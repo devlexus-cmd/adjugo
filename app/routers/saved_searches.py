@@ -1,0 +1,94 @@
+"""
+Veille / alertes AO programmées : l'utilisateur sauvegarde ses critères de
+recherche ; un cron quotidien rejoue la recherche et envoie un digest des
+nouveaux appels d'offres pertinents. Passe de « je vérifie » à « ça arrive ».
+"""
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+
+from app.core.database import get_db
+from app.core.security import get_current_user
+from app.models import User, SavedSearch
+
+router = APIRouter(prefix="/api/saved-searches", tags=["Veille / alertes AO"])
+
+
+class SavedSearchIn(BaseModel):
+    name: str
+    query: Optional[str] = ""
+    cpv: list[str] = []
+    departements: list[str] = []
+    countries: list[str] = []
+    montant_min: Optional[float] = None
+    montant_max: Optional[float] = None
+    frequency: Optional[str] = "quotidienne"
+    active: Optional[bool] = True
+    min_score: Optional[int] = None
+
+
+def _out(s: SavedSearch) -> dict:
+    return {
+        "id": s.id, "name": s.name, "query": s.query or "",
+        "cpv": s.cpv or [], "departements": s.departements or [], "countries": s.countries or [],
+        "montant_min": s.montant_min, "montant_max": s.montant_max,
+        "frequency": s.frequency, "active": s.active, "min_score": s.min_score,
+        "last_run": s.last_run.isoformat() if s.last_run else None,
+        "matches_seen": len(s.last_seen_refs or []),
+    }
+
+
+@router.get("/")
+def list_saved_searches(current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    rows = db.query(SavedSearch).filter(SavedSearch.user_id == current_user.id) \
+             .order_by(SavedSearch.created_at.desc()).all()
+    return [_out(s) for s in rows]
+
+
+@router.post("/", status_code=201)
+def create_saved_search(data: SavedSearchIn, current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    s = SavedSearch(user_id=current_user.id, **data.model_dump())
+    db.add(s); db.commit(); db.refresh(s)
+    return _out(s)
+
+
+@router.put("/{search_id}")
+def update_saved_search(search_id: int, data: SavedSearchIn,
+                        current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    s = db.query(SavedSearch).filter(SavedSearch.id == search_id,
+                                     SavedSearch.user_id == current_user.id).first()
+    if not s:
+        raise HTTPException(404, "Alerte introuvable")
+    for k, v in data.model_dump().items():
+        setattr(s, k, v)
+    db.commit(); db.refresh(s)
+    return _out(s)
+
+
+@router.delete("/{search_id}")
+def delete_saved_search(search_id: int, current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    s = db.query(SavedSearch).filter(SavedSearch.id == search_id,
+                                     SavedSearch.user_id == current_user.id).first()
+    if not s:
+        raise HTTPException(404, "Alerte introuvable")
+    db.delete(s); db.commit()
+    return {"ok": True}
+
+
+@router.post("/{search_id}/run")
+def run_saved_search_now(search_id: int, current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)):
+    """Exécute l'alerte immédiatement (aperçu) et renvoie les nouveaux AO trouvés."""
+    s = db.query(SavedSearch).filter(SavedSearch.id == search_id,
+                                     SavedSearch.user_id == current_user.id).first()
+    if not s:
+        raise HTTPException(404, "Alerte introuvable")
+    from app.services.alerts import run_one_saved_search
+    fresh = run_one_saved_search(s, db, mark=True)
+    db.commit()
+    return {"new_matches": len(fresh), "tenders": fresh}

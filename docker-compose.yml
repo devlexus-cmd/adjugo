@@ -1,0 +1,38 @@
+services:
+  # === Base de données PostgreSQL ===
+  db:
+    image: postgres:16-alpine
+    container_name: adjugo-db
+    environment:
+      POSTGRES_USER: adjugo
+      POSTGRES_PASSWORD: adjugo_password   # ⚠️ à changer en production
+      POSTGRES_DB: adjugo_db
+    volumes:
+      - adjugo_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adjugo -d adjugo_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # === API Backend ===
+  api:
+    build: .
+    container_name: adjugo-api
+    env_file: .env                          # secrets : ANTHROPIC, SECRET_KEY, STRIPE, S3, SMTP…
+    environment:                            # surcharge l'.env pour la prod conteneurisée
+      DATABASE_URL: postgresql+psycopg2://adjugo:adjugo_password@db:5432/adjugo_db
+      DEMO_MODE: "false"
+      ENVIRONMENT: production
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads              # utile seulement si STORAGE_BACKEND=local
+    restart: unless-stopped
+
+volumes:
+  adjugo_data:

@@ -1,0 +1,25 @@
+# Secrets — ne JAMAIS embarquer dans l'image
+.env
+.env.*
+
+# Environnements & caches Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Base locale & uploads (volumes/stockage externe en prod)
+*.db
+*.sqlite*
+uploads/
+
+# Outillage / docs / VCS
+.git/
+.gitignore
+.dockerignore
+tests/
+*.md
+.DS_Store
+.vscode/
+.idea/

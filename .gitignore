@@ -1,0 +1,39 @@
+# Secrets & config locale
+.env
+.env.*
+!.env.example
+
+# Base de données locale
+*.db
+*.sqlite
+*.sqlite3
+adjugo.db
+
+# Fichiers uploadés
+uploads/
+source/
+
+# Environnements Python
+venv/
+venv$/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# OS / éditeurs
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+
+# Artefacts générés
+*.zip
+test_adjugo.db
+
+# Claude Code local settings
+.claude/settings.local.json
