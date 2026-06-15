@@ -201,10 +201,14 @@ def ensure_demo(db, force: bool = False) -> User:
     crit.skills = ["toiture", "étanchéité", "gros œuvre", "isolation", "charpente"]
     crit.budget_min = _CRITERIA["budget_min"]; crit.budget_max = _CRITERIA["budget_max"]; crit.go_threshold = _CRITERIA["go_threshold"]
 
-    # On repart propre : liens, co-traitants, projets de la démo.
+    # On repart propre : on supprime D'ABORD tout ce qui référence les projets démo
+    # (documents, docs générés, factures, liens co-traitants) sinon la contrainte de clé
+    # étrangère bloque la suppression des projets et fait échouer tout le reseed.
+    from app.models import Document, GeneratedDoc, Invoice
     old_ids = [p.id for p in db.query(Project).filter(Project.user_id == user.id).all()]
     if old_ids:
-        db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id.in_(old_ids)).delete(synchronize_session=False)
+        for M in (ProjectCotraitant, Document, GeneratedDoc, Invoice):
+            db.query(M).filter(M.project_id.in_(old_ids)).delete(synchronize_session=False)
     db.query(Cotraitant).filter(Cotraitant.user_id == user.id).delete(synchronize_session=False)
     db.query(Project).filter(Project.user_id == user.id).delete(synchronize_session=False)
     db.flush()
