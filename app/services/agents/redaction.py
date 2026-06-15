@@ -36,6 +36,19 @@ def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
         quals = ", ".join(q.get("name", "") if isinstance(q, dict) else str(q) for q in quals)
     cot = "; ".join(f"{c.get('name')} ({c.get('specialites','')})" for c in cotraitants) or "aucun"
 
+    # Équipe interne (moyens humains) : présentée nommément dans le mémoire si renseignée.
+    team_block = ""
+    team = company.get("team") or []
+    if isinstance(team, list):
+        members = "\n".join(
+            f"- {m.get('nom','')} — {m.get('fonction','')}"
+            + (f" ({m.get('qualifications','')})" if m.get('qualifications') else "")
+            + (f" ; réf. : {m.get('references','')}" if m.get('references') else "")
+            for m in team if isinstance(m, dict) and m.get('nom'))
+        if members:
+            team_block = ("\n\nÉQUIPE INTERNE DÉDIÉE (présente-la NOMMÉMENT dans « Moyens humains », "
+                          f"avec rôles et qualifications) :\n{members}")
+
     # Chiffrage : si un devis a été établi, la méthodologie et le planning du mémoire
     # DOIVENT refléter le découpage chiffré (cohérence prix / discours).
     chiffrage_block, chiffrage_rule = "", ""
@@ -74,7 +87,7 @@ CRITÈRES D'ATTRIBUTION : {details.get('criteres_attribution','')}
 
 ENTREPRISE MANDATAIRE : {company.get('name','')} — {company.get('forme_juridique','')},
 {company.get('city','')}, effectif {company.get('effectif','')}, qualifications : {quals}.
-CO-TRAITANTS DU GROUPEMENT : {cot}.{sources_block}{chiffrage_block}
+CO-TRAITANTS DU GROUPEMENT : {cot}.{team_block}{sources_block}{chiffrage_block}
 
 Structure en Markdown avec ces sections :
 1. Présentation du groupement et répartition des lots

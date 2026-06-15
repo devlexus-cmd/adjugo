@@ -134,6 +134,10 @@ class Company(Base):
     references = Column(JSON, default=list)
     # Ex: [{"name": "Crèche municipale", "client": "Mairie X", "value": 64000, "year": 2025}]
 
+    # Équipe interne (moyens humains) — alimente le mémoire technique.
+    team = Column(JSON, default=list)
+    # Ex: [{"nom": "Yann Tanguy", "fonction": "Conducteur de travaux", "qualifications": "BTS, 15 ans", "references": "12 toitures scolaires"}]
+
     # Chiffrage : tarifs journaliers par profil de prestation + majoration distance.
     day_rates = Column(JSON, default=list)
     # Ex: [{"label": "Étude / conception", "rate": 600}, {"label": "Production / édition", "rate": 400}]

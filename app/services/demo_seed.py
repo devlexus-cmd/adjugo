@@ -184,6 +184,11 @@ def ensure_demo(db, force: bool = False) -> User:
     comp.city = "Quimper"; comp.postal_code = "29000"; comp.forme_juridique = "SARL"
     comp.ca_n1 = 1250000; comp.ca_n2 = 1100000; comp.ca_n3 = 980000; comp.effectif = 14
     comp.qualifications = _COMPANY["qualifications"]
+    comp.team = [
+        {"nom": "Yann Tanguy", "fonction": "Conducteur de travaux", "qualifications": "BTS Bâtiment, 18 ans d'expérience", "references": "Chef de chantier sur 12 réfections de toiture scolaire"},
+        {"nom": "Sophie Hénaff", "fonction": "Responsable QSE / RSE", "qualifications": "Ingénieure, certifiée RGE", "references": "Pilote des clauses d'insertion sur 8 marchés publics"},
+        {"nom": "Erwan Le Bris", "fonction": "Chef d'équipe étanchéité", "qualifications": "BP Couverture, 12 ans", "references": "Pose de membrane sur 20 000 m² de toitures-terrasses"},
+    ]
     comp.day_rates = _DAY_RATES
     comp.distance_threshold_km = 50
     comp.distance_surcharge_pct = 12

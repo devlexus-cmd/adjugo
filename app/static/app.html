@@ -1012,6 +1012,15 @@
             <div class="frow t3"><div class="field"><label>CA N-1 (€)</label><input type="number" v-model.number="company.ca_n1"></div>
               <div class="field"><label>CA N-2 (€)</label><input type="number" v-model.number="company.ca_n2"></div>
               <div class="field"><label>CA N-3 (€)</label><input type="number" v-model.number="company.ca_n3"></div></div>
+            <div class="sectitle">Collaborateurs <span class="muted small" style="font-weight:400">— vos moyens humains, présentés nommément dans les mémoires techniques</span></div>
+            <div v-for="(m,i) in (company.team||[])" :key="'tm'+i" class="card pad" style="background:var(--surface-2);margin-bottom:8px;padding:12px">
+              <div class="frow"><div class="field" style="margin:0"><label>Nom</label><input v-model="m.nom" placeholder="Yann Tanguy"></div>
+                <div class="field" style="margin:0"><label>Fonction</label><input v-model="m.fonction" placeholder="Conducteur de travaux"></div></div>
+              <div class="field" style="margin:8px 0 0"><label>Qualifications / expérience</label><input v-model="m.qualifications" placeholder="BTS Bâtiment, 15 ans d'expérience"></div>
+              <div class="field" style="margin:8px 0 0"><label>Références clés</label><input v-model="m.references" placeholder="Chef de chantier sur 12 réfections de toiture"></div>
+              <button class="btn sm ghost" style="margin-top:8px" @click="company.team.splice(i,1)"><i data-lucide="trash-2"></i>Retirer</button>
+            </div>
+            <button class="btn sm" style="margin-bottom:14px" @click="company.team=(company.team||[]).concat([{nom:'',fonction:'',qualifications:'',references:''}])"><i data-lucide="user-plus"></i>Ajouter un collaborateur</button>
             <div class="sectitle">Tarifs de chiffrage <span class="muted small" style="font-weight:400">— prix de journée par type de prestation, utilisés pour estimer vos devis</span></div>
             <div v-for="(r,i) in (company.day_rates||[])" :key="'dr'+i" class="row" style="gap:8px;margin-bottom:6px;align-items:center">
               <input class="inp" v-model="r.label" placeholder="Ex. Étude / conception" style="flex:1">
