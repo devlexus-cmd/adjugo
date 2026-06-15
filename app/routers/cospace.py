@@ -45,6 +45,7 @@ def _space_out(db, s: CoSpace, members=None) -> dict:
             "owner_company": _company_name(db, s.owner_id),
             "owner_kb_chunks": _kb_count(db, s.owner_id),
             "members": [_member_out(db, m) for m in members],
+            "warroom": s.warroom,
             "created_at": s.created_at.isoformat() if s.created_at else None}
 
 
@@ -178,3 +179,33 @@ def merged_memoire(space_id: int, req: MergedMemoireReq, request: Request,
         raise HTTPException(422, "Invitez et faites accepter au moins un co-traitant avant de fusionner.")
     consume_analysis(current_user, db)
     return generate_merged_memoire(db, members, req.dce_text)
+
+
+class WarRoomReq(BaseModel):
+    dce_text: str
+
+
+@router.post("/{space_id}/warroom")
+@limiter.limit("12/hour")
+def warroom(space_id: int, req: WarRoomReq, request: Request,
+            current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """War Room : l'IA lit le DCE et pré-répartit les lots entre les membres selon leur
+    savoir-faire (pré-projet remis au partenaire). Stocké sur l'espace pour tous les membres."""
+    from app.services.agents.warroom import propose_allocation
+    s = db.query(CoSpace).filter(CoSpace.id == space_id, CoSpace.owner_id == current_user.id).first()
+    if not s:
+        raise HTTPException(404, "Espace introuvable (seul le mandataire pré-répartit).")
+    if len((req.dce_text or "").strip()) < 60:
+        raise HTTPException(422, "DCE trop court.")
+    members = [{"user_id": s.owner_id, "name": _company_name(db, s.owner_id) or "Mandataire", "role": "mandataire"}]
+    for m in db.query(CoMember).filter(CoMember.space_id == s.id, CoMember.status == "accepted").all():
+        if m.user_id:
+            members.append({"user_id": m.user_id, "name": m.company_name or "Co-traitant", "role": m.role})
+    # Aussi les invités non encore acceptés (pour pré-remplir leur dossier d'accueil)
+    for m in db.query(CoMember).filter(CoMember.space_id == s.id, CoMember.status == "invited").all():
+        members.append({"user_id": None, "name": m.email, "role": m.role})
+    consume_analysis(current_user, db)
+    result = propose_allocation(db, req.dce_text, [m for m in members if m.get("user_id")])
+    s.warroom = result
+    db.commit()
+    return result

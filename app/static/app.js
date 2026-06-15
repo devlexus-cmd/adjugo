@@ -91,7 +91,8 @@ createApp({
             searchQ: "", searchRes: null, qText: "", qResults: null, qLoading: false,
             memoire: null, memoireLoading: false },
       cospace: { spaces: [], current: null, newName: "", newMarche: "", inviteEmail: "", inviteRole: "cotraitant",
-                 lastToken: "", joinToken: "", dceText: "", memoire: null, generating: false },
+                 lastToken: "", joinToken: "", dceText: "", memoire: null, generating: false,
+                 warroomDce: "", warroomLoading: false },
       amontRegions: [
         { code: "IDF", nom: "Île-de-France", deps: ["75", "77", "78", "91", "92", "93", "94", "95"] },
         { code: "ARA", nom: "Auvergne-Rhône-Alpes", deps: ["01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"] },
@@ -881,6 +882,19 @@ createApp({
       catch (e) { this.notify(e.message, "err"); }
     },
     coIsOwner(s) { return s && s.owner_id === this.user.id; },
+    async coWarroom() {
+      if (!this.cospace.current) return;
+      if ((this.cospace.warroomDce || "").trim().length < 60) { this.notify("Collez le DCE (min. 60 caractères)", "err"); return; }
+      this.cospace.warroomLoading = true;
+      try {
+        const r = await this.api("POST", "/api/cospace/" + this.cospace.current.id + "/warroom", { dce_text: this.cospace.warroomDce });
+        this.cospace.current.warroom = r; this.notify("Pré-répartition générée (" + (r.lots ? r.lots.length : 0) + " lots)");
+      } catch (err) {
+        if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
+        else this.notify(err.message, "err");
+      } finally { this.cospace.warroomLoading = false; }
+    },
+    eurMaybe(n) { return (n || n === 0) ? this.eur(n) : "montant estimé n/d"; },
     async coMerge() {
       if (!this.cospace.current) return;
       if ((this.cospace.dceText || "").trim().length < 60) { this.notify("Collez le DCE (RC/CCTP) — min. 60 caractères", "err"); return; }

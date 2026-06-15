@@ -449,6 +449,7 @@ class CoSpace(Base):
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)  # mandataire (pilote)
     name = Column(String(255), nullable=False)        # nom de l'espace / du marché
     marche = Column(String(500), default="")          # objet du marché visé
+    warroom = Column(JSON, nullable=True)             # pré-répartition des lots (War Room)
     created_at = Column(DateTime, default=utcnow)
 
 

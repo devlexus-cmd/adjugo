@@ -819,6 +819,26 @@
                 <div style="flex:1;min-width:0"><b class="small">Code à transmettre au partenaire</b><div class="num small" style="word-break:break-all">{{ cospace.lastToken }}</div></div>
               </div>
 
+              <!-- War Room : pré-répartition des lots -->
+              <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+                <div class="sectitle" style="margin-top:0"><i data-lucide="swords" style="width:14px;height:14px"></i> War Room — pré-répartition du marché</div>
+                <div v-if="coIsOwner(cospace.current)" class="muted small" style="margin-bottom:8px">Collez le DCE : l'IA identifie les lots et propose <b>qui prend quoi</b> selon le savoir-faire de chacun. Le partenaire reçoit un dossier clé en main (montants estimés, sources réelles).</div>
+                <div v-if="coIsOwner(cospace.current)" class="row wrap" style="gap:8px;align-items:flex-start">
+                  <textarea class="inp" v-model="cospace.warroomDce" placeholder="Texte du DCE (RC/CCTP)…" style="flex:1;min-width:240px;height:64px;padding:9px 12px"></textarea>
+                  <button class="btn primary" @click="coWarroom()" :disabled="cospace.warroomLoading"><span v-if="cospace.warroomLoading" class="spin"></span><i v-else data-lucide="swords"></i>Pré-répartir</button>
+                </div>
+                <div v-if="cospace.current.warroom && cospace.current.warroom.lots && cospace.current.warroom.lots.length" style="margin-top:10px;padding:11px 13px;background:var(--surface-2);border-radius:10px">
+                  <div class="strong small" v-if="cospace.current.warroom.marche_objet">{{ cospace.current.warroom.marche_objet }}</div>
+                  <div v-if="cospace.current.warroom.montant_total_estime" class="muted small" style="margin-bottom:6px">Montant total estimé : {{ eur(cospace.current.warroom.montant_total_estime) }}</div>
+                  <div v-for="(l,i) in cospace.current.warroom.lots" :key="'lot'+i" class="row" style="padding:7px 0;border-top:1px solid var(--hairline);gap:8px;align-items:flex-start">
+                    <span class="pill" :class="(cospace.current.warroom.lots[i].attribue_a===cospace.current.owner_company)?'go':'st-envoye'" style="font-size:10px">{{ l.attribue_a }}</span>
+                    <div style="flex:1;min-width:0"><span class="small strong">{{ l.intitule }}</span><span v-if="l.montant_estime" class="muted small"> · {{ eur(l.montant_estime) }} (estimé)</span><div class="muted small">{{ l.raison }}</div></div>
+                  </div>
+                  <div v-if="cospace.current.warroom.synthese" class="small" style="margin-top:8px;font-style:italic;color:var(--text-2)">{{ cospace.current.warroom.synthese }}</div>
+                  <div v-if="cospace.current.warroom.accroche_partenaire && !coIsOwner(cospace.current)" class="alert-callout" style="margin-top:10px"><i data-lucide="handshake"></i><div><b>Proposition du mandataire</b><div class="small" style="margin-top:2px">{{ cospace.current.warroom.accroche_partenaire }}</div></div></div>
+                </div>
+              </div>
+
               <!-- Générer le mémoire fusionné (mandataire) -->
               <div v-if="coIsOwner(cospace.current)" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
                 <div class="sectitle" style="margin-top:0"><i data-lucide="sparkles" style="width:14px;height:14px"></i> Générer le mémoire unifié du groupement</div>
