@@ -26,7 +26,8 @@ _DEFAULT_DUREE = {"accord-cadre": 48, "marché": 30, None: 36}
 
 
 def _fetch_attributions(query: str, departements, per: int = 50) -> list:
-    q = (query or "travaux").replace('"', " ").strip()
+    from app.sourcing.http import safe_terms
+    q = safe_terms(query) or "travaux"   # neutralise l'injection ODSQL
     today = date.today()
     start = (today - timedelta(days=int(5 * 365))).isoformat()   # attribué il y a ≤ 5 ans
     end = (today - timedelta(days=int(1.5 * 365))).isoformat()   # … et ≥ 1,5 an (zone de renouvellement)
@@ -36,8 +37,8 @@ def _fetch_attributions(query: str, departements, per: int = 50) -> list:
         where = f"({where}) AND ({deps})"
     where += f" AND dateparution >= date'{start}' AND dateparution <= date'{end}'"
     params = {"limit": min(per, 60), "order_by": "-dateparution", "where": where, "select": SELECT}
-    r = httpx.get(API, params=params, timeout=14)
-    r.raise_for_status()
+    from app.sourcing.http import get_with_retry
+    r = get_with_retry(API, params=params, timeout=14)   # retry + backoff
     out = []
     for row in r.json().get("results", []):
         deps = row.get("code_departement") or []

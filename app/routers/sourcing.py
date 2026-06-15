@@ -210,12 +210,19 @@ def renewals(request: Request, req: RenewalRequest,
              current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Traque les marchés DÉJÀ ATTRIBUÉS dont le contrat arrive bientôt à échéance →
     se positionner auprès de l'acheteur avant la republication. Dates estimées, sources réelles."""
-    from app.core.quota import consume_analysis
+    from app.core.quota import consume_analysis, refund_analysis
     from app.services.renewal import detect_renewals
     gonogo = _criteria_dict(current_user.id, db)
     deps = [d.strip()[:3] for d in (req.departements or []) if d.strip()]
     consume_analysis(current_user, db)
-    return detect_renewals(req.query or "travaux", deps, gonogo, domaines=req.domaines)
+    try:
+        res = detect_renewals(req.query or "travaux", deps, gonogo, domaines=req.domaines)
+    except Exception:
+        refund_analysis(current_user, db)   # rien produit → on ne débite pas
+        raise
+    if res.get("errors") and not res.get("renewals"):
+        refund_analysis(current_user, db)   # source en panne → remboursement
+    return res
 
 
 # ── Étape 2 : analyse profonde d'UN AO (LLM, quota) ──────────────────────────────

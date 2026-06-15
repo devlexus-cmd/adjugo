@@ -32,6 +32,19 @@ if settings.ENVIRONMENT == "production" and settings.SECRET_KEY in ("", "change-
 if settings.SECRET_KEY in ("", "change-this-in-production"):
     _logging.getLogger("adjugo").warning("SECRET_KEY par défaut — à changer avant la prod.")
 
+# Garde-fou prod : fail-CLOSED. DEMO_MODE ouvre des endpoints sans auth ; CRON_SECRET
+# protège les tâches admin coûteuses. Les deux doivent être verrouillés en production.
+if settings.ENVIRONMENT == "production":
+    if settings.DEMO_MODE:
+        raise RuntimeError("DEMO_MODE=True interdit en production (endpoints sans auth). Mettez DEMO_MODE=false.")
+    if not settings.CRON_SECRET:
+        raise RuntimeError("CRON_SECRET requis en production (protège /api/admin/run-*). Définissez-le.")
+# Rate-limit en mémoire inefficace en multi-worker : alerte si pas de store partagé.
+if settings.RATELIMIT_STORAGE_URI.startswith("memory://") and int(os.getenv("WEB_CONCURRENCY", "1")) > 1:
+    _logging.getLogger("adjugo").warning(
+        "Rate-limit en mémoire avec %s workers : limites multipliées. Configurez RATELIMIT_STORAGE_URI=redis://…",
+        os.getenv("WEB_CONCURRENCY"))
+
 # Dev (SQLite) : création directe des tables. Prod (Postgres) : migrations Alembic
 # (`alembic upgrade head`) — on ne crée pas le schéma à la volée.
 if _is_sqlite:
@@ -140,7 +153,48 @@ def software():
 
 @app.get("/api/health", tags=["Sante"])
 def health():
-    return {"status": "ok"}
+    # Health-check RÉEL : teste la base. Si Postgres est injoignable, on renvoie 503 pour
+    # que le load-balancer retire l'instance au lieu de lui envoyer du trafic qui 500.
+    from fastapi.responses import JSONResponse
+    from sqlalchemy import text as _sqltext
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        db.execute(_sqltext("SELECT 1"))
+        return {"status": "ok"}
+    except Exception as e:
+        import logging
+        logging.getLogger("adjugo").warning("health: base injoignable : %s", e)
+        return JSONResponse(status_code=503, content={"status": "error", "db": "unreachable"})
+    finally:
+        db.close()
+
+
+# ── Récupération des jobs orphelins au démarrage ────────────────────────────
+@app.on_event("startup")
+def _recover_orphan_jobs():
+    """Au démarrage, tout job resté « pending/running » est orphelin (le thread est mort
+    au redémarrage) : on le passe en erreur et on rembourse l'analyse consommée."""
+    from app.core.database import SessionLocal
+    from app.models import Job, User
+    from app.core.quota import refund_analysis
+    from sqlalchemy import update as _update
+    db = SessionLocal()
+    try:
+        for j in db.query(Job).filter(Job.status.in_(["pending", "running"])).all():
+            # Claim ATOMIQUE : seul le worker qui change réellement la ligne rembourse
+            # (évite le double-remboursement quand 4 workers démarrent ensemble).
+            res = db.execute(_update(Job).where(Job.id == j.id, Job.status.in_(["pending", "running"]))
+                             .values(status="error", error="Interrompu par un redémarrage du serveur."))
+            db.commit()
+            if res.rowcount == 1:
+                u = db.get(User, j.user_id)
+                if u:
+                    refund_analysis(u, db)
+    except Exception:
+        pass
+    finally:
+        db.close()
 
 
 # ── Veille amont autonome : scan périodique → emails des nouveautés ──
@@ -162,9 +216,21 @@ async def _amont_scheduler():
         await _asyncio.sleep(120)  # premier passage 2 min après le démarrage
 
         def _run():
+            # Verrou consultatif par tick : avec plusieurs workers uvicorn, UN SEUL
+            # exécute le scan (plus de 4× emails/appels IA dupliqués).
+            from app.core.database import _is_sqlite
+            from sqlalchemy import text as _t
             db = SessionLocal()
             try:
-                return run_amont_alerts(db)
+                if not _is_sqlite:
+                    got = db.execute(_t("SELECT pg_try_advisory_lock(815343)")).scalar()
+                    if not got:
+                        return None
+                try:
+                    return run_amont_alerts(db)
+                finally:
+                    if not _is_sqlite:
+                        db.execute(_t("SELECT pg_advisory_unlock(815343)"))
             finally:
                 db.close()
 

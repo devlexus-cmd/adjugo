@@ -25,7 +25,8 @@ class BoampSource(TenderSource):
     supported_filters = {"query", "departements"}
 
     def search(self, criteria: TenderCriteria) -> list[NormalizedTender]:
-        q = (criteria.query or "travaux").replace('"', " ").strip()
+        from app.sourcing.http import safe_terms
+        q = safe_terms(criteria.query) or "travaux"   # neutralise l'injection ODSQL
         where = f'objet like "{q}" OR descripteur_libelle like "{q}"'
         if criteria.departements:
             deps = " OR ".join(f'code_departement like "{d}"' for d in criteria.departements)
@@ -38,8 +39,8 @@ class BoampSource(TenderSource):
         params = {"limit": min(criteria.limit, 50), "order_by": "-dateparution",
                   "where": where, "select": SELECT}
         try:
-            r = httpx.get(API, params=params, timeout=12)
-            r.raise_for_status()
+            from app.sourcing.http import get_with_retry
+            r = get_with_retry(API, params=params, timeout=12)   # retry + backoff
             rows = r.json().get("results", [])
         except Exception as e:
             logger.warning("BOAMP indisponible : %s", e)

@@ -51,6 +51,13 @@ def run_in_thread(job_id: int, work) -> None:
                     j.status = "error"
                     j.error = str(e)[:1000]
                     db.commit()
+                    # Le traitement a consommé une analyse à la soumission mais n'a rien
+                    # produit → on rembourse le client.
+                    from app.core.quota import refund_analysis
+                    from app.models import User
+                    u = db.get(User, j.user_id)
+                    if u:
+                        refund_analysis(u, db)
             except Exception:
                 pass
         finally:
