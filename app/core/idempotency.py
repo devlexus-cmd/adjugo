@@ -11,6 +11,7 @@ Ne s'active que sur POST/PUT/PATCH (les téléchargements de fichiers sont des G
 jamais bufferisés ici). Cache mémoire borné + TTL ; pour le multi-worker, fournir Redis
 (même clé) — cf. invariants d'architecture (état partagé par processus).
 """
+import hashlib
 import threading
 import time
 
@@ -30,10 +31,20 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         if not key or request.method not in ("POST", "PUT", "PATCH"):
             return await call_next(request)
 
-        # Clé cantonnée à (clé client, méthode, chemin, identité) : pas de collision
-        # entre endpoints ni entre utilisateurs.
+        # On lit le corps pour l'inclure dans la clé (sinon : même clé + corps DIFFÉRENT
+        # renverrait la réponse cachée du premier → mauvaise donnée servie). On réinjecte
+        # ensuite le corps pour que le handler en aval puisse le relire.
+        body_bytes = await request.body()
+
+        async def _receive():
+            return {"type": "http.request", "body": body_bytes, "more_body": False}
+        request._receive = _receive
+
+        # Clé cantonnée à (clé client, méthode, chemin, identité, EMPREINTE DU CORPS) :
+        # pas de collision entre endpoints, utilisateurs, ni charges utiles différentes.
         auth = request.headers.get("authorization", "")
-        ck = f"{key}|{request.method}|{request.url.path}|{hash(auth)}"
+        body_h = hashlib.sha256(body_bytes).hexdigest()[:16]
+        ck = f"{key}|{request.method}|{request.url.path}|{hash(auth)}|{body_h}"
         now = time.monotonic()
 
         with _LOCK:

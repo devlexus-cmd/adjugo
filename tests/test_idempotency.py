@@ -30,6 +30,20 @@ def test_avec_entete_rejeu_renvoie_le_cache(client):
     assert r2.headers.get("Idempotent-Replayed") == "true"
 
 
+def test_meme_cle_corps_different_ne_collisionne_pas(client):
+    """Même Idempotency-Key mais CORPS différent → exécutions DISTINCTES (le corps entre
+    dans la clé). Sans ça, la 2e inscription renverrait à tort le compte de la 1re."""
+    key = str(uuid.uuid4())
+    e1 = f"idem_{uuid.uuid4().hex[:8]}@test.fr"
+    e2 = f"idem_{uuid.uuid4().hex[:8]}@test.fr"
+    base = {"password": "motdepasse123", "full_name": "X", "company_name": "Y SARL"}
+    r1 = client.post("/api/auth/register", json={**base, "email": e1}, headers={"Idempotency-Key": key})
+    r2 = client.post("/api/auth/register", json={**base, "email": e2}, headers={"Idempotency-Key": key})
+    assert r1.status_code == 201 and r2.status_code == 201
+    assert r1.json()["access_token"] != r2.json()["access_token"]   # deux comptes distincts
+    assert r2.headers.get("Idempotent-Replayed") != "true"          # 2e PAS rejouée du cache
+
+
 def test_cles_differentes_executent_chacune(client):
     """Deux clés différentes sur le même corps → la 2e s'exécute (et échoue : email pris)."""
     email = f"idem_{uuid.uuid4().hex[:8]}@test.fr"
