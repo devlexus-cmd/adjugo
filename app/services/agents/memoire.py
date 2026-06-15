@@ -89,16 +89,25 @@ RÈGLES ABSOLUES :
 - Si une partie de l'objectif n'est couverte par aucune source, tu écris une phrase
   explicite : « [À compléter : information non présente dans votre base de connaissances] ».
 - Style professionnel, concret, orienté preuve. Pas d'invention, pas de superlatifs creux.
+- ALIGNEMENT SUR LA GRILLE : développe davantage et apporte le plus de preuves sur les
+  critères d'attribution les plus PONDÉRÉS (ex. 40 % valeur technique, 20 % RSE) — c'est
+  là que se gagnent les points.
 Réponds en texte (pas de JSON), prêt à intégrer dans le mémoire."""
 
 
-def write_section(section: dict, chunks: list) -> dict:
+def write_section(section: dict, chunks: list, criteres=None) -> dict:
     if chunks:
         src = rag.sources_block(chunks)
     else:
         src = "(aucune source disponible)"
+    grille = ""
+    if criteres:
+        items = "; ".join(f"{c.get('intitule','')} ({c.get('ponderation') or '?'})"
+                          for c in criteres if isinstance(c, dict) and c.get("intitule"))
+        if items:
+            grille = f"\n\nGRILLE DE NOTATION PONDÉRÉE DE L'ACHETEUR : {items}\nMaximise le score : insiste sur les critères les plus pondérés liés à cette section."
     user = f"""Section à rédiger : {section.get('titre')}
-Objectif : {section.get('objectif', '')}
+Objectif : {section.get('objectif', '')}{grille}
 
 SOURCES AUTORISÉES (savoir-faire de l'entreprise) :
 {src}
@@ -153,13 +162,14 @@ def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int
         plan = [{"titre": "Méthodologie et organisation", "objectif": "Démontrer la démarche",
                  "requete": "méthodologie organisation qualité"}]
 
+    criteres = requirements.get("criteres_attribution") or []
     sections = []
     kb_used = False
     for sec in plan:
         chunks = rag.retrieve(db, user_id, sec.get("requete") or sec.get("titre", ""), k=5)
         if chunks:
             kb_used = True
-        sections.append(write_section(sec, chunks))
+        sections.append(write_section(sec, chunks, criteres=criteres))
 
     conformity = conformity_check(requirements, sections)
 

@@ -446,6 +446,27 @@
             <div v-if="src.sources.length" class="row small muted" style="margin-top:10px;gap:6px">Sources officielles : <span v-for="s in src.sources" :key="s" class="pill neutral">{{ s }}</span></div>
           </div>
 
+          <!-- Radar des échéances : marchés en fin de contrat -->
+          <div class="card pad" style="margin-top:10px">
+            <div class="row" style="gap:8px"><i data-lucide="timer-reset" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Radar des échéances</b><div class="spacer"></div>
+              <button class="btn sm" @click="srcRenewals()" :disabled="src.renewals.loading"><span v-if="src.renewals.loading" class="spin"></span><i v-else data-lucide="search"></i>Scanner (mots-clés ci-dessus)</button></div>
+            <div class="muted small" style="margin-top:6px">Marchés <b>déjà attribués</b> dont le contrat arrive à terme → positionnez-vous auprès de l'acheteur <b>avant la republication</b>. Dates de fin <b>estimées</b> (durée citée si disponible), sources réelles BOAMP.</div>
+            <div v-if="src.renewals.done && !src.renewals.list.length" class="muted small" style="margin-top:8px">Aucune échéance proche sur ce périmètre.</div>
+            <div v-for="r in src.renewals.list" :key="r.idweb" class="row" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:10px;align-items:flex-start;gap:10px">
+              <div style="flex:1;min-width:0">
+                <div class="row wrap" style="gap:6px">
+                  <span class="pill go">Renouvellement ~ {{ r.renouvellement_estime }}</span>
+                  <span class="pill neutral">pertinence {{ r.score }}/100</span>
+                  <span v-if="r.type_contrat" class="pill st-envoye">{{ r.type_contrat }}</span>
+                  <span class="pill" :class="r.duree_estimee?'a_etudier':'neutral'" style="font-size:10px">durée {{ r.duree_mois }} mois{{ r.duree_estimee?' (estimée)':' (citée)' }}</span>
+                </div>
+                <div class="strong" style="margin-top:7px;line-height:1.35">{{ r.objet }}</div>
+                <div class="muted small" style="margin-top:3px">{{ r.acheteur||'Acheteur' }}<span v-if="r.lieu"> · {{ r.lieu }}</span> · attribué le {{ r.date_attribution }} · fin estimée {{ r.fin_estimee }}</div>
+                <a v-if="r.url" :href="r.url" target="_blank" class="small" style="margin-top:5px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>Voir l'avis d'attribution ↗</a>
+              </div>
+            </div>
+          </div>
+
           <!-- Veille : alertes AO programmées -->
           <div class="card pad" style="margin-top:10px">
             <div class="row" style="gap:8px"><i data-lucide="bell"></i><b style="font-size:13.5px">Veille — alertes automatiques</b><div class="spacer"></div>

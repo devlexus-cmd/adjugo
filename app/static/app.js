@@ -111,6 +111,7 @@ createApp({
         analyzing: false, analysis: null, projectId: null, chosen: null,
         ct: { trade: "electricite", dept: "", searching: false, companies: [], selected: [], errors: [] },
         generating: false, dossier: null, alerts: [],
+        renewals: { list: [], loading: false, done: false },
       },
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
             cotraitants: [], stOpen: false, st: { trade: "electricite", dept: "", role: "sous_traitant", loading: false, results: [] },
@@ -671,6 +672,17 @@ createApp({
     srcDeps() { return this.src.dept.split(",").map(s => s.trim()).filter(Boolean); },
     srcCpv() { return (this.src.cpv || "").split(/[,\s]+/).map(s => s.trim()).filter(Boolean); },
     srcResetAdv() { this.src.type_marche = ""; this.src.cpv = ""; },
+    async srcRenewals() {
+      this.src.renewals.loading = true; this.src.renewals.done = false;
+      try {
+        const r = await this.api("POST", "/api/sourcing/renewals", { query: this.src.query || "travaux", departements: this.srcDeps() });
+        this.src.renewals.list = r.renewals || []; this.src.renewals.done = true;
+        this.notify(r.count ? (r.count + " marché(s) en fin de contrat détecté(s)") : "Aucune échéance proche sur ce périmètre", r.count ? "ok" : "err");
+      } catch (err) {
+        if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
+        else this.notify(err.message, "err");
+      } finally { this.src.renewals.loading = false; }
+    },
     async srcSearch() {
       this.src.searching = true; this.src.tenders = []; this.src.errors = []; this.src.analysis = null;
       try {

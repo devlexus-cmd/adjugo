@@ -196,6 +196,28 @@ def search_tenders(request: Request, req: SearchRequest,
     }
 
 
+# ── Radar des échéances : marchés attribués arrivant à terme (LLM, quota) ─────────
+
+class RenewalRequest(BaseModel):
+    query: str = "travaux"
+    departements: list[str] = []
+    domaines: list[str] = []
+
+
+@router.post("/renewals")
+@limiter.limit("12/hour")
+def renewals(request: Request, req: RenewalRequest,
+             current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Traque les marchés DÉJÀ ATTRIBUÉS dont le contrat arrive bientôt à échéance →
+    se positionner auprès de l'acheteur avant la republication. Dates estimées, sources réelles."""
+    from app.core.quota import consume_analysis
+    from app.services.renewal import detect_renewals
+    gonogo = _criteria_dict(current_user.id, db)
+    deps = [d.strip()[:3] for d in (req.departements or []) if d.strip()]
+    consume_analysis(current_user, db)
+    return detect_renewals(req.query or "travaux", deps, gonogo, domaines=req.domaines)
+
+
 # ── Étape 2 : analyse profonde d'UN AO (LLM, quota) ──────────────────────────────
 
 class AnalyzeRequest(BaseModel):
