@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    name: Tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt pytest
+      - name: pytest
+        run: pytest -q
+        env:
+          DATABASE_URL: sqlite:///./ci.db
+          DEMO_MODE: "true"
+
+  a11y:
+    name: Accessibilité (RGAA/WCAG 2.1 AA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm init -y && npm install --no-save playwright && npx playwright install --with-deps chromium
+      - name: Démarrer l'API
+        run: |
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+          for i in $(seq 1 40); do curl -sf http://127.0.0.1:8000/api/health && break; sleep 1; done
+        env:
+          DATABASE_URL: sqlite:///./ci.db
+          DEMO_MODE: "true"
+      - name: Audit a11y (landing + app)
+        run: node scripts/a11y_audit.cjs
+        env:
+          BASE_URL: http://127.0.0.1:8000

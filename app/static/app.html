@@ -23,10 +23,10 @@
 <div id="app">
 
   <!-- ══════════ AUTH ══════════ -->
-  <div v-if="!token" class="auth">
+  <main v-if="!token" class="auth">
     <div class="box">
-      <div class="logo"><svg class="mark" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="#fff" stroke-opacity=".42" stroke-width="3.5"/><circle cx="24" cy="24" r="13" stroke="#fff" stroke-opacity=".72" stroke-width="3.5"/><circle cx="24" cy="24" r="6" fill="#fff"/></svg></div>
-      <h2 class="wordmark" style="justify-content:center;font-size:26px"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></h2>
+      <div class="logo" aria-hidden="true"><svg class="mark" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="#fff" stroke-opacity=".42" stroke-width="3.5"/><circle cx="24" cy="24" r="13" stroke="#fff" stroke-opacity=".72" stroke-width="3.5"/><circle cx="24" cy="24" r="6" fill="#fff"/></svg></div>
+      <h1 class="wordmark" aria-label="Adjugo" style="justify-content:center;font-size:26px"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none" aria-hidden="true"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></h1>
       <p class="tagline">Plateforme de réponse aux marchés publics</p>
       <div class="field"><label>Email</label><input v-model="auth.email" type="email" placeholder="vous@entreprise.fr" @keyup.enter="submitAuth"></div>
       <div class="field" v-if="auth.mode==='register'"><label>Nom complet</label><input v-model="auth.full_name" placeholder="Jean Dupont"></div>
@@ -37,7 +37,7 @@
           {{ auth.mode==='login'?"Pas de compte ? S'inscrire":'Déjà inscrit ? Se connecter' }}</a></p>
       <p class="alt" style="margin-top:8px">Démo : demo@adjugo.fr / demo1234</p>
     </div>
-  </div>
+  </main>
 
   <!-- ══════════ APP ══════════ -->
   <div v-else class="app">
