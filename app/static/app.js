@@ -83,7 +83,7 @@ createApp({
       statuses: ["nouveau", "en_cours", "envoye", "gagne", "perdu"],
       statuses2: ["nouveau", "en_cours", "envoye", "gagne", "perdu", "abandonne"],
       plan: { plan: "starter" }, org: { data: null, name: "", invite: { email: "", full_name: "" }, lastTemp: null },
-      discover: { open: false, trade: "electricite", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [],
+      discover: { open: false, trade: "", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [],
       countries2: [], adaptedCountries: [], orgCountry: "FR", lang: "fr",
       amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false },
       amontDomaines: ["bâtiment", "voirie / VRD", "réseaux", "énergie / rénovation énergétique", "espaces verts / aménagement", "numérique / télécom", "équipement", "études / maîtrise d'œuvre"],
@@ -112,12 +112,12 @@ createApp({
       src: {
         query: "", dept: "", country: "FR", advOpen: false, type_marche: "", cpv: "", searching: false, tenders: [], errors: [], sources: [], expanded: null,
         analyzing: false, analysis: null, projectId: null, chosen: null,
-        ct: { trade: "electricite", dept: "", searching: false, companies: [], selected: [], errors: [] },
+        ct: { trade: "", dept: "", searching: false, companies: [], selected: [], errors: [] },
         generating: false, dossier: null, alerts: [],
         renewals: { list: [], loading: false, done: false },
       },
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
-            cotraitants: [], stOpen: false, st: { trade: "electricite", dept: "", role: "sous_traitant", loading: false, results: [] },
+            cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             qa: [], qaInput: "", qaLoading: false },
       titles: { kb: "Base de connaissances — savoir-faire & mémoires IA", amont: "Veille amont — signaux d'investissement", dashboard: "Tableau de bord", sourcing: "Sourcing IA — appels d'offres", agent: "Agent IA — Pipeline multi-agents", pipeline: "Pipeline des appels d'offres", veille: "Veille des marchés publics", cotraitants: "Réseau de co-traitants", contacts: "Contacts CRM", documents: "Coffre-fort documentaire", invoices: "Devis & Factures", company: "Profil entreprise", criteria: "Critères Go/No-Go", team: "Équipe", billing: "Abonnement", aodetail: "Appel d'offres" },
@@ -236,7 +236,8 @@ createApp({
       } catch (e) { this.notify(e.message, "err"); } finally { this.discover.loading = false; }
     },
     async importCotraitant(e) {
-      const tradeLabel = (this.trades.find(t => t.key === this.discover.trade) || {}).label || "";
+      const t = this.trades.find(t => t.key === this.discover.trade || (t.label || "").toLowerCase() === (this.discover.trade || "").toLowerCase());
+      const tradeLabel = t ? t.label : (this.discover.trade || "");
       try {
         await this.api("POST", "/api/registre/import", { ...e, specialites: tradeLabel });
         e._added = true; this.loadCotraitants(); this.notify(e.name + " ajouté au réseau");
@@ -895,6 +896,7 @@ createApp({
       } finally { this.cospace.warroomLoading = false; }
     },
     eurMaybe(n) { return (n || n === 0) ? this.eur(n) : "montant estimé n/d"; },
+    companyWeb(c) { return "https://www.google.com/search?q=" + encodeURIComponent((c.nom || c.name || "") + " " + (c.ville || c.city || "") + " site officiel contact"); },
     async coMerge() {
       if (!this.cospace.current) return;
       if ((this.cospace.dceText || "").trim().length < 60) { this.notify("Collez le DCE (RC/CCTP) — min. 60 caractères", "err"); return; }

@@ -46,7 +46,10 @@ class SireneSource(CompanySource):
 
     def search(self, activity: str = "", departement: str = "", query: str = "",
                limit: int = 12) -> list[NormalizedCompany]:
-        trade = next((t for t in TRADES if t["key"] == activity), None)
+        # On accepte une ACTIVITÉ LIBRE : si elle correspond à un métier connu (par clé
+        # OU par libellé), on gagne le filtre NAF ; sinon recherche par mots-clés libres.
+        al = (activity or "").strip().lower()
+        trade = next((t for t in TRADES if t["key"] == al or t["label"].lower() == al), None)
         params = {"per_page": min(limit, 25), "page": 1, "etat_administratif": "A"}
         kw = trade["label"] if trade else activity
         if trade:

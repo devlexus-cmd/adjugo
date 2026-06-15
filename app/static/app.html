@@ -339,7 +339,7 @@
               <div v-if="ao.stOpen" style="margin-top:12px;border-top:1px solid var(--hairline);padding-top:12px">
                 <div class="muted small" style="margin-bottom:8px">Recherche d'entreprises réelles (SIRENE) à rattacher comme sous-traitant.</div>
                 <div class="row wrap">
-                  <select class="inp" v-model="ao.st.trade" style="width:170px"><option v-for="t in trades" :key="t.key" :value="t.key">{{ t.label }}</option></select>
+                  <input class="inp" v-model="ao.st.trade" list="trades-dl" placeholder="Activité (libre)" style="width:190px">
                   <input class="inp" v-model="ao.st.dept" placeholder="Département" style="width:120px">
                   <select class="inp" v-model="ao.st.role" style="width:140px"><option value="mandataire">Mandataire</option><option value="cotraitant">Co-traitant</option><option value="sous_traitant">Sous-traitant</option></select>
                   <button class="btn primary" @click="aoSearchSt()" :disabled="ao.st.loading"><span v-if="ao.st.loading" class="spin"></span><i v-else data-lucide="search"></i>Chercher</button>
@@ -353,7 +353,7 @@
                       <span v-if="c.est_qualiopi" class="pill go" style="font-size:10px">Qualiopi</span>
                       <span v-if="c.categorie" class="pill neutral" style="font-size:10px">{{ c.categorie }}</span>
                     </div>
-                    <div class="muted small">{{ c.naf_label||c.naf }} · {{ c.ville }} · {{ c.effectif!=null?c.effectif+' sal.':'' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab.</span></div>
+                    <div class="muted small">{{ c.naf_label||c.naf }} · {{ c.ville }} · {{ c.effectif!=null?c.effectif+' sal.':'' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab.</span><span v-if="c.provenance && c.provenance.source_url"> · <a :href="c.provenance.source_url" target="_blank" style="color:var(--accent-text)">fiche ↗</a></span> · <a :href="companyWeb(c)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div>
                     <div v-if="c.red_flags && c.red_flags.length" class="row wrap small" style="gap:5px;margin-top:4px;color:var(--danger);font-weight:600"><i data-lucide="triangle-alert" style="width:13px;height:13px"></i><span v-for="f in c.red_flags" :key="f">{{ f }}</span></div>
                     <details class="cot-score" style="margin-top:4px"><summary class="muted small" style="cursor:pointer;user-select:none">Détail du score</summary>
                       <div v-for="b in c.score.breakdown" :key="b.key" class="row small" style="padding:3px 0;gap:8px;border-bottom:1px solid var(--hairline)"><span style="min-width:120px">{{ b.label }}</span><span class="muted" style="flex:1;min-width:0">{{ b.detail }}</span><span class="pill" :class="b.status==='ok'?'go':b.status==='partiel'?'a_etudier':'neutral'" style="font-size:9px">{{ b.points }}/{{ b.max_points }}</span></div>
@@ -545,7 +545,8 @@
           <div v-if="src.analysis && (src.ct.companies.length || src.ct.searching || src.ct.dept)" class="card pad" style="margin-top:16px">
             <div class="row" style="gap:8px;margin-bottom:10px"><span class="pill" style="background:var(--accent-weak);color:var(--accent-text)">Étape 3</span><b style="font-size:13.5px">Co-traitants — entreprises réelles (SIRENE)</b></div>
             <div class="row wrap">
-              <select class="inp" v-model="src.ct.trade" style="width:200px"><option v-for="t in trades" :key="t.key" :value="t.key">{{ t.label }}</option></select>
+              <input class="inp" v-model="src.ct.trade" list="trades-dl" placeholder="Activité recherchée (ex. électricité, paysagiste, traiteur, dév web…)" style="flex:1;min-width:240px">
+              <datalist id="trades-dl"><option v-for="t in trades" :key="t.key" :value="t.label"></option></datalist>
               <input class="inp" v-model="src.ct.dept" placeholder="Département" style="width:140px">
               <button class="btn primary" @click="srcCotraitants()" :disabled="src.ct.searching"><span v-if="src.ct.searching" class="spin"></span><i v-else data-lucide="search"></i>Chercher</button>
             </div>
@@ -561,7 +562,7 @@
                   <span v-if="c.est_qualiopi" class="pill go" style="font-size:10px">Qualiopi</span>
                   <span v-if="c.categorie" class="pill neutral" style="font-size:10px">{{ c.categorie }}</span>
                 </div>
-                <div class="muted small">{{ c.naf_label||c.naf||'NAF n/d' }} · {{ c.ville||'ville n/d' }} · {{ c.effectif!=null?c.effectif+' sal.':'effectif n/d' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab. ouvert(s)</span> · <a :href="c.provenance.source_url" target="_blank" style="color:var(--accent-text)">fiche officielle ↗</a></div>
+                <div class="muted small">{{ c.naf_label||c.naf||'NAF n/d' }} · {{ c.ville||'ville n/d' }} · {{ c.effectif!=null?c.effectif+' sal.':'effectif n/d' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab. ouvert(s)</span> · <a :href="c.provenance.source_url" target="_blank" style="color:var(--accent-text)">fiche officielle ↗</a> · <a :href="companyWeb(c)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div>
                 <div v-if="c.red_flags && c.red_flags.length" class="row wrap small" style="gap:5px;margin-top:5px;color:var(--danger);font-weight:600"><i data-lucide="triangle-alert" style="width:13px;height:13px"></i><span v-for="f in c.red_flags" :key="f">{{ f }}</span></div>
                 <details v-if="c.synergy" class="cot-score" style="margin-top:5px"><summary class="muted small" style="cursor:pointer;user-select:none">Détail de la synergie ({{ c.synergy.total }}/100)</summary>
                   <div v-for="b in c.synergy.breakdown" :key="b.key" class="row small" style="padding:3px 0;gap:8px;border-bottom:1px solid var(--hairline)"><span style="min-width:140px">{{ b.label }}</span><span class="muted" style="flex:1;min-width:0">{{ b.detail }}</span><span class="pill" :class="b.points>=b.max*0.66?'go':(b.points>=b.max*0.33?'a_etudier':'neutral')" style="font-size:9px">{{ b.points }}/{{ b.max }}</span></div>
@@ -1138,14 +1139,14 @@
       <div class="modal-b">
         <div class="muted small" style="margin-bottom:12px">Entreprises réelles issues du registre officiel (SIRENE / annuaire-entreprises).</div>
         <div class="frow t3">
-          <div class="field"><label>Métier</label><select v-model="discover.trade"><option v-for="t in trades" :key="t.key" :value="t.key">{{ t.label }}</option></select></div>
+          <div class="field"><label>Activité <span class="hint">(libre — ex. électricité, paysagiste, nettoyage…)</span></label><input class="inp" v-model="discover.trade" list="trades-dl" placeholder="Activité recherchée"></div>
           <div class="field"><label>Département</label><input v-model="discover.dept" placeholder="29"></div>
           <div class="field"><label>Recherche libre</label><input v-model="discover.q" placeholder="ville, nom…"></div>
         </div>
         <button class="btn primary block" @click="runDiscover" :disabled="discover.loading"><span v-if="discover.loading" class="spin"></span>Rechercher des entreprises</button>
         <div v-if="discover.total" class="small muted" style="margin:12px 0 6px">{{ discover.total }} entreprises actives trouvées</div>
         <div v-for="e in discover.results" :key="e.siren" class="disc-item">
-          <div style="flex:1"><div class="nm">{{ e.name }}</div><div class="me">{{ e.naf_label||e.code_ape }} · {{ e.city }} {{ e.postal_code }} · {{ e.effectif?e.effectif+' sal.':'' }}</div></div>
+          <div style="flex:1"><div class="nm">{{ e.name }}</div><div class="me">{{ e.naf_label||e.code_ape }} · {{ e.city }} {{ e.postal_code }} · {{ e.effectif?e.effectif+' sal.':'' }} · <a :href="companyWeb(e)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div></div>
           <button v-if="!e._added" class="btn sm primary" @click="importCotraitant(e)"><i data-lucide="plus"></i>Ajouter</button>
           <span v-else class="pill go row" style="gap:4px"><i data-lucide="check" style="width:13px;height:13px"></i>Ajouté</span>
         </div>
