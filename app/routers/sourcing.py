@@ -417,9 +417,12 @@ def ask_ao(request: Request, req: AskRequest,
             f"\"\"\"\n{ctx[:14000]}\n\"\"\"\n\nQUESTION : {q}\n\n"
             f"Réponds en {lang}, fondé uniquement sur le DCE ci-dessus.")
     try:
-        from app.services.llm import tenant_scope
+        from app.services.llm import tenant_scope, LLMUnavailable
         with tenant_scope(current_user.id):
             answer = complete(ASK_SYSTEM, user, max_tokens=700, temperature=0.1, model=MODEL_FAST)
+    except LLMUnavailable as e:
+        # Dégradation gracieuse : service IA saturé/en pause → 503 RETRYABLE (Retry-After).
+        raise HTTPException(503, str(e), headers={"Retry-After": "30"})
     except Exception as e:
         raise HTTPException(502, f"IA momentanément indisponible : {e}")
     return {"answer": (answer or "").strip() or "—"}

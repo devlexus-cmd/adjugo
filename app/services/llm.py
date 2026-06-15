@@ -92,25 +92,41 @@ def _track_usage(model: str, resp) -> None:
         pass
 
 
-# ── Disjoncteur (circuit breaker) par process ────────────────────────────────
-# Après N échecs consécutifs, on OUVRE le circuit pendant un cooldown : les appels
-# suivants échouent vite (LLMUnavailable) au lieu de marteler une API IA en panne et
-# de saturer le pool de jobs. Un succès referme le circuit.
+# ── Disjoncteur (circuit breaker) GLOBAL + PAR TENANT ────────────────────────
+# Global : après N échecs consécutifs (panne API), on ouvre le circuit pendant un
+# cooldown → échec rapide pour tous. Un succès (de n'importe quel tenant) le referme.
+# Par tenant : un client dont LES appels échouent (entrées pathologiques) voit SON
+# circuit s'ouvrir, sans pénaliser les autres — isolation « voisin bruyant » au niveau
+# résilience, pas seulement coût.
 _CB = {"fails": 0, "open_until": 0.0}
 _CB_THRESHOLD = int(os.getenv("LLM_CB_THRESHOLD", "5"))
 _CB_COOLDOWN = float(os.getenv("LLM_CB_COOLDOWN", "30"))
+_TENANT_CB = {}          # tenant_id -> {"fails": int, "open_until": float}  (borné)
+_TENANT_CB_MAX = 5000
+_TCB_THRESHOLD = int(os.getenv("LLM_TENANT_CB_THRESHOLD", "4"))
+
+
+def _tenant_cb(tid):
+    cb = _TENANT_CB.get(tid)
+    if cb is None:
+        if len(_TENANT_CB) >= _TENANT_CB_MAX:
+            _TENANT_CB.pop(next(iter(_TENANT_CB)), None)
+        cb = _TENANT_CB[tid] = {"fails": 0, "open_until": 0.0}
+    return cb
 
 
 def messages_create(**kwargs):
-    """Point d'entrée CENTRAL vers Claude : disjoncteur + plafonds (global ET par
-    tenant) + suivi usage. Tous les appels (agents ET analyse DCE) passent par ici."""
+    """Point d'entrée CENTRAL vers Claude : disjoncteur (global + tenant) + plafonds
+    (global ET par tenant) + suivi usage. Tous les appels passent par ici."""
     now = time.monotonic()
+    tid = _CURRENT_TENANT.get()
     if _CB["open_until"] > now:
-        raise LLMUnavailable("Service IA temporairement indisponible (circuit ouvert). Réessayez sous peu.")
+        raise LLMUnavailable("Service IA temporairement indisponible (circuit global ouvert). Réessayez sous peu.")
+    if tid is not None and _TENANT_CB.get(tid, {}).get("open_until", 0.0) > now:
+        raise LLMUnavailable("Service IA momentanément indisponible pour votre espace. Réessayez sous peu.")
     if _TOKEN_HARD_CAP and (TOKENS["input"] + TOKENS["output"]) >= _TOKEN_HARD_CAP:
         logger.error("Plafond de tokens IA GLOBAL atteint (%s) — appels refusés.", _TOKEN_HARD_CAP)
         raise LLMUnavailable("Plafond de tokens IA atteint pour ce processus.")
-    tid = _CURRENT_TENANT.get()
     if _TOKEN_CAP_PER_TENANT and tid is not None and _TENANT_TOKENS.get(tid, 0) >= _TOKEN_CAP_PER_TENANT:
         logger.warning("Plafond de tokens IA atteint pour le tenant %s (%s) — appel refusé.",
                        tid, _TOKEN_CAP_PER_TENANT)
@@ -121,12 +137,21 @@ def messages_create(**kwargs):
         _CB["fails"] += 1
         if _CB["fails"] >= _CB_THRESHOLD and _CB["open_until"] <= now:
             _CB["open_until"] = time.monotonic() + _CB_COOLDOWN
-            logger.error("Disjoncteur IA OUVERT après %s échecs — pause %ss.", _CB["fails"], _CB_COOLDOWN)
+            logger.error("Disjoncteur IA GLOBAL ouvert après %s échecs — pause %ss.", _CB["fails"], _CB_COOLDOWN)
+        if tid is not None:
+            tcb = _tenant_cb(tid)
+            tcb["fails"] += 1
+            if tcb["fails"] >= _TCB_THRESHOLD and tcb["open_until"] <= now:
+                tcb["open_until"] = time.monotonic() + _CB_COOLDOWN
+                logger.warning("Disjoncteur IA ouvert pour le tenant %s après %s échecs.", tid, tcb["fails"])
         raise
     if _CB["fails"]:
-        logger.info("Disjoncteur IA refermé (appel réussi après %s échecs).", _CB["fails"])
+        logger.info("Disjoncteur IA global refermé (appel réussi après %s échecs).", _CB["fails"])
     _CB["fails"] = 0
     _CB["open_until"] = 0.0
+    if tid is not None and tid in _TENANT_CB:
+        _TENANT_CB[tid]["fails"] = 0
+        _TENANT_CB[tid]["open_until"] = 0.0
     _track_usage(kwargs.get("model", MODEL), resp)
     return resp
 

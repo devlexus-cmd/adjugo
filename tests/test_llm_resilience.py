@@ -26,6 +26,7 @@ def _reset():
     llm._CB["open_until"] = 0.0
     llm.TOKENS.update(input=0, output=0, calls=0)
     llm._TENANT_TOKENS.clear()
+    llm._TENANT_CB.clear()
 
 
 def test_disjoncteur_souvre_apres_n_echecs(monkeypatch):
@@ -112,6 +113,36 @@ def test_plafond_par_tenant_isole_le_voisin_bruyant(monkeypatch):
     with llm.tenant_scope("B"):
         resp = llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
         assert resp is not None
+    _reset()
+
+
+def test_disjoncteur_par_tenant_isole_le_voisin(monkeypatch):
+    """Un tenant dont les appels échouent ouvre SON circuit ; un autre tenant reste OK."""
+    _reset()
+    monkeypatch.setattr(llm, "_TCB_THRESHOLD", 2)
+
+    class _Boom:
+        class messages:
+            @staticmethod
+            def create(**kw):
+                raise RuntimeError("entrée pathologique")
+
+    # tenantA échoue 2 fois → son circuit s'ouvre.
+    monkeypatch.setattr(llm, "client", lambda: _Boom)
+    with llm.tenant_scope("A"):
+        for _ in range(2):
+            with pytest.raises(RuntimeError):
+                llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
+        # 3e appel de A : échec RAPIDE (circuit tenant ouvert), sans toucher l'API.
+        with pytest.raises(llm.LLMUnavailable):
+            llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
+
+    # tenantB, lui, fonctionne normalement (API « réparée » pour cet exemple).
+    monkeypatch.setattr(llm, "client", _fake_client)
+    with llm.tenant_scope("B"):
+        resp = llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
+        assert resp is not None
+    assert llm._TENANT_CB["A"]["open_until"] > 0    # circuit de A ouvert
     _reset()
 
 

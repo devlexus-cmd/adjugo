@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
@@ -177,6 +177,31 @@ def health():
         return JSONResponse(status_code=503, content={"status": "error", "db": "unreachable"})
     finally:
         db.close()
+
+
+@app.get("/api/health/ready", tags=["Sante"])
+def health_ready():
+    """Readiness détaillée : base + état du disjoncteur IA + backlog de jobs.
+    503 si un sous-système CRITIQUE (base) est en panne."""
+    from fastapi.responses import JSONResponse
+    from app.core.metrics import readiness
+    r = readiness()
+    return JSONResponse(status_code=200 if r.get("ready") else 503, content=r)
+
+
+@app.get("/metrics", tags=["Sante"], include_in_schema=False)
+def metrics(request: Request):
+    """Métriques Prometheus (agrégats opérationnels). Protégé par un jeton si
+    METRICS_TOKEN ou CRON_SECRET est défini (sinon ouvert, pratique en dev)."""
+    from fastapi.responses import PlainTextResponse, JSONResponse
+    token = os.getenv("METRICS_TOKEN") or settings.CRON_SECRET
+    if token:
+        auth = request.headers.get("authorization", "")
+        provided = auth[7:] if auth.lower().startswith("bearer ") else request.query_params.get("token", "")
+        if provided != token:
+            return JSONResponse(status_code=401, content={"error": "jeton metrics requis"})
+    from app.core.metrics import render
+    return PlainTextResponse(render(), media_type="text/plain; version=0.0.4")
 
 
 # ── Récupération des jobs orphelins au démarrage ────────────────────────────
