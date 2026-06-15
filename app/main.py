@@ -39,11 +39,22 @@ if settings.ENVIRONMENT == "production":
         raise RuntimeError("DEMO_MODE=True interdit en production (endpoints sans auth). Mettez DEMO_MODE=false.")
     if not settings.CRON_SECRET:
         raise RuntimeError("CRON_SECRET requis en production (protège /api/admin/run-*). Définissez-le.")
-# Rate-limit en mémoire inefficace en multi-worker : alerte si pas de store partagé.
-if settings.RATELIMIT_STORAGE_URI.startswith("memory://") and int(os.getenv("WEB_CONCURRENCY", "1")) > 1:
+# Rate-limit en mémoire = compteur PAR worker : avec >1 worker, la limite réelle est
+# multipliée par le nombre de workers → protection illusoire. En production cette
+# combinaison est INTERDITE (fail-closed) : il faut un store partagé (Redis). En
+# mono-worker, memory:// est correct et reste autorisé.
+_mem_rl = settings.RATELIMIT_STORAGE_URI.startswith("memory://")
+_workers = int(os.getenv("WEB_CONCURRENCY", "1"))
+if settings.ENVIRONMENT == "production" and _mem_rl and _workers > 1:
+    raise RuntimeError(
+        f"Rate-limit en mémoire avec {_workers} workers en production : la limite serait "
+        f"multipliée par {_workers} (protection illusoire). Configurez "
+        f"RATELIMIT_STORAGE_URI=redis://… ou forcez WEB_CONCURRENCY=1."
+    )
+if _mem_rl and _workers > 1:
     _logging.getLogger("adjugo").warning(
         "Rate-limit en mémoire avec %s workers : limites multipliées. Configurez RATELIMIT_STORAGE_URI=redis://…",
-        os.getenv("WEB_CONCURRENCY"))
+        _workers)
 
 # Dev (SQLite) : création directe des tables. Prod (Postgres) : migrations Alembic
 # (`alembic upgrade head`) — on ne crée pas le schéma à la volée.

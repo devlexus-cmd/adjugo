@@ -9,6 +9,7 @@ SEULE source autorisée. Chaque réponse cite le chunk exact → anti-hallucinat
 Choix d'implémentation : BM25 lexical plutôt qu'embeddings, pour rester souverain,
 sans appel réseau, déterministe et explicable (cohérent avec la charte Adjugo).
 """
+import heapq
 import math
 import re
 from collections import Counter
@@ -155,15 +156,19 @@ def index_document(db: Session, user_id: int, name: str, text: str, kind: str = 
     return doc
 
 
-# ── Recherche BM25 (avec cache de tokenisation par utilisateur) ──────────────
-# Tokeniser toute la base à CHAQUE requête est en O(N) coûteux. On met en cache les
-# chunks DÉJÀ tokenisés par user, invalidés via une empreinte (nombre + max id) — ce
-# qui évite de re-tokeniser à chaque appel. Plafonné pour borner la RAM ; au-delà,
-# la vraie solution à l'échelle est un index Postgres full-text (GIN tsvector).
+# ── Recherche BM25 via INDEX INVERSÉ (par utilisateur, mis en cache) ──────────
+# Scanner toute la base à chaque requête est en O(N). On construit, par user, un
+# index inversé {terme → postings (doc, fréquence)} avec df et longueurs précalculées.
+# Une requête ne touche alors QUE les chunks contenant au moins un terme cherché
+# (O(postings concernés)), pas l'ensemble du corpus. L'index est invalidé via une
+# empreinte (nombre de chunks + id max) à chaque (ré)indexation. 100 % souverain,
+# sans embeddings ni réseau, portable SQLite↔Postgres. Au-delà du plafond RAM,
+# l'évolution naturelle est un index Postgres GIN (tsvector) — même structure.
 from sqlalchemy import func as _func
 
-_TOK_CACHE = {}          # user_id -> (empreinte, [rows tokenisées])
-_TOK_CACHE_MAX = 8000    # plafond de chunks mis en cache par user
+_IDX_CACHE = {}          # user_id -> (empreinte, index)
+_IDX_CACHE_MAX = 8000    # plafond de chunks indexés en RAM par user
+_K1, _B = 1.5, 0.75
 
 
 def _fingerprint(db, user_id: int):
@@ -172,58 +177,90 @@ def _fingerprint(db, user_id: int):
     return (row[0] or 0, row[1] or 0)
 
 
-def _tokenized_rows(db, user_id: int) -> list:
-    """[(id, doc_id, doc_name, ordinal, user_id, tokens, text)] avec cache invalidé à
-    l'indexation (empreinte = nombre de chunks + id max)."""
+def _build_index(rows: list) -> dict:
+    """Construit l'index inversé d'un corpus de chunks (objets KnowledgeChunk)."""
+    meta, doc_len, postings, df, total_len = [], [], {}, Counter(), 0
+    for i, r in enumerate(rows):
+        toks = _tokens(r.text)
+        meta.append((r.id, r.doc_id, r.doc_name, r.ordinal, r.user_id, r.text))
+        dl = len(toks)
+        doc_len.append(dl)
+        total_len += dl
+        for w, c in Counter(toks).items():
+            postings.setdefault(w, []).append((i, c))
+            df[w] += 1
+    N = len(meta)
+    return {"meta": meta, "doc_len": doc_len, "postings": postings, "df": df,
+            "N": N, "total_len": total_len, "avgdl": (total_len / N) if N else 0.0}
+
+
+def _index_for(db, user_id: int) -> dict:
+    """Index inversé de l'utilisateur, avec cache invalidé à l'indexation."""
     fp = _fingerprint(db, user_id)
-    cached = _TOK_CACHE.get(user_id)
+    cached = _IDX_CACHE.get(user_id)
     if cached and cached[0] == fp:
         return cached[1]
     rows = db.query(KnowledgeChunk).filter(KnowledgeChunk.user_id == user_id).all()
-    out = [(r.id, r.doc_id, r.doc_name, r.ordinal, r.user_id, _tokens(r.text), r.text) for r in rows]
-    if fp[0] <= _TOK_CACHE_MAX:
-        _TOK_CACHE[user_id] = (fp, out)
-    return out
+    idx = _build_index(rows)
+    if fp[0] <= _IDX_CACHE_MAX:
+        _IDX_CACHE[user_id] = (fp, idx)
+    return idx
 
 
-def _bm25(trows: list, query: str, k: int) -> list:
-    N = len(trows)
+def _merge_indexes(indexes: list) -> dict:
+    """Fusionne plusieurs index par-user (Merged Brain) en réutilisant leur cache,
+    avec ré-indexation des postings par décalage. df/idf recalculés sur l'union."""
+    meta, doc_len, postings, df, total_len = [], [], {}, Counter(), 0
+    for idx in indexes:
+        offset = len(meta)
+        meta.extend(idx["meta"])
+        doc_len.extend(idx["doc_len"])
+        total_len += idx["total_len"]
+        for w, plist in idx["postings"].items():
+            tgt = postings.setdefault(w, [])
+            for i, tf in plist:
+                tgt.append((offset + i, tf))
+        for w, c in idx["df"].items():
+            df[w] += c
+    N = len(meta)
+    return {"meta": meta, "doc_len": doc_len, "postings": postings, "df": df,
+            "N": N, "total_len": total_len, "avgdl": (total_len / N) if N else 0.0}
+
+
+def _bm25_indexed(idx: dict, query: str, k: int) -> list:
+    """BM25 par accumulation sur l'index inversé : ne visite que les postings des
+    termes de la requête. Renvoie [(score, meta_tuple)] trié décroissant, top-k."""
+    N = idx["N"]
     if not N:
         return []
-    q = _tokens(query)
+    q = list(dict.fromkeys(_tokens(query)))     # termes uniques de la requête
     if not q:
         return []
-    avgdl = sum(len(t[5]) for t in trows) / N
-    df = Counter()
-    for t in trows:
-        for w in set(t[5]):
-            df[w] += 1
-    k1, b = 1.5, 0.75
-    scored = []
-    for t in trows:
-        toks = t[5]
-        if not toks:
+    avgdl = idx["avgdl"] or 1.0
+    df, postings, doc_len = idx["df"], idx["postings"], idx["doc_len"]
+    scores = {}
+    for w in q:
+        plist = postings.get(w)
+        if not plist:
             continue
-        tf = Counter(toks)
-        dl = len(toks)
-        s = 0.0
-        for w in q:
-            if w not in tf:
-                continue
-            idf = math.log(1 + (N - df[w] + 0.5) / (df[w] + 0.5))
-            s += idf * (tf[w] * (k1 + 1)) / (tf[w] + k1 * (1 - b + b * dl / avgdl))
-        if s > 0:
-            scored.append((s, t))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return scored[:k]
+        idf = math.log(1 + (N - df[w] + 0.5) / (df[w] + 0.5))
+        for i, tf in plist:
+            dl = doc_len[i]
+            scores[i] = scores.get(i, 0.0) + idf * (tf * (_K1 + 1)) / (tf + _K1 * (1 - _B + _B * dl / avgdl))
+    if not scores:
+        return []
+    top = heapq.nlargest(k, scores.items(), key=lambda kv: kv[1])
+    return [(s, idx["meta"][i]) for i, s in top]
 
 
 def retrieve(db: Session, user_id: int, query: str, k: int = 6, min_score: float = 0.0) -> list:
     """Renvoie les k chunks les plus pertinents pour `query` dans la base de l'utilisateur."""
     out = []
-    for s, t in _bm25(_tokenized_rows(db, user_id), query, k):
+    for s, t in _bm25_indexed(_index_for(db, user_id), query, k):
+        if s < min_score:
+            continue
         out.append({"chunk_id": t[0], "doc_id": t[1], "doc_name": t[2],
-                    "ordinal": t[3], "text": t[6], "score": round(s, 3)})
+                    "ordinal": t[3], "text": t[5], "score": round(s, 3)})
     return out
 
 
@@ -239,16 +276,14 @@ def sources_block(chunks: list) -> str:
 # ── Récupération MULTI-ENTREPRISES (Merged Brain) ────────────────────────────
 def retrieve_multi(db: Session, user_ids: list, query: str, k: int = 8) -> list:
     """Récupère les chunks les plus pertinents à travers PLUSIEURS bases (co-traitance),
-    en réutilisant le cache de tokenisation par user. Chaque résultat porte son user_id."""
+    en réutilisant l'index inversé caché de chaque user. Chaque résultat porte son user_id."""
     if not user_ids:
         return []
-    trows = []
-    for uid in dict.fromkeys(user_ids):
-        trows.extend(_tokenized_rows(db, uid))
+    indexes = [_index_for(db, uid) for uid in dict.fromkeys(user_ids)]
     out = []
-    for s, t in _bm25(trows, query, k):
+    for s, t in _bm25_indexed(_merge_indexes(indexes), query, k):
         out.append({"chunk_id": t[0], "doc_id": t[1], "doc_name": t[2], "user_id": t[4],
-                    "text": t[6], "score": round(s, 3)})
+                    "text": t[5], "score": round(s, 3)})
     return out
 
 

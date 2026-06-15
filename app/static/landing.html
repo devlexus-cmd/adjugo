@@ -16,6 +16,7 @@
     --navy:#0A1730; --navy-2:#10203F;
     --blue:#1B4FFF; --blue-bright:#2F6BFF; --blue-deep:#143FD6; --blue-wash:#E9F0FF;
     --cyan:#00D4FF; --grad:linear-gradient(120deg,#1B4FFF 0%,#00D4FF 100%);
+    --grad-text:linear-gradient(120deg,#1B4FFF 0%,#0077A8 100%); /* AA: texte blanc ≥4.9:1 (CTA) */
     --go:#0F9D58; --go-wash:#E0F4E9; --warn:#B7791F; --danger:#E0352B; --danger-wash:#FCE1DE;
     --r:14px; --r-lg:22px;
     --shadow:0 2px 4px rgba(10,23,48,.04), 0 14px 40px rgba(10,23,48,.07);
@@ -36,11 +37,16 @@
   .btn svg { width:17px; height:17px; }
   .btn-primary { background:var(--ink); color:#fff; box-shadow:0 1px 2px rgba(10,23,48,.2); }
   .btn-primary:hover { background:#06101f; transform:translateY(-2px); box-shadow:0 10px 26px rgba(10,23,48,.22); }
-  .btn-accent { background:var(--grad); color:#fff; box-shadow:0 6px 18px rgba(27,79,255,.30); }
+  .btn-accent { background:var(--grad-text); color:#fff; box-shadow:0 6px 18px rgba(27,79,255,.30); }
   .btn-accent:hover { filter:brightness(1.05); transform:translateY(-2px); box-shadow:0 12px 30px rgba(27,79,255,.38); }
   .btn-ghost { background:var(--paper); color:var(--ink); border-color:var(--hair); }
   .btn-ghost:hover { border-color:#cfd5e2; transform:translateY(-2px); }
   .btn-lg { padding:15px 26px; font-size:16.5px; }
+  /* Accessibilité : lien d'évitement + focus clavier visible (RGAA 10.7 / 12.x) */
+  .skip-link { position:absolute; left:12px; top:-48px; z-index:200; background:var(--ink); color:#fff;
+    padding:10px 16px; border-radius:10px; font-weight:600; font-size:14px; transition:top .15s; }
+  .skip-link:focus { top:12px; outline:3px solid var(--blue); outline-offset:2px; }
+  a:focus-visible, button:focus-visible, .btn:focus-visible { outline:3px solid var(--blue); outline-offset:2px; }
 
   /* Nav */
   .nav { position:sticky; top:0; z-index:60; background:rgba(255,255,255,.78); backdrop-filter:saturate(160%) blur(14px); border-bottom:1px solid var(--hair); }
@@ -236,6 +242,8 @@
 </head>
 <body>
 
+<a href="#content" class="skip-link">Aller au contenu</a>
+
 <nav class="nav">
   <div class="wrap nav-in">
     <a href="/" class="brand"><span>adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></a>
@@ -253,6 +261,7 @@
   </div>
 </nav>
 
+<main id="content">
 <header class="hero">
   <div class="wrap hero-grid">
     <div>
@@ -479,6 +488,7 @@
     </div>
   </div>
 </section>
+</main>
 
 <footer>
   <div class="wrap">
