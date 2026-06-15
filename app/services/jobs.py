@@ -10,12 +10,21 @@ Le résultat est persisté en base (Postgres partagé entre workers) → le poll
 fonctionne quel que soit le worker qui répond.
 """
 import logging
-import threading
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 from app.core.database import SessionLocal
 from app.models import Job
 
 logger = logging.getLogger("adjugo")
+
+# File d'exécution BORNÉE. Des threads démons illimités exposaient à l'épuisement
+# mémoire/CPU et au dépassement des limites de l'API IA sous un pic de soumissions.
+# Un pool borné traite N jobs à la fois ; les suivants restent 'pending' en base et
+# sont pris dès qu'un worker se libère → back-pressure propre, sans dépendance externe.
+# La durabilité inter-redémarrage est assurée par _recover_orphan_jobs (au démarrage).
+_MAX_JOB_WORKERS = max(1, int(os.getenv("JOB_WORKERS", "4")))
+_EXECUTOR = ThreadPoolExecutor(max_workers=_MAX_JOB_WORKERS, thread_name_prefix="adjugo-job")
 
 
 def create_job(db, user_id: int, kind: str, label: str = "") -> Job:
@@ -63,7 +72,7 @@ def run_in_thread(job_id: int, work) -> None:
         finally:
             db.close()
 
-    threading.Thread(target=_run, daemon=True).start()
+    _EXECUTOR.submit(_run)
 
 
 def job_out(j: Job) -> dict:
