@@ -163,13 +163,16 @@ def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int
                  "requete": "méthodologie organisation qualité"}]
 
     criteres = requirements.get("criteres_attribution") or []
-    sections = []
-    kb_used = False
+    # Récupération RAG (rapide) puis rédaction des sections EN PARALLÈLE (latence ÷ ~6)
+    from concurrent.futures import ThreadPoolExecutor
+    prepared, kb_used = [], False
     for sec in plan:
         chunks = rag.retrieve(db, user_id, sec.get("requete") or sec.get("titre", ""), k=5)
         if chunks:
             kb_used = True
-        sections.append(write_section(sec, chunks, criteres=criteres))
+        prepared.append((sec, chunks))
+    with ThreadPoolExecutor(max_workers=min(6, len(prepared) or 1)) as ex:
+        sections = list(ex.map(lambda pc: write_section(pc[0], pc[1], criteres=criteres), prepared))
 
     conformity = conformity_check(requirements, sections)
 
@@ -241,12 +244,15 @@ def generate_merged_memoire(db, members: list, dce_text: str, max_sections: int 
                  "objectif": "Démontrer l'organisation conjointe", "requete": "méthodologie organisation"}]
     criteres = requirements.get("criteres_attribution") or []
 
-    sections, contributors = [], set()
+    from concurrent.futures import ThreadPoolExecutor
+    prepared, contributors = [], set()
     for sec in plan:
         chunks = rag.retrieve_multi(db, user_ids, sec.get("requete") or sec.get("titre", ""), k=8)
         for c in chunks:
             contributors.add(names_by_user.get(c.get("user_id")))
-        sections.append(_write_merged_section(sec, chunks, names_by_user, criteres))
+        prepared.append((sec, chunks))
+    with ThreadPoolExecutor(max_workers=min(6, len(prepared) or 1)) as ex:
+        sections = list(ex.map(lambda pc: _write_merged_section(pc[0], pc[1], names_by_user, criteres), prepared))
 
     conformity = conformity_check(requirements, sections)
     return {
