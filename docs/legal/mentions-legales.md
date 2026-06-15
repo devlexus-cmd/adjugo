@@ -12,22 +12,24 @@ Conformément aux dispositions des articles 6-III et 19 de la loi n° 2004-575 d
 
 Le service Adjugo (ci-après « le Service ») est édité par :
 
-- **Dénomination / Raison sociale** : `[À COMPLÉTER : nom de la société ou de l'entrepreneur individuel exploitant Adjugo]`
-- **Forme juridique** : `[À COMPLÉTER : SAS / SASU / SARL / EURL / EI / auto-entrepreneur, etc.]`
-- **Capital social** : `[À COMPLÉTER : montant en euros, le cas échéant]`
-- **Siège social / Adresse** : `[À COMPLÉTER : adresse postale complète]`
-- **Numéro SIREN / SIRET** : `[À COMPLÉTER : SIREN à 9 chiffres / SIRET à 14 chiffres]`
-- **Numéro RCS / Ville d'immatriculation** : `[À COMPLÉTER : RCS et ville du greffe]`
-- **Numéro de TVA intracommunautaire** : `[À COMPLÉTER : FR + clé + SIREN, ou « non assujetti » le cas échéant]`
-- **Adresse e-mail de contact** : viegaseliot1@gmail.com
-- **Téléphone** : `[À COMPLÉTER : numéro de téléphone, facultatif mais recommandé]`
+- **Exploitant** : Eliot VIEGAS, entrepreneur individuel (EI)
+- **Nom commercial** : PADIS
+- **Forme juridique** : Entrepreneur individuel
+- **Capital social** : sans objet (entreprise individuelle)
+- **Siège / établissement** : 9 rue Saint-Yves, 29000 Quimper, France
+- **Numéro SIREN / SIRET** : 105 406 813 / 105 406 813 00011
+- **Code APE / NAF** : 6201Z — Programmation informatique
+- **Immatriculation** : Registre National des Entreprises (RNE) `[le cas échéant, RCS de Quimper sous le n° 105 406 813 — à confirmer selon le caractère commercial de l'activité]`
+- **Numéro de TVA intracommunautaire** : FR63105406813
+- **Adresse e-mail de contact** : `[recommandé : contact@adjugo.fr — à défaut]` viegaseliot1@gmail.com
+- **Téléphone** : `[À COMPLÉTER : facultatif mais recommandé]`
 
 ## 2. Directeur de la publication
 
 Le directeur de la publication du Service est :
 
-- **Nom et prénom** : `[À COMPLÉTER : nom du directeur de la publication, généralement le représentant légal de la société]`
-- **Qualité** : `[À COMPLÉTER : ex. gérant, président, dirigeant]`
+- **Nom et prénom** : Eliot Viegas
+- **Qualité** : exploitant de l'entreprise individuelle (PADIS)
 - **Contact** : viegaseliot1@gmail.com
 
 ## 3. Hébergement
@@ -79,4 +81,4 @@ Les présentes mentions légales sont régies par le **droit français**. En cas
 Pour toute question relative au Service ou aux présentes mentions légales :
 
 - **E-mail** : viegaseliot1@gmail.com
-- **Adresse postale** : `[À COMPLÉTER : adresse postale de l'éditeur]`
+- **Adresse postale** : 9 rue Saint-Yves, 29000 Quimper, France

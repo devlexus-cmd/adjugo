@@ -10,7 +10,7 @@
 
 Les présentes Conditions Générales de Vente et d'Utilisation (ci-après les « CGV ») régissent la relation contractuelle entre :
 
-- d'une part, **`[À COMPLÉTER : raison sociale de l'éditeur]`**, éditeur du service Adjugo (ci-après « **Adjugo** », « **l'Éditeur** » ou « **le Prestataire** »), dont les coordonnées figurent dans les [Mentions légales](./mentions-legales.md) ;
+- d'une part, **Eliot VIEGAS, entrepreneur individuel exerçant sous le nom commercial PADIS** (SIREN 105 406 813 — siège : 9 rue Saint-Yves, 29000 Quimper), éditeur du service Adjugo (ci-après « **Adjugo** », « **l'Éditeur** » ou « **le Prestataire** »), dont les coordonnées figurent dans les [Mentions légales](./mentions-legales.md) ;
 - et d'autre part, toute personne morale ou tout professionnel (indépendant, TPE, PME) souscrivant au Service dans le cadre de son activité professionnelle (ci-après « **le Client** »).
 
 **Caractère professionnel (B2B).** Le Service Adjugo est exclusivement destiné à des professionnels agissant dans le cadre de leur activité commerciale, industrielle, artisanale, libérale ou agricole. En souscrivant, le Client reconnaît agir à des fins professionnelles. **Les dispositions du Code de la consommation relatives aux consommateurs, et notamment le droit de rétractation, ne s'appliquent pas** à la présente relation.
@@ -58,7 +58,11 @@ Les conditions tarifaires et fonctionnelles de l'offre **Enterprise** (notamment
 
 ### 3.3. TVA
 
-Les prix sont exprimés **hors taxes**. La **TVA française** au taux en vigueur (20 % à la date de rédaction) s'ajoute le cas échéant. Pour les Clients professionnels établis dans un autre État membre de l'UE et fournissant un numéro de TVA intracommunautaire valide, l'autoliquidation pourra s'appliquer conformément à la réglementation en vigueur. `[À COMPLÉTER : préciser le régime de TVA effectif de l'éditeur — assujetti / franchise en base, etc.]`
+L'Éditeur dispose du numéro de TVA intracommunautaire **FR63105406813**.
+
+> ⚠️ **À CONFIRMER selon votre régime fiscal réel — deux cas :**
+> - **Si franchise en base de TVA** (régime fréquent pour une entreprise individuelle récente) : la TVA n'est pas facturée. Les prix affichés sont **nets**, et la mention légale obligatoire sur les factures est **« TVA non applicable, article 293 B du CGI »**. Dans ce cas, supprimer les mentions « HT » de la grille tarifaire.
+> - **Si assujetti à la TVA** (régime réel) : les prix sont **hors taxes** et la **TVA française** au taux en vigueur (20 %) s'ajoute. Pour un Client professionnel établi dans un autre État membre de l'UE fournissant un numéro de TVA intracommunautaire valide, l'autoliquidation peut s'appliquer.
 
 ### 3.4. Évolution des prix
 
@@ -140,7 +144,7 @@ L'Éditeur peut modifier les présentes CGV. Toute modification substantielle es
 
 13.3. **Résolution amiable.** En cas de différend, les parties s'efforceront de trouver une solution amiable avant toute action judiciaire. Toute réclamation peut être adressée à viegaseliot1@gmail.com.
 
-13.4. **Juridiction compétente.** À défaut d'accord amiable, **tout litige relatif à la formation, l'interprétation, l'exécution ou la rupture des présentes sera soumis aux tribunaux compétents de `[À COMPLÉTER : ville du ressort du siège social de l'éditeur]`**, y compris en cas de pluralité de défendeurs, d'appel en garantie ou de procédure d'urgence, sous réserve des dispositions légales impératives applicables entre professionnels.
+13.4. **Juridiction compétente.** À défaut d'accord amiable, **tout litige relatif à la formation, l'interprétation, l'exécution ou la rupture des présentes sera soumis aux tribunaux compétents du ressort de Quimper** (siège de l'Éditeur), y compris en cas de pluralité de défendeurs, d'appel en garantie ou de procédure d'urgence, sous réserve des dispositions légales impératives applicables entre professionnels.
 
 ---
 

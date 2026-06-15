@@ -12,9 +12,9 @@ La présente Politique de confidentialité décrit la manière dont le service *
 
 Le responsable du traitement des données collectées via le Service est :
 
-- **Dénomination** : `[À COMPLÉTER : raison sociale de l'éditeur d'Adjugo]`
-- **Adresse** : `[À COMPLÉTER : adresse postale]`
-- **SIREN / SIRET** : `[À COMPLÉTER]`
+- **Dénomination** : Eliot VIEGAS, entrepreneur individuel (nom commercial PADIS)
+- **Adresse** : 9 rue Saint-Yves, 29000 Quimper, France
+- **SIREN / SIRET** : 105 406 813 / 105 406 813 00011
 - **Contact** : viegaseliot1@gmail.com
 
 > **Précision sur les rôles.** Pour les données de gestion du compte et de facturation, l'Éditeur agit en qualité de **responsable de traitement**. Pour les données personnelles éventuellement contenues dans les **documents téléversés par le Client** (DCE, pièces d'entreprise, contacts de co-traitants), l'Éditeur agit pour l'essentiel en qualité de **sous-traitant** du Client (au sens de l'article 28 RGPD), le Client demeurant responsable de traitement de ces données. `[À COMPLÉTER : formaliser le cas échéant un accord de sous-traitance (DPA) dédié.]`
@@ -24,8 +24,8 @@ Le responsable du traitement des données collectées via le Service est :
 Pour toute question relative à vos données personnelles ou pour exercer vos droits :
 
 - **E-mail** : viegaseliot1@gmail.com
-- **DPO** : `[À COMPLÉTER : nom/coordonnées d'un DPO si désigné — la désignation n'est pas obligatoire pour toutes les structures mais recommandée ; à défaut, indiquer un point de contact « protection des données »]`
-- **Adresse postale** : `[À COMPLÉTER]`
+- **DPO** : non désigné (désignation non obligatoire pour une structure de cette taille) — point de contact « protection des données » : Eliot Viegas, viegaseliot1@gmail.com
+- **Adresse postale** : 9 rue Saint-Yves, 29000 Quimper, France
 
 ## 3. Données collectées
 
@@ -74,7 +74,7 @@ Les données sont traitées par les équipes habilitées de l'Éditeur et par le
 | Prestataire | Rôle | Données concernées | Localisation |
 |---|---|---|---|
 | **Railway Corporation** | Hébergement de l'infrastructure et de la base de données | l'ensemble des données du Service | **États-Unis** (région actuelle — voir art. 7) |
-| **Anthropic** (Claude API) | Fournisseur du modèle d'IA pour l'analyse et la génération de documents | contenus soumis à l'analyse (extraits de DCE, données d'entreprise) | `[À COMPLÉTER : région d'appel API — US / UE]` |
+| **Anthropic, PBC** (Claude API) | Fournisseur du modèle d'IA pour l'analyse et la génération de documents | contenus soumis à l'analyse (extraits de DCE, données d'entreprise) | **États-Unis** (API standard api.anthropic.com) |
 | **Stripe** (Stripe Payments Europe, Ltd. / Stripe, Inc.) | Traitement des paiements | données de facturation et de paiement (l'Éditeur n'accède pas aux numéros de carte) | UE / États-Unis |
 | **`[À COMPLÉTER : fournisseur SMTP/e-mail si configuré]`** | Envoi des e-mails transactionnels | adresse e-mail, contenu des notifications | `[À COMPLÉTER]` |
 | **`[À COMPLÉTER : Sentry, si activé]`** | Observabilité / suivi des erreurs | journaux techniques, identifiants techniques | `[À COMPLÉTER]` |
