@@ -217,6 +217,25 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 /* ---------- Spinner / bar ---------- */
 .spin { width:14px; height:14px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; display:inline-block; animation:rot .6s linear infinite; opacity:.7; }
 @keyframes rot { to { transform:rotate(360deg); } }
+
+/* Loader « onde » Adjugo — une goutte tombe, des cercles concentriques s'étendent */
+.adj-ripple { position:relative; width:72px; height:72px; margin:0 auto; }
+.adj-ripple .drop { position:absolute; top:50%; left:50%; width:11px; height:11px; margin:-5.5px 0 0 -5.5px;
+  border-radius:50%; background:var(--accent); animation:adjDrop 1.9s ease-in-out infinite; }
+.adj-ripple .wave { position:absolute; top:50%; left:50%; width:11px; height:11px; margin:-5.5px 0 0 -5.5px;
+  border-radius:50%; border:2.5px solid var(--accent); opacity:0; animation:adjWave 1.9s cubic-bezier(.2,.55,.25,1) infinite; }
+.adj-ripple .wave:nth-child(2) { animation-delay:.63s; }
+.adj-ripple .wave:nth-child(3) { animation-delay:1.26s; }
+@keyframes adjWave {
+  0% { width:11px; height:11px; margin:-5.5px 0 0 -5.5px; opacity:.85; border-width:2.5px; }
+  100% { width:72px; height:72px; margin:-36px 0 0 -36px; opacity:0; border-width:1px; }
+}
+@keyframes adjDrop { 0%,100% { transform:scale(1); opacity:1; } 45% { transform:scale(.55); opacity:.6; } }
+
+/* Voile de chargement posé sur une carte/section pendant une opération longue */
+.busy-veil { position:absolute; inset:0; z-index:6; border-radius:inherit; display:grid; place-items:center;
+  background:color-mix(in srgb, var(--surface) 78%, transparent); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
+.busy-veil .bv-msg { margin-top:16px; font-size:13px; font-weight:600; color:var(--text-2); text-align:center; }
 .bar { height:7px; background:var(--surface-3); border-radius:999px; overflow:hidden; }
 .bar > i { display:block; height:100%; background:var(--grad); }
 

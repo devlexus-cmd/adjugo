@@ -153,6 +153,12 @@ _static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    from fastapi.responses import FileResponse
+    return FileResponse(os.path.join(_static_dir, "favicon.svg"), media_type="image/svg+xml")
+
+
 @app.get("/", tags=["Site"], include_in_schema=False)
 def root():
     from fastapi.responses import HTMLResponse

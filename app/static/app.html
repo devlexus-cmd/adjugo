@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Adjugo</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="apple-touch-icon" href="/static/favicon.svg">
 <script>
   (function(){
     var t = localStorage.getItem('adjugo_theme') || 'system';
@@ -215,7 +217,8 @@
           </div>
 
           <!-- Analyse du DCE — pleine largeur (lisible) -->
-          <div class="card" style="margin-top:14px">
+          <div class="card" style="margin-top:14px;position:relative">
+            <div v-if="ao.uploading" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Analyse du DCE en cours…</div></div></div>
             <div class="ch"><i data-lucide="scan-search"></i><h3>Analyse du DCE</h3><div class="spacer"></div>
               <span class="pill" :class="aoDceAvailable()?'go':'neutral'" style="gap:4px"><i :data-lucide="aoDceAvailable()?'file-check':'file-x'" style="width:13px;height:13px"></i>{{ aoDceAvailable()?'DCE complet':'Avis seul' }}</span></div>
             <div class="cb">
@@ -255,7 +258,8 @@
           </div>
 
           <!-- Chiffrage estimatif (compact, détail repliable) -->
-          <div class="card" style="margin-top:14px">
+          <div class="card" style="margin-top:14px;position:relative">
+            <div v-if="ao.estimating" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Chiffrage en cours…</div></div></div>
             <div class="ch"><i data-lucide="calculator"></i><h3>Chiffrage estimatif</h3><div class="spacer"></div>
               <span v-if="ao.estimate" class="pill neutral" style="font-size:11px">{{ eur(ao.estimate.total_ht) }} HT · {{ ao.estimate.jours_total }} j</span>
               <span v-if="ao.estimate && ao.estimate.review" class="pill" :class="reviewPill(ao.estimate.review.status)" style="font-size:11px">{{ reviewLabel(ao.estimate.review.status) }}</span>
@@ -303,7 +307,8 @@
 
           <!-- Documents + Checklist (2 colonnes) -->
           <div class="cards cols-2" style="margin-top:14px;align-items:start">
-            <div class="card">
+            <div class="card" style="position:relative">
+              <div v-if="ao.generating" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Génération du dossier…</div></div></div>
               <div class="ch"><i data-lucide="file-text"></i><h3>Documents de réponse</h3><div class="spacer"></div>
                 <button class="btn primary sm" @click="aoGenerate()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="sparkles"></i>Générer</button></div>
               <div class="cb">
