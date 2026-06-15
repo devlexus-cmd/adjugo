@@ -258,8 +258,10 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         # On analyse alors l'avis lui-même (objet + métadonnées), pas un DCE fabriqué
         dce_text = _tender_as_text(tender)
 
-    analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                lang_name=_user_lang_name(current_user, db))
+    from app.services.llm import tenant_scope
+    with tenant_scope(current_user.id):
+        analysis = analyze_dce_text(dce_text, company_data, gonogo,
+                                    lang_name=_user_lang_name(current_user, db))
     analysis["dce_available"] = dce_available
     analysis["source"] = tender.provenance.model_dump()
     analysis["lead_score"] = tender.score.model_dump() if tender.score else None
@@ -332,8 +334,10 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     company_data = _company_dict(company)
     gonogo = _criteria_dict(current_user.id, db)
 
-    analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                lang_name=_user_lang_name(current_user, db))
+    from app.services.llm import tenant_scope
+    with tenant_scope(current_user.id):
+        analysis = analyze_dce_text(dce_text, company_data, gonogo,
+                                    lang_name=_user_lang_name(current_user, db))
     analysis["dce_available"] = True
     analysis["dce_excerpt"] = (dce_text or "")[:14000]   # contexte pour le Q&A IA
     prev = project.ai_analysis or {}
@@ -506,10 +510,12 @@ def generate_documents(request: Request, req: DocumentsRequest,
                     "role": lk.role or "sous_traitant",
                 })
 
-    dossier = redaction.build_dossier(project.ai_analysis, company_data, verified, project.id,
-                                      lang_name=_user_lang_name(current_user, db),
-                                      country=_user_country(current_user, db),
-                                      db=db, user_id=current_user.id)
+    from app.services.llm import tenant_scope
+    with tenant_scope(current_user.id):
+        dossier = redaction.build_dossier(project.ai_analysis, company_data, verified, project.id,
+                                          lang_name=_user_lang_name(current_user, db),
+                                          country=_user_country(current_user, db),
+                                          db=db, user_id=current_user.id)
 
     # Archiver les CERFA + mémoire dans le dossier de l'AO (coffre-fort)
     try:

@@ -25,6 +25,7 @@ def _reset():
     llm._CB["fails"] = 0
     llm._CB["open_until"] = 0.0
     llm.TOKENS.update(input=0, output=0, calls=0)
+    llm._TENANT_TOKENS.clear()
 
 
 def test_disjoncteur_souvre_apres_n_echecs(monkeypatch):
@@ -74,6 +75,43 @@ def test_plafond_tokens_bloque(monkeypatch):
     }))
     with pytest.raises(llm.LLMUnavailable):
         llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
+    _reset()
+
+
+def _fake_client():
+    return type("C", (), {
+        "messages": type("M", (), {"create": staticmethod(lambda **kw: _FakeResp())})
+    })
+
+
+def test_tokens_attribues_par_tenant(monkeypatch):
+    _reset()
+    monkeypatch.setattr(llm, "client", _fake_client)
+    with llm.tenant_scope("tenantA"):
+        llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
+        llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
+    with llm.tenant_scope("tenantB"):
+        llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
+    assert llm.tenant_usage("tenantA") == 60   # 2 appels × 30 tokens
+    assert llm.tenant_usage("tenantB") == 30   # isolé
+    _reset()
+
+
+def test_plafond_par_tenant_isole_le_voisin_bruyant(monkeypatch):
+    """Un tenant qui sature SON plafond ne bloque PAS les autres (anti voisin bruyant)."""
+    _reset()
+    monkeypatch.setattr(llm, "_TOKEN_CAP_PER_TENANT", 50)
+    monkeypatch.setattr(llm, "client", _fake_client)
+    # tenantA consomme jusqu'au plafond (30, puis 60 ≥ 50).
+    with llm.tenant_scope("A"):
+        llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)   # 30
+        llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)   # 60 ≥ 50
+        with pytest.raises(llm.LLMUnavailable):
+            llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
+    # tenantB n'est PAS affecté.
+    with llm.tenant_scope("B"):
+        resp = llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
+        assert resp is not None
     _reset()
 
 

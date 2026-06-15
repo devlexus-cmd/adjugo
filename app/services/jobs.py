@@ -39,6 +39,7 @@ def run_in_thread(job_id: int, work) -> None:
     """Lance `work(db) -> dict` dans un thread démon, avec une session DB dédiée.
     Le statut et le résultat du Job sont mis à jour en base."""
     def _run():
+        from app.services.llm import tenant_scope
         db = SessionLocal()
         try:
             j = db.get(Job, job_id)
@@ -46,7 +47,9 @@ def run_in_thread(job_id: int, work) -> None:
                 return
             j.status = "running"
             db.commit()
-            result = work(db)
+            # Attribution des tokens IA au tenant propriétaire du job (plafond par tenant).
+            with tenant_scope(j.user_id):
+                result = work(db)
             j = db.get(Job, job_id)
             j.result = result
             j.status = "done"

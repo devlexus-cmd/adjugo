@@ -11,7 +11,9 @@ sans appel réseau, déterministe et explicable (cohérent avec la charte Adjugo
 """
 import heapq
 import math
+import os
 import re
+import time
 from collections import Counter
 
 from sqlalchemy.orm import Session
@@ -166,9 +168,10 @@ def index_document(db: Session, user_id: int, name: str, text: str, kind: str = 
 # l'évolution naturelle est un index Postgres GIN (tsvector) — même structure.
 from sqlalchemy import func as _func
 
-_IDX_CACHE = {}          # user_id -> (empreinte, index)  [ordre d'insertion préservé]
+_IDX_CACHE = {}          # user_id -> (empreinte, index, expiration)  [ordre préservé]
 _IDX_CACHE_MAX = 8000    # plafond de chunks indexés en RAM par user
-_IDX_CACHE_USERS = int(__import__("os").getenv("RAG_CACHE_USERS", "200"))  # plafond d'users cachés
+_IDX_CACHE_USERS = int(os.getenv("RAG_CACHE_USERS", "200"))   # plafond d'users cachés
+_IDX_CACHE_TTL = float(os.getenv("RAG_CACHE_TTL", "1800"))    # péremption (s) : 30 min
 _K1, _B = 1.5, 0.75
 
 
@@ -198,17 +201,18 @@ def _build_index(rows: list) -> dict:
 def _index_for(db, user_id: int) -> dict:
     """Index inversé de l'utilisateur, avec cache invalidé à l'indexation."""
     fp = _fingerprint(db, user_id)
+    now = time.monotonic()
     cached = _IDX_CACHE.get(user_id)
-    if cached and cached[0] == fp:
+    if cached and cached[0] == fp and cached[2] > now:   # empreinte ET fraîcheur (TTL)
         return cached[1]
     rows = db.query(KnowledgeChunk).filter(KnowledgeChunk.user_id == user_id).all()
     idx = _build_index(rows)
     if fp[0] <= _IDX_CACHE_MAX:
-        # Éviction bornée : on ne garde la RAM que pour N tenants (FIFO simple).
+        # Éviction bornée : N tenants max (FIFO), plus péremption temporelle (TTL).
         _IDX_CACHE.pop(user_id, None)
         while len(_IDX_CACHE) >= _IDX_CACHE_USERS:
             _IDX_CACHE.pop(next(iter(_IDX_CACHE)), None)
-        _IDX_CACHE[user_id] = (fp, idx)
+        _IDX_CACHE[user_id] = (fp, idx, now + _IDX_CACHE_TTL)
     return idx
 
 

@@ -65,8 +65,10 @@ async def run_analysis(
     except Exception:
         pass
 
-    # Lancer l'analyse
-    result = analyze_dce(file_bytes, company_data, criteria_data)
+    # Lancer l'analyse (tokens IA attribués au tenant → plafond par client)
+    from app.services.llm import tenant_scope
+    with tenant_scope(current_user.id):
+        result = analyze_dce(file_bytes, company_data, criteria_data)
 
     # Sauvegarder les resultats dans le projet
     project.match_score = result.get("match_score", 0)

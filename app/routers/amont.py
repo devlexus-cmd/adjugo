@@ -92,7 +92,9 @@ def _persist(projets, default_coll, source_label, current_user, db, domaines=Non
 
 
 def _analyze_text(text: str, source_name: str, current_user: User, db: Session, domaines=None) -> dict:
-    res = detect_projets(text, lang_name=_lang(current_user, db), domaines=domaines)
+    from app.services.llm import tenant_scope
+    with tenant_scope(current_user.id):
+        res = detect_projets(text, lang_name=_lang(current_user, db), domaines=domaines)
     signals = _persist(res.get("projets", []), res.get("collectivite", ""), source_name, current_user, db, domaines=domaines)
     return {"collectivite": res.get("collectivite", ""), "count": len(signals), "signals": signals}
 
@@ -150,7 +152,9 @@ def scan(request: Request, req: ScanRequest = ScanRequest(),
         return {"scanned": 0, "count": 0, "signals": [], "country": country,
                 "errors": ["Aucune délibération sur ce périmètre (élargissez les régions ou réessayez)."]}
     consume_analysis(current_user, db)
-    projets = detect_from_deliberations(records, lang_name=_lang(current_user, db), domaines=doms)
+    from app.services.llm import tenant_scope
+    with tenant_scope(current_user.id):
+        projets = detect_from_deliberations(records, lang_name=_lang(current_user, db), domaines=doms)
     if deps and country == "FR":
         projets = [p for p in projets if (p.get("dept") in deps) or not p.get("dept")]
     signals = _persist(projets, "", "Délibération (open data)", current_user, db, domaines=doms)
