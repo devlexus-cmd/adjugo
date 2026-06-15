@@ -165,6 +165,17 @@ createApp({
         });
         document.querySelectorAll(".modal,.drawer").forEach((m) => { m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); });
         document.querySelectorAll(".nav-item").forEach((n) => { if (!n.getAttribute("tabindex")) { n.setAttribute("tabindex", "0"); n.setAttribute("role", "button"); } });
+        // Boutons/liens à ICÔNE SEULE (pas de texte) : leur donner un nom accessible.
+        const ICON = { x: "Fermer", "trash-2": "Supprimer", trash: "Supprimer", plus: "Ajouter",
+          search: "Rechercher", download: "Télécharger", package: "Exporter", edit: "Modifier",
+          "pencil": "Modifier", check: "Valider", "external-link": "Ouvrir le lien", copy: "Copier",
+          "more-horizontal": "Plus d'options", "chevron-down": "Dérouler", filter: "Filtrer" };
+        document.querySelectorAll("button, a").forEach((el) => {
+          if (clean(el.textContent) || el.getAttribute("aria-label") || el.getAttribute("title")) return;
+          let label = el.classList.contains("x") ? "Fermer" : "";
+          if (!label) { const ic = el.querySelector("[data-lucide]"); if (ic) { const k = ic.getAttribute("data-lucide"); label = ICON[k] || k.replace(/-/g, " "); } }
+          if (label) el.setAttribute("aria-label", label);
+        });
       } catch (e) { console.warn("a11y enhancement skipped:", e); }
     },
     renderI18n() { if (this.lang && this.lang !== "fr") this.$nextTick(() => translateDOM(this.lang)); },

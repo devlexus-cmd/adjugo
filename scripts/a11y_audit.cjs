@@ -83,6 +83,22 @@ async function run(page, label) {
         total += await run(page, `/app → ${title}`);
       } catch (e) { /* vue indisponible */ }
     }
+    // Modales : on les ouvre pour valider leurs champs dynamiques (sinon jamais audités).
+    const MODALS = [
+      { nav: "Facture", btn: (t) => t === "Créer", label: "modale facture" },
+      { nav: "Contact", btn: (t) => t.includes("Ajouter un contact"), label: "modale contact" },
+    ];
+    for (const m of MODALS) {
+      try {
+        await page.evaluate((n) => { for (const el of document.querySelectorAll(".nav-item")) if ((el.textContent || "").includes(n)) { el.click(); break; } }, m.nav);
+        await page.waitForTimeout(1200);
+        await page.evaluate((src) => { const f = new Function("t", "return " + src); for (const el of document.querySelectorAll("button")) if (f((el.textContent || "").trim())) { el.click(); break; } }, m.btn.toString());
+        await page.waitForTimeout(1200);
+        if (await page.$(".overlay .modal, .drawer")) total += await run(page, `/app → ${m.label}`);
+        await page.evaluate(() => document.querySelector(".overlay .modal-h .x, .drawer .x")?.click());
+        await page.waitForTimeout(500);
+      } catch (e) { /* modale indisponible */ }
+    }
   } else {
     console.log("\n(inscription indisponible — partie connectée ignorée)");
   }
