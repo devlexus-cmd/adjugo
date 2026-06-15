@@ -448,10 +448,16 @@ createApp({
       const p = this.ao.project || {}; const ev = [];
       if (p.created_at) ev.push({ icon: "plus", t: "Appel d'offres créé", d: p.created_at.slice(0, 10) });
       const a = p.ai_analysis;
-      if (a) ev.push({ icon: "scan-search", t: a.dce_available ? "DCE analysé (complet)" : "Avis analysé", d: "" });
-      if (this.ao.cotraitants.length) ev.push({ icon: "handshake", t: this.ao.cotraitants.length + " sous-traitant(s) rattaché(s)", d: "" });
+      if (a) ev.push({ icon: "scan-search", t: a.dce_available ? "DCE analysé (complet)" : "Avis analysé", d: a.match_score != null ? "score " + a.match_score + "/100" : "" });
+      const e = this.ao.estimate;
+      if (e && e.total_ht) ev.push({ icon: "calculator", t: "Chiffrage estimé", d: this.eur(e.total_ht) + " HT" });
+      if (e && e.review && e.review.status === "valide") ev.push({ icon: "circle-check-big", t: "Chiffrage validé" + (e.review.by ? " · " + e.review.by : ""), d: "" });
+      if (this.ao.cotraitants.length) ev.push({ icon: "handshake", t: this.ao.cotraitants.length + " co-traitant(s) rattaché(s)", d: "" });
+      if (this.ao.dossier) ev.push({ icon: "package", t: "Dossier généré (CERFA + mémoire)", d: "" });
       const nd = (this.ao.documents || []).reduce((s, g) => s + g.documents.length, 0);
-      if (nd) ev.push({ icon: "folder", t: nd + " pièce(s) au dossier", d: "" });
+      if (nd) ev.push({ icon: "folder", t: nd + " pièce(s) au coffre-fort", d: "" });
+      const dl = this.aoDetails().date_limite;
+      if (dl) ev.push({ icon: "calendar-clock", t: "Échéance de remise", d: dl });
       return ev;
     },
     async aoLoadCotraitants() {
@@ -481,7 +487,11 @@ createApp({
     async aoOptimizeGroup() {
       if (!this.ao.group) this.ao.group = { loading: false, data: null };
       this.ao.group.loading = true;
-      try { this.ao.group.data = await this.api("POST", "/api/sourcing/groupement", { project_id: this.ao.project.id }); }
+      try {
+        this.ao.group.data = await this.api("POST", "/api/sourcing/groupement", { project_id: this.ao.project.id });
+        if (this.ao.group.data && !this.ao.group.data.n_lots) this.notify("Marché en lot unique : pas de décomposition possible. Utilisez « Ajouter » pour un co-traitant.");
+        else if (this.ao.group.data) this.notify("Groupement optimisé : " + this.ao.group.data.n_lots + " lot(s) analysé(s)");
+      }
       catch (e) { this.notify(e.message, "err"); }
       finally { this.ao.group.loading = false; }
     },

@@ -438,8 +438,9 @@
               </div>
             </div>
             <div class="card pad">
-              <div class="row" style="gap:7px;margin-bottom:10px"><i data-lucide="history"></i><b style="font-size:13.5px">Suivi</b></div>
-              <div v-for="(e,idx) in aoTimeline()" :key="idx" class="row small" style="padding:5px 0"><i :data-lucide="e.icon" style="width:15px;height:15px;color:var(--muted)"></i><span style="flex:1">{{ e.t }}</span><span class="muted">{{ e.d }}</span></div>
+              <div style="margin-bottom:10px"><div class="row" style="gap:7px"><i data-lucide="history"></i><b style="font-size:13.5px">Suivi du dossier</b></div>
+                <div class="muted small" style="margin-top:2px">L'historique des étapes franchies sur cet appel d'offres — d'un coup d'œil, où vous en êtes.</div></div>
+              <div v-for="(e,idx) in aoTimeline()" :key="idx" class="row small" style="padding:5px 0"><i :data-lucide="e.icon" style="width:15px;height:15px;color:var(--accent-text)"></i><span style="flex:1">{{ e.t }}</span><span class="muted">{{ e.d }}</span></div>
               <div v-if="!aoTimeline().length" class="muted small">Aucune action pour le moment.</div>
             </div>
           </div>
