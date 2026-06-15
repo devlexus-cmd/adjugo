@@ -66,6 +66,16 @@ def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
     return {"access_token": token, "token_type": "bearer"}
 
 
+@router.post("/demo", response_model=Token)
+@limiter.limit("30/hour")
+def demo_login(request: Request, db: Session = Depends(get_db)):
+    """Connexion au compte de DÉMONSTRATION (sans mot de passe) — données pré-remplies."""
+    from app.services.demo_seed import ensure_demo
+    user = ensure_demo(db)   # crée le compte démo s'il n'existe pas encore
+    token = create_access_token(data={"sub": str(user.id)})
+    return {"access_token": token, "token_type": "bearer"}
+
+
 @router.get("/me", response_model=UserOut)
 def get_me(current_user: User = Depends(get_current_user)):
     """Récupérer le profil de l'utilisateur connecté."""

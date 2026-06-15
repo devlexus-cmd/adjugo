@@ -142,6 +142,7 @@ createApp({
       if ((e.key === "Enter" || e.key === " ") && a && a.classList && a.classList.contains("nav-item")) { e.preventDefault(); a.click(); }
     });
     this.$nextTick(() => this._a11y());
+    if (!this.token && new URLSearchParams(location.search).get("demo") === "1") { this.demoLogin(); return; }
     if (this.token) this.boot();
   },
   updated() { this.renderIcons(); this.renderI18n(); this._a11y(); },
@@ -217,6 +218,15 @@ createApp({
         this.token = res.access_token; localStorage.setItem("adjugo_token", this.token);
         await this.boot();
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
+    },
+    async demoLogin() {
+      this.busy = true;
+      try {
+        const res = await this.api("POST", "/api/auth/demo");
+        this.token = res.access_token; localStorage.setItem("adjugo_token", this.token);
+        history.replaceState({}, "", "/app");   // retire ?demo=1 de l'URL
+        await this.boot();
+      } catch (e) { this.notify("Démo momentanément indisponible.", "err"); } finally { this.busy = false; }
     },
     logout() { localStorage.removeItem("adjugo_token"); window.location.href = "/"; },
 

@@ -257,6 +257,22 @@ def _recover_orphan_jobs():
         db.close()
 
 
+# ── Compte de démonstration : présent dès le démarrage ──────────────────────
+@app.on_event("startup")
+def _ensure_demo_account():
+    """Garantit l'existence du compte démo (demo@adjugo.fr), pré-rempli, pour la
+    connexion /api/auth/demo. Idempotent ; n'écrase pas un compte existant."""
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        from app.services.demo_seed import ensure_demo
+        ensure_demo(db, force=True)   # repart propre à chaque démarrage (anti-dérive)
+    except Exception as e:
+        _logging.getLogger("adjugo").warning("seed démo ignoré : %s", e)
+    finally:
+        db.close()
+
+
 # ── Veille amont autonome : scan périodique → emails des nouveautés ──
 # Court-circuité (zéro appel IA) tant qu'aucun utilisateur n'a activé sa veille auto.
 import asyncio as _asyncio

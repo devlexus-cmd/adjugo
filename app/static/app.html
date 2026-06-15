@@ -34,6 +34,7 @@
       <div class="field" v-if="auth.mode==='register'"><label>Entreprise</label><input v-model="auth.company_name" placeholder="Ma société SARL"></div>
       <div class="field"><label>Mot de passe</label><input v-model="auth.password" type="password" placeholder="••••••••" @keyup.enter="submitAuth"></div>
       <button class="btn primary block" @click="submitAuth" :disabled="busy"><span v-if="busy" class="spin"></span>{{ auth.mode==='login'?'Se connecter':'Créer le compte' }}</button>
+      <button class="btn ghost block" style="margin-top:9px" @click="demoLogin" :disabled="busy"><i data-lucide="play-circle"></i>Voir la démo (sans inscription)</button>
       <p class="alt"><a href="#" @click.prevent="auth.mode = auth.mode==='login'?'register':'login'">
           {{ auth.mode==='login'?"Pas de compte ? S'inscrire":'Déjà inscrit ? Se connecter' }}</a></p>
     </div>
