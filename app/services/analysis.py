@@ -74,6 +74,7 @@ Tu dois TOUJOURS repondre en JSON valide, sans texte avant ou apres. Voici le fo
   "details": {
     "intitule_marche": "Nom exact du marche",
     "acheteur": "Nom de l'acheteur / pouvoir adjudicateur",
+    "contact": {"nom": "Nom de la personne a contacter pour les questions (si indique)", "fonction": "Fonction / service", "email": "Email de contact", "telephone": "Telephone"},
     "type_marche": "Travaux / Services / Fournitures",
     "nature_marche": "Marche a procedure adaptee (MAPA) / Appel d'offres ouvert / etc.",
     "forme_prix": "Prix global et forfaitaire / Prix unitaires / Mixte",
@@ -134,6 +135,7 @@ Regles importantes :
   * Tu DOIS comparer aux seuils de l'entreprise fournis dans les criteres (penalites max, garantie max, retenue max, avance min, delai de reponse min) : marque "eleve" des qu'un seuil est depasse, et dis-le explicitement dans "pourquoi"
   * "levier_negociation" propose une contre-proposition concrete et actionnable (article du CCP si pertinent)
   * Renvoie une liste vide [] si aucune clause notable, n'invente jamais
+- Pour "contact" : n'extrais le nom/email/telephone QUE s'ils figurent dans le DCE (souvent dans le reglement de consultation, rubrique "renseignements"). Si rien n'est indique, laisse les champs vides "" — n'invente JAMAIS de contact.
 - Si une information n'est pas dans le DCE, indique "Non specifie dans le DCE"
 - Extrais TOUTES les pieces demandees dans le reglement de consultation"""
 

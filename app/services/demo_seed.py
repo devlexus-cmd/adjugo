@@ -70,7 +70,9 @@ def _projects():
     # 1) GO — toiture groupe scolaire
     d1 = {
         "intitule_marche": "Réfection de la toiture et étanchéité du groupe scolaire Jean Moulin",
-        "acheteur": "Ville de Quimper", "type_marche": "Travaux",
+        "acheteur": "Ville de Quimper",
+        "contact": {"nom": "Marie Le Goff", "fonction": "Service de la commande publique", "email": "marches@mairie-quimper.fr", "telephone": "02 98 98 89 89"},
+        "type_marche": "Travaux",
         "nature_marche": "Marché à procédure adaptée (MAPA)", "forme_prix": "Prix global et forfaitaire",
         "budget_estime": "480 000 EUR HT", "date_limite": "30/12/2026 à 12h00",
         "delai_execution": "5 mois à compter de l'ordre de service", "lieu_execution": "Quimper (29)",
@@ -208,6 +210,9 @@ def ensure_demo(db, force: bool = False) -> User:
         est = compute_estimate(_TOITURE_TASKS, _DAY_RATES, 0, 50, 12) if p["key"] == "toiture" else None
         if est:
             est["rates_used"] = _DAY_RATES
+            est["review"] = {"status": "valide", "by": "Compte Démo",
+                             "note": "Chiffrage cohérent avec le DCE — bon à déposer.",
+                             "at": "2026-06-16T09:00:00"}
         proj = Project(user_id=user.id, name=p["name"], client=p["client"], budget=p["budget"],
                        status=p["status"], source_url=ai["source"]["source_url"],
                        match_score=ai["match_score"], go_decision=ai["go_decision"],

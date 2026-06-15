@@ -188,6 +188,9 @@
                 </div>
                 <h2 style="margin:8px 0 2px;font-size:18px;line-height:1.3;font-weight:560">{{ ao.project.name }}</h2>
                 <div class="muted small">{{ ao.project.client||'Acheteur non précisé' }}</div>
+                <div class="small row" v-if="aoContact()" style="gap:5px;margin-top:4px;color:var(--text-2);flex-wrap:wrap">
+                  <i data-lucide="user-round" style="width:13px;height:13px"></i><b>{{ aoContact().nom }}</b><span v-if="aoContact().fonction" class="muted">· {{ aoContact().fonction }}</span>
+                  <a v-if="aoContact().email" :href="'mailto:'+aoContact().email" style="color:var(--accent-text)">{{ aoContact().email }}</a><span v-if="aoContact().telephone" class="muted">· {{ aoContact().telephone }}</span></div>
               </div>
               <div class="field" style="margin:0;min-width:160px"><label>Étape</label>
                 <select v-model="ao.project.status" @change="aoStatus"><option v-for="s in statuses2" :key="s" :value="s">{{ statusLabel(s) }}</option></select></div>
@@ -255,6 +258,7 @@
           <div class="card" style="margin-top:14px">
             <div class="ch"><i data-lucide="calculator"></i><h3>Chiffrage estimatif</h3><div class="spacer"></div>
               <span v-if="ao.estimate" class="pill neutral" style="font-size:11px">{{ eur(ao.estimate.total_ht) }} HT · {{ ao.estimate.jours_total }} j</span>
+              <span v-if="ao.estimate && ao.estimate.review" class="pill" :class="reviewPill(ao.estimate.review.status)" style="font-size:11px">{{ reviewLabel(ao.estimate.review.status) }}</span>
               <button v-if="!ao.estimate" class="btn primary sm" @click="aoEstimate()" :disabled="ao.estimateBusy"><span v-if="ao.estimateBusy" class="spin"></span><i v-else data-lucide="sparkles"></i>Estimer le devis</button>
               <button v-if="ao.estimate" class="btn sm" @click="aoDownloadDpgf()"><i data-lucide="file-down"></i>DPGF / BPU</button>
               <button v-if="ao.estimate" class="btn sm" @click="ao.estimateOpen=!ao.estimateOpen"><i :data-lucide="ao.estimateOpen?'chevron-up':'sliders-horizontal'"></i>{{ ao.estimateOpen?'Replier':'Détailler / ajuster' }}</button></div>
@@ -282,6 +286,16 @@
                   </div>
                   <div class="row" style="justify-content:flex-end;margin-top:9px"><b>Total HT : {{ eur(ao.estimate.total_ht) }}</b></div>
                   <p class="muted small" style="margin-top:6px">Ajustez jours et profils puis « Recalculer » (calcul instantané, sans IA). Profils & tarifs configurables dans <b>Profil entreprise</b>.</p>
+                  <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+                    <div class="row wrap" style="gap:7px;align-items:center"><i data-lucide="users" style="width:14px;height:14px"></i><b class="small">Revue d'équipe</b>
+                      <span v-if="ao.estimate.review" class="pill" :class="reviewPill(ao.estimate.review.status)" style="font-size:10px">{{ reviewLabel(ao.estimate.review.status) }}</span>
+                      <span v-if="ao.estimate.review" class="muted small">par {{ ao.estimate.review.by }}</span>
+                      <span v-if="ao.estimate.review && ao.estimate.review.note" class="muted small" style="font-style:italic">— « {{ ao.estimate.review.note }} »</span></div>
+                    <div class="row wrap" style="gap:8px;margin-top:8px;align-items:center">
+                      <input class="inp" v-model="ao.reviewNote" placeholder="Commentaire pour l'équipe (optionnel)" style="flex:1;min-width:170px">
+                      <button class="btn sm" style="background:var(--success-weak);color:var(--success-text)" @click="aoReview('valide')" :disabled="ao.estimateBusy"><i data-lucide="circle-check-big"></i>Valider</button>
+                      <button class="btn sm ghost" @click="aoReview('revision')" :disabled="ao.estimateBusy"><i data-lucide="rotate-ccw"></i>Demander une révision</button></div>
+                  </div>
                 </div>
               </div>
             </div>

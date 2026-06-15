@@ -120,7 +120,7 @@ createApp({
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             qa: [], qaInput: "", qaLoading: false,
-            estimate: null, estimateOpen: false, estimateBusy: false, estimateDistance: 0 },
+            estimate: null, estimateOpen: false, estimateBusy: false, estimateDistance: 0, reviewNote: "" },
       titles: { kb: "Base de connaissances — savoir-faire & mémoires IA", amont: "Veille amont — signaux d'investissement", dashboard: "Tableau de bord", sourcing: "Sourcing IA — appels d'offres", agent: "Agent IA — Pipeline multi-agents", pipeline: "Pipeline des appels d'offres", veille: "Veille des marchés publics", cotraitants: "Réseau de co-traitants", contacts: "Contacts CRM", documents: "Coffre-fort documentaire", invoices: "Devis & Factures", company: "Profil entreprise", criteria: "Critères Go/No-Go", team: "Équipe", billing: "Abonnement", aodetail: "Appel d'offres" },
       subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres" },
     };
@@ -399,6 +399,16 @@ createApp({
       } catch (e) { this.notify(e.message, "err"); } finally { this.ao.estimateBusy = false; }
     },
     estRateLabels() { return (this.company && this.company.day_rates && this.company.day_rates.length ? this.company.day_rates : [{label:'Étude / conception'},{label:'Production / édition'},{label:'Encadrement / direction'},{label:'Exécution / terrain'}]).map(r => r.label); },
+    async aoReview(status) {
+      this.ao.estimateBusy = true;
+      try {
+        this.ao.estimate = await this.api("PUT", "/api/chiffrage/" + this.ao.project.id + "/review", { status, note: this.ao.reviewNote || "" });
+        this.ao.reviewNote = "";
+        this.notify(status === "valide" ? "Chiffrage validé" : "Révision demandée");
+      } catch (e) { this.notify(e.message, "err"); } finally { this.ao.estimateBusy = false; }
+    },
+    reviewLabel(s) { return { valide: "Validé", revision: "Révision demandée", a_valider: "À valider" }[s] || "Brouillon"; },
+    reviewPill(s) { return { valide: "go", revision: "a_etudier", a_valider: "neutral" }[s] || "neutral"; },
     async aoDownloadDpgf() {
       try {
         const r = await fetch("/api/chiffrage/" + this.ao.project.id + "/dpgf", { headers: { Authorization: "Bearer " + this.token } });
@@ -493,6 +503,7 @@ createApp({
     aoBack() { this.view = this.ao.back || "pipeline"; this.loadProjects(); },
     aoDetails() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.details) || {}; },
     aoSource() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.source) || null; },
+    aoContact() { const c = this.aoDetails().contact; return (c && (c.nom || c.email)) ? c : null; },
     aoDceAvailable() { return !!(this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.dce_available); },
     aoBreakdown() { const a = this.ao.project && this.ao.project.ai_analysis; return (a && a.dce_available && a.lead_score && a.lead_score.breakdown) || []; },
     async aoStatus() {

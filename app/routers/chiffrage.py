@@ -45,6 +45,11 @@ class SaveRequest(BaseModel):
     distance_km: float = 0
 
 
+class ReviewRequest(BaseModel):
+    status: str = "valide"   # valide | revision | a_valider
+    note: str = ""
+
+
 @router.get("/{project_id}")
 def get_estimate(project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return _project(project_id, current_user, db).estimate or {}
@@ -91,11 +96,28 @@ def download_dpgf(project_id: int, current_user: User = Depends(get_current_user
 @router.put("/{project_id}")
 def save_estimate(project_id: int, req: SaveRequest,
                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Recalcul déterministe après ajustement manuel (aucun appel IA)."""
+    """Recalcul déterministe après ajustement manuel (aucun appel IA). Repasse en brouillon."""
     p = _project(project_id, current_user, db)
     rates, th, su = _rates(current_user, db)
     est = compute_estimate(req.lignes, rates, req.distance_km, th, su)
     est["rates_used"] = rates
+    p.estimate = est   # toute modification invalide une validation précédente
+    db.commit()
+    return est
+
+
+@router.put("/{project_id}/review")
+def review_estimate(project_id: int, req: ReviewRequest,
+                    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Revue d'équipe : valider / demander une révision (étape 5). Trace l'auteur."""
+    import datetime
+    p = _project(project_id, current_user, db)
+    if not (p.estimate and p.estimate.get("lignes")):
+        raise HTTPException(400, "Aucun chiffrage à valider.")
+    status = req.status if req.status in ("valide", "revision", "a_valider") else "a_valider"
+    est = dict(p.estimate)
+    est["review"] = {"status": status, "by": current_user.full_name or current_user.email,
+                     "note": (req.note or "")[:500], "at": datetime.datetime.utcnow().isoformat()}
     p.estimate = est
     db.commit()
     return est

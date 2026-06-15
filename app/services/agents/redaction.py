@@ -25,7 +25,8 @@ Pas de bla-bla : des engagements précis, des moyens chiffrés, une méthodologi
 
 
 def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
-                           lang_name: str = None, db=None, user_id: int = None) -> str:
+                           lang_name: str = None, db=None, user_id: int = None,
+                           estimate: dict = None) -> str:
     """Mémoire technique en UN seul appel LLM. SOURCÉ sur la base de connaissances de
     l'entreprise quand elle existe (extraits injectés + citations [S1]) → traçabilité ;
     sinon mémoire générique (l'entreprise est invitée à alimenter sa base)."""
@@ -34,6 +35,17 @@ def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
     if isinstance(quals, list):
         quals = ", ".join(q.get("name", "") if isinstance(q, dict) else str(q) for q in quals)
     cot = "; ".join(f"{c.get('name')} ({c.get('specialites','')})" for c in cotraitants) or "aucun"
+
+    # Chiffrage : si un devis a été établi, la méthodologie et le planning du mémoire
+    # DOIVENT refléter le découpage chiffré (cohérence prix / discours).
+    chiffrage_block, chiffrage_rule = "", ""
+    if estimate and estimate.get("lignes"):
+        lines = "\n".join(f"- [{l.get('phase','')}] {l.get('tache','')} — {l.get('jours','')} j"
+                          for l in estimate["lignes"])
+        chiffrage_block = (f"\n\nDÉCOUPAGE CHIFFRÉ DE LA PRESTATION (charge totale : "
+                           f"{estimate.get('jours_total','')} jours) :\n{lines}")
+        chiffrage_rule = ("\n\nRÈGLE : structure la section « Méthodologie » et le « Planning » "
+                          "autour de CES phases et tâches ; le planning doit refléter la charge en jours.")
 
     # RAG : récupère le savoir-faire réel de l'entreprise pertinent pour ce marché
     sources_block, src_rule = "", ""
@@ -62,7 +74,7 @@ CRITÈRES D'ATTRIBUTION : {details.get('criteres_attribution','')}
 
 ENTREPRISE MANDATAIRE : {company.get('name','')} — {company.get('forme_juridique','')},
 {company.get('city','')}, effectif {company.get('effectif','')}, qualifications : {quals}.
-CO-TRAITANTS DU GROUPEMENT : {cot}.{sources_block}
+CO-TRAITANTS DU GROUPEMENT : {cot}.{sources_block}{chiffrage_block}
 
 Structure en Markdown avec ces sections :
 1. Présentation du groupement et répartition des lots
@@ -70,7 +82,7 @@ Structure en Markdown avec ces sections :
 3. Moyens humains et matériels
 4. Démarche qualité, sécurité et RSE (clause d'insertion)
 5. Planning et engagements de délai
-Sois concret, mentionne explicitement la co-traitance par lot. ~600 mots.{src_rule}"""
+Sois concret, mentionne explicitement la co-traitance par lot. ~600 mots.{src_rule}{chiffrage_rule}"""
     if lang_name and lang_name.lower() != "français":
         prompt += (f"\n\nLANGUE : rédige l'intégralité du mémoire en {lang_name} "
                    f"(titres de sections compris).")
@@ -79,7 +91,7 @@ Sois concret, mentionne explicitement la co-traitance par lot. ~600 mots.{src_ru
 
 def build_dossier(analysis: dict, company: dict, cotraitants: list,
                   project_id: Optional[int] = None, lang_name: str = None,
-                  country: str = "FR", db=None, user_id: int = None) -> dict:
+                  country: str = "FR", db=None, user_id: int = None, estimate: dict = None) -> dict:
     """
     Génère le dossier complet.
     cotraitants : liste de dicts des co-traitants retenus dans le groupement.
@@ -92,7 +104,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
 
     # ── Mémoire technique (IA, un seul appel) ──
     try:
-        memoire_md = _generate_memoire_fast(analysis, company, cotraitants, lang_name, db=db, user_id=user_id)
+        memoire_md = _generate_memoire_fast(analysis, company, cotraitants, lang_name, db=db, user_id=user_id, estimate=estimate)
     except Exception as e:
         memoire_md = f"# Mémoire technique\n\n(génération indisponible : {e})"
         warnings.append(f"mémoire: {e}")
