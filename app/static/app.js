@@ -849,7 +849,8 @@ createApp({
       if (!qs.length) { this.notify("Collez vos questions (une par ligne)", "err"); return; }
       this.kb.qLoading = true; this.kb.qResults = null;
       try {
-        this.kb.qResults = await this.api("POST", "/api/knowledge/questionnaire", { questions: qs });
+        const job = await this.api("POST", "/api/knowledge/questionnaire", { questions: qs });
+        this.kb.qResults = await this.pollJob(job.id);
         this.notify(this.kb.qResults.covered + "/" + this.kb.qResults.count + " réponses trouvées dans votre base");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }

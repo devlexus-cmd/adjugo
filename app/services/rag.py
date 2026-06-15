@@ -155,46 +155,75 @@ def index_document(db: Session, user_id: int, name: str, text: str, kind: str = 
     return doc
 
 
-# ── Recherche BM25 ──────────────────────────────────────────────────────────
-def retrieve(db: Session, user_id: int, query: str, k: int = 6, min_score: float = 0.0) -> list:
-    """Renvoie les k chunks les plus pertinents pour `query` dans la base de
-    l'utilisateur. Chaque résultat est traçable (doc_name + extrait + id)."""
+# ── Recherche BM25 (avec cache de tokenisation par utilisateur) ──────────────
+# Tokeniser toute la base à CHAQUE requête est en O(N) coûteux. On met en cache les
+# chunks DÉJÀ tokenisés par user, invalidés via une empreinte (nombre + max id) — ce
+# qui évite de re-tokeniser à chaque appel. Plafonné pour borner la RAM ; au-delà,
+# la vraie solution à l'échelle est un index Postgres full-text (GIN tsvector).
+from sqlalchemy import func as _func
+
+_TOK_CACHE = {}          # user_id -> (empreinte, [rows tokenisées])
+_TOK_CACHE_MAX = 8000    # plafond de chunks mis en cache par user
+
+
+def _fingerprint(db, user_id: int):
+    row = db.query(_func.count(KnowledgeChunk.id), _func.max(KnowledgeChunk.id)) \
+            .filter(KnowledgeChunk.user_id == user_id).first()
+    return (row[0] or 0, row[1] or 0)
+
+
+def _tokenized_rows(db, user_id: int) -> list:
+    """[(id, doc_id, doc_name, ordinal, user_id, tokens, text)] avec cache invalidé à
+    l'indexation (empreinte = nombre de chunks + id max)."""
+    fp = _fingerprint(db, user_id)
+    cached = _TOK_CACHE.get(user_id)
+    if cached and cached[0] == fp:
+        return cached[1]
     rows = db.query(KnowledgeChunk).filter(KnowledgeChunk.user_id == user_id).all()
-    if not rows:
+    out = [(r.id, r.doc_id, r.doc_name, r.ordinal, r.user_id, _tokens(r.text), r.text) for r in rows]
+    if fp[0] <= _TOK_CACHE_MAX:
+        _TOK_CACHE[user_id] = (fp, out)
+    return out
+
+
+def _bm25(trows: list, query: str, k: int) -> list:
+    N = len(trows)
+    if not N:
         return []
-    docs_tokens = [_tokens(r.text) for r in rows]
-    N = len(rows)
-    avgdl = sum(len(t) for t in docs_tokens) / max(1, N)
-    # document frequency
-    df = Counter()
-    for toks in docs_tokens:
-        for t in set(toks):
-            df[t] += 1
     q = _tokens(query)
     if not q:
         return []
+    avgdl = sum(len(t[5]) for t in trows) / N
+    df = Counter()
+    for t in trows:
+        for w in set(t[5]):
+            df[w] += 1
     k1, b = 1.5, 0.75
     scored = []
-    for r, toks in zip(rows, docs_tokens):
+    for t in trows:
+        toks = t[5]
         if not toks:
             continue
         tf = Counter(toks)
         dl = len(toks)
         s = 0.0
-        for t in q:
-            if t not in tf:
+        for w in q:
+            if w not in tf:
                 continue
-            idf = math.log(1 + (N - df[t] + 0.5) / (df[t] + 0.5))
-            s += idf * (tf[t] * (k1 + 1)) / (tf[t] + k1 * (1 - b + b * dl / avgdl))
-        if s > min_score:
-            scored.append((s, r))
+            idf = math.log(1 + (N - df[w] + 0.5) / (df[w] + 0.5))
+            s += idf * (tf[w] * (k1 + 1)) / (tf[w] + k1 * (1 - b + b * dl / avgdl))
+        if s > 0:
+            scored.append((s, t))
     scored.sort(key=lambda x: x[0], reverse=True)
+    return scored[:k]
+
+
+def retrieve(db: Session, user_id: int, query: str, k: int = 6, min_score: float = 0.0) -> list:
+    """Renvoie les k chunks les plus pertinents pour `query` dans la base de l'utilisateur."""
     out = []
-    for s, r in scored[:k]:
-        out.append({
-            "chunk_id": r.id, "doc_id": r.doc_id, "doc_name": r.doc_name,
-            "ordinal": r.ordinal, "text": r.text, "score": round(s, 3),
-        })
+    for s, t in _bm25(_tokenized_rows(db, user_id), query, k):
+        out.append({"chunk_id": t[0], "doc_id": t[1], "doc_name": t[2],
+                    "ordinal": t[3], "text": t[6], "score": round(s, 3)})
     return out
 
 
@@ -209,41 +238,18 @@ def sources_block(chunks: list) -> str:
 
 # ── Récupération MULTI-ENTREPRISES (Merged Brain) ────────────────────────────
 def retrieve_multi(db: Session, user_ids: list, query: str, k: int = 8) -> list:
-    """Récupère les chunks les plus pertinents à travers PLUSIEURS bases (co-traitance).
-    Chaque résultat porte son user_id d'origine → attribution par entreprise."""
+    """Récupère les chunks les plus pertinents à travers PLUSIEURS bases (co-traitance),
+    en réutilisant le cache de tokenisation par user. Chaque résultat porte son user_id."""
     if not user_ids:
         return []
-    rows = db.query(KnowledgeChunk).filter(KnowledgeChunk.user_id.in_(list(user_ids))).all()
-    if not rows:
-        return []
-    docs_tokens = [_tokens(r.text) for r in rows]
-    N = len(rows)
-    avgdl = sum(len(t) for t in docs_tokens) / max(1, N)
-    df = Counter()
-    for toks in docs_tokens:
-        for t in set(toks):
-            df[t] += 1
-    q = _tokens(query)
-    if not q:
-        return []
-    k1, b = 1.5, 0.75
-    scored = []
-    for r, toks in zip(rows, docs_tokens):
-        if not toks:
-            continue
-        tf = Counter(toks)
-        dl = len(toks)
-        s = 0.0
-        for t in q:
-            if t not in tf:
-                continue
-            idf = math.log(1 + (N - df[t] + 0.5) / (df[t] + 0.5))
-            s += idf * (tf[t] * (k1 + 1)) / (tf[t] + k1 * (1 - b + b * dl / avgdl))
-        if s > 0:
-            scored.append((s, r))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [{"chunk_id": r.id, "doc_id": r.doc_id, "doc_name": r.doc_name, "user_id": r.user_id,
-             "text": r.text, "score": round(s, 3)} for s, r in scored[:k]]
+    trows = []
+    for uid in dict.fromkeys(user_ids):
+        trows.extend(_tokenized_rows(db, uid))
+    out = []
+    for s, t in _bm25(trows, query, k):
+        out.append({"chunk_id": t[0], "doc_id": t[1], "doc_name": t[2], "user_id": t[4],
+                    "text": t[6], "score": round(s, 3)})
+    return out
 
 
 def sources_block_attributed(chunks: list, names_by_user: dict) -> str:

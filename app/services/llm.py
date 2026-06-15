@@ -36,7 +36,23 @@ def complete(system: str, user: str, max_tokens: int = 3000, temperature: float 
         system=system,
         messages=[{"role": "user", "content": user}],
     )
+    _track_usage(model or MODEL, resp)
     return resp.content[0].text.strip()
+
+
+# Compteurs de tokens en mémoire (par process) — pour mesurer/plafonner le coût IA.
+TOKENS = {"input": 0, "output": 0, "calls": 0}
+
+
+def _track_usage(model: str, resp) -> None:
+    try:
+        u = getattr(resp, "usage", None)
+        if u:
+            TOKENS["input"] += getattr(u, "input_tokens", 0) or 0
+            TOKENS["output"] += getattr(u, "output_tokens", 0) or 0
+            TOKENS["calls"] += 1
+    except Exception:
+        pass
 
 
 def complete_json(system: str, user: str, max_tokens: int = 3000, temperature: float = 0.2) -> dict:

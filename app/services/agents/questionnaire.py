@@ -25,8 +25,9 @@ pour le compte d'une entreprise. RÈGLES :
 N'invente jamais de chiffre, certification, référence ou engagement."""
 
 
-def answer_question(db: Session, user_id: int, question: str) -> dict:
-    chunks = rag.retrieve(db, user_id, question, k=5)
+def _answer_from_chunks(question: str, chunks: list) -> dict:
+    """Répond à UNE question depuis des chunks déjà récupérés (appel LLM, AUCUN accès DB
+    → exécutable en parallèle dans un thread sans partager la session SQLAlchemy)."""
     if not chunks:
         return {"question": question, "answer": "À compléter — non couvert par votre base de connaissances.",
                 "sources": [], "covered": False}
@@ -47,9 +48,20 @@ Réponds en citant [S1], [S2]…"""
     return {"question": question, "answer": ans, "sources": used if covered else [], "covered": covered}
 
 
+def answer_question(db: Session, user_id: int, question: str) -> dict:
+    return _answer_from_chunks(question, rag.retrieve(db, user_id, question, k=5))
+
+
 def answer_questions(db: Session, user_id: int, questions: list, limit: int = 40) -> dict:
     qs = [q.strip() for q in (questions or []) if q and q.strip()][:limit]
-    results = [answer_question(db, user_id, q) for q in qs]
+    if not qs:
+        return {"count": 0, "covered": 0, "coverage_rate": 0, "answers": []}
+    # 1) Récupération RAG SÉQUENTIELLE (la session SQLAlchemy n'est pas thread-safe)
+    prepared = [(q, rag.retrieve(db, user_id, q, k=5)) for q in qs]
+    # 2) Réponses LLM EN PARALLÈLE (I/O-bound, aucun accès DB) — latence divisée
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(8, len(qs))) as ex:
+        results = list(ex.map(lambda pc: _answer_from_chunks(pc[0], pc[1]), prepared))
     covered = sum(1 for r in results if r["covered"])
     return {"count": len(results), "covered": covered,
             "coverage_rate": round(100 * covered / len(results)) if results else 0,

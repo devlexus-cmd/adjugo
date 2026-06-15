@@ -156,4 +156,9 @@ def questionnaire(request: Request, req: QuestionnaireReq, current_user: User = 
     if not qs:
         raise HTTPException(422, "Aucune question fournie.")
     consume_analysis(current_user, db)
-    return answer_questions(db, current_user.id, qs)
+    # Asynchrone (anti-timeout) : jusqu'à 40 questions × LLM, traitées en tâche de fond.
+    from app.services.jobs import create_job, run_in_thread, job_out
+    job = create_job(db, current_user.id, "questionnaire", f"Questionnaire ({len(qs)} questions)")
+    uid = current_user.id
+    run_in_thread(job.id, lambda jdb: answer_questions(jdb, uid, qs))
+    return job_out(job)

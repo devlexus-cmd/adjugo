@@ -38,11 +38,20 @@ def test_kb_tenant_isolation(client):
                      json={"query": "marge financiere confidentielle"})
     assert any("marge" in r["text"].lower() for r in ra.json()["results"])
 
-    # B ne peut pas répondre à un questionnaire à partir de la base de A.
+    # B ne peut pas répondre à un questionnaire à partir de la base de A (job async).
+    import time
     qb = client.post("/api/knowledge/questionnaire", headers=b,
                      json={"questions": ["Quelle est votre marge financiere ?"]})
     assert qb.status_code == 200
-    for ans in qb.json()["answers"]:
+    job_id = qb.json()["id"]
+    result = None
+    for _ in range(30):
+        j = client.get(f"/api/jobs/{job_id}", headers=b).json()
+        if j["status"] in ("done", "error"):
+            result = j.get("result")
+            break
+        time.sleep(0.3)
+    for ans in (result or {}).get("answers", []):
         assert "quarante-deux" not in ans["answer"].lower()
         assert "42" not in ans["answer"]
 
