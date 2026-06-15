@@ -27,6 +27,9 @@ def _reset():
     llm.TOKENS.update(input=0, output=0, calls=0)
     llm._TENANT_TOKENS.clear()
     llm._TENANT_CB.clear()
+    llm._LAT["counts"] = {b: 0 for b in llm._LAT_BUCKETS}
+    llm._LAT["sum"] = 0.0
+    llm._LAT["count"] = 0
 
 
 def test_disjoncteur_souvre_apres_n_echecs(monkeypatch):
@@ -143,6 +146,30 @@ def test_disjoncteur_par_tenant_isole_le_voisin(monkeypatch):
         resp = llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
         assert resp is not None
     assert llm._TENANT_CB["A"]["open_until"] > 0    # circuit de A ouvert
+    _reset()
+
+
+def test_concurrence_compteurs_coherents(monkeypatch):
+    """Sous 16 threads en parallèle (8 tenants × 2), les compteurs verrouillés restent
+    EXACTS — pas de perte d'incrément (atomicité du disjoncteur/usage/latence)."""
+    import concurrent.futures as cf
+    _reset()
+    monkeypatch.setattr(llm, "client", _fake_client)
+    N_TENANTS, PER = 8, 20
+
+    def hammer(tid):
+        with llm.tenant_scope(f"t{tid}"):
+            for _ in range(PER):
+                llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
+
+    with cf.ThreadPoolExecutor(max_workers=16) as ex:
+        list(ex.map(hammer, list(range(N_TENANTS)) * 2))   # chaque tenant martelé par 2 threads
+
+    expected_calls = N_TENANTS * 2 * PER
+    assert llm.TOKENS["calls"] == expected_calls                     # aucun appel perdu
+    assert llm.latency_snapshot()["count"] == expected_calls         # latence cohérente
+    for tid in range(N_TENANTS):
+        assert llm.tenant_usage(f"t{tid}") == 2 * PER * 30           # 2 threads × 20 × 30 tokens
     _reset()
 
 

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from typing import Optional
 from anthropic import Anthropic
@@ -15,6 +16,10 @@ from app.core.config import get_settings
 
 settings = get_settings()
 logger = logging.getLogger("adjugo")
+
+# Verrou des mutations d'état partagé (compteurs, disjoncteurs) : le pool de jobs et
+# les requêtes concurrentes mettent à jour ces dicts ; `x += 1` n'est pas atomique.
+_LOCK = threading.Lock()
 
 # Modèles Claude courants (cf. roster Anthropic à jour).
 MODEL = "claude-sonnet-4-6"        # raisonnement (analyse, stratégie)
@@ -74,6 +79,26 @@ def tenant_usage(tenant_id) -> int:
     return _TENANT_TOKENS.get(tenant_id, 0)
 
 
+# ── Latence des appels IA (histogramme Prometheus) ───────────────────────────
+_LAT_BUCKETS = [0.5, 1, 2, 5, 10, 30]
+_LAT = {"counts": {b: 0 for b in _LAT_BUCKETS}, "sum": 0.0, "count": 0}
+
+
+def _record_latency(dt: float) -> None:
+    """Histogramme cumulatif (le=bucket) de la durée des appels Claude réussis."""
+    _LAT["sum"] += dt
+    _LAT["count"] += 1
+    for b in _LAT_BUCKETS:
+        if dt <= b:
+            _LAT["counts"][b] += 1
+
+
+def latency_snapshot() -> dict:
+    """Copie cohérente de l'histogramme de latence pour /metrics."""
+    with _LOCK:
+        return {"buckets": dict(_LAT["counts"]), "sum": _LAT["sum"], "count": _LAT["count"]}
+
+
 def _track_usage(model: str, resp) -> None:
     try:
         u = getattr(resp, "usage", None)
@@ -131,28 +156,33 @@ def messages_create(**kwargs):
         logger.warning("Plafond de tokens IA atteint pour le tenant %s (%s) — appel refusé.",
                        tid, _TOKEN_CAP_PER_TENANT)
         raise LLMUnavailable("Plafond de tokens IA atteint pour votre espace. Réessayez plus tard.")
+    t0 = time.monotonic()
     try:
         resp = client().messages.create(**kwargs)
     except Exception:
-        _CB["fails"] += 1
-        if _CB["fails"] >= _CB_THRESHOLD and _CB["open_until"] <= now:
-            _CB["open_until"] = time.monotonic() + _CB_COOLDOWN
-            logger.error("Disjoncteur IA GLOBAL ouvert après %s échecs — pause %ss.", _CB["fails"], _CB_COOLDOWN)
-        if tid is not None:
-            tcb = _tenant_cb(tid)
-            tcb["fails"] += 1
-            if tcb["fails"] >= _TCB_THRESHOLD and tcb["open_until"] <= now:
-                tcb["open_until"] = time.monotonic() + _CB_COOLDOWN
-                logger.warning("Disjoncteur IA ouvert pour le tenant %s après %s échecs.", tid, tcb["fails"])
+        with _LOCK:
+            _CB["fails"] += 1
+            if _CB["fails"] >= _CB_THRESHOLD and _CB["open_until"] <= now:
+                _CB["open_until"] = time.monotonic() + _CB_COOLDOWN
+                logger.error("Disjoncteur IA GLOBAL ouvert après %s échecs — pause %ss.", _CB["fails"], _CB_COOLDOWN)
+            if tid is not None:
+                tcb = _tenant_cb(tid)
+                tcb["fails"] += 1
+                if tcb["fails"] >= _TCB_THRESHOLD and tcb["open_until"] <= now:
+                    tcb["open_until"] = time.monotonic() + _CB_COOLDOWN
+                    logger.warning("Disjoncteur IA ouvert pour le tenant %s après %s échecs.", tid, tcb["fails"])
         raise
-    if _CB["fails"]:
-        logger.info("Disjoncteur IA global refermé (appel réussi après %s échecs).", _CB["fails"])
-    _CB["fails"] = 0
-    _CB["open_until"] = 0.0
-    if tid is not None and tid in _TENANT_CB:
-        _TENANT_CB[tid]["fails"] = 0
-        _TENANT_CB[tid]["open_until"] = 0.0
-    _track_usage(kwargs.get("model", MODEL), resp)
+    dt = time.monotonic() - t0
+    with _LOCK:
+        if _CB["fails"]:
+            logger.info("Disjoncteur IA global refermé (appel réussi après %s échecs).", _CB["fails"])
+        _CB["fails"] = 0
+        _CB["open_until"] = 0.0
+        if tid is not None and tid in _TENANT_CB:
+            _TENANT_CB[tid]["fails"] = 0
+            _TENANT_CB[tid]["open_until"] = 0.0
+        _record_latency(dt)
+        _track_usage(kwargs.get("model", MODEL), resp)
     return resp
 
 

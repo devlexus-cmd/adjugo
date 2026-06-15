@@ -52,6 +52,18 @@ def render() -> str:
             "# TYPE adjugo_llm_tracked_tenants gauge",
             _fmt("adjugo_llm_tracked_tenants", len(llm._TENANT_TOKENS)),
         ]
+        # Histogramme de latence des appels IA (→ p50/p95/p99 via histogram_quantile).
+        lat = llm.latency_snapshot()
+        out += ["# HELP adjugo_llm_call_duration_seconds Durée des appels Claude réussis.",
+                "# TYPE adjugo_llm_call_duration_seconds histogram"]
+        cumulative = lat["buckets"]
+        for b in sorted(cumulative):
+            out.append(_fmt("adjugo_llm_call_duration_seconds_bucket", cumulative[b], {"le": str(b)}))
+        out += [
+            _fmt("adjugo_llm_call_duration_seconds_bucket", lat["count"], {"le": "+Inf"}),
+            _fmt("adjugo_llm_call_duration_seconds_sum", round(lat["sum"], 3)),
+            _fmt("adjugo_llm_call_duration_seconds_count", lat["count"]),
+        ]
     except Exception:
         pass
 
