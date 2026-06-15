@@ -302,7 +302,8 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
     user_prompt = build_user_prompt(text, company, criteria, lang_name)
 
     try:
-        response = client().messages.create(
+        from app.services.llm import messages_create
+        response = messages_create(
             model="claude-sonnet-4-6",
             max_tokens=4000,
             temperature=0,  # extraction reproductible (le score, lui, est déterministe)

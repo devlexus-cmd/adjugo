@@ -166,8 +166,9 @@ def index_document(db: Session, user_id: int, name: str, text: str, kind: str = 
 # l'évolution naturelle est un index Postgres GIN (tsvector) — même structure.
 from sqlalchemy import func as _func
 
-_IDX_CACHE = {}          # user_id -> (empreinte, index)
+_IDX_CACHE = {}          # user_id -> (empreinte, index)  [ordre d'insertion préservé]
 _IDX_CACHE_MAX = 8000    # plafond de chunks indexés en RAM par user
+_IDX_CACHE_USERS = int(__import__("os").getenv("RAG_CACHE_USERS", "200"))  # plafond d'users cachés
 _K1, _B = 1.5, 0.75
 
 
@@ -203,6 +204,10 @@ def _index_for(db, user_id: int) -> dict:
     rows = db.query(KnowledgeChunk).filter(KnowledgeChunk.user_id == user_id).all()
     idx = _build_index(rows)
     if fp[0] <= _IDX_CACHE_MAX:
+        # Éviction bornée : on ne garde la RAM que pour N tenants (FIFO simple).
+        _IDX_CACHE.pop(user_id, None)
+        while len(_IDX_CACHE) >= _IDX_CACHE_USERS:
+            _IDX_CACHE.pop(next(iter(_IDX_CACHE)), None)
         _IDX_CACHE[user_id] = (fp, idx)
     return idx
 

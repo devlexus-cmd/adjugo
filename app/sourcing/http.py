@@ -38,8 +38,9 @@ def post_with_retry(url: str, json: dict = None, timeout: float = 15, tries: int
     raise last
 
 
-def safe_terms(q: str) -> str:
-    """Assainit une requête utilisateur avant interpolation dans un `where` ODSQL :
-    on ne garde que lettres/chiffres/espaces/traits — neutralise guillemets et opérateurs."""
-    cleaned = re.sub(r"[^0-9A-Za-zÀ-ÿ \-']", " ", str(q or ""))
-    return re.sub(r"\s+", " ", cleaned).strip()
+def safe_terms(q: str, max_len: int = 200) -> str:
+    """Assainit une requête utilisateur avant interpolation dans un `where` ODSQL.
+    On ne garde que lettres/chiffres/espaces/traits — et surtout PAS l'apostrophe ni le
+    guillemet, qui délimitent les chaînes ODSQL (neutralise toute évasion). Longueur bornée."""
+    cleaned = re.sub(r"[^0-9A-Za-zÀ-ÿ \-]", " ", str(q or ""))
+    return re.sub(r"\s+", " ", cleaned).strip()[:max_len]

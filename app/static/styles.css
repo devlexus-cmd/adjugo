@@ -12,7 +12,7 @@
   --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#F8FAFC; --surface-3:#F1F4F9;
   --sidebar:#FFFFFF; --sidebar-line:#EAEEF4;
   --border:#EAEEF4; --border-2:#DCE2EC; --hairline:#F1F4F9;
-  --text:#0D1117; --text-2:#5A6573; --muted:#5A6573; --subtle:#6B7382;  /* AA: ~4.6:1 sur blanc */
+  --text:#0D1117; --text-2:#4A5462; --muted:#5A6573; --subtle:#6B7382;  /* text-2 AAA 7.7:1 · muted 5.9:1 · subtle 4.8:1 */
   --accent:#1B4FFF; --accent-hover:#143FD6; --accent-weak:#E9F0FF; --accent-text:#1B4FFF; --on-accent:#FFFFFF;
   --accent-2:#00D4FF; --accent-2-soft:#E0F8FF;
   --grad:linear-gradient(120deg,#1B4FFF 0%,#00D4FF 100%);
