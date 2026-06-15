@@ -22,6 +22,16 @@ from app.core.observability import setup_logging, init_sentry, request_logger
 setup_logging()
 init_sentry()
 
+# Garde-fou prod : refuse de démarrer avec une clé secrète par défaut (JWT prévisibles).
+import logging as _logging
+if settings.ENVIRONMENT == "production" and settings.SECRET_KEY in ("", "change-this-in-production"):
+    raise RuntimeError(
+        "SECRET_KEY non configurée en production. Générez-en une (openssl rand -hex 32) "
+        "et définissez la variable d'environnement SECRET_KEY."
+    )
+if settings.SECRET_KEY in ("", "change-this-in-production"):
+    _logging.getLogger("adjugo").warning("SECRET_KEY par défaut — à changer avant la prod.")
+
 # Dev (SQLite) : création directe des tables. Prod (Postgres) : migrations Alembic
 # (`alembic upgrade head`) — on ne crée pas le schéma à la volée.
 if _is_sqlite:

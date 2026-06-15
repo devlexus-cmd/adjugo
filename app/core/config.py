@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # CORS : origines autorisées (séparées par des virgules). Restreindre en prod.
     CORS_ORIGINS: str = "http://localhost:8000,http://localhost:5173,http://localhost:3000"
 
+    # URL publique de l'app (redirections Stripe, liens emails). À régler en prod.
+    APP_BASE_URL: str = "https://adjugo-api-production.up.railway.app"
+
     # Rate limiting : "memory://" en mono-instance, "redis://host:6379" en multi-workers/prod
     RATELIMIT_STORAGE_URI: str = "memory://"
 

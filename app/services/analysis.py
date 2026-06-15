@@ -4,11 +4,10 @@ Prompt expert marches publics francais.
 Utilise le profil entreprise + criteres Go/No-Go pour un matching precis.
 """
 import json
-from anthropic import Anthropic
 from app.core.config import get_settings
+from app.services.llm import client  # client Anthropic LAZY partagé (pas d'instanciation à l'import)
 
 settings = get_settings()
-client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 SYSTEM_PROMPT = """Tu es un expert en marches publics francais, specialise dans l'analyse des Dossiers de Consultation des Entreprises (DCE). Tu travailles pour un logiciel appele Adjugo qui aide les entreprises du BTP et des services a repondre aux appels d'offres.
 
@@ -249,7 +248,7 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
     user_prompt = build_user_prompt(text, company, criteria, lang_name)
 
     try:
-        response = client.messages.create(
+        response = client().messages.create(
             model="claude-sonnet-4-6",
             max_tokens=4000,
             system=SYSTEM_PROMPT,

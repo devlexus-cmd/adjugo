@@ -21,6 +21,7 @@ else:
     engine = create_engine(
         settings.DATABASE_URL,
         pool_pre_ping=True,
+        pool_recycle=1800,   # recycle les connexions > 30 min (évite les conn. mortes)
         pool_size=10,
         max_overflow=20,
     )

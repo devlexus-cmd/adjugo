@@ -35,8 +35,8 @@ def create_checkout(plan: str, current_user: User = Depends(get_current_user), d
             payment_method_types=["card"],
             line_items=[{"price": prices[plan], "quantity": 1}],
             mode="subscription",
-            success_url="http://localhost:5173/?payment=success",
-            cancel_url="http://localhost:5173/?payment=cancel",
+            success_url=settings.APP_BASE_URL + "/app?payment=success",
+            cancel_url=settings.APP_BASE_URL + "/app?payment=cancel",
             metadata={"user_id": str(current_user.id), "plan": plan}
         )
         return {"checkout_url": session.url, "session_id": session.id}
@@ -98,7 +98,7 @@ def create_portal(current_user: User = Depends(get_current_user)):
     try:
         session = stripe.billing_portal.Session.create(
             customer=current_user.stripe_customer_id,
-            return_url="http://localhost:5173/"
+            return_url=settings.APP_BASE_URL + "/app"
         )
         return {"portal_url": session.url}
 

@@ -67,8 +67,9 @@ def consume_analysis(user, db: Session) -> None:
             try:
                 from app.services.billing_usage import report_overage
                 report_overage(user)
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger("adjugo").warning("Report d'usage facturable échoué (user %s) : %s", user.id, e)
             return
         raise HTTPException(
             status_code=402,
