@@ -218,7 +218,7 @@ createApp({
         await this.boot();
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
-    logout() { this.token = ""; localStorage.removeItem("adjugo_token"); this.user = {}; },
+    logout() { localStorage.removeItem("adjugo_token"); window.location.href = "/"; },
 
     async boot() {
       try { this.user = await this.api("GET", "/api/auth/me"); } catch (e) { return; }

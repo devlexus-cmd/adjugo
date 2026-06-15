@@ -243,6 +243,10 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 .auth { min-height:100vh; display:grid; place-items:center; background:
    radial-gradient(1100px 520px at 50% -10%, var(--accent-weak), transparent 60%), var(--bg); padding:20px; }
 .auth .box { background:var(--surface); border:1px solid var(--border); border-radius:20px; width:392px; padding:30px; box-shadow:var(--shadow-pop); }
+.auth-back { position:fixed; top:20px; left:22px; display:inline-flex; align-items:center; gap:6px; font-size:13.5px; font-weight:600; color:var(--text-2); padding:8px 12px; border-radius:10px; transition:background .12s,color .12s; }
+.auth-back:hover { background:var(--surface-3); color:var(--text); }
+.auth-back:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); }
+.auth-back .lucide { width:16px; height:16px; }
 .auth .logo { width:52px; height:52px; border-radius:15px; background:var(--grad); display:grid; place-items:center; margin:0 auto 16px; box-shadow:0 8px 22px color-mix(in srgb,var(--accent) 34%,transparent); }
 .auth .logo .mark { width:62%; height:62%; }
 .auth h2 { text-align:center; margin:0 0 2px; font-family:var(--font-display); font-size:21px; font-weight:800; letter-spacing:-.03em; }
