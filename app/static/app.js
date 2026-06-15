@@ -378,7 +378,8 @@ createApp({
       this.ao.qa = []; this.ao.qaInput = "";
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
-      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadBuyer(); this.aoLoadEstimate();
+      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate();
+      setTimeout(() => this.aoLoadBuyer(), 700);   // profil acheteur (BOAMP, lent) en différé, après le cœur de l'AO
     },
     async aoLoadEstimate() {
       try { const e = await this.api("GET", "/api/chiffrage/" + this.ao.project.id); this.ao.estimate = (e && e.lignes) ? e : null; } catch (e) {}

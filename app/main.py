@@ -264,6 +264,19 @@ def _recover_orphan_jobs():
         db.close()
 
 
+# ── Capacité du pool de threads (endpoints sync) ────────────────────────────
+@app.on_event("startup")
+def _raise_threadpool():
+    """Les endpoints synchrones tournent dans un pool de threads partagé (défaut 40).
+    On l'élargit pour qu'un appel externe lent (ex. profil acheteur BOAMP) ne puisse
+    pas affamer les requêtes rapides et bloquer l'app."""
+    try:
+        import anyio
+        anyio.to_thread.current_default_thread_limiter().total_tokens = 96
+    except Exception as e:
+        _logging.getLogger("adjugo").info("threadpool non ajusté : %s", e)
+
+
 # ── Compte de démonstration : présent dès le démarrage ──────────────────────
 @app.on_event("startup")
 def _ensure_demo_account():
