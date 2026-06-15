@@ -84,7 +84,7 @@ L'Éditeur se réserve le droit de modifier ses tarifs. Toute modification est n
 
 5.2. **Résiliation par le Client.** Le Client peut résilier à tout moment depuis son compte ou par e-mail à viegaseliot1@gmail.com. La résiliation prend effet **à la fin de la période d'abonnement en cours** ; aucun remboursement prorata temporis n'est dû pour la période entamée, sauf disposition légale impérative contraire. La formule Découverte (0 €) peut être quittée à tout moment.
 
-5.3. **Résiliation par l'Éditeur.** L'Éditeur peut suspendre ou résilier le compte, après mise en demeure restée sans effet pendant `[À COMPLÉTER : délai, ex. 15 jours]`, en cas de manquement du Client à ses obligations (notamment défaut de paiement, usage frauduleux ou illicite, atteinte à la sécurité du Service).
+5.3. **Résiliation par l'Éditeur.** L'Éditeur peut suspendre ou résilier le compte, après mise en demeure restée sans effet pendant **quinze (15) jours**, en cas de manquement du Client à ses obligations (notamment défaut de paiement, usage frauduleux ou illicite, atteinte à la sécurité du Service).
 
 5.4. **Effets.** À la résiliation, l'accès au Service est désactivé. Les modalités de récupération et de suppression des données du Client sont précisées dans la [Politique de confidentialité](./politique-confidentialite.md). Le Client est invité à exporter ses documents avant la date d'effet de la résiliation.
 
@@ -130,7 +130,7 @@ Le traitement des données à caractère personnel est régi par la [Politique d
 
 ## 11. Confidentialité
 
-Chaque partie s'engage à préserver la confidentialité des informations non publiques échangées dans le cadre de l'exécution du contrat, pendant toute sa durée et `[À COMPLÉTER : durée post-contractuelle, ex. 2 ans]` après son terme.
+Chaque partie s'engage à préserver la confidentialité des informations non publiques échangées dans le cadre de l'exécution du contrat, pendant toute sa durée et **deux (2) ans** après son terme.
 
 ## 12. Modification des CGV
 

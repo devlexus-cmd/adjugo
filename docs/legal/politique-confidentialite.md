@@ -59,11 +59,11 @@ Le Service collecte et traite les catégories de données suivantes :
 
 | Donnée | Durée de conservation |
 |---|---|
-| Données de compte | pendant la durée de la relation contractuelle, puis suppression ou anonymisation `[À COMPLÉTER : ex. 12 mois]` après la clôture du compte |
-| Documents téléversés (DCE, pièces) | pendant la durée d'utilisation du Service, puis suppression `[À COMPLÉTER : ex. 30 à 90 jours]` après la clôture du compte ou sur demande |
+| Données de compte | pendant la durée de la relation contractuelle, puis suppression ou anonymisation **12 mois** après la clôture du compte |
+| Documents téléversés (DCE, pièces) | pendant la durée d'utilisation du Service, puis suppression **90 jours** après la clôture du compte, ou immédiatement sur demande |
 | Données de facturation | **10 ans** (obligation comptable et fiscale, art. L.123-22 Code de commerce) |
-| Journaux techniques (logs) | `[À COMPLÉTER : ex. 6 à 12 mois]` |
-| Données de prospection | `[À COMPLÉTER : ex. 3 ans à compter du dernier contact]` |
+| Journaux techniques (logs) | **6 mois** |
+| Données de prospection | **3 ans** à compter du dernier contact |
 
 À l'expiration de ces durées, les données sont supprimées ou anonymisées de manière irréversible.
 
