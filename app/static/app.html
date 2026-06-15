@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/static/styles.css">
 <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-<script src="/static/i18n.js"></script>
+<script src="/static/i18n.js" defer></script>
 </head>
 <body>
 <div id="app">
@@ -1033,6 +1033,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js"></script>
+<script src="/static/app.js" defer></script>
 </body>
 </html>

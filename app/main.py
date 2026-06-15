@@ -52,6 +52,11 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 _origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+# Compression gzip des réponses texte (HTML/JS/CSS/JSON) — allège fortement le front
+# (i18n.js, app.js…). Filet en plus de la compression de l'edge.
+from starlette.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=800)
+
 
 app.middleware("http")(request_logger)
 
