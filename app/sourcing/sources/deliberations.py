@@ -50,8 +50,15 @@ COUNTRIES = {
     ],
 }
 
-_DISCOVERED = None
+_DISCOVERED = {}          # pays -> [dataset_ids] découverts dynamiquement (caché)
 _MAX_DATASETS = 16
+# Requête de découverte par pays : on ne se limite pas à une liste figée de communes,
+# on interroge le hub open data pour TOUS les jeux de délibérations/actes du pays.
+_DISCO_QUERY = {
+    "FR": 'title like "délibération" OR title like "deliberation" OR title like "conseil municipal"',
+    "IT": 'title like "delibere" OR title like "delibera" OR title like "determina"',
+    "ES": 'title like "acuerdos" OR title like "pleno" OR title like "junta de gobierno"',
+}
 _OBJ_HINTS = ("objet", "intitul", "affaire", "libell", "sujet", "titre",
               "oggetto", "titolo", "descrizione",           # IT
               "titulo", "asunto", "descripcion", "acuerdo",  # ES
@@ -97,20 +104,26 @@ def _doc_link(rec):
     return ""
 
 
-def _discover(limit=18):
-    global _DISCOVERED
-    if _DISCOVERED is not None:
-        return _DISCOVERED
+def _discover(country: str = "FR", limit=18):
+    """Découverte DYNAMIQUE des jeux de délibérations du pays sur le hub open data —
+    pas une liste figée de communes. Caché par pays (le hub est stable sur une session)."""
+    country = (country or "FR").upper()
+    if country in _DISCOVERED:
+        return _DISCOVERED[country]
+    query = _DISCO_QUERY.get(country)
+    if not query:
+        _DISCOVERED[country] = []
+        return []
     try:
-        r = httpx.get(HUB, params={"where": 'title like "délibération" OR title like "deliberation"',
-                                   "limit": 60, "order_by": "records_count DESC"}, timeout=12, headers=_H)
+        r = httpx.get(HUB, params={"where": query, "limit": 60, "order_by": "records_count DESC"},
+                      timeout=12, headers=_H)
         ids = [d.get("dataset_id") for d in r.json().get("results", [])
                if d.get("dataset_id") and (((d.get("metas", {}) or {}).get("default", {}) or {}).get("records_count") or 0) >= 25]
-        _DISCOVERED = ids[:limit]
+        _DISCOVERED[country] = ids[:limit]
     except Exception as e:
-        logger.info("Découverte délibérations indisponible : %s", e)
-        _DISCOVERED = []
-    return _DISCOVERED
+        logger.info("Découverte délibérations indisponible (%s) : %s", country, e)
+        _DISCOVERED[country] = []
+    return _DISCOVERED[country]
 
 
 def _fetch_one(did, coll, dep, pays, per):
@@ -145,10 +158,10 @@ class DeliberationSource:
         tasks, seen = [], set()
         for d in COUNTRIES.get(country, []):
             seen.add(d["id"]); tasks.append((d["id"], d["coll"], d.get("dep", ""), country))
-        if country == "FR":
-            for did in _discover():
-                if did not in seen:
-                    seen.add(did); tasks.append((did, "", "", "FR"))
+        # Découverte dynamique pour TOUS les pays couverts (plus seulement la France).
+        for did in _discover(country):
+            if did not in seen:
+                seen.add(did); tasks.append((did, "", "", country))
         tasks = tasks[:_MAX_DATASETS]
         if not tasks:
             return []
