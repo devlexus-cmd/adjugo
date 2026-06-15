@@ -37,3 +37,8 @@ test_adjugo.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Node / Playwright (audit a11y) — ne pas committer
+node_modules/
+package.json
+package-lock.json
