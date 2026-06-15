@@ -5,7 +5,10 @@ POST .../estimate : l'IA propose un découpage en tâches + jours, le prix est c
 PUT  ...           : recalcul DÉTERMINISTE après ajustement manuel (jours/profil/distance),
                      sans nouvel appel IA.
 """
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -69,6 +72,20 @@ def make_estimate(project_id: int, req: EstimateRequest, request: Request,
     p.estimate = est
     db.commit()
     return est
+
+
+@router.get("/{project_id}/dpgf")
+def download_dpgf(project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Génère la DPGF + BPU (PDF) à partir du chiffrage estimatif."""
+    p = _project(project_id, current_user, db)
+    if not (p.estimate and p.estimate.get("lignes")):
+        raise HTTPException(400, "Aucun chiffrage à exporter. Lancez d'abord l'estimation.")
+    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    from app.services.dpgf import generate_dpgf_pdf
+    pdf = generate_dpgf_pdf(p.estimate, (company.name if company else "Entreprise"), p.name)
+    fn = "DPGF-" + (re.sub(r"[^A-Za-z0-9]+", "-", p.name or "marche").strip("-")[:40] or "marche") + ".pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{fn}"'})
 
 
 @router.put("/{project_id}")

@@ -256,7 +256,8 @@
             <div class="ch"><i data-lucide="calculator"></i><h3>Chiffrage estimatif</h3><div class="spacer"></div>
               <span v-if="ao.estimate" class="pill neutral" style="font-size:11px">{{ eur(ao.estimate.total_ht) }} HT · {{ ao.estimate.jours_total }} j</span>
               <button v-if="!ao.estimate" class="btn primary sm" @click="aoEstimate()" :disabled="ao.estimateBusy"><span v-if="ao.estimateBusy" class="spin"></span><i v-else data-lucide="sparkles"></i>Estimer le devis</button>
-              <button v-else class="btn sm" @click="ao.estimateOpen=!ao.estimateOpen"><i :data-lucide="ao.estimateOpen?'chevron-up':'sliders-horizontal'"></i>{{ ao.estimateOpen?'Replier':'Détailler / ajuster' }}</button></div>
+              <button v-if="ao.estimate" class="btn sm" @click="aoDownloadDpgf()"><i data-lucide="file-down"></i>DPGF / BPU</button>
+              <button v-if="ao.estimate" class="btn sm" @click="ao.estimateOpen=!ao.estimateOpen"><i :data-lucide="ao.estimateOpen?'chevron-up':'sliders-horizontal'"></i>{{ ao.estimateOpen?'Replier':'Détailler / ajuster' }}</button></div>
             <div class="cb">
               <div v-if="!ao.estimate" class="muted small">L'IA découpe la prestation en tâches et estime les jours ; le prix est calculé sur <b>vos tarifs</b> (réglables dans Profil entreprise) — chiffrage déterministe, jamais inventé.
                 <div class="row" style="gap:6px;margin-top:9px;align-items:center"><span>Distance du chantier :</span><input class="inp" type="number" min="0" v-model.number="ao.estimateDistance" style="width:90px"><span>km</span></div>

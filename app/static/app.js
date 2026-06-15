@@ -399,6 +399,16 @@ createApp({
       } catch (e) { this.notify(e.message, "err"); } finally { this.ao.estimateBusy = false; }
     },
     estRateLabels() { return (this.company && this.company.day_rates && this.company.day_rates.length ? this.company.day_rates : [{label:'Étude / conception'},{label:'Production / édition'},{label:'Encadrement / direction'},{label:'Exécution / terrain'}]).map(r => r.label); },
+    async aoDownloadDpgf() {
+      try {
+        const r = await fetch("/api/chiffrage/" + this.ao.project.id + "/dpgf", { headers: { Authorization: "Bearer " + this.token } });
+        if (!r.ok) throw new Error("indispo");
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = "DPGF.pdf"; document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) { this.notify("Export DPGF momentanément indisponible.", "err"); }
+    },
     async aoLoadBuyer() {
       const name = this.ao.project && this.ao.project.client;
       if (!name) return;
