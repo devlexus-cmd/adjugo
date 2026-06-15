@@ -134,10 +134,29 @@ createApp({
       window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (this.theme === "system") this.applyTheme(); });
     }
     this.renderIcons();
+    // Accessibilité clavier (RGAA) : Échap ferme la modale ouverte ; Entrée/Espace
+    // active l'élément de navigation focalisé (les nav-item ne sont pas des <button>).
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { const x = document.querySelector(".overlay .modal-h .x, .drawer .x"); if (x) x.click(); }
+      const a = document.activeElement;
+      if ((e.key === "Enter" || e.key === " ") && a && a.classList && a.classList.contains("nav-item")) { e.preventDefault(); a.click(); }
+    });
+    this.$nextTick(() => this._a11y());
     if (this.token) this.boot();
   },
-  updated() { this.renderIcons(); this.renderI18n(); },
+  updated() { this.renderIcons(); this.renderI18n(); this._a11y(); },
   methods: {
+    // Accessibilité : associe chaque label à son champ, rend les modales/nav sémantiques.
+    _a11y() {
+      try {
+        document.querySelectorAll(".field").forEach((f) => {
+          const l = f.querySelector("label"), i = f.querySelector("input,select,textarea");
+          if (l && i && !i.getAttribute("aria-label")) i.setAttribute("aria-label", (l.textContent || "").replace(/\s+/g, " ").trim());
+        });
+        document.querySelectorAll(".modal,.drawer").forEach((m) => { m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); });
+        document.querySelectorAll(".nav-item").forEach((n) => { if (!n.getAttribute("tabindex")) { n.setAttribute("tabindex", "0"); n.setAttribute("role", "button"); } });
+      } catch (e) {}
+    },
     renderI18n() { if (this.lang && this.lang !== "fr") this.$nextTick(() => translateDOM(this.lang)); },
     applyLang(code) { this.lang = code || "fr"; document.documentElement.setAttribute("lang", this.lang); this.renderI18n(); },
     // ── Thème + icônes ──
