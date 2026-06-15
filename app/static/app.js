@@ -68,7 +68,7 @@ createApp({
       theme: localStorage.getItem("adjugo_theme") || "system",
       mobileNav: false,
       user: {}, company: {}, criteria: {},
-      view: "dashboard", busy: false, toast: null,
+      view: "dashboard", busy: false, toast: null, pending: 0,
       auth: { mode: "login", email: "", password: "", full_name: "", company_name: "" },
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], expiring: [],
       veille: { q: "", loc: "", results: [], loading: false },
@@ -192,6 +192,8 @@ createApp({
 
     // ── API helper ──
     async api(method, path, body, isForm) {
+      this.pending++;   // → barre de progression globale (retour visuel sur TOUTE action réseau)
+      try {
       const opt = { method, headers: {} };
       if (this.token) opt.headers["Authorization"] = "Bearer " + this.token;
       if (body && !isForm) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
@@ -202,6 +204,7 @@ createApp({
       const data = txt ? JSON.parse(txt) : null;
       if (!r.ok) throw new Error((data && data.detail) ? JSON.stringify(data.detail) : "Erreur " + r.status);
       return data;
+      } finally { this.pending = Math.max(0, this.pending - 1); }
     },
     notify(msg, kind = "ok") { if (this._toastT) clearTimeout(this._toastT); this.toast = { msg, kind }; this._toastT = setTimeout(() => this.toast = null, 2600); },
     notifyUndo(msg, undoFn) { if (this._toastT) clearTimeout(this._toastT); this.toast = { msg, kind: "ok", undo: undoFn }; this._toastT = setTimeout(() => this.toast = null, 7000); },
@@ -435,7 +438,7 @@ createApp({
       const q = (this.ao.qaInput || "").trim();
       if (!q || this.ao.qaLoading) return;
       this.ao.qaLoading = true;
-      const entry = { q, a: "…" };
+      const entry = { q, a: "__loading__" };
       this.ao.qa.push(entry); this.ao.qaInput = "";
       try {
         const r = await this.api("POST", "/api/sourcing/ask", { project_id: this.ao.project.id, question: q });

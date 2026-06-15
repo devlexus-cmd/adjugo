@@ -236,6 +236,14 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 .busy-veil { position:absolute; inset:0; z-index:6; border-radius:inherit; display:grid; place-items:center;
   background:color-mix(in srgb, var(--surface) 78%, transparent); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
 .busy-veil .bv-msg { margin-top:16px; font-size:13px; font-weight:600; color:var(--text-2); text-align:center; }
+
+/* Barre de progression globale en haut de page — retour visuel sur toute requête réseau */
+.net-progress { position:fixed; top:0; left:0; right:0; height:3px; z-index:9999;
+  background:color-mix(in srgb, var(--accent) 12%, transparent); overflow:hidden; }
+.net-progress::before { content:""; position:absolute; top:0; height:100%; width:35%; left:-35%;
+  background:var(--grad); border-radius:0 4px 4px 0; box-shadow:0 0 9px color-mix(in srgb, var(--accent) 65%, transparent);
+  animation:netslide 1.05s ease-in-out infinite; }
+@keyframes netslide { 0% { left:-35%; } 50% { left:48%; } 100% { left:115%; } }
 .bar { height:7px; background:var(--surface-3); border-radius:999px; overflow:hidden; }
 .bar > i { display:block; height:100%; background:var(--grad); }
 

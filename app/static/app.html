@@ -24,6 +24,9 @@
 <body>
 <div id="app">
 
+  <!-- Barre de progression globale : visible dès qu'une requête réseau est en cours -->
+  <div v-if="pending > 0" class="net-progress" role="status" aria-label="Chargement en cours"></div>
+
   <!-- ══════════ AUTH ══════════ -->
   <main v-if="!token" class="auth">
     <a href="/" class="auth-back"><i data-lucide="arrow-left"></i>Accueil</a>
@@ -246,7 +249,8 @@
                 <div class="sectitle" style="margin-top:0"><i data-lucide="messages-square" style="width:14px;height:14px"></i> Poser une question à l'IA sur cet appel d'offres</div>
                 <div v-for="(m,i) in ao.qa" :key="'qa'+i" style="margin-bottom:11px">
                   <div class="row small" style="gap:6px;font-weight:600"><i data-lucide="circle-help" style="width:13px;height:13px;color:var(--accent-text)"></i><span>{{ m.q }}</span></div>
-                  <div class="small" style="margin-top:5px;padding:10px 13px;background:var(--surface-2);border-radius:8px;white-space:pre-wrap;line-height:1.55">{{ m.a }}</div>
+                  <div v-if="m.a==='__loading__'" class="small row" style="margin-top:5px;padding:10px 13px;background:var(--surface-2);border-radius:8px;gap:8px;color:var(--text-2)"><span class="spin"></span> L'IA lit le DCE et rédige la réponse…</div>
+                  <div v-else class="small" style="margin-top:5px;padding:10px 13px;background:var(--surface-2);border-radius:8px;white-space:pre-wrap;line-height:1.55">{{ m.a }}</div>
                 </div>
                 <div class="row" style="gap:8px;margin-top:4px">
                   <input class="inp" v-model="ao.qaInput" placeholder="Ex. Quelles pénalités de retard ? Le CA minimal exigé ? La date de visite ?" @keyup.enter="aoAsk()" :disabled="ao.qaLoading" style="flex:1">
