@@ -134,6 +134,12 @@ class Company(Base):
     references = Column(JSON, default=list)
     # Ex: [{"name": "Crèche municipale", "client": "Mairie X", "value": 64000, "year": 2025}]
 
+    # Chiffrage : tarifs journaliers par profil de prestation + majoration distance.
+    day_rates = Column(JSON, default=list)
+    # Ex: [{"label": "Étude / conception", "rate": 600}, {"label": "Production / édition", "rate": 400}]
+    distance_threshold_km = Column(Integer, default=50)   # au-delà : majoration
+    distance_surcharge_pct = Column(Float, default=0)     # ex. 10 (%)
+
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -168,6 +174,9 @@ class Project(Base):
     # Workflow (checklist)
     workflow = Column(JSON, default=dict)
     # Ex: {"prise_contact": true, "collecte_docs": false, ...}
+
+    # Chiffrage estimatif (devis) : tâches + jours + tarifs + totaux. Voir agents/chiffrage.
+    estimate = Column(JSON, nullable=True)
 
     # Résultat (capture Gagné/Perdu pour les analytics de win-rate)
     outcome_reason = Column(String(255), nullable=True)

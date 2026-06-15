@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from app.core.config import get_settings
 from app.core.database import engine, Base, _is_sqlite
-from app.routers import auth, projects, invoices, contacts, documents, analysis, cerfa, stripe_pay, cotraitants, export_dossier, checklist
+from app.routers import auth, projects, invoices, contacts, documents, analysis, cerfa, stripe_pay, cotraitants, export_dossier, checklist, chiffrage
 from app.routers.company import company_router, criteria_router
 from app.routers.criteria_v2 import router as criteria_v2_router
 from app.routers.agent import router as agent_router
@@ -132,6 +132,7 @@ app.include_router(stripe_pay.router)
 app.include_router(cotraitants.router)
 app.include_router(export_dossier.router)
 app.include_router(checklist.router)
+app.include_router(chiffrage.router)
 app.include_router(agent_router)
 app.include_router(registre_router)
 app.include_router(admin_router)

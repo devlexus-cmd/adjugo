@@ -119,7 +119,8 @@ createApp({
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
-            qa: [], qaInput: "", qaLoading: false },
+            qa: [], qaInput: "", qaLoading: false,
+            estimate: null, estimateOpen: false, estimateBusy: false, estimateDistance: 0 },
       titles: { kb: "Base de connaissances — savoir-faire & mémoires IA", amont: "Veille amont — signaux d'investissement", dashboard: "Tableau de bord", sourcing: "Sourcing IA — appels d'offres", agent: "Agent IA — Pipeline multi-agents", pipeline: "Pipeline des appels d'offres", veille: "Veille des marchés publics", cotraitants: "Réseau de co-traitants", contacts: "Contacts CRM", documents: "Coffre-fort documentaire", invoices: "Devis & Factures", company: "Profil entreprise", criteria: "Critères Go/No-Go", team: "Équipe", billing: "Abonnement", aodetail: "Appel d'offres" },
       subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres" },
     };
@@ -375,9 +376,29 @@ createApp({
       this.ao.cotraitants = []; this.ao.stOpen = false; this.ao.st.results = [];
       this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.group = null;
       this.ao.qa = []; this.ao.qaInput = "";
+      this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
-      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadBuyer();
+      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadBuyer(); this.aoLoadEstimate();
     },
+    async aoLoadEstimate() {
+      try { const e = await this.api("GET", "/api/chiffrage/" + this.ao.project.id); this.ao.estimate = (e && e.lignes) ? e : null; } catch (e) {}
+    },
+    async aoEstimate() {
+      this.ao.estimateBusy = true;
+      try {
+        this.ao.estimate = await this.api("POST", "/api/chiffrage/" + this.ao.project.id + "/estimate", { distance_km: Number(this.ao.estimateDistance) || 0 });
+        this.ao.estimateOpen = true;
+      } catch (e) { this.notify(e.message, "err"); } finally { this.ao.estimateBusy = false; }
+    },
+    async aoSaveEstimate() {
+      this.ao.estimateBusy = true;
+      try {
+        this.ao.estimate = await this.api("PUT", "/api/chiffrage/" + this.ao.project.id,
+          { lignes: this.ao.estimate.lignes, distance_km: Number(this.ao.estimateDistance) || 0 });
+        this.notify("Chiffrage recalculé");
+      } catch (e) { this.notify(e.message, "err"); } finally { this.ao.estimateBusy = false; }
+    },
+    estRateLabels() { return (this.company && this.company.day_rates && this.company.day_rates.length ? this.company.day_rates : [{label:'Étude / conception'},{label:'Production / édition'},{label:'Encadrement / direction'},{label:'Exécution / terrain'}]).map(r => r.label); },
     async aoLoadBuyer() {
       const name = this.ao.project && this.ao.project.client;
       if (!name) return;

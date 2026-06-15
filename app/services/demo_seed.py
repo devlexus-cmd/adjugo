@@ -15,7 +15,24 @@ from app.core.security import hash_password
 from app.models import (Company, MatchingCriteria, Organization, PlanType,
                         Project, ProjectStatus, User)
 from app.routers.cotraitants import Cotraitant, ProjectCotraitant
+from app.services.agents.chiffrage import compute_estimate
 from app.services.dce_scoring import score_dce
+
+_DAY_RATES = [
+    {"label": "Étude / conception", "rate": 650},
+    {"label": "Encadrement / direction", "rate": 850},
+    {"label": "Exécution / terrain", "rate": 400},
+]
+# Estimation pré-calculée (déterministe) pour l'AO toiture — vitrine du chiffrage.
+_TOITURE_TASKS = [
+    {"phase": "Préparation", "tache": "Installation de chantier, sécurité et protections", "profil": "Exécution / terrain", "jours": 4},
+    {"phase": "Étude", "tache": "Relevés, calepinage et plans d'exécution étanchéité", "profil": "Étude / conception", "jours": 5},
+    {"phase": "Production", "tache": "Dépose de la couverture existante et évacuation", "profil": "Exécution / terrain", "jours": 12},
+    {"phase": "Production", "tache": "Pose de l'isolation thermique et de la membrane d'étanchéité", "profil": "Exécution / terrain", "jours": 22},
+    {"phase": "Production", "tache": "Zinguerie, relevés et évacuations des eaux pluviales", "profil": "Exécution / terrain", "jours": 8},
+    {"phase": "Contrôle", "tache": "Tests d'étanchéité, levée de réserves et réception", "profil": "Étude / conception", "jours": 4},
+    {"phase": "Pilotage", "tache": "Encadrement, coordination et suivi de chantier", "profil": "Encadrement / direction", "jours": 10},
+]
 
 logger = logging.getLogger("adjugo")
 
@@ -165,6 +182,9 @@ def ensure_demo(db, force: bool = False) -> User:
     comp.city = "Quimper"; comp.postal_code = "29000"; comp.forme_juridique = "SARL"
     comp.ca_n1 = 1250000; comp.ca_n2 = 1100000; comp.ca_n3 = 980000; comp.effectif = 14
     comp.qualifications = _COMPANY["qualifications"]
+    comp.day_rates = _DAY_RATES
+    comp.distance_threshold_km = 50
+    comp.distance_surcharge_pct = 12
 
     crit = db.query(MatchingCriteria).filter(MatchingCriteria.user_id == user.id).first() or MatchingCriteria(user_id=user.id)
     if crit.id is None:
@@ -185,10 +205,13 @@ def ensure_demo(db, force: bool = False) -> User:
     proj_by_key = {}
     for p in _projects():
         ai = p["ai"]
+        est = compute_estimate(_TOITURE_TASKS, _DAY_RATES, 0, 50, 12) if p["key"] == "toiture" else None
+        if est:
+            est["rates_used"] = _DAY_RATES
         proj = Project(user_id=user.id, name=p["name"], client=p["client"], budget=p["budget"],
                        status=p["status"], source_url=ai["source"]["source_url"],
                        match_score=ai["match_score"], go_decision=ai["go_decision"],
-                       ai_summary=ai["summary"], ai_analysis=ai)
+                       ai_summary=ai["summary"], ai_analysis=ai, estimate=est)
         db.add(proj); db.flush()
         proj_by_key[p["key"]] = proj.id
 

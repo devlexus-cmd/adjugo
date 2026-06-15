@@ -59,6 +59,9 @@ class CompanyCreate(BaseModel):
     effectif: Optional[int] = 0
     qualifications: Optional[list] = []
     references: Optional[list] = []
+    day_rates: Optional[list] = []
+    distance_threshold_km: Optional[int] = 50
+    distance_surcharge_pct: Optional[float] = 0
 
 
 class CompanyOut(CompanyCreate):
