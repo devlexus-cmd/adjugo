@@ -820,13 +820,24 @@ createApp({
       try { this.kb.searchRes = await this.api("POST", "/api/knowledge/search", { query: this.kb.searchQ, k: 6 }); }
       catch (e) { this.notify(e.message, "err"); }
     },
+    // Attend la fin d'un job asynchrone (génération longue) en interrogeant /api/jobs/{id}
+    async pollJob(jobId) {
+      for (let i = 0; i < 160; i++) {
+        const j = await this.api("GET", "/api/jobs/" + jobId);
+        if (j.status === "done") return j.result;
+        if (j.status === "error") throw new Error(j.error || "Échec de la génération");
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      throw new Error("Délai dépassé — réessayez");
+    },
     async kbMemoire(e) {
       const file = e.target.files[0]; if (!file) return; e.target.value = "";
       if (!this.kb.docs.length) { this.notify("Ajoutez d'abord des documents à votre base", "err"); return; }
       this.kb.memoireLoading = true; this.kb.memoire = null;
       try {
         const fd = new FormData(); fd.append("file", file);
-        this.kb.memoire = await this.api("POST", "/api/knowledge/memoire-upload", fd, true);
+        const job = await this.api("POST", "/api/knowledge/memoire-upload", fd, true);
+        this.kb.memoire = await this.pollJob(job.id);
         this.notify("Mémoire généré (" + (this.kb.memoire.n_sections || 0) + " sections)");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
@@ -888,7 +899,8 @@ createApp({
       if ((this.cospace.warroomDce || "").trim().length < 60) { this.notify("Collez le DCE (min. 60 caractères)", "err"); return; }
       this.cospace.warroomLoading = true;
       try {
-        const r = await this.api("POST", "/api/cospace/" + this.cospace.current.id + "/warroom", { dce_text: this.cospace.warroomDce });
+        const job = await this.api("POST", "/api/cospace/" + this.cospace.current.id + "/warroom", { dce_text: this.cospace.warroomDce });
+        const r = await this.pollJob(job.id);
         this.cospace.current.warroom = r; this.notify("Pré-répartition générée (" + (r.lots ? r.lots.length : 0) + " lots)");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
@@ -902,7 +914,8 @@ createApp({
       if ((this.cospace.dceText || "").trim().length < 60) { this.notify("Collez le DCE (RC/CCTP) — min. 60 caractères", "err"); return; }
       this.cospace.generating = true; this.cospace.memoire = null;
       try {
-        this.cospace.memoire = await this.api("POST", "/api/cospace/" + this.cospace.current.id + "/memoire", { dce_text: this.cospace.dceText });
+        const job = await this.api("POST", "/api/cospace/" + this.cospace.current.id + "/memoire", { dce_text: this.cospace.dceText });
+        this.cospace.memoire = await this.pollJob(job.id);
         this.notify("Mémoire fusionné généré (" + (this.cospace.memoire.n_sections || 0) + " sections)");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }

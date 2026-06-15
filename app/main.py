@@ -117,6 +117,8 @@ from app.routers.knowledge import router as knowledge_router
 app.include_router(knowledge_router)
 from app.routers.cospace import router as cospace_router
 app.include_router(cospace_router)
+from app.routers.jobs import router as jobs_router
+app.include_router(jobs_router)
 
 # Fichiers statiques du logiciel (SPA)
 _static_dir = os.path.join(os.path.dirname(__file__), "static")

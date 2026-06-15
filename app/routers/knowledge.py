@@ -107,8 +107,13 @@ def search(req: SearchReq, current_user: User = Depends(get_current_user), db: S
 
 # ── Mémoire IA (multi-agents, sourcé) ────────────────────────────────────────
 def _gen_memoire(text: str, current_user: User, db: Session) -> dict:
+    # Génération longue → asynchrone (anti-timeout). Le client interroge /api/jobs/{id}.
     consume_analysis(current_user, db)
-    return generate_memoire(db, current_user.id, text)
+    from app.services.jobs import create_job, run_in_thread, job_out
+    job = create_job(db, current_user.id, "memoire", "Mémoire technique")
+    uid = current_user.id
+    run_in_thread(job.id, lambda jdb: generate_memoire(jdb, uid, text))
+    return job_out(job)
 
 
 @router.post("/memoire-upload")

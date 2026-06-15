@@ -465,3 +465,22 @@ class CoMember(Base):
     token = Column(String(64), default="", index=True)  # jeton d'invitation
     company_name = Column(String(255), default="")    # dénormalisé pour l'attribution des sources
     created_at = Column(DateTime, default=utcnow)
+
+
+# === JOBS ASYNCHRONES (générations longues : mémoire, war room…) ===
+# Les traitements IA longs (ingestion DCE, mémoire fusionné, war room) ne tiennent
+# pas dans une requête HTTP synchrone. On crée un Job, on traite en tâche de fond,
+# le client interroge le statut puis récupère le résultat (anti-timeout).
+
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    kind = Column(String(40), default="")             # memoire | merged_memoire | warroom | …
+    status = Column(String(20), default="pending")    # pending | running | done | error
+    label = Column(String(255), default="")           # libellé affiché au client
+    result = Column(JSON, nullable=True)              # résultat (quand done)
+    error = Column(Text, default="")                  # message d'erreur (quand error)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)

@@ -178,7 +178,12 @@ def merged_memoire(space_id: int, req: MergedMemoireReq, request: Request,
     if len(members) < 2:
         raise HTTPException(422, "Invitez et faites accepter au moins un co-traitant avant de fusionner.")
     consume_analysis(current_user, db)
-    return generate_merged_memoire(db, members, req.dce_text)
+    # Génération longue → asynchrone (anti-timeout). Le client interroge /api/jobs/{id}.
+    from app.services.jobs import create_job, run_in_thread, job_out
+    job = create_job(db, current_user.id, "merged_memoire", "Mémoire fusionné — " + (s.name or ""))
+    text = req.dce_text
+    run_in_thread(job.id, lambda jdb: generate_merged_memoire(jdb, members, text))
+    return job_out(job)
 
 
 class WarRoomReq(BaseModel):
@@ -205,7 +210,16 @@ def warroom(space_id: int, req: WarRoomReq, request: Request,
     for m in db.query(CoMember).filter(CoMember.space_id == s.id, CoMember.status == "invited").all():
         members.append({"user_id": None, "name": m.email, "role": m.role})
     consume_analysis(current_user, db)
-    result = propose_allocation(db, req.dce_text, [m for m in members if m.get("user_id")])
-    s.warroom = result
-    db.commit()
-    return result
+    from app.services.jobs import create_job, run_in_thread, job_out
+    job = create_job(db, current_user.id, "warroom", "War Room — " + (s.name or ""))
+    text, mids, sid = req.dce_text, [m for m in members if m.get("user_id")], s.id
+
+    def _work(jdb):
+        res = propose_allocation(jdb, text, mids)
+        sp = jdb.get(CoSpace, sid)
+        if sp:
+            sp.warroom = res
+            jdb.commit()
+        return res
+    run_in_thread(job.id, _work)
+    return job_out(job)
