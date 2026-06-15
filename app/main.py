@@ -79,6 +79,11 @@ app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_credentials=Tru
 from starlette.middleware.gzip import GZipMiddleware
 app.add_middleware(GZipMiddleware, minimum_size=800)
 
+# Idempotence des requêtes mutantes (rejeu sûr d'un POST facturé). Opt-in via l'en-tête
+# Idempotency-Key ; passe-plat strict sans l'en-tête.
+from app.core.idempotency import IdempotencyMiddleware
+app.add_middleware(IdempotencyMiddleware)
+
 
 app.middleware("http")(request_logger)
 
