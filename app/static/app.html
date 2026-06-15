@@ -35,7 +35,6 @@
       <button class="btn primary block" @click="submitAuth" :disabled="busy"><span v-if="busy" class="spin"></span>{{ auth.mode==='login'?'Se connecter':'Créer le compte' }}</button>
       <p class="alt"><a href="#" @click.prevent="auth.mode = auth.mode==='login'?'register':'login'">
           {{ auth.mode==='login'?"Pas de compte ? S'inscrire":'Déjà inscrit ? Se connecter' }}</a></p>
-      <p class="alt" style="margin-top:8px">Démo : demo@adjugo.fr / demo1234</p>
     </div>
   </main>
 

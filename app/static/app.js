@@ -149,9 +149,19 @@ createApp({
     // Accessibilité : associe chaque label à son champ, rend les modales/nav sémantiques.
     _a11y() {
       try {
-        document.querySelectorAll(".field").forEach((f) => {
-          const l = f.querySelector("label"), i = f.querySelector("input,select,textarea");
-          if (l && i && !i.getAttribute("aria-label")) i.setAttribute("aria-label", (l.textContent || "").replace(/\s+/g, " ").trim());
+        const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
+        const FALLBACK = { email: "E-mail", password: "Mot de passe", search: "Recherche",
+          tel: "Téléphone", number: "Valeur", date: "Date", file: "Importer un fichier" };
+        // Nom accessible sur TOUTE commande de formulaire (pas seulement celles en .field) :
+        // label associé > label du .field parent > placeholder > repli par type.
+        document.querySelectorAll("input:not([type=hidden]), select, textarea").forEach((el) => {
+          if (el.getAttribute("aria-label") || el.getAttribute("aria-labelledby") || el.closest("label")) return;
+          let name = "";
+          if (el.id) { const l = document.querySelector('label[for="' + el.id + '"]'); if (l) name = l.textContent; }
+          if (!name) { const f = el.closest(".field"); if (f) { const l = f.querySelector("label"); if (l) name = l.textContent; } }
+          if (!name) name = el.getAttribute("placeholder") || "";
+          if (!name) name = FALLBACK[el.getAttribute("type")] || (el.tagName === "SELECT" ? "Sélection" : "Champ");
+          el.setAttribute("aria-label", clean(name));
         });
         document.querySelectorAll(".modal,.drawer").forEach((m) => { m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); });
         document.querySelectorAll(".nav-item").forEach((n) => { if (!n.getAttribute("tabindex")) { n.setAttribute("tabindex", "0"); n.setAttribute("role", "button"); } });

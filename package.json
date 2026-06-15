@@ -1,0 +1,25 @@
+{
+  "name": "adjugo-backend",
+  "version": "1.0.0",
+  "description": "API FastAPI pour la gestion des marchés publics et l'analyse IA des appels d'offres.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devlexus-cmd/adjugo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/devlexus-cmd/adjugo/issues"
+  },
+  "homepage": "https://github.com/devlexus-cmd/adjugo#readme"
+}
