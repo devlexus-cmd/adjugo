@@ -215,8 +215,10 @@ def renewals(request: Request, req: RenewalRequest,
     gonogo = _criteria_dict(current_user.id, db)
     deps = [d.strip()[:3] for d in (req.departements or []) if d.strip()]
     consume_analysis(current_user, db)
+    from app.services.llm import tenant_scope
     try:
-        res = detect_renewals(req.query or "travaux", deps, gonogo, domaines=req.domaines)
+        with tenant_scope(current_user.id):
+            res = detect_renewals(req.query or "travaux", deps, gonogo, domaines=req.domaines)
     except Exception:
         refund_analysis(current_user, db)   # rien produit → on ne débite pas
         raise
@@ -415,7 +417,9 @@ def ask_ao(request: Request, req: AskRequest,
             f"\"\"\"\n{ctx[:14000]}\n\"\"\"\n\nQUESTION : {q}\n\n"
             f"Réponds en {lang}, fondé uniquement sur le DCE ci-dessus.")
     try:
-        answer = complete(ASK_SYSTEM, user, max_tokens=700, temperature=0.1, model=MODEL_FAST)
+        from app.services.llm import tenant_scope
+        with tenant_scope(current_user.id):
+            answer = complete(ASK_SYSTEM, user, max_tokens=700, temperature=0.1, model=MODEL_FAST)
     except Exception as e:
         raise HTTPException(502, f"IA momentanément indisponible : {e}")
     return {"answer": (answer or "").strip() or "—"}
