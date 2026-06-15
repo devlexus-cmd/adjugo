@@ -4,10 +4,62 @@ Prompt expert marches publics francais.
 Utilise le profil entreprise + criteres Go/No-Go pour un matching precis.
 """
 import json
+import re
 from app.core.config import get_settings
 from app.services.llm import client  # client Anthropic LAZY partagé (pas d'instanciation à l'import)
 
 settings = get_settings()
+
+# Termes des clauses sensibles : souvent dans le CCAP, en fin de DCE — on garantit
+# qu'elles sont vues par l'analyse même dans un dossier de plusieurs centaines de pages.
+_RISK_TERMS = re.compile(
+    r"p[ée]nalit|retenue de garantie|garantie [aà] premi[èe]re demande|cautionnement|"
+    r"avance|d[ée]lai d'ex[ée]cution|d[ée]lai de remise|crit[èe]res? d['e]|pond[ée]ration|"
+    r"notation|valeur technique|prix|reconduction|tranche|variante|sous-trait|"
+    r"assurance|qualification|certificat|RGE|capacit[ée]|chiffre d'affaires",
+    re.IGNORECASE,
+)
+
+
+def select_dce_content(text: str, head: int = 9000, budget: int = 30000, window: int = 700) -> str:
+    """
+    Sélection pertinente du DCE plutôt qu'une troncature aveugle des N premiers caractères.
+
+    On conserve toujours la tête du dossier (objet, acheteur, contexte) puis, dans tout
+    le reste du document, on extrait des fenêtres autour des CLAUSES SENSIBLES (pénalités,
+    retenue de garantie, critères de pondération, délais…) où qu'elles se trouvent. Ainsi
+    une clause de pénalité située page 180 d'un CCAP est bien analysée — ce qu'une coupe à
+    15 000 caractères manquait systématiquement. Budget borné pour la fenêtre de contexte.
+    """
+    text = text or ""
+    if len(text) <= budget:
+        return text
+    head_part = text[:head]
+    rest = text[head:]
+    # Repère les fenêtres autour de chaque occurrence de terme sensible.
+    spans = []
+    for m in _RISK_TERMS.finditer(rest):
+        a = max(0, m.start() - window // 3)
+        b = min(len(rest), m.end() + window)
+        if spans and a <= spans[-1][1] + 120:   # fusionne les fenêtres proches
+            spans[-1] = (spans[-1][0], max(spans[-1][1], b))
+        else:
+            spans.append((a, b))
+    picked, used = [], 0
+    room = budget - head
+    for a, b in spans:
+        if used >= room:
+            break
+        seg = rest[a:b]
+        if used + len(seg) > room:
+            seg = seg[: room - used]
+        picked.append(seg)
+        used += len(seg)
+    if not picked:
+        # Aucune clause sensible repérée : on reprend une coupe simple jusqu'au budget.
+        return text[:budget]
+    return head_part + "\n\n[… extraits ciblés des clauses sensibles, ailleurs dans le DCE …]\n\n" + \
+        "\n[…]\n".join(picked)
 
 SYSTEM_PROMPT = """Tu es un expert en marches publics francais, specialise dans l'analyse des Dossiers de Consultation des Entreprises (DCE). Tu travailles pour un logiciel appele Adjugo qui aide les entreprises du BTP et des services a repondre aux appels d'offres.
 
@@ -151,10 +203,12 @@ def build_user_prompt(text, company=None, criteria=None, lang_name=None):
                    f"niveau: faible/moyen/eleve).\n\n")
 
     prompt += "=== CONTENU DU DCE ===\n"
-    prompt += text[:15000]  # Limiter pour rester dans la fenetre de contexte
-
-    if len(text) > 15000:
-        prompt += "\n\n[... Document tronque a 15000 caracteres. Analyse sur la base du texte disponible.]"
+    selected = select_dce_content(text)
+    prompt += selected
+    if len(selected) < len(text):
+        prompt += ("\n\n[... DCE volumineux : tête du dossier + extraits ciblés des clauses "
+                   "sensibles (pénalités, garanties, critères, délais) sélectionnés dans "
+                   "l'ensemble du document. Analyse sur la base de ces éléments.]")
 
     return prompt
 
