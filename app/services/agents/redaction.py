@@ -25,13 +25,32 @@ Pas de bla-bla : des engagements précis, des moyens chiffrés, une méthodologi
 
 
 def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
-                           lang_name: str = None) -> str:
-    """Mémoire technique en UN seul appel LLM (rapide pour la démo)."""
+                           lang_name: str = None, db=None, user_id: int = None) -> str:
+    """Mémoire technique en UN seul appel LLM. SOURCÉ sur la base de connaissances de
+    l'entreprise quand elle existe (extraits injectés + citations [S1]) → traçabilité ;
+    sinon mémoire générique (l'entreprise est invitée à alimenter sa base)."""
     details = analysis.get("details", {}) if analysis else {}
     quals = company.get("qualifications", [])
     if isinstance(quals, list):
         quals = ", ".join(q.get("name", "") if isinstance(q, dict) else str(q) for q in quals)
     cot = "; ".join(f"{c.get('name')} ({c.get('specialites','')})" for c in cotraitants) or "aucun"
+
+    # RAG : récupère le savoir-faire réel de l'entreprise pertinent pour ce marché
+    sources_block, src_rule = "", ""
+    if db is not None and user_id:
+        try:
+            from app.services import rag
+            q = " ".join(str(details.get(k, "")) for k in ("intitule_marche", "type_marche", "critere_rse")) \
+                + " méthodologie sécurité qualité références moyens"
+            chunks = rag.retrieve(db, user_id, q, k=6)
+            if chunks:
+                sources_block = "\n\nSOURCES (savoir-faire RÉEL de l'entreprise — appuie-toi DESSUS) :\n" + rag.sources_block(chunks)
+                src_rule = ("\n\nRÈGLE : appuie chaque affirmation factuelle (moyens, références, "
+                            "certifications, chiffres) sur ces sources et CITE-les avec [S1], [S2]… "
+                            "N'invente aucun chiffre ni référence absent des sources.")
+        except Exception:
+            pass
+
     prompt = f"""Rédige un mémoire technique pour cet appel d'offres.
 
 MARCHÉ : {details.get('intitule_marche','')}
@@ -43,7 +62,7 @@ CRITÈRES D'ATTRIBUTION : {details.get('criteres_attribution','')}
 
 ENTREPRISE MANDATAIRE : {company.get('name','')} — {company.get('forme_juridique','')},
 {company.get('city','')}, effectif {company.get('effectif','')}, qualifications : {quals}.
-CO-TRAITANTS DU GROUPEMENT : {cot}.
+CO-TRAITANTS DU GROUPEMENT : {cot}.{sources_block}
 
 Structure en Markdown avec ces sections :
 1. Présentation du groupement et répartition des lots
@@ -51,16 +70,16 @@ Structure en Markdown avec ces sections :
 3. Moyens humains et matériels
 4. Démarche qualité, sécurité et RSE (clause d'insertion)
 5. Planning et engagements de délai
-Sois concret, mentionne explicitement la co-traitance par lot. ~600 mots."""
+Sois concret, mentionne explicitement la co-traitance par lot. ~600 mots.{src_rule}"""
     if lang_name and lang_name.lower() != "français":
         prompt += (f"\n\nLANGUE : rédige l'intégralité du mémoire en {lang_name} "
                    f"(titres de sections compris).")
-    return complete(MEMOIRE_SYSTEM, prompt, max_tokens=2000, temperature=0.4, model=MODEL_FAST)
+    return complete(MEMOIRE_SYSTEM, prompt, max_tokens=2000, temperature=0.3, model=MODEL_FAST)
 
 
 def build_dossier(analysis: dict, company: dict, cotraitants: list,
                   project_id: Optional[int] = None, lang_name: str = None,
-                  country: str = "FR") -> dict:
+                  country: str = "FR", db=None, user_id: int = None) -> dict:
     """
     Génère le dossier complet.
     cotraitants : liste de dicts des co-traitants retenus dans le groupement.
@@ -73,7 +92,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
 
     # ── Mémoire technique (IA, un seul appel) ──
     try:
-        memoire_md = _generate_memoire_fast(analysis, company, cotraitants, lang_name)
+        memoire_md = _generate_memoire_fast(analysis, company, cotraitants, lang_name, db=db, user_id=user_id)
     except Exception as e:
         memoire_md = f"# Mémoire technique\n\n(génération indisponible : {e})"
         warnings.append(f"mémoire: {e}")

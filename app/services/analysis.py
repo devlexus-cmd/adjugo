@@ -251,6 +251,7 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
         response = client().messages.create(
             model="claude-sonnet-4-6",
             max_tokens=4000,
+            temperature=0,  # extraction reproductible (le score, lui, est déterministe)
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}]
         )
@@ -279,9 +280,14 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
         if "details" not in result:
             result["details"] = {}
 
-        # S'assurer que le score est dans les bornes
-        result["match_score"] = max(0, min(100, result["match_score"]))
-
+        # SCORE GO/NO-GO DÉTERMINISTE : l'IA a EXTRAIT les faits ci-dessus ; le score est
+        # recalculé par un barème ouvert et reproductible (jamais laissé au LLM).
+        from app.services.dce_scoring import score_dce
+        det = score_dce(result.get("details") or {}, company, criteria)
+        result["match_score"] = det["score"]
+        result["go_decision"] = det["go_decision"]
+        result["score_breakdown"] = det["breakdown"]
+        result["score_deterministe"] = True
         return result
 
     except json.JSONDecodeError:

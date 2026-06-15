@@ -501,7 +501,8 @@ def generate_documents(request: Request, req: DocumentsRequest,
 
     dossier = redaction.build_dossier(project.ai_analysis, company_data, verified, project.id,
                                       lang_name=_user_lang_name(current_user, db),
-                                      country=_user_country(current_user, db))
+                                      country=_user_country(current_user, db),
+                                      db=db, user_id=current_user.id)
 
     # Archiver les CERFA + mémoire dans le dossier de l'AO (coffre-fort)
     try:
