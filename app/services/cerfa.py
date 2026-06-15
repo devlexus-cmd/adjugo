@@ -35,10 +35,13 @@ def _multiline(c, x, y, text, size=9, bold=False, line_height=13):
         c.drawString(x, H - y - (i * line_height), line)
 
 
-def _checkbox(c, x, y, box_size=9.5):
-    c.setFont("Helvetica-Bold", 8)
+def _checkbox(c, cx, cy, size=9.5):
+    """Dessine un « X » CENTRÉ dans la case dont le centre (origine en haut) est (cx, cy).
+    cx/cy = centre réel de la case relevé sur le template (pas le coin)."""
+    c.setFont("Helvetica-Bold", size)
     c.setFillColor(BLACK)
-    c.drawString(x + 1.5, H - y - 0.5, "X")
+    cap = 0.70 * size  # hauteur de capitale approx. d'un X
+    c.drawCentredString(cx, H - cy - 0.5 * cap, "X")
 
 
 def create_overlay(fields_by_page):
@@ -100,9 +103,9 @@ def generate_dc1(c, p):
             {"x": 42, "y": 470, "text": p.get("client", ""), "size": 10, "bold": True},
             {"x": 42, "y": 622, "text": p.get("name", ""), "size": 10, "bold": True},
         ],
-        # Page 2: C - cocher "pour le marche public" (x=72, y=88)
+        # Page 2: C - cocher "pour le marche public" (centre case relevé)
         1: [
-            {"type": "checkbox", "x": 72, "y": 88},
+            {"type": "checkbox", "x": 76.8, "y": 92.3},
         ],
         # Page 3: D - candidat seul OU groupement
         2: [],
@@ -110,8 +113,8 @@ def generate_dc1(c, p):
         3: [],
         # Page 5: F1 - declaration honneur (x=240, y=201), F3 - DC2 (x=71, y=540)
         4: [
-            {"type": "checkbox", "x": 240, "y": 201},
-            {"type": "checkbox", "x": 71, "y": 540},
+            {"type": "checkbox", "x": 245.0, "y": 205.7},
+            {"type": "checkbox", "x": 75.7, "y": 545.0},
         ],
         # Page 6: mandataire (si groupement)
         5: [],
@@ -121,7 +124,7 @@ def generate_dc1(c, p):
     if not is_groupement:
         # Candidat seul
         fields[2] = [
-            {"type": "checkbox", "x": 72, "y": 77},
+            {"type": "checkbox", "x": 76.7, "y": 81.1},
             {"x": 60, "y": 160, "text": c.get("name", ""), "size": 10, "bold": True},
             {"x": 60, "y": 205, "text": addr, "size": 9},
             {"x": 60, "y": 253, "text": c.get("email", ""), "size": 9},
@@ -230,9 +233,9 @@ def _generate_single_dc2(tpl, c, p):
             {"x": 185, "y": 670, "text": fmt_int(c.get("ca_n2", 0) or 0), "size": 8},
             {"x": 315, "y": 670, "text": fmt_int(c.get("ca_n3", 0) or 0), "size": 8},
         ],
-        # Page 3: D2 - NON redressement
+        # Page 3: D2 - NON redressement (centre case relevé)
         2: [
-            {"type": "checkbox", "x": 176, "y": 103},
+            {"type": "checkbox", "x": 180.7, "y": 107.4},
         ],
     }
 
@@ -256,21 +259,16 @@ def generate_dc4(c, p):
             {"x": 42, "y": 420, "text": p.get("client", ""), "size": 10, "bold": True},
             {"x": 42, "y": 545, "text": p.get("name", ""), "size": 10, "bold": True},
         ],
-        # Page 2: C - cocher "document annexe", D - titulaire
+        # Page 2: C - cocher "document annexe à l'offre" (centre case relevé), D - titulaire
         1: [
-            {"type": "checkbox", "x": 63, "y": 100},
-            # D - Nom commercial
-            {"x": 42, "y": 310, "text": c.get("name", ""), "size": 10, "bold": True},
-            # Adresse
-            {"x": 42, "y": 360, "text": addr, "size": 9},
-            # Email
-            {"x": 42, "y": 395, "text": c.get("email", ""), "size": 9},
-            # Telephone
-            {"x": 42, "y": 420, "text": c.get("phone", ""), "size": 9},
-            # SIRET
-            {"x": 42, "y": 455, "text": c.get("siret", ""), "size": 9, "bold": True},
-            # Forme juridique
-            {"x": 42, "y": 500, "text": c.get("forme_juridique", ""), "size": 9},
+            {"type": "checkbox", "x": 77.8, "y": 140.6},
+            # D - valeurs placées sous chaque libellé (positions relevées à la grille)
+            {"x": 44, "y": 370, "text": c.get("name", ""), "size": 10, "bold": True},
+            {"x": 44, "y": 425, "text": addr, "size": 9},
+            {"x": 44, "y": 457, "text": c.get("email", ""), "size": 9},
+            {"x": 44, "y": 487, "text": c.get("phone", ""), "size": 9},
+            {"x": 44, "y": 525, "text": c.get("siret", ""), "size": 9, "bold": True},
+            {"x": 44, "y": 575, "text": c.get("forme_juridique", ""), "size": 9},
         ],
         2: [], 3: [], 4: [], 5: [], 6: [],
         # Page 8: M - Signatures
@@ -307,14 +305,13 @@ def generate_attri1(c, p):
         # Page 1: A - Objet + case "ensemble du marche"
         0: [
             {"x": 42, "y": 415, "text": p.get("name", ""), "size": 10, "bold": True},
-            {"type": "checkbox", "x": 86, "y": 514, "size": 9.7},
+            {"type": "checkbox", "x": 91.2, "y": 518.6, "size": 9.7},
         ],
         # Page 2: B1 - Engagement + prix
         1: [
-            # Case "s'engage propre compte"
-            {"type": "checkbox", "x": 129, "y": 242, "size": 9.7},
-            # Identification (sous la case)
-            {"type": "multiline", "x": 75, "y": 275, "text": ident_text, "size": 8, "line_height": 12},
+            # Case "engage la société" (candidat = personne morale) + dénomination sur sa ligne
+            {"type": "checkbox", "x": 133.6, "y": 324.5, "size": 9.7},
+            {"x": 158, "y": 327, "text": (str(c.get("name", "")) + " — SIRET " + str(c.get("siret", ""))).strip(" —"), "size": 8, "bold": True},
             # TVA
             {"x": 226, "y": 521, "text": "20 %", "size": 9},
             # Montant HT chiffres
@@ -322,9 +319,9 @@ def generate_attri1(c, p):
             # Montant TTC chiffres
             {"x": 210, "y": 622, "text": fmt_eur(ttc), "size": 9, "bold": True},
         ],
-        # Page 3: B4 - Avance NON
+        # Page 3: B4 - Avance NON (centre case relevé)
         2: [
-            {"type": "checkbox", "x": 356, "y": 556, "size": 9.7},
+            {"type": "checkbox", "x": 360.5, "y": 560.9, "size": 9.7},
         ],
         # Page 4: C1 - Signature titulaire
         # Tableau C1: col1=x35 (nom), col2=x267 (lieu/date), col3=x402 (signature)
