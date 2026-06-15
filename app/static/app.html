@@ -49,6 +49,7 @@
       <a class="nav-item" :class="{active:view==='dashboard'}" @click="go('dashboard')"><i data-lucide="layout-dashboard"></i>Tableau de bord</a>
       <a class="nav-item" :class="{active:view==='sourcing'}" @click="go('sourcing')"><i data-lucide="radar"></i>Sourcing IA</a>
       <a class="nav-item" :class="{active:view==='amont'}" @click="go('amont')"><i data-lucide="telescope"></i>Veille amont <span v-if="amont.signals.length" class="badge">{{ amont.signals.length }}</span></a>
+      <a class="nav-item" :class="{active:view==='kb'}" @click="go('kb')"><i data-lucide="brain-circuit"></i>Base de connaissances <span v-if="kb.docs.length" class="badge">{{ kb.docs.length }}</span></a>
       <a class="nav-item" :class="{active:view==='pipeline'}" @click="go('pipeline')"><i data-lucide="square-kanban"></i>Pipeline AO <span class="badge">{{ projects.length }}</span></a>
       <div class="nav-group">CRM</div>
       <a class="nav-item" :class="{active:view==='cotraitants'}" @click="go('cotraitants')"><i data-lucide="handshake"></i>Co-traitants <span class="badge">{{ cotraitants.length }}</span></a>
@@ -606,6 +607,109 @@
                 <div v-else class="muted small" style="margin-top:6px;display:flex;align-items:center;gap:5px"><i data-lucide="file-text" style="width:12px;height:12px"></i>{{ s.source_name }}</div>
               </div>
               <button class="btn icon sm ghost" @click="amontDelete(s)" aria-label="Archiver"><i data-lucide="trash-2"></i></button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ░░ BASE DE CONNAISSANCES (RAG) ░░ -->
+        <section v-if="view==='kb'">
+          <!-- Dépôt de documents — onboarding "Do It For You" -->
+          <div class="card pad">
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="brain-circuit" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Votre savoir-faire, indexé et traçable</b></div>
+            <div class="muted small" style="margin-bottom:13px">Déposez vos <b>mémoires techniques passés</b>, fiches RSE, méthodologies, certifications. Adjugo les indexe pour rédiger vos futures réponses <b>uniquement à partir de votre savoir-faire réel</b> — chaque phrase générée cite sa source. Aucune invention.</div>
+            <div class="row wrap" style="gap:8px;align-items:center">
+              <select class="inp" v-model="kb.kind" style="width:190px">
+                <option value="memoire">Mémoire technique</option><option value="methodologie">Méthodologie</option>
+                <option value="rse">RSE</option><option value="certification">Certification</option>
+                <option value="reference">Référence</option><option value="autre">Autre</option>
+              </select>
+              <button class="btn primary" @click="$refs.kbUpl.click()" :disabled="kb.uploading"><span v-if="kb.uploading" class="spin"></span><i v-else data-lucide="upload"></i>Importer des documents (PDF, multiples)</button>
+              <input ref="kbUpl" type="file" accept=".pdf,.zip,.docx,.txt" multiple class="hidden" @change="kbUpload">
+              <span class="muted small">ou collez du texte ci-dessous</span>
+            </div>
+            <div class="row wrap" style="gap:8px;margin-top:10px;align-items:flex-start">
+              <input class="inp" v-model="kb.textName" placeholder="Titre (ex. Méthodologie chantier)" style="width:240px">
+              <textarea class="inp" v-model="kb.text" placeholder="Collez ici un extrait de votre savoir-faire…" style="flex:1;min-width:260px;height:64px;padding:9px 12px"></textarea>
+              <button class="btn" @click="kbAddText" :disabled="kb.busyText"><span v-if="kb.busyText" class="spin"></span><i v-else data-lucide="plus"></i>Ajouter</button>
+            </div>
+          </div>
+
+          <!-- Documents de la base -->
+          <div class="card" style="margin-top:14px">
+            <div class="ch"><i data-lucide="library"></i><h3>Base de connaissances</h3><div class="spacer"></div>
+              <span class="muted small">{{ kb.docs.length }} document(s) · {{ kb.totalChunks }} extrait(s) indexés</span></div>
+            <div class="cb">
+              <div v-if="!kb.docs.length" class="muted small">Base vide. Importez vos documents pour activer la rédaction sourcée.</div>
+              <div v-for="d in kb.docs" :key="d.id" class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline);gap:10px">
+                <i data-lucide="file-text" style="width:16px;height:16px;color:var(--muted)"></i>
+                <div style="flex:1;min-width:0"><span class="strong small">{{ d.name }}</span>
+                  <span class="pill neutral" style="font-size:10px;margin-left:6px">{{ kbKindLabel(d.kind) }}</span>
+                  <div class="muted small">{{ d.n_chunks }} extrait(s) · {{ Math.round(d.char_count/1000) }}k caractères</div></div>
+                <button class="btn icon sm ghost" @click="kbDelete(d)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recherche traçable -->
+          <div class="card pad" style="margin-top:14px">
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="search-check"></i><b style="font-size:13.5px">Retrouver une source (traçabilité)</b></div>
+            <div class="row wrap" style="gap:8px">
+              <input class="inp" v-model="kb.searchQ" placeholder="Ex. démarche qualité, sécurité chantier, références scolaires…" style="flex:1;min-width:240px" @keyup.enter="kbSearch">
+              <button class="btn" @click="kbSearch"><i data-lucide="search"></i>Chercher dans ma base</button>
+            </div>
+            <div v-if="kb.searchRes" style="margin-top:10px">
+              <div v-if="!kb.searchRes.results.length" class="muted small">Aucun extrait pertinent.</div>
+              <div v-for="r in kb.searchRes.results" :key="r.chunk_id" style="padding:9px 11px;margin-top:7px;background:var(--surface-2);border-radius:10px">
+                <div class="row small" style="gap:6px"><i data-lucide="quote" style="width:12px;height:12px;color:var(--accent-text)"></i><span class="strong">{{ r.doc_name }}</span><span class="muted">· pertinence {{ r.score }}</span></div>
+                <div class="small" style="margin-top:4px;color:var(--text-2)">{{ r.text.slice(0,300) }}…</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mémoire IA — multi-agents sourcé -->
+          <div class="card pad" style="margin-top:14px">
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="file-pen-line" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Rédiger un mémoire technique (multi-agents, sourcé)</b></div>
+            <div class="muted small" style="margin-bottom:11px">Importez le DCE (RC/CCTP/CCAP) : 4 agents s'enchaînent — extraction des exigences → plan → rédaction <b>citant votre base</b> → contrôle de conformité.</div>
+            <button class="btn primary" @click="$refs.kbMem.click()" :disabled="kb.memoireLoading"><span v-if="kb.memoireLoading" class="spin"></span><i v-else data-lucide="sparkles"></i>Importer le DCE & générer</button>
+            <input ref="kbMem" type="file" accept=".pdf,.zip" class="hidden" @change="kbMemoire">
+
+            <div v-if="kb.memoire" style="margin-top:14px">
+              <div class="row wrap" style="gap:8px;margin-bottom:10px">
+                <span class="pill" :class="(kb.memoire.conformity && kb.memoire.conformity.score_conformite>=70)?'go':'a_etudier'" v-if="kb.memoire.conformity && kb.memoire.conformity.score_conformite!=null">Conformité {{ kb.memoire.conformity.score_conformite }}/100</span>
+                <span class="pill" :class="kb.memoire.kb_used?'go':'no_go'">{{ kb.memoire.kb_used?'Sourcé sur votre base':'Aucune source utilisée' }}</span>
+                <span class="pill neutral">{{ kb.memoire.n_sections }} sections</span>
+              </div>
+              <div class="strong small" v-if="kb.memoire.objet" style="margin-bottom:8px">Objet : {{ kb.memoire.objet }}</div>
+              <div v-for="(s,i) in kb.memoire.sections" :key="'s'+i" style="padding:11px 0;border-top:1px solid var(--hairline)">
+                <div class="strong" style="font-size:13.5px;margin-bottom:5px">{{ i+1 }}. {{ s.titre }}</div>
+                <div class="small" style="white-space:pre-wrap;line-height:1.55;color:var(--text-2)">{{ s.content }}</div>
+                <div v-if="s.sources && s.sources.length" class="row wrap" style="gap:5px;margin-top:7px">
+                  <span class="muted small">Sources :</span>
+                  <span v-for="src in s.sources" :key="src.ref+s.titre" class="pill neutral" style="font-size:10px" :title="src.excerpt">{{ src.ref }} · {{ src.doc_name }}</span>
+                </div>
+              </div>
+              <div v-if="kb.memoire.conformity && kb.memoire.conformity.manques && kb.memoire.conformity.manques.length" class="alert-callout" style="margin-top:12px">
+                <i data-lucide="alert-triangle"></i>
+                <div><b>À compléter avant dépôt</b><div class="small" style="margin-top:3px"><span v-for="(m,i) in kb.memoire.conformity.manques" :key="'m'+i">• {{ m }}<br></span></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Questionnaire RFP/RFI/DDQ -->
+          <div class="card pad" style="margin-top:14px">
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="list-checks" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Auto-compléter un questionnaire (RFP / RFI / DDQ)</b></div>
+            <div class="muted small" style="margin-bottom:9px">Collez vos questions, une par ligne — Adjugo répond depuis votre base, avec sources.</div>
+            <textarea class="inp" v-model="kb.qText" placeholder="Quelle est votre démarche qualité ?&#10;Disposez-vous de certifications environnementales ?&#10;Citez 3 références similaires." style="width:100%;height:90px;padding:9px 12px"></textarea>
+            <div class="row" style="margin-top:8px"><button class="btn primary" @click="kbQuestionnaire" :disabled="kb.qLoading"><span v-if="kb.qLoading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répondre</button>
+              <span v-if="kb.qResults" class="muted small" style="margin-left:10px">{{ kb.qResults.covered }}/{{ kb.qResults.count }} couvertes ({{ kb.qResults.coverage_rate }}%)</span></div>
+            <div v-if="kb.qResults" style="margin-top:11px">
+              <div v-for="(a,i) in kb.qResults.answers" :key="'q'+i" style="padding:10px 0;border-top:1px solid var(--hairline)">
+                <div class="row small" style="gap:6px;font-weight:600"><i :data-lucide="a.covered?'circle-check':'circle-help'" :style="a.covered?'color:var(--success)':'color:var(--subtle)'" style="width:14px;height:14px"></i><span>{{ a.question }}</span></div>
+                <div class="small" style="margin-top:5px;padding:9px 12px;background:var(--surface-2);border-radius:8px;white-space:pre-wrap;line-height:1.5">{{ a.answer }}</div>
+                <div v-if="a.sources && a.sources.length" class="row wrap" style="gap:5px;margin-top:5px">
+                  <span v-for="src in a.sources" :key="src.ref+i" class="pill neutral" style="font-size:10px" :title="src.excerpt">{{ src.ref }} · {{ src.doc_name }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </section>

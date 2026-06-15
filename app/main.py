@@ -98,6 +98,8 @@ app.include_router(saved_searches_router)
 app.include_router(org_router)
 from app.routers.amont import router as amont_router
 app.include_router(amont_router)
+from app.routers.knowledge import router as knowledge_router
+app.include_router(knowledge_router)
 
 # Fichiers statiques du logiciel (SPA)
 _static_dir = os.path.join(os.path.dirname(__file__), "static")

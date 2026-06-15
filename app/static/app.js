@@ -86,6 +86,9 @@ createApp({
       discover: { open: false, trade: "electricite", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [],
       countries2: [], adaptedCountries: [], orgCountry: "FR", lang: "fr",
       amont: { signals: [], uploading: false, scanning: false, regions: [], auto: false },
+      kb: { docs: [], totalChunks: 0, uploading: false, kind: "memoire", text: "", textName: "", busyText: false,
+            searchQ: "", searchRes: null, qText: "", qResults: null, qLoading: false,
+            memoire: null, memoireLoading: false },
       amontRegions: [
         { code: "IDF", nom: "Île-de-France", deps: ["75", "77", "78", "91", "92", "93", "94", "95"] },
         { code: "ARA", nom: "Auvergne-Rhône-Alpes", deps: ["01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"] },
@@ -112,8 +115,8 @@ createApp({
             cotraitants: [], stOpen: false, st: { trade: "electricite", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             qa: [], qaInput: "", qaLoading: false },
-      titles: { amont: "Veille amont — signaux d'investissement", dashboard: "Tableau de bord", sourcing: "Sourcing IA — appels d'offres", agent: "Agent IA — Pipeline multi-agents", pipeline: "Pipeline des appels d'offres", veille: "Veille des marchés publics", cotraitants: "Réseau de co-traitants", contacts: "Contacts CRM", documents: "Coffre-fort documentaire", invoices: "Devis & Factures", company: "Profil entreprise", criteria: "Critères Go/No-Go", team: "Équipe", billing: "Abonnement", aodetail: "Appel d'offres" },
-      subtitles: { amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres" },
+      titles: { kb: "Base de connaissances — savoir-faire & mémoires IA", amont: "Veille amont — signaux d'investissement", dashboard: "Tableau de bord", sourcing: "Sourcing IA — appels d'offres", agent: "Agent IA — Pipeline multi-agents", pipeline: "Pipeline des appels d'offres", veille: "Veille des marchés publics", cotraitants: "Réseau de co-traitants", contacts: "Contacts CRM", documents: "Coffre-fort documentaire", invoices: "Devis & Factures", company: "Profil entreprise", criteria: "Critères Go/No-Go", team: "Équipe", billing: "Abonnement", aodetail: "Appel d'offres" },
+      subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres" },
     };
   },
   computed: {
@@ -193,6 +196,7 @@ createApp({
       if (v === "agent") this.loadStats();
       if (v === "sourcing") { this.loadTrades(); this.loadAlerts(); this.loadCountries(); }
       if (v === "amont") this.loadAmont();
+      if (v === "kb") this.kbLoad();
       if (v === "team") this.loadOrg();
       if (v === "billing") { this.loadPlan(); this.loadStats(); }
     },
@@ -756,6 +760,69 @@ createApp({
     async amontDelete(s) {
       try { await this.api("DELETE", "/api/amont/" + s.id); this.amont.signals = this.amont.signals.filter(x => x.id !== s.id); }
       catch (e) { this.notify(e.message, "err"); }
+    },
+
+    // ── Base de connaissances (RAG) ──
+    async kbLoad() {
+      try { const r = await this.api("GET", "/api/knowledge/"); this.kb.docs = r.docs || []; this.kb.totalChunks = r.total_chunks || 0; }
+      catch (e) {}
+    },
+    kbKindLabel(k) { return ({ memoire: "Mémoire technique", rse: "RSE", methodologie: "Méthodologie", certification: "Certification", reference: "Référence", autre: "Autre" })[k] || k; },
+    async kbUpload(e) {
+      const files = Array.from(e.target.files || []); if (!files.length) return;
+      e.target.value = ""; this.kb.uploading = true;
+      let ok = 0;
+      try {
+        for (const file of files) {
+          const fd = new FormData(); fd.append("file", file); fd.append("kind", this.kb.kind);
+          try { await this.api("POST", "/api/knowledge/upload", fd, true); ok++; }
+          catch (err) { this.notify(file.name + " : " + err.message, "err"); }
+        }
+        await this.kbLoad();
+        if (ok) this.notify(ok + " document(s) ajouté(s) à la base");
+      } finally { this.kb.uploading = false; }
+    },
+    async kbAddText() {
+      if ((this.kb.text || "").trim().length < 40) { this.notify("Texte trop court", "err"); return; }
+      this.kb.busyText = true;
+      try {
+        await this.api("POST", "/api/knowledge/text", { name: this.kb.textName || "Texte collé", text: this.kb.text, kind: this.kb.kind });
+        this.kb.text = ""; this.kb.textName = ""; await this.kbLoad(); this.notify("Ajouté à la base");
+      } catch (e) { this.notify(e.message, "err"); } finally { this.kb.busyText = false; }
+    },
+    async kbDelete(d) {
+      try { await this.api("DELETE", "/api/knowledge/" + d.id); this.kb.docs = this.kb.docs.filter(x => x.id !== d.id); }
+      catch (e) { this.notify(e.message, "err"); }
+    },
+    async kbSearch() {
+      if (!(this.kb.searchQ || "").trim()) return;
+      try { this.kb.searchRes = await this.api("POST", "/api/knowledge/search", { query: this.kb.searchQ, k: 6 }); }
+      catch (e) { this.notify(e.message, "err"); }
+    },
+    async kbMemoire(e) {
+      const file = e.target.files[0]; if (!file) return; e.target.value = "";
+      if (!this.kb.docs.length) { this.notify("Ajoutez d'abord des documents à votre base", "err"); return; }
+      this.kb.memoireLoading = true; this.kb.memoire = null;
+      try {
+        const fd = new FormData(); fd.append("file", file);
+        this.kb.memoire = await this.api("POST", "/api/knowledge/memoire-upload", fd, true);
+        this.notify("Mémoire généré (" + (this.kb.memoire.n_sections || 0) + " sections)");
+      } catch (err) {
+        if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
+        else this.notify(err.message, "err");
+      } finally { this.kb.memoireLoading = false; }
+    },
+    async kbQuestionnaire() {
+      const qs = (this.kb.qText || "").split("\n").map(s => s.trim()).filter(Boolean);
+      if (!qs.length) { this.notify("Collez vos questions (une par ligne)", "err"); return; }
+      this.kb.qLoading = true; this.kb.qResults = null;
+      try {
+        this.kb.qResults = await this.api("POST", "/api/knowledge/questionnaire", { questions: qs });
+        this.notify(this.kb.qResults.covered + "/" + this.kb.qResults.count + " réponses trouvées dans votre base");
+      } catch (err) {
+        if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
+        else this.notify(err.message, "err");
+      } finally { this.kb.qLoading = false; }
     },
     async srcCotraitants() {
       this.src.ct.searching = true; this.src.ct.companies = []; this.src.ct.errors = [];

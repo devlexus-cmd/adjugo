@@ -1,0 +1,148 @@
+"""
+Adjugo — RAG à traçabilité (base de connaissances entreprise).
+
+L'entreprise dépose ses documents (mémoires passés, RSE, méthodologies…). On les
+découpe en chunks indexés. À la génération, on récupère les chunks pertinents par
+BM25 (pur Python, aucune dépendance ni clé externe) et on les fournit à l'IA comme
+SEULE source autorisée. Chaque réponse cite le chunk exact → anti-hallucination.
+
+Choix d'implémentation : BM25 lexical plutôt qu'embeddings, pour rester souverain,
+sans appel réseau, déterministe et explicable (cohérent avec la charte Adjugo).
+"""
+import math
+import re
+from collections import Counter
+
+from sqlalchemy.orm import Session
+
+from app.models import KnowledgeDoc, KnowledgeChunk
+
+# Mots vides FR (réduit le bruit lexical du BM25)
+_STOP = set("""
+au aux avec ce ces dans de des du elle en et eux il je la le les leur lui ma mais me
+meme mes moi mon ne nos notre nous on ou par pas pour qu que qui sa se ses son sur ta
+te tes toi ton tu un une vos votre vous c d j l a m n s t y ete etre avoir fait sont est
+plus tres etc afin ainsi cette cet leurs comme entre selon dont chaque tout tous toute
+toutes lors apres avant sous aussi donc alors quel quelle quels quelles
+""".split())
+
+_TOKEN_RE = re.compile(r"[a-zà-ÿ0-9]+", re.IGNORECASE)
+
+
+def _tokens(text: str) -> list:
+    out = []
+    for w in _TOKEN_RE.findall((text or "").lower()):
+        if len(w) > 2 and w not in _STOP:
+            out.append(w)
+    return out
+
+
+# ── Chunking ────────────────────────────────────────────────────────────────
+def chunk_text(text: str, target: int = 900, overlap: int = 150) -> list:
+    """Découpe en chunks ~target caractères, sur des frontières de paragraphe/phrase,
+    avec léger recouvrement pour ne pas couper une idée en deux."""
+    text = re.sub(r"[ \t]+", " ", (text or "").strip())
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    if not text:
+        return []
+    # paragraphes d'abord
+    paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    chunks, buf = [], ""
+    for p in paras:
+        if len(buf) + len(p) + 1 <= target:
+            buf = (buf + "\n" + p).strip()
+        else:
+            if buf:
+                chunks.append(buf)
+            if len(p) <= target:
+                buf = p
+            else:
+                # paragraphe trop long → découpe par phrases
+                sent = re.split(r"(?<=[.!?])\s+", p)
+                cur = ""
+                for s in sent:
+                    if len(cur) + len(s) + 1 <= target:
+                        cur = (cur + " " + s).strip()
+                    else:
+                        if cur:
+                            chunks.append(cur)
+                        cur = s[:target]
+                buf = cur
+    if buf:
+        chunks.append(buf)
+    # recouvrement : on préfixe chaque chunk par la fin du précédent
+    if overlap > 0 and len(chunks) > 1:
+        out = [chunks[0]]
+        for i in range(1, len(chunks)):
+            tail = chunks[i - 1][-overlap:]
+            out.append((tail + " … " + chunks[i]).strip())
+        chunks = out
+    return [c for c in chunks if len(c) > 40]
+
+
+# ── Indexation ──────────────────────────────────────────────────────────────
+def index_document(db: Session, user_id: int, name: str, text: str, kind: str = "autre") -> KnowledgeDoc:
+    chunks = chunk_text(text)
+    doc = KnowledgeDoc(user_id=user_id, name=name[:300], kind=kind,
+                       text=(text or "")[:400000], char_count=len(text or ""),
+                       n_chunks=len(chunks))
+    db.add(doc)
+    db.flush()  # pour récupérer doc.id
+    for i, ck in enumerate(chunks):
+        db.add(KnowledgeChunk(doc_id=doc.id, user_id=user_id, ordinal=i,
+                              text=ck, doc_name=name[:300]))
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+# ── Recherche BM25 ──────────────────────────────────────────────────────────
+def retrieve(db: Session, user_id: int, query: str, k: int = 6, min_score: float = 0.0) -> list:
+    """Renvoie les k chunks les plus pertinents pour `query` dans la base de
+    l'utilisateur. Chaque résultat est traçable (doc_name + extrait + id)."""
+    rows = db.query(KnowledgeChunk).filter(KnowledgeChunk.user_id == user_id).all()
+    if not rows:
+        return []
+    docs_tokens = [_tokens(r.text) for r in rows]
+    N = len(rows)
+    avgdl = sum(len(t) for t in docs_tokens) / max(1, N)
+    # document frequency
+    df = Counter()
+    for toks in docs_tokens:
+        for t in set(toks):
+            df[t] += 1
+    q = _tokens(query)
+    if not q:
+        return []
+    k1, b = 1.5, 0.75
+    scored = []
+    for r, toks in zip(rows, docs_tokens):
+        if not toks:
+            continue
+        tf = Counter(toks)
+        dl = len(toks)
+        s = 0.0
+        for t in q:
+            if t not in tf:
+                continue
+            idf = math.log(1 + (N - df[t] + 0.5) / (df[t] + 0.5))
+            s += idf * (tf[t] * (k1 + 1)) / (tf[t] + k1 * (1 - b + b * dl / avgdl))
+        if s > min_score:
+            scored.append((s, r))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    out = []
+    for s, r in scored[:k]:
+        out.append({
+            "chunk_id": r.id, "doc_id": r.doc_id, "doc_name": r.doc_name,
+            "ordinal": r.ordinal, "text": r.text, "score": round(s, 3),
+        })
+    return out
+
+
+def sources_block(chunks: list) -> str:
+    """Formate les chunks récupérés en bloc de sources numérotées [S1], [S2]…
+    à injecter dans le prompt. L'IA ne doit citer QUE ces sources."""
+    lines = []
+    for i, c in enumerate(chunks, 1):
+        lines.append(f"[S{i}] (source: « {c['doc_name']} »)\n{c['text']}")
+    return "\n\n".join(lines)

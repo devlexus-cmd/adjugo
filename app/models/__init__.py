@@ -397,3 +397,35 @@ class Signal(Base):
     archived = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=utcnow)
+
+
+# === BASE DE CONNAISSANCES (RAG à traçabilité) ===
+# L'entreprise dépose ses documents bruts (mémoires techniques passés, fiches RSE,
+# méthodologies, certifications…). Adjugo en construit une base interrogeable :
+# chaque réponse générée par l'IA cite le chunk source exact (anti-hallucination).
+
+class KnowledgeDoc(Base):
+    __tablename__ = "knowledge_docs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    name = Column(String(300), nullable=False)           # nom du fichier / titre
+    kind = Column(String(40), default="autre")           # memoire | rse | methodologie | certification | reference | autre
+    text = Column(Text, default="")                      # texte intégral extrait
+    char_count = Column(Integer, default=0)
+    n_chunks = Column(Integer, default=0)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class KnowledgeChunk(Base):
+    __tablename__ = "knowledge_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    doc_id = Column(Integer, ForeignKey("knowledge_docs.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    ordinal = Column(Integer, default=0)                 # position du chunk dans le doc
+    text = Column(Text, default="")                      # contenu du chunk (cité comme source)
+    doc_name = Column(String(300), default="")           # dénormalisé pour la traçabilité
+    created_at = Column(DateTime, default=utcnow)
