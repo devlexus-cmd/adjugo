@@ -5,6 +5,7 @@ Aucune clé requise. Données réelles, traçables par idweb + url_avis.
 """
 import re
 import logging
+from datetime import date
 from typing import Optional
 
 import httpx
@@ -31,6 +32,9 @@ class BoampSource(TenderSource):
             where = f"({where}) AND ({deps})"
         if getattr(criteria, "type_marche", "") in ("TRAVAUX", "SERVICES", "FOURNITURES"):
             where = f'({where}) AND type_marche like "{criteria.type_marche}"'
+        # On ne remonte que les AO ENCORE OUVERTS (date limite de réponse non passée).
+        # Exclut de fait les avis d'attribution / clôturés → crédibilité du sourcing.
+        where = f"({where}) AND datelimitereponse >= date'{date.today().isoformat()}'"
         params = {"limit": min(criteria.limit, 50), "order_by": "-dateparution",
                   "where": where, "select": SELECT}
         try:

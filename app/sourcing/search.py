@@ -5,6 +5,7 @@ remontées (jamais masquées, jamais remplacées par de l'inventé).
 """
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime
 from typing import Optional
 
 from app.sourcing.base import TenderSource, TenderCriteria, CompanySource
@@ -33,6 +34,12 @@ class TenderSearchService:
                     errors.append(SourceError(source=src.name, message=str(e)[:200]))
 
         deduped = _dedup_tenders(tenders)
+        # On n'affiche JAMAIS un AO dont la date limite de réponse est passée
+        # (crédibilité). Les AO sans date connue sont conservés (récents/non parsés).
+        before = len(deduped)
+        deduped = [t for t in deduped if not _is_closed(t.date_limite)]
+        closed = before - len(deduped)
+
         for t in deduped:
             t.score = score_tender(t, company, gonogo)
         deduped.sort(key=lambda t: (t.score.total if t.score else 0), reverse=True)
@@ -42,7 +49,19 @@ class TenderSearchService:
             "errors": errors,
             "sources_queried": [s.name for s in self.sources],
             "count": len(deduped),
+            "closed_filtered": closed,
         }
+
+
+def _is_closed(date_limite) -> bool:
+    """True si la date limite de réponse est passée (AO clôturé)."""
+    if not date_limite:
+        return False
+    try:
+        d = datetime.strptime(str(date_limite)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return False
+    return d < date.today()
 
 
 def _dedup_tenders(tenders: list[NormalizedTender]) -> list[NormalizedTender]:
