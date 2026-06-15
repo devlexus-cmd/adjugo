@@ -39,18 +39,18 @@ Adjugo est un service en ligne (SaaS) d'aide à la réponse aux marchés publics
 
 ## 3. Offres, prix et facturation à l'usage
 
-Le Service est proposé selon les formules suivantes (prix indiqués **hors taxes (HT)**, par mois et par compte, sauf mention contraire) :
+Le Service est proposé selon les formules suivantes (prix **nets — TVA non applicable, art. 293 B du CGI**, par mois et par compte, sauf mention contraire) :
 
 | Formule | Prix | Contenu principal |
 |---|---|---|
-| **Découverte** | **0 € / mois** | Veille + **3 analyses d'appel d'offres** incluses |
-| **Pro** | **129 € HT / mois** | `[À COMPLÉTER : quota d'analyses AO incluses dans la formule Pro]` |
-| **Business** | **199 € HT / mois** | `[À COMPLÉTER : quota d'analyses AO incluses dans la formule Business]` |
+| **Starter** | **0 € / mois** | Veille + **2 analyses d'appel d'offres** incluses / mois |
+| **Pro** | **129 € / mois** | Veille + **30 analyses d'appel d'offres** incluses / mois + génération de dossier |
+| **Business** | **199 € / mois** | Veille + **100 analyses d'appel d'offres** incluses / mois + fonctions de groupement |
 | **Enterprise** | **Sur devis** | Groupements, grandes structures, volumes élevés, fonctionnalités dédiées |
 
 ### 3.1. Facturation à l'usage (au-delà du quota)
 
-Au-delà du quota d'analyses d'appel d'offres inclus dans la formule souscrite, chaque **analyse AO supplémentaire** est facturée **5 € HT l'unité**. Ces analyses supplémentaires sont décomptées au fil de l'usage et facturées `[À COMPLÉTER : modalité — ex. à la fin de chaque période de facturation, ou par achat de crédits prépayés]`.
+Au-delà du quota d'analyses d'appel d'offres inclus dans la formule souscrite, chaque **analyse AO supplémentaire** est facturée **5 € l'unité** (TVA non applicable, art. 293 B du CGI). Ces analyses supplémentaires sont décomptées au fil de l'usage et facturées à la fin de chaque période de facturation mensuelle.
 
 ### 3.2. Offre Enterprise
 
@@ -58,11 +58,9 @@ Les conditions tarifaires et fonctionnelles de l'offre **Enterprise** (notamment
 
 ### 3.3. TVA
 
-L'Éditeur dispose du numéro de TVA intracommunautaire **FR63105406813**.
+L'Éditeur bénéficie de la **franchise en base de TVA** (article 293 B du Code général des impôts). En conséquence, **la TVA n'est pas facturée** : les prix indiqués sont **nets**, et les factures portent la mention **« TVA non applicable, article 293 B du CGI »**. Aucune TVA n'est due ni récupérable par le Client à ce titre.
 
-> ⚠️ **À CONFIRMER selon votre régime fiscal réel — deux cas :**
-> - **Si franchise en base de TVA** (régime fréquent pour une entreprise individuelle récente) : la TVA n'est pas facturée. Les prix affichés sont **nets**, et la mention légale obligatoire sur les factures est **« TVA non applicable, article 293 B du CGI »**. Dans ce cas, supprimer les mentions « HT » de la grille tarifaire.
-> - **Si assujetti à la TVA** (régime réel) : les prix sont **hors taxes** et la **TVA française** au taux en vigueur (20 %) s'ajoute. Pour un Client professionnel établi dans un autre État membre de l'UE fournissant un numéro de TVA intracommunautaire valide, l'autoliquidation peut s'appliquer.
+Le numéro de TVA intracommunautaire de l'Éditeur est **FR63105406813** (utilisé le cas échéant pour les opérations intracommunautaires). En cas de dépassement des seuils de la franchise, l'Éditeur informera les Clients de son assujettissement et de l'application de la TVA au taux en vigueur.
 
 ### 3.4. Évolution des prix
 

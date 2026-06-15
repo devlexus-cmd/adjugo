@@ -1035,7 +1035,7 @@
             <div class="plan">
               <h3>Starter</h3><div class="muted small">Pour découvrir</div>
               <div class="price">0€<small>/mois</small></div>
-              <ul><li>3 analyses IA / mois</li><li>Veille BOAMP réelle</li><li>1 utilisateur</li><li>Coffre-fort 500 Mo</li></ul>
+              <ul><li>2 analyses IA / mois</li><li>Veille BOAMP réelle</li><li>1 utilisateur</li><li>Coffre-fort 500 Mo</li></ul>
               <div class="cur" v-if="(plan.plan||'starter')==='starter'">Votre plan actuel</div>
               <button v-else class="btn block" disabled>Inclus</button>
             </div>
@@ -1043,14 +1043,14 @@
               <div class="tag">Le plus choisi</div>
               <h3>Pro</h3><div class="muted small">Pour répondre régulièrement</div>
               <div class="price">129€<small>/mois</small></div>
-              <ul><li>20 analyses IA / mois (puis 5 €/analyse)</li><li>Base de connaissances & mémoire IA sourcé</li><li>Veille amont & co-traitants vérifiés</li><li>Génération CERFA + DUME</li><li>Coffre-fort 10 Go</li></ul>
+              <ul><li>30 analyses IA / mois (puis 5 €/analyse)</li><li>Base de connaissances & mémoire IA sourcé</li><li>Veille amont & co-traitants vérifiés</li><li>Génération CERFA + DUME</li><li>Coffre-fort 10 Go</li></ul>
               <div class="cur" v-if="plan.plan==='pro'">Votre plan actuel</div>
               <button v-else class="btn primary block" @click="checkout('pro')">Passer au Pro</button>
             </div>
             <div class="plan">
               <h3>Business</h3><div class="muted small">Pour les équipes & ETI</div>
               <div class="price">199€<small>/mois</small></div>
-              <ul><li>60 analyses IA / mois (puis 5 €/analyse)</li><li>Multi-utilisateurs</li><li>Veille multi-domaines & multi-pays</li><li>Accès API & support prioritaire</li><li>Coffre-fort 100 Go</li></ul>
+              <ul><li>100 analyses IA / mois (puis 5 €/analyse)</li><li>Multi-utilisateurs</li><li>Veille multi-domaines & multi-pays</li><li>Accès API & support prioritaire</li><li>Coffre-fort 100 Go</li></ul>
               <div class="cur" v-if="plan.plan==='business'">Votre plan actuel</div>
               <button v-else class="btn primary block" @click="checkout('business')">Passer au Business</button>
             </div>

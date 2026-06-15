@@ -144,7 +144,7 @@ Génération des pièces (CERFA, DUME, mémoire), tout sourcé, prêt à dépose
 > « C'est la première chose qu'on a verrouillée. Adjugo ne ressort **que des données réelles, avec la source, la date et le lien**. S'il ne sait pas, il écrit « inconnu » — il n'invente jamais une référence ni un chiffre. Et le scoring Go/No-Go n'est pas de l'IA opaque : c'est un barème déterministe, transparent, que vous pouvez auditer. Vous gardez la main : Adjugo prépare, vous validez et signez. »
 
 **« C'est trop cher. »**
-> « Comparez au temps passé : un mémoire technique, c'est facilement une à deux journées. Le Pro est à 129 €/mois — moins qu'une demi-journée de votre temps. Et **un seul marché gagné** rembourse l'abonnement pour des années. Vous pouvez commencer **gratuitement** : l'offre Découverte inclut la veille et 3 analyses, sans carte bancaire. Vous ne payez que si ça vous rapporte. »
+> « Comparez au temps passé : un mémoire technique, c'est facilement une à deux journées. Le Pro est à 129 €/mois — moins qu'une demi-journée de votre temps. Et **un seul marché gagné** rembourse l'abonnement pour des années. Vous pouvez commencer **gratuitement** : l'offre Starter inclut la veille et 2 analyses, sans carte bancaire. Vous ne payez que si ça vous rapporte. »
 
 **« Et le RGPD / l'IA, niveau réglementaire ? »**
 > « Adjugo travaille sur des **données publiques** (BOAMP, TED, SIRENE, BODACC, délibérations open-data) — pas de données personnelles sensibles. Vos documents restent les vôtres. *(À COMPLÉTER par l'éditeur : hébergement et localisation des données — actuellement région US sur Railway, migration UE recommandée avant argumentaire RGPD ferme ; politique de conservation ; sous-traitant IA = Anthropic.)* On vous fournit la doc de conformité sur demande. Côté IA Act, Adjugo est un outil d'aide à la décision : la décision finale reste humaine. »
@@ -192,7 +192,7 @@ Je reviens vers vous rapidement. Au-delà de la veille en amont, ce que les entr
 
 Le tout sans aucune invention : chaque info est sourcée (source + date + lien), sinon c'est marqué « inconnu ».
 
-Vous pouvez tester gratuitement (veille + 3 analyses, sans carte). 15 min suffisent pour voir si ça vaut le coup pour vous.
+Vous pouvez tester gratuitement (veille + 2 analyses, sans carte). 15 min suffisent pour voir si ça vaut le coup pour vous.
 
 Quel créneau cette semaine ?
 

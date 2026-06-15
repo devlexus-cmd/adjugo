@@ -44,7 +44,7 @@
 
 ## 6. Commercialisation ✅
 - **Pricing aligné** (décidé) partout : Découverte 0 € · Pro 129 € · Business 199 € ·
-  5 €/analyse au-delà · Enterprise sur devis. Quotas inclus : 3 / 20 / 60 analyses.
+  5 €/analyse au-delà · Enterprise sur devis. Quotas inclus : 2 / 30 / 100 analyses.
 - Pack légal (mentions légales, CGV, confidentialité RGPD), kit de prospection, plan de
   mise en production → `docs/`. **Dossier de lancement** : `docs/LANCEMENT.md`.
 

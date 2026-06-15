@@ -45,12 +45,17 @@ def create_checkout(plan: str, current_user: User = Depends(get_current_user), d
         raise HTTPException(400, str(e))
 
 
+def _limit(plan: str) -> int:
+    """Quota d'analyses du plan — source unique : settings.PLAN_LIMITS."""
+    return settings.PLAN_LIMITS.get(plan, {}).get("analyses", 0)
+
+
 @router.get("/status")
 def get_subscription_status(current_user: User = Depends(get_current_user)):
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
     if not current_user.stripe_customer_id:
-        return {"plan": "starter", "status": "active", "analyses_limit": 3}
+        return {"plan": "starter", "status": "active", "analyses_limit": _limit("starter")}
 
     try:
         subscriptions = stripe.Subscription.list(
@@ -60,20 +65,20 @@ def get_subscription_status(current_user: User = Depends(get_current_user)):
         )
 
         if not subscriptions.data:
-            return {"plan": "starter", "status": "active", "analyses_limit": 3}
+            return {"plan": "starter", "status": "active", "analyses_limit": _limit("starter")}
 
         sub = subscriptions.data[0]
         price_id = sub["items"]["data"][0]["price"]["id"]
 
         if price_id == settings.STRIPE_PRICE_PRO:
-            return {"plan": "pro", "status": "active", "analyses_limit": 50, "current_period_end": sub.current_period_end}
+            return {"plan": "pro", "status": "active", "analyses_limit": _limit("pro"), "current_period_end": sub.current_period_end}
         elif price_id == settings.STRIPE_PRICE_BUSINESS:
-            return {"plan": "business", "status": "active", "analyses_limit": -1, "current_period_end": sub.current_period_end}
+            return {"plan": "business", "status": "active", "analyses_limit": _limit("business"), "current_period_end": sub.current_period_end}
 
-        return {"plan": "starter", "status": "active", "analyses_limit": 3}
+        return {"plan": "starter", "status": "active", "analyses_limit": _limit("starter")}
 
     except stripe.error.StripeError:
-        return {"plan": "starter", "status": "active", "analyses_limit": 3}
+        return {"plan": "starter", "status": "active", "analyses_limit": _limit("starter")}
 
 
 @router.post("/overage")

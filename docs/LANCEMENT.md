@@ -19,9 +19,9 @@ au dossier déposé.
 ## 2. Offre & prix (validés)
 | Palier | Cible | Prix | Inclus |
 |---|---|---|---|
-| Découverte | tous | **0 €** | veille + 3 analyses IA/mois |
-| Pro | indé · TPE/PME | **129 €/mo** | 20 analyses/mois, base de connaissances, mémoire IA, CERFA |
-| Business | PME · équipes | **199 €/mo** | 60 analyses/mois, multi-utilisateurs, multi-domaines/pays, API |
+| Starter | tous | **0 €** | veille + 2 analyses IA/mois |
+| Pro | indé · TPE/PME | **129 €/mo** | 30 analyses/mois, base de connaissances, mémoire IA, CERFA |
+| Business | PME · équipes | **199 €/mo** | 100 analyses/mois, multi-utilisateurs, multi-domaines/pays, API |
 | À la carte | tous | **5 €/analyse** | au-delà du quota mensuel |
 | Enterprise | groupements / grands comptes | **sur devis** | — |
 
