@@ -90,6 +90,8 @@ createApp({
       kb: { docs: [], totalChunks: 0, uploading: false, kind: "memoire", text: "", textName: "", busyText: false,
             searchQ: "", searchRes: null, qText: "", qResults: null, qLoading: false,
             memoire: null, memoireLoading: false },
+      cospace: { spaces: [], current: null, newName: "", newMarche: "", inviteEmail: "", inviteRole: "cotraitant",
+                 lastToken: "", joinToken: "", dceText: "", memoire: null, generating: false },
       amontRegions: [
         { code: "IDF", nom: "Île-de-France", deps: ["75", "77", "78", "91", "92", "93", "94", "95"] },
         { code: "ARA", nom: "Auvergne-Rhône-Alpes", deps: ["01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"] },
@@ -194,7 +196,7 @@ createApp({
       if (v === "contacts") this.loadContacts();
       if (v === "invoices") this.loadInvoices();
       if (v === "documents") this.loadDocuments();
-      if (v === "cotraitants") { this.loadCotraitants(); this.loadTrades(); }
+      if (v === "cotraitants") { this.loadCotraitants(); this.loadTrades(); this.coLoad(); }
       if (v === "agent") this.loadStats();
       if (v === "sourcing") { this.loadTrades(); this.loadAlerts(); this.loadCountries(); }
       if (v === "amont") this.loadAmont();
@@ -840,6 +842,56 @@ createApp({
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
       } finally { this.kb.qLoading = false; }
+    },
+
+    // ── Espace co-traitance (Merged Brain) ──
+    async coLoad() {
+      try { const r = await this.api("GET", "/api/cospace/"); this.cospace.spaces = r.spaces || []; if (this.cospace.current) { const c = this.cospace.spaces.find(s => s.id === this.cospace.current.id); if (c) this.cospace.current = c; } }
+      catch (e) {}
+    },
+    async coCreate() {
+      if (!(this.cospace.newName || "").trim()) { this.notify("Nom de l'espace requis", "err"); return; }
+      try {
+        const r = await this.api("POST", "/api/cospace/", { name: this.cospace.newName, marche: this.cospace.newMarche });
+        this.cospace.newName = ""; this.cospace.newMarche = ""; await this.coLoad(); this.coOpen(r.space); this.notify("Espace créé");
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async coOpen(s) {
+      try { const r = await this.api("GET", "/api/cospace/" + s.id); this.cospace.current = r.space; this.cospace.memoire = null; this.cospace.lastToken = ""; }
+      catch (e) { this.notify(e.message, "err"); }
+    },
+    async coInvite() {
+      if (!this.cospace.current) return;
+      if (!(this.cospace.inviteEmail || "").includes("@")) { this.notify("Email invalide", "err"); return; }
+      try {
+        const r = await this.api("POST", "/api/cospace/" + this.cospace.current.id + "/invite", { email: this.cospace.inviteEmail, role: this.cospace.inviteRole });
+        this.cospace.lastToken = r.join_token; this.cospace.inviteEmail = ""; await this.coOpen(this.cospace.current);
+        this.notify("Invitation créée — partagez le code");
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async coJoin() {
+      if (!(this.cospace.joinToken || "").trim()) { this.notify("Collez le code d'invitation", "err"); return; }
+      try {
+        const r = await this.api("POST", "/api/cospace/join", { token: this.cospace.joinToken.trim() });
+        this.cospace.joinToken = ""; await this.coLoad(); if (r.space) this.coOpen(r.space); this.notify("Vous avez rejoint l'espace");
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async coDelete(s) {
+      try { await this.api("DELETE", "/api/cospace/" + s.id); if (this.cospace.current && this.cospace.current.id === s.id) this.cospace.current = null; await this.coLoad(); }
+      catch (e) { this.notify(e.message, "err"); }
+    },
+    coIsOwner(s) { return s && s.owner_id === this.user.id; },
+    async coMerge() {
+      if (!this.cospace.current) return;
+      if ((this.cospace.dceText || "").trim().length < 60) { this.notify("Collez le DCE (RC/CCTP) — min. 60 caractères", "err"); return; }
+      this.cospace.generating = true; this.cospace.memoire = null;
+      try {
+        this.cospace.memoire = await this.api("POST", "/api/cospace/" + this.cospace.current.id + "/memoire", { dce_text: this.cospace.dceText });
+        this.notify("Mémoire fusionné généré (" + (this.cospace.memoire.n_sections || 0) + " sections)");
+      } catch (err) {
+        if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
+        else this.notify(err.message, "err");
+      } finally { this.cospace.generating = false; }
     },
     async srcCotraitants() {
       this.src.ct.searching = true; this.src.ct.companies = []; this.src.ct.errors = [];

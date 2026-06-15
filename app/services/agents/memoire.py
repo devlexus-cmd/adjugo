@@ -182,3 +182,77 @@ def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int
         "kb_used": kb_used,
         "n_sections": len(sections),
     }
+
+
+# ── MERGED BRAIN : mémoire unifié de co-traitance ────────────────────────────
+_MERGED_SYS = """Tu rédiges UNE section de mémoire technique pour un GROUPEMENT d'entreprises
+qui répondent ensemble à un marché. Tu disposes du savoir-faire de PLUSIEURS entreprises
+(sources attribuées à chacune).
+RÈGLES ABSOLUES :
+- Tu ne t'appuies QUE sur les SOURCES fournies. Cite [S1], [S2]…
+- Rédige un texte UNIFIÉ et FLUIDE, comme une seule offre cohérente (ton homogène),
+  jamais un copier-coller de deux parties juxtaposées.
+- Attribue chaque savoir-faire à la BONNE entreprise et, quand c'est pertinent, CROISE
+  les apports (ex. « la méthodologie de [Entreprise A] s'appuie sur les moyens de [Entreprise B] »).
+- Si l'objectif n'est pas couvert par les sources, écris « [À compléter : … ] » plutôt qu'inventer.
+- Insiste sur les critères les plus PONDÉRÉS de la grille de notation.
+Réponds en texte (pas de JSON)."""
+
+
+def _write_merged_section(section, chunks, names_by_user, criteres=None):
+    src = rag.sources_block_attributed(chunks, names_by_user) if chunks else "(aucune source)"
+    grille = ""
+    if criteres:
+        items = "; ".join(f"{c.get('intitule','')} ({c.get('ponderation') or '?'})"
+                          for c in criteres if isinstance(c, dict) and c.get("intitule"))
+        if items:
+            grille = f"\n\nGRILLE PONDÉRÉE : {items}"
+    companies = ", ".join(sorted(set(names_by_user.values())))
+    user = f"""Section : {section.get('titre')}
+Objectif : {section.get('objectif','')}
+Entreprises du groupement : {companies}{grille}
+
+SOURCES ATTRIBUÉES :
+{src}
+
+Rédige la section unifiée (250-450 mots), en attribuant et en croisant les apports."""
+    try:
+        content = complete(_MERGED_SYS, user, max_tokens=1500, temperature=0.3)
+    except Exception as e:
+        logger.warning("merged.write en échec : %s", e)
+        content = "[À compléter : génération échouée.]"
+    used = [{"ref": f"S{i+1}", "company": names_by_user.get(c.get("user_id"), "Entreprise"),
+             "doc_name": c["doc_name"], "chunk_id": c["chunk_id"], "excerpt": c["text"][:220]}
+            for i, c in enumerate(chunks)]
+    return {"titre": section.get("titre"), "content": content, "sources": used}
+
+
+def generate_merged_memoire(db, members: list, dce_text: str, max_sections: int = 9) -> dict:
+    """Mémoire UNIFIÉ d'un groupement. members = [{user_id, name, role}].
+    Récupère le savoir-faire de TOUTES les bases et rédige une offre cohérente et croisée."""
+    user_ids = [m["user_id"] for m in members if m.get("user_id")]
+    names_by_user = {m["user_id"]: (m.get("name") or "Entreprise") for m in members if m.get("user_id")}
+
+    requirements = extract_requirements(dce_text)
+    objet = requirements.get("objet", "")
+    plan = build_plan(objet, requirements)[:max_sections]
+    if not plan:
+        plan = [{"titre": "Méthodologie et organisation du groupement",
+                 "objectif": "Démontrer l'organisation conjointe", "requete": "méthodologie organisation"}]
+    criteres = requirements.get("criteres_attribution") or []
+
+    sections, contributors = [], set()
+    for sec in plan:
+        chunks = rag.retrieve_multi(db, user_ids, sec.get("requete") or sec.get("titre", ""), k=8)
+        for c in chunks:
+            contributors.add(names_by_user.get(c.get("user_id")))
+        sections.append(_write_merged_section(sec, chunks, names_by_user, criteres))
+
+    conformity = conformity_check(requirements, sections)
+    return {
+        "objet": objet, "membres": [{"name": names_by_user[u], "user_id": u} for u in user_ids],
+        "criteres_attribution": criteres, "exigences": requirements.get("exigences", []),
+        "sections": sections, "conformity": conformity,
+        "contributors": sorted([c for c in contributors if c]),
+        "n_sections": len(sections),
+    }

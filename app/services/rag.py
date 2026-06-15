@@ -146,3 +146,51 @@ def sources_block(chunks: list) -> str:
     for i, c in enumerate(chunks, 1):
         lines.append(f"[S{i}] (source: « {c['doc_name']} »)\n{c['text']}")
     return "\n\n".join(lines)
+
+
+# ── Récupération MULTI-ENTREPRISES (Merged Brain) ────────────────────────────
+def retrieve_multi(db: Session, user_ids: list, query: str, k: int = 8) -> list:
+    """Récupère les chunks les plus pertinents à travers PLUSIEURS bases (co-traitance).
+    Chaque résultat porte son user_id d'origine → attribution par entreprise."""
+    if not user_ids:
+        return []
+    rows = db.query(KnowledgeChunk).filter(KnowledgeChunk.user_id.in_(list(user_ids))).all()
+    if not rows:
+        return []
+    docs_tokens = [_tokens(r.text) for r in rows]
+    N = len(rows)
+    avgdl = sum(len(t) for t in docs_tokens) / max(1, N)
+    df = Counter()
+    for toks in docs_tokens:
+        for t in set(toks):
+            df[t] += 1
+    q = _tokens(query)
+    if not q:
+        return []
+    k1, b = 1.5, 0.75
+    scored = []
+    for r, toks in zip(rows, docs_tokens):
+        if not toks:
+            continue
+        tf = Counter(toks)
+        dl = len(toks)
+        s = 0.0
+        for t in q:
+            if t not in tf:
+                continue
+            idf = math.log(1 + (N - df[t] + 0.5) / (df[t] + 0.5))
+            s += idf * (tf[t] * (k1 + 1)) / (tf[t] + k1 * (1 - b + b * dl / avgdl))
+        if s > 0:
+            scored.append((s, r))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [{"chunk_id": r.id, "doc_id": r.doc_id, "doc_name": r.doc_name, "user_id": r.user_id,
+             "text": r.text, "score": round(s, 3)} for s, r in scored[:k]]
+
+
+def sources_block_attributed(chunks: list, names_by_user: dict) -> str:
+    """Bloc de sources numérotées avec ATTRIBUTION par entreprise (Merged Brain)."""
+    lines = []
+    for i, c in enumerate(chunks, 1):
+        company = names_by_user.get(c.get("user_id"), "Entreprise")
+        lines.append(f"[S{i}] (entreprise: {company} · doc: « {c['doc_name']} »)\n{c['text']}")
+    return "\n\n".join(lines)

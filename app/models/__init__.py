@@ -436,3 +436,31 @@ class KnowledgeChunk(Base):
     text = Column(Text, default="")                      # contenu du chunk (cité comme source)
     doc_name = Column(String(300), default="")           # dénormalisé pour la traçabilité
     created_at = Column(DateTime, default=utcnow)
+
+
+# === ESPACE CO-TRAITANCE PARTAGÉ (Merged Brain) ===
+# Deux comptes Adjugo (ou plus) collaborent sur une réponse : leurs bases de
+# connaissances sont mises en commun pour générer UN mémoire technique unifié.
+
+class CoSpace(Base):
+    __tablename__ = "co_spaces"
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)  # mandataire (pilote)
+    name = Column(String(255), nullable=False)        # nom de l'espace / du marché
+    marche = Column(String(500), default="")          # objet du marché visé
+    created_at = Column(DateTime, default=utcnow)
+
+
+class CoMember(Base):
+    __tablename__ = "co_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    space_id = Column(Integer, ForeignKey("co_spaces.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)   # rempli à l'acceptation
+    email = Column(String(255), default="")           # email invité
+    role = Column(String(20), default="cotraitant")   # mandataire | cotraitant
+    status = Column(String(20), default="invited")    # invited | accepted
+    token = Column(String(64), default="", index=True)  # jeton d'invitation
+    company_name = Column(String(255), default="")    # dénormalisé pour l'attribution des sources
+    created_at = Column(DateTime, default=utcnow)

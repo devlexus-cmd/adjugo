@@ -766,6 +766,86 @@
 
         <!-- ░░ CO-TRAITANTS ░░ -->
         <section v-if="view==='cotraitants'">
+          <!-- Espace co-traitance partagé (Merged Brain) -->
+          <div class="card pad" style="margin-bottom:14px">
+            <div class="row" style="gap:8px;margin-bottom:6px"><i data-lucide="brain-circuit" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Espace co-traitance — mémoire fusionné</b><div class="spacer"></div>
+              <span v-if="cospace.current" class="btn ghost sm" @click="cospace.current=null"><i data-lucide="arrow-left"></i>Mes espaces</span></div>
+
+            <!-- Liste des espaces + création + rejoindre -->
+            <div v-if="!cospace.current">
+              <div class="muted small" style="margin-bottom:10px">Répondez à plusieurs : l'IA fusionne vos <b>deux bases de connaissances</b> en <b>un seul mémoire unifié</b> (références croisées, sources attribuées par entreprise). Chaque partenaire garde son compte et sa base.</div>
+              <div v-for="s in cospace.spaces" :key="s.id" class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline);gap:10px;cursor:pointer" @click="coOpen(s)">
+                <i data-lucide="users-round" style="width:16px;height:16px;color:var(--muted)"></i>
+                <div style="flex:1;min-width:0"><span class="strong small">{{ s.name }}</span><span class="pill neutral" style="font-size:10px;margin-left:6px">{{ coIsOwner(s)?'Mandataire':'Co-traitant' }}</span>
+                  <div class="muted small">{{ s.members.filter(m=>m.status==='accepted').length+1 }} membre(s) · {{ s.marche||'marché non précisé' }}</div></div>
+                <button v-if="coIsOwner(s)" class="btn icon sm ghost" @click.stop="coDelete(s)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button>
+                <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--subtle)"></i>
+              </div>
+              <div class="frow" style="margin-top:12px;gap:8px">
+                <input class="inp" v-model="cospace.newName" placeholder="Nom de l'espace (ex. Groupement lycée Quimper)">
+                <input class="inp" v-model="cospace.newMarche" placeholder="Objet du marché (optionnel)">
+              </div>
+              <div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">
+                <button class="btn primary" @click="coCreate()"><i data-lucide="plus"></i>Créer un espace</button>
+                <div class="spacer"></div>
+                <input class="inp" v-model="cospace.joinToken" placeholder="Code d'invitation reçu" style="width:200px">
+                <button class="btn" @click="coJoin()"><i data-lucide="log-in"></i>Rejoindre</button>
+              </div>
+            </div>
+
+            <!-- Espace ouvert -->
+            <div v-else>
+              <div class="strong" style="font-size:14px">{{ cospace.current.name }}</div>
+              <div class="muted small" style="margin-bottom:10px">{{ cospace.current.marche||'Marché non précisé' }}</div>
+              <div class="row" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px">
+                <i data-lucide="crown" style="width:14px;height:14px;color:var(--warning)"></i>
+                <span class="small strong">{{ cospace.current.owner_company||'Mandataire' }}</span><span class="pill neutral" style="font-size:10px">mandataire</span>
+                <div class="spacer"></div><span class="muted small">{{ cospace.current.owner_kb_chunks }} extrait(s) en base</span>
+              </div>
+              <div v-for="m in cospace.current.members" :key="m.id" class="row" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px">
+                <i data-lucide="user" style="width:14px;height:14px;color:var(--muted)"></i>
+                <span class="small">{{ m.company_name||m.email }}</span>
+                <span class="pill" :class="m.status==='accepted'?'go':'neutral'" style="font-size:10px">{{ m.status==='accepted'?'a rejoint':'invité' }}</span>
+                <div class="spacer"></div><span v-if="m.status==='accepted'" class="muted small">{{ m.kb_chunks }} extrait(s)</span>
+              </div>
+
+              <!-- Inviter (mandataire) -->
+              <div v-if="coIsOwner(cospace.current)" class="row wrap" style="margin-top:10px;gap:8px;align-items:center">
+                <input class="inp" v-model="cospace.inviteEmail" placeholder="Email du partenaire (compte Adjugo)" style="flex:1;min-width:200px">
+                <button class="btn sm" @click="coInvite()"><i data-lucide="user-plus"></i>Inviter</button>
+              </div>
+              <div v-if="cospace.lastToken" class="row" style="margin-top:8px;gap:8px;padding:9px 12px;background:var(--surface-2);border-radius:8px">
+                <i data-lucide="key-round" style="width:14px;height:14px;color:var(--accent-text)"></i>
+                <div style="flex:1;min-width:0"><b class="small">Code à transmettre au partenaire</b><div class="num small" style="word-break:break-all">{{ cospace.lastToken }}</div></div>
+              </div>
+
+              <!-- Générer le mémoire fusionné (mandataire) -->
+              <div v-if="coIsOwner(cospace.current)" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+                <div class="sectitle" style="margin-top:0"><i data-lucide="sparkles" style="width:14px;height:14px"></i> Générer le mémoire unifié du groupement</div>
+                <textarea class="inp" v-model="cospace.dceText" placeholder="Collez le texte du DCE (RC/CCTP/CCAP)…" style="width:100%;height:80px;padding:9px 12px"></textarea>
+                <button class="btn primary" style="margin-top:8px" @click="coMerge()" :disabled="cospace.generating"><span v-if="cospace.generating" class="spin"></span><i v-else data-lucide="wand-2"></i>Fusionner les savoir-faire & rédiger</button>
+                <div class="muted small" style="margin-top:6px">Nécessite au moins 1 co-traitant ayant rejoint. Chaque entreprise doit avoir alimenté sa base de connaissances.</div>
+              </div>
+
+              <!-- Résultat -->
+              <div v-if="cospace.memoire" style="margin-top:14px">
+                <div class="row wrap" style="gap:8px;margin-bottom:8px">
+                  <span class="pill go">Mémoire unifié · {{ cospace.memoire.n_sections }} sections</span>
+                  <span v-if="cospace.memoire.contributors.length" class="pill neutral">apports : {{ cospace.memoire.contributors.join(' + ') }}</span>
+                  <span v-if="cospace.memoire.conformity && cospace.memoire.conformity.score_conformite!=null" class="pill" :class="cospace.memoire.conformity.score_conformite>=70?'go':'a_etudier'">Conformité {{ cospace.memoire.conformity.score_conformite }}/100</span>
+                </div>
+                <div v-for="(s,i) in cospace.memoire.sections" :key="'ms'+i" style="padding:11px 0;border-top:1px solid var(--hairline)">
+                  <div class="strong" style="font-size:13.5px;margin-bottom:5px">{{ i+1 }}. {{ s.titre }}</div>
+                  <div class="small" style="white-space:pre-wrap;line-height:1.55;color:var(--text-2)">{{ s.content }}</div>
+                  <div v-if="s.sources && s.sources.length" class="row wrap" style="gap:5px;margin-top:7px">
+                    <span class="muted small">Sources :</span>
+                    <span v-for="src in s.sources" :key="src.ref+s.titre" class="pill neutral" style="font-size:10px" :title="src.excerpt">{{ src.ref }} · {{ src.company }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div v-if="!cotraitants.length" class="empty card pad">
             <div class="eic"><i data-lucide="handshake"></i></div>
             <h4>Aucun co-traitant</h4><p>Ajoutez vos partenaires, ou découvrez de vraies entreprises par métier et département.</p>
