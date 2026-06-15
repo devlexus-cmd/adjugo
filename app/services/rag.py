@@ -37,15 +37,32 @@ def _tokens(text: str) -> list:
     return out
 
 
-# ── Chunking ────────────────────────────────────────────────────────────────
-def chunk_text(text: str, target: int = 900, overlap: int = 150) -> list:
-    """Découpe en chunks ~target caractères, sur des frontières de paragraphe/phrase,
-    avec léger recouvrement pour ne pas couper une idée en deux."""
-    text = re.sub(r"[ \t]+", " ", (text or "").strip())
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    if not text:
-        return []
-    # paragraphes d'abord
+# ── Détection de structure juridique (Article 4.2, Titres, Annexes…) ─────────
+_KW_HEAD = re.compile(r"^\s*(article|titre|chapitre|section|annexe|partie|pr[ée]ambule|sous[- ]?article)\b",
+                      re.IGNORECASE)
+_NUM_MULTI = re.compile(r"^\s*(\d+(?:\.\d+){1,4})[\.\)]?\s+\S")          # 4.2, 4.2.1 …
+_NUM_SIMPLE = re.compile(r"^\s*(\d+)[\.\)]\s+[A-ZÀ-Ÿ]")                   # 4. PÉNALITÉS, 1) Objet
+_CAPS = re.compile(r"^[A-ZÀ-Ÿ0-9][A-ZÀ-Ÿ0-9 ,\-/'’()]{3,79}$")
+
+
+def _heading(line: str):
+    """Renvoie (niveau, libellé) si la ligne est un titre de section, sinon None."""
+    s = line.strip()
+    if not s or len(s) > 120:
+        return None
+    m = _NUM_MULTI.match(s)
+    if m:
+        return (1 + m.group(1).count("."), s)
+    if _KW_HEAD.match(s):
+        return (1, s)
+    if _NUM_SIMPLE.match(s):
+        return (2, s)
+    if _CAPS.match(s) and not s.endswith((".", ":", ";")) and any(c.isalpha() for c in s):
+        return (1, s)
+    return None
+
+
+def _paragraph_chunks(text: str, target: int, overlap: int) -> list:
     paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     chunks, buf = [], ""
     for p in paras:
@@ -57,7 +74,6 @@ def chunk_text(text: str, target: int = 900, overlap: int = 150) -> list:
             if len(p) <= target:
                 buf = p
             else:
-                # paragraphe trop long → découpe par phrases
                 sent = re.split(r"(?<=[.!?])\s+", p)
                 cur = ""
                 for s in sent:
@@ -70,13 +86,56 @@ def chunk_text(text: str, target: int = 900, overlap: int = 150) -> list:
                 buf = cur
     if buf:
         chunks.append(buf)
-    # recouvrement : on préfixe chaque chunk par la fin du précédent
     if overlap > 0 and len(chunks) > 1:
         out = [chunks[0]]
         for i in range(1, len(chunks)):
-            tail = chunks[i - 1][-overlap:]
-            out.append((tail + " … " + chunks[i]).strip())
+            out.append((chunks[i - 1][-overlap:] + " … " + chunks[i]).strip())
         chunks = out
+    return chunks
+
+
+def chunk_text(text: str, target: int = 900, overlap: int = 150) -> list:
+    """Découpe STRUCTURELLE : respecte la hiérarchie juridique (Article 4.2 et ses
+    sous-clauses ne sont pas séparés de leur titre). Chaque chunk porte son fil d'Ariane
+    de section → l'IA ne perd jamais le contexte contractuel. Fallback paragraphe si le
+    document n'est pas structuré (fiche RSE, prose libre)."""
+    text = re.sub(r"[ \t]+", " ", (text or "").strip())
+    if not text:
+        return []
+    lines = text.split("\n")
+    crumbs = {}          # niveau -> titre courant
+    sections = []        # (fil_d_ariane, corps)
+    body = []
+
+    def _flush():
+        if body and any(l.strip() for l in body):
+            path = " › ".join(crumbs[k] for k in sorted(crumbs) if crumbs.get(k))
+            sections.append((path, "\n".join(body).strip()))
+
+    n_head = 0
+    for line in lines:
+        h = _heading(line)
+        if h:
+            n_head += 1
+            _flush()
+            body = []
+            level, label = h
+            crumbs[level] = label
+            for k in [k for k in crumbs if k > level]:
+                crumbs.pop(k, None)
+        else:
+            body.append(line)
+    _flush()
+
+    # Document non/peu structuré → chunker paragraphe simple
+    if n_head < 2:
+        return [c for c in _paragraph_chunks(text, target, overlap) if len(c) > 40]
+
+    chunks = []
+    for path, corps in sections:
+        prefix = f"[{path}]\n" if path else ""
+        for c in _paragraph_chunks(corps, max(200, target - len(prefix)), overlap):
+            chunks.append((prefix + c).strip())
     return [c for c in chunks if len(c) > 40]
 
 
