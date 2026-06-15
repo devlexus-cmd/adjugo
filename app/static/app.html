@@ -572,6 +572,12 @@
                 <span v-for="r in amontRegions" :key="r.code" @click="amontToggleRegion(r.code)" class="pill" :class="amont.regions.includes(r.code)?'go':'neutral'" style="cursor:pointer;user-select:none">{{ r.nom }}</span>
               </div>
             </div>
+            <div style="margin-bottom:13px">
+              <div class="sectitle" style="margin:0 0 7px"><i data-lucide="layers" style="width:13px;height:13px"></i> Domaines ciblés <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">(aucun = tous — affine la détection et la priorité)</span></div>
+              <div class="row wrap" style="gap:6px">
+                <span v-for="d in amontDomaines" :key="d" @click="amontToggleDomaine(d)" class="pill" :class="amont.domaines.includes(d)?'go':'neutral'" style="cursor:pointer;user-select:none">{{ d }}</span>
+              </div>
+            </div>
             <div class="row wrap" style="gap:8px">
               <button class="btn primary" @click="amontScan()" :disabled="amont.scanning"><span v-if="amont.scanning" class="spin"></span><i v-else data-lucide="radar"></i>Lancer la veille — chercher les délibérations</button>
               <button class="btn" @click="$refs.amontUpl.click()" :disabled="amont.uploading"><span v-if="amont.uploading" class="spin"></span><i v-else data-lucide="upload"></i>Importer une délibération</button>
@@ -594,11 +600,14 @@
               <div style="flex:1;min-width:0">
                 <div class="row wrap" style="gap:6px">
                   <span class="pill" :class="s.pertinence==='pertinent'?'go':(s.pertinence==='a_etudier'?'a_etudier':'neutral')">{{ amontLabel(s.pertinence) }} · {{ s.pertinence_score }}/100</span>
+                  <span v-if="s.maturite!=null" class="pill" :class="s.maturite>=70?'go':(s.maturite>=40?'a_etudier':'neutral')" title="Probabilité estimée qu'un appel d'offres en découle">Maturité {{ s.maturite }}%</span>
+                  <span v-if="s.phase" class="pill st-nouveau">{{ s.phase }}</span>
                   <span class="pill neutral">{{ s.type_projet||'projet' }}</span>
+                  <span v-if="s.domaine" class="pill neutral">{{ s.domaine }}</span>
                   <span v-if="s.budget_texte||s.budget" class="pill st-envoye">{{ s.budget_texte || eur(s.budget) }}</span>
                 </div>
                 <div class="strong" style="margin-top:8px;font-size:14px;line-height:1.35">{{ s.intitule }}</div>
-                <div class="muted small" style="margin-top:3px">{{ s.collectivite||'Collectivité' }}<span v-if="s.localisation"> · {{ s.localisation }}</span><span v-if="s.calendrier"> · {{ s.calendrier }}</span></div>
+                <div class="muted small" style="margin-top:3px">{{ s.collectivite||'Collectivité' }}<span v-if="s.localisation"> · {{ s.localisation }}</span><span v-if="s.echeance_ao"> · AO estimé : {{ s.echeance_ao }}</span><span v-if="s.financement"> · financement : {{ s.financement }}</span><span v-if="s.calendrier && !s.echeance_ao"> · {{ s.calendrier }}</span></div>
                 <div v-if="s.metiers && s.metiers.length" class="row wrap" style="gap:5px;margin-top:7px">
                   <span v-for="m in s.metiers.slice(0,8)" :key="m" class="pill neutral" style="font-size:10px">{{ m }}</span>
                 </div>

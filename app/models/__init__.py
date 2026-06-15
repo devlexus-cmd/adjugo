@@ -396,6 +396,13 @@ class Signal(Base):
     source_date = Column(String(40), default="")         # date de la délibération si connue
     archived = Column(Boolean, default=False)
 
+    # Profondeur veille amont (détection enrichie)
+    domaine = Column(String(80), default="")              # bâtiment, voirie/VRD, réseaux, énergie…
+    phase = Column(String(40), default="")                # idée|étude|programmation|financement voté|concours|imminent
+    echeance_ao = Column(String(120), default="")         # estimation de publication de l'AO
+    financement = Column(String(255), default="")         # DETR, DSIL, subvention, autofinancement…
+    maturite = Column(Integer, nullable=True)             # 0-100 : probabilité estimée qu'un AO suive
+
     created_at = Column(DateTime, default=utcnow)
 
 

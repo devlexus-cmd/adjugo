@@ -45,11 +45,13 @@ def _out(s: Signal) -> dict:
         "collectivite": s.collectivite, "calendrier": s.calendrier, "metiers": s.metiers or [],
         "extrait": s.extrait, "pertinence": s.pertinence, "pertinence_score": s.pertinence_score,
         "source_name": s.source_name, "source_url": s.source_url, "source_date": s.source_date,
+        "domaine": s.domaine, "phase": s.phase, "echeance_ao": s.echeance_ao,
+        "financement": s.financement, "maturite": s.maturite,
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
 
 
-def _persist(projets, default_coll, source_label, current_user, db) -> list:
+def _persist(projets, default_coll, source_label, current_user, db, domaines=None) -> list:
     """Score, déduplique (vs signaux existants) et enregistre les projets détectés."""
     criteria = _criteria_dict(current_user.id, db)
     existing = {((s.intitule or "").lower()[:80], (s.collectivite or "").lower())
@@ -65,8 +67,9 @@ def _persist(projets, default_coll, source_label, current_user, db) -> list:
         if key in existing:
             continue
         existing.add(key)
-        score, label = score_pertinence(p, criteria)
+        score, label = score_pertinence(p, criteria, domaines=domaines)
         src = f"Délibération · {p['source']}" if p.get("source") else source_label
+        mat = p.get("maturite")
         sig = Signal(
             user_id=current_user.id, intitule=intitule[:500],
             type_projet=(p.get("type_projet") or "")[:120],
@@ -75,6 +78,9 @@ def _persist(projets, default_coll, source_label, current_user, db) -> list:
             calendrier=(p.get("calendrier") or "")[:255], metiers=p.get("metiers") or [],
             extrait=(p.get("extrait") or "")[:2000], pertinence=label, pertinence_score=score,
             source_name=src[:255], source_url=(p.get("url") or "")[:700], source_date=(p.get("date") or "")[:40],
+            domaine=(p.get("domaine") or "")[:80], phase=(p.get("phase") or "")[:40],
+            echeance_ao=(p.get("echeance_ao") or "")[:120], financement=(p.get("financement") or "")[:255],
+            maturite=int(mat) if isinstance(mat, (int, float)) else None,
         )
         db.add(sig)
         created.append(sig)
@@ -85,15 +91,15 @@ def _persist(projets, default_coll, source_label, current_user, db) -> list:
     return [_out(s) for s in created]
 
 
-def _analyze_text(text: str, source_name: str, current_user: User, db: Session) -> dict:
-    res = detect_projets(text, lang_name=_lang(current_user, db))
-    signals = _persist(res.get("projets", []), res.get("collectivite", ""), source_name, current_user, db)
+def _analyze_text(text: str, source_name: str, current_user: User, db: Session, domaines=None) -> dict:
+    res = detect_projets(text, lang_name=_lang(current_user, db), domaines=domaines)
+    signals = _persist(res.get("projets", []), res.get("collectivite", ""), source_name, current_user, db, domaines=domaines)
     return {"collectivite": res.get("collectivite", ""), "count": len(signals), "signals": signals}
 
 
 @router.post("/analyze-upload")
 @limiter.limit("30/hour")
-async def analyze_upload(request: Request, file: UploadFile = File(...),
+async def analyze_upload(request: Request, file: UploadFile = File(...), domaines: str = Form(""),
                          current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     content = await file.read()
     if not content:
@@ -105,7 +111,8 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     except ValueError as e:
         raise HTTPException(422, str(e))
     consume_analysis(current_user, db)
-    return _analyze_text(text, file.filename or "Délibération importée", current_user, db)
+    doms = [d.strip() for d in (domaines or "").split(",") if d.strip()]
+    return _analyze_text(text, file.filename or "Délibération importée", current_user, db, domaines=doms)
 
 
 @router.post("/analyze-text")
@@ -116,11 +123,13 @@ def analyze_text(request: Request, payload: dict,
     if len(text.strip()) < 60:
         raise HTTPException(422, "Texte trop court pour une détection fiable.")
     consume_analysis(current_user, db)
-    return _analyze_text(text, (payload.get("source") or "Texte collé")[:255], current_user, db)
+    doms = (payload or {}).get("domaines") or []
+    return _analyze_text(text, (payload.get("source") or "Texte collé")[:255], current_user, db, domaines=doms)
 
 
 class ScanRequest(BaseModel):
     departements: list[str] = []   # cibler des régions/départements (ex. ["75","94"]) ; vide = toute la France
+    domaines: list[str] = []       # cibler des domaines (bâtiment, voirie/VRD, réseaux, énergie…)
 
 
 @router.post("/scan")
@@ -132,17 +141,19 @@ def scan(request: Request, req: ScanRequest = ScanRequest(),
     Si des départements sont ciblés, on ne garde que ces zones."""
     country = _country(current_user, db)
     deps = {d.strip()[:3] for d in (req.departements or []) if d.strip()}
-    records = DeliberationSource().fetch_recent(country=country, per=40, only_invest=True)
+    doms = [d.strip() for d in (req.domaines or []) if d.strip()]
+    # Profondeur accrue : on récupère davantage de délibérations (60) pour creuser.
+    records = DeliberationSource().fetch_recent(country=country, per=60, only_invest=True)
     if records and deps and country == "FR":   # filtrage régional = France
         records = [r for r in records if (r.get("dept") in deps) or not r.get("dept")]
     if not records:
         return {"scanned": 0, "count": 0, "signals": [], "country": country,
                 "errors": ["Aucune délibération sur ce périmètre (élargissez les régions ou réessayez)."]}
     consume_analysis(current_user, db)
-    projets = detect_from_deliberations(records, lang_name=_lang(current_user, db))
+    projets = detect_from_deliberations(records, lang_name=_lang(current_user, db), domaines=doms)
     if deps and country == "FR":
         projets = [p for p in projets if (p.get("dept") in deps) or not p.get("dept")]
-    signals = _persist(projets, "", "Délibération (open data)", current_user, db)
+    signals = _persist(projets, "", "Délibération (open data)", current_user, db, domaines=doms)
     return {"scanned": len(records), "count": len(signals), "signals": signals}
 
 

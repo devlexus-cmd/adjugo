@@ -85,7 +85,8 @@ createApp({
       plan: { plan: "starter" }, org: { data: null, name: "", invite: { email: "", full_name: "" }, lastTemp: null },
       discover: { open: false, trade: "electricite", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [],
       countries2: [], adaptedCountries: [], orgCountry: "FR", lang: "fr",
-      amont: { signals: [], uploading: false, scanning: false, regions: [], auto: false },
+      amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false },
+      amontDomaines: ["bâtiment", "voirie / VRD", "réseaux", "énergie / rénovation énergétique", "espaces verts / aménagement", "numérique / télécom", "équipement", "études / maîtrise d'œuvre"],
       kb: { docs: [], totalChunks: 0, uploading: false, kind: "memoire", text: "", textName: "", busyText: false,
             searchQ: "", searchRes: null, qText: "", qResults: null, qLoading: false,
             memoire: null, memoireLoading: false },
@@ -725,6 +726,10 @@ createApp({
       const i = this.amont.regions.indexOf(code);
       if (i >= 0) this.amont.regions.splice(i, 1); else this.amont.regions.push(code);
     },
+    amontToggleDomaine(d) {
+      const i = this.amont.domaines.indexOf(d);
+      if (i >= 0) this.amont.domaines.splice(i, 1); else this.amont.domaines.push(d);
+    },
     amontDeps() {
       const sel = this.amont.regions;
       if (!sel.length) return [];
@@ -733,7 +738,7 @@ createApp({
     async amontScan() {
       this.amont.scanning = true;
       try {
-        const r = await this.api("POST", "/api/amont/scan", { departements: this.amontDeps() });
+        const r = await this.api("POST", "/api/amont/scan", { departements: this.amontDeps(), domaines: this.amont.domaines });
         await this.loadAmont();
         if (r.count) this.notify(r.count + " projet(s) détecté(s) sur " + r.scanned + " délibérations");
         else this.notify(r.scanned ? "Aucun nouveau projet (sur " + r.scanned + " délibérations)" : "Sources momentanément indisponibles", r.scanned ? "ok" : "err");
@@ -748,7 +753,7 @@ createApp({
       e.target.value = "";
       this.amont.uploading = true;
       try {
-        const fd = new FormData(); fd.append("file", file);
+        const fd = new FormData(); fd.append("file", file); fd.append("domaines", this.amont.domaines.join(","));
         const r = await this.api("POST", "/api/amont/analyze-upload", fd, true);
         await this.loadAmont();
         this.notify(r.count ? (r.count + " projet(s) détecté(s)") : "Aucun projet d'investissement détecté");

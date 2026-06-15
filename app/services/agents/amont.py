@@ -1,34 +1,71 @@
 """
-AGENT VEILLE AMONT — détection de signaux d'investissement.
+AGENT VEILLE AMONT — détection PROFONDE de signaux d'investissement.
 
-À partir d'une délibération ou d'un compte-rendu de collectivité, l'IA détecte les
-PROJETS D'INVESTISSEMENT FUTURS (construction, réhabilitation, voirie, équipement…)
-susceptibles de donner lieu à un appel d'offres — des mois AVANT sa publication.
+À partir d'une délibération, d'un budget, d'un PPI ou d'un débat d'orientation
+budgétaire (DOB), l'IA détecte les PROJETS D'INVESTISSEMENT FUTURS susceptibles de
+déboucher sur un marché public — des mois AVANT sa publication.
 
-Règle anti-hallucination : on n'extrait QUE des projets réellement mentionnés dans le
-document. Aucun budget, date ou projet inventé. Chaque signal porte un extrait du texte.
-La pertinence vs l'entreprise est calculée de façon déterministe et explicable.
+Profondeur (vs simple détection) :
+- phase du projet (idée → étude → programmation → financement voté → concours → imminent),
+- échéance estimée de publication de l'AO,
+- financement cité (DETR, DSIL, autofinancement, subventions…),
+- MATURITÉ 0-100 : probabilité estimée qu'un marché public en découle réellement,
+- domaine (bâtiment, voirie/VRD, réseaux, énergie, espaces verts, numérique, équipement…).
+
+Ciblage : l'entreprise peut cibler des DOMAINES ; la détection les priorise et le
+scoring booste les correspondances. Anti-hallucination : rien n'est inventé, chaque
+signal porte un extrait du texte ; maturité/phase déduites uniquement des indices présents.
 """
 import re
 from app.services.llm import complete_json
 
-SYSTEM = """Tu es un analyste de la commande publique spécialisé dans la détection
-amont. À partir d'une délibération ou d'un compte-rendu de conseil (municipal,
-communautaire, départemental, régional), tu repères les PROJETS D'INVESTISSEMENT
-FUTURS susceptibles de déboucher sur un marché public : construction, réhabilitation,
-extension, voirie/VRD, réseaux, équipements, aménagement, gros entretien.
+DOMAINES = ["bâtiment", "voirie / VRD", "réseaux (eau, assainissement, énergie)",
+            "espaces verts / aménagement", "énergie / rénovation énergétique",
+            "numérique / télécom", "équipement / mobilier", "études / maîtrise d'œuvre"]
 
-RÈGLES STRICTES :
+SYSTEM = """Tu es un analyste senior de la commande publique, spécialisé dans la
+détection AMONT. À partir d'un document de collectivité (délibération, compte-rendu,
+budget primitif, plan pluriannuel d'investissement, débat d'orientation budgétaire),
+tu repères les PROJETS D'INVESTISSEMENT FUTURS susceptibles de déboucher sur un marché
+public, et tu évalues leur MATURITÉ (probabilité qu'un appel d'offres suive).
+
+RÈGLES STRICTES (anti-hallucination) :
 - N'extrais QUE des projets réellement présents dans le document.
-- N'invente JAMAIS de budget, de date, de localisation ni de projet.
-- Si un montant est cité, reporte-le ; sinon budget = null.
-- Pour chaque projet, fournis un extrait COURT et fidèle du document (traçabilité).
+- N'invente JAMAIS de budget, de date, de financement ni de projet.
+- Maturité et phase sont DÉDUITES des indices du texte (montant voté, AP/CP ouvertes,
+  étude lancée, concours, calendrier) — sois prudent, n'exagère pas.
+- Chaque projet porte un extrait COURT et fidèle (traçabilité).
 - S'il n'y a aucun projet d'investissement, renvoie une liste vide.
 Réponds en JSON strict, sans texte autour."""
 
 
-def detect_projets(text: str, lang_name: str = None) -> dict:
-    """Retourne {collectivite, projets:[...]} détectés dans le document."""
+def _focus(domaines) -> str:
+    if not domaines:
+        return ""
+    d = ", ".join(str(x) for x in domaines)
+    return (f"\n\nL'entreprise cible en priorité les domaines : {d}. "
+            "Repère TOUS les projets, mais sois particulièrement attentif et exhaustif "
+            "sur ces domaines (y compris les signaux faibles).")
+
+
+_PROJ_SHAPE = """{
+      "intitule": "intitulé court et clair du projet",
+      "type_projet": "construction|réhabilitation|extension|voirie|réseaux|aménagement|équipement|rénovation énergétique|étude|autre",
+      "domaine": "bâtiment|voirie / VRD|réseaux|espaces verts / aménagement|énergie / rénovation énergétique|numérique / télécom|équipement|études / maîtrise d'œuvre|autre",
+      "budget": <nombre en euros si cité, sinon null>,
+      "budget_texte": "le montant tel que cité (ex. « 8 M€ HT »), sinon \\"\\"",
+      "localisation": "commune / lieu si précisé, sinon \\"\\"",
+      "phase": "idée|étude|programmation|financement voté|concours|imminent",
+      "echeance_ao": "estimation de la période de publication de l'AO (ex. « S2 2026 », « 2027 »), sinon \\"\\"",
+      "financement": "sources de financement citées (DETR, DSIL, subvention région, autofinancement…), sinon \\"\\"",
+      "maturite": <0-100 : probabilité estimée qu'un marché public en découle, fondée sur la phase et les indices>,
+      "metiers": ["métiers / corps d'état concernés"],
+      "extrait": "citation courte et fidèle du document justifiant le projet"
+    }"""
+
+
+def detect_projets(text: str, lang_name: str = None, domaines=None) -> dict:
+    """Retourne {collectivite, projets:[...]} détectés en profondeur dans le document."""
     if not text or len(text) < 60:
         return {"collectivite": "", "projets": []}
     lang = f" Rédige les valeurs textuelles en {lang_name}." if (lang_name and lang_name != "français") else ""
@@ -36,63 +73,60 @@ def detect_projets(text: str, lang_name: str = None) -> dict:
 {{
   "collectivite": "nom de la collectivité émettrice (mairie, communauté, département, région)",
   "projets": [
-    {{
-      "intitule": "intitulé court du projet",
-      "type_projet": "construction|réhabilitation|voirie|réseaux|équipement|aménagement|autre",
-      "budget": <nombre en euros si cité, sinon null>,
-      "budget_texte": "le montant tel que cité (ex. « 8 M€ HT »), sinon \"\"",
-      "localisation": "commune / lieu si précisé, sinon \"\"",
-      "calendrier": "échéance estimée de l'AO si déductible du texte, sinon \"\"",
-      "metiers": ["métiers BTP concernés, ex. maçonnerie, électricité, CVC, VRD"],
-      "extrait": "citation courte et fidèle du document justifiant le projet"
-    }}
+    {_PROJ_SHAPE}
   ]
-}}{lang}
+}}{lang}{_focus(domaines)}
 
 DOCUMENT :
-{text[:16000]}"""
+{text[:18000]}"""
     try:
-        data = complete_json(SYSTEM, user, max_tokens=2200, temperature=0.1)
+        data = complete_json(SYSTEM, user, max_tokens=2800, temperature=0.1)
     except Exception:
         return {"collectivite": "", "projets": []}
     if not isinstance(data, dict):
         return {"collectivite": "", "projets": []}
-    projets = data.get("projets") or []
-    # garde-fou : ne garde que des entrées avec un intitulé
-    projets = [p for p in projets if isinstance(p, dict) and (p.get("intitule") or "").strip()]
+    projets = [_clean(p) for p in (data.get("projets") or []) if isinstance(p, dict) and (p.get("intitule") or "").strip()]
     return {"collectivite": (data.get("collectivite") or "").strip(), "projets": projets}
 
 
-BATCH_SYSTEM = """Tu tries des intitulés de délibérations de collectivités pour ne garder
-que les PROJETS D'INVESTISSEMENT / TRAVAUX futurs susceptibles de déboucher sur un marché
-public (construction, réhabilitation, voirie/VRD, réseaux, équipements, aménagement, ZAC,
-gros entretien). Tu ÉCARTES le fonctionnement courant : subventions sans travaux, ressources
-humaines, conventions administratives, tarifs, motions, finances générales. N'invente jamais
-de budget. Réponds en JSON strict."""
+BATCH_SYSTEM = """Tu tries des intitulés de délibérations / lignes budgétaires de
+collectivités pour ne garder que les PROJETS D'INVESTISSEMENT / TRAVAUX futurs
+susceptibles de déboucher sur un marché public (construction, réhabilitation,
+voirie/VRD, réseaux, équipements, aménagement, ZAC, rénovation énergétique, études).
+Tu ÉVALUES la maturité (probabilité d'AO) à partir des indices présents. Tu ÉCARTES le
+fonctionnement courant (subventions sans travaux, RH, conventions, tarifs, motions).
+N'invente jamais de budget ni de date. Réponds en JSON strict."""
 
 
-def detect_from_deliberations(records: list, lang_name: str = None) -> list:
-    """Détecte les projets d'investissement dans un lot d'intitulés de délibérations
-    récupérés en open data. Un seul appel IA. Renvoie les projets enrichis de leur source."""
-    records = (records or [])[:70]
+def detect_from_deliberations(records: list, lang_name: str = None, domaines=None) -> list:
+    """Détecte (en profondeur) les projets d'investissement dans un lot d'intitulés
+    récupérés en open data. Un seul appel IA. Projets enrichis de leur source."""
+    records = (records or [])[:80]
     if not records:
         return []
     lang = f" Rédige en {lang_name}." if (lang_name and lang_name != "français") else ""
     lines = "\n".join(f"{i}. [{r.get('collectivite','')}] {r.get('objet','')}" for i, r in enumerate(records))
-    user = f"""Voici des intitulés de délibérations (numérotés). Renvoie EXACTEMENT ce JSON :
+    user = f"""Voici des intitulés de délibérations / lignes budgétaires (numérotés).
+Renvoie EXACTEMENT ce JSON :
 {{"projets": [
-  {{"index": <numéro de la ligne>, "intitule": "intitulé reformulé clair du projet",
-    "type_projet": "construction|réhabilitation|voirie|réseaux|équipement|aménagement|autre",
-    "budget": <euros si un montant figure, sinon null>, "budget_texte": "montant cité ou \"\"",
-    "localisation": "lieu si présent, sinon \"\"",
-    "metiers": ["métiers BTP concernés"]}}
+  {{"index": <numéro de la ligne>,
+    "intitule": "intitulé reformulé clair du projet",
+    "type_projet": "construction|réhabilitation|voirie|réseaux|aménagement|équipement|rénovation énergétique|étude|autre",
+    "domaine": "bâtiment|voirie / VRD|réseaux|espaces verts / aménagement|énergie / rénovation énergétique|numérique / télécom|équipement|études / maîtrise d'œuvre|autre",
+    "budget": <euros si un montant figure, sinon null>, "budget_texte": "montant cité ou \\"\\"",
+    "localisation": "lieu si présent, sinon \\"\\"",
+    "phase": "idée|étude|programmation|financement voté|concours|imminent",
+    "echeance_ao": "estimation période de l'AO ou \\"\\"",
+    "financement": "financement cité ou \\"\\"",
+    "maturite": <0-100 probabilité qu'un AO suive>,
+    "metiers": ["métiers concernés"]}}
 ]}}
-Ne garde QUE les vrais projets d'investissement/travaux ; ignore le reste.{lang}
+Ne garde QUE les vrais projets d'investissement/travaux ; ignore le reste.{lang}{_focus(domaines)}
 
 INTITULÉS :
 {lines}"""
     try:
-        data = complete_json(BATCH_SYSTEM, user, max_tokens=2600, temperature=0.1)
+        data = complete_json(BATCH_SYSTEM, user, max_tokens=3200, temperature=0.1)
     except Exception:
         return []
     out = []
@@ -101,6 +135,7 @@ INTITULÉS :
             continue
         idx = p.get("index")
         rec = records[idx] if isinstance(idx, int) and 0 <= idx < len(records) else {}
+        p = _clean(p)
         p["collectivite"] = (p.get("collectivite") or rec.get("collectivite") or "").strip()
         p["date"] = rec.get("date", "")
         p["source"] = rec.get("source", "open data")
@@ -112,48 +147,79 @@ INTITULÉS :
     return out
 
 
-def score_pertinence(projet: dict, criteria: dict) -> tuple:
-    """Score 0-100 de pertinence du projet pour l'entreprise (déterministe, explicable).
-    Renvoie (score, label) avec label pertinent | a_etudier | faible."""
+def _clean(p: dict) -> dict:
+    """Normalise les champs profonds (bornage maturité, defaults)."""
+    try:
+        m = int(float(p.get("maturite"))) if p.get("maturite") not in (None, "") else None
+    except (ValueError, TypeError):
+        m = None
+    p["maturite"] = max(0, min(100, m)) if m is not None else None
+    for k in ("domaine", "phase", "echeance_ao", "financement"):
+        p[k] = (str(p.get(k) or "")).strip()
+    return p
+
+
+# ── Scoring déterministe (métier 40 · zone 25 · budget 15 · maturité 20) ──────
+def score_pertinence(projet: dict, criteria: dict, domaines=None) -> tuple:
+    """Score 0-100 de pertinence pour l'entreprise (déterministe, explicable).
+    Intègre la MATURITÉ (probabilité d'AO) et le ciblage par DOMAINE."""
     criteria = criteria or {}
-    hay = " ".join(str(projet.get(k, "")) for k in ("intitule", "type_projet", "localisation"))
+    hay = " ".join(str(projet.get(k, "")) for k in ("intitule", "type_projet", "domaine", "localisation"))
     hay += " " + " ".join(str(m) for m in (projet.get("metiers") or []))
     hay = hay.lower()
 
-    # 1) Métier (50) — recoupement avec les spécialités du profil
+    # 1) Métier / domaine (40) — spécialités OU domaine ciblé
     specs = [s.strip().lower() for s in re.split(r"[,;]", str(criteria.get("specialites", ""))) if s.strip()]
-    if not specs:
-        metier = 30  # profil sans spécialité → on ne pénalise pas
+    dom_targets = [str(d).lower() for d in (domaines or [])]
+    dom_match = bool(dom_targets) and any(_words(d) & _words(hay) for d in dom_targets)
+    if dom_match:
+        metier = 40
+    elif not specs:
+        metier = 24
     elif any(_words(s) & _words(hay) for s in specs):
-        metier = 50
+        metier = 40
     else:
         metier = 0
 
-    # 2) Zone (30) — département du projet vs départements ciblés
+    # 2) Zone (25)
     deps = _deps(criteria.get("departements"))
     loc_dep = _dep_of(projet.get("localisation", ""))
     if not deps:
-        zone = 18
+        zone = 15
     elif loc_dep and loc_dep in deps:
-        zone = 30
+        zone = 25
     elif loc_dep:
-        zone = 6
+        zone = 5
     else:
-        zone = 14  # localisation inconnue
+        zone = 12
 
-    # 3) Budget (20) — dans la fourchette visée
+    # 3) Budget (15)
     bmin, bmax = criteria.get("budget_min"), criteria.get("budget_max")
     b = projet.get("budget")
     if b is None:
-        budget = 12
+        budget = 9
     elif (bmin in (None, 0) or b >= bmin) and (bmax in (None, 0) or b <= bmax):
-        budget = 20
+        budget = 15
     else:
-        budget = 8
+        budget = 6
 
-    score = min(100, metier + zone + budget)
+    # 4) Maturité / probabilité d'AO (20)
+    mat = projet.get("maturite")
+    if mat is None:
+        mat = _maturite_from_phase(projet.get("phase", ""))
+    maturite = round(20 * max(0, min(100, mat)) / 100)
+
+    score = min(100, metier + zone + budget + maturite)
     label = "pertinent" if score >= 62 else ("a_etudier" if score >= 38 else "faible")
     return score, label
+
+
+_PHASE_MAT = {"imminent": 90, "concours": 80, "financement voté": 75,
+              "programmation": 55, "étude": 35, "idée": 20}
+
+
+def _maturite_from_phase(phase: str) -> int:
+    return _PHASE_MAT.get(str(phase or "").strip().lower(), 45)
 
 
 def _words(s: str) -> set:
@@ -167,5 +233,5 @@ def _deps(v) -> list:
 
 
 def _dep_of(localisation: str) -> str:
-    m = re.search(r"\b(\d{2})\d{3}\b", str(localisation))   # code postal → département
+    m = re.search(r"\b(\d{2})\d{3}\b", str(localisation))
     return m.group(1) if m else ""
