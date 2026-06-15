@@ -299,3 +299,72 @@ def _is_past(date_str: Optional[str]) -> bool:
         return datetime.strptime(date_str[:10], "%Y-%m-%d").date() < date.today()
     except (ValueError, TypeError):
         return False
+
+
+# ================================================================
+# COMPLEMENTARITY GRAPH — score de SYNERGIE d'un co-traitant
+# Mesure ce que le candidat APPORTE au groupement (vs l'entreprise pilote
+# et le marché), pas seulement sa fiabilité intrinsèque.
+#   Complémentarité métier 40 · Ancrage territorial 35 · Fiabilité & certifs 25
+# ================================================================
+def _wset(s: str) -> set:
+    import re as _re
+    return {w for w in _re.split(r"\W+", str(s).lower()) if len(w) > 3}
+
+
+def _dep_of_postal(cp) -> str:
+    cp = str(cp or "").strip()
+    return cp[:2] if len(cp) >= 2 and cp[:2].isdigit() else ""
+
+
+def synergy_score(candidate, lead: dict = None, tender_departements=None, need_label: str = "") -> dict:
+    """Score de synergie 0-100 du candidat vs l'entreprise pilote + le marché."""
+    lead = lead or {}
+    deps = [str(d)[:2] for d in (tender_departements or []) if d]
+    bd = []
+
+    # 1) Complémentarité métier (40) — couvre un besoin que le pilote n'assure pas
+    cand = _wset((candidate.naf_label or "") + " " + (need_label or ""))
+    needw = _wset(need_label)
+    lead_words = _wset(" ".join(str(q.get("name", q) if isinstance(q, dict) else q)
+                                for q in (lead.get("qualifications") or [])) + " " + str(lead.get("code_ape", "")))
+    redundant = bool(cand & lead_words)
+    if needw and (cand & needw):
+        comp = 33 if redundant else 40
+        dcomp = (f"Couvre le besoin « {need_label} »"
+                 + (" (proche de votre activité)" if redundant else " que vous n'assurez pas — complémentaire"))
+    elif needw:
+        comp, dcomp = 20, "Métier à confirmer vs le besoin recherché"
+    else:
+        comp, dcomp = 26, "Métier potentiellement complémentaire"
+    bd.append({"key": "complementarite", "label": "Complémentarité métier", "points": comp, "max": 40, "detail": dcomp})
+
+    # 2) Ancrage territorial (35) — implantation locale = bonus RSE/carbone du dossier
+    lead_dep = _dep_of_postal(lead.get("postal_code"))
+    if deps and candidate.departement in deps:
+        terr = 35
+        d = "Implanté sur le lieu d'exécution"
+        if lead_dep and lead_dep not in deps:
+            d += " — apporte l'ancrage local que vous n'avez pas (RSE/carbone)"
+    elif not deps:
+        terr, d = 18, "Lieu d'exécution non précisé"
+    else:
+        terr, d = 9, f"Hors lieu d'exécution (dépt {candidate.departement or 'n/d'})"
+    bd.append({"key": "territoire", "label": "Ancrage territorial", "points": terr, "max": 35, "detail": d})
+
+    # 3) Fiabilité & qualifications (25) — réutilise la fiabilité + certifs
+    rel = round((candidate.score.total if candidate.score else 50) / 100 * 18)
+    certs, cl = 0, []
+    if candidate.est_rge:
+        certs += 4; cl.append("RGE")
+    if candidate.est_qualiopi:
+        certs += 3; cl.append("Qualiopi")
+    fiab = min(25, rel + certs)
+    bd.append({"key": "fiabilite", "label": "Fiabilité & qualifications", "points": fiab, "max": 25,
+               "detail": f"Fiabilité {candidate.score.total if candidate.score else '—'}/100"
+                         + (" · " + ", ".join(cl) if cl else "")})
+
+    total = min(100, comp + terr + fiab)
+    headline = "Forte synergie" if total >= 70 else ("Synergie correcte" if total >= 45 else "Synergie faible")
+    return {"total": total, "headline": headline, "breakdown": bd,
+            "note": "Axe « historique de groupements gagnants » à venir (accumulation des données)."}

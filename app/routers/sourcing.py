@@ -432,6 +432,16 @@ def source_cotraitants(request: Request, req: CotraitantsRequest,
     res = _company_service().discover(
         activity=req.activity, departement=req.departement, query=req.query,
         tender_departements=deps, need_label=req.activity)
+    # Complementarity Graph : score de SYNERGIE vs l'entreprise pilote (ce que le
+    # candidat APPORTE au groupement). On trie les partenaires par synergie décroissante.
+    from app.sourcing.scoring import synergy_score
+    lead = db.query(Company).filter(Company.user_id == current_user.id).first()
+    lead_data = _company_dict(lead)
+    for c in res["companies"]:
+        if not c.procedure_collective:   # un partenaire en procédure reste plafonné/en bas
+            c.synergy = synergy_score(c, lead_data, deps, req.activity)
+    res["companies"].sort(key=lambda c: (c.synergy or {}).get("total", 0) if not c.procedure_collective else -1,
+                          reverse=True)
     return {
         "count": res["count"],
         "errors": [e.model_dump() for e in res["errors"]],

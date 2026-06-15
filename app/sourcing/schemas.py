@@ -96,6 +96,7 @@ class NormalizedCompany(BaseModel):
     provenance: Provenance
     confidence: float = 0.0
     score: Optional[Score] = None
+    synergy: Optional[dict] = None   # score de synergie vs l'entreprise pilote (Complementarity Graph)
     raw: dict[str, Any] = {}
 
 

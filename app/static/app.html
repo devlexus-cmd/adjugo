@@ -549,12 +549,13 @@
               <input class="inp" v-model="src.ct.dept" placeholder="Département" style="width:140px">
               <button class="btn primary" @click="srcCotraitants()" :disabled="src.ct.searching"><span v-if="src.ct.searching" class="spin"></span><i v-else data-lucide="search"></i>Chercher</button>
             </div>
-            <div class="muted small" style="margin-top:8px">Classement par fiabilité — uniquement des signaux vérifiables (SIRENE + BODACC). Survolez « Détail du score ».</div>
+            <div class="muted small" style="margin-top:8px">Classement par <b>synergie</b> avec votre entreprise — ce que chaque partenaire <b>apporte au groupement</b> (complémentarité métier + ancrage territorial + fiabilité). Signaux vérifiables (SIRENE/BODACC).</div>
             <div v-for="c in src.ct.companies" :key="c.siren" class="row" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:8px;align-items:flex-start" :style="srcIsSelected(c)?'border-color:var(--accent);background:var(--accent-weak)':(c.procedure_collective?'border-color:var(--danger)':'')">
               <input type="checkbox" :checked="srcIsSelected(c)" @change="srcToggle(c)" style="width:auto;height:auto;margin-top:2px">
               <div style="flex:1;min-width:0;margin-left:4px">
                 <div class="row wrap" style="gap:6px">
                   <span class="strong small">{{ c.nom }}</span>
+                  <span v-if="c.synergy" class="pill" :class="c.synergy.total>=70?'go':(c.synergy.total>=45?'a_etudier':'neutral')" style="font-size:10px">{{ c.synergy.headline }}</span>
                   <span v-if="c.siret_verified" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="badge-check" style="width:11px;height:11px"></i>SIRET vérifié</span>
                   <span v-if="c.est_rge" class="pill go" style="font-size:10px">RGE</span>
                   <span v-if="c.est_qualiopi" class="pill go" style="font-size:10px">Qualiopi</span>
@@ -562,11 +563,12 @@
                 </div>
                 <div class="muted small">{{ c.naf_label||c.naf||'NAF n/d' }} · {{ c.ville||'ville n/d' }} · {{ c.effectif!=null?c.effectif+' sal.':'effectif n/d' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab. ouvert(s)</span> · <a :href="c.provenance.source_url" target="_blank" style="color:var(--accent-text)">fiche officielle ↗</a></div>
                 <div v-if="c.red_flags && c.red_flags.length" class="row wrap small" style="gap:5px;margin-top:5px;color:var(--danger);font-weight:600"><i data-lucide="triangle-alert" style="width:13px;height:13px"></i><span v-for="f in c.red_flags" :key="f">{{ f }}</span></div>
-                <details class="cot-score" style="margin-top:5px"><summary class="muted small" style="cursor:pointer;user-select:none">Détail du score ({{ c.score.total }}/100)</summary>
-                  <div v-for="b in c.score.breakdown" :key="b.key" class="row small" style="padding:3px 0;gap:8px;border-bottom:1px solid var(--hairline)"><span style="min-width:130px">{{ b.label }}</span><span class="muted" style="flex:1;min-width:0">{{ b.detail }}</span><span class="pill" :class="b.status==='ok'?'go':b.status==='partiel'?'a_etudier':'neutral'" style="font-size:9px">{{ b.points }}/{{ b.max_points }}</span></div>
+                <details v-if="c.synergy" class="cot-score" style="margin-top:5px"><summary class="muted small" style="cursor:pointer;user-select:none">Détail de la synergie ({{ c.synergy.total }}/100)</summary>
+                  <div v-for="b in c.synergy.breakdown" :key="b.key" class="row small" style="padding:3px 0;gap:8px;border-bottom:1px solid var(--hairline)"><span style="min-width:140px">{{ b.label }}</span><span class="muted" style="flex:1;min-width:0">{{ b.detail }}</span><span class="pill" :class="b.points>=b.max*0.66?'go':(b.points>=b.max*0.33?'a_etudier':'neutral')" style="font-size:9px">{{ b.points }}/{{ b.max }}</span></div>
+                  <div class="muted small" style="padding:5px 0 2px;font-style:italic">Fiabilité intrinsèque : {{ c.score.total }}/100. {{ c.synergy.note }}</div>
                 </details>
               </div>
-              <div class="num strong" :style="c.procedure_collective?'color:var(--danger)':(c.score.total<45?'color:var(--warning)':'')">{{ c.score.total }}</div>
+              <div class="num strong" style="text-align:right" :style="c.procedure_collective?'color:var(--danger)':''">{{ c.synergy?c.synergy.total:c.score.total }}<div class="muted" style="font-size:10px;font-weight:400">fiab. {{ c.score.total }}</div></div>
             </div>
           </div>
 
