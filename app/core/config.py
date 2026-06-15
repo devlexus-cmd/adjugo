@@ -71,10 +71,12 @@ class Settings(BaseSettings):
     ALLOWED_UPLOAD_EXT: str = ".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.odt,.ods"
 
     # Plans
+    # Quotas d'analyses IA inclus / mois. Au-delà : 5 €/analyse (overage).
+    # Découverte 0 € · Pro 129 € · Business 199 € · Enterprise sur-devis.
     PLAN_LIMITS: dict = {
         "starter": {"analyses": 3, "storage_mb": 500},
-        "pro": {"analyses": 50, "storage_mb": 10240},
-        "business": {"analyses": 999999, "storage_mb": 102400},
+        "pro": {"analyses": 20, "storage_mb": 10240},
+        "business": {"analyses": 60, "storage_mb": 102400},
     }
 
     class Config:
