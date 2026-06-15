@@ -159,6 +159,27 @@ def root():
         return HTMLResponse(f.read())
 
 
+def _legal_page(name: str):
+    from fastapi.responses import HTMLResponse
+    with open(os.path.join(_static_dir, "legal", name), encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+
+@app.get("/mentions-legales", tags=["Site"], include_in_schema=False)
+def mentions_legales():
+    return _legal_page("mentions-legales.html")
+
+
+@app.get("/cgv", tags=["Site"], include_in_schema=False)
+def cgv():
+    return _legal_page("cgv.html")
+
+
+@app.get("/confidentialite", tags=["Site"], include_in_schema=False)
+def confidentialite():
+    return _legal_page("confidentialite.html")
+
+
 @app.get("/app", tags=["Logiciel"], include_in_schema=False)
 def software():
     from fastapi.responses import HTMLResponse
