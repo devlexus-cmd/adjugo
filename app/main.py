@@ -147,6 +147,8 @@ from app.routers.cospace import router as cospace_router
 app.include_router(cospace_router)
 from app.routers.jobs import router as jobs_router
 app.include_router(jobs_router)
+from app.routers.invites import router as invites_router
+app.include_router(invites_router)
 
 # Fichiers statiques du logiciel (SPA)
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -191,6 +193,15 @@ def confidentialite():
 def software():
     from fastapi.responses import HTMLResponse
     with open(os.path.join(_static_dir, "app.html"), encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+
+@app.get("/invite/{token}", tags=["Co-traitance"], include_in_schema=False)
+def invite_page(token: str):
+    """Page d'accès co-traitant (vue bridée). Le jeton est lu côté client puis
+    validé par l'API ; cette route ne sert que la coquille HTML."""
+    from fastapi.responses import HTMLResponse
+    with open(os.path.join(_static_dir, "invite.html"), encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
 @app.get("/api/health", tags=["Sante"])

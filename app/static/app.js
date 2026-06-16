@@ -120,7 +120,8 @@ createApp({
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             qa: [], qaInput: "", qaLoading: false,
-            estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "" },
+            estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
+            share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], form: { recipient: "", company_name: "", can_view_docs: true, expires_days: 30 } } },
       titles: { kb: "Base de connaissances — savoir-faire & mémoires IA", amont: "Veille amont — signaux d'investissement", dashboard: "Tableau de bord", sourcing: "Sourcing IA — appels d'offres", agent: "Agent IA — Pipeline multi-agents", pipeline: "Pipeline des appels d'offres", veille: "Veille des marchés publics", cotraitants: "Réseau de co-traitants", contacts: "Contacts CRM", documents: "Coffre-fort documentaire", invoices: "Devis & Factures", company: "Profil entreprise", criteria: "Critères Go/No-Go", team: "Équipe", billing: "Abonnement", aodetail: "Appel d'offres" },
       subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres" },
     };
@@ -381,8 +382,9 @@ createApp({
       this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.group = null;
       this.ao.qa = []; this.ao.qaInput = "";
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
+      this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], form: { recipient: "", company_name: "", can_view_docs: true, expires_days: 30 } };
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
-      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate();
+      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites();
       setTimeout(() => this.aoLoadBuyer(), 700);   // profil acheteur (BOAMP, lent) en différé, après le cœur de l'AO
     },
     async aoLoadEstimate() {
@@ -467,6 +469,49 @@ createApp({
     async aoLoadCotraitants() {
       try { this.ao.cotraitants = await this.api("GET", "/api/cotraitants/project/" + this.ao.project.id) || []; } catch (e) {}
     },
+
+    // ── Partage co-traitant (lien bridé) + journal d'accès RGPD ──
+    async aoLoadInvites() {
+      try { this.ao.share.invites = await this.api("GET", "/api/projects/" + this.ao.project.id + "/invites") || []; } catch (e) {}
+    },
+    inviteUrl(inv) { return window.location.origin + (inv.path || ("/invite/" + inv.token)); },
+    inviteState(inv) {
+      if (inv.revoked) return { label: "Révoqué", cls: "neutral" };
+      if (inv.expires_at && new Date(inv.expires_at) < new Date()) return { label: "Expiré", cls: "a_etudier" };
+      return { label: "Actif", cls: "go" };
+    },
+    async aoCreateInvite() {
+      const f = this.ao.share.form;
+      this.ao.share.busy = true;
+      try {
+        const inv = await this.api("POST", "/api/projects/" + this.ao.project.id + "/invites", f);
+        this.ao.share.lastUrl = this.inviteUrl(inv);
+        this.ao.share.form = { recipient: "", company_name: "", can_view_docs: true, expires_days: 30 };
+        await this.aoLoadInvites();
+        this.copyInvite(this.ao.share.lastUrl, true);
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.ao.share.busy = false; }
+    },
+    async aoRevokeInvite(inv) {
+      if (!confirm("Révoquer ce lien ? Le co-traitant perdra l'accès immédiatement.")) return;
+      try { await this.api("DELETE", "/api/projects/" + this.ao.project.id + "/invites/" + inv.id); this.notify("Lien révoqué"); this.aoLoadInvites(); }
+      catch (e) { this.notify(e.message, "err"); }
+    },
+    copyInvite(url, silent) {
+      try { navigator.clipboard.writeText(url); if (!silent) this.notify("Lien copié"); else this.notify("Lien généré et copié dans le presse-papier"); }
+      catch (e) { if (!silent) this.notify("Copie impossible — sélectionnez le lien manuellement", "err"); }
+    },
+    async aoToggleAudit() {
+      this.ao.share.auditOpen = !this.ao.share.auditOpen;
+      if (this.ao.share.auditOpen && !this.ao.share.audit.length) {
+        try { this.ao.share.audit = await this.api("GET", "/api/projects/" + this.ao.project.id + "/audit") || []; } catch (e) {}
+      }
+    },
+    auditLabel(a) {
+      const m = { "invite.created": "Lien créé", "invite.revoked": "Lien révoqué", "guest.view_project": "Consultation du dossier", "guest.download_doc": "Téléchargement de pièce" };
+      return m[a.action] || a.action;
+    },
+    auditWhen(s) { if (!s) return ""; try { return new Date(s).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } },
     async aoLoadDocs() {
       try { const r = await this.api("GET", "/api/projects/" + this.ao.project.id + "/documents"); this.ao.documents = r.folders || []; } catch (e) {}
     },

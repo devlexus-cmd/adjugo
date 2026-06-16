@@ -497,3 +497,53 @@ class Job(Base):
     error = Column(Text, default="")                  # message d'erreur (quand error)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# === INVITATION CO-TRAITANT (vue bridée par jeton) ===
+# Un mandataire partage UN appel d'offres avec un co-traitant externe via un lien
+# secret. Le co-traitant accède à une vue LIMITÉE au seul projet partagé — sans
+# compte, sans accès au reste du tenant. C'est la base de confiance pour ouvrir un
+# dossier à un partenaire. Voir [[adjugo-architecture-invariants]] : la portée est
+# TOUJOURS contrainte à invite.project_id côté serveur.
+
+class ProjectInvite(Base):
+    __tablename__ = "project_invites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(64), unique=True, index=True, nullable=False)   # secret de l'URL
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)  # qui partage
+
+    recipient = Column(String(255), default="")        # email/nom du co-traitant (info)
+    company_name = Column(String(255), default="")     # entreprise co-traitante (info)
+    can_view_docs = Column(Boolean, default=True)      # autorise la liste + le téléchargement des pièces
+
+    revoked = Column(Boolean, default=False, index=True)
+    expires_at = Column(DateTime, nullable=True)       # null = sans expiration
+    view_count = Column(Integer, default=0)
+    last_viewed_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=utcnow)
+
+
+# === JOURNAL D'ACCÈS (RGPD) ===
+# Trace immuable de qui a consulté/téléchargé quoi, et quand — y compris les invités
+# externes. C'est l'argument juridique : preuve de traçabilité des accès aux pièces.
+# Append-only (jamais modifié) ; un échec d'écriture ne doit jamais casser l'action.
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=utcnow, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)   # tenant propriétaire de la donnée
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
+
+    actor = Column(String(160), default="")        # "user:42" | email du co-traitant | "invité"
+    actor_kind = Column(String(20), default="")    # owner | guest
+    action = Column(String(60), default="", index=True)  # invite.created | invite.revoked | guest.view_project | guest.download_doc
+    target_type = Column(String(40), default="")   # project | document | invite
+    target_id = Column(Integer, nullable=True)
+    detail = Column(String(255), default="")       # ex. nom du document consulté
+    ip = Column(String(45), default="")            # IPv4/IPv6 de l'accès
+    meta = Column(JSON, nullable=True)

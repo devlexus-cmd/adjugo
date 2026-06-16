@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Espace co-traitant — Adjugo</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    body { background: var(--bg, #f6f7f9); margin: 0; }
+    .iv-wrap { max-width: 860px; margin: 0 auto; padding: 22px 18px 64px; }
+    .iv-top { display:flex; align-items:center; justify-content:space-between; gap:12px; padding: 6px 2px 18px; }
+    .iv-brand { display:flex; align-items:center; gap:9px; font-weight:800; font-size:19px; letter-spacing:-.02em; color: var(--text, #16181d); }
+    .iv-badge { font-size:11px; font-weight:700; padding:4px 10px; border-radius:999px; background: var(--accent-weak, #eef2ff); color: var(--accent-text, #3b5bdb); }
+    .iv-h { font-size:21px; font-weight:800; margin:2px 0 3px; letter-spacing:-.02em; }
+    .iv-fact { display:grid; grid-template-columns: 168px 1fr; gap:6px 14px; font-size:13.5px; margin-top:10px; }
+    .iv-fact dt { color: var(--text-2, #6b7280); font-weight:600; }
+    .iv-fact dd { margin:0; color: var(--text, #16181d); }
+    .iv-doc { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; border:1px solid var(--border, #e6e8ec); border-radius:10px; margin-top:8px; background: var(--surface, #fff); }
+    .iv-doc .nm { font-weight:600; font-size:13.5px; }
+    .iv-muted { color: var(--text-2, #6b7280); }
+    .iv-note { font-size:12px; color: var(--text-2, #6b7280); margin-top:22px; text-align:center; line-height:1.6; }
+    .iv-state { text-align:center; padding:70px 20px; color: var(--text-2, #6b7280); }
+    ul.iv-list { margin:4px 0 0; padding-left:18px; } ul.iv-list li { margin:2px 0; }
+  </style>
+</head>
+<body>
+  <div class="iv-wrap" id="root">
+    <div class="iv-state" id="loading"><div class="spin" style="margin:0 auto 12px"></div>Chargement de l'espace partagé…</div>
+  </div>
+
+  <script>
+    const TOKEN = decodeURIComponent(location.pathname.split("/invite/")[1] || "").replace(/\/.*$/, "");
+    const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
+    const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const kb = (n) => !n ? "" : n < 1024 ? n + " o" : n < 1048576 ? (n / 1024).toFixed(0) + " Ko" : (n / 1048576).toFixed(1) + " Mo";
+    const fmtDate = (s) => { if (!s) return ""; try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" }); } catch (e) { return s; } };
+
+    const LABELS = {
+      objet: "Objet", acheteur: "Acheteur", lieu: "Lieu d'exécution", duree: "Durée",
+      delais: "Délais", lots: "Lots / allotissement", allotissement: "Allotissement",
+      pieces_requises: "Pièces attendues", criteres_attribution: "Critères d'attribution",
+      criteres: "Critères", montant_estime: "Montant estimé", type_marche: "Type de marché",
+      procedure: "Procédure", date_limite: "Date limite"
+    };
+
+    function objLabel(x) {
+      // Nom lisible d'un objet (lot, critère…) sans tomber sur du JSON brut.
+      const name = x.nom || x.name || x.label || x.intitule || x.critere || x.libelle || x.titre || x.designation || x.lot || "";
+      const weight = x.ponderation || x.poids || x.pourcentage || x.coefficient || x.pct || "";
+      if (name) return esc(name) + (weight ? ` — <b>${esc(weight)}</b>` : "");
+      const vals = Object.values(x).filter(v => typeof v !== "object");
+      return esc(vals.join(" · "));
+    }
+    function renderVal(v) {
+      if (Array.isArray(v)) {
+        const items = v.map(x => (x && typeof x === "object") ? objLabel(x) : esc(x)).filter(Boolean);
+        return items.length ? `<ul class="iv-list">${items.map(i => `<li>${i}</li>`).join("")}</ul>` : "";
+      }
+      if (v && typeof v === "object") return `<ul class="iv-list"><li>${objLabel(v)}</li></ul>`;
+      return esc(v);
+    }
+
+    function render(d) {
+      const p = d.project || {};
+      const a = p.analysis || {};
+      const facts = Object.keys(LABELS).filter(k => a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length));
+      const root = document.getElementById("root");
+      root.innerHTML = "";
+
+      root.appendChild($(`
+        <div class="iv-top">
+          <div class="iv-brand">
+            <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#3b5bdb"/><circle cx="16" cy="16" r="9" fill="none" stroke="#fff" stroke-width="2"/><circle cx="16" cy="16" r="4" fill="#fff"/></svg>
+            Adjugo
+          </div>
+          <span class="iv-badge">Espace co-traitant · lecture seule</span>
+        </div>`));
+
+      const head = $(`<div class="card pad" style="margin-bottom:14px"></div>`);
+      head.appendChild($(`<div class="iv-muted small">${d.mandataire ? "Partagé par <b>" + esc(d.mandataire) + "</b>" : "Dossier partagé"}${d.invited && d.invited.company ? " · pour " + esc(d.invited.company) : ""}</div>`));
+      head.appendChild($(`<div class="iv-h">${esc(p.name || "Appel d'offres")}</div>`));
+      if (p.client) head.appendChild($(`<div class="iv-muted small">${esc(p.client)}</div>`));
+      const dl = $(`<dl class="iv-fact"></dl>`);
+      const addFact = (dt, ddHtml) => { dl.appendChild($(`<dt>${dt}</dt>`)); const dd = document.createElement("dd"); dd.innerHTML = ddHtml; dl.appendChild(dd); };
+      if (p.deadline) addFact("Date limite", `<b>${esc(fmtDate(p.deadline))}</b>`);
+      facts.forEach(k => addFact(LABELS[k], renderVal(a[k])));
+      if (p.source_url) addFact("Source", `<a href="${esc(p.source_url)}" target="_blank" rel="noopener nofollow">Avis d'origine ↗</a>`);
+      if (dl.children.length) head.appendChild(dl);
+      root.appendChild(head);
+
+      if (p.summary) {
+        const s = $(`<div class="card pad" style="margin-bottom:14px"></div>`);
+        s.appendChild($(`<b style="font-size:13.5px">Synthèse</b>`));
+        s.appendChild($(`<div class="small" style="margin-top:7px;white-space:pre-wrap;line-height:1.65">${esc(p.summary)}</div>`));
+        root.appendChild(s);
+      }
+
+      const docCard = $(`<div class="card pad" style="margin-bottom:8px"></div>`);
+      docCard.appendChild($(`<b style="font-size:13.5px">Pièces partagées${d.documents && d.documents.length ? " (" + d.documents.length + ")" : ""}</b>`));
+      if (!d.can_view_docs) {
+        docCard.appendChild($(`<div class="iv-muted small" style="margin-top:8px">Le partage des pièces n'est pas activé pour ce lien.</div>`));
+      } else if (!d.documents || !d.documents.length) {
+        docCard.appendChild($(`<div class="iv-muted small" style="margin-top:8px">Aucune pièce partagée pour le moment.</div>`));
+      } else {
+        d.documents.forEach(doc => {
+          const row = $(`<div class="iv-doc"></div>`);
+          row.appendChild($(`<div><div class="nm">${esc(doc.name)}</div><div class="iv-muted small">${esc(doc.folder || doc.category || "")}${doc.size ? " · " + kb(doc.size) : ""}</div></div>`));
+          row.appendChild($(`<a class="btn" href="/api/invite/${encodeURIComponent(TOKEN)}/doc/${doc.id}">Télécharger</a>`));
+          docCard.appendChild(row);
+        });
+      }
+      root.appendChild(docCard);
+
+      root.appendChild($(`<div class="iv-note">Accès en lecture seule, limité à ce dossier.<br>Conformément au RGPD, vos consultations et téléchargements sont journalisés et visibles par le mandataire.</div>`));
+    }
+
+    function fail(title, msg) {
+      document.getElementById("root").innerHTML =
+        `<div class="iv-state"><div style="font-size:34px;margin-bottom:8px">🔒</div><div style="font-weight:700;font-size:16px;color:var(--text,#16181d)">${esc(title)}</div><div style="margin-top:6px">${esc(msg)}</div></div>`;
+    }
+
+    fetch("/api/invite/" + encodeURIComponent(TOKEN))
+      .then(async r => {
+        if (r.status === 410) throw { t: "Lien expiré", m: "Ce lien de partage a expiré. Demandez-en un nouveau au mandataire." };
+        if (!r.ok) throw { t: "Lien invalide", m: "Ce lien n'est plus valable ou a été révoqué." };
+        return r.json();
+      })
+      .then(render)
+      .catch(e => fail(e.t || "Accès impossible", e.m || "Réessayez plus tard."));
+  </script>
+</body>
+</html>
