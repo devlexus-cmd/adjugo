@@ -88,6 +88,21 @@
         <button class="btn icon ghost menu-btn" @click="mobileNav=!mobileNav" aria-label="Menu"><i data-lucide="menu"></i></button>
         <div><h1>{{ titles[view] }}</h1><div class="sub">{{ subtitles[view] }}</div></div>
         <div class="spacer"></div>
+        <div style="position:relative">
+          <button class="btn icon ghost" @click="toggleNotifs()" aria-label="Notifications" style="position:relative">
+            <i data-lucide="bell"></i>
+            <span v-if="notifUnseen>0" style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--danger-text);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ notifUnseen>9?'9+':notifUnseen }}</span>
+          </button>
+          <div v-if="notifsOpen" @click="notifsOpen=false" style="position:fixed;inset:0;z-index:40"></div>
+          <div v-if="notifsOpen" style="position:absolute;right:0;top:40px;z-index:41;width:340px;max-height:440px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:11px;box-shadow:0 10px 34px rgba(0,0,0,.13)">
+            <div class="row" style="padding:11px 14px;border-bottom:1px solid var(--hairline);gap:6px"><i data-lucide="users-round" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Activité des partenaires</b></div>
+            <div v-if="!notifs.length" class="muted small" style="padding:16px 14px">Aucune activité récente de vos co-traitants.</div>
+            <div v-for="n in notifs" :key="n.id" @click="openNotif(n)" style="padding:10px 14px;border-bottom:1px solid var(--hairline);cursor:pointer" @mouseover="$event.currentTarget.style.background='var(--surface-2)'" @mouseleave="$event.currentTarget.style.background=''">
+              <div class="small"><b>{{ n.actor }}</b> {{ n.label }}<span v-if="n.detail" class="muted"> · {{ n.detail }}</span></div>
+              <div class="muted small">{{ n.project }} · {{ auditWhen(n.at) }}</div>
+            </div>
+          </div>
+        </div>
         <button v-if="view==='pipeline'||view==='dashboard'" class="btn primary" @click="go('sourcing')"><i data-lucide="radar"></i>Sourcing IA</button>
         <button v-if="view==='cotraitants'" class="btn" @click="openDiscover()"><i data-lucide="search"></i>Découvrir</button>
         <button v-if="view==='cotraitants'" class="btn primary" @click="openCotraitant()"><i data-lucide="plus"></i>Co-traitant</button>

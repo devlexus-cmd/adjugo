@@ -601,3 +601,36 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
             "qualifications": len(company.qualifications or []) if company else 0,
         },
     }
+
+
+# ── Notifications (activité des partenaires, in-app) ─────────────────────────
+# Pas de modèle dédié : on s'appuie sur audit_logs (déjà rempli). Le mandataire voit
+# l'activité de ses co-traitants sur TOUS ses AO d'un coup d'œil.
+_NOTIF_LABELS = {
+    "guest.submit_contribution": "a soumis sa part",
+    "guest.upload_piece": "a déposé une pièce",
+    "guest.view_project": "a consulté le dossier",
+}
+
+
+@router.get("/api/notifications")
+def notifications(current_user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db), days: int = 21):
+    """Activité récente des co-traitants sur les AO du mandataire (in-app, sans email)."""
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max(1, min(days, 90)))
+    rows = db.query(AuditLog).filter(
+        AuditLog.owner_id == current_user.id, AuditLog.actor_kind == "guest",
+        AuditLog.action.in_(list(_NOTIF_LABELS)),
+        AuditLog.created_at >= since
+    ).order_by(AuditLog.created_at.desc()).limit(40).all()
+    pids = {r.project_id for r in rows if r.project_id}
+    names = {}
+    if pids:
+        names = {p.id: p.name for p in db.query(Project).filter(
+            Project.id.in_(pids), Project.user_id == current_user.id).all()}
+    return [{
+        "id": r.id, "at": r.created_at.isoformat() if r.created_at else None,
+        "project_id": r.project_id, "project": names.get(r.project_id, "Appel d'offres"),
+        "actor": r.actor or "Un partenaire", "action": r.action,
+        "label": _NOTIF_LABELS.get(r.action, r.action), "detail": r.detail or "",
+    } for r in rows]
