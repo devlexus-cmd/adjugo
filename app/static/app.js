@@ -121,7 +121,7 @@ const __adjApp = createApp({
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             qa: [], qaInput: "", qaLoading: false,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
-            share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
+            share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
       titles: { kb: "Base de connaissances — savoir-faire & mémoires IA", amont: "Veille amont — signaux d'investissement", dashboard: "Tableau de bord", sourcing: "Sourcing IA — appels d'offres", agent: "Agent IA — Pipeline multi-agents", pipeline: "Pipeline des appels d'offres", veille: "Veille des marchés publics", cotraitants: "Réseau de co-traitants", contacts: "Contacts CRM", documents: "Coffre-fort documentaire", invoices: "Devis & Factures", company: "Profil entreprise", criteria: "Critères Go/No-Go", team: "Équipe", billing: "Abonnement", aodetail: "Appel d'offres" },
       subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres" },
     };
@@ -382,9 +382,9 @@ const __adjApp = createApp({
       this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.group = null;
       this.ao.qa = []; this.ao.qaInput = "";
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
-      this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
+      this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
-      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites();
+      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites(); this.aoLoadConsortium();
       setTimeout(() => this.aoLoadBuyer(), 700);   // profil acheteur (BOAMP, lent) en différé, après le cœur de l'AO
     },
     async aoLoadEstimate() {
@@ -474,6 +474,14 @@ const __adjApp = createApp({
     async aoLoadInvites() {
       try { this.ao.share.invites = await this.api("GET", "/api/projects/" + this.ao.project.id + "/invites") || []; } catch (e) {}
     },
+    async aoLoadConsortium() {
+      try { this.ao.share.consortium = await this.api("GET", "/api/projects/" + this.ao.project.id + "/consortium"); } catch (e) { this.ao.share.consortium = null; }
+    },
+    async aoToggleCockpit() {
+      this.ao.share.cockpitOpen = !this.ao.share.cockpitOpen;
+      if (this.ao.share.cockpitOpen) await this.aoLoadConsortium();
+    },
+    readinessColor(pct) { const p = Math.min(100, Math.max(0, Number(pct) || 0)); return p >= 80 ? "var(--success-text)" : p >= 45 ? "var(--warning-text)" : "var(--danger-text)"; },
     inviteUrl(inv) { return window.location.origin + (inv.path || ("/invite/" + inv.token)); },
     inviteState(inv) {
       if (inv.revoked) return { label: "Révoqué", cls: "neutral" };

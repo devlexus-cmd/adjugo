@@ -438,6 +438,16 @@
             <div class="cb">
               <div class="muted small">Associez d'autres PME pour gagner ce marché ensemble. Chaque partenaire reçoit un <b>lien sécurisé</b> limité à ce seul dossier : il apporte <b>sa part</b> (références, lot, mémoire) sans jamais voir les données des autres. L'IA fusionne le tout en une réponse commune.</div>
 
+              <!-- Cockpit : état de préparation de la réponse commune (calcul déterministe) -->
+              <div v-if="ao.share.consortium && ao.share.consortium.readiness && ao.share.consortium.readiness.invited" class="row" style="margin-top:12px;gap:13px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)">
+                <div style="flex:1;min-width:0">
+                  <div class="row" style="gap:7px;align-items:baseline"><b style="font-size:17px" :style="{color:readinessColor(ao.share.consortium.readiness.pct)}">{{ ao.share.consortium.readiness.pct }}%</b><span class="small">réponse commune prête</span></div>
+                  <div class="muted small">{{ ao.share.consortium.readiness.submitted }}/{{ ao.share.consortium.readiness.invited }} partenaire(s) ont contribué · {{ ao.share.consortium.readiness.lots }} lot(s) couvert(s)</div>
+                  <div style="height:6px;background:var(--surface-3);border-radius:3px;margin-top:7px;overflow:hidden"><div :style="{width:ao.share.consortium.readiness.pct+'%',height:'100%',background:readinessColor(ao.share.consortium.readiness.pct),transition:'width .4s'}"></div></div>
+                </div>
+                <button class="btn sm" @click="aoToggleCockpit()"><i data-lucide="layout-dashboard"></i>{{ ao.share.cockpitOpen?'Replier':'Cockpit' }}</button>
+              </div>
+
               <!-- CTA viral : le geste le plus visible -->
               <button class="btn primary" @click="ao.share.open=!ao.share.open" style="margin-top:12px;width:100%;justify-content:center;padding:12px;font-size:14px"><i data-lucide="user-plus"></i>Inviter un partenaire dans le consortium</button>
 
@@ -498,6 +508,41 @@
                   <div v-if="c.references && c.references.length" class="muted small">Références : {{ c.references.map(r => r.intitule).filter(Boolean).join(' · ') }}</div>
                   <div v-if="c.chiffrage_note" class="muted small">Prix lot : {{ c.chiffrage_note }}</div>
                   <div v-if="c.memoire_paragraph" class="small" style="margin-top:5px;padding:7px 9px;background:var(--surface-2);border-radius:6px;white-space:pre-wrap">{{ c.memoire_paragraph }}</div>
+                </div>
+              </div>
+
+              <!-- Cockpit du consortium : lots × partenaires, complétude, manques, assemblage -->
+              <div v-if="ao.share.cockpitOpen && ao.share.consortium && ao.share.consortium.readiness" style="margin-top:14px;border-top:1px solid var(--hairline);padding-top:12px">
+                <div class="row" style="gap:6px;margin-bottom:10px;align-items:center"><i data-lucide="layout-dashboard" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Cockpit du consortium</b><span class="muted small">Qui couvre quoi · ce qu'il manque · assemblage.</span></div>
+
+                <div v-if="(ao.share.consortium.lots||[]).length" style="margin-bottom:12px">
+                  <div class="muted small" style="font-weight:600;margin-bottom:5px">Lots couverts</div>
+                  <div v-for="l in ao.share.consortium.lots" :key="l.lot" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
+                    <span class="pill go" style="font-size:10px"><i data-lucide="check" style="width:11px;height:11px"></i>{{ l.lot }}</span>
+                    <span class="muted">{{ l.partners.join(', ') }}</span>
+                  </div>
+                </div>
+
+                <div class="muted small" style="font-weight:600;margin-bottom:5px">Parts des partenaires</div>
+                <div v-if="!ao.share.consortium.partners.length" class="muted small">Aucun partenaire invité. Cliquez « Inviter un partenaire » ci-dessus.</div>
+                <div v-for="p in ao.share.consortium.partners" :key="p.company" class="row" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
+                  <div style="flex:1;min-width:0">
+                    <span class="strong small">{{ p.company }}</span>
+                    <span class="pill" :class="p.status==='submitted'?'go':p.status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ p.status==='submitted'?'Soumise':p.status==='draft'?'Brouillon':'En attente' }}</span>
+                    <span v-if="p.lot" class="muted small"> · {{ p.lot }}</span>
+                  </div>
+                  <div style="width:84px"><div style="height:5px;background:var(--surface-3);border-radius:3px;overflow:hidden"><div :style="{width:p.completeness+'%',height:'100%',background:readinessColor(p.completeness)}"></div></div></div>
+                  <span class="muted small" style="width:32px;text-align:right">{{ p.completeness }}%</span>
+                </div>
+
+                <div v-if="ao.share.consortium.readiness.missing.length" style="margin-top:11px">
+                  <div class="muted small" style="font-weight:600;margin-bottom:5px">À compléter</div>
+                  <div v-for="(m,i) in ao.share.consortium.readiness.missing" :key="'cm'+i" class="row small" style="gap:6px;padding:3px 0;color:var(--warning-text)"><i data-lucide="circle-alert" style="width:13px;height:13px;flex:none"></i><span>{{ m }}</span></div>
+                </div>
+
+                <div class="row wrap" style="margin-top:13px;gap:9px;align-items:center">
+                  <button class="btn primary" @click="aoGenerate()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="combine"></i>Assembler la réponse commune</button>
+                  <span class="muted small">Fusionne les parts soumises dans le mémoire commun.</span>
                 </div>
               </div>
 

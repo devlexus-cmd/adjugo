@@ -373,3 +373,76 @@ def list_contributions(project_id: int, current_user: User = Depends(get_current
         ProjectContribution.owner_id == current_user.id
     ).order_by(ProjectContribution.updated_at.desc()).all()
     return [_serialize_contribution(c) for c in rows]
+
+
+# Pondération de complétude d'UNE part de partenaire (somme = 1.0). Déterministe et
+# explicable : le % de préparation n'est jamais "deviné" par l'IA, c'est un calcul.
+_READINESS_WEIGHTS = {"submitted": 0.40, "lot": 0.15, "references": 0.15,
+                      "memoire": 0.20, "qualifications": 0.10}
+
+
+@router.get("/api/projects/{project_id}/consortium")
+def consortium_cockpit(project_id: int, current_user: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    """Cockpit du consortium (mandataire) : partenaires × lots, complétude de chaque part,
+    et % de réponse commune PRÊTE — calcul DÉTERMINISTE (jamais inventé)."""
+    _owned_project(project_id, current_user, db)
+    invites = db.query(ProjectInvite).filter(
+        ProjectInvite.project_id == project_id, ProjectInvite.owner_id == current_user.id,
+        ProjectInvite.revoked.is_(False)).order_by(ProjectInvite.created_at.asc()).all()
+    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
+        ProjectContribution.project_id == project_id,
+        ProjectContribution.owner_id == current_user.id).all()}
+    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+
+    partners, lots, missing, total_score = [], {}, [], 0.0
+    for inv in invites:
+        c = contribs.get(inv.id)
+        lot_clean = (c.lot.strip() if c and c.lot else "")   # évite une clé de lot vide/espaces
+        flags = {
+            "submitted": bool(c and c.status == "submitted"),
+            "lot": bool(lot_clean),
+            "references": bool(c and c.references),
+            "memoire": bool(c and c.memoire_paragraph),
+            "qualifications": bool(c and c.qualifications),
+        }
+        score = min(1.0, sum(_READINESS_WEIGHTS[k] for k, v in flags.items() if v))   # borne [0,1]
+        total_score += score
+        name = (c.company_name if c and c.company_name else inv.company_name) or inv.recipient or "Partenaire"
+        partners.append({
+            "company": name, "role": inv.role or "cotraitant",
+            "lot": lot_clean, "status": (c.status if c else "invited"),
+            "has_references": flags["references"], "has_memoire": flags["memoire"],
+            "has_chiffrage": bool(c and c.chiffrage_note),
+            "qualifications_count": len(c.qualifications or []) if c else 0,
+            "completeness": round(score * 100),
+        })
+        if lot_clean:
+            lots.setdefault(lot_clean, []).append(name)
+        # File des manques (concrets, actionnables) — le plus bloquant d'abord.
+        if not flags["submitted"]:
+            missing.append(f"{name} n'a pas encore soumis sa part")
+        elif not flags["memoire"]:
+            missing.append(f"{name} : paragraphe de mémoire manquant")
+        elif not flags["lot"]:
+            missing.append(f"{name} : lot/périmètre non précisé")
+        elif not flags["references"]:
+            missing.append(f"{name} : aucune référence renseignée")
+
+    n = len(invites)
+    pct = round(100 * total_score / n) if n else 0
+    return {
+        "partners": partners,
+        "lots": [{"lot": k, "partners": v} for k, v in lots.items()],
+        "readiness": {
+            "invited": n,
+            "submitted": sum(1 for p in partners if p["status"] == "submitted"),
+            "lots": len(lots),
+            "pct": pct,
+            "missing": missing[:12],
+        },
+        "mandataire": {
+            "company": (company.name if company else "") or "",
+            "qualifications": len(company.qualifications or []) if company else 0,
+        },
+    }
