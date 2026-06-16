@@ -162,6 +162,20 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         except Exception:
             contributions = []
 
+    # Pièces administratives des co-traitants (parts SOUMISES) → assemblées dans le ZIP.
+    cotraitant_pieces = []
+    if db is not None and project_id:
+        try:
+            from app.models import ContributionPiece, ProjectContribution
+            prows = db.query(ContributionPiece, ProjectContribution).join(
+                ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).filter(
+                ContributionPiece.project_id == project_id,
+                ProjectContribution.status == "submitted").all()
+            cotraitant_pieces = [{"company": (cb.company_name or "cotraitant"),
+                                  "name": pc.name, "file_key": pc.file_key} for pc, cb in prows]
+        except Exception:
+            cotraitant_pieces = []
+
     # ── Mémoire technique (IA, un seul appel) ──
     try:
         memoire_md = _generate_memoire_fast(analysis, company, cotraitants, lang_name, db=db, user_id=user_id, estimate=estimate, contributions=contributions)
@@ -219,7 +233,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
             warnings.append(f"formulaire national: {e}")
 
     # ── ZIP ──
-    zip_bytes, zip_name = _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id)
+    zip_bytes, zip_name = _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces)
 
     return {
         "memoire_markdown": memoire_md,
@@ -233,7 +247,8 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     }
 
 
-def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id):
+def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces=None):
+    import os
     buf = io.BytesIO()
     ao = re.sub(r"[^\w\s-]", "", details.get("intitule_marche", "AO"))[:40].strip() or f"projet_{project_id}"
     zip_name = f"Adjugo_Dossier_{ao}.zip".replace(" ", "_")
@@ -244,6 +259,28 @@ def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_i
             zf.writestr(f"cerfa/{c['name']}", _as_bytes(c["content"]))
         zf.writestr("00_groupement.txt", _groupement_recap(company, cotraitants, details).encode("utf-8"))
         zf.writestr("fiche_ao.txt", _ao_recap(details).encode("utf-8"))
+
+        # Pièces administratives des co-traitants (assemblage automatique du groupement).
+        if cotraitant_pieces:
+            from app.services.storage import get_storage
+            storage = get_storage()
+            seen = set()
+            for p in cotraitant_pieces:
+                try:
+                    content = storage.load(p["file_key"])
+                except Exception:
+                    continue
+                co = re.sub(r"[^\w\s-]", "", p.get("company", "") or "cotraitant")[:40].strip() or "cotraitant"
+                nm = os.path.basename(p.get("name", "") or "piece") or "piece"
+                path = f"pieces_cotraitants/{co}/{nm}"
+                i = 2
+                while path in seen:        # évite l'écrasement si deux pièces de même nom
+                    stem, dot, ext = nm.rpartition(".")
+                    nm2 = (f"{stem}_{i}{dot}{ext}" if dot else f"{nm}_{i}")
+                    path = f"pieces_cotraitants/{co}/{nm2}"
+                    i += 1
+                seen.add(path)
+                zf.writestr(path, content)
     return buf.getvalue(), zip_name
 
 
