@@ -73,7 +73,7 @@ const __adjApp = createApp({
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], expiring: [],
       notifs: [], notifsOpen: false, notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
-      cdetail: {}, copen: {}, cexport: {},
+      cdetail: {}, copen: {}, cexport: {}, cpreview: {},
       shared: [],
       sharedAo: { token: "", project: null, mandataire: "", docs: [], status: "", busy: false, msg: "", pieces: [], canContribute: true,
                   contrib: { company_name: "", lot: "", quals: "", refs: "", chiffrage_note: "", memoire_paragraph: "", contact: { nom: "", email: "", telephone: "" } } },
@@ -516,6 +516,19 @@ const __adjApp = createApp({
         if ((e.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
         else this.notify(e.message, "err");
       } finally { this.cexport[pid] = false; }
+    },
+    async dossierPreview(pid) {
+      if (this.cpreview[pid]) { this.cpreview[pid] = null; return; }   // re-clic = replier
+      try { this.cpreview[pid] = await this.api("GET", "/api/projects/" + pid + "/dossier-preview"); } catch (e) { this.notify("Aperçu indisponible", "err"); }
+    },
+    async consortiumReportPdf(pid) {
+      try {
+        const r = await fetch("/api/projects/" + pid + "/consortium/report", { headers: { Authorization: "Bearer " + this.token } });
+        if (!r.ok) throw new Error("indispo");
+        const blob = await r.blob(); const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = "Compte-rendu_consortium.pdf"; document.body.appendChild(a); a.click(); a.remove();
+        this.notify("Compte-rendu PDF téléchargé");
+      } catch (e) { this.notify("Compte-rendu indisponible", "err"); }
     },
 
     // ── Partagé avec moi (compte-à-compte) : je contribue à un AO d'un autre mandataire ──

@@ -1374,7 +1374,18 @@
                 </div>
                 <div class="row wrap" style="gap:8px;margin-top:13px">
                   <button class="btn primary" @click="exportConsortium(cs.project_id)" :disabled="cexport[cs.project_id]"><span v-if="cexport[cs.project_id]" class="spin"></span><i v-else data-lucide="download"></i>Exporter le dossier commun</button>
-                  <button class="btn" @click="openProjectById(cs.project_id)"><i data-lucide="external-link"></i>Ouvrir l'AO complet</button>
+                  <button class="btn" @click="dossierPreview(cs.project_id)"><i data-lucide="list"></i>{{ cpreview[cs.project_id]?'Masquer l\'aperçu':'Aperçu du dossier' }}</button>
+                  <button class="btn" @click="consortiumReportPdf(cs.project_id)"><i data-lucide="file-text"></i>Compte-rendu PDF</button>
+                  <button class="btn ghost" @click="openProjectById(cs.project_id)"><i data-lucide="external-link"></i>Ouvrir l'AO</button>
+                </div>
+                <!-- Aperçu : ce que contiendra le ZIP, sans le générer -->
+                <div v-if="cpreview[cs.project_id]" style="margin-top:10px;border:1px solid var(--border);border-radius:9px;padding:11px 13px;background:var(--surface-2)">
+                  <div class="muted small" style="font-weight:600;margin-bottom:5px">Contenu du dossier commun ({{ cpreview[cs.project_id].count }} fichiers · {{ cpreview[cs.project_id].pieces_count }} pièce(s) de partenaires)</div>
+                  <div v-for="f in cpreview[cs.project_id].files" :key="f.name" class="row small" style="padding:3px 0;gap:8px;align-items:baseline">
+                    <i data-lucide="file" style="width:12px;height:12px;color:var(--text-2);flex:none"></i>
+                    <span style="flex:1;min-width:0">{{ f.kind }}</span>
+                    <span class="muted" style="font-size:11px;font-family:var(--mono,monospace)">{{ f.name }}</span>
+                  </div>
                 </div>
                 <div class="muted small" style="margin-top:6px">Le ZIP contient le mémoire fusionné (vos savoir-faire croisés) + les CERFA + les pièces administratives de chaque partenaire.</div>
               </template>

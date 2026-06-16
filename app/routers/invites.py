@@ -18,7 +18,7 @@ from typing import Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -773,3 +773,47 @@ def shared_with_me(current_user: User = Depends(get_current_user), db: Session =
         ProjectInvite.accepted_by_user_id == current_user.id,
         ProjectInvite.revoked.is_(False)).order_by(ProjectInvite.created_at.desc()).all()
     return [_shared_item(inv, db) for inv in rows if not _is_expired(inv.expires_at)]
+
+
+# ── Aperçu du dossier commun (ce que contiendra le ZIP) — sans le générer ────
+@router.get("/api/projects/{project_id}/dossier-preview")
+def dossier_preview(project_id: int, current_user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """Liste les fichiers que contiendra le dossier commun, SANS lancer la génération
+    (pas de LLM, pas de quota) — pour voir avant d'exporter."""
+    _owned_project(project_id, current_user, db)
+    files = [
+        {"name": "memoire_technique.md", "kind": "Mémoire technique (savoir-faire fusionnés)"},
+        {"name": "cerfa/DC1.pdf", "kind": "CERFA — lettre de candidature (groupement)"},
+        {"name": "cerfa/DC2.pdf", "kind": "CERFA — déclaration du candidat"},
+        {"name": "cerfa/ATTRI1.pdf", "kind": "CERFA — acte d'engagement"},
+        {"name": "00_groupement.txt", "kind": "Composition du groupement"},
+        {"name": "fiche_ao.txt", "kind": "Fiche récapitulative de l'AO"},
+    ]
+    rows = db.query(ContributionPiece, ProjectContribution).join(
+        ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).filter(
+        ContributionPiece.project_id == project_id, ContributionPiece.owner_id == current_user.id,
+        ProjectContribution.status == "submitted").all()
+    for pc, cb in rows:
+        co = (cb.company_name or "cotraitant")
+        files.append({"name": f"pieces_cotraitants/{co}/{pc.name}",
+                      "kind": f"Pièce — {co}", "size": pc.file_size or 0})
+    n_pieces = len(rows)
+    return {"files": files, "count": len(files), "pieces_count": n_pieces}
+
+
+# ── Compte-rendu PDF du consortium (synthèse partageable) ────────────────────
+@router.get("/api/projects/{project_id}/consortium/report")
+def consortium_report(project_id: int, current_user: User = Depends(get_current_user),
+                      db: Session = Depends(get_db)):
+    project = _owned_project(project_id, current_user, db)
+    data = consortium_cockpit(project_id, current_user, db)
+    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    contribs = [_serialize_contribution(c, db) for c in db.query(ProjectContribution).filter(
+        ProjectContribution.project_id == project_id,
+        ProjectContribution.owner_id == current_user.id).all()]
+    from app.services.consortium_report import generate_consortium_report_pdf
+    pdf = generate_consortium_report_pdf(project.name, (company.name if company else ""), data, contribs)
+    safe = re.sub(r'[^A-Za-z0-9._ -]', "_", (project.name or "consortium"))[:50]
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="Compte-rendu_{safe}.pdf"'})
