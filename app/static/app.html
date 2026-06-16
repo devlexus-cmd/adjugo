@@ -508,6 +508,10 @@
                   <div v-if="c.references && c.references.length" class="muted small">Références : {{ c.references.map(r => r.intitule).filter(Boolean).join(' · ') }}</div>
                   <div v-if="c.chiffrage_note" class="muted small">Prix lot : {{ c.chiffrage_note }}</div>
                   <div v-if="c.memoire_paragraph" class="small" style="margin-top:5px;padding:7px 9px;background:var(--surface-2);border-radius:6px;white-space:pre-wrap">{{ c.memoire_paragraph }}</div>
+                  <div v-if="c.pieces && c.pieces.length" style="margin-top:6px">
+                    <div class="muted small" style="font-weight:600">Pièces administratives ({{ c.pieces.length }})</div>
+                    <a v-for="pc in c.pieces" :key="pc.id" class="pill neutral" :href="'/api/projects/'+ao.project.id+'/contribution-pieces/'+pc.id" style="font-size:10px;margin:4px 4px 0 0;gap:4px;text-decoration:none"><i data-lucide="file-down" style="width:11px;height:11px"></i>{{ pc.name }}</a>
+                  </div>
                 </div>
               </div>
 
@@ -529,6 +533,7 @@
                   <div style="flex:1;min-width:0">
                     <span class="strong small">{{ p.company }}</span>
                     <span class="pill" :class="p.status==='submitted'?'go':p.status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ p.status==='submitted'?'Soumise':p.status==='draft'?'Brouillon':'En attente' }}</span>
+                    <span v-if="p.pieces_count" class="pill neutral" style="font-size:10px"><i data-lucide="paperclip" style="width:10px;height:10px"></i>{{ p.pieces_count }} pièce(s)</span>
                     <span v-if="p.lot" class="muted small"> · {{ p.lot }}</span>
                   </div>
                   <div style="width:84px"><div style="height:5px;background:var(--surface-3);border-radius:3px;overflow:hidden"><div :style="{width:p.completeness+'%',height:'100%',background:readinessColor(p.completeness)}"></div></div></div>

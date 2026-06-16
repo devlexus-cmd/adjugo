@@ -8,24 +8,62 @@ partagées). Chaque consultation/téléchargement est tracé dans le journal d'a
 aucune route invité ne lit jamais une autre donnée du tenant.
 """
 import io
+import mimetypes
+import os
+import re
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.ratelimit import limiter
 from app.core.security import get_current_user
-from app.models import (AuditLog, Company, Document, Project, ProjectContribution,
-                        ProjectInvite, User, utcnow)
+from app.models import (AuditLog, Company, ContributionPiece, Document, Project,
+                        ProjectContribution, ProjectInvite, User, utcnow)
 from app.services import audit
 from app.services.storage import get_storage
 
 router = APIRouter(tags=["Co-traitance"])
+_settings = get_settings()
+_ALLOWED_EXT = {e.strip().lower() for e in _settings.ALLOWED_UPLOAD_EXT.split(",") if e.strip()}
+_MAX_BYTES = _settings.MAX_UPLOAD_MB * 1024 * 1024
+
+
+def _read_upload(file: UploadFile) -> tuple:
+    """Valide extension + taille d'un fichier téléversé par un invité ; (contenu, ext)."""
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if _ALLOWED_EXT and ext not in _ALLOWED_EXT:
+        raise HTTPException(400, f"Type de fichier non autorisé ({ext or 'inconnu'}).")
+    content = file.file.read()
+    if not content:
+        raise HTTPException(400, "Fichier vide")
+    if len(content) > _MAX_BYTES:
+        raise HTTPException(413, f"Fichier trop volumineux (max {_settings.MAX_UPLOAD_MB} Mo)")
+    return content, ext
+
+
+def _safe_mime(filename: str) -> str:
+    """Type MIME DÉRIVÉ de l'extension (jamais le Content-Type fourni par le client) :
+    l'extension étant en liste blanche (pdf/png/doc…), on ne peut jamais servir du
+    text/html → pas de XSS au téléchargement. Repli neutre forçant le download."""
+    return mimetypes.guess_type(filename or "")[0] or "application/octet-stream"
+
+
+def _attachment_headers(name: str) -> dict:
+    """Content-Disposition robuste : pas d'injection d'en-tête possible via le nom de
+    fichier (guillemets/CRLF). Repli ASCII + variante RFC 5987 (filename*)."""
+    base = os.path.basename(name or "fichier")
+    ascii_name = re.sub(r'[^A-Za-z0-9._ -]', "_", base) or "fichier"
+    return {"Content-Disposition":
+            f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(base, safe='')}"}
 
 # Sous-ensemble SÛR de l'analyse exposé au co-traitant : de quoi comprendre le marché
 # et préparer sa part, SANS la stratégie interne du mandataire (score, faiblesses…).
@@ -263,7 +301,7 @@ def guest_download(token: str, doc_id: int, request: Request, db: Session = Depe
     return StreamingResponse(
         io.BytesIO(content),
         media_type=doc.mime_type or "application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{doc.name}"'},
+        headers=_attachment_headers(doc.name),
     )
 
 
@@ -271,7 +309,16 @@ def guest_download(token: str, doc_id: int, request: Request, db: Session = Depe
 # Cœur du réseau Adjugo : chaque PME contribue à un dossier commun sans jamais
 # voir les données des autres. La contribution est liée à l'invitation (1-1) ;
 # l'invité ne lit/écrit JAMAIS que la sienne.
-def _serialize_contribution(c: ProjectContribution) -> dict:
+def _piece_dict(pc: ContributionPiece) -> dict:
+    return {"id": pc.id, "name": pc.name, "size": pc.file_size or 0,
+            "created_at": pc.created_at.isoformat() if pc.created_at else None}
+
+
+def _serialize_contribution(c: ProjectContribution, db: Session = None) -> dict:
+    pieces = []
+    if db is not None:
+        pieces = [_piece_dict(p) for p in db.query(ContributionPiece).filter(
+            ContributionPiece.contribution_id == c.id).order_by(ContributionPiece.created_at.asc()).all()]
     return {
         "id": c.id, "company_name": c.company_name, "role": c.role, "lot": c.lot,
         "references": c.references or [], "qualifications": c.qualifications or [],
@@ -279,6 +326,7 @@ def _serialize_contribution(c: ProjectContribution) -> dict:
         "contact": c.contact or {}, "status": c.status,
         "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+        "pieces": pieces,
     }
 
 
@@ -312,7 +360,7 @@ def guest_get_contribution(token: str, request: Request, db: Session = Depends(g
     inv = _valid_invite(token, db)
     if not getattr(inv, "can_contribute", True):
         raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
-    return _serialize_contribution(_get_or_create_contribution(inv, db))
+    return _serialize_contribution(_get_or_create_contribution(inv, db), db)
 
 
 @router.put("/api/invite/{token}/contribution")
@@ -342,7 +390,7 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
         c.status = "draft"
         c.submitted_at = None
     db.commit()
-    return _serialize_contribution(c)
+    return _serialize_contribution(c, db)
 
 
 @router.post("/api/invite/{token}/contribution/submit")
@@ -360,7 +408,108 @@ def guest_submit_contribution(token: str, request: Request, db: Session = Depend
                  actor=(inv.recipient or inv.company_name or "invité")[:160], actor_kind="guest",
                  target_type="contribution", target_id=c.id,
                  detail=(c.company_name or inv.company_name or "")[:255], ip=audit.client_ip(request))
-    return _serialize_contribution(c)
+    return _serialize_contribution(c, db)
+
+
+# ── Pièces administratives du co-traitant (DC2, attestations…) ───────────────
+_MAX_PIECES_PER_CONTRIB = 20
+
+
+def _guest_piece(token: str, piece_id: int, db: Session):
+    """Résout (invite, contribution, piece) en garantissant que la pièce appartient
+    bien à la contribution de CE jeton — jamais celle d'un autre co-traitant."""
+    inv = _valid_invite(token, db)
+    c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+    if not c:
+        raise HTTPException(404, "Aucune contribution")
+    pc = db.query(ContributionPiece).filter(
+        ContributionPiece.id == piece_id, ContributionPiece.contribution_id == c.id).first()
+    if not pc:
+        raise HTTPException(404, "Pièce introuvable")
+    return inv, c, pc
+
+
+@router.post("/api/invite/{token}/contribution/piece")
+@limiter.limit("30/minute")
+def guest_upload_piece(token: str, request: Request, file: UploadFile = File(...),
+                       db: Session = Depends(get_db)):
+    """Le co-traitant téléverse UNE de ses pièces administratives (scopée à sa part)."""
+    inv = _valid_invite(token, db)
+    if not getattr(inv, "can_contribute", True):
+        raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
+    c = _get_or_create_contribution(inv, db)
+    if db.query(ContributionPiece).filter(ContributionPiece.contribution_id == c.id).count() >= _MAX_PIECES_PER_CONTRIB:
+        raise HTTPException(400, f"Maximum {_MAX_PIECES_PER_CONTRIB} pièces par partenaire.")
+    content, ext = _read_upload(file)
+    safe_mime = _safe_mime(file.filename)        # type dérivé de l'extension, pas du client
+    file_key = f"{inv.owner_id}/cotraitant/{uuid.uuid4().hex}{ext}"
+    get_storage().save(file_key, content, safe_mime)
+    pc = ContributionPiece(
+        contribution_id=c.id, project_id=inv.project_id, owner_id=inv.owner_id,
+        name=os.path.basename(file.filename or "piece")[:500], file_key=file_key,
+        file_size=len(content), mime_type=safe_mime[:100])
+    db.add(pc)
+    db.commit()
+    db.refresh(pc)
+    audit.record(db, action="guest.upload_piece", owner_id=inv.owner_id, project_id=inv.project_id,
+                 actor=(inv.recipient or inv.company_name or "invité")[:160], actor_kind="guest",
+                 target_type="piece", target_id=pc.id, detail=(pc.name or "")[:255],
+                 ip=audit.client_ip(request))
+    return _piece_dict(pc)
+
+
+@router.get("/api/invite/{token}/contribution/piece/{piece_id}")
+@limiter.limit("60/minute")
+def guest_download_piece(token: str, piece_id: int, request: Request, db: Session = Depends(get_db)):
+    """Le co-traitant re-télécharge SA pièce."""
+    inv, c, pc = _guest_piece(token, piece_id, db)
+    return _stream_piece(pc)
+
+
+@router.delete("/api/invite/{token}/contribution/piece/{piece_id}")
+@limiter.limit("30/minute")
+def guest_delete_piece(token: str, piece_id: int, request: Request, db: Session = Depends(get_db)):
+    """Le co-traitant retire SA pièce."""
+    inv, c, pc = _guest_piece(token, piece_id, db)
+    try:
+        get_storage().delete(pc.file_key)
+    except Exception:
+        pass
+    db.delete(pc)
+    db.commit()
+    return {"ok": True}
+
+
+def _stream_piece(pc: ContributionPiece):
+    storage = get_storage()
+    signed = storage.url(pc.file_key)
+    if signed:
+        return RedirectResponse(signed)
+    try:
+        content = storage.load(pc.file_key)
+    except FileNotFoundError:
+        raise HTTPException(410, "Fichier absent du stockage")
+    return StreamingResponse(io.BytesIO(content),
+                             media_type=pc.mime_type or "application/octet-stream",
+                             headers=_attachment_headers(pc.name))
+
+
+@router.get("/api/projects/{project_id}/contribution-pieces/{piece_id}")
+def owner_download_piece(project_id: int, piece_id: int, request: Request,
+                         current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)):
+    """Le mandataire télécharge une pièce d'un co-traitant (scopée à SON projet)."""
+    _owned_project(project_id, current_user, db)
+    pc = db.query(ContributionPiece).filter(
+        ContributionPiece.id == piece_id, ContributionPiece.project_id == project_id,
+        ContributionPiece.owner_id == current_user.id).first()
+    if not pc:
+        raise HTTPException(404, "Pièce introuvable")
+    audit.record(db, action="owner.download_piece", owner_id=current_user.id, project_id=project_id,
+                 actor=f"user:{current_user.id}", actor_kind="owner",
+                 target_type="piece", target_id=pc.id, detail=(pc.name or "")[:255],
+                 ip=audit.client_ip(request))
+    return _stream_piece(pc)
 
 
 @router.get("/api/projects/{project_id}/contributions")
@@ -372,7 +521,7 @@ def list_contributions(project_id: int, current_user: User = Depends(get_current
         ProjectContribution.project_id == project_id,
         ProjectContribution.owner_id == current_user.id
     ).order_by(ProjectContribution.updated_at.desc()).all()
-    return [_serialize_contribution(c) for c in rows]
+    return [_serialize_contribution(c, db) for c in rows]
 
 
 # Pondération de complétude d'UNE part de partenaire (somme = 1.0). Déterministe et
@@ -393,6 +542,11 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id,
         ProjectContribution.owner_id == current_user.id).all()}
+    piece_counts = {}
+    for pc in db.query(ContributionPiece).filter(
+            ContributionPiece.project_id == project_id,
+            ContributionPiece.owner_id == current_user.id).all():
+        piece_counts[pc.contribution_id] = piece_counts.get(pc.contribution_id, 0) + 1
     company = db.query(Company).filter(Company.user_id == current_user.id).first()
 
     partners, lots, missing, total_score = [], {}, [], 0.0
@@ -415,6 +569,7 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
             "has_references": flags["references"], "has_memoire": flags["memoire"],
             "has_chiffrage": bool(c and c.chiffrage_note),
             "qualifications_count": len(c.qualifications or []) if c else 0,
+            "pieces_count": (piece_counts.get(c.id, 0) if c else 0),
             "completeness": round(score * 100),
         })
         if lot_clean:

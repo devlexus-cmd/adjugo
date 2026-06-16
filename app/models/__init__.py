@@ -582,3 +582,26 @@ class ProjectContribution(Base):
 
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# === PIÈCES ADMINISTRATIVES DU CO-TRAITANT ===
+# Pour déposer un dossier de GROUPEMENT, chaque membre fournit SES pièces (DC2,
+# attestations fiscales/sociales, Kbis, assurance…). Le co-traitant les téléverse via
+# son lien bridé ; le mandataire les rassemble dans le dossier commun. Cloisonnement :
+# une pièce est liée à UNE contribution (donc à UNE invitation) — l'invité ne voit/
+# supprime que les siennes. Stockées dans le tenant du mandataire (owner_id).
+
+class ContributionPiece(Base):
+    __tablename__ = "contribution_pieces"
+
+    id = Column(Integer, primary_key=True, index=True)
+    contribution_id = Column(Integer, ForeignKey("project_contributions.id"), nullable=False, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)  # tenant mandataire
+
+    name = Column(String(500), nullable=False)
+    file_key = Column(String(500), nullable=False)     # clé de stockage (préfixe owner)
+    file_size = Column(Integer, default=0)
+    mime_type = Column(String(100), default="")
+
+    created_at = Column(DateTime, default=utcnow)

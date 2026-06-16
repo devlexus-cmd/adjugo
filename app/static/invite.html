@@ -149,6 +149,47 @@
       [cNom, cMail, cTel].forEach(el => { el.style.flex = "1"; el.style.minWidth = "140px"; cr.appendChild(el); });
       card.appendChild(field("Contact", cr));
 
+      // Pièces administratives (DC2, attestations, Kbis, assurance…)
+      const piecesBox = document.createElement("div");
+      const piecesList = document.createElement("div");
+      const fileIn = document.createElement("input"); fileIn.type = "file"; fileIn.style.display = "none";
+      const addBtn = $(`<button class="btn" style="padding:7px 13px">+ Ajouter une pièce</button>`);
+      const upMsg = $(`<span class="iv-muted small" style="margin-left:8px"></span>`);
+      const addRow = document.createElement("div"); addRow.className = "row"; addRow.style.cssText = "gap:6px;align-items:center;margin-top:7px;flex-wrap:wrap";
+      addRow.appendChild(addBtn); addRow.appendChild(upMsg);
+      piecesBox.appendChild(piecesList); piecesBox.appendChild(addRow); piecesBox.appendChild(fileIn);
+      card.appendChild(field("Mes pièces administratives (DC2, attestations, Kbis, assurance…)", piecesBox));
+
+      const pieceUrl = "/api/invite/" + encodeURIComponent(TOKEN) + "/contribution/piece";
+      function renderPieces(pieces) {
+        piecesList.innerHTML = "";
+        (pieces || []).forEach(pc => {
+          const row = $(`<div class="iv-doc" style="padding:8px 11px;margin-top:6px"></div>`);
+          row.appendChild($(`<div style="min-width:0"><div class="nm" style="font-size:13px">${esc(pc.name)}</div><div class="iv-muted small">${kb(pc.size)}</div></div>`));
+          const acts = document.createElement("div"); acts.className = "row"; acts.style.gap = "6px";
+          acts.appendChild($(`<a class="btn" style="padding:5px 10px" href="${pieceUrl}/${pc.id}">Voir</a>`));
+          const rm = $(`<button class="btn" style="padding:5px 10px">Retirer</button>`);
+          rm.onclick = async () => { rm.disabled = true; await fetch(pieceUrl + "/" + pc.id, { method: "DELETE" }); reloadPieces(); };
+          acts.appendChild(rm); row.appendChild(acts);
+          piecesList.appendChild(row);
+        });
+        if (!pieces || !pieces.length) piecesList.appendChild($(`<div class="iv-muted small">Aucune pièce déposée.</div>`));
+      }
+      async function reloadPieces() {
+        const c = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/contribution").then(r => r.ok ? r.json() : null).catch(() => null);
+        renderPieces(c ? c.pieces : []);
+      }
+      addBtn.onclick = () => fileIn.click();
+      fileIn.onchange = async () => {
+        if (!fileIn.files.length) return;
+        upMsg.textContent = "Envoi…";
+        const fd = new FormData(); fd.append("file", fileIn.files[0]);
+        const r = await fetch(pieceUrl, { method: "POST", body: fd });
+        fileIn.value = "";
+        if (r.ok) { upMsg.textContent = "Pièce ajoutée ✓"; reloadPieces(); }
+        else { const e = await r.json().catch(() => ({})); upMsg.textContent = (e && e.detail) ? e.detail : "Échec de l'envoi"; }
+      };
+
       const msg = $(`<span class="iv-muted small"></span>`);
       const btnSave = $(`<button class="btn">Enregistrer le brouillon</button>`);
       const btnSubmit = $(`<button class="btn" style="background:var(--accent,#3b5bdb);color:#fff;border-color:transparent">Soumettre au mandataire</button>`);
@@ -175,6 +216,7 @@
         const ct = c0.contact || {}; cNom.value = ct.nom || ""; cMail.value = ct.email || ""; cTel.value = ct.telephone || "";
         setStatus(c0.status);
       }
+      renderPieces(c0 ? c0.pieces : []);
       btnSave.onclick = async () => {
         msg.textContent = "Enregistrement…";
         const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) });
