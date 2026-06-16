@@ -793,7 +793,7 @@ const __adjApp = createApp({
       try { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(v); }
       catch (e) { return v.toLocaleString("fr-FR") + " €"; }
     },
-    kb(b) { return Math.round((Number(b) || 0) / 1024) + " Ko"; },
+    koSize(b) { return Math.round((Number(b) || 0) / 1024) + " Ko"; },   // ⚠ ne PAS nommer kb() : collision avec la donnée `kb` (base de connaissances) → data masque la méthode
     avg(...a) { const n = a.map(Number).filter(x => x > 0); return n.length ? n.reduce((s, x) => s + x, 0) / n.length : 0; },
     detailRows(d) {
       const out = {}; const labels = { intitule_marche: "Intitulé", acheteur: "Acheteur", budget_estime: "Budget", date_limite: "Date limite", delai_execution: "Délai", lieu_execution: "Lieu", allotissement: "Allotissement", penalites: "Pénalités", sous_traitance: "Sous-traitance", ca_minimum_requis: "CA minimum", visite_obligatoire: "Visite" };

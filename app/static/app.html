@@ -547,7 +547,7 @@
                 <div v-for="d in (g.documents||[])" :key="d.id" class="row" style="padding:6px 0 6px 22px;border-bottom:1px solid var(--hairline)">
                   <i data-lucide="file-text" style="width:14px;height:14px;color:var(--muted)"></i>
                   <span class="small" style="flex:1;min-width:0">{{ d.name }}</span>
-                  <span class="muted small">{{ kb(d.file_size) }}</span>
+                  <span class="muted small">{{ koSize(d.file_size) }}</span>
                   <button class="btn icon sm ghost" @click="downloadDoc(d)" aria-label="Télécharger"><i data-lucide="download"></i></button>
                 </div>
               </div>
@@ -1052,7 +1052,7 @@
           </div>
           <div v-else class="t-wrap"><table><thead><tr><th>Document</th><th>Catégorie</th><th>Taille</th><th>Expiration</th><th></th></tr></thead><tbody>
             <tr v-for="d in documents" :key="d.id"><td><b>{{ d.name }}</b><div v-if="d.project_name" class="muted small">{{ d.folder }} · {{ (d.project_name||'').slice(0,40) }}</div></td><td><span class="pill st-nouveau">{{ d.folder || d.category }}</span></td>
-              <td class="small">{{ kb(d.file_size) }}</td><td class="small">{{ d.expiration_date||'—' }}</td>
+              <td class="small">{{ koSize(d.file_size) }}</td><td class="small">{{ d.expiration_date||'—' }}</td>
               <td class="row"><button class="btn icon sm ghost" @click="downloadDoc(d)" aria-label="Télécharger"><i data-lucide="download"></i></button><button class="btn icon sm ghost" @click="delDoc(d)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button></td></tr>
           </tbody></table></div>
         </section>
