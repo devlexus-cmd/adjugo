@@ -519,6 +519,9 @@ class ProjectInvite(Base):
     can_view_docs = Column(Boolean, default=True)      # autorise la liste + le téléchargement des pièces
     role = Column(String(20), default="cotraitant")    # rôle de l'invité : cotraitant | sous_traitant
     can_contribute = Column(Boolean, default=True)     # autorise la CO-CONSTRUCTION (apport de sa part)
+    # Compte-à-compte : si l'invité a un compte Adjugo et « réclame » le lien, l'AO
+    # apparaît dans SON espace (« Partagé avec moi »). Reste null pour un invité sans compte.
+    accepted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     revoked = Column(Boolean, default=False, index=True)
     expires_at = Column(DateTime, nullable=True)       # null = sans expiration

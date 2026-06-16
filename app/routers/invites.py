@@ -727,3 +727,49 @@ def notifications(current_user: User = Depends(get_current_user),
         "actor": r.actor or "Un partenaire", "action": r.action,
         "label": _NOTIF_LABELS.get(r.action, r.action), "detail": r.detail or "",
     } for r in rows]
+
+
+# ── Compte-à-compte : « Partagé avec moi » ───────────────────────────────────
+# Si l'invité possède un compte Adjugo, il réclame le lien → l'AO partagé apparaît
+# dans SON espace (il contribue en tant que lui-même, pas en invité bridé).
+def _shared_item(inv: ProjectInvite, db: Session) -> dict:
+    project = db.query(Project).filter(Project.id == inv.project_id, Project.deleted_at.is_(None)).first()
+    owner_company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
+    c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+    return {
+        "token": inv.token, "project_id": inv.project_id,
+        "project": (project.name if project else "Appel d'offres"),
+        "mandataire": (owner_company.name if owner_company else "") or "",
+        "role": inv.role or "cotraitant",
+        "can_contribute": bool(getattr(inv, "can_contribute", True)),
+        "contribution_status": (c.status if c else None),
+        "deadline": project.deadline.isoformat() if project and project.deadline else None,
+    }
+
+
+@router.post("/api/invite/{token}/claim")
+def claim_invite(token: str, request: Request, current_user: User = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """Un titulaire de compte réclame un lien → l'AO entre dans son « Partagé avec moi »."""
+    inv = _valid_invite(token, db)
+    if inv.owner_id == current_user.id:
+        raise HTTPException(400, "Vous êtes le mandataire de ce partage.")
+    if inv.accepted_by_user_id and inv.accepted_by_user_id != current_user.id:
+        raise HTTPException(409, "Ce lien a déjà été réclamé par un autre compte.")
+    if not inv.accepted_by_user_id:
+        inv.accepted_by_user_id = current_user.id
+        db.commit()
+        audit.record(db, action="invite.claimed", owner_id=inv.owner_id, project_id=inv.project_id,
+                     actor=(current_user.full_name or current_user.email or f"user:{current_user.id}")[:160],
+                     actor_kind="guest", target_type="invite", target_id=inv.id,
+                     detail=(current_user.email or "")[:255], ip=audit.client_ip(request))
+    return _shared_item(inv, db)
+
+
+@router.get("/api/shared")
+def shared_with_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Les AO partagés AVEC moi (liens que j'ai réclamés). Pour « Partagé avec moi »."""
+    rows = db.query(ProjectInvite).filter(
+        ProjectInvite.accepted_by_user_id == current_user.id,
+        ProjectInvite.revoked.is_(False)).order_by(ProjectInvite.created_at.desc()).all()
+    return [_shared_item(inv, db) for inv in rows if not _is_expired(inv.expires_at)]

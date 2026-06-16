@@ -314,6 +314,23 @@
         document.getElementById("loading").style.display = "none";
         document.getElementById("shell").style.display = "";
         setBanner();
+        // Si la personne a DÉJÀ un compte Adjugo : lui proposer d'ouvrir le dossier
+        // dans SON espace (compte-à-compte) plutôt que de rester en invité bridé.
+        let myToken = null; try { myToken = localStorage.getItem("adjugo_token"); } catch (e) {}
+        if (myToken) {
+          const b = document.getElementById("g-banner");
+          b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)";
+          b.innerHTML = '<i data-lucide="user-check"></i><div class="small" style="flex:1">Vous avez un compte Adjugo — <b>ouvrez ce dossier dans VOTRE espace</b> pour contribuer avec votre base de connaissances et vos références.</div>';
+          const btn = document.createElement("button"); btn.className = "btn sm primary"; btn.style.flex = "none"; btn.textContent = "Ouvrir dans mon Adjugo";
+          btn.onclick = async () => {
+            btn.disabled = true; btn.textContent = "Ouverture…";
+            try { const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/claim", { method: "POST", headers: { Authorization: "Bearer " + myToken } });
+              if (r.ok) { location.href = "/app?shared=" + encodeURIComponent(TOKEN); return; }
+              const e = await r.json().catch(() => ({})); btn.disabled = false; btn.textContent = (e && e.detail) ? e.detail : "Impossible";
+            } catch (e) { btn.disabled = false; btn.textContent = "Erreur"; }
+          };
+          b.appendChild(btn);
+        }
         nav("monao", "Mon appel d'offres");
         icons();
       })

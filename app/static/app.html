@@ -59,6 +59,7 @@
       <a class="nav-item" :class="{active:view==='amont'}" @click="go('amont')"><i data-lucide="telescope"></i>Veille amont <span v-if="amont.signals.length" class="badge">{{ amont.signals.length }}</span></a>
       <a class="nav-item" :class="{active:view==='kb'}" @click="go('kb')"><i data-lucide="brain-circuit"></i>Base de connaissances <span v-if="kb.docs.length" class="badge">{{ kb.docs.length }}</span></a>
       <a class="nav-item" :class="{active:view==='pipeline'}" @click="go('pipeline')"><i data-lucide="square-kanban"></i>Pipeline AO <span class="badge">{{ projects.length }}</span></a>
+      <a v-if="shared.length" class="nav-item" :class="{active:view==='shared'||view==='sharedao'}" @click="go('shared')"><i data-lucide="inbox"></i>Partagé avec moi <span class="badge">{{ shared.length }}</span></a>
       <div class="nav-group">CRM</div>
       <a class="nav-item" :class="{active:view==='cotraitants'}" @click="go('cotraitants')"><i data-lucide="handshake"></i>Co-traitants <span class="badge">{{ cotraitants.length }}</span></a>
       <a class="nav-item" :class="{active:view==='contacts'}" @click="go('contacts')"><i data-lucide="users"></i>Contacts <span class="badge">{{ contacts.length }}</span></a>
@@ -1011,8 +1012,8 @@
 
         <!-- ░░ CO-TRAITANTS ░░ -->
         <section v-if="view==='cotraitants'">
-          <!-- Espace co-traitance partagé (Merged Brain) -->
-          <div class="card pad" style="margin-bottom:14px">
+          <!-- Espace co-traitance « Merged Brain » ARCHIVÉ (doublon du Réseau Adjugo / lien d'invitation) -->
+          <div v-if="false" class="card pad" style="margin-bottom:14px">
             <div class="row" style="gap:8px;margin-bottom:6px"><i data-lucide="brain-circuit" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Espace co-traitance — mémoire fusionné</b><div class="spacer"></div>
               <span v-if="cospace.current" class="btn ghost sm" @click="cospace.current=null"><i data-lucide="arrow-left"></i>Mes espaces</span></div>
 
@@ -1325,6 +1326,75 @@
           </div></div>
           <div class="card pad" style="margin-top:14px"><div class="row" style="gap:11px"><i data-lucide="terminal"></i>
             <div><b class="small">API &amp; développeurs</b><div class="muted small">Intégrez Adjugo à votre SI. Documentation interactive : <a href="/docs" target="_blank" style="color:var(--accent-text);font-weight:500">/docs</a> · Schéma OpenAPI : <a href="/openapi.json" target="_blank" style="color:var(--accent-text);font-weight:500">/openapi.json</a></div></div></div></div>
+        </section>
+
+        <!-- Partagé avec moi — liste des AO d'autres mandataires -->
+        <section v-if="view==='shared'">
+          <div class="card pad">
+            <div class="row" style="gap:11px;align-items:flex-start"><i data-lucide="inbox" style="color:var(--accent-text);margin-top:2px"></i>
+              <div style="flex:1"><b style="font-size:14px">Dossiers partagés avec vous</b>
+                <div class="muted small">D'autres entreprises vous ont invité à co-traiter sur leurs appels d'offres. Apportez votre part — depuis <b>votre propre espace</b>.</div></div></div>
+            <div v-if="!shared.length" class="muted small" style="margin-top:12px">Aucun dossier partagé avec vous pour l'instant.</div>
+            <div v-for="s in shared" :key="s.token" @click="openShared(s)" class="row" style="margin-top:10px;padding:11px 13px;border:1px solid var(--border);border-radius:10px;gap:12px;align-items:center;cursor:pointer" @mouseover="$event.currentTarget.style.borderColor='var(--accent)'" @mouseleave="$event.currentTarget.style.borderColor='var(--border)'">
+              <div style="flex:1;min-width:0">
+                <div class="strong small">{{ s.project }}</div>
+                <div class="muted small">Mandataire : <b>{{ s.mandataire }}</b> · vous êtes {{ s.role==='sous_traitant'?'sous-traitant':'co-traitant' }}<span v-if="s.deadline"> · limite {{ auditWhen(s.deadline) }}</span></div>
+              </div>
+              <span class="pill" :class="s.contribution_status==='submitted'?'go':s.contribution_status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ s.contribution_status==='submitted'?'Soumise':s.contribution_status==='draft'?'Brouillon':'À compléter' }}</span>
+              <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-2)"></i>
+            </div>
+          </div>
+        </section>
+
+        <!-- Partagé avec moi — un AO : je contribue en tant que MON entreprise -->
+        <section v-if="view==='sharedao' && sharedAo.project">
+          <button class="btn ghost sm" @click="go('shared')" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Partagé avec moi</button>
+          <div class="card pad" style="margin-bottom:14px">
+            <div class="muted small">Partagé par <b>{{ sharedAo.mandataire }}</b></div>
+            <div style="font-size:19px;font-weight:800;margin:2px 0 4px;letter-spacing:-.02em">{{ sharedAo.project.name }}</div>
+            <div v-if="sharedAo.project.client" class="muted small">{{ sharedAo.project.client }}</div>
+            <div style="margin-top:10px">
+              <div v-if="sharedAo.project.deadline" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">Date limite</span><span style="flex:1"><b>{{ auditWhen(sharedAo.project.deadline) }}</b></span></div>
+              <div v-for="f in sharedFact(sharedAo.project.analysis)" :key="f.k" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">{{ f.k }}</span><span style="flex:1">{{ f.v }}</span></div>
+              <div v-if="sharedAo.project.source_url" class="row small" style="padding:5px 0"><span class="muted" style="min-width:140px">Source</span><a :href="sharedAo.project.source_url" target="_blank" style="color:var(--accent-text)">Avis d'origine ↗</a></div>
+            </div>
+          </div>
+
+          <div v-if="sharedAo.docs.length" class="card pad" style="margin-bottom:14px">
+            <b style="font-size:13.5px">Pièces partagées</b>
+            <div v-for="d in sharedAo.docs" :key="d.id" class="row" style="padding:8px 0;border-bottom:1px solid var(--hairline);gap:10px;align-items:center">
+              <div style="flex:1;min-width:0"><span class="strong small">{{ d.name }}</span><div class="muted small">{{ d.folder||d.category||'' }}</div></div>
+              <a class="btn sm" :href="'/api/invite/'+sharedAo.token+'/doc/'+d.id">Télécharger</a>
+            </div>
+          </div>
+
+          <div v-if="sharedAo.canContribute" class="card pad" style="border:1.5px solid var(--accent)">
+            <div class="row" style="gap:8px;align-items:center"><b style="font-size:13.5px;flex:1">Ma contribution au dossier commun</b>
+              <span class="pill" :class="sharedAo.status==='submitted'?'go':'neutral'" style="font-size:11px">{{ sharedAo.status==='submitted'?'✓ Soumise':'Brouillon' }}</span></div>
+            <div class="muted small" style="margin-top:4px">Vous contribuez en tant que <b>{{ company.name||'votre entreprise' }}</b>. Le mandataire assemble, l'IA fusionne votre part dans la réponse commune.</div>
+            <div class="field" style="margin-top:10px"><label>Entreprise</label><input class="inp" v-model="sharedAo.contrib.company_name"></div>
+            <div class="field"><label>Lot / périmètre</label><input class="inp" v-model="sharedAo.contrib.lot" placeholder="ex. Lot 2 — Démolition"></div>
+            <div class="field"><label>Qualifications (séparées par des virgules)</label><input class="inp" v-model="sharedAo.contrib.quals" placeholder="ex. Qualibat 1112, RGE"></div>
+            <div class="field"><label>Références (une par ligne)</label><textarea class="inp" v-model="sharedAo.contrib.refs" rows="3"></textarea></div>
+            <div class="field"><label>Approche prix de votre lot</label><textarea class="inp" v-model="sharedAo.contrib.chiffrage_note" rows="2" placeholder="ex. forfait 18 000 € HT"></textarea></div>
+            <div class="field"><label>Paragraphe de mémoire technique</label><textarea class="inp" v-model="sharedAo.contrib.memoire_paragraph" rows="4" placeholder="Votre savoir-faire sur ce lot"></textarea></div>
+            <div class="field"><label>Contact</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.contact.nom" placeholder="Nom" style="flex:1;min-width:130px"><input class="inp" v-model="sharedAo.contrib.contact.email" placeholder="Email" style="flex:1;min-width:130px"><input class="inp" v-model="sharedAo.contrib.contact.telephone" placeholder="Téléphone" style="flex:1;min-width:130px"></div></div>
+
+            <div class="field"><label>Mes pièces administratives (DC2, attestations, Kbis…)</label>
+              <div v-for="pc in sharedAo.pieces" :key="pc.id" class="row" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
+                <div style="flex:1;min-width:0"><span class="small strong">{{ pc.name }}</span><span class="muted small"> · {{ koSize(pc.size) }}</span></div>
+                <a class="btn icon sm ghost" :href="'/api/invite/'+sharedAo.token+'/contribution/piece/'+pc.id" aria-label="Voir"><i data-lucide="download"></i></a>
+                <button class="btn icon sm ghost" @click="sharedRemovePiece(pc.id)" aria-label="Retirer"><i data-lucide="trash-2"></i></button>
+              </div>
+              <button class="btn sm" style="margin-top:8px" @click="$refs.sharedFile.click()"><i data-lucide="upload"></i>Ajouter une pièce</button>
+              <input ref="sharedFile" type="file" class="hidden" @change="sharedUpload">
+            </div>
+
+            <div class="row wrap" style="gap:8px;margin-top:13px;align-items:center">
+              <button class="btn" @click="sharedSave()" :disabled="sharedAo.busy"><span v-if="sharedAo.busy" class="spin"></span><i v-else data-lucide="save"></i>Enregistrer le brouillon</button>
+              <button class="btn primary" @click="sharedSubmit()" :disabled="sharedAo.busy"><i data-lucide="send"></i>Soumettre au mandataire</button>
+            </div>
+          </div>
         </section>
 
       </div>

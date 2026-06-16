@@ -73,6 +73,9 @@ const __adjApp = createApp({
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], expiring: [],
       notifs: [], notifsOpen: false, notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
+      shared: [],
+      sharedAo: { token: "", project: null, mandataire: "", docs: [], status: "", busy: false, msg: "", pieces: [], canContribute: true,
+                  contrib: { company_name: "", lot: "", quals: "", refs: "", chiffrage_note: "", memoire_paragraph: "", contact: { nom: "", email: "", telephone: "" } } },
       veille: { q: "", loc: "", results: [], loading: false },
       drawer: null, modal: null,
       ag: { query: "réhabilitation groupe scolaire", running: false, log: [], gonogo: null, coverage: null, lots: [], dossier: null },
@@ -240,10 +243,15 @@ const __adjApp = createApp({
 
     async boot() {
       try { this.user = await this.api("GET", "/api/auth/me"); } catch (e) { return; }
-      await Promise.all([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadNotifs(), this.loadConsortiums()]);
+      await Promise.all([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadNotifs(), this.loadConsortiums(), this.loadShared()]);
       // Adaptation au pays de l'organisation : scope AO + devise + LANGUE par défaut
       if (this.org.data && this.org.data.country) { this.src.country = this.org.data.country; this.orgCountry = this.org.data.country; this.applyLang(this.org.data.lang); }
       this.go("dashboard");
+      // Arrivée depuis un lien d'invitation « ouvert dans mon Adjugo » → ouvre le dossier partagé
+      try {
+        const st = new URLSearchParams(location.search).get("shared");
+        if (st) { history.replaceState({}, "", "/app"); const it = this.shared.find(s => s.token === st); if (it) this.openShared(it); else this.go("shared"); }
+      } catch (e) {}
     },
 
     // ── Navigation + lazy loads ──
@@ -255,7 +263,7 @@ const __adjApp = createApp({
       if (v === "contacts") this.loadContacts();
       if (v === "invoices") this.loadInvoices();
       if (v === "documents") this.loadDocuments();
-      if (v === "cotraitants") { this.loadCotraitants(); this.loadTrades(); this.coLoad(); }
+      if (v === "cotraitants") { this.loadCotraitants(); this.loadTrades(); }
       if (v === "agent") this.loadStats();
       if (v === "sourcing") { this.loadTrades(); this.loadAlerts(); this.loadCountries(); }
       if (v === "amont") this.loadAmont();
@@ -487,6 +495,66 @@ const __adjApp = createApp({
     readinessColor(pct) { const p = Math.min(100, Math.max(0, Number(pct) || 0)); return p >= 80 ? "var(--success-text)" : p >= 45 ? "var(--warning-text)" : "var(--danger-text)"; },
 
     async loadConsortiums() { try { this.consortiums = await this.api("GET", "/api/consortiums") || this.consortiums; } catch (e) {} },
+
+    // ── Partagé avec moi (compte-à-compte) : je contribue à un AO d'un autre mandataire ──
+    async loadShared() { try { this.shared = await this.api("GET", "/api/shared") || []; } catch (e) { this.shared = []; } },
+    async openShared(item) {
+      const t = item.token;
+      this.sharedAo = { token: t, project: null, mandataire: item.mandataire, docs: [], status: "", busy: false, msg: "", pieces: [], canContribute: true,
+                        contrib: { company_name: "", lot: "", quals: "", refs: "", chiffrage_note: "", memoire_paragraph: "", contact: { nom: "", email: "", telephone: "" } } };
+      this.view = "sharedao";
+      try {
+        const v = await this.api("GET", "/api/invite/" + t);
+        this.sharedAo.project = v.project; this.sharedAo.mandataire = v.mandataire; this.sharedAo.docs = v.documents || []; this.sharedAo.canContribute = v.can_contribute;
+        if (v.can_contribute) await this.sharedReload(t);
+      } catch (e) { this.notify("Ce dossier n'est plus accessible", "err"); }
+    },
+    async sharedReload(t) {
+      try {
+        const c = await this.api("GET", "/api/invite/" + (t || this.sharedAo.token) + "/contribution");
+        this.sharedAo.status = c.status; this.sharedAo.pieces = c.pieces || [];
+        const k = this.sharedAo.contrib;
+        if (!k.company_name && !k.lot) {   // pré-remplir au 1er chargement, sans écraser une saisie
+          k.company_name = c.company_name || this.company.name || ""; k.lot = c.lot || "";
+          k.quals = (c.qualifications || []).join(", "); k.refs = (c.references || []).map(r => r.intitule || "").filter(Boolean).join("\n");
+          k.chiffrage_note = c.chiffrage_note || ""; k.memoire_paragraph = c.memoire_paragraph || "";
+          const ct = c.contact || {}; k.contact = { nom: ct.nom || this.user.full_name || "", email: ct.email || this.user.email || "", telephone: ct.telephone || "" };
+        }
+      } catch (e) {}
+    },
+    _sharedBody() {
+      const k = this.sharedAo.contrib;
+      return { company_name: k.company_name, lot: k.lot, qualifications: (k.quals || "").split(",").map(s => s.trim()).filter(Boolean),
+               references: (k.refs || "").split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })),
+               chiffrage_note: k.chiffrage_note, memoire_paragraph: k.memoire_paragraph, contact: k.contact };
+    },
+    async sharedSave() {
+      this.sharedAo.busy = true;
+      try { const c = await this.api("PUT", "/api/invite/" + this.sharedAo.token + "/contribution", this._sharedBody()); this.sharedAo.status = c.status; this.notify("Brouillon enregistré"); }
+      catch (e) { this.notify(e.message, "err"); } finally { this.sharedAo.busy = false; }
+    },
+    async sharedSubmit() {
+      this.sharedAo.busy = true;
+      try {
+        await this.api("PUT", "/api/invite/" + this.sharedAo.token + "/contribution", this._sharedBody());
+        const c = await this.api("POST", "/api/invite/" + this.sharedAo.token + "/contribution/submit");
+        this.sharedAo.status = c.status; this.notify("Contribution soumise au mandataire ✓"); this.loadShared();
+      } catch (e) { this.notify(e.message, "err"); } finally { this.sharedAo.busy = false; }
+    },
+    async sharedUpload(ev) {
+      const f = ev.target.files[0]; if (!f) return;
+      const fd = new FormData(); fd.append("file", f);
+      try {
+        const r = await fetch("/api/invite/" + this.sharedAo.token + "/contribution/piece", { method: "POST", body: fd });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); this.notify(e.detail || "Échec de l'envoi", "err"); }
+        else { this.notify("Pièce ajoutée"); this.sharedReload(); }
+      } catch (e) { this.notify("Échec de l'envoi", "err"); }
+      ev.target.value = "";
+    },
+    async sharedRemovePiece(id) {
+      try { await fetch("/api/invite/" + this.sharedAo.token + "/contribution/piece/" + id, { method: "DELETE" }); this.sharedReload(); } catch (e) {}
+    },
+    sharedFact(a) { const L = { acheteur: "Acheteur", allotissement: "Allotissement", lieu: "Lieu", type_marche: "Type", date_limite: "Date limite", criteres_attribution: "Critères", duree: "Durée" }; return Object.entries(L).filter(([k]) => a && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length)).map(([k, lab]) => ({ k: lab, v: Array.isArray(a[k]) ? a[k].map(x => (x && typeof x === "object") ? (x.critere || x.nom || x.label || "") + (x.ponderation ? " — " + x.ponderation : "") : x).join(" · ") : a[k] })); },
     // ── Notifications (activité des partenaires) ──
     async loadNotifs() { try { this.notifs = await this.api("GET", "/api/notifications") || []; } catch (e) {} },
     toggleNotifs() {

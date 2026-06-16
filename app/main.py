@@ -148,8 +148,10 @@ from app.routers.amont import router as amont_router
 app.include_router(amont_router)
 from app.routers.knowledge import router as knowledge_router
 app.include_router(knowledge_router)
-from app.routers.cospace import router as cospace_router
-app.include_router(cospace_router)
+# « Merged Brain » (CoSpace) ARCHIVÉ : doublon du Réseau Adjugo (lien d'invitation +
+# contribution cloisonnée). Routeur non monté ; modèles conservés (pas de migration).
+# from app.routers.cospace import router as cospace_router
+# app.include_router(cospace_router)
 from app.routers.jobs import router as jobs_router
 app.include_router(jobs_router)
 from app.routers.invites import router as invites_router
