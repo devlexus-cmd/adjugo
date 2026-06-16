@@ -6,122 +6,158 @@
   <meta name="robots" content="noindex,nofollow">
   <title>Espace co-traitant — Adjugo</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/vendor/lucide-1.20.0.min.js"></script>
   <style>
-    body { background: var(--bg, #f6f7f9); margin: 0; }
-    .iv-wrap { max-width: 860px; margin: 0 auto; padding: 22px 18px 64px; }
-    .iv-top { display:flex; align-items:center; justify-content:space-between; gap:12px; padding: 6px 2px 18px; }
-    .iv-brand { display:flex; align-items:center; gap:9px; font-weight:800; font-size:19px; letter-spacing:-.02em; color: var(--text, #16181d); }
-    .iv-badge { font-size:11px; font-weight:700; padding:4px 10px; border-radius:999px; background: var(--accent-weak, #eef2ff); color: var(--accent-text, #3b5bdb); }
-    .iv-h { font-size:21px; font-weight:800; margin:2px 0 3px; letter-spacing:-.02em; }
-    .iv-fact { display:grid; grid-template-columns: 168px 1fr; gap:6px 14px; font-size:13.5px; margin-top:10px; }
-    .iv-fact dt { color: var(--text-2, #6b7280); font-weight:600; }
-    .iv-fact dd { margin:0; color: var(--text, #16181d); }
-    .iv-doc { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; border:1px solid var(--border, #e6e8ec); border-radius:10px; margin-top:8px; background: var(--surface, #fff); }
-    .iv-doc .nm { font-weight:600; font-size:13.5px; }
-    .iv-muted { color: var(--text-2, #6b7280); }
-    .iv-note { font-size:12px; color: var(--text-2, #6b7280); margin-top:22px; text-align:center; line-height:1.6; }
-    .iv-state { text-align:center; padding:70px 20px; color: var(--text-2, #6b7280); }
-    ul.iv-list { margin:4px 0 0; padding-left:18px; } ul.iv-list li { margin:2px 0; }
+    .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
+    .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
+    .g-locked { opacity:.62; }
+    .g-fact { display:grid; grid-template-columns:170px 1fr; gap:6px 14px; font-size:13.5px; margin-top:10px; }
+    .g-fact dt { color:var(--text-2,#6b7280); font-weight:600; } .g-fact dd { margin:0; }
+    .g-doc { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 13px; border:1px solid var(--border,#e6e8ec); border-radius:10px; margin-top:8px; background:var(--surface,#fff); }
+    ul.g-list { margin:4px 0 0; padding-left:18px; } ul.g-list li { margin:2px 0; }
+    .g-res { padding:12px 14px; border:1px solid var(--border,#e6e8ec); border-radius:11px; margin-top:10px; background:var(--surface,#fff); }
   </style>
 </head>
 <body>
-  <div class="iv-wrap" id="root">
-    <div class="iv-state" id="loading"><div class="spin" style="margin:0 auto 12px"></div>Chargement de l'espace partagé…</div>
+  <div class="g-state" id="loading"><div class="spin" style="margin:0 auto 12px"></div>Chargement de votre espace…</div>
+
+  <div class="app" id="shell" style="display:none">
+    <aside class="side">
+      <div class="brand"><span class="wordmark"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></span><span class="org-sub" id="brand-sub">Espace co-traitant</span></div>
+      <div class="nav-group">Votre invitation</div>
+      <a class="nav-item" data-view="monao" data-allowed="1"><i data-lucide="folder-open"></i>Mon appel d'offres</a>
+      <div class="nav-group">Pilotage</div>
+      <a class="nav-item" data-view="dashboard"><i data-lucide="layout-dashboard"></i>Tableau de bord</a>
+      <a class="nav-item" data-view="sourcing" data-allowed="1"><i data-lucide="radar"></i>Sourcing IA</a>
+      <a class="nav-item" data-view="amont" data-allowed="1"><i data-lucide="telescope"></i>Veille AO</a>
+      <a class="nav-item" data-view="kb"><i data-lucide="brain-circuit"></i>Base de connaissances</a>
+      <a class="nav-item" data-view="pipeline"><i data-lucide="square-kanban"></i>Pipeline AO</a>
+      <div class="nav-group">CRM</div>
+      <a class="nav-item" data-view="cotraitants"><i data-lucide="handshake"></i>Co-traitants</a>
+      <a class="nav-item" data-view="contacts"><i data-lucide="users"></i>Contacts</a>
+      <div class="nav-group">Gestion</div>
+      <a class="nav-item" data-view="documents"><i data-lucide="folder-lock"></i>Coffre-fort</a>
+      <a class="nav-item" data-view="invoices"><i data-lucide="file-spreadsheet"></i>Devis &amp; factures</a>
+      <div class="nav-group">Configuration</div>
+      <a class="nav-item" data-view="company"><i data-lucide="briefcase"></i>Entreprise</a>
+      <a class="nav-item" data-view="criteria"><i data-lucide="sliders-horizontal"></i>Critères Go/No-Go</a>
+      <div class="nav-group">Compte</div>
+      <a class="nav-item" data-view="team"><i data-lucide="users-round"></i>Équipe</a>
+      <a class="nav-item" data-view="billing"><i data-lucide="credit-card"></i>Abonnement</a>
+      <div class="side-foot">
+        <div class="user"><div class="av" id="g-av">CO</div><div style="min-width:0"><b id="g-name">Co-traitant</b><small style="display:block">Invité · lecture seule</small></div></div>
+      </div>
+    </aside>
+
+    <main class="work">
+      <header class="top">
+        <div><h1 id="g-title">Mon appel d'offres</h1><div class="sub" id="g-sub"></div></div>
+        <div class="spacer"></div>
+        <a class="btn primary" href="/app" target="_blank" rel="noopener"><i data-lucide="sparkles"></i>Créer mon compte Adjugo</a>
+      </header>
+      <div style="padding:18px 22px 60px;max-width:980px">
+        <div class="g-banner" id="g-banner"></div>
+        <div id="content"></div>
+      </div>
+    </main>
   </div>
 
   <script>
     const TOKEN = decodeURIComponent(location.pathname.split("/invite/")[1] || "").replace(/\/.*$/, "");
+    const ALLOWED = { monao: 1, sourcing: 1, amont: 1 };
+    const VIEW_TITLE = {
+      monao: ["Mon appel d'offres", "Le dossier partagé avec vous — apportez votre part."],
+      sourcing: ["Sourcing IA", "Découvrez des appels d'offres publics en direct."],
+      amont: ["Veille AO", "Surveillez les marchés publics qui vous correspondent."],
+    };
+    let DATA = null, ICONS;
     const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
     const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     const kb = (n) => !n ? "" : n < 1024 ? n + " o" : n < 1048576 ? (n / 1024).toFixed(0) + " Ko" : (n / 1048576).toFixed(1) + " Mo";
+    const eur = (n) => (n || n === 0) ? Number(n).toLocaleString("fr-FR") + " €" : "";
     const fmtDate = (s) => { if (!s) return ""; try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" }); } catch (e) { return s; } };
+    const icons = () => { try { lucide.createIcons(); } catch (e) {} };
+    const content = () => document.getElementById("content");
 
-    const LABELS = {
-      objet: "Objet", acheteur: "Acheteur", lieu: "Lieu d'exécution", duree: "Durée",
-      delais: "Délais", lots: "Lots / allotissement", allotissement: "Allotissement",
-      pieces_requises: "Pièces attendues", criteres_attribution: "Critères d'attribution",
-      criteres: "Critères", montant_estime: "Montant estimé", type_marche: "Type de marché",
-      procedure: "Procédure", date_limite: "Date limite"
-    };
-
+    const LABELS = { objet: "Objet", acheteur: "Acheteur", lieu: "Lieu d'exécution", duree: "Durée", delais: "Délais", lots: "Lots / allotissement", allotissement: "Allotissement", pieces_requises: "Pièces attendues", criteres_attribution: "Critères d'attribution", criteres: "Critères", montant_estime: "Montant estimé", type_marche: "Type de marché", procedure: "Procédure", date_limite: "Date limite" };
     function objLabel(x) {
-      // Nom lisible d'un objet (lot, critère…) sans tomber sur du JSON brut.
       const name = x.nom || x.name || x.label || x.intitule || x.critere || x.libelle || x.titre || x.designation || x.lot || "";
       const weight = x.ponderation || x.poids || x.pourcentage || x.coefficient || x.pct || "";
       if (name) return esc(name) + (weight ? ` — <b>${esc(weight)}</b>` : "");
-      const vals = Object.values(x).filter(v => typeof v !== "object");
-      return esc(vals.join(" · "));
+      return esc(Object.values(x).filter(v => typeof v !== "object").join(" · "));
     }
     function renderVal(v) {
-      if (Array.isArray(v)) {
-        const items = v.map(x => (x && typeof x === "object") ? objLabel(x) : esc(x)).filter(Boolean);
-        return items.length ? `<ul class="iv-list">${items.map(i => `<li>${i}</li>`).join("")}</ul>` : "";
-      }
-      if (v && typeof v === "object") return `<ul class="iv-list"><li>${objLabel(v)}</li></ul>`;
+      if (Array.isArray(v)) { const items = v.map(x => (x && typeof x === "object") ? objLabel(x) : esc(x)).filter(Boolean); return items.length ? `<ul class="g-list">${items.map(i => `<li>${i}</li>`).join("")}</ul>` : ""; }
+      if (v && typeof v === "object") return `<ul class="g-list"><li>${objLabel(v)}</li></ul>`;
       return esc(v);
     }
 
-    function render(d) {
-      const p = d.project || {};
-      const a = p.analysis || {};
-      const facts = Object.keys(LABELS).filter(k => a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length));
-      const root = document.getElementById("root");
-      root.innerHTML = "";
+    // ── Routeur ──
+    function setActive(view) {
+      document.querySelectorAll(".nav-item").forEach(a => a.classList.toggle("active", a.dataset.view === view && ALLOWED[view]));
+      const t = VIEW_TITLE[view] || ["", ""];
+      document.getElementById("g-title").textContent = t[0];
+      document.getElementById("g-sub").textContent = t[1];
+    }
+    function nav(view, label) {
+      if (!ALLOWED[view]) return renderBlocked(label);
+      setActive(view);
+      if (view === "monao") renderMonAO();
+      else renderSourcing();
+    }
+    function renderBlocked(label) {
+      document.getElementById("g-title").textContent = label || "Accès réservé";
+      document.getElementById("g-sub").textContent = "";
+      content().innerHTML =
+        `<div class="card pad" style="text-align:center;padding:46px 24px">
+           <div style="font-size:36px">🔒</div>
+           <h2 style="margin:10px 0 4px;font-size:18px">« ${esc(label)} » est réservé aux membres</h2>
+           <p class="muted" style="max-width:460px;margin:4px auto 0">Vous êtes invité sur un dossier précis. Créez votre compte Adjugo (gratuit) pour débloquer tout l'espace : pipeline, coffre-fort, équipe, facturation…</p>
+           <a class="btn primary" href="/app" target="_blank" rel="noopener" style="margin-top:16px"><i data-lucide="sparkles"></i>Créer mon compte gratuit</a>
+         </div>`;
+      icons();
+    }
 
-      root.appendChild($(`
-        <div class="iv-top">
-          <div class="iv-brand">
-            <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#3b5bdb"/><circle cx="16" cy="16" r="9" fill="none" stroke="#fff" stroke-width="2"/><circle cx="16" cy="16" r="4" fill="#fff"/></svg>
-            Adjugo
-          </div>
-          <span class="iv-badge">Espace co-traitant · lecture seule</span>
-        </div>`));
+    // ── Vue : Mon appel d'offres (vue bridée + contribution + pièces) ──
+    function renderMonAO() {
+      const d = DATA, p = d.project || {}, a = p.analysis || {};
+      const facts = Object.keys(LABELS).filter(k => a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length));
+      const root = content(); root.innerHTML = "";
 
       const head = $(`<div class="card pad" style="margin-bottom:14px"></div>`);
-      head.appendChild($(`<div class="iv-muted small">${d.mandataire ? "Partagé par <b>" + esc(d.mandataire) + "</b>" : "Dossier partagé"}${d.invited && d.invited.company ? " · pour " + esc(d.invited.company) : ""}</div>`));
-      head.appendChild($(`<div class="iv-h">${esc(p.name || "Appel d'offres")}</div>`));
-      if (p.client) head.appendChild($(`<div class="iv-muted small">${esc(p.client)}</div>`));
-      const dl = $(`<dl class="iv-fact"></dl>`);
-      const addFact = (dt, ddHtml) => { dl.appendChild($(`<dt>${dt}</dt>`)); const dd = document.createElement("dd"); dd.innerHTML = ddHtml; dl.appendChild(dd); };
+      head.appendChild($(`<div class="muted small">${d.mandataire ? "Partagé par <b>" + esc(d.mandataire) + "</b>" : "Dossier partagé"}${d.invited && d.invited.company ? " · pour " + esc(d.invited.company) : ""}</div>`));
+      head.appendChild($(`<div style="font-size:21px;font-weight:800;margin:2px 0 3px;letter-spacing:-.02em">${esc(p.name || "Appel d'offres")}</div>`));
+      if (p.client) head.appendChild($(`<div class="muted small">${esc(p.client)}</div>`));
+      const dl = $(`<dl class="g-fact"></dl>`);
+      const addFact = (t, h) => { dl.appendChild($(`<dt>${t}</dt>`)); const dd = document.createElement("dd"); dd.innerHTML = h; dl.appendChild(dd); };
       if (p.deadline) addFact("Date limite", `<b>${esc(fmtDate(p.deadline))}</b>`);
       facts.forEach(k => addFact(LABELS[k], renderVal(a[k])));
       if (p.source_url) addFact("Source", `<a href="${esc(p.source_url)}" target="_blank" rel="noopener nofollow">Avis d'origine ↗</a>`);
       if (dl.children.length) head.appendChild(dl);
       root.appendChild(head);
 
-      if (p.summary) {
-        const s = $(`<div class="card pad" style="margin-bottom:14px"></div>`);
-        s.appendChild($(`<b style="font-size:13.5px">Synthèse</b>`));
-        s.appendChild($(`<div class="small" style="margin-top:7px;white-space:pre-wrap;line-height:1.65">${esc(p.summary)}</div>`));
-        root.appendChild(s);
-      }
-
-      const docCard = $(`<div class="card pad" style="margin-bottom:8px"></div>`);
+      const docCard = $(`<div class="card pad" style="margin-bottom:14px"></div>`);
       docCard.appendChild($(`<b style="font-size:13.5px">Pièces partagées${d.documents && d.documents.length ? " (" + d.documents.length + ")" : ""}</b>`));
-      if (!d.can_view_docs) {
-        docCard.appendChild($(`<div class="iv-muted small" style="margin-top:8px">Le partage des pièces n'est pas activé pour ce lien.</div>`));
-      } else if (!d.documents || !d.documents.length) {
-        docCard.appendChild($(`<div class="iv-muted small" style="margin-top:8px">Aucune pièce partagée pour le moment.</div>`));
-      } else {
-        d.documents.forEach(doc => {
-          const row = $(`<div class="iv-doc"></div>`);
-          row.appendChild($(`<div><div class="nm">${esc(doc.name)}</div><div class="iv-muted small">${esc(doc.folder || doc.category || "")}${doc.size ? " · " + kb(doc.size) : ""}</div></div>`));
-          row.appendChild($(`<a class="btn" href="/api/invite/${encodeURIComponent(TOKEN)}/doc/${doc.id}">Télécharger</a>`));
-          docCard.appendChild(row);
-        });
-      }
+      if (!d.can_view_docs) docCard.appendChild($(`<div class="muted small" style="margin-top:8px">Le partage des pièces n'est pas activé pour ce lien.</div>`));
+      else if (!d.documents || !d.documents.length) docCard.appendChild($(`<div class="muted small" style="margin-top:8px">Aucune pièce partagée pour le moment.</div>`));
+      else d.documents.forEach(doc => {
+        const row = $(`<div class="g-doc"></div>`);
+        row.appendChild($(`<div style="min-width:0"><div style="font-weight:600;font-size:13.5px">${esc(doc.name)}</div><div class="muted small">${esc(doc.folder || doc.category || "")}${doc.size ? " · " + kb(doc.size) : ""}</div></div>`));
+        row.appendChild($(`<a class="btn sm" href="/api/invite/${encodeURIComponent(TOKEN)}/doc/${doc.id}">Télécharger</a>`));
+        docCard.appendChild(row);
+      });
       root.appendChild(docCard);
 
       if (d.can_contribute) renderContribution(d);
-
-      const noteTxt = d.can_contribute
-        ? "Vous ne voyez que ce dossier et VOTRE contribution — jamais les données des autres entreprises.<br>Conformément au RGPD, vos actions sont journalisées et visibles par le mandataire."
-        : "Accès en lecture seule, limité à ce dossier.<br>Conformément au RGPD, vos consultations et téléchargements sont journalisés et visibles par le mandataire.";
-      root.appendChild($(`<div class="iv-note">${noteTxt}</div>`));
+      root.appendChild($(`<div class="muted small" style="margin-top:16px;text-align:center">Vous ne voyez que ce dossier et VOTRE contribution — jamais les données des autres entreprises. Conformément au RGPD, vos actions sont journalisées et visibles par le mandataire.</div>`));
+      icons();
     }
 
-    // ── Ma contribution (co-construction cloisonnée) ──
+    // ── Contribution + pièces (cœur de la co-construction) ──
     const inp = (ph, v) => { const i = document.createElement("input"); i.className = "inp"; i.placeholder = ph || ""; i.value = v || ""; i.style.width = "100%"; return i; };
     const ta = (ph, rows) => { const t = document.createElement("textarea"); t.className = "inp"; t.placeholder = ph || ""; t.rows = rows || 3; t.style.width = "100%"; t.style.resize = "vertical"; return t; };
     const field = (label, el) => { const w = document.createElement("div"); w.style.marginTop = "10px"; w.appendChild($(`<label class="small" style="display:block;color:var(--text-2,#6b7280);font-weight:600;margin-bottom:4px">${esc(label)}</label>`)); w.appendChild(el); return w; };
@@ -130,12 +166,12 @@
       const role = (d.invited && d.invited.role === "sous_traitant") ? "sous-traitant" : "co-traitant";
       const card = $(`<div class="card pad" style="margin-bottom:8px;border:1px solid var(--accent,#3b5bdb)"></div>`);
       card.appendChild($(`<div class="row" style="gap:8px;align-items:center"><b style="font-size:13.5px;flex:1">Ma contribution au dossier commun</b></div>`));
-      const status = $(`<span class="iv-badge">Brouillon</span>`); card.firstChild.appendChild(status);
-      card.appendChild($(`<div class="iv-muted small" style="margin-top:4px">En tant que <b>${role}</b>, renseignez votre part. Vous ne voyez que VOS données ; le mandataire les assemble et l'IA les fusionne dans la réponse commune.</div>`));
+      const status = $(`<span class="pill neutral" style="font-size:11px">Brouillon</span>`); card.firstChild.appendChild(status);
+      card.appendChild($(`<div class="muted small" style="margin-top:4px">En tant que <b>${role}</b>, renseignez votre part. Vous ne voyez que VOS données ; le mandataire les assemble et l'IA les fusionne dans la réponse commune.</div>`));
 
       const company = inp("Votre entreprise"), lot = inp("Votre lot / périmètre (ex. Lot 2 — Démolition)");
       const quals = inp("Qualifications, séparées par des virgules (ex. Qualibat 1112, RGE)");
-      const refs = ta("Vos références — une par ligne (ex. Démolition collège — Ville de Lorient, 2024)", 3);
+      const refs = ta("Vos références — une par ligne", 3);
       const chiffrage = ta("Votre approche prix pour votre lot (ex. forfait 18 000 € HT)", 2);
       const memoire = ta("Votre paragraphe de mémoire technique — votre savoir-faire sur ce lot", 4);
       const cNom = inp("Contact — nom"), cMail = inp("Email"), cTel = inp("Téléphone");
@@ -149,111 +185,138 @@
       [cNom, cMail, cTel].forEach(el => { el.style.flex = "1"; el.style.minWidth = "140px"; cr.appendChild(el); });
       card.appendChild(field("Contact", cr));
 
-      // Pièces administratives (DC2, attestations, Kbis, assurance…)
-      const piecesBox = document.createElement("div");
-      const piecesList = document.createElement("div");
+      // pièces
+      const piecesBox = document.createElement("div"); const piecesList = document.createElement("div");
       const fileIn = document.createElement("input"); fileIn.type = "file"; fileIn.style.display = "none";
       const addBtn = $(`<button class="btn" style="padding:7px 13px">+ Ajouter une pièce</button>`);
-      const upMsg = $(`<span class="iv-muted small" style="margin-left:8px"></span>`);
-      const addRow = document.createElement("div"); addRow.className = "row"; addRow.style.cssText = "gap:6px;align-items:center;margin-top:7px;flex-wrap:wrap";
+      const upMsg = $(`<span class="muted small" style="margin-left:8px"></span>`);
+      const addRow = document.createElement("div"); addRow.className = "row wrap"; addRow.style.cssText = "gap:6px;align-items:center;margin-top:7px";
       addRow.appendChild(addBtn); addRow.appendChild(upMsg);
       piecesBox.appendChild(piecesList); piecesBox.appendChild(addRow); piecesBox.appendChild(fileIn);
       card.appendChild(field("Mes pièces administratives (DC2, attestations, Kbis, assurance…)", piecesBox));
-
       const pieceUrl = "/api/invite/" + encodeURIComponent(TOKEN) + "/contribution/piece";
       function renderPieces(pieces) {
         piecesList.innerHTML = "";
         (pieces || []).forEach(pc => {
-          const row = $(`<div class="iv-doc" style="padding:8px 11px;margin-top:6px"></div>`);
-          row.appendChild($(`<div style="min-width:0"><div class="nm" style="font-size:13px">${esc(pc.name)}</div><div class="iv-muted small">${kb(pc.size)}</div></div>`));
+          const row = $(`<div class="g-doc" style="padding:8px 11px;margin-top:6px"></div>`);
+          row.appendChild($(`<div style="min-width:0"><div style="font-weight:600;font-size:13px">${esc(pc.name)}</div><div class="muted small">${kb(pc.size)}</div></div>`));
           const acts = document.createElement("div"); acts.className = "row"; acts.style.gap = "6px";
-          acts.appendChild($(`<a class="btn" style="padding:5px 10px" href="${pieceUrl}/${pc.id}">Voir</a>`));
-          const rm = $(`<button class="btn" style="padding:5px 10px">Retirer</button>`);
+          acts.appendChild($(`<a class="btn sm" href="${pieceUrl}/${pc.id}">Voir</a>`));
+          const rm = $(`<button class="btn sm">Retirer</button>`);
           rm.onclick = async () => { rm.disabled = true; await fetch(pieceUrl + "/" + pc.id, { method: "DELETE" }); reloadPieces(); };
-          acts.appendChild(rm); row.appendChild(acts);
-          piecesList.appendChild(row);
+          acts.appendChild(rm); row.appendChild(acts); piecesList.appendChild(row);
         });
-        if (!pieces || !pieces.length) piecesList.appendChild($(`<div class="iv-muted small">Aucune pièce déposée.</div>`));
+        if (!pieces || !pieces.length) piecesList.appendChild($(`<div class="muted small">Aucune pièce déposée.</div>`));
       }
-      async function reloadPieces() {
-        const c = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/contribution").then(r => r.ok ? r.json() : null).catch(() => null);
-        renderPieces(c ? c.pieces : []);
-      }
+      async function reloadPieces() { const c = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/contribution").then(r => r.ok ? r.json() : null).catch(() => null); renderPieces(c ? c.pieces : []); }
       addBtn.onclick = () => fileIn.click();
       fileIn.onchange = async () => {
-        if (!fileIn.files.length) return;
-        upMsg.textContent = "Envoi…";
+        if (!fileIn.files.length) return; upMsg.textContent = "Envoi…";
         const fd = new FormData(); fd.append("file", fileIn.files[0]);
-        const r = await fetch(pieceUrl, { method: "POST", body: fd });
-        fileIn.value = "";
-        if (r.ok) { upMsg.textContent = "Pièce ajoutée ✓"; reloadPieces(); }
-        else { const e = await r.json().catch(() => ({})); upMsg.textContent = (e && e.detail) ? e.detail : "Échec de l'envoi"; }
+        const r = await fetch(pieceUrl, { method: "POST", body: fd }); fileIn.value = "";
+        if (r.ok) { upMsg.textContent = "Pièce ajoutée ✓"; reloadPieces(); } else { const e = await r.json().catch(() => ({})); upMsg.textContent = (e && e.detail) ? e.detail : "Échec de l'envoi"; }
       };
 
-      const msg = $(`<span class="iv-muted small"></span>`);
+      const msg = $(`<span class="muted small"></span>`);
       const btnSave = $(`<button class="btn">Enregistrer le brouillon</button>`);
-      const btnSubmit = $(`<button class="btn" style="background:var(--accent,#3b5bdb);color:#fff;border-color:transparent">Soumettre au mandataire</button>`);
-      const bar = document.createElement("div"); bar.className = "row"; bar.style.cssText = "gap:8px;margin-top:13px;align-items:center;flex-wrap:wrap";
+      const btnSubmit = $(`<button class="btn primary">Soumettre au mandataire</button>`);
+      const bar = document.createElement("div"); bar.className = "row wrap"; bar.style.cssText = "gap:8px;margin-top:13px;align-items:center";
       bar.appendChild(btnSave); bar.appendChild(btnSubmit); bar.appendChild(msg);
       card.appendChild(bar);
-      document.getElementById("root").appendChild(card);
+      content().appendChild(card);
 
-      const setStatus = (s) => { const ok = s === "submitted"; status.textContent = ok ? "✓ Soumis" : "Brouillon"; status.style.background = ok ? "#e7f7ee" : "var(--mist,#eef1f6)"; status.style.color = ok ? "#1a7f4b" : "var(--text-2,#6b7280)"; };
-      const collect = () => ({
-        company_name: company.value, lot: lot.value,
-        qualifications: quals.value.split(",").map(s => s.trim()).filter(Boolean),
-        references: refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })),
-        chiffrage_note: chiffrage.value, memoire_paragraph: memoire.value,
-        contact: { nom: cNom.value, email: cMail.value, telephone: cTel.value },
-      });
+      const setStatus = (s) => { const ok = s === "submitted"; status.textContent = ok ? "✓ Soumis" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; };
+      const collect = () => ({ company_name: company.value, lot: lot.value, qualifications: quals.value.split(",").map(s => s.trim()).filter(Boolean), references: refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })), chiffrage_note: chiffrage.value, memoire_paragraph: memoire.value, contact: { nom: cNom.value, email: cMail.value, telephone: cTel.value } });
       const url = "/api/invite/" + encodeURIComponent(TOKEN) + "/contribution";
       const c0 = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
       if (c0) {
-        company.value = c0.company_name || ""; lot.value = c0.lot || "";
-        quals.value = (c0.qualifications || []).join(", ");
+        company.value = c0.company_name || ""; lot.value = c0.lot || ""; quals.value = (c0.qualifications || []).join(", ");
         refs.value = (c0.references || []).map(r => r.intitule || "").filter(Boolean).join("\n");
         chiffrage.value = c0.chiffrage_note || ""; memoire.value = c0.memoire_paragraph || "";
         const ct = c0.contact || {}; cNom.value = ct.nom || ""; cMail.value = ct.email || ""; cTel.value = ct.telephone || "";
         setStatus(c0.status);
       }
       renderPieces(c0 ? c0.pieces : []);
-
-      // Une fois la part SOUMISE : bandeau de confirmation en haut (sentiment d'« espace » / accès).
       function showSubmittedBanner() {
-        if (document.getElementById("iv-submitted")) return;
-        const banner = $(`<div id="iv-submitted" class="card pad" style="margin-bottom:14px;border:1px solid #1a7f4b;background:#e7f7ee"></div>`);
-        banner.innerHTML = '<div style="display:flex;gap:10px;align-items:flex-start"><span style="font-size:20px;line-height:1.1">✓</span><div><b style="font-size:14px;color:#16181d">Votre part est soumise au mandataire</b>'
-          + '<div class="iv-muted small" style="margin-top:2px">Vous faites partie du groupement piloté par <b>' + esc(d.mandataire || "le mandataire") + '</b>. Il assemble la réponse commune. Vous pouvez encore ajuster votre part et vos pièces ci-dessous.</div></div></div>';
-        const root = document.getElementById("root"), top = document.querySelector(".iv-top");
-        if (top && top.nextSibling) root.insertBefore(banner, top.nextSibling); else root.insertBefore(banner, root.firstChild);
+        const b = document.getElementById("g-banner");
+        b.style.background = "#e7f7ee"; b.style.borderColor = "#1a7f4b";
+        b.innerHTML = '<span style="font-size:18px">✓</span><div class="small"><b>Votre part est soumise au mandataire.</b> Vous faites partie du groupement piloté par <b>' + esc(d.mandataire || "le mandataire") + '</b>. Vous pouvez encore l\'ajuster.</div>';
       }
       if (c0 && c0.status === "submitted") showSubmittedBanner();
-
-      btnSave.onclick = async () => {
-        msg.textContent = "Enregistrement…";
-        const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) });
-        if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Brouillon enregistré ✓"; } else msg.textContent = "Erreur d'enregistrement.";
-      };
-      btnSubmit.onclick = async () => {
-        msg.textContent = "Envoi…";
-        await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) });
-        const r = await fetch(url + "/submit", { method: "POST" });
-        if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Contribution soumise au mandataire ✓"; showSubmittedBanner(); window.scrollTo({ top: 0, behavior: "smooth" }); } else msg.textContent = "Erreur d'envoi.";
-      };
+      btnSave.onclick = async () => { msg.textContent = "Enregistrement…"; const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) }); if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Brouillon enregistré ✓"; } else msg.textContent = "Erreur."; };
+      btnSubmit.onclick = async () => { msg.textContent = "Envoi…"; await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) }); const r = await fetch(url + "/submit", { method: "POST" }); if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Contribution soumise ✓"; showSubmittedBanner(); window.scrollTo({ top: 0, behavior: "smooth" }); } else msg.textContent = "Erreur d'envoi."; };
+      icons();
     }
 
+    // ── Vue : Sourcing IA / Veille AO (découverte, lecture seule) ──
+    function renderSourcing() {
+      const root = content(); root.innerHTML = "";
+      const bar = $(`<div class="card pad" style="margin-bottom:12px"></div>`);
+      const q = inp("Mots-clés (ex. toiture, voirie, informatique)"); q.style.flex = "1"; q.style.minWidth = "200px";
+      const dep = inp("Département (ex. 56)"); dep.style.width = "150px";
+      const btn = $(`<button class="btn primary"><i data-lucide="search"></i>Rechercher</button>`);
+      const row = document.createElement("div"); row.className = "row wrap"; row.style.gap = "8px";
+      row.appendChild(q); row.appendChild(dep); row.appendChild(btn);
+      bar.appendChild($(`<b style="font-size:13.5px">Trouvez des appels d'offres publics</b>`));
+      bar.appendChild($(`<div class="muted small" style="margin:3px 0 10px">Sources officielles en direct (BOAMP, TED…). En tant qu'invité, la recherche est ouverte ; pour <b>analyser</b> ou <b>répondre</b>, créez votre compte.</div>`));
+      bar.appendChild(row);
+      root.appendChild(bar);
+      const results = document.createElement("div"); root.appendChild(results);
+
+      async function search() {
+        results.innerHTML = `<div class="g-state"><div class="spin" style="margin:0 auto 10px"></div>Recherche en cours…</div>`;
+        let d;
+        try {
+          d = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q.value, departements: dep.value ? [dep.value.trim()] : [], countries: ["FR"], limit: 20 }) }).then(r => r.ok ? r.json() : Promise.reject());
+        } catch (e) { results.innerHTML = `<div class="muted small" style="padding:14px">Recherche indisponible. Réessayez.</div>`; return; }
+        if (!d.tenders.length) { results.innerHTML = `<div class="muted small" style="padding:14px">Aucun appel d'offres trouvé. Élargissez les mots-clés.</div>`; return; }
+        results.innerHTML = `<div class="muted small" style="margin:2px 0 6px">${d.count} résultat(s)</div>`;
+        d.tenders.forEach(t => {
+          const card = $(`<div class="g-res"></div>`);
+          card.appendChild($(`<div style="font-weight:700;font-size:14px">${esc(t.objet || "Appel d'offres")}</div>`));
+          const meta = [t.acheteur, t.lieu, t.montant_estime ? eur(t.montant_estime) : "", t.date_limite ? "limite " + fmtDate(t.date_limite) : ""].filter(Boolean).map(esc).join(" · ");
+          card.appendChild($(`<div class="muted small" style="margin-top:3px">${meta}</div>`));
+          const acts = $(`<div class="row" style="gap:8px;margin-top:9px"></div>`);
+          if (t.url || (t.provenance && t.provenance.source_url)) acts.appendChild($(`<a class="btn sm" href="${esc(t.url || t.provenance.source_url)}" target="_blank" rel="noopener nofollow">Voir l'avis ↗</a>`));
+          const ana = $(`<button class="btn sm primary">Analyser cet AO</button>`);
+          ana.onclick = () => { const b = document.getElementById("g-banner"); b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)"; b.innerHTML = '<i data-lucide="sparkles"></i><div class="small">L\'analyse Go/No-Go, le chiffrage et la génération du dossier sont réservés aux comptes Adjugo. <a href="/app" target="_blank" rel="noopener"><b>Créez le vôtre gratuitement →</b></a></div>'; icons(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+          acts.appendChild(ana); card.appendChild(acts); results.appendChild(card);
+        });
+        icons();
+      }
+      btn.onclick = search; q.addEventListener("keyup", e => { if (e.key === "Enter") search(); });
+      icons();
+    }
+
+    // ── Boot ──
     function fail(title, msg) {
-      document.getElementById("root").innerHTML =
-        `<div class="iv-state"><div style="font-size:34px;margin-bottom:8px">🔒</div><div style="font-weight:700;font-size:16px;color:var(--text,#16181d)">${esc(title)}</div><div style="margin-top:6px">${esc(msg)}</div></div>`;
+      document.getElementById("loading").innerHTML = `<div style="font-size:34px;margin-bottom:8px">🔒</div><div style="font-weight:700;font-size:16px;color:var(--text,#16181d)">${esc(title)}</div><div style="margin-top:6px">${esc(msg)}</div>`;
     }
+    function setBanner() {
+      const b = document.getElementById("g-banner");
+      b.innerHTML = '<i data-lucide="info"></i><div class="small">Vous êtes invité par <b>' + esc(DATA.mandataire || "le mandataire") + '</b> sur ce dossier. <a href="/app" target="_blank" rel="noopener"><b>Créez votre compte Adjugo</b></a> pour débloquer tout l\'espace.</div>';
+    }
+    function initials(s) { return (s || "CO").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase(); }
+
+    document.querySelectorAll(".nav-item").forEach(a => {
+      if (!a.dataset.allowed) a.classList.add("g-locked");
+      a.addEventListener("click", () => nav(a.dataset.view, a.textContent.trim()));
+    });
 
     fetch("/api/invite/" + encodeURIComponent(TOKEN))
-      .then(async r => {
-        if (r.status === 410) throw { t: "Lien expiré", m: "Ce lien de partage a expiré. Demandez-en un nouveau au mandataire." };
-        if (!r.ok) throw { t: "Lien invalide", m: "Ce lien n'est plus valable ou a été révoqué." };
-        return r.json();
+      .then(async r => { if (r.status === 410) throw { t: "Lien expiré", m: "Ce lien de partage a expiré." }; if (!r.ok) throw { t: "Lien invalide", m: "Ce lien n'est plus valable ou a été révoqué." }; return r.json(); })
+      .then(d => {
+        DATA = d;
+        const co = (d.invited && d.invited.company) || "Co-traitant";
+        document.getElementById("g-name").textContent = co;
+        document.getElementById("g-av").textContent = initials(co);
+        document.getElementById("brand-sub").textContent = d.mandataire || "Espace co-traitant";
+        document.getElementById("loading").style.display = "none";
+        document.getElementById("shell").style.display = "";
+        setBanner();
+        nav("monao", "Mon appel d'offres");
+        icons();
       })
-      .then(render)
       .catch(e => fail(e.t || "Accès impossible", e.m || "Réessayez plus tard."));
   </script>
 </body>

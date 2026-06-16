@@ -411,6 +411,38 @@ def guest_submit_contribution(token: str, request: Request, db: Session = Depend
     return _serialize_contribution(c, db)
 
 
+# ── Découverte d'appels d'offres pour l'invité (NON facturée, lecture seule) ──
+# L'invité goûte au sourcing : il cherche des AO publics, mais « analyser / ajouter »
+# l'invitera à créer son compte (conversion). Aucune dépense, aucune donnée du tenant.
+class GuestSearch(BaseModel):
+    query: str = ""
+    departements: list = []
+    countries: list = []
+    montant_min: float = 0
+    montant_max: float = 0
+    limit: int = 20
+
+
+@router.post("/api/invite/{token}/search")
+@limiter.limit("30/hour")
+def guest_search(token: str, body: GuestSearch, request: Request, db: Session = Depends(get_db)):
+    """Recherche d'AO publics pour l'invité (découverte). Pas de LLM, pas de quota."""
+    _valid_invite(token, db)
+    from app.routers.sourcing import _tender_sources
+    from app.sourcing.base import TenderCriteria
+    from app.sourcing.search import TenderSearchService
+    countries = [c for c in (body.countries or ["FR"]) if c] or ["FR"]
+    crit = TenderCriteria(query=(body.query or "").strip()[:200], departements=body.departements or [],
+                          montant_min=body.montant_min or None, montant_max=body.montant_max or None,
+                          limit=min(max(int(body.limit or 20), 1), 30), countries=countries)
+    try:
+        result = TenderSearchService(_tender_sources(countries)).search(crit, {}, {})
+    except Exception:
+        raise HTTPException(503, "La recherche est momentanément indisponible. Réessayez.")
+    return {"count": result.get("count", 0),
+            "tenders": [t.model_dump(exclude={"raw"}) for t in result.get("tenders", [])]}
+
+
 # ── Pièces administratives du co-traitant (DC2, attestations…) ───────────────
 _MAX_PIECES_PER_CONTRIB = 20
 
