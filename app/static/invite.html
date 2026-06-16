@@ -217,6 +217,18 @@
         setStatus(c0.status);
       }
       renderPieces(c0 ? c0.pieces : []);
+
+      // Une fois la part SOUMISE : bandeau de confirmation en haut (sentiment d'« espace » / accès).
+      function showSubmittedBanner() {
+        if (document.getElementById("iv-submitted")) return;
+        const banner = $(`<div id="iv-submitted" class="card pad" style="margin-bottom:14px;border:1px solid #1a7f4b;background:#e7f7ee"></div>`);
+        banner.innerHTML = '<div style="display:flex;gap:10px;align-items:flex-start"><span style="font-size:20px;line-height:1.1">✓</span><div><b style="font-size:14px;color:#16181d">Votre part est soumise au mandataire</b>'
+          + '<div class="iv-muted small" style="margin-top:2px">Vous faites partie du groupement piloté par <b>' + esc(d.mandataire || "le mandataire") + '</b>. Il assemble la réponse commune. Vous pouvez encore ajuster votre part et vos pièces ci-dessous.</div></div></div>';
+        const root = document.getElementById("root"), top = document.querySelector(".iv-top");
+        if (top && top.nextSibling) root.insertBefore(banner, top.nextSibling); else root.insertBefore(banner, root.firstChild);
+      }
+      if (c0 && c0.status === "submitted") showSubmittedBanner();
+
       btnSave.onclick = async () => {
         msg.textContent = "Enregistrement…";
         const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) });
@@ -226,7 +238,7 @@
         msg.textContent = "Envoi…";
         await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) });
         const r = await fetch(url + "/submit", { method: "POST" });
-        if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Contribution soumise au mandataire ✓"; } else msg.textContent = "Erreur d'envoi.";
+        if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Contribution soumise au mandataire ✓"; showSubmittedBanner(); window.scrollTo({ top: 0, behavior: "smooth" }); } else msg.textContent = "Erreur d'envoi.";
       };
     }
 

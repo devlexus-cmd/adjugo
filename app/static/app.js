@@ -72,6 +72,7 @@ const __adjApp = createApp({
       auth: { mode: "login", email: "", password: "", full_name: "", company_name: "" },
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], expiring: [],
       notifs: [], notifsOpen: false, notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
+      consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
       veille: { q: "", loc: "", results: [], loading: false },
       drawer: null, modal: null,
       ag: { query: "réhabilitation groupe scolaire", running: false, log: [], gonogo: null, coverage: null, lots: [], dossier: null },
@@ -239,7 +240,7 @@ const __adjApp = createApp({
 
     async boot() {
       try { this.user = await this.api("GET", "/api/auth/me"); } catch (e) { return; }
-      await Promise.all([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadLlmInfo(), this.loadNotifs()]);
+      await Promise.all([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadNotifs(), this.loadConsortiums()]);
       // Adaptation au pays de l'organisation : scope AO + devise + LANGUE par défaut
       if (this.org.data && this.org.data.country) { this.src.country = this.org.data.country; this.orgCountry = this.org.data.country; this.applyLang(this.org.data.lang); }
       this.go("dashboard");
@@ -249,7 +250,7 @@ const __adjApp = createApp({
     go(v) {
       this.view = v;
       this.mobileNav = false;  // referme le menu mobile à la navigation
-      if (v === "dashboard") { this.loadStats(); this.loadExpiring(); }
+      if (v === "dashboard") { this.loadStats(); this.loadExpiring(); this.loadConsortiums(); this.loadNotifs(); }
       if (v === "pipeline") this.loadProjects();
       if (v === "contacts") this.loadContacts();
       if (v === "invoices") this.loadInvoices();
@@ -485,6 +486,7 @@ const __adjApp = createApp({
     },
     readinessColor(pct) { const p = Math.min(100, Math.max(0, Number(pct) || 0)); return p >= 80 ? "var(--success-text)" : p >= 45 ? "var(--warning-text)" : "var(--danger-text)"; },
 
+    async loadConsortiums() { try { this.consortiums = await this.api("GET", "/api/consortiums") || this.consortiums; } catch (e) {} },
     // ── Notifications (activité des partenaires) ──
     async loadNotifs() { try { this.notifs = await this.api("GET", "/api/notifications") || []; } catch (e) {} },
     toggleNotifs() {
@@ -501,6 +503,7 @@ const __adjApp = createApp({
       const p = this.projects.find(x => x.id === n.project_id);
       if (p) this.openProject(p); else this.notify("Cet appel d'offres n'est plus accessible", "err");
     },
+    openProjectById(id) { const p = this.projects.find(x => x.id === id); if (p) this.openProject(p); else this.notify("Appel d'offres introuvable", "err"); },
     inviteUrl(inv) { return window.location.origin + (inv.path || ("/invite/" + inv.token)); },
     inviteState(inv) {
       if (inv.revoked) return { label: "Révoqué", cls: "neutral" };

@@ -530,6 +530,73 @@ _READINESS_WEIGHTS = {"submitted": 0.40, "lot": 0.15, "references": 0.15,
                       "memoire": 0.20, "qualifications": 0.10}
 
 
+def _partner_flags(c) -> dict:
+    return {
+        "submitted": bool(c and c.status == "submitted"),
+        "lot": bool(c and c.lot and c.lot.strip()),
+        "references": bool(c and c.references),
+        "memoire": bool(c and c.memoire_paragraph),
+        "qualifications": bool(c and c.qualifications),
+    }
+
+
+def _partner_score(flags: dict) -> float:
+    return min(1.0, sum(_READINESS_WEIGHTS[k] for k, v in flags.items() if v))
+
+
+@router.get("/api/consortiums")
+def my_consortiums(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Tous les consortiums du mandataire (AO avec ≥1 partenaire) — pour l'accueil.
+    Agrège partenaires, parts soumises, pièces et % de réponse prête par AO."""
+    invites = db.query(ProjectInvite).filter(
+        ProjectInvite.owner_id == current_user.id, ProjectInvite.revoked.is_(False)).all()
+    if not invites:
+        return {"consortiums": [], "active": 0, "partners_total": 0, "submitted_total": 0}
+    pids = {i.project_id for i in invites}
+    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
+        ProjectContribution.owner_id == current_user.id,
+        ProjectContribution.project_id.in_(pids)).all()}
+    piece_counts = {}
+    for pc in db.query(ContributionPiece).filter(
+            ContributionPiece.owner_id == current_user.id,
+            ContributionPiece.project_id.in_(pids)).all():
+        piece_counts[pc.contribution_id] = piece_counts.get(pc.contribution_id, 0) + 1
+    projects = {p.id: p for p in db.query(Project).filter(
+        Project.id.in_(pids), Project.user_id == current_user.id, Project.deleted_at.is_(None)).all()}
+
+    by_project = {}
+    for inv in invites:
+        by_project.setdefault(inv.project_id, []).append(inv)
+
+    out, partners_total, submitted_total = [], 0, 0
+    for pid, invs in by_project.items():
+        proj = projects.get(pid)
+        if not proj:
+            continue
+        total_score = submitted = pieces = 0
+        for inv in invs:
+            c = contribs.get(inv.id)
+            flags = _partner_flags(c)
+            total_score += _partner_score(flags)
+            if flags["submitted"]:
+                submitted += 1
+            if c:
+                pieces += piece_counts.get(c.id, 0)
+        n = len(invs)
+        partners_total += n
+        submitted_total += submitted
+        out.append({
+            "project_id": pid, "project": proj.name,
+            "status": proj.status.value if hasattr(proj.status, "value") else str(proj.status or ""),
+            "deadline": proj.deadline.isoformat() if proj.deadline else None,
+            "partners": n, "submitted": submitted, "pieces": pieces,
+            "readiness_pct": round(100 * total_score / n) if n else 0,
+        })
+    out.sort(key=lambda x: (-x["submitted"], -x["readiness_pct"]))
+    return {"consortiums": out, "active": len(out),
+            "partners_total": partners_total, "submitted_total": submitted_total}
+
+
 @router.get("/api/projects/{project_id}/consortium")
 def consortium_cockpit(project_id: int, current_user: User = Depends(get_current_user),
                        db: Session = Depends(get_db)):
@@ -553,14 +620,8 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
     for inv in invites:
         c = contribs.get(inv.id)
         lot_clean = (c.lot.strip() if c and c.lot else "")   # évite une clé de lot vide/espaces
-        flags = {
-            "submitted": bool(c and c.status == "submitted"),
-            "lot": bool(lot_clean),
-            "references": bool(c and c.references),
-            "memoire": bool(c and c.memoire_paragraph),
-            "qualifications": bool(c and c.qualifications),
-        }
-        score = min(1.0, sum(_READINESS_WEIGHTS[k] for k, v in flags.items() if v))   # borne [0,1]
+        flags = _partner_flags(c)
+        score = _partner_score(flags)                          # borné [0,1]
         total_score += score
         name = (c.company_name if c and c.company_name else inv.company_name) or inv.recipient or "Partenaire"
         partners.append({
