@@ -61,9 +61,7 @@ function translateDOM(lang) {
   });
 }
 
-// window.__adjugo = instance racine montée (hook débogage/tests E2E ; mount() retourne
-// le proxy en build prod comme dev — état client de l'utilisateur courant uniquement).
-window.__adjugo = createApp({
+const __adjApp = createApp({
   data() {
     return {
       token: localStorage.getItem("adjugo_token") || "",
@@ -462,7 +460,7 @@ window.__adjugo = createApp({
       if (e && e.review && e.review.status === "valide") ev.push({ icon: "circle-check-big", t: "Chiffrage validé" + (e.review.by ? " · " + e.review.by : ""), d: "" });
       if (this.ao.cotraitants.length) ev.push({ icon: "handshake", t: this.ao.cotraitants.length + " co-traitant(s) rattaché(s)", d: "" });
       if (this.ao.dossier) ev.push({ icon: "package", t: "Dossier généré (CERFA + mémoire)", d: "" });
-      const nd = (this.ao.documents || []).reduce((s, g) => s + g.documents.length, 0);
+      const nd = (this.ao.documents || []).reduce((s, g) => s + ((g && g.documents || []).length), 0);
       if (nd) ev.push({ icon: "folder", t: nd + " pièce(s) au coffre-fort", d: "" });
       const dl = this.aoDetails().date_limite;
       if (dl) ev.push({ icon: "calendar-clock", t: "Échéance de remise", d: dl });
@@ -1122,4 +1120,36 @@ window.__adjugo = createApp({
     critStatus(s) { return ({ ok: "go", partiel: "a_etudier", inconnu: "neutral" })[s] || "neutral"; },
     saveBlob(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); },
   },
-}).mount("#app");
+});
+
+// Filet de sécurité : une erreur de rendu dans UNE carte ne doit JAMAIS blanchir toute
+// l'app (page blanche). On l'intercepte → Vue conserve le dernier rendu valide au lieu de
+// tout démonter, on journalise le détail (diagnostic) et on affiche le message à l'écran.
+__adjApp.config.errorHandler = function (err, vm, info) {
+  var msg = (err && err.message) ? err.message : String(err);
+  try { console.error("[Adjugo] erreur de rendu (" + info + ") :", err); } catch (e) {}
+  // Si l'app s'est vidée (Vue démonte la racine sur erreur de rendu), on remplace la page
+  // blanche par un message LISIBLE + le détail technique + un bouton recharger. Plus jamais
+  // d'écran blanc muet ; et l'erreur exacte est visible (diagnostic).
+  try {
+    setTimeout(function () {
+      var app = document.querySelector("#app");
+      if (!app || app.innerHTML.replace(/\s/g, "").length > 60) return;       // app intacte → rien à faire
+      if (document.getElementById("adj-crash")) return;
+      var safe = String(msg).replace(/[<>&]/g, "").slice(0, 200);
+      var d = document.createElement("div");
+      d.id = "adj-crash";
+      d.style.cssText = "max-width:560px;margin:64px auto;padding:26px;font-family:system-ui,-apple-system,sans-serif;text-align:center;color:#16181d";
+      d.innerHTML = '<div style="font-size:36px">⚠️</div>'
+        + '<h2 style="margin:10px 0 4px;font-size:19px">Un élément n’a pas pu s’afficher</h2>'
+        + '<p style="color:#6b7280;font-size:14px;margin:6px 0 4px">L’application reste intacte — rechargez la page.</p>'
+        + '<p style="font-size:12px;color:#9aa0ab;margin:10px 0">Détail : <code style="background:#f1f3f5;padding:2px 6px;border-radius:5px;color:#444">' + safe + '</code></p>'
+        + '<button onclick="location.reload()" style="margin-top:14px;padding:10px 20px;border:0;border-radius:9px;background:#3b5bdb;color:#fff;font-weight:600;font-size:14px;cursor:pointer">Recharger</button>';
+      document.body.appendChild(d);
+    }, 60);
+  } catch (e) {}
+};
+
+// window.__adjugo = instance racine montée (hook débogage/tests E2E ; mount() retourne le
+// proxy en build prod comme dev — état client de l'utilisateur courant uniquement).
+window.__adjugo = __adjApp.mount("#app");

@@ -331,7 +331,7 @@
             </div>
             <div class="card">
               <div class="ch"><i data-lucide="list-checks"></i><h3>Checklist des pièces</h3><div class="spacer"></div>
-                <span v-if="ao.checklist" class="muted small">{{ ao.checklist.stats.ok }}/{{ ao.checklist.stats.total }}</span></div>
+                <span v-if="ao.checklist && ao.checklist.stats" class="muted small">{{ ao.checklist.stats.ok }}/{{ ao.checklist.stats.total }}</span></div>
               <div class="cb">
                 <div v-if="!ao.checklist" class="muted small">Chargement…</div>
                 <div v-else style="max-height:320px;overflow:auto">
@@ -543,8 +543,8 @@
             <div class="cb">
               <div v-if="!ao.documents.length" class="muted small">Aucune pièce classée. Le <b>DCE</b> importé et les <b>CERFA</b> générés se rangent ici automatiquement.</div>
               <div v-for="g in ao.documents" :key="g.folder" style="margin-bottom:12px">
-                <div class="row" style="gap:6px;margin-bottom:6px"><i data-lucide="folder" style="width:15px;height:15px;color:var(--muted)"></i><b class="small">{{ g.folder }}</b><span class="muted small">({{ g.documents.length }})</span></div>
-                <div v-for="d in g.documents" :key="d.id" class="row" style="padding:6px 0 6px 22px;border-bottom:1px solid var(--hairline)">
+                <div class="row" style="gap:6px;margin-bottom:6px"><i data-lucide="folder" style="width:15px;height:15px;color:var(--muted)"></i><b class="small">{{ g.folder }}</b><span class="muted small">({{ (g.documents||[]).length }})</span></div>
+                <div v-for="d in (g.documents||[])" :key="d.id" class="row" style="padding:6px 0 6px 22px;border-bottom:1px solid var(--hairline)">
                   <i data-lucide="file-text" style="width:14px;height:14px;color:var(--muted)"></i>
                   <span class="small" style="flex:1;min-width:0">{{ d.name }}</span>
                   <span class="muted small">{{ kb(d.file_size) }}</span>
