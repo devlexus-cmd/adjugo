@@ -113,7 +113,79 @@
       }
       root.appendChild(docCard);
 
-      root.appendChild($(`<div class="iv-note">Accès en lecture seule, limité à ce dossier.<br>Conformément au RGPD, vos consultations et téléchargements sont journalisés et visibles par le mandataire.</div>`));
+      if (d.can_contribute) renderContribution(d);
+
+      const noteTxt = d.can_contribute
+        ? "Vous ne voyez que ce dossier et VOTRE contribution — jamais les données des autres entreprises.<br>Conformément au RGPD, vos actions sont journalisées et visibles par le mandataire."
+        : "Accès en lecture seule, limité à ce dossier.<br>Conformément au RGPD, vos consultations et téléchargements sont journalisés et visibles par le mandataire.";
+      root.appendChild($(`<div class="iv-note">${noteTxt}</div>`));
+    }
+
+    // ── Ma contribution (co-construction cloisonnée) ──
+    const inp = (ph, v) => { const i = document.createElement("input"); i.className = "inp"; i.placeholder = ph || ""; i.value = v || ""; i.style.width = "100%"; return i; };
+    const ta = (ph, rows) => { const t = document.createElement("textarea"); t.className = "inp"; t.placeholder = ph || ""; t.rows = rows || 3; t.style.width = "100%"; t.style.resize = "vertical"; return t; };
+    const field = (label, el) => { const w = document.createElement("div"); w.style.marginTop = "10px"; w.appendChild($(`<label class="small" style="display:block;color:var(--text-2,#6b7280);font-weight:600;margin-bottom:4px">${esc(label)}</label>`)); w.appendChild(el); return w; };
+
+    async function renderContribution(d) {
+      const role = (d.invited && d.invited.role === "sous_traitant") ? "sous-traitant" : "co-traitant";
+      const card = $(`<div class="card pad" style="margin-bottom:8px;border:1px solid var(--accent,#3b5bdb)"></div>`);
+      card.appendChild($(`<div class="row" style="gap:8px;align-items:center"><b style="font-size:13.5px;flex:1">Ma contribution au dossier commun</b></div>`));
+      const status = $(`<span class="iv-badge">Brouillon</span>`); card.firstChild.appendChild(status);
+      card.appendChild($(`<div class="iv-muted small" style="margin-top:4px">En tant que <b>${role}</b>, renseignez votre part. Vous ne voyez que VOS données ; le mandataire les assemble et l'IA les fusionne dans la réponse commune.</div>`));
+
+      const company = inp("Votre entreprise"), lot = inp("Votre lot / périmètre (ex. Lot 2 — Démolition)");
+      const quals = inp("Qualifications, séparées par des virgules (ex. Qualibat 1112, RGE)");
+      const refs = ta("Vos références — une par ligne (ex. Démolition collège — Ville de Lorient, 2024)", 3);
+      const chiffrage = ta("Votre approche prix pour votre lot (ex. forfait 18 000 € HT)", 2);
+      const memoire = ta("Votre paragraphe de mémoire technique — votre savoir-faire sur ce lot", 4);
+      const cNom = inp("Contact — nom"), cMail = inp("Email"), cTel = inp("Téléphone");
+      card.appendChild(field("Entreprise", company));
+      card.appendChild(field("Lot / périmètre", lot));
+      card.appendChild(field("Qualifications", quals));
+      card.appendChild(field("Références", refs));
+      card.appendChild(field("Approche prix de votre lot", chiffrage));
+      card.appendChild(field("Paragraphe de mémoire technique", memoire));
+      const cr = document.createElement("div"); cr.className = "row wrap"; cr.style.gap = "8px";
+      [cNom, cMail, cTel].forEach(el => { el.style.flex = "1"; el.style.minWidth = "140px"; cr.appendChild(el); });
+      card.appendChild(field("Contact", cr));
+
+      const msg = $(`<span class="iv-muted small"></span>`);
+      const btnSave = $(`<button class="btn">Enregistrer le brouillon</button>`);
+      const btnSubmit = $(`<button class="btn" style="background:var(--accent,#3b5bdb);color:#fff;border-color:transparent">Soumettre au mandataire</button>`);
+      const bar = document.createElement("div"); bar.className = "row"; bar.style.cssText = "gap:8px;margin-top:13px;align-items:center;flex-wrap:wrap";
+      bar.appendChild(btnSave); bar.appendChild(btnSubmit); bar.appendChild(msg);
+      card.appendChild(bar);
+      document.getElementById("root").appendChild(card);
+
+      const setStatus = (s) => { const ok = s === "submitted"; status.textContent = ok ? "✓ Soumis" : "Brouillon"; status.style.background = ok ? "#e7f7ee" : "var(--mist,#eef1f6)"; status.style.color = ok ? "#1a7f4b" : "var(--text-2,#6b7280)"; };
+      const collect = () => ({
+        company_name: company.value, lot: lot.value,
+        qualifications: quals.value.split(",").map(s => s.trim()).filter(Boolean),
+        references: refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })),
+        chiffrage_note: chiffrage.value, memoire_paragraph: memoire.value,
+        contact: { nom: cNom.value, email: cMail.value, telephone: cTel.value },
+      });
+      const url = "/api/invite/" + encodeURIComponent(TOKEN) + "/contribution";
+      const c0 = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
+      if (c0) {
+        company.value = c0.company_name || ""; lot.value = c0.lot || "";
+        quals.value = (c0.qualifications || []).join(", ");
+        refs.value = (c0.references || []).map(r => r.intitule || "").filter(Boolean).join("\n");
+        chiffrage.value = c0.chiffrage_note || ""; memoire.value = c0.memoire_paragraph || "";
+        const ct = c0.contact || {}; cNom.value = ct.nom || ""; cMail.value = ct.email || ""; cTel.value = ct.telephone || "";
+        setStatus(c0.status);
+      }
+      btnSave.onclick = async () => {
+        msg.textContent = "Enregistrement…";
+        const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) });
+        if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Brouillon enregistré ✓"; } else msg.textContent = "Erreur d'enregistrement.";
+      };
+      btnSubmit.onclick = async () => {
+        msg.textContent = "Envoi…";
+        await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) });
+        const r = await fetch(url + "/submit", { method: "POST" });
+        if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Contribution soumise au mandataire ✓"; } else msg.textContent = "Erreur d'envoi.";
+      };
     }
 
     function fail(title, msg) {

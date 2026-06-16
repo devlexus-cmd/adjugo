@@ -18,8 +18,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.ratelimit import limiter
 from app.core.security import get_current_user
-from app.models import AuditLog, Company, Document, Project, ProjectInvite, User, utcnow
+from app.models import (AuditLog, Company, Document, Project, ProjectContribution,
+                        ProjectInvite, User, utcnow)
 from app.services import audit
 from app.services.storage import get_storage
 
@@ -60,8 +62,10 @@ def _invite_public(inv: ProjectInvite, project: Project, owner_company: Optional
             "analysis": _safe_analysis(project.ai_analysis),
         },
         "mandataire": (owner_company.name if owner_company else "") or "",
-        "invited": {"recipient": inv.recipient, "company": inv.company_name},
+        "invited": {"recipient": inv.recipient, "company": inv.company_name,
+                    "role": inv.role or "cotraitant"},
         "can_view_docs": bool(inv.can_view_docs),
+        "can_contribute": bool(getattr(inv, "can_contribute", True)),
         "documents": docs,
         "shared_at": inv.created_at.isoformat() if inv.created_at else None,
     }
@@ -71,7 +75,9 @@ def _invite_public(inv: ProjectInvite, project: Project, owner_company: Optional
 class InviteCreate(BaseModel):
     recipient: str = ""
     company_name: str = ""
+    role: str = "cotraitant"        # cotraitant | sous_traitant
     can_view_docs: bool = True
+    can_contribute: bool = True     # autorise la co-construction (apport de sa part)
     expires_days: int = 30          # 0 = sans expiration
 
 
@@ -84,15 +90,19 @@ def _owned_project(pid: int, user: User, db: Session) -> Project:
     return p
 
 
-def _serialize_invite(inv: ProjectInvite) -> dict:
+def _serialize_invite(inv: ProjectInvite, contribution: "ProjectContribution" = None) -> dict:
     return {
         "id": inv.id, "token": inv.token, "path": f"/invite/{inv.token}",
         "recipient": inv.recipient, "company_name": inv.company_name,
-        "can_view_docs": bool(inv.can_view_docs), "revoked": bool(inv.revoked),
+        "role": inv.role or "cotraitant",
+        "can_view_docs": bool(inv.can_view_docs),
+        "can_contribute": bool(getattr(inv, "can_contribute", True)),
+        "revoked": bool(inv.revoked),
         "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
         "view_count": inv.view_count or 0,
         "last_viewed_at": inv.last_viewed_at.isoformat() if inv.last_viewed_at else None,
         "created_at": inv.created_at.isoformat() if inv.created_at else None,
+        "contribution_status": (contribution.status if contribution else None),
     }
 
 
@@ -107,7 +117,9 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
         project_id=project.id, owner_id=current_user.id,
         recipient=(body.recipient or "").strip()[:255],
         company_name=(body.company_name or "").strip()[:255],
+        role=(body.role if body.role in ("cotraitant", "sous_traitant") else "cotraitant"),
         can_view_docs=bool(body.can_view_docs),
+        can_contribute=bool(body.can_contribute),
         expires_at=(utcnow() + timedelta(days=body.expires_days)) if body.expires_days and body.expires_days > 0 else None,
     )
     db.add(inv)
@@ -130,7 +142,9 @@ def list_invites(project_id: int, current_user: User = Depends(get_current_user)
     rows = db.query(ProjectInvite).filter(
         ProjectInvite.project_id == project_id, ProjectInvite.owner_id == current_user.id
     ).order_by(ProjectInvite.created_at.desc()).all()
-    return [_serialize_invite(r) for r in rows]
+    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
+        ProjectContribution.project_id == project_id, ProjectContribution.owner_id == current_user.id).all()}
+    return [_serialize_invite(r, contribs.get(r.id)) for r in rows]
 
 
 @router.delete("/api/projects/{project_id}/invites/{invite_id}")
@@ -177,7 +191,7 @@ def _is_expired(dt) -> bool:
         return False
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt < datetime.now(timezone.utc)
+    return dt <= datetime.now(timezone.utc)
 
 
 def _valid_invite(token: str, db: Session) -> ProjectInvite:
@@ -190,6 +204,7 @@ def _valid_invite(token: str, db: Session) -> ProjectInvite:
 
 
 @router.get("/api/invite/{token}")
+@limiter.limit("120/minute")
 def guest_view(token: str, request: Request, db: Session = Depends(get_db)):
     """Vue bridée du projet partagé (aucune autre donnée du tenant n'est lisible)."""
     inv = _valid_invite(token, db)
@@ -221,6 +236,7 @@ def guest_view(token: str, request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/api/invite/{token}/doc/{doc_id}")
+@limiter.limit("60/minute")
 def guest_download(token: str, doc_id: int, request: Request, db: Session = Depends(get_db)):
     """Télécharge une pièce partagée — STRICTEMENT limitée au projet de l'invitation."""
     inv = _valid_invite(token, db)
@@ -249,3 +265,111 @@ def guest_download(token: str, doc_id: int, request: Request, db: Session = Depe
         media_type=doc.mime_type or "application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{doc.name}"'},
     )
+
+
+# ── CO-CONSTRUCTION : l'invité apporte SA part (cloisonnée) ──────────────────
+# Cœur du réseau Adjugo : chaque PME contribue à un dossier commun sans jamais
+# voir les données des autres. La contribution est liée à l'invitation (1-1) ;
+# l'invité ne lit/écrit JAMAIS que la sienne.
+def _serialize_contribution(c: ProjectContribution) -> dict:
+    return {
+        "id": c.id, "company_name": c.company_name, "role": c.role, "lot": c.lot,
+        "references": c.references or [], "qualifications": c.qualifications or [],
+        "chiffrage_note": c.chiffrage_note or "", "memoire_paragraph": c.memoire_paragraph or "",
+        "contact": c.contact or {}, "status": c.status,
+        "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
+        "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+    }
+
+
+def _get_or_create_contribution(inv: ProjectInvite, db: Session) -> ProjectContribution:
+    c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+    if c is None:
+        c = ProjectContribution(
+            invite_id=inv.id, project_id=inv.project_id, owner_id=inv.owner_id,
+            company_name=inv.company_name or "", role=inv.role or "cotraitant",
+        )
+        db.add(c)
+        db.commit()
+        db.refresh(c)
+    return c
+
+
+class ContributionSave(BaseModel):
+    company_name: Optional[str] = None
+    lot: Optional[str] = None
+    references: Optional[list] = None
+    qualifications: Optional[list] = None
+    chiffrage_note: Optional[str] = None
+    memoire_paragraph: Optional[str] = None
+    contact: Optional[dict] = None
+
+
+@router.get("/api/invite/{token}/contribution")
+@limiter.limit("120/minute")
+def guest_get_contribution(token: str, request: Request, db: Session = Depends(get_db)):
+    """Récupère (ou initialise) la contribution de CET invité — la sienne uniquement."""
+    inv = _valid_invite(token, db)
+    if not getattr(inv, "can_contribute", True):
+        raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
+    return _serialize_contribution(_get_or_create_contribution(inv, db))
+
+
+@router.put("/api/invite/{token}/contribution")
+@limiter.limit("90/minute")
+def guest_save_contribution(token: str, body: ContributionSave, request: Request, db: Session = Depends(get_db)):
+    """Enregistre le brouillon de la contribution de cet invité (ses champs uniquement)."""
+    inv = _valid_invite(token, db)
+    if not getattr(inv, "can_contribute", True):
+        raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
+    c = _get_or_create_contribution(inv, db)
+    if body.company_name is not None:
+        c.company_name = body.company_name.strip()[:255]
+    if body.lot is not None:
+        c.lot = body.lot.strip()[:255]
+    if body.references is not None:
+        c.references = body.references[:50]
+    if body.qualifications is not None:
+        c.qualifications = body.qualifications[:50]
+    if body.chiffrage_note is not None:
+        c.chiffrage_note = body.chiffrage_note[:8000]
+    if body.memoire_paragraph is not None:
+        c.memoire_paragraph = body.memoire_paragraph[:12000]
+    if body.contact is not None:
+        c.contact = {k: str(v)[:255] for k, v in (body.contact or {}).items()
+                     if k in ("nom", "email", "telephone")}
+    if c.status == "submitted":            # toute modif après soumission repasse en brouillon
+        c.status = "draft"
+        c.submitted_at = None
+    db.commit()
+    return _serialize_contribution(c)
+
+
+@router.post("/api/invite/{token}/contribution/submit")
+@limiter.limit("30/minute")
+def guest_submit_contribution(token: str, request: Request, db: Session = Depends(get_db)):
+    """Soumet la contribution au mandataire (et la rend disponible pour la fusion IA)."""
+    inv = _valid_invite(token, db)
+    if not getattr(inv, "can_contribute", True):
+        raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
+    c = _get_or_create_contribution(inv, db)
+    c.status = "submitted"
+    c.submitted_at = utcnow()
+    db.commit()
+    audit.record(db, action="guest.submit_contribution", owner_id=inv.owner_id, project_id=inv.project_id,
+                 actor=(inv.recipient or inv.company_name or "invité")[:160], actor_kind="guest",
+                 target_type="contribution", target_id=c.id,
+                 detail=(c.company_name or inv.company_name or "")[:255], ip=audit.client_ip(request))
+    return _serialize_contribution(c)
+
+
+@router.get("/api/projects/{project_id}/contributions")
+def list_contributions(project_id: int, current_user: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    """Toutes les contributions des co-traitants de CE projet (mandataire only)."""
+    _owned_project(project_id, current_user, db)
+    rows = db.query(ProjectContribution).filter(
+        ProjectContribution.project_id == project_id,
+        ProjectContribution.owner_id == current_user.id
+    ).order_by(ProjectContribution.updated_at.desc()).all()
+    return [_serialize_contribution(c) for c in rows]

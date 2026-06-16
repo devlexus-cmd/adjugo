@@ -429,27 +429,36 @@
             </div>
           </div>
 
-          <!-- Partage co-traitant (lien bridé) + journal d'accès RGPD -->
-          <div class="card" style="margin-top:14px">
-            <div class="ch"><i data-lucide="share-2"></i><h3>Partage co-traitant &amp; accès</h3><div class="spacer"></div>
+          <!-- Réseau Adjugo — co-construction cloisonnée + journal RGPD -->
+          <div class="card" style="margin-top:14px;border:1.5px solid var(--accent)">
+            <div class="ch"><i data-lucide="users-round" style="color:var(--accent-text)"></i><h3>Réseau Adjugo — montez le dossier à plusieurs</h3><div class="spacer"></div>
+              <button class="btn sm" @click="aoToggleContrib()"><i data-lucide="layers"></i>Contributions<span v-if="contribCount()" class="pill go" style="font-size:9px;margin-left:5px">{{ contribCount() }}</span></button>
               <button class="btn sm" @click="aoToggleAudit()"><i data-lucide="history"></i>Journal d'accès</button>
-              <button class="btn sm primary" @click="ao.share.open=!ao.share.open"><i data-lucide="link"></i>Partager l'AO</button></div>
+            </div>
             <div class="cb">
-              <div class="muted small">Générez un lien sécurisé : le co-traitant accède en <b>lecture seule</b> à ce seul dossier (résumé + pièces), <b>sans compte</b>. Chaque consultation est tracée (RGPD).</div>
+              <div class="muted small">Associez d'autres PME pour gagner ce marché ensemble. Chaque partenaire reçoit un <b>lien sécurisé</b> limité à ce seul dossier : il apporte <b>sa part</b> (références, lot, mémoire) sans jamais voir les données des autres. L'IA fusionne le tout en une réponse commune.</div>
+
+              <!-- CTA viral : le geste le plus visible -->
+              <button class="btn primary" @click="ao.share.open=!ao.share.open" style="margin-top:12px;width:100%;justify-content:center;padding:12px;font-size:14px"><i data-lucide="user-plus"></i>Inviter un partenaire dans le consortium</button>
 
               <div v-if="ao.share.open" style="margin-top:12px;border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--surface-2)">
                 <div class="row wrap" style="gap:8px">
-                  <input class="inp" v-model="ao.share.form.company_name" placeholder="Entreprise co-traitante" style="width:220px">
-                  <input class="inp" v-model="ao.share.form.recipient" placeholder="Nom / email du contact (optionnel)" style="width:240px">
-                  <select class="inp" v-model.number="ao.share.form.expires_days" style="width:170px">
+                  <input class="inp" v-model="ao.share.form.company_name" placeholder="Entreprise partenaire" style="width:210px">
+                  <input class="inp" v-model="ao.share.form.recipient" placeholder="Nom / email du contact (optionnel)" style="width:230px">
+                  <select class="inp" v-model="ao.share.form.role" style="width:150px">
+                    <option value="cotraitant">Co-traitant</option>
+                    <option value="sous_traitant">Sous-traitant</option>
+                  </select>
+                  <select class="inp" v-model.number="ao.share.form.expires_days" style="width:160px">
                     <option :value="7">Expire dans 7 jours</option>
                     <option :value="30">Expire dans 30 jours</option>
                     <option :value="90">Expire dans 90 jours</option>
                     <option :value="0">Sans expiration</option>
                   </select>
                 </div>
-                <label class="row small" style="gap:7px;margin-top:10px;align-items:center;cursor:pointer"><input type="checkbox" v-model="ao.share.form.can_view_docs"> Autoriser le téléchargement des pièces du dossier</label>
-                <div class="row" style="margin-top:10px"><button class="btn primary" @click="aoCreateInvite()" :disabled="ao.share.busy"><span v-if="ao.share.busy" class="spin"></span><i v-else data-lucide="link"></i>Générer le lien</button></div>
+                <label class="row small" style="gap:7px;margin-top:10px;align-items:center;cursor:pointer"><input type="checkbox" v-model="ao.share.form.can_contribute"> Autoriser la <b>co-construction</b> (le partenaire apporte sa part : références, lot, mémoire)</label>
+                <label class="row small" style="gap:7px;margin-top:8px;align-items:center;cursor:pointer"><input type="checkbox" v-model="ao.share.form.can_view_docs"> Autoriser le téléchargement des pièces du dossier</label>
+                <div class="row" style="margin-top:11px"><button class="btn primary" @click="aoCreateInvite()" :disabled="ao.share.busy"><span v-if="ao.share.busy" class="spin"></span><i v-else data-lucide="link"></i>Générer le lien d'invitation</button></div>
               </div>
 
               <div v-if="ao.share.lastUrl" class="row" style="margin-top:10px;gap:8px;align-items:center;padding:9px 11px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-weak)">
@@ -459,14 +468,36 @@
               </div>
 
               <div v-if="ao.share.invites.length" style="margin-top:12px">
+                <div class="muted small" style="margin-bottom:4px;font-weight:600">Partenaires du consortium</div>
                 <div v-for="inv in ao.share.invites" :key="inv.id" class="row" style="padding:8px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
                   <div style="flex:1;min-width:0">
                     <span class="strong small">{{ inv.company_name || inv.recipient || 'Lien de partage' }}</span>
+                    <span class="pill neutral" style="font-size:10px">{{ inv.role==='sous_traitant'?'Sous-traitant':'Co-traitant' }}</span>
                     <span class="pill" :class="inviteState(inv).cls" style="font-size:10px">{{ inviteState(inv).label }}</span>
-                    <div class="muted small">{{ inv.view_count }} consultation(s)<span v-if="inv.last_viewed_at"> · dernière {{ auditWhen(inv.last_viewed_at) }}</span><span v-if="!inv.can_view_docs"> · pièces masquées</span></div>
+                    <span v-if="inv.contribution_status==='submitted'" class="pill go" style="font-size:10px"><i data-lucide="check" style="width:11px;height:11px"></i>Contribution reçue</span>
+                    <span v-else-if="inv.can_contribute && !inv.revoked" class="pill a_etudier" style="font-size:10px">En attente de sa part</span>
+                    <div class="muted small">{{ inv.view_count }} consultation(s)<span v-if="inv.last_viewed_at"> · dernière {{ auditWhen(inv.last_viewed_at) }}</span></div>
                   </div>
                   <button class="btn icon sm ghost" @click="copyInvite(inviteUrl(inv))" aria-label="Copier le lien" :disabled="inv.revoked"><i data-lucide="copy"></i></button>
                   <button v-if="!inv.revoked" class="btn icon sm ghost" @click="aoRevokeInvite(inv)" aria-label="Révoquer le lien"><i data-lucide="ban"></i></button>
+                </div>
+              </div>
+
+              <!-- Panneau des contributions reçues (mandataire) -->
+              <div v-if="ao.share.contribOpen" style="margin-top:14px;border-top:1px solid var(--hairline);padding-top:12px">
+                <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Contributions des partenaires</b><span class="muted small">Apportées par chaque PME · fusionnées par l'IA dans le mémoire commun.</span></div>
+                <div v-if="!ao.share.contributions.length" class="muted small">Aucune contribution reçue. Invitez des partenaires et activez la co-construction.</div>
+                <div v-for="c in ao.share.contributions" :key="c.id" style="padding:10px 0;border-bottom:1px solid var(--hairline)">
+                  <div class="row" style="gap:6px;align-items:center">
+                    <span class="strong small">{{ c.company_name || 'Partenaire' }}</span>
+                    <span class="pill neutral" style="font-size:10px">{{ c.role==='sous_traitant'?'Sous-traitant':'Co-traitant' }}</span>
+                    <span v-if="c.lot" class="pill neutral" style="font-size:10px">{{ c.lot }}</span>
+                    <span class="pill" :class="c.status==='submitted'?'go':'a_etudier'" style="font-size:10px">{{ c.status==='submitted'?'Soumise':'Brouillon' }}</span>
+                  </div>
+                  <div v-if="c.qualifications && c.qualifications.length" class="muted small" style="margin-top:4px">Qualifications : {{ c.qualifications.join(', ') }}</div>
+                  <div v-if="c.references && c.references.length" class="muted small">Références : {{ c.references.map(r => r.intitule).filter(Boolean).join(' · ') }}</div>
+                  <div v-if="c.chiffrage_note" class="muted small">Prix lot : {{ c.chiffrage_note }}</div>
+                  <div v-if="c.memoire_paragraph" class="small" style="margin-top:5px;padding:7px 9px;background:var(--surface-2);border-radius:6px;white-space:pre-wrap">{{ c.memoire_paragraph }}</div>
                 </div>
               </div>
 

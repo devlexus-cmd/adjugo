@@ -517,6 +517,8 @@ class ProjectInvite(Base):
     recipient = Column(String(255), default="")        # email/nom du co-traitant (info)
     company_name = Column(String(255), default="")     # entreprise co-traitante (info)
     can_view_docs = Column(Boolean, default=True)      # autorise la liste + le téléchargement des pièces
+    role = Column(String(20), default="cotraitant")    # rôle de l'invité : cotraitant | sous_traitant
+    can_contribute = Column(Boolean, default=True)     # autorise la CO-CONSTRUCTION (apport de sa part)
 
     revoked = Column(Boolean, default=False, index=True)
     expires_at = Column(DateTime, nullable=True)       # null = sans expiration
@@ -547,3 +549,36 @@ class AuditLog(Base):
     detail = Column(String(255), default="")       # ex. nom du document consulté
     ip = Column(String(45), default="")            # IPv4/IPv6 de l'accès
     meta = Column(JSON, nullable=True)
+
+
+# === CONTRIBUTION CO-TRAITANT (co-construction cloisonnée — cœur CaaS) ===
+# Chaque PME invitée apporte SA part au dossier commun : références, qualifications,
+# chiffrage de son lot, paragraphe de mémoire. Le réseau Adjugo : ensemble sur des
+# marchés trop gros pour une seule entreprise. CLOISONNEMENT STRICT : une contribution
+# est liée à UNE invitation (invite_id unique). Un invité ne lit/écrit JAMAIS que la
+# sienne ; il ne voit jamais les données des autres co-traitants. Le mandataire (owner
+# du projet) voit tout et assemble. L'IA fusionne les contributions soumises.
+
+class ProjectContribution(Base):
+    __tablename__ = "project_contributions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invite_id = Column(Integer, ForeignKey("project_invites.id"), nullable=False, unique=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)  # mandataire (tenant)
+
+    company_name = Column(String(255), default="")     # entreprise contributrice
+    role = Column(String(20), default="cotraitant")    # cotraitant | sous_traitant
+    lot = Column(String(255), default="")              # lot / périmètre couvert par cette PME
+
+    references = Column(JSON, default=list)            # [{intitule, client, montant, annee}]
+    qualifications = Column(JSON, default=list)        # ["Qualibat 1234", "RGE", "ISO 9001"]
+    chiffrage_note = Column(Text, default="")          # approche / estimation prix de son lot
+    memoire_paragraph = Column(Text, default="")       # son paragraphe de mémoire technique
+    contact = Column(JSON, nullable=True)              # {nom, email, telephone}
+
+    status = Column(String(20), default="draft")       # draft | submitted
+    submitted_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)

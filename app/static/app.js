@@ -61,7 +61,9 @@ function translateDOM(lang) {
   });
 }
 
-createApp({
+// window.__adjugo = instance racine montée (hook débogage/tests E2E ; mount() retourne
+// le proxy en build prod comme dev — état client de l'utilisateur courant uniquement).
+window.__adjugo = createApp({
   data() {
     return {
       token: localStorage.getItem("adjugo_token") || "",
@@ -121,7 +123,7 @@ createApp({
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             qa: [], qaInput: "", qaLoading: false,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
-            share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], form: { recipient: "", company_name: "", can_view_docs: true, expires_days: 30 } } },
+            share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
       titles: { kb: "Base de connaissances — savoir-faire & mémoires IA", amont: "Veille amont — signaux d'investissement", dashboard: "Tableau de bord", sourcing: "Sourcing IA — appels d'offres", agent: "Agent IA — Pipeline multi-agents", pipeline: "Pipeline des appels d'offres", veille: "Veille des marchés publics", cotraitants: "Réseau de co-traitants", contacts: "Contacts CRM", documents: "Coffre-fort documentaire", invoices: "Devis & Factures", company: "Profil entreprise", criteria: "Critères Go/No-Go", team: "Équipe", billing: "Abonnement", aodetail: "Appel d'offres" },
       subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres" },
     };
@@ -382,7 +384,7 @@ createApp({
       this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.group = null;
       this.ao.qa = []; this.ao.qaInput = "";
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
-      this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], form: { recipient: "", company_name: "", can_view_docs: true, expires_days: 30 } };
+      this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
       this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites();
       setTimeout(() => this.aoLoadBuyer(), 700);   // profil acheteur (BOAMP, lent) en différé, après le cœur de l'AO
@@ -486,7 +488,7 @@ createApp({
       try {
         const inv = await this.api("POST", "/api/projects/" + this.ao.project.id + "/invites", f);
         this.ao.share.lastUrl = this.inviteUrl(inv);
-        this.ao.share.form = { recipient: "", company_name: "", can_view_docs: true, expires_days: 30 };
+        this.ao.share.form = { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 };
         await this.aoLoadInvites();
         this.copyInvite(this.ao.share.lastUrl, true);
       } catch (e) { this.notify(e.message, "err"); }
@@ -507,6 +509,14 @@ createApp({
         try { this.ao.share.audit = await this.api("GET", "/api/projects/" + this.ao.project.id + "/audit") || []; } catch (e) {}
       }
     },
+    async aoLoadContributions() {
+      try { this.ao.share.contributions = await this.api("GET", "/api/projects/" + this.ao.project.id + "/contributions") || []; } catch (e) {}
+    },
+    async aoToggleContrib() {
+      this.ao.share.contribOpen = !this.ao.share.contribOpen;
+      if (this.ao.share.contribOpen) await this.aoLoadContributions();
+    },
+    contribCount() { return (this.ao.share.invites || []).filter(i => i.contribution_status === "submitted").length; },
     auditLabel(a) {
       const m = { "invite.created": "Lien créé", "invite.revoked": "Lien révoqué", "guest.view_project": "Consultation du dossier", "guest.download_doc": "Téléchargement de pièce" };
       return m[a.action] || a.action;
