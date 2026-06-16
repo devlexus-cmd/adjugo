@@ -92,7 +92,7 @@ app.middleware("http")(request_logger)
 # Un build front permettrait de les retirer plus tard.
 _CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; "
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
     "font-src 'self' data: https://fonts.gstatic.com; "
     "img-src 'self' data: blob: https://cdn.jsdelivr.net https://fastapi.tiangolo.com; "
@@ -111,9 +111,14 @@ async def security_headers(request, call_next):
     resp.headers["Content-Security-Policy"] = _CSP
     if not settings.DEBUG:
         resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    # Anti-cache sur l'app et ses assets (évite d'exécuter un app.js/css périmé)
+    # Cache des assets :
+    #  • /static/vendor/* : libs épinglées par VERSION dans le nom → immuables, cache long
+    #    (un bump = nouveau nom de fichier = nouvelle URL, donc jamais de version périmée).
+    #  • le reste (/app, /, app.js, styles.css) : no-store, pour ne jamais exécuter un build périmé.
     p = request.url.path
-    if p == "/app" or p == "/" or p.startswith("/static"):
+    if p.startswith("/static/vendor/"):
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif p == "/app" or p == "/" or p.startswith("/static"):
         resp.headers["Cache-Control"] = "no-store, must-revalidate"
         resp.headers["Pragma"] = "no-cache"
     return resp

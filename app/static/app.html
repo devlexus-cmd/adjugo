@@ -17,8 +17,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/styles.css">
-<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<!-- Vue + lucide AUTO-HÉBERGÉS (épinglés) : plus aucune dépendance à unpkg, qui pouvait
+     bloquer indéfiniment le chargement de l'app lors de ses ralentissements fréquents. -->
+<script src="/static/vendor/vue-3.5.38.prod.js"></script>
+<script src="/static/vendor/lucide-1.20.0.min.js"></script>
 <script src="/static/i18n.js" defer></script>
 </head>
 <body>
