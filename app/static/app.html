@@ -59,6 +59,7 @@
       <a class="nav-item" :class="{active:view==='amont'}" @click="go('amont')"><i data-lucide="telescope"></i>Veille amont <span v-if="amont.signals.length" class="badge">{{ amont.signals.length }}</span></a>
       <a class="nav-item" :class="{active:view==='kb'}" @click="go('kb')"><i data-lucide="brain-circuit"></i>Base de connaissances <span v-if="kb.docs.length" class="badge">{{ kb.docs.length }}</span></a>
       <a class="nav-item" :class="{active:view==='pipeline'}" @click="go('pipeline')"><i data-lucide="square-kanban"></i>Pipeline AO <span class="badge">{{ projects.length }}</span></a>
+      <a class="nav-item" :class="{active:view==='consortiums'}" @click="go('consortiums')"><i data-lucide="users-round"></i>Mes consortiums <span v-if="consortiums.active" class="badge">{{ consortiums.active }}</span></a>
       <a v-if="shared.length" class="nav-item" :class="{active:view==='shared'||view==='sharedao'}" @click="go('shared')"><i data-lucide="inbox"></i>Partagé avec moi <span class="badge">{{ shared.length }}</span></a>
       <div class="nav-group">CRM</div>
       <a class="nav-item" :class="{active:view==='cotraitants'}" @click="go('cotraitants')"><i data-lucide="handshake"></i>Co-traitants <span class="badge">{{ cotraitants.length }}</span></a>
@@ -593,8 +594,9 @@
                 </div>
 
                 <div class="row wrap" style="margin-top:13px;gap:9px;align-items:center">
-                  <button class="btn primary" @click="aoGenerate()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="combine"></i>Assembler la réponse commune</button>
-                  <span class="muted small">Fusionne les parts soumises dans le mémoire <b>et joint les pièces des partenaires</b> au dossier (ZIP).</span>
+                  <button class="btn primary" @click="aoAssemble()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="combine"></i>Assembler &amp; télécharger</button>
+                  <button v-if="ao.dossier" class="btn" @click="aoDownload()"><i data-lucide="download"></i>Re-télécharger ({{ ao.dossier.zip_name }})</button>
+                  <span class="muted small" style="flex-basis:100%">Fusionne les parts soumises dans le mémoire <b>et joint les pièces des partenaires</b> dans un ZIP, téléchargé directement.</span>
                 </div>
               </div>
 
@@ -1326,6 +1328,58 @@
           </div></div>
           <div class="card pad" style="margin-top:14px"><div class="row" style="gap:11px"><i data-lucide="terminal"></i>
             <div><b class="small">API &amp; développeurs</b><div class="muted small">Intégrez Adjugo à votre SI. Documentation interactive : <a href="/docs" target="_blank" style="color:var(--accent-text);font-weight:500">/docs</a> · Schéma OpenAPI : <a href="/openapi.json" target="_blank" style="color:var(--accent-text);font-weight:500">/openapi.json</a></div></div></div></div>
+        </section>
+
+        <!-- Mes consortiums — hub central : tous mes groupements, compte-rendu + export -->
+        <section v-if="view==='consortiums'">
+          <div class="card pad" style="margin-bottom:14px;border:1.5px solid var(--accent);background:var(--accent-weak)">
+            <div class="row wrap" style="gap:12px;align-items:center">
+              <i data-lucide="users-round" style="color:var(--accent-text);width:22px;height:22px;flex:none"></i>
+              <div style="flex:1;min-width:200px"><b style="font-size:15px">Mes consortiums</b>
+                <div class="muted small">Tous vos groupements en cours : partenaires, contributions, pièces, et le <b>dossier commun à exporter</b>.<span v-if="consortiums.active"> {{ consortiums.active }} actif(s) · {{ consortiums.partners_total }} partenaire(s) · {{ consortiums.submitted_total }} part(s) reçue(s).</span></div></div>
+              <button class="btn primary" @click="go('pipeline')"><i data-lucide="user-plus"></i>Nouveau consortium</button>
+            </div>
+          </div>
+
+          <div v-if="!consortiums.consortiums.length" class="card pad"><div class="muted small">Aucun consortium pour l'instant. Ouvrez un appel d'offres et invitez un partenaire — vous le retrouverez ici avec ses pièces et le dossier commun.</div></div>
+
+          <div v-for="cs in consortiums.consortiums" :key="cs.project_id" class="card pad" style="margin-bottom:12px">
+            <div class="row" style="gap:12px;align-items:center;cursor:pointer" @click="toggleConsortium(cs.project_id)">
+              <div style="flex:1;min-width:0">
+                <div class="strong">{{ cs.project }}</div>
+                <div class="muted small">{{ cs.submitted }}/{{ cs.partners }} part(s) reçue(s)<span v-if="cs.pieces"> · {{ cs.pieces }} pièce(s)</span><span v-if="cs.deadline"> · limite {{ auditWhen(cs.deadline) }}</span></div>
+              </div>
+              <div style="width:110px;flex:none">
+                <div class="row" style="justify-content:space-between"><span class="muted small">prêt</span><b class="small" :style="{color:readinessColor(cs.readiness_pct)}">{{ cs.readiness_pct }}%</b></div>
+                <div style="height:6px;background:var(--surface-3);border-radius:3px;overflow:hidden;margin-top:3px"><div :style="{width:cs.readiness_pct+'%',height:'100%',background:readinessColor(cs.readiness_pct)}"></div></div>
+              </div>
+              <i :data-lucide="copen[cs.project_id]?'chevron-up':'chevron-down'" style="width:16px;height:16px;color:var(--text-2);flex:none"></i>
+            </div>
+
+            <div v-if="copen[cs.project_id]" style="margin-top:12px;border-top:1px solid var(--hairline);padding-top:12px">
+              <div v-if="!cdetail[cs.project_id]" class="muted small"><span class="spin"></span> Chargement du compte-rendu…</div>
+              <template v-else>
+                <div v-if="cdetail[cs.project_id].lots.length">
+                  <div class="muted small" style="font-weight:600;margin-bottom:4px">Lots couverts</div>
+                  <div v-for="l in cdetail[cs.project_id].lots" :key="l.lot" class="row small" style="padding:3px 0;gap:8px;align-items:center"><span class="pill go" style="font-size:10px">{{ l.lot }}</span><span class="muted">{{ l.partners.join(', ') }}</span></div>
+                </div>
+                <div class="muted small" style="font-weight:600;margin:9px 0 4px">Partenaires &amp; pièces</div>
+                <div v-for="pp in cdetail[cs.project_id].partners" :key="pp.company" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
+                  <span class="strong" style="flex:1;min-width:0">{{ pp.company }}</span>
+                  <span class="pill" :class="pp.status==='submitted'?'go':pp.status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ pp.status==='submitted'?'Soumise':pp.status==='draft'?'Brouillon':'En attente' }}</span>
+                  <span v-if="pp.pieces_count" class="pill neutral" style="font-size:10px"><i data-lucide="paperclip" style="width:10px;height:10px"></i>{{ pp.pieces_count }}</span>
+                </div>
+                <div v-if="cdetail[cs.project_id].readiness.missing.length" style="margin-top:8px">
+                  <div v-for="(m,i) in cdetail[cs.project_id].readiness.missing" :key="'cmh'+i" class="row small" style="gap:6px;padding:2px 0;color:var(--warning-text)"><i data-lucide="circle-alert" style="width:12px;height:12px;flex:none"></i><span>{{ m }}</span></div>
+                </div>
+                <div class="row wrap" style="gap:8px;margin-top:13px">
+                  <button class="btn primary" @click="exportConsortium(cs.project_id)" :disabled="cexport[cs.project_id]"><span v-if="cexport[cs.project_id]" class="spin"></span><i v-else data-lucide="download"></i>Exporter le dossier commun</button>
+                  <button class="btn" @click="openProjectById(cs.project_id)"><i data-lucide="external-link"></i>Ouvrir l'AO complet</button>
+                </div>
+                <div class="muted small" style="margin-top:6px">Le ZIP contient le mémoire fusionné (vos savoir-faire croisés) + les CERFA + les pièces administratives de chaque partenaire.</div>
+              </template>
+            </div>
+          </div>
         </section>
 
         <!-- Partagé avec moi — liste des AO d'autres mandataires -->

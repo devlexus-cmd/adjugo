@@ -73,6 +73,7 @@ const __adjApp = createApp({
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], expiring: [],
       notifs: [], notifsOpen: false, notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
+      cdetail: {}, copen: {}, cexport: {},
       shared: [],
       sharedAo: { token: "", project: null, mandataire: "", docs: [], status: "", busy: false, msg: "", pieces: [], canContribute: true,
                   contrib: { company_name: "", lot: "", quals: "", refs: "", chiffrage_note: "", memoire_paragraph: "", contact: { nom: "", email: "", telephone: "" } } },
@@ -259,6 +260,7 @@ const __adjApp = createApp({
       this.view = v;
       this.mobileNav = false;  // referme le menu mobile à la navigation
       if (v === "dashboard") { this.loadStats(); this.loadExpiring(); this.loadConsortiums(); this.loadNotifs(); }
+      if (v === "consortiums") this.loadConsortiums();
       if (v === "pipeline") this.loadProjects();
       if (v === "contacts") this.loadContacts();
       if (v === "invoices") this.loadInvoices();
@@ -496,6 +498,26 @@ const __adjApp = createApp({
 
     async loadConsortiums() { try { this.consortiums = await this.api("GET", "/api/consortiums") || this.consortiums; } catch (e) {} },
 
+    // ── Espace « Mes consortiums » (hub central) ──
+    async toggleConsortium(pid) {
+      this.copen[pid] = !this.copen[pid];
+      if (this.copen[pid] && !this.cdetail[pid]) {
+        try { this.cdetail[pid] = await this.api("GET", "/api/projects/" + pid + "/consortium"); } catch (e) {}
+      }
+    },
+    async exportConsortium(pid) {
+      this.cexport[pid] = true;
+      this.notify("Assemblage du dossier commun (mémoire fusionné + pièces des partenaires)…");
+      try {
+        const r = await this.api("POST", "/api/sourcing/documents", { project_id: pid, cotraitants: [] });
+        if (r.dossier && r.dossier.zip_b64) { this._downloadB64(r.dossier.zip_b64, r.dossier.zip_name); this.notify("Dossier commun exporté ✓"); }
+        else this.notify("Rien à exporter pour ce consortium", "err");
+      } catch (e) {
+        if ((e.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
+        else this.notify(e.message, "err");
+      } finally { this.cexport[pid] = false; }
+    },
+
     // ── Partagé avec moi (compte-à-compte) : je contribue à un AO d'un autre mandataire ──
     async loadShared() { try { this.shared = await this.api("GET", "/api/shared") || []; } catch (e) { this.shared = []; } },
     async openShared(item) {
@@ -702,11 +724,17 @@ const __adjApp = createApp({
         else this.notify(e.message, "err");
       } finally { this.ao.generating = false; }
     },
-    aoDownload() {
-      const d = this.ao.dossier; if (!d || !d.zip_b64) return;
-      const bin = atob(d.zip_b64), arr = new Uint8Array(bin.length);
+    _downloadB64(b64, name) {
+      const bin = atob(b64), arr = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-      this.saveBlob(new Blob([arr], { type: "application/zip" }), d.zip_name || "dossier.zip");
+      this.saveBlob(new Blob([arr], { type: "application/zip" }), name || "dossier.zip");
+    },
+    aoDownload() { const d = this.ao.dossier; if (d && d.zip_b64) this._downloadB64(d.zip_b64, d.zip_name); },
+    // Cockpit : assemble la réponse commune PUIS télécharge directement (sinon on ne
+    // « trouve pas le doc » : il était généré mais le bouton de téléchargement était ailleurs).
+    async aoAssemble() {
+      await this.aoGenerate();
+      if (this.ao.dossier && this.ao.dossier.zip_b64) { this.aoDownload(); this.notify("Dossier commun assemblé et téléchargé"); }
     },
     async aoUploadDce(e) {
       const file = e.target.files[0]; if (!file) return;
