@@ -11,6 +11,7 @@ import re
 import threading
 import time
 from typing import Optional
+import httpx
 from anthropic import Anthropic
 from app.core.config import get_settings
 
@@ -43,6 +44,115 @@ def client() -> Anthropic:
         _client = Anthropic(api_key=settings.ANTHROPIC_API_KEY,
                             timeout=_TIMEOUT, max_retries=_MAX_RETRIES)
     return _client
+
+
+# ── Fournisseur IA interchangeable : Anthropic (défaut) ou Mistral (souverain) ──
+# Toute l'app appelle messages_create() avec le format Anthropic (system + messages).
+# Quand LLM_PROVIDER=mistral ET qu'une clé Mistral est présente, on traduit cet appel
+# vers l'API Mistral (compatible OpenAI) puis on ré-emballe la réponse dans la MÊME
+# forme qu'Anthropic (resp.content[0].text, resp.usage.input/output_tokens) — donc
+# aucun agent en aval ne change. Repli auto sur Anthropic si la clé Mistral manque.
+_PROVIDER_WARNED = {"missing_key": False}
+
+
+def active_provider() -> dict:
+    """Fournisseur IA réellement actif (sans secret) — pour /metrics, /api/llm/info, UI."""
+    prov = (os.getenv("LLM_PROVIDER") or settings.LLM_PROVIDER or "anthropic").strip().lower()
+    if prov == "mistral" and settings.MISTRAL_API_KEY:
+        return {"provider": "mistral", "model": settings.MISTRAL_MODEL,
+                "model_fast": settings.MISTRAL_MODEL_FAST,
+                "label": "Mistral Large", "sovereign": True, "region": "FR/EU"}
+    # Anthropic (défaut) — ou repli si mistral demandé sans clé.
+    return {"provider": "anthropic", "model": MODEL, "model_fast": MODEL_FAST,
+            "label": "Claude (Anthropic)", "sovereign": False, "region": "US"}
+
+
+def _use_mistral() -> bool:
+    prov = (os.getenv("LLM_PROVIDER") or settings.LLM_PROVIDER or "anthropic").strip().lower()
+    if prov != "mistral":
+        return False
+    if not settings.MISTRAL_API_KEY:
+        if not _PROVIDER_WARNED["missing_key"]:
+            logger.warning("LLM_PROVIDER=mistral mais MISTRAL_API_KEY absente → repli sur Anthropic.")
+            _PROVIDER_WARNED["missing_key"] = True
+        return False
+    return True
+
+
+class _Usage:
+    __slots__ = ("input_tokens", "output_tokens")
+
+    def __init__(self, i, o):
+        self.input_tokens = i or 0
+        self.output_tokens = o or 0
+
+
+class _Block:
+    __slots__ = ("type", "text")
+
+    def __init__(self, text):
+        self.type = "text"
+        self.text = text or ""
+
+
+class _Resp:
+    """Réponse compatible Anthropic (resp.content[0].text, resp.usage.*)."""
+    __slots__ = ("content", "usage", "stop_reason")
+
+    def __init__(self, text, usage, stop_reason="end_turn"):
+        self.content = [_Block(text)]
+        self.usage = usage
+        self.stop_reason = stop_reason
+
+
+def _map_model_to_mistral(model: Optional[str]) -> str:
+    m = (model or "").lower()
+    if model == MODEL_FAST or "haiku" in m or "fast" in m or "small" in m:
+        return settings.MISTRAL_MODEL_FAST
+    return settings.MISTRAL_MODEL
+
+
+def _flatten_content(content) -> str:
+    """Le contenu Anthropic peut être une str ou une liste de blocs ; Mistral veut une str."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            (b.get("text", "") if isinstance(b, dict) else str(b)) for b in content
+        )
+    return "" if content is None else str(content)
+
+
+def _to_openai_messages(system, messages) -> list:
+    out = []
+    if system:
+        out.append({"role": "system", "content": _flatten_content(system)})
+    for m in (messages or []):
+        out.append({"role": m.get("role", "user"),
+                    "content": _flatten_content(m.get("content"))})
+    return out
+
+
+def _mistral_create(model=None, max_tokens=1024, temperature=0.2,
+                    system="", messages=None, **_ignored):
+    """Traduit un appel façon Anthropic vers l'API Mistral et ré-emballe la réponse."""
+    payload = {
+        "model": _map_model_to_mistral(model),
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "messages": _to_openai_messages(system, messages),
+    }
+    url = settings.MISTRAL_BASE_URL.rstrip("/") + "/chat/completions"
+    headers = {"Authorization": f"Bearer {settings.MISTRAL_API_KEY}",
+               "Content-Type": "application/json"}
+    r = httpx.post(url, json=payload, headers=headers, timeout=_TIMEOUT)
+    r.raise_for_status()
+    data = r.json()
+    choice = (data.get("choices") or [{}])[0]
+    text = ((choice.get("message") or {}).get("content")) or ""
+    u = data.get("usage") or {}
+    return _Resp(text, _Usage(u.get("prompt_tokens", 0), u.get("completion_tokens", 0)),
+                 choice.get("finish_reason", "stop"))
 
 
 # ── Compteurs de tokens : global (par process) + PAR TENANT ──────────────────
@@ -158,7 +268,10 @@ def messages_create(**kwargs):
         raise LLMUnavailable("Plafond de tokens IA atteint pour votre espace. Réessayez plus tard.")
     t0 = time.monotonic()
     try:
-        resp = client().messages.create(**kwargs)
+        if _use_mistral():
+            resp = _mistral_create(**kwargs)            # ré-emballé en réponse façon Anthropic
+        else:
+            resp = client().messages.create(**kwargs)
     except Exception:
         with _LOCK:
             _CB["fails"] += 1

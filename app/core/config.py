@@ -49,8 +49,22 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+psycopg2://adjugo:adjugo_password@localhost:5432/adjugo_db"
 
-    # Claude
+    # Moteur IA — fournisseur interchangeable (souveraineté).
+    # "anthropic" (défaut) ou "mistral" (Mistral Large, hébergé FR/EU).
+    # L'architecture est découplée du fournisseur : tous les appels passent par
+    # app/services/llm.py:messages_create. Basculer = changer LLM_PROVIDER (+ clé),
+    # sans toucher une ligne des agents. Si la clé Mistral manque, repli auto sur
+    # Anthropic (jamais de panne due à un flag mal réglé).
+    LLM_PROVIDER: str = "anthropic"
+
+    # Claude (Anthropic)
     ANTHROPIC_API_KEY: str = ""
+
+    # Mistral (souverain) — utilisé uniquement si LLM_PROVIDER=mistral
+    MISTRAL_API_KEY: str = ""
+    MISTRAL_BASE_URL: str = "https://api.mistral.ai/v1"
+    MISTRAL_MODEL: str = "mistral-large-latest"        # raisonnement (analyse, stratégie)
+    MISTRAL_MODEL_FAST: str = "mistral-small-latest"   # rédaction rapide (mémoire, Q&A)
 
     # Stripe
     STRIPE_SECRET_KEY: str = ""

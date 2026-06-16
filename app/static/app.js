@@ -68,7 +68,7 @@ createApp({
       theme: localStorage.getItem("adjugo_theme") || "system",
       mobileNav: false,
       user: {}, company: {}, criteria: {},
-      view: "dashboard", busy: false, toast: null, pending: 0,
+      view: "dashboard", busy: false, toast: null, pending: 0, llmInfo: null,
       auth: { mode: "login", email: "", password: "", full_name: "", company_name: "" },
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], expiring: [],
       veille: { q: "", loc: "", results: [], loading: false },
@@ -236,7 +236,7 @@ createApp({
 
     async boot() {
       try { this.user = await this.api("GET", "/api/auth/me"); } catch (e) { return; }
-      await Promise.all([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont()]);
+      await Promise.all([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadLlmInfo()]);
       // Adaptation au pays de l'organisation : scope AO + devise + LANGUE par défaut
       if (this.org.data && this.org.data.country) { this.src.country = this.org.data.country; this.orgCountry = this.org.data.country; this.applyLang(this.org.data.lang); }
       this.go("dashboard");
@@ -357,6 +357,7 @@ createApp({
     async loadDocuments() { try { this.documents = await this.api("GET", "/api/documents/") || []; } catch (e) {} },
     async loadExpiring() { try { this.expiring = await this.api("GET", "/api/documents/expiring") || []; } catch (e) { this.expiring = []; } },
     async loadCompany() { try { const c = await this.api("GET", "/api/company/"); if (c && !c.detail) this.company = c; } catch (e) {} },
+    async loadLlmInfo() { try { this.llmInfo = await this.api("GET", "/api/llm/info"); } catch (e) {} },
     async loadCriteria() { try { this.criteria = await this.api("GET", "/api/criteria/") || {}; } catch (e) {} },
 
     // ── Company / Criteria ──

@@ -212,6 +212,14 @@ def health():
         db.close()
 
 
+@app.get("/api/llm/info", tags=["Sante"])
+def llm_info():
+    """Fournisseur IA actif (sans secret). Prouve que l'architecture est découplée :
+    bascule Anthropic ↔ Mistral (souverain FR/EU) par simple variable d'environnement."""
+    from app.services.llm import active_provider
+    return active_provider()
+
+
 @app.get("/api/health/ready", tags=["Sante"])
 def health_ready():
     """Readiness détaillée : base + état du disjoncteur IA + backlog de jobs.
