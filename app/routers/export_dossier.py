@@ -11,7 +11,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.org import data_owner_id
+from app.core.org import data_owner_id, member_ids
 from app.models import User, Project, Company, Document
 from app.services.cerfa import GENERATORS
 
@@ -30,7 +30,7 @@ def export_dossier(
     db: Session = Depends(get_db),
 ):
     project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
+        Project.id == project_id, Project.user_id.in_(member_ids(current_user, db))
     ).first()
     if not project:
         raise HTTPException(404, "Projet introuvable")
@@ -59,7 +59,7 @@ def export_dossier(
     # Charger les co-traitants si disponibles
     try:
         from app.routers.cotraitants import Cotraitant
-        cts = db.query(Cotraitant).filter(Cotraitant.user_id == current_user.id).all()
+        cts = db.query(Cotraitant).filter(Cotraitant.user_id.in_(member_ids(current_user, db))).all()
         for ct in cts:
             ct_data = {}
             for k in ["name", "siret", "code_ape", "forme_juridique",

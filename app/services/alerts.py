@@ -172,7 +172,14 @@ def run_amont_alerts(db: Session) -> dict:
     records = DeliberationSource().fetch_recent(per=40, only_invest=True)
     if not records:
         return {"scanned": 0, "users_notified": 0, "new_signals": 0}
-    projets = detect_from_deliberations(records)   # détection partagée (1 appel IA)
+    # Domaines de l'ensemble des abonnés (dérivés des spécialités) → la détection
+    # partagée priorise les domaines réellement suivis par la cohorte (parité scan manuel).
+    cohort_domaines = sorted({d for u in opted
+                              for d in re.split(r"[,;]", str(criteria_dict(u.id, db).get("specialites", "") or ""))
+                              if d.strip()})
+    from app.services.llm import tenant_scope
+    with tenant_scope(opted[0].id):   # un scope (auditabilité/quota) pour l'appel mutualisé
+        projets = detect_from_deliberations(records, domaines=cohort_domaines or None)
 
     notified, total = 0, 0
     for user in opted:
@@ -205,7 +212,7 @@ def run_amont_alerts(db: Session) -> dict:
                 # Champs de PROFONDEUR : étaient perdus en mode auto (incohérence cron/manuel).
                 domaine=(p.get("domaine") or "")[:80], phase=(p.get("phase") or "")[:40],
                 echeance_ao=(p.get("echeance_ao") or "")[:120], financement=(p.get("financement") or "")[:255],
-                maturite=_num_or_none(p.get("maturite")),
+                maturite=(int(p["maturite"]) if isinstance(p.get("maturite"), (int, float)) else None),
                 extrait=(p.get("extrait") or "")[:2000], pertinence=label, pertinence_score=score,
                 source_name=(f"Délibération · {p['source']}" if p.get("source") else "Délibération (open data)")[:255],
                 source_url=(p.get("url") or "")[:700], source_date=(p.get("date") or "")[:40],

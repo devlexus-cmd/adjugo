@@ -65,8 +65,11 @@ class TedSource(TenderSource):
         a3_list = " ".join(_BY_A2[c]["a3"] for c in wanted)
         # préfixes acceptés côté client (NUTS + alpha-3), gère la Grèce (EL)
         prefixes = tuple({_BY_A2[c]["nuts"] for c in wanted} | {_BY_A2[c]["a3"] for c in wanted})
-        # filtre CPV (recherche détaillée) : ne garde que des codes numériques
-        cpv = [c for c in getattr(criteria, "cpv", []) if c.isdigit()]
+        # filtre CPV : on extrait les chiffres (gère le format officiel '45000000-7'
+        # avec clé de contrôle, qui était silencieusement écarté par c.isdigit()).
+        import re as _re
+        cpv = [_re.sub(r"\D", "", c) for c in getattr(criteria, "cpv", [])]
+        cpv = [c for c in cpv if c]
         cpv_clause = f' AND classification-cpv IN ({" ".join(cpv)})' if cpv else ""
         lim = min(criteria.limit, 50)
         page = (max(0, getattr(criteria, "offset", 0)) // lim) + 1 if lim else 1
@@ -76,8 +79,10 @@ class TedSource(TenderSource):
             "scope": "ACTIVE", "paginationMode": "PAGE_NUMBER",
         }
         try:
-            r = httpx.post(API, json=body, timeout=15,
-                           headers={"User-Agent": "AdjugoBot/1.0"})
+            # Symétrie avec BOAMP : retry + backoff sur micro-coupure réseau.
+            from app.sourcing.http import post_with_retry
+            r = post_with_retry(API, json=body, timeout=15,
+                                headers={"User-Agent": "AdjugoBot/1.0"})
             r.raise_for_status()
             notices = r.json().get("notices", [])
         except Exception as e:
