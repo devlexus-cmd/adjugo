@@ -4,8 +4,9 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-# Dépendances système minimales (psycopg2 binaire n'en a pas besoin, mais utiles aux libs PDF)
+# Dépendances système : tesseract (OCR des DCE scannés, langue FR) + poppler (pdf2image).
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr tesseract-ocr-fra poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

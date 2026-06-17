@@ -231,6 +231,31 @@ def extract_text_from_pdf(file_bytes):
         return f"Erreur extraction PDF : {str(e)}"
 
 
+def _ocr_pdf(content: bytes, max_pages: int = 15) -> str:
+    """OCR de repli pour les DCE SCANNÉS (PDF image, fréquents chez les petites
+    collectivités). Gracieux : retourne '' si l'OCR n'est pas disponible (binaire
+    tesseract/poppler absent) — le code appelant retombe alors sur l'erreur claire."""
+    try:
+        import pytesseract
+        from pdf2image import convert_from_bytes
+    except Exception:
+        return ""
+    try:
+        images = convert_from_bytes(content, dpi=200)
+    except Exception:
+        return ""
+    out = []
+    for img in images[:max_pages]:
+        try:
+            out.append(pytesseract.image_to_string(img, lang="fra"))
+        except Exception:
+            try:
+                out.append(pytesseract.image_to_string(img))   # repli langue par défaut
+            except Exception:
+                pass
+    return "\n\n".join(t for t in out if t).strip()
+
+
 def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000) -> str:
     """
     Extrait le texte d'un DCE réel : PDF unique OU archive ZIP de plusieurs PDF.
@@ -242,7 +267,12 @@ def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000) -> s
     if name.endswith(".pdf") or content[:5] == b"%PDF-":
         txt = extract_text_from_pdf(content)
         if not txt or txt.startswith("Erreur") or len(txt) < 30:
-            raise ValueError("PDF illisible (document scanné/protégé ?) ou vide.")
+            # PDF sans couche texte → tentative OCR (document scanné).
+            ocr = _ocr_pdf(content)
+            if ocr and len(ocr) >= 30:
+                return ocr[:max_chars]
+            raise ValueError("PDF illisible (document scanné/protégé ?) ou vide. "
+                             "Si c'est un scan, l'OCR n'a rien pu extraire.")
         return txt[:max_chars]
 
     if name.endswith(".zip") or content[:2] == b"PK":
@@ -261,6 +291,8 @@ def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000) -> s
             try:
                 data = zf.read(n)
                 t = extract_text_from_pdf(data)
+                if not (t and not t.startswith("Erreur") and len(t) > 30):
+                    t = _ocr_pdf(data)   # PDF scanné dans l'archive → OCR de repli
                 if t and not t.startswith("Erreur") and len(t) > 30:
                     parts.append(f"=== {os.path.basename(n)} ===\n{t}")
                     files_done += 1
