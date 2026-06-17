@@ -39,6 +39,23 @@ logger = logging.getLogger("adjugo")
 DEMO_EMAIL = "demo@adjugo.fr"
 DEMO_PASSWORD = "demo1234"
 
+
+def _luhn_siret(base13: str) -> str:
+    """Complète 13 chiffres par la clé de Luhn → SIRET 14 chiffres valide (réaliste)."""
+    s = 0
+    for i, ch in enumerate(reversed(base13)):
+        d = int(ch)
+        if i % 2 == 0:
+            d *= 2
+            if d > 9:
+                d -= 9
+        s += d
+    return base13 + str((10 - s % 10) % 10)
+
+
+# SIRET de démonstration stable et Luhn-valide (SIREN 802 456 073, établissement 0004).
+DEMO_SIRET = _luhn_siret("8024560730004")
+
 _COMPANY = {
     "name": "Bâtiment de l'Ouest", "ca_n1": 1250000, "postal_code": "29000",
     "qualifications": [
@@ -181,10 +198,21 @@ def ensure_demo(db, force: bool = False) -> User:
     comp = db.query(Company).filter(Company.user_id == user.id).first() or Company(user_id=user.id, name="x")
     if comp.id is None:
         db.add(comp)
-    comp.name = "Bâtiment de l'Ouest"; comp.siret = "00000000000000"
-    comp.city = "Quimper"; comp.postal_code = "29000"; comp.forme_juridique = "SARL"
+    comp.name = "Bâtiment de l'Ouest"; comp.siret = DEMO_SIRET
+    comp.code_ape = "4391A"   # travaux de couverture par éléments
+    comp.forme_juridique = "SARL"; comp.capital = "50 000 €"
+    comp.representant_legal = "Gwénaël Le Bihan, gérant"
+    comp.address = "12 rue des Chantiers, ZA de Kerlann"
+    comp.city = "Quimper"; comp.postal_code = "29000"
+    comp.tva_intracom = "FR" + DEMO_SIRET[:11]   # FR + clé + SIREN (format vitrine)
+    comp.phone = "02 98 52 14 30"; comp.email = "contact@batiment-ouest.fr"
     comp.ca_n1 = 1250000; comp.ca_n2 = 1100000; comp.ca_n3 = 980000; comp.effectif = 14
     comp.qualifications = _COMPANY["qualifications"]
+    comp.references = [
+        {"intitule": "Réfection de la couverture de l'école élémentaire", "client": "Commune de Pluguffan", "montant": 96000, "annee": 2024},
+        {"intitule": "Étanchéité-toiture du centre technique municipal", "client": "Quimper Bretagne Occidentale", "montant": 182000, "annee": 2023},
+        {"intitule": "Rénovation thermique d'un groupe scolaire (lot couverture/isolation)", "client": "Commune de Briec", "montant": 145000, "annee": 2023},
+    ]
     comp.team = [
         {"nom": "Yann Tanguy", "fonction": "Conducteur de travaux", "qualifications": "BTS Bâtiment, 18 ans d'expérience", "references": "Chef de chantier sur 12 réfections de toiture scolaire"},
         {"nom": "Sophie Hénaff", "fonction": "Responsable QSE / RSE", "qualifications": "Ingénieure, certifiée RGE", "references": "Pilote des clauses d'insertion sur 8 marchés publics"},
@@ -235,16 +263,277 @@ def ensure_demo(db, force: bool = False) -> User:
         db.add(proj); db.flush()
         proj_by_key[p["key"]] = proj.id
 
+    ct_by_name = {}
     for c in _COTRAITANTS:
         ct = Cotraitant(user_id=user.id, name=c["name"], siret=c["siret"], code_ape=c["code_ape"],
                         city=c["city"], departement=c["departement"], specialites=c["specialites"],
                         ca_n1=c["ca_n1"], effectif=c["effectif"])
         db.add(ct); db.flush()
+        ct_by_name[c["name"]] = ct
         for key, role, lot in c["attach"]:
             if key in proj_by_key:
                 db.add(ProjectCotraitant(project_id=proj_by_key[key], cotraitant_id=ct.id, role=role, lot=lot))
 
     db.commit()
+
+    # Vitrine complète : factures, coffre-fort, CERFA (dont DC4 du consortium), veille
+    # amont, alertes, base de connaissances, contacts, consortium Lorient matérialisé…
+    # Isolé dans sa propre transaction : un échec ici n'altère jamais le cœur de la démo.
+    try:
+        _seed_extras(db, user, proj_by_key, ct_by_name)
+    except Exception as e:
+        db.rollback()
+        logger.warning("seed démo (extras) ignoré : %s", e)
+
     db.refresh(user)
-    logger.info("Compte démo prêt (%s) — 3 AO + %d co-traitants.", DEMO_EMAIL, len(_COTRAITANTS))
+    logger.info("Compte démo prêt (%s) — 3 AO + %d co-traitants + vitrine complète.", DEMO_EMAIL, len(_COTRAITANTS))
     return user
+
+
+def _demo_pdf(title: str, subtitle: str = "") -> bytes:
+    """Petit PDF réaliste (titre + mention démo) — pour que les téléchargements du
+    coffre-fort et des pièces co-traitant fonctionnent vraiment."""
+    from io import BytesIO
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    _w, h = A4
+    c.setFont("Helvetica-Bold", 15)
+    c.drawString(25 * mm, h - 40 * mm, title[:80])
+    if subtitle:
+        c.setFont("Helvetica", 11)
+        c.drawString(25 * mm, h - 50 * mm, subtitle[:95])
+    c.setFont("Helvetica", 10)
+    c.drawString(25 * mm, h - 70 * mm, "Bâtiment de l'Ouest — SARL — Quimper (29)")
+    c.setFont("Helvetica-Oblique", 9)
+    c.setFillColorRGB(0.5, 0.5, 0.5)
+    c.drawString(25 * mm, 18 * mm, "Document de démonstration — généré par Adjugo")
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+def _seed_extras(db, user, proj_by_key, ct_by_name):
+    """Matérialise TOUTES les fonctionnalités sur le compte démo, comme si une PME
+    s'en servait réellement : factures/devis, coffre-fort (avec vrais PDF + alertes
+    d'expiration), CERFA générés (dont le DC4 du consortium), veille amont, alertes
+    sauvegardées, base de connaissances interrogeable, contacts CRM, espace de
+    co-construction, et le consortium de Lorient entièrement instancié (invitation +
+    contribution soumise + pièces). Idempotent : purge d'abord les entités démo."""
+    import datetime
+    import secrets
+    from datetime import timedelta
+    from app.models import (Document, GeneratedDoc, Invoice, Contact, Signal,
+                            SavedSearch, KnowledgeDoc, KnowledgeChunk, CoSpace,
+                            CoMember, ProjectInvite, ProjectContribution,
+                            ContributionPiece, DocCategory, InvoiceType, InvoiceStatus)
+    from app.services.storage import get_storage
+
+    uid = user.id
+    today = datetime.date.today()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    toiture = proj_by_key.get("toiture")
+    lorient = proj_by_key.get("lorient")
+
+    # ── Idempotence : purge des entités démo de cet utilisateur ──────────────
+    for M in (KnowledgeChunk, KnowledgeDoc, Signal, SavedSearch, Invoice, Contact, Document):
+        db.query(M).filter(M.user_id == uid).delete(synchronize_session=False)
+    space_ids = [s.id for s in db.query(CoSpace).filter(CoSpace.owner_id == uid).all()]
+    if space_ids:
+        db.query(CoMember).filter(CoMember.space_id.in_(space_ids)).delete(synchronize_session=False)
+    db.query(CoSpace).filter(CoSpace.owner_id == uid).delete(synchronize_session=False)
+    db.flush()
+
+    # ── Coffre-fort : vrais PDF à clés stables (uploadés une fois, réutilisés) ──
+    storage = get_storage()
+    try:
+        existing = set(storage.list_keys("demo/"))
+    except Exception:
+        existing = set()
+
+    def _put(key, title, subtitle=""):
+        if key not in existing:
+            try:
+                storage.save(key, _demo_pdf(title, subtitle), "application/pdf")
+                existing.add(key)
+            except Exception as e:
+                logger.warning("fichier démo %s non stocké : %s", key, e)
+        return key
+
+    # (nom, catégorie, dossier, expiration, project_id, clé)
+    DOCS = [
+        ("Extrait Kbis — Bâtiment de l'Ouest", DocCategory.administratif, "Pièces administratives", None, None, "demo/kbis.pdf"),
+        ("Attestation de régularité fiscale (DGFiP)", DocCategory.fiscal, "Pièces administratives", today + timedelta(days=80), None, "demo/attestation_fiscale.pdf"),
+        ("Attestation de vigilance URSSAF", DocCategory.fiscal, "Pièces administratives", today + timedelta(days=22), None, "demo/urssaf.pdf"),
+        ("Attestation d'assurance RC professionnelle", DocCategory.assurances, "Pièces administratives", today + timedelta(days=210), None, "demo/rc_pro.pdf"),
+        ("Attestation d'assurance décennale", DocCategory.assurances, "Pièces administratives", today + timedelta(days=230), None, "demo/decennale.pdf"),
+        ("Certificat Qualibat 3212 — étanchéité de toiture", DocCategory.qualifications, "Pièces administratives", today + timedelta(days=26), None, "demo/qualibat.pdf"),
+        ("Attestation RGE", DocCategory.qualifications, "Pièces administratives", today + timedelta(days=240), None, "demo/rge.pdf"),
+        ("RIB — Bâtiment de l'Ouest", DocCategory.administratif, "Pièces administratives", None, None, "demo/rib.pdf"),
+        ("Liste de références — travaux similaires (< 3 ans)", DocCategory.administratif, "Pièces administratives", None, None, "demo/references.pdf"),
+        ("Mémoire technique — méthodologie étanchéité", DocCategory.autre, "Mémoire technique", None, toiture, "demo/memoire_methodologie.pdf"),
+        ("DPGF — bordereau des prix (toiture Jean Moulin)", DocCategory.autre, "Chiffrage", None, toiture, "demo/dpgf.pdf"),
+        ("DCE — Réfection toiture groupe scolaire Jean Moulin", DocCategory.autre, "DCE", None, toiture, "demo/dce_toiture.pdf"),
+    ]
+    for name, cat, folder, exp, pid, key in DOCS:
+        _put(key, name)
+        db.add(Document(user_id=uid, name=name, category=cat, file_key=key, file_size=12000,
+                        mime_type="application/pdf", folder=folder, expiration_date=exp,
+                        project_id=pid, alert_30_sent=True, alert_7_sent=True, alert_day_sent=True))
+
+    # ── Contacts (CRM) ────────────────────────────────────────────────────────
+    for n, role, org, ctype, email, phone in [
+        ("Marie Le Goff", "Responsable de la commande publique", "Ville de Quimper", "maitre_ouvrage", "marches@mairie-quimper.fr", "02 98 98 89 89"),
+        ("Atelier Kermarrec Architectes", "Architecte mandataire (maîtrise d'œuvre)", "Atelier Kermarrec", "partenaire", "contact@kermarrec-archi.fr", "02 98 55 12 30"),
+        ("Service comptes pro — Point P", "Responsable comptes professionnels", "Point P — Saint-Gobain Distribution", "fournisseur", "pro.quimper@pointp.fr", "02 98 90 44 10"),
+    ]:
+        db.add(Contact(user_id=uid, name=n, role=role, organization=org, contact_type=ctype, email=email, phone=phone))
+
+    # ── Devis & factures ──────────────────────────────────────────────────────
+    def _inv(ref, itype, status, client, items, project_id, issue, due=None, paid=None, notes=""):
+        sub = sum(it["qty"] * it["unit_price"] for it in items)
+        tva = round(sub * 20.0 / 100, 2)
+        db.add(Invoice(user_id=uid, reference=ref, type=itype, status=status, client_name=client,
+                       items=items, subtotal_ht=sub, tva_rate=20.0, tva_amount=tva,
+                       total_ttc=round(sub + tva, 2), issue_date=issue, due_date=due,
+                       paid_date=paid, project_id=project_id, notes=notes))
+
+    _inv("DEV-2026-0142", InvoiceType.devis, InvoiceStatus.accepte, "Ville de Quimper",
+         [{"description": "Réfection toiture et étanchéité — groupe scolaire Jean Moulin (lot unique)", "qty": 1, "unit_price": 468500}],
+         toiture, today - timedelta(days=20), due=today + timedelta(days=10),
+         notes="Devis remis à l'appui de l'offre — réf. AO 25-114207.")
+    _inv("FAC-2026-0087", InvoiceType.facture, InvoiceStatus.paye, "Commune de Pluguffan",
+         [{"description": "Réfection de la couverture — école élémentaire", "qty": 1, "unit_price": 96000}],
+         None, today - timedelta(days=95), due=today - timedelta(days=65), paid=today - timedelta(days=70))
+    _inv("AV-2026-0009", InvoiceType.avoir, InvoiceStatus.envoye, "Commune de Pluguffan",
+         [{"description": "Avoir — ajustement de métré lot zinguerie", "qty": 1, "unit_price": -2400}],
+         None, today - timedelta(days=40))
+
+    # ── Veille amont : signaux d'investissement détectés en amont des AO ───────
+    for sig in [
+        dict(intitule="Construction d'un pôle enfance (crèche + ALSH)", type_projet="construction",
+             budget=3200000, budget_texte="3,2 M€ HT", localisation="Fouesnant (29)",
+             collectivite="Commune de Fouesnant", calendrier="AO probable T4 2026",
+             metiers=["gros œuvre", "toiture", "étanchéité", "isolation"],
+             extrait="« …le conseil approuve l'enveloppe prévisionnelle de 3,2 M€ HT pour la construction du pôle enfance, financée par la DETR et l'autofinancement… »",
+             pertinence="pertinent", pertinence_score=84, source_name="Délibération du conseil municipal de Fouesnant",
+             source_url="https://www.fouesnant.bzh/deliberations", source_date="2026-05-14",
+             domaine="bâtiment", phase="financement voté", echeance_ao="T4 2026",
+             financement="DETR + autofinancement", maturite=78),
+        dict(intitule="Rénovation thermique du groupe scolaire des Sables Blancs", type_projet="rénovation",
+             budget=1400000, budget_texte="1,4 M€ HT", localisation="Concarneau (29)",
+             collectivite="Concarneau Cornouaille Agglomération", calendrier="AO probable T1 2027",
+             metiers=["isolation", "couverture", "menuiserie"],
+             extrait="« …inscription au plan pluriannuel d'investissement de la rénovation énergétique du groupe scolaire, demande de subvention DSIL en cours… »",
+             pertinence="pertinent", pertinence_score=73, source_name="PPI 2026-2028 — Concarneau Agglomération",
+             source_url="https://www.concarneau-cornouaille.fr/ppi", source_date="2026-04-02",
+             domaine="bâtiment", phase="programmation", echeance_ao="T1 2027",
+             financement="DSIL", maturite=60),
+        dict(intitule="Réhabilitation de la salle des sports municipale", type_projet="rénovation",
+             budget=900000, budget_texte="≈ 900 k€ HT", localisation="Quimperlé (29)",
+             collectivite="Commune de Quimperlé", calendrier="à confirmer",
+             metiers=["gros œuvre", "toiture", "désamiantage"],
+             extrait="« …lancement d'une étude de faisabilité pour la réhabilitation de la salle des sports, présence d'amiante à confirmer par diagnostic… »",
+             pertinence="a_etudier", pertinence_score=58, source_name="Compte-rendu de la commission travaux — Quimperlé",
+             source_url="https://www.quimperle.bzh/travaux", source_date="2026-03-19",
+             domaine="bâtiment", phase="étude", echeance_ao="non daté",
+             financement="à définir", maturite=40),
+    ]:
+        db.add(Signal(user_id=uid, **sig))
+
+    # ── Alertes sauvegardées (veille AO) ──────────────────────────────────────
+    db.add(SavedSearch(user_id=uid, name="Réfection toiture / étanchéité — Finistère",
+                       query="toiture étanchéité couverture", cpv=["45261000", "45260000"],
+                       type_marche="travaux", departements=["29", "56", "22"], countries=[],
+                       frequency="quotidienne", active=True, min_score=70))
+    db.add(SavedSearch(user_id=uid, name="Rénovation énergétique — bâtiments publics",
+                       query="rénovation énergétique isolation thermique", cpv=["45321000"],
+                       type_marche="travaux", departements=["29", "56"], countries=[],
+                       frequency="hebdomadaire", active=True, min_score=65))
+
+    # ── Base de connaissances (RAG cité) : mémoires & RSE chunkés, interrogeables ──
+    def _kb(name, kind, chunks):
+        full = "\n\n".join(chunks)
+        kd = KnowledgeDoc(user_id=uid, name=name, kind=kind, text=full,
+                          char_count=len(full), n_chunks=len(chunks))
+        db.add(kd); db.flush()
+        for i, ch in enumerate(chunks):
+            db.add(KnowledgeChunk(doc_id=kd.id, user_id=uid, ordinal=i, text=ch, doc_name=name))
+
+    _kb("Mémoire technique — Réfection toiture école de Pluguffan (2024)", "memoire", [
+        "Méthodologie d'étanchéité : dépose soignée de la couverture existante, contrôle du support, pose d'un pare-vapeur, d'une isolation thermique en polyuréthane et d'une membrane d'étanchéité bicouche soudée. Relevés et zinguerie traités en points singuliers.",
+        "Sécurité et chantier en site occupé : installation de protections collectives (garde-corps périphériques, filets), phasage permettant le maintien de l'activité scolaire, nettoyage quotidien et évacuation des déchets en filière agréée.",
+        "Planning d'exécution : préparation (1 semaine), dépose et reprise du support (2 semaines), isolation et étanchéité (4 semaines), zinguerie et finitions (2 semaines), réception et levée de réserves (1 semaine).",
+        "Références similaires : 12 réfections de toitures scolaires conduites sur les 5 dernières années en Finistère, dont l'école élémentaire de Pluguffan (2024) et le centre technique de Quimper (2023).",
+        "Engagements environnementaux : tri des déchets de chantier, valorisation des matériaux, recours à des isolants biosourcés lorsque le CCTP le permet, démarche RGE.",
+    ])
+    _kb("Politique RSE & clause d'insertion sociale", "rse", [
+        "Insertion sociale : Bâtiment de l'Ouest conventionne des structures d'insertion par l'activité économique (SIAE) locales pour réaliser les heures d'insertion exigées dans les marchés publics. 1 040 heures réalisées en 2025.",
+        "Démarche environnementale : entreprise RGE, tri et valorisation des déchets de chantier, optimisation des tournées et bilan carbone suivi annuellement.",
+        "Sécurité et conditions de travail : 0 accident avec arrêt en 2025, formations régulières (travail en hauteur, désamiantage sous-section 4), encadrement QSE dédié.",
+    ])
+
+    # ── Co-construction & consortium : Lorient entièrement instancié ──────────
+    if lorient:
+        breizh = ct_by_name.get("Breizh Désamiantage")
+        breizh_siret = (breizh.siret if breizh else "") or "53219876500011"
+
+        invite = ProjectInvite(
+            token=secrets.token_hex(24), project_id=lorient, owner_id=uid,
+            recipient="contact@breizh-desamiantage.fr", company_name="Breizh Désamiantage",
+            can_view_docs=True, role="cotraitant", can_contribute=True, revoked=False,
+            view_count=4, last_viewed_at=now, verified_email="contact@breizh-desamiantage.fr",
+            verified_at=now)
+        db.add(invite); db.flush()
+
+        contrib = ProjectContribution(
+            invite_id=invite.id, project_id=lorient, owner_id=uid,
+            company_name="Breizh Désamiantage", role="cotraitant",
+            lot="Lot 1 — Désamiantage et retrait d'amiante (SS3)", siret=breizh_siret,
+            forme_juridique="SAS", address="8 rue de l'Industrie", postal_code="56100", city="Lorient",
+            references=[
+                {"intitule": "Désamiantage avant démolition d'un EHPAD", "client": "Lorient Agglomération", "montant": 320000, "annee": 2024},
+                {"intitule": "Retrait d'amiante en toiture d'un gymnase", "client": "Commune de Lanester", "montant": 185000, "annee": 2023},
+            ],
+            qualifications=["Qualification désamiantage SS3", "Certification amiante sous-section 3", "Assurance amiante"],
+            chiffrage_note="Lot désamiantage estimé à 280 000 € HT : plan de retrait, confinement, traitement et évacuation en filière agréée, mesures d'empoussièrement.",
+            memoire_paragraph="Breizh Désamiantage réalise le retrait d'amiante en sous-section 3 conformément au plan de retrait validé. Confinement dynamique, contrôles d'empoussièrement libératoires et traçabilité complète des déchets (BSDA).",
+            contact={"nom": "Soizic Morvan", "email": "contact@breizh-desamiantage.fr", "telephone": "02 97 84 22 10"},
+            status="submitted", submitted_at=now, version=1)
+        db.add(contrib); db.flush()
+
+        for pname, pkey in [("Kbis — Breizh Désamiantage", "demo/breizh_kbis.pdf"),
+                            ("Attestation de qualification désamiantage SS3 — Breizh Désamiantage", "demo/breizh_ss3.pdf")]:
+            _put(pkey, pname)
+            db.add(ContributionPiece(contribution_id=contrib.id, project_id=lorient, owner_id=uid,
+                                     name=pname, file_key=pkey, file_size=11000, mime_type="application/pdf"))
+
+        space = CoSpace(owner_id=uid, name="Groupement — Gymnase de Lorient",
+                        marche="Réhabilitation énergétique et désamiantage du gymnase municipal de Lorient",
+                        warroom={"lots": [
+                            {"lot": "Lot 1 — Désamiantage SS3", "attribue": "Breizh Désamiantage"},
+                            {"lot": "Lot 2 — Isolation / rénovation énergétique", "attribue": "Bâtiment de l'Ouest (mandataire)"},
+                            {"lot": "Lot 3 — Gros œuvre & étanchéité", "attribue": "Bâtiment de l'Ouest (mandataire)"},
+                        ]})
+        db.add(space); db.flush()
+        db.add(CoMember(space_id=space.id, user_id=uid, role="mandataire", status="accepted",
+                        company_name="Bâtiment de l'Ouest"))
+        db.add(CoMember(space_id=space.id, email="contact@breizh-desamiantage.fr", role="cotraitant",
+                        status="accepted", token=secrets.token_hex(16), company_name="Breizh Désamiantage"))
+
+    # ── CERFA générés (régénérés à la volée au téléchargement) ────────────────
+    def _gen(pid, types):
+        for t in types:
+            db.add(GeneratedDoc(project_id=pid, doc_type=t, status="pret",
+                                filled_data={"company": "Bâtiment de l'Ouest", "project": str(pid)}))
+
+    if toiture:
+        _gen(toiture, ["dc1", "dc2", "honneur", "attri1"])
+    if lorient:
+        # DC4 = déclaration de sous-traitance/co-traitance → matérialise le consortium
+        _gen(lorient, ["dc1", "dc2", "dc4", "honneur"])
+
+    db.commit()
+    logger.info("Vitrine démo : coffre-fort, factures, veille amont, KB, consortium Lorient + DC4 seedés.")

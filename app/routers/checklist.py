@@ -90,9 +90,17 @@ def _is_groupement(project, db) -> bool:
         return False
 
 
+def _norm(s: str) -> str:
+    """Minuscule + sans accents : un document nommé « décennale » doit matcher le
+    mot-clé « decennale ». Sans ça, l'accent casse silencieusement la détection."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(s or "").lower())
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+
 def match_document(piece_name, documents):
     """Verifie si un document du coffre-fort correspond a la piece demandee."""
-    piece_lower = piece_name.lower()
+    piece_lower = _norm(piece_name)
     keywords = {
         "kbis": ["kbis", "extrait k", "registre commerce"],
         "dc1": ["dc1", "lettre de candidature"],
@@ -115,8 +123,8 @@ def match_document(piece_name, documents):
     }
 
     for doc in documents:
-        doc_name = (doc.name or "").lower()
-        doc_cat = (doc.category or "").lower()
+        doc_name = _norm(doc.name)
+        doc_cat = _norm(getattr(doc.category, "value", doc.category))
 
         # Chercher par mots-cles
         for key, terms in keywords.items():
