@@ -111,7 +111,7 @@ def match_document(piece_name, documents):
         "attestation_sociale": ["urssaf", "social", "cotisation", "regularite sociale"],
         "rc_pro": ["rc pro", "responsabilite civile", "assurance pro"],
         "rc_decennale": ["decennale", "garantie decennale"],
-        "certif_qualibat": ["qualibat", "qualification", "certification", "qualif"],
+        "certif_qualibat": ["qualibat", "qualification", "certification", "qualif", "rge", "qualifelec"],
         "references": ["reference", "travaux similaires", "experience"],
         "moyens_humains": ["moyens humains", "effectif", "personnel", "organigramme"],
         "moyens_techniques": ["moyens techniques", "materiel", "equipement"],

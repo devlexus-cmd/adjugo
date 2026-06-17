@@ -165,16 +165,23 @@ def _projects():
     return P
 
 
-# Réseau de co-traitants de démonstration (rattachés à certains AO).
+# Réseau de co-traitants de démonstration (rattachés à certains AO) — fiches complètes.
 _COTRAITANTS = [
     dict(name="Charpentes du Léon", siret="51234567800018", code_ape="4391A", city="Landerneau",
          departement="29", specialites="Charpente bois, ossature, couverture", ca_n1=820000, effectif=9,
-         attach=[("toiture", "cotraitant", "")]),
+         forme_juridique="SARL", representant_legal="Hervé Quéméner", email="contact@charpentes-leon.fr",
+         phone="02 98 85 21 40", codes_cpv="45261000, 45422000",
+         qualifications="Qualibat 2392 (charpente bois), RGE", attach=[("toiture", "cotraitant", "")]),
     dict(name="Zinguerie Bigoudène", siret="48765432100027", code_ape="4391B", city="Pont-l'Abbé",
          departement="29", specialites="Couverture, zinguerie, étanchéité", ca_n1=540000, effectif=6,
-         attach=[("toiture", "cotraitant", "")]),
+         forme_juridique="SARL", representant_legal="Loïc Le Berre", email="contact@zinguerie-bigoudene.fr",
+         phone="02 98 87 33 12", codes_cpv="45261000, 45261210",
+         qualifications="Qualibat 3411 (zinguerie)", attach=[("toiture", "cotraitant", "")]),
     dict(name="Breizh Désamiantage", siret="53219876500011", code_ape="4399A", city="Lorient",
          departement="56", specialites="Désamiantage SS3, dépose amiante, retrait", ca_n1=2100000, effectif=18,
+         forme_juridique="SAS", representant_legal="Soizic Morvan", email="contact@breizh-desamiantage.fr",
+         phone="02 97 84 22 10", codes_cpv="45262660",
+         qualifications="Qualification désamiantage SS3, certification amiante sous-section 3",
          attach=[("lorient", "cotraitant", "")]),
 ]
 
@@ -227,7 +234,11 @@ def ensure_demo(db, force: bool = False) -> User:
         db.add(crit)
     crit.departments = _CRITERIA["departements"] if "departements" in _CRITERIA else _CRITERIA["departements"]
     crit.skills = ["toiture", "étanchéité", "gros œuvre", "isolation", "charpente"]
-    crit.budget_min = _CRITERIA["budget_min"]; crit.budget_max = _CRITERIA["budget_max"]; crit.go_threshold = _CRITERIA["go_threshold"]
+    crit.certifications = ["Qualibat 3212", "RGE"]
+    crit.market_types = ["public", "semi_public"]
+    crit.max_distance_km = 80
+    crit.budget_min = _CRITERIA["budget_min"]; crit.budget_max = _CRITERIA["budget_max"]
+    crit.go_threshold = _CRITERIA["go_threshold"]; crit.nogo_threshold = 49
 
     # On repart propre : on supprime D'ABORD tout ce qui référence les projets démo
     # (documents, docs générés, factures, liens co-traitants) sinon la contrainte de clé
@@ -267,7 +278,10 @@ def ensure_demo(db, force: bool = False) -> User:
     for c in _COTRAITANTS:
         ct = Cotraitant(user_id=user.id, name=c["name"], siret=c["siret"], code_ape=c["code_ape"],
                         city=c["city"], departement=c["departement"], specialites=c["specialites"],
-                        ca_n1=c["ca_n1"], effectif=c["effectif"])
+                        ca_n1=c["ca_n1"], effectif=c["effectif"],
+                        forme_juridique=c.get("forme_juridique", ""), representant_legal=c.get("representant_legal", ""),
+                        email=c.get("email", ""), phone=c.get("phone", ""),
+                        codes_cpv=c.get("codes_cpv", ""), qualifications=c.get("qualifications", ""))
         db.add(ct); db.flush()
         ct_by_name[c["name"]] = ct
         for key, role, lot in c["attach"]:
@@ -374,7 +388,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
         ("RIB — Bâtiment de l'Ouest", DocCategory.administratif, "Pièces administratives", None, None, "demo/rib.pdf"),
         ("Liste de références — travaux similaires (< 3 ans)", DocCategory.administratif, "Pièces administratives", None, None, "demo/references.pdf"),
         ("Mémoire technique — méthodologie étanchéité", DocCategory.autre, "Mémoire technique", None, toiture, "demo/memoire_methodologie.pdf"),
-        ("DPGF — bordereau des prix (toiture Jean Moulin)", DocCategory.autre, "Chiffrage", None, toiture, "demo/dpgf.pdf"),
+        ("DPGF — bordereau de décomposition des prix", DocCategory.autre, "Chiffrage", None, toiture, "demo/dpgf.pdf"),
         ("DCE — Réfection toiture groupe scolaire Jean Moulin", DocCategory.autre, "DCE", None, toiture, "demo/dce_toiture.pdf"),
     ]
     for name, cat, folder, exp, pid, key in DOCS:
@@ -384,12 +398,12 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                         project_id=pid, alert_30_sent=True, alert_7_sent=True, alert_day_sent=True))
 
     # ── Contacts (CRM) ────────────────────────────────────────────────────────
-    for n, role, org, ctype, email, phone in [
-        ("Marie Le Goff", "Responsable de la commande publique", "Ville de Quimper", "maitre_ouvrage", "marches@mairie-quimper.fr", "02 98 98 89 89"),
-        ("Atelier Kermarrec Architectes", "Architecte mandataire (maîtrise d'œuvre)", "Atelier Kermarrec", "partenaire", "contact@kermarrec-archi.fr", "02 98 55 12 30"),
-        ("Service comptes pro — Point P", "Responsable comptes professionnels", "Point P — Saint-Gobain Distribution", "fournisseur", "pro.quimper@pointp.fr", "02 98 90 44 10"),
+    for n, role, org, ctype, email, phone, addr, note in [
+        ("Marie Le Goff", "Responsable de la commande publique", "Ville de Quimper", "maitre_ouvrage", "marches@mairie-quimper.fr", "02 98 98 89 89", "44 place Saint-Corentin, 29000 Quimper", "Interlocutrice marchés bâtiment — réactive, privilégie le dépôt dématérialisé."),
+        ("Atelier Kermarrec Architectes", "Architecte mandataire (maîtrise d'œuvre)", "Atelier Kermarrec", "partenaire", "contact@kermarrec-archi.fr", "02 98 55 12 30", "9 rue du Parc, 29000 Quimper", "MOE sur plusieurs marchés scolaires — bon relais pour les visites de site."),
+        ("Service comptes pro — Point P", "Responsable comptes professionnels", "Point P — Saint-Gobain Distribution", "fournisseur", "pro.quimper@pointp.fr", "02 98 90 44 10", "ZI de l'Hippodrome, 29000 Quimper", "Conditions cadre négociées sur l'étanchéité et l'isolation."),
     ]:
-        db.add(Contact(user_id=uid, name=n, role=role, organization=org, contact_type=ctype, email=email, phone=phone))
+        db.add(Contact(user_id=uid, name=n, role=role, organization=org, contact_type=ctype, email=email, phone=phone, address=addr, notes=note))
 
     # ── Devis & factures ──────────────────────────────────────────────────────
     def _inv(ref, itype, status, client, items, project_id, issue, due=None, paid=None, notes=""):
@@ -447,11 +461,13 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
     db.add(SavedSearch(user_id=uid, name="Réfection toiture / étanchéité — Finistère",
                        query="toiture étanchéité couverture", cpv=["45261000", "45260000"],
                        type_marche="travaux", departements=["29", "56", "22"], countries=[],
-                       frequency="quotidienne", active=True, min_score=70))
+                       frequency="quotidienne", active=True, min_score=70,
+                       last_run=now - timedelta(hours=6)))
     db.add(SavedSearch(user_id=uid, name="Rénovation énergétique — bâtiments publics",
                        query="rénovation énergétique isolation thermique", cpv=["45321000"],
                        type_marche="travaux", departements=["29", "56"], countries=[],
-                       frequency="hebdomadaire", active=True, min_score=65))
+                       frequency="hebdomadaire", active=True, min_score=65,
+                       last_run=now - timedelta(days=2)))
 
     # ── Base de connaissances (RAG cité) : mémoires & RSE chunkés, interrogeables ──
     def _kb(name, kind, chunks):
@@ -535,5 +551,51 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
         # DC4 = déclaration de sous-traitance/co-traitance → matérialise le consortium
         _gen(lorient, ["dc1", "dc2", "dc4", "honneur"])
 
+    # ── Historique d'AO décidés (gagné/perdu) : peuple le tableau de bord ──────
+    # Win-rate, pipeline et analytics n'ont de sens qu'avec des marchés clôturés.
+    from app.models import ProjectStatus
+    PAST = [
+        dict(name="Réfection de toiture-terrasse — médiathèque de Douarnenez", client="Ville de Douarnenez",
+             budget=212000, status=ProjectStatus.gagne, ref="24-098112",
+             outcome_rank=1, awarded_amount=212000, outcome_reason="Offre la mieux-disante (valeur technique 60 %).",
+             details={"intitule_marche": "Réfection de la toiture-terrasse de la médiathèque",
+                      "acheteur": "Ville de Douarnenez", "type_marche": "Travaux", "budget_estime": "212 000 EUR HT",
+                      "lieu_execution": "Douarnenez (29)", "qualifications_requises": ["Qualibat 3212", "RGE"],
+                      "ca_minimum_requis": "CA > 800 000 EUR",
+                      "criteres_attribution": [{"critere": "Valeur technique", "ponderation": "60%"}, {"critere": "Prix", "ponderation": "40%"}]},
+             summary="Réfection de toiture-terrasse à Douarnenez — métier et zone alignés. Marché remporté en 2024.",
+             pieces=["Attestation Qualibat 3212", "Mémoire technique", "Attestation décennale"]),
+        dict(name="Couverture et zinguerie — école de Plomelin", client="Commune de Plomelin",
+             budget=138000, status=ProjectStatus.gagne, ref="24-061330",
+             outcome_rank=1, awarded_amount=138000, outcome_reason="Meilleur rapport valeur technique / prix.",
+             details={"intitule_marche": "Réfection de la couverture et de la zinguerie de l'école",
+                      "acheteur": "Commune de Plomelin", "type_marche": "Travaux", "budget_estime": "138 000 EUR HT",
+                      "lieu_execution": "Plomelin (29)", "qualifications_requises": ["Qualibat 3212"],
+                      "ca_minimum_requis": "CA > 500 000 EUR",
+                      "criteres_attribution": [{"critere": "Valeur technique", "ponderation": "50%"}, {"critere": "Prix", "ponderation": "50%"}]},
+             summary="Couverture et zinguerie d'une école à Plomelin — cœur de métier. Marché remporté en 2024.",
+             pieces=["Attestation Qualibat 3212", "Mémoire technique", "Références scolaires"]),
+        dict(name="Rénovation de couverture — gendarmerie de Châteaulin", client="SGAMI Ouest",
+             budget=175000, status=ProjectStatus.perdu, ref="24-076550",
+             outcome_rank=2, competitor_winner="SARL Couverture du Porzay",
+             outcome_reason="Classé 2e — offre supérieure de 6 % au prix retenu.",
+             details={"intitule_marche": "Rénovation de la couverture de la caserne de gendarmerie",
+                      "acheteur": "SGAMI Ouest", "type_marche": "Travaux", "budget_estime": "175 000 EUR HT",
+                      "lieu_execution": "Châteaulin (29)", "qualifications_requises": ["Qualibat 3212"],
+                      "ca_minimum_requis": "CA > 600 000 EUR",
+                      "criteres_attribution": [{"critere": "Prix", "ponderation": "60%"}, {"critere": "Valeur technique", "ponderation": "40%"}]},
+             summary="Rénovation de couverture à Châteaulin — métier et zone alignés. Offre classée 2e (prix) en 2024.",
+             pieces=["Attestation Qualibat 3212", "Mémoire technique", "Attestation décennale"]),
+    ]
+    for p in PAST:
+        ai = _analysis(p["details"], p["summary"], p["ref"], p["pieces"])
+        db.add(Project(user_id=uid, name=p["name"], client=p["client"], budget=p["budget"],
+                       status=p["status"], source_url=ai["source"]["source_url"],
+                       match_score=ai["match_score"], go_decision=ai["go_decision"],
+                       ai_summary=ai["summary"], ai_analysis=ai,
+                       outcome_rank=p.get("outcome_rank"), awarded_amount=p.get("awarded_amount"),
+                       outcome_reason=p.get("outcome_reason"), competitor_winner=p.get("competitor_winner")))
+
     db.commit()
-    logger.info("Vitrine démo : coffre-fort, factures, veille amont, KB, consortium Lorient + DC4 seedés.")
+    logger.info("Vitrine démo : coffre-fort, factures, veille amont, KB, consortium Lorient + DC4, "
+                "%d AO décidés (win-rate) seedés.", len(PAST))
