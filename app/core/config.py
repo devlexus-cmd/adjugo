@@ -29,6 +29,9 @@ class Settings(BaseSettings):
 
     # Rate limiting : "memory://" en mono-instance, "redis://host:6379" en multi-workers/prod
     RATELIMIT_STORAGE_URI: str = "memory://"
+    # Nb de proxys de confiance devant l'app (Railway edge = 1). Sert à extraire l'IP
+    # client réelle = hop le plus à droite de X-Forwarded-For (non spoofable).
+    TRUSTED_PROXY_HOPS: int = 1
 
     # Observabilité
     ENVIRONMENT: str = "development"      # development | staging | production

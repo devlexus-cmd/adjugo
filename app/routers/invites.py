@@ -224,6 +224,13 @@ def project_audit(project_id: int, current_user: User = Depends(get_current_user
     } for r in rows]
 
 
+@router.get("/api/audit/integrity")
+def audit_integrity(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Vérifie l'intégrité du journal d'audit du tenant (chaîne de hash). Preuve RGPD
+    que la traçabilité n'a pas été altérée."""
+    return audit.verify_chain(db, current_user.id)
+
+
 # ── Côté CO-TRAITANT INVITÉ (NON authentifié — jeton dans l'URL) ─────────────
 def _is_expired(dt) -> bool:
     """Comparaison robuste : la base peut renvoyer un datetime naïf (UTC implicite)."""

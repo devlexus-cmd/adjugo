@@ -23,6 +23,35 @@ publics français du BTP. Tu produis un mémoire technique convaincant, concret 
 structuré en Markdown, prêt à être inséré dans une réponse à appel d'offres.
 Pas de bla-bla : des engagements précis, des moyens chiffrés, une méthodologie crédible."""
 
+_FUSION_SYSTEM = """Tu es l'architecte d'un groupement d'entreprises (co-traitance) répondant
+à un marché public. On te donne les apports BRUTS de chaque PME du groupement (lots,
+qualifications, références, paragraphes rédigés chacun de leur côté). Ta mission : les
+FUSIONNER en une synthèse d'équipe unique, cohérente et sans redondance — pas une
+juxtaposition. Reformule (jamais de copier-coller verbatim), regroupe les savoir-faire
+qui se recoupent, mets en avant la complémentarité des lots. Règle absolue : n'invente
+AUCUN moyen, chiffre, référence ou certification absent des apports fournis."""
+
+
+def _fuse_consortium(raw_block: str, details: dict, lang_name: str = None) -> str:
+    """2ᵉ passe LLM : transforme les apports bruts des co-traitants en une synthèse
+    d'équipe fusionnée et dédupliquée. Retourne "" en cas d'échec (repli géré par l'appelant)."""
+    if not (raw_block or "").strip():
+        return ""
+    prompt = (f"MARCHÉ : {details.get('intitule_marche','')}\n"
+              f"ALLOTISSEMENT : {details.get('allotissement','')}\n\n"
+              f"APPORTS BRUTS DES CO-TRAITANTS :\n{raw_block}\n\n"
+              "Produis 2 à 4 paragraphes Markdown qui tissent ces apports en une présentation "
+              "UNIQUE des moyens mutualisés du groupement : complémentarité des lots, "
+              "savoir-faire combinés, références consolidées. Reformule tout, fusionne les "
+              "redondances, n'invente rien. Pas de liste à puces entreprise par entreprise.")
+    if lang_name and lang_name.lower() != "français":
+        prompt += f"\n\nLANGUE : rédige en {lang_name}."
+    try:
+        out = complete(_FUSION_SYSTEM, prompt, max_tokens=700, temperature=0.25, model=MODEL_FAST)
+        return (out or "").strip()
+    except Exception:
+        return ""
+
 
 def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
                            lang_name: str = None, db=None, user_id: int = None,
@@ -83,12 +112,24 @@ def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
             if c.get("memoire_paragraph"):
                 b += f"\n  Apport rédigé par la PME : {c['memoire_paragraph']}"
             parts.append(b)
-        consortium_block = ("\n\nCONTRIBUTIONS DES CO-TRAITANTS DU CONSORTIUM "
-                            "(apports réels fournis par chaque PME — à FUSIONNER) :\n" + "\n".join(parts))
+        raw_block = "\n".join(parts)
+        # 2ᵉ PASSE DE FUSION : au lieu d'injecter les paragraphes des PME bruts (risque
+        # de copier-coller verbatim dans le mémoire), on les fait d'abord SYNTHÉTISER en
+        # un récit d'équipe unique, dédupliqué. Repli gracieux sur la concat si l'appel
+        # échoue (jamais de blocage). Voir _fuse_consortium().
+        fused = _fuse_consortium(raw_block, details, lang_name)
+        if fused:
+            consortium_block = ("\n\nMOYENS MUTUALISÉS DU GROUPEMENT (synthèse déjà fusionnée "
+                                "des apports réels des co-traitants — réutilise-la telle quelle, "
+                                "ne re-liste pas les entreprises mécaniquement) :\n" + fused)
+        else:
+            consortium_block = ("\n\nCONTRIBUTIONS DES CO-TRAITANTS DU CONSORTIUM "
+                                "(apports réels fournis par chaque PME — à FUSIONNER) :\n" + raw_block)
         consortium_rule = ("\n\nRÈGLE CONSORTIUM : intègre les qualifications, références et apports de CHAQUE "
                            "co-traitant ci-dessus ; attribue chaque lot à l'entreprise qui le couvre et tisse "
-                           "leurs moyens et savoir-faire en un récit d'équipe UNIQUE et cohérent. N'invente rien "
-                           "au-delà de ce que chaque co-traitant a fourni.")
+                           "leurs moyens et savoir-faire en un récit d'équipe UNIQUE et cohérent. REFORMULE — "
+                           "ne recopie JAMAIS mot pour mot le paragraphe d'une PME — et fusionne les savoir-faire "
+                           "redondants. N'invente rien au-delà de ce que chaque co-traitant a fourni.")
 
     # RAG : récupère le savoir-faire réel de l'entreprise pertinent pour ce marché
     sources_block, src_rule = "", ""
@@ -256,7 +297,10 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
             warnings.append(f"formulaire national: {e}")
 
     # ── ZIP ──
-    zip_bytes, zip_name = _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces)
+    zip_bytes, zip_name, failed_pieces = _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces)
+    if failed_pieces:
+        warnings.append("Pièces partenaires non jointes au dossier (à re-déposer) : "
+                        + ", ".join(failed_pieces[:8]))
 
     return {
         "memoire_markdown": memoire_md,
@@ -273,6 +317,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
 def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces=None):
     import os
     buf = io.BytesIO()
+    failed_pieces = []
     ao = re.sub(r"[^\w\s-]", "", details.get("intitule_marche", "AO"))[:40].strip() or f"projet_{project_id}"
     zip_name = f"Adjugo_Dossier_{ao}.zip".replace(" ", "_")
 
@@ -298,6 +343,9 @@ def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_i
                 try:
                     content = storage.load(p["file_key"])
                 except Exception:
+                    # Ne plus avaler silencieusement : le mandataire doit savoir qu'une
+                    # pièce partenaire manque au ZIP (sinon dossier commun incomplet déposé).
+                    failed_pieces.append(f"{p.get('company') or 'co-traitant'} — {p.get('name') or 'pièce'}")
                     continue
                 co = re.sub(r"[^\w\s-]", "", p.get("company", "") or "cotraitant")[:40].strip() or "cotraitant"
                 nm = os.path.basename(p.get("name", "") or "piece") or "piece"
@@ -310,7 +358,7 @@ def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_i
                     i += 1
                 seen.add(path)
                 zf.writestr(path, content)
-    return buf.getvalue(), zip_name
+    return buf.getvalue(), zip_name, failed_pieces
 
 
 def _groupement_recap(company, cotraitants, details):

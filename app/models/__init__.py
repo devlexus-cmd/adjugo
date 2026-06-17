@@ -556,6 +556,11 @@ class AuditLog(Base):
     ip = Column(String(45), default="")            # IPv4/IPv6 de l'accès
     meta = Column(JSON, nullable=True)
 
+    # Chaînage cryptographique (tamper-evidence). entry_hash = sha256(prev_hash + payload) ;
+    # toute modification/suppression d'une entrée brise la chaîne et est détectable.
+    prev_hash = Column(String(64), default="")
+    entry_hash = Column(String(64), default="", index=True)
+
 
 # === CONTRIBUTION CO-TRAITANT (co-construction cloisonnée — cœur CaaS) ===
 # Chaque PME invitée apporte SA part au dossier commun : références, qualifications,
