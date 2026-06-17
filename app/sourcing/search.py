@@ -4,13 +4,50 @@ déduplique, fusionne les provenances, score. Les erreurs de source sont
 remontées (jamais masquées, jamais remplacées par de l'inventé).
 """
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeout
 from datetime import date, datetime
 from typing import Optional
 
 from app.sourcing.base import TenderSource, TenderCriteria, CompanySource
 from app.sourcing.schemas import NormalizedTender, NormalizedCompany, SourceError
 from app.sourcing.scoring import score_tender, score_company
+
+logger = logging.getLogger("adjugo")
+
+# Délai DUR d'une recherche : au-delà, on rend ce qui a répondu et on marque les sources
+# lentes en « délai dépassé » — une source lente/HS ne paralyse jamais la recherche.
+_SEARCH_DEADLINE = float(os.getenv("SOURCING_DEADLINE", "14"))
+
+# Disjoncteur par source : après N échecs/timeouts consécutifs, on saute la source pendant
+# un cooldown (fail-fast) au lieu de réattendre son timeout à chaque recherche.
+_CB = {}
+_CB_LOCK = threading.Lock()
+_CB_THRESHOLD = int(os.getenv("SOURCING_CB_THRESHOLD", "3"))
+_CB_COOLDOWN = float(os.getenv("SOURCING_CB_COOLDOWN", "120"))
+
+
+def _cb_open(name: str) -> bool:
+    with _CB_LOCK:
+        cb = _CB.get(name)
+        return bool(cb and cb["open_until"] > time.monotonic())
+
+
+def _cb_fail(name: str) -> None:
+    with _CB_LOCK:
+        cb = _CB.setdefault(name, {"fails": 0, "open_until": 0.0})
+        cb["fails"] += 1
+        if cb["fails"] >= _CB_THRESHOLD:
+            cb["open_until"] = time.monotonic() + _CB_COOLDOWN
+            logger.warning("Disjoncteur sourcing ouvert pour « %s » (%s échecs) — pause %ss.",
+                           name, cb["fails"], _CB_COOLDOWN)
+
+
+def _cb_ok(name: str) -> None:
+    with _CB_LOCK:
+        _CB[name] = {"fails": 0, "open_until": 0.0}
 
 logger = logging.getLogger("adjugo")
 
@@ -24,14 +61,32 @@ class TenderSearchService:
         tenders: list[NormalizedTender] = []
         errors: list[SourceError] = []
 
-        with ThreadPoolExecutor(max_workers=max(1, len(self.sources))) as ex:
-            futs = {ex.submit(s.search, criteria): s for s in self.sources}
-            for fut in as_completed(futs):
+        # Disjoncteur : on saute les sources en panne (fail-fast, pas de réattente).
+        active = [s for s in self.sources if not _cb_open(s.name)]
+        for s in self.sources:
+            if _cb_open(s.name):
+                errors.append(SourceError(source=s.name, message="temporairement indisponible (trop d'échecs récents)"))
+
+        ex = ThreadPoolExecutor(max_workers=max(1, len(active) or 1))
+        futs = {ex.submit(s.search, criteria): s for s in active}
+        try:
+            for fut in as_completed(futs, timeout=_SEARCH_DEADLINE):
                 src = futs[fut]
                 try:
                     tenders.extend(fut.result())
+                    _cb_ok(src.name)
                 except Exception as e:
                     errors.append(SourceError(source=src.name, message=str(e)[:200]))
+                    _cb_fail(src.name)
+        except FuturesTimeout:
+            pass
+        # Sources non terminées au délai → délai dépassé (et on ne BLOQUE pas dessus).
+        for fut, src in futs.items():
+            if not fut.done():
+                errors.append(SourceError(source=src.name, message="délai dépassé"))
+                _cb_fail(src.name)
+                fut.cancel()
+        ex.shutdown(wait=False)
 
         deduped = _dedup_tenders(tenders)
         # On n'affiche JAMAIS un AO dont la date limite de réponse est passée
