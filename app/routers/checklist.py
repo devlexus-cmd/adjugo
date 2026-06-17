@@ -166,6 +166,13 @@ def get_checklist(
     if is_groupement:
         contextual["pouvoir"] = "Groupement : pouvoir / habilitation du mandataire obligatoire."
         contextual["dc4"] = "Groupement avec sous-traitance : DC4 à prévoir le cas échéant."
+    # DPGF/BPU imposé par l'acheteur : si une trame figure dans les pièces requises du DCE,
+    # il faut la compléter telle quelle — le modèle Adjugo ne sert alors que de chiffrage.
+    _pieces_txt = " ".join(
+        (ap if isinstance(ap, str) else ap.get("nom", "")) for ap in ai_pieces).lower()
+    if any(k in _pieces_txt for k in ("dpgf", "bordereau", "bpu", "décomposition", "decomposition")):
+        contextual["dpgf"] = ("Trame DPGF/BPU imposée par l'acheteur (détectée dans le DCE) : "
+                              "téléchargez-la et complétez-la — n'envoyez pas le modèle Adjugo seul.")
 
     # Combiner pieces standard + pieces IA
     seen_ids = set()

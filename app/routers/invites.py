@@ -746,6 +746,28 @@ def _partner_score(flags: dict) -> float:
     return min(1.0, sum(_READINESS_WEIGHTS[k] for k, v in flags.items() if v))
 
 
+# Pièces administratives attendues de CHAQUE membre d'un groupement (au-delà des
+# CERFA mutualisés). Permet au mandataire de voir, par partenaire, ce qui manque.
+_PARTNER_PIECE_TYPES = [
+    ("kbis", "Kbis", ("kbis", "extrait k", "registre")),
+    ("fiscale", "Attest. fiscale", ("fiscal", "impot", "dgfip")),
+    ("sociale", "Attest. sociale (URSSAF)", ("urssaf", "social", "vigilance", "cotisation")),
+    ("assurance", "Assurance (RC/décennale)", ("assurance", "rc pro", "responsabilite", "decennale", "decenale")),
+    ("rib", "RIB", ("rib", "bancaire", "iban")),
+]
+
+
+def _classify_partner_pieces(names: list) -> dict:
+    """À partir des noms de pièces déposées par un partenaire, déduit quels types
+    administratifs attendus sont présents/absents (rapprochement par mots-clés)."""
+    low = [(n or "").lower() for n in names]
+    have, missing = [], []
+    for key, label, kw in _PARTNER_PIECE_TYPES:
+        present = any(any(k in n for k in kw) for n in low)
+        (have if present else missing).append(label)
+    return {"have": have, "missing": missing}
+
+
 @router.get("/api/consortiums")
 def my_consortiums(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Tous les consortiums du mandataire (AO avec ≥1 partenaire) — pour l'accueil.
@@ -811,11 +833,12 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id,
         ProjectContribution.owner_id == current_user.id).all()}
-    piece_counts = {}
+    piece_counts, piece_names = {}, {}
     for pc in db.query(ContributionPiece).filter(
             ContributionPiece.project_id == project_id,
             ContributionPiece.owner_id == current_user.id).all():
         piece_counts[pc.contribution_id] = piece_counts.get(pc.contribution_id, 0) + 1
+        piece_names.setdefault(pc.contribution_id, []).append(pc.name or "")
     company = db.query(Company).filter(Company.user_id == current_user.id).first()
 
     partners, lots, missing, total_score = [], {}, [], 0.0
@@ -826,6 +849,7 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
         score = _partner_score(flags)                          # borné [0,1]
         total_score += score
         name = (c.company_name if c and c.company_name else inv.company_name) or inv.recipient or "Partenaire"
+        pclass = _classify_partner_pieces(piece_names.get(c.id, []) if c else [])
         partners.append({
             "company": name, "role": inv.role or "cotraitant",
             "lot": lot_clean, "status": (c.status if c else "invited"),
@@ -833,6 +857,7 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
             "has_chiffrage": bool(c and c.chiffrage_note),
             "qualifications_count": len(c.qualifications or []) if c else 0,
             "pieces_count": (piece_counts.get(c.id, 0) if c else 0),
+            "pieces_have": pclass["have"], "pieces_missing": pclass["missing"],
             "completeness": round(score * 100),
         })
         if lot_clean:
@@ -846,6 +871,9 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
             missing.append(f"{name} : lot/périmètre non précisé")
         elif not flags["references"]:
             missing.append(f"{name} : aucune référence renseignée")
+        elif pclass["missing"]:
+            # Part soumise mais pièces administratives obligatoires absentes du membre.
+            missing.append(f"{name} : pièce(s) à fournir — {', '.join(pclass['missing'][:3])}")
 
     n = len(invites)
     pct = round(100 * total_score / n) if n else 0

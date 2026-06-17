@@ -628,6 +628,11 @@
                     <span class="pill" :class="p.status==='submitted'?'go':p.status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ p.status==='submitted'?'Soumise':p.status==='draft'?'Brouillon':'En attente' }}</span>
                     <span v-if="p.pieces_count" class="pill neutral" style="font-size:10px"><i data-lucide="paperclip" style="width:10px;height:10px"></i>{{ p.pieces_count }} pièce(s)</span>
                     <span v-if="p.lot" class="muted small"> · {{ p.lot }}</span>
+                    <!-- Pièces administratives attendues du membre : présentes (vert) / manquantes (rouge) -->
+                    <div v-if="(p.pieces_have && p.pieces_have.length) || (p.pieces_missing && p.pieces_missing.length)" class="row wrap" style="gap:4px;margin-top:3px">
+                      <span v-for="h in p.pieces_have" :key="'h'+h" class="pill go" style="font-size:9px">✓ {{ h }}</span>
+                      <span v-for="m in p.pieces_missing" :key="'m'+m" class="pill" style="font-size:9px;background:rgba(220,38,38,.08);color:#b91c1c">✗ {{ m }}</span>
+                    </div>
                   </div>
                   <div style="width:84px"><div style="height:5px;background:var(--surface-3);border-radius:3px;overflow:hidden"><div :style="{width:p.completeness+'%',height:'100%',background:readinessColor(p.completeness)}"></div></div></div>
                   <span class="muted small" style="width:32px;text-align:right">{{ p.completeness }}%</span>
