@@ -183,14 +183,36 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         memoire_md = f"# Mémoire technique\n\n(génération indisponible : {e})"
         warnings.append(f"mémoire: {e}")
 
+    # Taux de TVA piloté par le projet (0 % par défaut — art. 293 B CGI).
+    tva_rate = 0
+    if db is not None and project_id:
+        try:
+            from app.models import Project
+            proj = db.query(Project).filter(Project.id == project_id).first()
+            tva_rate = (getattr(proj, "tva_rate", 0) or 0) if proj else 0
+        except Exception:
+            tva_rate = 0
+
     # ── CERFA ──
     project_data = {
         "name": details.get("intitule_marche", "Marché public"),
         "client": details.get("acheteur", ""),
         "budget": _parse_amount(details.get("budget_estime", "")),  # numérique pour l'ATTRI1
+        "tva_rate": tva_rate,
         "reference": f"AO-{(project_id or 0):04d}",
         "cotraitants": cotraitants,   # ← injecté pour le DC1 groupement / DC2 multi-membres
     }
+
+    # ── Pare-feu : champs critiques manquants = pli rejeté. On signale (bloquant,
+    # remonté en rouge côté front) sans empêcher l'assemblage du brouillon.
+    try:
+        from app.services.cerfa import missing_company_fields
+        miss = missing_company_fields(company)
+        if miss:
+            warnings.append("BLOQUANT — profil entreprise incomplet (rejet probable du pli) : "
+                            + ", ".join(miss))
+    except Exception:
+        pass
 
     # Composition du dossier selon le PAYS :
     #  - France : CERFA DC1/DC2/(DC4)/ATTRI1 + DUME sur gros marchés.
@@ -200,7 +222,8 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     has_subcontractor = any(r == "sous_traitant" for r in roles) or (cotraitants and not any(roles))
     if (country or "FR").upper() == "FR":
         include_dume = (project_data.get("budget") or 0) >= DUME_THRESHOLD
-        cerfa_ids = ["dc1", "dc2"] + (["dc4"] if has_subcontractor else []) + ["attri1"] \
+        # "honneur" = déclaration sur l'honneur (R2143-3), pièce obligatoire de tout pli FR.
+        cerfa_ids = ["dc1", "dc2"] + (["dc4"] if has_subcontractor else []) + ["attri1", "honneur"] \
             + (["dume"] if include_dume else [])
     else:
         cerfa_ids = ["dume"]   # ESPD localisé = pièce de candidature paneuropéenne

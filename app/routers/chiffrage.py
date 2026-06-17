@@ -87,7 +87,8 @@ def download_dpgf(project_id: int, current_user: User = Depends(get_current_user
         raise HTTPException(400, "Aucun chiffrage à exporter. Lancez d'abord l'estimation.")
     company = db.query(Company).filter(Company.user_id == current_user.id).first()
     from app.services.dpgf import generate_dpgf_pdf
-    pdf = generate_dpgf_pdf(p.estimate, (company.name if company else "Entreprise"), p.name)
+    pdf = generate_dpgf_pdf(p.estimate, (company.name if company else "Entreprise"), p.name,
+                            tva_rate=getattr(p, "tva_rate", 0) or 0)
     fn = "DPGF-" + (re.sub(r"[^A-Za-z0-9]+", "-", p.name or "marche").strip("-")[:40] or "marche") + ".pdf"
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{fn}"'})

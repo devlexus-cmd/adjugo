@@ -161,6 +161,9 @@ class Project(Base):
     name = Column(String(500), nullable=False)
     client = Column(String(255))
     budget = Column(Float, default=0)
+    # Taux de TVA de l'acte d'engagement. Défaut 0 % : marchés publics souvent
+    # hors-champ TVA (art. 293 B CGI). Pilote l'ATTRI1 et la DPGF.
+    tva_rate = Column(Float, default=0.0)
     status = Column(SAEnum(ProjectStatus), default=ProjectStatus.nouveau)
     deadline = Column(Date, nullable=True)
 

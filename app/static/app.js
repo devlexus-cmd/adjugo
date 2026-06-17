@@ -125,6 +125,7 @@ const __adjApp = createApp({
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
+            chkHelp: null,
             qa: [], qaInput: "", qaLoading: false,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
@@ -745,6 +746,16 @@ const __adjApp = createApp({
       this.saveBlob(new Blob([arr], { type: "application/zip" }), name || "dossier.zip");
     },
     aoDownload() { const d = this.ao.dossier; if (d && d.zip_b64) this._downloadB64(d.zip_b64, d.zip_name); },
+    // Taux de TVA de l'acte d'engagement (0 % par défaut — art. 293 B CGI).
+    async setTva(v) {
+      const rate = parseFloat(v) || 0;
+      if (!this.ao.project) return;
+      this.ao.project.tva_rate = rate;
+      try {
+        await this.api("PUT", "/api/projects/" + this.ao.project.id, { tva_rate: rate });
+        this.notify("TVA réglée à " + (rate ? String(rate).replace('.', ',') + " %" : "0 % (hors-champ)") + " — régénérez le dossier pour l'appliquer");
+      } catch (e) { this.notify(e.message, "err"); }
+    },
     // Cockpit : assemble la réponse commune PUIS télécharge directement (sinon on ne
     // « trouve pas le doc » : il était généré mais le bouton de téléchargement était ailleurs).
     async aoAssemble() {

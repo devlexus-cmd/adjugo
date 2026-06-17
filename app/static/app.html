@@ -366,14 +366,43 @@
               <div class="ch"><i data-lucide="file-text"></i><h3>Documents de réponse</h3><div class="spacer"></div>
                 <button class="btn primary sm" @click="aoGenerate()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="sparkles"></i>Générer</button></div>
               <div class="cb">
-                <div v-if="!ao.dossier" class="muted small">Génère les CERFA (DC1, DC2, DC4, ATTRI1) pré-remplis + le mémoire technique, à partir des données de l'AO et de votre entreprise.</div>
+                <!-- TVA de l'acte d'engagement : 0 % par défaut (marchés publics souvent hors-champ, art. 293 B CGI) -->
+                <div class="row small" style="gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+                  <i data-lucide="percent" style="width:14px;height:14px;color:var(--accent-text)"></i>
+                  <span style="flex:1;min-width:120px">TVA de l'acte d'engagement</span>
+                  <select class="input sm" style="width:auto;min-width:130px" :value="ao.project && ao.project.tva_rate || 0" @change="setTva($event.target.value)">
+                    <option :value="0">0 % — hors-champ (293 B)</option>
+                    <option :value="5.5">5,5 %</option>
+                    <option :value="10">10 %</option>
+                    <option :value="20">20 %</option>
+                  </select>
+                </div>
+                <div v-if="!ao.dossier" class="muted small">Génère les CERFA (DC1, DC2, déclaration sur l'honneur, ATTRI1) pré-remplis + le mémoire technique, à partir des données de l'AO et de votre entreprise.</div>
                 <div v-else>
+                  <!-- Avertissements de génération : BLOQUANT en rouge, le reste en orange -->
+                  <div v-if="ao.dossier.warnings && ao.dossier.warnings.length" style="margin-bottom:12px">
+                    <div v-for="(w,i) in ao.dossier.warnings" :key="i" class="row small" style="gap:6px;align-items:flex-start;padding:7px 9px;border-radius:8px;margin-bottom:5px"
+                         :style="w.startsWith('BLOQUANT')?'background:rgba(220,38,38,.08);color:#b91c1c':'background:rgba(234,179,8,.10);color:#92400e'">
+                      <i :data-lucide="w.startsWith('BLOQUANT')?'octagon-alert':'triangle-alert'" style="width:14px;height:14px;flex-shrink:0;margin-top:1px"></i>
+                      <span style="flex:1">{{ w }}</span>
+                    </div>
+                  </div>
                   <button class="btn primary block" @click="aoDownload()" style="margin-bottom:12px"><i data-lucide="download"></i>Télécharger ({{ ao.dossier.zip_name }})</button>
                   <div class="row wrap" style="gap:6px">
                     <span v-for="c in ao.dossier.cerfas" :key="c.name" class="pill neutral row" style="gap:5px"><i data-lucide="file-text" style="width:13px;height:13px"></i>{{ c.name }}</span>
                     <span class="pill neutral row" style="gap:5px"><i data-lucide="file-pen-line" style="width:13px;height:13px"></i>mémoire technique</span>
                   </div>
                   <p class="muted small" style="margin-top:10px">{{ ao.dossier.memoire_preview }}</p>
+                  <!-- Rappel pré-dépôt : le ZIP n'est pas la fin du parcours -->
+                  <div style="margin-top:12px;padding:10px 11px;border-radius:9px;background:var(--surface-2);border:1px solid var(--hairline)">
+                    <div class="row small" style="gap:6px;font-weight:600;margin-bottom:6px"><i data-lucide="clipboard-check" style="width:14px;height:14px;color:var(--accent-text)"></i>Avant de déposer sur la plateforme acheteur</div>
+                    <div class="muted small" style="line-height:1.7">
+                      ① Relisez chaque CERFA et <b>signez</b> (acte d'engagement + déclaration sur l'honneur).<br>
+                      ② Vérifiez le <b>taux de TVA</b> et les montants de l'ATTRI1.<br>
+                      ③ Ajoutez les pièces <b>« manquant »</b> de la checklist (attestations fiscale/sociale, assurances…).<br>
+                      ④ Déposez avant la <b>date limite</b> sur le profil acheteur (Chorus Pro / PLACE / plateforme indiquée au DCE).
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -382,12 +411,28 @@
                 <span v-if="ao.checklist && ao.checklist.stats" class="muted small">{{ ao.checklist.stats.ok }}/{{ ao.checklist.stats.total }}</span></div>
               <div class="cb">
                 <div v-if="!ao.checklist" class="muted small">Chargement…</div>
-                <div v-else style="max-height:320px;overflow:auto">
-                  <div v-for="c in ao.checklist.checklist" :key="c.id" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)">
-                    <i :data-lucide="c.status==='ok'?'check':c.status==='generable'?'sparkles':c.status==='expire'?'clock':'circle'" :style="c.status==='ok'?'color:var(--success)':c.status==='manquant'?'color:var(--subtle)':c.status==='expire'?'color:var(--warning)':'color:var(--accent-text)'" style="width:15px;height:15px"></i>
-                    <span style="flex:1;min-width:0">{{ c.name }}</span>
-                    <span class="pill" :class="c.status==='ok'?'go':c.status==='manquant'?'neutral':c.status==='expire'?'a_etudier':'st-nouveau'" style="font-size:10px">{{ checklistLabel(c.status) }}</span>
+                <div v-else>
+                  <!-- Contexte détecté du marché -->
+                  <div v-if="ao.checklist.context && (ao.checklist.context.travaux || ao.checklist.context.groupement)" class="row wrap small" style="gap:6px;margin-bottom:8px">
+                    <span v-if="ao.checklist.context.travaux" class="pill a_etudier row" style="gap:4px;font-size:10px"><i data-lucide="hard-hat" style="width:12px;height:12px"></i>Marché de travaux</span>
+                    <span v-if="ao.checklist.context.groupement" class="pill go row" style="gap:4px;font-size:10px"><i data-lucide="users-round" style="width:12px;height:12px"></i>Groupement</span>
+                    <span class="muted" style="font-size:10px;align-self:center">→ pièces obligatoires ajustées</span>
                   </div>
+                  <div style="max-height:320px;overflow:auto">
+                    <div v-for="c in ao.checklist.checklist" :key="c.id" style="padding:5px 0;border-bottom:1px solid var(--hairline)">
+                      <div class="row small" style="gap:7px">
+                        <i :data-lucide="c.status==='ok'?'check':c.status==='generable'?'sparkles':c.status==='expire'?'clock':'circle'" :style="c.status==='ok'?'color:var(--success)':c.status==='manquant'?'color:var(--subtle)':c.status==='expire'?'color:var(--warning)':'color:var(--accent-text)'" style="width:15px;height:15px"></i>
+                        <span style="flex:1;min-width:0">{{ c.name }}<b v-if="c.required" style="color:#b91c1c"> *</b></span>
+                        <button v-if="c.help" class="icon-btn xs" :title="c.help" @click="ao.chkHelp = (ao.chkHelp===c.id?null:c.id)" style="padding:2px"><i data-lucide="help-circle" style="width:14px;height:14px"></i></button>
+                        <span class="pill" :class="c.status==='ok'?'go':c.status==='manquant'?'neutral':c.status==='expire'?'a_etudier':'st-nouveau'" style="font-size:10px">{{ checklistLabel(c.status) }}</span>
+                      </div>
+                      <div v-if="c.context_note" class="small" style="color:#b45309;margin:2px 0 0 22px">{{ c.context_note }}</div>
+                      <div v-if="ao.chkHelp===c.id" class="muted small" style="margin:4px 0 4px 22px;padding:6px 9px;background:var(--surface-2);border-radius:7px">
+                        {{ c.help }}<br v-if="c.help_url"><a v-if="c.help_url" :href="c.help_url" target="_blank" rel="noopener" style="color:var(--accent-text)">{{ c.help_url }}</a>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="muted" style="font-size:10px;margin-top:6px"><b style="color:#b91c1c">*</b> pièce obligatoire pour ce marché</div>
                 </div>
               </div>
             </div>

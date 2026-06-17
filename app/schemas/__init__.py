@@ -80,6 +80,7 @@ class ProjectCreate(BaseModel):
     name: str
     client: Optional[str] = None
     budget: Optional[float] = 0
+    tva_rate: Optional[float] = 0
     deadline: Optional[date] = None
     source_url: Optional[str] = None
 
@@ -88,6 +89,7 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     client: Optional[str] = None
     budget: Optional[float] = None
+    tva_rate: Optional[float] = None
     status: Optional[str] = None
     deadline: Optional[date] = None
     workflow: Optional[dict] = None
@@ -103,6 +105,7 @@ class ProjectOut(BaseModel):
     name: str
     client: Optional[str]
     budget: float
+    tva_rate: Optional[float] = 0
     status: str
     deadline: Optional[date]
     match_score: Optional[int]

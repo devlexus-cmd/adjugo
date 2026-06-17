@@ -23,7 +23,7 @@ def _eur(v) -> str:
     return f"{int(round(v or 0)):,}".replace(",", " ") + " €"
 
 
-def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str) -> bytes:
+def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str, tva_rate: float = 0) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=16 * mm,
                             leftMargin=15 * mm, rightMargin=15 * mm, title="DPGF")
@@ -51,6 +51,16 @@ def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str) -> b
                      Paragraph(_eur(l.get("tarif")), cell), Paragraph(_eur(l.get("montant")), cell)])
     rows.append(["", "", "", "", "", Paragraph("Total HT", cellb),
                  Paragraph(_eur(estimate.get("total_ht")), cellb)])
+    # Cohérence avec l'acte d'engagement : on n'affiche TVA/TTC que si le projet
+    # est assujetti (taux > 0). Par défaut 0 % → hors-champ (art. 293 B CGI).
+    _rate = tva_rate or 0
+    if _rate:
+        _ht = estimate.get("total_ht") or 0
+        _tva = _ht * _rate / 100.0
+        rows.append(["", "", "", "", "", Paragraph(f"TVA {('%g' % _rate)} %", cell),
+                     Paragraph(_eur(_tva), cell)])
+        rows.append(["", "", "", "", "", Paragraph("Total TTC", cellb),
+                     Paragraph(_eur(_ht + _tva), cellb)])
 
     table = Table(rows, colWidths=[9 * mm, 64 * mm, 27 * mm, 13 * mm, 11 * mm, 22 * mm, 27 * mm], repeatRows=1)
     table.setStyle(TableStyle([
@@ -66,7 +76,8 @@ def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str) -> b
     story.append(table)
     story.append(Spacer(1, 4 * mm))
 
-    note = "Prix nets — TVA non applicable, art. 293 B du CGI."
+    note = ("Prix nets — TVA non applicable, art. 293 B du CGI." if not _rate
+            else f"Prix hors taxes ; TVA au taux de {('%g' % _rate)} % applicable.")
     maj = estimate.get("majoration_pct") or 0
     if maj:
         note += f" Inclut une majoration de {maj} % (chantier à {estimate.get('distance_km')} km)."

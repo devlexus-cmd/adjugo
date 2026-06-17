@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models import User, Project, Company, GeneratedDoc
-from app.services.cerfa import GENERATORS
+from app.services.cerfa import GENERATORS, missing_company_fields
 
 router = APIRouter(prefix="/api/cerfa", tags=["Generation CERFA"])
 
@@ -16,6 +16,7 @@ def list_types():
         {"id": "dc2", "name": "DC2", "description": "Declaration du candidat"},
         {"id": "dc4", "name": "DC4", "description": "Sous-traitance"},
         {"id": "attri1", "name": "ATTRI1", "description": "Acte d'engagement"},
+        {"id": "honneur", "name": "Déclaration sur l'honneur", "description": "Attestation art. R2143-3 (obligatoire)"},
         {"id": "dume", "name": "DUME", "description": "Document Unique de Marché Européen (pré-rempli)"},
     ]
 
@@ -47,10 +48,23 @@ def generate(
         cd[k] = getattr(company, k, "") or ""
     cd["qualifications"] = company.qualifications or []
 
+    # Pare-feu : un acte d'engagement / une déclaration aux champs de signature
+    # vides est rejeté mécaniquement. On bloque AVANT de produire le PDF.
+    if doc_type in ("attri1", "dc2", "honneur", "dc1"):
+        missing = missing_company_fields(cd)
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "Champs obligatoires manquants dans votre profil entreprise "
+                                   "avant génération de ce document.",
+                        "missing_fields": missing},
+            )
+
     pd = {
         "name": project.name,
         "client": project.client or "",
         "budget": project.budget or 0,
+        "tva_rate": getattr(project, "tva_rate", 0) or 0,
         "reference": f"AO-{project.id:04d}",
     }
 
@@ -97,6 +111,7 @@ def get_status(
         ("dc2", "Declaration du candidat"),
         ("dc4", "Sous-traitance"),
         ("attri1", "Acte d'engagement"),
+        ("honneur", "Déclaration sur l'honneur (R2143-3)"),
         ("dume", "Document Unique de Marché Européen"),
     ]
     return [

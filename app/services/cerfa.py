@@ -84,6 +84,36 @@ def fmt_int(n):
     return "{:,.0f}".format(n).replace(",", " ")
 
 
+def fmt_pct(n):
+    """Taux en % sans décimale superflue : 0 → '0', 20 → '20', 5.5 → '5,5'."""
+    try:
+        f = float(n)
+    except (TypeError, ValueError):
+        return "0"
+    return (("{:.1f}".format(f)).rstrip("0").rstrip(".")).replace(".", ",")
+
+
+# ================================================================
+# PARE-FEU DE VALIDATION — champs critiques sans lesquels un pli est
+# mécaniquement rejeté (signature vide, identité incomplète). Utilisé par
+# le routeur CERFA (422) et par build_dossier (avertissement bloquant).
+# ================================================================
+REQUIRED_COMPANY_FIELDS = {
+    "name": "Dénomination de l'entreprise",
+    "siret": "SIRET",
+    "representant_legal": "Nom et qualité du représentant légal (signataire)",
+    "address": "Adresse du siège",
+    "city": "Ville",
+}
+
+
+def missing_company_fields(c) -> list:
+    """Retourne la liste des libellés des champs critiques manquants."""
+    c = c or {}
+    return [label for k, label in REQUIRED_COMPANY_FIELDS.items()
+            if not str(c.get(k) or "").strip()]
+
+
 # ================================================================
 # DC1 - LETTRE DE CANDIDATURE (6 pages)
 # ================================================================
@@ -295,8 +325,13 @@ def generate_attri1(c, p):
     d = datetime.date.today().strftime("%d/%m/%Y")
     addr = (str(c.get("address", "")) + " " + str(c.get("postal_code", "")) + " " + str(c.get("city", ""))).strip()
     budget = p.get("budget", 0) or 0
-    tva = budget * 0.2
+    # Taux de TVA piloté par le projet. Défaut 0 % : la majorité des marchés
+    # publics FR sont hors-champ TVA (art. 293 B du CGI). Un 20 % codé en dur
+    # produisait un montant TTC d'engagement FAUX par défaut.
+    rate = p.get("tva_rate", 0) or 0
+    tva = budget * rate / 100.0
     ttc = budget + tva
+    tva_label = (fmt_pct(rate) + " %") if rate else "0 % — TVA non applicable (art. 293 B CGI)"
 
     # Bloc identification pour page 2
     ident_text = str(c.get("name", "")) + "\n" + addr + "\n" + str(c.get("email", "")) + " - " + str(c.get("phone", "")) + "\nSIRET : " + str(c.get("siret", ""))
@@ -312,8 +347,8 @@ def generate_attri1(c, p):
             # Case "engage la société" (candidat = personne morale) + dénomination sur sa ligne
             {"type": "checkbox", "x": 133.6, "y": 324.5, "size": 9.7},
             {"x": 158, "y": 327, "text": (str(c.get("name", "")) + " — SIRET " + str(c.get("siret", ""))).strip(" —"), "size": 8, "bold": True},
-            # TVA
-            {"x": 226, "y": 521, "text": "20 %", "size": 9},
+            # TVA (taux réel du projet, 0 % par défaut — art. 293 B CGI)
+            {"x": 226, "y": 521, "text": tva_label, "size": 8 if rate == 0 else 9},
             # Montant HT chiffres
             {"x": 230, "y": 563, "text": fmt_eur(budget), "size": 9, "bold": True},
             # Montant TTC chiffres
@@ -563,10 +598,96 @@ def generate_national_form(c, p, spec):
     return buf.getvalue()
 
 
+# ================================================================
+# DÉCLARATION SUR L'HONNEUR (art. R2143-3 CMP)
+# Pièce universellement exigée par l'acheteur public ; son absence invalide
+# le pli. Adjugo la génère pré-remplie, prête à dater et signer.
+# ================================================================
+_HONNEUR_POINTS = [
+    "ne pas entrer dans l'un des cas d'interdiction de soumissionner mentionnés aux "
+    "articles L2141-1 à L2141-5 et L2141-7 à L2141-11 du Code de la commande publique "
+    "(condamnations pénales, faillite/liquidation judiciaire, manquements graves, etc.) ;",
+    "être en règle au regard des articles L5212-1 à L5212-11 du Code du travail relatifs "
+    "à l'obligation d'emploi des travailleurs handicapés ;",
+    "avoir, au 31 décembre de l'année précédant le lancement de la consultation, souscrit "
+    "les déclarations fiscales et sociales incombant à l'entreprise et acquitté les impôts, "
+    "taxes et cotisations sociales exigibles (ou constitué les garanties équivalentes) ;",
+    "que les renseignements et documents fournis dans la candidature et l'offre sont exacts ;",
+    "m'engager, si l'entreprise est retenue, à produire dans le délai imparti les certificats "
+    "et attestations prévus aux articles R2143-6 à R2143-10 du Code de la commande publique.",
+]
+
+
+def generate_attestation_honneur(c, p):
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
+                                    TableStyle)
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors as _colors
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20 * mm, bottomMargin=16 * mm,
+                            leftMargin=20 * mm, rightMargin=20 * mm,
+                            title="Déclaration sur l'honneur")
+    s = getSampleStyleSheet()
+    s.add(ParagraphStyle(name="HTitle", fontSize=14, fontName="Helvetica-Bold", spaceAfter=2, alignment=1))
+    s.add(ParagraphStyle(name="HSub", fontSize=8.5, textColor=_colors.HexColor("#555555"),
+                         spaceAfter=12, alignment=1))
+    s.add(ParagraphStyle(name="HH", fontSize=10.5, fontName="Helvetica-Bold",
+                         textColor=_colors.HexColor("#2C5BD8"), spaceBefore=10, spaceAfter=5))
+    body = s["Normal"]; body.fontSize = 9.5; body.leading = 14
+    addr = (str(c.get("address", "")) + " " + str(c.get("postal_code", "")) + " " + str(c.get("city", ""))).strip()
+
+    def kv(rows):
+        t = Table([[Paragraph("<b>" + k + "</b>", body), Paragraph(_esc(v) or "—", body)] for k, v in rows],
+                  colWidths=[55 * mm, 110 * mm])
+        t.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.3, _colors.HexColor("#E0E0E0")),
+            ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        return t
+
+    e = [
+        Paragraph("DÉCLARATION SUR L'HONNEUR", s["HTitle"]),
+        Paragraph("Article R2143-3 du Code de la commande publique", s["HSub"]),
+
+        Paragraph("Identité du candidat", s["HH"]),
+        kv([("Dénomination", c.get("name")), ("Forme juridique", c.get("forme_juridique")),
+            ("SIRET", c.get("siret")), ("Adresse", addr),
+            ("Représentant légal", c.get("representant_legal"))]),
+
+        Paragraph("Objet de la consultation", s["HH"]),
+        kv([("Marché", p.get("name")), ("Acheteur public", p.get("client")),
+            ("Référence", p.get("reference"))]),
+
+        Spacer(1, 6),
+        Paragraph("Je soussigné(e), représentant légal de l'entreprise désignée ci-dessus, "
+                  "agissant en son nom et pour son compte, déclare sur l'honneur :", body),
+        Spacer(1, 4),
+    ]
+    for pt in _HONNEUR_POINTS:
+        e.append(Paragraph("•&nbsp;&nbsp;" + pt, body))
+        e.append(Spacer(1, 2))
+
+    e += [
+        Spacer(1, 4),
+        Paragraph("Fait pour servir et valoir ce que de droit.", body),
+        Spacer(1, 10 * mm),
+        kv([("Fait à", c.get("city")), ("Le", datetime.date.today().strftime("%d/%m/%Y")),
+            ("Nom et qualité du signataire", c.get("representant_legal")), ("Signature", "")]),
+        Spacer(1, 6),
+        Paragraph("<font size=7 color='#888888'>Document pré-rempli par Adjugo à partir de votre "
+                  "profil. Vérifiez chaque mention, datez et signez avant dépôt.</font>", body),
+    ]
+    doc.build(e)
+    return buf.getvalue()
+
+
 GENERATORS = {
     "dc1": generate_dc1,
     "dc2": generate_dc2,
     "dc4": generate_dc4,
     "attri1": generate_attri1,
+    "honneur": generate_attestation_honneur,
     "dume": generate_dume,
 }
