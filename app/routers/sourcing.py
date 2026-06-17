@@ -213,21 +213,36 @@ class RenewalRequest(BaseModel):
 def renewals(request: Request, req: RenewalRequest,
              current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Traque les marchés DÉJÀ ATTRIBUÉS dont le contrat arrive bientôt à échéance →
-    se positionner auprès de l'acheteur avant la republication. Dates estimées, sources réelles."""
-    from app.core.quota import consume_analysis, refund_analysis
-    from app.services.renewal import detect_renewals
+    se positionner auprès de l'acheteur avant la republication.
+
+    PRIORITÉ DECP (Données Essentielles, open data) : durée + date réelles → échéance
+    100 % DÉTERMINISTE, couverture de TOUS les profils acheteurs (pas que BOAMP),
+    et GRATUIT (aucun quota consommé). Repli sur la version BOAMP+IA si DECP est vide."""
     gonogo = _criteria_dict(current_user.id, db)
     deps = [d.strip()[:3] for d in (req.departements or []) if d.strip()]
+
+    # 1) DECP — déterministe, sans LLM, sans quota.
+    try:
+        from app.services.decp import detect_renewals_decp
+        res = detect_renewals_decp(req.query or "travaux", deps, gonogo, domaines=req.domaines)
+        if res.get("renewals"):
+            return res
+    except Exception as e:
+        logger.warning("Radar DECP en échec, repli BOAMP+IA : %s", e)
+
+    # 2) Repli : BOAMP + enrichissement IA (consomme un quota, remboursé si rien).
+    from app.core.quota import consume_analysis, refund_analysis
+    from app.services.renewal import detect_renewals
     consume_analysis(current_user, db)
     from app.services.llm import tenant_scope
     try:
         with tenant_scope(current_user.id):
             res = detect_renewals(req.query or "travaux", deps, gonogo, domaines=req.domaines)
     except Exception:
-        refund_analysis(current_user, db)   # rien produit → on ne débite pas
+        refund_analysis(current_user, db)
         raise
     if res.get("errors") and not res.get("renewals"):
-        refund_analysis(current_user, db)   # source en panne → remboursement
+        refund_analysis(current_user, db)
     return res
 
 

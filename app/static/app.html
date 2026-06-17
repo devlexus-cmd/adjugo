@@ -758,11 +758,13 @@
                   <span class="pill go">Renouvellement ~ {{ r.renouvellement_estime }}</span>
                   <span class="pill neutral">pertinence {{ r.score }}/100</span>
                   <span v-if="r.type_contrat" class="pill st-envoye">{{ r.type_contrat }}</span>
-                  <span class="pill" :class="r.duree_estimee?'a_etudier':'neutral'" style="font-size:10px">durée {{ r.duree_mois }} mois{{ r.duree_estimee?' (estimée)':' (citée)' }}</span>
+                  <span class="pill" :class="r.duree_estimee?'a_etudier':'neutral'" style="font-size:10px">durée {{ r.duree_mois }} mois{{ r.duree_estimee?' (estimée)':' (réelle)' }}</span>
+                  <span v-if="r.montant" class="pill neutral" style="font-size:10px">{{ Math.round(r.montant).toLocaleString('fr-FR') }} €</span>
+                  <span v-if="r.source_plateforme" class="pill neutral" style="font-size:10px">{{ r.source_plateforme }}</span>
                 </div>
                 <div class="strong" style="margin-top:7px;line-height:1.35">{{ r.objet }}</div>
-                <div class="muted small" style="margin-top:3px">{{ r.acheteur||'Acheteur' }}<span v-if="r.lieu"> · {{ r.lieu }}</span> · attribué le {{ r.date_attribution }} · fin estimée {{ r.fin_estimee }}</div>
-                <a v-if="r.url" :href="r.url" target="_blank" class="small" style="margin-top:5px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>Voir l'avis d'attribution ↗</a>
+                <div class="muted small" style="margin-top:3px">{{ r.acheteur||'Acheteur' }}<span v-if="r.lieu"> · dépt {{ r.lieu }}</span> · notifié le {{ r.date_attribution }} · fin estimée {{ r.fin_estimee }}</div>
+                <a v-if="r.url" :href="r.url" target="_blank" class="small" style="margin-top:5px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ r.source_plateforme!==undefined ? 'Voir la fiche acheteur' : 'Voir l\'avis d\'attribution' }} ↗</a>
               </div>
             </div>
           </div>
