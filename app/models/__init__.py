@@ -371,6 +371,7 @@ class SavedSearch(Base):
     name = Column(String(255), nullable=False)
     query = Column(String(500), default="")
     cpv = Column(JSON, default=list)
+    type_marche = Column(String(40), default="")   # travaux | services | fournitures | "" (tous)
     departements = Column(JSON, default=list)
     countries = Column(JSON, default=list)   # ISO alpha-2 ; vide = toute l'UE/EEE
     montant_min = Column(Float, nullable=True)

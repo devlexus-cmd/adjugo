@@ -12,7 +12,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field as PydField
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -387,7 +387,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
 
 class AskRequest(BaseModel):
     project_id: int
-    question: str
+    question: str = PydField(..., min_length=1, max_length=2000)
 
 
 ASK_SYSTEM = (

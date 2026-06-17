@@ -83,7 +83,8 @@ def run_one_saved_search(s: SavedSearch, db: Session, mark: bool = True) -> list
     countries = s.countries or []
     crit = TenderCriteria(query=s.query or "", cpv=s.cpv or [],
                           departements=s.departements or [], countries=countries,
-                          montant_min=s.montant_min, montant_max=s.montant_max, limit=25)
+                          montant_min=s.montant_min, montant_max=s.montant_max, limit=25,
+                          type_marche=getattr(s, "type_marche", "") or "")
     try:
         result = TenderSearchService(_tender_sources(countries)).search(crit, company_dict(company), gonogo)
     except Exception as e:

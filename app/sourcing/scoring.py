@@ -48,19 +48,38 @@ def score_tender(t: NormalizedTender, company: Optional[dict], criteria: Optiona
     b = []
 
     # 1. Adéquation métier (CPV/descripteur ↔ spécialités/CPV client)
-    targets = _split(crit.get("codes_cpv")) + _split(crit.get("specialites")) + _split(crit.get("qualifications"))
-    blob = " ".join(t.cpv + [t.objet or "", t.lieu or ""]).lower()
+    cpv_targets = _split(crit.get("codes_cpv"))                    # codes numériques
+    text_targets = _split(crit.get("specialites")) + _split(crit.get("qualifications"))
+    targets = cpv_targets + text_targets
+    text_blob = " ".join([t.objet or "", t.lieu or ""]).lower()
+    blob_words = set(re.split(r"\W+", text_blob))
     if not targets:
         b.append(ScoreCriterion(key="cpv", label="Adéquation métier", points=0,
                                 max_points=TENDER_WEIGHTS["cpv"], status="inconnu",
                                 detail="Aucune spécialité/CPV défini dans vos critères"))
     else:
-        hits = [x for x in targets if x and x[:4] in blob or x in blob]
+        hits = []
+        # CPV : match par préfixe DÉLIMITÉ sur les codes CPV réels de l'avis (≥4 chiffres
+        # communs), pas une sous-chaîne dans un blob (fini les faux positifs "4521").
+        tender_cpv = [str(c).strip() for c in (t.cpv or []) if str(c).strip()]
+        for ct in cpv_targets:
+            digits = re.sub(r"\D", "", ct)
+            if digits and any(tc.startswith(digits[:4]) or digits.startswith(tc[:4])
+                              for tc in tender_cpv if re.sub(r"\D", "", tc)):
+                hits.append(ct)
+        # Spécialités/qualifs : match par MOT entier dans l'objet/lieu (pas sous-chaîne).
+        for tt in text_targets:
+            toks = [w for w in re.split(r"\W+", tt) if len(w) > 3]
+            if toks and any(w in blob_words for w in toks):
+                hits.append(tt)
+        hits = list(dict.fromkeys(hits))
         pts = min(TENDER_WEIGHTS["cpv"], TENDER_WEIGHTS["cpv"] * len(hits) / 2) if hits else 0
         b.append(ScoreCriterion(key="cpv", label="Adéquation métier", points=round(pts),
                                 max_points=TENDER_WEIGHTS["cpv"],
                                 status="ok" if hits else "partiel",
                                 detail=f"Correspondances : {', '.join(hits[:3]) or 'aucune'}"))
+    # blob conservé pour les autres critères (mots-clés exclus)
+    blob = (" ".join(t.cpv) + " " + text_blob).lower()
 
     # 2. Zone géographique
     zones = _split(crit.get("departements")) + [(comp.get("postal_code") or "")[:2]]
@@ -117,17 +136,28 @@ def score_tender(t: NormalizedTender, company: Optional[dict], criteria: Optiona
                             status="partiel" if bad else "ok",
                             detail=f"Exclu : {bad[0]}" if bad else "Aucun mot-clé exclu"))
 
-    # 6. Procédure
+    # 6. Procédure — une procédure RESTREINTE/négociée présélectionne les candidats :
+    # une PME ne peut pas y répondre librement → score partiel, pas plein.
+    pmax = TENDER_WEIGHTS["procedure"]
+    proc_l = (t.procedure or "").lower()
     if not t.procedure:
         b.append(ScoreCriterion(key="procedure", label="Procédure", points=0,
-                                max_points=TENDER_WEIGHTS["procedure"], status="inconnu",
-                                detail="Procédure non précisée"))
+                                max_points=pmax, status="inconnu", detail="Procédure non précisée"))
+    elif any(k in proc_l for k in ("restreint", "négoci", "negoci", "dialogue", "concours")):
+        b.append(ScoreCriterion(key="procedure", label="Procédure", points=round(pmax * 0.4),
+                                max_points=pmax, status="partiel",
+                                detail=f"{t.procedure} — accès restreint (présélection requise)"))
     else:
-        b.append(ScoreCriterion(key="procedure", label="Procédure",
-                                points=TENDER_WEIGHTS["procedure"], max_points=TENDER_WEIGHTS["procedure"],
-                                status="ok", detail=t.procedure))
+        b.append(ScoreCriterion(key="procedure", label="Procédure", points=pmax,
+                                max_points=pmax, status="ok", detail=t.procedure))
 
-    total = round(sum(c.points for c in b))
+    # Score rescalé sur les critères DISPONIBLES : une donnée absente (« inconnu », ex.
+    # montant jamais publié par la source) ne pénalise plus mécaniquement le score —
+    # elle est simplement exclue du dénominateur. « partiel » (donnée présente mais non
+    # conforme) compte bien 0. Reste déterministe et explicable.
+    achievable = sum(c.max_points for c in b if c.status != "inconnu")
+    earned = sum(c.points for c in b)
+    total = round(earned / achievable * 100) if achievable else 0
     return Score(total=max(0, min(100, total)), breakdown=b)
 
 

@@ -19,6 +19,7 @@ class SavedSearchIn(BaseModel):
     name: str
     query: Optional[str] = ""
     cpv: list[str] = []
+    type_marche: Optional[str] = ""
     departements: list[str] = []
     countries: list[str] = []
     montant_min: Optional[float] = None
@@ -31,7 +32,8 @@ class SavedSearchIn(BaseModel):
 def _out(s: SavedSearch) -> dict:
     return {
         "id": s.id, "name": s.name, "query": s.query or "",
-        "cpv": s.cpv or [], "departements": s.departements or [], "countries": s.countries or [],
+        "cpv": s.cpv or [], "type_marche": getattr(s, "type_marche", "") or "",
+        "departements": s.departements or [], "countries": s.countries or [],
         "montant_min": s.montant_min, "montant_max": s.montant_max,
         "frequency": s.frequency, "active": s.active, "min_score": s.min_score,
         "last_run": s.last_run.isoformat() if s.last_run else None,

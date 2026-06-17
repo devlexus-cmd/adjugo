@@ -798,6 +798,8 @@
                 <div class="row" style="gap:6px;flex-wrap:wrap">
                   <span class="pill neutral">{{ t.provenance.source }}</span>
                   <span class="pill" :class="confClass(t.confidence)">confiance {{ Math.round(t.confidence*100) }}%</span>
+                  <!-- Pré-tri de l'avis (sur vos critères, hors DCE). Le score Go/No-Go définitif n'arrive qu'après import du DCE. -->
+                  <span v-if="t.score && typeof t.score.total==='number'" class="pill" :class="t.score.total>=66?'go':t.score.total>=40?'a_etudier':'neutral'" :title="'Pré-tri sur vos critères (avant analyse du DCE)'">pré-tri {{ t.score.total }}/100</span>
                   <a :href="t.provenance.source_url" target="_blank" class="small row" style="gap:3px;color:var(--accent-text);font-weight:500">Voir l'avis officiel<i data-lucide="external-link" style="width:13px;height:13px"></i></a>
                 </div>
                 <div class="strong" style="margin-top:7px;line-height:1.4">{{ t.objet }}</div>

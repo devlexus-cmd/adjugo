@@ -95,6 +95,22 @@ class TenderSearchService:
         deduped = [t for t in deduped if not _is_closed(t.date_limite)]
         closed = before - len(deduped)
 
+        # Filtre montant DEMANDÉ par l'utilisateur : on n'écarte QUE les avis dont le
+        # montant est CONNU et hors fourchette (les avis sans montant — le cas le plus
+        # fréquent en open data — sont conservés, sinon on masquerait presque tout).
+        mn = getattr(criteria, "montant_min", None)
+        mx = getattr(criteria, "montant_max", None)
+        amount_filtered = 0
+        if mn is not None or mx is not None:
+            kept = []
+            for t in deduped:
+                m = t.montant_estime
+                if m is not None and ((mn is not None and m < mn) or (mx is not None and m > mx)):
+                    amount_filtered += 1
+                    continue
+                kept.append(t)
+            deduped = kept
+
         for t in deduped:
             t.score = score_tender(t, company, gonogo)
         deduped.sort(key=lambda t: (t.score.total if t.score else 0), reverse=True)
@@ -105,6 +121,7 @@ class TenderSearchService:
             "sources_queried": [s.name for s in self.sources],
             "count": len(deduped),
             "closed_filtered": closed,
+            "amount_filtered": amount_filtered,
         }
 
 

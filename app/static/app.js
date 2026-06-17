@@ -988,10 +988,12 @@ const __adjApp = createApp({
     async srcSaveAlert() {
       const deps = this.srcDeps();
       const countries = this.src.country ? [this.src.country] : [];
+      const cpv = (this.src.cpv || "").split(/[ ,;]+/).map(s => s.trim()).filter(Boolean);
       const zone = this.src.country ? this.countryName(this.src.country) : "UE";
       const name = (this.src.query || "Veille") + " · " + zone + (deps.length ? " (" + deps.join("/") + ")" : "");
       try {
-        await this.api("POST", "/api/saved-searches/", { name, query: this.src.query, departements: deps, countries, frequency: "quotidienne", active: true });
+        // On replique fidèlement la recherche : query + CPV + type de marché + zone.
+        await this.api("POST", "/api/saved-searches/", { name, query: this.src.query, cpv, type_marche: this.src.type_marche || "", departements: deps, countries, frequency: "quotidienne", active: true });
         this.loadAlerts(); this.notify("Alerte créée — vous serez notifié par email");
       } catch (e) { this.notify(e.message, "err"); }
     },
