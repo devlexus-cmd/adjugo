@@ -18,10 +18,15 @@ def company_dict(company: Optional[Company]) -> dict:
 
 
 def criteria_dict(user_id: int, db: Session) -> dict:
-    """Critères étendus (criteria_v2) si présents."""
+    """Critères étendus (criteria_v2) si présents. PARTAGÉS dans l'organisation : on lit
+    les critères du PROPRIÉTAIRE de l'org (un membre n'a pas les siens)."""
     try:
+        from app.models import User
+        from app.core.org import data_owner_id
+        u = db.query(User).filter(User.id == user_id).first()
+        oid = data_owner_id(u, db) if u else user_id
         from app.routers.criteria_v2 import MatchingCriteriaExt
-        c = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == user_id).first()
+        c = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == oid).first()
         if c:
             return {col.name: getattr(c, col.name) for col in c.__table__.columns}
     except Exception:

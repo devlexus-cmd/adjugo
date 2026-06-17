@@ -36,3 +36,19 @@ def member_ids(user, db: Session) -> list[int]:
     from app.models import User as U
     rows = db.query(U.id).filter(U.org_id == oid).all()
     return [r[0] for r in rows] or [user.id]
+
+
+def data_owner_id(user, db: Session) -> int:
+    """ID de l'utilisateur qui PORTE les données partagées de l'organisation (profil
+    entreprise, critères Go/No-Go) = le propriétaire de l'org. Tous les membres lisent et
+    éditent le MÊME profil/critères (l'org = l'entreprise). Repli sur l'utilisateur."""
+    try:
+        from app.models import Organization
+        oid = getattr(user, "org_id", None)
+        if oid:
+            org = db.query(Organization).filter(Organization.id == oid).first()
+            if org and org.owner_id:
+                return org.owner_id
+    except Exception:
+        pass
+    return user.id

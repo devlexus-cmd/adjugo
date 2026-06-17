@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.ratelimit import limiter
 from app.core.security import get_current_user
-from app.core.org import member_ids
+from app.core.org import member_ids, data_owner_id
 from app.models import Company, Project, User
 from app.services.agents.chiffrage import DEFAULT_RATES, compute_estimate, propose_tasks
 
@@ -30,7 +30,7 @@ def _project(pid: int, user: User, db: Session) -> Project:
 
 
 def _rates(user: User, db: Session):
-    c = db.query(Company).filter(Company.user_id == user.id).first()
+    c = db.query(Company).filter(Company.user_id == data_owner_id(user, db)).first()
     rates = (c.day_rates if c and c.day_rates else None) or DEFAULT_RATES
     th = c.distance_threshold_km if (c and c.distance_threshold_km is not None) else 50
     su = c.distance_surcharge_pct if (c and c.distance_surcharge_pct is not None) else 0

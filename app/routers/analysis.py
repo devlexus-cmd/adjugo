@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.ratelimit import limiter
 from app.core.security import get_current_user
+from app.core.org import data_owner_id
 from app.models import User, Project, Company
 from app.services.analysis import analyze_dce
 
@@ -40,7 +41,7 @@ async def run_analysis(
     consume_analysis(current_user, db)
 
     # Charger le profil entreprise
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     company_data = None
     if company:
         company_data = {}

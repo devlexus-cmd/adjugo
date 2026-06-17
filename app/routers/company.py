@@ -6,10 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.org import data_owner_id
 from app.models import User, Company, MatchingCriteria
 from app.schemas import CompanyCreate, CompanyOut, CriteriaUpdate, CriteriaOut
 
 # === COMPANY ===
+# Le profil entreprise et les critères Go/No-Go sont PARTAGÉS dans l'organisation :
+# tous les membres lisent/éditent le profil du propriétaire (l'org = l'entreprise).
 
 company_router = APIRouter(prefix="/api/company", tags=["Mon entreprise"])
 
@@ -19,7 +22,7 @@ def get_company(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     if not company:
         raise HTTPException(status_code=404, detail="Profil entreprise non créé")
     return company
@@ -31,11 +34,12 @@ def create_company(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    existing = db.query(Company).filter(Company.user_id == current_user.id).first()
+    oid = data_owner_id(current_user, db)
+    existing = db.query(Company).filter(Company.user_id == oid).first()
     if existing:
         raise HTTPException(status_code=400, detail="Profil déjà existant, utilisez PUT")
 
-    company = Company(user_id=current_user.id, **data.model_dump())
+    company = Company(user_id=oid, **data.model_dump())
     db.add(company)
     db.commit()
     db.refresh(company)
@@ -48,9 +52,10 @@ def update_company(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    oid = data_owner_id(current_user, db)
+    company = db.query(Company).filter(Company.user_id == oid).first()
     if not company:
-        company = Company(user_id=current_user.id)
+        company = Company(user_id=oid)
         db.add(company)
 
     for key, value in data.model_dump(exclude_unset=True).items():
@@ -71,11 +76,12 @@ def get_criteria(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    oid = data_owner_id(current_user, db)
     criteria = db.query(MatchingCriteria).filter(
-        MatchingCriteria.user_id == current_user.id
+        MatchingCriteria.user_id == oid
     ).first()
     if not criteria:
-        criteria = MatchingCriteria(user_id=current_user.id)
+        criteria = MatchingCriteria(user_id=oid)
         db.add(criteria)
         db.commit()
         db.refresh(criteria)
@@ -88,11 +94,12 @@ def update_criteria(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    oid = data_owner_id(current_user, db)
     criteria = db.query(MatchingCriteria).filter(
-        MatchingCriteria.user_id == current_user.id
+        MatchingCriteria.user_id == oid
     ).first()
     if not criteria:
-        criteria = MatchingCriteria(user_id=current_user.id)
+        criteria = MatchingCriteria(user_id=oid)
         db.add(criteria)
 
     for key, value in data.model_dump(exclude_unset=True).items():

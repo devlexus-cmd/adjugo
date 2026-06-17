@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field as PydField
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.org import data_owner_id
 from app.core.ratelimit import limiter
 from app.models import User, Company, Project
 from app.sourcing.base import TenderCriteria
@@ -105,7 +106,7 @@ def optimize_groupement(request: Request, req: GroupementRequest,
         raise HTTPException(404, "Projet ou analyse introuvable")
 
     details = (project.ai_analysis or {}).get("details", {})
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     company_data = _company_dict(company)
     gonogo = _criteria_dict(current_user.id, db)
 
@@ -182,7 +183,7 @@ def list_countries(current_user: User = Depends(get_current_user)):
 def search_tenders(request: Request, req: SearchRequest,
                    current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     company_data = _company_dict(company)
     gonogo = _criteria_dict(current_user.id, db)
     crit = TenderCriteria(query=req.query, cpv=req.cpv, departements=req.departements,
@@ -251,7 +252,7 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
 
     consume_analysis(current_user, db)  # 402 si quota atteint
 
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     company_data = _company_dict(company)
     gonogo = _criteria_dict(current_user.id, db)
 
@@ -340,7 +341,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
 
     consume_analysis(current_user, db)  # 402 si quota atteint
 
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     company_data = _company_dict(company)
     gonogo = _criteria_dict(current_user.id, db)
 
@@ -461,7 +462,7 @@ def source_cotraitants(request: Request, req: CotraitantsRequest,
     # Complementarity Graph : score de SYNERGIE vs l'entreprise pilote (ce que le
     # candidat APPORTE au groupement). On trie les partenaires par synergie décroissante.
     from app.sourcing.scoring import synergy_score
-    lead = db.query(Company).filter(Company.user_id == current_user.id).first()
+    lead = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     lead_data = _company_dict(lead)
     for c in res["companies"]:
         if not c.procedure_collective:   # un partenaire en procédure reste plafonné/en bas
@@ -494,7 +495,7 @@ def generate_documents(request: Request, req: DocumentsRequest,
     if not project or not project.ai_analysis:
         raise HTTPException(404, "Projet ou analyse introuvable")
 
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     company_data = _company_dict(company)
 
     verified = []

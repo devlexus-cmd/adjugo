@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.ratelimit import limiter
 from app.core.security import get_current_user
-from app.core.org import member_ids
+from app.core.org import member_ids, data_owner_id
 from app.models import User, Project, Company, GeneratedDoc
 from app.services.cerfa import GENERATORS, missing_company_fields
 
@@ -41,7 +41,7 @@ def generate(
     if not project:
         raise HTTPException(status_code=404, detail="Projet introuvable")
 
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     if not company:
         raise HTTPException(status_code=400, detail="Completez votre profil entreprise")
 
