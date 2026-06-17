@@ -46,9 +46,13 @@ class S3Storage:
     """Stockage objet S3 (production)."""
     def __init__(self):
         import boto3
-        kwargs = {"region_name": settings.S3_REGION,
+        from botocore.config import Config
+        # signature_version s3v4 : requis par Cloudflare R2 (et OK pour AWS/Scaleway/MinIO)
+        # → put/get ET URLs pré-signées fiables quel que soit le fournisseur S3-compatible.
+        kwargs = {"region_name": settings.S3_REGION or "auto",
                   "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
-                  "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY}
+                  "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
+                  "config": Config(signature_version="s3v4")}
         if settings.S3_ENDPOINT_URL:
             kwargs["endpoint_url"] = settings.S3_ENDPOINT_URL
         self.s3 = boto3.client("s3", **kwargs)
