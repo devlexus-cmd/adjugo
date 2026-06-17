@@ -5,6 +5,7 @@ from app.core.database import get_db
 from app.core.ratelimit import limiter
 from app.core.security import get_current_user
 from app.core.org import member_ids, data_owner_id
+from app.core.http import content_disposition
 from app.models import User, Project, Company, GeneratedDoc
 from app.services.cerfa import GENERATORS, missing_company_fields
 
@@ -89,7 +90,7 @@ def generate(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition(filename)},
     )
 
 

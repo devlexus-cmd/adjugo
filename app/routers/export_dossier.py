@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.org import data_owner_id, member_ids
+from app.core.http import content_disposition
 from app.models import User, Project, Company, Document
 from app.services.cerfa import GENERATORS
 
@@ -171,5 +172,5 @@ def export_dossier(
     return Response(
         content=zip_bytes,
         media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="' + filename + '"'},
+        headers={"Content-Disposition": content_disposition(filename)},
     )

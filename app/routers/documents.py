@@ -13,6 +13,7 @@ import io
 from app.core.database import get_db
 from app.core.config import get_settings
 from app.core.security import get_current_user
+from app.core.http import content_disposition
 from app.models import User, Document, DocCategory
 from app.services.storage import get_storage
 
@@ -245,7 +246,7 @@ def download_document(
     return StreamingResponse(
         io.BytesIO(content),
         media_type=doc.mime_type or "application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{doc.name}"'},
+        headers={"Content-Disposition": content_disposition(doc.name)},
     )
 
 
