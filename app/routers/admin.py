@@ -9,10 +9,44 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.config import get_settings
+from app.core.security import get_current_user
+from app.models import User
 from app.services.alerts import run_document_expiry_alerts, run_tender_alerts, run_amont_alerts
 
 settings = get_settings()
 router = APIRouter(prefix="/api/admin", tags=["Administration"])
+
+
+@router.get("/storage-diag")
+def storage_diag(current_user: User = Depends(get_current_user)):
+    """Diagnostic du stockage (sans exposer les secrets) : ce que le serveur voit
+    réellement + un test d'écriture/lecture sur le bucket. Utilisateur authentifié."""
+    s = settings
+
+    def mask(v):
+        v = v or ""
+        return {"length": len(v), "preview": (v[:3] + "…" + v[-2:]) if len(v) > 6 else ("*" * len(v))}
+
+    info = {
+        "backend": s.STORAGE_BACKEND,
+        "bucket": s.S3_BUCKET,
+        "endpoint": s.S3_ENDPOINT_URL,
+        "region": s.S3_REGION,
+        "access_key": mask(s.AWS_ACCESS_KEY_ID),                 # attendu length=32 pour R2
+        "secret_key_length": len(s.AWS_SECRET_ACCESS_KEY or ""),  # attendu 64
+    }
+    try:
+        from app.services.storage import get_storage
+        st = get_storage()
+        key = f"_diag/{current_user.id}.txt"
+        st.save(key, b"adjugo-diag", "text/plain")
+        ok = st.load(key) == b"adjugo-diag"
+        st.delete(key)
+        info["test"] = "OK — écriture/lecture/suppression réussies" if ok else "ÉCHEC — relecture incohérente"
+    except Exception as e:
+        info["test"] = "ÉCHEC"
+        info["error"] = f"{type(e).__name__}: {str(e)[:300]}"
+    return info
 
 
 def _check_cron(request: Request):
