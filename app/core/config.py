@@ -2,6 +2,7 @@
 Adjugo Backend — Configuration centrale
 """
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from functools import lru_cache
 
 
@@ -105,6 +106,17 @@ class Settings(BaseSettings):
         "pro": {"analyses": 30, "storage_mb": 10240, "members": 10},
         "business": {"analyses": 100, "storage_mb": 102400, "members": 50},
     }
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _strip_env_whitespace(cls, v):
+        """Nettoie les espaces/tabulations/retours-ligne parasites collés dans une
+        variable d'environnement (copier-coller). Sans ça, un simple « \\ttrue »
+        sur SMTP_TLS empêche TOUTE l'app de démarrer (crash au boot). On strip donc
+        toute valeur scalaire de type str avant que pydantic ne tente de la typer."""
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
     class Config:
         env_file = ".env"
