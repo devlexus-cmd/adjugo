@@ -242,8 +242,14 @@ const __adjApp = createApp({
       const r = await fetch(path, opt);
       if (r.status === 401) { this.logout(); throw new Error("Session expirée"); }
       const txt = await r.text();
-      const data = txt ? JSON.parse(txt) : null;
-      if (!r.ok) throw new Error((data && data.detail) ? JSON.stringify(data.detail) : "Erreur " + r.status);
+      let data = null;
+      try { data = txt ? JSON.parse(txt) : null; } catch (e) { data = null; }   // réponse non-JSON (ex. 500 « Internal Server Error »)
+      if (!r.ok) {
+        const d = data && data.detail;
+        const msg = d ? (typeof d === "string" ? d : (d.message || JSON.stringify(d)))
+                      : (r.status >= 500 ? "Erreur serveur, réessayez dans un instant." : "Erreur " + r.status);
+        throw new Error(msg);
+      }
       return data;
       } finally { this.pending = Math.max(0, this.pending - 1); }
     },
