@@ -61,7 +61,17 @@ class TedSource(TenderSource):
 
     def search(self, criteria: TenderCriteria) -> list[NormalizedTender]:
         q = (criteria.query or "travaux").replace('"', " ").strip()
-        wanted = [c for c in getattr(criteria, "countries", []) if c in _BY_A2] or [c["a2"] for c in EU_COUNTRIES]
+        wanted = [c for c in getattr(criteria, "countries", []) if c in _BY_A2]
+        derived_fr = False
+        if not wanted:
+            # Aucun pays explicite mais des DÉPARTEMENTS FRANÇAIS demandés → on restreint
+            # TED à la France. Sans ça, une recherche « 29 » ramène toute l'UE (bruit
+            # hors zone : marchés portugais/belges… que l'utilisateur ne veut pas).
+            deps = [str(d).strip() for d in getattr(criteria, "departements", []) if str(d).strip()]
+            if any(d[:2].isdigit() or d[:2] in ("2A", "2B") for d in deps):
+                wanted, derived_fr = ["FR"], True
+            else:
+                wanted = [c["a2"] for c in EU_COUNTRIES]
         a3_list = " ".join(_BY_A2[c]["a3"] for c in wanted)
         # préfixes acceptés côté client (NUTS + alpha-3), gère la Grèce (EL)
         prefixes = tuple({_BY_A2[c]["nuts"] for c in wanted} | {_BY_A2[c]["a3"] for c in wanted})
@@ -88,7 +98,7 @@ class TedSource(TenderSource):
         except Exception as e:
             logger.warning("TED indisponible : %s", e)
             raise
-        only_scope = bool(getattr(criteria, "countries", []))  # un pays précis est demandé
+        only_scope = bool(getattr(criteria, "countries", [])) or derived_fr  # zone précise demandée
         out = []
         for n in notices:
             if not _in_scope(n.get("place-of-performance"), prefixes):

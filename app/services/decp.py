@@ -12,11 +12,26 @@ sont des champs STRUCTURÉS RÉELS → l'échéance est calculée de façon 100 
 """
 import logging
 from datetime import date, timedelta
+from functools import lru_cache
 
 from app.sourcing.http import safe_terms, get_with_retry
 from app.services.renewal import _score, _parse  # scoring + parsing partagés
 
 logger = logging.getLogger("adjugo")
+
+
+@lru_cache(maxsize=4096)
+def _acheteur_name(siren: str) -> str:
+    """SIREN (9 chiffres) → raison sociale via l'annuaire public des entreprises
+    (gratuit, sans clé). Mis en cache : un même acheteur n'est résolu qu'une fois.
+    Retourne '' en cas d'échec → le repli « SIRET … » est géré par l'appelant."""
+    if not (siren and len(siren) == 9 and siren.isdigit()):
+        return ""
+    try:
+        from app.services.registre import lookup_company
+        return (lookup_company(siren) or {}).get("name", "") or ""
+    except Exception:
+        return ""
 
 API = "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/decp-2022-marches-valides/records"
 SELECT = ("objet,montant,datenotification,dureemois,nature,procedure,acheteur_id,"
@@ -63,6 +78,20 @@ def detect_renewals_decp(query: str, departements, criteria: dict, domaines=None
     today = date.today()
     win_start, win_end = today - timedelta(days=180), today + timedelta(days=550)
     out, seen = [], set()
+    # Budget de résolution SIRET→raison sociale par appel (au-delà : repli « SIRET … »).
+    # Borné pour ne pas allonger le radar ; le cache LRU absorbe les acheteurs récurrents.
+    resolved, RESOLVE_CAP = {}, 30
+
+    def _name_for(aid: str) -> str:
+        siren = aid[:9]
+        if siren in resolved:
+            return resolved[siren]
+        if len(resolved) >= RESOLVE_CAP:
+            return ""
+        nm = _acheteur_name(siren)
+        resolved[siren] = nm
+        return nm
+
     for row in rows:
         # Dédup : un marché multi-lots/multi-titulaires apparaît plusieurs fois.
         k = ((row.get("objet") or "").lower()[:80], str(row.get("acheteur_id") or ""))
@@ -81,8 +110,10 @@ def detect_renewals_decp(query: str, departements, criteria: dict, domaines=None
         if not (win_start <= renouv <= win_end):
             continue
         acheteur_id = str(row.get("acheteur_id") or "")
+        acheteur_nom = _name_for(acheteur_id) if acheteur_id else ""
+        acheteur_label = acheteur_nom or (("SIRET " + acheteur_id) if acheteur_id else "Acheteur public")
         r = {"objet": (row.get("objet") or "").strip()[:400],
-             "acheteur": ("SIRET " + acheteur_id) if acheteur_id else "Acheteur public",
+             "acheteur": acheteur_label,
              "dept": dep, "lieu": dep, "date_attribution": str(row.get("datenotification") or "")[:10]}
         score = _score(r, criteria, domaines, renouv, today)
         out.append({
