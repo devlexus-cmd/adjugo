@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.org import data_owner_id, member_ids
 from app.core.http import content_disposition
+from app.services.storage import get_storage
 from app.models import User, Project, Company, Document
 from app.services.cerfa import GENERATORS
 
@@ -98,23 +99,27 @@ def export_dossier(
             Document.user_id.in_(member_ids(current_user, db))
         ).all()
 
+        storage = get_storage()
         for doc in documents:
-            # Verifier si le fichier existe physiquement
-            if doc.file_path and os.path.exists(doc.file_path):
-                category = doc.category or "autre"
-                ext = os.path.splitext(doc.file_path)[1] or ".pdf"
+            category = str(getattr(doc.category, "value", doc.category) or "autre")
+            content = None
+            if doc.file_key:
+                try:
+                    content = storage.load(doc.file_key)   # stockage objet (R2/local)
+                except Exception:
+                    content = None
+            if content:
+                ext = (os.path.splitext(doc.file_key)[1]
+                       or os.path.splitext(doc.name)[1] or ".pdf")
                 safe_name = doc.name.replace("/", "_").replace(" ", "_")
-                filename = "02_Documents/{}/{}{}".format(
-                    category.capitalize(), safe_name, ext
-                )
-                with open(doc.file_path, "rb") as f:
-                    zf.writestr(filename, f.read())
+                filename = "02_Documents/{}/{}{}".format(category.capitalize(), safe_name, ext)
+                zf.writestr(filename, content)
             else:
-                # Document en base mais fichier manquant
+                # Document en base mais fichier introuvable dans le stockage
                 zf.writestr(
                     "02_Documents/{}.txt".format(doc.name.replace(" ", "_")),
                     "Document reference: {}\nCategorie: {}\nFichier non disponible sur le serveur.".format(
-                        doc.name, doc.category or "autre"
+                        doc.name, category
                     )
                 )
 
