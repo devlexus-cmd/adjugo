@@ -75,7 +75,7 @@ const __adjApp = createApp({
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
       cdetail: {}, copen: {}, cexport: {}, cpreview: {},
       shared: [],
-      sharedAo: { token: "", project: null, mandataire: "", docs: [], status: "", busy: false, msg: "", pieces: [], canContribute: true,
+      sharedAo: { token: "", project: null, mandataire: "", docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true,
                   contrib: { company_name: "", lot: "", quals: "", refs: "", chiffrage_note: "", memoire_paragraph: "", contact: { nom: "", email: "", telephone: "" } } },
       veille: { q: "", loc: "", results: [], loading: false },
       drawer: null, modal: null,
@@ -535,7 +535,7 @@ const __adjApp = createApp({
     async loadShared() { try { this.shared = await this.api("GET", "/api/shared") || []; } catch (e) { this.shared = []; } },
     async openShared(item) {
       const t = item.token;
-      this.sharedAo = { token: t, project: null, mandataire: item.mandataire, docs: [], status: "", busy: false, msg: "", pieces: [], canContribute: true,
+      this.sharedAo = { token: t, project: null, mandataire: item.mandataire, docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true,
                         contrib: { company_name: "", lot: "", quals: "", refs: "", chiffrage_note: "", memoire_paragraph: "", contact: { nom: "", email: "", telephone: "" } } };
       this.view = "sharedao";
       try {
@@ -547,7 +547,7 @@ const __adjApp = createApp({
     async sharedReload(t) {
       try {
         const c = await this.api("GET", "/api/invite/" + (t || this.sharedAo.token) + "/contribution");
-        this.sharedAo.status = c.status; this.sharedAo.pieces = c.pieces || [];
+        this.sharedAo.status = c.status; this.sharedAo.pieces = c.pieces || []; this.sharedAo.version = c.version || 0;
         const k = this.sharedAo.contrib;
         if (!k.company_name && !k.lot) {   // pré-remplir au 1er chargement, sans écraser une saisie
           k.company_name = c.company_name || this.company.name || ""; k.lot = c.lot || "";
@@ -561,17 +561,19 @@ const __adjApp = createApp({
       const k = this.sharedAo.contrib;
       return { company_name: k.company_name, lot: k.lot, qualifications: (k.quals || "").split(",").map(s => s.trim()).filter(Boolean),
                references: (k.refs || "").split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })),
-               chiffrage_note: k.chiffrage_note, memoire_paragraph: k.memoire_paragraph, contact: k.contact };
+               chiffrage_note: k.chiffrage_note, memoire_paragraph: k.memoire_paragraph, contact: k.contact, version: this.sharedAo.version };
     },
-    async sharedSave() {
-      this.sharedAo.busy = true;
-      try { const c = await this.api("PUT", "/api/invite/" + this.sharedAo.token + "/contribution", this._sharedBody()); this.sharedAo.status = c.status; this.notify("Brouillon enregistré"); }
-      catch (e) { this.notify(e.message, "err"); } finally { this.sharedAo.busy = false; }
+    async _sharedPut() {   // PUT avec gestion du verrou optimiste (409)
+      const r = await fetch("/api/invite/" + this.sharedAo.token + "/contribution", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(this._sharedBody()) });
+      if (r.ok) { const c = await r.json(); this.sharedAo.version = c.version || 0; this.sharedAo.status = c.status; return true; }
+      if (r.status === 409) { this.notify("Modifié ailleurs entre-temps — rechargement de la dernière version", "err"); await this.sharedReload(); return false; }
+      const e = await r.json().catch(() => ({})); this.notify((e && e.detail) || "Erreur d'enregistrement", "err"); return false;
     },
+    async sharedSave() { this.sharedAo.busy = true; try { if (await this._sharedPut()) this.notify("Brouillon enregistré"); } finally { this.sharedAo.busy = false; } },
     async sharedSubmit() {
       this.sharedAo.busy = true;
       try {
-        await this.api("PUT", "/api/invite/" + this.sharedAo.token + "/contribution", this._sharedBody());
+        if (!(await this._sharedPut())) return;
         const c = await this.api("POST", "/api/invite/" + this.sharedAo.token + "/contribution/submit");
         this.sharedAo.status = c.status; this.notify("Contribution soumise au mandataire ✓"); this.loadShared();
       } catch (e) { this.notify(e.message, "err"); } finally { this.sharedAo.busy = false; }

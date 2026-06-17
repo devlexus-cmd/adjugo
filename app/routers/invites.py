@@ -65,11 +65,13 @@ def _attachment_headers(name: str) -> dict:
     return {"Content-Disposition":
             f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(base, safe='')}"}
 
-# Sous-ensemble SÛR de l'analyse exposé au co-traitant : de quoi comprendre le marché
-# et préparer sa part, SANS la stratégie interne du mandataire (score, faiblesses…).
+# Sous-ensemble SÛR de l'analyse exposé au co-traitant : FAITS PUBLICS du marché (déjà
+# dans l'avis publié), de quoi comprendre et préparer sa part — SANS la stratégie interne
+# du mandataire (score, faiblesses) NI le montant estimé (= cible de prix : un co-traitant
+# pourrait s'en servir pour caler son lot ; il chiffre sa part sur sa propre base).
 _SAFE_ANALYSIS_KEYS = {
     "objet", "acheteur", "lieu", "duree", "delais", "lots", "allotissement",
-    "pieces_requises", "criteres_attribution", "criteres", "montant_estime",
+    "pieces_requises", "criteres_attribution", "criteres",
     "type_marche", "procedure", "date_limite",
 }
 
@@ -324,6 +326,7 @@ def _serialize_contribution(c: ProjectContribution, db: Session = None) -> dict:
         "references": c.references or [], "qualifications": c.qualifications or [],
         "chiffrage_note": c.chiffrage_note or "", "memoire_paragraph": c.memoire_paragraph or "",
         "contact": c.contact or {}, "status": c.status,
+        "version": c.version or 0,
         "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
         "pieces": pieces,
@@ -351,6 +354,7 @@ class ContributionSave(BaseModel):
     chiffrage_note: Optional[str] = None
     memoire_paragraph: Optional[str] = None
     contact: Optional[dict] = None
+    version: Optional[int] = None     # verrou optimiste : la version chargée par le client
 
 
 @router.get("/api/invite/{token}/contribution")
@@ -371,6 +375,11 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
     if not getattr(inv, "can_contribute", True):
         raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
     c = _get_or_create_contribution(inv, db)
+    # Verrou optimiste : si le client a chargé une version périmée (un autre a sauvegardé
+    # entre-temps), on refuse au lieu d'écraser sa saisie.
+    if body.version is not None and int(body.version) != (c.version or 0):
+        raise HTTPException(409, "Cette contribution a été modifiée ailleurs entre-temps. "
+                                 "Rechargez pour récupérer la dernière version avant de réenregistrer.")
     if body.company_name is not None:
         c.company_name = body.company_name.strip()[:255]
     if body.lot is not None:
@@ -389,6 +398,7 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
     if c.status == "submitted":            # toute modif après soumission repasse en brouillon
         c.status = "draft"
         c.submitted_at = None
+    c.version = (c.version or 0) + 1        # incrémente le verrou optimiste
     db.commit()
     return _serialize_contribution(c, db)
 

@@ -238,7 +238,7 @@ class AnalyzeRequest(BaseModel):
 def analyze_tender(request: Request, req: AnalyzeRequest,
                    current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
-    from app.core.quota import consume_analysis
+    from app.core.quota import consume_analysis, refund_analysis
     from app.services.analysis import analyze_dce_text
 
     try:
@@ -261,9 +261,14 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         dce_text = _tender_as_text(tender)
 
     from app.services.llm import tenant_scope
-    with tenant_scope(current_user.id):
-        analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                    lang_name=_user_lang_name(current_user, db))
+    try:
+        with tenant_scope(current_user.id):
+            analysis = analyze_dce_text(dce_text, company_data, gonogo,
+                                        lang_name=_user_lang_name(current_user, db))
+    except Exception:
+        refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
+        raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
+                                 "Réessayez — votre quota n'a pas été débité.")
     analysis["dce_available"] = dce_available
     analysis["source"] = tender.provenance.model_dump()
     analysis["lead_score"] = tender.score.model_dump() if tender.score else None

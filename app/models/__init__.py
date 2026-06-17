@@ -582,6 +582,10 @@ class ProjectContribution(Base):
 
     status = Column(String(20), default="draft")       # draft | submitted
     submitted_at = Column(DateTime, nullable=True)
+    # Verrouillage optimiste : incrémenté à chaque sauvegarde. Le client renvoie la
+    # version qu'il a chargée ; si elle a changé entre-temps (édition concurrente), on
+    # refuse (409) au lieu d'écraser silencieusement la saisie de l'autre.
+    version = Column(Integer, default=0, nullable=False)
 
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)

@@ -120,8 +120,11 @@ def delete_project(
     ).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projet introuvable")
-    from app.models import utcnow
+    from app.models import utcnow, ProjectInvite
     project.deleted_at = utcnow()
+    # Couper les liens d'invitation actifs : pas de lien « vivant » vers un AO en corbeille.
+    db.query(ProjectInvite).filter(ProjectInvite.project_id == project.id,
+                                   ProjectInvite.revoked.is_(False)).update({"revoked": True})
     db.commit()
 
 
