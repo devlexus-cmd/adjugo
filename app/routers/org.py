@@ -109,7 +109,8 @@ def get_org(current_user: User = Depends(get_current_user), db: Session = Depend
 
 
 @router.put("/")
-def update_org(data: RenameIn, current_user: User = Depends(get_current_user),
+@limiter.limit("60/hour")
+def update_org(data: RenameIn, request: Request, current_user: User = Depends(get_current_user),
                db: Session = Depends(get_db)):
     from app.core.countries import is_supported, country_config
     org = _org(current_user, db)
@@ -274,6 +275,9 @@ def transfer_ownership(data: TransferIn, request: Request,
     org.owner_id = target.id
     target.org_role = "admin"
     current_user.org_role = "membre"
+    # L'ancien propriétaire perd ses droits → on révoque ses sessions en cours pour que
+    # la baisse d'autorité prenne effet immédiatement (pas seulement au prochain login).
+    current_user.token_version = (current_user.token_version or 0) + 1
     db.commit()
     audit.record(db, action="team.ownership_transferred", owner_id=org.owner_id,
                  actor=f"user:{current_user.id}", actor_kind="owner",

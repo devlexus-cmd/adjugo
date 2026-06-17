@@ -393,15 +393,18 @@
                     <span class="pill neutral row" style="gap:5px"><i data-lucide="file-pen-line" style="width:13px;height:13px"></i>mémoire technique</span>
                   </div>
                   <p class="muted small" style="margin-top:10px">{{ ao.dossier.memoire_preview }}</p>
-                  <!-- Rappel pré-dépôt : le ZIP n'est pas la fin du parcours -->
-                  <div style="margin-top:12px;padding:10px 11px;border-radius:9px;background:var(--surface-2);border:1px solid var(--hairline)">
-                    <div class="row small" style="gap:6px;font-weight:600;margin-bottom:6px"><i data-lucide="clipboard-check" style="width:14px;height:14px;color:var(--accent-text)"></i>Avant de déposer sur la plateforme acheteur</div>
-                    <div class="muted small" style="line-height:1.7">
-                      ① Relisez chaque CERFA et <b>signez</b> (acte d'engagement + déclaration sur l'honneur).<br>
-                      ② Vérifiez le <b>taux de TVA</b> et les montants de l'ATTRI1.<br>
-                      ③ Ajoutez les pièces <b>« manquant »</b> de la checklist (attestations fiscale/sociale, assurances…).<br>
-                      ④ Déposez avant la <b>date limite</b> sur le profil acheteur (Chorus Pro / PLACE / plateforme indiquée au DCE).
+                  <!-- Wizard pré-dépôt INTERACTIF : on coche chaque étape, progression suivie -->
+                  <div style="margin-top:12px;padding:11px 12px;border-radius:9px;background:var(--surface-2);border:1px solid var(--hairline)">
+                    <div class="row small" style="gap:6px;font-weight:600;margin-bottom:8px;align-items:center">
+                      <i data-lucide="clipboard-check" style="width:14px;height:14px;color:var(--accent-text)"></i>
+                      <span style="flex:1">Avant de déposer sur la plateforme acheteur</span>
+                      <span class="pill" :class="predepotDone===predepotSteps.length?'go':'neutral'" style="font-size:10px">{{ predepotDone }}/{{ predepotSteps.length }}</span>
                     </div>
+                    <label v-for="(st,i) in predepotSteps" :key="i" class="row small" style="gap:8px;align-items:flex-start;padding:5px 0;cursor:pointer">
+                      <input type="checkbox" v-model="predepot[i]" @change="savePredepot()" style="margin-top:2px">
+                      <span :style="predepot[i]?'text-decoration:line-through;opacity:.55':''" v-html="st"></span>
+                    </label>
+                    <div v-if="predepotDone===predepotSteps.length" class="small" style="color:var(--success);font-weight:600;margin-top:6px">✓ Dossier prêt à déposer — bonne chance !</div>
                   </div>
                 </div>
               </div>

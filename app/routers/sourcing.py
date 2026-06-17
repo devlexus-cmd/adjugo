@@ -196,7 +196,7 @@ def search_tenders(request: Request, req: SearchRequest,
         "sources_queried": result["sources_queried"],
         "errors": [e.model_dump() for e in result["errors"]],
         "tenders": [t.model_dump(exclude={"raw"}) for t in result["tenders"]],
-        "has_more": result["count"] >= req.limit,   # indice « charger plus »
+        "has_more": result.get("has_more", False),   # calculé sur le brut (pas le post-filtre)
     }
 
 

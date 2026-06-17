@@ -71,7 +71,7 @@ class TedSource(TenderSource):
         lim = min(criteria.limit, 50)
         page = (max(0, getattr(criteria, "offset", 0)) // lim) + 1 if lim else 1
         body = {
-            "query": f'FT~"{q}" AND notice-type="cn-standard" AND place-of-performance IN ({a3_list}){cpv_clause}',
+            "query": f'FT~"{q}" AND notice-type IN (cn-standard cn-social) AND place-of-performance IN ({a3_list}){cpv_clause}',
             "fields": FIELDS, "limit": lim, "page": page,
             "scope": "ACTIVE", "paginationMode": "PAGE_NUMBER",
         }

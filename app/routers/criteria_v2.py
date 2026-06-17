@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 from app.core.database import get_db, Base
 from app.core.security import get_current_user
+from app.core.org import data_owner_id
 from app.models import User
 
 # Modele etendu
@@ -85,7 +86,7 @@ router = APIRouter(prefix="/api/criteria", tags=["Criteres de matching"])
 
 @router.get("/")
 def get_criteria(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    c = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == current_user.id).first()
+    c = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == data_owner_id(current_user, db)).first()
     if not c:
         return CriteriaUpdate().model_dump()
     result = {}
@@ -96,9 +97,9 @@ def get_criteria(current_user: User = Depends(get_current_user), db: Session = D
 
 @router.put("/")
 def update_criteria(data: CriteriaUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    c = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == current_user.id).first()
+    c = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == data_owner_id(current_user, db)).first()
     if not c:
-        c = MatchingCriteriaExt(user_id=current_user.id)
+        c = MatchingCriteriaExt(user_id=data_owner_id(current_user, db))
         db.add(c)
     for k, v in data.model_dump().items():
         setattr(c, k, v)

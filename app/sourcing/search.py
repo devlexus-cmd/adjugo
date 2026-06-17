@@ -88,6 +88,11 @@ class TenderSearchService:
                 fut.cancel()
         ex.shutdown(wait=False)
 
+        # « has_more » se calcule sur le BRUT récupéré (avant dédup/filtres) : si au moins
+        # une source a rempli une page, il reste probablement des résultats — sinon le
+        # filtrage serveur (date passée, montant) faisait croire à tort qu'on était au bout.
+        raw_more = len(tenders) >= max(1, getattr(criteria, "limit", 20))
+
         deduped = _dedup_tenders(tenders)
         # On n'affiche JAMAIS un AO dont la date limite de réponse est passée
         # (crédibilité). Les AO sans date connue sont conservés (récents/non parsés).
@@ -122,6 +127,7 @@ class TenderSearchService:
             "count": len(deduped),
             "closed_filtered": closed,
             "amount_filtered": amount_filtered,
+            "has_more": raw_more,
         }
 
 

@@ -90,6 +90,13 @@ const __adjApp = createApp({
       statuses2: ["nouveau", "en_cours", "envoye", "gagne", "perdu", "abandonne"],
       plan: { plan: "starter" }, org: { data: null, name: "", invite: { email: "", full_name: "" }, lastTemp: null },
       pwd: { current: "", next: "" },
+      predepot: [false, false, false, false],
+      predepotSteps: [
+        "Relisez chaque CERFA et <b>signez</b> (acte d'engagement + déclaration sur l'honneur).",
+        "Vérifiez le <b>taux de TVA</b> et les montants de l'ATTRI1.",
+        "Ajoutez les pièces <b>« manquant »</b> de la checklist (attestations fiscale/sociale, assurances…).",
+        "Déposez avant la <b>date limite</b> sur le profil acheteur (Chorus Pro / PLACE / plateforme du DCE)."
+      ],
       discover: { open: false, trade: "", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [],
       countries2: [], adaptedCountries: [], orgCountry: "FR", lang: "fr",
       amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false, pasteOpen: false, pasteText: "", pasting: false },
@@ -139,6 +146,7 @@ const __adjApp = createApp({
     initials() { return (this.user.full_name || "U").split(" ").map(s => s[0]).slice(0, 2).join("").toUpperCase(); },
     quotaReached() { const u = this.stats.usage; return !!u && u.analyses_remaining <= 0; },
     notifUnseen() { return this.notifs.filter(n => n.at && n.at > this.notifsSeen).length; },
+    predepotDone() { return (this.predepot || []).filter(Boolean).length; },
   },
   mounted() {
     this.applyTheme();
@@ -418,8 +426,16 @@ const __adjApp = createApp({
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
       this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
+      this.loadPredepot(p.id);   // état du wizard pré-dépôt propre à cet AO
       this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites(); this.aoLoadConsortium();
       setTimeout(() => this.aoLoadBuyer(), 700);   // profil acheteur (BOAMP, lent) en différé, après le cœur de l'AO
+    },
+    loadPredepot(pid) {
+      try { const v = JSON.parse(localStorage.getItem("adjugo_predepot_" + pid) || "null"); this.predepot = Array.isArray(v) && v.length === 4 ? v : [false, false, false, false]; }
+      catch (e) { this.predepot = [false, false, false, false]; }
+    },
+    savePredepot() {
+      try { if (this.ao.project) localStorage.setItem("adjugo_predepot_" + this.ao.project.id, JSON.stringify(this.predepot)); } catch (e) {}
     },
     async aoLoadEstimate() {
       try { const e = await this.api("GET", "/api/chiffrage/" + this.ao.project.id); this.ao.estimate = (e && e.lignes) ? e : null; } catch (e) {}

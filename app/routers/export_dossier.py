@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.org import data_owner_id
 from app.models import User, Project, Company, Document
 from app.services.cerfa import GENERATORS
 
@@ -34,7 +35,7 @@ def export_dossier(
     if not project:
         raise HTTPException(404, "Projet introuvable")
 
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     if not company:
         raise HTTPException(400, "Completez votre profil entreprise")
 

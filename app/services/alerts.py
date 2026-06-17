@@ -4,6 +4,7 @@ Envoie un digest par utilisateur (escalade 30 j → 7 j → jour J),
 en marquant les flags pour ne pas renvoyer deux fois la même alerte.
 """
 import logging
+import re
 from datetime import date
 from collections import defaultdict
 from sqlalchemy.orm import Session
@@ -176,7 +177,12 @@ def run_amont_alerts(db: Session) -> dict:
     notified, total = 0, 0
     for user in opted:
         criteria = criteria_dict(user.id, db)
-        domaines = criteria.get("domaines") or criteria.get("domaines_cibles") or None
+        # MatchingCriteriaExt n'a pas de colonne « domaines » : on dérive le boost domaine
+        # des SPÉCIALITÉS du profil (parité réelle avec le scan manuel, où le boost vient
+        # des domaines cochés). Sinon criteria.get("domaines") restait toujours None.
+        domaines = (criteria.get("domaines") or criteria.get("domaines_cibles")
+                    or [s.strip() for s in re.split(r"[,;]", str(criteria.get("specialites", "") or ""))
+                        if s.strip()] or None)
         existing = {((s.intitule or "").lower()[:80], (s.collectivite or "").lower())
                     for s in db.query(Signal).filter(Signal.user_id == user.id).all()}
         new_pertinent = []

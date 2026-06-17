@@ -28,6 +28,12 @@ class BoampSource(TenderSource):
         from app.sourcing.http import safe_terms
         q = safe_terms(criteria.query) or "travaux"   # neutralise l'injection ODSQL
         where = f'objet like "{q}" OR descripteur_libelle like "{q}"'
+        # Recall accru : si des codes CPV sont fournis, on élargit la recherche aux avis
+        # portant ces familles CPV (en plus du mot-clé) — plus d'AO pertinents captés.
+        cpv_codes = [re.sub(r"\D", "", str(c))[:8] for c in getattr(criteria, "cpv", []) if re.sub(r"\D", "", str(c))]
+        if cpv_codes:
+            cpv_clause = " OR ".join(f'descripteur_code like "{c[:4]}"' for c in cpv_codes[:6])
+            where = f"({where}) OR ({cpv_clause})"
         if criteria.departements:
             deps = " OR ".join(f'code_departement like "{d}"' for d in criteria.departements)
             where = f"({where}) AND ({deps})"
