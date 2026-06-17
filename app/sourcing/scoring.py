@@ -158,7 +158,11 @@ def score_tender(t: NormalizedTender, company: Optional[dict], criteria: Optiona
     achievable = sum(c.max_points for c in b if c.status != "inconnu")
     earned = sum(c.points for c in b)
     total = round(earned / achievable * 100) if achievable else 0
-    return Score(total=max(0, min(100, total)), breakdown=b)
+    # Adéquation évaluable UNIQUEMENT si l'utilisateur a renseigné de quoi juger le « fit » :
+    # des spécialités/CPV/qualifications OU une zone cible. Sinon le score ne reflète que
+    # la validité de l'avis (délai/procédure), pas l'adéquation au client → on le signale.
+    fit_assessable = bool(targets) or bool(_split(crit.get("departements")))
+    return Score(total=max(0, min(100, total)), breakdown=b, fit_assessable=fit_assessable)
 
 
 def score_company(c: NormalizedCompany, need_trade_label: str = "",

@@ -36,6 +36,10 @@ class Score(BaseModel):
     total: int                        # 0-100
     breakdown: list[ScoreCriterion] = []
     note: str = ""                    # synthèse courte (peut être produite par LLM)
+    # False = l'utilisateur n'a renseigné AUCUN critère d'adéquation (métier/zone) → le
+    # score ne mesure pas l'adéquation au client ; le front affiche alors « configurez
+    # vos critères » au lieu d'un nombre trompeur.
+    fit_assessable: bool = True
 
 
 class NormalizedTender(BaseModel):

@@ -286,12 +286,14 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     #  - France : CERFA DC1/DC2/(DC4)/ATTRI1 + DUME sur gros marchés.
     #  - Autres pays UE adaptés : les CERFA français ne s'appliquent pas → le document
     #    de candidature est l'ESPD (= DUME), toujours inclus, dans la langue locale.
-    roles = [str(c.get("role") or "") for c in cotraitants]
-    has_subcontractor = any(r == "sous_traitant" for r in roles) or (cotraitants and not any(roles))
+    # DC4 (déclaration de sous-traitance) : dès qu'il y a un GROUPEMENT/consortium, on le
+    # génère pré-rempli — la sous-traitance est fréquente en groupement et l'acheteur
+    # l'exige le cas échéant ; mieux vaut le fournir prêt que de l'oublier.
+    has_groupement = bool(cerfa_cotraitants)
     if (country or "FR").upper() == "FR":
         include_dume = (project_data.get("budget") or 0) >= DUME_THRESHOLD
         # "honneur" = déclaration sur l'honneur (R2143-3), pièce obligatoire de tout pli FR.
-        cerfa_ids = ["dc1", "dc2"] + (["dc4"] if has_subcontractor else []) + ["attri1", "honneur"] \
+        cerfa_ids = ["dc1", "dc2"] + (["dc4"] if has_groupement else []) + ["attri1", "honneur"] \
             + (["dume"] if include_dume else [])
     else:
         cerfa_ids = ["dume"]   # ESPD localisé = pièce de candidature paneuropéenne
