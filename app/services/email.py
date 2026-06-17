@@ -2,19 +2,66 @@
 Service d'envoi d'emails (SMTP).
 No-op silencieux si SMTP non configuré → ne casse jamais le dev.
 """
+import json
 import smtplib
 import ssl
 import logging
+import urllib.request
+import urllib.error
 from email.message import EmailMessage
+from email.utils import parseaddr
 
 from app.core.config import get_settings
 
 settings = get_settings()
 logger = logging.getLogger("adjugo")
 
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
+
 
 def is_enabled() -> bool:
-    return bool(settings.SMTP_HOST and settings.SMTP_USER)
+    # Actif si une clé API Brevo (voie HTTP, fiable sur PaaS) OU un SMTP est configuré.
+    return bool(settings.BREVO_API_KEY or (settings.SMTP_HOST and settings.SMTP_USER))
+
+
+def _sender() -> dict:
+    """Décompose SMTP_FROM (« Adjugo <noreply@adjugo.pro> ») en {name, email}."""
+    name, addr = parseaddr(settings.SMTP_FROM)
+    return {"name": name or "Adjugo", "email": addr or "noreply@adjugo.pro"}
+
+
+def _send_via_brevo_api(to: str, subject: str, text: str, html: str | None) -> bool:
+    """Envoi via l'API HTTP de Brevo (port 443). Lève en cas d'échec réseau ;
+    retourne False sur réponse d'erreur applicative (clé invalide, etc.)."""
+    payload = {
+        "sender": _sender(),
+        "to": [{"email": to}],
+        "subject": subject,
+        "textContent": text,
+    }
+    if html:
+        payload["htmlContent"] = html
+    req = urllib.request.Request(
+        BREVO_API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "api-key": settings.BREVO_API_KEY,
+            "content-type": "application/json",
+            "accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if 200 <= resp.status < 300:
+                logger.info("email envoyé destinataire=%s sujet=%s via=brevo-api", to, subject)
+                return True
+            logger.warning("échec envoi email destinataire=%s : brevo-api HTTP %s", to, resp.status)
+            return False
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "ignore")[:300]
+        logger.warning("échec envoi email destinataire=%s : brevo-api HTTP %s (%s)", to, e.code, body)
+        return False
 
 
 def _candidate_transports() -> list[tuple[int, str]]:
@@ -60,6 +107,18 @@ def send_email(to: str, subject: str, text: str, html: str | None = None) -> boo
     réessayé sur les autres ports — inutile, et ça évite 3 timeouts en série."""
     if not is_enabled():
         logger.info("email désactivé (SMTP non configuré) — destinataire=%s sujet=%s", to, subject)
+        return False
+
+    # Voie privilégiée : API HTTP Brevo (port 443). Sur Railway/PaaS les ports SMTP
+    # sortants sont bloqués → le SMTP ci-dessous ne sert qu'en dev local.
+    if settings.BREVO_API_KEY:
+        try:
+            return _send_via_brevo_api(to, subject, text, html)
+        except Exception as e:
+            logger.warning("brevo-api injoignable (%s) — repli SMTP", e)
+
+    if not (settings.SMTP_HOST and settings.SMTP_USER):
+        logger.warning("échec envoi email destinataire=%s : aucune voie disponible", to)
         return False
 
     msg = EmailMessage()

@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = "Adjugo <noreply@adjugo.pro>"
     SMTP_TLS: bool = True
+    # Clé API Brevo (xkeysib-…). Si renseignée, l'envoi passe par l'API HTTP de Brevo
+    # (port 443) au lieu du SMTP — indispensable sur Railway/PaaS qui bloquent les
+    # ports SMTP sortants (587/465/2525). Le SMTP reste le repli (dev local).
+    BREVO_API_KEY: str = ""
 
     # Secret pour déclencher les tâches cron (alertes). Défini en prod.
     CRON_SECRET: str = ""
