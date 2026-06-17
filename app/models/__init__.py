@@ -643,3 +643,17 @@ class ContributionPiece(Base):
     mime_type = Column(String(100), default="")
 
     created_at = Column(DateTime, default=utcnow)
+
+
+# === FEEDBACK (beta) ===
+# Retours des utilisateurs (bouton « Signaler / Idée ») — précieux en phase de test PME.
+class Feedback(Base):
+    __tablename__ = "feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    email = Column(String(255), default="")
+    kind = Column(String(20), default="idee")          # bug | idee | autre
+    message = Column(Text, default="")
+    page = Column(String(120), default="")             # vue/contexte d'où vient le retour
+    created_at = Column(DateTime, default=utcnow)

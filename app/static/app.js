@@ -90,6 +90,8 @@ const __adjApp = createApp({
       statuses2: ["nouveau", "en_cours", "envoye", "gagne", "perdu", "abandonne"],
       plan: { plan: "starter" }, org: { data: null, name: "", invite: { email: "", full_name: "" }, lastTemp: null },
       pwd: { current: "", next: "" },
+      fb: { open: false, message: "", kind: "idee", busy: false },
+      cookiesOk: (function(){ try { return localStorage.getItem("adjugo_cookies_ok") === "1"; } catch(e){ return true; } })(),
       predepot: [false, false, false, false],
       predepotSteps: [
         "Relisez chaque CERFA et <b>signez</b> (acte d'engagement + déclaration sur l'honneur).",
@@ -147,6 +149,23 @@ const __adjApp = createApp({
     quotaReached() { const u = this.stats.usage; return !!u && u.analyses_remaining <= 0; },
     notifUnseen() { return this.notifs.filter(n => n.at && n.at > this.notifsSeen).length; },
     predepotDone() { return (this.predepot || []).filter(Boolean).length; },
+    onboarding() {
+      // Premiers pas : 3 jalons d'activation, dérivés des données réelles du compte.
+      const c = this.company || {}, cr = this.criteria || {};
+      const profil = !!(c.name && c.siret);
+      const criteres = !!((cr.specialites && String(cr.specialites).trim()) || (cr.departements && String(cr.departements).trim()));
+      const premier = (this.projects || []).length > 0;
+      const steps = [
+        { k: "profil", done: profil, label: "Complétez votre profil entreprise", view: "company", cta: "Compléter" },
+        { k: "criteres", done: criteres, label: "Définissez vos critères Go/No-Go", view: "criteria", cta: "Définir" },
+        { k: "premier", done: premier, label: "Lancez votre première recherche d'appel d'offres", view: "sourcing", cta: "Rechercher" },
+      ];
+      return { steps, done: steps.filter(s => s.done).length, total: steps.length };
+    },
+    showOnboarding() {
+      try { if (localStorage.getItem("adjugo_onboarding_done") === "1") return false; } catch (e) {}
+      return this.onboarding.done < this.onboarding.total;
+    },
   },
   mounted() {
     this.applyTheme();
@@ -165,6 +184,7 @@ const __adjApp = createApp({
     if (!this.token && new URLSearchParams(location.search).get("demo") === "1") { this.demoLogin(); return; }
     const _rst = new URLSearchParams(location.search).get("reset");
     if (!this.token && _rst) { this.auth.mode = "reset"; this.auth.resetToken = _rst; }
+    this._loadAnalytics();
     if (this.token) this.boot();
   },
   updated() { this.renderIcons(); this.renderI18n(); this._a11y(); },
@@ -272,6 +292,48 @@ const __adjApp = createApp({
       } catch (e) { this.notify("Démo momentanément indisponible.", "err"); } finally { this.busy = false; }
     },
     logout() { localStorage.removeItem("adjugo_token"); window.location.href = "/"; },
+    dismissOnboarding() { try { localStorage.setItem("adjugo_onboarding_done", "1"); } catch (e) {} this.$forceUpdate(); },
+    // ── Feedback in-app ──
+    openFeedback() { this.fb.open = true; this.fb.message = ""; this.fb.kind = "idee"; },
+    async sendFeedback() {
+      if ((this.fb.message || "").trim().length < 2) { this.notify("Écrivez votre message", "err"); return; }
+      this.fb.busy = true;
+      try {
+        const r = await this.api("POST", "/api/feedback", { message: this.fb.message, kind: this.fb.kind, page: this.view });
+        this.fb.open = false; this.notify(r.message || "Merci pour votre retour !");
+      } catch (e) { this.notify(e.message, "err"); } finally { this.fb.busy = false; }
+    },
+    // ── RGPD : export + suppression ──
+    async rgpdExport() {
+      try {
+        const r = await fetch("/api/rgpd/export", { headers: { Authorization: "Bearer " + this.token } });
+        if (!r.ok) throw new Error("Export indisponible");
+        this.saveBlob(await r.blob(), "mes_donnees_adjugo.json"); this.notify("Export téléchargé");
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async rgpdDelete() {
+      const pw = window.prompt("Suppression DÉFINITIVE de votre compte et de toutes vos données.\nEntrez votre mot de passe pour confirmer :");
+      if (!pw) return;
+      const cf = window.prompt("Tapez SUPPRIMER en majuscules pour confirmer définitivement :");
+      if ((cf || "").trim().toUpperCase() !== "SUPPRIMER") { this.notify("Suppression annulée", "err"); return; }
+      try {
+        await this.api("POST", "/api/rgpd/delete-account", { password: pw, confirm: "SUPPRIMER" });
+        localStorage.removeItem("adjugo_token"); this.notify("Compte supprimé"); setTimeout(() => window.location.href = "/", 1200);
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    acceptCookies() { try { localStorage.setItem("adjugo_cookies_ok", "1"); } catch (e) {} this.cookiesOk = true; },
+    async _loadAnalytics() {
+      // Analytics produit cookieless (ex. Plausible), activé par variable d'env serveur.
+      try {
+        const cfg = await this.api("GET", "/api/public-config");
+        if (cfg && cfg.analytics_src && !document.getElementById("adj-analytics")) {
+          const s = document.createElement("script");
+          s.id = "adj-analytics"; s.defer = true; s.src = cfg.analytics_src;
+          if (cfg.analytics_domain) s.setAttribute("data-domain", cfg.analytics_domain);
+          document.head.appendChild(s);
+        }
+      } catch (e) {}
+    },
 
     async boot() {
       try { this.user = await this.api("GET", "/api/auth/me"); } catch (e) { return; }

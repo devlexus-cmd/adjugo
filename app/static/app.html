@@ -140,6 +140,21 @@
 
         <!-- ░░ DASHBOARD ░░ -->
         <section v-if="view==='dashboard'">
+          <!-- Premiers pas : onboarding guidé (disparaît une fois les 3 jalons faits) -->
+          <div v-if="showOnboarding" class="card pad" style="margin-bottom:14px;border:1px solid var(--accent-weak)">
+            <div class="row" style="align-items:center;gap:8px">
+              <i data-lucide="rocket" style="color:var(--accent-text)"></i>
+              <b style="flex:1">Premiers pas sur Adjugo</b>
+              <span class="pill" :class="onboarding.done===onboarding.total?'go':'neutral'" style="font-size:11px">{{ onboarding.done }}/{{ onboarding.total }}</span>
+              <button class="icon-btn xs" title="Masquer" @click="dismissOnboarding()"><i data-lucide="x" style="width:15px;height:15px"></i></button>
+            </div>
+            <div class="muted small" style="margin:4px 0 10px">3 étapes pour configurer votre espace et trouver vos premiers marchés.</div>
+            <div v-for="(s,i) in onboarding.steps" :key="s.k" class="row" style="padding:7px 0;border-top:1px solid var(--hairline);gap:10px;align-items:center">
+              <i :data-lucide="s.done?'check-circle-2':'circle'" :style="s.done?'color:var(--success)':'color:var(--subtle)'" style="width:18px;height:18px"></i>
+              <span style="flex:1" :style="s.done?'text-decoration:line-through;opacity:.6':''">{{ s.label }}</span>
+              <button v-if="!s.done" class="btn sm primary" @click="go(s.view)">{{ s.cta }}</button>
+            </div>
+          </div>
           <!-- Ruban de synthèse (inline, réglé — pas une grille de cartes) -->
           <div class="dash-ribbon">
             <div class="rb"><span class="rb-l">Appels d'offres</span><span class="rb-v num">{{ stats.total_projects||0 }}</span><span class="rb-d">{{ (stats.by_status&&stats.by_status.en_cours)||0 }} en cours</span></div>
@@ -1406,6 +1421,16 @@
               <button class="btn" @click="changePassword()"><i data-lucide="key-round"></i>Changer</button>
             </div>
           </div>
+
+          <!-- Mes données (RGPD) -->
+          <div class="card pad" style="margin-top:14px">
+            <h3>Mes données (RGPD)</h3>
+            <div class="muted small" style="margin:4px 0 10px">Vous restez propriétaire de vos données. Vous pouvez les exporter ou supprimer définitivement votre compte à tout moment.</div>
+            <div class="row wrap" style="gap:8px">
+              <button class="btn" @click="rgpdExport()"><i data-lucide="download"></i>Exporter mes données (JSON)</button>
+              <button class="btn ghost" style="color:var(--danger-text)" @click="rgpdDelete()"><i data-lucide="trash-2"></i>Supprimer mon compte</button>
+            </div>
+          </div>
         </section>
 
         <section v-if="view==='billing'">
@@ -1664,6 +1689,30 @@
       </div>
       <div class="modal-f"><button class="btn ghost" @click="discover.open=false">Fermer</button></div>
     </div>
+  </div>
+
+  <!-- Bouton feedback flottant (utilisateur connecté) -->
+  <button v-if="token" @click="openFeedback()" title="Une idée ? Un problème ?" style="position:fixed;right:18px;bottom:18px;z-index:45;border:none;border-radius:24px;padding:10px 15px;background:var(--accent);color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.18);cursor:pointer;display:flex;align-items:center;gap:7px;font-weight:600;font-size:13px">
+    <i data-lucide="message-circle" style="width:16px;height:16px"></i>Mon avis
+  </button>
+  <div v-if="fb.open" class="modal-back" @click.self="fb.open=false" style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:16px">
+    <div class="card pad" style="max-width:440px;width:100%">
+      <div class="row" style="align-items:center;gap:8px;margin-bottom:8px"><i data-lucide="message-circle" style="color:var(--accent-text)"></i><b style="flex:1">Votre retour</b><button class="icon-btn xs" @click="fb.open=false"><i data-lucide="x" style="width:15px;height:15px"></i></button></div>
+      <div class="row" style="gap:6px;margin-bottom:8px">
+        <button v-for="o in [['idee','💡 Idée'],['bug','🐞 Problème'],['autre','💬 Autre']]" :key="o[0]" class="btn sm" :class="fb.kind===o[0]?'primary':''" @click="fb.kind=o[0]">{{ o[1] }}</button>
+      </div>
+      <textarea v-model="fb.message" class="inp" rows="4" placeholder="Dites-nous ce qui vous aiderait, ce qui bloque, ce qui manque…" style="width:100%;resize:vertical"></textarea>
+      <div class="row" style="gap:8px;margin-top:8px;justify-content:flex-end">
+        <button class="btn ghost" @click="fb.open=false">Annuler</button>
+        <button class="btn primary" @click="sendFeedback()" :disabled="fb.busy"><span v-if="fb.busy" class="spin"></span>Envoyer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bandeau cookies / stockage (RGPD) -->
+  <div v-if="!cookiesOk" style="position:fixed;left:12px;right:12px;bottom:12px;z-index:70;background:var(--surface);border:1px solid var(--border);border-radius:11px;box-shadow:0 8px 28px rgba(0,0,0,.16);padding:13px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;max-width:760px;margin:0 auto">
+    <span class="small" style="flex:1;min-width:220px">Adjugo utilise un stockage local strictement nécessaire à votre connexion et, le cas échéant, une mesure d'audience anonyme. Aucun cookie publicitaire. <a href="/legal/politique-confidentialite.html" target="_blank" style="color:var(--accent-text)">En savoir plus</a>.</span>
+    <button class="btn primary sm" @click="acceptCookies()">J'ai compris</button>
   </div>
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>

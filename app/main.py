@@ -148,6 +148,10 @@ from app.routers.amont import router as amont_router
 app.include_router(amont_router)
 from app.routers.knowledge import router as knowledge_router
 app.include_router(knowledge_router)
+from app.routers.rgpd import router as rgpd_router
+app.include_router(rgpd_router)
+from app.routers.feedback import router as feedback_router
+app.include_router(feedback_router)
 # « Merged Brain » (CoSpace) ARCHIVÉ : doublon du Réseau Adjugo (lien d'invitation +
 # contribution cloisonnée). Routeur non monté ; modèles conservés (pas de migration).
 # from app.routers.cospace import router as cospace_router
@@ -236,6 +240,13 @@ def llm_info():
     bascule Anthropic ↔ Mistral (souverain FR/EU) par simple variable d'environnement."""
     from app.services.llm import active_provider
     return active_provider()
+
+
+@app.get("/api/public-config", tags=["Sante"], include_in_schema=False)
+def public_config():
+    """Config publique (sans secret) pour le front : analytics activé par env, etc."""
+    s = settings
+    return {"analytics_src": s.ANALYTICS_SRC or "", "analytics_domain": s.ANALYTICS_DOMAIN or ""}
 
 
 @app.get("/api/health/ready", tags=["Sante"])

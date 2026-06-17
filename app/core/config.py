@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: str = ""                  # vide = Sentry désactivé
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1
+    # Analytics produit (cookieless, ex. Plausible). Vide = désactivé.
+    # ANALYTICS_SRC = URL du script ; ANALYTICS_DOMAIN = domaine déclaré (data-domain).
+    ANALYTICS_SRC: str = ""
+    ANALYTICS_DOMAIN: str = ""
 
     # Email (SMTP) — vide = emails désactivés (no-op)
     SMTP_HOST: str = ""
