@@ -255,10 +255,26 @@
         const e = await r.json().catch(() => ({})); msg.textContent = (e && e.detail) ? e.detail : "Erreur."; return false;
       };
       btnSave.onclick = async () => { msg.textContent = "Enregistrement…"; if (await save()) msg.textContent = "Brouillon enregistré ✓"; };
+      // Binding d'identité : avant la SOUMISSION, si le lien cible une adresse email et que
+      // l'email est configuré, l'invité prouve qu'il contrôle cette adresse (code à 6 chiffres).
+      async function ensureVerified() {
+        const st = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/status").then(r => r.ok ? r.json() : null).catch(() => null);
+        if (!st || !st.required || st.verified) return true;
+        msg.textContent = "Envoi d'un code de vérification…";
+        const rq = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/request", { method: "POST" }).then(r => r.ok ? r.json() : null).catch(() => null);
+        if (!rq || !rq.sent) { msg.textContent = "Impossible d'envoyer le code de vérification."; return false; }
+        const code = window.prompt("Un code à 6 chiffres vient d'être envoyé à " + (rq.email_masked || "votre adresse") + ".\nSaisissez-le pour valider votre identité avant de soumettre :");
+        if (!code) { msg.textContent = "Vérification annulée."; return false; }
+        const vr = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code.trim() }) });
+        if (vr.ok) { msg.textContent = "Identité vérifiée ✓"; return true; }
+        const e = await vr.json().catch(() => ({})); msg.textContent = (e && e.detail) ? e.detail : "Code incorrect."; return false;
+      }
       btnSubmit.onclick = async () => {
         msg.textContent = "Envoi…"; if (!(await save())) return;
+        if (!(await ensureVerified())) return;
         const r = await fetch(url + "/submit", { method: "POST" });
-        if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Contribution soumise ✓"; showSubmittedBanner(); window.scrollTo({ top: 0, behavior: "smooth" }); } else msg.textContent = "Erreur d'envoi.";
+        if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Contribution soumise ✓"; showSubmittedBanner(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+        else { const e = await r.json().catch(() => ({})); const dt = e && e.detail; msg.textContent = (dt && dt.message) ? dt.message : (typeof dt === "string" ? dt : "Erreur d'envoi."); }
       };
       icons();
     }

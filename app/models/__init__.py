@@ -531,6 +531,16 @@ class ProjectInvite(Base):
     view_count = Column(Integer, default=0)
     last_viewed_at = Column(DateTime, nullable=True)
 
+    # Binding d'identité par OTP email (sécurité « industrielle ») : avant de SOUMETTRE
+    # sa part, l'invité prouve qu'il contrôle l'adresse destinataire. Le secret de l'URL
+    # devient alors une capacité + une identité vérifiée. Actif seulement si l'email est
+    # configuré ET recipient est une adresse (sinon flux inchangé, zéro friction).
+    otp_hash = Column(String(64), default="")          # sha256 du code à 6 chiffres
+    otp_expires_at = Column(DateTime, nullable=True)
+    otp_attempts = Column(Integer, default=0)
+    verified_email = Column(String(255), default="")   # adresse prouvée
+    verified_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=utcnow)
 
 

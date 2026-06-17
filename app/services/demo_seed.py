@@ -204,10 +204,15 @@ def ensure_demo(db, force: bool = False) -> User:
     # On repart propre : on supprime D'ABORD tout ce qui référence les projets démo
     # (documents, docs générés, factures, liens co-traitants) sinon la contrainte de clé
     # étrangère bloque la suppression des projets et fait échouer tout le reseed.
-    from app.models import Document, GeneratedDoc, Invoice
+    from app.models import (Document, GeneratedDoc, Invoice, ProjectInvite,
+                            ProjectContribution, ContributionPiece, AuditLog)
     old_ids = [p.id for p in db.query(Project).filter(Project.user_id == user.id).all()]
     if old_ids:
-        for M in (ProjectCotraitant, Document, GeneratedDoc, Invoice):
+        # Ordre : enfants des contributions/invites d'abord, puis le reste. TOUTES les
+        # tables qui référencent projects doivent être purgées sinon la FK bloque le reseed
+        # (ex. project_invites créés en testant la co-traitance).
+        for M in (ContributionPiece, ProjectContribution, ProjectInvite,
+                  ProjectCotraitant, Document, GeneratedDoc, Invoice, AuditLog):
             db.query(M).filter(M.project_id.in_(old_ids)).delete(synchronize_session=False)
     db.query(Cotraitant).filter(Cotraitant.user_id == user.id).delete(synchronize_session=False)
     db.query(Project).filter(Project.user_id == user.id).delete(synchronize_session=False)

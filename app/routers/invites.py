@@ -33,6 +33,57 @@ from app.services.storage import get_storage
 
 router = APIRouter(tags=["Co-traitance"])
 _settings = get_settings()
+
+import hashlib
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_OTP_TTL_MIN = 15
+_OTP_MAX_ATTEMPTS = 5
+
+
+def _is_email(s) -> bool:
+    return bool(_EMAIL_RE.match((s or "").strip()))
+
+
+def _binding_required(inv) -> bool:
+    """Le binding d'identité OTP s'applique UNIQUEMENT si l'email est configuré ET le
+    destinataire est une adresse. Sinon : flux inchangé, zéro friction (l'ADN CaaS)."""
+    try:
+        from app.services import email as _email
+        return _email.is_enabled() and _is_email(getattr(inv, "recipient", ""))
+    except Exception:
+        return False
+
+
+def _mask_email(e: str) -> str:
+    e = (e or "").strip()
+    if "@" not in e:
+        return e
+    user, _, dom = e.partition("@")
+    return ((user[0] + "***") if user else "***") + "@" + dom
+
+
+def _hash_otp(code: str) -> str:
+    return hashlib.sha256(("adjugo-otp:" + (code or "")).encode("utf-8")).hexdigest()
+
+
+def _send_invite_email(inv, project, base_url: str) -> bool:
+    """Envoie le lien d'invitation au co-traitant. No-op gracieux si email désactivé."""
+    if not _is_email(inv.recipient):
+        return False
+    try:
+        from app.services import email as _email
+        url = base_url.rstrip("/") + f"/invite/{inv.token}"
+        who = inv.company_name or "votre entreprise"
+        subj = f"Invitation à co-traiter sur un marché — {project.name[:60]}"
+        text = (f"Bonjour,\n\nVous êtes invité(e) à rejoindre le groupement pour répondre au "
+                f"marché « {project.name} » sur Adjugo, en tant que {who}.\n\n"
+                f"Accédez à votre espace dédié (cloisonné à ce seul dossier) :\n{url}\n\n"
+                f"Vous n'y voyez que ce dossier et votre propre contribution — jamais les "
+                f"données des autres partenaires.\n\n— Adjugo, le réseau des PME")
+        return _email.send_email(inv.recipient, subj, text)
+    except Exception:
+        return False
 _ALLOWED_EXT = {e.strip().lower() for e in _settings.ALLOWED_UPLOAD_EXT.split(",") if e.strip()}
 _MAX_BYTES = _settings.MAX_UPLOAD_MB * 1024 * 1024
 
@@ -172,6 +223,8 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
                  ip=audit.client_ip(request))
     out = _serialize_invite(inv)
     out["url"] = str(request.base_url).rstrip("/") + out["path"]
+    # Envoi du lien par email au destinataire (si adresse + SMTP configuré).
+    out["emailed"] = _send_invite_email(inv, project, _settings.APP_BASE_URL or str(request.base_url))
     return out
 
 
@@ -205,7 +258,19 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
                  target_type="invite", target_id=inv.id,
                  detail=(inv.company_name or inv.recipient or "")[:255],
                  ip=audit.client_ip(request))
-    return {"ok": True}
+    # Notifie le partenaire que son accès est coupé (s'il a une adresse + SMTP configuré).
+    emailed = False
+    if _is_email(inv.recipient):
+        try:
+            from app.services import email as _email
+            proj = db.query(Project).filter(Project.id == project_id).first()
+            emailed = _email.send_email(
+                inv.recipient, "Accès à un dossier Adjugo retiré",
+                f"Bonjour,\n\nVotre accès au dossier « {proj.name if proj else 'partagé'} » sur "
+                f"Adjugo a été retiré par le mandataire. Vous n'y avez plus accès.\n\n— Adjugo")
+        except Exception:
+            emailed = False
+    return {"ok": True, "notified": emailed}
 
 
 @router.get("/api/projects/{project_id}/audit")
@@ -422,6 +487,76 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
     return _serialize_contribution(c, db)
 
 
+# ── Binding d'identité par OTP email (sécurité « industrielle ») ─────────────
+class OtpVerify(BaseModel):
+    code: str = ""
+
+
+@router.get("/api/invite/{token}/otp/status")
+@limiter.limit("120/minute")
+def guest_otp_status(token: str, request: Request, db: Session = Depends(get_db)):
+    """Indique au front si une vérification d'identité est requise pour soumettre, et si
+    elle est déjà faite. Si l'email n'est pas configuré, aucune vérification (flux libre)."""
+    inv = _valid_invite(token, db)
+    return {"required": _binding_required(inv),
+            "verified": bool(inv.verified_at),
+            "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
+
+
+@router.post("/api/invite/{token}/otp/request")
+@limiter.limit("6/hour")
+def guest_otp_request(token: str, request: Request, db: Session = Depends(get_db)):
+    """Envoie un code à 6 chiffres à l'adresse destinataire de l'invitation, pour prouver
+    que l'invité la contrôle avant de soumettre sa part."""
+    inv = _valid_invite(token, db)
+    if not _binding_required(inv):
+        return {"sent": False, "reason": "Vérification non requise pour ce lien."}
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    inv.otp_hash = _hash_otp(code)
+    inv.otp_expires_at = utcnow() + timedelta(minutes=_OTP_TTL_MIN)
+    inv.otp_attempts = 0
+    db.commit()
+    from app.services import email as _email
+    _email.send_email(
+        inv.recipient,
+        "Votre code de vérification Adjugo",
+        f"Votre code pour valider votre contribution au groupement : {code}\n\n"
+        f"Il expire dans {_OTP_TTL_MIN} minutes. Si vous n'êtes pas à l'origine de cette "
+        f"demande, ignorez ce message.")
+    audit.record(db, action="guest.otp_request", owner_id=inv.owner_id, project_id=inv.project_id,
+                 actor=(inv.recipient or "")[:160], actor_kind="guest", target_type="invite",
+                 target_id=inv.id, ip=audit.client_ip(request))
+    return {"sent": True, "email_masked": _mask_email(inv.recipient), "ttl_min": _OTP_TTL_MIN}
+
+
+@router.post("/api/invite/{token}/otp/verify")
+@limiter.limit("20/hour")
+def guest_otp_verify(token: str, body: OtpVerify, request: Request, db: Session = Depends(get_db)):
+    """Vérifie le code reçu par email → marque l'identité de l'invité comme prouvée."""
+    inv = _valid_invite(token, db)
+    if not _binding_required(inv):
+        return {"verified": True}
+    if not inv.otp_hash or not inv.otp_expires_at:
+        raise HTTPException(400, "Aucun code en attente. Demandez d'abord un code.")
+    if _is_expired(inv.otp_expires_at):
+        raise HTTPException(410, "Code expiré. Demandez-en un nouveau.")
+    if (inv.otp_attempts or 0) >= _OTP_MAX_ATTEMPTS:
+        raise HTTPException(429, "Trop de tentatives. Demandez un nouveau code.")
+    if _hash_otp((body.code or "").strip()) != inv.otp_hash:
+        inv.otp_attempts = (inv.otp_attempts or 0) + 1
+        db.commit()
+        raise HTTPException(400, "Code incorrect.")
+    inv.verified_at = utcnow()
+    inv.verified_email = inv.recipient
+    inv.otp_hash = ""
+    inv.otp_expires_at = None
+    db.commit()
+    audit.record(db, action="guest.otp_verified", owner_id=inv.owner_id, project_id=inv.project_id,
+                 actor=(inv.recipient or "")[:160], actor_kind="guest", target_type="invite",
+                 target_id=inv.id, detail=_mask_email(inv.recipient), ip=audit.client_ip(request))
+    return {"verified": True}
+
+
 @router.post("/api/invite/{token}/contribution/submit")
 @limiter.limit("30/minute")
 def guest_submit_contribution(token: str, request: Request, db: Session = Depends(get_db)):
@@ -429,6 +564,12 @@ def guest_submit_contribution(token: str, request: Request, db: Session = Depend
     inv = _valid_invite(token, db)
     if not getattr(inv, "can_contribute", True):
         raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
+    # Binding d'identité : si requis (email configuré + destinataire = adresse), l'invité
+    # doit avoir prouvé son adresse avant de soumettre. La saisie/brouillon reste libre.
+    if _binding_required(inv) and not inv.verified_at:
+        raise HTTPException(status_code=403,
+                            detail={"code": "identity_unverified",
+                                    "message": "Vérifiez votre adresse email avant de soumettre votre part."})
     c = _get_or_create_contribution(inv, db)
     c.status = "submitted"
     c.submitted_at = utcnow()
@@ -785,6 +926,11 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
         raise HTTPException(400, "Vous êtes le mandataire de ce partage.")
     if inv.accepted_by_user_id and inv.accepted_by_user_id != current_user.id:
         raise HTTPException(409, "Ce lien a déjà été réclamé par un autre compte.")
+    # Binding d'identité : si le lien cible une adresse précise, seul le compte de CETTE
+    # adresse peut le réclamer (le secret de l'URL ne suffit plus à usurper le partenaire).
+    if _is_email(inv.recipient) and (current_user.email or "").strip().lower() != inv.recipient.strip().lower():
+        raise HTTPException(403, f"Ce lien est réservé à {_mask_email(inv.recipient)}. "
+                                 f"Connectez-vous avec ce compte pour l'accepter.")
     if not inv.accepted_by_user_id:
         inv.accepted_by_user_id = current_user.id
         db.commit()
