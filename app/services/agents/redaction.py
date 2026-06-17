@@ -254,11 +254,17 @@ def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_i
     zip_name = f"Adjugo_Dossier_{ao}.zip".replace(" ", "_")
 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("memoire_technique.md", memoire_md.encode("utf-8"))
+        # Tout en PDF : les utilisateurs n'ouvrent pas des .md/.txt.
+        from app.services.md_pdf import markdown_to_pdf, text_to_pdf
+        try:
+            zf.writestr("memoire_technique.pdf", markdown_to_pdf(memoire_md, "Mémoire technique"))
+        except Exception:
+            zf.writestr("memoire_technique.txt", memoire_md.encode("utf-8"))   # repli sûr
         for c in cerfa_files:
             zf.writestr(f"cerfa/{c['name']}", _as_bytes(c["content"]))
-        zf.writestr("00_groupement.txt", _groupement_recap(company, cotraitants, details).encode("utf-8"))
-        zf.writestr("fiche_ao.txt", _ao_recap(details).encode("utf-8"))
+        zf.writestr("synthese_groupement.pdf",
+                    text_to_pdf(_groupement_recap(company, cotraitants, details), "Composition du groupement"))
+        zf.writestr("fiche_appel_offres.pdf", text_to_pdf(_ao_recap(details), "Fiche récapitulative de l'AO"))
 
         # Pièces administratives des co-traitants (assemblage automatique du groupement).
         if cotraitant_pieces:

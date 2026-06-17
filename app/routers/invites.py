@@ -793,12 +793,12 @@ def dossier_preview(project_id: int, current_user: User = Depends(get_current_us
     (pas de LLM, pas de quota) — pour voir avant d'exporter."""
     _owned_project(project_id, current_user, db)
     files = [
-        {"name": "memoire_technique.md", "kind": "Mémoire technique (savoir-faire fusionnés)"},
+        {"name": "memoire_technique.pdf", "kind": "Mémoire technique (savoir-faire fusionnés)"},
         {"name": "cerfa/DC1.pdf", "kind": "CERFA — lettre de candidature (groupement)"},
         {"name": "cerfa/DC2.pdf", "kind": "CERFA — déclaration du candidat"},
         {"name": "cerfa/ATTRI1.pdf", "kind": "CERFA — acte d'engagement"},
-        {"name": "00_groupement.txt", "kind": "Composition du groupement"},
-        {"name": "fiche_ao.txt", "kind": "Fiche récapitulative de l'AO"},
+        {"name": "synthese_groupement.pdf", "kind": "Composition du groupement"},
+        {"name": "fiche_appel_offres.pdf", "kind": "Fiche récapitulative de l'AO"},
     ]
     rows = db.query(ContributionPiece, ProjectContribution).join(
         ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).filter(
