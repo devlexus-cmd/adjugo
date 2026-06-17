@@ -69,7 +69,7 @@ const __adjApp = createApp({
       mobileNav: false,
       user: {}, company: {}, criteria: {},
       view: "dashboard", busy: false, toast: null, pending: 0, llmInfo: null,
-      auth: { mode: "login", email: "", password: "", full_name: "", company_name: "" },
+      auth: { mode: "login", email: "", password: "", full_name: "", company_name: "", resetToken: "", sent: false },
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], expiring: [],
       notifs: [], notifsOpen: false, notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
@@ -163,6 +163,8 @@ const __adjApp = createApp({
     });
     this.$nextTick(() => this._a11y());
     if (!this.token && new URLSearchParams(location.search).get("demo") === "1") { this.demoLogin(); return; }
+    const _rst = new URLSearchParams(location.search).get("reset");
+    if (!this.token && _rst) { this.auth.mode = "reset"; this.auth.resetToken = _rst; }
     if (this.token) this.boot();
   },
   updated() { this.renderIcons(); this.renderI18n(); this._a11y(); },
@@ -240,6 +242,24 @@ const __adjApp = createApp({
         const res = await this.api("POST", path, body);
         this.token = res.access_token; localStorage.setItem("adjugo_token", this.token);
         await this.boot();
+      } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
+    },
+    async forgotPassword() {
+      if (!this.auth.email) { this.notify("Entrez votre email", "err"); return; }
+      this.busy = true;
+      try {
+        const r = await this.api("POST", "/api/auth/forgot-password", { email: this.auth.email });
+        this.auth.sent = true; this.notify(r.message || "Email envoyé si le compte existe");
+      } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
+    },
+    async resetPassword() {
+      if ((this.auth.password || "").length < 8) { this.notify("Mot de passe : 8 caractères minimum", "err"); return; }
+      this.busy = true;
+      try {
+        const res = await this.api("POST", "/api/auth/reset-password", { token: this.auth.resetToken, new_password: this.auth.password });
+        this.token = res.access_token; localStorage.setItem("adjugo_token", this.token);
+        history.replaceState({}, "", "/app");
+        this.notify("Mot de passe réinitialisé ✓"); await this.boot();
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
     async demoLogin() {

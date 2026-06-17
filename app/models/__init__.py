@@ -91,6 +91,9 @@ class User(Base):
     # Révocation de session : incrémenté au retrait/transfert → les JWT émis avant
     # (qui portent l'ancienne valeur) sont rejetés. Coupe immédiatement un accès.
     token_version = Column(Integer, default=0)
+    # Réinitialisation de mot de passe par email (sha256 d'un token à usage unique).
+    reset_token_hash = Column(String(64), default="")
+    reset_expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 

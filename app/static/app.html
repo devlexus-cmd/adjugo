@@ -36,14 +36,37 @@
       <div class="logo" aria-hidden="true"><svg class="mark" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="#fff" stroke-opacity=".42" stroke-width="3.5"/><circle cx="24" cy="24" r="13" stroke="#fff" stroke-opacity=".72" stroke-width="3.5"/><circle cx="24" cy="24" r="6" fill="#fff"/></svg></div>
       <h1 class="wordmark" aria-label="Adjugo" style="justify-content:center;font-size:26px"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none" aria-hidden="true"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></h1>
       <p class="tagline">Plateforme de réponse aux marchés publics</p>
-      <div class="field"><label>Email</label><input v-model="auth.email" type="email" placeholder="vous@entreprise.fr" @keyup.enter="submitAuth"></div>
-      <div class="field" v-if="auth.mode==='register'"><label>Nom complet</label><input v-model="auth.full_name" placeholder="Jean Dupont"></div>
-      <div class="field" v-if="auth.mode==='register'"><label>Entreprise</label><input v-model="auth.company_name" placeholder="Ma société SARL"></div>
-      <div class="field"><label>Mot de passe</label><input v-model="auth.password" type="password" placeholder="••••••••" @keyup.enter="submitAuth"></div>
-      <button class="btn primary block" @click="submitAuth" :disabled="busy"><span v-if="busy" class="spin"></span>{{ auth.mode==='login'?'Se connecter':'Créer le compte' }}</button>
-      <button class="btn ghost block" style="margin-top:9px" @click="demoLogin" :disabled="busy"><i data-lucide="play-circle"></i>Voir la démo (sans inscription)</button>
-      <p class="alt"><a href="#" @click.prevent="auth.mode = auth.mode==='login'?'register':'login'">
-          {{ auth.mode==='login'?"Pas de compte ? S'inscrire":'Déjà inscrit ? Se connecter' }}</a></p>
+
+      <!-- Réinitialisation : on arrive ici via le lien email (?reset=…) -->
+      <template v-if="auth.mode==='reset'">
+        <div class="field"><label>Nouveau mot de passe</label><input v-model="auth.password" type="password" placeholder="8 caractères minimum" @keyup.enter="resetPassword"></div>
+        <button class="btn primary block" @click="resetPassword" :disabled="busy"><span v-if="busy" class="spin"></span>Définir le mot de passe</button>
+        <p class="alt"><a href="#" @click.prevent="auth.mode='login'">Retour à la connexion</a></p>
+      </template>
+
+      <!-- Mot de passe oublié : saisie de l'email -->
+      <template v-else-if="auth.mode==='forgot'">
+        <div v-if="auth.sent" class="muted small" style="text-align:center;padding:8px 0">Si un compte existe pour <b>{{ auth.email }}</b>, un email de réinitialisation vient d'être envoyé. Vérifiez votre boîte (et les spams).</div>
+        <template v-else>
+          <div class="field"><label>Email</label><input v-model="auth.email" type="email" placeholder="vous@entreprise.fr" @keyup.enter="forgotPassword"></div>
+          <button class="btn primary block" @click="forgotPassword" :disabled="busy"><span v-if="busy" class="spin"></span>Envoyer le lien de réinitialisation</button>
+        </template>
+        <p class="alt"><a href="#" @click.prevent="auth.mode='login';auth.sent=false">Retour à la connexion</a></p>
+      </template>
+
+      <!-- Connexion / inscription -->
+      <template v-else>
+        <div class="field"><label>Email</label><input v-model="auth.email" type="email" placeholder="vous@entreprise.fr" @keyup.enter="submitAuth"></div>
+        <div class="field" v-if="auth.mode==='register'"><label>Nom complet</label><input v-model="auth.full_name" placeholder="Jean Dupont"></div>
+        <div class="field" v-if="auth.mode==='register'"><label>Entreprise</label><input v-model="auth.company_name" placeholder="Ma société SARL"></div>
+        <div class="field"><label>Mot de passe</label><input v-model="auth.password" type="password" placeholder="••••••••" @keyup.enter="submitAuth"></div>
+        <button class="btn primary block" @click="submitAuth" :disabled="busy"><span v-if="busy" class="spin"></span>{{ auth.mode==='login'?'Se connecter':'Créer le compte' }}</button>
+        <button class="btn ghost block" style="margin-top:9px" @click="demoLogin" :disabled="busy"><i data-lucide="play-circle"></i>Voir la démo (sans inscription)</button>
+        <p class="alt" style="display:flex;justify-content:space-between;gap:10px">
+          <a href="#" @click.prevent="auth.mode = auth.mode==='login'?'register':'login'">{{ auth.mode==='login'?"Pas de compte ? S'inscrire":'Déjà inscrit ? Se connecter' }}</a>
+          <a v-if="auth.mode==='login'" href="#" @click.prevent="auth.mode='forgot';auth.sent=false">Mot de passe oublié ?</a>
+        </p>
+      </template>
     </div>
   </main>
 

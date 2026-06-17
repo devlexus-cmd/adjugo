@@ -126,3 +126,71 @@ def change_password(request: Request, data: PasswordChange,
     db.refresh(current_user)
     token = create_access_token(data={"sub": str(current_user.id), "tv": int(current_user.token_version or 0)})
     return {"access_token": token, "token_type": "bearer"}
+
+
+# ── Mot de passe oublié (réinitialisation par email) ─────────────────────────
+import hashlib as _hashlib
+import secrets as _secrets
+from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+
+def _hash_reset(t: str) -> str:
+    return _hashlib.sha256(("adjugo-reset:" + (t or "")).encode("utf-8")).hexdigest()
+
+
+class ForgotIn(BaseModel):
+    email: str
+
+
+class ResetIn(BaseModel):
+    token: str
+    new_password: str
+
+
+@router.post("/forgot-password")
+@limiter.limit("5/hour")
+def forgot_password(request: Request, data: ForgotIn, db: Session = Depends(get_db)):
+    """Envoie un lien de réinitialisation à l'adresse, SI elle correspond à un compte.
+    Réponse identique dans tous les cas (on ne révèle pas l'existence d'un compte)."""
+    user = db.query(User).filter(User.email == (data.email or "").strip().lower()).first()
+    if user:
+        raw = _secrets.token_urlsafe(32)
+        user.reset_token_hash = _hash_reset(raw)
+        user.reset_expires_at = _dt.now(_tz.utc) + _td(hours=1)
+        db.commit()
+        try:
+            from app.services.email import send_email
+            from app.core.config import get_settings
+            base = (get_settings().APP_BASE_URL or "https://adjugo.pro").rstrip("/")
+            link = f"{base}/app?reset={raw}"
+            send_email(user.email, "Réinitialisation de votre mot de passe Adjugo",
+                       f"Bonjour,\n\nVous avez demandé à réinitialiser votre mot de passe Adjugo.\n"
+                       f"Cliquez sur ce lien (valable 1 heure) :\n{link}\n\n"
+                       f"Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.\n\n— Adjugo")
+        except Exception:
+            pass
+    return {"ok": True, "message": "Si un compte existe pour cette adresse, un email vient d'être envoyé."}
+
+
+@router.post("/reset-password", response_model=Token)
+@limiter.limit("10/hour")
+def reset_password(request: Request, data: ResetIn, db: Session = Depends(get_db)):
+    """Pose un nouveau mot de passe à partir d'un token reçu par email. Invalide les
+    autres sessions et connecte directement (token frais)."""
+    if len(data.new_password or "") < 8:
+        raise HTTPException(400, "Le mot de passe doit faire au moins 8 caractères")
+    h = _hash_reset((data.token or "").strip())
+    user = db.query(User).filter(User.reset_token_hash == h, User.reset_token_hash != "").first()
+    exp = getattr(user, "reset_expires_at", None) if user else None
+    if exp is not None and exp.tzinfo is None:
+        exp = exp.replace(tzinfo=_tz.utc)
+    if not user or not exp or exp <= _dt.now(_tz.utc):
+        raise HTTPException(400, "Lien de réinitialisation invalide ou expiré. Recommencez.")
+    user.hashed_password = hash_password(data.new_password)
+    user.reset_token_hash = ""
+    user.reset_expires_at = None
+    user.token_version = (user.token_version or 0) + 1
+    db.commit()
+    db.refresh(user)
+    token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})
+    return {"access_token": token, "token_type": "bearer"}
