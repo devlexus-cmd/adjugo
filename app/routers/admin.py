@@ -20,7 +20,9 @@ router = APIRouter(prefix="/api/admin", tags=["Administration"])
 @router.get("/storage-diag")
 def storage_diag(current_user: User = Depends(get_current_user)):
     """Diagnostic du stockage (sans exposer les secrets) : ce que le serveur voit
-    réellement + un test d'écriture/lecture sur le bucket. Utilisateur authentifié."""
+    réellement + un test d'écriture/lecture sur le bucket. RÉSERVÉ aux administrateurs."""
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(403, "Réservé à l'administrateur")
     s = settings
 
     def mask(v):
