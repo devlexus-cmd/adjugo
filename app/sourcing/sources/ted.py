@@ -68,9 +68,11 @@ class TedSource(TenderSource):
         # filtre CPV (recherche détaillée) : ne garde que des codes numériques
         cpv = [c for c in getattr(criteria, "cpv", []) if c.isdigit()]
         cpv_clause = f' AND classification-cpv IN ({" ".join(cpv)})' if cpv else ""
+        lim = min(criteria.limit, 50)
+        page = (max(0, getattr(criteria, "offset", 0)) // lim) + 1 if lim else 1
         body = {
             "query": f'FT~"{q}" AND notice-type="cn-standard" AND place-of-performance IN ({a3_list}){cpv_clause}',
-            "fields": FIELDS, "limit": min(criteria.limit, 50),
+            "fields": FIELDS, "limit": lim, "page": page,
             "scope": "ACTIVE", "paginationMode": "PAGE_NUMBER",
         }
         try:

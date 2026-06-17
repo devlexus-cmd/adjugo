@@ -118,6 +118,7 @@ const __adjApp = createApp({
       ],
       src: {
         query: "", dept: "", country: "FR", advOpen: false, type_marche: "", cpv: "", searching: false, tenders: [], errors: [], sources: [], expanded: null,
+        offset: 0, hasMore: false, loadingMore: false,
         analyzing: false, analysis: null, projectId: null, chosen: null,
         ct: { trade: "", dept: "", searching: false, companies: [], selected: [], errors: [] },
         generating: false, dossier: null, alerts: [],
@@ -1043,16 +1044,26 @@ const __adjApp = createApp({
         else this.notify(err.message, "err");
       } finally { this.src.renewals.loading = false; }
     },
-    async srcSearch() {
-      this.src.searching = true; this.src.tenders = []; this.src.errors = []; this.src.analysis = null;
+    async srcSearch(append) {
+      if (append) { this.src.loadingMore = true; }
+      else { this.src.searching = true; this.src.tenders = []; this.src.errors = []; this.src.analysis = null; this.src.offset = 0; this.src.hasMore = false; }
+      const PAGE = 15;
       try {
         const r = await this.api("POST", "/api/sourcing/search",
           { query: this.src.query, departements: this.srcDeps(), countries: this.src.country ? [this.src.country] : [],
-            type_marche: this.src.type_marche, cpv: this.srcCpv(), limit: 15 });
-        this.src.tenders = r.tenders || []; this.src.errors = r.errors || []; this.src.sources = r.sources_queried || [];
-        if (!this.src.tenders.length) this.notify("Aucun appel d'offres trouvé pour ces critères", "err");
-      } catch (e) { this.notify(e.message, "err"); } finally { this.src.searching = false; }
+            type_marche: this.src.type_marche, cpv: this.srcCpv(), limit: PAGE, offset: append ? this.src.offset : 0 });
+        const fresh = r.tenders || [];
+        if (append) {
+          // Dédup à l'ajout (les sources peuvent renvoyer un chevauchement).
+          const seen = new Set(this.src.tenders.map(t => t.provenance && t.provenance.official_ref));
+          this.src.tenders = this.src.tenders.concat(fresh.filter(t => !seen.has(t.provenance && t.provenance.official_ref)));
+        } else { this.src.tenders = fresh; this.src.errors = r.errors || []; this.src.sources = r.sources_queried || []; }
+        this.src.offset = (append ? this.src.offset : 0) + PAGE;
+        this.src.hasMore = !!r.has_more;
+        if (!append && !this.src.tenders.length) this.notify("Aucun appel d'offres trouvé pour ces critères", "err");
+      } catch (e) { this.notify(e.message, "err"); } finally { this.src.searching = false; this.src.loadingMore = false; }
     },
+    srcLoadMore() { return this.srcSearch(true); },
     async srcAnalyze(t) {
       this.src.analyzing = true; this.src.chosen = t; this.src.analysis = null;
       this.src.ct.companies = []; this.src.ct.selected = []; this.src.dossier = null;

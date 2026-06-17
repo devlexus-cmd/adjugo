@@ -165,6 +165,7 @@ class SearchRequest(BaseModel):
     montant_min: Optional[float] = None
     montant_max: Optional[float] = None
     limit: int = 20
+    offset: int = 0                # pagination « charger plus »
     countries: list[str] = []      # ISO alpha-2 (ex. ["FR","DE"]). Vide = toute l'UE/EEE.
     type_marche: str = ""          # "travaux" | "services" | "fournitures" | "" (tous)
 
@@ -186,13 +187,15 @@ def search_tenders(request: Request, req: SearchRequest,
     gonogo = _criteria_dict(current_user.id, db)
     crit = TenderCriteria(query=req.query, cpv=req.cpv, departements=req.departements,
                           montant_min=req.montant_min, montant_max=req.montant_max,
-                          limit=req.limit, countries=req.countries, type_marche=req.type_marche)
+                          limit=req.limit, countries=req.countries, type_marche=req.type_marche,
+                          offset=req.offset)
     result = TenderSearchService(_tender_sources(req.countries)).search(crit, company_data, gonogo)
     return {
         "count": result["count"],
         "sources_queried": result["sources_queried"],
         "errors": [e.model_dump() for e in result["errors"]],
         "tenders": [t.model_dump(exclude={"raw"}) for t in result["tenders"]],
+        "has_more": result["count"] >= req.limit,   # indice « charger plus »
     }
 
 

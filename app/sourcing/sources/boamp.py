@@ -36,8 +36,8 @@ class BoampSource(TenderSource):
         # On ne remonte que les AO ENCORE OUVERTS (date limite de réponse non passée).
         # Exclut de fait les avis d'attribution / clôturés → crédibilité du sourcing.
         where = f"({where}) AND datelimitereponse >= date'{date.today().isoformat()}'"
-        params = {"limit": min(criteria.limit, 50), "order_by": "-dateparution",
-                  "where": where, "select": SELECT}
+        params = {"limit": min(criteria.limit, 50), "offset": min(getattr(criteria, "offset", 0), 9900),
+                  "order_by": "-dateparution", "where": where, "select": SELECT}
         try:
             from app.sourcing.http import get_with_retry
             r = get_with_retry(API, params=params, timeout=12)   # retry + backoff

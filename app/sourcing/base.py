@@ -14,13 +14,14 @@ class TenderCriteria:
                  departements: Optional[list] = None,
                  montant_min: Optional[float] = None, montant_max: Optional[float] = None,
                  limit: int = 20, countries: Optional[list] = None,
-                 type_marche: str = ""):
+                 type_marche: str = "", offset: int = 0):
         self.query = (query or "").strip()
         self.cpv = [str(c).strip() for c in (cpv or []) if str(c).strip()]
         self.departements = departements or []
         self.montant_min = montant_min
         self.montant_max = montant_max
         self.limit = limit
+        self.offset = max(0, int(offset or 0))   # pagination : décalage « charger plus »
         # Codes pays ISO alpha-2 (ex. ["FR","DE"]). Vide = tous les pays UE/EEE.
         self.countries = [c.upper() for c in (countries or []) if c]
         # Type de marché : "TRAVAUX" | "SERVICES" | "FOURNITURES" | "" (tous).

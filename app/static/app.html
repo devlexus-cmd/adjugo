@@ -810,6 +810,10 @@
               <button class="btn primary sm" @click="srcAnalyze(t)" :disabled="src.analyzing"><span v-if="src.analyzing && src.chosen===t" class="spin"></span><i v-else data-lucide="scan-search"></i>Analyser cet appel d'offres</button>
             </div>
           </div>
+          <!-- Pagination : lève le plafond invisible de résultats -->
+          <div v-if="src.hasMore && src.tenders.length" class="row" style="justify-content:center;margin-top:12px">
+            <button class="btn" @click="srcLoadMore()" :disabled="src.loadingMore"><span v-if="src.loadingMore" class="spin"></span><i v-else data-lucide="chevron-down"></i>Charger plus d'appels d'offres</button>
+          </div>
 
           <!-- Étape 2 — Analyse profonde -->
           <div v-if="src.analysis" class="card pad" style="margin-top:16px">
