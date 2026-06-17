@@ -63,6 +63,11 @@ def test_renewals_impute_les_tokens_au_tenant(client, auth, monkeypatch):
     monkeypatch.setattr(llm, "client", _fake_client)
     uid = _uid(auth["email"])
 
+    # DECP (prioritaire, déterministe, SANS LLM) renvoie vide → force le repli BOAMP+IA,
+    # seul chemin qui consomme un appel LLM et doit l'imputer au tenant.
+    monkeypatch.setattr("app.services.decp.detect_renewals_decp",
+                        lambda *a, **k: {"count": 0, "renewals": [], "errors": [], "source": "DECP"})
+
     # Faux détecteur : consomme un appel IA (via le client patché), sans réseau.
     def _fake_detect(query, deps, gonogo, domaines=None):
         llm.messages_create(model=llm.MODEL, messages=[], max_tokens=10)
