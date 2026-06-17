@@ -595,6 +595,12 @@ class ProjectContribution(Base):
     company_name = Column(String(255), default="")     # entreprise contributrice
     role = Column(String(20), default="cotraitant")    # cotraitant | sous_traitant
     lot = Column(String(255), default="")              # lot / périmètre couvert par cette PME
+    # Identité juridique du membre → alimente les DC1/DC2 multi-membres du groupement.
+    siret = Column(String(20), default="")
+    forme_juridique = Column(String(80), default="")
+    address = Column(String(255), default="")
+    postal_code = Column(String(10), default="")
+    city = Column(String(120), default="")
 
     references = Column(JSON, default=list)            # [{intitule, client, montant, annee}]
     qualifications = Column(JSON, default=list)        # ["Qualibat 1234", "RGE", "ISO 9001"]

@@ -170,6 +170,8 @@
       card.appendChild($(`<div class="muted small" style="margin-top:4px">En tant que <b>${role}</b>, renseignez votre part. Vous ne voyez que VOS données ; le mandataire les assemble et l'IA les fusionne dans la réponse commune.</div>`));
 
       const company = inp("Votre entreprise"), lot = inp("Votre lot / périmètre (ex. Lot 2 — Démolition)");
+      const siret = inp("SIRET (14 chiffres)"), forme = inp("Forme juridique (ex. SARL, SAS)");
+      const adresse = inp("Adresse"), cp = inp("Code postal"), ville = inp("Ville");
       const quals = inp("Qualifications, séparées par des virgules (ex. Qualibat 1112, RGE)");
       const refs = ta("Vos références — une par ligne", 3);
       const chiffrage = ta("Votre approche prix pour votre lot (ex. forfait 18 000 € HT)", 2);
@@ -177,6 +179,14 @@
       const cNom = inp("Contact — nom"), cMail = inp("Email"), cTel = inp("Téléphone");
       card.appendChild(field("Entreprise", company));
       card.appendChild(field("Lot / périmètre", lot));
+      // Identité juridique → alimente votre DC1/DC2 dans le dossier commun.
+      const idr = document.createElement("div"); idr.className = "row wrap"; idr.style.gap = "8px";
+      [siret, forme].forEach(el => { el.style.flex = "1"; el.style.minWidth = "140px"; idr.appendChild(el); });
+      card.appendChild(field("Identité (pour vos CERFA DC1/DC2)", idr));
+      const adr = document.createElement("div"); adr.className = "row wrap"; adr.style.gap = "8px";
+      adresse.style.flex = "2"; adresse.style.minWidth = "180px"; cp.style.width = "110px"; ville.style.flex = "1"; ville.style.minWidth = "120px";
+      [adresse, cp, ville].forEach(el => adr.appendChild(el));
+      card.appendChild(field("Adresse", adr));
       card.appendChild(field("Qualifications", quals));
       card.appendChild(field("Références", refs));
       card.appendChild(field("Approche prix de votre lot", chiffrage));
@@ -227,10 +237,11 @@
 
       const setStatus = (s) => { const ok = s === "submitted"; status.textContent = ok ? "✓ Soumis" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; };
       let curVer = 0;   // verrou optimiste : version chargée
-      const collect = () => ({ company_name: company.value, lot: lot.value, qualifications: quals.value.split(",").map(s => s.trim()).filter(Boolean), references: refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })), chiffrage_note: chiffrage.value, memoire_paragraph: memoire.value, contact: { nom: cNom.value, email: cMail.value, telephone: cTel.value }, version: curVer });
+      const collect = () => ({ company_name: company.value, lot: lot.value, siret: siret.value, forme_juridique: forme.value, address: adresse.value, postal_code: cp.value, city: ville.value, qualifications: quals.value.split(",").map(s => s.trim()).filter(Boolean), references: refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })), chiffrage_note: chiffrage.value, memoire_paragraph: memoire.value, contact: { nom: cNom.value, email: cMail.value, telephone: cTel.value }, version: curVer });
       const url = "/api/invite/" + encodeURIComponent(TOKEN) + "/contribution";
       const fill = (c) => {
         company.value = c.company_name || ""; lot.value = c.lot || ""; quals.value = (c.qualifications || []).join(", ");
+        siret.value = c.siret || ""; forme.value = c.forme_juridique || ""; adresse.value = c.address || ""; cp.value = c.postal_code || ""; ville.value = c.city || "";
         refs.value = (c.references || []).map(r => r.intitule || "").filter(Boolean).join("\n");
         chiffrage.value = c.chiffrage_note || ""; memoire.value = c.memoire_paragraph || "";
         const ct = c.contact || {}; cNom.value = ct.nom || ""; cMail.value = ct.email || ""; cTel.value = ct.telephone || "";

@@ -196,6 +196,9 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
                 ProjectContribution.status == "submitted").all()
             contributions = [{
                 "company_name": c.company_name, "role": c.role, "lot": c.lot,
+                "siret": getattr(c, "siret", "") or "", "forme_juridique": getattr(c, "forme_juridique", "") or "",
+                "address": getattr(c, "address", "") or "", "postal_code": getattr(c, "postal_code", "") or "",
+                "city": getattr(c, "city", "") or "", "contact": c.contact or {},
                 "references": c.references or [], "qualifications": c.qualifications or [],
                 "chiffrage_note": c.chiffrage_note or "", "memoire_paragraph": c.memoire_paragraph or "",
                 "status": c.status,
@@ -234,6 +237,30 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         except Exception:
             tva_rate = 0
 
+    # Co-traitants pour les CERFA : on FUSIONNE la liste fournie (SIRET vérifiés) avec
+    # l'identité juridique réellement SOUMISE par les partenaires invités (réseau Adjugo)
+    # → leurs DC1/DC2 multi-membres sont enfin alimentés par leurs propres contributions.
+    cerfa_cotraitants = list(cotraitants or [])
+    _seen_sir = {str(c.get("siret") or "").strip() for c in cerfa_cotraitants if c.get("siret")}
+    for c in contributions:
+        if c.get("status") != "submitted":
+            continue
+        sir = str(c.get("siret") or "").strip()
+        if sir and sir in _seen_sir:
+            continue
+        if not (c.get("company_name") or sir):
+            continue
+        cerfa_cotraitants.append({
+            "name": c.get("company_name", ""), "siret": sir,
+            "forme_juridique": c.get("forme_juridique", ""), "address": c.get("address", ""),
+            "postal_code": c.get("postal_code", ""), "city": c.get("city", ""),
+            "email": (c.get("contact") or {}).get("email", ""),
+            "phone": (c.get("contact") or {}).get("telephone", ""),
+            "role": c.get("role", "cotraitant"), "lot": c.get("lot", ""),
+        })
+        if sir:
+            _seen_sir.add(sir)
+
     # ── CERFA ──
     project_data = {
         "name": details.get("intitule_marche", "Marché public"),
@@ -241,7 +268,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         "budget": _parse_amount(details.get("budget_estime", "")),  # numérique pour l'ATTRI1
         "tva_rate": tva_rate,
         "reference": f"AO-{(project_id or 0):04d}",
-        "cotraitants": cotraitants,   # ← injecté pour le DC1 groupement / DC2 multi-membres
+        "cotraitants": cerfa_cotraitants,   # ← DC1 groupement / DC2 multi-membres (incl. contributions)
     }
 
     # ── Pare-feu : champs critiques manquants = pli rejeté. On signale (bloquant,
@@ -296,8 +323,11 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         except Exception as e:
             warnings.append(f"formulaire national: {e}")
 
+    # ── Convention de groupement (projet, à compléter/signer) si groupement ──
+    convention_md = _groupement_convention(company, cerfa_cotraitants, details) if cerfa_cotraitants else ""
+
     # ── ZIP ──
-    zip_bytes, zip_name, failed_pieces = _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces)
+    zip_bytes, zip_name, failed_pieces = _build_zip(memoire_md, cerfa_files, company, details, cerfa_cotraitants, project_id, cotraitant_pieces, convention_md)
     if failed_pieces:
         warnings.append("Pièces partenaires non jointes au dossier (à re-déposer) : "
                         + ", ".join(failed_pieces[:8]))
@@ -314,7 +344,57 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     }
 
 
-def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces=None):
+def _groupement_convention(company, cotraitants, details):
+    """Brouillon de convention de groupement momentané d'entreprises (à relire/signer).
+    Désigne le mandataire et liste les membres + leurs lots. Pièce attendue par
+    l'acheteur sur les marchés en groupement."""
+    mand = company.get("name", "le mandataire") if isinstance(company, dict) else "le mandataire"
+    lines = [
+        "# Convention de groupement momentané d'entreprises",
+        "",
+        "*Projet à relire, compléter et faire signer par chaque membre. Modèle Adjugo — "
+        "ne dispense pas d'une validation juridique.*",
+        "",
+        f"**Marché :** {details.get('intitule_marche','')}",
+        f"**Acheteur :** {details.get('acheteur','')}",
+        "",
+        "## Article 1 — Membres du groupement",
+        f"- **{mand}** — mandataire du groupement",
+    ]
+    for c in cotraitants:
+        ident = c.get("name", "")
+        extra = " — ".join(x for x in [c.get("lot") and f"lot : {c['lot']}",
+                                       c.get("siret") and f"SIRET {c['siret']}"] if x)
+        lines.append(f"- {ident}" + (f" ({extra})" if extra else "") + f" — {c.get('role','cotraitant')}")
+    lines += [
+        "",
+        "## Article 2 — Forme du groupement",
+        "Le groupement est **conjoint** / **solidaire** *(rayer la mention inutile)*. En cas "
+        "de groupement conjoint, le mandataire est solidaire de chacun des membres pour "
+        "l'exécution du marché.",
+        "",
+        "## Article 3 — Mandataire",
+        f"{mand} est désigné mandataire. Il représente l'ensemble des membres vis-à-vis de "
+        "l'acheteur, coordonne les prestations et est l'interlocuteur unique.",
+        "",
+        "## Article 4 — Répartition des prestations et de la rémunération",
+        "Chaque membre exécute le(s) lot(s) indiqué(s) à l'article 1 et perçoit la part de "
+        "rémunération correspondante, selon la décomposition jointe (DPGF/BPU).",
+        "",
+        "## Article 5 — Durée",
+        "La présente convention prend effet à la date de signature et reste valable pendant "
+        "toute la durée d'exécution du marché et de la période de garantie.",
+        "",
+        "## Signatures",
+        "Fait à ……………………, le ……………………, en autant d'exemplaires que de membres.",
+        "",
+    ]
+    for c in [{"name": mand}] + list(cotraitants):
+        lines.append(f"- {c.get('name','')} : ……………………………… (nom, qualité, signature)")
+    return "\n".join(lines)
+
+
+def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces=None, convention_md=""):
     import os
     buf = io.BytesIO()
     failed_pieces = []
@@ -333,6 +413,12 @@ def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_i
         zf.writestr("synthese_groupement.pdf",
                     text_to_pdf(_groupement_recap(company, cotraitants, details), "Composition du groupement"))
         zf.writestr("fiche_appel_offres.pdf", text_to_pdf(_ao_recap(details), "Fiche récapitulative de l'AO"))
+        if convention_md:
+            try:
+                zf.writestr("convention_groupement.pdf",
+                            markdown_to_pdf(convention_md, "Convention de groupement"))
+            except Exception:
+                pass
 
         # Pièces administratives des co-traitants (assemblage automatique du groupement).
         if cotraitant_pieces:

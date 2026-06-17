@@ -395,6 +395,8 @@ def _serialize_contribution(c: ProjectContribution, db: Session = None) -> dict:
             ContributionPiece.contribution_id == c.id).order_by(ContributionPiece.created_at.asc()).all()]
     return {
         "id": c.id, "company_name": c.company_name, "role": c.role, "lot": c.lot,
+        "siret": c.siret or "", "forme_juridique": c.forme_juridique or "",
+        "address": c.address or "", "postal_code": c.postal_code or "", "city": c.city or "",
         "references": c.references or [], "qualifications": c.qualifications or [],
         "chiffrage_note": c.chiffrage_note or "", "memoire_paragraph": c.memoire_paragraph or "",
         "contact": c.contact or {}, "status": c.status,
@@ -421,6 +423,11 @@ def _get_or_create_contribution(inv: ProjectInvite, db: Session) -> ProjectContr
 class ContributionSave(BaseModel):
     company_name: Optional[str] = None
     lot: Optional[str] = None
+    siret: Optional[str] = None
+    forme_juridique: Optional[str] = None
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
+    city: Optional[str] = None
     references: Optional[list] = None
     qualifications: Optional[list] = None
     chiffrage_note: Optional[str] = None
@@ -468,6 +475,16 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
         c.company_name = body.company_name.strip()[:255]
     if body.lot is not None:
         c.lot = body.lot.strip()[:255]
+    if body.siret is not None:
+        c.siret = body.siret.strip()[:20]
+    if body.forme_juridique is not None:
+        c.forme_juridique = body.forme_juridique.strip()[:80]
+    if body.address is not None:
+        c.address = body.address.strip()[:255]
+    if body.postal_code is not None:
+        c.postal_code = body.postal_code.strip()[:10]
+    if body.city is not None:
+        c.city = body.city.strip()[:120]
     if body.references is not None:
         c.references = body.references[:50]
     if body.qualifications is not None:
