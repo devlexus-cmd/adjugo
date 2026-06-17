@@ -23,8 +23,9 @@ class Settings(BaseSettings):
     # CORS : origines autorisées (séparées par des virgules). Restreindre en prod.
     CORS_ORIGINS: str = "http://localhost:8000,http://localhost:5173,http://localhost:3000"
 
-    # URL publique de l'app (redirections Stripe, liens emails). À régler en prod.
-    APP_BASE_URL: str = "https://adjugo-api-production.up.railway.app"
+    # URL publique de l'app (redirections Stripe, liens emails). Domaine officiel adjugo.pro.
+    # Tant que le DNS n'est pas propagé, surcharger via la variable d'env Railway si besoin.
+    APP_BASE_URL: str = "https://adjugo.pro"
 
     # Rate limiting : "memory://" en mono-instance, "redis://host:6379" en multi-workers/prod
     RATELIMIT_STORAGE_URI: str = "memory://"
@@ -40,7 +41,7 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
-    SMTP_FROM: str = "Adjugo <noreply@adjugo.fr>"
+    SMTP_FROM: str = "Adjugo <noreply@adjugo.pro>"
     SMTP_TLS: bool = True
 
     # Secret pour déclencher les tâches cron (alertes). Défini en prod.

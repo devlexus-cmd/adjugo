@@ -21,7 +21,7 @@ Le service Adjugo (ci-après « le Service ») est édité par :
 - **Code APE / NAF** : 6201Z — Programmation informatique
 - **Immatriculation** : Registre National des Entreprises (RNE) `[le cas échéant, RCS de Quimper sous le n° 105 406 813 — à confirmer selon le caractère commercial de l'activité]`
 - **Numéro de TVA intracommunautaire** : FR63105406813
-- **Adresse e-mail de contact** : `[recommandé : contact@adjugo.fr — à défaut]` viegaseliot1@gmail.com
+- **Adresse e-mail de contact** : `[recommandé : contact@adjugo.pro — à défaut]` viegaseliot1@gmail.com
 - **Téléphone** : `[À COMPLÉTER : facultatif mais recommandé]`
 
 ## 2. Directeur de la publication
@@ -42,7 +42,7 @@ Le Service est hébergé par :
 
 > **Note de transparence** — L'infrastructure d'hébergement est actuellement opérée dans une région **États-Unis**. L'éditeur s'engage à migrer l'hébergement vers une région **Union européenne** et à encadrer tout transfert de données hors UE par des garanties appropriées (clauses contractuelles types). Voir la [Politique de confidentialité](./politique-confidentialite.md) pour le détail.
 
-Le nom de domaine et l'API du Service sont accessibles à l'adresse : https://adjugo-api-production.up.railway.app
+Le nom de domaine et l'API du Service sont accessibles à l'adresse : https://adjugo.pro
 
 ## 4. Propriété intellectuelle
 
