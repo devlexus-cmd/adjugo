@@ -92,9 +92,9 @@ def export_dossier(
                     "Erreur generation {}: {}".format(doc_type.upper(), str(e))
                 )
 
-        # 2. Ajouter les documents du coffre-fort
+        # 2. Ajouter les documents du coffre-fort (partagés dans l'organisation)
         documents = db.query(Document).filter(
-            Document.user_id == current_user.id
+            Document.user_id.in_(member_ids(current_user, db))
         ).all()
 
         for doc in documents:
