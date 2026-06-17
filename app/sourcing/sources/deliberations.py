@@ -34,12 +34,19 @@ INVEST = re.compile(
     re.I)
 
 # Jeux par pays. dep = département (FR) pour le filtrage régional.
+# Socle FR de grandes collectivités MÉTROPOLITAINES (dataset_ids vérifiés live sur le hub
+# OpenDataSoft) : garantit une couverture sérieuse même si la découverte dynamique échoue.
 COUNTRIES = {
     "FR": [
+        {"id": "ordres_du_jour_du_conseil_municipal@parisdata", "coll": "Ville de Paris (75)", "dep": "75"},
+        {"id": "liste-de-deliberations-du-conseil-municipal-de-toulouse@toulouse-metropole", "coll": "Toulouse Métropole (31)", "dep": "31"},
+        {"id": "deliberations-conseil-communautaire@gpseo", "coll": "Grand Paris Seine & Oise (78)", "dep": "78"},
+        {"id": "actes-et-deliberation-du-conseil-municipal-de-la-ville-de-roubaix@ville-de-roubaix", "coll": "Ville de Roubaix (59)", "dep": "59"},
+        {"id": "deliberations-rcvl@centrevaldeloire", "coll": "Région Centre-Val de Loire", "dep": ""},
+        {"id": "deliberations-de-la-commune-de-marseillan@data-herault-occitanie", "coll": "Commune de Marseillan (34)", "dep": "34"},
+        {"id": "deliberations_2014_2020@agglo-montargoise-centrevaldeloire", "coll": "Agglo Montargoise (45)", "dep": "45"},
         {"id": "deliberations-2023@cachan", "coll": "Ville de Cachan (94)", "dep": "94"},
         {"id": "deliberations-conseil-2021-et-2022@tco-lareunion", "coll": "Territoire de l'Ouest (974)", "dep": "974"},
-        {"id": "deliberation-de-la-ville-de-la-possession-novembre-2024@lareunion", "coll": "Ville de La Possession (974)", "dep": "974"},
-        {"id": "deliberation-de-la-ville-de-la-possession-aout-2024@lareunion", "coll": "Ville de La Possession (974)", "dep": "974"},
     ],
     "IT": [
         {"id": "delibere-di-giunta@bologna", "coll": "Comune di Bologna"},
@@ -51,7 +58,7 @@ COUNTRIES = {
 }
 
 _DISCOVERED = {}          # pays -> [dataset_ids] découverts dynamiquement (caché)
-_MAX_DATASETS = 16
+_MAX_DATASETS = 28
 # Requête de découverte par pays : on ne se limite pas à une liste figée de communes,
 # on interroge le hub open data pour TOUS les jeux de délibérations/actes du pays.
 _DISCO_QUERY = {
@@ -119,11 +126,12 @@ def _discover(country: str = "FR", limit=18):
                       timeout=12, headers=_H)
         ids = [d.get("dataset_id") for d in r.json().get("results", [])
                if d.get("dataset_id") and (((d.get("metas", {}) or {}).get("default", {}) or {}).get("records_count") or 0) >= 25]
-        _DISCOVERED[country] = ids[:limit]
+        if ids:
+            _DISCOVERED[country] = ids[:limit]   # ne CACHE QUE les succès (sinon figé aveugle)
+        return ids[:limit]
     except Exception as e:
         logger.info("Découverte délibérations indisponible (%s) : %s", country, e)
-        _DISCOVERED[country] = []
-    return _DISCOVERED[country]
+        return []   # pas de cache négatif : on retentera au prochain scan
 
 
 def _fetch_one(did, coll, dep, pays, per):
@@ -187,6 +195,9 @@ class DeliberationSource:
                 continue
             seen_o.add(k)
             out.append(r)
+        # « fetch_recent » doit l'être : on trie par date décroissante (ISO → tri lexical),
+        # les sans-date en dernier. Avant, l'ordre était celui d'arrivée des datasets.
+        out.sort(key=lambda r: (r.get("date") or ""), reverse=True)
         return out
 
     @staticmethod

@@ -92,7 +92,7 @@ const __adjApp = createApp({
       pwd: { current: "", next: "" },
       discover: { open: false, trade: "", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [],
       countries2: [], adaptedCountries: [], orgCountry: "FR", lang: "fr",
-      amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false },
+      amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false, pasteOpen: false, pasteText: "", pasting: false },
       amontDomaines: ["bâtiment", "voirie / VRD", "réseaux", "énergie / rénovation énergétique", "espaces verts / aménagement", "numérique / télécom", "équipement", "études / maîtrise d'œuvre"],
       kb: { docs: [], totalChunks: 0, uploading: false, kind: "memoire", text: "", textName: "", busyText: false,
             searchQ: "", searchRes: null, qText: "", qResults: null, qLoading: false,
@@ -1133,6 +1133,19 @@ const __adjApp = createApp({
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
       } finally { this.amont.uploading = false; }
+    },
+    async amontAnalyzeText() {
+      if (this.amont.pasteText.trim().length < 60) { this.notify("Texte trop court (60 caractères min.)", "err"); return; }
+      this.amont.pasting = true;
+      try {
+        const r = await this.api("POST", "/api/amont/analyze-text", { text: this.amont.pasteText, domaines: this.amont.domaines, source: "Texte collé" });
+        await this.loadAmont();
+        this.amont.pasteText = ""; this.amont.pasteOpen = false;
+        this.notify(r.count ? (r.count + " projet(s) détecté(s)") : "Aucun projet d'investissement détecté");
+      } catch (err) {
+        if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
+        else this.notify(err.message, "err");
+      } finally { this.amont.pasting = false; }
     },
     async amontDelete(s) {
       try { await this.api("DELETE", "/api/amont/" + s.id); this.amont.signals = this.amont.signals.filter(x => x.id !== s.id); }

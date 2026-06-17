@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.ratelimit import limiter
-from app.core.quota import consume_analysis
+from app.core.quota import consume_analysis, refund_analysis
 from app.models import User, Signal, Organization
 from app.services.analysis import extract_dce_text
 from app.services.agents.amont import detect_projets, detect_from_deliberations, score_pertinence
@@ -93,9 +93,18 @@ def _persist(projets, default_coll, source_label, current_user, db, domaines=Non
 
 def _analyze_text(text: str, source_name: str, current_user: User, db: Session, domaines=None) -> dict:
     from app.services.llm import tenant_scope
-    with tenant_scope(current_user.id):
-        res = detect_projets(text, lang_name=_lang(current_user, db), domaines=domaines)
-    signals = _persist(res.get("projets", []), res.get("collectivite", ""), source_name, current_user, db, domaines=domaines)
+    from app.services.agents.amont import _anchor
+    try:
+        with tenant_scope(current_user.id):
+            res = detect_projets(text, lang_name=_lang(current_user, db), domaines=domaines)
+    except Exception:
+        refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le client
+        raise HTTPException(503, "Détection indisponible (réessayez dans un instant).",
+                            headers={"Retry-After": "30"})
+    # Ancrage anti-hallucination : ici on a le TEXTE COMPLET (pas un titre nu), donc
+    # budget/échéance peuvent être réels — on vérifie quand même qu'ils s'y appuient.
+    projets = [_anchor(p, text, title_only=False) for p in res.get("projets", []) if isinstance(p, dict)]
+    signals = _persist(projets, res.get("collectivite", ""), source_name, current_user, db, domaines=domaines)
     return {"collectivite": res.get("collectivite", ""), "count": len(signals), "signals": signals}
 
 
@@ -153,8 +162,13 @@ def scan(request: Request, req: ScanRequest = ScanRequest(),
                 "errors": ["Aucune délibération sur ce périmètre (élargissez les régions ou réessayez)."]}
     consume_analysis(current_user, db)
     from app.services.llm import tenant_scope
-    with tenant_scope(current_user.id):
-        projets = detect_from_deliberations(records, lang_name=_lang(current_user, db), domaines=doms)
+    try:
+        with tenant_scope(current_user.id):
+            projets = detect_from_deliberations(records, lang_name=_lang(current_user, db), domaines=doms)
+    except Exception:
+        refund_analysis(current_user, db)   # l'IA a échoué → remboursement
+        raise HTTPException(503, "Détection indisponible (réessayez dans un instant).",
+                            headers={"Retry-After": "30"})
     if deps and country == "FR":
         projets = [p for p in projets if (p.get("dept") in deps) or not p.get("dept")]
     signals = _persist(projets, "", "Délibération (open data)", current_user, db, domaines=doms)

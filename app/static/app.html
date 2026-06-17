@@ -905,6 +905,15 @@
               <button class="btn primary" @click="amontScan()" :disabled="amont.scanning"><span v-if="amont.scanning" class="spin"></span><i v-else data-lucide="radar"></i>Lancer la veille — chercher les délibérations</button>
               <button class="btn" @click="$refs.amontUpl.click()" :disabled="amont.uploading"><span v-if="amont.uploading" class="spin"></span><i v-else data-lucide="upload"></i>Importer une délibération</button>
               <input ref="amontUpl" type="file" accept=".pdf,.zip" class="hidden" @change="amontUpload">
+              <button class="btn" @click="amont.pasteOpen=!amont.pasteOpen"><i data-lucide="clipboard-paste"></i>Coller un texte</button>
+            </div>
+            <!-- Coller le texte d'une délibération / compte-rendu (sans fichier) -->
+            <div v-if="amont.pasteOpen" style="margin-top:10px">
+              <textarea v-model="amont.pasteText" class="inp" rows="5" placeholder="Collez ici le texte d'une délibération, d'un compte-rendu de conseil municipal, d'un plan pluriannuel d'investissement…" style="width:100%;resize:vertical"></textarea>
+              <div class="row" style="gap:8px;margin-top:6px;align-items:center">
+                <button class="btn primary sm" @click="amontAnalyzeText()" :disabled="amont.pasting || amont.pasteText.trim().length<60"><span v-if="amont.pasting" class="spin"></span><i v-else data-lucide="sparkles"></i>Détecter les projets</button>
+                <span class="muted small">{{ amont.pasteText.trim().length }} caractères (60 min.)</span>
+              </div>
             </div>
             <div class="row" style="margin-top:12px;gap:10px;align-items:center;padding:10px 13px;background:var(--surface-2);border-radius:8px">
               <i data-lucide="bell-ring" style="width:16px;height:16px;color:var(--accent-text)"></i>
