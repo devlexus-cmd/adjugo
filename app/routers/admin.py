@@ -61,6 +61,26 @@ def _check_cron(request: Request):
         raise HTTPException(403, "CRON_SECRET non configuré")
 
 
+@router.post("/run-backup")
+def run_backup_now(current_user: User = Depends(get_current_user)):
+    """Déclenche une sauvegarde immédiate de la base vers R2. Réservé à l'administrateur.
+    (La sauvegarde tourne aussi toute seule chaque jour via le planificateur.)"""
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(403, "Réservé à l'administrateur")
+    from app.services.backup import run_backup
+    return run_backup(keep=settings.BACKUP_KEEP)
+
+
+@router.get("/backups")
+def list_backups(current_user: User = Depends(get_current_user)):
+    """Liste les sauvegardes présentes dans R2 (preuve que le filet fonctionne)."""
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(403, "Réservé à l'administrateur")
+    from app.services.storage import get_storage
+    keys = sorted([k for k in get_storage().list_keys("backups/") if k.endswith(".json.gz")], reverse=True)
+    return {"count": len(keys), "backups": keys[:30]}
+
+
 @router.post("/run-alerts")
 def run_alerts(request: Request, db: Session = Depends(get_db)):
     _check_cron(request)

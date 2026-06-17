@@ -41,6 +41,14 @@ class LocalStorage:
     def url(self, key: str, expires: int = 3600) -> Optional[str]:
         return None  # pas d'URL signée en local : on sert via l'API
 
+    def list_keys(self, prefix: str = "") -> list:
+        base = os.path.join(UPLOAD_DIR, "")
+        out = []
+        for root, _dirs, files in os.walk(os.path.join(UPLOAD_DIR, prefix)):
+            for f in files:
+                out.append(os.path.relpath(os.path.join(root, f), base))
+        return out
+
 
 class S3Storage:
     """Stockage objet S3 (production)."""
@@ -73,6 +81,19 @@ class S3Storage:
     def url(self, key: str, expires: int = 3600) -> Optional[str]:
         return self.s3.generate_presigned_url(
             "get_object", Params={"Bucket": self.bucket, "Key": key}, ExpiresIn=expires)
+
+    def list_keys(self, prefix: str = "") -> list:
+        out, token = [], None
+        while True:
+            kw = {"Bucket": self.bucket, "Prefix": prefix}
+            if token:
+                kw["ContinuationToken"] = token
+            resp = self.s3.list_objects_v2(**kw)
+            out += [o["Key"] for o in resp.get("Contents", [])]
+            if not resp.get("IsTruncated"):
+                break
+            token = resp.get("NextContinuationToken")
+        return out
 
 
 @lru_cache()

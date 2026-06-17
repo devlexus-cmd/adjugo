@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     # Démo : endpoints publics sans auth (/api/pipeline/demo/run, /demo).
     # METTRE À False EN PRODUCTION.
     DEMO_MODE: bool = True
+    # Emails (séparés par des virgules) promus administrateurs au démarrage (is_admin).
+    ADMIN_EMAILS: str = ""
 
     # CORS : origines autorisées (séparées par des virgules). Restreindre en prod.
     CORS_ORIGINS: str = "http://localhost:8000,http://localhost:5173,http://localhost:3000"
@@ -89,6 +91,9 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str = ""
 
     # Upload : limites de validation
+    # Sauvegarde auto de la base vers le stockage objet (R2). 0 = désactivée.
+    BACKUP_INTERVAL_HOURS: int = 24
+    BACKUP_KEEP: int = 14                 # nb de sauvegardes conservées
     MAX_UPLOAD_MB: int = 20
     ALLOWED_UPLOAD_EXT: str = ".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.odt,.ods"
 

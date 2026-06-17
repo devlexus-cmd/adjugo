@@ -330,6 +330,28 @@ def _ensure_demo_account():
         db.close()
 
 
+@app.on_event("startup")
+def _promote_admins():
+    """Promeut en administrateurs les comptes listés dans ADMIN_EMAILS (idempotent)."""
+    emails = [e.strip().lower() for e in (settings.ADMIN_EMAILS or "").split(",") if e.strip()]
+    if not emails:
+        return
+    from app.core.database import SessionLocal
+    from app.models import User
+    db = SessionLocal()
+    try:
+        n = db.query(User).filter(User.email.in_(emails), User.is_admin.is_(False)).update(
+            {User.is_admin: True}, synchronize_session=False)
+        db.commit()
+        if n:
+            _logging.getLogger("adjugo").info("admins promus : %d", n)
+    except Exception as e:
+        db.rollback()
+        _logging.getLogger("adjugo").warning("promotion admin ignorée : %s", e)
+    finally:
+        db.close()
+
+
 # ── Veille amont autonome : scan périodique → emails des nouveautés ──
 # Court-circuité (zéro appel IA) tant qu'aucun utilisateur n'a activé sa veille auto.
 import asyncio as _asyncio
@@ -375,5 +397,47 @@ async def _amont_scheduler():
             except Exception as e:
                 log.warning("veille amont auto en échec : %s", e)
             await _asyncio.sleep(_AMONT_INTERVAL_MIN * 60)
+
+    _asyncio.create_task(_loop())
+
+
+@app.on_event("startup")
+async def _backup_scheduler():
+    """Sauvegarde quotidienne de la base vers R2 (filet de sécurité, gratuit)."""
+    hours = settings.BACKUP_INTERVAL_HOURS
+    if hours <= 0 or (settings.STORAGE_BACKEND or "").lower() != "s3":
+        return  # désactivé, ou stockage local (sauvegarde inutile)
+
+    async def _loop():
+        import logging
+        from sqlalchemy import text as _t
+        from app.core.database import SessionLocal, _is_sqlite
+        log = logging.getLogger("adjugo")
+        await _asyncio.sleep(300)   # 5 min après le démarrage
+
+        def _run():
+            from app.services.backup import run_backup
+            # Verrou consultatif : un seul worker sauvegarde par tick.
+            db = SessionLocal()
+            try:
+                if not _is_sqlite:
+                    if not db.execute(_t("SELECT pg_try_advisory_lock(815344)")).scalar():
+                        return None
+                try:
+                    return run_backup(keep=settings.BACKUP_KEEP)
+                finally:
+                    if not _is_sqlite:
+                        db.execute(_t("SELECT pg_advisory_unlock(815344)"))
+            finally:
+                db.close()
+
+        while True:
+            try:
+                res = await _asyncio.get_event_loop().run_in_executor(None, _run)
+                if res and res.get("ok"):
+                    log.info("sauvegarde base → R2 : %s", res.get("key"))
+            except Exception as e:
+                log.warning("sauvegarde auto en échec : %s", e)
+            await _asyncio.sleep(hours * 3600)
 
     _asyncio.create_task(_loop())
