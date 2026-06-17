@@ -384,19 +384,35 @@ def _ao_recap(details):
 
 
 def _parse_amount(v) -> float:
+    """Montant € robuste, y compris formats compacts (« 8 M€ », « 1,5 M€ HT », « 300 k€ »).
+    L'ancienne version renvoyait 8 pour « 8 M€ » (multiplicateur ignoré)."""
     if isinstance(v, (int, float)):
         return float(v)
     if not v:
         return 0.0
-    nums = re.findall(r"[\d\s]+", str(v).replace(",", "."))
-    for n in nums:
-        n = n.replace(" ", "")
-        if n:
-            try:
-                return float(n)
-            except ValueError:
-                continue
-    return 0.0
+    s = str(v).lower().replace("\xa0", " ").replace(" ", " ")
+    mult = 1.0
+    if re.search(r"milliard|\bmd\b", s):
+        mult = 1e9
+    elif re.search(r"million|m€|\bm\b|\bmio\b", s):
+        mult = 1e6
+    elif re.search(r"millier|k€|\bk\b", s):
+        mult = 1e3
+    m = re.search(r"\d[\d .,]*", s)
+    if not m:
+        return 0.0
+    num = m.group(0).strip().replace(" ", "")   # l'espace = séparateur de milliers en FR
+    if "," in num and "." in num:               # le dernier séparateur est décimal
+        if num.rfind(",") > num.rfind("."):
+            num = num.replace(".", "").replace(",", ".")
+        else:
+            num = num.replace(",", "")
+    elif "," in num:
+        num = num.replace(",", ".")
+    try:
+        return float(num.rstrip(".")) * mult
+    except ValueError:
+        return 0.0
 
 
 def _as_bytes(content) -> bytes:

@@ -749,11 +749,12 @@ def _partner_score(flags: dict) -> float:
 # Pièces administratives attendues de CHAQUE membre d'un groupement (au-delà des
 # CERFA mutualisés). Permet au mandataire de voir, par partenaire, ce qui manque.
 _PARTNER_PIECE_TYPES = [
-    ("kbis", "Kbis", ("kbis", "extrait k", "registre")),
-    ("fiscale", "Attest. fiscale", ("fiscal", "impot", "dgfip")),
-    ("sociale", "Attest. sociale (URSSAF)", ("urssaf", "social", "vigilance", "cotisation")),
-    ("assurance", "Assurance (RC/décennale)", ("assurance", "rc pro", "responsabilite", "decennale", "decenale")),
-    ("rib", "RIB", ("rib", "bancaire", "iban")),
+    # Mots-clés resserrés : « registre » seul matchait « registre_de_securite.pdf ».
+    ("kbis", "Kbis", ("kbis", "extrait k", "registre du commerce", "registre commerce", "rcs")),
+    ("fiscale", "Attest. fiscale", ("fiscal", "impot", "impôt", "dgfip")),
+    ("sociale", "Attest. sociale (URSSAF)", ("urssaf", "vigilance", "cotisation", "attestation sociale")),
+    ("assurance", "Assurance (RC/décennale)", ("assurance", "rc pro", "responsabilite civile", "responsabilité civile", "decennale", "décennale")),
+    ("rib", "RIB", ("rib", "iban", "releve d'identite bancaire", "relevé d'identité bancaire")),
 ]
 
 

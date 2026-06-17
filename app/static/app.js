@@ -590,10 +590,26 @@ const __adjApp = createApp({
       const e = await r.json().catch(() => ({})); this.notify((e && e.detail) || "Erreur d'enregistrement", "err"); return false;
     },
     async sharedSave() { this.sharedAo.busy = true; try { if (await this._sharedPut()) this.notify("Brouillon enregistré"); } finally { this.sharedAo.busy = false; } },
+    // Binding d'identité OTP côté « Partagé avec moi » : si le lien l'exige (email
+    // configuré), on vérifie l'adresse avant de soumettre — sinon le 403 bloquait sans
+    // recours (aucun moyen de saisir le code).
+    async sharedEnsureVerified() {
+      const t = this.sharedAo.token;
+      const st = await this.api("GET", "/api/invite/" + t + "/otp/status").catch(() => null);
+      if (!st || !st.required || st.verified) return true;
+      this.notify("Envoi d'un code de vérification…");
+      const rq = await this.api("POST", "/api/invite/" + t + "/otp/request").catch(() => null);
+      if (!rq || !rq.sent) { this.notify("Impossible d'envoyer le code de vérification", "err"); return false; }
+      const code = window.prompt("Un code à 6 chiffres a été envoyé à " + (rq.email_masked || "votre adresse") + ".\nSaisissez-le pour valider votre identité :");
+      if (!code) { this.notify("Vérification annulée", "err"); return false; }
+      try { await this.api("POST", "/api/invite/" + t + "/otp/verify", { code: code.trim() }); return true; }
+      catch (e) { this.notify(e.message || "Code incorrect", "err"); return false; }
+    },
     async sharedSubmit() {
       this.sharedAo.busy = true;
       try {
         if (!(await this._sharedPut())) return;
+        if (!(await this.sharedEnsureVerified())) return;
         const c = await this.api("POST", "/api/invite/" + this.sharedAo.token + "/contribution/submit");
         this.sharedAo.status = c.status; this.notify("Contribution soumise au mandataire ✓"); this.loadShared();
       } catch (e) { this.notify(e.message, "err"); } finally { this.sharedAo.busy = false; }
