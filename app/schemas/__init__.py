@@ -32,6 +32,7 @@ class UserOut(BaseModel):
     plan: str
     analyses_used_this_month: int
     is_active: bool
+    is_admin: bool = False
     created_at: datetime
 
     class Config:

@@ -91,6 +91,7 @@ const __adjApp = createApp({
       plan: { plan: "starter" }, org: { data: null, name: "", invite: { email: "", full_name: "" }, lastTemp: null },
       pwd: { current: "", next: "" },
       fb: { open: false, message: "", kind: "idee", busy: false },
+      admin: { diag: null, backups: [], busy: false },
       cookiesOk: (function(){ try { return localStorage.getItem("adjugo_cookies_ok") === "1"; } catch(e){ return true; } })(),
       predepot: [false, false, false, false],
       predepotSteps: [
@@ -371,6 +372,19 @@ const __adjApp = createApp({
       if (v === "kb") this.kbLoad();
       if (v === "team") this.loadOrg();
       if (v === "billing") { this.loadPlan(); this.loadStats(); }
+      if (v === "admin") this.loadAdmin();
+    },
+    async loadAdmin() {
+      try { this.admin.diag = await this.api("GET", "/api/admin/storage-diag"); } catch (e) { this.admin.diag = null; }
+      try { this.admin.backups = (await this.api("GET", "/api/admin/backups")).backups || []; } catch (e) { this.admin.backups = []; }
+    },
+    async adminRunBackup() {
+      this.admin.busy = true;
+      try {
+        const r = await this.api("POST", "/api/admin/run-backup");
+        if (r && r.ok) this.notify("Sauvegarde effectuée (" + (r.rows || 0) + " lignes)"); else this.notify("Sauvegarde : " + ((r && r.error) || "ignorée"), "err");
+        await this.loadAdmin();
+      } catch (e) { this.notify(e.message, "err"); } finally { this.admin.busy = false; }
     },
 
     // ── Registre entreprises (données réelles) ──
