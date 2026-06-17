@@ -11,6 +11,7 @@ from pydantic import BaseModel, EmailStr
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user, hash_password
+from app.core.ratelimit import limiter
 from app.core.org import ensure_org
 from app.models import User, Organization
 from app.services import audit
@@ -30,8 +31,11 @@ def _reassign_models():
     app.models)."""
     mods = []
     try:
-        from app.models import Project, Contact, Document, Invoice, KnowledgeDoc, Signal
-        mods += [Project, Contact, Document, Invoice, KnowledgeDoc, Signal]
+        from app.models import (Project, Contact, Document, Invoice, KnowledgeDoc,
+                                KnowledgeChunk, Signal)
+        # KnowledgeChunk DOIT suivre KnowledgeDoc sinon le RAG du membre parti devient
+        # orphelin (l'index interroge KnowledgeChunk.user_id).
+        mods += [Project, Contact, Document, Invoice, KnowledgeDoc, KnowledgeChunk, Signal]
     except Exception:
         pass
     try:
@@ -91,6 +95,9 @@ def get_org(current_user: User = Depends(get_current_user), db: Session = Depend
     return {
         "id": org.id, "name": org.name, "owner_id": org.owner_id,
         "is_owner": org.owner_id == current_user.id,
+        "my_role": current_user.org_role or "membre",
+        "can_invite": org.owner_id == current_user.id or (current_user.org_role or "") == "admin",
+        "member_limit": _plan_member_limit(db, org),
         "country": cfg["code"], "country_nom": cfg["nom"],
         "lang": cfg["lang"], "devise": cfg["devise"],
         "members": [{
@@ -122,6 +129,7 @@ def update_org(data: RenameIn, current_user: User = Depends(get_current_user),
 
 
 @router.post("/invite", status_code=201)
+@limiter.limit("30/hour")
 def invite_member(data: InviteIn, request: Request, current_user: User = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     """Invite un collègue dans l'organisation. Crée son compte avec un mot de passe
@@ -130,6 +138,9 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
     if org.owner_id != current_user.id and (current_user.org_role or "") != "admin":
         raise HTTPException(403, "Seul un administrateur peut inviter des membres")
 
+    # Verrou de ligne sur l'org : sérialise les invitations concurrentes pour que le
+    # contrôle de limite (count) ne soit pas contournable par deux POST simultanés.
+    db.query(Organization).filter(Organization.id == org.id).with_for_update().first()
     # Limite de membres selon l'offre du propriétaire (appliquée, plus seulement affichée).
     limit = _plan_member_limit(db, org)
     n_members = db.query(User).filter(User.org_id == org.id).count()
@@ -177,6 +188,7 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
 
 
 @router.delete("/members/{member_id}")
+@limiter.limit("30/hour")
 def remove_member(member_id: int, request: Request, current_user: User = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     """Retire un membre de l'organisation (lui recrée un espace personnel → il perd
@@ -214,6 +226,7 @@ class RoleIn(BaseModel):
 
 
 @router.put("/members/{member_id}/role")
+@limiter.limit("60/hour")
 def set_member_role(member_id: int, data: RoleIn, request: Request,
                     current_user: User = Depends(get_current_user),
                     db: Session = Depends(get_db)):
@@ -244,6 +257,7 @@ class TransferIn(BaseModel):
 
 
 @router.post("/transfer-ownership")
+@limiter.limit("20/hour")
 def transfer_ownership(data: TransferIn, request: Request,
                        current_user: User = Depends(get_current_user),
                        db: Session = Depends(get_db)):

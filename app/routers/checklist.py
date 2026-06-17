@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.org import member_ids
 from app.models import User, Project, Document
 
 router = APIRouter(prefix="/api/checklist", tags=["Checklist intelligente"])
@@ -138,7 +139,7 @@ def get_checklist(
     db: Session = Depends(get_db),
 ):
     project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
+        Project.id == project_id, Project.user_id.in_(member_ids(current_user, db))
     ).first()
     if not project:
         raise HTTPException(404, "Projet introuvable")

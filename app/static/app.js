@@ -89,6 +89,7 @@ const __adjApp = createApp({
       statuses: ["nouveau", "en_cours", "envoye", "gagne", "perdu"],
       statuses2: ["nouveau", "en_cours", "envoye", "gagne", "perdu", "abandonne"],
       plan: { plan: "starter" }, org: { data: null, name: "", invite: { email: "", full_name: "" }, lastTemp: null },
+      pwd: { current: "", next: "" },
       discover: { open: false, trade: "", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [],
       countries2: [], adaptedCountries: [], orgCountry: "FR", lang: "fr",
       amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false },
@@ -345,8 +346,26 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); }
     },
     async orgRemove(m) {
-      try { await this.api("DELETE", "/api/org/members/" + m.id); this.loadOrg(); this.notify(m.full_name + " retiré"); }
+      if (!confirm("Retirer " + (m.full_name || m.email) + " de l'équipe ?\nSes dossiers (AO, contacts…) seront réattribués au propriétaire et son accès coupé immédiatement.")) return;
+      try { const r = await this.api("DELETE", "/api/org/members/" + m.id); this.loadOrg(); this.notify(m.full_name + " retiré" + (r && r.reassigned ? " — " + r.reassigned + " élément(s) réattribué(s)" : "")); }
       catch (e) { this.notify(e.message, "err"); }
+    },
+    async orgSetRole(m, role) {
+      try { await this.api("PUT", "/api/org/members/" + m.id + "/role", { role }); this.loadOrg(); this.notify((m.full_name || m.email) + " : " + this.roleLabelOrg(role)); }
+      catch (e) { this.notify(e.message, "err"); this.loadOrg(); }
+    },
+    async orgTransfer(m) {
+      if (!confirm("Transférer la PROPRIÉTÉ de l'organisation à " + (m.full_name || m.email) + " ?\nVous deviendrez simple administrateur.")) return;
+      try { await this.api("POST", "/api/org/transfer-ownership", { new_owner_id: m.id }); this.loadOrg(); this.notify("Propriété transférée à " + (m.full_name || m.email)); }
+      catch (e) { this.notify(e.message, "err"); }
+    },
+    async changePassword() {
+      if (!this.pwd.current || !this.pwd.next) { this.notify("Renseignez les deux champs", "err"); return; }
+      try {
+        const r = await this.api("POST", "/api/auth/change-password", { current_password: this.pwd.current, new_password: this.pwd.next });
+        if (r && r.access_token) { this.token = r.access_token; localStorage.setItem("adjugo_token", r.access_token); }
+        this.pwd = { current: "", next: "" }; this.notify("Mot de passe changé ✓");
+      } catch (e) { this.notify(e.message, "err"); }
     },
     async toggleOverage() {
       const on = !(this.stats.usage && this.stats.usage.overage_enabled);

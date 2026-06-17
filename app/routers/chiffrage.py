@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.ratelimit import limiter
 from app.core.security import get_current_user
+from app.core.org import member_ids
 from app.models import Company, Project, User
 from app.services.agents.chiffrage import DEFAULT_RATES, compute_estimate, propose_tasks
 
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/api/chiffrage", tags=["Chiffrage"])
 
 
 def _project(pid: int, user: User, db: Session) -> Project:
-    p = db.query(Project).filter(Project.id == pid, Project.user_id == user.id).first()
+    p = db.query(Project).filter(Project.id == pid, Project.user_id.in_(member_ids(user, db))).first()
     if not p:
         raise HTTPException(404, "Projet introuvable")
     return p

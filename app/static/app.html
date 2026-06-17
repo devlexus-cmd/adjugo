@@ -1320,17 +1320,26 @@
           </div>
 
           <div class="card pad" style="margin-top:14px">
-            <h3>Membres</h3>
+            <div class="row" style="align-items:center"><h3 style="flex:1">Membres</h3>
+              <span v-if="org.data && org.data.member_limit" class="pill neutral" style="font-size:10px">{{ ((org.data.members||[]).length) }}/{{ org.data.member_limit }} place(s)</span></div>
             <div v-for="m in (org.data&&org.data.members)||[]" :key="m.id" class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline);gap:8px">
               <div style="width:34px;height:34px;border-radius:50%;background:var(--accent-weak);color:var(--accent-text);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px">{{ (m.full_name||m.email||'?').slice(0,1).toUpperCase() }}</div>
               <div style="flex:1;min-width:0"><span class="strong small">{{ m.full_name }}</span> <span v-if="m.is_me" class="muted small">(vous)</span>
                 <div class="muted small">{{ m.email }}</div></div>
-              <span class="pill" :class="m.is_owner?'go':'neutral'" style="font-size:10px">{{ m.is_owner?'Propriétaire':roleLabelOrg(m.role) }}</span>
-              <button v-if="org.data && org.data.is_owner && !m.is_owner" class="btn icon sm ghost" @click="orgRemove(m)" aria-label="Retirer"><i data-lucide="user-minus"></i></button>
+              <!-- Propriétaire : pilote le rôle, le transfert et le retrait. -->
+              <template v-if="org.data && org.data.is_owner && !m.is_owner">
+                <select class="inp sm" :value="m.role||'membre'" @change="orgSetRole(m,$event.target.value)" style="width:auto;font-size:11px;padding:3px 6px">
+                  <option value="membre">Membre</option>
+                  <option value="admin">Administrateur</option>
+                </select>
+                <button class="btn icon sm ghost" @click="orgTransfer(m)" title="Transférer la propriété"><i data-lucide="crown"></i></button>
+                <button class="btn icon sm ghost" @click="orgRemove(m)" aria-label="Retirer"><i data-lucide="user-minus"></i></button>
+              </template>
+              <span v-else class="pill" :class="m.is_owner?'go':'neutral'" style="font-size:10px">{{ m.is_owner?'Propriétaire':roleLabelOrg(m.role) }}</span>
             </div>
           </div>
 
-          <div v-if="org.data && org.data.is_owner" class="card pad" style="margin-top:14px">
+          <div v-if="org.data && org.data.can_invite" class="card pad" style="margin-top:14px">
             <h3>Inviter un collègue</h3>
             <div class="row wrap" style="gap:8px;margin-top:8px">
               <input class="inp" v-model="org.invite.full_name" placeholder="Nom" style="width:200px">
@@ -1338,8 +1347,20 @@
               <button class="btn primary" @click="orgInvite()"><i data-lucide="user-plus"></i>Inviter</button>
             </div>
             <div v-if="org.lastTemp" class="row wrap" style="margin-top:10px;gap:8px;padding:10px;background:var(--accent-weak);border-radius:8px">
-              <div class="small"><b>{{ org.lastTemp.email }}</b> ajouté. Mot de passe provisoire à lui transmettre :
+              <div class="small"><b>{{ org.lastTemp.email }}</b> ajouté.
+                <span v-if="org.lastTemp.emailed">Un email d'invitation lui a été envoyé. </span>
+                <span v-else><b>Email non envoyé</b> — transmettez-lui ce mot de passe provisoire : </span>
                 <code style="background:var(--bg);padding:2px 6px;border-radius:4px">{{ org.lastTemp.temp_password }}</code></div>
+            </div>
+          </div>
+
+          <!-- Changer mon mot de passe (indispensable pour un membre invité) -->
+          <div class="card pad" style="margin-top:14px">
+            <h3>Mon mot de passe</h3>
+            <div class="row wrap" style="gap:8px;margin-top:8px">
+              <input class="inp" type="password" v-model="pwd.current" placeholder="Mot de passe actuel" style="width:220px">
+              <input class="inp" type="password" v-model="pwd.next" placeholder="Nouveau (8 caractères min.)" style="width:240px">
+              <button class="btn" @click="changePassword()"><i data-lucide="key-round"></i>Changer</button>
             </div>
           </div>
         </section>

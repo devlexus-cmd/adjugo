@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.ratelimit import limiter
 from app.core.security import get_current_user
+from app.core.org import member_ids
 from app.models import User, Project, Company, GeneratedDoc
 from app.services.cerfa import GENERATORS, missing_company_fields
 
@@ -22,9 +24,11 @@ def list_types():
 
 
 @router.post("/{project_id}/{doc_type}")
+@limiter.limit("20/hour")
 def generate(
     project_id: int,
     doc_type: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -32,7 +36,7 @@ def generate(
         raise HTTPException(status_code=400, detail=f"Type inconnu: {doc_type}")
 
     project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
+        Project.id == project_id, Project.user_id.in_(member_ids(current_user, db))
     ).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projet introuvable")
@@ -90,13 +94,15 @@ def generate(
 
 
 @router.get("/{project_id}/status")
+@limiter.limit("60/minute")
 def get_status(
     project_id: int,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
+        Project.id == project_id, Project.user_id.in_(member_ids(current_user, db))
     ).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projet introuvable")

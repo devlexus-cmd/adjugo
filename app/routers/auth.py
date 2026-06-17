@@ -2,6 +2,7 @@
 Adjugo — Routes d'authentification
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -100,3 +101,28 @@ def update_me(
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password", response_model=Token)
+@limiter.limit("10/hour")
+def change_password(request: Request, data: PasswordChange,
+                    current_user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """Change le mot de passe (notamment pour un membre invité qui doit remplacer son
+    mot de passe provisoire). Invalide les autres sessions (token_version) et renvoie un
+    token frais pour la session courante."""
+    if not verify_password(data.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Mot de passe actuel incorrect")
+    if len(data.new_password or "") < 8:
+        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit faire au moins 8 caractères")
+    current_user.hashed_password = hash_password(data.new_password)
+    current_user.token_version = (current_user.token_version or 0) + 1  # coupe les autres sessions
+    db.commit()
+    db.refresh(current_user)
+    token = create_access_token(data={"sub": str(current_user.id), "tv": int(current_user.token_version or 0)})
+    return {"access_token": token, "token_type": "bearer"}
