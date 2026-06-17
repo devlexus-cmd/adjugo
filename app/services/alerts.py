@@ -176,6 +176,7 @@ def run_amont_alerts(db: Session) -> dict:
     notified, total = 0, 0
     for user in opted:
         criteria = criteria_dict(user.id, db)
+        domaines = criteria.get("domaines") or criteria.get("domaines_cibles") or None
         existing = {((s.intitule or "").lower()[:80], (s.collectivite or "").lower())
                     for s in db.query(Signal).filter(Signal.user_id == user.id).all()}
         new_pertinent = []
@@ -188,12 +189,17 @@ def run_amont_alerts(db: Session) -> dict:
             if key in existing:
                 continue
             existing.add(key)
-            score, label = score_pertinence(p, criteria)
+            # Parité avec le scan manuel : boost domaine par utilisateur.
+            score, label = score_pertinence(p, criteria, domaines)
             db.add(Signal(
                 user_id=user.id, intitule=intitule[:500], type_projet=(p.get("type_projet") or "")[:120],
                 budget=_num_or_none(p.get("budget")), budget_texte=(p.get("budget_texte") or "")[:120],
                 localisation=(p.get("localisation") or "")[:255], collectivite=coll[:255],
                 calendrier=(p.get("calendrier") or "")[:255], metiers=p.get("metiers") or [],
+                # Champs de PROFONDEUR : étaient perdus en mode auto (incohérence cron/manuel).
+                domaine=(p.get("domaine") or "")[:80], phase=(p.get("phase") or "")[:40],
+                echeance_ao=(p.get("echeance_ao") or "")[:120], financement=(p.get("financement") or "")[:255],
+                maturite=_num_or_none(p.get("maturite")),
                 extrait=(p.get("extrait") or "")[:2000], pertinence=label, pertinence_score=score,
                 source_name=(f"Délibération · {p['source']}" if p.get("source") else "Délibération (open data)")[:255],
                 source_url=(p.get("url") or "")[:700], source_date=(p.get("date") or "")[:40],
@@ -201,7 +207,11 @@ def run_amont_alerts(db: Session) -> dict:
             total += 1
             if label == "pertinent":
                 new_pertinent.append((score, intitule, coll, p.get("budget_texte") or "", p.get("url") or ""))
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()   # une contrainte ne doit pas casser la veille des autres users
+            continue
         if new_pertinent:
             new_pertinent.sort(reverse=True)
             lines = ["Bonjour,\n\nVotre veille amont Adjugo a repéré de nouveaux projets d'investissement, "

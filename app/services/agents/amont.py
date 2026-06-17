@@ -143,6 +143,8 @@ INTITULÉS :
         p["dept"] = rec.get("dept", "")
         if not p.get("extrait"):
             p["extrait"] = rec.get("objet", "")
+        # Ancrage anti-hallucination : la source ici n'est qu'un INTITULÉ (titre nu).
+        p = _anchor(p, rec.get("objet", ""), title_only=True)
         out.append(p)
     return out
 
@@ -156,6 +158,31 @@ def _clean(p: dict) -> dict:
     p["maturite"] = max(0, min(100, m)) if m is not None else None
     for k in ("domaine", "phase", "echeance_ao", "financement"):
         p[k] = (str(p.get(k) or "")).strip()
+    return p
+
+
+def _anchor(p: dict, source_text: str, title_only: bool) -> dict:
+    """Anti-hallucination : un BUDGET et un FINANCEMENT sont des faits — ils ne survivent
+    que s'ils sont réellement présents dans le texte source. En mode « titre nu » (scan
+    de délibérations), on interdit en plus toute ÉCHÉANCE d'AO devinée (un titre ne la
+    porte jamais de façon fiable). La maturité/phase restent des ESTIMATIONS assumées."""
+    src = (source_text or "")
+    src_l = src.lower()
+    has_digits = bool(re.search(r"\d", src))
+    # Budget : doit s'appuyer sur un chiffre présent dans la source.
+    if p.get("budget") is not None and not has_digits:
+        p["budget"] = None
+    if (p.get("budget_texte") or "") and not has_digits:
+        p["budget_texte"] = ""
+    # Financement : ne garder que si un terme de financement apparaît dans la source.
+    if p.get("financement"):
+        fin_terms = ("subvention", "fonds", "dotation", "detr", "dsil", "emprunt", "feder",
+                     "région", "departement", "état", "etat", "autofinancement", "europ", "prêt")
+        if not any(t in src_l for t in fin_terms):
+            p["financement"] = ""
+    # Échéance d'AO : devinée à partir d'un simple titre → on l'efface (mode scan).
+    if title_only:
+        p["echeance_ao"] = ""
     return p
 
 
@@ -181,9 +208,10 @@ def score_pertinence(projet: dict, criteria: dict, domaines=None) -> tuple:
     else:
         metier = 0
 
-    # 2) Zone (25)
+    # 2) Zone (25) — on lit d'ABORD le département réel propagé par la source (dept),
+    # sinon on retombe sur un parsing de la localisation (le champ dept était ignoré).
     deps = _deps(criteria.get("departements"))
-    loc_dep = _dep_of(projet.get("localisation", ""))
+    loc_dep = (str(projet.get("dept") or "").strip()[:2] or _dep_of(projet.get("localisation", "")))
     if not deps:
         zone = 15
     elif loc_dep and loc_dep in deps:
