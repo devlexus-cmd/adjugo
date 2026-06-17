@@ -88,6 +88,9 @@ class User(Base):
     overage_enabled = Column(Boolean, default=False)
     overage_count = Column(Integer, default=0)  # analyses hors quota ce mois
     amont_alerts_enabled = Column(Boolean, default=False)  # veille amont auto (email)
+    # Révocation de session : incrémenté au retrait/transfert → les JWT émis avant
+    # (qui portent l'ancienne valeur) sont rejetés. Coupe immédiatement un accès.
+    token_version = Column(Integer, default=0)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 

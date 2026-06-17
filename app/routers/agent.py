@@ -79,7 +79,7 @@ def agent_stats(current_user: User = Depends(get_current_user),
         "loss_reasons": loss_reasons,
     }
 
-    u = usage(current_user)
+    u = usage(current_user, db)
     db.commit()
     return {
         "total_projects": total, "by_status": by_status, "win_rate": win_rate,

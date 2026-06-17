@@ -53,4 +53,11 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(User).filter(User.id == int(user_id)).first()
     if user is None:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    # Révocation de session : si le token porte une version (tv), elle doit correspondre
+    # à celle de l'utilisateur. Un retrait/transfert incrémente token_version → l'ancien
+    # token est rejeté. Les tokens hérités (sans tv) restent acceptés (rétro-compat).
+    tv = payload.get("tv")
+    if tv is not None and int(tv) != int(getattr(user, "token_version", 0) or 0):
+        raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
+                            headers={"WWW-Authenticate": "Bearer"})
     return user

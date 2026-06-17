@@ -48,7 +48,7 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(data={"sub": str(user.id)})
+    token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -62,7 +62,7 @@ def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Compte désactivé")
 
-    token = create_access_token(data={"sub": str(user.id)})
+    token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -72,7 +72,7 @@ def demo_login(request: Request, db: Session = Depends(get_db)):
     """Connexion au compte de DÉMONSTRATION (sans mot de passe) — données pré-remplies."""
     from app.services.demo_seed import ensure_demo
     user = ensure_demo(db)   # crée le compte démo s'il n'existe pas encore
-    token = create_access_token(data={"sub": str(user.id)})
+    token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})
     return {"access_token": token, "token_type": "bearer"}
 
 

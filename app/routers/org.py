@@ -24,6 +24,41 @@ def _plan_member_limit(db, org) -> int:
     return get_settings().PLAN_LIMITS.get(plan, {}).get("members", 2)
 
 
+def _reassign_models():
+    """Modèles métier dont les lignes (par user_id) restent à l'org au retrait d'un
+    membre. Résolus paresseusement et tolérants aux absents (Cotraitant vit hors
+    app.models)."""
+    mods = []
+    try:
+        from app.models import Project, Contact, Document, Invoice, KnowledgeDoc, Signal
+        mods += [Project, Contact, Document, Invoice, KnowledgeDoc, Signal]
+    except Exception:
+        pass
+    try:
+        from app.routers.cotraitants import Cotraitant
+        mods.append(Cotraitant)
+    except Exception:
+        pass
+    return mods
+
+
+def _reassign_member_data(db, from_user_id: int, to_user_id: int) -> int:
+    """Réassigne au propriétaire les données métier créées par un membre qu'on retire,
+    pour qu'elles RESTENT dans l'organisation. Ne touche pas au profil (Company) ni au
+    quota du membre. Retourne le nombre de lignes réassignées."""
+    total = 0
+    for M in _reassign_models():
+        if not hasattr(M, "user_id"):
+            continue
+        try:
+            total += db.query(M).filter(M.user_id == from_user_id).update(
+                {M.user_id: to_user_id}, synchronize_session=False)
+        except Exception:
+            pass
+    db.flush()
+    return total
+
+
 class InviteIn(BaseModel):
     email: EmailStr
     full_name: Optional[str] = ""
@@ -123,10 +158,12 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
                  target_type="user", target_id=member.id, detail=member.email[:255],
                  ip=audit.client_ip(request))
 
-    # Email best-effort (no-op si SMTP non configuré)
+    # Email best-effort (no-op si SMTP non configuré). On signale au front si l'email
+    # n'est pas parti → le propriétaire sait qu'il doit transmettre le mot de passe.
+    emailed = False
     try:
         from app.services.email import send_email
-        send_email(member.email, f"Invitation à rejoindre {org.name} sur Adjugo",
+        emailed = send_email(member.email, f"Invitation à rejoindre {org.name} sur Adjugo",
                    f"Bonjour,\n\n{current_user.full_name} vous invite à rejoindre l'espace "
                    f"« {org.name} » sur Adjugo.\n\nIdentifiant : {member.email}\n"
                    f"Mot de passe provisoire : {temp_password}\n\nConnectez-vous puis "
@@ -136,7 +173,7 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
         logging.getLogger("adjugo").warning("Email d'invitation non envoyé à %s : %s", member.email, e)
 
     return {"id": member.id, "email": member.email, "full_name": member.full_name,
-            "temp_password": temp_password}
+            "temp_password": temp_password, "emailed": emailed}
 
 
 @router.delete("/members/{member_id}")
@@ -152,18 +189,54 @@ def remove_member(member_id: int, request: Request, current_user: User = Depends
     member = db.query(User).filter(User.id == member_id, User.org_id == org.id).first()
     if not member:
         raise HTTPException(404, "Membre introuvable")
-    # Nouvel espace personnel pour l'ancien membre (ses futures données lui restent)
+    # Les dossiers que le membre a créés appartiennent à l'ENTREPRISE : on les réassigne
+    # au propriétaire avant de sortir le membre (sinon l'org perdait l'accès — un
+    # commercial partait avec ses AO). On NE déplace PAS son profil entreprise (Company).
+    reassigned = _reassign_member_data(db, member.id, org.owner_id)
+    # Nouvel espace personnel vierge pour l'ancien membre.
     new_org = Organization(name=f"Équipe {member.full_name}", owner_id=member.id)
     db.add(new_org)
     db.flush()
     member.org_id = new_org.id
     member.org_role = "admin"
+    member.token_version = (member.token_version or 0) + 1   # coupe ses sessions en cours
     db.commit()
     audit.record(db, action="team.member_removed", owner_id=org.owner_id,
                  actor=f"user:{current_user.id}", actor_kind="owner",
-                 target_type="user", target_id=member.id, detail=(member.email or "")[:255],
+                 target_type="user", target_id=member.id,
+                 detail=f"{member.email} — {reassigned} élément(s) réassigné(s)"[:255],
                  ip=audit.client_ip(request))
-    return {"ok": True}
+    return {"ok": True, "reassigned": reassigned}
+
+
+class RoleIn(BaseModel):
+    role: str  # admin | membre
+
+
+@router.put("/members/{member_id}/role")
+def set_member_role(member_id: int, data: RoleIn, request: Request,
+                    current_user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """Change le rôle d'un membre (admin/membre). Réservé au propriétaire. Un admin peut
+    inviter des membres ; le propriétaire reste seul à pouvoir retirer/transférer."""
+    org = _org(current_user, db)
+    if org.owner_id != current_user.id:
+        raise HTTPException(403, "Seul le propriétaire peut changer les rôles")
+    role = (data.role or "").strip().lower()
+    if role not in ("admin", "membre"):
+        raise HTTPException(400, "Rôle invalide (admin ou membre)")
+    member = db.query(User).filter(User.id == member_id, User.org_id == org.id).first()
+    if not member:
+        raise HTTPException(404, "Membre introuvable")
+    if member.id == org.owner_id:
+        raise HTTPException(400, "Le propriétaire est administrateur par défaut")
+    member.org_role = role
+    db.commit()
+    audit.record(db, action="team.role_changed", owner_id=org.owner_id,
+                 actor=f"user:{current_user.id}", actor_kind="owner",
+                 target_type="user", target_id=member.id,
+                 detail=f"{member.email} → {role}"[:255], ip=audit.client_ip(request))
+    return {"ok": True, "id": member.id, "role": role}
 
 
 class TransferIn(BaseModel):

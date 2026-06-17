@@ -11,6 +11,27 @@ from app.core.config import get_settings
 settings = get_settings()
 
 
+def _billing_user(user, db):
+    """Le quota d'analyses est porté par le PROPRIÉTAIRE de l'organisation : tous les
+    membres consomment le MÊME pool, au plan du propriétaire (un client Business n'a
+    plus N quotas starter indépendants). Repli sur l'utilisateur si pas d'org/db."""
+    if db is None:
+        return user
+    try:
+        from app.models import Organization, User as U
+        oid = getattr(user, "org_id", None)
+        if not oid:
+            return user
+        org = db.query(Organization).filter(Organization.id == oid).first()
+        if org and org.owner_id and org.owner_id != user.id:
+            owner = db.query(U).filter(U.id == org.owner_id).first()
+            if owner:
+                return owner
+    except Exception:
+        return user
+    return user
+
+
 def _plan_key(user) -> str:
     p = getattr(user, "plan", "starter")
     return p.value if hasattr(p, "value") else str(p)
@@ -36,7 +57,8 @@ def _sync_period(user) -> None:
 OVERAGE_PRICE = 5  # € HT par analyse hors quota
 
 
-def usage(user) -> dict:
+def usage(user, db: Session = None) -> dict:
+    user = _billing_user(user, db)   # le pool de l'org (propriétaire) si membre
     _sync_period(user)
     lim = _limit(user)
     used = user.analyses_used_this_month or 0
@@ -57,9 +79,11 @@ def consume_analysis(user, db: Session) -> None:
     ferme la course read-modify-write qui permettait de contourner le quota en lançant
     2 analyses en parallèle). Au-delà du quota : overage si activé, sinon 402."""
     from app.models import User as _User
-    # SELECT … FOR UPDATE : sérialise les consommations concurrentes du même user
-    # (no-op sur SQLite dev, protection réelle sur Postgres prod).
-    locked = db.query(_User).filter(_User.id == user.id).with_for_update().first() or user
+    # Le quota est porté par le propriétaire de l'org (pool partagé).
+    billing = _billing_user(user, db)
+    # SELECT … FOR UPDATE : sérialise les consommations concurrentes (no-op SQLite dev,
+    # protection réelle sur Postgres prod).
+    locked = db.query(_User).filter(_User.id == billing.id).with_for_update().first() or billing
     _sync_period(locked)
     lim = _limit(locked)
     used = locked.analyses_used_this_month or 0
@@ -90,7 +114,8 @@ def refund_analysis(user, db: Session) -> None:
     pas être débité pour une analyse qui n'a rien produit). Annule aussi l'overage."""
     try:
         from app.models import User as _User
-        locked = db.query(_User).filter(_User.id == user.id).with_for_update().first() or user
+        billing = _billing_user(user, db)
+        locked = db.query(_User).filter(_User.id == billing.id).with_for_update().first() or billing
         used = locked.analyses_used_this_month or 0
         if used <= 0:
             return
