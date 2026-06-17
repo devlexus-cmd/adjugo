@@ -709,7 +709,14 @@ const __adjApp = createApp({
     aoSource() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.source) || null; },
     aoContact() { const c = this.aoDetails().contact; return (c && (c.nom || c.email)) ? c : null; },
     aoDceAvailable() { return !!(this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.dce_available); },
-    aoBreakdown() { const a = this.ao.project && this.ao.project.ai_analysis; return (a && a.dce_available && a.lead_score && a.lead_score.breakdown) || []; },
+    // Détail du score : on affiche le VRAI score déterministe du DCE (score_breakdown,
+    // 6 critères pondérés) ; repli sur le pré-score de l'avis (lead_score) si absent.
+    aoBreakdown() {
+      const a = this.ao.project && this.ao.project.ai_analysis;
+      if (!a) return [];
+      if (a.score_breakdown && a.score_breakdown.length) return a.score_breakdown;
+      return (a.dce_available && a.lead_score && a.lead_score.breakdown) || [];
+    },
     async aoStatus() {
       try { await this.api("PUT", "/api/projects/" + this.ao.project.id, { status: this.ao.project.status }); this.notify("Étape mise à jour"); this.loadStats(); }
       catch (e) { this.notify(e.message, "err"); }

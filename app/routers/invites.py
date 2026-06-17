@@ -375,9 +375,21 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
     if not getattr(inv, "can_contribute", True):
         raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
     c = _get_or_create_contribution(inv, db)
-    # Verrou optimiste : si le client a chargé une version périmée (un autre a sauvegardé
-    # entre-temps), on refuse au lieu d'écraser sa saisie.
-    if body.version is not None and int(body.version) != (c.version or 0):
+    # Verrou optimiste OBLIGATOIRE et ATOMIQUE. La version est exigée (un client qui
+    # l'omettait écrasait silencieusement la saisie d'un autre). On « réserve » la
+    # transition de version par un UPDATE ... WHERE version = attendue, exécuté en une
+    # seule instruction SQL : deux PUT concurrents lisant la même version ne peuvent pas
+    # passer tous les deux (le 2ᵉ matche 0 ligne → 409). Cela ferme la fenêtre TOCTOU
+    # du simple read-then-write.
+    if body.version is None:
+        raise HTTPException(428, "Version requise (verrou optimiste). Rechargez la contribution.")
+    expected = int(body.version)
+    claimed = db.query(ProjectContribution).filter(
+        ProjectContribution.id == c.id,
+        ProjectContribution.version == expected,
+    ).update({ProjectContribution.version: expected + 1}, synchronize_session="fetch")
+    if not claimed:
+        db.rollback()
         raise HTTPException(409, "Cette contribution a été modifiée ailleurs entre-temps. "
                                  "Rechargez pour récupérer la dernière version avant de réenregistrer.")
     if body.company_name is not None:
@@ -398,7 +410,7 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
     if c.status == "submitted":            # toute modif après soumission repasse en brouillon
         c.status = "draft"
         c.submitted_at = None
-    c.version = (c.version or 0) + 1        # incrémente le verrou optimiste
+    # La version a déjà été incrémentée atomiquement par le claim ci-dessus (→ expected+1).
     db.commit()
     return _serialize_contribution(c, db)
 

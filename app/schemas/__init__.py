@@ -1,7 +1,7 @@
 """
 Adjugo — Schémas Pydantic (validation des requêtes/réponses API)
 """
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import date, datetime
 
@@ -80,7 +80,7 @@ class ProjectCreate(BaseModel):
     name: str
     client: Optional[str] = None
     budget: Optional[float] = 0
-    tva_rate: Optional[float] = 0
+    tva_rate: Optional[float] = Field(0, ge=0, le=100)
     deadline: Optional[date] = None
     source_url: Optional[str] = None
 
@@ -89,7 +89,7 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     client: Optional[str] = None
     budget: Optional[float] = None
-    tva_rate: Optional[float] = None
+    tva_rate: Optional[float] = Field(None, ge=0, le=100)
     status: Optional[str] = None
     deadline: Optional[date] = None
     workflow: Optional[dict] = None
