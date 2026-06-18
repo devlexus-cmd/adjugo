@@ -200,6 +200,11 @@ def confidentialite():
     return _legal_page("confidentialite.html")
 
 
+@app.get("/dpa", tags=["Site"], include_in_schema=False)
+def dpa():
+    return _legal_page("dpa.html")
+
+
 @app.get("/app", tags=["Logiciel"], include_in_schema=False)
 def software():
     from fastapi.responses import HTMLResponse
