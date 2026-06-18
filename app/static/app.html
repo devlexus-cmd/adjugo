@@ -78,7 +78,7 @@
       <div class="brand"><span class="wordmark"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></span><span class="org-sub">{{ company.name || 'Votre entreprise' }}</span></div>
       <div class="nav-group">Pilotage</div>
       <a class="nav-item" :class="{active:view==='dashboard'}" @click="go('dashboard')"><i data-lucide="layout-dashboard"></i>Tableau de bord</a>
-      <a class="nav-item" :class="{active:view==='sourcing'}" @click="go('sourcing')"><i data-lucide="radar"></i>Sourcing IA</a>
+      <a class="nav-item" :class="{active:view==='sourcing'}" @click="go('sourcing')"><i data-lucide="radar"></i>Veille AO</a>
       <a class="nav-item" :class="{active:view==='amont'}" @click="go('amont')"><i data-lucide="telescope"></i>Veille amont <span v-if="amont.signals.length" class="badge">{{ amont.signals.length }}</span></a>
       <a class="nav-item" :class="{active:view==='kb'}" @click="go('kb')"><i data-lucide="brain-circuit"></i>Base de connaissances <span v-if="kb.docs.length" class="badge">{{ kb.docs.length }}</span></a>
       <a class="nav-item" :class="{active:view==='pipeline'}" @click="go('pipeline')"><i data-lucide="square-kanban"></i>Pipeline AO <span class="badge">{{ projects.length }}</span></a>
@@ -129,7 +129,7 @@
             </div>
           </div>
         </div>
-        <button v-if="view==='pipeline'||view==='dashboard'" class="btn primary" @click="go('sourcing')"><i data-lucide="radar"></i>Sourcing IA</button>
+        <button v-if="view==='pipeline'||view==='dashboard'" class="btn primary" @click="go('sourcing')"><i data-lucide="radar"></i>Veille AO</button>
         <button v-if="view==='cotraitants'" class="btn" @click="openDiscover()"><i data-lucide="search"></i>Découvrir</button>
         <button v-if="view==='cotraitants'" class="btn primary" @click="openCotraitant()"><i data-lucide="plus"></i>Co-traitant</button>
         <button v-if="view==='contacts'" class="btn primary" @click="openContact()"><i data-lucide="plus"></i>Contact</button>
@@ -201,8 +201,8 @@
               <div class="ch"><h3>Vos appels d'offres</h3><div class="spacer"></div><button class="btn ghost sm" @click="go('pipeline')">Tout voir<i data-lucide="arrow-right"></i></button></div>
               <div v-if="!projects.length" class="empty">
                 <div class="eic"><i data-lucide="inbox"></i></div>
-                <h4>Aucun appel d'offres</h4><p>Lancez le sourcing IA pour qualifier des marchés selon vos critères.</p>
-                <button class="btn primary" @click="go('sourcing')"><i data-lucide="radar"></i>Lancer le sourcing IA</button>
+                <h4>Aucun appel d'offres</h4><p>Lancez la veille AO pour qualifier des marchés selon vos critères.</p>
+                <button class="btn primary" @click="go('sourcing')"><i data-lucide="radar"></i>Lancer la veille AO</button>
               </div>
               <div v-else class="feed-list">
                 <div v-for="p in projects.slice(0,7)" :key="p.id" class="ao-row" @click="openProject(p)">
@@ -224,7 +224,7 @@
             <div class="dash-rail">
               <div class="act-hero" @click="go('sourcing')">
                 <div class="ah-ic"><i data-lucide="radar"></i></div>
-                <div class="ah-tx"><div class="ah-t">Sourcing IA</div><div class="ah-d">Trouver &amp; qualifier de nouveaux marchés</div></div>
+                <div class="ah-tx"><div class="ah-t">Veille AO</div><div class="ah-d">Trouver &amp; qualifier de nouveaux marchés</div></div>
                 <i data-lucide="arrow-right"></i>
               </div>
               <div class="act-links">
