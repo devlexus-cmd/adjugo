@@ -78,21 +78,21 @@
       <div class="brand"><span class="wordmark"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></span><span class="org-sub">{{ company.name || 'Votre entreprise' }}</span></div>
       <div class="nav-group">Pilotage</div>
       <a class="nav-item" :class="{active:view==='dashboard'}" @click="go('dashboard')"><i data-lucide="layout-dashboard"></i>Tableau de bord</a>
-      <a class="nav-item" :class="{active:view==='sourcing'}" @click="go('sourcing')"><i data-lucide="radar"></i>Veille AO</a>
-      <a class="nav-item" :class="{active:view==='amont'}" @click="go('amont')"><i data-lucide="telescope"></i>Veille amont <span v-if="amont.signals.length" class="badge">{{ amont.signals.length }}</span></a>
-      <a class="nav-item" :class="{active:view==='kb'}" @click="go('kb')"><i data-lucide="brain-circuit"></i>Base de connaissances <span v-if="kb.docs.length" class="badge">{{ kb.docs.length }}</span></a>
+      <a class="nav-item" :class="{active:view==='sourcing'}" @click="go('sourcing')"><i data-lucide="target"></i>Veille AO</a>
+      <a class="nav-item" :class="{active:view==='amont'}" @click="go('amont')"><i data-lucide="scan-eye"></i>Veille amont <span v-if="amont.signals.length" class="badge">{{ amont.signals.length }}</span></a>
+      <a class="nav-item" :class="{active:view==='kb'}" @click="go('kb')"><i data-lucide="library"></i>Base de connaissances <span v-if="kb.docs.length" class="badge">{{ kb.docs.length }}</span></a>
       <a class="nav-item" :class="{active:view==='pipeline'}" @click="go('pipeline')"><i data-lucide="square-kanban"></i>Pipeline AO <span class="badge">{{ projects.length }}</span></a>
       <a class="nav-item" :class="{active:view==='consortiums'}" @click="go('consortiums')"><i data-lucide="users-round"></i>Mes consortiums <span v-if="consortiums.active" class="badge">{{ consortiums.active }}</span></a>
       <a v-if="shared.length" class="nav-item" :class="{active:view==='shared'||view==='sharedao'}" @click="go('shared')"><i data-lucide="inbox"></i>Partagé avec moi <span class="badge">{{ shared.length }}</span></a>
       <div class="nav-group">CRM</div>
       <a class="nav-item" :class="{active:view==='cotraitants'}" @click="go('cotraitants')"><i data-lucide="handshake"></i>Co-traitants <span class="badge">{{ cotraitants.length }}</span></a>
-      <a class="nav-item" :class="{active:view==='contacts'}" @click="go('contacts')"><i data-lucide="users"></i>Contacts <span class="badge">{{ contacts.length }}</span></a>
+      <a class="nav-item" :class="{active:view==='contacts'}" @click="go('contacts')"><i data-lucide="contact-round"></i>Contacts <span class="badge">{{ contacts.length }}</span></a>
       <div class="nav-group">Gestion</div>
       <a class="nav-item" :class="{active:view==='documents'}" @click="go('documents')"><i data-lucide="folder-lock"></i>Coffre-fort</a>
-      <a class="nav-item" :class="{active:view==='invoices'}" @click="go('invoices')"><i data-lucide="file-spreadsheet"></i>Devis &amp; factures</a>
+      <a class="nav-item" :class="{active:view==='invoices'}" @click="go('invoices')"><i data-lucide="file-text"></i>Devis &amp; factures</a>
       <div class="nav-group">Configuration</div>
       <a class="nav-item" :class="{active:view==='company'}" @click="go('company')"><i data-lucide="briefcase"></i>Entreprise</a>
-      <a class="nav-item" :class="{active:view==='criteria'}" @click="go('criteria')"><i data-lucide="sliders-horizontal"></i>Critères Go/No-Go</a>
+      <a class="nav-item" :class="{active:view==='criteria'}" @click="go('criteria')"><i data-lucide="list-filter"></i>Critères Go/No-Go</a>
       <div class="nav-group">Compte</div>
       <a class="nav-item" :class="{active:view==='team'}" @click="go('team')"><i data-lucide="users-round"></i>Équipe</a>
       <a class="nav-item" :class="{active:view==='billing'}" @click="go('billing')"><i data-lucide="credit-card"></i>Abonnement</a>
@@ -129,7 +129,7 @@
             </div>
           </div>
         </div>
-        <button v-if="view==='pipeline'||view==='dashboard'" class="btn primary" @click="go('sourcing')"><i data-lucide="radar"></i>Veille AO</button>
+        <button v-if="view==='pipeline'||view==='dashboard'" class="btn primary" @click="go('sourcing')"><i data-lucide="target"></i>Veille AO</button>
         <button v-if="view==='cotraitants'" class="btn" @click="openDiscover()"><i data-lucide="search"></i>Découvrir</button>
         <button v-if="view==='cotraitants'" class="btn primary" @click="openCotraitant()"><i data-lucide="plus"></i>Co-traitant</button>
         <button v-if="view==='contacts'" class="btn primary" @click="openContact()"><i data-lucide="plus"></i>Contact</button>
@@ -202,7 +202,7 @@
               <div v-if="!projects.length" class="empty">
                 <div class="eic"><i data-lucide="inbox"></i></div>
                 <h4>Aucun appel d'offres</h4><p>Lancez la veille AO pour qualifier des marchés selon vos critères.</p>
-                <button class="btn primary" @click="go('sourcing')"><i data-lucide="radar"></i>Lancer la veille AO</button>
+                <button class="btn primary" @click="go('sourcing')"><i data-lucide="target"></i>Lancer la veille AO</button>
               </div>
               <div v-else class="feed-list">
                 <div v-for="p in projects.slice(0,7)" :key="p.id" class="ao-row" @click="openProject(p)">
@@ -223,7 +223,7 @@
             <!-- Rail -->
             <div class="dash-rail">
               <div class="act-hero" @click="go('sourcing')">
-                <div class="ah-ic"><i data-lucide="radar"></i></div>
+                <div class="ah-ic"><i data-lucide="target"></i></div>
                 <div class="ah-tx"><div class="ah-t">Veille AO</div><div class="ah-d">Trouver &amp; qualifier de nouveaux marchés</div></div>
                 <i data-lucide="arrow-right"></i>
               </div>
@@ -709,7 +709,7 @@
           <!-- Devis liés + Suivi -->
           <div class="cards cols-2" style="margin-top:14px;align-items:start">
             <div class="card">
-              <div class="ch"><i data-lucide="file-spreadsheet"></i><h3>Devis &amp; factures liés</h3><div class="spacer"></div>
+              <div class="ch"><i data-lucide="file-text"></i><h3>Devis &amp; factures liés</h3><div class="spacer"></div>
                 <button class="btn ghost sm" @click="go('invoices')"><i data-lucide="external-link"></i>Facturation</button></div>
               <div class="cb">
                 <div v-if="!aoInvoices().length" class="muted small">Aucun devis ni facture lié. Créez-en depuis <b>Devis &amp; factures</b> (champ « AO lié »).</div>
@@ -834,7 +834,7 @@
 
           <!-- Feed des AO réels -->
           <div v-if="!src.tenders.length && !src.searching" class="empty card pad" style="margin-top:14px">
-            <div class="eic"><i data-lucide="radar"></i></div>
+            <div class="eic"><i data-lucide="target"></i></div>
             <h4>Lancez une recherche</h4><p>Appels d'offres réels et traçables (BOAMP, TED). Chaque résultat affiche sa source et un lien vers l'avis officiel. Le score Go/No-Go n'apparaît qu'après import et analyse du DCE réel.</p>
           </div>
           <div v-for="t in src.tenders" :key="t.provenance.official_ref" class="card pad" style="margin-top:10px">
@@ -939,7 +939,7 @@
         <!-- ░░ VEILLE AMONT (signaux d'investissement) ░░ -->
         <section v-if="view==='amont'">
           <div class="card pad">
-            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="telescope" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Détecter des projets d'investissement</b></div>
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="scan-eye" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Détecter des projets d'investissement</b></div>
             <div class="muted small" style="margin-bottom:13px">Adjugo <b>va chercher lui-même</b> les délibérations récentes des collectivités (open data), puis l'IA y détecte les projets d'investissement futurs — <b>des mois avant l'appel d'offres</b> — notés selon votre profil. Sources réelles et traçables, zéro projet inventé.</div>
             <div v-if="orgCountry==='FR'" style="margin-bottom:13px">
               <div class="sectitle" style="margin:0 0 7px"><i data-lucide="map" style="width:13px;height:13px"></i> Régions ciblées <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">(aucune = toute la France)</span></div>
@@ -976,7 +976,7 @@
           </div>
 
           <div v-if="!amont.signals.length && !amont.uploading" class="empty card pad" style="margin-top:14px">
-            <div class="eic"><i data-lucide="telescope"></i></div>
+            <div class="eic"><i data-lucide="scan-eye"></i></div>
             <h4>Aucun signal pour le moment</h4><p>Importez une délibération pour détecter les projets d'investissement à venir, en amont de l'appel d'offres.</p>
           </div>
           <div v-for="s in amont.signals" :key="s.id" class="card pad" style="margin-top:12px" :style="s.pertinence==='pertinent'?'border-color:var(--success)':''">
@@ -1008,7 +1008,7 @@
         <section v-if="view==='kb'">
           <!-- Dépôt de documents — onboarding "Do It For You" -->
           <div class="card pad">
-            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="brain-circuit" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Votre savoir-faire, indexé et traçable</b></div>
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="library" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Votre savoir-faire, indexé et traçable</b></div>
             <div class="muted small" style="margin-bottom:13px">Déposez vos <b>mémoires techniques passés</b>, fiches RSE, méthodologies, certifications. Adjugo les indexe pour rédiger vos futures réponses <b>uniquement à partir de votre savoir-faire réel</b> — chaque phrase générée cite sa source. Aucune invention.</div>
             <div class="row wrap" style="gap:8px;align-items:center">
               <select class="inp" v-model="kb.kind" style="width:190px">
@@ -1243,7 +1243,7 @@
         <!-- ░░ CONTACTS ░░ -->
         <section v-if="view==='contacts'">
           <div v-if="!contacts.length" class="empty card pad">
-            <div class="eic"><i data-lucide="users"></i></div>
+            <div class="eic"><i data-lucide="contact-round"></i></div>
             <h4>Aucun contact</h4><p>Maîtres d'ouvrage, partenaires, fournisseurs — centralisez vos interlocuteurs.</p>
             <button class="btn primary" @click="openContact()"><i data-lucide="plus"></i>Ajouter un contact</button>
           </div>
@@ -1272,7 +1272,7 @@
         <!-- ░░ INVOICES ░░ -->
         <section v-if="view==='invoices'">
           <div v-if="!invoices.length" class="empty card pad">
-            <div class="eic"><i data-lucide="file-spreadsheet"></i></div>
+            <div class="eic"><i data-lucide="file-text"></i></div>
             <h4>Aucun devis ni facture</h4><p>Créez des devis et factures liés à vos marchés, avec calcul automatique du TTC.</p>
             <button class="btn primary" @click="openInvoice()"><i data-lucide="plus"></i>Créer</button>
           </div>
