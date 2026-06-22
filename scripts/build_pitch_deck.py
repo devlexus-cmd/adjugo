@@ -151,12 +151,12 @@ pillars([("Souveraineté & conformité","IA souveraine (Mistral, FR), hébergeme
 big("Notre vrai fossé, c'est le <b>réseau</b> : chaque PME et chaque collectivité qui rejoint Adjugo le rend plus utile aux autres — un avantage qui grandit avec nous."); NEXT()
 
 # 8. Business model
-kicker(8,"Modèle économique"); title("Un SaaS récurrent, doublé d'un effet réseau")
-bullets(["<b>Abonnement</b> : Découverte 0 € · Pro 129 € · Business 199 € /mois · Enterprise sur devis.",
-         "<b>À l'usage</b> : au-delà du quota inclus, 5 € l'analyse supplémentaire — la PME n'est jamais bloquée.",
+kicker(8,"Modèle économique"); title("Un SaaS PME aujourd'hui, un revenu côté collectivités demain")
+bullets(["<b>Face PME (revenus actuels)</b> : abonnement Découverte 0 € · Pro 129 € · Business 199 € /mois, + 5 € l'analyse au-delà du quota — jamais de blocage.",
+         "<b>Face collectivités (phase 2)</b> : abonnement acheteur pour sourcer des PME locales et structurer des groupements — d'abord en pilotes, puis récurrent.",
          "<b>Canal viral intégré</b> : on invite ses co-traitants sur un marché → ils découvrent Adjugo et deviennent à leur tour utilisateurs.",
          "<b>Modèle réplicable pays par pays</b> : même moteur, on branche les sources locales et on ouvre un nouveau marché."])
-big("Le réseau (co-traitance) crée la <b>rétention</b> et un coût d'acquisition qui baisse avec la croissance."); NEXT()
+big("Le réseau à deux faces crée la <b>rétention</b> et un coût d'acquisition qui baisse avec la croissance."); NEXT()
 
 # 9. Traction
 kicker(9,"Où on en est"); title("Des utilisateurs engagés et des prospects payeurs")

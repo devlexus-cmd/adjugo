@@ -163,19 +163,30 @@ st += section("03 — L'avantage : le réseau Adjugo",
 
 # ---- 4. MARCHÉ + BUSINESS MODEL ----
 st += section("04 — Marché & modèle économique",
-    "Un marché immense, un modèle SaaS clair",
+    "Un marché immense, un modèle à deux faces",
     Paragraph("<b>Marché.</b> ~160 Md€/an en France, ~2 000 Md€/an en Europe. Cible initiale : les PME du BTP, des "
               "services et des études — artisans, indépendants, TPE/PME. Notre moteur s'appuie déjà sur TED : il est "
               "<b>européen dès le départ</b>.", S['body']),
-    Paragraph("<b>Modèle.</b> Abonnement SaaS, sans engagement, avec paiement à l'usage au-delà du quota :", S['body']),
+    Paragraph("Le modèle suit le réseau : on monétise <b>les deux côtés</b> du marché.", S['body']),
+    Paragraph("<b>Face 1 — les PME (revenus aujourd'hui).</b> Abonnement SaaS, sans engagement, paiement à l'usage "
+              "au-delà du quota :", S['body']),
     grid_table(
         ["Offre", "Prix", "Inclus"],
         [["Découverte", "0 €/mois", "2 analyses/mois · recherche BOAMP réelle · 1 utilisateur"],
-         ["Pro", "129 €/mois", "30 analyses · savoir-faire + rédaction IA sourcée · partenaires vérifiés · formulaires officiels"],
+         ["Pro", "129 €/mois", "30 analyses · savoir-faire + rédaction IA · partenaires vérifiés · formulaires officiels"],
          ["Business", "199 €/mois", "100 analyses · multi-utilisateurs · multi-pays · API · support prioritaire"]],
         [30*mm, 24*mm, PW-2*MX-54*mm]),
-    Paragraph("Au-delà du quota : 5 €/analyse (jamais de blocage). Revenus additionnels à venir : volet acheteur "
-              "(collectivités) et services du réseau.", S['note']),
+    Paragraph("Au-delà du quota : 5 €/analyse — jamais de blocage. <b>Canal viral</b> : une PME invite ses partenaires "
+              "sur un marché, ils découvrent Adjugo et s'abonnent à leur tour.", S['note']),
+    Paragraph("<b>Face 2 — les collectivités (revenus en construction, phase 2).</b> Les acheteurs publics viennent "
+              "sur Adjugo pour :", S['body']),
+    bullets([
+        "<b>Sourcer des PME locales qualifiées</b> et <b>structurer des groupements</b> — via un abonnement acheteur dédié.",
+        "Démarrage en <b>pilotes</b> (subventionnables : plus de concurrence, plus d'achat local et durable = valeur publique), puis abonnement récurrent.",
+        "<b>Services du réseau</b> : mise en relation qualifiée, accompagnement, structuration de la réponse commune.",
+    ]),
+    Paragraph("Les deux faces se renforcent : le SaaS PME amorce et autofinance le réseau ; la face acheteur "
+              "démultiplie ensuite le revenu par marché et verrouille l'effet de réseau.", S['note']),
 )
 
 # ---- 5. TRACTION + ROADMAP ----
