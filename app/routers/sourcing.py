@@ -334,7 +334,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
                          project_id: int = Form(...),
                          current_user: User = Depends(get_current_user),
                          db: Session = Depends(get_db)):
-    from app.core.quota import consume_analysis
+    from app.core.quota import consume_analysis, refund_analysis
     from app.services.analysis import analyze_dce_text, extract_dce_text
 
     project = db.query(Project).filter(Project.id == project_id,
@@ -363,9 +363,14 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     gonogo = _criteria_dict(current_user.id, db)
 
     from app.services.llm import tenant_scope
-    with tenant_scope(current_user.id):
-        analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                    lang_name=_user_lang_name(current_user, db))
+    try:
+        with tenant_scope(current_user.id):
+            analysis = analyze_dce_text(dce_text, company_data, gonogo,
+                                        lang_name=_user_lang_name(current_user, db))
+    except Exception:
+        refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
+        raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
+                                 "Réessayez — votre quota n'a pas été débité.")
     analysis["dce_available"] = True
     analysis["dce_excerpt"] = (dce_text or "")[:30000]   # contexte pour le Q&A IA
     prev = project.ai_analysis or {}
@@ -394,8 +399,8 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
         from app.services.dossier import replace_in_dossier
         replace_in_dossier(db, current_user.id, project.id, "DCE",
                            file.filename or "DCE.pdf", content, file.content_type or "application/pdf")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Archivage DCE échoué (projet %s): %s", project.id, e)
 
     return {
         "project_id": project.id, "decision": decision, "score": score,
@@ -414,7 +419,7 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
                             db: Session = Depends(get_db)):
     """Relance l'analyse sur le dossier déjà importé — utile après avoir affiné ses
     critères, ou si l'analyse précédente semblait incomplète."""
-    from app.core.quota import consume_analysis
+    from app.core.quota import consume_analysis, refund_analysis
     from app.services.analysis import analyze_dce_text, extract_dce_text
     from app.services.storage import get_storage
     from app.models import Document
@@ -444,9 +449,14 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     company_data = _company_dict(company)
     gonogo = _criteria_dict(current_user.id, db)
     from app.services.llm import tenant_scope
-    with tenant_scope(current_user.id):
-        analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                    lang_name=_user_lang_name(current_user, db))
+    try:
+        with tenant_scope(current_user.id):
+            analysis = analyze_dce_text(dce_text, company_data, gonogo,
+                                        lang_name=_user_lang_name(current_user, db))
+    except Exception:
+        refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
+        raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
+                                 "Réessayez — votre quota n'a pas été débité.")
     analysis["dce_available"] = True
     analysis["dce_excerpt"] = (dce_text or "")[:30000]
     prev = project.ai_analysis or {}
@@ -461,6 +471,9 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     project.go_decision = decision
     project.ai_summary = analysis.get("summary", "")
     project.ai_analysis = analysis
+    intitule = analysis.get("details", {}).get("intitule_marche")
+    if intitule:
+        project.name = intitule[:500]
     db.commit()
     return {
         "project_id": project.id, "decision": decision, "score": score,

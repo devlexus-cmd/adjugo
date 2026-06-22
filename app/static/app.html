@@ -115,7 +115,7 @@
         <div style="position:relative">
           <button class="btn icon ghost" @click="toggleNotifs()" aria-label="Notifications" style="position:relative">
             <i data-lucide="bell"></i>
-            <span v-if="notifUnseen>0" style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--danger-text);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ notifUnseen>9?'9+':notifUnseen }}</span>
+            <span v-if="notifUnseen>0" style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--danger-text);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ notifUnseen>99?'99+':notifUnseen }}</span>
           </button>
           <div v-if="notifsOpen" @click="notifsOpen=false" style="position:fixed;inset:0;z-index:40"></div>
           <div v-if="notifsOpen" style="position:absolute;right:0;top:40px;z-index:41;width:340px;max-height:440px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:11px;box-shadow:0 10px 34px rgba(0,0,0,.13)">
@@ -132,7 +132,7 @@
         <button v-if="view==='cotraitants'" class="btn primary" @click="openCotraitant()"><i data-lucide="plus"></i>Partenaire</button>
         <button v-if="view==='contacts'" class="btn primary" @click="openContact()"><i data-lucide="plus"></i>Contact</button>
         <button v-if="view==='invoices'" class="btn primary" @click="openInvoice()"><i data-lucide="plus"></i>Devis / facture</button>
-        <button v-if="view==='documents'" class="btn primary" @click="$refs.upl.click()"><i data-lucide="upload"></i>Ajouter un document</button>
+        <button v-if="view==='documents'" class="btn primary" @click="$refs.upl.click()" :disabled="uploading"><span v-if="uploading" class="spin"></span><i v-else data-lucide="upload"></i>Ajouter un document</button>
         <input ref="upl" type="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.odt,.ods,.zip,.txt" multiple class="hidden" @change="uploadDoc">
       </header>
       <div class="content">
@@ -145,7 +145,7 @@
               <i data-lucide="rocket" style="color:var(--accent-text)"></i>
               <b style="flex:1">Premiers pas sur Adjugo</b>
               <span class="pill" :class="onboarding.done===onboarding.total?'go':'neutral'" style="font-size:11px">{{ onboarding.done }}/{{ onboarding.total }}</span>
-              <button class="icon-btn xs" title="Masquer" @click="dismissOnboarding()"><i data-lucide="x" style="width:15px;height:15px"></i></button>
+              <button class="icon-btn xs" title="Masquer" aria-label="Masquer" @click="dismissOnboarding()"><i data-lucide="x" style="width:15px;height:15px"></i></button>
             </div>
             <div class="muted small" style="margin:4px 0 10px">3 étapes pour configurer votre espace et trouver vos premiers marchés.</div>
             <div v-for="(s,i) in onboarding.steps" :key="s.k" class="row" style="padding:7px 0;border-top:1px solid var(--hairline);gap:10px;align-items:center">
@@ -206,7 +206,7 @@
                 <div v-for="p in projects.slice(0,7)" :key="p.id" class="ao-row" @click="openProject(p)">
                   <div class="score-ring" :style="ringStyle(p.match_score)"><span class="num">{{ p.match_score!=null?p.match_score:'—' }}</span></div>
                   <div class="ao-mid">
-                    <div class="ao-t">{{ (p.name||'Sans titre').slice(0,64) }}</div>
+                    <div class="ao-t" :title="p.name||'Sans titre'">{{ (p.name||'Sans titre').slice(0,64) }}</div>
                     <div class="ao-c">{{ p.client||'Acheteur non précisé' }}</div>
                   </div>
                   <div class="ao-tags">
@@ -238,7 +238,7 @@
 
               <div class="card pad" v-if="dashTotal()">
                 <h3>Mes marchés</h3>
-                <div class="funnel">
+                <div class="funnel" role="img" :aria-label="'Marchés par étape : ' + Object.entries(stats.by_status||{}).map(([s,n]) => statusLabel(s)+' '+n).join(', ')">
                   <i v-for="(n,s) in stats.by_status" :key="'f'+s" :style="'width:'+dashPct(n)+'%;background:'+dashColor(s)" :title="statusLabel(s)+' · '+n"></i>
                 </div>
                 <div class="funnel-leg">
@@ -360,7 +360,7 @@
               <button v-if="ao.estimate" class="btn sm" @click="ao.estimateOpen=!ao.estimateOpen"><i :data-lucide="ao.estimateOpen?'chevron-up':'sliders-horizontal'"></i>{{ ao.estimateOpen?'Replier':'Détailler / ajuster' }}</button></div>
             <div class="cb">
               <div v-if="!ao.estimate" class="muted small">L'IA découpe le travail en tâches et estime le nombre de jours ; le prix est calculé sur <b>vos tarifs</b> (réglables dans Mon entreprise). Rien d'inventé : tout est calculé.
-                <div class="row" style="gap:6px;margin-top:9px;align-items:center"><span>Distance du chantier :</span><input class="inp" type="number" min="0" v-model.number="ao.estimateDistance" style="width:90px"><span>km</span></div>
+                <div class="row" style="gap:6px;margin-top:9px;align-items:center"><span>Distance du chantier :</span><input class="inp" type="number" min="0" v-model.number="ao.estimateDistance" style="width:90px" aria-label="Distance du chantier en km"><span>km</span></div>
               </div>
               <div v-else>
                 <div class="cards cols-4">
@@ -371,7 +371,7 @@
                 </div>
                 <div v-if="ao.estimateOpen" style="margin-top:12px">
                   <div class="row wrap" style="gap:8px;margin-bottom:10px;align-items:center">
-                    <span class="muted small">Distance chantier</span><input class="inp" type="number" min="0" v-model.number="ao.estimateDistance" style="width:78px"><span class="muted small">km</span>
+                    <span class="muted small">Distance chantier</span><input class="inp" type="number" min="0" v-model.number="ao.estimateDistance" style="width:78px" aria-label="Distance chantier en km"><span class="muted small">km</span>
                     <button class="btn sm primary" @click="aoSaveEstimate()" :disabled="ao.estimateBusy"><span v-if="ao.estimateBusy" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Recalculer</button>
                     <button class="btn sm ghost" @click="aoEstimate()" :disabled="ao.estimateBusy"><i data-lucide="sparkles"></i>Régénérer</button></div>
                   <div v-for="(l,i) in ao.estimate.lignes" :key="'est'+i" class="row small" style="padding:6px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
@@ -464,7 +464,7 @@
                       <div class="row small" style="gap:7px">
                         <i :data-lucide="c.status==='ok'?'check':c.status==='generable'?'sparkles':c.status==='expire'?'clock':'circle'" :style="c.status==='ok'?'color:var(--success)':c.status==='manquant'?'color:var(--subtle)':c.status==='expire'?'color:var(--warning)':'color:var(--accent-text)'" style="width:15px;height:15px"></i>
                         <span style="flex:1;min-width:0">{{ c.name }}<b v-if="c.required" style="color:#b91c1c"> *</b></span>
-                        <button v-if="c.help" class="icon-btn xs" :title="c.help" @click="ao.chkHelp = (ao.chkHelp===c.id?null:c.id)" style="padding:2px"><i data-lucide="help-circle" style="width:14px;height:14px"></i></button>
+                        <button v-if="c.help" class="icon-btn xs" :title="c.help" aria-label="Aide" @click="ao.chkHelp = (ao.chkHelp===c.id?null:c.id)" style="padding:2px"><i data-lucide="help-circle" style="width:14px;height:14px"></i></button>
                         <span class="pill" :class="c.status==='ok'?'go':c.status==='manquant'?'neutral':c.status==='expire'?'a_etudier':'st-nouveau'" style="font-size:10px">{{ checklistLabel(c.status) }}</span>
                       </div>
                       <div v-if="c.context_note" class="small" style="color:#b45309;margin:2px 0 0 22px">{{ c.context_note }}</div>
@@ -607,7 +607,7 @@
 
               <div v-if="ao.share.lastUrl" class="row" style="margin-top:10px;gap:8px;align-items:center;padding:9px 11px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-weak)">
                 <i data-lucide="link" style="width:15px;height:15px;color:var(--accent-text)"></i>
-                <input class="inp" :value="ao.share.lastUrl" readonly style="flex:1;font-size:12px" onclick="this.select()">
+                <input class="inp" :value="ao.share.lastUrl" readonly aria-label="Lien d'invitation à copier" style="flex:1;font-size:12px" onclick="this.select()" @focus="$event.target.select()">
                 <button class="btn sm" @click="copyInvite(ao.share.lastUrl)"><i data-lucide="copy"></i>Copier</button>
               </div>
 
@@ -780,7 +780,7 @@
               </div>
               <div class="row wrap" style="margin-top:8px;gap:8px;align-items:center">
                 <span class="muted small" style="flex:1;min-width:200px">Type de marché affine le BOAMP (France) · les codes CPV affinent TED (Europe).</span>
-                <button v-if="src.type_marche||src.cpv" class="btn ghost sm" @click="srcResetAdv()"><i data-lucide="x"></i>Réinitialiser</button>
+                <button :disabled="!src.type_marche && !src.cpv" class="btn ghost sm" @click="srcResetAdv()"><i data-lucide="x"></i>Réinitialiser</button>
               </div>
             </div>
             <div v-if="src.sources.length" class="row small muted" style="margin-top:10px;gap:6px">Sources officielles : <span v-for="s in src.sources" :key="s" class="pill neutral">{{ s }}</span></div>
@@ -837,7 +837,7 @@
             <div class="eic"><i data-lucide="target"></i></div>
             <h4>Lancez une recherche</h4><p>Des marchés réels et traçables (sources officielles BOAMP, TED). Chaque résultat affiche sa source et un lien vers l'annonce officielle. La compatibilité avec votre entreprise s'affiche une fois le dossier du marché importé et analysé.</p>
           </div>
-          <div v-for="t in src.tenders" :key="t.provenance.official_ref" class="card pad" style="margin-top:10px">
+          <div v-for="(t,ti) in src.tenders" :key="ti" class="card pad" style="margin-top:10px">
             <div class="row" style="align-items:flex-start;gap:12px">
               <div style="flex:1;min-width:0">
                 <div class="row" style="gap:6px;flex-wrap:wrap">
@@ -1160,7 +1160,7 @@
           <div v-if="!documents.length" class="empty card pad">
             <div class="eic"><i data-lucide="folder-lock"></i></div>
             <h4>Aucun document pour l'instant</h4><p>Centralisez vos pièces administratives (Kbis, attestations, qualifications) avec alertes d'expiration.</p>
-            <button class="btn primary" @click="$refs.upl.click()"><i data-lucide="upload"></i>Ajouter un document</button>
+            <button class="btn primary" @click="$refs.upl.click()" :disabled="uploading"><span v-if="uploading" class="spin"></span><i v-else data-lucide="upload"></i>Ajouter un document</button>
           </div>
           <div v-else class="t-wrap"><table><thead><tr><th>Document</th><th>Catégorie</th><th>Taille</th><th>Expiration</th><th></th></tr></thead><tbody>
             <tr v-for="d in documents" :key="d.id"><td><b>{{ d.name }}</b><div v-if="d.project_name" class="muted small">{{ d.folder }} · {{ (d.project_name||'').slice(0,40) }}</div></td><td><span class="pill st-nouveau">{{ d.folder || d.category }}</span></td>
@@ -1523,7 +1523,7 @@
                 <a class="btn icon sm ghost" :href="'/api/invite/'+sharedAo.token+'/contribution/piece/'+pc.id" aria-label="Voir"><i data-lucide="download"></i></a>
                 <button class="btn icon sm ghost" @click="sharedRemovePiece(pc.id)" aria-label="Retirer"><i data-lucide="trash-2"></i></button>
               </div>
-              <button class="btn sm" style="margin-top:8px" @click="$refs.sharedFile.click()"><i data-lucide="upload"></i>Ajouter une pièce</button>
+              <button class="btn sm" style="margin-top:8px" @click="$refs.sharedFile.click()" :disabled="sharedAo.busy"><span v-if="sharedAo.busy" class="spin"></span><i v-else data-lucide="upload"></i>Ajouter une pièce</button>
               <input ref="sharedFile" type="file" class="hidden" @change="sharedUpload">
             </div>
 
@@ -1597,7 +1597,7 @@
         </template>
       </div>
       <div class="modal-f"><button class="btn ghost" @click="modal=null">Annuler</button>
-        <button class="btn primary" @click="saveModal" :disabled="busy"><span v-if="busy" class="spin"></span>Enregistrer</button></div>
+        <button class="btn primary" @click="saveModal" :disabled="busy || ((modal.type==='contact'||modal.type==='cotraitant') && (!modal.d.name || !modal.d.name.trim()))"><span v-if="busy" class="spin"></span>Enregistrer</button></div>
     </div>
   </div>
 

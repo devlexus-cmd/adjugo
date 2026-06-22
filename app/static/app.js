@@ -100,7 +100,7 @@ const __adjApp = createApp({
         "Ajoutez les pièces <b>« manquantes »</b> de la liste (attestations fiscale/sociale, assurances…).",
         "Déposez avant la <b>date limite</b> sur le profil de votre client (Chorus Pro, PLACE, plateforme du marché)."
       ],
-      discover: { open: false, trade: "", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [],
+      discover: { open: false, trade: "", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [], uploading: false,
       cpvList: [
         {code:"45000000",label:"Travaux de construction"},{code:"45100000",label:"Préparation de chantier"},
         {code:"45110000",label:"Démolition / terrassement"},{code:"45200000",label:"Bâtiment / génie civil"},
@@ -561,6 +561,7 @@ const __adjApp = createApp({
     cpvLabels(str) {
       const codes = (str || "").split(/[ ,;]+/).map(s => s.trim().replace(/\D/g, "")).filter(Boolean);
       return codes.map(code => {
+        if (code.length < 8) return code + " — (tapez les 8 chiffres)";
         let hit = (this.cpvList || []).find(c => c.code === code);
         if (!hit) hit = (this.cpvList || []).find(c => code.slice(0, 2) === c.code.slice(0, 2));
         return hit ? code + " — " + hit.label : code + " — (libellé inconnu)";
@@ -785,16 +786,18 @@ const __adjApp = createApp({
     },
     async sharedUpload(ev) {
       const f = ev.target.files[0]; if (!f) return;
+      ev.target.value = "";
+      this.sharedAo.busy = true;
       const fd = new FormData(); fd.append("file", f);
       try {
         const r = await fetch("/api/invite/" + this.sharedAo.token + "/contribution/piece", { method: "POST", body: fd });
         if (!r.ok) { const e = await r.json().catch(() => ({})); this.notify(e.detail || "Échec de l'envoi", "err"); }
         else { this.notify("Pièce ajoutée"); this.sharedReload(); }
-      } catch (e) { this.notify("Échec de l'envoi", "err"); }
-      ev.target.value = "";
+      } catch (e) { this.notify("Échec de l'envoi", "err"); } finally { this.sharedAo.busy = false; }
     },
     async sharedRemovePiece(id) {
-      try { await fetch("/api/invite/" + this.sharedAo.token + "/contribution/piece/" + id, { method: "DELETE" }); this.sharedReload(); } catch (e) {}
+      try { await fetch("/api/invite/" + this.sharedAo.token + "/contribution/piece/" + id, { method: "DELETE" }); this.sharedReload(); }
+      catch (e) { this.notify("Échec de la suppression de la pièce", "err"); }
     },
     sharedFact(a) { const L = { acheteur: "Acheteur", allotissement: "Allotissement", lieu: "Lieu", type_marche: "Type", date_limite: "Date limite", criteres_attribution: "Critères", duree: "Durée" }; return Object.entries(L).filter(([k]) => a && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length)).map(([k, lab]) => ({ k: lab, v: Array.isArray(a[k]) ? a[k].map(x => (x && typeof x === "object") ? (x.critere || x.nom || x.label || "") + (x.ponderation ? " — " + x.ponderation : "") : x).join(" · ") : a[k] })); },
     // ── Notifications (activité des partenaires) ──
@@ -1025,6 +1028,7 @@ const __adjApp = createApp({
     },
     async delProject(p) {
       const id = p.id;
+      if (!confirm("Supprimer ce marché et toutes ses données (analyse, partenaires, documents) ?\nIl part à la corbeille — récupérable.")) return;
       try { await this.api("DELETE", "/api/projects/" + id); this.drawer = null; this.loadProjects(); this.notifyUndo("Appel d'offres mis à la corbeille", () => this.restoreProject(id)); }
       catch (e) { this.notify(e.message, "err"); }
     },
@@ -1071,13 +1075,17 @@ const __adjApp = createApp({
     async uploadDoc(e) {
       const files = Array.from(e.target.files || []); if (!files.length) return;
       e.target.value = "";
+      this.uploading = true;
       let ok = 0;
-      for (const file of files) {
-        const fd = new FormData(); fd.append("file", file); fd.append("name", file.name); fd.append("category", "autre");
-        try { await this.api("POST", "/api/documents/", fd, true); ok++; }
-        catch (err) { this.notify(file.name + " : " + err.message, "err"); }
-      }
-      if (ok) { this.loadDocuments(); this.notify(ok + " document(s) ajouté(s)"); }
+      try {
+        for (const file of files) {
+          const fd = new FormData(); fd.append("file", file); fd.append("name", file.name); fd.append("category", "autre");
+          try { await this.api("POST", "/api/documents/", fd, true); ok++; }
+          catch (err) { this.notify(file.name + " : " + err.message, "err"); }
+        }
+      } finally { this.uploading = false; }
+      if (ok) { this.loadDocuments(); this.notify(ok === files.length ? ok + " document(s) ajouté(s)" : ok + "/" + files.length + " ajouté(s)"); }
+      else this.notify("Aucun document ajouté", "err");
     },
     async delDoc(d) { const id = d.id; try { await this.api("DELETE", "/api/documents/" + id); this.loadDocuments(); this.notifyUndo("Document mis à la corbeille", () => this.restoreDoc(id)); } catch (e) { this.notify(e.message, "err"); } },
     async renameDoc(d) {
@@ -1219,6 +1227,7 @@ const __adjApp = createApp({
     },
     async srcDelAlert(a) {
       const id = a.id;
+      if (!confirm("Supprimer cette alerte ? Vous ne recevrez plus les nouveaux marchés correspondants par email.")) return;
       try { await this.api("DELETE", "/api/saved-searches/" + id); this.loadAlerts(); this.notify("Alerte supprimée"); }
       catch (e) { this.notify(e.message, "err"); }
     },
@@ -1247,10 +1256,15 @@ const __adjApp = createApp({
           { query: this.src.query, departements: this.srcDeps(), countries: this.src.country ? [this.src.country] : [],
             type_marche: this.src.type_marche, cpv: this.srcCpv(), limit: PAGE, offset: append ? this.src.offset : 0 });
         const fresh = r.tenders || [];
+        // Clé de dédup ROBUSTE : official_ref peut être vide (avis TED sans réf claire) →
+        // on combine source + réf + objet, sinon plusieurs avis « sans réf » s'écrasaient
+        // (pagination qui semblait bloquée / résultats perdus en silence).
+        const tkey = t => ((t.provenance && t.provenance.source) || "") + "|" + ((t.provenance && t.provenance.official_ref) || "") + "|" + ((t.objet || "").slice(0, 60));
         if (append) {
-          // Dédup à l'ajout (les sources peuvent renvoyer un chevauchement).
-          const seen = new Set(this.src.tenders.map(t => t.provenance && t.provenance.official_ref));
-          this.src.tenders = this.src.tenders.concat(fresh.filter(t => !seen.has(t.provenance && t.provenance.official_ref)));
+          const seen = new Set(this.src.tenders.map(tkey));
+          const added = fresh.filter(t => !seen.has(tkey(t)));
+          this.src.tenders = this.src.tenders.concat(added);
+          if (fresh.length && !added.length) this.notify("Aucun nouveau marché (doublons filtrés)", "ok");
         } else { this.src.tenders = fresh; this.src.errors = r.errors || []; this.src.sources = r.sources_queried || []; }
         this.src.offset = (append ? this.src.offset : 0) + PAGE;
         this.src.hasMore = !!r.has_more;
@@ -1402,6 +1416,7 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); } finally { this.kb.busyText = false; }
     },
     async kbDelete(d) {
+      if (!confirm("Retirer ce document de votre savoir-faire ?")) return;
       try { await this.api("DELETE", "/api/knowledge/" + d.id); this.kb.docs = this.kb.docs.filter(x => x.id !== d.id); }
       catch (e) { this.notify(e.message, "err"); }
     },
@@ -1451,6 +1466,7 @@ const __adjApp = createApp({
     eurMaybe(n) { return (n || n === 0) ? this.eur(n) : "montant estimé n/d"; },
     companyWeb(c) { return "https://www.google.com/search?q=" + encodeURIComponent((c.nom || c.name || "") + " " + (c.ville || c.city || "") + " site officiel contact"); },
     async srcCotraitants() {
+      if (!this.src.projectId) { this.notify("Analysez d'abord un marché (Étape 2) avant de chercher des partenaires", "err"); return; }
       this.src.ct.searching = true; this.src.ct.companies = []; this.src.ct.errors = [];
       if (!this.src.ct.dept) this.src.ct.dept = (this.srcDeps()[0] || (this.company.postal_code || "").slice(0, 2));
       try {

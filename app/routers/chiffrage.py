@@ -16,7 +16,7 @@ from app.core.database import get_db
 from app.core.ratelimit import limiter
 from app.core.security import get_current_user
 from app.core.org import member_ids, data_owner_id
-from app.models import Company, Project, User
+from app.models import Company, Project, User, utcnow
 from app.services.agents.chiffrage import DEFAULT_RATES, compute_estimate, propose_tasks
 
 router = APIRouter(prefix="/api/chiffrage", tags=["Chiffrage"])
@@ -112,14 +112,13 @@ def save_estimate(project_id: int, req: SaveRequest,
 def review_estimate(project_id: int, req: ReviewRequest,
                     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Revue d'équipe : valider / demander une révision (étape 5). Trace l'auteur."""
-    import datetime
     p = _project(project_id, current_user, db)
     if not (p.estimate and p.estimate.get("lignes")):
         raise HTTPException(400, "Aucun chiffrage à valider.")
     status = req.status if req.status in ("valide", "revision", "a_valider") else "a_valider"
     est = dict(p.estimate)
     est["review"] = {"status": status, "by": current_user.full_name or current_user.email,
-                     "note": (req.note or "")[:500], "at": datetime.datetime.utcnow().isoformat()}
+                     "note": (req.note or "")[:500], "at": utcnow().isoformat()}
     p.estimate = est
     db.commit()
     return est
