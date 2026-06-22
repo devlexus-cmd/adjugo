@@ -191,10 +191,11 @@ st += section("04 — Marché & modèle économique",
 
 # ---- 5. TRACTION + ROADMAP ----
 st += section("05 — Traction & feuille de route",
-    "Le produit existe déjà — la beta est lancée",
+    "Le produit existe déjà — 7 PME le testent",
     bullets([
         "<b>Produit en ligne et fonctionnel</b> (adjugo.pro), données réelles branchées (BOAMP, TED, registre SIRENE).",
-        "<b>Beta PME en cours</b> (objectif 5 à 10) — Bretagne, région parisienne, Lille.",
+        "<b>7 PME en test</b> aujourd'hui, qui nous envoient leurs retours — Bretagne, région parisienne, Lille.",
+        "Projet <b>repris et élargi</b> au hackathon vibe coding d'EuraTechnologies (13 juin).",
         "<b>Conformité</b> : pages légales et RGPD en ligne (dont l'accord de traitement / DPA).",
         "<b>Coût d'infrastructure maîtrisé</b> et 0 salaire fondateur au démarrage → burn minimal.",
     ]),
@@ -217,12 +218,14 @@ st += section("06 — Expansion européenne",
 
 # ---- 7. ÉQUIPE ----
 st += section("07 — L'équipe",
-    "Deux fondateurs complémentaires, qui se connaissent depuis le collège",
+    "Deux fondateurs complémentaires, amis depuis dix ans",
     kv_table([
-        ("Eliot Viegas", "Technique & produit (Audencia / Centrale Nantes). Conçoit et opère la plateforme."),
-        ("Mathys Guena", "Business & développement (l'iteem — SKEMA / Centrale Lille). Basé à Lille."),
-        ("Le binôme", "Deux Bretons, amis de longue date. Profils tech + business qui se complètent. "
-                       "Pas de salaire fondateur au démarrage : on construit avant de coûter."),
+        ("Eliot Viegas", "Technique & produit (Centrale Nantes). Conçoit et opère la plateforme."),
+        ("Mathys Guena", "Business & développement (Centrale Lille & SKEMA). Basé à Lille."),
+        ("L'origine", "Eliot a vu sa mère, muséographe, perdre un temps fou sur ses appels d'offres — "
+                      "et renoncer à des marchés qui la faisaient rêver, faute de moyens. Adjugo est né de cette frustration."),
+        ("Le binôme", "Deux Bretons, profils tech + business qui se complètent. "
+                      "Pas de salaire fondateur au démarrage : on construit avant de coûter."),
     ]),
 )
 

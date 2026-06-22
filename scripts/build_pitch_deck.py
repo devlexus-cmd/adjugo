@@ -161,10 +161,10 @@ bullets(["<b>Face PME (revenus actuels)</b> : abonnement Découverte 0 € · Pr
 big("Le réseau à deux faces crée la <b>rétention</b> et un coût d'acquisition qui baisse avec la croissance."); NEXT()
 
 # 9. Traction
-kicker(9,"Où on en est"); title("Des utilisateurs engagés et des prospects payeurs")
-kpiband([("~10","PME utilisatrices"),("Co-construction","retours &amp; améliorations"),("1ers RDV","clients payeurs posés")])
-bullets(["<b>Environ 10 PME</b> utilisent le logiciel en échange de leurs <b>retours</b> et de leur <b>aide pour les améliorations</b>.",
-         "<b>Premiers rendez-vous clients payeurs</b> déjà posés.",
+kicker(9,"Où on en est"); title("Un produit en ligne, déjà testé par de vraies PME")
+kpiband([("7","PME en test"),("Co-construction","retours &amp; améliorations"),("Hackathon","EuraTech · 13 juin")])
+bullets(["<b>7 PME</b> testent aujourd'hui le logiciel et nous font des <b>retours</b> qui nous font avancer chaque semaine.",
+         "Présenté au <b>hackathon vibe coding d'EuraTechnologies</b> (13 juin) — c'est là qu'on a repris et élargi le projet.",
          "Socle prêt : hébergement UE, sauvegardes, e-mails, supervision, cadre légal complet (CGV, confidentialité, DPA).",
          "Prochaine étape : convertir les premiers payants, puis lancer l'expansion européenne."]); NEXT()
 
@@ -176,12 +176,12 @@ bullets(["<b>Un réseau à deux faces</b> : côté PME, répondre (seul ou en gr
          "Localiser = brancher les plateformes nationales (PLACSP, e-Procurement, TenderNed) + la langue. Pas de refonte."]); NEXT()
 
 # 11. Équipe
-kicker(11,"L'équipe"); title("Deux fondateurs bretons, complémentaires, amis depuis le collège")
-team([("Eliot Viegas","Tech & Produit","Centrale Nantes / Audencia"),
-      ("Mathys Guéna","Business & Développement","ITEEM — Centrale Lille / SKEMA · basé à Lille")])
+kicker(11,"L'équipe"); title("Deux fondateurs bretons, complémentaires, amis depuis dix ans")
+team([("Eliot Viegas","Tech & Produit","Centrale Nantes · basé à Nantes"),
+      ("Mathys Guéna","Business & Développement","Centrale Lille & SKEMA · basé à Lille")])
 bullets(["Eliot pilote le <b>produit et la tech</b> ; Mathys pilote le <b>business et le développement commercial</b>.",
-         "Deux cursus ingénieur-manager (Centrale Nantes/Audencia, Centrale Lille/SKEMA) : on parle <b>produit ET marché</b>."])
-big("Confiance longue durée, double compétence ingénieur × business, et un fondateur <b>déjà ancré à Lille</b>."); NEXT()
+         "Deux cursus ingénieur-manager (Centrale Nantes, Centrale Lille &amp; SKEMA) : on parle <b>produit ET marché</b>."])
+big("Et une histoire vraie : Eliot a vu sa mère, <b>muséographe</b>, perdre un temps fou sur ses appels d'offres — et renoncer à des marchés faute de moyens. <b>Adjugo est né de cette frustration.</b>"); NEXT()
 
 # 12. Ambition / clôture
 kicker(12,"Notre ambition"); title("La plateforme n°1 des marchés publics en Europe")
