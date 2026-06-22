@@ -162,7 +162,7 @@ big("Le réseau à deux faces crée la <b>rétention</b> et un coût d'acquisiti
 
 # 9. Traction
 kicker(9,"Où on en est"); title("Un produit en ligne, déjà testé par de vraies PME")
-kpiband([("7","PME en test"),("Co-construction","retours &amp; améliorations"),("Hackathon","EuraTech · 13 juin")])
+kpiband([("7","PME en test"),("Co-construction","retours & améliorations"),("Hackathon","EuraTech · 13 juin")])
 bullets(["<b>7 PME</b> testent aujourd'hui le logiciel et nous font des <b>retours</b> qui nous font avancer chaque semaine.",
          "Présenté au <b>hackathon vibe coding d'EuraTechnologies</b> (13 juin) — c'est là qu'on a repris et élargi le projet.",
          "Socle prêt : hébergement UE, sauvegardes, e-mails, supervision, cadre légal complet (CGV, confidentialité, DPA).",

@@ -247,7 +247,7 @@ st += section("09 — Financier simplifié",
     "Burn minimal, croissance par l'usage — projections prudentes",
     grid_table(
         ["Indicateur", "Aujourd'hui", "+6 mois", "+12 mois"],
-        [["PME payantes", "beta (5–10 testeurs)", "30–40", "~100"],
+        [["PME payantes", "7 en test", "30–40", "~100"],
          ["MRR (€)", "0", "~4–5 k", "~12–15 k"],
          ["Pilotes collectivités", "0", "3 (lettres d'intention)", "premiers contrats"],
          ["Pays ouverts", "1 (France)", "2 (FR + Belgique)", "3–4"],
