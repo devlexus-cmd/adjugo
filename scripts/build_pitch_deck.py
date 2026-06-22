@@ -122,7 +122,7 @@ note("Sources : Commission européenne (2018) ; recensement OECP 2023. Cadre com
 # 4. Solution
 kicker(4,"La solution"); title("Adjugo : le copilote des PME sur toute la chaîne")
 chain(["Veille AO","Go / No-Go","Dossier (CERFA, DUME)","Dépôt"], "+ S'allier")
-bullets(["Des <b>données 100 % officielles et sourcées</b> (BOAMP, TED, DECP, SIRENE) — jamais inventées.",
+bullets(["Des <b>données 100 % officielles</b> (BOAMP, TED, DECP, SIRENE), reliées à l'avis source — vérifiables d'un clic.",
          "De la <b>détection</b> du marché jusqu'au <b>dossier prêt à déposer</b>, en passant par la décision Go/No-Go et le chiffrage.",
          "Et surtout : la possibilité de <b>répondre à plusieurs</b> (co-traitance) — ce que personne d'autre ne propose."])
 big("Tout au même endroit : on remplace le bricolage entre dix outils et le temps perdu."); NEXT()
@@ -139,16 +139,16 @@ big("Un besoin réel et non couvert : monter un groupement à la main est pénib
 kicker(6,"Le produit"); title("Un logiciel fini et commercialisable")
 bullets(["<b>Chaîne complète</b> : veille AO → analyse Go/No-Go → chiffrage → génération des CERFA (dont le DC4) → dossier complet exporté.",
          "<b>Toutes les fonctionnalités opérationnelles</b> : veille amont, co-traitance cloisonnée, base de connaissances, coffre-fort, pipeline, devis &amp; factures.",
-         "<b>Moteur IA souverain : Mistral</b> (IA française) — analyse et rédaction, bridé par un garde-fou anti-hallucination : jamais une donnée factuelle inventée.",
+         "<b>Moteur IA souverain : Mistral</b> (IA française) — pour l'analyse et la rédaction.",
          "Hébergé en <b>Union européenne</b>, conforme RGPD (CGV, confidentialité, DPA publiés), avec sauvegardes et supervision."])
 big("Le produit est prêt à être <b>commercialisé</b>."); NEXT()
 
 # 7. Pourquoi nous gagnons
 kicker(7,"Avantage défendable"); title("Ce qui nous rend difficiles à copier")
-pillars([("Confiance par construction","Anti-hallucination : donnée réelle et sourcée, ou « inconnu ». Jamais inventée."),
+pillars([("Souveraineté & conformité","IA souveraine (Mistral, FR), hébergement et données en UE — pensé pour le secteur public."),
          ("Déterminisme explicable","Le scoring Go/No-Go est un barème transparent, pas une boîte noire."),
-         ("Effet réseau (CaaS)","Chaque PME enrichit le réseau de co-traitants — un moat qui grandit avec nous.")])
-big("Et un <b>moteur IA souverain — Mistral, IA française</b> — hébergé en UE, conforme RGPD, anti-hallucination par construction : un atout décisif face aux acheteurs publics."); NEXT()
+         ("Effet réseau (CaaS)","Chaque PME — et demain chaque collectivité — enrichit le réseau : un moat qui grandit avec nous.")])
+big("Notre vrai fossé, c'est le <b>réseau</b> : chaque PME et chaque collectivité qui rejoint Adjugo le rend plus utile aux autres — un avantage qui grandit avec nous."); NEXT()
 
 # 8. Business model
 kicker(8,"Modèle économique"); title("Un SaaS récurrent, doublé d'un effet réseau")
