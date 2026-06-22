@@ -139,7 +139,7 @@ big("Un besoin réel et non couvert : monter un groupement à la main est pénib
 kicker(6,"Le produit"); title("Un logiciel fini et commercialisable")
 bullets(["<b>Chaîne complète</b> : veille AO → analyse Go/No-Go → chiffrage → génération des CERFA (dont le DC4) → dossier complet exporté.",
          "<b>Toutes les fonctionnalités opérationnelles</b> : veille amont, co-traitance cloisonnée, base de connaissances, coffre-fort, pipeline, devis &amp; factures.",
-         "<b>IA de pointe</b> pour l'analyse et la rédaction — bridée par un garde-fou anti-hallucination : jamais une donnée factuelle inventée.",
+         "<b>Moteur IA souverain : Mistral</b> (IA française) — analyse et rédaction, bridé par un garde-fou anti-hallucination : jamais une donnée factuelle inventée.",
          "Hébergé en <b>Union européenne</b>, conforme RGPD (CGV, confidentialité, DPA publiés), avec sauvegardes et supervision."])
 big("Le produit est prêt à être <b>commercialisé</b>."); NEXT()
 
@@ -148,7 +148,7 @@ kicker(7,"Avantage défendable"); title("Ce qui nous rend difficiles à copier")
 pillars([("Confiance par construction","Anti-hallucination : donnée réelle et sourcée, ou « inconnu ». Jamais inventée."),
          ("Déterminisme explicable","Le scoring Go/No-Go est un barème transparent, pas une boîte noire."),
          ("Effet réseau (CaaS)","Chaque PME enrichit le réseau de co-traitants — un moat qui grandit avec nous.")])
-big("Et un socle <b>hébergé en UE, conforme RGPD, anti-hallucination par construction</b> — un atout fort face aux acheteurs publics et pour la conformité européenne."); NEXT()
+big("Et un <b>moteur IA souverain — Mistral, IA française</b> — hébergé en UE, conforme RGPD, anti-hallucination par construction : un atout décisif face aux acheteurs publics."); NEXT()
 
 # 8. Business model
 kicker(8,"Modèle économique"); title("Un SaaS récurrent, doublé d'un effet réseau")

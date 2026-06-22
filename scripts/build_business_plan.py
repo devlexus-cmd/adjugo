@@ -140,8 +140,8 @@ st += section("02 — La solution",
     Paragraph("Un module de <b>veille amont</b> détecte même les projets d'investissement dans les délibérations des "
               "collectivités, <b>des mois avant</b> la publication de l'appel d'offres.", S['body']),
     Paragraph("Principe non négociable, notre ADN : <b>données 100&nbsp;% réelles et traçables, zéro invention.</b> "
-              "Chaque chiffre et chaque source sont vérifiables. C'est ce qui rend l'outil utilisable dans un contexte "
-              "où une erreur coûte un marché.", S['body']),
+              "Chaque chiffre et chaque source sont vérifiables — c'est ce qui rend l'outil utilisable dans un contexte "
+              "où une erreur coûte un marché. Le tout porté par une <b>IA souveraine française (Mistral)</b>, hébergée en UE.", S['body']),
 )
 
 # ---- 3. RÉSEAU ----
@@ -225,6 +225,7 @@ st += section("08 — Concurrence & différenciation",
         "Le <b>réseau de groupements cloisonnés</b> (répondre à plusieurs en sécurité).",
         "Le <b>two-sided</b> PME ↔ collectivités, qui crée un effet de réseau.",
         "L'<b>anti-hallucination sourcé</b> : chaque phrase citée, zéro donnée inventée.",
+        "Une <b>IA souveraine (Mistral, française)</b>, hébergée en UE — un atout de conformité décisif pour le secteur public.",
     ]),
 )
 
