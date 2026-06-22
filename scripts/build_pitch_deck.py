@@ -136,12 +136,14 @@ bullets(["On ouvre l'accès aux marchés <b>trop gros pour une PME seule</b> —
 big("Un besoin réel et non couvert : monter un groupement à la main est pénible et risqué. On le rend <b>simple et traçable</b>."); NEXT()
 
 # 6. Produit
-kicker(6,"Le produit"); title("Un logiciel fini et commercialisable")
-bullets(["<b>Chaîne complète</b> : veille AO → analyse Go/No-Go → chiffrage → génération des CERFA (dont le DC4) → dossier complet exporté.",
-         "<b>Toutes les fonctionnalités opérationnelles</b> : veille amont, co-traitance cloisonnée, base de connaissances, coffre-fort, pipeline, devis &amp; factures.",
-         "<b>Moteur IA souverain : Mistral</b> (IA française) — pour l'analyse et la rédaction.",
-         "Hébergé en <b>Union européenne</b>, conforme RGPD (CGV, confidentialité, DPA publiés), avec sauvegardes et supervision."])
-big("Le produit est prêt à être <b>commercialisé</b>."); NEXT()
+kicker(6,"Le produit"); title("Ce qu'Adjugo fait, concrètement")
+bullets(["<b>Trouver</b> — veille BOAMP (France) + TED (Europe), radar des contrats en fin d'échéance, alertes e-mail, et veille « amont » : les projets repérés dans les délibérations, des mois avant l'appel d'offres.",
+         "<b>Décider</b> — analyse du dossier de consultation, score de compatibilité, clauses à risque + leviers de négociation, questions/réponses sur le marché.",
+         "<b>Chiffrer</b> — estimation à partir de vos tarifs réels, tableau de prix (DPGF/BPU) exportable, frais de déplacement.",
+         "<b>Préparer</b> — formulaires officiels (DC1, DC2, DC4, DUME), mémoire technique rédigé depuis votre savoir-faire, liste des pièces à fournir.",
+         "<b>Répondre à plusieurs</b> — groupements cloisonnés, invitations sécurisées, fusion des contributions par l'IA, tableau de bord de préparation.",
+         "<b>Piloter</b> — suivi des marchés, coffre-fort des pièces (alertes d'expiration), contacts, devis &amp; factures, multi-utilisateurs."])
+note("Produit en ligne sur adjugo.pro · IA souveraine Mistral · hébergé en UE, conforme RGPD (CGV, confidentialité, DPA publiés)."); NEXT()
 
 # 7. Pourquoi nous gagnons
 kicker(7,"Avantage défendable"); title("Ce qui nous rend difficiles à copier")
@@ -189,29 +191,54 @@ bullets(["France d'abord, puis <b>3 pays</b> (Belgique, Pays-Bas, Espagne) penda
 big("Faire gagner les PME, ensemble — et rapprocher PME et acheteurs publics partout en Europe."); NEXT()
 
 # ===== RENDER =====
+# Logo Adjugo (viseur/cible) reproduit en vectoriel — cohérent avec favicon.svg
+def _bullseye(c, cx, cy, r, col, sw=None):
+    sw = sw or r*0.22
+    c.setLineWidth(sw); c.setStrokeColor(col)
+    c.setStrokeAlpha(0.42); c.circle(cx, cy, r, stroke=1, fill=0)
+    c.setStrokeAlpha(0.72); c.circle(cx, cy, r*0.6, stroke=1, fill=0)
+    c.setStrokeAlpha(1); c.setFillColor(col); c.setFillAlpha(1)
+    c.circle(cx, cy, r*0.26, stroke=0, fill=1)
+    c.setStrokeAlpha(1); c.setFillAlpha(1)
+
+def _wordmark(c, x, y, fs, col):   # « adjug » + viseur en guise de « o »
+    c.setFont('Helvetica-Bold', fs); c.setFillColor(col); c.setFillAlpha(1)
+    c.drawString(x, y, "adjug")
+    w = c.stringWidth("adjug", 'Helvetica-Bold', fs)
+    r = fs*0.27
+    _bullseye(c, x + w + r*1.02, y + r, r, col, sw=r*0.30)
+
+def _logomark(c, x, y, s, square_col, mark_col):   # icône carrée arrondie
+    c.setFillColor(square_col); c.setFillAlpha(1)
+    c.roundRect(x, y, s, s, s*0.23, fill=1, stroke=0)
+    _bullseye(c, x+s/2, y+s/2, s*0.30, mark_col, sw=s*0.30*0.22)
+
 def _foot(canvas, doc):
-    canvas.saveState()
-    canvas.setFont('Helvetica-Bold',11); canvas.setFillColor(BLUE)
-    canvas.drawString(16*mm, 10*mm, "adjugo")
-    canvas.setFont('Helvetica',8.5); canvas.setFillColor(MUTED)
-    canvas.drawCentredString(PW/2, 10*mm, "The Square — EuraTechnologies · candidature 2026")
-    canvas.drawRightString(PW-16*mm, 10*mm, "%02d" % doc.page)
-    canvas.restoreState()
+    c=canvas; c.saveState()
+    s=5.6*mm; bx=16*mm; by=8.0*mm
+    _logomark(c, bx, by, s, BLUE, white)
+    _wordmark(c, bx+s+2.4*mm, by+s*0.18, 10.5, BLUE)
+    c.setFont('Helvetica',8.5); c.setFillColor(MUTED); c.setFillAlpha(1)
+    c.drawCentredString(PW/2, 10*mm, "The Square — EuraTechnologies · candidature 2026")
+    c.drawRightString(PW-16*mm, 10*mm, "%02d" % doc.page)
+    c.restoreState()
 
 def _cover(canvas, doc):
-    canvas.saveState()
-    canvas.setFillColor(BLUE); canvas.rect(0,0,PW,PH,fill=1,stroke=0)
-    canvas.setFillColor(white)
-    canvas.setFont('Helvetica-Bold',64); canvas.drawString(24*mm, PH-78*mm, "adjugo")
-    canvas.setFont('Helvetica-Bold',22)
-    canvas.drawString(24*mm, PH-100*mm, "Le réseau qui fait gagner aux PME")
-    canvas.drawString(24*mm, PH-112*mm, "des marchés publics — ensemble.")
-    canvas.setFont('Helvetica-Oblique',14)
-    canvas.drawString(24*mm, PH-128*mm, "Win public tenders. Together.")
-    canvas.setFont('Helvetica',12)
-    canvas.drawString(24*mm, PH-160*mm, "Eliot Viegas  ·  Mathys Guéna")
-    canvas.drawString(24*mm, PH-170*mm, "Candidature The Square — EuraTechnologies  ·  juin 2026")
-    canvas.restoreState()
+    c=canvas; c.saveState()
+    c.setFillColor(BLUE); c.rect(0,0,PW,PH,fill=1,stroke=0)
+    s=24*mm; ix=24*mm; iy=PH-60*mm
+    _logomark(c, ix, iy, s, white, BLUE)
+    _wordmark(c, ix+s+9*mm, iy+s*0.30, 42, white)
+    c.setFillColor(white); c.setFillAlpha(1)
+    c.setFont('Helvetica-Bold',22)
+    c.drawString(24*mm, PH-94*mm, "Le réseau qui fait gagner aux PME")
+    c.drawString(24*mm, PH-106*mm, "des marchés publics — ensemble.")
+    c.setFont('Helvetica',13)
+    c.drawString(24*mm, PH-122*mm, "Le copilote des marchés publics — de la veille jusqu'au dépôt du dossier.")
+    c.setFont('Helvetica',12)
+    c.drawString(24*mm, PH-156*mm, "Eliot Viegas  ·  Mathys Guéna")
+    c.drawString(24*mm, PH-166*mm, "Candidature The Square — EuraTechnologies  ·  juin 2026")
+    c.restoreState()
 
 frame=Frame(16*mm, 18*mm, PW-32*mm, PH-46*mm, id='m')
 title_frame=frame
