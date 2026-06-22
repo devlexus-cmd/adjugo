@@ -276,8 +276,8 @@
             <div class="row" style="align-items:flex-start;gap:14px">
               <div style="flex:1;min-width:0">
                 <div class="row" style="gap:8px;flex-wrap:wrap">
-                  <span class="pill" :class="ao.project.go_decision||'neutral'">{{ decLabel(ao.project.go_decision) }}</span>
-                  <span class="pill neutral" v-if="ao.project.match_score!=null">Score {{ ao.project.match_score }}/100</span>
+                  <span class="pill" :class="ao.project.go_decision||'neutral'" v-if="ao.project.match_score!=null">Compatibilité {{ ao.project.match_score }}/100</span>
+                  <span class="pill neutral" v-else>À analyser</span>
                   <a v-if="aoSource()" :href="aoSource().source_url" target="_blank" class="small row" style="gap:3px;color:var(--accent-text);font-weight:500">{{ aoSource().source }} · réf {{ aoSource().official_ref }}<i data-lucide="external-link" style="width:13px;height:13px"></i></a>
                 </div>
                 <h2 style="margin:8px 0 2px;font-size:18px;line-height:1.3;font-weight:560">{{ ao.project.name }}</h2>
@@ -310,19 +310,19 @@
 
           <!-- Analyse du DCE — pleine largeur (lisible) -->
           <div class="card" style="margin-top:14px;position:relative">
-            <div v-if="ao.uploading" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Analyse du DCE en cours…</div></div></div>
-            <div class="ch"><i data-lucide="scan-search"></i><h3>Analyse du DCE</h3><div class="spacer"></div>
-              <span class="pill" :class="aoDceAvailable()?'go':'neutral'" style="gap:4px"><i :data-lucide="aoDceAvailable()?'file-check':'file-x'" style="width:13px;height:13px"></i>{{ aoDceAvailable()?'DCE complet':'Avis seul' }}</span></div>
+            <div v-if="ao.uploading" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Analyse du dossier en cours…</div></div></div>
+            <div class="ch"><i data-lucide="scan-search"></i><h3>Analyse du dossier du marché</h3><div class="spacer"></div>
+              <span class="pill" :class="aoDceAvailable()?'go':'neutral'" style="gap:4px"><i :data-lucide="aoDceAvailable()?'file-check':'file-x'" style="width:13px;height:13px"></i>{{ aoDceAvailable()?'Dossier complet':'Annonce seule' }}</span></div>
             <div class="cb">
               <div v-if="!aoDceAvailable()" class="row wrap" style="margin-bottom:12px;gap:10px;padding:12px;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:8px">
                 <i data-lucide="alert-triangle" style="width:18px;height:18px;color:#b45309;flex-shrink:0;margin-top:2px"></i>
-                <div style="flex:1;min-width:180px"><b class="small" style="color:#92400e">Le DCE complet est indispensable</b><div class="muted small" style="margin-top:2px">Cette analyse est <b>préliminaire</b> (fondée sur l'avis seul). Le <b>score Go/No-Go fiable</b>, la checklist exacte des pièces et les CERFA corrects nécessitent le <b>DCE réel</b> (RC, CCAP, CCTP, DPGF). Téléchargez-le depuis la plateforme acheteur et importez-le ici.</div></div>
-                <button class="btn primary sm" @click="$refs.aoDce.click()" :disabled="ao.uploading"><span v-if="ao.uploading" class="spin"></span><i v-else data-lucide="upload"></i>Importer le DCE</button>
+                <div style="flex:1;min-width:180px"><b class="small" style="color:#92400e">Le dossier complet du marché est indispensable</b><div class="muted small" style="margin-top:2px">Pour l'instant l'analyse est <b>préliminaire</b> (faite à partir de l'annonce seule). Pour une <b>compatibilité fiable</b>, la liste exacte des pièces et des formulaires corrects, importez le <b>dossier complet</b> (le règlement, le cahier des charges, le tableau de prix). Téléchargez-le sur la plateforme de l'acheteur et déposez-le ici.</div></div>
+                <button class="btn primary sm" @click="$refs.aoDce.click()" :disabled="ao.uploading"><span v-if="ao.uploading" class="spin"></span><i v-else data-lucide="upload"></i>Importer le dossier du marché</button>
               </div>
-              <div v-else class="row" style="margin-bottom:10px"><button class="btn ghost sm" @click="$refs.aoDce.click()" :disabled="ao.uploading"><i data-lucide="upload"></i>Ré-importer un DCE</button></div>
+              <div v-else class="row" style="margin-bottom:10px"><button class="btn ghost sm" @click="$refs.aoDce.click()" :disabled="ao.uploading"><i data-lucide="upload"></i>Ré-importer le dossier</button></div>
               <input ref="aoDce" type="file" accept=".pdf,.zip" class="hidden" @change="aoUploadDce">
               <p class="small" v-if="ao.project.ai_summary">{{ ao.project.ai_summary }}</p>
-              <p class="muted small" v-else>Aucune analyse encore. Importez le DCE pour la lancer.</p>
+              <p class="muted small" v-else>Aucune analyse encore. Importez le dossier du marché pour la lancer.</p>
               <div class="frow" style="margin-top:8px;gap:0 24px">
                 <div v-for="(v,k) in detailRows(aoDetails())" :key="k" class="row small" style="padding:6px 0;border-bottom:1px solid var(--hairline);align-items:flex-start"><span class="muted" style="min-width:130px">{{ k }}</span><span style="flex:1">{{ v }}</span></div>
               </div>
@@ -339,29 +339,29 @@
                 <div class="sectitle" style="margin-top:0"><i data-lucide="messages-square" style="width:14px;height:14px"></i> Poser une question à l'IA sur cet appel d'offres</div>
                 <div v-for="(m,i) in ao.qa" :key="'qa'+i" style="margin-bottom:11px">
                   <div class="row small" style="gap:6px;font-weight:600"><i data-lucide="circle-help" style="width:13px;height:13px;color:var(--accent-text)"></i><span>{{ m.q }}</span></div>
-                  <div v-if="m.a==='__loading__'" class="small row" style="margin-top:5px;padding:10px 13px;background:var(--surface-2);border-radius:8px;gap:8px;color:var(--text-2)"><span class="spin"></span> L'IA lit le DCE et rédige la réponse…</div>
+                  <div v-if="m.a==='__loading__'" class="small row" style="margin-top:5px;padding:10px 13px;background:var(--surface-2);border-radius:8px;gap:8px;color:var(--text-2)"><span class="spin"></span> L'IA lit le dossier et rédige la réponse…</div>
                   <div v-else class="small" style="margin-top:5px;padding:10px 13px;background:var(--surface-2);border-radius:8px;white-space:pre-wrap;line-height:1.55">{{ m.a }}</div>
                 </div>
                 <div class="row" style="gap:8px;margin-top:4px">
                   <input class="inp" v-model="ao.qaInput" placeholder="Ex. Quelles pénalités de retard ? Le CA minimal exigé ? La date de visite ?" @keyup.enter="aoAsk()" :disabled="ao.qaLoading" style="flex:1">
                   <button class="btn primary" @click="aoAsk()" :disabled="ao.qaLoading||!ao.qaInput.trim()"><span v-if="ao.qaLoading" class="spin"></span><i v-else data-lucide="send"></i>Demander</button>
                 </div>
-                <div class="muted small" style="margin-top:6px">Réponses fondées sur le DCE importé. Si l'information n'y figure pas, l'IA le dit clairement.</div>
+                <div class="muted small" style="margin-top:6px">Réponses fondées sur le dossier importé. Si l'information n'y figure pas, l'IA le dit clairement.</div>
               </div>
             </div>
           </div>
 
           <!-- Chiffrage estimatif (compact, détail repliable) -->
           <div class="card" style="margin-top:14px;position:relative">
-            <div v-if="ao.estimating" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Chiffrage en cours…</div></div></div>
-            <div class="ch"><i data-lucide="calculator"></i><h3>Chiffrage estimatif</h3><div class="spacer"></div>
+            <div v-if="ao.estimating" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Estimation en cours…</div></div></div>
+            <div class="ch"><i data-lucide="calculator"></i><h3>Estimation du prix</h3><div class="spacer"></div>
               <span v-if="ao.estimate" class="pill neutral" style="font-size:11px">{{ eur(ao.estimate.total_ht) }} HT · {{ ao.estimate.jours_total }} j</span>
               <span v-if="ao.estimate && ao.estimate.review" class="pill" :class="reviewPill(ao.estimate.review.status)" style="font-size:11px">{{ reviewLabel(ao.estimate.review.status) }}</span>
-              <button v-if="!ao.estimate" class="btn primary sm" @click="aoEstimate()" :disabled="ao.estimateBusy"><span v-if="ao.estimateBusy" class="spin"></span><i v-else data-lucide="sparkles"></i>Estimer le devis</button>
-              <button v-if="ao.estimate" class="btn sm" @click="aoDownloadDpgf()"><i data-lucide="file-down"></i>DPGF / BPU</button>
+              <button v-if="!ao.estimate" class="btn primary sm" @click="aoEstimate()" :disabled="ao.estimateBusy"><span v-if="ao.estimateBusy" class="spin"></span><i v-else data-lucide="sparkles"></i>Estimer mon prix</button>
+              <button v-if="ao.estimate" class="btn sm" @click="aoDownloadDpgf()"><i data-lucide="file-down"></i>Tableau de prix (Excel)</button>
               <button v-if="ao.estimate" class="btn sm" @click="ao.estimateOpen=!ao.estimateOpen"><i :data-lucide="ao.estimateOpen?'chevron-up':'sliders-horizontal'"></i>{{ ao.estimateOpen?'Replier':'Détailler / ajuster' }}</button></div>
             <div class="cb">
-              <div v-if="!ao.estimate" class="muted small">L'IA découpe la prestation en tâches et estime les jours ; le prix est calculé sur <b>vos tarifs</b> (réglables dans Profil entreprise) — chiffrage déterministe, jamais inventé.
+              <div v-if="!ao.estimate" class="muted small">L'IA découpe le travail en tâches et estime le nombre de jours ; le prix est calculé sur <b>vos tarifs</b> (réglables dans Mon entreprise). Rien d'inventé : tout est calculé.
                 <div class="row" style="gap:6px;margin-top:9px;align-items:center"><span>Distance du chantier :</span><input class="inp" type="number" min="0" v-model.number="ao.estimateDistance" style="width:90px"><span>km</span></div>
               </div>
               <div v-else>
@@ -369,7 +369,7 @@
                   <div class="kpi"><div class="kh"><span>Total estimé HT</span><i data-lucide="banknote"></i></div><div class="v" style="font-size:16px">{{ eur(ao.estimate.total_ht) }}</div></div>
                   <div class="kpi"><div class="kh"><span>Charge</span><i data-lucide="calendar-days"></i></div><div class="v" style="font-size:16px">{{ ao.estimate.jours_total }} j</div></div>
                   <div class="kpi"><div class="kh"><span>Tarif moyen / j</span><i data-lucide="trending-up"></i></div><div class="v" style="font-size:16px">{{ eur(ao.estimate.tarif_moyen) }}</div></div>
-                  <div class="kpi"><div class="kh"><span>Majoration</span><i data-lucide="map-pin"></i></div><div class="v" style="font-size:16px">{{ ao.estimate.majoration_pct }}%</div></div>
+                  <div class="kpi"><div class="kh"><span>Frais de déplacement</span><i data-lucide="map-pin"></i></div><div class="v" style="font-size:16px">{{ ao.estimate.majoration_pct }}%</div></div>
                 </div>
                 <div v-if="ao.estimateOpen" style="margin-top:12px">
                   <div class="row wrap" style="gap:8px;margin-bottom:10px;align-items:center">
@@ -403,21 +403,21 @@
           <div class="cards cols-2" style="margin-top:14px;align-items:start">
             <div class="card" style="position:relative">
               <div v-if="ao.generating" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Génération du dossier…</div></div></div>
-              <div class="ch"><i data-lucide="file-text"></i><h3>Documents de réponse</h3><div class="spacer"></div>
-                <button class="btn primary sm" @click="aoGenerate()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="sparkles"></i>Générer</button></div>
+              <div class="ch"><i data-lucide="file-text"></i><h3>Mes documents de réponse</h3><div class="spacer"></div>
+                <button class="btn primary sm" @click="aoGenerate()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="sparkles"></i>Préparer mes documents</button></div>
               <div class="cb">
                 <!-- TVA de l'acte d'engagement : 0 % par défaut (marchés publics souvent hors-champ, art. 293 B CGI) -->
                 <div class="row small" style="gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
                   <i data-lucide="percent" style="width:14px;height:14px;color:var(--accent-text)"></i>
                   <span style="flex:1;min-width:120px">TVA de l'acte d'engagement</span>
                   <select class="input sm" style="width:auto;min-width:130px" :value="ao.project && ao.project.tva_rate || 0" @change="setTva($event.target.value)">
-                    <option :value="0">0 % — hors-champ (293 B)</option>
+                    <option :value="0">0 % — je ne facture pas la TVA (franchise)</option>
                     <option :value="5.5">5,5 %</option>
                     <option :value="10">10 %</option>
                     <option :value="20">20 %</option>
                   </select>
                 </div>
-                <div v-if="!ao.dossier" class="muted small">Génère les CERFA (DC1, DC2, déclaration sur l'honneur, ATTRI1) pré-remplis + le mémoire technique, à partir des données de l'AO et de votre entreprise.</div>
+                <div v-if="!ao.dossier" class="muted small">Prépare les formulaires officiels (DC1, DC2, déclaration sur l'honneur, acte d'engagement) déjà remplis, plus votre dossier de présentation, à partir des infos du marché et de votre entreprise.</div>
                 <div v-else>
                   <!-- Avertissements de génération : BLOQUANT en rouge, le reste en orange -->
                   <div v-if="ao.dossier.warnings && ao.dossier.warnings.length" style="margin-bottom:12px">
@@ -430,7 +430,7 @@
                   <button class="btn primary block" @click="aoDownload()" style="margin-bottom:12px"><i data-lucide="download"></i>Télécharger ({{ ao.dossier.zip_name }})</button>
                   <div class="row wrap" style="gap:6px">
                     <span v-for="c in ao.dossier.cerfas" :key="c.name" class="pill neutral row" style="gap:5px"><i data-lucide="file-text" style="width:13px;height:13px"></i>{{ c.name }}</span>
-                    <span class="pill neutral row" style="gap:5px"><i data-lucide="file-pen-line" style="width:13px;height:13px"></i>mémoire technique</span>
+                    <span class="pill neutral row" style="gap:5px"><i data-lucide="file-pen-line" style="width:13px;height:13px"></i>dossier de présentation</span>
                   </div>
                   <p class="muted small" style="margin-top:10px">{{ ao.dossier.memoire_preview }}</p>
                   <!-- Wizard pré-dépôt INTERACTIF : on coche chaque étape, progression suivie -->
@@ -450,7 +450,7 @@
               </div>
             </div>
             <div class="card">
-              <div class="ch"><i data-lucide="list-checks"></i><h3>Checklist des pièces</h3><div class="spacer"></div>
+              <div class="ch"><i data-lucide="list-checks"></i><h3>Pièces à fournir</h3><div class="spacer"></div>
                 <span v-if="ao.checklist && ao.checklist.stats" class="muted small">{{ ao.checklist.stats.ok }}/{{ ao.checklist.stats.total }}</span></div>
               <div class="cb">
                 <div v-if="!ao.checklist" class="muted small">Chargement…</div>
@@ -483,8 +483,8 @@
 
           <!-- Profil acheteur (intelligence marché, BOAMP) -->
           <div class="card" style="margin-top:14px">
-            <div class="ch"><i data-lucide="building"></i><h3>Profil acheteur</h3><div class="spacer"></div>
-              <span v-if="ao.buyer && ao.buyer.recurrent" class="pill go" style="font-size:10px">Acheteur récurrent</span></div>
+            <div class="ch"><i data-lucide="building"></i><h3>Votre client (l'acheteur)</h3><div class="spacer"></div>
+              <span v-if="ao.buyer && ao.buyer.recurrent" class="pill go" style="font-size:10px">Client régulier</span></div>
             <div class="cb">
               <div v-if="ao.buyerLoading" class="muted small"><span class="spin"></span> Analyse de l'historique de publication…</div>
               <div v-else-if="!ao.buyer || ao.buyer.found===false" class="muted small">Aucun historique de publication trouvé pour « {{ ao.project.client||'cet acheteur' }} » sur le BOAMP.</div>
@@ -509,13 +509,13 @@
 
           <!-- Sous-traitants rattachés à l'AO -->
           <div class="card" style="margin-top:14px">
-            <div class="ch"><i data-lucide="handshake"></i><h3>Sous-traitants &amp; co-traitance</h3><div class="spacer"></div>
-              <button class="btn sm" @click="aoOptimizeGroup()" :disabled="ao.group&&ao.group.loading"><span v-if="ao.group&&ao.group.loading" class="spin"></span><i v-else data-lucide="wand-2"></i>Optimiser le groupement</button>
+            <div class="ch"><i data-lucide="handshake"></i><h3>Partenaires sur ce marché</h3><div class="spacer"></div>
+              <button class="btn sm" @click="aoOptimizeGroup()" :disabled="ao.group&&ao.group.loading"><span v-if="ao.group&&ao.group.loading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répartir entre partenaires</button>
               <button class="btn sm" @click="ao.stOpen=!ao.stOpen"><i data-lucide="plus"></i>Ajouter</button></div>
             <div class="cb">
               <!-- Recommandation de groupement par lot -->
               <div v-if="ao.group && ao.group.data" style="margin-bottom:12px;padding:11px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-weak)">
-                <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Composition recommandée</b><span class="muted small">{{ ao.group.data.n_lots }} lot(s) · {{ ao.group.data.n_propre }} en propre · {{ ao.group.data.n_cotraitance }} en co-traitance · {{ ao.group.data.n_non_couverts }} à couvrir</span></div>
+                <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Composition recommandée</b><span class="muted small">{{ ao.group.data.n_lots }} lot(s) · {{ ao.group.data.n_propre }} pour vous · {{ ao.group.data.n_cotraitance }} avec un partenaire · {{ ao.group.data.n_non_couverts }} à couvrir</span></div>
                 <div v-if="!ao.group.data.n_lots" class="muted small">Marché en lot unique (ou allotissement non précisé) — pas de décomposition.</div>
                 <div v-for="l in ao.group.data.lots" :key="'gl'+l.num" class="row" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:flex-start">
                   <span class="pill neutral" style="font-size:10px;min-width:42px">Lot {{ l.num }}</span>
@@ -523,12 +523,12 @@
                     <span class="strong small">{{ l.label }}</span> <span v-if="l.trade" class="muted small">· {{ l.trade }}</span>
                     <div v-if="l.couverture==='propre'" class="small" style="color:var(--success)"><i data-lucide="check" style="width:12px;height:12px"></i> Couvert en propre (mandataire)</div>
                     <div v-else-if="l.candidate" class="muted small">→ {{ l.candidate.nom }} · score {{ l.candidate.score.total }}/100 · {{ l.candidate.ville||'' }}<span v-if="l.candidate.procedure_collective" style="color:var(--danger)"> ⚠ procédure collective</span></div>
-                    <div v-else class="small" style="color:var(--warning-text)"><i data-lucide="alert-triangle" style="width:12px;height:12px"></i> Aucun co-traitant trouvé — à sourcer</div>
+                    <div v-else class="small" style="color:var(--warning-text)"><i data-lucide="alert-triangle" style="width:12px;height:12px"></i> Aucun partenaire trouvé — à chercher</div>
                   </div>
                   <button v-if="l.candidate" class="btn sm primary" @click="aoAttachFromGroup(l)"><i data-lucide="plus"></i>Rattacher</button>
                 </div>
               </div>
-              <div v-if="!ao.cotraitants.length && !ao.stOpen" class="muted small">Aucun sous-traitant rattaché. Ajoutez-en pour générer le <b>DC4</b> (déclaration de sous-traitance).</div>
+              <div v-if="!ao.cotraitants.length && !ao.stOpen" class="muted small">Aucun partenaire ajouté. Ajoutez-en un pour préparer le <b>DC4</b> (le document qui déclare un partenaire).</div>
               <div v-for="c in ao.cotraitants" :key="c.link_id" class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline)">
                 <div style="flex:1;min-width:0"><span class="strong small">{{ c.name }}</span> <span class="pill" :class="c.role==='mandataire'?'go':'neutral'" style="font-size:10px">{{ roleLabel(c.role) }}</span>
                   <div class="muted small">{{ c.specialites||c.code_ape||'' }} · {{ c.city||'' }} · SIRET {{ c.siret||'n/d' }}</div></div>
@@ -539,7 +539,7 @@
                 <div class="row wrap">
                   <input class="inp" v-model="ao.st.trade" list="trades-dl" placeholder="Activité (libre)" style="width:190px">
                   <input class="inp" v-model="ao.st.dept" placeholder="Département" style="width:120px">
-                  <select class="inp" v-model="ao.st.role" style="width:140px"><option value="mandataire">Mandataire</option><option value="cotraitant">Co-traitant</option><option value="sous_traitant">Sous-traitant</option></select>
+                  <select class="inp" v-model="ao.st.role" style="width:140px"><option value="mandataire">Chef de file</option><option value="cotraitant">Partenaire</option><option value="sous_traitant">Sous-traitant</option></select>
                   <button class="btn primary" @click="aoSearchSt()" :disabled="ao.st.loading"><span v-if="ao.st.loading" class="spin"></span><i v-else data-lucide="search"></i>Chercher</button>
                 </div>
                 <div v-for="c in ao.st.results" :key="c.siren" class="row" style="padding:9px;margin-top:8px;border:1px solid var(--border);border-radius:8px;align-items:flex-start" :style="c.procedure_collective?'border-color:var(--danger)':''">
@@ -585,14 +585,14 @@
               </div>
 
               <!-- CTA viral : le geste le plus visible -->
-              <button class="btn primary" @click="ao.share.open=!ao.share.open" style="margin-top:12px;width:100%;justify-content:center;padding:12px;font-size:14px"><i data-lucide="user-plus"></i>Inviter un partenaire dans le consortium</button>
+              <button class="btn primary" @click="ao.share.open=!ao.share.open" style="margin-top:12px;width:100%;justify-content:center;padding:12px;font-size:14px"><i data-lucide="user-plus"></i>Inviter un partenaire sur ce marché</button>
 
               <div v-if="ao.share.open" style="margin-top:12px;border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--surface-2)">
                 <div class="row wrap" style="gap:8px">
                   <input class="inp" v-model="ao.share.form.company_name" placeholder="Entreprise partenaire" style="width:210px">
                   <input class="inp" v-model="ao.share.form.recipient" placeholder="Nom / email du contact (optionnel)" style="width:230px">
                   <select class="inp" v-model="ao.share.form.role" style="width:150px">
-                    <option value="cotraitant">Co-traitant</option>
+                    <option value="cotraitant">Partenaire</option>
                     <option value="sous_traitant">Sous-traitant</option>
                   </select>
                   <select class="inp" v-model.number="ao.share.form.expires_days" style="width:160px">
@@ -602,7 +602,7 @@
                     <option :value="0">Sans expiration</option>
                   </select>
                 </div>
-                <label class="row small" style="gap:7px;margin-top:10px;align-items:center;cursor:pointer"><input type="checkbox" v-model="ao.share.form.can_contribute"> Autoriser la <b>co-construction</b> (le partenaire apporte sa part : références, lot, mémoire)</label>
+                <label class="row small" style="gap:7px;margin-top:10px;align-items:center;cursor:pointer"><input type="checkbox" v-model="ao.share.form.can_contribute"> Laisser le partenaire <b>apporter sa part</b> (ses références, son lot, sa partie du dossier)</label>
                 <label class="row small" style="gap:7px;margin-top:8px;align-items:center;cursor:pointer"><input type="checkbox" v-model="ao.share.form.can_view_docs"> Autoriser le téléchargement des pièces du dossier</label>
                 <div class="row" style="margin-top:11px"><button class="btn primary" @click="aoCreateInvite()" :disabled="ao.share.busy"><span v-if="ao.share.busy" class="spin"></span><i v-else data-lucide="link"></i>Générer le lien d'invitation</button></div>
               </div>
@@ -614,11 +614,11 @@
               </div>
 
               <div v-if="ao.share.invites.length" style="margin-top:12px">
-                <div class="muted small" style="margin-bottom:4px;font-weight:600">Partenaires du consortium</div>
+                <div class="muted small" style="margin-bottom:4px;font-weight:600">Vos partenaires sur ce marché</div>
                 <div v-for="inv in ao.share.invites" :key="inv.id" class="row" style="padding:8px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
                   <div style="flex:1;min-width:0">
                     <span class="strong small">{{ inv.company_name || inv.recipient || 'Lien de partage' }}</span>
-                    <span class="pill neutral" style="font-size:10px">{{ inv.role==='sous_traitant'?'Sous-traitant':'Co-traitant' }}</span>
+                    <span class="pill neutral" style="font-size:10px">{{ inv.role==='sous_traitant'?'Sous-traitant':'Partenaire' }}</span>
                     <span class="pill" :class="inviteState(inv).cls" style="font-size:10px">{{ inviteState(inv).label }}</span>
                     <span v-if="inv.contribution_status==='submitted'" class="pill go" style="font-size:10px"><i data-lucide="check" style="width:11px;height:11px"></i>Contribution reçue</span>
                     <span v-else-if="inv.can_contribute && !inv.revoked" class="pill a_etudier" style="font-size:10px">En attente de sa part</span>
@@ -632,11 +632,11 @@
               <!-- Panneau des contributions reçues (mandataire) -->
               <div v-if="ao.share.contribOpen" style="margin-top:14px;border-top:1px solid var(--hairline);padding-top:12px">
                 <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Contributions des partenaires</b><span class="muted small">Apportées par chaque PME · fusionnées par l'IA dans le mémoire commun.</span></div>
-                <div v-if="!ao.share.contributions.length" class="muted small">Aucune contribution reçue. Invitez des partenaires et activez la co-construction.</div>
+                <div v-if="!ao.share.contributions.length" class="muted small">Aucune contribution reçue. Invitez des partenaires et laissez-les apporter leur part.</div>
                 <div v-for="c in ao.share.contributions" :key="c.id" style="padding:10px 0;border-bottom:1px solid var(--hairline)">
                   <div class="row" style="gap:6px;align-items:center">
                     <span class="strong small">{{ c.company_name || 'Partenaire' }}</span>
-                    <span class="pill neutral" style="font-size:10px">{{ c.role==='sous_traitant'?'Sous-traitant':'Co-traitant' }}</span>
+                    <span class="pill neutral" style="font-size:10px">{{ c.role==='sous_traitant'?'Sous-traitant':'Partenaire' }}</span>
                     <span v-if="c.lot" class="pill neutral" style="font-size:10px">{{ c.lot }}</span>
                     <span class="pill" :class="c.status==='submitted'?'go':'a_etudier'" style="font-size:10px">{{ c.status==='submitted'?'Soumise':'Brouillon' }}</span>
                   </div>
@@ -1127,106 +1127,6 @@
 
         <!-- ░░ CO-TRAITANTS ░░ -->
         <section v-if="view==='cotraitants'">
-          <!-- Espace co-traitance « Merged Brain » ARCHIVÉ (doublon du Réseau Adjugo / lien d'invitation) -->
-          <div v-if="false" class="card pad" style="margin-bottom:14px">
-            <div class="row" style="gap:8px;margin-bottom:6px"><i data-lucide="brain-circuit" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Espace co-traitance — mémoire fusionné</b><div class="spacer"></div>
-              <span v-if="cospace.current" class="btn ghost sm" @click="cospace.current=null"><i data-lucide="arrow-left"></i>Mes espaces</span></div>
-
-            <!-- Liste des espaces + création + rejoindre -->
-            <div v-if="!cospace.current">
-              <div class="muted small" style="margin-bottom:10px">Répondez à plusieurs : l'IA fusionne vos <b>deux bases de connaissances</b> en <b>un seul mémoire unifié</b> (références croisées, sources attribuées par entreprise). Chaque partenaire garde son compte et sa base.</div>
-              <div v-for="s in cospace.spaces" :key="s.id" class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline);gap:10px;cursor:pointer" @click="coOpen(s)">
-                <i data-lucide="users-round" style="width:16px;height:16px;color:var(--muted)"></i>
-                <div style="flex:1;min-width:0"><span class="strong small">{{ s.name }}</span><span class="pill neutral" style="font-size:10px;margin-left:6px">{{ coIsOwner(s)?'Mandataire':'Co-traitant' }}</span>
-                  <div class="muted small">{{ s.members.filter(m=>m.status==='accepted').length+1 }} membre(s) · {{ s.marche||'marché non précisé' }}</div></div>
-                <button v-if="coIsOwner(s)" class="btn icon sm ghost" @click.stop="coDelete(s)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button>
-                <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--subtle)"></i>
-              </div>
-              <div class="frow" style="margin-top:12px;gap:8px">
-                <input class="inp" v-model="cospace.newName" placeholder="Nom de l'espace (ex. Groupement lycée Quimper)">
-                <input class="inp" v-model="cospace.newMarche" placeholder="Objet du marché (optionnel)">
-              </div>
-              <div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">
-                <button class="btn primary" @click="coCreate()"><i data-lucide="plus"></i>Créer un espace</button>
-                <div class="spacer"></div>
-                <input class="inp" v-model="cospace.joinToken" placeholder="Code d'invitation reçu" style="width:200px">
-                <button class="btn" @click="coJoin()"><i data-lucide="log-in"></i>Rejoindre</button>
-              </div>
-            </div>
-
-            <!-- Espace ouvert -->
-            <div v-else>
-              <div class="strong" style="font-size:14px">{{ cospace.current.name }}</div>
-              <div class="muted small" style="margin-bottom:10px">{{ cospace.current.marche||'Marché non précisé' }}</div>
-              <div class="row" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px">
-                <i data-lucide="crown" style="width:14px;height:14px;color:var(--warning)"></i>
-                <span class="small strong">{{ cospace.current.owner_company||'Mandataire' }}</span><span class="pill neutral" style="font-size:10px">mandataire</span>
-                <div class="spacer"></div><span class="muted small">{{ cospace.current.owner_kb_chunks }} extrait(s) en base</span>
-              </div>
-              <div v-for="m in cospace.current.members" :key="m.id" class="row" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px">
-                <i data-lucide="user" style="width:14px;height:14px;color:var(--muted)"></i>
-                <span class="small">{{ m.company_name||m.email }}</span>
-                <span class="pill" :class="m.status==='accepted'?'go':'neutral'" style="font-size:10px">{{ m.status==='accepted'?'a rejoint':'invité' }}</span>
-                <div class="spacer"></div><span v-if="m.status==='accepted'" class="muted small">{{ m.kb_chunks }} extrait(s)</span>
-              </div>
-
-              <!-- Inviter (mandataire) -->
-              <div v-if="coIsOwner(cospace.current)" class="row wrap" style="margin-top:10px;gap:8px;align-items:center">
-                <input class="inp" v-model="cospace.inviteEmail" placeholder="Email du partenaire (compte Adjugo)" style="flex:1;min-width:200px">
-                <button class="btn sm" @click="coInvite()"><i data-lucide="user-plus"></i>Inviter</button>
-              </div>
-              <div v-if="cospace.lastToken" class="row" style="margin-top:8px;gap:8px;padding:9px 12px;background:var(--surface-2);border-radius:8px">
-                <i data-lucide="key-round" style="width:14px;height:14px;color:var(--accent-text)"></i>
-                <div style="flex:1;min-width:0"><b class="small">Code à transmettre au partenaire</b><div class="num small" style="word-break:break-all">{{ cospace.lastToken }}</div></div>
-              </div>
-
-              <!-- War Room : pré-répartition des lots -->
-              <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-                <div class="sectitle" style="margin-top:0"><i data-lucide="swords" style="width:14px;height:14px"></i> War Room — pré-répartition du marché</div>
-                <div v-if="coIsOwner(cospace.current)" class="muted small" style="margin-bottom:8px">Collez le DCE : l'IA identifie les lots et propose <b>qui prend quoi</b> selon le savoir-faire de chacun. Le partenaire reçoit un dossier clé en main (montants estimés, sources réelles).</div>
-                <div v-if="coIsOwner(cospace.current)" class="row wrap" style="gap:8px;align-items:flex-start">
-                  <textarea class="inp" v-model="cospace.warroomDce" placeholder="Texte du DCE (RC/CCTP)…" style="flex:1;min-width:240px;height:64px;padding:9px 12px"></textarea>
-                  <button class="btn primary" @click="coWarroom()" :disabled="cospace.warroomLoading"><span v-if="cospace.warroomLoading" class="spin"></span><i v-else data-lucide="swords"></i>Pré-répartir</button>
-                </div>
-                <div v-if="cospace.current.warroom && cospace.current.warroom.lots && cospace.current.warroom.lots.length" style="margin-top:10px;padding:11px 13px;background:var(--surface-2);border-radius:10px">
-                  <div class="strong small" v-if="cospace.current.warroom.marche_objet">{{ cospace.current.warroom.marche_objet }}</div>
-                  <div v-if="cospace.current.warroom.montant_total_estime" class="muted small" style="margin-bottom:6px">Montant total estimé : {{ eur(cospace.current.warroom.montant_total_estime) }}</div>
-                  <div v-for="(l,i) in cospace.current.warroom.lots" :key="'lot'+i" class="row" style="padding:7px 0;border-top:1px solid var(--hairline);gap:8px;align-items:flex-start">
-                    <span class="pill" :class="(cospace.current.warroom.lots[i].attribue_a===cospace.current.owner_company)?'go':'st-envoye'" style="font-size:10px">{{ l.attribue_a }}</span>
-                    <div style="flex:1;min-width:0"><span class="small strong">{{ l.intitule }}</span><span v-if="l.montant_estime" class="muted small"> · {{ eur(l.montant_estime) }} (estimé)</span><div class="muted small">{{ l.raison }}</div></div>
-                  </div>
-                  <div v-if="cospace.current.warroom.synthese" class="small" style="margin-top:8px;font-style:italic;color:var(--text-2)">{{ cospace.current.warroom.synthese }}</div>
-                  <div v-if="cospace.current.warroom.accroche_partenaire && !coIsOwner(cospace.current)" class="alert-callout" style="margin-top:10px"><i data-lucide="handshake"></i><div><b>Proposition du mandataire</b><div class="small" style="margin-top:2px">{{ cospace.current.warroom.accroche_partenaire }}</div></div></div>
-                </div>
-              </div>
-
-              <!-- Générer le mémoire fusionné (mandataire) -->
-              <div v-if="coIsOwner(cospace.current)" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-                <div class="sectitle" style="margin-top:0"><i data-lucide="sparkles" style="width:14px;height:14px"></i> Générer le mémoire unifié du groupement</div>
-                <textarea class="inp" v-model="cospace.dceText" placeholder="Collez le texte du DCE (RC/CCTP/CCAP)…" style="width:100%;height:80px;padding:9px 12px"></textarea>
-                <button class="btn primary" style="margin-top:8px" @click="coMerge()" :disabled="cospace.generating"><span v-if="cospace.generating" class="spin"></span><i v-else data-lucide="wand-2"></i>Fusionner les savoir-faire & rédiger</button>
-                <div class="muted small" style="margin-top:6px">Nécessite au moins 1 co-traitant ayant rejoint. Chaque entreprise doit avoir alimenté sa base de connaissances.</div>
-              </div>
-
-              <!-- Résultat -->
-              <div v-if="cospace.memoire" style="margin-top:14px">
-                <div class="row wrap" style="gap:8px;margin-bottom:8px">
-                  <span class="pill go">Mémoire unifié · {{ cospace.memoire.n_sections }} sections</span>
-                  <span v-if="cospace.memoire.contributors.length" class="pill neutral">apports : {{ cospace.memoire.contributors.join(' + ') }}</span>
-                  <span v-if="cospace.memoire.conformity && cospace.memoire.conformity.score_conformite!=null" class="pill" :class="cospace.memoire.conformity.score_conformite>=70?'go':'a_etudier'">Conformité {{ cospace.memoire.conformity.score_conformite }}/100</span>
-                </div>
-                <div v-for="(s,i) in cospace.memoire.sections" :key="'ms'+i" style="padding:11px 0;border-top:1px solid var(--hairline)">
-                  <div class="strong" style="font-size:13.5px;margin-bottom:5px">{{ i+1 }}. {{ s.titre }}</div>
-                  <div class="small" style="white-space:pre-wrap;line-height:1.55;color:var(--text-2)">{{ s.content }}</div>
-                  <div v-if="s.sources && s.sources.length" class="row wrap" style="gap:5px;margin-top:7px">
-                    <span class="muted small">Sources :</span>
-                    <span v-for="src in s.sources" :key="src.ref+s.titre" class="pill neutral" style="font-size:10px" :title="src.excerpt">{{ src.ref }} · {{ src.company }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <div v-if="!cotraitants.length" class="empty card pad">
             <div class="eic"><i data-lucide="handshake"></i></div>
             <h4>Aucun co-traitant</h4><p>Ajoutez vos partenaires, ou découvrez de vraies entreprises par métier et département.</p>
