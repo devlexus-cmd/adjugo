@@ -1,0 +1,6 @@
+# Adjugo — paquets système ajoutés au build Nixpacks (Railway).
+# tesseract-ocr (+ langue FR) et poppler-utils permettent l'OCR des PDF SCANNÉS
+# (documents image, fréquents chez les petites collectivités) via pytesseract + pdf2image.
+# Seul `aptPkgs` est défini → les paquets Nix auto-détectés (Python) sont conservés.
+[phases.setup]
+aptPkgs = ["tesseract-ocr", "tesseract-ocr-fra", "poppler-utils"]
