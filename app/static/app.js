@@ -82,9 +82,9 @@ const __adjApp = createApp({
       ag: { query: "réhabilitation groupe scolaire", running: false, log: [], gonogo: null, coverage: null, lots: [], dossier: null },
       agState: {}, agStep: {},
       agentDefs: [
-        { id: "sourceur", ic: "radar", name: "Agent Sourceur", role: "Veille BOAMP · scoring critères · Go/No-Go" },
-        { id: "groupement", ic: "handshake", name: "Agent Stratège", role: "Lots non couverts · matching co-traitants" },
-        { id: "redacteur", ic: "file-text", name: "Agent Rédacteur", role: "Mémoire technique · CERFA · dossier ZIP" },
+        { id: "sourceur", ic: "radar", name: "Agent Sourceur", role: "Recherche BOAMP · score selon vos critères · recommandation" },
+        { id: "groupement", ic: "handshake", name: "Agent Stratège", role: "Parties non couvertes · partenaires complémentaires" },
+        { id: "redacteur", ic: "file-text", name: "Agent Rédacteur", role: "Dossier de présentation · formulaires officiels · dossier ZIP" },
       ],
       statuses: ["nouveau", "en_cours", "envoye", "gagne", "perdu"],
       statuses2: ["nouveau", "en_cours", "envoye", "gagne", "perdu", "abandonne"],
@@ -95,10 +95,10 @@ const __adjApp = createApp({
       cookiesOk: (function(){ try { return localStorage.getItem("adjugo_cookies_ok") === "1"; } catch(e){ return true; } })(),
       predepot: [false, false, false, false],
       predepotSteps: [
-        "Relisez chaque CERFA et <b>signez</b> (acte d'engagement + déclaration sur l'honneur).",
-        "Vérifiez le <b>taux de TVA</b> et les montants de l'ATTRI1.",
-        "Ajoutez les pièces <b>« manquant »</b> de la checklist (attestations fiscale/sociale, assurances…).",
-        "Déposez avant la <b>date limite</b> sur le profil acheteur (Chorus Pro / PLACE / plateforme du DCE)."
+        "Relisez chaque formulaire officiel et <b>signez</b> (acte d'engagement + déclaration sur l'honneur).",
+        "Vérifiez le <b>taux de TVA</b> et les montants du formulaire ATTRI1.",
+        "Ajoutez les pièces <b>« manquantes »</b> de la liste (attestations fiscale/sociale, assurances…).",
+        "Déposez avant la <b>date limite</b> sur le profil de votre client (Chorus Pro, PLACE, plateforme du marché)."
       ],
       discover: { open: false, trade: "", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [],
       countries2: [], adaptedCountries: [], orgCountry: "FR", lang: "fr",
@@ -155,7 +155,7 @@ const __adjApp = createApp({
       const premier = (this.projects || []).length > 0;
       const steps = [
         { k: "profil", done: profil, label: "Complétez votre profil entreprise", view: "company", cta: "Compléter" },
-        { k: "criteres", done: criteres, label: "Définissez vos critères Go/No-Go", view: "criteria", cta: "Définir" },
+        { k: "criteres", done: criteres, label: "Définissez vos critères", view: "criteria", cta: "Définir" },
         { k: "premier", done: premier, label: "Lancez votre première recherche d'appel d'offres", view: "sourcing", cta: "Rechercher" },
       ];
       return { steps, done: steps.filter(s => s.done).length, total: steps.length };
@@ -551,7 +551,7 @@ const __adjApp = createApp({
       try {
         this.ao.estimate = await this.api("PUT", "/api/chiffrage/" + this.ao.project.id,
           { lignes: this.ao.estimate.lignes, distance_km: Number(this.ao.estimateDistance) || 0 });
-        this.notify("Chiffrage recalculé");
+        this.notify("Estimation recalculée");
       } catch (e) { this.notify(e.message, "err"); } finally { this.ao.estimateBusy = false; }
     },
     estRateLabels() { return (this.company && this.company.day_rates && this.company.day_rates.length ? this.company.day_rates : [{label:'Étude / conception'},{label:'Production / édition'},{label:'Encadrement / direction'},{label:'Exécution / terrain'}]).map(r => r.label); },
@@ -560,7 +560,7 @@ const __adjApp = createApp({
       try {
         this.ao.estimate = await this.api("PUT", "/api/chiffrage/" + this.ao.project.id + "/review", { status, note: this.ao.reviewNote || "" });
         this.ao.reviewNote = "";
-        this.notify(status === "valide" ? "Chiffrage validé" : "Révision demandée");
+        this.notify(status === "valide" ? "Estimation validée" : "Révision demandée");
       } catch (e) { this.notify(e.message, "err"); } finally { this.ao.estimateBusy = false; }
     },
     reviewLabel(s) { return { valide: "Validé", revision: "Révision demandée", a_valider: "À valider" }[s] || "Brouillon"; },
@@ -601,16 +601,16 @@ const __adjApp = createApp({
     aoInvoices() { return (this.invoices || []).filter(i => i.project_id === (this.ao.project && this.ao.project.id)); },
     aoTimeline() {
       const p = this.ao.project || {}; const ev = [];
-      if (p.created_at) ev.push({ icon: "plus", t: "Appel d'offres créé", d: p.created_at.slice(0, 10) });
+      if (p.created_at) ev.push({ icon: "plus", t: "Marché ajouté", d: p.created_at.slice(0, 10) });
       const a = p.ai_analysis;
-      if (a) ev.push({ icon: "scan-search", t: a.dce_available ? "DCE analysé (complet)" : "Avis analysé", d: a.match_score != null ? "score " + a.match_score + "/100" : "" });
+      if (a) ev.push({ icon: "scan-search", t: a.dce_available ? "Dossier analysé (complet)" : "Annonce analysée", d: a.match_score != null ? "compatibilité " + a.match_score + "/100" : "" });
       const e = this.ao.estimate;
-      if (e && e.total_ht) ev.push({ icon: "calculator", t: "Chiffrage estimé", d: this.eur(e.total_ht) + " HT" });
-      if (e && e.review && e.review.status === "valide") ev.push({ icon: "circle-check-big", t: "Chiffrage validé" + (e.review.by ? " · " + e.review.by : ""), d: "" });
-      if (this.ao.cotraitants.length) ev.push({ icon: "handshake", t: this.ao.cotraitants.length + " co-traitant(s) rattaché(s)", d: "" });
-      if (this.ao.dossier) ev.push({ icon: "package", t: "Dossier généré (CERFA + mémoire)", d: "" });
+      if (e && e.total_ht) ev.push({ icon: "calculator", t: "Estimation du prix", d: this.eur(e.total_ht) + " HT" });
+      if (e && e.review && e.review.status === "valide") ev.push({ icon: "circle-check-big", t: "Estimation validée" + (e.review.by ? " · " + e.review.by : ""), d: "" });
+      if (this.ao.cotraitants.length) ev.push({ icon: "handshake", t: this.ao.cotraitants.length + " partenaire(s) rattaché(s)", d: "" });
+      if (this.ao.dossier) ev.push({ icon: "package", t: "Documents préparés (formulaires + présentation)", d: "" });
       const nd = (this.ao.documents || []).reduce((s, g) => s + ((g && g.documents || []).length), 0);
-      if (nd) ev.push({ icon: "folder", t: nd + " pièce(s) au coffre-fort", d: "" });
+      if (nd) ev.push({ icon: "folder", t: nd + " pièce(s) dans mes documents", d: "" });
       const dl = this.aoDetails().date_limite;
       if (dl) ev.push({ icon: "calendar-clock", t: "Échéance de remise", d: dl });
       return ev;
@@ -643,11 +643,11 @@ const __adjApp = createApp({
     },
     async exportConsortium(pid) {
       this.cexport[pid] = true;
-      this.notify("Assemblage du dossier commun (mémoire fusionné + pièces des partenaires)…");
+      this.notify("Assemblage du dossier commun (présentation fusionnée + pièces des partenaires)…");
       try {
         const r = await this.api("POST", "/api/sourcing/documents", { project_id: pid, cotraitants: [] });
         if (r.dossier && r.dossier.zip_b64) { this._downloadB64(r.dossier.zip_b64, r.dossier.zip_name); this.notify("Dossier commun exporté ✓"); }
-        else this.notify("Rien à exporter pour ce consortium", "err");
+        else this.notify("Rien à exporter pour ce groupement", "err");
       } catch (e) {
         if ((e.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
         else this.notify(e.message, "err");
@@ -662,7 +662,7 @@ const __adjApp = createApp({
         const r = await fetch("/api/projects/" + pid + "/consortium/report", { headers: { Authorization: "Bearer " + this.token } });
         if (!r.ok) throw new Error("indispo");
         const blob = await r.blob(); const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob); a.download = "Compte-rendu_consortium.pdf"; document.body.appendChild(a); a.click(); a.remove();
+        a.href = URL.createObjectURL(blob); a.download = "Compte-rendu_groupement.pdf"; document.body.appendChild(a); a.click(); a.remove();
         this.notify("Compte-rendu PDF téléchargé");
       } catch (e) { this.notify("Compte-rendu indisponible", "err"); }
     },
@@ -727,7 +727,7 @@ const __adjApp = createApp({
         if (!(await this._sharedPut())) return;
         if (!(await this.sharedEnsureVerified())) return;
         const c = await this.api("POST", "/api/invite/" + this.sharedAo.token + "/contribution/submit");
-        this.sharedAo.status = c.status; this.notify("Contribution soumise au mandataire ✓"); this.loadShared();
+        this.sharedAo.status = c.status; this.notify("Contribution soumise au chef de file ✓"); this.loadShared();
       } catch (e) { this.notify(e.message, "err"); } finally { this.sharedAo.busy = false; }
     },
     async sharedUpload(ev) {
@@ -780,7 +780,7 @@ const __adjApp = createApp({
       finally { this.ao.share.busy = false; }
     },
     async aoRevokeInvite(inv) {
-      if (!confirm("Révoquer ce lien ? Le co-traitant perdra l'accès immédiatement.")) return;
+      if (!confirm("Révoquer ce lien ? Le partenaire perdra l'accès immédiatement.")) return;
       try { await this.api("DELETE", "/api/projects/" + this.ao.project.id + "/invites/" + inv.id); this.notify("Lien révoqué"); this.aoLoadInvites(); }
       catch (e) { this.notify(e.message, "err"); }
     },
@@ -833,7 +833,7 @@ const __adjApp = createApp({
       this.ao.group.loading = true;
       try {
         this.ao.group.data = await this.api("POST", "/api/sourcing/groupement", { project_id: this.ao.project.id });
-        if (this.ao.group.data && !this.ao.group.data.n_lots) this.notify("Marché en lot unique : pas de décomposition possible. Utilisez « Ajouter » pour un co-traitant.");
+        if (this.ao.group.data && !this.ao.group.data.n_lots) this.notify("Marché en lot unique : pas de répartition possible. Utilisez « Ajouter » pour un partenaire.");
         else if (this.ao.group.data) this.notify("Groupement optimisé : " + this.ao.group.data.n_lots + " lot(s) analysé(s)");
       }
       catch (e) { this.notify(e.message, "err"); }
@@ -874,8 +874,8 @@ const __adjApp = createApp({
     },
     outcomeReasons(status) {
       return status === "gagne"
-        ? ["Prix compétitif", "Valeur technique / mémoire", "Références & expérience", "Délai proposé", "Critère RSE / insertion", "Co-traitance / groupement", "Relation acheteur"]
-        : ["Prix trop élevé", "Mémoire technique insuffisant", "Références insuffisantes", "Délai non tenable", "Critère RSE non couvert", "Dossier incomplet / hors délai", "Capacité / effectif insuffisant"];
+        ? ["Prix compétitif", "Valeur technique / présentation", "Références & expérience", "Délai proposé", "Critère RSE / insertion", "Groupement / partenaires", "Relation client"]
+        : ["Prix trop élevé", "Dossier de présentation insuffisant", "Références insuffisantes", "Délai non tenable", "Critère RSE non couvert", "Dossier incomplet / hors délai", "Capacité / effectif insuffisant"];
     },
     async aoSaveOutcome() {
       const p = this.ao.project;
@@ -911,7 +911,7 @@ const __adjApp = createApp({
       this.ao.project.tva_rate = rate;
       try {
         await this.api("PUT", "/api/projects/" + this.ao.project.id, { tva_rate: rate });
-        this.notify("TVA réglée à " + (rate ? String(rate).replace('.', ',') + " %" : "0 % (hors-champ)") + " — régénérez le dossier pour l'appliquer");
+        this.notify("TVA réglée à " + (rate ? String(rate).replace('.', ',') + " %" : "0 % (franchise)") + " — régénérez le dossier pour l'appliquer");
       } catch (e) { this.notify(e.message, "err"); }
     },
     // Cockpit : assemble la réponse commune PUIS télécharge directement (sinon on ne
@@ -928,7 +928,7 @@ const __adjApp = createApp({
         await this.api("POST", "/api/sourcing/analyze-upload", fd, true);
         this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id);
         this.aoLoadDocs();
-        this.notify("DCE analysé — analyse complète ✓");
+        this.notify("Dossier analysé — analyse complète ✓");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
@@ -976,7 +976,7 @@ const __adjApp = createApp({
     },
 
     // ── Modals (cotraitant / contact / invoice) ──
-    openCotraitant(c) { this.modal = { type: "cotraitant", title: c ? "Modifier le co-traitant" : "Nouveau co-traitant", d: c ? { ...c } : { name: "", ca_n1: 0, ca_n2: 0, effectif: 0 } }; },
+    openCotraitant(c) { this.modal = { type: "cotraitant", title: c ? "Modifier le partenaire" : "Nouveau partenaire", d: c ? { ...c } : { name: "", ca_n1: 0, ca_n2: 0, effectif: 0 } }; },
     openContact(c) { this.modal = { type: "contact", title: c ? "Modifier le contact" : "Nouveau contact", d: c ? { ...c } : { name: "", contact_type: "" } }; },
     openInvoice() { this.modal = { type: "invoice", wide: true, title: "Nouveau document", d: { type: "devis", client_name: "", client_address: "", tva_rate: 20, items: [{ description: "", qty: 1, unit_price: 0 }] } }; },
     async saveModal() {
@@ -1095,7 +1095,7 @@ const __adjApp = createApp({
     decLabel(d) { return ({ go: "Bon potentiel", no_go: "Peu adapté", a_etudier: "À étudier" })[d] || "—"; },
     decColor(d) { return ({ go: "color:var(--go)", no_go: "color:var(--nogo)", a_etudier: "color:var(--warn)" })[d] || "color:var(--muted)"; },
     statusLabel(s) { return ({ nouveau: "Nouveau", en_cours: "En cours", envoye: "Envoyé", gagne: "Gagné", perdu: "Perdu", abandonne: "Abandonné" })[s] || s; },
-    covLabel(c) { return ({ entreprise: "Entreprise seule", cotraitant: "Co-traitance", non_couvert: "Non couvert" })[c] || c; },
+    covLabel(c) { return ({ entreprise: "Entreprise seule", cotraitant: "Avec un partenaire", non_couvert: "Non couvert" })[c] || c; },
     covClass(c) { return ({ entreprise: "go", cotraitant: "st-nouveau", non_couvert: "no_go" })[c] || "st-nouveau"; },
     eur(v) {
       v = Number(v) || 0;
@@ -1186,7 +1186,7 @@ const __adjApp = createApp({
         const r = await this.api("POST", "/api/sourcing/analyze", { tender: t });
         this.src.analysis = r; this.src.projectId = r.project_id;
         this.loadProjects(); this.loadStats();
-        if (!r.dce_available) this.notify("DCE complet non accessible — analyse fondée sur l'avis publié", "ok");
+        if (!r.dce_available) this.notify("Dossier complet non accessible — analyse fondée sur l'annonce publiée", "ok");
       } catch (e) {
         if ((e.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
         else this.notify(e.message, "err");
@@ -1195,13 +1195,13 @@ const __adjApp = createApp({
     async srcUploadDce(e) {
       const file = e.target.files[0]; if (!file) return;
       e.target.value = "";
-      if (!this.src.projectId) { this.notify("Analysez d'abord l'avis", "err"); return; }
+      if (!this.src.projectId) { this.notify("Analysez d'abord l'annonce", "err"); return; }
       this.src.analyzing = true;
       try {
         const fd = new FormData(); fd.append("file", file); fd.append("project_id", this.src.projectId);
         const r = await this.api("POST", "/api/sourcing/analyze-upload", fd, true);
         this.src.analysis = r; this.loadProjects(); this.loadStats();
-        this.notify("DCE analysé — analyse complète ✓");
+        this.notify("Dossier analysé — analyse complète ✓");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
@@ -1284,7 +1284,7 @@ const __adjApp = createApp({
       try { const r = await this.api("GET", "/api/knowledge/"); this.kb.docs = r.docs || []; this.kb.totalChunks = r.total_chunks || 0; }
       catch (e) {}
     },
-    kbKindLabel(k) { return ({ memoire: "Mémoire technique", rse: "RSE", methodologie: "Méthodologie", certification: "Certification", reference: "Référence", autre: "Autre" })[k] || k; },
+    kbKindLabel(k) { return ({ memoire: "Dossier de présentation", rse: "RSE", methodologie: "Méthodologie", certification: "Certification", reference: "Référence", autre: "Autre" })[k] || k; },
     async kbUpload(e) {
       const files = Array.from(e.target.files || []); if (!files.length) return;
       e.target.value = ""; this.kb.uploading = true;
@@ -1377,7 +1377,7 @@ const __adjApp = createApp({
         const r = await this.api("POST", "/api/sourcing/documents",
           { project_id: this.src.projectId, cotraitants: this.src.ct.selected });
         this.src.dossier = r.dossier;
-        this.notify(`Dossier généré (${r.cotraitants_verifies} co-traitant(s) SIRET vérifié)`);
+        this.notify(`Documents préparés (${r.cotraitants_verifies} partenaire(s) SIRET vérifié)`);
       } catch (e) {
         if ((e.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(e.message, "err");
