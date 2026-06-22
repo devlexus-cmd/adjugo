@@ -76,27 +76,25 @@
     <div v-if="mobileNav" class="nav-backdrop" @click="mobileNav=false"></div>
     <aside class="side" :class="{open:mobileNav}">
       <div class="brand"><span class="wordmark"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></span><span class="org-sub">{{ company.name || 'Votre entreprise' }}</span></div>
-      <div class="nav-group">Pilotage</div>
       <a class="nav-item" :class="{active:view==='dashboard'}" @click="go('dashboard')"><i data-lucide="layout-dashboard"></i>Tableau de bord</a>
-      <a class="nav-item" :class="{active:view==='sourcing'}" @click="go('sourcing')"><i data-lucide="target"></i>Veille AO</a>
-      <a class="nav-item" :class="{active:view==='amont'}" @click="go('amont')"><i data-lucide="scan-eye"></i>Veille amont <span v-if="amont.signals.length" class="badge">{{ amont.signals.length }}</span></a>
-      <a class="nav-item" :class="{active:view==='kb'}" @click="go('kb')"><i data-lucide="library"></i>Base de connaissances <span v-if="kb.docs.length" class="badge">{{ kb.docs.length }}</span></a>
-      <a class="nav-item" :class="{active:view==='pipeline'}" @click="go('pipeline')"><i data-lucide="square-kanban"></i>Pipeline AO <span class="badge">{{ projects.length }}</span></a>
-      <a class="nav-item" :class="{active:view==='consortiums'}" @click="go('consortiums')"><i data-lucide="users-round"></i>Mes consortiums <span v-if="consortiums.active" class="badge">{{ consortiums.active }}</span></a>
+      <a class="nav-item" :class="{active:view==='sourcing'}" @click="go('sourcing')"><i data-lucide="target"></i>Trouver des marchés</a>
+      <a class="nav-item" :class="{active:view==='pipeline'}" @click="go('pipeline')"><i data-lucide="square-kanban"></i>Mes marchés <span class="badge">{{ projects.length }}</span></a>
+      <a class="nav-item" :class="{active:view==='cotraitants'}" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires <span class="badge">{{ cotraitants.length }}</span></a>
+      <a class="nav-item" :class="{active:view==='documents'}" @click="go('documents')"><i data-lucide="folder-lock"></i>Mes documents</a>
+      <a class="nav-item" :class="{active:view==='company'}" @click="go('company')"><i data-lucide="briefcase"></i>Mon entreprise</a>
       <a v-if="shared.length" class="nav-item" :class="{active:view==='shared'||view==='sharedao'}" @click="go('shared')"><i data-lucide="inbox"></i>Partagé avec moi <span class="badge">{{ shared.length }}</span></a>
-      <div class="nav-group">CRM</div>
-      <a class="nav-item" :class="{active:view==='cotraitants'}" @click="go('cotraitants')"><i data-lucide="handshake"></i>Co-traitants <span class="badge">{{ cotraitants.length }}</span></a>
-      <a class="nav-item" :class="{active:view==='contacts'}" @click="go('contacts')"><i data-lucide="contact-round"></i>Contacts <span class="badge">{{ contacts.length }}</span></a>
-      <div class="nav-group">Gestion</div>
-      <a class="nav-item" :class="{active:view==='documents'}" @click="go('documents')"><i data-lucide="folder-lock"></i>Coffre-fort</a>
-      <a class="nav-item" :class="{active:view==='invoices'}" @click="go('invoices')"><i data-lucide="file-text"></i>Devis &amp; factures</a>
-      <div class="nav-group">Configuration</div>
-      <a class="nav-item" :class="{active:view==='company'}" @click="go('company')"><i data-lucide="briefcase"></i>Entreprise</a>
-      <a class="nav-item" :class="{active:view==='criteria'}" @click="go('criteria')"><i data-lucide="list-filter"></i>Critères Go/No-Go</a>
-      <div class="nav-group">Compte</div>
-      <a class="nav-item" :class="{active:view==='team'}" @click="go('team')"><i data-lucide="users-round"></i>Équipe</a>
-      <a class="nav-item" :class="{active:view==='billing'}" @click="go('billing')"><i data-lucide="credit-card"></i>Abonnement</a>
-      <a v-if="user.is_admin" class="nav-item" :class="{active:view==='admin'}" @click="go('admin')"><i data-lucide="shield"></i>Administration</a>
+      <a class="nav-item" @click="navMore=!navMore" style="opacity:.7"><i :data-lucide="navMore?'chevron-down':'chevron-right'"></i>Plus</a>
+      <template v-if="navMore">
+        <a class="nav-item" :class="{active:view==='amont'}" @click="go('amont')"><i data-lucide="scan-eye"></i>Projets à venir <span v-if="amont.signals.length" class="badge">{{ amont.signals.length }}</span></a>
+        <a class="nav-item" :class="{active:view==='kb'}" @click="go('kb')"><i data-lucide="library"></i>Mon savoir-faire <span v-if="kb.docs.length" class="badge">{{ kb.docs.length }}</span></a>
+        <a class="nav-item" :class="{active:view==='consortiums'}" @click="go('consortiums')"><i data-lucide="users-round"></i>Mes groupements <span v-if="consortiums.active" class="badge">{{ consortiums.active }}</span></a>
+        <a class="nav-item" :class="{active:view==='contacts'}" @click="go('contacts')"><i data-lucide="contact-round"></i>Contacts <span class="badge">{{ contacts.length }}</span></a>
+        <a class="nav-item" :class="{active:view==='invoices'}" @click="go('invoices')"><i data-lucide="file-text"></i>Devis &amp; factures</a>
+        <a class="nav-item" :class="{active:view==='criteria'}" @click="go('criteria')"><i data-lucide="list-filter"></i>Mes critères</a>
+        <a class="nav-item" :class="{active:view==='team'}" @click="go('team')"><i data-lucide="users-round"></i>Équipe</a>
+        <a class="nav-item" :class="{active:view==='billing'}" @click="go('billing')"><i data-lucide="credit-card"></i>Abonnement</a>
+        <a v-if="user.is_admin" class="nav-item" :class="{active:view==='admin'}" @click="go('admin')"><i data-lucide="shield"></i>Administration</a>
+      </template>
       <div class="side-foot">
         <div class="theme-toggle">
           <button :class="{on:theme==='light'}" @click="setTheme('light')" aria-label="Thème clair"><i data-lucide="sun"></i></button>
@@ -1149,7 +1147,7 @@
           </div>
           <div v-else class="t-wrap"><table><thead><tr><th>Nom</th><th>Rôle</th><th>Organisation</th><th>Type</th><th>Contact</th><th></th></tr></thead><tbody>
             <tr v-for="c in contacts" :key="c.id"><td><b>{{ c.name }}</b></td><td class="small">{{ c.role }}</td><td class="small">{{ c.organization }}</td>
-              <td><span class="pill st-nouveau">{{ c.contact_type||'—' }}</span></td>
+              <td><span class="pill st-nouveau">{{ contactTypeLabel(c.contact_type) }}</span></td>
               <td class="small">{{ c.email }}<div class="muted">{{ c.phone }}</div></td>
               <td class="row"><button class="btn icon sm ghost" @click="openContact(c)" aria-label="Modifier"><i data-lucide="pencil"></i></button><button class="btn icon sm ghost" @click="delContact(c)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button></td></tr>
           </tbody></table></div>
@@ -1576,7 +1574,7 @@
         <template v-if="modal.type==='contact'">
           <div class="frow"><div class="field"><label>Nom *</label><input v-model="modal.d.name"></div><div class="field"><label>Rôle</label><input v-model="modal.d.role"></div></div>
           <div class="frow"><div class="field"><label>Organisation</label><input v-model="modal.d.organization"></div>
-            <div class="field"><label>Type</label><select v-model="modal.d.contact_type"><option value="">—</option><option>maitre_ouvrage</option><option>sous_traitant</option><option>partenaire</option><option>fournisseur</option></select></div></div>
+            <div class="field"><label>Type</label><select v-model="modal.d.contact_type"><option value="">—</option><option value="maitre_ouvrage">Client (acheteur)</option><option value="partenaire">Partenaire</option><option value="sous_traitant">Sous-traitant</option><option value="fournisseur">Fournisseur</option></select></div></div>
           <div class="frow"><div class="field"><label>Email</label><input v-model="modal.d.email"></div><div class="field"><label>Téléphone</label><input v-model="modal.d.phone"></div></div>
           <div class="field"><label>Notes</label><textarea v-model="modal.d.notes"></textarea></div>
         </template>
