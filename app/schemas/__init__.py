@@ -1,7 +1,7 @@
 """
 Adjugo — Schémas Pydantic (validation des requêtes/réponses API)
 """
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List
 from datetime import date, datetime
 
@@ -64,6 +64,18 @@ class CompanyCreate(BaseModel):
     day_rates: Optional[list] = []
     distance_threshold_km: Optional[int] = 50
     distance_surcharge_pct: Optional[float] = 0
+
+    # Champ numérique laissé VIDE dans le formulaire = "" → on accepte (= None),
+    # l'endpoint garde alors la valeur en place (jamais de refus d'enregistrement).
+    @field_validator("ca_n1", "ca_n2", "ca_n3", "effectif",
+                     "distance_threshold_km", "distance_surcharge_pct", mode="before")
+    @classmethod
+    def _empty_num_to_none(cls, v):
+        if v is None or v == "":
+            return None
+        if isinstance(v, float) and v != v:   # NaN
+            return None
+        return v
 
 
 class CompanyOut(CompanyCreate):

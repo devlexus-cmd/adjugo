@@ -57,7 +57,7 @@ _BY_A2 = {c["a2"]: c for c in EU_COUNTRIES}
 
 class TedSource(TenderSource):
     name = "TED"
-    supported_filters = {"query", "countries"}
+    supported_filters = {"query", "countries", "type_marche"}
 
     def search(self, criteria: TenderCriteria) -> list[NormalizedTender]:
         q = (criteria.query or "travaux").replace('"', " ").strip()
@@ -81,10 +81,16 @@ class TedSource(TenderSource):
         cpv = [_re.sub(r"\D", "", c) for c in getattr(criteria, "cpv", [])]
         cpv = [c for c in cpv if c]
         cpv_clause = f' AND classification-cpv IN ({" ".join(cpv)})' if cpv else ""
+        # Filtre TYPE DE MARCHÉ (works/services/supplies) — TED expose le champ
+        # `contract-nature`. Sans ça, choisir « Services » ramenait quand même
+        # travaux + fournitures (le filtre semblait cassé côté Europe).
+        _NAT = {"TRAVAUX": "works", "SERVICES": "services", "FOURNITURES": "supplies"}
+        _nat = _NAT.get((getattr(criteria, "type_marche", "") or "").upper(), "")
+        nature_clause = f' AND contract-nature IN ({_nat})' if _nat else ""
         lim = min(criteria.limit, 50)
         page = (max(0, getattr(criteria, "offset", 0)) // lim) + 1 if lim else 1
         body = {
-            "query": f'FT~"{q}" AND notice-type IN (cn-standard cn-social) AND place-of-performance IN ({a3_list}){cpv_clause}',
+            "query": f'FT~"{q}" AND notice-type IN (cn-standard cn-social) AND place-of-performance IN ({a3_list}){cpv_clause}{nature_clause}',
             "fields": FIELDS, "limit": lim, "page": page,
             "scope": "ACTIVE", "paginationMode": "PAGE_NUMBER",
         }

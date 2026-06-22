@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     BACKUP_INTERVAL_HOURS: int = 24
     BACKUP_KEEP: int = 14                 # nb de sauvegardes conservées
     MAX_UPLOAD_MB: int = 20
-    ALLOWED_UPLOAD_EXT: str = ".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.odt,.ods"
+    ALLOWED_UPLOAD_EXT: str = ".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.odt,.ods,.zip,.txt"
 
     # Plans
     # Quotas d'analyses IA inclus / mois. Au-delà : 5 €/analyse (overage).

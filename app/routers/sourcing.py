@@ -348,9 +348,11 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     if len(content) > 50 * 1024 * 1024:
         raise HTTPException(413, "Fichier trop volumineux (50 Mo max).")
 
-    # Extraction du DCE réel — message clair si illisible/format non supporté
+    # Extraction du DCE réel — message clair si illisible/format non supporté.
+    # max_chars élevé : on lit l'INTÉGRALITÉ du dossier (RC+CCAP+CCTP+DPGF d'un ZIP),
+    # sinon l'analyse variait d'un import à l'autre selon ce qui passait sous le plafond.
     try:
-        dce_text = extract_dce_text(file.filename, content)
+        dce_text = extract_dce_text(file.filename, content, max_chars=120000)
     except ValueError as e:
         raise HTTPException(422, str(e))
 
@@ -365,7 +367,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
         analysis = analyze_dce_text(dce_text, company_data, gonogo,
                                     lang_name=_user_lang_name(current_user, db))
     analysis["dce_available"] = True
-    analysis["dce_excerpt"] = (dce_text or "")[:14000]   # contexte pour le Q&A IA
+    analysis["dce_excerpt"] = (dce_text or "")[:30000]   # contexte pour le Q&A IA
     prev = project.ai_analysis or {}
     analysis["source"] = prev.get("source") or {}
     analysis["lead_score"] = prev.get("lead_score")
@@ -385,14 +387,81 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
         project.name = intitule[:500]
     db.commit()
 
-    # Archiver le DCE importé dans le dossier de l'AO (coffre-fort, dossier "DCE")
+    # Archiver le DCE importé dans le dossier de l'AO (coffre-fort, dossier "DCE").
+    # replace_in_dossier (et non save) : un ré-import du même nom REMPLACE l'ancien
+    # au lieu d'empiler des doublons (l'utilisateur croyait ses documents « écrasés »).
     try:
-        from app.services.dossier import save_to_dossier
-        save_to_dossier(db, current_user.id, project.id, "DCE",
-                        file.filename or "DCE.pdf", content, file.content_type or "application/pdf")
+        from app.services.dossier import replace_in_dossier
+        replace_in_dossier(db, current_user.id, project.id, "DCE",
+                           file.filename or "DCE.pdf", content, file.content_type or "application/pdf")
     except Exception:
         pass
 
+    return {
+        "project_id": project.id, "decision": decision, "score": score,
+        "dce_available": True,
+        "summary": analysis.get("summary", ""),
+        "details": analysis.get("details", {}),
+        "source": analysis["source"],
+    }
+
+
+# ── Ré-analyser le DCE DÉJÀ importé (sans re-télécharger) ────────────────────────
+@router.post("/reanalyze")
+@limiter.limit("30/hour")
+async def reanalyze_project(request: Request, project_id: int = Form(...),
+                            current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)):
+    """Relance l'analyse sur le dossier déjà importé — utile après avoir affiné ses
+    critères, ou si l'analyse précédente semblait incomplète."""
+    from app.core.quota import consume_analysis
+    from app.services.analysis import analyze_dce_text, extract_dce_text
+    from app.services.storage import get_storage
+    from app.models import Document
+
+    project = db.query(Project).filter(Project.id == project_id,
+                                       Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(404, "Projet introuvable.")
+
+    doc = (db.query(Document)
+           .filter(Document.user_id == current_user.id, Document.project_id == project.id,
+                   Document.folder == "DCE", Document.deleted_at.is_(None))
+           .order_by(Document.created_at.desc()).first())
+    if not doc:
+        raise HTTPException(400, "Aucun dossier importé à ré-analyser. Importez d'abord le dossier du marché.")
+    try:
+        content = get_storage().load(doc.file_key)
+    except Exception:
+        raise HTTPException(404, "Le fichier du dossier est introuvable dans le stockage.")
+    try:
+        dce_text = extract_dce_text(doc.name, content, max_chars=120000)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+    consume_analysis(current_user, db)
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
+    company_data = _company_dict(company)
+    gonogo = _criteria_dict(current_user.id, db)
+    from app.services.llm import tenant_scope
+    with tenant_scope(current_user.id):
+        analysis = analyze_dce_text(dce_text, company_data, gonogo,
+                                    lang_name=_user_lang_name(current_user, db))
+    analysis["dce_available"] = True
+    analysis["dce_excerpt"] = (dce_text or "")[:30000]
+    prev = project.ai_analysis or {}
+    analysis["source"] = prev.get("source") or {}
+    analysis["lead_score"] = prev.get("lead_score")
+    score = analysis.get("match_score", 0)
+    go_t = (gonogo or {}).get("go_threshold") or 65
+    nogo_t = (gonogo or {}).get("nogo_threshold") or 40
+    decision = "go" if score >= go_t else ("no_go" if score < nogo_t else "a_etudier")
+    analysis["go_decision"] = decision
+    project.match_score = score
+    project.go_decision = decision
+    project.ai_summary = analysis.get("summary", "")
+    project.ai_analysis = analysis
+    db.commit()
     return {
         "project_id": project.id, "decision": decision, "score": score,
         "dce_available": True,

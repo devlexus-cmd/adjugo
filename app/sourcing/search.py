@@ -116,6 +116,20 @@ class TenderSearchService:
                 kept.append(t)
             deduped = kept
 
+        # Filtre TYPE DE MARCHÉ en post-traitement (filet de sécurité) : on n'écarte
+        # QUE les avis dont la nature est CONNUE et différente (Travaux/Services/
+        # Fournitures côté BOAMP). Les natures non catégorisées (TED = « Marché
+        # européen », déjà filtré à la source via contract-nature) sont conservées.
+        tm = (getattr(criteria, "type_marche", "") or "").strip().upper()
+        if tm in ("TRAVAUX", "SERVICES", "FOURNITURES"):
+            _KNOWN = ("TRAVAUX", "SERVICES", "FOURNITURES")
+            kept = []
+            for t in deduped:
+                n = (getattr(t, "nature", "") or "").strip().upper()
+                if n not in _KNOWN or n == tm:
+                    kept.append(t)
+            deduped = kept
+
         for t in deduped:
             t.score = score_tender(t, company, gonogo)
         deduped.sort(key=lambda t: (t.score.total if t.score else 0), reverse=True)

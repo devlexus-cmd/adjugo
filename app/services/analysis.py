@@ -256,6 +256,23 @@ def _ocr_pdf(content: bytes, max_pages: int = 15) -> str:
     return "\n\n".join(t for t in out if t).strip()
 
 
+def _extract_docx(data: bytes) -> str:
+    """Extrait le texte d'un .docx (Word), tableaux compris. Gracieux si python-docx absent."""
+    try:
+        import io
+        import docx
+        d = docx.Document(io.BytesIO(data))
+        parts = [p.text for p in d.paragraphs if p.text]
+        for tbl in d.tables:
+            for row in tbl.rows:
+                cells = [c.text for c in row.cells if c.text]
+                if cells:
+                    parts.append(" | ".join(cells))
+        return "\n".join(parts).strip()
+    except Exception:
+        return ""
+
+
 def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000) -> str:
     """
     Extrait le texte d'un DCE réel : PDF unique OU archive ZIP de plusieurs PDF.
@@ -275,36 +292,55 @@ def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000) -> s
                              "Si c'est un scan, l'OCR n'a rien pu extraire.")
         return txt[:max_chars]
 
+    if name.endswith(".docx"):   # AVANT le ZIP : un .docx est aussi une archive PK
+        t = _extract_docx(content)
+        if t and len(t) >= 20:
+            return t[:max_chars]
+        raise ValueError("Document Word illisible ou vide. Exportez-le en PDF si le souci persiste.")
+
+    if name.endswith((".txt", ".md", ".csv")):
+        t = content.decode("utf-8", errors="replace").strip()
+        if t:
+            return t[:max_chars]
+        raise ValueError("Fichier texte vide ou illisible.")
+
     if name.endswith(".zip") or content[:2] == b"PK":
         try:
             zf = zipfile.ZipFile(io.BytesIO(content))
         except Exception:
             raise ValueError("Archive ZIP corrompue ou illisible.")
         parts, files_done = [], 0
-        # PDF d'abord (le cœur du DCE), triés par nom
+        _OKEXT = (".pdf", ".docx", ".txt", ".md", ".csv")
+        # PDF d'abord (le cœur du DCE), puis Word/texte ; triés par nom
         names = sorted(zf.namelist(), key=lambda n: (not n.lower().endswith(".pdf"), n.lower()))
         for n in names:
+            ln = n.lower()
             if n.endswith("/") or os.path.basename(n).startswith("."):
                 continue
-            if not n.lower().endswith(".pdf"):
+            if not ln.endswith(_OKEXT):
                 continue
             try:
                 data = zf.read(n)
-                t = extract_text_from_pdf(data)
-                if not (t and not t.startswith("Erreur") and len(t) > 30):
-                    t = _ocr_pdf(data)   # PDF scanné dans l'archive → OCR de repli
+                if ln.endswith(".pdf"):
+                    t = extract_text_from_pdf(data)
+                    if not (t and not t.startswith("Erreur") and len(t) > 30):
+                        t = _ocr_pdf(data)   # PDF scanné dans l'archive → OCR de repli
+                elif ln.endswith(".docx"):
+                    t = _extract_docx(data)
+                else:
+                    t = data.decode("utf-8", errors="replace")
                 if t and not t.startswith("Erreur") and len(t) > 30:
                     parts.append(f"=== {os.path.basename(n)} ===\n{t}")
                     files_done += 1
             except Exception:
                 continue
-            if sum(len(p) for p in parts) > max_chars or files_done >= 12:
+            if sum(len(p) for p in parts) > max_chars or files_done >= 25:
                 break
         if not parts:
-            raise ValueError("Aucun PDF exploitable dans l'archive (DCE scanné ou autres formats ?).")
+            raise ValueError("Aucun fichier exploitable dans l'archive (PDF scanné ou format non géré ?).")
         return "\n\n".join(parts)[:max_chars]
 
-    raise ValueError("Format non supporté. Importez le DCE en PDF ou en archive ZIP.")
+    raise ValueError("Format non supporté. Importez le dossier en PDF, Word (.docx), texte ou archive ZIP.")
 
 
 def analyze_dce(file_bytes, company=None, criteria=None):

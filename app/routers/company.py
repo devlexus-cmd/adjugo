@@ -59,6 +59,9 @@ def update_company(
         db.add(company)
 
     for key, value in data.model_dump(exclude_unset=True).items():
+        if value is None and key in ("ca_n1", "ca_n2", "ca_n3", "effectif",
+                                     "distance_threshold_km", "distance_surcharge_pct"):
+            continue   # champ numérique vidé → on garde la valeur en place
         setattr(company, key, value)
 
     db.commit()

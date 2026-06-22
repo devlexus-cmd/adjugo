@@ -101,6 +101,35 @@ const __adjApp = createApp({
         "Déposez avant la <b>date limite</b> sur le profil de votre client (Chorus Pro, PLACE, plateforme du marché)."
       ],
       discover: { open: false, trade: "", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [],
+      cpvList: [
+        {code:"45000000",label:"Travaux de construction"},{code:"45100000",label:"Préparation de chantier"},
+        {code:"45110000",label:"Démolition / terrassement"},{code:"45200000",label:"Bâtiment / génie civil"},
+        {code:"45210000",label:"Construction de bâtiments"},{code:"45233000",label:"Voirie / routes"},
+        {code:"45260000",label:"Couverture / charpente"},{code:"45262500",label:"Maçonnerie"},
+        {code:"45300000",label:"Installations du bâtiment"},{code:"45310000",label:"Installation électrique"},
+        {code:"45320000",label:"Isolation"},{code:"45330000",label:"Plomberie"},
+        {code:"45331000",label:"Chauffage / ventilation / climatisation"},{code:"45400000",label:"Parachèvement de bâtiment"},
+        {code:"45410000",label:"Plâtrerie"},{code:"45420000",label:"Menuiserie"},
+        {code:"45430000",label:"Revêtements sols et murs"},{code:"45440000",label:"Peinture et vitrerie"},
+        {code:"45450000",label:"Autres travaux de finition"},{code:"45500000",label:"Location de matériel de chantier"},
+        {code:"50000000",label:"Réparation et entretien"},{code:"71000000",label:"Architecture, ingénierie, études"},
+        {code:"71200000",label:"Services d'architecture"},{code:"71300000",label:"Services d'ingénierie"},
+        {code:"71400000",label:"Urbanisme / paysage"},{code:"72000000",label:"Services informatiques"},
+        {code:"72200000",label:"Développement de logiciels"},{code:"72400000",label:"Services internet"},
+        {code:"48000000",label:"Logiciels et systèmes"},{code:"79000000",label:"Services aux entreprises"},
+        {code:"79400000",label:"Conseil en gestion"},{code:"79800000",label:"Impression et services connexes"},
+        {code:"79341000",label:"Publicité"},{code:"79952000",label:"Organisation d'événements"},
+        {code:"80000000",label:"Enseignement et formation"},{code:"85000000",label:"Santé et action sociale"},
+        {code:"90000000",label:"Environnement / déchets / assainissement"},{code:"90900000",label:"Nettoyage / hygiène"},
+        {code:"77000000",label:"Agriculture / sylviculture / horticulture"},{code:"77300000",label:"Espaces verts (création/entretien)"},
+        {code:"55000000",label:"Hôtellerie et restauration"},{code:"55500000",label:"Cantine et traiteur"},
+        {code:"60000000",label:"Transport"},{code:"92000000",label:"Culture, loisirs, sport"},
+        {code:"92500000",label:"Bibliothèques, archives, musées"},{code:"30000000",label:"Matériel informatique et de bureau"},
+        {code:"32000000",label:"Communication / audiovisuel"},{code:"39000000",label:"Mobilier et équipements"},
+        {code:"33000000",label:"Équipements médicaux"},{code:"34000000",label:"Véhicules / transport"},
+        {code:"22000000",label:"Imprimés et papeterie"},{code:"09000000",label:"Énergie / carburants"},
+        {code:"15000000",label:"Produits alimentaires"},
+      ],
       countries2: [], adaptedCountries: [], orgCountry: "FR", lang: "fr",
       amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false, pasteOpen: false, pasteText: "", pasting: false },
       amontDomaines: ["bâtiment", "voirie / VRD", "réseaux", "énergie / rénovation énergétique", "espaces verts / aménagement", "numérique / télécom", "équipement", "études / maîtrise d'œuvre"],
@@ -510,8 +539,32 @@ const __adjApp = createApp({
     },
     async saveCriteria() {
       this.busy = true;
-      try { await this.api("PUT", "/api/criteria/", this.criteria); this.notify("Critères enregistrés"); }
+      // Un champ numérique vidé arrive en "" → on l'envoie en null (le backend garde le défaut au lieu de refuser).
+      const payload = {};
+      for (const [k, v] of Object.entries(this.criteria || {})) payload[k] = (v === "" || (typeof v === "number" && Number.isNaN(v))) ? null : v;
+      try { await this.api("PUT", "/api/criteria/", payload); this.notify("Critères enregistrés"); }
       catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
+    },
+    // ── Garde-fou critères + résolution des libellés CPV ──
+    criteriaEmpty() {
+      const cr = this.criteria || {};
+      const has = k => cr[k] && String(cr[k]).trim();
+      return !(has('specialites') || has('codes_cpv') || has('qualifications') || has('departements'));
+    },
+    gateCriteria() {
+      // true = on continue ; false = on a renvoyé l'utilisateur vers ses critères.
+      if (!this.criteriaEmpty()) return true;
+      const ok = confirm("Vous n'avez pas encore renseigné vos critères (vos spécialités, votre zone géographique…).\n\nPour une analyse vraiment adaptée à votre entreprise, mieux vaut les définir d'abord.\n\nAller à « Mes critères » maintenant ?");
+      if (ok) { this.go('criteria'); return false; }
+      return true;
+    },
+    cpvLabels(str) {
+      const codes = (str || "").split(/[ ,;]+/).map(s => s.trim().replace(/\D/g, "")).filter(Boolean);
+      return codes.map(code => {
+        let hit = (this.cpvList || []).find(c => c.code === code);
+        if (!hit) hit = (this.cpvList || []).find(c => code.slice(0, 2) === c.code.slice(0, 2));
+        return hit ? code + " — " + hit.label : code + " — (libellé inconnu)";
+      });
     },
 
     // ── Projects (kanban + page détaillée AO) ──
@@ -922,13 +975,29 @@ const __adjApp = createApp({
     },
     async aoUploadDce(e) {
       const file = e.target.files[0]; if (!file) return;
-      e.target.value = ""; this.ao.uploading = true;
+      e.target.value = "";
+      if (!this.gateCriteria()) return;
+      this.ao.uploading = true;
       try {
         const fd = new FormData(); fd.append("file", file); fd.append("project_id", this.ao.project.id);
         await this.api("POST", "/api/sourcing/analyze-upload", fd, true);
         this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id);
         this.aoLoadDocs();
         this.notify("Dossier analysé — analyse complète ✓");
+      } catch (err) {
+        if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
+        else this.notify(err.message, "err");
+      } finally { this.ao.uploading = false; }
+    },
+    async aoReanalyze() {
+      if (!this.ao.project) return;
+      this.ao.uploading = true;
+      try {
+        const fd = new FormData(); fd.append("project_id", this.ao.project.id);
+        await this.api("POST", "/api/sourcing/reanalyze", fd, true);
+        this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id);
+        this.aoLoadDocs();
+        this.notify("Ré-analyse terminée ✓");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
@@ -1000,13 +1069,23 @@ const __adjApp = createApp({
 
     // ── Documents ──
     async uploadDoc(e) {
-      const file = e.target.files[0]; if (!file) return;
-      const fd = new FormData(); fd.append("file", file); fd.append("name", file.name); fd.append("category", "autre");
-      try { await this.api("POST", "/api/documents/", fd, true); this.loadDocuments(); this.notify("Document ajouté"); }
-      catch (err) { this.notify(err.message, "err"); }
+      const files = Array.from(e.target.files || []); if (!files.length) return;
       e.target.value = "";
+      let ok = 0;
+      for (const file of files) {
+        const fd = new FormData(); fd.append("file", file); fd.append("name", file.name); fd.append("category", "autre");
+        try { await this.api("POST", "/api/documents/", fd, true); ok++; }
+        catch (err) { this.notify(file.name + " : " + err.message, "err"); }
+      }
+      if (ok) { this.loadDocuments(); this.notify(ok + " document(s) ajouté(s)"); }
     },
     async delDoc(d) { const id = d.id; try { await this.api("DELETE", "/api/documents/" + id); this.loadDocuments(); this.notifyUndo("Document mis à la corbeille", () => this.restoreDoc(id)); } catch (e) { this.notify(e.message, "err"); } },
+    async renameDoc(d) {
+      const name = (prompt("Nouveau nom du document :", d.name || "") || "").trim();
+      if (!name || name === d.name) return;
+      try { await this.api("PATCH", "/api/documents/" + d.id, { name }); this.loadDocuments(); this.notify("Renommé"); }
+      catch (e) { this.notify(e.message, "err"); }
+    },
     async restoreDoc(id) { try { await this.api("POST", "/api/documents/" + id + "/restore"); this.loadDocuments(); this.notify("Restauré"); } catch (e) { this.notify(e.message, "err"); } },
     async downloadDoc(d) {
       try {
@@ -1180,6 +1259,7 @@ const __adjApp = createApp({
     },
     srcLoadMore() { return this.srcSearch(true); },
     async srcAnalyze(t) {
+      if (!this.gateCriteria()) return;
       this.src.analyzing = true; this.src.chosen = t; this.src.analysis = null;
       this.src.ct.companies = []; this.src.ct.selected = []; this.src.dossier = null;
       try {
@@ -1195,6 +1275,7 @@ const __adjApp = createApp({
     async srcUploadDce(e) {
       const file = e.target.files[0]; if (!file) return;
       e.target.value = "";
+      if (!this.gateCriteria()) return;
       if (!this.src.projectId) { this.notify("Analysez d'abord l'annonce", "err"); return; }
       this.src.analyzing = true;
       try {
@@ -1204,6 +1285,19 @@ const __adjApp = createApp({
         this.notify("Dossier analysé — analyse complète ✓");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
+        else this.notify(err.message, "err");
+      } finally { this.src.analyzing = false; }
+    },
+    async srcReanalyze() {
+      if (!this.src.projectId) { this.notify("Importez d'abord le dossier du marché", "err"); return; }
+      this.src.analyzing = true;
+      try {
+        const fd = new FormData(); fd.append("project_id", this.src.projectId);
+        const r = await this.api("POST", "/api/sourcing/reanalyze", fd, true);
+        this.src.analysis = r; this.loadProjects();
+        this.notify("Ré-analyse terminée ✓");
+      } catch (err) {
+        if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
       } finally { this.src.analyzing = false; }
     },

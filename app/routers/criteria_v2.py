@@ -5,7 +5,7 @@ Stocke les criteres supplementaires en JSON pour flexibilite.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import Column, Integer, Float, String, JSON, ForeignKey
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 from app.core.database import get_db, Base
 from app.core.security import get_current_user
@@ -80,6 +80,22 @@ class CriteriaUpdate(BaseModel):
     go_threshold: Optional[int] = 75
     nogo_threshold: Optional[int] = 40
 
+    # Un champ numérique laissé VIDE dans le formulaire arrive en "" (v-model.number)
+    # → Pydantic refusait tout l'enregistrement (422). On accepte le vide = None,
+    # et l'endpoint conserve alors la valeur existante / le défaut (jamais d'erreur).
+    @field_validator("budget_min", "budget_max", "ca_ratio_max", "avance_min",
+                     "delai_paiement_max", "max_distance_km", "lot_min",
+                     "effectif_max_marche", "penalty_max", "garantie_max",
+                     "retenue_garantie_max", "delai_reponse_min",
+                     "go_threshold", "nogo_threshold", mode="before")
+    @classmethod
+    def _empty_num_to_none(cls, v):
+        if v is None or v == "":
+            return None
+        if isinstance(v, float) and v != v:   # NaN
+            return None
+        return v
+
 
 router = APIRouter(prefix="/api/criteria", tags=["Criteres de matching"])
 
@@ -102,6 +118,8 @@ def update_criteria(data: CriteriaUpdate, current_user: User = Depends(get_curre
         c = MatchingCriteriaExt(user_id=data_owner_id(current_user, db))
         db.add(c)
     for k, v in data.model_dump().items():
+        if v is None:        # champ numérique laissé vide → on garde la valeur en place / le défaut
+            continue
         setattr(c, k, v)
     db.commit()
     db.refresh(c)

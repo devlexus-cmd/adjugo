@@ -4,7 +4,7 @@ Adjugo — Routes Documents (Coffre-fort)
 import os
 import uuid
 from datetime import date
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Body
 from fastapi.responses import StreamingResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -185,6 +185,28 @@ def replace_document(
         "version": new_doc.version,
         "message": "Document mis à jour",
     }
+
+
+@router.patch("/{doc_id}", status_code=200)
+def rename_document(
+    doc_id: int,
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Renommer un document (titre affiché dans le coffre-fort)."""
+    doc = db.query(Document).filter(
+        Document.id == doc_id, Document.user_id == current_user.id,
+        Document.deleted_at.is_(None),
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document introuvable")
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Le nom ne peut pas être vide")
+    doc.name = name[:500]
+    db.commit()
+    return {"id": doc.id, "name": doc.name}
 
 
 @router.delete("/{doc_id}", status_code=204)
