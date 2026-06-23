@@ -93,6 +93,12 @@ class NormalizedCompany(BaseModel):
     ca: Optional[float] = None                 # dernier CA publié (RNE/INPI), souvent absent
     resultat_net: Optional[float] = None
 
+    # Historique des marchés publics RÉELLEMENT remportés (DECP, titulaire_id_1) —
+    # signal de capacité déterministe : « cette entreprise a déjà gagné ce type de marché »
+    past_wins: int = 0
+    last_win_date: Optional[str] = None
+    win_domains: list[str] = []                 # familles CPV (2 chiffres) déjà gagnées
+
     # Red-flag financier (BODACC) : procédure collective en cours
     procedure_collective: Optional[str] = None  # ex "liquidation judiciaire" si détectée
     red_flags: list[str] = []

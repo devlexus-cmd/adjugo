@@ -398,7 +398,19 @@ def synergy_score(candidate, lead: dict = None, tender_departements=None, need_l
                "detail": f"Fiabilité {candidate.score.total if candidate.score else '—'}/100"
                          + (" · " + ", ".join(cl) if cl else "")})
 
-    total = min(100, comp + terr + fiab)
+    # 4) Expérience marchés publics (bonus, DECP) — « a déjà gagné des marchés publics »
+    wins = int(getattr(candidate, "past_wins", 0) or 0)
+    if wins >= 1:
+        exp = min(10, 3 + wins)
+        dexp = f"A déjà remporté {wins} marché(s) public(s) (source DECP)"
+        if getattr(candidate, "last_win_date", None):
+            dexp += f", dernier le {candidate.last_win_date}"
+        bd.append({"key": "experience", "label": "Expérience marchés publics", "points": exp, "max": 10, "detail": dexp})
+    else:
+        exp = 0
+
+    total = min(100, comp + terr + fiab + exp)
     headline = "Forte synergie" if total >= 70 else ("Synergie correcte" if total >= 45 else "Synergie faible")
-    return {"total": total, "headline": headline, "breakdown": bd,
-            "note": "Axe « historique de groupements gagnants » à venir (accumulation des données)."}
+    note = ("Inclut l'historique réel de marchés publics gagnés (DECP)." if wins
+            else "Aucun marché public gagné trouvé en source DECP pour ce SIRET.")
+    return {"total": total, "headline": headline, "breakdown": bd, "note": note}

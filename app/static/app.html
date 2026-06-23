@@ -557,6 +557,7 @@
                       <span v-if="c.siret_verified" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="badge-check" style="width:11px;height:11px"></i>SIRET vérifié</span>
                       <span v-if="c.est_rge" class="pill go" style="font-size:10px">RGE</span>
                       <span v-if="c.est_qualiopi" class="pill go" style="font-size:10px">Qualiopi</span>
+                      <span v-if="c.past_wins" class="pill" style="font-size:10px;background:var(--accent-weak);color:var(--accent-text);gap:3px" :title="'Marchés publics déjà remportés (source DECP)'+(c.last_win_date?' · dernier le '+c.last_win_date:'')"><i data-lucide="trophy" style="width:11px;height:11px"></i>{{ c.past_wins }} gagné(s)</span>
                       <span v-if="c.categorie" class="pill neutral" style="font-size:10px">{{ c.categorie }}</span>
                     </div>
                     <div class="muted small">{{ c.naf_label||c.naf }} · {{ c.ville }} · {{ c.effectif!=null?c.effectif+' sal.':'' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab.</span><span v-if="c.provenance && c.provenance.source_url"> · <a :href="c.provenance.source_url" target="_blank" style="color:var(--accent-text)">fiche ↗</a></span> · <a :href="companyWeb(c)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div>
@@ -922,6 +923,7 @@
                   <span v-if="c.siret_verified" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="badge-check" style="width:11px;height:11px"></i>SIRET vérifié</span>
                   <span v-if="c.est_rge" class="pill go" style="font-size:10px">RGE</span>
                   <span v-if="c.est_qualiopi" class="pill go" style="font-size:10px">Qualiopi</span>
+                  <span v-if="c.past_wins" class="pill" style="font-size:10px;background:var(--accent-weak);color:var(--accent-text);gap:3px" :title="'Marchés publics déjà remportés (source DECP)'+(c.last_win_date?' · dernier le '+c.last_win_date:'')"><i data-lucide="trophy" style="width:11px;height:11px"></i>{{ c.past_wins }} marché(s) public(s) gagné(s)</span>
                   <span v-if="c.categorie" class="pill neutral" style="font-size:10px">{{ c.categorie }}</span>
                 </div>
                 <div class="muted small">{{ c.naf_label||c.naf||'NAF n/d' }} · {{ c.ville||'ville n/d' }} · {{ c.effectif!=null?c.effectif+' sal.':'effectif n/d' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab. ouvert(s)</span> · <a :href="c.provenance.source_url" target="_blank" style="color:var(--accent-text)">fiche officielle ↗</a> · <a :href="companyWeb(c)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div>

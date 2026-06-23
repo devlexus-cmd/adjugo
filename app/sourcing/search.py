@@ -216,6 +216,9 @@ class CompanySearchService:
         for c in deduped:
             c.score = score_company(c, need_label or activity, tender_departements)
         deduped.sort(key=lambda c: (c.score.total if c.score else 0), reverse=True)
+        # Enrichissement DECP : marchés publics RÉELLEMENT gagnés (capacité réelle),
+        # borné aux meilleurs candidats pour la latence. Échec = dégradation silencieuse.
+        self._enrich_decp_wins(deduped[:12])
         return {"companies": deduped, "errors": errors, "count": len(deduped)}
 
     def _enrich_red_flags(self, companies: list[NormalizedCompany]) -> None:
@@ -247,6 +250,28 @@ class CompanySearchService:
                         c.red_flags = list(c.red_flags) + [f"Procédure collective clôturée : {label}"]
         except Exception as e:
             logger.info("Enrichissement BODACC partiel/indisponible : %s", e)
+
+    def _enrich_decp_wins(self, companies: list[NormalizedCompany]) -> None:
+        """Enrichit chaque entreprise avec son historique de marchés publics gagnés (DECP).
+        En parallèle, avec un budget de temps borné. Échec = pas d'enrichissement (jamais inventé)."""
+        targets = [c for c in companies if c.siren]
+        if not targets:
+            return
+        from app.services.decp import wins_by_siren
+        try:
+            with ThreadPoolExecutor(max_workers=min(8, len(targets))) as ex:
+                futs = {ex.submit(wins_by_siren, c.siren): c for c in targets}
+                for fut in as_completed(futs, timeout=10):
+                    c = futs[fut]
+                    try:
+                        w = fut.result()
+                    except Exception:
+                        continue
+                    c.past_wins = int(w.get("count") or 0)
+                    c.last_win_date = w.get("last_date") or None
+                    c.win_domains = list(w.get("domains") or [])
+        except Exception as e:
+            logger.info("Enrichissement DECP (marchés gagnés) partiel/indisponible : %s", e)
 
     def verify_siret(self, siret: str) -> Optional[NormalizedCompany]:
         for s in self.sources:

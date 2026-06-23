@@ -87,16 +87,19 @@ def agent_stats(current_user: User = Depends(get_current_user),
     moat = {"groupements": 0, "avec_partenaire_suggere": 0, "rate": 0,
             "liens_suggeres": 0, "liens_reseau": 0}
     pids = [p.id for p in projects]
-    if pids:
-        links = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id.in_(pids)).all()
-        by_proj = {}
-        for lk in links:
-            src = getattr(lk, "source", None) or "reseau"
-            moat["liens_suggeres" if src == "discover" else "liens_reseau"] += 1
-            by_proj.setdefault(lk.project_id, set()).add(src)
-        moat["groupements"] = len(by_proj)
-        moat["avec_partenaire_suggere"] = sum(1 for s in by_proj.values() if "discover" in s)
-        moat["rate"] = round(moat["avec_partenaire_suggere"] / moat["groupements"] * 100) if moat["groupements"] else 0
+    try:
+        if pids:
+            links = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id.in_(pids)).all()
+            by_proj = {}
+            for lk in links:
+                src = getattr(lk, "source", None) or "reseau"
+                moat["liens_suggeres" if src == "discover" else "liens_reseau"] += 1
+                by_proj.setdefault(lk.project_id, set()).add(src)
+            moat["groupements"] = len(by_proj)
+            moat["avec_partenaire_suggere"] = sum(1 for s in by_proj.values() if "discover" in s)
+            moat["rate"] = round(moat["avec_partenaire_suggere"] / moat["groupements"] * 100) if moat["groupements"] else 0
+    except Exception:
+        db.rollback()   # filet : colonne absente / souci DB → moat à zéro, stats jamais cassées
 
     u = usage(current_user, db)
     db.commit()

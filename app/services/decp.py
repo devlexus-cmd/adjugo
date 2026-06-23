@@ -132,3 +132,29 @@ def detect_renewals_decp(query: str, departements, criteria: dict, domaines=None
         })
     out.sort(key=lambda x: (x["score"], x["renouvellement_estime"]), reverse=True)
     return {"count": len(out), "renewals": out, "errors": [], "source": "DECP"}
+
+
+def wins_by_siren(siren: str) -> dict:
+    """Marchés publics RÉELLEMENT remportés par une entreprise (via DECP, champ
+    titulaire_id_1). Signal de capacité déterministe et sourcé — « cette entreprise a
+    déjà gagné ce type de marché ». Retourne {count, last_date, domains} (familles CPV
+    2 chiffres). Échec = compte 0 (jamais inventé)."""
+    siren = "".join(ch for ch in str(siren or "") if ch.isdigit())[:9]
+    if len(siren) != 9:
+        return {"count": 0, "last_date": "", "domains": []}
+    try:
+        params = {"limit": 20, "select": "codecpv,datenotification",
+                  "where": f'startswith(titulaire_id_1, "{siren}")',
+                  "order_by": "-datenotification"}
+        data = get_with_retry(API, params=params, timeout=8).json()
+    except Exception as e:
+        logger.info("DECP wins_by_siren indisponible (%s) : %s", siren, e)
+        return {"count": 0, "last_date": "", "domains": []}
+    rows = data.get("results", []) or []
+    fams = set()
+    for row in rows:
+        digits = "".join(ch for ch in str(row.get("codecpv") or "") if ch.isdigit())
+        if len(digits) >= 2:
+            fams.add(digits[:2])
+    last = str((rows[0].get("datenotification") if rows else "") or "")[:10]
+    return {"count": int(data.get("total_count") or 0), "last_date": last, "domains": sorted(fams)}
