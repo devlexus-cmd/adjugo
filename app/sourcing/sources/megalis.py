@@ -60,9 +60,16 @@ class MegalisSource(TenderSource):
             logger.info("Mégalis : BeautifulSoup indisponible — source ignorée.")
             return []
 
-        r = get_with_retry(LISTING, timeout=16, headers=_UA)
+        q = _clean(getattr(criteria, "query", "") or "")
+        if q:
+            # Recherche SERVEUR par mot-clé sur tout le catalogue Mégalis (pas seulement la
+            # liste récente) → on ratisse large ET pertinent. Endpoint Atexo confirmé.
+            from urllib.parse import quote
+            url = BASE + "/?page=Entreprise.EntrepriseAdvancedSearch&searchAnnCons&keyWord=" + quote(q[:80])
+        else:
+            url = LISTING
+        r = get_with_retry(url, timeout=16, headers=_UA)
         soup = BeautifulSoup(r.text, "html.parser")
-        q_tokens = [t for t in re.split(r"\W+", _no_accents(getattr(criteria, "query", "") or "")) if len(t) > 2]
 
         out, seen = [], set()
         for a in soup.find_all("a", href=re.compile(r"/entreprise/consultation/\d+")):
@@ -95,9 +102,7 @@ class MegalisSource(TenderSource):
             titre = intitule or objet
             if not titre:
                 continue
-            if q_tokens and not any(tok in _no_accents(titre + " " + objet) for tok in q_tokens):
-                continue
-            url = f"{BASE}/entreprise/consultation/{cid}" + (f"?orgAcronyme={org}" if org else "")
+            cons_url = f"{BASE}/entreprise/consultation/{cid}" + (f"?orgAcronyme={org}" if org else "")
             tender = NormalizedTender(
                 objet=titre[:400],
                 acheteur=organisme or None,
@@ -105,8 +110,8 @@ class MegalisSource(TenderSource):
                 lieu=organisme or None,
                 departements=[dep] if dep else [],
                 nature="Marché public (Bretagne)",
-                dce_url=url,
-                provenance=Provenance(source=self.name, source_url=url, official_ref=cid),
+                dce_url=cons_url,
+                provenance=Provenance(source=self.name, source_url=cons_url, official_ref=cid),
                 raw={"objet_complet": objet[:600]},
             )
             tender.confidence = 0.7
