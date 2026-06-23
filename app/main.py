@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from app.core.config import get_settings
 from app.core.database import engine, Base, _is_sqlite
-from app.routers import auth, projects, invoices, contacts, documents, analysis, cerfa, stripe_pay, cotraitants, export_dossier, checklist, chiffrage
+from app.routers import auth, projects, invoices, contacts, documents, cerfa, stripe_pay, cotraitants, export_dossier, checklist, chiffrage
 from app.routers.company import company_router, criteria_router
 from app.routers.criteria_v2 import router as criteria_v2_router
 from app.routers.agent import router as agent_router
@@ -126,7 +126,6 @@ async def security_headers(request, call_next):
 
 app.include_router(auth.router)
 app.include_router(projects.router)
-app.include_router(analysis.router)
 app.include_router(documents.router)
 app.include_router(invoices.router)
 app.include_router(contacts.router)

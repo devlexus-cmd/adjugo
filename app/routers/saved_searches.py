@@ -65,7 +65,9 @@ def update_saved_search(search_id: int, data: SavedSearchIn,
                                      SavedSearch.user_id == current_user.id).first()
     if not s:
         raise HTTPException(404, "Alerte introuvable")
-    for k, v in data.model_dump().items():
+    # exclude_unset : on ne met à jour que les champs RÉELLEMENT envoyés → un PUT partiel
+    # (ex. bascule actif/inactif) n'écrase plus les CPV/pays/montants/seuil avec leur défaut.
+    for k, v in data.model_dump(exclude_unset=True).items():
         setattr(s, k, v)
     db.commit(); db.refresh(s)
     return _out(s)

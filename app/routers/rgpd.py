@@ -59,7 +59,7 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
     data["criteres"] = _ser(crit, ["specialites", "departements", "budget_min", "budget_max"]) if crit else None
     dump(Project, ["id", "name", "client", "budget", "status", "deadline", "match_score",
                    "go_decision", "created_at"], "appels_offres")
-    dump(Contact, ["id", "name", "email", "phone", "organisation", "created_at"], "contacts")
+    dump(Contact, ["id", "name", "email", "phone", "organization", "created_at"], "contacts")
     dump(Document, ["id", "name", "category", "file_size", "expiration_date", "created_at"], "documents_coffre_fort")
     dump(Invoice, ["id", "type", "client_name", "total_ttc", "created_at"], "factures")
     dump(Signal, ["id", "intitule", "collectivite", "pertinence", "created_at"], "signaux_veille")

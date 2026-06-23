@@ -160,7 +160,8 @@ def replace_document(
         except ValueError:
             exp_date = old_doc.expiration_date
 
-    # Créer la nouvelle version
+    # Créer la nouvelle version = version COURANTE (parent_id NULL → visible dans la liste
+    # et les alertes d'expiration, qui filtrent sur parent_id IS NULL).
     new_doc = Document(
         user_id=current_user.id,
         name=old_doc.name,
@@ -170,12 +171,11 @@ def replace_document(
         mime_type=file.content_type,
         expiration_date=exp_date or old_doc.expiration_date,
         version=old_doc.version + 1,
-        parent_id=old_doc.id,
+        parent_id=None,
     )
-
-    # L'ancien document devient enfant du nouveau (inversion)
-    old_doc.parent_id = None  # On garde l'ancien accessible
     db.add(new_doc)
+    db.flush()                      # obtenir new_doc.id avant d'y rattacher l'ancien
+    old_doc.parent_id = new_doc.id  # l'ancienne version devient enfant (archivée, masquée)
     db.commit()
     db.refresh(new_doc)
 

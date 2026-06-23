@@ -4,13 +4,22 @@ set -e
 # Appliquer les migrations (Postgres en prod) avant de démarrer.
 # Retry léger le temps que la base soit prête.
 echo "→ Migrations Alembic…"
+MIGRATED=0
 for i in 1 2 3 4 5; do
   if alembic upgrade head; then
+    MIGRATED=1
     break
   fi
   echo "  base non prête, nouvel essai dans 3s ($i/5)…"
   sleep 3
 done
+if [ "$MIGRATED" != 1 ]; then
+  # Échec après 5 tentatives → on NE démarre PAS sur un schéma périmé (sinon 500 silencieux
+  # + hooks de démarrage cassés, déploiement « réussi » mais API HS). On échoue franchement :
+  # Railway conserve alors la version précédente qui marche.
+  echo "✗ Migrations Alembic échouées après 5 tentatives — arrêt." >&2
+  exit 1
+fi
 
 # Cohérence rate-limit / état partagé : les compteurs de rate-limit, le cache d'index
 # RAG et le pool de jobs sont PAR PROCESSUS. Sans store partagé (Redis), plusieurs

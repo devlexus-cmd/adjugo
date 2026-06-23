@@ -273,8 +273,15 @@ const __adjApp = createApp({
       try { data = txt ? JSON.parse(txt) : null; } catch (e) { data = null; }   // réponse non-JSON (ex. 500 « Internal Server Error »)
       if (!r.ok) {
         const d = data && data.detail;
-        const msg = d ? (typeof d === "string" ? d : (d.message || JSON.stringify(d)))
-                      : (r.status >= 500 ? "Erreur serveur, réessayez dans un instant." : "Erreur " + r.status);
+        let msg;
+        if (Array.isArray(d) && d.length) {
+          // Erreur de validation Pydantic (422) : on extrait un message lisible au lieu
+          // d'afficher le JSON brut [{"type":"missing","loc":[...]}] à l'utilisateur.
+          const f = d[0]; const field = Array.isArray(f.loc) ? f.loc[f.loc.length - 1] : "";
+          msg = (field && field !== "body" ? "Champ « " + field + " » : " : "") + (f.msg || "valeur invalide");
+        } else if (typeof d === "string") { msg = d; }
+        else if (d && d.message) { msg = d.message; }
+        else { msg = r.status >= 500 ? "Erreur serveur, réessayez dans un instant." : "Erreur " + r.status; }
         throw new Error(msg);
       }
       return data;
@@ -286,6 +293,9 @@ const __adjApp = createApp({
 
     // ── Auth ──
     async submitAuth() {
+      if (this.auth.mode === "register" && (this.auth.password || "").length < 8) {
+        this.notify("Le mot de passe doit faire au moins 8 caractères", "err"); return;
+      }
       this.busy = true;
       try {
         const path = this.auth.mode === "login" ? "/api/auth/login" : "/api/auth/register";
@@ -506,6 +516,7 @@ const __adjApp = createApp({
     },
     async changePassword() {
       if (!this.pwd.current || !this.pwd.next) { this.notify("Renseignez les deux champs", "err"); return; }
+      if ((this.pwd.next || "").length < 8) { this.notify("Le nouveau mot de passe doit faire au moins 8 caractères", "err"); return; }
       try {
         const r = await this.api("POST", "/api/auth/change-password", { current_password: this.pwd.current, new_password: this.pwd.next });
         if (r && r.access_token) { this.token = r.access_token; localStorage.setItem("adjugo_token", r.access_token); }
@@ -541,6 +552,7 @@ const __adjApp = createApp({
 
     // ── Company / Criteria ──
     async saveCompany() {
+      if (!(this.company.name || "").trim()) { this.notify("Indiquez le nom de votre entreprise (Dénomination)", "err"); return; }
       this.busy = true;
       try { await this.api("PUT", "/api/company/", this.company); this.notify("Profil enregistré"); }
       catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
@@ -1189,7 +1201,7 @@ const __adjApp = createApp({
 
     // ── Helpers d'affichage ──
     decLabel(d) { return ({ go: "Bon potentiel", no_go: "Peu adapté", a_etudier: "À étudier" })[d] || "—"; },
-    decColor(d) { return ({ go: "color:var(--go)", no_go: "color:var(--nogo)", a_etudier: "color:var(--warn)" })[d] || "color:var(--muted)"; },
+    decColor(d) { return ({ go: "color:var(--go)", no_go: "color:var(--danger)", a_etudier: "color:var(--warn)" })[d] || "color:var(--muted)"; },
     statusLabel(s) { return ({ nouveau: "Nouveau", en_cours: "En cours", envoye: "Envoyé", gagne: "Gagné", perdu: "Perdu", abandonne: "Abandonné" })[s] || s; },
     covLabel(c) { return ({ entreprise: "Entreprise seule", cotraitant: "Avec un partenaire", non_couvert: "Non couvert" })[c] || c; },
     covClass(c) { return ({ entreprise: "go", cotraitant: "st-nouveau", non_couvert: "no_go" })[c] || "st-nouveau"; },
@@ -1231,7 +1243,10 @@ const __adjApp = createApp({
       catch (e) { this.notify(e.message, "err"); }
     },
     async srcToggleAlert(a) {
-      try { await this.api("PUT", "/api/saved-searches/" + a.id, { name: a.name, query: a.query, departements: a.departements, frequency: a.frequency, active: !a.active }); this.loadAlerts(); }
+      // On renvoie l'alerte COMPLÈTE (…a) : le PUT backend réécrit tous les champs avec
+      // leur défaut s'ils sont absents → un payload partiel effaçait silencieusement CPV,
+      // type de marché, pays, montants et seuil de compatibilité à chaque pause/activation.
+      try { await this.api("PUT", "/api/saved-searches/" + a.id, { ...a, active: !a.active }); this.loadAlerts(); }
       catch (e) { this.notify(e.message, "err"); }
     },
     async srcDelAlert(a) {
@@ -1257,6 +1272,9 @@ const __adjApp = createApp({
       } finally { this.src.renewals.loading = false; }
     },
     async srcSearch(arg) {
+      // Garde de réentrance : Entrée maintenue / double-clic ne lancent pas des requêtes
+      // concurrentes qui se piétinent.
+      if (this.src.searching || this.src.loadingMore) return;
       // arg === true vient UNIQUEMENT du bouton « Charger plus » (srcLoadMore). Un clic /
       // une touche Entrée passe l'évènement DOM en argument : avant, il était pris pour un
       // « append » → toute recherche après la 1re s'empilait avec un mauvais offset (d'où
@@ -1268,7 +1286,13 @@ const __adjApp = createApp({
       // Critères modifiés → nouvelle recherche (remise à zéro).
       const append = (arg === true) || (sig === this.src.lastSig && this.src.tenders.length > 0);
       if (append) { this.src.loadingMore = true; }
-      else { this.src.searching = true; this.src.tenders = []; this.src.errors = []; this.src.analysis = null; this.src.offset = 0; this.src.hasMore = false; this.src.lastSig = sig; }
+      else {
+        this.src.searching = true; this.src.tenders = []; this.src.errors = []; this.src.analysis = null;
+        this.src.offset = 0; this.src.hasMore = false; this.src.lastSig = sig;
+        // Purge l'état d'analyse périmé de la recherche précédente (sinon un panneau
+        // « Analyser » / partenaires restait latent sur les nouveaux résultats).
+        this.src.chosen = null; this.src.projectId = null; this.src.dossier = null;
+      }
       const PAGE = 15;
       try {
         const r = await this.api("POST", "/api/sourcing/search",

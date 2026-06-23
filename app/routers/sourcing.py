@@ -41,25 +41,6 @@ TENDER_SOURCES = [BoampSource(), TedSource(), MEGALIS, PLACE]
 COMPANY_SOURCES = [SireneSource()]
 
 
-@router.get("/diag-atexo", include_in_schema=False)
-@limiter.limit("20/hour")
-def diag_atexo(request: Request):
-    """Diagnostic prod : que renvoient PLACE et Mégalis DEPUIS CE SERVEUR ? (counts + timing,
-    aucune donnée de marché). Public + rate-limité. À retirer une fois le souci tranché."""
-    import time as _t
-    out = {}
-    for src, deps in ((PLACE, []), (MEGALIS, ["29"])):
-        t0 = _t.time()
-        try:
-            r = src.search(TenderCriteria(query="travaux", departements=deps, countries=["FR"]))
-            out[src.name] = {"count": len(r), "ms": int((_t.time() - t0) * 1000),
-                             "sample": [t.objet[:45] for t in r[:2]]}
-        except Exception as e:
-            out[src.name] = {"error": type(e).__name__ + ": " + str(e)[:160],
-                             "ms": int((_t.time() - t0) * 1000)}
-    return out
-
-
 def _tender_sources(countries: list) -> list:
     """Sources à interroger selon les pays demandés. BOAMP (national FR) n'est
     pertinent que pour la France ; TED couvre tous les pays UE/EEE."""
@@ -244,7 +225,7 @@ def renewals(request: Request, req: RenewalRequest,
     100 % DÉTERMINISTE, couverture de TOUS les profils acheteurs (pas que BOAMP),
     et GRATUIT (aucun quota consommé). Repli sur la version BOAMP+IA si DECP est vide."""
     gonogo = _criteria_dict(current_user.id, db)
-    deps = [d.strip()[:3] for d in (req.departements or []) if d.strip()]
+    deps = [d.strip()[:2] for d in (req.departements or []) if d.strip()]
 
     # 1) DECP — déterministe, sans LLM, sans quota.
     try:
@@ -266,7 +247,9 @@ def renewals(request: Request, req: RenewalRequest,
     except Exception:
         refund_analysis(current_user, db)
         raise
-    if res.get("errors") and not res.get("renewals"):
+    # Remboursement dès que le repli ne produit AUCUN renouvellement (BOAMP vide, hors
+    # fenêtre, ou erreur) : pas de valeur rendue = pas de quota débité.
+    if not res.get("renewals"):
         refund_analysis(current_user, db)
     return res
 

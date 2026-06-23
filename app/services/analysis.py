@@ -343,20 +343,6 @@ def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000) -> s
     raise ValueError("Format non supporté. Importez le dossier en PDF, Word (.docx), texte ou archive ZIP.")
 
 
-def analyze_dce(file_bytes, company=None, criteria=None):
-    """Analyse un DCE (PDF) avec Claude."""
-    text = extract_text_from_pdf(file_bytes)
-
-    if not text or len(text) < 50:
-        return {
-            "match_score": 0,
-            "go_decision": "no_go",
-            "summary": "Impossible d'extraire le texte du PDF. Le document est peut-etre scanne ou protege.",
-            "details": {}
-        }
-    return analyze_dce_text(text, company, criteria)
-
-
 def _detect_groupement(details: dict, company: dict = None) -> dict:
     """Détecte si le marché est une OPPORTUNITÉ DE GROUPEMENT (répondre à plusieurs),
     de façon DÉTERMINISTE à partir des faits extraits — jamais inventé :
@@ -366,7 +352,13 @@ def _detect_groupement(details: dict, company: dict = None) -> dict:
     company = company or {}
     raisons = []
     allot = str(details.get("allotissement") or "").lower()
-    if allot.count("lot ") >= 2 or "lot 2" in allot:
+    # Détecte l'allotissement sous ses formulations courantes : énumération « Lot 1… Lot 2… »
+    # MAIS aussi « 3 lots », « marché alloti en 4 lots », etc. (les sorties LLM réelles).
+    n = re.search(r"\b(\d+)\s+lots?\b", allot)
+    multi = (n and int(n.group(1)) >= 2) or allot.count("lot ") >= 2 or "lot 2" in allot
+    if "lot unique" in allot and allot.count("lot ") < 2:
+        multi = False
+    if multi:
         raisons.append("Marché alloti : vous pouvez répondre à plusieurs, un partenaire par lot.")
     reqs = details.get("qualifications_requises") or []
     own_q = str(company.get("qualifications") or "").lower()
