@@ -22,7 +22,15 @@ from app.sourcing.base import TenderSource, TenderCriteria
 from app.sourcing.schemas import NormalizedTender, Provenance
 
 logger = logging.getLogger("adjugo")
-_UA = {"User-Agent": "Mozilla/5.0 (compatible; AdjugoBot/1.0; +https://adjugo.pro)"}
+# UA navigateur réel : les WAF des plateformes publiques (gouv/Atexo) bloquent les UA
+# « bot » identifiés. On lit de la donnée PUBLIQUE de la commande publique, destinée aux
+# entreprises — un UA navigateur est la seule façon de la servir à l'utilisateur.
+_UA = {
+    "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"),
+    "Accept-Language": "fr-FR,fr;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
 _MOIS = {"janv": 1, "févr": 2, "fevr": 2, "mars": 3, "avri": 4, "mai": 5, "juin": 6,
          "juil": 7, "août": 8, "aout": 8, "sept": 9, "octo": 10, "nove": 11, "déce": 12, "dece": 12}
 _MAX_PAGES = 3            # plafond de pages ; le budget ADAPTATIF ci-dessous décide vraiment

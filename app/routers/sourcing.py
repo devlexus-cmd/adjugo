@@ -41,6 +41,25 @@ TENDER_SOURCES = [BoampSource(), TedSource(), MEGALIS, PLACE]
 COMPANY_SOURCES = [SireneSource()]
 
 
+@router.get("/diag-atexo", include_in_schema=False)
+@limiter.limit("20/hour")
+def diag_atexo(request: Request):
+    """Diagnostic prod : que renvoient PLACE et Mégalis DEPUIS CE SERVEUR ? (counts + timing,
+    aucune donnée de marché). Public + rate-limité. À retirer une fois le souci tranché."""
+    import time as _t
+    out = {}
+    for src, deps in ((PLACE, []), (MEGALIS, ["29"])):
+        t0 = _t.time()
+        try:
+            r = src.search(TenderCriteria(query="travaux", departements=deps, countries=["FR"]))
+            out[src.name] = {"count": len(r), "ms": int((_t.time() - t0) * 1000),
+                             "sample": [t.objet[:45] for t in r[:2]]}
+        except Exception as e:
+            out[src.name] = {"error": type(e).__name__ + ": " + str(e)[:160],
+                             "ms": int((_t.time() - t0) * 1000)}
+    return out
+
+
 def _tender_sources(countries: list) -> list:
     """Sources à interroger selon les pays demandés. BOAMP (national FR) n'est
     pertinent que pour la France ; TED couvre tous les pays UE/EEE."""
