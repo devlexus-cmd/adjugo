@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field as PydField
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.org import data_owner_id
+from app.core.org import data_owner_id, member_ids
 from app.core.ratelimit import limiter
 from app.models import User, Company, Project
 from app.sourcing.base import TenderCriteria
@@ -106,7 +106,7 @@ def optimize_groupement(request: Request, req: GroupementRequest,
     from app.sourcing.sources.sirene import TRADES
 
     project = db.query(Project).filter(Project.id == req.project_id,
-                                       Project.user_id == current_user.id,
+                                       Project.user_id.in_(member_ids(current_user, db)),
                                        Project.deleted_at.is_(None)).first()
     if not project or not project.ai_analysis:
         raise HTTPException(404, "Projet ou analyse introuvable")
@@ -346,7 +346,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     from app.services.analysis import analyze_dce_text, extract_dce_text
 
     project = db.query(Project).filter(Project.id == project_id,
-                                       Project.user_id == current_user.id).first()
+                                       Project.user_id.in_(member_ids(current_user, db))).first()
     if not project:
         raise HTTPException(404, "Projet introuvable — analysez d'abord l'avis.")
 
@@ -433,12 +433,12 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     from app.models import Document
 
     project = db.query(Project).filter(Project.id == project_id,
-                                       Project.user_id == current_user.id).first()
+                                       Project.user_id.in_(member_ids(current_user, db))).first()
     if not project:
         raise HTTPException(404, "Projet introuvable.")
 
     doc = (db.query(Document)
-           .filter(Document.user_id == current_user.id, Document.project_id == project.id,
+           .filter(Document.user_id.in_(member_ids(current_user, db)), Document.project_id == project.id,
                    Document.folder == "DCE", Document.deleted_at.is_(None))
            .order_by(Document.created_at.desc()).first())
     if not doc:
@@ -514,7 +514,7 @@ def ask_ao(request: Request, req: AskRequest,
            current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     from app.services.llm import complete, MODEL_FAST
     project = db.query(Project).filter(Project.id == req.project_id,
-                                       Project.user_id == current_user.id).first()
+                                       Project.user_id.in_(member_ids(current_user, db))).first()
     if not project or not project.ai_analysis:
         raise HTTPException(404, "Projet ou analyse introuvable")
     q = (req.question or "").strip()
@@ -557,7 +557,7 @@ def source_cotraitants(request: Request, req: CotraitantsRequest,
                        current_user: User = Depends(get_current_user),
                        db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == req.project_id,
-                                       Project.user_id == current_user.id).first()
+                                       Project.user_id.in_(member_ids(current_user, db))).first()
     if not project:
         raise HTTPException(404, "Projet introuvable")
     deps = [req.departement] if req.departement else []
@@ -596,7 +596,7 @@ def generate_documents(request: Request, req: DocumentsRequest,
     from app.services.agents import redaction
 
     project = db.query(Project).filter(Project.id == req.project_id,
-                                       Project.user_id == current_user.id).first()
+                                       Project.user_id.in_(member_ids(current_user, db))).first()
     if not project or not project.ai_analysis:
         raise HTTPException(404, "Projet ou analyse introuvable")
 

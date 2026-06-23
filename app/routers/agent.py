@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.quota import usage
+from app.core.org import member_ids
 from app.models import User, Project
 
 router = APIRouter(prefix="/api/agent", tags=["Tableau de bord"])
@@ -52,7 +53,9 @@ def _segment(projects, keyfn):
 @router.get("/stats")
 def agent_stats(current_user: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
-    projects = db.query(Project).filter(Project.user_id == current_user.id,
+    # Périmètre ORGANISATION (comme la liste « Mes marchés ») : le tableau de bord compte
+    # les marchés de toute l'équipe, pas seulement ceux du compte courant.
+    projects = db.query(Project).filter(Project.user_id.in_(member_ids(current_user, db)),
                                         Project.deleted_at.is_(None)).all()
     total = len(projects)
     by_status = {}

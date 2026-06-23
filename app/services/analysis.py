@@ -445,6 +445,12 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
             "details": {}
         }
     except Exception as e:
+        # Panne IA / plafond atteint : on NE renvoie PAS un faux « NO-GO » (score 0) — ce
+        # serait un verdict mensonger ET le client serait débité pour rien. On propage :
+        # les appelants (sourcing) remboursent le quota et renvoient un 503 « réessayez ».
+        from app.services.llm import LLMUnavailable
+        if isinstance(e, LLMUnavailable):
+            raise
         return {
             "match_score": 0,
             "go_decision": "no_go",
