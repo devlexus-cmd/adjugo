@@ -67,7 +67,10 @@ def _tender_sources(countries: list) -> list:
     fr_inclus = (not cc) or ("FR" in cc)
     sources = []
     if fr_inclus:
-        sources.append(BoampSource())
+        # BOAMP (bulletin national) + les plateformes Atexo : Mégalis (MAPA Bretagne) et
+        # PLACE (MAPA de l'État). Mégalis et PLACE s'auto-filtrent (Mégalis = départements
+        # bretons uniquement ; PLACE = France) → aucun surcoût quand hors périmètre.
+        sources += [BoampSource(), MEGALIS, PLACE]
     sources.append(TedSource())
     return sources
 # Red-flag financier (procédure collective) — enrichissement parallèle, jamais bloquant.
