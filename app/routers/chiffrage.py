@@ -31,10 +31,11 @@ def _project(pid: int, user: User, db: Session) -> Project:
 
 def _rates(user: User, db: Session):
     c = db.query(Company).filter(Company.user_id == data_owner_id(user, db)).first()
-    rates = (c.day_rates if c and c.day_rates else None) or DEFAULT_RATES
+    user_rates = c.day_rates if (c and c.day_rates) else None
+    rates = user_rates or DEFAULT_RATES
     th = c.distance_threshold_km if (c and c.distance_threshold_km is not None) else 50
     su = c.distance_surcharge_pct if (c and c.distance_surcharge_pct is not None) else 0
-    return rates, th, su
+    return rates, th, su, (user_rates is None)   # 4e = tarifs PAR DÉFAUT (non personnalisés)
 
 
 class EstimateRequest(BaseModel):
@@ -64,7 +65,7 @@ def make_estimate(project_id: int, req: EstimateRequest, request: Request,
     details = (p.ai_analysis or {}).get("details", {})
     if not details:
         raise HTTPException(400, "Analysez d'abord le DCE pour pouvoir le chiffrer.")
-    rates, th, su = _rates(current_user, db)
+    rates, th, su, rates_default = _rates(current_user, db)
     from app.services.llm import LLMUnavailable, tenant_scope
     try:
         with tenant_scope(current_user.id):
@@ -75,6 +76,7 @@ def make_estimate(project_id: int, req: EstimateRequest, request: Request,
         raise HTTPException(502, "Le chiffrage n'a pas pu être généré. Réessayez.")
     est = compute_estimate(tasks, rates, req.distance_km, th, su)
     est["rates_used"] = rates
+    est["rates_default"] = rates_default   # tarifs GÉNÉRIQUES non personnalisés → à signaler à l'user
     p.estimate = est
     db.commit()
     return est
@@ -100,7 +102,7 @@ def save_estimate(project_id: int, req: SaveRequest,
                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Recalcul déterministe après ajustement manuel (aucun appel IA). Repasse en brouillon."""
     p = _project(project_id, current_user, db)
-    rates, th, su = _rates(current_user, db)
+    rates, th, su, _ = _rates(current_user, db)
     est = compute_estimate(req.lignes, rates, req.distance_km, th, su)
     est["rates_used"] = rates
     p.estimate = est   # toute modification invalide une validation précédente

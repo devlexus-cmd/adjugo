@@ -325,13 +325,16 @@ def generate_attri1(c, p):
     d = datetime.date.today().strftime("%d/%m/%Y")
     addr = (str(c.get("address", "")) + " " + str(c.get("postal_code", "")) + " " + str(c.get("city", ""))).strip()
     budget = p.get("budget", 0) or 0
-    # Taux de TVA piloté par le projet. Défaut 0 % : la majorité des marchés
-    # publics FR sont hors-champ TVA (art. 293 B du CGI). Un 20 % codé en dur
-    # produisait un montant TTC d'engagement FAUX par défaut.
+    # ATTRI1 = ACTE D'ENGAGEMENT : le montant est l'OFFRE DE PRIX juridiquement engageante du
+    # candidat. S'il n'y a pas de chiffrage réel, on n'imprime PAS « 0 € » ni un budget supposé
+    # de l'acheteur : on laisse « À COMPLÉTER » pour ne jamais engager un prix inventé/faux.
+    has_price = budget > 0
     rate = p.get("tva_rate", 0) or 0
     tva = budget * rate / 100.0
     ttc = budget + tva
     tva_label = (fmt_pct(rate) + " %") if rate else "0 % — TVA non applicable (art. 293 B CGI)"
+    montant_ht_txt = fmt_eur(budget) if has_price else "À COMPLÉTER (chiffrez le marché)"
+    montant_ttc_txt = fmt_eur(ttc) if has_price else "À COMPLÉTER"
 
     # Bloc identification pour page 2
     ident_text = str(c.get("name", "")) + "\n" + addr + "\n" + str(c.get("email", "")) + " - " + str(c.get("phone", "")) + "\nSIRET : " + str(c.get("siret", ""))
@@ -349,10 +352,10 @@ def generate_attri1(c, p):
             {"x": 158, "y": 327, "text": (str(c.get("name", "")) + " — SIRET " + str(c.get("siret", ""))).strip(" —"), "size": 8, "bold": True},
             # TVA (taux réel du projet, 0 % par défaut — art. 293 B CGI)
             {"x": 226, "y": 521, "text": tva_label, "size": 8 if rate == 0 else 9},
-            # Montant HT chiffres
-            {"x": 230, "y": 563, "text": fmt_eur(budget), "size": 9, "bold": True},
+            # Montant HT chiffres (offre du candidat — « À COMPLÉTER » si non chiffré)
+            {"x": 230, "y": 563, "text": montant_ht_txt, "size": 9 if has_price else 6, "bold": True},
             # Montant TTC chiffres
-            {"x": 210, "y": 622, "text": fmt_eur(ttc), "size": 9, "bold": True},
+            {"x": 210, "y": 622, "text": montant_ttc_txt, "size": 9 if has_price else 6, "bold": True},
         ],
         # Page 3: B4 - Avance NON (centre case relevé)
         2: [

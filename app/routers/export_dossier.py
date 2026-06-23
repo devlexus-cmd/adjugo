@@ -50,18 +50,23 @@ def export_dossier(
         cd[k] = getattr(company, k, "") or ""
     cd["qualifications"] = company.qualifications or []
 
+    # Montant d'engagement (ATTRI1) = chiffrage RÉEL du candidat, JAMAIS le budget supposé de
+    # l'acheteur ni 0. None si non chiffré → l'acte d'engagement affiche « à compléter ».
+    est = project.estimate if isinstance(project.estimate, dict) else {}
     pd = {
         "name": project.name,
         "client": project.client or "",
-        "budget": project.budget or 0,
+        "budget": est.get("total_ht"),
         "reference": "AO-{:04d}".format(project.id),
         "cotraitants": [],
     }
 
-    # Charger les co-traitants si disponibles
+    # Co-traitants RATTACHÉS À CE MARCHÉ uniquement (pas tout le carnet d'adresses de l'org).
     try:
-        from app.routers.cotraitants import Cotraitant
-        cts = db.query(Cotraitant).filter(Cotraitant.user_id.in_(member_ids(current_user, db))).all()
+        from app.routers.cotraitants import Cotraitant, ProjectCotraitant
+        link_rows = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).all()
+        ct_ids = [l.cotraitant_id for l in link_rows]
+        cts = db.query(Cotraitant).filter(Cotraitant.id.in_(ct_ids)).all() if ct_ids else []
         for ct in cts:
             ct_data = {}
             for k in ["name", "siret", "code_ape", "forme_juridique",
@@ -94,9 +99,14 @@ def export_dossier(
                     "Erreur generation {}: {}".format(doc_type.upper(), str(e))
                 )
 
-        # 2. Ajouter les documents du coffre-fort (partagés dans l'organisation)
+        # 2. Documents : CE marché (project_id) + pièces générales du coffre-fort (project_id NULL,
+        #    type Kbis/attestations valables pour tout pli) — JAMAIS les documents d'un AUTRE
+        #    marché ; ni la corbeille (deleted_at) ni les versions remplacées (parent_id).
         documents = db.query(Document).filter(
-            Document.user_id.in_(member_ids(current_user, db))
+            Document.user_id.in_(member_ids(current_user, db)),
+            Document.deleted_at.is_(None),
+            Document.parent_id.is_(None),
+            ((Document.project_id == project_id) | (Document.project_id.is_(None))),
         ).all()
 
         storage = get_storage()
@@ -131,7 +141,7 @@ def export_dossier(
         sommaire.append("")
         sommaire.append("Projet : " + project.name)
         sommaire.append("Client : " + (project.client or ""))
-        sommaire.append("Budget : " + "{:,.0f} EUR".format(project.budget or 0).replace(",", " "))
+        sommaire.append("Montant de l'offre (HT) : " + ("{:,.0f} EUR".format(est.get("total_ht")).replace(",", " ") if est.get("total_ht") else "à chiffrer (aucun chiffrage enregistré)"))
         sommaire.append("Reference : AO-{:04d}".format(project.id))
         sommaire.append("Date : " + date_str)
         sommaire.append("")

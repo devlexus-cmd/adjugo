@@ -388,10 +388,11 @@
               <button v-if="ao.estimate" class="btn sm" @click="aoDownloadDpgf()"><i data-lucide="file-down"></i>Tableau de prix (Excel)</button>
               <button v-if="ao.estimate" class="btn sm" @click="ao.estimateOpen=!ao.estimateOpen"><i :data-lucide="ao.estimateOpen?'chevron-up':'sliders-horizontal'"></i>{{ ao.estimateOpen?'Replier':'Détailler / ajuster' }}</button></div>
             <div class="cb">
-              <div v-if="!ao.estimate" class="muted small">L'IA découpe le travail en tâches et estime le nombre de jours ; le prix est calculé sur <b>vos tarifs</b> (réglables dans Mon entreprise). Rien d'inventé : tout est calculé.
+              <div v-if="!ao.estimate" class="muted small">L'IA découpe le travail en tâches et estime le nombre de jours ; le prix est calculé sur <b>vos tarifs de journée</b> (réglables dans Mon entreprise — sinon des tarifs par défaut, à personnaliser). Le montant lui-même n'est jamais inventé : il est calculé jours × tarif.
                 <div class="row" style="gap:6px;margin-top:9px;align-items:center"><span>Distance du chantier :</span><input class="inp" type="number" min="0" v-model.number="ao.estimateDistance" style="width:90px" aria-label="Distance du chantier en km"><span>km</span></div>
               </div>
               <div v-else>
+                <div v-if="ao.estimate.rates_default" class="row small" style="gap:6px;margin-bottom:9px;color:var(--warn)"><i data-lucide="alert-triangle" style="width:13px;height:13px"></i><span>Estimation basée sur des <b>tarifs par défaut</b> — personnalisez vos tarifs de journée dans <b>Mon entreprise</b> pour un prix fidèle à votre structure.</span></div>
                 <div class="cards cols-4">
                   <div class="kpi"><div class="kh"><span>Total estimé HT</span><i data-lucide="banknote"></i></div><div class="v" style="font-size:16px">{{ eur(ao.estimate.total_ht) }}</div></div>
                   <div class="kpi"><div class="kh"><span>Charge</span><i data-lucide="calendar-days"></i></div><div class="v" style="font-size:16px">{{ ao.estimate.jours_total }} j</div></div>

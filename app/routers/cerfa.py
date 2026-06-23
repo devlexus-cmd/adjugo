@@ -65,10 +65,13 @@ def generate(
                         "missing_fields": missing},
             )
 
+    # Montant d'engagement = chiffrage RÉEL du candidat (project.estimate), pas project.budget
+    # (jamais renseigné) ni le budget supposé de l'acheteur. None → ATTRI1 « À COMPLÉTER ».
+    _est = project.estimate if isinstance(project.estimate, dict) else {}
     pd = {
         "name": project.name,
         "client": project.client or "",
-        "budget": project.budget or 0,
+        "budget": _est.get("total_ht"),
         "tva_rate": getattr(project, "tva_rate", 0) or 0,
         "reference": f"AO-{project.id:04d}",
     }

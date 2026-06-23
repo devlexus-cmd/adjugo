@@ -51,6 +51,17 @@ def _days_until(s):
         return None
 
 
+# Vocabulaire GÉNÉRIQUE de la commande publique : présent dans presque tous les DCE ET
+# profils → un recoupement sur ces seuls mots ne prouve AUCUNE adéquation métier réelle.
+_GENERIC = {
+    "marche", "marche", "public", "publics", "publique", "travaux", "service", "services",
+    "prestation", "prestations", "fourniture", "fournitures", "technique", "techniques",
+    "prix", "offre", "offres", "candidat", "entreprise", "societe", "projet", "lot", "lots",
+    "realisation", "mise", "oeuvre", "place", "ensemble", "divers", "general", "generale",
+    "qualite", "delai", "delais", "client", "maitre", "ouvrage", "consultation",
+}
+
+
 def _words(s):
     return {w for w in re.split(r"\W+", str(s).lower()) if len(w) > 3}
 
@@ -85,12 +96,15 @@ def score_dce(details: dict, company: dict = None, criteria: dict = None) -> dic
     ent_w = set().union(*[_words(s) for s in specs]) if specs else set()
     ent_w |= ent_qual_w | _words(company.get("name", ""))
 
-    # 1) Adéquation métier (30)
+    # 1) Adéquation métier (30) — recoupement sur des mots SIGNIFIANTS (hors vocabulaire
+    # générique « travaux/technique/prix… » qui matche tout et donnait de faux « ok »).
+    meaningful = (hay_w - _GENERIC) & (ent_w - _GENERIC)
     if not ent_w:
         bd.append(_crit("metier", "Adéquation métier", 18, 30, "inconnu",
                         "Profil entreprise incomplet (renseignez vos spécialités/qualifications)"))
-    elif hay_w & ent_w:
-        bd.append(_crit("metier", "Adéquation métier", 30, 30, "ok", "Le marché recoupe votre activité"))
+    elif meaningful:
+        bd.append(_crit("metier", "Adéquation métier", 30, 30, "ok",
+                        "Le marché recoupe votre activité (" + ", ".join(sorted(meaningful)[:3]) + ")"))
     else:
         bd.append(_crit("metier", "Adéquation métier", 8, 30, "partiel",
                         "Recoupement faible avec votre activité — à vérifier"))

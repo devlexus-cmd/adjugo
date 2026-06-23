@@ -288,10 +288,16 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
             _seen_sir.add(sir)
 
     # ── CERFA ──
+    # Montant de l'ATTRI1 (acte d'engagement) = chiffrage RÉEL du candidat (estimate.total_ht),
+    # JAMAIS le budget estimé de l'ACHETEUR (details.budget_estime) — sinon on engage l'entreprise
+    # sur un prix qu'elle n'a pas calculé. None si pas chiffré → l'ATTRI1 affiche « À COMPLÉTER ».
+    _real_ht = (estimate or {}).get("total_ht") if isinstance(estimate, dict) else None
+    if not _real_ht:
+        warnings.append("Montant d'engagement (ATTRI1) vide : chiffrez le marché avant de déposer.")
     project_data = {
         "name": details.get("intitule_marche", "Marché public"),
         "client": details.get("acheteur", ""),
-        "budget": _parse_amount(details.get("budget_estime", "")),  # numérique pour l'ATTRI1
+        "budget": _real_ht,  # None → ATTRI1 « À COMPLÉTER » (jamais un prix inventé)
         "tva_rate": tva_rate,
         "reference": f"AO-{(project_id or 0):04d}",
         "cotraitants": cerfa_cotraitants,   # ← DC1 groupement / DC2 multi-membres (incl. contributions)
