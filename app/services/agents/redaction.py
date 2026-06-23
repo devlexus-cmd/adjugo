@@ -107,8 +107,9 @@ def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
                 b += f"\n  Qualifications : {quals_c}"
             if refs:
                 b += f"\n  Références : {refs}"
-            if c.get("chiffrage_note"):
-                b += f"\n  Approche prix de son lot : {c['chiffrage_note']}"
+            # NB : l'« approche prix » (chiffrage_note) n'est volontairement PAS injectée dans le
+            # mémoire TECHNIQUE fusionné — le prix est jugé séparément (DPGF/BPU/cockpit) et n'a
+            # pas à apparaître dans la note méthodologique commune.
             if c.get("memoire_paragraph"):
                 b += f"\n  Apport rédigé par la PME : {c['memoire_paragraph']}"
             parts.append(b)
@@ -209,10 +210,14 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     contributions = []
     if db is not None and project_id:
         try:
-            from app.models import ProjectContribution
-            rows = db.query(ProjectContribution).filter(
+            from app.models import ProjectContribution, ProjectInvite
+            # On EXCLUT les parts dont le lien a été révoqué (partenaire retiré du groupement) →
+            # jamais dans le dossier déposé, même pour une révocation antérieure au correctif.
+            rows = db.query(ProjectContribution).join(
+                ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
                 ProjectContribution.project_id == project_id,
-                ProjectContribution.status == "submitted").all()
+                ProjectContribution.status == "submitted",
+                ProjectInvite.revoked.is_(False)).all()
             contributions = [{
                 "company_name": c.company_name, "role": c.role, "lot": c.lot,
                 "siret": getattr(c, "siret", "") or "", "forme_juridique": getattr(c, "forme_juridique", "") or "",
@@ -229,11 +234,13 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     cotraitant_pieces = []
     if db is not None and project_id:
         try:
-            from app.models import ContributionPiece, ProjectContribution
+            from app.models import ContributionPiece, ProjectContribution, ProjectInvite
             prows = db.query(ContributionPiece, ProjectContribution).join(
-                ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).filter(
+                ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).join(
+                ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
                 ContributionPiece.project_id == project_id,
-                ProjectContribution.status == "submitted").all()
+                ProjectContribution.status == "submitted",
+                ProjectInvite.revoked.is_(False)).all()
             cotraitant_pieces = [{"company": (cb.company_name or "cotraitant"),
                                   "name": pc.name, "file_key": pc.file_key} for pc, cb in prows]
         except Exception:

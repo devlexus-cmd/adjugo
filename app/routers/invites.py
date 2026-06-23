@@ -265,6 +265,13 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
     if not inv:
         raise HTTPException(404, "Invitation introuvable")
     inv.revoked = True
+    # On éjecte AUSSI la contribution liée : sinon elle reste « submitted » et continue d'être
+    # injectée dans le dossier final (mémoire fusionné, CERFA DC1/DC2, ZIP) → un partenaire
+    # explicitement retiré du groupement repartait dans le pli déposé à l'acheteur.
+    c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+    if c and c.status == "submitted":
+        c.status = "draft"
+        c.submitted_at = None
     db.commit()
     audit.record(db, action="invite.revoked", owner_id=inv.owner_id, project_id=project_id,
                  actor=f"user:{current_user.id}", actor_kind="owner",
@@ -542,6 +549,12 @@ def guest_otp_request(token: str, request: Request, db: Session = Depends(get_db
     inv = _valid_invite(token, db)
     if not _binding_required(inv):
         return {"sent": False, "reason": "Vérification non requise pour ce lien."}
+    # Idempotence : si un code valide est DÉJÀ en attente, on ne le régénère pas (sinon le code
+    # déjà reçu par le partenaire serait invalidé à chaque clic « Soumettre », et le plafond
+    # 6/h finirait par le verrouiller). Il réutilise le code reçu.
+    if inv.otp_hash and inv.otp_expires_at and inv.otp_expires_at > utcnow():
+        return {"sent": True, "already": True,
+                "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
     code = f"{secrets.randbelow(1_000_000):06d}"
     inv.otp_hash = _hash_otp(code)
     inv.otp_expires_at = utcnow() + timedelta(minutes=_OTP_TTL_MIN)
@@ -905,6 +918,13 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
         elif pclass["missing"]:
             # Part soumise mais pièces administratives obligatoires absentes du membre.
             missing.append(f"{name} : pièce(s) à fournir — {', '.join(pclass['missing'][:3])}")
+
+    # Conformité (politique : AVERTIR, pas bloquer) — un lot ne peut avoir qu'UN attributaire
+    # en groupement conjoint : on signale tout lot revendiqué par plusieurs partenaires.
+    for k, names in lots.items():
+        if len(names) > 1:
+            missing.insert(0, f"Lot « {k} » revendiqué par {len(names)} partenaires "
+                              f"({', '.join(names[:3])}) — un lot ne peut avoir qu'un seul attributaire")
 
     n = len(invites)
     pct = round(100 * total_score / n) if n else 0

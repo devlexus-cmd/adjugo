@@ -88,7 +88,8 @@ def update_cotraitant(ct_id: int, data: CotraitantCreate, current_user: User = D
     ct = db.query(Cotraitant).filter(Cotraitant.id == ct_id, Cotraitant.user_id.in_(member_ids(current_user, db))).first()
     if not ct:
         raise HTTPException(404, "Co-traitant introuvable")
-    for k, v in data.model_dump().items():
+    # exclude_unset : un PUT partiel ne réécrit plus les champs non transmis avec leur défaut.
+    for k, v in data.model_dump(exclude_unset=True).items():
         setattr(ct, k, v)
     db.commit()
     db.refresh(ct)
@@ -100,6 +101,8 @@ def delete_cotraitant(ct_id: int, current_user: User = Depends(get_current_user)
     ct = db.query(Cotraitant).filter(Cotraitant.id == ct_id, Cotraitant.user_id.in_(member_ids(current_user, db))).first()
     if not ct:
         raise HTTPException(404, "Co-traitant introuvable")
+    # On purge les liaisons aux AO (sinon ProjectCotraitant pointe vers un partenaire supprimé).
+    db.query(ProjectCotraitant).filter(ProjectCotraitant.cotraitant_id == ct.id).delete()
     db.delete(ct)
     db.commit()
     return {"ok": True}

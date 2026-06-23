@@ -761,6 +761,9 @@ const __adjApp = createApp({
         const k = this.sharedAo.contrib;
         if (!k.company_name && !k.lot) {   // pré-remplir au 1er chargement, sans écraser une saisie
           k.company_name = c.company_name || this.company.name || ""; k.lot = c.lot || "";
+          // Identité juridique (pour les CERFA DC1/DC2 du groupement) — pré-remplie depuis MA fiche entreprise.
+          k.siret = c.siret || this.company.siret || ""; k.forme_juridique = c.forme_juridique || this.company.forme_juridique || "";
+          k.address = c.address || this.company.address || ""; k.postal_code = c.postal_code || this.company.postal_code || ""; k.city = c.city || this.company.city || "";
           k.quals = (c.qualifications || []).join(", "); k.refs = (c.references || []).map(r => r.intitule || "").filter(Boolean).join("\n");
           k.chiffrage_note = c.chiffrage_note || ""; k.memoire_paragraph = c.memoire_paragraph || "";
           const ct = c.contact || {}; k.contact = { nom: ct.nom || this.user.full_name || "", email: ct.email || this.user.email || "", telephone: ct.telephone || "" };
@@ -769,7 +772,9 @@ const __adjApp = createApp({
     },
     _sharedBody() {
       const k = this.sharedAo.contrib;
-      return { company_name: k.company_name, lot: k.lot, qualifications: (k.quals || "").split(",").map(s => s.trim()).filter(Boolean),
+      return { company_name: k.company_name, lot: k.lot,
+               siret: k.siret, forme_juridique: k.forme_juridique, address: k.address, postal_code: k.postal_code, city: k.city,
+               qualifications: (k.quals || "").split(",").map(s => s.trim()).filter(Boolean),
                references: (k.refs || "").split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })),
                chiffrage_note: k.chiffrage_note, memoire_paragraph: k.memoire_paragraph, contact: k.contact, version: this.sharedAo.version };
     },
