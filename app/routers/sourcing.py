@@ -22,7 +22,7 @@ from app.models import User, Company, Project
 from app.sourcing.base import TenderCriteria
 from app.sourcing.sources.boamp import BoampSource
 from app.sourcing.sources.ted import TedSource
-from app.sourcing.sources.megalis import MegalisSource
+from app.sourcing.sources.atexo import MEGALIS, PLACE
 from app.sourcing.sources.sirene import SireneSource
 from app.sourcing.sources.bodacc import BodaccSource
 from app.sourcing.sources.buyer import BuyerProfileSource
@@ -33,11 +33,11 @@ from app.services.profile import company_dict as _company_dict, criteria_dict as
 logger = logging.getLogger("adjugo")
 router = APIRouter(prefix="/api/sourcing", tags=["Sourcing (sources officielles)"])
 
-# Sources AO actives : BOAMP (national FR) + TED (européen) + Mégalis Bretagne
-# (consultations des collectivités bretonnes, dont les MAPA sous-seuil absents du BOAMP ;
-# ne s'active que si un département breton 22/29/35/56 est ciblé).
+# Sources AO actives : BOAMP (national FR) + TED (européen) + plateformes Atexo
+# (profils acheteurs : PLACE = État national ; Mégalis = collectivités bretonnes — couvrent
+# les MAPA sous-seuil absents du BOAMP). Pagination + cache 20 min + garde-fou template.
 # DECP = marchés attribués → réservé à l'« intelligence marché », pas au feed d'AO ouverts.
-TENDER_SOURCES = [BoampSource(), TedSource(), MegalisSource()]
+TENDER_SOURCES = [BoampSource(), TedSource(), MEGALIS, PLACE]
 COMPANY_SOURCES = [SireneSource()]
 
 
