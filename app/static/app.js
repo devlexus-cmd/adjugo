@@ -433,6 +433,14 @@ const __adjApp = createApp({
       } catch (e) { this.notify("Entreprise introuvable", "err"); } finally { this.busy = false; }
     },
     openDiscover() { this.discover.open = true; this.discover.results = []; this.loadTrades(); if (!this.discover.dept) this.discover.dept = (this.company.postal_code || "").slice(0, 2); },
+    amontFindPartners(s) {
+      // Pré-AO : constituer le groupement DÈS le signal amont, AVANT la publication de l'AO.
+      const trade = (s && s.metiers && s.metiers.length) ? s.metiers[0] : ((s && s.domaine) || "");
+      const m = String((s && s.localisation) || "").match(/\b(\d{2})\d{0,3}\b/);
+      this.openDiscover();
+      this.discover.trade = trade;
+      if (m) this.discover.dept = m[1];
+    },
     async runDiscover() {
       this.discover.loading = true; this.discover.results = [];
       try {
