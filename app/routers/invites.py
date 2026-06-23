@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.org import data_owner_id, member_ids
 from app.core.ratelimit import limiter
 from app.core.security import get_current_user
 from app.models import (AuditLog, Company, ContributionPiece, Document, Project,
@@ -173,8 +174,11 @@ class InviteCreate(BaseModel):
 
 
 def _owned_project(pid: int, user: User, db: Session) -> Project:
+    # Portée ORGANISATION : un coéquipier accède au même AO (cohérent avec la liste
+    # « Mes marchés », le chiffrage, les CERFA, l'export). Sans ça, un membre ouvrant
+    # l'AO d'un collègue recevait un 404 alors qu'il le voyait dans la liste.
     p = db.query(Project).filter(
-        Project.id == pid, Project.user_id == user.id, Project.deleted_at.is_(None)
+        Project.id == pid, Project.user_id.in_(member_ids(user, db)), Project.deleted_at.is_(None)
     ).first()
     if not p:
         raise HTTPException(404, "Projet introuvable")
@@ -203,9 +207,14 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
                   db: Session = Depends(get_db)):
     """Génère un lien d'invitation co-traitant pour ce projet (mandataire only)."""
     project = _owned_project(project_id, current_user, db)
+    # owner_id = propriétaire CANONIQUE de l'organisation (porteur du profil entreprise).
+    # Toute la co-traitance d'un même tenant converge ainsi sur un seul owner_id : la vue
+    # invité (nom du mandataire = Company.user_id == owner_id) et la chaîne d'audit
+    # restent correctes quel que soit le membre qui crée le lien.
+    owner = data_owner_id(current_user, db)
     inv = ProjectInvite(
         token=secrets.token_urlsafe(32),
-        project_id=project.id, owner_id=current_user.id,
+        project_id=project.id, owner_id=owner,
         recipient=(body.recipient or "").strip()[:255],
         company_name=(body.company_name or "").strip()[:255],
         role=(body.role if body.role in ("cotraitant", "sous_traitant") else "cotraitant"),
@@ -216,7 +225,7 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
     db.add(inv)
     db.commit()
     db.refresh(inv)
-    audit.record(db, action="invite.created", owner_id=current_user.id, project_id=project.id,
+    audit.record(db, action="invite.created", owner_id=owner, project_id=project.id,
                  actor=f"user:{current_user.id}", actor_kind="owner",
                  target_type="invite", target_id=inv.id,
                  detail=(inv.company_name or inv.recipient or "")[:255],
@@ -231,12 +240,14 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
 @router.get("/api/projects/{project_id}/invites")
 def list_invites(project_id: int, current_user: User = Depends(get_current_user),
                  db: Session = Depends(get_db)):
+    # L'AO est vérifié au périmètre organisation ci-dessus ; on scope donc par project_id
+    # (et non par owner_id) pour que tout coéquipier voie les mêmes invitations/contributions.
     _owned_project(project_id, current_user, db)
     rows = db.query(ProjectInvite).filter(
-        ProjectInvite.project_id == project_id, ProjectInvite.owner_id == current_user.id
+        ProjectInvite.project_id == project_id
     ).order_by(ProjectInvite.created_at.desc()).all()
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project_id, ProjectContribution.owner_id == current_user.id).all()}
+        ProjectContribution.project_id == project_id).all()}
     return [_serialize_invite(r, contribs.get(r.id)) for r in rows]
 
 
@@ -245,15 +256,17 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
                   current_user: User = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     """Révoque un lien : le co-traitant perd l'accès immédiatement."""
+    # Contrôle d'accès = appartenance de l'AO à l'organisation (l'ancien filtre owner_id
+    # servait de garde ; on le remplace par la vérification de périmètre explicite).
+    _owned_project(project_id, current_user, db)
     inv = db.query(ProjectInvite).filter(
-        ProjectInvite.id == invite_id, ProjectInvite.project_id == project_id,
-        ProjectInvite.owner_id == current_user.id
+        ProjectInvite.id == invite_id, ProjectInvite.project_id == project_id
     ).first()
     if not inv:
         raise HTTPException(404, "Invitation introuvable")
     inv.revoked = True
     db.commit()
-    audit.record(db, action="invite.revoked", owner_id=current_user.id, project_id=project_id,
+    audit.record(db, action="invite.revoked", owner_id=inv.owner_id, project_id=project_id,
                  actor=f"user:{current_user.id}", actor_kind="owner",
                  target_type="invite", target_id=inv.id,
                  detail=(inv.company_name or inv.recipient or "")[:255],
@@ -279,7 +292,7 @@ def project_audit(project_id: int, current_user: User = Depends(get_current_user
     """Journal d'accès du projet (RGPD) — qui a consulté/téléchargé quoi, et quand."""
     _owned_project(project_id, current_user, db)
     rows = db.query(AuditLog).filter(
-        AuditLog.project_id == project_id, AuditLog.owner_id == current_user.id
+        AuditLog.project_id == project_id
     ).order_by(AuditLog.created_at.desc()).limit(min(max(limit, 1), 500)).all()
     return [{
         "id": r.id, "at": r.created_at.isoformat() if r.created_at else None,
@@ -293,7 +306,8 @@ def project_audit(project_id: int, current_user: User = Depends(get_current_user
 def audit_integrity(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Vérifie l'intégrité du journal d'audit du tenant (chaîne de hash). Preuve RGPD
     que la traçabilité n'a pas été altérée."""
-    return audit.verify_chain(db, current_user.id)
+    # La chaîne d'audit du tenant est portée par le propriétaire canonique de l'org.
+    return audit.verify_chain(db, data_owner_id(current_user, db))
 
 
 # ── Côté CO-TRAITANT INVITÉ (NON authentifié — jeton dans l'URL) ─────────────
@@ -720,11 +734,10 @@ def owner_download_piece(project_id: int, piece_id: int, request: Request,
     """Le mandataire télécharge une pièce d'un co-traitant (scopée à SON projet)."""
     _owned_project(project_id, current_user, db)
     pc = db.query(ContributionPiece).filter(
-        ContributionPiece.id == piece_id, ContributionPiece.project_id == project_id,
-        ContributionPiece.owner_id == current_user.id).first()
+        ContributionPiece.id == piece_id, ContributionPiece.project_id == project_id).first()
     if not pc:
         raise HTTPException(404, "Pièce introuvable")
-    audit.record(db, action="owner.download_piece", owner_id=current_user.id, project_id=project_id,
+    audit.record(db, action="owner.download_piece", owner_id=pc.owner_id, project_id=project_id,
                  actor=f"user:{current_user.id}", actor_kind="owner",
                  target_type="piece", target_id=pc.id, detail=(pc.name or "")[:255],
                  ip=audit.client_ip(request))
@@ -734,11 +747,10 @@ def owner_download_piece(project_id: int, piece_id: int, request: Request,
 @router.get("/api/projects/{project_id}/contributions")
 def list_contributions(project_id: int, current_user: User = Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    """Toutes les contributions des co-traitants de CE projet (mandataire only)."""
+    """Toutes les contributions des co-traitants de CE projet (toute l'organisation)."""
     _owned_project(project_id, current_user, db)
     rows = db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project_id,
-        ProjectContribution.owner_id == current_user.id
+        ProjectContribution.project_id == project_id
     ).order_by(ProjectContribution.updated_at.desc()).all()
     return [_serialize_contribution(c, db) for c in rows]
 
@@ -790,21 +802,24 @@ def _classify_partner_pieces(names: list) -> dict:
 def my_consortiums(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Tous les consortiums du mandataire (AO avec ≥1 partenaire) — pour l'accueil.
     Agrège partenaires, parts soumises, pièces et % de réponse prête par AO."""
+    # Périmètre ORGANISATION : agrège les consortiums de toute l'équipe (comme la liste
+    # des marchés et le tableau de bord), pas seulement ceux portés par le compte courant.
+    ids = member_ids(current_user, db)
     invites = db.query(ProjectInvite).filter(
-        ProjectInvite.owner_id == current_user.id, ProjectInvite.revoked.is_(False)).all()
+        ProjectInvite.owner_id.in_(ids), ProjectInvite.revoked.is_(False)).all()
     if not invites:
         return {"consortiums": [], "active": 0, "partners_total": 0, "submitted_total": 0}
     pids = {i.project_id for i in invites}
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
-        ProjectContribution.owner_id == current_user.id,
+        ProjectContribution.owner_id.in_(ids),
         ProjectContribution.project_id.in_(pids)).all()}
     piece_counts = {}
     for pc in db.query(ContributionPiece).filter(
-            ContributionPiece.owner_id == current_user.id,
+            ContributionPiece.owner_id.in_(ids),
             ContributionPiece.project_id.in_(pids)).all():
         piece_counts[pc.contribution_id] = piece_counts.get(pc.contribution_id, 0) + 1
     projects = {p.id: p for p in db.query(Project).filter(
-        Project.id.in_(pids), Project.user_id == current_user.id, Project.deleted_at.is_(None)).all()}
+        Project.id.in_(pids), Project.user_id.in_(ids), Project.deleted_at.is_(None)).all()}
 
     by_project = {}
     for inv in invites:
@@ -846,18 +861,16 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
     et % de réponse commune PRÊTE — calcul DÉTERMINISTE (jamais inventé)."""
     _owned_project(project_id, current_user, db)
     invites = db.query(ProjectInvite).filter(
-        ProjectInvite.project_id == project_id, ProjectInvite.owner_id == current_user.id,
+        ProjectInvite.project_id == project_id,
         ProjectInvite.revoked.is_(False)).order_by(ProjectInvite.created_at.asc()).all()
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project_id,
-        ProjectContribution.owner_id == current_user.id).all()}
+        ProjectContribution.project_id == project_id).all()}
     piece_counts, piece_names = {}, {}
     for pc in db.query(ContributionPiece).filter(
-            ContributionPiece.project_id == project_id,
-            ContributionPiece.owner_id == current_user.id).all():
+            ContributionPiece.project_id == project_id).all():
         piece_counts[pc.contribution_id] = piece_counts.get(pc.contribution_id, 0) + 1
         piece_names.setdefault(pc.contribution_id, []).append(pc.name or "")
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
 
     partners, lots, missing, total_score = [], {}, [], 0.0
     for inv in invites:
@@ -927,8 +940,9 @@ def notifications(current_user: User = Depends(get_current_user),
                   db: Session = Depends(get_db), days: int = 21):
     """Activité récente des co-traitants sur les AO du mandataire (in-app, sans email)."""
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max(1, min(days, 90)))
+    ids = member_ids(current_user, db)
     rows = db.query(AuditLog).filter(
-        AuditLog.owner_id == current_user.id, AuditLog.actor_kind == "guest",
+        AuditLog.owner_id.in_(ids), AuditLog.actor_kind == "guest",
         AuditLog.action.in_(list(_NOTIF_LABELS)),
         AuditLog.created_at >= since
     ).order_by(AuditLog.created_at.desc()).limit(40).all()
@@ -936,7 +950,7 @@ def notifications(current_user: User = Depends(get_current_user),
     names = {}
     if pids:
         names = {p.id: p.name for p in db.query(Project).filter(
-            Project.id.in_(pids), Project.user_id == current_user.id).all()}
+            Project.id.in_(pids), Project.user_id.in_(ids)).all()}
     return [{
         "id": r.id, "at": r.created_at.isoformat() if r.created_at else None,
         "project_id": r.project_id, "project": names.get(r.project_id, "Appel d'offres"),
@@ -968,7 +982,7 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
                  db: Session = Depends(get_db)):
     """Un titulaire de compte réclame un lien → l'AO entre dans son « Partagé avec moi »."""
     inv = _valid_invite(token, db)
-    if inv.owner_id == current_user.id:
+    if inv.owner_id in member_ids(current_user, db):
         raise HTTPException(400, "Vous êtes le mandataire de ce partage.")
     if inv.accepted_by_user_id and inv.accepted_by_user_id != current_user.id:
         raise HTTPException(409, "Ce lien a déjà été réclamé par un autre compte.")
@@ -1013,7 +1027,7 @@ def dossier_preview(project_id: int, current_user: User = Depends(get_current_us
     ]
     rows = db.query(ContributionPiece, ProjectContribution).join(
         ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).filter(
-        ContributionPiece.project_id == project_id, ContributionPiece.owner_id == current_user.id,
+        ContributionPiece.project_id == project_id,
         ProjectContribution.status == "submitted").all()
     for pc, cb in rows:
         co = (cb.company_name or "cotraitant")
@@ -1029,10 +1043,9 @@ def consortium_report(project_id: int, current_user: User = Depends(get_current_
                       db: Session = Depends(get_db)):
     project = _owned_project(project_id, current_user, db)
     data = consortium_cockpit(project_id, current_user, db)
-    company = db.query(Company).filter(Company.user_id == current_user.id).first()
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     contribs = [_serialize_contribution(c, db) for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project_id,
-        ProjectContribution.owner_id == current_user.id).all()]
+        ProjectContribution.project_id == project_id).all()]
     from app.services.consortium_report import generate_consortium_report_pdf
     pdf = generate_consortium_report_pdf(project.name, (company.name if company else ""), data, contribs)
     safe = re.sub(r'[^A-Za-z0-9._ -]', "_", (project.name or "consortium"))[:50]

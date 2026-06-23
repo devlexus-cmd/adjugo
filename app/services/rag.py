@@ -273,6 +273,15 @@ def retrieve(db: Session, user_id: int, query: str, k: int = 6, min_score: float
     return out
 
 
+def cited_refs(text: str) -> set:
+    """Numéros de sources réellement cités dans un texte généré : [S1], [S2], [S1, S2]…
+    Ancré sur les crochets pour ne PAS confondre avec une nuance technique (« acier S235 »)."""
+    out = set()
+    for grp in re.findall(r"\[S[\dS,;\s]*\]", text or ""):
+        out.update(int(n) for n in re.findall(r"\d+", grp))
+    return out
+
+
 def sources_block(chunks: list) -> str:
     """Formate les chunks récupérés en bloc de sources numérotées [S1], [S2]…
     à injecter dans le prompt. L'IA ne doit citer QUE ces sources."""

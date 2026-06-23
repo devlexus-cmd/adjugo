@@ -134,7 +134,7 @@ const __adjApp = createApp({
       amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false, pasteOpen: false, pasteText: "", pasting: false },
       amontDomaines: ["bâtiment", "voirie / VRD", "réseaux", "énergie / rénovation énergétique", "espaces verts / aménagement", "numérique / télécom", "équipement", "études / maîtrise d'œuvre"],
       kb: { docs: [], totalChunks: 0, uploading: false, kind: "memoire", text: "", textName: "", busyText: false,
-            searchQ: "", searchRes: null, qText: "", qResults: null, qLoading: false,
+            searchQ: "", searchRes: null, searching: false, qText: "", qResults: null, qLoading: false,
             memoire: null, memoireLoading: false },
       amontRegions: [
         { code: "IDF", nom: "Île-de-France", deps: ["75", "77", "78", "91", "92", "93", "94", "95"] },
@@ -1462,13 +1462,15 @@ const __adjApp = createApp({
     },
     async kbDelete(d) {
       if (!confirm("Retirer ce document de votre savoir-faire ?")) return;
-      try { await this.api("DELETE", "/api/knowledge/" + d.id); this.kb.docs = this.kb.docs.filter(x => x.id !== d.id); }
+      // kbLoad() rafraîchit aussi le compteur d'extraits indexés (sinon il restait périmé).
+      try { await this.api("DELETE", "/api/knowledge/" + d.id); await this.kbLoad(); }
       catch (e) { this.notify(e.message, "err"); }
     },
     async kbSearch() {
-      if (!(this.kb.searchQ || "").trim()) return;
+      if (!(this.kb.searchQ || "").trim() || this.kb.searching) return;
+      this.kb.searching = true;
       try { this.kb.searchRes = await this.api("POST", "/api/knowledge/search", { query: this.kb.searchQ, k: 6 }); }
-      catch (e) { this.notify(e.message, "err"); }
+      catch (e) { this.notify(e.message, "err"); } finally { this.kb.searching = false; }
     },
     // Attend la fin d'un job asynchrone (génération longue) en interrogeant /api/jobs/{id}
     async pollJob(jobId) {
@@ -1497,11 +1499,15 @@ const __adjApp = createApp({
     async kbQuestionnaire() {
       const qs = (this.kb.qText || "").split("\n").map(s => s.trim()).filter(Boolean);
       if (!qs.length) { this.notify("Collez vos questions (une par ligne)", "err"); return; }
+      if (!this.kb.docs.length) { this.notify("Ajoutez d'abord des documents à votre base", "err"); return; }
       this.kb.qLoading = true; this.kb.qResults = null;
       try {
         const job = await this.api("POST", "/api/knowledge/questionnaire", { questions: qs });
-        this.kb.qResults = await this.pollJob(job.id);
-        this.notify(this.kb.qResults.covered + "/" + this.kb.qResults.count + " réponses trouvées dans votre base");
+        const r = await this.pollJob(job.id); this.kb.qResults = r;
+        const errs = r.errors || 0;
+        let msg = r.covered + "/" + (r.count - errs) + " réponses trouvées dans votre base";
+        if (errs) msg += " · " + errs + " non générée(s), réessayez";
+        this.notify(msg);
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");

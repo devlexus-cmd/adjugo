@@ -132,7 +132,7 @@ def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
                            "redondants. N'invente rien au-delà de ce que chaque co-traitant a fourni.")
 
     # RAG : récupère le savoir-faire réel de l'entreprise pertinent pour ce marché
-    sources_block, src_rule = "", ""
+    sources_block, src_rule, chunks = "", "", []
     if db is not None and user_id:
         try:
             from app.services import rag
@@ -146,6 +146,14 @@ def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
                             "N'invente aucun chiffre ni référence absent des sources.")
         except Exception:
             pass
+    # Anti-invention : AUCUNE source réelle (ni savoir-faire indexé, ni apport de co-traitant)
+    # → on interdit explicitement d'inventer plutôt que de produire un mémoire fabriqué de toutes
+    # pièces présenté comme la réponse réelle de l'entreprise (promesse « Aucune invention »).
+    if not chunks and not subs:
+        src_rule = ("\n\nRÈGLE ANTI-INVENTION (aucune source réelle disponible) : tu n'as NI savoir-faire "
+                    "indexé NI apport de co-traitant. N'invente AUCUN chiffre, référence client, "
+                    "certification, ni moyen humain/matériel précis. Pour tout élément factuel non fourni, "
+                    "écris « [À compléter par l'entreprise] ». Reste sur une trame méthodologique générale.")
 
     prompt = f"""Rédige un mémoire technique pour cet appel d'offres.
 

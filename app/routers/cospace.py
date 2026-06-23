@@ -182,7 +182,8 @@ def merged_memoire(space_id: int, req: MergedMemoireReq, request: Request,
     from app.services.jobs import create_job, run_in_thread, job_out
     job = create_job(db, current_user.id, "merged_memoire", "Mémoire fusionné — " + (s.name or ""))
     text = req.dce_text
-    run_in_thread(job.id, lambda jdb: generate_merged_memoire(jdb, members, text))
+    uid = current_user.id
+    run_in_thread(job.id, lambda jdb: generate_merged_memoire(jdb, members, text, billing_user_id=uid))
     return job_out(job)
 
 

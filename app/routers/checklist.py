@@ -152,9 +152,11 @@ def get_checklist(
     if not project:
         raise HTTPException(404, "Projet introuvable")
 
-    # Recuperer les documents du coffre-fort
+    # Recuperer les documents du coffre-fort (partagés dans l'organisation, comme l'export
+    # et le dossier de l'AO) : un coéquipier matche les pièces requises contre les MÊMES
+    # documents que ceux que le ZIP exporté contiendra, sinon tout apparaît « manquant ».
     documents = db.query(Document).filter(
-        Document.user_id == current_user.id
+        Document.user_id.in_(member_ids(current_user, db))
     ).all()
 
     # Construire la checklist

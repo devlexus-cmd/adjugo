@@ -16,7 +16,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.services.llm import complete, complete_json
+from app.services.llm import complete, complete_json, tenant_scope
 from app.services import rag
 
 logger = logging.getLogger("adjugo")
@@ -95,7 +95,7 @@ RÈGLES ABSOLUES :
 Réponds en texte (pas de JSON), prêt à intégrer dans le mémoire."""
 
 
-def write_section(section: dict, chunks: list, criteres=None) -> dict:
+def write_section(section: dict, chunks: list, criteres=None, user_id=None) -> dict:
     if chunks:
         src = rag.sources_block(chunks)
     else:
@@ -115,13 +115,23 @@ SOURCES AUTORISÉES (savoir-faire de l'entreprise) :
 Rédige la section (250-450 mots) en citant [S1], [S2]… Si rien ne couvre l'objectif,
 indique-le explicitement plutôt que d'inventer."""
     try:
-        content = complete(_WRITE_SYS, user, max_tokens=1400, temperature=0.3)
+        # tenant_scope reposé : le contextvar (quota/disjoncteur PAR TENANT) n'est pas hérité
+        # par les threads du ThreadPoolExecutor appelant → sinon ces appels (le gros du coût)
+        # échappent à l'isolation « voisin bruyant ».
+        with tenant_scope(user_id):
+            content = complete(_WRITE_SYS, user, max_tokens=1400, temperature=0.3)
     except Exception as e:
         logger.warning("memoire.write en échec : %s", e)
         content = "[À compléter : la génération de cette section a échoué.]"
+    # Citations VÉRIFIÉES : on n'expose comme « sources » que les chunks réellement cités
+    # [S1]…[Sn] dans le texte (fin de la citation décorative). grounded=False si le texte cite
+    # une source hors-borne ou n'en cite aucune → le front peut signaler « à vérifier ».
+    cited = rag.cited_refs(content)
+    n = len(chunks)
     used = [{"ref": f"S{i+1}", "doc_name": c["doc_name"], "chunk_id": c["chunk_id"],
-             "excerpt": c["text"][:240]} for i, c in enumerate(chunks)]
-    return {"titre": section.get("titre"), "content": content, "sources": used}
+             "excerpt": c["text"][:240]} for i, c in enumerate(chunks) if (i + 1) in cited]
+    grounded = bool(used) and not any(r < 1 or r > n for r in cited)
+    return {"titre": section.get("titre"), "content": content, "sources": used, "grounded": grounded}
 
 
 # ── 4. Contrôle de conformité ────────────────────────────────────────────────
@@ -165,14 +175,16 @@ def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int
     criteres = requirements.get("criteres_attribution") or []
     # Récupération RAG (rapide) puis rédaction des sections EN PARALLÈLE (latence ÷ ~6)
     from concurrent.futures import ThreadPoolExecutor
-    prepared, kb_used = [], False
+    prepared = []
     for sec in plan:
         chunks = rag.retrieve(db, user_id, sec.get("requete") or sec.get("titre", ""), k=5)
-        if chunks:
-            kb_used = True
         prepared.append((sec, chunks))
     with ThreadPoolExecutor(max_workers=min(6, len(prepared) or 1)) as ex:
-        sections = list(ex.map(lambda pc: write_section(pc[0], pc[1], criteres=criteres), prepared))
+        sections = list(ex.map(lambda pc: write_section(pc[0], pc[1], criteres=criteres, user_id=user_id), prepared))
+    # kb_used HONNÊTE : vrai seulement si au moins une section CITE réellement une source
+    # (et non « un chunk a été récupéré quelque part »). Évite le badge « Basé sur votre
+    # savoir-faire » sur un mémoire non sourcé.
+    kb_used = any(s.get("grounded") for s in sections)
 
     conformity = conformity_check(requirements, sections)
 
@@ -202,7 +214,7 @@ RÈGLES ABSOLUES :
 Réponds en texte (pas de JSON)."""
 
 
-def _write_merged_section(section, chunks, names_by_user, criteres=None):
+def _write_merged_section(section, chunks, names_by_user, criteres=None, billing_user_id=None):
     src = rag.sources_block_attributed(chunks, names_by_user) if chunks else "(aucune source)"
     grille = ""
     if criteres:
@@ -220,17 +232,20 @@ SOURCES ATTRIBUÉES :
 
 Rédige la section unifiée (250-450 mots), en attribuant et en croisant les apports."""
     try:
-        content = complete(_MERGED_SYS, user, max_tokens=1500, temperature=0.3)
+        with tenant_scope(billing_user_id):
+            content = complete(_MERGED_SYS, user, max_tokens=1500, temperature=0.3)
     except Exception as e:
         logger.warning("merged.write en échec : %s", e)
         content = "[À compléter : génération échouée.]"
+    cited = rag.cited_refs(content)
     used = [{"ref": f"S{i+1}", "company": names_by_user.get(c.get("user_id"), "Entreprise"),
              "doc_name": c["doc_name"], "chunk_id": c["chunk_id"], "excerpt": c["text"][:220]}
-            for i, c in enumerate(chunks)]
-    return {"titre": section.get("titre"), "content": content, "sources": used}
+            for i, c in enumerate(chunks) if (i + 1) in cited]
+    grounded = bool(used) and not any(r < 1 or r > len(chunks) for r in cited)
+    return {"titre": section.get("titre"), "content": content, "sources": used, "grounded": grounded}
 
 
-def generate_merged_memoire(db, members: list, dce_text: str, max_sections: int = 9) -> dict:
+def generate_merged_memoire(db, members: list, dce_text: str, max_sections: int = 9, billing_user_id=None) -> dict:
     """Mémoire UNIFIÉ d'un groupement. members = [{user_id, name, role}].
     Récupère le savoir-faire de TOUTES les bases et rédige une offre cohérente et croisée."""
     user_ids = [m["user_id"] for m in members if m.get("user_id")]
@@ -252,7 +267,8 @@ def generate_merged_memoire(db, members: list, dce_text: str, max_sections: int 
             contributors.add(names_by_user.get(c.get("user_id")))
         prepared.append((sec, chunks))
     with ThreadPoolExecutor(max_workers=min(6, len(prepared) or 1)) as ex:
-        sections = list(ex.map(lambda pc: _write_merged_section(pc[0], pc[1], names_by_user, criteres), prepared))
+        sections = list(ex.map(lambda pc: _write_merged_section(pc[0], pc[1], names_by_user, criteres,
+                                                                billing_user_id=billing_user_id), prepared))
 
     conformity = conformity_check(requirements, sections)
     return {

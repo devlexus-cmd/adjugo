@@ -107,6 +107,10 @@ def search(req: SearchReq, current_user: User = Depends(get_current_user), db: S
 
 # ── Mémoire IA (multi-agents, sourcé) ────────────────────────────────────────
 def _gen_memoire(text: str, current_user: User, db: Session) -> dict:
+    # Base de connaissances vide → on NE débite PAS un quota pour un livrable 100% « [À compléter] ».
+    if db.query(KnowledgeChunk.id).filter(KnowledgeChunk.user_id == current_user.id).first() is None:
+        raise HTTPException(422, "Votre base de connaissances est vide : ajoutez au moins un document "
+                                 "(dossier de présentation, fiche RSE, méthodologie) avant de générer.")
     # Génération longue → asynchrone (anti-timeout). Le client interroge /api/jobs/{id}.
     consume_analysis(current_user, db)
     from app.services.jobs import create_job, run_in_thread, job_out
@@ -155,6 +159,9 @@ def questionnaire(request: Request, req: QuestionnaireReq, current_user: User = 
     qs = [q for q in (req.questions or []) if q and q.strip()]
     if not qs:
         raise HTTPException(422, "Aucune question fournie.")
+    if db.query(KnowledgeChunk.id).filter(KnowledgeChunk.user_id == current_user.id).first() is None:
+        raise HTTPException(422, "Votre base de connaissances est vide : ajoutez au moins un document "
+                                 "avant de répondre à un questionnaire.")
     consume_analysis(current_user, db)
     # Asynchrone (anti-timeout) : jusqu'à 40 questions × LLM, traitées en tâche de fond.
     from app.services.jobs import create_job, run_in_thread, job_out
