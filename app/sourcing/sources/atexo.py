@@ -187,6 +187,11 @@ class AtexoSource(TenderSource):
         self.scope = set(scope) if scope else None
 
     def search(self, criteria: TenderCriteria) -> list[NormalizedTender]:
+        # Pas de pagination par offset côté Atexo : les résultats sont servis en page 1.
+        # Sur un « Charger plus » (offset>0), on NE refait PAS le scrape — c'est BOAMP/TED
+        # qui paginent → évite de re-télécharger pour rien et un « has_more » bloqué à tort.
+        if getattr(criteria, "offset", 0):
+            return []
         try:
             import bs4  # noqa: F401
         except Exception:
