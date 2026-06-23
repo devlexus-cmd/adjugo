@@ -1153,7 +1153,7 @@
             <button class="btn primary" @click="go('sourcing')"><i data-lucide="target"></i>Trouver des marchés</button>
           </div>
           <div v-else class="kanban">
-            <div v-for="s in statuses" :key="s" class="kcol">
+            <div v-for="s in statuses2" :key="s" class="kcol">
               <div class="kcol-h"><span class="pill" :class="'st-'+s">{{ statusLabel(s) }}</span><span class="n">{{ byStatus(s).length }}</span></div>
               <div v-for="p in byStatus(s)" :key="p.id" class="kcard" @click="openProject(p)">
                 <div class="ti2">{{ (p.name||'').slice(0,60) }}</div>

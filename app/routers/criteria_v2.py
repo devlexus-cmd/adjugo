@@ -118,7 +118,12 @@ def update_criteria(data: CriteriaUpdate, current_user: User = Depends(get_curre
         c = MatchingCriteriaExt(user_id=data_owner_id(current_user, db))
         db.add(c)
     for k, v in data.model_dump().items():
-        if v is None:        # champ numérique laissé vide → on garde la valeur en place / le défaut
+        if v is None:
+            # Champ TEXTE explicitement vidé → on l'EFFACE (l'utilisateur doit pouvoir
+            # retirer ses spécialités/départements/CPV). Champ numérique laissé vide → on
+            # garde la valeur en place / le défaut (un nombre ne se « vide » pas en base).
+            if "str" in str(CriteriaUpdate.model_fields[k].annotation):
+                setattr(c, k, "")
             continue
         setattr(c, k, v)
     db.commit()
