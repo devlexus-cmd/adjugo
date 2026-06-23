@@ -128,9 +128,13 @@ indique-le explicitement plutôt que d'inventer."""
     # une source hors-borne ou n'en cite aucune → le front peut signaler « à vérifier ».
     cited = rag.cited_refs(content)
     n = len(chunks)
+    # Souple : sources précises si l'IA a cité, sinon les extraits réellement fournis à la section
+    # (le filtre de pertinence garantit qu'ils sont à propos). On ne signale « non sourcée » que
+    # s'il n'y avait AUCUNE source pertinente (chunks vide), pas si l'IA a juste omis le marqueur.
+    keep = cited if cited else set(range(1, n + 1))
     used = [{"ref": f"S{i+1}", "doc_name": c["doc_name"], "chunk_id": c["chunk_id"],
-             "excerpt": c["text"][:240]} for i, c in enumerate(chunks) if (i + 1) in cited]
-    grounded = bool(used) and not any(r < 1 or r > n for r in cited)
+             "excerpt": c["text"][:240]} for i, c in enumerate(chunks) if (i + 1) in keep]
+    grounded = bool(chunks)
     return {"titre": section.get("titre"), "content": content, "sources": used, "grounded": grounded}
 
 
@@ -241,10 +245,11 @@ Rédige la section unifiée (250-450 mots), en attribuant et en croisant les app
         logger.warning("merged.write en échec : %s", e)
         content = "[À compléter : génération échouée.]"
     cited = rag.cited_refs(content)
+    keep = cited if cited else set(range(1, len(chunks) + 1))
     used = [{"ref": f"S{i+1}", "company": names_by_user.get(c.get("user_id"), "Entreprise"),
              "doc_name": c["doc_name"], "chunk_id": c["chunk_id"], "excerpt": c["text"][:220]}
-            for i, c in enumerate(chunks) if (i + 1) in cited]
-    grounded = bool(used) and not any(r < 1 or r > len(chunks) for r in cited)
+            for i, c in enumerate(chunks) if (i + 1) in keep]
+    grounded = bool(chunks)
     return {"titre": section.get("titre"), "content": content, "sources": used, "grounded": grounded}
 
 

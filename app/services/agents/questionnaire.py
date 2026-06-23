@@ -47,12 +47,17 @@ Réponds en citant [S1], [S2]…"""
         logger.warning("questionnaire.answer en échec : %s", e)
         return {"question": question, "answer": "Génération momentanément indisponible — réessayez.",
                 "sources": [], "covered": False, "error": True}
-    # « Couvert » = la réponse CITE au moins une source réellement fournie (fini la devinette
-    # sur les 30 premiers caractères). Sources exposées = uniquement celles réellement citées.
+    # « Couvert » = réponse SUBSTANTIELLE (pas la formule d'abstention) à partir des sources
+    # fournies. Souple : une bonne réponse non explicitement citée compte quand même (on ne se
+    # base plus sur une devinette de 30 caractères, mais sur la phrase d'abstention canonique).
+    is_abstention = ans.strip().lower().startswith(("à compl", "a compl", "non couvert"))
+    covered = not is_abstention
     valid = rag.cited_refs(ans) & set(range(1, len(chunks) + 1))
+    # Sources affichées : précises si l'IA a cité ; sinon les extraits fournis (tant que couvert).
+    keep = valid if valid else (set(range(1, len(chunks) + 1)) if covered else set())
     used = [{"ref": f"S{i+1}", "doc_name": c["doc_name"], "chunk_id": c["chunk_id"],
-             "excerpt": c["text"][:200]} for i, c in enumerate(chunks) if (i + 1) in valid]
-    return {"question": question, "answer": ans, "sources": used, "covered": bool(valid)}
+             "excerpt": c["text"][:200]} for i, c in enumerate(chunks) if (i + 1) in keep]
+    return {"question": question, "answer": ans, "sources": used, "covered": covered}
 
 
 def answer_question(db: Session, user_id: int, question: str, kb_user_ids: list = None) -> dict:
