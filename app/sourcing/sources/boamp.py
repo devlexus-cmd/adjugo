@@ -26,8 +26,19 @@ class BoampSource(TenderSource):
 
     def search(self, criteria: TenderCriteria) -> list[NormalizedTender]:
         from app.sourcing.http import safe_terms
-        q = safe_terms(criteria.query) or "travaux"   # neutralise l'injection ODSQL
-        where = f'objet like "{q}" OR descripteur_libelle like "{q}"'
+        # Mots-clés : on découpe en TERMES et on les combine en OU (pas en ET). Taper
+        # « musée scénographie expositions » trouve tout ce qui touche À L'UN d'eux, pas
+        # seulement les marchés qui contiennent les trois. Et chaque terme d'au moins 5
+        # lettres est cherché en PRÉFIXE élargi (« plomb* ») → « plombier » trouve aussi
+        # « plomberie ». safe_terms a déjà neutralisé l'injection ODSQL (quotes retirées).
+        raw = safe_terms(criteria.query)
+        terms = [t for t in raw.split(" ") if len(t) >= 3][:6] or ["travaux"]
+
+        def _kw_clause(term: str) -> str:
+            pat = term if len(term) <= 4 else term[:max(4, len(term) - 3)] + "*"
+            return f'objet like "{pat}" OR descripteur_libelle like "{pat}"'
+
+        where = "(" + " OR ".join(f"({_kw_clause(t)})" for t in terms) + ")"
         # Recall accru : si des codes CPV sont fournis, on élargit la recherche aux avis
         # portant ces familles CPV (en plus du mot-clé) — plus d'AO pertinents captés.
         cpv_codes = [re.sub(r"\D", "", str(c))[:8] for c in getattr(criteria, "cpv", []) if re.sub(r"\D", "", str(c))]

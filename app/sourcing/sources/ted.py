@@ -61,17 +61,22 @@ class TedSource(TenderSource):
 
     def search(self, criteria: TenderCriteria) -> list[NormalizedTender]:
         q = (criteria.query or "travaux").replace('"', " ").strip()
+        # Termes en OU (comme BOAMP) : « musée scénographie » trouve l'un OU l'autre.
+        _terms = [t for t in q.split(" ") if len(t) >= 3][:6] or [q or "travaux"]
+        ft = " OR ".join(f'FT~"{t}"' for t in _terms)
+        fr_deps = [d for d in (str(x).strip()[:2] for x in getattr(criteria, "departements", []) if str(x).strip())
+                   if d.isdigit() or d in ("2A", "2B")]
         wanted = [c for c in getattr(criteria, "countries", []) if c in _BY_A2]
         derived_fr = False
         if not wanted:
-            # Aucun pays explicite mais des DÉPARTEMENTS FRANÇAIS demandés → on restreint
-            # TED à la France. Sans ça, une recherche « 29 » ramène toute l'UE (bruit
-            # hors zone : marchés portugais/belges… que l'utilisateur ne veut pas).
-            deps = [str(d).strip() for d in getattr(criteria, "departements", []) if str(d).strip()]
-            if any(d[:2].isdigit() or d[:2] in ("2A", "2B") for d in deps):
-                wanted, derived_fr = ["FR"], True
-            else:
-                wanted = [c["a2"] for c in EU_COUNTRIES]
+            wanted = (["FR"] if fr_deps else [c["a2"] for c in EU_COUNTRIES])
+            derived_fr = bool(fr_deps)
+        # Recherche LOCALE française (départements précis, sans pays étranger explicite) :
+        # TED filtre par PAYS, pas par département (il expose du NUTS, pas le n° de dept) →
+        # il ramènerait TOUTE la France (ex. Arras pour « 29 »). BOAMP + Mégalis/PLACE
+        # couvrent déjà le local FR au département → on n'exécute PAS TED ici (zéro bruit hors zone).
+        if fr_deps and set(wanted) <= {"FR"}:
+            return []
         a3_list = " ".join(_BY_A2[c]["a3"] for c in wanted)
         # préfixes acceptés côté client (NUTS + alpha-3), gère la Grèce (EL)
         prefixes = tuple({_BY_A2[c]["nuts"] for c in wanted} | {_BY_A2[c]["a3"] for c in wanted})
@@ -90,7 +95,7 @@ class TedSource(TenderSource):
         lim = min(criteria.limit, 50)
         page = (max(0, getattr(criteria, "offset", 0)) // lim) + 1 if lim else 1
         body = {
-            "query": f'FT~"{q}" AND notice-type IN (cn-standard cn-social) AND place-of-performance IN ({a3_list}){cpv_clause}{nature_clause}',
+            "query": f'({ft}) AND notice-type IN (cn-standard cn-social) AND place-of-performance IN ({a3_list}){cpv_clause}{nature_clause}',
             "fields": FIELDS, "limit": lim, "page": page,
             "scope": "ACTIVE", "paginationMode": "PAGE_NUMBER",
         }

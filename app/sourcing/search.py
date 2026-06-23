@@ -100,6 +100,15 @@ class TenderSearchService:
         deduped = [t for t in deduped if not _is_closed(t.date_limite)]
         closed = before - len(deduped)
 
+        # Filtre DÉPARTEMENT (filet de sécurité, toutes sources confondues) : si l'utilisateur
+        # a ciblé des départements, on retire les AO dont le département CONNU n'en fait pas
+        # partie. Les AO sans département (nationaux / zone non précisée) sont conservés.
+        # Empêche « je saisis 29 → on me propose Arras (62) ».
+        wanted_deps = {str(d).strip()[:2] for d in getattr(criteria, "departements", []) if str(d).strip()}
+        if wanted_deps:
+            deduped = [t for t in deduped
+                       if (not t.departements) or any(str(d)[:2] in wanted_deps for d in t.departements)]
+
         # Filtre montant DEMANDÉ par l'utilisateur : on n'écarte QUE les avis dont le
         # montant est CONNU et hors fourchette (les avis sans montant — le cas le plus
         # fréquent en open data — sont conservés, sinon on masquerait presque tout).

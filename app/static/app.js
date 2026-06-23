@@ -1256,9 +1256,19 @@ const __adjApp = createApp({
         else this.notify(err.message, "err");
       } finally { this.src.renewals.loading = false; }
     },
-    async srcSearch(append) {
+    async srcSearch(arg) {
+      // arg === true vient UNIQUEMENT du bouton « Charger plus » (srcLoadMore). Un clic /
+      // une touche Entrée passe l'évènement DOM en argument : avant, il était pris pour un
+      // « append » → toute recherche après la 1re s'empilait avec un mauvais offset (d'où
+      // « une seule recherche, il faut rafraîchir »). On ne s'y trompe plus.
+      const sig = JSON.stringify([(this.src.query || "").trim().toLowerCase(), this.srcDeps(),
+        this.src.country || "", this.src.type_marche || "", this.srcCpv()]);
+      // Mêmes critères que la dernière recherche → on enchaîne la page suivante et on
+      // n'affiche QUE ce qu'on n'a pas déjà vu (rappuyer = « montre-m'en d'autres »).
+      // Critères modifiés → nouvelle recherche (remise à zéro).
+      const append = (arg === true) || (sig === this.src.lastSig && this.src.tenders.length > 0);
       if (append) { this.src.loadingMore = true; }
-      else { this.src.searching = true; this.src.tenders = []; this.src.errors = []; this.src.analysis = null; this.src.offset = 0; this.src.hasMore = false; }
+      else { this.src.searching = true; this.src.tenders = []; this.src.errors = []; this.src.analysis = null; this.src.offset = 0; this.src.hasMore = false; this.src.lastSig = sig; }
       const PAGE = 15;
       try {
         const r = await this.api("POST", "/api/sourcing/search",
@@ -1273,7 +1283,9 @@ const __adjApp = createApp({
           const seen = new Set(this.src.tenders.map(tkey));
           const added = fresh.filter(t => !seen.has(tkey(t)));
           this.src.tenders = this.src.tenders.concat(added);
-          if (fresh.length && !added.length) this.notify("Aucun nouveau marché (doublons filtrés)", "ok");
+          this.src.errors = r.errors || [];
+          if (added.length) this.notify(added.length + " nouveau" + (added.length > 1 ? "x" : "") + " marché" + (added.length > 1 ? "s" : ""), "ok");
+          else this.notify("Tous les marchés correspondant à ces critères sont déjà affichés", "ok");
         } else { this.src.tenders = fresh; this.src.errors = r.errors || []; this.src.sources = r.sources_queried || []; }
         this.src.offset = (append ? this.src.offset : 0) + PAGE;
         this.src.hasMore = !!r.has_more;
