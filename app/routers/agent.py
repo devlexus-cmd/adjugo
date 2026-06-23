@@ -79,11 +79,30 @@ def agent_stats(current_user: User = Depends(get_current_user),
         "loss_reasons": loss_reasons,
     }
 
+    # Métrique de MOAT : part des groupements formés avec un partenaire NOUVEAU
+    # (suggéré par Adjugo via SIRENE) vs un partenaire du carnet d'adresses du Client.
+    # Si elle reste basse, le produit n'est qu'un générateur de documents (copiable) ;
+    # si elle monte, le réseau se forme et devient défendable.
+    from app.routers.cotraitants import ProjectCotraitant
+    moat = {"groupements": 0, "avec_partenaire_suggere": 0, "rate": 0,
+            "liens_suggeres": 0, "liens_reseau": 0}
+    pids = [p.id for p in projects]
+    if pids:
+        links = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id.in_(pids)).all()
+        by_proj = {}
+        for lk in links:
+            src = getattr(lk, "source", None) or "reseau"
+            moat["liens_suggeres" if src == "discover" else "liens_reseau"] += 1
+            by_proj.setdefault(lk.project_id, set()).add(src)
+        moat["groupements"] = len(by_proj)
+        moat["avec_partenaire_suggere"] = sum(1 for s in by_proj.values() if "discover" in s)
+        moat["rate"] = round(moat["avec_partenaire_suggere"] / moat["groupements"] * 100) if moat["groupements"] else 0
+
     u = usage(current_user, db)
     db.commit()
     return {
         "total_projects": total, "by_status": by_status, "win_rate": win_rate,
         "total_won_budget": total_budget, "decided": won + by_status.get("perdu", 0),
-        "segments": segments,
+        "segments": segments, "moat": moat,
         "analyses_this_month": u["analyses_used"], "usage": u,
     }

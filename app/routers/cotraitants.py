@@ -43,6 +43,9 @@ class ProjectCotraitant(Base):
     cotraitant_id = Column(Integer, ForeignKey("cotraitants.id"))
     role = Column(String, default="sous_traitant")   # mandataire | cotraitant | sous_traitant
     lot = Column(String, default="")
+    # Métrique de moat : d'où vient ce partenaire ?
+    #   "discover" = suggéré par Adjugo (découverte SIRENE) · "reseau" = carnet d'adresses du Client
+    source = Column(String, default="reseau")
 
 
 class CotraitantCreate(BaseModel):
@@ -177,8 +180,11 @@ def attach_cotraitant(project_id: int, req: AttachRequest,
         db.commit()
         return {"link_id": exists.id, "cotraitant_id": ct.id, "name": ct.name}
 
+    # Provenance pour la métrique de moat : une entreprise fournie via `company`
+    # vient de la découverte SIRENE (suggérée par Adjugo) ; via `cotraitant_id`, du réseau.
+    link_source = "discover" if (req.company and not req.cotraitant_id) else "reseau"
     link = ProjectCotraitant(project_id=project_id, cotraitant_id=ct.id,
-                             role=req.role or "sous_traitant", lot=req.lot or "")
+                             role=req.role or "sous_traitant", lot=req.lot or "", source=link_source)
     db.add(link); db.commit(); db.refresh(link)
     return {"link_id": link.id, "cotraitant_id": ct.id, "name": ct.name}
 
