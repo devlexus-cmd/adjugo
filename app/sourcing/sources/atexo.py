@@ -25,8 +25,8 @@ logger = logging.getLogger("adjugo")
 _UA = {"User-Agent": "Mozilla/5.0 (compatible; AdjugoBot/1.0; +https://adjugo.pro)"}
 _MOIS = {"janv": 1, "févr": 2, "fevr": 2, "mars": 3, "avri": 4, "mai": 5, "juin": 6,
          "juil": 7, "août": 8, "aout": 8, "sept": 9, "octo": 10, "nove": 11, "déce": 12, "dece": 12}
-_MAX_PAGES = 2            # ~20 consultations / plateforme / recherche (latence maîtrisée)
-_TIME_BUDGET = 7.0       # plafond temps (s) pour la pagination
+_MAX_PAGES = 3            # plafond de pages ; le budget ADAPTATIF ci-dessous décide vraiment
+_TIME_BUDGET = 6.0       # budget temps (s) : on n'entame une page de plus que si elle y tient
 _CACHE = {}              # url -> (expire_ts, [NormalizedTender])
 _CACHE_TTL = 1200        # 20 min : partagé entre tous les utilisateurs (process unique)
 
@@ -110,8 +110,10 @@ def _fetch_all(url, source_name, base):
     t0 = time.time()
     tenders, seen, total_links = [], set(), 0
     try:
-        with httpx.Client(timeout=16, headers=_UA, follow_redirects=True) as c:
+        with httpx.Client(timeout=10, headers=_UA, follow_redirects=True) as c:
+            g0 = time.time()
             html = c.get(url).text
+            fetch_dur = time.time() - g0
             for page in range(1, _MAX_PAGES + 1):
                 part, n_links = _parse_page(html, source_name, base)
                 total_links += n_links
@@ -120,7 +122,10 @@ def _fetch_all(url, source_name, base):
                         continue
                     seen.add(te.dedup_key)
                     tenders.append(te)
-                if page == _MAX_PAGES or (time.time() - t0) > _TIME_BUDGET:
+                # Budget ADAPTATIF : on n'entame la page suivante que si elle tient dans le
+                # budget, estimé sur la durée de la dernière requête. Plateforme lente (PLACE)
+                # → moins de pages mais réponse rapide ; plateforme rapide (Mégalis) → ratisse large.
+                if page == _MAX_PAGES or (time.time() - t0) + fetch_dur > _TIME_BUDGET:
                     break
                 try:    # page suivante : postback Prado « aller à la page N+1 »
                     fields = _post_fields(BeautifulSoup(html, "html.parser"))
@@ -131,7 +136,9 @@ def _fetch_all(url, source_name, base):
                     fields[npb] = str(page + 1)
                     fields["PRADO_POSTBACK_TARGET"] = btn
                     fields["PRADO_POSTBACK_PARAMETER"] = ""
+                    p0 = time.time()
                     resp = c.post(url, data=fields)
+                    fetch_dur = time.time() - p0
                     if resp.status_code != 200:
                         break
                     html = resp.text
