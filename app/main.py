@@ -205,6 +205,11 @@ def dpa():
     return _legal_page("dpa.html")
 
 
+@app.get("/securite", tags=["Site"], include_in_schema=False)
+def securite():
+    return _legal_page("securite.html")
+
+
 @app.get("/app", tags=["Logiciel"], include_in_schema=False)
 def software():
     from fastapi.responses import HTMLResponse

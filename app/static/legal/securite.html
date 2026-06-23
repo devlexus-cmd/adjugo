@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="index, follow">
+<title>Sécurité &amp; souveraineté des données — Adjugo</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<style>
+  :root { --blue:#1B4FFF; --ink:#0A1730; --ink-2:#3D4A63; --muted:#5A6573; --line:#E6E9F0;
+    --bg:#FFFFFF; --soft:#F6F7FA; --warn-bg:#FBF6E9; --warn-bd:#E6C870; --ok-bg:#ECF7F1; --ok-bd:#9BD3B5; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    color:var(--ink); background:var(--bg); line-height:1.62; font-size:15.5px; }
+  a { color:var(--blue); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  a:focus-visible { outline:3px solid var(--blue); outline-offset:2px; border-radius:3px; }
+  .lg-top { display:flex; align-items:center; justify-content:space-between; gap:16px;
+    max-width:880px; margin:0 auto; padding:20px 24px; border-bottom:1px solid var(--line); }
+  .brand { display:inline-flex; align-items:center; font-weight:800; font-size:21px;
+    letter-spacing:-.04em; color:var(--blue); }
+  .brand svg { width:.92em; height:.92em; margin-left:-.04em; }
+  .back { font-size:14px; font-weight:600; color:var(--ink-2); }
+  main { max-width:820px; margin:0 auto; padding:32px 24px 64px; }
+  h1 { font-size:30px; letter-spacing:-.02em; margin:8px 0 10px; }
+  .lede { font-size:17px; color:var(--ink-2); margin:0 0 8px; }
+  h2 { font-size:21px; letter-spacing:-.01em; margin:38px 0 12px; padding-top:8px; }
+  p { margin:12px 0; color:var(--ink-2); }
+  strong { color:var(--ink); }
+  ul { color:var(--ink-2); padding-left:22px; }
+  li { margin:6px 0; }
+  hr { border:0; border-top:1px solid var(--line); margin:32px 0; }
+  table { width:100%; border-collapse:collapse; margin:18px 0; font-size:14px; }
+  th, td { border:1px solid var(--line); padding:9px 12px; text-align:left; vertical-align:top; }
+  th { background:var(--soft); font-weight:700; color:var(--ink); }
+  blockquote { background:var(--ok-bg); border:1px solid var(--ok-bd); border-left:4px solid var(--ok-bd);
+    border-radius:10px; padding:12px 16px; margin:18px 0; color:#194A33; font-size:14.5px; }
+  blockquote strong { color:#0E3322; }
+  .lg-foot { max-width:820px; margin:0 auto; padding:24px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:13.5px; display:flex; gap:18px; flex-wrap:wrap; align-items:center; }
+  .lg-foot a { color:var(--ink-2); font-weight:600; }
+</style>
+</head>
+<body>
+<header class="lg-top">
+  <a class="brand" href="/">adjug<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></a>
+  <a class="back" href="/">← Retour à l'accueil</a>
+</header>
+<main>
+<h1>Sécurité &amp; souveraineté des données</h1>
+<p class="lede">Où sont vos données, comment elles sont protégées, et ce qu'on s'interdit d'en faire. Sans jargon, vérifiable.</p>
+<hr>
+
+<blockquote><strong>L'essentiel.</strong> Vos données applicatives (base de données, documents téléversés, sauvegardes) sont <strong>hébergées en Union européenne</strong>. Les échanges sont <strong>chiffrés</strong>. Et vos contenus ne sont <strong>jamais utilisés pour entraîner un modèle d'IA</strong>, ni le nôtre, ni celui d'un tiers.</blockquote>
+
+<h2>1. Hébergement &amp; résidence des données (UE)</h2>
+<p>Les données qui font tourner le service restent en Europe :</p>
+<table>
+  <thead><tr><th>Donnée</th><th>Hébergeur</th><th>Localisation</th></tr></thead>
+  <tbody>
+    <tr><td>Base de données (comptes, marchés, analyses)</td><td>Railway</td><td><strong>Union européenne</strong></td></tr>
+    <tr><td>Documents téléversés (DCE, pièces, savoir-faire)</td><td>Cloudflare R2</td><td><strong>Europe de l'Ouest (WEUR)</strong></td></tr>
+    <tr><td>Sauvegardes</td><td>Cloudflare R2</td><td><strong>Union européenne</strong></td></tr>
+  </tbody>
+</table>
+<p>La liste complète et à jour de nos sous-traitants techniques, avec leur localisation et leur rôle, figure dans notre <a href="/dpa">accord de traitement des données (DPA)</a>.</p>
+
+<h2>2. Chiffrement &amp; sauvegardes</h2>
+<ul>
+  <li><strong>En transit</strong> : toutes les communications passent par HTTPS/TLS.</li>
+  <li><strong>Au repos</strong> : sauvegardes quotidiennes <strong>chiffrées</strong>, stockées en Union européenne, avec une <strong>rétention de 14 jours</strong>.</li>
+  <li><strong>Mots de passe</strong> : jamais stockés en clair — uniquement leur empreinte (hachage).</li>
+  <li><strong>Suppression</strong> : une suppression que vous demandez devient définitive, y compris dans les sauvegardes, sous 14 jours.</li>
+</ul>
+
+<h2>3. Le modèle d'IA et vos données</h2>
+<p>Adjugo s'appuie sur un modèle d'IA, appelé <strong>via une API</strong>, pour analyser les dossiers et rédiger des documents. Notre engagement :</p>
+<ul>
+  <li><strong>Aucun entraînement sur vos données</strong> : les contenus envoyés au modèle ne sont <strong>jamais</strong> utilisés pour entraîner ou améliorer des modèles d'IA (politique de non-rétention / non-entraînement de l'API).</li>
+  <li><strong>Strict nécessaire</strong> : on ne transmet au modèle que les extraits utiles à l'analyse demandée, pas l'ensemble de votre espace.</li>
+  <li><strong>Transferts encadrés</strong> : si un traitement technique implique un transfert hors UE, il est couvert par des <strong>clauses contractuelles types (CCT/SCC)</strong>, conformément au chapitre V du RGPD (détail dans le <a href="/dpa">DPA</a>).</li>
+</ul>
+
+<h2>4. Cloisonnement entre partenaires (cotraitance)</h2>
+<p>Répondre à plusieurs ne veut pas dire tout partager. Quand une entreprise rejoint un groupement sur un marché :</p>
+<ul>
+  <li>chaque partenaire accède <strong>uniquement à sa propre contribution</strong> (ses pièces, son approche) — <strong>jamais</strong> aux prix, marges ou documents des autres ;</li>
+  <li>le lien d'invitation est <strong>limité à ce seul marché</strong> et révocable à tout moment ;</li>
+  <li>chaque accès aux pièces partagées est tracé.</li>
+</ul>
+
+<h2>5. Données réelles, jamais inventées</h2>
+<p>C'est notre principe de fond : Adjugo travaille à partir de <strong>sources officielles</strong> (BOAMP, TED, registre SIRENE, BODACC) et de vos propres documents. Les informations factuelles affichées renvoient à leur source, vérifiable. Le service est conçu pour ne pas présenter de donnée inventée comme si elle était réelle.</p>
+
+<h2>6. Vos droits</h2>
+<p>Vous restez propriétaire de vos données : vous pouvez les <strong>exporter</strong> ou <strong>supprimer votre compte</strong> à tout moment depuis l'application. Pour toute question sécurité ou donnée personnelle : <strong>eviegas@padis-core.com</strong>. Voir aussi notre <a href="/confidentialite">politique de confidentialité</a>.</p>
+
+</main>
+<div class="lg-foot">
+  <a href="/">Accueil</a>
+  <a href="/mentions-legales">Mentions légales</a>
+  <a href="/cgv">CGV</a>
+  <a href="/confidentialite">Confidentialité</a>
+  <a href="/dpa">DPA</a>
+  <span>© 2026 Adjugo — PADIS (Eliot Viegas).</span>
+</div>
+</body>
+</html>
