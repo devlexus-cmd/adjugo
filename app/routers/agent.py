@@ -73,9 +73,48 @@ def agent_stats(current_user: User = Depends(get_current_user),
         [{"reason": r, "count": n} for r, n in loss_reasons.items()],
         key=lambda x: -x["count"])
 
+    # Pilotage enrichi (donnée propriétaire que personne d'autre n'a) :
+    # win rate GROUPEMENT vs SOLO, et par partenaire. Défensif : jamais de 500.
+    by_groupement, by_partner = [], []
+    try:
+        from app.routers.cotraitants import ProjectCotraitant, Cotraitant
+        from app.models import ProjectInvite
+        pids2 = [p.id for p in projects]
+        grp_ids, partners_by_proj = set(), {}
+        if pids2:
+            links = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id.in_(pids2)).all()
+            ct_ids = {lk.cotraitant_id for lk in links}
+            names = {c.id: c.name for c in db.query(Cotraitant).filter(Cotraitant.id.in_(ct_ids)).all()} if ct_ids else {}
+            for lk in links:
+                grp_ids.add(lk.project_id)
+                partners_by_proj.setdefault(lk.project_id, set()).add(names.get(lk.cotraitant_id) or "Partenaire")
+            for inv in db.query(ProjectInvite).filter(ProjectInvite.project_id.in_(pids2),
+                                                      ProjectInvite.revoked.is_(False)).all():
+                grp_ids.add(inv.project_id)
+                if getattr(inv, "company_name", None):
+                    partners_by_proj.setdefault(inv.project_id, set()).add(inv.company_name)
+        by_groupement = _segment(projects, lambda p: "Groupement" if p.id in grp_ids else "Solo")
+        pagg = {}
+        for p in projects:
+            st = _status(p)
+            if st not in ("gagne", "perdu"):
+                continue
+            for nm in partners_by_proj.get(p.id, ()):
+                a = pagg.setdefault(nm, {"key": nm, "won": 0, "lost": 0})
+                a["won" if st == "gagne" else "lost"] += 1
+        for a in pagg.values():
+            tot = a["won"] + a["lost"]; a["total"] = tot
+            a["win_rate"] = round(a["won"] / tot * 100) if tot else 0
+            by_partner.append(a)
+        by_partner.sort(key=lambda a: (-a["total"], -a["win_rate"]))
+    except Exception:
+        db.rollback()
+
     segments = {
         "by_zone": _segment(projects, _zone),
         "by_type": _segment(projects, lambda p: _details(p).get("type_marche")),
+        "by_groupement": by_groupement,
+        "by_partner": by_partner[:6],
         "loss_reasons": loss_reasons,
     }
 

@@ -246,7 +246,7 @@
                 </div>
               </div>
 
-              <div v-if="stats.segments && (stats.segments.by_zone.length||stats.segments.loss_reasons.length)" class="card pad">
+              <div v-if="stats.segments && (stats.segments.by_zone.length||stats.segments.loss_reasons.length||(stats.segments.by_groupement&&stats.segments.by_groupement.length))" class="card pad">
                 <h3>Où vous gagnez / perdez</h3>
                 <div class="muted small" style="margin:2px 0 8px">{{ stats.decided||0 }} marché(s) terminé(s) · taux global {{ stats.win_rate||0 }}%</div>
                 <div v-if="stats.segments.by_zone.length">
@@ -255,6 +255,29 @@
                     <span style="min-width:58px">Dépt {{ z.key }}</span>
                     <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+z.win_rate+'%;background:var(--success)'"></div></div>
                     <span class="num muted" style="min-width:66px;text-align:right">{{ z.win_rate }}%</span>
+                  </div>
+                </div>
+                <div v-if="stats.segments.by_groupement && stats.segments.by_groupement.length">
+                  <div class="sectitle">Groupement vs solo</div>
+                  <div v-for="g in stats.segments.by_groupement" :key="'g'+g.key" class="row small" style="padding:4px 0;gap:8px">
+                    <span style="min-width:90px">{{ g.key }}</span>
+                    <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+g.win_rate+'%;background:var(--accent)'"></div></div>
+                    <span class="num muted" style="min-width:82px;text-align:right">{{ g.win_rate }}% ({{ g.total }})</span>
+                  </div>
+                </div>
+                <div v-if="stats.segments.by_partner && stats.segments.by_partner.length">
+                  <div class="sectitle">Par partenaire</div>
+                  <div v-for="pt in stats.segments.by_partner.slice(0,4)" :key="'pt'+pt.key" class="row small" style="padding:4px 0;gap:8px">
+                    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="pt.key">{{ pt.key }}</span>
+                    <span class="num muted" style="min-width:82px;text-align:right">{{ pt.win_rate }}% ({{ pt.total }})</span>
+                  </div>
+                </div>
+                <div v-if="stats.segments.by_type && stats.segments.by_type.length">
+                  <div class="sectitle">Par type de marché</div>
+                  <div v-for="ty in stats.segments.by_type.slice(0,4)" :key="'ty'+ty.key" class="row small" style="padding:4px 0;gap:8px">
+                    <span style="min-width:90px">{{ ty.key }}</span>
+                    <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+ty.win_rate+'%;background:var(--success)'"></div></div>
+                    <span class="num muted" style="min-width:82px;text-align:right">{{ ty.win_rate }}%</span>
                   </div>
                 </div>
                 <div v-if="stats.segments.loss_reasons.length">
@@ -1236,6 +1259,7 @@
               <div class="field"><label>CA N-2 (€)</label><input type="number" v-model.number="company.ca_n2"></div>
               <div class="field"><label>CA N-3 (€)</label><input type="number" v-model.number="company.ca_n3"></div></div>
             <div class="sectitle">Collaborateurs <span class="muted small" style="font-weight:400">— vos moyens humains, présentés nommément dans vos dossiers de présentation</span></div>
+            <div class="muted small" style="margin:-2px 0 8px;padding:8px 10px;background:var(--surface-2);border-radius:8px"><i data-lucide="info" style="width:12px;height:12px;display:inline;vertical-align:-1px"></i> Ces éléments (qualifications, références, certifications) sont repris <b>tels quels</b> dans vos dossiers officiels. Vérifiez-les : une <b>fausse déclaration</b> peut faire écarter votre offre.</div>
             <div v-for="(m,i) in (company.team||[])" :key="'tm'+i" class="card pad" style="background:var(--surface-2);margin-bottom:8px;padding:12px">
               <div class="frow"><div class="field" style="margin:0"><label>Nom</label><input v-model="m.nom" placeholder="Yann Tanguy"></div>
                 <div class="field" style="margin:0"><label>Fonction</label><input v-model="m.fonction" placeholder="Conducteur de travaux"></div></div>
