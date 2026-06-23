@@ -236,9 +236,21 @@ def _merge_indexes(indexes: list) -> dict:
             "N": N, "total_len": total_len, "avgdl": (total_len / N) if N else 0.0}
 
 
-def _bm25_indexed(idx: dict, query: str, k: int) -> list:
+# Filtre de PERTINENCE (opt-in pour la GÉNÉRATION) : BM25 donne un score positif à tout
+# chunk contenant ≥1 terme → un extrait hors-sujet (un seul mot commun qui matche) pouvait
+# devenir « source autorisée » et l'IA brodait dessus. On ne garde un chunk que s'il (a) reste
+# proche du meilleur score (bruit de fond coupé) ET (b) montre un VRAI signal : il couvre ≥2
+# termes DISTINCTS de la requête, OU son meilleur terme est discriminant (idf élevé = mot rare).
+# Si plus rien ne passe → [] → les branches honnêtes s'arment (« aucune source » / « À compléter »).
+# Désactivé par défaut (recherche manuelle = rappel maximal). Calibré sur KB réel.
+_REL_TRIM = float(os.getenv("RAG_REL_TRIM", "0.30"))        # fraction du meilleur score
+_REL_RARE_IDF = float(os.getenv("RAG_REL_RARE_IDF", "1.6"))  # idf « mot discriminant »
+
+
+def _bm25_indexed(idx: dict, query: str, k: int, relevance: bool = False) -> list:
     """BM25 par accumulation sur l'index inversé : ne visite que les postings des
-    termes de la requête. Renvoie [(score, meta_tuple)] trié décroissant, top-k."""
+    termes de la requête. Renvoie [(score, meta_tuple)] trié décroissant, top-k.
+    relevance=True applique le filtre anti-bruit (cf. ci-dessus)."""
     N = idx["N"]
     if not N:
         return []
@@ -247,7 +259,7 @@ def _bm25_indexed(idx: dict, query: str, k: int) -> list:
         return []
     avgdl = idx["avgdl"] or 1.0
     df, postings, doc_len = idx["df"], idx["postings"], idx["doc_len"]
-    scores = {}
+    scores, hits, best_idf = {}, {}, {}
     for w in q:
         plist = postings.get(w)
         if not plist:
@@ -256,16 +268,26 @@ def _bm25_indexed(idx: dict, query: str, k: int) -> list:
         for i, tf in plist:
             dl = doc_len[i]
             scores[i] = scores.get(i, 0.0) + idf * (tf * (_K1 + 1)) / (tf + _K1 * (1 - _B + _B * dl / avgdl))
+            hits[i] = hits.get(i, 0) + 1
+            if idf > best_idf.get(i, 0.0):
+                best_idf[i] = idf
     if not scores:
         return []
+    if relevance:
+        best = max(scores.values())
+        scores = {i: s for i, s in scores.items()
+                  if s >= _REL_TRIM * best and (hits[i] >= 2 or best_idf[i] >= _REL_RARE_IDF)}
+        if not scores:
+            return []
     top = heapq.nlargest(k, scores.items(), key=lambda kv: kv[1])
     return [(s, idx["meta"][i]) for i, s in top]
 
 
-def retrieve(db: Session, user_id: int, query: str, k: int = 6, min_score: float = 0.0) -> list:
+def retrieve(db: Session, user_id: int, query: str, k: int = 6, min_score: float = 0.0,
+             relevance: bool = False) -> list:
     """Renvoie les k chunks les plus pertinents pour `query` dans la base de l'utilisateur."""
     out = []
-    for s, t in _bm25_indexed(_index_for(db, user_id), query, k):
+    for s, t in _bm25_indexed(_index_for(db, user_id), query, k, relevance=relevance):
         if s < min_score:
             continue
         out.append({"chunk_id": t[0], "doc_id": t[1], "doc_name": t[2],
@@ -292,14 +314,16 @@ def sources_block(chunks: list) -> str:
 
 
 # ── Récupération MULTI-ENTREPRISES (Merged Brain) ────────────────────────────
-def retrieve_multi(db: Session, user_ids: list, query: str, k: int = 8) -> list:
-    """Récupère les chunks les plus pertinents à travers PLUSIEURS bases (co-traitance),
-    en réutilisant l'index inversé caché de chaque user. Chaque résultat porte son user_id."""
+def retrieve_multi(db: Session, user_ids: list, query: str, k: int = 8,
+                   relevance: bool = False) -> list:
+    """Récupère les chunks les plus pertinents à travers PLUSIEURS bases (base COMMUNE de
+    l'organisation, ou co-traitance), en réutilisant l'index inversé caché de chaque user.
+    Chaque résultat porte son user_id."""
     if not user_ids:
         return []
     indexes = [_index_for(db, uid) for uid in dict.fromkeys(user_ids)]
     out = []
-    for s, t in _bm25_indexed(_merge_indexes(indexes), query, k):
+    for s, t in _bm25_indexed(_merge_indexes(indexes), query, k, relevance=relevance):
         out.append({"chunk_id": t[0], "doc_id": t[1], "doc_name": t[2], "user_id": t[4],
                     "text": t[5], "score": round(s, 3)})
     return out

@@ -19,6 +19,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.ratelimit import limiter
 from app.core.quota import consume_analysis
+from app.core.org import member_ids
 from app.models import User, KnowledgeDoc, KnowledgeChunk
 from app.services.analysis import extract_dce_text
 from app.services import rag
@@ -107,16 +108,18 @@ def search(req: SearchReq, current_user: User = Depends(get_current_user), db: S
 
 # ── Mémoire IA (multi-agents, sourcé) ────────────────────────────────────────
 def _gen_memoire(text: str, current_user: User, db: Session) -> dict:
-    # Base de connaissances vide → on NE débite PAS un quota pour un livrable 100% « [À compléter] ».
-    if db.query(KnowledgeChunk.id).filter(KnowledgeChunk.user_id == current_user.id).first() is None:
-        raise HTTPException(422, "Votre base de connaissances est vide : ajoutez au moins un document "
-                                 "(dossier de présentation, fiche RSE, méthodologie) avant de générer.")
+    # Base COMMUNE de l'organisation (chaque base perso reste inchangée ; on les met en commun
+    # pour la génération). Vide → on NE débite PAS un quota pour un livrable 100% « [À compléter] ».
+    uids = member_ids(current_user, db)
+    if db.query(KnowledgeChunk.id).filter(KnowledgeChunk.user_id.in_(uids)).first() is None:
+        raise HTTPException(422, "La base de connaissances de votre organisation est vide : ajoutez au moins "
+                                 "un document (dossier de présentation, fiche RSE, méthodologie) avant de générer.")
     # Génération longue → asynchrone (anti-timeout). Le client interroge /api/jobs/{id}.
     consume_analysis(current_user, db)
     from app.services.jobs import create_job, run_in_thread, job_out
     job = create_job(db, current_user.id, "memoire", "Mémoire technique")
     uid = current_user.id
-    run_in_thread(job.id, lambda jdb: generate_memoire(jdb, uid, text))
+    run_in_thread(job.id, lambda jdb: generate_memoire(jdb, uid, text, kb_user_ids=uids))
     return job_out(job)
 
 
@@ -159,13 +162,14 @@ def questionnaire(request: Request, req: QuestionnaireReq, current_user: User = 
     qs = [q for q in (req.questions or []) if q and q.strip()]
     if not qs:
         raise HTTPException(422, "Aucune question fournie.")
-    if db.query(KnowledgeChunk.id).filter(KnowledgeChunk.user_id == current_user.id).first() is None:
-        raise HTTPException(422, "Votre base de connaissances est vide : ajoutez au moins un document "
-                                 "avant de répondre à un questionnaire.")
+    uids = member_ids(current_user, db)
+    if db.query(KnowledgeChunk.id).filter(KnowledgeChunk.user_id.in_(uids)).first() is None:
+        raise HTTPException(422, "La base de connaissances de votre organisation est vide : ajoutez au moins "
+                                 "un document avant de répondre à un questionnaire.")
     consume_analysis(current_user, db)
     # Asynchrone (anti-timeout) : jusqu'à 40 questions × LLM, traitées en tâche de fond.
     from app.services.jobs import create_job, run_in_thread, job_out
     job = create_job(db, current_user.id, "questionnaire", f"Questionnaire ({len(qs)} questions)")
     uid = current_user.id
-    run_in_thread(job.id, lambda jdb: answer_questions(jdb, uid, qs))
+    run_in_thread(job.id, lambda jdb: answer_questions(jdb, uid, qs, kb_user_ids=uids))
     return job_out(job)

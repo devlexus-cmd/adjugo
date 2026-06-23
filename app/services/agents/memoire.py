@@ -163,8 +163,10 @@ Renvoie EXACTEMENT ce JSON :
 
 
 # ── Orchestration ────────────────────────────────────────────────────────────
-def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int = 9) -> dict:
-    """Pipeline complet. Renvoie un mémoire structuré, sourcé et contrôlé."""
+def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int = 9,
+                     kb_user_ids: list = None) -> dict:
+    """Pipeline complet. Renvoie un mémoire structuré, sourcé et contrôlé.
+    kb_user_ids = base COMMUNE à interroger (membres de l'organisation) ; défaut = [user_id]."""
     requirements = extract_requirements(dce_text)
     objet = requirements.get("objet", "")
     plan = build_plan(objet, requirements)[:max_sections]
@@ -175,9 +177,10 @@ def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int
     criteres = requirements.get("criteres_attribution") or []
     # Récupération RAG (rapide) puis rédaction des sections EN PARALLÈLE (latence ÷ ~6)
     from concurrent.futures import ThreadPoolExecutor
+    pool = kb_user_ids or [user_id]   # base COMMUNE de l'organisation (sinon le seul user)
     prepared = []
     for sec in plan:
-        chunks = rag.retrieve(db, user_id, sec.get("requete") or sec.get("titre", ""), k=5)
+        chunks = rag.retrieve_multi(db, pool, sec.get("requete") or sec.get("titre", ""), k=5, relevance=True)
         prepared.append((sec, chunks))
     with ThreadPoolExecutor(max_workers=min(6, len(prepared) or 1)) as ex:
         sections = list(ex.map(lambda pc: write_section(pc[0], pc[1], criteres=criteres, user_id=user_id), prepared))

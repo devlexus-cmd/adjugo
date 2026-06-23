@@ -138,7 +138,18 @@ def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
             from app.services import rag
             q = " ".join(str(details.get(k, "")) for k in ("intitule_marche", "type_marche", "critere_rse")) \
                 + " méthodologie sécurité qualité références moyens"
-            chunks = rag.retrieve(db, user_id, q, k=6)
+            # Base COMMUNE de l'organisation (si org existe ; sinon base perso). On met en
+            # commun les savoir-faire de l'équipe pour rédiger, sans modifier les bases perso.
+            pool = [user_id]
+            try:
+                from app.core.org import member_ids
+                from app.models import User as _U
+                _u = db.query(_U).get(user_id)
+                if _u is not None and getattr(_u, "org_id", None):
+                    pool = member_ids(_u, db)
+            except Exception:
+                pool = [user_id]
+            chunks = rag.retrieve_multi(db, pool, q, k=6, relevance=True)
             if chunks:
                 sources_block = "\n\nSOURCES (savoir-faire RÉEL de l'entreprise — appuie-toi DESSUS) :\n" + rag.sources_block(chunks)
                 src_rule = ("\n\nRÈGLE : appuie chaque affirmation factuelle (moyens, références, "
