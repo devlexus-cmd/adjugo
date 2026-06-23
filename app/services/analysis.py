@@ -357,6 +357,34 @@ def analyze_dce(file_bytes, company=None, criteria=None):
     return analyze_dce_text(text, company, criteria)
 
 
+def _detect_groupement(details: dict, company: dict = None) -> dict:
+    """Détecte si le marché est une OPPORTUNITÉ DE GROUPEMENT (répondre à plusieurs),
+    de façon DÉTERMINISTE à partir des faits extraits — jamais inventé :
+    (a) marché alloti, (b) qualification exigée que l'entreprise n'affiche pas,
+    (c) CA minimum requis supérieur au CA de l'entreprise."""
+    import re
+    company = company or {}
+    raisons = []
+    allot = str(details.get("allotissement") or "").lower()
+    if allot.count("lot ") >= 2 or "lot 2" in allot:
+        raisons.append("Marché alloti : vous pouvez répondre à plusieurs, un partenaire par lot.")
+    reqs = details.get("qualifications_requises") or []
+    own_q = str(company.get("qualifications") or "").lower()
+    if isinstance(reqs, list) and own_q:
+        manquantes = [q for q in reqs if isinstance(q, str) and q.strip()
+                      and not any(t for t in re.split(r"[\s/]+", q.lower()) if len(t) > 2 and t in own_q)]
+        if manquantes:
+            raisons.append("Qualification(s) exigée(s) que vous n'affichez pas ("
+                           + ", ".join(manquantes[:3]) + ") — un partenaire peut les apporter.")
+    cam = str(details.get("ca_minimum_requis") or "")
+    m = re.search(r"(\d[\d\s  .]{3,})", cam)
+    req_ca = int(re.sub(r"\D", "", m.group(1))) if m else 0
+    ca = company.get("ca_n1") or 0
+    if req_ca and ca and req_ca > ca:
+        raisons.append("CA minimum exigé supérieur au vôtre — un groupement additionne les capacités.")
+    return {"recommande": bool(raisons), "raisons": raisons[:3]}
+
+
 def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
     """Analyse un DCE depuis du texte brut (notice BOAMP, DCE déjà extrait...).
     lang_name : langue de rédaction des valeurs textuelles (adaptation par pays)."""
@@ -413,6 +441,8 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
         result["go_decision"] = det["go_decision"]
         result["score_breakdown"] = det["breakdown"]
         result["score_deterministe"] = True
+        # Auto-flag « opportunité de groupement » (déterministe, n'altère pas le score)
+        result["groupement"] = _detect_groupement(result.get("details") or {}, company)
         return result
 
     except json.JSONDecodeError:

@@ -321,6 +321,12 @@
               <input ref="aoDce" type="file" accept=".pdf,.zip,.docx,.txt" class="hidden" @change="aoUploadDce">
               <p class="small" v-if="ao.project.ai_summary">{{ ao.project.ai_summary }}</p>
               <p class="muted small" v-else>Aucune analyse encore. Importez le dossier du marché pour la lancer.</p>
+              <div v-if="ao.project.ai_analysis && ao.project.ai_analysis.groupement && ao.project.ai_analysis.groupement.recommande" class="row wrap" style="margin:8px 0 2px;gap:10px;padding:11px 13px;background:var(--accent-weak);border:1px solid var(--accent);border-radius:9px;align-items:flex-start">
+                <i data-lucide="users-round" style="width:18px;height:18px;color:var(--accent-text);flex-shrink:0;margin-top:1px"></i>
+                <div style="flex:1;min-width:200px"><b class="small" style="color:var(--accent-text)">Opportunité de groupement — répondez à plusieurs</b>
+                  <ul class="muted small" style="margin:3px 0 0;padding-left:18px"><li v-for="(r,gi) in ao.project.ai_analysis.groupement.raisons" :key="'grp'+gi">{{ r }}</li></ul></div>
+                <button class="btn primary sm" @click="aoOptimizeGroup()"><i data-lucide="handshake"></i>Répartir entre partenaires</button>
+              </div>
               <div class="frow" style="margin-top:8px;gap:0 24px">
                 <div v-for="(v,k) in detailRows(aoDetails())" :key="k" class="row small" style="padding:6px 0;border-bottom:1px solid var(--hairline);align-items:flex-start"><span class="muted" style="min-width:130px">{{ k }}</span><span style="flex:1">{{ v }}</span></div>
               </div>
@@ -511,6 +517,10 @@
               <button class="btn sm" @click="aoOptimizeGroup()" :disabled="ao.group&&ao.group.loading"><span v-if="ao.group&&ao.group.loading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répartir entre partenaires</button>
               <button class="btn sm" @click="ao.stOpen=!ao.stOpen"><i data-lucide="plus"></i>Ajouter</button></div>
             <div class="cb">
+              <!-- Règles de conformité du groupement (avertissement, pas un blocage) -->
+              <div class="muted small" style="margin-bottom:10px;padding:9px 11px;background:var(--surface-2);border-radius:8px;line-height:1.5">
+                <b>⚠ À vérifier avant de déposer en groupement :</b> le règlement peut <b>imposer ou interdire</b> la co-traitance selon le lot ; un opérateur ne peut être <b>mandataire que d'un seul groupement par lot</b>, ni être à la fois <b>candidat seul et membre</b> d'un groupement ; la <b>composition ne doit plus changer</b> entre la remise des candidatures et la signature.
+              </div>
               <!-- Recommandation de groupement par lot -->
               <div v-if="ao.group && ao.group.data" style="margin-bottom:12px;padding:11px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-weak)">
                 <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Composition recommandée</b><span class="muted small">{{ ao.group.data.n_lots }} lot(s) · {{ ao.group.data.n_propre }} pour vous · {{ ao.group.data.n_cotraitance }} avec un partenaire · {{ ao.group.data.n_non_couverts }} à couvrir</span></div>
