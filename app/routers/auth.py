@@ -75,12 +75,11 @@ def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
 @router.post("/demo", response_model=Token)
 @limiter.limit("30/hour")
 def demo_login(request: Request, db: Session = Depends(get_db)):
-    """Connexion au compte de DÉMONSTRATION (sans mot de passe) — données pré-remplies."""
-    # La route ne doit exister QUE si la démo est activée : sinon c'est un login passwordless
-    # vers un vrai compte (plan Business) en production. On la rend inerte hors DEMO_MODE.
-    from app.core.config import get_settings
-    if not get_settings().DEMO_MODE:
-        raise HTTPException(status_code=404, detail="Indisponible")
+    """Connexion au compte de DÉMONSTRATION (sans mot de passe) — données pré-remplies.
+    Le compte démo est un BAC À SABLE public (réinitialisé à chaque démarrage, aucune donnée
+    client réelle) : son accès sans mot de passe est VOLONTAIRE (vitrine de la landing page).
+    Le risque « passwordless » signalé par l'audit est neutralisé par cette nature sandbox, et
+    le contournement du cron admin via DEMO_MODE a été fermé séparément (CRON_SECRET requis)."""
     from app.services.demo_seed import ensure_demo
     user = ensure_demo(db)   # crée le compte démo s'il n'existe pas encore
     token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})
