@@ -82,6 +82,11 @@ def consume_analysis(user, db: Session) -> None:
     """Vérifie le quota et incrémente, de façon ATOMIQUE (verrou de ligne Postgres :
     ferme la course read-modify-write qui permettait de contourner le quota en lançant
     2 analyses en parallèle). Au-delà du quota : overage si activé, sinon 402."""
+    # Verrou « email vérifié » : aucune action coûteuse (IA/quota) tant que l'adresse de l'utilisateur
+    # AGISSANT n'est pas confirmée — anti-contournement par appel API direct (le front bloque déjà l'UI).
+    if not getattr(user, "email_verified", True):
+        from fastapi import HTTPException
+        raise HTTPException(403, "Confirmez votre adresse email pour utiliser cette fonctionnalité.")
     from app.models import User as _User
     # Le quota est porté par le propriétaire de l'org (pool partagé).
     billing = _billing_user(user, db)
