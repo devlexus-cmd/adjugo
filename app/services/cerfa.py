@@ -162,15 +162,13 @@ def generate_dc1(c, p):
             {"x": 60, "y": 357, "text": c.get("siret", ""), "size": 10, "bold": True},
         ]
     else:
-        # Groupement - cocher groupement, pas seul
-        # "Le candidat est un groupement" checkbox is lower on page 3
+        # Groupement : on COCHE « Le candidat est un groupement d'entreprises » (case relevée
+        # sur dc1.pdf — centre x=76.7 aligné sur la case « seul », y=389.5 = milieu de la ligne
+        # à y≈384). On NE remplit PAS les champs du candidat individuel (section « se présente
+        # seul ») : le groupement est décrit par le TABLEAU des membres (section E) + la page
+        # mandataire. Sans cette case, le formulaire ne déclarait JAMAIS le groupement.
         fields[2] = [
-            # On remplit quand meme les infos du mandataire (nous)
-            {"x": 60, "y": 160, "text": c.get("name", "") + " (mandataire)", "size": 10, "bold": True},
-            {"x": 60, "y": 205, "text": addr, "size": 9},
-            {"x": 60, "y": 253, "text": c.get("email", ""), "size": 9},
-            {"x": 60, "y": 300, "text": c.get("phone", ""), "size": 9},
-            {"x": 60, "y": 357, "text": c.get("siret", ""), "size": 10, "bold": True},
+            {"type": "checkbox", "x": 76.7, "y": 389.5},
         ]
 
         # Page 3 Section E - tableau des membres du groupement
@@ -256,12 +254,14 @@ def _generate_single_dc2(tpl, c, p):
             # Representant
             {"x": 107, "y": 715, "text": c.get("representant_legal", ""), "size": 9, "bold": True},
         ],
-        # Page 2: D1 - CA (3 colonnes)
-        # Colonnes: x=171 (N-3), x=299 (N-2), x=427 (N-1) — ligne CA global y=670
+        # Page 2: D1 - CA global, ligne y≈672. Les 3 colonnes « Exercice » du template dc2.pdf
+        # sont aux entêtes x≈174 / 303 / 431 (relevé fitz) → on place la valeur DANS chaque
+        # colonne (avant, ca_n1 atterrissait à x=55 DANS le libellé de ligne et la 3ᵉ colonne
+        # restait vide). Ordre gauche→droite = du plus ANCIEN (N-3) au plus RÉCENT (N-1).
         1: [
-            {"x": 55, "y": 670, "text": fmt_int(c.get("ca_n1", 0) or 0), "size": 8},
-            {"x": 185, "y": 670, "text": fmt_int(c.get("ca_n2", 0) or 0), "size": 8},
-            {"x": 315, "y": 670, "text": fmt_int(c.get("ca_n3", 0) or 0), "size": 8},
+            {"x": 185, "y": 672, "text": fmt_int(c.get("ca_n3", 0) or 0), "size": 8},
+            {"x": 315, "y": 672, "text": fmt_int(c.get("ca_n2", 0) or 0), "size": 8},
+            {"x": 443, "y": 672, "text": fmt_int(c.get("ca_n1", 0) or 0), "size": 8},
         ],
         # Page 3: D2 - NON redressement (centre case relevé)
         2: [

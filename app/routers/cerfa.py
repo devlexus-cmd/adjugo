@@ -74,7 +74,22 @@ def generate(
         "budget": _est.get("total_ht"),
         "tva_rate": getattr(project, "tva_rate", 0) or 0,
         "reference": f"AO-{project.id:04d}",
+        "cotraitants": [],
     }
+
+    # Co-traitants RATTACHÉS À CE MARCHÉ → DC1 (groupement), DC2 multi-membres, DC4 (sous-traitance).
+    # Sans ça, le routeur unitaire produisait toujours des CERFA « candidat seul ».
+    try:
+        from app.routers.cotraitants import Cotraitant, ProjectCotraitant
+        link_rows = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).all()
+        ct_ids = [l.cotraitant_id for l in link_rows]
+        cts = db.query(Cotraitant).filter(Cotraitant.id.in_(ct_ids)).all() if ct_ids else []
+        for ct in cts:
+            pd["cotraitants"].append({k: getattr(ct, k, "") or "" for k in
+                ["name", "siret", "code_ape", "forme_juridique", "representant_legal", "address",
+                 "city", "postal_code", "email", "phone", "tva_intracom", "ca_n1", "ca_n2", "ca_n3", "effectif"]})
+    except Exception:
+        pass
 
     pdf_bytes = GENERATORS[doc_type](cd, pd)
 
