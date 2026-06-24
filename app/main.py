@@ -125,6 +125,8 @@ async def security_headers(request, call_next):
 
 
 app.include_router(auth.router)
+from app.routers import google_auth
+app.include_router(google_auth.router)
 app.include_router(projects.router)
 app.include_router(documents.router)
 app.include_router(invoices.router)

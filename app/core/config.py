@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     STRIPE_PRICE_PRO: str = ""
     STRIPE_PRICE_BUSINESS: str = ""
 
+    # Connexion Google (OAuth 2.0). Inactive tant que CLIENT_ID/SECRET ne sont pas fournis.
+    # REDIRECT_URI doit correspondre EXACTEMENT à celui enregistré dans la Google Cloud Console.
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = ""   # défaut : {APP_BASE_URL}/api/auth/google/callback
+
     # Stockage des fichiers : "local" (dev) ou "s3" (prod / MinIO / Scaleway)
     STORAGE_BACKEND: str = "local"
     S3_BUCKET: str = "adjugo-documents"

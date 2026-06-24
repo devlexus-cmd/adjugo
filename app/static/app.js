@@ -67,7 +67,7 @@ const __adjApp = createApp({
       token: localStorage.getItem("adjugo_token") || "",
       theme: localStorage.getItem("adjugo_theme") || "system",
       mobileNav: false,
-      user: {}, company: {}, criteria: {},
+      user: {}, company: {}, criteria: {}, googleEnabled: false,
       view: "dashboard", navMore: false, busy: false, toast: null, pending: 0, llmInfo: null,
       auth: { mode: "login", email: "", password: "", full_name: "", company_name: "", resetToken: "", sent: false },
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], expiring: [],
@@ -222,6 +222,12 @@ const __adjApp = createApp({
         .then(r => { this.notify(r.message || "Adresse confirmée ✓"); if (this.token) this.api("GET", "/api/auth/me").then(u => this.user = u).catch(() => {}); })
         .catch(e => this.notify(e.message || "Lien de vérification invalide ou expiré", "err"));
     }
+    // Connexion Google : retour de l'OAuth → le jeton arrive dans l'URL (?gtoken=) ou une erreur (?gerror=).
+    const _gt = new URLSearchParams(location.search).get("gtoken");
+    const _ge = new URLSearchParams(location.search).get("gerror");
+    if (_gt) { this.token = _gt; localStorage.setItem("adjugo_token", _gt); history.replaceState({}, "", "/app"); }
+    else if (_ge) { history.replaceState({}, "", "/"); this.$nextTick(() => this.notify(_ge, "err")); }
+    if (!this.token) { this.api("GET", "/api/auth/oauth-config").then(c => this.googleEnabled = !!(c && c.google)).catch(() => {}); }
     this._loadAnalytics();
     if (this.token) this.boot();
   },
@@ -326,6 +332,7 @@ const __adjApp = createApp({
         this.auth.sent = true; this.notify(r.message || "Email envoyé si le compte existe");
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
+    googleLogin() { window.location.href = "/api/auth/google/login"; },
     async resendVerification() {
       try { const r = await this.api("POST", "/api/auth/resend-verification"); this.notify(r.message || "Email de confirmation renvoyé"); }
       catch (e) { this.notify(e.message, "err"); }
