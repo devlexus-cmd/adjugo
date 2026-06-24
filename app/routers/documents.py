@@ -22,6 +22,8 @@ router = APIRouter(prefix="/api/documents", tags=["Coffre-fort"])
 
 _ALLOWED_EXT = {e.strip().lower() for e in settings.ALLOWED_UPLOAD_EXT.split(",") if e.strip()}
 _MAX_BYTES = settings.MAX_UPLOAD_MB * 1024 * 1024
+_VALID_CATS = {e.value for e in DocCategory}   # catégorie hors-liste → stockée invalide puis
+#  casse le listing (doc.category.value) / rejetée par l'enum Postgres → on la borne.
 
 
 def _validate_and_read(file: UploadFile) -> tuple[bytes, str]:
@@ -101,6 +103,7 @@ def upload_document(
 ):
     """Uploader un document dans le coffre-fort."""
     content, ext = _validate_and_read(file)
+    category = category if category in _VALID_CATS else "autre"
     file_key = f"{current_user.id}/{uuid.uuid4().hex}{ext}"
     get_storage().save(file_key, content, file.content_type)
 
