@@ -1308,8 +1308,8 @@
             <div class="frow"><div class="field"><label>Qualifications</label><input v-model="criteria.qualifications" placeholder="Qualibat 2111"></div>
               <div class="field"><label>Mots-clés exclus</label><input v-model="criteria.excluded_keywords" placeholder="désamiantage, voirie"></div></div>
             <div class="sectitle">Seuils de recommandation</div>
-            <div class="frow"><div class="field"><label>Seuil « bon potentiel » <span class="hint">score ≥</span></label><input type="number" v-model.number="criteria.go_threshold"></div>
-              <div class="field"><label>Seuil « peu adapté » <span class="hint">score &lt;</span></label><input type="number" v-model.number="criteria.nogo_threshold"></div></div>
+            <div class="frow"><div class="field"><label>Seuil « bon potentiel » <span class="hint">score ≥</span></label><input type="number" min="0" max="100" placeholder="65 (défaut)" v-model.number="criteria.go_threshold"></div>
+              <div class="field"><label>Seuil « peu adapté » <span class="hint">score &lt;</span></label><input type="number" min="0" max="100" placeholder="40 (défaut)" v-model.number="criteria.nogo_threshold"></div></div>
             <button class="btn primary" @click="saveCriteria" :disabled="busy"><span v-if="busy" class="spin"></span><i v-else data-lucide="check"></i>Enregistrer</button>
           </div>
         </section>

@@ -185,7 +185,11 @@ def export_dossier(
         sommaire.append("SIRET : " + cd.get("siret", ""))
         sommaire.append("Adresse : " + cd.get("address", "") + " " + cd.get("city", ""))
         sommaire.append("Representant : " + cd.get("representant_legal", ""))
-        sommaire.append("CA N-1 : " + "{:,.0f} EUR".format(cd.get("ca_n1", 0) or 0).replace(",", " "))
+        try:
+            _ca1 = float(cd.get("ca_n1") or 0)
+        except (TypeError, ValueError):
+            _ca1 = 0   # CA stocké en texte → ne fait plus planter TOUT l'export ZIP
+        sommaire.append("CA N-1 : " + ("{:,.0f} EUR".format(_ca1).replace(",", " ") if _ca1 else "—"))
         sommaire.append("")
 
         if pd["cotraitants"]:

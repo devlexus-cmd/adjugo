@@ -6,6 +6,7 @@ from typing import Optional, List
 from app.core.database import get_db, Base
 from app.core.security import get_current_user
 from app.core.org import member_ids
+from app.services.dce_scoring import _dept   # Corse 2A/2B & DOM-TOM 97x à l'import d'un partenaire
 from app.models import User
 
 class Cotraitant(Base):
@@ -178,7 +179,9 @@ def attach_cotraitant(project_id: int, req: AttachRequest,
             ct = Cotraitant(user_id=current_user.id, name=c.get("name") or c.get("nom") or "Sous-traitant",
                             siret=siret, code_ape=c.get("code_ape") or c.get("naf"),
                             city=c.get("city") or c.get("ville"),
-                            departement=c.get("departement") or "",
+                            departement=(_dept(c.get("postal_code") or c.get("code_postal") or "")
+                                         or c.get("departement") or ""),   # Corse/DOM-TOM corrects
+
                             specialites=c.get("specialites") or c.get("naf_label") or "",
                             effectif=c.get("effectif") or 0)
             db.add(ct); db.commit(); db.refresh(ct)

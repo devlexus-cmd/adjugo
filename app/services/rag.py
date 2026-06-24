@@ -134,14 +134,23 @@ def chunk_text(text: str, target: int = 900, overlap: int = 150) -> list:
 
     # Document non/peu structuré → chunker paragraphe simple
     if n_head < 2:
-        return [c for c in _paragraph_chunks(text, target, overlap) if len(c) > 40]
+        out = [c for c in _paragraph_chunks(text, target, overlap) if len(c) > 40]
+        return out or _fallback_chunk(text)
 
     chunks = []
     for path, corps in sections:
         prefix = f"[{path}]\n" if path else ""
         for c in _paragraph_chunks(corps, max(200, target - len(prefix)), overlap):
             chunks.append((prefix + c).strip())
-    return [c for c in chunks if len(c) > 40]
+    out = [c for c in chunks if len(c) > 40]
+    return out or _fallback_chunk(text)
+
+
+def _fallback_chunk(text: str) -> list:
+    """Évite un document indexé à 0 extrait (apparaît dans la base mais jamais récupéré par le RAG) :
+    si le découpage a tout filtré mais que le texte source est exploitable, on garde le texte brut."""
+    t = (text or "").strip()
+    return [t[:1500]] if len(t) >= 20 else []
 
 
 # ── Indexation ──────────────────────────────────────────────────────────────

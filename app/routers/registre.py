@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
+from app.services.dce_scoring import _dept   # Corse 2A/2B & DOM-TOM 97x corrects (au lieu de [:2])
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -78,7 +79,7 @@ def import_cotraitant(data: ImportCotraitant,
         name=data.name, siret=data.siret, code_ape=data.code_ape,
         forme_juridique=data.forme_juridique, representant_legal=data.representant_legal,
         address=data.address, postal_code=data.postal_code, city=data.city,
-        departement=data.departement or (data.postal_code or "")[:2],
+        departement=data.departement or _dept(data.postal_code or "") or (data.postal_code or "")[:2],
         effectif=data.effectif or 0, specialites=data.specialites,
         qualifications=data.qualifications, codes_cpv=data.codes_cpv,
     )

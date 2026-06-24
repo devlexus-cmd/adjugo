@@ -163,7 +163,7 @@
     const field = (label, el) => { const w = document.createElement("div"); w.style.marginTop = "10px"; w.appendChild($(`<label class="small" style="display:block;color:var(--text-2,#6b7280);font-weight:600;margin-bottom:4px">${esc(label)}</label>`)); w.appendChild(el); return w; };
 
     async function renderContribution(d) {
-      const role = (d.invited && d.invited.role === "sous_traitant") ? "sous-traitant" : "co-traitant";
+      const role = (d.invited && d.invited.role === "sous_traitant") ? "sous-traitant" : "partenaire";
       const card = $(`<div class="card pad" style="margin-bottom:8px;border:1px solid var(--accent,#3b5bdb)"></div>`);
       card.appendChild($(`<div class="row" style="gap:8px;align-items:center"><b style="font-size:13.5px;flex:1">Ma contribution au dossier commun</b></div>`));
       const status = $(`<span class="pill neutral" style="font-size:11px">Brouillon</span>`); card.firstChild.appendChild(status);
@@ -235,7 +235,7 @@
       card.appendChild(bar);
       content().appendChild(card);
 
-      const setStatus = (s) => { const ok = s === "submitted"; status.textContent = ok ? "✓ Soumis" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; };
+      const setStatus = (s) => { const ok = s === "submitted"; status.textContent = ok ? "✓ Soumise" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; };
       let curVer = 0;   // verrou optimiste : version chargée
       const collect = () => ({ company_name: company.value, lot: lot.value, siret: siret.value, forme_juridique: forme.value, address: adresse.value, postal_code: cp.value, city: ville.value, qualifications: quals.value.split(",").map(s => s.trim()).filter(Boolean), references: refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })), chiffrage_note: chiffrage.value, memoire_paragraph: memoire.value, contact: { nom: cNom.value, email: cMail.value, telephone: cTel.value }, version: curVer });
       const url = "/api/invite/" + encodeURIComponent(TOKEN) + "/contribution";
@@ -360,7 +360,7 @@
         document.getElementById("g-av").textContent = initials(co);
         // Rôle exact : le partenaire PEUT contribuer par défaut → ne plus afficher « lecture seule »
         // à tort (il a un formulaire d'écriture juste à côté). On distingue aussi co-traitant/sous-traitant.
-        const _role = (d.invited && d.invited.role) ? d.invited.role : "partenaire";
+        const _role = (d.invited && d.invited.role === "sous_traitant") ? "sous-traitant" : "partenaire";
         document.getElementById("g-role").textContent = "Invité · " + (d.can_contribute ? _role : "lecture seule");
         document.getElementById("brand-sub").textContent = d.mandataire || "Espace co-traitant";
         document.getElementById("loading").style.display = "none";

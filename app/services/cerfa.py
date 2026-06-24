@@ -324,7 +324,10 @@ def generate_attri1(c, p):
 
     d = datetime.date.today().strftime("%d/%m/%Y")
     addr = (str(c.get("address", "")) + " " + str(c.get("postal_code", "")) + " " + str(c.get("city", ""))).strip()
-    budget = p.get("budget", 0) or 0
+    try:
+        budget = max(0.0, float(p.get("budget", 0) or 0))   # négatif (chiffrage erroné) → traité « non chiffré »
+    except (TypeError, ValueError):
+        budget = 0.0
     # ATTRI1 = ACTE D'ENGAGEMENT : le montant est l'OFFRE DE PRIX juridiquement engageante du
     # candidat. S'il n'y a pas de chiffrage réel, on n'imprime PAS « 0 € » ni un budget supposé
     # de l'acheteur : on laisse « À COMPLÉTER » pour ne jamais engager un prix inventé/faux.
