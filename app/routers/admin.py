@@ -5,6 +5,8 @@ Tâches d'administration / cron.
     À appeler quotidiennement depuis un planificateur (cron, Vercel Cron…).
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -103,3 +105,73 @@ def run_amont_alerts_endpoint(request: Request, db: Session = Depends(get_db)):
     et notifie chaque utilisateur de ses nouveaux projets pertinents (avant l'AO)."""
     _check_cron(request)
     return run_amont_alerts(db)
+
+
+class _DeleteUserIn(BaseModel):
+    email: str
+    confirm: bool = False
+
+
+@router.post("/delete-user")
+def delete_user_by_email(data: _DeleteUserIn, request: Request, db: Session = Depends(get_db)):
+    """SUPPORT : supprime un compte par email + ses données. Protégé par CRON_SECRET. IRRÉVERSIBLE.
+    Refuse le compte démo et un propriétaire d'org ayant d'autres membres (transférer d'abord)."""
+    _check_cron(request)
+    if not data.confirm:
+        raise HTTPException(400, "Ajoutez \"confirm\": true pour confirmer la suppression.")
+    email = (data.email or "").strip().lower()
+    if email in ("demo@adjugo.fr",):
+        raise HTTPException(400, "Le compte démo est protégé.")
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+    if not user:
+        raise HTTPException(404, "Compte introuvable.")
+    uid = user.id
+    import app.models as M
+    from app.models import Organization
+
+    def delete_by(name, field, value):
+        model = getattr(M, name, None)
+        if model is not None and hasattr(model, field):
+            db.query(model).filter(getattr(model, field) == value).delete(synchronize_session=False)
+
+    org = db.query(Organization).filter(Organization.id == user.org_id).first() if user.org_id else None
+    is_owner = bool(org and org.owner_id == uid)
+    if is_owner:
+        others = db.query(User).filter(User.org_id == org.id, User.id != uid).count()
+        if others:
+            raise HTTPException(409, "Propriétaire d'une organisation avec d'autres membres : "
+                                     "transférez la propriété avant de supprimer.")
+    try:
+        if org and not is_owner:
+            # Membre : réassigne les données métier au propriétaire, n'efface que le perso.
+            from app.routers.org import _reassign_member_data
+            _reassign_member_data(db, uid, org.owner_id)
+            for name in ("CoSpace", "ProjectInvite", "ProjectContribution", "ContributionPiece"):
+                model = getattr(M, name, None)
+                if model is not None and hasattr(model, "owner_id"):
+                    db.query(model).filter(model.owner_id == uid).update(
+                        {model.owner_id: org.owner_id}, synchronize_session=False)
+            for name in ("SavedSearch", "Company", "MatchingCriteria", "MatchingCriteriaExt"):
+                delete_by(name, "user_id", uid)
+            db.query(User).filter(User.id == uid).delete(synchronize_session=False)
+        else:
+            # Propriétaire solo (ou sans org) : suppression complète, enfants avant parents.
+            pids = [p.id for p in db.query(M.Project).filter(M.Project.user_id == uid).all()]
+            delete_by("ContributionPiece", "owner_id", uid)
+            delete_by("ProjectContribution", "owner_id", uid)
+            delete_by("ProjectInvite", "owner_id", uid)
+            if pids:
+                db.query(M.GeneratedDoc).filter(M.GeneratedDoc.project_id.in_(pids)).delete(synchronize_session=False)
+            delete_by("AuditLog", "owner_id", uid)
+            for name in ("Project", "Contact", "Document", "Cotraitant", "Invoice",
+                         "KnowledgeChunk", "KnowledgeDoc", "Signal", "SavedSearch",
+                         "Company", "MatchingCriteria", "MatchingCriteriaExt"):
+                delete_by(name, "user_id", uid)
+            if org:
+                db.query(Organization).filter(Organization.id == org.id).delete(synchronize_session=False)
+            db.query(User).filter(User.id == uid).delete(synchronize_session=False)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Suppression impossible : {e}")
+    return {"ok": True, "deleted_email": email}
