@@ -546,6 +546,11 @@ const __adjApp = createApp({
     async loadCotraitants() { try { this.cotraitants = await this.api("GET", "/api/cotraitants/") || []; } catch (e) {} },
     async loadContacts() { try { this.contacts = await this.api("GET", "/api/contacts/") || []; } catch (e) {} },
     async loadInvoices() { try { this.invoices = await this.api("GET", "/api/invoices/") || []; } catch (e) {} },
+    async convertInvoice(i) {
+      if (!confirm("Créer une facture à partir du devis " + i.reference + " ?")) return;
+      try { const f = await this.api("POST", "/api/invoices/" + i.id + "/convert"); await this.loadInvoices(); this.notify("Facture " + (f && f.reference || "") + " créée"); }
+      catch (e) { this.notify(e.message, "err"); }
+    },
     async loadDocuments() { try { this.documents = await this.api("GET", "/api/documents/") || []; } catch (e) {} },
     async loadExpiring() { try { this.expiring = await this.api("GET", "/api/documents/expiring") || []; } catch (e) { this.expiring = []; } },
     async loadCompany() { try { const c = await this.api("GET", "/api/company/"); if (c && !c.detail) this.company = c; } catch (e) {} },
@@ -1079,14 +1084,6 @@ const __adjApp = createApp({
         const blob = await r.blob(); this.saveBlob(blob, "Dossier_AO_" + p.id + ".zip"); this.notify("Dossier téléchargé");
       } catch (e) { this.notify(e.message, "err"); }
     },
-    async suggestForProject(p) {
-      this.notify("Analyse de co-traitance…");
-      try {
-        const s = await this.api("POST", "/api/cotraitants/suggest", { project_id: p.id, demo: true });
-        this.drawer.suggestion = s; this.notify("Suggestion prête");
-      } catch (e) { this.notify(e.message, "err"); }
-    },
-
     // ── Modals (cotraitant / contact / invoice) ──
     openCotraitant(c) { this.modal = { type: "cotraitant", title: c ? "Modifier le partenaire" : "Nouveau partenaire", d: c ? { ...c } : { name: "", ca_n1: 0, ca_n2: 0, effectif: 0 } }; },
     openContact(c) { this.modal = { type: "contact", title: c ? "Modifier le contact" : "Nouveau contact", d: c ? { ...c } : { name: "", contact_type: "" } }; },
@@ -1141,67 +1138,6 @@ const __adjApp = createApp({
         this.saveBlob(await r.blob(), d.name || "document");
       } catch (e) { this.notify(e.message, "err"); }
     },
-
-    // ── Veille ──
-    async searchVeille() {
-      this.veille.loading = true; this.veille.results = [];
-      try {
-        const qs = "?q=" + encodeURIComponent(this.veille.q) + (this.veille.loc ? "&location=" + encodeURIComponent(this.veille.loc) : "");
-        const r = await this.api("GET", "/api/veille/search" + qs);
-        this.veille.results = (r && r.results) ? r.results : (Array.isArray(r) ? r : []);
-        if (!this.veille.results.length) this.notify("Aucun résultat BOAMP", "err");
-      } catch (e) { this.notify(e.message, "err"); } finally { this.veille.loading = false; }
-    },
-
-    // ── Agent IA (SSE) ──
-    async runAgent() {
-      this.ag.running = true; this.ag.log = []; this.ag.gonogo = null; this.ag.coverage = null; this.ag.lots = []; this.ag.dossier = null;
-      this.agState = {}; this.agStep = {};
-      try {
-        const res = await fetch("/api/pipeline/run", {
-          method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + this.token },
-          body: JSON.stringify({ query: this.ag.query }),
-        });
-        if (res.status === 402) {
-          const d = await res.json().catch(() => ({}));
-          this.notify(d.detail || "Quota d'analyses atteint", "err");
-          this.ag.running = false; this.loadStats(); this.go("billing"); return;
-        }
-        if (!res.ok) throw new Error("Erreur " + res.status);
-        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
-        while (true) {
-          const { value, done } = await reader.read(); if (done) break;
-          buf += dec.decode(value, { stream: true });
-          let i;
-          while ((i = buf.indexOf("\n\n")) >= 0) {
-            const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
-            const ln = chunk.split("\n").find(l => l.startsWith("data:"));
-            if (ln) { try { this.handleAg(JSON.parse(ln.slice(5).trim())); } catch (e) {} }
-          }
-        }
-      } catch (e) { this.notify(e.message, "err"); } finally { this.ag.running = false; this.loadProjects(); this.loadStats(); }
-    },
-    handleAg(ev) {
-      const { agent, event, data } = ev;
-      if (data && data.label) this.ag.log.push({ a: agent, m: data.label });
-      if (["agent_start", "step", "error"].includes(event)) { this.agState[agent] = "En cours"; this.agStep[agent] = data.label || ""; }
-      if (event === "agent_done") { this.agState[agent] = "Terminé"; this.agStep[agent] = data.label || ""; }
-      if (agent === "sourceur" && event === "agent_done") this.ag.gonogo = { decision: data.decision, score: data.score, summary: data.summary };
-      if (agent === "groupement" && event === "agent_done") {
-        this.ag.lots = data.lots || [];
-        const g = data.groupement || {};
-        this.ag.coverage = { label: data.label, members: g.membres || [] };
-      }
-      if (event === "pipeline_complete" && data.dossier) { this.ag.dossier = data.dossier; }
-    },
-    dlAgentZip() {
-      const d = this.ag.dossier; if (!d || !d.zip_b64) return;
-      const bin = atob(d.zip_b64); const arr = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-      this.saveBlob(new Blob([arr], { type: "application/zip" }), d.zip_name || "dossier.zip");
-    },
-    agStyle(id) { const s = this.agState[id]; if (s === "Terminé") return "border-color:var(--go)"; if (s === "En cours") return "border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)"; return ""; },
-    agPillClass(id) { const s = this.agState[id]; if (s === "Terminé") return "go"; if (s === "En cours") return "a_etudier"; return "st-nouveau"; },
 
     // ── Dashboard « briefing » ──
     ringStyle(score) {

@@ -308,6 +308,14 @@ class Invoice(Base):
     user = relationship("User", back_populates="invoices")
 
 
+class ProcessedStripeEvent(Base):
+    """Idempotence des webhooks Stripe : on enregistre chaque event_id traité pour ignorer
+    un rejeu (Stripe retry ou replay d'un event signé) → pas de double-traitement."""
+    __tablename__ = "processed_stripe_events"
+    event_id = Column(String(255), primary_key=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
 # === CONTACT ===
 
 class Contact(Base):

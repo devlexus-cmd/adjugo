@@ -1216,9 +1216,13 @@
             <h4>Aucun devis ni facture</h4><p>Créez des devis et factures liés à vos marchés, avec calcul automatique du TTC.</p>
             <button class="btn primary" @click="openInvoice()"><i data-lucide="plus"></i>Créer</button>
           </div>
-          <div v-else class="t-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Client</th><th>Total TTC</th><th>Statut</th></tr></thead><tbody>
+          <div v-else class="t-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Client</th><th>Total TTC</th><th>Statut</th><th></th></tr></thead><tbody>
             <tr v-for="i in invoices" :key="i.id"><td><b>{{ i.reference }}</b></td><td><span class="pill st-nouveau">{{ i.type }}</span></td>
-              <td>{{ i.client_name }}</td><td><b>{{ eur(i.total_ttc) }}</b></td><td><span class="pill" :class="'st-'+(i.status||'nouveau')">{{ i.status }}</span></td></tr>
+              <td>{{ i.client_name }}</td><td><b>{{ eur(i.total_ttc) }}</b></td><td><span class="pill" :class="'st-'+(i.status||'nouveau')">{{ i.status }}</span></td>
+              <td style="text-align:right">
+                <button v-if="i.type==='devis' && !i.converted_invoice_id" class="btn ghost sm" @click="convertInvoice(i)" title="Créer la facture à partir de ce devis"><i data-lucide="file-check-2"></i>Facturer</button>
+                <span v-else-if="i.converted_invoice_id" class="muted small">facturé ✓</span>
+              </td></tr>
           </tbody></table></div>
         </section>
 

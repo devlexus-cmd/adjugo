@@ -135,7 +135,20 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     except Exception:
         raise HTTPException(400, "Webhook invalide (signature)")
 
-    from app.models import PlanType
+    from app.models import PlanType, ProcessedStripeEvent
+
+    # Idempotence : si cet event_id a déjà été traité (Stripe rejoue ses webhooks), on s'arrête là.
+    # On INSÈRE d'abord (la PK event_id rend l'opération atomique : un rejeu concurrent échoue).
+    evt_id = event.get("id") if isinstance(event, dict) else getattr(event, "id", None)
+    if evt_id:
+        if db.query(ProcessedStripeEvent).filter(ProcessedStripeEvent.event_id == evt_id).first():
+            return {"status": "ignored", "reason": "duplicate"}
+        try:
+            db.add(ProcessedStripeEvent(event_id=evt_id))
+            db.commit()
+        except Exception:
+            db.rollback()
+            return {"status": "ignored", "reason": "duplicate"}
 
     def _set_plan(user, plan_str):
         try:

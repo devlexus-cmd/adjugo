@@ -203,6 +203,7 @@ class InvoiceOut(BaseModel):
     due_date: Optional[date]
     paid_date: Optional[date]
     project_id: Optional[int]
+    converted_invoice_id: Optional[int] = None   # devis déjà converti → cache le bouton « Facturer »
     created_at: datetime
 
     class Config:
