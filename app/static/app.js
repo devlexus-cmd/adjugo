@@ -68,6 +68,7 @@ const __adjApp = createApp({
       theme: localStorage.getItem("adjugo_theme") || "system",
       mobileNav: false,
       user: {}, company: {}, criteria: {}, googleEnabled: false,
+      idleLimitMs: 60 * 60 * 1000,   // déconnexion auto après 1 h SANS activité (sécurité appareil partagé/perdu)
       view: "dashboard", navMore: false, busy: false, toast: null, pending: 0, llmInfo: null,
       auth: { mode: "login", email: "", password: "", full_name: "", company_name: "", resetToken: "", sent: false },
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], expiring: [],
@@ -225,8 +226,21 @@ const __adjApp = createApp({
     // Connexion Google : retour de l'OAuth → le jeton arrive dans l'URL (?gtoken=) ou une erreur (?gerror=).
     const _gt = new URLSearchParams(location.search).get("gtoken");
     const _ge = new URLSearchParams(location.search).get("gerror");
-    if (_gt) { this.token = _gt; localStorage.setItem("adjugo_token", _gt); history.replaceState({}, "", "/app"); }
+    let _freshLogin = false;
+    if (_gt) { this.token = _gt; localStorage.setItem("adjugo_token", _gt); history.replaceState({}, "", "/app"); _freshLogin = true; }
     else if (_ge) { history.replaceState({}, "", "/"); this.$nextTick(() => this.notify(_ge, "err")); }
+
+    // ── Verrou de session par INACTIVITÉ ──
+    // Chaque interaction rafraîchit l'horodatage d'activité. Au retour (nouvelle fenêtre, longtemps
+    // après…), si la dernière activité dépasse idleLimitMs → PAS de reconnexion auto : on repasse par
+    // l'écran de connexion. Un appareil laissé ouvert ne donne plus accès au compte des heures plus tard.
+    const _touch = () => { if (this.token) { try { localStorage.setItem("adjugo_active", String(Date.now())); } catch (e) {} } };
+    ["click", "keydown", "touchstart"].forEach(ev => window.addEventListener(ev, _touch, { passive: true }));
+    const _idleStale = () => { const l = parseInt(localStorage.getItem("adjugo_active") || "0", 10); return !!(l && (Date.now() - l) > this.idleLimitMs); };
+    setInterval(() => { if (this.token && _idleStale()) { this.notify("Déconnecté par sécurité après une période d'inactivité.", "err"); this.logout(); } }, 60000);
+    // Session STOCKÉE (pas une connexion fraîche) trop ancienne → on l'efface, retour à l'écran de connexion.
+    if (this.token && !_freshLogin && _idleStale()) { localStorage.removeItem("adjugo_token"); this.token = ""; }
+
     if (!this.token) { this.api("GET", "/api/auth/oauth-config").then(c => this.googleEnabled = !!(c && c.google)).catch(() => {}); }
     this._loadAnalytics();
     if (this.token) this.boot();
@@ -356,7 +370,7 @@ const __adjApp = createApp({
         await this.boot();
       } catch (e) { this.notify("Démo momentanément indisponible.", "err"); } finally { this.busy = false; }
     },
-    logout() { localStorage.removeItem("adjugo_token"); window.location.href = "/"; },
+    logout() { localStorage.removeItem("adjugo_token"); localStorage.removeItem("adjugo_active"); window.location.href = "/"; },
     dismissOnboarding() { try { localStorage.setItem("adjugo_onboarding_done", "1"); } catch (e) {} this.$forceUpdate(); },
     // ── Feedback in-app ──
     openFeedback() { this.fb.open = true; this.fb.message = ""; this.fb.kind = "idee"; },
@@ -401,6 +415,7 @@ const __adjApp = createApp({
     },
 
     async boot() {
+      try { localStorage.setItem("adjugo_active", String(Date.now())); } catch (e) {}   // toute connexion réussie = activité (réarme le verrou d'inactivité)
       try { this.user = await this.api("GET", "/api/auth/me"); } catch (e) { return; }
       await Promise.all([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadNotifs(), this.loadConsortiums(), this.loadShared()]);
       // Adaptation au pays de l'organisation : scope AO + devise + LANGUE par défaut

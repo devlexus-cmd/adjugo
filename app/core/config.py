@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # Auth
     SECRET_KEY: str = "change-this-in-production"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24h
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 720  # 12h (plafond absolu d'une session ; + verrou d'inactivité côté front)
 
     # Démo : endpoints publics sans auth (/api/pipeline/demo/run, /demo).
     # METTRE À False EN PRODUCTION.
