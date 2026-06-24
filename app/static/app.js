@@ -210,7 +210,10 @@ const __adjApp = createApp({
     this.$nextTick(() => this._a11y());
     if (!this.token && new URLSearchParams(location.search).get("demo") === "1") { this.demoLogin(); return; }
     const _rst = new URLSearchParams(location.search).get("reset");
-    if (!this.token && _rst) { this.auth.mode = "reset"; this.auth.resetToken = _rst; }
+    // Cliquer le lien de réinitialisation est une action EXPLICITE : il prime sur une session
+    // déjà ouverte. Sinon, un utilisateur connecté qui clique le lic reçu par email atterrissait
+    // dans l'app sans jamais voir le formulaire « Nouveau mot de passe » (le clic semblait inerte).
+    if (_rst) { this.auth.mode = "reset"; this.auth.resetToken = _rst; this.token = ""; }
     this._loadAnalytics();
     if (this.token) this.boot();
   },
@@ -1092,7 +1095,7 @@ const __adjApp = createApp({
     // ── Modals (cotraitant / contact / invoice) ──
     openCotraitant(c) { this.modal = { type: "cotraitant", title: c ? "Modifier le partenaire" : "Nouveau partenaire", d: c ? { ...c } : { name: "", ca_n1: 0, ca_n2: 0, effectif: 0 } }; },
     openContact(c) { this.modal = { type: "contact", title: c ? "Modifier le contact" : "Nouveau contact", d: c ? { ...c } : { name: "", contact_type: "" } }; },
-    openInvoice() { this.modal = { type: "invoice", wide: true, title: "Nouveau document", d: { type: "devis", client_name: "", client_address: "", tva_rate: 20, items: [{ description: "", qty: 1, unit_price: 0 }] } }; },
+    openInvoice(projectId = null) { this.modal = { type: "invoice", wide: true, title: "Nouveau document", d: { type: "devis", client_name: "", client_address: "", tva_rate: 0, project_id: (typeof projectId === "number" ? projectId : null), items: [{ description: "", qty: 1, unit_price: 0 }] } }; },
     async saveModal() {
       this.busy = true;
       try {
@@ -1164,6 +1167,14 @@ const __adjApp = createApp({
     statusLabel(s) { return ({ nouveau: "Nouveau", en_cours: "En cours", envoye: "Envoyé", gagne: "Gagné", perdu: "Perdu", abandonne: "Abandonné" })[s] || s; },
     covLabel(c) { return ({ entreprise: "Entreprise seule", cotraitant: "Avec un partenaire", non_couvert: "Non couvert" })[c] || c; },
     covClass(c) { return ({ entreprise: "go", cotraitant: "st-nouveau", non_couvert: "no_go" })[c] || "st-nouveau"; },
+    eurExact(v) {
+      // Montants de FACTURATION : 2 décimales (le centime calculé doit être lisible).
+      v = Number(v) || 0;
+      const cur = (this.org.data && this.org.data.devise) || "EUR";
+      try { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: cur, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v); }
+      catch (e) { return v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €"; }
+    },
+    invStatusLabel(s) { return ({ brouillon: "Brouillon", envoye: "Envoyé", accepte: "Accepté", en_attente: "En attente", paye: "Payé", en_retard: "En retard" })[s] || s; },
     eur(v) {
       v = Number(v) || 0;
       const cur = (this.org.data && this.org.data.devise) || "EUR";
@@ -1263,16 +1274,19 @@ const __adjApp = createApp({
         // on combine source + réf + objet, sinon plusieurs avis « sans réf » s'écrasaient
         // (pagination qui semblait bloquée / résultats perdus en silence).
         const tkey = t => ((t.provenance && t.provenance.source) || "") + "|" + ((t.provenance && t.provenance.official_ref) || "") + "|" + ((t.objet || "").slice(0, 60));
+        let appendedNothing = false;
         if (append) {
           const seen = new Set(this.src.tenders.map(tkey));
           const added = fresh.filter(t => !seen.has(tkey(t)));
           this.src.tenders = this.src.tenders.concat(added);
           this.src.errors = r.errors || [];
           if (added.length) this.notify(added.length + " nouveau" + (added.length > 1 ? "x" : "") + " marché" + (added.length > 1 ? "s" : ""), "ok");
-          else this.notify("Tous les marchés correspondant à ces critères sont déjà affichés", "ok");
+          else { this.notify("Tous les marchés correspondant à ces critères sont déjà affichés", "ok"); appendedNothing = true; }
         } else { this.src.tenders = fresh; this.src.errors = r.errors || []; this.src.sources = r.sources_queried || []; }
         this.src.offset = (append ? this.src.offset : 0) + PAGE;
-        this.src.hasMore = !!r.has_more;
+        // Une page entièrement dupliquée = on est au bout côté affichage → on masque « charger plus »
+        // (le serveur ignore ce qui est déjà à l'écran et pouvait renvoyer has_more à tort).
+        this.src.hasMore = appendedNothing ? false : !!r.has_more;
         if (!append && !this.src.tenders.length) this.notify("Aucun appel d'offres trouvé pour ces critères", "err");
       } catch (e) { this.notify(e.message, "err"); } finally { this.src.searching = false; this.src.loadingMore = false; }
     },

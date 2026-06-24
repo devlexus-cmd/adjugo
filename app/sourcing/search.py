@@ -146,11 +146,16 @@ class TenderSearchService:
         return {
             "tenders": deduped,
             "errors": errors,
-            "sources_queried": [s.name for s in self.sources],
+            # Seulement les sources RÉELLEMENT interrogées (on ne prétend pas avoir consulté une
+            # source mise en pause par le disjoncteur) ; les autres sont signalées à part.
+            "sources_queried": [s.name for s in active],
+            "sources_skipped": [s.name for s in self.sources if s not in active],
             "count": len(deduped),
             "closed_filtered": closed,
             "amount_filtered": amount_filtered,
-            "has_more": raw_more,
+            # has_more HONNÊTE : une source a rempli sa page ET il reste des résultats NETS après
+            # dédup/filtres → sinon le bouton « charger plus » persistait pour 0 nouveau résultat.
+            "has_more": raw_more and len(deduped) > 0,
         }
 
 

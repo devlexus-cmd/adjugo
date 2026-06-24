@@ -51,34 +51,51 @@ def _limit(plan: str) -> int:
 
 
 @router.get("/status")
-def get_subscription_status(current_user: User = Depends(get_current_user)):
+def get_subscription_status(current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)):
     stripe.api_key = settings.STRIPE_SECRET_KEY
+    from app.core.quota import _billing_user
+    # Le quota RÉEL est porté par le PROPRIÉTAIRE de l'org (pool partagé) : un membre doit voir
+    # le plan de l'org, pas « starter / 2 » (son propre abonnement, inexistant).
+    bu = _billing_user(current_user, db)
 
-    if not current_user.stripe_customer_id:
-        return {"plan": "starter", "status": "active", "analyses_limit": _limit("starter")}
+    def _persisted():
+        plan = getattr(bu.plan, "value", bu.plan) or "starter"
+        return {"plan": plan, "status": "active", "analyses_limit": _limit(plan)}
+
+    if not bu.stripe_customer_id:
+        return _persisted()
 
     try:
         subscriptions = stripe.Subscription.list(
-            customer=current_user.stripe_customer_id,
-            status="active",
-            limit=1
-        )
-
+            customer=bu.stripe_customer_id, status="active", limit=1)
         if not subscriptions.data:
-            return {"plan": "starter", "status": "active", "analyses_limit": _limit("starter")}
+            return _persisted()
 
         sub = subscriptions.data[0]
         price_id = sub["items"]["data"][0]["price"]["id"]
-
         if price_id == settings.STRIPE_PRICE_PRO:
-            return {"plan": "pro", "status": "active", "analyses_limit": _limit("pro"), "current_period_end": sub.current_period_end}
+            plan = "pro"
         elif price_id == settings.STRIPE_PRICE_BUSINESS:
-            return {"plan": "business", "status": "active", "analyses_limit": _limit("business"), "current_period_end": sub.current_period_end}
+            plan = "business"
+        else:
+            plan = "starter"
 
-        return {"plan": "starter", "status": "active", "analyses_limit": _limit("starter")}
+        # Réconciliation : si l'abonnement Stripe diverge du plan EN BASE (webhook en retard ou
+        # non configuré), on persiste → l'AFFICHAGE et l'ENFORCEMENT du quota convergent (sinon
+        # le client payait Pro, voyait « Pro / 30 », mais était bloqué à 2 avec un message « starter »).
+        if (getattr(bu.plan, "value", bu.plan) or "starter") != plan:
+            try:
+                from app.models import PlanType
+                bu.plan = PlanType(plan)
+                db.commit()
+            except Exception:
+                db.rollback()
+        return {"plan": plan, "status": "active", "analyses_limit": _limit(plan),
+                "current_period_end": sub.current_period_end}
 
     except stripe.error.StripeError:
-        return {"plan": "starter", "status": "active", "analyses_limit": _limit("starter")}
+        return _persisted()
 
 
 @router.post("/overage")

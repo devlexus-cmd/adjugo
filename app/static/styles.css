@@ -157,6 +157,12 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 .pill.st-envoye { background:var(--info-weak); color:var(--info-text); }
 .pill.st-gagne { background:var(--success-weak); color:var(--success-text); }
 .pill.st-perdu { background:var(--danger-weak); color:var(--danger-text); }
+/* Statuts de FACTURE (sinon « en_attente »/« brouillon » s'affichaient sans fond, texte brut). */
+.pill.st-brouillon { background:var(--surface-3); color:var(--text-2); }
+.pill.st-en_attente { background:var(--warning-weak); color:var(--warning-text); }
+.pill.st-accepte { background:var(--info-weak); color:var(--info-text); }
+.pill.st-paye { background:var(--success-weak); color:var(--success-text); }
+.pill.st-en_retard { background:var(--danger-weak); color:var(--danger-text); }
 .dot { width:6px; height:6px; border-radius:50%; background:currentColor; }
 
 /* ---------- Forms ---------- */

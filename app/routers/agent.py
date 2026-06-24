@@ -32,6 +32,8 @@ def _zone(p) -> str:
     if not m:
         return "Inconnu"
     cp = m.group(1)
+    if cp[:2] == "20":                 # Corse : 2A (20000-20199) / 2B (20200-20999), pas « 20 »
+        return "2A" if cp < "20200" else "2B"
     return cp[:3] if cp[:2] in ("97", "98") else cp[:2]
 
 

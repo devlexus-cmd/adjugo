@@ -744,13 +744,14 @@
           <div class="cards cols-2" style="margin-top:14px;align-items:start">
             <div class="card">
               <div class="ch"><i data-lucide="file-text"></i><h3>Devis &amp; factures liés</h3><div class="spacer"></div>
+                <button class="btn ghost sm" @click="openInvoice(ao.project.id)"><i data-lucide="plus"></i>Devis</button>
                 <button class="btn ghost sm" @click="go('invoices')"><i data-lucide="external-link"></i>Facturation</button></div>
               <div class="cb">
-                <div v-if="!aoInvoices().length" class="muted small">Aucun devis ni facture lié. Créez-en depuis <b>Devis &amp; factures</b> (champ « AO lié »).</div>
+                <div v-if="!aoInvoices().length" class="muted small">Aucun devis ni facture lié. Créez-en avec le bouton <b>Devis</b> ci-dessus (il sera rattaché à ce marché).</div>
                 <div v-for="i in aoInvoices()" :key="i.id" class="row small" style="padding:7px 0;border-bottom:1px solid var(--hairline)">
                   <span class="strong" style="flex:1;min-width:0">{{ i.reference }} · {{ i.type }}</span>
-                  <span class="num">{{ eur(i.total_ttc) }}</span>
-                  <span class="pill" :class="'st-'+(i.status||'nouveau')" style="font-size:10px">{{ i.status }}</span>
+                  <span class="num">{{ eurExact(i.total_ttc) }}</span>
+                  <span class="pill" :class="'st-'+(i.status||'brouillon')" style="font-size:10px">{{ invStatusLabel(i.status) }}</span>
                 </div>
               </div>
             </div>
@@ -1218,7 +1219,7 @@
           </div>
           <div v-else class="t-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Client</th><th>Total TTC</th><th>Statut</th><th></th></tr></thead><tbody>
             <tr v-for="i in invoices" :key="i.id"><td><b>{{ i.reference }}</b></td><td><span class="pill st-nouveau">{{ i.type }}</span></td>
-              <td>{{ i.client_name }}</td><td><b>{{ eur(i.total_ttc) }}</b></td><td><span class="pill" :class="'st-'+(i.status||'nouveau')">{{ i.status }}</span></td>
+              <td>{{ i.client_name }}</td><td><b>{{ eurExact(i.total_ttc) }}</b></td><td><span class="pill" :class="'st-'+(i.status||'brouillon')">{{ invStatusLabel(i.status) }}</span></td>
               <td style="text-align:right">
                 <button v-if="i.type==='devis' && !i.converted_invoice_id" class="btn ghost sm" @click="convertInvoice(i)" title="Créer la facture à partir de ce devis"><i data-lucide="file-check-2"></i>Facturer</button>
                 <span v-else-if="i.converted_invoice_id" class="muted small">facturé ✓</span>
@@ -1399,14 +1400,14 @@
             <div class="plan pop">
               <div class="tag">Le plus choisi</div>
               <h3>Pro</h3><div class="muted small">Pour répondre régulièrement</div>
-              <div class="price">129€<small>/mois</small></div>
+              <div class="price">129,99€<small>/mois</small></div>
               <ul><li>30 analyses IA / mois (puis 5 €/analyse)</li><li>Savoir-faire & rédaction IA sourcée</li><li>Projets à venir & partenaires vérifiés</li><li>Formulaires officiels (CERFA, DUME)</li><li>Espace documents 10 Go</li></ul>
               <div class="cur" v-if="plan.plan==='pro'">Votre plan actuel</div>
               <button v-else class="btn primary block" @click="checkout('pro')">Passer au Pro</button>
             </div>
             <div class="plan">
               <h3>Business</h3><div class="muted small">Pour les équipes & ETI</div>
-              <div class="price">199€<small>/mois</small></div>
+              <div class="price">199,99€<small>/mois</small></div>
               <ul><li>100 analyses IA / mois (puis 5 €/analyse)</li><li>Multi-utilisateurs</li><li>Recherche multi-domaines & multi-pays</li><li>Accès API & support prioritaire</li><li>Espace documents 100 Go</li></ul>
               <div class="cur" v-if="plan.plan==='business'">Votre plan actuel</div>
               <button v-else class="btn primary block" @click="checkout('business')">Passer au Business</button>
@@ -1634,13 +1635,14 @@
           <div class="frow"><div class="field"><label>Type</label><select v-model="modal.d.type"><option value="devis">Devis</option><option value="facture">Facture</option></select></div>
             <div class="field"><label>Client</label><input v-model="modal.d.client_name"></div></div>
           <div class="field"><label>Adresse client</label><input v-model="modal.d.client_address"></div>
+          <div class="field"><label>AO lié (optionnel)</label><select v-model.number="modal.d.project_id"><option :value="null">— aucun —</option><option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option></select></div>
           <div class="sectitle">Lignes</div>
           <div v-for="(it,idx) in modal.d.items" :key="idx" class="frow t3" style="align-items:end">
             <div class="field"><label>Description</label><input v-model="it.description"></div>
             <div class="field"><label>Qté</label><input type="number" v-model.number="it.qty"></div>
             <div class="field"><label>PU HT</label><input type="number" v-model.number="it.unit_price"></div></div>
           <button class="btn ghost sm" @click="modal.d.items.push({description:'',qty:1,unit_price:0})">+ Ligne</button>
-          <div class="field" style="margin-top:10px"><label>TVA (%)</label><input type="number" v-model.number="modal.d.tva_rate"></div>
+          <div class="field" style="margin-top:10px"><label>TVA (%)</label><input type="number" min="0" max="100" v-model.number="modal.d.tva_rate"><div class="muted small">0 % si vous êtes en franchise de TVA (art. 293 B CGI).</div></div>
         </template>
       </div>
       <div class="modal-f"><button class="btn ghost" @click="modal=null">Annuler</button>

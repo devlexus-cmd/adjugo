@@ -121,10 +121,21 @@ def _attachment_headers(name: str) -> dict:
 # dans l'avis publié), de quoi comprendre et préparer sa part — SANS la stratégie interne
 # du mandataire (score, faiblesses) NI le montant estimé (= cible de prix : un co-traitant
 # pourrait s'en servir pour caler son lot ; il chiffre sa part sur sa propre base).
-_SAFE_ANALYSIS_KEYS = {
-    "objet", "acheteur", "lieu", "duree", "delais", "lots", "allotissement",
-    "pieces_requises", "criteres_attribution", "criteres",
-    "type_marche", "procedure", "date_limite",
+#
+# IMPORTANT : on MAPPE les clés RÉELLES de l'analyse (intitule_marche, lieu_execution,
+# delai_execution…) vers les clés attendues par la vue co-traitant (invite.html : objet, lieu,
+# duree…). Sans ce mapping, l'objet/le lieu/la durée n'apparaissaient JAMAIS (clés muettes) et
+# le partenaire devait redemander ces infos par email — l'inverse de l'espace autonome promis.
+_SAFE_KEY_MAP = {
+    "intitule_marche": "objet", "objet": "objet",
+    "acheteur": "acheteur",
+    "lieu_execution": "lieu", "lieu": "lieu",
+    "delai_execution": "duree", "duree": "duree", "delais": "delais",
+    "type_marche": "type_marche",
+    "nature_marche": "procedure", "procedure": "procedure",
+    "allotissement": "allotissement",
+    "criteres_attribution": "criteres_attribution",
+    "date_limite": "date_limite",
 }
 
 
@@ -132,11 +143,16 @@ _SAFE_ANALYSIS_KEYS = {
 def _safe_analysis(ai_analysis) -> dict:
     if not isinstance(ai_analysis, dict):
         return {}
-    out = {}
     details = ai_analysis.get("details") if isinstance(ai_analysis.get("details"), dict) else ai_analysis
-    for k in _SAFE_ANALYSIS_KEYS:
-        if isinstance(details, dict) and details.get(k) not in (None, "", [], {}):
-            out[k] = details[k]
+    if not isinstance(details, dict):
+        return {}
+    out = {}
+    for real_key, front_key in _SAFE_KEY_MAP.items():
+        if front_key in out:                       # 1ère clé non vide gagne (clé réelle avant alias)
+            continue
+        v = details.get(real_key)
+        if v not in (None, "", [], {}):
+            out[front_key] = v
     return out
 
 

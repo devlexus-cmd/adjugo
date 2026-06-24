@@ -54,9 +54,10 @@ def _out(s: Signal) -> dict:
 def _persist(projets, default_coll, source_label, current_user, db, domaines=None) -> list:
     """Score, déduplique (vs signaux existants) et enregistre les projets détectés."""
     criteria = _criteria_dict(current_user.id, db)
+    # On inclut les signaux ARCHIVÉS (supprimés) dans la dé-duplication : sinon un signal qu'on
+    # vient de supprimer était re-détecté et recréé à l'identique au scan suivant (boucle sans fin).
     existing = {((s.intitule or "").lower()[:80], (s.collectivite or "").lower())
-                for s in db.query(Signal).filter(Signal.user_id == current_user.id,
-                                                  Signal.archived == False).all()}  # noqa: E712
+                for s in db.query(Signal).filter(Signal.user_id == current_user.id).all()}
     created = []
     for p in (projets or []):
         intitule = (p.get("intitule") or "").strip()
@@ -104,6 +105,13 @@ def _analyze_text(text: str, source_name: str, current_user: User, db: Session, 
     # Ancrage anti-hallucination : ici on a le TEXTE COMPLET (pas un titre nu), donc
     # budget/échéance peuvent être réels — on vérifie quand même qu'ils s'y appuient.
     projets = [_anchor(p, text, title_only=False) for p in res.get("projets", []) if isinstance(p, dict)]
+    if not projets:
+        # IA OK mais AUCUN projet détecté → on ne débite pas une analyse pour « 0 résultat ». On
+        # rembourse sur les projets DÉTECTÉS (pas persistés) : un ré-import dont tout est ensuite
+        # dédupliqué a bien ré-extrait de vrais projets et reste, lui, débité.
+        refund_analysis(current_user, db)
+        return {"collectivite": res.get("collectivite", ""), "count": 0, "signals": [],
+                "message": "Aucun projet d'investissement détecté — votre crédit n'a pas été décompté."}
     signals = _persist(projets, res.get("collectivite", ""), source_name, current_user, db, domaines=domaines)
     return {"collectivite": res.get("collectivite", ""), "count": len(signals), "signals": signals}
 

@@ -287,7 +287,7 @@ class Invoice(Base):
     # Ex: [{"description": "Lot 1 gros œuvre", "qty": 1, "unit_price": 38400}]
 
     subtotal_ht = Column(Float, default=0)
-    tva_rate = Column(Float, default=20.0)
+    tva_rate = Column(Float, default=0.0)   # franchise de TVA par défaut (cible PME/EI, art. 293 B CGI)
     tva_amount = Column(Float, default=0)
     total_ttc = Column(Float, default=0)
 

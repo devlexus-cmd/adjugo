@@ -47,11 +47,15 @@ def _period() -> str:
 
 
 def _sync_period(user) -> None:
-    """Réinitialise le compteur si on a changé de mois."""
+    """Réinitialise les compteurs MENSUELS si on a changé de mois."""
     cur = _period()
     if getattr(user, "analyses_period", "") != cur:
         user.analyses_period = cur
         user.analyses_used_this_month = 0
+        # overage_count est « ce mois » (affiché « à facturer ce mois ») : sans cette remise à
+        # zéro il cumulait depuis l'inscription → un montant faux et toujours plus gros.
+        if hasattr(user, "overage_count"):
+            user.overage_count = 0
 
 
 OVERAGE_PRICE = 5  # € HT par analyse hors quota

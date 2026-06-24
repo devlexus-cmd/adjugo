@@ -21,6 +21,21 @@ def _amount(s):
         return None
     if isinstance(s, (int, float)):
         return float(s)
+    t = str(s)
+    # Forme ABRÉGÉE avec devise (« 2 M€ », « 1,5 M EUR HT », « 800 k€ ») : sans ça « 1,5 M€ »
+    # était lu « 15 » → marché faussement « hors fourchette ». On EXIGE le symbole monétaire
+    # après le multiplicateur pour ne JAMAIS confondre avec « 500 m² » ou « 5 mois ».
+    mm = re.search(r"(\d+(?:[.,]\d+)?)\s*(milliards?|millions?|md|m|k)\s*(?:€|eur)", t, re.I)
+    if mm:
+        val = float(mm.group(1).replace(",", "."))
+        suf = mm.group(2).lower()
+        if suf in ("md", "milliard", "milliards"):
+            mult = 1_000_000_000
+        elif suf in ("m", "million", "millions"):
+            mult = 1_000_000
+        else:
+            mult = 1_000
+        return int(val * mult)
     best = None
     for n in re.findall(r"\d[\d  .]*\d|\d", str(s)):
         v = n.replace(" ", "").replace(" ", "").replace(".", "")
@@ -33,15 +48,18 @@ def _amount(s):
 
 
 def _dept(s):
-    """Département depuis « Quimper (29) » ou un code postal. DOM-TOM (97x/98x) sur 3 chiffres
-    pour ne pas confondre Guadeloupe (971) et Réunion (974)."""
+    """Département depuis « Quimper (29) », « Ajaccio (2A) » ou un code postal. DOM-TOM (97x/98x)
+    sur 3 chiffres (Guadeloupe 971 ≠ Réunion 974) ; Corse (CP 20xxx) mappée 2A (20000-20199,
+    Corse-du-Sud) / 2B (20200-20999, Haute-Corse) — sinon toute la Corse passait « hors zone »."""
     t = str(s or "")
-    m = re.search(r"\((\d{2,3})\)", t)
+    m = re.search(r"\((\d{2,3}|2[ABab])\)", t)
     if m:
-        return m.group(1)
+        return m.group(1).upper()
     m = re.search(r"\b(\d{5})\b", t)
     if m:
         cp = m.group(1)
+        if cp[:2] == "20":
+            return "2A" if cp < "20200" else "2B"
         return cp[:3] if cp[:2] in ("97", "98") else cp[:2]
     return ""
 
@@ -117,9 +135,27 @@ def score_dce(details: dict, company: dict = None, criteria: dict = None) -> dic
                         "Recoupement faible avec votre activité — à vérifier"))
 
     # 2) Zone géographique (20)
-    def _dep(x):                       # DOM-TOM (97x/98x) sur 3 chiffres, métropole sur 2
-        x = str(x).strip()
+    def _dep(x):                       # normalise un dépt saisi (métropole 2, DOM-TOM 3, Corse 2A/2B/20)
+        x = str(x).strip().upper()
+        if x[:2] in ("2A", "2B"):
+            return x[:2]
+        if x[:2] == "20":              # saisie numérique Corse, ambiguë (2A ou 2B)
+            return "20"
         return x[:3] if x[:2] in ("97", "98") else x[:2]
+
+    def _in_zone(ld, deps):            # lieu dans la zone ? tolérant Corse/DOM-TOM
+        ld = str(ld).strip().upper()
+        for d in deps:
+            d = str(d).strip().upper()
+            if ld == d:
+                return True
+            # Corse : « 20 » (ambigu) tolère 2A/2B et inversement ; mais 2A ≠ 2B.
+            if ld in ("20", "2A", "2B") and d in ("20", "2A", "2B") and "20" in (ld, d):
+                return True
+            # DOM-TOM : un dépt saisi sur 2 chiffres (97/98) couvre tout son préfixe.
+            if d in ("97", "98") and ld[:2] == d:
+                return True
+        return False
     raw = criteria.get("departements") or []
     deps = [_dep(d) for d in raw if str(d).strip()] if isinstance(raw, list) else [_dep(d) for d in re.split(r"[,;\s]+", str(raw)) if d.strip()]
     explicit = bool(deps)              # l'utilisateur a-t-il VRAIMENT défini une zone ?
@@ -128,7 +164,7 @@ def score_dce(details: dict, company: dict = None, criteria: dict = None) -> dic
     ld = _dept(details.get("lieu_execution", ""))
     if not deps:
         bd.append(_crit("zone", "Zone géographique", 12, 20, "inconnu", "Zone d'intervention non renseignée"))
-    elif ld and ld in deps:
+    elif ld and _in_zone(ld, deps):
         bd.append(_crit("zone", "Zone géographique", 20, 20, "ok", f"Lieu d'exécution dans votre zone ({ld})"))
     elif ld and explicit:
         bd.append(_crit("zone", "Zone géographique", 5, 20, "partiel", f"Hors zone d'intervention (dépt {ld})"))
@@ -191,10 +227,32 @@ def score_dce(details: dict, company: dict = None, criteria: dict = None) -> dic
         threshold = int(criteria.get("go_threshold") or 60)
     except (ValueError, TypeError):
         threshold = 60
+    try:
+        nogo = int(criteria.get("nogo_threshold") or 40)
+    except (ValueError, TypeError):
+        nogo = 40
+    if nogo >= threshold:                       # nogo doit rester strictement sous le seuil « go »
+        nogo = max(0, threshold - 1)
+    # Garde-fou « extraction vide » : si l'IA n'a RIEN extrait d'exploitable (fichier qui n'est pas
+    # un vrai DCE, scan illisible…), on PLAFONNE le score dans la bande « à étudier » — jamais
+    # « go / Bon potentiel » sur du vide. Le plafond porte sur le SCORE → le routeur, qui recalcule
+    # le verdict à partir du score, le respecte aussi (sinon il écrasait ce garde-fou).
+    extracted = any([
+        details.get("intitule_marche"), details.get("type_marche"),
+        details.get("lieu_execution"), details.get("budget_estime"),
+        details.get("ca_minimum_requis"), details.get("date_limite"),
+        quals_req, crit_att,
+    ])
+    if not extracted:
+        total = min(total, 50)
+    # Bande à DEUX SEUILS, identique au routeur (go_threshold / nogo_threshold) : le verdict
+    # affiché (pastille) ne contredit plus le détail du score (avant, score_dce et le routeur
+    # utilisaient deux formules différentes → « À étudier » posé sur un détail qui valait rejet).
     if total >= threshold:
         go = "go"
-    elif total >= max(35, threshold - 22):
+    elif total >= nogo:
         go = "a_etudier"
     else:
         go = "no_go"
-    return {"score": total, "go_decision": go, "breakdown": bd, "threshold": threshold}
+    return {"score": total, "go_decision": go, "breakdown": bd, "threshold": threshold,
+            "nogo_threshold": nogo, "extracted": bool(extracted)}

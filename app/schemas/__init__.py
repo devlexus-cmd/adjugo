@@ -187,7 +187,7 @@ class InvoiceCreate(BaseModel):
     client_address: Optional[str] = None
     client_siret: Optional[str] = None
     items: List[dict] = []
-    tva_rate: Optional[float] = Field(20.0, ge=0, le=100)
+    tva_rate: Optional[float] = Field(0.0, ge=0, le=100)  # cible PME/EI en franchise (293 B CGI)
     due_date: Optional[date] = None
     project_id: Optional[int] = None
     notes: Optional[str] = None

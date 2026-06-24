@@ -25,18 +25,21 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(func.lower(User.email) == data.email).first():
         raise HTTPException(status_code=400, detail="Cet email est déjà utilisé")
 
+    fn = (data.full_name or "").strip()
     user = User(
         email=data.email,
         hashed_password=hash_password(data.password),
-        full_name=data.full_name,
+        full_name=fn,
         org_role="admin",
     )
     db.add(user)
     db.flush()
 
-    # Créer l'organisation (espace de travail) dont l'utilisateur est propriétaire
+    # Créer l'organisation (espace de travail) dont l'utilisateur est propriétaire. Repli si le
+    # nom complet est vide (sinon on créait une organisation nommée « Équipe » + espace).
     from app.models import Organization
-    org = Organization(name=data.company_name or f"Équipe {data.full_name}", owner_id=user.id)
+    org_name = data.company_name or (f"Équipe {fn}" if fn else "Mon organisation")
+    org = Organization(name=org_name, owner_id=user.id)
     db.add(org)
     db.flush()
     user.org_id = org.id
