@@ -119,12 +119,16 @@ def run_one_saved_search(s: SavedSearch, db: Session, mark: bool = True) -> list
 def run_tender_alerts(db: Session) -> dict:
     """Cron veille : rejoue toutes les recherches actives et envoie un digest par user."""
     searches = db.query(SavedSearch).filter(SavedSearch.active.is_(True)).all()
+    # On ne marque « déjà vu » QUE pour les users joignables par email : sinon les marchés d'un
+    # user sans email étaient marqués vus puis jamais notifiés (perdus quand il ajoute son email).
+    emailed = {uid for (uid,) in db.query(User.id).filter(User.email.isnot(None)).all()}
     by_user = defaultdict(list)   # user_id -> [(search_name, [tenders])]
     for s in searches:
         if s.frequency == "manuelle":
             continue
-        fresh = run_one_saved_search(s, db, mark=True)
-        if fresh:
+        has_email = s.user_id in emailed
+        fresh = run_one_saved_search(s, db, mark=has_email)
+        if fresh and has_email:
             by_user[s.user_id].append((s.name, fresh))
 
     notified, total = 0, 0
@@ -178,8 +182,14 @@ def run_amont_alerts(db: Session) -> dict:
                               for d in re.split(r"[,;]", str(criteria_dict(u.id, db).get("specialites", "") or ""))
                               if d.strip()})
     from app.services.llm import tenant_scope
-    with tenant_scope(opted[0].id):   # un scope (auditabilité/quota) pour l'appel mutualisé
-        projets = detect_from_deliberations(records, domaines=cohort_domaines or None)
+    try:
+        with tenant_scope(opted[0].id):   # un scope (auditabilité/quota) pour l'appel mutualisé
+            projets = detect_from_deliberations(records, domaines=cohort_domaines or None)
+    except Exception as e:
+        # detect_from_deliberations propage désormais une panne IA → dégradation gracieuse du
+        # cron (pas de crash ni de spam) ; le batch n'a pas de quota à rembourser.
+        logger.warning("veille amont (cron) : détection IA indisponible : %s", e)
+        return {"scanned": len(records), "users_notified": 0, "new_signals": 0}
 
     notified, total = 0, 0
     for user in opted:

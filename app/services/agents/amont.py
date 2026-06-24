@@ -79,8 +79,11 @@ def detect_projets(text: str, lang_name: str = None, domaines=None) -> dict:
 
 DOCUMENT :
 {text[:18000]}"""
+    from app.services.llm import LLMUnavailable
     try:
         data = complete_json(SYSTEM, user, max_tokens=2800, temperature=0.1)
+    except LLMUnavailable:
+        raise   # panne IA → le routeur rembourse + 503 (pas un faux « rien détecté » facturé)
     except Exception:
         return {"collectivite": "", "projets": []}
     if not isinstance(data, dict):
@@ -125,8 +128,11 @@ Ne garde QUE les vrais projets d'investissement/travaux ; ignore le reste.{lang}
 
 INTITULÉS :
 {lines}"""
+    from app.services.llm import LLMUnavailable
     try:
         data = complete_json(BATCH_SYSTEM, user, max_tokens=3200, temperature=0.1)
+    except LLMUnavailable:
+        raise   # panne IA → remboursement côté routeur ; le cron l'attrape (dégradation gracieuse)
     except Exception:
         return []
     out = []
@@ -168,11 +174,13 @@ def _anchor(p: dict, source_text: str, title_only: bool) -> dict:
     porte jamais de façon fiable). La maturité/phase restent des ESTIMATIONS assumées."""
     src = (source_text or "")
     src_l = src.lower()
-    has_digits = bool(re.search(r"\d", src))
-    # Budget : doit s'appuyer sur un chiffre présent dans la source.
-    if p.get("budget") is not None and not has_digits:
+    # Budget = FAIT MONÉTAIRE : ne survit que si un vrai MONTANT figure dans la source (€/k€/
+    # M€/euros…). Un simple chiffre (millésime « 2024 », n° de délibération) ne suffisait pas
+    # → un budget HALLUCINÉ par l'IA passait pour un fait sourcé. Garde-fou monétaire strict.
+    has_money = bool(re.search(r"\d[\d\s.,]*\s*(?:€|k€|m€|md€|eur\b|euros?|millions?)", src_l))
+    if p.get("budget") is not None and not has_money:
         p["budget"] = None
-    if (p.get("budget_texte") or "") and not has_digits:
+    if (p.get("budget_texte") or "") and not has_money:
         p["budget_texte"] = ""
     # Financement : ne garder que si un terme de financement apparaît dans la source.
     if p.get("financement"):
@@ -180,9 +188,12 @@ def _anchor(p: dict, source_text: str, title_only: bool) -> dict:
                      "région", "departement", "état", "etat", "autofinancement", "europ", "prêt")
         if not any(t in src_l for t in fin_terms):
             p["financement"] = ""
-    # Échéance d'AO : devinée à partir d'un simple titre → on l'efface (mode scan).
+    # Mode « titre nu » (scan de délibérations) : un intitulé ne porte JAMAIS de façon fiable
+    # un montant ni une échéance d'AO → on les efface systématiquement (zéro budget deviné).
     if title_only:
         p["echeance_ao"] = ""
+        p["budget"] = None
+        p["budget_texte"] = ""
     return p
 
 
