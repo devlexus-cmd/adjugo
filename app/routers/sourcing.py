@@ -200,9 +200,14 @@ def search_tenders(request: Request, req: SearchRequest,
     return {
         "count": result["count"],
         "sources_queried": result["sources_queried"],
+        "sources_skipped": result.get("sources_skipped", []),
         "errors": [e.model_dump() for e in result["errors"]],
         "tenders": [t.model_dump(exclude={"raw"}) for t in result["tenders"]],
-        "has_more": result.get("has_more", False),   # calculé sur le brut (pas le post-filtre)
+        "has_more": result.get("has_more", False),
+        # combien d'AO ÉCARTÉS (clôturés / hors fourchette) → le front distingue « rien trouvé »
+        # de « des marchés existaient mais ont été filtrés » (message actionnable).
+        "closed_filtered": result.get("closed_filtered", 0),
+        "amount_filtered": result.get("amount_filtered", 0),
     }
 
 

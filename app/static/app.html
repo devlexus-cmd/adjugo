@@ -1014,7 +1014,7 @@
             </div>
           </div>
 
-          <div v-if="!amont.signals.length && !amont.uploading" class="empty card pad" style="margin-top:14px">
+          <div v-if="!amont.signals.length && !amont.uploading && !amont.scanning && !amont.pasting" class="empty card pad" style="margin-top:14px">
             <div class="eic"><i data-lucide="scan-eye"></i></div>
             <h4>Aucun signal pour le moment</h4><p>Importez une délibération pour détecter les projets d'investissement à venir, en amont de l'appel d'offres.</p>
           </div>
@@ -1105,6 +1105,7 @@
             <div class="muted small" style="margin-bottom:11px">Importez le dossier du marché : l'IA en extrait les exigences, bâtit un plan, rédige <b>en citant votre savoir-faire</b>, puis vérifie la conformité.</div>
             <button class="btn primary" @click="$refs.kbMem.click()" :disabled="kb.memoireLoading"><span v-if="kb.memoireLoading" class="spin"></span><i v-else data-lucide="sparkles"></i>Importer le dossier & rédiger</button>
             <input ref="kbMem" type="file" accept=".pdf,.zip,.docx,.txt" class="hidden" @change="kbMemoire">
+            <div v-if="kb.memoireLoading" class="muted small" style="margin-top:9px"><span class="spin"></span> Rédaction en cours — cela peut prendre quelques minutes, ne fermez pas la page.</div>
 
             <div v-if="kb.memoire" style="margin-top:14px">
               <div class="row wrap" style="gap:8px;margin-bottom:10px">
@@ -1135,7 +1136,8 @@
             <div class="muted small" style="margin-bottom:9px">Collez vos questions, une par ligne — Adjugo répond à partir de votre savoir-faire, en citant ses sources.</div>
             <textarea class="inp" v-model="kb.qText" placeholder="Quelle est votre démarche qualité ?&#10;Disposez-vous de certifications environnementales ?&#10;Citez 3 références similaires." style="width:100%;height:90px;padding:9px 12px"></textarea>
             <div class="row" style="margin-top:8px"><button class="btn primary" @click="kbQuestionnaire" :disabled="kb.qLoading"><span v-if="kb.qLoading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répondre</button>
-              <span v-if="kb.qResults" class="muted small" style="margin-left:10px">{{ kb.qResults.covered }}/{{ kb.qResults.count - (kb.qResults.errors||0) }} couvertes ({{ kb.qResults.coverage_rate }}%)<span v-if="kb.qResults.errors" style="color:var(--warn)"> · {{ kb.qResults.errors }} non générée(s)</span></span></div>
+              <span v-if="kb.qResults" class="muted small" style="margin-left:10px">{{ kb.qResults.covered }}/{{ kb.qResults.count - (kb.qResults.errors||0) }} couvertes ({{ kb.qResults.coverage_rate }}%)<span v-if="kb.qResults.errors" style="color:var(--warn)"> · {{ kb.qResults.errors }} non générée(s)</span></span>
+              <span v-if="kb.qLoading" class="muted small" style="margin-left:10px"><span class="spin"></span> Rédaction des réponses en cours — quelques minutes, ne fermez pas la page.</span></div>
             <div v-if="kb.qResults" style="margin-top:11px">
               <div v-for="(a,i) in kb.qResults.answers" :key="'q'+i" style="padding:10px 0;border-top:1px solid var(--hairline)">
                 <div class="row small" style="gap:6px;font-weight:600"><i :data-lucide="a.error?'alert-triangle':(a.covered?'circle-check':'circle-help')" :style="a.error?'color:var(--warn)':(a.covered?'color:var(--success)':'color:var(--subtle)')" style="width:14px;height:14px"></i><span>{{ a.question }}</span></div>
@@ -1260,8 +1262,8 @@
             <div class="frow t3"><div class="field"><label>Code postal</label><input v-model="company.postal_code"></div>
               <div class="field"><label>Ville</label><input v-model="company.city"></div>
               <div class="field"><label>Effectif</label><input type="number" v-model.number="company.effectif"></div></div>
-            <div class="frow"><div class="field"><label>Email</label><input v-model="company.email"></div>
-              <div class="field"><label>Téléphone</label><input v-model="company.phone"></div></div>
+            <div class="frow"><div class="field"><label>Email</label><input type="email" v-model="company.email"></div>
+              <div class="field"><label>Téléphone</label><input type="tel" v-model="company.phone"></div></div>
             <div class="sectitle">Chiffre d'affaires (3 derniers exercices)</div>
             <div class="frow t3"><div class="field"><label>CA N-1 (€)</label><input type="number" v-model.number="company.ca_n1"></div>
               <div class="field"><label>CA N-2 (€)</label><input type="number" v-model.number="company.ca_n2"></div>
@@ -1354,7 +1356,7 @@
             <h3>Inviter un collègue</h3>
             <div class="row wrap" style="gap:8px;margin-top:8px">
               <input class="inp" v-model="org.invite.full_name" placeholder="Nom" style="width:200px">
-              <input class="inp" v-model="org.invite.email" placeholder="Email" style="flex:1;min-width:200px">
+              <input type="email" class="inp" v-model="org.invite.email" placeholder="Email" style="flex:1;min-width:200px">
               <button class="btn primary" @click="orgInvite()"><i data-lucide="user-plus"></i>Inviter</button>
             </div>
             <div v-if="org.lastTemp" class="row wrap" style="margin-top:10px;gap:8px;padding:10px;background:var(--accent-weak);border-radius:8px">
@@ -1475,7 +1477,8 @@
             </div>
 
             <div v-if="copen[cs.project_id]" style="margin-top:12px;border-top:1px solid var(--hairline);padding-top:12px">
-              <div v-if="!cdetail[cs.project_id]" class="muted small"><span class="spin"></span> Chargement du compte-rendu…</div>
+              <div v-if="cerror[cs.project_id]" class="muted small" style="color:var(--danger-text)"><i data-lucide="circle-alert" style="width:13px;height:13px"></i> {{ cerror[cs.project_id] }} · <a @click.stop="retryConsortium(cs.project_id)" style="cursor:pointer;text-decoration:underline">Réessayer</a></div>
+              <div v-else-if="!cdetail[cs.project_id]" class="muted small"><span class="spin"></span> Chargement du compte-rendu…</div>
               <template v-else>
                 <div v-if="cdetail[cs.project_id].lots.length">
                   <div class="muted small" style="font-weight:600;margin-bottom:4px">Lots couverts</div>
@@ -1529,6 +1532,16 @@
           </div>
         </section>
 
+        <!-- Partagé avec moi — état chargement / erreur (sinon écran blanc pendant l'appel ou si le lien a expiré) -->
+        <section v-if="view==='sharedao' && !sharedAo.project">
+          <button class="btn ghost sm" @click="go('shared')" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Partagé avec moi</button>
+          <div v-if="sharedAo.error" class="empty card pad">
+            <div class="eic"><i data-lucide="lock"></i></div>
+            <h4>Dossier inaccessible</h4><p>{{ sharedAo.error }}</p>
+          </div>
+          <div v-else class="card pad" style="text-align:center"><span class="spin"></span> Chargement du dossier partagé…</div>
+        </section>
+
         <!-- Partagé avec moi — un AO : je contribue en tant que MON entreprise -->
         <section v-if="view==='sharedao' && sharedAo.project">
           <button class="btn ghost sm" @click="go('shared')" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Partagé avec moi</button>
@@ -1563,7 +1576,7 @@
             <div class="field"><label>Références (une par ligne)</label><textarea class="inp" v-model="sharedAo.contrib.refs" rows="3"></textarea></div>
             <div class="field"><label>Approche prix de votre lot</label><textarea class="inp" v-model="sharedAo.contrib.chiffrage_note" rows="2" placeholder="ex. forfait 18 000 € HT"></textarea></div>
             <div class="field"><label>Paragraphe de présentation</label><textarea class="inp" v-model="sharedAo.contrib.memoire_paragraph" rows="4" placeholder="Votre savoir-faire sur ce lot"></textarea></div>
-            <div class="field"><label>Contact</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.contact.nom" placeholder="Nom" style="flex:1;min-width:130px"><input class="inp" v-model="sharedAo.contrib.contact.email" placeholder="Email" style="flex:1;min-width:130px"><input class="inp" v-model="sharedAo.contrib.contact.telephone" placeholder="Téléphone" style="flex:1;min-width:130px"></div></div>
+            <div class="field"><label>Contact</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.contact.nom" placeholder="Nom" style="flex:1;min-width:130px"><input type="email" class="inp" v-model="sharedAo.contrib.contact.email" placeholder="Email" style="flex:1;min-width:130px"><input type="tel" class="inp" v-model="sharedAo.contrib.contact.telephone" placeholder="Téléphone" style="flex:1;min-width:130px"></div></div>
 
             <div class="field"><label>Mes pièces administratives (attestations, Kbis, formulaire DC2…)</label>
               <div v-for="pc in sharedAo.pieces" :key="pc.id" class="row" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
@@ -1620,14 +1633,14 @@
           <div class="field"><label>Qualifications</label><input v-model="modal.d.qualifications" placeholder="Qualifelec E2"></div>
           <div class="field"><label>Codes CPV</label><input v-model="modal.d.codes_cpv" placeholder="45310000"></div>
           <div class="frow t3"><div class="field"><label>CA N-1</label><input type="number" v-model.number="modal.d.ca_n1"></div><div class="field"><label>CA N-2</label><input type="number" v-model.number="modal.d.ca_n2"></div><div class="field"><label>Effectif</label><input type="number" v-model.number="modal.d.effectif"></div></div>
-          <div class="frow"><div class="field"><label>Ville</label><input v-model="modal.d.city"></div><div class="field"><label>Email</label><input v-model="modal.d.email"></div></div>
+          <div class="frow"><div class="field"><label>Ville</label><input v-model="modal.d.city"></div><div class="field"><label>Email</label><input type="email" v-model="modal.d.email"></div></div>
         </template>
         <!-- Contact -->
         <template v-if="modal.type==='contact'">
           <div class="frow"><div class="field"><label>Nom *</label><input v-model="modal.d.name"></div><div class="field"><label>Rôle</label><input v-model="modal.d.role"></div></div>
           <div class="frow"><div class="field"><label>Organisation</label><input v-model="modal.d.organization"></div>
             <div class="field"><label>Type</label><select v-model="modal.d.contact_type"><option value="">—</option><option value="maitre_ouvrage">Client (acheteur)</option><option value="partenaire">Partenaire</option><option value="sous_traitant">Sous-traitant</option><option value="fournisseur">Fournisseur</option></select></div></div>
-          <div class="frow"><div class="field"><label>Email</label><input v-model="modal.d.email"></div><div class="field"><label>Téléphone</label><input v-model="modal.d.phone"></div></div>
+          <div class="frow"><div class="field"><label>Email</label><input type="email" v-model="modal.d.email"></div><div class="field"><label>Téléphone</label><input type="tel" v-model="modal.d.phone"></div></div>
           <div class="field"><label>Notes</label><textarea v-model="modal.d.notes"></textarea></div>
         </template>
         <!-- Invoice -->

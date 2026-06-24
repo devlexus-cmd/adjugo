@@ -73,7 +73,7 @@ const __adjApp = createApp({
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], expiring: [],
       notifs: [], notifsOpen: false, notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
-      cdetail: {}, copen: {}, cexport: {}, cpreview: {},
+      cdetail: {}, copen: {}, cexport: {}, cpreview: {}, cerror: {},
       shared: [],
       sharedAo: { token: "", project: null, mandataire: "", docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true,
                   contrib: { company_name: "", lot: "", quals: "", refs: "", chiffrage_note: "", memoire_paragraph: "", contact: { nom: "", email: "", telephone: "" } } },
@@ -457,7 +457,7 @@ const __adjApp = createApp({
       if (m) this.discover.dept = m[1];
     },
     async runDiscover() {
-      this.discover.loading = true; this.discover.results = [];
+      this.discover.loading = true; this.discover.results = []; this.discover.total = 0;   // sinon l'ancien compteur « N trouvées » survit à une recherche en échec
       try {
         const qs = "?activity=" + encodeURIComponent(this.discover.trade) + "&departement=" + encodeURIComponent(this.discover.dept) + (this.discover.q ? "&query=" + encodeURIComponent(this.discover.q) : "");
         const r = await this.api("GET", "/api/registre/discover" + qs);
@@ -575,6 +575,8 @@ const __adjApp = createApp({
     async saveCriteria() {
       const go = Number(this.criteria.go_threshold), ng = Number(this.criteria.nogo_threshold);
       if (go && ng && go <= ng) { this.notify("Le seuil « bon potentiel » doit être supérieur au seuil « peu adapté »", "err"); return; }
+      const bmin = Number(this.criteria.budget_min), bmax = Number(this.criteria.budget_max);
+      if (bmin && bmax && bmin > bmax) { this.notify("Le budget minimum doit être inférieur au budget maximum", "err"); return; }
       this.busy = true;
       // Un champ numérique vidé arrive en "" → on l'envoie en null (le backend garde le défaut au lieu de refuser).
       const payload = {};
@@ -729,8 +731,15 @@ const __adjApp = createApp({
     async toggleConsortium(pid) {
       this.copen[pid] = !this.copen[pid];
       if (this.copen[pid] && !this.cdetail[pid]) {
-        try { this.cdetail[pid] = await this.api("GET", "/api/projects/" + pid + "/consortium"); } catch (e) {}
+        this.cerror[pid] = "";
+        try { this.cdetail[pid] = await this.api("GET", "/api/projects/" + pid + "/consortium"); }
+        catch (e) { this.cerror[pid] = e.message || "Échec du chargement du compte-rendu"; }   // sinon spinner infini
       }
+    },
+    async retryConsortium(pid) {
+      this.cerror[pid] = ""; this.cdetail[pid] = null;
+      try { this.cdetail[pid] = await this.api("GET", "/api/projects/" + pid + "/consortium"); }
+      catch (e) { this.cerror[pid] = e.message || "Échec du chargement du compte-rendu"; }
     },
     async exportConsortium(pid) {
       this.cexport[pid] = true;
@@ -762,14 +771,15 @@ const __adjApp = createApp({
     async loadShared() { try { this.shared = await this.api("GET", "/api/shared") || []; } catch (e) { this.shared = []; } },
     async openShared(item) {
       const t = item.token;
-      this.sharedAo = { token: t, project: null, mandataire: item.mandataire, docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true,
+      this.sharedAo = { token: t, project: null, mandataire: item.mandataire, docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true, loading: true, error: "",
                         contrib: { company_name: "", lot: "", quals: "", refs: "", chiffrage_note: "", memoire_paragraph: "", contact: { nom: "", email: "", telephone: "" } } };
       this.view = "sharedao";
       try {
         const v = await this.api("GET", "/api/invite/" + t);
         this.sharedAo.project = v.project; this.sharedAo.mandataire = v.mandataire; this.sharedAo.docs = v.documents || []; this.sharedAo.canContribute = v.can_contribute;
         if (v.can_contribute) await this.sharedReload(t);
-      } catch (e) { this.notify("Ce dossier n'est plus accessible", "err"); }
+      } catch (e) { this.sharedAo.error = "Ce dossier n'est plus accessible (lien expiré ou révoqué)."; this.notify("Ce dossier n'est plus accessible", "err"); }
+      finally { this.sharedAo.loading = false; }
     },
     async sharedReload(t) {
       try {
@@ -1291,7 +1301,10 @@ const __adjApp = createApp({
         // Une page entièrement dupliquée = on est au bout côté affichage → on masque « charger plus »
         // (le serveur ignore ce qui est déjà à l'écran et pouvait renvoyer has_more à tort).
         this.src.hasMore = appendedNothing ? false : !!r.has_more;
-        if (!append && !this.src.tenders.length) this.notify("Aucun appel d'offres trouvé pour ces critères", "err");
+        if (!append && !this.src.tenders.length) {
+          const cf = (r.closed_filtered || 0) + (r.amount_filtered || 0);
+          this.notify(cf ? cf + " marché(s) trouvé(s) mais clôturé(s) ou hors fourchette — élargissez la période ou le budget" : "Aucun appel d'offres trouvé pour ces critères", "err");
+        }
       } catch (e) { this.notify(e.message, "err"); } finally { this.src.searching = false; this.src.loadingMore = false; }
     },
     srcLoadMore() { return this.srcSearch(true); },
