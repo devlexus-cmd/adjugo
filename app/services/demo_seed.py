@@ -193,7 +193,7 @@ def ensure_demo(db, force: bool = False) -> User:
 
     if not user:
         user = User(email=DEMO_EMAIL, hashed_password=hash_password(DEMO_PASSWORD),
-                    full_name="Compte Démo", org_role="admin")
+                    full_name="Compte Démo", org_role="admin", email_verified=True)
         db.add(user); db.flush()
         org = Organization(name="Bâtiment de l'Ouest (démo)", owner_id=user.id)
         db.add(org); db.flush()

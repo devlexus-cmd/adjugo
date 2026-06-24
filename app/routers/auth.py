@@ -7,13 +7,34 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import func
 
+from datetime import timedelta
+
 from app.core.database import get_db
-from app.core.security import hash_password, verify_password, create_access_token, get_current_user
+from app.core.security import hash_password, verify_password, create_access_token, get_current_user, decode_token
+from app.core.config import get_settings
 from app.core.ratelimit import limiter
 from app.models import User, Company, MatchingCriteria
 from app.schemas import UserCreate, UserLogin, Token, UserOut
+from app.services.email import send_email
+from app.services.email_templates import verify_email_html
 
 router = APIRouter(prefix="/api/auth", tags=["Authentification"])
+
+
+def _send_verification(user: User) -> None:
+    """Génère un lien signé (3 jours) et envoie l'email de confirmation. Silencieux si l'email
+    est désactivé/échoue → ne bloque JAMAIS l'inscription."""
+    try:
+        token = create_access_token(data={"sub": str(user.id), "purpose": "verify_email"},
+                                    expires_delta=timedelta(days=3))
+        base = (get_settings().APP_BASE_URL or "https://adjugo.pro").rstrip("/")
+        link = f"{base}/app?verify={token}"
+        send_email(user.email, "Confirmez votre adresse email — Adjugo",
+                   "Bienvenue sur Adjugo !\n\nConfirmez votre adresse email (lien valable 3 jours) :\n"
+                   f"{link}\n\nSi vous n'êtes pas à l'origine de cette inscription, ignorez ce message.\n\n— Adjugo",
+                   html=verify_email_html(link, user.full_name or ""))
+    except Exception:
+        pass
 
 
 @router.post("/register", response_model=Token, status_code=201)
@@ -56,8 +77,50 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
+    # Email de confirmation (n'empêche pas l'accès : on n'enferme personne si l'email tarde ;
+    # le front affiche une bannière « vérifiez votre adresse » jusqu'à confirmation).
+    _send_verification(user)
+
     token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})
     return {"access_token": token, "token_type": "bearer"}
+
+
+class VerifyIn(BaseModel):
+    token: str
+
+
+@router.post("/verify-email")
+@limiter.limit("30/hour")
+def verify_email(request: Request, data: VerifyIn, db: Session = Depends(get_db)):
+    """Confirme l'adresse à partir du lien signé reçu par email."""
+    try:
+        payload = decode_token(data.token)
+    except Exception:
+        raise HTTPException(400, "Lien de vérification invalide ou expiré.")
+    if payload.get("purpose") != "verify_email":
+        raise HTTPException(400, "Lien de vérification invalide.")
+    try:
+        uid = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Lien de vérification invalide.")
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+        raise HTTPException(404, "Compte introuvable.")
+    if not user.email_verified:
+        user.email_verified = True
+        db.commit()
+    return {"ok": True, "message": "Adresse email confirmée. Merci !"}
+
+
+@router.post("/resend-verification")
+@limiter.limit("3/hour")
+def resend_verification(request: Request, current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    """Renvoie l'email de confirmation au compte connecté."""
+    if current_user.email_verified:
+        return {"ok": True, "message": "Votre adresse est déjà confirmée."}
+    _send_verification(current_user)
+    return {"ok": True, "message": "Email de confirmation renvoyé."}
 
 
 @router.post("/login", response_model=Token)

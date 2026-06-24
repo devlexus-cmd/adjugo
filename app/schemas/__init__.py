@@ -47,6 +47,7 @@ class UserOut(BaseModel):
     analyses_used_this_month: int
     is_active: bool
     is_admin: bool = False
+    email_verified: bool = True   # exposé pour la bannière « confirmez votre adresse »
     created_at: datetime
 
     class Config:

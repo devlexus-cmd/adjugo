@@ -137,6 +137,13 @@
       </header>
       <div class="content">
 
+        <!-- Bannière de confirmation d'email (non bloquante : on n'enferme personne) -->
+        <div v-if="user && user.id && user.email_verified===false" class="row" style="align-items:center;gap:10px;padding:11px 15px;margin-bottom:14px;border:1px solid var(--warning);background:var(--warning-weak);border-radius:11px;color:var(--warning-text)">
+          <i data-lucide="mail-warning" style="width:18px;height:18px;flex:none"></i>
+          <span class="small" style="flex:1">Confirmez votre adresse <b>{{ user.email }}</b> pour sécuriser votre compte — un lien vous a été envoyé par email.</span>
+          <button class="btn ghost sm" @click="resendVerification">Renvoyer l'email</button>
+        </div>
+
         <!-- ░░ DASHBOARD ░░ -->
         <section v-if="view==='dashboard'">
           <!-- Premiers pas : onboarding guidé (disparaît une fois les 3 jalons faits) -->

@@ -214,6 +214,14 @@ const __adjApp = createApp({
     // déjà ouverte. Sinon, un utilisateur connecté qui clique le lic reçu par email atterrissait
     // dans l'app sans jamais voir le formulaire « Nouveau mot de passe » (le clic semblait inerte).
     if (_rst) { this.auth.mode = "reset"; this.auth.resetToken = _rst; this.token = ""; }
+    // Confirmation d'email : le lien reçu par mail ouvre /app?verify=… → on confirme et on retire le param.
+    const _vrf = new URLSearchParams(location.search).get("verify");
+    if (_vrf) {
+      history.replaceState({}, "", this.token ? "/app" : "/");
+      this.api("POST", "/api/auth/verify-email", { token: _vrf })
+        .then(r => { this.notify(r.message || "Adresse confirmée ✓"); if (this.token) this.api("GET", "/api/auth/me").then(u => this.user = u).catch(() => {}); })
+        .catch(e => this.notify(e.message || "Lien de vérification invalide ou expiré", "err"));
+    }
     this._loadAnalytics();
     if (this.token) this.boot();
   },
@@ -317,6 +325,10 @@ const __adjApp = createApp({
         const r = await this.api("POST", "/api/auth/forgot-password", { email: this.auth.email });
         this.auth.sent = true; this.notify(r.message || "Email envoyé si le compte existe");
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
+    },
+    async resendVerification() {
+      try { const r = await this.api("POST", "/api/auth/resend-verification"); this.notify(r.message || "Email de confirmation renvoyé"); }
+      catch (e) { this.notify(e.message, "err"); }
     },
     async resetPassword() {
       if ((this.auth.password || "").length < 8) { this.notify("Mot de passe : 8 caractères minimum", "err"); return; }
