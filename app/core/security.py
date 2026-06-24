@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -25,7 +26,7 @@ def verify_password(plain: str, hashed: str) -> bool:
     try:
         salt, stored_hash = hashed.split("$")
         check = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), 100000).hex()
-        return check == stored_hash
+        return hmac.compare_digest(check, stored_hash)   # comparaison à temps constant
     except Exception:
         return False
 
@@ -53,11 +54,16 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(User).filter(User.id == int(user_id)).first()
     if user is None:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
-    # Révocation de session : si le token porte une version (tv), elle doit correspondre
-    # à celle de l'utilisateur. Un retrait/transfert incrémente token_version → l'ancien
-    # token est rejeté. Les tokens hérités (sans tv) restent acceptés (rétro-compat).
-    tv = payload.get("tv")
-    if tv is not None and int(tv) != int(getattr(user, "token_version", 0) or 0):
+    # Compte désactivé : un token déjà émis ne doit plus donner accès (le login le bloque déjà,
+    # mais les sessions en cours restaient valides).
+    if not getattr(user, "is_active", True):
+        raise HTTPException(status_code=403, detail="Compte désactivé",
+                            headers={"WWW-Authenticate": "Bearer"})
+    # Révocation de session : la version du token (tv, défaut 0) DOIT correspondre à celle de
+    # l'utilisateur. Un token SANS tv vaut 0 → rejeté dès que token_version a été incrémenté
+    # (retrait/transfert/changement de mot de passe) : plus de contournement par token « legacy ».
+    # Tous les tokens émis portent tv (register/login/demo), donc aucune régression.
+    if int(payload.get("tv") or 0) != int(getattr(user, "token_version", 0) or 0):
         raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
                             headers={"WWW-Authenticate": "Bearer"})
     return user

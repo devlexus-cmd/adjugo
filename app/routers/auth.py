@@ -58,7 +58,12 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
 def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
     """Connexion — retourne un JWT."""
     user = db.query(User).filter(User.email == data.email).first()
-    if not user or not verify_password(data.password, user.hashed_password):
+    # Anti-énumération par timing : on exécute TOUJOURS un PBKDF2 (sur un faux hash si l'email
+    # est inconnu) → la réponse « identifiants incorrects » prend le même temps, qu'un compte
+    # existe ou non. Sinon le court-circuit révélait par chronométrie quels emails ont un compte.
+    _DUMMY = "0" * 32 + "$" + "0" * 64
+    pwd_ok = verify_password(data.password, user.hashed_password if user else _DUMMY)
+    if not user or not pwd_ok:
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Compte désactivé")
@@ -71,6 +76,11 @@ def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
 @limiter.limit("30/hour")
 def demo_login(request: Request, db: Session = Depends(get_db)):
     """Connexion au compte de DÉMONSTRATION (sans mot de passe) — données pré-remplies."""
+    # La route ne doit exister QUE si la démo est activée : sinon c'est un login passwordless
+    # vers un vrai compte (plan Business) en production. On la rend inerte hors DEMO_MODE.
+    from app.core.config import get_settings
+    if not get_settings().DEMO_MODE:
+        raise HTTPException(status_code=404, detail="Indisponible")
     from app.services.demo_seed import ensure_demo
     user = ensure_demo(db)   # crée le compte démo s'il n'existe pas encore
     token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})

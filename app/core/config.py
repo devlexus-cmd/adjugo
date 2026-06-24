@@ -2,7 +2,7 @@
 Adjugo Backend — Configuration centrale
 """
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from functools import lru_cache
 
 
@@ -121,6 +121,24 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v.strip()
         return v
+
+    @model_validator(mode="after")
+    def _harden_secret_key(self):
+        # Normalise l'environnement (« Production »/« prod » → « production ») pour que les
+        # gardes-fous ne dépendent plus d'une chaîne exacte.
+        self.ENVIRONMENT = (self.ENVIRONMENT or "").strip().lower()
+        # SECRET_KEY FORTE et OBLIGATOIRE, INDÉPENDAMMENT de l'environnement : une clé faible/
+        # par défaut avec HS256 = forge de n'importe quel JWT (bypass total de l'auth). En prod
+        # → refus de démarrer ; en dev → clé éphémère en mémoire (jamais le défaut codé en dur).
+        weak = ((not self.SECRET_KEY) or self.SECRET_KEY == "change-this-in-production"
+                or len(self.SECRET_KEY) < 32)
+        if weak:
+            if self.ENVIRONMENT == "production":
+                raise ValueError("SECRET_KEY faible ou par défaut en production : "
+                                 "définissez une clé d'au moins 32 caractères.")
+            import secrets as _secrets
+            self.SECRET_KEY = _secrets.token_hex(32)
+        return self
 
     class Config:
         env_file = ".env"
