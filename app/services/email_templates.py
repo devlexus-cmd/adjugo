@@ -20,7 +20,7 @@ def _shell(inner: str, preheader: str = "") -> str:
   <tr><td align="center">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border:1px solid {_BORDER};border-radius:16px;overflow:hidden;">
       <tr><td style="padding:30px 36px 8px;text-align:center;">
-        <div style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:26px;font-weight:800;letter-spacing:-.5px;color:{_ACCENT};">adjug&#9678;</div>
+        <div style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:26px;font-weight:800;letter-spacing:-.5px;color:{_ACCENT};">adjugo</div>
       </td></tr>
       {inner}
       <tr><td style="padding:8px 36px 30px;">
