@@ -32,24 +32,24 @@
       <a class="nav-item" data-view="monao" data-allowed="1"><i data-lucide="folder-open"></i>Mon appel d'offres</a>
       <div class="nav-group">Pilotage</div>
       <a class="nav-item" data-view="dashboard"><i data-lucide="layout-dashboard"></i>Tableau de bord</a>
-      <a class="nav-item" data-view="sourcing" data-allowed="1"><i data-lucide="radar"></i>Sourcing IA</a>
-      <a class="nav-item" data-view="amont" data-allowed="1"><i data-lucide="telescope"></i>Veille AO</a>
-      <a class="nav-item" data-view="kb"><i data-lucide="brain-circuit"></i>Base de connaissances</a>
-      <a class="nav-item" data-view="pipeline"><i data-lucide="square-kanban"></i>Pipeline AO</a>
+      <a class="nav-item" data-view="sourcing" data-allowed="1"><i data-lucide="target"></i>Trouver des marchés</a>
+      <a class="nav-item" data-view="amont" data-allowed="1"><i data-lucide="scan-eye"></i>Projets à venir</a>
+      <a class="nav-item" data-view="kb"><i data-lucide="brain-circuit"></i>Mon savoir-faire</a>
+      <a class="nav-item" data-view="pipeline"><i data-lucide="square-kanban"></i>Mes marchés</a>
       <div class="nav-group">CRM</div>
-      <a class="nav-item" data-view="cotraitants"><i data-lucide="handshake"></i>Co-traitants</a>
+      <a class="nav-item" data-view="cotraitants"><i data-lucide="handshake"></i>Mes partenaires</a>
       <a class="nav-item" data-view="contacts"><i data-lucide="users"></i>Contacts</a>
       <div class="nav-group">Gestion</div>
-      <a class="nav-item" data-view="documents"><i data-lucide="folder-lock"></i>Coffre-fort</a>
+      <a class="nav-item" data-view="documents"><i data-lucide="folder-lock"></i>Mes documents</a>
       <a class="nav-item" data-view="invoices"><i data-lucide="file-spreadsheet"></i>Devis &amp; factures</a>
       <div class="nav-group">Configuration</div>
       <a class="nav-item" data-view="company"><i data-lucide="briefcase"></i>Entreprise</a>
-      <a class="nav-item" data-view="criteria"><i data-lucide="sliders-horizontal"></i>Critères Go/No-Go</a>
+      <a class="nav-item" data-view="criteria"><i data-lucide="sliders-horizontal"></i>Mes critères</a>
       <div class="nav-group">Compte</div>
       <a class="nav-item" data-view="team"><i data-lucide="users-round"></i>Équipe</a>
       <a class="nav-item" data-view="billing"><i data-lucide="credit-card"></i>Abonnement</a>
       <div class="side-foot">
-        <div class="user"><div class="av" id="g-av">CO</div><div style="min-width:0"><b id="g-name">Co-traitant</b><small style="display:block">Invité · lecture seule</small></div></div>
+        <div class="user"><div class="av" id="g-av">CO</div><div style="min-width:0"><b id="g-name">Co-traitant</b><small id="g-role" style="display:block">Invité</small></div></div>
       </div>
     </aside>
 
@@ -71,8 +71,8 @@
     const ALLOWED = { monao: 1, sourcing: 1, amont: 1 };
     const VIEW_TITLE = {
       monao: ["Mon appel d'offres", "Le dossier partagé avec vous — apportez votre part."],
-      sourcing: ["Sourcing IA", "Découvrez des appels d'offres publics en direct."],
-      amont: ["Veille AO", "Surveillez les marchés publics qui vous correspondent."],
+      sourcing: ["Trouver des marchés", "Découvrez des appels d'offres publics en direct."],
+      amont: ["Projets à venir", "Surveillez les marchés publics qui vous correspondent."],
     };
     let DATA = null, ICONS;
     const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
@@ -327,7 +327,7 @@
           const acts = $(`<div class="row" style="gap:8px;margin-top:9px"></div>`);
           if (t.url || (t.provenance && t.provenance.source_url)) acts.appendChild($(`<a class="btn sm" href="${esc(t.url || t.provenance.source_url)}" target="_blank" rel="noopener nofollow">Voir l'avis ↗</a>`));
           const ana = $(`<button class="btn sm primary">Analyser cet AO</button>`);
-          ana.onclick = () => { const b = document.getElementById("g-banner"); b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)"; b.innerHTML = '<i data-lucide="sparkles"></i><div class="small">L\'analyse Go/No-Go, le chiffrage et la génération du dossier sont réservés aux comptes Adjugo. <a href="/app" target="_blank" rel="noopener"><b>Créez le vôtre gratuitement →</b></a></div>'; icons(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+          ana.onclick = () => { const b = document.getElementById("g-banner"); b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)"; b.innerHTML = '<i data-lucide="sparkles"></i><div class="small">L\'analyse de pertinence, le chiffrage et la génération du dossier sont réservés aux comptes Adjugo. <a href="/app" target="_blank" rel="noopener"><b>Créez le vôtre gratuitement →</b></a></div>'; icons(); window.scrollTo({ top: 0, behavior: "smooth" }); };
           acts.appendChild(ana); card.appendChild(acts); results.appendChild(card);
         });
         icons();
@@ -358,6 +358,10 @@
         const co = (d.invited && d.invited.company) || "Co-traitant";
         document.getElementById("g-name").textContent = co;
         document.getElementById("g-av").textContent = initials(co);
+        // Rôle exact : le partenaire PEUT contribuer par défaut → ne plus afficher « lecture seule »
+        // à tort (il a un formulaire d'écriture juste à côté). On distingue aussi co-traitant/sous-traitant.
+        const _role = (d.invited && d.invited.role) ? d.invited.role : "partenaire";
+        document.getElementById("g-role").textContent = "Invité · " + (d.can_contribute ? _role : "lecture seule");
         document.getElementById("brand-sub").textContent = d.mandataire || "Espace co-traitant";
         document.getElementById("loading").style.display = "none";
         document.getElementById("shell").style.display = "";

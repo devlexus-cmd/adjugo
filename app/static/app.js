@@ -692,7 +692,7 @@ const __adjApp = createApp({
     aoInvoices() { return (this.invoices || []).filter(i => i.project_id === (this.ao.project && this.ao.project.id)); },
     aoTimeline() {
       const p = this.ao.project || {}; const ev = [];
-      if (p.created_at) ev.push({ icon: "plus", t: "Marché ajouté", d: p.created_at.slice(0, 10) });
+      if (p.created_at) ev.push({ icon: "plus", t: "Marché ajouté", d: this.fmtDate(p.created_at) });
       const a = p.ai_analysis;
       if (a) ev.push({ icon: "scan-search", t: a.dce_available ? "Dossier analysé (complet)" : "Annonce analysée", d: a.match_score != null ? "compatibilité " + a.match_score + "/100" : "" });
       const e = this.ao.estimate;
@@ -1175,6 +1175,10 @@ const __adjApp = createApp({
       catch (e) { return v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €"; }
     },
     invStatusLabel(s) { return ({ brouillon: "Brouillon", envoye: "Envoyé", accepte: "Accepté", en_attente: "En attente", paye: "Payé", en_retard: "En retard" })[s] || s; },
+    // Date FR (JJ/MM/AAAA). Ne reformate QUE les dates ISO strictes → laisse intacts les
+    // estimés libres (« S2 2026 », « 2026 »…) au lieu de les transformer en fausse date.
+    fmtDate(s) { if (!s) return "—"; const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "/" + m[2] + "/" + m[1] : String(s); },
+    scoreStatusLabel(s) { return ({ ok: "Conforme", partiel: "Partiel", inconnu: "Inconnu" })[s] || s; },
     eur(v) {
       v = Number(v) || 0;
       const cur = (this.org.data && this.org.data.devise) || "EUR";

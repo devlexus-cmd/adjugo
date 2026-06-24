@@ -354,7 +354,7 @@
                 <div v-for="(v,k) in detailRows(aoDetails())" :key="k" class="row small" style="padding:6px 0;border-bottom:1px solid var(--hairline);align-items:flex-start"><span class="muted" style="min-width:130px">{{ k }}</span><span style="flex:1">{{ v }}</span></div>
               </div>
               <div v-if="aoBreakdown().length" class="sectitle">Détail du score</div>
-              <div v-for="c in aoBreakdown()" :key="c.key" class="row small" style="padding:3px 0"><span style="min-width:130px">{{ c.label }}</span><span class="pill" :class="critStatus(c.status)" style="font-size:10px">{{ c.status }}</span><span class="num muted">{{ c.points }}/{{ c.max_points }}</span></div>
+              <div v-for="c in aoBreakdown()" :key="c.key" class="row small" style="padding:3px 0"><span style="min-width:130px">{{ c.label }}</span><span class="pill" :class="critStatus(c.status)" style="font-size:10px">{{ scoreStatusLabel(c.status) }}</span><span class="num muted">{{ c.points }}/{{ c.max_points }}</span></div>
               <div v-if="clausesRisque(aoDetails()).length" class="sectitle"><i data-lucide="shield-alert" style="width:14px;height:14px"></i> Clauses à risque &amp; négociation</div>
               <div v-for="(cl,i) in clausesRisque(aoDetails())" :key="'cl'+i" style="padding:8px 0;border-bottom:1px solid var(--hairline)">
                 <div class="row" style="gap:6px"><span class="pill" :class="niveauPill(cl.niveau)" style="font-size:10px">{{ niveauLabel(cl.niveau) }}</span><span class="strong small">{{ cl.clause }}</span></div>
@@ -687,7 +687,7 @@
 
               <!-- Cockpit du consortium : lots × partenaires, complétude, manques, assemblage -->
               <div v-if="ao.share.cockpitOpen && ao.share.consortium && ao.share.consortium.readiness" style="margin-top:14px;border-top:1px solid var(--hairline);padding-top:12px">
-                <div class="row" style="gap:6px;margin-bottom:10px;align-items:center"><i data-lucide="layout-dashboard" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Cockpit du consortium</b><span class="muted small">Qui couvre quoi · ce qu'il manque · assemblage.</span></div>
+                <div class="row" style="gap:6px;margin-bottom:10px;align-items:center"><i data-lucide="layout-dashboard" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Cockpit du groupement</b><span class="muted small">Qui couvre quoi · ce qu'il manque · assemblage.</span></div>
 
                 <div v-if="(ao.share.consortium.lots||[]).length" style="margin-bottom:12px">
                   <div class="muted small" style="font-weight:600;margin-bottom:5px">Lots couverts</div>
@@ -832,7 +832,7 @@
             <div v-for="r in src.renewals.list" :key="r.idweb" class="row" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:10px;align-items:flex-start;gap:10px">
               <div style="flex:1;min-width:0">
                 <div class="row wrap" style="gap:6px">
-                  <span class="pill go">Renouvellement ~ {{ r.renouvellement_estime }}</span>
+                  <span class="pill go">Renouvellement ~ {{ fmtDate(r.renouvellement_estime) }}</span>
                   <span class="pill neutral">pertinence {{ r.score }}/100</span>
                   <span v-if="r.type_contrat" class="pill st-envoye">{{ r.type_contrat }}</span>
                   <span class="pill" :class="r.duree_estimee?'a_etudier':'neutral'" style="font-size:10px">durée {{ r.duree_mois }} mois{{ r.duree_estimee?' (estimée)':' (réelle)' }}</span>
@@ -840,7 +840,7 @@
                   <span v-if="r.source_plateforme" class="pill neutral" style="font-size:10px">{{ r.source_plateforme }}</span>
                 </div>
                 <div class="strong" style="margin-top:7px;line-height:1.35">{{ r.objet }}</div>
-                <div class="muted small" style="margin-top:3px">{{ r.acheteur||'Acheteur' }}<span v-if="r.lieu"> · dépt {{ r.lieu }}</span> · notifié le {{ r.date_attribution }} · fin estimée {{ r.fin_estimee }}</div>
+                <div class="muted small" style="margin-top:3px">{{ r.acheteur||'Acheteur' }}<span v-if="r.lieu"> · dépt {{ r.lieu }}</span> · notifié le {{ fmtDate(r.date_attribution) }} · fin estimée {{ fmtDate(r.fin_estimee) }}</div>
                 <a v-if="r.url" :href="r.url" target="_blank" class="small" style="margin-top:5px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ r.source_plateforme!==undefined ? 'Voir la fiche acheteur' : 'Voir l\'avis d\'attribution' }} ↗</a>
               </div>
             </div>
@@ -1205,7 +1205,7 @@
           </div>
           <div v-else class="t-wrap"><table><thead><tr><th>Document</th><th>Catégorie</th><th>Taille</th><th>Expiration</th><th></th></tr></thead><tbody>
             <tr v-for="d in documents" :key="d.id"><td><b>{{ d.name }}</b><div v-if="d.project_name" class="muted small">{{ d.folder }} · {{ (d.project_name||'').slice(0,40) }}</div></td><td><span class="pill st-nouveau">{{ d.folder || d.category }}</span></td>
-              <td class="small">{{ koSize(d.file_size) }}</td><td class="small">{{ d.expiration_date||'—' }}</td>
+              <td class="small">{{ koSize(d.file_size) }}</td><td class="small">{{ fmtDate(d.expiration_date) }}</td>
               <td class="row"><button class="btn icon sm ghost" @click="renameDoc(d)" aria-label="Renommer"><i data-lucide="pencil"></i></button><button class="btn icon sm ghost" @click="downloadDoc(d)" aria-label="Télécharger"><i data-lucide="download"></i></button><button class="btn icon sm ghost" @click="delDoc(d)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button></td></tr>
           </tbody></table></div>
         </section>
