@@ -876,8 +876,11 @@ const __adjApp = createApp({
       catch (e) { this.notify(e.message, "err"); }
     },
     copyInvite(url, silent) {
-      try { navigator.clipboard.writeText(url); if (!silent) this.notify("Lien copié"); else this.notify("Lien généré et copié dans le presse-papier"); }
-      catch (e) { if (!silent) this.notify("Copie impossible — sélectionnez le lien manuellement", "err"); }
+      // writeText renvoie une Promise : on gère succès ET échec (le try/catch ne capte pas
+      // un rejet asynchrone) → l'utilisateur a toujours un retour fiable.
+      Promise.resolve(navigator.clipboard && navigator.clipboard.writeText(url))
+        .then(() => this.notify(silent ? "Lien généré et copié dans le presse-papier" : "Lien copié"))
+        .catch(() => this.notify("Copie impossible — sélectionnez le lien manuellement", "err"));
     },
     async aoToggleAudit() {
       this.ao.share.auditOpen = !this.ao.share.auditOpen;
@@ -1277,6 +1280,7 @@ const __adjApp = createApp({
     srcResetAdv() { this.src.type_marche = ""; this.src.cpv = ""; },
     async srcRenewals() {
       this.src.renewals.loading = true; this.src.renewals.done = false;
+      this.src.renewals.list = [];   // vide le scan précédent (sinon résultats périmés affichés)
       try {
         const r = await this.api("POST", "/api/sourcing/renewals", { query: this.src.query || "travaux", departements: this.srcDeps() });
         this.src.renewals.list = r.renewals || []; this.src.renewals.done = true;
