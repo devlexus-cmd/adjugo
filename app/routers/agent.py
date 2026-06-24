@@ -23,11 +23,16 @@ def _details(p) -> dict:
 
 
 def _zone(p) -> str:
-    """Département (2 chiffres) déduit du lieu d'exécution, sinon 'Inconnu'."""
+    """Département déduit du CODE POSTAL (5 chiffres) du lieu d'exécution, sinon 'Inconnu'.
+    On exige un vrai code postal pour ne pas confondre une année (« 2024 ») ou un n° de rue
+    avec un département. DOM-TOM (97x/98x) conservés sur 3 chiffres."""
     import re
     lieu = str(_details(p).get("lieu_execution") or "")
-    m = re.search(r"\b(\d{2})\d{0,3}\b", lieu)
-    return m.group(1) if m else "Inconnu"
+    m = re.search(r"\b(\d{5})\b", lieu)
+    if not m:
+        return "Inconnu"
+    cp = m.group(1)
+    return cp[:3] if cp[:2] in ("97", "98") else cp[:2]
 
 
 def _segment(projects, keyfn):

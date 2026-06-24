@@ -100,7 +100,8 @@ class SearchReq(BaseModel):
 
 
 @router.post("/search")
-def search(req: SearchReq, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("120/hour")
+def search(request: Request, req: SearchReq, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Recherche traçable dans la base : renvoie les extraits sources (clic-vers-source)."""
     res = rag.retrieve(db, current_user.id, req.query or "", k=max(1, min(req.k, 12)))
     return {"results": res, "count": len(res)}
@@ -130,6 +131,8 @@ async def memoire_upload(request: Request, file: UploadFile = File(...),
     content = await file.read()
     if not content:
         raise HTTPException(400, "Fichier vide.")
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(413, "Fichier trop volumineux (50 Mo max).")
     try:
         text = extract_dce_text(file.filename, content)
     except ValueError as e:

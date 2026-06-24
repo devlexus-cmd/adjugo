@@ -35,7 +35,9 @@ _TOKEN_RE = re.compile(r"[a-zà-ÿ0-9]+", re.IGNORECASE)
 def _tokens(text: str) -> list:
     out = []
     for w in _TOKEN_RE.findall((text or "").lower()):
-        if len(w) > 2 and w not in _STOP:
+        # On ignore les nombres courts (n° d'article, années, montants partiels) : purs
+        # bruits lexicaux qui gonflaient artificiellement la pertinence BM25.
+        if len(w) > 2 and w not in _STOP and not (w.isdigit() and len(w) < 4):
             out.append(w)
     return out
 

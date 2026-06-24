@@ -16,6 +16,14 @@ def get_with_retry(url: str, params: dict = None, timeout: float = 12, tries: in
             r = httpx.get(url, params=params, timeout=timeout, headers=headers)
             r.raise_for_status()
             return r
+        except httpx.HTTPStatusError as e:
+            # Erreur 4xx (hors 408/429) = non récupérable (mauvaise requête) → on ne rejoue pas.
+            sc = e.response.status_code
+            if 400 <= sc < 500 and sc not in (408, 429):
+                raise
+            last = e
+            if i < tries - 1:
+                time.sleep(0.4 * (2 ** i))
         except Exception as e:
             last = e
             if i < tries - 1:
@@ -31,6 +39,13 @@ def post_with_retry(url: str, json: dict = None, timeout: float = 15, tries: int
             r = httpx.post(url, json=json, timeout=timeout, headers=headers)
             r.raise_for_status()
             return r
+        except httpx.HTTPStatusError as e:
+            sc = e.response.status_code
+            if 400 <= sc < 500 and sc not in (408, 429):
+                raise   # non récupérable → pas de réessai
+            last = e
+            if i < tries - 1:
+                time.sleep(0.4 * (2 ** i))
         except Exception as e:
             last = e
             if i < tries - 1:

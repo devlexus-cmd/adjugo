@@ -33,10 +33,17 @@ def _amount(s):
 
 
 def _dept(s):
-    """Département depuis « Quimper (29) » ou un code postal."""
+    """Département depuis « Quimper (29) » ou un code postal. DOM-TOM (97x/98x) sur 3 chiffres
+    pour ne pas confondre Guadeloupe (971) et Réunion (974)."""
     t = str(s or "")
-    m = re.search(r"\((\d{2,3})\)", t) or re.search(r"\b(\d{2})\d{3}\b", t)
-    return m.group(1) if m else ""
+    m = re.search(r"\((\d{2,3})\)", t)
+    if m:
+        return m.group(1)
+    m = re.search(r"\b(\d{5})\b", t)
+    if m:
+        cp = m.group(1)
+        return cp[:3] if cp[:2] in ("97", "98") else cp[:2]
+    return ""
 
 
 def _days_until(s):
@@ -110,17 +117,24 @@ def score_dce(details: dict, company: dict = None, criteria: dict = None) -> dic
                         "Recoupement faible avec votre activité — à vérifier"))
 
     # 2) Zone géographique (20)
-    deps = criteria.get("departements") or []
-    deps = [str(d)[:2] for d in deps] if isinstance(deps, list) else [d.strip()[:2] for d in re.split(r"[,;\s]+", str(deps)) if d.strip()]
+    def _dep(x):                       # DOM-TOM (97x/98x) sur 3 chiffres, métropole sur 2
+        x = str(x).strip()
+        return x[:3] if x[:2] in ("97", "98") else x[:2]
+    raw = criteria.get("departements") or []
+    deps = [_dep(d) for d in raw if str(d).strip()] if isinstance(raw, list) else [_dep(d) for d in re.split(r"[,;\s]+", str(raw)) if d.strip()]
+    explicit = bool(deps)              # l'utilisateur a-t-il VRAIMENT défini une zone ?
     if not deps and company.get("postal_code"):
-        deps = [str(company["postal_code"])[:2]]
+        deps = [_dep(company["postal_code"])]
     ld = _dept(details.get("lieu_execution", ""))
     if not deps:
         bd.append(_crit("zone", "Zone géographique", 12, 20, "inconnu", "Zone d'intervention non renseignée"))
     elif ld and ld in deps:
         bd.append(_crit("zone", "Zone géographique", 20, 20, "ok", f"Lieu d'exécution dans votre zone ({ld})"))
-    elif ld:
+    elif ld and explicit:
         bd.append(_crit("zone", "Zone géographique", 5, 20, "partiel", f"Hors zone d'intervention (dépt {ld})"))
+    elif ld:
+        # zone déduite du SEUL code postal (jamais définie) → on ne pénalise pas « hors zone »
+        bd.append(_crit("zone", "Zone géographique", 12, 20, "inconnu", "Zone d'intervention non renseignée — précisez vos départements"))
     else:
         bd.append(_crit("zone", "Zone géographique", 11, 20, "inconnu", "Lieu d'exécution non précisé"))
 

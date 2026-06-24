@@ -29,6 +29,7 @@ def criteria_dict(user_id: int, db: Session) -> dict:
         c = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == oid).first()
         if c:
             return {col.name: getattr(c, col.name) for col in c.__table__.columns}
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("adjugo").warning("criteria_dict a échoué pour user %s : %s", user_id, e)
     return {}
