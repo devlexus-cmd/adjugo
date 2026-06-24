@@ -4,7 +4,7 @@ Adjugo — Modèles de base de données
 from datetime import datetime, date, timezone
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, Text, DateTime,
-    Date, ForeignKey, JSON, Enum as SAEnum,
+    Date, ForeignKey, JSON, Enum as SAEnum, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -265,11 +265,15 @@ class GeneratedDoc(Base):
 
 class Invoice(Base):
     __tablename__ = "invoices"
+    # Numérotation FAC/DEV SÉQUENTIELLE PAR UTILISATEUR → l'unicité doit être (user_id,
+    # reference) et non globale (sinon le 2e user à créer « FAC-2026-001 » heurte la
+    # contrainte globale → 500). Cf. migration g1h2i3j4k5l6.
+    __table_args__ = (UniqueConstraint("user_id", "reference", name="uq_invoice_user_reference"),)
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-    reference = Column(String(50), unique=True, nullable=False)  # FAC-2026-001
+    reference = Column(String(50), nullable=False)  # FAC-2026-001 (unique par utilisateur)
     type = Column(SAEnum(InvoiceType), nullable=False)
     status = Column(SAEnum(InvoiceStatus), default=InvoiceStatus.brouillon)
 

@@ -3,6 +3,7 @@ Adjugo — Routes Facturation
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import List
 from datetime import date
 
@@ -25,11 +26,21 @@ def generate_reference(db: Session, user_id: int, inv_type: str) -> str:
     return f"{prefix}-{year}-{str(count + 1).zfill(3)}"
 
 
+def _num(v, default=0.0):
+    """Coerce qty/prix/taux en float (un champ vidé arrive en None/'' → 0, jamais un crash)."""
+    try:
+        f = float(v)
+        return f if f == f else default   # écarte NaN
+    except (TypeError, ValueError):
+        return default
+
+
 def calculate_totals(items: list, tva_rate: float) -> tuple:
-    """Calcule sous-total HT, TVA et TTC."""
-    subtotal = sum(item.get("qty", 1) * item.get("unit_price", 0) for item in items)
-    tva = subtotal * tva_rate / 100
-    return subtotal, tva, subtotal + tva
+    """Calcule sous-total HT, TVA et TTC. Montants ARRONDIS à 2 décimales (document
+    comptable : pas de dérive de centime ni de double imprécision flottante)."""
+    subtotal = round(sum(_num(i.get("qty", 1), 1.0) * _num(i.get("unit_price", 0)) for i in (items or [])), 2)
+    tva = round(subtotal * _num(tva_rate) / 100, 2)
+    return subtotal, tva, round(subtotal + tva, 2)
 
 
 @router.get("/", response_model=List[InvoiceOut])
@@ -73,7 +84,11 @@ def create_invoice(
         notes=data.notes,
     )
     db.add(invoice)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Conflit de numérotation, réessayez")
     db.refresh(invoice)
     return invoice
 
@@ -94,11 +109,10 @@ def update_invoice(
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(inv, key, value)
 
-    # Recalculer si items modifiés
-    if data.items is not None:
-        inv.subtotal_ht, inv.tva_amount, inv.total_ttc = calculate_totals(
-            inv.items, inv.tva_rate
-        )
+    # Recalculer dès que les lignes OU le taux de TVA changent (sinon TVA/TTC restaient
+    # périmés après une simple modif de taux → document comptablement incohérent).
+    if data.items is not None or data.tva_rate is not None:
+        inv.subtotal_ht, inv.tva_amount, inv.total_ttc = calculate_totals(inv.items or [], inv.tva_rate)
 
     db.commit()
     db.refresh(inv)
@@ -138,6 +152,10 @@ def convert_devis_to_facture(
         notes=devis.notes,
     )
     db.add(facture)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Conflit de numérotation, réessayez")
     db.refresh(facture)
     return facture
