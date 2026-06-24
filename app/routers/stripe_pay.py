@@ -143,6 +143,13 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         except ValueError:
             user.plan = PlanType.starter   # plan inconnu → palier le PLUS BAS (jamais une montée)
 
+    def _plan_for_price(price_id):
+        if price_id and price_id == settings.STRIPE_PRICE_PRO:
+            return "pro"
+        if price_id and price_id == settings.STRIPE_PRICE_BUSINESS:
+            return "business"
+        return "starter"
+
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         user_id = session.get("metadata", {}).get("user_id")
@@ -165,6 +172,24 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 if user.plan != was:
                     user.analyses_used_this_month = 0
                 db.commit()
+
+    elif event["type"] == "customer.subscription.updated":
+        # Changement d'abonnement via le PORTAIL client (downgrade/upgrade) ou échec de paiement
+        # (past_due/unpaid) → on re-dérive le plan depuis le price_id courant. Sans ça, un
+        # downgrade Business→Pro n'était jamais reflété (le quota lisait l'ancien plan).
+        sub = event["data"]["object"]
+        customer_id = sub.get("customer")
+        user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
+        if user:
+            if sub.get("status") in ("active", "trialing"):
+                try:
+                    price_id = sub["items"]["data"][0]["price"]["id"]
+                except (KeyError, IndexError, TypeError):
+                    price_id = None
+                _set_plan(user, _plan_for_price(price_id))
+            else:   # past_due / unpaid / incomplete / canceled → on rétrograde au gratuit
+                _set_plan(user, "starter")
+            db.commit()
 
     elif event["type"] == "customer.subscription.deleted":
         sub = event["data"]["object"]

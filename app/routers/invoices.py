@@ -133,6 +133,8 @@ def convert_devis_to_facture(
     ).first()
     if not devis:
         raise HTTPException(status_code=404, detail="Devis introuvable")
+    if getattr(devis, "converted_invoice_id", None):
+        raise HTTPException(status_code=409, detail="Ce devis a déjà été converti en facture.")
 
     ref = generate_reference(db, current_user.id, "facture")
     facture = Invoice(
@@ -158,4 +160,6 @@ def convert_devis_to_facture(
         db.rollback()
         raise HTTPException(409, "Conflit de numérotation, réessayez")
     db.refresh(facture)
+    devis.converted_invoice_id = facture.id   # lien anti double-conversion
+    db.commit()
     return facture

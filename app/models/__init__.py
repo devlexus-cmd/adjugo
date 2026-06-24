@@ -294,6 +294,8 @@ class Invoice(Base):
     issue_date = Column(Date, default=date.today)
     due_date = Column(Date, nullable=True)
     paid_date = Column(Date, nullable=True)
+    converted_invoice_id = Column(Integer, nullable=True)  # id de la facture issue de CE devis
+    #  (anti double-conversion : un devis ne se convertit qu'une fois)
 
     # Lien optionnel vers un projet
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
