@@ -278,6 +278,21 @@ def transfer_ownership(data: TransferIn, request: Request,
     # L'ancien propriétaire perd ses droits → on révoque ses sessions en cours pour que
     # la baisse d'autorité prenne effet immédiatement (pas seulement au prochain login).
     current_user.token_version = (current_user.token_version or 0) + 1
+    # data_owner_id() bascule sur le nouveau propriétaire : on DOIT migrer avec lui les
+    # données portées par le tenant, sinon elles deviennent orphelines/invisibles pour TOUTE
+    # l'organisation (fiche entreprise, critères Go/No-Go, co-traitance). On ne touche PAS
+    # AuditLog (sa chaîne de hash deviendrait invérifiable).
+    from app.models import Company, MatchingCriteria, CoSpace, ProjectInvite, ProjectContribution, ContributionPiece
+    from app.routers.criteria_v2 import MatchingCriteriaExt
+    old_id, new_id = current_user.id, target.id
+    # (a) mono-propriétaire UNIQUE(user_id) : purger une éventuelle ligne du nouveau owner
+    #     (issue de son usage perso/inscription) avant de réaffecter, pour éviter une collision.
+    for M in (Company, MatchingCriteria, MatchingCriteriaExt):
+        db.query(M).filter(M.user_id == new_id).delete(synchronize_session=False)
+        db.query(M).filter(M.user_id == old_id).update({M.user_id: new_id}, synchronize_session=False)
+    # (b) co-traitance (owner_id = tenant mandataire) : simple réaffectation.
+    for M in (CoSpace, ProjectInvite, ProjectContribution, ContributionPiece):
+        db.query(M).filter(M.owner_id == old_id).update({M.owner_id: new_id}, synchronize_session=False)
     db.commit()
     audit.record(db, action="team.ownership_transferred", owner_id=org.owner_id,
                  actor=f"user:{current_user.id}", actor_kind="owner",

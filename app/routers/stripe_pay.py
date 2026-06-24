@@ -85,11 +85,17 @@ def get_subscription_status(current_user: User = Depends(get_current_user)):
 def set_overage(enabled: bool = True, current_user: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     """Active/désactive le paiement à l'usage au-delà du quota mensuel."""
-    current_user.overage_enabled = bool(enabled)
+    # Le quota/overage est porté par le PROPRIÉTAIRE du pool de facturation : on écrit SON
+    # flag (sinon le toggle d'un membre n'avait aucun effet — consume_analysis lit l'owner).
+    # Et c'est un engagement financier → réservé au propriétaire / admin de l'organisation.
+    from app.core.quota import OVERAGE_PRICE, _billing_user
+    bu = _billing_user(current_user, db)
+    if bu.id != current_user.id and getattr(current_user, "org_role", "") not in ("owner", "admin"):
+        raise HTTPException(403, "Seul le propriétaire ou un administrateur peut activer le paiement à l'usage")
+    bu.overage_enabled = bool(enabled)
     db.commit()
-    from app.core.quota import OVERAGE_PRICE
-    return {"overage_enabled": current_user.overage_enabled,
-            "overage_count": current_user.overage_count or 0,
+    return {"overage_enabled": bu.overage_enabled,
+            "overage_count": bu.overage_count or 0,
             "overage_price": OVERAGE_PRICE}
 
 
@@ -117,14 +123,17 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     sig = request.headers.get("stripe-signature", "")
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
+    # SIGNATURE OBLIGATOIRE : sans secret on REFUSE (plus de fallback JSON non signé). Sinon
+    # n'importe qui pouvait POSTer un faux « checkout.session.completed » et s'offrir un plan
+    # payant gratuitement (metadata user_id/plan entièrement contrôlés par l'attaquant).
+    if not settings.STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(503, "Webhook Stripe non configuré")
     try:
-        if settings.STRIPE_WEBHOOK_SECRET:
-            event = stripe.Webhook.construct_event(payload, sig, settings.STRIPE_WEBHOOK_SECRET)
-        else:
-            import json
-            event = json.loads(payload)
+        event = stripe.Webhook.construct_event(payload, sig, settings.STRIPE_WEBHOOK_SECRET)
+    except HTTPException:
+        raise
     except Exception:
-        raise HTTPException(400, "Webhook invalide")
+        raise HTTPException(400, "Webhook invalide (signature)")
 
     from app.models import PlanType
 
@@ -142,10 +151,15 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         if user_id:
             user = db.query(User).filter(User.id == int(user_id)).first()
             if user:
+                was = user.plan
                 _set_plan(user, plan)
                 if customer_id:
                     user.stripe_customer_id = customer_id  # pour gérer la résiliation ensuite
-                user.analyses_used_this_month = 0  # repart à zéro au passage payant
+                # Idempotence : on ne remet le compteur d'analyses à zéro que sur un VRAI
+                # changement de plan — un rejeu (Stripe retry / event signé répété) ne doit
+                # pas réinitialiser le quota à chaque fois.
+                if user.plan != was:
+                    user.analyses_used_this_month = 0
                 db.commit()
 
     elif event["type"] == "customer.subscription.deleted":

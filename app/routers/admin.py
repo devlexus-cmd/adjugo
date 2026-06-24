@@ -52,13 +52,16 @@ def storage_diag(current_user: User = Depends(get_current_user)):
 
 
 def _check_cron(request: Request):
+    # Endpoints cron PUBLICS (sans login) : on EXIGE toujours le secret. Plus de
+    # contournement DEMO_MODE — sinon, secret vide + DEMO_MODE=True rendait run-alerts /
+    # run-tender-alerts / run-amont-alerts (emails + IA) déclenchables par n'importe qui.
+    import secrets as _secrets
     secret = settings.CRON_SECRET
-    provided = request.headers.get("x-cron-secret", "")
-    if secret:
-        if provided != secret:
-            raise HTTPException(403, "Secret cron invalide")
-    elif not settings.DEMO_MODE:
+    if not secret:
         raise HTTPException(403, "CRON_SECRET non configuré")
+    provided = request.headers.get("x-cron-secret", "")
+    if not _secrets.compare_digest(provided, secret):   # comparaison à temps constant
+        raise HTTPException(403, "Secret cron invalide")
 
 
 @router.post("/run-backup")
