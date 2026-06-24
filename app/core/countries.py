@@ -9,32 +9,23 @@ Les pays UE qui ne divulguent que la validité TVA (DE, ES…) ou non vérifiés
 PAS proposés à l'adaptation : on n'offre que ce qu'on peut faire parfaitement.
 """
 
+# Pays adaptés volontairement RESTREINTS aux marchés cibles : France (natif), Belgique,
+# Espagne, Pays-Bas. La recherche d'AO reste possible dans toute l'UE (TED) ; seule
+# l'ADAPTATION du logiciel (langue d'interface, devise, registre) est limitée à ces pays.
+# Belgique : interface en FRANÇAIS (marché wallon/bruxellois, qualité native). Pour viser la
+# Flandre, basculer "lang" sur "nl" (le dictionnaire néerlandais est déjà complet).
 COUNTRIES_FULL = [
-    {"code": "FR", "nom": "France",      "lang": "fr", "devise": "EUR", "registre": "SIRENE"},
-    {"code": "IT", "nom": "Italie",      "lang": "it", "devise": "EUR", "registre": "VIES"},
-    {"code": "PL", "nom": "Pologne",     "lang": "pl", "devise": "PLN", "registre": "VIES"},
-    {"code": "NL", "nom": "Pays-Bas",    "lang": "nl", "devise": "EUR", "registre": "VIES"},
-    {"code": "FI", "nom": "Finlande",    "lang": "fi", "devise": "EUR", "registre": "VIES"},
-    {"code": "DK", "nom": "Danemark",    "lang": "da", "devise": "DKK", "registre": "VIES"},
-    {"code": "IE", "nom": "Irlande",     "lang": "en", "devise": "EUR", "registre": "VIES"},
-    {"code": "AT", "nom": "Autriche",    "lang": "de", "devise": "EUR", "registre": "VIES"},
-    {"code": "PT", "nom": "Portugal",    "lang": "pt", "devise": "EUR", "registre": "VIES"},
-    {"code": "LU", "nom": "Luxembourg",  "lang": "fr", "devise": "EUR", "registre": "VIES"},
-    {"code": "CZ", "nom": "Tchéquie",    "lang": "cs", "devise": "CZK", "registre": "VIES"},
-    {"code": "RO", "nom": "Roumanie",    "lang": "ro", "devise": "RON", "registre": "VIES"},
-    {"code": "SK", "nom": "Slovaquie",   "lang": "sk", "devise": "EUR", "registre": "VIES"},
-    {"code": "BG", "nom": "Bulgarie",    "lang": "bg", "devise": "BGN", "registre": "VIES"},
-    {"code": "LT", "nom": "Lituanie",    "lang": "lt", "devise": "EUR", "registre": "VIES"},
+    {"code": "FR", "nom": "France",   "lang": "fr", "devise": "EUR", "registre": "SIRENE"},
+    {"code": "BE", "nom": "Belgique", "lang": "fr", "devise": "EUR", "registre": "VIES"},
+    {"code": "ES", "nom": "Espagne",  "lang": "es", "devise": "EUR", "registre": "VIES"},
+    {"code": "NL", "nom": "Pays-Bas", "lang": "nl", "devise": "EUR", "registre": "VIES"},
 ]
 
 _BY_CODE = {c["code"]: c for c in COUNTRIES_FULL}
 
 # Nom des langues (pour instruire l'IA « réponds en … »)
 LANG_NAMES = {
-    "fr": "français", "it": "italien", "pl": "polonais", "nl": "néerlandais",
-    "fi": "finnois", "da": "danois", "en": "anglais", "de": "allemand",
-    "pt": "portugais", "cs": "tchèque", "ro": "roumain", "sk": "slovaque",
-    "bg": "bulgare", "lt": "lituanien",
+    "fr": "français", "nl": "néerlandais", "es": "espagnol",
 }
 
 
