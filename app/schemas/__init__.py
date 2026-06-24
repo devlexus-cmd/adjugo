@@ -77,6 +77,19 @@ class CompanyCreate(BaseModel):
             return None
         return v
 
+    @field_validator("siret")
+    @classmethod
+    def _validate_siret(cls, v):
+        # Le SIRET français = 14 chiffres. On refuse une saisie CHIFFRÉE non conforme (typo,
+        # SIREN à 9, tronquée) qui serait imprimée telle quelle sur les CERFA officiels.
+        # Vide accepté (optionnel) ; identifiants étrangers (avec lettres) non concernés.
+        if not v:
+            return v
+        s = str(v).replace(" ", "").replace(".", "")
+        if s.isdigit() and len(s) != 14:
+            raise ValueError("Le SIRET doit comporter exactement 14 chiffres.")
+        return v
+
 
 class CompanyOut(CompanyCreate):
     id: int

@@ -431,7 +431,9 @@ const __adjApp = createApp({
       this.busy = true;
       try {
         const r = await this.api("GET", "/api/registre/company?q=" + encodeURIComponent(q));
-        ["name", "siret", "code_ape", "forme_juridique", "address", "postal_code", "city", "effectif", "tva_intracom"].forEach(k => { if (r[k]) this.company[k] = r[k]; });
+        // On COMPLÈTE les champs vides sans ÉCRASER ce que l'utilisateur a déjà saisi (ex.
+        // effectif précis remplacé par une tranche SIRENE, adresse de correspondance perdue).
+        ["name", "siret", "code_ape", "forme_juridique", "address", "postal_code", "city", "effectif", "tva_intracom"].forEach(k => { if (r[k] && !this.company[k]) this.company[k] = r[k]; });
         if (r.dirigeant && !this.company.representant_legal) this.company.representant_legal = r.dirigeant;
         if (r.source === "VIES") {
           if (r.vat_valid && r.name) this.notify("TVA UE validée (VIES) — profil pré-rempli");
@@ -558,6 +560,8 @@ const __adjApp = createApp({
       catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
     async saveCriteria() {
+      const go = Number(this.criteria.go_threshold), ng = Number(this.criteria.nogo_threshold);
+      if (go && ng && go <= ng) { this.notify("Le seuil « bon potentiel » doit être supérieur au seuil « peu adapté »", "err"); return; }
       this.busy = true;
       // Un champ numérique vidé arrive en "" → on l'envoie en null (le backend garde le défaut au lieu de refuser).
       const payload = {};

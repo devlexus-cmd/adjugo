@@ -90,7 +90,16 @@ def lookup_company(query: str) -> Optional[dict]:
             results = r.json().get("results", [])
             if not results:
                 return None
-            data = _normalize(results[0])
+            top = results[0]
+            # SÉCURITÉ EXACTITUDE : l'API `q` est un best-match plein-texte. Pour une recherche
+            # par SIREN/SIRET, on EXIGE que le SIREN renvoyé soit EXACTEMENT celui saisi — sinon
+            # on renverrait l'identité d'une AUTRE entreprise, et coller le SIRET saisi dessus
+            # (ligne ci-dessous) produirait une fiche/CERFA totalement faux. → introuvable.
+            if len(digits) in (9, 14):
+                api_siren = re.sub(r"\D", "", str(top.get("siren", "")))
+                if api_siren != digits[:9]:
+                    return None
+            data = _normalize(top)
             if siret_saisi:  # garder l'établissement exact que l'utilisateur a renseigné
                 data["siret"] = siret_saisi
             return data
