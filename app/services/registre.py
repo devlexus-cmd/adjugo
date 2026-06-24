@@ -154,7 +154,9 @@ def _lookup_vies(raw: str) -> Optional[dict]:
         return None
     return {
         "name": v.get("name") or "",
-        "siren": "", "siret": v.get("vat") or "",   # n° TVA (pas de SIRET hors FR)
+        # PAS de SIRET hors France : le n° de TVA va dans tva_intracom (ci-dessous), JAMAIS
+        # dans siret (sinon un n° de TVA s'imprimait à la place du SIRET sur les CERFA).
+        "siren": "", "siret": "",
         "code_ape": "", "naf_label": "",
         "forme_juridique": "",
         "address": v.get("address") or "",

@@ -29,6 +29,9 @@ fi
 #   faux. Pour scaler horizontalement, configurez Redis ; le multi-worker sera alors
 #   automatiquement réactivé.
 WORKERS="${WEB_CONCURRENCY:-4}"
+# WEB_CONCURRENCY non numérique (faute de frappe d'env) → on retombe sur 4 au lieu de faire
+# échouer uvicorn --workers avec une valeur invalide et un message obscur.
+case "$WORKERS" in (''|*[!0-9]*) WORKERS=4 ;; esac
 case "${RATELIMIT_STORAGE_URI:-memory://}" in
   redis://*|rediss://*) : ;;                       # store partagé → multi-worker OK
   *)

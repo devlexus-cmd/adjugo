@@ -64,10 +64,13 @@ def import_cotraitant(data: ImportCotraitant,
                       db: Session = Depends(get_db)):
     """Crée un co-traitant à partir d'une entreprise réelle découverte dans le registre."""
     from app.routers.cotraitants import Cotraitant
+    from app.core.org import member_ids
     existing = None
     if data.siret:
+        # Dé-duplication au niveau ORGANISATION (cohérent avec le reste) : éviter qu'un
+        # coéquipier ré-importe un partenaire déjà présent dans le carnet de l'équipe.
         existing = db.query(Cotraitant).filter(
-            Cotraitant.user_id == current_user.id, Cotraitant.siret == data.siret).first()
+            Cotraitant.user_id.in_(member_ids(current_user, db)), Cotraitant.siret == data.siret).first()
     if existing:
         raise HTTPException(409, "Ce co-traitant existe déjà")
     ct = Cotraitant(
