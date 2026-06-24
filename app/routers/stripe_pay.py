@@ -141,15 +141,19 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         try:
             user.plan = PlanType(plan_str)
         except ValueError:
-            user.plan = PlanType.pro
+            user.plan = PlanType.starter   # plan inconnu → palier le PLUS BAS (jamais une montée)
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         user_id = session.get("metadata", {}).get("user_id")
         plan = session.get("metadata", {}).get("plan", "pro")
         customer_id = session.get("customer")
+        try:
+            user_id = int(user_id) if user_id else None
+        except (TypeError, ValueError):
+            user_id = None
         if user_id:
-            user = db.query(User).filter(User.id == int(user_id)).first()
+            user = db.query(User).filter(User.id == user_id).first()
             if user:
                 was = user.plan
                 _set_plan(user, plan)

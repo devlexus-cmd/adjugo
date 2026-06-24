@@ -40,7 +40,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 def decode_token(token: str) -> dict:
     try:
-        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        # require=["exp"] : refuse un token SANS expiration (un token éternel ne doit jamais
+        # être accepté). L'algorithme est fixé (pas de 'none'/confusion d'algo).
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM],
+                          options={"require_exp": True})
     except JWTError:
         raise HTTPException(status_code=401, detail="Token invalide ou expire", headers={"WWW-Authenticate": "Bearer"})
 
@@ -49,9 +52,11 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     from app.models import User
     payload = decode_token(token)
     user_id = payload.get("sub")
-    if user_id is None:
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
         raise HTTPException(status_code=401, detail="Token invalide")
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    user = db.query(User).filter(User.id == uid).first()
     if user is None:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     # Compte désactivé : un token déjà émis ne doit plus donner accès (le login le bloque déjà,

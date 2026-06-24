@@ -79,7 +79,9 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
     org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True, index=True)
-    org_role = Column(String(20), default="admin")  # admin | membre
+    org_role = Column(String(20), default="membre")  # admin | membre — défaut = MOINS privilégié
+    # (le propriétaire est promu 'admin' explicitement à la création de son org ; un membre
+    #  invité reçoit son rôle explicitement → ce défaut ne sert que de filet anti-escalade).
     plan = Column(SAEnum(PlanType), default=PlanType.starter)
     analyses_used_this_month = Column(Integer, default=0)
     analyses_period = Column(String(7), default="")  # "AAAA-MM" pour le reset mensuel

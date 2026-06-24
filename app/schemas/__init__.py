@@ -54,16 +54,16 @@ class CompanyCreate(BaseModel):
     tva_intracom: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
-    ca_n1: Optional[float] = 0
-    ca_n2: Optional[float] = 0
-    ca_n3: Optional[float] = 0
-    effectif: Optional[int] = 0
+    ca_n1: Optional[float] = Field(0, ge=0)
+    ca_n2: Optional[float] = Field(0, ge=0)
+    ca_n3: Optional[float] = Field(0, ge=0)
+    effectif: Optional[int] = Field(0, ge=0)
     qualifications: Optional[list] = []
     references: Optional[list] = []
     team: Optional[list] = []
     day_rates: Optional[list] = []
-    distance_threshold_km: Optional[int] = 50
-    distance_surcharge_pct: Optional[float] = 0
+    distance_threshold_km: Optional[int] = Field(50, ge=0)
+    distance_surcharge_pct: Optional[float] = Field(0, ge=0)
 
     # Champ numérique laissé VIDE dans le formulaire = "" → on accepte (= None),
     # l'endpoint garde alors la valeur en place (jamais de refus d'enregistrement).
@@ -173,7 +173,7 @@ class InvoiceCreate(BaseModel):
     client_address: Optional[str] = None
     client_siret: Optional[str] = None
     items: List[dict] = []
-    tva_rate: Optional[float] = 20.0
+    tva_rate: Optional[float] = Field(20.0, ge=0, le=100)
     due_date: Optional[date] = None
     project_id: Optional[int] = None
     notes: Optional[str] = None
@@ -182,7 +182,7 @@ class InvoiceCreate(BaseModel):
 class InvoiceUpdate(BaseModel):
     status: Optional[str] = None
     items: Optional[List[dict]] = None
-    tva_rate: Optional[float] = None
+    tva_rate: Optional[float] = Field(None, ge=0, le=100)
     due_date: Optional[date] = None
     paid_date: Optional[date] = None
     notes: Optional[str] = None

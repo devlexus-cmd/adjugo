@@ -24,8 +24,11 @@ def real_client_ip(request, hops: int = None) -> str:
     xff = request.headers.get("x-forwarded-for")
     if xff:
         parts = [p.strip() for p in xff.split(",") if p.strip()]
-        if parts:
-            return parts[-hops] if len(parts) >= hops else parts[0]
+        # XFF assez long → hop le plus à droite (ajouté par notre proxy, non spoofable). S'il
+        # est PLUS COURT que le nb de proxys attendus, c'est un XFF FORGÉ par le client : on ne
+        # retombe PAS sur parts[0] (contournement du rate-limit), mais sur l'IP réelle du socket.
+        if parts and len(parts) >= hops:
+            return parts[-hops]
     return get_remote_address(request)
 
 

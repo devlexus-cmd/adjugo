@@ -24,8 +24,8 @@ def ensure_org(user, db: Session) -> int:
     db.add(org)
     db.flush()
     user.org_id = org.id
-    if not getattr(user, "org_role", None):
-        user.org_role = "admin"
+    user.org_role = "admin"   # propriétaire de la NOUVELLE org → admin (inconditionnel : le
+    #  défaut modèle de org_role est désormais 'membre', donc on ne peut plus s'appuyer dessus).
     db.commit()
     return org.id
 

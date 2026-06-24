@@ -37,6 +37,8 @@ def create_contact(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if not (data.name or "").strip():
+        raise HTTPException(422, "Le nom du contact est obligatoire.")
     contact = Contact(user_id=current_user.id, **data.model_dump())
     db.add(contact)
     db.commit()

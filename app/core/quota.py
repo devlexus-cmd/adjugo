@@ -116,6 +116,7 @@ def refund_analysis(user, db: Session) -> None:
         from app.models import User as _User
         billing = _billing_user(user, db)
         locked = db.query(_User).filter(_User.id == billing.id).with_for_update().first() or billing
+        _sync_period(locked)   # remboursement après bascule de mois → ne pas décrémenter la nouvelle période
         used = locked.analyses_used_this_month or 0
         if used <= 0:
             return
