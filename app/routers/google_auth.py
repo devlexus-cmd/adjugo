@@ -111,17 +111,18 @@ def google_callback(code: str = "", state: str = "", error: str = "",
     name = (info.get("name") or "").strip()
 
     user = db.query(User).filter(func.lower(User.email) == email).first()
+    is_new = user is None
     if user:
         if not user.is_active:
             return RedirectResponse(_front("/app?gerror=" + quote("Compte désactivé")))
-        if not user.email_verified:        # Google a prouvé l'adresse → on confirme.
-            user.email_verified = True
-            db.commit()
+        # On NE force PLUS la vérification ici : la vérification d'email Adjugo s'applique à TOUT
+        # le monde, quel que soit le mode de connexion (la bannière + le mail s'en chargent).
     else:
-        # Création : mot de passe aléatoire INUTILISABLE (l'utilisateur passe par Google ; il peut
-        # définir un mot de passe plus tard via « mot de passe oublié »).
+        # Création via Google : mot de passe aléatoire INUTILISABLE (il peut en définir un plus tard
+        # via « mot de passe oublié »). email_verified=False → il devra confirmer son adresse comme
+        # une inscription classique.
         user = User(email=email, hashed_password=hash_password(_secrets.token_urlsafe(24)),
-                    full_name=name, org_role="admin", email_verified=True)
+                    full_name=name, org_role="admin", email_verified=False)
         db.add(user)
         db.flush()
         org = Organization(name=(f"Équipe {name}" if name else "Mon organisation"), owner_id=user.id)
@@ -131,6 +132,12 @@ def google_callback(code: str = "", state: str = "", error: str = "",
         db.add(MatchingCriteria(user_id=user.id))
         db.commit()
         db.refresh(user)
+
+    # Email de confirmation à la CRÉATION du compte (comme l'inscription par mot de passe) — pas à
+    # chaque connexion, pour ne pas spammer. Un ancien compte non vérifié garde la bannière + « Renvoyer ».
+    if is_new:
+        from app.routers.auth import _send_verification
+        _send_verification(user)
 
     jwt = create_access_token({"sub": str(user.id), "tv": int(user.token_version or 0)})
     return RedirectResponse(_front("/app?gtoken=" + jwt))
