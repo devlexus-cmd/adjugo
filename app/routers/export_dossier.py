@@ -201,8 +201,10 @@ def export_dossier(
         sommaire.append("-" * 60)
         sommaire.append("")
         sommaire.append("01_CERFA/")
-        for dt in ["DC1", "DC2", "DC4", "ATTRI1"]:
-            sommaire.append("  - {}_{}_{}.pdf".format(dt, project_slug, date_str))
+        # Dérivé de GENERATORS (sinon le sommaire listait 4 CERFA alors que le ZIP en contient 6 :
+        # la déclaration sur l'honneur OBLIGATOIRE et le DUME manquaient au sommaire).
+        for dt in GENERATORS:
+            sommaire.append("  - {}_{}_{}.pdf".format(dt.upper(), project_slug, date_str))
         sommaire.append("")
         sommaire.append("02_Documents/")
         for doc in documents:

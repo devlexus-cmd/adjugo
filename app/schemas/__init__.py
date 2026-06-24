@@ -2,7 +2,7 @@
 Adjugo — Schémas Pydantic (validation des requêtes/réponses API)
 """
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import date, datetime
 
 
@@ -182,14 +182,33 @@ class DocumentOut(BaseModel):
 # === INVOICE ===
 
 class InvoiceCreate(BaseModel):
-    type: str  # devis, facture, avoir
-    client_name: str
+    type: Literal["devis", "facture", "avoir"] = "devis"  # borné : un type inconnu ne devient plus un AVO silencieux
+    client_name: str = Field(..., min_length=1)            # pas de pièce officielle sans destinataire
     client_address: Optional[str] = None
     client_siret: Optional[str] = None
     items: List[dict] = []
     tva_rate: Optional[float] = Field(0.0, ge=0, le=100)  # cible PME/EI en franchise (293 B CGI)
     due_date: Optional[date] = None
     project_id: Optional[int] = None
+
+    @field_validator("client_name")
+    @classmethod
+    def _name_not_blank(cls, v):
+        if not (v or "").strip():
+            raise ValueError("Le nom du client est requis.")
+        return v.strip()
+
+    @field_validator("items")
+    @classmethod
+    def _items_non_negative(cls, v):
+        # Quantité/prix négatifs → total HT/TTC négatif imprimé sur un document comptable.
+        for it in (v or []):
+            try:
+                if float(it.get("qty") or 0) < 0 or float(it.get("unit_price") or 0) < 0:
+                    raise ValueError("Quantité et prix unitaire doivent être positifs.")
+            except (TypeError, ValueError) as e:
+                raise ValueError("Ligne de facture invalide : " + str(e))
+        return v
     notes: Optional[str] = None
 
 

@@ -103,7 +103,9 @@ def score_tender(t: NormalizedTender, company: Optional[dict], criteria: Optiona
         b.append(ScoreCriterion(key="montant", label="Budget", points=0,
                                 max_points=TENDER_WEIGHTS["montant"], status="inconnu",
                                 detail="Montant non publié dans l'avis"))
-    elif bmax and bmin is not None and bmin <= t.montant_estime <= bmax:
+    elif (not bmin or t.montant_estime >= bmin) and (not bmax or t.montant_estime <= bmax):
+        # Bornes OUVERTES (comme l'analyse) : un budget seulement MIN ne doit pas marquer
+        # « hors fourchette » tout marché au-dessus du seuil (verdict opposé à l'analyse).
         b.append(ScoreCriterion(key="montant", label="Budget", points=TENDER_WEIGHTS["montant"],
                                 max_points=TENDER_WEIGHTS["montant"], status="ok",
                                 detail=f"{t.montant_estime:,.0f} € dans votre fourchette"))

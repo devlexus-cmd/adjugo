@@ -64,6 +64,10 @@ def create_invoice(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if not data.items:
+        # Garde AVANT generate_reference : sinon une facture vide consommait un numéro comptable
+        # (trou dans la numérotation à sa suppression).
+        raise HTTPException(422, "Ajoutez au moins une ligne avant d'enregistrer.")
     ref = generate_reference(db, current_user.id, data.type)
     ht, tva, ttc = calculate_totals(data.items, data.tva_rate)
 

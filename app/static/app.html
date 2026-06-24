@@ -528,7 +528,7 @@
                 <div v-if="ao.buyer.recents && ao.buyer.recents.length" class="sectitle">Derniers avis publiés</div>
                 <div v-for="(r,i) in (ao.buyer.recents||[])" :key="'br'+i" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px">
                   <span style="flex:1;min-width:0">{{ r.objet }}</span>
-                  <a :href="r.url" target="_blank" class="muted" style="white-space:nowrap">{{ r.date }} ↗</a>
+                  <a :href="r.url" target="_blank" class="muted" style="white-space:nowrap">{{ fmtDate(r.date) }} ↗</a>
                 </div>
                 <a :href="ao.buyer.search_url" target="_blank" class="small" style="color:var(--accent-text);display:inline-block;margin-top:8px">Voir tous ses avis sur BOAMP ↗</a>
               </div>
@@ -1591,7 +1591,7 @@
     <div class="modal-h"><h3>{{ (drawer.name||'').slice(0,50) }}</h3><button class="x" @click="drawer=null"><i data-lucide="x"></i></button></div>
     <div class="modal-b">
       <div class="row" style="margin-bottom:14px"><span class="pill" :class="drawer.go_decision||'neutral'">{{ decLabel(drawer.go_decision) }}</span>
-        <span class="pill neutral" v-if="drawer.match_score!=null">Compatibilité {{ drawer.match_score }}/100</span><div class="spacer"></div>
+        <span class="pill" :class="drawer.go_decision||'neutral'" v-if="drawer.match_score!=null">Compatibilité {{ drawer.match_score }}/100</span><div class="spacer"></div>
         <span class="muted small">{{ drawer.client }}</span></div>
       <div class="field"><label>Étape</label>
         <select v-model="drawer.status" @change="updateProjectStatus"><option v-for="s in statuses2" :key="s" :value="s">{{ statusLabel(s) }}</option></select></div>
@@ -1639,14 +1639,14 @@
           <div class="sectitle">Lignes</div>
           <div v-for="(it,idx) in modal.d.items" :key="idx" class="frow t3" style="align-items:end">
             <div class="field"><label>Description</label><input v-model="it.description"></div>
-            <div class="field"><label>Qté</label><input type="number" v-model.number="it.qty"></div>
-            <div class="field"><label>PU HT</label><input type="number" v-model.number="it.unit_price"></div></div>
+            <div class="field"><label>Qté</label><input type="number" min="0" v-model.number="it.qty"></div>
+            <div class="field"><label>PU HT</label><input type="number" min="0" v-model.number="it.unit_price"></div></div>
           <button class="btn ghost sm" @click="modal.d.items.push({description:'',qty:1,unit_price:0})">+ Ligne</button>
           <div class="field" style="margin-top:10px"><label>TVA (%)</label><input type="number" min="0" max="100" v-model.number="modal.d.tva_rate"><div class="muted small">0 % si vous êtes en franchise de TVA (art. 293 B CGI).</div></div>
         </template>
       </div>
       <div class="modal-f"><button class="btn ghost" @click="modal=null">Annuler</button>
-        <button class="btn primary" @click="saveModal" :disabled="busy || ((modal.type==='contact'||modal.type==='cotraitant') && (!modal.d.name || !modal.d.name.trim()))"><span v-if="busy" class="spin"></span>Enregistrer</button></div>
+        <button class="btn primary" @click="saveModal" :disabled="busy || ((modal.type==='contact'||modal.type==='cotraitant') && (!modal.d.name || !modal.d.name.trim())) || (modal.type==='invoice' && (!modal.d.client_name || !modal.d.client_name.trim() || !(modal.d.items||[]).length))"><span v-if="busy" class="spin"></span>Enregistrer</button></div>
     </div>
   </div>
 

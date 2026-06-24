@@ -1185,7 +1185,7 @@ const __adjApp = createApp({
       try { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(v); }
       catch (e) { return v.toLocaleString("fr-FR") + " €"; }
     },
-    koSize(b) { return Math.round((Number(b) || 0) / 1024) + " Ko"; },   // ⚠ ne PAS nommer kb() : collision avec la donnée `kb` (base de connaissances) → data masque la méthode
+    koSize(b) { const k = (Number(b) || 0) / 1024; return k >= 1024 ? (k / 1024).toFixed(1) + " Mo" : Math.round(k) + " Ko"; },   // bascule en Mo au-delà de ~1 Mo (sinon « 18432 Ko » illisible). ⚠ ne PAS nommer kb() : collision avec la donnée `kb`
     avg(...a) { const n = a.map(Number).filter(x => x > 0); return n.length ? n.reduce((s, x) => s + x, 0) / n.length : 0; },
     detailRows(d) {
       const out = {}; const labels = { intitule_marche: "Intitulé", acheteur: "Acheteur", budget_estime: "Budget", date_limite: "Date limite", delai_execution: "Délai", lieu_execution: "Lieu", allotissement: "Allotissement", penalites: "Pénalités", sous_traitance: "Sous-traitance", ca_minimum_requis: "CA minimum", visite_obligatoire: "Visite" };
@@ -1194,7 +1194,7 @@ const __adjApp = createApp({
     },
     clausesRisque(d) { return Array.isArray(d && d.clauses_risque) ? d.clauses_risque : []; },
     niveauPill(n) { return ({ eleve: "no_go", "élevé": "no_go", "élevée": "no_go", moyen: "a_etudier", moyenne: "a_etudier", faible: "go" })[String(n || "").toLowerCase()] || "neutral"; },
-    niveauLabel(n) { return ({ eleve: "Élevé", "élevé": "Élevé", moyen: "Moyen", faible: "Faible" })[String(n || "").toLowerCase()] || (n || "—"); },
+    niveauLabel(n) { return ({ eleve: "Élevé", "élevé": "Élevé", "élevée": "Élevé", elevee: "Élevé", moyen: "Moyen", moyenne: "Moyen", faible: "Faible" })[String(n || "").toLowerCase()] || (n || "—"); },   // formes féminines alignées sur niveauPill (sinon « moyenne »/« élevée » brut)
     async loadCountries() { if (this.countries2.length) return; try { this.countries2 = await this.api("GET", "/api/sourcing/countries"); } catch (e) {} },
     countryName(code) { const c = this.countries2.find(x => x.code === code); return c ? c.nom : code; },
     // ── Veille / alertes AO sauvegardées ──

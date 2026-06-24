@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import Column, Integer, String, Float, ForeignKey
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from app.core.database import get_db, Base
 from app.core.security import get_current_user
@@ -68,6 +68,18 @@ class CotraitantCreate(BaseModel):
     specialites: Optional[str] = ""
     codes_cpv: Optional[str] = ""
     departement: Optional[str] = ""
+
+    @field_validator("siret")
+    @classmethod
+    def _validate_siret(cls, v):
+        # Même règle que pour SA PROPRE entreprise : un SIRET partenaire chiffré non conforme
+        # (SIREN à 9, tronqué) ne doit pas s'imprimer tel quel sur les CERFA de co-traitance/DC4.
+        if not v:
+            return v
+        s = str(v).replace(" ", "").replace(".", "")
+        if s.isdigit() and len(s) != 14:
+            raise ValueError("Le SIRET doit comporter exactement 14 chiffres.")
+        return v
 
 router = APIRouter(prefix="/api/cotraitants", tags=["Co-traitants"])
 
