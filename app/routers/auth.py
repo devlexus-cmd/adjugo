@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func
+
 from app.core.database import get_db
 from app.core.security import hash_password, verify_password, create_access_token, get_current_user
 from app.core.ratelimit import limiter
@@ -18,7 +20,9 @@ router = APIRouter(prefix="/api/auth", tags=["Authentification"])
 @limiter.limit("5/minute")
 def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     """Créer un nouveau compte utilisateur."""
-    if db.query(User).filter(User.email == data.email).first():
+    # data.email est déjà normalisé (minuscules) par le schéma. Le doublon se teste en
+    # INSENSIBLE à la casse pour couvrir d'éventuelles anciennes lignes en casse mixte.
+    if db.query(User).filter(func.lower(User.email) == data.email).first():
         raise HTTPException(status_code=400, detail="Cet email est déjà utilisé")
 
     user = User(
@@ -57,7 +61,8 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
 @limiter.limit("10/minute")
 def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
     """Connexion — retourne un JWT."""
-    user = db.query(User).filter(User.email == data.email).first()
+    # Recherche insensible à la casse : couvre les comptes créés avant la normalisation.
+    user = db.query(User).filter(func.lower(User.email) == data.email).first()
     # Anti-énumération par timing : on exécute TOUJOURS un PBKDF2 (sur un faux hash si l'email
     # est inconnu) → la réponse « identifiants incorrects » prend le même temps, qu'un compte
     # existe ou non. Sinon le court-circuit révélait par chronométrie quels emails ont un compte.
@@ -161,7 +166,9 @@ class ResetIn(BaseModel):
 def forgot_password(request: Request, data: ForgotIn, db: Session = Depends(get_db)):
     """Envoie un lien de réinitialisation à l'adresse, SI elle correspond à un compte.
     Réponse identique dans tous les cas (on ne révèle pas l'existence d'un compte)."""
-    user = db.query(User).filter(User.email == (data.email or "").strip().lower()).first()
+    # Insensible à la casse : un compte créé en casse mixte (« Jean.Dupont@… ») recevait
+    # SILENCIEUSEMENT aucun email (le .lower() ne matchait pas la ligne stockée).
+    user = db.query(User).filter(func.lower(User.email) == (data.email or "").strip().lower()).first()
     if user:
         raw = _secrets.token_urlsafe(32)
         user.reset_token_hash = _hash_reset(raw)

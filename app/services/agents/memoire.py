@@ -114,6 +114,7 @@ SOURCES AUTORISÉES (savoir-faire de l'entreprise) :
 
 Rédige la section (250-450 mots) en citant [S1], [S2]… Si rien ne couvre l'objectif,
 indique-le explicitement plutôt que d'inventer."""
+    err = False
     try:
         # tenant_scope reposé : le contextvar (quota/disjoncteur PAR TENANT) n'est pas hérité
         # par les threads du ThreadPoolExecutor appelant → sinon ces appels (le gros du coût)
@@ -123,6 +124,7 @@ indique-le explicitement plutôt que d'inventer."""
     except Exception as e:
         logger.warning("memoire.write en échec : %s", e)
         content = "[À compléter : la génération de cette section a échoué.]"
+        err = True   # échec TECHNIQUE (IA indispo) → ne pas le déguiser en livrable « sourcé »
     # Citations VÉRIFIÉES : on n'expose comme « sources » que les chunks réellement cités
     # [S1]…[Sn] dans le texte (fin de la citation décorative). grounded=False si le texte cite
     # une source hors-borne ou n'en cite aucune → le front peut signaler « à vérifier ».
@@ -135,7 +137,10 @@ indique-le explicitement plutôt que d'inventer."""
     used = [{"ref": f"S{i+1}", "doc_name": c["doc_name"], "chunk_id": c["chunk_id"],
              "excerpt": c["text"][:240]} for i, c in enumerate(chunks) if (i + 1) in keep]
     grounded = bool(chunks)
-    return {"titre": section.get("titre"), "content": content, "sources": used, "grounded": grounded}
+    if err:                       # une section en erreur n'a NI sources NI ancrage (sinon faux badge)
+        used, grounded = [], False
+    return {"titre": section.get("titre"), "content": content, "sources": used,
+            "grounded": grounded, "error": err}
 
 
 # ── 4. Contrôle de conformité ────────────────────────────────────────────────
@@ -188,10 +193,16 @@ def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int
         prepared.append((sec, chunks))
     with ThreadPoolExecutor(max_workers=min(6, len(prepared) or 1)) as ex:
         sections = list(ex.map(lambda pc: write_section(pc[0], pc[1], criteres=criteres, user_id=user_id), prepared))
-    # kb_used HONNÊTE : vrai seulement si au moins une section CITE réellement une source
-    # (et non « un chunk a été récupéré quelque part »). Évite le badge « Basé sur votre
-    # savoir-faire » sur un mémoire non sourcé.
-    kb_used = any(s.get("grounded") for s in sections)
+    # Si TOUTES les sections ont échoué techniquement (IA indispo / plafond / panne), le mémoire
+    # est 100 % « [À compléter] » : on LÈVE pour que le job passe en 'error' et que le quota soit
+    # REMBOURSÉ — au lieu de débiter le client pour un livrable vide.
+    errs = sum(1 for s in sections if s.get("error"))
+    if sections and errs == len(sections):
+        from app.services.llm import LLMUnavailable
+        raise LLMUnavailable("Service IA indisponible — mémoire non généré.")
+    # kb_used HONNÊTE : vrai seulement si au moins une section RÉUSSIE est ancrée (on exclut les
+    # sections en erreur) → pas de badge « Basé sur votre savoir-faire » sur un mémoire raté.
+    kb_used = any(s.get("grounded") for s in sections if not s.get("error"))
 
     conformity = conformity_check(requirements, sections)
 
@@ -238,19 +249,24 @@ SOURCES ATTRIBUÉES :
 {src}
 
 Rédige la section unifiée (250-450 mots), en attribuant et en croisant les apports."""
+    err = False
     try:
         with tenant_scope(billing_user_id):
             content = complete(_MERGED_SYS, user, max_tokens=1500, temperature=0.3)
     except Exception as e:
         logger.warning("merged.write en échec : %s", e)
         content = "[À compléter : génération échouée.]"
+        err = True
     cited = rag.cited_refs(content)
     keep = cited if cited else set(range(1, len(chunks) + 1))
     used = [{"ref": f"S{i+1}", "company": names_by_user.get(c.get("user_id"), "Entreprise"),
              "doc_name": c["doc_name"], "chunk_id": c["chunk_id"], "excerpt": c["text"][:220]}
             for i, c in enumerate(chunks) if (i + 1) in keep]
     grounded = bool(chunks)
-    return {"titre": section.get("titre"), "content": content, "sources": used, "grounded": grounded}
+    if err:
+        used, grounded = [], False
+    return {"titre": section.get("titre"), "content": content, "sources": used,
+            "grounded": grounded, "error": err}
 
 
 def generate_merged_memoire(db, members: list, dce_text: str, max_sections: int = 9, billing_user_id=None) -> dict:
@@ -277,6 +293,11 @@ def generate_merged_memoire(db, members: list, dce_text: str, max_sections: int 
     with ThreadPoolExecutor(max_workers=min(6, len(prepared) or 1)) as ex:
         sections = list(ex.map(lambda pc: _write_merged_section(pc[0], pc[1], names_by_user, criteres,
                                                                 billing_user_id=billing_user_id), prepared))
+
+    errs = sum(1 for s in sections if s.get("error"))
+    if sections and errs == len(sections):
+        from app.services.llm import LLMUnavailable
+        raise LLMUnavailable("Service IA indisponible — mémoire de groupement non généré.")
 
     conformity = conformity_check(requirements, sections)
     return {

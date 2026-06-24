@@ -2,6 +2,7 @@
 Adjugo - Checklist intelligente
 Compare les pieces requises (extraites par l'IA) avec les documents du coffre-fort.
 """
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -134,7 +135,9 @@ def match_document(piece_name, documents):
                         "found": True,
                         "document_id": doc.id,
                         "document_name": doc.name,
-                        "expired": hasattr(doc, 'days_until_expiration') and doc.days_until_expiration is not None and doc.days_until_expiration < 0,
+                        # Vraie date d'expiration (la colonne days_until_expiration n'existe PAS sur
+                        # le modèle → hasattr renvoyait toujours False → AUCUNE pièce jamais « périmée »).
+                        "expired": (doc.expiration_date is not None and doc.expiration_date < date.today()),
                     }
 
     return {"found": False}

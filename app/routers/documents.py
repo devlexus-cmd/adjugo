@@ -13,6 +13,7 @@ import io
 from app.core.database import get_db
 from app.core.config import get_settings
 from app.core.security import get_current_user
+from app.core.org import member_ids
 from app.core.http import content_disposition
 from app.models import User, Document, DocCategory
 from app.services.storage import get_storage
@@ -49,7 +50,7 @@ def list_documents(
 ):
     """Lister les documents du coffre-fort."""
     query = db.query(Document).filter(
-        Document.user_id == current_user.id,
+        Document.user_id.in_(member_ids(current_user, db)),
         Document.parent_id.is_(None),  # Ne montrer que les versions courantes
         Document.deleted_at.is_(None),  # hors corbeille
     )
@@ -146,7 +147,7 @@ def replace_document(
 ):
     """Remplacer un document par une nouvelle version."""
     old_doc = db.query(Document).filter(
-        Document.id == doc_id, Document.user_id == current_user.id
+        Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db))
     ).first()
     if not old_doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
@@ -199,7 +200,7 @@ def rename_document(
 ):
     """Renommer un document (titre affiché dans le coffre-fort)."""
     doc = db.query(Document).filter(
-        Document.id == doc_id, Document.user_id == current_user.id,
+        Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
         Document.deleted_at.is_(None),
     ).first()
     if not doc:
@@ -221,7 +222,7 @@ def delete_document(
     """Mettre un document à la corbeille (suppression douce, réversible).
     Le fichier de stockage est conservé tant que la corbeille n'est pas purgée."""
     doc = db.query(Document).filter(
-        Document.id == doc_id, Document.user_id == current_user.id,
+        Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
         Document.deleted_at.is_(None),
     ).first()
     if not doc:
@@ -239,7 +240,7 @@ def restore_document(
 ):
     """Restaurer un document depuis la corbeille (annulation de suppression)."""
     doc = db.query(Document).filter(
-        Document.id == doc_id, Document.user_id == current_user.id,
+        Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
     ).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
@@ -256,7 +257,7 @@ def download_document(
 ):
     """Télécharger un document. S3 → URL signée ; local → flux direct."""
     doc = db.query(Document).filter(
-        Document.id == doc_id, Document.user_id == current_user.id
+        Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db))
     ).first()
     if not doc or not doc.file_key:
         raise HTTPException(404, "Document introuvable")
@@ -286,7 +287,7 @@ def get_expiring_documents(
     threshold = date.today() + timedelta(days=days)
 
     docs = db.query(Document).filter(
-        Document.user_id == current_user.id,
+        Document.user_id.in_(member_ids(current_user, db)),
         Document.expiration_date.isnot(None),
         Document.expiration_date <= threshold,
         Document.parent_id.is_(None),

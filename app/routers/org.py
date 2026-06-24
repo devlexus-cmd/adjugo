@@ -10,7 +10,7 @@ from pydantic import BaseModel, EmailStr
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.security import get_current_user, hash_password
+from app.core.security import get_current_user, hash_password, create_access_token
 from app.core.ratelimit import limiter
 from app.core.org import ensure_org
 from app.models import User, Organization
@@ -298,4 +298,10 @@ def transfer_ownership(data: TransferIn, request: Request,
                  actor=f"user:{current_user.id}", actor_kind="owner",
                  target_type="user", target_id=target.id, detail=(target.email or "")[:255],
                  ip=audit.client_ip(request))
-    return {"ok": True, "owner_id": org.owner_id}
+    # On vient d'incrémenter token_version → l'ancien jeton est invalide. On renvoie un jeton
+    # FRAIS (comme le changement de mot de passe) pour que l'ex-propriétaire reste connecté en
+    # tant qu'admin, au lieu d'être éjecté vers l'écran de login dès le prochain appel (401).
+    db.refresh(current_user)
+    fresh = create_access_token(data={"sub": str(current_user.id),
+                                      "tv": int(current_user.token_version or 0)})
+    return {"ok": True, "owner_id": org.owner_id, "access_token": fresh}

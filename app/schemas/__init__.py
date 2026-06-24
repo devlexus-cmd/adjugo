@@ -14,10 +14,24 @@ class UserCreate(BaseModel):
     full_name: str
     company_name: Optional[str] = None
 
+    # EmailStr ne met en minuscule QUE le domaine : on normalise TOUTE l'adresse (partie locale
+    # incluse) pour qu'inscription, connexion et reset utilisent la même forme canonique. Sinon
+    # « Jean.Dupont@x.fr » à l'inscription et « jean.dupont@x.fr » à la connexion = comptes
+    # « fantômes » inaccessibles (ni login ni mot de passe oublié ne matchaient).
+    @field_validator("email")
+    @classmethod
+    def _norm_email(cls, v):
+        return str(v).strip().lower()
+
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def _norm_email(cls, v):
+        return str(v).strip().lower()
 
 
 class Token(BaseModel):

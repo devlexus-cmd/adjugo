@@ -513,8 +513,13 @@ const __adjApp = createApp({
     },
     async orgTransfer(m) {
       if (!confirm("Transférer la PROPRIÉTÉ de l'organisation à " + (m.full_name || m.email) + " ?\nVous deviendrez simple administrateur.")) return;
-      try { await this.api("POST", "/api/org/transfer-ownership", { new_owner_id: m.id }); this.loadOrg(); this.notify("Propriété transférée à " + (m.full_name || m.email)); }
-      catch (e) { this.notify(e.message, "err"); }
+      try {
+        const r = await this.api("POST", "/api/org/transfer-ownership", { new_owner_id: m.id });
+        // L'API renvoie un jeton frais (nos sessions ont été révoquées) : on l'adopte AVANT
+        // tout autre appel, sinon loadOrg() partait avec l'ancien jeton → 401 → logout brutal.
+        if (r && r.access_token) { this.token = r.access_token; localStorage.setItem("adjugo_token", r.access_token); }
+        this.loadOrg(); this.notify("Propriété transférée à " + (m.full_name || m.email));
+      } catch (e) { this.notify(e.message, "err"); }
     },
     async changePassword() {
       if (!this.pwd.current || !this.pwd.next) { this.notify("Renseignez les deux champs", "err"); return; }

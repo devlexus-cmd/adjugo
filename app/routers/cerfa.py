@@ -49,7 +49,8 @@ def generate(
     cd = {}
     for k in ["name", "siret", "code_ape", "forme_juridique", "capital",
               "representant_legal", "address", "city", "postal_code",
-              "tva_intracom", "ca_n1", "ca_n2", "ca_n3", "effectif"]:
+              "tva_intracom", "ca_n1", "ca_n2", "ca_n3", "effectif",
+              "email", "phone"]:   # SANS eux, courriel/téléphone du candidat sortaient VIDES sur les CERFA
         cd[k] = getattr(company, k, "") or ""
     cd["qualifications"] = company.qualifications or []
 

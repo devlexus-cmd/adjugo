@@ -87,12 +87,14 @@ def delete_saved_search(search_id: int, current_user: User = Depends(get_current
 @router.post("/{search_id}/run")
 def run_saved_search_now(search_id: int, current_user: User = Depends(get_current_user),
                          db: Session = Depends(get_db)):
-    """Exécute l'alerte immédiatement (aperçu) et renvoie les nouveaux AO trouvés."""
+    """Exécute l'alerte immédiatement (APERÇU) et renvoie les nouveaux AO trouvés."""
     s = db.query(SavedSearch).filter(SavedSearch.id == search_id,
                                      SavedSearch.user_id == current_user.id).first()
     if not s:
         raise HTTPException(404, "Alerte introuvable")
     from app.services.alerts import run_one_saved_search
-    fresh = run_one_saved_search(s, db, mark=True)
-    db.commit()
+    # mark=False : c'est un APERÇU. Avec mark=True, les AO trouvés étaient marqués « déjà vus »
+    # et n'étaient JAMAIS inclus dans le prochain digest email — le client les perdait d'un clic
+    # sur un bouton « tester ». On ne mute donc ni last_seen_refs ni last_run.
+    fresh = run_one_saved_search(s, db, mark=False)
     return {"new_matches": len(fresh), "tenders": fresh}

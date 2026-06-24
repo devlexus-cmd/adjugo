@@ -87,13 +87,6 @@ def delete_account(request: Request, data: DeleteIn,
     if (data.confirm or "").strip().upper() != "SUPPRIMER":
         raise HTTPException(400, "Tapez SUPPRIMER pour confirmer")
     from app.models import Organization
-    org = db.query(Organization).filter(Organization.owner_id == current_user.id).first()
-    if org:
-        others = db.query(User).filter(User.org_id == org.id, User.id != current_user.id).count()
-        if others:
-            raise HTTPException(409, "Transférez d'abord la propriété de l'organisation à un "
-                                     "autre membre (ou retirez les membres) avant de supprimer votre compte.")
-
     uid = current_user.id
     import app.models as M
 
@@ -103,6 +96,45 @@ def delete_account(request: Request, data: DeleteIn,
             return
         db.query(model).filter(getattr(model, field) == value).delete(synchronize_session=False)
 
+    # On résout l'organisation par l'APPARTENANCE (org_id), pas seulement la propriété : un
+    # MEMBRE a aussi un org_id. Sinon, pour un membre, `org` valait None et on enchaînait le
+    # hard-delete de ses Project/Contact/Document/… — or ce sont des données d'ENTREPRISE
+    # partagées (un commercial partait avec les AO de toute la boîte par la porte RGPD).
+    org = (db.query(Organization).filter(Organization.id == current_user.org_id).first()
+           if current_user.org_id else None)
+    is_owner = bool(org and org.owner_id == uid)
+
+    if is_owner:
+        others = db.query(User).filter(User.org_id == org.id, User.id != uid).count()
+        if others:
+            raise HTTPException(409, "Transférez d'abord la propriété de l'organisation à un "
+                                     "autre membre (ou retirez les membres) avant de supprimer votre compte.")
+
+    # MEMBRE d'une organisation tierce : on RÉASSIGNE ses dossiers au propriétaire (comme le
+    # retrait de membre) — l'effacement RGPD de la personne physique n'impose pas de détruire
+    # les registres de la personne morale — puis on n'efface QUE ses données strictement perso.
+    if org and not is_owner:
+        try:
+            from app.routers.org import _reassign_member_data
+            _reassign_member_data(db, uid, org.owner_id)
+            # co-traitance portée par ce membre (owner_id) → suit le propriétaire, comme au transfert.
+            for name in ("CoSpace", "ProjectInvite", "ProjectContribution", "ContributionPiece"):
+                model = getattr(M, name, None)
+                if model is not None and hasattr(model, "owner_id"):
+                    db.query(model).filter(model.owner_id == uid).update(
+                        {model.owner_id: org.owner_id}, synchronize_session=False)
+            # données PERSONNELLES du membre (jamais partagées) → supprimées.
+            for name in ("SavedSearch", "Company", "MatchingCriteria", "MatchingCriteriaExt"):
+                delete_by(name, "user_id", uid)
+            db.query(User).filter(User.id == uid).delete(synchronize_session=False)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(500, f"Suppression impossible (contactez le support) : {e}")
+        return {"ok": True, "message": "Compte supprimé ; les données de l'entreprise ont été conservées."}
+
+    # Propriétaire SOLO (ou compte sans organisation) : ses données sont strictement les
+    # siennes → effacement complet et ordonné (enfants avant parents).
     try:
         pids = [p.id for p in db.query(M.Project).filter(M.Project.user_id == uid).all()]
         # 1) enfants liés aux contributions / invitations (owner_id = mandataire)

@@ -57,6 +57,9 @@ def export_dossier(
         "name": project.name,
         "client": project.client or "",
         "budget": est.get("total_ht"),
+        # SANS ça, l'ATTRI1 du ZIP affichait toujours « 0 % — TVA non applicable » (TTC=HT),
+        # même quand le client avait choisi 20 % — un acte d'engagement à la TVA fausse.
+        "tva_rate": getattr(project, "tva_rate", 0) or 0,
         "reference": "AO-{:04d}".format(project.id),
         "cotraitants": [],
     }
@@ -75,6 +78,36 @@ def export_dossier(
                        "ca_n3", "effectif"]:
                 ct_data[k] = getattr(ct, k, "") or ""
             pd["cotraitants"].append(ct_data)
+    except Exception:
+        pass
+
+    # Groupements montés via le réseau Adjugo (invitation → contribution SOUMISE, lien non
+    # révoqué) : SANS ça, le ZIP « dossier complet » sortait un DC1 « candidat seul » alors
+    # que build_dossier (bouton « Télécharger ») déclarait bien le groupement — incohérence.
+    try:
+        from app.models import ProjectContribution, ProjectInvite
+        _seen_sir = {str(c.get("siret") or "").strip() for c in pd["cotraitants"] if c.get("siret")}
+        rows = db.query(ProjectContribution).join(
+            ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
+            ProjectContribution.project_id == project_id,
+            ProjectContribution.status == "submitted",
+            ProjectInvite.revoked.is_(False)).all()
+        for c in rows:
+            sir = str(getattr(c, "siret", "") or "").strip()
+            if sir and sir in _seen_sir:
+                continue
+            if not ((c.company_name or "") or sir):
+                continue
+            contact = c.contact or {}
+            pd["cotraitants"].append({
+                "name": c.company_name or "", "siret": sir,
+                "forme_juridique": getattr(c, "forme_juridique", "") or "",
+                "address": getattr(c, "address", "") or "", "postal_code": getattr(c, "postal_code", "") or "",
+                "city": getattr(c, "city", "") or "",
+                "email": contact.get("email", ""), "phone": contact.get("telephone", ""),
+            })
+            if sir:
+                _seen_sir.add(sir)
     except Exception:
         pass
 
