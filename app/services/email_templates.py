@@ -48,6 +48,24 @@ def _button(label: str, href: str) -> str:
 </table>"""
 
 
+def reset_password_html(link: str, name: str = "") -> str:
+    """Email de réinitialisation de mot de passe (même charte que la confirmation d'adresse)."""
+    hello = "Bonjour" + (f" {name.split()[0]}" if name and name.split() else "")
+    inner = f"""\
+      <tr><td style="padding:6px 36px 4px;">
+        <h1 style="margin:14px 0 6px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:21px;font-weight:800;color:{_INK};text-align:center;">{hello}</h1>
+        <p style="margin:0 0 20px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.62;color:{_INK};text-align:center;">
+          Vous avez demandé à réinitialiser votre mot de passe Adjugo. Cliquez ci-dessous pour en définir un nouveau.
+        </p>
+        {_button("Réinitialiser mon mot de passe", link)}
+        <p style="margin:18px 0 4px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:12.5px;line-height:1.6;color:{_MUTED};text-align:center;">
+          Ce lien est valable <b>1 heure</b>. S'il ne fonctionne pas, copiez-collez cette adresse&nbsp;:
+        </p>
+        <p style="margin:0;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:11.5px;line-height:1.5;color:{_ACCENT};text-align:center;word-break:break-all;">{link}</p>
+      </td></tr>"""
+    return _shell(inner, preheader="Réinitialisez votre mot de passe Adjugo.")
+
+
 def verify_email_html(link: str, name: str = "") -> str:
     """Email de confirmation d'adresse à l'inscription."""
     hello = "Bienvenue" + (f" {name.split()[0]}" if name and name.split() else "")

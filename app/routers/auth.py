@@ -242,13 +242,15 @@ def forgot_password(request: Request, data: ForgotIn, db: Session = Depends(get_
         db.commit()
         try:
             from app.services.email import send_email
+            from app.services.email_templates import reset_password_html
             from app.core.config import get_settings
             base = (get_settings().APP_BASE_URL or "https://adjugo.pro").rstrip("/")
             link = f"{base}/app?reset={raw}"
             send_email(user.email, "Réinitialisation de votre mot de passe Adjugo",
                        f"Bonjour,\n\nVous avez demandé à réinitialiser votre mot de passe Adjugo.\n"
                        f"Cliquez sur ce lien (valable 1 heure) :\n{link}\n\n"
-                       f"Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.\n\n— Adjugo")
+                       f"Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.\n\n— Adjugo",
+                       html=reset_password_html(link, user.full_name or ""))
         except Exception:
             pass
     return {"ok": True, "message": "Si un compte existe pour cette adresse, un email vient d'être envoyé."}
