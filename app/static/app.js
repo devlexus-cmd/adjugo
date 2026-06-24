@@ -796,11 +796,17 @@ const __adjApp = createApp({
       const t = this.sharedAo.token;
       const st = await this.api("GET", "/api/invite/" + t + "/otp/status").catch(() => null);
       if (!st || !st.required || st.verified) return true;
-      this.notify("Envoi d'un code de vérification…");
-      const rq = await this.api("POST", "/api/invite/" + t + "/otp/request").catch(() => null);
-      if (!rq || !rq.sent) { this.notify("Impossible d'envoyer le code de vérification", "err"); return false; }
-      const code = window.prompt("Un code à 6 chiffres a été envoyé à " + (rq.email_masked || "votre adresse") + ".\nSaisissez-le pour valider votre identité :");
-      if (!code) { this.notify("Vérification annulée", "err"); return false; }
+      let masked = (st && st.email_masked) || "votre adresse";
+      // On réutilise un code déjà valide (st.pending) au lieu d'en redemander un (la limite
+      // 6/h serait épuisée par des clics répétés sur « Soumettre » → partenaire bloqué).
+      if (!st.pending) {
+        this.notify("Envoi d'un code de vérification…");
+        const rq = await this.api("POST", "/api/invite/" + t + "/otp/request").catch(() => null);
+        if (!rq || !rq.sent) { this.notify("Trop d'envois récents — patientez quelques minutes puis ressaisissez le dernier code reçu", "err"); return false; }
+        masked = rq.email_masked || masked;
+      }
+      const code = window.prompt("Saisissez le code à 6 chiffres envoyé à " + masked + " pour valider votre identité :");
+      if (!code) { this.notify("Vérification annulée — brouillon conservé", "err"); return false; }
       try { await this.api("POST", "/api/invite/" + t + "/otp/verify", { code: code.trim() }); return true; }
       catch (e) { this.notify(e.message || "Code incorrect", "err"); return false; }
     },

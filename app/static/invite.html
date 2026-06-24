@@ -271,11 +271,17 @@
       async function ensureVerified() {
         const st = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/status").then(r => r.ok ? r.json() : null).catch(() => null);
         if (!st || !st.required || st.verified) return true;
-        msg.textContent = "Envoi d'un code de vérification…";
-        const rq = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/request", { method: "POST" }).then(r => r.ok ? r.json() : null).catch(() => null);
-        if (!rq || !rq.sent) { msg.textContent = "Impossible d'envoyer le code de vérification."; return false; }
-        const code = window.prompt("Un code à 6 chiffres vient d'être envoyé à " + (rq.email_masked || "votre adresse") + ".\nSaisissez-le pour valider votre identité avant de soumettre :");
-        if (!code) { msg.textContent = "Vérification annulée."; return false; }
+        let masked = st.email_masked || "votre adresse";
+        // On ne redemande un code QUE s'il n'y en a pas déjà un valide en attente : sinon on
+        // réutilise celui envoyé (rappeler /otp/request épuiserait la limite 6/h et bloquerait).
+        if (!st.pending) {
+          msg.textContent = "Envoi d'un code de vérification…";
+          const rq = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/request", { method: "POST" }).then(r => r.ok ? r.json() : null).catch(() => null);
+          if (!rq || !rq.sent) { msg.textContent = "Trop d'envois récents — patientez quelques minutes, puis ressaisissez le dernier code reçu."; return false; }
+          masked = rq.email_masked || masked;
+        }
+        const code = window.prompt("Saisissez le code à 6 chiffres envoyé à " + masked + " pour valider votre identité avant de soumettre votre part :");
+        if (!code) { msg.textContent = "Vérification annulée — votre brouillon est conservé."; return false; }
         const vr = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code.trim() }) });
         if (vr.ok) { msg.textContent = "Identité vérifiée ✓"; return true; }
         const e = await vr.json().catch(() => ({})); msg.textContent = (e && e.detail) ? e.detail : "Code incorrect."; return false;

@@ -536,8 +536,12 @@ def guest_otp_status(token: str, request: Request, db: Session = Depends(get_db)
     """Indique au front si une vérification d'identité est requise pour soumettre, et si
     elle est déjà faite. Si l'email n'est pas configuré, aucune vérification (flux libre)."""
     inv = _valid_invite(token, db)
+    # `pending` = un code valide a déjà été envoyé et n'est pas expiré → le front le réutilise
+    # au lieu de rappeler /otp/request (qui consomme la limite 6/h et bloquerait le partenaire).
+    pending = bool(inv.otp_hash and inv.otp_expires_at and inv.otp_expires_at > utcnow())
     return {"required": _binding_required(inv),
             "verified": bool(inv.verified_at),
+            "pending": pending,
             "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
 
 
