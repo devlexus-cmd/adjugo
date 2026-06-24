@@ -50,7 +50,7 @@ def _button(label: str, href: str) -> str:
 
 def verify_email_html(link: str, name: str = "") -> str:
     """Email de confirmation d'adresse à l'inscription."""
-    hello = ("Bienvenue" + (f" {name.split()[0]}" if name and name.split() else "")) + " 👋"
+    hello = "Bienvenue" + (f" {name.split()[0]}" if name and name.split() else "")
     inner = f"""\
       <tr><td style="padding:6px 36px 4px;">
         <h1 style="margin:14px 0 6px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:21px;font-weight:800;color:{_INK};text-align:center;">{hello}</h1>
