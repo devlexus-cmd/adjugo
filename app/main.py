@@ -180,10 +180,41 @@ def root():
         return HTMLResponse(f.read())
 
 
+def _ai_subprocessor_fragments():
+    """Fragments décrivant le sous-traitant IA RÉELLEMENT actif, injectés dans les pages
+    légales (confidentialité + DPA). Ainsi le doc reflète toujours la vérité : Anthropic (US)
+    tant que c'est Anthropic, Mistral (FR/UE) dès qu'on bascule — aucune mise à jour manuelle,
+    aucun risque que la politique « mente » sur la localisation des données."""
+    try:
+        from app.services.llm import active_provider
+        if active_provider().get("provider") == "mistral":
+            return {
+                "{{AI_PROVIDER}}": "Mistral AI",
+                "{{AI_PRODUCT}}": "La Plateforme",
+                "{{AI_LOCATION_FULL}}": "<strong>Union européenne</strong> (France — api.mistral.ai)",
+                "{{AI_LOCATION_SHORT}}": "Union européenne (France)",
+                "{{AI_TRANSFER_MENTION}}": "",   # IA hébergée en UE → plus de transfert pays tiers pour ce traitement
+            }
+    except Exception:
+        pass
+    # Défaut sûr : Anthropic (état de production actuel).
+    return {
+        "{{AI_PROVIDER}}": "Anthropic, PBC",
+        "{{AI_PRODUCT}}": "Claude API",
+        "{{AI_LOCATION_FULL}}": "<strong>États-Unis</strong> (API standard api.anthropic.com — encadré par CCT)",
+        "{{AI_LOCATION_SHORT}}": "États-Unis (CCT)",
+        "{{AI_TRANSFER_MENTION}}": "le fournisseur d&#x27;IA (Anthropic, États-Unis) pour l&#x27;analyse et la génération de documents, ",
+    }
+
+
 def _legal_page(name: str):
     from fastapi.responses import HTMLResponse
     with open(os.path.join(_static_dir, "legal", name), encoding="utf-8") as f:
-        return HTMLResponse(f.read())
+        html = f.read()
+    if "{{AI_" in html:
+        for k, v in _ai_subprocessor_fragments().items():
+            html = html.replace(k, v)
+    return HTMLResponse(html)
 
 
 @app.get("/mentions-legales", tags=["Site"], include_in_schema=False)
