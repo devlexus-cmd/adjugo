@@ -1,0 +1,111 @@
+- generic [ref=e2]:
+  - generic [ref=e42]:
+    - complementary [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: adjug
+          - img [ref=e47]
+        - generic [ref=e51]: Bâtiment de l'Ouest
+      - button "Tableau de bord" [ref=e52] [cursor=pointer]:
+        - img [ref=e54]
+        - text: Tableau de bord
+      - button "Trouver des marchés" [ref=e59] [cursor=pointer]:
+        - img [ref=e61]
+        - text: Trouver des marchés
+      - button "Mes marchés 6" [ref=e65] [cursor=pointer]:
+        - img [ref=e67]
+        - text: Mes marchés
+        - generic [ref=e69]: "6"
+      - button "Mes partenaires 3" [active] [ref=e70] [cursor=pointer]:
+        - img [ref=e72]
+        - text: Mes partenaires
+        - generic [ref=e77]: "3"
+      - button "Mes documents" [ref=e78] [cursor=pointer]:
+        - img [ref=e80]
+        - text: Mes documents
+      - button "Mon entreprise" [ref=e84] [cursor=pointer]:
+        - img [ref=e86]
+        - text: Mon entreprise
+      - button "Plus" [ref=e89] [cursor=pointer]:
+        - img [ref=e91]
+        - text: Plus
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - button "Thème clair" [ref=e95] [cursor=pointer]:
+            - img [ref=e97]
+          - button "Thème système" [ref=e103] [cursor=pointer]:
+            - img [ref=e105]
+          - button "Thème sombre" [ref=e107] [cursor=pointer]:
+            - img [ref=e109]
+        - generic [ref=e111]:
+          - generic [ref=e112]: CD
+          - generic [ref=e113]:
+            - text: Compte Démo
+            - generic [ref=e114]: demo@adjugo.fr
+          - button "Déconnexion" [ref=e115] [cursor=pointer]:
+            - img [ref=e117]
+    - main [ref=e120]:
+      - generic [ref=e121]:
+        - button "Menu" [ref=e122] [cursor=pointer]:
+          - img [ref=e124]
+        - heading "Mes partenaires" [level=1] [ref=e1340]
+        - button "Notifications" [ref=e129] [cursor=pointer]:
+          - img [ref=e131]
+        - button "Découvrir" [ref=e1341] [cursor=pointer]:
+          - img [ref=e1343]
+          - text: Découvrir
+        - button "Partenaire" [ref=e1346] [cursor=pointer]:
+          - img [ref=e1348]
+          - text: Partenaire
+      - table [ref=e1351]:
+        - rowgroup [ref=e1352]:
+          - row "Entreprise Spécialités Qualifications CA moyen Dépt" [ref=e1353]:
+            - columnheader "Entreprise" [ref=e1354]
+            - columnheader "Spécialités" [ref=e1355]
+            - columnheader "Qualifications" [ref=e1356]
+            - columnheader "CA moyen" [ref=e1357]
+            - columnheader "Dépt" [ref=e1358]
+            - columnheader [ref=e1359]
+        - rowgroup [ref=e1360]:
+          - row "Charpentes du Léon Landerneau · 51234567800018 Charpente bois, ossature, couverture Qualibat 2392 (charpente bois), RGE 820 000 € 29 Modifier Supprimer" [ref=e1361]:
+            - cell "Charpentes du Léon Landerneau · 51234567800018" [ref=e1362]:
+              - text: Charpentes du Léon
+              - generic [ref=e1363]: Landerneau · 51234567800018
+            - cell "Charpente bois, ossature, couverture" [ref=e1364]
+            - cell "Qualibat 2392 (charpente bois), RGE" [ref=e1365]
+            - cell "820 000 €" [ref=e1366]
+            - cell "29" [ref=e1367]
+            - cell "Modifier Supprimer" [ref=e1368]:
+              - button "Modifier" [ref=e1369] [cursor=pointer]:
+                - img [ref=e1371]
+              - button "Supprimer" [ref=e1374] [cursor=pointer]:
+                - img [ref=e1376]
+          - row "Zinguerie Bigoudène Pont-l'Abbé · 48765432100027 Couverture, zinguerie, étanchéité Qualibat 3411 (zinguerie) 540 000 € 29 Modifier Supprimer" [ref=e1379]:
+            - cell "Zinguerie Bigoudène Pont-l'Abbé · 48765432100027" [ref=e1380]:
+              - text: Zinguerie Bigoudène
+              - generic [ref=e1381]: Pont-l'Abbé · 48765432100027
+            - cell "Couverture, zinguerie, étanchéité" [ref=e1382]
+            - cell "Qualibat 3411 (zinguerie)" [ref=e1383]
+            - cell "540 000 €" [ref=e1384]
+            - cell "29" [ref=e1385]
+            - cell "Modifier Supprimer" [ref=e1386]:
+              - button "Modifier" [ref=e1387] [cursor=pointer]:
+                - img [ref=e1389]
+              - button "Supprimer" [ref=e1392] [cursor=pointer]:
+                - img [ref=e1394]
+          - row "Breizh Désamiantage Lorient · 53219876500011 Désamiantage SS3, dépose amiante, retrait Qualification désamiantage SS3, certification amiante sous-section 3 2 100 000 € 56 Modifier Supprimer" [ref=e1397]:
+            - cell "Breizh Désamiantage Lorient · 53219876500011" [ref=e1398]:
+              - text: Breizh Désamiantage
+              - generic [ref=e1399]: Lorient · 53219876500011
+            - cell "Désamiantage SS3, dépose amiante, retrait" [ref=e1400]
+            - cell "Qualification désamiantage SS3, certification amiante sous-section 3" [ref=e1401]
+            - cell "2 100 000 €" [ref=e1402]
+            - cell "56" [ref=e1403]
+            - cell "Modifier Supprimer" [ref=e1404]:
+              - button "Modifier" [ref=e1405] [cursor=pointer]:
+                - img [ref=e1407]
+              - button "Supprimer" [ref=e1410] [cursor=pointer]:
+                - img [ref=e1412]
+  - button "Mon avis" [ref=e387] [cursor=pointer]:
+    - img [ref=e389]
+    - text: Mon avis

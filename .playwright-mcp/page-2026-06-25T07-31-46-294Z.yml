@@ -1,0 +1,306 @@
+- generic [ref=e2]:
+  - status "Chargement en cours" [ref=e734]
+  - generic [ref=e42]:
+    - complementary [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: adjug
+          - img [ref=e47]
+        - generic [ref=e51]: Bâtiment de l'Ouest
+      - button "Tableau de bord" [ref=e52] [cursor=pointer]:
+        - img [ref=e54]
+        - text: Tableau de bord
+      - button "Trouver des marchés" [ref=e59] [cursor=pointer]:
+        - img [ref=e61]
+        - text: Trouver des marchés
+      - button "Mes marchés 6" [ref=e65] [cursor=pointer]:
+        - img [ref=e67]
+        - text: Mes marchés
+        - generic [ref=e69]: "6"
+      - button "Mes partenaires 3" [ref=e70] [cursor=pointer]:
+        - img [ref=e72]
+        - text: Mes partenaires
+        - generic [ref=e77]: "3"
+      - button "Mes documents" [ref=e78] [cursor=pointer]:
+        - img [ref=e80]
+        - text: Mes documents
+      - button "Mon entreprise" [ref=e84] [cursor=pointer]:
+        - img [ref=e86]
+        - text: Mon entreprise
+      - button "Plus" [ref=e89] [cursor=pointer]:
+        - img [ref=e91]
+        - text: Plus
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - button "Thème clair" [ref=e95] [cursor=pointer]:
+            - img [ref=e97]
+          - button "Thème système" [ref=e103] [cursor=pointer]:
+            - img [ref=e105]
+          - button "Thème sombre" [ref=e107] [cursor=pointer]:
+            - img [ref=e109]
+        - generic [ref=e111]:
+          - generic [ref=e112]: CD
+          - generic [ref=e113]:
+            - text: Compte Démo
+            - generic [ref=e114]: demo@adjugo.fr
+          - button "Déconnexion" [ref=e115] [cursor=pointer]:
+            - img [ref=e117]
+    - main [ref=e120]:
+      - generic [ref=e121]:
+        - button "Menu" [ref=e122] [cursor=pointer]:
+          - img [ref=e124]
+        - heading "Le marché" [level=1] [ref=e735]
+        - button "Notifications" [ref=e129] [cursor=pointer]:
+          - img [ref=e131]
+      - generic [ref=e736]:
+        - button "Retour" [ref=e737] [cursor=pointer]:
+          - img [ref=e739]
+          - text: Retour
+        - generic [ref=e741]:
+          - generic [ref=e742]:
+            - generic [ref=e743]:
+              - generic [ref=e744]:
+                - generic [ref=e745]: Compatibilité 34/100
+                - link "BOAMP · réf 25-121650" [ref=e746] [cursor=pointer]:
+                  - /url: https://www.boamp.fr
+                  - text: BOAMP · réf 25-121650
+                  - img [ref=e748]
+              - heading "Infogérance SI — CD Ille-et-Vilaine" [level=2] [ref=e752]
+              - generic [ref=e753]: Conseil départemental 35
+            - generic [ref=e754]:
+              - generic [ref=e755]: Étape
+              - combobox "Étape" [ref=e756]:
+                - option "Nouveau" [selected]
+                - option "En cours"
+                - option "Envoyé"
+                - option "Gagné"
+                - option "Perdu"
+                - option "Abandonné"
+          - generic [ref=e757]:
+            - generic [ref=e758]:
+              - generic [ref=e759]:
+                - generic [ref=e760]: Date limite
+                - img [ref=e762]
+              - generic [ref=e766]: 10/12/2026 à 12h00
+            - generic [ref=e767]:
+              - generic [ref=e768]:
+                - generic [ref=e769]: Montant estimé
+                - img [ref=e771]
+              - generic [ref=e774]: 35 000 EUR HT
+            - generic [ref=e775]:
+              - generic [ref=e776]:
+                - generic [ref=e777]: Lieu
+                - img [ref=e779]
+              - generic [ref=e782]: Rennes (35)
+            - generic [ref=e783]:
+              - generic [ref=e784]:
+                - generic [ref=e785]: Délai
+                - img [ref=e787]
+              - generic [ref=e790]: Accord-cadre 4 ans
+        - generic [ref=e791]:
+          - generic [ref=e792]:
+            - img [ref=e794]
+            - heading "Analyse du dossier du marché" [level=3] [ref=e801]
+            - generic [ref=e802]:
+              - img [ref=e804]
+              - text: Dossier complet
+          - generic [ref=e808]:
+            - generic [ref=e809]:
+              - button "Ré-importer le dossier" [ref=e810] [cursor=pointer]:
+                - img [ref=e812]
+                - text: Ré-importer le dossier
+              - button "Ré-analyser" [ref=e815] [cursor=pointer]:
+                - img [ref=e817]
+                - text: Ré-analyser
+            - paragraph [ref=e822]: Marché de services d'infogérance informatique à Rennes — hors métier BTP, hors zone, CA exigé inatteignable. Classé No-Go par le barème déterministe.
+            - generic [ref=e823]:
+              - generic [ref=e824]:
+                - generic [ref=e825]: Intitulé
+                - generic [ref=e826]: Maintenance du parc informatique et infogérance du système d'information
+              - generic [ref=e827]:
+                - generic [ref=e828]: Acheteur
+                - generic [ref=e829]: Conseil départemental d'Ille-et-Vilaine
+              - generic [ref=e830]:
+                - generic [ref=e831]: Budget
+                - generic [ref=e832]: 35 000 EUR HT
+              - generic [ref=e833]:
+                - generic [ref=e834]: Date limite
+                - generic [ref=e835]: 10/12/2026 à 12h00
+              - generic [ref=e836]:
+                - generic [ref=e837]: Délai
+                - generic [ref=e838]: Accord-cadre 4 ans
+              - generic [ref=e839]:
+                - generic [ref=e840]: Lieu
+                - generic [ref=e841]: Rennes (35)
+              - generic [ref=e842]:
+                - generic [ref=e843]: Allotissement
+                - generic [ref=e844]: Lot unique
+              - generic [ref=e845]:
+                - generic [ref=e846]: Sous-traitance
+                - generic [ref=e847]: Autorisée
+              - generic [ref=e848]:
+                - generic [ref=e849]: CA minimum
+                - generic [ref=e850]: CA > 5 000 000 EUR
+            - generic [ref=e851]: Détail du score
+            - generic [ref=e852]:
+              - generic [ref=e853]: Adéquation métier
+              - generic [ref=e854]: Partiel
+              - generic [ref=e855]: 8/30
+            - generic [ref=e856]:
+              - generic [ref=e857]: Zone géographique
+              - generic [ref=e858]: Partiel
+              - generic [ref=e859]: 5/20
+            - generic [ref=e860]:
+              - generic [ref=e861]: Budget
+              - generic [ref=e862]: Partiel
+              - generic [ref=e863]: 6/15
+            - generic [ref=e864]:
+              - generic [ref=e865]: Capacité financière
+              - generic [ref=e866]: Partiel
+              - generic [ref=e867]: 2/15
+            - generic [ref=e868]:
+              - generic [ref=e869]: Qualifications exigées
+              - generic [ref=e870]: Partiel
+              - generic [ref=e871]: 3/10
+            - generic [ref=e872]:
+              - generic [ref=e873]: Délai de réponse
+              - generic [ref=e874]: Conforme
+              - generic [ref=e875]: 10/10
+            - generic [ref=e876]:
+              - img [ref=e878]
+              - text: Clauses à risque & négociation
+            - generic [ref=e880]:
+              - generic [ref=e881]:
+                - generic [ref=e882]: Élevé
+                - generic [ref=e883]: Adéquation métier
+              - generic [ref=e884]: Prestation informatique sans lien avec le BTP
+              - generic [ref=e885]:
+                - img [ref=e887]
+                - text: "Levier : Aucun — marché hors périmètre"
+            - generic [ref=e889]:
+              - generic [ref=e890]:
+                - img [ref=e892]
+                - text: Poser une question à l'IA sur cet appel d'offres
+              - generic [ref=e895]:
+                - textbox "Ex. Quelles pénalités de retard ? Le CA minimal exigé ? La date de visite ?" [ref=e896]
+                - button "Demander" [disabled] [ref=e897]:
+                  - img [ref=e899]
+                  - text: Demander
+              - generic [ref=e902]: Réponses fondées sur le dossier importé. Si l'information n'y figure pas, l'IA le dit clairement.
+        - generic [ref=e903]:
+          - generic [ref=e904]:
+            - img [ref=e906]
+            - heading "Estimation du prix" [level=3] [ref=e908]
+            - button "Estimer mon prix" [ref=e909] [cursor=pointer]:
+              - img [ref=e911]
+              - text: Estimer mon prix
+          - generic [ref=e915]:
+            - text: "L'IA découpe le travail en tâches et estime le nombre de jours ; le prix est calculé sur vos tarifs de journée (réglables dans Mon entreprise — sinon des tarifs par défaut, à personnaliser). Le montant lui-même n'est jamais inventé : il est calculé jours × tarif."
+            - generic [ref=e916]:
+              - generic [ref=e917]: "Distance du chantier :"
+              - spinbutton "Distance du chantier en km" [ref=e918]: "0"
+              - generic [ref=e919]: km
+        - generic [ref=e920]:
+          - generic [ref=e921]:
+            - generic [ref=e922]:
+              - img [ref=e924]
+              - heading "Mes documents de réponse" [level=3] [ref=e927]
+              - button "Préparer mes documents" [ref=e928] [cursor=pointer]:
+                - img [ref=e930]
+                - text: Préparer mes documents
+            - generic [ref=e933]:
+              - generic [ref=e934]:
+                - img [ref=e936]
+                - generic [ref=e940]: TVA de l'acte d'engagement
+                - combobox "Sélection" [ref=e941]:
+                  - option "0 % — je ne facture pas la TVA (franchise)" [selected]
+                  - option "5,5 %"
+                  - option "10 %"
+                  - option "20 %"
+              - generic [ref=e942]: Prépare les formulaires officiels (DC1, DC2, déclaration sur l'honneur, acte d'engagement) déjà remplis, plus votre dossier de présentation, à partir des infos du marché et de votre entreprise.
+          - generic [ref=e943]:
+            - generic [ref=e944]:
+              - img [ref=e946]
+              - heading "Pièces à fournir" [level=3] [ref=e949]
+            - generic [ref=e951]: Chargement…
+        - generic [ref=e952]:
+          - generic [ref=e953]:
+            - img [ref=e955]
+            - heading "Votre client (l'acheteur)" [level=3] [ref=e958]
+          - generic [ref=e960]: Aucun historique de publication trouvé pour « Conseil départemental 35 » sur le BOAMP.
+        - generic [ref=e961]:
+          - generic [ref=e962]:
+            - img [ref=e964]
+            - heading "Partenaires sur ce marché" [level=3] [ref=e969]
+            - button "Répartir entre partenaires" [ref=e970] [cursor=pointer]:
+              - img [ref=e972]
+              - text: Répartir entre partenaires
+            - button "Ajouter" [ref=e975] [cursor=pointer]:
+              - img [ref=e977]
+              - text: Ajouter
+          - generic [ref=e978]:
+            - generic [ref=e979]: "⚠ À vérifier avant de déposer en groupement : le règlement peut imposer ou interdire la co-traitance selon le lot ; un opérateur ne peut être mandataire que d'un seul groupement par lot, ni être à la fois candidat seul et membre d'un groupement ; la composition ne doit plus changer entre la remise des candidatures et la signature."
+            - generic [ref=e980]: Aucun partenaire ajouté. Ajoutez-en un pour préparer le DC4 (le document qui déclare un partenaire).
+        - generic [ref=e981]:
+          - generic [ref=e982]:
+            - img [ref=e984]
+            - heading "Réseau Adjugo — montez le dossier à plusieurs" [level=3] [ref=e988]
+            - button "Contributions" [ref=e989] [cursor=pointer]:
+              - img [ref=e991]
+              - text: Contributions
+            - button "Journal d'accès" [ref=e995] [cursor=pointer]:
+              - img [ref=e997]
+              - text: Journal d'accès
+          - generic [ref=e1001]:
+            - generic [ref=e1002]: "Associez d'autres entreprises pour gagner ce marché ensemble. Chaque partenaire reçoit un lien sécurisé limité à ce seul dossier : il apporte sa part (références, lot, présentation) sans jamais voir les données des autres. L'IA fusionne le tout en une réponse commune."
+            - button "Inviter un partenaire sur ce marché" [ref=e1003] [cursor=pointer]:
+              - img [ref=e1005]
+              - text: Inviter un partenaire sur ce marché
+        - generic [ref=e1008]:
+          - generic [ref=e1009]:
+            - generic [ref=e1010]:
+              - img [ref=e1012]
+              - heading "Devis & factures liés" [level=3] [ref=e1015]
+              - button "Devis" [ref=e1016] [cursor=pointer]:
+                - img [ref=e1018]
+                - text: Devis
+              - button "Facturation" [ref=e1019] [cursor=pointer]:
+                - img [ref=e1021]
+                - text: Facturation
+            - generic [ref=e1026]: Aucun devis ni facture lié. Créez-en avec le bouton Devis ci-dessus (il sera rattaché à ce marché).
+          - generic [ref=e1027]:
+            - generic [ref=e1028]:
+              - generic [ref=e1029]:
+                - img [ref=e1031]
+                - generic [ref=e1035]: Suivi du dossier
+              - generic [ref=e1036]: L'historique des étapes franchies sur cet appel d'offres — d'un coup d'œil, où vous en êtes.
+            - generic [ref=e1037]:
+              - img [ref=e1039]
+              - generic [ref=e1040]: Marché ajouté
+              - generic [ref=e1041]: 24/06/2026
+            - generic [ref=e1042]:
+              - img [ref=e1044]
+              - generic [ref=e1051]: Dossier analysé (complet)
+              - generic [ref=e1052]: compatibilité 34/100
+            - generic [ref=e1053]:
+              - img [ref=e1055]
+              - generic [ref=e1059]: Échéance de remise
+              - generic [ref=e1060]: 10/12/2026 à 12h00
+        - generic [ref=e1061]:
+          - generic [ref=e1062]:
+            - img [ref=e1064]
+            - heading "Dossier du marché" [level=3] [ref=e1066]
+            - button "Mes documents" [ref=e1067] [cursor=pointer]:
+              - img [ref=e1069]
+              - text: Mes documents
+          - generic [ref=e1073]: Aucune pièce classée. Le dossier du marché importé et les formulaires officiels générés se rangent ici automatiquement.
+        - generic [ref=e1075]:
+          - button "Exporter le dossier complet (ZIP)" [ref=e1076] [cursor=pointer]:
+            - img [ref=e1078]
+            - text: Exporter le dossier complet (ZIP)
+          - button "Supprimer cet AO" [ref=e1082] [cursor=pointer]:
+            - img [ref=e1084]
+            - text: Supprimer cet AO
+  - button "Mon avis" [ref=e387] [cursor=pointer]:
+    - img [ref=e389]
+    - text: Mon avis

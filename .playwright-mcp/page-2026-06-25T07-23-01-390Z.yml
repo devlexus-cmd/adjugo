@@ -1,0 +1,37 @@
+- generic [ref=e2]:
+  - status "Chargement en cours" [ref=e3]
+  - main [ref=e4]:
+    - link "Accueil" [ref=e5] [cursor=pointer]:
+      - /url: /
+      - img [ref=e7]
+      - text: Accueil
+    - generic [ref=e9]:
+      - img [ref=e11]
+      - heading "Adjugo" [level=1] [ref=e15]:
+        - generic [ref=e16]: adjug
+        - img [ref=e17]
+      - paragraph [ref=e21]: Plateforme de réponse aux marchés publics
+      - generic [ref=e22]:
+        - generic [ref=e23]: Email
+        - textbox "Email" [ref=e24]:
+          - /placeholder: vous@entreprise.fr
+      - generic [ref=e25]:
+        - generic [ref=e26]: Mot de passe
+        - textbox "Mot de passe" [ref=e27]:
+          - /placeholder: ••••••••
+      - button "Se connecter" [disabled] [ref=e28]: Se connecter
+      - button "Voir la démo (sans inscription)" [disabled] [ref=e30]:
+        - img [ref=e32]
+        - text: Voir la démo (sans inscription)
+      - paragraph [ref=e35]:
+        - link "Pas de compte ? S'inscrire" [ref=e36] [cursor=pointer]:
+          - /url: "#"
+        - link "Mot de passe oublié ?" [ref=e37] [cursor=pointer]:
+          - /url: "#"
+  - generic [ref=e38]:
+    - generic [ref=e39]:
+      - text: Adjugo utilise un stockage local strictement nécessaire à votre connexion et, le cas échéant, une mesure d'audience anonyme. Aucun cookie publicitaire.
+      - link "En savoir plus" [ref=e40] [cursor=pointer]:
+        - /url: /legal/politique-confidentialite.html
+      - text: .
+    - button "J'ai compris" [ref=e41] [cursor=pointer]

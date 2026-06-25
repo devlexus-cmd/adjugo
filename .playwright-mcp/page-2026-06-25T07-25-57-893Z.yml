@@ -1,0 +1,232 @@
+- generic [ref=e2]:
+  - generic [ref=e42]:
+    - complementary [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: adjug
+          - img [ref=e47]
+        - generic [ref=e51]: Bâtiment de l'Ouest
+      - button "Tableau de bord" [ref=e52] [cursor=pointer]:
+        - img [ref=e54]
+        - text: Tableau de bord
+      - button "Trouver des marchés" [ref=e59] [cursor=pointer]:
+        - img [ref=e61]
+        - text: Trouver des marchés
+      - button "Mes marchés 6" [ref=e65] [cursor=pointer]:
+        - img [ref=e67]
+        - text: Mes marchés
+        - generic [ref=e69]: "6"
+      - button "Mes partenaires 3" [ref=e70] [cursor=pointer]:
+        - img [ref=e72]
+        - text: Mes partenaires
+        - generic [ref=e77]: "3"
+      - button "Mes documents" [active] [ref=e78] [cursor=pointer]:
+        - img [ref=e80]
+        - text: Mes documents
+      - button "Mon entreprise" [ref=e84] [cursor=pointer]:
+        - img [ref=e86]
+        - text: Mon entreprise
+      - button "Plus" [ref=e89] [cursor=pointer]:
+        - img [ref=e91]
+        - text: Plus
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - button "Thème clair" [ref=e95] [cursor=pointer]:
+            - img [ref=e97]
+          - button "Thème système" [ref=e103] [cursor=pointer]:
+            - img [ref=e105]
+          - button "Thème sombre" [ref=e107] [cursor=pointer]:
+            - img [ref=e109]
+        - generic [ref=e111]:
+          - generic [ref=e112]: CD
+          - generic [ref=e113]:
+            - text: Compte Démo
+            - generic [ref=e114]: demo@adjugo.fr
+          - button "Déconnexion" [ref=e115] [cursor=pointer]:
+            - img [ref=e117]
+    - main [ref=e120]:
+      - generic [ref=e121]:
+        - button "Menu" [ref=e122] [cursor=pointer]:
+          - img [ref=e124]
+        - generic [ref=e125]:
+          - heading "Mes documents" [level=1] [ref=e392]
+          - generic [ref=e127]: Vos pièces administratives centralisées
+        - button "Notifications" [ref=e129] [cursor=pointer]:
+          - img [ref=e131]
+        - button "Ajouter un document" [ref=e393] [cursor=pointer]:
+          - img [ref=e395]
+          - text: Ajouter un document
+      - table [ref=e400]:
+        - rowgroup [ref=e401]:
+          - row "Document Catégorie Taille Expiration" [ref=e402]:
+            - columnheader "Document" [ref=e403]
+            - columnheader "Catégorie" [ref=e404]
+            - columnheader "Taille" [ref=e405]
+            - columnheader "Expiration" [ref=e406]
+            - columnheader [ref=e407]
+        - rowgroup [ref=e408]:
+          - row "DCE — Réfection toiture groupe scolaire Jean Moulin DCE · Réfection toiture — Groupe scolaire Jean DCE 12 Ko — Renommer Télécharger Supprimer" [ref=e409]:
+            - cell "DCE — Réfection toiture groupe scolaire Jean Moulin DCE · Réfection toiture — Groupe scolaire Jean" [ref=e410]:
+              - text: DCE — Réfection toiture groupe scolaire Jean Moulin
+              - generic [ref=e411]: DCE · Réfection toiture — Groupe scolaire Jean
+            - cell "DCE" [ref=e412]:
+              - generic [ref=e413]: DCE
+            - cell "12 Ko" [ref=e414]
+            - cell "—" [ref=e415]
+            - cell "Renommer Télécharger Supprimer" [ref=e416]:
+              - button "Renommer" [ref=e417] [cursor=pointer]:
+                - img [ref=e419]
+              - button "Télécharger" [ref=e422] [cursor=pointer]:
+                - img [ref=e424]
+              - button "Supprimer" [ref=e427] [cursor=pointer]:
+                - img [ref=e429]
+          - row "DPGF — bordereau de décomposition des prix Chiffrage · Réfection toiture — Groupe scolaire Jean Chiffrage 12 Ko — Renommer Télécharger Supprimer" [ref=e432]:
+            - cell "DPGF — bordereau de décomposition des prix Chiffrage · Réfection toiture — Groupe scolaire Jean" [ref=e433]:
+              - text: DPGF — bordereau de décomposition des prix
+              - generic [ref=e434]: Chiffrage · Réfection toiture — Groupe scolaire Jean
+            - cell "Chiffrage" [ref=e435]:
+              - generic [ref=e436]: Chiffrage
+            - cell "12 Ko" [ref=e437]
+            - cell "—" [ref=e438]
+            - cell "Renommer Télécharger Supprimer" [ref=e439]:
+              - button "Renommer" [ref=e440] [cursor=pointer]:
+                - img [ref=e442]
+              - button "Télécharger" [ref=e445] [cursor=pointer]:
+                - img [ref=e447]
+              - button "Supprimer" [ref=e450] [cursor=pointer]:
+                - img [ref=e452]
+          - row "Mémoire technique — méthodologie étanchéité Mémoire technique · Réfection toiture — Groupe scolaire Jean Mémoire technique 12 Ko — Renommer Télécharger Supprimer" [ref=e455]:
+            - cell "Mémoire technique — méthodologie étanchéité Mémoire technique · Réfection toiture — Groupe scolaire Jean" [ref=e456]:
+              - text: Mémoire technique — méthodologie étanchéité
+              - generic [ref=e457]: Mémoire technique · Réfection toiture — Groupe scolaire Jean
+            - cell "Mémoire technique" [ref=e458]:
+              - generic [ref=e459]: Mémoire technique
+            - cell "12 Ko" [ref=e460]
+            - cell "—" [ref=e461]
+            - cell "Renommer Télécharger Supprimer" [ref=e462]:
+              - button "Renommer" [ref=e463] [cursor=pointer]:
+                - img [ref=e465]
+              - button "Télécharger" [ref=e468] [cursor=pointer]:
+                - img [ref=e470]
+              - button "Supprimer" [ref=e473] [cursor=pointer]:
+                - img [ref=e475]
+          - row "Liste de références — travaux similaires (< 3 ans) Pièces administratives 12 Ko — Renommer Télécharger Supprimer" [ref=e478]:
+            - cell "Liste de références — travaux similaires (< 3 ans)" [ref=e479]
+            - cell "Pièces administratives" [ref=e480]:
+              - generic [ref=e481]: Pièces administratives
+            - cell "12 Ko" [ref=e482]
+            - cell "—" [ref=e483]
+            - cell "Renommer Télécharger Supprimer" [ref=e484]:
+              - button "Renommer" [ref=e485] [cursor=pointer]:
+                - img [ref=e487]
+              - button "Télécharger" [ref=e490] [cursor=pointer]:
+                - img [ref=e492]
+              - button "Supprimer" [ref=e495] [cursor=pointer]:
+                - img [ref=e497]
+          - row "RIB — Bâtiment de l'Ouest Pièces administratives 12 Ko — Renommer Télécharger Supprimer" [ref=e500]:
+            - cell "RIB — Bâtiment de l'Ouest" [ref=e501]
+            - cell "Pièces administratives" [ref=e502]:
+              - generic [ref=e503]: Pièces administratives
+            - cell "12 Ko" [ref=e504]
+            - cell "—" [ref=e505]
+            - cell "Renommer Télécharger Supprimer" [ref=e506]:
+              - button "Renommer" [ref=e507] [cursor=pointer]:
+                - img [ref=e509]
+              - button "Télécharger" [ref=e512] [cursor=pointer]:
+                - img [ref=e514]
+              - button "Supprimer" [ref=e517] [cursor=pointer]:
+                - img [ref=e519]
+          - row "Attestation RGE Pièces administratives 12 Ko 19/02/2027 Renommer Télécharger Supprimer" [ref=e522]:
+            - cell "Attestation RGE" [ref=e523]
+            - cell "Pièces administratives" [ref=e524]:
+              - generic [ref=e525]: Pièces administratives
+            - cell "12 Ko" [ref=e526]
+            - cell "19/02/2027" [ref=e527]
+            - cell "Renommer Télécharger Supprimer" [ref=e528]:
+              - button "Renommer" [ref=e529] [cursor=pointer]:
+                - img [ref=e531]
+              - button "Télécharger" [ref=e534] [cursor=pointer]:
+                - img [ref=e536]
+              - button "Supprimer" [ref=e539] [cursor=pointer]:
+                - img [ref=e541]
+          - row "Certificat Qualibat 3212 — étanchéité de toiture Pièces administratives 12 Ko 20/07/2026 Renommer Télécharger Supprimer" [ref=e544]:
+            - cell "Certificat Qualibat 3212 — étanchéité de toiture" [ref=e545]
+            - cell "Pièces administratives" [ref=e546]:
+              - generic [ref=e547]: Pièces administratives
+            - cell "12 Ko" [ref=e548]
+            - cell "20/07/2026" [ref=e549]
+            - cell "Renommer Télécharger Supprimer" [ref=e550]:
+              - button "Renommer" [ref=e551] [cursor=pointer]:
+                - img [ref=e553]
+              - button "Télécharger" [ref=e556] [cursor=pointer]:
+                - img [ref=e558]
+              - button "Supprimer" [ref=e561] [cursor=pointer]:
+                - img [ref=e563]
+          - row "Attestation d'assurance décennale Pièces administratives 12 Ko 09/02/2027 Renommer Télécharger Supprimer" [ref=e566]:
+            - cell "Attestation d'assurance décennale" [ref=e567]
+            - cell "Pièces administratives" [ref=e568]:
+              - generic [ref=e569]: Pièces administratives
+            - cell "12 Ko" [ref=e570]
+            - cell "09/02/2027" [ref=e571]
+            - cell "Renommer Télécharger Supprimer" [ref=e572]:
+              - button "Renommer" [ref=e573] [cursor=pointer]:
+                - img [ref=e575]
+              - button "Télécharger" [ref=e578] [cursor=pointer]:
+                - img [ref=e580]
+              - button "Supprimer" [ref=e583] [cursor=pointer]:
+                - img [ref=e585]
+          - row "Attestation d'assurance RC professionnelle Pièces administratives 12 Ko 20/01/2027 Renommer Télécharger Supprimer" [ref=e588]:
+            - cell "Attestation d'assurance RC professionnelle" [ref=e589]
+            - cell "Pièces administratives" [ref=e590]:
+              - generic [ref=e591]: Pièces administratives
+            - cell "12 Ko" [ref=e592]
+            - cell "20/01/2027" [ref=e593]
+            - cell "Renommer Télécharger Supprimer" [ref=e594]:
+              - button "Renommer" [ref=e595] [cursor=pointer]:
+                - img [ref=e597]
+              - button "Télécharger" [ref=e600] [cursor=pointer]:
+                - img [ref=e602]
+              - button "Supprimer" [ref=e605] [cursor=pointer]:
+                - img [ref=e607]
+          - row "Attestation de vigilance URSSAF Pièces administratives 12 Ko 16/07/2026 Renommer Télécharger Supprimer" [ref=e610]:
+            - cell "Attestation de vigilance URSSAF" [ref=e611]
+            - cell "Pièces administratives" [ref=e612]:
+              - generic [ref=e613]: Pièces administratives
+            - cell "12 Ko" [ref=e614]
+            - cell "16/07/2026" [ref=e615]
+            - cell "Renommer Télécharger Supprimer" [ref=e616]:
+              - button "Renommer" [ref=e617] [cursor=pointer]:
+                - img [ref=e619]
+              - button "Télécharger" [ref=e622] [cursor=pointer]:
+                - img [ref=e624]
+              - button "Supprimer" [ref=e627] [cursor=pointer]:
+                - img [ref=e629]
+          - row "Attestation de régularité fiscale (DGFiP) Pièces administratives 12 Ko 12/09/2026 Renommer Télécharger Supprimer" [ref=e632]:
+            - cell "Attestation de régularité fiscale (DGFiP)" [ref=e633]
+            - cell "Pièces administratives" [ref=e634]:
+              - generic [ref=e635]: Pièces administratives
+            - cell "12 Ko" [ref=e636]
+            - cell "12/09/2026" [ref=e637]
+            - cell "Renommer Télécharger Supprimer" [ref=e638]:
+              - button "Renommer" [ref=e639] [cursor=pointer]:
+                - img [ref=e641]
+              - button "Télécharger" [ref=e644] [cursor=pointer]:
+                - img [ref=e646]
+              - button "Supprimer" [ref=e649] [cursor=pointer]:
+                - img [ref=e651]
+          - row "Extrait Kbis — Bâtiment de l'Ouest Pièces administratives 12 Ko — Renommer Télécharger Supprimer" [ref=e654]:
+            - cell "Extrait Kbis — Bâtiment de l'Ouest" [ref=e655]
+            - cell "Pièces administratives" [ref=e656]:
+              - generic [ref=e657]: Pièces administratives
+            - cell "12 Ko" [ref=e658]
+            - cell "—" [ref=e659]
+            - cell "Renommer Télécharger Supprimer" [ref=e660]:
+              - button "Renommer" [ref=e661] [cursor=pointer]:
+                - img [ref=e663]
+              - button "Télécharger" [ref=e666] [cursor=pointer]:
+                - img [ref=e668]
+              - button "Supprimer" [ref=e671] [cursor=pointer]:
+                - img [ref=e673]
+  - button "Mon avis" [ref=e387] [cursor=pointer]:
+    - img [ref=e389]
+    - text: Mon avis

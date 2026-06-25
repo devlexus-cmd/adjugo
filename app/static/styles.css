@@ -306,12 +306,17 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
   .side.open { transform:none; box-shadow:var(--shadow-pop); }
   .nav-backdrop { display:block; position:fixed; inset:0; background:rgba(13,17,23,.45); z-index:55; }
   .menu-btn { display:inline-flex; }
-  .top { padding:12px 15px; gap:10px; }
-  .top h1 { font-size:16px; }
+  .top { padding:12px 15px; gap:9px; }
+  .top .spacer, .top .sub { display:none; }      /* libère la place : sous-titre superflu sur mobile */
+  .top-title { flex:1; min-width:0; }            /* le titre rétrécit (ellipsis) au lieu de pousser */
+  .top h1 { font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .top .btn { height:33px; padding:0 11px; font-size:12.5px; }   /* bouton d'action compact */
+  .top .btn .lucide { width:14px; height:14px; }
   .content { padding:18px 15px 48px; }
   .t-wrap { overflow-x:auto; }
   .t-wrap table { min-width:560px; }
   .cards.cols-4 { grid-template-columns:1fr 1fr; }  /* KPIs : 2 colonnes, pas 1 */
+  .kanban { grid-template-columns:1fr; overflow-x:visible; }  /* colonnes EMPILÉES (plus de scroll horizontal) */
 }
 @media (max-width:520px) {
   .cards.cols-4 { grid-template-columns:1fr; }
