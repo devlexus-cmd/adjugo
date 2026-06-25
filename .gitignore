@@ -42,3 +42,6 @@ test_adjugo.db
 node_modules/
 package.json
 package-lock.json
+
+.playwright-mcp/
+mobile-*.png
