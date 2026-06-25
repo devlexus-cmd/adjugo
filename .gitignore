@@ -45,3 +45,4 @@ package-lock.json
 
 .playwright-mcp/
 mobile-*.png
+landing-*.png
