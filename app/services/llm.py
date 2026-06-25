@@ -55,28 +55,36 @@ def client() -> Anthropic:
 _PROVIDER_WARNED = {"missing_key": False}
 
 
+def _resolve_provider() -> str:
+    """Fournisseur effectif. Mode 'auto' (défaut) → MISTRAL dès qu'une clé est présente, sinon
+    Anthropic. Donc ajouter MISTRAL_API_KEY suffit à basculer (rien d'autre à régler). Forçable
+    via LLM_PROVIDER=anthropic|mistral. 'mistral' sans clé → repli sûr sur Anthropic."""
+    prov = (os.getenv("LLM_PROVIDER") or settings.LLM_PROVIDER or "auto").strip().lower()
+    if prov == "anthropic":
+        return "anthropic"
+    if prov == "mistral":
+        if settings.MISTRAL_API_KEY:
+            return "mistral"
+        if not _PROVIDER_WARNED["missing_key"]:
+            logger.warning("LLM_PROVIDER=mistral mais MISTRAL_API_KEY absente → repli sur Anthropic.")
+            _PROVIDER_WARNED["missing_key"] = True
+        return "anthropic"
+    # auto : la clé Mistral décide.
+    return "mistral" if settings.MISTRAL_API_KEY else "anthropic"
+
+
 def active_provider() -> dict:
     """Fournisseur IA réellement actif (sans secret) — pour /metrics, /api/llm/info, UI."""
-    prov = (os.getenv("LLM_PROVIDER") or settings.LLM_PROVIDER or "anthropic").strip().lower()
-    if prov == "mistral" and settings.MISTRAL_API_KEY:
+    if _resolve_provider() == "mistral":
         return {"provider": "mistral", "model": settings.MISTRAL_MODEL,
                 "model_fast": settings.MISTRAL_MODEL_FAST,
                 "label": "Mistral Large", "sovereign": True, "region": "FR/EU"}
-    # Anthropic (défaut) — ou repli si mistral demandé sans clé.
     return {"provider": "anthropic", "model": MODEL, "model_fast": MODEL_FAST,
             "label": "Claude (Anthropic)", "sovereign": False, "region": "US"}
 
 
 def _use_mistral() -> bool:
-    prov = (os.getenv("LLM_PROVIDER") or settings.LLM_PROVIDER or "anthropic").strip().lower()
-    if prov != "mistral":
-        return False
-    if not settings.MISTRAL_API_KEY:
-        if not _PROVIDER_WARNED["missing_key"]:
-            logger.warning("LLM_PROVIDER=mistral mais MISTRAL_API_KEY absente → repli sur Anthropic.")
-            _PROVIDER_WARNED["missing_key"] = True
-        return False
-    return True
+    return _resolve_provider() == "mistral"
 
 
 class _Usage:

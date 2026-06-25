@@ -65,17 +65,18 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg2://adjugo:adjugo_password@localhost:5432/adjugo_db"
 
     # Moteur IA — fournisseur interchangeable (souveraineté).
-    # "anthropic" (défaut) ou "mistral" (Mistral Large, hébergé FR/EU).
-    # L'architecture est découplée du fournisseur : tous les appels passent par
-    # app/services/llm.py:messages_create. Basculer = changer LLM_PROVIDER (+ clé),
-    # sans toucher une ligne des agents. Si la clé Mistral manque, repli auto sur
-    # Anthropic (jamais de panne due à un flag mal réglé).
-    LLM_PROVIDER: str = "anthropic"
+    # "auto" (défaut) | "anthropic" | "mistral". L'architecture est découplée du fournisseur :
+    # tous les appels passent par app/services/llm.py:messages_create.
+    # En "auto" : on bascule sur MISTRAL dès qu'une MISTRAL_API_KEY est présente, sinon Anthropic.
+    # → il SUFFIT d'ajouter la clé Mistral dans Railway pour passer au souverain, rien d'autre.
+    # Forçable : LLM_PROVIDER=anthropic (rester sur Claude même avec une clé Mistral) ou =mistral.
+    # Si "mistral" est demandé sans clé → repli auto sur Anthropic (jamais de panne due à un flag).
+    LLM_PROVIDER: str = "auto"
 
     # Claude (Anthropic)
     ANTHROPIC_API_KEY: str = ""
 
-    # Mistral (souverain) — utilisé uniquement si LLM_PROVIDER=mistral
+    # Mistral (souverain, hébergé FR/EU) — sa seule présence suffit à activer Mistral (mode auto)
     MISTRAL_API_KEY: str = ""
     MISTRAL_BASE_URL: str = "https://api.mistral.ai/v1"
     MISTRAL_MODEL: str = "mistral-large-latest"        # raisonnement (analyse, stratégie)
