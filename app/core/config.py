@@ -113,7 +113,7 @@ class Settings(BaseSettings):
     # Quotas d'analyses IA inclus / mois. Au-delà : 5 €/analyse (overage).
     # Découverte 0 € · Pro 129 € · Business 199 € · Enterprise sur-devis.
     PLAN_LIMITS: dict = {
-        "starter": {"analyses": 2, "storage_mb": 500, "members": 2},
+        "starter": {"analyses": 5, "storage_mb": 500, "members": 2},
         "pro": {"analyses": 30, "storage_mb": 10240, "members": 10},
         "business": {"analyses": 100, "storage_mb": 102400, "members": 50},
     }
