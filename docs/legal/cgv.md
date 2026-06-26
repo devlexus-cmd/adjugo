@@ -43,7 +43,7 @@ Le Service est proposé selon les formules suivantes (prix **nets — TVA non ap
 
 | Formule | Prix | Contenu principal |
 |---|---|---|
-| **Starter** | **0 € / mois** | Veille + **2 analyses d'appel d'offres** incluses / mois |
+| **Starter** | **0 € / mois** | Veille + **5 analyses d'appel d'offres** incluses / mois |
 | **Pro** | **129 € / mois** | Veille + **30 analyses d'appel d'offres** incluses / mois + génération de dossier |
 | **Business** | **199 € / mois** | Veille + **100 analyses d'appel d'offres** incluses / mois + fonctions de groupement |
 | **Enterprise** | **Sur devis** | Groupements, grandes structures, volumes élevés, fonctionnalités dédiées |
