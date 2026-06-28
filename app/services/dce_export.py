@@ -38,8 +38,14 @@ def _slug(s: str) -> str:
     return (s or "projet")[:50]
 
 
+# Caractères de contrôle interdits en XML 1.0 (tout C0 sauf \t \n \r). python-docx
+# les écrit tels quels dans le XML → lxml lève une ValueError et l'export part en 500.
+# On les retire en amont, dans _s() : tous les champs rendus passent par là.
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
 def _s(v) -> str:
-    return str(v if v is not None else "").strip()
+    return _CTRL.sub("", str(v if v is not None else "")).strip()
 
 
 def _eur(v) -> str:
@@ -63,6 +69,8 @@ def _bloc_procedure(dce: dict) -> list:
         out.append(("bullet", "Délais : " + _s(p.get("delai_note"))))
     if _s(p.get("seuil_reference")):
         out.append(("note", "Référence des seuils : " + _s(p.get("seuil_reference"))))
+    out.append(("note", "Le seuil de procédure s'apprécie sur la valeur TOTALE estimée du besoin "
+                "(tous lots, tranches et reconductions) ; ne pas scinder le besoin pour rester sous un seuil."))
     return out
 
 
@@ -199,22 +207,42 @@ def blocks_cctp(dce: dict) -> list:
 _LVL = {"h1": 1, "h2": 2, "h3": 3}
 
 
+def _add_runs(p, text):
+    """Insère le texte en respectant les sauts de ligne internes (\\n → saut de ligne Word,
+    au lieu d'un \\n littéral écrasé par Word)."""
+    parts = _s(text).split("\n")
+    for i, part in enumerate(parts):
+        if i:
+            p.add_run().add_break()
+        if part:
+            p.add_run(part)
+    return p
+
+
 def render_docx(title: str, blocks: list) -> bytes:
     doc = Document()
-    doc.add_heading(_s(title) or "Document", level=0)
+    blocks = list(blocks)
+    # Le 1er bloc h1 fait office de titre (niveau 0) : sinon il s'ajoute APRÈS le titre
+    # passé en argument → double titre identique en tête de chaque pièce.
+    if blocks and blocks[0][0] == "h1":
+        doc.add_heading(_s(blocks[0][1]) or _s(title) or "Document", level=0)
+        blocks = blocks[1:]
+    else:
+        doc.add_heading(_s(title) or "Document", level=0)
     for b in blocks:
         kind = b[0]
         if kind in _LVL:
             doc.add_heading(_s(b[1]), level=_LVL[kind])
         elif kind == "p":
-            doc.add_paragraph(_s(b[1]))
+            _add_runs(doc.add_paragraph(), b[1])
         elif kind == "bullet":
-            doc.add_paragraph(_s(b[1]), style="List Bullet")
+            _add_runs(doc.add_paragraph(style="List Bullet"), b[1])
         elif kind == "note":
             p = doc.add_paragraph()
-            r = p.add_run(_s(b[1]))
-            r.italic = True
-            r.font.size = Pt(9)
+            _add_runs(p, b[1])
+            for r in p.runs:
+                r.italic = True
+                r.font.size = Pt(9)
         elif kind == "table":
             _add_table(doc, b[1])
     buf = io.BytesIO()

@@ -15,8 +15,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.ratelimit import limiter
 from app.core.security import (hash_password, verify_password, create_access_token,
-                               get_current_acheteur)
+                               get_current_acheteur, needs_rehash, DUMMY_HASH)
 from app.models import Acheteur, AcheteurDce
+from app.services.acheteur_demo_seed import DEMO_EMAIL
 
 logger = logging.getLogger("adjugo")
 router = APIRouter(prefix="/api/acheteur", tags=["Espace acheteur (collectivités)"])
@@ -32,6 +33,19 @@ def _token(a: Acheteur) -> str:
 
 def _norm_email(e: str) -> str:
     return (e or "").strip().lower()
+
+
+def _is_demo(a: Acheteur) -> bool:
+    return _norm_email(a.email) == DEMO_EMAIL
+
+
+def _guard_not_demo(a: Acheteur) -> None:
+    """Le compte de DÉMO est PARTAGÉ (vitrine publique) : on bloque toute écriture, sinon un
+    visiteur corromprait ou supprimerait l'expérience de tous les suivants. Les flux de
+    découverte (génération, sourcing, estimation, avis, export) ne touchent pas la base et
+    restent disponibles en démo."""
+    if _is_demo(a):
+        raise HTTPException(403, "Compte de démonstration en lecture seule. Créez un espace gratuit pour enregistrer, piloter et diffuser vos consultations.")
 
 
 class RegisterIn(BaseModel):
@@ -66,13 +80,16 @@ def register(request: Request, data: RegisterIn, db: Session = Depends(get_db)):
 @limiter.limit("10/minute")
 def login(request: Request, data: LoginIn, db: Session = Depends(get_db)):
     a = db.query(Acheteur).filter(func.lower(Acheteur.email) == _norm_email(data.email)).first()
-    # Anti-énumération par timing : on exécute TOUJOURS un PBKDF2 (faux hash si inconnu).
-    _DUMMY = "0" * 32 + "$" + "0" * 64
-    ok = verify_password(data.password, a.hashed_password if a else _DUMMY)
+    # Anti-énumération par timing : on exécute TOUJOURS un PBKDF2 équivalent (hash factice si inconnu).
+    ok = verify_password(data.password, a.hashed_password if a else DUMMY_HASH)
     if not a or not ok:
         raise HTTPException(401, "Identifiants incorrects.")
     if not a.is_active:
         raise HTTPException(403, "Compte désactivé.")
+    # Migration transparente du hachage vers la cible OWASP courante, au login réussi.
+    if needs_rehash(a.hashed_password):
+        a.hashed_password = hash_password(data.password)
+        db.commit()
     return {"access_token": _token(a), "token_type": "bearer",
             "nom_collectivite": a.nom_collectivite, "email": a.email}
 
@@ -90,7 +107,39 @@ def demo(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/me")
 def me(a: Acheteur = Depends(get_current_acheteur)):
-    return {"email": a.email, "nom_collectivite": a.nom_collectivite}
+    return {"email": a.email, "nom_collectivite": a.nom_collectivite, "demo": _is_demo(a)}
+
+
+@router.get("/rgpd/export")
+def rgpd_export(a: Acheteur = Depends(get_current_acheteur), db: Session = Depends(get_db)):
+    """Droit d'accès et de portabilité (RGPD art. 15 & 20) : l'intégralité des données du
+    compte acheteur et de ses DCE, en JSON réutilisable."""
+    rows = (db.query(AcheteurDce).filter(AcheteurDce.acheteur_id == a.id)
+            .order_by(AcheteurDce.id).all())
+    return {
+        "compte": {"email": a.email, "nom_collectivite": a.nom_collectivite,
+                   "cree_le": a.created_at.isoformat() if a.created_at else None},
+        "dces": [{**_out(d), "payload": d.payload} for d in rows],
+    }
+
+
+class EffacerIn(BaseModel):
+    password: str = Field(max_length=200)
+
+
+@router.post("/rgpd/effacer")
+@limiter.limit("5/hour")
+def rgpd_effacer(request: Request, data: EffacerIn,
+                 a: Acheteur = Depends(get_current_acheteur), db: Session = Depends(get_db)):
+    """Droit à l'effacement (RGPD art. 17) : supprime DÉFINITIVEMENT le compte et tous ses
+    DCE. Confirmation par mot de passe — action irréversible."""
+    _guard_not_demo(a)
+    if not verify_password(data.password, a.hashed_password):
+        raise HTTPException(403, "Mot de passe incorrect.")
+    db.query(AcheteurDce).filter(AcheteurDce.acheteur_id == a.id).delete()
+    db.delete(a)
+    db.commit()
+    return {"ok": True, "message": "Compte et données supprimés définitivement."}
 
 
 # ── DCE sauvegardés ──────────────────────────────────────────────────────────
@@ -119,6 +168,7 @@ def _out(d: AcheteurDce) -> dict:
 def save_dce(request: Request, data: DceSaveIn,
              a: Acheteur = Depends(get_current_acheteur), db: Session = Depends(get_db)):
     """Crée ou met à jour un DCE de l'acheteur connecté."""
+    _guard_not_demo(a)
     import json
     payload = data.payload or {}
     if not isinstance(payload, dict) or not (payload.get("objet") or data.objet):
@@ -169,6 +219,7 @@ class StatutIn(BaseModel):
 def set_statut(dce_id: int, data: StatutIn,
                a: Acheteur = Depends(get_current_acheteur), db: Session = Depends(get_db)):
     """Met à jour le statut de pilotage et/ou l'échéance d'une consultation."""
+    _guard_not_demo(a)
     d = db.query(AcheteurDce).filter(AcheteurDce.id == dce_id,
                                      AcheteurDce.acheteur_id == a.id).first()
     if not d:
@@ -205,12 +256,16 @@ def diffuser(dce_id: int, data: DiffuserIn,
     BOAMP/JAL/JOUE selon le seuil), elle ne s'y SUBSTITUE jamais — le dossier reste ouvert à
     tout candidat, y compris hors réseau (égalité de traitement, anti-favoritisme 432-14 CP).
     Le compte `nb_pme` est indicatif (fourni par le client à titre de portée)."""
+    _guard_not_demo(a)
     d = db.query(AcheteurDce).filter(AcheteurDce.id == dce_id,
                                      AcheteurDce.acheteur_id == a.id).first()
     if not d:
         raise HTTPException(404, "DCE introuvable.")
     from datetime import datetime, timezone
-    d.date_diffusion = datetime.now(timezone.utc)
+    # Idempotent : on conserve la 1re date de signalement (pas de réécriture silencieuse à
+    # chaque clic). On rafraîchit seulement la portée indicative.
+    if not d.date_diffusion:
+        d.date_diffusion = datetime.now(timezone.utc)
     d.nb_pme_diffusion = int(data.nb_pme or 0)
     if d.statut == "preparation":
         d.statut = "publie"
@@ -221,6 +276,7 @@ def diffuser(dce_id: int, data: DiffuserIn,
 
 @router.delete("/dce/{dce_id}")
 def delete_dce(dce_id: int, a: Acheteur = Depends(get_current_acheteur), db: Session = Depends(get_db)):
+    _guard_not_demo(a)
     d = db.query(AcheteurDce).filter(AcheteurDce.id == dce_id,
                                      AcheteurDce.acheteur_id == a.id).first()
     if not d:

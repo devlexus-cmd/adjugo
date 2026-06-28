@@ -97,6 +97,7 @@ class BesoinIn(BaseModel):
 class EstimIn(BaseModel):
     objet: str = Field(default="", max_length=300)
     departement: str = Field(default="", max_length=3)
+    duree_mois: int | None = Field(default=None, ge=0, le=600)
 
 
 @router.post("/estimer-budget")
@@ -108,7 +109,7 @@ def estimer_budget_ep(request: Request, payload: EstimIn):
     if len(objet) < 3:
         raise HTTPException(422, "Décrivez l'objet du marché pour l'estimer.")
     from app.services.estimation_budget import estimer_budget
-    return estimer_budget(objet, departement=payload.departement)
+    return estimer_budget(objet, departement=payload.departement, duree_mois=payload.duree_mois)
 
 
 @router.post("/preview-procedure")

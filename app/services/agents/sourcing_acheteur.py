@@ -66,8 +66,12 @@ def _serialize(c) -> dict:
     économique. On N'INCLUT VOLONTAIREMENT PAS `c.dirigeant` (donnée nominative non
     nécessaire au sourcing) ni `c.raw`. Ne pas ré-ajouter le dirigeant ici sans revoir la
     politique de confidentialité (/confidentialite) et l'information des personnes."""
+    ei = bool(getattr(c, "est_personne_physique", False))
     return {
-        "nom": c.nom,
+        # EI = personne physique : le nom EST une donnée nominative → masqué (minimisation
+        # RGPD). L'acheteur peut lever l'identité lui-même via le SIREN au registre public.
+        "nom": ("Entreprise individuelle (nom masqué)" if ei else c.nom),
+        "personne_physique": ei,
         "siren": c.siren,
         "ville": c.ville,
         "departement": c.departement,
@@ -96,7 +100,9 @@ def sourcer_lot(lot: dict, departement: str = "") -> dict:
     # Recherche PAR MÉTIER (NAF), pas par le libellé complet du lot : passer l'intitulé
     # entier en `query` ramène ~0 résultat (il matche des noms d'entreprise). On déduit le
     # métier (infer_trade → filtre NAF), avec repli sur un mot-clé court si non reconnu.
-    activity = infer_trade(intitule) or _mots_cles(intitule)
+    trade = infer_trade(intitule)
+    metier_reconnu = trade is not None   # sinon repli mots-clés (sans filtre NAF) → vivier à vérifier
+    activity = trade or _mots_cles(intitule)
 
     errors = []
     try:
@@ -141,10 +147,14 @@ def sourcer_lot(lot: dict, departement: str = "") -> dict:
                "nb_local": nb_local, "nb_sain": nb_sain, "nb_groupement": nb_groupement}
     indice = score_infructuosite(intitule, signals)
 
+    # NEUTRALITÉ (art. 432-14 CP) : vivier en ordre ALPHABÉTIQUE, pas par score décroissant —
+    # on évite un classement de facto des candidats potentiels.
+    vivier = sorted(capables[:8], key=lambda c: (c.nom or "").lower())
     return {
         "numero": numero, "intitule": intitule, "metier": activity,
+        "metier_reconnu": metier_reconnu,
         "indice": indice,
-        "vivier": [_serialize(c) for c in capables[:8]],
+        "vivier": [_serialize(c) for c in vivier],
         "groupement": groupement,
         "errors": errors,
     }

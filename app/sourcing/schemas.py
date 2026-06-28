@@ -90,6 +90,7 @@ class NormalizedCompany(BaseModel):
     est_rge: Optional[bool] = None             # qualification RGE (rénovation énergétique)
     est_qualiopi: Optional[bool] = None
     convention_collective: Optional[bool] = None
+    est_personne_physique: bool = False        # entrepreneur individuel (nom = personne physique → RGPD)
     ca: Optional[float] = None                 # dernier CA publié (RNE/INPI), souvent absent
     resultat_net: Optional[float] = None
 

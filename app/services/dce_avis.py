@@ -19,13 +19,59 @@ def _eur(v):
         return "[montant à préciser]"
 
 
+def _forme_prix(dce: dict) -> str:
+    """Mention de la forme du prix + pièce financière cohérente (DPGF vs BPU/DQE)."""
+    tp = _s((dce.get("ccap") or {}).get("type_prix"))
+    if not tp:
+        return ""
+    low = tp.lower()
+    if any(k in low for k in ("unitaire", "bordereau", "bons de commande", "bon de commande")):
+        piece = " (bordereau des prix unitaires + DQE à joindre)"
+    elif "forfait" in low or "global" in low:
+        piece = " (décomposition du prix global et forfaitaire – DPGF – à joindre)"
+    else:
+        piece = ""
+    return tp + piece
+
+
 def build_avis(dce: dict) -> str:
-    """Texte d'avis d'appel à la concurrence (AAPC), prêt à adapter puis publier."""
+    """Avis adapté au RÉGIME de passation : un gré à gré (dispense) ne fait pas l'objet d'un
+    AAPC ; une procédure adaptée ou formalisée, oui (avec les mentions propres au formalisé)."""
     dce = dce or {}
     proc = dce.get("procedure") or {}
+    if _s(proc.get("code")) == "mna":          # gré à gré / dispense → pas d'appel à la concurrence
+        return _avis_gre_a_gre(dce, proc)
+    return _avis_concurrence(dce, proc)
+
+
+def _avis_gre_a_gre(dce: dict, proc: dict) -> str:
+    """Pas d'AAPC pour un marché de gré à gré : note de bonnes pratiques à la place."""
+    L = ["MARCHÉ SANS PUBLICITÉ NI MISE EN CONCURRENCE PRÉALABLES (GRÉ À GRÉ)", ""]
+    L.append("Au vu du montant estimé, ce marché relève d'une dispense de procédure "
+             "(art. R2122-8 CCP) : AUCUN avis d'appel à la concurrence n'est requis.")
+    L.append("Objet : " + (_s(dce.get("objet")) or "[à préciser]") + ".")
+    forme = _forme_prix(dce)
+    if forme:
+        L.append("Forme du prix : " + forme + ".")
+    L.append("")
+    L.append("Bonnes pratiques (bon emploi des deniers publics) :")
+    L.append("• Consulter plusieurs fournisseurs (au moins 3 devis conseillés) et tracer le choix.")
+    L.append("• Ne PAS scinder artificiellement le besoin pour rester sous le seuil — le seuil "
+             "s'apprécie sur la valeur TOTALE estimée du besoin.")
+    L.append("• Respecter l'égalité de traitement, prévenir les conflits d'intérêts et éviter "
+             "de solliciter toujours les mêmes opérateurs (faire jouer la concurrence).")
+    L.append("")
+    L.append("— Note générée par Adjugo, à valider. Un gré à gré ne dispense pas du respect "
+             "des principes de la commande publique.")
+    return "\n".join(L)
+
+
+def _avis_concurrence(dce: dict, proc: dict) -> str:
+    """Texte d'avis d'appel à la concurrence (AAPC) adapté à MAPA ou formalisé."""
     allot = dce.get("allotissement") or {}
     lots = [l for l in (allot.get("lots") or []) if isinstance(l, dict)]
     crit = [c for c in ((dce.get("criteres") or {}).get("liste") or []) if isinstance(c, dict)]
+    formalise = (_s(proc.get("code")) == "formalise")
     delai = proc.get("delai_min_jours")
 
     L = []
@@ -39,6 +85,9 @@ def build_avis(dce: dict) -> str:
     L.append("4. Procédure de passation : " + (_s(proc.get("type")) or "[à préciser]") + ".")
     if _s(proc.get("publicite")):
         L.append("   Modalités de publicité : " + _s(proc.get("publicite")) + ".")
+    if formalise:
+        L.append("   Publication au BOAMP ET au JOUE (formulaire eForms standard) ; le présent "
+                 "avis tient lieu d'avis de marché.")
 
     if lots:
         L.append("5. Allotissement : marché alloti en " + str(len(lots)) + " lots :")
@@ -63,18 +112,34 @@ def build_avis(dce: dict) -> str:
              "financières exigées — [à compléter] ; le candidat ne doit pas être dans un cas "
              "d'interdiction de soumissionner (art. L2141-1 et s. CCP).")
     L.append("6 ter. Critères de sélection des candidatures : [à compléter].")
-    L.append("7. Durée du marché / délai d'exécution : [à compléter].")
-    delai_txt = (f"délai indicatif d'environ {delai} jours" if delai
-                 else "délai raisonnable et proportionné à la complexité")
+    forme = _forme_prix(dce)
+    if forme:
+        L.append("6 quater. Forme du prix : " + forme + ".")
+    L.append("7. Durée du marché / délai d'exécution : [à compléter]. Variantes : [autorisées / "
+             "non autorisées — à préciser].")
+    if formalise:
+        delai_txt = (f"{delai or 35} jours minimum à compter de l'envoi du présent avis "
+                     "(procédure formalisée, art. R2161-2 et s. ; réductions possibles : 30 j si "
+                     "remise électronique des offres, 15 j avec avis de préinformation ou urgence)")
+    elif delai:
+        delai_txt = f"délai indicatif d'environ {delai} jours"
+    else:
+        delai_txt = ("délai raisonnable et proportionné — la DAJ recommande ≈ 22 jours en MAPA "
+                     "publié ; un délai trop court pénalise les PME")
     L.append("8. Date limite de réception des offres : [JJ/MM/AAAA à HH:MM] "
-             "(" + delai_txt + " à compter de l'envoi du présent avis).")
+             "(" + delai_txt + ").")
     L.append("   Délai de validité des offres : [à compléter, ex. 120 jours].")
     L.append("9. Modalités essentielles de remise des offres : dossier de consultation et "
              "dépôt des plis par voie ÉLECTRONIQUE sur le profil acheteur ; les candidats "
              "peuvent présenter une offre en groupement (co-traitance).")
     L.append("10. Renseignements complémentaires : [service / contact — à compléter].")
-    L.append("11. Instance chargée des procédures de recours : Tribunal administratif "
-             "compétent — [à compléter].")
+    L.append("11. Procédures de recours : Tribunal administratif compétent — [nom / adresse à "
+             "compléter]. Référé précontractuel possible AVANT la signature (art. L551-1 du code "
+             "de justice administrative), référé contractuel APRÈS la signature (art. L551-13).")
+    if formalise:
+        L.append("    Un délai de suspension (standstill) d'au moins 11 jours (16 jours si "
+                 "notification non électronique) est respecté entre l'information des candidats "
+                 "évincés et la signature du marché.")
     L.append("")
     L.append("Date d'envoi du présent avis à la publication : [à compléter].")
     L.append("")

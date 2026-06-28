@@ -16,19 +16,50 @@ settings = get_settings()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
+# PBKDF2-HMAC-SHA256. 600k itérations = recommandation OWASP 2024 (l'ancien 100k était 6×
+# trop faible). Rétro-compatible : les hash existants `salt$hash` sont relus à 100k et
+# re-hachés au login (cf. needs_rehash). Le nombre d'itérations est encodé dans le hash.
+_PBKDF2_ITERS = 600_000
+_LEGACY_ITERS = 100_000
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
-    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100000).hex()
-    return f"{salt}${hashed}"
+    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), _PBKDF2_ITERS).hex()
+    return f"pbkdf2_sha256${_PBKDF2_ITERS}${salt}${hashed}"
+
+
+def _parse_hash(hashed: str):
+    """(iters, salt, hash). Tolère l'ancien format `salt$hash` (100k itérations)."""
+    parts = hashed.split("$")
+    if len(parts) == 4 and parts[0] == "pbkdf2_sha256":
+        return int(parts[1]), parts[2], parts[3]
+    if len(parts) == 2:                       # legacy
+        return _LEGACY_ITERS, parts[0], parts[1]
+    raise ValueError("format de hash inconnu")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     try:
-        salt, stored_hash = hashed.split("$")
-        check = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), 100000).hex()
+        iters, salt, stored_hash = _parse_hash(hashed)
+        check = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), iters).hex()
         return hmac.compare_digest(check, stored_hash)   # comparaison à temps constant
     except Exception:
         return False
+
+
+def needs_rehash(hashed: str) -> bool:
+    """Vrai si le hash est plus faible que la cible actuelle → à re-hacher au prochain login."""
+    try:
+        iters, _, _ = _parse_hash(hashed)
+        return iters < _PBKDF2_ITERS
+    except Exception:
+        return True
+
+
+# Hash factice (au format courant) pour exécuter un PBKDF2 équivalent quand l'email est
+# inconnu : empêche de distinguer « email inexistant » par le temps de réponse.
+DUMMY_HASH = f"pbkdf2_sha256${_PBKDF2_ITERS}${'0' * 32}${'0' * 64}"
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

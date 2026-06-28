@@ -30,7 +30,7 @@ produit (prochaine révision des seuils formalisés : 1er janvier 2028).
 """
 import os
 from concurrent.futures import ThreadPoolExecutor
-from app.services.llm import complete, complete_json, parse_json, tenant_scope, MODEL_FAST, LLMUnavailable
+from app.services.llm import complete_ex, parse_json, tenant_scope, MODEL_FAST, LLMUnavailable
 
 # ── Seuils de DISPENSE de publicité/mise en concurrence — gré à gré (€ HT) ────
 # Par TYPE depuis 2026 (art. R2122-8 CCP). Travaux 100 000 € (pérenne, 1er janv. 2026) ;
@@ -58,9 +58,21 @@ SEUIL_REF_LABEL = os.getenv(
 DATE_OBLIG_ENV = "21 août 2026"
 
 _TYPES = {"travaux", "fournitures", "services"}
-# Marqueurs pour vérifier qu'un critère environnemental est bien présent (déterministe).
-_ENV_MARKERS = ("environnement", "écolog", "ecolog", "carbone", "co2", "énerg", "energ",
+_TYPE_ALIASES = {"travaux": "travaux", "travail": "travaux", "work": "travaux", "works": "travaux",
+                 "fournitures": "fournitures", "fourniture": "fournitures",
+                 "supply": "fournitures", "supplies": "fournitures",
+                 "services": "services", "service": "services"}
+# Marqueurs pour vérifier qu'un critère environnemental est bien présent (repli si le LLM
+# n'a pas posé le flag explicite ; la voie principale est désormais le drapeau JSON).
+_ENV_MARKERS = ("environnement", "écolog", "ecolog", "carbone", "co2",
                 "rse", "durable", "biosourc", "déchet", "dechet", "climat")
+
+
+def _canonical_type(v) -> str:
+    """Type de marché canonique parmi {travaux, fournitures, services}, ou "" si non reconnu.
+    Centralisé : la procédure (seuils) et l'affichage utilisent EXACTEMENT la même valeur,
+    pour qu'un « Travaux » mal saisi ne soit jamais calculé en silence comme « services »."""
+    return _TYPE_ALIASES.get((v or "").strip().lower(), "")
 
 
 def procedure_recommandee(montant, type_marche: str) -> dict:
@@ -197,7 +209,7 @@ Tu réponds en JSON STRICT (français), sans aucun texte autour, selon EXACTEMEN
   }},
   "criteres": {{
     "liste": [
-      {{"critere": "<nom du critère>", "ponderation": <entier>, "sous_criteres": ["...", "..."]}}
+      {{"critere": "<nom du critère>", "ponderation": <entier>, "environnemental": true|false, "sous_criteres": ["...", "..."]}}
     ],
     "note": "rappel : somme des pondérations = 100 ; au moins un critère environnemental ; pas de critère excluant les PME"
   }}
@@ -205,8 +217,8 @@ Tu réponds en JSON STRICT (français), sans aucun texte autour, selon EXACTEMEN
 
 CONSIGNES : SOIS SYNTHÉTIQUE — allotissement raisonnable et pensé PME/groupement (sauf
 impossibilité, alors lot unique MOTIVÉ) ; pondérations ENTIÈRES dont la SOMME vaut 100, avec au
-moins un critère environnemental pondéré > 0. NE rédige NI le CCAP, NI les pièces, NI le CCTP
-(rédigés séparément)."""
+moins un critère environnemental pondéré > 0 — marque-le (et lui seul) par "environnemental": true,
+les autres "environnemental": false. NE rédige NI le CCAP, NI les pièces, NI le CCTP (rédigés séparément)."""
 
 
 # ── Prompt ADMINISTRATIF (Haiku, rapide) : CCAP, RSE, pièces, conseils, garde-fous ──
@@ -270,25 +282,36 @@ PROCÉDURE IMPOSÉE (déterminée par les seuils, ne la recalcule pas) :
 
 
 def _gen_core(user: str, tenant) -> dict:
-    """Cœur juridique (Sonnet) : objet, synthèse, allotissement, critères. Re-pose le scope."""
+    """Cœur juridique (Sonnet) : objet, synthèse, allotissement, critères. Re-pose le scope.
+    Une troncature (max_tokens) est FATALE : un cœur amputé (lots/critères coupés) ne doit
+    jamais passer en silence pour un DCE complet."""
     with tenant_scope(tenant):
-        return complete_json(_SYSTEM_CORE, "Rédige le cœur du DCE pour :\n\n" + user,
-                             max_tokens=3500, temperature=0.25)
+        raw, stop = complete_ex(_SYSTEM_CORE, "Rédige le cœur du DCE pour :\n\n" + user,
+                                max_tokens=3500, temperature=0.25)
+    if stop == "max_tokens":
+        raise LLMUnavailable("Réponse IA tronquée (cœur du DCE incomplet). Réessayez.")
+    return parse_json(raw)
 
 
 def _gen_admin(user: str, tenant) -> dict:
-    """Volets administratifs (Haiku, rapide) : CCAP, RSE, pièces, conseils, garde-fous."""
+    """Volets administratifs (Haiku, rapide) : CCAP, RSE, pièces, conseils, garde-fous.
+    Troncature → ValueError (best-effort : remontée en avertissement, non bloquant)."""
     with tenant_scope(tenant):
-        raw = complete(_SYSTEM_ADMIN, "Rédige les volets administratifs pour :\n\n" + user,
-                       max_tokens=2500, temperature=0.3, model=MODEL_FAST)
+        raw, stop = complete_ex(_SYSTEM_ADMIN, "Rédige les volets administratifs pour :\n\n" + user,
+                                max_tokens=2500, temperature=0.3, model=MODEL_FAST)
+    if stop == "max_tokens":
+        raise ValueError("volets administratifs tronqués")
     return parse_json(raw)
 
 
 def _gen_cctp(user: str, tenant) -> dict:
-    """Appel CCTP (Haiku, prose rapide). Re-pose tenant_scope (thread du pool)."""
+    """Appel CCTP (Haiku, prose rapide). Re-pose tenant_scope (thread du pool).
+    Troncature → ValueError (best-effort : avertissement, non bloquant)."""
     with tenant_scope(tenant):
-        raw = complete(_SYSTEM_CCTP, "Rédige le CCTP pour :\n\n" + user,
-                       max_tokens=3000, temperature=0.3, model=MODEL_FAST)
+        raw, stop = complete_ex(_SYSTEM_CCTP, "Rédige le CCTP pour :\n\n" + user,
+                                max_tokens=3000, temperature=0.3, model=MODEL_FAST)
+    if stop == "max_tokens":
+        raise ValueError("CCTP tronqué")
     return parse_json(raw)
 
 
@@ -305,7 +328,10 @@ def generer_dce(besoin: dict, tenant=None) -> dict:
     if len(objet) < 8:
         raise ValueError("Objet du marché trop court pour générer un DCE fiable.")
 
-    type_marche = (besoin.get("type_marche") or "services").strip().lower()
+    type_marche = _canonical_type(besoin.get("type_marche"))
+    type_inconnu = (type_marche == "")
+    if type_inconnu:
+        type_marche = "services"
     proc = procedure_recommandee(besoin.get("montant_estime"), type_marche)
     user = _besoin_user(besoin, objet, type_marche, proc)
 
@@ -358,7 +384,7 @@ def generer_dce(besoin: dict, tenant=None) -> dict:
         ex.shutdown(wait=False)   # ne bloque jamais l'appelant
     data["cctp_sections"] = cctp_sections
 
-    result = _assemble(data, objet, type_marche, proc, partiel_ko)
+    result = _assemble(data, objet, type_marche, proc, partiel_ko, type_inconnu)
     # On conserve les champs de saisie (notamment le DÉPARTEMENT) dans le DCE : un DCE
     # rechargé garde son territoire → le sourcing/diffusion reste territorialisé même hors
     # du formulaire. (Le formulaire « Créer » est repeuplé depuis `_inputs` à l'ouverture.)
@@ -375,7 +401,8 @@ def generer_dce(besoin: dict, tenant=None) -> dict:
     return result
 
 
-def _assemble(data: dict, objet: str, type_marche: str, proc: dict, partiel_ko: bool = False) -> dict:
+def _assemble(data: dict, objet: str, type_marche: str, proc: dict,
+              partiel_ko: bool = False, type_inconnu: bool = False) -> dict:
     """Normalise la sortie LLM, ré-injecte la procédure déterministe, VÉRIFIE la
     cohérence métier (somme des pondérations, présence d'un critère environnemental)
     et ajoute les métadonnées (échéance RSE, disclaimer, note sourcing Pilier 2)."""
@@ -404,6 +431,9 @@ def _assemble(data: dict, objet: str, type_marche: str, proc: dict, partiel_ko: 
     if partiel_ko:
         avertissements.append("Une partie du document (CCTP et/ou volets administratifs) n'a pas pu "
                               "être générée — relancez la génération pour l'obtenir.")
+    if type_inconnu:
+        avertissements.append("Type de marché non reconnu : traité par défaut comme « services ». "
+                              "Vérifiez (travaux / fournitures / services) — il détermine le seuil de procédure.")
 
     return {
         "objet": (data.get("objet") or objet).strip(),
@@ -444,7 +474,13 @@ def _pond(v) -> int:
 
 
 def _a_critere_env(liste) -> bool:
-    """Au moins un critère dont le nom évoque l'environnement, avec pondération > 0."""
+    """Au moins un critère environnemental pondéré > 0. Voie principale : le DRAPEAU JSON
+    `environnemental` posé explicitement par le LLM (fiable). Repli : heuristique par le nom
+    (marqueurs sans ambiguïté), seulement si le modèle n'a posé aucun drapeau."""
+    if any(_pond(c.get("ponderation")) > 0 and c.get("environnemental") is True for c in liste):
+        return True
+    if any("environnemental" in c for c in liste):   # le modèle a posé le drapeau (et il est faux partout)
+        return False
     for c in liste:
         nom = str(c.get("critere", "")).lower()
         if _pond(c.get("ponderation")) > 0 and any(m in nom for m in _ENV_MARKERS):

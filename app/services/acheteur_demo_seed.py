@@ -19,6 +19,23 @@ DEMO_NOM = "Mairie de Démoville (démonstration)"
 _DATA = os.path.join(os.path.dirname(__file__), "acheteur_demo_dces.json")
 
 
+def _apply_demo_meta(d, demo: dict) -> None:
+    """Applique l'état de DÉMO (pilotage + diffusion) avec des dates calculées AU SEED, pour
+    que la démo exerce vraiment ces fonctions sans jamais afficher d'échéances périmées."""
+    if not demo:
+        return
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    if demo.get("statut"):
+        d.statut = demo["statut"]
+    off = demo.get("date_limite_offset_days")
+    if off is not None:
+        d.date_limite = now + timedelta(days=int(off))
+    if demo.get("diffuse"):
+        d.date_diffusion = now
+        d.nb_pme_diffusion = int(demo.get("nb_pme_diffusion") or 0)
+
+
 def ensure_demo_acheteur(db):
     """Garantit l'existence du compte démo acheteur + ses DCE d'exemple. Renvoie l'Acheteur."""
     a = db.query(Acheteur).filter(Acheteur.email == DEMO_EMAIL).first()
@@ -45,7 +62,9 @@ def ensure_demo_acheteur(db):
         for it in items:
             payload = it.get("payload") or {}
             if isinstance(payload, dict) and payload.get("objet"):
-                db.add(AcheteurDce(acheteur_id=a.id, objet=(it.get("objet") or "")[:500], payload=payload))
+                d = AcheteurDce(acheteur_id=a.id, objet=(it.get("objet") or "")[:500], payload=payload)
+                _apply_demo_meta(d, it.get("demo") or {})
+                db.add(d)
         try:
             db.commit()
         except IntegrityError:

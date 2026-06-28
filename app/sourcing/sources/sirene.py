@@ -29,6 +29,14 @@ TRADES = [
     {"key": "metallerie", "label": "Serrurerie / Métallerie", "naf": "25.11Z"},
     {"key": "etancheite", "label": "Étanchéité", "naf": "43.99A"},
     {"key": "demolition", "label": "Démolition", "naf": "43.11Z"},
+    # Familles FOURNITURES & SERVICES (la moitié des achats publics) — NAF principal.
+    {"key": "nettoyage", "label": "Nettoyage / Propreté", "naf": "81.21Z"},
+    {"key": "espaces_verts", "label": "Espaces verts / Paysage", "naf": "81.30Z"},
+    {"key": "restauration", "label": "Restauration collective", "naf": "56.29A"},
+    {"key": "informatique", "label": "Informatique / Logiciel", "naf": "62.02A"},
+    {"key": "securite", "label": "Sécurité / Gardiennage", "naf": "80.10Z"},
+    {"key": "imprimerie", "label": "Imprimerie / Reprographie", "naf": "18.12Z"},
+    {"key": "formation", "label": "Formation professionnelle", "naf": "85.59A"},
 ]
 _EFFECTIF = {"NN": None, "00": 0, "01": 2, "02": 4, "03": 8, "11": 15, "12": 30,
              "21": 75, "22": 150, "31": 250, "32": 750, "41": 1500, "42": 3500,
@@ -107,6 +115,9 @@ class SireneSource(CompanySource):
             naf=e.get("activite_principale") or None,
             naf_label=_naf_label(e.get("activite_principale")),
             forme_juridique=None,
+            # nature_juridique "1000" = personne physique (entrepreneur individuel) : son nom
+            # EST une donnée nominative → on le masquera côté acheteur (minimisation RGPD).
+            est_personne_physique=(str(e.get("nature_juridique") or "") == "1000"),
             effectif=eff,
             adresse=siege.get("adresse") or None,
             code_postal=siege.get("code_postal") or None,
