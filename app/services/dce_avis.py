@@ -59,11 +59,16 @@ def build_avis(dce: dict) -> str:
                 p = 0
             L.append("   - " + _s(c.get("critere")) + " : " + str(p) + " %")
 
+    L.append("6 bis. Conditions de participation : capacités professionnelles, techniques et "
+             "financières exigées — [à compléter] ; le candidat ne doit pas être dans un cas "
+             "d'interdiction de soumissionner (art. L2141-1 et s. CCP).")
+    L.append("6 ter. Critères de sélection des candidatures : [à compléter].")
     L.append("7. Durée du marché / délai d'exécution : [à compléter].")
     delai_txt = (f"délai indicatif d'environ {delai} jours" if delai
                  else "délai raisonnable et proportionné à la complexité")
     L.append("8. Date limite de réception des offres : [JJ/MM/AAAA à HH:MM] "
              "(" + delai_txt + " à compter de l'envoi du présent avis).")
+    L.append("   Délai de validité des offres : [à compléter, ex. 120 jours].")
     L.append("9. Modalités essentielles de remise des offres : dossier de consultation et "
              "dépôt des plis par voie ÉLECTRONIQUE sur le profil acheteur ; les candidats "
              "peuvent présenter une offre en groupement (co-traitance).")
@@ -96,11 +101,12 @@ def build_methode_notation(dce: dict) -> str:
         nom = _s(c.get("critere"))
         low = nom.lower()
         L.append("• " + nom + " (" + str(p) + " points) :")
-        if "prix" in low or "coût" in low or "cout" in low:
+        if any(m in low for m in ("prix", "coût", "cout", "tarif", "économ", "econom", "financ")):
             has_prix = True
             L.append("   Note = (offre la moins-disante / offre considérée) × " + str(p) +
                      " points. L'offre la moins chère obtient la note maximale ; les offres "
-                     "anormalement basses font l'objet d'une demande de justification (art. R2152-3 CCP).")
+                     "anormalement basses font l'objet d'une demande de justification écrite "
+                     "avant tout rejet (art. R2152-1 à R2152-3 CCP).")
         else:
             L.append("   Note attribuée selon un barème détaillé dans le règlement de la "
                      "consultation (sous-critères, échelle de 0 à " + str(p) + " points).")

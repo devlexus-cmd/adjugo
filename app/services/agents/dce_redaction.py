@@ -358,7 +358,21 @@ def generer_dce(besoin: dict, tenant=None) -> dict:
         ex.shutdown(wait=False)   # ne bloque jamais l'appelant
     data["cctp_sections"] = cctp_sections
 
-    return _assemble(data, objet, type_marche, proc, partiel_ko)
+    result = _assemble(data, objet, type_marche, proc, partiel_ko)
+    # On conserve les champs de saisie (notamment le DÉPARTEMENT) dans le DCE : un DCE
+    # rechargé garde son territoire → le sourcing/diffusion reste territorialisé même hors
+    # du formulaire. (Le formulaire « Créer » est repeuplé depuis `_inputs` à l'ouverture.)
+    result["_inputs"] = {
+        "dept": (besoin.get("dept") or "").strip()[:3],
+        "montant_estime": besoin.get("montant_estime"),
+        "duree_mois": besoin.get("duree_mois"),
+        "lieu": (besoin.get("lieu") or "").strip()[:120],
+        "contraintes": (besoin.get("contraintes") or "").strip()[:2000],
+        "exigences_env": (besoin.get("exigences_env") or "").strip()[:2000],
+        "exigences_sociales": (besoin.get("exigences_sociales") or "").strip()[:2000],
+        "allotissement": besoin.get("allotissement") or "auto",
+    }
+    return result
 
 
 def _assemble(data: dict, objet: str, type_marche: str, proc: dict, partiel_ko: bool = False) -> dict:

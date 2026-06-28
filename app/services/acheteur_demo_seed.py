@@ -9,6 +9,8 @@ import json
 import os
 import secrets
 
+from sqlalchemy.exc import IntegrityError
+
 from app.core.security import hash_password
 from app.models import Acheteur, AcheteurDce
 
@@ -25,8 +27,15 @@ def ensure_demo_acheteur(db):
         a = Acheteur(email=DEMO_EMAIL, hashed_password=hash_password(secrets.token_hex(16)),
                      nom_collectivite=DEMO_NOM)
         db.add(a)
-        db.commit()
-        db.refresh(a)
+        try:
+            db.commit()
+            db.refresh(a)
+        except IntegrityError:
+            # Création concurrente (deux /demo simultanés) → on récupère l'existant, pas de 500.
+            db.rollback()
+            a = db.query(Acheteur).filter(Acheteur.email == DEMO_EMAIL).first()
+    if a is None:
+        return None
     if db.query(AcheteurDce).filter(AcheteurDce.acheteur_id == a.id).count() == 0:
         try:
             with open(_DATA, encoding="utf-8") as f:
@@ -37,5 +46,8 @@ def ensure_demo_acheteur(db):
             payload = it.get("payload") or {}
             if isinstance(payload, dict) and payload.get("objet"):
                 db.add(AcheteurDce(acheteur_id=a.id, objet=(it.get("objet") or "")[:500], payload=payload))
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()   # seed concurrent → on tolère, l'autre transaction l'a fait
     return a

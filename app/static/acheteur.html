@@ -21,7 +21,7 @@
   @keyframes fadev{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
   .org-pill{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);
     background:var(--accent-weak);padding:2px 7px;border-radius:6px;margin-left:6px;vertical-align:2px}
-  .toolbar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;position:sticky;top:58px;z-index:8;
+  .toolbar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;position:sticky;top:50px;z-index:8;
     background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(8px);padding:6px 0}
   .doc h2.sec{font-family:var(--font-display);font-size:15px;font-weight:700;color:var(--text);
     margin:24px 0 11px;padding-bottom:7px;border-bottom:1px solid var(--border);letter-spacing:-.01em}
@@ -63,8 +63,11 @@
   .pmecard{border:1px solid var(--border);border-radius:10px;padding:8px 11px;background:var(--surface-2)}
   .pmecard .pn{font-weight:600;font-size:12.5px} .pmecard .pm{font-size:11.5px;color:var(--muted);margin-top:2px}
   .grp{background:var(--accent-weak);border-radius:9px;padding:8px 11px;margin-top:8px;font-size:12.5px}
-  .demo-banner{display:flex;align-items:center;gap:12px;background:var(--grad-text);color:#fff;border-radius:14px;padding:13px 17px;margin-bottom:18px;box-shadow:0 8px 22px color-mix(in srgb,var(--accent) 28%,transparent)}
+  .demo-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--grad-text);color:#fff;border-radius:14px;padding:13px 17px;margin-bottom:18px;box-shadow:0 8px 22px color-mix(in srgb,var(--accent) 28%,transparent)}
   .demo-banner b{font-family:var(--font-display)} .demo-banner .small{color:rgba(255,255,255,.85)}
+  @media(max-width:560px){.demo-banner .btn{width:100%;justify-content:center}}
+  /* focus visible cohérent sur les contrôles hors .btn (a11y) */
+  .nav-item:focus-visible,.theme-toggle button:focus-visible,.modal-h .x:focus-visible,.act-link:focus-visible,.ao-row:focus-visible,.alert-callout:focus-visible{outline:none;box-shadow:0 0 0 3px var(--ring)}
   @media print{.side,.top,.toolbar,.note-src{display:none!important} .app{display:block;height:auto} .work{overflow:visible;height:auto} .content{padding:0;max-width:none}}
 </style>
 </head>
@@ -77,7 +80,7 @@
       <span class="org-sub">Espace acheteurs publics</span>
     </div>
     <div class="nav-group">Espace</div>
-    <div id="nav">
+    <div id="nav" role="navigation" aria-label="Navigation principale">
       <button class="nav-item active" data-view="dashboard"><i data-lucide="layout-dashboard" class="lucide"></i> Tableau de bord</button>
       <button class="nav-item" data-view="creer"><i data-lucide="file-plus-2" class="lucide"></i> Créer un DCE</button>
       <button class="nav-item" data-view="mesdce"><i data-lucide="folder" class="lucide"></i> Mes DCE <span class="badge" id="navCount">0</span></button>
@@ -86,9 +89,9 @@
     </div>
     <div class="side-foot">
       <div class="theme-toggle" id="themeToggle">
-        <button data-t="light" title="Clair"><i data-lucide="sun" class="lucide"></i></button>
-        <button data-t="dark" title="Sombre"><i data-lucide="moon" class="lucide"></i></button>
-        <button data-t="system" title="Système"><i data-lucide="monitor" class="lucide"></i></button>
+        <button data-t="light" title="Clair" aria-label="Thème clair"><i data-lucide="sun" class="lucide"></i></button>
+        <button data-t="dark" title="Sombre" aria-label="Thème sombre"><i data-lucide="moon" class="lucide"></i></button>
+        <button data-t="system" title="Système" aria-label="Thème système"><i data-lucide="monitor" class="lucide"></i></button>
       </div>
       <div id="sideAcct"></div>
     </div>
@@ -102,7 +105,7 @@
       <div class="spacer"></div>
       <button class="btn primary sm" id="tbAction" onclick="window.__nav('creer')"><i data-lucide="plus" class="lucide"></i> Nouveau DCE</button>
     </header>
-    <div class="content">
+    <div class="content" role="main">
 
       <!-- DASHBOARD -->
       <section class="view" id="view-dashboard">
@@ -110,7 +113,7 @@
         <div class="dash-ribbon">
           <div class="rb"><span class="rb-l">DCE enregistrés</span><span class="rb-v" id="statDces">—</span><span class="rb-d">dans votre espace</span></div>
           <div class="rb"><span class="rb-l">Dernier projet</span><span class="rb-v" id="statLast" style="font-size:15px">—</span><span class="rb-d" id="statLastD">—</span></div>
-          <div class="rb alert"><span class="rb-l">Échéance · 21 août 2026</span><span class="rb-v" style="font-size:16px">Clause environnementale</span><span class="rb-d">obligatoire — intégrée par défaut</span></div>
+          <div class="rb"><span class="rb-l">Conformité</span><span class="rb-v" style="font-size:16px">Clauses environnementales</span><span class="rb-d">obligation 2026 — intégrées par défaut</span></div>
           <div class="rb"><span class="rb-l">Souveraineté</span><span class="rb-v" style="font-size:16px">IA FR/UE</span><span class="rb-d">données publiques officielles</span></div>
         </div>
         <div class="dash-grid">
@@ -129,7 +132,7 @@
               <button class="act-link" onclick="window.__nav('mesdce')"><i data-lucide="folder" class="lucide"></i><span>Mes DCE enregistrés</span><i data-lucide="chevron-right" class="lucide cr"></i></button>
               <button class="act-link" onclick="window.__nav('compte')"><i data-lucide="user" class="lucide"></i><span>Mon espace</span><i data-lucide="chevron-right" class="lucide cr"></i></button>
             </div>
-            <div class="alert-callout" onclick="window.__nav('creer')"><i data-lucide="leaf" class="lucide"></i><div><b>Conformité 2026</b><div class="small">Seuils de procédure et clauses environnementales à jour, vérifiés avant publication.</div></div></div>
+            <div class="alert-callout" role="button" tabindex="0" onclick="window.__nav('creer')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.__nav('creer')}"><i data-lucide="leaf" class="lucide"></i><div><b>Conformité 2026</b><div class="small">Seuils de procédure et clauses environnementales à jour, vérifiés avant publication.</div></div></div>
           </div>
         </div>
       </section>
@@ -137,27 +140,27 @@
       <!-- CRÉER -->
       <section class="view" id="view-creer">
         <form class="card pad" id="form" autocomplete="off" style="margin-bottom:16px">
-          <div class="field"><label>Objet du marché</label><textarea id="objet" placeholder="Ex. : rénovation énergétique de l'école des Tilleuls (isolation, menuiseries, chaufferie biomasse)" required></textarea></div>
+          <div class="field"><label for="objet">Objet du marché</label><textarea id="objet" placeholder="Ex. : rénovation énergétique de l'école des Tilleuls (isolation, menuiseries, chaufferie biomasse)" required></textarea></div>
           <div class="frow t3">
-            <div class="field"><label>Type</label><select id="type_marche"><option value="travaux">Travaux</option><option value="fournitures">Fournitures</option><option value="services" selected>Services</option></select></div>
-            <div class="field"><label>Montant estimé <span class="hint">(€ HT)</span> <a href="#" id="estimBtn" style="float:right;font-weight:600;color:var(--accent-text);font-size:11px">💡 Estimer (DECP)</a></label><input id="montant" type="number" min="0" step="1000" placeholder="120000" /><div id="estimNote" class="muted small" style="margin-top:5px"></div></div>
-            <div class="field"><label>Durée <span class="hint">(mois)</span></label><input id="duree" type="number" min="0" step="1" placeholder="12" /></div>
+            <div class="field"><label for="type_marche">Type</label><select id="type_marche"><option value="travaux">Travaux</option><option value="fournitures">Fournitures</option><option value="services" selected>Services</option></select></div>
+            <div class="field"><label for="montant">Montant estimé <span class="hint">(€ HT)</span></label><input id="montant" type="number" min="0" step="1000" placeholder="120000" /><button type="button" class="btn ghost sm" id="estimBtn" style="margin-top:6px"><i data-lucide="lightbulb" class="lucide"></i> Estimer (DECP)</button><div id="estimNote" class="muted small" style="margin-top:5px" aria-live="polite"></div></div>
+            <div class="field"><label for="duree">Durée <span class="hint">(mois)</span></label><input id="duree" type="number" min="0" step="1" placeholder="12" /></div>
           </div>
           <div class="frow t3">
-            <div class="field"><label>Lieu d'exécution <span class="hint">(facultatif)</span></label><input id="lieu" type="text" placeholder="Quimper" /></div>
-            <div class="field"><label>Département</label><input id="dept" type="text" placeholder="29" maxlength="3" /></div>
-            <div class="field"><label>Allotissement</label><select id="allotissement"><option value="auto" selected>Au choix de l'IA</option><option value="oui">Forcer l'allotissement</option><option value="non">Lot unique</option></select></div>
+            <div class="field"><label for="lieu">Lieu d'exécution <span class="hint">(facultatif)</span></label><input id="lieu" type="text" placeholder="Quimper" /></div>
+            <div class="field"><label for="dept">Département</label><input id="dept" type="text" placeholder="29" maxlength="3" /></div>
+            <div class="field"><label for="allotissement">Allotissement</label><select id="allotissement"><option value="auto" selected>Au choix de l'IA</option><option value="oui">Forcer l'allotissement</option><option value="non">Lot unique</option></select></div>
           </div>
           <div class="frow">
-            <div class="field"><label>Exigences environnementales <span class="hint">(facultatif)</span></label><textarea id="env" placeholder="Matériaux biosourcés, gestion des déchets…"></textarea></div>
-            <div class="field"><label>Exigences sociales <span class="hint">(facultatif)</span></label><textarea id="social" placeholder="Clause d'insertion…"></textarea></div>
+            <div class="field"><label for="env">Exigences environnementales <span class="hint">(facultatif)</span></label><textarea id="env" placeholder="Matériaux biosourcés, gestion des déchets…"></textarea></div>
+            <div class="field"><label for="social">Exigences sociales <span class="hint">(facultatif)</span></label><textarea id="social" placeholder="Clause d'insertion…"></textarea></div>
           </div>
-          <div class="field"><label>Contraintes particulières <span class="hint">(facultatif)</span></label><textarea id="contraintes" placeholder="Site occupé, phasage, performances attendues…"></textarea></div>
-          <div class="proc-box" id="procChip" style="margin:4px 0 14px"><span class="muted">Renseignez le montant et le type pour voir la procédure recommandée.</span></div>
+          <div class="field"><label for="contraintes">Contraintes particulières <span class="hint">(facultatif)</span></label><textarea id="contraintes" placeholder="Site occupé, phasage, performances attendues…"></textarea></div>
+          <div class="proc-box" id="procChip" style="margin:4px 0 14px" aria-live="polite"><span class="muted">Renseignez le montant et le type pour voir la procédure recommandée.</span></div>
           <button class="btn primary" id="go" type="submit"><i data-lucide="sparkles" class="lucide"></i> Générer le projet de DCE</button>
           <span class="muted small" style="margin-left:12px">Projet généré par IA, à faire valider avant publication.</span>
         </form>
-        <div id="result"></div>
+        <div id="result" aria-live="polite"></div>
       </section>
 
       <!-- MES DCE -->
@@ -168,12 +171,12 @@
         <div class="card pad" style="margin-bottom:16px">
           <p class="muted" style="margin:0 0 12px">Identifiez les PME capables de répondre à un besoin et le risque d'infructuosité, sur données publiques officielles (SIRENE · DECP · BODACC).</p>
           <div class="frow">
-            <div class="field"><label>Besoin / métier recherché</label><input id="srcObjet" type="text" placeholder="Ex. : menuiseries extérieures, plomberie, espaces verts…" /></div>
-            <div class="field"><label>Département</label><input id="srcDept" type="text" placeholder="29" maxlength="3" /></div>
+            <div class="field"><label for="srcObjet">Besoin / métier recherché</label><input id="srcObjet" type="text" placeholder="Ex. : menuiseries extérieures, plomberie, espaces verts…" /></div>
+            <div class="field"><label for="srcDept">Département</label><input id="srcDept" type="text" placeholder="29" maxlength="3" /></div>
           </div>
           <button class="btn primary" id="srcGo"><i data-lucide="search" class="lucide"></i> Sonder le marché</button>
         </div>
-        <div id="srcResult"></div>
+        <div id="srcResult" aria-live="polite"></div>
       </section>
 
       <!-- COMPTE -->
@@ -186,30 +189,30 @@
 
 <!-- Modale diffusion réseau PME -->
 <div class="overlay hidden" id="diffuserModal">
-  <div class="modal">
-    <div class="modal-h"><h3>Diffuser au réseau de PME</h3><button class="x" id="diffClose"><i data-lucide="x" class="lucide"></i></button></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="diffTitle">
+    <div class="modal-h"><h3 id="diffTitle">Diffuser au réseau de PME</h3><button class="x" id="diffClose" aria-label="Fermer"><i data-lucide="x" class="lucide"></i></button></div>
     <div class="modal-b" id="diffuserBody"></div>
   </div>
 </div>
 
 <!-- Modale avis de publicité -->
 <div class="overlay hidden" id="avisModal">
-  <div class="modal wide">
-    <div class="modal-h"><h3>Avis de publicité &amp; méthode de notation</h3><button class="x" id="avisClose"><i data-lucide="x" class="lucide"></i></button></div>
+  <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="avisTitle">
+    <div class="modal-h"><h3 id="avisTitle">Avis de publicité &amp; méthode de notation</h3><button class="x" id="avisClose" aria-label="Fermer"><i data-lucide="x" class="lucide"></i></button></div>
     <div class="modal-b" id="avisBody"></div>
   </div>
 </div>
 
 <!-- Modale auth -->
 <div class="overlay hidden" id="authModal">
-  <div class="modal" style="max-width:420px">
-    <div class="modal-h"><h3 id="authTitle">Espace collectivité</h3><button class="x" id="authClose"><i data-lucide="x" class="lucide"></i></button></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="authTitle" style="max-width:420px">
+    <div class="modal-h"><h3 id="authTitle">Espace collectivité</h3><button class="x" id="authClose" aria-label="Fermer"><i data-lucide="x" class="lucide"></i></button></div>
     <div class="modal-b">
       <p class="muted small" id="authLead" style="margin:0 0 14px">Connectez-vous pour enregistrer et retrouver vos DCE.</p>
-      <div id="authErr" class="avert" style="display:none;margin-bottom:12px"></div>
-      <div class="field"><label>Email professionnel</label><input id="auEmail" type="email" autocomplete="username" placeholder="marches@ma-commune.fr" /></div>
-      <div class="field"><label>Mot de passe</label><input id="auPwd" type="password" autocomplete="current-password" placeholder="8 caractères minimum" /></div>
-      <div class="field" id="auNomWrap" style="display:none"><label>Nom de la collectivité</label><input id="auNom" type="text" placeholder="Ville de Quimper" /></div>
+      <div id="authErr" class="avert" role="alert" style="display:none;margin-bottom:12px"></div>
+      <div class="field"><label for="auEmail">Email professionnel</label><input id="auEmail" type="email" autocomplete="username" placeholder="marches@ma-commune.fr" /></div>
+      <div class="field"><label for="auPwd">Mot de passe</label><input id="auPwd" type="password" autocomplete="current-password" placeholder="8 caractères minimum" /></div>
+      <div class="field" id="auNomWrap" style="display:none"><label for="auNom">Nom de la collectivité</label><input id="auNom" type="text" placeholder="Ville de Quimper" /></div>
       <button class="btn primary block" id="auSubmit">Se connecter</button>
       <p class="muted small" style="text-align:center;margin:12px 0 0"><span id="auSwitchTxt">Pas encore de compte ?</span> <a href="#" id="auSwitch" style="color:var(--accent-text);font-weight:600">Créer un espace</a></p>
       <div style="text-align:center;margin-top:10px;padding-top:12px;border-top:1px solid var(--hairline)"><a href="#" id="auDemo" style="color:var(--accent-text);font-weight:600;font-size:12.5px">▶ Découvrir avec la démo</a></div>
@@ -231,7 +234,7 @@
   function applyTheme(){var t=localStorage.getItem("adjugo_theme")||"system";
     var dark=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);
     document.documentElement.setAttribute("data-theme",dark?"dark":"light");
-    $$("#themeToggle button").forEach(function(b){b.classList.toggle("on",b.getAttribute("data-t")===t);});}
+    $$("#themeToggle button").forEach(function(b){var on=b.getAttribute("data-t")===t;b.classList.toggle("on",on);b.setAttribute("aria-pressed",String(on));});}
   $$("#themeToggle button").forEach(function(b){b.onclick=function(){localStorage.setItem("adjugo_theme",b.getAttribute("data-t"));applyTheme();};});
 
   // ── Compte (cloisonné) ──
@@ -253,9 +256,9 @@
 
   function enterDemo(){
     fetch("/api/acheteur/demo",{method:"POST",headers:{"Content-Type":"application/json"}})
-      .then(function(r){return r.json();}).then(function(d){if(!d.access_token)return;
+      .then(function(r){return r.json();}).then(function(d){if(!d.access_token){alert("Démonstration momentanément indisponible. Réessayez.");return;}
         setToken(d.access_token);AME={email:d.email,nom_collectivite:d.nom_collectivite};IS_DEMO=true;closeAuth();renderAcct();navTo("dashboard");})
-      .catch(function(){});
+      .catch(function(){alert("Démonstration indisponible (réseau). Réessayez.");});
   }
 
   function openAuth(mode){authMode=mode||"login";var reg=(authMode==="register");
@@ -269,6 +272,11 @@
   function closeAuth(){$("#authModal").classList.add("hidden");}
   function showAuthErr(m){var e=$("#authErr");e.textContent=m;e.style.display="block";}
   $("#authClose").onclick=closeAuth;
+  // Fermeture des modales par Échap (a11y).
+  document.addEventListener("keydown",function(e){if(e.key!=="Escape")return;
+    if(!$("#authModal").classList.contains("hidden"))closeAuth();
+    else if(!$("#avisModal").classList.contains("hidden"))$("#avisModal").classList.add("hidden");
+    else if(!$("#diffuserModal").classList.contains("hidden"))closeDiffuser();});
   $("#auSwitch").onclick=function(e){e.preventDefault();openAuth(authMode==="login"?"register":"login");};
   $("#auDemo").onclick=function(e){e.preventDefault();enterDemo();};
   $("#authModal").addEventListener("click",function(e){if(e.target===this)closeAuth();});
@@ -317,8 +325,8 @@
       $("#statLastD").textContent=list.length?("modifié le "+(list[0].updated_at||"").slice(0,10)):"—";
       if(!list.length){$("#dashRecent").innerHTML='<div class="empty"><div class="eic"><i data-lucide="file-plus-2" class="lucide"></i></div><h4>Votre premier DCE</h4><p>Décrivez un besoin, l\'IA rédige le projet complet.</p><button class="btn primary sm" onclick="window.__nav(\'creer\')">Créer un DCE</button></div>';icons();return;}
       $("#dashRecent").innerHTML=list.slice(0,6).map(function(d){
-        return '<div class="ao-row" data-id="'+d.id+'"><div class="score-ring" style="background:conic-gradient(var(--accent) 0 100%,var(--surface-3) 0)"><span><i data-lucide="file-text" class="lucide" style="width:16px;height:16px"></i></span></div><div class="ao-mid"><div class="ao-t">'+esc(d.objet||"Projet de DCE")+'</div><div class="ao-c">modifié le '+esc((d.updated_at||"").slice(0,10))+'</div></div><i data-lucide="chevron-right" class="ao-go lucide"></i></div>';}).join("");
-      $$("#dashRecent .ao-row").forEach(function(it){it.onclick=function(){openSavedDce(it.getAttribute("data-id"));};});icons();});
+        return '<div class="ao-row" data-id="'+d.id+'" role="button" tabindex="0"><div class="score-ring" style="background:conic-gradient(var(--accent) 0 100%,var(--surface-3) 0)"><span><i data-lucide="file-text" class="lucide" style="width:16px;height:16px"></i></span></div><div class="ao-mid"><div class="ao-t">'+esc(d.objet||"Projet de DCE")+'</div><div class="ao-c">modifié le '+esc((d.updated_at||"").slice(0,10))+'</div></div><i data-lucide="chevron-right" class="ao-go lucide"></i></div>';}).join("");
+      $$("#dashRecent .ao-row").forEach(function(it){var op=function(){openSavedDce(it.getAttribute("data-id"));};it.onclick=op;it.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();op();}};});icons();});
   }
 
   // ── Mes DCE ──
@@ -334,24 +342,29 @@
       list.sort(function(a,b){var x=a.date_limite||"9999-99",y=b.date_limite||"9999-99";return x<y?-1:x>y?1:0;});
       var today=new Date().toISOString().slice(0,10);
       var h='<div class="dash-ribbon" style="margin-bottom:16px"><div class="rb"><span class="rb-l">Consultations</span><span class="rb-v">'+list.length+'</span></div><div class="rb"><span class="rb-l">En préparation</span><span class="rb-v">'+by.preparation+'</span></div><div class="rb"><span class="rb-l">En cours</span><span class="rb-v">'+(by.publie+by.analyse)+'</span><span class="rb-d">publiées / en analyse</span></div><div class="rb '+(by.infructueux?"alert":"")+'"><span class="rb-l">Attribuées</span><span class="rb-v">'+by.attribue+'</span><span class="rb-d">'+(by.infructueux?(by.infructueux+" infructueux"):"")+'</span></div></div>';
-      h+='<div class="t-wrap"><table><thead><tr><th>Consultation</th><th>Statut</th><th>Échéance des offres</th><th></th></tr></thead><tbody>';
+      h+='<div class="t-wrap"><table><thead><tr><th scope="col">Consultation</th><th scope="col">Statut</th><th scope="col">Échéance des offres</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>';
       list.forEach(function(d){var dl=d.date_limite||"";var late=dl&&dl<today&&d.statut!=="attribue"&&d.statut!=="infructueux";
         h+='<tr data-id="'+d.id+'"><td><div class="strong row-open" style="cursor:pointer">'+esc(d.objet||"Projet de DCE")+'</div><div class="muted small">modifié le '+esc((d.updated_at||"").slice(0,10))+'</div></td>'+
-          '<td><select class="inp st-sel" style="height:30px;padding:0 8px;width:auto;min-width:148px">'+STATUTS.map(function(s){return '<option value="'+s[0]+'"'+(d.statut===s[0]?" selected":"")+'>'+s[1]+'</option>';}).join("")+'</select></td>'+
-          '<td><input type="date" class="inp dl-inp" value="'+esc(dl)+'" style="height:30px;width:auto'+(late?";border-color:var(--danger)":"")+'">'+(late?' <span class="pill no_go">dépassée</span>':"")+'</td>'+
-          '<td style="text-align:right;white-space:nowrap"><button class="btn sm act-open" title="Ouvrir"><i data-lucide="folder-open" class="lucide"></i></button> <button class="btn sm act-docx">Word</button> <button class="btn sm icon act-del" title="Supprimer"><i data-lucide="trash-2" class="lucide"></i></button></td></tr>';});
+          '<td><select class="inp st-sel" aria-label="Statut de la consultation" style="height:30px;padding:0 8px;width:auto;min-width:148px">'+STATUTS.map(function(s){return '<option value="'+s[0]+'"'+(d.statut===s[0]?" selected":"")+'>'+s[1]+'</option>';}).join("")+'</select></td>'+
+          '<td><input type="date" class="inp dl-inp" aria-label="Échéance des offres" value="'+esc(dl)+'" style="height:30px;width:auto'+(late?";border-color:var(--danger)":"")+'">'+(late?' <span class="pill no_go">dépassée</span>':"")+'</td>'+
+          '<td style="text-align:right;white-space:nowrap"><button class="btn sm act-open" title="Ouvrir" aria-label="Ouvrir le DCE"><i data-lucide="folder-open" class="lucide"></i></button> <button class="btn sm act-docx">Word</button> <button class="btn sm icon act-del" title="Supprimer" aria-label="Supprimer la consultation"><i data-lucide="trash-2" class="lucide"></i></button></td></tr>';});
       h+='</tbody></table></div><p class="muted small" style="margin-top:10px">Le statut et l\'échéance sont enregistrés automatiquement. Triés par échéance la plus proche.</p>';
       w.innerHTML=h;
       $$("#mesDceWrap tr[data-id]").forEach(function(tr){var id=tr.getAttribute("data-id");
         tr.querySelector(".row-open").onclick=function(){openSavedDce(id);};
         tr.querySelector(".act-open").onclick=function(){openSavedDce(id);};
         tr.querySelector(".act-del").onclick=function(){if(confirm("Supprimer cette consultation ?"))fetch("/api/acheteur/dce/"+id,{method:"DELETE",headers:aHeaders()}).then(function(r){if(r.ok)loadMesDce();});};
-        tr.querySelector(".act-docx").onclick=function(){fetch("/api/acheteur/dce/"+id,{headers:aHeaders()}).then(function(r){return r.json();}).then(function(d){LAST=d.payload;exportDce("docx","docx");});};
+        tr.querySelector(".act-docx").onclick=function(){fetch("/api/acheteur/dce/"+id,{headers:aHeaders()}).then(function(r){return r.json();}).then(function(d){exportDce("docx","docx",d.payload);});};
         tr.querySelector(".st-sel").onchange=function(){setStatut(id,{statut:this.value},function(){loadMesDce();});};
         tr.querySelector(".dl-inp").onchange=function(){setStatut(id,{date_limite:this.value},function(){loadMesDce();});};});
       icons();});}
+  function fillFormFromDce(x){var inp=(x&&x._inputs)||{};
+    $("#objet").value=x.objet||"";if(x.type_marche)$("#type_marche").value=x.type_marche;
+    $("#montant").value=(inp.montant_estime!=null?inp.montant_estime:"");$("#duree").value=(inp.duree_mois!=null?inp.duree_mois:"");
+    $("#lieu").value=inp.lieu||"";$("#dept").value=inp.dept||"";$("#contraintes").value=inp.contraintes||"";
+    $("#env").value=inp.exigences_env||"";$("#social").value=inp.exigences_sociales||"";if(inp.allotissement)$("#allotissement").value=inp.allotissement;}
   function openSavedDce(id){fetch("/api/acheteur/dce/"+id,{headers:aHeaders()}).then(function(r){if(!r.ok)throw 0;return r.json();})
-    .then(function(d){LAST=d.payload;CURRENT_DCE_ID=d.id;navTo("creer");render(d.payload);}).catch(function(){alert("Impossible d'ouvrir ce DCE.");});}
+    .then(function(d){LAST=d.payload;CURRENT_DCE_ID=d.id;navTo("creer");fillFormFromDce(d.payload);render(d.payload);}).catch(function(){alert("Impossible d'ouvrir ce DCE.");});}
 
   // ── Compte ──
   function loadCompte(){var w=$("#compteWrap");
@@ -375,8 +388,9 @@
     if(objet.length<3){$("#objet").focus();return;}
     var note=$("#estimNote");note.innerHTML='<span class="spin" style="width:11px;height:11px"></span> Estimation sur marchés comparables…';
     fetch("/api/dce/estimer-budget",{method:"POST",headers:headers(),body:JSON.stringify({objet:objet,departement:dept})})
-      .then(function(r){return r.json();})
-      .then(function(d){if(!d.ok){note.textContent=d.message||"Pas assez de marchés comparables.";return;}
+      .then(function(r){return r.json().then(function(d){return{status:r.status,d:d};});})
+      .then(function(res){if(res.status===401){note.textContent="Connectez-vous (ou lancez la démo) pour utiliser cette fonction.";return;}
+        var d=res.d;if(!d.ok){note.textContent=d.message||"Pas assez de marchés comparables.";return;}
         $("#montant").value=d.mediane;refreshProc();
         note.innerHTML="D'après <b>"+d.nb_marches+"</b> marchés comparables (DECP"+(d.departement?" · dépt "+esc(d.departement):"")+") — médiane <b>"+fmt(d.mediane)+" €</b>, fourchette "+fmt(d.q1)+"–"+fmt(d.q3)+" € HT. <span class='muted'>Repère de marché, à ajuster.</span>";})
       .catch(function(){note.textContent="Estimation indisponible.";});};
@@ -458,13 +472,14 @@
   $("#diffuserModal").addEventListener("click",function(e){if(e.target===this)closeDiffuser();});
   function showDiffuser(){if(!LAST)return;var lots=((LAST.allotissement||{}).lots||[]).map(function(l){return{numero:l.numero,intitule:l.intitule};});
     if(!lots.length){lots=[{numero:1,intitule:LAST.objet||""}];}
-    $("#diffuserModal").classList.remove("hidden");var body=$("#diffuserBody");
+    $("#diffuserModal").classList.remove("hidden");$("#diffClose").focus();var body=$("#diffuserBody");
     body.innerHTML='<div class="muted" style="padding:6px 0"><span class="spin"></span> Évaluation de la portée auprès du réseau de PME…</div>';icons();
-    fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:lots,departement:$("#dept")?$("#dept").value.trim():""})})
+    fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:lots,departement:((LAST&&LAST._inputs&&LAST._inputs.dept)||($("#dept")?$("#dept").value.trim():""))})})
       .then(function(r){return r.json();})
       .then(function(s){var total=0,rows="";(s.lots||[]).forEach(function(l){var n=(l.vivier||[]).length;total+=n;rows+='<div class="list-row"><span>Lot '+esc(l.numero!=null?l.numero:"")+' — '+esc(l.intitule||"")+'</span><b>'+n+' PME</b></div>';});
         body.innerHTML='<div class="act-hero" style="cursor:default;margin-bottom:14px"><span class="ah-ic"><i data-lucide="radio-tower" class="lucide"></i></span><span class="ah-tx"><span class="ah-t">'+total+' PME capables dans le réseau</span><span class="ah-d">correspondent à votre marché</span></span></div>'+
-          rows+'<p class="muted small" style="margin:12px 0">Diffuser informe les PME capables et inscrites du réseau Adjugo de votre consultation — information ouverte, dans le respect de l\'égalité de traitement. Plus de candidats potentiels = moins de risque d\'infructuosité.</p>'+
+          rows+'<p class="muted small" style="margin:12px 0 8px">Diffuser informe les PME capables et inscrites du réseau Adjugo de votre consultation — information ouverte, dans le respect de l\'égalité de traitement. Plus de candidats potentiels = moins de risque d\'infructuosité.</p>'+
+          '<p class="muted small" style="margin:0 0 12px">La diffusion réseau <b>complète</b> votre publicité réglementaire (profil acheteur, BOAMP/JAL/JOUE selon le seuil) ; elle ne s\'y substitue pas. Le dossier reste accessible à tout candidat, y compris hors réseau.</p>'+
           '<button class="btn primary block" id="diffConfirm"><i data-lucide="send" class="lucide"></i> Confirmer la diffusion</button>';
         $("#diffConfirm").onclick=function(){confirmDiffuser(total);};icons();})
       .catch(function(){body.innerHTML='<div class="avert">Analyse indisponible. Réessayez.</div>';});}
@@ -477,7 +492,7 @@
     else{fetch("/api/acheteur/dce",{method:"POST",headers:aHeaders(),body:JSON.stringify({objet:LAST.objet||"",payload:LAST})}).then(function(r){return r.json();}).then(function(d){diffuse(d.id);}).catch(function(){if(btn){btn.disabled=false;btn.innerHTML="Réessayer";}});}}
 
   // ── Avis de publicité (AAPC) + méthode de notation ──
-  function showAvis(){if(!LAST)return;var body=$("#avisBody");$("#avisModal").classList.remove("hidden");
+  function showAvis(){if(!LAST)return;var body=$("#avisBody");$("#avisModal").classList.remove("hidden");$("#avisClose").focus();
     body.innerHTML='<div class="muted"><span class="spin"></span> Génération de l\'avis…</div>';icons();
     fetch("/api/dce/avis",{method:"POST",headers:headers(),body:JSON.stringify({dce:LAST,format:"docx"})})
       .then(function(r){return r.json();})
@@ -501,10 +516,10 @@
   function toggleEdit(){var body=$("#docBody");if(!body)return;EDITING=!EDITING;body.classList.toggle("editing",EDITING);Array.prototype.forEach.call(body.querySelectorAll(".ed"),function(el){el.contentEditable=EDITING?"true":"false";});var btn=$("#btnEdit");if(btn)btn.innerHTML=EDITING?'<i data-lucide="check" class="lucide"></i> Terminer':'<i data-lucide="pencil" class="lucide"></i> Modifier';icons();}
 
   // ── Export ──
-  function exportDce(fmt,ext){if(!LAST)return;var ids={docx:"#btnDocx",pdf:"#btnPdf",zip:"#btnZip"};var btn=$(ids[fmt]);var old=btn?btn.innerHTML:"";if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
-    fetch("/api/dce/export",{method:"POST",headers:headers(),body:JSON.stringify({dce:LAST,format:fmt})})
+  function exportDce(fmt,ext,payload){var dce=payload||LAST;if(!dce)return;var ids={docx:"#btnDocx",pdf:"#btnPdf",zip:"#btnZip"};var btn=$(ids[fmt]);var old=btn?btn.innerHTML:"";if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
+    fetch("/api/dce/export",{method:"POST",headers:headers(),body:JSON.stringify({dce:dce,format:fmt})})
       .then(function(r){if(!r.ok)return r.json().then(function(d){throw new Error((d&&d.detail)||"Export impossible");});return r.blob();})
-      .then(function(blob){var slug=(LAST.objet||"dce").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,50)||"projet";var aE=document.createElement("a");aE.href=URL.createObjectURL(blob);aE.download=(fmt==="zip"?"DCE-":"Projet-DCE-")+slug+"."+ext;document.body.appendChild(aE);aE.click();setTimeout(function(){URL.revokeObjectURL(aE.href);aE.remove();},1500);})
+      .then(function(blob){var slug=(dce.objet||"dce").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,50)||"projet";var aE=document.createElement("a");aE.href=URL.createObjectURL(blob);aE.download=(fmt==="zip"?"DCE-":"Projet-DCE-")+slug+"."+ext;document.body.appendChild(aE);aE.click();setTimeout(function(){URL.revokeObjectURL(aE.href);aE.remove();},1500);})
       .catch(function(e){alert(e.message||"Export impossible");})
       .finally(function(){if(btn){btn.disabled=false;btn.innerHTML=old;icons();}});}
 
@@ -529,19 +544,20 @@
   function copyText(txt,btn){navigator.clipboard.writeText(txt).then(function(){var o=btn.innerHTML;btn.innerHTML='<i data-lucide="check" class="lucide"></i> Copié';icons();setTimeout(function(){btn.innerHTML=o;icons();},1500);}).catch(function(){});}
 
   // ── Sourcing ──
-  function annotateLots(s){(s.lots||[]).forEach(function(l){var card=document.querySelector('.lot[data-lot-num="'+(l.numero!=null?l.numero:"")+'"]');if(!card)return;var b=card.querySelector(".lot-badge");if(!b)return;var idx=l.indice||{};b.className="lot-badge pill "+pillCls(idx.niveau);b.textContent=(l.vivier||[]).length+" PME · risque "+(idx.risque||0)+"%";});}
+  function annotateLots(s){(s.lots||[]).forEach(function(l){var n=(l.numero!=null&&!isNaN(l.numero))?Number(l.numero):null;if(n==null)return;var card=document.querySelector('.lot[data-lot-num="'+n+'"]');if(!card)return;var b=card.querySelector(".lot-badge");if(!b)return;var idx=l.indice||{};b.className="lot-badge pill "+pillCls(idx.niveau);b.textContent=(l.vivier||[]).length+" PME · risque "+(Number(idx.risque)||0)+"%";});}
   function runSourcing(){if(!LAST)return;var lots=((LAST.allotissement||{}).lots||[]).map(function(l){return{numero:l.numero,intitule:l.intitule};});var box=$("#sourcingResult");
     if(!lots.length){box.innerHTML='<div class="muted">Aucun lot à analyser.</div>';return;}
     var btn=$("#btnSourcing");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Analyse…';
     box.innerHTML='<div class="muted" style="padding:10px 0">Recherche des PME (SIRENE · DECP · BODACC) et calcul du risque…</div>';
-    fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:lots,departement:$("#dept").value.trim()})})
+    fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:lots,departement:((LAST&&LAST._inputs&&LAST._inputs.dept)||$("#dept").value.trim())})})
       .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d};});})
       .then(function(res){if(!res.ok){box.innerHTML='<div class="avert">'+esc((res.d&&res.d.detail)||"Erreur")+'</div>';return;}box.innerHTML=renderSourcing(res.d);annotateLots(res.d);icons();})
       .catch(function(){box.innerHTML='<div class="avert">Réseau indisponible.</div>';})
       .finally(function(){btn.disabled=false;btn.innerHTML='<i data-lucide="refresh-cw" class="lucide"></i> Relancer l\'analyse';icons();});}
   function renderSourcing(s){var h="",g=s.global||{};
     if(s.disclaimer)h+='<div class="note-src" style="margin-top:12px">⚠️ '+esc(s.disclaimer)+'</div>';
-    h+='<div class="risk-banner '+( "pill-bg-"+pillCls(g.niveau) )+'" style="background:var(--'+(pillCls(g.niveau)==="go"?"success":pillCls(g.niveau)==="a_etudier"?"warning":"danger")+'-weak)">Risque global d\'infructuosité : <b>'+(g.risque||0)+'%</b> ('+esc(g.niveau||"")+(g.pire_lot?' — lot le plus à risque : '+esc(g.pire_lot):'')+')</div>';
+    var glvl=(pillCls(g.niveau)==="go"?"success":pillCls(g.niveau)==="a_etudier"?"warning":"danger");
+    h+='<div class="risk-banner" style="background:var(--'+glvl+'-weak);color:var(--'+glvl+'-text);border-color:color-mix(in srgb,var(--'+glvl+') 30%,transparent)">Risque global d\'infructuosité : <b>'+(Number(g.risque)||0)+'%</b> ('+esc(g.niveau||"")+(g.pire_lot?' — lot le plus à risque : '+esc(g.pire_lot):'')+')</div>';
     if((s.conseils||[]).length){h+='<div class="conseils-box"><b>💡 Conseils pour réduire le risque</b><ul class="clean">';s.conseils.forEach(function(co){h+='<li>'+esc(co)+'</li>';});h+='</ul></div>';}
     (s.lots||[]).forEach(function(l){var idx=l.indice||{};
       h+='<div class="lot-src"><div class="lot-src-head"><span class="pill '+pillCls(idx.niveau)+'" style="float:right">'+(idx.risque||0)+'% '+esc(idx.niveau||"")+'</span><b>Lot '+esc(l.numero!=null?l.numero:"")+' — '+esc(l.intitule||"")+'</b></div>';

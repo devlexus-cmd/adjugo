@@ -22,6 +22,16 @@ def upgrade():
     import app.models  # noqa: F401  (enregistre Acheteur / AcheteurDce sur Base)
     from app.core.database import Base
     Base.metadata.create_all(bind=bind)   # crée `acheteurs` + `acheteur_dces` si absentes
+    # Idempotent : si une table acheteur préexiste sans une colonne du modèle (pilotage /
+    # diffusion ajoutés après coup), on l'ajoute (nullable, defaults gérés par l'app).
+    insp = sa.inspect(bind)
+    for tname in ("acheteurs", "acheteur_dces"):
+        if tname not in insp.get_table_names():
+            continue
+        existing = {c["name"] for c in insp.get_columns(tname)}
+        for col in Base.metadata.tables[tname].columns:
+            if col.name not in existing:
+                op.add_column(tname, sa.Column(col.name, col.type, nullable=True))
 
 
 def downgrade():

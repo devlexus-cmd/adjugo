@@ -62,8 +62,17 @@ def _check_access(request: Request) -> None:
 
 
 def _tenant(request: Request) -> str:
-    """Tenant LLM scopé par client → l'isolation 'voisin bruyant' de llm.py (disjoncteur
-    et plafond PAR tenant) joue réellement, sans pénaliser les autres acheteurs."""
+    """Tenant LLM scopé : par COMPTE acheteur si un token valide est présent (isolation
+    coût/résilience par compte), sinon par IP. L'isolation 'voisin bruyant' de llm.py
+    (disjoncteur + plafond PAR tenant) joue ainsi au bon grain."""
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        try:
+            p = decode_token(auth[7:].strip())
+            if p.get("typ") == "acheteur" and p.get("sub"):
+                return f"dce:ach:{p.get('sub')}"
+        except Exception:
+            pass
     return f"dce:{real_client_ip(request)}"
 
 
@@ -148,6 +157,8 @@ def avis(request: Request, payload: ExportIn):
     dce = payload.dce or {}
     if not isinstance(dce, dict) or not (dce.get("objet") or "").strip():
         raise HTTPException(422, "DCE manquant ou invalide.")
+    if len(json.dumps(dce, ensure_ascii=False)) > 300000:
+        raise HTTPException(413, "DCE trop volumineux.")
     from app.services.dce_avis import build_avis, build_methode_notation
     return {"avis": build_avis(dce), "methode": build_methode_notation(dce)}
 

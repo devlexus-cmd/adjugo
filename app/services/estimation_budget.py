@@ -55,13 +55,17 @@ def estimer_budget(objet: str, departement: str = "", cpv=None) -> dict:
 
     montants.sort()
     n = len(montants)
+    try:
+        qs = statistics.quantiles(montants, n=4, method="inclusive")   # vrais Q1/Q3
+        q1, q3 = round(qs[0]), round(qs[2])
+    except Exception:
+        q1, q3 = round(montants[max(0, n // 4)]), round(montants[min(n - 1, (3 * n) // 4)])
     return {
         "ok": True,
         "nb_marches": n,
         "departement": deps[0] if deps else None,
         "mediane": round(statistics.median(montants)),
-        "q1": round(montants[max(0, n // 4)]),
-        "q3": round(montants[min(n - 1, (3 * n) // 4)]),
+        "q1": q1, "q3": q3,
         "min": round(montants[0]),
         "max": round(montants[-1]),
         "exemples": exemples,

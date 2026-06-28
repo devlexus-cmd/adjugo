@@ -192,14 +192,19 @@ def set_statut(dce_id: int, data: StatutIn,
 
 
 class DiffuserIn(BaseModel):
-    nb_pme: int | None = Field(default=None, ge=0)
+    nb_pme: int | None = Field(default=None, ge=0, le=100000)
 
 
 @router.post("/dce/{dce_id}/diffuser")
 def diffuser(dce_id: int, data: DiffuserIn,
              a: Acheteur = Depends(get_current_acheteur), db: Session = Depends(get_db)):
     """Diffuse la consultation au réseau de PME Adjugo (flywheel) : enregistre la diffusion
-    (date + nombre de PME capables touchées) et passe la consultation en « publié »."""
+    (date + nombre de PME capables touchées) et passe la consultation en « publié ».
+
+    INVARIANT : la diffusion réseau COMPLÈTE la publicité réglementaire (profil acheteur,
+    BOAMP/JAL/JOUE selon le seuil), elle ne s'y SUBSTITUE jamais — le dossier reste ouvert à
+    tout candidat, y compris hors réseau (égalité de traitement, anti-favoritisme 432-14 CP).
+    Le compte `nb_pme` est indicatif (fourni par le client à titre de portée)."""
     d = db.query(AcheteurDce).filter(AcheteurDce.id == dce_id,
                                      AcheteurDce.acheteur_id == a.id).first()
     if not d:
