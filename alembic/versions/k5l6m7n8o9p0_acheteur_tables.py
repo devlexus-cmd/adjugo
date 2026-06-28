@@ -35,5 +35,10 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_table("acheteur_dces")
-    op.drop_table("acheteurs")
+    # Défensif et symétrique de l'upgrade idempotent : on ne drop que ce qui existe (et dans
+    # l'ordre des dépendances), pour ne jamais planter un downgrade sur une base partielle.
+    bind = op.get_bind()
+    existing = sa.inspect(bind).get_table_names()
+    for tname in ("acheteur_dces", "acheteurs"):
+        if tname in existing:
+            op.drop_table(tname)

@@ -7,6 +7,15 @@
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="apple-touch-icon" href="/static/favicon.svg">
 <meta name="description" content="Adjugo aide votre collectivité à écrire un appel d'offres complet et à jour, puis à voir les entreprises capables d'y répondre. Pour moins de marchés sans réponse. Sources officielles, on n'invente rien.">
+<link rel="canonical" href="https://adjugo-api-production.up.railway.app/acheteur">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Adjugo Collectivités — Rédigez vos appels d'offres, trouvez les entreprises">
+<meta property="og:description" content="Écrivez un appel d'offres complet et à jour, et voyez les entreprises capables d'y répondre. Moins de marchés sans réponse. Sources officielles, on n'invente rien.">
+<meta property="og:url" content="https://adjugo-api-production.up.railway.app/acheteur">
+<meta property="og:image" content="https://adjugo-api-production.up.railway.app/static/favicon.svg">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Adjugo Collectivités">
+<meta name="twitter:description" content="Rédigez vos appels d'offres, trouvez les entreprises capables d'y répondre. Sources officielles, on n'invente rien.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -170,7 +179,7 @@
   .tc-row { display:flex; align-items:center; gap:12px; padding:15px 0; border-bottom:1px solid rgba(255,255,255,.08); font-size:14.5px; }
   .tc-row:last-child { border-bottom:none; }
   .tc-row svg { width:18px; height:18px; color:#5BE0A0; flex-shrink:0; }
-  .tc-row .meta { margin-left:auto; font-size:12px; color:#7E8AA6; font-family:'Bricolage Grotesque'; }
+  .tc-row .meta { margin-left:auto; font-size:12px; color:#9AA6C2; font-family:'Bricolage Grotesque'; }
 
   /* Pricing */
   .plans { display:grid; grid-template-columns:repeat(3,1fr); gap:24px; align-items:start; }
@@ -217,7 +226,7 @@
   .foot-col h4 { font-size:13px; font-weight:700; margin-bottom:14px; color:#fff; text-transform:uppercase; letter-spacing:.08em; }
   .foot-col a { display:block; font-size:14.5px; padding:5px 0; transition:color .15s; }
   .foot-col a:hover { color:#fff; }
-  .foot-bot { margin-top:48px; padding-top:24px; border-top:1px solid rgba(255,255,255,.1); display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap; font-size:13px; color:#7E8AA6; }
+  .foot-bot { margin-top:48px; padding-top:24px; border-top:1px solid rgba(255,255,255,.1); display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap; font-size:13px; color:#9AA6C2; }
 
   /* Entrance animation */
   .reveal { opacity:0; transform:translateY(16px); animation:rise .8s var(--ease) forwards; }
@@ -258,7 +267,7 @@
 
 <nav class="nav">
   <div class="wrap nav-in">
-    <a href="/acheteur" class="brand"><span>adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></a>
+    <a href="/acheteur" class="brand" aria-label="Adjugo Collectivités"><span>adjug</span><svg class="wm-o" aria-hidden="true" focusable="false" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></a>
     <span class="brand-sub" style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--blue-deep);background:var(--blue-wash);border:1px solid #dbe5fd;padding:3px 9px;border-radius:999px">Collectivités</span>
     <div class="nav-links">
       <a href="#features">Fonctionnalités</a>
@@ -279,7 +288,7 @@
     <div>
       <span class="eyebrow reveal d1"><span class="dot"></span> Pour les acheteurs publics</span>
       <h1 class="hero-title display reveal d2">Rédigez l'appel d'offres.
-        <span class="accent">Trouvez qui peut y répondre<svg viewBox="0 0 300 18" preserveAspectRatio="none"><path d="M2 13 C 70 4, 150 4, 298 11" stroke="var(--blue)" stroke-width="4" fill="none" stroke-linecap="round"/></svg></span>.
+        <span class="accent">Trouvez qui peut y répondre<svg viewBox="0 0 300 18" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M2 13 C 70 4, 150 4, 298 11" stroke="var(--blue)" stroke-width="4" fill="none" stroke-linecap="round"/></svg></span>.
       </h1>
       <p class="lede reveal d3">Adjugo aide votre collectivité à écrire un appel d'offres complet et à jour, puis vous montre les entreprises capables d'y répondre. Moins de marchés qui restent sans offre, plus d'entreprises locales en lice. Tout part de sources officielles. On n'invente rien.</p>
       <div class="cta-row reveal d4">
@@ -297,9 +306,9 @@
       <span class="float-chip"><i data-lucide="leaf"></i>Clauses environnementales à jour</span>
       <div class="card pv">
         <div class="pv-top">
+          <span class="pill" style="background:#FEF3C7;color:#92400E">Exemple</span>
           <span class="pill go"><i data-lucide="circle-check" style="width:13px;height:13px"></i>Conforme 2026</span>
           <span class="pill">Risque 23%</span>
-          <span class="pv-src">DECP · SIRENE <i data-lucide="external-link"></i></span>
         </div>
         <div class="pv-title">Rénovation énergétique de l'école des Tilleuls</div>
         <div class="pv-sub">Marché de travaux · 3 lots · Quimper (29)</div>
@@ -312,8 +321,8 @@
         <div class="pv-row"><span class="lbl">Lot 2 · Isolation</span><span class="pv-bar"><i style="width:78%"></i></span><span class="pv-sc">7 PME</span></div>
         <div class="pv-row"><span class="lbl">Lot 3 · Chaufferie</span><span class="pv-bar"><i style="width:84%"></i></span><span class="pv-sc">11 PME</span></div>
         <div class="pv-ct">
-          <span class="pv-av">LG</span>
-          <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">Menuiserie Le Goff</div><div style="font-size:11.5px;color:var(--ink-3)">Finistère · a déjà gagné 4 marchés publics</div></div>
+          <span class="pv-av">A</span>
+          <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">Entreprise A</div><div style="font-size:11.5px;color:var(--ink-3)">Finistère · a déjà remporté des marchés similaires</div></div>
           <span class="pill blue"><i data-lucide="badge-check" style="width:12px;height:12px"></i>en règle</span>
         </div>
       </div>
@@ -436,7 +445,7 @@
           <li><i data-lucide="check"></i>Branchement à votre profil acheteur</li>
           <li><i data-lucide="check"></i>Support prioritaire</li>
         </ul>
-        <a href="/acheteur/app?demo=1" class="btn btn-ghost">Voir une démo</a>
+        <a href="mailto:eviegas@padis-core.com?subject=Accompagnement%20Adjugo%20Collectivit%C3%A9s" class="btn btn-ghost">Demander un accompagnement</a>
       </div>
     </div>
     <p class="pay-note">Adjugo vous aide à rédiger, à sonder le marché et à comparer : la décision d'attribution reste entièrement la vôtre. Prix nets, sans TVA (franchise, art. 293 B du CGI).</p>
@@ -486,7 +495,7 @@
   <div class="wrap">
     <div class="foot-in">
       <div class="foot-brand">
-        <a href="/acheteur" class="brand"><span>adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".2" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".5" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></a>
+        <a href="/acheteur" class="brand" aria-label="Adjugo Collectivités"><span>adjug</span><svg class="wm-o" aria-hidden="true" focusable="false" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".2" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".5" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></a>
         <p>L'outil des acheteurs publics, de la rédaction de l'appel d'offres jusqu'à la publication.</p>
       </div>
       <div class="foot-cols">

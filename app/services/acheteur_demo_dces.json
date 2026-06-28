@@ -29,14 +29,14 @@
           {
             "numero": 2,
             "intitule": "Remplacement des menuiseries extérieures",
-            "description": "Dépose des menuiseries extérieures existantes (fenêtres, portes-fenêtres, portes d'entrée, éventuels lanterneaux) et fourniture-pose de menuiseries neuves à haute performance thermique (Uw ≤ [à compléter] W/m².K), en aluminium à rupture de pont thermique ou en bois certifié PEFC/FSC, avec vitrages à isolation renforcée (VIR). Travaux de calfeutrement, habillage intérieur et extérieur, et remise en état des tableaux. Respect du phasage vacances scolaires pour les salles de classe.",
+            "description": "Dépose des menuiseries extérieures existantes (fenêtres, portes-fenêtres, portes d'entrée, éventuels lanterneaux) et fourniture-pose de menuiseries neuves à haute performance thermique (Uw ≤ [valeur indicative à confirmer] W/m².K), en aluminium à rupture de pont thermique ou en bois certifié PEFC/FSC, avec vitrages à isolation renforcée (VIR). Travaux de calfeutrement, habillage intérieur et extérieur, et remise en état des tableaux. Respect du phasage vacances scolaires pour les salles de classe.",
             "atteignable_pme": "Ce lot relève du métier de menuisier-poseur, très représenté parmi les PME et artisans du Finistère. Le montant estimé (environ 180 000 à 220 000 € HT) est parfaitement accessible à une PME seule disposant d'une équipe de pose. Aucune technicité exceptionnelle n'est requise.",
             "groupement_conseille": false
           },
           {
             "numero": 3,
             "intitule": "Installation de la chaufferie biomasse et réseaux de distribution de chaleur",
-            "description": "Dépose de l'installation de chauffage existante, fourniture et installation d'une chaufferie biomasse (chaudière à granulés ou plaquettes forestières, puissance [à compléter] kW), silo ou local de stockage du combustible, réseaux de distribution hydraulique, émetteurs de chaleur si nécessaire, régulation et GTB, raccordements électriques associés, mise en service et formation du personnel technique communal. Inclut les travaux de génie civil liés au local chaufferie si nécessaire. Conformité aux réglementations en vigueur (arrêté du [à compléter], DTU applicables).",
+            "description": "Dépose de l'installation de chauffage existante, fourniture et installation d'une chaufferie biomasse (chaudière à granulés ou plaquettes forestières, puissance [valeur indicative à confirmer] kW), silo ou local de stockage du combustible, réseaux de distribution hydraulique, émetteurs de chaleur si nécessaire, régulation et GTB, raccordements électriques associés, mise en service et formation du personnel technique communal. Inclut les travaux de génie civil liés au local chaufferie si nécessaire. Conformité aux réglementations en vigueur (arrêté du [valeur indicative à confirmer], DTU applicables).",
             "atteignable_pme": "Ce lot nécessite des compétences en génie climatique et en installations biomasse. Il est accessible à une PME spécialisée en chauffage-plomberie-génie climatique, secteur bien représenté en Bretagne. Un groupement avec un électricien ou un génie civil est conseillé si la PME candidate ne dispose pas de toutes les qualifications en interne (Qualibois ou équivalent recommandé).",
             "groupement_conseille": true
           }
@@ -91,15 +91,15 @@
         },
         {
           "titre": "2. Spécifications techniques et performances énergétiques",
-          "contenu": "L'isolation thermique extérieure doit atteindre une résistance thermique minimale de [à compléter selon étude thermique] m².K/W, mise en œuvre selon les règles de l'art et les DTU applicables. Les menuiseries de remplacement doivent présenter un coefficient de transmission thermique Uw ≤ [à compléter] W/(m².K) et être certifiées par un organisme accrédité. La chaufferie biomasse doit fonctionner avec des combustibles certifiés (bois-énergie conforme aux normes [à compléter]) et disposer d'un rendement énergétique saisonnier ≥ [à compléter]%. Tous les équipements doivent être conformes à la réglementation thermique en vigueur et aux normes NF applicables. Un test d'étanchéité à l'air (blower door) sera réalisé après travaux pour validation de la performance globale."
+          "contenu": "L'isolation thermique extérieure doit atteindre une résistance thermique minimale R ≥ 4,5 m².K/W (à confirmer par l'étude thermique), mise en œuvre selon les règles de l'art et les DTU applicables. Les menuiseries de remplacement doivent présenter un coefficient de transmission thermique Uw ≤ [valeur indicative à confirmer] W/(m².K) et être certifiées par un organisme accrédité. La chaufferie biomasse doit fonctionner avec des combustibles certifiés (bois-énergie conforme aux normes [valeur indicative à confirmer]) et disposer d'un rendement énergétique saisonnier ≥ [valeur indicative à confirmer]%. Tous les équipements doivent être conformes à la réglementation thermique en vigueur et aux normes NF applicables. Un test d'étanchéité à l'air (blower door) sera réalisé après travaux pour validation de la performance globale."
         },
         {
           "titre": "3. Exigences environnementales et gestion des déchets",
-          "contenu": "L'entreprise privilégiera l'utilisation de matériaux biosourcés (isolants à base de fibre de bois, liège, chanvre ou équivalent) pour au moins [à compléter]% de l'isolation mise en place, justifiés par des déclarations environnementales de produit (FDES ou équivalent). Un plan de gestion des déchets de chantier doit être établi avant le démarrage, prévoyant le tri sélectif et la valorisation des déchets (bois, métaux, plastiques, déchets inertes) avec justification des filières de traitement. Les emballages et matériaux de protection doivent être minimisés et recyclés. L'entreprise s'engage à réduire les nuisances sonores et les émissions polluantes selon les prescriptions du chantier en site occupé."
+          "contenu": "L'entreprise privilégiera l'utilisation de matériaux biosourcés (isolants à base de fibre de bois, liège, chanvre ou équivalent) pour au moins [valeur indicative à confirmer]% de l'isolation mise en place, justifiés par des déclarations environnementales de produit (FDES ou équivalent). Un plan de gestion des déchets de chantier doit être établi avant le démarrage, prévoyant le tri sélectif et la valorisation des déchets (bois, métaux, plastiques, déchets inertes) avec justification des filières de traitement. Les emballages et matériaux de protection doivent être minimisés et recyclés. L'entreprise s'engage à réduire les nuisances sonores et les émissions polluantes selon les prescriptions du chantier en site occupé."
         },
         {
           "titre": "4. Clauses sociales et conditions d'exécution",
-          "contenu": "Une clause d'insertion professionnelle est obligatoire : l'entreprise s'engage à employer ou à faire employer par ses sous-traitants au minimum [à compléter]% d'heures de travail par des personnes en difficulté d'insertion ou demandeurs d'emploi de longue durée, avec suivi mensuel documenté. Le chantier doit respecter un phasage strict limitant les interventions aux périodes de vacances scolaires (calendrier fourni en annexe) ; tout débordement entraînera des pénalités. Un responsable de chantier dédié doit être désigné pour coordonner les accès, la sécurité et les relations avec l'établissement. Les horaires de travail et les modalités de circulation dans l'école sont définis dans le dossier de consultation."
+          "contenu": "Une clause d'insertion professionnelle est obligatoire : l'entreprise s'engage à employer ou à faire employer par ses sous-traitants au minimum [valeur indicative à confirmer]% d'heures de travail par des personnes en difficulté d'insertion ou demandeurs d'emploi de longue durée, avec suivi mensuel documenté. Le chantier doit respecter un phasage strict limitant les interventions aux périodes de vacances scolaires (calendrier fourni en annexe) ; tout débordement entraînera des pénalités. Un responsable de chantier dédié doit être désigné pour coordonner les accès, la sécurité et les relations avec l'établissement. Les horaires de travail et les modalités de circulation dans l'école sont définis dans le dossier de consultation."
         }
       ],
       "ccap": {
@@ -111,13 +111,13 @@
           "Pénalités de retard : 1/300e du prix TTC par jour calendaire de retard au-delà du délai contractuel, plafonnées à 5 % du prix TTC",
           "Assurance tous risques chantier obligatoire, responsabilité civile décennale, garantie de parfait achèvement 1 an"
         ],
-        "derogations_ccag": "Article [à compléter après validation interne] : Dérogations au CCAG Travaux applicables au présent marché : (1) Phasage du chantier imposé selon calendrier scolaire annexé au CCTP ; (2) Modalités de gestion des déchets de chantier et valorisation renforcées (cf. clause environnementale) ; (3) Délai de paiement des mémoires : 30 jours à compter de la réception du mémoire visé par le maître d'ouvrage."
+        "derogations_ccag": "Article 9 : Dérogations au CCAG Travaux applicables au présent marché : (1) Phasage du chantier imposé selon calendrier scolaire annexé au CCTP ; (2) Modalités de gestion des déchets de chantier et valorisation renforcées (cf. clause environnementale) ; (3) Délai de paiement des mémoires : 30 jours à compter de la réception du mémoire visé par le maître d'ouvrage."
       },
       "clauses_rse": {
         "environnementales": [
           "Condition d'exécution : Utilisation obligatoire de matériaux biosourcés (isolation thermique extérieure à base de fibre de bois, liège ou chanvre) pour au moins 80 % de la surface isolée. Justification par fiche technique produit et attestation du fournisseur.",
           "Condition d'exécution : Plan de gestion et valorisation des déchets de chantier (déchets de démolition, menuiseries anciennes, emballages) avec tri sélectif sur site et orientation vers filières de recyclage/valorisation agréées. Rapport mensuel de suivi remis au maître d'ouvrage.",
-          "Condition d'exécution : Chaufferie biomasse : installation conforme aux normes RT 2012 et aux critères de performance énergétique saisonnière (PES ≥ 90 %). Attestation de conformité énergétique à la réception."
+          "Condition d'exécution : Chaufferie biomasse : installation conforme aux normes RE2020 (réglementation environnementale en vigueur) et aux critères de performance énergétique saisonnière (PES ≥ 90 %). Attestation de conformité énergétique à la réception."
         ],
         "sociales": [
           "Clause d'insertion professionnelle : L'entreprise s'engage à recruter au moins 2 demandeurs d'emploi en CDI ou CDD ≥ 6 mois pour l'exécution du marché, ou à justifier un partenariat avec un organisme d'insertion agréé. Suivi mensuel et attestation à la fin du marché."
@@ -140,7 +140,7 @@
       "conseils": [
         "Sourcing : Identifier en amont 3-4 entreprises qualifiées en rénovation énergétique (labels RGE, expérience site occupé) pour assurer une mise en concurrence réelle ; relancer par courrier ou appel téléphonique pour lever les freins à candidature (délai 10 mois, phasage, biosourcés).",
         "Délai de candidature : Prévoir 3-4 semaines minimum pour permettre aux candidats de constituer leur dossier (assurances, références, plan de phasage) ; publier sur profil acheteur et BOAMP.",
-        "Phasage : Annexer au CCTP un calendrier détaillé des vacances scolaires 2024-2025 et préciser les zones du bâtiment accessibles par phase (ex. aile nord vacances d'automne, aile sud vacances de printemps) pour éviter tout litige.",
+        "Phasage : Annexer au CCTP un calendrier détaillé des vacances scolaires de l'année d'exécution et préciser les zones du bâtiment accessibles par phase (ex. aile nord vacances d'automne, aile sud vacances de printemps) pour éviter tout litige.",
         "Matériaux biosourcés : Exiger des fiches techniques et certifications (ACERMI, Natureplus) dès la candidature pour éviter des substitutions tardives ; prévoir une visite de site commune avant notification."
       ],
       "garde_fous": [
@@ -260,7 +260,7 @@
         },
         {
           "titre": "3. Exigences environnementales et gestion différenciée",
-          "contenu": "Le prestataire s'engage à appliquer une approche zéro phytosanitaire : aucun produit phytopharmaceutique de synthèse ne sera utilisé sur les espaces gérés. La lutte contre les nuisibles et les adventices sera menée par des méthodes alternatives (désherbage mécanique, paillage, lutte biologique, [à compléter selon pratiques locales]). Une gestion différenciée sera mise en place, adaptant l'intensité d'entretien à la fonction de chaque espace (zones de détente, corridors écologiques, etc.). Le paillage organique sera privilégié pour les massifs et les pieds d'arbres, favorisant la rétention d'eau et la réduction des interventions. Les déchets verts seront compostés ou valorisés en ressource locale autant que possible. Le prestataire justifiera annuellement du respect de ces engagements par un bilan environnemental."
+          "contenu": "Le prestataire s'engage à appliquer une approche zéro phytosanitaire : aucun produit phytopharmaceutique de synthèse ne sera utilisé sur les espaces gérés. La lutte contre les nuisibles et les adventices sera menée par des méthodes alternatives (désherbage mécanique, paillage, lutte biologique, [valeur indicative à confirmer]). Une gestion différenciée sera mise en place, adaptant l'intensité d'entretien à la fonction de chaque espace (zones de détente, corridors écologiques, etc.). Le paillage organique sera privilégié pour les massifs et les pieds d'arbres, favorisant la rétention d'eau et la réduction des interventions. Les déchets verts seront compostés ou valorisés en ressource locale autant que possible. Le prestataire justifiera annuellement du respect de ces engagements par un bilan environnemental."
         },
         {
           "titre": "4. Exigences sociales et clauses d'insertion",
@@ -274,10 +274,10 @@
           "Durée du marché : 24 mois à compter de la date de notification, reconduction possible sur demande écrite 30 jours avant terme",
           "Modalités de paiement : facture mensuelle sur justificatif d'exécution (feuilles de présence, photos d'état des lieux) ; délai de paiement 30 jours fin de mois",
           "Pénalités de retard : 0,5 % par décade de retard, plafonnées à 5 % du montant mensuel",
-          "Assurance responsabilité civile obligatoire (montant minimum [à compléter selon risque local])",
+          "Assurance responsabilité civile obligatoire (montant minimum 1 500 000 € par sinistre)",
           "Résiliation possible pour inexécution après mise en demeure restée sans effet 15 jours"
         ],
-        "derogations_ccag": "Article [à compléter] : Aucune dérogation substantielle au CCAG FCS ; adaptation mineure des modalités de paiement à la facturation mensuelle (art. 14 CCAG FCS)"
+        "derogations_ccag": "Article 8 : Aucune dérogation substantielle au CCAG FCS ; adaptation mineure des modalités de paiement à la facturation mensuelle (art. 14 CCAG FCS)"
       },
       "clauses_rse": {
         "environnementales": [

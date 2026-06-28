@@ -69,6 +69,7 @@
   /* focus visible cohérent sur les contrôles hors .btn (a11y) */
   .nav-item:focus-visible,.theme-toggle button:focus-visible,.modal-h .x:focus-visible,.act-link:focus-visible,.ao-row:focus-visible,.alert-callout:focus-visible{outline:none;box-shadow:0 0 0 3px var(--ring)}
   @media print{.side,.top,.toolbar,.note-src{display:none!important} .app{display:block;height:auto} .work{overflow:visible;height:auto} .content{padding:0;max-width:none}}
+  @media (prefers-reduced-motion:reduce){.view.active{animation:none} .adj-ripple *{animation:none!important} *{scroll-behavior:auto!important}}
 </style>
 </head>
 <body>
@@ -103,7 +104,7 @@
       <button class="btn icon sm menu-btn" id="menuBtn" aria-label="Menu"><i data-lucide="menu" class="lucide"></i></button>
       <div class="top-title"><h1 id="tbTitle">Tableau de bord</h1><div class="sub" id="tbSub"></div></div>
       <div class="spacer"></div>
-      <button class="btn primary sm" id="tbAction" onclick="window.__nav('creer')"><i data-lucide="plus" class="lucide"></i> Nouveau DCE</button>
+      <button class="btn primary sm" id="tbAction" onclick="window.__newDce()"><i data-lucide="plus" class="lucide"></i> Nouveau DCE</button>
     </header>
     <div class="content" role="main">
 
@@ -122,7 +123,7 @@
             <div class="feed-list" id="dashRecent"><div class="empty"><div class="adj-ripple"><div class="drop"></div><div class="wave"></div><div class="wave"></div><div class="wave"></div></div></div></div>
           </div>
           <div class="dash-rail">
-            <button class="act-hero" onclick="window.__nav('creer')">
+            <button class="act-hero" onclick="window.__newDce()">
               <span class="ah-ic"><i data-lucide="file-plus-2" class="lucide"></i></span>
               <span class="ah-tx"><span class="ah-t">Créer un DCE</span><span class="ah-d">Décrivez le besoin, l'IA rédige le projet</span></span>
               <i data-lucide="arrow-right" class="lucide"></i>
@@ -321,6 +322,17 @@
     if(v==="dashboard")loadDashboard();if(v==="mesdce")loadMesDce();if(v==="compte")loadCompte();
     $(".work").scrollTop=0;icons();}
   window.__nav=navTo;
+  // « Nouveau DCE » : repart d'une page vierge (sinon l'ancien résultat reste sous un formulaire vide).
+  function nouveauDce(){
+    if(curView==="creer"&&DIRTY&&!confirm("Des modifications de ce DCE ne sont pas enregistrées. Démarrer un nouveau DCE quand même ?"))return;
+    LAST=null;CURRENT_DCE_ID=null;DIRTY=false;
+    var f=$("#form");if(f)f.reset();
+    if($("#result"))$("#result").innerHTML="";
+    if($("#procChip"))$("#procChip").innerHTML='<span class="muted small">La procédure s\'affichera ici.</span>';
+    if($("#estimNote"))$("#estimNote").innerHTML="";
+    navTo("creer");
+  }
+  window.__newDce=nouveauDce;
   $$("#nav .nav-item").forEach(function(a){a.onclick=function(){navTo(a.getAttribute("data-view"));};});
   $("#menuBtn").onclick=function(){$(".side").classList.toggle("open");$("#navBackdrop").classList.toggle("hidden");};
   $("#navBackdrop").onclick=function(){$(".side").classList.remove("open");this.classList.add("hidden");};
@@ -356,7 +368,9 @@
       $("#navCount").textContent=list.length;
       if(!list.length){w.innerHTML='<div class="card"><div class="empty"><div class="eic"><i data-lucide="folder" class="lucide"></i></div><h4>Aucune consultation</h4><p>Créez votre premier projet de DCE.</p><button class="btn primary sm" onclick="window.__nav(\'creer\')">Créer un DCE</button></div></div>';icons();return;}
       var by={preparation:0,publie:0,analyse:0,attribue:0,infructueux:0};list.forEach(function(d){by[d.statut]=(by[d.statut]||0)+1;});
-      list.sort(function(a,b){var x=a.date_limite||"9999-99",y=b.date_limite||"9999-99";return x<y?-1:x>y?1:0;});
+      var _term={attribue:1,infructueux:1};   // consultations clôturées → en fin de liste (pas d'urgence)
+      list.sort(function(a,b){var ta=_term[a.statut]?1:0,tb=_term[b.statut]?1:0;if(ta!==tb)return ta-tb;
+        var x=a.date_limite||"9999-99",y=b.date_limite||"9999-99";return x<y?-1:x>y?1:0;});
       var today=new Date().toISOString().slice(0,10);
       var h='<div class="dash-ribbon" style="margin-bottom:16px"><div class="rb"><span class="rb-l">Consultations</span><span class="rb-v">'+list.length+'</span></div><div class="rb"><span class="rb-l">En préparation</span><span class="rb-v">'+by.preparation+'</span></div><div class="rb"><span class="rb-l">En cours</span><span class="rb-v">'+(by.publie+by.analyse)+'</span><span class="rb-d">publiées / en analyse</span></div><div class="rb '+(by.infructueux?"alert":"")+'"><span class="rb-l">Attribuées</span><span class="rb-v">'+by.attribue+'</span><span class="rb-d">'+(by.infructueux?(by.infructueux+" infructueux"):"")+'</span></div></div>';
       h+='<div class="t-wrap"><table><thead><tr><th scope="col">Consultation</th><th scope="col">Statut</th><th scope="col">Échéance des offres</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>';
@@ -372,9 +386,19 @@
         tr.querySelector(".act-open").onclick=function(){openSavedDce(id);};
         tr.querySelector(".act-del").onclick=function(){if(demoBlock())return;if(confirm("Supprimer cette consultation ?"))aFetch("/api/acheteur/dce/"+id,{method:"DELETE",headers:aHeaders()}).then(function(r){if(r.ok)loadMesDce();});};
         tr.querySelector(".act-docx").onclick=function(){aFetch("/api/acheteur/dce/"+id,{headers:aHeaders()}).then(function(r){return r.json();}).then(function(d){exportDce("docx","docx",d.payload);});};
-        tr.querySelector(".st-sel").onchange=function(){setStatut(id,{statut:this.value},function(){loadMesDce();});};
-        tr.querySelector(".dl-inp").onchange=function(){setStatut(id,{date_limite:this.value},function(){loadMesDce();});};});
+        tr.querySelector(".st-sel").onchange=function(){setStatut(id,{statut:this.value},function(d){if(d)refreshRow(tr,d);});};
+        tr.querySelector(".dl-inp").onchange=function(){setStatut(id,{date_limite:this.value},function(d){if(d)refreshRow(tr,d);});};});
       icons();});}
+  // MAJ d'une ligne de pilotage en place (évite de recharger tout le tableau et de voler le focus).
+  function refreshRow(tr,d){
+    var today=new Date().toISOString().slice(0,10),dl=d.date_limite||"";
+    var late=dl&&dl<today&&d.statut!=="attribue"&&d.statut!=="infructueux";
+    var inp=tr.querySelector(".dl-inp");if(!inp)return;
+    inp.value=dl;inp.style.borderColor=late?"var(--danger)":"";
+    var cell=inp.parentNode,pill=cell.querySelector(".pill.no_go");
+    if(late&&!pill){var s=document.createElement("span");s.className="pill no_go";s.textContent="dépassée";s.style.marginLeft="6px";cell.appendChild(s);}
+    else if(!late&&pill){pill.remove();}
+  }
   function fillFormFromDce(x){var inp=(x&&x._inputs)||{};
     $("#objet").value=x.objet||"";if(x.type_marche)$("#type_marche").value=x.type_marche;
     $("#montant").value=(inp.montant_estime!=null?inp.montant_estime:"");$("#duree").value=(inp.duree_mois!=null?inp.duree_mois:"");
@@ -498,7 +522,7 @@
     fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:lots,departement:((LAST&&LAST._inputs&&LAST._inputs.dept)||($("#dept")?$("#dept").value.trim():""))})})
       .then(function(r){return r.json();})
       .then(function(s){var total=0,rows="";(s.lots||[]).forEach(function(l){var n=(l.vivier||[]).length;total+=n;rows+='<div class="list-row"><span>Lot '+esc(l.numero!=null?l.numero:"")+' — '+esc(l.intitule||"")+'</span><b>'+n+' PME</b></div>';});
-        body.innerHTML='<div class="act-hero" style="cursor:default;margin-bottom:14px"><span class="ah-ic"><i data-lucide="radio-tower" class="lucide"></i></span><span class="ah-tx"><span class="ah-t">'+total+' PME capables dans le réseau</span><span class="ah-d">correspondent à votre marché</span></span></div>'+
+        body.innerHTML='<div class="act-hero" style="cursor:default;margin-bottom:14px"><span class="ah-ic"><i data-lucide="radio-tower" class="lucide"></i></span><span class="ah-tx"><span class="ah-t">'+total+' PME capables (estimées)</span><span class="ah-d">dans le réseau à la date de diffusion — portée indicative, non un décompte ferme</span></span></div>'+
           rows+'<p class="muted small" style="margin:12px 0 8px">Diffuser informe les PME capables et inscrites du réseau Adjugo de votre consultation — information ouverte, dans le respect de l\'égalité de traitement. Plus de candidats potentiels = moins de risque d\'infructuosité.</p>'+
           '<p class="muted small" style="margin:0 0 12px">La diffusion réseau <b>complète</b> votre publicité réglementaire (profil acheteur, BOAMP/JAL/JOUE selon le seuil) ; elle ne s\'y substitue pas. Le dossier reste accessible à tout candidat, y compris hors réseau.</p>'+
           '<button class="btn primary block" id="diffConfirm"><i data-lucide="send" class="lucide"></i> Confirmer la diffusion</button>';

@@ -97,7 +97,10 @@ def get_current_acheteur(token: str = Depends(oauth2_acheteur), db: Session = De
         raise HTTPException(status_code=401, detail="Token invalide")
     acheteur = db.query(Acheteur).filter(Acheteur.id == aid).first()
     if acheteur is None:
-        raise HTTPException(status_code=404, detail="Compte introuvable")
+        # 401 (et non 404) : du point de vue du porteur de token, « compte introuvable » et
+        # « session invalide » sont indistinguables — on n'expose pas la différence.
+        raise HTTPException(status_code=401, detail="Session invalide, reconnectez-vous",
+                            headers={"WWW-Authenticate": "Bearer"})
     if not getattr(acheteur, "is_active", True):
         raise HTTPException(status_code=403, detail="Compte désactivé",
                             headers={"WWW-Authenticate": "Bearer"})
@@ -122,7 +125,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise HTTPException(status_code=401, detail="Token invalide")
     user = db.query(User).filter(User.id == uid).first()
     if user is None:
-        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+        raise HTTPException(status_code=401, detail="Session invalide, reconnectez-vous",
+                            headers={"WWW-Authenticate": "Bearer"})
     # Compte désactivé : un token déjà émis ne doit plus donner accès (le login le bloque déjà,
     # mais les sessions en cours restaient valides).
     if not getattr(user, "is_active", True):

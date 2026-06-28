@@ -346,11 +346,15 @@ def parse_json(raw: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # Dernier recours : extraire le premier objet {...} équilibré
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
+        # Dernier recours : décoder le PREMIER objet équilibré à partir du premier « { »
+        # (raw_decode s'arrête à la fin de l'objet), au lieu d'un regex greedy `\{.*\}` qui
+        # sur-capture jusqu'à la dernière accolade (et échoue dès qu'il y a du texte après).
+        start = text.find("{")
+        if start != -1:
             try:
-                return json.loads(match.group(0))
+                obj, _ = json.JSONDecoder().raw_decode(text[start:])
+                if isinstance(obj, dict):
+                    return obj
             except json.JSONDecodeError:
                 pass
     raise ValueError(f"Réponse LLM non JSON: {raw[:200]}")

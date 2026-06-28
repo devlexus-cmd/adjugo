@@ -8,7 +8,7 @@ Strictement séparé du produit PME : identités dans la table `acheteurs`, JWT 
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -49,13 +49,13 @@ def _guard_not_demo(a: Acheteur) -> None:
 
 
 class RegisterIn(BaseModel):
-    email: str = Field(max_length=255)
+    email: EmailStr = Field(max_length=255)   # validation syntaxique réelle (email-validator)
     password: str = Field(min_length=8, max_length=200)
     nom_collectivite: str = Field(default="", max_length=255)
 
 
 class LoginIn(BaseModel):
-    email: str = Field(max_length=255)
+    email: EmailStr = Field(max_length=255)
     password: str = Field(max_length=200)
 
 
@@ -63,8 +63,8 @@ class LoginIn(BaseModel):
 @limiter.limit("5/minute")
 def register(request: Request, data: RegisterIn, db: Session = Depends(get_db)):
     email = _norm_email(data.email)
-    if "@" not in email or "." not in email:
-        raise HTTPException(422, "Adresse email invalide.")
+    if email == DEMO_EMAIL:                       # adresse de la vitrine publique : non inscriptible
+        raise HTTPException(400, "Adresse réservée.")
     if db.query(Acheteur).filter(func.lower(Acheteur.email) == email).first():
         raise HTTPException(400, "Cet email est déjà utilisé.")
     a = Acheteur(email=email, hashed_password=hash_password(data.password),

@@ -53,6 +53,13 @@ def ensure_demo_acheteur(db):
             a = db.query(Acheteur).filter(Acheteur.email == DEMO_EMAIL).first()
     if a is None:
         return None
+    # Sérialise le seed des DCE entre workers concurrents : sans contrainte d'unicité sur
+    # AcheteurDce, deux workers verraient tous deux count==0 et inséreraient les DCE en double.
+    # Verrou sur la ligne Acheteur (no-op sous SQLite mono-worker, effectif sous Postgres).
+    try:
+        db.query(Acheteur).filter(Acheteur.id == a.id).with_for_update().first()
+    except Exception:
+        db.rollback()
     if db.query(AcheteurDce).filter(AcheteurDce.acheteur_id == a.id).count() == 0:
         try:
             with open(_DATA, encoding="utf-8") as f:

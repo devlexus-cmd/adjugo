@@ -31,6 +31,7 @@ produit (prochaine révision des seuils formalisés : 1er janvier 2028).
 import os
 from concurrent.futures import ThreadPoolExecutor
 from app.services.llm import complete_ex, parse_json, tenant_scope, MODEL_FAST, LLMUnavailable
+from app.services.format import format_eur
 
 # ── Seuils de DISPENSE de publicité/mise en concurrence — gré à gré (€ HT) ────
 # Par TYPE depuis 2026 (art. R2122-8 CCP). Travaux 100 000 € (pérenne, 1er janv. 2026) ;
@@ -155,10 +156,7 @@ def procedure_recommandee(montant, type_marche: str) -> dict:
 
 
 def _eur(v) -> str:
-    try:
-        return f"{int(round(float(v))):,}".replace(",", " ") + " €"
-    except (ValueError, TypeError):
-        return str(v)
+    return format_eur(v, " €", fallback=str(v))
 
 
 # ── Prompt CŒUR (Sonnet) : raisonnement juridique (allotissement + critères) ──
@@ -410,6 +408,8 @@ def _assemble(data: dict, objet: str, type_marche: str, proc: dict,
     liste = [c for c in (crit.get("liste") or []) if isinstance(c, dict)]
     allot = data.get("allotissement") or {}
     lots = [l for l in (allot.get("lots") or []) if isinstance(l, dict)]
+    for i, l in enumerate(lots, start=1):   # numérotation 1..N déterministe (pas de « Lot : … » ni de trou)
+        l["numero"] = i
     recommande = bool(allot.get("recommande", len(lots) > 1))
 
     # ── Vérifications déterministes (on ne fait pas une confiance aveugle au LLM) ──

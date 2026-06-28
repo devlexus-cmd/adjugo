@@ -8,15 +8,15 @@ compléter (mentions « [à compléter] » pour les éléments propres à la col
 """
 
 
+from app.services.format import format_eur
+
+
 def _s(v):
     return str(v if v is not None else "").strip()
 
 
 def _eur(v):
-    try:
-        return f"{int(round(float(v))):,}".replace(",", " ") + " € HT"
-    except (ValueError, TypeError):
-        return "[montant à préciser]"
+    return format_eur(v, " € HT", fallback="[montant à préciser]")
 
 
 def _forme_prix(dce: dict) -> str:
@@ -94,6 +94,8 @@ def _avis_concurrence(dce: dict, proc: dict) -> str:
         for l in lots:
             L.append("   - Lot " + _s(l.get("numero")) + " : " + _s(l.get("intitule")) +
                      ((" — " + _s(l.get("description"))) if _s(l.get("description")) else ""))
+        L.append("   Les candidats peuvent présenter une offre pour un, plusieurs ou la totalité "
+                 "des lots [préciser un éventuel nombre maximal de lots attribuables à un même candidat].")
     else:
         L.append("5. Allotissement : lot unique." +
                  (("  Motivation : " + _s(allot.get("motivation_lot_unique")))
@@ -140,6 +142,12 @@ def _avis_concurrence(dce: dict, proc: dict) -> str:
         L.append("    Un délai de suspension (standstill) d'au moins 11 jours (16 jours si "
                  "notification non électronique) est respecté entre l'information des candidats "
                  "évincés et la signature du marché.")
+    averts = [a for a in (dce.get("avertissements") or []) if _s(a)]
+    if averts:
+        L.append("")
+        L.append("⚠️ Points à corriger AVANT publication (contrôles automatiques du projet) :")
+        for a in averts:
+            L.append("   - " + _s(a))
     L.append("")
     L.append("Date d'envoi du présent avis à la publication : [à compléter].")
     L.append("")
@@ -153,11 +161,15 @@ def build_methode_notation(dce: dict) -> str:
     L = []
     L.append("MÉTHODE DE NOTATION DES OFFRES")
     L.append("")
-    L.append("Le marché est attribué à l'offre économiquement la plus avantageuse, appréciée "
-             "selon les critères pondérés ci-dessous. La note globale d'une offre est la somme "
-             "des notes pondérées de chaque critère (sur 100 points).")
+    if len(crit) == 1:
+        L.append("Le marché est attribué à l'offre économiquement la plus avantageuse, appréciée "
+                 "au regard du SEUL critère ci-dessous.")
+    else:
+        L.append("Le marché est attribué à l'offre économiquement la plus avantageuse, appréciée "
+                 "selon les critères pondérés ci-dessous. La note globale d'une offre est la somme "
+                 "des notes pondérées de chaque critère (sur 100 points).")
     L.append("")
-    has_prix = False
+    has_prix = has_sub = False
     for c in crit:
         try:
             p = int(float(c.get("ponderation") or 0))
@@ -177,10 +189,15 @@ def build_methode_notation(dce: dict) -> str:
                      "consultation (sous-critères, échelle de 0 à " + str(p) + " points).")
         sub = [s for s in (c.get("sous_criteres") or []) if _s(s)]
         if sub:
+            has_sub = True
             L.append("   Sous-critères : " + " ; ".join(_s(s) for s in sub) + ".")
     if not crit:
         L.append("• [Critères et pondérations à définir.]")
     L.append("")
+    if has_sub:
+        L.append("Les sous-critères susceptibles d'exercer une influence sur le classement des "
+                 "offres sont portés à la connaissance des candidats (information préalable, avec "
+                 "leur pondération ou hiérarchisation).")
     if not has_prix:
         L.append("Rappel : le critère prix doit être noté par une formule proportionnelle "
                  "(offre la moins-disante / offre × points).")

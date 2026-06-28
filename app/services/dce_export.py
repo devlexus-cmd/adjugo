@@ -48,17 +48,12 @@ def _s(v) -> str:
     return _CTRL.sub("", str(v if v is not None else "")).strip()
 
 
-def _eur(v) -> str:
-    try:
-        return f"{int(round(float(v))):,}".replace(",", " ") + " € HT"
-    except (ValueError, TypeError):
-        return ""
-
-
 # ── Construction des blocs depuis le DCE ─────────────────────────────────────
 def _bloc_procedure(dce: dict) -> list:
     p = dce.get("procedure") or {}
-    out = [("h2", "Procédure"), ("p", _s(p.get("type")))]
+    out = [("h2", "Procédure")]
+    if _s(p.get("type")):                 # pas de paragraphe vide si le type manque
+        out.append(("p", _s(p.get("type"))))
     if _s(p.get("justification")):
         out.append(("p", _s(p.get("justification"))))
     if _s(p.get("publicite")):
@@ -306,16 +301,17 @@ def to_zip(dce: dict) -> tuple:
     """ZIP des pièces séparées (RC, CCAP, CCTP) + le projet complet, en .docx."""
     slug = _slug(dce.get("objet"))
     pieces = [
-        ("00_Projet-DCE-complet.docx", render_docx("Projet de DCE", blocks_full(dce))),
-        ("01_Reglement-de-la-consultation.docx", render_docx("Règlement de la consultation", blocks_rc(dce))),
-        ("02_CCAP.docx", render_docx("CCAP", blocks_ccap(dce))),
-        ("03_CCTP.docx", render_docx("CCTP", blocks_cctp(dce))),
-        ("04_Avis-de-publicite-AAPC.docx", render_docx("Avis d'appel à la concurrence", blocks_avis(dce))),
+        ("00_Projet-DCE-complet", "Projet de DCE", blocks_full(dce)),
+        ("01_Reglement-de-la-consultation", "Règlement de la consultation", blocks_rc(dce)),
+        ("02_CCAP", "CCAP", blocks_ccap(dce)),
+        ("03_CCTP", "CCTP", blocks_cctp(dce)),
+        ("04_Avis-de-publicite-AAPC", "Avis d'appel à la concurrence", blocks_avis(dce)),
     ]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name, content in pieces:
-            zf.writestr(name, content)
+        for name, title, blocks in pieces:               # chaque pièce en Word ET en PDF
+            zf.writestr("word/" + name + ".docx", render_docx(title, blocks))
+            zf.writestr("pdf/" + name + ".pdf", markdown_to_pdf(render_md(blocks), title=title))
     return buf.getvalue(), f"DCE-{slug}.zip"
 
 
