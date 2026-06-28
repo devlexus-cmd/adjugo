@@ -395,6 +395,7 @@ def generer_dce(besoin: dict, tenant=None) -> dict:
         "exigences_env": (besoin.get("exigences_env") or "").strip()[:2000],
         "exigences_sociales": (besoin.get("exigences_sociales") or "").strip()[:2000],
         "allotissement": besoin.get("allotissement") or "auto",
+        "cpv": (besoin.get("cpv") or "").strip()[:12],
     }
     return result
 

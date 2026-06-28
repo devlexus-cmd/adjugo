@@ -146,6 +146,7 @@
             <div class="field"><label for="type_marche">Type</label><select id="type_marche"><option value="travaux">Travaux</option><option value="fournitures">Fournitures</option><option value="services" selected>Services</option></select></div>
             <div class="field"><label for="montant">Montant estimé <span class="hint">(€ HT)</span></label><input id="montant" type="number" min="0" step="1000" placeholder="120000" /><button type="button" class="btn ghost sm" id="estimBtn" style="margin-top:6px"><i data-lucide="lightbulb" class="lucide"></i> Estimer (DECP)</button><div id="estimNote" class="muted small" style="margin-top:5px" aria-live="polite"></div></div>
             <div class="field"><label for="duree">Durée <span class="hint">(mois)</span></label><input id="duree" type="number" min="0" step="1" placeholder="12" /></div>
+            <div class="field"><label for="cpv">Code CPV <span class="hint">(facultatif)</span></label><input id="cpv" type="text" placeholder="45000000" maxlength="12" /><div class="muted small" style="margin-top:4px">Cible les comparables et la capacité « dans le domaine ».</div></div>
           </div>
           <div class="frow t3">
             <div class="field"><label for="lieu">Lieu d'exécution <span class="hint">(facultatif)</span></label><input id="lieu" type="text" placeholder="Quimper" /></div>
@@ -403,7 +404,8 @@
     $("#objet").value=x.objet||"";if(x.type_marche)$("#type_marche").value=x.type_marche;
     $("#montant").value=(inp.montant_estime!=null?inp.montant_estime:"");$("#duree").value=(inp.duree_mois!=null?inp.duree_mois:"");
     $("#lieu").value=inp.lieu||"";$("#dept").value=inp.dept||"";$("#contraintes").value=inp.contraintes||"";
-    $("#env").value=inp.exigences_env||"";$("#social").value=inp.exigences_sociales||"";if(inp.allotissement)$("#allotissement").value=inp.allotissement;}
+    $("#env").value=inp.exigences_env||"";$("#social").value=inp.exigences_sociales||"";if(inp.allotissement)$("#allotissement").value=inp.allotissement;
+    $("#cpv").value=inp.cpv||"";}
   function openSavedDce(id){aFetch("/api/acheteur/dce/"+id,{headers:aHeaders()}).then(function(r){if(!r.ok)throw 0;return r.json();})
     .then(function(d){LAST=d.payload;CURRENT_DCE_ID=d.id;navTo("creer");fillFormFromDce(d.payload);render(d.payload);}).catch(function(){alert("Impossible d'ouvrir ce DCE.");});}
 
@@ -431,7 +433,7 @@
     var objet=$("#objet").value.trim(),dept=$("#dept").value.trim();
     if(objet.length<3){$("#objet").focus();return;}
     var note=$("#estimNote");note.innerHTML='<span class="spin" style="width:11px;height:11px"></span> Estimation sur marchés comparables…';
-    fetch("/api/dce/estimer-budget",{method:"POST",headers:headers(),body:JSON.stringify({objet:objet,departement:dept,duree_mois:num("#duree")})})
+    fetch("/api/dce/estimer-budget",{method:"POST",headers:headers(),body:JSON.stringify({objet:objet,departement:dept,duree_mois:num("#duree"),cpv:$("#cpv").value.trim()})})
       .then(function(r){return r.json().then(function(d){return{status:r.status,d:d};});})
       .then(function(res){if(res.status===401){note.textContent="Connectez-vous (ou lancez la démo) pour utiliser cette fonction.";return;}
         var d=res.d;if(!d.ok){note.textContent=d.message||"Pas assez de marchés comparables.";return;}
@@ -442,7 +444,7 @@
   // ── Génération ──
   var LAST=null;
   $("#form").addEventListener("submit",function(e){e.preventDefault();
-    var p={objet:$("#objet").value.trim(),type_marche:$("#type_marche").value,montant_estime:num("#montant"),duree_mois:num("#duree"),lieu:$("#lieu").value.trim(),dept:$("#dept").value.trim(),contraintes:$("#contraintes").value.trim(),exigences_env:$("#env").value.trim(),exigences_sociales:$("#social").value.trim(),allotissement:$("#allotissement").value};
+    var p={objet:$("#objet").value.trim(),type_marche:$("#type_marche").value,montant_estime:num("#montant"),duree_mois:num("#duree"),lieu:$("#lieu").value.trim(),dept:$("#dept").value.trim(),contraintes:$("#contraintes").value.trim(),exigences_env:$("#env").value.trim(),exigences_sociales:$("#social").value.trim(),allotissement:$("#allotissement").value,cpv:$("#cpv").value.trim()};
     if(p.objet.length<8){$("#objet").focus();return;}
     var go=$("#go");go.disabled=true;go.innerHTML='<span class="spin"></span> Génération…';
     $("#result").innerHTML='<div class="card pad" style="text-align:center;padding:40px"><div class="adj-ripple"><div class="drop"></div><div class="wave"></div><div class="wave"></div><div class="wave"></div></div><div class="muted" style="margin-top:16px">Rédaction du projet de DCE… (~1 min)</div></div>';
@@ -519,7 +521,7 @@
     if(!lots.length){lots=[{numero:1,intitule:LAST.objet||""}];}
     $("#diffuserModal").classList.remove("hidden");$("#diffClose").focus();var body=$("#diffuserBody");
     body.innerHTML='<div class="muted" style="padding:6px 0"><span class="spin"></span> Évaluation de la portée auprès du réseau de PME…</div>';icons();
-    fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:lots,departement:((LAST&&LAST._inputs&&LAST._inputs.dept)||($("#dept")?$("#dept").value.trim():""))})})
+    fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:lots,departement:((LAST&&LAST._inputs&&LAST._inputs.dept)||($("#dept")?$("#dept").value.trim():"")),cpv:((LAST&&LAST._inputs&&LAST._inputs.cpv)||($("#cpv")?$("#cpv").value.trim():""))})})
       .then(function(r){return r.json();})
       .then(function(s){var total=0,rows="";(s.lots||[]).forEach(function(l){var n=(l.vivier||[]).length;total+=n;rows+='<div class="list-row"><span>Lot '+esc(l.numero!=null?l.numero:"")+' — '+esc(l.intitule||"")+'</span><b>'+n+' PME</b></div>';});
         body.innerHTML='<div class="act-hero" style="cursor:default;margin-bottom:14px"><span class="ah-ic"><i data-lucide="radio-tower" class="lucide"></i></span><span class="ah-tx"><span class="ah-t">'+total+' PME capables (estimées)</span><span class="ah-d">dans le réseau à la date de diffusion — portée indicative, non un décompte ferme</span></span></div>'+
@@ -596,7 +598,7 @@
     if(!lots.length){box.innerHTML='<div class="muted">Aucun lot à analyser.</div>';return;}
     var btn=$("#btnSourcing");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Analyse…';
     box.innerHTML='<div class="muted" style="padding:10px 0">Recherche des PME (SIRENE · DECP · BODACC) et calcul du risque…</div>';
-    fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:lots,departement:((LAST&&LAST._inputs&&LAST._inputs.dept)||$("#dept").value.trim())})})
+    fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:lots,departement:((LAST&&LAST._inputs&&LAST._inputs.dept)||$("#dept").value.trim()),cpv:((LAST&&LAST._inputs&&LAST._inputs.cpv)||$("#cpv").value.trim())})})
       .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d};});})
       .then(function(res){if(!res.ok){box.innerHTML='<div class="avert">'+esc((res.d&&res.d.detail)||"Erreur")+'</div>';return;}box.innerHTML=renderSourcing(res.d);annotateLots(res.d);icons();})
       .catch(function(){box.innerHTML='<div class="avert">Réseau indisponible.</div>';})
@@ -610,7 +612,7 @@
       h+='<div class="lot-src"><div class="lot-src-head"><span class="pill '+pillCls(idx.niveau)+'" style="float:right">'+(idx.risque||0)+'% '+esc(idx.niveau||"")+'</span><b>Lot '+esc(l.numero!=null?l.numero:"")+' — '+esc(l.intitule||"")+'</b></div>';
       if(l.metier_reconnu===false)h+='<div class="note-src" style="margin-top:6px">⚠️ Métier non identifié automatiquement : entreprises trouvées par mots-clés (sans filtre d\'activité) — pertinence à vérifier.</div>';
       h+='<div class="bk">';(idx.breakdown||[]).forEach(function(b){h+='<span class="bk-i" title="'+esc(b.detail||"")+'">'+esc(b.label)+' : +'+b.risque+'</span>';});h+='</div>';
-      if((l.vivier||[]).length){h+='<div class="muted small" style="margin-bottom:4px">Candidats potentiels (open data) — liste <b>non classée</b>, ordre alphabétique. Vous restez seul décideur.</div><div class="vivier">';l.vivier.forEach(function(pp){var tags="";if(pp.capacite_prouvee)tags+=' <span class="pill go">'+pp.past_wins+' marché(s) gagné(s)</span>';if(pp.est_rge)tags+=' <span class="pill go">RGE</span>';if(pp.procedure_collective)tags+=' <span class="pill no_go">'+esc(pp.procedure_collective)+'</span>';
+      if((l.vivier||[]).length){h+='<div class="muted small" style="margin-bottom:4px">Candidats potentiels (open data) — liste <b>non classée</b>, ordre alphabétique. Vous restez seul décideur.</div><div class="vivier">';l.vivier.forEach(function(pp){var tags="";if(pp.capacite_domaine)tags+=' <span class="pill go">déjà gagné dans ce domaine'+(pp.capacite_recente?', récent':'')+'</span>';else if(pp.capacite_prouvee)tags+=' <span class="pill">'+pp.past_wins+' marché(s) public(s) gagné(s)</span>';if(pp.est_rge)tags+=' <span class="pill go">RGE</span>';if(pp.procedure_collective)tags+=' <span class="pill no_go">'+esc(pp.procedure_collective)+'</span>';
         var m=[pp.ville,pp.departement&&("dépt "+pp.departement),pp.naf_label].filter(Boolean).join(" · ");
         h+='<div class="pmecard"><div class="pn">'+esc(pp.nom||"")+tags+'</div><div class="pm">'+esc(m)+(pp.score!=null?(" — adéquation estimée (sourcing) "+pp.score+"/100"):"")+'</div></div>';});h+='</div>';}
       else h+='<div class="muted">'+(l.metier_reconnu===false?"Métier non identifié — aucune entreprise trouvée par mots-clés. Précisez l\'intitulé du lot.":"Aucune PME capable identifiée sur ce lot.")+'</div>';

@@ -92,12 +92,14 @@ class BesoinIn(BaseModel):
     exigences_env: str = Field(default="", max_length=4000)
     exigences_sociales: str = Field(default="", max_length=4000)
     allotissement: str = Field(default="auto", max_length=20)     # auto | oui | non
+    cpv: str = Field(default="", max_length=12)                   # code CPV optionnel
 
 
 class EstimIn(BaseModel):
     objet: str = Field(default="", max_length=300)
     departement: str = Field(default="", max_length=3)
     duree_mois: int | None = Field(default=None, ge=0, le=600)
+    cpv: str = Field(default="", max_length=12)   # code CPV optionnel → comparables DECP ciblés
 
 
 @router.post("/estimer-budget")
@@ -109,7 +111,8 @@ def estimer_budget_ep(request: Request, payload: EstimIn):
     if len(objet) < 3:
         raise HTTPException(422, "Décrivez l'objet du marché pour l'estimer.")
     from app.services.estimation_budget import estimer_budget
-    return estimer_budget(objet, departement=payload.departement, duree_mois=payload.duree_mois)
+    return estimer_budget(objet, departement=payload.departement,
+                          duree_mois=payload.duree_mois, cpv=(payload.cpv.strip() or None))
 
 
 @router.post("/preview-procedure")
@@ -172,6 +175,7 @@ class LotIn(BaseModel):
 class SourcingIn(BaseModel):
     lots: list[LotIn]
     departement: str = ""
+    cpv: str = Field(default="", max_length=12)   # code CPV optionnel → capacité « dans le domaine »
 
 
 @router.post("/sourcing")
@@ -185,7 +189,8 @@ def sourcing(request: Request, payload: SourcingIn):
         raise HTTPException(422, "Aucun lot à analyser.")
     dep = (payload.departement or "").strip()[:3]
     try:
-        return sourcer_lots(lots, departement=dep, tenant=_tenant(request))
+        return sourcer_lots(lots, departement=dep, tenant=_tenant(request),
+                            cpv=(payload.cpv or "").strip())
     except Exception:
         logger.exception("Échec sourcing acheteur")
         raise HTTPException(500, "Échec de l'analyse de sourcing. Réessayez.")

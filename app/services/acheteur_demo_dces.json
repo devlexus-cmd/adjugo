@@ -160,7 +160,8 @@
         "contraintes": "Chantier en site occupé (école), phasage sur les vacances scolaires, présence d'amiante à traiter.",
         "exigences_env": "Objectif de performance BBC rénovation, matériaux biosourcés privilégiés, tri et valorisation des déchets de chantier.",
         "exigences_sociales": "Clause d'insertion : heures réservées à des personnes éloignées de l'emploi.",
-        "allotissement": "oui"
+        "allotissement": "oui",
+        "cpv": "45000000"
       }
     },
     "demo": {
@@ -329,7 +330,8 @@
         "contraintes": "Marché annuel reconductible, interventions réparties sur plusieurs sites communaux.",
         "exigences_env": "Gestion différenciée, zéro produit phytosanitaire (désherbage mécanique), valorisation des déchets verts en compost.",
         "exigences_sociales": "",
-        "allotissement": "non"
+        "allotissement": "non",
+        "cpv": "77310000"
       }
     },
     "demo": {

@@ -58,7 +58,7 @@ def _mots_cles(intitule: str) -> str:
     return " ".join(mots[:2]) if mots else (intitule or "").strip()[:40]
 
 
-def _serialize(c) -> dict:
+def _serialize(c, cpv_fam: str = "") -> dict:
     """Fiche PME publique, factuelle (provenance open data), pour l'affichage acheteur.
 
     MINIMISATION RGPD (art. 5.1.c + art. 14) — l'acheteur est un responsable de traitement
@@ -67,6 +67,13 @@ def _serialize(c) -> dict:
     nécessaire au sourcing) ni `c.raw`. Ne pas ré-ajouter le dirigeant ici sans revoir la
     politique de confidentialité (/confidentialite) et l'information des personnes."""
     ei = bool(getattr(c, "est_personne_physique", False))
+    # Capacité prouvée QUALIFIÉE : « dans le domaine » (famille CPV gagnée) et « récente »
+    # (≤ 4 ans), au lieu d'un décompte brut tous marchés confondus (badge plus honnête).
+    win_domains = [str(w) for w in (getattr(c, "win_domains", []) or [])]
+    capacite_domaine = bool(cpv_fam) and cpv_fam in win_domains
+    lw = str(getattr(c, "last_win_date", "") or "")[:4]
+    import datetime as _dt
+    capacite_recente = lw.isdigit() and int(lw) >= _dt.date.today().year - 4
     return {
         # EI = personne physique : le nom EST une donnée nominative → masqué (minimisation
         # RGPD). L'acheteur peut lever l'identité lui-même via le SIREN au registre public.
@@ -82,6 +89,9 @@ def _serialize(c) -> dict:
         "capacite_prouvee": bool(getattr(c, "past_wins", 0)),
         "past_wins": int(getattr(c, "past_wins", 0) or 0),
         "last_win_date": getattr(c, "last_win_date", None),
+        "capacite_domaine": capacite_domaine,
+        "capacite_recente": capacite_recente,
+        "win_domains": win_domains,
         "est_rge": c.est_rge,
         "procedure_collective": c.procedure_collective,
         "red_flags": list(c.red_flags or []),
@@ -89,9 +99,11 @@ def _serialize(c) -> dict:
     }
 
 
-def sourcer_lot(lot: dict, departement: str = "") -> dict:
+def sourcer_lot(lot: dict, departement: str = "", cpv: str = "") -> dict:
     """Source un lot : vivier de PME capables + signaux + indice d'infructuosité + groupement.
-    N'appelle PAS le LLM (uniquement les sources open data) — sûr à paralléliser."""
+    N'appelle PAS le LLM (uniquement les sources open data) — sûr à paralléliser.
+    `cpv` (optionnel) qualifie la capacité prouvée par famille CPV (2 chiffres)."""
+    cpv_fam = (cpv or "").strip()[:2]
     numero = lot.get("numero") if isinstance(lot, dict) else None
     intitule = (lot.get("intitule") if isinstance(lot, dict) else str(lot)) or ""
     intitule = intitule.strip()
@@ -154,7 +166,7 @@ def sourcer_lot(lot: dict, departement: str = "") -> dict:
         "numero": numero, "intitule": intitule, "metier": activity,
         "metier_reconnu": metier_reconnu,
         "indice": indice,
-        "vivier": [_serialize(c) for c in vivier],
+        "vivier": [_serialize(c, cpv_fam) for c in vivier],
         "groupement": groupement,
         "errors": errors,
     }
@@ -190,8 +202,10 @@ def _generer_conseils(lots_out: list, glob: dict, tenant) -> list:
         return []
 
 
-def sourcer_lots(lots: list, departement: str = "", tenant=None) -> dict:
-    """Source TOUS les lots (en parallèle), agrège le risque global et génère les conseils."""
+def sourcer_lots(lots: list, departement: str = "", tenant=None, cpv: str = "") -> dict:
+    """Source TOUS les lots (en parallèle), agrège le risque global et génère les conseils.
+    `cpv` (optionnel) : la capacité prouvée DECP est alors qualifiée « dans le domaine »
+    (famille CPV à 2 chiffres) plutôt que « tous marchés confondus »."""
     lots = [l for l in (lots or []) if isinstance(l, dict) and (l.get("intitule") or "").strip()][:12]
     if not lots:
         return {"lots": [], "global": {"risque": 0, "niveau": "faible", "pire_lot": None},
@@ -199,7 +213,7 @@ def sourcer_lots(lots: list, departement: str = "", tenant=None) -> dict:
 
     out = [None] * len(lots)
     with ThreadPoolExecutor(max_workers=min(4, len(lots))) as ex:
-        futs = {ex.submit(sourcer_lot, lot, departement): i for i, lot in enumerate(lots)}
+        futs = {ex.submit(sourcer_lot, lot, departement, cpv): i for i, lot in enumerate(lots)}
         for fut in as_completed(futs):
             i = futs[fut]
             try:
