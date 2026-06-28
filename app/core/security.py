@@ -48,9 +48,42 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Token invalide ou expire", headers={"WWW-Authenticate": "Bearer"})
 
 
+oauth2_acheteur = OAuth2PasswordBearer(tokenUrl="/api/acheteur/login")
+
+
+def get_current_acheteur(token: str = Depends(oauth2_acheteur), db: Session = Depends(get_db)):
+    """Auth de l'ESPACE ACHETEUR (collectivités), strictement cloisonnée du produit PME :
+    le token DOIT porter `typ="acheteur"` et l'identité est chargée depuis la table
+    SÉPARÉE `acheteurs` (jamais `users`). Un token PME (sans `typ`) est donc rejeté."""
+    from app.models import Acheteur
+    payload = decode_token(token)
+    if payload.get("typ") != "acheteur":
+        raise HTTPException(status_code=401, detail="Token acheteur requis",
+                            headers={"WWW-Authenticate": "Bearer"})
+    try:
+        aid = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Token invalide")
+    acheteur = db.query(Acheteur).filter(Acheteur.id == aid).first()
+    if acheteur is None:
+        raise HTTPException(status_code=404, detail="Compte introuvable")
+    if not getattr(acheteur, "is_active", True):
+        raise HTTPException(status_code=403, detail="Compte désactivé",
+                            headers={"WWW-Authenticate": "Bearer"})
+    if int(payload.get("tv") or 0) != int(getattr(acheteur, "token_version", 0) or 0):
+        raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
+                            headers={"WWW-Authenticate": "Bearer"})
+    return acheteur
+
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     from app.models import User
     payload = decode_token(token)
+    # Cloisonnement 2 faces : un token ACHETEUR (qui porte `typ`) ne doit JAMAIS être
+    # accepté par l'auth PME (sinon un sub=acheteur_id pourrait charger un User homonyme).
+    if payload.get("typ"):
+        raise HTTPException(status_code=401, detail="Token invalide pour cet espace",
+                            headers={"WWW-Authenticate": "Bearer"})
     user_id = payload.get("sub")
     try:
         uid = int(user_id)

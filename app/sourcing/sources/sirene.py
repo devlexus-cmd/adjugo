@@ -54,7 +54,11 @@ class SireneSource(CompanySource):
         kw = trade["label"] if trade else activity
         if trade:
             params["activite_principale"] = trade["naf"]
-        q = (query or kw).strip()
+        # q (plein-texte) : NE PAS réimposer le libellé du métier quand on a déjà le filtre
+        # NAF — un libellé multi-mots (« Plomberie / CVC », « Plâtrerie / Isolation ») se
+        # combine en ET avec le NAF et ramène 0 résultat. On n'utilise q que pour une
+        # recherche explicite, ou comme mots-clés libres SANS filtre NAF (métier inconnu).
+        q = (query or "").strip() or ("" if trade else (kw or "").strip())
         if q:
             params["q"] = q
         if departement:
