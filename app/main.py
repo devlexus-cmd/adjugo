@@ -277,6 +277,12 @@ def _serve(name: str):
 
 
 @app.get("/acheteur", tags=["Acheteur"], include_in_schema=False)
+def acheteur_landing():
+    """Landing acheteur (collectivités) : présentation + connexion/inscription/démo.
+    Même design system et même ton qu'Adjugo. Les CTA pointent vers /acheteur/app."""
+    return _serve("acheteur-landing.html")
+
+
 @app.get("/acheteur/app", tags=["Acheteur"], include_in_schema=False)
 def acheteur_app():
     """Application acheteur (collectivités) — même design system que le logiciel PME,

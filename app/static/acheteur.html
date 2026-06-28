@@ -229,6 +229,10 @@
   function icons(){try{window.lucide&&window.lucide.createIcons();}catch(e){}}
   var CODE=new URLSearchParams(location.search).get("code")||"";
   if(CODE){try{var _u=new URL(location.href);_u.searchParams.delete("code");history.replaceState(null,"",_u.pathname+_u.search+_u.hash);}catch(e){}}
+  // Intention passée par la landing (/acheteur) : ?demo / ?login / ?register
+  var _q=new URLSearchParams(location.search);
+  var WANT=_q.has("demo")?"demo":(_q.has("register")?"register":(_q.has("login")?"login":""));
+  if(WANT){try{var _u2=new URL(location.href);["demo","login","register"].forEach(function(k){_u2.searchParams.delete(k);});history.replaceState(null,"",_u2.pathname+_u2.search+_u2.hash);}catch(e){}}
 
   // ── Thème ──
   function applyTheme(){var t=localStorage.getItem("adjugo_theme")||"system";
@@ -582,7 +586,10 @@
 
   // ── Init ──
   applyTheme();renderAcct();navTo("dashboard");
-  if(ATOKEN){fetch("/api/acheteur/me",{headers:aHeaders()}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(me){AME=me;IS_DEMO=(me.email==="demo@collectivites.adjugo.fr");renderAcct();refreshCurrentView();}).catch(function(){setToken("");AME=null;renderAcct();refreshCurrentView();});}
+  if(WANT==="demo"){enterDemo();}
+  else if(ATOKEN){fetch("/api/acheteur/me",{headers:aHeaders()}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(me){AME=me;IS_DEMO=(me.email==="demo@collectivites.adjugo.fr");renderAcct();refreshCurrentView();}).catch(function(){setToken("");AME=null;renderAcct();refreshCurrentView();});}
+  else if(WANT==="register"){openAuth("register");}
+  else if(WANT==="login"){openAuth("login");}
   icons();
 })();
 </script>
