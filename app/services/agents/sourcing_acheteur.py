@@ -107,6 +107,13 @@ def sourcer_lot(lot: dict, departement: str = "", cpv: str = "") -> dict:
     numero = lot.get("numero") if isinstance(lot, dict) else None
     intitule = (lot.get("intitule") if isinstance(lot, dict) else str(lot)) or ""
     intitule = intitule.strip()
+    lot_montant = None
+    if isinstance(lot, dict):
+        try:
+            v = lot.get("montant", lot.get("montant_estime"))
+            lot_montant = float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            lot_montant = None
     dep = _dep2(departement)
     deps = [dep] if dep else None
     # Recherche PAR MÉTIER (NAF), pas par le libellé complet du lot : passer l'intitulé
@@ -119,7 +126,8 @@ def sourcer_lot(lot: dict, departement: str = "", cpv: str = "") -> dict:
     errors = []
     try:
         res = _service().discover(activity=activity, departement=dep, query="",
-                                  limit=12, tender_departements=deps, need_label=intitule)
+                                  limit=12, tender_departements=deps, need_label=intitule,
+                                  lot_montant=lot_montant)
         companies = res.get("companies") or []
         errors = [f"{e.source}: {e.message}" for e in (res.get("errors") or [])]
     except Exception as e:

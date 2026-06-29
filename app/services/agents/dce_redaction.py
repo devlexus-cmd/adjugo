@@ -201,6 +201,7 @@ Tu réponds en JSON STRICT (français), sans aucun texte autour, selon EXACTEMEN
     "motivation_lot_unique": "si recommande=false : motivation au titre de L2113-11, sinon \\"\\"",
     "lots": [
       {{"numero": <entier>, "intitule": "...", "description": "périmètre du lot",
+        "montant_estime": <entier € HT, part indicative de ce lot dans le montant total ; la somme des lots ≈ montant estimé du marché>,
         "atteignable_pme": "pourquoi ce lot est à portée d'une PME (ou d'un groupement)",
         "groupement_conseille": true|false}}
     ]
@@ -411,6 +412,11 @@ def _assemble(data: dict, objet: str, type_marche: str, proc: dict,
     lots = [l for l in (allot.get("lots") or []) if isinstance(l, dict)]
     for i, l in enumerate(lots, start=1):   # numérotation 1..N déterministe (pas de « Lot : … » ni de trou)
         l["numero"] = i
+        if "montant_estime" in l:           # assainit le montant par lot (entier € HT) ou le retire
+            try:
+                l["montant_estime"] = int(round(float(l["montant_estime"])))
+            except (TypeError, ValueError):
+                l.pop("montant_estime", None)
     recommande = bool(allot.get("recommande", len(lots) > 1))
 
     # ── Vérifications déterministes (on ne fait pas une confiance aveugle au LLM) ──

@@ -170,6 +170,7 @@ def avis(request: Request, payload: ExportIn):
 class LotIn(BaseModel):
     numero: int | None = Field(default=None, ge=0)
     intitule: str = Field(min_length=1, max_length=200)
+    montant: float | None = Field(default=None, ge=0)   # montant estimé du lot (capacité vs taille)
 
 
 class SourcingIn(BaseModel):

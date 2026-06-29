@@ -482,7 +482,7 @@
     if(p.justification)h+='<div class="j">'+esc(p.justification)+'</div>';var sub=[];if(p.publicite)sub.push("Publicité : "+esc(p.publicite));if(p.delai_min_jours)sub.push("Délai min. : "+esc(p.delai_min_jours)+" j");if(p.seuil_reference)sub.push(esc(p.seuil_reference));
     if(sub.length)h+='<div class="sub">'+sub.join(" — ")+'</div>';if(p.delai_note)h+='<div class="sub">⏱️ '+esc(p.delai_note)+'</div>';h+='<div class="sub">⚖️ Le seuil s\'apprécie sur la valeur <b>totale</b> estimée du besoin (tous lots, tranches et reconductions) — ne scindez pas le besoin pour rester sous un seuil.</div>';h+='</div>';
     var a=x.allotissement||{};h+='<h2 class="sec">Allotissement</h2>';if(a.principe)h+='<p style="font-size:13px">'+esc(a.principe)+'</p>';
-    (a.lots||[]).forEach(function(l,li){h+='<div class="lot" data-lot-num="'+esc(l.numero!=null?l.numero:"")+'"><div><span class="n">Lot '+esc(l.numero!=null?l.numero:"")+'</span><span class="ti ed" data-path="allotissement.lots.'+li+'.intitule">'+esc(l.intitule||"")+'</span>'+(l.groupement_conseille?'<span class="pill go" style="margin-left:6px">groupement conseillé</span>':'')+'<span class="lot-badge"></span></div>';
+    (a.lots||[]).forEach(function(l,li){h+='<div class="lot" data-lot-num="'+esc(l.numero!=null?l.numero:"")+'"><div><span class="n">Lot '+esc(l.numero!=null?l.numero:"")+'</span><span class="ti ed" data-path="allotissement.lots.'+li+'.intitule">'+esc(l.intitule||"")+'</span>'+(l.montant_estime?' <span class="muted small">≈ '+fmt(l.montant_estime)+' € HT</span>':'')+(l.groupement_conseille?'<span class="pill go" style="margin-left:6px">groupement conseillé</span>':'')+'<span class="lot-badge"></span></div>';
       if(l.description)h+='<div class="ed" data-path="allotissement.lots.'+li+'.description" style="font-size:12.5px;margin-top:4px;color:var(--text-2)">'+esc(l.description)+'</div>';
       if(l.atteignable_pme)h+='<div class="pme">✓ '+esc(l.atteignable_pme)+'</div>';h+='</div>';});
     if(!(a.lots||[]).length)h+='<p class="muted">Lot unique proposé.</p>';
@@ -517,7 +517,7 @@
   function closeDiffuser(){$("#diffuserModal").classList.add("hidden");}
   $("#diffClose").onclick=closeDiffuser;
   $("#diffuserModal").addEventListener("click",function(e){if(e.target===this)closeDiffuser();});
-  function showDiffuser(){if(!LAST)return;var lots=((LAST.allotissement||{}).lots||[]).map(function(l){return{numero:l.numero,intitule:l.intitule};});
+  function showDiffuser(){if(!LAST)return;var lots=((LAST.allotissement||{}).lots||[]).map(function(l){return{numero:l.numero,intitule:l.intitule,montant:l.montant_estime};});
     if(!lots.length){lots=[{numero:1,intitule:LAST.objet||""}];}
     $("#diffuserModal").classList.remove("hidden");$("#diffClose").focus();var body=$("#diffuserBody");
     body.innerHTML='<div class="muted" style="padding:6px 0"><span class="spin"></span> Évaluation de la portée auprès du réseau de PME…</div>';icons();
@@ -594,7 +594,7 @@
 
   // ── Sourcing ──
   function annotateLots(s){(s.lots||[]).forEach(function(l){var n=(l.numero!=null&&!isNaN(l.numero))?Number(l.numero):null;if(n==null)return;var card=document.querySelector('.lot[data-lot-num="'+n+'"]');if(!card)return;var b=card.querySelector(".lot-badge");if(!b)return;var idx=l.indice||{};b.className="lot-badge pill "+pillCls(idx.niveau);b.textContent=(l.vivier||[]).length+" PME · risque "+(Number(idx.risque)||0)+"%";});}
-  function runSourcing(){if(!LAST)return;var lots=((LAST.allotissement||{}).lots||[]).map(function(l){return{numero:l.numero,intitule:l.intitule};});var box=$("#sourcingResult");
+  function runSourcing(){if(!LAST)return;var lots=((LAST.allotissement||{}).lots||[]).map(function(l){return{numero:l.numero,intitule:l.intitule,montant:l.montant_estime};});var box=$("#sourcingResult");
     if(!lots.length){box.innerHTML='<div class="muted">Aucun lot à analyser.</div>';return;}
     var btn=$("#btnSourcing");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Analyse…';
     box.innerHTML='<div class="muted" style="padding:10px 0">Recherche des PME (SIRENE · DECP · BODACC) et calcul du risque…</div>';

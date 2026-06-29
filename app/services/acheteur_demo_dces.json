@@ -24,21 +24,24 @@
             "intitule": "Isolation thermique par l'extérieur (ITE) et ravalement de façades",
             "description": "Fourniture et pose d'un système d'isolation thermique par l'extérieur (ITE) sur l'ensemble des façades de l'école : préparation des supports, pose des isolants (dont matériaux biosourcés privilégiés : laine de bois, fibre de cellulose ou équivalent), application des enduits de finition et travaux de ravalement associés. Inclut la gestion des échafaudages, la protection des ouvrages existants et le respect du phasage en site occupé.",
             "atteignable_pme": "Ce lot correspond au cœur de métier des entreprises de façade-ravalement et d'isolation, nombreuses en Bretagne. Son montant estimé (environ 280 000 à 320 000 € HT) est compatible avec les capacités d'une PME de taille intermédiaire. Un groupement avec un second œuvre spécialisé ITE reste possible pour les PME de plus petite taille.",
-            "groupement_conseille": false
+            "groupement_conseille": false,
+            "montant_estime": 350000
           },
           {
             "numero": 2,
             "intitule": "Remplacement des menuiseries extérieures",
             "description": "Dépose des menuiseries extérieures existantes (fenêtres, portes-fenêtres, portes d'entrée, éventuels lanterneaux) et fourniture-pose de menuiseries neuves à haute performance thermique (Uw ≤ [valeur indicative à confirmer] W/m².K), en aluminium à rupture de pont thermique ou en bois certifié PEFC/FSC, avec vitrages à isolation renforcée (VIR). Travaux de calfeutrement, habillage intérieur et extérieur, et remise en état des tableaux. Respect du phasage vacances scolaires pour les salles de classe.",
             "atteignable_pme": "Ce lot relève du métier de menuisier-poseur, très représenté parmi les PME et artisans du Finistère. Le montant estimé (environ 180 000 à 220 000 € HT) est parfaitement accessible à une PME seule disposant d'une équipe de pose. Aucune technicité exceptionnelle n'est requise.",
-            "groupement_conseille": false
+            "groupement_conseille": false,
+            "montant_estime": 280000
           },
           {
             "numero": 3,
             "intitule": "Installation de la chaufferie biomasse et réseaux de distribution de chaleur",
             "description": "Dépose de l'installation de chauffage existante, fourniture et installation d'une chaufferie biomasse (chaudière à granulés ou plaquettes forestières, puissance [valeur indicative à confirmer] kW), silo ou local de stockage du combustible, réseaux de distribution hydraulique, émetteurs de chaleur si nécessaire, régulation et GTB, raccordements électriques associés, mise en service et formation du personnel technique communal. Inclut les travaux de génie civil liés au local chaufferie si nécessaire. Conformité aux réglementations en vigueur (arrêté du [valeur indicative à confirmer], DTU applicables).",
             "atteignable_pme": "Ce lot nécessite des compétences en génie climatique et en installations biomasse. Il est accessible à une PME spécialisée en chauffage-plomberie-génie climatique, secteur bien représenté en Bretagne. Un groupement avec un électricien ou un génie civil est conseillé si la PME candidate ne dispose pas de toutes les qualifications en interne (Qualibois ou équivalent recommandé).",
-            "groupement_conseille": true
+            "groupement_conseille": true,
+            "montant_estime": 220000
           }
         ],
         "note_sourcing": "Lancez l'analyse de sourcing pour compter, par lot, les PME et groupements réellement capables (et le risque d'infructuosité)."
@@ -196,14 +199,16 @@
             "intitule": "Entretien courant des espaces verts",
             "description": "Tonte des pelouses et prairies fleuries, taille des haies, arbustes et arbres d'ornement (hors élagage de hauteur nécessitant nacelle > 20 m), désherbage thermique ou mécanique (zéro phytosanitaire), ramassage et évacuation des déchets verts, pose et renouvellement du paillage sur massifs et pieds d'arbres, arrosage d'appoint. Prestations réalisées à bons de commande sur l'ensemble du territoire communal.",
             "atteignable_pme": "Le périmètre correspond au cœur de métier d'une entreprise de paysage de taille TPE/PME (code NAF 8130Z). Le montant estimé du lot (environ 65 000 € HT sur 24 mois, soit ~32 500 € HT/an) est compatible avec la capacité financière et technique d'une PME locale ou d'un groupement solidaire (ex. entreprise de paysage + association d'insertion). Aucune exigence de chiffre d'affaires disproportionnée ne sera imposée (plafond recommandé : 2× le montant annuel estimé).",
-            "groupement_conseille": true
+            "groupement_conseille": true,
+            "montant_estime": 60000
           },
           {
             "numero": 2,
             "intitule": "Fleurissement saisonnier et fourniture de végétaux",
             "description": "Fourniture, plantation et entretien des végétaux annuels, bisannuels et vivaces pour massifs, jardinières, suspensions et bacs en voirie et bâtiments publics ; deux campagnes de fleurissement par an (printemps-été et automne-hiver) ; arrachage et évacuation des végétaux en fin de saison ; conseil en composition florale et en gestion différenciée (réduction des espèces gourmandes en eau, introduction de plantes mellifères). Prestations réalisées à bons de commande.",
             "atteignable_pme": "Ce lot, estimé à environ 30 000 € HT sur 24 mois (~15 000 € HT/an), est accessible à une horticultrice/horticulteur, une pépinière ou une petite entreprise de paysage spécialisée en fleurissement, voire à une structure de l'économie sociale et solidaire (ESAT, chantier d'insertion horticole). La séparation du fleurissement de l'entretien courant permet à des structures spécialisées de candidater sans avoir à couvrir l'ensemble des prestations.",
-            "groupement_conseille": false
+            "groupement_conseille": false,
+            "montant_estime": 60000
           }
         ],
         "note_sourcing": "Lancez l'analyse de sourcing pour compter, par lot, les PME et groupements réellement capables (et le risque d'infructuosité)."

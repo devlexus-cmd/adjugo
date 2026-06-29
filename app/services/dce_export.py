@@ -16,6 +16,7 @@ from docx.shared import Pt
 
 from app.services.md_pdf import markdown_to_pdf
 from app.services.dce_avis import build_avis, build_methode_notation
+from app.services.format import format_eur
 
 
 def _lines_blocks(text: str, head: bool = True) -> list:
@@ -78,6 +79,9 @@ def _bloc_allotissement(dce: dict) -> list:
         if not isinstance(l, dict):
             continue
         out.append(("h3", f"Lot {_s(l.get('numero'))} — {_s(l.get('intitule'))}".strip(" —")))
+        if l.get("montant_estime"):
+            out.append(("bullet", "Montant estimé du lot : "
+                        + format_eur(l.get("montant_estime")) + " (indicatif)"))
         if _s(l.get("description")):
             out.append(("p", _s(l.get("description"))))
         if _s(l.get("atteignable_pme")):
