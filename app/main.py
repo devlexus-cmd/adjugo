@@ -39,6 +39,11 @@ if settings.ENVIRONMENT == "production":
         raise RuntimeError("DEMO_MODE=True interdit en production (endpoints sans auth). Mettez DEMO_MODE=false.")
     if not settings.CRON_SECRET:
         raise RuntimeError("CRON_SECRET requis en production (protège /api/admin/run-*). Définissez-le.")
+    # L'endpoint acheteur /api/dce/generate appelle le LLM ; en prod il doit être protégé
+    # par un code d'accès (sinon endpoint coûteux ouvert). Fail-closed, comme ci-dessus.
+    if not os.getenv("DCE_ACCESS_CODE", "").strip():
+        raise RuntimeError("DCE_ACCESS_CODE requis en production (protège /api/dce/generate, "
+                           "endpoint LLM du produit acheteur). Définissez-le.")
 # Rate-limit en mémoire = compteur PAR worker : avec >1 worker, la limite réelle est
 # multipliée par le nombre de workers → protection illusoire. L'enforcement FAIL-SAFE
 # est dans entrypoint.sh : sans RATELIMIT_STORAGE_URI=redis://, il ramène le nombre de
@@ -161,6 +166,14 @@ from app.routers.jobs import router as jobs_router
 app.include_router(jobs_router)
 from app.routers.invites import router as invites_router
 app.include_router(invites_router)
+# Produit ACHETEUR (collectivités) — Pilier 1 : rédacteur de DCE. Cloisonné du logiciel
+# PME (génération pure, aucune donnée tenant) ; page autonome /acheteur.
+from app.routers.dce import router as dce_router
+app.include_router(dce_router)
+# Espace ACHETEUR (collectivités) : comptes cloisonnés (table séparée, JWT typ=acheteur)
+# + DCE sauvegardés. Aucune donnée PME.
+from app.routers.acheteur import router as acheteur_router
+app.include_router(acheteur_router)
 
 # Fichiers statiques du logiciel (SPA)
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -256,6 +269,26 @@ def invite_page(token: str):
     from fastapi.responses import HTMLResponse
     with open(os.path.join(_static_dir, "invite.html"), encoding="utf-8") as f:
         return HTMLResponse(f.read())
+
+def _serve(name: str):
+    from fastapi.responses import HTMLResponse
+    with open(os.path.join(_static_dir, name), encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+
+@app.get("/acheteur", tags=["Acheteur"], include_in_schema=False)
+def acheteur_landing():
+    """Landing acheteur (collectivités) : présentation + connexion/inscription/démo.
+    Même design system et même ton qu'Adjugo. Les CTA pointent vers /acheteur/app."""
+    return _serve("acheteur-landing.html")
+
+
+@app.get("/acheteur/app", tags=["Acheteur"], include_in_schema=False)
+def acheteur_app():
+    """Application acheteur (collectivités) — même design system que le logiciel PME,
+    distincte de ses données ; toute la logique tape /api/dce/* et /api/acheteur/*."""
+    return _serve("acheteur.html")
+
 
 @app.get("/api/health", tags=["Sante"])
 def health():

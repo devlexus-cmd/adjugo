@@ -1209,11 +1209,31 @@
             <h4>Aucun document pour l'instant</h4><p>Centralisez vos pièces administratives (Kbis, attestations, qualifications) avec alertes d'expiration.</p>
             <button class="btn primary" @click="$refs.upl.click()" :disabled="uploading"><span v-if="uploading" class="spin"></span><i v-else data-lucide="upload"></i>Ajouter un document</button>
           </div>
-          <div v-else class="t-wrap"><table><thead><tr><th>Document</th><th>Catégorie</th><th>Taille</th><th>Expiration</th><th></th></tr></thead><tbody>
-            <tr v-for="d in documents" :key="d.id"><td><b>{{ d.name }}</b><div v-if="d.project_name" class="muted small">{{ d.folder }} · {{ (d.project_name||'').slice(0,40) }}</div></td><td><span class="pill st-nouveau">{{ d.folder || d.category }}</span></td>
-              <td class="small">{{ koSize(d.file_size) }}</td><td class="small">{{ fmtDate(d.expiration_date) }}</td>
-              <td class="row"><button class="btn icon sm ghost" @click="renameDoc(d)" aria-label="Renommer"><i data-lucide="pencil"></i></button><button class="btn icon sm ghost" @click="downloadDoc(d)" aria-label="Télécharger"><i data-lucide="download"></i></button><button class="btn icon sm ghost" @click="delDoc(d)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button></td></tr>
-          </tbody></table></div>
+          <template v-else>
+            <div class="row wrap" style="gap:10px;margin-bottom:13px;align-items:center">
+              <div style="position:relative;flex:1;min-width:220px">
+                <i data-lucide="search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--muted);pointer-events:none"></i>
+                <input class="inp" v-model="docQuery" type="search" placeholder="Rechercher un document (nom, catégorie, marché…)" style="width:100%;padding-left:34px" aria-label="Rechercher un document">
+              </div>
+              <select class="inp" v-model="docSort" style="width:auto;flex:none" aria-label="Trier les documents">
+                <option value="recent">Plus récents</option>
+                <option value="name">Nom (A–Z)</option>
+                <option value="category">Catégorie</option>
+                <option value="size">Taille (décroissant)</option>
+                <option value="expiry">Expiration (la plus proche)</option>
+              </select>
+              <span class="muted small" style="flex:none" aria-live="polite">{{ filteredDocuments.length }} / {{ documents.length }}</span>
+            </div>
+            <div v-if="filteredDocuments.length" class="t-wrap"><table><thead><tr><th>Document</th><th>Catégorie</th><th>Taille</th><th>Expiration</th><th></th></tr></thead><tbody>
+              <tr v-for="d in filteredDocuments" :key="d.id"><td><b>{{ d.name }}</b><div v-if="d.project_name" class="muted small">{{ d.folder }} · {{ (d.project_name||'').slice(0,40) }}</div></td><td><span class="pill st-nouveau">{{ d.folder || d.category }}</span></td>
+                <td class="small">{{ koSize(d.file_size) }}</td><td class="small">{{ fmtDate(d.expiration_date) }}</td>
+                <td class="row"><button class="btn icon sm ghost" @click="renameDoc(d)" aria-label="Renommer"><i data-lucide="pencil"></i></button><button class="btn icon sm ghost" @click="downloadDoc(d)" aria-label="Télécharger"><i data-lucide="download"></i></button><button class="btn icon sm ghost" @click="delDoc(d)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button></td></tr>
+            </tbody></table></div>
+            <div v-else class="empty card pad" style="text-align:center">
+              <p class="muted">Aucun document ne correspond à « <b>{{ docQuery }}</b> ».</p>
+              <button class="btn ghost sm" @click="docQuery=''"><i data-lucide="x"></i>Effacer la recherche</button>
+            </div>
+          </template>
         </section>
 
         <!-- ░░ INVOICES ░░ -->

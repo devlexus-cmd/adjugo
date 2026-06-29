@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Adjugo Collectivités</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<script>
+  (function(){var t=localStorage.getItem('adjugo_theme')||'system';
+   var dark=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+   document.documentElement.setAttribute('data-theme',dark?'dark':'light');})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+<script src="/static/vendor/lucide-1.20.0.min.js"></script>
+<style>
+  /* ── Spécifique au produit acheteur (au-dessus du design system Adjugo) ── */
+  .view{display:none} .view.active{display:block;animation:fadev .3s ease}
+  @keyframes fadev{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .org-pill{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);
+    background:var(--accent-weak);padding:2px 7px;border-radius:6px;margin-left:6px;vertical-align:2px}
+  .toolbar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;position:sticky;top:50px;z-index:8;
+    background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(8px);padding:6px 0}
+  .doc h2.sec{font-family:var(--font-display);font-size:15px;font-weight:700;color:var(--text);
+    margin:24px 0 11px;padding-bottom:7px;border-bottom:1px solid var(--border);letter-spacing:-.01em}
+  .doc h2.sec:first-of-type{margin-top:4px}
+  .objet{font-family:var(--font-display);font-size:22px;font-weight:700;letter-spacing:-.02em;margin:2px 0}
+  .ed{outline:none}
+  .editing .ed{outline:1px dashed var(--accent);outline-offset:2px;border-radius:5px;background:var(--accent-weak);cursor:text}
+  .editing .ed:focus{outline:2px solid var(--accent);background:var(--surface)}
+  .docmeta{color:var(--muted);font-size:12.5px;margin-bottom:6px}
+  .disclaimer{background:var(--warning-weak);border:1px solid color-mix(in srgb,var(--warning) 30%,transparent);
+    color:var(--warning-text);border-radius:11px;padding:10px 13px;font-size:12.5px;margin:0 0 14px}
+  .avert{background:var(--danger-weak);border:1px solid color-mix(in srgb,var(--danger) 32%,transparent);
+    color:var(--danger-text);border-radius:11px;padding:11px 14px;margin:0 0 18px;font-size:13px}
+  .avert ul{margin:6px 0 0;padding-left:18px}
+  .moti{background:var(--warning-weak);border-left:3px solid var(--warning);padding:8px 12px;margin:8px 0;font-size:12.5px;border-radius:0 8px 8px 0;color:var(--warning-text)}
+  .proc-box{background:var(--accent-weak);border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);border-radius:12px;padding:13px 15px}
+  .proc-box .t{font-weight:700;color:var(--accent-text);font-family:var(--font-display)} .proc-box .j{font-size:12.5px;margin-top:4px} .proc-box .sub{font-size:11.5px;color:var(--muted);margin-top:6px}
+  .lot{border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:9px;background:var(--surface)}
+  .lot .n{display:inline-block;background:var(--text);color:var(--bg);border-radius:6px;padding:1px 8px;font-size:11.5px;font-weight:700;margin-right:8px}
+  .lot .ti{font-weight:600} .lot .pme{font-size:12px;color:var(--success-text);margin-top:6px}
+  .lot-badge{margin-left:8px}
+  .crit-t{width:100%;border-collapse:collapse;font-size:13px}
+  .crit-t td{padding:8px 4px;border-bottom:1px solid var(--hairline);vertical-align:top}
+  .pond{font-weight:700;color:var(--accent-text);text-align:right;width:64px;font-variant-numeric:tabular-nums}
+  .subc{color:var(--muted);font-size:12px;margin-top:3px}
+  .cctp h3{font-size:13.5px;margin:13px 0 4px;font-weight:600} .cctp p{margin:0;font-size:13px;white-space:pre-wrap;color:var(--text-2)}
+  ul.clean{margin:6px 0;padding-left:19px} ul.clean li{margin:4px 0;font-size:13px}
+  .twocol{display:grid;grid-template-columns:1fr 1fr;gap:20px} @media(max-width:680px){.twocol{grid-template-columns:1fr}}
+  .note-src{background:var(--surface-2);border:1px dashed var(--border-2);border-radius:9px;padding:8px 11px;font-size:12px;color:var(--muted);margin-top:8px}
+  .conseil{background:var(--accent-weak);border-left:3px solid var(--accent);padding:8px 12px;margin:6px 0;font-size:13px;border-radius:0 8px 8px 0}
+  .garde{background:var(--danger-weak);border-left:3px solid var(--danger);padding:8px 12px;margin:6px 0;font-size:12.5px;border-radius:0 8px 8px 0;color:var(--danger-text)}
+  .echeance{font-size:12px;color:var(--warning-text);margin-top:6px}
+  .risk-banner{border-radius:12px;padding:12px 15px;margin:14px 0;font-size:13.5px;border:1px solid var(--border)}
+  .conseils-box{background:var(--accent-weak);border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);border-radius:12px;padding:11px 14px;margin:10px 0;font-size:13px}
+  .lot-src{border:1px solid var(--border);border-radius:12px;padding:12px 15px;margin:10px 0;background:var(--surface)}
+  .lot-src-head{font-size:13.5px;margin-bottom:6px;overflow:hidden}
+  .bk{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0} .bk-i{background:var(--surface-3);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--text-2)}
+  .vivier{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px} @media(max-width:680px){.vivier{grid-template-columns:1fr}}
+  .pmecard{border:1px solid var(--border);border-radius:10px;padding:8px 11px;background:var(--surface-2)}
+  .pmecard .pn{font-weight:600;font-size:12.5px} .pmecard .pm{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .grp{background:var(--accent-weak);border-radius:9px;padding:8px 11px;margin-top:8px;font-size:12.5px}
+  .demo-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--grad-text);color:#fff;border-radius:14px;padding:13px 17px;margin-bottom:18px;box-shadow:0 8px 22px color-mix(in srgb,var(--accent) 28%,transparent)}
+  .demo-banner b{font-family:var(--font-display)} .demo-banner .small{color:rgba(255,255,255,.85)}
+  @media(max-width:560px){.demo-banner .btn{width:100%;justify-content:center}}
+  /* focus visible cohérent sur les contrôles hors .btn (a11y) */
+  .nav-item:focus-visible,.theme-toggle button:focus-visible,.modal-h .x:focus-visible,.act-link:focus-visible,.ao-row:focus-visible,.alert-callout:focus-visible{outline:none;box-shadow:0 0 0 3px var(--ring)}
+  @media print{.side,.top,.toolbar,.note-src{display:none!important} .app{display:block;height:auto} .work{overflow:visible;height:auto} .content{padding:0;max-width:none}}
+  @media (prefers-reduced-motion:reduce){.view.active{animation:none} .adj-ripple *{animation:none!important} *{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand">
+      <a href="/acheteur" class="wordmark" aria-label="Adjugo"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></a>
+      <span class="org-sub">Espace acheteurs publics</span>
+    </div>
+    <div class="nav-group">Espace</div>
+    <div id="nav" role="navigation" aria-label="Navigation principale">
+      <button class="nav-item active" data-view="dashboard"><i data-lucide="layout-dashboard" class="lucide"></i> Tableau de bord</button>
+      <button class="nav-item" data-view="creer"><i data-lucide="file-plus-2" class="lucide"></i> Créer un DCE</button>
+      <button class="nav-item" data-view="mesdce"><i data-lucide="folder" class="lucide"></i> Mes DCE <span class="badge" id="navCount">0</span></button>
+      <button class="nav-item" data-view="sourcing"><i data-lucide="search" class="lucide"></i> Sourcing PME</button>
+      <button class="nav-item" data-view="compte"><i data-lucide="user" class="lucide"></i> Compte</button>
+    </div>
+    <div class="side-foot">
+      <div class="theme-toggle" id="themeToggle">
+        <button data-t="light" title="Clair" aria-label="Thème clair"><i data-lucide="sun" class="lucide"></i></button>
+        <button data-t="dark" title="Sombre" aria-label="Thème sombre"><i data-lucide="moon" class="lucide"></i></button>
+        <button data-t="system" title="Système" aria-label="Thème système"><i data-lucide="monitor" class="lucide"></i></button>
+      </div>
+      <div id="sideAcct"></div>
+    </div>
+  </aside>
+
+  <!-- WORK -->
+  <div class="work">
+    <header class="top">
+      <button class="btn icon sm menu-btn" id="menuBtn" aria-label="Menu"><i data-lucide="menu" class="lucide"></i></button>
+      <div class="top-title"><h1 id="tbTitle">Tableau de bord</h1><div class="sub" id="tbSub"></div></div>
+      <div class="spacer"></div>
+      <button class="btn primary sm" id="tbAction" onclick="window.__newDce()"><i data-lucide="plus" class="lucide"></i> Nouveau DCE</button>
+    </header>
+    <div class="content" role="main">
+
+      <!-- DASHBOARD -->
+      <section class="view" id="view-dashboard">
+        <div id="demoBanner"></div>
+        <div class="dash-ribbon">
+          <div class="rb"><span class="rb-l">DCE enregistrés</span><span class="rb-v" id="statDces">—</span><span class="rb-d">dans votre espace</span></div>
+          <div class="rb"><span class="rb-l">Dernier projet</span><span class="rb-v" id="statLast" style="font-size:15px">—</span><span class="rb-d" id="statLastD">—</span></div>
+          <div class="rb"><span class="rb-l">Conformité</span><span class="rb-v" style="font-size:16px">Clauses environnementales</span><span class="rb-d">obligation 2026 — intégrées par défaut</span></div>
+          <div class="rb"><span class="rb-l">Souveraineté</span><span class="rb-v" style="font-size:16px">IA FR/UE</span><span class="rb-d">données publiques officielles</span></div>
+        </div>
+        <div class="dash-grid">
+          <div class="card">
+            <div class="ch"><h3>Projets récents</h3><div class="spacer" style="flex:1"></div><button class="btn ghost sm" onclick="window.__nav('mesdce')">Tout voir</button></div>
+            <div class="feed-list" id="dashRecent"><div class="empty"><div class="adj-ripple"><div class="drop"></div><div class="wave"></div><div class="wave"></div><div class="wave"></div></div></div></div>
+          </div>
+          <div class="dash-rail">
+            <button class="act-hero" onclick="window.__newDce()">
+              <span class="ah-ic"><i data-lucide="file-plus-2" class="lucide"></i></span>
+              <span class="ah-tx"><span class="ah-t">Créer un DCE</span><span class="ah-d">Décrivez le besoin, l'IA rédige le projet</span></span>
+              <i data-lucide="arrow-right" class="lucide"></i>
+            </button>
+            <div class="act-links">
+              <button class="act-link" onclick="window.__nav('sourcing')"><i data-lucide="search" class="lucide"></i><span>Sourcer des PME</span><i data-lucide="chevron-right" class="lucide cr"></i></button>
+              <button class="act-link" onclick="window.__nav('mesdce')"><i data-lucide="folder" class="lucide"></i><span>Mes DCE enregistrés</span><i data-lucide="chevron-right" class="lucide cr"></i></button>
+              <button class="act-link" onclick="window.__nav('compte')"><i data-lucide="user" class="lucide"></i><span>Mon espace</span><i data-lucide="chevron-right" class="lucide cr"></i></button>
+            </div>
+            <div class="alert-callout" role="button" tabindex="0" onclick="window.__nav('creer')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.__nav('creer')}"><i data-lucide="leaf" class="lucide"></i><div><b>Conformité 2026</b><div class="small">Seuils de procédure et clauses environnementales à jour, vérifiés avant publication.</div></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CRÉER -->
+      <section class="view" id="view-creer">
+        <form class="card pad" id="form" autocomplete="off" style="margin-bottom:16px">
+          <div class="field"><label for="objet">Objet du marché</label><textarea id="objet" placeholder="Ex. : rénovation énergétique de l'école des Tilleuls (isolation, menuiseries, chaufferie biomasse)" required></textarea></div>
+          <div class="frow t3">
+            <div class="field"><label for="type_marche">Type</label><select id="type_marche"><option value="travaux">Travaux</option><option value="fournitures">Fournitures</option><option value="services" selected>Services</option></select></div>
+            <div class="field"><label for="montant">Montant estimé <span class="hint">(€ HT)</span></label><input id="montant" type="number" min="0" step="1000" placeholder="120000" /><button type="button" class="btn ghost sm" id="estimBtn" style="margin-top:6px"><i data-lucide="lightbulb" class="lucide"></i> Estimer (DECP)</button><div id="estimNote" class="muted small" style="margin-top:5px" aria-live="polite"></div></div>
+            <div class="field"><label for="duree">Durée <span class="hint">(mois)</span></label><input id="duree" type="number" min="0" step="1" placeholder="12" /></div>
+            <div class="field"><label for="cpv">Code CPV <span class="hint">(facultatif)</span></label><input id="cpv" type="text" placeholder="45000000" maxlength="12" /><div class="muted small" style="margin-top:4px">Cible les comparables et la capacité « dans le domaine ».</div></div>
+          </div>
+          <div class="frow t3">
+            <div class="field"><label for="lieu">Lieu d'exécution <span class="hint">(facultatif)</span></label><input id="lieu" type="text" placeholder="Quimper" /></div>
+            <div class="field"><label for="dept">Département</label><input id="dept" type="text" placeholder="29" maxlength="3" /></div>
+            <div class="field"><label for="allotissement">Allotissement</label><select id="allotissement"><option value="auto" selected>Au choix de l'IA</option><option value="oui">Forcer l'allotissement</option><option value="non">Lot unique</option></select></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label for="env">Exigences environnementales <span class="hint">(facultatif)</span></label><textarea id="env" placeholder="Matériaux biosourcés, gestion des déchets…"></textarea></div>
+            <div class="field"><label for="social">Exigences sociales <span class="hint">(facultatif)</span></label><textarea id="social" placeholder="Clause d'insertion…"></textarea></div>
+          </div>
+          <div class="field"><label for="contraintes">Contraintes particulières <span class="hint">(facultatif)</span></label><textarea id="contraintes" placeholder="Site occupé, phasage, performances attendues…"></textarea></div>
+          <div class="proc-box" id="procChip" style="margin:4px 0 14px" aria-live="polite"><span class="muted">Renseignez le montant et le type pour voir la procédure recommandée.</span></div>
+          <button class="btn primary" id="go" type="submit"><i data-lucide="sparkles" class="lucide"></i> Générer le projet de DCE</button>
+          <span class="muted small" style="margin-left:12px">Projet généré par IA, à faire valider avant publication.</span>
+        </form>
+        <div id="result" aria-live="polite"></div>
+      </section>
+
+      <!-- MES DCE -->
+      <section class="view" id="view-mesdce"><div id="mesDceWrap"></div></section>
+
+      <!-- SOURCING -->
+      <section class="view" id="view-sourcing">
+        <div class="card pad" style="margin-bottom:16px">
+          <p class="muted" style="margin:0 0 12px">Identifiez les PME capables de répondre à un besoin et le risque d'infructuosité, sur données publiques officielles (SIRENE · DECP · BODACC).</p>
+          <div class="frow">
+            <div class="field"><label for="srcObjet">Besoin / métier recherché</label><input id="srcObjet" type="text" placeholder="Ex. : menuiseries extérieures, plomberie, espaces verts…" /></div>
+            <div class="field"><label for="srcDept">Département</label><input id="srcDept" type="text" placeholder="29" maxlength="3" /></div>
+          </div>
+          <button class="btn primary" id="srcGo"><i data-lucide="search" class="lucide"></i> Sonder le marché</button>
+        </div>
+        <div id="srcResult" aria-live="polite"></div>
+      </section>
+
+      <!-- COMPTE -->
+      <section class="view" id="view-compte"><div id="compteWrap"></div></section>
+
+    </div>
+  </div>
+</div>
+<div class="nav-backdrop hidden" id="navBackdrop"></div>
+
+<!-- Modale diffusion réseau PME -->
+<div class="overlay hidden" id="diffuserModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="diffTitle">
+    <div class="modal-h"><h3 id="diffTitle">Diffuser au réseau de PME</h3><button class="x" id="diffClose" aria-label="Fermer"><i data-lucide="x" class="lucide"></i></button></div>
+    <div class="modal-b" id="diffuserBody"></div>
+  </div>
+</div>
+
+<!-- Modale avis de publicité -->
+<div class="overlay hidden" id="avisModal">
+  <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="avisTitle">
+    <div class="modal-h"><h3 id="avisTitle">Avis de publicité &amp; méthode de notation</h3><button class="x" id="avisClose" aria-label="Fermer"><i data-lucide="x" class="lucide"></i></button></div>
+    <div class="modal-b" id="avisBody"></div>
+  </div>
+</div>
+
+<!-- Modale auth -->
+<div class="overlay hidden" id="authModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="authTitle" style="max-width:420px">
+    <div class="modal-h"><h3 id="authTitle">Espace collectivité</h3><button class="x" id="authClose" aria-label="Fermer"><i data-lucide="x" class="lucide"></i></button></div>
+    <div class="modal-b">
+      <p class="muted small" id="authLead" style="margin:0 0 14px">Connectez-vous pour enregistrer et retrouver vos DCE.</p>
+      <div id="authErr" class="avert" role="alert" style="display:none;margin-bottom:12px"></div>
+      <div class="field"><label for="auEmail">Email professionnel</label><input id="auEmail" type="email" autocomplete="username" placeholder="marches@ma-commune.fr" /></div>
+      <div class="field"><label for="auPwd">Mot de passe</label><input id="auPwd" type="password" autocomplete="current-password" placeholder="8 caractères minimum" /></div>
+      <div class="field" id="auNomWrap" style="display:none"><label for="auNom">Nom de la collectivité</label><input id="auNom" type="text" placeholder="Ville de Quimper" /></div>
+      <button class="btn primary block" id="auSubmit">Se connecter</button>
+      <p class="muted small" style="text-align:center;margin:12px 0 0"><span id="auSwitchTxt">Pas encore de compte ?</span> <a href="#" id="auSwitch" style="color:var(--accent-text);font-weight:600">Créer un espace</a></p>
+      <div style="text-align:center;margin-top:10px;padding-top:12px;border-top:1px solid var(--hairline)"><a href="#" id="auDemo" style="color:var(--accent-text);font-weight:600;font-size:12.5px">▶ Découvrir avec la démo</a></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $=function(s){return document.querySelector(s);},$$=function(s){return document.querySelectorAll(s);};
+  function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+  function num(id){var v=$(id).value.trim();return v===""?null:Number(v);}
+  function icons(){try{window.lucide&&window.lucide.createIcons();}catch(e){}}
+  var CODE=new URLSearchParams(location.search).get("code")||"";
+  if(CODE){try{var _u=new URL(location.href);_u.searchParams.delete("code");history.replaceState(null,"",_u.pathname+_u.search+_u.hash);}catch(e){}}
+  // Intention passée par la landing (/acheteur) : ?demo / ?login / ?register
+  var _q=new URLSearchParams(location.search);
+  var WANT=_q.has("demo")?"demo":(_q.has("register")?"register":(_q.has("login")?"login":""));
+  if(WANT){try{var _u2=new URL(location.href);["demo","login","register"].forEach(function(k){_u2.searchParams.delete(k);});history.replaceState(null,"",_u2.pathname+_u2.search+_u2.hash);}catch(e){}}
+
+  // ── Thème ──
+  function applyTheme(){var t=localStorage.getItem("adjugo_theme")||"system";
+    var dark=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme",dark?"dark":"light");
+    $$("#themeToggle button").forEach(function(b){var on=b.getAttribute("data-t")===t;b.classList.toggle("on",on);b.setAttribute("aria-pressed",String(on));});}
+  $$("#themeToggle button").forEach(function(b){b.onclick=function(){localStorage.setItem("adjugo_theme",b.getAttribute("data-t"));applyTheme();};});
+
+  // ── Compte (cloisonné) ──
+  var ATOKEN=localStorage.getItem("adjugo_acheteur_token")||"",AME=null,IS_DEMO=false,CURRENT_DCE_ID=null,authMode="login";
+  function headers(){var h={"Content-Type":"application/json"};if(CODE)h["X-Dce-Code"]=CODE;if(ATOKEN)h["Authorization"]="Bearer "+ATOKEN;return h;}
+  function aHeaders(){var h={"Content-Type":"application/json"};if(ATOKEN)h["Authorization"]="Bearer "+ATOKEN;return h;}
+  function setToken(t){ATOKEN=t||"";if(t)localStorage.setItem("adjugo_acheteur_token",t);else localStorage.removeItem("adjugo_acheteur_token");}
+  // Session expirée : au lieu de laisser la sidebar « connectée » avec un contenu vide,
+  // on déconnecte proprement et on rouvre la connexion.
+  function sessionLost(){var was=!!AME;setToken("");AME=null;IS_DEMO=false;CURRENT_DCE_ID=null;renderAcct();if(curView!=="creer")refreshCurrentView();if(was){openAuth("login");showAuthErr("Session expirée. Reconnectez-vous pour continuer.");}}
+  // fetch pour les endpoints DATA de l'acheteur : intercepte tout 401 (token expiré/révoqué).
+  function aFetch(url,opts){return fetch(url,opts).then(function(r){if(r.status===401){sessionLost();throw new Error("Session expirée");}return r;});}
+  // Le compte de démo est partagé : on bloque les écritures côté client (le backend renvoie aussi 403).
+  function demoBlock(){if(IS_DEMO){alert("Compte de démonstration en lecture seule.\n\nCréez votre espace gratuit pour enregistrer, piloter et diffuser vos consultations.");return true;}return false;}
+  function initials(s){s=(s||"").trim();var p=s.split(/\s+/);return ((p[0]||"")[0]||"C").toUpperCase()+((p[1]||"")[0]||"").toUpperCase();}
+
+  function renderAcct(){
+    var el=$("#sideAcct");
+    if(AME){el.innerHTML='<div class="user"><div class="av">'+esc(initials(AME.nom_collectivite||AME.email))+'</div><div style="min-width:0"><b>'+esc(AME.nom_collectivite||"Ma collectivité")+'</b><small>'+esc(IS_DEMO?"Compte de démonstration":AME.email)+'</small></div></div><button class="btn ghost sm block" id="btnLogout" style="margin-top:6px"><i data-lucide="log-out" class="lucide"></i> Déconnexion</button>';
+      $("#btnLogout").onclick=function(){setToken("");AME=null;IS_DEMO=false;CURRENT_DCE_ID=null;renderAcct();refreshCurrentView();};}
+    else{el.innerHTML='<button class="btn primary sm block" id="btnLoginOpen"><i data-lucide="log-in" class="lucide"></i> Connexion</button><button class="btn ghost sm block" id="btnDemoSide" style="margin-top:6px">▶ Voir la démo</button>';
+      $("#btnLoginOpen").onclick=function(){openAuth("login");};$("#btnDemoSide").onclick=enterDemo;}
+    icons();
+  }
+  function refreshCurrentView(){if(curView==="dashboard")loadDashboard();if(curView==="mesdce")loadMesDce();if(curView==="compte")loadCompte();updateCount();}
+
+  function enterDemo(){
+    fetch("/api/acheteur/demo",{method:"POST",headers:{"Content-Type":"application/json"}})
+      .then(function(r){return r.json();}).then(function(d){if(!d.access_token){alert("Démonstration momentanément indisponible. Réessayez.");return;}
+        setToken(d.access_token);AME={email:d.email,nom_collectivite:d.nom_collectivite};IS_DEMO=true;closeAuth();renderAcct();navTo("dashboard");})
+      .catch(function(){alert("Démonstration indisponible (réseau). Réessayez.");});
+  }
+
+  function openAuth(mode){authMode=mode||"login";var reg=(authMode==="register");
+    $("#authErr").style.display="none";
+    $("#authTitle").textContent=reg?"Créer un espace collectivité":"Espace collectivité";
+    $("#authLead").textContent=reg?"Quelques secondes pour enregistrer vos DCE et y revenir.":"Connectez-vous pour enregistrer et retrouver vos DCE.";
+    $("#auNomWrap").style.display=reg?"block":"none";$("#auSubmit").textContent=reg?"Créer mon espace":"Se connecter";
+    $("#auSwitchTxt").textContent=reg?"Déjà un compte ?":"Pas encore de compte ?";$("#auSwitch").textContent=reg?"Se connecter":"Créer un espace";
+    $("#auPwd").setAttribute("autocomplete",reg?"new-password":"current-password");
+    $("#authModal").classList.remove("hidden");$("#auEmail").focus();icons();}
+  function closeAuth(){$("#authModal").classList.add("hidden");}
+  function showAuthErr(m){var e=$("#authErr");e.textContent=m;e.style.display="block";}
+  $("#authClose").onclick=closeAuth;
+  // a11y modales : fermeture par Échap + piège de focus (le Tab ne doit pas s'échapper derrière).
+  function openModal(){return ["#authModal","#avisModal","#diffuserModal"].map($).filter(function(m){return m&&!m.classList.contains("hidden");})[0];}
+  function trapFocus(modal,e){var f=modal.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
+    if(!f.length)return;var first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
+  document.addEventListener("keydown",function(e){var m=openModal();
+    if(e.key==="Escape"){if(!m)return;if(m.id==="authModal")closeAuth();else if(m.id==="diffuserModal")closeDiffuser();else m.classList.add("hidden");}
+    else if(e.key==="Tab"&&m){trapFocus(m,e);}});
+  $("#auSwitch").onclick=function(e){e.preventDefault();openAuth(authMode==="login"?"register":"login");};
+  $("#auDemo").onclick=function(e){e.preventDefault();enterDemo();};
+  $("#authModal").addEventListener("click",function(e){if(e.target===this)closeAuth();});
+  $("#auSubmit").onclick=function(){
+    var email=$("#auEmail").value.trim(),pwd=$("#auPwd").value,nom=$("#auNom").value.trim(),reg=(authMode==="register");
+    if(!email||pwd.length<(reg?8:1)){showAuthErr(reg?"Email et mot de passe (8 caractères min.) requis.":"Email et mot de passe requis.");return;}
+    var body=reg?{email:email,password:pwd,nom_collectivite:nom}:{email:email,password:pwd};
+    var btn=$("#auSubmit");btn.disabled=true;var old=btn.textContent;btn.textContent="…";
+    fetch("/api/acheteur/"+(reg?"register":"login"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+      .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d};});})
+      .then(function(res){if(!res.ok){showAuthErr((res.d&&res.d.detail)||"Échec de la connexion.");return;}
+        setToken(res.d.access_token);AME={email:res.d.email,nom_collectivite:res.d.nom_collectivite};IS_DEMO=false;closeAuth();renderAcct();refreshCurrentView();})
+      .catch(function(){showAuthErr("Réseau indisponible.");})
+      .finally(function(){btn.disabled=false;btn.textContent=old;});};
+
+  // ── Navigation ──
+  var curView="dashboard";
+  var TITLES={dashboard:["Tableau de bord",""],creer:["Créer un DCE","Décrivez le besoin, l'IA rédige le projet."],mesdce:["Mes DCE — Pilotage","Suivi des consultations : statuts et échéances"],sourcing:["Sourcing PME","Trouvez les entreprises capables de répondre."],compte:["Mon espace",""]};
+  function navTo(v){
+    if(curView==="creer"&&v!=="creer"&&DIRTY&&!confirm("Des modifications de ce DCE ne sont pas enregistrées. Quitter quand même ?"))return;
+    curView=v;
+    $$("#nav .nav-item").forEach(function(a){var on=a.getAttribute("data-view")===v;a.classList.toggle("active",on);if(on)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});
+    $$(".view").forEach(function(s){s.classList.toggle("active",s.id==="view-"+v);});
+    $("#tbTitle").textContent=TITLES[v][0];$("#tbSub").textContent=TITLES[v][1];
+    $("#tbAction").style.display=(v==="creer")?"none":"inline-flex";
+    $(".side").classList.remove("open");$("#navBackdrop").classList.add("hidden");
+    if(v==="dashboard")loadDashboard();if(v==="mesdce")loadMesDce();if(v==="compte")loadCompte();
+    $(".work").scrollTop=0;icons();}
+  window.__nav=navTo;
+  // « Nouveau DCE » : repart d'une page vierge (sinon l'ancien résultat reste sous un formulaire vide).
+  function nouveauDce(){
+    if(curView==="creer"&&DIRTY&&!confirm("Des modifications de ce DCE ne sont pas enregistrées. Démarrer un nouveau DCE quand même ?"))return;
+    LAST=null;CURRENT_DCE_ID=null;DIRTY=false;
+    var f=$("#form");if(f)f.reset();
+    if($("#result"))$("#result").innerHTML="";
+    if($("#procChip"))$("#procChip").innerHTML='<span class="muted small">La procédure s\'affichera ici.</span>';
+    if($("#estimNote"))$("#estimNote").innerHTML="";
+    navTo("creer");
+  }
+  window.__newDce=nouveauDce;
+  $$("#nav .nav-item").forEach(function(a){a.onclick=function(){navTo(a.getAttribute("data-view"));};});
+  $("#menuBtn").onclick=function(){$(".side").classList.toggle("open");$("#navBackdrop").classList.toggle("hidden");};
+  $("#navBackdrop").onclick=function(){$(".side").classList.remove("open");this.classList.add("hidden");};
+
+  function updateCount(){if(!AME){$("#navCount").textContent="0";return;}aFetch("/api/acheteur/dce",{headers:aHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(l){$("#navCount").textContent=l.length;}).catch(function(){});}
+
+  // ── Tableau de bord ──
+  function loadDashboard(){
+    var db=$("#demoBanner");
+    db.innerHTML = IS_DEMO ? '<div class="demo-banner"><i data-lucide="play-circle" class="lucide"></i><div style="flex:1"><b>Vous explorez la démonstration</b><div class="small">Compte fictif pré-rempli — ouvrez un DCE, sondez le marché, exportez. Créez votre espace pour sauvegarder vos vrais projets.</div></div><button class="btn sm" style="background:#fff;color:var(--accent)" id="db_create">Créer mon espace</button></div>'
+      : (!AME ? '<div class="demo-banner"><i data-lucide="play-circle" class="lucide"></i><div style="flex:1"><b>Découvrez Adjugo Collectivités</b><div class="small">Lancez la démonstration pré-remplie, ou commencez directement votre premier DCE.</div></div><button class="btn sm" style="background:#fff;color:var(--accent)" id="db_demo">▶ Voir la démo</button></div>' : '');
+    if($("#db_demo"))$("#db_demo").onclick=enterDemo; if($("#db_create"))$("#db_create").onclick=function(){openAuth("register");};
+    if(!AME){$("#statDces").textContent="0";$("#statLast").textContent="—";$("#statLastD").textContent="—";
+      $("#dashRecent").innerHTML='<div class="empty"><div class="eic"><i data-lucide="folder-open" class="lucide"></i></div><h4>Aucun projet pour l\'instant</h4><p>Connectez-vous ou lancez la démo pour voir des DCE ici.</p><button class="btn primary sm" id="dr_demo">▶ Voir la démo</button></div>';
+      if($("#dr_demo"))$("#dr_demo").onclick=enterDemo;icons();return;}
+    aFetch("/api/acheteur/dce",{headers:aHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(list){
+      $("#navCount").textContent=list.length;$("#statDces").textContent=list.length;
+      $("#statLast").textContent=list.length?(list[0].objet||"Projet").slice(0,26):"—";
+      $("#statLastD").textContent=list.length?("modifié le "+(list[0].updated_at||"").slice(0,10)):"—";
+      if(!list.length){$("#dashRecent").innerHTML='<div class="empty"><div class="eic"><i data-lucide="file-plus-2" class="lucide"></i></div><h4>Votre premier DCE</h4><p>Décrivez un besoin, l\'IA rédige le projet complet.</p><button class="btn primary sm" onclick="window.__nav(\'creer\')">Créer un DCE</button></div>';icons();return;}
+      $("#dashRecent").innerHTML=list.slice(0,6).map(function(d){
+        return '<div class="ao-row" data-id="'+d.id+'" role="button" tabindex="0"><div class="score-ring" style="background:conic-gradient(var(--accent) 0 100%,var(--surface-3) 0)"><span><i data-lucide="file-text" class="lucide" style="width:16px;height:16px"></i></span></div><div class="ao-mid"><div class="ao-t">'+esc(d.objet||"Projet de DCE")+'</div><div class="ao-c">modifié le '+esc((d.updated_at||"").slice(0,10))+'</div></div><i data-lucide="chevron-right" class="ao-go lucide"></i></div>';}).join("");
+      $$("#dashRecent .ao-row").forEach(function(it){var op=function(){openSavedDce(it.getAttribute("data-id"));};it.onclick=op;it.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();op();}};});icons();});
+  }
+
+  // ── Mes DCE ──
+  var STATUTS=[["preparation","En préparation","neutral"],["publie","Publié","st-envoye"],["analyse","En analyse","st-en_cours"],["attribue","Attribué","st-gagne"],["infructueux","Infructueux","st-perdu"]];
+  function setStatut(id,body,cb){if(demoBlock()){loadMesDce();return;}aFetch("/api/acheteur/dce/"+id+"/statut",{method:"POST",headers:aHeaders(),body:JSON.stringify(body)}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(cb)cb(d);}).catch(function(){});}
+  function loadMesDce(){var w=$("#mesDceWrap");
+    if(!AME){w.innerHTML='<div class="card"><div class="empty"><div class="eic"><i data-lucide="lock" class="lucide"></i></div><h4>Connectez-vous</h4><p>Pour piloter vos consultations.</p><div class="row"><button class="btn primary sm" id="md_login">Connexion</button><button class="btn sm" id="md_demo">▶ Voir la démo</button></div></div></div>';$("#md_login").onclick=function(){openAuth("login");};$("#md_demo").onclick=enterDemo;icons();return;}
+    w.innerHTML='<div class="empty"><div class="adj-ripple"><div class="drop"></div><div class="wave"></div><div class="wave"></div><div class="wave"></div></div></div>';
+    aFetch("/api/acheteur/dce",{headers:aHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(list){
+      $("#navCount").textContent=list.length;
+      if(!list.length){w.innerHTML='<div class="card"><div class="empty"><div class="eic"><i data-lucide="folder" class="lucide"></i></div><h4>Aucune consultation</h4><p>Créez votre premier projet de DCE.</p><button class="btn primary sm" onclick="window.__nav(\'creer\')">Créer un DCE</button></div></div>';icons();return;}
+      var by={preparation:0,publie:0,analyse:0,attribue:0,infructueux:0};list.forEach(function(d){by[d.statut]=(by[d.statut]||0)+1;});
+      var _term={attribue:1,infructueux:1};   // consultations clôturées → en fin de liste (pas d'urgence)
+      list.sort(function(a,b){var ta=_term[a.statut]?1:0,tb=_term[b.statut]?1:0;if(ta!==tb)return ta-tb;
+        var x=a.date_limite||"9999-99",y=b.date_limite||"9999-99";return x<y?-1:x>y?1:0;});
+      var today=new Date().toISOString().slice(0,10);
+      var h='<div class="dash-ribbon" style="margin-bottom:16px"><div class="rb"><span class="rb-l">Consultations</span><span class="rb-v">'+list.length+'</span></div><div class="rb"><span class="rb-l">En préparation</span><span class="rb-v">'+by.preparation+'</span></div><div class="rb"><span class="rb-l">En cours</span><span class="rb-v">'+(by.publie+by.analyse)+'</span><span class="rb-d">publiées / en analyse</span></div><div class="rb '+(by.infructueux?"alert":"")+'"><span class="rb-l">Attribuées</span><span class="rb-v">'+by.attribue+'</span><span class="rb-d">'+(by.infructueux?(by.infructueux+" infructueux"):"")+'</span></div></div>';
+      h+='<div class="t-wrap"><table><thead><tr><th scope="col">Consultation</th><th scope="col">Statut</th><th scope="col">Échéance des offres</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>';
+      list.forEach(function(d){var dl=d.date_limite||"";var late=dl&&dl<today&&d.statut!=="attribue"&&d.statut!=="infructueux";
+        h+='<tr data-id="'+d.id+'"><td><div class="strong row-open" style="cursor:pointer">'+esc(d.objet||"Projet de DCE")+'</div><div class="muted small">modifié le '+esc((d.updated_at||"").slice(0,10))+(d.diffuse?' · <span style="color:var(--accent-text)">📡 signalé au réseau le '+esc((d.date_diffusion||"").slice(0,10))+'</span>':'')+'</div></td>'+
+          '<td><select class="inp st-sel" aria-label="Statut de la consultation" style="height:30px;padding:0 8px;width:auto;min-width:148px">'+STATUTS.map(function(s){return '<option value="'+s[0]+'"'+(d.statut===s[0]?" selected":"")+'>'+s[1]+'</option>';}).join("")+'</select></td>'+
+          '<td><input type="date" class="inp dl-inp" aria-label="Échéance des offres" value="'+esc(dl)+'" style="height:30px;width:auto'+(late?";border-color:var(--danger)":"")+'">'+(late?' <span class="pill no_go">dépassée</span>':"")+'</td>'+
+          '<td style="text-align:right;white-space:nowrap"><button class="btn sm act-open" title="Ouvrir" aria-label="Ouvrir le DCE"><i data-lucide="folder-open" class="lucide"></i></button> <button class="btn sm act-docx">Word</button> <button class="btn sm icon act-del" title="Supprimer" aria-label="Supprimer la consultation"><i data-lucide="trash-2" class="lucide"></i></button></td></tr>';});
+      h+='</tbody></table></div><p class="muted small" style="margin-top:10px">Le statut et l\'échéance sont enregistrés automatiquement. Triés par échéance la plus proche.</p>';
+      w.innerHTML=h;
+      $$("#mesDceWrap tr[data-id]").forEach(function(tr){var id=tr.getAttribute("data-id");
+        tr.querySelector(".row-open").onclick=function(){openSavedDce(id);};
+        tr.querySelector(".act-open").onclick=function(){openSavedDce(id);};
+        tr.querySelector(".act-del").onclick=function(){if(demoBlock())return;if(confirm("Supprimer cette consultation ?"))aFetch("/api/acheteur/dce/"+id,{method:"DELETE",headers:aHeaders()}).then(function(r){if(r.ok)loadMesDce();});};
+        tr.querySelector(".act-docx").onclick=function(){aFetch("/api/acheteur/dce/"+id,{headers:aHeaders()}).then(function(r){return r.json();}).then(function(d){exportDce("docx","docx",d.payload);});};
+        tr.querySelector(".st-sel").onchange=function(){setStatut(id,{statut:this.value},function(d){if(d)refreshRow(tr,d);});};
+        tr.querySelector(".dl-inp").onchange=function(){setStatut(id,{date_limite:this.value},function(d){if(d)refreshRow(tr,d);});};});
+      icons();});}
+  // MAJ d'une ligne de pilotage en place (évite de recharger tout le tableau et de voler le focus).
+  function refreshRow(tr,d){
+    var today=new Date().toISOString().slice(0,10),dl=d.date_limite||"";
+    var late=dl&&dl<today&&d.statut!=="attribue"&&d.statut!=="infructueux";
+    var inp=tr.querySelector(".dl-inp");if(!inp)return;
+    inp.value=dl;inp.style.borderColor=late?"var(--danger)":"";
+    var cell=inp.parentNode,pill=cell.querySelector(".pill.no_go");
+    if(late&&!pill){var s=document.createElement("span");s.className="pill no_go";s.textContent="dépassée";s.style.marginLeft="6px";cell.appendChild(s);}
+    else if(!late&&pill){pill.remove();}
+  }
+  function fillFormFromDce(x){var inp=(x&&x._inputs)||{};
+    $("#objet").value=x.objet||"";if(x.type_marche)$("#type_marche").value=x.type_marche;
+    $("#montant").value=(inp.montant_estime!=null?inp.montant_estime:"");$("#duree").value=(inp.duree_mois!=null?inp.duree_mois:"");
+    $("#lieu").value=inp.lieu||"";$("#dept").value=inp.dept||"";$("#contraintes").value=inp.contraintes||"";
+    $("#env").value=inp.exigences_env||"";$("#social").value=inp.exigences_sociales||"";if(inp.allotissement)$("#allotissement").value=inp.allotissement;
+    $("#cpv").value=inp.cpv||"";}
+  function openSavedDce(id){aFetch("/api/acheteur/dce/"+id,{headers:aHeaders()}).then(function(r){if(!r.ok)throw 0;return r.json();})
+    .then(function(d){LAST=d.payload;CURRENT_DCE_ID=d.id;navTo("creer");fillFormFromDce(d.payload);render(d.payload);}).catch(function(){alert("Impossible d'ouvrir ce DCE.");});}
+
+  // ── Compte ──
+  function loadCompte(){var w=$("#compteWrap");
+    if(!AME){w.innerHTML='<div class="card pad" style="text-align:center"><div class="empty"><div class="eic"><i data-lucide="user" class="lucide"></i></div><h4>Votre espace collectivité</h4><p>Connectez-vous ou créez un espace pour enregistrer vos DCE.</p><div class="row"><button class="btn primary sm" id="cp_login">Connexion</button><button class="btn sm" id="cp_reg">Créer un espace</button><button class="btn sm" id="cp_demo">▶ Démo</button></div></div></div>';
+      $("#cp_login").onclick=function(){openAuth("login");};$("#cp_reg").onclick=function(){openAuth("register");};$("#cp_demo").onclick=enterDemo;icons();return;}
+    w.innerHTML='<div class="card pad"><h3 style="font-size:16px">'+esc(AME.nom_collectivite||"Ma collectivité")+(IS_DEMO?' <span class="org-pill">Démo</span>':'')+'</h3><div class="list-row"><span class="muted">Email</span><b>'+esc(AME.email)+'</b></div><div class="list-row"><span class="muted">Données</span><span>Cloisonnées — jamais partagées avec les entreprises</span></div><div class="list-row"><span class="muted">Intelligence artificielle</span><span>Souveraine (hébergement FR/UE)</span></div><div class="list-row"><span class="muted">Sources</span><span>SIRENE · DECP · BODACC (open data)</span></div>'+(!IS_DEMO?'<div class="list-row"><span class="muted">Vos données (RGPD)</span><span><button class="btn ghost sm" id="cp_export"><i data-lucide="download" class="lucide"></i> Exporter</button> <button class="btn ghost sm" id="cp_delete" style="color:var(--danger-text)"><i data-lucide="trash-2" class="lucide"></i> Supprimer mon compte</button></span></div>':'')+'<button class="btn ghost sm" id="cp_logout" style="margin-top:16px"><i data-lucide="log-out" class="lucide"></i> Déconnexion</button></div>';
+    $("#cp_logout").onclick=function(){setToken("");AME=null;IS_DEMO=false;renderAcct();loadCompte();};
+    if($("#cp_export"))$("#cp_export").onclick=rgpdExport;if($("#cp_delete"))$("#cp_delete").onclick=rgpdDelete;icons();}
+  function rgpdExport(){aFetch("/api/acheteur/rgpd/export",{headers:aHeaders()}).then(function(r){return r.json();}).then(function(d){var blob=new Blob([JSON.stringify(d,null,2)],{type:"application/json"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="mes-donnees-adjugo.json";document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1500);}).catch(function(){});}
+  function rgpdDelete(){var pwd=prompt("Suppression DÉFINITIVE de votre compte et de tous vos DCE.\nConfirmez avec votre mot de passe :");if(!pwd)return;aFetch("/api/acheteur/rgpd/effacer",{method:"POST",headers:aHeaders(),body:JSON.stringify({password:pwd})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d};});}).then(function(res){if(!res.ok){alert((res.d&&res.d.detail)||"Échec.");return;}alert("Compte et données supprimés.");setToken("");AME=null;IS_DEMO=false;renderAcct();navTo("dashboard");}).catch(function(){});}
+
+  // ── Aperçu procédure ──
+  var tProc=null;
+  function refreshProc(){clearTimeout(tProc);tProc=setTimeout(function(){var m=num("#montant"),ty=$("#type_marche").value;
+    fetch("/api/dce/preview-procedure",{method:"POST",headers:headers(),body:JSON.stringify({montant_estime:m,type_marche:ty})})
+      .then(function(r){return r.ok?r.json():null;}).then(function(p){if(!p)return;
+        $("#procChip").innerHTML="<span class='strong' style='color:var(--accent-text)'>"+esc(p.type)+"</span><div class='small muted' style='margin-top:3px'>"+esc(p.justification||"")+"</div>";}).catch(function(){});},350);}
+  $("#montant").addEventListener("input",refreshProc);$("#type_marche").addEventListener("change",refreshProc);
+
+  // ── Estimation budgétaire (DECP) ──
+  function fmt(n){try{return Number(n).toLocaleString("fr-FR");}catch(e){return String(n);}}
+  $("#estimBtn").onclick=function(e){e.preventDefault();
+    var objet=$("#objet").value.trim(),dept=$("#dept").value.trim();
+    if(objet.length<3){$("#objet").focus();return;}
+    var note=$("#estimNote");note.innerHTML='<span class="spin" style="width:11px;height:11px"></span> Estimation sur marchés comparables…';
+    fetch("/api/dce/estimer-budget",{method:"POST",headers:headers(),body:JSON.stringify({objet:objet,departement:dept,duree_mois:num("#duree"),cpv:$("#cpv").value.trim()})})
+      .then(function(r){return r.json().then(function(d){return{status:r.status,d:d};});})
+      .then(function(res){if(res.status===401){note.textContent="Connectez-vous (ou lancez la démo) pour utiliser cette fonction.";return;}
+        var d=res.d;if(!d.ok){note.textContent=d.message||"Pas assez de marchés comparables.";return;}
+        note.innerHTML="D'après <b>"+d.nb_marches+"</b> marchés comparables (DECP"+(d.departement?" · dépt "+esc(d.departement):"")+(d.periode?" · "+esc(d.periode):"")+(d.duree_filtree?" · durée similaire":"")+") — médiane <b>"+fmt(d.mediane)+" €</b>, fourchette "+fmt(d.q1)+"–"+fmt(d.q3)+" € HT. <a href='#' id='estimApply'>Reporter la médiane dans le montant</a>. <span class='muted'>Repère de marché, à ajuster — il pilote la procédure, vérifiez-le.</span>";
+        var ap=$("#estimApply");if(ap)ap.onclick=function(ev){ev.preventDefault();$("#montant").value=d.mediane;refreshProc();this.outerHTML="<span class='muted'>✓ médiane reportée</span>";};})
+      .catch(function(){note.textContent="Estimation indisponible.";});};
+
+  // ── Génération ──
+  var LAST=null;
+  $("#form").addEventListener("submit",function(e){e.preventDefault();
+    var p={objet:$("#objet").value.trim(),type_marche:$("#type_marche").value,montant_estime:num("#montant"),duree_mois:num("#duree"),lieu:$("#lieu").value.trim(),dept:$("#dept").value.trim(),contraintes:$("#contraintes").value.trim(),exigences_env:$("#env").value.trim(),exigences_sociales:$("#social").value.trim(),allotissement:$("#allotissement").value,cpv:$("#cpv").value.trim()};
+    if(p.objet.length<8){$("#objet").focus();return;}
+    var go=$("#go");go.disabled=true;go.innerHTML='<span class="spin"></span> Génération…';
+    $("#result").innerHTML='<div class="card pad" style="text-align:center;padding:40px"><div class="adj-ripple"><div class="drop"></div><div class="wave"></div><div class="wave"></div><div class="wave"></div></div><div class="muted" style="margin-top:16px">Rédaction du projet de DCE… (~1 min)</div></div>';
+    fetch("/api/dce/generate",{method:"POST",headers:headers(),body:JSON.stringify(p)})
+      .then(function(r){return r.json().then(function(d){return{ok:r.ok,status:r.status,d:d};});})
+      .then(function(res){if(!res.ok){showError(res.status,res.d);return;}LAST=res.d;CURRENT_DCE_ID=null;render(res.d);})
+      .catch(function(){showError(0,{detail:"Réseau indisponible."});})
+      .finally(function(){go.disabled=false;go.innerHTML='<i data-lucide="sparkles" class="lucide"></i> Générer le projet de DCE';icons();});});
+  function showError(status,d){var msg=(d&&d.detail)||"Une erreur est survenue.";
+    if(status===401)msg="Accès restreint : connectez-vous à votre espace.";if(status===503)msg="Service IA momentanément indisponible. Réessayez.";if(status===429)msg="Trop de demandes. Patientez quelques minutes.";
+    $("#result").innerHTML='<div class="card pad"><div class="avert">'+esc(msg)+'</div></div>';}
+
+  function pillCls(n){n=String(n||"").normalize("NFD").replace(/[̀-ͯ]/g,"");return n==="faible"?"go":(n==="modere"?"a_etudier":"no_go");}
+
+  // ── Rendu du DCE ──
+  function render(x){
+    DIRTY=false;
+    var h='<div class="toolbar">';
+    h+='<button class="btn sm" id="btnEdit"><i data-lucide="pencil" class="lucide"></i> Modifier</button>';
+    h+='<button class="btn sm" id="btnSave"><i data-lucide="save" class="lucide"></i> Enregistrer</button>';
+    h+='<button class="btn sm" id="btnDocx"><i data-lucide="file-down" class="lucide"></i> Word</button>';
+    h+='<button class="btn sm" id="btnPdf"><i data-lucide="file-text" class="lucide"></i> PDF</button>';
+    h+='<button class="btn sm" id="btnZip"><i data-lucide="folder-archive" class="lucide"></i> Pièces (ZIP)</button>';
+    h+='<button class="btn sm" id="btnAvis"><i data-lucide="megaphone" class="lucide"></i> Avis de publicité</button>';
+    h+='<button class="btn sm primary" id="btnDiffuser"><i data-lucide="radio-tower" class="lucide"></i> Diffuser au réseau</button>';
+    h+='<button class="btn sm" id="btnPrint"><i data-lucide="printer" class="lucide"></i> Imprimer</button>';
+    h+='<button class="btn sm" id="btnCopy"><i data-lucide="copy" class="lucide"></i> Copier</button></div>';
+    h+='<div class="card pad"><div class="doc" id="docBody">';
+    h+='<div class="disclaimer">⚠️ '+esc(x.disclaimer||"")+'</div>';
+    if((x.avertissements||[]).length){h+='<div class="avert"><b>⚠️ Points à corriger avant publication</b><ul class="clean">';x.avertissements.forEach(function(a){h+='<li>'+esc(a)+'</li>';});h+='</ul></div>';}
+    h+='<div class="objet ed" data-path="objet">'+esc(x.objet||"")+'</div>';
+    var meta=[];if(x.type_marche)meta.push("Marché de "+esc(x.type_marche));meta.push("Projet de DCE");h+='<div class="docmeta">'+meta.join(" · ")+'</div>';
+    if(x.synthese_besoin)h+='<p class="ed" data-path="synthese_besoin" style="font-size:13.5px">'+esc(x.synthese_besoin)+'</p>';
+    var p=x.procedure||{};h+='<h2 class="sec">Procédure</h2><div class="proc-box"><div class="t">'+esc(p.type||"")+'</div>';
+    if(p.justification)h+='<div class="j">'+esc(p.justification)+'</div>';var sub=[];if(p.publicite)sub.push("Publicité : "+esc(p.publicite));if(p.delai_min_jours)sub.push("Délai min. : "+esc(p.delai_min_jours)+" j");if(p.seuil_reference)sub.push(esc(p.seuil_reference));
+    if(sub.length)h+='<div class="sub">'+sub.join(" — ")+'</div>';if(p.delai_note)h+='<div class="sub">⏱️ '+esc(p.delai_note)+'</div>';h+='<div class="sub">⚖️ Le seuil s\'apprécie sur la valeur <b>totale</b> estimée du besoin (tous lots, tranches et reconductions) — ne scindez pas le besoin pour rester sous un seuil.</div>';h+='</div>';
+    var a=x.allotissement||{};h+='<h2 class="sec">Allotissement</h2>';if(a.principe)h+='<p style="font-size:13px">'+esc(a.principe)+'</p>';
+    (a.lots||[]).forEach(function(l,li){h+='<div class="lot" data-lot-num="'+esc(l.numero!=null?l.numero:"")+'"><div><span class="n">Lot '+esc(l.numero!=null?l.numero:"")+'</span><span class="ti ed" data-path="allotissement.lots.'+li+'.intitule">'+esc(l.intitule||"")+'</span>'+(l.montant_estime?' <span class="muted small">≈ '+fmt(l.montant_estime)+' € HT</span>':'')+(l.groupement_conseille?'<span class="pill go" style="margin-left:6px">groupement conseillé</span>':'')+'<span class="lot-badge"></span></div>';
+      if(l.description)h+='<div class="ed" data-path="allotissement.lots.'+li+'.description" style="font-size:12.5px;margin-top:4px;color:var(--text-2)">'+esc(l.description)+'</div>';
+      if(l.atteignable_pme)h+='<div class="pme">✓ '+esc(l.atteignable_pme)+'</div>';h+='</div>';});
+    if(!(a.lots||[]).length)h+='<p class="muted">Lot unique proposé.</p>';
+    if(a.recommande===false&&a.motivation_lot_unique)h+='<div class="moti"><b>Motivation du lot unique (L2113-11) :</b> '+esc(a.motivation_lot_unique)+'</div>';
+    if(a.note_sourcing)h+='<div class="note-src">🔎 '+esc(a.note_sourcing)+'</div>';
+    h+='<button class="btn primary sm" id="btnSourcing" style="margin-top:10px"><i data-lucide="search" class="lucide"></i> Trouver les PME &amp; évaluer le risque</button><div id="sourcingResult"></div>';
+    var c=x.criteres||{};if((c.liste||[]).length){h+='<h2 class="sec">Critères de sélection</h2><table class="crit-t">';
+      c.liste.forEach(function(cr,ci){var pond=Number(cr.ponderation)||0;h+='<tr><td><b class="ed" data-path="criteres.liste.'+ci+'.critere">'+esc(cr.critere||"")+'</b><div class="bar" style="margin-top:5px;max-width:240px"><i style="width:'+Math.min(100,pond)+'%"></i></div>';
+        if((cr.sous_criteres||[]).length)h+='<div class="subc">'+cr.sous_criteres.map(esc).join(" · ")+'</div>';
+        h+='</td><td class="pond"><span class="ed" data-type="int" data-path="criteres.liste.'+ci+'.ponderation">'+pond+'</span> %</td></tr>';});
+      h+='</table>';if(c.note)h+='<div class="subc" style="margin-top:8px">ℹ️ '+esc(c.note)+'</div>';}
+    if((x.cctp_sections||[]).length){h+='<h2 class="sec">Projet de CCTP</h2><div class="cctp">';x.cctp_sections.forEach(function(s,si){h+='<h3 class="ed" data-path="cctp_sections.'+si+'.titre">'+esc(s.titre||"")+'</h3><p class="ed" data-path="cctp_sections.'+si+'.contenu">'+esc(s.contenu||"")+'</p>';});h+='</div>';}
+    h+='<div class="twocol">';var ccap=x.ccap||{};h+='<div><h2 class="sec">CCAP — points clés</h2>';
+    if(ccap.ccag_applicable)h+='<p style="font-size:13px"><b>CCAG :</b> '+esc(ccap.ccag_applicable)+'</p>';if(ccap.type_prix)h+='<p style="font-size:13px"><b>Type de prix :</b> '+esc(ccap.type_prix)+'</p>';
+    if((ccap.points_cles||[]).length){h+='<ul class="clean">';ccap.points_cles.forEach(function(pt){h+='<li>'+esc(pt)+'</li>';});h+='</ul>';}
+    if(ccap.derogations_ccag)h+='<div class="subc"><b>Dérogations (R2112-3) :</b> '+esc(ccap.derogations_ccag)+'</div>';h+='</div>';
+    var rse=x.clauses_rse||{};h+='<div><h2 class="sec">Clauses environnementales & sociales</h2>';
+    if((rse.environnementales||[]).length){h+='<p style="font-size:12px;font-weight:700;margin:0;color:var(--success-text)">🌿 Environnement</p><ul class="clean">';rse.environnementales.forEach(function(e){h+='<li>'+esc(e)+'</li>';});h+='</ul>';}
+    if((rse.sociales||[]).length){h+='<p style="font-size:12px;font-weight:700;margin:6px 0 0">🤝 Social</p><ul class="clean">';rse.sociales.forEach(function(e){h+='<li>'+esc(e)+'</li>';});h+='</ul>';}
+    if(x.echeance_rse)h+='<div class="echeance">⏳ '+esc(x.echeance_rse)+'</div>';h+='</div></div>';
+    if((x.pieces_dce||[]).length){h+='<h2 class="sec">Pièces du DCE</h2><ul class="clean">';x.pieces_dce.forEach(function(pp){h+='<li>'+esc(pp)+'</li>';});h+='</ul>';}
+    if((x.pieces_candidature||[]).length){h+='<h2 class="sec">Pièces à demander aux candidats</h2><ul class="clean">';x.pieces_candidature.forEach(function(pp){h+='<li>'+esc(pp)+'</li>';});h+='</ul>';}
+    if((x.conseils||[]).length){h+='<h2 class="sec">Conseils de l\'acheteur</h2>';x.conseils.forEach(function(co,i){h+='<div class="conseil">💡 <span class="ed" data-path="conseils.'+i+'">'+esc(co)+'</span></div>';});}
+    if((x.garde_fous||[]).length){h+='<h2 class="sec">Garde-fous juridiques</h2>';x.garde_fous.forEach(function(g,i){h+='<div class="garde">⚖️ <span class="ed" data-path="garde_fous.'+i+'">'+esc(g)+'</span></div>';});}
+    h+='</div></div>';
+    $("#result").innerHTML=h;
+    $("#btnPrint").onclick=function(){window.print();};$("#btnCopy").onclick=function(){copyText(toMarkdown(x),this);};
+    $("#btnDocx").onclick=function(){exportDce("docx","docx");};$("#btnPdf").onclick=function(){exportDce("pdf","pdf");};$("#btnZip").onclick=function(){exportDce("zip","zip");};
+    $("#btnSave").onclick=saveDce;$("#btnEdit").onclick=toggleEdit;EDITING=false;$("#btnSourcing").onclick=runSourcing;$("#btnAvis").onclick=showAvis;$("#btnDiffuser").onclick=showDiffuser;icons();}
+
+  // ── Diffuser au réseau de PME (flywheel à deux faces) ──
+  function closeDiffuser(){$("#diffuserModal").classList.add("hidden");}
+  $("#diffClose").onclick=closeDiffuser;
+  $("#diffuserModal").addEventListener("click",function(e){if(e.target===this)closeDiffuser();});
+  function showDiffuser(){if(!LAST)return;var lots=((LAST.allotissement||{}).lots||[]).map(function(l){return{numero:l.numero,intitule:l.intitule,montant:l.montant_estime};});
+    if(!lots.length){lots=[{numero:1,intitule:LAST.objet||""}];}
+    $("#diffuserModal").classList.remove("hidden");$("#diffClose").focus();var body=$("#diffuserBody");
+    body.innerHTML='<div class="muted" style="padding:6px 0"><span class="spin"></span> Évaluation de la portée auprès du réseau de PME…</div>';icons();
+    fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:lots,departement:((LAST&&LAST._inputs&&LAST._inputs.dept)||($("#dept")?$("#dept").value.trim():"")),cpv:((LAST&&LAST._inputs&&LAST._inputs.cpv)||($("#cpv")?$("#cpv").value.trim():""))})})
+      .then(function(r){return r.json();})
+      .then(function(s){var total=0,rows="";(s.lots||[]).forEach(function(l){var n=(l.vivier||[]).length;total+=n;rows+='<div class="list-row"><span>Lot '+esc(l.numero!=null?l.numero:"")+' — '+esc(l.intitule||"")+'</span><b>'+n+' PME</b></div>';});
+        body.innerHTML='<div class="act-hero" style="cursor:default;margin-bottom:14px"><span class="ah-ic"><i data-lucide="radio-tower" class="lucide"></i></span><span class="ah-tx"><span class="ah-t">'+total+' PME capables (estimées)</span><span class="ah-d">dans le réseau à la date de diffusion — portée indicative, non un décompte ferme</span></span></div>'+
+          rows+'<p class="muted small" style="margin:12px 0 8px">Diffuser informe les PME capables et inscrites du réseau Adjugo de votre consultation — information ouverte, dans le respect de l\'égalité de traitement. Plus de candidats potentiels = moins de risque d\'infructuosité.</p>'+
+          '<p class="muted small" style="margin:0 0 12px">La diffusion réseau <b>complète</b> votre publicité réglementaire (profil acheteur, BOAMP/JAL/JOUE selon le seuil) ; elle ne s\'y substitue pas. Le dossier reste accessible à tout candidat, y compris hors réseau.</p>'+
+          '<button class="btn primary block" id="diffConfirm"><i data-lucide="send" class="lucide"></i> Confirmer la diffusion</button>';
+        $("#diffConfirm").onclick=function(){confirmDiffuser(total);};icons();})
+      .catch(function(){body.innerHTML='<div class="avert">Analyse indisponible. Réessayez.</div>';});}
+  function confirmDiffuser(nb){
+    if(!AME){closeDiffuser();openAuth("login");return;}
+    if(demoBlock())return;
+    var btn=$("#diffConfirm");if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span> Diffusion…';}
+    var done=function(){$("#diffuserBody").innerHTML='<div class="empty"><div class="eic" style="background:var(--success-weak);color:var(--success-text)"><i data-lucide="check-circle-2" class="lucide"></i></div><h4>Consultation signalée au réseau</h4><p>Elle est signalée aux PME capables et inscrites du réseau Adjugo (portée indicative : '+nb+'). Cette diffusion <b>complète</b> votre publicité réglementaire — elle ne la remplace pas, et le marché reste ouvert à tout candidat. Statut passé en « Publié ».</p><button class="btn primary sm" id="diffOk">Fermer</button></div>';$("#diffOk").onclick=closeDiffuser;if(curView==="mesdce")loadMesDce();if(curView==="dashboard")loadDashboard();icons();};
+    var diffuse=function(id){CURRENT_DCE_ID=id;aFetch("/api/acheteur/dce/"+id+"/diffuser",{method:"POST",headers:aHeaders(),body:JSON.stringify({nb_pme:nb})}).then(function(r){return r.json();}).then(done).catch(function(){if(btn){btn.disabled=false;btn.innerHTML="Réessayer";}});};
+    if(CURRENT_DCE_ID){diffuse(CURRENT_DCE_ID);}
+    else{aFetch("/api/acheteur/dce",{method:"POST",headers:aHeaders(),body:JSON.stringify({objet:LAST.objet||"",payload:LAST})}).then(function(r){return r.json();}).then(function(d){diffuse(d.id);}).catch(function(){if(btn){btn.disabled=false;btn.innerHTML="Réessayer";}});}}
+
+  // ── Avis de publicité (AAPC) + méthode de notation ──
+  function showAvis(){if(!LAST)return;var body=$("#avisBody");$("#avisModal").classList.remove("hidden");$("#avisClose").focus();
+    body.innerHTML='<div class="muted"><span class="spin"></span> Génération de l\'avis…</div>';icons();
+    fetch("/api/dce/avis",{method:"POST",headers:headers(),body:JSON.stringify({dce:LAST,format:"docx"})})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        var pre='white-space:pre-wrap;font-size:12.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:14px;margin:0';
+        body.innerHTML='<div class="between" style="margin-bottom:8px"><div class="sectitle" style="margin:0">Avis d\'appel à la concurrence</div><button class="btn sm" id="avCopy1"><i data-lucide="copy" class="lucide"></i> Copier</button></div>'+
+          '<div style="'+pre+';margin-bottom:18px">'+esc(d.avis||"")+'</div>'+
+          '<div class="between" style="margin-bottom:8px"><div class="sectitle" style="margin:0">Méthode de notation</div><button class="btn sm" id="avCopy2"><i data-lucide="copy" class="lucide"></i> Copier</button></div>'+
+          '<div style="'+pre+'">'+esc(d.methode||"")+'</div>'+
+          '<p class="muted small" style="margin-top:14px">Aussi inclus dans l\'export Word et le ZIP des pièces (04 · Avis).</p>';
+        $("#avCopy1").onclick=function(){copyText(d.avis,this);};$("#avCopy2").onclick=function(){copyText(d.methode,this);};icons();})
+      .catch(function(){body.innerHTML='<div class="avert">Génération indisponible.</div>';});}
+  $("#avisClose").onclick=function(){$("#avisModal").classList.add("hidden");};
+  $("#avisModal").addEventListener("click",function(e){if(e.target===this)this.classList.add("hidden");});
+
+  // ── Édition ──
+  var EDITING=false,DIRTY=false;
+  window.addEventListener("beforeunload",function(e){if(DIRTY){e.preventDefault();e.returnValue="";}});
+  function setPath(obj,path,val){var p=path.split("."),o=obj;for(var i=0;i<p.length-1;i++){o=o[p[i]];if(o==null)return;}o[p[p.length-1]]=val;}
+  function onEdit(e){var tg=e.target;if(!tg.getAttribute||!tg.classList||!tg.classList.contains("ed"))return;var path=tg.getAttribute("data-path");if(!path||!LAST)return;var val=tg.textContent;if(tg.getAttribute("data-type")==="int"){var n=parseInt(String(val).replace(/[^0-9-]/g,""),10);val=isNaN(n)?0:n;}else val=String(val).trim();setPath(LAST,path,val);DIRTY=true;}
+  $("#result").addEventListener("input",onEdit);
+  function toggleEdit(){var body=$("#docBody");if(!body)return;EDITING=!EDITING;body.classList.toggle("editing",EDITING);Array.prototype.forEach.call(body.querySelectorAll(".ed"),function(el){el.contentEditable=EDITING?"true":"false";});var btn=$("#btnEdit");if(btn)btn.innerHTML=EDITING?'<i data-lucide="check" class="lucide"></i> Terminer':'<i data-lucide="pencil" class="lucide"></i> Modifier';icons();}
+
+  // ── Export ──
+  function exportDce(fmt,ext,payload){var dce=payload||LAST;if(!dce)return;var ids={docx:"#btnDocx",pdf:"#btnPdf",zip:"#btnZip"};var btn=$(ids[fmt]);var old=btn?btn.innerHTML:"";if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
+    fetch("/api/dce/export",{method:"POST",headers:headers(),body:JSON.stringify({dce:dce,format:fmt})})
+      .then(function(r){if(!r.ok)return r.json().then(function(d){throw new Error((d&&d.detail)||"Export impossible");});return r.blob();})
+      .then(function(blob){var slug=(dce.objet||"dce").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,50)||"projet";var aE=document.createElement("a");aE.href=URL.createObjectURL(blob);aE.download=(fmt==="zip"?"DCE-":"Projet-DCE-")+slug+"."+ext;document.body.appendChild(aE);aE.click();setTimeout(function(){URL.revokeObjectURL(aE.href);aE.remove();},1500);})
+      .catch(function(e){alert(e.message||"Export impossible");})
+      .finally(function(){if(btn){btn.disabled=false;btn.innerHTML=old;icons();}});}
+
+  // ── Enregistrement ──
+  function saveDce(){if(!LAST)return;if(!AME){openAuth("login");return;}if(demoBlock())return;
+    var btn=$("#btnSave");btn.disabled=true;var old=btn.innerHTML;btn.innerHTML='<span class="spin"></span>';
+    aFetch("/api/acheteur/dce",{method:"POST",headers:aHeaders(),body:JSON.stringify({id:CURRENT_DCE_ID,objet:LAST.objet||"",payload:LAST})})
+      .then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.detail||"Échec");return d;});})
+      .then(function(d){CURRENT_DCE_ID=d.id;DIRTY=false;btn.innerHTML='<i data-lucide="check" class="lucide"></i> Enregistré';icons();updateCount();setTimeout(function(){btn.innerHTML=old;icons();},1700);})
+      .catch(function(e){btn.innerHTML=old;icons();if(e.message!=="Session expirée")alert(e.message||"Échec");})
+      .finally(function(){btn.disabled=false;});}
+
+  // ── Markdown ──
+  function toMarkdown(x){var L=[],p=x.procedure||{},a=x.allotissement||{},c=x.criteres||{};
+    L.push("# Projet de DCE — "+(x.objet||""));L.push("");L.push("> "+(x.disclaimer||""));L.push("");
+    if(x.synthese_besoin){L.push("## Synthèse");L.push(x.synthese_besoin);L.push("");}
+    L.push("## Procédure");L.push("**"+(p.type||"")+"**");if(p.justification)L.push(p.justification);L.push("");
+    L.push("## Allotissement");if(a.principe)L.push(a.principe);(a.lots||[]).forEach(function(l){L.push("### Lot "+(l.numero!=null?l.numero:"")+" — "+(l.intitule||""));if(l.description)L.push(l.description);});L.push("");
+    if((c.liste||[]).length){L.push("## Critères");c.liste.forEach(function(cr){L.push("- **"+(cr.critere||"")+"** — "+(Number(cr.ponderation)||0)+" %");});L.push("");}
+    (x.cctp_sections||[]).forEach(function(s){L.push("### "+(s.titre||""));L.push(s.contenu||"");});(x.conseils||[]).forEach(function(co){L.push("- 💡 "+co);});
+    return L.join("\n");}
+  function copyText(txt,btn){navigator.clipboard.writeText(txt).then(function(){var o=btn.innerHTML;btn.innerHTML='<i data-lucide="check" class="lucide"></i> Copié';icons();setTimeout(function(){btn.innerHTML=o;icons();},1500);}).catch(function(){});}
+
+  // ── Sourcing ──
+  function annotateLots(s){(s.lots||[]).forEach(function(l){var n=(l.numero!=null&&!isNaN(l.numero))?Number(l.numero):null;if(n==null)return;var card=document.querySelector('.lot[data-lot-num="'+n+'"]');if(!card)return;var b=card.querySelector(".lot-badge");if(!b)return;var idx=l.indice||{};b.className="lot-badge pill "+pillCls(idx.niveau);b.textContent=(l.vivier||[]).length+" PME · risque "+(Number(idx.risque)||0)+"%";});}
+  function runSourcing(){if(!LAST)return;var lots=((LAST.allotissement||{}).lots||[]).map(function(l){return{numero:l.numero,intitule:l.intitule,montant:l.montant_estime};});var box=$("#sourcingResult");
+    if(!lots.length){box.innerHTML='<div class="muted">Aucun lot à analyser.</div>';return;}
+    var btn=$("#btnSourcing");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Analyse…';
+    box.innerHTML='<div class="muted" style="padding:10px 0">Recherche des PME (SIRENE · DECP · BODACC) et calcul du risque…</div>';
+    fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:lots,departement:((LAST&&LAST._inputs&&LAST._inputs.dept)||$("#dept").value.trim()),cpv:((LAST&&LAST._inputs&&LAST._inputs.cpv)||$("#cpv").value.trim())})})
+      .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d};});})
+      .then(function(res){if(!res.ok){box.innerHTML='<div class="avert">'+esc((res.d&&res.d.detail)||"Erreur")+'</div>';return;}box.innerHTML=renderSourcing(res.d);annotateLots(res.d);icons();})
+      .catch(function(){box.innerHTML='<div class="avert">Réseau indisponible.</div>';})
+      .finally(function(){btn.disabled=false;btn.innerHTML='<i data-lucide="refresh-cw" class="lucide"></i> Relancer l\'analyse';icons();});}
+  function renderSourcing(s){var h="",g=s.global||{};
+    if(s.disclaimer)h+='<div class="note-src" style="margin-top:12px">⚠️ '+esc(s.disclaimer)+'</div>';
+    var glvl=(pillCls(g.niveau)==="go"?"success":pillCls(g.niveau)==="a_etudier"?"warning":"danger");
+    h+='<div class="risk-banner" style="background:var(--'+glvl+'-weak);color:var(--'+glvl+'-text);border-color:color-mix(in srgb,var(--'+glvl+') 30%,transparent)">Risque global d\'infructuosité : <b>'+(Number(g.risque)||0)+'%</b> ('+esc(g.niveau||"")+(g.pire_lot?' — lot le plus à risque : '+esc(g.pire_lot):'')+')</div>';
+    if((s.conseils||[]).length){h+='<div class="conseils-box"><b>💡 Conseils pour réduire le risque</b><ul class="clean">';s.conseils.forEach(function(co){h+='<li>'+esc(co)+'</li>';});h+='</ul></div>';}
+    (s.lots||[]).forEach(function(l){var idx=l.indice||{};
+      h+='<div class="lot-src"><div class="lot-src-head"><span class="pill '+pillCls(idx.niveau)+'" style="float:right">'+(idx.risque||0)+'% '+esc(idx.niveau||"")+'</span><b>Lot '+esc(l.numero!=null?l.numero:"")+' — '+esc(l.intitule||"")+'</b></div>';
+      if(l.metier_reconnu===false)h+='<div class="note-src" style="margin-top:6px">⚠️ Métier non identifié automatiquement : entreprises trouvées par mots-clés (sans filtre d\'activité) — pertinence à vérifier.</div>';
+      h+='<div class="bk">';(idx.breakdown||[]).forEach(function(b){h+='<span class="bk-i" title="'+esc(b.detail||"")+'">'+esc(b.label)+' : +'+b.risque+'</span>';});h+='</div>';
+      if((l.vivier||[]).length){h+='<div class="muted small" style="margin-bottom:4px">Candidats potentiels (open data) — liste <b>non classée</b>, ordre alphabétique. Vous restez seul décideur.</div><div class="vivier">';l.vivier.forEach(function(pp){var tags="";if(pp.capacite_domaine)tags+=' <span class="pill go">déjà gagné dans ce domaine'+(pp.capacite_recente?', récent':'')+'</span>';else if(pp.capacite_prouvee)tags+=' <span class="pill">'+pp.past_wins+' marché(s) public(s) gagné(s)</span>';if(pp.est_rge)tags+=' <span class="pill go">RGE</span>';if(pp.procedure_collective)tags+=' <span class="pill no_go">'+esc(pp.procedure_collective)+'</span>';
+        var m=[pp.ville,pp.departement&&("dépt "+pp.departement),pp.naf_label].filter(Boolean).join(" · ");
+        h+='<div class="pmecard"><div class="pn">'+esc(pp.nom||"")+tags+'</div><div class="pm">'+esc(m)+(pp.score!=null?(" — adéquation estimée (sourcing) "+pp.score+"/100"):"")+'</div></div>';});h+='</div>';}
+      else h+='<div class="muted">'+(l.metier_reconnu===false?"Métier non identifié — aucune entreprise trouvée par mots-clés. Précisez l\'intitulé du lot.":"Aucune PME capable identifiée sur ce lot.")+'</div>';
+      if((l.groupement||[]).length)h+='<div class="grp">🤝 Groupement possible : '+l.groupement.map(function(xx){return esc(xx.nom||"")+(xx.synergie!=null?" ("+xx.synergie+"%)":(xx.headline?" — "+esc(xx.headline):""));}).join(" + ")+'</div>';
+      if((l.errors||[]).length)h+='<div class="muted small">Sources partielles : '+esc(l.errors.join(" ; "))+'</div>';h+='</div>';});
+    return h;}
+
+  // ── Sourcing autonome ──
+  $("#srcGo").onclick=function(){var objet=$("#srcObjet").value.trim();if(objet.length<3){$("#srcObjet").focus();return;}
+    var btn=$("#srcGo");btn.disabled=true;var old=btn.innerHTML;btn.innerHTML='<span class="spin"></span> Analyse…';
+    $("#srcResult").innerHTML='<div class="card pad"><div class="muted">Recherche des PME…</div></div>';
+    fetch("/api/dce/sourcing",{method:"POST",headers:headers(),body:JSON.stringify({lots:[{numero:1,intitule:objet}],departement:$("#srcDept").value.trim()})})
+      .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d};});})
+      .then(function(res){if(!res.ok){$("#srcResult").innerHTML='<div class="card pad"><div class="avert">'+esc((res.d&&res.d.detail)||"Erreur")+'</div></div>';return;}$("#srcResult").innerHTML='<div class="card pad">'+renderSourcing(res.d)+'</div>';icons();})
+      .catch(function(){$("#srcResult").innerHTML='<div class="card pad"><div class="avert">Réseau indisponible.</div></div>';})
+      .finally(function(){btn.disabled=false;btn.innerHTML=old;icons();});};
+
+  // ── Init ──
+  applyTheme();renderAcct();navTo("dashboard");
+  if(WANT==="demo"){enterDemo();}
+  else if(ATOKEN){fetch("/api/acheteur/me",{headers:aHeaders()}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(me){AME=me;IS_DEMO=(me.email==="demo@collectivites.adjugo.fr");renderAcct();refreshCurrentView();}).catch(function(){setToken("");AME=null;renderAcct();refreshCurrentView();});}
+  else if(WANT==="register"){openAuth("register");}
+  else if(WANT==="login"){openAuth("login");}
+  icons();
+})();
+</script>
+</body>
+</html>

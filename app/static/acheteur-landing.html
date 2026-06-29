@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Adjugo Collectivités — Rédigez vos appels d'offres, trouvez les entreprises</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="apple-touch-icon" href="/static/favicon.svg">
+<meta name="description" content="Adjugo aide votre collectivité à écrire un appel d'offres complet et à jour, puis à voir les entreprises capables d'y répondre. Pour moins de marchés sans réponse. Sources officielles, on n'invente rien.">
+<link rel="canonical" href="https://adjugo-api-production.up.railway.app/acheteur">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Adjugo Collectivités — Rédigez vos appels d'offres, trouvez les entreprises">
+<meta property="og:description" content="Écrivez un appel d'offres complet et à jour, et voyez les entreprises capables d'y répondre. Moins de marchés sans réponse. Sources officielles, on n'invente rien.">
+<meta property="og:url" content="https://adjugo-api-production.up.railway.app/acheteur">
+<meta property="og:image" content="https://adjugo-api-production.up.railway.app/static/favicon.svg">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Adjugo Collectivités">
+<meta name="twitter:description" content="Rédigez vos appels d'offres, trouvez les entreprises capables d'y répondre. Sources officielles, on n'invente rien.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="/static/vendor/lucide-1.20.0.min.js"></script>
+<style>
+  :root {
+    --paper:#FFFFFF; --bone:#F6F7FA; --mist:#EEF1F6;
+    --ink:#0A1730; --ink-2:#3D4A63; --ink-3:#6B768C; --hair:#E6E9F0;
+    --navy:#0A1730; --navy-2:#10203F;
+    --blue:#1B4FFF; --blue-bright:#2F6BFF; --blue-deep:#143FD6; --blue-wash:#E9F0FF;
+    --cyan:#00D4FF; --grad:linear-gradient(120deg,#1B4FFF 0%,#00D4FF 100%);
+    --grad-text:linear-gradient(120deg,#1B4FFF 0%,#0077A8 100%); /* AA: texte blanc ≥4.9:1 (CTA) */
+    --go:#0F9D58; --go-wash:#E0F4E9; --warn:#B7791F; --danger:#E0352B; --danger-wash:#FCE1DE;
+    --r:14px; --r-lg:22px;
+    --shadow:0 2px 4px rgba(10,23,48,.04), 0 14px 40px rgba(10,23,48,.07);
+    --shadow-soft:0 1px 2px rgba(10,23,48,.04), 0 8px 24px rgba(10,23,48,.05);
+    --ease:cubic-bezier(.22,.61,.36,1);
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html { scroll-behavior:smooth; }
+  body { font-family:'Hanken Grotesk',system-ui,sans-serif; background:var(--paper); color:var(--ink); font-size:17px; line-height:1.6; -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+  a { color:inherit; text-decoration:none; }
+  .display { font-family:'Bricolage Grotesque',sans-serif; font-weight:700; letter-spacing:-.022em; line-height:1.02; }
+  .wrap { max-width:1200px; margin:0 auto; padding:0 28px; }
+  section { padding:104px 0; position:relative; }
+  ::selection { background:var(--blue); color:#fff; }
+
+  /* Buttons */
+  .btn { display:inline-flex; align-items:center; gap:8px; font-family:inherit; font-size:15.5px; font-weight:600; padding:12px 20px; border-radius:11px; border:1px solid transparent; cursor:pointer; transition:transform .18s var(--ease), background .18s, box-shadow .18s, border-color .18s; white-space:nowrap; }
+  .btn svg { width:17px; height:17px; }
+  .btn-primary { background:var(--ink); color:#fff; box-shadow:0 1px 2px rgba(10,23,48,.2); }
+  .btn-primary:hover { background:#06101f; transform:translateY(-2px); box-shadow:0 10px 26px rgba(10,23,48,.22); }
+  .btn-accent { background:var(--grad-text); color:#fff; box-shadow:0 6px 18px rgba(27,79,255,.30); }
+  .btn-accent:hover { filter:brightness(1.05); transform:translateY(-2px); box-shadow:0 12px 30px rgba(27,79,255,.38); }
+  .btn-ghost { background:var(--paper); color:var(--ink); border-color:var(--hair); }
+  .btn-ghost:hover { border-color:#cfd5e2; transform:translateY(-2px); }
+  .btn-lg { padding:15px 26px; font-size:16.5px; }
+  /* Accessibilité : lien d'évitement + focus clavier visible (RGAA 10.7 / 12.x) */
+  .skip-link { position:absolute; left:12px; top:-48px; z-index:200; background:var(--ink); color:#fff;
+    padding:10px 16px; border-radius:10px; font-weight:600; font-size:14px; transition:top .15s; }
+  .skip-link:focus { top:12px; outline:3px solid var(--blue); outline-offset:2px; }
+  a:focus-visible, button:focus-visible, .btn:focus-visible { outline:3px solid var(--blue); outline-offset:2px; }
+
+  /* Nav */
+  .nav { position:sticky; top:0; z-index:60; background:rgba(255,255,255,.78); backdrop-filter:saturate(160%) blur(14px); border-bottom:1px solid var(--hair); }
+  .nav-in { display:flex; align-items:center; gap:30px; height:70px; }
+  .brand { display:inline-flex; align-items:center; font-family:'Hanken Grotesk',system-ui,sans-serif; font-weight:800; font-size:24px; letter-spacing:-.045em; line-height:1; color:var(--blue); }
+  .brand .wm-o { width:.95em; height:.95em; margin-left:-.05em; flex-shrink:0; }
+  .nav-links { display:flex; gap:30px; margin-left:8px; }
+  .nav-links a { color:var(--ink-2); font-size:15px; font-weight:500; transition:color .15s; }
+  .nav-links a:hover { color:var(--ink); }
+  .nav-right { margin-left:auto; display:flex; align-items:center; gap:12px; }
+  .nav-login { font-size:15px; font-weight:600; color:var(--ink-2); padding:8px 6px; }
+  .nav-login:hover { color:var(--ink); }
+
+  /* Hero */
+  .hero { padding:72px 0 90px; }
+  .hero::before { content:""; position:absolute; inset:0; z-index:0;
+    background-image:radial-gradient(circle, rgba(10,23,48,.05) 1px, transparent 1.4px);
+    background-size:30px 30px;
+    -webkit-mask-image:radial-gradient(ellipse 58% 52% at 76% 34%, #000 0%, transparent 68%);
+    mask-image:radial-gradient(ellipse 58% 52% at 76% 34%, #000 0%, transparent 68%); }
+  .hero::after { content:""; position:absolute; top:-160px; right:-120px; width:680px; height:680px; z-index:0; pointer-events:none;
+    background:radial-gradient(circle, rgba(47,107,255,.10), transparent 62%); }
+  .hero-grid { position:relative; z-index:1; display:grid; grid-template-columns:1.08fr .92fr; gap:56px; align-items:center; }
+  .eyebrow { display:inline-flex; align-items:center; gap:9px; font-size:13.5px; font-weight:600; color:var(--blue-deep); background:var(--blue-wash); border:1px solid #dbe5fd; padding:7px 14px 7px 11px; border-radius:999px; }
+  .eyebrow .dot { width:7px; height:7px; border-radius:50%; background:var(--blue-bright); box-shadow:0 0 0 4px rgba(47,107,255,.18); animation:pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+  h1.hero-title { font-size:clamp(40px,5.4vw,68px); margin-top:24px; color:var(--ink); }
+  h1 .accent { color:var(--blue); position:relative; white-space:nowrap; }
+  h1 .accent svg { position:absolute; left:0; bottom:-.16em; width:100%; height:.34em; overflow:visible; }
+  .lede { font-size:19.5px; color:var(--ink-2); margin-top:24px; max-width:545px; }
+  .cta-row { display:flex; gap:13px; margin-top:32px; flex-wrap:wrap; }
+  .stats { display:flex; gap:34px; margin-top:42px; flex-wrap:wrap; }
+  .stat .n { font-family:'Bricolage Grotesque'; font-weight:700; font-size:34px; letter-spacing:-.02em; color:var(--ink); line-height:1; }
+  .stat .l { font-size:13.5px; color:var(--ink-3); margin-top:7px; max-width:140px; }
+  .stat .n .u { color:var(--blue); }
+
+  /* Hero visual — layered product mockups */
+  .visual { position:relative; }
+  .card { background:var(--paper); border:1px solid var(--hair); border-radius:var(--r-lg); box-shadow:var(--shadow); }
+  .pv { position:relative; z-index:2; padding:20px; animation:floaty 8s var(--ease) infinite; }
+  @keyframes floaty { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-9px)} }
+  .pv-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:15px; }
+  .pill { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; padding:4px 10px; border-radius:999px; background:var(--mist); color:var(--ink-2); }
+  .pill.go { background:var(--go-wash); color:var(--go); }
+  .pill.danger { background:var(--danger-wash); color:var(--danger); }
+  .pill.blue { background:var(--blue-wash); color:var(--blue-deep); }
+  .pv-src { margin-left:auto; font-size:12.5px; color:var(--blue-deep); display:inline-flex; align-items:center; gap:4px; font-weight:600; }
+  .pv-src svg { width:13px; height:13px; }
+  .pv-title { font-family:'Bricolage Grotesque'; font-weight:600; font-size:17px; letter-spacing:-.01em; line-height:1.25; color:var(--ink); }
+  .pv-sub { font-size:13px; color:var(--ink-3); margin-top:3px; }
+  .pv-kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin:16px 0; }
+  .pv-kpi { background:var(--bone); border-radius:11px; padding:11px 12px; }
+  .pv-kpi .k { font-size:10.5px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.04em; font-weight:600; }
+  .pv-kpi .v { font-family:'Bricolage Grotesque'; font-weight:600; font-size:15px; margin-top:3px; color:var(--ink); }
+  .pv-row { display:flex; align-items:center; gap:10px; padding:9px 0; border-top:1px solid var(--mist); font-size:13.5px; }
+  .pv-row .lbl { color:var(--ink-2); flex:1; }
+  .pv-bar { width:70px; height:6px; border-radius:4px; background:var(--mist); overflow:hidden; }
+  .pv-bar i { display:block; height:100%; background:var(--blue); border-radius:4px; }
+  .pv-sc { font-family:'Bricolage Grotesque'; font-weight:600; font-size:13px; min-width:42px; text-align:right; color:var(--ink); }
+  .pv-ct { display:flex; align-items:center; gap:9px; padding:11px 0 2px; border-top:1px solid var(--mist); margin-top:4px; }
+  .pv-av { width:28px; height:28px; border-radius:8px; background:var(--blue-wash); color:var(--blue-deep); display:grid; place-items:center; font-size:11px; font-weight:700; }
+  .pv-2 { position:absolute; right:-26px; bottom:-34px; width:62%; z-index:1; padding:17px; animation:floaty 8s var(--ease) infinite .9s; }
+  .float-chip { position:absolute; top:-20px; left:-26px; z-index:3; display:inline-flex; align-items:center; gap:8px; background:var(--paper); border:1px solid var(--hair); box-shadow:var(--shadow-soft); border-radius:999px; padding:9px 15px; font-size:13px; font-weight:600; animation:floaty 6.5s var(--ease) infinite .4s; }
+  .float-chip svg { width:14px; height:14px; color:var(--blue); }
+
+  /* Sources strip */
+  .sources { border-top:1px solid var(--hair); border-bottom:1px solid var(--hair); background:var(--bone); padding:34px 0; }
+  .sources-in { display:flex; align-items:center; justify-content:center; gap:16px 46px; flex-wrap:wrap; }
+  .sources-lbl { font-size:13.5px; color:var(--ink-3); font-weight:500; }
+  .src { display:inline-flex; align-items:center; gap:8px; font-family:'Bricolage Grotesque'; font-weight:600; font-size:18px; color:var(--ink-2); letter-spacing:-.01em; }
+  .src svg { width:16px; height:16px; color:var(--go); }
+
+  /* Section headers */
+  .head { max-width:680px; margin:0 auto 60px; text-align:center; }
+  .tag { display:inline-block; font-size:13px; font-weight:700; color:var(--blue-deep); text-transform:uppercase; letter-spacing:.12em; }
+  .head h2 { font-size:clamp(30px,3.8vw,44px); margin-top:15px; color:var(--ink); }
+  .head p { font-size:18.5px; color:var(--ink-2); margin-top:16px; }
+
+  /* Featured feature */
+  .flagship { display:grid; grid-template-columns:1.1fr .9fr; gap:40px; align-items:center; background:linear-gradient(180deg,#fff,var(--bone)); border:1px solid var(--hair); border-radius:var(--r-lg); padding:44px; margin-bottom:22px; }
+  .flagship .fic { width:48px; height:48px; border-radius:13px; background:var(--ink); color:#fff; display:grid; place-items:center; margin-bottom:20px; }
+  .flagship .fic svg { width:23px; height:23px; }
+  .flagship h3 { font-family:'Bricolage Grotesque'; font-weight:700; font-size:27px; letter-spacing:-.02em; color:var(--ink); line-height:1.1; }
+  .flagship p { font-size:16.5px; color:var(--ink-2); margin-top:14px; }
+  .gauge { background:var(--paper); border:1px solid var(--hair); border-radius:var(--r); box-shadow:var(--shadow-soft); padding:22px; }
+  .gauge .gn { font-family:'Bricolage Grotesque'; font-weight:700; font-size:54px; letter-spacing:-.03em; color:var(--ink); line-height:1; }
+  .gauge .gn span { font-size:24px; color:var(--ink-3); }
+  .gline { display:flex; align-items:center; gap:10px; margin-top:16px; font-size:13.5px; }
+  .gline:first-of-type { margin-top:20px; }
+  .gline .lab { flex:1; color:var(--ink-2); }
+  .gdot { width:9px; height:9px; border-radius:50%; }
+
+  /* Feature grid */
+  .feats { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:22px; }
+  .feat { background:var(--paper); border:1px solid var(--hair); border-radius:var(--r-lg); padding:30px 28px; transition:transform .22s var(--ease), border-color .22s, box-shadow .22s; }
+  .feat:hover { transform:translateY(-4px); border-color:#d6deeb; box-shadow:var(--shadow); }
+  .feat .fic { width:46px; height:46px; border-radius:12px; background:var(--blue-wash); color:var(--blue-deep); display:grid; place-items:center; margin-bottom:18px; }
+  .feat .fic svg { width:22px; height:22px; }
+  .feat h3 { font-family:'Bricolage Grotesque'; font-weight:600; font-size:19px; letter-spacing:-.01em; color:var(--ink); }
+  .feat p { font-size:15px; color:var(--ink-2); margin-top:10px; }
+
+  /* Steps */
+  .steps-sec { background:var(--bone); border-top:1px solid var(--hair); border-bottom:1px solid var(--hair); }
+  .steps { display:grid; grid-template-columns:repeat(4,1fr); gap:20px; }
+  .step { position:relative; }
+  .step-n { width:46px; height:46px; border-radius:13px; background:var(--paper); border:1px solid var(--hair); color:var(--blue); display:grid; place-items:center; font-family:'Bricolage Grotesque'; font-weight:700; font-size:19px; margin-bottom:18px; box-shadow:var(--shadow-soft); }
+  .step h3 { font-family:'Bricolage Grotesque'; font-weight:600; font-size:19px; color:var(--ink); }
+  .step p { font-size:14.5px; color:var(--ink-2); margin-top:9px; }
+  .step:not(:last-child) .step-n::after { content:""; position:absolute; top:23px; left:58px; right:-20px; height:2px; background:repeating-linear-gradient(90deg,var(--hair) 0 6px,transparent 6px 12px); }
+
+  /* Trust band */
+  .trust-band { background:var(--navy); color:#fff; border-radius:var(--r-lg); padding:64px 60px; display:grid; grid-template-columns:1fr 1fr; gap:52px; align-items:center; position:relative; overflow:hidden; }
+  .trust-band::before { content:""; position:absolute; inset:0; background-image:radial-gradient(circle, rgba(255,255,255,.05) 1px, transparent 1.4px); background-size:28px 28px; -webkit-mask-image:radial-gradient(ellipse 70% 80% at 20% 30%,#000,transparent 70%); mask-image:radial-gradient(ellipse 70% 80% at 20% 30%,#000,transparent 70%); }
+  .trust-band > * { position:relative; }
+  .trust-band .tag { color:#7FA8FF; }
+  .trust-band h2 { font-family:'Bricolage Grotesque'; font-weight:700; font-size:clamp(28px,3.2vw,38px); letter-spacing:-.02em; line-height:1.1; margin-top:14px; }
+  .trust-band p { font-size:16.5px; color:#AEB9D0; margin-top:18px; }
+  .tcard { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:var(--r); padding:8px 22px; }
+  .tc-row { display:flex; align-items:center; gap:12px; padding:15px 0; border-bottom:1px solid rgba(255,255,255,.08); font-size:14.5px; }
+  .tc-row:last-child { border-bottom:none; }
+  .tc-row svg { width:18px; height:18px; color:#5BE0A0; flex-shrink:0; }
+  .tc-row .meta { margin-left:auto; font-size:12px; color:#9AA6C2; font-family:'Bricolage Grotesque'; }
+
+  /* Pricing */
+  .plans { display:grid; grid-template-columns:repeat(3,1fr); gap:24px; align-items:start; }
+  .plan { background:var(--paper); border:1px solid var(--hair); border-radius:var(--r-lg); padding:34px 30px; position:relative; transition:transform .22s var(--ease); }
+  .plan:hover { transform:translateY(-3px); }
+  .plan.pop { border:1.5px solid var(--blue); box-shadow:0 18px 50px rgba(44,91,216,.16); }
+  .plan-tag { position:absolute; top:-14px; left:30px; background:var(--blue); color:#fff; font-size:12.5px; font-weight:600; padding:5px 14px; border-radius:999px; }
+  .plan h3 { font-family:'Bricolage Grotesque'; font-weight:700; font-size:21px; color:var(--ink); }
+  .plan .pd { font-size:14px; color:var(--ink-3); margin-top:4px; min-height:20px; }
+  .price { font-family:'Bricolage Grotesque'; font-weight:700; font-size:46px; letter-spacing:-.03em; margin:20px 0 4px; color:var(--ink); }
+  .price small { font-size:16px; font-weight:400; color:var(--ink-3); font-family:'Hanken Grotesk'; }
+  .plan ul { list-style:none; margin:22px 0 26px; display:flex; flex-direction:column; gap:13px; }
+  .plan li { display:flex; align-items:flex-start; gap:10px; font-size:14.5px; color:var(--ink-2); }
+  .plan li svg { width:17px; height:17px; color:var(--blue); flex-shrink:0; margin-top:2px; }
+  .plan .btn { width:100%; justify-content:center; }
+  .pay-note { text-align:center; font-size:14px; color:var(--ink-3); margin-top:26px; }
+
+  /* FAQ */
+  .faq-sec { background:var(--bone); border-top:1px solid var(--hair); border-bottom:1px solid var(--hair); }
+  .faq { max-width:780px; margin:0 auto; display:flex; flex-direction:column; gap:13px; }
+  .faq details { background:var(--paper); border:1px solid var(--hair); border-radius:var(--r); padding:0 24px; transition:border-color .15s, box-shadow .15s; }
+  .faq details[open] { border-color:#d6deeb; box-shadow:var(--shadow-soft); }
+  .faq summary { list-style:none; cursor:pointer; padding:21px 0; font-family:'Bricolage Grotesque'; font-weight:600; font-size:17.5px; color:var(--ink); display:flex; align-items:center; gap:14px; }
+  .faq summary::-webkit-details-marker { display:none; }
+  .faq summary .chev { margin-left:auto; color:var(--ink-3); transition:transform .25s var(--ease); width:19px; height:19px; flex-shrink:0; }
+  .faq details[open] summary .chev { transform:rotate(180deg); }
+  .faq .ans { padding:0 0 22px; font-size:15.5px; color:var(--ink-2); line-height:1.65; }
+
+  /* Closing — dark band */
+  .closing { background:var(--navy); color:#fff; text-align:center; overflow:hidden; }
+  .closing::before { content:""; position:absolute; inset:0; background:radial-gradient(ellipse 50% 70% at 50% 0%, rgba(47,107,255,.22), transparent 70%); }
+  .closing .wrap { position:relative; }
+  .closing h2 { font-family:'Bricolage Grotesque'; font-weight:700; font-size:clamp(34px,4.4vw,54px); letter-spacing:-.025em; line-height:1.04; max-width:820px; margin:0 auto; }
+  .closing p { font-size:18px; color:#AEB9D0; margin:22px auto 0; max-width:600px; }
+  .closing .cta-row { justify-content:center; margin-top:36px; }
+
+  /* Footer */
+  footer { padding:64px 0 44px; background:var(--navy-2); color:#AEB9D0; }
+  .foot-in { display:flex; justify-content:space-between; gap:48px; flex-wrap:wrap; }
+  .foot-brand { max-width:320px; }
+  .foot-brand .brand { color:#fff; }
+  .foot-brand p { font-size:14.5px; margin-top:14px; line-height:1.6; }
+  .foot-cols { display:flex; gap:70px; flex-wrap:wrap; }
+  .foot-col h4 { font-size:13px; font-weight:700; margin-bottom:14px; color:#fff; text-transform:uppercase; letter-spacing:.08em; }
+  .foot-col a { display:block; font-size:14.5px; padding:5px 0; transition:color .15s; }
+  .foot-col a:hover { color:#fff; }
+  .foot-bot { margin-top:48px; padding-top:24px; border-top:1px solid rgba(255,255,255,.1); display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap; font-size:13px; color:#9AA6C2; }
+
+  /* Entrance animation */
+  .reveal { opacity:0; transform:translateY(16px); animation:rise .8s var(--ease) forwards; }
+  @keyframes rise { to { opacity:1; transform:none; } }
+  .d1{animation-delay:.05s} .d2{animation-delay:.14s} .d3{animation-delay:.23s} .d4{animation-delay:.32s} .d5{animation-delay:.41s} .d6{animation-delay:.5s}
+
+  @media (max-width:940px) {
+    .hero-grid { grid-template-columns:1fr; gap:54px; }
+    .visual { max-width:480px; }
+    .flagship { grid-template-columns:1fr; gap:30px; padding:34px; }
+    .steps { grid-template-columns:repeat(2,1fr); gap:30px; }
+    .step:not(:last-child) .step-n::after { display:none; }
+    .trust-band { grid-template-columns:1fr; gap:34px; padding:44px 34px; }
+    .plans { grid-template-columns:1fr; max-width:440px; margin:0 auto; }
+    .nav-links { display:none; }
+  }
+  @media (max-width:560px) {
+    section { padding:72px 0; } .hero { padding:48px 0 70px; }
+    .pv-2,.float-chip { display:none; } .pv { animation:none; }
+    .stats { gap:24px; }
+    .wrap { padding:0 18px; }
+    .hero-grid > * { min-width:0; }       /* les cellules de la grille peuvent rétrécir */
+    h1 .accent { white-space:normal; }    /* le titre passe à la ligne (sinon il débordait et coupait TOUTE la colonne) */
+    h1 .accent svg { display:none; }      /* underline décoratif gênant sur un titre multi-lignes */
+    h1.hero-title { font-size:34px; }
+    .lede { font-size:17px; }
+    .nav-in { gap:14px; }
+    .nav-right { gap:8px; }
+    .nav-right .btn { padding:9px 14px; font-size:14px; }   /* « Créer un espace » ne déborde plus */
+    .brand-sub { display:none; }                            /* la pastille « Collectivités » céderait sa place aux CTA */
+  }
+  @media (prefers-reduced-motion:reduce) { .reveal,.pv,.pv-2,.float-chip,.eyebrow .dot { animation:none; opacity:1; transform:none; } }
+</style>
+</head>
+<body>
+
+<a href="#content" class="skip-link">Aller au contenu</a>
+
+<nav class="nav">
+  <div class="wrap nav-in">
+    <a href="/acheteur" class="brand" aria-label="Adjugo Collectivités"><span>adjug</span><svg class="wm-o" aria-hidden="true" focusable="false" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></a>
+    <span class="brand-sub" style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--blue-deep);background:var(--blue-wash);border:1px solid #dbe5fd;padding:3px 9px;border-radius:999px">Collectivités</span>
+    <div class="nav-links">
+      <a href="#features">Fonctionnalités</a>
+      <a href="#how">Démarche</a>
+      <a href="#trust">Sources</a>
+      <a href="#faq">Questions</a>
+    </div>
+    <div class="nav-right">
+      <a href="/acheteur/app?login=1" class="nav-login">Se connecter</a>
+      <a href="/acheteur/app?register=1" class="btn btn-accent">Créer un espace</a>
+    </div>
+  </div>
+</nav>
+
+<main id="content">
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow reveal d1"><span class="dot"></span> Pour les acheteurs publics</span>
+      <h1 class="hero-title display reveal d2">Rédigez l'appel d'offres.
+        <span class="accent">Trouvez qui peut y répondre<svg viewBox="0 0 300 18" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M2 13 C 70 4, 150 4, 298 11" stroke="var(--blue)" stroke-width="4" fill="none" stroke-linecap="round"/></svg></span>.
+      </h1>
+      <p class="lede reveal d3">Adjugo aide votre collectivité à écrire un appel d'offres complet et à jour, puis vous montre les entreprises capables d'y répondre. Moins de marchés qui restent sans offre, plus d'entreprises locales en lice. Tout part de sources officielles. On n'invente rien.</p>
+      <div class="cta-row reveal d4">
+        <a href="/acheteur/app?register=1" class="btn btn-accent btn-lg">Commencer gratuitement<i data-lucide="arrow-right"></i></a>
+        <a href="/acheteur/app?demo=1" class="btn btn-ghost btn-lg">Voir une démo</a>
+      </div>
+      <div class="stats reveal d5">
+        <div class="stat"><div class="n">0</div><div class="l">donnée jamais inventée</div></div>
+        <div class="stat"><div class="n">100<span class="u">%</span></div><div class="l">sources officielles (SIRENE, DECP…)</div></div>
+        <div class="stat"><div class="n">Gratuit</div><div class="l">pour commencer, sans carte bancaire</div></div>
+      </div>
+    </div>
+
+    <div class="visual reveal d4" aria-hidden="true">
+      <span class="float-chip"><i data-lucide="leaf"></i>Clauses environnementales à jour</span>
+      <div class="card pv">
+        <div class="pv-top">
+          <span class="pill" style="background:#FEF3C7;color:#92400E">Exemple</span>
+          <span class="pill go"><i data-lucide="circle-check" style="width:13px;height:13px"></i>Conforme 2026</span>
+          <span class="pill">Risque 23%</span>
+        </div>
+        <div class="pv-title">Rénovation énergétique de l'école des Tilleuls</div>
+        <div class="pv-sub">Marché de travaux · 3 lots · Quimper (29)</div>
+        <div class="pv-kpis">
+          <div class="pv-kpi"><div class="k">Procédure</div><div class="v">MAPA</div></div>
+          <div class="pv-kpi"><div class="k">Budget repère</div><div class="v">850 000 €</div></div>
+          <div class="pv-kpi"><div class="k">Lieu</div><div class="v">Quimper (29)</div></div>
+        </div>
+        <div class="pv-row"><span class="lbl">Lot 1 · Menuiseries</span><span class="pv-bar"><i style="width:90%"></i></span><span class="pv-sc">9 PME</span></div>
+        <div class="pv-row"><span class="lbl">Lot 2 · Isolation</span><span class="pv-bar"><i style="width:78%"></i></span><span class="pv-sc">7 PME</span></div>
+        <div class="pv-row"><span class="lbl">Lot 3 · Chaufferie</span><span class="pv-bar"><i style="width:84%"></i></span><span class="pv-sc">11 PME</span></div>
+        <div class="pv-ct">
+          <span class="pv-av">A</span>
+          <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">Entreprise A</div><div style="font-size:11.5px;color:var(--ink-3)">Finistère · a déjà remporté des marchés similaires</div></div>
+          <span class="pill blue"><i data-lucide="badge-check" style="width:12px;height:12px"></i>en règle</span>
+        </div>
+      </div>
+      <div class="card pv-2">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="pill blue"><i data-lucide="folder-check" style="width:12px;height:12px"></i>Pièces générées</span><span style="font-size:11.5px;color:var(--ink-3)">prêtes à compléter</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:7px">
+          <span class="pill">Règlement</span><span class="pill">CCAP</span><span class="pill">CCTP</span><span class="pill">Avis</span><span class="pill">Word · PDF</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="sources">
+  <div class="wrap sources-in">
+    <span class="sources-lbl">Adossé aux sources officielles :</span>
+    <span class="src"><i data-lucide="shield-check"></i>SIRENE</span>
+    <span class="src"><i data-lucide="shield-check"></i>DECP</span>
+    <span class="src"><i data-lucide="shield-check"></i>BODACC</span>
+    <span class="src"><i data-lucide="shield-check"></i>Code de la commande publique</span>
+  </div>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <div class="head">
+      <span class="tag">Fonctionnalités</span>
+      <h2 class="display">De l'idée du marché au dossier publié</h2>
+      <p>Vous décrivez votre besoin, Adjugo écrit le projet et vous montre le marché. Pas de blabla d'IA : tout est vérifiable.</p>
+    </div>
+
+    <div class="flagship">
+      <div>
+        <div class="fic"><i data-lucide="radar"></i></div>
+        <h3>Évitez les appels d'offres qui restent sans réponse</h3>
+        <p>Avant de publier, Adjugo regarde combien d'entreprises peuvent vraiment répondre, lot par lot, et vous donne un risque clair. S'il est élevé, il vous dit quoi changer : redécouper en lots plus petits, assouplir une exigence, laisser plus de temps. Vous publiez en confiance.</p>
+      </div>
+      <div class="gauge">
+        <div class="gn">23<span>% de risque</span></div>
+        <div class="gline" style="margin-top:18px"><span class="gdot" style="background:var(--go)"></span><span class="lab">Lot 1 · Menuiseries</span><b style="font-family:'Bricolage Grotesque'">9 PME</b></div>
+        <div class="gline"><span class="gdot" style="background:var(--go)"></span><span class="lab">Lot 2 · Isolation</span><b style="font-family:'Bricolage Grotesque'">7 PME</b></div>
+        <div class="gline"><span class="gdot" style="background:var(--go)"></span><span class="lab">Lot 3 · Chaufferie</span><b style="font-family:'Bricolage Grotesque'">11 PME</b></div>
+        <div class="gline"><span class="gdot" style="background:var(--danger)"></span><span class="lab">Lot 4 · Désamiantage</span><b style="font-family:'Bricolage Grotesque'">0 PME</b></div>
+      </div>
+    </div>
+
+    <div class="feats">
+      <div class="feat"><div class="fic"><i data-lucide="file-pen"></i></div><h3>Écrivez votre dossier en quelques minutes</h3><p>Décrivez votre besoin en langage normal. Adjugo rédige le projet d'appel d'offres : la procédure adaptée, le découpage en lots, les critères de choix, les clauses techniques et environnementales. À vous de relire et d'ajuster.</p></div>
+      <div class="feat"><div class="fic"><i data-lucide="search"></i></div><h3>Voyez qui peut répondre</h3><p>Pour chaque lot, Adjugo trouve les entreprises capables à partir des données publiques : celles qui ont déjà gagné des marchés proches, qui sont en règle, et installées près de chez vous.</p></div>
+      <div class="feat"><div class="fic"><i data-lucide="layout-grid"></i></div><h3>Faites entrer les petites entreprises</h3><p>Adjugo propose un découpage en lots à la portée des PME, voire de plusieurs entreprises réunies. Plus d'entreprises peuvent répondre, et vous avez plus de choix.</p></div>
+      <div class="feat"><div class="fic"><i data-lucide="shield-check"></i></div><h3>Aux normes, sans y penser</h3><p>Les seuils de procédure sont à jour, et les clauses environnementales obligatoires en 2026 sont intégrées par défaut. Adjugo vous prévient avant publication s'il manque quelque chose.</p></div>
+      <div class="feat"><div class="fic"><i data-lucide="folder-check"></i></div><h3>Récupérez vos pièces</h3><p>Le règlement de consultation, le CCAP, le CCTP et l'avis de publicité, en Word et en PDF, prêts à compléter et à déposer sur votre profil acheteur.</p></div>
+      <div class="feat"><div class="fic"><i data-lucide="calculator"></i></div><h3>Estimez le budget</h3><p>Une fourchette de prix tirée des marchés déjà passés et comparables, pour fixer votre montant sans partir de zéro.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="how" class="steps-sec">
+  <div class="wrap">
+    <div class="head">
+      <span class="tag">Démarche</span>
+      <h2 class="display">Quatre étapes, un seul outil</h2>
+      <p>Décrire, rédiger, sonder le marché, publier. Tout au même endroit, sans rien ressaisir.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="step-n">1</div><h3>Décrire</h3><p>Dites en quelques lignes ce dont vous avez besoin : l'objet, le budget approximatif, le territoire, vos contraintes. En langage normal, pas de formulaire à rallonge.</p></div>
+      <div class="step"><div class="step-n">2</div><h3>Rédiger</h3><p>Adjugo écrit le projet d'appel d'offres : la procédure adaptée à votre montant, le découpage en lots, les critères de choix, les clauses techniques et environnementales. Vous relisez et ajustez ce que vous voulez.</p></div>
+      <div class="step"><div class="step-n">3</div><h3>Sonder le marché</h3><p>Avant de publier, Adjugo vous dit combien d'entreprises peuvent répondre, lot par lot, et le risque que le marché reste sans offre. S'il est élevé, il vous propose quoi changer.</p></div>
+      <div class="step"><div class="step-n">4</div><h3>Publier</h3><p>Récupérez vos pièces en Word et en PDF, déposez-les sur votre profil acheteur, et suivez la consultation jusqu'à l'attribution. La mise en relation avec les entreprises du réseau <b>complète</b> vos obligations de publicité (profil acheteur, BOAMP/JOUE selon le seuil) — elle ne les remplace pas.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="trust">
+  <div class="wrap">
+    <div class="trust-band">
+      <div>
+        <span class="tag">D'où viennent les infos</span>
+        <h2>Des informations officielles, et à jour.</h2>
+        <p>Tout ce qu'Adjugo vous montre vient des sources officielles : le registre des entreprises, les marchés déjà attribués, les annonces légales. Vous voyez toujours d'où vient une information et quand elle a été récupérée. Quand une info manque, on l'écrit, on ne la remplace jamais par une supposition.</p>
+      </div>
+      <div class="tcard">
+        <div class="tc-row"><i data-lucide="link"></i><span>La source et le lien officiel sur chaque donnée</span><span class="meta">officiel</span></div>
+        <div class="tc-row"><i data-lucide="calendar-check"></i><span>La date à laquelle l'info a été récupérée</span><span class="meta">horodaté</span></div>
+        <div class="tc-row"><i data-lucide="badge-check"></i><span>L'entreprise vérifiée au registre officiel</span><span class="meta">SIRENE</span></div>
+        <div class="tc-row"><i data-lucide="alert-triangle"></i><span>Une alerte si une entreprise est en difficulté</span><span class="meta">BODACC</span></div>
+        <div class="tc-row"><i data-lucide="scale"></i><span>Aucune entreprise n'est mise en avant : c'est vous qui décidez</span><span class="meta">neutralité</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="wrap">
+    <div class="head">
+      <span class="tag">Accès</span>
+      <h2 class="display">Gratuit pour démarrer</h2>
+      <p>Créez votre espace, rédigez un appel d'offres et sondez le marché sans rien payer. L'accompagnement sur-mesure, c'est quand vous voulez aller plus loin.</p>
+    </div>
+    <div class="plans" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));max-width:760px;margin:0 auto">
+      <div class="plan pop">
+        <div class="plan-tag">Pour commencer</div>
+        <h3>Espace collectivité</h3><div class="pd">Tout ce qu'il faut pour publier un bon marché</div>
+        <div class="price">0 €<small>pour démarrer</small></div>
+        <ul>
+          <li><i data-lucide="check"></i>Rédaction de vos appels d'offres (procédure, lots, critères, clauses)</li>
+          <li><i data-lucide="check"></i>Recherche des entreprises capables de répondre</li>
+          <li><i data-lucide="check"></i>Estimation du budget et risque de marché sans réponse</li>
+          <li><i data-lucide="check"></i>Export Word et PDF de toutes les pièces</li>
+          <li><i data-lucide="check"></i>Suivi de vos consultations</li>
+        </ul>
+        <a href="/acheteur/app?register=1" class="btn btn-accent">Créer un espace</a>
+      </div>
+      <div class="plan">
+        <h3>Accompagnement</h3><div class="pd">Pour les services qui veulent aller plus loin</div>
+        <div class="price" style="font-size:30px">Sur-mesure</div>
+        <ul>
+          <li><i data-lucide="check"></i>Prise en main avec vos équipes</li>
+          <li><i data-lucide="check"></i>Pilote sur un vrai marché, accompagné</li>
+          <li><i data-lucide="check"></i>Branchement à votre profil acheteur</li>
+          <li><i data-lucide="check"></i>Support prioritaire</li>
+        </ul>
+        <a href="mailto:eviegas@padis-core.com?subject=Accompagnement%20Adjugo%20Collectivit%C3%A9s" class="btn btn-ghost">Demander un accompagnement</a>
+      </div>
+    </div>
+    <p class="pay-note">Adjugo vous aide à rédiger, à sonder le marché et à comparer : la décision d'attribution reste entièrement la vôtre. Prix nets, sans TVA (franchise, art. 293 B du CGI).</p>
+  </div>
+</section>
+
+<section id="faq" class="faq-sec">
+  <div class="wrap">
+    <div class="head">
+      <span class="tag">Questions fréquentes</span>
+      <h2 class="display">Ce que vous vous demandez sûrement</h2>
+    </div>
+    <div class="faq">
+      <details open>
+        <summary>D'où viennent les informations, et sont-elles fiables ?<i data-lucide="chevron-down" class="chev"></i></summary>
+        <div class="ans">Adjugo ne s'appuie que sur des sources officielles : le registre des entreprises (SIRENE), les marchés déjà attribués (DECP), les annonces légales (BODACC). Chaque donnée porte sa source, sa date et un lien vers l'original. Quand une information manque, on écrit « inconnu ». On ne la remplace jamais par une estimation.</div>
+      </details>
+      <details>
+        <summary>Est-ce que ça respecte le code de la commande publique ?<i data-lucide="chevron-down" class="chev"></i></summary>
+        <div class="ans">Adjugo s'appuie sur les règles en vigueur : seuils de procédure à jour, allotissement, clauses environnementales obligatoires en 2026. Il vous alerte avant publication s'il manque une pièce ou si un choix est risqué. Mais c'est un assistant : la rédaction finale et la décision restent sous votre responsabilité.</div>
+      </details>
+      <details>
+        <summary>Les pièces générées sont-elles utilisables telles quelles ?<i data-lucide="chevron-down" class="chev"></i></summary>
+        <div class="ans">Adjugo vous remet un projet complet — règlement de consultation, CCAP, CCTP, avis de publicité — en Word et en PDF, à partir de ce que vous avez décrit. Vous ne partez pas d'une page blanche. Il reste à relire, à adapter à vos usages, et à faire valider par votre service avant publication.</div>
+      </details>
+      <details>
+        <summary>Les entreprises proposées : y a-t-il un favori ?<i data-lucide="chevron-down" class="chev"></i></summary>
+        <div class="ans">Non. Adjugo liste les entreprises capables selon des critères publics et explicites (marchés déjà gagnés, situation à jour, proximité), sans jamais en imposer une. C'est vous qui consultez et qui choisissez. Aucune entreprise ne paie pour être mieux placée.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="closing">
+  <div class="wrap">
+    <h2>Votre prochain marché<br>mérite d'aboutir.</h2>
+    <p>Créez votre espace gratuitement : rédigez votre appel d'offres, voyez qui peut répondre, et récupérez vos pièces prêtes à publier.</p>
+    <div class="cta-row">
+      <a href="/acheteur/app?register=1" class="btn btn-accent btn-lg">Commencer gratuitement<i data-lucide="arrow-right"></i></a>
+      <a href="/acheteur/app?demo=1" class="btn btn-lg" style="background:rgba(255,255,255,.08);color:#fff;border-color:rgba(255,255,255,.16)">Voir une démo</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-in">
+      <div class="foot-brand">
+        <a href="/acheteur" class="brand" aria-label="Adjugo Collectivités"><span>adjug</span><svg class="wm-o" aria-hidden="true" focusable="false" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".2" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".5" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></a>
+        <p>L'outil des acheteurs publics, de la rédaction de l'appel d'offres jusqu'à la publication.</p>
+      </div>
+      <div class="foot-cols">
+        <div class="foot-col">
+          <h4>Produit</h4>
+          <a href="#features">Fonctionnalités</a>
+          <a href="#how">Démarche</a>
+          <a href="#pricing">Accès</a>
+          <a href="/acheteur/app?login=1">Se connecter</a>
+        </div>
+        <div class="foot-col">
+          <h4>Sources</h4>
+          <a href="https://annuaire-entreprises.data.gouv.fr" target="_blank" rel="noopener">SIRENE</a>
+          <a href="https://www.data.gouv.fr/fr/datasets/donnees-essentielles-de-la-commande-publique-fichiers-consolides/" target="_blank" rel="noopener">DECP</a>
+          <a href="https://www.bodacc.fr" target="_blank" rel="noopener">BODACC</a>
+          <a href="https://www.legifrance.gouv.fr/codes/texte_lc/LEGITEXT000037701019/" target="_blank" rel="noopener">Code de la commande publique</a>
+        </div>
+        <div class="foot-col">
+          <h4>Développeurs</h4>
+          <a href="/docs" target="_blank">API · /docs</a>
+          <a href="/openapi.json" target="_blank">OpenAPI</a>
+        </div>
+        <div class="foot-col">
+          <h4>Légal</h4>
+          <a href="/securite">Sécurité &amp; souveraineté</a>
+          <a href="/mentions-legales">Mentions légales</a>
+          <a href="/cgv">CGV</a>
+          <a href="/confidentialite">Confidentialité</a>
+          <a href="/dpa">DPA</a>
+        </div>
+      </div>
+    </div>
+    <div class="foot-bot">
+      <span>© 2026 Adjugo — PADIS (Eliot Viegas). Données issues de sources publiques officielles.</span>
+      <span>Des dossiers clairs et vérifiables, jamais inventés.</span>
+    </div>
+  </div>
+</footer>
+
+<script>if (window.lucide) lucide.createIcons();</script>
+</body>
+</html>

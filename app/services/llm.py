@@ -307,9 +307,10 @@ def messages_create(**kwargs):
     return resp
 
 
-def complete(system: str, user: str, max_tokens: int = 3000, temperature: float = 0.2,
-             model: Optional[str] = None) -> str:
-    """Appel texte simple. Retourne le texte de la réponse."""
+def complete_ex(system: str, user: str, max_tokens: int = 3000, temperature: float = 0.2,
+                model: Optional[str] = None) -> tuple:
+    """Comme complete() mais renvoie (texte, stop_reason) : permet à l'appelant de détecter
+    une réponse TRONQUÉE (stop_reason == "max_tokens") au lieu de la prendre pour complète."""
     resp = messages_create(
         model=model or MODEL,
         max_tokens=max_tokens,
@@ -317,7 +318,13 @@ def complete(system: str, user: str, max_tokens: int = 3000, temperature: float 
         system=system,
         messages=[{"role": "user", "content": user}],
     )
-    return resp.content[0].text.strip()
+    return resp.content[0].text.strip(), getattr(resp, "stop_reason", "end_turn")
+
+
+def complete(system: str, user: str, max_tokens: int = 3000, temperature: float = 0.2,
+             model: Optional[str] = None) -> str:
+    """Appel texte simple. Retourne le texte de la réponse."""
+    return complete_ex(system, user, max_tokens=max_tokens, temperature=temperature, model=model)[0]
 
 
 def complete_json(system: str, user: str, max_tokens: int = 3000, temperature: float = 0.2) -> dict:
@@ -339,11 +346,15 @@ def parse_json(raw: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # Dernier recours : extraire le premier objet {...} équilibré
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
+        # Dernier recours : décoder le PREMIER objet équilibré à partir du premier « { »
+        # (raw_decode s'arrête à la fin de l'objet), au lieu d'un regex greedy `\{.*\}` qui
+        # sur-capture jusqu'à la dernière accolade (et échoue dès qu'il y a du texte après).
+        start = text.find("{")
+        if start != -1:
             try:
-                return json.loads(match.group(0))
+                obj, _ = json.JSONDecoder().raw_decode(text[start:])
+                if isinstance(obj, dict):
+                    return obj
             except json.JSONDecodeError:
                 pass
     raise ValueError(f"Réponse LLM non JSON: {raw[:200]}")

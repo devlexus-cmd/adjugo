@@ -10,7 +10,8 @@ from sqlalchemy import func
 from datetime import timedelta
 
 from app.core.database import get_db
-from app.core.security import hash_password, verify_password, create_access_token, get_current_user, decode_token
+from app.core.security import (hash_password, verify_password, create_access_token,
+                               get_current_user, decode_token, needs_rehash, DUMMY_HASH)
 from app.core.config import get_settings
 from app.core.ratelimit import limiter
 from app.models import User, Company, MatchingCriteria
@@ -132,12 +133,16 @@ def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
     # Anti-énumération par timing : on exécute TOUJOURS un PBKDF2 (sur un faux hash si l'email
     # est inconnu) → la réponse « identifiants incorrects » prend le même temps, qu'un compte
     # existe ou non. Sinon le court-circuit révélait par chronométrie quels emails ont un compte.
-    _DUMMY = "0" * 32 + "$" + "0" * 64
-    pwd_ok = verify_password(data.password, user.hashed_password if user else _DUMMY)
+    pwd_ok = verify_password(data.password, user.hashed_password if user else DUMMY_HASH)
     if not user or not pwd_ok:
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Compte désactivé")
+    # Migration transparente du hachage vers la cible OWASP courante (les anciens hash 100k
+    # restent vérifiables et sont remplacés au login réussi).
+    if needs_rehash(user.hashed_password):
+        user.hashed_password = hash_password(data.password)
+        db.commit()
 
     token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})
     return {"access_token": token, "token_type": "bearer"}

@@ -674,3 +674,38 @@ class Feedback(Base):
     message = Column(Text, default="")
     page = Column(String(120), default="")             # vue/contexte d'où vient le retour
     created_at = Column(DateTime, default=utcnow)
+
+
+# === ACHETEUR (produit collectivités — Pilier acheteur) ===
+# CLOISONNEMENT à 2 faces : les acheteurs publics vivent dans une TABLE SÉPARÉE des `users`
+# (PME). Un JWT acheteur porte `typ:"acheteur"` et ne peut jamais charger un User (et
+# inversement, l'auth PME rejette tout token portant `typ`). Aucune donnée PME ici.
+class Acheteur(Base):
+    __tablename__ = "acheteurs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    nom_collectivite = Column(String(255), default="")
+    is_active = Column(Boolean, default=True)
+    token_version = Column(Integer, default=0)   # révocation de session (même logique que User)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# DCE sauvegardés par un acheteur (le DCE complet généré, en JSON, pour rechargement).
+class AcheteurDce(Base):
+    __tablename__ = "acheteur_dces"
+
+    id = Column(Integer, primary_key=True, index=True)
+    acheteur_id = Column(Integer, ForeignKey("acheteurs.id"), nullable=False, index=True)
+    objet = Column(String(500), default="")
+    payload = Column(JSON, nullable=False)       # le DCE complet (sortie de generer_dce)
+    # Pilotage du cycle de vie de la consultation.
+    statut = Column(String(20), default="preparation")   # preparation|publie|analyse|attribue|infructueux
+    date_limite = Column(DateTime, nullable=True)         # date limite de remise des offres
+    # Diffusion au réseau PME Adjugo (flywheel à deux faces).
+    date_diffusion = Column(DateTime, nullable=True)
+    nb_pme_diffusion = Column(Integer, nullable=True)     # nb de PME capables touchées (sourcing)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)

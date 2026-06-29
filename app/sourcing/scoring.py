@@ -6,6 +6,7 @@ aucun score ici.
 
 Barèmes documentés ci-dessous (modifiables sans toucher à la logique).
 """
+import os
 import re
 from typing import Optional
 
@@ -32,6 +33,12 @@ COMPANY_WEIGHTS = {
     "categorie": 6,        # PME / ETI / GE
     "verif": 6,            # SIRET confirmé au registre
 }
+
+# Confrontation capacité / TAILLE DU LOT : surface annuelle estimée d'une entreprise ≈ CA
+# publié, à défaut effectif × ce montant ; un lot dont le montant dépasse cette surface d'un
+# facteur > _RATIO_LOT signale une structure probablement trop petite (capacité à confirmer).
+_EUR_PAR_SALARIE = float(os.getenv("SOURCING_EUR_PAR_SALARIE", "200000"))
+_RATIO_LOT = float(os.getenv("SOURCING_RATIO_LOT", "1.5"))
 
 
 def _split(s) -> list:
@@ -230,16 +237,24 @@ def score_company(c: NormalizedCompany, need_trade_label: str = "",
         out.append(_crit("anciennete", "Ancienneté", 0, W["anciennete"], "partiel",
                          "Moins d'un an d'existence"))
 
-    # 5. Capacité (tranche d'effectif salarié) — 12
+    # 5. Capacité (effectif), éventuellement CONFRONTÉE À LA TAILLE DU LOT — 12
+    W5 = W["capacite"]
     if c.effectif is None:
-        out.append(_crit("capacite", "Capacité (effectif)", 0, W["capacite"], "inconnu",
+        out.append(_crit("capacite", "Capacité (effectif)", 0, W5, "inconnu",
                          "Tranche d'effectif non publiée"))
-    elif c.effectif >= 5:
-        out.append(_crit("capacite", "Capacité (effectif)", W["capacite"], W["capacite"], "ok",
-                         f"~{c.effectif} salariés"))
     else:
-        out.append(_crit("capacite", "Capacité (effectif)", round(W["capacite"] * 0.5), W["capacite"],
-                         "partiel", f"~{c.effectif} salarié(s) — petite structure"))
+        pts = W5 if c.effectif >= 5 else round(W5 * 0.5)
+        note = (f"~{c.effectif} salariés" if c.effectif >= 5
+                else f"~{c.effectif} salarié(s) — petite structure")
+        # Surface annuelle estimée (CA, à défaut effectif × _EUR_PAR_SALARIE) ; si le lot la
+        # dépasse de plus de _RATIO_LOT, la structure est probablement sous-dimensionnée.
+        surface = max(float(c.ca or 0.0), (c.effectif or 0) * _EUR_PAR_SALARIE)
+        if lot_montant and surface and lot_montant > surface * _RATIO_LOT:
+            pts = min(pts, round(W5 * 0.25))
+            note += (" — lot de " + f"{int(round(lot_montant)):,}".replace(",", " ")
+                     + " € élevé au regard de la taille, capacité à confirmer")
+        out.append(_crit("capacite", "Capacité (effectif)", pts, W5,
+                         "ok" if pts == W5 else "partiel", note))
 
     # 6. Présence opérationnelle (établissements ouverts) — 8
     nb = c.nb_etablissements_ouverts
