@@ -71,7 +71,7 @@ const __adjApp = createApp({
       idleLimitMs: 60 * 60 * 1000,   // déconnexion auto après 1 h SANS activité (sécurité appareil partagé/perdu)
       view: "dashboard", navMore: false, busy: false, toast: null, pending: 0, llmInfo: null,
       auth: { mode: "login", email: "", password: "", full_name: "", company_name: "", resetToken: "", sent: false },
-      stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], expiring: [],
+      stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], docQuery: "", docSort: "recent", expiring: [],
       notifs: [], notifsOpen: false, notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
       cdetail: {}, copen: {}, cexport: {}, cpreview: {}, cerror: {},
@@ -174,6 +174,27 @@ const __adjApp = createApp({
   },
   computed: {
     initials() { return (this.user.full_name || "U").split(" ").map(s => s[0]).slice(0, 2).join("").toUpperCase(); },
+    filteredDocuments() {
+      // Coffre-fort : recherche (nom/catégorie/dossier/marché lié) + tri. 100% côté client
+      // (tous les documents sont déjà chargés), donc instantané et sans appel réseau.
+      let list = (this.documents || []).slice();
+      const q = (this.docQuery || "").trim().toLowerCase();
+      if (q) list = list.filter(d => ((d.name || "") + " " + (d.folder || "") + " " + (d.category || "") + " " + (d.project_name || "")).toLowerCase().includes(q));
+      const by = {
+        recent: (a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")),
+        name: (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }),
+        category: (a, b) => String(a.folder || a.category || "").localeCompare(String(b.folder || b.category || ""), "fr", { sensitivity: "base" }),
+        size: (a, b) => (Number(b.file_size) || 0) - (Number(a.file_size) || 0),
+        expiry: (a, b) => {            // la plus proche d'abord ; les pièces sans date d'expiration en dernier
+          if (!a.expiration_date && !b.expiration_date) return 0;
+          if (!a.expiration_date) return 1;
+          if (!b.expiration_date) return -1;
+          return String(a.expiration_date).localeCompare(String(b.expiration_date));
+        },
+      }[this.docSort];
+      if (by) list.sort(by);
+      return list;
+    },
     quotaReached() { const u = this.stats.usage; return !!u && u.analyses_remaining <= 0; },
     notifUnseen() { return this.notifs.filter(n => n.at && n.at > this.notifsSeen).length; },
     predepotDone() { return (this.predepot || []).filter(Boolean).length; },
