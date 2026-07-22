@@ -176,6 +176,10 @@ def replace_document(
         expiration_date=exp_date or old_doc.expiration_date,
         version=old_doc.version + 1,
         parent_id=None,
+        # Conserver le rattachement : sans ça, remplacer une pièce la sortait de son AO
+        # et de son dossier → elle disparaissait des exports du marché concerné.
+        project_id=old_doc.project_id,
+        folder=old_doc.folder,
     )
     db.add(new_doc)
     db.flush()                      # obtenir new_doc.id avant d'y rattacher l'ancien
@@ -284,6 +288,8 @@ def get_expiring_documents(
 ):
     """Récupérer les documents qui expirent dans les X prochains jours."""
     from datetime import timedelta
+    # Bornage : days=99999999 provoquait un OverflowError (500) dans timedelta.
+    days = max(0, min(int(days or 0), 3650))
     threshold = date.today() + timedelta(days=days)
 
     docs = db.query(Document).filter(

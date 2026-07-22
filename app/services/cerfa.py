@@ -114,6 +114,23 @@ def missing_company_fields(c) -> list:
             if not str(c.get(k) or "").strip()]
 
 
+# ── Rôles : co-traitant (MEMBRE du groupement) vs sous-traitant ──────────────
+# Distinction JURIDIQUE : un co-traitant est membre du groupement (DC1 section E + un
+# DC2), un sous-traitant N'EST PAS membre (il relève du DC4). Les confondre produit des
+# pièces invalides. On tolère les variantes d'orthographe du rôle.
+def _is_soustraitant(m) -> bool:
+    return str((m or {}).get("role", "")).strip().lower().replace("-", "_") == "sous_traitant"
+
+
+def _groupement_members(cotraitants):
+    """Co-traitants MEMBRES du groupement (hors sous-traitants → DC4)."""
+    return [ct for ct in (cotraitants or []) if not _is_soustraitant(ct)]
+
+
+def _soustraitants(cotraitants):
+    return [ct for ct in (cotraitants or []) if _is_soustraitant(ct)]
+
+
 # ================================================================
 # DC1 - LETTRE DE CANDIDATURE (6 pages)
 # ================================================================
@@ -124,7 +141,9 @@ def generate_dc1(c, p):
 
     d = datetime.date.today().strftime("%d/%m/%Y")
     addr = (str(c.get("address", "")) + " " + str(c.get("postal_code", "")) + " " + str(c.get("city", ""))).strip()
-    cotraitants = p.get("cotraitants", [])
+    # SECTION E = membres du GROUPEMENT uniquement. Les sous-traitants sont exclus ici
+    # (ils sont déclarés au DC4), sinon un sous-traitant apparaissait à tort comme membre.
+    cotraitants = _groupement_members(p.get("cotraitants", []))
     is_groupement = len(cotraitants) > 0
 
     fields = {
@@ -213,7 +232,9 @@ def generate_dc2(c, p):
     if not os.path.exists(tpl):
         return _fallback("DC2", c, p)
 
-    cotraitants = p.get("cotraitants", [])
+    # Un DC2 par MEMBRE du groupement (mandataire + co-traitants) — PAS les sous-traitants,
+    # qui ne sont pas membres du groupement (ils relèvent du DC4).
+    cotraitants = _groupement_members(p.get("cotraitants", []))
     members = [c] + cotraitants  # Mandataire + co-traitants
 
     if len(members) == 1:
@@ -276,10 +297,29 @@ def _generate_single_dc2(tpl, c, p):
 # DC4 - DECLARATION DE SOUS-TRAITANCE (9 pages)
 # ================================================================
 def generate_dc4(c, p):
+    """UN DC4 par SOUS-TRAITANT déclaré (role == sous_traitant) : section D = titulaire/
+    candidat (c), section E = identité du sous-traitant, section F = nature des prestations
+    (son lot). Sans sous-traitant, on produit un DC4 « titulaire seul » (section E à
+    compléter à la main) — le dossier ne l'inclut de toute façon qu'en cas de sous-traitance."""
     tpl = os.path.join(TEMPLATES_DIR, "dc4.pdf")
     if not os.path.exists(tpl):
         return _fallback("DC4", c, p)
 
+    subs = _soustraitants(p.get("cotraitants", []))
+    if not subs:
+        return _generate_single_dc4(tpl, c, None, p)
+
+    writer = PdfWriter()
+    for sub in subs:
+        reader = PdfReader(io.BytesIO(_generate_single_dc4(tpl, c, sub, p)))
+        for page in reader.pages:
+            writer.add_page(page)
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
+
+
+def _generate_single_dc4(tpl, c, sub, p):
     d = datetime.date.today().strftime("%d/%m/%Y")
     addr = (str(c.get("address", "")) + " " + str(c.get("postal_code", "")) + " " + str(c.get("city", ""))).strip()
 
@@ -300,6 +340,8 @@ def generate_dc4(c, p):
             {"x": 44, "y": 525, "text": c.get("siret", ""), "size": 9, "bold": True},
             {"x": 44, "y": 575, "text": c.get("forme_juridique", ""), "size": 9},
         ],
+        # Page 3 (idx 2): E - identité du SOUS-TRAITANT (positions relevées sous chaque
+        # libellé du template, alignées sur la section D).
         2: [], 3: [], 4: [], 5: [], 6: [],
         # Page 8: M - Signatures
         7: [
@@ -310,6 +352,21 @@ def generate_dc4(c, p):
         ],
         8: [],
     }
+
+    if sub:
+        s_addr = (str(sub.get("address", "")) + " " + str(sub.get("postal_code", "")) + " " + str(sub.get("city", ""))).strip()
+        fields[2] = [
+            {"x": 44, "y": 216, "text": str(sub.get("name", "")), "size": 10, "bold": True},
+            {"x": 44, "y": 253, "text": s_addr, "size": 9},
+            {"x": 44, "y": 289, "text": str(sub.get("email", "")), "size": 9},
+            {"x": 44, "y": 336, "text": str(sub.get("phone", "")), "size": 9},
+            {"x": 44, "y": 382, "text": str(sub.get("siret", "")), "size": 9, "bold": True},
+            {"x": 44, "y": 437, "text": str(sub.get("forme_juridique", "")), "size": 9},
+        ]
+        # Section F (page idx 3) : nature des prestations sous-traitées = lot du sous-traitant.
+        lot = str(sub.get("lot", "")).strip()
+        if lot:
+            fields[3] = [{"type": "multiline", "x": 44, "y": 225, "text": lot, "size": 9, "line_height": 13}]
 
     return merge_overlay(tpl, create_overlay(fields))
 

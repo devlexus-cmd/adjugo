@@ -11,7 +11,8 @@ from app.core.database import get_db
 from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.models import User
-from app.services.alerts import run_document_expiry_alerts, run_tender_alerts, run_amont_alerts
+from app.services.alerts import (run_document_expiry_alerts, run_tender_alerts, run_amont_alerts,
+                                 run_cotraitance_reminders)
 
 settings = get_settings()
 router = APIRouter(prefix="/api/admin", tags=["Administration"])
@@ -103,3 +104,11 @@ def run_amont_alerts_endpoint(request: Request, db: Session = Depends(get_db)):
     et notifie chaque utilisateur de ses nouveaux projets pertinents (avant l'AO)."""
     _check_cron(request)
     return run_amont_alerts(db)
+
+
+@router.post("/run-cotraitance-reminders")
+def run_cotraitance_reminders_endpoint(request: Request, db: Session = Depends(get_db)):
+    """Relance les partenaires d'un groupement qui n'ont pas soumis leur part, à J-3 puis
+    J-1 de la date limite (idempotent par palier). À cron-er quotidiennement."""
+    _check_cron(request)
+    return run_cotraitance_reminders(db)

@@ -95,13 +95,31 @@ app.middleware("http")(request_logger)
 # CSP — verrouille les origines. 'unsafe-eval'/'unsafe-inline' requis car Vue (CDN)
 # compile les templates à l'exécution et l'app utilise des styles inline (pas de build).
 # Un build front permettrait de les retirer plus tard.
+# Si un outil de mesure d'audience est configuré (ANALYTICS_SRC), on autorise SON origine
+# dans script-src ET connect-src — sinon le script et son beacon étaient bloqués par la CSP
+# (fonctionnalité activable par variable d'env mais silencieusement inopérante).
+def _analytics_origin() -> str:
+    src = (settings.ANALYTICS_SRC or "").strip()
+    if not src:
+        return ""
+    try:
+        from urllib.parse import urlparse
+        u = urlparse(src)
+        return f"{u.scheme}://{u.netloc}" if u.scheme and u.netloc else ""
+    except Exception:
+        return ""
+
+
+_ANALYTICS_ORIGIN = _analytics_origin()
+_SCRIPT_EXTRA = (" " + _ANALYTICS_ORIGIN) if _ANALYTICS_ORIGIN else ""
+_CONNECT_EXTRA = (" " + _ANALYTICS_ORIGIN) if _ANALYTICS_ORIGIN else ""
 _CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+    f"script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net{_SCRIPT_EXTRA}; "
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
     "font-src 'self' data: https://fonts.gstatic.com; "
     "img-src 'self' data: blob: https://cdn.jsdelivr.net https://fastapi.tiangolo.com; "
-    "connect-src 'self'; worker-src 'self' blob:; "
+    f"connect-src 'self'{_CONNECT_EXTRA}; worker-src 'self' blob:; "
     "frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
 )
 
@@ -361,17 +379,24 @@ def _recover_orphan_jobs():
     db = SessionLocal()
     try:
         for j in db.query(Job).filter(Job.status.in_(["pending", "running"])).all():
-            # Claim ATOMIQUE : seul le worker qui change réellement la ligne rembourse
-            # (évite le double-remboursement quand 4 workers démarrent ensemble).
-            res = db.execute(_update(Job).where(Job.id == j.id, Job.status.in_(["pending", "running"]))
-                             .values(status="error", error="Interrompu par un redémarrage du serveur."))
-            db.commit()
-            if res.rowcount == 1:
-                u = db.get(User, j.user_id)
-                if u:
-                    refund_analysis(u, db)
-    except Exception:
-        pass
+            # try PAR job : une panne sur un job (ex. utilisateur supprimé) ne doit pas
+            # abandonner silencieusement la récupération de TOUS les jobs suivants.
+            try:
+                # Claim ATOMIQUE : seul le worker qui change réellement la ligne rembourse
+                # (évite le double-remboursement quand 4 workers démarrent ensemble).
+                res = db.execute(_update(Job).where(Job.id == j.id, Job.status.in_(["pending", "running"]))
+                                 .values(status="error", error="Interrompu par un redémarrage du serveur."))
+                db.commit()
+                if res.rowcount == 1:
+                    u = db.get(User, j.user_id)
+                    if u:
+                        refund_analysis(u, db)
+            except Exception as e:
+                db.rollback()
+                _logging.getLogger("adjugo").warning(
+                    "récupération du job orphelin %s échouée : %s", getattr(j, "id", "?"), e)
+    except Exception as e:
+        _logging.getLogger("adjugo").warning("récupération des jobs orphelins interrompue : %s", e)
     finally:
         db.close()
 

@@ -80,6 +80,7 @@ const __adjApp = createApp({
                   contrib: { company_name: "", lot: "", quals: "", refs: "", chiffrage_note: "", memoire_paragraph: "", contact: { nom: "", email: "", telephone: "" } } },
       veille: { q: "", loc: "", results: [], loading: false },
       drawer: null, modal: null,
+      welcome: { siret: "", busy: false, dismissed: false },   // activation par SIRET (1er lancement)
       ag: { query: "réhabilitation groupe scolaire", running: false, log: [], gonogo: null, coverage: null, lots: [], dossier: null },
       agState: {}, agStep: {},
       agentDefs: [
@@ -160,6 +161,8 @@ const __adjApp = createApp({
         ct: { trade: "", dept: "", searching: false, companies: [], selected: [], errors: [] },
         generating: false, dossier: null, alerts: [],
         renewals: { list: [], loading: false, done: false },
+        searched: false, empty: null, prefilled: false,
+        marketEst: null, marketEstBusy: false,
       },
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
@@ -197,6 +200,34 @@ const __adjApp = createApp({
     },
     quotaReached() { const u = this.stats.usage; return !!u && u.analyses_remaining <= 0; },
     notifUnseen() { return this.notifs.filter(n => n.at && n.at > this.notifsSeen).length; },
+    // Boucle gagné/perdu : synthèse en langage clair de ce que les marchés terminés apprennent.
+    // Prudent : on ne conclut que sur des échantillons suffisants (jamais sur 1 marché).
+    winInsights() {
+      const s = this.stats && this.stats.segments; if (!s || (this.stats.decided || 0) < 3) return [];
+      const esc = (t) => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      const out = [];
+      const _bad = (k) => { const v = String(k || "").trim().toLowerCase(); return !v || v === "inconnu" || v === "non précisé" || v === "n/d"; };
+      const best = (arr, min = 2) => (arr || []).filter(x => (x.total || 0) >= min && !_bad(x.key)).sort((a, b) => b.win_rate - a.win_rate)[0];
+      const bz = best(s.by_zone);
+      if (bz && bz.win_rate >= 50) out.push(`Vous gagnez surtout dans le <b>département ${esc(bz.key)}</b> (${bz.win_rate}% de réussite) — ciblez-y vos recherches.`);
+      const bt = best(s.by_type);
+      if (bt && bt.win_rate >= 50) out.push(`Vos meilleurs résultats : les marchés de <b>${esc(bt.key)}</b> (${bt.win_rate}%).`);
+      const grp = (s.by_groupement || []).reduce((m, g) => { m[g.key] = g; return m; }, {});
+      if (grp.Groupement && grp.Solo && (grp.Groupement.total || 0) >= 2 && (grp.Solo.total || 0) >= 2 && grp.Groupement.win_rate > grp.Solo.win_rate + 10) {
+        out.push(`Vous gagnez plus <b>en groupement</b> (${grp.Groupement.win_rate}%) qu'en solo (${grp.Solo.win_rate}%) — associez-vous plus souvent.`);
+      }
+      const bp = (s.by_partner || []).filter(p => (p.total || 0) >= 2).sort((a, b) => b.win_rate - a.win_rate)[0];
+      if (bp && bp.win_rate >= 60) out.push(`Votre partenaire le plus gagnant : <b>${esc(bp.key)}</b> (${bp.win_rate}% sur ${bp.total} marchés).`);
+      const lr = (s.loss_reasons || [])[0];
+      if (lr && lr.count >= 2) out.push(`Vous perdez surtout pour : <b>${esc(lr.reason)}</b> (${lr.count} fois) — un levier à travailler.`);
+      return out.slice(0, 4);
+    },
+    // Veille amont mise en avant (dashboard) : les 3 projets les plus pertinents/mûrs.
+    topAmont() {
+      return [...(this.amont.signals || [])]
+        .sort((a, b) => (b.pertinence_score || 0) - (a.pertinence_score || 0) || (b.maturite || 0) - (a.maturite || 0))
+        .slice(0, 3);
+    },
     predepotDone() { return (this.predepot || []).filter(Boolean).length; },
     onboarding() {
       // Premiers pas : 3 jalons d'activation, dérivés des données réelles du compte.
@@ -214,6 +245,12 @@ const __adjApp = createApp({
     showOnboarding() {
       try { if (localStorage.getItem("adjugo_onboarding_done") === "1") return false; } catch (e) {}
       return this.onboarding.done < this.onboarding.total;
+    },
+    // Activation par SIRET : écran d'accueil au 1er lancement tant que le profil n'a pas de SIRET.
+    showWelcome() {
+      if (!this.token || this.welcome.dismissed) return false;
+      try { if (localStorage.getItem("adjugo_welcome_done") === "1") return false; } catch (e) {}
+      return !!(this.user && this.user.id) && !(this.company && this.company.siret);
     },
   },
   mounted() {
@@ -461,7 +498,7 @@ const __adjApp = createApp({
       if (v === "documents") this.loadDocuments();
       if (v === "cotraitants") { this.loadCotraitants(); this.loadTrades(); }
       if (v === "agent") this.loadStats();
-      if (v === "sourcing") { this.loadTrades(); this.loadAlerts(); this.loadCountries(); }
+      if (v === "sourcing") { this.loadTrades(); this.loadAlerts(); this.loadCountries(); this.loadStats(); this.srcPrefillFromProfile(); }
       if (v === "amont") this.loadAmont();
       if (v === "kb") this.kbLoad();
       if (v === "team") this.loadOrg();
@@ -501,6 +538,36 @@ const __adjApp = createApp({
           this.notify("Profil pré-rempli depuis le registre");
         }
       } catch (e) { this.notify("Entreprise introuvable", "err"); } finally { this.busy = false; }
+    },
+    // ── Activation par SIRET : un champ → profil rempli + critères pré-réglés + marchés ──
+    welcomeDone() { this.welcome.dismissed = true; try { localStorage.setItem("adjugo_welcome_done", "1"); } catch (e) {} },
+    welcomeSkip() { this.welcomeDone(); },
+    async welcomeStart() {
+      const q = (this.welcome.siret || "").trim();
+      if (!q) { this.notify("Saisissez votre SIRET (14 chiffres)", "err"); return; }
+      this.welcome.busy = true;
+      try {
+        const r = await this.api("GET", "/api/registre/company?q=" + encodeURIComponent(q));
+        if (!r || (!r.name && !r.siret)) { this.notify("Entreprise introuvable — vérifiez le SIRET", "err"); return; }
+        // 1) Profil entreprise (on n'écrase pas une saisie existante).
+        ["name", "siret", "code_ape", "forme_juridique", "address", "postal_code", "city", "effectif", "tva_intracom"].forEach(k => { if (r[k] && !this.company[k]) this.company[k] = r[k]; });
+        if (r.dirigeant && !this.company.representant_legal) this.company.representant_legal = r.dirigeant;
+        await this.api("PUT", "/api/company/", this.company);
+        // 2) Critères pré-réglés : spécialité (dérivée du NAF) + département (du code postal).
+        const spec = r.specialite || r.naf_label || "";
+        const dep = (r.postal_code || this.company.postal_code || "").slice(0, 2);
+        if (spec && !((this.criteria.specialites || "").trim())) this.criteria.specialites = spec;
+        if (dep && !((this.criteria.departements || "").trim())) this.criteria.departements = dep;
+        try { await this.api("PUT", "/api/criteria/", this.criteria); } catch (e) {}
+        // 3) Pré-remplir et lancer la 1re recherche pertinente.
+        if (spec && !this.src.query) this.src.query = spec.split(/[ ,;]/)[0];
+        if (dep && !this.src.dept) this.src.dept = dep;
+        this.welcomeDone();
+        this.notify("Profil créé depuis votre SIRET ✓");
+        this.go("sourcing");
+        this.$nextTick(() => this.srcSearch());
+      } catch (e) { this.notify("Entreprise introuvable — vérifiez le SIRET", "err"); }
+      finally { this.welcome.busy = false; }
     },
     openDiscover() { this.discover.open = true; this.discover.results = []; this.loadTrades(); if (!this.discover.dept) this.discover.dept = (this.company.postal_code || "").slice(0, 2); },
     amontFindPartners(s) {
@@ -816,8 +883,7 @@ const __adjApp = createApp({
       try {
         const r = await fetch("/api/projects/" + pid + "/consortium/report", { headers: { Authorization: "Bearer " + this.token } });
         if (!r.ok) throw new Error("indispo");
-        const blob = await r.blob(); const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob); a.download = "Compte-rendu_groupement.pdf"; document.body.appendChild(a); a.click(); a.remove();
+        this.saveBlob(await r.blob(), "Compte-rendu_groupement.pdf");
         this.notify("Compte-rendu PDF téléchargé");
       } catch (e) { this.notify("Compte-rendu indisponible", "err"); }
     },
@@ -953,6 +1019,15 @@ const __adjApp = createApp({
       try { await this.api("DELETE", "/api/projects/" + this.ao.project.id + "/invites/" + inv.id); this.notify("Lien révoqué"); this.aoLoadInvites(); }
       catch (e) { this.notify(e.message, "err"); }
     },
+    async aoResendInvite(inv) {
+      // Renvoie le mail sur le MÊME lien (sans changer le token) : relance un partenaire
+      // silencieux ou rattrape un mail en spam, sans casser l'URL déjà partagée.
+      try {
+        const r = await this.api("POST", "/api/projects/" + this.ao.project.id + "/invites/" + inv.id + "/resend");
+        this.notify(r && r.sent ? "Invitation renvoyée par email" : "Envoi impossible — copiez le lien et transmettez-le", r && r.sent ? "ok" : "err");
+        this.aoLoadInvites();
+      } catch (e) { this.notify(e.message, "err"); }
+    },
     copyInvite(url, silent) {
       // writeText renvoie une Promise : on gère succès ET échec (le try/catch ne capte pas
       // un rejet asynchrone) → l'utilisateur a toujours un retour fiable.
@@ -974,6 +1049,26 @@ const __adjApp = createApp({
       if (this.ao.share.contribOpen) await this.aoLoadContributions();
     },
     contribCount() { return (this.ao.share.invites || []).filter(i => i.contribution_status === "submitted").length; },
+    // Cockpit — partenaires EN ATTENTE (invités, non révoqués, part non soumise) et relançables (email).
+    aoPendingInvites() {
+      return (this.ao.share.invites || []).filter(i => !i.revoked && i.can_contribute && i.contribution_status !== "submitted");
+    },
+    aoPendingRelancables() {
+      return this.aoPendingInvites().filter(i => (i.recipient || "").includes("@"));
+    },
+    async aoRelanceRetardataires() {
+      const list = this.aoPendingRelancables();
+      if (!list.length) { this.notify("Aucun partenaire relançable par email (copiez le lien à la place)", "err"); return; }
+      let sent = 0;
+      for (const inv of list) {
+        try {
+          const r = await this.api("POST", "/api/projects/" + this.ao.project.id + "/invites/" + inv.id + "/resend");
+          if (r && r.sent) sent++;
+        } catch (e) {}
+      }
+      await this.aoLoadInvites();
+      this.notify(sent ? sent + " partenaire(s) relancé(s) par email" : "Envoi impossible — copiez les liens et transmettez-les", sent ? "ok" : "err");
+    },
     auditLabel(a) {
       const m = { "invite.created": "Lien créé", "invite.revoked": "Lien révoqué", "guest.view_project": "Consultation du dossier", "guest.download_doc": "Téléchargement de pièce" };
       return m[a.action] || a.action;
@@ -1329,6 +1424,7 @@ const __adjApp = createApp({
       else {
         this.src.searching = true; this.src.tenders = []; this.src.errors = []; this.src.analysis = null;
         this.src.offset = 0; this.src.hasMore = false; this.src.lastSig = sig;
+        this.src.empty = null; this.src.marketEst = null;
         // Purge l'état d'analyse périmé de la recherche précédente (sinon un panneau
         // « Analyser » / partenaires restait latent sur les nouveaux résultats).
         this.src.chosen = null; this.src.projectId = null; this.src.dossier = null;
@@ -1356,16 +1452,69 @@ const __adjApp = createApp({
         // Une page entièrement dupliquée = on est au bout côté affichage → on masque « charger plus »
         // (le serveur ignore ce qui est déjà à l'écran et pouvait renvoyer has_more à tort).
         this.src.hasMore = appendedNothing ? false : !!r.has_more;
+        if (!append) this.src.searched = true;
         if (!append && !this.src.tenders.length) {
-          const cf = (r.closed_filtered || 0) + (r.amount_filtered || 0);
-          this.notify(cf ? cf + " marché(s) trouvé(s) mais clôturé(s) ou hors fourchette — élargissez la période ou le budget" : "Aucun appel d'offres trouvé pour ces critères", "err");
+          // 0 résultat → carte ACTIONNABLE (élargir en un clic) plutôt qu'un simple toast.
+          this.src.empty = {
+            closed: (r.closed_filtered || 0) + (r.amount_filtered || 0),
+            hasDept: !!this.srcDeps().length,
+            hasAdv: !!(this.src.type_marche || this.srcCpv().length),
+            multiWord: (this.src.query || "").trim().split(/\s+/).filter(Boolean).length > 1,
+          };
         }
       } catch (e) { this.notify(e.message, "err"); } finally { this.src.searching = false; this.src.loadingMore = false; }
     },
     srcLoadMore() { return this.srcSearch(true); },
+    // ── #3 Pré-remplissage de la 1re recherche depuis le profil (fin de la page blanche) ──
+    srcPrefillFromProfile() {
+      if (this.src.prefilled || this.src.searched) return;
+      const c = this.company || {};
+      const spec = (c.specialites || "").split(/[,;]/).map(s => s.trim()).filter(Boolean)[0];
+      if (spec && !this.src.query) this.src.query = spec;
+      const dep = (c.postal_code || "").slice(0, 2);
+      if (dep && !this.src.dept) this.src.dept = dep;
+      this.src.prefilled = true;
+    },
+    srcSearchMine() {   // « Voir les marchés pour mon entreprise »
+      this.srcPrefillFromProfile();
+      if (!(this.src.query || "").trim() && !this.src.dept) { this.go("company"); this.notify("Complétez vos spécialités et votre zone", "err"); return; }
+      this.srcSearch();
+    },
+    // ── #2 Élargir la recherche en un clic ──
+    srcWiden(kind) {
+      if (kind === "dept") this.src.dept = "";
+      else if (kind === "adv") { this.src.type_marche = ""; this.src.cpv = ""; }
+      else if (kind === "query") this.src.query = (this.src.query || "").trim().split(/\s+/)[0] || "";
+      this.srcSearch();
+    },
+    // ── #10 Quota visible avant l'analyse : compteur + garde ──
+    srcQuotaBlocked() { const u = this.stats.usage; return !!u && u.analyses_remaining <= 0 && !u.overage_enabled; },
+    srcQuotaLabel() {
+      const u = this.stats.usage; if (!u || typeof u.analyses_remaining !== "number") return "";
+      if (u.analyses_remaining > 0) return u.analyses_remaining + " analyse" + (u.analyses_remaining > 1 ? "s" : "") + " restante" + (u.analyses_remaining > 1 ? "s" : "") + " ce mois";
+      if (u.overage_enabled) return "Quota atteint — analyses au tarif à l'usage";
+      return "Quota d'analyses atteint ce mois";
+    },
+    // ── #5 Repère de prix marché (DECP) quand l'annonce n'a pas de budget ──
+    srcHasBudget(details) {
+      const b = details && (details.budget_estime || details.budget);
+      return !!(b && String(b).trim() && !/non|inconnu|à compléter|a completer|\bn\/?a\b/i.test(String(b)));
+    },
+    async srcMarketEstimate() {
+      const a = this.src.analysis; if (!a) return;
+      const d = a.details || {};
+      const objet = d.intitule_marche || (this.src.chosen && this.src.chosen.objet) || this.src.query || "";
+      const dep = (this.srcDeps()[0] || (this.src.chosen && (this.src.chosen.departements || [])[0]) || "");
+      this.src.marketEstBusy = true;
+      try {
+        this.src.marketEst = await this.api("POST", "/api/sourcing/market-estimate",
+          { objet: objet, departement: dep, cpv: this.srcCpv()[0] || "" });
+      } catch (e) { this.src.marketEst = { ok: false }; this.notify(e.message, "err"); }
+      finally { this.src.marketEstBusy = false; }
+    },
     async srcAnalyze(t) {
       if (!this.gateCriteria()) return;
-      this.src.analyzing = true; this.src.chosen = t; this.src.analysis = null;
+      this.src.analyzing = true; this.src.chosen = t; this.src.analysis = null; this.src.marketEst = null;
       this.src.ct.companies = []; this.src.ct.selected = []; this.src.dossier = null;
       try {
         const r = await this.api("POST", "/api/sourcing/analyze", { tender: t });
@@ -1598,7 +1747,12 @@ const __adjApp = createApp({
     },
     confClass(c) { return c >= 0.8 ? "go" : c >= 0.5 ? "a_etudier" : "neutral"; },
     critStatus(s) { return ({ ok: "go", partiel: "a_etudier", inconnu: "neutral" })[s] || "neutral"; },
-    saveBlob(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); },
+    saveBlob(blob, name) {
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      // Sans révocation, chaque téléchargement gardait le fichier entier en mémoire.
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    },
   },
 });
 

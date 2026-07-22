@@ -107,6 +107,9 @@ LISTE :
         estimated = duree is None
         if not isinstance(duree, (int, float)) or duree <= 0:
             duree = _DEFAULT_DUREE.get(ctype, 36)
+        # Borne HAUTE : une durée LLM absurde (ex. duree_mois=999999999) ferait planter
+        # timedelta (OverflowError → 500). On plafonne à 240 mois (20 ans).
+        duree = min(float(duree), 240)
         fin = aw + timedelta(days=int(duree * 30.4))
         renouv = fin - timedelta(days=120)   # republication anticipée ~4 mois avant la fin
         if not (win_start <= renouv <= win_end):

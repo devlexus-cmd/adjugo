@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
 from app.core.database import get_db
@@ -69,7 +70,8 @@ def _hash_otp(code: str) -> str:
 
 
 def _send_invite_email(inv, project, base_url: str) -> bool:
-    """Envoie le lien d'invitation au co-traitant. No-op gracieux si email désactivé."""
+    """Envoie le lien d'invitation au co-traitant. No-op gracieux si email désactivé.
+    Horodate l'envoi réussi (emailed_at) → le mandataire voit si le mail est parti."""
     if not _is_email(inv.recipient):
         return False
     try:
@@ -82,9 +84,70 @@ def _send_invite_email(inv, project, base_url: str) -> bool:
                 f"Accédez à votre espace dédié (cloisonné à ce seul dossier) :\n{url}\n\n"
                 f"Vous n'y voyez que ce dossier et votre propre contribution — jamais les "
                 f"données des autres partenaires.\n\n— Adjugo, le réseau des PME")
-        return _email.send_email(inv.recipient, subj, text)
+        sent = _email.send_email(inv.recipient, subj, text)
+        if sent:
+            inv.emailed_at = utcnow()
+        return sent
     except Exception:
         return False
+
+
+def _mandataire_email(owner_id: int, db: Session) -> Optional[str]:
+    """Email du mandataire (propriétaire du tenant) pour les notifications de groupement."""
+    u = db.query(User).filter(User.id == owner_id).first()
+    return (u.email if u and _is_email(u.email or "") else None)
+
+
+def _notify_part_submitted(inv, contribution, db: Session) -> None:
+    """Prévient le mandataire par email qu'une part vient d'être soumise (best-effort).
+    Un dirigeant ne rafraîchit pas Adjugo toute la journée : sans ça, il peut rater une
+    part reçue à la veille du dépôt."""
+    try:
+        to = _mandataire_email(inv.owner_id, db)
+        if not to:
+            return
+        from app.services import email as _email
+        project = db.query(Project).filter(Project.id == inv.project_id).first()
+        pname = (project.name if project else "votre marché")
+        who = contribution.company_name or inv.company_name or "Un partenaire"
+        # X/Y partenaires prêts (parts soumises / invitations actives du projet).
+        total = db.query(ProjectInvite).filter(ProjectInvite.project_id == inv.project_id,
+                                               ProjectInvite.revoked.is_(False)).count()
+        done = db.query(ProjectContribution).join(
+            ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
+            ProjectContribution.project_id == inv.project_id,
+            ProjectContribution.status == "submitted",
+            ProjectInvite.revoked.is_(False)).count()
+        base = (_settings.APP_BASE_URL or "").rstrip("/")
+        subj = f"{who} a soumis sa part — {pname[:60]}"
+        text = (f"Bonjour,\n\n{who} vient de soumettre sa part sur le marché « {pname} ».\n"
+                f"Partenaires prêts : {done}/{total}.\n\n"
+                f"Ouvrez le cockpit du groupement pour assembler la réponse commune :\n{base}/app\n\n"
+                f"— Adjugo")
+        _email.send_email(to, subj, text)
+    except Exception:
+        pass
+
+
+def _notify_partner_received(inv, db: Session) -> None:
+    """Accusé de réception au partenaire après soumission (best-effort) : une trace écrite
+    rassure un dirigeant qui vient d'envoyer une pièce engageante à un marché public."""
+    try:
+        if not _is_email(inv.recipient):
+            return
+        from app.services import email as _email
+        project = db.query(Project).filter(Project.id == inv.project_id).first()
+        pname = (project.name if project else "le marché")
+        owner_company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
+        chef = (owner_company.name if owner_company and owner_company.name else "le chef de file")
+        subj = f"Votre part a bien été transmise — {pname[:60]}"
+        text = (f"Bonjour,\n\nVotre part sur le marché « {pname} » a bien été transmise à "
+                f"{chef}.\n\nVous pouvez encore l'ajuster (texte et pièces) jusqu'à la date "
+                f"limite via votre lien. Toute modification après envoi repasse votre part en "
+                f"brouillon : pensez à la re-soumettre.\n\n— Adjugo, le réseau des PME")
+        _email.send_email(inv.recipient, subj, text)
+    except Exception:
+        pass
 _ALLOWED_EXT = {e.strip().lower() for e in _settings.ALLOWED_UPLOAD_EXT.split(",") if e.strip()}
 _MAX_BYTES = _settings.MAX_UPLOAD_MB * 1024 * 1024
 
@@ -94,7 +157,9 @@ def _read_upload(file: UploadFile) -> tuple:
     ext = os.path.splitext(file.filename or "")[1].lower()
     if _ALLOWED_EXT and ext not in _ALLOWED_EXT:
         raise HTTPException(400, f"Type de fichier non autorisé ({ext or 'inconnu'}).")
-    content = file.file.read()
+    # Lecture BORNÉE : on ne charge jamais plus de la limite +1 octet en mémoire (l'upload
+    # vient d'un invité non authentifié → un fichier géant ne doit pas gonfler le process).
+    content = file.file.read(_MAX_BYTES + 1)
     if not content:
         raise HTTPException(400, "Fichier vide")
     if len(content) > _MAX_BYTES:
@@ -213,6 +278,8 @@ def _serialize_invite(inv: ProjectInvite, contribution: "ProjectContribution" = 
         "view_count": inv.view_count or 0,
         "last_viewed_at": inv.last_viewed_at.isoformat() if inv.last_viewed_at else None,
         "created_at": inv.created_at.isoformat() if inv.created_at else None,
+        # emailed_at = le lien a réellement été envoyé par email (sinon : à transmettre à la main).
+        "emailed_at": inv.emailed_at.isoformat() if getattr(inv, "emailed_at", None) else None,
         "contribution_status": (contribution.status if contribution else None),
     }
 
@@ -236,7 +303,10 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
         role=(body.role if body.role in ("cotraitant", "sous_traitant") else "cotraitant"),
         can_view_docs=bool(body.can_view_docs),
         can_contribute=bool(body.can_contribute),
-        expires_at=(utcnow() + timedelta(days=body.expires_days)) if body.expires_days and body.expires_days > 0 else None,
+        # Borné à [1, 365] j : days=0 → lien permanent (voulu) ; une valeur énorme faisait
+        # planter timedelta (OverflowError 500), une valeur négative créait un lien déjà expiré.
+        expires_at=(utcnow() + timedelta(days=min(int(body.expires_days), 365)))
+                   if body.expires_days and body.expires_days > 0 else None,
     )
     db.add(inv)
     db.commit()
@@ -246,10 +316,14 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
                  target_type="invite", target_id=inv.id,
                  detail=(inv.company_name or inv.recipient or "")[:255],
                  ip=audit.client_ip(request))
+    # Envoi du lien par email au destinataire (si adresse + SMTP configuré). Renseigne
+    # emailed_at → on commit APRÈS l'envoi pour le persister.
+    emailed = _send_invite_email(inv, project, _settings.APP_BASE_URL or str(request.base_url))
+    db.commit()
+    db.refresh(inv)
     out = _serialize_invite(inv)
     out["url"] = str(request.base_url).rstrip("/") + out["path"]
-    # Envoi du lien par email au destinataire (si adresse + SMTP configuré).
-    out["emailed"] = _send_invite_email(inv, project, _settings.APP_BASE_URL or str(request.base_url))
+    out["emailed"] = emailed
     return out
 
 
@@ -265,6 +339,31 @@ def list_invites(project_id: int, current_user: User = Depends(get_current_user)
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id).all()}
     return [_serialize_invite(r, contribs.get(r.id)) for r in rows]
+
+
+@router.post("/api/projects/{project_id}/invites/{invite_id}/resend")
+def resend_invite(project_id: int, invite_id: int, request: Request,
+                  current_user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """Renvoie le mail d'invitation SUR LE MÊME lien (sans changer le token) : relance un
+    partenaire silencieux ou rattrape un mail tombé en spam, sans casser l'URL déjà partagée."""
+    project = _owned_project(project_id, current_user, db)
+    inv = db.query(ProjectInvite).filter(
+        ProjectInvite.id == invite_id, ProjectInvite.project_id == project_id).first()
+    if not inv:
+        raise HTTPException(404, "Invitation introuvable")
+    if inv.revoked:
+        raise HTTPException(400, "Ce lien a été révoqué — créez une nouvelle invitation.")
+    if not _is_email(inv.recipient):
+        raise HTTPException(400, "Aucune adresse email sur ce lien — copiez-le et transmettez-le à la main.")
+    sent = _send_invite_email(inv, project, _settings.APP_BASE_URL or str(request.base_url))
+    db.commit()
+    if sent:
+        audit.record(db, action="invite.resent", owner_id=inv.owner_id, project_id=project_id,
+                     actor=f"user:{current_user.id}", actor_kind="owner",
+                     target_type="invite", target_id=inv.id,
+                     detail=(inv.recipient or "")[:255], ip=audit.client_ip(request))
+    return {"sent": sent, "emailed_at": inv.emailed_at.isoformat() if inv.emailed_at else None}
 
 
 @router.delete("/api/projects/{project_id}/invites/{invite_id}")
@@ -437,10 +536,14 @@ def _serialize_contribution(c: ProjectContribution, db: Session = None) -> dict:
         "references": c.references or [], "qualifications": c.qualifications or [],
         "chiffrage_note": c.chiffrage_note or "", "memoire_paragraph": c.memoire_paragraph or "",
         "contact": c.contact or {}, "status": c.status,
+        "note_au_mandataire": getattr(c, "note_au_mandataire", "") or "",
         "version": c.version or 0,
         "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
         "pieces": pieces,
+        # Checklist des pièces administratives : le partenaire voit en direct ce qu'il a
+        # fourni et ce qu'il lui reste à déposer (même logique que la vue mandataire).
+        "pieces_checklist": _classify_partner_pieces([p["name"] for p in pieces]),
     }
 
 
@@ -452,8 +555,17 @@ def _get_or_create_contribution(inv: ProjectInvite, db: Session) -> ProjectContr
             company_name=inv.company_name or "", role=inv.role or "cotraitant",
         )
         db.add(c)
-        db.commit()
-        db.refresh(c)
+        try:
+            db.commit()
+            db.refresh(c)
+        except IntegrityError:
+            # invite_id est UNIQUE : deux requêtes concurrentes (2 onglets, GET /contribution
+            # + /otp/status en parallèle) peuvent tenter l'INSERT ensemble → on récupère la
+            # contribution créée par l'autre au lieu de renvoyer un 500.
+            db.rollback()
+            c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+            if c is None:
+                raise
     return c
 
 
@@ -470,6 +582,7 @@ class ContributionSave(BaseModel):
     chiffrage_note: Optional[str] = None
     memoire_paragraph: Optional[str] = None
     contact: Optional[dict] = None
+    note_au_mandataire: Optional[str] = None   # mot libre du partenaire au chef de file
     version: Optional[int] = None     # verrou optimiste : la version chargée par le client
 
 
@@ -533,6 +646,8 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
     if body.contact is not None:
         c.contact = {k: str(v)[:255] for k, v in (body.contact or {}).items()
                      if k in ("nom", "email", "telephone")}
+    if body.note_au_mandataire is not None:
+        c.note_au_mandataire = body.note_au_mandataire[:2000]
     if c.status == "submitted":            # toute modif après soumission repasse en brouillon
         c.status = "draft"
         c.submitted_at = None
@@ -554,7 +669,9 @@ def guest_otp_status(token: str, request: Request, db: Session = Depends(get_db)
     inv = _valid_invite(token, db)
     # `pending` = un code valide a déjà été envoyé et n'est pas expiré → le front le réutilise
     # au lieu de rappeler /otp/request (qui consomme la limite 6/h et bloquerait le partenaire).
-    pending = bool(inv.otp_hash and inv.otp_expires_at and inv.otp_expires_at > utcnow())
+    # _is_expired et non `> utcnow()` : relu en base, otp_expires_at est NAÏF alors
+    # qu'utcnow() est aware → TypeError (500) dès la 2e requête sans cette précaution.
+    pending = bool(inv.otp_hash and inv.otp_expires_at and not _is_expired(inv.otp_expires_at))
     return {"required": _binding_required(inv),
             "verified": bool(inv.verified_at),
             "pending": pending,
@@ -572,7 +689,7 @@ def guest_otp_request(token: str, request: Request, db: Session = Depends(get_db
     # Idempotence : si un code valide est DÉJÀ en attente, on ne le régénère pas (sinon le code
     # déjà reçu par le partenaire serait invalidé à chaque clic « Soumettre », et le plafond
     # 6/h finirait par le verrouiller). Il réutilise le code reçu.
-    if inv.otp_hash and inv.otp_expires_at and inv.otp_expires_at > utcnow():
+    if inv.otp_hash and inv.otp_expires_at and not _is_expired(inv.otp_expires_at):
         return {"sent": True, "already": True,
                 "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
     code = f"{secrets.randbelow(1_000_000):06d}"
@@ -581,12 +698,21 @@ def guest_otp_request(token: str, request: Request, db: Session = Depends(get_db
     inv.otp_attempts = 0
     db.commit()
     from app.services import email as _email
-    _email.send_email(
+    sent = _email.send_email(
         inv.recipient,
         "Votre code de vérification Adjugo",
         f"Votre code pour valider votre contribution au groupement : {code}\n\n"
         f"Il expire dans {_OTP_TTL_MIN} minutes. Si vous n'êtes pas à l'origine de cette "
         f"demande, ignorez ce message.")
+    if not sent:
+        # L'email n'est pas parti : on EFFACE le code en attente, sinon l'invité restait
+        # bloqué (état « pending » 15 min) avec un code qu'il n'a jamais reçu.
+        inv.otp_hash = None
+        inv.otp_expires_at = None
+        db.commit()
+        return {"sent": False,
+                "reason": "L'envoi du code a échoué. Réessayez dans un instant.",
+                "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
     audit.record(db, action="guest.otp_request", owner_id=inv.owner_id, project_id=inv.project_id,
                  actor=(inv.recipient or "")[:160], actor_kind="guest", target_type="invite",
                  target_id=inv.id, ip=audit.client_ip(request))
@@ -642,6 +768,10 @@ def guest_submit_contribution(token: str, request: Request, db: Session = Depend
                  actor=(inv.recipient or inv.company_name or "invité")[:160], actor_kind="guest",
                  target_type="contribution", target_id=c.id,
                  detail=(c.company_name or inv.company_name or "")[:255], ip=audit.client_ip(request))
+    # Notifications best-effort (aucune ne doit casser la soumission) : le mandataire est
+    # prévenu qu'une part est arrivée, le partenaire reçoit un accusé de réception.
+    _notify_part_submitted(inv, c, db)
+    _notify_partner_received(inv, db)
     return _serialize_contribution(c, db)
 
 
@@ -715,6 +845,11 @@ def guest_upload_piece(token: str, request: Request, file: UploadFile = File(...
         name=os.path.basename(file.filename or "piece")[:500], file_key=file_key,
         file_size=len(content), mime_type=safe_mime[:100])
     db.add(pc)
+    # Cohérence avec le PUT : ajouter une pièce après soumission repasse la part en
+    # brouillon, sinon le pli « soumis » que le mandataire croit figé change en douce.
+    if c.status == "submitted":
+        c.status = "draft"
+        c.submitted_at = None
     db.commit()
     db.refresh(pc)
     audit.record(db, action="guest.upload_piece", owner_id=inv.owner_id, project_id=inv.project_id,
@@ -742,6 +877,11 @@ def guest_delete_piece(token: str, piece_id: int, request: Request, db: Session 
     except Exception:
         pass
     db.delete(pc)
+    # Comme le PUT : retirer une pièce après soumission repasse la part en brouillon
+    # (le pli déposé ne doit pas perdre une pièce en silence après « soumission »).
+    if c.status == "submitted":
+        c.status = "draft"
+        c.submitted_at = None
     db.commit()
     return {"ok": True}
 
@@ -1028,9 +1168,15 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
         raise HTTPException(409, "Ce lien a déjà été réclamé par un autre compte.")
     # Binding d'identité : si le lien cible une adresse précise, seul le compte de CETTE
     # adresse peut le réclamer (le secret de l'URL ne suffit plus à usurper le partenaire).
-    if _is_email(inv.recipient) and (current_user.email or "").strip().lower() != inv.recipient.strip().lower():
-        raise HTTPException(403, f"Ce lien est réservé à {_mask_email(inv.recipient)}. "
-                                 f"Connectez-vous avec ce compte pour l'accepter.")
+    if _is_email(inv.recipient):
+        if (current_user.email or "").strip().lower() != inv.recipient.strip().lower():
+            raise HTTPException(403, f"Ce lien est réservé à {_mask_email(inv.recipient)}. "
+                                     f"Connectez-vous avec ce compte pour l'accepter.")
+        # …et cette adresse doit être PROUVÉE : sinon n'importe qui pouvait créer un compte
+        # avec l'email du partenaire (jamais confirmé) et verrouiller le lien à sa place.
+        if not getattr(current_user, "email_verified", False):
+            raise HTTPException(403, "Confirmez d'abord votre adresse email (lien reçu par mail) "
+                                     "pour accepter ce partage nominatif.")
     if not inv.accepted_by_user_id:
         inv.accepted_by_user_id = current_user.id
         db.commit()
@@ -1065,10 +1211,14 @@ def dossier_preview(project_id: int, current_user: User = Depends(get_current_us
         {"name": "synthese_groupement.pdf", "kind": "Composition du groupement"},
         {"name": "fiche_appel_offres.pdf", "kind": "Fiche récapitulative de l'AO"},
     ]
+    # Exclut les partenaires RÉVOQUÉS (comme build_dossier) : l'aperçu doit refléter
+    # exactement le ZIP réellement assemblé, jamais les pièces d'un partenaire retiré.
     rows = db.query(ContributionPiece, ProjectContribution).join(
-        ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).filter(
+        ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).join(
+        ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
         ContributionPiece.project_id == project_id,
-        ProjectContribution.status == "submitted").all()
+        ProjectContribution.status == "submitted",
+        ProjectInvite.revoked.is_(False)).all()
     for pc, cb in rows:
         co = (cb.company_name or "cotraitant")
         files.append({"name": f"pieces_cotraitants/{co}/{pc.name}",
@@ -1084,8 +1234,13 @@ def consortium_report(project_id: int, current_user: User = Depends(get_current_
     project = _owned_project(project_id, current_user, db)
     data = consortium_cockpit(project_id, current_user, db)
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
-    contribs = [_serialize_contribution(c, db) for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project_id).all()]
+    # Cloisonnement : le compte-rendu est « partageable » → il ne doit JAMAIS exposer
+    # l'apport (approche prix, mémoire) d'un partenaire RÉVOQUÉ. On aligne sur build_dossier :
+    # jointure sur l'invitation + exclusion des révoqués (et seules les parts soumises comptent).
+    contribs = [_serialize_contribution(c, db) for c in db.query(ProjectContribution).join(
+        ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
+        ProjectContribution.project_id == project_id,
+        ProjectInvite.revoked.is_(False)).all()]
     from app.services.consortium_report import generate_consortium_report_pdf
     pdf = generate_consortium_report_pdf(project.name, (company.name if company else ""), data, contribs)
     safe = re.sub(r'[^A-Za-z0-9._ -]', "_", (project.name or "consortium"))[:50]

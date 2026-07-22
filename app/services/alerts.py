@@ -27,6 +27,66 @@ def _due_alert(doc, days: int):
     return None
 
 
+def run_cotraitance_reminders(db: Session) -> dict:
+    """Relance les partenaires invités qui n'ont PAS soumis leur part, à l'approche de la
+    date limite. Idempotent par palier (reminder_stage : 1 = J-3 envoyée, 2 = J-1 envoyée)
+    → un partenaire reçoit au plus une relance par palier. Process unique sans Redis :
+    appelé par cron (POST /api/admin/run-cotraitance-reminders)."""
+    from datetime import datetime, timezone
+    from app.models import Project, ProjectInvite, ProjectContribution, Company
+
+    def _is_email(v):
+        return bool(v) and "@" in str(v) and "." in str(v).split("@")[-1]
+
+    today = datetime.now(timezone.utc).date()
+    invites = db.query(ProjectInvite).filter(
+        ProjectInvite.revoked.is_(False),
+        ProjectInvite.can_contribute.is_(True)).all()
+    scanned, reminded = 0, 0
+    for inv in invites:
+        if not _is_email(inv.recipient):
+            continue
+        project = db.query(Project).filter(Project.id == inv.project_id,
+                                           Project.deleted_at.is_(None)).first()
+        if not project or not project.deadline:
+            continue
+        # deadline peut être un date OU un datetime selon les enregistrements → on normalise.
+        deadline = project.deadline
+        deadline_date = deadline.date() if isinstance(deadline, datetime) else deadline
+        days_left = (deadline_date - today).days
+        if days_left < 0:
+            continue   # échéance passée : plus de relance
+        # Part déjà soumise ? pas de relance.
+        c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+        if c and c.status == "submitted":
+            continue
+        scanned += 1
+        # Palier à envoyer : J-1 (stage 2) prioritaire, sinon J-3 (stage 1).
+        stage = inv.reminder_stage or 0
+        target = None
+        if days_left <= 1 and stage < 2:
+            target = 2
+        elif days_left <= 3 and stage < 1:
+            target = 1
+        if not target:
+            continue
+        company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
+        chef = (company.name if company and company.name else "le chef de file")
+        base = "il vous reste 1 jour" if days_left <= 1 else f"il vous reste {days_left} jours"
+        subj = f"Rappel — {base} pour votre part ({project.name[:50]})"
+        text = (f"Bonjour,\n\n{base} pour ajouter votre part au groupement de {chef} sur le "
+                f"marché « {project.name} » (date limite : {deadline_date}).\n\n"
+                f"Complétez et soumettez votre part via votre lien Adjugo. Sans elle, votre "
+                f"entreprise ne figurera pas dans la réponse commune.\n\n— Adjugo, le réseau des PME")
+        if send_email(inv.recipient, subj, text):
+            inv.reminder_stage = target
+            reminded += 1
+    db.commit()
+    result = {"scanned": scanned, "reminded": reminded}
+    logger.info("relances co-traitance : %s", result)
+    return result
+
+
 def run_document_expiry_alerts(db: Session) -> dict:
     today = date.today()
     docs = db.query(Document).filter(

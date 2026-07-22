@@ -123,6 +123,7 @@ def match_document(piece_name, documents):
         "planning": ["planning", "calendrier", "delai", "gantt"],
     }
 
+    fallback = None   # un document qui matche mais est expiré : gardé en repli seulement
     for doc in documents:
         doc_name = _norm(doc.name)
         doc_cat = _norm(getattr(doc.category, "value", doc.category))
@@ -131,16 +132,19 @@ def match_document(piece_name, documents):
         for key, terms in keywords.items():
             if key in piece_lower or any(t in piece_lower for t in terms):
                 if any(t in doc_name or t in doc_cat for t in terms):
-                    return {
-                        "found": True,
-                        "document_id": doc.id,
-                        "document_name": doc.name,
-                        # Vraie date d'expiration (la colonne days_until_expiration n'existe PAS sur
-                        # le modèle → hasattr renvoyait toujours False → AUCUNE pièce jamais « périmée »).
-                        "expired": (doc.expiration_date is not None and doc.expiration_date < date.today()),
-                    }
+                    # Vraie date d'expiration (la colonne days_until_expiration n'existe PAS sur
+                    # le modèle → hasattr renvoyait toujours False → AUCUNE pièce jamais « périmée »).
+                    expired = (doc.expiration_date is not None and doc.expiration_date < date.today())
+                    hit = {"found": True, "document_id": doc.id,
+                           "document_name": doc.name, "expired": expired}
+                    # Un document VALIDE prime : sinon une vieille version expirée masquait
+                    # une pièce à jour présente dans le coffre-fort (checklist « périmée » à tort).
+                    if not expired:
+                        return hit
+                    fallback = fallback or hit
+                    break   # ce doc est déjà classé, passe au suivant
 
-    return {"found": False}
+    return fallback or {"found": False}
 
 
 @router.get("/{project_id}")
@@ -171,7 +175,11 @@ def get_checklist(
     # Pieces extraites par l'IA (si analyse faite)
     ai_pieces = []
     if project.ai_analysis and isinstance(project.ai_analysis, dict):
-        ai_pieces = project.ai_analysis.get("pieces_requises", [])
+        # `or []` : la clé peut exister avec la valeur null (IA) → sans ça, l'itération
+        # plus bas plante en 500 (« NoneType is not iterable »).
+        ai_pieces = project.ai_analysis.get("pieces_requises") or []
+        if not isinstance(ai_pieces, list):
+            ai_pieces = []
 
     # Contexte du marché : réévalue les pièces « conditionnelles » en obligatoires.
     is_travaux = _is_travaux(project)
@@ -202,7 +210,9 @@ def get_checklist(
     # Ajouter les pieces IA qui ne sont pas dans la liste standard
     for ap in ai_pieces:
         name = ap if isinstance(ap, str) else ap.get("nom", "")
-        if name and not any(name.lower() in p["name"].lower() for p in all_pieces):
+        # _norm (sans accents) : « Références » de l'IA dédoublonne bien « references »
+        # standard — sinon la pièce apparaissait en double et faussait le % de complétion.
+        if name and not any(_norm(name) in _norm(p["name"]) for p in all_pieces):
             all_pieces.append({
                 "id": "ia_" + str(len(all_pieces)),
                 "name": name,

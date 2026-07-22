@@ -188,12 +188,20 @@ def _anchor(p: dict, source_text: str, title_only: bool) -> dict:
                      "région", "departement", "état", "etat", "autofinancement", "europ", "prêt")
         if not any(t in src_l for t in fin_terms):
             p["financement"] = ""
-    # Mode « titre nu » (scan de délibérations) : un intitulé ne porte JAMAIS de façon fiable
-    # un montant ni une échéance d'AO → on les efface systématiquement (zéro budget deviné).
+    # Mode « titre nu » (scan de délibérations) : un intitulé ne porte JAMAIS de façon
+    # fiable une échéance d'AO → effacée systématiquement. Le budget, lui, ne survit que
+    # si SON montant figure tel quel dans le titre (« voirie 50 000 € ») : un montant
+    # halluciné, arrondi ou différent est effacé (zéro budget deviné).
     if title_only:
         p["echeance_ao"] = ""
-        p["budget"] = None
-        p["budget_texte"] = ""
+        digit_groups = {re.sub(r"\D", "", g) for g in re.findall(r"\d[\d\s., ]*", src)}
+        try:
+            budget_digits = str(int(float(p["budget"]))) if p.get("budget") is not None else ""
+        except (TypeError, ValueError):
+            budget_digits = ""
+        if not budget_digits or budget_digits not in digit_groups:
+            p["budget"] = None
+            p["budget_texte"] = ""
     return p
 
 
@@ -233,17 +241,17 @@ def score_pertinence(projet: dict, criteria: dict, domaines=None) -> tuple:
         zone = 12
 
     # 3) Budget (15)
-    bmin, bmax = criteria.get("budget_min"), criteria.get("budget_max")
-    b = projet.get("budget")
+    bmin, bmax = _num(criteria.get("budget_min")), _num(criteria.get("budget_max"))
+    b = _num(projet.get("budget"))   # l'IA peut renvoyer « 50 000 » (str) → coercition sûre, sinon TypeError (500)
     if b is None:
         budget = 9
-    elif (bmin in (None, 0) or b >= bmin) and (bmax in (None, 0) or b <= bmax):
+    elif (not bmin or b >= bmin) and (not bmax or b <= bmax):
         budget = 15
     else:
         budget = 6
 
     # 4) Maturité / probabilité d'AO (20)
-    mat = projet.get("maturite")
+    mat = _num(projet.get("maturite"))
     if mat is None:
         mat = _maturite_from_phase(projet.get("phase", ""))
     maturite = round(20 * max(0, min(100, mat)) / 100)
@@ -259,6 +267,23 @@ _PHASE_MAT = {"imminent": 90, "concours": 80, "financement voté": 75,
 
 def _maturite_from_phase(phase: str) -> int:
     return _PHASE_MAT.get(str(phase or "").strip().lower(), 45)
+
+
+def _num(v):
+    """Coercition numérique tolérante : l'IA renvoie parfois un montant/score en TEXTE
+    (« 50 000 », « 50000 € »). Renvoie un float, ou None si non convertible — jamais
+    une comparaison str/int qui ferait planter le scoring (500)."""
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    digits = re.sub(r"[^\d.]", "", str(v).replace(",", "."))
+    if not digits or digits == ".":
+        return None
+    try:
+        return float(digits)
+    except ValueError:
+        return None
 
 
 def _words(s: str) -> set:

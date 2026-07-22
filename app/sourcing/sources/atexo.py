@@ -105,7 +105,12 @@ def _parse_page(html, source_name, base):
             provenance=Provenance(source=source_name, source_url=cons_url, official_ref=cid),
             raw={"objet_complet": objet[:600], "dep": dep})
         te.confidence = 0.7
-        te.dedup_key = "atexo:" + cid
+        # Clé de dédup FLOUE (objet+acheteur+échéance), identique à BOAMP/TED : un même MAPA
+        # publié aussi sur BOAMP fusionne (concordance) au lieu d'apparaître en double. La dédup
+        # INTRA-Atexo, elle, se fait sur le cid exact (cf. _fetch_all) — pas de faux positif.
+        base = re.sub(r"[^a-z0-9]", "", (titre or "").lower())[:40]
+        ach = re.sub(r"[^a-z0-9]", "", (organisme or "").lower())[:20]
+        te.dedup_key = f"{base}|{ach}|{te.date_limite or ''}"
         out.append(te)
     return out, len(ids)
 
@@ -126,9 +131,12 @@ def _fetch_all(url, source_name, base):
                 part, n_links = _parse_page(html, source_name, base)
                 total_links += n_links
                 for te in part:
-                    if te.dedup_key in seen:
+                    # Dédup intra-Atexo sur le cid EXACT (official_ref) : la clé floue peut
+                    # coïncider entre deux consultations proches, pas le cid.
+                    cid = te.provenance.official_ref
+                    if cid in seen:
                         continue
-                    seen.add(te.dedup_key)
+                    seen.add(cid)
                     tenders.append(te)
                 # Budget ADAPTATIF : on n'entame la page suivante que si elle tient dans le
                 # budget, estimé sur la durée de la dernière requête. Plateforme lente (PLACE)

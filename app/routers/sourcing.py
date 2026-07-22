@@ -63,6 +63,16 @@ def _company_service() -> CompanySearchService:
     return CompanySearchService(COMPANY_SOURCES, red_flag_source=RED_FLAG_SOURCE)
 
 
+def _verdict(score, gonogo) -> str:
+    """Verdict Go/À étudier/No-Go à partir des seuils du profil. Garde-fou CENTRAL :
+    on force nogo_threshold < go_threshold pour que la bande « à étudier » existe toujours
+    (sinon un profil mal réglé nogo≥go faisait disparaître la zone intermédiaire)."""
+    go_t = (gonogo or {}).get("go_threshold") or 65
+    nogo_t = (gonogo or {}).get("nogo_threshold") or 40
+    nogo_t = min(nogo_t, go_t - 1)
+    return "go" if score >= go_t else ("no_go" if score < nogo_t else "a_etudier")
+
+
 def _user_country(current_user, db) -> str:
     """Pays d'adaptation de l'organisation de l'utilisateur (défaut FR)."""
     from app.models import Organization
@@ -86,6 +96,27 @@ def buyer_profile(request: Request, acheteur: str = "",
     Renvoie {} si l'acheteur n'a aucun avis trouvé — jamais de profil inventé."""
     prof = BUYER_SOURCE.profile(acheteur)
     return prof or {"acheteur": acheteur, "found": False}
+
+
+class MarketEstimateRequest(BaseModel):
+    objet: str = ""
+    departement: str = ""
+    cpv: str = ""
+
+
+@router.post("/market-estimate")
+@limiter.limit("40/hour")
+def market_estimate(request: Request, req: MarketEstimateRequest,
+                    current_user: User = Depends(get_current_user)):
+    """Repère de PRIX DE MARCHÉ (fourchette) à partir des marchés comparables réels (DECP).
+    Déterministe, SANS LLM, SANS quota. C'est un repère INDICATIF sourcé — jamais le budget
+    de l'acheteur, jamais un montant inventé. Utile quand l'avis ne publie pas de montant."""
+    objet = (req.objet or "").strip()
+    if len(objet) < 3:
+        raise HTTPException(422, "Objet trop court pour estimer un repère de prix.")
+    from app.services.estimation_budget import estimer_budget
+    return estimer_budget(objet, departement=(req.departement or "").strip()[:3],
+                          cpv=((req.cpv or "").strip() or None))
 
 
 # ── Optimiseur de groupement (composition recommandée par lot) ────────────────────
@@ -171,8 +202,8 @@ class SearchRequest(BaseModel):
     cpv: list[str] = []
     montant_min: Optional[float] = None
     montant_max: Optional[float] = None
-    limit: int = 20
-    offset: int = 0                # pagination « charger plus »
+    limit: int = PydField(20, ge=1, le=100)          # borné : l'UI demande 15 par page
+    offset: int = PydField(0, ge=0, le=10000)        # pagination « charger plus »
     countries: list[str] = []      # ISO alpha-2 (ex. ["FR","DE"]). Vide = toute l'UE/EEE.
     type_marche: str = ""          # "travaux" | "services" | "fournitures" | "" (tous)
 
@@ -310,9 +341,7 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
     # ; le score apparaît après import du DCE réel via /analyze-upload.
     if dce_available:
         score = analysis.get("match_score", 0)
-        go_t = (gonogo or {}).get("go_threshold") or 65
-        nogo_t = (gonogo or {}).get("nogo_threshold") or 40
-        decision = "go" if score >= go_t else ("no_go" if score < nogo_t else "a_etudier")
+        decision = _verdict(score, gonogo)
     else:
         score = None
         decision = None
@@ -335,6 +364,7 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         "confidence": tender.confidence,
         "summary": analysis.get("summary", ""),
         "details": analysis.get("details", {}),
+        "score_breakdown": analysis.get("score_breakdown"),   # « pourquoi ce % » (déterministe)
         "source": tender.provenance.model_dump(),
     }
 
@@ -391,9 +421,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     analysis["lead_score"] = prev.get("lead_score")
 
     score = analysis.get("match_score", 0)
-    go_t = (gonogo or {}).get("go_threshold") or 65
-    nogo_t = (gonogo or {}).get("nogo_threshold") or 40
-    decision = "go" if score >= go_t else ("no_go" if score < nogo_t else "a_etudier")
+    decision = _verdict(score, gonogo)
     analysis["go_decision"] = decision
 
     project.match_score = score
@@ -420,6 +448,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
         "dce_available": True,
         "summary": analysis.get("summary", ""),
         "details": analysis.get("details", {}),
+        "score_breakdown": analysis.get("score_breakdown"),   # « pourquoi ce % » (déterministe)
         "source": analysis["source"],
     }
 
@@ -476,9 +505,7 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     analysis["source"] = prev.get("source") or {}
     analysis["lead_score"] = prev.get("lead_score")
     score = analysis.get("match_score", 0)
-    go_t = (gonogo or {}).get("go_threshold") or 65
-    nogo_t = (gonogo or {}).get("nogo_threshold") or 40
-    decision = "go" if score >= go_t else ("no_go" if score < nogo_t else "a_etudier")
+    decision = _verdict(score, gonogo)
     analysis["go_decision"] = decision
     project.match_score = score
     project.go_decision = decision
@@ -493,6 +520,7 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
         "dce_available": True,
         "summary": analysis.get("summary", ""),
         "details": analysis.get("details", {}),
+        "score_breakdown": analysis.get("score_breakdown"),   # « pourquoi ce % » (déterministe)
         "source": analysis["source"],
     }
 

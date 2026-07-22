@@ -20,7 +20,14 @@ def real_client_ip(request, hops: int = None) -> str:
     """
     if hops is None:
         hops = getattr(settings, "TRUSTED_PROXY_HOPS", 1)
-    hops = max(1, int(hops or 1))
+    try:
+        hops = int(hops)
+    except (TypeError, ValueError):
+        hops = 1
+    # hops <= 0 = exposition DIRECTE (aucun proxy de confiance) : on IGNORE totalement
+    # X-Forwarded-For (entièrement forgeable par le client) et on s'en tient à l'IP du socket.
+    if hops <= 0:
+        return get_remote_address(request)
     xff = request.headers.get("x-forwarded-for")
     if xff:
         parts = [p.strip() for p in xff.split(",") if p.strip()]

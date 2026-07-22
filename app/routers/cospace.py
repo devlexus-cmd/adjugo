@@ -33,18 +33,23 @@ def _kb_count(db, user_id) -> int:
     return db.query(KnowledgeChunk).filter(KnowledgeChunk.user_id == user_id).count()
 
 
-def _member_out(db, m: CoMember) -> dict:
+def _member_out(db, m: CoMember, show_kb=True) -> dict:
+    # kb_chunks = TAILLE de la base de connaissances d'un membre = info concurrentielle :
+    # visible seulement par le mandataire (pilote), masquée aux autres co-traitants.
     return {"id": m.id, "user_id": m.user_id, "email": m.email, "role": m.role,
             "status": m.status, "company_name": m.company_name,
-            "kb_chunks": (_kb_count(db, m.user_id) if m.user_id else 0)}
+            "kb_chunks": (_kb_count(db, m.user_id) if (show_kb and m.user_id) else None)}
 
 
-def _space_out(db, s: CoSpace, members=None) -> dict:
+def _space_out(db, s: CoSpace, members=None, viewer_id=None) -> dict:
     members = members if members is not None else db.query(CoMember).filter(CoMember.space_id == s.id).all()
+    is_owner = (viewer_id is None) or (viewer_id == s.owner_id)
     return {"id": s.id, "name": s.name, "marche": s.marche, "owner_id": s.owner_id,
             "owner_company": _company_name(db, s.owner_id),
-            "owner_kb_chunks": _kb_count(db, s.owner_id),
-            "members": [_member_out(db, m) for m in members],
+            # Compteurs KB : réservés au mandataire ; un co-traitant ne voit pas la taille
+            # de base de connaissances des autres membres.
+            "owner_kb_chunks": (_kb_count(db, s.owner_id) if is_owner else None),
+            "members": [_member_out(db, m, show_kb=(is_owner or m.user_id == viewer_id)) for m in members],
             "warroom": s.warroom,
             "created_at": s.created_at.isoformat() if s.created_at else None}
 
@@ -75,7 +80,7 @@ def create_space(req: CreateSpace, current_user: User = Depends(get_current_user
     db.add(s)
     db.commit()
     db.refresh(s)
-    return {"space": _space_out(db, s)}
+    return {"space": _space_out(db, s, viewer_id=current_user.id)}
 
 
 @router.get("/")
@@ -84,13 +89,13 @@ def list_spaces(current_user: User = Depends(get_current_user), db: Session = De
     member_of = (db.query(CoSpace).join(CoMember, CoMember.space_id == CoSpace.id)
                  .filter(CoMember.user_id == current_user.id, CoMember.status == "accepted").all())
     spaces = {s.id: s for s in (owned + member_of)}.values()
-    return {"spaces": [_space_out(db, s) for s in spaces]}
+    return {"spaces": [_space_out(db, s, viewer_id=current_user.id) for s in spaces]}
 
 
 @router.get("/{space_id}")
 def get_space(space_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     s = _accessible(db, space_id, current_user)
-    return {"space": _space_out(db, s)}
+    return {"space": _space_out(db, s, viewer_id=current_user.id)}
 
 
 class InviteReq(BaseModel):
@@ -132,7 +137,10 @@ class JoinReq(BaseModel):
 
 @router.post("/join")
 def join(req: JoinReq, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    m = db.query(CoMember).filter(CoMember.token == (req.token or "").strip()).first()
+    tok = (req.token or "").strip()
+    if not tok:   # un token vide matcherait les lignes CoMember à token par défaut (=="")
+        raise HTTPException(404, "Code d'invitation invalide.")
+    m = db.query(CoMember).filter(CoMember.token == tok).first()
     if not m:
         raise HTTPException(404, "Invitation introuvable ou expirée.")
     if m.status == "accepted" and m.user_id and m.user_id != current_user.id:
@@ -142,7 +150,7 @@ def join(req: JoinReq, current_user: User = Depends(get_current_user), db: Sessi
     m.company_name = _company_name(db, current_user.id) or (current_user.full_name or "")
     db.commit()
     s = db.query(CoSpace).filter(CoSpace.id == m.space_id).first()
-    return {"ok": True, "space": _space_out(db, s)}
+    return {"ok": True, "space": _space_out(db, s, viewer_id=current_user.id)}
 
 
 @router.delete("/{space_id}")

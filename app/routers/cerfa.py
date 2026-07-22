@@ -44,7 +44,7 @@ def generate(
 
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     if not company:
-        raise HTTPException(status_code=400, detail="Completez votre profil entreprise")
+        raise HTTPException(status_code=400, detail="Complétez votre profil entreprise")
 
     cd = {}
     for k in ["name", "siret", "code_ape", "forme_juridique", "capital",

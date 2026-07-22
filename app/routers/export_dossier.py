@@ -39,7 +39,7 @@ def export_dossier(
 
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     if not company:
-        raise HTTPException(400, "Completez votre profil entreprise")
+        raise HTTPException(400, "Complétez votre profil entreprise")
 
     # Preparer les donnees entreprise
     cd = {}
@@ -68,6 +68,7 @@ def export_dossier(
     try:
         from app.routers.cotraitants import Cotraitant, ProjectCotraitant
         link_rows = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).all()
+        link_by_ct = {l.cotraitant_id: l for l in link_rows}
         ct_ids = [l.cotraitant_id for l in link_rows]
         cts = db.query(Cotraitant).filter(Cotraitant.id.in_(ct_ids)).all() if ct_ids else []
         for ct in cts:
@@ -77,6 +78,11 @@ def export_dossier(
                        "email", "phone", "tva_intracom", "ca_n1", "ca_n2",
                        "ca_n3", "effectif"]:
                 ct_data[k] = getattr(ct, k, "") or ""
+            # role/lot viennent du LIEN (pas de la fiche partenaire) : indispensables pour
+            # router correctement co-traitant → DC1/DC2 et sous-traitant → DC4.
+            lk = link_by_ct.get(ct.id)
+            ct_data["role"] = (getattr(lk, "role", "") or "cotraitant") if lk else "cotraitant"
+            ct_data["lot"] = (getattr(lk, "lot", "") or "") if lk else ""
             pd["cotraitants"].append(ct_data)
     except Exception:
         pass
@@ -105,6 +111,8 @@ def export_dossier(
                 "address": getattr(c, "address", "") or "", "postal_code": getattr(c, "postal_code", "") or "",
                 "city": getattr(c, "city", "") or "",
                 "email": contact.get("email", ""), "phone": contact.get("telephone", ""),
+                # role/lot : co-traitant → DC1/DC2 ; sous-traitant → DC4 (cf. cerfa._is_soustraitant).
+                "role": getattr(c, "role", "") or "cotraitant", "lot": getattr(c, "lot", "") or "",
             })
             if sir:
                 _seen_sir.add(sir)
@@ -116,9 +124,16 @@ def export_dossier(
     date_str = datetime.date.today().strftime("%Y-%m-%d")
     project_slug = project.name.replace(" ", "_")[:30]
 
+    # DC4 (déclaration de sous-traitance) UNIQUEMENT si un sous-traitant est déclaré —
+    # sinon on joignait un DC4 vide/sans objet à chaque dossier de groupement.
+    from app.services.cerfa import _soustraitants
+    _has_soustraitance = bool(_soustraitants(pd.get("cotraitants", [])))
+
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # 1. Generer les 4 CERFA
+        # 1. Generer les CERFA (DC4 seulement en cas de sous-traitance)
         for doc_type, generator in GENERATORS.items():
+            if doc_type == "dc4" and not _has_soustraitance:
+                continue
             try:
                 pdf_bytes = generator(cd, pd)
                 filename = "01_CERFA/{}_{}_{}.pdf".format(
@@ -208,11 +223,15 @@ def export_dossier(
         # Dérivé de GENERATORS (sinon le sommaire listait 4 CERFA alors que le ZIP en contient 6 :
         # la déclaration sur l'honneur OBLIGATOIRE et le DUME manquaient au sommaire).
         for dt in GENERATORS:
+            if dt == "dc4" and not _has_soustraitance:   # cohérent avec le ZIP réellement généré
+                continue
             sommaire.append("  - {}_{}_{}.pdf".format(dt.upper(), project_slug, date_str))
         sommaire.append("")
         sommaire.append("02_Documents/")
         for doc in documents:
-            sommaire.append("  - {} ({})".format(doc.name, doc.category or "autre"))
+            # .value : sinon le sommaire affichait « DocCategory.administratif » (repr de l'enum).
+            cat = getattr(doc.category, "value", doc.category) or "autre"
+            sommaire.append("  - {} ({})".format(doc.name, cat))
 
         sommaire.append("")
         sommaire.append("=" * 60)

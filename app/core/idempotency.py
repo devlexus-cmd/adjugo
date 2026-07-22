@@ -40,11 +40,14 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
             return {"type": "http.request", "body": body_bytes, "more_body": False}
         request._receive = _receive
 
-        # Clé cantonnée à (clé client, méthode, chemin, identité, EMPREINTE DU CORPS) :
-        # pas de collision entre endpoints, utilisateurs, ni charges utiles différentes.
+        # Clé cantonnée à (clé client, méthode, chemin + QUERY, identité, EMPREINTE DU CORPS) :
+        # pas de collision entre endpoints, utilisateurs, ni charges utiles différentes. La query
+        # DOIT en faire partie : des POST portent leur charge en query (ex. create-checkout?plan=)
+        # → sans elle, ?plan=pro et ?plan=business partageaient la même réponse cachée.
         auth = request.headers.get("authorization", "")
         body_h = hashlib.sha256(body_bytes).hexdigest()[:16]
-        ck = f"{key}|{request.method}|{request.url.path}|{hash(auth)}|{body_h}"
+        path_q = request.url.path + ("?" + request.url.query if request.url.query else "")
+        ck = f"{key}|{request.method}|{path_q}|{hash(auth)}|{body_h}"
         now = time.monotonic()
 
         with _LOCK:

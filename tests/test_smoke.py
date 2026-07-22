@@ -85,13 +85,17 @@ def test_document_upload_download_validate(client, auth):
 # ── Quota par plan ──
 
 def test_quota_blocks_at_limit(client, auth):
-    # Mettre le compteur du nouvel utilisateur (plan starter, limite 3) au plafond
+    # Mettre le compteur du nouvel utilisateur AU PLAFOND EFFECTIF — lu via quota._limit
+    # (un compte fraîchement inscrit est en essai gratuit 30j = accès niveau Pro, plus
+    # « starter/5 »). Sans ça le quota n'était pas atteint → VRAI appel LLM payant.
     from datetime import datetime, timezone
     from app.core.database import SessionLocal
+    from app.core.quota import _limit
     from app.models import User
     db = SessionLocal()
     u = db.query(User).filter(User.email == auth["email"]).first()
-    u.analyses_used_this_month = 3
+    lim = _limit(u)
+    u.analyses_used_this_month = lim
     u.analyses_period = datetime.now(timezone.utc).strftime("%Y-%m")
     db.commit(); db.close()
 
@@ -101,6 +105,46 @@ def test_quota_blocks_at_limit(client, auth):
     r = client.post("/api/sourcing/analyze", headers=auth["headers"], json={"tender": tender})
     assert r.status_code == 402  # quota atteint, sans appel LLM
     assert "uota" in r.json()["detail"]
+
+
+def test_trial_states_and_lockout(client, auth):
+    # Essai gratuit 30j SANS carte : actif → niveau Pro ; compte historique (NULL) →
+    # ancien palier Découverte ; expiré → limite 0 + 402 « essai terminé » à la conso.
+    from datetime import datetime, timezone, timedelta
+    from fastapi import HTTPException
+    from app.core.database import SessionLocal
+    from app.core.config import get_settings
+    from app.core.quota import _limit, _trial_state, consume_analysis
+    from app.models import User
+    PRO = get_settings().PLAN_LIMITS["pro"]["analyses"]
+    STARTER = get_settings().PLAN_LIMITS["starter"]["analyses"]
+    db = SessionLocal()
+    u = db.query(User).filter(User.email == auth["email"]).first()
+
+    # 1) Essai ACTIF (compte fraîchement inscrit) → accès niveau Pro
+    assert _trial_state(u) == "active"
+    assert _limit(u) == PRO
+
+    # 2) Compte HISTORIQUE (trial_ends_at NULL) → ancien palier Découverte conservé
+    u.trial_ends_at = None
+    assert _trial_state(u) == "none"
+    assert _limit(u) == STARTER
+
+    # 3) Essai EXPIRÉ → limite 0 + 402 dédié (pas d'overage)
+    u.trial_ends_at = datetime.now(timezone.utc) - timedelta(days=1)
+    u.email_verified = True
+    u.analyses_used_this_month = 0
+    u.analyses_period = datetime.now(timezone.utc).strftime("%Y-%m")
+    db.commit()
+    assert _trial_state(u) == "expired"
+    assert _limit(u) == 0
+    try:
+        consume_analysis(u, db)
+        assert False, "l'essai expiré aurait dû bloquer"
+    except HTTPException as e:
+        assert e.status_code == 402
+        assert "essai" in e.detail.lower()
+    db.close()
 
 
 # ── Sourcing : recherche d'AO (sources réelles, mock pour le test) ──
@@ -146,10 +190,18 @@ def test_document_expiry_alert(client, auth, monkeypatch):
     db.close()
 
 
-def test_cron_endpoint_demo(client):
-    # DEMO_MODE=true en test → endpoint accessible, renvoie un récap
-    r = client.post("/api/admin/run-alerts")
-    assert r.status_code == 200 and "scanned" in r.json()
+def test_cron_endpoint_secret(client):
+    # Le secret cron est TOUJOURS exigé (plus de contournement DEMO_MODE) : sans lui → 403,
+    # avec le bon en-tête → récap. On configure un secret le temps du test.
+    from app.routers import admin
+    old = admin.settings.CRON_SECRET
+    admin.settings.CRON_SECRET = "secret-de-test"
+    try:
+        assert client.post("/api/admin/run-alerts").status_code == 403
+        r = client.post("/api/admin/run-alerts", headers={"x-cron-secret": "secret-de-test"})
+        assert r.status_code == 200 and "scanned" in r.json()
+    finally:
+        admin.settings.CRON_SECRET = old
 
 
 # ── Rate limiting (en dernier : réactive puis désactive le limiteur) ──

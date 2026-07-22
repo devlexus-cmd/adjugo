@@ -60,8 +60,13 @@ def get_subscription_status(current_user: User = Depends(get_current_user),
     bu = _billing_user(current_user, db)
 
     def _persisted():
-        plan = getattr(bu.plan, "value", bu.plan) or "starter"
-        return {"plan": plan, "status": "active", "analyses_limit": _limit(plan)}
+        # Passe par quota.usage → tient compte de l'essai gratuit 30j (limite niveau Pro
+        # pendant l'essai, 0 une fois expire) et expose l'etat d'essai au front.
+        from app.core.quota import usage as _usage
+        u = _usage(bu, db)
+        return {"plan": u["plan"], "status": "active", "analyses_limit": u["analyses_limit"],
+                "trial_state": u.get("trial_state"), "trial_days_left": u.get("trial_days_left"),
+                "trial_ends_at": u.get("trial_ends_at")}
 
     if not bu.stripe_customer_id:
         return _persisted()

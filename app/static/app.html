@@ -15,7 +15,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Hanken+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/styles.css">
 <!-- Vue + lucide AUTO-HÉBERGÉS (épinglés) : plus aucune dépendance à unpkg, qui pouvait
      bloquer indéfiniment le chargement de l'app lors de ses ralentissements fréquents. -->
@@ -34,8 +34,8 @@
     <a href="/" class="auth-back"><i data-lucide="arrow-left"></i>Accueil</a>
     <div class="box">
       <div class="logo" aria-hidden="true"><svg class="mark" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="#fff" stroke-opacity=".42" stroke-width="3.5"/><circle cx="24" cy="24" r="13" stroke="#fff" stroke-opacity=".72" stroke-width="3.5"/><circle cx="24" cy="24" r="6" fill="#fff"/></svg></div>
-      <h1 class="wordmark" aria-label="Adjugo" style="justify-content:center;font-size:26px"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none" aria-hidden="true"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></h1>
-      <p class="tagline">Plateforme de réponse aux marchés publics</p>
+      <h1 class="wordmark" aria-label="Adjugo" style="justify-content:center;font-size:20px"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none" aria-hidden="true"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></h1>
+      <p class="tagline">{{ auth.mode==='register' ? 'Créons votre compte' : auth.mode==='forgot' ? 'Réinitialisez votre accès' : auth.mode==='reset' ? 'Choisissez un nouveau mot de passe' : 'Content de vous revoir' }}</p>
 
       <!-- Réinitialisation : on arrive ici via le lien email (?reset=…) -->
       <template v-if="auth.mode==='reset'">
@@ -197,6 +197,33 @@
             </div>
           </div>
 
+          <!-- Veille AMONT — projets détectés AVANT l'appel d'offres (longueur d'avance) -->
+          <div class="card pad" style="margin-bottom:14px;border:1px solid var(--accent-weak)">
+            <div class="row wrap" style="align-items:center;gap:12px">
+              <i data-lucide="radar" style="color:var(--accent-text);width:20px;height:20px;flex:none"></i>
+              <div style="flex:1;min-width:200px">
+                <b style="font-size:14.5px">Une longueur d'avance — projets détectés avant l'appel d'offres</b>
+                <div class="muted small">Adjugo lit les délibérations des collectivités et repère les investissements <b>des mois avant la publication du marché</b>. Positionnez-vous en premier.</div>
+              </div>
+              <button class="btn" @click="go('amont')"><i data-lucide="scan-eye"></i>{{ amont.signals.length?'Voir les '+amont.signals.length+' projet(s)':'Détecter des projets' }}</button>
+            </div>
+            <div v-if="topAmont.length" style="margin-top:12px">
+              <div v-for="s in topAmont" :key="s.id" @click="go('amont')" class="row" style="padding:10px 12px;margin-top:8px;border:1px solid var(--border);border-radius:9px;background:var(--surface);gap:12px;align-items:center;cursor:pointer" @mouseover="$event.currentTarget.style.borderColor='var(--accent)'" @mouseleave="$event.currentTarget.style.borderColor='var(--border)'">
+                <div style="flex:1;min-width:0">
+                  <div class="strong small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.intitule }}</div>
+                  <div class="muted small">{{ s.collectivite||'Collectivité' }}<span v-if="s.echeance_ao"> · AO estimé {{ s.echeance_ao }}</span><span v-if="s.domaine"> · {{ s.domaine }}</span></div>
+                </div>
+                <span v-if="s.maturite!=null" class="pill" :class="s.maturite>=70?'go':(s.maturite>=40?'a_etudier':'neutral')" style="flex:none" title="Probabilité qu'un appel d'offres en découle">Maturité {{ s.maturite }}%</span>
+                <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-2);flex:none"></i>
+              </div>
+            </div>
+            <div v-else class="row wrap" style="margin-top:11px;gap:10px;align-items:center;padding:11px 13px;border:1px dashed var(--border);border-radius:9px;background:var(--surface)">
+              <i data-lucide="lightbulb" style="color:var(--accent-text);flex:none"></i>
+              <div class="small" style="flex:1;min-width:170px">Aucun projet détecté pour l'instant. Lancez un scan des délibérations de votre zone pour prendre de l'avance sur vos concurrents.</div>
+              <button class="btn sm" @click="go('amont')"><i data-lucide="search"></i>Scanner ma zone</button>
+            </div>
+          </div>
+
           <div class="dash-grid">
             <!-- Feed priorisé -->
             <div class="card dash-feed">
@@ -253,6 +280,13 @@
               <div v-if="stats.segments && (stats.segments.by_zone.length||stats.segments.loss_reasons.length||(stats.segments.by_groupement&&stats.segments.by_groupement.length))" class="card pad">
                 <h3>Où vous gagnez / perdez</h3>
                 <div class="muted small" style="margin:2px 0 8px">{{ stats.decided||0 }} marché(s) terminé(s) · taux global {{ stats.win_rate||0 }}%</div>
+                <!-- Synthèse en langage clair : la leçon apprise de vos marchés (boucle gagné/perdu) -->
+                <div v-if="winInsights.length" style="margin:0 0 12px;padding:10px 12px;background:var(--accent-weak);border-radius:9px">
+                  <div class="row small" style="gap:6px;font-weight:600;margin-bottom:4px;color:var(--accent-text)"><i data-lucide="lightbulb" style="width:14px;height:14px"></i>Ce que vos marchés vous apprennent</div>
+                  <ul style="margin:0;padding-left:18px">
+                    <li v-for="(ins,i) in winInsights" :key="i" class="small" style="margin:3px 0" v-html="ins"></li>
+                  </ul>
+                </div>
                 <div v-if="stats.segments.by_zone.length">
                   <div class="sectitle">Par département</div>
                   <div v-for="z in stats.segments.by_zone.slice(0,4)" :key="'z'+z.key" class="row small" style="padding:4px 0;gap:8px">
@@ -622,6 +656,15 @@
                 <button class="btn sm" @click="aoToggleCockpit()"><i data-lucide="layout-dashboard"></i>{{ ao.share.cockpitOpen?'Replier':'Suivi' }}</button>
               </div>
 
+              <!-- Barre de COMMANDE du groupement : les 2 actions clés du mandataire, en un clic -->
+              <div v-if="ao.share.invites && ao.share.invites.length" class="row wrap" style="margin-top:10px;gap:8px;align-items:center">
+                <span v-if="aoPendingInvites().length" class="small" style="color:var(--warning-text);font-weight:600"><i data-lucide="clock" style="width:13px;height:13px;vertical-align:-2px"></i> {{ aoPendingInvites().length }} partenaire(s) en attente de leur part</span>
+                <span v-else class="small" style="color:var(--success);font-weight:600"><i data-lucide="check-circle-2" style="width:13px;height:13px;vertical-align:-2px"></i> Toutes les parts sont reçues</span>
+                <div class="spacer"></div>
+                <button v-if="aoPendingRelancables().length" class="btn sm" @click="aoRelanceRetardataires()"><i data-lucide="send"></i>Relancer les {{ aoPendingRelancables().length }} en attente</button>
+                <button class="btn sm primary" @click="aoAssemble()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="package"></i>Assembler le dossier commun</button>
+              </div>
+
               <!-- CTA viral : le geste le plus visible -->
               <button class="btn primary" @click="ao.share.open=!ao.share.open" style="margin-top:12px;width:100%;justify-content:center;padding:12px;font-size:14px"><i data-lucide="user-plus"></i>Inviter un partenaire sur ce marché</button>
 
@@ -661,8 +704,13 @@
                     <span v-if="inv.contribution_status==='submitted'" class="pill go" style="font-size:10px"><i data-lucide="check" style="width:11px;height:11px"></i>Contribution reçue</span>
                     <span v-else-if="inv.can_contribute && !inv.revoked" class="pill a_etudier" style="font-size:10px">En attente de sa part</span>
                     <div class="muted small">{{ inv.view_count }} consultation(s)<span v-if="inv.last_viewed_at"> · dernière {{ auditWhen(inv.last_viewed_at) }}</span></div>
+                    <div v-if="inv.recipient && inv.recipient.includes('@')" class="muted small" style="font-size:10.5px">
+                      <span v-if="inv.emailed_at" style="color:var(--success)">✓ Email envoyé {{ auditWhen(inv.emailed_at) }}</span>
+                      <span v-else style="color:var(--warning)">Email non envoyé — copiez le lien ou relancez</span>
+                    </div>
                   </div>
                   <button class="btn icon sm ghost" @click="copyInvite(inviteUrl(inv))" aria-label="Copier le lien" :disabled="inv.revoked"><i data-lucide="copy"></i></button>
+                  <button v-if="!inv.revoked && inv.recipient && inv.recipient.includes('@')" class="btn icon sm ghost" @click="aoResendInvite(inv)" :aria-label="'Renvoyer l\'invitation par email'" title="Renvoyer / relancer par email"><i data-lucide="send"></i></button>
                   <button v-if="!inv.revoked" class="btn icon sm ghost" @click="aoRevokeInvite(inv)" aria-label="Révoquer le lien"><i data-lucide="ban"></i></button>
                 </div>
               </div>
@@ -682,6 +730,7 @@
                   <div v-if="c.references && c.references.length" class="muted small">Références : {{ c.references.map(r => r.intitule).filter(Boolean).join(' · ') }}</div>
                   <div v-if="c.chiffrage_note" class="muted small">Prix lot : {{ c.chiffrage_note }}</div>
                   <div v-if="c.memoire_paragraph" class="small" style="margin-top:5px;padding:7px 9px;background:var(--surface-2);border-radius:6px;white-space:pre-wrap">{{ c.memoire_paragraph }}</div>
+                  <div v-if="c.note_au_mandataire" class="small" style="margin-top:5px;padding:7px 9px;background:rgba(59,91,219,.06);border-left:2px solid var(--accent);border-radius:4px;white-space:pre-wrap"><i data-lucide="message-square" style="width:12px;height:12px;vertical-align:-1px"></i> Message : {{ c.note_au_mandataire }}</div>
                   <div v-if="c.pieces && c.pieces.length" style="margin-top:6px">
                     <div class="muted small" style="font-weight:600">Pièces administratives ({{ c.pieces.length }})</div>
                     <a v-for="pc in c.pieces" :key="pc.id" class="pill neutral" :href="'/api/projects/'+ao.project.id+'/contribution-pieces/'+pc.id" style="font-size:10px;margin:4px 4px 0 0;gap:4px;text-decoration:none"><i data-lucide="file-down" style="width:11px;height:11px"></i>{{ pc.name }}</a>
@@ -874,9 +923,25 @@
           </div>
 
           <!-- Feed des AO réels -->
-          <div v-if="!src.tenders.length && !src.searching" class="empty card pad" style="margin-top:14px">
+          <!-- État initial (jamais cherché) : raccourci « marchés pour mon entreprise » (#3) -->
+          <div v-if="!src.tenders.length && !src.searching && !src.empty" class="empty card pad" style="margin-top:14px">
             <div class="eic"><i data-lucide="target"></i></div>
-            <h4>Lancez une recherche</h4><p>Des marchés réels et traçables (sources officielles BOAMP, TED). Chaque résultat affiche sa source et un lien vers l'annonce officielle. La compatibilité avec votre entreprise s'affiche une fois le dossier du marché importé et analysé.</p>
+            <h4>Trouvez vos marchés</h4><p>Des marchés réels et traçables (sources officielles BOAMP, TED, PLACE, Mégalis). Chaque résultat affiche sa source et un lien vers l'annonce officielle.</p>
+            <button class="btn primary" style="margin-top:12px" @click="srcSearchMine()"><i data-lucide="sparkles"></i>Voir les marchés pour mon entreprise</button>
+            <div class="muted small" style="margin-top:6px">D'après vos spécialités et votre département — ajustez les critères ci-dessus à tout moment.</div>
+          </div>
+          <!-- 0 résultat après recherche : carte ACTIONNABLE (élargir en un clic) (#2) -->
+          <div v-else-if="src.empty && !src.searching" class="empty card pad" style="margin-top:14px">
+            <div class="eic"><i data-lucide="search-x"></i></div>
+            <h4>Aucun marché sur ces critères</h4>
+            <p v-if="src.empty.closed">{{ src.empty.closed }} marché(s) trouvé(s) mais clôturé(s) ou hors budget. Élargissez pour voir des marchés encore ouverts.</p>
+            <p v-else>Élargissez votre recherche en un clic :</p>
+            <div class="row wrap" style="gap:8px;justify-content:center;margin-top:12px">
+              <button v-if="src.empty.hasDept" class="btn sm" @click="srcWiden('dept')"><i data-lucide="map"></i>Élargir à toute la France</button>
+              <button v-if="src.empty.hasAdv" class="btn sm" @click="srcWiden('adv')"><i data-lucide="filter-x"></i>Retirer les filtres détaillés</button>
+              <button v-if="src.empty.multiWord" class="btn sm" @click="srcWiden('query')"><i data-lucide="scissors"></i>Simplifier les mots-clés</button>
+              <button class="btn sm ghost" @click="go('amont')"><i data-lucide="radar"></i>Voir les projets à venir (amont)</button>
+            </div>
           </div>
           <div v-for="(t,ti) in src.tenders" :key="ti" class="card pad" style="margin-top:10px">
             <div class="row" style="align-items:flex-start;gap:12px">
@@ -894,8 +959,11 @@
                 <div class="muted small" style="margin-top:3px">{{ t.acheteur||'Acheteur non précisé' }} · dépt {{ t.departements.join(', ')||'non précisé' }} · limite {{ t.date_limite||'non précisée' }}</div>
               </div>
             </div>
-            <div class="row" style="margin-top:10px">
-              <button class="btn primary sm" @click="srcAnalyze(t)" :disabled="src.analyzing"><span v-if="src.analyzing && src.chosen===t" class="spin"></span><i v-else data-lucide="scan-search"></i>Analyser ce marché</button>
+            <div class="row" style="margin-top:10px;gap:8px;align-items:center">
+              <!-- #10 Garde de quota : à 0 (sans paiement à l'usage), on invite à débloquer au lieu de laisser cliquer vers un échec 402 -->
+              <button v-if="!srcQuotaBlocked()" class="btn primary sm" @click="srcAnalyze(t)" :disabled="src.analyzing"><span v-if="src.analyzing && src.chosen===t" class="spin"></span><i v-else data-lucide="scan-search"></i>Analyser ce marché</button>
+              <button v-else class="btn sm" style="border-color:var(--warning);color:var(--warning-text)" @click="go('billing')"><i data-lucide="lock"></i>Débloquer plus d'analyses</button>
+              <span v-if="srcQuotaLabel()" class="muted small">{{ srcQuotaLabel() }}</span>
             </div>
           </div>
           <!-- Pagination : lève le plafond invisible de résultats -->
@@ -915,11 +983,25 @@
             <div v-else class="row" style="margin-bottom:10px;gap:8px"><button class="btn ghost sm" @click="$refs.dceUpl.click()" :disabled="src.analyzing"><i data-lucide="upload"></i>Ré-importer le dossier</button><button class="btn ghost sm" @click="srcReanalyze()" :disabled="src.analyzing"><span v-if="src.analyzing" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Ré-analyser</button></div>
             <input ref="dceUpl" type="file" accept=".pdf,.zip,.docx,.txt" class="hidden" @change="srcUploadDce">
             <div v-if="src.analysis.dce_available" class="row" style="gap:16px;align-items:center">
-              <span style="font-size:30px;font-weight:700" :style="decColor(src.analysis.decision)">{{ src.analysis.score }}<small style="font-size:15px;font-weight:600">/100</small></span>
+              <div class="score-ring lg" :style="ringStyle(src.analysis.score)"><span class="num">{{ src.analysis.score }}</span></div>
               <div><span class="pill" :class="src.analysis.decision||'neutral'">{{ decLabel(src.analysis.decision) }}</span><a :href="src.analysis.source.source_url" target="_blank" class="small muted row" style="gap:3px;margin-top:4px">source {{ src.analysis.source.source }} · réf {{ src.analysis.source.official_ref }}<i data-lucide="external-link" style="width:12px;height:12px"></i></a></div>
             </div>
             <div v-else class="muted small" style="display:flex;align-items:center;gap:6px"><i data-lucide="info" style="width:14px;height:14px"></i>Analyse préliminaire (annonce). La compatibilité s'affiche après l'import du dossier réel du marché.</div>
             <p class="small" style="margin-top:10px">{{ src.analysis.summary }}</p>
+            <!-- Pourquoi ce % : barème DÉTERMINISTE (jamais sorti du LLM), la donnée la plus rassurante -->
+            <div v-if="src.analysis.dce_available && src.analysis.score_breakdown && src.analysis.score_breakdown.length" style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border-radius:9px">
+              <div class="row small" style="gap:6px;font-weight:600;margin-bottom:6px"><i data-lucide="calculator" style="width:14px;height:14px;color:var(--accent-text)"></i>Pourquoi ce score ? <span class="muted" style="font-weight:400">— calcul transparent, pas une opinion de l'IA</span></div>
+              <div v-for="c in src.analysis.score_breakdown" :key="c.key" class="row small" style="padding:3px 0" :title="c.detail"><span style="min-width:150px">{{ c.label }}</span><span class="pill" :class="critStatus(c.status)" style="font-size:10px">{{ scoreStatusLabel(c.status) }}</span><span class="num muted">{{ c.points }}/{{ c.max_points }}</span></div>
+            </div>
+            <!-- Repère de prix marché (DECP) quand l'annonce ne publie pas de budget -->
+            <div v-if="!srcHasBudget(src.analysis.details)" style="margin-top:10px">
+              <button v-if="!src.marketEst && !src.marketEstBusy" class="btn ghost sm" @click="srcMarketEstimate()"><i data-lucide="scale"></i>Voir un repère de prix marché (indicatif)</button>
+              <span v-if="src.marketEstBusy" class="muted small"><span class="spin"></span> Recherche de marchés comparables…</span>
+              <div v-if="src.marketEst" class="small" style="padding:9px 12px;background:rgba(59,91,219,.06);border:1px solid var(--hairline);border-radius:8px">
+                <template v-if="src.marketEst.ok"><i data-lucide="scale" style="width:13px;height:13px;color:var(--accent-text)"></i> Repère marché : <b>~{{ Math.round(src.marketEst.mediane).toLocaleString('fr-FR') }} €</b> <span class="muted">(fourchette {{ Math.round(src.marketEst.q1).toLocaleString('fr-FR') }}–{{ Math.round(src.marketEst.q3).toLocaleString('fr-FR') }} €, sur {{ src.marketEst.nb_marches }} marchés similaires {{ src.marketEst.periode }}, source DECP)</span><div class="muted" style="margin-top:2px;font-size:11px">Repère INDICATIF sourcé — ce n'est pas le budget de l'acheteur.</div></template>
+                <span v-else class="muted">Pas assez de marchés comparables pour un repère fiable.</span>
+              </div>
+            </div>
             <div v-for="(v,k) in detailRows(src.analysis.details)" :key="k" class="row small" style="padding:4px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">{{ k }}</span><span>{{ v }}</span></div>
             <div v-if="clausesRisque(src.analysis.details).length" class="sectitle" style="margin-top:12px"><i data-lucide="shield-alert" style="width:14px;height:14px"></i> Clauses à risque &amp; négociation</div>
             <div v-for="(cl,i) in clausesRisque(src.analysis.details)" :key="'scl'+i" style="padding:8px 0;border-bottom:1px solid var(--hairline)">
@@ -1413,14 +1495,18 @@
         </section>
 
         <section v-if="view==='billing'">
-          <div class="row" style="margin-bottom:18px"><span class="muted">Plan actuel :</span><span class="pill go" style="text-transform:capitalize">{{ plan.plan||'starter' }}</span>
+          <div class="row" style="margin-bottom:18px"><span class="muted">Votre offre :</span>
+            <span v-if="plan.trial_state==='active'" class="pill go">Essai gratuit · {{ plan.trial_days_left }} j restants</span>
+            <span v-else-if="plan.trial_state==='expired'" class="pill" style="background:#fdeceb;color:#c0392b">Essai terminé — abonnez-vous</span>
+            <span v-else class="pill go" style="text-transform:capitalize">{{ plan.plan||'starter' }}</span>
             <div class="spacer"></div><button v-if="(plan.plan||'starter')!=='starter'" class="btn" @click="portal"><i data-lucide="settings"></i>Gérer mon abonnement</button></div>
           <div class="plans">
             <div class="plan">
-              <h3>Découverte</h3><div class="muted small">Pour démarrer</div>
-              <div class="price">0€<small>/mois</small></div>
-              <ul><li>5 analyses IA / mois</li><li>Recherche BOAMP réelle</li><li>1 utilisateur</li><li>Espace documents 500 Mo</li></ul>
-              <div class="cur" v-if="(plan.plan||'starter')==='starter'">Votre plan actuel</div>
+              <h3>Essai gratuit</h3><div class="muted small">30 jours, sans carte</div>
+              <div class="price">0€<small>/30 jours</small></div>
+              <ul><li>Accès complet niveau Pro</li><li>30 analyses IA / mois</li><li>Aucune carte bancaire</li><li>Puis Pro ou Business pour continuer</li></ul>
+              <div class="cur" v-if="plan.trial_state==='active'">Essai en cours · {{ plan.trial_days_left }} j</div>
+              <div class="cur" v-else-if="plan.trial_state==='expired'" style="background:#fdeceb;color:#c0392b">Essai terminé</div>
               <button v-else class="btn block" disabled>Inclus</button>
             </div>
             <div class="plan pop">
@@ -1641,6 +1727,19 @@
       <div class="sectitle">Actions</div>
       <button class="btn block" style="justify-content:flex-start;margin-bottom:8px" @click="exportDossier(drawer)"><i data-lucide="package"></i>Exporter le dossier (ZIP)</button>
       <button class="btn danger block" style="justify-content:flex-start" @click="delProject(drawer)"><i data-lucide="trash-2"></i>Supprimer ce marché</button>
+    </div>
+  </div>
+
+  <!-- ══════════ ACTIVATION PAR SIRET (1er lancement) ══════════ -->
+  <div v-if="token && showWelcome" class="overlay" style="align-items:center;z-index:60">
+    <div class="modal" style="max-width:480px;text-align:center;padding:38px 36px">
+      <div class="logo" aria-hidden="true" style="margin:4px auto 10px"><svg class="mark" viewBox="0 0 48 48" fill="none" style="width:44px;height:44px"><circle cx="24" cy="24" r="21" stroke="var(--accent)" stroke-opacity=".42" stroke-width="3.5"/><circle cx="24" cy="24" r="13" stroke="var(--accent)" stroke-opacity=".72" stroke-width="3.5"/><circle cx="24" cy="24" r="6" fill="var(--accent)"/></svg></div>
+      <h2 style="font-size:20px;font-weight:800;margin:0 0 4px">Bienvenue sur Adjugo</h2>
+      <p class="muted small" style="margin:0 0 16px">Un seul champ pour démarrer : votre <b>SIRET</b>. On remplit votre profil, on règle vos critères et on vous montre <b>vos premiers marchés</b> — automatiquement.</p>
+      <input class="inp" v-model="welcome.siret" placeholder="SIRET (14 chiffres)" inputmode="numeric" style="width:100%;text-align:center;font-size:16px;letter-spacing:1px" @keyup.enter="welcomeStart()" aria-label="Votre SIRET">
+      <button class="btn primary block" style="margin-top:12px" @click="welcomeStart()" :disabled="welcome.busy"><span v-if="welcome.busy" class="spin"></span><i v-else data-lucide="sparkles"></i>Démarrer avec mon SIRET</button>
+      <button class="btn ghost sm" style="margin-top:8px" @click="welcomeSkip()">Je remplirai plus tard</button>
+      <div class="muted" style="font-size:11px;margin-top:10px">Données issues du registre officiel des entreprises (SIRENE). Rien n'est publié.</div>
     </div>
   </div>
 

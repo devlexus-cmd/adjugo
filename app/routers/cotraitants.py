@@ -73,14 +73,19 @@ class CotraitantCreate(BaseModel):
     @field_validator("siret")
     @classmethod
     def _validate_siret(cls, v):
-        # Même règle que pour SA PROPRE entreprise : un SIRET partenaire chiffré non conforme
-        # (SIREN à 9, tronqué) ne doit pas s'imprimer tel quel sur les CERFA de co-traitance/DC4.
-        if not v:
-            return v
-        s = str(v).replace(" ", "").replace(".", "")
-        if s.isdigit() and len(s) != 14:
-            raise ValueError("Le SIRET doit comporter exactement 14 chiffres.")
-        return v
+        return _clean_siret(v)
+
+
+def _clean_siret(v):
+    """Normalise (sans espaces/points) ET valide un SIRET. Renvoie la forme CANONIQUE —
+    stockée et comparée telle quelle, sinon deux écritures du même SIRET (« 123 456… » vs
+    « 123456… ») créaient des doublons et un SIRET non conforme s'imprimait sur les CERFA."""
+    if not v:
+        return ""
+    s = str(v).replace(" ", "").replace(".", "").strip()
+    if s.isdigit() and len(s) != 14:
+        raise ValueError("Le SIRET doit comporter exactement 14 chiffres.")
+    return s
 
 router = APIRouter(prefix="/api/cotraitants", tags=["Co-traitants"])
 
@@ -144,9 +149,15 @@ def list_project_cotraitants(project_id: int, current_user: User = Depends(get_c
                              db: Session = Depends(get_db)):
     _own_project(project_id, current_user, db)
     links = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).all()
+    # Une seule requête (pas une par lien) + cloisonnement : le partenaire affiché doit
+    # appartenir au réseau de l'organisation, comme partout ailleurs.
+    ids = member_ids(current_user, db)
+    cts = {c.id: c for c in db.query(Cotraitant).filter(
+        Cotraitant.id.in_([lk.cotraitant_id for lk in links] or [0]),
+        Cotraitant.user_id.in_(ids)).all()}
     out = []
     for lk in links:
-        ct = db.query(Cotraitant).filter(Cotraitant.id == lk.cotraitant_id).first()
+        ct = cts.get(lk.cotraitant_id)
         if not ct:
             continue
         out.append({"link_id": lk.id, "role": lk.role, "lot": lk.lot,
@@ -171,7 +182,12 @@ def attach_cotraitant(project_id: int, req: AttachRequest,
             raise HTTPException(404, "Co-traitant introuvable")
     elif req.company:
         c = req.company
-        siret = c.get("siret")
+        # Même validation/normalisation que le chemin Pydantic : le SIRET arrive ici en dict
+        # libre (découverte SIRENE) et alimente les CERFA DC1/DC2/DC4 → il doit être conforme.
+        try:
+            siret = _clean_siret(c.get("siret"))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         if siret:
             ct = db.query(Cotraitant).filter(Cotraitant.user_id.in_(ids),
                                              Cotraitant.siret == siret).first()

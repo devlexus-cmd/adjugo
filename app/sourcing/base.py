@@ -2,10 +2,14 @@
 Interfaces communes des sources. Ajouter une plateforme = une nouvelle classe,
 sans toucher au reste.
 """
+import re
 from abc import ABC, abstractmethod
 from typing import Optional
 
 from app.sourcing.schemas import NormalizedTender, NormalizedCompany
+
+# Un département FR valide : 2 chiffres (01-95), 3 chiffres DOM (971-976) ou Corse 2A/2B.
+_DEPT_RE = re.compile(r"^(?:[0-9]{2,3}|2[AB])$", re.IGNORECASE)
 
 
 class TenderCriteria:
@@ -17,7 +21,12 @@ class TenderCriteria:
                  type_marche: str = "", offset: int = 0):
         self.query = (query or "").strip()
         self.cpv = [str(c).strip() for c in (cpv or []) if str(c).strip()]
-        self.departements = departements or []
+        # Départements ASSAINIS au format attendu : garde-fou CENTRAL contre l'injection
+        # (un département interpolé brut dans une requête ODSQL/API ssource pouvait la casser)
+        # ET normalise (majuscule Corse). Couvre BOAMP, TED, ATEXO… d'un seul point.
+        self.departements = [d for d in
+                             (str(x).strip().upper() for x in (departements or []))
+                             if _DEPT_RE.match(d)]
         self.montant_min = montant_min
         self.montant_max = montant_max
         self.limit = limit

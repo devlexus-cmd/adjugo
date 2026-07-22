@@ -272,19 +272,26 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 .disc-item .nm { font-weight:600; font-size:13px; }
 .disc-item .me { font-size:11.5px; color:var(--muted); margin-top:1px; }
 
-/* ---------- Auth ---------- */
-.auth { min-height:100vh; display:grid; place-items:center; background:
-   radial-gradient(1100px 520px at 50% -10%, var(--accent-weak), transparent 60%), var(--bg); padding:20px; }
-.auth .box { background:var(--surface); border:1px solid var(--border); border-radius:20px; width:392px; padding:30px; box-shadow:var(--shadow-pop); }
+/* ---------- Auth (esprit landing : Bricolage + carte premium) ---------- */
+.auth { min-height:100vh; display:grid; place-items:center; padding:24px; background:
+   radial-gradient(820px 460px at 50% -12%, color-mix(in srgb,var(--accent) 13%,transparent), transparent 60%),
+   radial-gradient(680px 420px at 90% 112%, color-mix(in srgb,var(--accent-2) 13%,transparent), transparent 58%),
+   var(--bg); }
+.auth .box { position:relative; background:var(--surface); border:1px solid var(--border); border-radius:24px; width:416px; max-width:calc(100vw - 40px); padding:40px 36px 34px; box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 30px 74px -32px rgba(13,17,23,.28), 0 10px 26px -14px rgba(13,17,23,.12); }
 .auth-back { position:fixed; top:20px; left:22px; display:inline-flex; align-items:center; gap:6px; font-size:13.5px; font-weight:600; color:var(--text-2); padding:8px 12px; border-radius:10px; transition:background .12s,color .12s; }
 .auth-back:hover { background:var(--surface-3); color:var(--text); }
 .auth-back:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); }
 .auth-back .lucide { width:16px; height:16px; }
-.auth .logo { width:52px; height:52px; border-radius:15px; background:var(--grad); display:grid; place-items:center; margin:0 auto 16px; box-shadow:0 8px 22px color-mix(in srgb,var(--accent) 34%,transparent); }
-.auth .logo .mark { width:62%; height:62%; }
-.auth h2 { text-align:center; margin:0 0 2px; font-family:var(--font-display); font-size:21px; font-weight:800; letter-spacing:-.03em; }
-.auth .tagline { text-align:center; color:var(--muted); font-size:12.5px; margin:0 0 22px; }
-.auth .alt { text-align:center; font-size:12.5px; color:var(--muted); margin:14px 0 0; }
+.auth .logo { width:58px; height:58px; border-radius:18px; background:var(--grad); display:grid; place-items:center; margin:0 auto 18px; box-shadow:inset 0 1px 0 rgba(255,255,255,.4), 0 12px 28px -8px color-mix(in srgb,var(--accent) 44%,transparent); }
+.auth .logo .mark { width:60%; height:60%; }
+.auth .wordmark { justify-content:center; font-family:'Bricolage Grotesque',var(--font-display); font-weight:700; letter-spacing:-.03em; }
+.auth h2 { text-align:center; margin:0 0 2px; font-family:'Bricolage Grotesque',var(--font-display); font-size:21px; font-weight:700; letter-spacing:-.03em; }
+.auth .tagline { text-align:center; font-family:'Bricolage Grotesque',var(--font-display); font-weight:700; font-size:22px; letter-spacing:-.02em; color:var(--text); margin:8px 0 26px; }
+.auth .field { margin-bottom:15px; }
+.auth .field label { font-size:12.5px; margin-bottom:6px; }
+.auth .field input { height:47px; border-radius:13px; font-size:14px; padding:0 15px; }
+.auth .btn.block { height:47px; border-radius:13px; font-size:14px; }
+.auth .alt { text-align:center; font-size:12.5px; color:var(--muted); margin:18px 0 0; }
 .auth .alt a { color:var(--accent-text); font-weight:600; }
 
 /* ---------- utils ---------- */
@@ -337,6 +344,9 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 .dash-ribbon .rb.alert .rb-v { color:var(--warning); }
 
 .dash-grid { display:grid; grid-template-columns:1.7fr 1fr; gap:16px; margin-top:16px; align-items:start; }
+/* Items de grille : min-width:0 → la colonne 1fr peut rétrécir sous son min-content
+   (sinon un titre d'AO long forçait la colonne à ~524px, débordant hors écran sur mobile). */
+.dash-grid > * { min-width:0; }
 .dash-rail { display:flex; flex-direction:column; gap:14px; }
 
 .feed-list { padding:8px; }
@@ -346,6 +356,10 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 .score-ring::before { content:""; position:absolute; inset:4px; background:var(--surface); border-radius:50%; }
 .ao-row:hover .score-ring::before { background:var(--surface-2); }
 .score-ring span { position:relative; font-family:var(--font-display); font-size:13px; font-weight:700; }
+/* Variante large : jauge de score en pièce maîtresse (carte d'analyse du tunnel). */
+.score-ring.lg { width:74px; height:74px; }
+.score-ring.lg::before { inset:6px; }
+.score-ring.lg span { font-size:23px; }
 .ao-mid { flex:1; min-width:0; }
 .ao-t { font-weight:600; font-size:13.5px; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ao-c { font-size:11.5px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

@@ -3,9 +3,10 @@
   "configurations": [
     {
       "name": "adjugo-preview",
-      "runtimeExecutable": "venv/bin/uvicorn",
-      "runtimeArgs": ["app.main:app", "--port", "8010", "--log-level", "warning"],
-      "port": 8010
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd /private/tmp/adjugo-preview && exec venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port \"${PORT:-8011}\" --log-level warning"],
+      "autoPort": true,
+      "port": 8011
     }
   ]
 }

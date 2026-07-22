@@ -163,6 +163,7 @@ TEMPLATE = """<!doctype html>
   <a href="/mentions-legales">Mentions légales</a>
   <a href="/cgv">CGV</a>
   <a href="/confidentialite">Confidentialité</a>
+  <a href="/dpa">DPA</a>
 </footer>
 </body>
 </html>

@@ -109,9 +109,10 @@ class Settings(BaseSettings):
     MAX_UPLOAD_MB: int = 20
     ALLOWED_UPLOAD_EXT: str = ".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.odt,.ods,.zip,.txt"
 
-    # Plans
-    # Quotas d'analyses IA inclus / mois. Au-delà : 5 €/analyse (overage).
-    # Découverte 0 € · Pro 129 € · Business 199 € · Enterprise sur-devis.
+    # Plans — essai gratuit 30j SANS carte, puis payant (logique dans app/core/quota.py).
+    # Quotas d'analyses IA inclus / mois. Au-delà : 5 €/analyse (overage, plans payants).
+    # Pendant l'essai : accès niveau Pro. Pro 129,99 € · Business 199,99 € · Sur mesure sur devis.
+    # 'starter' = palier résiduel : essai actif→niveau Pro, essai expiré→bloqué, historique/démo→Découverte.
     PLAN_LIMITS: dict = {
         "starter": {"analyses": 5, "storage_mb": 500, "members": 2},
         "pro": {"analyses": 30, "storage_mb": 10240, "members": 10},

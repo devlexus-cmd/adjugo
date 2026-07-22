@@ -96,6 +96,42 @@
       return esc(v);
     }
 
+    // ── Modale légère (récap avant envoi, saisie du code de vérification) ──
+    // Remplace window.prompt/confirm (dialogues système gris → perçus comme du phishing par
+    // un dirigeant non technique, collage bloqué sur mobile). Renvoie une Promise.
+    function openModal({ title, bodyHtml, confirmLabel, cancelLabel, withInput, inputLabel, extraLabel }) {
+      return new Promise(resolve => {
+        const ov = document.createElement("div");
+        ov.style.cssText = "position:fixed;inset:0;background:rgba(17,24,39,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px";
+        const box = document.createElement("div");
+        box.style.cssText = "background:var(--card,#fff);border-radius:14px;max-width:440px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3)";
+        box.innerHTML = `<div style="font-size:16px;font-weight:800;margin-bottom:8px">${esc(title || "")}</div><div class="small" style="color:var(--text-2,#4b5563);line-height:1.5">${bodyHtml || ""}</div>`;
+        let input = null;
+        if (withInput) {
+          if (inputLabel) box.appendChild($(`<label class="small" style="display:block;font-weight:600;margin:12px 0 4px">${esc(inputLabel)}</label>`));
+          input = document.createElement("input"); input.className = "inp"; input.style.cssText = "width:100%;font-size:18px;letter-spacing:3px;text-align:center";
+          input.inputMode = "numeric"; input.autocomplete = "one-time-code"; input.maxLength = 6; input.placeholder = "••••••";
+          box.appendChild(input);
+        }
+        const extra = document.createElement("div"); extra.className = "small"; extra.style.cssText = "margin-top:8px;min-height:16px;color:#b8730a";
+        box.appendChild(extra);
+        const bar = document.createElement("div"); bar.className = "row"; bar.style.cssText = "gap:8px;justify-content:flex-end;margin-top:16px";
+        const cancel = $(`<button class="btn">${esc(cancelLabel || "Annuler")}</button>`);
+        const ok = $(`<button class="btn primary">${esc(confirmLabel || "Confirmer")}</button>`);
+        let extraBtn = null;
+        if (extraLabel) { extraBtn = $(`<button class="btn" style="margin-right:auto">${esc(extraLabel)}</button>`); bar.appendChild(extraBtn); }
+        bar.appendChild(cancel); bar.appendChild(ok); box.appendChild(bar);
+        ov.appendChild(box); document.body.appendChild(ov); icons();
+        const close = (val) => { ov.remove(); resolve(val); };
+        cancel.onclick = () => close(null);
+        ok.onclick = () => close(withInput ? { value: (input.value || "").trim() } : true);
+        if (extraBtn) extraBtn.onclick = () => close({ extra: true });
+        ov.addEventListener("click", e => { if (e.target === ov) close(null); });
+        setTimeout(() => (input || ok).focus(), 40);
+        if (input) input.addEventListener("keydown", e => { if (e.key === "Enter") ok.click(); });
+      });
+    }
+
     // ── Routeur ──
     function setActive(view) {
       document.querySelectorAll(".nav-item").forEach(a => a.classList.toggle("active", a.dataset.view === view && ALLOWED[view]));
@@ -132,6 +168,20 @@
       head.appendChild($(`<div class="muted small">${d.mandataire ? "Partagé par <b>" + esc(d.mandataire) + "</b>" : "Dossier partagé"}${d.invited && d.invited.company ? " · pour " + esc(d.invited.company) : ""}</div>`));
       head.appendChild($(`<div style="font-size:21px;font-weight:800;margin:2px 0 3px;letter-spacing:-.02em">${esc(p.name || "Appel d'offres")}</div>`));
       if (p.client) head.appendChild($(`<div class="muted small">${esc(p.client)}</div>`));
+      // Compte à rebours : le partenaire perçoit l'urgence et sait combien de temps il lui
+      // reste pour renvoyer SA part (le mandataire assemble AVANT la date limite officielle).
+      if (p.deadline) {
+        const dLeft = Math.ceil((new Date(p.deadline) - new Date()) / 86400000);
+        if (!isNaN(dLeft)) {
+          const past = dLeft < 0, urgent = dLeft <= 3;
+          const bg = past ? "#fdecea" : urgent ? "#fff4e5" : "#eef2ff";
+          const bd = past ? "#d93025" : urgent ? "#b8730a" : "#3b5bdb";
+          const txt = past ? "Date limite dépassée — contactez le chef de file."
+            : dLeft === 0 ? "Dernier jour : soumettez votre part aujourd'hui."
+            : "Il vous reste <b>" + dLeft + " jour" + (dLeft > 1 ? "s" : "") + "</b> pour soumettre votre part au chef de file.";
+          head.appendChild($(`<div style="margin-top:10px;padding:9px 12px;border-radius:9px;background:${bg};border:1px solid ${bd};color:${bd};font-size:13px">⏱ ${txt} <span class="muted" style="color:inherit;opacity:.8">(date limite acheteur : ${esc(fmtDate(p.deadline))})</span></div>`));
+        }
+      }
       const dl = $(`<dl class="g-fact"></dl>`);
       const addFact = (t, h) => { dl.appendChild($(`<dt>${t}</dt>`)); const dd = document.createElement("dd"); dd.innerHTML = h; dl.appendChild(dd); };
       if (p.deadline) addFact("Date limite", `<b>${esc(fmtDate(p.deadline))}</b>`);
@@ -176,6 +226,7 @@
       const refs = ta("Vos références — une par ligne", 3);
       const chiffrage = ta("Votre approche prix pour votre lot (ex. forfait 18 000 € HT)", 2);
       const memoire = ta("Votre paragraphe de mémoire technique — votre savoir-faire sur ce lot", 4);
+      const note = ta("Un mot au chef de file (optionnel) — une question, une précision sur votre lot…", 2);
       const cNom = inp("Contact — nom"), cMail = inp("Email"), cTel = inp("Téléphone");
       card.appendChild(field("Entreprise", company));
       card.appendChild(field("Lot / périmètre", lot));
@@ -191,19 +242,31 @@
       card.appendChild(field("Références", refs));
       card.appendChild(field("Approche prix de votre lot", chiffrage));
       card.appendChild(field("Paragraphe de mémoire technique", memoire));
+      card.appendChild(field("Message au mandataire (optionnel)", note));
       const cr = document.createElement("div"); cr.className = "row wrap"; cr.style.gap = "8px";
       [cNom, cMail, cTel].forEach(el => { el.style.flex = "1"; el.style.minWidth = "140px"; cr.appendChild(el); });
       card.appendChild(field("Contact", cr));
 
       // pièces
       const piecesBox = document.createElement("div"); const piecesList = document.createElement("div");
+      const checklistEl = document.createElement("div"); checklistEl.style.cssText = "margin-bottom:8px";
       const fileIn = document.createElement("input"); fileIn.type = "file"; fileIn.style.display = "none";
       const addBtn = $(`<button class="btn" style="padding:7px 13px">+ Ajouter une pièce</button>`);
       const upMsg = $(`<span class="muted small" style="margin-left:8px"></span>`);
       const addRow = document.createElement("div"); addRow.className = "row wrap"; addRow.style.cssText = "gap:6px;align-items:center;margin-top:7px";
       addRow.appendChild(addBtn); addRow.appendChild(upMsg);
-      piecesBox.appendChild(piecesList); piecesBox.appendChild(addRow); piecesBox.appendChild(fileIn);
+      piecesBox.appendChild(checklistEl); piecesBox.appendChild(piecesList); piecesBox.appendChild(addRow); piecesBox.appendChild(fileIn);
       card.appendChild(field("Mes pièces administratives (DC2, attestations, Kbis, assurance…)", piecesBox));
+      // Checklist « ce qui est fourni / ce qu'il reste » (déduite des pièces déposées) :
+      // le partenaire voit précisément ce qui manque, sans allers-retours par email.
+      function renderChecklist(chk) {
+        checklistEl.innerHTML = "";
+        if (!chk || (!(chk.have || []).length && !(chk.missing || []).length)) return;
+        const wrap = $(`<div class="row wrap" style="gap:6px;align-items:center"></div>`);
+        (chk.have || []).forEach(l => wrap.appendChild($(`<span class="pill go" style="font-size:11px">✓ ${esc(l)}</span>`)));
+        (chk.missing || []).forEach(l => wrap.appendChild($(`<span class="pill neutral" style="font-size:11px;opacity:.75">○ ${esc(l)} à fournir</span>`)));
+        checklistEl.appendChild(wrap);
+      }
       const pieceUrl = "/api/invite/" + encodeURIComponent(TOKEN) + "/contribution/piece";
       function renderPieces(pieces) {
         piecesList.innerHTML = "";
@@ -218,7 +281,7 @@
         });
         if (!pieces || !pieces.length) piecesList.appendChild($(`<div class="muted small">Aucune pièce déposée.</div>`));
       }
-      async function reloadPieces() { const c = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/contribution").then(r => r.ok ? r.json() : null).catch(() => null); renderPieces(c ? c.pieces : []); }
+      async function reloadPieces() { const c = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/contribution").then(r => r.ok ? r.json() : null).catch(() => null); renderPieces(c ? c.pieces : []); if (c) renderChecklist(c.pieces_checklist); }
       addBtn.onclick = () => fileIn.click();
       fileIn.onchange = async () => {
         if (!fileIn.files.length) return; upMsg.textContent = "Envoi…";
@@ -237,15 +300,15 @@
 
       const setStatus = (s) => { const ok = s === "submitted"; status.textContent = ok ? "✓ Soumise" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; };
       let curVer = 0;   // verrou optimiste : version chargée
-      const collect = () => ({ company_name: company.value, lot: lot.value, siret: siret.value, forme_juridique: forme.value, address: adresse.value, postal_code: cp.value, city: ville.value, qualifications: quals.value.split(",").map(s => s.trim()).filter(Boolean), references: refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })), chiffrage_note: chiffrage.value, memoire_paragraph: memoire.value, contact: { nom: cNom.value, email: cMail.value, telephone: cTel.value }, version: curVer });
+      const collect = () => ({ company_name: company.value, lot: lot.value, siret: siret.value, forme_juridique: forme.value, address: adresse.value, postal_code: cp.value, city: ville.value, qualifications: quals.value.split(",").map(s => s.trim()).filter(Boolean), references: refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })), chiffrage_note: chiffrage.value, memoire_paragraph: memoire.value, note_au_mandataire: note.value, contact: { nom: cNom.value, email: cMail.value, telephone: cTel.value }, version: curVer });
       const url = "/api/invite/" + encodeURIComponent(TOKEN) + "/contribution";
       const fill = (c) => {
         company.value = c.company_name || ""; lot.value = c.lot || ""; quals.value = (c.qualifications || []).join(", ");
         siret.value = c.siret || ""; forme.value = c.forme_juridique || ""; adresse.value = c.address || ""; cp.value = c.postal_code || ""; ville.value = c.city || "";
         refs.value = (c.references || []).map(r => r.intitule || "").filter(Boolean).join("\n");
-        chiffrage.value = c.chiffrage_note || ""; memoire.value = c.memoire_paragraph || "";
+        chiffrage.value = c.chiffrage_note || ""; memoire.value = c.memoire_paragraph || ""; note.value = c.note_au_mandataire || "";
         const ct = c.contact || {}; cNom.value = ct.nom || ""; cMail.value = ct.email || ""; cTel.value = ct.telephone || "";
-        curVer = c.version || 0; setStatus(c.status); renderPieces(c.pieces || []);
+        curVer = c.version || 0; setStatus(c.status); renderPieces(c.pieces || []); renderChecklist(c.pieces_checklist);
       };
       const c0 = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
       if (c0) fill(c0); else renderPieces([]);
@@ -274,20 +337,53 @@
         let masked = st.email_masked || "votre adresse";
         // On ne redemande un code QUE s'il n'y en a pas déjà un valide en attente : sinon on
         // réutilise celui envoyé (rappeler /otp/request épuiserait la limite 6/h et bloquerait).
+        const requestCode = async () => {
+          const rq = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/request", { method: "POST" }).then(r => r.ok ? r.json() : null).catch(() => null);
+          if (rq && rq.email_masked) masked = rq.email_masked;
+          return rq && rq.sent;
+        };
         if (!st.pending) {
           msg.textContent = "Envoi d'un code de vérification…";
-          const rq = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/request", { method: "POST" }).then(r => r.ok ? r.json() : null).catch(() => null);
-          if (!rq || !rq.sent) { msg.textContent = "Trop d'envois récents — patientez quelques minutes, puis ressaisissez le dernier code reçu."; return false; }
-          masked = rq.email_masked || masked;
+          if (!(await requestCode())) { msg.textContent = "Trop d'envois récents — patientez quelques minutes, puis ressaisissez le dernier code reçu."; return false; }
         }
-        const code = window.prompt("Saisissez le code à 6 chiffres envoyé à " + masked + " pour valider votre identité avant de soumettre votre part :");
-        if (!code) { msg.textContent = "Vérification annulée — votre brouillon est conservé."; return false; }
-        const vr = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code.trim() }) });
-        if (vr.ok) { msg.textContent = "Identité vérifiée ✓"; return true; }
-        const e = await vr.json().catch(() => ({})); msg.textContent = (e && e.detail) ? e.detail : "Code incorrect."; return false;
+        // Champ de saisie intégré (aux couleurs Adjugo) plutôt qu'un prompt système gris.
+        while (true) {
+          const res = await openModal({
+            title: "Vérifiez votre identité",
+            bodyHtml: `Pour ajouter votre part au dossier commun, saisissez le code à 6 chiffres envoyé à <b>${esc(masked)}</b>.`,
+            inputLabel: "Code de vérification", withInput: true,
+            confirmLabel: "Valider", cancelLabel: "Annuler", extraLabel: "Renvoyer le code",
+          });
+          if (!res) { msg.textContent = "Vérification annulée — votre brouillon est conservé."; return false; }
+          if (res.extra) { await requestCode(); continue; }   // « Renvoyer le code »
+          const code = (res.value || "").trim();
+          if (!code) continue;
+          const vr = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
+          if (vr.ok) { msg.textContent = "Identité vérifiée ✓"; return true; }
+          const e = await vr.json().catch(() => ({})); msg.textContent = (e && e.detail) ? e.detail : "Code incorrect."; return false;
+        }
       }
       btnSubmit.onclick = async () => {
         msg.textContent = "Envoi…"; if (!(await save())) return;
+        // Récapitulatif AVANT envoi : le partenaire relit ce qui entrera dans le pli déposé
+        // à l'acheteur (ces éléments alimentent son DC1/DC2) — réduit les envois incomplets.
+        const nRefs = refs.value.split("\n").map(s => s.trim()).filter(Boolean).length;
+        const nPieces = piecesList.querySelectorAll(".g-doc").length;
+        const li = (ok, t) => `<li style="margin:2px 0">${ok ? "✓" : "○"} ${t}</li>`;
+        const recap = await openModal({
+          title: "Confirmer l'envoi au chef de file",
+          bodyHtml: "Voici ce que le mandataire va recevoir pour votre part :"
+            + `<ul style="list-style:none;padding:0;margin:10px 0">`
+            + li(!!company.value, "Entreprise : <b>" + (esc(company.value) || "—") + "</b>")
+            + li(!!lot.value, "Lot / périmètre : " + (esc(lot.value) || "—"))
+            + li(!!siret.value, "SIRET : " + (esc(siret.value) || "à compléter"))
+            + li(nRefs > 0, nRefs + " référence(s)")
+            + li(!!memoire.value, "Paragraphe de mémoire technique")
+            + li(nPieces > 0, nPieces + " pièce(s) jointe(s)")
+            + `</ul><div class="muted small">Ces éléments alimenteront votre DC1/DC2 dans la réponse commune. Vous pourrez encore les ajuster jusqu'à la date limite.</div>`,
+          confirmLabel: "Confirmer l'envoi", cancelLabel: "Revenir",
+        });
+        if (!recap) { msg.textContent = "Envoi annulé — votre brouillon est conservé."; return; }
         if (!(await ensureVerified())) return;
         const r = await fetch(url + "/submit", { method: "POST" });
         if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Contribution soumise ✓"; showSubmittedBanner(); window.scrollTo({ top: 0, behavior: "smooth" }); }

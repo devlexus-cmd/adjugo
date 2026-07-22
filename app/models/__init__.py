@@ -89,6 +89,9 @@ class User(Base):
     # Tarification à l'usage : autoriser le dépassement de quota facturé (vs 402 bloquant)
     overage_enabled = Column(Boolean, default=False)
     overage_count = Column(Integer, default=0)  # analyses hors quota ce mois
+    # Essai gratuit 30 jours (sans carte) : date de fin. NULL = compte historique/démo
+    # (jamais d'essai attaché → ancien comportement Découverte conservé).
+    trial_ends_at = Column(DateTime, nullable=True)
     amont_alerts_enabled = Column(Boolean, default=False)  # veille amont auto (email)
     # Révocation de session : incrémenté au retrait/transfert → les JWT émis avant
     # (qui portent l'ancienne valeur) sont rejetés. Coupe immédiatement un accès.
@@ -565,6 +568,12 @@ class ProjectInvite(Base):
     verified_email = Column(String(255), default="")   # adresse prouvée
     verified_at = Column(DateTime, nullable=True)
 
+    # Suivi d'envoi : le mandataire voit si le mail d'invitation est réellement parti,
+    # et la relance automatique sait quels paliers d'échéance ont déjà été notifiés
+    # (0 = aucune relance, 1 = J-3 envoyée, 2 = J-1 envoyée) — anti-spam idempotent.
+    emailed_at = Column(DateTime, nullable=True)
+    reminder_stage = Column(Integer, default=0)
+
     created_at = Column(DateTime, default=utcnow)
 
 
@@ -627,6 +636,7 @@ class ProjectContribution(Base):
     chiffrage_note = Column(Text, default="")          # approche / estimation prix de son lot
     memoire_paragraph = Column(Text, default="")       # son paragraphe de mémoire technique
     contact = Column(JSON, nullable=True)              # {nom, email, telephone}
+    note_au_mandataire = Column(Text, default="")      # message libre du partenaire au chef de file
 
     status = Column(String(20), default="draft")       # draft | submitted
     submitted_at = Column(DateTime, nullable=True)

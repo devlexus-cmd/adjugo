@@ -159,8 +159,12 @@ def _mistral_create(model=None, max_tokens=1024, temperature=0.2,
     choice = (data.get("choices") or [{}])[0]
     text = ((choice.get("message") or {}).get("content")) or ""
     u = data.get("usage") or {}
-    return _Resp(text, _Usage(u.get("prompt_tokens", 0), u.get("completion_tokens", 0)),
-                 choice.get("finish_reason", "stop"))
+    # Normaliser le motif d'arrêt façon Anthropic : Mistral renvoie "length" sur troncature
+    # (max_tokens), Anthropic "max_tokens". Les garde-fous anti-troncature en aval testent
+    # UNIQUEMENT "max_tokens" → sans ce mapping, un livrable Mistral coupé passerait pour complet.
+    fr = choice.get("finish_reason", "stop")
+    stop = "max_tokens" if fr == "length" else fr
+    return _Resp(text, _Usage(u.get("prompt_tokens", 0), u.get("completion_tokens", 0)), stop)
 
 
 # ── Compteurs de tokens : global (par process) + PAR TENANT ──────────────────

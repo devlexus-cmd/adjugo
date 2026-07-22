@@ -45,7 +45,10 @@ def _fetch(query: str, departements, cpv=None, per: int = 100) -> list:
     end = (today - timedelta(days=int(0.5 * 365))).isoformat()        # … et ≥ 6 mois
     obj = f'objet like "{q}"'
     if cpv:
-        codes = [str(c).strip()[:4] for c in cpv if str(c).strip()[:4].isdigit()]
+        # cpv peut arriver en CHAÎNE ("45211000") ou en LISTE : sans normalisation, itérer
+        # une chaîne parcourait ses CARACTÈRES ("4","5",…) → filtre CPV neutralisé (matche tout).
+        cpv_list = [cpv] if isinstance(cpv, str) else list(cpv)
+        codes = [str(c).strip()[:4] for c in cpv_list if str(c).strip()[:4].isdigit()]
         if codes:
             obj = "(" + obj + " OR " + " OR ".join(f'codecpv like "{c}"' for c in codes[:5]) + ")"
     where = (f'{obj} AND dureemois > 0 '
@@ -100,7 +103,10 @@ def detect_renewals_decp(query: str, departements, criteria: dict, domaines=None
         seen.add(k)
         notif = _parse(row.get("datenotification"))
         duree = row.get("dureemois")
-        if not notif or not isinstance(duree, (int, float)) or duree <= 0:
+        # Borne HAUTE : un dureemois aberrant (erreur de saisie DECP, ex. 999999999) ferait
+        # planter timedelta (OverflowError) et abandonnerait TOUT le radar déterministe → on
+        # ignore juste ce row (240 mois = 20 ans, plafond réaliste des marchés publics).
+        if not notif or not isinstance(duree, (int, float)) or not (0 < duree <= 240):
             continue
         dep = (str(row.get("lieuexecution_code") or "")[:2])
         if deps and dep not in deps:                       # filtre département côté client

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import func
 
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 
 from app.core.database import get_db
 from app.core.security import (hash_password, verify_password, create_access_token,
@@ -53,6 +53,9 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
         hashed_password=hash_password(data.password),
         full_name=fn,
         org_role="admin",
+        # Essai gratuit 30 jours sans carte : accès niveau Pro jusqu'à cette date, puis
+        # blocage tant qu'aucun abonnement (cf. app/core/quota.py). Compte historique = NULL.
+        trial_ends_at=datetime.now(timezone.utc) + timedelta(days=30),
     )
     db.add(user)
     db.flush()
@@ -179,12 +182,21 @@ def update_me(
     if full_name:
         current_user.full_name = full_name
     if email:
-        existing = db.query(User).filter(User.email == email, User.id != current_user.id).first()
+        # Normalisé comme à l'inscription/connexion : sinon « Jean@X.fr » créait un doublon
+        # de « jean@x.fr » et l'utilisateur ne pouvait plus se reconnecter.
+        email = email.strip().lower()
+        existing = db.query(User).filter(func.lower(User.email) == email, User.id != current_user.id).first()
         if existing:
             raise HTTPException(status_code=400, detail="Email déjà utilisé")
-        current_user.email = email
+        if email != (current_user.email or "").strip().lower():
+            # Nouvelle adresse = adresse NON prouvée : sans ça, on vérifiait une adresse
+            # puis on la remplaçait par n'importe laquelle en restant « vérifié ».
+            current_user.email = email
+            current_user.email_verified = False
     db.commit()
     db.refresh(current_user)
+    if email and not current_user.email_verified:
+        _send_verification(current_user)
     return current_user
 
 

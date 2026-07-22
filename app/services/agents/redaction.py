@@ -321,11 +321,25 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     # DC4 (déclaration de sous-traitance) : dès qu'il y a un GROUPEMENT/consortium, on le
     # génère pré-rempli — la sous-traitance est fréquente en groupement et l'acheteur
     # l'exige le cas échéant ; mieux vaut le fournir prêt que de l'oublier.
-    has_groupement = bool(cerfa_cotraitants)
+    # DC4 = déclaration de SOUS-TRAITANCE : on ne le joint que si un partenaire est
+    # réellement déclaré sous-traitant (role sous_traitant), pas pour un simple groupement
+    # de co-traitants — sinon on ajoutait un DC4 sans objet à chaque dossier.
+    from app.services.cerfa import _soustraitants
+    has_soustraitance = bool(_soustraitants(cerfa_cotraitants))
+    # Membres du groupement (co-traitants) dont le représentant légal (signataire du DC2)
+    # est manquant : leur DC2 serait non signable → on avertit (bloquant) plutôt que de
+    # produire un DC2 vide en silence.
+    from app.services.cerfa import _groupement_members
+    _missing_rep = [ct.get("name") or ct.get("siret") or "un co-traitant"
+                    for ct in _groupement_members(cerfa_cotraitants)
+                    if not str(ct.get("representant_legal") or "").strip()]
+    if _missing_rep:
+        warnings.append("BLOQUANT — représentant légal (signataire du DC2) manquant pour : "
+                        + ", ".join(_missing_rep) + ". Demandez-le au partenaire avant dépôt.")
     if (country or "FR").upper() == "FR":
         include_dume = (project_data.get("budget") or 0) >= DUME_THRESHOLD
         # "honneur" = déclaration sur l'honneur (R2143-3), pièce obligatoire de tout pli FR.
-        cerfa_ids = ["dc1", "dc2"] + (["dc4"] if has_groupement else []) + ["attri1", "honneur"] \
+        cerfa_ids = ["dc1", "dc2"] + (["dc4"] if has_soustraitance else []) + ["attri1", "honneur"] \
             + (["dume"] if include_dume else [])
     else:
         cerfa_ids = ["dume"]   # ESPD localisé = pièce de candidature paneuropéenne

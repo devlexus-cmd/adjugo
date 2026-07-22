@@ -139,6 +139,8 @@ async def analyze_upload(request: Request, file: UploadFile = File(...), domaine
 def analyze_text(request: Request, payload: dict,
                  current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     text = (payload or {}).get("text", "")
+    if not isinstance(text, str):   # payload {"text": null} ou nombre → 422 propre, pas un 500
+        text = ""
     if len(text.strip()) < 60:
         raise HTTPException(422, "Texte trop court pour une détection fiable.")
     consume_analysis(current_user, db)

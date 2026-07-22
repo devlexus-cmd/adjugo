@@ -37,9 +37,47 @@ def _plan_key(user) -> str:
     return p.value if hasattr(p, "value") else str(p)
 
 
+TRIAL_DAYS = 30
+
+
+def _as_utc(dt):
+    """Normalise une datetime éventuellement naïve (SQLite) en UTC pour comparer."""
+    if dt is None:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def _trial_state(user) -> str:
+    """État de l'essai gratuit 30j pour un compte au plan 'starter' :
+      'active'  → essai en cours (accès niveau Pro),
+      'expired' → essai terminé (bloqué : plus d'offre gratuite),
+      'none'    → aucun essai attaché (trial_ends_at NULL = compte historique/démo,
+                  ancien comportement Découverte conservé)."""
+    ends = _as_utc(getattr(user, "trial_ends_at", None))
+    if ends is None:
+        return "none"
+    return "active" if ends > datetime.now(timezone.utc) else "expired"
+
+
+def _trial_days_left(user) -> int:
+    import math
+    ends = _as_utc(getattr(user, "trial_ends_at", None))
+    if ends is None:
+        return 0
+    return max(0, math.ceil((ends - datetime.now(timezone.utc)).total_seconds() / 86400))
+
+
 def _limit(user) -> int:
-    limits = settings.PLAN_LIMITS.get(_plan_key(user), {})
-    return int(limits.get("analyses", 3))
+    plan = _plan_key(user)
+    if plan in ("pro", "business"):
+        return int(settings.PLAN_LIMITS.get(plan, {}).get("analyses", 0))
+    # plan 'starter' (ou inconnu) : le quota depend de l'essai gratuit.
+    st = _trial_state(user)
+    if st == "active":
+        return int(settings.PLAN_LIMITS.get("pro", {}).get("analyses", 30))   # acces Pro pendant l'essai
+    if st == "expired":
+        return 0   # essai termine → bloque
+    return int(settings.PLAN_LIMITS.get("starter", {}).get("analyses", 5))     # historique/demo
 
 
 def _period() -> str:
@@ -66,8 +104,11 @@ def usage(user, db: Session = None) -> dict:
     _sync_period(user)
     lim = _limit(user)
     used = user.analyses_used_this_month or 0
+    plan = _plan_key(user)
+    tstate = _trial_state(user) if plan not in ("pro", "business") else None
+    ends = _as_utc(getattr(user, "trial_ends_at", None))
     return {
-        "plan": _plan_key(user),
+        "plan": plan,
         "analyses_used": used,
         "analyses_limit": lim,
         "analyses_remaining": max(0, lim - used),
@@ -75,6 +116,9 @@ def usage(user, db: Session = None) -> dict:
         "overage_count": getattr(user, "overage_count", 0) or 0,
         "overage_price": OVERAGE_PRICE,
         "period": _period(),
+        "trial_state": tstate,                                   # 'active'|'expired'|'none'|None (payant)
+        "trial_days_left": _trial_days_left(user) if tstate == "active" else 0,
+        "trial_ends_at": ends.isoformat() if ends else None,
     }
 
 
@@ -85,17 +129,31 @@ def consume_analysis(user, db: Session) -> None:
     # Verrou « email vérifié » : aucune action coûteuse (IA/quota) tant que l'adresse de l'utilisateur
     # AGISSANT n'est pas confirmée — anti-contournement par appel API direct (le front bloque déjà l'UI).
     if not getattr(user, "email_verified", True):
-        from fastapi import HTTPException
+        # NB : surtout PAS de « from fastapi import HTTPException » ici — un import local
+        # rendait HTTPException locale à TOUTE la fonction → le 402 « quota atteint » plus
+        # bas plantait en 500 (UnboundLocalError) pour tout utilisateur vérifié à la limite.
         raise HTTPException(403, "Confirmez votre adresse email pour utiliser cette fonctionnalité.")
     from app.models import User as _User
     # Le quota est porté par le propriétaire de l'org (pool partagé).
     billing = _billing_user(user, db)
     # SELECT … FOR UPDATE : sérialise les consommations concurrentes (no-op SQLite dev,
-    # protection réelle sur Postgres prod).
-    locked = db.query(_User).filter(_User.id == billing.id).with_for_update().first() or billing
+    # protection réelle sur Postgres prod). populate_existing() est INDISPENSABLE : l'objet
+    # User est déjà dans l'identity map de la session (chargé par get_current_user), et sans
+    # lui SQLAlchemy renvoie les attributs lus AVANT le verrou → le compteur périmé rouvrait
+    # exactement la course que ce verrou prétend fermer.
+    locked = (db.query(_User).filter(_User.id == billing.id)
+              .populate_existing().with_for_update().first() or billing)
     _sync_period(locked)
     lim = _limit(locked)
     used = locked.analyses_used_this_month or 0
+    # Essai gratuit 30j termine (plan starter, essai expire) → blocage net, SANS overage
+    # (aucun abonnement pour le facturer). Message dedie orientant vers l'abonnement.
+    if _plan_key(locked) == "starter" and _trial_state(locked) == "expired":
+        raise HTTPException(
+            status_code=402,
+            detail="Votre essai gratuit de 30 jours est termine. Abonnez-vous (Pro ou Business) "
+                   "pour continuer a lancer des analyses.",
+        )
     if used >= lim:
         if getattr(locked, "overage_enabled", False):
             locked.overage_count = (getattr(locked, "overage_count", 0) or 0) + 1
@@ -124,7 +182,8 @@ def refund_analysis(user, db: Session) -> None:
     try:
         from app.models import User as _User
         billing = _billing_user(user, db)
-        locked = db.query(_User).filter(_User.id == billing.id).with_for_update().first() or billing
+        locked = (db.query(_User).filter(_User.id == billing.id)
+                  .populate_existing().with_for_update().first() or billing)   # populate_existing : cf. consume_analysis
         _sync_period(locked)   # remboursement après bascule de mois → ne pas décrémenter la nouvelle période
         used = locked.analyses_used_this_month or 0
         if used <= 0:

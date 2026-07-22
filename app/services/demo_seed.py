@@ -189,6 +189,12 @@ _COTRAITANTS = [
 def ensure_demo(db, force: bool = False) -> User:
     user = db.query(User).filter(User.email == DEMO_EMAIL).first()
     if user and not force:
+        # Auto-réparation : un compte démo créé AVANT la vérification d'email restait non
+        # vérifié → le mur « Confirmez votre adresse email » bloquait toute la vitrine
+        # (personne ne reçoit les mails de demo@adjugo.fr).
+        if not user.email_verified:
+            user.email_verified = True
+            db.commit()
         return user
 
     if not user:
@@ -201,6 +207,10 @@ def ensure_demo(db, force: bool = False) -> User:
 
     user.plan = PlanType.business
     user.full_name = "Compte Démo"
+    # Vitrine TOUJOURS accessible : le re-seed (force=True au démarrage) doit aussi réparer
+    # un compte démo d'avant la vérification d'email, sinon le mur « Confirmez votre
+    # adresse » bloque la démo (personne ne reçoit les mails de demo@adjugo.fr).
+    user.email_verified = True
 
     comp = db.query(Company).filter(Company.user_id == user.id).first() or Company(user_id=user.id, name="x")
     if comp.id is None:

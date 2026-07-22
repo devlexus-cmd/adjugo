@@ -51,6 +51,9 @@ def _normalize(e: dict) -> dict:
         "siret": siege.get("siret", ""),
         "code_ape": (e.get("activite_principale") or "").replace(".", ""),
         "naf_label": _naf_label(e.get("activite_principale")),
+        # Spécialité EXPLOITABLE (mots-clés métier) dérivée du NAF → pré-remplit les critères
+        # et la 1re recherche à l'activation par SIRET (repli : libellé NAF).
+        "specialite": _specialite(e.get("activite_principale")),
         "forme_juridique": _forme_label(forme),
         "address": siege.get("adresse") or f"{siege.get('numero_voie','')} {siege.get('libelle_voie','')}".strip(),
         "postal_code": siege.get("code_postal", ""),
@@ -177,6 +180,21 @@ def _lookup_vies(raw: str) -> Optional[dict]:
 
 
 # ── Helpers ──
+
+def _specialite(naf: Optional[str]) -> str:
+    """Mots-clés métier depuis le code NAF : si le NAF correspond à un métier BTP connu,
+    on renvoie ses mots-clés (bons pour la recherche d'AO) ; sinon le libellé NAF."""
+    if not naf:
+        return ""
+    code = str(naf).strip().upper()
+    for t in TRADES:
+        if t["naf"].upper() == code:
+            return t["kw"]
+    # Hors métiers BTP connus : on ne renvoie PAS le code NAF brut (mauvais mot-clé de
+    # recherche) — le libellé seulement s'il existe, sinon vide (l'utilisateur ajustera).
+    label = _naf_label(naf)
+    return label if label and label != naf else ""
+
 
 def _naf_label(naf: Optional[str]) -> str:
     if not naf:

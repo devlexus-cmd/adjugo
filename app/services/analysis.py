@@ -413,7 +413,15 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
             response_text = response_text[:-3]
         response_text = response_text.strip()
 
-        result = json.loads(response_text)
+        try:
+            result = json.loads(response_text)
+        except json.JSONDecodeError:
+            # Réponse « bavarde » (texte autour du JSON) : on repêche le premier objet JSON
+            # complet plutôt que de jeter une analyse déjà payée par le client.
+            start = response_text.find("{")
+            if start < 0:
+                raise
+            result, _ = json.JSONDecoder().raw_decode(response_text[start:])
 
         # Valider les champs obligatoires
         if "match_score" not in result:
@@ -438,22 +446,19 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
         return result
 
     except json.JSONDecodeError:
+        # Le LLM a bien RÉPONDU mais dans un format illisible : verdict NEUTRE honnête
+        # (« à étudier »), jamais un faux NO-GO.
         return {
             "match_score": 50,
             "go_decision": "a_etudier",
             "summary": response_text[:500] if response_text else "Erreur de format dans la reponse IA.",
             "details": {}
         }
-    except Exception as e:
-        # Panne IA / plafond atteint : on NE renvoie PAS un faux « NO-GO » (score 0) — ce
-        # serait un verdict mensonger ET le client serait débité pour rien. On propage :
-        # les appelants (sourcing) remboursent le quota et renvoient un 503 « réessayez ».
-        from app.services.llm import LLMUnavailable
-        if isinstance(e, LLMUnavailable):
-            raise
-        return {
-            "match_score": 0,
-            "go_decision": "no_go",
-            "summary": f"Erreur d'analyse : {str(e)}",
-            "details": {}
-        }
+    except Exception:
+        # PANNE de l'IA (timeout, coupure réseau, 5xx/429 du fournisseur, plafond de tokens,
+        # disjoncteur ouvert…) : on NE fabrique JAMAIS un verdict — un faux « NO-GO » serait
+        # mensonger ET débiterait le client pour rien. On PROPAGE : les appelants (sourcing)
+        # remboursent le quota (refund_analysis) et renvoient un 503 « réessayez ». Avant, seul
+        # LLMUnavailable remontait ; une vraie erreur SDK (avant l'ouverture du disjoncteur à
+        # 5 échecs) retournait un faux NO-GO facturé — c'est ce trou qu'on ferme ici.
+        raise

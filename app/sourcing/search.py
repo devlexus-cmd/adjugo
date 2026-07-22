@@ -69,9 +69,11 @@ class TenderSearchService:
 
         ex = ThreadPoolExecutor(max_workers=max(1, len(active) or 1))
         futs = {ex.submit(s.search, criteria): s for s in active}
+        processed = set()
         try:
             for fut in as_completed(futs, timeout=_SEARCH_DEADLINE):
                 src = futs[fut]
+                processed.add(fut)
                 try:
                     tenders.extend(fut.result())
                     _cb_ok(src.name)
@@ -80,11 +82,22 @@ class TenderSearchService:
                     _cb_fail(src.name)
         except FuturesTimeout:
             pass
-        # Sources non terminées au délai → délai dépassé (et on ne BLOQUE pas dessus).
         for fut, src in futs.items():
-            if not fut.done():
+            if fut in processed:
+                continue
+            if fut.done():
+                # Terminée JUSTE après la deadline globale : on récupère son résultat valide
+                # au lieu de le jeter (sinon une source utile mais lente perdait tout).
+                try:
+                    tenders.extend(fut.result())
+                    _cb_ok(src.name)
+                except Exception as e:
+                    errors.append(SourceError(source=src.name, message=str(e)[:200]))
+                    _cb_fail(src.name)
+            else:
+                # Source simplement LENTE (pas en panne) : erreur douce, SANS ouvrir le
+                # disjoncteur — sinon une plateforme lente (PLACE/ATEXO) finissait exclue 120 s.
                 errors.append(SourceError(source=src.name, message="délai dépassé"))
-                _cb_fail(src.name)
                 fut.cancel()
         ex.shutdown(wait=False)
 
@@ -178,8 +191,13 @@ def _dedup_tenders(tenders: list[NormalizedTender]) -> list[NormalizedTender]:
     out: list[NormalizedTender] = []
 
     for t in tenders:
+        # Clé de réf NAMESPACÉE PAR SOURCE : les réf officielles sont des ENTIERS NUS et
+        # incompatibles entre sources (idweb BOAMP, cid Atexo, pub TED) → sans le préfixe
+        # source, un cid PLACE/Mégalis égal à un idweb BOAMP faisait DISPARAÎTRE un AO
+        # distinct. La fusion d'un même AO vu sur plusieurs sources passe par dedup_key (flou).
         ref = t.provenance.official_ref
-        existing = (by_ref.get(ref) if ref else None) or by_key.get(t.dedup_key)
+        ref_key = f"{t.provenance.source}|{ref}" if ref else None
+        existing = (by_ref.get(ref_key) if ref_key else None) or by_key.get(t.dedup_key)
         if existing:
             existing.also_seen_in.append(t.provenance)
             existing.confidence = min(1.0, round(existing.confidence + 0.1, 2))  # concordance
@@ -189,8 +207,8 @@ def _dedup_tenders(tenders: list[NormalizedTender]) -> list[NormalizedTender]:
                     setattr(existing, f, getattr(t, f))
         else:
             out.append(t)
-            if ref:
-                by_ref[ref] = t
+            if ref_key:
+                by_ref[ref_key] = t
             by_key[t.dedup_key] = t
     return out
 
