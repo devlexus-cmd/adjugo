@@ -220,6 +220,12 @@ def list_countries(current_user: User = Depends(get_current_user)):
 def search_tenders(request: Request, req: SearchRequest,
                    current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
+    from app.services.demo_search import is_demo as _is_demo, search_results as _demo_search
+    if _is_demo(current_user):
+        _t = _demo_search()   # le vrai BOAMP renverrait vide sur la requête démo → liste canned riche
+        return {"count": len(_t), "sources_queried": ["BOAMP"], "sources_skipped": [], "errors": [],
+                "tenders": [x.model_dump(exclude={"raw"}) for x in _t], "has_more": False,
+                "closed_filtered": 0, "amount_filtered": 0}
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     company_data = _company_dict(company)
     gonogo = _criteria_dict(current_user.id, db)
@@ -308,6 +314,21 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         tender = NormalizedTender(**req.tender)
     except Exception:
         raise HTTPException(400, "Objet AO invalide")
+
+    from app.services.demo_search import is_demo as _is_demo, analysis_for as _demo_analysis
+    if _is_demo(current_user) and (tender.provenance.official_ref or "").startswith("DEMO-"):
+        _a = _demo_analysis(tender.provenance.official_ref)
+        if _a:
+            _score = _a.get("match_score", 0); _decision = _a.get("go_decision")
+            _proj = Project(user_id=current_user.id,
+                            name=(_a.get("details", {}).get("intitule_marche") or tender.objet)[:500],
+                            client=tender.acheteur or "", match_score=_score, go_decision=_decision,
+                            ai_summary=_a.get("summary", ""), ai_analysis=_a, source_url=tender.provenance.source_url)
+            db.add(_proj); db.commit(); db.refresh(_proj)
+            return {"project_id": _proj.id, "decision": _decision, "score": _score, "dce_available": True,
+                    "confidence": tender.confidence, "summary": _a.get("summary", ""),
+                    "details": _a.get("details", {}), "score_breakdown": _a.get("score_breakdown"),
+                    "source": tender.provenance.model_dump()}
 
     consume_analysis(current_user, db)  # 402 si quota atteint
 

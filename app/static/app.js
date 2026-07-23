@@ -262,9 +262,9 @@ const __adjApp = createApp({
     // Accessibilité clavier (RGAA) : Échap ferme la modale ouverte ; Entrée/Espace
     // active l'élément de navigation focalisé (les nav-item ne sont pas des <button>).
     window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") { const x = document.querySelector(".overlay .modal-h .x, .drawer .x"); if (x) x.click(); }
+      if (e.key === "Escape") { const x = document.querySelector(".overlay .modal-h .x, .drawer .x"); if (x) x.click(); this.fb.open = false; this.notifsOpen = false; }
       const a = document.activeElement;
-      if ((e.key === "Enter" || e.key === " ") && a && a.classList && a.classList.contains("nav-item")) { e.preventDefault(); a.click(); }
+      if ((e.key === "Enter" || e.key === " ") && a && a.classList && a.classList.contains("nav-item") && !document.querySelector(".overlay, .drawer, .modal-back")) { e.preventDefault(); a.click(); }
     });
     this.$nextTick(() => this._a11y());
     if (!this.token && new URLSearchParams(location.search).get("demo") === "1") { this.demoLogin(); return; }
@@ -490,6 +490,7 @@ const __adjApp = createApp({
     go(v) {
       this.view = v;
       this.mobileNav = false;  // referme le menu mobile à la navigation
+      this.notifsOpen = false; this.fb.open = false;  // referme les popups (notifications / retour d'avis) à la navigation
       if (v === "dashboard") { this.loadStats(); this.loadExpiring(); this.loadConsortiums(); this.loadNotifs(); }
       if (v === "consortiums") this.loadConsortiums();
       if (v === "pipeline") this.loadProjects();
@@ -504,6 +505,7 @@ const __adjApp = createApp({
       if (v === "team") this.loadOrg();
       if (v === "billing") { this.loadPlan(); this.loadStats(); }
       if (v === "admin") this.loadAdmin();
+      this.$nextTick(() => { const w = document.querySelector(".work"); if (w) w.scrollTop = 0; });   // remonte en haut du contenu à chaque changement de vue
     },
     async loadAdmin() {
       try { this.admin.diag = await this.api("GET", "/api/admin/storage-diag"); } catch (e) { this.admin.diag = null; }
@@ -735,7 +737,7 @@ const __adjApp = createApp({
     async openAo(p) {
       this.ao.back = this.view; this.ao.dossier = null; this.ao.project = p;
       this.ao.cotraitants = []; this.ao.stOpen = false; this.ao.st.results = [];
-      this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.group = null;
+      this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.buyerLoading = true; this.ao.checklist = null; this.ao.group = null;
       this.ao.qa = []; this.ao.qaInput = "";
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
       this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
@@ -1022,11 +1024,14 @@ const __adjApp = createApp({
     async aoResendInvite(inv) {
       // Renvoie le mail sur le MÊME lien (sans changer le token) : relance un partenaire
       // silencieux ou rattrape un mail en spam, sans casser l'URL déjà partagée.
+      if (inv._resending) return;   // garde anti double-clic (évite l'invitation en double)
+      inv._resending = true;
       try {
         const r = await this.api("POST", "/api/projects/" + this.ao.project.id + "/invites/" + inv.id + "/resend");
         this.notify(r && r.sent ? "Invitation renvoyée par email" : "Envoi impossible — copiez le lien et transmettez-le", r && r.sent ? "ok" : "err");
         this.aoLoadInvites();
       } catch (e) { this.notify(e.message, "err"); }
+      finally { inv._resending = false; }
     },
     copyInvite(url, silent) {
       // writeText renvoie une Promise : on gère succès ET échec (le try/catch ne capte pas
@@ -1057,8 +1062,10 @@ const __adjApp = createApp({
       return this.aoPendingInvites().filter(i => (i.recipient || "").includes("@"));
     },
     async aoRelanceRetardataires() {
+      if (this.ao.share._relancing) return;   // garde anti double-clic (évite les relances en double)
       const list = this.aoPendingRelancables();
       if (!list.length) { this.notify("Aucun partenaire relançable par email (copiez le lien à la place)", "err"); return; }
+      this.ao.share._relancing = true;
       let sent = 0;
       for (const inv of list) {
         try {
@@ -1068,6 +1075,7 @@ const __adjApp = createApp({
       }
       await this.aoLoadInvites();
       this.notify(sent ? sent + " partenaire(s) relancé(s) par email" : "Envoi impossible — copiez les liens et transmettez-les", sent ? "ok" : "err");
+      this.ao.share._relancing = false;
     },
     auditLabel(a) {
       const m = { "invite.created": "Lien créé", "invite.revoked": "Lien révoqué", "guest.view_project": "Consultation du dossier", "guest.download_doc": "Téléchargement de pièce" };
@@ -1360,6 +1368,8 @@ const __adjApp = createApp({
     // ── Veille / alertes AO sauvegardées ──
     async loadAlerts() { try { this.src.alerts = await this.api("GET", "/api/saved-searches/"); } catch (e) {} },
     async srcSaveAlert() {
+      if (this.src._savingAlert) return;   // garde anti double-clic (évite l'alerte en double)
+      this.src._savingAlert = true;
       const deps = this.srcDeps();
       const countries = this.src.country ? [this.src.country] : [];
       const cpv = (this.src.cpv || "").split(/[ ,;]+/).map(s => s.trim()).filter(Boolean);
@@ -1370,6 +1380,7 @@ const __adjApp = createApp({
         await this.api("POST", "/api/saved-searches/", { name, query: this.src.query, cpv, type_marche: this.src.type_marche || "", departements: deps, countries, frequency: "quotidienne", active: true });
         this.loadAlerts(); this.notify("Alerte créée — vous serez notifié par email");
       } catch (e) { this.notify(e.message, "err"); }
+      finally { this.src._savingAlert = false; }
     },
     async srcRunAlert(a) {
       this.notify("Test de l'alerte…");

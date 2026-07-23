@@ -382,6 +382,12 @@
               <input ref="aoDce" type="file" accept=".pdf,.zip,.docx,.txt" class="hidden" @change="aoUploadDce">
               <p class="small" v-if="ao.project.ai_summary">{{ ao.project.ai_summary }}</p>
               <p class="muted small" v-else>Aucune analyse encore. Importez le dossier du marché pour la lancer.</p>
+              <!-- Synthèse rédigée de l'analyse (recommandation) + points d'attention : le vrai texte d'analyse du dossier -->
+              <div v-if="aoDetails() && aoDetails().recommandation" class="small" style="margin:12px 0 2px;padding:13px 15px;background:var(--surface-2);border-radius:10px;line-height:1.65;white-space:pre-line">{{ aoDetails().recommandation }}</div>
+              <div v-if="aoDetails() && aoDetails().points_attention && aoDetails().points_attention.length" style="margin-top:12px">
+                <div class="sectitle" style="margin-top:0"><i data-lucide="alert-circle" style="width:14px;height:14px"></i> Points d'attention</div>
+                <ul class="small" style="margin:5px 0 0;padding-left:18px;line-height:1.6"><li v-for="(pt,pi) in aoDetails().points_attention" :key="'pa'+pi" style="margin-bottom:5px">{{ pt }}</li></ul>
+              </div>
               <div v-if="ao.project.ai_analysis && ao.project.ai_analysis.groupement && ao.project.ai_analysis.groupement.recommande" class="row wrap" style="margin:8px 0 2px;gap:10px;padding:11px 13px;background:var(--accent-weak);border:1px solid var(--accent);border-radius:9px;align-items:flex-start">
                 <i data-lucide="users-round" style="width:18px;height:18px;color:var(--accent-text);flex-shrink:0;margin-top:1px"></i>
                 <div style="flex:1;min-width:200px"><b class="small" style="color:var(--accent-text)">Opportunité de groupement — répondez à plusieurs</b>

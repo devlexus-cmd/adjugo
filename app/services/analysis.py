@@ -116,7 +116,7 @@ Tu dois TOUJOURS repondre en JSON valide, sans texte avant ou apres. Voici le fo
       "Penalites elevees - 1/1000 par jour",
       "Visite obligatoire le 01/06"
     ],
-    "recommandation": "Recommandation detaillee sur la strategie a adopter...",
+    "recommandation": "Analyse redigee en 3 a 4 paragraphes (180 a 350 mots), separes par une ligne vide : (1) de quoi parle le marche et ce qu'il exige, (2) les attentes de l'acheteur et la mecanique d'attribution, (3) les points techniques et administratifs a maitriser et les clauses a negocier, (4) la strategie et la recommandation finale",
     "clauses_risque": [
       {"clause": "Penalites de retard", "niveau": "eleve", "pourquoi": "1/1000 du HT par jour plafonnees a 10%, au-dela du seuil tolere par l'entreprise", "levier_negociation": "Demander un plafond a 5% et une franchise de 5 jours ouvres"},
       {"clause": "Retenue de garantie", "niveau": "moyen", "pourquoi": "Retenue de 5% sur 1 an immobilise la tresorerie", "levier_negociation": "Proposer une caution bancaire de substitution (art. R2191-33)"}
@@ -129,7 +129,7 @@ Regles importantes :
 - "go_decision" est "go", "no_go" ou "a_etudier"
 - Pour les pieces_requises, "disponible" est true pour les CERFA (DC1, DC2, DC4, ATTRI1) car le logiciel les genere automatiquement, et false pour le reste
 - Les "points_attention" sont les elements de risque ou les contraintes particulieres
-- La "recommandation" est un conseil strategique concret (300 caracteres max)
+- La "recommandation" est une ANALYSE REDIGEE et substantielle, PAS un resume d'une phrase : 3 a 4 paragraphes, entre 180 et 350 mots (jamais moins de 180), separes par une ligne vide (double saut de ligne \n\n). Structure attendue : (1) de quoi parle le marche et ce qu'il demande concretement ; (2) les attentes de l'acheteur et la mecanique d'attribution (poids des criteres, ce qui fait gagner) ; (3) les points techniques et administratifs a maitriser + les clauses a negocier ; (4) la strategie et la recommandation finale (y aller ou non, comment, seul ou en groupement). Reste factuel et fonde UNIQUEMENT sur le DCE fourni — n'invente jamais un chiffre, une exigence ou une echeance. Sur une simple annonce (pas de DCE complet), reste plus prudent mais redige quand meme une analyse structuree de ce qui est connu.
 - "clauses_risque" liste les clauses contractuelles a surveiller : penalites, retenue de garantie, garantie a premiere demande, avance, delais d'execution intenables, revision de prix figee, assurances exigees, criteres financiers (CA mini). Pour CHAQUE clause notable :
   * "niveau" vaut "faible", "moyen" ou "eleve"
   * Tu DOIS comparer aux seuils de l'entreprise fournis dans les criteres (penalites max, garantie max, retenue max, avance min, delai de reponse min) : marque "eleve" des qu'un seuil est depasse, et dis-le explicitement dans "pourquoi"

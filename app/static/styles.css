@@ -207,7 +207,8 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 @keyframes slide { from { transform:translateX(24px); opacity:.6; } }
 
 /* ---------- Toast ---------- */
-.toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:200; background:var(--text); color:var(--bg); padding:11px 17px; border-radius:12px; box-shadow:var(--shadow-pop); font-weight:600; font-size:13px; display:flex; align-items:center; gap:8px; animation:pop .16s; }
+@keyframes toastIn { from { opacity:0; transform:translate(-50%,6px); } to { opacity:1; transform:translate(-50%,0); } }
+.toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:200; background:var(--text); color:var(--bg); padding:11px 17px; border-radius:12px; box-shadow:var(--shadow-pop); font-weight:600; font-size:13px; display:flex; align-items:center; gap:8px; animation:toastIn .16s; }
 .toast.err { background:var(--danger); color:#fff; }
 .toast.ok { background:var(--grad-text); color:#fff; }
 .toast-undo { display:inline-flex; align-items:center; gap:4px; background:rgba(255,255,255,.2); color:#fff; border:none; border-radius:999px; padding:4px 11px; font-size:12px; font-weight:600; cursor:pointer; }
