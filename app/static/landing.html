@@ -86,7 +86,7 @@ img{max-width:100%}
 @media(max-width:860px){.nav-links{display:none}}
 
 /* hero */
-.hero{position:relative;min-height:640px;height:90vh;max-height:840px;display:flex;align-items:center;color:#fff}
+.hero{position:relative;min-height:90vh;max-height:900px;padding-top:84px;display:flex;align-items:center;color:#fff}
 .hero-photo{position:absolute;inset:0;background-image:
   linear-gradient(100deg, rgba(8,15,34,.82) 0%, rgba(8,15,34,.46) 44%, rgba(8,15,34,.08) 72%),
   linear-gradient(0deg, rgba(8,15,34,.6) 0%, rgba(8,15,34,.1) 48%, rgba(8,15,34,.26) 100%),
@@ -262,6 +262,47 @@ img{max-width:100%}
 .reveal{opacity:0;animation:rise .8s cubic-bezier(.2,.7,.2,1) forwards}
 .d1{animation-delay:.05s}.d2{animation-delay:.16s}.d3{animation-delay:.3s}.d4{animation-delay:.44s}
 @media(prefers-reduced-motion:reduce){.reveal{animation:none;opacity:1}.gauge{--p:87}.crit .fill{width:var(--w)}}
+
+/* ===== Section secteurs — « Les Cimaises » (accordéon muséographique) ===== */
+:root{
+  --p-culture:url(/static/img/secteurs/culture.jpg);
+  --p-spectacle:url(/static/img/secteurs/spectacle.jpg);
+  --p-batiment:url(/static/img/secteurs/batiment.jpg);
+  --p-sante:url(/static/img/secteurs/sante.jpg);
+  --p-formation:url(/static/img/secteurs/formation.jpg);
+  --p-resto:url(/static/img/secteurs/resto.jpg);
+  --p-etudes:url(/static/img/secteurs/etudes.jpg);
+  --p-energie:url(/static/img/secteurs/energie.jpg);
+}
+.cim-band{display:flex;gap:0;height:clamp(420px,60vh,560px);margin-top:clamp(26px,3.4vw,44px);border-radius:22px;overflow:hidden;background:var(--ink);box-shadow:0 30px 60px -38px rgba(12,21,38,.5)}
+.cim-panel{position:relative;flex:1 1 0;min-width:64px;border:0;padding:0;margin:0;cursor:pointer;overflow:hidden;background:transparent;transition:flex-grow .52s cubic-bezier(.22,.61,.36,1)}
+.cim-panel.is-active{flex-grow:6.4}
+.cim-panel:not(:first-child)::after{content:"";position:absolute;left:0;top:0;bottom:0;width:1px;z-index:4;background:linear-gradient(to bottom,rgba(27,79,255,0),rgba(27,79,255,.55) 22%,rgba(27,79,255,.55) 78%,rgba(27,79,255,0));opacity:.85;transition:opacity .5s}
+.cim-panel.is-active::after,.cim-panel.is-active+.cim-panel::after{opacity:1}
+.cim-photo{position:absolute;inset:0;background-image:var(--pi);background-size:cover;background-position:center;transform:scale(1.07);filter:saturate(.9) brightness(.94);transition:transform 1.15s cubic-bezier(.2,.7,.2,1),filter .55s ease}
+.cim-panel.is-active .cim-photo{transform:scale(1);filter:saturate(1.04) brightness(1)}
+.cim-scrim{position:absolute;inset:0;z-index:1;background:linear-gradient(to top,rgba(9,15,28,.72),rgba(9,15,28,.28) 24%,rgba(9,15,28,0) 46%)}
+.cim-vlabel{position:absolute;z-index:3;left:0;right:0;bottom:20px;margin:0 auto;writing-mode:vertical-rl;transform:rotate(180deg);transform-origin:center;text-align:left;font-family:var(--display);font-weight:600;font-size:clamp(13px,1.15vw,16px);letter-spacing:.01em;color:#fff;white-space:nowrap;text-shadow:0 1px 10px rgba(6,10,22,.55);width:1.4em;transition:opacity .34s ease;pointer-events:none}
+.cim-panel.is-active .cim-vlabel{opacity:0}
+.cim-open{position:absolute;z-index:3;left:0;bottom:0;right:0;padding:clamp(18px,1.7vw,26px) clamp(20px,1.9vw,28px);text-align:left;opacity:0;transform:translateY(10px);transition:opacity .42s ease .06s,transform .42s cubic-bezier(.22,.61,.36,1) .06s;pointer-events:none}
+.cim-panel.is-active .cim-open{opacity:1;transform:none}
+.cim-nm{display:block;font-family:var(--display);font-weight:640;font-size:clamp(19px,1.9vw,27px);letter-spacing:-.015em;color:#fff;line-height:1.06;text-shadow:0 2px 18px rgba(6,10,22,.5)}
+.cim-ph{display:block;font-size:13.5px;line-height:1.5;color:rgba(255,255,255,.92);margin-top:7px;max-width:34ch;text-shadow:0 1px 12px rgba(6,10,22,.5)}
+.cim-cta{display:inline-flex;align-items:center;gap:6px;margin-top:14px;font-weight:600;font-size:13px;color:#fff;border:1px solid rgba(255,255,255,.42);background:rgba(255,255,255,.12);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);padding:8px 14px;border-radius:999px}
+.cim-cta svg{transition:transform .3s}
+.cim-panel:hover .cim-cta svg{transform:translateX(3px)}
+.cim-panel:focus-visible{outline:3px solid var(--blue);outline-offset:-3px}
+@media(max-width:760px){
+  .cim-band{flex-direction:column;height:auto}
+  .cim-panel{min-height:62px;min-width:0}
+  .cim-panel.is-active{min-height:320px}
+  .cim-vlabel{writing-mode:horizontal-tb;transform:none;bottom:auto;top:18px;left:20px;right:auto;width:auto;margin:0}
+}
+@media(prefers-reduced-motion:reduce){
+  .cim-panel{transition:flex-grow .14s linear}
+  .cim-photo{transform:none!important;transition:filter .3s}
+  .cim-open,.cim-vlabel{transition:opacity .2s}
+}
 </style>
 </head>
 <body>
@@ -271,7 +312,7 @@ img{max-width:100%}
   <div class="hero-photo"></div>
   <nav class="nav"><div class="wrap nav-in">
     <a class="brand" href="/">adjug<svg class="mark" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".55" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".8" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></a>
-    <div class="nav-links"><a href="#decider">Fonctionnalités</a><a href="#demarche">Démarche</a><a href="#tarifs">Tarifs</a></div>
+    <div class="nav-links"><a href="#decider">Fonctionnalités</a><a href="#demarche">Démarche</a><a href="#secteurs">Secteurs</a><a href="#tarifs">Tarifs</a></div>
     <div class="nav-right"><a class="lk" href="/app">Se connecter</a><a class="btn on-photo" href="/app">Demander un accès</a></div>
   </div></nav>
   <div class="wrap hero-in">
@@ -366,6 +407,23 @@ img{max-width:100%}
   </div>
 </div></section>
 
+
+<!-- SECTEURS -->
+<section class="band" id="secteurs"><div class="wrap">
+  <div class="eyebrow sr">Nos secteurs</div>
+  <h2 class="lead-h sr s1" style="max-width:14ch">Quel que soit <span style="color:var(--blue)">votre secteur</span></h2>
+  <div class="cim-band sr s1" aria-label="Secteurs couverts par Adjugo">
+    <button class="cim-panel is-active" data-k="culture" aria-label="Culture &amp; Patrimoine" aria-expanded="true" style="--pi:var(--p-culture)"><span class="cim-photo"></span><span class="cim-scrim"></span><span class="cim-vlabel">Culture &amp; Patrimoine</span><span class="cim-open"><span class="cim-nm">Culture &amp; Patrimoine</span><span class="cim-ph">Musées, expositions, scénographie, restauration d’œuvres.</span><span class="cim-cta">Voir les marchés <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span></span></button>
+    <button class="cim-panel" data-k="spectacle" aria-label="Spectacle vivant &amp; Musique" aria-expanded="false" style="--pi:var(--p-spectacle)"><span class="cim-photo"></span><span class="cim-scrim"></span><span class="cim-vlabel">Spectacle vivant &amp; Musique</span><span class="cim-open"><span class="cim-nm">Spectacle vivant &amp; Musique</span><span class="cim-ph">Salles, festivals, régie, sonorisation, prestations artistiques.</span><span class="cim-cta">Voir les marchés <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span></span></button>
+    <button class="cim-panel" data-k="batiment" aria-label="Bâtiment &amp; Travaux publics" aria-expanded="false" style="--pi:var(--p-batiment)"><span class="cim-photo"></span><span class="cim-scrim"></span><span class="cim-vlabel">Bâtiment &amp; Travaux publics</span><span class="cim-open"><span class="cim-nm">Bâtiment &amp; Travaux publics</span><span class="cim-ph">Gros œuvre, rénovation, voirie, second œuvre.</span><span class="cim-cta">Voir les marchés <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span></span></button>
+    <button class="cim-panel" data-k="sante" aria-label="Santé &amp; Médico-social" aria-expanded="false" style="--pi:var(--p-sante)"><span class="cim-photo"></span><span class="cim-scrim"></span><span class="cim-vlabel">Santé &amp; Médico-social</span><span class="cim-open"><span class="cim-nm">Santé &amp; Médico-social</span><span class="cim-ph">Hôpitaux, EHPAD, équipements, services aux patients.</span><span class="cim-cta">Voir les marchés <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span></span></button>
+    <button class="cim-panel" data-k="formation" aria-label="Formation &amp; Apprentissage" aria-expanded="false" style="--pi:var(--p-formation)"><span class="cim-photo"></span><span class="cim-scrim"></span><span class="cim-vlabel">Formation &amp; Apprentissage</span><span class="cim-open"><span class="cim-nm">Formation &amp; Apprentissage</span><span class="cim-ph">Organismes de formation, ateliers, pédagogie, insertion.</span><span class="cim-cta">Voir les marchés <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span></span></button>
+    <button class="cim-panel" data-k="resto" aria-label="Restauration collective" aria-expanded="false" style="--pi:var(--p-resto)"><span class="cim-photo"></span><span class="cim-scrim"></span><span class="cim-vlabel">Restauration collective</span><span class="cim-open"><span class="cim-nm">Restauration collective</span><span class="cim-ph">Cuisines centrales, cantines, produits frais, traiteur.</span><span class="cim-cta">Voir les marchés <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span></span></button>
+    <button class="cim-panel" data-k="etudes" aria-label="Études, ingénierie &amp; Conseil" aria-expanded="false" style="--pi:var(--p-etudes)"><span class="cim-photo"></span><span class="cim-scrim"></span><span class="cim-vlabel">Études, ingénierie &amp; Conseil</span><span class="cim-open"><span class="cim-nm">Études, ingénierie &amp; Conseil</span><span class="cim-ph">AMO, études techniques, conseil, accompagnement.</span><span class="cim-cta">Voir les marchés <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span></span></button>
+    <button class="cim-panel" data-k="energie" aria-label="Transition écologique &amp; Énergie" aria-expanded="false" style="--pi:var(--p-energie)"><span class="cim-photo"></span><span class="cim-scrim"></span><span class="cim-vlabel">Transition écologique &amp; Énergie</span><span class="cim-open"><span class="cim-nm">Transition écologique &amp; Énergie</span><span class="cim-ph">Énergies, eau, déchets, rénovation énergétique.</span><span class="cim-cta">Voir les marchés <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span></span></button>
+  </div>
+</div></section>
+
 <!-- TARIFS -->
 <section class="band" id="tarifs"><div class="wrap">
   <div class="eyebrow sr">Tarifs</div>
@@ -422,7 +480,7 @@ img{max-width:100%}
       <span class="eu">🇪🇺 Hébergé en Union européenne</span>
     </div>
     <div class="cols">
-      <div class="col"><b>Produit</b><a href="#decider">Fonctionnalités</a><a href="#demarche">Démarche</a><a href="#tarifs">Tarifs</a></div>
+      <div class="col"><b>Produit</b><a href="#decider">Fonctionnalités</a><a href="#demarche">Démarche</a><a href="#secteurs">Secteurs</a><a href="#tarifs">Tarifs</a></div>
       <div class="col"><b>Sources</b><a href="https://www.boamp.fr" target="_blank" rel="noopener">BOAMP</a><a href="https://ted.europa.eu" target="_blank" rel="noopener">TED</a><a href="https://annuaire-entreprises.data.gouv.fr" target="_blank" rel="noopener">SIRENE</a><a href="https://www.bodacc.fr" target="_blank" rel="noopener">BODACC</a></div>
       <div class="col"><b>Légal</b><a href="/mentions-legales">Mentions légales</a><a href="/cgv">CGV</a><a href="/confidentialite">Confidentialité</a><a href="/dpa">DPA</a><a href="/securite">Sécurité</a></div>
     </div>
@@ -439,6 +497,31 @@ img{max-width:100%}
   document.querySelectorAll('.sr,.stagger,.gauge,.crit').forEach(function(el){ io.observe(el); });
   var coSec=document.getElementById('scene1'),coScene=document.getElementById('scene'),coPc=document.getElementById('cappc');
   if(coSec&&coScene){var coFn=function(){var tot=coSec.offsetHeight-window.innerHeight;var pr=Math.min(Math.max(-coSec.getBoundingClientRect().top/tot,0),1);var st=pr>=.72?3:pr>=.48?2:pr>=.24?1:0;coScene.classList.toggle('has1',st>=1);coScene.classList.toggle('has2',st>=2);coScene.classList.toggle('has3',st>=3);if(coPc)coPc.textContent=st>=2?100:st>=1?66:33;};addEventListener('scroll',coFn,{passive:true});addEventListener('resize',coFn);coFn();}
+})();
+</script>
+
+<script>
+/* Section secteurs — accordéon « Les Cimaises » */
+(function(){
+  var band=document.querySelector('.cim-band'); if(!band) return;
+  var panels=[].slice.call(band.querySelectorAll('.cim-panel'));
+  var locked=0;
+  function set(i){panels.forEach(function(p,j){var on=j===i;p.classList.toggle('is-active',on);p.setAttribute('aria-expanded',on?'true':'false');});}
+  panels.forEach(function(p,i){
+    p.addEventListener('mouseenter',function(){set(i);});
+    p.addEventListener('focus',function(){set(i);});
+    p.addEventListener('click',function(){
+      if(!p.classList.contains('is-active')){locked=i;set(i);}   /* 1er clic/tap : ouvrir */
+      else{window.location.href='/app';}                          /* déjà ouvert : aller à l'app */
+    });
+    p.addEventListener('keydown',function(e){
+      if(e.key==='ArrowRight'||e.key==='ArrowDown'){e.preventDefault();locked=Math.min(panels.length-1,i+1);panels[locked].focus();}
+      else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){e.preventDefault();locked=Math.max(0,i-1);panels[locked].focus();}
+      else if(e.key==='Home'){e.preventDefault();locked=0;panels[0].focus();}
+      else if(e.key==='End'){e.preventDefault();locked=panels.length-1;panels[locked].focus();}
+    });
+  });
+  band.addEventListener('mouseleave',function(){set(locked);});
 })();
 </script>
 </body>
