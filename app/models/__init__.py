@@ -197,6 +197,16 @@ class Project(Base):
     # Chiffrage estimatif (devis) : tâches + jours + tarifs + totaux. Voir agents/chiffrage.
     estimate = Column(JSON, nullable=True)
 
+    # ── Répondre à plusieurs (co-traitance v2) ──
+    # match_score reste le score SEUL (jamais gonflé). groupement_score = score cumulé de
+    # l'entreprise virtuelle « moi + partenaires retenus » (calcul déterministe, 0 LLM).
+    # groupement_plan = {members:[{kind,id,invite_id,name,siret,apporte[]}], breakdown, gaps,
+    #   warnings, offre:{total_ht, frozen_at, convention_id}, computed_at}.
+    # L'ÉTAT du groupement n'est PAS stocké : il est DÉRIVÉ par groupement_state() (une seule
+    # source de vérité, rien à resynchroniser). go_decision accepte aussi 'go_groupement'.
+    groupement_score = Column(Integer, nullable=True)
+    groupement_plan = Column(JSON, nullable=True)
+
     # Résultat (capture Gagné/Perdu pour les analytics de win-rate)
     outcome_reason = Column(String(255), nullable=True)
     outcome_rank = Column(Integer, nullable=True)        # classement obtenu
@@ -554,6 +564,14 @@ class ProjectInvite(Base):
     accepted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     revoked = Column(Boolean, default=False, index=True)
+    # Le partenaire DÉCLINE l'invitation : traité EXACTEMENT comme revoked partout (helper
+    # app.services.groupement_members.active_invites) — il sort du groupement (checklist,
+    # cockpit, CERFA, convention, signatures) sans que le mandataire ait à révoquer.
+    declined_at = Column(DateTime, nullable=True)
+    # Provenance de l'invitation : manuel (lien créé par le mandataire) | reseau_adjugo
+    # (vague 3 : recipient rempli côté serveur et JAMAIS sérialisé tant que non accepté) | sirene.
+    source = Column(String(20), default="manuel")
+    partner_profile_id = Column(Integer, nullable=True, index=True)   # vague 3 (réseau)
     expires_at = Column(DateTime, nullable=True)       # null = sans expiration
     view_count = Column(Integer, default=0)
     last_viewed_at = Column(DateTime, nullable=True)
@@ -590,8 +608,12 @@ class AuditLog(Base):
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)   # tenant propriétaire de la donnée
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
 
-    actor = Column(String(160), default="")        # "user:42" | email du co-traitant | "invité"
+    actor = Column(String(160), default="")        # "user:42" | nom d'entreprise du co-traitant | "invité"
     actor_kind = Column(String(20), default="")    # owner | guest
+    # Invitation concernée par l'entrée → le JOURNAL MEMBRE (ce que le mandataire a vu de MA
+    # part, ce que j'ai fait) est une simple projection : entrées où invite_id = le mien +
+    # événements de groupement du projet. Jamais l'email/IP des autres membres.
+    invite_id = Column(Integer, nullable=True, index=True)
     action = Column(String(60), default="", index=True)  # invite.created | invite.revoked | guest.view_project | guest.download_doc
     target_type = Column(String(40), default="")   # project | document | invite
     target_id = Column(Integer, nullable=True)
@@ -633,7 +655,28 @@ class ProjectContribution(Base):
 
     references = Column(JSON, default=list)            # [{intitule, client, montant, annee}]
     qualifications = Column(JSON, default=list)        # ["Qualibat 1234", "RGE", "ISO 9001"]
-    chiffrage_note = Column(Text, default="")          # approche / estimation prix de son lot
+    # DÉPRÉCIÉ (doctrine de visibilité, oct. 2026) : l'« approche prix » en clair était visible
+    # du mandataire (sérialisation, PDF, dossier) = exactement ce que la doctrine interdit.
+    # Migration n8o9p0q1r2s3 : contenu déplacé en tête de note_au_mandataire préfixé
+    # « (ancienne approche prix) », colonne vidée ; supprimée en vague 4. NE PLUS LIRE/ÉCRIRE.
+    chiffrage_note = Column(Text, default="")
+    # ── DOCTRINE DE VISIBILITÉ ──
+    # prix_lot_ht = PRIX DE VENTE du lot : le SEUL montant que voit le mandataire (il en a
+    # besoin pour consolider l'offre commune et remplir l'ATTRI1).
+    prix_lot_ht = Column(Float, nullable=True)
+    # detail_chiffre = décomposition / coûts / marges / méthode : ENVELOPPE CHIFFRÉE dans le
+    # navigateur du membre (AES-256-GCM, clé dérivée d'un code de récupération par PBKDF2,
+    # jamais transmise). {ciphertext, iv, alg:'A256GCM', kdf:'PBKDF2-SHA256', kdf_salt,
+    # kdf_iter, key_fingerprint, updated_at}. Le serveur n'en vérifie que la forme ; ni le
+    # mandataire, ni Adjugo, ni le LLM ne peuvent le lire.
+    detail_chiffre = Column(JSON, nullable=True)
+    # Signataire du membre (DC2 / annexe de la convention, vague 2).
+    representant_legal = Column(String(255), default="")
+    signataire_qualite = Column(String(120), default="")
+    # Capacités DÉCLARÉES PAR LE PARTENAIRE LUI-MÊME ({ca_n1, effectif, declared_at}) →
+    # alimentent le score de groupement avec capacites_source='contribution' (plus fiable que
+    # ce que le mandataire a saisi sur son partenaire dans l'annuaire).
+    capacites = Column(JSON, nullable=True)
     memoire_paragraph = Column(Text, default="")       # son paragraphe de mémoire technique
     contact = Column(JSON, nullable=True)              # {nom, email, telephone}
     note_au_mandataire = Column(Text, default="")      # message libre du partenaire au chef de file
@@ -668,7 +711,42 @@ class ContributionPiece(Base):
     file_key = Column(String(500), nullable=False)     # clé de stockage (préfixe owner)
     file_size = Column(Integer, default=0)
     mime_type = Column(String(100), default="")
+    # ── Coffre-fort croisé (E) ── statut des attestations visible par TOUS les membres
+    # (présent / valide jusqu'au / expire avant la date limite / manquant) SANS jamais exposer
+    # le fichier (téléchargeable uniquement par son déposant et par le mandataire, audité).
+    piece_type = Column(String(20), default="")        # kibs|fiscale|sociale|assurance|rib|qualification|autre
+    expiration_date = Column(Date, nullable=True)      # saisie par le déposant ou copiée du Document source
+    # « Joindre depuis mon coffre-fort » : Document.id du coffre PERSONNEL du partenaire (son
+    # tenant) — le fichier est COPIÉ dans le tenant mandataire, l'original n'est jamais exposé.
+    source_document_id = Column(Integer, nullable=True)
 
+    created_at = Column(DateTime, default=utcnow)
+
+
+# === SIMULATIONS DE GROUPEMENT (A — « Répondre à plusieurs ? ») ===
+# Chaque what-if « seul 54 % → avec X 81 % » est conservé : historique « pourquoi GO en
+# groupement », membres pré-remplis de la convention (vague 2), journal. Pour un membre de
+# kind 'sirene', le serveur ne conserve que le SIRET et RE-FETCH les capacités (anti-fausse
+# provenance) ; 'saisi' = étiqueté « déclaré par vous le … ».
+
+class GroupementSimulation(Base):
+    __tablename__ = "groupement_simulations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)   # = data_owner_id
+    created_by_user_id = Column(Integer, nullable=True)
+
+    # [{kind:'lead'|'attached'|'annuaire'|'reseau'|'sirene'|'saisi', id, name, siret, source, as_of}]
+    members = Column(JSON, default=list)
+    score_seul = Column(Integer, nullable=True)
+    score_groupement = Column(Integer, nullable=True)
+    decision = Column(String(20), default="")          # go_groupement | a_etudier | no_go
+    breakdown = Column(JSON, nullable=True)            # 6 critères × {points,status,detail,apporte_par[]}
+    cumul = Column(JSON, nullable=True)                # capacités cumulées de l'entreprise virtuelle
+    gaps = Column(JSON, nullable=True)                 # ce que le marché exige et qui manque encore
+    warnings = Column(JSON, nullable=True)             # ex. « verdict fondé sur vos propres déclarations »
+    retained = Column(Boolean, default=False)          # composition retenue (→ groupement_plan)
     created_at = Column(DateTime, default=utcnow)
 
 

@@ -4,6 +4,9 @@ Compte-rendu de consortium (PDF, partageable) — Réseau Adjugo.
 Synthèse de l'état d'un groupement : partenaires, lots couverts, complétude de chaque
 part, pièces reçues, % de réponse commune prête (calcul déterministe), et ce qu'il reste
 à compléter. Même style reportlab que les CERFA / la DPGF.
+
+DOCTRINE DE VISIBILITÉ (oct. 2026) : document PARTAGEABLE → jamais un prix par membre
+(prix de lot, approche prix, décomposition). Seul le total de l'offre commune FIGÉE.
 """
 import io
 from datetime import date
@@ -65,6 +68,18 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
                                ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
     el.append(synth)
 
+    # Offre commune figée (seul montant autorisé dans un document partageable : le TOTAL).
+    state = data.get("state") if isinstance(data.get("state"), dict) else {}
+    if state.get("offer_frozen") and state.get("total_offre_ht") is not None:
+        frozen = str(state.get("frozen_at") or "")[:10]
+        try:
+            d, m = frozen[8:10], frozen[5:7]
+            frozen_fr = f"{d}/{m}" if d and m else frozen
+        except Exception:
+            frozen_fr = frozen
+        total = f"{float(state['total_offre_ht']):,.0f}".replace(",", " ")
+        el.append(_p(f"Offre commune figée le {frozen_fr} : total {total} € HT", h2))
+
     # Lots couverts
     if lots:
         el.append(_p("Lots couverts", h2))
@@ -99,8 +114,9 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
             refs = [r.get("intitule", "") for r in (c.get("references") or []) if isinstance(r, dict) and r.get("intitule")]
             if refs:
                 el.append(_p("Références : " + " · ".join(refs), muted))
-            if c.get("chiffrage_note"):
-                el.append(_p("Approche prix : " + c["chiffrage_note"], muted))
+            # DOCTRINE DE VISIBILITÉ : ce compte-rendu est PARTAGEABLE → AUCUN prix par membre
+            # (ni approche prix, ni prix de lot, ni décomposition). Seul le total de l'offre
+            # commune FIGÉE apparaît (bloc « Offre commune » ci-dessous).
             if c.get("memoire_paragraph"):
                 el.append(_p("Mémoire : " + c["memoire_paragraph"][:600], muted))
             el.append(Spacer(1, 5))

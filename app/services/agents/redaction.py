@@ -107,9 +107,10 @@ def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
                 b += f"\n  Qualifications : {quals_c}"
             if refs:
                 b += f"\n  Références : {refs}"
-            # NB : l'« approche prix » (chiffrage_note) n'est volontairement PAS injectée dans le
-            # mémoire TECHNIQUE fusionné — le prix est jugé séparément (DPGF/BPU/cockpit) et n'a
-            # pas à apparaître dans la note méthodologique commune.
+            # NB : AUCUN prix n'est injecté dans le mémoire TECHNIQUE fusionné — ni le prix de
+            # lot (prix_lot_ht), ni a fortiori le détail chiffré (enveloppe chiffrée, illisible).
+            # Le prix est jugé séparément (DPGF/BPU/cockpit) et n'a pas à apparaître dans la
+            # note méthodologique commune. INVARIANT doctrine de visibilité : ne pas ajouter.
             if c.get("memoire_paragraph"):
                 b += f"\n  Apport rédigé par la PME : {c['memoire_paragraph']}"
             parts.append(b)
@@ -211,20 +212,25 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     if db is not None and project_id:
         try:
             from app.models import ProjectContribution, ProjectInvite
-            # On EXCLUT les parts dont le lien a été révoqué (partenaire retiré du groupement) →
-            # jamais dans le dossier déposé, même pour une révocation antérieure au correctif.
+            from app.services.groupement_members import active_invite_filter
+            # On EXCLUT les parts dont le lien a été révoqué OU décliné (partenaire sorti du
+            # groupement) → jamais dans le dossier déposé.
             rows = db.query(ProjectContribution).join(
                 ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
                 ProjectContribution.project_id == project_id,
                 ProjectContribution.status == "submitted",
-                ProjectInvite.revoked.is_(False)).all()
+                active_invite_filter()).all()
+            # DOCTRINE DE VISIBILITÉ : seul le PRIX DE VENTE du lot (prix_lot_ht) est lisible
+            # ici (ATTRI1/convention) ; detail_chiffre (enveloppe chiffrée) n'est JAMAIS lu,
+            # et aucun prix n'est injecté dans le prompt du mémoire (cf. _generate_memoire_fast).
             contributions = [{
                 "company_name": c.company_name, "role": c.role, "lot": c.lot,
                 "siret": getattr(c, "siret", "") or "", "forme_juridique": getattr(c, "forme_juridique", "") or "",
                 "address": getattr(c, "address", "") or "", "postal_code": getattr(c, "postal_code", "") or "",
                 "city": getattr(c, "city", "") or "", "contact": c.contact or {},
                 "references": c.references or [], "qualifications": c.qualifications or [],
-                "chiffrage_note": c.chiffrage_note or "", "memoire_paragraph": c.memoire_paragraph or "",
+                "prix_lot_ht": getattr(c, "prix_lot_ht", None),
+                "memoire_paragraph": c.memoire_paragraph or "",
                 "status": c.status,
             } for c in rows]
         except Exception:
@@ -235,12 +241,13 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     if db is not None and project_id:
         try:
             from app.models import ContributionPiece, ProjectContribution, ProjectInvite
+            from app.services.groupement_members import active_invite_filter
             prows = db.query(ContributionPiece, ProjectContribution).join(
                 ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).join(
                 ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
                 ContributionPiece.project_id == project_id,
                 ProjectContribution.status == "submitted",
-                ProjectInvite.revoked.is_(False)).all()
+                active_invite_filter()).all()
             cotraitant_pieces = [{"company": (cb.company_name or "cotraitant"),
                                   "name": pc.name, "file_key": pc.file_key} for pc, cb in prows]
         except Exception:

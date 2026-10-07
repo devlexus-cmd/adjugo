@@ -64,6 +64,14 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
     dump(Invoice, ["id", "type", "client_name", "total_ttc", "created_at"], "factures")
     dump(Signal, ["id", "intitule", "collectivite", "pertinence", "created_at"], "signaux_veille")
     dump(SavedSearch, ["id", "name", "query", "frequency", "created_at"], "alertes")
+    # Simulations « Répondre à plusieurs ? » : portées par owner_id (= data_owner_id), pas user_id.
+    try:
+        from app.models import GroupementSimulation
+        rows = db.query(GroupementSimulation).filter(GroupementSimulation.owner_id == uid).all()
+        data["simulations_groupement"] = [_ser(r, ["id", "project_id", "score_seul", "score_groupement",
+                                                   "decision", "created_at"]) for r in rows]
+    except Exception:
+        data["simulations_groupement"] = []
 
     payload = json.dumps(data, ensure_ascii=False, indent=2, default=str)
     return Response(content=payload, media_type="application/json",

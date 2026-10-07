@@ -58,8 +58,13 @@ def client_ip(request) -> str:
 def record(db, *, action: str, owner_id: Optional[int] = None,
            project_id: Optional[int] = None, actor: str = "", actor_kind: str = "",
            target_type: str = "", target_id: Optional[int] = None,
-           detail: str = "", ip: str = "", meta: Optional[dict] = None) -> None:
-    """Écrit une entrée d'audit, chaînée par hash (tamper-evidence). Best-effort."""
+           detail: str = "", ip: str = "", meta: Optional[dict] = None,
+           invite_id: Optional[int] = None) -> None:
+    """Écrit une entrée d'audit, chaînée par hash (tamper-evidence). Best-effort.
+
+    `invite_id` = invitation concernée (journal MEMBRE : projection par simple filtre).
+    Volontairement HORS du payload haché (`_entry_payload`) pour ne pas invalider la
+    chaîne des entrées existantes — c'est un index de projection, pas une preuve."""
     try:
         from app.models import AuditLog, utcnow
         entry = AuditLog(
@@ -68,6 +73,7 @@ def record(db, *, action: str, owner_id: Optional[int] = None,
             actor=(actor or "")[:160], actor_kind=(actor_kind or "")[:20],
             target_type=(target_type or "")[:40], target_id=target_id,
             detail=(detail or "")[:255], ip=(ip or "")[:45], meta=meta,
+            invite_id=invite_id,
         )
         db.add(entry)
         db.flush()   # obtient l'id avant de calculer le hash

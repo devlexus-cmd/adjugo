@@ -38,9 +38,11 @@ def run_cotraitance_reminders(db: Session) -> dict:
     def _is_email(v):
         return bool(v) and "@" in str(v) and "." in str(v).split("@")[-1]
 
+    from app.services.groupement_members import active_invite_filter
+
     today = datetime.now(timezone.utc).date()
     invites = db.query(ProjectInvite).filter(
-        ProjectInvite.revoked.is_(False),
+        active_invite_filter(),
         ProjectInvite.can_contribute.is_(True)).all()
     scanned, reminded = 0, 0
     for inv in invites:
@@ -82,9 +84,101 @@ def run_cotraitance_reminders(db: Session) -> dict:
             inv.reminder_stage = target
             reminded += 1
     db.commit()
-    result = {"scanned": scanned, "reminded": reminded}
+    pieces_alerted = _run_piece_expiry_alerts(db, today)
+    result = {"scanned": scanned, "reminded": reminded, "pieces_alerted": pieces_alerted}
     logger.info("relances co-traitance : %s", result)
     return result
+
+
+def _run_piece_expiry_alerts(db: Session, today) -> int:
+    """Coffre-fort croisé (E) : à J-7 puis J-3 de la date limite, prévient chaque membre dont
+    une attestation est MANQUANTE ou EXPIRE AVANT la date limite (+ le mandataire).
+    Idempotent par (invitation, jour, palier) via une entrée AuditLog `piece.expiring`
+    (invite_id + detail « J-7 » / « J-3 ») — une seule exécution par palier et par jour,
+    sans Redis (process unique). Best-effort : aucune exception ne remonte au cron."""
+    from datetime import datetime, timedelta
+    from app.models import AuditLog, Project, ProjectInvite, Company, User
+    from app.services import audit
+    from app.services.groupement_members import active_invites
+    try:
+        from app.routers.invites import coffre_croise, _PIECE_LABELS
+    except Exception:
+        return 0
+
+    def _is_email(v):
+        return bool(v) and "@" in str(v) and "." in str(v).split("@")[-1]
+
+    alerted = 0
+    horizon = today + timedelta(days=7)
+    try:
+        projects = db.query(Project).filter(
+            Project.deleted_at.is_(None), Project.deadline.isnot(None),
+            Project.deadline >= today, Project.deadline <= horizon).all()
+    except Exception:
+        return 0
+    day_start = datetime(today.year, today.month, today.day)
+    for project in projects:
+        invites = active_invites(db, project.id)
+        if not invites:
+            continue
+        deadline = project.deadline
+        deadline_date = deadline.date() if isinstance(deadline, datetime) else deadline
+        days_left = (deadline_date - today).days
+        palier = "J-3" if days_left <= 3 else "J-7"
+        try:
+            grid = coffre_croise(db, project, invites, viewer_invite_id=None, for_owner=True)
+        except Exception:
+            continue
+        labels = dict(_PIECE_LABELS)
+        owner_user = db.query(User).filter(User.id == project.user_id).first()
+        owner_email = owner_user.email if owner_user and _is_email(owner_user.email) else None
+        company = db.query(Company).filter(Company.user_id == project.user_id).first()
+        chef = (company.name if company and company.name else "le mandataire")
+        by_id = {i.id: i for i in invites}
+        for m in grid.get("members", []):
+            inv = by_id.get(m.get("invite_id"))
+            if not inv:
+                continue
+            problems = []
+            for key, st in (m.get("pieces") or {}).items():
+                s = st.get("status")
+                if s == "manquant":
+                    problems.append(f"{labels.get(key, key)} manquante")
+                elif s == "expire_avant_limite":
+                    problems.append(f"{labels.get(key, key)} expire le {st.get('expiration_date')} "
+                                    f"(avant la date limite)")
+                elif s == "expire":
+                    problems.append(f"{labels.get(key, key)} expirée")
+            if not problems:
+                continue
+            # Idempotence : déjà alerté aujourd'hui pour ce palier → on saute.
+            already = db.query(AuditLog).filter(
+                AuditLog.invite_id == inv.id, AuditLog.action == "piece.expiring",
+                AuditLog.detail == palier, AuditLog.created_at >= day_start).first()
+            if already:
+                continue
+            who = m.get("company") or inv.company_name or "Partenaire"
+            lines = "\n".join(f"- {p}" for p in problems)
+            if _is_email(inv.recipient):
+                send_email(
+                    inv.recipient,
+                    f"Attestations à mettre à jour avant le {deadline_date} — {project.name[:50]}",
+                    f"Bonjour,\n\nPour le marché « {project.name} » (date limite : {deadline_date}), "
+                    f"le groupement de {chef} a besoin de vos attestations à jour :\n{lines}\n\n"
+                    f"Déposez-les depuis votre espace Adjugo (votre lien d'invitation).\n\n— Adjugo")
+            if owner_email:
+                send_email(
+                    owner_email,
+                    f"{who} : attestation(s) à surveiller — {project.name[:50]}",
+                    f"Bonjour,\n\nSur le marché « {project.name} » (date limite : {deadline_date}), "
+                    f"les pièces de {who} ne sont pas prêtes pour le dépôt :\n{lines}\n\n"
+                    f"Le partenaire a été prévenu. Suivez le coffre-fort croisé dans le cockpit du "
+                    f"groupement.\n\n— Adjugo")
+            audit.record(db, action="piece.expiring", owner_id=project.user_id, project_id=project.id,
+                         actor="adjugo", actor_kind="system", target_type="invite", target_id=inv.id,
+                         detail=palier, invite_id=inv.id)
+            alerted += 1
+    return alerted
 
 
 def run_document_expiry_alerts(db: Session) -> dict:

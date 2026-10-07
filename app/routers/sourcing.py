@@ -73,6 +73,21 @@ def _verdict(score, gonogo) -> str:
     return "go" if score >= go_t else ("no_go" if score < nogo_t else "a_etudier")
 
 
+def _apply_groupement(db, project, analysis, company_data, gonogo, current_user) -> None:
+    """« Répondre à plusieurs ? » — verdict de groupement après une analyse sur DCE réel :
+    manques + alliance automatique sur les partenaires rattachés et l'annuaire (JAMAIS de
+    réseau ici). Pose go_decision='go_groupement' le cas échéant ; match_score reste le score
+    SEUL. Tolérant : service absent / erreur → rien ne change, l'analyse est déjà sauvée."""
+    try:
+        from app.services.groupement_verdict import apply_groupement_verdict
+        apply_groupement_verdict(db, project, analysis, company_data, gonogo,
+                                 member_ids(current_user, db))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning("verdict de groupement ignoré (projet %s) : %s", getattr(project, "id", "?"), e)
+
+
 def _user_country(current_user, db) -> str:
     """Pays d'adaptation de l'organisation de l'utilisateur (défaut FR)."""
     from app.models import Organization
@@ -379,14 +394,20 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
     )
     db.add(project); db.commit(); db.refresh(project)
 
+    # Verdict de groupement SEULEMENT sur un vrai DCE scoré (sans DCE : pas de score, rien).
+    if dce_available:
+        _apply_groupement(db, project, analysis, company_data, gonogo, current_user)
+
     return {
-        "project_id": project.id, "decision": decision, "score": score,
+        "project_id": project.id, "decision": project.go_decision, "score": score,   # score = SEUL
         "dce_available": dce_available,
         "confidence": tender.confidence,
         "summary": analysis.get("summary", ""),
         "details": analysis.get("details", {}),
         "score_breakdown": analysis.get("score_breakdown"),   # « pourquoi ce % » (déterministe)
         "source": tender.provenance.model_dump(),
+        "groupement": analysis.get("groupement"),
+        "groupement_score": project.groupement_score,
     }
 
 
@@ -453,6 +474,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     if intitule:
         project.name = intitule[:500]
     db.commit()
+    _apply_groupement(db, project, analysis, company_data, gonogo, current_user)
 
     # Archiver le DCE importé dans le dossier de l'AO (coffre-fort, dossier "DCE").
     # replace_in_dossier (et non save) : un ré-import du même nom REMPLACE l'ancien
@@ -465,12 +487,14 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
         logger.warning("Archivage DCE échoué (projet %s): %s", project.id, e)
 
     return {
-        "project_id": project.id, "decision": decision, "score": score,
+        "project_id": project.id, "decision": project.go_decision, "score": score,   # score = SEUL
         "dce_available": True,
         "summary": analysis.get("summary", ""),
         "details": analysis.get("details", {}),
         "score_breakdown": analysis.get("score_breakdown"),   # « pourquoi ce % » (déterministe)
         "source": analysis["source"],
+        "groupement": analysis.get("groupement"),
+        "groupement_score": project.groupement_score,
     }
 
 
@@ -536,13 +560,16 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     if intitule:
         project.name = intitule[:500]
     db.commit()
+    _apply_groupement(db, project, analysis, company_data, gonogo, current_user)
     return {
-        "project_id": project.id, "decision": decision, "score": score,
+        "project_id": project.id, "decision": project.go_decision, "score": score,   # score = SEUL
         "dce_available": True,
         "summary": analysis.get("summary", ""),
         "details": analysis.get("details", {}),
         "score_breakdown": analysis.get("score_breakdown"),   # « pourquoi ce % » (déterministe)
         "source": analysis["source"],
+        "groupement": analysis.get("groupement"),
+        "groupement_score": project.groupement_score,
     }
 
 

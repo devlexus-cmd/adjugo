@@ -81,12 +81,23 @@
   <li><strong>Transferts encadrés</strong> : si un traitement technique implique un transfert hors UE, il est couvert par des <strong>clauses contractuelles types (CCT/SCC)</strong>, conformément au chapitre V du RGPD (détail dans le <a href="/dpa">DPA</a>).</li>
 </ul>
 
-<h2>4. Cloisonnement entre partenaires (cotraitance)</h2>
-<p>Répondre à plusieurs ne veut pas dire tout partager. Quand une entreprise rejoint un groupement sur un marché :</p>
+<h2>4. Cloisonnement entre partenaires (répondre à plusieurs)</h2>
+<p>Répondre à plusieurs ne veut pas dire tout partager. Quand une entreprise rejoint un groupement sur un marché, voici exactement qui voit quoi :</p>
+<table>
+  <thead><tr><th>Donnée</th><th>Le mandataire</th><th>Les autres partenaires</th><th>Adjugo</th></tr></thead>
+  <tbody>
+    <tr><td>Le <strong>prix de vente</strong> de votre lot</td><td>Oui (il consolide l'offre)</td><td>Non, jusqu'à la convention de groupement signée par tous</td><td>Lisible</td></tr>
+    <tr><td>Le <strong>détail de votre chiffrage</strong> (coûts, marges, méthode)</td><td><strong>Jamais</strong></td><td><strong>Jamais</strong></td><td>Chiffré dans votre navigateur — enveloppe illisible</td></tr>
+    <tr><td>Le <strong>total</strong> de l'offre commune</td><td>Oui</td><td>Oui, une fois l'offre figée</td><td>Lisible</td></tr>
+    <tr><td>Vos <strong>pièces administratives</strong> (Kbis, attestations…)</td><td>Oui (nécessaires au dépôt, chaque téléchargement est tracé)</td><td>Seulement leur <strong>statut</strong> (présente, valide jusqu'au…), jamais le fichier</td><td>Stockées chiffrées au repos</td></tr>
+    <tr><td>Votre <strong>présentation technique</strong> (paragraphe de mémoire)</td><td>Oui</td><td>Non</td><td>Lisible (fusion du dossier commun)</td></tr>
+  </tbody>
+</table>
 <ul>
-  <li>chaque partenaire accède <strong>uniquement à sa propre contribution</strong> (ses pièces, son approche) — <strong>jamais</strong> aux prix, marges ou documents des autres ;</li>
-  <li>le lien d'invitation est <strong>limité à ce seul marché</strong> et révocable à tout moment ;</li>
-  <li>chaque accès aux pièces partagées est tracé.</li>
+  <li><strong>Détail chiffré par membre.</strong> Le détail de votre chiffrage est chiffré <strong>dans votre navigateur</strong> (AES-256-GCM, clé dérivée d'un code de récupération par PBKDF2) avec une clé <strong>qu'Adjugo ne stocke pas</strong>. Ce détail n'est jamais transmis au modèle d'IA. Ce que cela implique, dit honnêtement : si vous perdez votre code, ce détail est <strong>définitivement perdu</strong> ; sur un autre ordinateur, vous le ressaisissez ; et comme Adjugo sert le code de l'application, ce n'est pas un chiffrement « de bout en bout » au sens strict — c'est pourquoi nous ne l'écrivons jamais ainsi.</li>
+  <li><strong>Fuite par différence, assumée.</strong> À deux membres, le total de l'offre révèle mécaniquement la part de l'autre ; et la convention de groupement signée par tous reprend la répartition des prix de lot. L'interface vous le dit au moment où ça compte.</li>
+  <li>Le lien d'invitation est <strong>limité à ce seul marché</strong>, peut être <strong>décliné</strong> par le partenaire et révoqué par le mandataire à tout moment.</li>
+  <li><strong>Journal pour chaque membre.</strong> Chaque consultation ou téléchargement est inscrit dans un journal chaîné par hachage (toute modification serait détectable). Le mandataire voit le journal du dossier ; chaque partenaire voit <strong>ce qui concerne sa part</strong> (« le mandataire a consulté votre part le… »), sans jamais voir l'adresse email ni l'adresse IP des autres.</li>
 </ul>
 
 <h2>5. Données réelles, jamais inventées</h2>

@@ -84,9 +84,11 @@ def _is_groupement(project, db) -> bool:
     """Le marché est-il porté en groupement ? (au moins un partenaire invité)."""
     try:
         from app.models import ProjectInvite
+        from app.services.groupement_members import active_invite_filter
+        # Membre = invitation ACTIVE (ni révoquée, ni déclinée) — source unique de vérité.
         return db.query(ProjectInvite).filter(
             ProjectInvite.project_id == project.id,
-            ProjectInvite.revoked.is_(False)).count() > 0
+            active_invite_filter()).count() > 0
     except Exception:
         return False
 

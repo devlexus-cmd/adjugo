@@ -61,6 +61,25 @@ function translateDOM(lang) {
   });
 }
 
+// État initial de « Partagé avec moi » (vue co-traitant avec compte) — plus de chiffrage_note : prix de vente du lot
+// en clair + détail chiffré dans le navigateur (enveloppe), capacités déclarées, signataire, pièces typées.
+function _sharedInit(token, mandataire) {
+  return { token: token || "", project: null, mandataire: mandataire || "", docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true, loading: false, error: "",
+           forMember: null, coffre: null, journal: null, journalLoaded: false,
+           envelope: null, detailClair: "", detailLocked: false, cryptoCtx: null, pendingCode: null, detailLoaded: false,
+           upl: { piece_type: "", expiration_date: "" }, vault: { open: false, loading: false, docs: [], needClaim: false, pendingDoc: null },
+           contrib: { company_name: "", lot: "", siret: "", forme_juridique: "", address: "", postal_code: "", city: "", quals: "", refs: "", memoire_paragraph: "",
+                      prix_lot_ht: "", representant_legal: "", signataire_qualite: "", ca_n1: "", effectif: "", contact: { nom: "", email: "", telephone: "" } } };
+}
+
+// État initial de la carte « Répondre à plusieurs ? » (co-traitance v2) — réinitialisé à chaque ouverture de marché.
+function _grpInit() {
+  return { loading: false, error: "", state: null, besoins: null, selected: [],
+           saisi: { name: "", siret: "", ca_n1: null, effectif: null, qualifications: "" }, saisiOpen: false,
+           sim: null, simulating: false, retaining: false,
+           history: [], historyOpen: false, historyLoading: false, historyLoaded: false, sireneLoading: false };
+}
+
 const __adjApp = createApp({
   data() {
     return {
@@ -76,8 +95,8 @@ const __adjApp = createApp({
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
       cdetail: {}, copen: {}, cexport: {}, cpreview: {}, cerror: {},
       shared: [],
-      sharedAo: { token: "", project: null, mandataire: "", docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true,
-                  contrib: { company_name: "", lot: "", quals: "", refs: "", chiffrage_note: "", memoire_paragraph: "", contact: { nom: "", email: "", telephone: "" } } },
+      sharedAo: _sharedInit(),
+      pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "autre", l: "Autre" }],
       veille: { q: "", loc: "", results: [], loading: false },
       drawer: null, modal: null,
       welcome: { siret: "", busy: false, dismissed: false },   // activation par SIRET (1er lancement)
@@ -167,10 +186,10 @@ const __adjApp = createApp({
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
-            chkHelp: null,
+            chkHelp: null, grp: _grpInit(),
             qa: [], qaInput: "", qaLoading: false,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
-            share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
+            share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
       titles: { kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché" },
       subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres" },
     };
@@ -738,12 +757,12 @@ const __adjApp = createApp({
       this.ao.back = this.view; this.ao.dossier = null; this.ao.project = p;
       this.ao.cotraitants = []; this.ao.stOpen = false; this.ao.st.results = [];
       this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.buyerLoading = true; this.ao.checklist = null; this.ao.group = null;
-      this.ao.qa = []; this.ao.qaInput = "";
+      this.ao.qa = []; this.ao.qaInput = ""; this.ao.grp = _grpInit();
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
-      this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
+      this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
       this.loadPredepot(p.id);   // état du wizard pré-dépôt propre à cet AO
-      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites(); this.aoLoadConsortium();
+      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites(); this.aoLoadConsortium(); this.aoGrpLoad();
       setTimeout(() => this.aoLoadBuyer(), 700);   // profil acheteur (BOAMP, lent) en différé, après le cœur de l'AO
     },
     loadPredepot(pid) {
@@ -894,20 +913,26 @@ const __adjApp = createApp({
     async loadShared() { try { this.shared = await this.api("GET", "/api/shared") || []; } catch (e) { this.shared = []; } },
     async openShared(item) {
       const t = item.token;
-      this.sharedAo = { token: t, project: null, mandataire: item.mandataire, docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true, loading: true, error: "",
-                        contrib: { company_name: "", lot: "", quals: "", refs: "", chiffrage_note: "", memoire_paragraph: "", contact: { nom: "", email: "", telephone: "" } } };
+      this.sharedAo = _sharedInit(t, item.mandataire); this.sharedAo.loading = true;
       this.view = "sharedao";
       try {
         const v = await this.api("GET", "/api/invite/" + t);
         this.sharedAo.project = v.project; this.sharedAo.mandataire = v.mandataire; this.sharedAo.docs = v.documents || []; this.sharedAo.canContribute = v.can_contribute;
+        this.sharedAo.forMember = v.for_member || null;   // « Pourquoi vous » : % commun, mon apport, seuils — jamais le score seul du mandataire
         if (v.can_contribute) await this.sharedReload(t);
-      } catch (e) { this.sharedAo.error = "Ce dossier n'est plus accessible (lien expiré ou révoqué)."; this.notify("Ce dossier n'est plus accessible", "err"); }
+        this.sharedLoadCoffre();
+      } catch (e) { this.sharedAo.error = "Ce dossier n'est plus accessible (lien expiré, décliné ou révoqué)."; this.notify("Ce dossier n'est plus accessible", "err"); }
       finally { this.sharedAo.loading = false; }
     },
+    sfm() { return this.sharedAo.forMember || {}; },
+    sfmState() { return (this.sharedAo.forMember && this.sharedAo.forMember.state) || {}; },
+    memberStatusLabel(s) { return ({ submitted: "part soumise", draft: "brouillon", invited: "invité" })[s] || s || ""; },
+    cryptoLabels() { return (window.AdjugoCrypto && window.AdjugoCrypto.LABELS) || {}; },
     async sharedReload(t) {
       try {
         const c = await this.api("GET", "/api/invite/" + (t || this.sharedAo.token) + "/contribution");
         this.sharedAo.status = c.status; this.sharedAo.pieces = c.pieces || []; this.sharedAo.version = c.version || 0;
+        this.sharedAo.envelope = (c.detail_chiffre && c.detail_chiffre.ciphertext) ? c.detail_chiffre : null;
         const k = this.sharedAo.contrib;
         if (!k.company_name && !k.lot) {   // pré-remplir au 1er chargement, sans écraser une saisie
           k.company_name = c.company_name || this.company.name || ""; k.lot = c.lot || "";
@@ -915,24 +940,98 @@ const __adjApp = createApp({
           k.siret = c.siret || this.company.siret || ""; k.forme_juridique = c.forme_juridique || this.company.forme_juridique || "";
           k.address = c.address || this.company.address || ""; k.postal_code = c.postal_code || this.company.postal_code || ""; k.city = c.city || this.company.city || "";
           k.quals = (c.qualifications || []).join(", "); k.refs = (c.references || []).map(r => r.intitule || "").filter(Boolean).join("\n");
-          k.chiffrage_note = c.chiffrage_note || ""; k.memoire_paragraph = c.memoire_paragraph || "";
+          k.memoire_paragraph = c.memoire_paragraph || "";
+          k.prix_lot_ht = c.prix_lot_ht != null ? c.prix_lot_ht : "";
+          k.representant_legal = c.representant_legal || this.company.representant_legal || ""; k.signataire_qualite = c.signataire_qualite || "";
+          const cap = c.capacites || {};
+          k.ca_n1 = cap.ca_n1 != null ? cap.ca_n1 : (this.company.ca_n1 || ""); k.effectif = cap.effectif != null ? cap.effectif : (this.company.effectif || "");
           const ct = c.contact || {}; k.contact = { nom: ct.nom || this.user.full_name || "", email: ct.email || this.user.email || "", telephone: ct.telephone || "" };
         }
+        if (!this.sharedAo.detailLoaded) { this.sharedAo.detailLoaded = true; await this.sharedDetailLoad(); }
       } catch (e) {}
     },
-    _sharedBody() {
+    // ── Détail du chiffrage : chiffré PAR MEMBRE dans le navigateur (window.AdjugoCrypto, scope = jeton d'invitation) ──
+    _rawCtx(ctx) { return (ctx && window.Vue && Vue.markRaw) ? Vue.markRaw(ctx) : ctx; },
+    async sharedDetailLoad() {   // au chargement : clé connue → texte déchiffré ; enveloppe sans clé → zone verrouillée
+      const C = window.AdjugoCrypto, env = this.sharedAo.envelope;
+      if (!env) { this.sharedAo.detailLocked = false; return; }
+      if (!C) { this.sharedAo.detailLocked = true; return; }
+      try {
+        const r = await C.ensureKey(this.sharedAo.token, env);
+        if (r.ctx) { this.sharedAo.detailClair = await C.decrypt(r.ctx, env); this.sharedAo.cryptoCtx = this._rawCtx(r.ctx); this.sharedAo.detailLocked = false; }
+        else this.sharedAo.detailLocked = true;
+      } catch (e) { this.sharedAo.detailLocked = true; }
+    },
+    async sharedUnlock() {
+      const C = window.AdjugoCrypto, env = this.sharedAo.envelope; if (!C || !env) return;
+      const code = await C.askRecoveryCode(); if (!code) return;
+      try {
+        const ctx = await C.keyFromCode(this.sharedAo.token, code, env);
+        this.sharedAo.detailClair = await C.decrypt(ctx, env); this.sharedAo.cryptoCtx = this._rawCtx(ctx); this.sharedAo.detailLocked = false;
+        this.notify("Détail déverrouillé");
+      } catch (e) { this.notify((e && e.code === "wrong_code") ? "Code incorrect" : ((e && e.message) || "Code incorrect"), "err"); }
+    },
+    async sharedLostCode() {
+      const C = window.AdjugoCrypto; if (!C) return;
+      if (!confirm("Vous avez perdu votre code de récupération ?\n\nL'ancien détail de votre chiffrage sera définitivement perdu : personne (ni Adjugo, ni le mandataire) ne peut le récupérer. Vous pourrez en saisir un nouveau.")) return;
+      try {
+        const rr = await C.resetKey(this.sharedAo.token);
+        this.sharedAo.envelope = null; this.sharedAo.detailClair = ""; this.sharedAo.detailLocked = false;
+        const ok = await C.showRecoveryCode(rr.code);
+        if (ok) { this.sharedAo.cryptoCtx = this._rawCtx(rr.ctx); this.sharedAo.pendingCode = null; } else { this.sharedAo.pendingCode = { code: rr.code, ctx: this._rawCtx(rr.ctx) }; }
+        await this._sharedPut();   // efface l'ancien détail (désormais illisible) côté serveur
+        this.notify("Ancien détail effacé — vous pouvez en saisir un nouveau");
+      } catch (e) { this.notify((e && e.message) || "Réinitialisation impossible", "err"); }
+    },
+    // Chiffre le texte ; null = ne pas envoyer (code non noté, détail verrouillé, navigateur sans WebCrypto…).
+    async _sharedEncrypt(txt) {
+      const C = window.AdjugoCrypto; if (!C) { this.notify("Chiffrement indisponible dans ce navigateur — détail non enregistré", "err"); return null; }
+      let ctx = this.sharedAo.cryptoCtx;
+      if (!ctx) {
+        let code = null;
+        if (this.sharedAo.pendingCode) { code = this.sharedAo.pendingCode.code; ctx = this.sharedAo.pendingCode.ctx; }
+        else {
+          const r = await C.ensureKey(this.sharedAo.token, this.sharedAo.envelope);
+          if (r.needCode) { this.notify("Déverrouillez d'abord votre détail avec votre code", "err"); return null; }
+          if (r.isNew) { code = r.code; ctx = r.ctx; }
+          else if (!this.sharedAo.envelope) { const rr = await C.resetKey(this.sharedAo.token); code = rr.code; ctx = rr.ctx; }   // clé en cache mais rien de chiffré encore : on montre un code
+          else ctx = r.ctx;
+        }
+        if (code) {
+          const ok = await C.showRecoveryCode(code);
+          if (!ok) { this.sharedAo.pendingCode = { code, ctx: this._rawCtx(ctx) }; this.notify("Détail non enregistré : notez d'abord votre code", "err"); return null; }
+          this.sharedAo.pendingCode = null;
+        }
+        this.sharedAo.cryptoCtx = this._rawCtx(ctx);
+      }
+      try { return await C.encrypt(ctx, txt); } catch (e) { this.notify("Chiffrement impossible — détail non enregistré", "err"); return null; }
+    },
+    async _sharedBody() {
       const k = this.sharedAo.contrib;
-      return { company_name: k.company_name, lot: k.lot,
+      const num = (v) => (v === "" || v == null || Number.isNaN(Number(v))) ? null : Number(v);
+      const body = { company_name: k.company_name, lot: k.lot,
                siret: k.siret, forme_juridique: k.forme_juridique, address: k.address, postal_code: k.postal_code, city: k.city,
                qualifications: (k.quals || "").split(",").map(s => s.trim()).filter(Boolean),
                references: (k.refs || "").split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })),
-               chiffrage_note: k.chiffrage_note, memoire_paragraph: k.memoire_paragraph, contact: k.contact, version: this.sharedAo.version };
+               memoire_paragraph: k.memoire_paragraph, contact: k.contact,
+               prix_lot_ht: num(k.prix_lot_ht), representant_legal: k.representant_legal || "", signataire_qualite: k.signataire_qualite || "",
+               capacites: { ca_n1: num(k.ca_n1), effectif: num(k.effectif) == null ? null : Math.round(num(k.effectif)) },
+               version: this.sharedAo.version };
+      // Détail du chiffrage : verrouillé → on n'y touche pas (champ absent) ; vide → effacé ; sinon chiffré dans le navigateur.
+      const txt = (this.sharedAo.detailClair || "").trim();
+      if (!this.sharedAo.detailLocked) {
+        if (!txt) body.detail_chiffre = null;
+        else { const env = await this._sharedEncrypt(txt); if (env) body.detail_chiffre = env; }
+      }
+      return body;
     },
     async _sharedPut() {   // PUT avec gestion du verrou optimiste (409)
-      const r = await fetch("/api/invite/" + this.sharedAo.token + "/contribution", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(this._sharedBody()) });
-      if (r.ok) { const c = await r.json(); this.sharedAo.version = c.version || 0; this.sharedAo.status = c.status; return true; }
+      const body = await this._sharedBody();
+      const r = await fetch("/api/invite/" + this.sharedAo.token + "/contribution", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (r.ok) { const c = await r.json(); this.sharedAo.version = c.version || 0; this.sharedAo.status = c.status; this.sharedAo.envelope = (c.detail_chiffre && c.detail_chiffre.ciphertext) ? c.detail_chiffre : null; return true; }
       if (r.status === 409) { this.notify("Modifié ailleurs entre-temps — rechargement de la dernière version", "err"); await this.sharedReload(); return false; }
-      const e = await r.json().catch(() => ({})); this.notify((e && e.detail) || "Erreur d'enregistrement", "err"); return false;
+      const e = await r.json().catch(() => ({})); const d = e && e.detail;
+      this.notify((typeof d === "string" ? d : ((d && d.message) || (Array.isArray(d) && d[0] && d[0].msg))) || "Erreur d'enregistrement", "err"); return false;
     },
     async sharedSave() { this.sharedAo.busy = true; try { if (await this._sharedPut()) this.notify("Brouillon enregistré"); } finally { this.sharedAo.busy = false; } },
     // Binding d'identité OTP côté « Partagé avec moi » : si le lien l'exige (email
@@ -951,9 +1050,14 @@ const __adjApp = createApp({
         if (!rq || !rq.sent) { this.notify("Trop d'envois récents — patientez quelques minutes puis ressaisissez le dernier code reçu", "err"); return false; }
         masked = rq.email_masked || masked;
       }
-      const code = window.prompt("Saisissez le code à 6 chiffres envoyé à " + masked + " pour valider votre identité :");
+      const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      let code = null;
+      if (window.AdjugoCrypto && window.AdjugoCrypto.modal) {
+        const r = await window.AdjugoCrypto.modal({ title: "Vérifiez votre identité", bodyHtml: "<p style='margin:0'>Saisissez le code à 6 chiffres envoyé à <b>" + esc(masked) + "</b> pour confirmer que c'est bien vous.</p>", withInput: true, placeholder: "123456", confirmLabel: "Valider", cancelLabel: "Annuler" });
+        code = r && r.value;
+      } else code = window.prompt("Saisissez le code à 6 chiffres envoyé à " + masked + " pour valider votre identité :");
       if (!code) { this.notify("Vérification annulée — brouillon conservé", "err"); return false; }
-      try { await this.api("POST", "/api/invite/" + t + "/otp/verify", { code: code.trim() }); return true; }
+      try { await this.api("POST", "/api/invite/" + t + "/otp/verify", { code: String(code).trim() }); return true; }
       catch (e) { this.notify(e.message || "Code incorrect", "err"); return false; }
     },
     async sharedSubmit() {
@@ -970,15 +1074,64 @@ const __adjApp = createApp({
       ev.target.value = "";
       this.sharedAo.busy = true;
       const fd = new FormData(); fd.append("file", f);
+      if (this.sharedAo.upl.piece_type) fd.append("piece_type", this.sharedAo.upl.piece_type);
+      if (this.sharedAo.upl.expiration_date) fd.append("expiration_date", this.sharedAo.upl.expiration_date);
       try {
         const r = await fetch("/api/invite/" + this.sharedAo.token + "/contribution/piece", { method: "POST", body: fd });
-        if (!r.ok) { const e = await r.json().catch(() => ({})); this.notify(e.detail || "Échec de l'envoi", "err"); }
-        else { this.notify("Pièce ajoutée"); this.sharedReload(); }
+        if (!r.ok) { const e = await r.json().catch(() => ({})); this.notify((typeof e.detail === "string" && e.detail) || "Échec de l'envoi", "err"); }
+        else { this.notify("Pièce ajoutée"); this.sharedAo.upl = { piece_type: "", expiration_date: "" }; this.sharedReload(); this.sharedLoadCoffre(); }
       } catch (e) { this.notify("Échec de l'envoi", "err"); } finally { this.sharedAo.busy = false; }
     },
+    async sharedPatchPiece(pc, patch) {   // type / date d'expiration d'une de MES pièces (coffre croisé)
+      try {
+        const r = await fetch("/api/invite/" + this.sharedAo.token + "/contribution/piece/" + pc.id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error((typeof e.detail === "string" && e.detail) || "Modification impossible"); }
+        Object.assign(pc, await r.json()); this.notify("Pièce mise à jour"); this.sharedLoadCoffre();
+      } catch (e) { this.notify(e.message, "err"); }
+    },
     async sharedRemovePiece(id) {
-      try { await fetch("/api/invite/" + this.sharedAo.token + "/contribution/piece/" + id, { method: "DELETE" }); this.sharedReload(); }
+      try { await fetch("/api/invite/" + this.sharedAo.token + "/contribution/piece/" + id, { method: "DELETE" }); this.sharedReload(); this.sharedLoadCoffre(); }
       catch (e) { this.notify("Échec de la suppression de la pièce", "err"); }
+    },
+    // « Joindre depuis mon coffre-fort » : mes documents (compte) → copie jointe à ma part. Exige que le lien soit réclamé par mon compte (403 sinon).
+    async sharedVaultOpen() {
+      const v = this.sharedAo.vault; v.open = true; v.loading = true; v.needClaim = false;
+      try { v.docs = (await this.api("GET", "/api/documents/") || []).filter(d => d && d.id); }
+      catch (e) { v.docs = []; this.notify(e.message, "err"); }
+      finally { v.loading = false; }
+    },
+    async sharedFromVault(d) {
+      const v = this.sharedAo.vault; this.sharedAo.busy = true;
+      try {
+        const r = await fetch("/api/invite/" + this.sharedAo.token + "/contribution/piece/from-vault", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + this.token }, body: JSON.stringify({ document_id: d.id }) });
+        if (r.status === 403) { v.needClaim = true; v.pendingDoc = d; return; }
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error((typeof e.detail === "string" && e.detail) || "Pièce non jointe"); }
+        this.notify((d.name || "Pièce") + " jointe à votre part"); this.sharedReload(); this.sharedLoadCoffre();
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.sharedAo.busy = false; }
+    },
+    async sharedClaimThenVault() {
+      const v = this.sharedAo.vault;
+      try {
+        await this.api("POST", "/api/invite/" + this.sharedAo.token + "/claim"); v.needClaim = false; this.loadShared();
+        if (v.pendingDoc) { const d = v.pendingDoc; v.pendingDoc = null; await this.sharedFromVault(d); }
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async sharedLoadCoffre() {   // grille membre : statut des pièces de chacun, détail de MA ligne seulement
+      try { this.sharedAo.coffre = await this.api("GET", "/api/invite/" + this.sharedAo.token + "/coffre-croise"); } catch (e) { this.sharedAo.coffre = null; }
+    },
+    async sharedJournalToggle(ev) {
+      if (!(ev && ev.target && ev.target.open) || this.sharedAo.journalLoaded) return;
+      try { this.sharedAo.journal = await this.api("GET", "/api/invite/" + this.sharedAo.token + "/journal"); this.sharedAo.journalLoaded = true; }
+      catch (e) { this.notify("Journal indisponible", "err"); }
+    },
+    async sharedDecline() {
+      if (!confirm("Décliner l'invitation ?\n\nVous sortez du groupement : votre part ne figurera pas dans la réponse commune et ce lien ne sera plus utilisable.")) return;
+      try {
+        const r = await fetch("/api/invite/" + this.sharedAo.token + "/decline", { method: "POST" });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error((typeof e.detail === "string" && e.detail) || "Impossible de décliner"); }
+        this.go("shared"); this.loadShared(); this.notify("Invitation déclinée");
+      } catch (e) { this.notify(e.message, "err"); }
     },
     sharedFact(a) { const L = { acheteur: "Acheteur", allotissement: "Allotissement", lieu: "Lieu", type_marche: "Type", date_limite: "Date limite", criteres_attribution: "Critères", duree: "Durée" }; return Object.entries(L).filter(([k]) => a && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length)).map(([k, lab]) => ({ k: lab, v: Array.isArray(a[k]) ? a[k].map(x => (x && typeof x === "object") ? (x.critere || x.nom || x.label || "") + (x.ponderation ? " — " + x.ponderation : "") : x).join(" · ") : a[k] })); },
     // ── Notifications (activité des partenaires) ──
@@ -1001,6 +1154,7 @@ const __adjApp = createApp({
     inviteUrl(inv) { return window.location.origin + (inv.path || ("/invite/" + inv.token)); },
     inviteState(inv) {
       if (inv.revoked) return { label: "Révoqué", cls: "neutral" };
+      if (this.inviteDeclined(inv)) return { label: "A décliné", cls: "declined" };
       if (inv.expires_at && new Date(inv.expires_at) < new Date()) return { label: "Expiré", cls: "a_etudier" };
       return { label: "Actif", cls: "go" };
     },
@@ -1056,7 +1210,7 @@ const __adjApp = createApp({
     contribCount() { return (this.ao.share.invites || []).filter(i => i.contribution_status === "submitted").length; },
     // Cockpit — partenaires EN ATTENTE (invités, non révoqués, part non soumise) et relançables (email).
     aoPendingInvites() {
-      return (this.ao.share.invites || []).filter(i => !i.revoked && i.can_contribute && i.contribution_status !== "submitted");
+      return (this.ao.share.invites || []).filter(i => !i.revoked && !this.inviteDeclined(i) && i.can_contribute && i.contribution_status !== "submitted");
     },
     aoPendingRelancables() {
       return this.aoPendingInvites().filter(i => (i.recipient || "").includes("@"));
@@ -1078,7 +1232,14 @@ const __adjApp = createApp({
       this.ao.share._relancing = false;
     },
     auditLabel(a) {
-      const m = { "invite.created": "Lien créé", "invite.revoked": "Lien révoqué", "guest.view_project": "Consultation du dossier", "guest.download_doc": "Téléchargement de pièce" };
+      const m = {
+        "invite.created": "Lien créé", "invite.revoked": "Lien révoqué", "invite.resent": "Invitation renvoyée", "invite.declined": "Le partenaire a décliné l'invitation", "invite.claimed": "Lien rattaché à un compte Adjugo",
+        "guest.view_project": "Consultation du dossier", "guest.download_doc": "Téléchargement de pièce", "guest.submit_contribution": "Part soumise", "guest.upload_piece": "Pièce déposée par le partenaire",
+        "guest.capacites_updated": "Capacités mises à jour par le partenaire", "guest.otp_request": "Code de vérification demandé", "guest.otp_verified": "Adresse email vérifiée",
+        "owner.view_contribution": "Vous avez consulté la part de ce partenaire", "owner.download_piece": "Vous avez téléchargé une pièce du partenaire", "owner.view_piece": "Vous avez consulté une pièce du partenaire",
+        "offer.frozen": "Offre commune figée", "offer.unfrozen": "Offre commune défigée", "piece.expiring": "Alerte : une attestation manque ou expire",
+        "groupement.besoins": "Lecture de ce que le marché exige", "groupement.simulate": "Score en groupement calculé", "groupement.retenue": "Composition du groupement retenue", "groupement.plan_retire": "Composition du groupement annulée",
+      };
       return m[a.action] || a.action;
     },
     auditWhen(s) { if (!s) return ""; try { return new Date(s).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } },
@@ -1123,6 +1284,209 @@ const __adjApp = createApp({
         await this.aoLoadCotraitants(); this.loadCotraitants();
         this.notify(l.candidate.nom + " rattaché (Lot " + l.num + ")");
       } catch (e) { this.notify(e.message, "err"); }
+    },
+    // ── « Répondre à plusieurs ? » (co-traitance v2) : score de groupement, manques, candidats, simulation ──
+    // Règle : aucun chiffre n'est calculé ici ; tout vient de l'API (state / besoins / simulate).
+    async aoGrpLoad() {
+      const pid = this.ao.project && this.ao.project.id; if (!pid) return;
+      this.ao.grp.loading = true; this.ao.grp.error = "";
+      const [st, bs] = await Promise.all([
+        this.api("GET", "/api/projects/" + pid + "/groupement/state").catch(e => ({ _err: e })),
+        this.api("GET", "/api/projects/" + pid + "/groupement/besoins").catch(e => ({ _err: e })),
+      ]);
+      if (!this.ao.project || this.ao.project.id !== pid) return;   // l'utilisateur a changé de marché entre-temps
+      if (st && !st._err) this.ao.grp.state = st;
+      if (bs && !bs._err) this.ao.grp.besoins = bs;
+      const err = (st && st._err) || (bs && bs._err);
+      if (err) this.ao.grp.error = err.message || "Le calcul de groupement est momentanément indisponible.";
+      this.ao.grp.loading = false;
+    },
+    async aoGrpLoadBesoins(sirene) {
+      const pid = this.ao.project && this.ao.project.id; if (!pid) return;
+      if (sirene) this.ao.grp.sireneLoading = true;
+      try {
+        this.ao.grp.besoins = await this.api("GET", "/api/projects/" + pid + "/groupement/besoins" + (sirene ? "?sirene=1" : ""));
+        if (sirene && !((this.ao.grp.besoins.candidats || {}).sirene || []).length) this.notify("Aucune entreprise SIRENE trouvée pour ces manques", "err");
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.ao.grp.sireneLoading = false; }
+    },
+    async aoGrpReloadState() {
+      const pid = this.ao.project && this.ao.project.id; if (!pid) return;
+      try { this.ao.grp.state = await this.api("GET", "/api/projects/" + pid + "/groupement/state"); } catch (e) {}
+    },
+    // Stepper : étapes passées / courante ; « Convention » et « Prêt à déposer » arrivent en vague 2 (libellés conservés).
+    gstepClass(state, s, i) {
+      const idx = (state && typeof state.index === "number") ? state.index : -1;
+      return { done: i < idx, cur: i === idx, soon: s.key === "convention_a_signer" || s.key === "pret_a_deposer" };
+    },
+    grpPlan() { const st = this.ao.grp.state; const p = st && st.plan; return (p && typeof p === "object" && (p.members || []).length) ? p : null; },
+    grpBreakdown() {
+      const sim = this.ao.grp.sim, plan = this.grpPlan();
+      const src = (sim && sim.breakdown) || (plan && plan.breakdown);
+      if (Array.isArray(src) && src.length) return src;
+      // Rien de simulé : les critères du score SEUL (détail du dossier), colonne groupement vide.
+      return (this.aoBreakdown() || []).map(c => ({ key: c.key, label: c.label, points_seul: c.points, points_groupement: null, max_points: c.max_points, apporte_par: [] }));
+    },
+    grpScore() {
+      const sim = this.ao.grp.sim; if (sim && sim.score_groupement != null) return sim.score_groupement;
+      const p = this.ao.project; return (p && p.groupement_score != null) ? p.groupement_score : null;
+    },
+    grpDecision() {
+      const sim = this.ao.grp.sim; if (sim && sim.decision) return sim.decision;
+      const st = this.ao.grp.state; if (st && st.decision) return st.decision;
+      return this.ao.project && this.ao.project.go_decision;
+    },
+    grpWarnings() {
+      const out = [], push = (w) => { if (w && !out.includes(w)) out.push(w); };
+      ((this.ao.grp.besoins && this.ao.grp.besoins.warnings) || []).forEach(push);
+      const sim = this.ao.grp.sim, plan = this.grpPlan(), st = this.ao.grp.state;
+      ((sim && sim.warnings) || (plan && plan.warnings) || (st && st.warnings) || []).forEach(push);
+      return out;
+    },
+    aoGrpRaisons() { const g = this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.groupement; return (g && g.recommande && Array.isArray(g.raisons)) ? g.raisons : []; },
+    gapLabel(k) {
+      const gaps = (this.ao.grp.besoins && this.ao.grp.besoins.gaps) || [];
+      const g = gaps.find(x => x.key === k); if (g && g.label) return g.label;
+      const b = this.grpBreakdown().find(x => x.key === k); if (b && b.label) return b.label;
+      return ({ metier: "Métier", zone: "Zone", capacite: "Capacité financière", qualifs: "Qualifications", references: "Références", effectif: "Effectif" })[k] || k;
+    },
+    gapSevLabel(s) { return ({ bloquant: "Bloquant", important: "Important", a_verifier: "À vérifier" })[s] || s || ""; },
+    gapSevClass(s) { return ({ bloquant: "no_go", important: "a_etudier", a_verifier: "neutral" })[s] || "neutral"; },
+    candGroups() {
+      const c = (this.ao.grp.besoins && this.ao.grp.besoins.candidats) || {};
+      return [{ key: "rattaches", label: "Déjà rattachés à ce marché", list: c.rattaches || [] },
+              { key: "annuaire", label: "Mes partenaires", list: c.annuaire || [] },
+              { key: "sirene", label: "Entreprises SIRENE", list: c.sirene || [] }];
+    },
+    candTotal() { return this.candGroups().reduce((n, g) => n + g.list.length, 0); },
+    candId(c) { return (c.kind || "?") + ":" + (c.id || c.siret || (c.name || "").toLowerCase()); },
+    isCandSelected(c) { const id = this.candId(c); return this.ao.grp.selected.some(m => this.candId(m) === id); },
+    toggleCand(c) {
+      const id = this.candId(c), i = this.ao.grp.selected.findIndex(m => this.candId(m) === id);
+      if (i >= 0) { this.ao.grp.selected.splice(i, 1); return; }
+      if (this.ao.grp.selected.length >= 4) { this.notify("4 partenaires au maximum par simulation", "err"); return; }
+      this.ao.grp.selected.push(c);
+    },
+    aoGrpAddSaisi() {
+      const s = this.ao.grp.saisi; const name = (s.name || "").trim();
+      if (!name) { this.notify("Le nom de l'entreprise est obligatoire", "err"); return; }
+      const quals = (s.qualifications || "").split(",").map(x => x.trim()).filter(Boolean);
+      this.toggleCand({ kind: "saisi", name, siret: (s.siret || "").replace(/\D/g, ""), ca_n1: s.ca_n1 || null, effectif: s.effectif || null, qualifications: quals, city: "" });
+      this.ao.grp.saisi = { name: "", siret: "", ca_n1: null, effectif: null, qualifications: "" }; this.ao.grp.saisiOpen = false;
+    },
+    _grpMemberBody(m) {
+      if (m.kind === "attached" || m.kind === "annuaire") return { kind: m.kind, id: m.id };
+      if (m.kind === "sirene") return { kind: "sirene", siret: m.siret, name: m.name };
+      return { kind: "saisi", name: m.name, siret: m.siret || "", ca_n1: m.ca_n1 || null, effectif: m.effectif || null, qualifications: m.qualifications || [] };
+    },
+    async aoGrpSimulate() {
+      const pid = this.ao.project.id, members = this.ao.grp.selected.map(m => this._grpMemberBody(m));
+      if (!members.length) { this.notify("Cochez au moins un partenaire", "err"); return; }
+      this.ao.grp.simulating = true;
+      try {
+        const r = await this.api("POST", "/api/projects/" + pid + "/groupement/simulate", { members, save: true });
+        r.retained = false; this.ao.grp.sim = r;
+        if (r.state && this.ao.grp.state) Object.assign(this.ao.grp.state, r.state);
+        this.ao.grp.historyLoaded = false;
+        this.notify("Seul " + r.score_seul + " % → en groupement " + r.score_groupement + " %");
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.ao.grp.simulating = false; }
+    },
+    simPartners(sim) { return ((sim && sim.members) || []).filter(m => m && m.kind !== "lead"); },
+    async aoGrpRetenir() {
+      const sim = this.ao.grp.sim; if (!sim || !sim.simulation_id) return;
+      this.ao.grp.retaining = true;
+      try {
+        const r = await this.api("POST", "/api/projects/" + this.ao.project.id + "/groupement/retenir", { simulation_id: sim.simulation_id });
+        sim.retained = true;
+        this.notify("Composition retenue" + (r && r.decision_label ? " — " + r.decision_label : ""));
+        await this.aoGrpReloadState();
+        try { this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id); } catch (e) {}
+        this.aoLoadCotraitants(); this.loadProjects(); this.ao.grp.historyLoaded = false;
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.ao.grp.retaining = false; }
+    },
+    inviteDeclined(inv) { return !!(inv && (inv.state === "declined" || inv.declined_at)); },
+    grpAlreadyInvited(m) {
+      const n = ((m && m.name) || "").trim().toLowerCase(); if (!n) return false;
+      return (this.ao.share.invites || []).some(i => !i.revoked && !this.inviteDeclined(i) && (i.company_name || "").trim().toLowerCase() === n);
+    },
+    // « Inviter {nom} » : pré-remplit le formulaire d'invitation existant et y amène l'utilisateur.
+    aoGrpInvite(m) {
+      this.ao.share.form.company_name = (m && m.name) || ""; this.ao.share.open = true;
+      this.$nextTick(() => { const el = this.$refs.reseauCard; if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" }); });
+    },
+    async aoGrpHistoryToggle(ev) {
+      const open = !!(ev && ev.target && ev.target.open); this.ao.grp.historyOpen = open;
+      if (!open || this.ao.grp.historyLoaded) return;
+      this.ao.grp.historyLoading = true;
+      try { this.ao.grp.history = await this.api("GET", "/api/projects/" + this.ao.project.id + "/groupement/simulations") || []; this.ao.grp.historyLoaded = true; }
+      catch (e) { this.notify(e.message, "err"); }
+      finally { this.ao.grp.historyLoading = false; }
+    },
+    grpCanCancel() { const st = this.ao.grp.state, p = this.grpPlan(); return !!(st && typeof st.index === "number" && st.index >= 2 && p && !p.auto); },
+    async aoGrpCancelPlan() {
+      if (!confirm("Annuler la composition retenue ?\nVous revenez au verdict seul. Les partenaires déjà rattachés au marché restent en place.")) return;
+      try {
+        const r = await this.api("DELETE", "/api/projects/" + this.ao.project.id + "/groupement/plan");
+        this.ao.grp.sim = null; if (r && r.state) this.ao.grp.state = r.state;
+        try { this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id); } catch (e) {}
+        this.loadProjects(); this.ao.grp.historyLoaded = false;
+        this.notify("Composition annulée — verdict seul restauré");
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    // ── Coffre-fort croisé (statuts) + offre commune (mandataire) ──
+    ddmm(s) { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "/" + m[2] : ""; },
+    cxPiece(m, k) { return (m && m.pieces && m.pieces[k]) || { status: "manquant" }; },
+    cxLabel(p) {
+      const d = p.expiration_date ? this.fmtDate(p.expiration_date) : "";
+      return ({ present: "présente", valide_jusquau: "valide → " + d, expire_avant_limite: "expire le " + d, expire: "expirée" + (d ? " le " + d : ""), manquant: "manquante" })[p.status] || p.status;
+    },
+    cxTitle(m, k) {
+      const p = this.cxPiece(m, k);
+      return (p.name ? p.name + " — " : "") + (({ present: "Pièce fournie (sans date d'expiration)", valide_jusquau: "Valide au-delà de la date limite", expire_avant_limite: "Expire AVANT la date limite : à renouveler", expire: "Expirée : à renouveler", manquant: "Pièce non fournie" })[p.status] || "");
+    },
+    async aoDownloadPiece(p) {
+      if (!p || !p.piece_id) return;
+      try {
+        const r = await fetch("/api/projects/" + this.ao.project.id + "/contribution-pieces/" + p.piece_id, { headers: { Authorization: "Bearer " + this.token } });
+        if (!r.ok) throw new Error("Téléchargement impossible");
+        this.saveBlob(await r.blob(), p.name || "piece");
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    freezeTotal() {
+      const o = this.ao.share.consortium && this.ao.share.consortium.offre; if (!o || o.total_ht_estime == null) return null;
+      const lead = (o.lead_total_ht == null && Number(this.ao.share.leadTotal) > 0) ? Number(this.ao.share.leadTotal) : 0;
+      return o.total_ht_estime + lead;
+    },
+    canFreeze() { const o = this.ao.share.consortium && this.ao.share.consortium.offre; return !!(o && !o.frozen && o.total_ht_estime != null); },
+    freezeMissing() {
+      const cs = this.ao.share.consortium || {}; const miss = (cs.readiness && cs.readiness.missing) || [];
+      if (!(cs.readiness && cs.readiness.invited)) return ["Invitez au moins un partenaire et attendez sa part"];
+      return miss.length ? miss : ["Aucune part soumise avec un prix de lot pour l'instant"];
+    },
+    async aoFreezeOffer() {
+      const cs = this.ao.share.consortium, o = cs && cs.offre; if (!o || !this.canFreeze()) return;
+      const lead = (o.lead_total_ht == null && Number(this.ao.share.leadTotal) > 0) ? Number(this.ao.share.leadTotal) : null;
+      let msg = "Figer l'offre commune ?\n\nTotal prévisionnel : " + this.eur(this.freezeTotal()) + " HT"
+        + (lead != null ? " (dont votre part " + this.eur(lead) + " HT)" : (o.lead_total_ht == null ? " — sans votre part (aucune estimation enregistrée)" : ""))
+        + ".\nChaque partenaire verra ce total.";
+      if (o.warning_two_members) msg += "\n\nÀ deux, le total révèle mécaniquement la part de l'autre.";
+      if (!confirm(msg)) return;
+      this.ao.share.freezing = true;
+      try {
+        const r = await this.api("POST", "/api/projects/" + this.ao.project.id + "/offre/figer", lead != null ? { lead_total_ht: lead } : {});
+        this.notify("Offre commune figée — total " + this.eur(r.total_ht) + " HT");
+        await this.aoLoadConsortium();
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.ao.share.freezing = false; }
+    },
+    async aoUnfreezeOffer() {
+      if (!confirm("Défiger l'offre commune ? Les partenaires ne verront plus le total tant qu'elle n'est pas refigée.")) return;
+      this.ao.share.freezing = true;
+      try { await this.api("DELETE", "/api/projects/" + this.ao.project.id + "/offre/figer"); this.notify("Offre commune défigée"); await this.aoLoadConsortium(); }
+      catch (e) { this.notify(e.message, "err"); }
+      finally { this.ao.share.freezing = false; }
     },
     roleLabel(r) { return ({ mandataire: "Chef de file", cotraitant: "Partenaire", sous_traitant: "Sous-traitant" })[r] || r; },
     checklistLabel(s) { return ({ ok: "Disponible", manquant: "Manquant", expire: "Expiré", generable: "Généré auto" })[s] || s; },
@@ -1330,8 +1694,25 @@ const __adjApp = createApp({
     },
 
     // ── Helpers d'affichage ──
-    decLabel(d) { return ({ go: "Bon potentiel", no_go: "Peu adapté", a_etudier: "À étudier" })[d] || "—"; },
-    decColor(d) { return ({ go: "color:var(--go)", no_go: "color:var(--danger)", a_etudier: "color:var(--warn)" })[d] || "color:var(--muted)"; },
+    decLabel(d) { return ({ go: "Bon potentiel", go_groupement: "Bon potentiel en groupement", no_go: "Peu adapté", a_etudier: "À étudier" })[d] || "—"; },
+    decColor(d) { return ({ go: "color:var(--go)", go_groupement: "color:var(--accent-text)", no_go: "color:var(--danger)", a_etudier: "color:var(--warn)" })[d] || "color:var(--muted)"; },
+    // Kanban : un marché « bon potentiel en groupement » affiche son score de groupement (le score seul reste au survol).
+    kanbanScore(p) { if (p.go_decision === "go_groupement" && p.groupement_score != null) return p.groupement_score; return p.match_score != null ? p.match_score : ""; },
+    kanbanScoreTitle(p) {
+      if (p.go_decision === "go_groupement" && p.groupement_score != null) return "Seul : " + (p.match_score != null ? p.match_score + "/100" : "—") + " · En groupement : " + p.groupement_score + "/100";
+      return p.match_score != null ? "Compatibilité " + p.match_score + "/100" : "";
+    },
+    grpAccessibleCount() { return (this.projects || []).filter(p => p.go_decision === "go_groupement").length; },
+    // Verdict SEUL d'un marché « bon potentiel en groupement » : celui que l'API a calculé (simulation)
+    // sinon, à défaut, les seuils du profil (mêmes défauts que le serveur : 65 / 40). Jamais un chiffre inventé.
+    aoSeulDecision() {
+      const p = this.ao.project || {}; const d = p.go_decision;
+      if (d !== "go_groupement") return d;
+      const sim = this.ao.grp && this.ao.grp.sim; if (sim && sim.decision_seul) return sim.decision_seul;
+      if (p.match_score == null) return null;
+      const go = Number(this.criteria.go_threshold) || 65, ng = Math.min(Number(this.criteria.nogo_threshold) || 40, go - 1);
+      return p.match_score >= go ? "go" : (p.match_score < ng ? "no_go" : "a_etudier");
+    },
     statusLabel(s) { return ({ nouveau: "Nouveau", en_cours: "En cours", envoye: "Envoyé", gagne: "Gagné", perdu: "Perdu", abandonne: "Abandonné" })[s] || s; },
     covLabel(c) { return ({ entreprise: "Entreprise seule", cotraitant: "Avec un partenaire", non_couvert: "Non couvert" })[c] || c; },
     covClass(c) { return ({ entreprise: "go", cotraitant: "st-nouveau", non_couvert: "no_go" })[c] || "st-nouveau"; },

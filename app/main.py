@@ -159,6 +159,8 @@ app.include_router(criteria_v2_router)
 app.include_router(cerfa.router)
 app.include_router(stripe_pay.router)
 app.include_router(cotraitants.router)
+from app.routers.groupement import router as groupement_router   # « Répondre à plusieurs ? »
+app.include_router(groupement_router)
 app.include_router(export_dossier.router)
 app.include_router(checklist.router)
 app.include_router(chiffrage.router)

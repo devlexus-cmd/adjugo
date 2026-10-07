@@ -52,6 +52,17 @@ class ReviewRequest(BaseModel):
     note: str = ""
 
 
+
+def _unfreeze_after_estimate(db, p, current_user) -> None:
+    """Le chiffrage du mandataire = sa part de l'offre commune : s'il change, un total figé
+    devient faux → on défige (avec trace offer.unfrozen). Best-effort."""
+    try:
+        from app.routers.invites import _unfreeze_offer_if_needed
+        _unfreeze_offer_if_needed(db, p.id, "chiffrage du mandataire modifié",
+                                  actor=f"user:{current_user.id}", actor_kind="owner")
+    except Exception:
+        pass
+
 @router.get("/{project_id}")
 def get_estimate(project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return _project(project_id, current_user, db).estimate or {}
@@ -79,6 +90,7 @@ def make_estimate(project_id: int, req: EstimateRequest, request: Request,
     est["rates_default"] = rates_default   # tarifs GÉNÉRIQUES non personnalisés → à signaler à l'user
     p.estimate = est
     db.commit()
+    _unfreeze_after_estimate(db, p, current_user)
     return est
 
 
@@ -107,6 +119,7 @@ def save_estimate(project_id: int, req: SaveRequest,
     est["rates_used"] = rates
     p.estimate = est   # toute modification invalide une validation précédente
     db.commit()
+    _unfreeze_after_estimate(db, p, current_user)
     return est
 
 
@@ -121,6 +134,6 @@ def review_estimate(project_id: int, req: ReviewRequest,
     est = dict(p.estimate)
     est["review"] = {"status": status, "by": current_user.full_name or current_user.email,
                      "note": (req.note or "")[:500], "at": utcnow().isoformat()}
-    p.estimate = est
+    p.estimate = est          # revue seulement : le montant ne change pas → l'offre figée reste valable
     db.commit()
     return est

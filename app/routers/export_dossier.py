@@ -92,12 +92,13 @@ def export_dossier(
     # que build_dossier (bouton « Télécharger ») déclarait bien le groupement — incohérence.
     try:
         from app.models import ProjectContribution, ProjectInvite
+        from app.services.groupement_members import active_invite_filter
         _seen_sir = {str(c.get("siret") or "").strip() for c in pd["cotraitants"] if c.get("siret")}
         rows = db.query(ProjectContribution).join(
             ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
             ProjectContribution.project_id == project_id,
             ProjectContribution.status == "submitted",
-            ProjectInvite.revoked.is_(False)).all()
+            active_invite_filter()).all()
         for c in rows:
             sir = str(getattr(c, "siret", "") or "").strip()
             if sir and sir in _seen_sir:

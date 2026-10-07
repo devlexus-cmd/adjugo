@@ -151,6 +151,8 @@ class ProjectOut(BaseModel):
     deadline: Optional[date]
     match_score: Optional[int]
     go_decision: Optional[str]
+    # « Répondre à plusieurs ? » : score de groupement (match_score reste le score SEUL).
+    groupement_score: Optional[int] = None
     ai_summary: Optional[str]
     ai_analysis: Optional[dict]
     workflow: Optional[dict]

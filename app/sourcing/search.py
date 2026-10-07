@@ -221,7 +221,8 @@ class CompanySearchService:
 
     def discover(self, activity: str = "", departement: str = "", query: str = "",
                  limit: int = 12, tender_departements: Optional[list] = None,
-                 need_label: str = "", lot_montant: Optional[float] = None) -> dict:
+                 need_label: str = "", lot_montant: Optional[float] = None,
+                 enrich_decp: bool = True) -> dict:
         companies: list[NormalizedCompany] = []
         errors: list[SourceError] = []
         for s in self.sources:
@@ -251,7 +252,8 @@ class CompanySearchService:
         deduped.sort(key=lambda c: (c.score.total if c.score else 0), reverse=True)
         # Enrichissement DECP : marchés publics RÉELLEMENT gagnés (capacité réelle),
         # borné aux meilleurs candidats pour la latence. Échec = dégradation silencieuse.
-        self._enrich_decp_wins(deduped[:12])
+        if enrich_decp:
+            self._enrich_decp_wins(deduped[:12])
         return {"companies": deduped, "errors": errors, "count": len(deduped)}
 
     def _enrich_red_flags(self, companies: list[NormalizedCompany]) -> None:

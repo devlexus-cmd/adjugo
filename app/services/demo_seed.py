@@ -254,13 +254,14 @@ def ensure_demo(db, force: bool = False) -> User:
     # (documents, docs générés, factures, liens co-traitants) sinon la contrainte de clé
     # étrangère bloque la suppression des projets et fait échouer tout le reseed.
     from app.models import (Document, GeneratedDoc, Invoice, ProjectInvite,
-                            ProjectContribution, ContributionPiece, AuditLog)
+                            ProjectContribution, ContributionPiece, AuditLog,
+                            GroupementSimulation)
     old_ids = [p.id for p in db.query(Project).filter(Project.user_id == user.id).all()]
     if old_ids:
         # Ordre : enfants des contributions/invites d'abord, puis le reste. TOUTES les
         # tables qui référencent projects doivent être purgées sinon la FK bloque le reseed
-        # (ex. project_invites créés en testant la co-traitance).
-        for M in (ContributionPiece, ProjectContribution, ProjectInvite,
+        # (ex. project_invites créés en testant la co-traitance, simulations de groupement).
+        for M in (ContributionPiece, ProjectContribution, ProjectInvite, GroupementSimulation,
                   ProjectCotraitant, Document, GeneratedDoc, Invoice, AuditLog):
             db.query(M).filter(M.project_id.in_(old_ids)).delete(synchronize_session=False)
     db.query(Cotraitant).filter(Cotraitant.user_id == user.id).delete(synchronize_session=False)
@@ -300,6 +301,14 @@ def ensure_demo(db, force: bool = False) -> User:
 
     db.commit()
 
+    # « Répondre à plusieurs ? » : verdict de groupement CALCULÉ sur Lorient (CA 3 M€ + SS3
+    # apportés par Breizh Désamiantage). Transaction propre ; skip si le service pur est absent.
+    try:
+        _seed_groupement(db, user, comp, proj_by_key, ct_by_name)
+    except Exception as e:
+        db.rollback()
+        logger.warning("seed démo (groupement) ignoré : %s", e)
+
     # Vitrine complète : factures, coffre-fort, CERFA (dont DC4 du consortium), veille
     # amont, alertes, base de connaissances, contacts, consortium Lorient matérialisé…
     # Isolé dans sa propre transaction : un échec ici n'altère jamais le cœur de la démo.
@@ -312,6 +321,75 @@ def ensure_demo(db, force: bool = False) -> User:
     db.refresh(user)
     logger.info("Compte démo prêt (%s) — 3 AO + %d co-traitants + vitrine complète.", DEMO_EMAIL, len(_COTRAITANTS))
     return user
+
+
+def _seed_groupement(db, user, comp, proj_by_key, ct_by_name):
+    """« Répondre à plusieurs ? » sur la vitrine. Le marché de Lorient exige un CA de 3 M€ et la
+    qualification désamiantage SS3 que Bâtiment de l'Ouest n'a pas ; Breizh Désamiantage les
+    apporte. Tout est CALCULÉ par le service pur (score_groupement) — jamais un chiffre codé en
+    dur — puis matérialisé : simulation retenue, plan, score et verdict « Bon potentiel en
+    groupement ». Les critères v2 du compte démo sont alignés sur _CRITERIA pour que les routes
+    (besoins / simulate) recalculent exactement la même chose à l'exécution."""
+    from app.models import GroupementSimulation
+    from app.routers.criteria_v2 import MatchingCriteriaExt
+    from app.services.groupement_verdict import (lead_member, member_from_cotraitant,
+                                                  plan_members, scoring_module,
+                                                  with_declare_warning)
+    from app.services.profile import company_dict
+    gs = scoring_module()
+    lorient_id = proj_by_key.get("lorient")
+    breizh = ct_by_name.get("Breizh Désamiantage")
+    if gs is None or not lorient_id or breizh is None:
+        return
+
+    ext = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == user.id).first()
+    if ext is None:
+        ext = MatchingCriteriaExt(user_id=user.id)
+        db.add(ext)
+    ext.specialites = _CRITERIA["specialites"]
+    ext.departements = ", ".join(_CRITERIA["departements"])
+    ext.budget_min = _CRITERIA["budget_min"]; ext.budget_max = _CRITERIA["budget_max"]
+    ext.go_threshold = _CRITERIA["go_threshold"]
+    ext.nogo_threshold = 40   # défaut de score_dce → mêmes verdicts que _analysis()
+    db.flush()
+    criteria = {col.name: getattr(ext, col.name) for col in ext.__table__.columns}
+
+    lorient = db.query(Project).filter(Project.id == lorient_id).first()
+    details = (lorient.ai_analysis or {}).get("details") or {}
+    lead = lead_member(company_dict(comp), criteria)
+    partner = member_from_cotraitant(breizh, "attached")
+    res = gs.score_groupement(details, lead, criteria, [lead, partner]) or {}
+    breakdown = res.get("breakdown") or []
+    warnings = with_declare_warning([partner], list(res.get("warnings") or []))
+
+    sim = GroupementSimulation(
+        project_id=lorient.id, owner_id=user.id, created_by_user_id=user.id,
+        members=[lead, partner], score_seul=res.get("score_seul"),
+        score_groupement=res.get("score_groupement"), decision=res.get("decision") or "",
+        breakdown=breakdown, cumul=res.get("cumul"), gaps=res.get("gaps"),
+        warnings=warnings, retained=True)
+    db.add(sim); db.flush()
+
+    members = plan_members([partner], breakdown, res.get("gaps_combles"))
+    link = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == lorient.id,
+                                              ProjectCotraitant.cotraitant_id == breizh.id).first()
+    if link:
+        link.source = "simulation"
+        members[0]["link_id"] = link.id
+    import datetime as _dt
+    lorient.groupement_plan = {
+        "members": members, "breakdown": breakdown, "gaps": res.get("gaps") or [],
+        "gaps_combles": res.get("gaps_combles") or [], "warnings": warnings,
+        "auto": False, "computed_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "score_seul": res.get("score_seul"), "score_groupement": res.get("score_groupement"),
+        "simulation_id": sim.id,
+    }
+    lorient.groupement_score = res.get("score_groupement")
+    if res.get("decision") == "go_groupement":
+        lorient.go_decision = "go_groupement"   # match_score reste le score SEUL
+    db.commit()
+    logger.info("Vitrine démo : groupement Lorient calculé — seul %s → avec Breizh %s (%s).",
+                res.get("score_seul"), res.get("score_groupement"), res.get("decision"))
 
 
 def _demo_pdf(title: str, subtitle: str = "") -> bytes:
@@ -524,17 +602,25 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                 {"intitule": "Retrait d'amiante en toiture d'un gymnase", "client": "Commune de Lanester", "montant": 185000, "annee": 2023},
             ],
             qualifications=["Qualification désamiantage SS3", "Certification amiante sous-section 3", "Assurance amiante"],
-            chiffrage_note="Lot désamiantage estimé à 280 000 € HT : plan de retrait, confinement, traitement et évacuation en filière agréée, mesures d'empoussièrement.",
+            # Doctrine de visibilité : le mandataire ne voit que le PRIX DE VENTE du lot ;
+            # la décomposition (detail_chiffre) serait chiffrée dans le navigateur du membre.
+            prix_lot_ht=280000.0,
+            capacites={"ca_n1": 1850000, "effectif": 14, "declared_at": now.isoformat()},
+            representant_legal="Soizic Morvan", signataire_qualite="Présidente",
             memoire_paragraph="Breizh Désamiantage réalise le retrait d'amiante en sous-section 3 conformément au plan de retrait validé. Confinement dynamique, contrôles d'empoussièrement libératoires et traçabilité complète des déchets (BSDA).",
             contact={"nom": "Soizic Morvan", "email": "contact@breizh-desamiantage.fr", "telephone": "02 97 84 22 10"},
             status="submitted", submitted_at=now, version=1)
         db.add(contrib); db.flush()
 
-        for pname, pkey in [("Kbis — Breizh Désamiantage", "demo/breizh_kbis.pdf"),
-                            ("Attestation de qualification désamiantage SS3 — Breizh Désamiantage", "demo/breizh_ss3.pdf")]:
+        for pname, pkey, ptype, pexp in [
+                ("Kbis — Breizh Désamiantage", "demo/breizh_kbis.pdf", "kbis",
+                 today + timedelta(days=75)),
+                ("Attestation de qualification désamiantage SS3 — Breizh Désamiantage", "demo/breizh_ss3.pdf",
+                 "qualification", today + timedelta(days=400))]:
             _put(pkey, pname)
             db.add(ContributionPiece(contribution_id=contrib.id, project_id=lorient, owner_id=uid,
-                                     name=pname, file_key=pkey, file_size=11000, mime_type="application/pdf"))
+                                     name=pname, file_key=pkey, file_size=11000, mime_type="application/pdf",
+                                     piece_type=ptype, expiration_date=pexp))
 
         space = CoSpace(owner_id=uid, name="Groupement — Gymnase de Lorient",
                         marche="Réhabilitation énergétique et désamiantage du gymnase municipal de Lorient",

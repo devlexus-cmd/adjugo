@@ -21,6 +21,8 @@
      bloquer indéfiniment le chargement de l'app lors de ses ralentissements fréquents. -->
 <script src="/static/vendor/vue-3.5.38.prod.js"></script>
 <script src="/static/vendor/lucide-1.20.0.min.js"></script>
+<!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
+<script src="/static/cotraitance-crypto.js"></script>
 <script src="/static/i18n.js" defer></script>
 </head>
 <body>
@@ -173,6 +175,7 @@
               <div style="flex:1;min-width:200px">
                 <b style="font-size:15px">Réseau Adjugo — gagnez les gros marchés à plusieurs</b>
                 <div class="muted small">Associez d'autres entreprises : chacune apporte sa part, l'IA assemble une réponse commune.<span v-if="consortiums.active"> <b>{{ consortiums.active }}</b> groupement(s) en cours · <b>{{ consortiums.partners_total }}</b> partenaire(s) · <b>{{ consortiums.submitted_total }}</b> part(s) reçue(s).</span></div>
+                <a v-if="grpAccessibleCount()" href="#" @click.prevent="go('pipeline')" class="row small" style="gap:5px;margin-top:6px;align-items:center;color:var(--accent-text);font-weight:600;text-decoration:none"><i data-lucide="users-round" style="width:14px;height:14px"></i><span>{{ grpAccessibleCount() }} marché(s) accessible(s) en groupement</span><i data-lucide="arrow-right" style="width:13px;height:13px"></i></a>
               </div>
               <button class="btn primary" @click="go('pipeline')"><i data-lucide="user-plus"></i>Monter un groupement</button>
             </div>
@@ -335,7 +338,10 @@
             <div class="row" style="align-items:flex-start;gap:14px">
               <div style="flex:1;min-width:0">
                 <div class="row" style="gap:8px;flex-wrap:wrap">
-                  <span class="pill" :class="ao.project.go_decision||'neutral'" v-if="ao.project.match_score!=null">Compatibilité {{ ao.project.match_score }}/100</span>
+                  <template v-if="ao.project.match_score!=null">
+                    <span class="pill" :class="aoSeulDecision()||'neutral'">{{ ao.project.groupement_score!=null?'Seul':'Compatibilité' }} {{ ao.project.match_score }}/100</span>
+                    <span v-if="ao.project.groupement_score!=null" class="pill go_groupement" style="gap:4px" title="Score calculé avec la composition de groupement retenue"><i data-lucide="users-round" style="width:12px;height:12px"></i>En groupement {{ ao.project.groupement_score }}/100</span>
+                  </template>
                   <span class="pill neutral" v-else>À analyser</span>
                   <a v-if="aoSource()" :href="aoSource().source_url" target="_blank" class="small row" style="gap:3px;color:var(--accent-text);font-weight:500">{{ aoSource().source }} · réf {{ aoSource().official_ref }}<i data-lucide="external-link" style="width:13px;height:13px"></i></a>
                 </div>
@@ -388,12 +394,6 @@
                 <div class="sectitle" style="margin-top:0"><i data-lucide="alert-circle" style="width:14px;height:14px"></i> Points d'attention</div>
                 <ul class="small" style="margin:5px 0 0;padding-left:18px;line-height:1.6"><li v-for="(pt,pi) in aoDetails().points_attention" :key="'pa'+pi" style="margin-bottom:5px">{{ pt }}</li></ul>
               </div>
-              <div v-if="ao.project.ai_analysis && ao.project.ai_analysis.groupement && ao.project.ai_analysis.groupement.recommande" class="row wrap" style="margin:8px 0 2px;gap:10px;padding:11px 13px;background:var(--accent-weak);border:1px solid var(--accent);border-radius:9px;align-items:flex-start">
-                <i data-lucide="users-round" style="width:18px;height:18px;color:var(--accent-text);flex-shrink:0;margin-top:1px"></i>
-                <div style="flex:1;min-width:200px"><b class="small" style="color:var(--accent-text)">Opportunité de groupement — répondez à plusieurs</b>
-                  <ul class="muted small" style="margin:3px 0 0;padding-left:18px"><li v-for="(r,gi) in ao.project.ai_analysis.groupement.raisons" :key="'grp'+gi">{{ r }}</li></ul></div>
-                <button class="btn primary sm" @click="aoOptimizeGroup()"><i data-lucide="handshake"></i>Répartir entre partenaires</button>
-              </div>
               <div class="frow" style="margin-top:8px;gap:0 24px">
                 <div v-for="(v,k) in detailRows(aoDetails())" :key="k" class="row small" style="padding:6px 0;border-bottom:1px solid var(--hairline);align-items:flex-start"><span class="muted" style="min-width:130px">{{ k }}</span><span style="flex:1">{{ v }}</span></div>
               </div>
@@ -419,6 +419,127 @@
                 </div>
                 <div class="muted small" style="margin-top:6px">Réponses fondées sur le dossier importé. Si l'information n'y figure pas, l'IA le dit clairement.</div>
               </div>
+            </div>
+          </div>
+
+          <!-- Répondre à plusieurs ? — score de groupement, manques du dossier, candidats, simulation (co-traitance v2) -->
+          <div v-if="ao.project.ai_analysis" class="card" style="margin-top:14px;border:1.5px solid var(--accent)">
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="users-round" style="color:var(--accent-text)"></i><h3>Répondre à plusieurs ?</h3><div class="spacer"></div>
+              <span v-if="ao.grp.state && ao.grp.state.label" class="pill go_groupement" style="font-size:11px">{{ ao.grp.state.label }}</span>
+              <button class="btn sm" @click="aoOptimizeGroup()" :disabled="ao.group&&ao.group.loading" title="Répartition des lots entre vos partenaires"><span v-if="ao.group&&ao.group.loading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répartir entre partenaires</button></div>
+            <div class="cb">
+              <div v-if="ao.grp.loading && !ao.grp.state && !ao.grp.besoins" class="muted small"><span class="spin"></span> Lecture de ce que le marché exige…</div>
+              <div v-else-if="ao.grp.error && !ao.grp.state && !ao.grp.besoins" class="muted small"><i data-lucide="info" style="width:13px;height:13px;vertical-align:-2px"></i> {{ ao.grp.error }} <a href="#" @click.prevent="aoGrpLoad()" style="color:var(--accent-text)">Réessayer</a></div>
+              <template v-else>
+                <!-- 1. Étapes du groupement (dérivées côté serveur, jamais stockées) -->
+                <div v-if="ao.grp.state && ao.grp.state.steps" class="gstep" role="list" aria-label="Étapes du groupement">
+                  <div v-for="(s,i) in ao.grp.state.steps" :key="s.key" class="gs" :class="gstepClass(ao.grp.state,s,i)" role="listitem">{{ s.label }}</div>
+                </div>
+                <ul v-if="aoGrpRaisons().length" class="muted small" style="margin:8px 0 0;padding-left:18px"><li v-for="(r,gi) in aoGrpRaisons()" :key="'grp'+gi">{{ r }}</li></ul>
+                <!-- 3. Avertissements : TOUJOURS visibles, au-dessus du résultat -->
+                <div v-for="(w,wi) in grpWarnings()" :key="'gw'+wi" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ w }}</span></div>
+                <!-- 2. Seul | En groupement -->
+                <div class="sg-cols">
+                  <div class="sg-col">
+                    <div class="sg-big">{{ ao.project.match_score!=null ? ao.project.match_score+' %' : '—' }}</div>
+                    <div class="sg-lab">Seul <span v-if="aoSeulDecision()" class="pill" :class="aoSeulDecision()" style="font-size:10px;margin-left:4px">{{ decLabel(aoSeulDecision()) }}</span></div>
+                  </div>
+                  <div class="sg-col grp">
+                    <div class="sg-big" style="color:var(--accent-text)">{{ grpScore()!=null ? grpScore()+' %' : '—' }}</div>
+                    <div class="sg-lab"><i data-lucide="users-round" style="width:12px;height:12px;vertical-align:-2px"></i> En groupement <span v-if="grpScore()!=null && grpDecision()" class="pill" :class="grpDecision()" style="font-size:10px;margin-left:4px">{{ decLabel(grpDecision()) }}</span><span v-else-if="grpScore()==null">— cochez un partenaire ci-dessous</span></div>
+                  </div>
+                </div>
+                <div v-if="grpBreakdown().length" style="margin-top:8px">
+                  <div v-for="c in grpBreakdown()" :key="'bk'+c.key" class="sg-row" style="flex-wrap:wrap">
+                    <span class="sg-k">{{ c.label }}</span>
+                    <span class="sg-pts">{{ c.points_seul }} → {{ c.points_groupement!=null ? c.points_groupement : '—' }}<span class="muted"> /{{ c.max_points }}</span></span>
+                    <span class="sg-delta">{{ (c.points_groupement!=null && c.points_groupement>c.points_seul) ? '+'+(c.points_groupement-c.points_seul) : '' }}</span>
+                    <span v-for="n in (c.apporte_par||[])" :key="c.key+'·'+n" class="sg-chip by">apporté par {{ n }}</span>
+                  </div>
+                </div>
+                <!-- Composition retenue (plan) + invitation des membres -->
+                <div v-if="grpPlan() && !ao.grp.sim" class="row wrap small" style="gap:6px;margin-top:10px;align-items:center">
+                  <i data-lucide="check-circle-2" style="width:14px;height:14px;color:var(--success-text)"></i><b>Composition retenue :</b>
+                  <span v-for="m in grpPlan().members" :key="'pm'+candId(m)" class="pill go_groupement">{{ m.name }}</span>
+                  <button v-for="m in grpPlan().members.filter(x=>!grpAlreadyInvited(x))" :key="'pi'+candId(m)" class="btn sm" @click="aoGrpInvite(m)"><i data-lucide="user-plus"></i>Inviter {{ m.name }}</button>
+                </div>
+                <!-- 4. Ce que le marché exige et que vous n'avez pas → qui l'a ? -->
+                <div v-if="ao.grp.besoins" style="margin-top:14px">
+                  <div class="sectitle" style="margin-top:0"><i data-lucide="search-check" style="width:14px;height:14px"></i> Ce que le marché exige et que vous n'avez pas</div>
+                  <div v-if="!ao.grp.besoins.gaps.length" class="muted small">Rien à signaler : d'après le dossier, vous couvrez seul les exigences repérées.</div>
+                  <div v-for="g in ao.grp.besoins.gaps" :key="'gap'+g.key" class="gap" :class="g.severity">
+                    <div class="gap-h"><span>{{ g.label }}</span><span class="pill" :class="gapSevClass(g.severity)" style="font-size:10px">{{ gapSevLabel(g.severity) }}</span></div>
+                    <div class="gap-req"><b>Exigé :</b> {{ g.required||'—' }} &nbsp;·&nbsp; <b>Vous :</b> {{ g.have||'—' }}</div>
+                    <div v-if="g.extrait" class="gap-cite">Le dossier dit : « {{ g.extrait }} »</div>
+                  </div>
+                  <div style="margin-top:12px">
+                    <div class="row wrap" style="gap:8px;align-items:center"><b class="small">Qui l'a ?</b><span class="muted small">Cochez un ou plusieurs partenaires (4 max.) pour simuler le score en groupement.</span><div class="spacer"></div>
+                      <button class="btn sm" @click="aoGrpLoadBesoins(true)" :disabled="ao.grp.sireneLoading"><span v-if="ao.grp.sireneLoading" class="spin"></span><i v-else data-lucide="search"></i>Chercher aussi dans SIRENE</button></div>
+                    <template v-for="grp in candGroups()" :key="grp.key">
+                      <div v-if="grp.list.length" class="muted small" style="font-weight:600;margin-top:10px">{{ grp.label }}</div>
+                      <label v-for="c in grp.list" :key="candId(c)" class="cand" :class="{sel:isCandSelected(c)}" style="cursor:pointer">
+                        <input type="checkbox" :checked="isCandSelected(c)" @change="toggleCand(c)" style="width:auto;height:auto;margin:0" :aria-label="'Simuler avec '+c.name">
+                        <div style="flex:1;min-width:0">
+                          <div class="row wrap" style="gap:6px;align-items:center"><span class="cand-name">{{ c.name }}</span><span v-if="c.city" class="muted small">· {{ c.city }}</span><span v-if="c.deja_partenaire" class="pill neutral" style="font-size:9px">déjà partenaire</span></div>
+                          <div class="cand-proof">{{ c.proof_label }}<span v-if="c.ca_label"> · {{ c.ca_label }}</span></div>
+                          <div v-if="c.apporte && c.apporte.length" class="row wrap" style="gap:4px;margin-top:3px"><span v-for="k in c.apporte" :key="candId(c)+k" class="sg-chip by">{{ gapLabel(k) }}</span></div>
+                        </div>
+                        <span class="cand-score" title="Score en groupement avec ce seul partenaire">{{ c.score_avec!=null ? c.score_avec+' %' : '—' }}</span>
+                      </label>
+                    </template>
+                    <div v-if="!candTotal()" class="muted small" style="margin-top:8px">Aucun candidat connu pour l'instant : ajoutez des entreprises dans « Mes partenaires », cherchez dans SIRENE, ou ajoutez une entreprise à la main ci-dessous.</div>
+                  </div>
+                </div>
+                <!-- 5. Simulation : membres cochés → « Calculer » → « Retenir » → « Inviter » -->
+                <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--hairline)" :style="ao.grp.selected.length?'position:sticky;bottom:0;background:var(--surface);z-index:2;padding-bottom:10px':''">
+                  <div class="row wrap" style="gap:6px;align-items:center">
+                    <b class="small">Simuler avec :</b>
+                    <span v-if="!ao.grp.selected.length" class="muted small">personne pour l'instant.</span>
+                    <span v-for="m in ao.grp.selected" :key="'sel'+candId(m)" class="pill" :class="m.kind==='saisi'?'a_etudier':'go_groupement'" style="gap:5px">{{ m.name }}<span v-if="m.kind==='saisi'" style="font-size:9px;opacity:.85">déclaré par vous</span><button type="button" @click="toggleCand(m)" :aria-label="'Retirer '+m.name" style="border:0;background:none;color:inherit;cursor:pointer;padding:0;margin-left:2px;line-height:0;display:inline-flex"><i data-lucide="x" style="width:11px;height:11px"></i></button></span>
+                    <div class="spacer"></div>
+                    <button class="btn sm ghost" @click="ao.grp.saisiOpen=!ao.grp.saisiOpen"><i data-lucide="plus"></i>Ajouter une entreprise à la main</button>
+                    <button class="btn sm primary" @click="aoGrpSimulate()" :disabled="ao.grp.simulating || !ao.grp.selected.length"><span v-if="ao.grp.simulating" class="spin"></span><i v-else data-lucide="calculator"></i>Calculer le score en groupement</button>
+                  </div>
+                  <div v-if="ao.grp.saisiOpen" style="margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2)">
+                    <div class="muted small" style="margin-bottom:7px">Une entreprise que vous connaissez mais qui n'est pas encore dans votre réseau. Ses capacités seront étiquetées <b>« déclaré par vous »</b> dans le résultat.</div>
+                    <div class="row wrap" style="gap:8px">
+                      <input class="inp" v-model="ao.grp.saisi.name" placeholder="Nom de l'entreprise *" style="flex:1;min-width:160px" aria-label="Nom de l'entreprise">
+                      <input class="inp" v-model="ao.grp.saisi.siret" placeholder="SIRET (optionnel)" style="width:150px" aria-label="SIRET">
+                      <input class="inp" type="number" min="0" v-model.number="ao.grp.saisi.ca_n1" placeholder="CA dernier exercice (€)" style="width:175px" aria-label="Chiffre d'affaires du dernier exercice">
+                      <input class="inp" type="number" min="0" v-model.number="ao.grp.saisi.effectif" placeholder="Effectif" style="width:100px" aria-label="Effectif">
+                      <input class="inp" v-model="ao.grp.saisi.qualifications" placeholder="Qualifications, séparées par des virgules" style="flex:1;min-width:200px" aria-label="Qualifications">
+                      <button class="btn sm" @click="aoGrpAddSaisi()"><i data-lucide="check"></i>Ajouter à la simulation</button>
+                    </div>
+                  </div>
+                  <div v-if="ao.grp.sim" style="margin-top:10px;padding:10px 12px;border:1px solid var(--accent);border-radius:9px;background:var(--accent-weak)">
+                    <div class="row wrap" style="gap:8px;align-items:center">
+                      <b class="small">Seul {{ ao.grp.sim.score_seul }} % → en groupement {{ ao.grp.sim.score_groupement }} %</b>
+                      <span class="pill" :class="ao.grp.sim.decision||'neutral'" style="font-size:10px">{{ ao.grp.sim.decision_label || decLabel(ao.grp.sim.decision) }}</span>
+                      <span class="muted small">avec {{ simPartners(ao.grp.sim).map(m=>m.name).join(', ') }}</span>
+                      <div class="spacer"></div>
+                      <button v-if="ao.grp.sim.simulation_id && !ao.grp.sim.retained" class="btn sm primary" @click="aoGrpRetenir()" :disabled="ao.grp.retaining"><span v-if="ao.grp.retaining" class="spin"></span><i v-else data-lucide="check-circle-2"></i>Retenir cette composition</button>
+                    </div>
+                    <div v-if="ao.grp.sim.retained" class="row wrap" style="gap:6px;margin-top:8px;align-items:center">
+                      <span class="small" style="color:var(--success-text);font-weight:600">✓ Composition retenue — partenaires rattachés au marché.</span>
+                      <button v-for="m in simPartners(ao.grp.sim).filter(x=>!grpAlreadyInvited(x))" :key="'inv'+candId(m)" class="btn sm" @click="aoGrpInvite(m)"><i data-lucide="user-plus"></i>Inviter {{ m.name }}</button>
+                    </div>
+                  </div>
+                </div>
+                <!-- 6. Historique des simulations + annulation de la composition -->
+                <details style="margin-top:12px" @toggle="aoGrpHistoryToggle($event)">
+                  <summary class="muted small" style="cursor:pointer;user-select:none">Simulations précédentes<span v-if="ao.grp.history.length"> ({{ ao.grp.history.length }})</span></summary>
+                  <div v-if="ao.grp.historyLoading" class="muted small" style="margin-top:6px"><span class="spin"></span> Chargement…</div>
+                  <div v-else-if="!ao.grp.history.length" class="muted small" style="margin-top:6px">Aucune simulation enregistrée pour ce marché.</div>
+                  <div v-for="h in ao.grp.history" :key="'h'+h.id" class="row wrap small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
+                    <span class="muted" style="min-width:96px">{{ auditWhen(h.created_at) }}</span>
+                    <span style="flex:1;min-width:120px">{{ (h.members||[]).map(m=>m.name).join(', ')||'—' }}</span>
+                    <span class="num">{{ h.score_seul }} → {{ h.score_groupement }} %</span>
+                    <span class="pill" :class="h.decision||'neutral'" style="font-size:10px">{{ h.decision_label||decLabel(h.decision) }}</span>
+                    <span v-if="h.retained" class="pill go" style="font-size:10px">retenue ✓</span>
+                  </div>
+                </details>
+                <div v-if="grpCanCancel()" style="margin-top:8px"><a href="#" @click.prevent="aoGrpCancelPlan()" class="muted small" style="text-decoration:underline">Annuler la composition</a> <span class="muted small">— vous revenez au verdict seul ; les partenaires rattachés restent.</span></div>
+              </template>
             </div>
           </div>
 
@@ -581,7 +702,7 @@
 
           <!-- Sous-traitants rattachés à l'AO -->
           <div class="card" style="margin-top:14px">
-            <div class="ch"><i data-lucide="handshake"></i><h3>Partenaires sur ce marché</h3><div class="spacer"></div>
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake"></i><h3>Partenaires sur ce marché</h3><div class="spacer"></div>
               <button class="btn sm" @click="aoOptimizeGroup()" :disabled="ao.group&&ao.group.loading"><span v-if="ao.group&&ao.group.loading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répartir entre partenaires</button>
               <button class="btn sm" @click="ao.stOpen=!ao.stOpen"><i data-lucide="plus"></i>Ajouter</button></div>
             <div class="cb">
@@ -644,8 +765,8 @@
           </div>
 
           <!-- Réseau Adjugo — co-construction cloisonnée + journal RGPD -->
-          <div class="card" style="margin-top:14px;border:1.5px solid var(--accent)">
-            <div class="ch"><i data-lucide="users-round" style="color:var(--accent-text)"></i><h3>Réseau Adjugo — montez le dossier à plusieurs</h3><div class="spacer"></div>
+          <div class="card" style="margin-top:14px;border:1.5px solid var(--accent)" ref="reseauCard">
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="users-round" style="color:var(--accent-text)"></i><h3>Réseau Adjugo — montez le dossier à plusieurs</h3><div class="spacer"></div>
               <button class="btn sm" @click="aoToggleContrib()"><i data-lucide="layers"></i>Contributions<span v-if="contribCount()" class="pill go" style="font-size:9px;margin-left:5px">{{ contribCount() }}</span></button>
               <button class="btn sm" @click="aoToggleAudit()"><i data-lucide="history"></i>Journal d'accès</button>
             </div>
@@ -708,7 +829,7 @@
                     <span class="pill neutral" style="font-size:10px">{{ inv.role==='sous_traitant'?'Sous-traitant':'Partenaire' }}</span>
                     <span class="pill" :class="inviteState(inv).cls" style="font-size:10px">{{ inviteState(inv).label }}</span>
                     <span v-if="inv.contribution_status==='submitted'" class="pill go" style="font-size:10px"><i data-lucide="check" style="width:11px;height:11px"></i>Contribution reçue</span>
-                    <span v-else-if="inv.can_contribute && !inv.revoked" class="pill a_etudier" style="font-size:10px">En attente de sa part</span>
+                    <span v-else-if="inv.can_contribute && !inv.revoked && !inviteDeclined(inv)" class="pill a_etudier" style="font-size:10px">En attente de sa part</span>
                     <div class="muted small">{{ inv.view_count }} consultation(s)<span v-if="inv.last_viewed_at"> · dernière {{ auditWhen(inv.last_viewed_at) }}</span></div>
                     <div v-if="inv.recipient && inv.recipient.includes('@')" class="muted small" style="font-size:10.5px">
                       <span v-if="inv.emailed_at" style="color:var(--success)">✓ Email envoyé {{ auditWhen(inv.emailed_at) }}</span>
@@ -716,8 +837,8 @@
                     </div>
                   </div>
                   <button class="btn icon sm ghost" @click="copyInvite(inviteUrl(inv))" aria-label="Copier le lien" :disabled="inv.revoked"><i data-lucide="copy"></i></button>
-                  <button v-if="!inv.revoked && inv.recipient && inv.recipient.includes('@')" class="btn icon sm ghost" @click="aoResendInvite(inv)" :aria-label="'Renvoyer l\'invitation par email'" title="Renvoyer / relancer par email"><i data-lucide="send"></i></button>
-                  <button v-if="!inv.revoked" class="btn icon sm ghost" @click="aoRevokeInvite(inv)" aria-label="Révoquer le lien"><i data-lucide="ban"></i></button>
+                  <button v-if="!inv.revoked && !inviteDeclined(inv) && inv.recipient && inv.recipient.includes('@')" class="btn icon sm ghost" @click="aoResendInvite(inv)" :aria-label="'Renvoyer l\'invitation par email'" title="Renvoyer / relancer par email"><i data-lucide="send"></i></button>
+                  <button v-if="!inv.revoked && !inviteDeclined(inv)" class="btn icon sm ghost" @click="aoRevokeInvite(inv)" aria-label="Révoquer le lien"><i data-lucide="ban"></i></button>
                 </div>
               </div>
 
@@ -734,7 +855,11 @@
                   </div>
                   <div v-if="c.qualifications && c.qualifications.length" class="muted small" style="margin-top:4px">Qualifications : {{ c.qualifications.join(', ') }}</div>
                   <div v-if="c.references && c.references.length" class="muted small">Références : {{ c.references.map(r => r.intitule).filter(Boolean).join(' · ') }}</div>
-                  <div v-if="c.chiffrage_note" class="muted small">Prix lot : {{ c.chiffrage_note }}</div>
+                  <!-- Doctrine de visibilité : le prix de VENTE du lot est visible ; le détail du chiffrage est chiffré par le partenaire (jamais lisible ici) -->
+                  <div class="small" style="margin-top:4px"><b>Prix de vente du lot :</b> <span v-if="c.prix_lot_ht!=null">{{ eur(c.prix_lot_ht) }} HT</span><span v-else class="muted">prix non renseigné</span></div>
+                  <div v-if="c.has_detail_chiffre" class="lock-note"><i data-lucide="lock" style="width:13px;height:13px;flex:none;margin-top:1px"></i><span>Détail du chiffrage chiffré par le partenaire — vous ne le voyez pas, c'est voulu.</span></div>
+                  <div v-if="c.representant_legal || c.signataire_qualite" class="muted small">Signataire : {{ c.representant_legal||'—' }}<span v-if="c.signataire_qualite"> · {{ c.signataire_qualite }}</span></div>
+                  <div v-if="c.capacites && (c.capacites.ca_n1!=null || c.capacites.effectif!=null)" class="muted small">Capacités : <span v-if="c.capacites.ca_n1!=null">CA {{ eur(c.capacites.ca_n1) }}</span><span v-if="c.capacites.ca_n1!=null && c.capacites.effectif!=null"> · </span><span v-if="c.capacites.effectif!=null">{{ c.capacites.effectif }} salarié(s)</span> — déclaré par le partenaire<span v-if="c.capacites.declared_at"> le {{ ddmm(c.capacites.declared_at) }}</span></div>
                   <div v-if="c.memoire_paragraph" class="small" style="margin-top:5px;padding:7px 9px;background:var(--surface-2);border-radius:6px;white-space:pre-wrap">{{ c.memoire_paragraph }}</div>
                   <div v-if="c.note_au_mandataire" class="small" style="margin-top:5px;padding:7px 9px;background:rgba(59,91,219,.06);border-left:2px solid var(--accent);border-radius:4px;white-space:pre-wrap"><i data-lucide="message-square" style="width:12px;height:12px;vertical-align:-1px"></i> Message : {{ c.note_au_mandataire }}</div>
                   <div v-if="c.pieces && c.pieces.length" style="margin-top:6px">
@@ -764,6 +889,9 @@
                     <span class="pill" :class="p.status==='submitted'?'go':p.status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ p.status==='submitted'?'Soumise':p.status==='draft'?'Brouillon':'En attente' }}</span>
                     <span v-if="p.pieces_count" class="pill neutral" style="font-size:10px"><i data-lucide="paperclip" style="width:10px;height:10px"></i>{{ p.pieces_count }} pièce(s)</span>
                     <span v-if="p.lot" class="muted small"> · {{ p.lot }}</span>
+                    <span v-if="p.prix_lot_ht!=null" class="pill neutral" style="font-size:10px" title="Prix de vente du lot (visible du mandataire)">{{ eur(p.prix_lot_ht) }} HT</span>
+                    <span v-else-if="p.status==='submitted'" class="pill a_etudier" style="font-size:10px">prix de lot manquant</span>
+                    <i v-if="p.has_detail_chiffre" data-lucide="lock" style="width:11px;height:11px;color:var(--text-2);vertical-align:-1px" title="Détail du chiffrage chiffré par le partenaire — vous ne le voyez pas, c'est voulu" aria-label="Détail du chiffrage chiffré"></i>
                     <!-- Pièces administratives attendues du membre : présentes (vert) / manquantes (rouge) -->
                     <div v-if="(p.pieces_have && p.pieces_have.length) || (p.pieces_missing && p.pieces_missing.length)" class="row wrap" style="gap:4px;margin-top:3px">
                       <span v-for="h in p.pieces_have" :key="'h'+h" class="pill go" style="font-size:9px">✓ {{ h }}</span>
@@ -777,6 +905,43 @@
                 <div v-if="ao.share.consortium.readiness.missing.length" style="margin-top:11px">
                   <div class="muted small" style="font-weight:600;margin-bottom:5px">À compléter</div>
                   <div v-for="(m,i) in ao.share.consortium.readiness.missing" :key="'cm'+i" class="row small" style="gap:6px;padding:3px 0;color:var(--warning-text)"><i data-lucide="circle-alert" style="width:13px;height:13px;flex:none"></i><span>{{ m }}</span></div>
+                </div>
+
+                <!-- Coffre-fort croisé : attestations de chaque partenaire (statut) ; le mandataire peut télécharger la pièce -->
+                <div v-if="ao.share.consortium.coffre && ao.share.consortium.coffre.members && ao.share.consortium.coffre.members.length" style="margin-top:12px">
+                  <div class="muted small" style="font-weight:600;margin-bottom:2px">Coffre-fort croisé — attestations de chaque partenaire<span v-if="ao.share.consortium.coffre.deadline"> · date limite {{ fmtDate(ao.share.consortium.coffre.deadline) }}</span></div>
+                  <div class="cx-wrap"><table class="cx">
+                    <thead><tr><th>Partenaire</th><th v-for="e in ao.share.consortium.coffre.expected" :key="'cxh'+e.key">{{ e.label }}</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(m,mi) in ao.share.consortium.coffre.members" :key="'cxr'+(m.invite_id||mi)">
+                        <td><b>{{ m.company }}</b><span v-if="m.complete" class="muted small"> ✓</span></td>
+                        <td v-for="e in ao.share.consortium.coffre.expected" :key="'cxc'+e.key">
+                          <span class="cxs" :class="cxPiece(m,e.key).status" :title="cxTitle(m,e.key)">
+                            <a v-if="cxPiece(m,e.key).piece_id" href="#" @click.prevent="aoDownloadPiece(cxPiece(m,e.key))">{{ cxLabel(cxPiece(m,e.key)) }}</a>
+                            <template v-else>{{ cxLabel(cxPiece(m,e.key)) }}</template>
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table></div>
+                </div>
+
+                <!-- Offre commune : total = prix de vente de chaque lot + part du mandataire ; une fois figée, visible des partenaires -->
+                <div v-if="ao.share.consortium.offre" style="margin-top:13px;padding-top:12px;border-top:1px solid var(--hairline)">
+                  <div class="row" style="gap:6px;align-items:center"><i data-lucide="badge-euro" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Offre commune</b></div>
+                  <div v-if="ao.share.consortium.offre.frozen" class="offre-box" style="flex-wrap:wrap">
+                    <i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i>
+                    <div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b> le {{ fmtDate(ao.share.consortium.offre.frozen_at) }}</div><div class="muted small">Chaque partenaire voit maintenant le total.</div></div>
+                    <div class="offre-total">{{ eur(ao.share.consortium.offre.total_ht) }} HT</div>
+                    <button class="btn sm" @click="aoUnfreezeOffer()" :disabled="ao.share.freezing"><i data-lucide="lock-open"></i>Défiger</button>
+                  </div>
+                  <template v-else>
+                    <div class="muted small" style="margin-top:4px">Total = prix de vente du lot de chaque partenaire + votre part. Tant que l'offre n'est pas figée, les partenaires ne voient pas le total.</div>
+                    <div v-if="ao.share.consortium.offre.total_ht_estime!=null" class="small" style="margin-top:6px">Total prévisionnel : <b>{{ eur(freezeTotal()) }} HT</b><span v-if="ao.share.consortium.offre.lead_total_ht!=null" class="muted"> (dont votre part {{ eur(ao.share.consortium.offre.lead_total_ht) }} HT, d'après votre estimation de prix)</span></div>
+                    <div v-if="ao.share.consortium.offre.lead_total_ht==null" class="row wrap small" style="gap:8px;margin-top:8px;align-items:center"><span>Votre part (€ HT)</span><input class="inp" type="number" min="0" v-model.number="ao.share.leadTotal" placeholder="ex. 950000" style="width:150px" aria-label="Votre part en euros HT"><span class="muted">— aucune estimation de prix enregistrée sur ce marché</span></div>
+                    <div v-if="!canFreeze()" class="muted small" style="margin-top:6px">Impossible de figer pour l'instant :<ul style="margin:3px 0 0;padding-left:18px"><li v-for="(m,i) in freezeMissing()" :key="'fm'+i">{{ m }}</li></ul></div>
+                    <button class="btn sm primary" style="margin-top:8px" @click="aoFreezeOffer()" :disabled="!canFreeze() || ao.share.freezing"><span v-if="ao.share.freezing" class="spin"></span><i v-else data-lucide="lock"></i>Figer l'offre commune</button>
+                  </template>
                 </div>
 
                 <div class="row wrap" style="margin-top:13px;gap:9px;align-items:center">
@@ -990,7 +1155,7 @@
             <input ref="dceUpl" type="file" accept=".pdf,.zip,.docx,.txt" class="hidden" @change="srcUploadDce">
             <div v-if="src.analysis.dce_available" class="row" style="gap:16px;align-items:center">
               <div class="score-ring lg" :style="ringStyle(src.analysis.score)"><span class="num">{{ src.analysis.score }}</span></div>
-              <div><span class="pill" :class="src.analysis.decision||'neutral'">{{ decLabel(src.analysis.decision) }}</span><a :href="src.analysis.source.source_url" target="_blank" class="small muted row" style="gap:3px;margin-top:4px">source {{ src.analysis.source.source }} · réf {{ src.analysis.source.official_ref }}<i data-lucide="external-link" style="width:12px;height:12px"></i></a></div>
+              <div><span class="pill" :class="src.analysis.decision||'neutral'">{{ decLabel(src.analysis.decision) }}</span><span v-if="src.analysis.groupement_score!=null" class="pill go_groupement" style="margin-left:6px;gap:4px"><i data-lucide="users-round" style="width:12px;height:12px"></i>En groupement {{ src.analysis.groupement_score }}/100</span><a :href="src.analysis.source.source_url" target="_blank" class="small muted row" style="gap:3px;margin-top:4px">source {{ src.analysis.source.source }} · réf {{ src.analysis.source.official_ref }}<i data-lucide="external-link" style="width:12px;height:12px"></i></a></div>
             </div>
             <div v-else class="muted small" style="display:flex;align-items:center;gap:6px"><i data-lucide="info" style="width:14px;height:14px"></i>Analyse préliminaire (annonce). La compatibilité s'affiche après l'import du dossier réel du marché.</div>
             <p class="small" style="margin-top:10px">{{ src.analysis.summary }}</p>
@@ -1254,7 +1419,7 @@
               <div class="kcol-h"><span class="pill" :class="'st-'+s">{{ statusLabel(s) }}</span><span class="n">{{ byStatus(s).length }}</span></div>
               <div v-for="p in byStatus(s)" :key="p.id" class="kcard" @click="openProject(p)">
                 <div class="ti2">{{ (p.name||'').slice(0,60) }}</div>
-                <div class="me">{{ p.client||'—' }}<span class="sc" :style="decColor(p.go_decision)">{{ p.match_score!=null?p.match_score:'' }}</span></div>
+                <div class="me">{{ p.client||'—' }}<span class="sc" :style="decColor(p.go_decision)" :title="kanbanScoreTitle(p)"><i v-if="p.go_decision==='go_groupement'" data-lucide="users-round" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px" aria-label="En groupement"></i>{{ kanbanScore(p) }}</span></div>
               </div>
             </div>
           </div>
@@ -1672,6 +1837,25 @@
             </div>
           </div>
 
+          <!-- Pourquoi vous dans ce groupement : le % COMMUN, votre apport, les seuils — jamais le score seul du mandataire ni le prix des autres -->
+          <div v-if="sharedAo.forMember" class="card pad" style="margin-bottom:14px;border:1.5px solid var(--accent)">
+            <div v-if="sfmState().steps" class="gstep" role="list" aria-label="Étapes du groupement"><div v-for="(s,i) in sfmState().steps" :key="s.key" class="gs" :class="gstepClass(sfmState(),s,i)" role="listitem">{{ s.label }}</div></div>
+            <div class="row wrap" style="gap:14px;align-items:center;margin-top:8px">
+              <div style="text-align:center;min-width:96px"><div class="sg-big" style="color:var(--accent-text)">{{ sfm().score_groupement!=null ? sfm().score_groupement+' %' : '—' }}</div><div class="sg-lab">score du groupement</div></div>
+              <div style="flex:1;min-width:200px">
+                <b style="font-size:13.5px">Pourquoi vous dans ce groupement</b>
+                <div v-if="(sfm().my_apport||[]).length" class="row wrap" style="gap:4px;margin-top:4px;align-items:center"><span class="muted small">Vous apportez :</span><span v-for="a in sfm().my_apport" :key="a.key" class="sg-chip by">{{ a.label }}</span></div>
+                <div v-else class="muted small" style="margin-top:4px">{{ sfm().score_groupement!=null ? 'Le mandataire n\'a pas précisé ce que vous apportez.' : 'Le mandataire n\'a pas encore calculé le score du groupement.' }}</div>
+                <div v-if="sfm().seuils" class="row wrap small" style="gap:12px;margin-top:6px"><span :style="sfm().seuils.ca_cumule_ok?'color:var(--success-text)':''">{{ sfm().seuils.ca_cumule_ok?'✓':'○' }} CA cumulé suffisant</span><span :style="sfm().seuils.qualifs_ok?'color:var(--success-text)':''">{{ sfm().seuils.qualifs_ok?'✓':'○' }} Qualifications couvertes</span></div>
+              </div>
+            </div>
+            <div v-if="(sfmState().members||[]).length" style="margin-top:10px">
+              <div class="muted small" style="font-weight:600;margin-bottom:3px">Membres du groupement</div>
+              <div class="row wrap" style="gap:6px"><span class="pill neutral" style="font-size:10px">{{ sharedAo.mandataire||'Mandataire' }} · chef de file</span><span v-for="(m,i) in sfmState().members" :key="'fm'+i" class="pill" :class="m.status==='submitted'?'go':'neutral'" style="font-size:10px">{{ m.company }} · {{ m.role==='sous_traitant'?'sous-traitant':'partenaire' }} · {{ memberStatusLabel(m.status) }}</span></div>
+            </div>
+            <div v-if="sfmState().offer_frozen" class="offre-box" style="flex-wrap:wrap"><i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i><div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b> le {{ fmtDate(sfmState().frozen_at) }}</div><div v-if="sfm().warning_two_members" class="muted small">À deux, le total révèle mécaniquement la part de l'autre.</div></div><div class="offre-total">{{ eur(sfmState().total_offre_ht) }} HT</div></div>
+          </div>
+
           <div v-if="sharedAo.docs.length" class="card pad" style="margin-bottom:14px">
             <b style="font-size:13.5px">Pièces partagées</b>
             <div v-for="d in sharedAo.docs" :key="d.id" class="row" style="padding:8px 0;border-bottom:1px solid var(--hairline);gap:10px;align-items:center">
@@ -1690,18 +1874,54 @@
             <div class="field"><label>Lot / périmètre</label><input class="inp" v-model="sharedAo.contrib.lot" placeholder="ex. Lot 2 — Démolition"></div>
             <div class="field"><label>Qualifications (séparées par des virgules)</label><input class="inp" v-model="sharedAo.contrib.quals" placeholder="ex. Qualibat 1112, RGE"></div>
             <div class="field"><label>Références (une par ligne)</label><textarea class="inp" v-model="sharedAo.contrib.refs" rows="3"></textarea></div>
-            <div class="field"><label>Approche prix de votre lot</label><textarea class="inp" v-model="sharedAo.contrib.chiffrage_note" rows="2" placeholder="ex. forfait 18 000 € HT"></textarea></div>
+            <!-- Doctrine de visibilité : le prix de VENTE du lot est lisible par le chef de file ; le détail est chiffré dans le navigateur -->
+            <div class="field"><label>Prix de vente de votre lot (€ HT)</label><input class="inp" type="number" min="0" step="1" v-model="sharedAo.contrib.prix_lot_ht" placeholder="ex. 280000"><div class="muted small" style="margin-top:3px">{{ cryptoLabels().not_zero_knowledge }}</div></div>
+            <div class="field"><label>Détail de votre chiffrage (coûts, marges, méthode)</label>
+              <div v-if="sharedAo.detailLocked" style="padding:12px;border:1px dashed var(--border);border-radius:9px;background:var(--surface-2)">
+                <div class="row small" style="gap:6px;align-items:center"><i data-lucide="lock" style="width:14px;height:14px"></i><b>Détail verrouillé</b><span class="muted">— chiffré sur un autre navigateur ou avec un autre code.</span></div>
+                <div class="row wrap" style="gap:10px;margin-top:8px;align-items:center"><button class="btn sm primary" @click="sharedUnlock()"><i data-lucide="key-round"></i>Déverrouiller avec mon code</button><a href="#" class="muted small" style="text-decoration:underline" @click.prevent="sharedLostCode()">J'ai perdu mon code</a></div>
+              </div>
+              <textarea v-else class="inp" v-model="sharedAo.detailClair" rows="4" placeholder="ex. main-d'œuvre 120 000 €, matériel 90 000 €, sous-traitance 40 000 €, marge 12 %"></textarea>
+              <div class="lock-note"><i data-lucide="lock" style="width:13px;height:13px;flex:none;margin-top:1px"></i><span>{{ cryptoLabels().lock }} {{ cryptoLabels().lost }}</span></div>
+            </div>
+            <div class="field"><label>Vos capacités (déclarées par vous, visibles du chef de file)</label><div class="row wrap" style="gap:8px"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.ca_n1" placeholder="Votre CA du dernier exercice (€)" style="flex:1;min-width:200px" aria-label="Votre CA du dernier exercice"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.effectif" placeholder="Effectif" style="width:120px" aria-label="Effectif"></div></div>
+            <div class="field"><label>Signataire de votre part</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.representant_legal" placeholder="Représentant légal (nom)" style="flex:1;min-width:160px" aria-label="Représentant légal"><input class="inp" v-model="sharedAo.contrib.signataire_qualite" placeholder="Qualité (gérant, président…)" style="flex:1;min-width:140px" aria-label="Qualité du signataire"></div></div>
             <div class="field"><label>Paragraphe de présentation</label><textarea class="inp" v-model="sharedAo.contrib.memoire_paragraph" rows="4" placeholder="Votre savoir-faire sur ce lot"></textarea></div>
             <div class="field"><label>Contact</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.contact.nom" placeholder="Nom" style="flex:1;min-width:130px"><input type="email" class="inp" v-model="sharedAo.contrib.contact.email" placeholder="Email" style="flex:1;min-width:130px"><input type="tel" class="inp" v-model="sharedAo.contrib.contact.telephone" placeholder="Téléphone" style="flex:1;min-width:130px"></div></div>
 
             <div class="field"><label>Mes pièces administratives (attestations, Kbis, formulaire DC2…)</label>
-              <div v-for="pc in sharedAo.pieces" :key="pc.id" class="row" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
-                <div style="flex:1;min-width:0"><span class="small strong">{{ pc.name }}</span><span class="muted small"> · {{ koSize(pc.size) }}</span></div>
+              <div v-for="pc in sharedAo.pieces" :key="pc.id" class="row wrap" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
+                <div style="flex:1;min-width:150px"><span class="small strong">{{ pc.name }}</span><span class="muted small"> · {{ koSize(pc.size) }}</span></div>
+                <select class="inp" :value="pc.piece_type||''" @change="sharedPatchPiece(pc,{piece_type:$event.target.value})" style="width:auto;font-size:12px;padding:4px 8px" aria-label="Type de la pièce"><option value="">Type ?</option><option v-for="t in pieceTypes" :key="t.k" :value="t.k">{{ t.l }}</option></select>
+                <input class="inp" type="date" :value="pc.expiration_date||''" @change="sharedPatchPiece(pc,{expiration_date:$event.target.value})" style="width:auto;font-size:12px;padding:4px 8px" aria-label="Date d'expiration de la pièce" title="Date d'expiration (vide = sans date)">
                 <a class="btn icon sm ghost" :href="'/api/invite/'+sharedAo.token+'/contribution/piece/'+pc.id" aria-label="Voir"><i data-lucide="download"></i></a>
                 <button class="btn icon sm ghost" @click="sharedRemovePiece(pc.id)" aria-label="Retirer"><i data-lucide="trash-2"></i></button>
               </div>
-              <button class="btn sm" style="margin-top:8px" @click="$refs.sharedFile.click()" :disabled="sharedAo.busy"><span v-if="sharedAo.busy" class="spin"></span><i v-else data-lucide="upload"></i>Ajouter une pièce</button>
-              <input ref="sharedFile" type="file" class="hidden" @change="sharedUpload">
+              <div class="row wrap" style="gap:8px;margin-top:8px;align-items:center">
+                <select class="inp" v-model="sharedAo.upl.piece_type" style="width:auto;font-size:12px" aria-label="Type de la pièce à ajouter"><option value="">Type (détecté automatiquement)</option><option v-for="t in pieceTypes" :key="'u'+t.k" :value="t.k">{{ t.l }}</option></select>
+                <input class="inp" type="date" v-model="sharedAo.upl.expiration_date" style="width:auto;font-size:12px" aria-label="Date d'expiration de la pièce à ajouter" title="Date d'expiration (optionnelle)">
+                <button class="btn sm" @click="$refs.sharedFile.click()" :disabled="sharedAo.busy"><span v-if="sharedAo.busy" class="spin"></span><i v-else data-lucide="upload"></i>Ajouter une pièce</button>
+                <button class="btn sm" @click="sharedVaultOpen()" :disabled="sharedAo.busy"><i data-lucide="folder-lock"></i>Joindre depuis mon coffre-fort</button>
+                <input ref="sharedFile" type="file" class="hidden" @change="sharedUpload">
+              </div>
+              <div v-if="sharedAo.vault.open" style="margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2)">
+                <div class="row" style="gap:6px;align-items:center;margin-bottom:6px"><b class="small" style="flex:1">Mon coffre-fort — choisissez une pièce à joindre</b><button class="btn icon sm ghost" @click="sharedAo.vault.open=false" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+                <div v-if="sharedAo.vault.loading" class="muted small"><span class="spin"></span> Chargement…</div>
+                <div v-else-if="sharedAo.vault.needClaim" class="small row wrap" style="gap:8px;align-items:center"><span>Rattachez d'abord ce dossier à votre compte pour joindre vos pièces depuis votre coffre-fort.</span><button class="btn sm primary" @click="sharedClaimThenVault()"><i data-lucide="link"></i>Rattacher et joindre</button></div>
+                <div v-else-if="!sharedAo.vault.docs.length" class="muted small">Aucun document dans votre coffre-fort. Ajoutez-en depuis « Mes documents ».</div>
+                <div v-for="d in sharedAo.vault.docs" :key="'vd'+d.id" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
+                  <span style="flex:1;min-width:0">{{ d.name }}<span class="muted"> · {{ d.folder||d.category||'' }}<span v-if="d.expiration_date"> · expire le {{ fmtDate(d.expiration_date) }}</span></span></span>
+                  <button class="btn sm" @click="sharedFromVault(d)" :disabled="sharedAo.busy"><i data-lucide="paperclip"></i>Joindre</button>
+                </div>
+              </div>
+            </div>
+            <div v-if="sharedAo.coffre && sharedAo.coffre.members && sharedAo.coffre.members.length" class="field"><label>Coffre-fort croisé — qui a fourni quoi (statut seulement)</label>
+              <div class="cx-wrap"><table class="cx">
+                <thead><tr><th>Partenaire</th><th v-for="e in sharedAo.coffre.expected" :key="'sxh'+e.key">{{ e.label }}</th></tr></thead>
+                <tbody><tr v-for="(m,mi) in sharedAo.coffre.members" :key="'sxr'+mi" :class="{'cx-me':m.is_me}"><td><b>{{ m.company }}</b><span v-if="m.is_me" class="muted small"> (vous)</span></td>
+                  <td v-for="e in sharedAo.coffre.expected" :key="'sxc'+e.key"><span class="cxs" :class="cxPiece(m,e.key).status" :title="cxTitle(m,e.key)">{{ cxLabel(cxPiece(m,e.key)) }}</span></td></tr></tbody>
+              </table></div>
+              <div v-if="(sharedAo.coffre.alerts||[]).length" style="margin-top:6px"><div v-for="(a,i) in sharedAo.coffre.alerts" :key="'sca'+i" class="row small" style="gap:6px;color:var(--warning-text)"><i data-lucide="circle-alert" style="width:13px;height:13px;flex:none"></i><span>{{ a }}</span></div></div>
             </div>
 
             <div class="row wrap" style="gap:8px;margin-top:13px;align-items:center">
@@ -1709,6 +1929,18 @@
               <button class="btn primary" @click="sharedSubmit()" :disabled="sharedAo.busy"><i data-lucide="send"></i>Soumettre au chef de file</button>
             </div>
           </div>
+
+          <!-- Mon journal : qui a vu quoi sur MA part (projection sans email ni IP d'un autre membre) -->
+          <details class="card pad" style="margin-top:14px" @toggle="sharedJournalToggle($event)">
+            <summary style="cursor:pointer;font-weight:700;font-size:13.5px;user-select:none">Mon journal — qui a vu quoi</summary>
+            <div class="muted small" style="margin-top:4px">{{ (sharedAo.journal && sharedAo.journal.integrity_label) || 'Journal infalsifiable tenu par Adjugo' }}<span v-if="sharedAo.journal && sharedAo.journal.chained" style="color:var(--success-text)"> ✓</span></div>
+            <ul v-if="sharedAo.journal && sharedAo.journal.entries.length" class="jrn">
+              <li v-for="(e,i) in sharedAo.journal.entries" :key="'jr'+i"><span class="jrn-at">{{ auditWhen(e.at) }}</span><span class="jrn-who" :class="e.who">{{ e.who==='vous'?'Vous':(e.who==='mandataire'?'Mandataire':'Partenaire') }}</span><span style="flex:1;min-width:0">{{ e.label }}<span v-if="e.detail" class="muted"> · {{ e.detail }}</span></span></li>
+            </ul>
+            <div v-else-if="sharedAo.journal" class="muted small" style="margin-top:6px">Aucune entrée pour l'instant.</div>
+          </details>
+
+          <div style="margin-top:16px;text-align:center"><a href="#" class="muted small" style="text-decoration:underline" @click.prevent="sharedDecline()">Décliner l'invitation</a></div>
         </section>
 
       </div>

@@ -98,8 +98,9 @@ def agent_stats(current_user: User = Depends(get_current_user),
             for lk in links:
                 grp_ids.add(lk.project_id)
                 partners_by_proj.setdefault(lk.project_id, set()).add(names.get(lk.cotraitant_id) or "Partenaire")
+            from app.services.groupement_members import active_invite_filter
             for inv in db.query(ProjectInvite).filter(ProjectInvite.project_id.in_(pids2),
-                                                      ProjectInvite.revoked.is_(False)).all():
+                                                      active_invite_filter()).all():
                 grp_ids.add(inv.project_id)
                 if getattr(inv, "company_name", None):
                     partners_by_proj.setdefault(inv.project_id, set()).add(inv.company_name)

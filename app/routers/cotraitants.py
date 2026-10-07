@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import Column, Integer, String, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, JSON, DateTime
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from app.core.database import get_db, Base
@@ -33,6 +33,13 @@ class Cotraitant(Base):
     specialites = Column(String, default="")   # "Électricité, CFO/CFA, Domotique"
     codes_cpv = Column(String, default="")      # "45310000, 45315100"
     departement = Column(String, default="")    # "29"
+    # ── Capacités étiquetées (score de groupement) ──
+    # D'où viennent ca_n1/effectif/qualifications de ce partenaire ? 'declare' = saisi par
+    # l'utilisateur SUR son partenaire (étiquette « déclaré par vous le … ») · 'rne' = vérifié
+    # SIRENE/RNE · 'contribution' = déclaré par le partenaire lui-même dans sa part · 'reseau'.
+    references = Column(JSON, default=list)
+    capacites_source = Column(String(20), default="declare")
+    capacites_updated_at = Column(DateTime, nullable=True)
 
 
 class ProjectCotraitant(Base):
@@ -46,7 +53,12 @@ class ProjectCotraitant(Base):
     lot = Column(String, default="")
     # Métrique de moat : d'où vient ce partenaire ?
     #   "discover" = suggéré par Adjugo (découverte SIRENE) · "reseau" = carnet d'adresses du Client
+    #   "simulation" = retenu depuis « Répondre à plusieurs ? » · "reseau_adjugo" (vague 3)
     source = Column(String, default="reseau")
+    # UNIFICATION « membre du groupement » : un rattachement SANS invite_id est un CANDIDAT
+    # retenu ; dès que l'invitation est créée, invite_id est posé et l'invitation ACTIVE
+    # (revoked=false ET declined_at IS NULL) devient LE membre (cf. groupement_members).
+    invite_id = Column(Integer, nullable=True, index=True)
 
 
 class CotraitantCreate(BaseModel):
@@ -69,11 +81,32 @@ class CotraitantCreate(BaseModel):
     specialites: Optional[str] = ""
     codes_cpv: Optional[str] = ""
     departement: Optional[str] = ""
+    # Score de groupement : références + provenance des capacités (ca_n1/effectif/qualifs).
+    references: Optional[list] = None
+    capacites_source: Optional[str] = None   # declare | rne | contribution | reseau (défaut 'declare')
 
     @field_validator("siret")
     @classmethod
     def _validate_siret(cls, v):
         return _clean_siret(v)
+
+    @field_validator("capacites_source")
+    @classmethod
+    def _validate_source(cls, v):
+        if v in (None, ""):
+            return None
+        if v not in CAPACITES_SOURCES:
+            raise ValueError("capacites_source doit valoir declare, rne, contribution ou reseau.")
+        return v
+
+
+CAPACITES_SOURCES = ("declare", "rne", "contribution", "reseau")
+_CAPACITY_FIELDS = ("ca_n1", "effectif", "qualifications")
+
+
+def _utcnow():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _clean_siret(v):
@@ -95,7 +128,12 @@ def list_cotraitants(current_user: User = Depends(get_current_user), db: Session
 
 @router.post("/")
 def create_cotraitant(data: CotraitantCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    ct = Cotraitant(user_id=current_user.id, **data.model_dump())
+    payload = data.model_dump()
+    # Capacités saisies par l'utilisateur SUR son partenaire → 'declare' (étiquette « déclaré
+    # par vous le … »), sauf provenance explicite ('rne' = vérifié SIRENE, etc.).
+    payload["references"] = payload.get("references") or []
+    payload["capacites_source"] = payload.get("capacites_source") or "declare"
+    ct = Cotraitant(user_id=current_user.id, capacites_updated_at=_utcnow(), **payload)
     db.add(ct)
     db.commit()
     db.refresh(ct)
@@ -107,8 +145,21 @@ def update_cotraitant(ct_id: int, data: CotraitantCreate, current_user: User = D
     if not ct:
         raise HTTPException(404, "Co-traitant introuvable")
     # exclude_unset : un PUT partiel ne réécrit plus les champs non transmis avec leur défaut.
-    for k, v in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    explicit_source = changes.pop("capacites_source", None)
+    if "references" in changes and changes["references"] is None:
+        changes["references"] = []
+    caps_changed = any(k in changes and changes[k] != getattr(ct, k) for k in _CAPACITY_FIELDS)
+    for k, v in changes.items():
         setattr(ct, k, v)
+    # Les capacités ont changé à la main → elles redeviennent « déclarées par vous », datées
+    # (sauf provenance explicite, ex. 'rne' après une re-vérification SIRENE).
+    if explicit_source:
+        ct.capacites_source = explicit_source
+        ct.capacites_updated_at = _utcnow()
+    elif caps_changed:
+        ct.capacites_source = "declare"
+        ct.capacites_updated_at = _utcnow()
     db.commit()
     db.refresh(ct)
     return ct
@@ -161,9 +212,12 @@ def list_project_cotraitants(project_id: int, current_user: User = Depends(get_c
         if not ct:
             continue
         out.append({"link_id": lk.id, "role": lk.role, "lot": lk.lot,
+                    "invite_id": getattr(lk, "invite_id", None), "source": lk.source or "reseau",
                     "id": ct.id, "name": ct.name, "siret": ct.siret, "code_ape": ct.code_ape,
                     "city": ct.city, "departement": ct.departement, "specialites": ct.specialites,
-                    "effectif": ct.effectif})
+                    "effectif": ct.effectif, "ca_n1": ct.ca_n1, "qualifications": ct.qualifications or "",
+                    "capacites_source": ct.capacites_source or "declare",
+                    "capacites_updated_at": ct.capacites_updated_at.isoformat() if ct.capacites_updated_at else None})
     return out
 
 
@@ -199,7 +253,10 @@ def attach_cotraitant(project_id: int, req: AttachRequest,
                                          or c.get("departement") or ""),   # Corse/DOM-TOM corrects
 
                             specialites=c.get("specialites") or c.get("naf_label") or "",
-                            effectif=c.get("effectif") or 0)
+                            effectif=c.get("effectif") or 0,
+                            # Découverte SIRENE : effectif du registre → capacités « vérifiées
+                            # SIRENE le … » (jamais un CA : non publié = à demander).
+                            references=[], capacites_source="rne", capacites_updated_at=_utcnow())
             db.add(ct); db.commit(); db.refresh(ct)
     else:
         raise HTTPException(400, "Fournir cotraitant_id ou company")

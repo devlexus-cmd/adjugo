@@ -5,6 +5,7 @@ Utilise le profil entreprise + criteres Go/No-Go pour un matching precis.
 """
 import json
 import re
+import unicodedata
 from app.core.config import get_settings
 from app.services.llm import client  # client Anthropic LAZY partagé (pas d'instanciation à l'import)
 
@@ -12,13 +13,128 @@ settings = get_settings()
 
 # Termes des clauses sensibles : souvent dans le CCAP, en fin de DCE — on garantit
 # qu'elles sont vues par l'analyse même dans un dossier de plusieurs centaines de pages.
+# Étendu (co-traitance v2) aux clauses de GROUPEMENT (forme conjoint/solidaire, mandataire,
+# appréciation des capacités en groupement, références, effectif) : sans ça, la clause
+# « chaque membre doit satisfaire individuellement » page 140 du RC n'entrait jamais dans
+# la fenêtre du LLM → exigence invisible → score de groupement faussement optimiste.
 _RISK_TERMS = re.compile(
     r"p[ée]nalit|retenue de garantie|garantie [aà] premi[èe]re demande|cautionnement|"
     r"avance|d[ée]lai d'ex[ée]cution|d[ée]lai de remise|crit[èe]res? d['e]|pond[ée]ration|"
     r"notation|valeur technique|prix|reconduction|tranche|variante|sous-trait|"
-    r"assurance|qualification|certificat|RGE|capacit[ée]|chiffre d'affaires",
+    r"assurance|qualification|certificat|RGE|capacit[ée]|chiffre d'affaires|"
+    r"groupement|conjoint|solidaire|mandataire|co-?traitan|r[ée]f[ée]rences?|effectif",
     re.IGNORECASE,
 )
+
+
+# ── Garde anti-hallucination des CITATIONS du DCE ─────────────────────────────────────
+# Le LLM « recopie » des phrases du DCE (CA exigé, forme de groupement imposée…). Une
+# phrase reformulée ou inventée serait affichée comme une citation → mensonge au client.
+# Règle : un extrait n'est conservé QUE s'il est une sous-chaîne du texte intégral (après
+# normalisation tolérante : casse, accents, espaces, apostrophes). Sinon '' (jamais affiché).
+
+_QUOTE_CHARS = "«»\"“”„‘’'"
+
+
+def _norm_citation(s) -> str:
+    """Forme normalisée pour la comparaison : minuscules, accents retirés (NFKD), apostrophes
+    typographiques → ', suites d'espaces/retours → un espace. Ne lève jamais."""
+    try:
+        t = unicodedata.normalize("NFKD", str(s or ""))
+        t = "".join(c for c in t if not unicodedata.combining(c))
+        t = t.replace("’", "'").replace("‘", "'").replace("ʼ", "'")
+        t = t.replace("“", '"').replace("”", '"').replace("„", '"')
+        t = t.replace(" ", " ").replace(" ", " ")
+        t = re.sub(r"\s+", " ", t.lower()).strip()
+        return t
+    except Exception:
+        return ""
+
+
+def citation_guard(text_integral: str, extrait: str, min_len: int = 12) -> str:
+    """Renvoie l'extrait d'ORIGINE (trim, sans guillemets d'encadrement, ≤ 400 caractères)
+    s'il est RÉELLEMENT une sous-chaîne du texte intégral du DCE (comparaison normalisée :
+    casse, accents, espaces multiples, apostrophes typographiques tolérés) ET s'il fait au
+    moins `min_len` caractères utiles ; sinon ''. Jamais d'exception."""
+    try:
+        ex = str(extrait or "").strip()
+        # Tolérance : l'IA encadre souvent sa citation de guillemets « » ou "" → retirés.
+        ex = ex.strip(_QUOTE_CHARS + " \t\r\n")
+        if not ex:
+            return ""
+        ex = ex[:400].strip()
+        nx = _norm_citation(ex)
+        if len(nx) < max(1, int(min_len)):
+            return ""
+        nt = _norm_citation(text_integral)
+        if not nt or nx not in nt:
+            return ""
+        return ex
+    except Exception:
+        return ""
+
+
+# Exigences dont le DCE doit être CITÉ (clé → présente dans details.exigences_sources).
+_EXIGENCE_KEYS = ("ca_minimum_requis", "qualifications_requises", "references_requises",
+                  "effectif_minimum_requis", "capacites_groupement")
+_FORMES_GROUPEMENT = ("non_specifie", "libre", "conjoint", "solidaire")
+_NON_SPECIFIE = "Non specifie dans le DCE"
+
+
+def _normalize_exigences(details: dict, text_integral: str) -> dict:
+    """Post-traitement DÉTERMINISTE des exigences de groupement extraites par l'IA :
+    - chaque citation (exigences_sources.*, forme_groupement.extrait) passe par citation_guard
+      sur le texte INTÉGRAL (pas la fenêtre envoyée au LLM) → '' si non vérifiable ;
+    - exigences_sources : toujours un dict des 5 clés (str) ;
+    - forme_groupement : toujours {"imposee": l'une des 4 valeurs, "extrait": str} ;
+    - capacites_groupement / references_requises / effectif_minimum_requis absents → non spécifié ;
+    - details["exigences_verifiees"] = {clé: bool(extrait non vide après garde)}.
+    Ne lève jamais (données LLM sales → valeurs neutres)."""
+    if not isinstance(details, dict):
+        return {}
+    try:
+        raw_src = details.get("exigences_sources")
+        raw_src = raw_src if isinstance(raw_src, dict) else {}
+        sources = {}
+        for k in _EXIGENCE_KEYS:
+            v = raw_src.get(k)
+            if isinstance(v, (list, tuple)):
+                v = " ".join(str(x) for x in v if x)
+            elif isinstance(v, dict):
+                v = v.get("extrait") or v.get("texte") or ""
+            sources[k] = citation_guard(text_integral, v)
+        details["exigences_sources"] = sources
+
+        fg = details.get("forme_groupement")
+        if isinstance(fg, str):                     # l'IA a parfois renvoyé « conjoint » tout court
+            fg = {"imposee": fg, "extrait": ""}
+        fg = fg if isinstance(fg, dict) else {}
+        imposee = _norm_citation(fg.get("imposee")).replace(" ", "_").replace("-", "_")
+        if imposee not in _FORMES_GROUPEMENT:
+            imposee = "non_specifie"
+        fg_extrait = fg.get("extrait")
+        if isinstance(fg_extrait, (list, tuple)):
+            fg_extrait = " ".join(str(x) for x in fg_extrait if x)
+        details["forme_groupement"] = {"imposee": imposee,
+                                       "extrait": citation_guard(text_integral, fg_extrait)}
+
+        for k in ("capacites_groupement", "references_requises", "effectif_minimum_requis"):
+            v = details.get(k)
+            if isinstance(v, (list, tuple)):
+                v = "; ".join(str(x) for x in v if x)
+            if v is None or (isinstance(v, str) and not v.strip()) or isinstance(v, (dict, bool)):
+                details[k] = _NON_SPECIFIE
+            else:
+                details[k] = str(v).strip()
+
+        verifiees = {k: bool(sources.get(k)) for k in _EXIGENCE_KEYS}
+        verifiees["forme_groupement"] = bool(details["forme_groupement"]["extrait"])
+        details["exigences_verifiees"] = verifiees
+    except Exception:
+        details.setdefault("exigences_sources", {k: "" for k in _EXIGENCE_KEYS})
+        details.setdefault("forme_groupement", {"imposee": "non_specifie", "extrait": ""})
+        details.setdefault("exigences_verifiees", {k: False for k in _EXIGENCE_KEYS + ("forme_groupement",)})
+    return details
 
 
 def select_dce_content(text: str, head: int = 9000, budget: int = 30000, window: int = 700) -> str:
@@ -95,6 +211,11 @@ Tu dois TOUJOURS repondre en JSON valide, sans texte avant ou apres. Voici le fo
     "critere_rse": "Oui - clause d'insertion sociale / Non",
     "ca_minimum_requis": "CA > 300 000 EUR sur 3 ans / Non specifie",
     "qualifications_requises": ["Qualibat 1312", "RGE"],
+    "references_requises": "ex. 3 references de travaux similaires sur 5 ans / Non specifie dans le DCE",
+    "effectif_minimum_requis": "ex. 10 salaries / Non specifie dans le DCE",
+    "capacites_groupement": "cumul admis / chaque membre doit satisfaire individuellement / mandataire seul / Non specifie dans le DCE",
+    "forme_groupement": {"imposee": "non_specifie | libre | conjoint | solidaire", "extrait": "phrase litterale du DCE ou vide"},
+    "exigences_sources": {"ca_minimum_requis": "phrase litterale du DCE ou vide", "qualifications_requises": "", "references_requises": "", "effectif_minimum_requis": "", "capacites_groupement": ""},
     "assurances_requises": ["RC Professionnelle", "Decennale"],
     "visite_obligatoire": "Oui, le 01/06/2026 a 14h / Non",
     "pieces_requises": [
@@ -136,6 +257,8 @@ Regles importantes :
   * "levier_negociation" propose une contre-proposition concrete et actionnable (article du CCP si pertinent)
   * Renvoie une liste vide [] si aucune clause notable, n'invente jamais
 - Pour "contact" : n'extrais le nom/email/telephone QUE s'ils figurent dans le DCE (souvent dans le reglement de consultation, rubrique "renseignements"). Si rien n'est indique, laisse les champs vides "" — n'invente JAMAIS de contact.
+- Exigences de candidature et de GROUPEMENT ("ca_minimum_requis", "qualifications_requises", "references_requises", "effectif_minimum_requis", "capacites_groupement", "forme_groupement") : n'extrais QUE si c'est ecrit dans le DCE, sinon "Non specifie dans le DCE". "capacites_groupement" dit comment les capacites sont appreciees quand plusieurs entreprises repondent ensemble : "cumul admis" (les capacites des membres s'additionnent), "chaque membre doit satisfaire individuellement", "mandataire seul", ou "Non specifie dans le DCE". "forme_groupement.imposee" vaut "conjoint" ou "solidaire" UNIQUEMENT si le reglement impose cette forme, "libre" s'il laisse le choix, "non_specifie" sinon.
+- Pour CHAQUE extrait ("exigences_sources".*, "forme_groupement.extrait") : recopie LITTERALEMENT la phrase du DCE (300 caracteres maximum), sans reformuler, sans resumer, sans corriger. Laisse "" si l'information n'est pas dans le DCE. Un extrait qui n'est pas une copie exacte du DCE sera rejete.
 - Si une information n'est pas dans le DCE, indique "Non specifie dans le DCE"
 - Extrais TOUTES les pieces demandees dans le reglement de consultation"""
 
@@ -374,7 +497,21 @@ def _detect_groupement(details: dict, company: dict = None) -> dict:
     ca = company.get("ca_n1") or 0
     if req_ca and ca and req_ca > ca:
         raisons.append("CA minimum exigé supérieur au vôtre — un groupement additionne les capacités.")
-    return {"recommande": bool(raisons), "raisons": raisons[:3]}
+    # Exigences de groupement (copie brute des faits extraits) : c'est le routeur qui calcule
+    # le score de groupement (app.services.groupement_scoring) — ici on ne fait que transmettre.
+    fg = details.get("forme_groupement")
+    if not isinstance(fg, dict):
+        fg = {"imposee": str(fg or "non_specifie"), "extrait": ""} if fg else \
+             {"imposee": "non_specifie", "extrait": ""}
+    exigences = {
+        "ca_minimum_requis": details.get("ca_minimum_requis") or "",
+        "qualifications_requises": reqs if isinstance(reqs, list) else ([reqs] if reqs else []),
+        "references_requises": details.get("references_requises") or "Non specifie dans le DCE",
+        "effectif_minimum_requis": details.get("effectif_minimum_requis") or "Non specifie dans le DCE",
+        "capacites_groupement": details.get("capacites_groupement") or "Non specifie dans le DCE",
+        "forme_groupement": fg,
+    }
+    return {"recommande": bool(raisons), "raisons": raisons[:3], "exigences": exigences}
 
 
 def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
@@ -430,8 +567,13 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
             result["go_decision"] = "a_etudier"
         if "summary" not in result:
             result["summary"] = "Analyse terminee."
-        if "details" not in result:
+        if "details" not in result or not isinstance(result.get("details"), dict):
             result["details"] = {}
+
+        # GARDE ANTI-HALLUCINATION des citations : chaque extrait « recopié » par l'IA est
+        # vérifié contre le texte INTÉGRAL du DCE (pas la fenêtre envoyée au LLM) ; un extrait
+        # non retrouvé devient '' (jamais affiché). Exigences de groupement normalisées.
+        _normalize_exigences(result["details"], text)
 
         # SCORE GO/NO-GO DÉTERMINISTE : l'IA a EXTRAIT les faits ci-dessus ; le score est
         # recalculé par un barème ouvert et reproductible (jamais laissé au LLM).

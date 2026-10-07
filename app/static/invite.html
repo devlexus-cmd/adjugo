@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js"></script>
+  <script src="/static/cotraitance-crypto.js"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -20,6 +21,16 @@
     .g-doc { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 13px; border:1px solid var(--border,#e6e8ec); border-radius:10px; margin-top:8px; background:var(--surface,#fff); }
     ul.g-list { margin:4px 0 0; padding-left:18px; } ul.g-list li { margin:2px 0; }
     .g-res { padding:12px 14px; border:1px solid var(--border,#e6e8ec); border-radius:11px; margin-top:10px; background:var(--surface,#fff); }
+    /* Co-traitance v2 : compléments locaux (les composants partagés sont dans styles.css) */
+    .g-sec { margin-top:14px; padding-top:12px; border-top:1px solid var(--hairline,#eef0f3); }
+    .g-members { list-style:none; margin:6px 0 0; padding:0; }
+    .g-members li { display:flex; gap:7px; align-items:center; flex-wrap:wrap; padding:5px 0; border-bottom:1px solid var(--hairline,#eef0f3); font-size:12.5px; }
+    .g-lockwrap textarea[readonly] { background:var(--surface-2,#f6f7f9); color:var(--text-2,#6b7280); cursor:not-allowed; }
+    .g-piece-meta { display:flex; gap:6px 10px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+    .g-piece-meta .inp { height:30px; padding:0 8px; font-size:12px; width:auto; }
+    .g-link { background:none; border:0; padding:0; color:var(--text-2,#6b7280); font-size:12px; text-decoration:underline; cursor:pointer; font-family:inherit; }
+    .g-link:hover { color:var(--text,#16181d); }
+    @media (max-width:640px){ .g-fact { grid-template-columns:1fr; gap:1px 0; } .g-fact dt { margin-top:7px; } }
   </style>
 </head>
 <body>
@@ -74,7 +85,9 @@
       sourcing: ["Trouver des marchés", "Découvrez des appels d'offres publics en direct."],
       amont: ["Projets à venir", "Surveillez les marchés publics qui vous correspondent."],
     };
-    let DATA = null, ICONS;
+    let DATA = null, ICONS, CLAIM_BTN = null;
+    const PIECE_TYPES = [["kbis", "Kbis"], ["fiscale", "Attestation fiscale"], ["sociale", "Attestation sociale (URSSAF)"], ["assurance", "Assurance (RC / décennale)"], ["rib", "RIB"], ["qualification", "Qualification / certificat"], ["autre", "Autre pièce"]];
+    const PIECE_LABEL = Object.fromEntries(PIECE_TYPES);
     const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
     const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     const kb = (n) => !n ? "" : n < 1024 ? n + " o" : n < 1048576 ? (n / 1024).toFixed(0) + " Ko" : (n / 1048576).toFixed(1) + " Mo";
@@ -82,6 +95,15 @@
     const fmtDate = (s) => { if (!s) return ""; try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" }); } catch (e) { return s; } };
     const icons = () => { try { lucide.createIcons(); } catch (e) {} };
     const content = () => document.getElementById("content");
+    // Message d'erreur lisible depuis un `detail` FastAPI : chaîne, {message}, ou liste de validation pydantic.
+    function errText(e, fallback) {
+      const dt = e && e.detail;
+      if (!dt) return fallback;
+      if (typeof dt === "string") return dt;
+      if (dt.message) return dt.message;
+      if (Array.isArray(dt)) return dt.map(x => String((x && x.msg) || "").replace(/^Value error,\s*/i, "")).filter(Boolean).join(" · ") || fallback;
+      return fallback;
+    }
 
     const LABELS = { objet: "Objet", acheteur: "Acheteur", lieu: "Lieu d'exécution", duree: "Durée", delais: "Délais", lots: "Lots / allotissement", allotissement: "Allotissement", pieces_requises: "Pièces attendues", criteres_attribution: "Critères d'attribution", criteres: "Critères", montant_estime: "Montant estimé", type_marche: "Type de marché", procedure: "Procédure", date_limite: "Date limite" };
     function objLabel(x) {
@@ -158,6 +180,73 @@
       icons();
     }
 
+    // ── Stepper + « Pourquoi vous dans ce groupement » (for_member, vue membre) ──
+    // Règle : on n'affiche QUE ce que l'API envoie. Jamais le score seul du mandataire,
+    // jamais le prix d'un autre membre (l'API ne les transmet pas au partenaire).
+    const SOON_STEPS = { convention_a_signer: 1, pret_a_deposer: 1 };
+    const ROLE_LABEL = { cotraitant: "partenaire", sous_traitant: "sous-traitant", mandataire: "mandataire" };
+    const MEMBER_STATUS = { invited: ["invité", "pill neutral"], draft: ["brouillon", "pill neutral"], submitted: ["part soumise", "pill go"] };
+    const fmtShort = (s) => { if (!s) return ""; try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch (e) { return s; } };
+    const fmtDT = (s) => { if (!s) return ""; try { const d = new Date(s); return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } };
+    function renderForMember(head, fm, d) {
+      const st = fm.state || {};
+      const steps = Array.isArray(st.steps) ? st.steps : [];
+      if (steps.length) {
+        let idx = steps.findIndex(s => s.key === st.state);
+        if (idx < 0 && typeof st.index === "number") idx = st.index;
+        const gs = $(`<div class="gstep" aria-label="Étapes du groupement"></div>`);
+        steps.forEach((s, i) => {
+          const cls = i < idx ? " done" : i === idx ? " cur" : "";
+          const soon = (SOON_STEPS[s.key] && i > idx) ? " soon" : "";
+          gs.appendChild($(`<div class="gs${cls}${soon}"${i === idx ? ' aria-current="step"' : ""}>${esc(s.label)}</div>`));
+        });
+        head.appendChild(gs);
+      }
+      const box = $(`<div class="g-sec"></div>`);
+      box.appendChild($(`<b style="font-size:13.5px">Pourquoi vous dans ce groupement</b>`));
+      const cols = $(`<div class="sg-cols"></div>`);
+      const grp = $(`<div class="sg-col grp"></div>`);
+      if (fm.score_groupement == null) grp.innerHTML = `<div class="sg-big" style="font-size:22px">—</div><div class="sg-lab">Score du groupement : calculé par le mandataire après analyse</div>`;
+      else grp.innerHTML = `<div class="sg-big">${esc(fm.score_groupement)}<span style="font-size:15px;font-weight:600;opacity:.75">/100</span></div><div class="sg-lab">score du groupement</div>`;
+      cols.appendChild(grp);
+      const col2 = $(`<div class="sg-col"></div>`);
+      const ap = $(`<div class="row wrap" style="gap:5px;align-items:center;font-size:12.5px"></div>`);
+      ap.appendChild($(`<span style="font-weight:600">Vous apportez :</span>`));
+      if ((fm.my_apport || []).length) fm.my_apport.forEach(a => ap.appendChild($(`<span class="sg-chip by">${esc(a.label || a.key)}</span>`)));
+      else ap.appendChild($(`<span class="muted">précisé par le mandataire après analyse</span>`));
+      col2.appendChild(ap);
+      const se = fm.seuils || {};
+      const seuil = (ok, yes, no) => $(`<div class="small" style="margin-top:6px;color:${ok ? "var(--success-text,#1a7f4b)" : "var(--text-2,#6b7280)"}">${ok ? "✓ " + yes : "○ " + no}</div>`);
+      col2.appendChild(seuil(se.ca_cumule_ok === true, "Chiffre d'affaires cumulé suffisant", "Chiffre d'affaires cumulé à vérifier"));
+      col2.appendChild(seuil(se.qualifs_ok === true, "Qualifications exigées couvertes", "Qualifications exigées à vérifier"));
+      cols.appendChild(col2);
+      box.appendChild(cols);
+      if ((fm.gaps_combles || []).length) {
+        const g = $(`<div class="small" style="margin-top:10px"><b>Ce que le groupement comble :</b></div>`);
+        const gl = $(`<ul class="g-list"></ul>`);
+        fm.gaps_combles.forEach(l => gl.appendChild($(`<li>${esc(l)}</li>`)));
+        g.appendChild(gl); box.appendChild(g);
+      }
+      // Membres : entreprise · rôle · statut. Le mandataire (nom fourni par l'API) ouvre la liste.
+      const members = Array.isArray(st.members) ? st.members : [];
+      const nM = st.n_members != null ? st.n_members : members.length;
+      const nS = st.n_submitted != null ? st.n_submitted : members.filter(m => m.status === "submitted").length;
+      box.appendChild($(`<div class="row" style="gap:8px;align-items:center;margin-top:12px"><b style="font-size:13px;flex:1">Les membres du groupement</b><span class="pill neutral" style="font-size:11px">${esc(nS)}/${esc(nM)} parts reçues</span></div>`));
+      const ul = $(`<ul class="g-members"></ul>`);
+      if (d.mandataire) ul.appendChild($(`<li><span style="font-weight:600">${esc(d.mandataire)}</span><span class="muted">· mandataire (chef de file)</span></li>`));
+      members.forEach(m => {
+        const stt = MEMBER_STATUS[m.status] || [m.status || "", "pill neutral"];
+        const me = !!(d.invited && d.invited.company && m.company === d.invited.company);
+        ul.appendChild($(`<li><span style="font-weight:600">${esc(m.company || "Partenaire")}</span><span class="muted">· ${esc(ROLE_LABEL[m.role] || m.role || "partenaire")}</span>${me ? '<span class="muted">(vous)</span>' : ""}<span class="${stt[1]}" style="font-size:10.5px;margin-left:auto">${esc(stt[0])}</span></li>`));
+      });
+      if (!members.length) ul.appendChild($(`<li class="muted">Aucun autre partenaire invité pour l'instant.</li>`));
+      box.appendChild(ul);
+      if (st.offer_frozen) {
+        box.appendChild($(`<div class="offre-box"><i data-lucide="lock"></i><div style="flex:1"><div style="font-weight:700">Offre commune figée${st.frozen_at ? " le " + esc(fmtShort(st.frozen_at)) : ""}</div>${fm.warning_two_members ? '<div class="small muted">À deux, le total révèle mécaniquement la part de l\'autre.</div>' : ""}</div>${st.total_offre_ht != null ? `<div class="offre-total">${esc(eur(st.total_offre_ht))} HT</div>` : ""}</div>`));
+      }
+      head.appendChild(box);
+    }
+
     // ── Vue : Mon appel d'offres (vue bridée + contribution + pièces) ──
     function renderMonAO() {
       const d = DATA, p = d.project || {}, a = p.analysis || {};
@@ -182,6 +271,7 @@
           head.appendChild($(`<div style="margin-top:10px;padding:9px 12px;border-radius:9px;background:${bg};border:1px solid ${bd};color:${bd};font-size:13px">⏱ ${txt} <span class="muted" style="color:inherit;opacity:.8">(date limite acheteur : ${esc(fmtDate(p.deadline))})</span></div>`));
         }
       }
+      if (d.for_member) { try { renderForMember(head, d.for_member, d); } catch (e) { console.warn("for_member", e); } }
       const dl = $(`<dl class="g-fact"></dl>`);
       const addFact = (t, h) => { dl.appendChild($(`<dt>${t}</dt>`)); const dd = document.createElement("dd"); dd.innerHTML = h; dl.appendChild(dd); };
       if (p.deadline) addFact("Date limite", `<b>${esc(fmtDate(p.deadline))}</b>`);
@@ -224,7 +314,15 @@
       const adresse = inp("Adresse"), cp = inp("Code postal"), ville = inp("Ville");
       const quals = inp("Qualifications, séparées par des virgules (ex. Qualibat 1112, RGE)");
       const refs = ta("Vos références — une par ligne", 3);
-      const chiffrage = ta("Votre approche prix pour votre lot (ex. forfait 18 000 € HT)", 2);
+      // Doctrine de visibilité : le PRIX DE VENTE du lot est en clair (le mandataire en a besoin) ;
+      // le DÉTAIL du chiffrage (coûts, marges, méthode) est chiffré dans le navigateur (AdjugoCrypto).
+      const CR = window.AdjugoCrypto || null;
+      const prix = inp("ex. 280000"); prix.type = "number"; prix.min = "0"; prix.step = "1"; prix.inputMode = "decimal";
+      const DETAIL_PH = "Coûts, marges, méthode de calcul — pour vous seul";
+      const detail = ta(DETAIL_PH, 4);
+      const ca = inp("ex. 1850000"); ca.type = "number"; ca.min = "0"; ca.step = "1"; ca.inputMode = "decimal";
+      const effectif = inp("ex. 14"); effectif.type = "number"; effectif.min = "0"; effectif.step = "1"; effectif.inputMode = "numeric";
+      const repr = inp("Nom et prénom du représentant légal"), qualite = inp("Qualité (ex. Président, Gérante)");
       const memoire = ta("Votre paragraphe de mémoire technique — votre savoir-faire sur ce lot", 4);
       const note = ta("Un mot au chef de file (optionnel) — une question, une précision sur votre lot…", 2);
       const cNom = inp("Contact — nom"), cMail = inp("Email"), cTel = inp("Téléphone");
@@ -238,9 +336,36 @@
       adresse.style.flex = "2"; adresse.style.minWidth = "180px"; cp.style.width = "110px"; ville.style.flex = "1"; ville.style.minWidth = "120px";
       [adresse, cp, ville].forEach(el => adr.appendChild(el));
       card.appendChild(field("Adresse", adr));
+      const sgr = document.createElement("div"); sgr.className = "row wrap"; sgr.style.gap = "8px";
+      [repr, qualite].forEach(el => { el.style.flex = "1"; el.style.minWidth = "160px"; sgr.appendChild(el); });
+      card.appendChild(field("Représentant légal et qualité du signataire", sgr));
       card.appendChild(field("Qualifications", quals));
+      // Capacités déclarées par le partenaire lui-même (comptent dans le score du groupement).
+      const capRow = document.createElement("div"); capRow.className = "row wrap"; capRow.style.gap = "8px";
+      const caW = document.createElement("div"); caW.style.cssText = "flex:1;min-width:180px";
+      caW.appendChild($(`<div class="muted small" style="margin-bottom:3px">Votre chiffre d'affaires (dernier exercice, € HT)</div>`)); caW.appendChild(ca);
+      const efW = document.createElement("div"); efW.style.cssText = "width:130px";
+      efW.appendChild($(`<div class="muted small" style="margin-bottom:3px">Effectif</div>`)); efW.appendChild(effectif);
+      capRow.appendChild(caW); capRow.appendChild(efW);
+      const capBox = document.createElement("div"); capBox.appendChild(capRow);
+      const capNote = $(`<span></span>`);
+      const capLine = $(`<div class="muted small" style="margin-top:4px">Ces capacités comptent dans le score du groupement — déclarées par vous. </div>`);
+      capLine.appendChild(capNote); capBox.appendChild(capLine);
+      card.appendChild(field("Vos capacités", capBox));
       card.appendChild(field("Références", refs));
-      card.appendChild(field("Approche prix de votre lot", chiffrage));
+      const prixBox = document.createElement("div"); prixBox.appendChild(prix);
+      prixBox.appendChild($(`<div class="muted small" style="margin-top:4px">C'est le seul montant que voit le mandataire : il en a besoin pour assembler l'offre commune.</div>`));
+      card.appendChild(field("Prix de vente de votre lot (€ HT)", prixBox));
+      const detBox = document.createElement("div"); detBox.className = "g-lockwrap"; detBox.style.position = "relative";
+      const lockIcon = $(`<span style="display:none;position:absolute;right:10px;top:8px;font-size:14px" aria-hidden="true">🔒</span>`);
+      detBox.appendChild(detail); detBox.appendChild(lockIcon);
+      const lockBar = $(`<div class="row wrap" style="gap:10px;align-items:center;margin-top:6px;display:none"></div>`);
+      const btnUnlock = $(`<button class="btn sm" type="button"><i data-lucide="key-round"></i>Déverrouiller avec mon code</button>`);
+      const btnLost = $(`<button class="g-link" type="button">J'ai perdu mon code</button>`);
+      lockBar.appendChild(btnUnlock); lockBar.appendChild(btnLost); detBox.appendChild(lockBar);
+      const lockMsg = $(`<div class="small" style="margin-top:4px;color:#b42318"></div>`); detBox.appendChild(lockMsg);
+      detBox.appendChild($(`<div class="lock-note"><span aria-hidden="true">🔒</span><span>${esc(CR ? CR.LABELS.lock : "Chiffré dans votre navigateur avec une clé qu'Adjugo ne stocke pas.")} ${esc(CR ? CR.LABELS.lost : "Si vous perdez votre code, ce détail est définitivement perdu.")}</span></div>`));
+      card.appendChild(field("Détail de votre chiffrage (coûts, marges, méthode)", detBox));
       card.appendChild(field("Paragraphe de mémoire technique", memoire));
       card.appendChild(field("Message au mandataire (optionnel)", note));
       const cr = document.createElement("div"); cr.className = "row wrap"; cr.style.gap = "8px";
@@ -254,9 +379,51 @@
       const addBtn = $(`<button class="btn" style="padding:7px 13px">+ Ajouter une pièce</button>`);
       const upMsg = $(`<span class="muted small" style="margin-left:8px"></span>`);
       const addRow = document.createElement("div"); addRow.className = "row wrap"; addRow.style.cssText = "gap:6px;align-items:center;margin-top:7px";
-      addRow.appendChild(addBtn); addRow.appendChild(upMsg);
+      // Type de pièce (défaut : détection automatique = champ non envoyé) + date de validité.
+      const typeSel = document.createElement("select"); typeSel.className = "inp"; typeSel.setAttribute("aria-label", "Type de pièce"); typeSel.style.cssText = "height:34px;padding:0 8px;font-size:12.5px";
+      typeSel.appendChild($(`<option value="">Type : détecter automatiquement</option>`));
+      PIECE_TYPES.forEach(([k, l]) => typeSel.appendChild($(`<option value="${k}">${esc(l)}</option>`)));
+      const expIn = document.createElement("input"); expIn.type = "date"; expIn.className = "inp"; expIn.setAttribute("aria-label", "Valide jusqu'au"); expIn.style.cssText = "height:34px;padding:0 8px;font-size:12.5px";
+      const expLab = $(`<label class="muted small" style="display:inline-flex;gap:6px;align-items:center">Valide jusqu'au</label>`); expLab.appendChild(expIn);
+      addRow.appendChild(addBtn); addRow.appendChild(typeSel); addRow.appendChild(expLab); addRow.appendChild(upMsg);
       piecesBox.appendChild(checklistEl); piecesBox.appendChild(piecesList); piecesBox.appendChild(addRow); piecesBox.appendChild(fileIn);
       card.appendChild(field("Mes pièces administratives (DC2, attestations, Kbis, assurance…)", piecesBox));
+      // ── Coffre-fort croisé : l'état des pièces de CHAQUE membre, jamais leurs fichiers ──
+      const cxBox = document.createElement("div");
+      cxBox.appendChild($(`<div class="muted small">Chaque membre voit si les pièces des autres sont présentes et à jour avant la date limite.</div>`));
+      const cxWrap = $(`<div class="cx-wrap"></div>`); const cxAlerts = document.createElement("div");
+      cxBox.appendChild(cxWrap); cxBox.appendChild(cxAlerts);
+      cxBox.appendChild($(`<div class="muted small" style="margin-top:8px">Vous voyez l'état des pièces de chaque membre, jamais leurs fichiers.</div>`));
+      const acct = $(`<div class="g-banner" style="margin:10px 0 0"><i data-lucide="user-check"></i><div class="small" style="flex:1">Vous avez un compte Adjugo ? Ouvrez ce dossier dans votre espace pour joindre vos pièces directement depuis votre coffre-fort.</div></div>`);
+      if (CLAIM_BTN) { const ob = $(`<button class="btn sm primary" type="button" style="flex:none">Ouvrir dans mon Adjugo</button>`); ob.onclick = () => CLAIM_BTN.click(); acct.appendChild(ob); }
+      else acct.appendChild($(`<a class="btn sm" href="/app" target="_blank" rel="noopener" style="flex:none">Me connecter</a>`));
+      cxBox.appendChild(acct);
+      card.appendChild(field("Les pièces de chaque membre du groupement", cxBox));
+      const CX_LABEL = (p) => ({ present: "Présente", valide_jusquau: "Valide jusqu'au " + fmtShort(p.expiration_date), expire_avant_limite: "Expire avant la limite", expire: "Expirée", manquant: "Manquante" })[p.status] || p.status || "";
+      async function reloadCoffre() {
+        let g = null;
+        try { g = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/coffre-croise").then(r => r.ok ? r.json() : null); } catch (e) {}
+        cxWrap.innerHTML = ""; cxAlerts.innerHTML = "";
+        if (!g) { cxWrap.appendChild($(`<div class="muted small">État des pièces indisponible pour le moment.</div>`)); return; }
+        const exp = g.expected || [], mem = g.members || [];
+        if (!mem.length) { cxWrap.appendChild($(`<div class="muted small">Aucun membre pour l'instant.</div>`)); return; }
+        const t = $(`<table class="cx"></table>`);
+        t.appendChild($(`<thead><tr><th>Membre</th>${exp.map(e => `<th>${esc(e.label)}</th>`).join("")}</tr></thead>`));
+        const tb = document.createElement("tbody");
+        mem.forEach(m => {
+          const tr = document.createElement("tr"); if (m.is_me) tr.className = "cx-me";
+          tr.appendChild($(`<td><b>${esc(m.company || "Partenaire")}</b>${m.is_me ? ' <span class="muted">(vous)</span>' : ""}<div class="muted" style="font-size:11px">${esc(ROLE_LABEL[m.role] || m.role || "")}</div></td>`));
+          exp.forEach(e => {
+            const p = (m.pieces || {})[e.key] || { status: "manquant" };
+            tr.appendChild($(`<td><span class="cxs ${esc(p.status || "manquant")}"${(m.is_me && p.name) ? ` title="${esc(p.name)}"` : ""}>${esc(CX_LABEL(p))}</span></td>`));
+          });
+          tb.appendChild(tr);
+        });
+        t.appendChild(tb); cxWrap.appendChild(t);
+        if (g.deadline) cxWrap.appendChild($(`<div class="muted small" style="margin-top:4px">Date limite de dépôt : ${esc(fmtShort(g.deadline))}.</div>`));
+        (g.alerts || []).forEach(a => cxAlerts.appendChild($(`<div class="warn-box"><i data-lucide="alert-triangle"></i><span>${esc(a)}</span></div>`)));
+        icons();
+      }
       // Checklist « ce qui est fourni / ce qu'il reste » (déduite des pièces déposées) :
       // le partenaire voit précisément ce qui manque, sans allers-retours par email.
       function renderChecklist(chk) {
@@ -271,8 +438,25 @@
       function renderPieces(pieces) {
         piecesList.innerHTML = "";
         (pieces || []).forEach(pc => {
-          const row = $(`<div class="g-doc" style="padding:8px 11px;margin-top:6px"></div>`);
-          row.appendChild($(`<div style="min-width:0"><div style="font-weight:600;font-size:13px">${esc(pc.name)}</div><div class="muted small">${kb(pc.size)}</div></div>`));
+          const row = $(`<div class="g-doc" style="padding:8px 11px;margin-top:6px;flex-wrap:wrap"></div>`);
+          const left = $(`<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:13px">${esc(pc.name)}</div><div class="muted small">${kb(pc.size)}${pc.piece_type ? " · " + esc(PIECE_LABEL[pc.piece_type] || pc.piece_type) : ""}${pc.expiration_date ? " · valide jusqu'au " + esc(fmtShort(pc.expiration_date)) : ""}</div></div>`);
+          // Type et date modifiables en place (PATCH) : le coffre croisé se met à jour aussitôt.
+          const meta = $(`<div class="g-piece-meta"></div>`);
+          const sel = document.createElement("select"); sel.className = "inp"; sel.setAttribute("aria-label", "Type de la pièce " + (pc.name || ""));
+          PIECE_TYPES.forEach(([k, l]) => sel.appendChild($(`<option value="${k}">${esc(l)}</option>`)));
+          sel.value = PIECE_LABEL[pc.piece_type] ? pc.piece_type : "autre";
+          const dt = document.createElement("input"); dt.type = "date"; dt.className = "inp"; dt.value = pc.expiration_date || ""; dt.setAttribute("aria-label", "Date de validité de la pièce " + (pc.name || ""));
+          const patch = async (body) => {
+            upMsg.textContent = "Mise à jour…";
+            const r = await fetch(pieceUrl + "/" + pc.id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+            if (r && r.ok) { upMsg.textContent = "Pièce mise à jour ✓"; reloadPieces(); }
+            else { const e = r ? await r.json().catch(() => ({})) : {}; upMsg.textContent = errText(e, "Modification impossible."); }
+          };
+          sel.onchange = () => patch({ piece_type: sel.value });
+          dt.onchange = () => patch({ expiration_date: dt.value });
+          meta.appendChild($(`<span class="muted small">Type</span>`)); meta.appendChild(sel);
+          meta.appendChild($(`<span class="muted small">Valide jusqu'au</span>`)); meta.appendChild(dt);
+          left.appendChild(meta); row.appendChild(left);
           const acts = document.createElement("div"); acts.className = "row"; acts.style.gap = "6px";
           acts.appendChild($(`<a class="btn sm" href="${pieceUrl}/${pc.id}">Voir</a>`));
           const rm = $(`<button class="btn sm">Retirer</button>`);
@@ -281,13 +465,15 @@
         });
         if (!pieces || !pieces.length) piecesList.appendChild($(`<div class="muted small">Aucune pièce déposée.</div>`));
       }
-      async function reloadPieces() { const c = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/contribution").then(r => r.ok ? r.json() : null).catch(() => null); renderPieces(c ? c.pieces : []); if (c) renderChecklist(c.pieces_checklist); }
+      async function reloadPieces() { const c = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/contribution").then(r => r.ok ? r.json() : null).catch(() => null); renderPieces(c ? c.pieces : []); if (c) { renderChecklist(c.pieces_checklist); curVer = c.version || curVer; setStatus(c.status); } reloadCoffre(); }
       addBtn.onclick = () => fileIn.click();
       fileIn.onchange = async () => {
         if (!fileIn.files.length) return; upMsg.textContent = "Envoi…";
         const fd = new FormData(); fd.append("file", fileIn.files[0]);
+        if (typeSel.value) fd.append("piece_type", typeSel.value);
+        if (expIn.value) fd.append("expiration_date", expIn.value);
         const r = await fetch(pieceUrl, { method: "POST", body: fd }); fileIn.value = "";
-        if (r.ok) { upMsg.textContent = "Pièce ajoutée ✓"; reloadPieces(); } else { const e = await r.json().catch(() => ({})); upMsg.textContent = (e && e.detail) ? e.detail : "Échec de l'envoi"; }
+        if (r.ok) { upMsg.textContent = "Pièce ajoutée ✓"; typeSel.value = ""; expIn.value = ""; reloadPieces(); } else { const e = await r.json().catch(() => ({})); upMsg.textContent = errText(e, "Échec de l'envoi"); }
       };
 
       const msg = $(`<span class="muted small"></span>`);
@@ -296,19 +482,147 @@
       const bar = document.createElement("div"); bar.className = "row wrap"; bar.style.cssText = "gap:8px;margin-top:13px;align-items:center";
       bar.appendChild(btnSave); bar.appendChild(btnSubmit); bar.appendChild(msg);
       card.appendChild(bar);
+      // Décliner : lien discret → confirmation → POST /decline → écran final (le lien renvoie ensuite 410).
+      const declineWrap = $(`<div style="margin-top:14px;text-align:right"></div>`);
+      const btnDecline = $(`<button class="g-link" type="button">Décliner l'invitation</button>`);
+      btnDecline.onclick = async () => {
+        const ok = await openModal({ title: "Décliner l'invitation ?", bodyHtml: "Vous ne ferez plus partie de ce groupement ; le mandataire sera prévenu. Ce lien ne fonctionnera plus ensuite.", confirmLabel: "Décliner l'invitation", cancelLabel: "Annuler" });
+        if (!ok) return;
+        btnDecline.disabled = true;
+        const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/decline", { method: "POST" }).catch(() => null);
+        if (r && r.ok) { finalScreen("✋", "Vous avez décliné cette invitation", "Le mandataire est prévenu. Ce lien ne fonctionne plus ; il pourra vous inviter de nouveau si besoin."); return; }
+        btnDecline.disabled = false; const e = r ? await r.json().catch(() => ({})) : {}; msg.textContent = errText(e, "Impossible de décliner pour le moment.");
+      };
+      declineWrap.appendChild(btnDecline); card.appendChild(declineWrap);
       content().appendChild(card);
+      // ── Mon journal : qui a vu / modifié quoi sur MA part + événements du groupement ──
+      const jCard = $(`<div class="card pad" style="margin-bottom:8px"></div>`);
+      const jHead = $(`<div class="row" style="gap:8px;align-items:center"><b style="font-size:13.5px;flex:1">Mon journal</b></div>`);
+      const jRefresh = $(`<button class="btn sm" type="button"><i data-lucide="refresh-cw"></i>Actualiser</button>`); jHead.appendChild(jRefresh);
+      jCard.appendChild(jHead);
+      jCard.appendChild($(`<div class="muted small" style="margin-top:3px">Qui a consulté ou modifié quoi sur votre part, et les événements du groupement.</div>`));
+      const jList = $(`<ul class="jrn"></ul>`); const jFoot = $(`<div class="muted small" style="margin-top:8px"></div>`);
+      jCard.appendChild(jList); jCard.appendChild(jFoot);
+      const WHO = { vous: "vous", mandataire: "mandataire", partenaire: "partenaire" };
+      async function loadJournal() {
+        jRefresh.disabled = true;
+        let j = null;
+        try { j = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/journal").then(r => r.ok ? r.json() : null); } catch (e) {}
+        jRefresh.disabled = false; jList.innerHTML = ""; jFoot.innerHTML = "";
+        if (!j) { jList.appendChild($(`<li class="muted">Journal indisponible pour le moment.</li>`)); return; }
+        const entries = j.entries || [];
+        if (!entries.length) jList.appendChild($(`<li class="muted">Aucune entrée pour l'instant.</li>`));
+        entries.forEach(e => jList.appendChild($(`<li><span class="jrn-at">${esc(fmtDT(e.at))}</span><span class="jrn-who ${esc(e.who || "")}">${esc(WHO[e.who] || e.who || "")}</span><span style="flex:1;min-width:0">${esc(e.label || e.action || "")}${e.detail ? ` <span class="muted">— ${esc(e.detail)}</span>` : ""}</span></li>`)));
+        jFoot.innerHTML = esc(j.integrity_label || "") + (j.chained ? ' <span style="color:var(--success-text,#1a7f4b);font-weight:600">✓ intégrité vérifiée</span>' : "");
+      }
+      jRefresh.onclick = loadJournal;
+      content().appendChild(jCard);
+      reloadCoffre(); loadJournal();
 
       const setStatus = (s) => { const ok = s === "submitted"; status.textContent = ok ? "✓ Soumise" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; };
       let curVer = 0;   // verrou optimiste : version chargée
-      const collect = () => ({ company_name: company.value, lot: lot.value, siret: siret.value, forme_juridique: forme.value, address: adresse.value, postal_code: cp.value, city: ville.value, qualifications: quals.value.split(",").map(s => s.trim()).filter(Boolean), references: refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })), chiffrage_note: chiffrage.value, memoire_paragraph: memoire.value, note_au_mandataire: note.value, contact: { nom: cNom.value, email: cMail.value, telephone: cTel.value }, version: curVer });
+      // ── Détail du chiffrage chiffré : état local ──
+      let curEnv = null;          // enveloppe actuellement enregistrée côté serveur
+      let keyCtx = null;          // clé en cache sur ce poste (null si verrouillé / pas encore créée)
+      let locked = false;         // enveloppe présente mais clé absente ici → zone en lecture seule
+      let pendingCode = null;     // code généré mais PAS encore noté par l'utilisateur → on n'envoie rien
+      let serverHasDetail = false, collectWarn = "";
+      const PENDING_KEY = "adjugo_cot_pending_" + TOKEN.slice(0, 16);
+      const pendingFlag = () => { try { return localStorage.getItem(PENDING_KEY) === "1"; } catch (e) { return false; } };
+      const setPendingFlag = (on) => { try { if (on) localStorage.setItem(PENDING_KEY, "1"); else localStorage.removeItem(PENDING_KEY); } catch (e) {} };
+      function setLocked(on, hint) {
+        locked = on; detail.readOnly = on;
+        detail.placeholder = on ? (hint || "Détail chiffré sur un autre navigateur — déverrouillez-le avec votre code de récupération.") : DETAIL_PH;
+        lockBar.style.display = (on && !hint) ? "" : "none";
+        lockIcon.style.display = on ? "" : "none";
+      }
+      // Au chargement : enveloppe + clé en cache → déchiffré ; enveloppe sans clé → verrouillé.
+      // Tant que la lecture n'est pas finie, la zone reste verrouillée (un PUT ne peut pas effacer l'enveloppe).
+      async function loadDetail(env) {
+        curEnv = (env && env.ciphertext) ? env : null; serverHasDetail = !!curEnv; keyCtx = null; lockMsg.textContent = ""; detail.value = "";
+        if (!curEnv) { setLocked(false); return; }
+        if (!CR) { setLocked(true, "Chiffrement indisponible dans ce navigateur."); return; }
+        setLocked(true, "Lecture de votre détail…");
+        try {
+          const r = await CR.ensureKey(TOKEN, curEnv);
+          if (r.ctx && !r.isNew) { keyCtx = r.ctx; detail.value = await CR.decrypt(r.ctx, curEnv); setLocked(false); return; }
+        } catch (e) {}
+        setLocked(true);
+      }
+      btnUnlock.onclick = async () => {
+        if (!CR || !curEnv) return;
+        let extra = "";
+        while (true) {
+          const code = await CR.askRecoveryCode(extra);
+          if (!code) return;
+          try {
+            const ctx = await CR.keyFromCode(TOKEN, code, curEnv);
+            detail.value = await CR.decrypt(ctx, curEnv); keyCtx = ctx; setLocked(false); lockMsg.textContent = ""; msg.textContent = "Détail déverrouillé ✓"; return;
+          } catch (e) { extra = `<p style="margin:8px 0 0;color:#b42318">Code incorrect. Vérifiez les caractères et réessayez.</p>`; }
+        }
+      };
+      btnLost.onclick = async () => {
+        if (!CR) return;
+        const ok = await CR.modal({ title: "Vous avez perdu votre code ?", bodyHtml: `<p style="margin:0">Sans ce code, <b>l'ancien détail de votre chiffrage sera définitivement perdu</b> : personne ne peut le récupérer, pas même Adjugo.</p><p style="margin:8px 0 0">Vous repartirez d'une zone vide. Un nouveau code vous sera affiché au prochain enregistrement.</p>`, confirmLabel: "Repartir de zéro", cancelLabel: "Annuler", requireCheck: "Je comprends que l'ancien détail sera définitivement perdu." });
+        if (!ok) return;
+        const rr = await CR.resetKey(TOKEN);
+        keyCtx = rr.ctx; pendingCode = rr.code; setPendingFlag(true); curEnv = null;
+        detail.value = ""; setLocked(false); lockMsg.textContent = "";
+        msg.textContent = "Zone réinitialisée — saisissez votre nouveau détail puis enregistrez.";
+      };
+      // Clé pour chiffrer avant envoi : {ctx} | {refused:true} (code pas noté) | {locked:true}.
+      // Le code de récupération est affiché UNE fois ; tant qu'il n'est pas noté, on n'envoie rien.
+      async function keyForSave() {
+        if (locked) return { locked: true };
+        let r = await CR.ensureKey(TOKEN, curEnv);
+        if (r.needCode) { setLocked(true); return { locked: true }; }
+        let code = r.isNew ? r.code : pendingCode;
+        if (!code && pendingFlag()) { const rr = await CR.resetKey(TOKEN); r = { ctx: rr.ctx }; code = rr.code; }
+        if (code) {
+          pendingCode = code; setPendingFlag(true);
+          const noted = await CR.showRecoveryCode(code);
+          if (!noted) return { refused: true };
+          pendingCode = null; setPendingFlag(false);
+        }
+        keyCtx = r.ctx;
+        return { ctx: r.ctx };
+      }
+      const numOrNull = (v) => { const s = String(v == null ? "" : v).trim().replace(/\s/g, "").replace(",", "."); if (s === "") return null; const n = Number(s); return isNaN(n) ? null : n; };
+      const intOrNull = (v) => { const n = numOrNull(v); return n == null ? null : Math.round(n); };
+      async function collect() {
+        collectWarn = "";
+        const body = { company_name: company.value, lot: lot.value, siret: siret.value, forme_juridique: forme.value, address: adresse.value, postal_code: cp.value, city: ville.value,
+          qualifications: quals.value.split(",").map(s => s.trim()).filter(Boolean),
+          references: refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })),
+          memoire_paragraph: memoire.value, note_au_mandataire: note.value,
+          contact: { nom: cNom.value, email: cMail.value, telephone: cTel.value },
+          prix_lot_ht: numOrNull(prix.value), representant_legal: repr.value, signataire_qualite: qualite.value,
+          capacites: { ca_n1: numOrNull(ca.value), effectif: intOrNull(effectif.value) },
+          version: curVer };
+        const txt = detail.value;
+        if (locked) { /* enveloppe présente mais non déverrouillée ici : on n'y touche pas (clé omise du PUT) */ }
+        else if (!txt.trim()) body.detail_chiffre = null;
+        else if (!CR) collectWarn = "Détail non enregistré : chiffrement indisponible dans ce navigateur.";
+        else {
+          const k = await keyForSave();
+          if (k.ctx) body.detail_chiffre = await CR.encrypt(k.ctx, txt);
+          else if (k.refused) collectWarn = "Détail non enregistré : notez d'abord votre code de récupération.";
+        }
+        return body;
+      }
       const url = "/api/invite/" + encodeURIComponent(TOKEN) + "/contribution";
       const fill = (c) => {
         company.value = c.company_name || ""; lot.value = c.lot || ""; quals.value = (c.qualifications || []).join(", ");
         siret.value = c.siret || ""; forme.value = c.forme_juridique || ""; adresse.value = c.address || ""; cp.value = c.postal_code || ""; ville.value = c.city || "";
         refs.value = (c.references || []).map(r => r.intitule || "").filter(Boolean).join("\n");
-        chiffrage.value = c.chiffrage_note || ""; memoire.value = c.memoire_paragraph || ""; note.value = c.note_au_mandataire || "";
+        memoire.value = c.memoire_paragraph || ""; note.value = c.note_au_mandataire || "";
+        prix.value = (c.prix_lot_ht == null) ? "" : String(c.prix_lot_ht);
+        repr.value = c.representant_legal || ""; qualite.value = c.signataire_qualite || "";
+        const cap = c.capacites || {}; ca.value = cap.ca_n1 == null ? "" : String(cap.ca_n1); effectif.value = cap.effectif == null ? "" : String(cap.effectif);
+        capNote.textContent = cap.declared_at ? "Dernière déclaration le " + fmtDate(cap.declared_at) + "." : "";
         const ct = c.contact || {}; cNom.value = ct.nom || ""; cMail.value = ct.email || ""; cTel.value = ct.telephone || "";
         curVer = c.version || 0; setStatus(c.status); renderPieces(c.pieces || []); renderChecklist(c.pieces_checklist);
+        loadDetail(c.detail_chiffre);
       };
       const c0 = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
       if (c0) fill(c0); else renderPieces([]);
@@ -319,16 +633,23 @@
       }
       if (c0 && c0.status === "submitted") showSubmittedBanner();
       const save = async () => {
-        const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) });
-        if (r.ok) { const c = await r.json(); curVer = c.version || 0; setStatus(c.status); return true; }
+        let body;
+        try { body = await collect(); } catch (e) { msg.textContent = "Chiffrement impossible : " + ((e && e.message) || "réessayez."); return false; }
+        const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (r.ok) {
+          const c = await r.json(); curVer = c.version || 0; setStatus(c.status);
+          if (!locked) { curEnv = (c.detail_chiffre && c.detail_chiffre.ciphertext) ? c.detail_chiffre : null; serverHasDetail = !!curEnv; }
+          const cap = c.capacites || {}; capNote.textContent = cap.declared_at ? "Dernière déclaration le " + fmtDate(cap.declared_at) + "." : "";
+          return true;
+        }
         if (r.status === 409) {   // édité ailleurs → on recharge la dernière version
           msg.textContent = "Modifié ailleurs — rechargement de la dernière version.";
           const c = await fetch(url).then(x => x.ok ? x.json() : null).catch(() => null); if (c) fill(c);
           return false;
         }
-        const e = await r.json().catch(() => ({})); msg.textContent = (e && e.detail) ? e.detail : "Erreur."; return false;
+        const e = await r.json().catch(() => ({})); msg.textContent = errText(e, r.status === 422 ? "Données invalides — vérifiez les montants saisis." : "Erreur."); return false;
       };
-      btnSave.onclick = async () => { msg.textContent = "Enregistrement…"; if (await save()) msg.textContent = "Brouillon enregistré ✓"; };
+      btnSave.onclick = async () => { msg.textContent = "Enregistrement…"; if (await save()) msg.textContent = collectWarn ? "Brouillon enregistré, mais : " + collectWarn : "Brouillon enregistré ✓"; };
       // Binding d'identité : avant la SOUMISSION, si le lien cible une adresse email et que
       // l'email est configuré, l'invité prouve qu'il contrôle cette adresse (code à 6 chiffres).
       async function ensureVerified() {
@@ -377,6 +698,8 @@
             + li(!!company.value, "Entreprise : <b>" + (esc(company.value) || "—") + "</b>")
             + li(!!lot.value, "Lot / périmètre : " + (esc(lot.value) || "—"))
             + li(!!siret.value, "SIRET : " + (esc(siret.value) || "à compléter"))
+            + li(numOrNull(prix.value) != null, "Prix de vente du lot : " + (numOrNull(prix.value) != null ? "<b>" + esc(eur(numOrNull(prix.value))) + " HT</b>" : "à compléter"))
+            + li(serverHasDetail, "Détail du chiffrage : " + (serverHasDetail ? "chiffré (le mandataire ne le voit pas)" : "non renseigné"))
             + li(nRefs > 0, nRefs + " référence(s)")
             + li(!!memoire.value, "Paragraphe de mémoire technique")
             + li(nPieces > 0, nPieces + " pièce(s) jointe(s)")
@@ -433,9 +756,12 @@
     }
 
     // ── Boot ──
-    function fail(title, msg) {
-      document.getElementById("loading").innerHTML = `<div style="font-size:34px;margin-bottom:8px">🔒</div><div style="font-weight:700;font-size:16px;color:var(--text,#16181d)">${esc(title)}</div><div style="margin-top:6px">${esc(msg)}</div>`;
+    function finalScreen(icon, title, msg) {
+      document.getElementById("shell").style.display = "none";
+      const l = document.getElementById("loading"); l.style.display = "";
+      l.innerHTML = `<div style="font-size:34px;margin-bottom:8px">${icon || "🔒"}</div><div style="font-weight:700;font-size:16px;color:var(--text,#16181d)">${esc(title)}</div><div style="margin-top:6px">${esc(msg)}</div>`;
     }
+    function fail(title, msg, icon) { finalScreen(icon, title, msg); }
     function setBanner() {
       const b = document.getElementById("g-banner");
       b.innerHTML = '<i data-lucide="info"></i><div class="small">Vous êtes invité par <b>' + esc(DATA.mandataire || "le mandataire") + '</b> sur ce dossier. <a href="/app" target="_blank" rel="noopener"><b>Créez votre compte Adjugo</b></a> pour débloquer tout l\'espace.</div>';
@@ -448,7 +774,13 @@
     });
 
     fetch("/api/invite/" + encodeURIComponent(TOKEN))
-      .then(async r => { if (r.status === 410) throw { t: "Lien expiré", m: "Ce lien de partage a expiré." }; if (!r.ok) throw { t: "Lien invalide", m: "Ce lien n'est plus valable ou a été révoqué." }; return r.json(); })
+      .then(async r => {
+        if (r.status === 410) {   // décliné OU expiré : distingués par le `detail` renvoyé
+          const e = await r.json().catch(() => ({})); const dt = (e && typeof e.detail === "string") ? e.detail : "";
+          if (/déclin/i.test(dt)) throw { icon: "✋", t: "Vous avez décliné cette invitation", m: dt };
+          throw { t: "Lien expiré", m: dt || "Ce lien de partage a expiré." };
+        }
+        if (!r.ok) throw { t: "Lien invalide", m: "Ce lien n'est plus valable ou a été révoqué." }; return r.json(); })
       .then(d => {
         DATA = d;
         const co = (d.invited && d.invited.company) || "Co-traitant";
@@ -470,6 +802,7 @@
           b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)";
           b.innerHTML = '<i data-lucide="user-check"></i><div class="small" style="flex:1">Vous avez un compte Adjugo — <b>ouvrez ce dossier dans VOTRE espace</b> pour contribuer avec votre base de connaissances et vos références.</div>';
           const btn = document.createElement("button"); btn.className = "btn sm primary"; btn.style.flex = "none"; btn.textContent = "Ouvrir dans mon Adjugo";
+          CLAIM_BTN = btn;
           btn.onclick = async () => {
             btn.disabled = true; btn.textContent = "Ouverture…";
             try { const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/claim", { method: "POST", headers: { Authorization: "Bearer " + myToken } });
@@ -482,7 +815,7 @@
         nav("monao", "Mon appel d'offres");
         icons();
       })
-      .catch(e => fail(e.t || "Accès impossible", e.m || "Réessayez plus tard."));
+      .catch(e => fail(e.t || "Accès impossible", e.m || "Réessayez plus tard.", e.icon));
   </script>
 </body>
 </html>
