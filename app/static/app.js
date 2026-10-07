@@ -190,8 +190,8 @@ const __adjApp = createApp({
             qa: [], qaInput: "", qaLoading: false,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
-      titles: { kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché" },
-      subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres" },
+      titles: { kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration" },
+      subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement" },
     };
   },
   computed: {
@@ -1694,6 +1694,30 @@ const __adjApp = createApp({
     },
 
     // ── Helpers d'affichage ──
+    // Pluriel lisible (« 1 partenaire », « 3 partenaires ») au lieu de « partenaire(s) ».
+    pl(n, one, many) { return Number(n) === 1 ? one : many; },
+    // « 6 % », « 280 000 € » : espace fine insécable entre le nombre et l'unité (jamais « % » seul en début de ligne).
+    nbspUnits(t) { return String(t == null ? "" : t).replace(/(\d)\s+(?=%|€)/g, "$1\u202F"); },
+    // Libellé COURT du verdict pour les listes compactes (fil du tableau de bord).
+    decShort(d) { return ({ go: "Bon potentiel", go_groupement: "En groupement", no_go: "Peu adapté", a_etudier: "À étudier" })[d] || "—"; },
+    // Fil du tableau de bord : un marché « bon potentiel en groupement » affiche le score DU GROUPEMENT
+    // (même règle que la vue Mes marchés) ; le score seul reste lisible au survol.
+    feedScore(p) {
+      if (p.go_decision === "go_groupement" && p.groupement_score != null) return p.groupement_score;
+      return p.match_score != null ? p.match_score : "—";
+    },
+    feedScoreTitle(p) {
+      if (p.go_decision === "go_groupement" && p.groupement_score != null)
+        return "Seul : " + (p.match_score != null ? p.match_score : "—") + "/100 · En groupement : " + p.groupement_score + "/100";
+      return p.match_score != null ? "Compatibilité " + p.match_score + "/100" : "Pas encore analysé";
+    },
+    feedRingStyle(p) {
+      if (p.go_decision === "go_groupement" && p.groupement_score != null) {
+        const deg = Math.max(0, Math.min(100, p.groupement_score)) * 3.6;
+        return `background:conic-gradient(var(--accent) ${deg}deg, var(--hairline) ${deg}deg)`;
+      }
+      return this.ringStyle(p.match_score);
+    },
     decLabel(d) { return ({ go: "Bon potentiel", go_groupement: "Bon potentiel en groupement", no_go: "Peu adapté", a_etudier: "À étudier" })[d] || "—"; },
     decColor(d) { return ({ go: "color:var(--go)", go_groupement: "color:var(--accent-text)", no_go: "color:var(--danger)", a_etudier: "color:var(--warn)" })[d] || "color:var(--muted)"; },
     // Kanban : un marché « bon potentiel en groupement » affiche son score de groupement (le score seul reste au survol).

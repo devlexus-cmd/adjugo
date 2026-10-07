@@ -102,6 +102,7 @@
         <a v-if="user.is_admin" class="nav-item" :class="{active:view==='admin'}" @click="go('admin')"><i data-lucide="shield"></i>Administration</a>
       </template>
       <div class="side-foot">
+        <a class="nav-item nav-fb" @click="openFeedback(); mobileNav=false"><i data-lucide="message-circle"></i>Mon avis<span class="nav-fb-hint">idée, problème</span></a>
         <div class="theme-toggle">
           <button :class="{on:theme==='light'}" @click="setTheme('light')" aria-label="Thème clair"><i data-lucide="sun"></i></button>
           <button :class="{on:theme==='system'}" @click="setTheme('system')" aria-label="Thème système"><i data-lucide="monitor"></i></button>
@@ -115,7 +116,7 @@
     <!-- Workspace -->
     <main class="work">
       <header class="top">
-        <button class="btn icon ghost menu-btn" @click="mobileNav=!mobileNav" aria-label="Menu"><i data-lucide="menu"></i></button>
+        <button class="btn icon ghost menu-btn" @click="mobileNav=!mobileNav" aria-label="Menu" :aria-expanded="mobileNav?'true':'false'"><i data-lucide="menu"></i></button>
         <div class="top-title"><h1>{{ titles[view] }}</h1><div class="sub">{{ subtitles[view] }}</div></div>
         <div class="spacer"></div>
         <div style="position:relative">
@@ -133,12 +134,12 @@
             </div>
           </div>
         </div>
-        <button v-if="view==='pipeline'||view==='dashboard'" class="btn primary" @click="go('sourcing')"><i data-lucide="target"></i>Trouver des marchés</button>
-        <button v-if="view==='cotraitants'" class="btn" @click="openDiscover()"><i data-lucide="search"></i>Découvrir</button>
-        <button v-if="view==='cotraitants'" class="btn primary" @click="openCotraitant()"><i data-lucide="plus"></i>Partenaire</button>
-        <button v-if="view==='contacts'" class="btn primary" @click="openContact()"><i data-lucide="plus"></i>Contact</button>
-        <button v-if="view==='invoices'" class="btn primary" @click="openInvoice()"><i data-lucide="plus"></i>Devis / facture</button>
-        <button v-if="view==='documents'" class="btn primary" @click="$refs.upl.click()" :disabled="uploading"><span v-if="uploading" class="spin"></span><i v-else data-lucide="upload"></i>Ajouter un document</button>
+        <button v-if="view==='pipeline'||view==='dashboard'" class="btn primary" @click="go('sourcing')" aria-label="Trouver des marchés"><i data-lucide="target"></i><span class="btn-l">Trouver des marchés</span></button>
+        <button v-if="view==='cotraitants'" class="btn" @click="openDiscover()" aria-label="Découvrir"><i data-lucide="search"></i><span class="btn-l">Découvrir</span></button>
+        <button v-if="view==='cotraitants'" class="btn primary" @click="openCotraitant()" aria-label="Ajouter un partenaire"><i data-lucide="plus"></i><span class="btn-l">Partenaire</span></button>
+        <button v-if="view==='contacts'" class="btn primary" @click="openContact()" aria-label="Ajouter un contact"><i data-lucide="plus"></i><span class="btn-l">Contact</span></button>
+        <button v-if="view==='invoices'" class="btn primary" @click="openInvoice()" aria-label="Nouveau devis ou facture"><i data-lucide="plus"></i><span class="btn-l">Devis / facture</span></button>
+        <button v-if="view==='documents'" class="btn primary" @click="$refs.upl.click()" :disabled="uploading" aria-label="Ajouter un document"><span v-if="uploading" class="spin"></span><i v-else data-lucide="upload"></i><span class="btn-l">Ajouter un document</span></button>
         <input ref="upl" type="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.odt,.ods,.zip,.txt" multiple class="hidden" @change="uploadDoc">
       </header>
       <div class="content">
@@ -146,7 +147,7 @@
         <!-- ░░ DASHBOARD ░░ -->
         <section v-if="view==='dashboard'">
           <!-- Premiers pas : onboarding guidé (disparaît une fois les 3 jalons faits) -->
-          <div v-if="showOnboarding" class="card pad" style="margin-bottom:14px;border:1px solid var(--accent-weak)">
+          <div v-if="showOnboarding" class="card pad dash-block" style="border:1px solid var(--accent-weak)">
             <div class="row" style="align-items:center;gap:8px">
               <i data-lucide="rocket" style="color:var(--accent-text)"></i>
               <b style="flex:1">Premiers pas sur Adjugo</b>
@@ -163,34 +164,35 @@
           <!-- Ruban de synthèse (inline, réglé — pas une grille de cartes) -->
           <div class="dash-ribbon">
             <div class="rb"><span class="rb-l">Appels d'offres</span><span class="rb-v num">{{ stats.total_projects||0 }}</span><span class="rb-d">{{ (stats.by_status&&stats.by_status.en_cours)||0 }} en cours</span></div>
-            <div class="rb"><span class="rb-l">Taux de réussite</span><span class="rb-v num">{{ stats.win_rate||0 }}<small>%</small></span><span class="rb-d">{{ stats.decided||0 }} clôturé(s)</span></div>
+            <div class="rb"><span class="rb-l">Taux de réussite</span><span class="rb-v num">{{ stats.win_rate||0 }}<small>%</small></span><span class="rb-d">{{ stats.decided||0 }} {{ pl(stats.decided||0, 'clôturé', 'clôturés') }}</span></div>
             <div class="rb"><span class="rb-l">Mes partenaires</span><span class="rb-v num">{{ cotraitants.length }}</span><span class="rb-d">vérifiés</span></div>
             <div class="rb" :class="{alert:expiring.length}"><span class="rb-l">À renouveler</span><span class="rb-v num">{{ expiring.length }}</span><span class="rb-d">documents</span></div>
           </div>
 
           <!-- ESPACE RÉSEAU ADJUGO — notre plus grosse force, en évidence sur l'accueil -->
-          <div class="card pad" style="margin-bottom:14px;border:1.5px solid var(--accent);background:var(--accent-weak)">
-            <div class="row wrap" style="align-items:center;gap:12px">
-              <i data-lucide="users-round" style="color:var(--accent-text);width:22px;height:22px;flex:none"></i>
-              <div style="flex:1;min-width:200px">
-                <b style="font-size:15px">Réseau Adjugo — gagnez les gros marchés à plusieurs</b>
-                <div class="muted small">Associez d'autres entreprises : chacune apporte sa part, l'IA assemble une réponse commune.<span v-if="consortiums.active"> <b>{{ consortiums.active }}</b> groupement(s) en cours · <b>{{ consortiums.partners_total }}</b> partenaire(s) · <b>{{ consortiums.submitted_total }}</b> part(s) reçue(s).</span></div>
-                <a v-if="grpAccessibleCount()" href="#" @click.prevent="go('pipeline')" class="row small" style="gap:5px;margin-top:6px;align-items:center;color:var(--accent-text);font-weight:600;text-decoration:none"><i data-lucide="users-round" style="width:14px;height:14px"></i><span>{{ grpAccessibleCount() }} marché(s) accessible(s) en groupement</span><i data-lucide="arrow-right" style="width:13px;height:13px"></i></a>
+          <div class="card pad dash-block" style="border:1.5px solid var(--accent);background:var(--accent-weak)">
+            <div class="dash-hero-h">
+              <i data-lucide="users-round" class="dh-ic"></i>
+              <div class="dh-tx">
+                <b class="dh-t">Réseau Adjugo — gagnez les gros marchés à plusieurs</b>
+                <div class="muted small">Associez d'autres entreprises : chacune apporte sa part, l'IA assemble une réponse commune.</div>
+                <div v-if="consortiums.active" class="muted small dh-stats"><span class="nw"><b>{{ consortiums.active }}</b> {{ pl(consortiums.active, 'groupement en cours', 'groupements en cours') }}</span> · <span class="nw"><b>{{ consortiums.partners_total }}</b> {{ pl(consortiums.partners_total, 'partenaire', 'partenaires') }}</span> · <span class="nw"><b>{{ consortiums.submitted_total }}</b> {{ pl(consortiums.submitted_total, 'part reçue', 'parts reçues') }}</span></div>
+                <a v-if="grpAccessibleCount()" href="#" @click.prevent="go('pipeline')" class="dh-link"><i data-lucide="users-round"></i><span>{{ grpAccessibleCount() }} {{ pl(grpAccessibleCount(), 'marché accessible', 'marchés accessibles') }} en groupement</span><i data-lucide="arrow-right"></i></a>
               </div>
-              <button class="btn primary" @click="go('pipeline')"><i data-lucide="user-plus"></i>Monter un groupement</button>
+              <button class="btn primary dh-act" @click="go('pipeline')"><i data-lucide="user-plus"></i>Monter un groupement</button>
             </div>
 
-            <div v-if="consortiums.consortiums.length" style="margin-top:12px">
-              <div v-for="cs in consortiums.consortiums" :key="cs.project_id" @click="openProjectById(cs.project_id)" class="row" style="padding:10px 12px;margin-top:8px;border:1px solid var(--border);border-radius:9px;background:var(--surface);gap:12px;align-items:center;cursor:pointer" @mouseover="$event.currentTarget.style.borderColor='var(--accent)'" @mouseleave="$event.currentTarget.style.borderColor='var(--border)'">
-                <div style="flex:1;min-width:0">
-                  <div class="strong small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cs.project }}</div>
-                  <div class="muted small">{{ cs.submitted }}/{{ cs.partners }} part(s) reçue(s)<span v-if="cs.pieces"> · {{ cs.pieces }} pièce(s)</span></div>
+            <div v-if="consortiums.consortiums.length" class="dash-items">
+              <div v-for="cs in consortiums.consortiums" :key="cs.project_id" @click="openProjectById(cs.project_id)" class="dash-item">
+                <div class="di-main">
+                  <div class="strong small di-title" :title="cs.project">{{ cs.project }}</div>
+                  <div class="muted small">{{ cs.submitted }}/{{ cs.partners }} {{ pl(cs.partners, 'part reçue', 'parts reçues') }}<span v-if="cs.pieces"> · {{ cs.pieces }} {{ pl(cs.pieces, 'pièce', 'pièces') }}</span></div>
                 </div>
-                <div style="width:120px;flex:none">
+                <div class="di-meter">
                   <div class="row" style="justify-content:space-between"><span class="muted small">prêt</span><b class="small" :style="{color:readinessColor(cs.readiness_pct)}">{{ cs.readiness_pct }}%</b></div>
                   <div style="height:6px;background:var(--surface-3);border-radius:3px;overflow:hidden;margin-top:3px"><div :style="{width:cs.readiness_pct+'%',height:'100%',background:readinessColor(cs.readiness_pct)}"></div></div>
                 </div>
-                <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-2);flex:none"></i>
+                <i data-lucide="chevron-right" class="di-go"></i>
               </div>
             </div>
 
@@ -201,23 +203,23 @@
           </div>
 
           <!-- Veille AMONT — projets détectés AVANT l'appel d'offres (longueur d'avance) -->
-          <div class="card pad" style="margin-bottom:14px;border:1px solid var(--accent-weak)">
-            <div class="row wrap" style="align-items:center;gap:12px">
-              <i data-lucide="radar" style="color:var(--accent-text);width:20px;height:20px;flex:none"></i>
-              <div style="flex:1;min-width:200px">
-                <b style="font-size:14.5px">Une longueur d'avance — projets détectés avant l'appel d'offres</b>
+          <div class="card pad dash-block" style="border:1px solid var(--accent-weak)">
+            <div class="dash-hero-h">
+              <i data-lucide="radar" class="dh-ic"></i>
+              <div class="dh-tx">
+                <b class="dh-t">Une longueur d'avance — projets détectés avant l'appel d'offres</b>
                 <div class="muted small">Adjugo lit les délibérations des collectivités et repère les investissements <b>des mois avant la publication du marché</b>. Positionnez-vous en premier.</div>
               </div>
-              <button class="btn" @click="go('amont')"><i data-lucide="scan-eye"></i>{{ amont.signals.length?'Voir les '+amont.signals.length+' projet(s)':'Détecter des projets' }}</button>
+              <button class="btn dh-act" @click="go('amont')"><i data-lucide="scan-eye"></i>{{ amont.signals.length ? (amont.signals.length === 1 ? 'Voir le projet' : 'Voir les ' + amont.signals.length + ' projets') : 'Détecter des projets' }}</button>
             </div>
-            <div v-if="topAmont.length" style="margin-top:12px">
-              <div v-for="s in topAmont" :key="s.id" @click="go('amont')" class="row" style="padding:10px 12px;margin-top:8px;border:1px solid var(--border);border-radius:9px;background:var(--surface);gap:12px;align-items:center;cursor:pointer" @mouseover="$event.currentTarget.style.borderColor='var(--accent)'" @mouseleave="$event.currentTarget.style.borderColor='var(--border)'">
-                <div style="flex:1;min-width:0">
-                  <div class="strong small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.intitule }}</div>
-                  <div class="muted small">{{ s.collectivite||'Collectivité' }}<span v-if="s.echeance_ao"> · AO estimé {{ s.echeance_ao }}</span><span v-if="s.domaine"> · {{ s.domaine }}</span></div>
+            <div v-if="topAmont.length" class="dash-items">
+              <div v-for="s in topAmont" :key="s.id" @click="go('amont')" class="dash-item">
+                <div class="di-main">
+                  <div class="strong small di-title" :title="s.intitule">{{ s.intitule }}</div>
+                  <div class="muted small di-meta">{{ s.collectivite||'Collectivité' }}<span v-if="s.echeance_ao"> ·&nbsp;AO estimé {{ s.echeance_ao }}</span><span v-if="s.domaine"> ·&nbsp;{{ s.domaine }}</span></div>
                 </div>
-                <span v-if="s.maturite!=null" class="pill" :class="s.maturite>=70?'go':(s.maturite>=40?'a_etudier':'neutral')" style="flex:none" title="Probabilité qu'un appel d'offres en découle">Maturité {{ s.maturite }}%</span>
-                <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-2);flex:none"></i>
+                <span v-if="s.maturite!=null" class="pill di-pill" :class="s.maturite>=70?'go':(s.maturite>=40?'a_etudier':'neutral')" title="Probabilité qu'un appel d'offres en découle">Maturité {{ s.maturite }}%</span>
+                <i data-lucide="chevron-right" class="di-go"></i>
               </div>
             </div>
             <div v-else class="row wrap" style="margin-top:11px;gap:10px;align-items:center;padding:11px 13px;border:1px dashed var(--border);border-radius:9px;background:var(--surface)">
@@ -238,13 +240,13 @@
               </div>
               <div v-else class="feed-list">
                 <div v-for="p in projects.slice(0,7)" :key="p.id" class="ao-row" @click="openProject(p)">
-                  <div class="score-ring" :style="ringStyle(p.match_score)"><span class="num">{{ p.match_score!=null?p.match_score:'—' }}</span></div>
+                  <div class="score-ring" :class="{grp:p.go_decision==='go_groupement'&&p.groupement_score!=null}" :style="feedRingStyle(p)" :title="feedScoreTitle(p)"><span class="num">{{ feedScore(p) }}</span><i v-if="p.go_decision==='go_groupement'&&p.groupement_score!=null" data-lucide="users-round" class="ring-badge"></i></div>
                   <div class="ao-mid">
                     <div class="ao-t" :title="p.name||'Sans titre'">{{ (p.name||'Sans titre').slice(0,64) }}</div>
                     <div class="ao-c">{{ p.client||'Acheteur non précisé' }}</div>
                   </div>
                   <div class="ao-tags">
-                    <span class="pill" :class="p.go_decision||'neutral'">{{ decLabel(p.go_decision) }}</span>
+                    <span class="pill" :class="p.go_decision||'neutral'">{{ decShort(p.go_decision) }}</span>
                     <span class="pill" :class="'st-'+(p.status||'nouveau')">{{ statusLabel(p.status||'nouveau') }}</span>
                   </div>
                   <i data-lucide="chevron-right" class="ao-go"></i>
@@ -265,10 +267,11 @@
                 <button class="act-link" @click="go('documents')"><i data-lucide="folder"></i><span>Mes documents</span><i data-lucide="chevron-right" class="cr"></i></button>
               </div>
 
-              <div v-if="expiring.length" class="alert-callout" @click="go('documents')">
+              <button v-if="expiring.length" type="button" class="alert-callout is-link" @click="go('documents')">
                 <i data-lucide="alert-triangle"></i>
-                <div><b>{{ expiring.length }} pièce(s) à renouveler</b><div class="small">Vérifiez la validité avant vos prochains dépôts.</div></div>
-              </div>
+                <div><b>{{ expiring.length }} {{ pl(expiring.length, 'pièce à renouveler', 'pièces à renouveler') }}</b><div class="small">Vérifiez la validité avant vos prochains dépôts.</div></div>
+                <i data-lucide="chevron-right" class="cr"></i>
+              </button>
 
               <div class="card pad" v-if="dashTotal()">
                 <h3>Mes marchés</h3>
@@ -280,51 +283,53 @@
                 </div>
               </div>
 
-              <div v-if="stats.segments && (stats.segments.by_zone.length||stats.segments.loss_reasons.length||(stats.segments.by_groupement&&stats.segments.by_groupement.length))" class="card pad">
-                <h3>Où vous gagnez / perdez</h3>
-                <div class="muted small" style="margin:2px 0 8px">{{ stats.decided||0 }} marché(s) terminé(s) · taux global {{ stats.win_rate||0 }}%</div>
-                <!-- Synthèse en langage clair : la leçon apprise de vos marchés (boucle gagné/perdu) -->
-                <div v-if="winInsights.length" style="margin:0 0 12px;padding:10px 12px;background:var(--accent-weak);border-radius:9px">
-                  <div class="row small" style="gap:6px;font-weight:600;margin-bottom:4px;color:var(--accent-text)"><i data-lucide="lightbulb" style="width:14px;height:14px"></i>Ce que vos marchés vous apprennent</div>
-                  <ul style="margin:0;padding-left:18px">
-                    <li v-for="(ins,i) in winInsights" :key="i" class="small" style="margin:3px 0" v-html="ins"></li>
-                  </ul>
+            </div>
+          <div v-if="stats.segments && (stats.segments.by_zone.length||stats.segments.loss_reasons.length||(stats.segments.by_groupement&&stats.segments.by_groupement.length))" class="card pad dash-wide">
+              <h3>Où vous gagnez / perdez</h3>
+              <div class="muted small" style="margin:2px 0 12px">{{ stats.decided||0 }} {{ pl(stats.decided||0, 'marché terminé', 'marchés terminés') }} · taux global {{ stats.win_rate||0 }}%</div>
+              <!-- Synthèse en langage clair : la leçon apprise de vos marchés (boucle gagné/perdu) -->
+              <div v-if="winInsights.length" style="margin:0 0 12px;padding:10px 12px;background:var(--accent-weak);border-radius:9px">
+                <div class="row small" style="gap:6px;font-weight:600;margin-bottom:4px;color:var(--accent-text)"><i data-lucide="lightbulb" style="width:14px;height:14px"></i>Ce que vos marchés vous apprennent</div>
+                <ul style="margin:0;padding-left:18px">
+                  <li v-for="(ins,i) in winInsights" :key="i" class="small" style="margin:3px 0" v-html="ins"></li>
+                </ul>
+              </div>
+              <div class="seg-grid">
+              <div v-if="stats.segments.by_zone.length">
+                <div class="sectitle">Par département</div>
+                <div v-for="z in stats.segments.by_zone.slice(0,4)" :key="'z'+z.key" class="row small" style="padding:4px 0;gap:8px">
+                  <span class="seg-l">{{ z.key==='Inconnu' ? 'Lieu non précisé' : 'Dépt ' + z.key }}</span>
+                  <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+z.win_rate+'%;background:var(--success)'"></div></div>
+                  <span class="num muted seg-v">{{ z.win_rate }}%</span>
                 </div>
-                <div v-if="stats.segments.by_zone.length">
-                  <div class="sectitle">Par département</div>
-                  <div v-for="z in stats.segments.by_zone.slice(0,4)" :key="'z'+z.key" class="row small" style="padding:4px 0;gap:8px">
-                    <span style="min-width:58px">Dépt {{ z.key }}</span>
-                    <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+z.win_rate+'%;background:var(--success)'"></div></div>
-                    <span class="num muted" style="min-width:66px;text-align:right">{{ z.win_rate }}%</span>
-                  </div>
+              </div>
+              <div v-if="stats.segments.by_groupement && stats.segments.by_groupement.length">
+                <div class="sectitle">Groupement vs solo</div>
+                <div v-for="g in stats.segments.by_groupement" :key="'g'+g.key" class="row small" style="padding:4px 0;gap:8px">
+                  <span class="seg-l">{{ g.key }} · {{ g.total }}</span>
+                  <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+g.win_rate+'%;background:var(--accent)'"></div></div>
+                  <span class="num muted seg-v">{{ g.win_rate }}%</span>
                 </div>
-                <div v-if="stats.segments.by_groupement && stats.segments.by_groupement.length">
-                  <div class="sectitle">Groupement vs solo</div>
-                  <div v-for="g in stats.segments.by_groupement" :key="'g'+g.key" class="row small" style="padding:4px 0;gap:8px">
-                    <span style="min-width:90px">{{ g.key }}</span>
-                    <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+g.win_rate+'%;background:var(--accent)'"></div></div>
-                    <span class="num muted" style="min-width:82px;text-align:right">{{ g.win_rate }}% ({{ g.total }})</span>
-                  </div>
+              </div>
+              <div v-if="stats.segments.by_partner && stats.segments.by_partner.length">
+                <div class="sectitle">Par partenaire</div>
+                <div v-for="pt in stats.segments.by_partner.slice(0,4)" :key="'pt'+pt.key" class="row small" style="padding:4px 0;gap:8px">
+                  <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="pt.key">{{ pt.key }}</span>
+                  <span class="num muted seg-v">{{ pt.win_rate }}% ({{ pt.total }})</span>
                 </div>
-                <div v-if="stats.segments.by_partner && stats.segments.by_partner.length">
-                  <div class="sectitle">Par partenaire</div>
-                  <div v-for="pt in stats.segments.by_partner.slice(0,4)" :key="'pt'+pt.key" class="row small" style="padding:4px 0;gap:8px">
-                    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="pt.key">{{ pt.key }}</span>
-                    <span class="num muted" style="min-width:82px;text-align:right">{{ pt.win_rate }}% ({{ pt.total }})</span>
-                  </div>
+              </div>
+              <div v-if="stats.segments.by_type && stats.segments.by_type.length">
+                <div class="sectitle">Par type de marché</div>
+                <div v-for="ty in stats.segments.by_type.slice(0,4)" :key="'ty'+ty.key" class="row small" style="padding:4px 0;gap:8px">
+                  <span class="seg-l">{{ ty.key }}</span>
+                  <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+ty.win_rate+'%;background:var(--success)'"></div></div>
+                  <span class="num muted seg-v">{{ ty.win_rate }}%</span>
                 </div>
-                <div v-if="stats.segments.by_type && stats.segments.by_type.length">
-                  <div class="sectitle">Par type de marché</div>
-                  <div v-for="ty in stats.segments.by_type.slice(0,4)" :key="'ty'+ty.key" class="row small" style="padding:4px 0;gap:8px">
-                    <span style="min-width:90px">{{ ty.key }}</span>
-                    <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+ty.win_rate+'%;background:var(--success)'"></div></div>
-                    <span class="num muted" style="min-width:82px;text-align:right">{{ ty.win_rate }}%</span>
-                  </div>
-                </div>
-                <div v-if="stats.segments.loss_reasons.length">
-                  <div class="sectitle">Motifs de perte</div>
-                  <div v-for="r in stats.segments.loss_reasons.slice(0,4)" :key="'lr'+r.reason" class="row small" style="padding:3px 0"><span style="flex:1">{{ r.reason }}</span><span class="pill no_go" style="font-size:10px">{{ r.count }}</span></div>
-                </div>
+              </div>
+              <div v-if="stats.segments.loss_reasons.length">
+                <div class="sectitle">Motifs de perte</div>
+                <div v-for="r in stats.segments.loss_reasons.slice(0,4)" :key="'lr'+r.reason" class="row small" style="padding:3px 0"><span style="flex:1">{{ nbspUnits(r.reason) }}</span><span class="pill no_go" style="font-size:10px">{{ r.count }}</span></div>
+              </div>
               </div>
             </div>
           </div>
@@ -1049,7 +1054,7 @@
 
           <!-- Radar des échéances : marchés en fin de contrat -->
           <div class="card pad" style="margin-top:10px">
-            <div class="row" style="gap:8px"><i data-lucide="timer-reset" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Radar des échéances</b><div class="spacer"></div>
+            <div class="row wrap" style="gap:8px"><i data-lucide="timer-reset" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Radar des échéances</b><div class="spacer"></div>
               <button class="btn sm" @click="srcRenewals()" :disabled="src.renewals.loading"><span v-if="src.renewals.loading" class="spin"></span><i v-else data-lucide="search"></i>Scanner (mots-clés ci-dessus)</button></div>
             <div class="muted small" style="margin-top:6px">Marchés <b>déjà attribués</b> dont le contrat arrive à terme → positionnez-vous auprès du client <b>avant la republication</b>. Dates de fin <b>estimées</b> (durée citée si disponible), sources réelles BOAMP.</div>
             <div v-if="src.renewals.done && !src.renewals.list.length" class="muted small" style="margin-top:8px">Aucune échéance proche sur ce périmètre.</div>
@@ -1250,7 +1255,7 @@
               </div>
             </div>
             <div class="row wrap" style="gap:8px">
-              <button class="btn primary" @click="amontScan()" :disabled="amont.scanning"><span v-if="amont.scanning" class="spin"></span><i v-else data-lucide="radar"></i>Lancer la recherche — analyser les délibérations</button>
+              <button class="btn primary btn-wrap" @click="amontScan()" :disabled="amont.scanning"><span v-if="amont.scanning" class="spin"></span><i v-else data-lucide="radar"></i>Lancer la recherche — analyser les délibérations</button>
               <button class="btn" @click="$refs.amontUpl.click()" :disabled="amont.uploading"><span v-if="amont.uploading" class="spin"></span><i v-else data-lucide="upload"></i>Importer une délibération</button>
               <input ref="amontUpl" type="file" accept=".pdf,.zip,.docx,.txt" class="hidden" @change="amontUpload">
               <button class="btn" @click="amont.pasteOpen=!amont.pasteOpen"><i data-lucide="clipboard-paste"></i>Coller un texte</button>
@@ -2059,9 +2064,6 @@
   </div>
 
   <!-- Bouton feedback flottant (utilisateur connecté) -->
-  <button v-if="token" @click="openFeedback()" title="Une idée ? Un problème ?" style="position:fixed;right:18px;bottom:18px;z-index:45;border:none;border-radius:24px;padding:10px 15px;background:var(--accent);color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.18);cursor:pointer;display:flex;align-items:center;gap:7px;font-weight:600;font-size:13px">
-    <i data-lucide="message-circle" style="width:16px;height:16px"></i>Mon avis
-  </button>
   <div v-if="fb.open" class="modal-back" @click.self="fb.open=false" style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:16px">
     <div class="card pad" style="max-width:440px;width:100%">
       <div class="row" style="align-items:center;gap:8px;margin-bottom:8px"><i data-lucide="message-circle" style="color:var(--accent-text)"></i><b style="flex:1">Votre retour</b><button class="icon-btn xs" @click="fb.open=false"><i data-lucide="x" style="width:15px;height:15px"></i></button></div>

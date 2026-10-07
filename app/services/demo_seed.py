@@ -540,7 +540,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
              extrait="« …lancement d'une étude de faisabilité pour la réhabilitation de la salle des sports, présence d'amiante à confirmer par diagnostic… »",
              pertinence="a_etudier", pertinence_score=58, source_name="Compte-rendu de la commission travaux — Millau",
              source_url="/static/demo/deliberation.html", source_date="2026-03-19",
-             domaine="bâtiment", phase="étude", echeance_ao="non daté",
+             domaine="bâtiment", phase="étude", echeance_ao="",
              financement="à définir", maturite=40),
     ]:
         db.add(Signal(user_id=uid, **sig))
