@@ -148,8 +148,7 @@
              d'une invitation, vague 3). Simple carte fermable : aucun email n'est envoyé pour ça. -->
         <div v-if="reseauSuggest && view!=='reseau'" class="card pad rn-suggest" role="region" aria-labelledby="rn-sg-t">
           <i data-lucide="network" class="rn-ic"></i>
-          <div class="rn-suggest-t"><b id="rn-sg-t">{{ reseauSuggest.titre }}</b><button v-if="reseauSuggest.message" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ reseauSuggest.message }}</span></button>
-            <div class="muted small">Publiez votre profil partenaire pour être trouvé par les entreprises qui montent un groupement.</div></div>
+          <div class="rn-suggest-t"><b id="rn-sg-t">{{ reseauSuggest.titre }}</b><button v-if="reseauSuggest.message" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ reseauSuggest.message }}</span></button></div>
           <div class="row wrap rn-g8 rn-suggest-a"><button type="button" class="btn sm primary" @click="rnSuggestGo()"><i data-lucide="building-2"></i>Créer mon profil partenaire</button><button type="button" class="btn sm ghost" @click="rnSuggestClose()">Plus tard</button></div>
         </div>
 

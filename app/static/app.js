@@ -1688,8 +1688,24 @@ const __adjApp = createApp({
     declinedLabel(inv) { const d = inv && this.ddmm(inv.declined_at); return "A décliné" + (d ? " le " + d : ""); },
     // « Inviter {nom} » : pré-remplit le formulaire d'invitation existant et y amène l'utilisateur.
     aoGrpInvite(m) {
+      // Partenaire du réseau Adjugo : invitation en 1 clic (Adjugo l'envoie, l'adresse reste masquée)
+      // au lieu du formulaire manuel, qui demanderait une adresse que le chef de file n'a pas.
+      const pid = m && m.kind === "reseau" ? this._grpProfileId(m) : "";
+      if (pid) { this.rnInviteOpen({ profile_id: pid, name: m.name }); return; }
       this.ao.share.form.company_name = (m && m.name) || ""; this.ao.share.open = true;
       this.$nextTick(() => { const el = this.$refs.reseauCard; if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" }); });
+    },
+    // Identifiant de profil d'un membre « reseau » de la composition retenue (le plan ne le garde pas) :
+    // retrouvé dans la simulation, les candidats ou le panneau « Partenaires pour ce marché » (SIRET, sinon nom).
+    _grpProfileId(m) {
+      if (!m) return "";
+      if (m.profile_id) return m.profile_id;
+      const n = String(m.name || "").trim().toLowerCase(), s = m.siret || "";
+      const pool = this.simPartners(this.ao.grp.sim).concat(((this.ao.grp.besoins || {}).candidats || {}).reseau || [],
+        ((this.ao.pm.d && this.ao.pm.d.lots) || []).reduce((a, l) => a.concat(l.reseau || []), []));
+      const same = x => (s && (x.siret === s || (x.siren && s.slice(0, 9) === x.siren))) || (n && String(x.name || "").trim().toLowerCase() === n);
+      const hit = pool.find(x => x && x.profile_id && same(x));
+      return (hit && hit.profile_id) || "";
     },
     async aoGrpHistoryToggle(ev) {
       const open = !!(ev && ev.target && ev.target.open); this.ao.grp.historyOpen = open;
@@ -3335,8 +3351,8 @@ __adjApp.component("rn-fiche", {
   methods: { jj: _rnJjmmaaaa },
   template: '<div class="rn-fiche">'
     + '<div class="rn-fiche-h"><div class="rn-fiche-id"><b class="rn-name">{{ c.name }}</b>'
-    + '<span v-if="c.siren" class="muted small nw">SIREN {{ c.siren }}</span>'
-    + '<button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">SIREN : le numéro à 9 chiffres qui identifie l\'entreprise dans le registre officiel des entreprises.</span></button></div>'
+    + '<span v-if="c.siren" class="muted small nw">SIREN {{ c.siren }}'
+    + '<button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">SIREN : le numéro à 9 chiffres qui identifie l\'entreprise dans le registre officiel des entreprises.</span></button></span></div>'
     + '<div v-if="lieu" class="muted small">{{ lieu }}</div>'
     + '<a v-if="lien" :href="lien" target="_blank" rel="noopener noreferrer" class="rn-link small"><i data-lucide="external-link"></i>Vérifier sur l\'annuaire des entreprises</a></div>'
     + '<p v-if="c.presentation" class="rn-pres">{{ c.presentation }}</p>'
