@@ -1651,44 +1651,154 @@ _PIECE_TYPE_VALUES = ("kbis", "fiscale", "sociale", "assurance", "rib", "qualifi
 _DPGF_EXT = {".pdf", ".xlsx", ".xls", ".ods", ".csv"}
 _DPGF_EXT_MSG = "Une DPGF de lot se dépose en PDF, en tableur (xlsx, xls, ods) ou en CSV."
 _DPGF_MAX_ROWS = 20000
+_DPGF_MAX_CELLS = 1_000_000      # par lecture : borne le travail fait en Python (fichier de 20 Mo compris)
+# Signature des formats binaires : un texte (CSV avec formules, page HTML) renommé en .xls ou en
+# .xlsx échapperait au contrôle du CSV → refusé, au lieu d'être accepté sans aucun contrôle.
+_DPGF_MAGIC = {".pdf": (b"%PDF-",), ".xlsx": (b"PK\x03\x04",), ".ods": (b"PK\x03\x04",),
+               ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",)}
 # Garde-fou de la doctrine (CSV seulement, seul format lisible sans dépendance) : une colonne
-# de coûts ou de marges serait visible du chef de file → refus explicite.
+# de coûts ou de marges serait visible du chef de file → refus explicite. Le motif s'applique à
+# un texte NORMALISÉ (_dpgf_norm : sans accents, minuscules, tout ce qui n'est ni lettre ni
+# chiffre devient une espace) : « Marge_HT », « coût-unitaire », « PRIX D'ACHAT » sont reconnus.
+# MÊME liste et MÊME normalisation que AdjugoCrypto.dpgf.forbiddenWord (cotraitance-crypto.js) :
+# un fichier produit par le navigateur n'est jamais refusé ici. Alternative de littéraux, sans
+# quantificateur imbriqué : temps linéaire.
 _DPGF_FORBIDDEN = re.compile(
-    r"\b(marges?|co[uû]ts?|d[ée]bours[ée]s?|prix\s+d['’]achat|frais\s+g[ée]n[ée]raux|coefficients?)\b",
-    re.IGNORECASE)
-_NUM_CELL = re.compile(r"^-?\d[\d \u00a0\u202f]*([.,]\d+)?\s*(€|%)?$")
+    r"\b(marges?|couts?|debourses?|prix d achat|prix achat|pu achat|prix de revient|frais generaux"
+    r"|coefficients?|coef|taux de marque)\b")
+_DPGF_WORD_LABEL = {"cout": "coût", "couts": "coûts", "debourse": "déboursé", "debourses": "déboursés",
+                    "prix d achat": "prix d'achat", "frais generaux": "frais généraux"}
+_DIGITS = "0123456789"
+_NUM_SEPS = " .,\u00a0\u202f"     # séparateurs de milliers / décimale admis ENTRE deux chiffres
+_NUM_MAX_LEN = 64                 # au-delà, une cellule n'est jamais lue comme un nombre
+
+
+def _dpgf_norm(s: str) -> str:
+    """Normalisation des en-têtes (identique à cotraitance-crypto.js) : NFKD, diacritiques
+    U+0300 à U+036F retirés, minuscules, tout caractère hors a-z et 0-9 → une espace."""
+    import unicodedata
+    s = "".join(ch for ch in unicodedata.normalize("NFKD", s or "") if not ("\u0300" <= ch <= "\u036f"))
+    return " ".join("".join(ch if ("a" <= ch <= "z" or ch in _DIGITS) else " " for ch in s.lower()).split())
+
+
+def _is_num_cell(v: str) -> bool:
+    """Valeur numérique de tableur (« 1 250,50 », « -150,00 », « 12 % », « 1e+21 ») : parseur
+    LINÉAIRE et borné, sans expression régulière. (L'ancienne regex, ambiguë sur les espaces,
+    faisait un retour arrière quadratique : une cellule de 100 000 espaces gelait tout le process.)"""
+    s = (v or "").strip()
+    if not s or len(s) > _NUM_MAX_LEN:
+        return False
+    if s[-1] in "€%":
+        s = s[:-1].rstrip()
+    if s[:1] == "-":
+        s = s[1:]
+    mant, exp = s, None
+    for i, ch in enumerate(s):
+        if ch in "eE":
+            mant, exp = s[:i], s[i + 1:]
+            break
+    if exp is not None:
+        if exp[:1] in ("+", "-"):
+            exp = exp[1:]
+        if not exp or any(ch not in _DIGITS for ch in exp):
+            return False
+    if not mant or mant[0] not in _DIGITS or mant[-1] not in _DIGITS:
+        return False
+    prev_sep = False
+    for ch in mant:
+        if ch in _DIGITS:
+            prev_sep = False
+        elif ch in _NUM_SEPS and not prev_sep:
+            prev_sep = True
+        else:
+            return False
+    return True
+
+
+def _dpgf_separators(text: str) -> list:
+    """Séparateurs qu'un tableur peut appliquer à ce fichier : « ; », « , », tabulation, plus celui
+    d'une directive « sep=X » en première ligne (Excel l'applique, quel que soit le reste)."""
+    seps = [";", ",", "\t"]
+    first = text.split("\n", 1)[0].strip()
+    if len(first) == 5 and first[:4].lower() == "sep=" and first[4] not in seps and first[4] != '"':
+        seps.append(first[4])
+    return seps
+
+
+def _dpgf_is_data_row(cells: list) -> bool:
+    """Ligne de valeurs : au moins deux cellules numériques, et pas moins que de cellules texte."""
+    n_num = n_txt = 0
+    for v in cells:
+        v = v.strip()
+        if not v:
+            continue
+        if _is_num_cell(v):
+            n_num += 1
+        else:
+            n_txt += 1
+    return n_num >= 2 and n_num >= n_txt
 
 
 def _check_dpgf_csv(content: bytes) -> None:
     """CSV de DPGF : UTF-8, aucune formule (injection à l'ouverture dans un tableur), aucune
-    colonne de coûts ou de marges dans les lignes d'en-tête. 422 explicite sinon."""
+    colonne de coûts ou de marges dans les lignes d'en-tête. 422 explicite sinon.
+
+    Formules : le séparateur qu'appliquera le tableur du chef de file n'est pas connu (réglage
+    régional, directive « sep= ») → CHAQUE cellule est contrôlée sous CHAQUE séparateur plausible.
+    En-tête : toutes les lignes non vides situées avant la première ligne de valeurs, quel que soit
+    leur nombre et qu'elles contiennent un nombre ou non. Garde-fou d'aide contre une erreur du
+    déposant : le contenu des PDF et des tableurs n'est pas inspecté."""
     import csv
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
         raise HTTPException(422, "La DPGF (CSV) doit être encodée en UTF-8.")
-    sample = text[:4096]
-    delim = ";" if sample.count(";") >= sample.count(",") else ","
+    seps = _dpgf_separators(text)
     try:
-        reader = csv.reader(io.StringIO(text), delimiter=delim)
-        header_rows = 0
-        for i, row in enumerate(reader):
-            if i >= _DPGF_MAX_ROWS:
-                raise HTTPException(422, f"DPGF trop longue (plus de {_DPGF_MAX_ROWS} lignes).")
-            cells = [c.strip() for c in row]
-            for v in cells:
-                if v and (v[0] in "=+@\t\r" or (v[0] == "-" and not _NUM_CELL.match(v))):
-                    raise HTTPException(422, "La DPGF contient une formule (cellule commençant par "
-                                             "« = », « + », « - » ou « @ ») : déposez des valeurs, pas des formules.")
-            # Lignes d'en-tête = premières lignes sans aucune cellule numérique.
-            if header_rows < 5 and cells and not any(_NUM_CELL.match(v) for v in cells if v):
-                header_rows += 1
-                bad = next((v for v in cells if _DPGF_FORBIDDEN.search(v)), None)
-                if bad:
-                    raise HTTPException(422, f"Une DPGF de lot ne contient que des prix de vente : retirez la "
-                                             f"colonne « {bad[:60]} » (elle serait visible du chef de file).")
+        for delim in seps:
+            n_cells = 0
+            # newline="" : fins de ligne \r, \n et \r\n reconnues comme un tableur (une ligne terminée par
+            # un \r seul est une nouvelle ligne pour Excel) ; rien d'autre (pas \x85, \u2028…).
+            for i, row in enumerate(csv.reader(io.StringIO(text, newline=""), delimiter=delim)):
+                if i >= _DPGF_MAX_ROWS:
+                    raise HTTPException(422, f"DPGF trop longue (plus de {_DPGF_MAX_ROWS} lignes).")
+                n_cells += len(row)
+                if n_cells > _DPGF_MAX_CELLS:
+                    raise HTTPException(422, "DPGF trop volumineuse pour un CSV : déposez-la en tableur ou en PDF.")
+                for cell in row:
+                    v = cell.strip()
+                    if v and (v[0] in "=+@" or (v[0] == "-" and not _is_num_cell(v))):
+                        raise HTTPException(422, "La DPGF contient une formule (cellule commençant par « = », "
+                                                 "« + », « - » ou « @ ») : déposez des valeurs, pas des formules.")
+        # En-tête : lignes non vides avant la première ligne de valeurs (sous l'un des séparateurs).
+        for line in io.StringIO(text, newline=""):
+            if not line.strip():
+                continue
+            if any(_dpgf_is_data_row(r) for d in seps for r in csv.reader([line], delimiter=d)):
+                break
+            m = _DPGF_FORBIDDEN.search(_dpgf_norm(line))
+            if m:
+                raise HTTPException(422, f"Une DPGF de lot ne contient que des prix de vente : retirez la "
+                                         f"colonne « {_DPGF_WORD_LABEL.get(m.group(1), m.group(1))} » "
+                                         "(elle serait visible du chef de file).")
     except csv.Error:
         raise HTTPException(422, "DPGF (CSV) illisible.")
+
+
+def _check_dpgf_signature(content: bytes, ext: str) -> None:
+    """DPGF en PDF ou en tableur : le contenu correspond bien à l'extension."""
+    magic = _DPGF_MAGIC.get(ext)
+    if magic and not any(content.startswith(m) for m in magic):
+        raise HTTPException(422, f"Ce fichier n'est pas un vrai {ext[1:].upper()} : enregistrez la DPGF depuis "
+                                 "votre tableur (xlsx, ods ou CSV) ou en PDF.")
+
+
+def _check_dpgf_content(content: bytes, ext: str) -> None:
+    """Contrôles d'une DPGF, quel que soit le chemin (dépôt, coffre-fort, changement de type)."""
+    if ext == ".csv":
+        _check_dpgf_csv(content)
+    else:
+        _check_dpgf_signature(content, ext)
 
 
 def _parse_expiration(s) -> Optional[date]:
@@ -1750,8 +1860,7 @@ def guest_upload_piece(token: str, request: Request, file: UploadFile = File(...
     content, ext = _read_upload(file, allowed=(_DPGF_EXT if is_dpgf else None))
     if is_dpgf:
         exp = None                                  # une DPGF n'expire pas
-        if ext == ".csv":
-            _check_dpgf_csv(content)
+        _check_dpgf_content(content, ext)
     safe_mime = _safe_mime(file.filename)        # type dérivé de l'extension, pas du client
     file_key = f"{inv.owner_id}/cotraitant/{uuid.uuid4().hex}{ext}"
     get_storage().save(file_key, content, safe_mime)
@@ -1790,8 +1899,16 @@ def guest_patch_piece(token: str, piece_id: int, body: PiecePatch, request: Requ
     fields = body.model_fields_set
     if "piece_type" in fields:
         new_type = _check_piece_type(body.piece_type) or "autre"
-        if new_type == "dpgf_lot" and os.path.splitext(pc.file_key or pc.name or "")[1].lower() not in _DPGF_EXT:
+        ext = os.path.splitext(pc.file_key or pc.name or "")[1].lower()
+        if new_type == "dpgf_lot" and ext not in _DPGF_EXT:
             raise HTTPException(422, _DPGF_EXT_MSG)
+        if new_type == "dpgf_lot" and (pc.piece_type or "") != "dpgf_lot":
+            # Devenir une DPGF = mêmes contrôles qu'au dépôt (signature du fichier, CSV sans formule).
+            try:
+                content = get_storage().load(pc.file_key)
+            except FileNotFoundError:
+                raise HTTPException(410, "Fichier absent du stockage")
+            _check_dpgf_content(content or b"", ext)
         pc.piece_type = new_type
     if "expiration_date" in fields:
         pc.expiration_date = _parse_expiration(body.expiration_date)
@@ -1846,7 +1963,6 @@ def guest_piece_from_vault(token: str, body: FromVault, request: Request,
     ext = os.path.splitext(doc.file_key or doc.name or "")[1].lower() or os.path.splitext(doc.name or "")[1].lower()
     file_key = f"{inv.owner_id}/cotraitant/{uuid.uuid4().hex}{ext}"
     safe_mime = _safe_mime(file_key)     # extension réelle du fichier, pas le nom (renommable)
-    storage.save(file_key, content, safe_mime)
     cat = doc.category.value if hasattr(doc.category, "value") else str(doc.category or "")
     ptype = {"fiscal": "", "assurances": "assurance", "qualifications": "qualification"}.get(cat, "")
     ptype = ptype or _classify_piece_type(doc.name or "")
@@ -1854,6 +1970,9 @@ def guest_piece_from_vault(token: str, body: FromVault, request: Request,
         ptype = "fiscale"
     if ptype == "dpgf_lot" and ext not in _DPGF_EXT:
         ptype = "autre"
+    if ptype == "dpgf_lot":
+        _check_dpgf_content(content, ext)      # mêmes contrôles qu'un dépôt direct (avant l'écriture)
+    storage.save(file_key, content, safe_mime)
     pc = ContributionPiece(
         contribution_id=c.id, project_id=inv.project_id, owner_id=inv.owner_id,
         name=os.path.basename(doc.name or "piece")[:500], file_key=file_key,

@@ -268,13 +268,25 @@
     let s = dec == null ? String(Math.round(Number(n) * 1000) / 1000) : Number(n).toFixed(dec);
     return s.replace(".", ",");
   }
-  // Une cellule de texte ne commence jamais par = + - @ (formule à l'ouverture dans un tableur).
-  const csvText = (v) => String(v == null ? "" : v).replace(/[\r\n\t]+/g, " ").replace(/^[\s=+\-@]+/, "").trim();
+  // Aucune cellule ne commence par = + - @ (formule à l'ouverture dans un tableur), QUEL QUE SOIT le
+  // séparateur qu'appliquera le tableur : le serveur découpe chaque ligne avec « ; », « , » et la
+  // tabulation. D'où : le début du texte, et ce qui suit chaque virgule (espaces et guillemets compris).
+  // Caractères de contrôle et sauts de ligne Unicode → espace (le serveur les traite comme des blancs).
+  const OPS = /[=+\-@]/g;
+  const csvText = (v) => String(v == null ? "" : v).replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029]+/g, " ")
+    .replace(/,[\s\u0085"=+\-@]+/g, (m) => m.replace(OPS, ""))
+    .replace(/^[\s\u0085=+\-@]+/, "").trim();
   const csvCell = (v) => { const s = String(v == null ? "" : v); return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  // Mots refusés par le serveur dans les lignes d'en-tête d'une DPGF (même liste) : un coût ou
-  // une marge ne doit jamais partir par erreur vers le chef de file.
-  const FORBIDDEN = /(^|[^a-zà-ÿ])(marges?|co[uû]ts?|d[ée]bours[ée]s?|prix\s+d['’]achat|frais\s+g[ée]n[ée]raux|coefficients?)([^a-zà-ÿ]|$)/i;
-  function forbiddenWord(s) { const m = FORBIDDEN.exec(String(s || "")); return m ? m[2] : ""; }
+  // Mots refusés par le serveur dans les lignes d'en-tête d'une DPGF : MÊME liste et MÊME
+  // normalisation (invites._DPGF_FORBIDDEN / _dpgf_norm) : sans accents, minuscules, tout ce qui
+  // n'est ni lettre ni chiffre devient une espace (« Marge_HT », « coût-unitaire » sont reconnus).
+  // Un coût ou une marge ne doit jamais partir par erreur vers le chef de file.
+  const FORBIDDEN = /(^| )(marges?|couts?|debourses?|prix d achat|prix achat|pu achat|prix de revient|frais generaux|coefficients?|coef|taux de marque)( |$)/;
+  const normWords = (s) => String(s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  // Libellé lisible du mot reconnu (le motif travaille sans accents).
+  const WORD_LABEL = { cout: "coût", couts: "coûts", debourse: "déboursé", debourses: "déboursés",
+    "prix d achat": "prix d'achat", "frais generaux": "frais généraux" };
+  function forbiddenWord(s) { const m = FORBIDDEN.exec(normWords(s)); return m ? (WORD_LABEL[m[2]] || m[2]) : ""; }
   function lineErrors(lignes) {
     const out = [];
     (lignes || []).forEach((l, i) => {
@@ -301,7 +313,7 @@
     const o = opts || {};
     for (const [lab, v] of [["Le nom de l'entreprise", o.entreprise], ["Le nom du lot", o.lot]]) {
       const w = forbiddenWord(csvText(v));
-      if (w) return lab + " contient le mot « " + w + " » : une DPGF de lot ne doit faire apparaître ni coût ni marge, ce mot est donc refusé en en-tête. Modifiez ce nom dans votre part.";
+      if (w) return lab + " (« " + csvText(v).slice(0, 80) + " ») contient le mot « " + w + " » : une DPGF de lot ne doit faire apparaître ni coût ni marge, ce mot est donc refusé en en-tête. Modifiez ce nom dans votre part.";
     }
     return "";
   }

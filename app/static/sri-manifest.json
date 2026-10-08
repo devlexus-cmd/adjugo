@@ -7,9 +7,9 @@
    "sha256": "ee2e770dafa2af42b13777cea21536ac6c555f8c1856dccb002ad745eae91997"
   },
   "/static/cotraitance-crypto.js": {
-   "integrity": "sha384-XeXF9c3sWCINLhcn8WsgnQA1g1we3veNODoV1/yHheSJcBMU2lSg+MGGmqFwlXF4",
-   "octets": 19824,
-   "sha256": "fcade57cd07e0f2ef60a168bb84c74e7f15e3961610130e7fcac96e60fbe2300"
+   "integrity": "sha384-Vho8AEpUucuoYTe4e4OmFl/p1v4rz2nqBKbIC1AUc36adSU7tP5XifKa8ptPtpKH",
+   "octets": 20952,
+   "sha256": "209f3b4f4eece42704a66c01eabf3e0bd181cf63d88a351e84abc862042eb209"
   },
   "/static/i18n.js": {
    "integrity": "sha384-oDik9h0VMLSezjzvjE5icFK+aIpVHzN4CCrDdXTColU7Xknf8tmAL3inncvd+DSq",
