@@ -247,8 +247,10 @@ def _read_upload(file: UploadFile) -> tuple:
 def _safe_mime(filename: str) -> str:
     """Type MIME DÉRIVÉ de l'extension (jamais le Content-Type fourni par le client) :
     l'extension étant en liste blanche (pdf/png/doc…), on ne peut jamais servir du
-    text/html → pas de XSS au téléchargement. Repli neutre forçant le download."""
-    return mimetypes.guess_type(filename or "")[0] or "application/octet-stream"
+    text/html → pas de XSS au téléchargement. Repli neutre forçant le download.
+    Table FIXE (app.core.mime), pas `mimetypes` qui dépend de la machine."""
+    from app.core.mime import mime_for
+    return mime_for(filename)
 
 
 def _attachment_headers(name: str) -> dict:
@@ -257,7 +259,8 @@ def _attachment_headers(name: str) -> dict:
     base = os.path.basename(name or "fichier")
     ascii_name = re.sub(r'[^A-Za-z0-9._ -]', "_", base) or "fichier"
     return {"Content-Disposition":
-            f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(base, safe='')}"}
+            f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(base, safe='')}",
+            "X-Content-Type-Options": "nosniff"}
 
 # Sous-ensemble SÛR de l'analyse exposé au co-traitant : FAITS PUBLICS du marché (déjà
 # dans l'avis publié), de quoi comprendre et préparer sa part — SANS la stratégie interne
@@ -879,7 +882,7 @@ def guest_download(token: str, doc_id: int, request: Request, db: Session = Depe
                  target_type="document", target_id=doc.id, detail=(doc.name or "")[:255],
                  ip=audit.client_ip(request))
     storage = get_storage()
-    signed = storage.url(doc.file_key)
+    signed = storage.url(doc.file_key, filename=doc.name)
     if signed:
         return RedirectResponse(signed)
     try:
@@ -888,7 +891,7 @@ def guest_download(token: str, doc_id: int, request: Request, db: Session = Depe
         raise HTTPException(410, "Fichier absent du stockage")
     return StreamingResponse(
         io.BytesIO(content),
-        media_type=doc.mime_type or "application/octet-stream",
+        media_type=_safe_mime(doc.file_key),     # jamais doc.mime_type (type annoncé par le client)
         headers=_attachment_headers(doc.name),
     )
 
@@ -1601,8 +1604,8 @@ def guest_piece_from_vault(token: str, body: FromVault, request: Request,
     if not content:
         raise HTTPException(410, "Fichier vide")
     ext = os.path.splitext(doc.file_key or doc.name or "")[1].lower() or os.path.splitext(doc.name or "")[1].lower()
-    safe_mime = _safe_mime(doc.name or doc.file_key)
     file_key = f"{inv.owner_id}/cotraitant/{uuid.uuid4().hex}{ext}"
+    safe_mime = _safe_mime(file_key)     # extension réelle du fichier, pas le nom (renommable)
     storage.save(file_key, content, safe_mime)
     cat = doc.category.value if hasattr(doc.category, "value") else str(doc.category or "")
     ptype = {"fiscal": "", "assurances": "assurance", "qualifications": "qualification"}.get(cat, "")
@@ -1652,7 +1655,7 @@ def guest_delete_piece(token: str, piece_id: int, request: Request, db: Session 
 
 def _stream_piece(pc: ContributionPiece):
     storage = get_storage()
-    signed = storage.url(pc.file_key)
+    signed = storage.url(pc.file_key, filename=pc.name)
     if signed:
         return RedirectResponse(signed)
     try:
@@ -1660,7 +1663,7 @@ def _stream_piece(pc: ContributionPiece):
     except FileNotFoundError:
         raise HTTPException(410, "Fichier absent du stockage")
     return StreamingResponse(io.BytesIO(content),
-                             media_type=pc.mime_type or "application/octet-stream",
+                             media_type=_safe_mime(pc.file_key),
                              headers=_attachment_headers(pc.name))
 
 
