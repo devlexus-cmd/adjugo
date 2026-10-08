@@ -32,7 +32,7 @@ from app.models import Company, GroupementSimulation, Project, User
 from app.services import audit
 from app.services.groupement_members import groupement_state
 from app.services.groupement_verdict import (
-    apports_for, ca_label, lead_member, member_from_cotraitant, member_from_sirene,
+    apports_for, ca_label, lead_member, member_from_cotraitant, member_from_profile, member_from_sirene,
     plan_members, pool_for_project, proof_label, scoring_module, verdict_label,
     with_declare_warning,
 )
@@ -42,7 +42,7 @@ logger = logging.getLogger("adjugo")
 router = APIRouter(prefix="/api/projects/{project_id}/groupement", tags=["Répondre à plusieurs"])
 
 MAX_MEMBERS = 4
-KINDS = ("attached", "annuaire", "sirene", "saisi")
+KINDS = ("attached", "annuaire", "sirene", "saisi", "reseau")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────────────
@@ -197,6 +197,7 @@ def besoins(request: Request, project_id: int, sirene: int = 0,
 class SimMember(BaseModel):
     kind: str
     id: Optional[int] = None
+    profile_id: Optional[str] = None     # kind 'reseau' : identifiant opaque du profil partenaire
     siret: Optional[str] = None
     name: Optional[str] = None
     ca_n1: Optional[float] = None
@@ -211,13 +212,26 @@ class SimulateIn(BaseModel):
     save: bool = True
 
 
-def _resolve_member(m: SimMember, db: Session, project: Project, ids: list) -> dict:
+def _resolve_member(m: SimMember, db: Session, project: Project, ids: list, user: User = None) -> dict:
     """Résolution CÔTÉ SERVEUR d'un membre : la base pour l'annuaire, le registre pour
-    'sirene' (capacités du body IGNORÉES), le body seulement pour 'saisi' (étiqueté)."""
+    'sirene' (capacités du body IGNORÉES), le profil PUBLIÉ pour 'reseau' (visible par le
+    chercheur : réciprocité, masquage, jamais démo), le body seulement pour 'saisi' (étiqueté)."""
     from app.routers.cotraitants import Cotraitant, ProjectCotraitant
     kind = (m.kind or "").strip().lower()
     if kind not in KINDS:
         raise HTTPException(422, f"Type de membre inconnu : {m.kind!r}")
+    if kind == "reseau":
+        from app.services import partner_network as pn
+        if user is None:
+            raise HTTPException(422, "Partenaire du réseau introuvable")
+        ctx = pn.searcher_context(db, user)
+        if not ctx["published"]:
+            raise HTTPException(403, {"code": "profil_non_publie",
+                                      "message": "Publiez votre profil partenaire pour simuler avec un partenaire du réseau."})
+        prof = pn.find_visible(db, ctx, m.profile_id or "")
+        if not prof:
+            raise HTTPException(404, "Partenaire introuvable dans le réseau.")
+        return member_from_profile(prof)
     if kind in ("attached", "annuaire"):
         if not m.id:
             raise HTTPException(422, "Identifiant du partenaire manquant")
@@ -267,6 +281,8 @@ def _run_simulation(gs, project: Project, lead: dict, criteria: dict, members: l
     for m in members:
         if m.get("kind") == "sirene" and ca_label(m):
             warnings.append(f"CA de {m.get('name')} non connu (non publié dans SIRENE) — à demander au partenaire")
+        elif m.get("kind") == "reseau" and ca_label(m):
+            warnings.append(f"CA de {m.get('name')} non affiché sur le réseau Adjugo — à demander au partenaire")
     res["warnings"] = with_declare_warning(members, warnings)
     res["members"] = [lead] + members
     res["decision_label"] = verdict_label(res.get("decision"))
@@ -287,7 +303,7 @@ def simulate(request: Request, project_id: int, data: SimulateIn,
     owner = data_owner_id(current_user, db)
     _company_data, criteria, lead = _lead_ctx(current_user, db)
 
-    members = [_resolve_member(m, db, project, ids) for m in data.members]
+    members = [_resolve_member(m, db, project, ids, current_user) for m in data.members]
     res = _run_simulation(gs, project, lead, criteria, members)
 
     sim_id = None
@@ -334,7 +350,7 @@ def _ensure_cotraitant(db, user: User, ids: list, m: dict):
                     ca_n1=m.get("ca_n1") if m.get("kind") == "saisi" else None,
                     effectif=m.get("effectif") or 0,
                     qualifications=", ".join(quals) if isinstance(quals, list) else (quals or ""),
-                    references=[], capacites_source="rne" if m.get("kind") == "sirene" else "declare",
+                    references=[], capacites_source={"sirene": "rne", "reseau": "reseau"}.get(m.get("kind"), "declare"),
                     capacites_updated_at=now)
     db.add(ct); db.flush()
     return ct
@@ -373,8 +389,17 @@ def retenir(request: Request, project_id: int, data: RetenirIn,
 
     # 1) Rattacher chaque partenaire (annuaire créé au besoin, pas de doublon de liaison)
     members_out = plan_members(partners, breakdown, res.get("gaps_combles"))
+    net_ctx = None
     for m, pm in zip(partners, members_out):
         ct = None
+        if m.get("kind") == "reseau":
+            # Profil du réseau : encore visible pour moi (publié, non masqué) ? Sinon on ne
+            # recopie rien dans l'annuaire (le partenaire a pu retirer sa publication).
+            from app.services import partner_network as _pn
+            net_ctx = net_ctx or _pn.searcher_context(db, current_user)
+            if not (net_ctx["published"] and _pn.find_visible(db, net_ctx, m.get("profile_id") or "")):
+                warnings.append(f"{m.get('name')} n'est plus visible dans le réseau Adjugo — non rattaché.")
+                continue
         if m.get("kind") in ("attached", "annuaire") and m.get("id"):
             ct = db.query(Cotraitant).filter(Cotraitant.id == m["id"], Cotraitant.user_id.in_(ids)).first()
             if not ct:

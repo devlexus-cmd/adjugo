@@ -320,6 +320,8 @@ from app.routers.jobs import router as jobs_router
 app.include_router(jobs_router)
 from app.routers.invites import router as invites_router
 app.include_router(invites_router)
+from app.routers.reseau import router as reseau_router     # réseau de partenaires (vague 3)
+app.include_router(reseau_router)
 # Produit ACHETEUR (collectivités) — Pilier 1 : rédacteur de DCE. Cloisonné du logiciel
 # PME (génération pure, aucune donnée tenant) ; page autonome /acheteur.
 from app.routers.dce import router as dce_router

@@ -315,6 +315,10 @@ def transfer_ownership(data: TransferIn, request: Request,
     for M in (CoSpace, ProjectInvite, ProjectContribution, ContributionPiece, GroupementSimulation,
               GroupementConvention, GroupementSignature):
         db.query(M).filter(M.owner_id == old_id).update({M.owner_id: new_id}, synchronize_session=False)
+    # (c) profil partenaire du réseau (vague 3, user_id UNIQUE = data_owner_id) : il suit le
+    #     nouveau propriétaire, sinon il devenait orphelin et inéditable par l'organisation.
+    from app.services.partner_network import transfer_profile
+    transfer_profile(db, old_id, new_id)
     db.commit()
     audit.record(db, action="team.ownership_transferred", owner_id=org.owner_id,
                  actor=f"user:{current_user.id}", actor_kind="owner",

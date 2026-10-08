@@ -87,6 +87,13 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
                                       for r in rows]
     except Exception:
         data["conventions_groupement"], data["accords_convention"] = [], []
+    # Profil partenaire du réseau Adjugo (vague 3) : tout son contenu, y compris la liste de
+    # masquage et le compteur anonyme d'apparitions (jamais QUI a cherché : non stocké).
+    try:
+        from app.services.partner_network import export_profile
+        data["profil_partenaire_reseau"] = export_profile(db, uid)
+    except Exception:
+        data["profil_partenaire_reseau"] = None
 
     payload = json.dumps(data, ensure_ascii=False, indent=2, default=str)
     return Response(content=payload, media_type="application/json",
@@ -209,6 +216,10 @@ def _erase_personal_rows(db, uid: int) -> None:
     dans les deux parcours (membre comme propriétaire solo)."""
     M, _, _ = _models()
     _del(db, M.Feedback, M.Feedback.user_id == uid)            # email + message libre
+    # Profil partenaire du réseau (vague 3) : effacé, et l'adresse du compte est retirée des
+    # invitations réseau stockées chez les chefs de file (UPDATE project_invites SET recipient='').
+    from app.services.partner_network import erase_profiles_of
+    erase_profiles_of(db, uid)
     cospace_ids = _ids(db, M.CoSpace.id, M.CoSpace.owner_id == uid)
     _del(db, M.CoMember, M.CoMember.user_id == uid,
          M.CoMember.space_id.in_(cospace_ids) if cospace_ids else None)

@@ -125,6 +125,17 @@ def run_trash_purge_endpoint(request: Request, db: Session = Depends(get_db)):
     return purge_trash(db)
 
 
+@router.post("/run-partner-network")
+def run_partner_network_endpoint(request: Request, db: Session = Depends(get_db)):
+    """Réseau de partenaires (vague 3) : re-vérifie SIRENE / BODACC / DECP des 25 profils
+    publiés vérifiés le plus anciennement (timeouts courts, budget temps borné). Dépublie
+    UNIQUEMENT sur une réponse positive « cessé » de SIRENE, jamais sur une erreur réseau.
+    À cron-er chaque semaine."""
+    _check_cron(request)
+    from app.services.partner_network import run_partner_network
+    return run_partner_network(db)
+
+
 @router.post("/run-audit-anchor")
 def run_audit_anchor_endpoint(request: Request, db: Session = Depends(get_db)):
     """Ancre la tête du journal d'audit : dernière entrée (id + hash) et nombre d'entrées

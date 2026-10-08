@@ -162,6 +162,39 @@ def member_from_sirene(fiche: dict, siret: str = "") -> dict:
     }
 
 
+def member_from_profile(p) -> dict:
+    """Profil PUBLIÉ du réseau Adjugo (vague 3) → membre 'reseau' du score de groupement.
+    Uniquement ce que la fiche publique expose : JAMAIS de CA ni d'effectif exact (inconnus →
+    « CA non publié — à demander »), qualifications = registres (RGE / Qualiopi via SIRENE),
+    références = celles que le partenaire a rendues publiques. Source 'reseau' = déclaré par
+    l'entreprise elle-même sur son profil (étiquette datée)."""
+    vs = p.verified_sirene if isinstance(getattr(p, "verified_sirene", None), dict) else {}
+    quals = []
+    if vs.get("est_rge") is True:
+        quals.append("RGE (registre ADEME)")
+    if vs.get("est_qualiopi") is True:
+        quals.append("Qualiopi (registre)")
+    try:
+        from app.services.partner_matching import trade_labels
+        labels = trade_labels()
+    except Exception:
+        labels = {}
+    refs = [{"name": r.get("intitule"), "client": r.get("client") or "", "year": r.get("annee")}
+            for r in (p.references_publiques or []) if isinstance(r, dict) and r.get("intitule")]
+    return {
+        "kind": "reseau", "id": None, "invite_id": None, "profile_id": p.public_id,
+        "name": p.name or "Partenaire", "siret": p.siret or "", "siren": p.siren or "",
+        "ca_n1": None, "effectif": None,
+        "qualifications": quals,
+        "specialites": ", ".join(labels.get(m, m) for m in (p.metiers or [])),
+        "code_ape": str(vs.get("naf") or "").replace(".", ""),
+        "departement": p.departement or "", "departements": list(p.departements or []),
+        "postal_code": p.postal_code or "", "city": p.city or "",
+        "references": refs,
+        "source": "reseau", "as_of": _iso(getattr(p, "declared_at", None)), "verified": False,
+    }
+
+
 def _member_from_normalized_company(c) -> dict:
     """NormalizedCompany (découverte SIRENE) → membre 'sirene'. RGE n'est ajouté que si le
     registre (ADEME via recherche-entreprises) le dit explicitement."""
@@ -195,6 +228,8 @@ def proof_label(member: dict) -> str:
         return f"vérifié SIRENE{d}"
     if src == "contribution":
         return f"déclaré par le partenaire{d}"
+    if src == "reseau":
+        return f"déclaré par l'entreprise sur son profil Adjugo{d}"
     if src == "profil":
         return "votre profil"
     return f"déclaré par vous{d}"

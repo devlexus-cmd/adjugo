@@ -73,6 +73,12 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+class RegisterOut(Token):
+    """Inscription : jeton + suggestion d'interface (vague 3 : « publiez votre profil
+    partenaire ») — simple affichage, aucun email n'est envoyé pour ça."""
+    suggest_profile: Optional[dict] = None
+
+
 class UserOut(BaseModel):
     id: int
     email: str
