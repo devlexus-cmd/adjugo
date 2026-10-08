@@ -563,7 +563,7 @@ const __adjApp = createApp({
       else txt = "valeur invalide";
       return label ? label + " : " + txt + "." : "Une information saisie est invalide (" + txt + ").";
     },
-    notify(msg, kind = "ok") { if (this._toastT) clearTimeout(this._toastT); this.toast = { msg, kind }; this._toastT = setTimeout(() => this.toast = null, 2600); },
+    notify(msg, kind = "ok") { if (this._toastT) clearTimeout(this._toastT); this.toast = { msg, kind }; this._toastT = setTimeout(() => this.toast = null, Math.min(9000, Math.max(2600, String(msg || "").length * 45))); },
     notifyUndo(msg, undoFn) { if (this._toastT) clearTimeout(this._toastT); this.toast = { msg, kind: "ok", undo: undoFn }; this._toastT = setTimeout(() => this.toast = null, 7000); },
     doUndo() { const t = this.toast; this.toast = null; if (t && t.undo) t.undo(); },
 
@@ -1729,6 +1729,7 @@ const __adjApp = createApp({
       const d = this.reseau.p.d, o = (d && d.options) || {};
       return { metiers: o.metiers || [], roles: o.roles || [], disponibilites: o.disponibilites || [], presentation_max: o.presentation_max || 300, references_max: o.references_max || 5 };
     },
+    plFr(n, one, many) { return Math.abs(Number(n) || 0) < 2 ? one : many; },
     rnStatutPill(s) { return ({ publie: "go", brouillon: "neutral", retire: "a_etudier", aucun: "neutral" })[s] || "neutral"; },
     rnRoleLabel(r) { return ({ cotraitant: "Partenaire du groupement (co-traitant)", sous_traitant: "Sous-traitant", mandataire: "Chef de file" })[r] || r; },
     rnMetiers(c) { return ((c && c.metiers) || []).map(m => (m && m.label) || m).filter(Boolean).join(", "); },
@@ -1895,8 +1896,22 @@ const __adjApp = createApp({
           finally { p.busy = ""; }
         } });
     },
-    rnScrollTo(ref) {
-      this.$nextTick(() => { let el = this.$refs[ref]; if (Array.isArray(el)) el = el[0]; if (el && el.scrollIntoView) { el.scrollIntoView({ block: "start", behavior: "smooth" }); if (el.focus) el.focus({ preventScroll: true }); } });
+    // Défilement de la seule zone de contenu (.work) : scrollIntoView faisait aussi défiler la page
+    // entière quand la cible était en bas (barre latérale décalée). L'en-tête collant est compté.
+    rnScrollTo(ref, nearest) {
+      this.$nextTick(() => {
+        let el = this.$refs[ref]; if (Array.isArray(el)) el = el[0];
+        const w = document.querySelector(".work"); if (!el || !w) return;
+        const top = w.querySelector(".top"), head = top ? top.getBoundingClientRect().height : 0;
+        const wr = w.getBoundingClientRect(), r = el.getBoundingClientRect();
+        let delta = r.top - wr.top - head - 16;
+        if (nearest) {
+          if (r.top >= wr.top + head && r.bottom <= wr.bottom) delta = 0;
+          else if (r.bottom > wr.bottom && r.height < wr.height - head) delta = r.bottom - wr.bottom + 16;
+        }
+        if (delta) w.scrollTo({ top: Math.max(0, w.scrollTop + delta), behavior: "smooth" });
+        if (el.focus && el.getAttribute("tabindex") != null) el.focus({ preventScroll: true });
+      });
     },
     // Raccourci « Publier mon profil » depuis l'annuaire ou un marché : onglet profil, bloc Publication.
     async rnGoPublish() { this.openReseau("profil"); if (!this.reseau.p.loaded) await this.rnLoadProfil(true); this.rnScrollTo("rnPub"); },
@@ -1914,7 +1929,7 @@ const __adjApp = createApp({
       try {
         const d = await this.api("GET", "/api/reseau/annuaire?" + qs.toString());
         a.d = d; a.loaded = true; a.page = (d && d.page) || page || 1;
-        a.live = !d.visible ? (d.message || "") : (d.total ? d.total + " " + this.pl(d.total, "partenaire trouvé", "partenaires trouvés") + "." : "Aucun partenaire du réseau Adjugo ne correspond encore à cette recherche.");
+        a.live = !d.visible ? (d.message || "") : (d.total ? d.total + " " + this.plFr(d.total, "partenaire trouvé", "partenaires trouvés") + "." : "Aucun partenaire du réseau Adjugo ne correspond encore à cette recherche.");
       } catch (e) { a.error = (e && e.message) || "Annuaire momentanément indisponible."; a.live = a.error; }
       finally { a.loading = false; }
     },
@@ -2038,7 +2053,7 @@ const __adjApp = createApp({
       const lots = (d && d.lots) || [];
       if (!lots.length) return "Aucun lot à compléter d'après le dossier.";
       const n = lots.reduce((s, l) => s + (l.reseau || []).length + (l.sirene || []).length, 0);
-      return lots.length + " " + this.pl(lots.length, "lot à compléter", "lots à compléter") + " · " + n + " " + this.pl(n, "entreprise proposée", "entreprises proposées") + ".";
+      return lots.length + " " + this.plFr(lots.length, "lot à compléter", "lots à compléter") + " · " + n + " " + this.plFr(n, "entreprise proposée", "entreprises proposées") + ".";
     },
     async aoPmLot(l) {
       const pid = this.ao.project && this.ao.project.id, pm = this.ao.pm; if (!pid || pm.lotBusy || !l || !l.num) return;
@@ -2051,7 +2066,7 @@ const __adjApp = createApp({
           if (i >= 0) pm.d.lots.splice(i, 1, nl);
           ((d && d.warnings) || []).forEach(w => { if (!(pm.d.warnings || []).includes(w)) (pm.d.warnings = pm.d.warnings || []).push(w); });
           const n = (nl.reseau || []).length + (nl.sirene || []).length;
-          pm.live = "Lot " + l.num + " : " + n + " " + this.pl(n, "entreprise proposée", "entreprises proposées") + ".";
+          pm.live = "Lot " + l.num + " : " + n + " " + this.plFr(n, "entreprise proposée", "entreprises proposées") + ".";
         }
       } catch (e) { this.notify(e.message, "err"); }
       finally { pm.lotBusy = ""; }
@@ -2065,11 +2080,11 @@ const __adjApp = createApp({
       const m = c.profile_id ? { kind: "reseau", profile_id: c.profile_id, name: c.name, city: c.city || "" }
                              : { kind: "sirene", siret: c.siret, name: c.name, city: c.city || "" };
       if (!this.isCandSelected(m)) {
-        if (this.ao.grp.selected.length >= 4) { this.notify("4 partenaires au maximum par simulation : retirez-en un dans « Simuler avec ».", "err"); this.rnScrollTo("grpSim"); return; }
+        if (this.ao.grp.selected.length >= 4) { this.notify("4 partenaires au maximum par simulation : retirez-en un dans « Simuler avec ».", "err"); this.rnScrollTo("grpSim", true); return; }
         this.ao.grp.selected.push(m);
       }
       await this.aoGrpSimulate();
-      this.rnScrollTo("grpSim");
+      this.rnScrollTo("grpSim", true);
     },
 
     // ── Modale d'invitation en 1 clic (vague 3) ──
@@ -2097,7 +2112,16 @@ const __adjApp = createApp({
       if (el && el.focus && document.body.contains(el)) this.$nextTick(() => el.focus());
     },
     rinvProjects() { return (this.projects || []).filter(p => p && !p.deleted_at && p.status !== "abandonne"); },
-    _rnMarkInvited(v) { if (v && v.card && typeof v.card === "object") v.card.deja_invite = true; },
+    // « Déjà invité » : la carte d'origine et, sur la fiche du marché, toutes les cartes de la même entreprise.
+    _rnMarkInvited(v) {
+      if (!v) return;
+      if (v.card && typeof v.card === "object") v.card.deja_invite = true;
+      const d = this.ao.pm && this.ao.pm.d; if (!d || this.view !== "aodetail" || !this.ao.project || this.ao.project.id !== v.projectId) return;
+      (d.lots || []).forEach(l => {
+        (l.reseau || []).forEach(c => { if (v.profile_id && c.profile_id === v.profile_id) c.deja_invite = true; });
+        (l.sirene || []).forEach(c => { if (v.siret && c.siret === v.siret) c.deja_invite = true; });
+      });
+    },
     async rinvSend() {
       const v = this.rinv; if (!v || v.busy || v.done) return;
       if (!v.projectId) { v.err = "Choisissez le marché sur lequel inviter ce partenaire."; v.errCode = ""; return; }

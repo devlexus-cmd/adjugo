@@ -611,6 +611,7 @@
                     </div>
                   </article>
                   <div v-if="l.sirene_message" class="row wrap rn-g8 rn-mt"><span class="muted small" style="flex:1;min-width:200px">{{ l.sirene_message }}</span><button v-if="l.num" type="button" class="btn sm" @click="aoPmLot(l)" :disabled="!!ao.pm.lotBusy" :aria-busy="ao.pm.lotBusy===String(l.num)?'true':'false'"><span v-if="ao.pm.lotBusy===String(l.num)" class="spin"></span><i v-else data-lucide="search"></i>Chercher pour ce lot</button></div>
+                  <p v-if="l.sirene_cherche && !(l.sirene||[]).length && (l.reseau||[]).length" class="muted small">Aucune autre entreprise trouvée dans le registre SIRENE pour ce lot.</p>
                   <div v-if="!(l.reseau||[]).length && !(l.sirene||[]).length && l.sirene_cherche" class="rn-lot-empty">
                     <span class="muted small">Aucune entreprise trouvée pour ce lot pour l'instant.</span>
                     <div class="row wrap rn-g8"><button type="button" class="btn sm" @click="rnDiscover(l.metier, l.departement)"><i data-lucide="search"></i>Chercher dans le registre SIRENE</button><button type="button" class="btn sm ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
@@ -2138,7 +2139,7 @@
                       <h2 class="rn-h2">Mon profil partenaire<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Votre fiche dans le réseau Adjugo : les entreprises qui ont publié la leur peuvent vous trouver pour un groupement et vous inviter. Rien n'est visible tant que vous ne publiez pas, et vous pouvez retirer la publication à tout moment.</span></button></h2>
                       <div class="row wrap rn-g6">
                         <span class="pill" :class="rnStatutPill(d.statut)">{{ d.statut_label }}</span>
-                        <span v-if="d.exists" class="muted small nw">{{ d.apparitions_ce_mois }} {{ pl(d.apparitions_ce_mois, 'recherche', 'recherches') }} ce mois-ci<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.apparitions_label }}</span></button></span>
+                        <span v-if="d.exists" class="muted small nw">{{ d.apparitions_ce_mois }} {{ plFr(d.apparitions_ce_mois, 'recherche', 'recherches') }} ce mois-ci<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.apparitions_label }}</span></button></span>
                       </div>
                     </div>
                   </div>
@@ -2285,7 +2286,7 @@
                 <div class="row wrap rn-g8 rn-empty-a"><button type="button" class="btn" @click="rnDiscover()"><i data-lucide="search"></i>Chercher dans le registre SIRENE</button><button type="button" class="btn ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
               </div>
               <template v-else>
-                <div class="muted small rn-count-line">{{ ad.total }} {{ pl(ad.total, 'partenaire', 'partenaires') }}<span v-if="rnClassed()"> · classés pour le métier choisi</span></div>
+                <div class="muted small rn-count-line">{{ ad.total }} {{ plFr(ad.total, 'partenaire', 'partenaires') }}<span v-if="rnClassed()"> · classés pour le métier choisi</span></div>
                 <article v-for="c in ad.profils" :key="'an'+c.profile_id" class="card pad rn-block rn-card" :aria-labelledby="'an-'+c.profile_id">
                   <div class="rn-card-h">
                     <span v-if="c.rang!=null" class="rn-rang">n° {{ c.rang }}<span class="sr-only"> dans le classement</span></span>
@@ -2323,7 +2324,7 @@
                   <section class="rn-hcol" aria-labelledby="rnh-p"><h3 id="rnh-p" class="rn-h3">Comme partenaire</h3>
                     <dl class="rn-counts"><template v-for="r in rnHistRows('partenaire')" :key="'hp'+r.k"><dt>{{ r.l }}</dt><dd>{{ r.v }}</dd></template></dl></section>
                 </div>
-                <div class="row small rn-g6 rn-mt"><i data-lucide="users-round" aria-hidden="true"></i><span><b>{{ reseau.hist.d.groupements_deposes || 0 }}</b> {{ pl(reseau.hist.d.groupements_deposes || 0, 'groupement déposé via Adjugo', 'groupements déposés via Adjugo') }}</span></div>
+                <div class="row small rn-g6 rn-mt"><i data-lucide="users-round" aria-hidden="true"></i><span><b>{{ reseau.hist.d.groupements_deposes || 0 }}</b> {{ plFr(reseau.hist.d.groupements_deposes || 0, 'groupement déposé via Adjugo', 'groupements déposés via Adjugo') }}</span></div>
                 <p v-if="rnHistEmpty()" class="muted small rn-mt">Votre historique se remplit quand vous invitez des partenaires sur un marché ou répondez à une invitation. <button type="button" class="linkbtn" @click="go('pipeline')">Ouvrir mes marchés</button></p>
               </template>
             </div>
@@ -2661,7 +2662,7 @@
         <p id="rinv-d" class="lock-note"><i :data-lucide="rinv.kind==='reseau'?'lock':'link'" style="width:14px;height:14px;flex:none;margin-top:2px"></i><span v-if="rinv.kind==='reseau'">Adjugo envoie l'invitation : vous verrez l'adresse du partenaire quand il aura accepté.</span><span v-else>Adjugo ne connaît pas son adresse : copiez le lien et envoyez-le-lui.</span></p>
         <template v-if="!rinv.done">
           <div v-if="rinv.pickProject" class="field"><label for="rinv-p">Marché</label>
-            <select id="rinv-p" class="inp" v-model="rinv.projectId" :disabled="rinv.busy"><option value="">Choisissez un marché</option><option v-for="p in rinvProjects()" :key="'rp'+p.id" :value="p.id">{{ p.name }}</option></select>
+            <select id="rinv-p" class="inp" v-model="rinv.projectId" :disabled="rinv.busy" @change="rinv.err=''; rinv.errCode=''"><option value="">Choisissez un marché</option><option v-for="p in rinvProjects()" :key="'rp'+p.id" :value="p.id">{{ p.name }}</option></select>
             <div v-if="!rinvProjects().length" class="muted small rn-hint">Aucun marché pour l'instant : <button type="button" class="linkbtn" @click="rinvClose(); go('sourcing')">trouvez un marché</button>, puis invitez depuis sa fiche.</div></div>
           <p v-if="rinv.noRole" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><span>Ce partenaire n'accepte que le rôle de chef de file : il ne peut pas être invité comme partenaire ou sous-traitant.</span></p>
           <fieldset v-else class="rn-fs" :disabled="rinv.busy">
@@ -2682,7 +2683,7 @@
       </div>
       <div class="modal-f">
         <template v-if="!rinv.done"><button type="button" class="btn ghost" @click="rinvClose()">Annuler</button>
-          <button type="button" class="btn primary" @click="rinvSend()" :disabled="rinv.busy || rinv.noRole || (rinv.errCode==='deja_invite')" :aria-busy="rinv.busy?'true':'false'"><span v-if="rinv.busy" class="spin"></span><i v-else :data-lucide="rinv.kind==='reseau'?'send':'link'"></i>{{ rinv.kind==='reseau' ? 'Envoyer l\'invitation' : 'Créer le lien' }}</button></template>
+          <button type="button" class="btn primary" @click="rinvSend()" :disabled="rinv.busy || rinv.noRole || rinv.errCode==='deja_invite' || rinv.errCode==='sur_le_reseau'" :aria-busy="rinv.busy?'true':'false'"><span v-if="rinv.busy" class="spin"></span><i v-else :data-lucide="rinv.kind==='reseau'?'send':'link'"></i>{{ rinv.kind==='reseau' ? 'Envoyer l\'invitation' : 'Créer le lien' }}</button></template>
         <button v-else type="button" class="btn primary" @click="rinvClose()">Fermer</button>
       </div>
     </div>
