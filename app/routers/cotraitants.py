@@ -171,10 +171,33 @@ def delete_cotraitant(ct_id: int, current_user: User = Depends(get_current_user)
     if not ct:
         raise HTTPException(404, "Co-traitant introuvable")
     # On purge les liaisons aux AO (sinon ProjectCotraitant pointe vers un partenaire supprimé).
+    link_ids = [lk.id for lk in db.query(ProjectCotraitant).filter(ProjectCotraitant.cotraitant_id == ct.id).all()]
+    _release_convention_links(db, link_ids, current_user)
     db.query(ProjectCotraitant).filter(ProjectCotraitant.cotraitant_id == ct.id).delete()
     db.delete(ct)
     db.commit()
     return {"ok": True}
+
+
+def _release_convention_links(db: Session, link_ids: list, user) -> None:
+    """Un partenaire « hors ligne » d'une convention de groupement ne peut pas disparaître en
+    silence : la convention concernée devient caduque (composition modifiée) et sa ligne
+    d'accord est retirée (sinon la clé étrangère bloquerait la suppression)."""
+    if not link_ids:
+        return
+    try:
+        from app.models import GroupementSignature, Project
+        from app.services.groupement_convention import perimer
+        rows = db.query(GroupementSignature).filter(GroupementSignature.cotraitant_link_id.in_(link_ids)).all()
+        for pid in {r.project_id for r in rows}:
+            p = db.query(Project).filter(Project.id == pid).first()
+            if p is not None:
+                perimer(db, p, "partenaire hors ligne retiré du marché", actor=f"user:{user.id}", actor_kind="owner")
+        db.query(GroupementSignature).filter(GroupementSignature.cotraitant_link_id.in_(link_ids)).delete(
+            synchronize_session=False)
+        db.flush()
+    except Exception:
+        pass
 
 
 # ── Sous-traitants rattachés à un appel d'offres ─────────────────────────────────
@@ -288,5 +311,6 @@ def detach_cotraitant(project_id: int, link_id: int,
                                               ProjectCotraitant.project_id == project_id).first()
     if not link:
         raise HTTPException(404, "Liaison introuvable")
+    _release_convention_links(db, [link.id], current_user)
     db.delete(link); db.commit()
     return {"ok": True}

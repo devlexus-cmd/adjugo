@@ -750,6 +750,75 @@ class GroupementSimulation(Base):
     created_at = Column(DateTime, default=utcnow)
 
 
+# === CONVENTION DE GROUPEMENT (C — vague 2 « Monter le groupement ») ===
+# UNE convention par marché (project_id UNIQUE), générée par un modèle paramétré DÉTERMINISTE
+# (0 LLM). Le texte figé (content_md) inclut l'annexe de répartition (nom, lot, rôle, prix de
+# vente du lot de chaque membre, total) — JAMAIS la décomposition chiffrée. Un seul
+# content_hash (sha256 du texte) pour tous les signataires. « Figer l'offre » est fusionné avec
+# la génération : total_offre_ht figé et révélé aux membres. Toute part / prix / composition
+# modifiée ensuite ⇒ status 'perimee'. L'option « masquer la répartition » (params) n'existe
+# qu'en brouillon. Ce n'est PAS un conseil juridique : modèle à faire relire par un conseil.
+
+class GroupementConvention(Base):
+    __tablename__ = "groupement_conventions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, unique=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)   # tenant (tenant_owner_id)
+
+    forme = Column(String(12), default="")                 # '' | conjoint | solidaire
+    mandataire_solidaire = Column(Boolean, default=False)  # en conjoint : le mandataire répond des autres
+    # Ce que le règlement impose : non_verifie | non_specifie | libre | conjoint | solidaire.
+    forme_imposee = Column(String(16), default="non_verifie")
+    # Citation du DCE passée par citation_guard (sous-chaîne du texte intégral), sinon ''.
+    forme_imposee_extrait = Column(Text, default="")
+    habilitation = Column(JSON, nullable=True)             # {representer, signer_candidature_offre, …}
+    # decision, delai_reponse_jours, defaillance, sortie_preavis_jours, confidentialite_annees,
+    # pi, penalites, assurances_travaux, litiges (+ part_mandataire_ht, lot_mandataire,
+    # mandataire_qualite, membres_hors_ligne, masquer_repartition — brouillon seulement).
+    params = Column(JSON, nullable=True)
+    status = Column(String(12), default="draft")           # draft | a_signer | signee | perimee
+    content_md = Column(Text, nullable=True)               # texte FIGÉ (annexe de répartition incluse)
+    content_hash = Column(String(64), nullable=True, unique=True)   # sha256(content_md), un seul pour tous
+    total_offre_ht = Column(Float, nullable=True)
+    version = Column(Integer, default=0)
+    frozen_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# Accord de chaque membre sur LE texte (même content_hash). Ce n'est pas une signature
+# électronique qualifiée : c'est un « accord enregistré » depuis l'espace du membre, avec le
+# niveau d'identité réellement prouvé (imprimé dans le PDF). invite_id NULL ET
+# cotraitant_link_id NULL = le mandataire ; cotraitant_link_id = membre rattaché sans
+# invitation (accord 'hors_ligne' coché par le mandataire).
+class GroupementSignature(Base):
+    __tablename__ = "groupement_signatures"
+    __table_args__ = (
+        UniqueConstraint("convention_id", "invite_id", name="uq_gsig_convention_invite"),
+        UniqueConstraint("convention_id", "cotraitant_link_id", name="uq_gsig_convention_link"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    convention_id = Column(Integer, ForeignKey("groupement_conventions.id"), nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+    invite_id = Column(Integer, ForeignKey("project_invites.id"), nullable=True)
+    cotraitant_link_id = Column(Integer, ForeignKey("project_cotraitants.id"), nullable=True)
+    user_id = Column(Integer, nullable=True)               # compte qui a enregistré l'accord
+    company_name = Column(String(255), default="")
+    siret = Column(String(20), default="")
+    signataire_nom = Column(String(255), default="")
+    signataire_qualite = Column(String(120), default="")
+    content_hash = Column(String(64), default="")          # = convention.content_hash approuvé
+    # compte_verifie | email_verifie | lien_seul ('' = accord hors ligne déclaré par le mandataire)
+    identity_level = Column(String(20), default="")
+    status = Column(String(12), default="pending")         # pending | signed | perimee | hors_ligne
+    verified_email = Column(String(255), default="")
+    signed_at = Column(DateTime, nullable=True)
+    ip = Column(String(45), default="")
+
+
 # === FEEDBACK (beta) ===
 # Retours des utilisateurs (bouton « Signaler / Idée ») — précieux en phase de test PME.
 class Feedback(Base):

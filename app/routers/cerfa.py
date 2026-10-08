@@ -83,14 +83,25 @@ def generate(
     try:
         from app.routers.cotraitants import Cotraitant, ProjectCotraitant
         link_rows = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).all()
+        link_by_ct = {l.cotraitant_id: l for l in link_rows}
         ct_ids = [l.cotraitant_id for l in link_rows]
         cts = db.query(Cotraitant).filter(Cotraitant.id.in_(ct_ids)).all() if ct_ids else []
         for ct in cts:
-            pd["cotraitants"].append({k: getattr(ct, k, "") or "" for k in
-                ["name", "siret", "code_ape", "forme_juridique", "representant_legal", "address",
-                 "city", "postal_code", "email", "phone", "tva_intracom", "ca_n1", "ca_n2", "ca_n3", "effectif"]})
+            row = {k: getattr(ct, k, "") or "" for k in
+                   ["name", "siret", "code_ape", "forme_juridique", "representant_legal", "address",
+                    "city", "postal_code", "email", "phone", "tva_intracom", "ca_n1", "ca_n2", "ca_n3", "effectif"]}
+            # role/lot viennent du LIEN (comme l'export ZIP) : sous-traitant → DC4, pas DC1/DC2.
+            lk = link_by_ct.get(ct.id)
+            row["role"] = (getattr(lk, "role", "") or "cotraitant") if lk else "cotraitant"
+            row["lot"] = (getattr(lk, "lot", "") or "") if lk else ""
+            pd["cotraitants"].append(row)
     except Exception:
         pass
+
+    # Convention de groupement générée et à jour → DC1/DC2/ATTRI1 disent EXACTEMENT la même
+    # chose qu'elle : membres (et eux seuls), lots, prix de vente, forme, habilitation, total.
+    from app.services.groupement_convention import apply_to_cerfa
+    grp = apply_to_cerfa(db, project, cd, pd)
 
     pdf_bytes = GENERATORS[doc_type](cd, pd)
 
@@ -102,7 +113,10 @@ def generate(
         gen = GeneratedDoc(project_id=project_id, doc_type=doc_type)
         db.add(gen)
     gen.status = "pret"
-    gen.filled_data = {"company": company.name, "project": project.name}
+    gen.filled_data = {"company": company.name, "project": project.name,
+                       "convention_version": (grp or {}).get("convention_version")}
+    from app.models import utcnow
+    gen.updated_at = utcnow()          # horodatage fiable (contrôle « généré après la convention »)
     db.commit()
 
     filename = f"{doc_type.upper()}_{project.name[:30].replace(' ', '_')}.pdf"

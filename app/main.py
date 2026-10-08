@@ -291,6 +291,10 @@ app.include_router(stripe_pay.router)
 app.include_router(cotraitants.router)
 from app.routers.groupement import router as groupement_router   # « Répondre à plusieurs ? »
 app.include_router(groupement_router)
+# « Monter le groupement » (co-traitance v2, vague 2) : convention + accords des membres.
+from app.routers.convention import owner_router as convention_owner_router, guest_router as convention_guest_router
+app.include_router(convention_owner_router)
+app.include_router(convention_guest_router)
 app.include_router(export_dossier.router)
 app.include_router(checklist.router)
 app.include_router(chiffrage.router)

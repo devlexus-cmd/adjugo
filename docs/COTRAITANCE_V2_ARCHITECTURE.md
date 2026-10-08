@@ -18,6 +18,36 @@
 
 **Reste (vague 1) :** front espace mandataire (`app.html`/`app.js`) et espace co-traitant (`invite.html`) — en cours ; vérification navigateur des deux expériences ; déploiement après feu vert du fondateur (migration de données en production).
 
+## Statut vague 2 (08/10/2026) — partie serveur
+
+**Backend livré sur une branche de worktree (non déployé), 335 tests verts (3.14 et 3.12).** Contrat
+d'API pour le front : `docs/COTRAITANCE_V2_VAGUE2_API.md`.
+
+- Migration `o9p0q1r2s3t4` (idempotente, testée à neuf / rejouée / base à la révision précédente) :
+  `groupement_conventions` (project_id UNIQUE, content_hash UNIQUE) et `groupement_signatures`
+  (UNIQUE(convention_id, invite_id), UNIQUE(convention_id, cotraitant_link_id)).
+- `app/services/groupement_convention.py` : modèle paramétré déterministe (0 LLM, empreinte sha256
+  unique, aucune date dans le texte), ce que le règlement impose (citation vérifiée par
+  `citation_guard`, sinon « non trouvé dans le DCE » ; relecture du dossier sans interprétation),
+  avertissements (avertir, pas bloquer), péremption explicite + filet par recalcul d'empreinte,
+  accords, PDF (valeurs échappées), données des CERFA.
+- `app/routers/convention.py` : assistant / brouillon / relecture / génération (= figer l'offre) /
+  accord du mandataire / accord hors ligne / PDF ; côté partenaire : vue, PDF, accord via le gate
+  d'identité existant (`_binding_required` + OTP) ou le compte après claim ; niveau d'identité stocké
+  et imprimé. Démo bloquée (garde central + liens démo).
+- Cohérence : DC1 (forme, mandataire solidaire, tableau des membres corrigé, désignation du
+  mandataire), DC2 (nom + qualité du signataire, CA vide si inconnu), ATTRI1 (engagement du
+  groupement, total de l'offre commune, répartition conjointe avec prix de vente, habilitation C2,
+  signataires) ; convention dans le ZIP, le dossier, l'aperçu du dossier ; item de checklist.
+- `groupement_state()` : `etape`/`etapes` (stepper 1→5), `convention`, `pret` (état 7 = convention
+  validée + attestations + CERFA régénérés après la convention).
+- RGPD / organisation : nouvelles tables dans l'export, l'effacement, la purge de corbeille et le
+  transfert de propriété.
+
+**Reste (vague 2) :** front mandataire (`app.html`/`app.js`) et partenaire (`invite.html` + vue
+« Partagé avec moi ») à partir du contrat ; relecture du modèle de convention par un conseil ;
+validation par le fondateur des valeurs par défaut et des libellés juridiques ; déploiement.
+
 ## Vision en une phrase
 
 Adjugo devient le seul outil où une PME voit en un coup d'œil « seul 54 % → avec Le Gall Électricité 81 % », monte le groupement en cinq minutes (convention générée, signée par chacun depuis son espace) et répond à plusieurs sans que personne — ni le mandataire, ni le serveur Adjugo, ni l'IA — ne voie jamais autre chose que le prix de vente de chaque lot et le total de l'offre commune.
