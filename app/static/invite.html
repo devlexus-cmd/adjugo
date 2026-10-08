@@ -284,7 +284,7 @@
     // ── Modale légère (récap avant envoi, saisie du code de vérification) ──
     // Remplace window.prompt/confirm (dialogues système gris → perçus comme du phishing par
     // un dirigeant non technique, collage bloqué sur mobile). Renvoie une Promise.
-    function openModal({ title, bodyHtml, confirmLabel, cancelLabel, withInput, inputLabel, extraLabel, noteHtml, maxWidth }) {
+    function openModal({ title, bodyHtml, confirmLabel, cancelLabel, withInput, inputLabel, extraLabel, noteHtml, maxWidth, focusCancel }) {
       return new Promise(resolve => {
         const ov = document.createElement("div");
         ov.style.cssText = "position:fixed;inset:0;background:rgba(17,24,39,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px";
@@ -318,7 +318,7 @@
         ok.onclick = () => close(withInput ? { value: (input.value || "").trim() } : true);
         if (extraBtn) extraBtn.onclick = () => close({ extra: true });
         ov.addEventListener("click", e => { if (e.target === ov) close(null); });
-        setTimeout(() => (input || ok).focus(), 40);
+        setTimeout(() => (input || (focusCancel ? cancel : ok)).focus(), 40);   // action engageante : focus sur « Revenir »
         if (input) input.addEventListener("keydown", e => { if (e.key === "Enter") ok.click(); });
       });
     }
@@ -953,7 +953,7 @@
         const co = c.company_name || ""; if (co !== MY_COMPANY) { MY_COMPANY = co; if (CV.data) renderConvention(CV.data); }   // repère « vous »
       };
       const c0 = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
-      if (c0) fill(c0); else renderPieces([]);
+      if (c0) fill(c0); else { renderPieces([]); if (dp) dp.setLocked(true, "Vos lignes sont indisponibles pour le moment : rechargez la page."); }
       // Arrivée depuis « Partagé avec moi » (« Préparer ma DPGF de lot ») : on amène la carte DPGF.
       if (location.hash === "#dpgf" && dp) setTimeout(() => { dp.el.scrollIntoView({ block: "start" }); dp.el.focus({ preventScroll: true }); }, 700);
       function showSubmittedBanner() {
@@ -1220,7 +1220,7 @@
           bodyHtml: `<p style="margin:0">Voici <b>exactement</b> le fichier que recevra le chef de file, et lui seul : ${esc(D.fileName(opts))}.</p>${tbl}${ecart}`
             + (old.length ? `<p style="margin:10px 0 0">Il remplacera la DPGF déjà déposée (${esc(old.map(p => p.name).join(", "))}).</p>` : "")
             + `<p style="margin:10px 0 0" class="muted">Vos coûts, vos marges et votre méthode n'y figurent pas et restent chiffrés.</p>`,
-          confirmLabel: "Déposer la DPGF", cancelLabel: "Revenir", maxWidth: 640,
+          confirmLabel: "Déposer la DPGF", cancelLabel: "Revenir", maxWidth: 640, focusCancel: true,
         });
         if (!ok) { say("Dépôt annulé : rien n'a été envoyé."); return; }
         btn.disabled = true; say("Dépôt de la DPGF…");

@@ -91,7 +91,7 @@ function _convInit() {
            errAt: "top", staleReason: "", editOpen: false, textOpen: false, rulesOpen: false, accord: { nom: "", qualite: "", accepte: false, hash: "" } };
 }
 // Étape 5 « Prêt à déposer » (vague 4) : contrôles GET /groupement/depot, « Marquer déposé ».
-function _depotInit() { return { d: null, loading: false, loaded: false, busy: "", err: "", live: "", pid: null }; }
+function _depotInit() { return { d: null, loading: false, again: false, loaded: false, busy: "", err: "", live: "", pid: null }; }
 // Convention vue par un partenaire qui a un compte (« Partagé avec moi », après rattachement du lien).
 function _sconvInit() {
   return { loading: false, d: null, error: "", busy: false, live: "", err: "", textOpen: false,
@@ -2158,13 +2158,14 @@ const __adjApp = createApp({
       this._depotT = setTimeout(() => { if (this.depotShown()) this.aoDepotLoad(); }, 200);
     },
     async aoDepotLoad() {
-      const pid = this.ao.project && this.ao.project.id, dp = this.ao.depot; if (!pid || dp.loading) return;
+      const pid = this.ao.project && this.ao.project.id, dp = this.ao.depot; if (!pid) return;
+      if (dp.loading) { dp.again = true; return; }   // un état plus récent arrive : relire après la lecture en cours
       dp.loading = true;
       try {
         const d = await this.api("GET", "/api/projects/" + pid + "/groupement/depot");
         if (this.ao.project && this.ao.project.id === pid) { dp.d = d; dp.pid = pid; dp.loaded = true; dp.err = ""; }
       } catch (e) { if (this.ao.project && this.ao.project.id === pid) dp.err = e.message || "Les contrôles avant dépôt sont momentanément indisponibles."; }
-      finally { dp.loading = false; }
+      finally { dp.loading = false; if (dp.again && this.ao.depot === dp) { dp.again = false; this.aoDepotLoad(); } }
     },
     depotPret() { const d = this.ao.depot.d; return (d && d.pret) || this.convPret() || null; },
     depotIsDeposed() { const d = this.ao.depot.d; return !!(d && d.depose) || !!(this.ao.grp.state && this.ao.grp.state.state === "depose"); },
@@ -2506,7 +2507,6 @@ const __adjApp = createApp({
       if (p.go_decision === "go_groupement" && p.groupement_score != null) return "Seul : " + (p.match_score != null ? p.match_score + "/100" : "—") + " · En groupement : " + p.groupement_score + "/100";
       return p.match_score != null ? "Compatibilité " + p.match_score + "/100" : "";
     },
-    grpAccessibleCount() { return (this.projects || []).filter(p => p.go_decision === "go_groupement").length; },
     // Verdict SEUL d'un marché « bon potentiel en groupement » : celui que l'API a calculé (simulation)
     // sinon, à défaut, les seuils du profil (mêmes défauts que le serveur : 65 / 40). Jamais un chiffre inventé.
     aoSeulDecision() {

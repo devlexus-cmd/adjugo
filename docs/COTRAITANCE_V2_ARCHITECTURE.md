@@ -76,9 +76,15 @@ l'annuaire, historique réseau.
 - Correctif transverse : `audit_logs.created_at` écrit en UTC naïf (sur une base Postgres réglée
   hors UTC, toute la chaîne semblait altérée à la relecture).
 
-**Reste (vague 4) :** écrans (bouton « Vérifier mon journal », DPGF générée dans le navigateur,
-« Marquer déposé », carte du tableau de bord), texte de la page sécurité, point cyber (revue
-externe du schéma de chiffrement et du journal, différée par le fondateur), déploiement.
+**Écrans livrés (même branche, non déployés)** — détail : `docs/COTRAITANCE_V2_VAGUE4_API.md` § 11 :
+« Vérifier mon journal » + exports (page partenaire et « Partagé avec moi »), « Ma DPGF de lot »
+produite dans le navigateur (lignes rangées dans le détail chiffré, route
+`PUT /api/invite/{token}/contribution/detail` qui ne touche ni la part soumise ni la convention),
+« Avant de déposer » en « N contrôles sur 4 » + « Marquer déposé » / « Retirer le marquage »,
+carte du tableau de bord (marchés accessibles en groupement, étapes 1→5).
+
+**Reste (vague 4) :** texte de la page sécurité, point cyber (revue externe du schéma de
+chiffrement et du journal, différée par le fondateur), déploiement.
 
 ## Vision en une phrase
 

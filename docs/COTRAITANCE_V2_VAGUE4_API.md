@@ -264,6 +264,16 @@ pièce. Rien de tout cela ne va vers le LLM ni dans une DPGF commune.
   « DPGF du lot (prix de vente) ».
 - `PATCH …/piece/{id}` `{"piece_type": "dpgf_lot"}` : 422 si le fichier n'est pas dans un format de
   DPGF ; la date d'expiration d'une DPGF est toujours vidée.
+- **Lignes de la DPGF (ajout des écrans)** : `PUT /api/invite/{token}/contribution/detail`
+  `{"detail_chiffre": <enveloppe>|null, "version": n}` (60/min) remplace **uniquement** l'enveloppe
+  chiffrée. Les lignes de la DPGF y sont rangées avec le texte libre du détail (même clé, même code
+  de récupération) : `AdjugoCrypto.packDetail(texte, {lignes})` → JSON marqué
+  `{"format": "adjugo-detail-v2", "texte", "dpgf": {"lignes": [{designation, unite, quantite, pu}], "maj"}}`
+  avant chiffrement ; un ancien détail (texte brut) se relit tel quel (`unpackDetail`). La part
+  soumise **reste soumise**, l'offre reste figée, la convention reste valable (le détail n'est lu
+  par personne d'autre et n'est imprimé nulle part) ; verrou optimiste identique au PUT complet
+  (409 / 428), enveloppe stricte (422), 403 si le lien est en lecture seule ; route ajoutée à la
+  garde démo. Le PUT complet garde sa règle (toute modification après soumission repasse en brouillon).
 
 ## 5. Étape 5 : « prêt à déposer » et « Marquer déposé »
 
@@ -404,3 +414,19 @@ Données réelles de l'organisation uniquement (aucun montant, aucun nom de part
   si la vague 3 veut y ajouter une action qui a déjà des entrées en base, il faut une `v2` (sinon
   les exports conservés par les membres ne se compareraient plus). Les actions `network.*` restent
   dans le tenant du chercheur et n'entrent pas dans la projection.
+
+## 11. Écrans livrés (08/10/2026, même branche, non déployés)
+
+| Écran | Ce qui est livré |
+|---|---|
+| `invite.html` — « Mon journal » | bouton « Vérifier mon journal » (verdict en pastille, `message` en `aria-live`, entrée concernée, date du dernier horodatage ou « pas encore d'empreinte quotidienne », empreinte tronquée + « Copier ») ; « Télécharger la preuve (JSON) » et « Télécharger le journal (PDF) » (fetch → fichier, erreurs lisibles, journal rechargé) ; bulle (i) du titre = libellé exact + `limites[]` ; bulle (i) « Vérifier vous-même » (garder la preuve, comparer deux exports, recalcul des maillons possible) |
+| `invite.html` — « Ma DPGF de lot » | lignes désignation / unité / quantité / prix unitaire HT, montant et total calculés dans le navigateur, comparaison au prix de vente du lot (avertir, pas bloquer) ; « Enregistrer mes lignes » (chiffré, route « détail seul ») ; « Relire et déposer la DPGF » : aperçu EXACT du fichier (CSV `AdjugoCrypto.dpgf.csv`), puis dépôt `dpgf_lot` et retrait de l'ancienne ; « Télécharger le fichier (CSV) » (local, rien n'est envoyé) ; deux lignes « Partagé avec le chef de file, au dépôt » / « Jamais partagé » ; carte verrouillée tant que le détail n'est pas déchiffré (bouton « Déverrouiller avec mon code ») ; ancre `#dpgf` |
+| `app.html` / `app.js` — « Partagé avec moi » | même vérification et mêmes exports via `/api/shared/{project_id}/journal/…` ; les lignes de DPGF sont conservées à chaque enregistrement du détail ; bloc « Ma DPGF de lot » (déposée ou non, nombre de lignes chiffrées) avec « Préparer ma DPGF de lot » qui ouvre la page partenaire du dossier (`/invite/{token}#dpgf`) ; type de pièce « DPGF du lot (prix de vente) », sans date de validité |
+| `app.html` / `app.js` — chef de file | bloc « Avant de déposer / Prêt à déposer » dès qu'un partenaire est invité : `GET /groupement/depot`, « N contrôles sur 4 » (aucun pourcentage), manques rangés sous leur contrôle (max 3 + « et N autres ») avec l'action qui les règle (relancer / voir les parts, voir les attestations, préparer / régénérer la convention ou voir les accords, préparer les documents), avertissements ; « Marquer déposé » avec confirmation (focus sur « Annuler » ; dossier incomplet : liste des manques et « Marquer déposé quand même ») ; état « Dossier marqué déposé » + « Retirer le marquage » (confirmation) ; pastille « DPGF du lot reçue » dans le cockpit ; journal d'accès : libellés `groupement.depose`, `groupement.depot_annule`, `guest.export_journal`, `guest.update_piece`, bulle (i) = libellé vérifiable (fin de « preuve opposable ») ; heures du journal lues en UTC puis affichées à l'heure locale |
+| `app.html` — tableau de bord | carte « Réseau Adjugo » : « N marchés accessibles en groupement » (serveur, bulle (i)), « N groupements en cours · N déposés », mini-stepper des 5 étapes avec compteurs (pastilles à 375 px), lignes cliquables (vrais boutons) : groupements en cours « Étape n sur 5 » + parts reçues, puis marchés accessibles « Avec partenaires : 81 % » (seul pourcentage) ; l'ancienne jauge « prêt XX % » disparaît de cette carte |
+
+Contrôlé dans le navigateur (serveur local, base SQLite jetable) à 1 024 px et 375 px : aucun
+débordement horizontal (les bulles masquées de la convention faisaient défiler la zone de travail
+de `invite.html` : corrigé par `overflow-x:hidden` sur `.work` de cette page), parcours DPGF complet
+(code de récupération, enregistrement, rechargement → lignes relues, relecture, dépôt, part
+toujours soumise), vérification et exports du journal, « Marquer déposé » puis retrait.

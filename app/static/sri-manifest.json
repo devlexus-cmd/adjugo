@@ -2,9 +2,9 @@
  "algorithme": "sha384",
  "fichiers": {
   "/static/app.js": {
-   "integrity": "sha384-Zlt7ORsJzOqgtojgcoIhQY4HoO8SZovfOkrvU9CDpmTVanxNXtuC/ikezNYPZ19d",
-   "octets": 211758,
-   "sha256": "8cbf5b85b8fd5bd5862bf3b8a2f58087690a0d564398763aaf8ebad74a1cccd8"
+   "integrity": "sha384-dLmFQluyY5wcX5uV7jkFcuN6IU9adhOFM3nn8nYFEI8BvA2nCeDpQQO6lFwx+aM5",
+   "octets": 211845,
+   "sha256": "fe1cba990eb5d7a059b217ec3bb0aed7806ea366887670e44f1739fd30b2fd2b"
   },
   "/static/cotraitance-crypto.js": {
    "integrity": "sha384-XeXF9c3sWCINLhcn8WsgnQA1g1we3veNODoV1/yHheSJcBMU2lSg+MGGmqFwlXF4",
