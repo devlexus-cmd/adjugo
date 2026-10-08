@@ -35,6 +35,87 @@
     .tip > svg.lucide { width:15px; height:15px; }
     .g-chk { display:flex; gap:6px; align-items:center; }
     @media (max-width:640px){ .g-fact { grid-template-columns:1fr; gap:1px 0; } .g-fact dt { margin-top:7px; } }
+    /* ── Convention de groupement (co-traitance v2, vague 2) — styles locaux à cette page ── */
+    .cv-card { margin-bottom:16px; }
+    .cv-head { display:flex; gap:6px 8px; align-items:center; flex-wrap:wrap; }
+    .cv-card .cv-title { margin:0; font-family:inherit; font-size:13.5px; font-weight:700; letter-spacing:0; }
+    .cv-card .cv-title:focus { outline:none; }
+    .cv-card .cv-sec { margin-top:16px; }
+    .cv-card .cv-sec-t { display:flex; align-items:center; flex-wrap:wrap; gap:4px; margin:0 0 6px; font-family:inherit; font-size:13px; font-weight:700; letter-spacing:0; }
+    .cv-card .cv-lead { margin:10px 0 0; font-size:13px; color:var(--text-2,#4b5563); }
+    .cv-legal { display:flex; gap:8px; align-items:flex-start; margin-top:12px; padding:9px 12px; border-radius:10px; background:var(--surface-2,#f6f7f9); border:1px solid var(--border,#e6e8ec); font-size:12.5px; color:var(--text-2,#4b5563); line-height:1.45; }
+    .cv-ok-banner { display:flex; gap:9px; align-items:flex-start; margin-top:12px; padding:10px 12px; border-radius:10px; background:var(--success-weak,#e7f7ee); border:1px solid var(--success,#1a7f4b); color:var(--success-text,#1a7f4b); font-size:12.5px; }
+    .cv-meta { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; margin-top:10px; font-size:12.5px; color:var(--text-2,#4b5563); }
+    .cv-meta b { color:var(--text,#16181d); }
+    .cv-hashw { display:inline-flex; align-items:center; gap:4px; }
+    .cv-hash { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; padding:1px 6px; border-radius:6px; background:var(--surface-3,#eef0f3); color:var(--text,#16181d); }
+    .cv-hashfull { display:block; margin-top:6px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11.5px; word-break:break-all; opacity:.85; }
+    .cv-fact { margin-top:12px; }
+    .cv-rules { grid-template-columns:minmax(0,2fr) minmax(0,3fr); font-size:13px; }
+    .cv-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+    .cv-tbl th { text-align:left; font-weight:600; color:var(--text-2,#4b5563); padding:7px 8px; border-bottom:1px solid var(--border,#e6e8ec); }
+    .cv-tbl td { padding:7px 8px; border-bottom:1px solid var(--hairline,#eef0f3); vertical-align:top; }
+    .cv-tbl .num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .cv-tbl tfoot td { font-weight:700; border-bottom:0; padding-top:9px; }
+    .cv-tbl .cv-me td { background:var(--surface-2,#f6f7f9); }
+    .cv-read { margin-top:16px; }
+    .cv-read > summary { display:flex; align-items:center; gap:8px; min-height:40px; padding:8px 12px; border:1px solid var(--border,#e6e8ec); border-radius:10px; background:var(--surface,#fff); font-size:13px; font-weight:600; cursor:pointer; list-style:none; }
+    .cv-read > summary::-webkit-details-marker { display:none; }
+    .cv-read > summary:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring,rgba(27,79,255,.26)); }
+    .cv-read > summary .cv-chev { display:inline-flex; line-height:0; transition:transform .15s; }
+    .cv-read[open] > summary .cv-chev { transform:rotate(90deg); }
+    .cv-box { margin-top:8px; padding:12px 14px; border:1px solid var(--border,#e6e8ec); border-radius:10px; background:var(--surface-2,#f6f7f9); font-size:13px; }
+    .cv-box ul { margin:4px 0 0; padding-left:18px; } .cv-box li { margin:3px 0; }
+    .cv-doc { margin-top:8px; padding:14px 16px; max-height:60vh; overflow:auto; border:1px solid var(--border,#e6e8ec); border-radius:10px; background:var(--surface-2,#f6f7f9); font-size:13px; line-height:1.55; overflow-wrap:anywhere; }
+    .cv-doc:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring,rgba(27,79,255,.26)); }
+    .cv-card .cv-doc h3 { margin:0 0 10px; font-family:inherit; font-size:15px; font-weight:800; letter-spacing:-.01em; }
+    .cv-card .cv-doc h4 { margin:16px 0 6px; font-size:13.5px; font-weight:700; }
+    .cv-doc p { margin:6px 0; } .cv-doc ul { margin:6px 0; padding-left:20px; } .cv-doc li { margin:3px 0; }
+    .cv-doc .cv-tbl { margin:6px 0; background:var(--surface,#fff); border-radius:8px; }
+    .cv-doc .cv-total { margin-top:10px; }
+    .cv-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; }
+    .cv-msg { font-size:12.5px; color:var(--text-2,#4b5563); }
+    .cv-msg:empty { display:none; }
+    .cv-msg.err { color:var(--danger-text,#b42318); }
+    .cv-accord { margin-top:16px; padding:14px 16px; border:1.5px solid var(--accent,#3b5bdb); border-radius:12px; background:var(--surface,#fff); }
+    .cv-accord.ok { border-color:var(--success,#1a7f4b); }
+    .cv-accord.plain { border:1px solid var(--border,#e6e8ec); background:var(--surface-2,#f6f7f9); }
+    .cv-accord .cv-sec-t { margin-bottom:2px; }
+    .cv-okline { display:flex; gap:10px; align-items:flex-start; }
+    .cv-okline:focus { outline:none; }
+    .cv-form { display:grid; grid-template-columns:1fr 1fr; gap:10px 12px; margin-top:12px; }
+    .cv-form label { display:block; margin-bottom:4px; font-size:12px; font-weight:600; color:var(--text-2,#4b5563); }
+    .cv-form .inp { width:100%; }
+    .cv-check { display:flex; gap:9px; align-items:flex-start; margin-top:14px; font-size:13px; font-weight:600; cursor:pointer; }
+    .cv-check input { flex:none; width:18px; height:18px; margin:1px 0 0; accent-color:var(--accent,#3b5bdb); cursor:pointer; }
+    .cv-check input:focus-visible { outline:2px solid var(--accent,#3b5bdb); outline-offset:2px; }
+    .cv-note { display:flex; gap:7px; align-items:flex-start; margin-top:8px; font-size:12px; line-height:1.45; color:var(--text-2,#4b5563); }
+    .cv-note svg, .cv-legal svg, .cv-ok-banner svg { flex:none; margin-top:1px; }
+    .cv-sigs { list-style:none; margin:0; padding:0; }
+    .cv-sigs li { padding:8px 0; border-bottom:1px solid var(--hairline,#eef0f3); font-size:12.5px; }
+    .cv-sigs li:last-child { border-bottom:0; }
+    .cv-sig-h { display:flex; gap:4px 7px; align-items:center; flex-wrap:wrap; }
+    .cv-sig-h .pill { margin-left:auto; }
+    .cv-sig-d { margin-top:2px; font-size:12px; color:var(--text-2,#4b5563); }
+    .cv-alert { display:flex; gap:8px 10px; align-items:center; flex-wrap:wrap; margin-top:12px; padding:10px 12px; border-radius:10px; border:1px solid var(--accent,#3b5bdb); background:var(--accent-weak,#eef2ff); }
+    .cv-stepline { margin-top:12px; font-size:12.5px; color:var(--text-2,#4b5563); }
+    .cv-stepline b { color:var(--text,#16181d); }
+    ol.cv-steps { list-style:none; padding:0 0 4px; margin:8px 0 4px; }
+    @media (max-width:640px){
+      ol.cv-steps .gs { min-width:0; padding-left:2px; padding-right:2px; font-size:10.5px; line-height:1.3; -webkit-hyphens:auto; hyphens:auto; }
+      .cv-form, .cv-rules { grid-template-columns:1fr; }
+      .cv-tbl thead { display:none; }
+      .cv-tbl, .cv-tbl tbody, .cv-tbl tfoot, .cv-tbl tr, .cv-tbl td { display:block; width:100%; }
+      .cv-tbl tr { padding:6px 0; border-bottom:1px solid var(--hairline,#eef0f3); }
+      .cv-tbl td { display:flex; justify-content:space-between; gap:12px; padding:2px 0; border:0; text-align:right; }
+      .cv-tbl td::before { content:attr(data-label); flex:none; max-width:45%; text-align:left; font-weight:600; color:var(--text-2,#4b5563); }
+      .cv-tbl td.num { white-space:normal; }
+      .cv-tbl tfoot tr { border-bottom:0; }
+      .cv-tbl tfoot td.cv-tot-l { display:none; }
+      .cv-tbl .cv-me td { background:transparent; }
+      .cv-tbl .cv-me { background:var(--surface-2,#f6f7f9); border-radius:8px; padding:6px 8px; }
+      .cv-doc { padding:12px; }
+    }
   </style>
 </head>
 <body>
@@ -90,6 +171,9 @@
       amont: ["Projets à venir", "Surveillez les marchés publics qui vous correspondent."],
     };
     let DATA = null, ICONS, CLAIM_BTN = null;
+    // MY_TOKEN : compte Adjugo de ce navigateur (s'il existe) ; MY_COMPANY : entreprise saisie dans
+    // MA part (repère « vous ») ; RELOAD_JOURNAL : rafraîchit « Mon journal » après une action.
+    let MY_TOKEN = null, MY_COMPANY = "", RELOAD_JOURNAL = null;
     const PIECE_TYPES = [["kbis", "Kbis"], ["fiscale", "Attestation fiscale"], ["sociale", "Attestation sociale (URSSAF)"], ["assurance", "Assurance (RC / décennale)"], ["rib", "RIB"], ["qualification", "Qualification / certificat"], ["autre", "Autre pièce"]];
     const PIECE_LABEL = Object.fromEntries(PIECE_TYPES);
     const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
@@ -150,21 +234,25 @@
     // ── Modale légère (récap avant envoi, saisie du code de vérification) ──
     // Remplace window.prompt/confirm (dialogues système gris → perçus comme du phishing par
     // un dirigeant non technique, collage bloqué sur mobile). Renvoie une Promise.
-    function openModal({ title, bodyHtml, confirmLabel, cancelLabel, withInput, inputLabel, extraLabel }) {
+    function openModal({ title, bodyHtml, confirmLabel, cancelLabel, withInput, inputLabel, extraLabel, noteHtml }) {
       return new Promise(resolve => {
         const ov = document.createElement("div");
         ov.style.cssText = "position:fixed;inset:0;background:rgba(17,24,39,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px";
         const box = document.createElement("div");
         box.style.cssText = "background:var(--card,#fff);border-radius:14px;max-width:440px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3)";
-        box.innerHTML = `<div style="font-size:16px;font-weight:800;margin-bottom:8px">${esc(title || "")}</div><div class="small" style="color:var(--text-2,#4b5563);line-height:1.5">${bodyHtml || ""}</div>`;
+        // Vraie boîte de dialogue pour les lecteurs d'écran (titre annoncé, Échap pour fermer).
+        const uid = "mdl" + Math.random().toString(36).slice(2, 9);
+        box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true"); box.setAttribute("aria-labelledby", uid + "-t");
+        box.innerHTML = `<div id="${uid}-t" style="font-size:16px;font-weight:800;margin-bottom:8px">${esc(title || "")}</div><div class="small" style="color:var(--text-2,#4b5563);line-height:1.5">${bodyHtml || ""}</div>`;
         let input = null;
         if (withInput) {
-          if (inputLabel) box.appendChild($(`<label class="small" style="display:block;font-weight:600;margin:12px 0 4px">${esc(inputLabel)}</label>`));
-          input = document.createElement("input"); input.className = "inp"; input.style.cssText = "width:100%;font-size:18px;letter-spacing:3px;text-align:center";
+          if (inputLabel) box.appendChild($(`<label class="small" for="${uid}-i" style="display:block;font-weight:600;margin:12px 0 4px">${esc(inputLabel)}</label>`));
+          input = document.createElement("input"); input.id = uid + "-i"; input.className = "inp"; input.style.cssText = "width:100%;font-size:18px;letter-spacing:3px;text-align:center";
           input.inputMode = "numeric"; input.autocomplete = "one-time-code"; input.maxLength = 6; input.placeholder = "••••••";
           box.appendChild(input);
         }
         const extra = document.createElement("div"); extra.className = "small"; extra.style.cssText = "margin-top:8px;min-height:16px;color:#b8730a";
+        extra.setAttribute("role", "status"); if (noteHtml) extra.innerHTML = noteHtml;   // noteHtml : DÉJÀ échappé
         box.appendChild(extra);
         const bar = document.createElement("div"); bar.className = "row"; bar.style.cssText = "gap:8px;justify-content:flex-end;margin-top:16px";
         const cancel = $(`<button class="btn">${esc(cancelLabel || "Annuler")}</button>`);
@@ -173,7 +261,9 @@
         if (extraLabel) { extraBtn = $(`<button class="btn" style="margin-right:auto">${esc(extraLabel)}</button>`); bar.appendChild(extraBtn); }
         bar.appendChild(cancel); bar.appendChild(ok); box.appendChild(bar);
         ov.appendChild(box); document.body.appendChild(ov); icons();
-        const close = (val) => { ov.remove(); resolve(val); };
+        const prevFocus = document.activeElement;
+        const close = (val) => { ov.remove(); try { if (prevFocus && prevFocus.isConnected && prevFocus.focus) prevFocus.focus({ preventScroll: true }); } catch (e) {} resolve(val); };
+        ov.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); close(null); } });
         cancel.onclick = () => close(null);
         ok.onclick = () => close(withInput ? { value: (input.value || "").trim() } : true);
         if (extraBtn) extraBtn.onclick = () => close({ extra: true });
@@ -215,12 +305,32 @@
     const SOON_STEPS = { convention_a_signer: 1, pret_a_deposer: 1 };
     const ROLE_LABEL = { cotraitant: "partenaire", sous_traitant: "sous-traitant", mandataire: "mandataire" };
     const MEMBER_STATUS = { invited: ["invité", "pill neutral"], draft: ["brouillon", "pill neutral"], submitted: ["part soumise", "pill go"] };
-    const fmtShort = (s) => { if (!s) return ""; try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch (e) { return s; } };
-    const fmtDT = (s) => { if (!s) return ""; try { const d = new Date(s); return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } };
+    // Horodatages de l'API : UTC « naïf » (sans fuseau, ex. 2026-10-08T01:30:11) → lus comme UTC,
+    // affichés à l'heure locale. Une date seule (2026-11-07) ou déjà datée d'un fuseau reste telle quelle.
+    const apiDate = (s) => new Date(typeof s === "string" && /T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s) ? s + "Z" : s);
+    const fmtShort = (s) => { if (!s) return ""; try { return apiDate(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch (e) { return s; } };
+    const fmtDT = (s) => { if (!s) return ""; try { const d = apiDate(s); return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } };
+    // Stepper 1→5 (vague 2) : étapes du parcours dérivées par le serveur (fait / en cours / à faire).
+    const ETAPE_SR = { fait: "fait", en_cours: "en cours", a_faire: "à venir" };
+    function renderEtapes(st, etapes) {
+      const wrap = document.createElement("div");
+      const cur = etapes.find(e => e.status === "en_cours");
+      const n = st.etape || (cur && cur.n);
+      if (n) wrap.appendChild($(`<div class="cv-stepline">Étape <b>${esc(n)}</b> sur ${esc(etapes.length)}${st.label ? " · " + esc(st.label) : ""}</div>`));
+      const ol = $(`<ol class="gstep cv-steps" aria-label="Étapes du groupement"></ol>`);
+      etapes.forEach(e => {
+        const cls = e.status === "fait" ? " done" : e.status === "en_cours" ? " cur" : "";
+        ol.appendChild($(`<li class="gs${cls}"${e.status === "en_cours" ? ' aria-current="step"' : ""}>${esc(e.label)}<span class="sr-only"> (${ETAPE_SR[e.status] || ""})</span></li>`));
+      });
+      wrap.appendChild(ol);
+      return wrap;
+    }
     function renderForMember(head, fm, d) {
       const st = fm.state || {};
       const steps = Array.isArray(st.steps) ? st.steps : [];
-      if (steps.length) {
+      const etapes = Array.isArray(st.etapes) ? st.etapes : [];
+      if (etapes.length) head.appendChild(renderEtapes(st, etapes));
+      else if (steps.length) {
         let idx = steps.findIndex(s => s.key === st.state);
         if (idx < 0 && typeof st.index === "number") idx = st.index;
         const gs = $(`<div class="gstep" aria-label="Étapes du groupement"></div>`);
@@ -270,8 +380,12 @@
       });
       if (!members.length) ul.appendChild($(`<li class="muted">Aucun autre partenaire invité pour l'instant.</li>`));
       box.appendChild(ul);
-      if (st.offer_frozen) {
-        box.appendChild($(`<div class="offre-box"><i data-lucide="lock"></i><div style="flex:1"><div style="font-weight:700">Offre commune figée${st.frozen_at ? " le " + esc(fmtShort(st.frozen_at)) : ""}</div>${fm.warning_two_members ? '<div class="small muted">À deux, le total révèle mécaniquement la part de l\'autre.</div>' : ""}</div>${st.total_offre_ht != null ? `<div class="offre-total">${esc(eur(st.total_offre_ht))} HT</div>` : ""}</div>`));
+      // Vague 2 : une convention en brouillon ou plus à jour fait foi, et le total n'est révélé
+      // qu'à sa génération. L'encadré « offre figée » ne s'affiche donc que sans convention, ou
+      // avec une convention générée (même total que son annexe).
+      const cvSt = st.convention && st.convention.status;
+      if (st.offer_frozen && (!cvSt || CV_ACTIVE[cvSt])) {
+        box.appendChild($(`<div class="offre-box"><i data-lucide="lock"></i><div style="flex:1"><div style="font-weight:700">Offre commune figée${st.frozen_at ? " le " + esc(fmtShort(st.frozen_at)) : ""}</div>${fm.warning_two_members ? '<div class="small muted">À deux, le total révèle mécaniquement la part de l\'autre.</div>' : ""}</div>${st.total_offre_ht != null ? `<div class="offre-total">${esc(eurHT(st.total_offre_ht))}</div>` : ""}</div>`));
       }
       head.appendChild(box);
     }
@@ -281,8 +395,9 @@
       const d = DATA, p = d.project || {}, a = p.analysis || {};
       const facts = Object.keys(LABELS).filter(k => a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length));
       const root = content(); root.innerHTML = "";
+      RELOAD_JOURNAL = null;
 
-      const head = $(`<div class="card pad" style="margin-bottom:14px"></div>`);
+      const head = $(`<div class="card pad" style="margin-bottom:16px"></div>`);
       head.appendChild($(`<div class="muted small">${d.mandataire ? "Partagé par <b>" + esc(d.mandataire) + "</b>" : "Dossier partagé"}${d.invited && d.invited.company ? " · pour " + esc(d.invited.company) : ""}</div>`));
       head.appendChild($(`<div style="font-size:21px;font-weight:800;margin:2px 0 3px;letter-spacing:-.02em">${esc(p.name || "Appel d'offres")}${tip("Vous ne voyez que ce dossier et <b>votre</b> contribution, jamais les données des autres entreprises. Conformément au RGPD, vos actions sont journalisées et visibles par le mandataire.")}</div>`));
       if (p.client) head.appendChild($(`<div class="muted small">${esc(p.client)}</div>`));
@@ -300,6 +415,7 @@
           head.appendChild($(`<div style="margin-top:10px;padding:9px 12px;border-radius:9px;background:${bg};border:1px solid ${bd};color:${bd};font-size:13px">${ico("clock", 14, "margin-right:4px")}${txt} <span class="muted" style="color:inherit;opacity:.8">(date limite acheteur : ${esc(fmtDate(p.deadline))})</span></div>`));
         }
       }
+      CV.alertEl = document.createElement("div"); head.appendChild(CV.alertEl);   // « Convention à valider »
       if (d.for_member) { try { renderForMember(head, d.for_member, d); } catch (e) { console.warn("for_member", e); } }
       const dl = $(`<dl class="g-fact"></dl>`);
       const addFact = (t, h) => { dl.appendChild($(`<dt>${t}</dt>`)); const dd = document.createElement("dd"); dd.innerHTML = h; dl.appendChild(dd); };
@@ -309,7 +425,13 @@
       if (dl.children.length) head.appendChild(dl);
       root.appendChild(head);
 
-      const docCard = $(`<div class="card pad" style="margin-bottom:14px"></div>`);
+      // Convention de groupement (vague 2) : état d'attente, brouillon, texte figé + accords.
+      const cvCard = $(`<section class="card pad cv-card" aria-labelledby="cv-title"><div class="cv-head"><h2 class="cv-title" id="cv-title" tabindex="-1">Convention de groupement</h2></div><div class="muted small" style="margin-top:8px">Chargement de la convention…</div></section>`);
+      CV.el = cvCard; CV.data = null;
+      root.appendChild(cvCard);
+      loadConvention();
+
+      const docCard = $(`<div class="card pad" style="margin-bottom:16px"></div>`);
       docCard.appendChild($(`<b style="font-size:13.5px">Pièces partagées${d.documents && d.documents.length ? " (" + d.documents.length + ")" : ""}</b>`));
       if (!d.can_view_docs) docCard.appendChild($(`<div class="muted small" style="margin-top:8px">Le partage des pièces n'est pas activé pour ce lien.</div>`));
       else if (!d.documents || !d.documents.length) docCard.appendChild($(`<div class="muted small" style="margin-top:8px">Aucune pièce partagée pour le moment.</div>`));
@@ -340,10 +462,11 @@
 
     async function renderContribution(d) {
       const role = (d.invited && d.invited.role === "sous_traitant") ? "sous-traitant" : "partenaire";
-      const card = $(`<div class="card pad" style="margin-bottom:8px;border:1px solid var(--accent,#3b5bdb)"></div>`);
+      const card = $(`<div class="card pad" style="margin-bottom:16px;border:1px solid var(--accent,#3b5bdb)"></div>`);
       card.appendChild($(`<div class="row" style="gap:8px;align-items:center"><span style="flex:1;min-width:0"><b style="font-size:13.5px">Ma contribution au dossier commun</b>${tip("Vous ne voyez que <b>vos</b> données ; le mandataire les assemble et l'IA les fusionne dans la réponse commune.")}</span></div>`));
       const status = $(`<span class="pill neutral" style="font-size:11px">Brouillon</span>`); card.firstChild.appendChild(status);
       card.appendChild($(`<div class="muted small" style="margin-top:4px">En tant que <b>${role}</b>, renseignez votre part.</div>`));
+      card.appendChild($(`<div id="cv-contrib-warn"></div>`));   // rempli si la convention est générée (syncContribWarn)
 
       const company = inp("Votre entreprise"), lot = inp("Votre lot / périmètre (ex. Lot 2 — Démolition)");
       const siret = inp("SIRET (14 chiffres)"), forme = inp("Forme juridique (ex. SARL, SAS)");
@@ -484,7 +607,9 @@
           PIECE_TYPES.forEach(([k, l]) => sel.appendChild($(`<option value="${k}">${esc(l)}</option>`)));
           sel.value = PIECE_LABEL[pc.piece_type] ? pc.piece_type : "autre";
           const dt = document.createElement("input"); dt.type = "date"; dt.className = "inp"; dt.value = pc.expiration_date || ""; dt.setAttribute("aria-label", "Date de validité de la pièce " + (pc.name || ""));
+          const sel0 = PIECE_LABEL[pc.piece_type] ? pc.piece_type : "autre", dt0 = pc.expiration_date || "";
           const patch = async (body) => {
+            if (!(await confirmPartChange())) { sel.value = sel0; dt.value = dt0; upMsg.textContent = "Modification annulée : la convention reste à jour."; return; }
             upMsg.textContent = "Mise à jour…";
             const r = await fetch(pieceUrl + "/" + pc.id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
             if (r && r.ok) { okMsg(upMsg, "Pièce mise à jour"); reloadPieces(); }
@@ -498,15 +623,17 @@
           const acts = document.createElement("div"); acts.className = "row"; acts.style.gap = "6px";
           acts.appendChild($(`<a class="btn sm" href="${pieceUrl}/${encodeURIComponent(pc.id)}">Voir</a>`));
           const rm = $(`<button class="btn sm">Retirer</button>`);
-          rm.onclick = async () => { rm.disabled = true; await fetch(pieceUrl + "/" + pc.id, { method: "DELETE" }); reloadPieces(); };
+          rm.onclick = async () => { if (!(await confirmPartChange())) { upMsg.textContent = "Retrait annulé : la convention reste à jour."; return; } rm.disabled = true; await fetch(pieceUrl + "/" + pc.id, { method: "DELETE" }); reloadPieces(); };
           acts.appendChild(rm); row.appendChild(acts); piecesList.appendChild(row);
         });
         if (!pieces || !pieces.length) piecesList.appendChild($(`<div class="muted small">Aucune pièce déposée.</div>`));
       }
-      async function reloadPieces() { const c = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/contribution").then(r => r.ok ? r.json() : null).catch(() => null); renderPieces(c ? c.pieces : []); if (c) { renderChecklist(c.pieces_checklist); curVer = c.version || curVer; setStatus(c.status); } reloadCoffre(); }
+      async function reloadPieces() { const c = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/contribution").then(r => r.ok ? r.json() : null).catch(() => null); renderPieces(c ? c.pieces : []); if (c) { renderChecklist(c.pieces_checklist); curVer = c.version || curVer; setStatus(c.status); } reloadCoffre(); if (cvPartLocksConvention()) loadConvention(); }
       addBtn.onclick = () => fileIn.click();
       fileIn.onchange = async () => {
-        if (!fileIn.files.length) return; upMsg.textContent = "Envoi…";
+        if (!fileIn.files.length) return;
+        if (!(await confirmPartChange())) { fileIn.value = ""; upMsg.textContent = "Ajout annulé : la convention reste à jour."; return; }
+        upMsg.textContent = "Envoi…";
         const fd = new FormData(); fd.append("file", fileIn.files[0]);
         if (typeSel.value) fd.append("piece_type", typeSel.value);
         if (expIn.value) fd.append("expiration_date", expIn.value);
@@ -524,7 +651,7 @@
       const declineWrap = $(`<div style="margin-top:14px;text-align:right"></div>`);
       const btnDecline = $(`<button class="g-link" type="button">Décliner l'invitation</button>`);
       btnDecline.onclick = async () => {
-        const ok = await openModal({ title: "Décliner l'invitation ?", bodyHtml: "Vous ne ferez plus partie de ce groupement ; le mandataire sera prévenu. Ce lien ne fonctionnera plus ensuite.", confirmLabel: "Décliner l'invitation", cancelLabel: "Annuler" });
+        const ok = await openModal({ title: "Décliner l'invitation ?", bodyHtml: "Vous ne ferez plus partie de ce groupement ; le mandataire sera prévenu. Ce lien ne fonctionnera plus ensuite." + (cvPartLocksConvention() ? " La convention de groupement <b>ne sera plus à jour</b> : le chef de file devra la régénérer." : ""), confirmLabel: "Décliner l'invitation", cancelLabel: "Annuler" });
         if (!ok) return;
         btnDecline.disabled = true;
         const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/decline", { method: "POST" }).catch(() => null);
@@ -533,8 +660,9 @@
       };
       declineWrap.appendChild(btnDecline); card.appendChild(declineWrap);
       content().appendChild(card);
+      syncContribWarn();
       // ── Mon journal : qui a vu / modifié quoi sur MA part + événements du groupement ──
-      const jCard = $(`<div class="card pad" style="margin-bottom:8px"></div>`);
+      const jCard = $(`<div class="card pad" style="margin-bottom:16px"></div>`);
       const jHead = $(`<div class="row" style="gap:8px;align-items:center"><span style="flex:1;min-width:0"><b style="font-size:13.5px">Mon journal</b>${tip("Qui a consulté ou modifié quoi sur votre part, et les événements du groupement.<span class=\"j-int\"></span>")}</span></div>`);
       const jInt = jHead.querySelector(".j-int");   // complété par le libellé d'intégrité renvoyé par l'API
       const jRefresh = $(`<button class="btn sm" type="button"><i data-lucide="refresh-cw"></i>Actualiser</button>`); jHead.appendChild(jRefresh);
@@ -556,6 +684,7 @@
         icons();
       }
       jRefresh.onclick = loadJournal;
+      RELOAD_JOURNAL = loadJournal;
       content().appendChild(jCard);
       reloadCoffre(); loadJournal();
 
@@ -663,6 +792,7 @@
         const ct = c.contact || {}; cNom.value = ct.nom || ""; cMail.value = ct.email || ""; cTel.value = ct.telephone || "";
         curVer = c.version || 0; setStatus(c.status); renderPieces(c.pieces || []); renderChecklist(c.pieces_checklist);
         loadDetail(c.detail_chiffre);
+        const co = c.company_name || ""; if (co !== MY_COMPANY) { MY_COMPANY = co; if (CV.data) renderConvention(CV.data); }   // repère « vous »
       };
       const c0 = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
       if (c0) fill(c0); else renderPieces([]);
@@ -690,43 +820,20 @@
         }
         const e = await r.json().catch(() => ({})); msg.textContent = errText(e, r.status === 422 ? "Données invalides — vérifiez les montants saisis." : "Erreur."); return false;
       };
-      btnSave.onclick = async () => { msg.textContent = "Enregistrement…"; if (await save()) { if (collectWarn) msg.textContent = "Brouillon enregistré, mais : " + collectWarn; else okMsg(msg, "Brouillon enregistré"); } };
+      btnSave.onclick = async () => {
+        if (!(await confirmPartChange())) { msg.textContent = "Modification annulée : la convention reste à jour."; return; }
+        msg.textContent = "Enregistrement…";
+        if (await save()) { if (collectWarn) msg.textContent = "Brouillon enregistré, mais : " + collectWarn; else okMsg(msg, "Brouillon enregistré"); if (CV.data && CV.data.status !== "aucune") loadConvention(); }
+      };
       // Binding d'identité : avant la SOUMISSION, si le lien cible une adresse email et que
       // l'email est configuré, l'invité prouve qu'il contrôle cette adresse (code à 6 chiffres).
-      async function ensureVerified() {
-        const st = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/status").then(r => r.ok ? r.json() : null).catch(() => null);
-        if (!st || !st.required || st.verified) return true;
-        let masked = st.email_masked || "votre adresse";
-        // On ne redemande un code QUE s'il n'y en a pas déjà un valide en attente : sinon on
-        // réutilise celui envoyé (rappeler /otp/request épuiserait la limite 6/h et bloquerait).
-        const requestCode = async () => {
-          const rq = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/request", { method: "POST" }).then(r => r.ok ? r.json() : null).catch(() => null);
-          if (rq && rq.email_masked) masked = rq.email_masked;
-          return rq && rq.sent;
-        };
-        if (!st.pending) {
-          msg.textContent = "Envoi d'un code de vérification…";
-          if (!(await requestCode())) { msg.textContent = "Trop d'envois récents — patientez quelques minutes, puis ressaisissez le dernier code reçu."; return false; }
-        }
-        // Champ de saisie intégré (aux couleurs Adjugo) plutôt qu'un prompt système gris.
-        while (true) {
-          const res = await openModal({
-            title: "Vérifiez votre identité",
-            bodyHtml: `Pour ajouter votre part au dossier commun, saisissez le code à 6 chiffres envoyé à <b>${esc(masked)}</b>.`,
-            inputLabel: "Code de vérification", withInput: true,
-            confirmLabel: "Valider", cancelLabel: "Annuler", extraLabel: "Renvoyer le code",
-          });
-          if (!res) { msg.textContent = "Vérification annulée — votre brouillon est conservé."; return false; }
-          if (res.extra) { await requestCode(); continue; }   // « Renvoyer le code »
-          const code = (res.value || "").trim();
-          if (!code) continue;
-          const vr = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
-          if (vr.ok) { okMsg(msg, "Identité vérifiée"); return true; }
-          const e = await vr.json().catch(() => ({})); msg.textContent = (e && e.detail) ? e.detail : "Code incorrect."; return false;
-        }
-      }
+      const ensureVerified = () => verifyIdentity(msg, { purpose: "Pour ajouter votre part au dossier commun", cancelMsg: "Vérification annulée — votre brouillon est conservé." });
       btnSubmit.onclick = async () => {
+        if (!(await confirmPartChange())) { msg.textContent = "Envoi annulé : la convention reste à jour."; return; }
         msg.textContent = "Envoi…"; if (!(await save())) return;
+        // L'enregistrement a pu rendre la convention caduque (part soumise repassée en brouillon) :
+        // la carte est rechargée tout de suite, même si l'envoi est ensuite annulé.
+        if (CV.data && CV.data.status !== "aucune") loadConvention();
         // Récapitulatif AVANT envoi : le partenaire relit ce qui entrera dans le pli déposé
         // à l'acheteur (ces éléments alimentent son DC1/DC2) — réduit les envois incomplets.
         const nRefs = refs.value.split("\n").map(s => s.trim()).filter(Boolean).length;
@@ -750,10 +857,475 @@
         if (!recap) { msg.textContent = "Envoi annulé — votre brouillon est conservé."; return; }
         if (!(await ensureVerified())) return;
         const r = await fetch(url + "/submit", { method: "POST" });
-        if (r.ok) { setStatus((await r.json()).status); okMsg(msg, "Contribution soumise"); showSubmittedBanner(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+        if (r.ok) { setStatus((await r.json()).status); okMsg(msg, "Contribution soumise"); showSubmittedBanner(); window.scrollTo({ top: 0, behavior: "smooth" }); if (CV.data && CV.data.status !== "aucune") loadConvention(); }
         else { const e = await r.json().catch(() => ({})); const dt = e && e.detail; msg.textContent = (dt && dt.message) ? dt.message : (typeof dt === "string" ? dt : "Erreur d'envoi."); }
       };
       icons();
+    }
+
+    // ── Vérification d'identité par code (flux OTP existant) ──
+    // Partagée par la soumission de la part et l'accord sur la convention. Si le lien cible une
+    // adresse email et que l'email est configuré, l'invité prouve qu'il contrôle cette adresse
+    // (code à 6 chiffres). opts.purpose : début de phrase de la modale (texte simple, échappé ici).
+    async function verifyIdentity(msgEl, opts) {
+      const o = opts || {};
+      const otp = "/api/invite/" + encodeURIComponent(TOKEN) + "/otp/";
+      const st = await fetch(otp + "status").then(r => r.ok ? r.json() : null).catch(() => null);
+      if (!st || !st.required || st.verified) return true;
+      let masked = st.email_masked || "votre adresse";
+      // On ne redemande un code QUE s'il n'y en a pas déjà un valide en attente : sinon on
+      // réutilise celui envoyé (rappeler /otp/request épuiserait la limite 6/h et bloquerait).
+      const requestCode = async () => {
+        const rq = await fetch(otp + "request", { method: "POST" }).then(r => r.ok ? r.json() : null).catch(() => null);
+        if (rq && rq.email_masked) masked = rq.email_masked;
+        return rq || { sent: false };
+      };
+      if (!st.pending) {
+        msgEl.textContent = "Envoi d'un code de vérification…";
+        const rq = await requestCode();
+        if (!rq.sent) { msgEl.textContent = rq.reason || "Trop d'envois récents — patientez quelques minutes, puis ressaisissez le dernier code reçu."; return false; }
+      }
+      // Champ de saisie intégré (aux couleurs Adjugo) plutôt qu'un prompt système gris.
+      let note = "";
+      while (true) {
+        const res = await openModal({
+          title: "Vérifiez votre identité",
+          bodyHtml: `${esc(o.purpose || "Pour continuer")}, saisissez le code à 6 chiffres envoyé à <b>${esc(masked)}</b>.`,
+          inputLabel: "Code de vérification", withInput: true, noteHtml: note,
+          confirmLabel: "Valider", cancelLabel: "Annuler", extraLabel: "Renvoyer le code",
+        });
+        if (!res) { msgEl.textContent = o.cancelMsg || "Vérification annulée."; return false; }
+        if (res.extra) {   // « Renvoyer le code »
+          const rq = await requestCode();
+          note = rq.sent ? (rq.already ? "Le dernier code envoyé est encore valable : vérifiez vos emails, y compris les indésirables." : "Un nouveau code vient d'être envoyé.")
+            : esc(rq.reason || "Envoi impossible pour le moment : réessayez dans quelques minutes.");
+          continue;
+        }
+        const code = (res.value || "").trim();
+        if (!code) { note = "Saisissez le code à 6 chiffres reçu par email."; continue; }
+        const vr = await fetch(otp + "verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) }).catch(() => null);
+        if (vr && vr.ok) { okMsg(msgEl, "Identité vérifiée"); return true; }
+        const e = vr ? await vr.json().catch(() => ({})) : {};
+        const txt = errText(e, vr ? "Code incorrect." : "Connexion impossible : réessayez.");
+        if (vr && (vr.status === 400 || vr.status === 410)) { note = esc(txt); continue; }   // code faux / expiré : on reste dans la saisie
+        msgEl.textContent = txt; return false;
+      }
+    }
+
+    // ══════════ Convention de groupement (co-traitance v2, vague 2) ══════════
+    // Contrat : docs/COTRAITANCE_V2_VAGUE2_API.md §4 et §7. Doctrine : en brouillon, le partenaire
+    // ne voit QUE son propre prix (jamais le total ni le prix des autres) ; une fois générée, le
+    // texte (annexe de répartition comprise) est le même pour tous. On n'affiche que ce que l'API
+    // renvoie : aucun chiffre calculé ici, jamais d'email ni d'IP.
+    // Le texte (content_md / apercu_md) n'est JAMAIS injecté en HTML : rendu DOM par textContent
+    // (titres, paragraphes, listes, gras / italique, tableau de répartition).
+    const CONV_URL = () => "/api/invite/" + encodeURIComponent(TOKEN) + "/convention";
+    const CV_ACTIVE = { a_signer: 1, signee: 1 };
+    const CV_PILL = { aucune: "neutral", draft: "neutral", a_signer: "st-envoye", signee: "go", perimee: "a_etudier" };
+    const SIG_PILL = { signed: "go", hors_ligne: "go", pending: "neutral", perimee: "neutral" };
+    const CV_LEGAL_DEFAULT = "Modèle à faire relire par un conseil (avocat, juriste, CCI) : ce n'est pas un conseil juridique.";
+    const CV_ID_EMAIL = "accord enregistré via le lien, adresse email vérifiée par code";   // identity_label « email_verifie » (contrat §2)
+    // form : nom / qualité saisis dans « Donner mon accord », conservés si la carte est redessinée (même texte).
+    const CV = { el: null, data: null, alertEl: null, form: null };
+    // Compte Adjugo ouvert dans ce navigateur : joint aux appels de la convention (le serveur ne
+    // s'en sert que si c'est le compte qui a réclamé ce lien → niveau « compte vérifié »). Relu à
+    // CHAQUE appel : la personne a pu se connecter dans un autre onglet entre-temps.
+    const readMyToken = () => { try { return localStorage.getItem("adjugo_token") || null; } catch (e) { return null; } };
+    const authHeaders = (extra) => { const h = Object.assign({}, extra || {}); MY_TOKEN = readMyToken(); if (MY_TOKEN) h.Authorization = "Bearer " + MY_TOKEN; return h; };
+    // Connexion (ou déconnexion) faite dans un autre onglet : la carte est rechargée d'elle-même,
+    // sans recharger la page (« compte requis » se lève dès le retour sur cet onglet).
+    function cvTokenChanged() { if (readMyToken() !== MY_TOKEN && CV.el && CV.el.isConnected) loadConvention(); }
+    window.addEventListener("storage", (e) => { if (!e || e.key === null || e.key === "adjugo_token") cvTokenChanged(); });
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") cvTokenChanged(); });
+    // Sous-traitant : ni membre du groupement, ni appelé à valider la convention (rôle donné par l'API).
+    const isSousTraitant = () => String((DATA && DATA.invited && DATA.invited.role) || "").trim().toLowerCase().replace(/-/g, "_") === "sous_traitant";
+    // Montant au format du texte de la convention : « 125 000 € HT » / « 125 000,50 € HT ».
+    const eurHT = (n) => {
+      if (n == null || n === "" || isNaN(Number(n))) return "—";
+      const v = Number(n), dec = Math.abs(v - Math.trunc(v)) > 0.004;
+      return v.toLocaleString("fr-FR", { minimumFractionDigits: dec ? 2 : 0, maximumFractionDigits: 2 }) + " € HT";
+    };
+    const norm = (s) => String(s || "").trim().toLowerCase();
+    const isMyCompany = (name) => { const n = norm(name); return !!n && [MY_COMPANY, DATA && DATA.invited && DATA.invited.company].some(x => norm(x) === n); };
+
+    // ── Rendu sûr du Markdown simple de la convention ──
+    // Les valeurs saisies y sont échappées (\* \_ \` \\ \# \[ \]) : on les protège d'abord (caractères
+    // privés), on applique **gras** / *italique*, puis on les restitue en texte littéral.
+    const mdProtect = (s) => String(s == null ? "" : s).replace(/[\uE000-\uE0FF]/g, "").replace(/\\([\\*_`#\[\]])/g, (m, c) => String.fromCharCode(0xE000 + c.charCodeAt(0)));
+    const mdRestore = (s) => String(s).replace(/[\uE000-\uE0FF]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xE000));
+    function mdInline(parent, s) {
+      String(s).split(/(\*\*[^*\n]+?\*\*|\*[^*\n]+?\*)/g).forEach(part => {
+        if (!part) return;
+        let node;
+        if (part.length > 4 && part.startsWith("**") && part.endsWith("**")) { node = document.createElement("strong"); node.textContent = mdRestore(part.slice(2, -2)); }
+        else if (part.length > 2 && part.startsWith("*") && part.endsWith("*")) { node = document.createElement("em"); node.textContent = mdRestore(part.slice(1, -1)); }
+        else node = document.createTextNode(mdRestore(part));
+        parent.appendChild(node);
+      });
+    }
+    // Ligne d'annexe produite par le serveur : « - **Entreprise** — rôle — part : … — prix de vente : … ».
+    const ANNEX_RE = /^- \*\*([^*]+)\*\* — (mandataire \(chef de file\)|co-traitant \(partenaire\)) — part : (.+) — prix de vente : (.+)$/;
+    const ANNEX_COLS = ["Entreprise", "Rôle", "Part", "Prix de vente"];
+    function mdTable() {
+      const t = document.createElement("table"); t.className = "cv-tbl";
+      const tr = document.createElement("tr");
+      ANNEX_COLS.forEach((c, i) => { const th = document.createElement("th"); th.scope = "col"; th.textContent = c; if (i === 3) th.className = "num"; tr.appendChild(th); });
+      const thead = document.createElement("thead"); thead.appendChild(tr); t.appendChild(thead);
+      t.appendChild(document.createElement("tbody"));
+      return t;
+    }
+    function mdRender(md, label) {
+      const root = document.createElement("div"); root.className = "cv-doc"; root.tabIndex = 0;
+      root.setAttribute("role", "region"); root.setAttribute("aria-label", label || "Texte de la convention");
+      let ul = null, table = null, annex = false;
+      String(md || "").replace(/\r/g, "").split("\n").forEach(raw => {
+        const line = mdProtect(raw).replace(/\s+$/, "");
+        if (!line.trim()) { ul = null; table = null; return; }
+        let m = /^(#{1,3}) +(.*)$/.exec(line);
+        if (m) {
+          ul = null; table = null;
+          const h = document.createElement(m[1].length === 1 ? "h3" : "h4"); mdInline(h, m[2]); root.appendChild(h);
+          annex = /^annexe\b/i.test(mdRestore(m[2]).trim());
+          return;
+        }
+        m = annex ? ANNEX_RE.exec(line) : null;
+        if (m) {
+          ul = null;
+          if (!table) { table = mdTable(); root.appendChild(table); }
+          const tr = document.createElement("tr");
+          [m[1], m[2], m[3], m[4]].forEach((v, i) => { const td = document.createElement("td"); td.textContent = mdRestore(v).trim(); td.dataset.label = ANNEX_COLS[i]; if (i === 3) td.className = "num"; if (i === 0) td.style.fontWeight = "600"; tr.appendChild(td); });
+          table.tBodies[0].appendChild(tr);
+          return;
+        }
+        if (/^- /.test(line)) {
+          table = null;
+          if (!ul) { ul = document.createElement("ul"); root.appendChild(ul); }
+          const li = document.createElement("li"); mdInline(li, line.slice(2)); ul.appendChild(li);
+          return;
+        }
+        ul = null; table = null;
+        const p = document.createElement("p"); mdInline(p, line);
+        if (/^\*\*Total de l'offre commune/.test(line)) p.className = "cv-total";
+        root.appendChild(p);
+      });
+      return root;
+    }
+
+    // ── Morceaux d'écran ──
+    const cvLegal = (d) => $(`<div class="cv-legal">${ico("scale", 15)}<span>${esc((d && d.avertissement) || CV_LEGAL_DEFAULT)}</span></div>`);
+    const cvWarn = (txt) => $(`<div class="warn-box"><i data-lucide="alert-triangle"></i><span>${esc(txt)}</span></div>`);
+    function cvDetails(key, title, bodyEl) {
+      const det = document.createElement("details"); det.className = "cv-read"; det.dataset.k = key;
+      det.appendChild($(`<summary><span class="cv-chev" aria-hidden="true">${ico("chevron-right", 15)}</span><span>${esc(title)}</span></summary>`));
+      det.appendChild(bodyEl);
+      return det;
+    }
+    function cvForme(d) {
+      const dl = $(`<dl class="g-fact cv-fact"></dl>`);
+      const add = (t, html) => { dl.appendChild($(`<dt>${esc(t)}</dt>`)); const dd = document.createElement("dd"); dd.innerHTML = html; dl.appendChild(dd); };
+      const f = d.forme_label;
+      // Terme juridique TOUJOURS accompagné de sa phrase simple (les deux viennent de l'API).
+      if (f && f.terme) add("Forme du groupement", `<b>${esc(f.phrase || "")}</b> <span class="muted">· ${esc(f.terme)}</span>${tip(esc(f.explication || ""))}`);
+      else add("Forme du groupement", `<span class="muted">Pas encore choisie par le chef de file</span>`);
+      if (d.forme === "conjoint" && d.mandataire_solidaire) add("Chef de file", `<b>Le chef de file répond aussi de la part de chaque partenaire</b> <span class="muted">· Mandataire solidaire</span>`);
+      return dl;
+    }
+    function cvRegles(d) {
+      const hab = Array.isArray(d.habilitation) ? d.habilitation : [], params = Array.isArray(d.params) ? d.params : [];
+      if (!hab.length && !params.length) return null;
+      const box = $(`<div class="cv-box"></div>`);
+      if (hab.length) {
+        box.appendChild($(`<b>Le chef de file peut, au nom de tous :</b>`));
+        const ul = document.createElement("ul");
+        hab.forEach(h => ul.appendChild($(`<li>${esc(h.libelle || "")}${h.terme ? tip(esc(h.terme)) : ""}</li>`)));
+        box.appendChild(ul);
+      }
+      if (params.length) {
+        box.appendChild($(`<b style="display:block;margin-top:12px">Règles du groupement</b>`));
+        const dl = $(`<dl class="g-fact cv-rules" style="margin-top:6px"></dl>`);
+        params.forEach(p => { dl.appendChild($(`<dt>${esc(p.libelle || p.key || "")}</dt>`)); dl.appendChild($(`<dd>${esc(p.valeur_libelle || "—")}</dd>`)); });
+        box.appendChild(dl);
+      }
+      return cvDetails("regles", "Pouvoirs du chef de file et règles du groupement", box);
+    }
+    // Répartition : en brouillon, SEUL le prix du partenaire (l'API n'envoie que le sien) ;
+    // générée, tous les prix de vente + le total figé. Avertissement de la doctrine au bon moment.
+    function cvRepartition(d, full) {
+      const rows = Array.isArray(d.membres) ? d.membres : [];
+      if (!rows.length) return null;
+      const sec = $(`<div class="cv-sec"></div>`);
+      sec.appendChild($(`<h3 class="cv-sec-t">Répartition des parts${tip(full
+        ? "L'annexe de répartition est la même pour tous les membres : chacun y voit le prix de vente de chaque part et le total. Les coûts et les marges n'y figurent pas et restent confidentiels."
+        : isSousTraitant() ? "Les membres du groupement et leur part. Les prix de vente n'apparaissent pas tant que la convention n'est pas générée. Les coûts et les marges n'y figurent jamais."
+        : "Tant que la convention n'est pas générée, vous ne voyez que votre propre prix. Les coûts et les marges ne figurent jamais dans la convention.")}</h3>`));
+      const t = $(`<table class="cv-tbl"><thead><tr><th scope="col">Entreprise</th><th scope="col">Rôle</th><th scope="col">Part</th><th scope="col" class="num">Prix de vente</th></tr></thead><tbody></tbody><tfoot></tfoot></table>`);
+      const tb = t.tBodies[0];
+      rows.forEach(m => {
+        const lead = m.membre === "mandataire" || m.role === "mandataire";
+        const hasPrice = Object.prototype.hasOwnProperty.call(m, "prix_lot_ht");
+        const me = !lead && (full ? isMyCompany(m.company) : hasPrice);
+        const prix = hasPrice ? (m.prix_lot_ht == null ? "pas encore renseigné" : eurHT(m.prix_lot_ht)) : "affiché à la génération";
+        const tr = $(`<tr${me ? ' class="cv-me"' : ""}><td data-label="Entreprise"><span><b>${esc(m.company || (lead ? "Chef de file" : "Partenaire"))}</b>${me ? ' <span class="muted">(vous)</span>' : ""}</span></td><td data-label="Rôle">${lead ? "chef de file" : "partenaire"}</td><td data-label="Part">${esc(m.lot || "à préciser")}</td><td data-label="Prix de vente" class="num${hasPrice ? "" : " muted"}">${esc(prix)}</td></tr>`);
+        tb.appendChild(tr);
+      });
+      const tot = full ? (d.total_offre_ht != null ? eurHT(d.total_offre_ht) : "—") : "révélé à tous à la génération";
+      t.tFoot.appendChild($(`<tr><td class="cv-tot-l" colspan="3">Total de l'offre commune</td><td class="num${full ? "" : " muted"}" data-label="Total de l'offre commune">${esc(tot)}</td></tr>`));
+      const wrap = document.createElement("div"); wrap.appendChild(t); sec.appendChild(wrap);
+      const two = full ? !!d.warning_two_members : rows.length === 2;
+      if (!full) { if (!isSousTraitant()) sec.appendChild(cvWarn("À la génération, chaque membre verra le prix de chaque part, le vôtre compris, et le total de l'offre." + (two ? " À deux membres, le total révèle à chacun la part de l'autre." : ""))); }
+      else if (two) sec.appendChild(cvWarn("À deux membres, le total révèle à chacun la part de l'autre."));
+      return sec;
+    }
+    function cvAccords(d) {
+      const sigs = Array.isArray(d.signatures) ? d.signatures : [];
+      if (!sigs.length) return null;
+      const ms = d.ma_signature || {};
+      const sec = $(`<div class="cv-sec"></div>`);
+      const nA = d.n_accords != null ? d.n_accords : sigs.filter(s => s.status === "signed" || s.status === "hors_ligne").length;
+      const nS = d.n_signataires != null ? d.n_signataires : sigs.length;
+      sec.appendChild($(`<h3 class="cv-sec-t">Accords des membres <span class="pill neutral" style="font-size:11px;margin-left:4px">${esc(nA)}/${esc(nS)}</span>${tip("Chaque accord est enregistré avec la date, l'empreinte du texte et le niveau d'identité de la personne. Ni adresse email ni adresse IP n'apparaissent ici.")}</h3>`));
+      const ul = $(`<ul class="cv-sigs"></ul>`);
+      sigs.forEach(s => {
+        const lead = s.membre === "mandataire";
+        const mineSigned = ms.status === "signed" && s.status === "signed" && s.signed_at && s.signed_at === ms.signed_at;
+        const me = !lead && (mineSigned || isMyCompany(s.company));
+        const li = $(`<li><div class="cv-sig-h"><b>${esc(s.company || (lead ? "Chef de file" : "Partenaire"))}</b><span class="muted">· ${lead ? "chef de file" : "partenaire"}</span>${me ? '<span class="muted">(vous)</span>' : ""}<span class="pill ${SIG_PILL[s.status] || "neutral"}" style="font-size:10.5px">${esc(s.status_label || s.status || "")}</span></div></li>`);
+        if (s.status === "signed" || s.status === "hors_ligne") {
+          const who = [s.signataire_nom, s.signataire_qualite].filter(Boolean).join(", ");
+          const bits = [who, s.signed_at ? "le " + fmtDT(s.signed_at) : "", s.identity_label || ""].filter(Boolean);
+          if (bits.length) li.appendChild($(`<div class="cv-sig-d">${esc(bits.join(" · "))}</div>`));
+        }
+        ul.appendChild(li);
+      });
+      sec.appendChild(ul);
+      return sec;
+    }
+    // Téléchargement du PDF (texte figé + accords) : fetch → fichier, pour afficher une erreur
+    // lisible au lieu d'une page JSON (409 tant que la convention n'est pas générée, 429…).
+    async function cvDownloadPdf(btn, live, version) {
+      btn.disabled = true; live.classList.remove("err"); live.textContent = "Préparation du PDF…";
+      try {
+        const r = await fetch(CONV_URL() + "/pdf");
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          live.classList.add("err"); live.textContent = errText(e, r.status === 429 ? "Trop de téléchargements : réessayez dans une minute." : "Téléchargement impossible pour le moment.");
+          return;
+        }
+        const blob = await r.blob();
+        const cd = r.headers.get("content-disposition") || "";
+        let name = "Convention_groupement" + (version ? "_v" + version : "") + ".pdf";
+        const m1 = /filename\*=UTF-8''([^;]+)/i.exec(cd), m2 = /filename="?([^";]+)"?/i.exec(cd);
+        try { if (m1) name = decodeURIComponent(m1[1]); else if (m2) name = m2[1]; } catch (e) {}
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = name; a.rel = "noopener"; a.style.display = "none";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        okMsg(live, "PDF téléchargé");
+        if (RELOAD_JOURNAL) RELOAD_JOURNAL();   // « Vous avez téléchargé la convention »
+      } catch (e) { live.classList.add("err"); live.textContent = "Téléchargement impossible : vérifiez votre connexion."; }
+      finally { btn.disabled = false; }
+    }
+    // Zone « Mon accord » : déjà donné / à donner / compte requis / non signataire.
+    function cvAccordBox(d, flash) {
+      const ms = d.ma_signature || {}, st = d.status;
+      const box = $(`<div class="cv-accord" id="cv-accord"></div>`);
+      const live = $(`<div class="cv-msg" role="status" aria-live="polite" style="margin-top:10px"></div>`);
+      const say = (t, err) => { live.classList.toggle("err", !!err); live.textContent = t || ""; };
+      const sayFlash = () => { if (flash) { say(flash.text, flash.err); flash.shown = true; } };
+      if (!ms.signataire) {
+        if (st !== "a_signer") return null;
+        box.className = "cv-accord plain";
+        box.appendChild($(`<div class="small cv-okline">${ico("info", 16, "color:var(--text-2,#6b7280)")}<span>${esc(d.message || "Vous n'êtes pas signataire de cette convention.")}</span></div>`));
+        box.appendChild(live); sayFlash();
+        return box;
+      }
+      if (ms.status === "signed") {
+        box.classList.add("ok");
+        // Niveau réellement imprimé dans le PDF : celui de MA ligne d'accord (même date, même nom).
+        const sig = (d.signatures || []).find(s => s.status === "signed" && s.signed_at && s.signed_at === ms.signed_at);
+        const lab = (sig && sig.identity_label) || ms.identite_libelle || "";
+        box.appendChild($(`<div class="cv-okline" tabindex="-1">${ico("check-circle-2", 18, "color:var(--success-text,#1a7f4b);margin-top:1px")}<div><b>Accord enregistré${ms.signed_at ? " le " + esc(fmtDT(ms.signed_at)) : ""}</b>${lab ? `<div class="small muted" style="margin-top:2px">${esc(lab)}</div>` : ""}</div></div>`));
+        box.appendChild(live); sayFlash();
+        return box;
+      }
+      if (st !== "a_signer" || !ms.peut_valider) return null;
+      box.appendChild($(`<h3 class="cv-sec-t">Donner mon accord${tip("Votre accord porte sur ce texte précis (son empreinte). Si le texte change, un nouvel accord vous sera demandé.")}</h3>`));
+      if ((d.version || 0) > 1) box.appendChild($(`<div class="small" style="margin-top:4px">Nouvelle version n°<b>${esc(d.version)}</b> : le chef de file a régénéré la convention. Relisez-la avant de donner votre accord.</div>`));
+      if (ms.compte_requis) {
+        box.appendChild($(`<div class="small" style="margin-top:8px">Ce dossier est rattaché à un compte Adjugo : connectez-vous avec ce compte, puis revenez sur cette page pour donner votre accord.${tip("La connexion s'ouvre dans un nouvel onglet. Cette page se met à jour d'elle-même quand vous y revenez.")}</div>`));
+        const acts = $(`<div class="cv-actions"></div>`);
+        acts.appendChild($(`<a class="btn sm primary" href="/app?shared=${esc(encodeURIComponent(TOKEN))}" target="_blank" rel="noopener"><i data-lucide="log-in"></i>Me connecter</a>`));
+        box.appendChild(acts); box.appendChild(live); box.appendChild(cvLegal(d)); sayFlash();
+        return box;
+      }
+      const uid = "cv" + (d.version || 0);
+      const keep = (CV.form && CV.form.hash === d.content_hash) ? CV.form : null;
+      const form = $(`<div class="cv-form"></div>`);
+      const nW = $(`<div><label for="${uid}-nom">Nom et prénom de la personne qui donne l'accord</label></div>`);
+      const nIn = inp("ex. Jean Le Gall", keep ? keep.nom : ms.signataire_nom); nIn.id = uid + "-nom"; nIn.autocomplete = "name"; nIn.maxLength = 255; nW.appendChild(nIn);
+      const qW = $(`<div><label for="${uid}-qual">Qualité</label></div>`);
+      const qIn = inp("ex. Gérant, Présidente", keep ? keep.qual : ms.signataire_qualite); qIn.id = uid + "-qual"; qIn.autocomplete = "organization-title"; qIn.maxLength = 120; qW.appendChild(qIn);
+      const remember = () => { CV.form = { hash: d.content_hash, nom: nIn.value, qual: qIn.value }; };
+      nIn.addEventListener("input", remember); qIn.addEventListener("input", remember);
+      form.appendChild(nW); form.appendChild(qW); box.appendChild(form);
+      const chkW = $(`<label class="cv-check" for="${uid}-ok"><input type="checkbox" id="${uid}-ok"><span>J'ai lu la convention et je donne mon accord</span></label>`);
+      const chk = chkW.querySelector("input");
+      box.appendChild(chkW);
+      const acts = $(`<div class="cv-actions"></div>`);
+      const btn = $(`<button class="btn primary" type="button"><i data-lucide="check"></i>Donner mon accord</button>`);
+      acts.appendChild(btn); box.appendChild(acts); box.appendChild(live);
+      // Ce qui sera imprimé dans le PDF, la nature de l'accord, l'avertissement : visibles ici.
+      // Code exigé : l'accord ne peut être donné qu'après vérification → niveau « email vérifié ».
+      const idLab = ms.verification_requise ? CV_ID_EMAIL : (ms.identite_libelle || "");
+      box.appendChild($(`<div class="cv-note">${ico("fingerprint", 14)}<span>Niveau d'identité imprimé dans le PDF : <b>${esc(idLab)}</b>.${ms.verification_requise ? " Vous recevrez d'abord un code à 6 chiffres par email pour vérifier votre adresse." : ""}</span></div>`));
+      if (d.nature_accord) box.appendChild($(`<div class="cv-note">${ico("stamp", 14)}<span>${esc(d.nature_accord)}</span></div>`));
+      box.appendChild(cvLegal(d)); sayFlash();
+      btn.onclick = async () => {
+        const nom = nIn.value.trim(), qual = qIn.value.trim();
+        if (!nom) { say("Indiquez le nom de la personne qui donne l'accord.", true); nIn.focus(); return; }
+        if (!chk.checked) { say("Cochez « J'ai lu la convention et je donne mon accord ».", true); chk.focus(); return; }
+        btn.disabled = true; say("Enregistrement de votre accord…");
+        const body = JSON.stringify({ content_hash: d.content_hash || "", signataire_nom: nom, signataire_qualite: qual, accepte: true });
+        const post = () => fetch(CONV_URL() + "/valider", { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body }).catch(() => null);
+        let r = await post();
+        // Identité à prouver : flux OTP existant (code par email), puis NOUVEL ESSAI automatique.
+        if (r && r.status === 403) {
+          const e = await r.clone().json().catch(() => ({}));
+          if (e && e.detail && e.detail.code === "identity_unverified") {
+            const ok = await verifyIdentity(live, { purpose: "Pour enregistrer votre accord sur la convention", cancelMsg: "Vérification annulée : votre accord n'est pas enregistré." });
+            if (!ok) { live.classList.add("err"); btn.disabled = false; return; }
+            say("Enregistrement de votre accord…");
+            r = await post();
+          }
+        }
+        if (r && r.ok) {
+          const nd = await r.json().catch(() => null);
+          if (nd) renderConvention(nd, { text: "Votre accord est enregistré.", focus: true }); else loadConvention({ text: "Votre accord est enregistré.", focus: true });
+          if (RELOAD_JOURNAL) RELOAD_JOURNAL();
+          return;
+        }
+        const e = r ? await r.json().catch(() => ({})) : {};
+        const code = e && e.detail && e.detail.code;
+        const txt = errText(e, !r ? "Connexion impossible : réessayez." : r.status === 429 ? "Trop de tentatives : réessayez dans quelques minutes." : "Accord impossible pour le moment.");
+        // Texte changé, convention plus à jour, compte requis… : on recharge l'état réel et on explique.
+        if (["texte_modifie", "perimee", "pas_generee", "statut", "compte_requis", "pas_signataire"].indexOf(code) >= 0) { loadConvention({ text: txt, err: true }); return; }
+        btn.disabled = false; say(txt, true);
+      };
+      return box;
+    }
+
+    // ── Carte complète ──
+    function renderConvention(d, flash) {
+      const el = CV.el; if (!el || !el.isConnected) return;
+      CV.data = d;
+      const openKeys = Array.from(el.querySelectorAll("details[open]")).map(x => x.dataset.k);
+      const textShown = el.dataset.cvText || "";   // version du texte déjà affichée (repli choisi par la personne respecté)
+      el.innerHTML = "";
+      const st = d.status || "aucune", ms = d.ma_signature || {};
+      const full = !!d.content_md && (!!CV_ACTIVE[st] || st === "perimee");
+      const head = $(`<div class="cv-head"></div>`);
+      head.appendChild($(`<h2 class="cv-title" id="cv-title" tabindex="-1">Convention de groupement</h2>`));
+      head.insertAdjacentHTML("beforeend", tip("Le texte qui organise le groupement : sa forme, les pouvoirs du chef de file, la part et le prix de chacun. Le chef de file la prépare puis la génère ; chaque membre donne ensuite son accord depuis son espace."));
+      head.appendChild($(`<span class="pill ${CV_PILL[st] || "neutral"}" style="font-size:11px">${esc(d.status_label || st)}</span>`));
+      head.appendChild($(`<span style="flex:1"></span>`));
+      const rf = $(`<button class="btn sm" type="button"><i data-lucide="refresh-cw"></i>Actualiser</button>`);
+      rf.onclick = async () => { rf.disabled = true; await loadConvention(); };
+      head.appendChild(rf);
+      el.appendChild(head);
+      const cardMsg = $(`<div class="cv-msg" role="status" aria-live="polite" style="margin-top:8px"></div>`);
+      const finish = () => {
+        el.appendChild(cardMsg);
+        if (flash && !flash.shown) { cardMsg.classList.toggle("err", !!flash.err); cardMsg.textContent = flash.text || ""; }
+        el.querySelectorAll("details").forEach(x => { if (openKeys.indexOf(x.dataset.k) >= 0) x.open = true; });
+        const tx = el.querySelector('details[data-k="texte"]');
+        if (tx) { const v = String(d.version || 0); if (textShown !== v && ms.peut_valider) tx.open = true; el.dataset.cvText = v; }
+        icons(); syncConvAlert(); syncContribWarn();
+        if (flash && flash.focus) { const t = el.querySelector("#cv-accord .cv-okline") || el.querySelector("#cv-title"); if (t) t.focus(); }
+      };
+
+      if (st === "aucune") {
+        el.appendChild($(`<p class="cv-lead">${esc(d.message || "Le chef de file n'a pas encore préparé la convention de groupement.")} Vous la retrouverez ici dès qu'elle sera prête.</p>`));
+        return finish();
+      }
+      const sousT = isSousTraitant();
+      if (st === "perimee") el.appendChild(cvWarn("La convention n'est plus à jour : une part, un prix ou la composition a changé. Le chef de file va la régénérer" + (sousT ? "." : " ; vous donnerez alors votre accord sur la nouvelle version.")));
+      if (st === "signee") el.appendChild($(`<div class="cv-ok-banner">${ico("check-circle-2", 16)}<span><b>Validée par tous les membres.</b> Le PDF reprend le texte et la liste des accords enregistrés.</span></div>`));
+      if (!full) el.appendChild($(`<p class="cv-lead">${sousT ? "Vous intervenez en sous-traitance : vous n'êtes pas membre du groupement et n'avez pas à valider la convention." : "Le chef de file prépare la convention. Vous pourrez donner votre accord dès qu'il l'aura générée."}</p>`));
+      else {
+        const meta = $(`<div class="cv-meta"></div>`);
+        meta.appendChild($(`<span>Version n°<b>${esc(d.version || 0)}</b></span>`));
+        if (d.frozen_at) meta.appendChild($(`<span>Générée le <b>${esc(fmtShort(d.frozen_at))}</b></span>`));
+        if (d.content_hash) {
+          const hw = $(`<span class="cv-hashw">Empreinte <code class="cv-hash">${esc(String(d.content_hash).slice(0, 12))}</code></span>`);
+          hw.insertAdjacentHTML("beforeend", tip(`L'empreinte identifie ce texte exact : c'est la même pour tous les membres, et elle change si un seul caractère change. Elle est imprimée dans le PDF.<span class="cv-hashfull">${esc(d.content_hash)}</span>`, true));
+          meta.appendChild(hw);
+        }
+        el.appendChild(meta);
+      }
+      // Avertissement « modèle à faire relire » : dans la zone d'accord quand on peut valider, sinon ici.
+      const legalInBox = st === "a_signer" && ms.peut_valider && ms.signataire && ms.status !== "signed";
+      if (!legalInBox) el.appendChild(cvLegal(d));
+      el.appendChild(cvForme(d));
+      // Caduque : l'ancienne répartition est dans l'annexe de l'ancien texte (même empreinte). On
+      // ne la redessine pas à partir des données du moment, qui ont pu changer depuis (et n'ont
+      // jamais figuré dans une convention générée).
+      const rep = (st === "perimee" && full) ? null : cvRepartition(d, full); if (rep) el.appendChild(rep);
+      const rg = cvRegles(d); if (rg) el.appendChild(rg);
+      if (full) {
+        const title = st === "perimee" ? "Relire l'ancien texte (version n°" + (d.version || 0) + ", plus à jour)" : "Lire le texte complet de la convention";
+        el.appendChild(cvDetails("texte", title, mdRender(d.content_md, "Texte de la convention, version " + (d.version || 0))));
+        const acts = $(`<div class="cv-actions"></div>`);
+        const pdf = $(`<button class="btn sm" type="button"><i data-lucide="file-down"></i>Télécharger le PDF</button>`);
+        const pLive = $(`<span class="cv-msg" role="status" aria-live="polite"></span>`);
+        pdf.onclick = () => cvDownloadPdf(pdf, pLive, d.version);
+        acts.appendChild(pdf); acts.appendChild(pLive); el.appendChild(acts);
+      } else if (d.apercu_md) {
+        el.appendChild(cvDetails("apercu", "Aperçu du texte (brouillon)", mdRender(d.apercu_md, "Aperçu du texte de la convention (brouillon)")));
+      }
+      let box = null;
+      if (CV_ACTIVE[st]) {
+        box = cvAccordBox(d, flash); if (box) el.appendChild(box);
+        const acc = cvAccords(d); if (acc) el.appendChild(acc);
+      }
+      finish();
+    }
+    function renderConvUnavailable(el, r) {
+      el.innerHTML = "";
+      el.appendChild($(`<div class="cv-head"><h2 class="cv-title" id="cv-title" tabindex="-1">Convention de groupement</h2></div>`));
+      const gone = r && (r.status === 404 || r.status === 410);
+      const p = $(`<div class="cv-actions"><span class="muted small" style="flex:1;min-width:180px">${gone ? "Ce lien ne donne plus accès à la convention." : "Convention indisponible pour le moment."}</span></div>`);
+      if (!gone) { const b = $(`<button class="btn sm" type="button"><i data-lucide="refresh-cw"></i>Réessayer</button>`); b.onclick = () => { b.disabled = true; loadConvention(); }; p.appendChild(b); }
+      el.appendChild(p); icons();
+    }
+    async function loadConvention(flash) {
+      const el = CV.el; if (!el) return;
+      let r = null, d = null;
+      try { r = await fetch(CONV_URL(), { headers: authHeaders() }); if (r.ok) d = await r.json(); } catch (e) {}
+      if (CV.el !== el || !el.isConnected) return;   // la page a été redessinée entre-temps
+      if (!d) { CV.data = null; renderConvUnavailable(el, r); syncConvAlert(); syncContribWarn(); return; }
+      renderConvention(d, flash);
+    }
+    // Badge « Convention à valider » en tête du dossier (si MON accord est attendu).
+    function syncConvAlert() {
+      const a = CV.alertEl; if (!a || !a.isConnected) return;
+      a.innerHTML = "";
+      const d = CV.data, ms = (d && d.ma_signature) || {};
+      if (!(d && d.status === "a_signer" && ms.peut_valider)) return;
+      const row = $(`<div class="cv-alert"><span class="pill go_groupement" style="font-size:11px">Convention à valider</span><span class="small" style="flex:1;min-width:170px">Le chef de file a généré la convention : relisez-la et donnez votre accord.</span></div>`);
+      const b = $(`<button class="btn sm primary" type="button">Voir la convention</button>`);
+      b.onclick = () => { if (!CV.el) return; CV.el.scrollIntoView({ behavior: "smooth", block: "start" }); const t = CV.el.querySelector("#cv-title"); if (t) setTimeout(() => t.focus({ preventScroll: true }), 300); };
+      row.appendChild(b); a.appendChild(row);
+    }
+    // Convention générée : modifier SA part la rend caduque (doctrine « avertir, pas bloquer »).
+    const cvPartLocksConvention = () => { const d = CV.data, ms = (d && d.ma_signature) || {}; return !!(d && CV_ACTIVE[d.status] && ms.signataire); };
+    function syncContribWarn() {
+      const w = document.getElementById("cv-contrib-warn"); if (!w) return;
+      w.innerHTML = "";
+      if (cvPartLocksConvention()) { w.appendChild(cvWarn("La convention est générée : si vous modifiez votre part (enregistrement, pièce ajoutée, modifiée ou retirée), elle ne sera plus à jour. Le chef de file devra la régénérer et chaque membre redonner son accord.")); icons(); }
+    }
+    async function confirmPartChange() {
+      if (!cvPartLocksConvention()) return true;
+      return !!(await openModal({ title: "Modifier votre part ?", bodyHtml: "La convention de groupement est déjà générée. Si vous modifiez votre part, elle <b>ne sera plus à jour</b> : le chef de file devra la régénérer et chaque membre redonner son accord.", confirmLabel: "Modifier ma part", cancelLabel: "Annuler" }));
     }
 
     // ── Vue : Sourcing IA / Veille AO (découverte, lecture seule) ──
@@ -842,6 +1414,7 @@
         // Si la personne a DÉJÀ un compte Adjugo : lui proposer d'ouvrir le dossier
         // dans SON espace (compte-à-compte) plutôt que de rester en invité bridé.
         let myToken = null; try { myToken = localStorage.getItem("adjugo_token"); } catch (e) {}
+        MY_TOKEN = myToken || null;
         if (myToken) {
           const b = document.getElementById("g-banner");
           b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)";
