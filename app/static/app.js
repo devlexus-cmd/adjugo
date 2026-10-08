@@ -63,10 +63,14 @@ function translateDOM(lang) {
 
 // État initial de « Partagé avec moi » (vue co-traitant avec compte) — plus de chiffrage_note : prix de vente du lot
 // en clair + détail chiffré dans le navigateur (enveloppe), capacités déclarées, signataire, pièces typées.
-function _sharedInit(token, mandataire) {
-  return { token: token || "", project: null, mandataire: mandataire || "", docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true, loading: false, error: "",
+function _sharedInit(token, mandataire, projectId) {
+  return { token: token || "", projectId: projectId || null, project: null, mandataire: mandataire || "", docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true, loading: false, error: "",
            forMember: null, coffre: null, journal: null, journalLoaded: false, conv: _sconvInit(),
-           envelope: null, detailClair: "", detailLocked: false, cryptoCtx: null, pendingCode: null, detailLoaded: false,
+           // Vague 4 : vérification du journal par le membre (verdict du serveur, exports JSON / PDF).
+           jv: { busy: false, v: null, err: "", live: "", exporting: "" },
+           // detailDpgf : lignes de la DPGF rangées dans le même détail chiffré (AdjugoCrypto.packDetail) ;
+           // cet écran ne les modifie pas mais les conserve à chaque enregistrement.
+           envelope: null, detailClair: "", detailDpgf: null, detailLocked: false, cryptoCtx: null, pendingCode: null, detailLoaded: false,
            upl: { piece_type: "", expiration_date: "" }, vault: { open: false, loading: false, docs: [], needClaim: false, pendingDoc: null },
            contrib: { company_name: "", lot: "", siret: "", forme_juridique: "", address: "", postal_code: "", city: "", quals: "", refs: "", memoire_paragraph: "",
                       prix_lot_ht: "", representant_legal: "", signataire_qualite: "", ca_n1: "", effectif: "", contact: { nom: "", email: "", telephone: "" } } };
@@ -86,6 +90,8 @@ function _convInit() {
   return { loading: false, loaded: false, error: "", d: null, f: null, busy: "", live: "", err: "", errCode: "", missing: [],
            errAt: "top", staleReason: "", editOpen: false, textOpen: false, rulesOpen: false, accord: { nom: "", qualite: "", accepte: false, hash: "" } };
 }
+// Étape 5 « Prêt à déposer » (vague 4) : contrôles GET /groupement/depot, « Marquer déposé ».
+function _depotInit() { return { d: null, loading: false, again: false, loaded: false, busy: "", err: "", live: "", pid: null }; }
 // Convention vue par un partenaire qui a un compte (« Partagé avec moi », après rattachement du lien).
 function _sconvInit() {
   return { loading: false, d: null, error: "", busy: false, live: "", err: "", textOpen: false,
@@ -183,6 +189,14 @@ function convMdToHtml(md) {
 // explicitement, sinon le navigateur les lirait comme une heure locale.
 // Trop de demandes (limite de fréquence côté serveur, réponse 429 sans message en français).
 const TOO_MANY_MSG = "Trop de demandes en peu de temps : réessayez dans quelques minutes.";
+// Journal vérifiable par chaque membre (co-traitance v2, vague 4) : libellé exact et limites de
+// repli (les limites renvoyées par la vérification les remplacent). On ne survend pas la preuve.
+const JOURNAL_LABEL = "Journal vérifiable : toute modification ou suppression d'entrée est détectable";
+const JOURNAL_LIMITES = [
+  "La vérification entrée par entrée est faite par Adjugo ; vous pouvez la compléter hors ligne en comparant deux exports successifs de votre journal.",
+  "Les entrées écrites depuis la dernière empreinte quotidienne (moins de 24 h) ne sont couvertes que par l'export que vous avez conservé.",
+  "Le journal ne montre jamais l'adresse IP ni l'email des autres membres : leurs entrées sont engagées par un sceau, pas révélées.",
+];
 function _isoUtc(s) {
   s = String(s || "");
   return (/T\d{2}:\d{2}/.test(s) && !/(Z|[+-]\d{2}:?\d{2})$/.test(s)) ? s + "Z" : s;
@@ -201,10 +215,11 @@ const __adjApp = createApp({
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], docQuery: "", docSort: "recent", expiring: [],
       notifs: [], notifsOpen: false, notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
+      grpDash: null,   // tableau de bord « Répondre à plusieurs » (vague 4) : GET /api/groupement/tableau-de-bord
       cdetail: {}, copen: {}, cexport: {}, cpreview: {}, cerror: {},
       shared: [],
       sharedAo: _sharedInit(),
-      pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "autre", l: "Autre" }],
+      pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "dpgf_lot", l: "DPGF du lot (prix de vente)" }, { k: "autre", l: "Autre" }],
       veille: { q: "", loc: "", results: [], loading: false },
       drawer: null, modal: null, cdlg: null,   // cdlg : confirmation d'une action de la convention
       reseau: _reseauInit(),                  // vue « Réseau » (vague 3)
@@ -297,7 +312,7 @@ const __adjApp = createApp({
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
-            chkHelp: null, grp: _grpInit(), conv: _convInit(), pm: _pmInit(),
+            chkHelp: null, grp: _grpInit(), conv: _convInit(), pm: _pmInit(), depot: _depotInit(),
             qa: [], qaInput: "", qaLoading: false,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
@@ -532,7 +547,7 @@ const __adjApp = createApp({
         const err = new Error(msg);
         err.status = r.status;
         if (d && typeof d === "object" && !Array.isArray(d)) {
-          err.code = d.code || ""; if (Array.isArray(d.missing)) err.missing = d.missing;
+          err.code = d.code || ""; if (Array.isArray(d.missing)) err.missing = d.missing; err.detail = d;
           if (typeof d.profile_id === "string" && /^[0-9a-f]{32}$/.test(d.profile_id)) err.profile_id = d.profile_id;
         }
         throw err;
@@ -654,7 +669,7 @@ const __adjApp = createApp({
     async boot() {
       try { localStorage.setItem("adjugo_active", String(Date.now())); } catch (e) {}   // toute connexion réussie = activité (réarme le verrou d'inactivité)
       try { this.user = await this.api("GET", "/api/auth/me"); } catch (e) { return; }
-      await Promise.all([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadNotifs(), this.loadConsortiums(), this.loadShared()]);
+      await Promise.all([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadNotifs(), this.loadConsortiums(), this.loadShared(), this.loadGrpDash()]);
       // Adaptation au pays de l'organisation : scope AO + devise + LANGUE par défaut
       if (this.org.data && this.org.data.country) { this.src.country = this.org.data.country; this.orgCountry = this.org.data.country; this.applyLang(this.org.data.lang); }
       this.go("dashboard");
@@ -675,7 +690,7 @@ const __adjApp = createApp({
       this.view = v;
       this.mobileNav = false;  // referme le menu mobile à la navigation
       this.notifsOpen = false; this.fb.open = false;  // referme les popups (notifications / retour d'avis) à la navigation
-      if (v === "dashboard") { this.loadStats(); this.loadExpiring(); this.loadConsortiums(); this.loadNotifs(); }
+      if (v === "dashboard") { this.loadStats(); this.loadExpiring(); this.loadConsortiums(); this.loadNotifs(); this.loadGrpDash(); }
       if (v === "consortiums") this.loadConsortiums();
       if (v === "pipeline") this.loadProjects();
       if (v === "contacts") this.loadContacts();
@@ -926,7 +941,7 @@ const __adjApp = createApp({
       this.ao.back = this.view; this.ao.dossier = null; this.ao.project = p;
       this.ao.cotraitants = []; this.ao.stOpen = false; this.ao.st.results = [];
       this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.buyerLoading = true; this.ao.checklist = null; this.ao.group = null;
-      this.ao.qa = []; this.ao.qaInput = ""; this.ao.grp = _grpInit(); this.ao.conv = _convInit(); this.ao.pm = _pmInit(); this.rinv = null;
+      this.ao.qa = []; this.ao.qaInput = ""; this.ao.grp = _grpInit(); this.ao.conv = _convInit(); this.ao.pm = _pmInit(); this.ao.depot = _depotInit(); this.rinv = null;
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
       this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
@@ -1038,6 +1053,28 @@ const __adjApp = createApp({
     readinessColor(pct) { const p = Math.min(100, Math.max(0, Number(pct) || 0)); return p >= 80 ? "var(--success-text)" : p >= 45 ? "var(--warning-text)" : "var(--danger-text)"; },
 
     async loadConsortiums() { try { this.consortiums = await this.api("GET", "/api/consortiums") || this.consortiums; } catch (e) {} },
+    // ── Tableau de bord « Répondre à plusieurs » (vague 4) ──
+    // Données réelles de l'organisation (serveur) : marchés accessibles en groupement, groupements
+    // en cours par étape 1→5, déposés. Aucun montant ; un seul pourcentage : le score de groupement.
+    async loadGrpDash() { try { this.grpDash = await this.api("GET", "/api/groupement/tableau-de-bord"); } catch (e) { this.grpDash = null; } },
+    grpDashHasAny() { const g = this.grpDash; return !!(g && (g.marches_accessibles_en_groupement || g.groupements_en_cours || g.deposes)); },
+    grpDashItems() {
+      const g = this.grpDash; if (!g) return [];
+      const parts = {}; ((this.consortiums && this.consortiums.consortiums) || []).forEach(c => { parts[c.project_id] = c; });
+      const lim = (d) => d ? "limite " + this.fmtDate(d) : "";
+      const seen = new Set(), out = [];
+      (g.en_cours || []).slice(0, 5).forEach(it => {
+        seen.add(it.project_id);
+        const cs = parts[it.project_id];
+        const bits = [it.label, cs && cs.partners ? cs.submitted + "/" + cs.partners + " " + this.pl(cs.partners, "part reçue", "parts reçues") : "", lim(it.deadline)].filter(Boolean);
+        out.push({ project_id: it.project_id, name: it.name || "Appel d'offres", meta: bits.join(" · "), badge: "Étape " + it.etape + " sur 5", pill: "neutral" });
+      });
+      (g.accessibles || []).filter(a => !seen.has(a.project_id)).slice(0, 3).forEach(a => {
+        out.push({ project_id: a.project_id, name: a.name || "Appel d'offres", meta: ["Repérer le marché", lim(a.deadline)].filter(Boolean).join(" · "),
+                   badge: a.groupement_score != null ? "Avec partenaires : " + a.groupement_score + " %" : "Bon potentiel en groupement", pill: "go_groupement" });
+      });
+      return out;
+    },
 
     // ── Espace « Mes consortiums » (hub central) ──
     async toggleConsortium(pid) {
@@ -1082,7 +1119,7 @@ const __adjApp = createApp({
     async loadShared() { try { this.shared = await this.api("GET", "/api/shared") || []; } catch (e) { this.shared = []; } },
     async openShared(item) {
       const t = item.token;
-      this.sharedAo = _sharedInit(t, item.mandataire); this.sharedAo.loading = true;
+      this.sharedAo = _sharedInit(t, item.mandataire, item.project_id); this.sharedAo.loading = true;
       this.view = "sharedao";
       try {
         const v = await this.api("GET", "/api/invite/" + t);
@@ -1127,7 +1164,7 @@ const __adjApp = createApp({
       if (!C) { this.sharedAo.detailLocked = true; return; }
       try {
         const r = await C.ensureKey(this.sharedAo.token, env);
-        if (r.ctx) { this.sharedAo.detailClair = await C.decrypt(r.ctx, env); this.sharedAo.cryptoCtx = this._rawCtx(r.ctx); this.sharedAo.detailLocked = false; }
+        if (r.ctx) { this._sharedApplyPlain(await C.decrypt(r.ctx, env)); this.sharedAo.cryptoCtx = this._rawCtx(r.ctx); this.sharedAo.detailLocked = false; }
         else this.sharedAo.detailLocked = true;
       } catch (e) { this.sharedAo.detailLocked = true; }
     },
@@ -1136,7 +1173,7 @@ const __adjApp = createApp({
       const code = await C.askRecoveryCode(); if (!code) return;
       try {
         const ctx = await C.keyFromCode(this.sharedAo.token, code, env);
-        this.sharedAo.detailClair = await C.decrypt(ctx, env); this.sharedAo.cryptoCtx = this._rawCtx(ctx); this.sharedAo.detailLocked = false;
+        this._sharedApplyPlain(await C.decrypt(ctx, env)); this.sharedAo.cryptoCtx = this._rawCtx(ctx); this.sharedAo.detailLocked = false;
         this.notify("Détail déverrouillé");
       } catch (e) { this.notify((e && e.code === "wrong_code") ? "Code incorrect" : ((e && e.message) || "Code incorrect"), "err"); }
     },
@@ -1145,12 +1182,18 @@ const __adjApp = createApp({
       if (!confirm("Vous avez perdu votre code de récupération ?\n\nL'ancien détail de votre chiffrage sera définitivement perdu : personne (ni Adjugo, ni le mandataire) ne peut le récupérer. Vous pourrez en saisir un nouveau.")) return;
       try {
         const rr = await C.resetKey(this.sharedAo.token);
-        this.sharedAo.envelope = null; this.sharedAo.detailClair = ""; this.sharedAo.detailLocked = false;
+        this.sharedAo.envelope = null; this.sharedAo.detailClair = ""; this.sharedAo.detailDpgf = null; this.sharedAo.detailLocked = false;
         const ok = await C.showRecoveryCode(rr.code);
         if (ok) { this.sharedAo.cryptoCtx = this._rawCtx(rr.ctx); this.sharedAo.pendingCode = null; } else { this.sharedAo.pendingCode = { code: rr.code, ctx: this._rawCtx(rr.ctx) }; }
         await this._sharedPut();   // efface l'ancien détail (désormais illisible) côté serveur
         this.notify("Ancien détail effacé — vous pouvez en saisir un nouveau");
       } catch (e) { this.notify((e && e.message) || "Réinitialisation impossible", "err"); }
+    },
+    // Texte clair déchiffré → texte libre (zone de saisie) + lignes de DPGF (conservées telles quelles).
+    _sharedApplyPlain(plain) {
+      const C = window.AdjugoCrypto;
+      const u = (C && C.unpackDetail) ? C.unpackDetail(plain) : { texte: String(plain || ""), dpgf: null };
+      this.sharedAo.detailClair = u.texte; this.sharedAo.detailDpgf = u.dpgf ? Vue.markRaw(u.dpgf) : null;
     },
     // Chiffre le texte ; null = ne pas envoyer (code non noté, détail verrouillé, navigateur sans WebCrypto…).
     async _sharedEncrypt(txt) {
@@ -1189,8 +1232,11 @@ const __adjApp = createApp({
       // Détail du chiffrage : verrouillé → on n'y touche pas (champ absent) ; vide → effacé ; sinon chiffré dans le navigateur.
       const txt = (this.sharedAo.detailClair || "").trim();
       if (!this.sharedAo.detailLocked) {
-        if (!txt) body.detail_chiffre = null;
-        else { const env = await this._sharedEncrypt(txt); if (env) body.detail_chiffre = env; }
+        // Les lignes de la DPGF (produites depuis la page partenaire) restent dans la même enveloppe.
+        const C = window.AdjugoCrypto;
+        const plain = (C && C.packDetail) ? C.packDetail(txt, this.sharedAo.detailDpgf) : txt;
+        if (!String(plain).trim()) body.detail_chiffre = null;
+        else { const env = await this._sharedEncrypt(plain); if (env) body.detail_chiffre = env; }
       }
       return body;
     },
@@ -1301,6 +1347,56 @@ const __adjApp = createApp({
         if (this.sharedAo.token === t) { this.sharedAo.journal = j; this.sharedAo.journalLoaded = true; }
       } catch (e) { this.notify("Journal indisponible", "err"); }
     },
+    // ── Journal vérifiable par le membre (vague 4) : /api/shared/{project_id}/journal/… ──
+    // Le verdict, la date de l'empreinte quotidienne et l'empreinte viennent du serveur ; rien
+    // n'est recalculé ici. Repli sur les routes du lien si le marché n'est pas connu.
+    _sharedJournalBase() {
+      const a = this.sharedAo;
+      return a.projectId ? "/api/shared/" + encodeURIComponent(a.projectId) + "/journal" : "/api/invite/" + encodeURIComponent(a.token) + "/journal";
+    },
+    async sharedJournalVerify() {
+      const a = this.sharedAo, t = a.token, jv = a.jv; if (jv.busy) return;
+      jv.busy = true; jv.err = ""; jv.live = "Vérification de votre journal…";
+      try {
+        const v = await this.api("GET", this._sharedJournalBase() + "/integrity");
+        if (this.sharedAo.token !== t) return;
+        jv.v = v; jv.live = (v.verdict_label || "") + " : " + (v.message || "");
+      } catch (e) { jv.err = e.message || "Vérification impossible pour le moment."; jv.live = ""; }
+      finally { jv.busy = false; }
+    },
+    async sharedJournalExport(fmt) {
+      const a = this.sharedAo, jv = a.jv; if (jv.exporting) return;
+      jv.exporting = fmt; jv.err = "";
+      try {
+        const r = await fetch(this._sharedJournalBase() + "/export?format=" + fmt, { headers: this.token ? { Authorization: "Bearer " + this.token } : {} });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error((typeof e.detail === "string" && e.detail) || (r.status === 429 ? TOO_MANY_MSG : "Téléchargement impossible pour le moment.")); }
+        const cd = r.headers.get("content-disposition") || "", m = /filename="?([^";]+)"?/i.exec(cd);
+        this.saveBlob(await r.blob(), (m && m[1]) || ("Journal." + fmt));
+        jv.live = fmt === "json" ? "Preuve téléchargée : gardez ce fichier, le prochain export doit reprendre toutes ses lignes à l'identique." : "Journal téléchargé (PDF).";
+        this.notify(fmt === "json" ? "Preuve du journal téléchargée" : "Journal téléchargé");
+        a.journalLoaded = false; await this.sharedJournalLoad();   // « Vous avez exporté votre journal »
+      } catch (e) { jv.err = e.message || "Téléchargement impossible."; }
+      finally { jv.exporting = ""; }
+    },
+    jvPill(v) { return ({ intact: "go", altere: "no_go" })[v && v.verdict] || "neutral"; },
+    jvIcon(v) { return ({ intact: "shield-check", altere: "shield-alert" })[v && v.verdict] || "shield"; },
+    jvAncrage(v) {
+      const an = v && v.ancrage;
+      if (an && an.date) return an.horodate ? "Dernier horodatage : " + (an.date_label || an.date) + ", empreinte quotidienne du journal horodatée par une autorité indépendante."
+                                            : "Dernière empreinte quotidienne du journal : " + (an.date_label || an.date) + " (sans horodatage externe).";
+      return "Pas encore d'empreinte quotidienne horodatée : vos entrées sont couvertes par cette vérification et par les preuves que vous téléchargez.";
+    },
+    jvAncrageExtra(v) { const an = v && v.ancrage; return (an && an.message && an.entrees_couvertes && String(v.message || "").indexOf(an.message) < 0) ? an.message : ""; },
+    jvHex(h) { return String(h || "").slice(0, 24).replace(/(.{4})/g, "$1 ").trim(); },
+    jvWhen(s) { return this.convWhen(s); },
+    async jvCopy(v) {
+      try { await navigator.clipboard.writeText(v.empreinte); this.notify("Empreinte copiée"); } catch (e) { this.notify("Copie impossible : sélectionnez l'empreinte dans la preuve (JSON)", "err"); }
+    },
+    jvLabel() { return JOURNAL_LABEL; },
+    jvLimites() { const v = this.sharedAo.jv.v; return (v && Array.isArray(v.limites) && v.limites.length) ? v.limites : JOURNAL_LIMITES; },
+    // Lignes de DPGF conservées dans le détail chiffré (produites depuis la page partenaire).
+    sharedDpgfPieces() { return (this.sharedAo.pieces || []).filter(p => p.piece_type === "dpgf_lot"); },
+    sharedDpgfOpen() { window.open("/invite/" + encodeURIComponent(this.sharedAo.token) + "#dpgf", "_blank", "noopener"); },
     // Après un accord : l'étape du groupement (stepper) vient de /api/shared, rechargé ici — rouvrir
     // le dossier ajouterait une « consultation » au journal. Le journal est relu s'il est ouvert.
     async _sharedAfterAccord(t) {
@@ -1488,10 +1584,16 @@ const __adjApp = createApp({
         "convention.generated": "Convention de groupement générée", "convention.signed": "Accord enregistré sur la convention",
         "convention.perimee": "Convention plus à jour (à régénérer)", "convention.hors_ligne": "Accord hors ligne enregistré",
         "convention.hors_ligne_retire": "Accord hors ligne retiré", "guest.download_convention": "Convention téléchargée par le partenaire",
+        // Vague 4 : dépôt, journal vérifiable, pièces
+        "groupement.depose": "Dossier marqué déposé", "groupement.depot_annule": "Marquage « déposé » retiré",
+        "guest.export_journal": "Le partenaire a exporté son journal", "guest.update_piece": "Pièce mise à jour par le partenaire (type ou date de validité)",
       };
       return m[a.action] || a.action;
     },
     auditWhen(s) { if (!s) return ""; try { return new Date(s).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } },
+    // Horodatage du journal (audit_logs.created_at) : UTC « naïf » côté serveur → lu comme UTC,
+    // affiché à l'heure locale (sinon décalé d'une ou deux heures par rapport à « Vérifié le … »).
+    auditAt(s) { return s ? this.auditWhen(_isoUtc(s)) : ""; },
     verifWhen(c) { const s = (c && (c.freshness_date || (c.provenance && c.provenance.fetched_at))) || ""; if (!s) return ""; try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch (e) { return String(s).slice(0, 10); } },
     async aoLoadDocs() {
       try { const r = await this.api("GET", "/api/projects/" + this.ao.project.id + "/documents"); this.ao.documents = r.folders || []; } catch (e) {}
@@ -1550,6 +1652,7 @@ const __adjApp = createApp({
       if (err) this.ao.grp.error = err.message || "Le calcul de groupement est momentanément indisponible.";
       this.ao.grp.loading = false;
       if (this.convVisible()) this.aoConvLoad();
+      this.aoDepotLoadSoon();
     },
     async aoGrpLoadBesoins(sirene) {
       const pid = this.ao.project && this.ao.project.id; if (!pid) return;
@@ -1564,6 +1667,7 @@ const __adjApp = createApp({
       const pid = this.ao.project && this.ao.project.id; if (!pid) return;
       try { this.ao.grp.state = await this.api("GET", "/api/projects/" + pid + "/groupement/state"); } catch (e) {}
       if (this.convVisible() && !this.ao.conv.loaded) this.aoConvLoad(true);
+      this.aoDepotLoadSoon();
     },
     // Stepper du groupement : les 5 étapes du parcours (state.etapes, dérivées côté serveur) ;
     // repli sur les 8 états de la vague 1 si l'API ne les renvoie pas. Plus de marque « bientôt ».
@@ -2267,6 +2371,7 @@ const __adjApp = createApp({
     _convMergeState(st) {   // le stepper et « Prêt à déposer » suivent la convention sans recharger la fiche
       if (!st || typeof st !== "object") return;
       if (this.ao.grp.state) Object.assign(this.ao.grp.state, st); else this.ao.grp.state = st;
+      this.aoDepotLoadSoon();
     },
     _convForm(d) {
       const hl = {};
@@ -2549,23 +2654,112 @@ const __adjApp = createApp({
       this.$nextTick(() => { const el = this.$refs.reseauCard; if (el && el.scrollIntoView) el.scrollIntoView({ block: "start", behavior: "smooth" }); });
     },
     async aoConvPrepareDocs() { await this.aoGenerate(); await this.aoGrpReloadState(); },
-    // « Prêt à déposer » : chaque contrôle de l'API (state.pret.checks) avec l'action qui le règle.
-    // Chaque manque de l'API (texte tel quel) est rangé sous le contrôle qu'il concerne : liste
-    // courte (3 au plus, puis « et N autres »), avec le bouton qui le règle juste à côté.
-    _convPretGroup(m) { return /^formulaire/i.test(m) ? "cerfa_generes" : /^convention/i.test(m) ? "convention_signee" : "attestations_ok"; },
+    // ── Étape 5 « Prêt à déposer » (vague 4, contrat docs/COTRAITANCE_V2_VAGUE4_API.md §5) ──
+    // Les 4 contrôles viennent de GET /groupement/depot, calculables à tout moment ; affichés
+    // « 3 contrôles sur 4 » (un seul pourcentage dans le produit : le score de groupement).
+    // Chaque manque (texte tel quel de l'API) est rangé sous son contrôle, avec l'action qui le règle.
+    depotShown() {
+      const st = this.ao.grp.state; if (!st || !this.convVisible()) return false;
+      const cv = this.ao.conv.d && this.ao.conv.d.status;
+      // Dès qu'un partenaire est invité (état « invitation » et au-delà) ou qu'une convention existe.
+      return (Number(st.index) || 0) >= 3 || (Number(st.etape) || 1) >= 3 || (!!cv && cv !== "aucune") || st.state === "depose" || !!(this.ao.depot.d && this.ao.depot.d.depose);
+    },
+    aoDepotLoadSoon() {
+      clearTimeout(this._depotT);
+      this._depotT = setTimeout(() => { if (this.depotShown()) this.aoDepotLoad(); }, 200);
+    },
+    async aoDepotLoad() {
+      const pid = this.ao.project && this.ao.project.id, dp = this.ao.depot; if (!pid) return;
+      if (dp.loading) { dp.again = true; return; }   // un état plus récent arrive : relire après la lecture en cours
+      dp.loading = true;
+      try {
+        const d = await this.api("GET", "/api/projects/" + pid + "/groupement/depot");
+        if (this.ao.project && this.ao.project.id === pid) { dp.d = d; dp.pid = pid; dp.loaded = true; dp.err = ""; }
+      } catch (e) { if (this.ao.project && this.ao.project.id === pid) dp.err = e.message || "Les contrôles avant dépôt sont momentanément indisponibles."; }
+      finally { dp.loading = false; if (dp.again && this.ao.depot === dp) { dp.again = false; this.aoDepotLoad(); } }
+    },
+    depotPret() { const d = this.ao.depot.d; return (d && d.pret) || this.convPret() || null; },
+    depotIsDeposed() { const d = this.ao.depot.d; return !!(d && d.depose) || !!(this.ao.grp.state && this.ao.grp.state.state === "depose"); },
+    depotStatus() { const d = this.ao.depot.d; return (d && d.status) || (this.ao.project && this.ao.project.status) || ""; },
+    depotCount(p) { const n = Number(p && p.n_ok) || 0; return n + " " + (n > 1 ? "contrôles" : "contrôle") + " sur " + (Number(p && p.n_total) || 4); },
+    _convPretGroup(m) { return /^part de/i.test(m) ? "parts_soumises" : /^formulaire/i.test(m) ? "cerfa_generes" : /^convention/i.test(m) ? "convention_signee" : "attestations_ok"; },
     convPretChecks() {
-      const p = this.convPret(); if (!p) return [];
-      const ch = p.checks || {}, man = (p.manques || []).map(m => String(m || "")).filter(Boolean);
+      const p = this.depotPret(); if (!p) return [];
+      const ch = p.checks || {}, lib = p.libelles || {}, man = (p.manques || []).map(m => String(m || "")).filter(Boolean);
+      const cv = this.ao.conv.d && this.ao.conv.d.status, generated = cv === "a_signer" || cv === "signee";
+      const relance = this.aoPendingRelancables().length > 0;
+      const conv = !cv || cv === "aucune" || cv === "draft"
+        ? { cta: "Préparer la convention", icon: "file-signature", action: () => this.aoConvScroll("convFoot") }
+        : cv === "perimee" ? { cta: "Régénérer la convention", icon: "refresh-cw", action: () => this.aoConvAskRegenerate() }
+        : { cta: "Voir les accords", icon: "users-round", action: () => this.aoConvScroll("convAccords") };
       return [
-        { key: "convention_signee", label: "Convention validée par tous les membres", cta: "Voir les accords", icon: "users-round", action: () => this.aoConvScroll("convAccords") },
+        { key: "parts_soumises", label: "Parts de tous les partenaires soumises, avec leur prix de vente", cta: relance ? "Relancer les partenaires" : "Voir les parts", icon: relance ? "send" : "users-round", action: () => relance ? this.aoRelanceRetardataires() : this.aoConvShowCoffre() },
         { key: "attestations_ok", label: "Attestations de tous les membres valides à la date limite", cta: "Voir les attestations", icon: "folder-lock", action: () => this.aoConvShowCoffre() },
-        { key: "cerfa_generes", label: "Formulaires officiels préparés après la convention", codes: "DC1, DC2, ATTRI1", cta: "Préparer mes documents", icon: "file-text", action: () => this.aoConvPrepareDocs() },
-      ].filter(k => k.key in ch).map(k => Object.assign(k, { ok: !!ch[k.key], manques: man.filter(m => this._convPretGroup(m) === k.key) }));
+        Object.assign({ key: "convention_signee", label: "Convention validée par tous les membres" }, conv),
+        generated ? { key: "cerfa_generes", label: "Formulaires officiels (DC1, DC2, ATTRI1) préparés après la convention", cta: "Préparer mes documents", icon: "file-text", action: () => this.aoConvPrepareDocs() }
+                  : { key: "cerfa_generes", label: "Formulaires officiels (DC1, DC2, ATTRI1) préparés après la convention", wait: "Après la convention" },
+      ].filter(k => k.key in ch).map(k => Object.assign(k, { label: lib[k.key] || k.label, ok: !!ch[k.key], manques: man.filter(m => this._convPretGroup(m) === k.key) }));
     },
     convPretRest() {   // manques qui ne se rangent sous aucun contrôle encore à faire (jamais masqués)
-      const p = this.convPret(); if (!p) return [];
+      const p = this.depotPret(); if (!p) return [];
       const open = this.convPretChecks().filter(k => !k.ok).map(k => k.key);
       return (p.manques || []).map(m => String(m || "")).filter(m => m && !open.includes(this._convPretGroup(m)));
+    },
+    // « Marquer déposé » : avertir, pas bloquer. Dossier complet → confirmation simple ; sinon la
+    // liste de ce qui manque et « Marquer déposé quand même » (le chef de file a pu déposer hors d'Adjugo).
+    aoDepotAsk() {
+      const p = this.depotPret() || {};
+      if (p.pret) {
+        this._convAsk({ title: "Marquer le dossier comme déposé ?", ok: "Marquer déposé", run: () => this.aoDepotMark(false),
+          lines: ["Le marché passe à l'étape « Déposé ».", "Chaque partenaire le verra dans son journal.",
+                  "Les relances automatiques s'arrêtent pour ce marché.", "En cas d'erreur, vous pourrez retirer ce marquage."] });
+        return;
+      }
+      this._depotAskIncomplete(p.manques || [], (Number(p.n_total) || 4) - (Number(p.n_ok) || 0));
+    },
+    _depotAskIncomplete(manques, n) {
+      const list = (manques || []).map(m => String(m || "")).filter(Boolean);
+      const lines = [{ t: (n > 0 ? n + (n > 1 ? " contrôles avant dépôt ne sont pas réglés." : " contrôle avant dépôt n'est pas réglé.") : "Le dossier n'est pas complet.") + " Le marquer déposé quand même ? Vous avez peut-être déposé hors d'Adjugo.", warn: true }];
+      list.slice(0, 5).forEach(m => lines.push({ t: m }));
+      if (list.length > 5) lines.push({ t: "et " + (list.length - 5) + " autre" + (list.length - 5 > 1 ? "s" : "") });
+      lines.push({ t: "Chaque partenaire verra le marquage dans son journal ; les relances automatiques s'arrêtent." });
+      this._convAsk({ title: "Le dossier n'est pas complet", lines, ok: "Marquer déposé quand même", run: () => this.aoDepotMark(true) });
+    },
+    async aoDepotMark(confirmer) {
+      const pid = this.ao.project && this.ao.project.id, dp = this.ao.depot; if (!pid || dp.busy) return;
+      dp.busy = "deposer"; dp.err = "";
+      try {
+        const r = await this.api("POST", "/api/projects/" + pid + "/groupement/deposer", { confirmer: !!confirmer });
+        if (!this.ao.project || this.ao.project.id !== pid) return;
+        if (r.status) this.ao.project.status = r.status;
+        if (r.state) this._convMergeState(r.state);
+        dp.d = Object.assign({}, dp.d || {}, { depose: true, status: r.status || "envoye" }, r.pret ? { pret: r.pret } : {});
+        dp.live = r.deja_depose ? "Le dossier était déjà marqué déposé." : "Dossier marqué déposé.";
+        this.notify(dp.live);
+        this.$nextTick(() => { let el = this.$refs.depotCard; if (Array.isArray(el)) el = el[0]; if (el && el.focus) el.focus({ preventScroll: true }); });
+      } catch (e) {
+        if (e.status === 409 && e.code === "pas_pret") { dp.busy = ""; await this.aoDepotLoad(); const d = e.detail || {}; this._depotAskIncomplete(d.manques || [], 0); return; }
+        dp.err = e.message || "Marquage impossible pour le moment.";
+      } finally { dp.busy = ""; }
+    },
+    aoDepotAskCancel() {
+      this._convAsk({ title: "Retirer le marquage « déposé » ?", ok: "Retirer le marquage", run: () => this.aoDepotUnmark(),
+        lines: ["À faire seulement si le dossier n'a pas été déposé : le marché retrouve son statut d'avant.",
+                "Le retrait est inscrit dans le journal de chaque partenaire."] });
+    },
+    async aoDepotUnmark() {
+      const pid = this.ao.project && this.ao.project.id, dp = this.ao.depot; if (!pid || dp.busy) return;
+      dp.busy = "annuler"; dp.err = "";
+      try {
+        const r = await this.api("DELETE", "/api/projects/" + pid + "/groupement/deposer");
+        if (!this.ao.project || this.ao.project.id !== pid) return;
+        if (r.status) this.ao.project.status = r.status;
+        if (r.state) this.ao.grp.state = r.state;
+        dp.d = Object.assign({}, dp.d || {}, { depose: false, status: r.status });
+        dp.live = "Marquage « déposé » retiré."; this.notify(dp.live);
+        dp.busy = ""; await this.aoDepotLoad();
+      } catch (e) { dp.err = e.message || "Impossible de retirer le marquage pour le moment."; }
+      finally { dp.busy = ""; }
     },
     // Boîte de confirmation : dit ce que l'action fait AVANT de la faire (focus sur « Annuler », Échap ferme).
     _convAsk(cfg) {
@@ -2824,7 +3018,6 @@ const __adjApp = createApp({
       if (p.go_decision === "go_groupement" && p.groupement_score != null) return "Seul : " + (p.match_score != null ? p.match_score + "/100" : "—") + " · En groupement : " + p.groupement_score + "/100";
       return p.match_score != null ? "Compatibilité " + p.match_score + "/100" : "";
     },
-    grpAccessibleCount() { return (this.projects || []).filter(p => p.go_decision === "go_groupement").length; },
     // Verdict SEUL d'un marché « bon potentiel en groupement » : celui que l'API a calculé (simulation)
     // sinon, à défaut, les seuils du profil (mêmes défauts que le serveur : 65 / 40). Jamais un chiffre inventé.
     aoSeulDecision() {

@@ -10,8 +10,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
-  <script src="/static/vendor/lucide-1.20.0.min.js"></script>
-  <script src="/static/cotraitance-crypto.js"></script>
+  <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
+  <script src="/static/cotraitance-crypto.js" integrity="sha384-XeXF9c3sWCINLhcn8WsgnQA1g1we3veNODoV1/yHheSJcBMU2lSg+MGGmqFwlXF4"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -123,6 +123,56 @@
       .cv-tbl .cv-me { background:var(--surface-2,#f6f7f9); border-radius:8px; padding:6px 8px; }
       .cv-doc { padding:12px; }
     }
+    /* ── Vague 4 : journal vérifiable par le membre + DPGF de lot — styles locaux à cette page ── */
+    /* .jv-acts / .jv (verdict du journal) : styles partagés dans styles.css */
+    /* Les bulles (i) masquées restent dans le calcul du défilement : sans ceci, la zone de travail
+       défilait horizontalement (bulles de la convention près du bord droit). Les bulles visibles
+       sont recadrées dans l'écran par fitTip(). */
+    .work { overflow-x:hidden; }
+    .dp-share { display:grid; gap:6px; margin-top:12px; font-size:12.5px; color:var(--text-2,#4b5563); }
+    .dp-share > div { display:flex; gap:7px; align-items:flex-start; line-height:1.45; }
+    .dp-share b { color:var(--text,#16181d); font-weight:600; }
+    .dp-head, .dp-row { display:grid; grid-template-columns:minmax(0,1fr) 76px 84px 112px 112px 34px; gap:6px; align-items:center; }
+    .dp-head { margin-top:16px; padding:0 0 5px; border-bottom:1px solid var(--hairline,#eef0f3); font-size:11.5px; font-weight:600; color:var(--text-2,#4b5563); }
+    .dp-row { padding:6px 0; border-bottom:1px solid var(--hairline,#eef0f3); }
+    .dp-row > div { min-width:0; }
+    .dp-row .inp { width:100%; height:34px; padding:0 8px; font-size:12.5px; min-width:0; }
+    .dp-num, .dp-row .inp.dp-num { text-align:right; }
+    .dp-amt { text-align:right; font-size:12.5px; font-variant-numeric:tabular-nums; }
+    .dp-lab, .dp-lab-inl { display:none; }
+    .dp-del { justify-self:end; }
+    .dp-tot { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 12px; margin-top:12px; font-size:13px; }
+    .dp-cmp { display:flex; gap:7px; align-items:flex-start; margin-top:6px; font-size:12.5px; line-height:1.45; }
+    .dp-cmp:empty { display:none; }
+    .dp-acts { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:16px; }
+    .dp-prev { max-height:42vh; overflow:auto; margin-top:10px; border:1px solid var(--border,#e6e8ec); border-radius:8px; background:var(--surface,#fff); }
+    .dp-prev:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring,rgba(27,79,255,.26)); }
+    .dp-prev table { border-collapse:collapse; font-size:11.5px; width:100%; }
+    .dp-prev th { padding:5px 8px; border-bottom:1px solid var(--border,#e6e8ec); text-align:left; font-weight:600; color:var(--text-2,#4b5563); white-space:nowrap; }
+    .dp-prev td { padding:4px 8px; border-bottom:1px solid var(--hairline,#eef0f3); white-space:nowrap; color:var(--text,#16181d); vertical-align:top; }
+    .dp-prev .num { text-align:right; font-variant-numeric:tabular-nums; }
+    .dp-prev td.des { white-space:normal; min-width:140px; }
+    .dp-card { scroll-margin-top:84px; }
+    @media (max-width:640px){
+      .dp-head { display:none; }
+      .dp-row { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px 10px; padding:12px 0; }
+      .dp-row .dp-des { grid-column:1 / -1; }
+      .dp-lab { display:block; margin-bottom:3px; font-size:11px; font-weight:600; color:var(--text-2,#4b5563); }
+      .dp-amt { text-align:left; align-self:end; padding-bottom:7px; }
+      .dp-amt .dp-lab { margin-bottom:5px; }
+      .dp-row .btn.dp-del { grid-column:1 / -1; justify-self:start; width:auto; min-width:0; padding:0 10px; gap:6px; }
+      /* Aperçu du fichier : une ligne de la DPGF par bloc (aucun défilement horizontal à 375 px) */
+      .dp-prev thead { display:none; }
+      .dp-prev table, .dp-prev tbody, .dp-prev tfoot, .dp-prev tr, .dp-prev td { display:block; width:100%; }
+      .dp-prev tr { padding:7px 10px; border-bottom:1px solid var(--hairline,#eef0f3); }
+      .dp-prev td { display:flex; justify-content:space-between; gap:12px; padding:1px 0; border:0; white-space:normal; text-align:right; }
+      .dp-prev td::before { content:attr(data-label); flex:none; max-width:50%; text-align:left; font-weight:600; color:var(--text-2,#4b5563); }
+      .dp-prev td:empty { display:none; }
+      .dp-prev td.des { min-width:0; }
+      .dp-prev tfoot tr { display:flex; justify-content:space-between; gap:12px; border-bottom:0; }
+      .dp-prev tfoot td { width:auto; }
+      .dp-del .dp-lab-inl { display:inline; font-size:12px; }
+    }
   </style>
 </head>
 <body>
@@ -181,7 +231,7 @@
     // MY_TOKEN : compte Adjugo de ce navigateur (s'il existe) ; MY_COMPANY : entreprise saisie dans
     // MA part (repère « vous ») ; RELOAD_JOURNAL : rafraîchit « Mon journal » après une action.
     let MY_TOKEN = null, MY_COMPANY = "", RELOAD_JOURNAL = null;
-    const PIECE_TYPES = [["kbis", "Kbis"], ["fiscale", "Attestation fiscale"], ["sociale", "Attestation sociale (URSSAF)"], ["assurance", "Assurance (RC / décennale)"], ["rib", "RIB"], ["qualification", "Qualification / certificat"], ["autre", "Autre pièce"]];
+    const PIECE_TYPES = [["kbis", "Kbis"], ["fiscale", "Attestation fiscale"], ["sociale", "Attestation sociale (URSSAF)"], ["assurance", "Assurance (RC / décennale)"], ["rib", "RIB"], ["qualification", "Qualification / certificat"], ["dpgf_lot", "DPGF du lot (prix de vente)"], ["autre", "Autre pièce"]];
     const PIECE_LABEL = Object.fromEntries(PIECE_TYPES);
     const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
     const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -241,12 +291,12 @@
     // ── Modale légère (récap avant envoi, saisie du code de vérification) ──
     // Remplace window.prompt/confirm (dialogues système gris → perçus comme du phishing par
     // un dirigeant non technique, collage bloqué sur mobile). Renvoie une Promise.
-    function openModal({ title, bodyHtml, confirmLabel, cancelLabel, withInput, inputLabel, extraLabel, noteHtml }) {
+    function openModal({ title, bodyHtml, confirmLabel, cancelLabel, withInput, inputLabel, extraLabel, noteHtml, maxWidth, focusCancel }) {
       return new Promise(resolve => {
         const ov = document.createElement("div");
         ov.style.cssText = "position:fixed;inset:0;background:rgba(17,24,39,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px";
         const box = document.createElement("div");
-        box.style.cssText = "background:var(--card,#fff);border-radius:14px;max-width:440px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3)";
+        box.style.cssText = "background:var(--card,#fff);border-radius:14px;max-width:" + (maxWidth || 440) + "px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3)";
         // Vraie boîte de dialogue pour les lecteurs d'écran (titre annoncé, Échap pour fermer).
         const uid = "mdl" + Math.random().toString(36).slice(2, 9);
         box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true"); box.setAttribute("aria-labelledby", uid + "-t");
@@ -275,7 +325,7 @@
         ok.onclick = () => close(withInput ? { value: (input.value || "").trim() } : true);
         if (extraBtn) extraBtn.onclick = () => close({ extra: true });
         ov.addEventListener("click", e => { if (e.target === ov) close(null); });
-        setTimeout(() => (input || ok).focus(), 40);
+        setTimeout(() => (input || (focusCancel ? cancel : ok)).focus(), 40);   // action engageante : focus sur « Revenir »
         if (input) input.addEventListener("keydown", e => { if (e.key === "Enter") ok.click(); });
       });
     }
@@ -503,6 +553,10 @@
       // Doctrine de visibilité : le PRIX DE VENTE du lot est en clair (le mandataire en a besoin) ;
       // le DÉTAIL du chiffrage (coûts, marges, méthode) est chiffré dans le navigateur (AdjugoCrypto).
       const CR = window.AdjugoCrypto || null;
+      // DPGF de lot (vague 4) : composant créé plus bas ; texte du détail tel qu'enregistré
+      // (savedTexte) et part telle que le chef de file la voit (savedMeta : nom, lot, prix).
+      let dp = null, savedTexte = "", lastCollect = null;
+      const savedMeta = { entreprise: "", lot: "", prix: null };
       const prix = inp("ex. 280000"); prix.type = "number"; prix.min = "0"; prix.step = "1"; prix.inputMode = "decimal";
       const DETAIL_PH = "Coûts, marges, méthode de calcul — pour vous seul";
       const detail = ta(DETAIL_PH, 4);
@@ -635,8 +689,9 @@
           sel.value = PIECE_LABEL[pc.piece_type] ? pc.piece_type : "autre";
           const dt = document.createElement("input"); dt.type = "date"; dt.className = "inp"; dt.value = pc.expiration_date || ""; dt.setAttribute("aria-label", "Date de validité de la pièce " + (pc.name || ""));
           const sel0 = PIECE_LABEL[pc.piece_type] ? pc.piece_type : "autre", dt0 = pc.expiration_date || "";
+          const isDp = pc.piece_type === "dpgf_lot";
           const patch = async (body) => {
-            if (!(await confirmPartChange())) { sel.value = sel0; dt.value = dt0; upMsg.textContent = "Modification annulée : la convention reste à jour."; return; }
+            if (!(await confirmUnlessDpgf(isDp && (!body.piece_type || body.piece_type === "dpgf_lot")))) { sel.value = sel0; dt.value = dt0; upMsg.textContent = "Modification annulée : la convention reste à jour."; return; }
             upMsg.textContent = "Mise à jour…";
             const r = await fetch(pieceUrl + "/" + pc.id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
             if (r && r.ok) { okMsg(upMsg, "Pièce mise à jour"); reloadPieces(); }
@@ -645,21 +700,28 @@
           sel.onchange = () => patch({ piece_type: sel.value });
           dt.onchange = () => patch({ expiration_date: dt.value });
           meta.appendChild($(`<span class="muted small">Type</span>`)); meta.appendChild(sel);
-          meta.appendChild($(`<span class="muted small">Valide jusqu'au</span>`)); meta.appendChild(dt);
+          if (!isDp) { meta.appendChild($(`<span class="muted small">Valide jusqu'au</span>`)); meta.appendChild(dt); }
           left.appendChild(meta); row.appendChild(left);
           const acts = document.createElement("div"); acts.className = "row"; acts.style.gap = "6px";
           acts.appendChild($(`<a class="btn sm" href="${pieceUrl}/${encodeURIComponent(pc.id)}">Voir</a>`));
           const rm = $(`<button class="btn sm">Retirer</button>`);
-          rm.onclick = async () => { if (!(await confirmPartChange())) { upMsg.textContent = "Retrait annulé : la convention reste à jour."; return; } rm.disabled = true; await fetch(pieceUrl + "/" + pc.id, { method: "DELETE" }); reloadPieces(); };
+          rm.onclick = async () => { if (!(await confirmUnlessDpgf(isDp))) { upMsg.textContent = "Retrait annulé : la convention reste à jour."; return; } rm.disabled = true; await fetch(pieceUrl + "/" + pc.id, { method: "DELETE" }); reloadPieces(); };
           acts.appendChild(rm); row.appendChild(acts); piecesList.appendChild(row);
         });
         if (!pieces || !pieces.length) piecesList.appendChild($(`<div class="muted small">Aucune pièce déposée.</div>`));
+        if (dp) dp.setPieces(pieces || []);
       }
       async function reloadPieces() { const c = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/contribution").then(r => r.ok ? r.json() : null).catch(() => null); renderPieces(c ? c.pieces : []); if (c) { renderChecklist(c.pieces_checklist); curVer = c.version || curVer; setStatus(c.status); } reloadCoffre(); if (cvPartLocksConvention()) loadConvention(); }
+      // DPGF de lot : sa pièce ne modifie ni la part ni la convention (contrat vague 4 §4) → pas
+      // d'avertissement « convention plus à jour » pour elle. Même règle que le serveur (type
+      // explicite, ou nom « DPGF… » dans un format de DPGF).
+      const DPGF_EXT = /\.(pdf|xlsx|xls|ods|csv)$/i;
+      const isDpgfUpload = (name, type) => DPGF_EXT.test(name || "") && (type === "dpgf_lot" || (!type && /dpgf|d[ée]composition du prix global/i.test(name || "")));
+      const confirmUnlessDpgf = (isDpgf) => isDpgf ? Promise.resolve(true) : confirmPartChange();
       addBtn.onclick = () => fileIn.click();
       fileIn.onchange = async () => {
         if (!fileIn.files.length) return;
-        if (!(await confirmPartChange())) { fileIn.value = ""; upMsg.textContent = "Ajout annulé : la convention reste à jour."; return; }
+        if (!(await confirmUnlessDpgf(isDpgfUpload(fileIn.files[0].name, typeSel.value)))) { fileIn.value = ""; upMsg.textContent = "Ajout annulé : la convention reste à jour."; return; }
         upMsg.textContent = "Envoi…";
         const fd = new FormData(); fd.append("file", fileIn.files[0]);
         if (typeSel.value) fd.append("piece_type", typeSel.value);
@@ -688,28 +750,118 @@
       declineWrap.appendChild(btnDecline); card.appendChild(declineWrap);
       content().appendChild(card);
       syncContribWarn();
+      // ── Ma DPGF de lot (vague 4) : produite ICI, à partir du détail chiffré déchiffré localement ──
+      function setSavedMeta(c) {
+        savedMeta.entreprise = c.company_name || (d.invited && d.invited.company) || "";
+        savedMeta.lot = c.lot || ""; savedMeta.prix = c.prix_lot_ht == null ? null : Number(c.prix_lot_ht);
+        if (dp) dp.refresh();
+      }
+      const dpApi = {
+        meta: () => savedMeta,
+        canUnlock: () => !!(CR && curEnv),
+        unlock: () => btnUnlock.onclick(),
+        // Enregistre les lignes DANS le détail chiffré, sans toucher au reste de la part (route
+        // « détail seul » : la part soumise et la convention restent intactes).
+        async save(lines) {
+          if (locked) return { err: "Déverrouillez d'abord votre détail avec votre code de récupération." };
+          if (!CR) return { err: "Chiffrement indisponible dans ce navigateur : vos lignes ne peuvent pas être enregistrées." };
+          const k = await keyForSave();
+          if (k.locked) return { err: "Déverrouillez d'abord votre détail avec votre code de récupération." };
+          if (k.refused) return { err: "Lignes non enregistrées : notez d'abord votre code de récupération." };
+          const plain = CR.packDetail(savedTexte, { lignes: lines });
+          const env = String(plain).trim() ? await CR.encrypt(k.ctx, plain) : null;
+          const r = await fetch(url + "/detail", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ detail_chiffre: env, version: curVer }) }).catch(() => null);
+          if (r && r.ok) { const c = await r.json(); curVer = c.version || curVer; curEnv = (c.detail_chiffre && c.detail_chiffre.ciphertext) ? c.detail_chiffre : null; serverHasDetail = !!curEnv; return { ok: true }; }
+          if (r && r.status === 409) {
+            const c = await fetch(url).then(x => x.ok ? x.json() : null).catch(() => null); if (c) fill(c);
+            return { err: "Votre part a été modifiée ailleurs entre-temps : la dernière version vient d'être rechargée. Vérifiez vos lignes puis enregistrez de nouveau." };
+          }
+          const e = r ? await r.json().catch(() => ({})) : {};
+          return { err: errText(e, r ? "Enregistrement impossible pour le moment." : "Connexion impossible : réessayez.") };
+        },
+        // Dépose le fichier produit ici comme pièce « dpgf_lot », puis retire l'ancienne DPGF.
+        async upload(csv, name, oldIds) {
+          const fd = new FormData();
+          fd.append("file", new Blob([csv], { type: "text/csv" }), name);
+          fd.append("piece_type", "dpgf_lot");
+          const r = await fetch(pieceUrl, { method: "POST", body: fd }).catch(() => null);
+          if (!r || !r.ok) { const e = r ? await r.json().catch(() => ({})) : {}; return { err: errText(e, r ? "Dépôt impossible pour le moment." : "Connexion impossible : réessayez.") }; }
+          const np = await r.json().catch(() => ({}));
+          for (const id of (oldIds || [])) { if (id !== np.id) await fetch(pieceUrl + "/" + encodeURIComponent(id), { method: "DELETE" }).catch(() => null); }
+          await reloadPieces();
+          if (RELOAD_JOURNAL) RELOAD_JOURNAL();
+          return { ok: true };
+        },
+      };
+      dp = renderDpgf(dpApi);
+      content().appendChild(dp.el);
       // ── Mon journal : qui a vu / modifié quoi sur MA part + événements du groupement ──
-      const jCard = $(`<div class="card pad" style="margin-bottom:16px"></div>`);
-      const jHead = $(`<div class="row" style="gap:8px;align-items:center"><span style="flex:1;min-width:0"><b style="font-size:13.5px">Mon journal</b>${tip("Qui a consulté ou modifié quoi sur votre part, et les événements du groupement.<span class=\"j-int\"></span>")}</span></div>`);
-      const jInt = jHead.querySelector(".j-int");   // complété par le libellé d'intégrité renvoyé par l'API
+      // Vérification par le membre (vague 4) : verdict, date du dernier horodatage, empreinte,
+      // preuve téléchargeable (JSON) et version lisible (PDF). Rien n'est calculé ici.
+      const jCard = $(`<section class="card pad" style="margin-bottom:16px" aria-labelledby="jr-title"></section>`);
+      const jHead = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 150px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="jr-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Mon journal</h2><span class="j-tip" style="display:inline-flex"></span></span></div>`);
+      const jTip = jHead.querySelector(".j-tip");
+      const setJournalTip = (label, limites) => {
+        jTip.innerHTML = tip("Qui a consulté ou modifié quoi sur votre part, et les événements du groupement. <b>" + esc(label || J_LABEL) + ".</b><br><br><b>Limites</b><br>" + (limites && limites.length ? limites : J_LIMITES).map(l => "· " + esc(l)).join("<br>"));
+        icons();
+      };
+      setJournalTip();
       const jRefresh = $(`<button class="btn sm" type="button"><i data-lucide="refresh-cw"></i>Actualiser</button>`); jHead.appendChild(jRefresh);
       jCard.appendChild(jHead);
-      const jList = $(`<ul class="jrn"></ul>`); const jFoot = $(`<div class="muted small" style="margin-top:8px"></div>`);
-      jCard.appendChild(jList); jCard.appendChild(jFoot);
+      const jActs = $(`<div class="jv-acts"></div>`);
+      const jVerify = $(`<button class="btn sm primary" type="button"><i data-lucide="shield-check"></i>Vérifier mon journal</button>`);
+      const jJson = $(`<button class="btn sm" type="button"><i data-lucide="file-json"></i>Télécharger la preuve (JSON)</button>`);
+      const jPdf = $(`<button class="btn sm" type="button"><i data-lucide="file-down"></i>Télécharger le journal (PDF)</button>`);
+      [jVerify, jJson, jPdf].forEach(b => jActs.appendChild(b));
+      jActs.insertAdjacentHTML("beforeend", tip("<b>Vérifier vous-même</b><br>1. Téléchargez la preuve (JSON) et gardez ce fichier.<br>2. Plus tard, téléchargez-en une nouvelle : chaque ligne de l'ancienne doit s'y retrouver à l'identique (date, événement, sceau, maillon). Si une entrée avait été modifiée ou supprimée, la comparaison le montrerait.<br>3. Un informaticien peut aussi recalculer chaque maillon (SHA-256) : la méthode est écrite dans le fichier.<br><br>Le PDF est la version lisible ; la preuve vérifiable est le fichier JSON.", true));
+      jCard.appendChild(jActs);
+      const jLive = $(`<div class="cv-msg" role="status" aria-live="polite" style="margin-top:8px"></div>`);
+      const jResult = $(`<div aria-live="polite"></div>`);
+      jCard.appendChild(jLive); jCard.appendChild(jResult);
+      const jList = $(`<ul class="jrn"></ul>`);
+      jCard.appendChild(jList);
       const WHO = { vous: "vous", mandataire: "mandataire", partenaire: "partenaire" };
       async function loadJournal() {
         jRefresh.disabled = true;
         let j = null;
         try { j = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/journal").then(r => r.ok ? r.json() : null); } catch (e) {}
-        jRefresh.disabled = false; jList.innerHTML = ""; jFoot.innerHTML = "";
+        jRefresh.disabled = false; jList.innerHTML = "";
         if (!j) { jList.appendChild($(`<li class="muted">Journal indisponible pour le moment.</li>`)); return; }
         const entries = j.entries || [];
         if (!entries.length) jList.appendChild($(`<li class="muted">Aucune entrée pour l'instant.</li>`));
         entries.forEach(e => jList.appendChild($(`<li><span class="jrn-at">${esc(fmtDT(e.at))}</span><span class="jrn-who ${esc(e.who || "")}">${esc(WHO[e.who] || e.who || "")}</span><span style="flex:1;min-width:0">${esc(e.label || e.action || "")}${e.detail ? ` <span class="muted">— ${esc(e.detail)}</span>` : ""}</span></li>`)));
-        jInt.textContent = j.integrity_label ? " " + j.integrity_label : "";
-        jFoot.innerHTML = j.chained ? `<span class="pill go" style="font-size:11px">${ico("check", 12, "vertical-align:0")}Intégrité vérifiée</span>` : "";
+        if (j.integrity_label) setJournalTip(j.integrity_label, LAST_LIMITES);
         icons();
       }
+      let LAST_LIMITES = null;
+      jVerify.onclick = async () => {
+        jVerify.disabled = true; jLive.classList.remove("err"); jLive.textContent = "Vérification de votre journal…";
+        let r = null, v = null;
+        try { r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/journal/integrity"); if (r.ok) v = await r.json(); } catch (e) {}
+        jVerify.disabled = false;
+        if (!v) {
+          const e = r ? await r.json().catch(() => ({})) : {};
+          jLive.classList.add("err"); jLive.textContent = errText(e, !r ? "Connexion impossible : réessayez." : r.status === 429 ? "Trop de vérifications : réessayez dans une minute." : "Vérification impossible pour le moment.");
+          return;
+        }
+        jLive.textContent = "";
+        LAST_LIMITES = Array.isArray(v.limites) ? v.limites : null;
+        setJournalTip(v.integrity_label, LAST_LIMITES);
+        renderVerdict(jResult, v);
+      };
+      const jExport = async (fmt, btn) => {
+        btn.disabled = true; jLive.classList.remove("err"); jLive.textContent = fmt === "json" ? "Préparation de la preuve…" : "Préparation du PDF…";
+        try {
+          const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/journal/export?format=" + fmt);
+          if (!r.ok) { const e = await r.json().catch(() => ({})); jLive.classList.add("err"); jLive.textContent = errText(e, r.status === 429 ? "Trop de téléchargements : réessayez dans une minute." : "Téléchargement impossible pour le moment."); return; }
+          saveResponse(r, await r.blob(), "Journal." + fmt);
+          okMsg(jLive, fmt === "json" ? "Preuve téléchargée : gardez ce fichier, le prochain export doit reprendre toutes ses lignes à l'identique." : "Journal téléchargé (PDF).");
+          loadJournal();   // « Vous avez exporté votre journal »
+        } catch (e) { jLive.classList.add("err"); jLive.textContent = "Téléchargement impossible : vérifiez votre connexion."; }
+        finally { btn.disabled = false; }
+      };
+      jJson.onclick = () => jExport("json", jJson);
+      jPdf.onclick = () => jExport("pdf", jPdf);
       jRefresh.onclick = loadJournal;
       RELOAD_JOURNAL = loadJournal;
       content().appendChild(jCard);
@@ -734,16 +886,18 @@
       }
       // Au chargement : enveloppe + clé en cache → déchiffré ; enveloppe sans clé → verrouillé.
       // Tant que la lecture n'est pas finie, la zone reste verrouillée (un PUT ne peut pas effacer l'enveloppe).
+      // Le détail contient le texte libre ET les lignes de la DPGF (AdjugoCrypto.packDetail).
+      const applyPlain = (plain) => { const u = CR.unpackDetail(plain); detail.value = u.texte; savedTexte = u.texte; if (dp) dp.load(u.dpgf); };
       async function loadDetail(env) {
-        curEnv = (env && env.ciphertext) ? env : null; serverHasDetail = !!curEnv; keyCtx = null; lockMsg.textContent = ""; detail.value = "";
-        if (!curEnv) { setLocked(false); return; }
-        if (!CR) { setLocked(true, "Chiffrement indisponible dans ce navigateur."); return; }
-        setLocked(true, "Lecture de votre détail…");
+        curEnv = (env && env.ciphertext) ? env : null; serverHasDetail = !!curEnv; keyCtx = null; lockMsg.textContent = ""; detail.value = ""; savedTexte = "";
+        if (!curEnv) { setLocked(false); if (dp) dp.load(null); return; }
+        if (!CR) { setLocked(true, "Chiffrement indisponible dans ce navigateur."); if (dp) dp.setLocked(true, "Chiffrement indisponible dans ce navigateur."); return; }
+        setLocked(true, "Lecture de votre détail…"); if (dp) dp.setLocked(true, "Lecture de vos lignes…");
         try {
           const r = await CR.ensureKey(TOKEN, curEnv);
-          if (r.ctx && !r.isNew) { keyCtx = r.ctx; detail.value = await CR.decrypt(r.ctx, curEnv); setLocked(false); return; }
+          if (r.ctx && !r.isNew) { keyCtx = r.ctx; applyPlain(await CR.decrypt(r.ctx, curEnv)); setLocked(false); return; }
         } catch (e) {}
-        setLocked(true);
+        setLocked(true); if (dp) dp.setLocked(true);
       }
       btnUnlock.onclick = async () => {
         if (!CR || !curEnv) return;
@@ -753,7 +907,7 @@
           if (!code) return;
           try {
             const ctx = await CR.keyFromCode(TOKEN, code, curEnv);
-            detail.value = await CR.decrypt(ctx, curEnv); keyCtx = ctx; setLocked(false); lockMsg.textContent = ""; okMsg(msg, "Détail déverrouillé"); return;
+            applyPlain(await CR.decrypt(ctx, curEnv)); keyCtx = ctx; setLocked(false); lockMsg.textContent = ""; okMsg(msg, "Détail déverrouillé"); return;
           } catch (e) { extra = `<p style="margin:8px 0 0;color:#b42318">Code incorrect. Vérifiez les caractères et réessayez.</p>`; }
         }
       };
@@ -763,7 +917,7 @@
         if (!ok) return;
         const rr = await CR.resetKey(TOKEN);
         keyCtx = rr.ctx; pendingCode = rr.code; setPendingFlag(true); curEnv = null;
-        detail.value = ""; setLocked(false); lockMsg.textContent = "";
+        detail.value = ""; savedTexte = ""; setLocked(false); lockMsg.textContent = ""; if (dp) dp.load(null);
         msg.textContent = "Zone réinitialisée — saisissez votre nouveau détail puis enregistrez.";
       };
       // Clé pour chiffrer avant envoi : {ctx} | {refused:true} (code pas noté) | {locked:true}.
@@ -796,12 +950,15 @@
           capacites: { ca_n1: numOrNull(ca.value), effectif: intOrNull(effectif.value) },
           version: curVer };
         const txt = detail.value;
+        lastCollect = null;
+        const lines = (dp && !locked) ? dp.current() : null;
+        const plain = (CR && !locked) ? CR.packDetail(txt.trim() ? txt : "", lines ? { lignes: lines } : null) : txt;
         if (locked) { /* enveloppe présente mais non déverrouillée ici : on n'y touche pas (clé omise du PUT) */ }
-        else if (!txt.trim()) body.detail_chiffre = null;
+        else if (!String(plain).trim()) { body.detail_chiffre = null; lastCollect = { texte: "" }; }
         else if (!CR) collectWarn = "Détail non enregistré : chiffrement indisponible dans ce navigateur.";
         else {
           const k = await keyForSave();
-          if (k.ctx) body.detail_chiffre = await CR.encrypt(k.ctx, txt);
+          if (k.ctx) { body.detail_chiffre = await CR.encrypt(k.ctx, plain); lastCollect = { texte: txt.trim() ? txt : "" }; }
           else if (k.refused) collectWarn = "Détail non enregistré : notez d'abord votre code de récupération.";
         }
         return body;
@@ -818,11 +975,14 @@
         capNote.textContent = cap.declared_at ? "Dernière déclaration le " + fmtDate(cap.declared_at) + "." : "";
         const ct = c.contact || {}; cNom.value = ct.nom || ""; cMail.value = ct.email || ""; cTel.value = ct.telephone || "";
         curVer = c.version || 0; setStatus(c.status); renderPieces(c.pieces || []); renderChecklist(c.pieces_checklist);
+        setSavedMeta(c);
         loadDetail(c.detail_chiffre);
         const co = c.company_name || ""; if (co !== MY_COMPANY) { MY_COMPANY = co; if (CV.data) renderConvention(CV.data); }   // repère « vous »
       };
       const c0 = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
-      if (c0) fill(c0); else renderPieces([]);
+      if (c0) fill(c0); else { renderPieces([]); if (dp) dp.setLocked(true, "Vos lignes sont indisponibles pour le moment : rechargez la page."); }
+      // Arrivée depuis « Partagé avec moi » (« Préparer ma DPGF de lot ») : on amène la carte DPGF.
+      if (location.hash === "#dpgf" && dp) setTimeout(() => { dp.el.scrollIntoView({ block: "start" }); dp.el.focus({ preventScroll: true }); }, 700);
       function showSubmittedBanner() {
         const b = document.getElementById("g-banner");
         b.style.background = "#e7f7ee"; b.style.borderColor = "#1a7f4b";
@@ -837,6 +997,8 @@
         if (r.ok) {
           const c = await r.json(); curVer = c.version || 0; setStatus(c.status);
           if (!locked) { curEnv = (c.detail_chiffre && c.detail_chiffre.ciphertext) ? c.detail_chiffre : null; serverHasDetail = !!curEnv; }
+          if (lastCollect) { savedTexte = lastCollect.texte; if (dp) dp.markSaved(); }
+          setSavedMeta(c);
           const cap = c.capacites || {}; capNote.textContent = cap.declared_at ? "Dernière déclaration le " + fmtDate(cap.declared_at) + "." : "";
           return true;
         }
@@ -888,6 +1050,230 @@
         else { const e = await r.json().catch(() => ({})); const dt = e && e.detail; msg.textContent = (dt && dt.message) ? dt.message : (typeof dt === "string" ? dt : "Erreur d'envoi."); }
       };
       icons();
+    }
+
+    // ══════════ Journal vérifiable par le membre (co-traitance v2, vague 4) ══════════
+    // Contrat : docs/COTRAITANCE_V2_VAGUE4_API.md §2. Le verdict vient du serveur ; on ne survend
+    // pas la preuve : libellé exact, limites dans la bulle (i), jamais d'IP ni d'email ici.
+    const J_LABEL = "Journal vérifiable : toute modification ou suppression d'entrée est détectable";
+    const J_LIMITES = [   // repli tant que la vérification n'a pas renvoyé ses propres limites
+      "La vérification entrée par entrée est faite par Adjugo ; vous pouvez la compléter hors ligne en comparant deux exports successifs de votre journal.",
+      "Les entrées écrites depuis la dernière empreinte quotidienne (moins de 24 h) ne sont couvertes que par l'export que vous avez conservé.",
+      "Le journal ne montre jamais l'adresse IP ni l'email des autres membres : leurs entrées sont engagées par un sceau, pas révélées.",
+    ];
+    const VERDICT_UI = { intact: ["go", "shield-check", "ok"], altere: ["no_go", "shield-alert", "bad"], vide: ["neutral", "shield", ""] };
+    const groupHex = (h) => String(h || "").slice(0, 24).replace(/(.{4})/g, "$1 ").trim();
+    // Téléchargement d'une réponse fetch : nom tiré de Content-Disposition, sinon `fallback`.
+    function saveResponse(r, blob, fallback) {
+      const cd = (r && r.headers && r.headers.get("content-disposition")) || "";
+      let name = fallback || "fichier";
+      const m1 = /filename\*=UTF-8''([^;]+)/i.exec(cd), m2 = /filename="?([^";]+)"?/i.exec(cd);
+      try { if (m1) name = decodeURIComponent(m1[1]); else if (m2) name = m2[1]; } catch (e) {}
+      saveBlob(blob, name);
+    }
+    function saveBlob(blob, name) {
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = u; a.download = name; a.rel = "noopener"; a.style.display = "none";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(u), 5000);
+    }
+    function renderVerdict(el, v) {
+      el.innerHTML = "";
+      const ui = VERDICT_UI[v.verdict] || VERDICT_UI.vide;
+      const box = $(`<div class="jv ${ui[2]}"></div>`);
+      const h = $(`<div class="jv-h"><span class="pill ${ui[0]}" style="font-size:11.5px;gap:4px">${ico(ui[1], 13, "vertical-align:-2px")}${esc(v.verdict_label || v.verdict || "")}</span></div>`);
+      if (v.verifie_le) h.appendChild($(`<span class="muted small">Vérifié le ${esc(fmtDT(v.verifie_le))}</span>`));
+      box.appendChild(h);
+      if (v.message) box.appendChild($(`<p class="jv-msg">${esc(v.message)}</p>`));
+      const fa = v.premiere_alteration;
+      if (fa && (fa.label || fa.at)) box.appendChild($(`<div class="jv-line"><b>Entrée concernée :</b> ${esc(fa.label || "")}${fa.at ? " (" + esc(fmtDT(fa.at)) + ")" : ""}</div>`));
+      const an = v.ancrage;
+      let anLine;
+      if (an && an.date) anLine = an.horodate ? "Dernier horodatage : " + (an.date_label || an.date) + ", empreinte quotidienne du journal horodatée par une autorité indépendante."
+                                              : "Dernière empreinte quotidienne du journal : " + (an.date_label || an.date) + " (sans horodatage externe).";
+      else anLine = "Pas encore d'empreinte quotidienne horodatée : vos entrées sont couvertes par cette vérification et par les preuves que vous téléchargez.";
+      box.appendChild($(`<div class="jv-line">${ico("stamp", 13, "margin-right:4px")}${esc(anLine)}</div>`));
+      if (an && an.message && an.entrees_couvertes && String(v.message || "").indexOf(an.message) < 0) box.appendChild($(`<div class="jv-line">${esc(an.message)}</div>`));
+      if (v.tronque) box.appendChild(cvWarn("Seules les 2 000 premières entrées sont vérifiées."));
+      if (v.empreinte) {
+        const fp = $(`<div class="jv-fp"><span>Empreinte de votre journal :</span><code title="Empreinte complète dans la preuve (JSON)">${esc(groupHex(v.empreinte))} …</code></div>`);
+        const cp = $(`<button class="btn sm" type="button"><i data-lucide="copy"></i>Copier</button>`);
+        cp.setAttribute("aria-label", "Copier l'empreinte complète de votre journal");
+        cp.onclick = () => {
+          Promise.resolve(navigator.clipboard && navigator.clipboard.writeText(v.empreinte))
+            .then(() => { cp.textContent = "Copiée"; }).catch(() => { cp.textContent = "Copie impossible"; });
+        };
+        fp.appendChild(cp); box.appendChild(fp);
+      }
+      el.appendChild(box); icons();
+    }
+
+    // ══════════ Ma DPGF de lot (co-traitance v2, vague 4) ══════════
+    // Contrat : docs/COTRAITANCE_V2_VAGUE4_API.md §4. DPGF = le détail de vos prix de vente, ligne
+    // par ligne. Les lignes sont rangées DANS le détail chiffré (même enveloppe, même code de
+    // récupération, AdjugoCrypto.packDetail) ; seul le fichier final, au niveau du prix de vente,
+    // part en clair, après relecture, comme pièce « dpgf_lot » visible du chef de file seulement.
+    // Aucune colonne de coût, de marge ni de coefficient n'existe dans le fichier produit.
+    const DP_UNITS = ["u", "ens", "ft", "m", "ml", "m²", "m³", "kg", "t", "h", "j"];
+    function renderDpgf(api) {
+      const CRY = window.AdjugoCrypto || null, D = CRY && CRY.dpgf;
+      const el = $(`<section class="card pad dp-card" id="dpgf" tabindex="-1" style="margin-bottom:16px;outline:none" aria-labelledby="dp-title"></section>`);
+      const head = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 170px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="dp-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Ma DPGF de lot</h2>${tip("<b>DPGF</b> : le détail de vos prix de vente, ligne par ligne (décomposition du prix global et forfaitaire). Souvent demandée avec l'offre.<br><br>Vos lignes sont enregistrées <b>chiffrées dans votre navigateur</b>, avec le détail de votre chiffrage et le même code de récupération. Elles ne partent en clair qu'au dépôt, après votre relecture, dans un fichier au niveau du prix de vente.<br><br>Déposer ou retirer la DPGF ne modifie ni votre part soumise ni la convention.")}</span></div>`);
+      const pill = $(`<span class="pill neutral" style="font-size:11px">Pas encore déposée</span>`); head.appendChild(pill);
+      el.appendChild(head);
+      el.appendChild($(`<div class="dp-share"><div>${ico("eye", 14, "margin-top:1px;color:var(--text-2,#6b7280)")}<span><b>Partagé avec le chef de file, au dépôt :</b> vos prix de vente, ligne par ligne, et leur total.</span></div><div>${ico("lock", 14, "margin-top:1px;color:var(--text-2,#6b7280)")}<span><b>Jamais partagé :</b> vos coûts, vos marges, votre méthode. Les autres partenaires ne voient pas votre DPGF.</span></div></div>`));
+      const body = document.createElement("div"); el.appendChild(body);
+      const live = $(`<div class="cv-msg" role="status" aria-live="polite" style="margin-top:10px"></div>`); el.appendChild(live);
+      const say = (t, err) => { live.classList.toggle("err", !!err); live.textContent = t || ""; };
+      let lignes = [], savedKey = "[]", locked = true, lockHint = "Lecture de vos lignes…", pieces = [], busy = false;
+      const keyOf = (ls) => JSON.stringify((ls || []).map(l => [l.designation || "", l.unite || "", String(l.quantite == null ? "" : l.quantite), String(l.pu == null ? "" : l.pu)]));
+      const dirty = () => keyOf(lignes) !== savedKey;
+      const fmt = (n) => n == null ? "—" : eurHT(n);
+      const blank = () => ({ designation: "", unite: "", quantite: "", pu: "" });
+      let totEl = null, cmpEl = null, dirtyEl = null, rowsEl = null;
+      function refreshTotals() {
+        if (!D || !totEl) return;
+        const t = D.total(lignes.map(l => ({ quantite: D.parseNum(l.quantite), pu: D.parseNum(l.pu) })));
+        totEl.textContent = fmt(t);
+        const prix = api.meta().prix;
+        cmpEl.innerHTML = "";
+        const anyAmount = lignes.some(l => D.montant({ quantite: D.parseNum(l.quantite), pu: D.parseNum(l.pu) }) != null);
+        if (!anyAmount) { /* rien à comparer tant qu'aucune ligne n'a de montant */ }
+        else if (prix == null) cmpEl.innerHTML = ico("circle-alert", 14, "margin-top:1px;color:var(--warning-text,#b8730a)") + "<span>Le prix de vente de votre lot n'est pas encore renseigné dans votre part.</span>";
+        else if (Math.abs(t - Number(prix)) < 0.005) cmpEl.innerHTML = ICO_OK(14) + "<span>Égal au prix de vente de votre lot (" + esc(eurHT(prix)) + ").</span>";
+        else cmpEl.innerHTML = ico("triangle-alert", 14, "margin-top:1px;color:var(--warning-text,#b8730a)") + "<span>Différent du prix de vente de votre lot (" + esc(eurHT(prix)) + ") : écart de " + esc(eurHT(Math.abs(t - Number(prix)))) + ".</span>";
+        if (dirtyEl) dirtyEl.style.display = dirty() ? "" : "none";
+        icons();
+      }
+      function rowEl(l, i) {
+        const r = $(`<div class="dp-row" role="group"></div>`);
+        r.setAttribute("aria-label", "Ligne " + (i + 1));
+        const uid = "dp" + i + "-";
+        const cell = (cls, lab, id, inputEl) => { const w = $(`<div class="${cls}"><label class="dp-lab" for="${id}">${esc(lab)}</label></div>`); inputEl.id = id; w.appendChild(inputEl); return w; };
+        const mk = (val, ph, aria, num) => { const x = document.createElement("input"); x.className = "inp" + (num ? " dp-num" : ""); x.value = val == null ? "" : String(val); x.placeholder = ph || ""; x.setAttribute("aria-label", aria + " (ligne " + (i + 1) + ")"); if (num) { x.inputMode = "decimal"; x.autocomplete = "off"; } return x; };
+        const des = mk(l.designation, "ex. Fourniture et pose de tableaux", "Désignation"); des.maxLength = 300;
+        const uni = mk(l.unite, "u, m², ml…", "Unité"); uni.maxLength = 20; uni.setAttribute("list", "dp-units");
+        const qty = mk(l.quantite, "0", "Quantité", true);
+        const pu = mk(l.pu, "0,00", "Prix unitaire de vente HT", true);
+        const amt = $(`<div class="dp-amt"><span class="dp-lab">Montant HT</span><output></output></div>`);
+        const out = amt.querySelector("output");
+        const upd = () => { const m = D.montant({ quantite: D.parseNum(qty.value), pu: D.parseNum(pu.value) }); out.textContent = m == null ? "—" : eurHT(m); };
+        const bind = (inputEl, key) => inputEl.addEventListener("input", () => { lignes[i][key] = inputEl.value; upd(); refreshTotals(); });
+        bind(des, "designation"); bind(uni, "unite"); bind(qty, "quantite"); bind(pu, "pu");
+        upd();
+        const del = $(`<button class="btn icon sm ghost dp-del" type="button"><i data-lucide="trash-2"></i><span class="dp-lab-inl">Retirer la ligne</span></button>`);
+        del.setAttribute("aria-label", "Retirer la ligne " + (i + 1));
+        del.onclick = () => { lignes.splice(i, 1); if (!lignes.length) lignes.push(blank()); draw(); const f = el.querySelector(".dp-row input"); if (f) f.focus(); };
+        r.appendChild(cell("dp-des", "Désignation", uid + "des", des));
+        r.appendChild(cell("", "Unité", uid + "uni", uni));
+        r.appendChild(cell("", "Quantité", uid + "qty", qty));
+        r.appendChild(cell("", "Prix unitaire HT", uid + "pu", pu));
+        r.appendChild(amt); r.appendChild(del);
+        return r;
+      }
+      function draw() {
+        body.innerHTML = "";
+        totEl = cmpEl = dirtyEl = rowsEl = null;
+        if (!D) { body.appendChild($(`<div class="muted small" style="margin-top:10px">La DPGF ne peut pas être produite dans ce navigateur (chiffrement indisponible).</div>`)); return; }
+        if (locked) {
+          const b = $(`<div class="g-banner" style="margin:12px 0 0"><i data-lucide="lock"></i><div class="small" style="flex:1">${esc(lockHint || "Vos lignes sont chiffrées : déverrouillez-les avec votre code de récupération.")}</div></div>`);
+          if (!lockHint && api.canUnlock()) { const u = $(`<button class="btn sm" type="button" style="flex:none"><i data-lucide="key-round"></i>Déverrouiller avec mon code</button>`); u.onclick = () => api.unlock(); b.appendChild(u); }
+          body.appendChild(b); icons(); return;
+        }
+        if (!document.getElementById("dp-units")) { const dl = document.createElement("datalist"); dl.id = "dp-units"; DP_UNITS.forEach(u => { const o = document.createElement("option"); o.value = u; dl.appendChild(o); }); document.body.appendChild(dl); }
+        body.appendChild($(`<div class="dp-head" aria-hidden="true"><span>Désignation</span><span>Unité</span><span class="dp-num">Quantité</span><span class="dp-num">Prix unitaire HT</span><span class="dp-num">Montant HT</span><span></span></div>`));
+        rowsEl = document.createElement("div");
+        lignes.forEach((l, i) => rowsEl.appendChild(rowEl(l, i)));
+        body.appendChild(rowsEl);
+        const add = $(`<button class="btn sm ghost" type="button" style="margin-top:8px"><i data-lucide="plus"></i>Ajouter une ligne</button>`);
+        add.onclick = () => {
+          if (lignes.length >= D.MAX_LIGNES) { say("Une DPGF de lot compte au plus " + D.MAX_LIGNES + " lignes ici.", true); return; }
+          lignes.push(blank()); draw(); const rs = el.querySelectorAll(".dp-row"); const last = rs[rs.length - 1]; if (last) last.querySelector("input").focus();
+        };
+        body.appendChild(add);
+        const tot = $(`<div class="dp-tot"><b>Total de la DPGF</b><b class="dp-tot-v" style="font-variant-numeric:tabular-nums"></b></div>`);
+        totEl = tot.querySelector(".dp-tot-v"); body.appendChild(tot);
+        cmpEl = $(`<div class="dp-cmp"></div>`); body.appendChild(cmpEl);
+        const acts = $(`<div class="dp-acts"></div>`);
+        const bSave = $(`<button class="btn sm" type="button"><i data-lucide="save"></i>Enregistrer mes lignes</button>`);
+        const bDepo = $(`<button class="btn sm primary" type="button"><i data-lucide="file-check-2"></i>Relire et déposer la DPGF</button>`);
+        const bCsv = $(`<button class="btn sm ghost" type="button"><i data-lucide="download"></i>Télécharger le fichier (CSV)</button>`);
+        bSave.onclick = () => saveLines(bSave);
+        bDepo.onclick = () => deposit(bDepo);
+        bCsv.onclick = () => { const ch = check(); if (ch) { say(ch, true); return; } saveBlob(new Blob([D.csv(fileOpts())], { type: "text/csv;charset=utf-8" }), D.fileName(fileOpts())); okMsg(live, "Fichier téléchargé sur cet appareil (rien n'a été envoyé)."); };
+        [bSave, bDepo, bCsv].forEach(b => acts.appendChild(b));
+        dirtyEl = $(`<span class="small muted" style="display:none">${ico("pencil", 13, "margin-right:3px")}Modifications non enregistrées</span>`);
+        acts.appendChild(dirtyEl);
+        body.appendChild(acts);
+        refreshTotals(); icons();
+      }
+      const clean = () => lignes.map(l => ({ designation: String(l.designation || "").trim(), unite: String(l.unite || "").trim(), quantite: D.parseNum(l.quantite), pu: D.parseNum(l.pu) }))
+        .filter(l => l.designation || l.unite || l.quantite != null || l.pu != null);
+      const fileOpts = () => { const m = api.meta(); return { lignes: clean(), entreprise: m.entreprise, lot: m.lot }; };
+      function check() {
+        const ls = clean();
+        if (!ls.length) return "Ajoutez au moins une ligne (désignation, quantité, prix unitaire).";
+        const errs = D.lineErrors(ls);
+        if (errs.length) return errs.slice(0, 3).join(" ") + (errs.length > 3 ? " (et " + (errs.length - 3) + " autre" + (errs.length - 3 > 1 ? "s" : "") + ")" : "");
+        return D.headerProblem(fileOpts());
+      }
+      async function saveLines(btn) {
+        if (busy) return false;
+        busy = true; if (btn) btn.disabled = true; say("Chiffrement et enregistrement de vos lignes…");
+        try {
+          const res = await api.save(clean());
+          if (res && res.ok) { savedKey = keyOf(lignes); refreshTotals(); okMsg(live, "Lignes enregistrées, chiffrées dans votre navigateur."); return true; }
+          say((res && res.err) || "Enregistrement impossible.", true); return false;
+        } catch (e) { say("Chiffrement impossible : " + ((e && e.message) || "réessayez."), true); return false; }
+        finally { busy = false; if (btn && btn.isConnected) btn.disabled = false; }
+      }
+      async function deposit(btn) {
+        const ch = check(); if (ch) { say(ch, true); return; }
+        if (dirty() && !(await saveLines(null))) return;
+        const opts = fileOpts(), rows = D.rows(opts), t = D.total(opts.lignes), prix = api.meta().prix;
+        const old = pieces.filter(p => p.piece_type === "dpgf_lot");
+        // Aperçu = les lignes du fichier, telles quelles : en-têtes (titre, entreprise, lot), tableau, total.
+        const hi = rows.findIndex(r => r[0] === "N°");
+        const metaRows = rows.slice(1, hi), cols = rows[hi], data = rows.slice(hi + 1, -1), tot = rows[rows.length - 1];
+        const NUMC = { 0: 1, 3: 1, 4: 1, 5: 1 };
+        const td = (c, j) => `<td class="${NUMC[j] ? "num" : j === 1 ? "des" : ""}" data-label="${esc(cols[j] || "")}">${esc(c)}</td>`;
+        const tbl = `<div class="small" style="margin-top:10px">${esc(rows[0][0])}${metaRows.map(r => `<br>${esc(r[0])} : <b>${esc(r[1] || "")}</b>`).join("")}</div>`
+          + `<div class="dp-prev" tabindex="0" role="region" aria-label="Aperçu du fichier"><table><thead><tr>${cols.map((c, j) => `<th scope="col" class="${NUMC[j] ? "num" : ""}">${esc(c)}</th>`).join("")}</tr></thead>`
+          + `<tbody>${data.map(r => `<tr>${r.map(td).join("")}</tr>`).join("")}</tbody>`
+          + `<tfoot><tr><td></td><td class="des" data-label=""><b>${esc(tot[1])}</b></td><td></td><td></td><td></td><td class="num" data-label=""><b>${esc(tot[5])}</b></td></tr></tfoot></table></div>`;
+        const ecart = (prix != null && Math.abs(t - Number(prix)) >= 0.005) ? `<p style="margin:10px 0 0;color:var(--warning-text,#b8730a)">Le total (${esc(eurHT(t))}) diffère du prix de vente de votre lot (${esc(eurHT(prix))}) : le chef de file verra les deux montants.</p>` : "";
+        const ok = await openModal({
+          title: "Relire et déposer votre DPGF",
+          bodyHtml: `<p style="margin:0">Voici <b>exactement</b> le fichier que recevra le chef de file, et lui seul : ${esc(D.fileName(opts))}.</p>${tbl}${ecart}`
+            + (old.length ? `<p style="margin:10px 0 0">Il remplacera la DPGF déjà déposée (${esc(old.map(p => p.name).join(", "))}).</p>` : "")
+            + `<p style="margin:10px 0 0" class="muted">Vos coûts, vos marges et votre méthode n'y figurent pas et restent chiffrés.</p>`,
+          confirmLabel: "Déposer la DPGF", cancelLabel: "Revenir", maxWidth: 640, focusCancel: true,
+        });
+        if (!ok) { say("Dépôt annulé : rien n'a été envoyé."); return; }
+        btn.disabled = true; say("Dépôt de la DPGF…");
+        try {
+          const res = await api.upload(D.csv(opts), D.fileName(opts), old.map(p => p.id));
+          if (res && res.ok) okMsg(live, "DPGF déposée : le chef de file peut la télécharger.");
+          else say((res && res.err) || "Dépôt impossible.", true);
+        } finally { if (btn.isConnected) btn.disabled = false; }
+      }
+      function syncPill() {
+        const dps = pieces.filter(p => p.piece_type === "dpgf_lot");
+        if (dps.length) { const last = dps[dps.length - 1]; pill.className = "pill go"; pill.innerHTML = ICO_OK(12) + " Déposée" + (last.created_at ? " le " + esc(fmtShort(last.created_at)) : ""); pill.title = last.name || ""; }
+        else { pill.className = "pill neutral"; pill.textContent = "Pas encore déposée"; pill.title = ""; }
+        icons();
+      }
+      draw();
+      return {
+        el,
+        load(d) { lignes = (d && Array.isArray(d.lignes) && d.lignes.length) ? d.lignes.map(l => ({ designation: l.designation || "", unite: l.unite || "", quantite: l.quantite == null ? "" : String(l.quantite).replace(".", ","), pu: l.pu == null ? "" : String(l.pu).replace(".", ",") })) : [blank()];
+                  savedKey = keyOf(lignes); locked = false; lockHint = ""; draw(); },
+        setLocked(on, hint) { locked = !!on; lockHint = hint || ""; draw(); },
+        current() { return (D && !locked) ? clean() : null; },
+        markSaved() { savedKey = keyOf(lignes); if (dirtyEl) dirtyEl.style.display = "none"; },
+        setPieces(ps) { pieces = Array.isArray(ps) ? ps : []; syncPill(); },
+        refresh() { refreshTotals(); },
+      };
     }
 
     // ── Vérification d'identité par code (flux OTP existant) ──

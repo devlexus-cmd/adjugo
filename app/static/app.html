@@ -19,11 +19,11 @@
 <link rel="stylesheet" href="/static/styles.css">
 <!-- Vue + lucide AUTO-HÉBERGÉS (épinglés) : plus aucune dépendance à unpkg, qui pouvait
      bloquer indéfiniment le chargement de l'app lors de ses ralentissements fréquents. -->
-<script src="/static/vendor/vue-3.5.38.prod.js"></script>
-<script src="/static/vendor/lucide-1.20.0.min.js"></script>
+<script src="/static/vendor/vue-3.5.38.prod.js" integrity="sha384-KYk+4lWOhWTo/BrM+zKkwLtFsD6cs2ClFbaGiX5ozDVHPqF4nOqxVGiHvcyWsw8B"></script>
+<script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
-<script src="/static/cotraitance-crypto.js"></script>
-<script src="/static/i18n.js" defer></script>
+<script src="/static/cotraitance-crypto.js" integrity="sha384-XeXF9c3sWCINLhcn8WsgnQA1g1we3veNODoV1/yHheSJcBMU2lSg+MGGmqFwlXF4"></script>
+<script src="/static/i18n.js" integrity="sha384-oDik9h0VMLSezjzvjE5icFK+aIpVHzN4CCrDdXTColU7Xknf8tmAL3inncvd+DSq" defer></script>
 </head>
 <body>
 <div id="app">
@@ -130,7 +130,7 @@
             <div v-if="!notifs.length" class="muted small" style="padding:16px 14px">Aucune activité récente de vos co-traitants.</div>
             <div v-for="n in notifs" :key="n.id" @click="openNotif(n)" style="padding:10px 14px;border-bottom:1px solid var(--hairline);cursor:pointer" @mouseover="$event.currentTarget.style.background='var(--surface-2)'" @mouseleave="$event.currentTarget.style.background=''">
               <div class="small"><b>{{ n.actor }}</b> {{ n.label }}<span v-if="n.detail" class="muted"> · {{ n.detail }}</span></div>
-              <div class="muted small">{{ n.project }} · {{ auditWhen(n.at) }}</div>
+              <div class="muted small">{{ n.project }} · {{ auditAt(n.at) }}</div>
             </div>
           </div>
         </div>
@@ -177,36 +177,40 @@
             <div class="rb" :class="{alert:expiring.length}"><span class="rb-l">À renouveler</span><span class="rb-v num">{{ expiring.length }}</span><span class="rb-d">documents</span></div>
           </div>
 
-          <!-- ESPACE RÉSEAU ADJUGO — notre plus grosse force, en évidence sur l'accueil -->
+          <!-- ESPACE RÉSEAU ADJUGO — notre plus grosse force, en évidence sur l'accueil.
+               Vague 4 : chiffres du serveur (GET /api/groupement/tableau-de-bord), groupements en cours par
+               étape 1→5. Aucun montant ; le seul pourcentage affiché est le score de groupement. -->
           <div class="card pad dash-block" style="border:1.5px solid var(--accent);background:var(--accent-weak)">
             <div class="dash-hero-h">
               <i data-lucide="users-round" class="dh-ic"></i>
               <div class="dh-tx">
                 <b class="dh-t">Réseau Adjugo — gagnez les gros marchés à plusieurs<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Associez d'autres entreprises : chacune apporte sa part, l'IA assemble une réponse commune.</span></button></b>
-                <div v-if="consortiums.active" class="muted small dh-stats"><span class="nw"><b>{{ consortiums.active }}</b> {{ pl(consortiums.active, 'groupement en cours', 'groupements en cours') }}</span> · <span class="nw"><b>{{ consortiums.partners_total }}</b> {{ pl(consortiums.partners_total, 'partenaire', 'partenaires') }}</span> · <span class="nw"><b>{{ consortiums.submitted_total }}</b> {{ pl(consortiums.submitted_total, 'part reçue', 'parts reçues') }}</span></div>
-                <a v-if="grpAccessibleCount()" href="#" @click.prevent="go('pipeline')" class="dh-link"><i data-lucide="users-round"></i><span>{{ grpAccessibleCount() }} {{ pl(grpAccessibleCount(), 'marché accessible', 'marchés accessibles') }} en groupement</span><i data-lucide="arrow-right"></i></a>
+                <div v-if="grpDash" class="dh-count"><b class="num">{{ grpDash.marches_accessibles_en_groupement }}</b> {{ pl(grpDash.marches_accessibles_en_groupement, 'marché accessible', 'marchés accessibles') }} en groupement<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Marchés que vous ne pourriez pas viser seul, mais oui avec des partenaires : verdict « Bon potentiel en groupement », marché encore ouvert.</span></button></div>
+                <div v-if="grpDash && (grpDash.groupements_en_cours || grpDash.deposes)" class="muted small dh-stats"><span class="nw"><b>{{ grpDash.groupements_en_cours }}</b> {{ pl(grpDash.groupements_en_cours, 'groupement en cours', 'groupements en cours') }}</span><template v-if="grpDash.deposes"> · <span class="nw"><b>{{ grpDash.deposes }}</b> {{ pl(grpDash.deposes, 'déposé', 'déposés') }}</span></template></div>
               </div>
               <button class="btn primary dh-act" @click="go('pipeline')"><i data-lucide="user-plus"></i>Monter un groupement</button>
             </div>
 
-            <div v-if="consortiums.consortiums.length" class="dash-items">
-              <div v-for="cs in consortiums.consortiums" :key="cs.project_id" @click="openProjectById(cs.project_id)" class="dash-item">
-                <div class="di-main">
-                  <div class="strong small di-title" :title="cs.project">{{ cs.project }}</div>
-                  <div class="muted small">{{ cs.submitted }}/{{ cs.partners }} {{ pl(cs.partners, 'part reçue', 'parts reçues') }}<span v-if="cs.pieces"> · {{ cs.pieces }} {{ pl(cs.pieces, 'pièce', 'pièces') }}</span></div>
-                </div>
-                <div class="di-meter">
-                  <div class="row" style="justify-content:space-between"><span class="muted small">prêt</span><b class="small" :style="{color:readinessColor(cs.readiness_pct)}">{{ cs.readiness_pct }}%</b></div>
-                  <div style="height:6px;background:var(--surface-3);border-radius:3px;overflow:hidden;margin-top:3px"><div :style="{width:cs.readiness_pct+'%',height:'100%',background:readinessColor(cs.readiness_pct)}"></div></div>
-                </div>
+            <ol v-if="grpDashHasAny()" class="dash-steps" aria-label="Vos marchés en groupement, par étape">
+              <li v-for="e in grpDash.par_etape" :key="'dst'+e.n" :class="{has:e.count}"><b class="num">{{ e.count }}</b><span>{{ e.label }}</span></li>
+            </ol>
+
+            <div v-if="grpDashItems().length" class="dash-items">
+              <button v-for="it in grpDashItems()" :key="'gdi'+it.project_id" type="button" class="dash-item" @click="openProjectById(it.project_id)">
+                <span class="di-main">
+                  <span class="strong small di-title" :title="it.name">{{ it.name }}</span>
+                  <span class="muted small di-meta">{{ it.meta }}</span>
+                </span>
+                <span class="pill di-pill" :class="it.pill">{{ it.badge }}</span>
                 <i data-lucide="chevron-right" class="di-go"></i>
-              </div>
+              </button>
             </div>
 
-            <div v-else class="row wrap" style="margin-top:11px;gap:10px;align-items:center;padding:11px 13px;border:1px dashed var(--border);border-radius:9px;background:var(--surface)">
+            <div v-else class="row wrap" style="margin-top:16px;gap:10px;align-items:center;padding:11px 13px;border:1px dashed var(--border);border-radius:9px;background:var(--surface)">
               <i data-lucide="sparkles" style="color:var(--accent-text);flex:none"></i>
               <div class="small" style="flex:1;min-width:170px">Aucun groupement pour l'instant. Ouvrez un marché et <b>invitez un partenaire</b>.</div>
             </div>
+            <div v-if="grpDash && grpDash.tronque" class="muted small" style="margin-top:8px">Calcul limité aux 100 marchés les plus récents.</div>
           </div>
 
           <!-- Veille AMONT — projets détectés AVANT l'appel d'offres (longueur d'avance) -->
@@ -646,15 +650,30 @@
                       <button v-if="ao.conv.errCode==='email_non_verifie'" type="button" class="btn sm" style="margin-top:8px" @click="resendVerification()"><i data-lucide="send"></i>Renvoyer l'email de confirmation</button></div>
                     <button type="button" class="btn icon sm ghost" @click="convErrClear()" aria-label="Fermer le message"><i data-lucide="x"></i></button></div>
 
-                  <!-- Prêt à déposer (état 7, calculé par le serveur) : ce qui manque, avec l'action qui le règle -->
-                  <section v-if="convPret()" class="conv-pret" :class="{ok:convPret().pct>=100}" aria-labelledby="conv-pret-h">
-                    <div class="conv-st"><i :data-lucide="convPret().pct>=100?'badge-check':'list-checks'"></i><span id="conv-pret-h">{{ ao.grp.state.label }}</span><span class="pill" :class="convPret().pct>=100?'go':'a_etudier'" style="font-size:11px">{{ convPret().pct }} %</span></div>
-                    <ul class="conv-checks">
-                      <li v-for="k in convPretChecks()" :key="k.key" :class="{ok:k.ok}"><i :data-lucide="k.ok?'circle-check':'circle-dashed'"></i><span>{{ k.label }}<span v-if="k.codes" class="cf-s">{{ k.codes }}</span><span class="sr-only">{{ k.ok ? ' : fait' : ' : à faire' }}</span></span><button v-if="!k.ok" type="button" class="btn sm btn-wrap" @click="k.action()" :disabled="k.key==='cerfa_generes' && ao.generating"><span v-if="k.key==='cerfa_generes' && ao.generating" class="spin"></span><i v-else :data-lucide="k.icon"></i>{{ k.cta }}</button>
-                        <ul v-if="!k.ok && k.manques.length" class="conv-sub"><li v-for="(m,mi) in k.manques.slice(0,3)" :key="k.key+'m'+mi">{{ m }}</li><li v-if="k.manques.length>3" class="muted">et {{ k.manques.length-3 }} autre{{ k.manques.length-3>1?'s':'' }}</li></ul></li>
-                    </ul>
-                    <ul v-if="convPretRest().length" class="conv-manques"><li v-for="(m,mi) in convPretRest()" :key="'pm'+mi">{{ m }}</li></ul>
-                    <div v-if="convPret().pct>=100" class="row wrap conv-actions"><button type="button" class="btn sm primary btn-wrap" @click="aoExport()"><i data-lucide="package"></i>Exporter le dossier complet (ZIP)</button></div>
+                  <!-- Étape 5 « Prêt à déposer » (vague 4) : 4 contrôles fiables calculés à tout moment par le serveur
+                       (GET /groupement/depot), chaque manque sous son contrôle avec l'action qui le règle, « Marquer déposé ».
+                       Affichage « N contrôles sur 4 » : aucun pourcentage (le seul du produit est le score de groupement). -->
+                  <section v-if="depotShown()" class="conv-pret" :class="{ok: depotIsDeposed() || (depotPret() && depotPret().pret)}" ref="depotCard" tabindex="-1" aria-labelledby="conv-pret-h">
+                    <template v-if="depotIsDeposed()">
+                      <div class="conv-st"><i data-lucide="send"></i><span id="conv-pret-h">Dossier marqué déposé</span><span class="pill" :class="'st-'+(depotStatus()||'envoye')" style="font-size:11px">{{ statusLabel(depotStatus()||'envoye') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Chaque partenaire voit le marquage dans son journal et l'étape « Déposé » dans son espace. Les relances automatiques sont arrêtées pour ce marché. Adjugo ne dépose pas le dossier à votre place : ce marquage le note.</span></button></div>
+                      <div v-if="depotStatus()==='envoye'" class="row wrap conv-actions"><button type="button" class="btn sm ghost btn-wrap" @click="aoDepotAskCancel()" :disabled="!!ao.depot.busy"><span v-if="ao.depot.busy==='annuler'" class="spin"></span><i v-else data-lucide="undo-2"></i>Retirer le marquage « déposé »</button></div>
+                    </template>
+                    <template v-else-if="depotPret()">
+                      <div class="conv-st"><i :data-lucide="depotPret().pret?'badge-check':'list-checks'"></i><span id="conv-pret-h">{{ depotPret().pret ? 'Prêt à déposer' : 'Avant de déposer' }}</span><span class="pill" :class="depotPret().pret?'go':'a_etudier'" style="font-size:11px">{{ depotCount(depotPret()) }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les 4 contrôles qu'Adjugo vérifie avant le dépôt : les parts, les attestations à la date limite, la convention validée par tous et les formulaires officiels préparés après elle. Ce qui manque est listé sous chaque contrôle, avec l'action qui le règle.</span></button><div class="spacer"></div><button type="button" class="btn icon sm ghost" @click="aoDepotLoad()" :disabled="ao.depot.loading" aria-label="Actualiser les contrôles avant dépôt"><span v-if="ao.depot.loading" class="spin"></span><i v-else data-lucide="refresh-cw"></i></button></div>
+                      <ul class="conv-checks">
+                        <li v-for="k in convPretChecks()" :key="k.key" :class="{ok:k.ok}"><i :data-lucide="k.ok?'circle-check':'circle-dashed'"></i><span>{{ k.label }}<span v-if="k.codes" class="cf-s">{{ k.codes }}</span><span class="sr-only">{{ k.ok ? ' : fait' : ' : à faire' }}</span></span><button v-if="!k.ok && k.cta" type="button" class="btn sm btn-wrap" @click="k.action()" :disabled="(k.key==='cerfa_generes' && ao.generating) || (k.key==='parts_soumises' && !!ao.share._relancing)"><span v-if="k.key==='cerfa_generes' && ao.generating" class="spin"></span><i v-else :data-lucide="k.icon"></i>{{ k.cta }}</button><span v-else-if="!k.ok && k.wait" class="muted small">{{ k.wait }}</span>
+                          <ul v-if="!k.ok && k.manques.length" class="conv-sub"><li v-for="(m,mi) in k.manques.slice(0,3)" :key="k.key+'m'+mi">{{ m }}</li><li v-if="k.manques.length>3" class="muted">et {{ k.manques.length-3 }} autre{{ k.manques.length-3>1?'s':'' }}</li></ul></li>
+                      </ul>
+                      <ul v-if="convPretRest().length" class="conv-manques"><li v-for="(m,mi) in convPretRest()" :key="'pm'+mi">{{ m }}</li></ul>
+                      <div v-for="(w,wi) in (depotPret().avertissements||[])" :key="'dpw'+wi" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ w }}</span></div>
+                      <div class="row wrap conv-actions">
+                        <button v-if="depotPret().pret" type="button" class="btn sm btn-wrap" @click="aoExport()"><i data-lucide="package"></i>Exporter le dossier complet (ZIP)</button>
+                        <button type="button" class="btn sm btn-wrap" :class="{primary: depotPret().pret}" @click="aoDepotAsk()" :disabled="!!ao.depot.busy"><span v-if="ao.depot.busy==='deposer'" class="spin"></span><i v-else data-lucide="send"></i>Marquer déposé</button><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Une fois le dossier remis à l'acheteur (sur sa plateforme ou hors d'Adjugo), marquez-le déposé : le marché passe à l'étape « Déposé », chaque partenaire le voit dans son journal et les relances s'arrêtent. Une confirmation vous est demandée ; un dossier incomplet peut être marqué quand même.</span></button>
+                      </div>
+                    </template>
+                    <div v-else-if="ao.depot.loading" class="muted small" role="status"><span class="spin"></span> Chargement des contrôles avant dépôt…</div>
+                    <div v-if="ao.depot.err" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ ao.depot.err }} <button type="button" class="linkbtn" @click="aoDepotLoad()">Réessayer</button></div><button type="button" class="btn icon sm ghost" @click="ao.depot.err=''" aria-label="Fermer le message"><i data-lucide="x"></i></button></div>
+                    <div class="sr-only" aria-live="polite">{{ ao.depot.live }}</div>
                   </section>
 
                   <!-- Convention caduque : bandeau + régénération (même route que la génération) -->
@@ -1217,6 +1236,7 @@
                     <span v-if="p.lot" class="muted small"> · {{ p.lot }}</span>
                     <span v-if="p.prix_lot_ht!=null" class="pill neutral" style="font-size:10px" title="Prix de vente du lot (visible du mandataire)">{{ eur(p.prix_lot_ht) }} HT</span>
                     <span v-else-if="p.status==='submitted'" class="pill a_etudier" style="font-size:10px">prix de lot manquant</span>
+                    <span v-if="p.has_dpgf_lot" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="file-check-2" style="width:10px;height:10px"></i>DPGF du lot reçue</span>
                     <i v-if="p.has_detail_chiffre" data-lucide="lock" style="width:11px;height:11px;color:var(--text-2);vertical-align:-1px" title="Détail du chiffrage chiffré par le partenaire — vous ne le voyez pas, c'est voulu" aria-label="Détail du chiffrage chiffré"></i>
                     <!-- Pièces administratives attendues du membre : présentes (vert) / manquantes (rouge) -->
                     <div v-if="(p.pieces_have && p.pieces_have.length) || (p.pieces_missing && p.pieces_missing.length)" class="row wrap" style="gap:4px;margin-top:3px">
@@ -1277,10 +1297,10 @@
               </div>
 
               <div v-if="ao.share.auditOpen" style="margin-top:14px;border-top:1px solid var(--hairline);padding-top:12px">
-                <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Journal d'accès (RGPD)</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Traçabilité des consultations — preuve opposable.</span></button></div>
+                <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Journal d'accès (RGPD)</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>{{ jvLabel() }}.</b> Qui a consulté ou modifié quoi, et quand. Chaque partenaire peut vérifier la partie de ce journal qui le concerne et en télécharger une preuve, sans jamais voir l'adresse IP ni l'email des autres membres.</span></button></div>
                 <div v-if="!ao.share.audit.length" class="muted small">Aucun accès enregistré pour l'instant.</div>
                 <div v-for="a in ao.share.audit" :key="a.id" class="row small" style="padding:6px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:baseline">
-                  <span class="muted" style="min-width:108px">{{ auditWhen(a.at) }}</span>
+                  <span class="muted" style="min-width:108px">{{ auditAt(a.at) }}</span>
                   <span class="pill" :class="a.actor_kind==='guest'?'neutral':'go'" style="font-size:9px;min-width:54px;justify-content:center">{{ a.actor_kind==='guest'?'Invité':'Vous' }}</span>
                   <span style="flex:1;min-width:0">{{ auditLabel(a) }}<span v-if="a.detail" class="muted"> · {{ a.detail }}</span></span>
                   <span class="muted" style="font-size:11px">{{ a.actor }}</span>
@@ -2533,7 +2553,7 @@
               <div v-for="pc in sharedAo.pieces" :key="pc.id" class="row wrap" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
                 <div style="flex:1;min-width:150px"><span class="small strong">{{ pc.name }}</span><span class="muted small"> · {{ koSize(pc.size) }}</span></div>
                 <select class="inp" :value="pc.piece_type||''" @change="sharedPatchPiece(pc,{piece_type:$event.target.value})" style="width:auto;font-size:12px;padding:4px 8px" aria-label="Type de la pièce"><option value="">Type ?</option><option v-for="t in pieceTypes" :key="t.k" :value="t.k">{{ t.l }}</option></select>
-                <input class="inp" type="date" :value="pc.expiration_date||''" @change="sharedPatchPiece(pc,{expiration_date:$event.target.value})" style="width:auto;font-size:12px;padding:4px 8px" aria-label="Date d'expiration de la pièce" title="Date d'expiration (vide = sans date)">
+                <input v-if="pc.piece_type!=='dpgf_lot'" class="inp" type="date" :value="pc.expiration_date||''" @change="sharedPatchPiece(pc,{expiration_date:$event.target.value})" style="width:auto;font-size:12px;padding:4px 8px" aria-label="Date d'expiration de la pièce" title="Date d'expiration (vide = sans date)">
                 <a class="btn icon sm ghost" :href="'/api/invite/'+sharedAo.token+'/contribution/piece/'+pc.id" aria-label="Voir"><i data-lucide="download"></i></a>
                 <button class="btn icon sm ghost" @click="sharedRemovePiece(pc.id)" aria-label="Retirer"><i data-lucide="trash-2"></i></button>
               </div>
@@ -2555,6 +2575,14 @@
                 </div>
               </div>
             </div>
+            <!-- Ma DPGF de lot (vague 4) : produite dans la page partenaire de ce dossier, à partir du détail chiffré -->
+            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Ma DPGF de lot</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>DPGF</b> : le détail de vos prix de vente, ligne par ligne. Elle se prépare dans la page partenaire de ce dossier (nouvel onglet) : vos lignes y sont enregistrées chiffrées avec le détail de votre chiffrage, puis le fichier est déposé après votre relecture. Seul le chef de file le reçoit ; vos coûts et vos marges n'y figurent pas.</span></button></div>
+              <div class="row wrap" style="gap:8px;align-items:center">
+                <span class="pill" :class="sharedDpgfPieces().length?'go':'neutral'" style="font-size:11px;gap:3px"><i v-if="sharedDpgfPieces().length" data-lucide="check" style="width:11px;height:11px"></i>{{ sharedDpgfPieces().length ? 'Déposée' : 'Pas encore déposée' }}</span>
+                <span v-if="sharedAo.detailDpgf && sharedAo.detailDpgf.lignes" class="muted small">{{ sharedAo.detailDpgf.lignes.length }} {{ pl(sharedAo.detailDpgf.lignes.length, 'ligne enregistrée', 'lignes enregistrées') }}, chiffrées</span>
+                <button type="button" class="btn sm" @click="sharedDpgfOpen()"><i data-lucide="external-link"></i>Préparer ma DPGF de lot</button>
+              </div>
+            </div>
             <div v-if="sharedAo.coffre && sharedAo.coffre.members && sharedAo.coffre.members.length" class="field"><label>Coffre-fort croisé — qui a fourni quoi (statut seulement)</label>
               <div class="cx-wrap"><table class="cx">
                 <thead><tr><th>Partenaire</th><th v-for="e in sharedAo.coffre.expected" :key="'sxh'+e.key">{{ e.label }}</th></tr></thead>
@@ -2572,10 +2600,27 @@
 
           <!-- Mon journal : qui a vu quoi sur MA part (projection sans email ni IP d'un autre membre) -->
           <details class="card pad" ref="sharedJournal" style="margin-top:14px" @toggle="sharedJournalToggle($event)">
-            <summary style="cursor:pointer;font-weight:700;font-size:13.5px;user-select:none">Mon journal — qui a vu quoi<button type="button" class="tip" @click.stop.prevent><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ (sharedAo.journal && sharedAo.journal.integrity_label) || 'Journal infalsifiable tenu par Adjugo' }}</span></button></summary>
-            <div v-if="sharedAo.journal && sharedAo.journal.chained" style="margin-top:6px"><span class="pill go" style="font-size:10px;gap:3px"><i data-lucide="shield-check" style="width:11px;height:11px"></i>Intégrité vérifiée</span></div>
+            <summary style="cursor:pointer;font-weight:700;font-size:13.5px;user-select:none">Mon journal — qui a vu quoi<button type="button" class="tip" @click.stop.prevent><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Qui a consulté ou modifié quoi sur votre part, et les événements du groupement. <b>{{ (sharedAo.journal && sharedAo.journal.integrity_label) || jvLabel() }}.</b><br><br><b>Limites</b><template v-for="(l,li) in jvLimites()" :key="'jl'+li"><br>· {{ l }}</template></span></button></summary>
+            <!-- Vague 4 : vérification par le membre (verdict du serveur) + preuve téléchargeable -->
+            <div class="row wrap jv-acts">
+              <button type="button" class="btn sm primary" @click="sharedJournalVerify()" :disabled="sharedAo.jv.busy"><span v-if="sharedAo.jv.busy" class="spin"></span><i v-else data-lucide="shield-check"></i>Vérifier mon journal</button>
+              <button type="button" class="btn sm" @click="sharedJournalExport('json')" :disabled="!!sharedAo.jv.exporting"><span v-if="sharedAo.jv.exporting==='json'" class="spin"></span><i v-else data-lucide="file-json"></i>Télécharger la preuve (JSON)</button>
+              <button type="button" class="btn sm" @click="sharedJournalExport('pdf')" :disabled="!!sharedAo.jv.exporting"><span v-if="sharedAo.jv.exporting==='pdf'" class="spin"></span><i v-else data-lucide="file-down"></i>Télécharger le journal (PDF)</button>
+              <button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">Comment vérifier vous-même ?</span><span class="tip-b" role="tooltip"><b>Vérifier vous-même</b><br>1. Téléchargez la preuve (JSON) et gardez ce fichier.<br>2. Plus tard, téléchargez-en une nouvelle : chaque ligne de l'ancienne doit s'y retrouver à l'identique (date, événement, sceau, maillon). Si une entrée avait été modifiée ou supprimée, la comparaison le montrerait.<br>3. Un informaticien peut aussi recalculer chaque maillon (SHA-256) : la méthode est écrite dans le fichier.<br><br>Le PDF est la version lisible ; la preuve vérifiable est le fichier JSON.</span></button>
+            </div>
+            <div class="sr-only" aria-live="polite">{{ sharedAo.jv.live }}</div>
+            <div v-if="sharedAo.jv.err" class="conv-err" role="alert" style="margin-top:10px"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ sharedAo.jv.err }}</div><button type="button" class="btn icon sm ghost" @click="sharedAo.jv.err=''" aria-label="Fermer le message"><i data-lucide="x"></i></button></div>
+            <div v-if="sharedAo.jv.v" class="jv" :class="{ok:sharedAo.jv.v.verdict==='intact', bad:sharedAo.jv.v.verdict==='altere'}">
+              <div class="jv-h"><span class="pill" :class="jvPill(sharedAo.jv.v)" style="font-size:11.5px;gap:4px"><i :data-lucide="jvIcon(sharedAo.jv.v)" style="width:13px;height:13px"></i>{{ sharedAo.jv.v.verdict_label }}</span><span v-if="sharedAo.jv.v.verifie_le" class="muted small">Vérifié le {{ jvWhen(sharedAo.jv.v.verifie_le) }}</span></div>
+              <p class="jv-msg">{{ sharedAo.jv.v.message }}</p>
+              <div v-if="sharedAo.jv.v.premiere_alteration" class="jv-line"><b>Entrée concernée :</b> {{ sharedAo.jv.v.premiere_alteration.label }}<template v-if="sharedAo.jv.v.premiere_alteration.at"> ({{ jvWhen(sharedAo.jv.v.premiere_alteration.at) }})</template></div>
+              <div class="jv-line"><i data-lucide="stamp" style="width:13px;height:13px;vertical-align:-2px;margin-right:4px"></i>{{ jvAncrage(sharedAo.jv.v) }}</div>
+              <div v-if="jvAncrageExtra(sharedAo.jv.v)" class="jv-line">{{ jvAncrageExtra(sharedAo.jv.v) }}</div>
+              <div v-if="sharedAo.jv.v.tronque" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>Seules les 2 000 premières entrées sont vérifiées.</span></div>
+              <div v-if="sharedAo.jv.v.empreinte" class="jv-fp"><span>Empreinte de votre journal :</span><code title="Empreinte complète dans la preuve (JSON)">{{ jvHex(sharedAo.jv.v.empreinte) }} …</code><button type="button" class="btn sm" @click="jvCopy(sharedAo.jv.v)" aria-label="Copier l'empreinte complète de votre journal"><i data-lucide="copy"></i>Copier</button></div>
+            </div>
             <ul v-if="sharedAo.journal && sharedAo.journal.entries.length" class="jrn">
-              <li v-for="(e,i) in sharedAo.journal.entries" :key="'jr'+i"><span class="jrn-at">{{ auditWhen(e.at) }}</span><span class="jrn-who" :class="e.who">{{ e.who==='vous'?'Vous':(e.who==='mandataire'?'Mandataire':'Partenaire') }}</span><span style="flex:1;min-width:0">{{ e.label }}<span v-if="e.detail" class="muted"> · {{ e.detail }}</span></span></li>
+              <li v-for="(e,i) in sharedAo.journal.entries" :key="'jr'+i"><span class="jrn-at">{{ auditAt(e.at) }}</span><span class="jrn-who" :class="e.who">{{ e.who==='vous'?'Vous':(e.who==='mandataire'?'Mandataire':'Partenaire') }}</span><span style="flex:1;min-width:0">{{ e.label }}<span v-if="e.detail" class="muted"> · {{ e.detail }}</span></span></li>
             </ul>
             <div v-else-if="sharedAo.journal" class="muted small" style="margin-top:6px">Aucune entrée pour l'instant.</div>
           </details>
@@ -2787,6 +2832,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" defer></script>
+<script src="/static/app.js" integrity="sha384-zN59g26dvLpl4LW2RSD8B463cNdmbQcJ4P0LcTWdpx+QZKBB3m7A9fMMIJE3A8+I" defer></script>
 </body>
 </html>

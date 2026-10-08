@@ -117,13 +117,14 @@ def test_doctrine_prix_visible_detail_chiffre_jamais_mandataire(client, auth):
     assert "chiffrage_note" not in o
     assert "FUITE" not in json.dumps(owner_view)
 
-    # La colonne dépréciée n'est plus écrite.
+    # Vague 4 : la colonne dépréciée n'existe plus (supprimée, migration q1r2s3t4u5v6).
     from app.core.database import SessionLocal
     from app.models import ProjectContribution
     db = SessionLocal()
     try:
         c = db.query(ProjectContribution).filter(ProjectContribution.project_id == pid).first()
-        assert not (c.chiffrage_note or "")
+        assert c is not None and not hasattr(c, "chiffrage_note")
+        assert "chiffrage_note" not in ProjectContribution.__table__.columns
     finally:
         db.close()
 
@@ -232,7 +233,7 @@ def test_journal_membre_projection(client, auth):
     j1 = client.get(f"/api/invite/{t1}/journal")
     assert j1.status_code == 200, j1.text
     body = j1.json()
-    assert body["integrity_label"].startswith("Journal infalsifiable")
+    assert body["integrity_label"] == "Journal vérifiable : toute modification ou suppression d'entrée est détectable"
     assert body["chained"] is True
     labels = [e["label"] for e in body["entries"]]
     assert "Le mandataire a consulté votre part" in labels

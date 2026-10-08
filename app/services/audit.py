@@ -80,9 +80,11 @@ def record(db, *, action: str, owner_id: Optional[int] = None,
     try:
         from app.models import AuditLog, utcnow
         now = utcnow()
-        # UTC NAÏF : un datetime avec fuseau est converti par Postgres dans le fuseau de la
-        # SESSION avant d'être rangé dans une colonne sans fuseau — sur une base réglée hors UTC,
-        # la valeur relue différait de celle hachée et toute la chaîne semblait altérée.
+        # UTC NAÏF (vague 4) : un datetime avec fuseau est converti par Postgres dans le fuseau
+        # de la SESSION avant d'être rangé dans une colonne sans fuseau — sur une base réglée
+        # en Europe/Paris, la valeur relue différait de 1-2 h de celle hachée et toute la chaîne
+        # semblait altérée. Naïf UTC : la valeur rangée est exactement celle qui est hachée,
+        # quel que soit le fuseau (identique à l'existant sur une base en UTC).
         if now.tzinfo is not None:
             from datetime import timezone as _tz
             now = now.astimezone(_tz.utc).replace(tzinfo=None)

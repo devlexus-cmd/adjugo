@@ -1011,7 +1011,12 @@ def test_migration_partner_profiles_a_neuf_precedente_et_rejouee(tmp_path):
         assert "ix_partner_profiles_siren" in {i["name"] for i in insp.get_indexes("partner_profiles")}
         assert {"source", "partner_profile_id"} <= {c["name"] for c in insp.get_columns("project_invites")}
         with eng.connect() as cn:
-            assert cn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == "p0q1r2s3t4u5"
+            from alembic.config import Config as _Cfg
+            from alembic.script import ScriptDirectory as _SD
+            _s = _SD.from_config(_Cfg("alembic.ini"))
+            _head = _s.get_current_head()
+            assert "p0q1r2s3t4u5" in {r.revision for r in _s.walk_revisions("base", _head)}
+            assert cn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == _head
             assert cn.execute(sa.text("SELECT COUNT(*) FROM partner_profiles")).scalar() == 0   # aucun profil créé
 
     run("upgrade", "head")

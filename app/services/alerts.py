@@ -41,11 +41,31 @@ def _due_alert(doc, days: int):
     return None
 
 
+_CLOSED = ("envoye", "gagne", "perdu", "abandonne")   # marché déposé ou clos : plus de relance
+
+
+def _status_value(project) -> str:
+    st = getattr(project, "status", None)
+    return st.value if hasattr(st, "value") else str(st or "")
+
+
+def _fr(d) -> str:
+    try:
+        return d.strftime("%d/%m/%Y")
+    except Exception:
+        return str(d or "")
+
+
 def run_cotraitance_reminders(db: Session) -> dict:
     """Relance les partenaires invités qui n'ont PAS soumis leur part, à l'approche de la
     date limite. Idempotent par palier (reminder_stage : 1 = J-3 envoyée, 2 = J-1 envoyée)
     → un partenaire reçoit au plus une relance par palier. Process unique sans Redis :
-    appelé par cron (POST /api/admin/run-cotraitance-reminders)."""
+    appelé par cron (POST /api/admin/run-cotraitance-reminders).
+
+    Sans doublon (vague 4) : si le même partenaire a aussi des attestations à mettre à jour
+    (coffre croisé, paliers J-7 / J-3), elles sont AJOUTÉES à cette relance (un seul email) et
+    l'alerte d'attestations du jour n'en renvoie pas un second. Plus aucune relance une fois
+    le marché marqué déposé (statut envoyé) ou clos."""
     from datetime import datetime, timezone
     from app.models import Project, ProjectInvite, ProjectContribution, Company
 
@@ -55,6 +75,13 @@ def run_cotraitance_reminders(db: Session) -> dict:
     from app.services.groupement_members import active_invite_filter
 
     today = datetime.now(timezone.utc).date()
+    try:
+        piece_due = _piece_alerts_due(db, today)
+    except Exception as e:
+        logger.warning("relances co-traitance : calcul des attestations impossible : %s", e)
+        piece_due = []
+    pieces_by_invite = {a["inv"].id: a for a in piece_due}
+    merged = set()
     invites = db.query(ProjectInvite).filter(
         active_invite_filter(),
         ProjectInvite.can_contribute.is_(True)).all()
@@ -65,7 +92,7 @@ def run_cotraitance_reminders(db: Session) -> dict:
             continue
         project = db.query(Project).filter(Project.id == inv.project_id,
                                            Project.deleted_at.is_(None)).first()
-        if not project or not project.deadline:
+        if not project or not project.deadline or _status_value(project) in _CLOSED:
             continue
         # deadline peut être un date OU un datetime selon les enregistrements → on normalise.
         deadline = project.deadline
@@ -92,49 +119,64 @@ def run_cotraitance_reminders(db: Session) -> dict:
         base = "il vous reste 1 jour" if days_left <= 1 else f"il vous reste {days_left} jours"
         subj = f"Rappel — {base} pour votre part ({project.name[:50]})"
         text = (f"Bonjour,\n\n{base} pour ajouter votre part au groupement de {chef} sur le "
-                f"marché « {project.name} » (date limite : {deadline_date}).\n\n"
+                f"marché « {project.name} » (date limite : {_fr(deadline_date)}).\n\n"
                 f"Complétez et soumettez votre part via votre lien Adjugo. Sans elle, votre "
-                f"entreprise ne figurera pas dans la réponse commune.\n\n— Adjugo, le réseau des PME")
+                f"entreprise ne figurera pas dans la réponse commune.")
+        extra = pieces_by_invite.get(inv.id)
+        if extra:
+            text += ("\n\nVos attestations sont aussi à mettre à jour avant le dépôt :\n"
+                     + "\n".join(f"- {x}" for x in extra["problems"]))
+        text += "\n\n— Adjugo, le réseau des PME"
         if send_email(inv.recipient, subj, text):
             inv.reminder_stage = target
             reminded += 1
+            if extra:
+                merged.add(inv.id)
     db.commit()
-    pieces_alerted = _run_piece_expiry_alerts(db, today)
-    result = {"scanned": scanned, "reminded": reminded, "pieces_alerted": pieces_alerted}
+    pieces_alerted = _run_piece_expiry_alerts(db, today, due=piece_due, merged=merged)
+    result = {"scanned": scanned, "reminded": reminded, "pieces_alerted": pieces_alerted,
+              "pieces_merged": len(merged)}
     logger.info("relances co-traitance : %s", result)
     return result
 
 
-def _run_piece_expiry_alerts(db: Session, today) -> int:
-    """Coffre-fort croisé (E) : à J-7 puis J-3 de la date limite, prévient chaque membre dont
-    une attestation est MANQUANTE ou EXPIRE AVANT la date limite (+ le mandataire).
-    Idempotent par (invitation, jour, palier) via une entrée AuditLog `piece.expiring`
-    (invite_id + detail « J-7 » / « J-3 ») — une seule exécution par palier et par jour,
-    sans Redis (process unique). Best-effort : aucune exception ne remonte au cron."""
+def _piece_window_start(deadline_date, palier: str):
+    """Début de la fenêtre d'un palier pour CETTE date limite (J-7 ou J-3) : une alerte déjà
+    journalisée depuis ce jour vaut pour tout le palier (et non pour la seule journée)."""
     from datetime import datetime, timedelta
-    from app.models import AuditLog, Project, ProjectInvite, Company, User
-    from app.services import audit
+    d = deadline_date - timedelta(days=3 if palier == "J-3" else 7)
+    return datetime(d.year, d.month, d.day)
+
+
+def _piece_alerts_due(db: Session, today) -> list:
+    """Alertes d'attestations DUES (coffre-fort croisé) : à J-7 puis J-3 de la date limite, chaque
+    membre dont une attestation est MANQUANTE ou EXPIRE AVANT la date limite. Une seule alerte
+    par (invitation, palier, date limite) : l'entrée AuditLog `piece.expiring` (invite_id +
+    detail « J-7 … » / « J-3 … ») posée depuis le début du palier vaut pour tout le palier —
+    auparavant l'alerte repartait CHAQUE JOUR du palier (doublons). Ne lève jamais."""
+    from datetime import datetime, timedelta
+    from app.models import AuditLog, Project, Company, User
     from app.services.groupement_members import active_invites
     try:
-        from app.routers.invites import coffre_croise, _PIECE_LABELS
+        from app.routers.invites import coffre_croise, _PIECE_LABELS, tenant_owner_id
     except Exception:
-        return 0
+        return []
 
     def _is_email(v):
         return bool(v) and "@" in str(v) and "." in str(v).split("@")[-1]
 
-    alerted = 0
+    out = []
     horizon = today + timedelta(days=7)
     try:
         projects = db.query(Project).filter(
             Project.deleted_at.is_(None), Project.deadline.isnot(None),
             Project.deadline >= today, Project.deadline <= horizon).all()
     except Exception:
-        return 0
-    day_start = datetime(today.year, today.month, today.day)
+        return []
     demo_ids = _demo_user_ids(db)
+    labels = dict(_PIECE_LABELS)
     for project in projects:
-        if project.user_id in demo_ids:
+        if project.user_id in demo_ids or _status_value(project) in _CLOSED:
             continue
         invites = active_invites(db, project.id)
         if not invites:
@@ -143,16 +185,15 @@ def _run_piece_expiry_alerts(db: Session, today) -> int:
         deadline_date = deadline.date() if isinstance(deadline, datetime) else deadline
         days_left = (deadline_date - today).days
         palier = "J-3" if days_left <= 3 else "J-7"
+        window = _piece_window_start(deadline_date, palier)
         try:
             grid = coffre_croise(db, project, invites, viewer_invite_id=None, for_owner=True)
         except Exception:
             continue
-        labels = dict(_PIECE_LABELS)
         owner_user = db.query(User).filter(User.id == project.user_id).first()
         owner_email = owner_user.email if owner_user and _is_email(owner_user.email) else None
         # Propriétaire CANONIQUE du tenant (porteur du profil entreprise et de la chaîne
         # d'audit) — jamais project.user_id brut si un membre a créé le marché.
-        from app.routers.invites import tenant_owner_id
         tenant_oid = tenant_owner_id(project, db)
         company = (db.query(Company).filter(Company.user_id == tenant_oid).first()
                    or db.query(Company).filter(Company.user_id == project.user_id).first())
@@ -164,45 +205,81 @@ def _run_piece_expiry_alerts(db: Session, today) -> int:
                 continue
             problems = []
             for key, st in (m.get("pieces") or {}).items():
-                s = st.get("status")
-                if s == "manquant":
+                s_ = st.get("status")
+                if s_ == "manquant":
                     problems.append(f"{labels.get(key, key)} manquante")
-                elif s == "expire_avant_limite":
-                    problems.append(f"{labels.get(key, key)} expire le {st.get('expiration_date')} "
-                                    f"(avant la date limite)")
-                elif s == "expire":
+                elif s_ == "expire_avant_limite":
+                    exp = st.get("expiration_date")
+                    try:
+                        exp = _fr(datetime.fromisoformat(exp).date()) if exp else exp
+                    except Exception:
+                        pass
+                    problems.append(f"{labels.get(key, key)} expire le {exp} (avant la date limite)")
+                elif s_ == "expire":
                     problems.append(f"{labels.get(key, key)} expirée")
             if not problems:
                 continue
-            # Idempotence : déjà alerté aujourd'hui pour ce palier → on saute.
-            already = db.query(AuditLog).filter(
+            already = db.query(AuditLog.id).filter(
                 AuditLog.invite_id == inv.id, AuditLog.action == "piece.expiring",
-                AuditLog.detail == palier, AuditLog.created_at >= day_start).first()
+                AuditLog.detail.like(f"{palier}%"), AuditLog.created_at >= window).first()
             if already:
                 continue
-            who = m.get("company") or inv.company_name or "Partenaire"
-            lines = "\n".join(f"- {p}" for p in problems)
-            if _is_email(inv.recipient):
-                send_email(
-                    inv.recipient,
-                    f"Attestations à mettre à jour avant le {deadline_date} — {project.name[:50]}",
-                    f"Bonjour,\n\nPour le marché « {project.name} » (date limite : {deadline_date}), "
-                    f"le groupement de {chef} a besoin de vos attestations à jour :\n{lines}\n\n"
-                    f"Déposez-les depuis votre espace Adjugo (votre lien d'invitation).\n\n— Adjugo")
-            if owner_email:
-                send_email(
-                    owner_email,
-                    f"{who} : attestation(s) à surveiller — {project.name[:50]}",
-                    f"Bonjour,\n\nSur le marché « {project.name} » (date limite : {deadline_date}), "
-                    f"les pièces de {who} ne sont pas prêtes pour le dépôt :\n{lines}\n\n"
-                    f"Le partenaire a été prévenu. Suivez le coffre-fort croisé dans le cockpit du "
-                    f"groupement.\n\n— Adjugo")
-            # Chaîné sous le propriétaire du tenant (sinon l'entrée sortait de la chaîne
-            # d'intégrité de l'entreprise quand un membre a créé le marché).
-            audit.record(db, action="piece.expiring", owner_id=tenant_oid, project_id=project.id,
-                         actor="adjugo", actor_kind="system", target_type="invite", target_id=inv.id,
-                         detail=palier, invite_id=inv.id)
-            alerted += 1
+            out.append({"project": project, "deadline_date": deadline_date, "palier": palier,
+                        "inv": inv, "who": m.get("company") or inv.company_name or "Partenaire",
+                        "problems": problems, "chef": chef, "owner_email": owner_email,
+                        "tenant_oid": tenant_oid})
+    return out
+
+
+def _run_piece_expiry_alerts(db: Session, today, due=None, merged=None) -> int:
+    """Coffre-fort croisé (E) : envoie les alertes d'attestations dues (voir _piece_alerts_due) —
+    un email au membre (sauf si son alerte a déjà été jointe à sa relance de part, `merged`) et
+    UN récapitulatif par marché au mandataire (plus un email par partenaire). Journalise
+    `piece.expiring` (visible du membre). Best-effort : aucune exception ne remonte au cron."""
+    from app.services import audit
+
+    def _is_email(v):
+        return bool(v) and "@" in str(v) and "." in str(v).split("@")[-1]
+
+    if due is None:
+        try:
+            due = _piece_alerts_due(db, today)
+        except Exception:
+            return 0
+    merged = set(merged or ())
+    alerted = 0
+    by_project = {}
+    for a in due:
+        inv, project = a["inv"], a["project"]
+        lines = "\n".join(f"- {p}" for p in a["problems"])
+        if _is_email(inv.recipient) and inv.id not in merged:
+            send_email(
+                inv.recipient,
+                f"Attestations à mettre à jour avant le {_fr(a['deadline_date'])} — {project.name[:50]}",
+                f"Bonjour,\n\nPour le marché « {project.name} » (date limite : {_fr(a['deadline_date'])}), "
+                f"le groupement de {a['chef']} a besoin de vos attestations à jour :\n{lines}\n\n"
+                f"Déposez-les depuis votre espace Adjugo (votre lien d'invitation).\n\n— Adjugo")
+        # Chaîné sous le propriétaire du tenant (sinon l'entrée sortait de la chaîne
+        # d'intégrité de l'entreprise quand un membre a créé le marché).
+        audit.record(db, action="piece.expiring", owner_id=a["tenant_oid"], project_id=project.id,
+                     actor="adjugo", actor_kind="system", target_type="invite", target_id=inv.id,
+                     detail=f"{a['palier']} (date limite {_fr(a['deadline_date'])})", invite_id=inv.id)
+        alerted += 1
+        by_project.setdefault(project.id, []).append(a)
+    for alerts in by_project.values():
+        a0 = alerts[0]
+        if not a0["owner_email"]:
+            continue
+        project = a0["project"]
+        blocks = "\n\n".join(f"{a['who']} :\n" + "\n".join(f"- {p}" for p in a["problems"]) for a in alerts)
+        n = len(alerts)
+        send_email(
+            a0["owner_email"],
+            f"{n} partenaire{'s' if n > 1 else ''} : attestation(s) à surveiller — {project.name[:50]}",
+            f"Bonjour,\n\nSur le marché « {project.name} » (date limite : {_fr(a0['deadline_date'])}), "
+            f"des pièces ne sont pas prêtes pour le dépôt :\n\n{blocks}\n\n"
+            f"Les partenaires concernés ont été prévenus. Suivez le coffre-fort croisé dans le cockpit "
+            f"du groupement.\n\n— Adjugo")
     return alerted
 
 

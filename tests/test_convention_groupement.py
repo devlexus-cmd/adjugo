@@ -546,7 +546,9 @@ def test_doctrine_brouillon_puis_generee(client, auth, mails):
     v = client.get(f"/api/invite/{t1}/convention").json()
     assert v["status"] == "draft" and v["content_md"] is None and v["total_offre_ht"] is None
     raw = json.dumps(v, ensure_ascii=False)
-    assert "40000" not in raw and "40 000" not in raw and "60 000" not in raw and "125" not in raw
+    # (« 125 » seul pouvait apparaître dans un horodatage ou un identifiant : test instable.)
+    assert "40000" not in raw and "40 000" not in raw and "60 000" not in raw
+    assert "125000" not in raw and "125 000" not in raw and "125000.5" not in raw
     mine = [m for m in v["membres"] if m["company"] == "Morvan Plomberie"]
     others = [m for m in v["membres"] if m["company"] != "Morvan Plomberie"]
     assert mine and mine[0]["prix_lot_ht"] == 25000.5
@@ -718,7 +720,9 @@ def test_pret_a_deposer_100(client, auth, mails):
     st = _valider(client, f"/api/projects/{pid}/groupement/convention/valider", c, headers=h,
                   nom="Eliot Viegas").json()["state"]
     assert st["state"] == "pret_a_deposer" and st["pret"]["checks"]["attestations_ok"] is True
-    assert st["pret"]["checks"]["cerfa_generes"] is False and st["pret"]["pct"] == 67
+    # Vague 4 : 4 contrôles (parts, attestations, convention, formulaires) — 3 réglés sur 4.
+    assert st["pret"]["checks"]["cerfa_generes"] is False and st["pret"]["checks"]["parts_soumises"] is True
+    assert st["pret"]["n_ok"] == 3 and st["pret"]["n_total"] == 4 and st["pret"]["pret"] is False
     for dt in ("dc1", "dc2", "attri1"):
         assert client.post(f"/api/cerfa/{pid}/{dt}", headers=h).status_code == 200
     st = client.get(f"/api/projects/{pid}/groupement/state", headers=h).json()
@@ -938,7 +942,8 @@ def test_migration_a_neuf_et_rejouee(tmp_path):
         assert ("project_id",) in cuq and ("content_hash",) in cuq
         pc = {c["name"] for c in insp.get_columns("project_contributions")}
         assert {"representant_legal", "signataire_qualite"} <= pc
-        # Tête de chaîne courante (o9p0q1r2s3t4 ou une révision plus récente qui la suit).
+        # Tête de la chaîne (o9p0q1r2s3t4 en vague 2, révisions suivantes depuis) : lue dans les
+        # scripts plutôt que codée en dur, pour que ce test survive aux vagues suivantes.
         from alembic.config import Config
         from alembic.script import ScriptDirectory
         cfg = Config(os.path.join(root, "alembic.ini"))

@@ -208,10 +208,118 @@
     return r && r.value ? r.value : null;
   }
 
+  // ── Contenu du détail chiffré (vague 4) : texte libre + lignes de la DPGF du lot ──
+  // Historique : le texte clair chiffré EST le détail (texte libre). Dès que le partenaire saisit
+  // les lignes de sa DPGF, le texte clair devient un petit document JSON marqué, chiffré de la
+  // même façon (une seule enveloppe, un seul code). Un ancien détail (texte brut) se relit tel quel.
+  const DETAIL_TAG = "adjugo-detail-v2";
+  const MAX_LIGNES = 300;
+  const clip = (v, n) => String(v == null ? "" : v).replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, n);
+  const numOrNull = (v) => (typeof v === "number" && isFinite(v)) ? v : parseNum(v);
+  function cleanLine(l) {
+    const o = (l && typeof l === "object") ? l : {};
+    return { designation: clip(o.designation, 300), unite: clip(o.unite, 20), quantite: numOrNull(o.quantite), pu: numOrNull(o.pu) };
+  }
+  function packDetail(texte, dpgf) {
+    const t = String(texte == null ? "" : texte);
+    const lignes = (dpgf && Array.isArray(dpgf.lignes)) ? dpgf.lignes.slice(0, MAX_LIGNES).map(cleanLine) : [];
+    if (!lignes.length) return t;
+    return JSON.stringify({ format: DETAIL_TAG, texte: t, dpgf: { lignes, maj: (dpgf && dpgf.maj) || new Date().toISOString() } });
+  }
+  function unpackDetail(plain) {
+    const s = String(plain == null ? "" : plain);
+    if (s.charAt(0) === "{" && s.indexOf(DETAIL_TAG) > 0) {
+      try {
+        const o = JSON.parse(s);
+        if (o && o.format === DETAIL_TAG) {
+          const d = o.dpgf && Array.isArray(o.dpgf.lignes) ? { lignes: o.dpgf.lignes.slice(0, MAX_LIGNES).map(cleanLine), maj: String(o.dpgf.maj || "") } : null;
+          return { texte: String(o.texte == null ? "" : o.texte), dpgf: (d && d.lignes.length) ? d : null };
+        }
+      } catch (e) {}
+    }
+    return { texte: s, dpgf: null };
+  }
+
+  // ── DPGF du lot : fonctions pures (le navigateur produit le fichier, le serveur ne voit que lui) ──
+  // Niveau PRIX DE VENTE uniquement : désignation, unité, quantité, prix unitaire HT, montant HT.
+  // Aucune colonne de coût, de marge ni de coefficient (le serveur refuse ces en-têtes).
+  function parseNum(v) {
+    if (v == null) return null;
+    let s = String(v).trim().replace(/[\s  ]/g, "").replace(/€$/, "");
+    if (!s) return null;
+    if (s.indexOf(",") >= 0) s = s.replace(/\./g, "").replace(",", ".");   // « 1.250,50 » ou « 1250,5 »
+    if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+    const n = Number(s);
+    return isFinite(n) ? n : null;
+  }
+  const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+  function montant(l) {
+    const q = numOrNull(l && l.quantite), pu = numOrNull(l && l.pu);
+    return (q == null || pu == null) ? null : round2(q * pu);
+  }
+  function total(lignes) {
+    let t = 0;
+    (lignes || []).forEach((l) => { const m = montant(l); if (m != null) t += m; });
+    return round2(t);
+  }
+  // Nombre pour le fichier : virgule décimale, sans séparateur de milliers (lisible par un tableur).
+  function csvNum(n, dec) {
+    if (n == null || !isFinite(n)) return "";
+    let s = dec == null ? String(Math.round(Number(n) * 1000) / 1000) : Number(n).toFixed(dec);
+    return s.replace(".", ",");
+  }
+  // Une cellule de texte ne commence jamais par = + - @ (formule à l'ouverture dans un tableur).
+  const csvText = (v) => String(v == null ? "" : v).replace(/[\r\n\t]+/g, " ").replace(/^[\s=+\-@]+/, "").trim();
+  const csvCell = (v) => { const s = String(v == null ? "" : v); return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  // Mots refusés par le serveur dans les lignes d'en-tête d'une DPGF (même liste) : un coût ou
+  // une marge ne doit jamais partir par erreur vers le chef de file.
+  const FORBIDDEN = /(^|[^a-zà-ÿ])(marges?|co[uû]ts?|d[ée]bours[ée]s?|prix\s+d['’]achat|frais\s+g[ée]n[ée]raux|coefficients?)([^a-zà-ÿ]|$)/i;
+  function forbiddenWord(s) { const m = FORBIDDEN.exec(String(s || "")); return m ? m[2] : ""; }
+  function lineErrors(lignes) {
+    const out = [];
+    (lignes || []).forEach((l, i) => {
+      const n = i + 1;
+      if (!csvText(l.designation)) out.push("Ligne " + n + " : désignation manquante.");
+      if (numOrNull(l.quantite) == null || numOrNull(l.quantite) < 0) out.push("Ligne " + n + " : quantité manquante ou invalide.");
+      if (numOrNull(l.pu) == null) out.push("Ligne " + n + " : prix unitaire manquant ou invalide.");
+    });
+    return out;
+  }
+  /** Lignes du fichier (tableau de tableaux), exactement ce qui sera partagé. */
+  function dpgfRows(opts) {
+    const o = opts || {}, lignes = (o.lignes || []).map(cleanLine);
+    const rows = [["DPGF du lot - prix de vente HT"]];
+    if (csvText(o.entreprise)) rows.push(["Entreprise", csvText(o.entreprise)]);
+    if (csvText(o.lot)) rows.push(["Lot", csvText(o.lot)]);
+    rows.push(["N°", "Désignation", "Unité", "Quantité", "Prix unitaire HT (€)", "Montant HT (€)"]);
+    lignes.forEach((l, i) => rows.push([String(i + 1), csvText(l.designation), csvText(l.unite), csvNum(l.quantite), csvNum(l.pu, 2), csvNum(montant(l), 2)]));
+    rows.push(["", "Total HT", "", "", "", csvNum(total(lignes), 2)]);
+    return rows;
+  }
+  /** En-têtes refusés (mot de coût ou de marge dans le nom d'entreprise ou du lot) : message, sinon "". */
+  function headerProblem(opts) {
+    const o = opts || {};
+    for (const [lab, v] of [["Le nom de l'entreprise", o.entreprise], ["Le nom du lot", o.lot]]) {
+      const w = forbiddenWord(csvText(v));
+      if (w) return lab + " contient le mot « " + w + " » : une DPGF de lot ne doit faire apparaître ni coût ni marge, ce mot est donc refusé en en-tête. Modifiez ce nom dans votre part.";
+    }
+    return "";
+  }
+  /** Fichier CSV UTF-8 (BOM), séparateur « ; », montants « 1250,00 », sans formule. */
+  function dpgfCsv(opts) { return "﻿" + dpgfRows(opts).map((r) => r.map(csvCell).join(";")).join("\r\n") + "\r\n"; }
+  function dpgfFileName(opts) {
+    const o = opts || {};
+    const base = String(csvText(o.lot) || csvText(o.entreprise) || "lot").normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 50) || "lot";
+    return "DPGF_" + base + ".csv";
+  }
+
   window.AdjugoCrypto = {
     ALG, KDF, ITER, LABELS,
     generateRecoveryCode, normalizeCode, derive, newSalt, encrypt, decrypt,
     ensureKey, keyFromCode, resetKey, showRecoveryCode, askRecoveryCode, modal,
+    packDetail, unpackDetail,
+    dpgf: { MAX_LIGNES, parseNum, montant, total, lineErrors, rows: dpgfRows, csv: dpgfCsv, fileName: dpgfFileName, headerProblem, forbiddenWord },
     _setStore: (s) => { _store = s; },   // tests
   };
 })();

@@ -8,6 +8,12 @@
   GET    /api/projects/{id}/groupement/state             — étape dérivée + plan retenu
   GET    /api/projects/{id}/groupement/simulations       — historique (≤ 20)
   DELETE /api/projects/{id}/groupement/plan              — revenir au verdict seul
+  Vague 4 (étape 5 et tableau de bord) :
+  GET    /api/projects/{id}/groupement/depot             — contrôles « prêt à déposer »
+  POST   /api/projects/{id}/groupement/deposer           — « Marquer déposé » (status envoye + journal)
+  DELETE /api/projects/{id}/groupement/deposer           — annuler un marquage fait par erreur
+  GET    /api/groupement/tableau-de-bord                 — N marchés accessibles en groupement,
+                                                           groupements en cours par étape
 
 Anti-hallucination : pour un membre 'sirene' le serveur RE-FETCH par SIRET et IGNORE toute
 capacité envoyée par le client (CA inconnu = « CA non publié — à demander ») ; 'attached' /
@@ -530,3 +536,196 @@ def delete_plan(request: Request, project_id: int,
     db.refresh(project)
     return {"ok": True, "decision": project.go_decision, "decision_label": verdict_label(project.go_decision),
             "state": _state_payload(project, db)}
+
+
+# ── Étape 5 : « Marquer déposé » (vague 4) ───────────────────────────────────────────
+
+class DeposerBody(BaseModel):
+    confirmer: bool = False     # True = marquer déposé MALGRÉ des contrôles non réglés
+
+
+def _status_value(project) -> str:
+    st = getattr(project, "status", None)
+    return st.value if hasattr(st, "value") else str(st or "")
+
+
+def _refresh_convention(db: Session, project: Project) -> None:
+    """Filet de péremption avant tout contrôle de dépôt (même règle que GET /state)."""
+    try:
+        from app.services.groupement_convention import get_convention, refresh
+        refresh(db, project, get_convention(db, project.id))
+    except Exception:
+        pass
+
+
+@router.get("/depot")
+@limiter.limit("240/hour")
+def depot(request: Request, project_id: int, current_user: User = Depends(get_current_user),
+          db: Session = Depends(get_db)):
+    """Contrôles de l'étape 5 (prêt à déposer), calculés à tout moment : parts soumises,
+    attestations valides à la date limite, convention validée par tous, formulaires officiels
+    générés après la convention. Avertir, pas bloquer."""
+    from app.services.groupement_members import CLOSED_STATUSES, depot_readiness
+    project = _project(project_id, current_user, db)
+    _refresh_convention(db, project)
+    status_v = _status_value(project)
+    return {"depose": status_v in CLOSED_STATUSES, "status": status_v,
+            "pret": depot_readiness(project, db)}
+
+
+@router.post("/deposer")
+@limiter.limit("30/hour")
+def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody] = None,
+                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """« Marquer déposé » : le marché passe au statut « envoyé » (état 8 « Déposé »), avec une
+    trace dans le journal visible de tous les membres. Si des contrôles ne sont pas réglés :
+    409 `pas_pret` avec la liste, puis `{"confirmer": true}` pour marquer quand même (le chef
+    de file peut avoir déposé hors d'Adjugo). Idempotent."""
+    from app.models import ProjectStatus
+    from app.services.groupement_members import CLOSED_STATUSES, depot_readiness
+    project = _project(project_id, current_user, db)
+    _refresh_convention(db, project)
+    status_v = _status_value(project)
+    if status_v in CLOSED_STATUSES:
+        return {"ok": True, "deja_depose": True, "status": status_v, "complet": None,
+                "state": _state_payload(project, db)}
+    ready = depot_readiness(project, db)
+    if not ready["pret"] and not (body and body.confirmer):
+        raise HTTPException(409, {
+            "code": "pas_pret",
+            "message": (f"{ready['n_total'] - ready['n_ok']} contrôle(s) avant dépôt ne sont pas réglés. "
+                        "Confirmez pour marquer le dossier comme déposé quand même."),
+            "manques": ready["manques"], "avertissements": ready["avertissements"],
+            "checks": ready["checks"]})
+    project.status = ProjectStatus.envoye
+    db.commit()
+    reste = ready["n_total"] - ready["n_ok"]
+    audit.record(db, action="groupement.depose", owner_id=data_owner_id(current_user, db),
+                 project_id=project.id, actor=f"user:{current_user.id}", actor_kind="owner",
+                 target_type="project", target_id=project.id, ip=audit.client_ip(request),
+                 meta={"statut_precedent": status_v, "controles_ok": ready["n_ok"]},
+                 detail=("dossier complet" if ready["pret"]
+                         else f"marqué déposé malgré {reste} contrôle(s) non réglé(s)"))
+    db.refresh(project)
+    return {"ok": True, "deja_depose": False, "status": "envoye", "complet": ready["pret"],
+            "pret": ready, "state": _state_payload(project, db)}
+
+
+@router.delete("/deposer")
+@limiter.limit("30/hour")
+def annuler_depose(request: Request, project_id: int, current_user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    """Annule un marquage « déposé » fait par erreur (trace dans le journal) : le marché
+    retrouve son statut d'avant (« nouveau » ou « en cours »). Un marché
+    déjà « gagné » ou « perdu » se change depuis sa fiche."""
+    from app.models import ProjectStatus
+    project = _project(project_id, current_user, db)
+    status_v = _status_value(project)
+    if status_v in ("gagne", "perdu"):
+        raise HTTPException(409, {"code": "marche_clos",
+                                  "message": "Le marché est déjà marqué gagné ou perdu : changez son "
+                                             "statut depuis sa fiche."})
+    if status_v != "envoye":
+        return {"ok": True, "etait_depose": False, "status": status_v, "state": _state_payload(project, db)}
+    # Statut d'avant le marquage (tracé dans le journal), « en cours » par défaut.
+    from app.models import AuditLog
+    last = db.query(AuditLog).filter(AuditLog.project_id == project.id,
+                                     AuditLog.action == "groupement.depose").order_by(AuditLog.id.desc()).first()
+    prev = ((last.meta or {}).get("statut_precedent") if last is not None and isinstance(last.meta, dict) else None)
+    project.status = ProjectStatus.nouveau if prev == "nouveau" else ProjectStatus.en_cours
+    db.commit()
+    audit.record(db, action="groupement.depot_annule", owner_id=data_owner_id(current_user, db),
+                 project_id=project.id, actor=f"user:{current_user.id}", actor_kind="owner",
+                 target_type="project", target_id=project.id, ip=audit.client_ip(request),
+                 detail="marquage « déposé » annulé")
+    db.refresh(project)
+    return {"ok": True, "etait_depose": True, "status": _status_value(project), "state": _state_payload(project, db)}
+
+
+# ── Tableau de bord : marchés accessibles en groupement, groupements par étape ────────
+
+dashboard_router = APIRouter(prefix="/api/groupement", tags=["Répondre à plusieurs"])
+_DASH_MAX = 100            # projets examinés au plus (groupement_state ≈ 5 requêtes chacun)
+
+
+@dashboard_router.get("/tableau-de-bord")
+@limiter.limit("240/hour")
+def tableau_de_bord(request: Request, current_user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """Agrégat du tableau de bord, données RÉELLES de l'organisation uniquement :
+    « N marchés accessibles en groupement » (verdict « bon potentiel en groupement », marché
+    ouvert) et groupements en cours par étape du parcours (1→5). Aucun montant, aucun nom de
+    partenaire ; un seul pourcentage : le score de groupement."""
+    from datetime import date
+    from app.models import ProjectInvite
+    from app.services.groupement_members import (CLOSED_STATUSES, ETAPES, active_invite_filter,
+                                                 groupement_state)
+    ids = member_ids(current_user, db)
+    today = date.today()
+    projects = db.query(Project).filter(Project.user_id.in_(ids), Project.deleted_at.is_(None))
+
+    def _open(p) -> bool:
+        st = _status_value(p)
+        if st in CLOSED_STATUSES or st == "abandonne":
+            return False
+        dl = p.deadline.date() if isinstance(p.deadline, datetime) else p.deadline
+        return dl is None or dl >= today
+
+    accessibles = [p for p in projects.filter(Project.go_decision == "go_groupement").all() if _open(p)]
+    accessibles.sort(key=lambda p: (p.deadline is None, p.deadline or today, p.id))
+
+    # Candidats « groupement en cours » : invitation active, plan retenu ou convention.
+    pids = [r[0] for r in projects.with_entities(Project.id).all()]
+    active_pids = set()
+    if pids:
+        for i in range(0, len(pids), 500):
+            chunk = pids[i:i + 500]
+            active_pids |= {r[0] for r in db.query(ProjectInvite.project_id).filter(
+                ProjectInvite.project_id.in_(chunk), active_invite_filter()).distinct().all()}
+            try:
+                from app.models import GroupementConvention
+                active_pids |= {r[0] for r in db.query(GroupementConvention.project_id).filter(
+                    GroupementConvention.project_id.in_(chunk)).all()}
+            except Exception:
+                pass
+    cands = projects.filter(Project.id.in_(list(active_pids)) | Project.groupement_plan.isnot(None)
+                            | (Project.go_decision == "go_groupement")) if active_pids else \
+        projects.filter(Project.groupement_plan.isnot(None) | (Project.go_decision == "go_groupement"))
+    cands = cands.order_by(Project.created_at.desc()).limit(_DASH_MAX + 1).all()
+    tronque = len(cands) > _DASH_MAX
+    cands = cands[:_DASH_MAX]
+
+    counts = {n: 0 for n in range(1, len(ETAPES) + 1)}
+    en_cours, deposes = [], 0
+    for p in cands:
+        try:
+            st = groupement_state(p, db)
+        except Exception as e:
+            logger.warning("tableau de bord : état du groupement %s indisponible : %s", p.id, e)
+            continue
+        if st["state"] == "depose":
+            deposes += 1
+            continue
+        if st["state"] == "seul" or not _open(p):
+            continue
+        counts[st["etape"]] += 1
+        if st["state"] == "potentiel":
+            continue                      # étape 1 : listé dans « accessibles »
+        en_cours.append({"project_id": p.id, "name": p.name,
+                         "deadline": p.deadline.isoformat() if p.deadline else None,
+                         "etape": st["etape"], "state": st["state"], "label": st["label"],
+                         "n_membres": st["n_members"], "convention_status": st["convention_status"] or ""})
+    en_cours.sort(key=lambda x: (x["deadline"] is None, x["deadline"] or "", x["project_id"]))
+    return {
+        "marches_accessibles_en_groupement": len(accessibles),
+        "accessibles": [{"project_id": p.id, "name": p.name,
+                         "deadline": p.deadline.isoformat() if p.deadline else None,
+                         "groupement_score": p.groupement_score} for p in accessibles[:10]],
+        "groupements_en_cours": len(en_cours),
+        "par_etape": [{"n": n, "key": key, "label": label, "count": counts[n]}
+                      for n, (key, label, _states) in enumerate(ETAPES, start=1)],
+        "en_cours": en_cours[:20],
+        "deposes": deposes,
+        "tronque": tronque,
+        "calcule_le": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"),
+    }
