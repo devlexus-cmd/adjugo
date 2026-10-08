@@ -34,6 +34,13 @@
     /* Ici lucide REMPLACE le <i> par un <svg class="lucide"> : on recale la taille de l'icône (i). */
     .tip > svg.lucide { width:15px; height:15px; }
     .g-chk { display:flex; gap:6px; align-items:center; }
+    /* Aperçu minimal d'une invitation du réseau Adjugo (vague 3) */
+    .g-apercu { margin-top:12px; padding:12px 14px; border-radius:10px; border:1px solid var(--accent,#3b5bdb); background:var(--accent-weak,#eef2ff); display:flex; flex-wrap:wrap; gap:10px 12px; align-items:center; }
+    .g-apercu-t { display:flex; align-items:center; gap:6px; flex:1 1 200px; min-width:0; font-size:13.5px; }
+    .g-apercu-a { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+    .g-apercu-a .btn svg.lucide { width:14px; height:14px; margin-right:4px; }
+    .g-apercu-msg { flex:1 1 100%; color:var(--text-2,#4b5563); }
+    .g-apercu-msg:empty { display:none; }
     @media (max-width:640px){ .g-fact { grid-template-columns:1fr; gap:1px 0; } .g-fact dt { margin-top:7px; } }
     /* ── Convention de groupement (co-traitance v2, vague 2) — styles locaux à cette page ── */
     .cv-card { margin-bottom:16px; }
@@ -401,6 +408,25 @@
       head.appendChild($(`<div class="muted small">${d.mandataire ? "Partagé par <b>" + esc(d.mandataire) + "</b>" : "Dossier partagé"}${d.invited && d.invited.company ? " · pour " + esc(d.invited.company) : ""}</div>`));
       head.appendChild($(`<div style="font-size:21px;font-weight:800;margin:2px 0 3px;letter-spacing:-.02em">${esc(p.name || "Appel d'offres")}${tip("Vous ne voyez que ce dossier et <b>votre</b> contribution, jamais les données des autres entreprises. Conformément au RGPD, vos actions sont journalisées et visibles par le mandataire.")}</div>`));
       if (p.client) head.appendChild($(`<div class="muted small">${esc(p.client)}</div>`));
+      // Invitation du RÉSEAU Adjugo pas encore acceptée (vague 3) : aperçu minimal — ni acheteur, ni
+      // lien de l'avis, ni pièces, ni composition du groupement. On l'explique dans une bulle (i) et on
+      // propose d'accepter depuis le compte (seul le compte destinataire, adresse confirmée, le peut).
+      if (d.apercu_minimal) {
+        const box = $(`<div class="g-apercu" role="region" aria-label="Aperçu limité"></div>`);
+        box.appendChild($(`<div class="g-apercu-t">${ico("lock", 15)}<b>Aperçu limité</b>${tip(esc(d.apercu_message || "Acceptez l'invitation depuis votre compte Adjugo pour voir le dossier complet."))}</div>`));
+        const act = $(`<div class="g-apercu-a"></div>`);
+        const live = $(`<div class="small g-apercu-msg" role="status" aria-live="polite"></div>`);
+        if (MY_TOKEN) {
+          const b = $(`<button type="button" class="btn sm primary">${ico("check", 14)}Accepter depuis mon compte</button>`);
+          b.onclick = () => claimAndOpen(b, live);
+          act.appendChild(b);
+        } else {
+          act.appendChild($(`<a class="btn sm primary" href="/app" target="_blank" rel="noopener">${ico("log-in", 14)}Me connecter pour accepter</a>`));
+          act.insertAdjacentHTML("beforeend", tip("Connectez-vous avec le compte Adjugo qui a reçu l'invitation, puis ouvrez <b>Réseau &gt; Invitations reçues</b> pour l'accepter."));
+        }
+        box.appendChild(act); box.appendChild(live);
+        head.appendChild(box);
+      }
       // Compte à rebours : le partenaire perçoit l'urgence et sait combien de temps il lui
       // reste pour renvoyer SA part (le mandataire assemble AVANT la date limite officielle).
       if (p.deadline) {
@@ -433,7 +459,8 @@
 
       const docCard = $(`<div class="card pad" style="margin-bottom:16px"></div>`);
       docCard.appendChild($(`<b style="font-size:13.5px">Pièces partagées${d.documents && d.documents.length ? " (" + d.documents.length + ")" : ""}</b>`));
-      if (!d.can_view_docs) docCard.appendChild($(`<div class="muted small" style="margin-top:8px">Le partage des pièces n'est pas activé pour ce lien.</div>`));
+      if (d.apercu_minimal) docCard.appendChild($(`<div class="muted small" style="margin-top:8px">Les pièces du marché seront visibles quand vous aurez accepté l'invitation depuis votre compte Adjugo.</div>`));
+      else if (!d.can_view_docs) docCard.appendChild($(`<div class="muted small" style="margin-top:8px">Le partage des pièces n'est pas activé pour ce lien.</div>`));
       else if (!d.documents || !d.documents.length) docCard.appendChild($(`<div class="muted small" style="margin-top:8px">Aucune pièce partagée pour le moment.</div>`));
       else d.documents.forEach(doc => {
         const row = $(`<div class="g-doc"></div>`);
@@ -1368,6 +1395,25 @@
       icons();
     }
 
+    // Suggestion d'interface « publiez votre profil partenaire » renvoyée par le rattachement : transmise à
+    // l'app (/app la lit une fois puis l'efface). Seuls titre et message, affichés en texte.
+    function keepSuggestion(res) {
+      const s = res && res.suggest_profile;
+      if (!s || s.code !== "publier_profil_reseau") return;
+      try { sessionStorage.setItem("adjugo_suggest_profile", JSON.stringify({ code: s.code, titre: String(s.titre || ""), message: String(s.message || "") })); } catch (e) {}
+    }
+    // « Accepter depuis mon compte » (aperçu minimal d'une invitation du réseau).
+    async function claimAndOpen(btn, live) {
+      btn.disabled = true; btn.setAttribute("aria-busy", "true"); live.textContent = "Acceptation en cours…";
+      try {
+        const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/claim", { method: "POST", headers: { Authorization: "Bearer " + MY_TOKEN } });
+        if (r.ok) { keepSuggestion(await r.json().catch(() => null)); live.textContent = "Invitation acceptée : ouverture du dossier…"; location.href = "/app?shared=" + encodeURIComponent(TOKEN); return; }
+        const e = await r.json().catch(() => ({}));
+        live.textContent = errText(e, "Acceptation impossible pour le moment.");
+      } catch (e) { live.textContent = "Erreur réseau : réessayez dans un instant."; }
+      btn.disabled = false; btn.removeAttribute("aria-busy");
+    }
+
     // ── Boot ──
     function finalScreen(icon, title, msg) {
       document.getElementById("shell").style.display = "none";
@@ -1424,8 +1470,8 @@
           btn.onclick = async () => {
             btn.disabled = true; btn.textContent = "Ouverture…";
             try { const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/claim", { method: "POST", headers: { Authorization: "Bearer " + myToken } });
-              if (r.ok) { location.href = "/app?shared=" + encodeURIComponent(TOKEN); return; }
-              const e = await r.json().catch(() => ({})); btn.disabled = false; btn.textContent = (e && e.detail) ? e.detail : "Impossible";
+              if (r.ok) { keepSuggestion(await r.json().catch(() => null)); location.href = "/app?shared=" + encodeURIComponent(TOKEN); return; }
+              const e = await r.json().catch(() => ({})); btn.disabled = false; btn.textContent = errText(e, "Impossible");
             } catch (e) { btn.disabled = false; btn.textContent = "Erreur"; }
           };
           b.appendChild(btn);
