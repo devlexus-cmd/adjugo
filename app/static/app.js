@@ -84,7 +84,7 @@ function _grpInit() {
 // État de la carte côté chef de file — réinitialisé à chaque ouverture de marché.
 function _convInit() {
   return { loading: false, loaded: false, error: "", d: null, f: null, busy: "", live: "", err: "", errCode: "", missing: [],
-           editOpen: false, textOpen: false, rulesOpen: false, accord: { nom: "", qualite: "", accepte: false, hash: "" } };
+           errAt: "top", staleReason: "", editOpen: false, textOpen: false, rulesOpen: false, accord: { nom: "", qualite: "", accepte: false, hash: "" } };
 }
 // Convention vue par un partenaire qui a un compte (« Partagé avec moi », après rattachement du lien).
 function _sconvInit() {
@@ -122,7 +122,7 @@ function convMdToHtml(md) {
   const flush = (keep) => {
     if (list && keep !== "list") { out.push("<ul>" + list.map(li => "<li>" + li + "</li>").join("") + "</ul>"); list = null; }
     if (rows && keep !== "rows") {
-      out.push('<div class="cv-tw"><table class="cv-table"><thead><tr><th scope="col">Membre</th><th scope="col">Rôle</th><th scope="col">Part</th><th scope="col">Prix de vente</th></tr></thead><tbody>'
+      out.push('<div class="cv-tw"><table class="cv-table cv-rep"><thead><tr><th scope="col">Membre</th><th scope="col">Rôle</th><th scope="col">Part</th><th scope="col">Prix de vente</th></tr></thead><tbody>'
         + rows.map(r => "<tr>" + r.map((c, i) => i === 0 ? '<th scope="row">' + _mdInline(c) + "</th>" : "<td>" + _mdInline(c) + "</td>").join("") + "</tr>").join("")
         + "</tbody></table></div>");
       rows = null;
@@ -1756,9 +1756,27 @@ const __adjApp = createApp({
       if (!c.accord.qualite) c.accord.qualite = ms.signataire_qualite || "";
       if (c.accord.hash !== ((d && d.content_hash) || "")) { c.accord.accepte = false; c.accord.hash = (d && d.content_hash) || ""; }
       if (d && d.state) this._convMergeState(d.state);
+      if (d && d.status === "perimee") this._convLoadStaleReason(); else c.staleReason = "";
+    },
+    // Convention caduque : la cause n'est pas dans la réponse de la convention, mais le serveur
+    // la journalise (« convention.perimee », détail en français). On la reprend telle quelle.
+    async _convLoadStaleReason() {
+      const pid = this.ao.project && this.ao.project.id; if (!pid) return;
+      try {
+        const rows = await this.api("GET", "/api/projects/" + pid + "/audit?limit=100") || [];
+        const r = (Array.isArray(rows) ? rows : []).find(x => x && x.action === "convention.perimee");
+        if (this.ao.project && this.ao.project.id === pid && this.ao.conv.d && this.ao.conv.d.status === "perimee")
+          this.ao.conv.staleReason = String((r && r.detail) || "").trim();
+      } catch (e) { /* cause indisponible : le bandeau reste générique */ }
     },
     _convSay(msg) { this.ao.conv.live = msg; this.notify(msg); },
-    _convFail(e) { const c = this.ao.conv; c.err = (e && e.message) || "Action impossible pour l'instant."; c.errCode = (e && e.code) || ""; c.missing = (e && Array.isArray(e.missing)) ? e.missing : []; },
+    // Les messages d'erreur s'affichent À CÔTÉ du bouton qui les a provoqués (zone) : « top » (haut de
+    // la carte), « fi » (règlement), « foot » (pied de l'assistant), « accords » (suivi), « accord » (mon accord).
+    _convErrZone() { return (this.convGenerated() && !this.ao.conv.editOpen) ? "top" : "foot"; },
+    _convFail(e, at) { const c = this.ao.conv; c.err = (e && e.message) || "Action impossible pour l'instant."; c.errCode = (e && e.code) || ""; c.missing = (e && Array.isArray(e.missing)) ? e.missing : []; c.errAt = at || this._convErrZone(); },
+    _convErr(msg, at) { const c = this.ao.conv; c.err = msg; c.errCode = ""; c.missing = []; c.errAt = at || this._convErrZone(); },
+    convErrAt(z) { return !!this.ao.conv.err && (this.ao.conv.errAt || "top") === z; },
+    convErrClear() { const c = this.ao.conv; c.err = ""; c.errCode = ""; c.missing = []; },
     async aoConvLoad(quiet) {
       const pid = this.ao.project && this.ao.project.id; if (!pid) return;
       const c = this.ao.conv; if (c.loading) return;
@@ -1828,7 +1846,7 @@ const __adjApp = createApp({
         if (c.d && r && r.forme_imposee) c.d.forme_imposee = r.forme_imposee;
         this._convSay("Dossier du marché relu.");
         c.busy = ""; await this.aoConvLoad(true);   // avertissements à jour (le formulaire en cours est conservé)
-      } catch (e) { this._convFail(e); }
+      } catch (e) { this._convFail(e, "fi"); }
       finally { c.busy = ""; }
     },
     async aoConvAskGenerate() {
@@ -1836,8 +1854,7 @@ const __adjApp = createApp({
       if (this.convDirty() && !(await this.aoConvSave())) return;
       const d = this.ao.conv.d;
       if (!d.peut_generer) {
-        c.err = "Impossible de générer la convention : il manque des éléments."; c.errCode = ""; c.missing = (d.manques || []).slice();
-        this.aoConvScroll("convCard"); return;
+        this._convErr("Impossible de générer la convention : complétez d'abord les éléments listés ci-dessous.", "foot"); return;
       }
       const total = d.total_estime_ht, two = (d.membres || []).length === 2;
       const lines = [
@@ -1871,17 +1888,17 @@ const __adjApp = createApp({
         if (!this.ao.project || this.ao.project.id !== pid) return;
         this._convApply(d); c.textOpen = false; c.editOpen = false;
         const n = Number(d.emails_envoyes) || 0;
-        this._convSay("Convention générée (version " + d.version + ")" + (n ? " — " + n + " partenaire(s) prévenu(s) par email." : "."));
+        this._convSay("Convention générée (version " + d.version + ")" + (n ? " — " + (n > 1 ? n + " partenaires prévenus" : "1 partenaire prévenu") + " par email." : "."));
         this.aoLoadConsortium(); this.aoLoadInvites();
       } catch (e) {
         if (e.status === 409 && e.code === "deja_generee") this.aoConvAskRegenerate(e.message);
-        else { this._convFail(e); this.aoConvScroll("convCard"); }
+        else { const z = this._convErrZone(); this._convFail(e, z); if (z === "top") this.aoConvScroll("convCard"); }
       } finally { c.busy = ""; }
     },
     async aoConvValider() {
       const c = this.ao.conv, d = c.d, pid = this.ao.project && this.ao.project.id; if (!pid || !d || c.busy) return;
-      if (!c.accord.accepte) { c.err = "Cochez « J'ai lu la convention et je donne mon accord »."; c.errCode = ""; c.missing = []; return; }
-      if (!(c.accord.nom || "").trim()) { c.err = "Indiquez le nom de la personne qui donne l'accord."; c.errCode = ""; c.missing = []; return; }
+      if (!c.accord.accepte) { this._convErr("Cochez « J'ai lu la convention et je donne mon accord ».", "accord"); return; }
+      if (!(c.accord.nom || "").trim()) { this._convErr("Indiquez le nom de la personne qui donne l'accord.", "accord"); return; }
       c.busy = "valider"; c.err = ""; c.errCode = ""; c.missing = [];
       try {
         const r = await this.api("POST", "/api/projects/" + pid + "/groupement/convention/valider",
@@ -1889,7 +1906,7 @@ const __adjApp = createApp({
         if (!this.ao.project || this.ao.project.id !== pid) return;
         this._convApply(r, true); this._convSay("Votre accord est enregistré.");
       } catch (e) {
-        this._convFail(e);
+        this._convFail(e, "accord");
         if (["texte_modifie", "perimee", "pas_generee", "statut"].includes(e.code)) { c.busy = ""; await this.aoConvLoad(true); }
       } finally { c.busy = ""; }
     },
@@ -1917,7 +1934,7 @@ const __adjApp = createApp({
         if (!this.ao.project || this.ao.project.id !== pid) return;
         this._convApply(r, true); this._convSay(on ? "Accord hors ligne enregistré." : "Accord hors ligne retiré.");
       } catch (e) {
-        this._convFail(e);
+        this._convFail(e, "accords");
         if (e.status === 409) { c.busy = ""; await this.aoConvLoad(true); }
       } finally { c.busy = ""; }
     },
@@ -1943,7 +1960,9 @@ const __adjApp = createApp({
     },
     aoConvScroll(ref) {
       this.$nextTick(() => {
-        const el = this.$refs[ref]; if (!el) return;
+        let el = this.$refs[ref];
+        if (Array.isArray(el)) el = el[0];   // ref posé dans un v-for (carte de la convention) → tableau
+        if (!el) return;
         if (el.scrollIntoView) el.scrollIntoView({ block: "start", behavior: "smooth" });
         if (el.focus) el.focus({ preventScroll: true });
       });
@@ -1954,14 +1973,22 @@ const __adjApp = createApp({
     },
     async aoConvPrepareDocs() { await this.aoGenerate(); await this.aoGrpReloadState(); },
     // « Prêt à déposer » : chaque contrôle de l'API (state.pret.checks) avec l'action qui le règle.
+    // Chaque manque de l'API (texte tel quel) est rangé sous le contrôle qu'il concerne : liste
+    // courte (3 au plus, puis « et N autres »), avec le bouton qui le règle juste à côté.
+    _convPretGroup(m) { return /^formulaire/i.test(m) ? "cerfa_generes" : /^convention/i.test(m) ? "convention_signee" : "attestations_ok"; },
     convPretChecks() {
       const p = this.convPret(); if (!p) return [];
-      const ch = p.checks || {};
+      const ch = p.checks || {}, man = (p.manques || []).map(m => String(m || "")).filter(Boolean);
       return [
         { key: "convention_signee", label: "Convention validée par tous les membres", cta: "Voir les accords", icon: "users-round", action: () => this.aoConvScroll("convAccords") },
-        { key: "attestations_ok", label: "Attestations de tous les membres valides à la date limite", cta: "Voir le coffre-fort croisé", icon: "folder-lock", action: () => this.aoConvShowCoffre() },
-        { key: "cerfa_generes", label: "Formulaires officiels (DC1, DC2, ATTRI1) préparés après la convention", cta: "Préparer mes documents", icon: "file-text", action: () => this.aoConvPrepareDocs() },
-      ].filter(k => k.key in ch).map(k => Object.assign(k, { ok: !!ch[k.key] }));
+        { key: "attestations_ok", label: "Attestations de tous les membres valides à la date limite", cta: "Voir les attestations", icon: "folder-lock", action: () => this.aoConvShowCoffre() },
+        { key: "cerfa_generes", label: "Formulaires officiels préparés après la convention", codes: "DC1, DC2, ATTRI1", cta: "Préparer mes documents", icon: "file-text", action: () => this.aoConvPrepareDocs() },
+      ].filter(k => k.key in ch).map(k => Object.assign(k, { ok: !!ch[k.key], manques: man.filter(m => this._convPretGroup(m) === k.key) }));
+    },
+    convPretRest() {   // manques qui ne se rangent sous aucun contrôle encore à faire (jamais masqués)
+      const p = this.convPret(); if (!p) return [];
+      const open = this.convPretChecks().filter(k => !k.ok).map(k => k.key);
+      return (p.manques || []).map(m => String(m || "")).filter(m => m && !open.includes(this._convPretGroup(m)));
     },
     // Boîte de confirmation : dit ce que l'action fait AVANT de la faire (focus sur « Annuler », Échap ferme).
     _convAsk(cfg) {

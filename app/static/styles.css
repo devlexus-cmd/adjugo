@@ -631,6 +631,7 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .cf-t { display:block; font-weight:700; font-size:14px; line-height:1.35; }
 .cf-s { display:block; font-size:11.5px; color:var(--subtle); margin-top:2px; font-weight:400; }
 .conv-check { display:flex; gap:4px; align-items:flex-start; }
+.conv-check > label { flex:0 1 auto; }   /* la bulle (i) suit le libellé au lieu de partir au bord */
 .conv-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px 12px; }
 .conv-grid .field { margin:0; min-width:0; }
 .conv-rules > summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px 10px; flex-wrap:wrap; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); user-select:none; }
@@ -649,11 +650,27 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .cv-tw { overflow-x:auto; max-width:100%; }
 .cv-table { width:100%; border-collapse:collapse; font-size:12.5px; }
 .cv-table th, .cv-table td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--hairline); vertical-align:top; overflow-wrap:anywhere; }
+.cv-table th { background:none; text-transform:none; letter-spacing:normal; font-size:inherit; color:var(--text); }
 .cv-table thead th { font-size:11px; font-weight:600; color:var(--text-2); border-bottom-color:var(--border); }
 .cv-table tbody th { font-weight:600; }
 .cv-table .num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .cv-table tfoot th, .cv-table tfoot td { border-bottom:0; padding-top:10px; }
 @media (max-width:420px) { .cv-table th, .cv-table td { padding:6px 5px; font-size:12px; } .cv-table .num { white-space:normal; } }
+/* Répartition (membre / rôle / part / prix) : sur téléphone, une ligne = une petite fiche
+   (nom en entier, rôle et part dessous, prix à droite) au lieu de 4 colonnes qui coupent les mots. */
+.cv-ht { display:none; }
+@media (max-width:520px) {
+  .cv-rep thead { display:none; }
+  .cv-rep tr { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:2px; padding:9px 0; border-bottom:1px solid var(--hairline); }
+  .cv-rep tfoot tr { border-bottom:0; }
+  .cv-rep th, .cv-rep td { border:0; padding:0; overflow-wrap:break-word; }
+  .cv-rep tbody th { grid-column:1 / -1; }
+  .cv-rep tbody td { grid-column:1; color:var(--text-2); }
+  .cv-rep tbody td:last-child { grid-column:2; grid-row:2 / span 2; align-self:start; text-align:right; white-space:nowrap; color:var(--text); }
+  .cv-rep tfoot th { grid-column:1; }
+  .cv-rep tfoot td { grid-column:2; text-align:right; white-space:nowrap; }
+  .cv-rep .cv-ht { display:inline; }
+}
 .conv-text { max-height:480px; overflow-y:auto; padding:14px 16px; border:1px solid var(--border); border-radius:10px; background:var(--surface); font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
 .conv-text:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); }
 .conv-text h4 { font-family:var(--font-display); font-size:15.5px; margin:0 0 10px; line-height:1.35; }
@@ -689,6 +706,8 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .conv-checks li > i[data-lucide] { width:15px; height:15px; flex:none; color:var(--text-2); }
 .conv-checks li > span { flex:1 1 180px; min-width:0; }
 .conv-checks li.ok, .conv-checks li.ok > i[data-lucide] { color:var(--success-text); }
+.conv-checks .conv-sub { flex:1 1 100%; margin:2px 0 0 25px; padding-left:16px; font-size:12px; line-height:1.5; color:var(--text-2); }
+.conv-checks .conv-sub li { padding:0; display:list-item; }
 .conv-list { margin:0; padding-left:18px; font-size:12.5px; line-height:1.5; }
 .conv-list li + li { margin-top:6px; }
 .conv-kv { display:flex; flex-wrap:wrap; gap:3px 12px; font-size:12.5px; padding:7px 0; border-bottom:1px solid var(--hairline); line-height:1.45; }
