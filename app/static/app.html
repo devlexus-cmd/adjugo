@@ -433,9 +433,7 @@
               <div v-else-if="ao.grp.error && !ao.grp.state && !ao.grp.besoins" class="muted small"><i data-lucide="info" style="width:13px;height:13px;vertical-align:-2px"></i> {{ ao.grp.error }} <a href="#" @click.prevent="aoGrpLoad()" style="color:var(--accent-text)">Réessayer</a></div>
               <template v-else>
                 <!-- 1. Étapes du groupement (dérivées côté serveur, jamais stockées) -->
-                <div v-if="ao.grp.state && ao.grp.state.steps" class="gstep" role="list" aria-label="Étapes du groupement">
-                  <div v-for="(s,i) in ao.grp.state.steps" :key="s.key" class="gs" :class="gstepClass(ao.grp.state,s,i)" role="listitem">{{ s.label }}</div>
-                </div>
+                <div v-if="grpSteps(ao.grp.state).length"><ol class="gstep" aria-label="Étapes du groupement"><li v-for="s in grpSteps(ao.grp.state)" :key="s.key" class="gs" :class="{done:s.done,cur:s.cur}" :aria-current="s.cur?'step':null"><span class="sr-only">{{ s.n }}. </span>{{ s.label }}<span v-if="s.done" class="sr-only"> (fait)</span></li></ol><div v-if="grpEtapeNow(ao.grp.state)" class="gstep-now">{{ grpEtapeNow(ao.grp.state) }}</div></div>
                 <ul v-if="aoGrpRaisons().length" class="muted small" style="margin:8px 0 0;padding-left:18px"><li v-for="(r,gi) in aoGrpRaisons()" :key="'grp'+gi">{{ r }}</li></ul>
                 <!-- 3. Avertissements : TOUJOURS visibles, au-dessus du résultat -->
                 <div v-for="(w,wi) in grpWarnings()" :key="'gw'+wi" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ w }}</span></div>
@@ -540,6 +538,225 @@
                 </details>
                 <div v-if="grpCanCancel()" style="margin-top:8px"><a href="#" @click.prevent="aoGrpCancelPlan()" class="muted small" style="text-decoration:underline">Annuler la composition</a> <span class="muted small">— vous revenez au verdict seul ; les partenaires rattachés restent.</span></div>
               </template>
+            </div>
+          </div>
+
+          <!-- Monter le groupement (co-traitance v2, vague 2) : ce que le règlement impose, forme, pouvoirs du
+               chef de file, règles, génération (= figer l'offre), accords des membres, prêt à déposer.
+               Tout vient de l'API (docs/COTRAITANCE_V2_VAGUE2_API.md). Le texte de la convention n'est JAMAIS
+               injecté brut : convHtml() échappe tout le HTML puis applique un rendu minimal. -->
+          <div v-if="convVisible()" class="card conv-card" ref="convCard" tabindex="-1" role="region" aria-labelledby="conv-h">
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="file-signature" style="color:var(--accent-text)"></i><h3 id="conv-h">Monter le groupement</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Vous choisissez la forme du groupement, les pouvoirs du chef de file et les règles communes : Adjugo prépare la <b>convention de groupement</b>. Une fois générée, chaque membre la relit et donne son accord depuis son espace. Le texte est le même pour tous.</span></button><div class="spacer"></div>
+              <span v-if="ao.conv.d" class="pill" :class="convStatusPill(ao.conv.d.status)" style="font-size:11px">{{ ao.conv.d.status_label }}<template v-if="ao.conv.d.version"> · version {{ ao.conv.d.version }}</template></span></div>
+            <div class="cb conv">
+              <div v-if="ao.conv.loading && !ao.conv.d" class="muted small" role="status"><span class="spin"></span> Chargement de la convention…</div>
+              <div v-else-if="ao.conv.error && !ao.conv.d" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ ao.conv.error }} <button type="button" class="linkbtn" @click="aoConvLoad()">Réessayer</button></div></div>
+              <template v-for="d in (ao.conv.d && ao.conv.f ? [ao.conv.d] : [])" :key="'cvd'">
+                <template v-for="f in [ao.conv.f]" :key="'cvf'">
+                  <!-- Stepper (seulement si la carte « Répondre à plusieurs ? » n'est pas affichée : marché non analysé) -->
+                  <div v-if="!ao.project.ai_analysis && grpSteps(ao.grp.state).length"><ol class="gstep" aria-label="Étapes du groupement"><li v-for="s in grpSteps(ao.grp.state)" :key="s.key" class="gs" :class="{done:s.done,cur:s.cur}" :aria-current="s.cur?'step':null"><span class="sr-only">{{ s.n }}. </span>{{ s.label }}<span v-if="s.done" class="sr-only"> (fait)</span></li></ol><div v-if="grpEtapeNow(ao.grp.state)" class="gstep-now">{{ grpEtapeNow(ao.grp.state) }}</div></div>
+
+                  <!-- Avertissement juridique : TOUJOURS visible, là où l'on génère et là où l'on valide -->
+                  <div class="conv-legal"><i data-lucide="scale"></i><span>{{ d.avertissement }}</span></div>
+
+                  <div v-if="ao.conv.err" class="conv-err" role="alert"><i data-lucide="circle-alert"></i>
+                    <div style="flex:1;min-width:0"><div>{{ ao.conv.err }}</div>
+                      <ul v-if="ao.conv.missing.length"><li v-for="(m,mi) in ao.conv.missing" :key="'cvm'+mi">{{ m }}</li></ul>
+                      <button v-if="ao.conv.errCode==='email_non_verifie'" type="button" class="btn sm" style="margin-top:8px" @click="resendVerification()"><i data-lucide="send"></i>Renvoyer l'email de confirmation</button></div>
+                    <button type="button" class="btn icon sm ghost" @click="ao.conv.err='';ao.conv.missing=[];ao.conv.errCode=''" aria-label="Fermer le message"><i data-lucide="x"></i></button></div>
+
+                  <!-- Prêt à déposer (état 7, calculé par le serveur) : ce qui manque, avec l'action qui le règle -->
+                  <section v-if="convPret()" class="conv-pret" :class="{ok:convPret().pct>=100}" aria-labelledby="conv-pret-h">
+                    <div class="conv-st"><i :data-lucide="convPret().pct>=100?'badge-check':'list-checks'"></i><span id="conv-pret-h">{{ ao.grp.state.label }}</span><span class="pill" :class="convPret().pct>=100?'go':'a_etudier'" style="font-size:11px">{{ convPret().pct }} %</span></div>
+                    <ul class="conv-checks">
+                      <li v-for="k in convPretChecks()" :key="k.key" :class="{ok:k.ok}"><i :data-lucide="k.ok?'circle-check':'circle-dashed'"></i><span>{{ k.label }}<span class="sr-only">{{ k.ok ? ' : fait' : ' : à faire' }}</span></span><button v-if="!k.ok" type="button" class="btn sm btn-wrap" @click="k.action()" :disabled="k.key==='cerfa_generes' && ao.generating"><span v-if="k.key==='cerfa_generes' && ao.generating" class="spin"></span><i v-else :data-lucide="k.icon"></i>{{ k.cta }}</button></li>
+                    </ul>
+                    <ul v-if="(convPret().manques||[]).length" class="conv-manques"><li v-for="(m,mi) in convPret().manques" :key="'pm'+mi">{{ m }}</li></ul>
+                    <div v-if="convPret().pct>=100" class="row wrap conv-actions"><button type="button" class="btn sm primary btn-wrap" @click="aoExport()"><i data-lucide="package"></i>Exporter le dossier complet (ZIP)</button></div>
+                  </section>
+
+                  <!-- Convention caduque : bandeau + régénération (même route que la génération) -->
+                  <div v-if="d.status==='perimee'" class="conv-stale" role="status"><i data-lucide="triangle-alert"></i>
+                    <div><b>La convention n'est plus à jour</b><div class="small">Une part, un prix ou la composition a changé depuis sa génération : les accords enregistrés sont caducs. Régénérez-la, puis chaque membre redonnera son accord.</div></div>
+                    <button type="button" class="btn sm primary btn-wrap" @click="aoConvAskRegenerate()" :disabled="!!ao.conv.busy"><span v-if="ao.conv.busy==='generer'" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Régénérer la convention</button></div>
+
+                  <!-- ── Convention générée : texte figé, empreinte, total, accords ── -->
+                  <template v-if="convGenerated()">
+                    <div class="conv-meta">
+                      <span v-if="d.frozen_at"><i data-lucide="lock"></i>Offre figée le {{ convWhen(d.frozen_at) }}</span>
+                      <span v-if="d.content_hash"><i data-lucide="fingerprint"></i>Empreinte <code>{{ convHash(d) }}</code><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Empreinte complète du texte (SHA-256) : <span style="word-break:break-all">{{ d.content_hash }}</span>. Même texte, donc même empreinte, pour tous les membres : elle est imprimée dans le PDF avec chaque accord.</span></button></span>
+                    </div>
+                    <div v-if="d.total_offre_ht!=null" class="offre-box" style="flex-wrap:wrap;margin-top:16px"><i data-lucide="badge-euro" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i><div style="flex:1;min-width:150px"><div class="small"><b>Total de l'offre commune</b></div><div class="muted small">Visible par tous les membres, avec l'annexe de répartition</div></div><div class="offre-total">{{ eur2(d.total_offre_ht) }} HT</div></div>
+                    <section class="conv-sec" aria-labelledby="conv-rep-g">
+                    <div class="conv-st"><span id="conv-rep-g">Répartition</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Prix de vente de chaque part, tels que chaque partenaire les a soumis. Les partenaires ne voient les prix des autres et le total qu'une fois la convention générée.</span></button></div>
+                    <div class="cv-tw"><table class="cv-table">
+                      <thead><tr><th scope="col">Membre</th><th scope="col">Rôle</th><th scope="col">Part</th><th scope="col" class="num">Prix de vente HT</th></tr></thead>
+                      <tbody><tr v-for="(m,i) in (d.membres||[])" :key="'conv-rep-g'+i"><th scope="row">{{ m.company }}</th><td>{{ roleLabel(m.role) }}<span v-if="m.membre==='hors_ligne'" class="muted"> · hors ligne</span></td><td>{{ m.lot || '—' }}</td><td class="num">{{ m.prix_lot_ht!=null ? eur2(m.prix_lot_ht) : 'pas encore renseigné' }}</td></tr></tbody>
+                      <tfoot v-if="convTotal(d)!=null"><tr><th scope="row" colspan="3">{{ convGenerated() ? 'Total de l\'offre commune' : 'Total estimé de l\'offre' }}</th><td class="num"><b>{{ eur2(convTotal(d)) }}</b></td></tr></tfoot>
+                    </table></div>
+                  </section>
+                    <div v-for="(w,wi) in (d.avertissements||[])" :key="'cvw'+wi" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ w }}</span></div>
+                    <div class="row wrap conv-actions">
+                      <button type="button" class="btn sm" @click="ao.conv.textOpen=!ao.conv.textOpen" :aria-expanded="ao.conv.textOpen?'true':'false'" aria-controls="conv-texte"><i data-lucide="scroll-text"></i>{{ ao.conv.textOpen ? 'Masquer le texte' : 'Lire la convention' }}</button>
+                      <button type="button" class="btn sm" @click="aoConvPdf()" :disabled="!!ao.conv.busy"><span v-if="ao.conv.busy==='pdf'" class="spin"></span><i v-else data-lucide="file-down"></i>Télécharger le PDF</button>
+                      <button v-if="d.status!=='perimee'" type="button" class="btn sm ghost" @click="aoConvAskRegenerate()" :disabled="!!ao.conv.busy"><i data-lucide="refresh-cw"></i>Régénérer</button>
+                    </div>
+                    <div v-if="ao.conv.textOpen" id="conv-texte">
+                      <div v-if="d.status==='perimee'" class="pill no_go" style="font-size:11px;margin-bottom:8px">Ancienne version : plus à jour</div>
+                      <div class="conv-text" tabindex="0" role="document" aria-label="Texte de la convention" v-html="convHtml(d.content_md)"></div>
+                    </div>
+
+                    <section class="conv-sec" ref="convAccords" tabindex="-1" aria-labelledby="conv-acc-h">
+                      <div class="conv-st"><span id="conv-acc-h">Accords des membres</span><span v-if="d.status!=='perimee'" class="pill" :class="d.n_signataires && d.n_accords===d.n_signataires?'go':'neutral'" style="font-size:11px">{{ d.n_accords }}/{{ d.n_signataires }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Chaque membre donne son accord sur ce texte depuis son espace. Adjugo enregistre la date, l'empreinte du texte et le niveau d'identité de chacun : tout est imprimé dans le PDF. Ce n'est pas une signature électronique qualifiée.</span></button></div>
+                      <ul class="conv-sigs">
+                        <li v-for="(s,si) in (d.signatures||[])" :key="'sig'+si">
+                          <div class="cs-main"><div><b>{{ s.company }}</b> <span class="muted small">· {{ convMemberLabel(s.membre) }}</span></div>
+                            <div v-if="s.identity_label" class="cs-sub">{{ s.identity_label }}</div>
+                            <div v-if="s.signed_at" class="cs-sub">le {{ convWhen(s.signed_at) }}<template v-if="s.signataire_nom"> · {{ s.signataire_nom }}<template v-if="s.signataire_qualite">, {{ s.signataire_qualite }}</template></template></div></div>
+                          <span class="pill" :class="convSigPill(s.status)" style="font-size:11px">{{ s.status_label }}</span>
+                          <button v-if="s.membre==='hors_ligne' && s.link_id!=null && d.status!=='perimee' && s.status==='pending'" type="button" class="btn sm btn-wrap" @click="aoConvAskHorsLigne(s,true)" :disabled="!!ao.conv.busy"><i data-lucide="clipboard-check"></i>Marquer l'accord comme recueilli</button>
+                          <button v-else-if="s.membre==='hors_ligne' && s.link_id!=null && d.status!=='perimee' && s.status==='hors_ligne'" type="button" class="btn sm ghost btn-wrap" @click="aoConvAskHorsLigne(s,false)" :disabled="!!ao.conv.busy"><i data-lucide="undo-2"></i>Retirer l'accord hors ligne</button>
+                        </li>
+                      </ul>
+                      <div v-if="!(d.signatures||[]).length" class="muted small">Aucun accord attendu pour l'instant.</div>
+                    </section>
+
+                    <!-- Accord du chef de file (adresse confirmée exigée par l'API) -->
+                    <section v-if="d.status==='a_signer' || d.status==='signee'" class="conv-sec conv-mine" aria-labelledby="conv-mine-h">
+                      <div class="conv-st" id="conv-mine-h">Votre accord (chef de file)</div>
+                      <div v-if="d.ma_signature && d.ma_signature.status==='signed'" class="conv-ok"><i data-lucide="circle-check-big"></i><span>Accord enregistré<template v-if="convMySig() && convMySig().signed_at"> le {{ convWhen(convMySig().signed_at) }}</template></span></div>
+                      <template v-else-if="d.ma_signature && d.ma_signature.peut_valider">
+                        <div v-if="!d.ma_signature.email_verifie" class="warn-box"><i data-lucide="mail" style="width:15px;height:15px;flex:none;margin-top:1px"></i><div style="flex:1;min-width:0">Confirmez d'abord votre adresse email (lien reçu par mail) pour enregistrer votre accord.<div style="margin-top:8px"><button type="button" class="btn sm" @click="resendVerification()"><i data-lucide="send"></i>Renvoyer l'email de confirmation</button></div></div></div>
+                        <div class="conv-grid">
+                          <div class="field"><label for="cv-acc-nom">Nom de la personne qui donne l'accord</label><input id="cv-acc-nom" class="inp" v-model="ao.conv.accord.nom" maxlength="255" autocomplete="name"></div>
+                          <div class="field"><label for="cv-acc-qual">Qualité (gérant, président…)</label><input id="cv-acc-qual" class="inp" v-model="ao.conv.accord.qualite" maxlength="120"></div>
+                        </div>
+                        <div class="conv-check"><label><input type="checkbox" v-model="ao.conv.accord.accepte"><span>J'ai lu la convention et je donne mon accord</span></label></div>
+                        <div class="row wrap conv-actions"><button type="button" class="btn primary" @click="aoConvValider()" :disabled="!!ao.conv.busy"><span v-if="ao.conv.busy==='valider'" class="spin"></span><i v-else data-lucide="check"></i>Donner mon accord</button></div>
+                        <p class="conv-nature">{{ d.nature_accord }}</p>
+                      </template>
+                      <div v-else class="muted small">{{ d.ma_signature && d.ma_signature.status ? (d.signatures||[]).filter(s=>s.membre==='mandataire').map(s=>s.status_label).join('') : 'Votre accord n\'est pas attendu sur cette version.' }}</div>
+                    </section>
+
+                    <div>
+                      <button type="button" class="btn sm ghost btn-wrap" @click="ao.conv.editOpen=!ao.conv.editOpen" :aria-expanded="ao.conv.editOpen?'true':'false'" aria-controls="conv-wiz"><i :data-lucide="ao.conv.editOpen?'chevron-up':'pencil'"></i>{{ ao.conv.editOpen ? 'Fermer les choix de la convention' : 'Modifier les choix de la convention' }}</button>
+                    </div>
+                    <div v-if="ao.conv.editOpen && d.status!=='perimee'" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>Modifier la convention annule les accords déjà enregistrés : il faudra la générer à nouveau.</span></div>
+                  </template>
+
+                  <!-- ── Assistant : brouillon (ou modification d'une convention générée) ── -->
+                  <div v-if="!convGenerated() || ao.conv.editOpen" id="conv-wiz" class="conv-wiz">
+                    <!-- 1. Ce que le règlement impose : citation vérifiée, jamais reformulée -->
+                    <section class="conv-sec" aria-labelledby="conv-fi-h">
+                      <div class="conv-st"><span id="conv-fi-h">Ce que le règlement impose</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo cite le dossier du marché mot pour mot et ne l'interprète pas à votre place. Vérifiez toujours le règlement de la consultation.</span></button></div>
+                      <div class="small" :class="{muted: ['non_specifie','non_verifie'].includes(d.forme_imposee && d.forme_imposee.code)}">{{ d.forme_imposee && d.forme_imposee.libelle }}</div>
+                      <figure v-if="d.forme_imposee && d.forme_imposee.extrait" class="conv-cite"><blockquote>« {{ d.forme_imposee.extrait }} »</blockquote><figcaption>Extrait du dossier du marché</figcaption></figure>
+                      <figure v-for="(cl,ci) in convOtherClauses(d.forme_imposee)" :key="'cl'+ci" class="conv-cite"><blockquote>« {{ cl }} »</blockquote><figcaption>Extrait du dossier du marché</figcaption></figure>
+                      <div v-if="(d.forme_imposee && d.forme_imposee.relu_le) || (d.forme_imposee && d.forme_imposee.dossier_disponible)" class="row wrap conv-actions" style="align-items:center">
+                        <span v-if="d.forme_imposee.relu_le" class="muted small">Dossier relu le {{ convWhen(d.forme_imposee.relu_le) }}</span>
+                        <button v-if="d.forme_imposee.dossier_disponible" type="button" class="btn sm" @click="aoConvRelire()" :disabled="!!ao.conv.busy"><span v-if="ao.conv.busy==='relire'" class="spin"></span><i v-else data-lucide="book-open-check"></i>Relire le dossier du marché</button>
+                      </div>
+                    </section>
+
+                    <!-- 2. Forme du groupement : la phrase simple d'abord, le terme juridique en petit -->
+                    <section class="conv-sec" aria-labelledby="conv-forme-h">
+                      <div class="conv-st" id="conv-forme-h">Forme du groupement</div>
+                      <div class="conv-formes" role="radiogroup" aria-labelledby="conv-forme-h">
+                        <div v-for="o in ((d.options && d.options.formes) || [])" :key="o.value" class="conv-forme" :class="{sel:f.forme===o.value}">
+                          <label><input type="radio" name="conv-forme" :value="o.value" :checked="f.forme===o.value" @change="convPickForme(o.value)"><span><span class="cf-t">{{ o.phrase }}</span><span class="cf-s">{{ o.terme }}</span></span></label>
+                          <button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ o.explication }}</span></button>
+                        </div>
+                      </div>
+                      <div v-if="f.forme==='conjoint' && d.options && d.options.mandataire_solidaire" class="conv-check">
+                        <label><input type="checkbox" v-model="f.mandataire_solidaire"><span><span>{{ d.options.mandataire_solidaire.phrase }}</span><span class="cf-s">{{ d.options.mandataire_solidaire.terme }}</span></span></label>
+                        <button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.options.mandataire_solidaire.explication }}</span></button>
+                      </div>
+                    </section>
+
+                    <!-- 3. Votre part (chef de file) -->
+                    <section class="conv-sec" aria-labelledby="conv-part-h">
+                      <div class="conv-st" id="conv-part-h">Votre part (chef de file)</div>
+                      <div class="conv-grid">
+                        <div v-for="m in ((d.options && d.options.mandataire) || [])" :key="m.key" class="field">
+                          <label :for="'cvp-'+m.key">{{ m.libelle }}</label>
+                          <input v-if="m.type==='montant'" :id="'cvp-'+m.key" class="inp" type="number" min="0" step="0.01" inputmode="decimal" v-model.number="f.params[m.key]" placeholder="ex. 60000">
+                          <input v-else :id="'cvp-'+m.key" class="inp" type="text" v-model="f.params[m.key]" :maxlength="m.key==='mandataire_qualite' ? 120 : 255">
+                        </div>
+                      </div>
+                    </section>
+
+                    <!-- 4. Pouvoirs du chef de file (le premier est obligatoire, non décochable) -->
+                    <section class="conv-sec" aria-labelledby="conv-hab-h">
+                      <div class="conv-st"><span id="conv-hab-h">Pouvoirs du chef de file</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ce que les partenaires autorisent le chef de file à faire en leur nom. Le premier pouvoir est la mission même du chef de file : il est toujours inclus.</span></button></div>
+                      <div v-for="h in ((d.options && d.options.habilitation) || [])" :key="h.key" class="conv-check">
+                        <label><input type="checkbox" v-model="f.habilitation[h.key]" :disabled="h.obligatoire"><span><span>{{ h.libelle }}<span v-if="h.obligatoire" class="pill neutral" style="font-size:10px;margin-left:6px">toujours inclus</span></span><span class="cf-s">{{ h.terme }}</span></span></label>
+                      </div>
+                    </section>
+
+                    <!-- 5. Règles du groupement : valeurs proposées par Adjugo, modifiables (repliées par défaut) -->
+                    <details class="conv-rules" :open="ao.conv.rulesOpen" @toggle="ao.conv.rulesOpen=$event.target.open">
+                      <summary><span class="conv-st">Règles du groupement</span><span class="muted small">valeurs proposées par Adjugo, modifiables</span><i data-lucide="chevron-down" class="cr-chev"></i></summary>
+                      <div v-for="p in ((d.options && d.options.params) || [])" :key="p.key" class="conv-param" role="group" :aria-labelledby="'cvr-'+p.key">
+                        <div class="cp-l"><span :id="'cvr-'+p.key">{{ p.libelle }}</span><span v-if="convIsDefault(p)" class="pill neutral" style="font-size:10px">proposé par Adjugo</span><template v-if="p.aide"><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ p.aide }}</span></button></template></div>
+                        <div v-if="p.type==='choix'" class="cp-choix">
+                          <label v-for="c in (p.choix||[])" :key="p.key+c.value" class="cp-opt"><input type="radio" :name="'cvr-r-'+p.key" :value="c.value" v-model="f.params[p.key]"><span>{{ c.libelle }}</span></label>
+                        </div>
+                        <div v-else-if="p.type==='entier'" class="row wrap" style="gap:8px;align-items:center"><input class="inp" type="number" :min="p.min" :max="p.max" step="1" inputmode="numeric" v-model.number="f.params[p.key]" :aria-labelledby="'cvr-'+p.key" style="width:110px"><span class="muted small">{{ p.unite }} (de {{ p.min }} à {{ p.max }})</span></div>
+                        <label v-else-if="p.type==='oui_non'" class="cp-opt"><input type="checkbox" v-model="f.params[p.key]"><span>Oui</span></label>
+                      </div>
+                    </details>
+
+                    <!-- 6. Partenaires rattachés sans invitation (accord recueilli hors ligne) -->
+                    <section v-if="(d.candidats_hors_ligne||[]).length" class="conv-sec" aria-labelledby="conv-hl-h">
+                      <div class="conv-st"><span id="conv-hl-h">Partenaires sans invitation</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ces entreprises sont rattachées au marché mais n'ont pas été invitées sur Adjugo. Si vous les incluez, indiquez le prix de vente de leur part : vous recueillerez leur accord hors ligne (sur papier, par exemple), puis vous le cocherez ici.</span></button></div>
+                      <div v-for="c in d.candidats_hors_ligne" :key="'hl'+c.link_id" class="conv-hl">
+                        <template v-for="h in (f.hl[c.link_id] ? [f.hl[c.link_id]] : [])" :key="'hlf'+c.link_id">
+                          <div class="conv-check"><label><input type="checkbox" v-model="h.on"><span><b>{{ c.company }}</b><span class="cf-s">Inclure dans la convention<template v-if="c.siret"> · SIRET {{ c.siret }}</template></span></span></label></div>
+                          <div v-if="h.on" class="conv-grid">
+                            <div class="field"><label :for="'cvh-p'+c.link_id">Prix de vente de sa part (€ HT)</label><input :id="'cvh-p'+c.link_id" class="inp" type="number" min="0" step="0.01" inputmode="decimal" v-model.number="h.prix_lot_ht"></div>
+                            <div class="field"><label :for="'cvh-l'+c.link_id">Lot ou prestations</label><input :id="'cvh-l'+c.link_id" class="inp" v-model="h.lot" maxlength="255"></div>
+                            <div class="field"><label :for="'cvh-r'+c.link_id">Représentant légal</label><input :id="'cvh-r'+c.link_id" class="inp" v-model="h.representant_legal" maxlength="255"></div>
+                            <div class="field"><label :for="'cvh-q'+c.link_id">Qualité du signataire</label><input :id="'cvh-q'+c.link_id" class="inp" v-model="h.signataire_qualite" maxlength="120"></div>
+                          </div>
+                        </template>
+                      </div>
+                    </section>
+
+                    <template v-if="!convGenerated()">
+                      <section class="conv-sec" aria-labelledby="conv-rep-b">
+                    <div class="conv-st"><span id="conv-rep-b">Répartition</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Prix de vente de chaque part, tels que chaque partenaire les a soumis. Les partenaires ne voient les prix des autres et le total qu'une fois la convention générée.</span></button></div>
+                    <div class="cv-tw"><table class="cv-table">
+                      <thead><tr><th scope="col">Membre</th><th scope="col">Rôle</th><th scope="col">Part</th><th scope="col" class="num">Prix de vente HT</th></tr></thead>
+                      <tbody><tr v-for="(m,i) in (d.membres||[])" :key="'conv-rep-b'+i"><th scope="row">{{ m.company }}</th><td>{{ roleLabel(m.role) }}<span v-if="m.membre==='hors_ligne'" class="muted"> · hors ligne</span></td><td>{{ m.lot || '—' }}</td><td class="num">{{ m.prix_lot_ht!=null ? eur2(m.prix_lot_ht) : 'pas encore renseigné' }}</td></tr></tbody>
+                      <tfoot v-if="convTotal(d)!=null"><tr><th scope="row" colspan="3">{{ convGenerated() ? 'Total de l\'offre commune' : 'Total estimé de l\'offre' }}</th><td class="num"><b>{{ eur2(convTotal(d)) }}</b></td></tr></tfoot>
+                    </table></div>
+                  </section>
+                      <div v-for="(w,wi) in (d.avertissements||[])" :key="'cvw'+wi" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ w }}</span></div>
+                      <!-- Aperçu du brouillon (texte échappé) + PDF + « masquer la répartition » (brouillon seulement) -->
+                      <section class="conv-sec" aria-labelledby="conv-ap-h">
+                        <div class="conv-st" id="conv-ap-h">Aperçu</div>
+                        <div class="row wrap conv-actions">
+                          <button type="button" class="btn sm" @click="ao.conv.textOpen=!ao.conv.textOpen" :aria-expanded="ao.conv.textOpen?'true':'false'" aria-controls="conv-apercu"><i data-lucide="scroll-text"></i>{{ ao.conv.textOpen ? 'Masquer l\'aperçu' : 'Aperçu du brouillon' }}</button>
+                          <button type="button" class="btn sm" @click="aoConvPdf()" :disabled="!!ao.conv.busy"><span v-if="ao.conv.busy==='pdf'" class="spin"></span><i v-else data-lucide="file-down"></i>Télécharger le brouillon (PDF)</button>
+                        </div>
+                        <div class="conv-check"><label><input type="checkbox" :checked="f.masquer_repartition" @change="aoConvToggleMasquer($event)" :disabled="!!ao.conv.busy"><span>Masquer la répartition dans le brouillon</span></label><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">L'aperçu et le PDF du brouillon n'affichent alors aucun prix, pour faire relire le texte sans dévoiler les montants. La convention générée montre la même répartition à tous les membres.</span></button></div>
+                        <div v-if="ao.conv.textOpen" id="conv-apercu" class="conv-text" tabindex="0" role="document" aria-label="Aperçu du brouillon de convention" v-html="convHtml(d.apercu_md)"></div>
+                      </section>
+                    </template>
+
+                    <!-- Actions : enregistrer ; générer (= figer l'offre) avec confirmation -->
+                    <div class="conv-foot">
+                      <div v-if="convDirty()" class="conv-dirty small"><i data-lucide="pencil"></i>Modifications non enregistrées</div>
+                      <div class="row wrap conv-actions">
+                        <button type="button" class="btn" @click="aoConvSave()" :disabled="!!ao.conv.busy"><span v-if="ao.conv.busy==='save'" class="spin"></span><i v-else data-lucide="save"></i>{{ convGenerated() ? 'Enregistrer les modifications' : 'Enregistrer le brouillon' }}</button>
+                        <button v-if="!convGenerated()" type="button" class="btn primary btn-wrap" @click="aoConvAskGenerate()" :disabled="!!ao.conv.busy"><span v-if="ao.conv.busy==='generer'" class="spin"></span><i v-else data-lucide="lock"></i>Figer l'offre et générer la convention</button>
+                      </div>
+                      <div v-if="!convGenerated() && (d.manques||[]).length" class="conv-missing"><b class="small">Pour générer la convention, il manque :</b><ul><li v-for="(m,mi) in d.manques" :key="'mq'+mi">{{ m }}</li></ul></div>
+                    </div>
+                  </div>
+                </template>
+              </template>
+              <div class="sr-only" aria-live="polite">{{ ao.conv.live }}</div>
             </div>
           </div>
 
@@ -933,9 +1150,9 @@
                   <template v-else>
                     <div class="muted small" style="margin-top:4px">Les partenaires ne verront le total qu'une fois l'offre figée.</div>
                     <div v-if="ao.share.consortium.offre.total_ht_estime!=null" class="small" style="margin-top:6px">Total prévisionnel : <b>{{ eur(freezeTotal()) }} HT</b><span v-if="ao.share.consortium.offre.lead_total_ht!=null" class="muted"> (dont votre part {{ eur(ao.share.consortium.offre.lead_total_ht) }} HT, d'après votre estimation de prix)</span></div>
-                    <div v-if="ao.share.consortium.offre.lead_total_ht==null" class="row wrap small" style="gap:8px;margin-top:8px;align-items:center"><span>Votre part (€ HT)</span><input class="inp" type="number" min="0" v-model.number="ao.share.leadTotal" placeholder="ex. 950000" style="width:150px" aria-label="Votre part en euros HT"><span class="muted">— aucune estimation de prix enregistrée sur ce marché</span></div>
-                    <div v-if="!canFreeze()" class="muted small" style="margin-top:6px">Impossible de figer pour l'instant :<ul style="margin:3px 0 0;padding-left:18px"><li v-for="(m,i) in freezeMissing()" :key="'fm'+i">{{ m }}</li></ul></div>
-                    <button class="btn sm primary" style="margin-top:8px" @click="aoFreezeOffer()" :disabled="!canFreeze() || ao.share.freezing"><span v-if="ao.share.freezing" class="spin"></span><i v-else data-lucide="lock"></i>Figer l'offre commune</button>
+                    <div v-if="ao.share.consortium.offre.lead_total_ht==null && !convVisible()" class="row wrap small" style="gap:8px;margin-top:8px;align-items:center"><span>Votre part (€ HT)</span><input class="inp" type="number" min="0" v-model.number="ao.share.leadTotal" placeholder="ex. 950000" style="width:150px" aria-label="Votre part en euros HT"><span class="muted">— aucune estimation de prix enregistrée sur ce marché</span></div>
+                    <div v-if="!canFreeze() && !convVisible()" class="muted small" style="margin-top:6px">Impossible de figer pour l'instant :<ul style="margin:3px 0 0;padding-left:18px"><li v-for="(m,i) in freezeMissing()" :key="'fm'+i">{{ m }}</li></ul></div>
+                    <button class="btn sm primary btn-wrap" style="margin-top:8px" @click="aoFreezeOffer()" :disabled="ao.share.freezing || (!convVisible() && !canFreeze())"><span v-if="ao.share.freezing" class="spin"></span><i v-else data-lucide="lock"></i>{{ convVisible() ? 'Figer l\'offre et générer la convention' : 'Figer l\'offre commune' }}</button>
                   </template>
                 </div>
 
@@ -1786,13 +2003,18 @@
             <div class="row" style="gap:11px;align-items:flex-start"><i data-lucide="inbox" style="color:var(--accent-text);margin-top:2px"></i>
               <div style="flex:1"><b style="font-size:14px">Dossiers partagés avec vous</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">D'autres entreprises vous ont invité à répondre avec elles sur leurs marchés. Apportez votre part — depuis <b>votre propre espace</b>.</span></button></div></div>
             <div v-if="!shared.length" class="muted small" style="margin-top:12px">Aucun dossier partagé avec vous pour l'instant.</div>
-            <div v-for="s in shared" :key="s.token" @click="openShared(s)" class="row" style="margin-top:10px;padding:11px 13px;border:1px solid var(--border);border-radius:10px;gap:12px;align-items:center;cursor:pointer" @mouseover="$event.currentTarget.style.borderColor='var(--accent)'" @mouseleave="$event.currentTarget.style.borderColor='var(--border)'">
-              <div style="flex:1;min-width:0">
+            <div v-for="s in shared" :key="s.token" @click="openShared(s)" @keydown="openSharedKey($event,s)" role="button" tabindex="0" class="row shared-item" style="margin-top:10px;padding:11px 13px;border:1px solid var(--border);border-radius:10px;gap:8px 12px;align-items:center;cursor:pointer;flex-wrap:wrap" @mouseover="$event.currentTarget.style.borderColor='var(--accent)'" @mouseleave="$event.currentTarget.style.borderColor='var(--border)'">
+              <div style="flex:1 1 220px;min-width:0">
                 <div class="strong small">{{ s.project }}</div>
                 <div class="muted small">Chef de file : <b>{{ s.mandataire }}</b> · vous êtes {{ s.role==='sous_traitant'?'sous-traitant':'partenaire' }}<span v-if="s.deadline"> · limite {{ auditWhen(s.deadline) }}</span></div>
+                <div v-if="sharedGrpLine(s)" class="small" style="color:var(--text-2);margin-top:2px">{{ sharedGrpLine(s) }}</div>
               </div>
-              <span class="pill" :class="s.contribution_status==='submitted'?'go':s.contribution_status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ s.contribution_status==='submitted'?'Soumise':s.contribution_status==='draft'?'Brouillon':'À compléter' }}</span>
-              <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-2)"></i>
+              <div class="row wrap" style="gap:6px;align-items:center">
+                <!-- « À valider » : convention générée, MON accord attendu (statut seulement, jamais un montant) -->
+                <span v-if="s.groupement && s.groupement.a_valider" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="file-signature" style="width:11px;height:11px"></i>Convention à valider</span>
+                <span class="pill" :class="s.contribution_status==='submitted'?'go':s.contribution_status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ s.contribution_status==='submitted'?'Soumise':s.contribution_status==='draft'?'Brouillon':'À compléter' }}</span>
+                <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-2)"></i>
+              </div>
             </div>
           </div>
         </section>
@@ -1823,7 +2045,7 @@
 
           <!-- Pourquoi vous dans ce groupement : le % COMMUN, votre apport, les seuils — jamais le score seul du mandataire ni le prix des autres -->
           <div v-if="sharedAo.forMember" class="card pad" style="margin-bottom:14px;border:1.5px solid var(--accent)">
-            <div v-if="sfmState().steps" class="gstep" role="list" aria-label="Étapes du groupement"><div v-for="(s,i) in sfmState().steps" :key="s.key" class="gs" :class="gstepClass(sfmState(),s,i)" role="listitem">{{ s.label }}</div></div>
+            <div v-if="grpSteps(sfmState()).length"><ol class="gstep" aria-label="Étapes du groupement"><li v-for="s in grpSteps(sfmState())" :key="s.key" class="gs" :class="{done:s.done,cur:s.cur}" :aria-current="s.cur?'step':null"><span class="sr-only">{{ s.n }}. </span>{{ s.label }}<span v-if="s.done" class="sr-only"> (fait)</span></li></ol><div v-if="grpEtapeNow(sfmState())" class="gstep-now">{{ grpEtapeNow(sfmState()) }}</div></div>
             <div class="row wrap" style="gap:14px;align-items:center;margin-top:8px">
               <div style="text-align:center;min-width:96px"><div class="sg-big" style="color:var(--accent-text)">{{ sfm().score_groupement!=null ? sfm().score_groupement+' %' : '—' }}</div><div class="sg-lab">score du groupement</div></div>
               <div style="flex:1;min-width:200px">
@@ -1838,6 +2060,82 @@
               <div class="row wrap" style="gap:6px"><span class="pill neutral" style="font-size:10px">{{ sharedAo.mandataire||'Mandataire' }} · chef de file</span><span v-for="(m,i) in sfmState().members" :key="'fm'+i" class="pill" :class="m.status==='submitted'?'go':'neutral'" style="font-size:10px">{{ m.company }} · {{ m.role==='sous_traitant'?'sous-traitant':'partenaire' }} · {{ memberStatusLabel(m.status) }}</span></div>
             </div>
             <div v-if="sfmState().offer_frozen" class="offre-box" style="flex-wrap:wrap"><i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i><div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b> le {{ fmtDate(sfmState().frozen_at) }}</div><div v-if="sfm().warning_two_members" class="muted small">À deux, le total révèle mécaniquement la part de l'autre.</div></div><div class="offre-total">{{ eur(sfmState().total_offre_ht) }} HT</div></div>
+          </div>
+
+          <!-- Convention de groupement (vague 2), vue du partenaire depuis son compte : même texte et même empreinte
+               pour tous ; en brouillon, seulement SON prix (jamais ceux des autres ni le total). Texte échappé (convHtml). -->
+          <div v-if="sharedAo.conv.d || sharedAo.conv.loading || sharedAo.conv.error" class="card pad conv-card" style="margin-bottom:14px" role="region" aria-labelledby="sconv-h">
+            <div class="row wrap" style="gap:6px 8px;align-items:center"><i data-lucide="file-signature" style="color:var(--accent-text)"></i><b id="sconv-h" style="font-size:14px">Convention de groupement</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le chef de file prépare la convention ; une fois générée, chaque membre la relit et donne son accord depuis son espace. Le texte, donc l'empreinte, est le même pour tous.</span></button><div class="spacer"></div>
+              <span v-if="sharedAo.conv.d && sharedAo.conv.d.ma_signature && sharedAo.conv.d.ma_signature.peut_valider" class="pill a_etudier" style="font-size:11px">À valider</span>
+              <span v-else-if="sharedAo.conv.d" class="pill" :class="convStatusPill(sharedAo.conv.d.status)" style="font-size:11px">{{ sharedAo.conv.d.status_label }}</span></div>
+            <div class="conv" style="margin-top:12px">
+              <div v-if="sharedAo.conv.loading && !sharedAo.conv.d" class="muted small" role="status"><span class="spin"></span> Chargement de la convention…</div>
+              <div v-else-if="sharedAo.conv.error && !sharedAo.conv.d" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ sharedAo.conv.error }} <button type="button" class="linkbtn" @click="sharedConvLoad()">Réessayer</button></div></div>
+              <template v-for="sd in (sharedAo.conv.d ? [sharedAo.conv.d] : [])" :key="'scv'">
+                <div class="conv-legal"><i data-lucide="scale"></i><span>{{ sd.avertissement }}</span></div>
+                <div v-if="sharedAo.conv.err" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ sharedAo.conv.err }}</div><button type="button" class="btn icon sm ghost" @click="sharedAo.conv.err=''" aria-label="Fermer le message"><i data-lucide="x"></i></button></div>
+                <div v-if="sd.status==='aucune'" class="muted small">{{ sd.message }}</div>
+                <template v-else>
+                  <div v-if="sd.status==='perimee'" class="conv-stale" role="status"><i data-lucide="triangle-alert"></i><div><b>La convention n'est plus à jour : le chef de file va la régénérer.</b></div></div>
+                  <div v-if="sd.status==='draft'" class="small"><b>Le chef de file prépare la convention.</b></div>
+                  <div v-if="sd.message" class="muted small">{{ sd.message }}</div>
+                  <div>
+                    <div class="conv-kv"><span class="k">Forme du groupement</span><span class="v"><template v-if="sd.forme_label"><b>{{ sd.forme_label.phrase }}</b> <span class="muted">({{ sd.forme_label.terme }})</span></template><span v-else class="muted">pas encore choisie</span></span></div>
+                    <div v-if="sd.forme==='conjoint' && sd.mandataire_solidaire" class="conv-kv"><span class="k">Chef de file</span><span class="v">répond aussi de la part de chaque partenaire <span class="muted">(mandataire solidaire)</span></span></div>
+                    <div v-if="sd.content_hash" class="conv-kv"><span class="k">Version</span><span class="v">{{ sd.version }}<template v-if="sd.frozen_at"> · figée le {{ convWhen(sd.frozen_at) }}</template> · empreinte <code class="cv-code">{{ convHash(sd) }}</code></span></div>
+                  </div>
+                  <section v-if="(sd.habilitation||[]).length" class="conv-sec" aria-labelledby="sconv-hab-h">
+                    <div class="conv-st" id="sconv-hab-h">Pouvoirs du chef de file</div>
+                    <ul class="conv-list"><li v-for="h in sd.habilitation" :key="'sh'+h.key">{{ h.libelle }}<span class="cf-s">{{ h.terme }}</span></li></ul>
+                  </section>
+                  <details v-if="(sd.params||[]).length" class="conv-rules">
+                    <summary><span class="conv-st">Règles du groupement</span><i data-lucide="chevron-down" class="cr-chev"></i></summary>
+                    <div v-for="p in sd.params" :key="'sp'+p.key" class="conv-kv"><span class="k">{{ p.libelle }}</span><span class="v">{{ p.valeur_libelle || '—' }}</span></div>
+                  </details>
+                  <section class="conv-sec" aria-labelledby="sconv-rep-h">
+                    <div class="conv-st"><span id="sconv-rep-h">Répartition</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Avant la génération, vous ne voyez que votre propre prix. Une fois la convention générée, tous les membres voient la même annexe : la part et le prix de vente de chacun, et le total de l'offre commune.</span></button></div>
+                    <div class="cv-tw"><table class="cv-table">
+                      <thead><tr><th scope="col">Membre</th><th scope="col">Rôle</th><th scope="col">Part</th><th scope="col" class="num">Prix de vente HT</th></tr></thead>
+                      <tbody><tr v-for="(m,i) in (sd.membres||[])" :key="'sm'+i"><th scope="row">{{ m.company }}</th><td>{{ roleLabel(m.role) }}</td><td>{{ m.lot || '—' }}</td><td class="num">{{ m.prix_lot_ht!=null ? eur2(m.prix_lot_ht) : (sd.content_md ? '—' : 'affiché à la génération') }}</td></tr></tbody>
+                      <tfoot v-if="sd.total_offre_ht!=null"><tr><th scope="row" colspan="3">Total de l'offre commune</th><td class="num"><b>{{ eur2(sd.total_offre_ht) }}</b></td></tr></tfoot>
+                    </table></div>
+                    <div v-if="sd.warning_two_members" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>À 2 membres, le total de l'offre révèle à chacun la part de l'autre.</span></div>
+                  </section>
+                  <div class="row wrap conv-actions">
+                    <button v-if="sd.content_md || sd.apercu_md" type="button" class="btn sm" @click="sharedAo.conv.textOpen=!sharedAo.conv.textOpen" :aria-expanded="sharedAo.conv.textOpen?'true':'false'" aria-controls="sconv-texte"><i data-lucide="scroll-text"></i>{{ sharedAo.conv.textOpen ? 'Masquer le texte' : (sd.content_md ? 'Lire la convention' : 'Aperçu du brouillon') }}</button>
+                    <button v-if="sd.content_md" type="button" class="btn sm" @click="sharedConvPdf()"><i data-lucide="file-down"></i>Télécharger le PDF</button>
+                  </div>
+                  <div v-if="sharedAo.conv.textOpen" id="sconv-texte" class="conv-text" tabindex="0" role="document" aria-label="Texte de la convention" v-html="convHtml(sd.content_md || sd.apercu_md)"></div>
+                  <section v-if="(sd.signatures||[]).length" class="conv-sec" aria-labelledby="sconv-acc-h">
+                    <div class="conv-st"><span id="sconv-acc-h">Accords des membres</span><span v-if="sd.status!=='perimee'" class="pill" :class="sd.n_signataires && sd.n_accords===sd.n_signataires?'go':'neutral'" style="font-size:11px">{{ sd.n_accords }}/{{ sd.n_signataires }}</span></div>
+                    <ul class="conv-sigs">
+                      <li v-for="(s,si) in sd.signatures" :key="'ssig'+si">
+                        <div class="cs-main"><div><b>{{ s.company }}</b> <span class="muted small">· {{ convMemberLabel(s.membre) }}</span></div>
+                          <div v-if="s.identity_label" class="cs-sub">{{ s.identity_label }}</div>
+                          <div v-if="s.signed_at" class="cs-sub">le {{ convWhen(s.signed_at) }}<template v-if="s.signataire_nom"> · {{ s.signataire_nom }}<template v-if="s.signataire_qualite">, {{ s.signataire_qualite }}</template></template></div></div>
+                        <span class="pill" :class="convSigPill(s.status)" style="font-size:11px">{{ s.status_label }}</span>
+                      </li>
+                    </ul>
+                  </section>
+                  <div v-if="sd.ma_signature && sd.ma_signature.status==='signed'" class="conv-ok"><i data-lucide="circle-check-big"></i><span>Votre accord est enregistré<template v-if="sd.ma_signature.signed_at"> le {{ convWhen(sd.ma_signature.signed_at) }}</template></span></div>
+                  <section v-else-if="sd.ma_signature && sd.ma_signature.peut_valider" class="conv-sec conv-mine" aria-labelledby="sconv-mine-h">
+                    <div class="conv-st" id="sconv-mine-h">Votre accord</div>
+                    <div v-if="sd.ma_signature.compte_requis" class="warn-box"><i data-lucide="user-check" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>Connectez-vous avec le compte qui a reçu ce dossier pour valider la convention.</span></div>
+                    <template v-else>
+                      <div class="conv-grid">
+                        <div class="field"><label for="scv-nom">Nom de la personne qui donne l'accord</label><input id="scv-nom" class="inp" v-model="sharedAo.conv.accord.nom" maxlength="255" autocomplete="name"></div>
+                        <div class="field"><label for="scv-qual">Qualité (gérant, président…)</label><input id="scv-qual" class="inp" v-model="sharedAo.conv.accord.qualite" maxlength="120"></div>
+                      </div>
+                      <div class="conv-check"><label><input type="checkbox" v-model="sharedAo.conv.accord.accepte"><span>J'ai lu la convention et je donne mon accord</span></label></div>
+                      <div class="row wrap conv-actions" style="align-items:center"><button type="button" class="btn primary" @click="sharedConvValider()" :disabled="sharedAo.conv.busy"><span v-if="sharedAo.conv.busy" class="spin"></span><i v-else data-lucide="check"></i>Valider la convention</button><template v-if="sd.ma_signature.verification_requise"><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Un code à 6 chiffres vous sera d'abord envoyé par email pour confirmer votre identité.</span></button></template></div>
+                      <p v-if="sd.ma_signature.identite_libelle" class="conv-nature">Imprimé dans le PDF : {{ sd.ma_signature.identite_libelle }}.</p>
+                      <p class="conv-nature">{{ sd.nature_accord }}</p>
+                    </template>
+                  </section>
+                </template>
+              </template>
+              <div class="sr-only" aria-live="polite">{{ sharedAo.conv.live }}</div>
+            </div>
           </div>
 
           <div v-if="sharedAo.docs.length" class="card pad" style="margin-bottom:14px">
@@ -1961,6 +2259,18 @@
       <input class="inp" v-model="welcome.siret" placeholder="SIRET (14 chiffres)" inputmode="numeric" style="width:100%;text-align:center;font-size:16px;letter-spacing:1px" @keyup.enter="welcomeStart()" aria-label="Votre SIRET">
       <button class="btn primary block" style="margin-top:12px" @click="welcomeStart()" :disabled="welcome.busy"><span v-if="welcome.busy" class="spin"></span><i v-else data-lucide="sparkles"></i>Démarrer avec mon SIRET</button>
       <button class="btn ghost sm" style="margin-top:8px" @click="welcomeSkip()">Je remplirai plus tard</button>
+    </div>
+  </div>
+
+  <!-- ══════════ CONFIRMATION (convention de groupement) : dit ce que l'action fait AVANT de la faire ══════════ -->
+  <div v-if="cdlg" class="overlay cdlg" @click.self="cdlgClose()" @keydown.esc="cdlgClose()">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cdlg-t" aria-describedby="cdlg-d">
+      <div class="modal-h"><h3 id="cdlg-t">{{ cdlg.title }}</h3><button type="button" class="x" @click="cdlgClose()" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+      <div class="modal-b">
+        <ul id="cdlg-d" class="cdlg-lines"><li v-for="(l,i) in cdlg.lines" :key="'cdl'+i" :class="{warn:l.warn}">{{ l.t }}</li></ul>
+        <div v-for="fl in cdlg.fields" :key="'cdf'+fl.key" class="field" style="margin-top:12px;margin-bottom:0"><label :for="'cdlg-'+fl.key">{{ fl.label }}</label><input :id="'cdlg-'+fl.key" class="inp" v-model="fl.value" :maxlength="fl.max || 255" @keydown.enter.prevent="cdlgRun()"></div>
+      </div>
+      <div class="modal-f"><button type="button" class="btn" ref="cdlgCancel" @click="cdlgClose()">Annuler</button><button type="button" class="btn primary btn-wrap" @click="cdlgRun()">{{ cdlg.ok }}</button></div>
     </div>
   </div>
 
