@@ -792,6 +792,12 @@ def guest_convention_pdf(token: str, request: Request, db: Session = Depends(get
     if conv is None or not conv.content_md or not (conv.status in gc.ACTIVE or (conv.status == "perimee" and mine)):
         raise HTTPException(409, {"code": "pas_generee",
                                   "message": "Le PDF de la convention est disponible une fois la convention générée."})
+    if mine is None:
+        # Non signataire (sous-traitant, lien ajouté après la génération) : ni texte, ni annexe des
+        # prix, ni total — même règle que la vue JSON (_guest_payload).
+        raise HTTPException(403, {"code": "pas_signataire",
+                                  "message": "Vous n'êtes pas signataire de cette convention : elle ne vous est pas "
+                                             "communiquée."})
     audit.record(db, action="guest.download_convention", owner_id=inv.owner_id, project_id=inv.project_id,
                  actor=_inv()._guest_actor(inv), actor_kind="guest", target_type="convention",
                  target_id=conv.id, invite_id=inv.id, detail=f"version {conv.version}",

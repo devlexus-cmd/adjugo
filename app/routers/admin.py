@@ -61,7 +61,9 @@ def _check_cron(request: Request):
     if not secret:
         raise HTTPException(403, "CRON_SECRET non configuré")
     provided = request.headers.get("x-cron-secret", "")
-    if not _secrets.compare_digest(provided, secret):   # comparaison à temps constant
+    # Comparaison à temps constant sur des OCTETS : compare_digest refuse deux str non ASCII
+    # (TypeError → erreur 500 au lieu d'un refus propre).
+    if not _secrets.compare_digest(provided.encode("utf-8", "surrogateescape"), secret.encode("utf-8")):
         raise HTTPException(403, "Secret cron invalide")
 
 

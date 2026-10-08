@@ -373,13 +373,24 @@ def _for_member(inv: ProjectInvite, project: Project, db: Session) -> dict:
         my_apport.append({"key": key, "label": label})
 
     n_members = int(st.get("n_members") or 0)
+    # Total de l'offre : membres du groupement seulement. Jamais un sous-traitant ; et, une fois la
+    # convention générée, seulement un signataire (un lien ajouté après la génération ne l'a pas).
+    sees_total = bool(st.get("offer_frozen")) and (inv.role or "") != "sous_traitant"
+    if sees_total:
+        try:
+            from app.services import groupement_convention as _gc
+            _conv = _gc.get_convention(db, project.id)
+            if _conv is not None and _conv.status in ("a_signer", "signee", "perimee"):
+                sees_total = any(s.invite_id == inv.id for s in _gc.signatures_of(db, _conv))
+        except Exception:
+            sees_total = False
     return {
         "state": {
             "state": st.get("state"), "label": st.get("label"), "index": st.get("index"),
             "steps": st.get("steps"), "n_members": n_members, "n_submitted": st.get("n_submitted"),
             "offer_frozen": bool(st.get("offer_frozen")),
-            "total_offre_ht": st.get("total_offre_ht") if st.get("offer_frozen") else None,
-            "frozen_at": st.get("frozen_at") if st.get("offer_frozen") else None,
+            "total_offre_ht": st.get("total_offre_ht") if sees_total else None,
+            "frozen_at": st.get("frozen_at") if sees_total else None,
             # Liste des membres RÉDUITE : jamais has_price / prix d'un autre.
             "members": [{"company": m.get("company"), "role": m.get("role"), "status": m.get("status")}
                         for m in (st.get("members") or [])],
