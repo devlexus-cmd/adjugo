@@ -50,6 +50,36 @@ d'API pour le front : `docs/COTRAITANCE_V2_VAGUE2_API.md`.
 « Partagé avec moi ») à partir du contrat ; relecture du modèle de convention par un conseil ;
 validation par le fondateur des valeurs par défaut et des libellés juridiques ; déploiement.
 
+## Statut vague 4 (08/10/2026) — partie serveur
+
+**Backend livré sur une branche de worktree (non déployé), 439 tests verts (3.12, versions de
+production) ; tests de la vague rejoués sur Postgres 16.** Contrat d'API pour le front :
+`docs/COTRAITANCE_V2_VAGUE4_API.md`. Hors périmètre (vague 3 en parallèle) : fiche partenaire de
+l'annuaire, historique réseau.
+
+- Journal vérifiable par chaque membre (`app/services/journal_membre.py`, `app/routers/journal_membre.py`) :
+  `GET /api/invite/{token}/journal/integrity` et `/api/shared/{project_id}/journal/integrity`
+  recalculent la sous-chaîne (empreinte + lien au maillon précédent) et citent la date du dernier
+  ancrage horodaté ; exports JSON / PDF ; vérification hors ligne par sceaux (sha256 à sens unique
+  de l'empreinte, pour ne jamais exposer de quoi retrouver une IP) et maillons propres au membre.
+  Libellé : « Journal vérifiable : toute modification ou suppression d'entrée est détectable ».
+- SRI : `integrity="sha384-…"` sur les `<script src="/static/…">`, manifeste publié
+  (`/static/sri-manifest.json`, `GET /api/securite/empreintes-scripts`), test + `scripts/sri_update.py`,
+  correction à la volée en production. CSP inchangée (piste de durcissement documentée).
+- DPGF de lot : pièce `dpgf_lot` (CSV contrôlé : formules et colonnes de coûts/marges refusées),
+  visible du chef de file seulement, part et convention intactes.
+- Étape 5 : `depot_readiness` (4 contrôles fiables, dont les parts), `GET /groupement/depot`,
+  `POST/DELETE /groupement/deposer` (journal, avertir puis confirmer) ; relances sans doublon
+  (un palier = une alerte, un seul email part + attestations, récapitulatif unique au chef de
+  file, rien après dépôt) ; tableau de bord `GET /api/groupement/tableau-de-bord`.
+- Migration `q1r2s3t4u5v6` (à rechaîner après la vague 3) : suppression de `chiffrage_note`.
+- Correctif transverse : `audit_logs.created_at` écrit en UTC naïf (sur une base Postgres réglée
+  hors UTC, toute la chaîne semblait altérée à la relecture).
+
+**Reste (vague 4) :** écrans (bouton « Vérifier mon journal », DPGF générée dans le navigateur,
+« Marquer déposé », carte du tableau de bord), texte de la page sécurité, point cyber (revue
+externe du schéma de chiffrement et du journal, différée par le fondateur), déploiement.
+
 ## Vision en une phrase
 
 Adjugo devient le seul outil où une PME voit en un coup d'œil « seul 54 % → avec Le Gall Électricité 81 % », monte le groupement en cinq minutes (convention générée, signée par chacun depuis son espace) et répond à plusieurs sans que personne — ni le mandataire, ni le serveur Adjugo, ni l'IA — ne voie jamais autre chose que le prix de vente de chaque lot et le total de l'offre commune.

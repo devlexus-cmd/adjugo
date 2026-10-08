@@ -229,10 +229,12 @@ _ALLOWED_EXT = {e.strip().lower() for e in _settings.ALLOWED_UPLOAD_EXT.split(",
 _MAX_BYTES = _settings.MAX_UPLOAD_MB * 1024 * 1024
 
 
-def _read_upload(file: UploadFile) -> tuple:
-    """Valide extension + taille d'un fichier téléversé par un invité ; (contenu, ext)."""
+def _read_upload(file: UploadFile, allowed: Optional[set] = None) -> tuple:
+    """Valide extension + taille d'un fichier téléversé par un invité ; (contenu, ext).
+    `allowed` remplace la liste blanche générale (DPGF de lot : PDF, tableurs, CSV)."""
     ext = os.path.splitext(file.filename or "")[1].lower()
-    if _ALLOWED_EXT and ext not in _ALLOWED_EXT:
+    exts = _ALLOWED_EXT if allowed is None else allowed
+    if exts and ext not in exts:
         raise HTTPException(400, f"Type de fichier non autorisé ({ext or 'inconnu'}).")
     # Lecture BORNÉE : on ne charge jamais plus de la limite +1 octet en mémoire (l'upload
     # vient d'un invité non authentifié → un fichier géant ne doit pas gonfler le process).
@@ -956,6 +958,7 @@ def _serialize_contribution(c: ProjectContribution, db: Session = None, viewer: 
         "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
         "pieces": pieces,
+        "has_dpgf_lot": any(p.get("piece_type") == "dpgf_lot" for p in pieces),
         # Checklist des pièces administratives : le partenaire voit en direct ce qu'il a
         # fourni et ce qu'il lui reste à déposer (même logique que la vue mandataire).
         "pieces_checklist": _classify_partner_pieces([p["name"] for p in pieces],
@@ -1486,7 +1489,57 @@ def _guest_piece(token: str, piece_id: int, db: Session):
     return inv, c, pc
 
 
-_PIECE_TYPE_VALUES = ("kbis", "fiscale", "sociale", "assurance", "rib", "qualification", "autre")
+_PIECE_TYPE_VALUES = ("kbis", "fiscale", "sociale", "assurance", "rib", "qualification", "dpgf_lot", "autre")
+
+# ── DPGF de lot (vague 4) ─────────────────────────────────────────────────────────────
+# Produite DANS LE NAVIGATEUR du membre à partir de son détail chiffré déchiffré localement :
+# prix unitaires au niveau du PRIX DE VENTE, sans coûts ni marges. Le serveur ne reçoit que le
+# fichier final (jamais detail_chiffre en clair) ; rien ne part vers le LLM. Visible du chef
+# de file comme toute pièce (téléchargement audité), jamais des autres membres ; absente du
+# coffre croisé (ce n'est pas une attestation). Déposer/retirer une DPGF ne repasse pas la
+# part en brouillon et ne rend pas la convention caduque : le prix de vente du lot, seul
+# imprimé dans la convention, ne change pas.
+_DPGF_EXT = {".pdf", ".xlsx", ".xls", ".ods", ".csv"}
+_DPGF_EXT_MSG = "Une DPGF de lot se dépose en PDF, en tableur (xlsx, xls, ods) ou en CSV."
+_DPGF_MAX_ROWS = 20000
+# Garde-fou de la doctrine (CSV seulement, seul format lisible sans dépendance) : une colonne
+# de coûts ou de marges serait visible du chef de file → refus explicite.
+_DPGF_FORBIDDEN = re.compile(
+    r"\b(marges?|co[uû]ts?|d[ée]bours[ée]s?|prix\s+d['’]achat|frais\s+g[ée]n[ée]raux|coefficients?)\b",
+    re.IGNORECASE)
+_NUM_CELL = re.compile(r"^-?\d[\d \u00a0\u202f]*([.,]\d+)?\s*(€|%)?$")
+
+
+def _check_dpgf_csv(content: bytes) -> None:
+    """CSV de DPGF : UTF-8, aucune formule (injection à l'ouverture dans un tableur), aucune
+    colonne de coûts ou de marges dans les lignes d'en-tête. 422 explicite sinon."""
+    import csv
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(422, "La DPGF (CSV) doit être encodée en UTF-8.")
+    sample = text[:4096]
+    delim = ";" if sample.count(";") >= sample.count(",") else ","
+    try:
+        reader = csv.reader(io.StringIO(text), delimiter=delim)
+        header_rows = 0
+        for i, row in enumerate(reader):
+            if i >= _DPGF_MAX_ROWS:
+                raise HTTPException(422, f"DPGF trop longue (plus de {_DPGF_MAX_ROWS} lignes).")
+            cells = [c.strip() for c in row]
+            for v in cells:
+                if v and (v[0] in "=+@\t\r" or (v[0] == "-" and not _NUM_CELL.match(v))):
+                    raise HTTPException(422, "La DPGF contient une formule (cellule commençant par "
+                                             "« = », « + », « - » ou « @ ») : déposez des valeurs, pas des formules.")
+            # Lignes d'en-tête = premières lignes sans aucune cellule numérique.
+            if header_rows < 5 and cells and not any(_NUM_CELL.match(v) for v in cells if v):
+                header_rows += 1
+                bad = next((v for v in cells if _DPGF_FORBIDDEN.search(v)), None)
+                if bad:
+                    raise HTTPException(422, f"Une DPGF de lot ne contient que des prix de vente : retirez la "
+                                             f"colonne « {bad[:60]} » (elle serait visible du chef de file).")
+    except csv.Error:
+        raise HTTPException(422, "DPGF (CSV) illisible.")
 
 
 def _parse_expiration(s) -> Optional[date]:
@@ -1502,7 +1555,8 @@ def _parse_expiration(s) -> Optional[date]:
 def _check_piece_type(t) -> str:
     t = (t or "").strip().lower()
     if t and t not in _PIECE_TYPE_VALUES:
-        raise HTTPException(422, "Type de pièce inconnu (kbis, fiscale, sociale, assurance, rib, qualification, autre).")
+        raise HTTPException(422, "Type de pièce inconnu (kbis, fiscale, sociale, assurance, rib, qualification, "
+                                 "dpgf_lot, autre).")
     return t
 
 
@@ -1536,7 +1590,19 @@ def guest_upload_piece(token: str, request: Request, file: UploadFile = File(...
         raise HTTPException(400, f"Maximum {_MAX_PIECES_PER_CONTRIB} pièces par partenaire.")
     ptype = _check_piece_type(piece_type)
     exp = _parse_expiration(expiration_date)
-    content, ext = _read_upload(file)
+    # DPGF de lot (vague 4) : type explicite, ou reconnu par le nom (« DPGF_lot2.csv »).
+    ext0 = os.path.splitext(file.filename or "")[1].lower()
+    final_type = ptype or _classify_piece_type(file.filename or "")
+    if final_type == "dpgf_lot" and ext0 not in _DPGF_EXT:
+        if ptype == "dpgf_lot":
+            raise HTTPException(422, _DPGF_EXT_MSG)
+        final_type = "autre"
+    is_dpgf = final_type == "dpgf_lot"
+    content, ext = _read_upload(file, allowed=(_DPGF_EXT if is_dpgf else None))
+    if is_dpgf:
+        exp = None                                  # une DPGF n'expire pas
+        if ext == ".csv":
+            _check_dpgf_csv(content)
     safe_mime = _safe_mime(file.filename)        # type dérivé de l'extension, pas du client
     file_key = f"{inv.owner_id}/cotraitant/{uuid.uuid4().hex}{ext}"
     get_storage().save(file_key, content, safe_mime)
@@ -1544,11 +1610,14 @@ def guest_upload_piece(token: str, request: Request, file: UploadFile = File(...
     pc = ContributionPiece(
         contribution_id=c.id, project_id=inv.project_id, owner_id=inv.owner_id,
         name=name, file_key=file_key, file_size=len(content), mime_type=safe_mime[:100],
-        piece_type=(ptype or _classify_piece_type(name)), expiration_date=exp)
+        piece_type=final_type, expiration_date=exp)
     db.add(pc)
-    # Cohérence avec le PUT : ajouter une pièce après soumission repasse la part en
-    # brouillon, sinon le pli « soumis » que le mandataire croit figé change en douce.
-    _after_piece_change(inv, c, db, request)
+    if is_dpgf:
+        db.commit()       # le prix de vente du lot ne change pas : part et convention intactes
+    else:
+        # Cohérence avec le PUT : ajouter une pièce après soumission repasse la part en
+        # brouillon, sinon le pli « soumis » que le mandataire croit figé change en douce.
+        _after_piece_change(inv, c, db, request)
     db.refresh(pc)
     audit.record(db, action="guest.upload_piece", owner_id=inv.owner_id, project_id=inv.project_id,
                  actor=_guest_actor(inv), actor_kind="guest", invite_id=inv.id,
@@ -1571,9 +1640,14 @@ def guest_patch_piece(token: str, piece_id: int, body: PiecePatch, request: Requ
     _refuse_if_demo_invite(inv, db)
     fields = body.model_fields_set
     if "piece_type" in fields:
-        pc.piece_type = _check_piece_type(body.piece_type) or "autre"
+        new_type = _check_piece_type(body.piece_type) or "autre"
+        if new_type == "dpgf_lot" and os.path.splitext(pc.file_key or pc.name or "")[1].lower() not in _DPGF_EXT:
+            raise HTTPException(422, _DPGF_EXT_MSG)
+        pc.piece_type = new_type
     if "expiration_date" in fields:
         pc.expiration_date = _parse_expiration(body.expiration_date)
+    if (pc.piece_type or "") == "dpgf_lot":
+        pc.expiration_date = None                 # une DPGF n'expire pas
     db.commit()
     db.refresh(pc)
     # Journalisé : une date d'expiration corrigée change le statut du coffre croisé vu par
@@ -1629,13 +1703,19 @@ def guest_piece_from_vault(token: str, body: FromVault, request: Request,
     ptype = ptype or _classify_piece_type(doc.name or "")
     if cat == "fiscal" and ptype not in ("fiscale", "sociale"):
         ptype = "fiscale"
+    if ptype == "dpgf_lot" and ext not in _DPGF_EXT:
+        ptype = "autre"
     pc = ContributionPiece(
         contribution_id=c.id, project_id=inv.project_id, owner_id=inv.owner_id,
         name=os.path.basename(doc.name or "piece")[:500], file_key=file_key,
         file_size=len(content), mime_type=safe_mime[:100],
-        piece_type=ptype, expiration_date=doc.expiration_date, source_document_id=doc.id)
+        piece_type=ptype, expiration_date=(None if ptype == "dpgf_lot" else doc.expiration_date),
+        source_document_id=doc.id)
     db.add(pc)
-    _after_piece_change(inv, c, db, request)
+    if ptype == "dpgf_lot":
+        db.commit()       # DPGF : le prix de vente du lot ne change pas (part et convention intactes)
+    else:
+        _after_piece_change(inv, c, db, request)
     db.refresh(pc)
     audit.record(db, action="guest.upload_piece", owner_id=inv.owner_id, project_id=inv.project_id,
                  actor=_guest_actor(inv), actor_kind="guest", invite_id=inv.id,
@@ -1659,14 +1739,18 @@ def guest_delete_piece(token: str, piece_id: int, request: Request, db: Session 
     """Le co-traitant retire SA pièce."""
     inv, c, pc = _guest_piece(token, piece_id, db)
     _refuse_if_demo_invite(inv, db)
+    was_dpgf = (getattr(pc, "piece_type", "") or "") == "dpgf_lot"
     try:
         get_storage().delete(pc.file_key)
     except Exception:
         pass
     db.delete(pc)
-    # Comme le PUT : retirer une pièce après soumission repasse la part en brouillon
-    # (le pli déposé ne doit pas perdre une pièce en silence après « soumission »).
-    _after_piece_change(inv, c, db, request)
+    if was_dpgf:
+        db.commit()       # DPGF : le prix de vente du lot ne change pas
+    else:
+        # Comme le PUT : retirer une pièce après soumission repasse la part en brouillon
+        # (le pli déposé ne doit pas perdre une pièce en silence après « soumission »).
+        _after_piece_change(inv, c, db, request)
     return {"ok": True}
 
 
@@ -1777,7 +1861,10 @@ _PARTNER_PIECE_TYPES = [
 
 # Types reconnus par NOM (classification à l'upload) : les 5 attendus + la qualification
 # (exigée seulement si le DCE demande des qualifications — cf. coffre_croise).
-_PIECE_TYPE_KEYWORDS = _PARTNER_PIECE_TYPES + [
+_PIECE_TYPE_KEYWORDS = [
+    ("dpgf_lot", "DPGF du lot (prix de vente)",
+     ("dpgf", "decomposition du prix global", "décomposition du prix global")),
+] + _PARTNER_PIECE_TYPES + [
     ("qualification", "Qualification / certificat",
      ("qualibat", "qualif", "certificat", "rge", "opqibi", "qualifelec", "iso")),
 ]
@@ -2022,6 +2109,7 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
             "capacites": (c.capacites if c and isinstance(c.capacites, dict) else None),
             "qualifications_count": len(c.qualifications or []) if c else 0,
             "pieces_count": (piece_counts.get(c.id, 0) if c else 0),
+            "has_dpgf_lot": bool(c and "dpgf_lot" in piece_types.get(c.id, [])),
             "pieces_have": pclass["have"], "pieces_missing": pclass["missing"],
             "completeness": round(score * 100),
         })
@@ -2191,54 +2279,13 @@ def unfreeze_offer(project_id: int, request: Request,
 
 
 # ── Journal MEMBRE (D) : projection « qui a vu quoi » pour UNE invitation ────
-# Événements « de groupement » visibles par TOUS les membres (pas seulement le concerné).
-GROUP_EVENTS = {"offer.frozen", "offer.unfrozen", "groupement.retenue", "convention.generated",
-                "convention.signed", "invite.created", "invite.revoked", "invite.declined",
-                # Vague 2 (convention) : caducité et accord hors ligne, visibles de tous les membres.
-                "convention.perimee", "convention.hors_ligne"}
-
-# Libellés en français simple (zéro jargon) selon QUI a agi, vu depuis le membre.
-_JOURNAL_LABELS_ME = {
-    "guest.view_project": "Vous avez consulté le dossier",
-    "guest.download_doc": "Vous avez téléchargé une pièce du dossier",
-    "guest.submit_contribution": "Vous avez soumis votre part",
-    "guest.upload_piece": "Vous avez déposé une pièce",
-    "guest.update_piece": "Vous avez mis à jour une pièce (type ou date de validité)",
-    "guest.capacites_updated": "Vous avez mis à jour vos capacités",
-    "guest.otp_request": "Vous avez demandé un code de vérification",
-    "guest.otp_verified": "Vous avez vérifié votre adresse email",
-    "invite.claimed": "Vous avez rattaché ce dossier à votre compte",
-    "invite.declined": "Vous avez décliné l'invitation",
-    "offer.unfrozen": "Votre modification a défigé l'offre commune",
-    # Vague 2 : « accord enregistré », jamais « signature électronique ».
-    "convention.signed": "Vous avez validé la convention (accord enregistré)",
-    "convention.perimee": "Votre modification a rendu la convention caduque : elle doit être régénérée",
-    "guest.download_convention": "Vous avez téléchargé la convention",
-}
-_JOURNAL_LABELS_OWNER = {
-    "owner.view_contribution": "Le mandataire a consulté votre part",
-    "owner.download_piece": "Le mandataire a téléchargé votre pièce",
-    "owner.view_piece": "Le mandataire a consulté votre pièce",
-    "invite.created": "Le mandataire vous a invité",
-    "invite.resent": "Le mandataire vous a renvoyé l'invitation",
-    "invite.revoked": "Le mandataire vous a retiré du groupement",
-    "offer.frozen": "Le mandataire a figé l'offre commune",
-    "offer.unfrozen": "Le mandataire a défigé l'offre commune",
-    "groupement.retenue": "Le mandataire a retenu la composition du groupement",
-    "convention.generated": "Le mandataire a généré la convention de groupement",
-    "convention.signed": "Le mandataire a validé la convention (accord enregistré)",
-    "convention.perimee": "La convention n'est plus à jour : le mandataire doit la régénérer",
-    "convention.hors_ligne": "Le mandataire a enregistré l'accord hors ligne d'un partenaire",
-    "piece.expiring": "Adjugo vous a alerté : une attestation manque ou expire",
-}
-_JOURNAL_LABELS_PARTNER = {
-    "invite.created": "Un partenaire a été invité",
-    "invite.declined": "Un partenaire a décliné",
-    "invite.revoked": "Un partenaire a été retiré",
-    "convention.signed": "Un partenaire a validé la convention (accord enregistré)",
-    "offer.unfrozen": "L'offre commune a été défigée (part d'un partenaire modifiée)",
-    "convention.perimee": "La convention n'est plus à jour (part d'un partenaire modifiée)",
-}
+# Source unique (vague 4) : app/services/journal_membre.py — projection, événements de
+# groupement visibles de tous, libellés, sous-chaîne vérifiable et exports. Ré-exportés ici
+# pour les appelants existants.
+from app.services.journal_membre import (GROUP_EVENTS, INTEGRITY_LABEL,  # noqa: E402
+                                         LABELS_ME as _JOURNAL_LABELS_ME,
+                                         LABELS_OWNER as _JOURNAL_LABELS_OWNER,
+                                         LABELS_PARTNER as _JOURNAL_LABELS_PARTNER)
 
 
 _CHAIN_CACHE: dict = {}        # owner_id → (ts, intact) — process unique, TTL 5 min
@@ -2266,52 +2313,16 @@ def _chain_intact_cached(db: Session, owner_id: int) -> bool:
 def guest_journal(token: str, request: Request, db: Session = Depends(get_db)):
     """Journal « qui a vu quoi » DU MEMBRE : ses entrées (invite_id = la sienne) + les
     événements de groupement du projet. Projection SANS ip, SANS email, SANS target_id
-    d'un autre ; l'acteur devient « vous » / « mandataire » / « partenaire »."""
+    d'un autre ; l'acteur devient « vous » / « mandataire » / « partenaire ».
+    Vérification par le membre : GET …/journal/integrity (app/routers/journal_membre.py)."""
+    from app.services.journal_membre import journal_entries
     inv = _valid_invite(token, db)
-    rows = db.query(AuditLog).filter(
-        AuditLog.project_id == inv.project_id,
-        ((AuditLog.invite_id == inv.id) | (AuditLog.action.in_(list(GROUP_EVENTS))))
-    ).order_by(AuditLog.created_at.desc()).limit(200).all()
-    # Noms d'entreprise des autres invitations (pour les événements de groupement).
-    other_ids = {r.invite_id for r in rows if r.invite_id and r.invite_id != inv.id}
-    names = {}
-    if other_ids:
-        names = {i.id: (i.company_name or "") for i in db.query(ProjectInvite).filter(
-            ProjectInvite.id.in_(other_ids)).all()}
-    out = []
-    for r in rows:
-        mine = (r.invite_id == inv.id)
-        if mine and r.actor_kind == "guest":
-            who, label = "vous", _JOURNAL_LABELS_ME.get(r.action, r.action)
-            detail = r.detail or ""
-        elif mine:                                   # le mandataire (ou Adjugo) a agi sur MA part
-            who, label = "mandataire", _JOURNAL_LABELS_OWNER.get(r.action, r.action)
-            detail = r.detail or ""
-            if r.action in ("owner.download_piece", "owner.view_piece") and detail:
-                label = f"{label} « {detail} »"
-        elif r.action in GROUP_EVENTS and r.actor_kind in ("guest", "system") and r.invite_id:
-            who, label = "partenaire", _JOURNAL_LABELS_PARTNER.get(r.action, r.action)
-            detail = names.get(r.invite_id, "") or ""
-        elif r.action in GROUP_EVENTS:
-            who, label = "mandataire", _JOURNAL_LABELS_OWNER.get(r.action, r.action)
-            # invite.created / invite.revoked concernent un AUTRE membre → libellé partenaire.
-            if r.action in ("invite.created", "invite.revoked", "invite.declined"):
-                who, label = "partenaire", _JOURNAL_LABELS_PARTNER.get(r.action, r.action)
-            detail = names.get(r.invite_id, "") if r.invite_id else (
-                r.detail if r.action in ("offer.frozen", "convention.generated", "convention.hors_ligne") else "")
-        else:
-            continue
-        # Jamais un email en clair dans la projection (anciennes entrées : actor = email).
-        if _is_email(detail):
-            detail = ""
-        out.append({"at": r.created_at.isoformat() if r.created_at else None,
-                    "action": r.action, "label": label, "who": who, "detail": (detail or "")[:255]})
+    out = journal_entries(db, inv)
     try:
         chained = _chain_intact_cached(db, inv.owner_id)
     except Exception:
         chained = False
-    return {"entries": out, "chained": chained,
-            "integrity_label": "Journal infalsifiable tenu par Adjugo (chaîne de hachage)"}
+    return {"entries": out, "chained": chained, "integrity_label": INTEGRITY_LABEL}
 
 
 # ── Notifications (activité des partenaires, in-app) ─────────────────────────

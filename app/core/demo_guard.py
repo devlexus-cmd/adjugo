@@ -54,6 +54,9 @@ _BLOCKED = [
     ("POST",   "/api/projects/{pid}/groupement/convention/generer",    "monter un groupement"),
     ("POST",   "/api/projects/{pid}/groupement/convention/valider",    "monter un groupement"),
     ("POST",   "/api/projects/{pid}/groupement/convention/hors-ligne/{lid}", "monter un groupement"),
+    # Dépôt (vague 4) : change le statut du marché et écrit dans le journal de tous les membres.
+    ("POST",   "/api/projects/{pid}/groupement/deposer",      "marquer un dossier déposé"),
+    ("DELETE", "/api/projects/{pid}/groupement/deposer",      "marquer un dossier déposé"),
     ("POST",   "/api/org/invite",                             "inviter un collègue"),
     ("PUT",    "/api/auth/me",                                "modifier le profil du compte"),  # changement d'email
     ("POST",   "/api/auth/change-password",                   "choisir un mot de passe"),

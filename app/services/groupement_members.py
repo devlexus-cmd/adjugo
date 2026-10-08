@@ -150,7 +150,7 @@ def groupement_state(project: Project, db: Session) -> dict:
     # Une convention générée peut ne compter que des partenaires « hors ligne » (rattachés
     # sans invitation) : le groupement existe alors même sans invitation active.
     has_members = bool(n) or convention_status in ("a_signer", "signee")
-    if status_v in ("envoye", "gagne", "perdu") and has_members:
+    if status_v in CLOSED_STATUSES and has_members:
         state = "depose"
     elif has_members and convention_status == "signee":
         state = "pret_a_deposer"
@@ -172,7 +172,7 @@ def groupement_state(project: Project, db: Session) -> dict:
     pret = None
     if state in ("pret_a_deposer", "depose") and conv is not None:
         pret = _pret_a_deposer(project, db, conv, invites)
-        if state == "pret_a_deposer" and pret["pct"] < 100:
+        if state == "pret_a_deposer" and not pret["pret"]:
             label = "Convention validée — derniers contrôles avant dépôt"
     idx = STATES.index(state)
     return {
@@ -225,42 +225,150 @@ def _etapes(state: str) -> list:
     return out
 
 
-def _pret_a_deposer(project, db: Session, conv, invites: list) -> dict:
-    """État 7 « prêt à déposer » : convention validée par tous + attestations de tous les
-    membres valides à la date limite (coffre croisé) + formulaires officiels DC1/DC2/ATTRI1
-    générés APRÈS la convention. Avertir, pas bloquer : renvoie les manques, ne bloque rien."""
-    checks, manques = {}, []
-    checks["convention_signee"] = conv.status == "signee"
-    if not checks["convention_signee"]:
-        manques.append("Convention à faire valider par tous les membres")
+CLOSED_STATUSES = ("envoye", "gagne", "perdu")      # « déposé » (état 8) et au-delà
+
+# Contrôles de l'étape 5, dans l'ordre d'affichage (libellés pour le front et les emails).
+DEPOT_CHECKS = [
+    ("parts_soumises", "Parts de tous les partenaires soumises, avec leur prix de vente"),
+    ("attestations_ok", "Attestations de tous les membres valides à la date limite"),
+    ("convention_signee", "Convention validée par tous les membres"),
+    ("cerfa_generes", "Formulaires officiels (DC1, DC2, ATTRI1) préparés après la convention"),
+]
+
+
+def _naive(dt):
+    if dt is not None and getattr(dt, "tzinfo", None) is not None:
+        return dt.replace(tzinfo=None)
+    return dt
+
+
+def _fr_date(d) -> str:
     try:
-        from app.routers.invites import coffre_croise
-        cc = coffre_croise(db, project, invites, viewer_invite_id=None, for_owner=True)
-        checks["attestations_ok"] = bool(cc.get("all_complete")) or not invites
-        if not checks["attestations_ok"]:
-            manques += list(cc.get("alerts") or [])[:5]
+        return d.strftime("%d/%m/%Y")
     except Exception:
-        checks["attestations_ok"] = False
+        return str(d or "")
+
+
+def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = None) -> dict:
+    """« Prêt à déposer » (étape 5), FIABLE et calculable à tout moment (pas seulement quand la
+    convention est validée) : parts soumises + attestations valides à la date limite + convention
+    validée par tous + formulaires officiels DC1/DC2/ATTRI1 générés APRÈS la convention.
+
+    Avertir, pas bloquer : renvoie {checks, libelles, pret, n_ok, n_total, pct, manques,
+    avertissements} ; seul `pret` (les 4 contrôles) vaut « Prêt à déposer ». `pct` est conservé
+    pour l'écran actuel : préférer « n_ok / n_total contrôles » (un seul pourcentage affiché dans
+    le produit : le score de groupement)."""
+    from datetime import date, datetime
+    if invites is None:
+        invites = active_invites(db, project.id)
+    if conv is None:
+        try:
+            from app.models import GroupementConvention
+            conv = db.query(GroupementConvention).filter(GroupementConvention.project_id == project.id).first()
+        except Exception:
+            conv = None
+    checks, manques, avert = {}, [], []
+
+    # 1) Parts : chaque co-traitant ACTIF a soumis sa part avec un prix de vente. Un sous-traitant
+    #    n'est pas membre du groupement (DC4) : son retard est un avertissement, pas un manque.
+    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
+        ProjectContribution.project_id == project.id).all()}
+    parts_ok = True
+    for inv in invites:
+        c = contribs.get(inv.id)
+        name = (c.company_name if c and c.company_name else inv.company_name) or "Un partenaire"
+        missing = None
+        if not c or c.status != "submitted":
+            missing = f"Part de {name} pas encore soumise"
+        elif c.prix_lot_ht is None:
+            missing = f"Part de {name} : prix de vente du lot manquant"
+        if not missing:
+            continue
+        if (inv.role or "cotraitant") == "sous_traitant":
+            avert.append(f"{missing} (sous-traitant : hors convention, utile pour le DC4)")
+        else:
+            parts_ok = False
+            manques.append(missing)
+    checks["parts_soumises"] = parts_ok
+
+    # 2) Attestations de tous les membres, valides à la date limite (coffre-fort croisé).
+    deadline = project.deadline
+    if isinstance(deadline, datetime):
+        deadline = deadline.date()
+    if invites:
+        try:
+            from app.routers.invites import coffre_croise
+            cc = coffre_croise(db, project, invites, viewer_invite_id=None, for_owner=True)
+            checks["attestations_ok"] = bool(cc.get("all_complete"))
+            if not checks["attestations_ok"]:
+                manques += list(cc.get("alerts") or [])[:8]
+        except Exception:
+            checks["attestations_ok"] = False
+            manques.append("Attestations des partenaires : vérification impossible pour l'instant")
+    else:
+        checks["attestations_ok"] = True       # aucun partenaire invité : rien à suivre ici
+    hors_ligne = 0
+    if conv is not None:
+        try:
+            from app.models import GroupementSignature
+            hors_ligne = db.query(GroupementSignature).filter(
+                GroupementSignature.convention_id == conv.id,
+                GroupementSignature.cotraitant_link_id.isnot(None)).count()
+        except Exception:
+            hors_ligne = 0
+    if hors_ligne:
+        avert.append(f"{hors_ligne} partenaire(s) hors ligne : Adjugo ne suit pas leurs attestations, "
+                     "vérifiez-les vous-même avant le dépôt")
+    if deadline is None:
+        avert.append("Date limite du marché inconnue : la validité des attestations est vérifiée à "
+                     "aujourd'hui seulement")
+    elif deadline < date.today():
+        avert.append(f"La date limite du marché ({_fr_date(deadline)}) est dépassée")
+
+    # 3) Convention validée par tous les membres.
+    checks["convention_signee"] = bool(conv is not None and conv.status == "signee")
+    if not checks["convention_signee"]:
+        if conv is None or conv.status == "draft":
+            manques.append("Convention de groupement à générer puis à faire valider par tous les membres")
+        elif conv.status == "perimee":
+            manques.append("Convention plus à jour : à régénérer puis à faire valider")
+        else:
+            manques.append("Convention à faire valider par tous les membres")
+
+    # 4) Formulaires officiels générés APRÈS la (dernière) génération de la convention.
     try:
         from app.models import GeneratedDoc
-        since = conv.frozen_at
-        if since is not None and since.tzinfo is not None:
-            since = since.replace(tzinfo=None)
+        since = _naive(conv.frozen_at) if (conv is not None and conv.status in ("a_signer", "signee")) else None
         ok = True
         for dt in ("dc1", "dc2", "attri1"):
             g = db.query(GeneratedDoc).filter(GeneratedDoc.project_id == project.id,
                                               GeneratedDoc.doc_type == dt).first()
-            stamp = (g.updated_at or g.created_at) if g else None
-            if stamp is not None and stamp.tzinfo is not None:
-                stamp = stamp.replace(tzinfo=None)
-            if not g or g.status not in ("pret", "signe") or (since and stamp and stamp < since):
+            stamp = _naive((g.updated_at or g.created_at) if g else None)
+            fresh = bool(g) and g.status in ("pret", "signe") and since is not None \
+                and stamp is not None and stamp >= since
+            if not fresh:
                 ok = False
                 manques.append(f"Formulaire {dt.upper()} à (re)générer après la convention")
         checks["cerfa_generes"] = ok
     except Exception:
         checks["cerfa_generes"] = False
-    pct = round(100 * sum(1 for v in checks.values() if v) / len(checks))
-    return {"checks": checks, "pct": pct, "manques": manques}
+
+    ordered = {k: bool(checks.get(k)) for k, _label in DEPOT_CHECKS}
+    n_ok = sum(1 for v in ordered.values() if v)
+    return {
+        "checks": ordered,
+        "libelles": {k: label for k, label in DEPOT_CHECKS},
+        "pret": n_ok == len(ordered),
+        "n_ok": n_ok, "n_total": len(ordered),
+        "pct": round(100 * n_ok / len(ordered)),
+        "manques": manques,
+        "avertissements": avert,
+    }
+
+
+def _pret_a_deposer(project, db: Session, conv, invites: list) -> dict:
+    """Compatibilité (vague 2) : voir depot_readiness."""
+    return depot_readiness(project, db, conv=conv, invites=invites)
 
 
 def total_offre_ht(project: Project, db: Session, lead_total: Optional[float] = None) -> Optional[float]:

@@ -1,0 +1,33 @@
+{
+ "algorithme": "sha384",
+ "fichiers": {
+  "/static/app.js": {
+   "integrity": "sha384-zPbj63WTsgWuroikCHo2e1j+s/TfeHTQlw0d0/N/2pYJKZV38NrqAsiyloOqNhrP",
+   "octets": 195822,
+   "sha256": "faa6f075868b7fa3e990cf4ded732d553f42eb106074671f77d94137e3cac95d"
+  },
+  "/static/cotraitance-crypto.js": {
+   "integrity": "sha384-8Y4+Qh20Z+tC0hkBfnqPKu19reik7BWS16qjCwIMW16q422njF4SEpJpcLlEVTsF",
+   "octets": 13410,
+   "sha256": "5207e21ef1a7e6b32c74065f4b4bb8c686971362cb25222fa10cca89b07e55e1"
+  },
+  "/static/i18n.js": {
+   "integrity": "sha384-oDik9h0VMLSezjzvjE5icFK+aIpVHzN4CCrDdXTColU7Xknf8tmAL3inncvd+DSq",
+   "octets": 27074,
+   "sha256": "c021a8b200b5abda3abb370f13a0569ad038512a57391609b0af420537307354"
+  },
+  "/static/vendor/lucide-1.20.0.min.js": {
+   "integrity": "sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt",
+   "octets": 408599,
+   "sha256": "0c0f06912fe3ea9addb70a220b66994bf363ac232d87c2f66e6b58e67670fa15"
+  },
+  "/static/vendor/vue-3.5.38.prod.js": {
+   "integrity": "sha384-KYk+4lWOhWTo/BrM+zKkwLtFsD6cs2ClFbaGiX5ozDVHPqF4nOqxVGiHvcyWsw8B",
+   "octets": 164475,
+   "sha256": "0c78d42b3a28ea6fcfdb42307085e7a6346585aa6395d6731b33324a708c3b10"
+  }
+ },
+ "regeneration": "python scripts/sri_update.py",
+ "schema": "adjugo-sri-v1",
+ "verification": "openssl dgst -sha384 -binary <fichier> | openssl base64 -A  (à préfixer par « sha384- »)"
+}

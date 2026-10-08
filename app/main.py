@@ -320,6 +320,12 @@ from app.routers.jobs import router as jobs_router
 app.include_router(jobs_router)
 from app.routers.invites import router as invites_router
 app.include_router(invites_router)
+# Co-traitance v2, vague 4 : journal vérifiable par chaque membre (intégrité + exports),
+# dépôt (« Marquer déposé ») et tableau de bord des groupements.
+from app.routers.journal_membre import router as journal_membre_router
+app.include_router(journal_membre_router)
+from app.routers.groupement import dashboard_router as groupement_dashboard_router
+app.include_router(groupement_dashboard_router)
 # Produit ACHETEUR (collectivités) — Pilier 1 : rédacteur de DCE. Cloisonné du logiciel
 # PME (génération pure, aucune donnée tenant) ; page autonome /acheteur.
 from app.routers.dce import router as dce_router
@@ -422,8 +428,8 @@ def demande_acces_page():
 @app.get("/app", tags=["Logiciel"], include_in_schema=False)
 def software():
     from fastapi.responses import HTMLResponse
-    with open(os.path.join(_static_dir, "app.html"), encoding="utf-8") as f:
-        return HTMLResponse(f.read())
+    from app.core.sri import page_html      # empreintes SRI garanties à jour (vague 4)
+    return HTMLResponse(page_html("app.html"))
 
 
 @app.get("/invite/{token}", tags=["Co-traitance"], include_in_schema=False)
@@ -431,11 +437,14 @@ def invite_page(token: str):
     """Page d'accès co-traitant (vue bridée). Le jeton est lu côté client puis
     validé par l'API ; cette route ne sert que la coquille HTML."""
     from fastapi.responses import HTMLResponse
-    with open(os.path.join(_static_dir, "invite.html"), encoding="utf-8") as f:
-        return HTMLResponse(f.read())
+    from app.core.sri import page_html
+    return HTMLResponse(page_html("invite.html"))
 
 def _serve(name: str):
     from fastapi.responses import HTMLResponse
+    from app.core.sri import PAGES, page_html
+    if name in PAGES:
+        return HTMLResponse(page_html(name))
     with open(os.path.join(_static_dir, name), encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
@@ -486,6 +495,21 @@ def public_config():
     """Config publique (sans secret) pour le front : analytics activé par env, etc."""
     s = settings
     return {"analytics_src": s.ANALYTICS_SRC or "", "analytics_domain": s.ANALYTICS_DOMAIN or ""}
+
+
+@app.get("/api/securite/empreintes-scripts", tags=["Sante"])
+@limiter.limit("60/minute")
+def empreintes_scripts(request: Request):
+    """Empreintes (SRI sha384 + sha256) des scripts RÉELLEMENT servis, calculées à chaud, pour
+    la page sécurité : chacun peut comparer ce que son navigateur reçoit à ce qui est publié et
+    versionné (app/static/sri-manifest.json). Aucune donnée personnelle, aucun secret."""
+    from app.core import sri
+    m = sri.compute_manifest()
+    rep = sri.stale_report()
+    m["manifeste_publie"] = "/static/" + sri.MANIFEST_NAME
+    m["manifeste_publie_a_jour"] = bool(rep["manifeste_a_jour"])
+    m["pages_a_jour"] = not rep["pages"]
+    return m
 
 
 @app.get("/api/health/ready", tags=["Sante"])

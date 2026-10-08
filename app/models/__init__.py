@@ -656,11 +656,9 @@ class ProjectContribution(Base):
 
     references = Column(JSON, default=list)            # [{intitule, client, montant, annee}]
     qualifications = Column(JSON, default=list)        # ["Qualibat 1234", "RGE", "ISO 9001"]
-    # DÉPRÉCIÉ (doctrine de visibilité, oct. 2026) : l'« approche prix » en clair était visible
-    # du mandataire (sérialisation, PDF, dossier) = exactement ce que la doctrine interdit.
-    # Migration n8o9p0q1r2s3 : contenu déplacé en tête de note_au_mandataire préfixé
-    # « (ancienne approche prix) », colonne vidée ; supprimée en vague 4. NE PLUS LIRE/ÉCRIRE.
-    chiffrage_note = Column(Text, default="")
+    # (chiffrage_note — l'ancienne « approche prix » en clair, visible du mandataire — a été
+    # vidée en vague 1 (contenu déplacé dans note_au_mandataire) puis SUPPRIMÉE en vague 4 :
+    # migration q1r2s3t4u5v6.)
     # ── DOCTRINE DE VISIBILITÉ ──
     # prix_lot_ht = PRIX DE VENTE du lot : le SEUL montant que voit le mandataire (il en a
     # besoin pour consolider l'offre commune et remplir l'ATTRI1).

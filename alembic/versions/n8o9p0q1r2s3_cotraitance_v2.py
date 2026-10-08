@@ -98,7 +98,11 @@ def upgrade():
             # avalé laisserait la transaction « aborted » et masquerait la vraie cause
 
     # ── Migration de données : la fuite « approche prix » ────────────────────────────
-    if "project_contributions" in tables:
+    # Garde (vague 4) : la colonne n'existe plus dans le modèle ; sur une base NEUVE, les
+    # create_all des révisions précédentes ne la créent donc plus → rien à déplacer.
+    has_note = "project_contributions" in tables and "chiffrage_note" in {
+        c["name"] for c in sa.inspect(bind).get_columns("project_contributions")}
+    if has_note:
         rows = bind.execute(sa.text(
             "SELECT id, chiffrage_note, note_au_mandataire FROM project_contributions "
             "WHERE chiffrage_note IS NOT NULL AND chiffrage_note <> ''")).fetchall()

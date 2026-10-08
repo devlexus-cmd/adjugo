@@ -79,8 +79,17 @@ def record(db, *, action: str, owner_id: Optional[int] = None,
     chaîne des entrées existantes — c'est un index de projection, pas une preuve."""
     try:
         from app.models import AuditLog, utcnow
+        now = utcnow()
+        # UTC NAÏF (vague 4) : un datetime avec fuseau est converti par Postgres dans le fuseau
+        # de la SESSION avant d'être rangé dans une colonne sans fuseau — sur une base réglée
+        # en Europe/Paris, la valeur relue différait de 1-2 h de celle hachée et toute la chaîne
+        # semblait altérée. Naïf UTC : la valeur rangée est exactement celle qui est hachée,
+        # quel que soit le fuseau (identique à l'existant sur une base en UTC).
+        if now.tzinfo is not None:
+            from datetime import timezone as _tz
+            now = now.astimezone(_tz.utc).replace(tzinfo=None)
         entry = AuditLog(
-            created_at=utcnow(),   # figé explicitement : doit être identique au hash
+            created_at=now,        # figé explicitement : doit être identique au hash
             action=action[:60], owner_id=owner_id, project_id=project_id,
             actor=(actor or "")[:160], actor_kind=(actor_kind or "")[:20],
             target_type=(target_type or "")[:40], target_id=target_id,

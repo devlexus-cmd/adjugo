@@ -19,11 +19,11 @@
 <link rel="stylesheet" href="/static/styles.css">
 <!-- Vue + lucide AUTO-HÉBERGÉS (épinglés) : plus aucune dépendance à unpkg, qui pouvait
      bloquer indéfiniment le chargement de l'app lors de ses ralentissements fréquents. -->
-<script src="/static/vendor/vue-3.5.38.prod.js"></script>
-<script src="/static/vendor/lucide-1.20.0.min.js"></script>
+<script src="/static/vendor/vue-3.5.38.prod.js" integrity="sha384-KYk+4lWOhWTo/BrM+zKkwLtFsD6cs2ClFbaGiX5ozDVHPqF4nOqxVGiHvcyWsw8B"></script>
+<script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
-<script src="/static/cotraitance-crypto.js"></script>
-<script src="/static/i18n.js" defer></script>
+<script src="/static/cotraitance-crypto.js" integrity="sha384-8Y4+Qh20Z+tC0hkBfnqPKu19reik7BWS16qjCwIMW16q422njF4SEpJpcLlEVTsF"></script>
+<script src="/static/i18n.js" integrity="sha384-oDik9h0VMLSezjzvjE5icFK+aIpVHzN4CCrDdXTColU7Xknf8tmAL3inncvd+DSq" defer></script>
 </head>
 <body>
 <div id="app">
@@ -2239,7 +2239,7 @@
 
           <!-- Mon journal : qui a vu quoi sur MA part (projection sans email ni IP d'un autre membre) -->
           <details class="card pad" ref="sharedJournal" style="margin-top:14px" @toggle="sharedJournalToggle($event)">
-            <summary style="cursor:pointer;font-weight:700;font-size:13.5px;user-select:none">Mon journal — qui a vu quoi<button type="button" class="tip" @click.stop.prevent><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ (sharedAo.journal && sharedAo.journal.integrity_label) || 'Journal infalsifiable tenu par Adjugo' }}</span></button></summary>
+            <summary style="cursor:pointer;font-weight:700;font-size:13.5px;user-select:none">Mon journal — qui a vu quoi<button type="button" class="tip" @click.stop.prevent><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ (sharedAo.journal && sharedAo.journal.integrity_label) || 'Journal vérifiable : toute modification ou suppression d\'entrée est détectable' }}</span></button></summary>
             <div v-if="sharedAo.journal && sharedAo.journal.chained" style="margin-top:6px"><span class="pill go" style="font-size:10px;gap:3px"><i data-lucide="shield-check" style="width:11px;height:11px"></i>Intégrité vérifiée</span></div>
             <ul v-if="sharedAo.journal && sharedAo.journal.entries.length" class="jrn">
               <li v-for="(e,i) in sharedAo.journal.entries" :key="'jr'+i"><span class="jrn-at">{{ auditWhen(e.at) }}</span><span class="jrn-who" :class="e.who">{{ e.who==='vous'?'Vous':(e.who==='mandataire'?'Mandataire':'Partenaire') }}</span><span style="flex:1;min-width:0">{{ e.label }}<span v-if="e.detail" class="muted"> · {{ e.detail }}</span></span></li>
@@ -2398,6 +2398,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" defer></script>
+<script src="/static/app.js" integrity="sha384-zPbj63WTsgWuroikCHo2e1j+s/TfeHTQlw0d0/N/2pYJKZV38NrqAsiyloOqNhrP" defer></script>
 </body>
 </html>
