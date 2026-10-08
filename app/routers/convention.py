@@ -712,11 +712,19 @@ def _guest_payload(db: Session, inv, project: Project, conv, user: Optional[User
                     "valeur_libelle": _param_value_label(p, params.get(p["key"]))}
                    for p in gc.PARAMS],
     })
-    full = status in gc.ACTIVE or (status == "perimee" and mine is not None)
-    if full:
+    generated = status in gc.ACTIVE or status == "perimee"
+    full = generated and mine is not None
+    if generated and mine is None:
+        # Non signataire (sous-traitant, ou lien ajouté après la génération) : il n'est pas partie à
+        # la convention → ni texte, ni annexe des prix, ni total.
+        base.update({"content_md": None, "content_hash": None, "total_offre_ht": None,
+                      "membres": [], "apercu_md": None})
+    elif full:
         # Texte figé : identique pour tous (annexe de répartition incluse, un seul hash).
+        # Convention caduque : l'ancienne annexe reste dans le texte ; on ne renvoie JAMAIS les prix
+        # courants (ils peuvent avoir changé depuis : c'est justement la cause de la péremption).
         parts = ((project.groupement_plan or {}).get("offre") or {}).get("parts") or [] \
-            if isinstance(project.groupement_plan, dict) else []
+            if isinstance(project.groupement_plan, dict) and status in gc.ACTIVE else []
         base.update({
             "content_md": conv.content_md, "content_hash": conv.content_hash,
             "total_offre_ht": conv.total_offre_ht,

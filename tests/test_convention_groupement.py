@@ -954,3 +954,41 @@ def test_migration_a_neuf_et_rejouee(tmp_path):
     run("upgrade", "head")
     check()
     eng.dispose()
+
+
+# ── Relecture des écrans (vague 2) : doctrine renforcée côté serveur ─────────────────
+def test_figer_vague1_refuse_des_qu_une_convention_existe(client, auth, mails):
+    """En brouillon, « figer » (vague 1) révélait le total aux partenaires (journal, email)
+    avant toute convention : seule la génération fige l'offre."""
+    h = auth["headers"]
+    pid, invs = _groupement(client, auth, n=2)
+    r = client.post(f"/api/projects/{pid}/offre/figer", headers=h, json={})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "convention_a_generer"
+    j = [e["label"] for e in client.get(f"/api/invite/{invs[0]['token']}/journal").json()["entries"]]
+    assert not any("total" in (x or "").lower() for x in j)
+    # Caduque : toujours refusé (pas de re-figeage qui renverrait les nouveaux prix).
+    c = _gen(client, h, pid).json()
+    assert _put(client, invs[0]["token"], prix_lot_ht=41000).status_code == 200
+    r = client.post(f"/api/projects/{pid}/offre/figer", headers=h, json={})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "convention_a_generer"
+    g = client.get(f"/api/invite/{invs[1]['token']}/convention").json()
+    assert g["status"] == "perimee" and g["membres"] == []
+    assert "41000" not in json.dumps(g) and "41 000" not in json.dumps(g)
+    assert c["content_hash"] == g["content_hash"]          # l'ancien texte reste relisible
+
+
+def test_sous_traitant_ne_voit_ni_texte_ni_prix(client, auth, mails):
+    h = auth["headers"]
+    pid, invs = _groupement(client, auth, n=1)
+    st = client.post(f"/api/projects/{pid}/invites", headers=h,
+                     json={"company_name": "Échafaudages Sous-Traitant", "role": "sous_traitant"}).json()
+    c = _gen(client, h, pid).json()
+    assert c["status"] == "a_signer"
+    g = client.get(f"/api/invite/{st['token']}/convention").json()
+    assert g["content_md"] is None and g["total_offre_ht"] is None and g["membres"] == []
+    assert not g.get("apercu_md")
+    assert "40000" not in json.dumps(g) and "Le Gall" not in json.dumps(g)
+    # Un membre signataire voit bien le texte complet et le total.
+    m = client.get(f"/api/invite/{invs[0]['token']}/convention").json()
+    assert m["content_md"] and m["total_offre_ht"] == c["total_offre_ht"]
+

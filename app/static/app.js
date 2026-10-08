@@ -1708,7 +1708,7 @@ const __adjApp = createApp({
         await this.aoLoadConsortium();
       } catch (e) {
         // 409 « convention_generee » : l'offre est déjà figée par la convention → on y renvoie.
-        if (e.status === 409 && e.code === "convention_generee") { this.notify(e.message, "err"); await this.aoConvLoad(true); this.aoConvScroll("convCard"); }
+        if (e.status === 409 && (e.code === "convention_generee" || e.code === "convention_a_generer")) { this.notify(e.message, "err"); await this.aoConvLoad(true); this.aoConvScroll("convCard"); }
         else this.notify(e.message, "err");
       }
       finally { this.ao.share.freezing = false; }

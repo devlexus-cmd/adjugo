@@ -2111,6 +2111,13 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
         raise HTTPException(409, {"code": "convention_generee",
                                   "message": "L'offre est déjà figée par la convention de groupement. Pour la "
                                              "modifier, régénérez la convention."})
+    if _conv is not None:
+        # Brouillon ou convention périmée : l'offre ne se fige QUE par la génération (qui révèle le
+        # total en même temps que l'annexe). Figer ici révélait le total et les nouveaux prix aux
+        # partenaires avant toute convention (doctrine de visibilité, relecture vague 2).
+        raise HTTPException(409, {"code": "convention_a_generer",
+                                  "message": "Avec une convention de groupement, l'offre se fige en générant la "
+                                             "convention (« Monter le groupement »)."})
     invites = active_invites(db, project_id)
     if not invites:
         raise HTTPException(422, "Aucun partenaire actif : invitez au moins un partenaire avant de figer l'offre.")
