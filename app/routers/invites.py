@@ -1976,11 +1976,7 @@ def guest_piece_from_vault(token: str, body: FromVault, request: Request,
     ext = os.path.splitext(doc.file_key or doc.name or "")[1].lower() or os.path.splitext(doc.name or "")[1].lower()
     file_key = f"{inv.owner_id}/cotraitant/{uuid.uuid4().hex}{ext}"
     safe_mime = _safe_mime(file_key)     # extension réelle du fichier, pas le nom (renommable)
-    cat = doc.category.value if hasattr(doc.category, "value") else str(doc.category or "")
-    ptype = {"fiscal": "", "assurances": "assurance", "qualifications": "qualification"}.get(cat, "")
-    ptype = ptype or _classify_piece_type(doc.name or "")
-    if cat == "fiscal" and ptype not in ("fiscale", "sociale"):
-        ptype = "fiscale"
+    ptype = vault_doc_type(doc)
     if ptype == "dpgf_lot" and ext not in _DPGF_EXT:
         ptype = "autre"
     if ptype == "dpgf_lot":
@@ -2160,6 +2156,17 @@ def _classify_piece_type(name: str) -> str:
         if any(k in n for k in kw):
             return key
     return ""
+
+
+def vault_doc_type(doc) -> str:
+    """Type de pièce d'un document du coffre-fort (catégorie, puis nom) — source unique : copie
+    d'une pièce depuis le coffre-fort (partenaire) et contrôle des attestations du chef de file."""
+    cat = doc.category.value if hasattr(doc.category, "value") else str(doc.category or "")
+    ptype = {"fiscal": "", "assurances": "assurance", "qualifications": "qualification"}.get(cat, "")
+    ptype = ptype or _classify_piece_type(doc.name or "")
+    if cat == "fiscal" and ptype not in ("fiscale", "sociale"):
+        ptype = "fiscale"
+    return ptype
 
 
 def _classify_partner_pieces(names: list, piece_types: list = None) -> dict:

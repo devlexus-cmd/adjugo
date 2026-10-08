@@ -363,3 +363,46 @@ def test_total_masque_au_cotraitant_ajoute_apres_la_generation(client, auth, mai
     assert "€ HT" not in _pdf_text(client.get(f"/api/invite/{late}/journal/export?format=pdf").content)
     co = client.get(f"/api/invite/{invs[0]['token']}/journal").json()
     assert any(e["action"] == "offer.frozen" and "€ HT" in e["detail"] for e in co["entries"])
+
+
+# ═══ Dépôt (étape 5) ══════════════════════════════════════════════════════════════════
+
+def test_pret_a_deposer_controle_aussi_les_attestations_du_chef_de_file(client, auth, mails):
+    """Le chef de file est membre du groupement : une attestation EXPIRÉE de son coffre-fort est un
+    manque (plus de « prêt à déposer » à tort) ; une attestation absente de son coffre-fort est
+    seulement signalée (il peut la gérer hors d'Adjugo)."""
+    from datetime import date, timedelta
+    from app.models import DocCategory, Document, User
+    from tests.test_convention_groupement import _groupement
+    h = auth["headers"]
+    pid, _invs = _groupement(client, auth, n=1)
+
+    def pret():
+        r = client.get(f"/api/projects/{pid}/groupement/depot", headers=h)
+        assert r.status_code == 200, r.text
+        return r.json()["pret"]
+    p = pret()
+    assert any("Vos propres attestations ne sont pas toutes dans votre coffre-fort" in a for a in p["avertissements"])
+    assert not any("coffre-fort" in m for m in p["manques"])
+    db = _db()
+    try:
+        uid = db.query(User).filter(User.email == auth["email"]).first().id
+        db.add(Document(user_id=uid, name="attestation_urssaf_vigilance.pdf", category=DocCategory.fiscal,
+                        file_key="x/urssaf.pdf", file_size=10, mime_type="application/pdf",
+                        expiration_date=date.today() - timedelta(days=20)))
+        db.commit()
+    finally:
+        db.close()
+    p = pret()
+    assert p["checks"]["attestations_ok"] is False and p["pret"] is False
+    assert any("(coffre-fort) a expiré" in m for m in p["manques"]), p["manques"]
+    # Une attestation à jour (valide après la date limite) remplace l'ancienne.
+    db = _db()
+    try:
+        db.add(Document(user_id=uid, name="attestation_urssaf_2026.pdf", category=DocCategory.fiscal,
+                        file_key="x/urssaf2.pdf", file_size=10, mime_type="application/pdf",
+                        expiration_date=date.today() + timedelta(days=200)))
+        db.commit()
+    finally:
+        db.close()
+    assert not any("coffre-fort" in m for m in pret()["manques"])
