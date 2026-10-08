@@ -20,6 +20,8 @@
 
 ## Statut vague 2 (08/10/2026) — partie serveur
 
+**En production depuis le 8 octobre 2026** (migration `o9p0q1r2s3t4` appliquée sur Postgres, écrans chef de file + partenaire, 416 tests). Règles ajoutées après relecture : « figer » (vague 1) refusé dès qu'une convention existe (seule la génération fige l'offre) ; un non-signataire (sous-traitant) ne reçoit ni le texte, ni l'annexe, ni le total ; une convention caduque ne renvoie jamais les prix courants. Valeurs par défaut des paramètres et texte du modèle : à valider par Eliot et à faire relire par un conseil.
+
 **Backend livré sur une branche de worktree (non déployé), 335 tests verts (3.14 et 3.12).** Contrat
 d'API pour le front : `docs/COTRAITANCE_V2_VAGUE2_API.md`.
 
