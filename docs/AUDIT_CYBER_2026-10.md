@@ -275,7 +275,7 @@ Résiduels acceptés (faibles) :
 - Un compte effacé et anonymisé, ancien propriétaire, est vérifié sur toute sa chaîne. Il peut révéler un nombre d'entrées d'une autre entreprise.
 - Un PDF hostile peut encore occuper environ 15 s d'un thread de travail. C'est borné, et limité à 30 envois par heure et par IP.
 
-## Vague 3 — faite le 8 octobre 2026 (branche de travail, pas encore en production)
+## Vague 3 — faite et en production le 8 octobre 2026
 
 Quatre lots, développés en parallèle puis fusionnés. La suite passe en entier sous Python 3.12 avec les versions verrouillées de production (`requirements.lock`).
 - **Dépendances (rang 16).**
