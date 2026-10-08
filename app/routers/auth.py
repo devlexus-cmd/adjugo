@@ -22,16 +22,55 @@ from app.services.email_templates import verify_email_html
 router = APIRouter(prefix="/api/auth", tags=["Authentification"])
 
 
+VERIFY_LINK_HOURS = 48
+
+
+def _norm_email(e) -> str:
+    return (str(e or "")).strip().lower()
+
+
+# Plafond PAR COMPTE des emails de confirmation (inscription, renvoi, changement d'adresse).
+# Sans lui, un compte d'essai non confirmé changeait d'adresse en boucle et faisait envoyer
+# des emails « Adjugo » signés SPF/DKIM à n'importe qui. En mémoire : process unique (cf.
+# invariants), une remise à zéro au redémarrage reste acceptable.
+VERIFY_MAILS_PER_DAY = 5
+_VERIFY_SENT: dict[int, list[float]] = {}
+_VERIFY_LOCK = __import__("threading").Lock()
+
+
+def _verify_mail_budget(user_id: int, consume: bool) -> bool:
+    import time
+    now = time.time()
+    with _VERIFY_LOCK:
+        recent = [t for t in _VERIFY_SENT.get(user_id, []) if now - t < 86400]
+        ok = len(recent) < VERIFY_MAILS_PER_DAY
+        if ok and consume:
+            recent.append(now)
+        _VERIFY_SENT[user_id] = recent
+        return ok
+
+
+def clean_full_name(v) -> str:
+    """Nom affiché : sans caractères de contrôle, borné. Il apparaît dans des emails."""
+    v = "".join(ch for ch in str(v or "") if ch.isprintable()).strip()
+    return v[:120]
+
+
 def _send_verification(user: User) -> None:
-    """Génère un lien signé (3 jours) et envoie l'email de confirmation. Silencieux si l'email
-    est désactivé/échoue → ne bloque JAMAIS l'inscription."""
+    """Génère un lien signé (48 h) et envoie l'email de confirmation. Silencieux si l'email
+    est désactivé/échoue → ne bloque JAMAIS l'inscription.
+    Le jeton porte `purpose` (jamais accepté comme session, cf. get_current_user) et
+    l'ADRESSE à prouver : un ancien lien ne peut pas confirmer une adresse changée depuis."""
+    if not _verify_mail_budget(user.id, consume=True):
+        return
     try:
-        token = create_access_token(data={"sub": str(user.id), "purpose": "verify_email"},
-                                    expires_delta=timedelta(days=3))
+        token = create_access_token(data={"sub": str(user.id), "purpose": "verify_email",
+                                          "email": _norm_email(user.email)},
+                                    expires_delta=timedelta(hours=VERIFY_LINK_HOURS))
         base = (get_settings().APP_BASE_URL or "https://adjugo.pro").rstrip("/")
         link = f"{base}/app?verify={token}"
         send_email(user.email, "Confirmez votre adresse email — Adjugo",
-                   "Bienvenue sur Adjugo !\n\nConfirmez votre adresse email (lien valable 3 jours) :\n"
+                   "Bienvenue sur Adjugo !\n\nConfirmez votre adresse email (lien valable 48 heures) :\n"
                    f"{link}\n\nSi vous n'êtes pas à l'origine de cette inscription, ignorez ce message.\n\n— Adjugo",
                    html=verify_email_html(link, user.full_name or ""))
     except Exception:
@@ -47,7 +86,7 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(func.lower(User.email) == data.email).first():
         raise HTTPException(status_code=400, detail="Cet email est déjà utilisé")
 
-    fn = (data.full_name or "").strip()
+    fn = clean_full_name(data.full_name)
     user = User(
         email=data.email,
         hashed_password=hash_password(data.password),
@@ -110,6 +149,19 @@ def verify_email(request: Request, data: VerifyIn, db: Session = Depends(get_db)
     user = db.query(User).filter(User.id == uid).first()
     if not user:
         raise HTTPException(404, "Compte introuvable.")
+    # Le lien ne prouve QUE l'adresse à laquelle il a été envoyé. Sans ce contrôle, rejouer le
+    # lien de l'ancienne adresse « prouvait » une nouvelle adresse qui n'avait rien reçu.
+    token_email = _norm_email(payload.get("email"))
+    if not token_email:
+        # Lien émis avant la liaison à l'adresse : on ne peut pas savoir ce qu'il prouve.
+        # Compte DÉJÀ confirmé : rien à prouver, on le dit simplement (pas d'erreur).
+        if user.email_verified:
+            return {"ok": True, "message": "Votre adresse est déjà confirmée."}
+        raise HTTPException(400, "Ce lien de confirmation n'est plus valable. "
+                                 "Demandez un nouveau lien depuis votre espace.")
+    if token_email != _norm_email(user.email):
+        raise HTTPException(400, "Ce lien concerne une ancienne adresse email. "
+                                 "Demandez un nouveau lien depuis votre espace.")
     if not user.email_verified:
         user.email_verified = True
         db.commit()
@@ -123,6 +175,9 @@ def resend_verification(request: Request, current_user: User = Depends(get_curre
     """Renvoie l'email de confirmation au compte connecté."""
     if current_user.email_verified:
         return {"ok": True, "message": "Votre adresse est déjà confirmée."}
+    if not _verify_mail_budget(current_user.id, consume=False):
+        raise HTTPException(status_code=429, detail="Plusieurs emails de confirmation sont déjà partis "
+                                                    "aujourd'hui. Vérifiez vos spams ou réessayez demain.")
     _send_verification(current_user)
     return {"ok": True, "message": "Email de confirmation renvoyé."}
 
@@ -172,23 +227,45 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 
 @router.put("/me", response_model=UserOut)
+@limiter.limit("10/hour")
 def update_me(
+    request: Request,
     full_name: str = None,
     email: str = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Mettre à jour le profil."""
+    # Le compte démo est partagé et public : son identité ne change jamais (sinon un visiteur
+    # détournait l'adresse de la démo et recevait les emails qui lui sont destinés).
+    from app.services.demo_search import is_demo
+    if is_demo(current_user) and (email or full_name):
+        raise HTTPException(status_code=403, detail="La démo est en lecture guidée : créez votre compte "
+                                                    "gratuit pour modifier un profil.")
     if full_name:
-        current_user.full_name = full_name
+        full_name = clean_full_name(full_name)
+        if full_name:
+            current_user.full_name = full_name
     if email:
         # Normalisé comme à l'inscription/connexion : sinon « Jean@X.fr » créait un doublon
         # de « jean@x.fr » et l'utilisateur ne pouvait plus se reconnecter.
-        email = email.strip().lower()
+        email = _norm_email(email)
+        # Même validation de format qu'à l'inscription (EmailStr) : sinon une valeur qui n'est
+        # pas une adresse était enregistrée (compte inconnectable, emails vers le vide).
+        try:
+            from pydantic import TypeAdapter, EmailStr
+            TypeAdapter(EmailStr).validate_python(email)
+            if len(email) > 255:
+                raise ValueError("trop long")
+        except Exception:
+            raise HTTPException(status_code=400, detail="Adresse email invalide. Vérifiez la saisie.")
         existing = db.query(User).filter(func.lower(User.email) == email, User.id != current_user.id).first()
         if existing:
             raise HTTPException(status_code=400, detail="Email déjà utilisé")
         if email != (current_user.email or "").strip().lower():
+            if not _verify_mail_budget(current_user.id, consume=False):
+                raise HTTPException(status_code=429, detail="Trop de changements d'adresse aujourd'hui. "
+                                                            "Réessayez demain ou écrivez-nous.")
             # Nouvelle adresse = adresse NON prouvée : sans ça, on vérifiait une adresse
             # puis on la remplaçait par n'importe laquelle en restant « vérifié ».
             current_user.email = email
@@ -252,6 +329,11 @@ def forgot_password(request: Request, data: ForgotIn, db: Session = Depends(get_
     # Insensible à la casse : un compte créé en casse mixte (« Jean.Dupont@… ») recevait
     # SILENCIEUSEMENT aucun email (le .lower() ne matchait pas la ligne stockée).
     user = db.query(User).filter(func.lower(User.email) == (data.email or "").strip().lower()).first()
+    # Compte démo public : jamais d'email (vitrine en lecture guidée) — réponse identique.
+    from app.services.demo_search import is_demo
+    # Idem pour un compte désactivé/effacé (anonymisé) : il ne peut plus se connecter.
+    if user and (is_demo(user) or not user.is_active):
+        user = None
     if user:
         raw = _secrets.token_urlsafe(32)
         user.reset_token_hash = _hash_reset(raw)

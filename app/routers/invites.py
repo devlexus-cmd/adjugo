@@ -29,8 +29,9 @@ from app.core.database import get_db
 from app.core.org import data_owner_id, member_ids
 from app.core.ratelimit import limiter
 from app.core.security import get_current_user
-from app.models import (AuditLog, Company, ContributionPiece, Document, Project,
+from app.models import (AuditLog, Company, ContributionPiece, Document, Organization, Project,
                         ProjectContribution, ProjectInvite, User, utcnow)
+from app.schemas import safe_link_url
 from app.services import audit
 from app.services.groupement_members import (active_invite_filter, active_invites,
                                              groupement_state, submitted_contributions,
@@ -53,12 +54,37 @@ def _is_email(s) -> bool:
 
 def _binding_required(inv) -> bool:
     """Le binding d'identité OTP s'applique UNIQUEMENT si l'email est configuré ET le
-    destinataire est une adresse. Sinon : flux inchangé, zéro friction (l'ADN CaaS)."""
+    destinataire est une adresse. Sinon : flux inchangé, zéro friction (l'ADN CaaS).
+    Jamais pour une invitation de la démo publique : aucun code n'y est envoyé."""
     try:
         from app.services import email as _email
-        return _email.is_enabled() and _is_email(getattr(inv, "recipient", ""))
+        if not (_email.is_enabled() and _is_email(getattr(inv, "recipient", ""))):
+            return False
+        from sqlalchemy.orm import object_session
+        sess = object_session(inv)
+        return not (sess is not None and _invite_is_demo(inv, sess))
     except Exception:
         return False
+
+
+_DEMO_INVITE_MSG = ("La démo est en lecture guidée : créez votre compte gratuit pour "
+                    "co-construire une réponse avec vos partenaires.")
+
+
+def _invite_is_demo(inv, db: Session) -> bool:
+    """Vrai si l'invitation appartient au compte démo public (vitrine) : aucun email ne doit
+    partir de ses liens invités, et ses pièces ne sont pas modifiables (vitrine partagée)."""
+    try:
+        from app.services.demo_search import is_demo
+        owner = db.query(User).filter(User.id == inv.owner_id).first()
+        return bool(owner and is_demo(owner))
+    except Exception:
+        return False
+
+
+def _refuse_if_demo_invite(inv, db: Session) -> None:
+    if _invite_is_demo(inv, db):
+        raise HTTPException(403, _DEMO_INVITE_MSG)
 
 
 def _mask_email(e: str) -> str:
@@ -119,9 +145,37 @@ def _send_invite_email(inv, project, base_url: str) -> bool:
 
 
 def _mandataire_email(owner_id: int, db: Session) -> Optional[str]:
-    """Email du mandataire (propriétaire du tenant) pour les notifications de groupement."""
+    """Email du mandataire (propriétaire du tenant) pour les notifications de groupement.
+    Aucun pour le compte démo public (la démo n'envoie jamais d'email)."""
     u = db.query(User).filter(User.id == owner_id).first()
+    if u:
+        from app.services.demo_search import is_demo
+        if is_demo(u):
+            return None
+        # Adresse non prouvée = jamais de notification : sinon on posait l'adresse d'un
+        # tiers sur son compte puis on faisait soumettre une part en boucle (spam Adjugo).
+        if not getattr(u, "email_verified", False):
+            return None
     return (u.email if u and _is_email(u.email or "") else None)
+
+
+# Anti-rafale des notifications par invitation (process unique : en mémoire suffit).
+_NOTIFY_LAST: dict = {}
+_NOTIFY_LOCK = __import__("threading").Lock()
+NOTIFY_MIN_INTERVAL_S = 30 * 60
+
+
+def _notify_allowed(key) -> bool:
+    import time
+    now = time.time()
+    with _NOTIFY_LOCK:
+        last = _NOTIFY_LAST.get(key)
+        if last is not None and now - last < NOTIFY_MIN_INTERVAL_S:
+            return False
+        _NOTIFY_LAST[key] = now
+        if len(_NOTIFY_LAST) > 20000:      # borne mémoire
+            _NOTIFY_LAST.clear()
+        return True
 
 
 def _notify_part_submitted(inv, contribution, db: Session) -> None:
@@ -130,7 +184,7 @@ def _notify_part_submitted(inv, contribution, db: Session) -> None:
     part reçue à la veille du dépôt."""
     try:
         to = _mandataire_email(inv.owner_id, db)
-        if not to:
+        if not to or not _notify_allowed(("part_submitted", inv.id)):
             return
         from app.services import email as _email
         project = db.query(Project).filter(Project.id == inv.project_id).first()
@@ -154,7 +208,9 @@ def _notify_partner_received(inv, db: Session) -> None:
     """Accusé de réception au partenaire après soumission (best-effort) : une trace écrite
     rassure un dirigeant qui vient d'envoyer une pièce engageante à un marché public."""
     try:
-        if not _is_email(inv.recipient):
+        if not _is_email(inv.recipient) or _invite_is_demo(inv, db):
+            return
+        if not _notify_allowed(("part_received", inv.id)):
             return
         from app.services import email as _email
         project = db.query(Project).filter(Project.id == inv.project_id).first()
@@ -346,7 +402,9 @@ def _invite_public(inv: ProjectInvite, project: Project, owner_company: Optional
             # décision interne du mandataire (Go/No-Go, faiblesses). On ne donne que des
             # FAITS sur le marché (objet, lots, critères, échéance).
             "deadline": project.deadline.isoformat() if project.deadline else None,
-            "source_url": project.source_url,
+            # Assaini à la LECTURE : une valeur ancienne (antérieure à la validation) ne
+            # ressort jamais en « javascript: » dans l'espace cloisonné du partenaire.
+            "source_url": safe_link_url(project.source_url),
             "analysis": _safe_analysis(project.ai_analysis),
         },
         "mandataire": (owner_company.name if owner_company else "") or "",
@@ -430,12 +488,44 @@ def _serialize_invite(inv: ProjectInvite, contribution: "ProjectContribution" = 
     }
 
 
+DAILY_INVITE_CAP = 30
+
+
+def _refuse_demo_sender(user: User) -> None:
+    """Défense en profondeur (en plus du garde central) : la démo n'envoie JAMAIS d'email."""
+    from app.services.demo_search import is_demo
+    if is_demo(user):
+        raise HTTPException(403, "La démo est en lecture guidée : créez votre compte gratuit "
+                                 "pour inviter un partenaire.")
+
+
+def _check_daily_invite_cap(user: User, db: Session) -> None:
+    """Anti-spam : au plus DAILY_INVITE_CAP invitations créées par organisation sur 24 h
+    glissantes (toutes les invitations du tenant, quel que soit le membre qui les crée)."""
+    if getattr(user, "org_id", None):
+        # Verrou de ligne : deux créations simultanées ne contournent pas le plafond.
+        db.query(Organization).filter(Organization.id == user.org_id).with_for_update().first()
+    since = utcnow() - timedelta(hours=24)
+    owners = list(set(member_ids(user, db)) | {data_owner_id(user, db)})
+    n = db.query(ProjectInvite).filter(ProjectInvite.owner_id.in_(owners),
+                                       ProjectInvite.created_at >= since).count()
+    # Les RENVOIS comptent aussi : sinon une seule invitation renvoyée en boucle permettait
+    # d'envoyer des emails sans limite depuis l'adresse d'Adjugo.
+    n += db.query(AuditLog).filter(AuditLog.owner_id.in_(owners), AuditLog.action == "invite.resent",
+                                   AuditLog.created_at >= since).count()
+    if n >= DAILY_INVITE_CAP:
+        raise HTTPException(429, f"Vous avez atteint la limite de {DAILY_INVITE_CAP} invitations "
+                                 f"par jour. Réessayez demain.")
+
+
 @router.post("/api/projects/{project_id}/invites")
 def create_invite(project_id: int, body: InviteCreate, request: Request,
                   current_user: User = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     """Génère un lien d'invitation co-traitant pour ce projet (mandataire only)."""
+    _refuse_demo_sender(current_user)
     project = _owned_project(project_id, current_user, db)
+    _check_daily_invite_cap(current_user, db)
     # owner_id = propriétaire CANONIQUE de l'organisation (porteur du profil entreprise).
     # Toute la co-traitance d'un même tenant converge ainsi sur un seul owner_id : la vue
     # invité (nom du mandataire = Company.user_id == owner_id) et la chaîne d'audit
@@ -466,7 +556,10 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
                  ip=audit.client_ip(request))
     # Envoi du lien par email au destinataire (si adresse + SMTP configuré). Renseigne
     # emailed_at → on commit APRÈS l'envoi pour le persister.
-    emailed = _send_invite_email(inv, project, _settings.APP_BASE_URL or str(request.base_url))
+    # Lien toujours créé ; l'EMAIL ne part que si l'expéditeur a confirmé sa propre adresse
+    # (anti-spam via comptes jetables). Sinon : lien à copier, comme sans adresse.
+    emailed = (_send_invite_email(inv, project, _settings.APP_BASE_URL or str(request.base_url))
+               if getattr(current_user, "email_verified", False) else False)
     db.commit()
     db.refresh(inv)
     # Un nouveau membre rend caduc un total figé (il ne couvre plus tout le groupement).
@@ -493,12 +586,28 @@ def list_invites(project_id: int, current_user: User = Depends(get_current_user)
     return [_serialize_invite(r, contribs.get(r.id)) for r in rows]
 
 
+RESEND_MIN_INTERVAL = timedelta(minutes=15)
+
+
+def _require_verified_sender(user: User) -> None:
+    """Un email d'invitation part sous le nom d'Adjugo vers un tiers : l'expéditeur doit
+    avoir prouvé sa propre adresse (sinon un compte jetable devient un canal de spam)."""
+    if not getattr(user, "email_verified", False):
+        raise HTTPException(403, "Confirmez d'abord votre adresse email (lien reçu à l'inscription) "
+                                 "pour envoyer des invitations par email. En attendant, copiez le lien.")
+
+
 @router.post("/api/projects/{project_id}/invites/{invite_id}/resend")
+@limiter.limit("20/hour")
 def resend_invite(project_id: int, invite_id: int, request: Request,
                   current_user: User = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     """Renvoie le mail d'invitation SUR LE MÊME lien (sans changer le token) : relance un
-    partenaire silencieux ou rattrape un mail tombé en spam, sans casser l'URL déjà partagée."""
+    partenaire silencieux ou rattrape un mail tombé en spam, sans casser l'URL déjà partagée.
+    Bornes anti-spam : adresse de l'expéditeur confirmée, 1 renvoi par lien toutes les 15 min,
+    renvois comptés dans le plafond quotidien de l'organisation, 20 renvois/h par IP."""
+    _refuse_demo_sender(current_user)
+    _require_verified_sender(current_user)
     project = _owned_project(project_id, current_user, db)
     inv = db.query(ProjectInvite).filter(
         ProjectInvite.id == invite_id, ProjectInvite.project_id == project_id).first()
@@ -510,6 +619,13 @@ def resend_invite(project_id: int, invite_id: int, request: Request,
         raise HTTPException(400, "Ce partenaire a décliné l'invitation — créez une nouvelle invitation.")
     if not _is_email(inv.recipient):
         raise HTTPException(400, "Aucune adresse email sur ce lien — copiez-le et transmettez-le à la main.")
+    last = inv.emailed_at
+    if last is not None:
+        last = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - last < RESEND_MIN_INTERVAL:
+            raise HTTPException(429, "Invitation déjà envoyée il y a moins de 15 minutes. "
+                                     "Laissez un peu de temps au partenaire avant de relancer.")
+    _check_daily_invite_cap(current_user, db)
     sent = _send_invite_email(inv, project, _settings.APP_BASE_URL or str(request.base_url))
     db.commit()
     if sent:
@@ -554,7 +670,7 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
     # Notifie le partenaire que son accès est coupé (s'il a une adresse + SMTP configuré).
     # Inutile s'il avait déjà décliné / était déjà révoqué.
     emailed = False
-    if _is_email(inv.recipient) and not already_out:
+    if _is_email(inv.recipient) and not already_out and getattr(current_user, "email_verified", False):
         try:
             from app.services import email as _email
             proj = db.query(Project).filter(Project.id == project_id).first()
@@ -587,8 +703,63 @@ def project_audit(project_id: int, current_user: User = Depends(get_current_user
 def audit_integrity(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Vérifie l'intégrité du journal d'audit du tenant (chaîne de hash). Preuve RGPD
     que la traçabilité n'a pas été altérée."""
-    # La chaîne d'audit du tenant est portée par le propriétaire canonique de l'org.
-    return audit.verify_chain(db, data_owner_id(current_user, db))
+    # La chaîne d'audit du tenant est portée par le propriétaire canonique de l'org ; on
+    # vérifie AUSSI les chaînes héritées encore référencées (anciens propriétaires après un
+    # transfert, comptes effacés) : owner_id étant haché, elles ne sont jamais fusionnées.
+    return audit.verify_org_chains(db, _org_chain_owner_ids(current_user, db))
+
+
+def _org_chain_owner_ids(current_user: User, db: Session) -> list:
+    """Propriétaire actuel d'abord, puis les porteurs de chaînes de l'historique de l'org :
+    (a) anciens propriétaires, remontés de proche en proche par les entrées
+        « team.ownership_transferred » (actor = « user:<ancien> ») ;
+    (b) membres actuels, ou comptes effacés-anonymisés, ayant des entrées sur les marchés
+        de l'organisation. Jamais la chaîne d'une autre entreprise active."""
+    current = data_owner_id(current_user, db)
+    ids, frontier = [current], [current]
+    members_now = set(member_ids(current_user, db))
+    out = [current]
+    for _ in range(50):   # borne de sécurité (transferts en chaîne)
+        if not frontier:
+            break
+        rows = db.query(AuditLog.id, AuditLog.actor).filter(
+            AuditLog.action == "team.ownership_transferred",
+            AuditLog.owner_id.in_(frontier)).all()
+        nxt = []
+        # Borne = DERNIER transfert sortant de cet ancien propriétaire (aller-retour K→L→K→L :
+        # le premier transfert laissait sa dernière période dans l'org sans vérification).
+        last = {}
+        for (tid, actor) in rows:
+            m = re.fullmatch(r"user:(\d+)", (actor or "").strip())
+            if m:
+                last[int(m.group(1))] = max(tid, last.get(int(m.group(1)), 0))
+        for old, tid in sorted(last.items(), key=lambda kv: kv[1]):
+            if old not in ids:
+                ids.append(old)
+                nxt.append(old)
+                u = db.query(User).filter(User.id == old).first()
+                erased = bool(u) and (not u.is_active) and u.org_id is None
+                # Ancien propriétaire toujours membre (ou effacé) : toute sa chaîne. S'il dirige
+                # désormais une AUTRE entreprise : seul le préfixe d'avant le transfert (jamais
+                # le journal de sa nouvelle entreprise).
+                out.append(old if (old in members_now or erased or not u) else (old, tid))
+        frontier = nxt
+    try:
+        members = set(member_ids(current_user, db))
+        pids = [r[0] for r in db.query(Project.id).filter(Project.user_id.in_(list(members))).all()]
+        if pids:
+            others = {r[0] for r in db.query(AuditLog.owner_id).filter(
+                AuditLog.project_id.in_(pids), AuditLog.owner_id.isnot(None)).distinct().all()}
+            others -= set(ids)
+            if others:
+                for u in db.query(User).filter(User.id.in_(list(others))).all():
+                    erased = (not u.is_active) and u.org_id is None
+                    if u.id in members or erased:
+                        ids.append(u.id)
+                        out.append(u.id)
+    except Exception:
+        pass
+    return out
 
 
 # ── Côté CO-TRAITANT INVITÉ (NON authentifié — jeton dans l'URL) ─────────────
@@ -618,6 +789,24 @@ def _guest_actor(inv) -> str:
     return (inv.company_name or "invité")[:160]
 
 
+def tenant_owner_id(project: Project, db: Session) -> int:
+    """Propriétaire CANONIQUE du tenant d'un projet (= propriétaire de l'organisation du
+    créateur), celui sous lequel est chaînée toute la traçabilité du dossier (invitations,
+    parts, offre figée…). Jamais `project.user_id` brut : si un MEMBRE a créé le marché, ses
+    entrées sortiraient de la chaîne d'intégrité de l'entreprise et disparaîtraient avec son
+    compte. Repli sur le créateur s'il n'a pas (encore) d'organisation."""
+    try:
+        creator = db.query(User).filter(User.id == project.user_id).first()
+        oid = getattr(creator, "org_id", None)
+        if oid:
+            owner = db.query(Organization.owner_id).filter(Organization.id == oid).scalar()
+            if owner:
+                return owner
+    except Exception:
+        pass
+    return project.user_id
+
+
 def _unfreeze_offer_if_needed(db: Session, project_id: int, reason: str, *, actor: str = "",
                               actor_kind: str = "guest", ip: str = "", invite_id=None) -> bool:
     """Si l'offre commune est figée et qu'une part change (prix, retour en brouillon,
@@ -630,7 +819,7 @@ def _unfreeze_offer_if_needed(db: Session, project_id: int, reason: str, *, acto
     new_plan = {k: v for k, v in plan.items() if k != "offre"}
     project.groupement_plan = new_plan
     db.commit()
-    audit.record(db, action="offer.unfrozen", owner_id=project.user_id, project_id=project.id,
+    audit.record(db, action="offer.unfrozen", owner_id=tenant_owner_id(project, db), project_id=project.id,
                  actor=actor, actor_kind=actor_kind, target_type="project", target_id=project.id,
                  detail=(f"part de {reason}" if actor_kind == "guest" else reason)[:255],
                  ip=ip, invite_id=invite_id)
@@ -651,8 +840,11 @@ def guest_view(token: str, request: Request, db: Session = Depends(get_db)):
 
     docs = []
     if inv.can_view_docs:
+        # Versions remplacées (parent_id posé) EXCLUES : ce que le mandataire a remplacé
+        # disparaît aussi pour le partenaire (même règle que le coffre-fort et l'export).
         rows = db.query(Document).filter(
-            Document.project_id == inv.project_id, Document.deleted_at.is_(None)
+            Document.project_id == inv.project_id, Document.deleted_at.is_(None),
+            Document.parent_id.is_(None)
         ).order_by(Document.created_at.desc()).all()
         docs = [{"id": d.id, "name": d.name,
                  "category": d.category.value if hasattr(d.category, "value") else str(d.category or ""),
@@ -678,7 +870,7 @@ def guest_download(token: str, doc_id: int, request: Request, db: Session = Depe
         raise HTTPException(403, "Le partage des pièces n'est pas autorisé pour ce lien")
     doc = db.query(Document).filter(
         Document.id == doc_id, Document.project_id == inv.project_id,
-        Document.deleted_at.is_(None)
+        Document.deleted_at.is_(None), Document.parent_id.is_(None)
     ).first()
     if not doc or not doc.file_key:
         raise HTTPException(404, "Pièce introuvable")
@@ -1064,19 +1256,40 @@ def guest_otp_status(token: str, request: Request, db: Session = Depends(get_db)
             "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
 
 
+OTP_DAILY_CAP_VERIFIED = 40     # codes envoyés / 24 h / organisation mandataire
+OTP_DAILY_CAP_UNVERIFIED = 8    # mandataire qui n'a pas prouvé son adresse : très bas
+
+
+def _otp_cap_reached(inv, db: Session) -> bool:
+    """Plafond quotidien des codes envoyés par organisation : la limite par lien (6/h) ne
+    suffisait pas, un compte jetable multipliait les liens vers autant d'adresses."""
+    owner = db.query(User).filter(User.id == inv.owner_id).first()
+    cap = OTP_DAILY_CAP_VERIFIED if (owner and owner.email_verified) else OTP_DAILY_CAP_UNVERIFIED
+    since = utcnow() - timedelta(hours=24)
+    n = db.query(AuditLog).filter(AuditLog.owner_id == inv.owner_id,
+                                  AuditLog.action == "guest.otp_request",
+                                  AuditLog.created_at >= since).count()
+    return n >= cap
+
+
 @router.post("/api/invite/{token}/otp/request")
 @limiter.limit("6/hour")
 def guest_otp_request(token: str, request: Request, db: Session = Depends(get_db)):
     """Envoie un code à 6 chiffres à l'adresse destinataire de l'invitation, pour prouver
     que l'invité la contrôle avant de soumettre sa part."""
     inv = _valid_invite(token, db)
-    if not _binding_required(inv):
+    if not _binding_required(inv):   # (dont : invitation de la démo → jamais d'envoi)
         return {"sent": False, "reason": "Vérification non requise pour ce lien."}
     # Idempotence : si un code valide est DÉJÀ en attente, on ne le régénère pas (sinon le code
     # déjà reçu par le partenaire serait invalidé à chaque clic « Soumettre », et le plafond
     # 6/h finirait par le verrouiller). Il réutilise le code reçu.
     if inv.otp_hash and inv.otp_expires_at and not _is_expired(inv.otp_expires_at):
         return {"sent": True, "already": True,
+                "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
+    if _otp_cap_reached(inv, db):
+        return {"sent": False,
+                "reason": "Trop de codes envoyés aujourd'hui pour ce groupement. Réessayez demain "
+                          "ou demandez au mandataire de vous renvoyer l'invitation.",
                 "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
     code = f"{secrets.randbelow(1_000_000):06d}"
     inv.otp_hash = _hash_otp(code)
@@ -1171,6 +1384,7 @@ def guest_decline(token: str, request: Request, db: Session = Depends(get_db)):
     CERFA, dossier) sans que le mandataire ait à révoquer. Le lien devient inutilisable
     (410) ; le mandataire peut créer une nouvelle invitation s'il veut le rouvrir."""
     inv = _valid_invite(token, db)           # déjà décliné → 410, révoqué → 404
+    _refuse_if_demo_invite(inv, db)          # vitrine partagée : on ne la ferme pas aux suivants
     inv.declined_at = utcnow()
     c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
     if c and c.status == "submitted":
@@ -1294,6 +1508,7 @@ def guest_upload_piece(token: str, request: Request, file: UploadFile = File(...
     Classée automatiquement (kbis / fiscale / sociale / assurance / rib / qualification)
     d'après son nom si `piece_type` n'est pas fourni ; `expiration_date` ISO optionnelle."""
     inv = _valid_invite(token, db)
+    _refuse_if_demo_invite(inv, db)
     if not getattr(inv, "can_contribute", True):
         raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
     c = _get_or_create_contribution(inv, db)
@@ -1333,6 +1548,7 @@ def guest_patch_piece(token: str, piece_id: int, body: PiecePatch, request: Requ
                       db: Session = Depends(get_db)):
     """Le co-traitant corrige le TYPE et/ou la DATE D'EXPIRATION de SA pièce (coffre croisé)."""
     inv, c, pc = _guest_piece(token, piece_id, db)
+    _refuse_if_demo_invite(inv, db)
     fields = body.model_fields_set
     if "piece_type" in fields:
         pc.piece_type = _check_piece_type(body.piece_type) or "autre"
@@ -1362,6 +1578,7 @@ def guest_piece_from_vault(token: str, body: FromVault, request: Request,
     un Document de SON coffre-fort personnel. Le fichier est COPIÉ dans le tenant du
     mandataire (clé {owner}/cotraitant/…) : le Document d'origine n'est jamais exposé."""
     inv = _valid_invite(token, db)
+    _refuse_if_demo_invite(inv, db)
     if not getattr(inv, "can_contribute", True):
         raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
     if not inv.accepted_by_user_id or inv.accepted_by_user_id != current_user.id:
@@ -1421,6 +1638,7 @@ def guest_download_piece(token: str, piece_id: int, request: Request, db: Sessio
 def guest_delete_piece(token: str, piece_id: int, request: Request, db: Session = Depends(get_db)):
     """Le co-traitant retire SA pièce."""
     inv, c, pc = _guest_piece(token, piece_id, db)
+    _refuse_if_demo_invite(inv, db)
     try:
         get_storage().delete(pc.file_key)
     except Exception:
@@ -1904,7 +2122,7 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
     plan["offre"] = {"total_ht": total, "frozen_at": frozen_at, "parts": parts, "lead_total_ht": lead_total}
     project.groupement_plan = plan          # NOUVEAU dict : SQLAlchemy détecte le changement
     db.commit()
-    audit.record(db, action="offer.frozen", owner_id=project.user_id, project_id=project.id,
+    audit.record(db, action="offer.frozen", owner_id=data_owner_id(current_user, db), project_id=project.id,
                  actor=f"user:{current_user.id}", actor_kind="owner", target_type="project",
                  target_id=project.id, detail=f"total {total:,.0f} € HT".replace(",", " ")[:255],
                  ip=audit.client_ip(request))
@@ -1917,7 +2135,9 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
                   f"« {project.name} » : total {total_txt} € HT.\n\n"
                   f"Retrouvez le détail dans votre espace : {base}/invite/{inv.token}\n\n— Adjugo")
                  for inv in invites if _is_email(inv.recipient)]
-        _send_mails_async(mails)
+        from app.services.demo_search import is_demo
+        if not is_demo(current_user):          # la démo n'envoie jamais d'email
+            _send_mails_async(mails)
     except Exception:
         pass
     return {"ok": True, "total_ht": total, "frozen_at": frozen_at, "n_members": len(invites),

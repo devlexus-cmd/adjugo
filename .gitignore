@@ -34,6 +34,7 @@ __pycache__/
 # Artefacts générés
 *.zip
 test_adjugo.db
+test_*.db
 
 # Claude Code local settings
 .claude/settings.local.json

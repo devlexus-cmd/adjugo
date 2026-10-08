@@ -30,6 +30,10 @@
     .g-piece-meta .inp { height:30px; padding:0 8px; font-size:12px; width:auto; }
     .g-link { background:none; border:0; padding:0; color:var(--text-2,#6b7280); font-size:12px; text-decoration:underline; cursor:pointer; font-family:inherit; }
     .g-link:hover { color:var(--text,#16181d); }
+    .g-banner:empty { display:none; }   /* bandeau réutilisé par plusieurs messages : pas de cadre vide */
+    /* Ici lucide REMPLACE le <i> par un <svg class="lucide"> : on recale la taille de l'icône (i). */
+    .tip > svg.lucide { width:15px; height:15px; }
+    .g-chk { display:flex; gap:6px; align-items:center; }
     @media (max-width:640px){ .g-fact { grid-template-columns:1fr; gap:1px 0; } .g-fact dt { margin-top:7px; } }
   </style>
 </head>
@@ -66,7 +70,7 @@
 
     <main class="work">
       <header class="top">
-        <div><h1 id="g-title">Mon appel d'offres</h1><div class="sub" id="g-sub"></div></div>
+        <div class="top-title"><div style="display:flex;align-items:center;min-width:0"><h1 id="g-title" style="min-width:0">Mon appel d'offres</h1><span id="g-tip" style="flex:none;display:inline-flex"></span></div><div class="sub" id="g-sub"></div></div>
         <div class="spacer"></div>
         <a class="btn primary" href="/app" target="_blank" rel="noopener"><i data-lucide="sparkles"></i>Créer mon compte Adjugo</a>
       </header>
@@ -89,11 +93,36 @@
     const PIECE_TYPES = [["kbis", "Kbis"], ["fiscale", "Attestation fiscale"], ["sociale", "Attestation sociale (URSSAF)"], ["assurance", "Assurance (RC / décennale)"], ["rib", "RIB"], ["qualification", "Qualification / certificat"], ["autre", "Autre pièce"]];
     const PIECE_LABEL = Object.fromEntries(PIECE_TYPES);
     const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
-    const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    // Garde de schéma pour TOUT lien construit depuis une donnée (avis d'origine, résultats de
+    // recherche…) : esc() n'empêche pas un « javascript: » d'être exécuté au clic. On n'accepte
+    // qu'une adresse web absolue (http/https) ou un chemin interne (/…) ; sinon lien neutre « # ».
+    const safeUrl = (u) => { const s = String(u == null ? "" : u).trim(); return (s && !/[\u0000-\u001f\u007f]/.test(s) && /^(https?:\/\/[^\s\/]|\/(?![\/\\]))/i.test(s)) ? s : "#"; };
     const kb = (n) => !n ? "" : n < 1024 ? n + " o" : n < 1048576 ? (n / 1024).toFixed(0) + " Ko" : (n / 1048576).toFixed(1) + " Mo";
     const eur = (n) => (n || n === 0) ? Number(n).toLocaleString("fr-FR") + " €" : "";
     const fmtDate = (s) => { if (!s) return ""; try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" }); } catch (e) { return s; } };
     const icons = () => { try { lucide.createIcons(); } catch (e) {} };
+    // Bulle d'information (i) à côté d'un titre : les phrases d'explication sortent de la page.
+    // `html` est DÉJÀ échappé (peut contenir <b>) ; left=true → la bulle s'ouvre vers la gauche.
+    const tip = (html, left) => html ? `<button type="button" class="tip${left ? " tip-l" : ""}"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">${html}</span></button>` : "";
+    // Icône lucide en ligne (remplace les émojis et glyphes Unicode), alignée sur le texte.
+    const ico = (name, px, extra) => `<i data-lucide="${esc(name)}" style="width:${px || 14}px;height:${px || 14}px;flex:none;vertical-align:-2px${extra ? ";" + extra : ""}"></i>`;
+    const ICO_OK = (px) => ico("check", px || 13, "color:var(--success-text,#1a7f4b)");
+    // Message de confirmation : coche lucide + texte (au lieu d'un glyphe collé au texte).
+    const okMsg = (el, text) => { el.innerHTML = ICO_OK() + " " + esc(text); icons(); };
+    // Bulles : au toucher on donne le focus (iOS ne le fait pas pour un bouton), Échap referme,
+    // et la bulle est recadrée pour ne jamais déborder de l'écran (téléphone, icône près d'un bord).
+    function fitTip(t) {
+      const b = t.querySelector(".tip-b"); if (!b) return;
+      b.style.translate = "";
+      const r = b.getBoundingClientRect(), vw = document.documentElement.clientWidth;
+      let dx = 0; if (r.right > vw - 8) dx = vw - 8 - r.right; if (r.left + dx < 8) dx = 8 - r.left;
+      if (dx) b.style.translate = Math.round(dx) + "px 0";
+    }
+    const tipOf = (e) => (e.target && e.target.closest) ? e.target.closest(".tip") : null;
+    ["mouseover", "focusin"].forEach(ev => document.addEventListener(ev, e => { const t = tipOf(e); if (t) fitTip(t); }));
+    document.addEventListener("click", e => { const t = tipOf(e); if (t) { t.focus(); fitTip(t); } });
+    document.addEventListener("keydown", e => { const a = document.activeElement; if (e.key === "Escape" && a && a.classList && a.classList.contains("tip")) a.blur(); });
     const content = () => document.getElementById("content");
     // Message d'erreur lisible depuis un `detail` FastAPI : chaîne, {message}, ou liste de validation pydantic.
     function errText(e, fallback) {
@@ -172,7 +201,7 @@
       document.getElementById("g-sub").textContent = "";
       content().innerHTML =
         `<div class="card pad" style="text-align:center;padding:46px 24px">
-           <div style="font-size:36px">🔒</div>
+           <div style="color:var(--text-2,#6b7280)">${ico("lock", 34)}</div>
            <h2 style="margin:10px 0 4px;font-size:18px">« ${esc(label)} » est réservé aux membres</h2>
            <p class="muted" style="max-width:460px;margin:4px auto 0">Vous êtes invité sur un dossier précis. Créez votre compte Adjugo (gratuit) pour débloquer tout l'espace : pipeline, coffre-fort, équipe, facturation…</p>
            <a class="btn primary" href="/app" target="_blank" rel="noopener" style="margin-top:16px"><i data-lucide="sparkles"></i>Créer mon compte gratuit</a>
@@ -216,7 +245,7 @@
       else ap.appendChild($(`<span class="muted">précisé par le mandataire après analyse</span>`));
       col2.appendChild(ap);
       const se = fm.seuils || {};
-      const seuil = (ok, yes, no) => $(`<div class="small" style="margin-top:6px;color:${ok ? "var(--success-text,#1a7f4b)" : "var(--text-2,#6b7280)"}">${ok ? "✓ " + yes : "○ " + no}</div>`);
+      const seuil = (ok, yes, no) => $(`<div class="small g-chk" style="margin-top:6px;color:${ok ? "var(--success-text,#1a7f4b)" : "var(--text-2,#6b7280)"}">${ok ? ico("check", 13) + esc(yes) : ico("circle", 13) + esc(no)}</div>`);
       col2.appendChild(seuil(se.ca_cumule_ok === true, "Chiffre d'affaires cumulé suffisant", "Chiffre d'affaires cumulé à vérifier"));
       col2.appendChild(seuil(se.qualifs_ok === true, "Qualifications exigées couvertes", "Qualifications exigées à vérifier"));
       cols.appendChild(col2);
@@ -255,7 +284,7 @@
 
       const head = $(`<div class="card pad" style="margin-bottom:14px"></div>`);
       head.appendChild($(`<div class="muted small">${d.mandataire ? "Partagé par <b>" + esc(d.mandataire) + "</b>" : "Dossier partagé"}${d.invited && d.invited.company ? " · pour " + esc(d.invited.company) : ""}</div>`));
-      head.appendChild($(`<div style="font-size:21px;font-weight:800;margin:2px 0 3px;letter-spacing:-.02em">${esc(p.name || "Appel d'offres")}</div>`));
+      head.appendChild($(`<div style="font-size:21px;font-weight:800;margin:2px 0 3px;letter-spacing:-.02em">${esc(p.name || "Appel d'offres")}${tip("Vous ne voyez que ce dossier et <b>votre</b> contribution, jamais les données des autres entreprises. Conformément au RGPD, vos actions sont journalisées et visibles par le mandataire.")}</div>`));
       if (p.client) head.appendChild($(`<div class="muted small">${esc(p.client)}</div>`));
       // Compte à rebours : le partenaire perçoit l'urgence et sait combien de temps il lui
       // reste pour renvoyer SA part (le mandataire assemble AVANT la date limite officielle).
@@ -268,7 +297,7 @@
           const txt = past ? "Date limite dépassée — contactez le chef de file."
             : dLeft === 0 ? "Dernier jour : soumettez votre part aujourd'hui."
             : "Il vous reste <b>" + dLeft + " jour" + (dLeft > 1 ? "s" : "") + "</b> pour soumettre votre part au chef de file.";
-          head.appendChild($(`<div style="margin-top:10px;padding:9px 12px;border-radius:9px;background:${bg};border:1px solid ${bd};color:${bd};font-size:13px">⏱ ${txt} <span class="muted" style="color:inherit;opacity:.8">(date limite acheteur : ${esc(fmtDate(p.deadline))})</span></div>`));
+          head.appendChild($(`<div style="margin-top:10px;padding:9px 12px;border-radius:9px;background:${bg};border:1px solid ${bd};color:${bd};font-size:13px">${ico("clock", 14, "margin-right:4px")}${txt} <span class="muted" style="color:inherit;opacity:.8">(date limite acheteur : ${esc(fmtDate(p.deadline))})</span></div>`));
         }
       }
       if (d.for_member) { try { renderForMember(head, d.for_member, d); } catch (e) { console.warn("for_member", e); } }
@@ -276,7 +305,7 @@
       const addFact = (t, h) => { dl.appendChild($(`<dt>${t}</dt>`)); const dd = document.createElement("dd"); dd.innerHTML = h; dl.appendChild(dd); };
       if (p.deadline) addFact("Date limite", `<b>${esc(fmtDate(p.deadline))}</b>`);
       facts.forEach(k => addFact(LABELS[k], renderVal(a[k])));
-      if (p.source_url) addFact("Source", `<a href="${esc(p.source_url)}" target="_blank" rel="noopener nofollow">Avis d'origine ↗</a>`);
+      if (p.source_url && safeUrl(p.source_url) !== "#") addFact("Source", `<a href="${esc(safeUrl(p.source_url))}" target="_blank" rel="noopener noreferrer nofollow">Avis d'origine ${ico("external-link", 13)}</a>`);
       if (dl.children.length) head.appendChild(dl);
       root.appendChild(head);
 
@@ -287,27 +316,34 @@
       else d.documents.forEach(doc => {
         const row = $(`<div class="g-doc"></div>`);
         row.appendChild($(`<div style="min-width:0"><div style="font-weight:600;font-size:13.5px">${esc(doc.name)}</div><div class="muted small">${esc(doc.folder || doc.category || "")}${doc.size ? " · " + kb(doc.size) : ""}</div></div>`));
-        row.appendChild($(`<a class="btn sm" href="/api/invite/${encodeURIComponent(TOKEN)}/doc/${doc.id}">Télécharger</a>`));
+        row.appendChild($(`<a class="btn sm" href="/api/invite/${encodeURIComponent(TOKEN)}/doc/${encodeURIComponent(doc.id)}">Télécharger</a>`));
         docCard.appendChild(row);
       });
       root.appendChild(docCard);
 
       if (d.can_contribute) renderContribution(d);
-      root.appendChild($(`<div class="muted small" style="margin-top:16px;text-align:center">Vous ne voyez que ce dossier et VOTRE contribution — jamais les données des autres entreprises. Conformément au RGPD, vos actions sont journalisées et visibles par le mandataire.</div>`));
       icons();
     }
 
     // ── Contribution + pièces (cœur de la co-construction) ──
     const inp = (ph, v) => { const i = document.createElement("input"); i.className = "inp"; i.placeholder = ph || ""; i.value = v || ""; i.style.width = "100%"; return i; };
     const ta = (ph, rows) => { const t = document.createElement("textarea"); t.className = "inp"; t.placeholder = ph || ""; t.rows = rows || 3; t.style.width = "100%"; t.style.resize = "vertical"; return t; };
-    const field = (label, el) => { const w = document.createElement("div"); w.style.marginTop = "10px"; w.appendChild($(`<label class="small" style="display:block;color:var(--text-2,#6b7280);font-weight:600;margin-bottom:4px">${esc(label)}</label>`)); w.appendChild(el); return w; };
+    // 3e paramètre optionnel : texte (déjà échappé) de la bulle (i) placée à côté du libellé.
+    // La bulle est HORS du <label> : un bouton dans un label serait « cliqué » par tout le libellé.
+    const field = (label, el, tipHtml) => {
+      const w = document.createElement("div"); w.style.marginTop = "10px";
+      const lab = $(`<label class="small" style="display:block;color:var(--text-2,#6b7280);font-weight:600;margin-bottom:4px">${esc(label)}</label>`);
+      if (tipHtml) { lab.style.marginBottom = "0"; const r = $(`<div style="display:flex;align-items:center;margin-bottom:2px"></div>`); r.appendChild(lab); r.insertAdjacentHTML("beforeend", tip(tipHtml)); w.appendChild(r); }
+      else w.appendChild(lab);
+      w.appendChild(el); return w;
+    };
 
     async function renderContribution(d) {
       const role = (d.invited && d.invited.role === "sous_traitant") ? "sous-traitant" : "partenaire";
       const card = $(`<div class="card pad" style="margin-bottom:8px;border:1px solid var(--accent,#3b5bdb)"></div>`);
-      card.appendChild($(`<div class="row" style="gap:8px;align-items:center"><b style="font-size:13.5px;flex:1">Ma contribution au dossier commun</b></div>`));
+      card.appendChild($(`<div class="row" style="gap:8px;align-items:center"><span style="flex:1;min-width:0"><b style="font-size:13.5px">Ma contribution au dossier commun</b>${tip("Vous ne voyez que <b>vos</b> données ; le mandataire les assemble et l'IA les fusionne dans la réponse commune.")}</span></div>`));
       const status = $(`<span class="pill neutral" style="font-size:11px">Brouillon</span>`); card.firstChild.appendChild(status);
-      card.appendChild($(`<div class="muted small" style="margin-top:4px">En tant que <b>${role}</b>, renseignez votre part. Vous ne voyez que VOS données ; le mandataire les assemble et l'IA les fusionne dans la réponse commune.</div>`));
+      card.appendChild($(`<div class="muted small" style="margin-top:4px">En tant que <b>${role}</b>, renseignez votre part.</div>`));
 
       const company = inp("Votre entreprise"), lot = inp("Votre lot / périmètre (ex. Lot 2 — Démolition)");
       const siret = inp("SIRET (14 chiffres)"), forme = inp("Forme juridique (ex. SARL, SAS)");
@@ -348,24 +384,28 @@
       efW.appendChild($(`<div class="muted small" style="margin-bottom:3px">Effectif</div>`)); efW.appendChild(effectif);
       capRow.appendChild(caW); capRow.appendChild(efW);
       const capBox = document.createElement("div"); capBox.appendChild(capRow);
-      const capNote = $(`<span></span>`);
-      const capLine = $(`<div class="muted small" style="margin-top:4px">Ces capacités comptent dans le score du groupement — déclarées par vous. </div>`);
-      capLine.appendChild(capNote); capBox.appendChild(capLine);
-      card.appendChild(field("Vos capacités", capBox));
+      // Seule la date de dernière déclaration reste visible (vide tant qu'il n'y en a pas).
+      const capNote = $(`<div class="muted small" style="margin-top:4px"></div>`);
+      capBox.appendChild(capNote);
+      card.appendChild(field("Vos capacités", capBox, "Ces capacités comptent dans le score du groupement. Elles sont déclarées par vous."));
       card.appendChild(field("Références", refs));
       const prixBox = document.createElement("div"); prixBox.appendChild(prix);
-      prixBox.appendChild($(`<div class="muted small" style="margin-top:4px">C'est le seul montant que voit le mandataire : il en a besoin pour assembler l'offre commune.</div>`));
-      card.appendChild(field("Prix de vente de votre lot (€ HT)", prixBox));
+      prixBox.appendChild($(`<div class="muted small" style="margin-top:4px">Seul montant visible par le mandataire.</div>`));
+      card.appendChild(field("Prix de vente de votre lot (€ HT)", prixBox, "C'est le seul montant que voit le mandataire : il en a besoin pour assembler l'offre commune."));
       const detBox = document.createElement("div"); detBox.className = "g-lockwrap"; detBox.style.position = "relative";
-      const lockIcon = $(`<span style="display:none;position:absolute;right:10px;top:8px;font-size:14px" aria-hidden="true">🔒</span>`);
+      const lockIcon = $(`<span style="display:none;position:absolute;right:10px;top:8px;line-height:0;color:var(--text-2,#6b7280)" aria-hidden="true">${ico("lock", 14)}</span>`);
       detBox.appendChild(detail); detBox.appendChild(lockIcon);
       const lockBar = $(`<div class="row wrap" style="gap:10px;align-items:center;margin-top:6px;display:none"></div>`);
       const btnUnlock = $(`<button class="btn sm" type="button"><i data-lucide="key-round"></i>Déverrouiller avec mon code</button>`);
       const btnLost = $(`<button class="g-link" type="button">J'ai perdu mon code</button>`);
       lockBar.appendChild(btnUnlock); lockBar.appendChild(btnLost); detBox.appendChild(lockBar);
       const lockMsg = $(`<div class="small" style="margin-top:4px;color:#b42318"></div>`); detBox.appendChild(lockMsg);
-      detBox.appendChild($(`<div class="lock-note"><span aria-hidden="true">🔒</span><span>${esc(CR ? CR.LABELS.lock : "Chiffré dans votre navigateur avec une clé qu'Adjugo ne stocke pas.")} ${esc(CR ? CR.LABELS.lost : "Si vous perdez votre code, ce détail est définitivement perdu.")}</span></div>`));
-      card.appendChild(field("Détail de votre chiffrage (coûts, marges, méthode)", detBox));
+      // Mention de confidentialité courte, visible au moment de la saisie ; l'explication complète
+      // (clé non stockée, code de récupération) passe dans la bulle du libellé.
+      const LOCK_SHORT = (CR && CR.LABELS.lock_short) || "Illisible par le mandataire, Adjugo et l'IA. Code perdu = détail perdu.";
+      detBox.appendChild($(`<div class="lock-note">${ico("lock", 13, "margin-top:1px")}<span>${esc(LOCK_SHORT)}</span></div>`));
+      const lockTip = esc(CR ? CR.LABELS.lock : "Chiffré dans votre navigateur avec une clé qu'Adjugo ne stocke pas.") + " " + esc(CR ? CR.LABELS.lost : "Si vous perdez votre code, ce détail est définitivement perdu.");
+      card.appendChild(field("Détail de votre chiffrage (coûts, marges, méthode)", detBox, lockTip));
       card.appendChild(field("Paragraphe de mémoire technique", memoire));
       card.appendChild(field("Message au mandataire (optionnel)", note));
       const cr = document.createElement("div"); cr.className = "row wrap"; cr.style.gap = "8px";
@@ -376,7 +416,7 @@
       const piecesBox = document.createElement("div"); const piecesList = document.createElement("div");
       const checklistEl = document.createElement("div"); checklistEl.style.cssText = "margin-bottom:8px";
       const fileIn = document.createElement("input"); fileIn.type = "file"; fileIn.style.display = "none";
-      const addBtn = $(`<button class="btn" style="padding:7px 13px">+ Ajouter une pièce</button>`);
+      const addBtn = $(`<button class="btn" style="padding:7px 13px"><i data-lucide="plus"></i>Ajouter une pièce</button>`);
       const upMsg = $(`<span class="muted small" style="margin-left:8px"></span>`);
       const addRow = document.createElement("div"); addRow.className = "row wrap"; addRow.style.cssText = "gap:6px;align-items:center;margin-top:7px";
       // Type de pièce (défaut : détection automatique = champ non envoyé) + date de validité.
@@ -390,15 +430,13 @@
       card.appendChild(field("Mes pièces administratives (DC2, attestations, Kbis, assurance…)", piecesBox));
       // ── Coffre-fort croisé : l'état des pièces de CHAQUE membre, jamais leurs fichiers ──
       const cxBox = document.createElement("div");
-      cxBox.appendChild($(`<div class="muted small">Chaque membre voit si les pièces des autres sont présentes et à jour avant la date limite.</div>`));
       const cxWrap = $(`<div class="cx-wrap"></div>`); const cxAlerts = document.createElement("div");
       cxBox.appendChild(cxWrap); cxBox.appendChild(cxAlerts);
-      cxBox.appendChild($(`<div class="muted small" style="margin-top:8px">Vous voyez l'état des pièces de chaque membre, jamais leurs fichiers.</div>`));
-      const acct = $(`<div class="g-banner" style="margin:10px 0 0"><i data-lucide="user-check"></i><div class="small" style="flex:1">Vous avez un compte Adjugo ? Ouvrez ce dossier dans votre espace pour joindre vos pièces directement depuis votre coffre-fort.</div></div>`);
+      const acct = $(`<div class="g-banner" style="margin:10px 0 0"><i data-lucide="user-check"></i><div class="small" style="flex:1">Déjà un compte Adjugo ? Joignez vos pièces depuis votre coffre-fort.</div></div>`);
       if (CLAIM_BTN) { const ob = $(`<button class="btn sm primary" type="button" style="flex:none">Ouvrir dans mon Adjugo</button>`); ob.onclick = () => CLAIM_BTN.click(); acct.appendChild(ob); }
       else acct.appendChild($(`<a class="btn sm" href="/app" target="_blank" rel="noopener" style="flex:none">Me connecter</a>`));
       cxBox.appendChild(acct);
-      card.appendChild(field("Les pièces de chaque membre du groupement", cxBox));
+      card.appendChild(field("Les pièces de chaque membre du groupement", cxBox, "Chaque membre voit si les pièces des autres sont présentes et à jour avant la date limite. Vous voyez l'état des pièces de chaque membre, jamais leurs fichiers."));
       const CX_LABEL = (p) => ({ present: "Présente", valide_jusquau: "Valide jusqu'au " + fmtShort(p.expiration_date), expire_avant_limite: "Expire avant la limite", expire: "Expirée", manquant: "Manquante" })[p.status] || p.status || "";
       async function reloadCoffre() {
         let g = null;
@@ -430,9 +468,9 @@
         checklistEl.innerHTML = "";
         if (!chk || (!(chk.have || []).length && !(chk.missing || []).length)) return;
         const wrap = $(`<div class="row wrap" style="gap:6px;align-items:center"></div>`);
-        (chk.have || []).forEach(l => wrap.appendChild($(`<span class="pill go" style="font-size:11px">✓ ${esc(l)}</span>`)));
-        (chk.missing || []).forEach(l => wrap.appendChild($(`<span class="pill neutral" style="font-size:11px;opacity:.75">○ ${esc(l)} à fournir</span>`)));
-        checklistEl.appendChild(wrap);
+        (chk.have || []).forEach(l => wrap.appendChild($(`<span class="pill go" style="font-size:11px">${ico("check", 12, "vertical-align:0")}${esc(l)}</span>`)));
+        (chk.missing || []).forEach(l => wrap.appendChild($(`<span class="pill neutral" style="font-size:11px;opacity:.75">${ico("circle", 12, "vertical-align:0")}${esc(l)} à fournir</span>`)));
+        checklistEl.appendChild(wrap); icons();
       }
       const pieceUrl = "/api/invite/" + encodeURIComponent(TOKEN) + "/contribution/piece";
       function renderPieces(pieces) {
@@ -449,7 +487,7 @@
           const patch = async (body) => {
             upMsg.textContent = "Mise à jour…";
             const r = await fetch(pieceUrl + "/" + pc.id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
-            if (r && r.ok) { upMsg.textContent = "Pièce mise à jour ✓"; reloadPieces(); }
+            if (r && r.ok) { okMsg(upMsg, "Pièce mise à jour"); reloadPieces(); }
             else { const e = r ? await r.json().catch(() => ({})) : {}; upMsg.textContent = errText(e, "Modification impossible."); }
           };
           sel.onchange = () => patch({ piece_type: sel.value });
@@ -458,7 +496,7 @@
           meta.appendChild($(`<span class="muted small">Valide jusqu'au</span>`)); meta.appendChild(dt);
           left.appendChild(meta); row.appendChild(left);
           const acts = document.createElement("div"); acts.className = "row"; acts.style.gap = "6px";
-          acts.appendChild($(`<a class="btn sm" href="${pieceUrl}/${pc.id}">Voir</a>`));
+          acts.appendChild($(`<a class="btn sm" href="${pieceUrl}/${encodeURIComponent(pc.id)}">Voir</a>`));
           const rm = $(`<button class="btn sm">Retirer</button>`);
           rm.onclick = async () => { rm.disabled = true; await fetch(pieceUrl + "/" + pc.id, { method: "DELETE" }); reloadPieces(); };
           acts.appendChild(rm); row.appendChild(acts); piecesList.appendChild(row);
@@ -473,7 +511,7 @@
         if (typeSel.value) fd.append("piece_type", typeSel.value);
         if (expIn.value) fd.append("expiration_date", expIn.value);
         const r = await fetch(pieceUrl, { method: "POST", body: fd }); fileIn.value = "";
-        if (r.ok) { upMsg.textContent = "Pièce ajoutée ✓"; typeSel.value = ""; expIn.value = ""; reloadPieces(); } else { const e = await r.json().catch(() => ({})); upMsg.textContent = errText(e, "Échec de l'envoi"); }
+        if (r.ok) { okMsg(upMsg, "Pièce ajoutée"); typeSel.value = ""; expIn.value = ""; reloadPieces(); } else { const e = await r.json().catch(() => ({})); upMsg.textContent = errText(e, "Échec de l'envoi"); }
       };
 
       const msg = $(`<span class="muted small"></span>`);
@@ -490,17 +528,17 @@
         if (!ok) return;
         btnDecline.disabled = true;
         const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/decline", { method: "POST" }).catch(() => null);
-        if (r && r.ok) { finalScreen("✋", "Vous avez décliné cette invitation", "Le mandataire est prévenu. Ce lien ne fonctionne plus ; il pourra vous inviter de nouveau si besoin."); return; }
+        if (r && r.ok) { finalScreen("hand", "Vous avez décliné cette invitation", "Le mandataire est prévenu. Ce lien ne fonctionne plus ; il pourra vous inviter de nouveau si besoin."); return; }
         btnDecline.disabled = false; const e = r ? await r.json().catch(() => ({})) : {}; msg.textContent = errText(e, "Impossible de décliner pour le moment.");
       };
       declineWrap.appendChild(btnDecline); card.appendChild(declineWrap);
       content().appendChild(card);
       // ── Mon journal : qui a vu / modifié quoi sur MA part + événements du groupement ──
       const jCard = $(`<div class="card pad" style="margin-bottom:8px"></div>`);
-      const jHead = $(`<div class="row" style="gap:8px;align-items:center"><b style="font-size:13.5px;flex:1">Mon journal</b></div>`);
+      const jHead = $(`<div class="row" style="gap:8px;align-items:center"><span style="flex:1;min-width:0"><b style="font-size:13.5px">Mon journal</b>${tip("Qui a consulté ou modifié quoi sur votre part, et les événements du groupement.<span class=\"j-int\"></span>")}</span></div>`);
+      const jInt = jHead.querySelector(".j-int");   // complété par le libellé d'intégrité renvoyé par l'API
       const jRefresh = $(`<button class="btn sm" type="button"><i data-lucide="refresh-cw"></i>Actualiser</button>`); jHead.appendChild(jRefresh);
       jCard.appendChild(jHead);
-      jCard.appendChild($(`<div class="muted small" style="margin-top:3px">Qui a consulté ou modifié quoi sur votre part, et les événements du groupement.</div>`));
       const jList = $(`<ul class="jrn"></ul>`); const jFoot = $(`<div class="muted small" style="margin-top:8px"></div>`);
       jCard.appendChild(jList); jCard.appendChild(jFoot);
       const WHO = { vous: "vous", mandataire: "mandataire", partenaire: "partenaire" };
@@ -513,13 +551,15 @@
         const entries = j.entries || [];
         if (!entries.length) jList.appendChild($(`<li class="muted">Aucune entrée pour l'instant.</li>`));
         entries.forEach(e => jList.appendChild($(`<li><span class="jrn-at">${esc(fmtDT(e.at))}</span><span class="jrn-who ${esc(e.who || "")}">${esc(WHO[e.who] || e.who || "")}</span><span style="flex:1;min-width:0">${esc(e.label || e.action || "")}${e.detail ? ` <span class="muted">— ${esc(e.detail)}</span>` : ""}</span></li>`)));
-        jFoot.innerHTML = esc(j.integrity_label || "") + (j.chained ? ' <span style="color:var(--success-text,#1a7f4b);font-weight:600">✓ intégrité vérifiée</span>' : "");
+        jInt.textContent = j.integrity_label ? " " + j.integrity_label : "";
+        jFoot.innerHTML = j.chained ? `<span class="pill go" style="font-size:11px">${ico("check", 12, "vertical-align:0")}Intégrité vérifiée</span>` : "";
+        icons();
       }
       jRefresh.onclick = loadJournal;
       content().appendChild(jCard);
       reloadCoffre(); loadJournal();
 
-      const setStatus = (s) => { const ok = s === "submitted"; status.textContent = ok ? "✓ Soumise" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; };
+      const setStatus = (s) => { const ok = s === "submitted"; status.innerHTML = ok ? ico("check", 12, "vertical-align:0") + "Soumise" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; if (ok) icons(); };
       let curVer = 0;   // verrou optimiste : version chargée
       // ── Détail du chiffrage chiffré : état local ──
       let curEnv = null;          // enveloppe actuellement enregistrée côté serveur
@@ -557,7 +597,7 @@
           if (!code) return;
           try {
             const ctx = await CR.keyFromCode(TOKEN, code, curEnv);
-            detail.value = await CR.decrypt(ctx, curEnv); keyCtx = ctx; setLocked(false); lockMsg.textContent = ""; msg.textContent = "Détail déverrouillé ✓"; return;
+            detail.value = await CR.decrypt(ctx, curEnv); keyCtx = ctx; setLocked(false); lockMsg.textContent = ""; okMsg(msg, "Détail déverrouillé"); return;
           } catch (e) { extra = `<p style="margin:8px 0 0;color:#b42318">Code incorrect. Vérifiez les caractères et réessayez.</p>`; }
         }
       };
@@ -629,7 +669,8 @@
       function showSubmittedBanner() {
         const b = document.getElementById("g-banner");
         b.style.background = "#e7f7ee"; b.style.borderColor = "#1a7f4b";
-        b.innerHTML = '<span style="font-size:18px">✓</span><div class="small"><b>Votre part est soumise au mandataire.</b> Vous faites partie du groupement piloté par <b>' + esc(d.mandataire || "le mandataire") + '</b>. Vous pouvez encore l\'ajuster.</div>';
+        b.innerHTML = ico("check-circle-2", 18, "color:#1a7f4b") + '<div class="small"><b>Votre part est soumise à ' + esc(d.mandataire || "le mandataire") + '.</b> Vous pouvez encore l\'ajuster.</div>';
+        icons();
       }
       if (c0 && c0.status === "submitted") showSubmittedBanner();
       const save = async () => {
@@ -649,7 +690,7 @@
         }
         const e = await r.json().catch(() => ({})); msg.textContent = errText(e, r.status === 422 ? "Données invalides — vérifiez les montants saisis." : "Erreur."); return false;
       };
-      btnSave.onclick = async () => { msg.textContent = "Enregistrement…"; if (await save()) msg.textContent = collectWarn ? "Brouillon enregistré, mais : " + collectWarn : "Brouillon enregistré ✓"; };
+      btnSave.onclick = async () => { msg.textContent = "Enregistrement…"; if (await save()) { if (collectWarn) msg.textContent = "Brouillon enregistré, mais : " + collectWarn; else okMsg(msg, "Brouillon enregistré"); } };
       // Binding d'identité : avant la SOUMISSION, si le lien cible une adresse email et que
       // l'email est configuré, l'invité prouve qu'il contrôle cette adresse (code à 6 chiffres).
       async function ensureVerified() {
@@ -680,7 +721,7 @@
           const code = (res.value || "").trim();
           if (!code) continue;
           const vr = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
-          if (vr.ok) { msg.textContent = "Identité vérifiée ✓"; return true; }
+          if (vr.ok) { okMsg(msg, "Identité vérifiée"); return true; }
           const e = await vr.json().catch(() => ({})); msg.textContent = (e && e.detail) ? e.detail : "Code incorrect."; return false;
         }
       }
@@ -690,7 +731,7 @@
         // à l'acheteur (ces éléments alimentent son DC1/DC2) — réduit les envois incomplets.
         const nRefs = refs.value.split("\n").map(s => s.trim()).filter(Boolean).length;
         const nPieces = piecesList.querySelectorAll(".g-doc").length;
-        const li = (ok, t) => `<li style="margin:2px 0">${ok ? "✓" : "○"} ${t}</li>`;
+        const li = (ok, t) => `<li class="g-chk" style="margin:2px 0">${ok ? ICO_OK() : ico("circle", 13, "color:var(--text-2,#6b7280)")}<span>${t}</span></li>`;
         const recap = await openModal({
           title: "Confirmer l'envoi au chef de file",
           bodyHtml: "Voici ce que le mandataire va recevoir pour votre part :"
@@ -709,7 +750,7 @@
         if (!recap) { msg.textContent = "Envoi annulé — votre brouillon est conservé."; return; }
         if (!(await ensureVerified())) return;
         const r = await fetch(url + "/submit", { method: "POST" });
-        if (r.ok) { setStatus((await r.json()).status); msg.textContent = "Contribution soumise ✓"; showSubmittedBanner(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+        if (r.ok) { setStatus((await r.json()).status); okMsg(msg, "Contribution soumise"); showSubmittedBanner(); window.scrollTo({ top: 0, behavior: "smooth" }); }
         else { const e = await r.json().catch(() => ({})); const dt = e && e.detail; msg.textContent = (dt && dt.message) ? dt.message : (typeof dt === "string" ? dt : "Erreur d'envoi."); }
       };
       icons();
@@ -724,8 +765,7 @@
       const btn = $(`<button class="btn primary"><i data-lucide="search"></i>Rechercher</button>`);
       const row = document.createElement("div"); row.className = "row wrap"; row.style.gap = "8px";
       row.appendChild(q); row.appendChild(dep); row.appendChild(btn);
-      bar.appendChild($(`<b style="font-size:13.5px">Trouvez des appels d'offres publics</b>`));
-      bar.appendChild($(`<div class="muted small" style="margin:3px 0 10px">Sources officielles en direct (BOAMP, TED…). En tant qu'invité, la recherche est ouverte ; pour <b>analyser</b> ou <b>répondre</b>, créez votre compte.</div>`));
+      bar.appendChild($(`<div style="margin-bottom:10px"><b style="font-size:13.5px">Trouvez des appels d'offres publics</b>${tip("Sources officielles en direct (BOAMP, TED…). En tant qu'invité, la recherche est ouverte ; pour <b>analyser</b> ou <b>répondre</b>, créez votre compte.")}</div>`));
       bar.appendChild(row);
       root.appendChild(bar);
       const results = document.createElement("div"); root.appendChild(results);
@@ -737,16 +777,17 @@
           d = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q.value, departements: dep.value ? [dep.value.trim()] : [], countries: ["FR"], limit: 20 }) }).then(r => r.ok ? r.json() : Promise.reject());
         } catch (e) { results.innerHTML = `<div class="muted small" style="padding:14px">Recherche indisponible. Réessayez.</div>`; return; }
         if (!d.tenders.length) { results.innerHTML = `<div class="muted small" style="padding:14px">Aucun appel d'offres trouvé. Élargissez les mots-clés.</div>`; return; }
-        results.innerHTML = `<div class="muted small" style="margin:2px 0 6px">${d.count} résultat(s)</div>`;
+        results.innerHTML = `<div class="muted small" style="margin:2px 0 6px">${esc(d.count)} résultat(s)</div>`;
         d.tenders.forEach(t => {
           const card = $(`<div class="g-res"></div>`);
           card.appendChild($(`<div style="font-weight:700;font-size:14px">${esc(t.objet || "Appel d'offres")}</div>`));
           const meta = [t.acheteur, t.lieu, t.montant_estime ? eur(t.montant_estime) : "", t.date_limite ? "limite " + fmtDate(t.date_limite) : ""].filter(Boolean).map(esc).join(" · ");
           card.appendChild($(`<div class="muted small" style="margin-top:3px">${meta}</div>`));
           const acts = $(`<div class="row" style="gap:8px;margin-top:9px"></div>`);
-          if (t.url || (t.provenance && t.provenance.source_url)) acts.appendChild($(`<a class="btn sm" href="${esc(t.url || t.provenance.source_url)}" target="_blank" rel="noopener nofollow">Voir l'avis ↗</a>`));
+          const avisUrl = safeUrl(t.url || (t.provenance && t.provenance.source_url));
+          if (avisUrl !== "#") acts.appendChild($(`<a class="btn sm" href="${esc(avisUrl)}" target="_blank" rel="noopener noreferrer nofollow">Voir l'avis<i data-lucide="external-link"></i></a>`));
           const ana = $(`<button class="btn sm primary">Analyser cet AO</button>`);
-          ana.onclick = () => { const b = document.getElementById("g-banner"); b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)"; b.innerHTML = '<i data-lucide="sparkles"></i><div class="small">L\'analyse de pertinence, le chiffrage et la génération du dossier sont réservés aux comptes Adjugo. <a href="/app" target="_blank" rel="noopener"><b>Créez le vôtre gratuitement →</b></a></div>'; icons(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+          ana.onclick = () => { const b = document.getElementById("g-banner"); b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)"; b.innerHTML = '<i data-lucide="sparkles"></i><div class="small">L\'analyse de pertinence, le chiffrage et la génération du dossier sont réservés aux comptes Adjugo. <a href="/app" target="_blank" rel="noopener"><b>Créez le vôtre gratuitement</b>' + ico("arrow-right", 13, "margin-left:3px") + '</a></div>'; icons(); window.scrollTo({ top: 0, behavior: "smooth" }); };
           acts.appendChild(ana); card.appendChild(acts); results.appendChild(card);
         });
         icons();
@@ -759,12 +800,16 @@
     function finalScreen(icon, title, msg) {
       document.getElementById("shell").style.display = "none";
       const l = document.getElementById("loading"); l.style.display = "";
-      l.innerHTML = `<div style="font-size:34px;margin-bottom:8px">${icon || "🔒"}</div><div style="font-weight:700;font-size:16px;color:var(--text,#16181d)">${esc(title)}</div><div style="margin-top:6px">${esc(msg)}</div>`;
+      l.innerHTML = `<div style="margin-bottom:8px;color:var(--text-2,#6b7280)">${ico(icon || "lock", 34)}</div><div style="font-weight:700;font-size:16px;color:var(--text,#16181d)">${esc(title)}</div><div style="margin-top:6px">${esc(msg)}</div>`;
+      icons();
     }
     function fail(title, msg, icon) { finalScreen(icon, title, msg); }
+    // L'invitation n'occupe plus un bandeau : elle passe dans la bulle (i) à côté du titre de page
+    // (le bouton « Créer mon compte Adjugo » est déjà dans l'en-tête). #g-banner reste pour les
+    // messages ponctuels (part soumise, analyse réservée, compte existant) et se masque s'il est vide.
     function setBanner() {
-      const b = document.getElementById("g-banner");
-      b.innerHTML = '<i data-lucide="info"></i><div class="small">Vous êtes invité par <b>' + esc(DATA.mandataire || "le mandataire") + '</b> sur ce dossier. <a href="/app" target="_blank" rel="noopener"><b>Créez votre compte Adjugo</b></a> pour débloquer tout l\'espace.</div>';
+      document.getElementById("g-banner").innerHTML = "";
+      document.getElementById("g-tip").innerHTML = tip("Vous êtes invité par <b>" + esc(DATA.mandataire || "le mandataire") + "</b> sur ce dossier. Créez votre compte Adjugo pour débloquer tout l'espace.");
     }
     function initials(s) { return (s || "CO").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase(); }
 
@@ -777,10 +822,10 @@
       .then(async r => {
         if (r.status === 410) {   // décliné OU expiré : distingués par le `detail` renvoyé
           const e = await r.json().catch(() => ({})); const dt = (e && typeof e.detail === "string") ? e.detail : "";
-          if (/déclin/i.test(dt)) throw { icon: "✋", t: "Vous avez décliné cette invitation", m: dt };
-          throw { t: "Lien expiré", m: dt || "Ce lien de partage a expiré." };
+          if (/déclin/i.test(dt)) throw { icon: "hand", t: "Vous avez décliné cette invitation", m: dt };
+          throw { icon: "link-2-off", t: "Lien expiré", m: dt || "Ce lien de partage a expiré." };
         }
-        if (!r.ok) throw { t: "Lien invalide", m: "Ce lien n'est plus valable ou a été révoqué." }; return r.json(); })
+        if (!r.ok) throw { icon: "link-2-off", t: "Lien invalide", m: "Ce lien n'est plus valable ou a été révoqué." }; return r.json(); })
       .then(d => {
         DATA = d;
         const co = (d.invited && d.invited.company) || "Co-traitant";
@@ -800,7 +845,7 @@
         if (myToken) {
           const b = document.getElementById("g-banner");
           b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)";
-          b.innerHTML = '<i data-lucide="user-check"></i><div class="small" style="flex:1">Vous avez un compte Adjugo — <b>ouvrez ce dossier dans VOTRE espace</b> pour contribuer avec votre base de connaissances et vos références.</div>';
+          b.innerHTML = '<i data-lucide="user-check"></i><div class="small" style="flex:1">Vous avez un compte Adjugo : <b>ouvrez ce dossier dans votre espace</b>.</div>';
           const btn = document.createElement("button"); btn.className = "btn sm primary"; btn.style.flex = "none"; btn.textContent = "Ouvrir dans mon Adjugo";
           CLAIM_BTN = btn;
           btn.onclick = async () => {

@@ -141,8 +141,8 @@ def _bloc_rse(dce: dict) -> list:
     if not env and not soc:
         return []
     out = [("h2", "Clauses environnementales & sociales")]
-    out += [("bullet", "🌿 " + e) for e in env]
-    out += [("bullet", "🤝 " + e) for e in soc]
+    out += [("bullet", "Environnement : " + e) for e in env]
+    out += [("bullet", "Social : " + e) for e in soc]
     if _s(dce.get("echeance_rse")):
         out.append(("note", _s(dce.get("echeance_rse"))))
     return out
@@ -161,7 +161,7 @@ def _entete(dce: dict) -> list:
     if _s(dce.get("disclaimer")):
         out.append(("note", _s(dce.get("disclaimer"))))
     if (dce.get("avertissements") or []):
-        out.append(("h2", "⚠️ Points à corriger avant publication"))
+        out.append(("h2", "Points à corriger avant publication"))
         out += [("bullet", _s(a)) for a in dce["avertissements"] if _s(a)]
     if _s(dce.get("synthese_besoin")):
         out += [("h2", "Synthèse du besoin"), ("p", _s(dce.get("synthese_besoin")))]

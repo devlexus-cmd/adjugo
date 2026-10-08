@@ -309,7 +309,7 @@ def score_company(c: NormalizedCompany, need_trade_label: str = "",
     if badges:
         note_parts.append("Certifié " + ", ".join(badges))
     if flags:
-        note_parts.append("⚠ " + " ; ".join(flags))
+        note_parts.append("À vérifier : " + " ; ".join(flags))
     note = ". ".join(note_parts)
 
     return Score(total=max(0, min(100, total)), breakdown=out, note=note)

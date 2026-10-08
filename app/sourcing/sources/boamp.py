@@ -7,6 +7,7 @@ import re
 import logging
 from datetime import date
 from typing import Optional
+from urllib.parse import urljoin
 
 import httpx
 
@@ -18,6 +19,9 @@ API = "https://www.boamp.fr/api/explore/v2.1/catalog/datasets/boamp/records"
 SELECT = ("idweb,objet,nomacheteur,code_departement,dateparution,datelimitereponse,"
           "descripteur_libelle,descripteur_code,nature_libelle,famille_libelle,"
           "url_avis,type_marche,procedure_libelle")
+# Identifiant d'avis BOAMP (idweb), ex. « 24-123456 » : seul format accepté pour reconstruire
+# une URL d'avis côté serveur (jamais d'URL arbitraire venue du client).
+_IDWEB = re.compile(r"^\d{2}-\d{1,9}$")
 
 
 class BoampSource(TenderSource):
@@ -102,27 +106,32 @@ class BoampSource(TenderSource):
     def fetch_dce(self, tender: NormalizedTender) -> Optional[str]:
         """Tente de récupérer le texte réel du DCE. Retourne None si inaccessible
         (jamais de DCE inventé en repli)."""
-        url = tender.provenance.source_url
+        # ANTI-SSRF : l'objet AO arrive du navigateur (/api/sourcing/analyze) → source_url
+        # est une donnée CLIENT. On n'appelle donc QUE des URLs https vers boamp.fr (liste
+        # blanche), IP publiques vérifiées après résolution, redirections revalidées à chaque
+        # saut, corps borné (app/core/safe_fetch.py). URL hors liste → on la reconstruit
+        # depuis l'identifiant officiel BOAMP, sinon rien (jamais de DCE inventé).
+        from app.core.safe_fetch import DCE_HOSTS, safe_get
+        url = self._safe_avis_url(tender)
         if not url:
             return None
         try:
-            with httpx.Client(follow_redirects=True, timeout=20,
+            with httpx.Client(follow_redirects=False, timeout=httpx.Timeout(10.0, connect=5.0),
                               headers={"User-Agent": "AdjugoBot/1.0 (+https://adjugo.fr)"}) as c:
-                resp = c.get(url)
+                resp = safe_get(url, DCE_HOSTS, max_bytes=5 * 1024 * 1024, client=c)
                 if resp.status_code != 200:
                     return None
                 pdf_links = re.findall(r'href="([^"]+\.pdf[^"]*)"', resp.text, re.I)
                 for link in pdf_links[:5]:
-                    if link.startswith("/"):
-                        link = "https://www.boamp.fr" + link
+                    link = urljoin(resp.url, link)
                     try:
-                        p = c.get(link, timeout=20)
+                        p = safe_get(link, DCE_HOSTS, client=c)   # revalide hôte + IP
                         if p.status_code == 200 and "pdf" in p.headers.get("content-type", "").lower():
                             from app.services.analysis import extract_text_from_pdf
-                            txt = extract_text_from_pdf(p.content)
+                            txt = extract_text_from_pdf(p.content, max_chars=120000)
                             if txt and len(txt) > 300 and not txt.startswith("Erreur"):
                                 return txt
-                    except Exception:
+                    except Exception:   # URL refusée, trop grosse ou injoignable → lien suivant
                         continue
                 # Pas de PDF DCE exploitable → None (l'avis sera analysé à part,
                 # honnêtement labellisé « DCE non accessible »). Jamais de DCE inventé.
@@ -130,6 +139,21 @@ class BoampSource(TenderSource):
         except Exception as e:
             logger.info("DCE BOAMP non récupéré (%s) : %s", url, e)
             return None
+
+    @staticmethod
+    def _safe_avis_url(tender: NormalizedTender) -> Optional[str]:
+        """URL de l'avis à appeler : la source_url si elle passe la liste blanche (https,
+        boamp.fr), sinon l'URL officielle reconstruite depuis l'idweb ; None sinon."""
+        from app.core.safe_fetch import DCE_HOSTS, UnsafeURL, validate_url
+        url = (tender.provenance.source_url or "").strip()
+        try:
+            return validate_url(url, DCE_HOSTS, resolve=False)
+        except UnsafeURL:
+            pass
+        ref = (tender.provenance.official_ref or "").strip()
+        if _IDWEB.match(ref):
+            return f"https://www.boamp.fr/avis/detail/{ref}"
+        return None
 
 
 def _as_str(v) -> Optional[str]:

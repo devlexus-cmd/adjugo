@@ -128,7 +128,7 @@ L'Éditeur met en œuvre des mesures techniques et organisationnelles approprié
 - hachage des mots de passe ;
 - contrôle des accès et habilitations ;
 - journalisation et supervision ;
-- sauvegardes quotidiennes chiffrées, stockées en Union européenne (Cloudflare R2), avec une rétention de 14 jours.
+- sauvegardes quotidiennes stockées chiffrées au repos chez notre hébergeur européen (Cloudflare R2, Union européenne), avec une rétention de 14 jours.
 
 En cas de **violation de données** présentant un risque pour les droits et libertés des personnes, l'Éditeur notifie la CNIL dans les **72 heures** et, le cas échéant, informe les personnes concernées, conformément aux articles 33 et 34 du RGPD.
 

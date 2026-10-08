@@ -18,6 +18,8 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.org import data_owner_id, member_ids
 from app.core.ratelimit import limiter
+from app.core.uploads import aread_upload_limited
+from starlette.concurrency import run_in_threadpool
 from app.models import User, Company, Project
 from app.sourcing.base import TenderCriteria
 from app.sourcing.sources.boamp import BoampSource
@@ -28,6 +30,7 @@ from app.sourcing.sources.bodacc import BodaccSource
 from app.sourcing.sources.buyer import BuyerProfileSource
 from app.sourcing.search import TenderSearchService, CompanySearchService
 from app.sourcing.schemas import NormalizedTender
+from app.schemas import safe_link_url
 from app.services.profile import company_dict as _company_dict, criteria_dict as _criteria_dict
 
 logger = logging.getLogger("adjugo")
@@ -338,12 +341,12 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
             _proj = Project(user_id=current_user.id,
                             name=(_a.get("details", {}).get("intitule_marche") or tender.objet)[:500],
                             client=tender.acheteur or "", match_score=_score, go_decision=_decision,
-                            ai_summary=_a.get("summary", ""), ai_analysis=_a, source_url=tender.provenance.source_url)
+                            ai_summary=_a.get("summary", ""), ai_analysis=_a, source_url=_safe_link(tender.provenance.source_url))
             db.add(_proj); db.commit(); db.refresh(_proj)
             return {"project_id": _proj.id, "decision": _decision, "score": _score, "dce_available": True,
                     "confidence": tender.confidence, "summary": _a.get("summary", ""),
                     "details": _a.get("details", {}), "score_breakdown": _a.get("score_breakdown"),
-                    "source": tender.provenance.model_dump()}
+                    "source": _safe_source(tender.provenance.model_dump())}
 
     consume_analysis(current_user, db)  # 402 si quota atteint
 
@@ -369,7 +372,7 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
                                  "Réessayez — votre quota n'a pas été débité.")
     analysis["dce_available"] = dce_available
-    analysis["source"] = tender.provenance.model_dump()
+    analysis["source"] = _safe_source(tender.provenance.model_dump())
     analysis["lead_score"] = tender.score.model_dump() if tender.score else None
 
     # Le SCORE Go/No-Go n'est posé QU'À PARTIR D'UN VRAI DCE analysé : sur un avis
@@ -390,7 +393,7 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         client=tender.acheteur or "",
         match_score=score, go_decision=decision,
         ai_summary=analysis.get("summary", ""), ai_analysis=analysis,
-        source_url=tender.provenance.source_url,
+        source_url=_safe_link(tender.provenance.source_url),
     )
     db.add(project); db.commit(); db.refresh(project)
 
@@ -405,7 +408,7 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         "summary": analysis.get("summary", ""),
         "details": analysis.get("details", {}),
         "score_breakdown": analysis.get("score_breakdown"),   # « pourquoi ce % » (déterministe)
-        "source": tender.provenance.model_dump(),
+        "source": _safe_source(tender.provenance.model_dump()),
         "groupement": analysis.get("groupement"),
         "groupement_score": project.groupement_score,
     }
@@ -427,17 +430,13 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     if not project:
         raise HTTPException(404, "Projet introuvable — analysez d'abord l'avis.")
 
-    content = await file.read()
-    if len(content) == 0:
-        raise HTTPException(400, "Fichier vide.")
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(413, "Fichier trop volumineux (50 Mo max).")
+    content = await aread_upload_limited(file)   # lecture bornée : 413 au-delà de 50 Mo
 
     # Extraction du DCE réel — message clair si illisible/format non supporté.
     # max_chars élevé : on lit l'INTÉGRALITÉ du dossier (RC+CCAP+CCTP+DPGF d'un ZIP),
     # sinon l'analyse variait d'un import à l'autre selon ce qui passait sous le plafond.
     try:
-        dce_text = extract_dce_text(file.filename, content, max_chars=120000)
+        dce_text = await run_in_threadpool(extract_dce_text, file.filename, content, max_chars=120000)
     except ValueError as e:
         raise HTTPException(422, str(e))
 
@@ -459,7 +458,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     analysis["dce_available"] = True
     analysis["dce_excerpt"] = (dce_text or "")[:30000]   # contexte pour le Q&A IA
     prev = project.ai_analysis or {}
-    analysis["source"] = prev.get("source") or {}
+    analysis["source"] = _safe_source(prev.get("source"))
     analysis["lead_score"] = prev.get("lead_score")
 
     score = analysis.get("match_score", 0)
@@ -527,7 +526,7 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     except Exception:
         raise HTTPException(404, "Le fichier du dossier est introuvable dans le stockage.")
     try:
-        dce_text = extract_dce_text(doc.name, content, max_chars=120000)
+        dce_text = await run_in_threadpool(extract_dce_text, doc.name, content, max_chars=120000)
     except ValueError as e:
         raise HTTPException(422, str(e))
 
@@ -547,7 +546,7 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     analysis["dce_available"] = True
     analysis["dce_excerpt"] = (dce_text or "")[:30000]
     prev = project.ai_analysis or {}
-    analysis["source"] = prev.get("source") or {}
+    analysis["source"] = _safe_source(prev.get("source"))
     analysis["lead_score"] = prev.get("lead_score")
     score = analysis.get("match_score", 0)
     decision = _verdict(score, gonogo)
@@ -738,6 +737,25 @@ def generate_documents(request: Request, req: DocumentsRequest,
         "cotraitants_rejetes": (len(req.cotraitants) - len(verified)) if req.cotraitants else 0,
         "dossier": dossier,
     }
+
+
+def _safe_link(url) -> Optional[str]:
+    """Lien d'avis stocké sur le projet (affiché ensuite comme lien cliquable, y compris
+    à un partenaire) : l'objet AO vient du navigateur, donc UNE SEULE règle, celle de
+    safe_link_url (http(s) absolu ou chemin interne « /… » ; jamais javascript:, data:,
+    « //hôte », « /\\hôte »…). Plafond = taille de la colonne Project.source_url (500)."""
+    return safe_link_url(url, 500)
+
+
+def _safe_source(src) -> dict:
+    """Bloc « source » d'une analyse (stocké dans ai_analysis puis renvoyé à l'interface) :
+    son source_url passe par la même règle — une ancienne valeur douteuse ressort vide."""
+    if not isinstance(src, dict):
+        return {}
+    out = dict(src)
+    if "source_url" in out:
+        out["source_url"] = safe_link_url(out.get("source_url"), 2000) or ""
+    return out
 
 
 def _tender_as_text(t: NormalizedTender) -> str:

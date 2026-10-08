@@ -274,6 +274,25 @@ const __adjApp = createApp({
   },
   mounted() {
     this.applyTheme();
+    // Bulles d'information (i) : au toucher on donne le focus (iOS ne le fait pas pour un
+    // bouton), Échap referme, et la bulle est recadrée pour ne jamais sortir de l'écran
+    // (à droite comme en bas : elle s'ouvre alors au-dessus de l'icône).
+    (function () {
+      const fit = (t) => {
+        const b = t && t.querySelector(".tip-b"); if (!b) return;
+        b.style.translate = ""; b.style.top = ""; b.style.bottom = "";
+        if (window.matchMedia && window.matchMedia("(max-width:640px)").matches) return;   // feuille fixe en bas
+        let r = b.getBoundingClientRect();
+        const vw = document.documentElement.clientWidth, vh = window.innerHeight;
+        let dx = 0; if (r.right > vw - 8) dx = vw - 8 - r.right; if (r.left + dx < 8) dx = 8 - r.left;
+        if (dx) b.style.translate = Math.round(dx) + "px 0";
+        if (r.bottom > vh - 8) { b.style.top = "auto"; b.style.bottom = "calc(100% + 8px)"; }
+      };
+      const tipOf = (e) => (e.target && e.target.closest) ? e.target.closest(".tip") : null;
+      ["mouseover", "focusin"].forEach(ev => document.addEventListener(ev, e => { const t = tipOf(e); if (t) fit(t); }));
+      document.addEventListener("click", e => { const t = tipOf(e); if (t) { e.preventDefault(); t.focus(); fit(t); } });
+      document.addEventListener("keydown", e => { const a = document.activeElement; if (e.key === "Escape" && a && a.classList && a.classList.contains("tip")) a.blur(); });
+    })();
     if (window.matchMedia) {
       window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (this.theme === "system") this.applyTheme(); });
     }
@@ -297,7 +316,7 @@ const __adjApp = createApp({
     if (_vrf) {
       history.replaceState({}, "", this.token ? "/app" : "/");
       this.api("POST", "/api/auth/verify-email", { token: _vrf })
-        .then(r => { this.notify(r.message || "Adresse confirmée ✓"); if (this.token) this.api("GET", "/api/auth/me").then(u => this.user = u).catch(() => {}); })
+        .then(r => { this.notify(r.message || "Adresse confirmée"); if (this.token) this.api("GET", "/api/auth/me").then(u => this.user = u).catch(() => {}); })
         .catch(e => this.notify(e.message || "Lien de vérification invalide ou expiré", "err"));
     }
     // Connexion Google : retour de l'OAuth → le jeton arrive dans l'URL (?gtoken=) ou une erreur (?gerror=).
@@ -385,8 +404,8 @@ const __adjApp = createApp({
         if (Array.isArray(d) && d.length) {
           // Erreur de validation Pydantic (422) : on extrait un message lisible au lieu
           // d'afficher le JSON brut [{"type":"missing","loc":[...]}] à l'utilisateur.
-          const f = d[0]; const field = Array.isArray(f.loc) ? f.loc[f.loc.length - 1] : "";
-          msg = (field && field !== "body" ? "Champ « " + field + " » : " : "") + (f.msg || "valeur invalide");
+          // On n'affiche JAMAIS f.input (la valeur saisie renvoyée par le serveur).
+          msg = this.validationMsg(d[0]);
         } else if (typeof d === "string") { msg = d; }
         else if (d && d.message) { msg = d.message; }
         else { msg = r.status >= 500 ? "Erreur serveur, réessayez dans un instant." : "Erreur " + r.status; }
@@ -394,6 +413,29 @@ const __adjApp = createApp({
       }
       return data;
       } finally { this.pending = Math.max(0, this.pending - 1); }
+    },
+    // Message lisible pour une erreur de validation : nos propres messages (déjà en français)
+    // sont repris sans le préfixe technique « Value error, » ; les autres cas reçoivent une
+    // phrase simple en français, avec le nom du champ seulement s'il est parlant.
+    validationMsg(f) {
+      f = f || {};
+      const labels = { email: "Adresse e-mail", password: "Mot de passe", full_name: "Nom",
+        name: "Nom", company_name: "Entreprise", source_url: "Adresse de l'avis", siret: "SIRET",
+        client: "Client", phone: "Téléphone", deadline: "Date limite" };
+      const field = Array.isArray(f.loc) ? f.loc[f.loc.length - 1] : "";
+      const label = labels[field] || "";
+      const type = String(f.type || "");
+      const raw = String(f.msg || "").replace(/^(value error|assertion failed)\s*,\s*/i, "").trim();
+      if (field === "email" || /email address/i.test(raw)) return "Adresse e-mail invalide.";
+      if (type === "value_error" && raw) return raw;
+      let txt;
+      if (type === "missing") txt = "information obligatoire";
+      else if (/too_short/.test(type)) txt = "trop court";
+      else if (/too_long/.test(type)) txt = "trop long";
+      else if (/int|float|decimal|number|greater|less/.test(type)) txt = "nombre invalide";
+      else if (/date|time/.test(type)) txt = "date invalide";
+      else txt = "valeur invalide";
+      return label ? label + " : " + txt + "." : "Une information saisie est invalide (" + txt + ").";
     },
     notify(msg, kind = "ok") { if (this._toastT) clearTimeout(this._toastT); this.toast = { msg, kind }; this._toastT = setTimeout(() => this.toast = null, 2600); },
     notifyUndo(msg, undoFn) { if (this._toastT) clearTimeout(this._toastT); this.toast = { msg, kind: "ok", undo: undoFn }; this._toastT = setTimeout(() => this.toast = null, 7000); },
@@ -435,7 +477,7 @@ const __adjApp = createApp({
         const res = await this.api("POST", "/api/auth/reset-password", { token: this.auth.resetToken, new_password: this.auth.password });
         this.token = res.access_token; localStorage.setItem("adjugo_token", this.token);
         history.replaceState({}, "", "/app");
-        this.notify("Mot de passe réinitialisé ✓"); await this.boot();
+        this.notify("Mot de passe réinitialisé"); await this.boot();
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
     async demoLogin() {
@@ -584,7 +626,7 @@ const __adjApp = createApp({
         if (spec && !this.src.query) this.src.query = spec.split(/[ ,;]/)[0];
         if (dep && !this.src.dept) this.src.dept = dep;
         this.welcomeDone();
-        this.notify("Profil créé depuis votre SIRET ✓");
+        this.notify("Profil créé depuis votre SIRET");
         this.go("sourcing");
         this.$nextTick(() => this.srcSearch());
       } catch (e) { this.notify("Entreprise introuvable — vérifiez le SIRET", "err"); }
@@ -673,11 +715,14 @@ const __adjApp = createApp({
       try {
         const r = await this.api("POST", "/api/auth/change-password", { current_password: this.pwd.current, new_password: this.pwd.next });
         if (r && r.access_token) { this.token = r.access_token; localStorage.setItem("adjugo_token", r.access_token); }
-        this.pwd = { current: "", next: "" }; this.notify("Mot de passe changé ✓");
+        this.pwd = { current: "", next: "" }; this.notify("Mot de passe changé");
       } catch (e) { this.notify(e.message, "err"); }
     },
+    // Paiement à l'usage : réservé à un abonnement payant actif (le serveur le revérifie).
+    overageAvailable() { const u = this.stats && this.stats.usage; return !!u && (u.plan === "pro" || u.plan === "business"); },
     async toggleOverage() {
       const on = !(this.stats.usage && this.stats.usage.overage_enabled);
+      if (on && !this.overageAvailable()) { this.notify("Disponible avec un abonnement Pro ou Business", "err"); return; }
       try { await this.api("POST", "/api/stripe/overage?enabled=" + on); await this.loadStats(); this.notify(on ? "Paiement à l'usage activé" : "Paiement à l'usage désactivé"); }
       catch (e) { this.notify(e.message, "err"); }
     },
@@ -889,7 +934,7 @@ const __adjApp = createApp({
       this.notify("Assemblage du dossier commun (présentation fusionnée + pièces des partenaires)…");
       try {
         const r = await this.api("POST", "/api/sourcing/documents", { project_id: pid, cotraitants: [] });
-        if (r.dossier && r.dossier.zip_b64) { this._downloadB64(r.dossier.zip_b64, r.dossier.zip_name); this.notify("Dossier commun exporté ✓"); }
+        if (r.dossier && r.dossier.zip_b64) { this._downloadB64(r.dossier.zip_b64, r.dossier.zip_name); this.notify("Dossier commun exporté"); }
         else this.notify("Rien à exporter pour ce groupement", "err");
       } catch (e) {
         if ((e.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
@@ -1031,7 +1076,7 @@ const __adjApp = createApp({
       if (r.ok) { const c = await r.json(); this.sharedAo.version = c.version || 0; this.sharedAo.status = c.status; this.sharedAo.envelope = (c.detail_chiffre && c.detail_chiffre.ciphertext) ? c.detail_chiffre : null; return true; }
       if (r.status === 409) { this.notify("Modifié ailleurs entre-temps — rechargement de la dernière version", "err"); await this.sharedReload(); return false; }
       const e = await r.json().catch(() => ({})); const d = e && e.detail;
-      this.notify((typeof d === "string" ? d : ((d && d.message) || (Array.isArray(d) && d[0] && d[0].msg))) || "Erreur d'enregistrement", "err"); return false;
+      this.notify((typeof d === "string" ? d : ((d && d.message) || (Array.isArray(d) && d[0] && this.validationMsg(d[0])))) || "Erreur d'enregistrement", "err"); return false;
     },
     async sharedSave() { this.sharedAo.busy = true; try { if (await this._sharedPut()) this.notify("Brouillon enregistré"); } finally { this.sharedAo.busy = false; } },
     // Binding d'identité OTP côté « Partagé avec moi » : si le lien l'exige (email
@@ -1066,7 +1111,7 @@ const __adjApp = createApp({
         if (!(await this._sharedPut())) return;
         if (!(await this.sharedEnsureVerified())) return;
         const c = await this.api("POST", "/api/invite/" + this.sharedAo.token + "/contribution/submit");
-        this.sharedAo.status = c.status; this.notify("Contribution soumise au chef de file ✓"); this.loadShared();
+        this.sharedAo.status = c.status; this.notify("Contribution soumise au chef de file"); this.loadShared();
       } catch (e) { this.notify(e.message, "err"); } finally { this.sharedAo.busy = false; }
     },
     async sharedUpload(ev) {
@@ -1570,7 +1615,7 @@ const __adjApp = createApp({
         await this.api("POST", "/api/sourcing/analyze-upload", fd, true);
         this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id);
         this.aoLoadDocs();
-        this.notify("Dossier analysé — analyse complète ✓");
+        this.notify("Dossier analysé — analyse complète");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
@@ -1584,7 +1629,7 @@ const __adjApp = createApp({
         await this.api("POST", "/api/sourcing/reanalyze", fd, true);
         this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id);
         this.aoLoadDocs();
-        this.notify("Ré-analyse terminée ✓");
+        this.notify("Ré-analyse terminée");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
@@ -1758,7 +1803,7 @@ const __adjApp = createApp({
       try { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(v); }
       catch (e) { return v.toLocaleString("fr-FR") + " €"; }
     },
-    koSize(b) { const k = (Number(b) || 0) / 1024; return k >= 1024 ? (k / 1024).toFixed(1) + " Mo" : Math.round(k) + " Ko"; },   // bascule en Mo au-delà de ~1 Mo (sinon « 18432 Ko » illisible). ⚠ ne PAS nommer kb() : collision avec la donnée `kb`
+    koSize(b) { const k = (Number(b) || 0) / 1024; return k >= 1024 ? (k / 1024).toFixed(1) + " Mo" : Math.round(k) + " Ko"; },   // bascule en Mo au-delà de ~1 Mo (sinon « 18432 Ko » illisible). Attention : ne PAS nommer kb() : collision avec la donnée `kb`
     avg(...a) { const n = a.map(Number).filter(x => x > 0); return n.length ? n.reduce((s, x) => s + x, 0) / n.length : 0; },
     detailRows(d) {
       const out = {}; const labels = { intitule_marche: "Intitulé", acheteur: "Acheteur", budget_estime: "Budget", date_limite: "Date limite", delai_execution: "Délai", lieu_execution: "Lieu", allotissement: "Allotissement", penalites: "Pénalités", sous_traitance: "Sous-traitance", ca_minimum_requis: "CA minimum", visite_obligatoire: "Visite" };
@@ -1952,7 +1997,7 @@ const __adjApp = createApp({
         const fd = new FormData(); fd.append("file", file); fd.append("project_id", this.src.projectId);
         const r = await this.api("POST", "/api/sourcing/analyze-upload", fd, true);
         this.src.analysis = r; this.loadProjects(); this.loadStats();
-        this.notify("Dossier analysé — analyse complète ✓");
+        this.notify("Dossier analysé — analyse complète");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
@@ -1965,7 +2010,7 @@ const __adjApp = createApp({
         const fd = new FormData(); fd.append("project_id", this.src.projectId);
         const r = await this.api("POST", "/api/sourcing/reanalyze", fd, true);
         this.src.analysis = r; this.loadProjects();
-        this.notify("Ré-analyse terminée ✓");
+        this.notify("Ré-analyse terminée");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
@@ -2127,6 +2172,13 @@ const __adjApp = createApp({
 
     eurMaybe(n) { return (n || n === 0) ? this.eur(n) : "montant estimé n/d"; },
     companyWeb(c) { return "https://www.google.com/search?q=" + encodeURIComponent((c.nom || c.name || "") + " " + (c.ville || c.city || "") + " site officiel contact"); },
+    // Garde de schéma pour TOUT :href construit depuis une donnée (avis, fiches, délibérations…) :
+    // Vue n'assainit pas les URL « javascript: ». Seules une adresse web absolue (http/https) ou
+    // un chemin interne (/…) passent ; sinon lien neutre « # ».
+    safeUrl(u) {
+      const s = String(u == null ? "" : u).trim();
+      return (s && !/[\u0000-\u001f\u007f]/.test(s) && /^(https?:\/\/[^\s\/]|\/(?![\/\\]))/i.test(s)) ? s : "#";
+    },
     async srcCotraitants() {
       if (!this.src.projectId) { this.notify("Analysez d'abord un marché (Étape 2) avant de chercher des partenaires", "err"); return; }
       this.src.ct.searching = true; this.src.ct.companies = []; this.src.ct.errors = [];
@@ -2190,7 +2242,7 @@ __adjApp.config.errorHandler = function (err, vm, info) {
       var d = document.createElement("div");
       d.id = "adj-crash";
       d.style.cssText = "max-width:560px;margin:64px auto;padding:26px;font-family:system-ui,-apple-system,sans-serif;text-align:center;color:#16181d";
-      d.innerHTML = '<div style="font-size:36px">⚠️</div>'
+      d.innerHTML = '<div style="color:#b45309;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></div>'
         + '<h2 style="margin:10px 0 4px;font-size:19px">Un élément n’a pas pu s’afficher</h2>'
         + '<p style="color:#6b7280;font-size:14px;margin:6px 0 4px">L’application reste intacte — rechargez la page.</p>'
         + '<p style="font-size:12px;color:#9aa0ab;margin:10px 0">Détail : <code style="background:#f1f3f5;padding:2px 6px;border-radius:5px;color:#444">' + safe + '</code></p>'

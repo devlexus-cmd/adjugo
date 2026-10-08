@@ -92,11 +92,17 @@ def record(db, *, action: str, owner_id: Optional[int] = None,
         logger.warning("audit: écriture du journal échouée (%s) : %s", action, e)
 
 
-def verify_chain(db, owner_id: int) -> dict:
+def verify_chain(db, owner_id: int, upto_id: int = None) -> dict:
     """Revérifie la chaîne de hash d'un tenant : recalcule chaque maillon et détecte
-    toute entrée modifiée, supprimée ou réordonnée. Renvoie l'état d'intégrité."""
+    toute entrée modifiée, supprimée ou réordonnée. Renvoie l'état d'intégrité.
+    `upto_id` : ne vérifie que le PRÉFIXE de la chaîne (entrées d'id ≤ upto_id) — un préfixe
+    d'une chaîne de hachage reste vérifiable seul (cas d'un ancien propriétaire parti fonder
+    une autre entreprise : seule sa période dans l'organisation la concerne)."""
     from app.models import AuditLog
-    rows = db.query(AuditLog).filter(AuditLog.owner_id == owner_id).order_by(AuditLog.id.asc()).all()
+    q = db.query(AuditLog).filter(AuditLog.owner_id == owner_id)
+    if upto_id is not None:
+        q = q.filter(AuditLog.id <= upto_id)
+    rows = q.order_by(AuditLog.id.asc()).all()
     prev = ""
     broken_at = None
     for a in rows:
@@ -115,4 +121,34 @@ def verify_chain(db, owner_id: int) -> dict:
         "chained_entries": len(chained),
         "intact": broken_at is None,
         "broken_at_id": broken_at,
+    }
+
+
+def verify_org_chains(db, owner_ids) -> dict:
+    """Vérifie TOUTES les chaînes d'une organisation : celle du propriétaire actuel (premier
+    de `owner_ids`) ET celles encore référencées par son historique (anciens propriétaires
+    après un transfert, comptes effacés-anonymisés…). Le journal d'un tenant n'est pas
+    réécrit au transfert (owner_id est haché) : sans cette agrégation, l'historique
+    antérieur échappait à la vérification. Renvoie le format de verify_chain (agrégé) +
+    le détail par chaîne dans « chains »."""
+    # Éléments : un owner_id, ou (owner_id, upto_id) pour ne vérifier qu'un préfixe.
+    ids, upto = [], {}
+    for item in owner_ids or []:
+        oid, lim = (item if isinstance(item, (tuple, list)) else (item, None))
+        if oid is None:
+            continue
+        if oid not in ids:
+            ids.append(oid)
+            upto[oid] = lim
+        elif upto.get(oid) is not None and lim is None:
+            upto[oid] = None                      # une vérification complète l'emporte
+    chains = [verify_chain(db, oid, upto.get(oid)) for oid in ids]
+    broken = next((c for c in chains if not c["intact"]), None)
+    return {
+        "owner_id": ids[0] if ids else None,
+        "entries": sum(c["entries"] for c in chains),
+        "chained_entries": sum(c["chained_entries"] for c in chains),
+        "intact": broken is None,
+        "broken_at_id": broken["broken_at_id"] if broken else None,
+        "chains": chains,
     }

@@ -7,11 +7,29 @@ fetched_at) sont, eux, toujours renseignés.
 """
 from datetime import datetime, timezone
 from typing import Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas import safe_link_url
+
+# Les liens d'avis peuvent être longs (paramètres de plateforme) : plafond large ici ; le
+# stockage en base (Project.source_url) applique ensuite sa propre limite.
+_MAX_LINK_LEN = 2000
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _clean_link(v) -> str:
+    """Un lien affiché (« Voir l'avis ↗ », « fiche ↗ ») ne garde que http(s) absolu ou un
+    chemin interne « /… ». Tout le reste (javascript:, data:, //hôte, /\\hôte…) devient
+    vide — JAMAIS d'erreur : un avis réel au lien bizarre ne doit pas casser la recherche."""
+    if v is None:
+        return ""
+    try:
+        return safe_link_url(v, _MAX_LINK_LEN) or ""
+    except Exception:
+        return ""
 
 
 class Provenance(BaseModel):
@@ -20,6 +38,11 @@ class Provenance(BaseModel):
     source_url: str                   # lien vers l'avis/la fiche officielle
     official_ref: str = ""            # idweb BOAMP, id TED, SIREN/SIRET…
     fetched_at: str = Field(default_factory=_now)
+
+    @field_validator("source_url", mode="before")
+    @classmethod
+    def _safe_source_url(cls, v):
+        return _clean_link(v)
 
 
 class ScoreCriterion(BaseModel):
@@ -62,6 +85,12 @@ class NormalizedTender(BaseModel):
     dedup_key: str = ""                        # clé de déduplication
     also_seen_in: list[Provenance] = []        # mêmes AO trouvés sur d'autres sources
     raw: dict[str, Any] = {}                   # payload brut (traçabilité)
+
+    @field_validator("dce_url", mode="before")
+    @classmethod
+    def _safe_dce_url(cls, v):
+        # Champ optionnel : lien absent ou invalide → None (« non disponible »), jamais d'erreur.
+        return _clean_link(v) or None
 
 
 class NormalizedCompany(BaseModel):

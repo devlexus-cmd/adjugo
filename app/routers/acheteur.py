@@ -42,8 +42,8 @@ def _is_demo(a: Acheteur) -> bool:
 def _guard_not_demo(a: Acheteur) -> None:
     """Le compte de DÉMO est PARTAGÉ (vitrine publique) : on bloque toute écriture, sinon un
     visiteur corromprait ou supprimerait l'expérience de tous les suivants. Les flux de
-    découverte (génération, sourcing, estimation, avis, export) ne touchent pas la base et
-    restent disponibles en démo."""
+    découverte sans IA (estimation, avis, export, vivier) restent disponibles en démo ; la
+    rédaction par l'IA et ses conseils sont refusés (cf. dce._is_demo_acheteur)."""
     if _is_demo(a):
         raise HTTPException(403, "Compte de démonstration en lecture seule. Créez un espace gratuit pour enregistrer, piloter et diffuser vos consultations.")
 

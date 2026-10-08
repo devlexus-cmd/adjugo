@@ -210,7 +210,8 @@ def _generer_conseils(lots_out: list, glob: dict, tenant) -> list:
         return []
 
 
-def sourcer_lots(lots: list, departement: str = "", tenant=None, cpv: str = "") -> dict:
+def sourcer_lots(lots: list, departement: str = "", tenant=None, cpv: str = "",
+                 with_conseils: bool = True) -> dict:
     """Source TOUS les lots (en parallèle), agrège le risque global et génère les conseils.
     `cpv` (optionnel) : la capacité prouvée DECP est alors qualifiée « dans le domaine »
     (famille CPV à 2 chiffres) plutôt que « tous marchés confondus »."""
@@ -234,7 +235,7 @@ def sourcer_lots(lots: list, departement: str = "", tenant=None, cpv: str = "") 
                           "vivier": [], "groupement": [], "errors": [str(e)[:160]]}
     lots_out = [o for o in out if o]
     glob = agreger([o["indice"] for o in lots_out])
-    conseils = _generer_conseils(lots_out, glob, tenant)
+    conseils = _generer_conseils(lots_out, glob, tenant) if with_conseils else []
     return {"lots": lots_out, "global": glob, "conseils": conseils, "disclaimer": _DISCLAIMER}
 
 

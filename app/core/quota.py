@@ -99,6 +99,22 @@ def _sync_period(user) -> None:
 OVERAGE_PRICE = 5  # € HT par analyse hors quota
 
 
+def overage_billable(user) -> bool:
+    """Le paiement à l'usage n'est honoré que s'il est FACTURABLE : abonnement payant (plan
+    pro/business, posé par le webhook Stripe signé et rétrogradé à la résiliation) ET client
+    Stripe connu. Sans cela (essai gratuit, compte sans carte, compte démo), chaque analyse
+    hors quota coûterait réellement à Adjugo sans pouvoir être facturée."""
+    return _plan_key(user) in ("pro", "business") and bool(getattr(user, "stripe_customer_id", None))
+
+
+def _is_demo(user) -> bool:
+    try:
+        from app.services.demo_search import is_demo
+        return is_demo(user)
+    except Exception:
+        return False
+
+
 def usage(user, db: Session = None) -> dict:
     user = _billing_user(user, db)   # le pool de l'org (propriétaire) si membre
     _sync_period(user)
@@ -126,6 +142,12 @@ def consume_analysis(user, db: Session) -> None:
     """Vérifie le quota et incrémente, de façon ATOMIQUE (verrou de ligne Postgres :
     ferme la course read-modify-write qui permettait de contourner le quota en lançant
     2 analyses en parallèle). Au-delà du quota : overage si activé, sinon 402."""
+    # Compte démo public (vitrine en lecture guidée) : AUCUN appel IA réel. Les analyses des
+    # marchés DEMO- sont servies en amont, sans passer par ici ; tout ce qui arrive ici est
+    # donc un vrai appel payant (défense en profondeur derrière le middleware demo_guard).
+    if _is_demo(user) or (db is not None and _is_demo(_billing_user(user, db))):
+        from app.core.demo_guard import demo_message
+        raise HTTPException(403, demo_message("lancer une analyse IA"))
     # Verrou « email vérifié » : aucune action coûteuse (IA/quota) tant que l'adresse de l'utilisateur
     # AGISSANT n'est pas confirmée — anti-contournement par appel API direct (le front bloque déjà l'UI).
     if not getattr(user, "email_verified", True):
@@ -155,7 +177,10 @@ def consume_analysis(user, db: Session) -> None:
                    "pour continuer a lancer des analyses.",
         )
     if used >= lim:
-        if getattr(locked, "overage_enabled", False):
+        # Overage SEULEMENT s'il est facturable (abonnement payant + client Stripe) : un flag
+        # activé pendant l'essai, ou laissé après une résiliation, ne doit jamais ouvrir des
+        # analyses IA illimitées et non facturables → on retombe sur le 402 standard.
+        if getattr(locked, "overage_enabled", False) and overage_billable(locked):
             locked.overage_count = (getattr(locked, "overage_count", 0) or 0) + 1
             locked.analyses_used_this_month = used + 1
             db.commit()
@@ -166,11 +191,15 @@ def consume_analysis(user, db: Session) -> None:
                 import logging
                 logging.getLogger("adjugo").warning("Report d'usage facturable échoué (user %s) : %s", locked.id, e)
             return
+        if overage_billable(locked):
+            hint = (f"Activez le paiement à l'usage ({OVERAGE_PRICE} € / analyse) ou passez "
+                    f"à un plan supérieur pour continuer.")
+        else:
+            hint = "Abonnez-vous (Pro ou Business) pour continuer."
         raise HTTPException(
             status_code=402,
             detail=f"Quota d'analyses IA atteint ({used}/{lim} ce mois) pour le plan "
-                   f"« {_plan_key(locked)} ». Activez le paiement à l'usage ({OVERAGE_PRICE} € "
-                   f"/ analyse) ou passez à un plan supérieur pour continuer.",
+                   f"« {_plan_key(locked)} ». {hint}",
         )
     locked.analyses_used_this_month = used + 1
     db.commit()

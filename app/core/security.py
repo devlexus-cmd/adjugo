@@ -88,7 +88,9 @@ def get_current_acheteur(token: str = Depends(oauth2_acheteur), db: Session = De
     SÉPARÉE `acheteurs` (jamais `users`). Un token PME (sans `typ`) est donc rejeté."""
     from app.models import Acheteur
     payload = decode_token(token)
-    if payload.get("typ") != "acheteur":
+    # Comme côté PME : un jeton « à finalité » (purpose) ou sans version (tv) n'est pas une
+    # session — seul `_token()` (login/inscription acheteur) en émet, toujours avec tv.
+    if payload.get("typ") != "acheteur" or payload.get("purpose") or "tv" not in payload:
         raise HTTPException(status_code=401, detail="Token acheteur requis",
                             headers={"WWW-Authenticate": "Bearer"})
     try:
@@ -118,6 +120,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if payload.get("typ"):
         raise HTTPException(status_code=401, detail="Token invalide pour cet espace",
                             headers={"WWW-Authenticate": "Bearer"})
+    # Seuls les jetons de SESSION ouvrent une session. Un jeton « à finalité » (lien de
+    # confirmation d'email, state OAuth…) porte `purpose` : il ne doit JAMAIS valoir session
+    # (sinon le lien reçu par mail donnait un accès complet au compte pendant sa validité).
+    # Liste blanche positive : tout jeton de session (register/login/demo/google/
+    # change-password/reset/transfert) porte `tv` ; un jeton sans `tv` n'en est pas un.
+    if payload.get("purpose") or "tv" not in payload:
+        raise HTTPException(status_code=401, detail="Session invalide, reconnectez-vous",
+                            headers={"WWW-Authenticate": "Bearer"})
     user_id = payload.get("sub")
     try:
         uid = int(user_id)
@@ -132,10 +142,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if not getattr(user, "is_active", True):
         raise HTTPException(status_code=403, detail="Compte désactivé",
                             headers={"WWW-Authenticate": "Bearer"})
-    # Révocation de session : la version du token (tv, défaut 0) DOIT correspondre à celle de
-    # l'utilisateur. Un token SANS tv vaut 0 → rejeté dès que token_version a été incrémenté
-    # (retrait/transfert/changement de mot de passe) : plus de contournement par token « legacy ».
-    # Tous les tokens émis portent tv (register/login/demo), donc aucune régression.
+    # Révocation de session : la version du token (tv) DOIT correspondre à celle de
+    # l'utilisateur (incrémentée au retrait/transfert/changement de mot de passe). Un token
+    # SANS tv est déjà rejeté plus haut (ce n'est pas un jeton de session).
     if int(payload.get("tv") or 0) != int(getattr(user, "token_version", 0) or 0):
         raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
                             headers={"WWW-Authenticate": "Bearer"})

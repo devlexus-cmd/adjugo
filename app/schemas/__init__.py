@@ -1,9 +1,43 @@
 """
 Adjugo — Schémas Pydantic (validation des requêtes/réponses API)
 """
+import re
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Literal
 from datetime import date, datetime
+
+
+# === LIENS AFFICHÉS (avis d'origine, fiches officielles…) ===
+# Un lien stocké puis rendu dans un <a href> ne doit JAMAIS porter un schéma exécutable
+# (« javascript: », « data: », « vbscript: »…) : l'échappement HTML ne le neutralise pas.
+# Seuls passent une adresse web absolue http(s) ou un chemin interne commençant par « / »
+# (pages de démo /static/…) ; « //hôte » (relatif au protocole) et « /\hôte » sont refusés.
+_SAFE_LINK_RE = re.compile(r"^(?:https?://[^\s/]|/(?![/\\]))", re.IGNORECASE)
+_CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
+URL_INVALID_MSG = ("Adresse de l'avis invalide : indiquez un lien qui commence par "
+                   "http:// ou https://.")
+
+
+def safe_link_url(value, max_len: int = 500) -> Optional[str]:
+    """Renvoie l'URL nettoyée si elle est sûre à afficher comme lien, sinon None.
+    Utilisée à l'ÉCRITURE (validation) et à la LECTURE (une ancienne valeur en base ne
+    ressort jamais en « javascript: »)."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s or len(s) > max_len or _CTRL_RE.search(s) or not _SAFE_LINK_RE.match(s):
+        return None
+    return s
+
+
+def _validate_link(v):
+    """Validateur Pydantic commun : vide → None ; lien dangereux → message clair (422)."""
+    if v is None or not str(v).strip():
+        return None
+    s = safe_link_url(v)
+    if s is None:
+        raise ValueError(URL_INVALID_MSG)
+    return s
 
 
 # === AUTH ===
@@ -125,6 +159,11 @@ class ProjectCreate(BaseModel):
     deadline: Optional[date] = None
     source_url: Optional[str] = None
 
+    @field_validator("source_url")
+    @classmethod
+    def _check_source_url(cls, v):
+        return _validate_link(v)
+
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
@@ -139,6 +178,13 @@ class ProjectUpdate(BaseModel):
     outcome_rank: Optional[int] = None
     awarded_amount: Optional[float] = None
     competitor_winner: Optional[str] = None
+    # Lien vers l'avis officiel : même garde de schéma qu'à la création.
+    source_url: Optional[str] = None
+
+    @field_validator("source_url")
+    @classmethod
+    def _check_source_url(cls, v):
+        return _validate_link(v)
 
 
 class ProjectOut(BaseModel):
@@ -161,6 +207,17 @@ class ProjectOut(BaseModel):
     awarded_amount: Optional[float] = None
     competitor_winner: Optional[str] = None
     created_at: datetime
+
+    @field_validator("ai_analysis")
+    @classmethod
+    def _safe_source_link(cls, v):
+        """Règle « à la lecture » : un lien d'avis ancien en base ne ressort jamais en
+        « javascript: » (copie : la valeur ORM n'est pas modifiée)."""
+        if isinstance(v, dict) and isinstance(v.get("source"), dict) and "source_url" in v["source"]:
+            v = dict(v)
+            v["source"] = dict(v["source"])
+            v["source"]["source_url"] = safe_link_url(v["source"].get("source_url"), 1000)
+        return v
 
     class Config:
         from_attributes = True

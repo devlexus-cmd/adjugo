@@ -5,6 +5,7 @@ projets, contacts et co-traitants), renommer l'organisation, retirer un membre.
 import secrets
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 
@@ -32,10 +33,12 @@ def _reassign_models():
     mods = []
     try:
         from app.models import (Project, Contact, Document, Invoice, KnowledgeDoc,
-                                KnowledgeChunk, Signal)
+                                KnowledgeChunk, Signal, Job)
         # KnowledgeChunk DOIT suivre KnowledgeDoc sinon le RAG du membre parti devient
         # orphelin (l'index interroge KnowledgeChunk.user_id).
-        mods += [Project, Contact, Document, Invoice, KnowledgeDoc, KnowledgeChunk, Signal]
+        # Job : les résultats IA (mémoires, questionnaires, war rooms) sont bâtis sur le
+        # savoir-faire COMMUN de l'org → ils restent à l'org ; sinon l'ex-membre les relisait.
+        mods += [Project, Contact, Document, Invoice, KnowledgeDoc, KnowledgeChunk, Signal, Job]
     except Exception:
         pass
     try:
@@ -135,6 +138,11 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
                   db: Session = Depends(get_db)):
     """Invite un collègue dans l'organisation. Crée son compte avec un mot de passe
     provisoire (retourné une seule fois) à lui transmettre, et envoie un email si SMTP."""
+    # Défense en profondeur (en plus du garde central) : la démo n'envoie JAMAIS d'email.
+    from app.services.demo_search import is_demo
+    if is_demo(current_user):
+        raise HTTPException(403, "La démo est en lecture guidée : créez votre compte gratuit "
+                                 "pour inviter un collègue.")
     org = _org(current_user, db)
     if org.owner_id != current_user.id and (current_user.org_role or "") != "admin":
         raise HTTPException(403, "Seul un administrateur peut inviter des membres")
@@ -142,6 +150,17 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
     # Verrou de ligne sur l'org : sérialise les invitations concurrentes pour que le
     # contrôle de limite (count) ne soit pas contournable par deux POST simultanés.
     db.query(Organization).filter(Organization.id == org.id).with_for_update().first()
+    # (Testé AVANT la limite d'offre : message exact même quand l'équipe est pleine.)
+    # Forme canonique (minuscules, partie locale incluse) comme à l'inscription/connexion, et
+    # doublon testé INSENSIBLE à la casse : sinon « TARGET@x.fr » créait un 2e compte pour une
+    # adresse déjà inscrite (« target@x.fr ») → connexion/réinitialisation imprévisibles.
+    email_norm = str(data.email).strip().lower()
+    existing = db.query(User).filter(func.lower(User.email) == email_norm).first()
+    if existing:
+        if existing.org_id == org.id:
+            raise HTTPException(400, "Cette personne fait déjà partie de l'organisation")
+        raise HTTPException(400, "Cet email est déjà associé à un autre compte")
+
     # Limite de membres selon l'offre du propriétaire (appliquée, plus seulement affichée).
     limit = _plan_member_limit(db, org)
     n_members = db.query(User).filter(User.org_id == org.id).count()
@@ -149,17 +168,11 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
         raise HTTPException(402, f"Votre offre est limitée à {limit} membre(s). "
                                  f"Passez à une offre supérieure pour agrandir l'équipe.")
 
-    existing = db.query(User).filter(User.email == data.email).first()
-    if existing:
-        if existing.org_id == org.id:
-            raise HTTPException(400, "Cette personne fait déjà partie de l'organisation")
-        raise HTTPException(400, "Cet email est déjà associé à un autre compte")
-
     temp_password = secrets.token_urlsafe(9)
     member = User(
-        email=str(data.email),
+        email=email_norm,
         hashed_password=hash_password(temp_password),
-        full_name=data.full_name or str(data.email).split("@")[0],
+        full_name=data.full_name or email_norm.split("@")[0],
         org_id=org.id, org_role="membre",
     )
     db.add(member)
@@ -175,6 +188,10 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
     emailed = False
     try:
         from app.services.email import send_email
+        # Un email part au nom d'Adjugo vers un tiers : l'expéditeur doit avoir prouvé sa
+        # propre adresse. Sinon, le mot de passe provisoire est affiché à transmettre.
+        if not getattr(current_user, "email_verified", False):
+            raise RuntimeError("expéditeur non confirmé")
         emailed = send_email(member.email, f"Invitation à rejoindre {org.name} sur Adjugo",
                    f"Bonjour,\n\n{current_user.full_name} vous invite à rejoindre l'espace "
                    f"« {org.name} » sur Adjugo.\n\nIdentifiant : {member.email}\n"
@@ -282,7 +299,8 @@ def transfer_ownership(data: TransferIn, request: Request,
     # données portées par le tenant, sinon elles deviennent orphelines/invisibles pour TOUTE
     # l'organisation (fiche entreprise, critères Go/No-Go, co-traitance). On ne touche PAS
     # AuditLog (sa chaîne de hash deviendrait invérifiable).
-    from app.models import Company, MatchingCriteria, CoSpace, ProjectInvite, ProjectContribution, ContributionPiece
+    from app.models import (Company, MatchingCriteria, CoSpace, ProjectInvite, ProjectContribution,
+                            ContributionPiece, GroupementSimulation)
     from app.routers.criteria_v2 import MatchingCriteriaExt
     old_id, new_id = current_user.id, target.id
     # (a) mono-propriétaire UNIQUE(user_id) : purger une éventuelle ligne du nouveau owner
@@ -290,8 +308,10 @@ def transfer_ownership(data: TransferIn, request: Request,
     for M in (Company, MatchingCriteria, MatchingCriteriaExt):
         db.query(M).filter(M.user_id == new_id).delete(synchronize_session=False)
         db.query(M).filter(M.user_id == old_id).update({M.user_id: new_id}, synchronize_session=False)
-    # (b) co-traitance (owner_id = tenant mandataire) : simple réaffectation.
-    for M in (CoSpace, ProjectInvite, ProjectContribution, ContributionPiece):
+    # (b) co-traitance et simulations « Répondre à plusieurs ? » (owner_id = tenant
+    #     mandataire) : simple réaffectation — sinon elles restaient à l'ex-propriétaire
+    #     (invisibles pour l'org, et effacées avec son compte).
+    for M in (CoSpace, ProjectInvite, ProjectContribution, ContributionPiece, GroupementSimulation):
         db.query(M).filter(M.owner_id == old_id).update({M.owner_id: new_id}, synchronize_session=False)
     db.commit()
     audit.record(db, action="team.ownership_transferred", owner_id=org.owner_id,

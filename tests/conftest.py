@@ -3,7 +3,10 @@ import os
 import pathlib
 
 # Doit être défini AVANT tout import de l'app (config lue à l'import).
-os.environ["DATABASE_URL"] = "sqlite:///./test_adjugo.db"
+# ADJUGO_TEST_DB permet de lancer plusieurs suites en parallèle sans partager la même base
+# (ex. ADJUGO_TEST_DB=test_auth.db). Défaut inchangé : test_adjugo.db.
+_TEST_DB_FILE = os.environ.get("ADJUGO_TEST_DB", "test_adjugo.db")
+os.environ["DATABASE_URL"] = f"sqlite:///./{_TEST_DB_FILE}"
 os.environ["DEMO_MODE"] = "true"
 # Emails DÉSACTIVÉS en test : sans ça, chaque inscription tentait de vrais envois
 # SMTP/Brevo (≈12 s de timeouts par test, et des emails réels depuis la machine).
@@ -15,7 +18,7 @@ os.environ["BREVO_API_KEY"] = ""
 os.environ["ANTHROPIC_API_KEY"] = ""
 os.environ["MISTRAL_API_KEY"] = ""
 
-_db = pathlib.Path("test_adjugo.db")
+_db = pathlib.Path(_TEST_DB_FILE)
 if _db.exists():
     _db.unlink()
 

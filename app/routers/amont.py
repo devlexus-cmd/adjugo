@@ -7,6 +7,7 @@ profil de l'entreprise. La valeur : être informé des MOIS avant l'appel d'offr
 """
 import logging
 
+from app.schemas import safe_link_url as _safe_link
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -17,6 +18,8 @@ from app.core.ratelimit import limiter
 from app.core.quota import consume_analysis, refund_analysis
 from app.models import User, Signal, Organization
 from app.services.analysis import extract_dce_text
+from app.core.uploads import aread_upload_limited
+from starlette.concurrency import run_in_threadpool
 from app.services.agents.amont import detect_projets, detect_from_deliberations, score_pertinence
 from app.sourcing.sources.deliberations import DeliberationSource
 from app.services.profile import criteria_dict as _criteria_dict
@@ -44,7 +47,7 @@ def _out(s: Signal) -> dict:
         "budget": s.budget, "budget_texte": s.budget_texte, "localisation": s.localisation,
         "collectivite": s.collectivite, "calendrier": s.calendrier, "metiers": s.metiers or [],
         "extrait": s.extrait, "pertinence": s.pertinence, "pertinence_score": s.pertinence_score,
-        "source_name": s.source_name, "source_url": s.source_url, "source_date": s.source_date,
+        "source_name": s.source_name, "source_url": _safe_link(s.source_url, 700), "source_date": s.source_date,
         "domaine": s.domaine, "phase": s.phase, "echeance_ao": s.echeance_ao,
         "financement": s.financement, "maturite": s.maturite,
         "created_at": s.created_at.isoformat() if s.created_at else None,
@@ -78,7 +81,7 @@ def _persist(projets, default_coll, source_label, current_user, db, domaines=Non
             localisation=(p.get("localisation") or "")[:255], collectivite=coll[:255],
             calendrier=(p.get("calendrier") or "")[:255], metiers=p.get("metiers") or [],
             extrait=(p.get("extrait") or "")[:2000], pertinence=label, pertinence_score=score,
-            source_name=src[:255], source_url=(p.get("url") or "")[:700], source_date=(p.get("date") or "")[:40],
+            source_name=src[:255], source_url=(_safe_link(p.get("url"), 700) or ""), source_date=(p.get("date") or "")[:40],
             domaine=(p.get("domaine") or "")[:80], phase=(p.get("phase") or "")[:40],
             echeance_ao=(p.get("echeance_ao") or "")[:120], financement=(p.get("financement") or "")[:255],
             maturite=int(mat) if isinstance(mat, (int, float)) else None,
@@ -120,13 +123,9 @@ def _analyze_text(text: str, source_name: str, current_user: User, db: Session, 
 @limiter.limit("30/hour")
 async def analyze_upload(request: Request, file: UploadFile = File(...), domaines: str = Form(""),
                          current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "Fichier vide.")
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(413, "Fichier trop volumineux (50 Mo max).")
+    content = await aread_upload_limited(file)   # lecture bornée : 413 au-delà de 50 Mo
     try:
-        text = extract_dce_text(file.filename, content)
+        text = await run_in_threadpool(extract_dce_text, file.filename, content)
     except ValueError as e:
         raise HTTPException(422, str(e))
     consume_analysis(current_user, db)

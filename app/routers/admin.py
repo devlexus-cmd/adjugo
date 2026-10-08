@@ -112,3 +112,12 @@ def run_cotraitance_reminders_endpoint(request: Request, db: Session = Depends(g
     J-1 de la date limite (idempotent par palier). À cron-er quotidiennement."""
     _check_cron(request)
     return run_cotraitance_reminders(db)
+
+
+@router.post("/run-trash-purge")
+def run_trash_purge_endpoint(request: Request, db: Session = Depends(get_db)):
+    """Vide la corbeille du coffre-fort : documents supprimés depuis plus de 30 jours
+    (ligne + fichier du stockage + anciennes versions). À cron-er quotidiennement."""
+    _check_cron(request)
+    from app.routers.rgpd import purge_trash
+    return purge_trash(db)

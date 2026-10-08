@@ -110,10 +110,16 @@ def set_overage(enabled: bool = True, current_user: User = Depends(get_current_u
     # Le quota/overage est porté par le PROPRIÉTAIRE du pool de facturation : on écrit SON
     # flag (sinon le toggle d'un membre n'avait aucun effet — consume_analysis lit l'owner).
     # Et c'est un engagement financier → réservé au propriétaire / admin de l'organisation.
-    from app.core.quota import OVERAGE_PRICE, _billing_user
+    from app.core.quota import OVERAGE_PRICE, _billing_user, overage_billable
     bu = _billing_user(current_user, db)
     if bu.id != current_user.id and getattr(current_user, "org_role", "") not in ("owner", "admin"):
         raise HTTPException(403, "Seul le propriétaire ou un administrateur peut activer le paiement à l'usage")
+    # ACTIVER engage une facturation : exige un abonnement payant actif + client Stripe (sinon
+    # analyses IA illimitées impossibles à facturer, ex. pendant l'essai gratuit). Désactiver
+    # reste toujours possible.
+    if enabled and not overage_billable(bu):
+        raise HTTPException(402, "Le paiement à l'usage nécessite un abonnement Pro ou Business "
+                                 "actif. Abonnez-vous d'abord, puis activez-le.")
     bu.overage_enabled = bool(enabled)
     db.commit()
     return {"overage_enabled": bu.overage_enabled,

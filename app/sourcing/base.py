@@ -2,11 +2,33 @@
 Interfaces communes des sources. Ajouter une plateforme = une nouvelle classe,
 sans toucher au reste.
 """
+import functools
 import re
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from app.schemas import safe_link_url
 from app.sourcing.schemas import NormalizedTender, NormalizedCompany
+
+# Les liens d'avis peuvent être longs (paramètres de plateforme) : plafond large ici, le
+# stockage en base (Project.source_url) applique ensuite sa propre limite.
+_MAX_LINK_LEN = 2000
+
+
+def sanitize_tender_links(tender):
+    """Neutralise tout lien NON web (javascript:, data:…) d'un AO normalisé avant qu'il
+    n'atteigne l'interface (« Voir l'avis ↗ ») ou la base (Project.source_url). Un lien
+    invalide devient vide — l'UI n'affiche alors simplement pas de lien (jamais inventé)."""
+    try:
+        provs = [tender.provenance] + list(getattr(tender, "also_seen_in", None) or [])
+        for prov in provs:
+            if prov is not None and prov.source_url:
+                prov.source_url = safe_link_url(prov.source_url, _MAX_LINK_LEN) or ""
+        if getattr(tender, "dce_url", None):
+            tender.dce_url = safe_link_url(tender.dce_url, _MAX_LINK_LEN)
+    except Exception:
+        pass
+    return tender
 
 # Un département FR valide : 2 chiffres (01-95), 3 chiffres DOM (971-976) ou Corse 2A/2B.
 _DEPT_RE = re.compile(r"^(?:[0-9]{2,3}|2[AB])$", re.IGNORECASE)
@@ -41,6 +63,24 @@ class TenderSource(ABC):
     """Une plateforme de marchés publics (BOAMP, DECP, TED…)."""
     name: str = "source"
     supported_filters: set = set()    # ex. {"cpv", "departements", "query"}
+
+    def __init_subclass__(cls, **kwargs):
+        """Garde CENTRALE des liens : toute source (actuelle ou future) voit les résultats
+        de sa `search` passer par `sanitize_tender_links`, sans rien avoir à faire."""
+        super().__init_subclass__(**kwargs)
+        fn = cls.__dict__.get("search")
+        if fn is None or getattr(fn, "_links_guarded", False) or getattr(fn, "__isabstractmethod__", False):
+            return
+
+        @functools.wraps(fn)
+        def search(self, *args, **kw):
+            res = fn(self, *args, **kw)
+            if isinstance(res, list):
+                return [sanitize_tender_links(t) for t in res]
+            return res
+
+        search._links_guarded = True
+        cls.search = search
 
     @abstractmethod
     def search(self, criteria: TenderCriteria) -> list[NormalizedTender]:

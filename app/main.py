@@ -67,7 +67,16 @@ if _is_sqlite:
     from app.core.dbsync import ensure_sqlite_columns
     ensure_sqlite_columns(engine, Base)
 
-app = FastAPI(title=settings.APP_NAME, version=settings.APP_VERSION, description="API pour la gestion des marches publics", docs_url="/docs")
+# Documentation interactive (Swagger /docs, ReDoc /redoc, schéma /openapi.json) : utile en
+# dev, mais en PRODUCTION c'est une carte complète de l'API (routes admin/cron, schémas
+# Stripe/RGPD/invitations) offerte sans authentification → coupée. Même détection de la prod
+# que les garde-fous ci-dessus (settings.ENVIRONMENT, normalisé en minuscules dans config).
+_IS_PROD = settings.ENVIRONMENT == "production"
+app = FastAPI(title=settings.APP_NAME, version=settings.APP_VERSION,
+              description="API pour la gestion des marches publics",
+              docs_url=None if _IS_PROD else "/docs",
+              redoc_url=None if _IS_PROD else "/redoc",
+              openapi_url=None if _IS_PROD else "/openapi.json")
 
 # Rate limiting
 from slowapi.errors import RateLimitExceeded
@@ -89,8 +98,125 @@ app.add_middleware(GZipMiddleware, minimum_size=800)
 from app.core.idempotency import IdempotencyMiddleware
 app.add_middleware(IdempotencyMiddleware)
 
+# Taille maximale des corps de requête (audit cyber oct. 2026, faille 2). Middleware ASGI
+# pur, ajouté APRÈS l'idempotence donc exécuté AVANT elle (Starlette : dernier ajouté =
+# premier traversé) et avant tout ce qui lit le corps (routes, formulaires, webhook Stripe).
+# Deux contrôles : Content-Length annoncé (refus immédiat, rien n'est lu) ET octets
+# réellement reçus (transfert « chunked » ou client qui ment). Le corps n'est ni copié ni
+# modifié : le webhook Stripe reçoit ses octets bruts intacts pour vérifier la signature.
+import re as _re
+from starlette.exceptions import HTTPException as _StarletteHTTPException
+
+_MB = 1024 * 1024
+BODY_LIMIT_UPLOAD = 60 * _MB     # routes d'envoi de fichiers (multipart)
+BODY_LIMIT_DEFAULT = 2 * _MB     # tout le reste (JSON, formulaires, webhook)
+_UPLOAD_ROUTES = [(m, _re.compile(rx)) for m, rx in (
+    ("POST", r"^/api/documents/?$"),
+    ("PUT",  r"^/api/documents/[^/]+/replace/?$"),
+    ("POST", r"^/api/sourcing/analyze-upload/?$"),
+    ("POST", r"^/api/amont/analyze-upload/?$"),
+    ("POST", r"^/api/knowledge/upload/?$"),
+    ("POST", r"^/api/knowledge/memoire-upload/?$"),
+    ("POST", r"^/api/invite/[^/]+/contribution/piece/?$"),
+)]
+_MSG_TOO_BIG_UPLOAD = "Fichier trop volumineux : 60 Mo maximum."
+_MSG_TOO_BIG = "Les données envoyées sont trop volumineuses."
+
+
+def _routed_path(scope) -> str:
+    """Chemin réellement routé (scope ASGI, root_path retiré) — jamais l'en-tête Host."""
+    path = scope.get("path") or ""
+    root = scope.get("root_path") or ""
+    if root and path.startswith(root):
+        path = path[len(root):] or "/"
+    return path
+
+
+def body_limit_for(scope) -> tuple:
+    """(limite en octets, message) pour cette requête."""
+    method = (scope.get("method") or "").upper()
+    # Starlette (request.form, Headers.get) lit le PREMIER Content-Type : on fait de même.
+    # Plusieurs Content-Type = requête ambiguë → limite basse (sinon « urlencoded » puis
+    # « multipart » obtenait la limite des fichiers pour un formulaire analysé en mémoire).
+    ctypes = [v for k, v in (scope.get("headers") or []) if k.lower() == b"content-type"]
+    if len(ctypes) != 1:
+        return BODY_LIMIT_DEFAULT, _MSG_TOO_BIG
+    ctype = ctypes[0]
+    if ctype.strip().lower().startswith(b"multipart/"):
+        path = _routed_path(scope)
+        if any(m == method and rx.match(path) for m, rx in _UPLOAD_ROUTES):
+            return BODY_LIMIT_UPLOAD, _MSG_TOO_BIG_UPLOAD
+    return BODY_LIMIT_DEFAULT, _MSG_TOO_BIG
+
+
+class _BodyTooLarge(_StarletteHTTPException):
+    """Levée par receive() au-delà de la limite. Sous-classe d'HTTPException : FastAPI la
+    relaie telle quelle (413 en français) au lieu d'un 400 « error parsing the body »."""
+    def __init__(self, detail: str):
+        super().__init__(status_code=413, detail=detail)
+
+
+async def _send_413(send, detail: str):
+    import json as _json
+    body = _json.dumps({"detail": detail}, ensure_ascii=False).encode("utf-8")
+    await send({"type": "http.response.start", "status": 413, "headers": [
+        (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()),
+        (b"connection", b"close")]})
+    await send({"type": "http.response.body", "body": body, "more_body": False})
+
+
+class BodySizeLimitMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            return await self.app(scope, receive, send)
+        limit, detail = body_limit_for(scope)
+        for k, v in scope.get("headers") or []:
+            if k.lower() == b"content-length":
+                try:
+                    declared = int(v.decode("latin-1").strip())
+                except ValueError:
+                    declared = 0      # le serveur HTTP rejette déjà un Content-Length invalide
+                if declared > limit:
+                    return await _send_413(send, detail)
+        received = 0
+        started = False
+
+        async def _receive():
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b""))
+                if received > limit:
+                    raise _BodyTooLarge(detail)
+            return message
+
+        async def _send(message):
+            nonlocal started
+            if message.get("type") == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, _receive, _send)
+        except _BodyTooLarge as e:
+            if not started:
+                await _send_413(send, e.detail)
+
+
+app.add_middleware(BodySizeLimitMiddleware)
+
 
 app.middleware("http")(request_logger)
+
+# Compte démo public = vitrine en LECTURE GUIDÉE : 403 explicite sur l'envoi d'emails, les
+# téléversements, les appels IA payants et la gestion du compte/abonnement/équipe (liste
+# explicite dans app/core/demo_guard.py). Enregistré AVANT security_headers → la réponse
+# 403 reçoit quand même les en-têtes de sécurité.
+from app.core.demo_guard import demo_guard_middleware
+app.middleware("http")(demo_guard_middleware)
 
 # CSP — verrouille les origines. 'unsafe-eval'/'unsafe-inline' requis car Vue (CDN)
 # compile les templates à l'exécution et l'app utilise des styles inline (pas de build).
@@ -113,12 +239,16 @@ def _analytics_origin() -> str:
 _ANALYTICS_ORIGIN = _analytics_origin()
 _SCRIPT_EXTRA = (" " + _ANALYTICS_ORIGIN) if _ANALYTICS_ORIGIN else ""
 _CONNECT_EXTRA = (" " + _ANALYTICS_ORIGIN) if _ANALYTICS_ORIGIN else ""
+# cdn.jsdelivr.net / fastapi.tiangolo.com ne servent QU'À Swagger/ReDoc (le front auto-héberge
+# ses libs) : autorisés seulement hors production, là où la doc interactive existe encore.
+_DOCS_SCRIPT = "" if _IS_PROD else " https://cdn.jsdelivr.net"
+_DOCS_IMG = "" if _IS_PROD else " https://cdn.jsdelivr.net https://fastapi.tiangolo.com"
 _CSP = (
     "default-src 'self'; "
-    f"script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net{_SCRIPT_EXTRA}; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+    f"script-src 'self' 'unsafe-inline' 'unsafe-eval'{_DOCS_SCRIPT}{_SCRIPT_EXTRA}; "
+    f"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com{_DOCS_SCRIPT}; "
     "font-src 'self' data: https://fonts.gstatic.com; "
-    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://fastapi.tiangolo.com; "
+    f"img-src 'self' data: blob:{_DOCS_IMG}; "
     f"connect-src 'self'{_CONNECT_EXTRA}; worker-src 'self' blob:; "
     "frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
 )
@@ -401,6 +531,50 @@ def _recover_orphan_jobs():
         _logging.getLogger("adjugo").warning("récupération des jobs orphelins interrompue : %s", e)
     finally:
         db.close()
+
+
+# ── Réparation : jobs des membres retirés AVANT le correctif (faille 8) ─────
+@app.on_event("startup")
+def _repair_removed_member_jobs():
+    """Avant le correctif, retirer un membre ne réassignait pas ses jobs (résultats IA bâtis
+    sur la base de l'organisation) : ils restaient à son nom, donc lisibles par lui dans son
+    nouvel espace. On les rend à l'organisation, d'après le journal : pour chaque entrée
+    `team.member_removed` (owner_id = propriétaire au moment du retrait, target_id = membre),
+    les jobs du membre créés AVANT le retrait passent au propriétaire. Idempotent (un 2e
+    passage ne trouve plus rien), best-effort, jamais bloquant au démarrage. Le journal
+    n'est que LU (son owner_id entre dans le hash de la chaîne : on n'y touche pas)."""
+    log = _logging.getLogger("adjugo")
+    from app.core.database import SessionLocal
+    from app.models import AuditLog, Job, User
+    from sqlalchemy import update as _update
+    db = SessionLocal()
+    moved = 0
+    try:
+        rows = (db.query(AuditLog.id, AuditLog.owner_id, AuditLog.target_id, AuditLog.created_at)
+                .filter(AuditLog.action == "team.member_removed").order_by(AuditLog.id).all())
+        for aid, owner_id, member_id, removed_at in rows:
+            try:
+                if not owner_id or not member_id or owner_id == member_id or removed_at is None:
+                    continue
+                if db.get(User, owner_id) is None:      # propriétaire supprimé : rien à rendre
+                    continue
+                res = db.execute(_update(Job)
+                                 .where(Job.user_id == member_id, Job.created_at <= removed_at)
+                                 .values(user_id=owner_id)
+                                 .execution_options(synchronize_session=False))
+                db.commit()
+                moved += res.rowcount or 0
+            except Exception as e:
+                db.rollback()
+                log.warning("réparation des jobs (journal %s) échouée : %s", aid, e)
+        if moved:
+            log.info("jobs d'anciens membres rendus à leur organisation : %d", moved)
+    except Exception as e:
+        db.rollback()
+        log.warning("réparation des jobs d'anciens membres interrompue : %s", e)
+    finally:
+        db.close()
+    return moved
 
 
 # ── Capacité du pool de threads (endpoints sync) ────────────────────────────

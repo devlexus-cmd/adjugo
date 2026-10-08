@@ -145,7 +145,7 @@ def _avis_concurrence(dce: dict, proc: dict) -> str:
     averts = [a for a in (dce.get("avertissements") or []) if _s(a)]
     if averts:
         L.append("")
-        L.append("⚠️ Points à corriger AVANT publication (contrôles automatiques du projet) :")
+        L.append("Points à corriger AVANT publication (contrôles automatiques du projet) :")
         for a in averts:
             L.append("   - " + _s(a))
     L.append("")

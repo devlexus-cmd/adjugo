@@ -24,9 +24,12 @@ def project_documents(project_id: int, current_user: User = Depends(get_current_
                                        Project.user_id.in_(ids)).first()
     if not project:
         raise HTTPException(404, "Appel d'offres introuvable")
+    # Versions remplacées (parent_id posé) exclues, comme dans le coffre-fort et l'export :
+    # sinon le dossier montre deux pièces homonymes dont une périmée.
     docs = db.query(Document).filter(Document.project_id == project_id,
                                      Document.user_id.in_(ids),
-                                     Document.deleted_at.is_(None)).order_by(Document.created_at).all()
+                                     Document.deleted_at.is_(None),
+                                     Document.parent_id.is_(None)).order_by(Document.created_at).all()
     by_folder = {}
     for d in docs:
         f = d.folder or "Autres"
@@ -140,6 +143,10 @@ def restore_project(
     ).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projet introuvable")
+    if project.ai_analysis == {"purged": True}:
+        # Contenu définitivement effacé après la période de corbeille (voir rgpd.purge_trash).
+        raise HTTPException(status_code=410, detail="Ce marché a été définitivement supprimé "
+                                                    "après 30 jours dans la corbeille.")
     project.deleted_at = None
     db.commit()
     return {"ok": True, "id": project.id}

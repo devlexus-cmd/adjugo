@@ -68,9 +68,9 @@
           Continuer avec Google
         </button>
         <button class="btn ghost block" style="margin-top:9px" @click="demoLogin" :disabled="busy"><i data-lucide="play-circle"></i>Voir la démo (sans inscription)</button>
-        <p class="alt" style="display:flex;justify-content:space-between;gap:10px">
-          <a href="#" @click.prevent="auth.mode = auth.mode==='login'?'register':'login'">{{ auth.mode==='login'?"Pas de compte ? S'inscrire":'Déjà inscrit ? Se connecter' }}</a>
-          <a v-if="auth.mode==='login'" href="#" @click.prevent="auth.mode='forgot';auth.sent=false">Mot de passe oublié ?</a>
+        <p class="alt" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px 14px">
+          <a href="#" style="white-space:nowrap" @click.prevent="auth.mode = auth.mode==='login'?'register':'login'">{{ auth.mode==='login'?"Pas de compte ? S'inscrire":'Déjà inscrit ? Se connecter' }}</a>
+          <a v-if="auth.mode==='login'" href="#" style="white-space:nowrap" @click.prevent="auth.mode='forgot';auth.sent=false">Mot de passe oublié ?</a>
         </p>
       </template>
     </div>
@@ -174,8 +174,7 @@
             <div class="dash-hero-h">
               <i data-lucide="users-round" class="dh-ic"></i>
               <div class="dh-tx">
-                <b class="dh-t">Réseau Adjugo — gagnez les gros marchés à plusieurs</b>
-                <div class="muted small">Associez d'autres entreprises : chacune apporte sa part, l'IA assemble une réponse commune.</div>
+                <b class="dh-t">Réseau Adjugo — gagnez les gros marchés à plusieurs<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Associez d'autres entreprises : chacune apporte sa part, l'IA assemble une réponse commune.</span></button></b>
                 <div v-if="consortiums.active" class="muted small dh-stats"><span class="nw"><b>{{ consortiums.active }}</b> {{ pl(consortiums.active, 'groupement en cours', 'groupements en cours') }}</span> · <span class="nw"><b>{{ consortiums.partners_total }}</b> {{ pl(consortiums.partners_total, 'partenaire', 'partenaires') }}</span> · <span class="nw"><b>{{ consortiums.submitted_total }}</b> {{ pl(consortiums.submitted_total, 'part reçue', 'parts reçues') }}</span></div>
                 <a v-if="grpAccessibleCount()" href="#" @click.prevent="go('pipeline')" class="dh-link"><i data-lucide="users-round"></i><span>{{ grpAccessibleCount() }} {{ pl(grpAccessibleCount(), 'marché accessible', 'marchés accessibles') }} en groupement</span><i data-lucide="arrow-right"></i></a>
               </div>
@@ -198,7 +197,7 @@
 
             <div v-else class="row wrap" style="margin-top:11px;gap:10px;align-items:center;padding:11px 13px;border:1px dashed var(--border);border-radius:9px;background:var(--surface)">
               <i data-lucide="sparkles" style="color:var(--accent-text);flex:none"></i>
-              <div class="small" style="flex:1;min-width:170px">Aucun groupement pour l'instant. Ouvrez un marché et <b>invitez un partenaire</b> : répondez ensemble à des marchés trop gros pour vous seul.</div>
+              <div class="small" style="flex:1;min-width:170px">Aucun groupement pour l'instant. Ouvrez un marché et <b>invitez un partenaire</b>.</div>
             </div>
           </div>
 
@@ -207,8 +206,7 @@
             <div class="dash-hero-h">
               <i data-lucide="radar" class="dh-ic"></i>
               <div class="dh-tx">
-                <b class="dh-t">Une longueur d'avance — projets détectés avant l'appel d'offres</b>
-                <div class="muted small">Adjugo lit les délibérations des collectivités et repère les investissements <b>des mois avant la publication du marché</b>. Positionnez-vous en premier.</div>
+                <b class="dh-t">Une longueur d'avance — projets détectés avant l'appel d'offres<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo lit les délibérations des collectivités et repère les investissements <b>des mois avant la publication du marché</b>. Positionnez-vous en premier.</span></button></b>
               </div>
               <button class="btn dh-act" @click="go('amont')"><i data-lucide="scan-eye"></i>{{ amont.signals.length ? (amont.signals.length === 1 ? 'Voir le projet' : 'Voir les ' + amont.signals.length + ' projets') : 'Détecter des projets' }}</button>
             </div>
@@ -224,7 +222,7 @@
             </div>
             <div v-else class="row wrap" style="margin-top:11px;gap:10px;align-items:center;padding:11px 13px;border:1px dashed var(--border);border-radius:9px;background:var(--surface)">
               <i data-lucide="lightbulb" style="color:var(--accent-text);flex:none"></i>
-              <div class="small" style="flex:1;min-width:170px">Aucun projet détecté pour l'instant. Lancez un scan des délibérations de votre zone pour prendre de l'avance sur vos concurrents.</div>
+              <div class="small" style="flex:1;min-width:170px">Aucun projet détecté pour l'instant. Lancez un scan de votre zone.</div>
               <button class="btn sm" @click="go('amont')"><i data-lucide="search"></i>Scanner ma zone</button>
             </div>
           </div>
@@ -348,7 +346,7 @@
                     <span v-if="ao.project.groupement_score!=null" class="pill go_groupement" style="gap:4px" title="Score calculé avec la composition de groupement retenue"><i data-lucide="users-round" style="width:12px;height:12px"></i>En groupement {{ ao.project.groupement_score }}/100</span>
                   </template>
                   <span class="pill neutral" v-else>À analyser</span>
-                  <a v-if="aoSource()" :href="aoSource().source_url" target="_blank" class="small row" style="gap:3px;color:var(--accent-text);font-weight:500">{{ aoSource().source }} · réf {{ aoSource().official_ref }}<i data-lucide="external-link" style="width:13px;height:13px"></i></a>
+                  <a v-if="aoSource()" :href="safeUrl(aoSource().source_url)" target="_blank" class="small row" style="gap:3px;color:var(--accent-text);font-weight:500">{{ aoSource().source }} · réf {{ aoSource().official_ref }}<i data-lucide="external-link" style="width:13px;height:13px"></i></a>
                 </div>
                 <h2 style="margin:8px 0 2px;font-size:18px;line-height:1.3;font-weight:560">{{ ao.project.name }}</h2>
                 <div class="muted small">{{ ao.project.client||'Acheteur non précisé' }}</div>
@@ -366,7 +364,7 @@
               <div class="kpi"><div class="kh"><span>Délai</span><i data-lucide="timer"></i></div><div class="v" style="font-size:15px">{{ aoDetails().delai_execution || 'non précisé' }}</div></div>
             </div>
             <div v-if="ao.project.status==='gagne'||ao.project.status==='perdu'" class="card pad" style="margin-top:12px;background:var(--accent-weak)">
-              <div class="row" style="gap:6px;margin-bottom:8px"><i :data-lucide="ao.project.status==='gagne'?'trophy':'circle-x'" style="width:15px;height:15px"></i><b class="small">{{ ao.project.status==='gagne'?'Marché remporté':'Marché perdu' }} — bilan</b><span class="muted small">alimente vos analytics « où vous gagnez / perdez »</span></div>
+              <div class="row" style="gap:6px;margin-bottom:8px"><i :data-lucide="ao.project.status==='gagne'?'trophy':'circle-x'" style="width:15px;height:15px"></i><b class="small">{{ ao.project.status==='gagne'?'Marché remporté':'Marché perdu' }} — bilan</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Alimente vos statistiques « où vous gagnez / perdez ».</span></button></div>
               <div class="row wrap" style="gap:10px">
                 <div class="field" style="margin:0;flex:1;min-width:200px"><label>{{ ao.project.status==='gagne'?'Facteur clé de succès':'Motif de la perte' }}</label>
                   <select v-model="ao.project.outcome_reason"><option value="">—</option><option v-for="r in outcomeReasons(ao.project.status)" :key="r" :value="r">{{ r }}</option></select></div>
@@ -386,7 +384,7 @@
             <div class="cb">
               <div v-if="!aoDceAvailable()" class="row wrap" style="margin-bottom:12px;gap:10px;padding:12px;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:8px">
                 <i data-lucide="alert-triangle" style="width:18px;height:18px;color:#b45309;flex-shrink:0;margin-top:2px"></i>
-                <div style="flex:1;min-width:180px"><b class="small" style="color:#92400e">Le dossier complet du marché est indispensable</b><div class="muted small" style="margin-top:2px">Pour l'instant l'analyse est <b>préliminaire</b> (faite à partir de l'annonce seule). Pour une <b>compatibilité fiable</b>, la liste exacte des pièces et des formulaires corrects, importez le <b>dossier complet</b> (le règlement, le cahier des charges, le tableau de prix). Téléchargez-le sur la plateforme de l'acheteur et déposez-le ici.</div></div>
+                <div style="flex:1;min-width:180px"><b class="small" style="color:#92400e">Le dossier complet du marché est indispensable</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le <b>dossier complet</b> (le règlement, le cahier des charges, le tableau de prix) donne une <b>compatibilité fiable</b>, la liste exacte des pièces et les formulaires corrects. Téléchargez-le sur la plateforme de l'acheteur et déposez-le ici.</span></button><div class="muted small" style="margin-top:2px">Analyse <b>préliminaire</b> (annonce seule) : importez le dossier complet du marché pour un résultat fiable.</div></div>
                 <button class="btn primary sm" @click="$refs.aoDce.click()" :disabled="ao.uploading"><span v-if="ao.uploading" class="spin"></span><i v-else data-lucide="upload"></i>Importer le dossier du marché</button>
               </div>
               <div v-else class="row" style="margin-bottom:10px;gap:8px"><button class="btn ghost sm" @click="$refs.aoDce.click()" :disabled="ao.uploading"><i data-lucide="upload"></i>Ré-importer le dossier</button><button class="btn ghost sm" @click="aoReanalyze()" :disabled="ao.uploading"><span v-if="ao.uploading" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Ré-analyser</button></div>
@@ -412,7 +410,7 @@
               </div>
               <!-- Q&A IA sur l'AO (après import du DCE complet) -->
               <div v-if="aoDceAvailable()" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
-                <div class="sectitle" style="margin-top:0"><i data-lucide="messages-square" style="width:14px;height:14px"></i> Poser une question à l'IA sur cet appel d'offres</div>
+                <div class="sectitle" style="margin-top:0"><i data-lucide="messages-square" style="width:14px;height:14px"></i> Poser une question à l'IA sur cet appel d'offres<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Réponses fondées sur le dossier importé. Si l'information n'y figure pas, l'IA le dit clairement.</span></button></div>
                 <div v-for="(m,i) in ao.qa" :key="'qa'+i" style="margin-bottom:11px">
                   <div class="row small" style="gap:6px;font-weight:600"><i data-lucide="circle-help" style="width:13px;height:13px;color:var(--accent-text)"></i><span>{{ m.q }}</span></div>
                   <div v-if="m.a==='__loading__'" class="small row" style="margin-top:5px;padding:10px 13px;background:var(--surface-2);border-radius:8px;gap:8px;color:var(--text-2)"><span class="spin"></span> L'IA lit le dossier et rédige la réponse…</div>
@@ -422,7 +420,6 @@
                   <input class="inp" v-model="ao.qaInput" placeholder="Ex. Quelles pénalités de retard ? Le CA minimal exigé ? La date de visite ?" @keyup.enter="aoAsk()" :disabled="ao.qaLoading" style="flex:1">
                   <button class="btn primary" @click="aoAsk()" :disabled="ao.qaLoading||!ao.qaInput.trim()"><span v-if="ao.qaLoading" class="spin"></span><i v-else data-lucide="send"></i>Demander</button>
                 </div>
-                <div class="muted small" style="margin-top:6px">Réponses fondées sur le dossier importé. Si l'information n'y figure pas, l'IA le dit clairement.</div>
               </div>
             </div>
           </div>
@@ -478,7 +475,7 @@
                     <div v-if="g.extrait" class="gap-cite">Le dossier dit : « {{ g.extrait }} »</div>
                   </div>
                   <div style="margin-top:12px">
-                    <div class="row wrap" style="gap:8px;align-items:center"><b class="small">Qui l'a ?</b><span class="muted small">Cochez un ou plusieurs partenaires (4 max.) pour simuler le score en groupement.</span><div class="spacer"></div>
+                    <div class="row wrap" style="gap:8px;align-items:center"><b class="small">Qui l'a ?</b><span class="muted small">Cochez jusqu'à 4 partenaires.</span><div class="spacer"></div>
                       <button class="btn sm" @click="aoGrpLoadBesoins(true)" :disabled="ao.grp.sireneLoading"><span v-if="ao.grp.sireneLoading" class="spin"></span><i v-else data-lucide="search"></i>Chercher aussi dans SIRENE</button></div>
                     <template v-for="grp in candGroups()" :key="grp.key">
                       <div v-if="grp.list.length" class="muted small" style="font-weight:600;margin-top:10px">{{ grp.label }}</div>
@@ -502,11 +499,10 @@
                     <span v-if="!ao.grp.selected.length" class="muted small">personne pour l'instant.</span>
                     <span v-for="m in ao.grp.selected" :key="'sel'+candId(m)" class="pill" :class="m.kind==='saisi'?'a_etudier':'go_groupement'" style="gap:5px">{{ m.name }}<span v-if="m.kind==='saisi'" style="font-size:9px;opacity:.85">déclaré par vous</span><button type="button" @click="toggleCand(m)" :aria-label="'Retirer '+m.name" style="border:0;background:none;color:inherit;cursor:pointer;padding:0;margin-left:2px;line-height:0;display:inline-flex"><i data-lucide="x" style="width:11px;height:11px"></i></button></span>
                     <div class="spacer"></div>
-                    <button class="btn sm ghost" @click="ao.grp.saisiOpen=!ao.grp.saisiOpen"><i data-lucide="plus"></i>Ajouter une entreprise à la main</button>
+                    <button class="btn sm ghost" @click="ao.grp.saisiOpen=!ao.grp.saisiOpen"><i data-lucide="plus"></i>Ajouter une entreprise à la main</button><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Une entreprise que vous connaissez mais qui n'est pas encore dans votre réseau. Ses capacités seront étiquetées <b>« déclaré par vous »</b> dans le résultat.</span></button>
                     <button class="btn sm primary" @click="aoGrpSimulate()" :disabled="ao.grp.simulating || !ao.grp.selected.length"><span v-if="ao.grp.simulating" class="spin"></span><i v-else data-lucide="calculator"></i>Calculer le score en groupement</button>
                   </div>
                   <div v-if="ao.grp.saisiOpen" style="margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2)">
-                    <div class="muted small" style="margin-bottom:7px">Une entreprise que vous connaissez mais qui n'est pas encore dans votre réseau. Ses capacités seront étiquetées <b>« déclaré par vous »</b> dans le résultat.</div>
                     <div class="row wrap" style="gap:8px">
                       <input class="inp" v-model="ao.grp.saisi.name" placeholder="Nom de l'entreprise *" style="flex:1;min-width:160px" aria-label="Nom de l'entreprise">
                       <input class="inp" v-model="ao.grp.saisi.siret" placeholder="SIRET (optionnel)" style="width:150px" aria-label="SIRET">
@@ -525,7 +521,7 @@
                       <button v-if="ao.grp.sim.simulation_id && !ao.grp.sim.retained" class="btn sm primary" @click="aoGrpRetenir()" :disabled="ao.grp.retaining"><span v-if="ao.grp.retaining" class="spin"></span><i v-else data-lucide="check-circle-2"></i>Retenir cette composition</button>
                     </div>
                     <div v-if="ao.grp.sim.retained" class="row wrap" style="gap:6px;margin-top:8px;align-items:center">
-                      <span class="small" style="color:var(--success-text);font-weight:600">✓ Composition retenue — partenaires rattachés au marché.</span>
+                      <span class="small" style="color:var(--success-text);font-weight:600"><i data-lucide="check" style="width:13px;height:13px;vertical-align:-2px"></i> Composition retenue — partenaires rattachés au marché.</span>
                       <button v-for="m in simPartners(ao.grp.sim).filter(x=>!grpAlreadyInvited(x))" :key="'inv'+candId(m)" class="btn sm" @click="aoGrpInvite(m)"><i data-lucide="user-plus"></i>Inviter {{ m.name }}</button>
                     </div>
                   </div>
@@ -540,7 +536,7 @@
                     <span style="flex:1;min-width:120px">{{ (h.members||[]).map(m=>m.name).join(', ')||'—' }}</span>
                     <span class="num">{{ h.score_seul }} → {{ h.score_groupement }} %</span>
                     <span class="pill" :class="h.decision||'neutral'" style="font-size:10px">{{ h.decision_label||decLabel(h.decision) }}</span>
-                    <span v-if="h.retained" class="pill go" style="font-size:10px">retenue ✓</span>
+                    <span v-if="h.retained" class="pill go" style="font-size:10px;gap:3px">retenue<i data-lucide="check" style="width:11px;height:11px"></i></span>
                   </div>
                 </details>
                 <div v-if="grpCanCancel()" style="margin-top:8px"><a href="#" @click.prevent="aoGrpCancelPlan()" class="muted small" style="text-decoration:underline">Annuler la composition</a> <span class="muted small">— vous revenez au verdict seul ; les partenaires rattachés restent.</span></div>
@@ -551,18 +547,18 @@
           <!-- Chiffrage estimatif (compact, détail repliable) -->
           <div class="card" style="margin-top:14px;position:relative">
             <div v-if="ao.estimating" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Estimation en cours…</div></div></div>
-            <div class="ch"><i data-lucide="calculator"></i><h3>Estimation du prix</h3><div class="spacer"></div>
+            <div class="ch"><i data-lucide="calculator"></i><h3>Estimation du prix</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">L'IA découpe le travail en tâches et estime le nombre de jours ; le prix est calculé sur <b>vos tarifs de journée</b> (profils et tarifs réglables dans Mon entreprise — sinon des tarifs par défaut, à personnaliser). Le montant lui-même n'est jamais inventé : il est calculé jours × tarif. Ensuite, ajustez jours et profils puis « Recalculer » (calcul instantané, sans IA).</span></button><div class="spacer"></div>
               <span v-if="ao.estimate" class="pill neutral" style="font-size:11px">{{ eur(ao.estimate.total_ht) }} HT · {{ ao.estimate.jours_total }} j</span>
               <span v-if="ao.estimate && ao.estimate.review" class="pill" :class="reviewPill(ao.estimate.review.status)" style="font-size:11px">{{ reviewLabel(ao.estimate.review.status) }}</span>
               <button v-if="!ao.estimate" class="btn primary sm" @click="aoEstimate()" :disabled="ao.estimateBusy"><span v-if="ao.estimateBusy" class="spin"></span><i v-else data-lucide="sparkles"></i>Estimer mon prix</button>
               <button v-if="ao.estimate" class="btn sm" @click="aoDownloadDpgf()"><i data-lucide="file-down"></i>Tableau de prix (Excel)</button>
               <button v-if="ao.estimate" class="btn sm" @click="ao.estimateOpen=!ao.estimateOpen"><i :data-lucide="ao.estimateOpen?'chevron-up':'sliders-horizontal'"></i>{{ ao.estimateOpen?'Replier':'Détailler / ajuster' }}</button></div>
             <div class="cb">
-              <div v-if="!ao.estimate" class="muted small">L'IA découpe le travail en tâches et estime le nombre de jours ; le prix est calculé sur <b>vos tarifs de journée</b> (réglables dans Mon entreprise — sinon des tarifs par défaut, à personnaliser). Le montant lui-même n'est jamais inventé : il est calculé jours × tarif.
-                <div class="row" style="gap:6px;margin-top:9px;align-items:center"><span>Distance du chantier :</span><input class="inp" type="number" min="0" v-model.number="ao.estimateDistance" style="width:90px" aria-label="Distance du chantier en km"><span>km</span></div>
+              <div v-if="!ao.estimate" class="muted small">
+                <div class="row" style="gap:6px;align-items:center"><span>Distance du chantier :</span><input class="inp" type="number" min="0" v-model.number="ao.estimateDistance" style="width:90px" aria-label="Distance du chantier en km"><span>km</span></div>
               </div>
               <div v-else>
-                <div v-if="ao.estimate.rates_default" class="row small" style="gap:6px;margin-bottom:9px;color:var(--warn)"><i data-lucide="alert-triangle" style="width:13px;height:13px"></i><span>Estimation basée sur des <b>tarifs par défaut</b> — personnalisez vos tarifs de journée dans <b>Mon entreprise</b> pour un prix fidèle à votre structure.</span></div>
+                <div v-if="ao.estimate.rates_default" class="row small" style="gap:6px;margin-bottom:9px;color:var(--warn)"><i data-lucide="alert-triangle" style="width:13px;height:13px"></i><span><b>Tarifs par défaut</b> : personnalisez vos tarifs de journée dans <b>Mon entreprise</b>.</span></div>
                 <div class="cards cols-4">
                   <div class="kpi"><div class="kh"><span>Total estimé HT</span><i data-lucide="banknote"></i></div><div class="v" style="font-size:16px">{{ eur(ao.estimate.total_ht) }}</div></div>
                   <div class="kpi"><div class="kh"><span>Charge</span><i data-lucide="calendar-days"></i></div><div class="v" style="font-size:16px">{{ ao.estimate.jours_total }} j</div></div>
@@ -581,7 +577,6 @@
                     <span class="num" style="min-width:74px;text-align:right">{{ eur(l.montant) }}</span>
                   </div>
                   <div class="row" style="justify-content:flex-end;margin-top:9px"><b>Total HT : {{ eur(ao.estimate.total_ht) }}</b></div>
-                  <p class="muted small" style="margin-top:6px">Ajustez jours et profils puis « Recalculer » (calcul instantané, sans IA). Profils & tarifs configurables dans <b>Profil entreprise</b>.</p>
                   <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
                     <div class="row wrap" style="gap:7px;align-items:center"><i data-lucide="users" style="width:14px;height:14px"></i><b class="small">Revue d'équipe</b>
                       <span v-if="ao.estimate.review" class="pill" :class="reviewPill(ao.estimate.review.status)" style="font-size:10px">{{ reviewLabel(ao.estimate.review.status) }}</span>
@@ -601,7 +596,7 @@
           <div class="cards cols-2" style="margin-top:14px;align-items:start">
             <div class="card" style="position:relative">
               <div v-if="ao.generating" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Génération du dossier…</div></div></div>
-              <div class="ch"><i data-lucide="file-text"></i><h3>Mes documents de réponse</h3><div class="spacer"></div>
+              <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="file-text"></i><h3>Mes documents de réponse</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Prépare les formulaires officiels (DC1, DC2, déclaration sur l'honneur, acte d'engagement) déjà remplis, plus votre dossier de présentation, à partir des infos du marché et de votre entreprise.</span></button><div class="spacer"></div>
                 <button class="btn primary sm" @click="aoGenerate()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="sparkles"></i>Préparer mes documents</button></div>
               <div class="cb">
                 <!-- TVA de l'acte d'engagement : 0 % par défaut (marchés publics souvent hors-champ, art. 293 B CGI) -->
@@ -615,8 +610,7 @@
                     <option :value="20">20 %</option>
                   </select>
                 </div>
-                <div v-if="!ao.dossier" class="muted small">Prépare les formulaires officiels (DC1, DC2, déclaration sur l'honneur, acte d'engagement) déjà remplis, plus votre dossier de présentation, à partir des infos du marché et de votre entreprise.</div>
-                <div v-else>
+                <div v-if="ao.dossier">
                   <!-- Avertissements de génération : BLOQUANT en rouge, le reste en orange -->
                   <div v-if="ao.dossier.warnings && ao.dossier.warnings.length" style="margin-bottom:12px">
                     <div v-for="(w,i) in ao.dossier.warnings" :key="i" class="row small" style="gap:6px;align-items:flex-start;padding:7px 9px;border-radius:8px;margin-bottom:5px"
@@ -642,7 +636,7 @@
                       <input type="checkbox" v-model="predepot[i]" @change="savePredepot()" style="margin-top:2px">
                       <span :style="predepot[i]?'text-decoration:line-through;opacity:.55':''" v-html="st"></span>
                     </label>
-                    <div v-if="predepotDone===predepotSteps.length" class="small" style="color:var(--success);font-weight:600;margin-top:6px">✓ Dossier prêt à déposer — bonne chance !</div>
+                    <div v-if="predepotDone===predepotSteps.length" class="small" style="color:var(--success);font-weight:600;margin-top:6px"><i data-lucide="check" style="width:13px;height:13px;vertical-align:-2px"></i> Dossier prêt à déposer — bonne chance !</div>
                   </div>
                 </div>
               </div>
@@ -669,7 +663,7 @@
                       </div>
                       <div v-if="c.context_note" class="small" style="color:#b45309;margin:2px 0 0 22px">{{ c.context_note }}</div>
                       <div v-if="ao.chkHelp===c.id" class="muted small" style="margin:4px 0 4px 22px;padding:6px 9px;background:var(--surface-2);border-radius:7px">
-                        {{ c.help }}<br v-if="c.help_url"><a v-if="c.help_url" :href="c.help_url" target="_blank" rel="noopener" style="color:var(--accent-text)">{{ c.help_url }}</a>
+                        {{ c.help }}<br v-if="c.help_url"><a v-if="c.help_url" :href="safeUrl(c.help_url)" target="_blank" rel="noopener" style="color:var(--accent-text)">{{ c.help_url }}</a>
                       </div>
                     </div>
                   </div>
@@ -698,22 +692,22 @@
                 <div v-if="ao.buyer.recents && ao.buyer.recents.length" class="sectitle">Derniers avis publiés</div>
                 <div v-for="(r,i) in (ao.buyer.recents||[])" :key="'br'+i" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px">
                   <span style="flex:1;min-width:0">{{ r.objet }}</span>
-                  <a :href="r.url" target="_blank" class="muted" style="white-space:nowrap">{{ fmtDate(r.date) }} ↗</a>
+                  <a :href="safeUrl(r.url)" target="_blank" class="muted" style="white-space:nowrap">{{ fmtDate(r.date) }} ↗</a>
                 </div>
-                <a :href="ao.buyer.search_url" target="_blank" class="small" style="color:var(--accent-text);display:inline-block;margin-top:8px">Voir tous ses avis sur BOAMP ↗</a>
+                <a :href="safeUrl(ao.buyer.search_url)" target="_blank" class="small" style="color:var(--accent-text);display:inline-block;margin-top:8px">Voir tous ses avis sur BOAMP ↗</a>
               </div>
             </div>
           </div>
 
           <!-- Sous-traitants rattachés à l'AO -->
           <div class="card" style="margin-top:14px">
-            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake"></i><h3>Partenaires sur ce marché</h3><div class="spacer"></div>
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake"></i><h3>Partenaires sur ce marché</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>Avant de déposer en groupement</b>, vérifiez le règlement : il peut <b>imposer ou interdire</b> la co-traitance selon le lot ; un opérateur ne peut être <b>mandataire que d'un seul groupement par lot</b>, ni être à la fois <b>candidat seul et membre</b> d'un groupement ; la <b>composition ne doit plus changer</b> entre la remise des candidatures et la signature. « Ajouter » recherche des entreprises réelles (SIRENE) à rattacher comme chef de file, partenaire ou sous-traitant ; leur vérification via les registres officiels donne le statut à la date indiquée.</span></button><div class="spacer"></div>
               <button class="btn sm" @click="aoOptimizeGroup()" :disabled="ao.group&&ao.group.loading"><span v-if="ao.group&&ao.group.loading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répartir entre partenaires</button>
               <button class="btn sm" @click="ao.stOpen=!ao.stOpen"><i data-lucide="plus"></i>Ajouter</button></div>
             <div class="cb">
               <!-- Règles de conformité du groupement (avertissement, pas un blocage) -->
-              <div class="muted small" style="margin-bottom:10px;padding:9px 11px;background:var(--surface-2);border-radius:8px;line-height:1.5">
-                <b>⚠ À vérifier avant de déposer en groupement :</b> le règlement peut <b>imposer ou interdire</b> la co-traitance selon le lot ; un opérateur ne peut être <b>mandataire que d'un seul groupement par lot</b>, ni être à la fois <b>candidat seul et membre</b> d'un groupement ; la <b>composition ne doit plus changer</b> entre la remise des candidatures et la signature.
+              <div class="muted small row" style="margin-bottom:10px;padding:9px 11px;background:var(--surface-2);border-radius:8px;line-height:1.5;gap:7px;align-items:flex-start">
+                <i data-lucide="alert-triangle" style="width:14px;height:14px;flex:none;margin-top:2px;color:var(--warning)"></i><span>Avant de déposer en groupement, <b>vérifiez les règles de co-traitance du règlement</b>.</span>
               </div>
               <!-- Recommandation de groupement par lot -->
               <div v-if="ao.group && ao.group.data" style="margin-bottom:12px;padding:11px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-weak)">
@@ -724,7 +718,7 @@
                   <div style="flex:1;min-width:0">
                     <span class="strong small">{{ l.label }}</span> <span v-if="l.trade" class="muted small">· {{ l.trade }}</span>
                     <div v-if="l.couverture==='propre'" class="small" style="color:var(--success)"><i data-lucide="check" style="width:12px;height:12px"></i> Couvert par vous (chef de file)</div>
-                    <div v-else-if="l.candidate" class="muted small">→ {{ l.candidate.nom }} · score {{ l.candidate.score.total }}/100 · {{ l.candidate.ville||'' }}<span v-if="l.candidate.procedure_collective" style="color:var(--danger)"> ⚠ procédure collective</span></div>
+                    <div v-else-if="l.candidate" class="muted small">→ {{ l.candidate.nom }} · score {{ l.candidate.score.total }}/100 · {{ l.candidate.ville||'' }}<span v-if="l.candidate.procedure_collective" style="color:var(--danger)"> <i data-lucide="alert-triangle" style="width:12px;height:12px;vertical-align:-2px"></i> procédure collective</span></div>
                     <div v-else class="small" style="color:var(--warning-text)"><i data-lucide="alert-triangle" style="width:12px;height:12px"></i> Aucun partenaire trouvé — à chercher</div>
                   </div>
                   <button v-if="l.candidate" class="btn sm primary" @click="aoAttachFromGroup(l)"><i data-lucide="plus"></i>Rattacher</button>
@@ -737,7 +731,6 @@
                 <button class="btn icon sm ghost" @click="aoDetachSt(c.link_id)" aria-label="Retirer"><i data-lucide="trash-2"></i></button>
               </div>
               <div v-if="ao.stOpen" style="margin-top:12px;border-top:1px solid var(--hairline);padding-top:12px">
-                <div class="muted small" style="margin-bottom:8px">Recherche d'entreprises réelles (SIRENE) à rattacher comme sous-traitant.</div>
                 <div class="row wrap">
                   <input class="inp" v-model="ao.st.trade" list="trades-dl" placeholder="Activité (libre)" style="width:190px">
                   <input class="inp" v-model="ao.st.dept" placeholder="Département" style="width:120px">
@@ -754,16 +747,16 @@
                       <span v-if="c.past_wins" class="pill" style="font-size:10px;background:var(--accent-weak);color:var(--accent-text);gap:3px" :title="'Marchés publics déjà remportés (source DECP)'+(c.last_win_date?' · dernier le '+c.last_win_date:'')"><i data-lucide="trophy" style="width:11px;height:11px"></i>{{ c.past_wins }} gagné(s)</span>
                       <span v-if="c.categorie" class="pill neutral" style="font-size:10px">{{ c.categorie }}</span>
                     </div>
-                    <div class="muted small">{{ c.naf_label||c.naf }} · {{ c.ville }} · {{ c.effectif!=null?c.effectif+' sal.':'' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab.</span><span v-if="c.provenance && c.provenance.source_url"> · <a :href="c.provenance.source_url" target="_blank" style="color:var(--accent-text)">fiche ↗</a></span> · <a :href="companyWeb(c)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div>
+                    <div class="muted small">{{ c.naf_label||c.naf }} · {{ c.ville }} · {{ c.effectif!=null?c.effectif+' sal.':'' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab.</span><span v-if="c.provenance && c.provenance.source_url"> · <a :href="safeUrl(c.provenance.source_url)" target="_blank" style="color:var(--accent-text)">fiche ↗</a></span> · <a :href="companyWeb(c)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div>
                     <div v-if="c.red_flags && c.red_flags.length" class="row wrap small" style="gap:5px;margin-top:4px;color:var(--danger);font-weight:600"><i data-lucide="triangle-alert" style="width:13px;height:13px"></i><span v-for="f in c.red_flags" :key="f">{{ f }}</span></div>
-                    <div v-if="verifWhen(c)" class="muted" style="font-size:10.5px;margin-top:3px">Vérifié le {{ verifWhen(c) }} (registres officiels — statut à cette date).</div>
+                    <div v-if="verifWhen(c)" class="muted" style="font-size:10.5px;margin-top:3px" title="Registres officiels — statut à cette date">Vérifié le {{ verifWhen(c) }}</div>
                     <details class="cot-score" style="margin-top:4px"><summary class="muted small" style="cursor:pointer;user-select:none">Détail du score</summary>
                       <div v-for="b in c.score.breakdown" :key="b.key" class="row small" style="padding:3px 0;gap:8px;border-bottom:1px solid var(--hairline)"><span style="min-width:120px">{{ b.label }}</span><span class="muted" style="flex:1;min-width:0">{{ b.detail }}</span><span class="pill" :class="b.status==='ok'?'go':b.status==='partiel'?'a_etudier':'neutral'" style="font-size:9px">{{ b.points }}/{{ b.max_points }}</span></div>
                     </details>
                   </div>
                   <div class="num strong" style="margin-right:8px" :style="c.procedure_collective?'color:var(--danger)':(c.score.total<45?'color:var(--warning)':'')">{{ c.score.total }}</div>
                   <button v-if="!aoStAttached(c)" class="btn sm primary" @click="aoAttachSt(c)"><i data-lucide="plus"></i>Rattacher</button>
-                  <span v-else class="pill go">✓</span>
+                  <span v-else class="pill go" title="Rattaché"><i data-lucide="check" style="width:12px;height:12px"></i><span class="sr-only">Rattaché</span></span>
                 </div>
               </div>
             </div>
@@ -771,13 +764,11 @@
 
           <!-- Réseau Adjugo — co-construction cloisonnée + journal RGPD -->
           <div class="card" style="margin-top:14px;border:1.5px solid var(--accent)" ref="reseauCard">
-            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="users-round" style="color:var(--accent-text)"></i><h3>Réseau Adjugo — montez le dossier à plusieurs</h3><div class="spacer"></div>
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="users-round" style="color:var(--accent-text)"></i><h3>Réseau Adjugo — montez le dossier à plusieurs</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Associez d'autres entreprises pour gagner ce marché ensemble. Chaque partenaire reçoit un <b>lien sécurisé</b> limité à ce seul dossier : il apporte <b>sa part</b> (références, lot, présentation) sans jamais voir les données des autres. L'IA fusionne le tout en une réponse commune.</span></button><div class="spacer"></div>
               <button class="btn sm" @click="aoToggleContrib()"><i data-lucide="layers"></i>Contributions<span v-if="contribCount()" class="pill go" style="font-size:9px;margin-left:5px">{{ contribCount() }}</span></button>
               <button class="btn sm" @click="aoToggleAudit()"><i data-lucide="history"></i>Journal d'accès</button>
             </div>
             <div class="cb">
-              <div class="muted small">Associez d'autres entreprises pour gagner ce marché ensemble. Chaque partenaire reçoit un <b>lien sécurisé</b> limité à ce seul dossier : il apporte <b>sa part</b> (références, lot, présentation) sans jamais voir les données des autres. L'IA fusionne le tout en une réponse commune.</div>
-
               <!-- Cockpit : état de préparation de la réponse commune (calcul déterministe) -->
               <div v-if="ao.share.consortium && ao.share.consortium.readiness && ao.share.consortium.readiness.invited" class="row" style="margin-top:12px;gap:13px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)">
                 <div style="flex:1;min-width:0">
@@ -837,7 +828,7 @@
                     <span v-else-if="inv.can_contribute && !inv.revoked && !inviteDeclined(inv)" class="pill a_etudier" style="font-size:10px">En attente de sa part</span>
                     <div class="muted small">{{ inv.view_count }} consultation(s)<span v-if="inv.last_viewed_at"> · dernière {{ auditWhen(inv.last_viewed_at) }}</span></div>
                     <div v-if="inv.recipient && inv.recipient.includes('@')" class="muted small" style="font-size:10.5px">
-                      <span v-if="inv.emailed_at" style="color:var(--success)">✓ Email envoyé {{ auditWhen(inv.emailed_at) }}</span>
+                      <span v-if="inv.emailed_at" style="color:var(--success)"><i data-lucide="check" style="width:12px;height:12px;vertical-align:-2px"></i> Email envoyé {{ auditWhen(inv.emailed_at) }}</span>
                       <span v-else style="color:var(--warning)">Email non envoyé — copiez le lien ou relancez</span>
                     </div>
                   </div>
@@ -849,7 +840,7 @@
 
               <!-- Panneau des contributions reçues (mandataire) -->
               <div v-if="ao.share.contribOpen" style="margin-top:14px;border-top:1px solid var(--hairline);padding-top:12px">
-                <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Contributions des partenaires</b><span class="muted small">Apportées par chaque entreprise · fusionnées par l'IA dans le dossier commun.</span></div>
+                <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Contributions des partenaires</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Apportées par chaque entreprise · fusionnées par l'IA dans le dossier commun.</span></button></div>
                 <div v-if="!ao.share.contributions.length" class="muted small">Aucune contribution reçue. Invitez des partenaires et laissez-les apporter leur part.</div>
                 <div v-for="c in ao.share.contributions" :key="c.id" style="padding:10px 0;border-bottom:1px solid var(--hairline)">
                   <div class="row" style="gap:6px;align-items:center">
@@ -876,7 +867,7 @@
 
               <!-- Cockpit du consortium : lots × partenaires, complétude, manques, assemblage -->
               <div v-if="ao.share.cockpitOpen && ao.share.consortium && ao.share.consortium.readiness" style="margin-top:14px;border-top:1px solid var(--hairline);padding-top:12px">
-                <div class="row" style="gap:6px;margin-bottom:10px;align-items:center"><i data-lucide="layout-dashboard" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Cockpit du groupement</b><span class="muted small">Qui couvre quoi · ce qu'il manque · assemblage.</span></div>
+                <div class="row" style="gap:6px;margin-bottom:10px;align-items:center"><i data-lucide="layout-dashboard" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Cockpit du groupement</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Qui couvre quoi · ce qu'il manque · assemblage.</span></button></div>
 
                 <div v-if="(ao.share.consortium.lots||[]).length" style="margin-bottom:12px">
                   <div class="muted small" style="font-weight:600;margin-bottom:5px">Lots couverts</div>
@@ -899,8 +890,8 @@
                     <i v-if="p.has_detail_chiffre" data-lucide="lock" style="width:11px;height:11px;color:var(--text-2);vertical-align:-1px" title="Détail du chiffrage chiffré par le partenaire — vous ne le voyez pas, c'est voulu" aria-label="Détail du chiffrage chiffré"></i>
                     <!-- Pièces administratives attendues du membre : présentes (vert) / manquantes (rouge) -->
                     <div v-if="(p.pieces_have && p.pieces_have.length) || (p.pieces_missing && p.pieces_missing.length)" class="row wrap" style="gap:4px;margin-top:3px">
-                      <span v-for="h in p.pieces_have" :key="'h'+h" class="pill go" style="font-size:9px">✓ {{ h }}</span>
-                      <span v-for="m in p.pieces_missing" :key="'m'+m" class="pill" style="font-size:9px;background:rgba(220,38,38,.08);color:#b91c1c">✗ {{ m }}</span>
+                      <span v-for="h in p.pieces_have" :key="'h'+h" class="pill go" style="font-size:9px;gap:3px"><i data-lucide="check" style="width:10px;height:10px"></i>{{ h }}</span>
+                      <span v-for="m in p.pieces_missing" :key="'m'+m" class="pill" style="font-size:9px;gap:3px;background:rgba(220,38,38,.08);color:#b91c1c"><i data-lucide="x" style="width:10px;height:10px"></i>{{ m }}</span>
                     </div>
                   </div>
                   <div style="width:84px"><div style="height:5px;background:var(--surface-3);border-radius:3px;overflow:hidden"><div :style="{width:p.completeness+'%',height:'100%',background:readinessColor(p.completeness)}"></div></div></div>
@@ -919,7 +910,7 @@
                     <thead><tr><th>Partenaire</th><th v-for="e in ao.share.consortium.coffre.expected" :key="'cxh'+e.key">{{ e.label }}</th></tr></thead>
                     <tbody>
                       <tr v-for="(m,mi) in ao.share.consortium.coffre.members" :key="'cxr'+(m.invite_id||mi)">
-                        <td><b>{{ m.company }}</b><span v-if="m.complete" class="muted small"> ✓</span></td>
+                        <td><b>{{ m.company }}</b><span v-if="m.complete" class="muted small" title="Complet"> <i data-lucide="check" style="width:12px;height:12px;vertical-align:-2px"></i><span class="sr-only">Complet</span></span></td>
                         <td v-for="e in ao.share.consortium.coffre.expected" :key="'cxc'+e.key">
                           <span class="cxs" :class="cxPiece(m,e.key).status" :title="cxTitle(m,e.key)">
                             <a v-if="cxPiece(m,e.key).piece_id" href="#" @click.prevent="aoDownloadPiece(cxPiece(m,e.key))">{{ cxLabel(cxPiece(m,e.key)) }}</a>
@@ -933,7 +924,7 @@
 
                 <!-- Offre commune : total = prix de vente de chaque lot + part du mandataire ; une fois figée, visible des partenaires -->
                 <div v-if="ao.share.consortium.offre" style="margin-top:13px;padding-top:12px;border-top:1px solid var(--hairline)">
-                  <div class="row" style="gap:6px;align-items:center"><i data-lucide="badge-euro" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Offre commune</b></div>
+                  <div class="row" style="gap:6px;align-items:center"><i data-lucide="badge-euro" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Offre commune</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Total = prix de vente du lot de chaque partenaire + votre part.</span></button></div>
                   <div v-if="ao.share.consortium.offre.frozen" class="offre-box" style="flex-wrap:wrap">
                     <i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i>
                     <div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b> le {{ fmtDate(ao.share.consortium.offre.frozen_at) }}</div><div class="muted small">Chaque partenaire voit maintenant le total.</div></div>
@@ -941,7 +932,7 @@
                     <button class="btn sm" @click="aoUnfreezeOffer()" :disabled="ao.share.freezing"><i data-lucide="lock-open"></i>Défiger</button>
                   </div>
                   <template v-else>
-                    <div class="muted small" style="margin-top:4px">Total = prix de vente du lot de chaque partenaire + votre part. Tant que l'offre n'est pas figée, les partenaires ne voient pas le total.</div>
+                    <div class="muted small" style="margin-top:4px">Les partenaires ne verront le total qu'une fois l'offre figée.</div>
                     <div v-if="ao.share.consortium.offre.total_ht_estime!=null" class="small" style="margin-top:6px">Total prévisionnel : <b>{{ eur(freezeTotal()) }} HT</b><span v-if="ao.share.consortium.offre.lead_total_ht!=null" class="muted"> (dont votre part {{ eur(ao.share.consortium.offre.lead_total_ht) }} HT, d'après votre estimation de prix)</span></div>
                     <div v-if="ao.share.consortium.offre.lead_total_ht==null" class="row wrap small" style="gap:8px;margin-top:8px;align-items:center"><span>Votre part (€ HT)</span><input class="inp" type="number" min="0" v-model.number="ao.share.leadTotal" placeholder="ex. 950000" style="width:150px" aria-label="Votre part en euros HT"><span class="muted">— aucune estimation de prix enregistrée sur ce marché</span></div>
                     <div v-if="!canFreeze()" class="muted small" style="margin-top:6px">Impossible de figer pour l'instant :<ul style="margin:3px 0 0;padding-left:18px"><li v-for="(m,i) in freezeMissing()" :key="'fm'+i">{{ m }}</li></ul></div>
@@ -950,14 +941,13 @@
                 </div>
 
                 <div class="row wrap" style="margin-top:13px;gap:9px;align-items:center">
-                  <button class="btn primary" @click="aoAssemble()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="combine"></i>Assembler &amp; télécharger</button>
+                  <button class="btn primary" @click="aoAssemble()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="combine"></i>Assembler &amp; télécharger</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Fusionne les parts soumises dans le mémoire <b>et joint les pièces des partenaires</b> dans un ZIP, téléchargé directement.</span></button>
                   <button v-if="ao.dossier" class="btn" @click="aoDownload()"><i data-lucide="download"></i>Re-télécharger ({{ ao.dossier.zip_name }})</button>
-                  <span class="muted small" style="flex-basis:100%">Fusionne les parts soumises dans le mémoire <b>et joint les pièces des partenaires</b> dans un ZIP, téléchargé directement.</span>
                 </div>
               </div>
 
               <div v-if="ao.share.auditOpen" style="margin-top:14px;border-top:1px solid var(--hairline);padding-top:12px">
-                <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Journal d'accès (RGPD)</b><span class="muted small">Traçabilité des consultations — preuve opposable.</span></div>
+                <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Journal d'accès (RGPD)</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Traçabilité des consultations — preuve opposable.</span></button></div>
                 <div v-if="!ao.share.audit.length" class="muted small">Aucun accès enregistré pour l'instant.</div>
                 <div v-for="a in ao.share.audit" :key="a.id" class="row small" style="padding:6px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:baseline">
                   <span class="muted" style="min-width:108px">{{ auditWhen(a.at) }}</span>
@@ -985,8 +975,7 @@
               </div>
             </div>
             <div class="card pad">
-              <div style="margin-bottom:10px"><div class="row" style="gap:7px"><i data-lucide="history"></i><b style="font-size:13.5px">Suivi du dossier</b></div>
-                <div class="muted small" style="margin-top:2px">L'historique des étapes franchies sur cet appel d'offres — d'un coup d'œil, où vous en êtes.</div></div>
+              <div style="margin-bottom:10px"><div class="row" style="gap:7px"><i data-lucide="history"></i><b style="font-size:13.5px">Suivi du dossier</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">L'historique des étapes franchies sur cet appel d'offres — d'un coup d'œil, où vous en êtes.</span></button></div></div>
               <div v-for="(e,idx) in aoTimeline()" :key="idx" class="row small" style="padding:5px 0"><i :data-lucide="e.icon" style="width:15px;height:15px;color:var(--accent-text)"></i><span style="flex:1">{{ e.t }}</span><span class="muted">{{ e.d }}</span></div>
               <div v-if="!aoTimeline().length" class="muted small">Aucune action pour le moment.</div>
             </div>
@@ -994,10 +983,10 @@
 
           <!-- Dossier de l'AO (arborescence, lié au coffre-fort) -->
           <div class="card" style="margin-top:14px">
-            <div class="ch"><i data-lucide="folder-open"></i><h3>Dossier du marché</h3><div class="spacer"></div>
+            <div class="ch"><i data-lucide="folder-open"></i><h3>Dossier du marché</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le <b>dossier du marché</b> importé et les <b>formulaires officiels</b> générés se rangent ici automatiquement.</span></button><div class="spacer"></div>
               <button class="btn ghost sm" @click="go('documents')"><i data-lucide="archive"></i>Mes documents</button></div>
             <div class="cb">
-              <div v-if="!ao.documents.length" class="muted small">Aucune pièce classée. Le <b>dossier du marché</b> importé et les <b>formulaires officiels</b> générés se rangent ici automatiquement.</div>
+              <div v-if="!ao.documents.length" class="muted small">Aucune pièce classée pour l'instant.</div>
               <div v-for="g in ao.documents" :key="g.folder" style="margin-bottom:12px">
                 <div class="row" style="gap:6px;margin-bottom:6px"><i data-lucide="folder" style="width:15px;height:15px;color:var(--muted)"></i><b class="small">{{ g.folder }}</b><span class="muted small">({{ (g.documents||[]).length }})</span></div>
                 <div v-for="d in (g.documents||[])" :key="d.id" class="row" style="padding:6px 0 6px 22px;border-bottom:1px solid var(--hairline)">
@@ -1036,7 +1025,7 @@
             </div>
             <div v-if="src.advOpen" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--hairline)">
               <div class="frow">
-                <div class="field" style="margin:0"><label>Type de marché</label>
+                <div class="field" style="margin:0"><label>Type de marché <span class="hint">France / BOAMP</span></label>
                   <select class="inp" v-model="src.type_marche">
                     <option value="">Tous</option><option value="travaux">Travaux</option><option value="services">Services</option><option value="fournitures">Fournitures</option>
                   </select></div>
@@ -1045,7 +1034,7 @@
                   <div v-if="cpvLabels(src.cpv).length" class="muted small" style="margin-top:3px">{{ cpvLabels(src.cpv).join(' · ') }}</div></div>
               </div>
               <div class="row wrap" style="margin-top:8px;gap:8px;align-items:center">
-                <span class="muted small" style="flex:1;min-width:200px">Type de marché affine le BOAMP (France) · les codes CPV affinent TED (Europe).</span>
+                <div class="spacer"></div>
                 <button :disabled="!src.type_marche && !src.cpv" class="btn ghost sm" @click="srcResetAdv()"><i data-lucide="x"></i>Réinitialiser</button>
               </div>
             </div>
@@ -1054,9 +1043,8 @@
 
           <!-- Radar des échéances : marchés en fin de contrat -->
           <div class="card pad" style="margin-top:10px">
-            <div class="row wrap" style="gap:8px"><i data-lucide="timer-reset" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Radar des échéances</b><div class="spacer"></div>
+            <div class="row wrap" style="gap:8px"><i data-lucide="timer-reset" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Radar des échéances</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Marchés <b>déjà attribués</b> dont le contrat arrive à terme → positionnez-vous auprès du client <b>avant la republication</b>. Dates de fin <b>estimées</b> (durée citée si disponible), sources réelles BOAMP.</span></button><div class="spacer"></div>
               <button class="btn sm" @click="srcRenewals()" :disabled="src.renewals.loading"><span v-if="src.renewals.loading" class="spin"></span><i v-else data-lucide="search"></i>Scanner (mots-clés ci-dessus)</button></div>
-            <div class="muted small" style="margin-top:6px">Marchés <b>déjà attribués</b> dont le contrat arrive à terme → positionnez-vous auprès du client <b>avant la republication</b>. Dates de fin <b>estimées</b> (durée citée si disponible), sources réelles BOAMP.</div>
             <div v-if="src.renewals.done && !src.renewals.list.length" class="muted small" style="margin-top:8px">Aucune échéance proche sur ce périmètre.</div>
             <div v-for="r in src.renewals.list" :key="r.idweb" class="row" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:10px;align-items:flex-start;gap:10px">
               <div style="flex:1;min-width:0">
@@ -1070,16 +1058,15 @@
                 </div>
                 <div class="strong" style="margin-top:7px;line-height:1.35">{{ r.objet }}</div>
                 <div class="muted small" style="margin-top:3px">{{ r.acheteur||'Acheteur' }}<span v-if="r.lieu"> · dépt {{ r.lieu }}</span> · notifié le {{ fmtDate(r.date_attribution) }} · fin estimée {{ fmtDate(r.fin_estimee) }}</div>
-                <a v-if="r.url" :href="r.url" target="_blank" class="small" style="margin-top:5px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ r.source_plateforme!==undefined ? 'Voir la fiche acheteur' : 'Voir l\'avis d\'attribution' }} ↗</a>
+                <a v-if="r.url" :href="safeUrl(r.url)" target="_blank" class="small" style="margin-top:5px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ r.source_plateforme!==undefined ? 'Voir la fiche acheteur' : 'Voir l\'avis d\'attribution' }} ↗</a>
               </div>
             </div>
           </div>
 
           <!-- Veille : alertes AO programmées -->
           <div class="card pad" style="margin-top:10px">
-            <div class="row" style="gap:8px"><i data-lucide="bell"></i><b style="font-size:13.5px">Alertes automatiques</b><div class="spacer"></div>
+            <div class="row" style="gap:8px"><i data-lucide="bell"></i><b style="font-size:13.5px">Alertes automatiques</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Recevez par email les nouveaux marchés qui vous correspondent (au-dessus de votre seuil de compatibilité). Les critères de recherche ci-dessus sont enregistrés.</span></button><div class="spacer"></div>
               <button class="btn sm" @click="srcSaveAlert()"><i data-lucide="plus"></i>Créer depuis la recherche</button></div>
-            <div class="muted small" style="margin-top:6px">Recevez par email les nouveaux marchés qui vous correspondent (au-dessus de votre seuil de compatibilité). Les critères de recherche ci-dessus sont enregistrés.</div>
             <div v-if="!src.alerts.length" class="muted small" style="margin-top:8px">Aucune alerte. Lancez une recherche puis « Créer depuis la recherche ».</div>
             <div v-for="a in src.alerts" :key="a.id" class="row" style="padding:8px 0;border-bottom:1px solid var(--hairline);gap:8px">
               <div style="flex:1;min-width:0">
@@ -1102,9 +1089,9 @@
           <!-- État initial (jamais cherché) : raccourci « marchés pour mon entreprise » (#3) -->
           <div v-if="!src.tenders.length && !src.searching && !src.empty" class="empty card pad" style="margin-top:14px">
             <div class="eic"><i data-lucide="target"></i></div>
-            <h4>Trouvez vos marchés</h4><p>Des marchés réels et traçables (sources officielles BOAMP, TED, PLACE, Mégalis). Chaque résultat affiche sa source et un lien vers l'annonce officielle.</p>
+            <h4>Trouvez vos marchés</h4><p>Marchés réels issus des sources officielles (BOAMP, TED, PLACE, Mégalis).</p>
             <button class="btn primary" style="margin-top:12px" @click="srcSearchMine()"><i data-lucide="sparkles"></i>Voir les marchés pour mon entreprise</button>
-            <div class="muted small" style="margin-top:6px">D'après vos spécialités et votre département — ajustez les critères ci-dessus à tout moment.</div>
+            <div class="muted small" style="margin-top:6px">D'après vos spécialités et votre département.</div>
           </div>
           <!-- 0 résultat après recherche : carte ACTIONNABLE (élargir en un clic) (#2) -->
           <div v-else-if="src.empty && !src.searching" class="empty card pad" style="margin-top:14px">
@@ -1127,9 +1114,9 @@
                   <span class="pill" :class="confClass(t.confidence)">confiance {{ Math.round(t.confidence*100) }}%</span>
                   <!-- Pré-tri = adéquation À VOS CRITÈRES (hors DCE). Sans critères renseignés,
                        le score ne mesure pas l'adéquation au client → on invite à les définir. -->
-                  <span v-if="t.score && t.score.fit_assessable===false" class="pill" style="font-size:10px;background:rgba(234,179,8,.12);color:#92400e;cursor:pointer" @click="go('criteria')" title="Renseignez vos spécialités et votre zone pour un score adapté à votre entreprise">⚙ Définissez vos critères pour un score adapté</span>
+                  <span v-if="t.score && t.score.fit_assessable===false" class="pill" style="font-size:10px;background:rgba(234,179,8,.12);color:#92400e;cursor:pointer" @click="go('criteria')" title="Renseignez vos spécialités et votre zone pour un score adapté à votre entreprise"><i data-lucide="settings" style="width:11px;height:11px;vertical-align:-1px"></i> Définissez vos critères pour un score adapté</span>
                   <span v-else-if="t.score && typeof t.score.total==='number'" class="pill" :class="t.score.total>=66?'go':t.score.total>=40?'a_etudier':'neutral'" :title="'Adéquation à VOS critères (pré-tri avant analyse du DCE)'">adéquation {{ t.score.total }}/100</span>
-                  <a :href="t.provenance.source_url" target="_blank" class="small row" style="gap:3px;color:var(--accent-text);font-weight:500">Voir l'annonce officielle<i data-lucide="external-link" style="width:13px;height:13px"></i></a>
+                  <a :href="safeUrl(t.provenance.source_url)" target="_blank" class="small row" style="gap:3px;color:var(--accent-text);font-weight:500">Voir l'annonce officielle<i data-lucide="external-link" style="width:13px;height:13px"></i></a>
                 </div>
                 <div class="strong" style="margin-top:7px;line-height:1.4">{{ t.objet }}</div>
                 <div class="muted small" style="margin-top:3px">{{ t.acheteur||'Acheteur non précisé' }} · dépt {{ t.departements.join(', ')||'non précisé' }} · limite {{ t.date_limite||'non précisée' }}</div>
@@ -1153,20 +1140,19 @@
               <span class="pill" :class="src.analysis.dce_available?'go':'neutral'" style="gap:4px"><i :data-lucide="src.analysis.dce_available?'file-check':'file-x'" style="width:13px;height:13px"></i>{{ src.analysis.dce_available?'Dossier complet analysé':'Annonce seule (dossier non accessible)' }}</span></div>
             <div v-if="!src.analysis.dce_available" class="row wrap" style="margin:0 0 12px;gap:10px;padding:12px;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:8px">
               <i data-lucide="alert-triangle" style="width:18px;height:18px;color:#b45309;flex-shrink:0;margin-top:2px"></i>
-              <div style="flex:1;min-width:200px"><b class="small" style="color:#92400e">Analyse préliminaire — le dossier complet est indispensable</b><div class="muted small" style="margin-top:2px">Ce résultat se fonde sur l'<b>annonce</b> seule. Une <b>compatibilité fiable</b> et un dossier de réponse complet (liste exacte des pièces, formulaires officiels corrects) exigent le <b>dossier réel du marché</b> (règlement, cahiers des charges, tableau de prix). Importez-le depuis la plateforme de votre client.</div></div>
+              <div style="flex:1;min-width:200px"><b class="small" style="color:#92400e">Analyse préliminaire — le dossier complet est indispensable</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ce résultat se fonde sur l'<b>annonce</b> seule. Une <b>compatibilité fiable</b> et un dossier de réponse complet (liste exacte des pièces, formulaires officiels corrects) exigent le <b>dossier réel du marché</b> (règlement, cahiers des charges, tableau de prix). Importez-le depuis la plateforme de votre client : la compatibilité s'affiche après cet import.</span></button><div class="muted small" style="margin-top:2px">Analyse <b>préliminaire</b> (annonce seule) : importez le dossier complet du marché pour un résultat fiable.</div></div>
               <button class="btn primary" @click="$refs.dceUpl.click()" :disabled="src.analyzing"><span v-if="src.analyzing" class="spin"></span><i v-else data-lucide="upload"></i>Importer le dossier du marché (PDF/ZIP)</button>
             </div>
             <div v-else class="row" style="margin-bottom:10px;gap:8px"><button class="btn ghost sm" @click="$refs.dceUpl.click()" :disabled="src.analyzing"><i data-lucide="upload"></i>Ré-importer le dossier</button><button class="btn ghost sm" @click="srcReanalyze()" :disabled="src.analyzing"><span v-if="src.analyzing" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Ré-analyser</button></div>
             <input ref="dceUpl" type="file" accept=".pdf,.zip,.docx,.txt" class="hidden" @change="srcUploadDce">
             <div v-if="src.analysis.dce_available" class="row" style="gap:16px;align-items:center">
               <div class="score-ring lg" :style="ringStyle(src.analysis.score)"><span class="num">{{ src.analysis.score }}</span></div>
-              <div><span class="pill" :class="src.analysis.decision||'neutral'">{{ decLabel(src.analysis.decision) }}</span><span v-if="src.analysis.groupement_score!=null" class="pill go_groupement" style="margin-left:6px;gap:4px"><i data-lucide="users-round" style="width:12px;height:12px"></i>En groupement {{ src.analysis.groupement_score }}/100</span><a :href="src.analysis.source.source_url" target="_blank" class="small muted row" style="gap:3px;margin-top:4px">source {{ src.analysis.source.source }} · réf {{ src.analysis.source.official_ref }}<i data-lucide="external-link" style="width:12px;height:12px"></i></a></div>
+              <div><span class="pill" :class="src.analysis.decision||'neutral'">{{ decLabel(src.analysis.decision) }}</span><span v-if="src.analysis.groupement_score!=null" class="pill go_groupement" style="margin-left:6px;gap:4px"><i data-lucide="users-round" style="width:12px;height:12px"></i>En groupement {{ src.analysis.groupement_score }}/100</span><a :href="safeUrl(src.analysis.source.source_url)" target="_blank" class="small muted row" style="gap:3px;margin-top:4px">source {{ src.analysis.source.source }} · réf {{ src.analysis.source.official_ref }}<i data-lucide="external-link" style="width:12px;height:12px"></i></a></div>
             </div>
-            <div v-else class="muted small" style="display:flex;align-items:center;gap:6px"><i data-lucide="info" style="width:14px;height:14px"></i>Analyse préliminaire (annonce). La compatibilité s'affiche après l'import du dossier réel du marché.</div>
             <p class="small" style="margin-top:10px">{{ src.analysis.summary }}</p>
             <!-- Pourquoi ce % : barème DÉTERMINISTE (jamais sorti du LLM), la donnée la plus rassurante -->
             <div v-if="src.analysis.dce_available && src.analysis.score_breakdown && src.analysis.score_breakdown.length" style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border-radius:9px">
-              <div class="row small" style="gap:6px;font-weight:600;margin-bottom:6px"><i data-lucide="calculator" style="width:14px;height:14px;color:var(--accent-text)"></i>Pourquoi ce score ? <span class="muted" style="font-weight:400">— calcul transparent, pas une opinion de l'IA</span></div>
+              <div class="row small" style="gap:6px;font-weight:600;margin-bottom:6px"><i data-lucide="calculator" style="width:14px;height:14px;color:var(--accent-text)"></i>Pourquoi ce score ?<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Calcul transparent, pas une opinion de l'IA.</span></button></div>
               <div v-for="c in src.analysis.score_breakdown" :key="c.key" class="row small" style="padding:3px 0" :title="c.detail"><span style="min-width:150px">{{ c.label }}</span><span class="pill" :class="critStatus(c.status)" style="font-size:10px">{{ scoreStatusLabel(c.status) }}</span><span class="num muted">{{ c.points }}/{{ c.max_points }}</span></div>
             </div>
             <!-- Repère de prix marché (DECP) quand l'annonce ne publie pas de budget -->
@@ -1193,14 +1179,13 @@
 
           <!-- Étape 3 — Co-traitants réels -->
           <div v-if="src.analysis && (src.ct.companies.length || src.ct.searching || src.ct.dept)" class="card pad" style="margin-top:16px">
-            <div class="row" style="gap:8px;margin-bottom:10px"><span class="pill" style="background:var(--accent-weak);color:var(--accent-text)">Étape 3</span><b style="font-size:13.5px">Partenaires — entreprises réelles (SIRENE)</b></div>
+            <div class="row" style="gap:8px;margin-bottom:10px"><span class="pill" style="background:var(--accent-weak);color:var(--accent-text)">Étape 3</span><b style="font-size:13.5px">Partenaires — entreprises réelles (SIRENE)</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Classement par <b>complémentarité</b> avec votre entreprise — ce que chaque partenaire <b>apporte au groupement</b> (complémentarité métier + ancrage territorial + fiabilité). Signaux vérifiables (SIRENE/BODACC). La date « Vérifié le » donne le statut à cette date via les registres officiels, pas une garantie permanente.</span></button></div>
             <div class="row wrap">
               <input class="inp" v-model="src.ct.trade" list="trades-dl" placeholder="Activité recherchée (ex. électricité, paysagiste, traiteur, dév web…)" style="flex:1;min-width:240px">
               <datalist id="trades-dl"><option v-for="t in trades" :key="t.key" :value="t.label"></option></datalist>
               <input class="inp" v-model="src.ct.dept" placeholder="Département" style="width:140px">
               <button class="btn primary" @click="srcCotraitants()" :disabled="src.ct.searching"><span v-if="src.ct.searching" class="spin"></span><i v-else data-lucide="search"></i>Chercher</button>
             </div>
-            <div class="muted small" style="margin-top:8px">Classement par <b>complémentarité</b> avec votre entreprise — ce que chaque partenaire <b>apporte au groupement</b> (complémentarité métier + ancrage territorial + fiabilité). Signaux vérifiables (SIRENE/BODACC).</div>
             <div v-for="c in src.ct.companies" :key="c.siren" class="row" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:8px;align-items:flex-start" :style="srcIsSelected(c)?'border-color:var(--accent);background:var(--accent-weak)':(c.procedure_collective?'border-color:var(--danger)':'')">
               <input type="checkbox" :checked="srcIsSelected(c)" @change="srcToggle(c)" style="width:auto;height:auto;margin-top:2px">
               <div style="flex:1;min-width:0;margin-left:4px">
@@ -1213,9 +1198,9 @@
                   <span v-if="c.past_wins" class="pill" style="font-size:10px;background:var(--accent-weak);color:var(--accent-text);gap:3px" :title="'Marchés publics déjà remportés (source DECP)'+(c.last_win_date?' · dernier le '+c.last_win_date:'')"><i data-lucide="trophy" style="width:11px;height:11px"></i>{{ c.past_wins }} marché(s) public(s) gagné(s)</span>
                   <span v-if="c.categorie" class="pill neutral" style="font-size:10px">{{ c.categorie }}</span>
                 </div>
-                <div class="muted small">{{ c.naf_label||c.naf||'NAF n/d' }} · {{ c.ville||'ville n/d' }} · {{ c.effectif!=null?c.effectif+' sal.':'effectif n/d' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab. ouvert(s)</span> · <a :href="c.provenance.source_url" target="_blank" style="color:var(--accent-text)">fiche officielle ↗</a> · <a :href="companyWeb(c)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div>
+                <div class="muted small">{{ c.naf_label||c.naf||'NAF n/d' }} · {{ c.ville||'ville n/d' }} · {{ c.effectif!=null?c.effectif+' sal.':'effectif n/d' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab. ouvert(s)</span> · <a :href="safeUrl(c.provenance.source_url)" target="_blank" style="color:var(--accent-text)">fiche officielle ↗</a> · <a :href="companyWeb(c)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div>
                 <div v-if="c.red_flags && c.red_flags.length" class="row wrap small" style="gap:5px;margin-top:5px;color:var(--danger);font-weight:600"><i data-lucide="triangle-alert" style="width:13px;height:13px"></i><span v-for="f in c.red_flags" :key="f">{{ f }}</span></div>
-                <div v-if="verifWhen(c)" class="muted" style="font-size:10.5px;margin-top:3px">Vérifié le {{ verifWhen(c) }} via les registres officiels (SIRENE/BODACC) — statut à cette date, pas une garantie permanente.</div>
+                <div v-if="verifWhen(c)" class="muted" style="font-size:10.5px;margin-top:3px" title="Registres officiels (SIRENE/BODACC) — statut à cette date">Vérifié le {{ verifWhen(c) }}</div>
                 <details v-if="c.synergy" class="cot-score" style="margin-top:5px"><summary class="muted small" style="cursor:pointer;user-select:none">Détail de la complémentarité ({{ c.synergy.total }}/100)</summary>
                   <div v-for="b in c.synergy.breakdown" :key="b.key" class="row small" style="padding:3px 0;gap:8px;border-bottom:1px solid var(--hairline)"><span style="min-width:140px">{{ b.label }}</span><span class="muted" style="flex:1;min-width:0">{{ b.detail }}</span><span class="pill" :class="b.points>=b.max*0.66?'go':(b.points>=b.max*0.33?'a_etudier':'neutral')" style="font-size:9px">{{ b.points }}/{{ b.max }}</span></div>
                   <div class="muted small" style="padding:5px 0 2px;font-style:italic">Fiabilité de l'entreprise : {{ c.score.total }}/100. {{ c.synergy.note }}</div>
@@ -1240,8 +1225,7 @@
         <!-- ░░ VEILLE AMONT (signaux d'investissement) ░░ -->
         <section v-if="view==='amont'">
           <div class="card pad">
-            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="scan-eye" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Détecter des projets d'investissement</b></div>
-            <div class="muted small" style="margin-bottom:13px">Adjugo <b>va chercher lui-même</b> les délibérations récentes des collectivités (open data), puis l'IA y détecte les projets d'investissement futurs — <b>des mois avant l'appel d'offres</b> — notés selon votre profil. Sources réelles et traçables, zéro projet inventé.</div>
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="scan-eye" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Détecter des projets d'investissement</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo <b>va chercher lui-même</b> les délibérations récentes des collectivités (open data), puis l'IA y détecte les projets d'investissement futurs — <b>des mois avant l'appel d'offres</b> — notés selon votre profil. Sources réelles et traçables, zéro projet inventé.</span></button></div>
             <div v-if="orgCountry==='FR'" style="margin-bottom:13px">
               <div class="sectitle" style="margin:0 0 7px"><i data-lucide="map" style="width:13px;height:13px"></i> Régions ciblées <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">(aucune = toute la France)</span></div>
               <div class="row wrap" style="gap:6px">
@@ -1249,7 +1233,7 @@
               </div>
             </div>
             <div style="margin-bottom:13px">
-              <div class="sectitle" style="margin:0 0 7px"><i data-lucide="layers" style="width:13px;height:13px"></i> Domaines ciblés <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">(aucun = tous — affine la détection et la priorité)</span></div>
+              <div class="sectitle" style="margin:0 0 7px"><i data-lucide="layers" style="width:13px;height:13px"></i> Domaines ciblés <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">(aucun = tous)</span></div>
               <div class="row wrap" style="gap:6px">
                 <span v-for="d in amontDomaines" :key="d" @click="amontToggleDomaine(d)" class="pill" :class="amont.domaines.includes(d)?'go':'neutral'" style="cursor:pointer;user-select:none">{{ d }}</span>
               </div>
@@ -1270,7 +1254,7 @@
             </div>
             <div class="row" style="margin-top:12px;gap:10px;align-items:center;padding:10px 13px;background:var(--surface-2);border-radius:8px">
               <i data-lucide="bell-ring" style="width:16px;height:16px;color:var(--accent-text)"></i>
-              <div style="flex:1;min-width:0"><b class="small">Veille automatique</b><div class="muted small">Un scan tourne tout seul et vous envoie par email les nouveaux projets <b>pertinents</b>.</div></div>
+              <div style="flex:1;min-width:0"><b class="small">Veille automatique</b><div class="muted small">Nouveaux projets <b>pertinents</b> envoyés par email.</div></div>
               <span v-if="amont.auto" class="pill go" style="font-size:10px">Active</span>
               <button class="btn sm" :class="amont.auto?'':'primary'" @click="amontToggleAuto()">{{ amont.auto?'Désactiver':'Activer' }}</button>
             </div>
@@ -1297,7 +1281,7 @@
                   <span v-for="m in s.metiers.slice(0,8)" :key="m" class="pill neutral" style="font-size:10px">{{ m }}</span>
                 </div>
                 <div v-if="s.extrait" class="small muted" style="margin-top:8px;padding:8px 11px;background:var(--surface-2);border-radius:8px;font-style:italic">« {{ s.extrait }} »</div>
-                <a v-if="s.source_url" :href="s.source_url" target="_blank" class="small" style="margin-top:6px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ s.source_name }} — voir la délibération ↗</a>
+                <a v-if="s.source_url" :href="safeUrl(s.source_url)" target="_blank" class="small" style="margin-top:6px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ s.source_name }} — voir la délibération ↗</a>
                 <div v-else class="muted small" style="margin-top:6px;display:flex;align-items:center;gap:5px"><i data-lucide="file-text" style="width:12px;height:12px"></i>{{ s.source_name }}</div>
                 <div style="margin-top:9px"><button class="btn sm" @click="amontFindPartners(s)"><i data-lucide="handshake"></i>Trouver des partenaires (avant l'AO)</button></div>
               </div>
@@ -1310,8 +1294,8 @@
         <section v-if="view==='kb'">
           <!-- Dépôt de documents — onboarding "Do It For You" -->
           <div class="card pad">
-            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="library" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Votre savoir-faire, indexé et traçable</b></div>
-            <div class="muted small" style="margin-bottom:13px">Déposez vos <b>anciens dossiers de présentation</b>, fiches RSE, méthodologies, certifications. Adjugo les range pour rédiger vos futures réponses <b>uniquement à partir de votre savoir-faire réel</b> — chaque phrase générée cite sa source. Aucune invention.</div>
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="library" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Votre savoir-faire, indexé et traçable</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo range vos documents pour rédiger vos futures réponses <b>uniquement à partir de votre savoir-faire réel</b> — chaque phrase générée cite sa source. Aucune invention.</span></button></div>
+            <div class="muted small" style="margin-bottom:13px">Déposez vos <b>anciens dossiers de présentation</b>, fiches RSE, méthodologies, certifications.</div>
             <div class="row wrap" style="gap:8px;align-items:center">
               <select class="inp" v-model="kb.kind" style="width:190px">
                 <option value="memoire">Dossier de présentation</option><option value="methodologie">Méthodologie</option>
@@ -1363,8 +1347,7 @@
 
           <!-- Mémoire IA — multi-agents sourcé -->
           <div class="card pad" style="margin-top:14px">
-            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="file-pen-line" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Rédiger un dossier de présentation (sourcé)</b></div>
-            <div class="muted small" style="margin-bottom:11px">Importez le dossier du marché : l'IA en extrait les exigences, bâtit un plan, rédige <b>en citant votre savoir-faire</b>, puis vérifie la conformité.</div>
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="file-pen-line" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Rédiger un dossier de présentation (sourcé)</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Importez le dossier du marché : l'IA en extrait les exigences, bâtit un plan, rédige <b>en citant votre savoir-faire</b>, puis vérifie la conformité.</span></button></div>
             <button class="btn primary" @click="$refs.kbMem.click()" :disabled="kb.memoireLoading"><span v-if="kb.memoireLoading" class="spin"></span><i v-else data-lucide="sparkles"></i>Importer le dossier & rédiger</button>
             <input ref="kbMem" type="file" accept=".pdf,.zip,.docx,.txt" class="hidden" @change="kbMemoire">
             <div v-if="kb.memoireLoading" class="muted small" style="margin-top:9px"><span class="spin"></span> Rédaction en cours — cela peut prendre quelques minutes, ne fermez pas la page.</div>
@@ -1394,8 +1377,8 @@
 
           <!-- Questionnaire RFP/RFI/DDQ -->
           <div class="card pad" style="margin-top:14px">
-            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="list-checks" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Répondre à un questionnaire</b></div>
-            <div class="muted small" style="margin-bottom:9px">Collez vos questions, une par ligne — Adjugo répond à partir de votre savoir-faire, en citant ses sources.</div>
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="list-checks" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Répondre à un questionnaire</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo répond à partir de votre savoir-faire, en citant ses sources.</span></button></div>
+            <div class="muted small" style="margin-bottom:9px">Collez vos questions, une par ligne.</div>
             <textarea class="inp" v-model="kb.qText" placeholder="Quelle est votre démarche qualité ?&#10;Disposez-vous de certifications environnementales ?&#10;Citez 3 références similaires." style="width:100%;height:90px;padding:9px 12px"></textarea>
             <div class="row" style="margin-top:8px"><button class="btn primary" @click="kbQuestionnaire" :disabled="kb.qLoading"><span v-if="kb.qLoading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répondre</button>
               <span v-if="kb.qResults" class="muted small" style="margin-left:10px">{{ kb.qResults.covered }}/{{ kb.qResults.count - (kb.qResults.errors||0) }} couvertes ({{ kb.qResults.coverage_rate }}%)<span v-if="kb.qResults.errors" style="color:var(--warn)"> · {{ kb.qResults.errors }} non générée(s)</span></span>
@@ -1506,7 +1489,7 @@
               <td>{{ i.client_name }}</td><td><b>{{ eurExact(i.total_ttc) }}</b></td><td><span class="pill" :class="'st-'+(i.status||'brouillon')">{{ invStatusLabel(i.status) }}</span></td>
               <td style="text-align:right">
                 <button v-if="i.type==='devis' && !i.converted_invoice_id" class="btn ghost sm" @click="convertInvoice(i)" title="Créer la facture à partir de ce devis"><i data-lucide="file-check-2"></i>Facturer</button>
-                <span v-else-if="i.converted_invoice_id" class="muted small">facturé ✓</span>
+                <span v-else-if="i.converted_invoice_id" class="muted small">facturé <i data-lucide="check" style="width:12px;height:12px;vertical-align:-2px"></i></span>
               </td></tr>
           </tbody></table></div>
         </section>
@@ -1516,8 +1499,7 @@
           <div class="card pad" style="max-width:820px;margin-bottom:16px">
             <div class="row" style="gap:11px;align-items:flex-start"><i data-lucide="globe" style="color:var(--accent-text);margin-top:2px"></i>
               <div style="flex:1">
-                <b style="font-size:13.5px">Pays de l'organisation</b>
-                <div class="muted small">Adjugo s'adapte à ce pays : marchés par défaut, devise, et analyses + documents générés dans la langue locale.</div>
+                <b style="font-size:13.5px">Pays de l'organisation</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo s'adapte à ce pays : marchés par défaut, devise, et analyses + documents générés dans la langue locale.</span></button>
                 <div class="row wrap" style="margin-top:10px;gap:8px;align-items:center">
                   <select class="inp" v-model="orgCountry" @change="setOrgCountry" :disabled="org.data && !org.data.is_owner" style="width:240px">
                     <option v-for="c in adaptedCountries" :key="c.code" :value="c.code">{{ c.nom }}</option>
@@ -1529,7 +1511,7 @@
             </div>
           </div>
           <div class="card pad" style="max-width:820px;margin-bottom:16px;background:var(--accent-weak);border-color:transparent">
-            <div class="row" style="gap:11px"><i data-lucide="search" style="color:var(--accent-text)"></i><div><b style="font-size:13.5px">Pré-remplir depuis le registre officiel</b><div class="muted small">{{ orgCountry==='FR' ? 'Saisissez votre SIRET ou nom — données réelles SIRENE.' : 'Saisissez votre numéro de TVA intracommunautaire — vérifié via VIES (UE).' }}</div></div></div>
+            <div class="row" style="gap:11px"><i data-lucide="search" style="color:var(--accent-text)"></i><div><b style="font-size:13.5px">Pré-remplir depuis le registre officiel</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ orgCountry==='FR' ? 'Saisissez votre SIRET ou nom — données réelles SIRENE.' : 'Saisissez votre numéro de TVA intracommunautaire — vérifié via VIES (UE).' }}</span></button></div></div>
             <div class="row" style="margin-top:12px"><input class="inp" v-model="company.siret" :placeholder="orgCountry==='FR' ? 'SIRET ou nom de l\'entreprise' : 'N° TVA intracommunautaire (ex. '+orgCountry+'12345678)'" style="flex:1"><button class="btn primary" @click="lookupCompany" :disabled="busy"><span v-if="busy" class="spin"></span>Récupérer</button></div>
           </div>
           <div class="card pad" style="max-width:820px">
@@ -1550,8 +1532,8 @@
             <div class="frow t3"><div class="field"><label>CA N-1 (€)</label><input type="number" v-model.number="company.ca_n1"></div>
               <div class="field"><label>CA N-2 (€)</label><input type="number" v-model.number="company.ca_n2"></div>
               <div class="field"><label>CA N-3 (€)</label><input type="number" v-model.number="company.ca_n3"></div></div>
-            <div class="sectitle">Collaborateurs <span class="muted small" style="font-weight:400">— vos moyens humains, présentés nommément dans vos dossiers de présentation</span></div>
-            <div class="muted small" style="margin:-2px 0 8px;padding:8px 10px;background:var(--surface-2);border-radius:8px"><i data-lucide="info" style="width:12px;height:12px;display:inline;vertical-align:-1px"></i> Ces éléments (qualifications, références, certifications) sont repris <b>tels quels</b> dans vos dossiers officiels. Vérifiez-les : une <b>fausse déclaration</b> peut faire écarter votre offre.</div>
+            <div class="sectitle">Collaborateurs<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Vos moyens humains, présentés nommément dans vos dossiers de présentation.</span></button></div>
+            <div class="muted small" style="margin:-2px 0 8px;padding:8px 10px;background:var(--surface-2);border-radius:8px"><i data-lucide="info" style="width:12px;height:12px;display:inline;vertical-align:-1px"></i> Repris <b>tels quels</b> dans vos dossiers : une <b>fausse déclaration</b> peut faire écarter votre offre.</div>
             <div v-for="(m,i) in (company.team||[])" :key="'tm'+i" class="card pad" style="background:var(--surface-2);margin-bottom:8px;padding:12px">
               <div class="frow"><div class="field" style="margin:0"><label>Nom</label><input v-model="m.nom" placeholder="Yann Tanguy"></div>
                 <div class="field" style="margin:0"><label>Fonction</label><input v-model="m.fonction" placeholder="Conducteur de travaux"></div></div>
@@ -1560,7 +1542,7 @@
               <button class="btn sm ghost" style="margin-top:8px" @click="company.team.splice(i,1)"><i data-lucide="trash-2"></i>Retirer</button>
             </div>
             <button class="btn sm" style="margin-bottom:14px" @click="company.team=(company.team||[]).concat([{nom:'',fonction:'',qualifications:'',references:''}])"><i data-lucide="user-plus"></i>Ajouter un collaborateur</button>
-            <div class="sectitle">Mes tarifs <span class="muted small" style="font-weight:400">— prix de journée par type de prestation, utilisés pour estimer vos devis</span></div>
+            <div class="sectitle">Mes tarifs<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Prix de journée par type de prestation, utilisés pour estimer vos devis.</span></button></div>
             <div v-for="(r,i) in (company.day_rates||[])" :key="'dr'+i" class="row" style="gap:8px;margin-bottom:6px;align-items:center">
               <input class="inp" v-model="r.label" placeholder="Ex. Étude / conception" style="flex:1">
               <input class="inp" type="number" min="0" v-model.number="r.rate" placeholder="€ / jour" style="width:130px">
@@ -1602,13 +1584,12 @@
           <div class="card pad">
             <div class="row" style="gap:10px;align-items:flex-start">
               <div style="flex:1;min-width:0">
-                <div class="muted small">Espace de travail partagé</div>
+                <div class="muted small" style="display:flex;align-items:center">Espace de travail partagé<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les membres partagent les marchés, contacts et partenaires.</span></button></div>
                 <div class="row" style="gap:8px;margin-top:4px">
                   <input v-if="org.data && org.data.is_owner" class="inp" v-model="org.name" style="max-width:280px;font-weight:600">
                   <h2 v-else style="font-size:18px;margin:0">{{ org.data&&org.data.name }}</h2>
                   <button v-if="org.data && org.data.is_owner" class="btn sm" @click="orgRename()"><i data-lucide="save"></i>Renommer</button>
                 </div>
-                <div class="muted small" style="margin-top:4px">Les membres partagent les marchés, contacts et partenaires.</div>
               </div>
               <span class="pill neutral">{{ (org.data&&org.data.members.length)||1 }} membre(s)</span>
             </div>
@@ -1661,8 +1642,7 @@
 
           <!-- Mes données (RGPD) -->
           <div class="card pad" style="margin-top:14px">
-            <h3>Mes données (RGPD)</h3>
-            <div class="muted small" style="margin:4px 0 10px">Vous restez propriétaire de vos données. Vous pouvez les exporter ou supprimer définitivement votre compte à tout moment.</div>
+            <div class="row" style="gap:0;align-items:center;margin-bottom:10px"><h3>Mes données (RGPD)</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Vous restez propriétaire de vos données. Vous pouvez les exporter ou supprimer définitivement votre compte à tout moment.</span></button></div>
             <div class="row wrap" style="gap:8px">
               <button class="btn" @click="rgpdExport()"><i data-lucide="download"></i>Exporter mes données (JSON)</button>
               <button class="btn ghost" style="color:var(--danger-text)" @click="rgpdDelete()"><i data-lucide="trash-2"></i>Supprimer mon compte</button>
@@ -1703,11 +1683,13 @@
           </div>
           <div class="card pad" style="margin-top:18px"><div class="row" style="gap:11px;align-items:flex-start"><i data-lucide="gauge"></i>
             <div style="flex:1"><b class="small">Paiement à l'usage</b>
-              <div class="muted small">Au-delà de votre quota mensuel, continuez à analyser des marchés pour {{ (stats.usage&&stats.usage.overage_price)||5 }} € / analyse au lieu d'être bloqué.<span v-if="stats.usage&&stats.usage.overage_count"> {{ stats.usage.overage_count }} analyse(s) hors quota ce mois (à facturer).</span></div></div>
-            <button class="btn" :class="(stats.usage&&stats.usage.overage_enabled)?'':'primary'" @click="toggleOverage()">{{ (stats.usage&&stats.usage.overage_enabled)?'Désactiver':'Activer' }}</button>
+              <div class="muted small">{{ (stats.usage&&stats.usage.overage_price)||5 }} € par analyse au-delà du quota mensuel.<span v-if="stats.usage&&stats.usage.overage_count"> {{ stats.usage.overage_count }} analyse(s) hors quota ce mois (à facturer).</span></div></div>
+            <!-- Activable seulement avec un abonnement payant actif (Pro/Business) ; « Désactiver » reste toujours possible -->
+            <button v-if="overageAvailable() || (stats.usage&&stats.usage.overage_enabled)" class="btn" :class="(stats.usage&&stats.usage.overage_enabled)?'':'primary'" @click="toggleOverage()">{{ (stats.usage&&stats.usage.overage_enabled)?'Désactiver':'Activer' }}</button>
+            <div v-else class="muted small" style="max-width:220px;text-align:right">Disponible avec un abonnement Pro ou Business.</div>
           </div></div>
           <div class="card pad" style="margin-top:14px"><div class="row" style="gap:11px"><i data-lucide="terminal"></i>
-            <div><b class="small">API &amp; développeurs</b><div class="muted small">Intégrez Adjugo à votre SI. Documentation interactive : <a href="/docs" target="_blank" style="color:var(--accent-text);font-weight:500">/docs</a> · Schéma OpenAPI : <a href="/openapi.json" target="_blank" style="color:var(--accent-text);font-weight:500">/openapi.json</a></div></div></div></div>
+            <div><b class="small">API &amp; développeurs</b><div class="muted small">Documentation : <a href="/docs" target="_blank" style="color:var(--accent-text);font-weight:500">/docs</a> · Schéma OpenAPI : <a href="/openapi.json" target="_blank" style="color:var(--accent-text);font-weight:500">/openapi.json</a></div></div></div></div>
         </section>
 
         <!-- Administration (visible aux seuls administrateurs) -->
@@ -1728,7 +1710,7 @@
           <div class="card pad" style="margin-top:14px">
             <div class="row" style="gap:8px;align-items:center"><i data-lucide="database-backup" style="color:var(--accent-text)"></i><b style="flex:1">Sauvegardes de la base (R2)</b>
               <button class="btn sm primary" @click="adminRunBackup()" :disabled="admin.busy"><span v-if="admin.busy" class="spin"></span><i v-else data-lucide="save"></i>Sauvegarder maintenant</button></div>
-            <div class="muted small" style="margin:6px 0 8px">Une sauvegarde automatique est faite chaque jour. Les {{ admin.backups.length }} plus récentes :</div>
+            <div class="muted small" style="margin:6px 0 8px">Les {{ admin.backups.length }} plus récentes (sauvegarde quotidienne) :</div>
             <div v-if="!admin.backups.length" class="muted small">Aucune sauvegarde encore (la première arrive automatiquement quelques minutes après le démarrage).</div>
             <div v-for="b in admin.backups" :key="b" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px">
               <i data-lucide="file-archive" style="width:14px;height:14px;color:var(--subtle)"></i><span style="flex:1">{{ b }}</span>
@@ -1742,12 +1724,12 @@
             <div class="row wrap" style="gap:12px;align-items:center">
               <i data-lucide="users-round" style="color:var(--accent-text);width:22px;height:22px;flex:none"></i>
               <div style="flex:1;min-width:200px"><b style="font-size:15px">Mes groupements</b>
-                <div class="muted small">Tous vos groupements en cours : partenaires, contributions, pièces, et le <b>dossier commun à exporter</b>.<span v-if="consortiums.active"> {{ consortiums.active }} en cours · {{ consortiums.partners_total }} partenaire(s) · {{ consortiums.submitted_total }} part(s) reçue(s).</span></div></div>
+                <div v-if="consortiums.active" class="muted small">{{ consortiums.active }} en cours · {{ consortiums.partners_total }} partenaire(s) · {{ consortiums.submitted_total }} part(s) reçue(s)</div></div>
               <button class="btn primary" @click="go('pipeline')"><i data-lucide="user-plus"></i>Nouveau groupement</button>
             </div>
           </div>
 
-          <div v-if="!consortiums.consortiums.length" class="card pad"><div class="muted small">Aucun groupement pour l'instant. Ouvrez un marché et invitez un partenaire — vous le retrouverez ici avec ses pièces et le dossier commun.</div></div>
+          <div v-if="!consortiums.consortiums.length" class="card pad"><div class="muted small">Aucun groupement pour l'instant. Ouvrez un marché et invitez un partenaire.</div></div>
 
           <div v-for="cs in consortiums.consortiums" :key="cs.project_id" class="card pad" style="margin-bottom:12px">
             <div class="row" style="gap:12px;align-items:center;cursor:pointer" @click="toggleConsortium(cs.project_id)">
@@ -1780,7 +1762,7 @@
                   <div v-for="(m,i) in cdetail[cs.project_id].readiness.missing" :key="'cmh'+i" class="row small" style="gap:6px;padding:2px 0;color:var(--warning-text)"><i data-lucide="circle-alert" style="width:12px;height:12px;flex:none"></i><span>{{ m }}</span></div>
                 </div>
                 <div class="row wrap" style="gap:8px;margin-top:13px">
-                  <button class="btn primary" @click="exportConsortium(cs.project_id)" :disabled="cexport[cs.project_id]"><span v-if="cexport[cs.project_id]" class="spin"></span><i v-else data-lucide="download"></i>Exporter le dossier commun</button>
+                  <button class="btn primary" @click="exportConsortium(cs.project_id)" :disabled="cexport[cs.project_id]"><span v-if="cexport[cs.project_id]" class="spin"></span><i v-else data-lucide="download"></i>Exporter le dossier commun</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier ZIP contient le dossier de présentation commun (vos savoir-faire croisés) + les formulaires officiels + les pièces administratives de chaque partenaire.</span></button>
                   <button class="btn" @click="dossierPreview(cs.project_id)"><i data-lucide="list"></i>{{ cpreview[cs.project_id]?'Masquer l\'aperçu':'Aperçu du dossier' }}</button>
                   <button class="btn" @click="consortiumReportPdf(cs.project_id)"><i data-lucide="file-text"></i>Compte-rendu PDF</button>
                   <button class="btn ghost" @click="openProjectById(cs.project_id)"><i data-lucide="external-link"></i>Ouvrir le marché</button>
@@ -1794,7 +1776,6 @@
                     <span class="muted" style="font-size:11px;font-family:var(--mono,monospace)">{{ f.name }}</span>
                   </div>
                 </div>
-                <div class="muted small" style="margin-top:6px">Le dossier ZIP contient le dossier de présentation commun (vos savoir-faire croisés) + les formulaires officiels + les pièces administratives de chaque partenaire.</div>
               </template>
             </div>
           </div>
@@ -1804,8 +1785,7 @@
         <section v-if="view==='shared'">
           <div class="card pad">
             <div class="row" style="gap:11px;align-items:flex-start"><i data-lucide="inbox" style="color:var(--accent-text);margin-top:2px"></i>
-              <div style="flex:1"><b style="font-size:14px">Dossiers partagés avec vous</b>
-                <div class="muted small">D'autres entreprises vous ont invité à répondre avec elles sur leurs marchés. Apportez votre part — depuis <b>votre propre espace</b>.</div></div></div>
+              <div style="flex:1"><b style="font-size:14px">Dossiers partagés avec vous</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">D'autres entreprises vous ont invité à répondre avec elles sur leurs marchés. Apportez votre part — depuis <b>votre propre espace</b>.</span></button></div></div>
             <div v-if="!shared.length" class="muted small" style="margin-top:12px">Aucun dossier partagé avec vous pour l'instant.</div>
             <div v-for="s in shared" :key="s.token" @click="openShared(s)" class="row" style="margin-top:10px;padding:11px 13px;border:1px solid var(--border);border-radius:10px;gap:12px;align-items:center;cursor:pointer" @mouseover="$event.currentTarget.style.borderColor='var(--accent)'" @mouseleave="$event.currentTarget.style.borderColor='var(--border)'">
               <div style="flex:1;min-width:0">
@@ -1838,7 +1818,7 @@
             <div style="margin-top:10px">
               <div v-if="sharedAo.project.deadline" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">Date limite</span><span style="flex:1"><b>{{ auditWhen(sharedAo.project.deadline) }}</b></span></div>
               <div v-for="f in sharedFact(sharedAo.project.analysis)" :key="f.k" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">{{ f.k }}</span><span style="flex:1">{{ f.v }}</span></div>
-              <div v-if="sharedAo.project.source_url" class="row small" style="padding:5px 0"><span class="muted" style="min-width:140px">Source</span><a :href="sharedAo.project.source_url" target="_blank" style="color:var(--accent-text)">Avis d'origine ↗</a></div>
+              <div v-if="sharedAo.project.source_url" class="row small" style="padding:5px 0"><span class="muted" style="min-width:140px">Source</span><a :href="safeUrl(sharedAo.project.source_url)" target="_blank" rel="noopener noreferrer nofollow" style="color:var(--accent-text)">Avis d'origine ↗</a></div>
             </div>
           </div>
 
@@ -1851,7 +1831,7 @@
                 <b style="font-size:13.5px">Pourquoi vous dans ce groupement</b>
                 <div v-if="(sfm().my_apport||[]).length" class="row wrap" style="gap:4px;margin-top:4px;align-items:center"><span class="muted small">Vous apportez :</span><span v-for="a in sfm().my_apport" :key="a.key" class="sg-chip by">{{ a.label }}</span></div>
                 <div v-else class="muted small" style="margin-top:4px">{{ sfm().score_groupement!=null ? 'Le mandataire n\'a pas précisé ce que vous apportez.' : 'Le mandataire n\'a pas encore calculé le score du groupement.' }}</div>
-                <div v-if="sfm().seuils" class="row wrap small" style="gap:12px;margin-top:6px"><span :style="sfm().seuils.ca_cumule_ok?'color:var(--success-text)':''">{{ sfm().seuils.ca_cumule_ok?'✓':'○' }} CA cumulé suffisant</span><span :style="sfm().seuils.qualifs_ok?'color:var(--success-text)':''">{{ sfm().seuils.qualifs_ok?'✓':'○' }} Qualifications couvertes</span></div>
+                <div v-if="sfm().seuils" class="row wrap small" style="gap:12px;margin-top:6px"><span :style="sfm().seuils.ca_cumule_ok?'color:var(--success-text)':''"><i :data-lucide="sfm().seuils.ca_cumule_ok?'check':'circle'" style="width:13px;height:13px;vertical-align:-2px"></i> CA cumulé suffisant</span><span :style="sfm().seuils.qualifs_ok?'color:var(--success-text)':''"><i :data-lucide="sfm().seuils.qualifs_ok?'check':'circle'" style="width:13px;height:13px;vertical-align:-2px"></i> Qualifications couvertes</span></div>
               </div>
             </div>
             <div v-if="(sfmState().members||[]).length" style="margin-top:10px">
@@ -1870,9 +1850,9 @@
           </div>
 
           <div v-if="sharedAo.canContribute" class="card pad" style="border:1.5px solid var(--accent)">
-            <div class="row" style="gap:8px;align-items:center"><b style="font-size:13.5px;flex:1">Ma contribution au dossier commun</b>
-              <span class="pill" :class="sharedAo.status==='submitted'?'go':'neutral'" style="font-size:11px">{{ sharedAo.status==='submitted'?'✓ Soumise':'Brouillon' }}</span></div>
-            <div class="muted small" style="margin-top:4px">Vous contribuez en tant que <b>{{ company.name||'votre entreprise' }}</b>. Le chef de file assemble, l'IA fusionne votre part dans la réponse commune.</div>
+            <div class="row" style="gap:8px;align-items:center"><b style="font-size:13.5px">Ma contribution au dossier commun</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le chef de file assemble, l'IA fusionne votre part dans la réponse commune.</span></button><div class="spacer"></div>
+              <span class="pill" :class="sharedAo.status==='submitted'?'go':'neutral'" style="font-size:11px;gap:3px"><i v-if="sharedAo.status==='submitted'" data-lucide="check" style="width:11px;height:11px"></i>{{ sharedAo.status==='submitted'?'Soumise':'Brouillon' }}</span></div>
+            <div class="muted small" style="margin-top:4px">Vous contribuez en tant que <b>{{ company.name||'votre entreprise' }}</b>.</div>
             <div class="field" style="margin-top:10px"><label>Entreprise</label><input class="inp" v-model="sharedAo.contrib.company_name"></div>
             <div class="field"><label>Identité (pour vos CERFA DC1/DC2)</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.siret" placeholder="SIRET" style="flex:1;min-width:130px"><input class="inp" v-model="sharedAo.contrib.forme_juridique" placeholder="Forme juridique (SARL, SAS…)" style="flex:1;min-width:130px"></div></div>
             <div class="field"><label>Adresse</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.address" placeholder="Adresse" style="flex:2;min-width:160px"><input class="inp" v-model="sharedAo.contrib.postal_code" placeholder="CP" style="width:80px"><input class="inp" v-model="sharedAo.contrib.city" placeholder="Ville" style="flex:1;min-width:110px"></div></div>
@@ -1880,14 +1860,14 @@
             <div class="field"><label>Qualifications (séparées par des virgules)</label><input class="inp" v-model="sharedAo.contrib.quals" placeholder="ex. Qualibat 1112, RGE"></div>
             <div class="field"><label>Références (une par ligne)</label><textarea class="inp" v-model="sharedAo.contrib.refs" rows="3"></textarea></div>
             <!-- Doctrine de visibilité : le prix de VENTE du lot est lisible par le chef de file ; le détail est chiffré dans le navigateur -->
-            <div class="field"><label>Prix de vente de votre lot (€ HT)</label><input class="inp" type="number" min="0" step="1" v-model="sharedAo.contrib.prix_lot_ht" placeholder="ex. 280000"><div class="muted small" style="margin-top:3px">{{ cryptoLabels().not_zero_knowledge }}</div></div>
-            <div class="field"><label>Détail de votre chiffrage (coûts, marges, méthode)</label>
+            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Prix de vente de votre lot (€ HT)</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le prix de vente de votre lot reste lisible par le mandataire : c'est voulu, il en a besoin pour consolider l'offre.</span></button></div><input class="inp" type="number" min="0" step="1" v-model="sharedAo.contrib.prix_lot_ht" placeholder="ex. 280000"><div class="muted small" style="margin-top:3px">{{ cryptoLabels().not_zero_knowledge }}</div></div>
+            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Détail de votre chiffrage (coûts, marges, méthode)</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ cryptoLabels().lock }} {{ cryptoLabels().lost }}</span></button></div>
               <div v-if="sharedAo.detailLocked" style="padding:12px;border:1px dashed var(--border);border-radius:9px;background:var(--surface-2)">
                 <div class="row small" style="gap:6px;align-items:center"><i data-lucide="lock" style="width:14px;height:14px"></i><b>Détail verrouillé</b><span class="muted">— chiffré sur un autre navigateur ou avec un autre code.</span></div>
                 <div class="row wrap" style="gap:10px;margin-top:8px;align-items:center"><button class="btn sm primary" @click="sharedUnlock()"><i data-lucide="key-round"></i>Déverrouiller avec mon code</button><a href="#" class="muted small" style="text-decoration:underline" @click.prevent="sharedLostCode()">J'ai perdu mon code</a></div>
               </div>
               <textarea v-else class="inp" v-model="sharedAo.detailClair" rows="4" placeholder="ex. main-d'œuvre 120 000 €, matériel 90 000 €, sous-traitance 40 000 €, marge 12 %"></textarea>
-              <div class="lock-note"><i data-lucide="lock" style="width:13px;height:13px;flex:none;margin-top:1px"></i><span>{{ cryptoLabels().lock }} {{ cryptoLabels().lost }}</span></div>
+              <div class="lock-note"><i data-lucide="lock" style="width:13px;height:13px;flex:none;margin-top:1px"></i><span>{{ cryptoLabels().lock_short }}</span></div>
             </div>
             <div class="field"><label>Vos capacités (déclarées par vous, visibles du chef de file)</label><div class="row wrap" style="gap:8px"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.ca_n1" placeholder="Votre CA du dernier exercice (€)" style="flex:1;min-width:200px" aria-label="Votre CA du dernier exercice"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.effectif" placeholder="Effectif" style="width:120px" aria-label="Effectif"></div></div>
             <div class="field"><label>Signataire de votre part</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.representant_legal" placeholder="Représentant légal (nom)" style="flex:1;min-width:160px" aria-label="Représentant légal"><input class="inp" v-model="sharedAo.contrib.signataire_qualite" placeholder="Qualité (gérant, président…)" style="flex:1;min-width:140px" aria-label="Qualité du signataire"></div></div>
@@ -1937,8 +1917,8 @@
 
           <!-- Mon journal : qui a vu quoi sur MA part (projection sans email ni IP d'un autre membre) -->
           <details class="card pad" style="margin-top:14px" @toggle="sharedJournalToggle($event)">
-            <summary style="cursor:pointer;font-weight:700;font-size:13.5px;user-select:none">Mon journal — qui a vu quoi</summary>
-            <div class="muted small" style="margin-top:4px">{{ (sharedAo.journal && sharedAo.journal.integrity_label) || 'Journal infalsifiable tenu par Adjugo' }}<span v-if="sharedAo.journal && sharedAo.journal.chained" style="color:var(--success-text)"> ✓</span></div>
+            <summary style="cursor:pointer;font-weight:700;font-size:13.5px;user-select:none">Mon journal — qui a vu quoi<button type="button" class="tip" @click.stop.prevent><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ (sharedAo.journal && sharedAo.journal.integrity_label) || 'Journal infalsifiable tenu par Adjugo' }}</span></button></summary>
+            <div v-if="sharedAo.journal && sharedAo.journal.chained" style="margin-top:6px"><span class="pill go" style="font-size:10px;gap:3px"><i data-lucide="shield-check" style="width:11px;height:11px"></i>Intégrité vérifiée</span></div>
             <ul v-if="sharedAo.journal && sharedAo.journal.entries.length" class="jrn">
               <li v-for="(e,i) in sharedAo.journal.entries" :key="'jr'+i"><span class="jrn-at">{{ auditWhen(e.at) }}</span><span class="jrn-who" :class="e.who">{{ e.who==='vous'?'Vous':(e.who==='mandataire'?'Mandataire':'Partenaire') }}</span><span style="flex:1;min-width:0">{{ e.label }}<span v-if="e.detail" class="muted"> · {{ e.detail }}</span></span></li>
             </ul>
@@ -1977,12 +1957,11 @@
   <div v-if="token && showWelcome" class="overlay" style="align-items:center;z-index:60">
     <div class="modal" style="max-width:480px;text-align:center;padding:38px 36px">
       <div class="logo" aria-hidden="true" style="margin:4px auto 10px"><svg class="mark" viewBox="0 0 48 48" fill="none" style="width:44px;height:44px"><circle cx="24" cy="24" r="21" stroke="var(--accent)" stroke-opacity=".42" stroke-width="3.5"/><circle cx="24" cy="24" r="13" stroke="var(--accent)" stroke-opacity=".72" stroke-width="3.5"/><circle cx="24" cy="24" r="6" fill="var(--accent)"/></svg></div>
-      <h2 style="font-size:20px;font-weight:800;margin:0 0 4px">Bienvenue sur Adjugo</h2>
-      <p class="muted small" style="margin:0 0 16px">Un seul champ pour démarrer : votre <b>SIRET</b>. On remplit votre profil, on règle vos critères et on vous montre <b>vos premiers marchés</b> — automatiquement.</p>
+      <div style="display:flex;align-items:center;justify-content:center;margin:0 0 4px"><h2 style="font-size:20px;font-weight:800;margin:0">Bienvenue sur Adjugo</h2><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Un seul champ suffit : on règle aussi vos critères automatiquement. Données issues du registre officiel des entreprises (SIRENE). Rien n'est publié.</span></button></div>
+      <p class="muted small" style="margin:0 0 16px">Entrez votre <b>SIRET</b> : on remplit votre profil et on vous montre <b>vos premiers marchés</b>.</p>
       <input class="inp" v-model="welcome.siret" placeholder="SIRET (14 chiffres)" inputmode="numeric" style="width:100%;text-align:center;font-size:16px;letter-spacing:1px" @keyup.enter="welcomeStart()" aria-label="Votre SIRET">
       <button class="btn primary block" style="margin-top:12px" @click="welcomeStart()" :disabled="welcome.busy"><span v-if="welcome.busy" class="spin"></span><i v-else data-lucide="sparkles"></i>Démarrer avec mon SIRET</button>
       <button class="btn ghost sm" style="margin-top:8px" @click="welcomeSkip()">Je remplirai plus tard</button>
-      <div class="muted" style="font-size:11px;margin-top:10px">Données issues du registre officiel des entreprises (SIRENE). Rien n'est publié.</div>
     </div>
   </div>
 
@@ -2032,11 +2011,10 @@
   <!-- ══════════ MODAL DÉCOUVERTE CO-TRAITANTS RÉELS ══════════ -->
   <div v-if="discover.open" class="overlay" @click.self="discover.open=false">
     <div class="modal wide">
-      <div class="modal-h"><h3 class="row" style="gap:7px"><i data-lucide="search"></i>Découvrir des co-traitants réels</h3><button class="x" @click="discover.open=false"><i data-lucide="x"></i></button></div>
+      <div class="modal-h"><h3 class="row" style="gap:7px"><i data-lucide="search"></i>Découvrir des partenaires réels<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Entreprises réelles issues du registre officiel (SIRENE / annuaire-entreprises).</span></button></h3><button class="x" @click="discover.open=false"><i data-lucide="x"></i></button></div>
       <div class="modal-b">
-        <div class="muted small" style="margin-bottom:12px">Entreprises réelles issues du registre officiel (SIRENE / annuaire-entreprises).</div>
         <div class="frow t3">
-          <div class="field"><label>Activité <span class="hint">(libre — ex. électricité, paysagiste, nettoyage…)</span></label><input class="inp" v-model="discover.trade" list="trades-dl" placeholder="Activité recherchée"></div>
+          <div class="field"><label>Activité</label><input class="inp" v-model="discover.trade" list="trades-dl" placeholder="ex. électricité, paysagiste, nettoyage…"></div>
           <div class="field"><label>Département</label><input v-model="discover.dept" placeholder="29"></div>
           <div class="field"><label>Recherche libre</label><input v-model="discover.q" placeholder="ville, nom…"></div>
         </div>
@@ -2068,7 +2046,7 @@
     <div class="card pad" style="max-width:440px;width:100%">
       <div class="row" style="align-items:center;gap:8px;margin-bottom:8px"><i data-lucide="message-circle" style="color:var(--accent-text)"></i><b style="flex:1">Votre retour</b><button class="icon-btn xs" @click="fb.open=false"><i data-lucide="x" style="width:15px;height:15px"></i></button></div>
       <div class="row" style="gap:6px;margin-bottom:8px">
-        <button v-for="o in [['idee','💡 Idée'],['bug','🐞 Problème'],['autre','💬 Autre']]" :key="o[0]" class="btn sm" :class="fb.kind===o[0]?'primary':''" @click="fb.kind=o[0]">{{ o[1] }}</button>
+        <button v-for="o in [['idee','Idée','lightbulb'],['bug','Problème','bug'],['autre','Autre','message-circle']]" :key="o[0]" class="btn sm" :class="fb.kind===o[0]?'primary':''" @click="fb.kind=o[0]"><i :data-lucide="o[2]"></i>{{ o[1] }}</button>
       </div>
       <textarea v-model="fb.message" class="inp" rows="4" placeholder="Dites-nous ce qui vous aiderait, ce qui bloque, ce qui manque…" style="width:100%;resize:vertical"></textarea>
       <div class="row" style="gap:8px;margin-top:8px;justify-content:flex-end">

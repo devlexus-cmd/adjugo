@@ -338,49 +338,392 @@ def build_user_prompt(text, company=None, criteria=None, lang_name=None):
     return prompt
 
 
-def extract_text_from_pdf(file_bytes):
-    """Extrait le texte d'un PDF."""
+# ── Extraction de texte BORNÉE (anti-bombe de décompression / PDF géant) ─────────
+# Process unique (1 worker sans Redis) : un seul fichier piégé ne doit jamais pouvoir
+# épuiser la mémoire ou le CPU pour tous les clients. Tout est donc plafonné AVANT lecture :
+#   • ZIP : chaque fichier lu en flux borné (jamais zf.read sans limite), budget cumulé
+#     sur l'archive entière, ZIP imbriqué accepté sur 1 seul niveau, nombre d'entrées borné ;
+#   • DOCX (archive elle aussi) : tailles décompressées vérifiées avant python-docx ;
+#   • PDF : nombre de pages lues borné + arrêt dès que le volume de texte utile est atteint ;
+#   • OCR : seules les premières pages sont RENDUES (pas toutes puis tronquées), page par
+#     page, résolution réduite pour les formats géants, budget de pages partagé dans un ZIP.
+# Un vrai DCE (RC + CCAP + CCTP + DPGF + plans, ~30 Mo zippés) reste très en dessous.
+_MB = 1024 * 1024
+ZIP_MEMBER_MAX_BYTES = 40 * _MB      # un fichier de l'archive, une fois décompressé
+ZIP_TOTAL_MAX_BYTES = 160 * _MB      # cumul décompressé lu dans toute l'archive
+ZIP_MAX_ENTRIES = 2000               # entrées déclarées (un DCE en compte quelques dizaines)
+ZIP_MAX_DEPTH = 1                    # ZIP dans le ZIP : oui ; ZIP dans un ZIP dans un ZIP : non
+ZIP_MAX_FILES = 25                   # fichiers réellement exploités (inchangé)
+DOCX_PART_MAX_BYTES = 40 * _MB       # une partie d'un .docx (image, XML…) décompressée
+DOCX_XML_MAX_BYTES = 25 * _MB        # une partie XML (document.xml…) décompressée
+DOCX_XML_TOTAL_MAX_BYTES = 40 * _MB  # tout le XML parsé par python-docx
+DOCX_TOTAL_MAX_BYTES = 120 * _MB     # cumul décompressé d'un .docx
+PDF_MAX_PAGES = 600                  # pages dont on extrait la couche texte
+PDF_TIME_BUDGET_S = 25.0             # temps CPU max d'extraction texte par dossier (archive comprise)
+PDF_PAGE_TIME_S = 6.0                # tranche de temps max pour UNE page (interrompue en cours)
+PDF_PAGE_CONTENT_MAX_BYTES = 2 * _MB # contenu décompressé d'une page (flux + formulaires) ;
+                                     # une page de texte pèse quelques Ko, l'analyse ≈ 1 s/Mo
+PDF_DOC_CONTENT_MAX_BYTES = 12 * _MB # cumul décompressé sur un dossier (archive comprise)
+PDF_PAGE_MAX_STREAMS = 500           # flux concaténés dans /Contents d'une seule page
+PDF_PAGE_MAX_FORMS = 500             # formulaires (XObject /Form) distincts sous une page
+OCR_MAX_PAGES = 15                   # pages scannées OCR-isées par PDF (inchangé)
+OCR_TOTAL_MAX_PAGES = 30             # pages OCR-isées au total sur une archive
+OCR_DPI = 200
+OCR_MAX_SIDE_PX = 4000               # plus grand côté d'une page rendue (A4 @200 dpi ≈ 2339)
+OCR_TIMEOUT_S = 60                   # rendu d'UNE page par poppler
+
+
+# Seules compressions dont zipfile borne la sortie à la taille demandée.
+_ZIP_SAFE_COMPRESSION = (0, 8)       # ZIP_STORED, ZIP_DEFLATED
+
+
+class _Budget:
+    """Budget partagé sur une extraction (archive imbriquée comprise)."""
+    def __init__(self):
+        self.bytes_left = ZIP_TOTAL_MAX_BYTES
+        self.ocr_pages_left = OCR_TOTAL_MAX_PAGES
+        self.skipped_big = 0        # fichiers ignorés car trop volumineux décompressés
+        self.skipped_nested = 0     # archives ignorées car imbriquées trop profondément
+        import time as _t
+        self.deadline = _t.monotonic() + PDF_TIME_BUDGET_S   # partagé par tous les PDF de l'archive
+        self.pdf_content_left = PDF_DOC_CONTENT_MAX_BYTES     # idem, en octets de contenu décompressé
+        self.pdf_heavy_pages = 0    # pages sautées car trop lourdes (plans vectoriels, bombes)
+
+
+def _zip_entry_count_ok(content: bytes) -> bool:
+    """Lit le nombre d'entrées DÉCLARÉ dans l'enregistrement de fin d'archive AVANT de
+    construire ZipFile (qui matérialise un objet par entrée)."""
+    import io, zipfile
+    try:
+        endrec = zipfile._EndRecData(io.BytesIO(content))   # API interne stable (3.8 → 3.14)
+        if endrec is None:
+            return True                                     # ZipFile lèvera son erreur claire
+        return int(endrec[zipfile._ECD_ENTRIES_TOTAL]) <= ZIP_MAX_ENTRIES
+    except Exception:
+        return True
+
+
+def _read_member_limited(zf, info, limit: int) -> bytes:
+    """Lit un membre d'archive en flux, jamais plus de `limit` + 1 octets en mémoire.
+    Retourne None si le membre dépasse la limite (taille déclarée OU réelle) ou s'il
+    utilise une compression autre que « stockée »/deflate : bzip2/LZMA décompressent un
+    bloc entier d'un coup, sans plafond de sortie (contournement de la lecture bornée)."""
+    if info.file_size > limit or info.compress_type not in _ZIP_SAFE_COMPRESSION:
+        return None
+    with zf.open(info) as fh:
+        # zipfile tronque la sortie à la taille DÉCLARÉE ; on ne demande donc jamais plus que
+        # celle-ci (+1) : un en-tête qui ment « 1 Ko » ne fait décompresser que ~1 Ko.
+        data = fh.read(min(info.file_size, limit) + 1)
+    if len(data) > limit:
+        return None
+    return data
+
+
+def _docx_sizes_ok(data: bytes) -> bool:
+    """Un .docx est une archive : on vérifie ses tailles décompressées AVANT python-docx
+    (qui charge toutes les parties en mémoire et parse le XML)."""
+    import io, zipfile
+    try:
+        if not _zip_entry_count_ok(data):
+            return False
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            total = xml_total = 0
+            for i in z.infolist():
+                if i.compress_type not in _ZIP_SAFE_COMPRESSION:
+                    return False
+                is_xml = i.filename.lower().endswith((".xml", ".rels"))
+                if i.file_size > (DOCX_XML_MAX_BYTES if is_xml else DOCX_PART_MAX_BYTES):
+                    return False
+                total += i.file_size
+                xml_total += i.file_size if is_xml else 0
+                if total > DOCX_TOTAL_MAX_BYTES or xml_total > DOCX_XML_TOTAL_MAX_BYTES:
+                    return False
+        return True
+    except Exception:
+        return False   # archive illisible → python-docx échouerait de toute façon
+
+
+def _page_content_key(page):
+    """Identité des flux de contenu d'une page (références indirectes). Deux pages qui
+    pointent vers le MÊME flux ont le même texte : inutile de le redécompresser."""
+    try:
+        raw = page.raw_get("/Contents") if hasattr(page, "raw_get") else page.get("/Contents")
+        if hasattr(raw, "idnum"):
+            return ((raw.idnum, raw.generation),)
+        refs = []
+        for x in (raw or []):
+            if not hasattr(x, "idnum"):
+                return None                       # flux direct : pas de clé fiable
+            refs.append((x.idnum, x.generation))
+        return tuple(refs) or None
+    except Exception:
+        return None
+
+
+class _PdfAbort(BaseException):
+    """Interruption d'une page trop coûteuse. BaseException EXPRÈS : pypdf avale `Exception`
+    autour des formulaires (XObject), une Exception ordinaire ne remonterait pas."""
+
+
+def _stream_size(s, limit: int) -> int:
+    """Taille décompressée d'un flux, mesurée sans jamais produire plus de `limit` + 1 octets
+    pour le cas courant (Flate). Les autres filtres passent par pypdf (plafonné par flux)."""
+    import zlib
+    try:
+        flt = s.get("/Filter")
+        flt = flt.get_object() if flt is not None else None
+        if isinstance(flt, list):
+            flt = flt[0] if len(flt) == 1 else tuple(flt)
+        enc = getattr(s, "_data", None)
+        if flt is None and isinstance(enc, (bytes, bytearray)):
+            return len(enc)
+        if flt in ("/FlateDecode", "/Fl") and isinstance(enc, (bytes, bytearray)):
+            try:
+                return len(zlib.decompressobj().decompress(bytes(enc), limit + 1))
+            except zlib.error:
+                pass                               # flux abîmé : pypdf sait parfois le réparer
+        return len(s.get_data())
+    except Exception:
+        return 0
+
+
+def _page_content_bytes(page, limit: int) -> int:
+    """Ce que extract_text va réellement analyser : les flux de /Contents ET les formulaires
+    (XObject /Form, récursivement, chacun compté une fois). Renvoie dès que `limit` est
+    dépassé (bombe « une page = des milliers de flux » ou « formulaire géant »)."""
+    total = 0
+    try:
+        contents = page.get("/Contents")
+        contents = contents.get_object() if contents is not None else None
+        streams = []
+        if isinstance(contents, list):
+            if len(contents) > PDF_PAGE_MAX_STREAMS:
+                return limit + 1
+            streams = [c.get_object() for c in contents]
+        elif contents is not None:
+            streams = [contents]
+        for st in streams:
+            total += _stream_size(st, limit - total)
+            if total > limit:
+                return total
+        # Formulaires référencés par les ressources (héritées des nœuds parents au besoin).
+        res, node, hops = None, page, 0
+        while node is not None and hops < 32:
+            if "/Resources" in node:
+                res = node["/Resources"].get_object()
+                break
+            node = node.get("/Parent")
+            node = node.get_object() if node is not None else None
+            hops += 1
+        seen, todo = set(), [res]
+        while todo:
+            r = todo.pop()
+            if not hasattr(r, "get"):
+                continue
+            xo = r.get("/XObject")
+            xo = xo.get_object() if xo is not None else None
+            if not hasattr(xo, "items"):
+                continue
+            for _name, ref in xo.items():
+                key = (ref.idnum, ref.generation) if hasattr(ref, "idnum") else id(ref)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if len(seen) > PDF_PAGE_MAX_FORMS:
+                    return limit + 1
+                f = ref.get_object()
+                if not hasattr(f, "get") or f.get("/Subtype") != "/Form":
+                    continue                       # image : extract_text ne la décode pas
+                total += _stream_size(f, limit - total)
+                if total > limit:
+                    return total
+                sub = f.get("/Resources")
+                if sub is not None:
+                    todo.append(sub.get_object())
+        return total
+    except Exception:
+        return total
+
+
+def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars: int = None,
+                          deadline: float = None, budget: "_Budget" = None):
+    """Extrait le texte d'un PDF — au plus `max_pages` pages, arrêt dès `max_chars`
+    caractères (le texte au-delà serait de toute façon tronqué par l'appelant).
+    Garde-fous CPU et mémoire (process unique) :
+      • une page qui réutilise un flux déjà lu est sautée (« toutes les pages pointent vers
+        le même flux de 74 Mo ») ;
+      • une page dont le contenu décompressé (flux + formulaires) dépasse
+        PDF_PAGE_CONTENT_MAX_BYTES est sautée, et le cumul est plafonné par dossier ;
+      • chaque page dispose d'une tranche de temps, contrôlée PENDANT l'analyse (à chaque
+        opérateur, y compris dans les formulaires appelés en boucle) ;
+      • l'extraction s'arrête au-delà du budget de temps global (partagé par une archive)."""
+    import time
+    if budget is not None:
+        deadline = budget.deadline
+    if deadline is None:
+        deadline = time.monotonic() + PDF_TIME_BUDGET_S
+    content_left = budget.pdf_content_left if budget is not None else PDF_DOC_CONTENT_MAX_BYTES
     try:
         from pypdf import PdfReader
         import io
         reader = PdfReader(io.BytesIO(file_bytes))
-        text = ""
-        for page in reader.pages:
-            page_text = page.extract_text()
+        parts, total, seen = [], 0, set()
+        n = min(len(reader.pages), max_pages)
+        for i in range(n):
+            if time.monotonic() > deadline:
+                break
+            page = reader.pages[i]
+            key = _page_content_key(page)
+            if key is not None:
+                if key in seen:
+                    continue
+                seen.add(key)
+            size = _page_content_bytes(page, min(PDF_PAGE_CONTENT_MAX_BYTES, content_left))
+            if size > PDF_PAGE_CONTENT_MAX_BYTES or size > content_left:
+                # Page trop lourde (plan vectoriel, bombe) ou budget presque épuisé : on la
+                # saute, les pages de texte (quelques Ko) suivantes passent encore.
+                if budget is not None:
+                    budget.pdf_heavy_pages += 1
+                continue
+            content_left -= size
+            page_deadline = min(deadline, time.monotonic() + PDF_PAGE_TIME_S)
+            cap = (max_chars - total + 2000) if max_chars else 2_000_000
+            frags, got = [], [0]
+
+            def _before(_op, _args, _cm, _tm):
+                if time.monotonic() > page_deadline:
+                    raise _PdfAbort()
+
+            def _text(t, _cm, _tm, _font, _size):
+                if t:
+                    room = cap - got[0]
+                    got[0] += len(t)
+                    if got[0] <= cap:
+                        frags.append(t)
+                    else:
+                        if room > 0:
+                            frags.append(t[:room])
+                        raise _PdfAbort()
+
+            try:
+                page_text = page.extract_text(visitor_operand_before=_before, visitor_text=_text)
+            except _PdfAbort:
+                page_text = "".join(frags)         # ce qui a été lu avant l'interruption
             if page_text:
-                text += page_text + "\n\n"
-        return text.strip()
+                parts.append(page_text)
+                total += len(page_text) + 2
+                if max_chars and total >= max_chars:
+                    break
+        return "\n\n".join(parts).strip()
     except Exception as e:
         return f"Erreur extraction PDF : {str(e)}"
+    finally:
+        if budget is not None:
+            budget.pdf_content_left = content_left
 
 
-def _ocr_pdf(content: bytes, max_pages: int = 15) -> str:
+OCR_MIN_DPI = 10                     # en dessous, on borne directement en pixels (size=)
+
+
+def _ocr_side_pt(page) -> float:
+    """Plus grand côté de la page en points, tel que poppler le rendra : valeurs ABSOLUES
+    (une MediaBox inversée [9500 9500 0 0] donne chez pypdf une largeur NÉGATIVE, alors que
+    poppler remet les coins dans l'ordre et rend une page de 132 pouces), × /UserUnit s'il
+    agrandit la page. 0.0 si la taille est illisible ou absurde (→ rendu borné en pixels)."""
+    try:
+        import math
+        b = page.mediabox
+        side = max(abs(float(b.right) - float(b.left)), abs(float(b.top) - float(b.bottom)))
+        try:
+            uu = float(page.get("/UserUnit", 1) or 1)
+        except Exception:
+            uu = 1.0
+        if math.isfinite(uu) and uu > 1:
+            side *= uu
+        return side if math.isfinite(side) and side > 0 else 0.0
+    except Exception:
+        return 0.0
+
+
+def _ocr_dpi_for(page) -> int:
+    """Résolution de rendu : 200 dpi, réduite pour qu'une page géante (affiche, plan A0,
+    format piégé 200×200 pouces) ne produise jamais une image de plusieurs Go.
+    0 si la taille de la page est inconnue : l'appelant borne alors en pixels (size=)."""
+    side_pt = _ocr_side_pt(page)
+    if side_pt <= 0:
+        return 0
+    return min(OCR_DPI, int(OCR_MAX_SIDE_PX * 72 / side_pt))
+
+
+def _ocr_render_kw(page) -> dict:
+    """Paramètres de rendu poppler pour UNE page. Cas normal : dpi calculé. Si pypdf ne lit
+    pas la page (page=None), si sa taille est inconnue ou si elle est si grande que même
+    OCR_MIN_DPI dépasserait le plafond : size=OCR_MAX_SIDE_PX (pdf2image → pdftoppm
+    -scale-to), borne en pixels du plus grand côté, quelle que soit la boîte déclarée."""
+    dpi = _ocr_dpi_for(page) if page is not None else 0
+    if dpi >= OCR_MIN_DPI:
+        return {"dpi": dpi}
+    return {"dpi": OCR_DPI // 2, "size": OCR_MAX_SIDE_PX}
+
+
+def _ocr_pdf(content: bytes, max_pages: int = OCR_MAX_PAGES, budget: "_Budget" = None) -> str:
     """OCR de repli pour les DCE SCANNÉS (PDF image, fréquents chez les petites
     collectivités). Gracieux : retourne '' si l'OCR n'est pas disponible (binaire
-    tesseract/poppler absent) — le code appelant retombe alors sur l'erreur claire."""
+    tesseract/poppler absent) — le code appelant retombe alors sur l'erreur claire.
+    BORNÉ : poppler ne rend QUE les premières pages (first_page/last_page), une à la fois,
+    au lieu de rendre tout le PDF en images puis d'en garder 15."""
     try:
         import pytesseract
         from pdf2image import convert_from_bytes
     except Exception:
         return ""
-    try:
-        images = convert_from_bytes(content, dpi=200)
-    except Exception:
+    if budget is not None:
+        max_pages = min(max_pages, budget.ocr_pages_left)
+    if max_pages <= 0:
         return ""
+    pages = None
+    try:
+        import io
+        from pypdf import PdfReader
+        pages = PdfReader(io.BytesIO(content)).pages
+        max_pages = min(max_pages, len(pages))
+    except Exception:
+        pages = None   # PDF que pypdf ne lit pas : poppler borne quand même via last_page
     out = []
-    for img in images[:max_pages]:
+    for num in range(1, max_pages + 1):
         try:
-            out.append(pytesseract.image_to_string(img, lang="fra"))
+            page = pages[num - 1] if pages is not None else None
         except Exception:
+            page = None
+        kw = dict(_ocr_render_kw(page), first_page=num, last_page=num)
+        try:
             try:
-                out.append(pytesseract.image_to_string(img))   # repli langue par défaut
+                images = convert_from_bytes(content, timeout=OCR_TIMEOUT_S, **kw)
+            except TypeError:      # pdf2image ancien sans `timeout` : on garde la borne de pages
+                images = convert_from_bytes(content, **kw)
+        except Exception:
+            break
+        if not images:
+            break          # au-delà de la dernière page
+        if budget is not None:
+            budget.ocr_pages_left -= 1
+        for img in images[:1]:
+            try:
+                out.append(pytesseract.image_to_string(img, lang="fra"))
             except Exception:
-                pass
+                try:
+                    out.append(pytesseract.image_to_string(img))   # repli langue par défaut
+                except Exception:
+                    pass
+        del images
     return "\n\n".join(t for t in out if t).strip()
 
 
 def _extract_docx(data: bytes) -> str:
-    """Extrait le texte d'un .docx (Word), tableaux compris. Gracieux si python-docx absent."""
+    """Extrait le texte d'un .docx (Word), tableaux compris. Gracieux si python-docx absent.
+    Tailles décompressées vérifiées AVANT ouverture (un .docx est une archive ZIP)."""
+    if not _docx_sizes_ok(data):
+        return ""
     try:
         import io
         import docx
@@ -396,16 +739,85 @@ def _extract_docx(data: bytes) -> str:
         return ""
 
 
+_ZIP_OKEXT = (".pdf", ".docx", ".txt", ".md", ".csv")
+
+
+def _extract_zip(content: bytes, max_chars: int, budget: "_Budget", depth: int, parts: list) -> None:
+    """Parcourt une archive (et au plus 1 niveau d'archive imbriquée) en ajoutant à
+    `parts` le texte des fichiers exploitables. Toute lecture est bornée par `budget`."""
+    import io, os, zipfile
+    if not _zip_entry_count_ok(content):
+        raise ValueError("Archive ZIP trop complexe (trop de fichiers). "
+                         "Importez directement les pièces utiles (RC, CCAP, CCTP, DPGF).")
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(content))
+    except Exception:
+        raise ValueError("Archive ZIP corrompue ou illisible.")
+    with zf:
+        # PDF d'abord (le cœur du DCE), puis Word/texte, puis archives imbriquées ; triés par nom
+        def _rank(i):
+            ln = i.filename.lower()
+            return (0 if ln.endswith(".pdf") else 2 if ln.endswith(".zip") else 1, ln)
+        for info in sorted(zf.infolist(), key=_rank):
+            if _chars(parts) > max_chars or len(parts) >= ZIP_MAX_FILES or budget.bytes_left <= 0:
+                break
+            n = info.filename
+            ln = n.lower()
+            if info.is_dir() or os.path.basename(n).startswith("."):
+                continue
+            is_zip = ln.endswith(".zip")
+            if not (ln.endswith(_ZIP_OKEXT) or is_zip):
+                continue
+            if is_zip and depth >= ZIP_MAX_DEPTH:
+                budget.skipped_nested += 1
+                continue
+            if info.compress_type not in _ZIP_SAFE_COMPRESSION:
+                continue    # bzip2/LZMA : sortie non bornable → ignoré (format non géré)
+            try:
+                data = _read_member_limited(zf, info, min(ZIP_MEMBER_MAX_BYTES, budget.bytes_left))
+                if data is None:
+                    budget.skipped_big += 1
+                    continue
+                budget.bytes_left -= len(data)
+                if is_zip:
+                    _extract_zip(data, max_chars, budget, depth + 1, parts)
+                    continue
+                remaining = max(0, max_chars - _chars(parts)) + 1
+                if ln.endswith(".pdf"):
+                    heavy_before = budget.pdf_heavy_pages
+                    t = extract_text_from_pdf(data, max_chars=remaining, budget=budget)
+                    # PDF scanné dans l'archive → OCR de repli. Pas pour un PDF dont on a sauté
+                    # des pages trop lourdes (plans vectoriels) : l'OCR y serait long et inutile.
+                    if (not (t and not t.startswith("Erreur") and len(t) > 30)
+                            and budget.pdf_heavy_pages == heavy_before):
+                        t = _ocr_pdf(data, budget=budget)
+                elif ln.endswith(".docx"):
+                    t = _extract_docx(data)
+                else:
+                    t = data[:remaining * 4].decode("utf-8", errors="replace")
+                del data
+                if t and not t.startswith("Erreur") and len(t) > 30:
+                    parts.append(f"=== {os.path.basename(n)} ===\n{t[:remaining]}")
+            except ValueError:
+                continue    # archive imbriquée illisible : on passe aux autres pièces
+            except Exception:
+                continue
+
+
+def _chars(parts: list) -> int:
+    return sum(len(p) for p in parts)
+
+
 def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000) -> str:
     """
     Extrait le texte d'un DCE réel : PDF unique OU archive ZIP de plusieurs PDF.
     Lève ValueError avec un message clair si illisible/vide/non supporté.
+    Mémoire et CPU BORNÉS quel que soit le fichier (cf. plafonds ci-dessus).
     """
-    import io, os, zipfile
     name = (filename or "").lower()
 
     if name.endswith(".pdf") or content[:5] == b"%PDF-":
-        txt = extract_text_from_pdf(content)
+        txt = extract_text_from_pdf(content, max_chars=max_chars)
         if not txt or txt.startswith("Erreur") or len(txt) < 30:
             # PDF sans couche texte → tentative OCR (document scanné).
             ocr = _ocr_pdf(content)
@@ -416,50 +828,31 @@ def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000) -> s
         return txt[:max_chars]
 
     if name.endswith(".docx"):   # AVANT le ZIP : un .docx est aussi une archive PK
+        if not _docx_sizes_ok(content):
+            raise ValueError("Document Word trop volumineux ou illisible. Exportez-le en PDF puis réessayez.")
         t = _extract_docx(content)
         if t and len(t) >= 20:
             return t[:max_chars]
         raise ValueError("Document Word illisible ou vide. Exportez-le en PDF si le souci persiste.")
 
     if name.endswith((".txt", ".md", ".csv")):
-        t = content.decode("utf-8", errors="replace").strip()
+        t = content[:max_chars * 4].decode("utf-8", errors="replace").strip()
         if t:
             return t[:max_chars]
         raise ValueError("Fichier texte vide ou illisible.")
 
     if name.endswith(".zip") or content[:2] == b"PK":
-        try:
-            zf = zipfile.ZipFile(io.BytesIO(content))
-        except Exception:
-            raise ValueError("Archive ZIP corrompue ou illisible.")
-        parts, files_done = [], 0
-        _OKEXT = (".pdf", ".docx", ".txt", ".md", ".csv")
-        # PDF d'abord (le cœur du DCE), puis Word/texte ; triés par nom
-        names = sorted(zf.namelist(), key=lambda n: (not n.lower().endswith(".pdf"), n.lower()))
-        for n in names:
-            ln = n.lower()
-            if n.endswith("/") or os.path.basename(n).startswith("."):
-                continue
-            if not ln.endswith(_OKEXT):
-                continue
-            try:
-                data = zf.read(n)
-                if ln.endswith(".pdf"):
-                    t = extract_text_from_pdf(data)
-                    if not (t and not t.startswith("Erreur") and len(t) > 30):
-                        t = _ocr_pdf(data)   # PDF scanné dans l'archive → OCR de repli
-                elif ln.endswith(".docx"):
-                    t = _extract_docx(data)
-                else:
-                    t = data.decode("utf-8", errors="replace")
-                if t and not t.startswith("Erreur") and len(t) > 30:
-                    parts.append(f"=== {os.path.basename(n)} ===\n{t}")
-                    files_done += 1
-            except Exception:
-                continue
-            if sum(len(p) for p in parts) > max_chars or files_done >= 25:
-                break
+        budget = _Budget()
+        parts = []
+        _extract_zip(content, max_chars, budget, 0, parts)
         if not parts:
+            if budget.skipped_big:
+                raise ValueError("Un fichier de l'archive est trop volumineux une fois décompressé "
+                                 f"({ZIP_MEMBER_MAX_BYTES // _MB} Mo max par fichier). "
+                                 "Importez directement les pièces utiles (RC, CCAP, CCTP, DPGF).")
+            if budget.skipped_nested:
+                raise ValueError("Archive trop imbriquée (un ZIP dans un ZIP dans un ZIP). "
+                                 "Décompressez-la puis importez les pièces ou un seul ZIP.")
             raise ValueError("Aucun fichier exploitable dans l'archive (PDF scanné ou format non géré ?).")
         return "\n\n".join(parts)[:max_chars]
 

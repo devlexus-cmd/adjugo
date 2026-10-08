@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.core.org import member_ids
 from app.core.http import content_disposition
+from app.core.uploads import read_upload_limited
 from app.models import User, Document, DocCategory
 from app.services.storage import get_storage
 
@@ -33,11 +34,9 @@ def _validate_and_read(file: UploadFile) -> tuple[bytes, str]:
     if _ALLOWED_EXT and ext not in _ALLOWED_EXT:
         raise HTTPException(400, f"Type de fichier non autorisé ({ext or 'inconnu'}). "
                                  f"Autorisés : {', '.join(sorted(_ALLOWED_EXT))}")
-    content = file.file.read()
-    if len(content) == 0:
-        raise HTTPException(400, "Fichier vide")
-    if len(content) > _MAX_BYTES:
-        raise HTTPException(413, f"Fichier trop volumineux (max {settings.MAX_UPLOAD_MB} Mo)")
+    # Lecture BORNÉE (limite + 1 octet) : un corps de plusieurs Go n'est jamais chargé en
+    # mémoire avant le 413 (process unique partagé par tous les clients).
+    content = read_upload_limited(file, _MAX_BYTES)
     return content, ext
 
 
@@ -146,11 +145,15 @@ def replace_document(
     db: Session = Depends(get_db),
 ):
     """Remplacer un document par une nouvelle version."""
+    # Seule la version COURANTE et active se remplace : remplacer un document à la corbeille
+    # ou une ancienne version créait une version « vivante » orpheline de son historique.
     old_doc = db.query(Document).filter(
-        Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db))
+        Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
+        Document.deleted_at.is_(None), Document.parent_id.is_(None),
     ).first()
     if not old_doc:
-        raise HTTPException(status_code=404, detail="Document introuvable")
+        raise HTTPException(status_code=404, detail="Document introuvable (peut-être à la corbeille "
+                                                    "ou déjà remplacé) : rechargez la liste.")
 
     # Sauvegarder la nouvelle version
     content, ext = _validate_and_read(file)
@@ -183,7 +186,20 @@ def replace_document(
     )
     db.add(new_doc)
     db.flush()                      # obtenir new_doc.id avant d'y rattacher l'ancien
-    old_doc.parent_id = new_doc.id  # l'ancienne version devient enfant (archivée, masquée)
+    # L'ancienne version devient enfant (archivée, masquée) — par UPDATE CONDITIONNEL : deux
+    # remplacements simultanés (double-clic, deux membres) créaient sinon deux versions
+    # « courantes » dont une sans historique. Le second voit 0 ligne modifiée → 409.
+    hit = db.query(Document).filter(
+        Document.id == old_doc.id, Document.parent_id.is_(None), Document.deleted_at.is_(None),
+    ).update({Document.parent_id: new_doc.id}, synchronize_session=False)
+    if hit != 1:
+        db.rollback()
+        try:
+            get_storage().delete(file_key)
+        except Exception:
+            pass
+        raise HTTPException(status_code=409, detail="Ce document vient d'être remplacé ou supprimé. "
+                                                    "Rechargez la liste puis réessayez.")
     db.commit()
     db.refresh(new_doc)
 
@@ -205,7 +221,7 @@ def rename_document(
     """Renommer un document (titre affiché dans le coffre-fort)."""
     doc = db.query(Document).filter(
         Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
-        Document.deleted_at.is_(None),
+        Document.deleted_at.is_(None), Document.parent_id.is_(None),
     ).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
@@ -232,8 +248,27 @@ def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
     from app.models import utcnow
-    doc.deleted_at = utcnow()
+    now = utcnow()
+    doc.deleted_at = now
+    # Les ANCIENNES versions (chaîne parent_id → version plus récente) suivent le document
+    # à la corbeille : sinon elles restaient téléchargeables et hors de la purge à 30 jours.
+    old_ids = _older_version_ids(db, doc.id, member_ids(current_user, db))
+    if old_ids:
+        db.query(Document).filter(Document.id.in_(old_ids), Document.deleted_at.is_(None)).update(
+            {Document.deleted_at: now}, synchronize_session=False)
     db.commit()
+
+
+def _older_version_ids(db: Session, doc_id: int, owners) -> list:
+    """Toutes les anciennes versions d'un document (transitivement), dans le périmètre."""
+    ids, frontier = set(), {doc_id}
+    while frontier:
+        rows = db.query(Document.id).filter(
+            Document.parent_id.in_(list(frontier)), Document.user_id.in_(owners)).all()
+        children = {r[0] for r in rows} - ids - {doc_id}
+        ids |= children
+        frontier = children
+    return list(ids)
 
 
 @router.post("/{doc_id}/restore", status_code=200)
@@ -248,7 +283,29 @@ def restore_document(
     ).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
+    # Ancienne version dont la version COURANTE est à la corbeille : on restaure la tête de
+    # chaîne (et les versions jetées avec elle). Sinon la version restaurée devenait « vivante »
+    # mais invisible, puis effacée avec la tête à la purge des 30 jours.
+    owners = member_ids(current_user, db)
+    head, hops = doc, 0
+    while head.parent_id is not None and hops < 200:
+        nxt = db.query(Document).filter(Document.id == head.parent_id,
+                                        Document.user_id.in_(owners)).first()
+        if not nxt:
+            break
+        head, hops = nxt, hops + 1
+    if head is not doc and head.deleted_at is not None:
+        doc = head
+    trashed_at = doc.deleted_at
     doc.deleted_at = None
+    # Restaure aussi les anciennes versions mises à la corbeille EN MÊME TEMPS que lui
+    # (même horodatage) — pas celles qu'on aurait jetées séparément auparavant.
+    if trashed_at is not None:
+        old_ids = _older_version_ids(db, doc.id, member_ids(current_user, db))
+        if old_ids:
+            db.query(Document).filter(Document.id.in_(old_ids),
+                                      Document.deleted_at == trashed_at).update(
+                {Document.deleted_at: None}, synchronize_session=False)
     db.commit()
     return {"ok": True, "id": doc.id}
 

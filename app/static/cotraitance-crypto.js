@@ -27,7 +27,9 @@
     lock: "Chiffré dans votre navigateur avec une clé qu'Adjugo ne stocke pas. Ni le mandataire, ni Adjugo, ni l'IA ne peuvent le lire.",
     lost: "Si vous perdez votre code de récupération, ce détail est définitivement perdu : nous ne pouvons pas le récupérer.",
     other_device: "Sur un autre ordinateur ou navigateur, vous devrez ressaisir votre code de récupération.",
-    not_zero_knowledge: "Le prix de vente de votre lot reste lisible par le mandataire : c'est voulu, il en a besoin pour consolider l'offre.",
+    not_zero_knowledge: "Seul montant visible par le mandataire.",
+    // Version courte, visible sous le champ (le texte complet lock + lost va dans l'icône d'aide du libellé).
+    lock_short: "Illisible par le mandataire, Adjugo et l'IA. Code perdu = détail perdu.",
   };
 
   // ── encodage ──
@@ -183,7 +185,7 @@
     setTimeout(() => {
       const b = document.getElementById("adj-copy-code");
       if (b) b.onclick = () => { Promise.resolve(navigator.clipboard && navigator.clipboard.writeText(code))
-        .then(() => { b.textContent = "Copié ✓"; }).catch(() => { b.textContent = "Copie impossible — sélectionnez le code"; }); };
+        .then(() => { b.textContent = "Copié"; }).catch(() => { b.textContent = "Copie impossible — sélectionnez le code"; }); };
     }, 60);
     return modal({
       title: "Votre code de récupération",

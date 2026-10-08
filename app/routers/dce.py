@@ -61,6 +61,35 @@ def _check_access(request: Request) -> None:
                              "ou utilisez le lien de démonstration avec son code.")
 
 
+def _is_demo_acheteur(request: Request) -> bool:
+    """Le jeton présenté est-il celui de la VITRINE publique (demo@collectivites…) ?
+    Elle s'ouvre sans mot de passe ni code : on lui sert les exemples pré-rédigés, jamais
+    un appel d'IA payant (même règle que la démo PME). Lecture DB courte, sur le seul `sub`."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return False
+    try:
+        p = decode_token(auth[7:].strip())
+        if p.get("typ") != "acheteur" or not p.get("sub"):
+            return False
+        sub = int(p.get("sub"))
+    except Exception:
+        return False
+    from app.core.database import SessionLocal
+    from app.models import Acheteur
+    from app.services.acheteur_demo_seed import DEMO_EMAIL
+    db = SessionLocal()
+    try:
+        a = db.get(Acheteur, sub)
+        return bool(a) and (a.email or "").strip().lower() == DEMO_EMAIL
+    finally:
+        db.close()
+
+
+DEMO_AI_REFUSED = ("La démonstration est en lecture guidée : ouvrez un exemple dans « Mes DCE ». "
+                   "Créez votre espace gratuit pour rédiger votre propre dossier.")
+
+
 def _tenant(request: Request) -> str:
     """Tenant LLM scopé : par COMPTE acheteur si un token valide est présent (isolation
     coût/résilience par compte), sinon par IP. L'isolation 'voisin bruyant' de llm.py
@@ -190,8 +219,10 @@ def sourcing(request: Request, payload: SourcingIn):
         raise HTTPException(422, "Aucun lot à analyser.")
     dep = (payload.departement or "").strip()[:3]
     try:
+        # Démo : le vivier (open data) reste visible, sans les conseils rédigés par l'IA.
         return sourcer_lots(lots, departement=dep, tenant=_tenant(request),
-                            cpv=(payload.cpv or "").strip())
+                            cpv=(payload.cpv or "").strip(),
+                            with_conseils=not _is_demo_acheteur(request))
     except Exception:
         logger.exception("Échec sourcing acheteur")
         raise HTTPException(500, "Échec de l'analyse de sourcing. Réessayez.")
@@ -202,6 +233,8 @@ def sourcing(request: Request, payload: SourcingIn):
 def generate(request: Request, besoin: BesoinIn):
     """Génère un PROJET de DCE structuré à partir du besoin saisi par l'acheteur."""
     _check_access(request)
+    if _is_demo_acheteur(request):
+        raise HTTPException(403, DEMO_AI_REFUSED)
     data = besoin.model_dump()
     if len((data.get("objet") or "").strip()) < 8:
         raise HTTPException(422, "Décrivez l'objet du marché (au moins quelques mots).")

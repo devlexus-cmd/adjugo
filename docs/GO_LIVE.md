@@ -115,7 +115,24 @@ Deux variables se « répondent » (garde-fous du code) :
 
 > Recommandation beta : garde la démo (conversion), pose `CRON_SECRET` + `SECRET_KEY`.
 
+**Tâches planifiées (cron externe : service cron Railway, cron-job.org…)** — chacune est un
+`POST` sur l'API avec l'en-tête `X-Cron-Secret: <CRON_SECRET>` (sans lui : 403). La veille
+amont et la sauvegarde R2 tournent seules dans l'application ; les autres non :
+
+| Fréquence | Appel | Rôle |
+|---|---|---|
+| quotidien | `POST /api/admin/run-alerts` | alertes de documents qui expirent |
+| quotidien | `POST /api/admin/run-tender-alerts` | veille AO (recherches sauvegardées) |
+| quotidien | `POST /api/admin/run-cotraitance-reminders` | relances partenaires J-3 / J-1 |
+| quotidien | `POST /api/admin/run-trash-purge` | **vide la corbeille** : documents supprimés depuis plus de 30 jours (ligne + fichier + anciennes versions). Sans ce cron, la corbeille n'est **jamais** purgée (promesse RGPD non tenue). |
+
+```bash
+curl -fsS -X POST https://adjugo-api-production.up.railway.app/api/admin/run-trash-purge \
+  -H "X-Cron-Secret: $CRON_SECRET"
+```
+
 - [ ] `CRON_SECRET` posé.
+- [ ] Crons quotidiens créés (dont `run-trash-purge`) et un premier appel vérifié (réponse 200).
 - [ ] Décision ENVIRONMENT/DEMO_MODE prise.
 
 ---

@@ -5,6 +5,7 @@ en marquant les flags pour ne pas renvoyer deux fois la même alerte.
 """
 import logging
 import re
+from app.schemas import safe_link_url as _safe_link
 from datetime import date
 from collections import defaultdict
 from sqlalchemy.orm import Session
@@ -13,6 +14,19 @@ from app.models import Document, SavedSearch, Company, User
 from app.services.email import send_email
 
 logger = logging.getLogger("adjugo")
+
+
+def _demo_user_ids(db: Session) -> set:
+    """Comptes démo publics (vitrine en lecture guidée) : AUCUN email ni appel IA ne part
+    pour eux depuis les tâches planifiées — ni relance vers les partenaires fictifs des
+    projets démo (adresses d'entreprises réelles possibles), ni digest, ni veille IA."""
+    try:
+        from sqlalchemy import func
+        from app.services.demo_seed import DEMO_EMAIL
+        return {uid for (uid,) in db.query(User.id).filter(
+            func.lower(User.email) == DEMO_EMAIL).all()}
+    except Exception:
+        return set()
 
 
 def _due_alert(doc, days: int):
@@ -45,8 +59,9 @@ def run_cotraitance_reminders(db: Session) -> dict:
         active_invite_filter(),
         ProjectInvite.can_contribute.is_(True)).all()
     scanned, reminded = 0, 0
+    demo_ids = _demo_user_ids(db)
     for inv in invites:
-        if not _is_email(inv.recipient):
+        if not _is_email(inv.recipient) or inv.owner_id in demo_ids:
             continue
         project = db.query(Project).filter(Project.id == inv.project_id,
                                            Project.deleted_at.is_(None)).first()
@@ -117,7 +132,10 @@ def _run_piece_expiry_alerts(db: Session, today) -> int:
     except Exception:
         return 0
     day_start = datetime(today.year, today.month, today.day)
+    demo_ids = _demo_user_ids(db)
     for project in projects:
+        if project.user_id in demo_ids:
+            continue
         invites = active_invites(db, project.id)
         if not invites:
             continue
@@ -132,7 +150,12 @@ def _run_piece_expiry_alerts(db: Session, today) -> int:
         labels = dict(_PIECE_LABELS)
         owner_user = db.query(User).filter(User.id == project.user_id).first()
         owner_email = owner_user.email if owner_user and _is_email(owner_user.email) else None
-        company = db.query(Company).filter(Company.user_id == project.user_id).first()
+        # Propriétaire CANONIQUE du tenant (porteur du profil entreprise et de la chaîne
+        # d'audit) — jamais project.user_id brut si un membre a créé le marché.
+        from app.routers.invites import tenant_owner_id
+        tenant_oid = tenant_owner_id(project, db)
+        company = (db.query(Company).filter(Company.user_id == tenant_oid).first()
+                   or db.query(Company).filter(Company.user_id == project.user_id).first())
         chef = (company.name if company and company.name else "le mandataire")
         by_id = {i.id: i for i in invites}
         for m in grid.get("members", []):
@@ -174,7 +197,9 @@ def _run_piece_expiry_alerts(db: Session, today) -> int:
                     f"les pièces de {who} ne sont pas prêtes pour le dépôt :\n{lines}\n\n"
                     f"Le partenaire a été prévenu. Suivez le coffre-fort croisé dans le cockpit du "
                     f"groupement.\n\n— Adjugo")
-            audit.record(db, action="piece.expiring", owner_id=project.user_id, project_id=project.id,
+            # Chaîné sous le propriétaire du tenant (sinon l'entrée sortait de la chaîne
+            # d'intégrité de l'entreprise quand un membre a créé le marché).
+            audit.record(db, action="piece.expiring", owner_id=tenant_oid, project_id=project.id,
                          actor="adjugo", actor_kind="system", target_type="invite", target_id=inv.id,
                          detail=palier, invite_id=inv.id)
             alerted += 1
@@ -200,8 +225,9 @@ def run_document_expiry_alerts(db: Session) -> dict:
             by_user[doc.user].append((doc, days, label, flags))
 
     notified, alerts = 0, 0
+    demo_ids = _demo_user_ids(db)
     for user, items in by_user.items():
-        if not user or not user.email:
+        if not user or not user.email or user.id in demo_ids:
             continue
         lines = [f"• {d.name} — {label} (échéance {d.expiration_date})" for d, _, label, _ in items]
         text = ("Bonjour,\n\nCertaines pièces de votre coffre-fort Adjugo arrivent à "
@@ -277,8 +303,9 @@ def run_tender_alerts(db: Session) -> dict:
     # user sans email étaient marqués vus puis jamais notifiés (perdus quand il ajoute son email).
     emailed = {uid for (uid,) in db.query(User.id).filter(User.email.isnot(None)).all()}
     by_user = defaultdict(list)   # user_id -> [(search_name, [tenders])]
+    demo_ids = _demo_user_ids(db)
     for s in searches:
-        if s.frequency == "manuelle":
+        if s.frequency == "manuelle" or s.user_id in demo_ids:
             continue
         has_email = s.user_id in emailed
         fresh = run_one_saved_search(s, db, mark=has_email)
@@ -323,7 +350,10 @@ def run_amont_alerts(db: Session) -> dict:
     from app.models import Signal
 
     # Personne n'a activé la veille auto → aucun scan (zéro appel IA inutile).
-    opted = db.query(User).filter(User.email.isnot(None), User.amont_alerts_enabled.is_(True)).all()
+    demo_ids = _demo_user_ids(db)
+    opted = [u for u in db.query(User).filter(User.email.isnot(None),
+                                              User.amont_alerts_enabled.is_(True)).all()
+             if u.id not in demo_ids]
     if not opted:
         return {"scanned": 0, "users_notified": 0, "new_signals": 0, "opted_in": 0}
 
@@ -379,7 +409,7 @@ def run_amont_alerts(db: Session) -> dict:
                 maturite=(int(p["maturite"]) if isinstance(p.get("maturite"), (int, float)) else None),
                 extrait=(p.get("extrait") or "")[:2000], pertinence=label, pertinence_score=score,
                 source_name=(f"Délibération · {p['source']}" if p.get("source") else "Délibération (open data)")[:255],
-                source_url=(p.get("url") or "")[:700], source_date=(p.get("date") or "")[:40],
+                source_url=(_safe_link(p.get("url"), 700) or ""), source_date=(p.get("date") or "")[:40],
             ))
             total += 1
             if label == "pertinent":

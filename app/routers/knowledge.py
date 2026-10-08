@@ -22,6 +22,8 @@ from app.core.quota import consume_analysis
 from app.core.org import member_ids
 from app.models import User, KnowledgeDoc, KnowledgeChunk
 from app.services.analysis import extract_dce_text
+from app.core.uploads import aread_upload_limited
+from starlette.concurrency import run_in_threadpool
 from app.services import rag
 from app.services.agents.memoire import generate_memoire
 from app.services.agents.questionnaire import answer_questions
@@ -50,13 +52,9 @@ def list_docs(current_user: User = Depends(get_current_user), db: Session = Depe
 @limiter.limit("60/hour")
 async def upload_doc(request: Request, file: UploadFile = File(...), kind: str = Form("autre"),
                      current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "Fichier vide.")
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(413, "Fichier trop volumineux (50 Mo max).")
+    content = await aread_upload_limited(file)   # lecture bornée : 413 au-delà de 50 Mo
     try:
-        text = extract_dce_text(file.filename, content, max_chars=400000)
+        text = await run_in_threadpool(extract_dce_text, file.filename, content, max_chars=400000)
     except ValueError as e:
         raise HTTPException(422, str(e))
     if len((text or "").strip()) < 40:
@@ -128,13 +126,9 @@ def _gen_memoire(text: str, current_user: User, db: Session) -> dict:
 @limiter.limit("20/hour")
 async def memoire_upload(request: Request, file: UploadFile = File(...),
                          current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "Fichier vide.")
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(413, "Fichier trop volumineux (50 Mo max).")
+    content = await aread_upload_limited(file)   # lecture bornée : 413 au-delà de 50 Mo
     try:
-        text = extract_dce_text(file.filename, content)
+        text = await run_in_threadpool(extract_dce_text, file.filename, content)
     except ValueError as e:
         raise HTTPException(422, str(e))
     if len((text or "").strip()) < 60:

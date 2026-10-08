@@ -575,3 +575,21 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 }
 /* Bouton à long libellé : peut passer sur 2 lignes au lieu de déborder sur téléphone */
 .btn.btn-wrap { white-space:normal; height:auto; min-height:35px; padding-top:7px; padding-bottom:7px; text-align:left; max-width:100%; }
+
+/* ══════════ Bulle d'information « ⓘ » : les phrases d'explication sortent des cartes ══════════
+   <button type="button" class="tip"><i data-lucide="info"></i><span class="tip-b" role="tooltip">…</span></button>
+   S'ouvre au survol (souris) et au toucher/clavier (focus). .tip-l : la bulle s'ouvre vers la gauche. */
+.tip { position:relative; display:inline-grid; place-items:center; width:22px; height:22px; padding:0; margin:0 0 0 4px; border:0; border-radius:50%; background:transparent; color:var(--subtle); cursor:help; vertical-align:middle; flex:none; transition:color .12s, background .12s; }
+.tip > i[data-lucide], .tip > i[data-lucide] .lucide { width:15px; height:15px; }
+.tip:hover, .tip:focus-visible, .tip[aria-expanded="true"] { color:var(--accent-text); background:var(--accent-weak); outline:none; }
+.tip-b { position:absolute; top:calc(100% + 8px); left:-6px; z-index:80; width:max-content; max-width:min(320px, calc(100vw - 48px)); padding:10px 12px; border-radius:10px; background:var(--text); color:var(--bg); font:400 12.5px/1.5 var(--font-body, inherit); letter-spacing:0; text-transform:none; text-align:left; white-space:normal; box-shadow:0 10px 30px rgba(0,0,0,.22); opacity:0; visibility:hidden; transform:translateY(-3px); transition:opacity .14s, transform .14s, visibility 0s linear .14s; pointer-events:none; }
+.tip-b b, .tip-b strong { font-weight:650; }
+.tip.tip-l .tip-b { left:auto; right:-6px; }
+.tip:focus .tip-b, .tip:focus-within .tip-b { opacity:1; visibility:visible; transform:none; transition:opacity .14s, transform .14s, visibility 0s; }
+@media (hover:hover) { .tip:hover .tip-b { opacity:1; visibility:visible; transform:none; transition:opacity .14s, transform .14s, visibility 0s; } }   /* au toucher : seule la bulle touchée s'ouvre */
+@media (hover:none) { .tip { width:30px; height:30px; } }   /* zone tactile confortable */
+/* Bulles sur téléphone : une feuille fixée en bas de l'écran, toujours lisible, jamais coupée */
+@media (max-width:640px) {
+  .tip .tip-b, .tip.tip-l .tip-b { position:fixed; left:16px; right:16px; top:auto; bottom:calc(16px + env(safe-area-inset-bottom)); width:auto; max-width:none; translate:none; font-size:13.5px; padding:14px 16px; border-radius:14px; }
+  .cards > * { min-width:0; }
+}

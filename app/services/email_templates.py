@@ -1,6 +1,7 @@
 """Gabarits d'emails HTML soignés (compatibles clients mail : layout en tableaux + styles
 INLINE, le <style> étant souvent retiré par Gmail/Outlook). Charte Adjugo : accent #1B4FFF,
 wordmark « adjug◎ » (le ◎ rappelle le logo en cercles concentriques)."""
+import html
 
 _ACCENT = "#1B4FFF"
 _INK = "#16181d"
@@ -48,9 +49,16 @@ def _button(label: str, href: str) -> str:
 </table>"""
 
 
+def _first(name: str) -> str:
+    """Prénom affiché dans l'email : 1er mot, borné et ÉCHAPPÉ (le nom est saisi librement
+    par l'utilisateur ; sans ça on pouvait glisser un lien dans un email signé Adjugo)."""
+    parts = (name or "").split()
+    return html.escape(parts[0][:40], quote=True) if parts else ""
+
+
 def reset_password_html(link: str, name: str = "") -> str:
     """Email de réinitialisation de mot de passe (même charte que la confirmation d'adresse)."""
-    hello = "Bonjour" + (f" {name.split()[0]}" if name and name.split() else "")
+    hello = "Bonjour" + (f" {_first(name)}" if _first(name) else "")
     inner = f"""\
       <tr><td style="padding:6px 36px 4px;">
         <h1 style="margin:14px 0 6px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:21px;font-weight:800;color:{_INK};text-align:center;">{hello}</h1>
@@ -68,7 +76,7 @@ def reset_password_html(link: str, name: str = "") -> str:
 
 def verify_email_html(link: str, name: str = "") -> str:
     """Email de confirmation d'adresse à l'inscription."""
-    hello = "Bienvenue" + (f" {name.split()[0]}" if name and name.split() else "")
+    hello = "Bienvenue" + (f" {_first(name)}" if _first(name) else "")
     inner = f"""\
       <tr><td style="padding:6px 36px 4px;">
         <h1 style="margin:14px 0 6px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:21px;font-weight:800;color:{_INK};text-align:center;">{hello}</h1>
@@ -77,7 +85,7 @@ def verify_email_html(link: str, name: str = "") -> str:
         </p>
         {_button("Vérifier mon adresse email", link)}
         <p style="margin:18px 0 4px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:12.5px;line-height:1.6;color:{_MUTED};text-align:center;">
-          Ce lien est valable <b>3 jours</b>. S'il ne fonctionne pas, copiez-collez cette adresse&nbsp;:
+          Ce lien est valable <b>48 heures</b>. S'il ne fonctionne pas, copiez-collez cette adresse&nbsp;:
         </p>
         <p style="margin:0;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:11.5px;line-height:1.5;color:{_ACCENT};text-align:center;word-break:break-all;">{link}</p>
       </td></tr>"""
