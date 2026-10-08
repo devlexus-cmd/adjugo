@@ -79,14 +79,34 @@ def record(db, *, action: str, owner_id: Optional[int] = None,
     chaîne des entrées existantes — c'est un index de projection, pas une preuve."""
     try:
         from app.models import AuditLog, utcnow
+        now = utcnow()
+        # UTC NAÏF : un datetime avec fuseau est converti par Postgres dans le fuseau de la
+        # SESSION avant d'être rangé dans une colonne sans fuseau — sur une base réglée hors UTC,
+        # la valeur relue différait de celle hachée et toute la chaîne semblait altérée.
+        if now.tzinfo is not None:
+            from datetime import timezone as _tz
+            now = now.astimezone(_tz.utc).replace(tzinfo=None)
         entry = AuditLog(
-            created_at=utcnow(),   # figé explicitement : doit être identique au hash
+            created_at=now,        # figé explicitement : doit être identique au hash
             action=action[:60], owner_id=owner_id, project_id=project_id,
             actor=(actor or "")[:160], actor_kind=(actor_kind or "")[:20],
             target_type=(target_type or "")[:40], target_id=target_id,
             detail=(detail or "")[:255], ip=(ip or "")[:45], meta=meta,
             invite_id=invite_id,
         )
+        # Écritures SÉRIALISÉES par tenant, de l'INSERT jusqu'au COMMIT : sans ce verrou, deux
+        # écritures simultanées (deux partenaires qui ouvrent leur lien au même instant) lisaient
+        # le même maillon précédent → chaîne « fourchue » et verdict « altéré » à tort.
+        # Verrou consultatif TRANSACTIONNEL (relâché par le commit ci-dessous) ; Postgres
+        # détecte les interblocages qu'il formerait avec des verrous de lignes. SQLite sérialise
+        # déjà les écritures : rien à faire.
+        try:
+            if db.get_bind().dialect.name == "postgresql":
+                from sqlalchemy import text as _text
+                db.execute(_text("SELECT pg_advisory_xact_lock(:ns, :k)"),
+                           {"ns": _AUDIT_LOCK_NS, "k": int(owner_id or 0)})
+        except Exception as e:      # le verrou ne doit jamais empêcher la journalisation
+            logger.warning("audit: verrou de chaîne indisponible : %s", type(e).__name__)
         db.add(entry)
         db.flush()   # obtient l'id avant de calculer le hash
         # Maillon précédent du même tenant : la chaîne lie chaque entrée à la suivante.
@@ -122,6 +142,10 @@ def _message(res: dict) -> str:
         return "Journal intact." if res.get("intact") else "Le journal a été altéré."
 
 
+_AUDIT_LOCK_NS = 7041          # espace de noms du verrou consultatif (journal d'audit)
+_FORK_WINDOW = 64              # fourches de concurrence : maillon pris parmi les entrées récentes
+
+
 def verify_chain(db, owner_id: int, upto_id: int = None) -> dict:
     """Revérifie la chaîne de hash d'un tenant : recalcule chaque maillon et détecte toute
     entrée modifiée, supprimée ou réordonnée À L'INTÉRIEUR de la chaîne ; puis compare la
@@ -139,15 +163,32 @@ def verify_chain(db, owner_id: int, upto_id: int = None) -> dict:
     rows = q.order_by(AuditLog.id.asc()).all()
     prev = ""
     broken_at = None
+    forks = 0
+    recent = []          # empreintes des dernières entrées chaînées (ordre d'id)
     for a in rows:
         # Entrées historiques (avant l'activation du chaînage) : pas de hash → on saute.
         if not a.entry_hash:
             prev = ""
+            recent = []
             continue
-        if (a.prev_hash or "") != prev or _hash(prev, a) != a.entry_hash:
+        link = a.prev_hash or ""
+        # Contenu de l'entrée : toujours recalculé (toute modification est détectée).
+        if _hash(link, a) != a.entry_hash:
             broken_at = a.id
             break
+        if link != prev:
+            # Fourche due à deux écritures simultanées (avant le verrou de chaîne) : le maillon
+            # pointe vers une entrée RÉCENTE qui existe bien. Une entrée supprimée au milieu de
+            # la chaîne reste détectée (son empreinte n'existe plus nulle part).
+            if link and link in recent:
+                forks += 1
+            else:
+                broken_at = a.id
+                break
         prev = a.entry_hash
+        recent.append(a.entry_hash)
+        if len(recent) > _FORK_WINDOW:
+            recent.pop(0)
     chained = [a for a in rows if a.entry_hash]
     res = {
         "owner_id": owner_id,
@@ -155,6 +196,7 @@ def verify_chain(db, owner_id: int, upto_id: int = None) -> dict:
         "chained_entries": len(chained),
         "intact": broken_at is None,
         "broken_at_id": broken_at,
+        "forks": forks,      # écritures simultanées anciennes, tolérées (voir ci-dessus)
     }
     res.update(_anchor_fields(db, owner_id, rows, upto_id))
     missing_id = res.pop("missing_id", None)
