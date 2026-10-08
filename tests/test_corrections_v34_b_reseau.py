@@ -153,3 +153,56 @@ def test_reseau_part_repassee_en_brouillon_reste_acceptee(client, reg, mails):
     assert client.get(f"/api/invite/{tok}").json()["apercu_minimal"] is False
     b = _export(client, tok)
     assert jm.prolonge(a, b)
+
+
+def _age_email(inv_id, minutes=16):
+    from datetime import timedelta
+    from app.core.database import SessionLocal
+    from app.models import ProjectInvite
+    db = SessionLocal()
+    try:
+        i = db.get(ProjectInvite, inv_id)
+        i.emailed_at = i.emailed_at - timedelta(minutes=minutes)
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_relance_reseau_refusee_apres_retrait_ou_masquage_et_plafonnee(client, reg, mails, monkeypatch):
+    """La relance d'une invitation réseau refait les contrôles de l'envoi : profil toujours publié,
+    paire non masquée (motif jamais dit au chef de file), et elle compte dans le plafond quotidien
+    du profil. Plus d'email affirmant « votre profil est publié » à un profil retiré."""
+    part = _org(client, "Le Gall Électricité")
+    part_pid = _publish(client, reg, part)
+    chef = _org(client, "Breizh Couverture")
+    _publish(client, reg, chef, metiers=("couverture",))
+    pid = _project(client, chef)
+    r = client.post(f"/api/projects/{pid}/reseau/invitations", headers=chef["headers"],
+                    json={"profile_id": part_pid, "lot": "Lot 2 — Électricité"})
+    assert r.status_code == 200, r.text
+    iid = r.json()["invitation"]["id"]
+    url = f"/api/projects/{pid}/invites/{iid}/resend"
+    _age_email(iid)
+    assert client.post(url, headers=chef["headers"]).json()["sent"] is True        # profil publié : OK
+    # Retrait de la publication → plus de relance (et donc plus de « votre profil est publié »).
+    assert client.delete("/api/reseau/profil/publier", headers=part["headers"]).status_code == 200
+    _age_email(iid)
+    n_mails = len(mails)
+    r = client.post(url, headers=chef["headers"])
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "plus_sollicitable", r.text
+    assert len(mails) == n_mails
+    # Republication puis masquage du chef de file → refus, sans dire pourquoi.
+    assert client.post("/api/reseau/profil/publier", headers=part["headers"], json={"accepte": True}).status_code == 200
+    _age_email(iid)
+    assert client.post(url, headers=chef["headers"]).status_code == 200
+    assert client.put("/api/reseau/profil", headers=part["headers"],
+                      json={"hidden_from_sirens": [chef["siren"]]}).status_code == 200
+    _age_email(iid)
+    r = client.post(url, headers=chef["headers"])
+    assert r.status_code == 409 and "masqu" not in r.text
+    # Démasqué : les relances comptent dans le plafond quotidien du profil (1 envoi + 2 relances).
+    assert client.put("/api/reseau/profil", headers=part["headers"], json={"hidden_from_sirens": []}).status_code == 200
+    import app.routers.reseau as R
+    monkeypatch.setattr(R, "NETWORK_INVITES_PER_PROFILE_DAY", 3)
+    _age_email(iid)
+    assert client.post(url, headers=chef["headers"]).status_code == 429

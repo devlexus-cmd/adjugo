@@ -707,6 +707,32 @@ def _require_verified_sender(user: User) -> None:
                                  "pour envoyer des invitations par email. En attendant, copiez le lien.")
 
 
+NETWORK_RESEND_REFUSED = ("Ce partenaire ne peut plus être relancé par le réseau Adjugo. Il retrouve toujours "
+                          "l'invitation dans son espace Adjugo.")
+
+
+def _check_network_resend(inv, current_user: User, db: Session) -> None:
+    """Relance d'une invitation RÉSEAU : mêmes conditions qu'à l'envoi — le profil du partenaire
+    est toujours publié et la paire n'est pas masquée (dans un sens ou dans l'autre ; le motif
+    n'est jamais dit au chef de file), et les relances comptent dans le plafond quotidien de
+    sollicitations du profil. Sinon l'email affirmerait à tort « votre profil est publié »."""
+    from app.models import AuditLog, PartnerProfile
+    from app.routers.reseau import NETWORK_INVITES_PER_PROFILE_DAY
+    from app.services import partner_network as pn
+    p = db.get(PartnerProfile, inv.partner_profile_id) if inv.partner_profile_id else None
+    if p is None or not p.visible or p.is_demo or pn.hidden_pair(pn.searcher_context(db, current_user), p):
+        raise HTTPException(409, {"code": "plus_sollicitable", "message": NETWORK_RESEND_REFUSED})
+    since = utcnow() - timedelta(hours=24)
+    ids = [i for (i,) in db.query(ProjectInvite.id).filter(ProjectInvite.partner_profile_id == p.id).all()]
+    n_created = db.query(ProjectInvite).filter(ProjectInvite.partner_profile_id == p.id,
+                                               ProjectInvite.created_at >= since).count()
+    n_resent = db.query(AuditLog).filter(AuditLog.action == "invite.resent", AuditLog.target_type == "invite",
+                                         AuditLog.target_id.in_(ids or [0]),
+                                         AuditLog.created_at >= since.replace(tzinfo=None)).count()
+    if n_created + n_resent >= NETWORK_INVITES_PER_PROFILE_DAY:
+        raise HTTPException(429, "Ce partenaire a reçu beaucoup d'invitations aujourd'hui : réessayez demain.")
+
+
 @router.post("/api/projects/{project_id}/invites/{invite_id}/resend")
 @limiter.limit("20/hour")
 def resend_invite(project_id: int, invite_id: int, request: Request,
@@ -735,6 +761,8 @@ def resend_invite(project_id: int, invite_id: int, request: Request,
         if datetime.now(timezone.utc) - last < RESEND_MIN_INTERVAL:
             raise HTTPException(429, "Invitation déjà envoyée il y a moins de 15 minutes. "
                                      "Laissez un peu de temps au partenaire avant de relancer.")
+    if _is_network_invite(inv):
+        _check_network_resend(inv, current_user, db)
     _check_daily_invite_cap(current_user, db)
     sender = _send_invite_email
     if _is_network_invite(inv):
