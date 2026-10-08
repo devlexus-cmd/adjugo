@@ -206,9 +206,19 @@
               </button>
             </div>
 
-            <div v-else class="row wrap" style="margin-top:16px;gap:10px;align-items:center;padding:11px 13px;border:1px dashed var(--border);border-radius:9px;background:var(--surface)">
+            <div v-else-if="grpDashState()==='vide'" class="row wrap" style="margin-top:16px;gap:10px;align-items:center;padding:11px 13px;border:1px dashed var(--border);border-radius:9px;background:var(--surface)">
               <i data-lucide="sparkles" style="color:var(--accent-text);flex:none"></i>
               <div class="small" style="flex:1;min-width:170px">Aucun groupement pour l'instant. Ouvrez un marché et <b>invitez un partenaire</b>.</div>
+            </div>
+            <div v-else-if="grpDashState()==='deposes'" class="row wrap" style="margin-top:16px;gap:10px;align-items:center;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--surface)">
+              <i data-lucide="send" style="color:var(--accent-text);flex:none"></i>
+              <div class="small" style="flex:1;min-width:170px"><b>{{ grpDash.deposes }}</b> {{ pl(grpDash.deposes, 'groupement déposé', 'groupements déposés') }}, aucun autre en cours.</div>
+              <button type="button" class="btn sm" @click="go('consortiums')"><i data-lucide="users-round"></i>Mes groupements</button>
+            </div>
+            <div v-else-if="grpDashState()==='erreur'" class="row wrap" role="status" style="margin-top:16px;gap:10px;align-items:center;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--surface)">
+              <i data-lucide="cloud-off" style="color:var(--text-2);flex:none"></i>
+              <div class="small" style="flex:1;min-width:170px">Données momentanément indisponibles.</div>
+              <button type="button" class="btn sm" @click="loadGrpDash()"><i data-lucide="refresh-cw"></i>Réessayer</button>
             </div>
             <div v-if="grpDash && grpDash.tronque" class="muted small" style="margin-top:8px">Calcul limité aux 100 marchés les plus récents.</div>
           </div>
@@ -562,7 +572,7 @@
               <button type="button" class="btn sm primary" @click="aoPmLoad()" :disabled="ao.pm.loading" :aria-busy="ao.pm.loading?'true':'false'"><span v-if="ao.pm.loading" class="spin"></span><i v-else :data-lucide="ao.pm.loaded?'refresh-cw':'search'"></i>{{ ao.pm.loaded ? 'Relancer la recherche' : 'Qui me complète ?' }}</button></div>
             <div class="cb rn-pm-b">
               <div class="sr-only" role="status" aria-live="polite">{{ ao.pm.live }}</div>
-              <p v-if="!ao.pm.loaded && !ao.pm.loading && !ao.pm.error" class="muted small">Cliquez sur « Qui me complète ? » pour chercher, lot par lot, les partenaires qui couvrent ce que vous ne faites pas.</p>
+              <p v-if="!ao.pm.loaded && !ao.pm.loading && !ao.pm.error" class="muted small">Aucune recherche lancée pour ce marché.</p>
               <div v-if="ao.pm.loading && !ao.pm.d" class="muted small"><span class="spin"></span> Recherche des partenaires, lot par lot…</div>
               <div v-if="ao.pm.error" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ ao.pm.error }} <button type="button" class="linkbtn" @click="aoPmLoad()">Réessayer</button></div></div>
               <template v-for="pd in (ao.pm.d ? [ao.pm.d] : [])" :key="'pmd'">
@@ -570,12 +580,12 @@
                 <div v-if="!pd.reseau_visible && pd.message" class="rn-callout">
                   <i data-lucide="lock"></i>
                   <div class="rn-callout-t"><b>{{ pd.message }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau fonctionne dans les deux sens : publiez votre profil partenaire pour voir les entreprises du réseau et les inviter. Les entreprises du registre SIRENE restent proposées ci-dessous.</span></button></div>
-                  <button type="button" class="btn sm primary" @click="rnGoPublish()"><i data-lucide="send"></i>Publier mon profil</button>
+                  <button type="button" class="btn sm primary" @click="rnGoPublish()"><i data-lucide="send"></i>{{ rnPubCta() }}</button>
                 </div>
                 <p v-if="!(pd.lots||[]).length" class="muted small">Aucun lot à compléter : d'après le dossier, vous couvrez seul les métiers repérés. <button type="button" class="linkbtn" @click="go('cotraitants')">Voir mes partenaires</button></p>
                 <section v-for="l in (pd.lots||[])" :key="pmLotId(l)" class="rn-lot" :aria-labelledby="pmLotId(l)">
-                  <h4 :id="pmLotId(l)" class="rn-lot-h">{{ pmLotTitle(l) }}<span class="muted small rn-lot-m"><template v-if="l.metier_label && l.metier_label!==l.label">{{ l.metier_label }}</template><template v-if="l.departement"> · exécution dans le {{ l.departement }}</template></span></h4>
-                  <p v-if="l.message" class="muted small">{{ l.message }}</p>
+                  <h4 :id="pmLotId(l)" class="rn-lot-h">{{ pmLotTitle(l) }}<span class="muted small rn-lot-m"><template v-if="l.metier_label && l.metier_label!==l.label">{{ l.metier_label }}</template><template v-if="l.departement"> · {{ l.departement_source==='suppose' ? 'département supposé : ' + l.departement : 'exécution dans le ' + l.departement }}</template></span></h4>
+                  <p v-if="l.message && l.message!==pd.message" class="muted small">{{ l.message }}</p>
                   <!-- Profils du réseau, classés -->
                   <article v-for="c in (l.reseau||[])" :key="'pmr'+c.profile_id" class="rn-card rn-card-pm" :aria-labelledby="'pmr-'+pmLotId(l)+c.profile_id">
                     <div class="rn-card-h">
@@ -596,7 +606,7 @@
                     </div>
                   </article>
                   <!-- Repli : entreprises du registre SIRENE (hors réseau) -->
-                  <div v-if="(l.sirene||[]).length" class="rn-sub">Entreprises du registre SIRENE<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">SIRENE : le répertoire officiel des entreprises. Ces entreprises ne sont pas sur le réseau Adjugo : Adjugo ne connaît pas leur adresse, vous les invitez avec un lien à leur transmettre.</span></button></div>
+                  <div v-if="(l.sirene||[]).length" class="rn-sub">Entreprises du registre SIRENE<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">SIRENE : le répertoire officiel des entreprises. Adjugo ne vous communique pas leur adresse : vous les invitez avec un lien à leur transmettre.</span></button></div>
                   <article v-for="s in (l.sirene||[])" :key="'pms'+s.siret" class="rn-card rn-card-pm rn-card-sirene">
                     <div class="rn-card-h">
                       <div class="rn-card-t"><h5 class="rn-name">{{ s.name }}</h5><div class="muted small">{{ rnLieu(s) }}<span v-if="s.activite"> · {{ s.activite }}</span></div></div>
@@ -617,7 +627,7 @@
                   <p v-if="l.sirene_cherche && !(l.sirene||[]).length && (l.reseau||[]).length" class="muted small">Aucune autre entreprise trouvée dans le registre SIRENE pour ce lot.</p>
                   <div v-if="!(l.reseau||[]).length && !(l.sirene||[]).length && l.sirene_cherche" class="rn-lot-empty">
                     <span class="muted small">Aucune entreprise trouvée pour ce lot pour l'instant.</span>
-                    <div class="row wrap rn-g8"><button type="button" class="btn sm" @click="rnDiscover(l.metier, l.departement)"><i data-lucide="search"></i>Chercher dans le registre SIRENE</button><button type="button" class="btn sm ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
+                    <div class="row wrap rn-g8"><button type="button" class="btn sm" @click="rnDiscover(l.metier, l.departement, l.metier_label)"><i data-lucide="search"></i>Chercher dans le registre SIRENE</button><button type="button" class="btn sm ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
                   </div>
                 </section>
                 <div v-if="(pd.lots_couverts||[]).length" class="row wrap rn-g6 rn-mt"><span class="muted small">Couverts par vous :</span><span v-for="c in pd.lots_couverts" :key="'pmc'+(c.num||c.metier)" class="pill neutral rn-pill-sm">{{ pmLotTitle(c) }}</span></div>
@@ -1112,9 +1122,8 @@
               <!-- Cockpit : état de préparation de la réponse commune (calcul déterministe) -->
               <div v-if="ao.share.consortium && ao.share.consortium.readiness && ao.share.consortium.readiness.invited" class="row" style="margin-top:12px;gap:13px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)">
                 <div style="flex:1;min-width:0">
-                  <div class="row" style="gap:7px;align-items:baseline"><b style="font-size:17px" :style="{color:readinessColor(ao.share.consortium.readiness.pct)}">{{ ao.share.consortium.readiness.pct }}%</b><span class="small">réponse commune prête</span></div>
-                  <div class="muted small">{{ ao.share.consortium.readiness.submitted }}/{{ ao.share.consortium.readiness.invited }} partenaire(s) ont contribué · {{ ao.share.consortium.readiness.lots }} lot(s) couvert(s)</div>
-                  <div style="height:6px;background:var(--surface-3);border-radius:3px;margin-top:7px;overflow:hidden"><div :style="{width:ao.share.consortium.readiness.pct+'%',height:'100%',background:readinessColor(ao.share.consortium.readiness.pct),transition:'width .4s'}"></div></div>
+                  <div class="row" style="gap:7px;align-items:baseline"><b style="font-size:17px" class="num">{{ ao.share.consortium.readiness.submitted }}/{{ ao.share.consortium.readiness.invited }}</b><span class="small">{{ pl(ao.share.consortium.readiness.invited, 'part reçue', 'parts reçues') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Nombre de partenaires qui ont envoyé leur part. Les contrôles avant dépôt (attestations, convention, formulaires) sont listés dans « Dépôt du dossier ».</span></button></div>
+                  <div class="muted small">{{ ao.share.consortium.readiness.lots }} lot(s) couvert(s)</div>
                 </div>
                 <button class="btn sm" @click="aoToggleCockpit()"><i data-lucide="layout-dashboard"></i>{{ ao.share.cockpitOpen?'Replier':'Suivi' }}</button>
               </div>
@@ -1244,8 +1253,7 @@
                       <span v-for="m in p.pieces_missing" :key="'m'+m" class="pill" style="font-size:9px;gap:3px;background:rgba(220,38,38,.08);color:#b91c1c"><i data-lucide="x" style="width:10px;height:10px"></i>{{ m }}</span>
                     </div>
                   </div>
-                  <div style="width:84px"><div style="height:5px;background:var(--surface-3);border-radius:3px;overflow:hidden"><div :style="{width:p.completeness+'%',height:'100%',background:readinessColor(p.completeness)}"></div></div></div>
-                  <span class="muted small" style="width:32px;text-align:right">{{ p.completeness }}%</span>
+                  <span class="pill rn-pill-sm" :class="p.status==='submitted'?'go':'neutral'">{{ p.status==='submitted' ? 'part envoyée' : 'part en cours' }}</span>
                 </div>
 
                 <div v-if="ao.share.consortium.readiness.missing.length" style="margin-top:11px">
@@ -2044,6 +2052,41 @@
 
         <!-- Administration (visible aux seuls administrateurs) -->
         <section v-if="view==='admin'">
+          <div class="card pad adm-rv" style="margin-bottom:14px" role="region" aria-labelledby="adm-rv-h">
+            <div class="row" style="gap:8px;align-items:center"><i data-lucide="user-check" style="color:var(--accent-text)"></i><b id="adm-rv-h" style="flex:1">Profils du réseau à valider<button v-if="admin.rv.explication" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ admin.rv.explication }}</span></button></b>
+              <span v-if="admin.rv.loaded" class="pill rn-pill-sm" :class="admin.rv.list.length?'a_etudier':'neutral'">{{ admin.rv.list.length }} en attente</span>
+              <button type="button" class="btn sm" @click="adminRvLoad()" :disabled="admin.rv.loading"><span v-if="admin.rv.loading" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Actualiser</button></div>
+            <div v-if="admin.rv.error" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ admin.rv.error }}</div></div>
+            <div v-else-if="admin.rv.loading && !admin.rv.loaded" class="muted small"><span class="spin"></span> Chargement…</div>
+            <p v-else-if="admin.rv.loaded && !admin.rv.list.length" class="muted small">Aucune demande en attente.</p>
+            <article v-for="it in admin.rv.list" :key="'rv'+it.profile_id" class="adm-rv-item" :aria-labelledby="'rv-'+it.profile_id">
+              <div class="row wrap" style="gap:8px;align-items:baseline"><b :id="'rv-'+it.profile_id">{{ it.name || 'Entreprise sans nom' }}</b><span class="muted small">SIREN {{ it.siren || 'non renseigné' }}</span><span v-if="it.demande_le" class="muted small">· demandé le {{ fmtDate(it.demande_le) }}</span></div>
+              <dl class="adm-rv-dl">
+                <dt>Registre SIRENE</dt>
+                <dd>{{ it.sirene.nom || 'nom non trouvé' }} · {{ it.sirene.etat==='actif' ? 'active' : (it.sirene.etat==='cesse' ? 'cessée' : 'non vérifiée') }}<span v-if="it.sirene.code_postal || it.sirene.ville"> · siège {{ [it.sirene.code_postal, it.sirene.ville].filter(Boolean).join(' ') }}</span><span v-if="it.sirene.naf"> · NAF {{ it.sirene.naf }}</span><span v-if="it.sirene.date_creation"> · créée le {{ fmtDate(it.sirene.date_creation) }}</span><span v-if="it.sirene.checked_at" class="muted"> (consulté le {{ fmtDate(it.sirene.checked_at) }})</span>
+                  <a v-if="adminRvLink(it)" :href="safeUrl(adminRvLink(it))" target="_blank" rel="noopener noreferrer" class="rn-link small"><i data-lucide="external-link"></i>Annuaire des entreprises</a></dd>
+                <dt>Profil entreprise</dt>
+                <dd>{{ it.entreprise_declaree.nom || 'non renseigné' }} · SIRET {{ it.entreprise_declaree.siret || 'non renseigné' }}<span v-if="it.entreprise_declaree.code_postal || it.entreprise_declaree.ville"> · {{ [it.entreprise_declaree.code_postal, it.entreprise_declaree.ville].filter(Boolean).join(' ') }}</span></dd>
+                <dt>Compte</dt>
+                <dd><template v-if="it.compte">{{ it.compte.nom || 'nom non renseigné' }} · {{ it.compte.email }} · {{ it.compte.email_confirme ? 'adresse confirmée' : 'adresse non confirmée' }}<span v-if="it.compte.inscrit_le"> · inscrit le {{ fmtDate(it.compte.inscrit_le) }}</span></template><template v-else>compte introuvable</template></dd>
+                <template v-if="it.demandeur"><dt>Demande faite par</dt><dd>{{ it.demandeur.nom || 'nom non renseigné' }} · {{ it.demandeur.email }}</dd></template>
+              </dl>
+              <div v-if="it.conflits && it.conflits.length" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><div>
+                <b>Même SIREN sur un autre compte</b>
+                <div v-for="c in it.conflits" :key="'rvc'+c.profile_id" class="small">{{ c.name || 'sans nom' }} — {{ c.statut==='publie' ? 'publié' : 'en attente' }} — {{ c.compte_nom || 'nom non renseigné' }} · {{ c.compte_email }}</div>
+                <label v-if="adminRvPublished(it).length" class="rn-check-line small" style="margin-top:6px"><input type="checkbox" v-model="admin.rv.remplacer[it.profile_id]"><span>Retirer l'autre fiche publiée si je valide celle-ci</span></label>
+              </div></div>
+              <div class="row wrap" style="gap:8px;margin-top:10px">
+                <button type="button" class="btn sm primary" @click="adminRvValider(it)" :disabled="!!admin.rv.busy" :aria-busy="admin.rv.busy===it.profile_id?'true':'false'"><span v-if="admin.rv.busy===it.profile_id" class="spin"></span><i v-else data-lucide="check"></i>Valider</button>
+                <button type="button" class="btn sm ghost" @click="admin.rv.refuser[it.profile_id] = !admin.rv.refuser[it.profile_id]" :aria-expanded="admin.rv.refuser[it.profile_id]?'true':'false'"><i data-lucide="x"></i>Refuser</button>
+              </div>
+              <div v-if="admin.rv.refuser[it.profile_id]" class="field" style="margin-top:8px">
+                <label :for="'rvm-'+it.profile_id">Motif du refus<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Affiché tel quel à l'entreprise sur son profil partenaire. 5 à 300 caractères.</span></button></label>
+                <textarea :id="'rvm-'+it.profile_id" class="inp" rows="2" maxlength="300" v-model="admin.rv.motif[it.profile_id]" placeholder="ex. Le compte ne correspond pas à cette entreprise."></textarea>
+                <div class="row" style="gap:8px;margin-top:6px"><button type="button" class="btn sm" @click="adminRvRefuser(it)" :disabled="!!admin.rv.busy || String(admin.rv.motif[it.profile_id]||'').trim().length<5"><span v-if="admin.rv.busy===it.profile_id" class="spin"></span>Confirmer le refus</button></div>
+              </div>
+            </article>
+          </div>
           <div class="card pad">
             <div class="row" style="gap:8px;align-items:center"><i data-lucide="hard-drive" style="color:var(--accent-text)"></i><b style="flex:1">Stockage</b>
               <span v-if="admin.diag" class="pill" :class="admin.diag.test && admin.diag.test.startsWith('OK')?'go':'neutral'" style="font-size:11px">{{ admin.diag.test && admin.diag.test.startsWith('OK') ? 'opérationnel' : 'à vérifier' }}</span></div>
@@ -2087,10 +2130,7 @@
                 <div class="strong">{{ cs.project }}</div>
                 <div class="muted small">{{ cs.submitted }}/{{ cs.partners }} part(s) reçue(s)<span v-if="cs.pieces"> · {{ cs.pieces }} pièce(s)</span><span v-if="cs.deadline"> · limite {{ auditWhen(cs.deadline) }}</span></div>
               </div>
-              <div style="width:110px;flex:none">
-                <div class="row" style="justify-content:space-between"><span class="muted small">prêt</span><b class="small" :style="{color:readinessColor(cs.readiness_pct)}">{{ cs.readiness_pct }}%</b></div>
-                <div style="height:6px;background:var(--surface-3);border-radius:3px;overflow:hidden;margin-top:3px"><div :style="{width:cs.readiness_pct+'%',height:'100%',background:readinessColor(cs.readiness_pct)}"></div></div>
-              </div>
+              <span class="pill rn-pill-sm" :class="cs.partners && cs.submitted>=cs.partners?'go':'neutral'" style="flex:none">{{ cs.submitted }}/{{ cs.partners }} {{ pl(cs.partners, 'part', 'parts') }}</span>
               <i :data-lucide="copen[cs.project_id]?'chevron-up':'chevron-down'" style="width:16px;height:16px;color:var(--text-2);flex:none"></i>
             </div>
 
@@ -2157,15 +2197,14 @@
                     <div class="rn-head-t">
                       <h2 class="rn-h2">Mon profil partenaire<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Votre fiche dans le réseau Adjugo : les entreprises qui ont publié la leur peuvent vous trouver pour un groupement et vous inviter. Rien n'est visible tant que vous ne publiez pas, et vous pouvez retirer la publication à tout moment.</span></button></h2>
                       <div class="row wrap rn-g6">
-                        <span class="pill" :class="rnStatutPill(d.statut)">{{ d.statut_label }}</span>
-                        <span v-if="d.exists" class="muted small nw">{{ d.apparitions_ce_mois }} {{ plFr(d.apparitions_ce_mois, 'recherche', 'recherches') }} ce mois-ci<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.apparitions_label }}</span></button></span>
+                        <span class="pill" :class="rnStatutPill(d.statut)">{{ d.statut_label }}</span><button v-if="(d.statut==='en_attente' || d.statut==='refuse') && d.validation" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Pourquoi une validation ?</span><span class="tip-b" role="tooltip">{{ d.validation.explication }}</span></button>
+                        <span v-if="d.exists" class="muted small nw">Vu par {{ d.apparitions_ce_mois }} {{ plFr(d.apparitions_ce_mois, 'entreprise', 'entreprises') }} ce mois-ci<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.apparitions_label }}</span></button></span>
                       </div>
                     </div>
                   </div>
                   <div v-if="d.suggestion" class="rn-callout">
                     <i data-lucide="sparkles"></i>
-                    <div class="rn-callout-t"><b>{{ d.suggestion.titre }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.suggestion.message }}</span></button>
-                      <div class="muted small">Renseignez ce que vous proposez, vérifiez votre entreprise, puis publiez.</div></div>
+                    <div class="rn-callout-t"><b>{{ d.suggestion.titre }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.suggestion.message }} Renseignez ce que vous proposez, vérifiez votre entreprise, puis demandez la publication.</span></button></div>
                   </div>
                 </div>
 
@@ -2173,7 +2212,9 @@
                 <div class="card pad rn-block" role="region" aria-labelledby="rn-id-h">
                   <h3 id="rn-id-h" class="rn-h3">Identité<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Reprise de votre profil entreprise. Après la vérification, le nom devient celui du registre officiel des entreprises (SIRENE). Pour la modifier, passez par « Mon entreprise ».</span></button></h3>
                   <dl class="rn-dl">
-                    <dt>Nom</dt><dd>{{ d.identite.name || 'non renseigné' }} <span v-if="d.identite.nom_officiel" class="pill go rn-pill-sm"><i data-lucide="badge-check"></i>nom officiel SIRENE</span></dd>
+                    <dt>Nom</dt><dd>{{ d.identite.name || 'non renseigné' }} <span v-if="d.identite.nom_officiel" class="pill neutral rn-pill-sm">nom du registre SIRENE</span>
+                      <span v-if="d.validation && d.validation.identite_validee" class="pill go rn-pill-sm"><i data-lucide="badge-check"></i>identité validée par Adjugo</span>
+                      <span v-else-if="d.statut==='en_attente'" class="pill a_etudier rn-pill-sm">identité en cours de validation</span></dd>
                     <dt>SIRET<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">SIRET : le numéro à 14 chiffres de votre établissement. Ses 9 premiers chiffres (le SIREN) identifient l'entreprise.</span></button></dt><dd>{{ d.identite.siret || 'non renseigné' }}</dd>
                     <dt>Ville</dt><dd>{{ [d.identite.postal_code, d.identite.city].filter(Boolean).join(' ') || 'non renseignée' }}</dd>
                   </dl>
@@ -2256,7 +2297,9 @@
                   <ul class="rn-conds">
                     <li v-for="c in d.publication.conditions" :key="'rc'+c.key" :class="{ok:c.ok}"><i :data-lucide="c.ok?'check':'x'" aria-hidden="true"></i><span>{{ c.label }}<span class="sr-only">{{ c.ok?' : fait':' : à faire' }}</span></span></li>
                   </ul>
-                  <template v-if="!d.visible">
+                  <div v-if="d.statut==='en_attente'" class="rn-note" role="status"><i data-lucide="hourglass"></i><div><b>En attente de validation par Adjugo</b><span v-if="d.validation && d.validation.demande_le"> depuis le {{ fmtDate(d.validation.demande_le) }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.validation && d.validation.explication }}</span></button><div>Votre fiche sera visible dès la validation.</div></div></div>
+                  <div v-else-if="d.statut==='refuse'" class="conv-err" role="status"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0"><b>Publication refusée par Adjugo</b><span v-if="d.validation && d.validation.decide_le"> le {{ fmtDate(d.validation.decide_le) }}</span><span v-if="d.validation && d.validation.motif"> : {{ d.validation.motif }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.validation && d.validation.explication }} Vous pouvez corriger votre profil entreprise, puis renvoyer une demande.</span></button></div></div>
+                  <template v-if="!d.visible && d.statut!=='en_attente'">
                     <div class="rn-consent" :class="{err:rnErrAt('pub') && reseau.p.errCode==='consentement_requis'}">
                       <input id="rn-consent" type="checkbox" v-model="reseau.p.consent" :disabled="!d.peut_modifier || !!reseau.p.busy">
                       <label for="rn-consent">J'accepte que la fiche ci-dessus soit visible des entreprises qui ont publié la leur</label>
@@ -2267,9 +2310,10 @@
                     <ul v-if="reseau.p.missing.length"><li v-for="(m,mi) in reseau.p.missing" :key="'pm'+mi">{{ m }}</li></ul>
                     <div v-if="reseau.p.errCode==='siret_invalide' || reseau.p.errCode==='verification_requise'" class="rn-mt"><button v-if="reseau.p.errCode==='siret_invalide'" type="button" class="btn sm" @click="go('company')"><i data-lucide="briefcase"></i>Ouvrir Mon entreprise</button><button v-else type="button" class="btn sm" @click="rnVerify()" :disabled="!!reseau.p.busy"><i data-lucide="shield-check"></i>Vérifier mon entreprise</button></div></div></div>
                   <div v-if="d.peut_modifier" class="row wrap rn-g8">
-                    <button v-if="!d.visible" type="button" class="btn primary" @click="rnPublish()" :disabled="!d.publication.peut_publier || !!reseau.p.busy" :aria-busy="reseau.p.busy==='pub'?'true':'false'"><span v-if="reseau.p.busy==='pub'" class="spin"></span><i v-else data-lucide="send"></i>Publier mon profil</button>
+                    <button v-if="d.statut==='en_attente'" type="button" class="btn" @click="rnCancelDemande()" :disabled="!!reseau.p.busy"><span v-if="reseau.p.busy==='pub'" class="spin"></span><i v-else data-lucide="x"></i>Annuler la demande</button>
+                    <template v-else-if="!d.visible"><button type="button" class="btn primary" @click="rnPublish()" :disabled="!d.publication.peut_publier || !!reseau.p.busy" :aria-busy="reseau.p.busy==='pub'?'true':'false'"><span v-if="reseau.p.busy==='pub'" class="spin"></span><i v-else data-lucide="send"></i>{{ rnPubLabel(d) }}</button><button v-if="!(d.validation && d.validation.identite_validee)" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Pourquoi une validation ?</span><span class="tip-b" role="tooltip">{{ d.validation && d.validation.explication }}</span></button></template>
                     <button v-else type="button" class="btn" @click="rnUnpublish()" :disabled="!!reseau.p.busy"><span v-if="reseau.p.busy==='pub'" class="spin"></span><i v-else data-lucide="eye-off"></i>Retirer la publication</button>
-                    <span v-if="!d.visible && !d.publication.peut_publier" class="muted small">Toutes les conditions ci-dessus doivent être remplies.</span>
+                    <span v-if="!d.visible && d.statut!=='en_attente' && !d.publication.peut_publier" class="muted small">Toutes les conditions ci-dessus doivent être remplies.</span>
                   </div>
                   <div v-if="d.exists && d.peut_modifier" class="rn-foot"><button type="button" class="linkbtn rn-danger-link" @click="rnDelete()" :disabled="!!reseau.p.busy">Effacer mon profil partenaire</button></div>
                 </div>
@@ -2297,7 +2341,7 @@
               <div v-if="!ad.visible" class="card pad rn-block rn-empty">
                 <i data-lucide="lock" class="rn-empty-ic"></i>
                 <div class="rn-empty-t"><b>{{ ad.message }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau fonctionne dans les deux sens : seules les entreprises qui ont publié leur profil voient celui des autres. Au lancement, le réseau est encore petit : c'est normal.</span></button></div>
-                <div class="row wrap rn-g8 rn-empty-a"><button type="button" class="btn primary" @click="rnGoPublish()"><i data-lucide="send"></i>Publier mon profil</button><button type="button" class="btn" @click="rnDiscover()"><i data-lucide="search"></i>Chercher dans le registre SIRENE</button><button type="button" class="btn ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
+                <div class="row wrap rn-g8 rn-empty-a"><button type="button" class="btn primary" @click="rnGoPublish()"><i data-lucide="send"></i>{{ rnPubCta() }}</button><button type="button" class="btn" @click="rnDiscover()"><i data-lucide="search"></i>Chercher dans le registre SIRENE</button><button type="button" class="btn ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
               </div>
               <div v-else-if="!(ad.profils||[]).length" class="card pad rn-block rn-empty">
                 <i data-lucide="users-round" class="rn-empty-ic"></i>
@@ -2305,6 +2349,7 @@
                 <div class="row wrap rn-g8 rn-empty-a"><button type="button" class="btn" @click="rnDiscover()"><i data-lucide="search"></i>Chercher dans le registre SIRENE</button><button type="button" class="btn ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
               </div>
               <template v-else>
+                <div v-if="ad.avertissement" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ ad.avertissement }}</span></div>
                 <div class="muted small rn-count-line">{{ ad.total }} {{ plFr(ad.total, 'partenaire', 'partenaires') }}<span v-if="rnClassed()"> · classés pour le métier choisi</span></div>
                 <article v-for="c in ad.profils" :key="'an'+c.profile_id" class="card pad rn-block rn-card" :aria-labelledby="'an-'+c.profile_id">
                   <div class="rn-card-h">
@@ -2343,8 +2388,8 @@
                   <section class="rn-hcol" aria-labelledby="rnh-p"><h3 id="rnh-p" class="rn-h3">Comme partenaire</h3>
                     <dl class="rn-counts"><template v-for="r in rnHistRows('partenaire')" :key="'hp'+r.k"><dt>{{ r.l }}</dt><dd>{{ r.v }}</dd></template></dl></section>
                 </div>
-                <div class="row small rn-g6 rn-mt"><i data-lucide="users-round" aria-hidden="true"></i><span><b>{{ reseau.hist.d.groupements_deposes || 0 }}</b> {{ plFr(reseau.hist.d.groupements_deposes || 0, 'groupement déposé via Adjugo', 'groupements déposés via Adjugo') }}</span></div>
-                <p v-if="rnHistEmpty()" class="muted small rn-mt">Votre historique se remplit quand vous invitez des partenaires sur un marché ou répondez à une invitation. <button type="button" class="linkbtn" @click="go('pipeline')">Ouvrir mes marchés</button></p>
+                <div class="row small rn-g6 rn-mt"><i data-lucide="users-round" aria-hidden="true"></i><span><b>{{ reseau.hist.d.groupements_deposes || 0 }}</b> {{ plFr(reseau.hist.d.groupements_deposes || 0, 'groupement marqué déposé sur Adjugo', 'groupements marqués déposés sur Adjugo') }} (déclaratif)</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">C'est le chef de file qui marque un marché « déposé » sur Adjugo : Adjugo ne voit pas le dépôt sur la plateforme de l'acheteur. Seuls les groupements avec une autre entreprise comptent.</span></button></div>
+                <p v-if="rnHistEmpty()" class="muted small rn-mt">Historique vide pour l'instant.<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Votre historique se remplit quand vous invitez des partenaires sur un marché ou répondez à une invitation.</span></button> <button type="button" class="linkbtn" @click="go('pipeline')">Ouvrir mes marchés</button></p>
               </template>
             </div>
           </template>
@@ -2364,10 +2409,11 @@
                 </div>
                 <span class="pill rn-pill-sm" :class="inv._declined?'declined':inv.statut==='acceptee'?'go':'a_etudier'">{{ inv._declined ? 'Vous avez décliné' : inv.statut_label }}</span>
                 <div v-if="!inv._declined" class="row wrap rn-g8 rn-acts">
-                  <button v-if="inv.statut!=='acceptee'" type="button" class="btn sm primary" @click="rnAccept(inv)" :disabled="!!reseau.recues.busy" :aria-busy="reseau.recues.busy===inv.token?'true':'false'"><span v-if="reseau.recues.busy===inv.token" class="spin"></span><i v-else data-lucide="check"></i>Accepter depuis mon compte</button>
+                  <span v-if="inv.statut!=='acceptee' && inv.peut_accepter===false" class="muted small">Réservée au compte propriétaire<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ inv.aide }}</span></button></span>
+                  <button v-if="inv.statut!=='acceptee' && inv.peut_accepter!==false" type="button" class="btn sm primary" @click="rnAccept(inv)" :disabled="!!reseau.recues.busy" :aria-busy="reseau.recues.busy===inv.token?'true':'false'"><span v-if="reseau.recues.busy===inv.token" class="spin"></span><i v-else data-lucide="check"></i>Accepter depuis mon compte</button>
                   <button v-else type="button" class="btn sm primary" @click="rnOpenRecue(inv)"><i data-lucide="folder-open"></i>Ouvrir le dossier</button>
                   <a class="btn sm" :href="'/invite/'+encodeURIComponent(inv.token)" target="_blank" rel="noopener"><i data-lucide="external-link"></i>Voir l'invitation</a>
-                  <button v-if="inv.statut!=='acceptee'" type="button" class="btn sm ghost" @click="rnDecline(inv)" :disabled="!!reseau.recues.busy">Décliner</button>
+                  <button v-if="inv.statut!=='acceptee' && inv.peut_accepter!==false" type="button" class="btn sm ghost" @click="rnDecline(inv)" :disabled="!!reseau.recues.busy">Décliner</button>
                 </div>
               </article>
             </div>
@@ -2832,6 +2878,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-zN59g26dvLpl4LW2RSD8B463cNdmbQcJ4P0LcTWdpx+QZKBB3m7A9fMMIJE3A8+I" defer></script>
+<script src="/static/app.js" integrity="sha384-tI6k9Qk7Hpv3/nJfV0OrrGxqFmvlMoszIbsw1yAOK2+1EdSxsbIYbkwrruMnEkSl" defer></script>
 </body>
 </html>

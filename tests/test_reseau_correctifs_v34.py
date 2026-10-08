@@ -560,3 +560,25 @@ def test_invitations_recues_seul_le_proprietaire_peut_accepter(client, reg, mail
     assert mine and mine[0]["peut_accepter"] is True and mine[0]["aide"] is None
     assert other and other[0]["peut_accepter"] is False and "propriétaire" in other[0]["aide"]
     assert b["email"] not in json.dumps(other)
+
+
+def test_badge_identite_validee_par_adjugo_date_et_retire_au_changement_de_siret(client, reg):
+    """« Trouvez des partenaires vérifiés » : la fiche dit QUI a vérifié l'identité et QUAND
+    (décision de l'administrateur Adjugo), jamais supposé ; un SIRET modifié le retire."""
+    me = _org(client, "Lecteur Badge")
+    _publish(client, reg, me, metiers=("couverture",))
+    b = _org(client, "Badge Identité")
+    b_pid = _publish(client, reg, b, metiers=("menuiserie",))
+    fiche = client.get(f"/api/reseau/annuaire/{b_pid}", headers=me["headers"]).json()
+    iv = next(x for x in fiche["badges"] if x["key"] == "identite")
+    assert iv["niveau"] == "ok" and iv["date"] == date.today().isoformat()
+    assert iv["label"] == f"Identité de l'entreprise validée par Adjugo le {date.today().strftime('%d/%m/%Y')}"
+    assert "Adjugo" in iv["source"]
+    # Après un changement de SIRET : validation retirée, plus de badge (aperçu du propriétaire).
+    autre = _siren()
+    reg.sirene[autre] = {"nom": "AUTRE", "etat": "A"}
+    assert client.put("/api/company/", headers=b["headers"],
+                      json={"name": "Badge Identité", "siret": autre + "00012"}).status_code == 200
+    v = client.get("/api/reseau/profil", headers=b["headers"]).json()
+    assert v["validation"]["identite_validee"] is False
+    assert all(x["key"] != "identite" for x in v["badges"])

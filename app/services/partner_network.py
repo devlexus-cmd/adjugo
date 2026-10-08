@@ -307,6 +307,8 @@ def profile_dict(p) -> dict:
         "verified_decp": p.verified_decp, "verified_at": p.verified_at,
         "groupements_deposes": int(p.groupements_deposes or 0),
         "groupements_checked_at": p.groupements_checked_at,
+        # Date de la validation de l'identité par Adjugo POUR LE SIREN ACTUEL (sinon None).
+        "identite_validee_le": p.validated_at if identity_validated(p) else None,
     }
 
 

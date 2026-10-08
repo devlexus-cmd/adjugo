@@ -62,6 +62,7 @@ _SOURCE_BODACC = "BODACC (annonces commerciales officielles)"
 _SOURCE_DECP = "DECP (données essentielles de la commande publique)"
 _SOURCE_ADJUGO = "statut de dépôt renseigné par le chef de file sur Adjugo (déclaratif)"
 _SOURCE_DCE = "dossier du marché (DCE)"
+_SOURCE_VALIDATION = "équipe Adjugo (compte rapproché de l'entreprise inscrite au registre SIRENE)"
 _SOURCE_RECHERCHE = "votre recherche"
 _SOURCE_RGE = "registre RGE (ADEME), via SIRENE"
 _SOURCE_QUALIOPI = "registre Qualiopi, via SIRENE"
@@ -195,6 +196,15 @@ def badges(p: dict) -> list:
     vs = p.get("verified_sirene") if isinstance(p.get("verified_sirene"), dict) else None
     vb = p.get("verified_bodacc") if isinstance(p.get("verified_bodacc"), dict) else None
     vd = p.get("verified_decp") if isinstance(p.get("verified_decp"), dict) else None
+
+    # Identité : un administrateur Adjugo a rapproché le compte de l'entreprise (SIRENE ne
+    # prouve que l'existence de l'entreprise). Date réelle de la décision, jamais supposée.
+    iv = p.get("identite_validee_le")
+    if iv:
+        d = jjmmaaaa(iv)
+        out.append({"key": "identite", "label": f"Identité de l'entreprise validée par Adjugo le {d}" if d
+                    else "Identité de l'entreprise validée par Adjugo",
+                    "source": _SOURCE_VALIDATION, "date": _iso(iv), "niveau": "ok"})
 
     etat = (vs or {}).get("etat")
     out.append({"key": "sirene", "label": sirene_label(vs), "source": _SOURCE_SIRENE,

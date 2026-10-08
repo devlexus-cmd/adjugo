@@ -945,3 +945,13 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
   .dash-steps li { flex-direction:row; align-items:baseline; gap:6px; padding:5px 10px; border-radius:999px; }
   .dash-steps li b { font-size:14px; }
 }
+
+/* ── Administration : profils du réseau à valider (identité de l'entreprise) ── */
+.adm-rv > * + * { margin-top:12px; }
+.adm-rv-item { padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:var(--surface); min-width:0; }
+.adm-rv-item > * + * { margin-top:10px; }
+.adm-rv-dl { display:grid; grid-template-columns:minmax(120px,auto) minmax(0,1fr); gap:6px 14px; font-size:13px; line-height:1.45; }
+.adm-rv-dl dt { color:var(--text-2); }
+.adm-rv-dl dd { min-width:0; overflow-wrap:anywhere; }
+.adm-rv-item textarea.inp { width:100%; height:auto; min-height:56px; padding:10px 13px; resize:vertical; }
+@media (max-width:640px) { .adm-rv-dl { grid-template-columns:minmax(0,1fr); gap:2px 0; } .adm-rv-dl dd { margin-bottom:6px; } }

@@ -216,6 +216,7 @@ const __adjApp = createApp({
       notifs: [], notifsOpen: false, notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
       grpDash: null,   // tableau de bord « Répondre à plusieurs » (vague 4) : GET /api/groupement/tableau-de-bord
+      grpDashErr: "",  // échec du chargement : jamais l'état vide « Aucun groupement » à la place
       cdetail: {}, copen: {}, cexport: {}, cpreview: {}, cerror: {},
       shared: [],
       sharedAo: _sharedInit(),
@@ -238,7 +239,9 @@ const __adjApp = createApp({
       plan: { plan: "starter" }, org: { data: null, name: "", invite: { email: "", full_name: "" }, lastTemp: null },
       pwd: { current: "", next: "" },
       fb: { open: false, message: "", kind: "idee", busy: false },
-      admin: { diag: null, backups: [], busy: false },
+      admin: { diag: null, backups: [], busy: false,
+               // Profils du réseau à valider (identité) : liste, motif de refus et « remplacer » par demande.
+               rv: { list: [], loaded: false, loading: false, error: "", busy: "", explication: "", motif: {}, remplacer: {}, refuser: {} } },
       cookiesOk: (function(){ try { return localStorage.getItem("adjugo_cookies_ok") === "1"; } catch(e){ return true; } })(),
       predepot: [false, false, false, false],
       predepotSteps: [
@@ -708,8 +711,48 @@ const __adjApp = createApp({
       this.$nextTick(() => { const w = document.querySelector(".work"); if (w) w.scrollTop = 0; });   // remonte en haut du contenu à chaque changement de vue
     },
     async loadAdmin() {
+      this.adminRvLoad();
       try { this.admin.diag = await this.api("GET", "/api/admin/storage-diag"); } catch (e) { this.admin.diag = null; }
       try { this.admin.backups = (await this.api("GET", "/api/admin/backups")).backups || []; } catch (e) { this.admin.backups = []; }
+    },
+    // Réseau : demandes de publication à valider (identité de l'entreprise). Le serveur fournit
+    // l'identité SIRENE, le nom et l'email du compte, et les conflits de SIREN ; rien n'est déduit ici.
+    async adminRvLoad() {
+      const rv = this.admin.rv; if (rv.loading) return;
+      rv.loading = true; rv.error = "";
+      try {
+        const d = await this.api("GET", "/api/admin/reseau/validations");
+        rv.list = (d && d.en_attente) || []; rv.explication = (d && d.explication) || ""; rv.loaded = true;
+      } catch (e) { rv.error = (e && e.message) || "Liste momentanément indisponible."; }
+      finally { rv.loading = false; }
+    },
+    adminRvPublished(it) { return ((it && it.conflits) || []).filter(c => c.statut === "publie"); },
+    // Lien vers l'annuaire officiel des entreprises : seulement l'adresse attendue (SIREN à 9 chiffres).
+    adminRvLink(it) { const u = String((it && it.sirene && it.sirene.lien_annuaire) || ""); return /^https:\/\/annuaire-entreprises\.data\.gouv\.fr\/entreprise\/\d{9}$/.test(u) ? u : ""; },
+    async adminRvValider(it) {
+      const rv = this.admin.rv; if (!it || rv.busy) return;
+      if (this.adminRvPublished(it).length && !rv.remplacer[it.profile_id]) {
+        this.notify("Un autre profil est publié pour ce SIREN : cochez « Retirer l'autre fiche » ou refusez la demande.", "err"); return;
+      }
+      rv.busy = it.profile_id;
+      try {
+        const r = await this.api("POST", "/api/admin/reseau/validations/" + encodeURIComponent(it.profile_id) + "/valider", { remplacer: !!rv.remplacer[it.profile_id] });
+        this.notify((r && r.message) || "Profil validé.");
+        rv.list = rv.list.filter(x => x.profile_id !== it.profile_id);
+      } catch (e) { this.notify(e.message, "err"); if (e && e.code === "deja_traitee") rv.list = rv.list.filter(x => x.profile_id !== it.profile_id); }
+      finally { rv.busy = ""; }
+    },
+    async adminRvRefuser(it) {
+      const rv = this.admin.rv; if (!it || rv.busy) return;
+      const motif = String(rv.motif[it.profile_id] || "").trim();
+      if (motif.length < 5) { this.notify("Indiquez le motif du refus : il sera affiché à l'entreprise.", "err"); return; }
+      rv.busy = it.profile_id;
+      try {
+        const r = await this.api("POST", "/api/admin/reseau/validations/" + encodeURIComponent(it.profile_id) + "/refuser", { motif });
+        this.notify((r && r.message) || "Demande refusée.");
+        rv.list = rv.list.filter(x => x.profile_id !== it.profile_id);
+      } catch (e) { this.notify(e.message, "err"); if (e && e.code === "deja_traitee") rv.list = rv.list.filter(x => x.profile_id !== it.profile_id); }
+      finally { rv.busy = ""; }
     },
     async adminRunBackup() {
       this.admin.busy = true;
@@ -1050,21 +1093,31 @@ const __adjApp = createApp({
       this.ao.share.cockpitOpen = !this.ao.share.cockpitOpen;
       if (this.ao.share.cockpitOpen) await this.aoLoadConsortium();
     },
-    readinessColor(pct) { const p = Math.min(100, Math.max(0, Number(pct) || 0)); return p >= 80 ? "var(--success-text)" : p >= 45 ? "var(--warning-text)" : "var(--danger-text)"; },
 
     async loadConsortiums() { try { this.consortiums = await this.api("GET", "/api/consortiums") || this.consortiums; } catch (e) {} },
     // ── Tableau de bord « Répondre à plusieurs » (vague 4) ──
     // Données réelles de l'organisation (serveur) : marchés accessibles en groupement, groupements
     // en cours par étape 1→5, déposés. Aucun montant ; un seul pourcentage : le score de groupement.
-    async loadGrpDash() { try { this.grpDash = await this.api("GET", "/api/groupement/tableau-de-bord"); } catch (e) { this.grpDash = null; } },
+    async loadGrpDash() {
+      try { this.grpDash = await this.api("GET", "/api/groupement/tableau-de-bord"); this.grpDashErr = ""; }
+      catch (e) { this.grpDashErr = (e && e.message) || "erreur"; }   // on garde les dernières données reçues
+    },
+    // État de la carte : chargement, erreur, rien du tout, seulement des groupements déposés, ou une liste.
+    grpDashState() {
+      const g = this.grpDash;
+      if (!g) return this.grpDashErr ? "erreur" : "chargement";
+      if (this.grpDashItems().length) return "liste";
+      if (g.deposes) return "deposes";
+      if (!g.marches_accessibles_en_groupement && !g.groupements_en_cours) return "vide";
+      return "rien_a_lister";
+    },
     grpDashHasAny() { const g = this.grpDash; return !!(g && (g.marches_accessibles_en_groupement || g.groupements_en_cours || g.deposes)); },
     grpDashItems() {
       const g = this.grpDash; if (!g) return [];
       const parts = {}; ((this.consortiums && this.consortiums.consortiums) || []).forEach(c => { parts[c.project_id] = c; });
       const lim = (d) => d ? "limite " + this.fmtDate(d) : "";
-      const seen = new Set(), out = [];
+      const seen = new Set((g.en_cours || []).map(it => it.project_id)), out = [];   // TOUS les en cours, pas seulement les 5 listés
       (g.en_cours || []).slice(0, 5).forEach(it => {
-        seen.add(it.project_id);
         const cs = parts[it.project_id];
         const bits = [it.label, cs && cs.partners ? cs.submitted + "/" + cs.partners + " " + this.pl(cs.partners, "part reçue", "parts reçues") : "", lim(it.deadline)].filter(Boolean);
         out.push({ project_id: it.project_id, name: it.name || "Appel d'offres", meta: bits.join(" · "), badge: "Étape " + it.etape + " sur 5", pill: "neutral" });
@@ -1850,7 +1903,12 @@ const __adjApp = createApp({
       return { metiers: o.metiers || [], roles: o.roles || [], disponibilites: o.disponibilites || [], presentation_max: o.presentation_max || 300, references_max: o.references_max || 5 };
     },
     plFr(n, one, many) { return Math.abs(Number(n) || 0) < 2 ? one : many; },
-    rnStatutPill(s) { return ({ publie: "go", brouillon: "neutral", retire: "a_etudier", aucun: "neutral" })[s] || "neutral"; },
+    rnStatutPill(s) { return ({ publie: "go", brouillon: "neutral", retire: "a_etudier", aucun: "neutral", en_attente: "a_etudier", refuse: "no_go" })[s] || "neutral"; },
+    rnPending() { const d = this.reseau.p.d; return !!(d && d.statut === "en_attente"); },
+    // Libellé des raccourcis « Publier mon profil » (annuaire, marché) : une demande en cours se consulte.
+    rnPubCta() { return this.rnPending() ? "Voir ma demande de publication" : "Publier mon profil"; },
+    // Bouton de publication du profil : demande de validation à Adjugo, sauf identité déjà validée.
+    rnPubLabel(d) { return d && d.validation && d.validation.identite_validee ? "Publier mon profil" : "Demander la publication"; },
     rnRoleLabel(r) { return ({ cotraitant: "Partenaire du groupement (co-traitant)", sous_traitant: "Sous-traitant", mandataire: "Chef de file" })[r] || r; },
     rnMetiers(c) { return ((c && c.metiers) || []).map(m => (m && m.label) || m).filter(Boolean).join(", "); },
     rnLieu(c) { return c ? [c.city, c.departement ? "(" + c.departement + ")" : ""].filter(Boolean).join(" ") : ""; },
@@ -1985,7 +2043,7 @@ const __adjApp = createApp({
         const d = await this.api("POST", "/api/reseau/profil/publier", { accepte: true });
         this._rnApply(d, true); p.consent = false; this.reseauSuggest = null;
         this.reseau.an.loaded = false;
-        this._rnSay(d.message || "Profil publié dans le réseau Adjugo.");
+        this._rnSay(d.message || (d.visible ? "Profil publié dans le réseau Adjugo." : "Demande envoyée à Adjugo."));
       } catch (e) { this._rnFail(e, "pub"); }
       finally { p.busy = ""; }
     },
@@ -1996,6 +2054,17 @@ const __adjApp = createApp({
           const p = this.reseau.p; if (p.busy) return;
           p.busy = "pub"; this._rnErrClear();
           try { const d = await this.api("DELETE", "/api/reseau/profil/publier"); this._rnApply(d, true); this.reseau.an.loaded = false; this._rnSay(d.message || "Publication retirée."); }
+          catch (e) { this._rnFail(e, "pub"); }
+          finally { p.busy = ""; }
+        } });
+    },
+    rnCancelDemande() {
+      this._convAsk({ title: "Annuler la demande de publication ?", ok: "Annuler la demande",
+        lines: ["Adjugo ne vérifiera pas votre entreprise pour l'instant.", "Votre profil reste enregistré, non publié.", "Vous pourrez renvoyer la demande à tout moment."],
+        run: async () => {
+          const p = this.reseau.p; if (p.busy) return;
+          p.busy = "pub"; this._rnErrClear();
+          try { const d = await this.api("DELETE", "/api/reseau/profil/publier"); this._rnApply(d, true); this._rnSay(d.message || "Demande de publication annulée."); }
           catch (e) { this._rnFail(e, "pub"); }
           finally { p.busy = ""; }
         } });
@@ -2056,10 +2125,14 @@ const __adjApp = createApp({
     rnPages() { const d = this.reseau.an.d; return d && d.visible ? Math.max(1, Math.ceil((d.total || 0) / (d.par_page || 20))) : 1; },
     rnClassed() { const d = this.reseau.an.d; return !!(d && (d.profils || []).some(c => c.rang != null)); },
     // États vides : on renvoie vers la recherche SIRENE existante (« Découvrir ») et « Mes partenaires ».
-    rnDiscover(metierKey, dept) {
-      const m = this.rnOptions().metiers.find(x => x.key === (metierKey || this.reseau.an.f.metier));
+    rnDiscover(metierKey, dept, label) {
+      const key = metierKey || this.reseau.an.f.metier;
+      // Les options du réseau ne sont chargées qu'avec la vue Réseau : repli sur le libellé du lot,
+      // puis sur la liste des métiers du registre (chargée par openDiscover), puis sur la clé.
+      const m = this.rnOptions().metiers.find(x => x.key === key) || (this.trades || []).find(t => t.key === key);
       this.openDiscover();
-      if (m) this.discover.trade = m.label;
+      const lab = label || (m && m.label) || key || "";
+      if (lab) this.discover.trade = lab;
       const dd = String(dept || this.reseau.an.f.departement || "").trim();
       if (dd) this.discover.dept = dd;
     },
@@ -2125,7 +2198,7 @@ const __adjApp = createApp({
     },
     rnRecuesCount() { return (this.reseau.recues.list || []).filter(i => !i._declined && i.statut !== "acceptee").length; },
     async rnAccept(inv) {
-      const r = this.reseau.recues; if (r.busy) return;
+      const r = this.reseau.recues; if (r.busy || (inv && inv.peut_accepter === false)) return;
       r.busy = inv.token;
       try {
         const res = await this.api("POST", "/api/invite/" + encodeURIComponent(inv.token) + "/claim");
@@ -2213,7 +2286,7 @@ const __adjApp = createApp({
     rnInviteOpen(card, opts) {
       opts = opts || {}; if (!card) return;
       const kind = card.profile_id ? "reseau" : "sirene";
-      const declared = Array.isArray(card.roles_acceptes);
+      const declared = Array.isArray(card.roles_acceptes) && card.roles_acceptes.length > 0;   // [] = tous les rôles (serveur)
       const ok = declared ? card.roles_acceptes.map(r => (r && r.value) || r).filter(r => r === "cotraitant" || r === "sous_traitant") : ["cotraitant", "sous_traitant"];
       const roles = kind === "sirene" || !declared ? ["cotraitant", "sous_traitant"] : ok;
       const inAo = this.view === "aodetail" && this.ao.project;
