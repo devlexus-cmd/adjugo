@@ -6,7 +6,7 @@
 
 **Backend livré, relu, 130 tests verts** (suite complète + `test_groupement_scoring`, `test_citation_guard`, `test_groupement_routes`, `test_cotraitance_v2_doctrine`, `test_cotraitance_v2_review`).
 
-- Migration `n8o9p0q1r2s3` (idempotente, testée fresh / re-run / données) : la fuite `chiffrage_note` est déplacée en tête de `note_au_mandataire` préfixée « (ancienne approche prix) », colonne vidée (supprimée en vague 4). Jamais de troncature (colonne Text).
+- Migration `n8o9p0q1r2s3` (idempotente, testée fresh / re-run / données) : la fuite `chiffrage_note` est déplacée en tête de `note_au_mandataire` préfixée « (ancienne approche prix) », colonne vidée (revidée en vague 4, plus mappée ; suppression différée, voir « Suppressions différées »). Jamais de troncature (colonne Text).
 - `app/services/groupement_members.py` : membre = invitation active (`revoked=False ET declined_at IS NULL`) ; `groupement_state()` dérive les 8 états (un plan calculé automatiquement à l'analyse = « potentiel », « composition » seulement si retenue par le mandataire).
 - `app/services/groupement_scoring.py` (pur, 0 LLM) + `citation_guard` dans `analysis.py` (extraits littéraux vérifiés contre le DCE intégral, sinon vidés).
 - `app/services/groupement_verdict.py` + `app/routers/groupement.py` : `/besoins`, `/simulate`, `/retenir`, `/state`, `/simulations`, `DELETE /plan` ; hooks dans `/analyze`, `/analyze-upload`, `/reanalyze` (3e verdict `go_groupement`, `match_score` = seul, jamais gonflé).
@@ -116,7 +116,30 @@ l'annuaire, historique réseau.
   `POST/DELETE /groupement/deposer` (journal, avertir puis confirmer) ; relances sans doublon
   (un palier = une alerte, un seul email part + attestations, récapitulatif unique au chef de
   file, rien après dépôt) ; tableau de bord `GET /api/groupement/tableau-de-bord`.
-- Migration `q1r2s3t4u5v6` (à rechaîner après la vague 3) : suppression de `chiffrage_note`.
+- Migration `q1r2s3t4u5v6` (déploiement sans casse, « expand/contract ») : `chiffrage_note` est
+  VIDÉE (tout texte encore présent est recopié en tête de `note_au_mandataire`, préfixé
+  « (ancienne approche prix) ») et n'est plus mappée par le modèle, mais la colonne RESTE en base :
+  le code de production (vague 2) la mappe encore, il doit continuer de lire et d'écrire les parts
+  pendant le démarrage du nouveau conteneur et après un retour arrière (vérifié sur Postgres).
+  Ajoute aussi `project_invites.network_accepted_at` (acceptation durable d'une invitation réseau).
+- Revue des vagues 3 et 4 (domaine B) : journal du membre tolérant aux fourches historiques comme
+  `audit.verify_chain` ; erreur technique = verdict « indisponible », jamais « altéré », jamais en
+  cache, export refusé (503) ; vérification et export refusés tant qu'une invitation réseau n'est
+  pas acceptée, acceptation durable (la projection ne change plus, ni à l'effacement du compte, ni
+  quand la part repasse en brouillon) ; rattachement d'une entrée au membre scellé dans
+  l'empreinte des NOUVELLES entrées (contenu haché v2 = « v2| » + v1 + invite_id, ancrage
+  inchangé) — pour les anciennes, l'export et l'écran disent qu'il n'est pas scellé ; convention
+  refusée (403) à une invitation réseau pas encore acceptée ; DPGF CSV contrôlée par des parseurs
+  linéaires bornés, formules contrôlées sous chaque séparateur plausible.
+
+### Suppressions différées (livraison ultérieure)
+
+- `project_contributions.chiffrage_note` : DROP COLUMN dans une révision d'une livraison
+  ULTÉRIEURE, une fois qu'aucune version déployable (production, image de repli Railway) ne mappe
+  plus la colonne, c'est-à-dire après le déploiement réussi de cette livraison. La révision devra
+  rester idempotente (ne rien faire si la colonne manque), passer par `batch_alter_table` sous
+  SQLite et, pour le retour arrière, recréer la colonne vide et nullable (`downgrade`) afin que
+  l'image précédente démarre.
 - Correctif transverse : `audit_logs.created_at` écrit en UTC naïf (sur une base Postgres réglée
   hors UTC, toute la chaîne semblait altérée à la relecture).
 
@@ -179,7 +202,7 @@ id ; project_id FK idx ; owner_id FK users idx (= data_owner_id) ; created_by_us
 
 ### `project_contributions` — modifiée
 
-+ prix_lot_ht Float NULL (PRIX DE VENTE du lot — le seul montant que voit le mandataire) ; + detail_chiffre JSON NULL (enveloppe chiffrée {ciphertext, iv, alg:'A256GCM', kdf:'PBKDF2-SHA256', kdf_salt, kdf_iter, key_fingerprint, updated_at} — décomposition/coûts/marges/méthode, illisible côté serveur) ; + representant_legal String(255) ; + signataire_qualite String(120) ; + capacites JSON NULL {ca_n1, effectif, declared_at} (déclaré par le partenaire → alimente A avec capacites_source='contribution') ; chiffrage_note DÉPRÉCIÉ : retiré de _serialize_contribution côté owner, du PDF consortium_report, du dict build_dossier et de has_chiffrage ; migration : contenu existant déplacé en tête de note_au_mandataire avec le préfixe « (ancienne approche prix) », colonne vidée, supprimée en vague 4.
++ prix_lot_ht Float NULL (PRIX DE VENTE du lot — le seul montant que voit le mandataire) ; + detail_chiffre JSON NULL (enveloppe chiffrée {ciphertext, iv, alg:'A256GCM', kdf:'PBKDF2-SHA256', kdf_salt, kdf_iter, key_fingerprint, updated_at} — décomposition/coûts/marges/méthode, illisible côté serveur) ; + representant_legal String(255) ; + signataire_qualite String(120) ; + capacites JSON NULL {ca_n1, effectif, declared_at} (déclaré par le partenaire → alimente A avec capacites_source='contribution') ; chiffrage_note DÉPRÉCIÉ : retiré de _serialize_contribution côté owner, du PDF consortium_report, du dict build_dossier et de has_chiffrage ; migration : contenu existant déplacé en tête de note_au_mandataire avec le préfixe « (ancienne approche prix) », colonne vidée, plus mappée depuis la vague 4 (suppression différée à une livraison ultérieure).
 
 *Sert à :* Doctrine de visibilité (prix de lot clair / détail chiffré), C (annexe de répartition, signataire DC2), A (capacités déclarées par le partenaire lui-même)
 
@@ -303,7 +326,7 @@ Chiffrement PAR MEMBRE ET PAR MARCHÉ, dans le navigateur, du seul champ detail_
 - GET /api/invite/{token}/journal/integrity + /api/shared/{id}/journal/integrity : sous-chaîne des entry_hash me concernant recalculée ; export du journal (JSON/PDF) par membre ; SRI + CSP sur les scripts, hash des scripts publié sur la page sécurité
 - DPGF de lot générée dans le navigateur depuis detail_chiffre (déchiffrement local) → déposée comme ContributionPiece ; jamais de détail chiffré vers le LLM ni la DPGF commune
 - Checklist de dépôt commune : état pret_a_deposer = parts soumises + attestations valides à la date limite + convention signée + CERFA générés ; bouton « Marquer déposé » → project.status envoye → historique réseau ; relance automatique au membre dont l'attestation expire avant la date limite
-- Suppression définitive de la colonne chiffrage_note ; dashboard : « N marchés accessibles en groupement », groupements en cours par étape ; fiche partenaire annuaire : références + date/source des capacités
+- Colonne chiffrage_note vidée et plus mappée (suppression différée à une livraison ultérieure, expand/contract) ; dashboard : « N marchés accessibles en groupement », groupements en cours par étape ; fiche partenaire annuaire : références + date/source des capacités
 - Point cyber (différé par le fondateur) : revue externe du schéma de chiffrement et du journal, listée comme suite, pas incluse
 
 **Effort :** M — environ 1 à 2 semaines  

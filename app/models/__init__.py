@@ -572,6 +572,11 @@ class ProjectInvite(Base):
     # (vague 3 : recipient rempli côté serveur et JAMAIS sérialisé tant que non accepté) | sirene.
     source = Column(String(20), default="manuel")
     partner_profile_id = Column(Integer, nullable=True, index=True)   # vague 3 (réseau)
+    # Invitation RÉSEAU : date de la PREMIÈRE réponse positive (acceptée depuis le compte, adresse
+    # prouvée par code, ou part soumise). Jamais remise à zéro (effacement du compte qui l'avait
+    # acceptée, part repassée en brouillon) : l'aperçu minimal et le journal du membre ne reviennent
+    # jamais en arrière (migration q1r2s3t4u5v6).
+    network_accepted_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)       # null = sans expiration
     view_count = Column(Integer, default=0)
     last_viewed_at = Column(DateTime, nullable=True)
@@ -657,8 +662,10 @@ class ProjectContribution(Base):
     references = Column(JSON, default=list)            # [{intitule, client, montant, annee}]
     qualifications = Column(JSON, default=list)        # ["Qualibat 1234", "RGE", "ISO 9001"]
     # (chiffrage_note — l'ancienne « approche prix » en clair, visible du mandataire — a été
-    # vidée en vague 1 (contenu déplacé dans note_au_mandataire) puis SUPPRIMÉE en vague 4 :
-    # migration q1r2s3t4u5v6.)
+    # vidée en vague 1 (contenu déplacé dans note_au_mandataire), revidée en vague 4 (migration
+    # q1r2s3t4u5v6) et n'est PLUS MAPPÉE. La colonne reste en base le temps qu'aucune version
+    # déployable ne la mappe (expand/contract) ; sa suppression viendra dans une livraison
+    # ultérieure.)
     # ── DOCTRINE DE VISIBILITÉ ──
     # prix_lot_ht = PRIX DE VENTE du lot : le SEUL montant que voit le mandataire (il en a
     # besoin pour consolider l'offre commune et remplir l'ATTRI1).

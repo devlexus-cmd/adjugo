@@ -514,11 +514,22 @@ def _is_network_invite(inv) -> bool:
 
 def _network_responded(inv, contribution=None) -> bool:
     """Invitation RÉSEAU « répondue » : acceptée depuis le compte du partenaire (claim),
-    adresse prouvée par code, ou part soumise. Décliner n'est pas accepter."""
+    adresse prouvée par code, ou part soumise. Décliner n'est pas accepter.
+    DURABLE : une fois répondue (network_accepted_at), elle le reste, même si le compte qui l'avait
+    acceptée est effacé ou si la part repasse en brouillon — l'aperçu minimal et la projection du
+    journal du membre ne reviennent jamais en arrière (un export conservé reste prolongeable)."""
     if not _is_network_invite(inv):
         return True
-    return bool(getattr(inv, "accepted_by_user_id", None) or getattr(inv, "verified_at", None)
+    return bool(getattr(inv, "network_accepted_at", None)
+                or getattr(inv, "accepted_by_user_id", None) or getattr(inv, "verified_at", None)
                 or (contribution is not None and contribution.status == "submitted"))
+
+
+def _mark_network_accepted(inv) -> None:
+    """Pose la date de PREMIÈRE réponse positive d'une invitation réseau (jamais remise à zéro).
+    À appeler avant le commit de l'acceptation (claim, code vérifié, part soumise)."""
+    if _is_network_invite(inv) and not getattr(inv, "network_accepted_at", None):
+        inv.network_accepted_at = utcnow()
 
 
 def _network_pending(inv, db: Session = None) -> bool:
@@ -1512,6 +1523,7 @@ def guest_otp_verify(token: str, body: OtpVerify, request: Request, db: Session 
     inv.verified_email = inv.recipient
     inv.otp_hash = ""
     inv.otp_expires_at = None
+    _mark_network_accepted(inv)
     db.commit()
     audit.record(db, action="guest.otp_verified", owner_id=inv.owner_id, project_id=inv.project_id,
                  actor=_guest_actor(inv), actor_kind="guest", target_type="invite",
@@ -1536,6 +1548,7 @@ def guest_submit_contribution(token: str, request: Request, db: Session = Depend
     c = _get_or_create_contribution(inv, db)
     c.status = "submitted"
     c.submitted_at = utcnow()
+    _mark_network_accepted(inv)
     db.commit()
     audit.record(db, action="guest.submit_contribution", owner_id=inv.owner_id, project_id=inv.project_id,
                  actor=_guest_actor(inv), actor_kind="guest",
@@ -2695,6 +2708,7 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
                                      "pour accepter ce partage nominatif.")
     if not inv.accepted_by_user_id:
         inv.accepted_by_user_id = current_user.id
+        _mark_network_accepted(inv)
         db.commit()
         audit.record(db, action="invite.claimed", owner_id=inv.owner_id, project_id=inv.project_id,
                      actor=(inv.company_name or "invité")[:160],

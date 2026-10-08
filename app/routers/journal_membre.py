@@ -40,10 +40,22 @@ def _project_of(inv, db: Session) -> Project:
     return project
 
 
+APERCU_MSG = ("Acceptez d'abord l'invitation depuis votre compte Adjugo pour vérifier ou télécharger "
+              "votre journal.")
+
+
 def _guest_invite(token: str, db: Session):
-    from app.routers.invites import _valid_invite
+    """Lien magique valide, pour la VÉRIFICATION et l'EXPORT. Invitation du réseau pas encore
+    acceptée (aperçu minimal) : 403 — son journal ne contient alors que ses propres entrées, et
+    les événements du groupement s'y ajouteraient à l'acceptation : une preuve remise avant ne
+    serait jamais « prolongée » par la suivante (fausse alerte de modification). L'acceptation
+    est durable (network_accepted_at) : une fois acceptée, la projection ne change plus."""
+    from app.routers.invites import _network_pending, _valid_invite
     inv = _valid_invite(token, db)
-    return inv, _project_of(inv, db)
+    project = _project_of(inv, db)
+    if _network_pending(inv, db):
+        raise HTTPException(403, {"code": "apercu_minimal", "message": APERCU_MSG})
+    return inv, project
 
 
 def _shared_invite(project_id: int, user: User, db: Session):
@@ -69,7 +81,11 @@ def _export(inv, project, fmt: str, request: Request, db: Session) -> Response:
     fmt = (fmt or "json").strip().lower()
     if fmt not in ("json", "pdf"):
         raise HTTPException(422, "Format inconnu : json ou pdf.")
-    payload = jm.export_payload(db, inv, project)
+    try:
+        payload = jm.export_payload(db, inv, project)
+    except jm.VerificationIndisponible:
+        # Erreur technique pendant la vérification : pas de « preuve » fondée sur une panne.
+        raise HTTPException(503, {"code": "verification_indisponible", "message": jm.MSG_INDISPONIBLE})
     name = f"Journal_{_safe_name(project.name)}"
     if fmt == "pdf":
         content, media, fname = jm.export_pdf(payload), "application/pdf", f"{name}.pdf"

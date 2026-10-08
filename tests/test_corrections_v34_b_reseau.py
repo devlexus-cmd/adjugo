@@ -104,3 +104,52 @@ def test_page_partenaire_ne_charge_pas_la_convention_en_apercu_minimal():
     i = html.index("Chargement de la convention")
     bloc = html[i - 700:i + 400]
     assert "if (!d.apercu_minimal)" in bloc and "loadConvention();" in bloc
+
+
+def _export(client, tok):
+    from app.services import journal_membre as jm
+    jm.reset_caches()
+    r = client.get(f"/api/invite/{tok}/journal/export")
+    assert r.status_code == 200, r.text
+    doc = r.json()
+    assert jm.verify_export(doc)["ok"]
+    return doc
+
+
+def test_journal_reseau_preuve_apres_acceptation_et_projection_durable(client, reg, mails):
+    """Avant acceptation : ni vérification ni preuve (le journal ne montre que ses entrées et les
+    événements du groupement s'y ajouteraient à l'acceptation). Après : la projection ne change
+    plus, même quand le compte qui avait accepté est effacé (lien libéré) — l'export suivant
+    PROLONGE toujours le précédent, aucune fausse alerte."""
+    from app.services import journal_membre as jm
+    chef, part, pid, tok = _scenario_brouillon_et_invitation_reseau(client, reg, mails)
+    for path in ("/journal/integrity", "/journal/export"):
+        r = client.get(f"/api/invite/{tok}{path}")
+        assert r.status_code == 403 and r.json()["detail"]["code"] == "apercu_minimal", (path, r.text)
+    assert client.post(f"/api/invite/{tok}/claim", headers=part["headers"]).status_code == 200
+    a = _export(client, tok)
+    assert any(e["qui"] == "partenaire" for e in a["entrees"])      # événements du groupement
+    r = client.post("/api/rgpd/delete-account", headers=part["headers"],
+                    json={"password": "motdepasse123", "confirm": "SUPPRIMER"})
+    assert r.status_code == 200, r.text
+    g = client.get(f"/api/invite/{tok}")
+    assert g.status_code == 200 and g.json()["apercu_minimal"] is False
+    b = _export(client, tok)
+    assert jm.prolonge(a, b), "l'export après effacement doit prolonger le précédent"
+    assert len(b["entrees"]) > len(a["entrees"])
+
+
+def test_reseau_part_repassee_en_brouillon_reste_acceptee(client, reg, mails):
+    """Part soumise (réponse à l'invitation) puis modifiée (repasse en brouillon) : l'invitation
+    reste acceptée — pas de retour à l'aperçu minimal, l'export suivant prolonge le précédent."""
+    from app.services import journal_membre as jm
+    chef, part, pid, tok = _scenario_brouillon_et_invitation_reseau(client, reg, mails)
+    _put_part(client, tok, company_name="Le Gall Électricité", lot="Lot 2 — Électricité", prix_lot_ht=40000)
+    assert client.post(f"/api/invite/{tok}/contribution/submit").status_code == 200
+    assert client.get(f"/api/invite/{tok}").json()["apercu_minimal"] is False
+    a = _export(client, tok)
+    _put_part(client, tok, prix_lot_ht=41000)                    # repasse en brouillon
+    assert client.get(f"/api/invite/{tok}/contribution").json()["status"] == "draft"
+    assert client.get(f"/api/invite/{tok}").json()["apercu_minimal"] is False
+    b = _export(client, tok)
+    assert jm.prolonge(a, b)

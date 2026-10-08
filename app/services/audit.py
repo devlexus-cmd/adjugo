@@ -15,7 +15,15 @@ Ce que garantit le journal, dit exactement :
     24 h) ne sont donc pas couvertes ;
   • le hachage n'est pas une signature : un accès en écriture à la base permet de tout
     recalculer. Ce sont l'ancrage horodaté par une autorité externe et sa copie hors
-    infrastructure qui rendent une telle réécriture détectable.
+    infrastructure qui rendent une telle réécriture détectable ;
+  • contenu haché, VERSIONNÉ : v1 (entrées historiques) = id, date, tenant, marché, acteur,
+    action, cible, détail, IP ; v2 (toute entrée écrite depuis) = « v2| » + v1 + invitation
+    concernée (invite_id). En v2, le RATTACHEMENT d'une entrée au journal d'un membre est donc
+    scellé comme le reste (un invite_id modifié casse l'empreinte, puis la chaîne et l'ancrage) ;
+    en v1, il ne l'est pas (il ne se vérifie qu'en comparant avec un export conservé). Les deux
+    versions se vérifient sans ambiguïté (préfixe distinct) et sans toucher aux entrées
+    existantes ; l'ancrage quotidien ne lit que les empreintes rangées, il est inchangé.
+    `meta` reste hors du hachage (jamais affiché au membre).
 
 Principe : un échec d'écriture du journal NE DOIT JAMAIS faire échouer l'action
 métier sous-jacente — on isole donc l'écriture et on avale toute exception.
@@ -43,15 +51,40 @@ def _ts(dt) -> str:
 
 
 def _entry_payload(a) -> str:
-    """Représentation canonique d'une entrée pour le hash (ordre stable)."""
+    """Représentation canonique d'une entrée pour le hash (ordre stable) — version 1."""
     return "|".join(str(x) for x in (
         a.id, _ts(a.created_at), a.owner_id, a.project_id, a.actor, a.actor_kind,
         a.action, a.target_type, a.target_id, a.detail, a.ip,
     ))
 
 
+def _entry_payload_v2(a) -> str:
+    """Version 2 : v1 + l'invitation concernée (rattachement au journal d'un membre). Le préfixe
+    « v2| » rend les deux formes disjointes (un contenu v1 commence toujours par un chiffre)."""
+    inv = getattr(a, "invite_id", None)
+    return "v2|" + _entry_payload(a) + "|" + ("" if inv is None else str(inv))
+
+
 def _hash(prev_hash: str, a) -> str:
+    """Empreinte version 1 (entrées historiques)."""
     return hashlib.sha256(((prev_hash or "") + _entry_payload(a)).encode("utf-8")).hexdigest()
+
+
+def _hash_v2(prev_hash: str, a) -> str:
+    """Empreinte version 2 (toute entrée écrite par record depuis la vague 4)."""
+    return hashlib.sha256(((prev_hash or "") + _entry_payload_v2(a)).encode("utf-8")).hexdigest()
+
+
+def hash_version(prev_hash: str, a):
+    """2 ou 1 selon la version dont l'empreinte rangée est le résultat, None si aucune ne
+    correspond (entrée modifiée). Une entrée v2 dont l'invite_id a changé ne correspond plus à
+    aucune version : la modification est détectée."""
+    h = a.entry_hash or ""
+    if _hash_v2(prev_hash, a) == h:
+        return 2
+    if _hash(prev_hash, a) == h:
+        return 1
+    return None
 
 
 def client_ip(request) -> str:
@@ -74,9 +107,9 @@ def record(db, *, action: str, owner_id: Optional[int] = None,
            invite_id: Optional[int] = None) -> None:
     """Écrit une entrée d'audit, chaînée par hash (tamper-evidence). Best-effort.
 
-    `invite_id` = invitation concernée (journal MEMBRE : projection par simple filtre).
-    Volontairement HORS du payload haché (`_entry_payload`) pour ne pas invalider la
-    chaîne des entrées existantes — c'est un index de projection, pas une preuve."""
+    `invite_id` = invitation concernée (journal MEMBRE : projection par simple filtre). Haché
+    dans l'empreinte VERSION 2 (`_entry_payload_v2`) : le rattachement de l'entrée au journal du
+    membre est scellé. Les entrées existantes (v1) gardent leur empreinte, vérifiée telle quelle."""
     try:
         from app.models import AuditLog, utcnow
         now = utcnow()
@@ -116,7 +149,7 @@ def record(db, *, action: str, owner_id: Optional[int] = None,
             AuditLog.owner_id == owner_id, AuditLog.id < entry.id,
         ).order_by(AuditLog.id.desc()).first()
         entry.prev_hash = (prev.entry_hash if prev else "")
-        entry.entry_hash = _hash(entry.prev_hash, entry)
+        entry.entry_hash = _hash_v2(entry.prev_hash, entry)     # v2 : rattachement scellé
         db.commit()
     except Exception as e:
         try:
@@ -174,8 +207,8 @@ def verify_chain(db, owner_id: int, upto_id: int = None) -> dict:
             recent = []
             continue
         link = a.prev_hash or ""
-        # Contenu de l'entrée : toujours recalculé (toute modification est détectée).
-        if _hash(link, a) != a.entry_hash:
+        # Contenu de l'entrée : toujours recalculé (toute modification est détectée) ; v1 ou v2.
+        if hash_version(link, a) is None:
             broken_at = a.id
             break
         if link != prev:

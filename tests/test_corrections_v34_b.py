@@ -168,3 +168,198 @@ def test_dpgf_produite_par_le_navigateur_toujours_acceptee():
             raise AssertionError(f"CSV du navigateur refusé : {e.detail} — {r['csv'][:300]!r}")
         checked += 1
     assert checked > 150
+
+
+# ═══ Journal membre ═══════════════════════════════════════════════════════════════════
+
+def _db():
+    from app.core.database import SessionLocal
+    return SessionLocal()
+
+
+def _invite_row(token):
+    from app.models import ProjectInvite
+    db = _db()
+    try:
+        i = db.query(ProjectInvite).filter(ProjectInvite.token == token).first()
+        return i.id, i.owner_id, i.project_id
+    finally:
+        db.close()
+
+
+def _integrity(client, token):
+    from app.services import journal_membre as jm
+    jm.reset_caches()
+    r = client.get(f"/api/invite/{token}/journal/integrity")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _rechain_from(db, chain, start):
+    """Recalcule les maillons à partir de chain[start] (même version d'empreinte qu'avant)."""
+    from app.services import audit
+    for a in chain[start:]:
+        a.prev_hash = chain[chain.index(a) - 1].entry_hash if chain.index(a) else ""
+        a.entry_hash = audit._hash_v2(a.prev_hash, a)
+    db.commit()
+
+
+def test_journal_membre_fourche_historique_toleree_alteration_detectee(client, auth, mails):
+    """Même tolérance que audit.verify_chain : une fourche ANCIENNE (deux écritures simultanées
+    avant le verrou) n'est pas une altération ; une vraie modification ou suppression l'est."""
+    from app.models import AuditLog
+    from app.services import audit
+    h = auth["headers"]
+    pid = _project(client, h)
+    t = _invite(client, h, pid, "Delta Peinture")["token"]
+    inv_id, owner, _ = _invite_row(t)
+    db = _db()
+    try:
+        for i in range(4):
+            audit.record(db, action="guest.view_project", owner_id=owner, project_id=pid, actor="Delta Peinture",
+                         actor_kind="guest", target_type="project", target_id=pid, invite_id=inv_id, detail=f"vue {i}")
+        chain = db.query(AuditLog).filter(AuditLog.owner_id == owner).order_by(AuditLog.id).all()
+        c = chain[-1]
+        # Fourche : B (avant-dernière) et C (dernière) ont lu le même maillon précédent A.
+        c.prev_hash = chain[-3].entry_hash
+        c.entry_hash = audit._hash_v2(c.prev_hash, c)
+        db.commit()
+        vc = audit.verify_chain(db, owner)
+        assert vc["intact"] is True and vc["forks"] == 1
+    finally:
+        db.close()
+    v = _integrity(client, t)
+    assert v["verdict"] == "intact", v["message"]
+    assert v["entrees"]["alterees"] == 0
+    # Une vraie modification reste détectée.
+    db = _db()
+    try:
+        b = db.get(AuditLog, chain[-2].id)
+        b.detail = "falsifié"
+        db.commit()
+    finally:
+        db.close()
+    v = _integrity(client, t)
+    assert v["verdict"] == "altere" and v["perimetre"] == "vos_entrees"
+    db = _db()
+    try:
+        b = db.get(AuditLog, chain[-2].id)
+        b.detail = "vue 2"
+        db.commit()
+        assert _integrity(client, t)["verdict"] == "intact"
+        # Une suppression aussi (le maillon de B pointe vers A, qui n'existe plus nulle part).
+        db.delete(db.get(AuditLog, chain[-3].id))
+        db.commit()
+    finally:
+        db.close()
+    v = _integrity(client, t)
+    assert v["verdict"] == "altere" and v["perimetre"] == "vos_entrees"
+
+
+def test_journal_membre_erreur_technique_jamais_alteree(client, auth, mails, monkeypatch):
+    """Une panne pendant la vérification complète n'est JAMAIS présentée comme une modification :
+    verdict « indisponible », rien en cache, export refusé (503) ; la vérification suivante, base
+    rétablie, est normale."""
+    import sqlalchemy as sa
+    from app.services import audit
+    h = auth["headers"]
+    pid = _project(client, h)
+    t = _invite(client, h, pid, "Delta Peinture")["token"]
+    assert client.get(f"/api/invite/{t}").status_code == 200
+    real = audit.verify_chain
+
+    def panne(*a, **k):
+        raise sa.exc.OperationalError("SELECT 1", {}, Exception("base momentanément indisponible"))
+    monkeypatch.setattr(audit, "verify_chain", panne)
+    v = _integrity(client, t)
+    assert v["verdict"] == "indisponible" and v["verdict"] != "altere", v
+    assert v["journal_complet_intact"] is None and "réessayez" in v["message"]
+    r = client.get(f"/api/invite/{t}/journal/export")
+    assert r.status_code == 503 and r.json()["detail"]["code"] == "verification_indisponible"
+    monkeypatch.setattr(audit, "verify_chain", real)
+    from app.services import journal_membre as jm
+    r = client.get(f"/api/invite/{t}/journal/integrity")       # cache NON vidé : rien n'y était
+    assert r.json()["verdict"] == "intact", r.json()
+    exp = client.get(f"/api/invite/{t}/journal/export").json()
+    assert exp["verdict"]["verdict"] == "intact" and jm.verify_export(exp)["ok"]
+
+
+def test_journal_membre_rattachement_scelle_pour_les_nouvelles_entrees(client, auth, mails):
+    """Version 2 de l'empreinte : l'invitation concernée (invite_id) est scellée. Réattribuer une
+    entrée à un autre membre est détecté ; une entrée ancienne (v1) le dit (rattachement non
+    scellé) et les limites l'expliquent."""
+    from app.models import AuditLog
+    from app.services import audit
+    h = auth["headers"]
+    pid = _project(client, h)
+    ta = _invite(client, h, pid, "Alpha Électricité")["token"]
+    tb = _invite(client, h, pid, "Beta Plomberie")["token"]
+    a_id, owner, _ = _invite_row(ta)
+    b_id, _, _ = _invite_row(tb)
+    assert client.get(f"/api/invite/{ta}").status_code == 200
+    assert client.get(f"/api/invite/{tb}").status_code == 200
+    va = _integrity(client, ta)
+    assert va["verdict"] == "intact"
+    assert all(e["rattachement_scelle"] for e in va["chaine"] if e["statut"] == "verifiee")
+    assert va["entrees"]["rattachement_non_scelle"] == 0
+    assert not any("pas scellé" in lim for lim in va["limites"])
+    db = _db()
+    try:
+        e = db.query(AuditLog).filter(AuditLog.invite_id == a_id, AuditLog.action == "guest.view_project").first()
+        e.invite_id = b_id                 # « Beta a consulté le dossier » à la place d'Alpha
+        db.commit()
+        eid = e.id
+    finally:
+        db.close()
+    vb = _integrity(client, tb)
+    assert vb["verdict"] == "altere" and vb["perimetre"] == "vos_entrees", vb["message"]
+    va = _integrity(client, ta)
+    assert va["verdict"] == "altere"       # la chaîne du chef de file est cassée elle aussi
+    # Entrée ANCIENNE (empreinte v1) : la vérification passe, mais elle dit que le rattachement
+    # n'est pas scellé — promesse exacte.
+    db = _db()
+    try:
+        e = db.get(AuditLog, eid)
+        e.invite_id = a_id
+        chain = db.query(AuditLog).filter(AuditLog.owner_id == owner).order_by(AuditLog.id).all()
+        i = [x.id for x in chain].index(eid)
+        e.entry_hash = audit._hash(e.prev_hash, e)          # empreinte v1, comme avant la vague 4
+        db.commit()
+        _rechain_from(db, chain, i + 1)
+        assert audit.verify_chain(db, owner)["intact"] is True
+    finally:
+        db.close()
+    va = _integrity(client, ta)
+    assert va["verdict"] == "intact"
+    old = [x for x in va["chaine"] if x["action"] == "guest.view_project"]
+    assert old and old[0]["rattachement_scelle"] is False
+    assert va["entrees"]["rattachement_non_scelle"] == 1
+    assert any("rattachement à votre journal n'est pas scellé" in lim for lim in va["limites"])
+    exp = client.get(f"/api/invite/{ta}/journal/export").json()
+    assert any(x["rattachement_scelle"] is False for x in exp["entrees"])
+    assert any("pas scellé" in lim for lim in exp["limites"])
+
+
+def test_total_masque_au_cotraitant_ajoute_apres_la_generation(client, auth, mails):
+    """Un co-traitant invité APRÈS la génération n'est pas signataire : le détail « total … € HT »
+    de l'offre figée ne lui est montré ni dans le journal, ni dans sa vérification, ni dans ses
+    exports (règle de la vague 2). Un signataire le voit toujours."""
+    from tests.test_convention_groupement import _gen, _groupement, _pdf_text
+    h = auth["headers"]
+    pid, invs = _groupement(client, auth, n=1)
+    c = _gen(client, h, pid).json()
+    assert c["total_offre_ht"]
+    late = _invite(client, h, pid, "Arrivé Tard SARL")["token"]
+    from app.services import journal_membre as jm
+    jm.reset_caches()
+    blobs = [client.get(f"/api/invite/{late}/journal").json(),
+             client.get(f"/api/invite/{late}/journal/integrity").json(),
+             client.get(f"/api/invite/{late}/journal/export").json()]
+    labels = [e["label"] for e in blobs[0]["entries"]]
+    assert "Le mandataire a figé l'offre commune" in labels
+    for b in blobs:
+        raw = json.dumps(b, ensure_ascii=False)
+        assert "€ HT" not in raw and "100 000" not in raw, raw[:400]
+    assert "€ HT" not in _pdf_text(client.get(f"/api/invite/{late}/journal/export?format=pdf").content)
+    co = client.get(f"/api/invite/{invs[0]['token']}/journal").json()
+    assert any(e["action"] == "offer.frozen" and "€ HT" in e["detail"] for e in co["entries"])

@@ -817,8 +817,11 @@
       const jVerify = $(`<button class="btn sm primary" type="button"><i data-lucide="shield-check"></i>Vérifier mon journal</button>`);
       const jJson = $(`<button class="btn sm" type="button"><i data-lucide="file-json"></i>Télécharger la preuve (JSON)</button>`);
       const jPdf = $(`<button class="btn sm" type="button"><i data-lucide="file-down"></i>Télécharger le journal (PDF)</button>`);
-      [jVerify, jJson, jPdf].forEach(b => jActs.appendChild(b));
-      jActs.insertAdjacentHTML("beforeend", tip("<b>Vérifier vous-même</b><br>1. Téléchargez la preuve (JSON) et gardez ce fichier.<br>2. Plus tard, téléchargez-en une nouvelle : chaque ligne de l'ancienne doit s'y retrouver à l'identique (date, événement, sceau, maillon). Si une entrée avait été modifiée ou supprimée, la comparaison le montrerait.<br>3. Un informaticien peut aussi recalculer chaque maillon (SHA-256) : la méthode est écrite dans le fichier.<br><br>Le PDF est la version lisible ; la preuve vérifiable est le fichier JSON.", true));
+      // Aperçu minimal (invitation du réseau pas encore acceptée) : ni vérification ni preuve (le
+      // serveur les refuse) — le journal ne montre alors que vos propres entrées.
+      if (d && d.apercu_minimal) jActs.appendChild($(`<span class="muted small" style="display:inline-flex;align-items:center">Vérification disponible après acceptation${tip("Acceptez d'abord l'invitation depuis votre compte Adjugo : vous pourrez alors vérifier votre journal et télécharger la preuve. D'ici là, il ne montre que vos propres entrées.")}</span>`));
+      else [jVerify, jJson, jPdf].forEach(b => jActs.appendChild(b));
+      if (!(d && d.apercu_minimal)) jActs.insertAdjacentHTML("beforeend", tip("<b>Vérifier vous-même</b><br>1. Téléchargez la preuve (JSON) et gardez ce fichier.<br>2. Plus tard, téléchargez-en une nouvelle : chaque ligne de l'ancienne doit s'y retrouver à l'identique (date, événement, sceau, maillon). Si une entrée avait été modifiée ou supprimée, la comparaison le montrerait.<br>3. Un informaticien peut aussi recalculer chaque maillon (SHA-256) : la méthode est écrite dans le fichier.<br><br>Le PDF est la version lisible ; la preuve vérifiable est le fichier JSON.", true));
       jCard.appendChild(jActs);
       const jLive = $(`<div class="cv-msg" role="status" aria-live="polite" style="margin-top:8px"></div>`);
       const jResult = $(`<div aria-live="polite"></div>`);
@@ -1066,7 +1069,8 @@
       "Les entrées écrites depuis la dernière empreinte quotidienne (moins de 24 h) ne sont couvertes que par l'export que vous avez conservé.",
       "Le journal ne montre jamais l'adresse IP ni l'email des autres membres : leurs entrées sont engagées par un sceau, pas révélées.",
     ];
-    const VERDICT_UI = { intact: ["go", "shield-check", "ok"], altere: ["no_go", "shield-alert", "bad"], vide: ["neutral", "shield", ""] };
+    // « indisponible » : erreur technique pendant la vérification — jamais présentée comme une modification.
+    const VERDICT_UI = { intact: ["go", "shield-check", "ok"], altere: ["no_go", "shield-alert", "bad"], vide: ["neutral", "shield", ""], indisponible: ["neutral", "shield-question", ""] };
     const groupHex = (h) => String(h || "").slice(0, 24).replace(/(.{4})/g, "$1 ").trim();
     // Téléchargement d'une réponse fetch : nom tiré de Content-Disposition, sinon `fallback`.
     function saveResponse(r, blob, fallback) {
@@ -1092,6 +1096,8 @@
       if (v.message) box.appendChild($(`<p class="jv-msg">${esc(v.message)}</p>`));
       const fa = v.premiere_alteration;
       if (fa && (fa.label || fa.at)) box.appendChild($(`<div class="jv-line"><b>Entrée concernée :</b> ${esc(fa.label || "")}${fa.at ? " (" + esc(fmtDT(fa.at)) + ")" : ""}</div>`));
+      // Erreur technique : ni ancrage ni empreinte à montrer (le bouton « Vérifier » permet de réessayer).
+      if (v.verdict === "indisponible") { el.appendChild(box); icons(); return; }
       const an = v.ancrage;
       let anLine;
       if (an && an.date) anLine = an.horodate ? "Dernier horodatage : " + (an.date_label || an.date) + ", empreinte quotidienne du journal horodatée par une autorité indépendante."
