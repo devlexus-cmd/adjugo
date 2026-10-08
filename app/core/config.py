@@ -106,6 +106,14 @@ class Settings(BaseSettings):
     # Sauvegarde auto de la base vers le stockage objet (R2). 0 = désactivée.
     BACKUP_INTERVAL_HOURS: int = 24
     BACKUP_KEEP: int = 14                 # nb de sauvegardes conservées
+    # Clé PUBLIQUE (X25519, non secrète) : chiffre chaque sauvegarde avant l'envoi. La clé
+    # privée reste hors ligne (scripts/backup_keygen.py). Vide = sauvegarde non chiffrée
+    # par l'application (avertissement dans les logs).
+    BACKUP_PUBLIC_KEY: str = ""
+    # Ancrage quotidien de la tête du journal d'audit (POST /api/admin/run-audit-anchor) :
+    # autorité d'horodatage RFC 3161, et adresse optionnelle qui reçoit l'empreinte du jour.
+    ANCHOR_TSA_URL: str = "https://freetsa.org/tsr"
+    ANCHOR_EMAIL: str = ""
     MAX_UPLOAD_MB: int = 20
     ALLOWED_UPLOAD_EXT: str = ".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.odt,.ods,.zip,.txt"
 

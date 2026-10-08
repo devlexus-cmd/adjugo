@@ -81,8 +81,10 @@ def list_backups(current_user: User = Depends(get_current_user)):
     if not getattr(current_user, "is_admin", False):
         raise HTTPException(403, "Réservé à l'administrateur")
     from app.services.storage import get_storage
-    keys = sorted([k for k in get_storage().list_keys("backups/") if k.endswith(".json.gz")], reverse=True)
-    return {"count": len(keys), "backups": keys[:30]}
+    from app.services.backup import PREFIX, is_backup_key
+    keys = sorted([k for k in get_storage().list_keys(PREFIX) if is_backup_key(k)], reverse=True)
+    return {"count": len(keys), "backups": keys[:30],
+            "encrypted": sum(1 for k in keys if k.endswith(".enc"))}
 
 
 @router.post("/run-alerts")
@@ -121,3 +123,15 @@ def run_trash_purge_endpoint(request: Request, db: Session = Depends(get_db)):
     _check_cron(request)
     from app.routers.rgpd import purge_trash
     return purge_trash(db)
+
+
+@router.post("/run-audit-anchor")
+def run_audit_anchor_endpoint(request: Request, db: Session = Depends(get_db)):
+    """Ancre la tête du journal d'audit : dernière entrée (id + hash) et nombre d'entrées
+    de chaque chaîne, réunis en un engagement SHA-256 horodaté par une autorité RFC 3161,
+    déposé sous anchors/AAAA-MM-JJ.json (+ email si ANCHOR_EMAIL). Rend détectable la
+    suppression des DERNIÈRES entrées. Ne lève jamais : une autorité injoignable donne un
+    ancrage sans jeton, avec la raison. À cron-er quotidiennement."""
+    _check_cron(request)
+    from app.services.audit_anchor import run_anchor
+    return run_anchor(db)

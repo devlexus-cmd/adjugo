@@ -1,9 +1,21 @@
 """
 Adjugo — Journal d'accès (RGPD).
 
-Trace immuable de qui consulte/télécharge quoi, et quand. Surtout : les accès des
-co-traitants externes invités via un lien bridé. C'est la preuve de traçabilité
-exigible (RGPD / confidentialité des dossiers de candidature).
+Trace de qui consulte/télécharge quoi, et quand. Surtout : les accès des co-traitants
+externes invités via un lien bridé. C'est la preuve de traçabilité exigible (RGPD /
+confidentialité des dossiers de candidature).
+
+Ce que garantit le journal, dit exactement :
+  • chaque entrée est chaînée par hachage à la précédente du même owner_id : toute
+    modification, insertion ou suppression d'une entrée AU MILIEU de la chaîne est
+    détectée par verify_chain ;
+  • la suppression des DERNIÈRES entrées (queue de chaîne) laisse un préfixe valide : elle
+    n'est détectée que par comparaison au dernier ancrage quotidien horodaté
+    (app/services/audit_anchor.py). Les entrées écrites depuis cet ancrage (moins de
+    24 h) ne sont donc pas couvertes ;
+  • le hachage n'est pas une signature : un accès en écriture à la base permet de tout
+    recalculer. Ce sont l'ancrage horodaté par une autorité externe et sa copie hors
+    infrastructure qui rendent une telle réécriture détectable.
 
 Principe : un échec d'écriture du journal NE DOIT JAMAIS faire échouer l'action
 métier sous-jacente — on isole donc l'écriture et on avale toute exception.
@@ -92,12 +104,34 @@ def record(db, *, action: str, owner_id: Optional[int] = None,
         logger.warning("audit: écriture du journal échouée (%s) : %s", action, e)
 
 
+def _anchor_fields(db, owner_id, rows, upto_id) -> dict:
+    try:
+        from app.services.audit_anchor import check_chain
+        return check_chain(db, owner_id, rows, upto_id)
+    except Exception as e:      # la vérification ne doit jamais tomber à cause de l'ancrage
+        logger.warning("audit: comparaison au dernier ancrage impossible : %s", type(e).__name__)
+        return {"anchor_date": None, "anchor_timestamped": False, "anchor_checked": False,
+                "truncated": False, "missing_since": None, "missing_id": None}
+
+
+def _message(res: dict) -> str:
+    try:
+        from app.services.audit_anchor import message
+        return message(res)
+    except Exception:
+        return "Journal intact." if res.get("intact") else "Le journal a été altéré."
+
+
 def verify_chain(db, owner_id: int, upto_id: int = None) -> dict:
-    """Revérifie la chaîne de hash d'un tenant : recalcule chaque maillon et détecte
-    toute entrée modifiée, supprimée ou réordonnée. Renvoie l'état d'intégrité.
+    """Revérifie la chaîne de hash d'un tenant : recalcule chaque maillon et détecte toute
+    entrée modifiée, supprimée ou réordonnée À L'INTÉRIEUR de la chaîne ; puis compare la
+    chaîne au dernier ancrage quotidien pour détecter la disparition des DERNIÈRES entrées
+    (hors entrées écrites depuis cet ancrage, et hors effacement RGPD légitime).
     `upto_id` : ne vérifie que le PRÉFIXE de la chaîne (entrées d'id ≤ upto_id) — un préfixe
     d'une chaîne de hachage reste vérifiable seul (cas d'un ancien propriétaire parti fonder
-    une autre entreprise : seule sa période dans l'organisation la concerne)."""
+    une autre entreprise : seule sa période dans l'organisation la concerne).
+    Champs ajoutés (rétrocompatibles) : anchor_date, anchor_timestamped, anchor_checked,
+    truncated, missing_since, message."""
     from app.models import AuditLog
     q = db.query(AuditLog).filter(AuditLog.owner_id == owner_id)
     if upto_id is not None:
@@ -115,13 +149,21 @@ def verify_chain(db, owner_id: int, upto_id: int = None) -> dict:
             break
         prev = a.entry_hash
     chained = [a for a in rows if a.entry_hash]
-    return {
+    res = {
         "owner_id": owner_id,
         "entries": len(rows),
         "chained_entries": len(chained),
         "intact": broken_at is None,
         "broken_at_id": broken_at,
     }
+    res.update(_anchor_fields(db, owner_id, rows, upto_id))
+    missing_id = res.pop("missing_id", None)
+    if res.get("truncated"):
+        res["intact"] = False
+        if res["broken_at_id"] is None:
+            res["broken_at_id"] = missing_id
+    res["message"] = _message(res)
+    return res
 
 
 def verify_org_chains(db, owner_ids) -> dict:
@@ -144,11 +186,19 @@ def verify_org_chains(db, owner_ids) -> dict:
             upto[oid] = None                      # une vérification complète l'emporte
     chains = [verify_chain(db, oid, upto.get(oid)) for oid in ids]
     broken = next((c for c in chains if not c["intact"]), None)
-    return {
+    truncated = next((c for c in chains if c.get("truncated")), None)
+    res = {
         "owner_id": ids[0] if ids else None,
         "entries": sum(c["entries"] for c in chains),
         "chained_entries": sum(c["chained_entries"] for c in chains),
         "intact": broken is None,
         "broken_at_id": broken["broken_at_id"] if broken else None,
         "chains": chains,
+        "anchor_date": next((c["anchor_date"] for c in chains if c.get("anchor_date")), None),
+        "anchor_timestamped": any(c.get("anchor_timestamped") for c in chains),
+        "anchor_checked": any(c.get("anchor_checked") for c in chains),
+        "truncated": truncated is not None,
+        "missing_since": truncated["missing_since"] if truncated else None,
     }
+    res["message"] = broken["message"] if broken else _message(res)
+    return res
