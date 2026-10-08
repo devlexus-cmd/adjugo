@@ -10,8 +10,9 @@ date), jamais un total ni un « % ». Le barème interne sert uniquement à ordo
     métier du lot 35 · zone d'intervention 25 · fiabilité vérifiée 15 ·
     expérience des marchés publics 15 · capacité et disponibilité 10
 
-Confiance UNIQUEMENT vérifiable (SIRENE, BODACC, DECP, dépôts réels sur Adjugo) — jamais de
-note, d'avis ni d'étoile. Formulations honnêtes et datées :
+Confiance vérifiable (SIRENE, BODACC, DECP) — jamais de note, d'avis ni d'étoile. Le compteur de
+groupements « marqués déposés » sur Adjugo est DÉCLARATIF (statut renseigné par le chef de file) :
+badge de niveau « info », daté, jamais « vérifié ». Formulations honnêtes et datées :
   - « Aucun avis de procédure collective trouvé au JJ/MM (recherche BODACC) » (absence de
     résultat ≠ preuve d'absence) ; None = « non vérifié » ;
   - « Au moins N marchés publics publiés dans DECP » (DECP est partiel et en retard) ;
@@ -39,7 +40,7 @@ CRITERIA_LABELS = {
 }
 EXPLICATION_CLASSEMENT = (
     "Classement par métier du lot, zone d'intervention, fiabilité vérifiée dans les registres "
-    "publics (SIRENE, BODACC), expérience des marchés publics (DECP, dépôts sur Adjugo), puis "
+    "publics (SIRENE, BODACC), expérience des marchés publics (DECP, groupements marqués déposés sur Adjugo), puis "
     "capacité et disponibilité. Ce n'est pas une note : le seul pourcentage affiché reste le "
     "score de groupement, calculé quand vous simulez le groupement.")
 
@@ -59,7 +60,9 @@ _SOURCE_DECLARE = "déclaré par l'entreprise"
 _SOURCE_SIRENE = "SIRENE (recherche-entreprises.api.gouv.fr)"
 _SOURCE_BODACC = "BODACC (annonces commerciales officielles)"
 _SOURCE_DECP = "DECP (données essentielles de la commande publique)"
-_SOURCE_ADJUGO = "Adjugo (dépôts réels de groupements)"
+_SOURCE_ADJUGO = "statut de dépôt renseigné par le chef de file sur Adjugo (déclaratif)"
+_SOURCE_DCE = "dossier du marché (DCE)"
+_SOURCE_RECHERCHE = "votre recherche"
 _SOURCE_RGE = "registre RGE (ADEME), via SIRENE"
 _SOURCE_QUALIOPI = "registre Qualiopi, via SIRENE"
 
@@ -173,9 +176,14 @@ def decp_label(v: Optional[dict]) -> str:
     return f"Au moins {n} marché{'s' if n > 1 else ''} public{'s' if n > 1 else ''} publié{'s' if n > 1 else ''} dans DECP{au}"
 
 
-def adjugo_label(n) -> str:
+def adjugo_label(n, when=None) -> str:
+    """« N groupements marqués déposés sur Adjugo (déclaratif) » : c'est le chef de file qui
+    marque le marché déposé ; Adjugo ne voit pas le dépôt sur la plateforme de l'acheteur."""
     n = int(n or 0)
-    return f"{n} groupement{'s' if n > 1 else ''} déposé{'s' if n > 1 else ''} via Adjugo"
+    d = jjmm(when)
+    au = f" au {d}" if d else ""
+    return (f"{n} groupement{'s' if n > 1 else ''} marqué{'s' if n > 1 else ''} déposé{'s' if n > 1 else ''} "
+            f"sur Adjugo (déclaratif){au}")
 
 
 # ── Badges sourcés et datés ──────────────────────────────────────────────────────────
@@ -217,8 +225,9 @@ def badges(p: dict) -> list:
 
     n = int(p.get("groupements_deposes") or 0)
     if n > 0:
-        out.append({"key": "adjugo", "label": adjugo_label(n), "source": _SOURCE_ADJUGO,
-                    "date": None, "niveau": "ok"})
+        when = p.get("groupements_checked_at")
+        out.append({"key": "adjugo", "label": adjugo_label(n, when), "source": _SOURCE_ADJUGO,
+                    "date": _iso(when), "niveau": "info"})
     return out
 
 
@@ -273,8 +282,8 @@ def capacites(p: dict) -> list:
                 "source": _SOURCE_DECP, "date": _iso(vd.get("checked_at"))})
     n = int(p.get("groupements_deposes") or 0)
     if n > 0:
-        out.append({"key": "groupements_adjugo", "label": "Groupements déposés via Adjugo",
-                    "valeur": str(n), "source": _SOURCE_ADJUGO, "date": None})
+        out.append({"key": "groupements_adjugo", "label": "Groupements marqués déposés sur Adjugo (déclaratif)",
+                    "valeur": str(n), "source": _SOURCE_ADJUGO, "date": _iso(p.get("groupements_checked_at"))})
     return out
 
 
@@ -348,24 +357,34 @@ def score_lot(lot: dict, p: dict, today: date) -> tuple:
     if metier and metier in metiers:
         add("metier", 35, "ok", f"Métier « {trade_label(metier)} » {decl_txt}", _SOURCE_DECLARE, decl)
     elif cpv:
-        add("metier", 20, "partiel", f"Code CPV {cpv} proche du marché, {decl_txt}", _SOURCE_DECLARE, decl)
+        cible = "de votre recherche" if (lot.get("contexte") or "") == "annuaire" else "du marché"
+        add("metier", 20, "partiel", f"Code CPV {cpv} proche {cible}, {decl_txt}", _SOURCE_DECLARE, decl)
     else:
         lab = trade_label(metier) if metier else "du lot"
         add("metier", 0, "non", f"Métier « {lab} » non déclaré par l'entreprise", _SOURCE_DECLARE, decl)
 
-    # 2) Zone (25)
+    # 2) Zone (25). Chaque phrase dit d'où vient la donnée : zones déclarées, siège SIRENE
+    # (code postal du siège lu dans le registre) ou code postal déclaré (profil entreprise).
     dep = _norm_dep(lot.get("departement") or "")
     zones = _deps(p)
-    siege = _norm_dep(p.get("departement") or p.get("postal_code") or "")
     vs = p.get("verified_sirene") if isinstance(p.get("verified_sirene"), dict) else {}
+    siege_sirene = _norm_dep(vs.get("code_postal") or "")
+    adresse_declaree = _norm_dep(p.get("postal_code") or p.get("departement") or "")
+    note = (" — département supposé (le vôtre) : le dossier n'indique pas le lieu d'exécution"
+            if dep and lot.get("departement_suppose") else "")
     if not dep:
-        add("zone", 10, "partiel", "Lieu d'exécution non précisé dans le dossier du marché", _SOURCE_DECLARE, decl)
+        if (lot.get("contexte") or "") == "annuaire":
+            add("zone", 10, "partiel", "Aucun département choisi dans votre recherche", _SOURCE_RECHERCHE, None)
+        else:
+            add("zone", 10, "partiel", "Lieu d'exécution non précisé dans le dossier du marché", _SOURCE_DCE, None)
     elif dep in zones:
-        add("zone", 25, "ok", f"Intervient dans le {dep} ({decl_txt})", _SOURCE_DECLARE, decl)
-    elif siege and siege == dep:
-        add("zone", 25, "ok", f"Siège dans le {dep} (SIRENE)", _SOURCE_SIRENE, vs.get("checked_at"))
+        add("zone", 25, "ok", f"Intervient dans le {dep} ({decl_txt}){note}", _SOURCE_DECLARE, decl)
+    elif siege_sirene and siege_sirene == dep:
+        add("zone", 25, "ok", f"Siège dans le {dep} (siège SIRENE){note}", _SOURCE_SIRENE, vs.get("checked_at"))
+    elif adresse_declaree and adresse_declaree == dep:
+        add("zone", 25, "ok", f"Adresse dans le {dep} (code postal déclaré){note}", _SOURCE_DECLARE, decl)
     else:
-        add("zone", 0, "non", f"N'indique pas intervenir dans le {dep}", _SOURCE_DECLARE, decl)
+        add("zone", 0, "non", f"N'indique pas intervenir dans le {dep}{note}", _SOURCE_DECLARE, decl)
 
     # 3) Fiabilité vérifiée (15) : SIRENE actif récent 8 + aucun avis BODACC trouvé 7.
     pts, parts, alerte = 0, [], False
@@ -398,7 +417,7 @@ def score_lot(lot: dict, p: dict, today: date) -> tuple:
     ng = int(p.get("groupements_deposes") or 0)
     if ng > 0:
         pts += 3
-        parts.append(adjugo_label(ng))
+        parts.append(adjugo_label(ng, p.get("groupements_checked_at")))
     statut = "ok" if pts >= 12 else ("partiel" if pts > 0 else "non")
     add("experience", pts, statut, " · ".join(parts), f"{_SOURCE_DECP} ; {_SOURCE_ADJUGO}", vd.get("checked_at"))
 

@@ -283,10 +283,15 @@ def _discover_sirene(trade: str, dept: str, warnings: list) -> list:
             if getattr(c, "est_personne_physique", False):
                 continue   # entrepreneur individuel : nom = personne physique (RGPD)
             out.append(_member_from_normalized_company(c))
-        for e in res.get("errors") or []:
+        errs = list(res.get("errors") or [])
+        for e in errs:
             msg = getattr(e, "message", None) or str(e)
             warnings.append(f"Recherche SIRENE ({label}) partielle : {msg[:120]}")
-        _SIRENE_CACHE[key] = (now, out)
+        # Une recherche en erreur n'est JAMAIS mise en cache : sinon, pendant 10 min, l'écran
+        # disait « aucune entreprise trouvée » sans l'avertissement, alors que le registre
+        # n'avait pas répondu.
+        if not errs:
+            _SIRENE_CACHE[key] = (now, out)
         return list(out)
     except Exception as e:
         logger.warning("découverte SIRENE %s/%s en échec : %s", trade, dept, e)

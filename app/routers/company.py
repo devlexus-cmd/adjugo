@@ -43,6 +43,7 @@ def create_company(
     db.add(company)
     db.commit()
     db.refresh(company)
+    _sync_partner_profile(db, oid)
     return company
 
 
@@ -66,7 +67,16 @@ def update_company(
 
     db.commit()
     db.refresh(company)
+    _sync_partner_profile(db, oid)
     return company
+
+
+def _sync_partner_profile(db: Session, owner_id: int) -> None:
+    """Réseau de partenaires : un SIRET modifié retire la publication du profil partenaire et
+    exige une nouvelle validation de l'identité par Adjugo (sinon un compte validé pour une
+    entreprise pouvait ensuite publier sous le SIREN d'une autre). Ne lève jamais."""
+    from app.services.partner_network import on_company_saved
+    on_company_saved(db, owner_id)
 
 
 # NB : les critères Go/No-Go sont servis par criteria_v2 (MatchingCriteriaExt). L'ancien
