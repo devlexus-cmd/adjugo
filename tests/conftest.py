@@ -8,6 +8,9 @@ import pathlib
 _TEST_DB_FILE = os.environ.get("ADJUGO_TEST_DB", "test_adjugo.db")
 os.environ["DATABASE_URL"] = f"sqlite:///./{_TEST_DB_FILE}"
 os.environ["DEMO_MODE"] = "true"
+# La démo publique est FERMÉE par défaut en production ; la suite existante l'exerce
+# (garde « lecture guidée ») → ouverte ici. tests/test_demande_acces.py teste la fermeture.
+os.environ.setdefault("DEMO_PUBLIC", "1")
 # Emails DÉSACTIVÉS en test : sans ça, chaque inscription tentait de vrais envois
 # SMTP/Brevo (≈12 s de timeouts par test, et des emails réels depuis la machine).
 os.environ["SMTP_HOST"] = ""

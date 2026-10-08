@@ -1,6 +1,6 @@
 # Politique de confidentialité
 
-*Version : 1.2 — Dernière mise à jour : 28 juin 2026*
+*Version : 1.3 — Dernière mise à jour : 8 octobre 2026*
 
 ---
 
@@ -39,6 +39,7 @@ Le Service collecte et traite les catégories de données suivantes :
 | **Documents téléversés** | DCE, pièces administratives, documents d'entreprise (pouvant contenir des données personnelles : noms, signatures, coordonnées) | téléversées par l'utilisateur |
 | **Données d'usage** | analyses réalisées, quotas consommés, journaux techniques (logs), adresse IP, horodatages | générées par le Service |
 | **Données de facturation** | formule souscrite, historique de paiement, identifiants de transaction | générées via Stripe |
+| **Demandes d'accès et de démonstration** | nom, prénom, adresse e-mail professionnelle, téléphone (facultatif), entreprise ou collectivité, profil, message | fournies par la personne via le formulaire « Demander un accès » |
 | **Données d'entreprises (sourcing acheteur)** | raison sociale, SIREN/SIRET, commune et département, code et libellé d'activité (NAF), catégorie (PME/ETI/GE), effectif, marchés publics remportés, signaux de procédure collective | **open data public** : SIRENE (recherche-entreprises.api.gouv.fr), DECP (data.economie.gouv.fr), BODACC |
 
 > Adjugo applique une **règle stricte de minimisation et d'anti-hallucination** : seules des données réelles et sourcées sont traitées ; aucune donnée personnelle n'est inventée. Le Service n'a pas vocation à collecter de **données sensibles** au sens de l'article 9 du RGPD ; le Client s'engage à ne pas téléverser de telles données sans base légale appropriée.
@@ -54,6 +55,7 @@ Le Service collecte et traite les catégories de données suivantes :
 | Facturation et gestion des paiements | **Exécution du contrat** + **obligation légale** (comptable/fiscale) (art. 6.1.c) |
 | Sécurité, prévention de la fraude, journalisation technique | **Intérêt légitime** (art. 6.1.f) |
 | Réponses aux demandes de support | **Exécution du contrat** / **intérêt légitime** |
+| Réponse aux demandes d'accès et de démonstration (formulaire « Demander un accès ») | **Mesures précontractuelles** prises à la demande de la personne (art. 6.1.b) et **intérêt légitime** (art. 6.1.f) |
 | Communications commerciales (le cas échéant) | **Intérêt légitime** ou **consentement** selon le cas (prospection B2B) |
 | Respect des obligations légales et réponses aux autorités | **Obligation légale** (art. 6.1.c) |
 
@@ -66,6 +68,7 @@ Le Service collecte et traite les catégories de données suivantes :
 | Données de facturation | **10 ans** (obligation comptable et fiscale, art. L.123-22 Code de commerce) |
 | Journaux techniques (logs) | **6 mois** |
 | Données de prospection | **3 ans** à compter du dernier contact |
+| Demandes d'accès et de démonstration | **3 ans** à compter du dernier contact. La demande est transmise par e-mail à la messagerie de l'Éditeur ; elle n'est pas enregistrée dans la base de données du Service |
 | Données de sourcing acheteur (open data entreprises) | **non conservées durablement** : interrogées en temps réel auprès des sources publiques à chaque requête et restituées à l'écran ; aucune base permanente n'est constituée. Seuls d'éventuels journaux techniques subsistent (**6 mois**) |
 
 À l'expiration de ces durées, les données sont supprimées ou anonymisées de manière irréversible. **Les copies de sauvegarde** contenant ces données sont **purgées au plus tard sous 14 jours** ; une suppression demandée par le Client devient donc définitive, y compris dans les sauvegardes, sous ce délai.
@@ -80,6 +83,7 @@ Les données sont traitées par les équipes habilitées de l'Éditeur et par le
 | **Cloudflare, Inc.** (stockage R2) | Stockage des fichiers téléversés et des sauvegardes | DCE, pièces administratives et documents d'entreprise (données personnelles éventuelles) | **Union européenne** (Europe de l'Ouest — WEUR) |
 | **{{AI_PROVIDER}}** ({{AI_PRODUCT}}) | Fournisseur du modèle d'IA pour l'analyse et la génération de documents | contenus soumis à l'analyse (extraits de DCE, données d'entreprise) | {{AI_LOCATION_FULL}} |
 | **Brevo** (Sendinblue SAS) | Envoi des e-mails transactionnels | adresse e-mail du destinataire, contenu des notifications | **Union européenne** (France) |
+| **Google** (Google Cloud France / Google LLC — Google Workspace) | Messagerie de l'Éditeur (adresses @adjugo.pro) : réception des demandes d'accès et des échanges par e-mail | coordonnées et message des demandes d'accès, correspondance | Union européenne / **États-Unis** (encadré par CCT et EU-U.S. Data Privacy Framework) |
 | **Functional Software, Inc.** (Sentry) | Observabilité et suivi technique des erreurs | journaux techniques, identifiants techniques, adresse IP | **États-Unis** (encadré par CCT) |
 | **Stripe** (Stripe Payments Europe, Ltd. / Stripe, Inc.) | Traitement des paiements | données de facturation et de paiement (l'Éditeur n'accède pas aux numéros de carte) | UE / États-Unis |
 
@@ -91,7 +95,7 @@ Adjugo **ne vend pas** les données personnelles et ne les transmet pas à des t
 
 Les **données applicatives du Service — base de données, fichiers téléversés et sauvegardes — sont hébergées en Union européenne** (base de données Railway en région UE ; fichiers et sauvegardes Cloudflare R2 en Europe de l'Ouest).
 
-Des **transferts résiduels vers des pays tiers** subsistent toutefois pour certains traitements techniques : {{AI_TRANSFER_MENTION}}le suivi technique des erreurs (Sentry, États-Unis) et le prestataire de paiement (Stripe, UE/États-Unis). Le cas échéant, le calcul applicatif peut également être opéré hors UE.
+Des **transferts résiduels vers des pays tiers** subsistent toutefois pour certains traitements techniques : {{AI_TRANSFER_MENTION}}le suivi technique des erreurs (Sentry, États-Unis), la messagerie de l'Éditeur (Google, UE/États-Unis) et le prestataire de paiement (Stripe, UE/États-Unis). Le cas échéant, le calcul applicatif peut également être opéré hors UE.
 
 Ces transferts sont encadrés par des **garanties appropriées** au sens du chapitre V du RGPD, notamment :
 

@@ -305,7 +305,6 @@ const __adjApp = createApp({
       if ((e.key === "Enter" || e.key === " ") && a && a.classList && a.classList.contains("nav-item") && !document.querySelector(".overlay, .drawer, .modal-back")) { e.preventDefault(); a.click(); }
     });
     this.$nextTick(() => this._a11y());
-    if (!this.token && new URLSearchParams(location.search).get("demo") === "1") { this.demoLogin(); return; }
     const _rst = new URLSearchParams(location.search).get("reset");
     // Cliquer le lien de réinitialisation est une action EXPLICITE : il prime sur une session
     // déjà ouverte. Sinon, un utilisateur connecté qui clique le lic reçu par email atterrissait
@@ -479,15 +478,6 @@ const __adjApp = createApp({
         history.replaceState({}, "", "/app");
         this.notify("Mot de passe réinitialisé"); await this.boot();
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
-    },
-    async demoLogin() {
-      this.busy = true;
-      try {
-        const res = await this.api("POST", "/api/auth/demo");
-        this.token = res.access_token; localStorage.setItem("adjugo_token", this.token);
-        history.replaceState({}, "", "/app");   // retire ?demo=1 de l'URL
-        await this.boot();
-      } catch (e) { this.notify("Démo momentanément indisponible.", "err"); } finally { this.busy = false; }
     },
     logout() { localStorage.removeItem("adjugo_token"); localStorage.removeItem("adjugo_active"); window.location.href = "/"; },
     dismissOnboarding() { try { localStorage.setItem("adjugo_onboarding_done", "1"); } catch (e) {} this.$forceUpdate(); },

@@ -99,6 +99,9 @@ def login(request: Request, data: LoginIn, db: Session = Depends(get_db)):
 def demo(request: Request, db: Session = Depends(get_db)):
     """Connexion au compte de DÉMONSTRATION (collectivité fictive pré-remplie), SANS mot de
     passe — bac à sable public, pour découvrir le produit immédiatement."""
+    from app.core.demo_guard import demo_public
+    if not demo_public():
+        raise HTTPException(status_code=404, detail="Not Found")
     from app.services.acheteur_demo_seed import ensure_demo_acheteur
     a = ensure_demo_acheteur(db)
     return {"access_token": _token(a), "token_type": "bearer", "demo": True,

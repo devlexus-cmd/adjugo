@@ -214,6 +214,9 @@ def demo_login(request: Request, db: Session = Depends(get_db)):
     client réelle) : son accès sans mot de passe est VOLONTAIRE (vitrine de la landing page).
     Le risque « passwordless » signalé par l'audit est neutralisé par cette nature sandbox, et
     le contournement du cron admin via DEMO_MODE a été fermé séparément (CRON_SECRET requis)."""
+    from app.core.demo_guard import demo_public
+    if not demo_public():
+        raise HTTPException(status_code=404, detail="Not Found")
     from app.services.demo_seed import ensure_demo
     user = ensure_demo(db)   # crée le compte démo s'il n'existe pas encore
     token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})

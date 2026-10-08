@@ -324,6 +324,8 @@ app.include_router(dce_router)
 # + DCE sauvegardés. Aucune donnée PME.
 from app.routers.acheteur import router as acheteur_router
 app.include_router(acheteur_router)
+from app.routers import contact as _contact_router
+app.include_router(_contact_router.router)
 
 # Fichiers statiques du logiciel (SPA)
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -403,6 +405,14 @@ def dpa():
 @app.get("/securite", tags=["Site"], include_in_schema=False)
 def securite():
     return _legal_page("securite.html")
+
+
+@app.get("/demande-acces", tags=["Site"], include_in_schema=False)
+def demande_acces_page():
+    """Demander un accès / réserver une démonstration (remplace la démo publique)."""
+    from fastapi.responses import HTMLResponse
+    with open(os.path.join(_static_dir, "demande-acces.html"), encoding="utf-8") as f:
+        return HTMLResponse(f.read())
 
 
 @app.get("/app", tags=["Logiciel"], include_in_schema=False)

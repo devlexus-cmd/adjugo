@@ -109,6 +109,12 @@ def get_current_acheteur(token: str = Depends(oauth2_acheteur), db: Session = De
     if int(payload.get("tv") or 0) != int(getattr(acheteur, "token_version", 0) or 0):
         raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
                             headers={"WWW-Authenticate": "Bearer"})
+    from app.core.demo_guard import demo_public
+    if not demo_public():
+        from app.services.acheteur_demo_seed import DEMO_EMAIL as _ACH_DEMO
+        if (getattr(acheteur, "email", "") or "").strip().lower() == _ACH_DEMO:
+            raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
+                                headers={"WWW-Authenticate": "Bearer"})
     return acheteur
 
 
@@ -148,4 +154,11 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if int(payload.get("tv") or 0) != int(getattr(user, "token_version", 0) or 0):
         raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
                             headers={"WWW-Authenticate": "Bearer"})
+    # Démo publique fermée : une session démo ouverte auparavant ne donne plus accès.
+    from app.core.demo_guard import demo_public
+    if not demo_public():
+        from app.services.demo_seed import DEMO_EMAIL
+        if (getattr(user, "email", "") or "").strip().lower() == DEMO_EMAIL:
+            raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
+                                headers={"WWW-Authenticate": "Bearer"})
     return user

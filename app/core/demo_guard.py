@@ -17,10 +17,19 @@ passe sans aucun coût supplémentaire. Défense en profondeur : consume_analysi
 refuse aussi tout appel IA du compte démo (les analyses DEMO- ne passent jamais par là).
 """
 import logging
+import os
 import re
 from typing import Optional
 
 logger = logging.getLogger("adjugo")
+
+
+def demo_public() -> bool:
+    """Démo publique sans mot de passe : FERMÉE par défaut (décision fondateur, 08/10/2026 :
+    « aucun concurrent ne montre son logiciel comme ça » → parcours « demander un accès »).
+    Réactivable sans code via DEMO_PUBLIC=1. Fermée, les routes de connexion démo répondent
+    404 et toute session démo déjà ouverte est refusée (401)."""
+    return os.getenv("DEMO_PUBLIC", "").strip().lower() in ("1", "true", "yes", "oui")
 
 _ID = r"[^/]+"
 

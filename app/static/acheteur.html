@@ -218,7 +218,6 @@
       <div class="field" id="auNomWrap" style="display:none"><label for="auNom">Nom de la collectivité</label><input id="auNom" type="text" placeholder="Ville de Quimper" /></div>
       <button class="btn primary block" id="auSubmit">Se connecter</button>
       <p class="muted small" style="text-align:center;margin:12px 0 0"><span id="auSwitchTxt">Pas encore de compte ?</span> <a href="#" id="auSwitch" style="color:var(--accent-text);font-weight:600">Créer un espace</a></p>
-      <div style="text-align:center;margin-top:10px;padding-top:12px;border-top:1px solid var(--hairline)"><a href="#" id="auDemo" style="color:var(--accent-text);font-weight:600;font-size:12.5px">Découvrir avec la démo</a></div>
     </div>
   </div>
 </div>
@@ -262,18 +261,13 @@
     var el=$("#sideAcct");
     if(AME){el.innerHTML='<div class="user"><div class="av">'+esc(initials(AME.nom_collectivite||AME.email))+'</div><div style="min-width:0"><b>'+esc(AME.nom_collectivite||"Ma collectivité")+'</b><small>'+esc(IS_DEMO?"Compte de démonstration":AME.email)+'</small></div></div><button class="btn ghost sm block" id="btnLogout" style="margin-top:6px"><i data-lucide="log-out" class="lucide"></i> Déconnexion</button>';
       $("#btnLogout").onclick=function(){setToken("");AME=null;IS_DEMO=false;CURRENT_DCE_ID=null;renderAcct();refreshCurrentView();};}
-    else{el.innerHTML='<button class="btn primary sm block" id="btnLoginOpen"><i data-lucide="log-in" class="lucide"></i> Connexion</button><button class="btn ghost sm block" id="btnDemoSide" style="margin-top:6px">Voir la démo</button>';
-      $("#btnLoginOpen").onclick=function(){openAuth("login");};$("#btnDemoSide").onclick=enterDemo;}
+    else{el.innerHTML='<button class="btn primary sm block" id="btnLoginOpen"><i data-lucide="log-in" class="lucide"></i> Connexion</button><button class="btn ghost sm block" id="btnRegSide" style="margin-top:6px">Créer un espace</button>';
+      $("#btnLoginOpen").onclick=function(){openAuth("login");};$("#btnRegSide").onclick=function(){openAuth("register");};}
     icons();
   }
   function refreshCurrentView(){if(curView==="dashboard")loadDashboard();if(curView==="mesdce")loadMesDce();if(curView==="compte")loadCompte();updateCount();}
 
-  function enterDemo(){
-    fetch("/api/acheteur/demo",{method:"POST",headers:{"Content-Type":"application/json"}})
-      .then(function(r){return r.json();}).then(function(d){if(!d.access_token){alert("Démonstration momentanément indisponible. Réessayez.");return;}
-        setToken(d.access_token);AME={email:d.email,nom_collectivite:d.nom_collectivite};IS_DEMO=true;closeAuth();renderAcct();navTo("dashboard");})
-      .catch(function(){alert("Démonstration indisponible (réseau). Réessayez.");});
-  }
+
 
   function openAuth(mode){authMode=mode||"login";var reg=(authMode==="register");
     $("#authErr").style.display="none";
@@ -296,7 +290,6 @@
     if(e.key==="Escape"){if(!m)return;if(m.id==="authModal")closeAuth();else if(m.id==="diffuserModal")closeDiffuser();else m.classList.add("hidden");}
     else if(e.key==="Tab"&&m){trapFocus(m,e);}});
   $("#auSwitch").onclick=function(e){e.preventDefault();openAuth(authMode==="login"?"register":"login");};
-  $("#auDemo").onclick=function(e){e.preventDefault();enterDemo();};
   $("#authModal").addEventListener("click",function(e){if(e.target===this)closeAuth();});
   $("#auSubmit").onclick=function(){
     var email=$("#auEmail").value.trim(),pwd=$("#auPwd").value,nom=$("#auNom").value.trim(),reg=(authMode==="register");
@@ -345,11 +338,11 @@
   function loadDashboard(){
     var db=$("#demoBanner");
     db.innerHTML = IS_DEMO ? '<div class="demo-banner"><i data-lucide="play-circle" class="lucide"></i><div style="flex:1"><b>Vous explorez la démonstration</b><div class="small">Compte fictif pré-rempli — ouvrez un DCE, sondez le marché, exportez. Créez votre espace pour sauvegarder vos vrais projets.</div></div><button class="btn sm" style="background:#fff;color:var(--accent)" id="db_create">Créer mon espace</button></div>'
-      : (!AME ? '<div class="demo-banner"><i data-lucide="play-circle" class="lucide"></i><div style="flex:1"><b>Découvrez Adjugo Collectivités</b><div class="small">Lancez la démonstration pré-remplie, ou commencez directement votre premier DCE.</div></div><button class="btn sm" style="background:#fff;color:var(--accent)" id="db_demo">Voir la démo</button></div>' : '');
-    if($("#db_demo"))$("#db_demo").onclick=enterDemo; if($("#db_create"))$("#db_create").onclick=function(){openAuth("register");};
+      : (!AME ? '<div class="demo-banner"><i data-lucide="play-circle" class="lucide"></i><div style="flex:1"><b>Découvrez Adjugo Collectivités</b><div class="small">Créez votre espace gratuitement et rédigez votre premier DCE.</div></div><button class="btn sm" style="background:#fff;color:var(--accent)" id="db_create">Créer mon espace</button></div>' : '');
+    if($("#db_create"))$("#db_create").onclick=function(){openAuth("register");};
     if(!AME){$("#statDces").textContent="0";$("#statLast").textContent="—";$("#statLastD").textContent="—";
-      $("#dashRecent").innerHTML='<div class="empty"><div class="eic"><i data-lucide="folder-open" class="lucide"></i></div><h4>Aucun projet pour l\'instant</h4><p>Connectez-vous ou lancez la démo pour voir des DCE ici.</p><button class="btn primary sm" id="dr_demo">Voir la démo</button></div>';
-      if($("#dr_demo"))$("#dr_demo").onclick=enterDemo;icons();return;}
+      $("#dashRecent").innerHTML='<div class="empty"><div class="eic"><i data-lucide="folder-open" class="lucide"></i></div><h4>Aucun projet pour l\'instant</h4><p>Connectez-vous pour retrouver vos DCE ici.</p><button class="btn primary sm" id="dr_login">Connexion</button></div>';
+      if($("#dr_login"))$("#dr_login").onclick=function(){openAuth("login");};icons();return;}
     aFetch("/api/acheteur/dce",{headers:aHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(list){
       $("#navCount").textContent=list.length;$("#statDces").textContent=list.length;
       $("#statLast").textContent=list.length?(list[0].objet||"Projet").slice(0,26):"—";
@@ -364,7 +357,7 @@
   var STATUTS=[["preparation","En préparation","neutral"],["publie","Publié","st-envoye"],["analyse","En analyse","st-en_cours"],["attribue","Attribué","st-gagne"],["infructueux","Infructueux","st-perdu"]];
   function setStatut(id,body,cb){if(demoBlock()){loadMesDce();return;}aFetch("/api/acheteur/dce/"+id+"/statut",{method:"POST",headers:aHeaders(),body:JSON.stringify(body)}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(cb)cb(d);}).catch(function(){});}
   function loadMesDce(){var w=$("#mesDceWrap");
-    if(!AME){w.innerHTML='<div class="card"><div class="empty"><div class="eic"><i data-lucide="lock" class="lucide"></i></div><h4>Connectez-vous</h4><p>Pour piloter vos consultations.</p><div class="row"><button class="btn primary sm" id="md_login">Connexion</button><button class="btn sm" id="md_demo">Voir la démo</button></div></div></div>';$("#md_login").onclick=function(){openAuth("login");};$("#md_demo").onclick=enterDemo;icons();return;}
+    if(!AME){w.innerHTML='<div class="card"><div class="empty"><div class="eic"><i data-lucide="lock" class="lucide"></i></div><h4>Connectez-vous</h4><p>Pour piloter vos consultations.</p><div class="row"><button class="btn primary sm" id="md_login">Connexion</button><button class="btn sm" id="md_reg">Créer un espace</button></div></div></div>';$("#md_login").onclick=function(){openAuth("login");};$("#md_reg").onclick=function(){openAuth("register");};icons();return;}
     w.innerHTML='<div class="empty"><div class="adj-ripple"><div class="drop"></div><div class="wave"></div><div class="wave"></div><div class="wave"></div></div></div>';
     aFetch("/api/acheteur/dce",{headers:aHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(list){
       $("#navCount").textContent=list.length;
@@ -412,8 +405,8 @@
 
   // ── Compte ──
   function loadCompte(){var w=$("#compteWrap");
-    if(!AME){w.innerHTML='<div class="card pad" style="text-align:center"><div class="empty"><div class="eic"><i data-lucide="user" class="lucide"></i></div><h4>Votre espace collectivité</h4><p>Connectez-vous ou créez un espace pour enregistrer vos DCE.</p><div class="row"><button class="btn primary sm" id="cp_login">Connexion</button><button class="btn sm" id="cp_reg">Créer un espace</button><button class="btn sm" id="cp_demo">Démo</button></div></div></div>';
-      $("#cp_login").onclick=function(){openAuth("login");};$("#cp_reg").onclick=function(){openAuth("register");};$("#cp_demo").onclick=enterDemo;icons();return;}
+    if(!AME){w.innerHTML='<div class="card pad" style="text-align:center"><div class="empty"><div class="eic"><i data-lucide="user" class="lucide"></i></div><h4>Votre espace collectivité</h4><p>Connectez-vous ou créez un espace pour enregistrer vos DCE.</p><div class="row"><button class="btn primary sm" id="cp_login">Connexion</button><button class="btn sm" id="cp_reg">Créer un espace</button></div></div></div>';
+      $("#cp_login").onclick=function(){openAuth("login");};$("#cp_reg").onclick=function(){openAuth("register");};icons();return;}
     w.innerHTML='<div class="card pad"><h3 style="font-size:16px">'+esc(AME.nom_collectivite||"Ma collectivité")+(IS_DEMO?' <span class="org-pill">Démo</span>':'')+'</h3><div class="list-row"><span class="muted">Email</span><b>'+esc(AME.email)+'</b></div><div class="list-row"><span class="muted">Données</span><span>Cloisonnées — jamais partagées avec les entreprises</span></div><div class="list-row"><span class="muted">Intelligence artificielle</span><span>Souveraine (hébergement FR/UE)</span></div><div class="list-row"><span class="muted">Sources</span><span>SIRENE · DECP · BODACC (open data)</span></div>'+(!IS_DEMO?'<div class="list-row"><span class="muted">Vos données (RGPD)</span><span><button class="btn ghost sm" id="cp_export"><i data-lucide="download" class="lucide"></i> Exporter</button> <button class="btn ghost sm" id="cp_delete" style="color:var(--danger-text)"><i data-lucide="trash-2" class="lucide"></i> Supprimer mon compte</button></span></div>':'')+'<button class="btn ghost sm" id="cp_logout" style="margin-top:16px"><i data-lucide="log-out" class="lucide"></i> Déconnexion</button></div>';
     $("#cp_logout").onclick=function(){setToken("");AME=null;IS_DEMO=false;renderAcct();loadCompte();};
     if($("#cp_export"))$("#cp_export").onclick=rgpdExport;if($("#cp_delete"))$("#cp_delete").onclick=rgpdDelete;icons();}
@@ -633,8 +626,7 @@
 
   // ── Init ──
   applyTheme();renderAcct();navTo("dashboard");
-  if(WANT==="demo"){enterDemo();}
-  else if(ATOKEN){fetch("/api/acheteur/me",{headers:aHeaders()}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(me){AME=me;IS_DEMO=(me.email==="demo@collectivites.adjugo.fr");renderAcct();refreshCurrentView();}).catch(function(){setToken("");AME=null;renderAcct();refreshCurrentView();});}
+  if(ATOKEN){fetch("/api/acheteur/me",{headers:aHeaders()}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(me){AME=me;IS_DEMO=(me.email==="demo@collectivites.adjugo.fr");renderAcct();refreshCurrentView();}).catch(function(){setToken("");AME=null;renderAcct();refreshCurrentView();});}
   else if(WANT==="register"){openAuth("register");}
   else if(WANT==="login"){openAuth("login");}
   icons();
