@@ -65,7 +65,7 @@ function translateDOM(lang) {
 // en clair + détail chiffré dans le navigateur (enveloppe), capacités déclarées, signataire, pièces typées.
 function _sharedInit(token, mandataire) {
   return { token: token || "", project: null, mandataire: mandataire || "", docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true, loading: false, error: "",
-           forMember: null, coffre: null, journal: null, journalLoaded: false,
+           forMember: null, coffre: null, journal: null, journalLoaded: false, conv: _sconvInit(),
            envelope: null, detailClair: "", detailLocked: false, cryptoCtx: null, pendingCode: null, detailLoaded: false,
            upl: { piece_type: "", expiration_date: "" }, vault: { open: false, loading: false, docs: [], needClaim: false, pendingDoc: null },
            contrib: { company_name: "", lot: "", siret: "", forme_juridique: "", address: "", postal_code: "", city: "", quals: "", refs: "", memoire_paragraph: "",
@@ -78,6 +78,99 @@ function _grpInit() {
            saisi: { name: "", siret: "", ca_n1: null, effectif: null, qualifications: "" }, saisiOpen: false,
            sim: null, simulating: false, retaining: false,
            history: [], historyOpen: false, historyLoading: false, historyLoaded: false, sireneLoading: false };
+}
+
+// ── « Monter le groupement » (co-traitance v2, vague 2) ──────────────────────────────
+// État de la carte côté chef de file — réinitialisé à chaque ouverture de marché.
+function _convInit() {
+  return { loading: false, loaded: false, error: "", d: null, f: null, busy: "", live: "", err: "", errCode: "", missing: [],
+           errAt: "top", staleReason: "", editOpen: false, textOpen: false, rulesOpen: false, accord: { nom: "", qualite: "", accepte: false, hash: "" } };
+}
+// Convention vue par un partenaire qui a un compte (« Partagé avec moi », après rattachement du lien).
+function _sconvInit() {
+  return { loading: false, d: null, error: "", busy: false, live: "", err: "", textOpen: false,
+           accord: { nom: "", qualite: "", accepte: false, hash: "" } };
+}
+
+// Rendu SÛR du texte de la convention (Markdown simple renvoyé par l'API : # titres, - listes,
+// **gras**, *italique*). JAMAIS de v-html brut : on échappe TOUT le HTML d'abord, puis on
+// applique ce rendu minimal sur le texte échappé. Les valeurs saisies arrivent échappées par le
+// serveur (« \* », « \_ », « \# »…) : elles restent du texte littéral. Aucun lien, aucune image,
+// aucun attribut venu du texte. L'annexe « - **Membre** — rôle — part : … — prix de vente : … »
+// devient un tableau de répartition (même texte, même ordre).
+const _MD_PH = { "\\": "", "*": "", "_": "", "`": "", "#": "", "[": "", "]": "" };
+const _MD_PH_BACK = {};
+Object.keys(_MD_PH).forEach(k => { _MD_PH_BACK[_MD_PH[k]] = k; });
+function _escHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+function _mdProtect(s) {   // échappements Markdown → marqueurs internes (jamais interprétés)
+  return String(s == null ? "" : s).replace(/[-]/g, "").replace(/\\([\\*_`#\[\]])/g, (m, c) => _MD_PH[c]);
+}
+function _mdInline(prot) {
+  let s = _escHtml(prot);
+  s = s.replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>").replace(/\*([^*]+?)\*/g, "<em>$1</em>");
+  return s.replace(/[-]/g, c => _MD_PH_BACK[c]);
+}
+function _mdCells(line) { return line.replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim()); }
+const _convMdCache = new Map();
+function convMdToHtml(md) {
+  const src = String(md || "");
+  if (_convMdCache.has(src)) return _convMdCache.get(src);
+  const out = [];
+  let list = null, rows = null, table = null, annex = false;
+  const flush = (keep) => {
+    if (list && keep !== "list") { out.push("<ul>" + list.map(li => "<li>" + li + "</li>").join("") + "</ul>"); list = null; }
+    if (rows && keep !== "rows") {
+      out.push('<div class="cv-tw"><table class="cv-table cv-rep"><thead><tr><th scope="col">Membre</th><th scope="col">Rôle</th><th scope="col">Part</th><th scope="col">Prix de vente</th></tr></thead><tbody>'
+        + rows.map(r => "<tr>" + r.map((c, i) => i === 0 ? '<th scope="row">' + _mdInline(c) + "</th>" : "<td>" + _mdInline(c) + "</td>").join("") + "</tr>").join("")
+        + "</tbody></table></div>");
+      rows = null;
+    }
+    if (table && keep !== "table") {
+      const head = table[0] || [], body = table.slice(1);
+      out.push('<div class="cv-tw"><table class="cv-table"><thead><tr>' + head.map(c => '<th scope="col">' + _mdInline(c) + "</th>").join("")
+        + "</tr></thead><tbody>" + body.map(r => "<tr>" + r.map(c => "<td>" + _mdInline(c) + "</td>").join("") + "</tr>").join("") + "</tbody></table></div>");
+      table = null;
+    }
+  };
+  src.replace(/\r\n?/g, "\n").split("\n").forEach(raw => {
+    const t = _mdProtect(raw).trim();
+    if (!t) { flush(); return; }
+    let m = t.match(/^(#{1,3})\s+(.+)$/);
+    if (m) {
+      flush(); const tag = "h" + (m[1].length + 3);
+      annex = /^annexe\b/i.test(m[2]);
+      out.push("<" + tag + ' class="cv-h">' + _mdInline(m[2]) + "</" + tag + ">");
+      return;
+    }
+    m = t.match(/^[-*]\s+(.+)$/);
+    if (m) {
+      const a = annex && m[1].match(/^\*\*(.+?)\*\* — (.+?) — part : (.*) — prix de vente : (.*)$/);
+      if (a) { flush("rows"); (rows = rows || []).push([a[1], a[2], a[3], a[4]]); }
+      else { flush("list"); (list = list || []).push(_mdInline(m[1])); }
+      return;
+    }
+    if (/^\|.*\|$/.test(t)) {
+      flush("table");
+      if (!/^\|[\s:|-]+\|$/.test(t)) (table = table || []).push(_mdCells(t));
+      return;
+    }
+    flush(); out.push("<p>" + _mdInline(t) + "</p>");
+  });
+  flush();
+  const html = out.join("");
+  if (_convMdCache.size > 8) _convMdCache.clear();
+  _convMdCache.set(src, html);
+  return html;
+}
+// Les dates du serveur sont en UTC sans fuseau (« 2026-10-08T01:30:10 ») : on l'indique
+// explicitement, sinon le navigateur les lirait comme une heure locale.
+// Trop de demandes (limite de fréquence côté serveur, réponse 429 sans message en français).
+const TOO_MANY_MSG = "Trop de demandes en peu de temps : réessayez dans quelques minutes.";
+function _isoUtc(s) {
+  s = String(s || "");
+  return (/T\d{2}:\d{2}/.test(s) && !/(Z|[+-]\d{2}:?\d{2})$/.test(s)) ? s + "Z" : s;
 }
 
 const __adjApp = createApp({
@@ -98,7 +191,7 @@ const __adjApp = createApp({
       sharedAo: _sharedInit(),
       pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "autre", l: "Autre" }],
       veille: { q: "", loc: "", results: [], loading: false },
-      drawer: null, modal: null,
+      drawer: null, modal: null, cdlg: null,   // cdlg : confirmation d'une action de la convention
       welcome: { siret: "", busy: false, dismissed: false },   // activation par SIRET (1er lancement)
       ag: { query: "réhabilitation groupe scolaire", running: false, log: [], gonogo: null, coverage: null, lots: [], dossier: null },
       agState: {}, agStep: {},
@@ -186,7 +279,7 @@ const __adjApp = createApp({
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
-            chkHelp: null, grp: _grpInit(),
+            chkHelp: null, grp: _grpInit(), conv: _convInit(),
             qa: [], qaInput: "", qaLoading: false,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
@@ -414,8 +507,14 @@ const __adjApp = createApp({
           msg = this.validationMsg(d[0]);
         } else if (typeof d === "string") { msg = d; }
         else if (d && d.message) { msg = d.message; }
+        else if (r.status === 429) { msg = TOO_MANY_MSG; }   // limite de fréquence (réponse sans « detail »)
         else { msg = r.status >= 500 ? "Erreur serveur, réessayez dans un instant." : "Erreur " + r.status; }
-        throw new Error(msg);
+        // Statut et code métier conservés (ex. 409 « deja_generee », 403 « email_non_verifie ») :
+        // certains écrans enchaînent une confirmation au lieu d'afficher seulement le message.
+        const err = new Error(msg);
+        err.status = r.status;
+        if (d && typeof d === "object" && !Array.isArray(d)) { err.code = d.code || ""; if (Array.isArray(d.missing)) err.missing = d.missing; }
+        throw err;
       }
       return data;
       } finally { this.pending = Math.max(0, this.pending - 1); }
@@ -799,7 +898,7 @@ const __adjApp = createApp({
       this.ao.back = this.view; this.ao.dossier = null; this.ao.project = p;
       this.ao.cotraitants = []; this.ao.stOpen = false; this.ao.st.results = [];
       this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.buyerLoading = true; this.ao.checklist = null; this.ao.group = null;
-      this.ao.qa = []; this.ao.qaInput = ""; this.ao.grp = _grpInit();
+      this.ao.qa = []; this.ao.qaInput = ""; this.ao.grp = _grpInit(); this.ao.conv = _convInit();
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
       this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
@@ -962,7 +1061,7 @@ const __adjApp = createApp({
         this.sharedAo.project = v.project; this.sharedAo.mandataire = v.mandataire; this.sharedAo.docs = v.documents || []; this.sharedAo.canContribute = v.can_contribute;
         this.sharedAo.forMember = v.for_member || null;   // « Pourquoi vous » : % commun, mon apport, seuils — jamais le score seul du mandataire
         if (v.can_contribute) await this.sharedReload(t);
-        this.sharedLoadCoffre();
+        this.sharedLoadCoffre(); this.sharedConvLoad();
       } catch (e) { this.sharedAo.error = "Ce dossier n'est plus accessible (lien expiré, décliné ou révoqué)."; this.notify("Ce dossier n'est plus accessible", "err"); }
       finally { this.sharedAo.loading = false; }
     },
@@ -1108,7 +1207,7 @@ const __adjApp = createApp({
         if (!(await this._sharedPut())) return;
         if (!(await this.sharedEnsureVerified())) return;
         const c = await this.api("POST", "/api/invite/" + this.sharedAo.token + "/contribution/submit");
-        this.sharedAo.status = c.status; this.notify("Contribution soumise au chef de file"); this.loadShared();
+        this.sharedAo.status = c.status; this.notify("Contribution soumise au chef de file"); this.loadShared(); this.sharedConvLoad();
       } catch (e) { this.notify(e.message, "err"); } finally { this.sharedAo.busy = false; }
     },
     async sharedUpload(ev) {
@@ -1164,8 +1263,28 @@ const __adjApp = createApp({
     },
     async sharedJournalToggle(ev) {
       if (!(ev && ev.target && ev.target.open) || this.sharedAo.journalLoaded) return;
-      try { this.sharedAo.journal = await this.api("GET", "/api/invite/" + this.sharedAo.token + "/journal"); this.sharedAo.journalLoaded = true; }
-      catch (e) { this.notify("Journal indisponible", "err"); }
+      await this.sharedJournalLoad();
+    },
+    async sharedJournalLoad() {
+      const t = this.sharedAo.token; if (!t) return;
+      try {
+        const j = await this.api("GET", "/api/invite/" + t + "/journal");
+        if (this.sharedAo.token === t) { this.sharedAo.journal = j; this.sharedAo.journalLoaded = true; }
+      } catch (e) { this.notify("Journal indisponible", "err"); }
+    },
+    // Après un accord : l'étape du groupement (stepper) vient de /api/shared, rechargé ici — rouvrir
+    // le dossier ajouterait une « consultation » au journal. Le journal est relu s'il est ouvert.
+    async _sharedAfterAccord(t) {
+      await this.loadShared();
+      if (this.sharedAo.token !== t) return;
+      const it = (this.shared || []).find(x => x && x.token === t), g = it && it.groupement, fm = this.sharedAo.forMember;
+      if (g && fm) {
+        const up = {}; ["state", "label", "index", "etape", "etapes"].forEach(k => { if (g[k] !== undefined) up[k] = g[k]; });
+        fm.state = Object.assign({}, fm.state || {}, up);
+      }
+      this.sharedAo.journalLoaded = false;
+      let el = this.$refs.sharedJournal; if (Array.isArray(el)) el = el[0];
+      if (el && el.open) await this.sharedJournalLoad();
     },
     async sharedDecline() {
       if (!confirm("Décliner l'invitation ?\n\nVous sortez du groupement : votre part ne figurera pas dans la réponse commune et ce lien ne sera plus utilisable.")) return;
@@ -1175,6 +1294,56 @@ const __adjApp = createApp({
         this.go("shared"); this.loadShared(); this.notify("Invitation déclinée");
       } catch (e) { this.notify(e.message, "err"); }
     },
+    // ── Convention de groupement vue par le partenaire (« Partagé avec moi ») ──
+    // Mêmes routes que l'espace par lien (/api/invite/{token}/convention) : api() ajoute le
+    // jeton du compte, donc l'accord est enregistré « depuis son compte Adjugo ».
+    async sharedConvLoad() {
+      const t = this.sharedAo.token; if (!t) return;
+      const c = this.sharedAo.conv; c.loading = true; c.error = "";
+      try {
+        const d = await this.api("GET", "/api/invite/" + t + "/convention");
+        if (this.sharedAo.token === t) this._sconvApply(d);
+      } catch (e) { if (this.sharedAo.token === t) this.sharedAo.conv.error = e.message || "Convention momentanément indisponible."; }
+      finally { c.loading = false; }
+    },
+    _sconvApply(d) {
+      const c = this.sharedAo.conv; c.d = d;
+      const ms = (d && d.ma_signature) || {};
+      if (!c.accord.nom) c.accord.nom = ms.signataire_nom || "";
+      if (!c.accord.qualite) c.accord.qualite = ms.signataire_qualite || "";
+      if (c.accord.hash !== ((d && d.content_hash) || "")) { c.accord.accepte = false; c.accord.hash = (d && d.content_hash) || ""; }
+    },
+    sconvGenerated() { const s = this.sharedAo.conv.d && this.sharedAo.conv.d.status; return s === "a_signer" || s === "signee"; },
+    async sharedConvValider(retried) {
+      const t = this.sharedAo.token, c = this.sharedAo.conv, d = c.d; if (!d || (c.busy && !retried)) return;
+      const ms = d.ma_signature || {};
+      if (!c.accord.accepte) { c.err = "Cochez « J'ai lu la convention et je donne mon accord »."; return; }
+      if (!(c.accord.nom || "").trim()) { c.err = "Indiquez le nom de la personne qui donne l'accord."; return; }
+      c.busy = true; c.err = "";
+      try {
+        if (ms.verification_requise && !retried && !(await this.sharedEnsureVerified())) return;
+        const r = await this.api("POST", "/api/invite/" + t + "/convention/valider",
+          { content_hash: d.content_hash, signataire_nom: c.accord.nom.trim(), signataire_qualite: (c.accord.qualite || "").trim(), accepte: true });
+        if (this.sharedAo.token !== t) return;
+        this._sconvApply(r); c.live = "Votre accord est enregistré."; this.notify("Accord enregistré"); this._sharedAfterAccord(t);
+      } catch (e) {
+        if (e.code === "identity_unverified" && !retried) {
+          if (await this.sharedEnsureVerified()) { await this.sharedConvValider(true); return; }
+        }
+        if (["texte_modifie", "perimee", "pas_generee"].includes(e.code)) await this.sharedConvLoad();
+        c.err = e.message || "Accord impossible pour l'instant.";
+      } finally { c.busy = false; }
+    },
+    async sharedConvPdf() {
+      try { await this._pdfFetch("/api/invite/" + this.sharedAo.token + "/convention/pdf", "Convention_groupement.pdf"); }
+      catch (e) { this.notify(e.message, "err"); }
+    },
+    sharedGrpLine(s) {
+      const g = s && s.groupement; if (!g || !g.etape) return "";
+      const all = g.etapes || [], e = all.find(x => x.n === g.etape);
+      return "Étape " + g.etape + (all.length ? " sur " + all.length : "") + (e ? " · " + e.label : "");
+    },
+    openSharedKey(ev, s) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); this.openShared(s); } },
     sharedFact(a) { const L = { acheteur: "Acheteur", allotissement: "Allotissement", lieu: "Lieu", type_marche: "Type", date_limite: "Date limite", criteres_attribution: "Critères", duree: "Durée" }; return Object.entries(L).filter(([k]) => a && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length)).map(([k, lab]) => ({ k: lab, v: Array.isArray(a[k]) ? a[k].map(x => (x && typeof x === "object") ? (x.critere || x.nom || x.label || "") + (x.ponderation ? " — " + x.ponderation : "") : x).join(" · ") : a[k] })); },
     // ── Notifications (activité des partenaires) ──
     async loadNotifs() { try { this.notifs = await this.api("GET", "/api/notifications") || []; } catch (e) {} },
@@ -1281,6 +1450,9 @@ const __adjApp = createApp({
         "owner.view_contribution": "Vous avez consulté la part de ce partenaire", "owner.download_piece": "Vous avez téléchargé une pièce du partenaire", "owner.view_piece": "Vous avez consulté une pièce du partenaire",
         "offer.frozen": "Offre commune figée", "offer.unfrozen": "Offre commune défigée", "piece.expiring": "Alerte : une attestation manque ou expire",
         "groupement.besoins": "Lecture de ce que le marché exige", "groupement.simulate": "Score en groupement calculé", "groupement.retenue": "Composition du groupement retenue", "groupement.plan_retire": "Composition du groupement annulée",
+        "convention.generated": "Convention de groupement générée", "convention.signed": "Accord enregistré sur la convention",
+        "convention.perimee": "Convention plus à jour (à régénérer)", "convention.hors_ligne": "Accord hors ligne enregistré",
+        "convention.hors_ligne_retire": "Accord hors ligne retiré", "guest.download_convention": "Convention téléchargée par le partenaire",
       };
       return m[a.action] || a.action;
     },
@@ -1342,6 +1514,7 @@ const __adjApp = createApp({
       const err = (st && st._err) || (bs && bs._err);
       if (err) this.ao.grp.error = err.message || "Le calcul de groupement est momentanément indisponible.";
       this.ao.grp.loading = false;
+      if (this.convVisible()) this.aoConvLoad();
     },
     async aoGrpLoadBesoins(sirene) {
       const pid = this.ao.project && this.ao.project.id; if (!pid) return;
@@ -1355,11 +1528,21 @@ const __adjApp = createApp({
     async aoGrpReloadState() {
       const pid = this.ao.project && this.ao.project.id; if (!pid) return;
       try { this.ao.grp.state = await this.api("GET", "/api/projects/" + pid + "/groupement/state"); } catch (e) {}
+      if (this.convVisible() && !this.ao.conv.loaded) this.aoConvLoad(true);
     },
-    // Stepper : étapes passées / courante ; « Convention » et « Prêt à déposer » arrivent en vague 2 (libellés conservés).
-    gstepClass(state, s, i) {
-      const idx = (state && typeof state.index === "number") ? state.index : -1;
-      return { done: i < idx, cur: i === idx, soon: s.key === "convention_a_signer" || s.key === "pret_a_deposer" };
+    // Stepper du groupement : les 5 étapes du parcours (state.etapes, dérivées côté serveur) ;
+    // repli sur les 8 états de la vague 1 si l'API ne les renvoie pas. Plus de marque « bientôt ».
+    grpSteps(state) {
+      if (!state) return [];
+      if (Array.isArray(state.etapes) && state.etapes.length)
+        return state.etapes.map(e => ({ key: e.key, n: e.n, label: e.label, done: e.status === "fait", cur: e.status === "en_cours" }));
+      const idx = typeof state.index === "number" ? state.index : -1;
+      return (state.steps || []).map((s, i) => ({ key: s.key, n: i + 1, label: s.label, done: i < idx, cur: i === idx }));
+    },
+    grpEtapeNow(state) {
+      const all = this.grpSteps(state), cur = all.find(s => s.cur); if (!cur) return "";
+      const sub = state && state.label && state.label !== cur.label ? " — " + state.label : "";
+      return "Étape " + cur.n + " sur " + all.length + " : " + cur.label + sub;
     },
     grpPlan() { const st = this.ao.grp.state; const p = st && st.plan; return (p && typeof p === "object" && (p.members || []).length) ? p : null; },
     grpBreakdown() {
@@ -1508,6 +1691,9 @@ const __adjApp = createApp({
       return miss.length ? miss : ["Aucune part soumise avec un prix de lot pour l'instant"];
     },
     async aoFreezeOffer() {
+      // Vague 2 : « Figer l'offre » = « Figer l'offre et générer la convention » (même geste,
+      // même confirmation). L'ancienne route ne sert plus que de repli si la convention n'a pas pu se charger.
+      if (this.convVisible() && this.ao.conv.d) { await this.aoConvAskGenerate(true); return; }
       const cs = this.ao.share.consortium, o = cs && cs.offre; if (!o || !this.canFreeze()) return;
       const lead = (o.lead_total_ht == null && Number(this.ao.share.leadTotal) > 0) ? Number(this.ao.share.leadTotal) : null;
       let msg = "Figer l'offre commune ?\n\nTotal prévisionnel : " + this.eur(this.freezeTotal()) + " HT"
@@ -1520,15 +1706,373 @@ const __adjApp = createApp({
         const r = await this.api("POST", "/api/projects/" + this.ao.project.id + "/offre/figer", lead != null ? { lead_total_ht: lead } : {});
         this.notify("Offre commune figée — total " + this.eur(r.total_ht) + " HT");
         await this.aoLoadConsortium();
-      } catch (e) { this.notify(e.message, "err"); }
+      } catch (e) {
+        // 409 « convention_generee » : l'offre est déjà figée par la convention → on y renvoie.
+        if (e.status === 409 && e.code === "convention_generee") { this.notify(e.message, "err"); await this.aoConvLoad(true); this.aoConvScroll("convCard"); }
+        else this.notify(e.message, "err");
+      }
       finally { this.ao.share.freezing = false; }
     },
     async aoUnfreezeOffer() {
-      if (!confirm("Défiger l'offre commune ? Les partenaires ne verront plus le total tant qu'elle n'est pas refigée.")) return;
+      const cv = this.ao.conv.d, generated = !!(cv && (cv.status === "a_signer" || cv.status === "signee"));
+      const msg = "Défiger l'offre commune ? Les partenaires ne verront plus le total tant qu'elle n'est pas refigée."
+        + (generated ? "\n\nLa convention de groupement deviendra caduque : les accords déjà enregistrés tombent et il faudra la régénérer." : "");
+      if (!confirm(msg)) return;
       this.ao.share.freezing = true;
-      try { await this.api("DELETE", "/api/projects/" + this.ao.project.id + "/offre/figer"); this.notify("Offre commune défigée"); await this.aoLoadConsortium(); }
+      try { await this.api("DELETE", "/api/projects/" + this.ao.project.id + "/offre/figer"); this.notify("Offre commune défigée"); await this.aoLoadConsortium(); if (this.convVisible()) await this.aoConvLoad(true); }
       catch (e) { this.notify(e.message, "err"); }
       finally { this.ao.share.freezing = false; }
+    },
+    // ── « Monter le groupement » (vague 2) : assistant, génération (= figer l'offre), accords ──
+    // Règle : aucun chiffre ni statut n'est calculé ici ; tout vient de l'API (contrat :
+    // docs/COTRAITANCE_V2_VAGUE2_API.md). Le texte de la convention passe par convHtml() (échappé).
+    convVisible() {
+      const st = this.ao.grp.state, d = this.ao.conv.d;
+      return !!((st && ((Number(st.etape) || 1) >= 2 || st.convention)) || (d && d.status && d.status !== "aucune"));
+    },
+    convHtml(md) { return convMdToHtml(md); },
+    convGenerated() { const s = this.ao.conv.d && this.ao.conv.d.status; return s === "a_signer" || s === "signee" || s === "perimee"; },
+    convStatusPill(s) { return ({ a_signer: "a_etudier", signee: "go", perimee: "no_go" })[s] || "neutral"; },
+    convSigPill(s) { return ({ signed: "go", hors_ligne: "go", pending: "a_etudier", perimee: "no_go" })[s] || "neutral"; },
+    convMemberLabel(m) { return ({ mandataire: "Chef de file", partenaire: "Partenaire", hors_ligne: "Partenaire · accord hors ligne" })[m] || ""; },
+    convHash(d) { return String((d && d.content_hash) || "").slice(0, 12); },
+    convTotal(d) { if (!d) return null; return this.convGenerated() ? d.total_offre_ht : d.total_estime_ht; },
+    convMySig() { const d = this.ao.conv.d; return ((d && d.signatures) || []).find(s => s.membre === "mandataire") || null; },
+    convOtherClauses(fi) { return ((fi && fi.clauses) || []).filter(x => x && x !== fi.extrait); },
+    convPret() { const st = this.ao.grp.state; return (st && st.pret) || null; },
+    eur2(v) {   // montants de la convention : au centime près (comme le texte et le PDF), jamais arrondis
+      if (v == null || v === "") return "—";
+      const n = Number(v); if (!isFinite(n)) return "—";
+      try { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }).format(n); }
+      catch (e) { return n.toLocaleString("fr-FR") + " €"; }
+    },
+    convWhen(s) {
+      if (!s) return "";
+      try {
+        const d = new Date(_isoUtc(s)); if (isNaN(d.getTime())) return String(s);
+        return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " à " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      } catch (e) { return String(s); }
+    },
+    _convMergeState(st) {   // le stepper et « Prêt à déposer » suivent la convention sans recharger la fiche
+      if (!st || typeof st !== "object") return;
+      if (this.ao.grp.state) Object.assign(this.ao.grp.state, st); else this.ao.grp.state = st;
+    },
+    _convForm(d) {
+      const hl = {};
+      (d.candidats_hors_ligne || []).forEach(c => {
+        const cur = (d.membres_hors_ligne || []).find(x => x.link_id === c.link_id);
+        hl[c.link_id] = { on: !!cur, prix_lot_ht: cur && cur.prix_lot_ht != null ? cur.prix_lot_ht : "",
+                          lot: (cur && cur.lot) || c.lot || "", representant_legal: (cur && cur.representant_legal) || c.representant_legal || "",
+                          signataire_qualite: (cur && cur.signataire_qualite) || "" };
+      });
+      return { forme: d.forme || "", mandataire_solidaire: !!d.mandataire_solidaire, habilitation: Object.assign({}, d.habilitation || {}),
+               params: Object.assign({}, d.params || {}), hl, masquer_repartition: !!d.masquer_repartition };
+    },
+    _convApply(d, keepForm) {
+      const c = this.ao.conv, keep = !!(keepForm && c.f && this.convDirty());
+      c.d = d;
+      if (!keep) c.f = this._convForm(d);
+      else { const fresh = this._convForm(d); Object.keys(fresh.hl).forEach(k => { if (!c.f.hl[k]) c.f.hl[k] = fresh.hl[k]; }); }
+      c.loaded = true; c.error = "";
+      const ms = (d && d.ma_signature) || {};
+      if (!c.accord.nom) c.accord.nom = ms.signataire_nom || "";
+      if (!c.accord.qualite) c.accord.qualite = ms.signataire_qualite || "";
+      if (c.accord.hash !== ((d && d.content_hash) || "")) { c.accord.accepte = false; c.accord.hash = (d && d.content_hash) || ""; }
+      if (d && d.state) this._convMergeState(d.state);
+      if (d && d.status === "perimee") this._convLoadStaleReason(); else c.staleReason = "";
+    },
+    // Convention caduque : la cause n'est pas dans la réponse de la convention, mais le serveur
+    // la journalise (« convention.perimee »). Ce détail est une note interne : on le traduit en
+    // phrase simple (_convStaleCause) ; cause inconnue → le bandeau garde sa phrase générique.
+    async _convLoadStaleReason() {
+      const pid = this.ao.project && this.ao.project.id; if (!pid) return;
+      try {
+        const rows = await this.api("GET", "/api/projects/" + pid + "/audit?limit=100") || [];
+        if (this.ao.project && this.ao.project.id === pid && this.ao.conv.d && this.ao.conv.d.status === "perimee")
+          this.ao.conv.staleReason = this._convStaleCause(rows);
+      } catch (e) { /* cause indisponible : le bandeau reste générique */ }
+    },
+    _convStaleCause(rows) {
+      const list = Array.isArray(rows) ? rows : [];
+      const i = list.findIndex(x => x && x.action === "convention.perimee"); if (i < 0) return "";
+      const det = String(list[i].detail || "").trim().replace(/\s+/g, " "), low = det.toLowerCase();
+      const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+      const fixed = {
+        "défigée par le mandataire": "L'offre commune a été défigée.",
+        "chiffrage du mandataire modifié": "Votre chiffrage (votre part de l'offre) a été modifié.",
+        "composition du groupement modifiée": "La composition du groupement a changé.",
+        "plan de groupement retiré": "Le plan de groupement a été retiré.",
+        "partenaire hors ligne retiré du marché": "Un partenaire hors ligne a été retiré du marché.",
+        "les parts, les prix ou la composition ont changé depuis la génération": "Une part, un prix ou la composition a changé depuis sa génération.",
+      };
+      if (fixed[low]) return fixed[low];
+      let m = det.match(/^part de (.+) modifiée$/i);
+      if (m) {
+        // Un refus d'invitation passe par le même chemin : il est journalisé juste après
+        // (« invite.declined », détail = l'entreprise), dans la même minute.
+        const who = m[1], t0 = Date.parse(_isoUtc(list[i].at));
+        const declined = list.slice(0, i).some(x => x && x.action === "invite.declined"
+          && String(x.detail || "").replace(/\s+/g, " ").trim() === who && Math.abs(Date.parse(_isoUtc(x.at)) - t0) < 60000);
+        return cap(who) + (declined ? " a décliné l'invitation." : " a modifié sa part.");
+      }
+      m = det.match(/^nouveau partenaire invité \((.+)\)$/i);
+      if (m) return m[1] === "sans nom" ? "Un nouveau partenaire a été invité." : cap(m[1]) + " a été invité dans le groupement.";
+      m = det.match(/^(.+) retiré$/i);
+      if (m) return cap(m[1]) + " a été retiré du groupement.";
+      return "";
+    },
+    _convSay(msg) { this.ao.conv.live = msg; this.notify(msg); },
+    // Les messages d'erreur s'affichent À CÔTÉ du bouton qui les a provoqués (zone) : « top » (haut de
+    // la carte), « fi » (règlement), « foot » (pied de l'assistant), « accords » (suivi), « accord » (mon accord).
+    _convErrZone() { return (this.convGenerated() && !this.ao.conv.editOpen) ? "top" : "foot"; },
+    _convFail(e, at) { const c = this.ao.conv; c.err = (e && e.message) || "Action impossible pour l'instant."; c.errCode = (e && e.code) || ""; c.missing = (e && Array.isArray(e.missing)) ? e.missing : []; c.errAt = at || this._convErrZone(); },
+    _convErr(msg, at) { const c = this.ao.conv; c.err = msg; c.errCode = ""; c.missing = []; c.errAt = at || this._convErrZone(); },
+    // peut_generer = false : le message s'affiche là où la liste des manques est visible (pied de
+    // l'assistant en brouillon ; haut de la carte, au-dessus du bandeau « plus à jour », sinon) et on y va.
+    _convCantGenerate(scroll) {
+      const c = this.ao.conv, d = c.d || {}, gen = this.convGenerated();
+      this._convErr((gen ? "Impossible de régénérer la convention" : "Impossible de générer la convention")
+        + " : complétez d'abord les éléments listés ci-dessous.", gen ? "top" : "foot");
+      // Convention générée et encore à jour : aucune autre liste en haut de la carte → elle va dans le message.
+      if (gen && d.status !== "perimee") c.missing = (d.manques || []).map(m => String(m || "")).filter(Boolean);
+      if (gen) this.aoConvScroll("convCard"); else if (scroll) this.aoConvScroll("convFoot");
+    },
+    convErrAt(z) { return !!this.ao.conv.err && (this.ao.conv.errAt || "top") === z; },
+    convErrClear() { const c = this.ao.conv; c.err = ""; c.errCode = ""; c.missing = []; },
+    async aoConvLoad(quiet) {
+      const pid = this.ao.project && this.ao.project.id; if (!pid) return;
+      const c = this.ao.conv; if (c.loading) return;
+      c.loading = true; if (!quiet) c.error = "";
+      try {
+        const d = await this.api("GET", "/api/projects/" + pid + "/groupement/convention");
+        if (this.ao.project && this.ao.project.id === pid) this._convApply(d, true);
+      } catch (e) { if (this.ao.project && this.ao.project.id === pid) this.ao.conv.error = e.message || "La convention est momentanément indisponible."; }
+      finally { c.loading = false; }
+    },
+    _convNorm(v) { return (v === "" || v === undefined) ? null : v; },
+    // Mise à jour PARTIELLE (contrat 3.2) : seuls les champs modifiés partent au serveur.
+    convDiff() {
+      const c = this.ao.conv, d = c.d, f = c.f, body = {}; if (!d || !f) return body;
+      const same = (a, b) => JSON.stringify(this._convNorm(a)) === JSON.stringify(this._convNorm(b));
+      if ((f.forme || "") !== (d.forme || "")) body.forme = f.forme || "";
+      if (f.forme === "conjoint" && (body.forme !== undefined || !!f.mandataire_solidaire !== !!d.mandataire_solidaire)) body.mandataire_solidaire = !!f.mandataire_solidaire;
+      const hab = {};
+      Object.keys(f.habilitation || {}).forEach(k => { if (k !== "representer" && !!f.habilitation[k] !== !!(d.habilitation || {})[k]) hab[k] = !!f.habilitation[k]; });
+      if (Object.keys(hab).length) body.habilitation = hab;
+      const prm = {};
+      Object.keys(f.params || {}).forEach(k => { if (!same(f.params[k], (d.params || {})[k])) prm[k] = this._convNorm(f.params[k]); });
+      if (Object.keys(prm).length) body.params = prm;
+      const pick = e => ({ link_id: Number(e.link_id), prix_lot_ht: this._convNorm(e.prix_lot_ht), lot: e.lot || "", representant_legal: e.representant_legal || "", signataire_qualite: e.signataire_qualite || "" });
+      const hl = Object.keys(f.hl || {}).filter(id => f.hl[id].on).map(id => pick(Object.assign({ link_id: id }, f.hl[id])));
+      const cur = (d.membres_hors_ligne || []).map(pick);
+      const byId = a => a.slice().sort((x, y) => x.link_id - y.link_id);
+      if (JSON.stringify(byId(hl)) !== JSON.stringify(byId(cur))) body.membres_hors_ligne = hl;
+      if ((d.status === "draft" || d.status === "aucune") && !!f.masquer_repartition !== !!d.masquer_repartition) body.masquer_repartition = !!f.masquer_repartition;
+      return body;
+    },
+    convDirty() { return Object.keys(this.convDiff()).length > 0; },
+    convIsDefault(p) { const f = this.ao.conv.f; return !!f && JSON.stringify(this._convNorm(f.params[p.key])) === JSON.stringify(this._convNorm(p.defaut)); },
+    convPickForme(v) { const f = this.ao.conv.f; if (!f) return; f.forme = v; if (v !== "conjoint") f.mandataire_solidaire = false; },
+    async aoConvSave(extra) {
+      const c = this.ao.conv, pid = this.ao.project && this.ao.project.id; if (!pid || !c.d || c.busy) return false;
+      const body = Object.assign(this.convDiff(), extra || {});
+      if (!Object.keys(body).some(k => k !== "confirmer_modification")) { this._convSay("Rien à enregistrer : aucun choix n'a changé."); return true; }
+      c.busy = "save"; c.err = ""; c.errCode = ""; c.missing = [];
+      try {
+        const d = await this.api("PUT", "/api/projects/" + pid + "/groupement/convention", body);
+        if (!this.ao.project || this.ao.project.id !== pid) return false;
+        this._convApply(d);
+        this._convSay(body.confirmer_modification ? "Convention repassée en brouillon : générez-la à nouveau quand vos choix sont faits." : "Brouillon enregistré.");
+        return true;
+      } catch (e) {
+        if (e.status === 409 && e.code === "convention_generee") {
+          this._convAsk({ title: "Modifier la convention ?", ok: "Modifier quand même",
+            lines: [{ t: "Modifier la convention annule les accords déjà enregistrés.", warn: true },
+                    { t: "Elle repasse en brouillon : il faudra la générer à nouveau, et chaque membre devra redonner son accord." }],
+            run: () => this.aoConvSave({ confirmer_modification: true }) });
+        } else this._convFail(e);
+        return false;
+      } finally { c.busy = ""; }
+    },
+    async aoConvToggleMasquer(ev) {   // option du brouillon seulement : enregistrée tout de suite (aperçu et PDF)
+      const f = this.ao.conv.f; if (!f) return;
+      f.masquer_repartition = !!(ev && ev.target && ev.target.checked);
+      await this.aoConvSave();
+    },
+    async aoConvRelire() {
+      const c = this.ao.conv, pid = this.ao.project && this.ao.project.id; if (!pid || c.busy) return;
+      c.busy = "relire"; c.err = "";
+      try {
+        const r = await this.api("POST", "/api/projects/" + pid + "/groupement/convention/relire-dce");
+        if (!this.ao.project || this.ao.project.id !== pid) return;
+        if (c.d && r && r.forme_imposee) c.d.forme_imposee = r.forme_imposee;
+        this._convSay("Dossier du marché relu.");
+        c.busy = ""; await this.aoConvLoad(true);   // avertissements à jour (le formulaire en cours est conservé)
+      } catch (e) { this._convFail(e, "fi"); }
+      finally { c.busy = ""; }
+    },
+    // fromCockpit : l'action vient du cockpit (autre carte) → on amène l'utilisateur à la convention.
+    async aoConvAskGenerate(fromCockpit) {
+      const c = this.ao.conv; if (!c.d || c.busy) return;
+      if (this.convDirty() && !(await this.aoConvSave())) return;
+      const d = this.ao.conv.d;
+      // Déjà générée ou plus à jour : c'est une régénération (même route, sa propre confirmation).
+      if (this.convGenerated()) { this.aoConvAskRegenerate(null, fromCockpit); return; }
+      if (!d.peut_generer) { this._convCantGenerate(fromCockpit); return; }
+      if (fromCockpit) this.aoConvScroll("convCard");
+      const total = d.total_estime_ht, two = (d.membres || []).length === 2;
+      const lines = [
+        { t: total != null ? "Le total de l'offre commune (" + this.eur2(total) + " HT) sera figé et révélé à tous les partenaires."
+                           : "Le total de l'offre commune sera figé et révélé à tous les partenaires." },
+        { t: "L'annexe de répartition (la part et le prix de vente de chaque membre) sera visible par tous les membres du groupement." },
+      ];
+      if (two) lines.push({ t: "À 2 membres, le total révèle à chacun la part de l'autre.", warn: true });
+      lines.push({ t: "Chaque partenaire invité recevra la convention à valider dans son espace." },
+                 { t: "Si une part, un prix ou la composition change ensuite, la convention ne sera plus à jour et devra être régénérée." },
+                 { t: d.avertissement, warn: true });
+      this._convAsk({ title: "Figer l'offre et générer la convention ?", lines, ok: "Figer l'offre et générer", run: () => this.aoConvGenerate(false) });
+    },
+    aoConvAskRegenerate(apiMsg, fromCockpit) {
+      const d = this.ao.conv.d; if (!d) return;
+      if (!d.peut_generer) { this._convCantGenerate(fromCockpit); return; }   // sinon le serveur refuserait (422)
+      if (fromCockpit) this.aoConvScroll("convCard");
+      const lines = [];
+      if (apiMsg) lines.push({ t: apiMsg });
+      lines.push({ t: "Une nouvelle version est créée, avec une nouvelle empreinte." });
+      lines.push(d.status === "perimee" ? { t: "Les accords donnés sur l'ancienne version sont caducs : chaque membre devra donner son accord sur la nouvelle." }
+                                        : { t: "Les accords déjà enregistrés sont annulés : chaque membre devra redonner son accord.", warn: true });
+      lines.push({ t: "Le total de l'offre est recalculé, figé et révélé à tous les partenaires, avec l'annexe de répartition." });
+      if ((d.membres || []).length === 2) lines.push({ t: "À 2 membres, le total révèle à chacun la part de l'autre.", warn: true });
+      lines.push({ t: d.avertissement, warn: true });
+      this._convAsk({ title: "Régénérer la convention ?", lines, ok: "Régénérer la convention", run: () => this.aoConvGenerate(true) });
+    },
+    async aoConvGenerate(regen) {
+      const c = this.ao.conv, pid = this.ao.project && this.ao.project.id; if (!pid || c.busy) return;
+      c.busy = "generer"; c.err = ""; c.errCode = ""; c.missing = [];
+      try {
+        const d = await this.api("POST", "/api/projects/" + pid + "/groupement/convention/generer", { regenerer: !!regen });
+        if (!this.ao.project || this.ao.project.id !== pid) return;
+        this._convApply(d); c.textOpen = false; c.editOpen = false;
+        const n = Number(d.emails_envoyes) || 0;
+        this._convSay("Convention générée (version " + d.version + ")" + (n ? " — " + (n > 1 ? n + " partenaires prévenus" : "1 partenaire prévenu") + " par email." : "."));
+        this.aoLoadConsortium(); this.aoLoadInvites();
+      } catch (e) {
+        if (e.status === 409 && e.code === "deja_generee") this.aoConvAskRegenerate(e.message);
+        else { const z = this._convErrZone(); this._convFail(e, z); if (z === "top") this.aoConvScroll("convCard"); }
+      } finally { c.busy = ""; }
+    },
+    async aoConvValider() {
+      const c = this.ao.conv, d = c.d, pid = this.ao.project && this.ao.project.id; if (!pid || !d || c.busy) return;
+      if (!c.accord.accepte) { this._convErr("Cochez « J'ai lu la convention et je donne mon accord ».", "accord"); return; }
+      if (!(c.accord.nom || "").trim()) { this._convErr("Indiquez le nom de la personne qui donne l'accord.", "accord"); return; }
+      c.busy = "valider"; c.err = ""; c.errCode = ""; c.missing = [];
+      try {
+        const r = await this.api("POST", "/api/projects/" + pid + "/groupement/convention/valider",
+          { content_hash: d.content_hash, signataire_nom: c.accord.nom.trim(), signataire_qualite: (c.accord.qualite || "").trim(), accepte: true });
+        if (!this.ao.project || this.ao.project.id !== pid) return;
+        this._convApply(r, true); this._convSay("Votre accord est enregistré.");
+      } catch (e) {
+        this._convFail(e, "accord");
+        if (["texte_modifie", "perimee", "pas_generee", "statut"].includes(e.code)) { c.busy = ""; await this.aoConvLoad(true); }
+      } finally { c.busy = ""; }
+    },
+    aoConvAskHorsLigne(s, on) {
+      const d = this.ao.conv.d; if (!d || !s || s.link_id == null) return;
+      if (!on) {
+        this._convAsk({ title: "Retirer l'accord hors ligne ?", ok: "Retirer l'accord",
+          lines: [{ t: "L'accord de " + s.company + " repasse « En attente »." }], run: () => this.aoConvHorsLigne(s.link_id, false, {}) });
+        return;
+      }
+      const prev = (d.membres_hors_ligne || []).find(x => x.link_id === s.link_id) || (d.candidats_hors_ligne || []).find(x => x.link_id === s.link_id) || {};
+      this._convAsk({ title: "Enregistrer l'accord hors ligne ?", ok: "Enregistrer l'accord",
+        lines: [{ t: "Vous déclarez avoir recueilli l'accord de " + s.company + " sur la version " + d.version + " de la convention, en dehors d'Adjugo (sur papier, par exemple)." },
+                { t: "Le PDF indiquera que cet accord a été recueilli hors ligne et déclaré par vous, chef de file." }],
+        fields: [{ key: "nom", label: "Nom de la personne qui a donné l'accord", value: prev.representant_legal || "", max: 255 },
+                 { key: "qualite", label: "Qualité (gérant, président…)", value: prev.signataire_qualite || "", max: 120 }],
+        run: (v) => this.aoConvHorsLigne(s.link_id, true, v) });
+    },
+    async aoConvHorsLigne(linkId, on, v) {
+      const c = this.ao.conv, pid = this.ao.project && this.ao.project.id; if (!pid || c.busy) return;
+      c.busy = "horsligne"; c.err = ""; c.errCode = ""; c.missing = [];
+      try {
+        const r = await this.api("POST", "/api/projects/" + pid + "/groupement/convention/hors-ligne/" + linkId,
+          { accord_recueilli: !!on, signataire_nom: (v && v.nom) || "", signataire_qualite: (v && v.qualite) || "" });
+        if (!this.ao.project || this.ao.project.id !== pid) return;
+        this._convApply(r, true); this._convSay(on ? "Accord hors ligne enregistré." : "Accord hors ligne retiré.");
+      } catch (e) {
+        this._convFail(e, "accords");
+        if (e.status === 409) { c.busy = ""; await this.aoConvLoad(true); }
+      } finally { c.busy = ""; }
+    },
+    async _pdfFetch(url, fallbackName) {
+      const r = await fetch(url, { headers: this.token ? { Authorization: "Bearer " + this.token } : {} });
+      if (!r.ok) {
+        let m = r.status === 429 ? TOO_MANY_MSG : "Téléchargement impossible pour l'instant.";
+        try { const j = await r.json(), dd = j && j.detail; m = (typeof dd === "string" ? dd : (dd && dd.message)) || m; } catch (e) {}
+        throw new Error(m);
+      }
+      const cd = r.headers.get("Content-Disposition") || "";
+      let name = fallbackName;
+      const m1 = cd.match(/filename\*=UTF-8''([^;]+)/i), m2 = cd.match(/filename="?([^";]+)"?/i);
+      try { if (m1) name = decodeURIComponent(m1[1]); else if (m2) name = m2[1]; } catch (e) {}
+      this.saveBlob(await r.blob(), name);
+    },
+    async aoConvPdf() {
+      const c = this.ao.conv, pid = this.ao.project && this.ao.project.id; if (!pid || c.busy) return;
+      c.busy = "pdf";
+      try { await this._pdfFetch("/api/projects/" + pid + "/groupement/convention/pdf", "Convention_groupement.pdf"); }
+      catch (e) { this.notify(e.message, "err"); }
+      finally { c.busy = ""; }
+    },
+    aoConvScroll(ref) {
+      this.$nextTick(() => {
+        let el = this.$refs[ref];
+        if (Array.isArray(el)) el = el[0];   // ref posé dans un v-for (carte de la convention) → tableau
+        if (!el) return;
+        if (el.scrollIntoView) el.scrollIntoView({ block: "start", behavior: "smooth" });
+        if (el.focus) el.focus({ preventScroll: true });
+      });
+    },
+    aoConvShowCoffre() {
+      this.ao.share.cockpitOpen = true; this.aoLoadConsortium();
+      this.$nextTick(() => { const el = this.$refs.reseauCard; if (el && el.scrollIntoView) el.scrollIntoView({ block: "start", behavior: "smooth" }); });
+    },
+    async aoConvPrepareDocs() { await this.aoGenerate(); await this.aoGrpReloadState(); },
+    // « Prêt à déposer » : chaque contrôle de l'API (state.pret.checks) avec l'action qui le règle.
+    // Chaque manque de l'API (texte tel quel) est rangé sous le contrôle qu'il concerne : liste
+    // courte (3 au plus, puis « et N autres »), avec le bouton qui le règle juste à côté.
+    _convPretGroup(m) { return /^formulaire/i.test(m) ? "cerfa_generes" : /^convention/i.test(m) ? "convention_signee" : "attestations_ok"; },
+    convPretChecks() {
+      const p = this.convPret(); if (!p) return [];
+      const ch = p.checks || {}, man = (p.manques || []).map(m => String(m || "")).filter(Boolean);
+      return [
+        { key: "convention_signee", label: "Convention validée par tous les membres", cta: "Voir les accords", icon: "users-round", action: () => this.aoConvScroll("convAccords") },
+        { key: "attestations_ok", label: "Attestations de tous les membres valides à la date limite", cta: "Voir les attestations", icon: "folder-lock", action: () => this.aoConvShowCoffre() },
+        { key: "cerfa_generes", label: "Formulaires officiels préparés après la convention", codes: "DC1, DC2, ATTRI1", cta: "Préparer mes documents", icon: "file-text", action: () => this.aoConvPrepareDocs() },
+      ].filter(k => k.key in ch).map(k => Object.assign(k, { ok: !!ch[k.key], manques: man.filter(m => this._convPretGroup(m) === k.key) }));
+    },
+    convPretRest() {   // manques qui ne se rangent sous aucun contrôle encore à faire (jamais masqués)
+      const p = this.convPret(); if (!p) return [];
+      const open = this.convPretChecks().filter(k => !k.ok).map(k => k.key);
+      return (p.manques || []).map(m => String(m || "")).filter(m => m && !open.includes(this._convPretGroup(m)));
+    },
+    // Boîte de confirmation : dit ce que l'action fait AVANT de la faire (focus sur « Annuler », Échap ferme).
+    _convAsk(cfg) {
+      this._cdlgFocus = document.activeElement;
+      const lines = (cfg.lines || []).filter(Boolean).map(l => typeof l === "string" ? { t: l } : l);
+      this.cdlg = Object.assign({ ok: "Confirmer", fields: [] }, cfg, { lines, fields: (cfg.fields || []).map(x => Object.assign({}, x)) });
+      this.$nextTick(() => { const b = this.$refs.cdlgCancel; if (b && b.focus) b.focus(); });
+    },
+    cdlgClose() {
+      this.cdlg = null;
+      const el = this._cdlgFocus; this._cdlgFocus = null;
+      if (el && el.focus && document.body.contains(el)) this.$nextTick(() => el.focus());
+    },
+    async cdlgRun() {
+      const d = this.cdlg; if (!d) return;
+      const vals = {}; (d.fields || []).forEach(x => { vals[x.key] = String(x.value || "").trim(); });
+      const run = d.run; this.cdlgClose();
+      if (run) await run(vals);
     },
     roleLabel(r) { return ({ mandataire: "Chef de file", cotraitant: "Partenaire", sous_traitant: "Sous-traitant" })[r] || r; },
     checklistLabel(s) { return ({ ok: "Disponible", manquant: "Manquant", expire: "Expiré", generable: "Généré auto" })[s] || s; },
@@ -1574,6 +2118,7 @@ const __adjApp = createApp({
       try {
         const r = await this.api("POST", "/api/sourcing/documents", { project_id: this.ao.project.id, cotraitants: [] });
         this.ao.dossier = r.dossier; this.aoLoadDocs();
+        if (this.convVisible()) this.aoGrpReloadState();   // « Prêt à déposer » : formulaires préparés après la convention
         this.notify("Documents générés et archivés dans le dossier");
       } catch (e) {
         if ((e.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
