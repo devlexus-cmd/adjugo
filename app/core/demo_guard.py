@@ -54,6 +54,15 @@ _BLOCKED = [
     ("POST",   "/api/projects/{pid}/groupement/convention/generer",    "monter un groupement"),
     ("POST",   "/api/projects/{pid}/groupement/convention/valider",    "monter un groupement"),
     ("POST",   "/api/projects/{pid}/groupement/convention/hors-ligne/{lid}", "monter un groupement"),
+    # Réseau de partenaires (vague 3) : la démo ne publie rien, n'invite personne du réseau et
+    # ne voit aucun profil réel (réciprocité : il faudrait un profil publié).
+    ("PUT",    "/api/reseau/profil",                          "rejoindre le réseau de partenaires"),
+    ("DELETE", "/api/reseau/profil",                          "rejoindre le réseau de partenaires"),
+    ("POST",   "/api/reseau/profil/verifier",                 "rejoindre le réseau de partenaires"),
+    ("POST",   "/api/reseau/profil/publier",                  "rejoindre le réseau de partenaires"),
+    ("DELETE", "/api/reseau/profil/publier",                  "rejoindre le réseau de partenaires"),
+    ("POST",   "/api/projects/{pid}/reseau/invitations",      "inviter un partenaire"),
+    ("POST",   "/api/projects/{pid}/reseau/invitations-sirene", "inviter un partenaire"),
     ("POST",   "/api/org/invite",                             "inviter un collègue"),
     ("PUT",    "/api/auth/me",                                "modifier le profil du compte"),  # changement d'email
     ("POST",   "/api/auth/change-password",                   "choisir un mot de passe"),

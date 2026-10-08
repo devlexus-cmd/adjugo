@@ -820,6 +820,66 @@ class GroupementSignature(Base):
     ip = Column(String(45), default="")
 
 
+# === PROFIL PARTENAIRE DU RÉSEAU ADJUGO (B — vague 3 « vrai réseau ») ===
+# UN profil par organisation (user_id = data_owner_id, UNIQUE). OPT-IN : visible=False par
+# défaut ; publié seulement par un admin, SIRET à 14 chiffres, entreprise active vérifiée dans
+# SIRENE il y a moins de 30 jours. Confiance UNIQUEMENT vérifiable : SIRENE, BODACC, DECP et
+# dépôts réels sur Adjugo — jamais de note, d'avis ni d'étoile. None = « non vérifié ».
+# Fiche publique = SOUS-ENSEMBLE STRICT : jamais email, téléphone, CA, effectif exact,
+# documents ni résultats ; les références seulement si le partenaire les a choisies.
+# is_demo : colonne conservée (schéma), AUCUN profil de démonstration n'est créé et toutes
+# les requêtes du réseau les excluent.
+class PartnerProfile(Base):
+    __tablename__ = "partner_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Identifiant OPAQUE exposé dans l'API (jamais l'id séquentiel : anti-énumération).
+    public_id = Column(String(32), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)   # = data_owner_id
+    visible = Column(Boolean, default=False, nullable=False)    # opt-in : jamais publié par défaut
+
+    # Identité : nom OFFICIEL (SIRENE) dès la vérification, sinon nom du profil entreprise.
+    name = Column(String(255), default="")
+    siren = Column(String(9), default="", index=True)
+    siret = Column(String(14), default="")
+    postal_code = Column(String(10), default="")
+    city = Column(String(120), default="")
+    departement = Column(String(3), default="")
+
+    # Capacités DÉCLARÉES par l'entreprise (étiquetées « déclaré par l'entreprise le … »).
+    metiers = Column(JSON, default=list)            # clés TRADES (app.sourcing.sources.sirene)
+    codes_cpv = Column(JSON, default=list)
+    departements = Column(JSON, default=list)       # zones d'intervention
+    roles_acceptes = Column(JSON, default=list)     # cotraitant | sous_traitant | mandataire
+    disponibilite = Column(String(20), default="")  # disponible | limitee | complet
+    dispo_jusqua = Column(Date, nullable=True)
+    lot_max_eur = Column(Float, nullable=True)      # taille de lot maximale acceptée (HT)
+    presentation = Column(String(300), default="")  # UI : « présentation en une phrase »
+    # Références rendues PUBLIQUES par le partenaire lui-même (choisies) : [{intitule, client, annee}].
+    references_publiques = Column(JSON, default=list)
+    declared_at = Column(DateTime, nullable=True)   # dernière mise à jour des capacités déclarées
+    # SIREN à qui ce profil est masqué — appliqué DANS LES DEUX SENS (ni vu, ni ne voit).
+    hidden_from_sirens = Column(JSON, default=list)
+
+    # Vérifications (registres publics), datées. None = « non vérifié ».
+    verified_sirene = Column(JSON, nullable=True)   # {etat, date_creation, categorie, est_rge, est_qualiopi, est_personne_physique, checked_at, source}
+    verified_bodacc = Column(JSON, nullable=True)   # {found, ongoing, nature, date, url, checked_at}
+    verified_decp = Column(JSON, nullable=True)     # {count, last_date, checked_at} → « au moins N »
+    verified_at = Column(DateTime, nullable=True)   # dernière vérification SIRENE réussie
+
+    # Dépôts réels sur Adjugo : COUNT recalculé, jamais saisi.
+    groupements_deposes = Column(Integer, default=0)
+    last_groupement_at = Column(DateTime, nullable=True)
+    # Compteur ANONYME d'apparitions dans les recherches (mensuel) : jamais QUI a cherché.
+    appearances_count = Column(Integer, default=0)
+    appearances_period = Column(String(7), default="")   # « AAAA-MM »
+
+    published_at = Column(DateTime, nullable=True)
+    is_demo = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 # === FEEDBACK (beta) ===
 # Retours des utilisateurs (bouton « Signaler / Idée ») — précieux en phase de test PME.
 class Feedback(Base):

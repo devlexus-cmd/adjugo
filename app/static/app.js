@@ -92,6 +92,21 @@ function _sconvInit() {
            accord: { nom: "", qualite: "", accepte: false, hash: "" } };
 }
 
+// ── Réseau de partenaires (co-traitance v2, vague 3) — contrat : docs/COTRAITANCE_V2_VAGUE3_API.md ──
+// État de la vue « Réseau » (Mon profil partenaire · Annuaire · Mon historique · Invitations reçues).
+function _reseauInit() {
+  return {
+    tab: "profil",
+    p: { loading: false, loaded: false, error: "", d: null, f: null, busy: "", live: "", err: "", errCode: "", errAt: "", missing: [], consent: false, verifMsgs: [] },
+    an: { loading: false, loaded: false, error: "", d: null, page: 1, live: "", f: { metier: "", departement: "", role: "", q: "" } },
+    hist: { loading: false, loaded: false, error: "", d: null },
+    recues: { loading: false, loaded: false, list: [], busy: "", live: "" },
+    fiche: null,
+  };
+}
+// Panneau « Partenaires pour ce marché » (bouton « Qui me complète ? ») — réinitialisé à chaque ouverture de marché.
+function _pmInit() { return { loading: false, loaded: false, error: "", d: null, lotBusy: "", live: "" }; }
+
 // Rendu SÛR du texte de la convention (Markdown simple renvoyé par l'API : # titres, - listes,
 // **gras**, *italique*). JAMAIS de v-html brut : on échappe TOUT le HTML d'abord, puis on
 // applique ce rendu minimal sur le texte échappé. Les valeurs saisies arrivent échappées par le
@@ -192,6 +207,9 @@ const __adjApp = createApp({
       pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "autre", l: "Autre" }],
       veille: { q: "", loc: "", results: [], loading: false },
       drawer: null, modal: null, cdlg: null,   // cdlg : confirmation d'une action de la convention
+      reseau: _reseauInit(),                  // vue « Réseau » (vague 3)
+      rinv: null,                             // modale d'invitation en 1 clic (partenaire du réseau ou entreprise SIRENE)
+      reseauSuggest: null, reseauSuggestOff: false,   // suggestion « publiez votre profil » (après inscription / acceptation)
       welcome: { siret: "", busy: false, dismissed: false },   // activation par SIRET (1er lancement)
       ag: { query: "réhabilitation groupe scolaire", running: false, log: [], gonogo: null, coverage: null, lots: [], dossier: null },
       agState: {}, agStep: {},
@@ -279,12 +297,12 @@ const __adjApp = createApp({
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
-            chkHelp: null, grp: _grpInit(), conv: _convInit(),
+            chkHelp: null, grp: _grpInit(), conv: _convInit(), pm: _pmInit(),
             qa: [], qaInput: "", qaLoading: false,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
-      titles: { kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration" },
-      subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement" },
+      titles: { kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
+      subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires vérifiés et faites-vous trouver" },
     };
   },
   computed: {
@@ -513,7 +531,10 @@ const __adjApp = createApp({
         // certains écrans enchaînent une confirmation au lieu d'afficher seulement le message.
         const err = new Error(msg);
         err.status = r.status;
-        if (d && typeof d === "object" && !Array.isArray(d)) { err.code = d.code || ""; if (Array.isArray(d.missing)) err.missing = d.missing; }
+        if (d && typeof d === "object" && !Array.isArray(d)) {
+          err.code = d.code || ""; if (Array.isArray(d.missing)) err.missing = d.missing;
+          if (typeof d.profile_id === "string" && /^[0-9a-f]{32}$/.test(d.profile_id)) err.profile_id = d.profile_id;
+        }
         throw err;
       }
       return data;
@@ -542,7 +563,7 @@ const __adjApp = createApp({
       else txt = "valeur invalide";
       return label ? label + " : " + txt + "." : "Une information saisie est invalide (" + txt + ").";
     },
-    notify(msg, kind = "ok") { if (this._toastT) clearTimeout(this._toastT); this.toast = { msg, kind }; this._toastT = setTimeout(() => this.toast = null, 2600); },
+    notify(msg, kind = "ok") { if (this._toastT) clearTimeout(this._toastT); this.toast = { msg, kind }; this._toastT = setTimeout(() => this.toast = null, Math.min(9000, Math.max(2600, String(msg || "").length * 45))); },
     notifyUndo(msg, undoFn) { if (this._toastT) clearTimeout(this._toastT); this.toast = { msg, kind: "ok", undo: undoFn }; this._toastT = setTimeout(() => this.toast = null, 7000); },
     doUndo() { const t = this.toast; this.toast = null; if (t && t.undo) t.undo(); },
 
@@ -559,6 +580,7 @@ const __adjApp = createApp({
           : { email: this.auth.email, password: this.auth.password, full_name: this.auth.full_name, company_name: this.auth.company_name };
         const res = await this.api("POST", path, body);
         this.token = res.access_token; localStorage.setItem("adjugo_token", this.token);
+        if (res && res.suggest_profile) this._rnSuggest(res.suggest_profile);
         await this.boot();
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
@@ -636,6 +658,11 @@ const __adjApp = createApp({
       // Adaptation au pays de l'organisation : scope AO + devise + LANGUE par défaut
       if (this.org.data && this.org.data.country) { this.src.country = this.org.data.country; this.orgCountry = this.org.data.country; this.applyLang(this.org.data.lang); }
       this.go("dashboard");
+      try {   // posée par invite.html juste avant la redirection « Accepter depuis mon compte »
+        const raw = sessionStorage.getItem("adjugo_suggest_profile");
+        if (raw) { sessionStorage.removeItem("adjugo_suggest_profile"); this._rnSuggest(JSON.parse(raw)); }
+      } catch (e) {}
+      this.rnLoadRecues(true);   // pastille « Invitations reçues » du menu Réseau
       // Arrivée depuis un lien d'invitation « ouvert dans mon Adjugo » → ouvre le dossier partagé
       try {
         const st = new URLSearchParams(location.search).get("shared");
@@ -662,6 +689,7 @@ const __adjApp = createApp({
       if (v === "team") this.loadOrg();
       if (v === "billing") { this.loadPlan(); this.loadStats(); }
       if (v === "admin") this.loadAdmin();
+      if (v === "reseau") { this.rnGo(this.reseau.tab || "profil"); this.rnLoadRecues(true); }
       this.$nextTick(() => { const w = document.querySelector(".work"); if (w) w.scrollTop = 0; });   // remonte en haut du contenu à chaque changement de vue
     },
     async loadAdmin() {
@@ -898,7 +926,7 @@ const __adjApp = createApp({
       this.ao.back = this.view; this.ao.dossier = null; this.ao.project = p;
       this.ao.cotraitants = []; this.ao.stOpen = false; this.ao.st.results = [];
       this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.buyerLoading = true; this.ao.checklist = null; this.ao.group = null;
-      this.ao.qa = []; this.ao.qaInput = ""; this.ao.grp = _grpInit(); this.ao.conv = _convInit();
+      this.ao.qa = []; this.ao.qaInput = ""; this.ao.grp = _grpInit(); this.ao.conv = _convInit(); this.ao.pm = _pmInit(); this.rinv = null;
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
       this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
@@ -1254,7 +1282,8 @@ const __adjApp = createApp({
     async sharedClaimThenVault() {
       const v = this.sharedAo.vault;
       try {
-        await this.api("POST", "/api/invite/" + this.sharedAo.token + "/claim"); v.needClaim = false; this.loadShared();
+        const cr = await this.api("POST", "/api/invite/" + this.sharedAo.token + "/claim"); v.needClaim = false; this.loadShared();
+        if (cr && cr.suggest_profile) this._rnSuggest(cr.suggest_profile);
         if (v.pendingDoc) { const d = v.pendingDoc; v.pendingDoc = null; await this.sharedFromVault(d); }
       } catch (e) { this.notify(e.message, "err"); }
     },
@@ -1393,7 +1422,8 @@ const __adjApp = createApp({
       inv._resending = true;
       try {
         const r = await this.api("POST", "/api/projects/" + this.ao.project.id + "/invites/" + inv.id + "/resend");
-        this.notify(r && r.sent ? "Invitation renvoyée par email" : "Envoi impossible — copiez le lien et transmettez-le", r && r.sent ? "ok" : "err");
+        this.notify(r && r.sent ? (this.inviteIsNetwork(inv) ? "Invitation renvoyée par Adjugo" : "Invitation renvoyée par email")
+          : (this.inviteIsNetwork(inv) ? "Envoi impossible pour le moment : le partenaire retrouve l'invitation dans son espace Adjugo" : "Envoi impossible — copiez le lien et transmettez-le"), r && r.sent ? "ok" : "err");
         this.aoLoadInvites();
       } catch (e) { this.notify(e.message, "err"); }
       finally { inv._resending = false; }
@@ -1424,8 +1454,13 @@ const __adjApp = createApp({
       return (this.ao.share.invites || []).filter(i => !i.revoked && !this.inviteDeclined(i) && i.can_contribute && i.contribution_status !== "submitted");
     },
     aoPendingRelancables() {
-      return this.aoPendingInvites().filter(i => (i.recipient || "").includes("@"));
+      return this.aoPendingInvites().filter(i => this.inviteRelancable(i));
     },
+    // Relançable par email : adresse saisie, ou invitation du réseau Adjugo (adresse masquée au chef
+    // de file mais connue d'Adjugo, qui renvoie le même texte réseau). Jamais une invitation SIRENE.
+    inviteRelancable(inv) { return !!inv && (inv.source === "reseau_adjugo" || (inv.recipient || "").includes("@")); },
+    inviteIsNetwork(inv) { return !!inv && inv.source === "reseau_adjugo"; },
+    inviteSourceLabel(inv) { return ({ reseau_adjugo: "Réseau Adjugo", sirene: "Registre SIRENE" })[inv && inv.source] || ""; },
     async aoRelanceRetardataires() {
       if (this.ao.share._relancing) return;   // garde anti double-clic (évite les relances en double)
       const list = this.aoPendingRelancables();
@@ -1579,12 +1614,15 @@ const __adjApp = createApp({
     gapSevClass(s) { return ({ bloquant: "no_go", important: "a_etudier", a_verifier: "neutral" })[s] || "neutral"; },
     candGroups() {
       const c = (this.ao.grp.besoins && this.ao.grp.besoins.candidats) || {};
+      // « reseau » (vague 3) : profils publiés du réseau Adjugo, dans l'ORDRE du classement serveur
+      // (un rang, jamais une note) ; le seul pourcentage reste score_avec (score de groupement).
       return [{ key: "rattaches", label: "Déjà rattachés à ce marché", list: c.rattaches || [] },
               { key: "annuaire", label: "Mes partenaires", list: c.annuaire || [] },
+              { key: "reseau", label: "Réseau Adjugo", list: c.reseau || [] },
               { key: "sirene", label: "Entreprises SIRENE", list: c.sirene || [] }];
     },
     candTotal() { return this.candGroups().reduce((n, g) => n + g.list.length, 0); },
-    candId(c) { return (c.kind || "?") + ":" + (c.id || c.siret || (c.name || "").toLowerCase()); },
+    candId(c) { return (c.kind || "?") + ":" + ((c.kind === "reseau" && c.profile_id) || c.id || c.siret || (c.name || "").toLowerCase()); },
     isCandSelected(c) { const id = this.candId(c); return this.ao.grp.selected.some(m => this.candId(m) === id); },
     toggleCand(c) {
       const id = this.candId(c), i = this.ao.grp.selected.findIndex(m => this.candId(m) === id);
@@ -1602,6 +1640,8 @@ const __adjApp = createApp({
     _grpMemberBody(m) {
       if (m.kind === "attached" || m.kind === "annuaire") return { kind: m.kind, id: m.id };
       if (m.kind === "sirene") return { kind: "sirene", siret: m.siret, name: m.name };
+      // Réseau : le serveur relit le profil publié (capacités du navigateur ignorées).
+      if (m.kind === "reseau") return { kind: "reseau", profile_id: m.profile_id };
       return { kind: "saisi", name: m.name, siret: m.siret || "", ca_n1: m.ca_n1 || null, effectif: m.effectif || null, qualifications: m.qualifications || [] };
     },
     async aoGrpSimulate() {
@@ -1636,10 +1676,36 @@ const __adjApp = createApp({
       const n = ((m && m.name) || "").trim().toLowerCase(); if (!n) return false;
       return (this.ao.share.invites || []).some(i => !i.revoked && !this.inviteDeclined(i) && (i.company_name || "").trim().toLowerCase() === n);
     },
+    // Dernière invitation DÉCLINÉE pour ce nom d'entreprise, s'il n'en a pas d'active depuis (même
+    // rapprochement par nom que grpAlreadyInvited) → pastille « A décliné » là où il est proposé.
+    inviteDeclinedFor(name) {
+      const n = String(name || "").trim().toLowerCase(); if (!n) return null;
+      const same = (this.ao.share.invites || []).filter(i => (i.company_name || "").trim().toLowerCase() === n);
+      if (same.some(i => !i.revoked && !this.inviteDeclined(i))) return null;
+      const dec = same.filter(i => this.inviteDeclined(i)).sort((a, b) => String(b.declined_at || "").localeCompare(String(a.declined_at || "")));
+      return dec[0] || null;
+    },
+    declinedLabel(inv) { const d = inv && this.ddmm(inv.declined_at); return "A décliné" + (d ? " le " + d : ""); },
     // « Inviter {nom} » : pré-remplit le formulaire d'invitation existant et y amène l'utilisateur.
     aoGrpInvite(m) {
+      // Partenaire du réseau Adjugo : invitation en 1 clic (Adjugo l'envoie, l'adresse reste masquée)
+      // au lieu du formulaire manuel, qui demanderait une adresse que le chef de file n'a pas.
+      const pid = m && m.kind === "reseau" ? this._grpProfileId(m) : "";
+      if (pid) { this.rnInviteOpen({ profile_id: pid, name: m.name }); return; }
       this.ao.share.form.company_name = (m && m.name) || ""; this.ao.share.open = true;
       this.$nextTick(() => { const el = this.$refs.reseauCard; if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" }); });
+    },
+    // Identifiant de profil d'un membre « reseau » de la composition retenue (le plan ne le garde pas) :
+    // retrouvé dans la simulation, les candidats ou le panneau « Partenaires pour ce marché » (SIRET, sinon nom).
+    _grpProfileId(m) {
+      if (!m) return "";
+      if (m.profile_id) return m.profile_id;
+      const n = String(m.name || "").trim().toLowerCase(), s = m.siret || "";
+      const pool = this.simPartners(this.ao.grp.sim).concat(((this.ao.grp.besoins || {}).candidats || {}).reseau || [],
+        ((this.ao.pm.d && this.ao.pm.d.lots) || []).reduce((a, l) => a.concat(l.reseau || []), []));
+      const same = x => (s && (x.siret === s || (x.siren && s.slice(0, 9) === x.siren))) || (n && String(x.name || "").trim().toLowerCase() === n);
+      const hit = pool.find(x => x && x.profile_id && same(x));
+      return (hit && hit.profile_id) || "";
     },
     async aoGrpHistoryToggle(ev) {
       const open = !!(ev && ev.target && ev.target.open); this.ao.grp.historyOpen = open;
@@ -1660,6 +1726,451 @@ const __adjApp = createApp({
         this.notify("Composition annulée — verdict seul restauré");
       } catch (e) { this.notify(e.message, "err"); }
     },
+    // ══════════ Réseau de partenaires (co-traitance v2, vague 3) ══════════
+    // Contrat : docs/COTRAITANCE_V2_VAGUE3_API.md. Règles tenues ici :
+    //  - un seul pourcentage à l'écran : le score de groupement (/groupement/simulate). Le réseau
+    //    renvoie un RANG et des CRITÈRES (statut + phrase + source + date) : rien n'est calculé ici ;
+    //  - badges et capacités affichés tels quels (libellé, source, date) — jamais de note ni d'étoile ;
+    //  - l'adresse d'un partenaire du réseau n'est jamais affichée (le serveur la masque) ;
+    //  - tout texte saisi par une entreprise est rendu en {{ }} (jamais v-html / innerHTML).
+    openReseau(tab) { this.reseau.tab = tab || "profil"; this.go("reseau"); },
+    rnGo(tab) {
+      const r = this.reseau; r.tab = tab;
+      if (tab === "profil" && !r.p.loaded) this.rnLoadProfil();
+      if (tab === "annuaire") { if (!r.p.loaded) this.rnLoadProfil(true); if (!r.an.loaded) this.rnLoadAnnuaire(1); }
+      if (tab === "historique") this.rnLoadHistorique();
+      if (tab === "recues") this.rnLoadRecues();
+    },
+    rnOptions() {
+      const d = this.reseau.p.d, o = (d && d.options) || {};
+      return { metiers: o.metiers || [], roles: o.roles || [], disponibilites: o.disponibilites || [], presentation_max: o.presentation_max || 300, references_max: o.references_max || 5 };
+    },
+    plFr(n, one, many) { return Math.abs(Number(n) || 0) < 2 ? one : many; },
+    rnStatutPill(s) { return ({ publie: "go", brouillon: "neutral", retire: "a_etudier", aucun: "neutral" })[s] || "neutral"; },
+    rnRoleLabel(r) { return ({ cotraitant: "Partenaire du groupement (co-traitant)", sous_traitant: "Sous-traitant", mandataire: "Chef de file" })[r] || r; },
+    rnMetiers(c) { return ((c && c.metiers) || []).map(m => (m && m.label) || m).filter(Boolean).join(", "); },
+    rnLieu(c) { return c ? [c.city, c.departement ? "(" + c.departement + ")" : ""].filter(Boolean).join(" ") : ""; },
+    // Icône d'une vérification (SIRENE / BODACC / DECP) : vérifié, à regarder, ou « non vérifié ».
+    rnVerif(v, k) {
+      v = v || {};
+      if (k === "sirene") return v.etat === "actif" ? { ic: "check", cls: "ok" } : v.etat === "cesse" ? { ic: "circle-x", cls: "alerte" } : { ic: "circle-dashed", cls: "nv" };
+      if (k === "bodacc") return v.found === false ? { ic: "check", cls: "ok" } : v.found === true ? { ic: "triangle-alert", cls: "alerte" } : { ic: "circle-dashed", cls: "nv" };
+      return v.count > 0 ? { ic: "check", cls: "ok" } : v.count === 0 ? { ic: "minus", cls: "info" } : { ic: "circle-dashed", cls: "nv" };
+    },
+    _rnSay(msg) { this.reseau.p.live = msg; this.notify(msg); },
+    _rnErr(msg, at, code, missing) { const p = this.reseau.p; p.err = msg; p.errAt = at || "form"; p.errCode = code || ""; p.missing = missing || []; this.notify(msg, "err"); },
+    _rnFail(e, at) { this._rnErr((e && e.message) || "Action impossible pour l'instant.", at, (e && e.code) || "", (e && e.missing) || []); },
+    _rnErrClear() { const p = this.reseau.p; p.err = ""; p.errCode = ""; p.errAt = ""; p.missing = []; },
+    rnErrAt(z) { const p = this.reseau.p; return !!p.err && p.errAt === z; },
+    _rnSuggest(s) {
+      if (!s || typeof s !== "object" || s.code !== "publier_profil_reseau" || this.reseauSuggestOff) return;
+      this.reseauSuggest = { titre: String(s.titre || "Faites-vous trouver pour des groupements"), message: String(s.message || "") };
+    },
+    rnSuggestClose() { this.reseauSuggest = null; this.reseauSuggestOff = true; },
+    rnSuggestGo() { this.reseauSuggest = null; this.reseauSuggestOff = true; this.openReseau("profil"); },
+
+    // ── Mon profil partenaire ──
+    rnLoadProfil(quiet) {   // renvoie la requête en cours si elle existe déjà (pas de double appel)
+      const p = this.reseau.p;
+      if (p.loading && this._rnProfilP) return this._rnProfilP;
+      p.loading = true; p.error = "";
+      this._rnProfilP = (async () => {
+        try { this._rnApply(await this.api("GET", "/api/reseau/profil")); }
+        catch (e) { p.error = (e && e.message) || "Profil partenaire momentanément indisponible."; if (!quiet) this.notify(p.error, "err"); }
+        finally { p.loading = false; }
+      })();
+      return this._rnProfilP;
+    },
+    _rnApply(d, keepForm) {
+      const p = this.reseau.p; if (!d || typeof d !== "object") return;
+      p.d = d; p.loaded = true;
+      if (!keepForm || !p.f) p.f = this._rnForm(d);
+      if (!d.suggestion) this.reseauSuggest = null;   // profil déjà publié (ou démo) : plus de suggestion
+    },
+    _rnSplit(s) { return String(s || "").split(/[,;\s]+/).map(x => x.trim()).filter(Boolean); },
+    _rnRefKey(r) { return [(r && r.intitule) || "", (r && r.client) || "", (r && r.annee != null && r.annee !== "") ? String(r.annee) : ""].join("|"); },
+    _rnRefClean(r) { return { intitule: r.intitule, client: r.client || "", annee: (r.annee != null && r.annee !== "") ? r.annee : null }; },
+    _rnForm(d) {
+      const dc = (d && d.declare) || {};
+      return {
+        metiers: (dc.metiers || []).slice(), departements: (dc.departements || []).join(", "),
+        roles_acceptes: (dc.roles_acceptes || []).slice(), disponibilite: dc.disponibilite || "",
+        dispo_jusqua: dc.dispo_jusqua || "", lot_max_eur: dc.lot_max_eur != null ? dc.lot_max_eur : "",
+        codes_cpv: (dc.codes_cpv || []).join(", "), presentation: dc.presentation || "",
+        refs: (dc.references_publiques || []).map(r => this._rnRefKey(r)),
+        hidden: ((d && d.hidden_from_sirens) || []).join(", "),
+      };
+    },
+    // Références proposables : celles du profil entreprise, puis celles déjà rendues publiques qui n'y
+    // figurent plus (pour pouvoir les décocher). Chacune garde une clé stable (intitulé|client|année).
+    rnRefOptions() {
+      const d = this.reseau.p.d; if (!d) return [];
+      const out = [], seen = new Set();
+      (d.references_disponibles || []).concat((d.declare && d.declare.references_publiques) || []).forEach(r => {
+        if (!r || !r.intitule) return; const k = this._rnRefKey(r); if (seen.has(k)) return; seen.add(k); out.push(Object.assign({ _k: k }, r));
+      });
+      return out;
+    },
+    rnRefDisabled(r) { const f = this.reseau.p.f; return !!f && !f.refs.includes(r._k) && f.refs.length >= this.rnOptions().references_max; },
+    _rnAll() {
+      const f = this.reseau.p.f;
+      const lot = (f.lot_max_eur === "" || f.lot_max_eur == null) ? null : Number(f.lot_max_eur);
+      return {
+        metiers: f.metiers.slice(), departements: this._rnSplit(f.departements), roles_acceptes: f.roles_acceptes.slice(),
+        disponibilite: f.disponibilite || "", dispo_jusqua: f.disponibilite ? (f.dispo_jusqua || null) : null, lot_max_eur: lot,
+        codes_cpv: this._rnSplit(f.codes_cpv), presentation: String(f.presentation || "").trim(),
+        references_publiques: this.rnRefOptions().filter(r => f.refs.includes(r._k)).map(r => this._rnRefClean(r)),
+        hidden_from_sirens: this._rnSplit(f.hidden),
+      };
+    },
+    // Mise à jour PARTIELLE : seulement les champs modifiés (tout, au premier enregistrement).
+    _rnBody() {
+      const d = this.reseau.p.d || {}, dc = d.declare || {}, all = this._rnAll();
+      if (!d.exists) return all;
+      const before = {
+        metiers: dc.metiers || [], departements: dc.departements || [], roles_acceptes: dc.roles_acceptes || [],
+        disponibilite: dc.disponibilite || "", dispo_jusqua: dc.disponibilite ? (dc.dispo_jusqua || null) : null,
+        lot_max_eur: dc.lot_max_eur != null ? Number(dc.lot_max_eur) : null, codes_cpv: dc.codes_cpv || [],
+        presentation: dc.presentation || "", references_publiques: (dc.references_publiques || []).map(r => this._rnRefClean(r)),
+        hidden_from_sirens: d.hidden_from_sirens || [],
+      };
+      const unordered = { metiers: 1, roles_acceptes: 1, codes_cpv: 1, hidden_from_sirens: 1 };
+      const norm = (k, v) => (unordered[k] && Array.isArray(v)) ? v.slice().sort() : v;
+      const out = {};
+      Object.keys(all).forEach(k => { if (JSON.stringify(norm(k, all[k])) !== JSON.stringify(norm(k, before[k]))) out[k] = all[k]; });
+      return out;
+    },
+    rnDirty() { const p = this.reseau.p; return !!(p.d && p.f && p.d.exists && Object.keys(this._rnBody()).length); },
+    async rnSave(silentOk) {
+      const p = this.reseau.p; if (!p.f || !p.d || p.busy) return false;
+      const lot = p.f.lot_max_eur;
+      if (lot !== "" && lot != null && !(Number(lot) > 0)) { this._rnErr("Taille de lot maximale invalide (montant HT positif).", "form"); return false; }
+      if (String(p.f.presentation || "").trim().length > this.rnOptions().presentation_max) { this._rnErr("Présentation en une phrase : " + this.rnOptions().presentation_max + " caractères au plus.", "form"); return false; }
+      const created = !p.d.exists, body = this._rnBody();
+      if (!created && !Object.keys(body).length) { if (!silentOk) this._rnSay("Aucune modification à enregistrer."); return true; }
+      p.busy = "save"; this._rnErrClear();
+      try {
+        const d = await this.api("PUT", "/api/reseau/profil", body);
+        this._rnApply(d);
+        this._rnSay(d.message || (created ? "Profil enregistré, non publié. Vérifiez votre entreprise, puis publiez-le." : "Profil enregistré."));
+        this.reseau.an.loaded = false;
+        return true;
+      } catch (e) { this._rnFail(e, "form"); return false; }
+      finally { p.busy = ""; }
+    },
+    async rnVerify() {
+      const p = this.reseau.p; if (!p.d || p.busy) return;
+      p.busy = "verif"; this._rnErrClear(); p.verifMsgs = [];
+      try {
+        const d = await this.api("POST", "/api/reseau/profil/verifier");
+        this._rnApply(d, true);
+        const v = d.verification || {}, msgs = [];
+        if (d.message) msgs.push(d.message);
+        ["sirene", "bodacc", "decp"].forEach(k => { const x = v[k]; if (x && x.message && !msgs.includes(x.message)) msgs.push(x.message); });
+        p.verifMsgs = msgs;
+        this._rnSay(msgs.length ? "Vérification terminée : un point est à regarder." : "Vérification terminée.");
+      } catch (e) { this._rnFail(e, "verif"); }
+      finally { p.busy = ""; }
+    },
+    async rnPublish() {
+      const p = this.reseau.p; if (!p.d || p.busy) return;
+      if (!p.consent) { this._rnErr("Cochez « J'accepte que la fiche ci-dessus soit visible des entreprises qui ont publié la leur » pour publier.", "pub", "consentement_requis"); return; }
+      if (this.rnDirty() && !(await this.rnSave(true))) return;   // la fiche publiée = celle de l'aperçu, modifications comprises
+      p.busy = "pub"; this._rnErrClear();
+      try {
+        const d = await this.api("POST", "/api/reseau/profil/publier", { accepte: true });
+        this._rnApply(d, true); p.consent = false; this.reseauSuggest = null;
+        this.reseau.an.loaded = false;
+        this._rnSay(d.message || "Profil publié dans le réseau Adjugo.");
+      } catch (e) { this._rnFail(e, "pub"); }
+      finally { p.busy = ""; }
+    },
+    rnUnpublish() {
+      this._convAsk({ title: "Retirer la publication ?", ok: "Retirer la publication",
+        lines: ["Votre fiche n'apparaîtra plus dans le réseau Adjugo.", "Les invitations déjà en cours restent valables.", "Vous pourrez la publier de nouveau à tout moment."],
+        run: async () => {
+          const p = this.reseau.p; if (p.busy) return;
+          p.busy = "pub"; this._rnErrClear();
+          try { const d = await this.api("DELETE", "/api/reseau/profil/publier"); this._rnApply(d, true); this.reseau.an.loaded = false; this._rnSay(d.message || "Publication retirée."); }
+          catch (e) { this._rnFail(e, "pub"); }
+          finally { p.busy = ""; }
+        } });
+    },
+    rnDelete() {
+      this._convAsk({ title: "Effacer votre profil partenaire ?", ok: "Effacer mon profil",
+        lines: ["Il disparaît du réseau Adjugo.", "Votre adresse est retirée des invitations reçues par le réseau.", { t: "Cette action ne s'annule pas : il faudra recréer le profil.", warn: true }],
+        run: async () => {
+          const p = this.reseau.p; if (p.busy) return;
+          p.busy = "del"; this._rnErrClear();
+          try {
+            const r = await this.api("DELETE", "/api/reseau/profil");
+            p.loaded = false; p.consent = false; p.verifMsgs = [];
+            this.reseau.an = _reseauInit().an; this.reseau.hist.loaded = false;
+            this._rnSay((r && r.message) || "Profil partenaire effacé.");
+            p.busy = ""; await this.rnLoadProfil(true);
+          } catch (e) { this._rnFail(e, "pub"); }
+          finally { p.busy = ""; }
+        } });
+    },
+    // Défilement de la seule zone de contenu (.work) : scrollIntoView faisait aussi défiler la page
+    // entière quand la cible était en bas (barre latérale décalée). L'en-tête collant est compté.
+    rnScrollTo(ref, nearest) {
+      this.$nextTick(() => {
+        let el = this.$refs[ref]; if (Array.isArray(el)) el = el[0];
+        const w = document.querySelector(".work"); if (!el || !w) return;
+        const top = w.querySelector(".top"), head = top ? top.getBoundingClientRect().height : 0;
+        const wr = w.getBoundingClientRect(), r = el.getBoundingClientRect();
+        let delta = r.top - wr.top - head - 16;
+        if (nearest) {
+          if (r.top >= wr.top + head && r.bottom <= wr.bottom) delta = 0;
+          else if (r.bottom > wr.bottom && r.height < wr.height - head) delta = r.bottom - wr.bottom + 16;
+        }
+        if (delta) w.scrollTo({ top: Math.max(0, w.scrollTop + delta), behavior: "smooth" });
+        if (el.focus && el.getAttribute("tabindex") != null) el.focus({ preventScroll: true });
+      });
+    },
+    // Raccourci « Publier mon profil » depuis l'annuaire ou un marché : onglet profil, bloc Publication.
+    async rnGoPublish() { this.openReseau("profil"); if (!this.reseau.p.loaded) await this.rnLoadProfil(true); this.rnScrollTo("rnPub"); },
+
+    // ── Annuaire ──
+    async rnLoadAnnuaire(page) {
+      const a = this.reseau.an; if (a.loading) return;
+      const f = a.f, qs = new URLSearchParams();
+      if (f.metier) qs.set("metier", f.metier);
+      if (String(f.departement || "").trim()) qs.set("departement", String(f.departement).trim());
+      if (f.role) qs.set("role", f.role);
+      if (String(f.q || "").trim()) qs.set("q", String(f.q).trim());
+      qs.set("page", String(page || 1)); qs.set("par_page", "20");
+      a.loading = true; a.error = "";
+      try {
+        const d = await this.api("GET", "/api/reseau/annuaire?" + qs.toString());
+        a.d = d; a.loaded = true; a.page = (d && d.page) || page || 1;
+        a.live = !d.visible ? (d.message || "") : (d.total ? d.total + " " + this.plFr(d.total, "partenaire trouvé", "partenaires trouvés") + "." : "Aucun partenaire du réseau Adjugo ne correspond encore à cette recherche.");
+      } catch (e) { a.error = (e && e.message) || "Annuaire momentanément indisponible."; a.live = a.error; }
+      finally { a.loading = false; }
+    },
+    rnPages() { const d = this.reseau.an.d; return d && d.visible ? Math.max(1, Math.ceil((d.total || 0) / (d.par_page || 20))) : 1; },
+    rnClassed() { const d = this.reseau.an.d; return !!(d && (d.profils || []).some(c => c.rang != null)); },
+    // États vides : on renvoie vers la recherche SIRENE existante (« Découvrir ») et « Mes partenaires ».
+    rnDiscover(metierKey, dept) {
+      const m = this.rnOptions().metiers.find(x => x.key === (metierKey || this.reseau.an.f.metier));
+      this.openDiscover();
+      if (m) this.discover.trade = m.label;
+      const dd = String(dept || this.reseau.an.f.departement || "").trim();
+      if (dd) this.discover.dept = dd;
+    },
+
+    // ── Fiche d'un partenaire (modale) ──
+    async rnOpenFiche(profileId, ctx) {
+      if (!profileId) return;
+      this._rnFicheFocus = document.activeElement;
+      this.reseau.fiche = { id: profileId, loading: true, d: null, error: "", errCode: "", ctx: ctx || null };
+      this.$nextTick(() => { const x = this.$refs.rnFicheX; if (x && x.focus) x.focus(); });
+      try {
+        const d = await this.api("GET", "/api/reseau/annuaire/" + encodeURIComponent(profileId));
+        if (this.reseau.fiche && this.reseau.fiche.id === profileId) this.reseau.fiche.d = d;
+      } catch (e) {
+        if (this.reseau.fiche && this.reseau.fiche.id === profileId) { this.reseau.fiche.error = (e && e.message) || "Fiche indisponible."; this.reseau.fiche.errCode = (e && e.code) || ""; }
+      } finally { if (this.reseau.fiche && this.reseau.fiche.id === profileId) this.reseau.fiche.loading = false; }
+    },
+    rnCloseFiche(keepFocus) {
+      this.reseau.fiche = null;
+      const el = this._rnFicheFocus; this._rnFicheFocus = null;
+      if (!keepFocus && el && el.focus && document.body.contains(el)) this.$nextTick(() => el.focus());
+    },
+    rnInviteFromFiche() {
+      const fi = this.reseau.fiche; if (!fi || !fi.d) return;
+      const card = fi.d, ctx = fi.ctx || {};
+      const back = this._rnFicheFocus; this.rnCloseFiche(true);
+      this.rnInviteOpen(card, { lot: ctx.lot || "", projectId: ctx.projectId || null, focusBack: back });
+    },
+    rnHistAvec(h) {
+      h = h || {};
+      return [{ l: "Invitations en cours", v: h.invitations_actives }, { l: "Parts envoyées", v: h.parts_soumises },
+              { l: "Marchés déposés ensemble", v: h.marches_deposes }, { l: "Gagnés", v: h.gagnes }, { l: "Perdus", v: h.perdus }].map(x => ({ l: x.l, v: Number(x.v) || 0 }));
+    },
+
+    // ── Mon historique ──
+    async rnLoadHistorique() {
+      const h = this.reseau.hist; if (h.loading) return;
+      h.loading = true; h.error = "";
+      try { h.d = await this.api("GET", "/api/reseau/historique"); h.loaded = true; }
+      catch (e) { h.error = (e && e.message) || "Historique momentanément indisponible."; }
+      finally { h.loading = false; }
+    },
+    rnHistRows(side) {
+      const d = this.reseau.hist.d || {}, x = (side === "chef" ? d.comme_chef_de_file : d.comme_partenaire) || {};
+      const rows = side === "chef"
+        ? [["invitations_actives", "Invitations en cours"], ["parts_recues", "Parts reçues des partenaires"], ["marches_deposes", "Marchés déposés"], ["gagnes", "Gagnés"], ["perdus", "Perdus"]]
+        : [["invitations_actives", "Invitations en cours"], ["parts_soumises", "Parts envoyées au chef de file"], ["marches_deposes", "Marchés déposés"], ["gagnes", "Gagnés"], ["perdus", "Perdus"]];
+      return rows.map(r => ({ k: r[0], l: r[1], v: Number(x[r[0]]) || 0 }));
+    },
+    rnHistEmpty() { return !["chef", "partenaire"].some(s => this.rnHistRows(s).some(r => r.v > 0)); },
+
+    // ── Invitations reçues par le réseau (côté partenaire) ──
+    async rnLoadRecues(quiet) {
+      const r = this.reseau.recues; if (r.loading || !this.token) return;
+      r.loading = true;
+      try {
+        const d = await this.api("GET", "/api/reseau/invitations");
+        const declined = (r.list || []).filter(i => i._declined);   // « Vous avez décliné » reste visible jusqu'au départ de la vue
+        r.list = ((d && d.invitations) || []).concat(declined.filter(x => !((d && d.invitations) || []).some(i => i.token === x.token)));
+        r.loaded = true;
+      } catch (e) { if (!quiet) this.notify(e.message, "err"); }
+      finally { r.loading = false; }
+    },
+    rnRecuesCount() { return (this.reseau.recues.list || []).filter(i => !i._declined && i.statut !== "acceptee").length; },
+    async rnAccept(inv) {
+      const r = this.reseau.recues; if (r.busy) return;
+      r.busy = inv.token;
+      try {
+        const res = await this.api("POST", "/api/invite/" + encodeURIComponent(inv.token) + "/claim");
+        if (res && res.suggest_profile) this._rnSuggest(res.suggest_profile);
+        inv.statut = "acceptee"; inv.statut_label = "Acceptée";
+        r.live = "Invitation acceptée : le dossier est dans « Partagé avec moi ».";
+        this.notify(r.live);
+        await this.loadShared();
+        const it = (this.shared || []).find(s => s.token === inv.token);
+        if (it) this.openShared(it);
+      } catch (e) { r.live = e.message; this.notify(e.message, "err"); }
+      finally { r.busy = ""; }
+    },
+    async rnOpenRecue(inv) {
+      let it = (this.shared || []).find(s => s.token === inv.token);
+      if (!it) { await this.loadShared(); it = (this.shared || []).find(s => s.token === inv.token); }
+      if (it) this.openShared(it); else this.notify("Ce dossier n'est plus accessible", "err");
+    },
+    rnDecline(inv) {
+      this._convAsk({ title: "Décliner l'invitation ?", ok: "Décliner l'invitation",
+        lines: ["Vous ne ferez pas partie de ce groupement : " + (inv.mandataire || "le chef de file") + " sera prévenu.", "Votre adresse ne lui est pas communiquée.", "Ce lien ne fonctionnera plus ensuite."],
+        run: async () => {
+          const r = this.reseau.recues; if (r.busy) return;
+          r.busy = inv.token;
+          try {
+            await this.api("POST", "/api/invite/" + encodeURIComponent(inv.token) + "/decline");
+            inv._declined = true; r.live = "Invitation déclinée."; this.notify(r.live);
+          } catch (e) { r.live = e.message; this.notify(e.message, "err"); }
+          finally { r.busy = ""; }
+        } });
+    },
+
+    // ── « Qui me complète ? » : partenaires lot par lot sur un marché ──
+    async aoPmLoad() {
+      const pid = this.ao.project && this.ao.project.id, pm = this.ao.pm; if (!pid || pm.loading) return;
+      pm.loading = true; pm.error = ""; pm.live = "Recherche des partenaires, lot par lot…";
+      try {
+        const d = await this.api("GET", "/api/projects/" + pid + "/partner-matches");
+        if (!this.ao.project || this.ao.project.id !== pid) return;
+        pm.d = d; pm.loaded = true; pm.live = this._pmSummary(d);
+      } catch (e) { pm.error = (e && e.message) || "Recherche de partenaires momentanément indisponible."; pm.live = pm.error; }
+      finally { pm.loading = false; }
+    },
+    _pmSummary(d) {
+      const lots = (d && d.lots) || [];
+      if (!lots.length) return "Aucun lot à compléter d'après le dossier.";
+      const n = lots.reduce((s, l) => s + (l.reseau || []).length + (l.sirene || []).length, 0);
+      return lots.length + " " + this.plFr(lots.length, "lot à compléter", "lots à compléter") + " · " + n + " " + this.plFr(n, "entreprise proposée", "entreprises proposées") + ".";
+    },
+    async aoPmLot(l) {
+      const pid = this.ao.project && this.ao.project.id, pm = this.ao.pm; if (!pid || pm.lotBusy || !l || !l.num) return;
+      pm.lotBusy = String(l.num);
+      try {
+        const d = await this.api("GET", "/api/projects/" + pid + "/partner-matches?lot=" + encodeURIComponent(l.num));
+        const nl = ((d && d.lots) || [])[0];
+        if (nl && pm.d) {
+          const i = pm.d.lots.findIndex(x => String(x.num) === String(l.num));
+          if (i >= 0) pm.d.lots.splice(i, 1, nl);
+          ((d && d.warnings) || []).forEach(w => { if (!(pm.d.warnings || []).includes(w)) (pm.d.warnings = pm.d.warnings || []).push(w); });
+          const n = (nl.reseau || []).length + (nl.sirene || []).length;
+          pm.live = "Lot " + l.num + " : " + n + " " + this.plFr(n, "entreprise proposée", "entreprises proposées") + ".";
+        }
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { pm.lotBusy = ""; }
+    },
+    pmLotTitle(l) { return l && l.num ? "Lot " + l.num + " — " + l.label : (l && l.label) || ""; },
+    pmLotPart(l) { return l && l.num ? "Lot " + l.num + " — " + l.label : (l && (l.metier_label || l.label)) || ""; },
+    pmLotId(l) { return "pml-" + String((l && (l.num || l.metier)) || "x").replace(/[^A-Za-z0-9_-]/g, ""); },
+    // « Simuler le groupement » depuis une carte : ajoute l'entreprise à la simulation de la carte
+    // « Répondre à plusieurs ? » et lance le calcul (le SEUL pourcentage affiché).
+    async aoPmSimulate(c) {
+      const m = c.profile_id ? { kind: "reseau", profile_id: c.profile_id, name: c.name, city: c.city || "" }
+                             : { kind: "sirene", siret: c.siret, name: c.name, city: c.city || "" };
+      if (!this.isCandSelected(m)) {
+        if (this.ao.grp.selected.length >= 4) { this.notify("4 partenaires au maximum par simulation : retirez-en un dans « Simuler avec ».", "err"); this.rnScrollTo("grpSim", true); return; }
+        this.ao.grp.selected.push(m);
+      }
+      await this.aoGrpSimulate();
+      this.rnScrollTo("grpSim", true);
+    },
+
+    // ── Modale d'invitation en 1 clic (vague 3) ──
+    // Réseau : Adjugo envoie l'invitation, l'adresse du partenaire n'est JAMAIS affichée au chef de file.
+    // SIRENE (hors réseau) : identité relue côté serveur, aucun email, un lien à transmettre.
+    rnInviteOpen(card, opts) {
+      opts = opts || {}; if (!card) return;
+      const kind = card.profile_id ? "reseau" : "sirene";
+      const declared = Array.isArray(card.roles_acceptes);
+      const ok = declared ? card.roles_acceptes.map(r => (r && r.value) || r).filter(r => r === "cotraitant" || r === "sous_traitant") : ["cotraitant", "sous_traitant"];
+      const roles = kind === "sirene" || !declared ? ["cotraitant", "sous_traitant"] : ok;
+      const inAo = this.view === "aodetail" && this.ao.project;
+      this._rinvFocus = opts.focusBack || document.activeElement;
+      this.rinv = {
+        kind, card, name: card.name || "", profile_id: card.profile_id || "", siret: card.siret || "",
+        projectId: opts.projectId || (inAo ? this.ao.project.id : ""), pickProject: !opts.projectId && !inAo,
+        roles, role: roles[0] || "cotraitant", noRole: kind === "reseau" && declared && !ok.length,
+        lot: opts.lot || "", can_view_docs: true, busy: false, err: "", errCode: "", errProfile: "", url: "", done: "",
+      };
+      this.$nextTick(() => { const el = document.querySelector(".rinv-modal .modal-b select, .rinv-modal .modal-b input") || document.querySelector(".rinv-modal .x"); if (el && el.focus) el.focus(); });
+    },
+    rinvClose() {
+      this.rinv = null;
+      const el = this._rinvFocus; this._rinvFocus = null;
+      if (el && el.focus && document.body.contains(el)) this.$nextTick(() => el.focus());
+    },
+    rinvProjects() { return (this.projects || []).filter(p => p && !p.deleted_at && p.status !== "abandonne"); },
+    // « Déjà invité » : la carte d'origine et, sur la fiche du marché, toutes les cartes de la même entreprise.
+    _rnMarkInvited(v) {
+      if (!v) return;
+      if (v.card && typeof v.card === "object") v.card.deja_invite = true;
+      const d = this.ao.pm && this.ao.pm.d; if (!d || this.view !== "aodetail" || !this.ao.project || this.ao.project.id !== v.projectId) return;
+      (d.lots || []).forEach(l => {
+        (l.reseau || []).forEach(c => { if (v.profile_id && c.profile_id === v.profile_id) c.deja_invite = true; });
+        (l.sirene || []).forEach(c => { if (v.siret && c.siret === v.siret) c.deja_invite = true; });
+      });
+    },
+    async rinvSend() {
+      const v = this.rinv; if (!v || v.busy || v.done) return;
+      if (!v.projectId) { v.err = "Choisissez le marché sur lequel inviter ce partenaire."; v.errCode = ""; return; }
+      if (v.noRole) return;
+      const pid = v.projectId, body = { role: v.role, lot: String(v.lot || "").trim().slice(0, 255), can_view_docs: !!v.can_view_docs, expires_days: 30 };
+      v.busy = true; v.err = ""; v.errCode = ""; v.errProfile = "";
+      try {
+        if (v.kind === "reseau") {
+          const r = await this.api("POST", "/api/projects/" + pid + "/reseau/invitations", Object.assign({ profile_id: v.profile_id }, body));
+          this._rnMarkInvited(v);
+          this.notify((r && r.message) || "Invitation envoyée par Adjugo.");
+          this.rinvClose();
+        } else {
+          const r = await this.api("POST", "/api/projects/" + pid + "/reseau/invitations-sirene", Object.assign({ siret: v.siret }, body));
+          const inv = (r && r.invitation) || {};
+          v.url = inv.path ? this.inviteUrl(inv) : ((r && r.url) || "");
+          v.done = (r && r.message) || "Lien créé : transmettez-le à l'entreprise.";
+          this._rnMarkInvited(v);
+          if (v.url) this.copyInvite(v.url, true);
+        }
+        if (this.view === "aodetail" && this.ao.project && this.ao.project.id === pid) { this.aoLoadInvites(); this.aoLoadCotraitants(); this.aoLoadConsortium(); }
+        this.loadCotraitants();
+      } catch (e) {
+        v.err = (e && e.message) || "Invitation impossible pour l'instant."; v.errCode = (e && e.code) || ""; v.errProfile = (e && e.profile_id) || "";
+        if (v.errCode === "deja_invite") this._rnMarkInvited(v);
+      } finally { if (this.rinv === v) v.busy = false; }
+    },
+    // 409 « sur_le_reseau » : l'entreprise SIRENE est sur le réseau → on l'invite via sa fiche (Adjugo transmet).
+    rinvViaReseau() {
+      const v = this.rinv; if (!v || !v.errProfile) return;
+      Object.assign(v, { kind: "reseau", profile_id: v.errProfile, roles: ["cotraitant", "sous_traitant"], noRole: false, err: "", errCode: "", errProfile: "", url: "", done: "" });
+    },
+    rinvShowInvites() { this.rinvClose(); if (this.view === "aodetail") this.rnScrollTo("reseauCard"); },
     // ── Coffre-fort croisé (statuts) + offre commune (mandataire) ──
     ddmm(s) { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "/" + m[2] : ""; },
     cxPiece(m, k) { return (m && m.pieces && m.pieces[k]) || { status: "manquant" }; },
@@ -2793,6 +3304,70 @@ __adjApp.config.errorHandler = function (err, vm, info) {
     }, 60);
   } catch (e) {}
 };
+
+// ── Réseau de partenaires (vague 3) : petits composants d'affichage, SANS état propre ──
+// Ils ne font qu'afficher ce que l'API renvoie (libellé, source, date) : aucune note, aucun calcul,
+// aucun « % ». Texte toujours rendu en {{ }} (jamais v-html). Les icônes sont peintes par le
+// hook `updated` de la racine (les props ne changent que quand la racine se re-rend).
+function _rnJjmmaaaa(s) { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "/" + m[2] + "/" + m[1] : ""; }
+const _RN_TIP = '<button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">Source et date</span><span class="tip-b" role="tooltip">';
+// Badges de confiance vérifiables (SIRENE, RGE, Qualiopi, BODACC, DECP, dépôts Adjugo).
+__adjApp.component("rn-badges", {
+  props: { badges: { type: Array, default: () => [] } },
+  methods: {
+    ic(n) { return ({ ok: "badge-check", info: "circle-dot", alerte: "triangle-alert" })[n] || "circle-dashed"; },
+    nv(n) { return ({ ok: "vérifié", info: "information", alerte: "point d'attention" })[n] || "non vérifié"; },
+    jj: _rnJjmmaaaa,
+  },
+  template: '<ul v-if="badges && badges.length" class="rn-badges">'
+    + '<li v-for="(b,i) in badges" :key="(b.key||\'b\')+i" class="rn-badge" :class="\'n-\'+(b.niveau||\'non_verifie\')">'
+    + '<i :data-lucide="ic(b.niveau)" aria-hidden="true"></i><span class="rn-badge-l">{{ b.label }}<span class="sr-only"> ({{ nv(b.niveau) }})</span></span>'
+    + _RN_TIP + 'Source : {{ b.source || "non précisée" }}<template v-if="b.date"><br>Date : {{ jj(b.date) }}</template></span></button>'
+    + '</li></ul>',
+});
+// Critères du classement (statut + phrase + source + date), toujours dans l'ordre renvoyé.
+__adjApp.component("rn-criteres", {
+  props: { criteres: { type: Array, default: () => [] } },
+  methods: {
+    ic(s) { return ({ ok: "check", partiel: "minus", non: "x", alerte: "triangle-alert" })[s] || "minus"; },
+    st(s) { return ({ ok: "oui", partiel: "en partie", non: "non", alerte: "point d'attention" })[s] || ""; },
+    jj: _rnJjmmaaaa,
+  },
+  template: '<ul class="rn-crits">'
+    + '<li v-for="c in criteres" :key="c.key" class="rn-crit" :class="\'s-\'+c.statut">'
+    + '<i :data-lucide="ic(c.statut)" aria-hidden="true"></i>'
+    + '<span class="rn-crit-t"><b>{{ c.label }}</b><span class="sr-only"> : {{ st(c.statut) }}.</span> <span class="rn-crit-d">{{ c.detail }}</span></span>'
+    + '<button v-if="c.source || c.date" type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">Source et date</span><span class="tip-b" role="tooltip">Source : {{ c.source || "non précisée" }}<template v-if="c.date"><br>Date : {{ jj(c.date) }}</template></span></button>'
+    + '</li></ul>',
+});
+// Fiche PUBLIQUE d'un partenaire (annuaire, aperçu de « Mon profil », fiche ouverte) : sous-ensemble
+// strict renvoyé par le serveur — jamais d'email, de téléphone, de CA ni de documents.
+__adjApp.component("rn-fiche", {
+  props: { c: { type: Object, required: true } },
+  computed: {
+    lien() { const u = String((this.c && this.c.lien_annuaire) || ""); return /^https:\/\/annuaire-entreprises\.data\.gouv\.fr\/entreprise\/\d{9}$/.test(u) ? u : ""; },
+    lieu() { const c = this.c || {}; return [c.city, c.departement ? "(" + c.departement + ")" : ""].filter(Boolean).join(" "); },
+  },
+  methods: { jj: _rnJjmmaaaa },
+  template: '<div class="rn-fiche">'
+    + '<div class="rn-fiche-h"><div class="rn-fiche-id"><b class="rn-name">{{ c.name }}</b>'
+    + '<span v-if="c.siren" class="muted small nw">SIREN {{ c.siren }}'
+    + '<button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">SIREN : le numéro à 9 chiffres qui identifie l\'entreprise dans le registre officiel des entreprises.</span></button></span></div>'
+    + '<div v-if="lieu" class="muted small">{{ lieu }}</div>'
+    + '<a v-if="lien" :href="lien" target="_blank" rel="noopener noreferrer" class="rn-link small"><i data-lucide="external-link"></i>Vérifier sur l\'annuaire des entreprises</a></div>'
+    + '<p v-if="c.presentation" class="rn-pres">{{ c.presentation }}</p>'
+    + '<div class="rn-sub">Capacités<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Chaque ligne indique sa source : déclarée par l\'entreprise, ou relevée dans un registre public, avec sa date.</span></button></div>'
+    + '<ul v-if="c.capacites && c.capacites.length" class="rn-caps"><li v-for="x in c.capacites" :key="x.key" class="rn-cap">'
+    + '<span class="rn-cap-l">{{ x.label }}</span><span class="rn-cap-v">{{ x.valeur }}</span>'
+    + '<span class="rn-cap-s">{{ x.source }}<template v-if="x.date"> · {{ jj(x.date) }}</template></span></li></ul>'
+    + '<p v-else class="muted small">Aucune capacité déclarée pour l\'instant.</p>'
+    + '<div class="rn-sub">Vérifications dans les registres publics<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">SIRENE : le répertoire officiel des entreprises. BODACC : le journal officiel où sont publiées les procédures collectives. DECP : les données publiques des marchés attribués. Chaque résultat est daté ; rien n\'est noté.</span></button></div>'
+    + '<rn-badges :badges="c.badges"></rn-badges>'
+    + '<template v-if="c.references && c.references.length"><div class="rn-sub">Références choisies par l\'entreprise</div>'
+    + '<ul class="rn-refs"><li v-for="(r,i) in c.references" :key="\'rf\'+i">{{ r.intitule }}<span v-if="r.client" class="muted"> — {{ r.client }}</span><span v-if="r.annee" class="muted"> ({{ r.annee }})</span></li></ul></template>'
+    + '<div v-if="c.declare_le" class="muted small rn-decl">Informations déclarées par l\'entreprise, mises à jour le {{ jj(c.declare_le) }}.</div>'
+    + '</div>',
+});
 
 // window.__adjugo = instance racine montée (hook débogage/tests E2E ; mount() retourne le
 // proxy en build prod comme dev — état client de l'utilisateur courant uniquement).

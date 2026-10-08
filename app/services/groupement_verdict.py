@@ -162,6 +162,39 @@ def member_from_sirene(fiche: dict, siret: str = "") -> dict:
     }
 
 
+def member_from_profile(p) -> dict:
+    """Profil PUBLIÉ du réseau Adjugo (vague 3) → membre 'reseau' du score de groupement.
+    Uniquement ce que la fiche publique expose : JAMAIS de CA ni d'effectif exact (inconnus →
+    « CA non publié — à demander »), qualifications = registres (RGE / Qualiopi via SIRENE),
+    références = celles que le partenaire a rendues publiques. Source 'reseau' = déclaré par
+    l'entreprise elle-même sur son profil (étiquette datée)."""
+    vs = p.verified_sirene if isinstance(getattr(p, "verified_sirene", None), dict) else {}
+    quals = []
+    if vs.get("est_rge") is True:
+        quals.append("RGE (registre ADEME)")
+    if vs.get("est_qualiopi") is True:
+        quals.append("Qualiopi (registre)")
+    try:
+        from app.services.partner_matching import trade_labels
+        labels = trade_labels()
+    except Exception:
+        labels = {}
+    refs = [{"name": r.get("intitule"), "client": r.get("client") or "", "year": r.get("annee")}
+            for r in (p.references_publiques or []) if isinstance(r, dict) and r.get("intitule")]
+    return {
+        "kind": "reseau", "id": None, "invite_id": None, "profile_id": p.public_id,
+        "name": p.name or "Partenaire", "siret": p.siret or "", "siren": p.siren or "",
+        "ca_n1": None, "effectif": None,
+        "qualifications": quals,
+        "specialites": ", ".join(labels.get(m, m) for m in (p.metiers or [])),
+        "code_ape": str(vs.get("naf") or "").replace(".", ""),
+        "departement": p.departement or "", "departements": list(p.departements or []),
+        "postal_code": p.postal_code or "", "city": p.city or "",
+        "references": refs,
+        "source": "reseau", "as_of": _iso(getattr(p, "declared_at", None)), "verified": False,
+    }
+
+
 def _member_from_normalized_company(c) -> dict:
     """NormalizedCompany (découverte SIRENE) → membre 'sirene'. RGE n'est ajouté que si le
     registre (ADEME via recherche-entreprises) le dit explicitement."""
@@ -195,6 +228,8 @@ def proof_label(member: dict) -> str:
         return f"vérifié SIRENE{d}"
     if src == "contribution":
         return f"déclaré par le partenaire{d}"
+    if src == "reseau":
+        return f"déclaré par l'entreprise sur son profil Adjugo{d}"
     if src == "profil":
         return "votre profil"
     return f"déclaré par vous{d}"
@@ -259,15 +294,45 @@ def _discover_sirene(trade: str, dept: str, warnings: list) -> list:
         return []
 
 
+def _reseau_pool(db, project, network_ctx: dict, trades: list, dept: str, per_trade: int = 5) -> list:
+    """Pool 'reseau' (vague 3) : profils PUBLIÉS visibles par le chercheur (réciprocité,
+    masquage dans les deux sens, jamais démo) dont le métier correspond, dans l'ORDRE du
+    classement déterministe partner_matching (B classe, A calcule le seul pourcentage).
+    Base seulement : aucun appel réseau."""
+    if not network_ctx or not network_ctx.get("published") or not trades:
+        return []
+    from datetime import date as _date
+    from app.services import partner_matching as pm
+    from app.services import partner_network as pn
+    profiles = pn.visible_profiles(db, network_ctx)
+    by_pid = {p.public_id: p for p in profiles}
+    dicts = [pn.profile_dict(p) for p in profiles]
+    out, seen = [], set()
+    today = _date.today()
+    for trade in trades:
+        for r in pm.rank({"metier": trade, "departement": dept, "role": "cotraitant"}, dicts, today, limit=per_trade):
+            if r["profile_id"] in seen:
+                continue
+            seen.add(r["profile_id"])
+            m = member_from_profile(by_pid[r["profile_id"]])
+            m["trade"] = trade
+            m["rang"] = r["rang"]
+            m["_db_id"] = by_pid[r["profile_id"]].id    # interne (compteur anonyme), jamais sérialisé
+            out.append(m)
+    return out
+
+
 def pool_for_project(db, project, owner_ids: list, include_sirene: bool = False,
                      max_sirene_calls: int = 3, gaps: Optional[list] = None,
                      lead: Optional[dict] = None, criteria: Optional[dict] = None,
-                     company_data: Optional[dict] = None) -> dict:
+                     company_data: Optional[dict] = None, network_ctx: Optional[dict] = None) -> dict:
     """Pool de partenaires d'un marché, en membres normalisés :
       rattaches = ProjectCotraitant du projet → Cotraitant (kind 'attached')
       annuaire  = Cotraitant de l'organisation NON rattachés (kind 'annuaire')
       sirene    = (si include_sirene) découverte SIRENE pour les métiers des manques
                   (≤ max_sirene_calls appels, cache 10 min, erreurs → liste vide + warning)
+      reseau    = (si network_ctx d'un chercheur au profil PUBLIÉ) profils du réseau Adjugo
+                  pour les métiers des manques, dans l'ordre du classement partner_matching
     `gaps` : manques déjà calculés (sinon calculés ici via gaps_for si lead/criteria fournis)."""
     from app.routers.cotraitants import Cotraitant, ProjectCotraitant
     from app.models import ProjectInvite
@@ -297,7 +362,9 @@ def pool_for_project(db, project, owner_ids: list, include_sirene: bool = False,
             annuaire.append(member_from_cotraitant(ct, "annuaire"))
 
     sirene: list = []
-    if include_sirene:
+    reseau: list = []
+    with_network = bool(network_ctx and network_ctx.get("published"))
+    if include_sirene or with_network:
         details = (project.ai_analysis or {}).get("details") or {} if isinstance(project.ai_analysis, dict) else {}
         if gaps is None and lead is not None:
             gs = scoring_module()
@@ -326,8 +393,16 @@ def pool_for_project(db, project, owner_ids: list, include_sirene: bool = False,
                 pass
         dept = _execution_dept(details, criteria or {}, company_data or lead or {})
         known = {m["siret"] for m in rattaches + annuaire if m.get("siret")}
+        if with_network:
+            try:
+                reseau = _reseau_pool(db, project, network_ctx, trades, dept)
+            except Exception as e:
+                logger.warning("pool réseau indisponible (projet %s) : %s", getattr(project, "id", "?"), e)
+                reseau = []
+            for m in reseau:
+                m["deja_partenaire"] = bool(m.get("siret") and m["siret"] in known)
         seen = set()
-        for trade in trades[:max(0, int(max_sirene_calls))]:
+        for trade in (trades[:max(0, int(max_sirene_calls))] if include_sirene else []):
             for m in _discover_sirene(trade, dept, warnings):
                 s = m.get("siret") or m.get("name")
                 if s in seen:
@@ -336,11 +411,11 @@ def pool_for_project(db, project, owner_ids: list, include_sirene: bool = False,
                 m["deja_partenaire"] = bool(m.get("siret") and m["siret"] in known)
                 m["trade"] = trade
                 sirene.append(m)
-        if len(trades) > max_sirene_calls:
+        if include_sirene and len(trades) > max_sirene_calls:
             warnings.append(f"Recherche SIRENE limitée à {max_sirene_calls} métiers par requête "
                             f"({len(trades) - max_sirene_calls} non cherché(s)).")
 
-    return {"rattaches": rattaches, "annuaire": annuaire, "sirene": sirene, "warnings": warnings}
+    return {"rattaches": rattaches, "annuaire": annuaire, "sirene": sirene, "reseau": reseau, "warnings": warnings}
 
 
 # ── Verdict de groupement après analyse ──────────────────────────────────────────────

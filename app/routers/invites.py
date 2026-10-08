@@ -95,6 +95,15 @@ def _mask_email(e: str) -> str:
     return ((user[0] + "***") if user else "***") + "@" + dom
 
 
+def _audit_email_detail(inv) -> str:
+    """Détail d'audit des codes de vérification. Le journal complet est lisible par le chef de
+    file : pour une invitation RÉSEAU (adresse remplie par Adjugo et masquée), on n'y écrit
+    même pas l'adresse masquée (le domaine suffirait à identifier l'entreprise)."""
+    if (getattr(inv, "source", "") or "") == "reseau_adjugo":
+        return ""
+    return _mask_email(inv.recipient)
+
+
 def _send_mails_async(mails: list) -> None:
     """Envoie une liste de (destinataire, sujet, texte) dans un thread démon : les
     notifications de groupement sont best-effort et ne doivent JAMAIS retenir la réponse
@@ -437,6 +446,23 @@ def _invite_public(inv: ProjectInvite, project: Project, owner_company: Optional
             out["for_member"] = _for_member(inv, project, db)
         except Exception:
             out["for_member"] = None
+    # Invitation RÉSEAU pas encore acceptée : APERÇU MINIMAL (objet, lots, lieu, échéance,
+    # chef de file) — ni acheteur, ni lien de l'avis, ni pièces. Protège le chef de file d'un
+    # concurrent déguisé tant que le partenaire n'a pas accepté depuis son compte.
+    if _network_pending(inv, db):
+        out["project"]["client"] = None
+        out["project"]["source_url"] = None
+        out["project"]["analysis"] = {k: v for k, v in (out["project"].get("analysis") or {}).items()
+                                      if k != "acheteur"}
+        out["documents"] = []
+        out["can_view_docs"] = False
+        # Ni composition du groupement, ni score commun avant acceptation (stratégie du chef de file).
+        out["for_member"] = None
+        out["apercu_minimal"] = True
+        out["apercu_message"] = ("Aperçu limité : acceptez l'invitation depuis votre compte Adjugo pour voir "
+                                 "le dossier complet (acheteur, pièces du marché).")
+    else:
+        out["apercu_minimal"] = False
     return out
 
 
@@ -480,11 +506,45 @@ def _invite_state(inv: ProjectInvite, contribution: "ProjectContribution" = None
     return "sent"
 
 
-def _serialize_invite(inv: ProjectInvite, contribution: "ProjectContribution" = None) -> dict:
+def _is_network_invite(inv) -> bool:
+    return (getattr(inv, "source", "") or "") == "reseau_adjugo"
+
+
+def _network_responded(inv, contribution=None) -> bool:
+    """Invitation RÉSEAU « répondue » : acceptée depuis le compte du partenaire (claim),
+    adresse prouvée par code, ou part soumise. Décliner n'est pas accepter."""
+    if not _is_network_invite(inv):
+        return True
+    return bool(getattr(inv, "accepted_by_user_id", None) or getattr(inv, "verified_at", None)
+                or (contribution is not None and contribution.status == "submitted"))
+
+
+def _network_pending(inv, db: Session = None) -> bool:
+    """Invitation réseau pas encore acceptée → aperçu minimal côté partenaire."""
+    if not _is_network_invite(inv):
+        return False
+    c = None
+    if db is not None:
+        c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+    return not _network_responded(inv, c)
+
+
+def _serialize_invite(inv: ProjectInvite, contribution: "ProjectContribution" = None, db: Session = None) -> dict:
     declined_at = getattr(inv, "declined_at", None)
+    # Invitation RÉSEAU (vague 3) : l'adresse a été remplie CÔTÉ SERVEUR et reste MASQUÉE au
+    # chef de file tant que le partenaire n'a pas répondu ; le lien n'est jamais remis au chef
+    # de file (Adjugo l'envoie au partenaire, qui le retrouve aussi dans son espace).
+    network = _is_network_invite(inv)
+    if network and contribution is None and db is not None:
+        contribution = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+    masked = network and not _network_responded(inv, contribution)
     return {
-        "id": inv.id, "token": inv.token, "path": f"/invite/{inv.token}",
-        "recipient": inv.recipient, "company_name": inv.company_name,
+        "id": inv.id,
+        "token": None if network else inv.token,
+        "path": None if network else f"/invite/{inv.token}",
+        "recipient": "" if masked else inv.recipient,
+        "recipient_masque": bool(masked),
+        "company_name": inv.company_name,
         "role": inv.role or "cotraitant",
         "can_view_docs": bool(inv.can_view_docs),
         "can_contribute": bool(getattr(inv, "can_contribute", True)),
@@ -535,14 +595,16 @@ def _check_daily_invite_cap(user: User, db: Session) -> None:
                                  f"par jour. Réessayez demain.")
 
 
-@router.post("/api/projects/{project_id}/invites")
-def create_invite(project_id: int, body: InviteCreate, request: Request,
-                  current_user: User = Depends(get_current_user),
-                  db: Session = Depends(get_db)):
-    """Génère un lien d'invitation co-traitant pour ce projet (mandataire only)."""
-    _refuse_demo_sender(current_user)
-    project = _owned_project(project_id, current_user, db)
-    _check_daily_invite_cap(current_user, db)
+def _create_invite(db: Session, project: Project, current_user: User, request: Request, *,
+                   recipient: str = "", company_name: str = "", role: str = "cotraitant",
+                   can_view_docs: bool = True, can_contribute: bool = True, expires_days: int = 30,
+                   source: str = "manuel", partner_profile_id: Optional[int] = None,
+                   mailer=None) -> tuple:
+    """Crée l'invitation (lien secret), la journalise, envoie l'email si l'expéditeur a
+    confirmé son adresse, et défige l'offre si besoin. Renvoie (invitation, email_parti).
+    Factorisé (vague 3) SANS changer le comportement de POST /invites : les contrôles d'accès,
+    de démo et de plafond restent à la charge de l'appelant. `mailer(inv, project, base_url)`
+    remplace l'email standard (invitation réseau : texte dédié, adresse jamais montrée)."""
     # owner_id = propriétaire CANONIQUE de l'organisation (porteur du profil entreprise).
     # Toute la co-traitance d'un même tenant converge ainsi sur un seul owner_id : la vue
     # invité (nom du mandataire = Company.user_id == owner_id) et la chaîne d'audit
@@ -551,15 +613,17 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
     inv = ProjectInvite(
         token=secrets.token_urlsafe(32),
         project_id=project.id, owner_id=owner,
-        recipient=(body.recipient or "").strip()[:255],
-        company_name=(body.company_name or "").strip()[:255],
-        role=(body.role if body.role in ("cotraitant", "sous_traitant") else "cotraitant"),
-        can_view_docs=bool(body.can_view_docs),
-        can_contribute=bool(body.can_contribute),
+        recipient=(recipient or "").strip()[:255],
+        company_name=(company_name or "").strip()[:255],
+        role=(role if role in ("cotraitant", "sous_traitant") else "cotraitant"),
+        can_view_docs=bool(can_view_docs),
+        can_contribute=bool(can_contribute),
         # Borné à [1, 365] j : days=0 → lien permanent (voulu) ; une valeur énorme faisait
         # planter timedelta (OverflowError 500), une valeur négative créait un lien déjà expiré.
-        expires_at=(utcnow() + timedelta(days=min(int(body.expires_days), 365)))
-                   if body.expires_days and body.expires_days > 0 else None,
+        expires_at=(utcnow() + timedelta(days=min(int(expires_days), 365)))
+                   if expires_days and expires_days > 0 else None,
+        source=(source or "manuel")[:20],
+        partner_profile_id=partner_profile_id,
     )
     db.add(inv)
     db.commit()
@@ -575,7 +639,8 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
     # emailed_at → on commit APRÈS l'envoi pour le persister.
     # Lien toujours créé ; l'EMAIL ne part que si l'expéditeur a confirmé sa propre adresse
     # (anti-spam via comptes jetables). Sinon : lien à copier, comme sans adresse.
-    emailed = (_send_invite_email(inv, project, _settings.APP_BASE_URL or str(request.base_url))
+    send = mailer or _send_invite_email
+    emailed = (send(inv, project, _settings.APP_BASE_URL or str(request.base_url))
                if getattr(current_user, "email_verified", False) else False)
     db.commit()
     db.refresh(inv)
@@ -583,6 +648,21 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
     _unfreeze_offer_if_needed(db, project.id, f"nouveau partenaire invité ({inv.company_name or 'sans nom'})",
                               actor=f"user:{current_user.id}", actor_kind="owner",
                               ip=audit.client_ip(request), invite_id=inv.id)
+    return inv, emailed
+
+
+@router.post("/api/projects/{project_id}/invites")
+def create_invite(project_id: int, body: InviteCreate, request: Request,
+                  current_user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """Génère un lien d'invitation co-traitant pour ce projet (mandataire only)."""
+    _refuse_demo_sender(current_user)
+    project = _owned_project(project_id, current_user, db)
+    _check_daily_invite_cap(current_user, db)
+    inv, emailed = _create_invite(db, project, current_user, request,
+                                  recipient=body.recipient, company_name=body.company_name,
+                                  role=body.role, can_view_docs=body.can_view_docs,
+                                  can_contribute=body.can_contribute, expires_days=body.expires_days)
     out = _serialize_invite(inv)
     out["url"] = str(request.base_url).rstrip("/") + out["path"]
     out["emailed"] = emailed
@@ -600,7 +680,7 @@ def list_invites(project_id: int, current_user: User = Depends(get_current_user)
     ).order_by(ProjectInvite.created_at.desc()).all()
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id).all()}
-    return [_serialize_invite(r, contribs.get(r.id)) for r in rows]
+    return [_serialize_invite(r, contribs.get(r.id), db=db) for r in rows]
 
 
 RESEND_MIN_INTERVAL = timedelta(minutes=15)
@@ -643,7 +723,16 @@ def resend_invite(project_id: int, invite_id: int, request: Request,
             raise HTTPException(429, "Invitation déjà envoyée il y a moins de 15 minutes. "
                                      "Laissez un peu de temps au partenaire avant de relancer.")
     _check_daily_invite_cap(current_user, db)
-    sent = _send_invite_email(inv, project, _settings.APP_BASE_URL or str(request.base_url))
+    sender = _send_invite_email
+    if _is_network_invite(inv):
+        # Relance d'une invitation RÉSEAU : même texte que l'envoi initial (adresse jamais
+        # montrée au chef de file, rappel « comment ne plus être sollicité »).
+        from app.routers.cotraitants import ProjectCotraitant
+        from app.routers.reseau import _network_mailer
+        lk = db.query(ProjectCotraitant).filter(ProjectCotraitant.invite_id == inv.id).first()
+        chef = db.query(Company).filter(Company.user_id == inv.owner_id).first()
+        sender = _network_mailer((lk.lot if lk else "") or "", (chef.name if chef else "") or "")
+    sent = sender(inv, project, _settings.APP_BASE_URL or str(request.base_url))
     db.commit()
     if sent:
         audit.record(db, action="invite.resent", owner_id=inv.owner_id, project_id=project_id,
@@ -899,6 +988,9 @@ def guest_download(token: str, doc_id: int, request: Request, db: Session = Depe
     inv = _valid_invite(token, db)
     if not inv.can_view_docs:
         raise HTTPException(403, "Le partage des pièces n'est pas autorisé pour ce lien")
+    if _network_pending(inv, db):
+        raise HTTPException(403, "Acceptez d'abord l'invitation depuis votre compte Adjugo pour télécharger "
+                                 "les pièces du marché.")
     doc = db.query(Document).filter(
         Document.id == doc_id, Document.project_id == inv.project_id,
         Document.deleted_at.is_(None), Document.parent_id.is_(None)
@@ -1345,7 +1437,7 @@ def guest_otp_request(token: str, request: Request, db: Session = Depends(get_db
                 "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
     audit.record(db, action="guest.otp_request", owner_id=inv.owner_id, project_id=inv.project_id,
                  actor=_guest_actor(inv), actor_kind="guest", target_type="invite",
-                 target_id=inv.id, invite_id=inv.id, detail=_mask_email(inv.recipient),
+                 target_id=inv.id, invite_id=inv.id, detail=_audit_email_detail(inv),
                  ip=audit.client_ip(request))
     return {"sent": True, "email_masked": _mask_email(inv.recipient), "ttl_min": _OTP_TTL_MIN}
 
@@ -1374,7 +1466,7 @@ def guest_otp_verify(token: str, body: OtpVerify, request: Request, db: Session 
     db.commit()
     audit.record(db, action="guest.otp_verified", owner_id=inv.owner_id, project_id=inv.project_id,
                  actor=_guest_actor(inv), actor_kind="guest", target_type="invite",
-                 target_id=inv.id, invite_id=inv.id, detail=_mask_email(inv.recipient),
+                 target_id=inv.id, invite_id=inv.id, detail=_audit_email_detail(inv),
                  ip=audit.client_ip(request))
     return {"verified": True}
 
@@ -1933,6 +2025,9 @@ def guest_coffre_croise(token: str, request: Request, db: Session = Depends(get_
     project = db.query(Project).filter(Project.id == inv.project_id, Project.deleted_at.is_(None)).first()
     if not project:
         raise HTTPException(404, "Projet introuvable ou retiré")
+    if _network_pending(inv, db):        # aperçu minimal : pas la composition du groupement
+        raise HTTPException(403, "Acceptez d'abord l'invitation depuis votre compte Adjugo pour voir "
+                                 "les attestations du groupement.")
     return coffre_croise(db, project, active_invites(db, project.id), viewer_invite_id=inv.id, for_owner=False)
 
 
@@ -2279,9 +2374,13 @@ def guest_journal(token: str, request: Request, db: Session = Depends(get_db)):
     événements de groupement du projet. Projection SANS ip, SANS email, SANS target_id
     d'un autre ; l'acteur devient « vous » / « mandataire » / « partenaire »."""
     inv = _valid_invite(token, db)
+    if _network_pending(inv, db):
+        # Invitation réseau pas encore acceptée : SES entrées seulement (pas la composition).
+        cond = (AuditLog.invite_id == inv.id)
+    else:
+        cond = ((AuditLog.invite_id == inv.id) | (AuditLog.action.in_(list(GROUP_EVENTS))))
     rows = db.query(AuditLog).filter(
-        AuditLog.project_id == inv.project_id,
-        ((AuditLog.invite_id == inv.id) | (AuditLog.action.in_(list(GROUP_EVENTS))))
+        AuditLog.project_id == inv.project_id, cond
     ).order_by(AuditLog.created_at.desc()).limit(200).all()
     # Noms d'entreprise des autres invitations (pour les événements de groupement).
     other_ids = {r.invite_id for r in rows if r.invite_id and r.invite_id != inv.id}
@@ -2429,7 +2528,12 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
                      actor=(inv.company_name or "invité")[:160],
                      actor_kind="guest", target_type="invite", target_id=inv.id, invite_id=inv.id,
                      detail="", ip=audit.client_ip(request))
-    return _shared_item(inv, db)
+    out = _shared_item(inv, db)
+    # Boucle de croissance (vague 3) : simple SUGGESTION d'interface « publiez votre profil
+    # partenaire » si l'organisation n'en a pas de publié — jamais d'email non sollicité.
+    from app.services.partner_network import suggest_profile
+    out["suggest_profile"] = suggest_profile(db, current_user)
+    return out
 
 
 @router.get("/api/shared")

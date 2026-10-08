@@ -15,7 +15,7 @@ from app.core.security import (hash_password, verify_password, create_access_tok
 from app.core.config import get_settings
 from app.core.ratelimit import limiter
 from app.models import User, Company, MatchingCriteria
-from app.schemas import UserCreate, UserLogin, Token, UserOut
+from app.schemas import UserCreate, UserLogin, Token, UserOut, RegisterOut
 from app.services.email import send_email
 from app.services.email_templates import verify_email_html
 
@@ -77,7 +77,7 @@ def _send_verification(user: User) -> None:
         pass
 
 
-@router.post("/register", response_model=Token, status_code=201)
+@router.post("/register", response_model=RegisterOut, status_code=201)
 @limiter.limit("5/minute")
 def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     """Créer un nouveau compte utilisateur."""
@@ -125,7 +125,10 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     _send_verification(user)
 
     token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})
-    return {"access_token": token, "token_type": "bearer"}
+    # Boucle de croissance (vague 3) : suggestion d'INTERFACE « publiez votre profil partenaire »,
+    # affichée après l'inscription — aucun email n'est envoyé pour ça.
+    from app.services.partner_network import suggest_profile
+    return {"access_token": token, "token_type": "bearer", "suggest_profile": suggest_profile(db, user)}
 
 
 class VerifyIn(BaseModel):

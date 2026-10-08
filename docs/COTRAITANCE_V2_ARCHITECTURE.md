@@ -50,6 +50,50 @@ d'API pour le front : `docs/COTRAITANCE_V2_VAGUE2_API.md`.
 « Partagé avec moi ») à partir du contrat ; relecture du modèle de convention par un conseil ;
 validation par le fondateur des valeurs par défaut et des libellés juridiques ; déploiement.
 
+## Statut vague 3 (08/10/2026) — partie serveur
+
+**Backend livré sur une branche de worktree (non déployé), 440 tests verts (Python 3.12, versions de
+production), migration et parcours rejoués sur Postgres 16.** Contrat d'API pour le front :
+`docs/COTRAITANCE_V2_VAGUE3_API.md`.
+
+- Migration `p0q1r2s3t4u5` (idempotente, testée à neuf / base à `o9p0q1r2s3t4` sans la table /
+  rejouée, SQLite et Postgres) : `partner_profiles` conforme au modèle ci-dessous (opt-in :
+  `visible` = false par défaut) + `public_id` opaque (UNIQUE, anti-énumération), `references_publiques`
+  (références choisies par l'entreprise), `declared_at` (date des capacités déclarées), `published_at`.
+- `app/services/partner_matching.py` (PUR, 0 LLM) : classement 35/25/15/15/10 → **rang + critères
+  sourcés et datés, jamais de total ni de %** ; badges et capacités avec source et date ; fiche
+  publique = sous-ensemble strict. `app/services/partner_network.py` : vérifications SIRENE / BODACC /
+  DECP tri-état (une erreur réseau = « non vérifié », ne remplace jamais une vérification réussie),
+  visibilité (réciprocité, `hidden_from_sirens` dans les deux sens, aucun profil démo), compteur
+  anonyme d'apparitions, historique COUNT, RGPD, cron borné.
+- `app/routers/reseau.py` : profil (GET pré-rempli Company + `lookup_company` / PUT / DELETE),
+  vérifier, publier (admin, SIRET 14 chiffres, SIRENE actif < 30 j, un seul profil publié par SIREN),
+  retirer ; annuaire + fiche ; historique ; invitations reçues ; `partner-matches` (≤ 3 lots SIRENE par
+  appel, cache 10 min, 60/h + plafond par organisation) ; mise en relation en 1 clic
+  (`_create_invite` factorisé sans changer POST /invites ; adresse remplie côté serveur et masquée au
+  chef de file jusqu'à la réponse ; lien jamais remis ; 409 si déjà invité ; annuaire rattaché) ;
+  invitation SIRENE hors réseau (lien à transmettre). Cron `POST /api/admin/run-partner-network`.
+- Pool `reseau` branché dans le score de groupement : `/simulate` (`kind: 'reseau'`, profil relu
+  côté serveur, CA/effectif inconnus) et `/besoins` (`candidats.reseau`, ordre du classement B).
+- Invitation réseau pas encore acceptée : aperçu minimal côté partenaire (ni acheteur, ni pièces,
+  ni composition du groupement). Boucle de croissance : `suggest_profile` après inscription et claim
+  (suggestion d'interface, aucun email).
+- Écart assumé avec le plan initial : **aucun profil `is_demo` n'est créé** (démo publique supprimée,
+  règle anti-hallucination) ; la colonne est conservée et toujours filtrée.
+
+**Écrans (08/10/2026, même branche, non déployés)** — `app.html`, `app.js`, `styles.css`, `invite.html` :
+entrée « Réseau » (Mon profil partenaire · Annuaire · Mon historique · Invitations reçues), panneau
+« Partenaires pour ce marché » sur la fiche du marché (bouton « Qui me complète ? », lot par lot, rang +
+critères + badges sourcés et datés, repli SIRENE, « Simuler le groupement » = seul %), modale
+d'invitation en 1 clic (adresse jamais affichée, 409 « déjà invité » / « sur le réseau » gérés), statut
+« a décliné » sur les cartes, la composition retenue et les candidats, source et adresse masquée dans
+la liste des invitations, suggestion « publiez votre profil » après inscription et acceptation, aperçu
+minimal dans `invite.html`. Garde-fous : `tests/test_reseau_ecrans.py`. Détail : § 13 du contrat.
+
+**Reste (vague 3) :** cron hebdomadaire à ajouter dans Railway ; validation par le fondateur des
+choix listés dans le contrat (poids du classement, aperçu minimal, plafonds) et des choix d'écran
+(§ 13 du contrat).
+
 ## Vision en une phrase
 
 Adjugo devient le seul outil où une PME voit en un coup d'œil « seul 54 % → avec Le Gall Électricité 81 % », monte le groupement en cinq minutes (convention générée, signée par chacun depuis son espace) et répond à plusieurs sans que personne — ni le mandataire, ni le serveur Adjugo, ni l'IA — ne voie jamais autre chose que le prix de vente de chaque lot et le total de l'offre commune.

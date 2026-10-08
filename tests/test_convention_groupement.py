@@ -938,8 +938,16 @@ def test_migration_a_neuf_et_rejouee(tmp_path):
         assert ("project_id",) in cuq and ("content_hash",) in cuq
         pc = {c["name"] for c in insp.get_columns("project_contributions")}
         assert {"representant_legal", "signataire_qualite"} <= pc
+        # Tête de chaîne courante (o9p0q1r2s3t4 ou une révision plus récente qui la suit).
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        cfg = Config(os.path.join(root, "alembic.ini"))
+        cfg.set_main_option("script_location", os.path.join(root, "alembic"))
+        script = ScriptDirectory.from_config(cfg)
+        head = script.get_current_head()
+        assert "o9p0q1r2s3t4" in {r.revision for r in script.walk_revisions("base", head)}
         with eng.connect() as cn:
-            assert cn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == "o9p0q1r2s3t4"
+            assert cn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == head
 
     check()
     # Base « production » à la révision précédente : les tables n'existent pas encore → créées.

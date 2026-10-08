@@ -36,8 +36,8 @@ _EFFECTIF = {
 }
 
 
-def _client():
-    return httpx.Client(timeout=12, headers={"User-Agent": "Adjugo/1.0 (+https://adjugo.fr)"})
+def _client(timeout: float = 12):
+    return httpx.Client(timeout=timeout, headers={"User-Agent": "Adjugo/1.0 (+https://adjugo.fr)"})
 
 
 def _normalize(e: dict) -> dict:
@@ -67,13 +67,16 @@ def _normalize(e: dict) -> dict:
     }
 
 
-def lookup_company(query: str) -> Optional[dict]:
+def lookup_company(query: str, timeout: float = 12) -> Optional[dict]:
     """Recherche une entreprise par SIRET, SIREN, nom (France via SIRENE) ou par
     numéro de TVA intracommunautaire étranger (UE via VIES).
 
     L'API recherche-entreprises n'indexe pas le SIRET (14 chiffres) dans le `q`
     plein-texte → on interroge par le SIREN (9 premiers chiffres) tout en conservant
-    le SIRET saisi par l'utilisateur dans le résultat."""
+    le SIRET saisi par l'utilisateur dans le résultat.
+
+    `timeout` : délai HTTP (12 s par défaut, inchangé) ; le réseau de partenaires passe un
+    délai court (process unique : jamais d'attente longue sur l'unique worker)."""
     if not query:
         return None
     raw = query.strip()
@@ -86,7 +89,7 @@ def lookup_company(query: str) -> Optional[dict]:
     siret_saisi = digits if len(digits) == 14 else ""
     search = digits[:9] if len(digits) in (9, 14) else raw  # SIREN/SIRET → SIREN ; sinon nom
     try:
-        with _client() as c:
+        with _client(timeout) as c:
             r = c.get(API, params={"q": search, "per_page": 1, "page": 1})
             if r.status_code != 200:
                 return None
