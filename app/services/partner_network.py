@@ -968,12 +968,14 @@ def run_partner_network(db, limit: int = CRON_BATCH, budget_s: float = CRON_BUDG
     from app.models import PartnerProfile
     from app.services import audit
     t0 = time.monotonic()
-    # Tri sur la dernière TENTATIVE (last_check_at, jamais tentés d'abord), puis la dernière
-    # réussite : un profil que SIRENE ne confirme pas ne garde pas la tête de file chaque semaine.
+    # Tri sur la dernière fois qu'Adjugo a REGARDÉ le profil : tentative du cron ou vérification
+    # lancée par l'entreprise (last_check_at, à défaut verified_at), jamais regardé d'abord. Un
+    # profil que SIRENE ne confirme pas ne garde donc plus la tête de file chaque semaine, et un
+    # profil tout juste vérifié ne passe pas devant un profil vérifié il y a des mois.
+    seen_at = func.coalesce(PartnerProfile.last_check_at, PartnerProfile.verified_at)
     rows = db.query(PartnerProfile).filter(
         PartnerProfile.visible.is_(True), PartnerProfile.is_demo.isnot(True),
-    ).order_by(PartnerProfile.last_check_at.is_(None).desc(), PartnerProfile.last_check_at.asc(),
-               PartnerProfile.verified_at.is_(None).desc(), PartnerProfile.verified_at.asc(),
+    ).order_by(seen_at.is_(None).desc(), seen_at.asc(),
                PartnerProfile.id.asc()).limit(max(0, min(int(limit), CRON_BATCH))).all()
     stats = {"checked": 0, "sirene_ok": 0, "errors": 0, "unpublished": 0, "skipped_budget": 0}
     for p in rows:

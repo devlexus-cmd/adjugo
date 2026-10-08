@@ -851,6 +851,7 @@ def test_cron_borne_et_jamais_de_depublication_sur_erreur(client, reg, monkeypat
     try:
         p = db.query(PartnerProfile).filter(PartnerProfile.user_id == b["id"]).first()
         p.verified_at = datetime(2000, 1, 1)
+        p.last_check_at = datetime(2000, 1, 1)     # dernier passage du cron : le plus ancien
         db.commit()
     finally:
         db.close()

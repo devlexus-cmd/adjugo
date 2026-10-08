@@ -577,6 +577,7 @@ def verifier(request: Request, current_user: User = Depends(get_current_user), d
         if len(_VERIFY_LAST) > 20000:
             _VERIFY_LAST.clear()
     now = pn.utcnow_naive()
+    p.last_check_at = now          # le cron passe d'abord aux profils regardés il y a longtemps
     res = pn.run_checks(p.siren, now)
     summary = pn.apply_checks(p, res, now)
     pn.recompute_groupements(db, p)
