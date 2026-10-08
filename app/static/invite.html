@@ -502,10 +502,15 @@
       root.appendChild(head);
 
       // Convention de groupement (vague 2) : état d'attente, brouillon, texte figé + accords.
-      const cvCard = $(`<section class="card pad cv-card" aria-labelledby="cv-title"><div class="cv-head"><h2 class="cv-title" id="cv-title" tabindex="-1">Convention de groupement</h2></div><div class="muted small" style="margin-top:8px">Chargement de la convention…</div></section>`);
-      CV.el = cvCard; CV.data = null;
-      root.appendChild(cvCard);
-      loadConvention();
+      // Aperçu minimal (invitation du réseau pas encore acceptée) : pas de convention (elle cite
+      // l'acheteur et la composition du groupement ; le serveur la refuse aussi).
+      CV.el = null; CV.data = null;
+      if (!d.apercu_minimal) {
+        const cvCard = $(`<section class="card pad cv-card" aria-labelledby="cv-title"><div class="cv-head"><h2 class="cv-title" id="cv-title" tabindex="-1">Convention de groupement</h2></div><div class="muted small" style="margin-top:8px">Chargement de la convention…</div></section>`);
+        CV.el = cvCard;
+        root.appendChild(cvCard);
+        loadConvention();
+      }
 
       const docCard = $(`<div class="card pad" style="margin-bottom:16px"></div>`);
       docCard.appendChild($(`<b style="font-size:13.5px">Pièces partagées${d.documents && d.documents.length ? " (" + d.documents.length + ")" : ""}</b>`));

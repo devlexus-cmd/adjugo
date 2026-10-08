@@ -678,6 +678,13 @@ def _guest_ctx(token: str, db: Session):
     project = db.query(Project).filter(Project.id == inv.project_id, Project.deleted_at.is_(None)).first()
     if not project:
         raise HTTPException(404, "Projet introuvable ou retiré")
+    if inv_mod._network_pending(inv, db):
+        # Invitation du RÉSEAU pas encore acceptée (aperçu minimal) : ni acheteur, ni composition du
+        # groupement. Le brouillon de la convention cite les deux (membres, « Acheteur : … ») → rien
+        # de la convention, pas même son état, sur les trois routes (lecture, PDF, accord).
+        raise HTTPException(403, {"code": "apercu_minimal",
+                                  "message": "Acceptez d'abord l'invitation depuis votre compte Adjugo pour voir "
+                                             "la convention de groupement."})
     conv = gc.get_convention(db, project.id)
     gc.refresh(db, project, conv)
     return inv, project, conv
