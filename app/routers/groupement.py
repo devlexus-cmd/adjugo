@@ -440,6 +440,13 @@ def retenir(request: Request, project_id: int, data: RetenirIn,
 @limiter.limit("240/hour")
 def state(request: Request, project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = _project(project_id, current_user, db)
+    # Vague 2 : une convention dont le texte figé ne correspond plus aux faits passe en
+    # « perimee » avant de calculer l'étape (filet de sécurité, en plus des défigements tracés).
+    try:
+        from app.services.groupement_convention import get_convention, refresh
+        refresh(db, project, get_convention(db, project.id))
+    except Exception:
+        pass
     return _state_payload(project, db)
 
 
@@ -468,6 +475,13 @@ def delete_plan(request: Request, project_id: int,
     from app.routers.sourcing import _verdict
     project = _project(project_id, current_user, db)
     owner = data_owner_id(current_user, db)
+    # Vague 2 : retirer le plan efface aussi l'offre figée → défigement TRACÉ (offer.unfrozen)
+    # et convention de groupement rendue caduque, au lieu d'une disparition silencieuse.
+    from app.routers.invites import _unfreeze_offer_if_needed
+    _unfreeze_offer_if_needed(db, project.id, "plan de groupement retiré",
+                              actor=f"user:{current_user.id}", actor_kind="owner",
+                              ip=audit.client_ip(request))
+    db.refresh(project)
     project.groupement_plan = None
     project.groupement_score = None
     if project.go_decision == "go_groupement":

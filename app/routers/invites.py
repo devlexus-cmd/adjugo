@@ -383,6 +383,9 @@ def _for_member(inv: ProjectInvite, project: Project, db: Session) -> dict:
             # Liste des membres RÉDUITE : jamais has_price / prix d'un autre.
             "members": [{"company": m.get("company"), "role": m.get("role"), "status": m.get("status")}
                         for m in (st.get("members") or [])],
+            # Vague 2 : stepper 1→5 + résumé de la convention (statuts et compteurs seulement).
+            "etape": st.get("etape"), "etapes": st.get("etapes"),
+            "convention": st.get("convention"),
         },
         "my_apport": my_apport,
         "score_groupement": project.groupement_score,     # le % COMMUN, jamais match_score
@@ -816,6 +819,20 @@ def _unfreeze_offer_if_needed(db: Session, project_id: int, reason: str, *, acto
     membre retiré), on la DÉFIGE : le total révélé aux membres ne doit jamais être faux.
     Réassigne un NOUVEAU dict (colonne JSON : la mutation en place n'est pas détectée)."""
     project = db.query(Project).filter(Project.id == project_id).first()
+    # Vague 2 : la même cause (part, prix, composition, part du mandataire) rend la convention
+    # de groupement CADUQUE (status 'perimee', tracé convention.perimee) — même si l'offre
+    # n'était plus figée. Best-effort, ne lève jamais.
+    if project is not None:
+        try:
+            from app.services.groupement_convention import concerns_convention, perimer as _perimer_convention
+            # Un sous-traitant (hors groupement) n'est ni dans la convention ni dans l'offre
+            # qu'elle fige : sa part ne défige rien et ne rend rien caduc.
+            if not concerns_convention(db, project, invite_id):
+                return False
+            _perimer_convention(db, project, (f"part de {reason} modifiée" if actor_kind == "guest" else reason),
+                                actor=actor, actor_kind=actor_kind, ip=ip, invite_id=invite_id)
+        except Exception:
+            pass
     plan = project.groupement_plan if project and isinstance(project.groupement_plan, dict) else None
     if not plan or not isinstance(plan.get("offre"), dict) or not plan["offre"].get("frozen_at"):
         return False
@@ -2086,6 +2103,14 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
     mandataire. C'est SEULEMENT à partir de là que les membres voient le total (avec
     l'avertissement « à 2 membres, le total révèle la part de l'autre »)."""
     project = _owned_project(project_id, current_user, db)
+    # Vague 2 : « Figer l'offre » est fusionné avec la génération de la convention. Une
+    # convention générée porte déjà l'offre figée : la re-figer ici la désynchroniserait.
+    from app.services.groupement_convention import get_convention as _get_conv
+    _conv = _get_conv(db, project_id)
+    if _conv is not None and _conv.status in ("a_signer", "signee"):
+        raise HTTPException(409, {"code": "convention_generee",
+                                  "message": "L'offre est déjà figée par la convention de groupement. Pour la "
+                                             "modifier, régénérez la convention."})
     invites = active_invites(db, project_id)
     if not invites:
         raise HTTPException(422, "Aucun partenaire actif : invitez au moins un partenaire avant de figer l'offre.")
@@ -2161,7 +2186,9 @@ def unfreeze_offer(project_id: int, request: Request,
 # ── Journal MEMBRE (D) : projection « qui a vu quoi » pour UNE invitation ────
 # Événements « de groupement » visibles par TOUS les membres (pas seulement le concerné).
 GROUP_EVENTS = {"offer.frozen", "offer.unfrozen", "groupement.retenue", "convention.generated",
-                "convention.signed", "invite.created", "invite.revoked", "invite.declined"}
+                "convention.signed", "invite.created", "invite.revoked", "invite.declined",
+                # Vague 2 (convention) : caducité et accord hors ligne, visibles de tous les membres.
+                "convention.perimee", "convention.hors_ligne"}
 
 # Libellés en français simple (zéro jargon) selon QUI a agi, vu depuis le membre.
 _JOURNAL_LABELS_ME = {
@@ -2176,6 +2203,10 @@ _JOURNAL_LABELS_ME = {
     "invite.claimed": "Vous avez rattaché ce dossier à votre compte",
     "invite.declined": "Vous avez décliné l'invitation",
     "offer.unfrozen": "Votre modification a défigé l'offre commune",
+    # Vague 2 : « accord enregistré », jamais « signature électronique ».
+    "convention.signed": "Vous avez validé la convention (accord enregistré)",
+    "convention.perimee": "Votre modification a rendu la convention caduque : elle doit être régénérée",
+    "guest.download_convention": "Vous avez téléchargé la convention",
 }
 _JOURNAL_LABELS_OWNER = {
     "owner.view_contribution": "Le mandataire a consulté votre part",
@@ -2188,15 +2219,18 @@ _JOURNAL_LABELS_OWNER = {
     "offer.unfrozen": "Le mandataire a défigé l'offre commune",
     "groupement.retenue": "Le mandataire a retenu la composition du groupement",
     "convention.generated": "Le mandataire a généré la convention de groupement",
-    "convention.signed": "Le mandataire a signé la convention",
+    "convention.signed": "Le mandataire a validé la convention (accord enregistré)",
+    "convention.perimee": "La convention n'est plus à jour : le mandataire doit la régénérer",
+    "convention.hors_ligne": "Le mandataire a enregistré l'accord hors ligne d'un partenaire",
     "piece.expiring": "Adjugo vous a alerté : une attestation manque ou expire",
 }
 _JOURNAL_LABELS_PARTNER = {
     "invite.created": "Un partenaire a été invité",
     "invite.declined": "Un partenaire a décliné",
     "invite.revoked": "Un partenaire a été retiré",
-    "convention.signed": "Un partenaire a signé la convention",
+    "convention.signed": "Un partenaire a validé la convention (accord enregistré)",
     "offer.unfrozen": "L'offre commune a été défigée (part d'un partenaire modifiée)",
+    "convention.perimee": "La convention n'est plus à jour (part d'un partenaire modifiée)",
 }
 
 
@@ -2257,7 +2291,7 @@ def guest_journal(token: str, request: Request, db: Session = Depends(get_db)):
             if r.action in ("invite.created", "invite.revoked", "invite.declined"):
                 who, label = "partenaire", _JOURNAL_LABELS_PARTNER.get(r.action, r.action)
             detail = names.get(r.invite_id, "") if r.invite_id else (
-                r.detail if r.action in ("offer.frozen",) else "")
+                r.detail if r.action in ("offer.frozen", "convention.generated", "convention.hors_ligne") else "")
         else:
             continue
         # Jamais un email en clair dans la projection (anciennes entrées : actor = email).
@@ -2282,6 +2316,7 @@ _NOTIF_LABELS = {
     "guest.view_project": "a consulté le dossier",
     "invite.declined": "a décliné l'invitation",
     "guest.capacites_updated": "a mis à jour ses capacités",
+    "convention.signed": "a validé la convention de groupement",
 }
 
 
@@ -2316,7 +2351,7 @@ def _shared_item(inv: ProjectInvite, db: Session) -> dict:
     project = db.query(Project).filter(Project.id == inv.project_id, Project.deleted_at.is_(None)).first()
     owner_company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
     c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
-    return {
+    out = {
         "token": inv.token, "project_id": inv.project_id,
         "project": (project.name if project else "Appel d'offres"),
         "mandataire": (owner_company.name if owner_company else "") or "",
@@ -2325,6 +2360,28 @@ def _shared_item(inv: ProjectInvite, db: Session) -> dict:
         "contribution_status": (c.status if c else None),
         "deadline": project.deadline.isoformat() if project and project.deadline else None,
     }
+    # Vague 2 : étape du groupement (stepper 1→5) et « convention à valider » pour CE membre.
+    # Statuts seulement : jamais de prix, jamais le score seul du mandataire.
+    out["groupement"] = None
+    if project is not None:
+        try:
+            st = groupement_state(project, db)
+            from app.models import GroupementSignature
+            conv = st.get("convention") or {}
+            sig = None
+            if conv.get("id"):
+                sig = db.query(GroupementSignature).filter(
+                    GroupementSignature.convention_id == conv["id"],
+                    GroupementSignature.invite_id == inv.id).first()
+            out["groupement"] = {
+                "state": st.get("state"), "label": st.get("label"), "index": st.get("index"),
+                "etape": st.get("etape"), "etapes": st.get("etapes"),
+                "convention_status": conv.get("status") or "",
+                "a_valider": bool(sig is not None and conv.get("status") == "a_signer" and sig.status == "pending"),
+            }
+        except Exception:
+            out["groupement"] = None
+    return out
 
 
 @router.post("/api/invite/{token}/claim")
@@ -2394,6 +2451,15 @@ def dossier_preview(project_id: int, current_user: User = Depends(get_current_us
         files.append({"name": f"pieces_cotraitants/{co}/{pc.name}",
                       "kind": f"Pièce — {co}", "size": pc.file_size or 0})
     n_pieces = len(rows)
+    # Vague 2 : la convention de groupement générée (texte figé + accords) part dans le dossier.
+    try:
+        from app.services.groupement_convention import STATUS_LABELS, get_convention
+        _conv = get_convention(db, project_id)
+        if _conv is not None and _conv.status in ("a_signer", "signee"):
+            files.append({"name": "convention_groupement.pdf",
+                          "kind": f"Convention de groupement v{_conv.version} — {STATUS_LABELS.get(_conv.status, '')}"})
+    except Exception:
+        pass
     return {"files": files, "count": len(files), "pieces_count": n_pieces}
 
 

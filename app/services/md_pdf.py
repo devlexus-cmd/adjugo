@@ -17,13 +17,25 @@ _ACCENT = colors.HexColor("#1B4FFF")
 _MUTED = colors.HexColor("#5A6573")
 
 
-def _inline(s: str) -> str:
+# Échappements Markdown « \* \_ \` \\ \# \[ \] » (option `md_escapes`) : une valeur dynamique
+# (nom d'entreprise, lot…) contenant « * » ou « _ » reste un TEXTE, jamais une mise en forme.
+# Désactivé par défaut : comportement inchangé pour les autres documents (mémoire, DCE).
+_ESC_RE = re.compile(r"\\([\\*_`#\[\]])")
+_ESC_BASE = 0xE000   # zone Unicode à usage privé : jamais présente dans un texte réel
+_ESC_BACK = re.compile("[-]")
+
+
+def _inline(s: str, escapes: bool = False) -> str:
     """Échappe le HTML puis convertit le gras/italique/code Markdown en balises reportlab."""
+    if escapes:
+        s = _ESC_RE.sub(lambda m: chr(_ESC_BASE + ord(m.group(1))), s)
     s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
     s = re.sub(r"__(.+?)__", r"<b>\1</b>", s)
     s = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<i>\1</i>", s)
     s = re.sub(r"`(.+?)`", r"<font face='Courier'>\1</font>", s)
+    if escapes:
+        s = _ESC_BACK.sub(lambda m: chr(ord(m.group(0)) - _ESC_BASE), s)
     return s
 
 
@@ -44,7 +56,9 @@ def _styles():
     }
 
 
-def markdown_to_pdf(md: str, title: str = "Document") -> bytes:
+def markdown_to_pdf(md: str, title: str = "Document", md_escapes: bool = False) -> bytes:
+    """`md_escapes=True` : honore les échappements « \\* \\_ \\` \\\\ \\# \\[ \\] » (texte littéral)."""
+    e = bool(md_escapes)
     buf = io.BytesIO()
     doc = _doc(buf, title)
     st = _styles()
@@ -62,14 +76,14 @@ def markdown_to_pdf(md: str, title: str = "Document") -> bytes:
         h = re.match(r"^(#{1,6})\s+(.*)", line)
         if h:
             flush(); lvl = min(len(h.group(1)), 3)
-            flow.append(Paragraph(_inline(h.group(2)), st[lvl])); continue
+            flow.append(Paragraph(_inline(h.group(2), e), st[lvl])); continue
         b = re.match(r"^[-*+]\s+(.*)", line)
         if b:
-            bullets.append(_inline(b.group(1))); continue
+            bullets.append(_inline(b.group(1), e)); continue
         n = re.match(r"^(\d+)\.\s+(.*)", line)
         if n:
-            flush(); flow.append(Paragraph(f"<b>{n.group(1)}.</b> " + _inline(n.group(2)), st["body"])); continue
-        flush(); flow.append(Paragraph(_inline(line), st["body"]))
+            flush(); flow.append(Paragraph(f"<b>{n.group(1)}.</b> " + _inline(n.group(2), e), st["body"])); continue
+        flush(); flow.append(Paragraph(_inline(line, e), st["body"]))
     flush()
     if not flow:
         flow.append(Paragraph("(document vide)", st["body"]))

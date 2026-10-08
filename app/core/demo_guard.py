@@ -47,6 +47,13 @@ _BLOCKED = [
     ("POST",   "/api/projects/{pid}/invites/{iid}/resend",    "relancer un partenaire"),
     ("DELETE", "/api/projects/{pid}/invites/{iid}",           "retirer un partenaire"),     # mail « accès retiré »
     ("POST",   "/api/projects/{pid}/offre/figer",             "figer l'offre commune"),     # prévient les partenaires
+    # Convention de groupement (vague 2) : toutes les écritures (la génération envoie aussi
+    # « convention à valider » aux partenaires ; la vitrine partagée ne doit pas changer).
+    ("PUT",    "/api/projects/{pid}/groupement/convention",            "monter un groupement"),
+    ("POST",   "/api/projects/{pid}/groupement/convention/relire-dce", "monter un groupement"),
+    ("POST",   "/api/projects/{pid}/groupement/convention/generer",    "monter un groupement"),
+    ("POST",   "/api/projects/{pid}/groupement/convention/valider",    "monter un groupement"),
+    ("POST",   "/api/projects/{pid}/groupement/convention/hors-ligne/{lid}", "monter un groupement"),
     ("POST",   "/api/org/invite",                             "inviter un collègue"),
     ("PUT",    "/api/auth/me",                                "modifier le profil du compte"),  # changement d'email
     ("POST",   "/api/auth/change-password",                   "choisir un mot de passe"),

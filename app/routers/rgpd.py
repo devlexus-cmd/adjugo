@@ -74,6 +74,19 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
                                                    "decision", "created_at"]) for r in rows]
     except Exception:
         data["simulations_groupement"] = []
+    # Conventions de groupement (tenant = owner_id) et accords que CE compte a enregistrés.
+    try:
+        from app.models import GroupementConvention, GroupementSignature
+        rows = db.query(GroupementConvention).filter(GroupementConvention.owner_id == uid).all()
+        data["conventions_groupement"] = [_ser(r, ["id", "project_id", "forme", "mandataire_solidaire", "status",
+                                                   "version", "total_offre_ht", "content_hash", "frozen_at",
+                                                   "created_at"]) for r in rows]
+        rows = db.query(GroupementSignature).filter(GroupementSignature.user_id == uid).all()
+        data["accords_convention"] = [_ser(r, ["convention_id", "project_id", "company_name", "signataire_nom",
+                                               "signataire_qualite", "status", "identity_level", "signed_at"])
+                                      for r in rows]
+    except Exception:
+        data["conventions_groupement"], data["accords_convention"] = [], []
 
     payload = json.dumps(data, ensure_ascii=False, indent=2, default=str)
     return Response(content=payload, media_type="application/json",
@@ -182,9 +195,13 @@ def _del(db, model, *conds) -> None:
 def _release_claims(db, uid: int) -> None:
     """Invitations RÉCLAMÉES par ce compte chez d'autres mandataires : on libère le lien
     (sinon il devenait définitivement non réclamable — 409 — et la FK bloquait l'effacement)."""
-    from app.models import ProjectInvite
+    from app.models import GroupementSignature, ProjectInvite
     db.query(ProjectInvite).filter(ProjectInvite.accepted_by_user_id == uid).update(
         {ProjectInvite.accepted_by_user_id: None}, synchronize_session=False)
+    # Accords de convention enregistrés depuis ce compte : la preuve (date, empreinte, niveau
+    # d'identité) reste au registre du groupement, mais le lien vers le compte effacé tombe.
+    db.query(GroupementSignature).filter(GroupementSignature.user_id == uid).update(
+        {GroupementSignature.user_id: None}, synchronize_session=False)
 
 
 def _erase_personal_rows(db, uid: int) -> None:
@@ -217,7 +234,7 @@ def _erase_member(db, uid: int, owner_id: int) -> None:
     # Co-traitance et simulations portées par ce membre → suivent le propriétaire
     # (registres du tenant : on ne les détruit pas, on ne les laisse pas orphelins).
     for model in (M.ProjectInvite, M.ProjectContribution, M.ContributionPiece,
-                  M.GroupementSimulation):
+                  M.GroupementSimulation, M.GroupementConvention, M.GroupementSignature):
         db.query(model).filter(model.owner_id == uid).update(
             {model.owner_id: owner_id}, synchronize_session=False)
     # JOURNAL D'AUDIT : JAMAIS réécrit. owner_id entre dans le hash de chaque entrée et la
@@ -260,7 +277,7 @@ def _drop_or_anonymize_user(db, uid: int) -> None:
     still_referenced = any(
         db.query(model.id).filter(model.owner_id == uid).first() is not None
         for model in (M.AuditLog, M.ProjectInvite, M.ProjectContribution, M.ContributionPiece,
-                      M.GroupementSimulation)
+                      M.GroupementSimulation, M.GroupementConvention)
     ) or db.query(M.Project.id).filter(M.Project.user_id == uid).first() is not None   # pierres tombales
     if not still_referenced:
         db.query(User).filter(User.id == uid).delete(synchronize_session=False)
@@ -305,6 +322,13 @@ def _erase_solo(db, uid: int, org_id) -> list:
     #    ayant transféré la propriété, données anciennes) : ils appartiennent à l'entreprise
     #    du marché → rattachés à son propriétaire actuel, jamais effacés.
     _hand_over_foreign_rows(db, uid, pids)
+    # 0 bis) conventions de groupement : accords (FK vers invitations / liaisons) puis conventions.
+    _ct_ids0 = _ids(db, Cotraitant.id, Cotraitant.user_id == uid)
+    _link_ids0 = _ids(db, ProjectCotraitant.id, in_p(ProjectCotraitant.project_id),
+                      ProjectCotraitant.cotraitant_id.in_(_ct_ids0) if _ct_ids0 else None)
+    _del(db, M.GroupementSignature, in_p(M.GroupementSignature.project_id),
+         M.GroupementSignature.cotraitant_link_id.in_(_link_ids0) if _link_ids0 else None)
+    _del(db, M.GroupementConvention, in_p(M.GroupementConvention.project_id))
     # 1) co-traitance (pièces → contributions → liaisons → journal → invitations)
     _del(db, M.ContributionPiece, in_p(M.ContributionPiece.project_id))
     _del(db, M.ProjectContribution, in_p(M.ProjectContribution.project_id))
@@ -358,7 +382,8 @@ def _hand_over_foreign_rows(db, uid: int, pids: list) -> None:
     M, _, _ = _models()
     from app.routers.invites import tenant_owner_id
     owners = {}
-    for model in (M.ContributionPiece, M.ProjectContribution, M.ProjectInvite, M.GroupementSimulation):
+    for model in (M.ContributionPiece, M.ProjectContribution, M.ProjectInvite, M.GroupementSimulation,
+                  M.GroupementConvention, M.GroupementSignature):
         q = db.query(model.project_id).filter(model.owner_id == uid)
         if pids:
             q = q.filter(~model.project_id.in_(pids))
@@ -516,6 +541,8 @@ def _purge_trashed_projects(db, cutoff) -> dict:
         keys += _ids(db, M.ContributionPiece.file_key, M.ContributionPiece.project_id.in_(pids))
         keys += _ids(db, M.GeneratedDoc.file_key, M.GeneratedDoc.project_id.in_(pids))
         keys += _ids(db, M.Project.dce_file_key, M.Project.id.in_(pids))
+        _del(db, M.GroupementSignature, M.GroupementSignature.project_id.in_(pids))
+        _del(db, M.GroupementConvention, M.GroupementConvention.project_id.in_(pids))
         _del(db, M.ContributionPiece, M.ContributionPiece.project_id.in_(pids))
         _del(db, M.ProjectContribution, M.ProjectContribution.project_id.in_(pids))
         _del(db, ProjectCotraitant, ProjectCotraitant.project_id.in_(pids))

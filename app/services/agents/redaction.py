@@ -310,6 +310,39 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         "cotraitants": cerfa_cotraitants,   # ← DC1 groupement / DC2 multi-membres (incl. contributions)
     }
 
+    # ── Convention de groupement (vague 2) ── si elle est générée et à jour, les CERFA reprennent
+    # SES membres, lots, prix, forme et habilitation, et son PDF (accords inclus) remplace le
+    # modèle à compléter. Le mémoire est DÉJÀ rédigé ci-dessus : la convention n'est JAMAIS
+    # transmise au LLM (invariant de la doctrine de visibilité).
+    convention_pdf, _grp_conv = None, None
+    if db is not None and project_id:
+        try:
+            from app.models import Project as _Project
+            from app.services import groupement_convention as _gc
+            _proj = db.query(_Project).filter(_Project.id == project_id).first()
+            if _proj is not None:
+                _grp_conv = _gc.apply_to_cerfa(db, _proj, company, project_data)
+                if _grp_conv:
+                    cerfa_cotraitants = project_data["cotraitants"]
+                    act = _gc.active_convention_pdf(db, _proj)
+                    if act:
+                        convention_pdf, _conv = act
+                        if _conv.status != "signee":
+                            _sigs = _gc.signatures_of(db, _conv)
+                            warnings.append("Convention de groupement générée mais pas encore validée par tous "
+                                            f"({sum(1 for s in _sigs if s.status in ('signed', 'hors_ligne'))}"
+                                            f"/{len(_sigs)} accords).")
+                else:
+                    _conv = _gc.get_convention(db, project_id)
+                    if _conv is not None and _conv.status == "perimee":
+                        warnings.append("La convention de groupement n'est plus à jour (une part, un prix ou la "
+                                        "composition a changé) : régénérez-la avant de déposer.")
+                    elif _conv is not None and _conv.status == "draft":
+                        warnings.append("Convention de groupement en brouillon : générez-la depuis « Monter le "
+                                        "groupement » pour que chaque membre la valide.")
+        except Exception as e:
+            warnings.append(f"convention de groupement : {e}")
+
     # ── Pare-feu : champs critiques manquants = pli rejeté. On signale (bloquant,
     # remonté en rouge côté front) sans empêcher l'assemblage du brouillon.
     try:
@@ -364,6 +397,11 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
                 warnings.append(f"{cid}: {e}")
     except Exception as e:
         warnings.append(f"cerfa indisponible: {e}")
+    if _grp_conv and db is not None and project_id:
+        # Formulaires produits APRÈS la convention : compte pour l'état « prêt à déposer ».
+        from app.services.groupement_convention import mark_cerfa_generated
+        mark_cerfa_generated(db, project_id, [c["id"] for c in cerfa_files if c["id"] in ("dc1", "dc2", "attri1")],
+                             _grp_conv.get("convention_version"))
 
     # ── Formulaire national supplémentaire (PL, PT, IT, NL, RO) ──
     if (country or "FR").upper() != "FR":
@@ -378,11 +416,14 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         except Exception as e:
             warnings.append(f"formulaire national: {e}")
 
-    # ── Convention de groupement (projet, à compléter/signer) si groupement ──
-    convention_md = _groupement_convention(company, cerfa_cotraitants, details) if cerfa_cotraitants else ""
+    # ── Convention de groupement : la VRAIE (générée, accords inclus) si elle existe ; sinon
+    #    le modèle à compléter/signer (comportement historique) si groupement.
+    convention_md = ("" if convention_pdf else
+                     (_groupement_convention(company, cerfa_cotraitants, details) if cerfa_cotraitants else ""))
 
     # ── ZIP ──
-    zip_bytes, zip_name, failed_pieces = _build_zip(memoire_md, cerfa_files, company, details, cerfa_cotraitants, project_id, cotraitant_pieces, convention_md)
+    zip_bytes, zip_name, failed_pieces = _build_zip(memoire_md, cerfa_files, company, details, cerfa_cotraitants, project_id,
+                                                    cotraitant_pieces, convention_md, convention_pdf=convention_pdf)
     if failed_pieces:
         warnings.append("Pièces partenaires non jointes au dossier (à re-déposer) : "
                         + ", ".join(failed_pieces[:8]))
@@ -449,7 +490,8 @@ def _groupement_convention(company, cotraitants, details):
     return "\n".join(lines)
 
 
-def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces=None, convention_md=""):
+def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces=None, convention_md="",
+               convention_pdf=None):
     import os
     buf = io.BytesIO()
     failed_pieces = []
@@ -468,7 +510,10 @@ def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_i
         zf.writestr("synthese_groupement.pdf",
                     text_to_pdf(_groupement_recap(company, cotraitants, details), "Composition du groupement"))
         zf.writestr("fiche_appel_offres.pdf", text_to_pdf(_ao_recap(details), "Fiche récapitulative de l'AO"))
-        if convention_md:
+        if convention_pdf:
+            # Convention GÉNÉRÉE (texte figé + accords enregistrés) : remplace le modèle.
+            zf.writestr("convention_groupement.pdf", convention_pdf)
+        elif convention_md:
             try:
                 zf.writestr("convention_groupement.pdf",
                             markdown_to_pdf(convention_md, "Convention de groupement"))

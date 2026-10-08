@@ -93,6 +93,37 @@ def _is_groupement(project, db) -> bool:
         return False
 
 
+def _convention_item(project, db) -> dict:
+    """Item « Convention de groupement validée » : ok seulement si TOUS les membres ont
+    enregistré leur accord sur le texte à jour ; sinon « manquant » + ce qu'il reste à faire."""
+    note, status = "À préparer : « Monter le groupement » dans la fiche du marché.", "manquant"
+    try:
+        from app.services import groupement_convention as gc
+        conv = gc.get_convention(db, project.id)
+        if conv is not None:
+            gc.refresh(db, project, conv)
+            sigs = gc.signatures_of(db, conv)
+            n_ok = sum(1 for s in sigs if s.status in ("signed", "hors_ligne"))
+            if conv.status == "signee":
+                status, note = "ok", f"Validée par tous les membres (version {conv.version})."
+            elif conv.status == "a_signer":
+                note = f"Générée : {n_ok}/{len(sigs)} accords enregistrés. Relancez les membres qui n'ont pas validé."
+            elif conv.status == "perimee":
+                note = "Plus à jour (une part, un prix ou la composition a changé) : régénérez-la."
+            else:
+                note = "Brouillon : choisissez la forme du groupement puis générez la convention."
+    except Exception:
+        pass
+    return {
+        "id": "convention_groupement", "name": "Convention de groupement validée par tous les membres",
+        "category": "groupement", "required": True, "from_ia": False,
+        "help": ("Générée par Adjugo (assistant « Monter le groupement ») ; chaque membre la valide depuis "
+                 "son espace. Modèle à faire relire par un conseil : ce n'est pas un conseil juridique."),
+        "help_url": None, "context_note": note, "status": status,
+        "document_name": None, "document_id": None, "expired": False,
+    }
+
+
 def _norm(s: str) -> str:
     """Minuscule + sans accents : un document nommé « décennale » doit matcher le
     mot-clé « decennale ». Sans ça, l'accent casse silencieusement la détection."""
@@ -223,6 +254,15 @@ def get_checklist(
                 "from_ia": True,
             })
 
+    # Groupement : « convention de groupement validée par tous les membres » (vague 2). Statut
+    # calculé depuis la convention réelle (jamais deviné) ; avertit, ne bloque rien.
+    try:
+        from app.services.groupement_convention import get_convention as _gconv
+        _has_conv = _gconv(db, project.id) is not None
+    except Exception:
+        _has_conv = False
+    convention_item = _convention_item(project, db) if (is_groupement or _has_conv) else None
+
     for piece in all_pieces:
         match = match_document(piece["name"], documents)
         item = {
@@ -248,6 +288,9 @@ def get_checklist(
             item["status"] = "generable"
 
         checklist.append(item)
+
+    if convention_item:
+        checklist.append(convention_item)
 
     # Stats
     total = len(checklist)

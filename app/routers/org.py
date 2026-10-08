@@ -300,7 +300,8 @@ def transfer_ownership(data: TransferIn, request: Request,
     # l'organisation (fiche entreprise, critères Go/No-Go, co-traitance). On ne touche PAS
     # AuditLog (sa chaîne de hash deviendrait invérifiable).
     from app.models import (Company, MatchingCriteria, CoSpace, ProjectInvite, ProjectContribution,
-                            ContributionPiece, GroupementSimulation)
+                            ContributionPiece, GroupementSimulation, GroupementConvention,
+                            GroupementSignature)
     from app.routers.criteria_v2 import MatchingCriteriaExt
     old_id, new_id = current_user.id, target.id
     # (a) mono-propriétaire UNIQUE(user_id) : purger une éventuelle ligne du nouveau owner
@@ -311,7 +312,8 @@ def transfer_ownership(data: TransferIn, request: Request,
     # (b) co-traitance et simulations « Répondre à plusieurs ? » (owner_id = tenant
     #     mandataire) : simple réaffectation — sinon elles restaient à l'ex-propriétaire
     #     (invisibles pour l'org, et effacées avec son compte).
-    for M in (CoSpace, ProjectInvite, ProjectContribution, ContributionPiece, GroupementSimulation):
+    for M in (CoSpace, ProjectInvite, ProjectContribution, ContributionPiece, GroupementSimulation,
+              GroupementConvention, GroupementSignature):
         db.query(M).filter(M.owner_id == old_id).update({M.owner_id: new_id}, synchronize_session=False)
     db.commit()
     audit.record(db, action="team.ownership_transferred", owner_id=org.owner_id,

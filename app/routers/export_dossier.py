@@ -120,6 +120,13 @@ def export_dossier(
     except Exception:
         pass
 
+    # Convention de groupement générée et à jour : les CERFA reprennent SES membres, lots,
+    # prix, forme et habilitation (le dossier dit partout la même chose), et le PDF de la
+    # convention (avec les accords enregistrés) rejoint le ZIP.
+    from app.services.groupement_convention import active_convention_pdf, apply_to_cerfa, STATUS_LABELS
+    grp = apply_to_cerfa(db, project, cd, pd)
+    conv_pdf = active_convention_pdf(db, project) if grp else None
+
     # Creer le ZIP
     zip_buf = io.BytesIO()
     date_str = datetime.date.today().strftime("%Y-%m-%d")
@@ -130,6 +137,7 @@ def export_dossier(
     from app.services.cerfa import _soustraitants
     _has_soustraitance = bool(_soustraitants(pd.get("cotraitants", [])))
 
+    cerfa_ok = []
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         # 1. Generer les CERFA (DC4 seulement en cas de sous-traitance)
         for doc_type, generator in GENERATORS.items():
@@ -141,12 +149,17 @@ def export_dossier(
                     doc_type.upper(), project_slug, date_str
                 )
                 zf.writestr(filename, pdf_bytes)
+                cerfa_ok.append(doc_type)
             except Exception as e:
                 # Ajouter un fichier d'erreur
                 zf.writestr(
                     "01_CERFA/{}_ERREUR.txt".format(doc_type.upper()),
                     "Erreur generation {}: {}".format(doc_type.upper(), str(e))
                 )
+
+        # 1 bis. Convention de groupement (texte figé + accords enregistrés)
+        if conv_pdf:
+            zf.writestr("03_Groupement/Convention_de_groupement_v{}.pdf".format(conv_pdf[1].version), conv_pdf[0])
 
         # 2. Documents : CE marché (project_id) + pièces générales du coffre-fort (project_id NULL,
         #    type Kbis/attestations valables pour tout pli) — JAMAIS les documents d'un AUTRE
@@ -190,7 +203,11 @@ def export_dossier(
         sommaire.append("")
         sommaire.append("Projet : " + project.name)
         sommaire.append("Client : " + (project.client or ""))
-        sommaire.append("Montant de l'offre (HT) : " + ("{:,.0f} EUR".format(est.get("total_ht")).replace(",", " ") if est.get("total_ht") else "à chiffrer (aucun chiffrage enregistré)"))
+        if grp and grp.get("total_ht") is not None:
+            sommaire.append("Montant de l'offre commune du groupement (HT) : "
+                            + "{:,.2f} EUR".format(grp["total_ht"]).replace(",", " "))
+        else:
+            sommaire.append("Montant de l'offre (HT) : " + ("{:,.0f} EUR".format(est.get("total_ht")).replace(",", " ") if est.get("total_ht") else "à chiffrer (aucun chiffrage enregistré)"))
         sommaire.append("Reference : AO-{:04d}".format(project.id))
         sommaire.append("Date : " + date_str)
         sommaire.append("")
@@ -233,6 +250,12 @@ def export_dossier(
             # .value : sinon le sommaire affichait « DocCategory.administratif » (repr de l'enum).
             cat = getattr(doc.category, "value", doc.category) or "autre"
             sommaire.append("  - {} ({})".format(doc.name, cat))
+        if conv_pdf:
+            c_ = conv_pdf[1]
+            sommaire.append("")
+            sommaire.append("03_Groupement/")
+            sommaire.append("  - Convention_de_groupement_v{}.pdf ({})".format(
+                c_.version, STATUS_LABELS.get(c_.status, c_.status)))
 
         sommaire.append("")
         sommaire.append("=" * 60)
@@ -242,6 +265,11 @@ def export_dossier(
 
     zip_bytes = zip_buf.getvalue()
     filename = "Dossier_{}_{}.zip".format(project_slug, date_str)
+    if grp:
+        # Formulaires produits APRÈS la convention : compte pour l'état « prêt à déposer ».
+        from app.services.groupement_convention import mark_cerfa_generated
+        mark_cerfa_generated(db, project.id, [d for d in ("dc1", "dc2", "attri1") if d in cerfa_ok],
+                             grp.get("convention_version"))
 
     return Response(
         content=zip_bytes,

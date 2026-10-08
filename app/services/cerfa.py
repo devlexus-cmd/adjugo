@@ -92,6 +92,15 @@ def fmt_int(n):
     return "{:,.0f}".format(n).replace(",", " ")
 
 
+def _ca(v) -> str:
+    """Chiffre d'affaires pour une case du DC2 : vide si inconnu ou nul (jamais « 0 »)."""
+    try:
+        f = float(v or 0)
+    except (TypeError, ValueError):
+        return ""
+    return fmt_int(f) if f > 0 else ""
+
+
 def fmt_pct(n):
     """Taux en % sans décimale superflue : 0 → '0', 20 → '20', 5.5 → '5,5'."""
     try:
@@ -197,38 +206,81 @@ def generate_dc1(c, p):
         fields[2] = [
             {"type": "checkbox", "x": 76.7, "y": 389.5},
         ]
+        # Forme du groupement et mandataire solidaire (cases relevées sur dc1.pdf) : SEULEMENT
+        # si une convention de groupement générée les fixe — jamais devinées.
+        grp = p.get("groupement") if isinstance(p.get("groupement"), dict) else {}
+        forme = grp.get("forme") or ""
+        if forme == "conjoint":
+            fields[2].append({"type": "checkbox", "x": 105.15, "y": 415.65})
+            # « En cas de groupement conjoint, le mandataire est solidaire : Non / Oui »
+            fields[2].append({"type": "checkbox", "x": 247.05 if grp.get("mandataire_solidaire") else 105.15,
+                              "y": 476.4})
+        elif forme == "solidaire":
+            fields[2].append({"type": "checkbox", "x": 247.05, "y": 415.65})
 
-        # Page 3 Section E - tableau des membres du groupement
-        # Le tableau commence environ y=500 sur page 3, puis continue page 4
-        table_y = 520
-        row_height = 45
+        # Section E — tableau des membres : 4 lignes (2 en bas de la page 3, y≈650-752 ; 2 en
+        # haut de la page 4, y≈23-125), colonnes « N° du lot » | identité | prestations.
+        # (Avant : écrit à y=520, PAR-DESSUS l'en-tête du tableau.)
+        rows = [(2, 649.6), (2, 700.6), (3, 22.7), (3, 73.7)]
+        members = [c] + list(cotraitants)
+        shown = members if len(members) <= len(rows) else members[:len(rows) - 1]
+        for (page, top), m in zip(rows, shown):
+            fields[page] += _dc1_member_row(m, top, mandataire=(m is c), conjoint=(forme != "solidaire"),
+                                            lot_override=(grp.get("mandataire") or {}).get("lot") if m is c else None)
+        if len(members) > len(rows):
+            rest = members[len(rows) - 1:]
+            page, top = rows[-1]
+            fields[page].append({"type": "multiline", "x": 82, "y": top + 10, "size": 6.8, "line_height": 9.5,
+                                 "text": "\n".join(_wrap("Autres membres : " + ", ".join(_one(r.get("name"), 60) for r in rest), 62)[:3]
+                                                   + ["(détail : convention de groupement jointe)"])})
 
-        # Ajouter le mandataire en premier dans le tableau
-        mandataire_text = c.get("name", "") + "\n" + addr + "\n" + str(c.get("email", "")) + " - " + str(c.get("phone", "")) + "\nSIRET: " + str(c.get("siret", ""))
-        fields[2].append({"type": "multiline", "x": 80, "y": table_y, "text": mandataire_text, "size": 7, "line_height": 10})
-
-        # Ajouter les co-traitants
-        for i, ct in enumerate(cotraitants):
-            ct_y = table_y + (i + 1) * row_height
-            ct_addr = (str(ct.get("address", "")) + " " + str(ct.get("postal_code", "")) + " " + str(ct.get("city", ""))).strip()
-            ct_text = str(ct.get("name", "")) + "\n" + ct_addr + "\n" + str(ct.get("email", "")) + " - " + str(ct.get("phone", "")) + "\nSIRET: " + str(ct.get("siret", ""))
-
-            if ct_y < 750:  # Reste sur page 3
-                fields[2].append({"type": "multiline", "x": 80, "y": ct_y, "text": ct_text, "size": 7, "line_height": 10})
-            else:  # Deborde sur page 4
-                overflow_y = 100 + (ct_y - 750)
-                fields[3].append({"type": "multiline", "x": 80, "y": overflow_y, "text": ct_text, "size": 7, "line_height": 10})
-
-        # Page 6 - mandataire si groupement
+        # Section G — désignation du mandataire : nom en bas de la page 5 (ligne vide sous
+        # « Nom commercial… »), puis adresse / courriel / téléphone / SIRET page 6, chacun sur
+        # la ligne vide sous son libellé (avant : décalés d'un cran, sur les libellés).
+        fields[4].append({"x": 64, "y": 770.5, "text": _one(c.get("name", ""), 80), "size": 9, "bold": True})
         fields[5] = [
-            {"x": 60, "y": 108, "text": c.get("name", ""), "size": 10, "bold": True},
-            {"x": 60, "y": 155, "text": addr, "size": 9},
-            {"x": 60, "y": 195, "text": c.get("email", ""), "size": 9},
-            {"x": 60, "y": 230, "text": c.get("phone", ""), "size": 9},
-            {"x": 60, "y": 275, "text": c.get("siret", ""), "size": 10, "bold": True},
+            {"x": 64, "y": 68, "text": _one(addr, 95), "size": 9},
+            {"x": 64, "y": 115, "text": _one(c.get("email", ""), 95), "size": 9},
+            {"x": 64, "y": 161, "text": _one(c.get("phone", ""), 40), "size": 9},
+            {"x": 64, "y": 219, "text": _one(c.get("siret", ""), 20), "size": 10, "bold": True},
         ]
 
     return merge_overlay(tpl, create_overlay(fields))
+
+
+def _one(v, n: int = 120) -> str:
+    """Valeur sur UNE ligne (aucun saut de ligne ni caractère de contrôle), bornée."""
+    import re as _re
+    s = _re.sub(r"[\x00-\x1f\x7f]", " ", str(v if v is not None else ""))
+    return _re.sub(r"\s+", " ", s).strip()[:n]
+
+
+def _wrap(text: str, width: int) -> list:
+    import textwrap
+    return textwrap.wrap(_one(text, 1000), width=width) or [""]
+
+
+def _lot_number(lot) -> str:
+    import re as _re
+    m = _re.search(r"\blot\s*(?:n\s*[°o]\s*)?(\d{1,3})\b", str(lot or ""), _re.IGNORECASE)
+    return m.group(1) if m else ""
+
+
+def _dc1_member_row(m, top: float, mandataire: bool, conjoint: bool, lot_override=None) -> list:
+    """Une ligne du tableau E du DC1 : n° de lot | identité (4 lignes) | prestations."""
+    addr = _one(" ".join(str(m.get(k, "") or "") for k in ("address", "postal_code", "city")), 70)
+    contact = " - ".join(x for x in (_one(m.get("email"), 40), _one(m.get("phone"), 20)) if x)
+    ident = [_one(m.get("name"), 55) + (" (mandataire)" if mandataire else ""), addr, contact,
+             ("SIRET : " + _one(m.get("siret"), 20)) if _one(m.get("siret")) else ""]
+    out = [{"type": "multiline", "x": 82, "y": top + 10, "text": "\n".join(x for x in ident if x),
+            "size": 6.8, "line_height": 9.8}]
+    lot = lot_override if lot_override is not None else m.get("lot")
+    if _lot_number(lot):
+        out.append({"x": 44, "y": top + 12, "text": _lot_number(lot), "size": 8, "bold": True})
+    if conjoint and _one(lot):
+        out.append({"type": "multiline", "x": 302, "y": top + 10, "size": 7, "line_height": 9.8,
+                    "text": "\n".join(_wrap(lot, 58)[:4])})
+    return out
 
 
 # ================================================================
@@ -266,8 +318,11 @@ def _generate_single_dc2(tpl, c, p):
     name = c.get("name", "")
     siret = c.get("siret", "")
 
-    # Bloc C1 : nom, adresse, email, tel, siret sur plusieurs lignes
-    c1_text = name + "\n" + addr + "\n" + str(c.get("email", "")) + "\n" + str(c.get("phone", "")) + "\nSIRET : " + siret
+    # Bloc C1 : nom, adresse, email, tel, siret sur plusieurs lignes. Lignes vides retirées et
+    # interligne resserré : 5 lignes à 14 pt débordaient sur le libellé « Forme juridique ».
+    c1_lines = [_one(name, 90), _one(addr, 90), _one(c.get("email", ""), 90), _one(c.get("phone", ""), 40),
+                "SIRET : " + _one(siret, 20)]
+    c1_text = "\n".join(x for x in c1_lines if x and x != "SIRET : ") or _one(name, 90)
 
     fields = {
         # Page 1
@@ -277,20 +332,24 @@ def _generate_single_dc2(tpl, c, p):
             # B - objet du marche
             {"x": 42, "y": 415, "text": p.get("name", ""), "size": 10, "bold": True},
             # C1 - nom, adresse, email, tel, siret
-            {"type": "multiline", "x": 42, "y": 553, "text": c1_text, "size": 9, "bold": False, "line_height": 14},
+            {"type": "multiline", "x": 42, "y": 553, "text": c1_text, "size": 8.5, "bold": False, "line_height": 11},
             # Forme juridique
             {"x": 42, "y": 635, "text": c.get("forme_juridique", ""), "size": 9},
-            # Representant
-            {"x": 107, "y": 715, "text": c.get("representant_legal", ""), "size": 9, "bold": True},
+            # Personne ayant le pouvoir d'engager le membre : « nom, prénom et qualité » (la
+            # qualité vient de la part du partenaire / de la convention de groupement).
+            {"x": 107, "y": 715, "text": _one(", ".join(x for x in (_one(c.get("representant_legal", ""), 80),
+                                                                    _one(c.get("signataire_qualite", ""), 60)) if x), 110),
+             "size": 9, "bold": True},
         ],
         # Page 2: D1 - CA global, ligne y≈672. Les 3 colonnes « Exercice » du template dc2.pdf
         # sont aux entêtes x≈174 / 303 / 431 (relevé fitz) → on place la valeur DANS chaque
         # colonne (avant, ca_n1 atterrissait à x=55 DANS le libellé de ligne et la 3ᵉ colonne
         # restait vide). Ordre gauche→droite = du plus ANCIEN (N-3) au plus RÉCENT (N-1).
+        # CA inconnu (partenaire qui ne l'a pas déclaré) → case VIDE, jamais « 0 » inventé.
         1: [
-            {"x": 185, "y": 672, "text": fmt_int(c.get("ca_n3", 0) or 0), "size": 8},
-            {"x": 315, "y": 672, "text": fmt_int(c.get("ca_n2", 0) or 0), "size": 8},
-            {"x": 443, "y": 672, "text": fmt_int(c.get("ca_n1", 0) or 0), "size": 8},
+            {"x": 185, "y": 672, "text": _ca(c.get("ca_n3")), "size": 8},
+            {"x": 315, "y": 672, "text": _ca(c.get("ca_n2")), "size": 8},
+            {"x": 443, "y": 672, "text": _ca(c.get("ca_n1")), "size": 8},
         ],
         # Page 3: D2 - NON redressement (centre case relevé)
         2: [
@@ -449,7 +508,99 @@ def generate_attri1(c, p):
         6: [],
     }
 
+    cotraitants = _groupement_members(p.get("cotraitants", []))
+    if cotraitants:
+        _attri1_groupement(fields, c, cotraitants, p, d)
+
     return merge_overlay(tpl, create_overlay(fields))
+
+
+def _attri1_groupement(fields: dict, c: dict, cotraitants: list, p: dict, d: str) -> None:
+    """ATTRI1 d'un GROUPEMENT : « l'ensemble des membres s'engagent » (B1), forme et répartition
+    des prestations avec le prix de vente de chaque part (B2, groupement conjoint), mandataire
+    désigné et habilitation (C2), signataires (tableau page 5). Forme, habilitation et prix ne
+    sont imprimés QUE s'ils viennent d'une convention de groupement générée (jamais devinés) :
+    l'acte d'engagement dit alors exactement la même chose que la convention."""
+    grp = p.get("groupement") if isinstance(p.get("groupement"), dict) else {}
+    forme = grp.get("forme") or ""
+    hab = grp.get("habilitation") if isinstance(grp.get("habilitation"), dict) else {}
+    lead = dict(c)
+    lead.update({k: v for k, v in (grp.get("mandataire") or {}).items() if k in ("lot", "prix_lot_ht")})
+    members = [lead] + list(cotraitants)
+
+    # B1 : la case « L'ensemble des membres du groupement s'engagent » au lieu de « engage la société ».
+    fields[1] = [f for f in fields[1] if not (f.get("type") == "checkbox" and f.get("x") == 133.6)
+                 and f.get("y") != 327]
+    fields[1].append({"type": "checkbox", "x": 91.15, "y": 407.95, "size": 9.7})
+    lines = [_one(m.get("name"), 60) + (" — SIRET " + _one(m.get("siret"), 20) if _one(m.get("siret")) else "")
+             + (" (mandataire)" if m is lead else "") for m in members]
+    if len(lines) > 3:
+        lines = lines[:2] + [f"et {len(members) - 2} autre(s) membre(s) : voir la convention de groupement jointe"]
+    for i, ln in enumerate(lines):
+        fields[1].append({"x": 46, "y": 454 + i * 11.5, "text": ln, "size": 7.5, "bold": i == 0})
+
+    # B2 : nature du groupement + répartition (groupement conjoint : désignation, prestation, montant HT).
+    if forme == "conjoint":
+        fields[2].append({"type": "checkbox", "x": 91.15, "y": 101.25, "size": 9.7})
+        rows = [209.8, 260.8, 311.9]
+        shown = members if len(members) <= len(rows) else members[:len(rows) - 1]
+        for top, m in zip(rows, shown):
+            fields[2].append({"type": "multiline", "x": 40, "y": top + 11, "size": 7, "line_height": 9.5,
+                              "text": "\n".join([_one(m.get("name"), 55), "SIRET : " + _one(m.get("siret"), 20)]
+                                                + (["(mandataire)"] if m is lead else []))})
+            if _one(m.get("lot")):
+                fields[2].append({"type": "multiline", "x": 266, "y": top + 11, "size": 7, "line_height": 9.5,
+                                  "text": "\n".join(_wrap(m.get("lot"), 42)[:4])})
+            if m.get("prix_lot_ht") is not None:
+                fields[2].append({"x": 450, "y": top + 14, "text": fmt_eur(float(m["prix_lot_ht"])),
+                                  "size": 8, "bold": True})
+        if len(members) > len(rows):
+            fields[2].append({"type": "multiline", "x": 40, "y": rows[-1] + 11, "size": 7, "line_height": 9.5,
+                              "text": f"Et {len(members) - len(rows) + 1} autre(s) membre(s) :\nvoir l'annexe de "
+                                      "répartition de la\nconvention de groupement jointe"})
+    elif forme == "solidaire":
+        fields[2].append({"type": "checkbox", "x": 247.05, "y": 101.25, "size": 9.7})
+
+    # C1 (titulaire individuel) ne concerne pas un groupement : on le laisse vide.
+    fields[3] = [f for f in fields[3] if f.get("y") not in (225, 238)]
+    # C2 : mandataire désigné (ligne vide sous « [Indiquer le nom commercial…] »).
+    fields[3].append({"x": 46, "y": 348, "text": _one(c.get("name"), 80), "size": 9, "bold": True})
+    if _one(c.get("siret")):
+        fields[3].append({"x": 46, "y": 359.5, "text": "SIRET : " + _one(c.get("siret"), 20), "size": 8})
+    if forme == "conjoint":
+        # « En cas de groupement conjoint, le mandataire du groupement est : conjoint / solidaire »
+        fields[3].append({"type": "checkbox", "x": 247.05 if grp.get("mandataire_solidaire") else 91.15,
+                          "y": 418.3, "size": 9.7})
+    if hab:
+        if hab.get("signer_candidature_offre"):
+            # « ont donné mandat au mandataire, qui signe le présent acte d'engagement » :
+            # pour signer + représenter + coordonner ; (+) modifications ultérieures.
+            fields[3].append({"type": "checkbox", "x": 48.55, "y": 453.35, "size": 9.7})
+            fields[3].append({"type": "checkbox", "x": 91.15, "y": 487.05, "size": 9.7})
+            if hab.get("signer_modifications"):
+                fields[3].append({"type": "checkbox", "x": 91.15, "y": 532.45, "size": 9.7})
+        else:
+            # « Les membres du groupement, qui signent le présent acte d'engagement » :
+            fields[3].append({"type": "checkbox", "x": 48.55, "y": 610.45, "size": 9.7})
+            if hab.get("representer", True):
+                fields[3].append({"type": "checkbox", "x": 91.15, "y": 644.35, "size": 9.7})
+            if hab.get("signer_modifications"):
+                fields[3].append({"type": "checkbox", "x": 91.15, "y": 679.75, "size": 9.7})
+
+    # Page 5 : tableau des signataires du groupement (5 lignes). Mandataire habilité à signer
+    # seul → une ligne ; sinon une ligne par membre. Sans convention : la ligne du mandataire.
+    sig_rows = [69.7, 120.7, 171.9, 222.9, 273.9]
+    signers = [lead] if (not hab or hab.get("signer_candidature_offre")) else members
+    nom_par = {s.get("company"): s for s in (grp.get("signataires") or []) if isinstance(s, dict)}
+    for top, m in zip(sig_rows, signers[:len(sig_rows)]):
+        s = nom_par.get(m.get("name")) or {}
+        nom = _one(s.get("nom") or m.get("representant_legal"), 60)
+        qual = _one(s.get("qualite") or m.get("signataire_qualite"), 50)
+        fields[4].append({"x": 40, "y": top + 14, "text": ", ".join(x for x in (nom, qual) if x), "size": 8, "bold": True})
+        fields[4].append({"x": 40, "y": top + 26, "text": _one(m.get("name"), 55)
+                          + (" — mandataire, pour le groupement" if (m is lead and len(signers) == 1) else ""), "size": 7})
+        if m is lead:
+            fields[4].append({"x": 272, "y": top + 14, "text": _one(c.get("city"), 30) + ", le " + d, "size": 8})
 
 
 # ================================================================
