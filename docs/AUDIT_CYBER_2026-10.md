@@ -275,8 +275,40 @@ Résiduels acceptés (faibles) :
 - Un compte effacé et anonymisé, ancien propriétaire, est vérifié sur toute sa chaîne. Il peut révéler un nombre d'entrées d'une autre entreprise.
 - Un PDF hostile peut encore occuper environ 15 s d'un thread de travail. C'est borné, et limité à 30 envois par heure et par IP.
 
-Vague 3, non faite :
-- fichier de verrouillage des dépendances ;
-- chiffrement applicatif des sauvegardes ;
-- liaison `state` de l'OAuth Google ;
-- ancrage externe de la queue du journal.
+## Vague 3 — faite le 8 octobre 2026 (branche de travail, pas encore en production)
+
+Quatre lots, développés en parallèle puis fusionnés. La suite passe en entier sous Python 3.12 avec les versions verrouillées de production (`requirements.lock`).
+- **Dépendances (rang 16).**
+  - Avant le lot, pip-audit relevait 64 failles dans 7 paquets. Il en reste 2, sans correctif publié et sans effet dans notre usage (python-jose, ecdsa), justifiées dans `docs/DEPENDANCES.md`.
+  - Paquets montés : starlette 1.3, fastapi 0.133, python-multipart 0.0.31, python-jose 3.5, pillow 12.3, pypdf 6.19, sentry-sdk 2.56.
+  - `requirements.lock` avec hachages, installé avec `--require-hashes` dans le Dockerfile, et pip-audit en CI chaque semaine.
+  - Effet de bord : depuis fastapi 0.132, un JSON envoyé sans en-tête Content-Type reçoit un 422.
+- **Durcissement (rang 18 et suivants).**
+  - Connexion Google :
+    - `state` lié au navigateur par un cookie HttpOnly ;
+    - le jeton de session ne passe plus dans l'URL : code d'échange à usage unique de 60 s, dans le fragment.
+  - Journaux et Sentry :
+    - jetons d'invitation, JWT et emails masqués ;
+    - `send_default_pii=False`, cookies et en-tête Authorization retirés.
+  - PDF reportlab : toutes les valeurs dynamiques sont échappées (DUME, DPGF, compte-rendu).
+  - Type MIME dérivé de l'extension à l'envoi comme au téléchargement, avec `nosniff` et `attachment`.
+- **Sauvegardes chiffrées (rang 13).**
+  - Chiffrement hybride X25519 + AES-256-GCM, par blocs authentifiés, avec une clé publique (`BACKUP_PUBLIC_KEY`). La clé privée est générée par `scripts/backup_keygen.py` et reste hors ligne.
+  - Restauration avec `scripts/backup_decrypt.py`.
+  - Sans clé, la sauvegarde part comme avant, avec un avertissement.
+- **Ancrage du journal.**
+  - Cron quotidien `POST /api/admin/run-audit-anchor` : têtes de toutes les chaînes, engagement chaîné de jour en jour, horodatage RFC 3161 par une autorité publique (freetsa.org par défaut).
+  - Stockage dans `anchors/` (R2), plus une copie par email si `ANCHOR_EMAIL` est définie.
+  - La vérification d'intégrité détecte maintenant la disparition des dernières entrées.
+  - Exception : l'effacement RGPD légitime d'un compte n'est jamais signalé.
+
+À faire par Eliot pour activer :
+1. Générer la clé avec `python scripts/backup_keygen.py`, ranger la clé privée hors ligne, poser `BACKUP_PUBLIC_KEY` dans Railway, puis tester une restauration.
+2. Créer le cron `run-audit-anchor`. Poser `ANCHOR_EMAIL` est facultatif.
+3. Ensuite seulement, mettre à jour les phrases de la page sécurité §2 et §4. La procédure est dans `docs/GO_LIVE.md`.
+
+Restent ouverts :
+- la vérification de bout en bout de la connexion Google avec un vrai compte ;
+- le remplacement de python-jose par PyJWT, à décider ;
+- la chaîne « système » (entrées sans `owner_id`), qui n'est pas ancrée ;
+- 2FA et durée de rétention du journal, décisions fondateur toujours ouvertes.
