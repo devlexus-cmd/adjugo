@@ -578,8 +578,9 @@
 
                   <!-- Convention caduque : bandeau + régénération (même route que la génération) -->
                   <div v-if="d.status==='perimee'" class="conv-stale" role="status"><i data-lucide="triangle-alert"></i>
-                    <div><b>La convention n'est plus à jour : les accords enregistrés sont caducs.</b><div class="small">{{ ao.conv.staleReason ? 'Cause : ' + ao.conv.staleReason + '.' : 'Une part, un prix ou la composition a changé depuis sa génération.' }}</div></div>
-                    <button type="button" class="btn sm primary btn-wrap" @click="aoConvAskRegenerate()" :disabled="!!ao.conv.busy"><span v-if="ao.conv.busy==='generer'" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Régénérer la convention</button></div>
+                    <div><b>La convention n'est plus à jour : les accords enregistrés sont caducs.</b><div class="small">{{ ao.conv.staleReason || 'Une part, un prix ou la composition a changé depuis sa génération.' }}</div>
+                      <div v-if="!d.peut_generer && (d.manques||[]).length" class="conv-stale-miss"><b class="small">Pour régénérer la convention, il manque :</b><ul><li v-for="(m,mi) in d.manques" :key="'mqst'+mi">{{ m }}</li></ul></div></div>
+                    <button v-if="d.peut_generer" type="button" class="btn sm primary btn-wrap" @click="aoConvAskRegenerate()" :disabled="!!ao.conv.busy"><span v-if="ao.conv.busy==='generer'" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Régénérer la convention</button></div>
 
                   <!-- ── Convention générée : texte figé, empreinte, total, accords ── -->
                   <template v-if="convGenerated()">
@@ -762,7 +763,7 @@
                     </template>
 
                     <!-- Actions : enregistrer ; générer (= figer l'offre) avec confirmation -->
-                    <div class="conv-foot">
+                    <div class="conv-foot" ref="convFoot" tabindex="-1">
                       <div v-if="convDirty()" class="conv-dirty small"><i data-lucide="pencil"></i>Modifications non enregistrées</div>
                       <div class="row wrap conv-actions">
                         <button type="button" class="btn" @click="aoConvSave()" :disabled="!!ao.conv.busy"><span v-if="ao.conv.busy==='save'" class="spin"></span><i v-else data-lucide="save"></i>{{ convGenerated() ? 'Enregistrer les modifications' : 'Enregistrer le brouillon' }}</button>
@@ -2237,7 +2238,7 @@
           </div>
 
           <!-- Mon journal : qui a vu quoi sur MA part (projection sans email ni IP d'un autre membre) -->
-          <details class="card pad" style="margin-top:14px" @toggle="sharedJournalToggle($event)">
+          <details class="card pad" ref="sharedJournal" style="margin-top:14px" @toggle="sharedJournalToggle($event)">
             <summary style="cursor:pointer;font-weight:700;font-size:13.5px;user-select:none">Mon journal — qui a vu quoi<button type="button" class="tip" @click.stop.prevent><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ (sharedAo.journal && sharedAo.journal.integrity_label) || 'Journal infalsifiable tenu par Adjugo' }}</span></button></summary>
             <div v-if="sharedAo.journal && sharedAo.journal.chained" style="margin-top:6px"><span class="pill go" style="font-size:10px;gap:3px"><i data-lucide="shield-check" style="width:11px;height:11px"></i>Intégrité vérifiée</span></div>
             <ul v-if="sharedAo.journal && sharedAo.journal.entries.length" class="jrn">

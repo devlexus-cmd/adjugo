@@ -166,6 +166,8 @@ function convMdToHtml(md) {
 }
 // Les dates du serveur sont en UTC sans fuseau (« 2026-10-08T01:30:10 ») : on l'indique
 // explicitement, sinon le navigateur les lirait comme une heure locale.
+// Trop de demandes (limite de fréquence côté serveur, réponse 429 sans message en français).
+const TOO_MANY_MSG = "Trop de demandes en peu de temps : réessayez dans quelques minutes.";
 function _isoUtc(s) {
   s = String(s || "");
   return (/T\d{2}:\d{2}/.test(s) && !/(Z|[+-]\d{2}:?\d{2})$/.test(s)) ? s + "Z" : s;
@@ -505,6 +507,7 @@ const __adjApp = createApp({
           msg = this.validationMsg(d[0]);
         } else if (typeof d === "string") { msg = d; }
         else if (d && d.message) { msg = d.message; }
+        else if (r.status === 429) { msg = TOO_MANY_MSG; }   // limite de fréquence (réponse sans « detail »)
         else { msg = r.status >= 500 ? "Erreur serveur, réessayez dans un instant." : "Erreur " + r.status; }
         // Statut et code métier conservés (ex. 409 « deja_generee », 403 « email_non_verifie ») :
         // certains écrans enchaînent une confirmation au lieu d'afficher seulement le message.
@@ -1260,8 +1263,28 @@ const __adjApp = createApp({
     },
     async sharedJournalToggle(ev) {
       if (!(ev && ev.target && ev.target.open) || this.sharedAo.journalLoaded) return;
-      try { this.sharedAo.journal = await this.api("GET", "/api/invite/" + this.sharedAo.token + "/journal"); this.sharedAo.journalLoaded = true; }
-      catch (e) { this.notify("Journal indisponible", "err"); }
+      await this.sharedJournalLoad();
+    },
+    async sharedJournalLoad() {
+      const t = this.sharedAo.token; if (!t) return;
+      try {
+        const j = await this.api("GET", "/api/invite/" + t + "/journal");
+        if (this.sharedAo.token === t) { this.sharedAo.journal = j; this.sharedAo.journalLoaded = true; }
+      } catch (e) { this.notify("Journal indisponible", "err"); }
+    },
+    // Après un accord : l'étape du groupement (stepper) vient de /api/shared, rechargé ici — rouvrir
+    // le dossier ajouterait une « consultation » au journal. Le journal est relu s'il est ouvert.
+    async _sharedAfterAccord(t) {
+      await this.loadShared();
+      if (this.sharedAo.token !== t) return;
+      const it = (this.shared || []).find(x => x && x.token === t), g = it && it.groupement, fm = this.sharedAo.forMember;
+      if (g && fm) {
+        const up = {}; ["state", "label", "index", "etape", "etapes"].forEach(k => { if (g[k] !== undefined) up[k] = g[k]; });
+        fm.state = Object.assign({}, fm.state || {}, up);
+      }
+      this.sharedAo.journalLoaded = false;
+      let el = this.$refs.sharedJournal; if (Array.isArray(el)) el = el[0];
+      if (el && el.open) await this.sharedJournalLoad();
     },
     async sharedDecline() {
       if (!confirm("Décliner l'invitation ?\n\nVous sortez du groupement : votre part ne figurera pas dans la réponse commune et ce lien ne sera plus utilisable.")) return;
@@ -1302,7 +1325,7 @@ const __adjApp = createApp({
         const r = await this.api("POST", "/api/invite/" + t + "/convention/valider",
           { content_hash: d.content_hash, signataire_nom: c.accord.nom.trim(), signataire_qualite: (c.accord.qualite || "").trim(), accepte: true });
         if (this.sharedAo.token !== t) return;
-        this._sconvApply(r); c.live = "Votre accord est enregistré."; this.notify("Accord enregistré"); this.loadShared();
+        this._sconvApply(r); c.live = "Votre accord est enregistré."; this.notify("Accord enregistré"); this._sharedAfterAccord(t);
       } catch (e) {
         if (e.code === "identity_unverified" && !retried) {
           if (await this.sharedEnsureVerified()) { await this.sharedConvValider(true); return; }
@@ -1670,7 +1693,7 @@ const __adjApp = createApp({
     async aoFreezeOffer() {
       // Vague 2 : « Figer l'offre » = « Figer l'offre et générer la convention » (même geste,
       // même confirmation). L'ancienne route ne sert plus que de repli si la convention n'a pas pu se charger.
-      if (this.convVisible() && this.ao.conv.d) { this.aoConvScroll("convCard"); await this.aoConvAskGenerate(); return; }
+      if (this.convVisible() && this.ao.conv.d) { await this.aoConvAskGenerate(true); return; }
       const cs = this.ao.share.consortium, o = cs && cs.offre; if (!o || !this.canFreeze()) return;
       const lead = (o.lead_total_ht == null && Number(this.ao.share.leadTotal) > 0) ? Number(this.ao.share.leadTotal) : null;
       let msg = "Figer l'offre commune ?\n\nTotal prévisionnel : " + this.eur(this.freezeTotal()) + " HT"
@@ -1759,15 +1782,44 @@ const __adjApp = createApp({
       if (d && d.status === "perimee") this._convLoadStaleReason(); else c.staleReason = "";
     },
     // Convention caduque : la cause n'est pas dans la réponse de la convention, mais le serveur
-    // la journalise (« convention.perimee », détail en français). On la reprend telle quelle.
+    // la journalise (« convention.perimee »). Ce détail est une note interne : on le traduit en
+    // phrase simple (_convStaleCause) ; cause inconnue → le bandeau garde sa phrase générique.
     async _convLoadStaleReason() {
       const pid = this.ao.project && this.ao.project.id; if (!pid) return;
       try {
         const rows = await this.api("GET", "/api/projects/" + pid + "/audit?limit=100") || [];
-        const r = (Array.isArray(rows) ? rows : []).find(x => x && x.action === "convention.perimee");
         if (this.ao.project && this.ao.project.id === pid && this.ao.conv.d && this.ao.conv.d.status === "perimee")
-          this.ao.conv.staleReason = String((r && r.detail) || "").trim();
+          this.ao.conv.staleReason = this._convStaleCause(rows);
       } catch (e) { /* cause indisponible : le bandeau reste générique */ }
+    },
+    _convStaleCause(rows) {
+      const list = Array.isArray(rows) ? rows : [];
+      const i = list.findIndex(x => x && x.action === "convention.perimee"); if (i < 0) return "";
+      const det = String(list[i].detail || "").trim().replace(/\s+/g, " "), low = det.toLowerCase();
+      const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+      const fixed = {
+        "défigée par le mandataire": "L'offre commune a été défigée.",
+        "chiffrage du mandataire modifié": "Votre chiffrage (votre part de l'offre) a été modifié.",
+        "composition du groupement modifiée": "La composition du groupement a changé.",
+        "plan de groupement retiré": "Le plan de groupement a été retiré.",
+        "partenaire hors ligne retiré du marché": "Un partenaire hors ligne a été retiré du marché.",
+        "les parts, les prix ou la composition ont changé depuis la génération": "Une part, un prix ou la composition a changé depuis sa génération.",
+      };
+      if (fixed[low]) return fixed[low];
+      let m = det.match(/^part de (.+) modifiée$/i);
+      if (m) {
+        // Un refus d'invitation passe par le même chemin : il est journalisé juste après
+        // (« invite.declined », détail = l'entreprise), dans la même minute.
+        const who = m[1], t0 = Date.parse(_isoUtc(list[i].at));
+        const declined = list.slice(0, i).some(x => x && x.action === "invite.declined"
+          && String(x.detail || "").replace(/\s+/g, " ").trim() === who && Math.abs(Date.parse(_isoUtc(x.at)) - t0) < 60000);
+        return cap(who) + (declined ? " a décliné l'invitation." : " a modifié sa part.");
+      }
+      m = det.match(/^nouveau partenaire invité \((.+)\)$/i);
+      if (m) return m[1] === "sans nom" ? "Un nouveau partenaire a été invité." : cap(m[1]) + " a été invité dans le groupement.";
+      m = det.match(/^(.+) retiré$/i);
+      if (m) return cap(m[1]) + " a été retiré du groupement.";
+      return "";
     },
     _convSay(msg) { this.ao.conv.live = msg; this.notify(msg); },
     // Les messages d'erreur s'affichent À CÔTÉ du bouton qui les a provoqués (zone) : « top » (haut de
@@ -1775,6 +1827,16 @@ const __adjApp = createApp({
     _convErrZone() { return (this.convGenerated() && !this.ao.conv.editOpen) ? "top" : "foot"; },
     _convFail(e, at) { const c = this.ao.conv; c.err = (e && e.message) || "Action impossible pour l'instant."; c.errCode = (e && e.code) || ""; c.missing = (e && Array.isArray(e.missing)) ? e.missing : []; c.errAt = at || this._convErrZone(); },
     _convErr(msg, at) { const c = this.ao.conv; c.err = msg; c.errCode = ""; c.missing = []; c.errAt = at || this._convErrZone(); },
+    // peut_generer = false : le message s'affiche là où la liste des manques est visible (pied de
+    // l'assistant en brouillon ; haut de la carte, au-dessus du bandeau « plus à jour », sinon) et on y va.
+    _convCantGenerate(scroll) {
+      const c = this.ao.conv, d = c.d || {}, gen = this.convGenerated();
+      this._convErr((gen ? "Impossible de régénérer la convention" : "Impossible de générer la convention")
+        + " : complétez d'abord les éléments listés ci-dessous.", gen ? "top" : "foot");
+      // Convention générée et encore à jour : aucune autre liste en haut de la carte → elle va dans le message.
+      if (gen && d.status !== "perimee") c.missing = (d.manques || []).map(m => String(m || "")).filter(Boolean);
+      if (gen) this.aoConvScroll("convCard"); else if (scroll) this.aoConvScroll("convFoot");
+    },
     convErrAt(z) { return !!this.ao.conv.err && (this.ao.conv.errAt || "top") === z; },
     convErrClear() { const c = this.ao.conv; c.err = ""; c.errCode = ""; c.missing = []; },
     async aoConvLoad(quiet) {
@@ -1849,13 +1911,15 @@ const __adjApp = createApp({
       } catch (e) { this._convFail(e, "fi"); }
       finally { c.busy = ""; }
     },
-    async aoConvAskGenerate() {
+    // fromCockpit : l'action vient du cockpit (autre carte) → on amène l'utilisateur à la convention.
+    async aoConvAskGenerate(fromCockpit) {
       const c = this.ao.conv; if (!c.d || c.busy) return;
       if (this.convDirty() && !(await this.aoConvSave())) return;
       const d = this.ao.conv.d;
-      if (!d.peut_generer) {
-        this._convErr("Impossible de générer la convention : complétez d'abord les éléments listés ci-dessous.", "foot"); return;
-      }
+      // Déjà générée ou plus à jour : c'est une régénération (même route, sa propre confirmation).
+      if (this.convGenerated()) { this.aoConvAskRegenerate(null, fromCockpit); return; }
+      if (!d.peut_generer) { this._convCantGenerate(fromCockpit); return; }
+      if (fromCockpit) this.aoConvScroll("convCard");
       const total = d.total_estime_ht, two = (d.membres || []).length === 2;
       const lines = [
         { t: total != null ? "Le total de l'offre commune (" + this.eur2(total) + " HT) sera figé et révélé à tous les partenaires."
@@ -1868,8 +1932,10 @@ const __adjApp = createApp({
                  { t: d.avertissement, warn: true });
       this._convAsk({ title: "Figer l'offre et générer la convention ?", lines, ok: "Figer l'offre et générer", run: () => this.aoConvGenerate(false) });
     },
-    aoConvAskRegenerate(apiMsg) {
+    aoConvAskRegenerate(apiMsg, fromCockpit) {
       const d = this.ao.conv.d; if (!d) return;
+      if (!d.peut_generer) { this._convCantGenerate(fromCockpit); return; }   // sinon le serveur refuserait (422)
+      if (fromCockpit) this.aoConvScroll("convCard");
       const lines = [];
       if (apiMsg) lines.push({ t: apiMsg });
       lines.push({ t: "Une nouvelle version est créée, avec une nouvelle empreinte." });
@@ -1941,7 +2007,7 @@ const __adjApp = createApp({
     async _pdfFetch(url, fallbackName) {
       const r = await fetch(url, { headers: this.token ? { Authorization: "Bearer " + this.token } : {} });
       if (!r.ok) {
-        let m = "Téléchargement impossible pour l'instant.";
+        let m = r.status === 429 ? TOO_MANY_MSG : "Téléchargement impossible pour l'instant.";
         try { const j = await r.json(), dd = j && j.detail; m = (typeof dd === "string" ? dd : (dd && dd.message)) || m; } catch (e) {}
         throw new Error(m);
       }

@@ -426,7 +426,10 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 /* Vague 2 : stepper « 1 → 5 » en vraie liste ordonnée + étape courante en clair */
 ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .gstep-now { font-size:12px; color:var(--text-2); margin-top:6px; }
-@media (max-width:520px) { .gstep .gs { min-width:0; font-size:10.5px; padding-left:2px; padding-right:2px; overflow-wrap:anywhere; } }
+/* Téléphone : les 5 étapes tiennent sans défilement ; un mot trop long est coupé à la syllabe avec un
+   trait d'union (« groupe-ment »), jamais n'importe où. Limité au stepper 1 → 5 (ol) : celui à 8 états
+   de l'espace partenaire par lien garde son défilement horizontal. */
+@media (max-width:520px) { ol.gstep .gs { min-width:0; font-size:10.5px; padding-left:2px; padding-right:2px; -webkit-hyphens:auto; hyphens:auto; } }
 
 /* Seul | En groupement — les deux colonnes du score */
 .sg-cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px; }
@@ -616,6 +619,8 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .conv-stale > i[data-lucide] { width:17px; height:17px; flex:none; }
 .conv-stale > div { flex:1 1 220px; min-width:0; }
 .conv-stale .small { margin-top:3px; line-height:1.5; }
+.conv-stale-miss { margin-top:8px; }
+.conv-stale-miss ul { margin:4px 0 0; padding-left:18px; font-size:12.5px; line-height:1.5; }
 .conv-cite { margin:0; padding:8px 12px; border-left:2px solid var(--accent); background:var(--surface-2); border-radius:0 8px 8px 0; }
 .conv-cite blockquote { margin:0; font-style:italic; font-size:12.5px; line-height:1.5; overflow-wrap:anywhere; }
 .conv-cite figcaption { font-size:11px; color:var(--subtle); margin-top:4px; }
@@ -689,7 +694,7 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .conv-sigs li:last-child { border-bottom:0; }
 .conv-sigs .cs-main { flex:1 1 200px; min-width:0; font-size:13px; }
 .conv-sigs .cs-sub { font-size:11.5px; color:var(--text-2); margin-top:2px; line-height:1.45; }
-.conv-sec:focus { outline:none; }
+.conv-sec:focus, .conv-foot:focus { outline:none; }
 .conv-ok { display:flex; gap:8px; align-items:center; color:var(--success-text); font-weight:600; font-size:13px; }
 .conv-ok > i[data-lucide] { width:17px; height:17px; flex:none; }
 .conv-nature { font-size:11.5px; color:var(--text-2); margin:0; line-height:1.5; }
