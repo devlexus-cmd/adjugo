@@ -17,6 +17,10 @@ def save_to_dossier(db, user_id: int, project_id: int, folder: str,
                     name: str, content: bytes, mime: str = "application/pdf") -> Document:
     ext = os.path.splitext(name)[1] or ""
     file_key = f"{user_id}/{uuid.uuid4().hex}{ext}"
+    # Le DCE importé garde le nom ET le type annoncés par le navigateur : on n'en retient que
+    # le type dérivé de l'extension (table fixe), jamais « text/html » ou « image/svg+xml ».
+    from app.core.mime import mime_for
+    mime = mime_for(file_key)
     get_storage().save(file_key, content, mime)
     doc = Document(user_id=user_id, project_id=project_id, folder=folder,
                    name=name, file_key=file_key, file_size=len(content),

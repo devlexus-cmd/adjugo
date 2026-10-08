@@ -318,11 +318,13 @@ const __adjApp = createApp({
         .then(r => { this.notify(r.message || "Adresse confirmée"); if (this.token) this.api("GET", "/api/auth/me").then(u => this.user = u).catch(() => {}); })
         .catch(e => this.notify(e.message || "Lien de vérification invalide ou expiré", "err"));
     }
-    // Connexion Google : retour de l'OAuth → le jeton arrive dans l'URL (?gtoken=) ou une erreur (?gerror=).
-    const _gt = new URLSearchParams(location.search).get("gtoken");
+    // Connexion Google : retour de l'OAuth → un code à usage unique (60 s) arrive dans le FRAGMENT
+    // (#gcode=…, jamais envoyé au serveur ni dans le Referer) et s'échange contre le jeton par POST
+    // plus bas : le jeton de session ne passe jamais dans une URL. Erreur : ?gerror=.
+    const _gc = new URLSearchParams((location.hash || "").replace(/^#/, "")).get("gcode");
     const _ge = new URLSearchParams(location.search).get("gerror");
     let _freshLogin = false;
-    if (_gt) { this.token = _gt; localStorage.setItem("adjugo_token", _gt); history.replaceState({}, "", "/app"); _freshLogin = true; }
+    if (_gc) { history.replaceState({}, "", "/app"); this.token = ""; _freshLogin = true; }
     else if (_ge) { history.replaceState({}, "", "/"); this.$nextTick(() => this.notify(_ge, "err")); }
 
     // ── Verrou de session par INACTIVITÉ ──
@@ -336,9 +338,14 @@ const __adjApp = createApp({
     // Session STOCKÉE (pas une connexion fraîche) trop ancienne → on l'efface, retour à l'écran de connexion.
     if (this.token && !_freshLogin && _idleStale()) { localStorage.removeItem("adjugo_token"); this.token = ""; }
 
-    if (!this.token) { this.api("GET", "/api/auth/oauth-config").then(c => this.googleEnabled = !!(c && c.google)).catch(() => {}); }
+    const _oauthCfg = () => this.api("GET", "/api/auth/oauth-config").then(c => this.googleEnabled = !!(c && c.google)).catch(() => {});
+    if (!this.token && !_gc) _oauthCfg();
     this._loadAnalytics();
-    if (this.token) this.boot();
+    if (_gc) {
+      this.api("POST", "/api/auth/google/exchange", { code: _gc }).then(
+        r => { this.token = r.access_token; localStorage.setItem("adjugo_token", this.token); this.boot(); },
+        e => { this.notify(e.message || "Connexion Google expirée, réessayez.", "err"); _oauthCfg(); });
+    } else if (this.token) this.boot();
   },
   updated() { this.renderIcons(); this.renderI18n(); this._a11y(); },
   methods: {

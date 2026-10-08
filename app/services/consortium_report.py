@@ -10,6 +10,7 @@ DOCTRINE DE VISIBILITÉ (oct. 2026) : document PARTAGEABLE → jamais un prix pa
 """
 import io
 from datetime import date
+from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -26,8 +27,19 @@ _OK = colors.HexColor("#1A7F4B")
 _WARN = colors.HexColor("#9A6700")
 
 
+def _e(value) -> str:
+    """Valeur dynamique échappée (« A & B <Sàrl> » ne casse ni n'injecte de balisage)."""
+    return _xml_escape(str(value if value is not None else ""))
+
+
 def _p(text, style):
-    return Paragraph(str(text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), style)
+    """Texte brut : TOUT est échappé."""
+    return Paragraph(_e(text or ""), style)
+
+
+def _m(markup, style):
+    """Balisage voulu (<b>, <font>, <br/>) : les valeurs dynamiques y sont passées par _e()."""
+    return Paragraph(markup, style)
 
 
 def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dict,
@@ -52,16 +64,17 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
     el.append(_p("Compte-rendu de consortium", h1))
     el.append(_p("Réseau Adjugo — co-traitance cloisonnée", muted))
     el.append(Spacer(1, 7))
-    el.append(_p(f"<b>{project_name}</b>", st))
+    el.append(_m(f"<b>{_e(project_name)}</b>", st))
     el.append(_p(f"Mandataire : {mandataire or '—'} · édité le {date.today().strftime('%d/%m/%Y')}", muted))
     el.append(Spacer(1, 9))
 
     # Synthèse / readiness
     pct_col = _OK if pct >= 80 else (_WARN if pct >= 45 else colors.HexColor("#C0392B"))
     synth = Table([[
-        _p(f"<font color='{pct_col.hexval()[2:]}'><b>{pct}%</b></font>", ParagraphStyle("big", parent=st, fontSize=22)),
+        _m(f"<font color='#{pct_col.hexval()[2:]}'><b>{_e(pct)}%</b></font>", ParagraphStyle("big", parent=st, fontSize=22)),
         _p("réponse commune prête", st),
-        _p(f"{r.get('submitted', 0)}/{r.get('invited', 0)} partenaire(s) ont contribué<br/>{r.get('lots', 0)} lot(s) couvert(s)", muted),
+        _m(f"{_e(r.get('submitted', 0))}/{_e(r.get('invited', 0))} partenaire(s) ont contribué<br/>"
+           f"{_e(r.get('lots', 0))} lot(s) couvert(s)", muted),
     ]], colWidths=[24 * mm, 45 * mm, 110 * mm])
     synth.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("BOX", (0, 0), (-1, -1), 0.6, _LINE),
                                ("BACKGROUND", (0, 0), (-1, -1), _HEAD), ("LEFTPADDING", (0, 0), (-1, -1), 8),
@@ -108,7 +121,7 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
     if subs:
         el.append(_p("Apports détaillés (parts soumises)", h2))
         for c in subs:
-            el.append(_p(f"<b>{c.get('company_name', '')}</b> — lot : {c.get('lot') or '(non précisé)'}", st))
+            el.append(_m(f"<b>{_e(c.get('company_name', ''))}</b> — lot : {_e(c.get('lot') or '(non précisé)')}", st))
             if c.get("qualifications"):
                 el.append(_p("Qualifications : " + ", ".join(str(q) for q in c["qualifications"]), muted))
             refs = [r.get("intitule", "") for r in (c.get("references") or []) if isinstance(r, dict) and r.get("intitule")]

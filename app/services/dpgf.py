@@ -5,6 +5,7 @@ Génération de la DPGF (Décomposition du Prix Global et Forfaitaire) et du BPU
 """
 import io
 from datetime import date
+from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -23,6 +24,12 @@ def _eur(v) -> str:
     return f"{int(round(v or 0)):,}".replace(",", " ") + " €"
 
 
+def _esc(s) -> str:
+    """Valeur dynamique (nom d'entreprise, intitulé de tâche…) échappée avant d'entrer dans
+    un Paragraph reportlab, qui interprète « & » et « < » comme du balisage."""
+    return _xml_escape(str(s if s is not None else ""))
+
+
 def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str, tva_rate: float = 0) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=16 * mm,
@@ -35,9 +42,9 @@ def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str, tva_
     cellb = ParagraphStyle("cellb", parent=cell, fontName="Helvetica-Bold")
     story = []
 
-    story.append(Paragraph(company_name or "Entreprise", h1))
+    story.append(Paragraph(_esc(company_name or "Entreprise"), h1))
     story.append(Paragraph("Décomposition du Prix Global et Forfaitaire (DPGF)", h2))
-    story.append(Paragraph(f"Marché : {project_name or ''}", sub))
+    story.append(Paragraph(f"Marché : {_esc(project_name or '')}", sub))
     story.append(Paragraph(f"Établi le {date.today().strftime('%d/%m/%Y')}", sub))
     story.append(Spacer(1, 7 * mm))
 
@@ -45,9 +52,9 @@ def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str, tva_
              Paragraph("Phase", cellb), Paragraph("Unité", cellb), Paragraph("Qté", cellb),
              Paragraph("P.U. HT", cellb), Paragraph("Montant HT", cellb)]]
     for i, l in enumerate(estimate.get("lignes", []), 1):
-        rows.append([Paragraph(str(i), cell), Paragraph(l.get("tache", ""), cell),
-                     Paragraph(l.get("phase", ""), cell), Paragraph("jour", cell),
-                     Paragraph(str(l.get("jours", "")), cell),
+        rows.append([Paragraph(str(i), cell), Paragraph(_esc(l.get("tache", "")), cell),
+                     Paragraph(_esc(l.get("phase", "")), cell), Paragraph("jour", cell),
+                     Paragraph(_esc(l.get("jours", "")), cell),
                      Paragraph(_eur(l.get("tarif")), cell), Paragraph(_eur(l.get("montant")), cell)])
     rows.append(["", "", "", "", "", Paragraph("Total HT", cellb),
                  Paragraph(_eur(estimate.get("total_ht")), cellb)])
@@ -81,7 +88,7 @@ def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str, tva_
     maj = estimate.get("majoration_pct") or 0
     if maj:
         note += f" Inclut une majoration de {maj} % (chantier à {estimate.get('distance_km')} km)."
-    story.append(Paragraph(note, sub))
+    story.append(Paragraph(_esc(note), sub))
 
     rates = estimate.get("rates_used") or []
     if rates:
@@ -89,7 +96,7 @@ def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str, tva_
         story.append(Paragraph("Bordereau des Prix Unitaires (BPU) — tarifs journaliers", h2))
         brows = [[Paragraph("Profil de prestation", cellb), Paragraph("Unité", cellb), Paragraph("P.U. HT", cellb)]]
         for r in rates:
-            brows.append([Paragraph(r.get("label", ""), cell), Paragraph("jour", cell),
+            brows.append([Paragraph(_esc(r.get("label", "")), cell), Paragraph("jour", cell),
                           Paragraph(_eur(r.get("rate")), cell)])
         bt = Table(brows, colWidths=[113 * mm, 20 * mm, 27 * mm], repeatRows=1)
         bt.setStyle(TableStyle([

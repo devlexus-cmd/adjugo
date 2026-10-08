@@ -14,7 +14,7 @@ from app.core.database import get_db
 from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.core.org import member_ids
-from app.core.http import content_disposition
+from app.core.mime import file_headers, mime_for
 from app.core.uploads import read_upload_limited
 from app.models import User, Document, DocCategory
 from app.services.storage import get_storage
@@ -105,7 +105,9 @@ def upload_document(
     content, ext = _validate_and_read(file)
     category = category if category in _VALID_CATS else "autre"
     file_key = f"{current_user.id}/{uuid.uuid4().hex}{ext}"
-    get_storage().save(file_key, content, file.content_type)
+    # Type DÉRIVÉ de l'extension autorisée, jamais le Content-Type annoncé par le client.
+    mime = mime_for(file_key)
+    get_storage().save(file_key, content, mime)
 
     # Parser la date d'expiration
     exp_date = None
@@ -121,7 +123,7 @@ def upload_document(
         category=category,
         file_key=file_key,
         file_size=len(content),
-        mime_type=file.content_type,
+        mime_type=mime,
         expiration_date=exp_date,
     )
     db.add(doc)
@@ -158,7 +160,8 @@ def replace_document(
     # Sauvegarder la nouvelle version
     content, ext = _validate_and_read(file)
     file_key = f"{current_user.id}/{uuid.uuid4().hex}{ext}"
-    get_storage().save(file_key, content, file.content_type)
+    mime = mime_for(file_key)       # dérivé de l'extension, pas du client
+    get_storage().save(file_key, content, mime)
 
     exp_date = None
     if expiration_date:
@@ -175,7 +178,7 @@ def replace_document(
         category=old_doc.category,
         file_key=file_key,
         file_size=len(content),
-        mime_type=file.content_type,
+        mime_type=mime,
         expiration_date=exp_date or old_doc.expiration_date,
         version=old_doc.version + 1,
         parent_id=None,
@@ -323,17 +326,19 @@ def download_document(
     if not doc or not doc.file_key:
         raise HTTPException(404, "Document introuvable")
     storage = get_storage()
-    signed = storage.url(doc.file_key)
+    signed = storage.url(doc.file_key, filename=doc.name)
     if signed:
         return RedirectResponse(signed)
     try:
         content = storage.load(doc.file_key)
     except FileNotFoundError:
         raise HTTPException(410, "Fichier absent du stockage")
+    # Type recalculé depuis l'extension de la clé (validée à l'envoi), jamais doc.mime_type :
+    # les anciennes lignes portent encore le type annoncé par le navigateur.
     return StreamingResponse(
         io.BytesIO(content),
-        media_type=doc.mime_type or "application/octet-stream",
-        headers={"Content-Disposition": content_disposition(doc.name)},
+        media_type=mime_for(doc.file_key),
+        headers=file_headers(doc.name, doc.file_key),
     )
 
 

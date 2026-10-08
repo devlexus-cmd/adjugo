@@ -4,6 +4,7 @@ Coordonnees precises relevees sur les grilles officielles.
 Support co-traitants pour DC1 section E et DC2 multiples.
 """
 import io, os, datetime
+from xml.sax.saxutils import escape as _xml_escape
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
@@ -16,6 +17,13 @@ TEMPLATES_DIR = os.path.join(
 )
 BLACK = HexColor("#111111")
 W, H = A4  # 595.28 x 841.89
+
+
+def _esc(s) -> str:
+    """Échappe une valeur DYNAMIQUE (nom d'entreprise, objet du marché…) avant de l'insérer
+    dans un Paragraph reportlab, qui interprète un mini-HTML : « A & B <Sàrl> » cassait la
+    génération ou injectait du balisage. Le balisage voulu (<b>…</b>) reste hors de l'appel."""
+    return _xml_escape(str(s if s is not None else ""))
 
 
 def _text(c, x, y, text, size=9, bold=False):
@@ -456,11 +464,11 @@ def _fallback(title, c, p):
     s = getSampleStyleSheet()
     s.add(ParagraphStyle(name="T", fontSize=14, fontName="Helvetica-Bold", alignment=TA_CENTER))
     e = [
-        Paragraph(title + " - Template introuvable", s["T"]),
+        Paragraph(_esc(title) + " - Template introuvable", s["T"]),
         Spacer(1, 10 * mm),
-        Paragraph("Entreprise : " + str(c.get("name", "")), s["Normal"]),
-        Paragraph("SIRET : " + str(c.get("siret", "")), s["Normal"]),
-        Paragraph("Marche : " + str(p.get("name", "")), s["Normal"]),
+        Paragraph("Entreprise : " + _esc(c.get("name", "")), s["Normal"]),
+        Paragraph("SIRET : " + _esc(c.get("siret", "")), s["Normal"]),
+        Paragraph("Marche : " + _esc(p.get("name", "")), s["Normal"]),
     ]
     doc.build(e)
     return buf.getvalue()
@@ -487,7 +495,7 @@ def generate_dume(c, p, lang_name=None):
     body = s["Normal"]; body.fontSize = 9; body.leading = 13
 
     def kv(rows):
-        t = Table([[Paragraph("<b>" + k + "</b>", body), Paragraph(str(v or "—"), body)] for k, v in rows],
+        t = Table([[Paragraph("<b>" + k + "</b>", body), Paragraph(_esc(v or "—"), body)] for k, v in rows],
                   colWidths=[55 * mm, 110 * mm])
         t.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -504,7 +512,10 @@ def generate_dume(c, p, lang_name=None):
     pme = "Oui (PME au sens UE)" if (eff and eff < 250) else ("Non / à préciser" if eff else "À préciser")
 
     from app.services.dume_labels import dume_translator
-    tr = dume_translator(lang_name)
+    _tr = dume_translator(lang_name)
+
+    def tr(fr: str) -> str:   # libellé traduit, échappé (il entre dans un Paragraph)
+        return _esc(_tr(fr))
 
     e = [
         Paragraph(tr("DUME — Document Unique de Marché Européen"), s["DumeTitle"]),
@@ -542,7 +553,7 @@ def generate_dume(c, p, lang_name=None):
             det = q.get("detail", "") if isinstance(q, dict) else ""
             exp = q.get("expiration", "") if isinstance(q, dict) else ""
             line = "• " + str(nom) + (" — " + str(det) if det else "") + ((" (" + str(exp) + ")") if exp else "")
-            e.append(Paragraph(line, body))
+            e.append(Paragraph(_esc(line), body))
     else:
         e.append(Paragraph("• " + tr("Aucune qualification renseignée dans le profil."), body))
     e.append(Spacer(1, 4))
@@ -555,7 +566,7 @@ def generate_dume(c, p, lang_name=None):
                        (" — " + str(r.get("year")) if r.get("year") else "")
             else:
                 line = "• " + str(r)
-            e.append(Paragraph(line, body))
+            e.append(Paragraph(_esc(line), body))
     else:
         e.append(Paragraph("• " + tr("Aucune référence renseignée dans le profil."), body))
 
@@ -576,10 +587,6 @@ def generate_dume(c, p, lang_name=None):
 # au modèle officiel de chaque pays (PL, PT, IT, NL, RO). On présente toujours
 # « brouillon à reporter sur le modèle officiel », jamais le formulaire officiel.
 # ================================================================
-def _esc(s) -> str:
-    return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
 def _resolve_source(key, c, p):
     import datetime as _dt
     addr = " ".join(str(c.get(k, "") or "") for k in ("address", "postal_code", "city")).strip()
