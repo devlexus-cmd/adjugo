@@ -41,42 +41,42 @@ a{color:inherit;text-decoration:none}
 .top .login:hover{border-color:var(--blue);color:var(--blue)}
 
 /* ── Page ── */
-.page{max-width:1180px;margin:0 auto;padding:64px 32px 96px;display:grid;
-  grid-template-columns:minmax(0,600px) minmax(0,1fr);gap:64px;align-items:start}
+.page{max-width:1180px;margin:0 auto;padding:52px 32px 84px;display:grid;
+  grid-template-columns:minmax(0,520px) minmax(0,1fr);gap:72px;align-items:start}
 .eyebrow{font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--blue)}
 h1{font-family:var(--display);font-weight:600;letter-spacing:-.028em;line-height:1.05;text-wrap:balance;
-  font-size:clamp(34px,3.9vw,48px);margin:14px 0 18px}
-.lede{font-size:18px;line-height:1.6;color:var(--ink-2);margin:0 0 34px;max-width:540px}
+  font-size:clamp(30px,3.3vw,40px);margin:12px 0 14px}
+.lede{font-size:16.5px;line-height:1.6;color:var(--ink-2);margin:0 0 26px;max-width:500px}
 
-.btn-xl{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:58px;padding:0 24px;
-  border:0;border-radius:14px;background:var(--blue);color:#fff;font:600 16.5px/1 var(--body);cursor:pointer;
+.btn-xl{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:50px;padding:0 22px;
+  border:0;border-radius:12px;background:var(--blue);color:#fff;font:600 15.5px/1 var(--body);cursor:pointer;
   box-shadow:0 14px 30px -14px rgba(27,79,255,.65);transition:transform .18s ease,box-shadow .18s ease,background .18s}
 .btn-xl:hover{background:var(--blue-deep);transform:translateY(-1px);box-shadow:0 18px 34px -14px rgba(27,79,255,.7)}
 .btn-xl:disabled{opacity:.7;cursor:wait;transform:none}
 .btn-xl svg{width:18px;height:18px;flex-shrink:0}
-.or{display:flex;align-items:center;gap:16px;margin:26px 0 22px;color:var(--muted);font-size:13.5px}
+.or{display:flex;align-items:center;gap:14px;margin:20px 0 18px;color:var(--muted);font-size:13px}
 .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
 
 /* ── Formulaire ── */
-form{display:grid;gap:18px}
-.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.field{display:grid;gap:7px;min-width:0}
-label{font-size:14px;font-weight:600;color:var(--ink)}
+form{display:grid;gap:14px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field{display:grid;gap:6px;min-width:0}
+label{font-size:13.5px;font-weight:600;color:var(--ink)}
 label .opt{font-weight:500;color:var(--muted)}
-input,select,textarea{width:100%;font:16px/1.4 var(--body);color:var(--ink);background:#fff;border:1px solid #DCE2EC;
-  border-radius:12px;padding:0 16px;height:52px;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none;appearance:none}
-textarea{height:auto;min-height:124px;padding:14px 16px;resize:vertical}
+input,select,textarea{width:100%;font:15.5px/1.4 var(--body);color:var(--ink);background:#fff;border:1px solid #DCE2EC;
+  border-radius:11px;padding:0 14px;height:46px;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none;appearance:none}
+textarea{height:auto;min-height:96px;padding:12px 14px;resize:vertical}
 input::placeholder,textarea::placeholder{color:var(--faint)}
 input:hover,select:hover,textarea:hover{border-color:#C9D2E1}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 4px rgba(27,79,255,.13)}
-select{padding-right:44px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%230C1526' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat:no-repeat;background-position:right 16px center}
+select{padding-right:42px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%230C1526' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center}
 [aria-invalid="true"]{border-color:var(--err)!important;box-shadow:0 0 0 4px rgba(194,54,47,.10)!important}
 .ferr{font-size:13px;color:var(--err);min-height:0}
 .ferr:empty{display:none}
 .trap{position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden}
-.submit{margin-top:6px}
-.fine{font-size:13px;line-height:1.55;color:var(--muted);margin:2px 0 0}
+.submit{margin-top:4px}
+.fine{font-size:12.5px;line-height:1.55;color:var(--muted);margin:0}
 .fine a{color:var(--ink-2);text-decoration:underline;text-underline-offset:2px}
 .alert{display:none;gap:10px;align-items:flex-start;padding:13px 15px;border-radius:12px;font-size:14.5px;line-height:1.5;
   background:var(--err-soft);color:#8E241E;border:1px solid #F3D3D0}
@@ -95,12 +95,20 @@ select{padding-right:44px;cursor:pointer;background-image:url("data:image/svg+xm
 .done .back{display:inline-flex;margin-top:20px;font-weight:600;color:var(--blue)}
 .done .back:hover{text-decoration:underline;text-underline-offset:3px}
 
-/* ── Visuel ── */
-.visual{position:sticky;top:120px;display:grid;place-items:center;min-height:540px}
-.visual .glow{position:absolute;inset:8% 4%;background:radial-gradient(closest-side,rgba(27,79,255,.13),rgba(27,79,255,0));filter:blur(8px)}
-.visual svg{position:relative;width:min(100%,520px);height:auto;animation:float 7s ease-in-out infinite;filter:drop-shadow(0 30px 40px rgba(16,40,140,.16))}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
-@media (prefers-reduced-motion:reduce){.visual svg{animation:none}html{scroll-behavior:auto}}
+/* ── Visuel : le logo Adjugo ── */
+.visual{position:sticky;top:118px;display:grid;place-items:center;min-height:520px;border-radius:28px;overflow:hidden;
+  background:radial-gradient(120% 90% at 50% 40%,#F3F6FF 0%,#FAFBFF 55%,#fff 100%);border:1px solid var(--line-2)}
+.logo-xl{position:relative;display:inline-flex;align-items:center;gap:.03em;font-family:var(--display);font-weight:700;
+  font-size:clamp(64px,7.2vw,104px);letter-spacing:-.05em;line-height:1;color:var(--blue)}
+.logo-xl .mk{position:relative;width:.82em;height:.82em;margin-left:.01em;display:inline-grid;place-items:center}
+.logo-xl .mk svg{position:relative;z-index:1;width:100%;height:100%}
+.logo-xl .mk i{position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--blue);opacity:0;
+  animation:ripple 4.8s cubic-bezier(.2,.6,.3,1) infinite}
+.logo-xl .mk i:nth-child(2){animation-delay:1.6s}
+.logo-xl .mk i:nth-child(3){animation-delay:3.2s}
+@keyframes ripple{0%{transform:scale(1);opacity:.32}100%{transform:scale(3.6);opacity:0}}
+.visual .tag{position:absolute;left:0;right:0;bottom:34px;text-align:center;font-size:14px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.logo-xl .mk i{animation:none}html{scroll-behavior:auto}}
 
 /* ── Pied de page ── */
 .foot{border-top:1px solid var(--line-2)}
@@ -122,6 +130,7 @@ select{padding-right:44px;cursor:pointer;background-image:url("data:image/svg+xm
   .page{padding:30px 16px 64px}
   .lede{font-size:16.5px;margin-bottom:26px}
   .row2{grid-template-columns:1fr}
+  input,select,textarea{font-size:16px}   /* < 16 px : Safari iOS zoome au toucher */
   .done{padding:28px 20px}
   .foot-in{padding:22px 16px}
   .foot-in nav{margin-left:0}
@@ -191,44 +200,8 @@ select{padding-right:44px;cursor:pointer;background-image:url("data:image/svg+xm
   </section>
 
   <aside class="visual" aria-hidden="true">
-    <div class="glow"></div>
-    <svg viewBox="36 150 448 300" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="topO" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F2F5FF"/><stop offset="1" stop-color="#B7C9FF"/></linearGradient>
-        <linearGradient id="sideO" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8DA6EE"/><stop offset=".5" stop-color="#C6D4FF"/><stop offset="1" stop-color="#7F9AE8"/></linearGradient>
-        <linearGradient id="wallO" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7F98E2"/><stop offset="1" stop-color="#A9BCF2"/></linearGradient>
-        <linearGradient id="topM" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#86A3FF"/><stop offset="1" stop-color="#2D59FF"/></linearGradient>
-        <linearGradient id="sideM" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1B3FC9"/><stop offset=".5" stop-color="#3E68F5"/><stop offset="1" stop-color="#1636B8"/></linearGradient>
-        <linearGradient id="wallM" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#14309F"/><stop offset="1" stop-color="#2A4FD8"/></linearGradient>
-        <radialGradient id="topC" cx=".34" cy=".3" r=".8"><stop offset="0" stop-color="#B4C8FF"/><stop offset=".45" stop-color="#3F6BFF"/><stop offset="1" stop-color="#1238C9"/></radialGradient>
-        <linearGradient id="sideC" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0C2894"/><stop offset=".5" stop-color="#2452EE"/><stop offset="1" stop-color="#0A2486"/></linearGradient>
-        <filter id="blur" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="12"/></filter>
-        <clipPath id="holeO"><ellipse cx="260" cy="270" rx="158" ry="91.6"/></clipPath>
-        <clipPath id="inO"><rect x="0" y="0" width="520" height="270"/><ellipse cx="260" cy="270" rx="158" ry="91.6"/></clipPath>
-        <clipPath id="holeM"><ellipse cx="260" cy="252" rx="92" ry="53.4"/></clipPath>
-        <clipPath id="inM"><rect x="0" y="0" width="520" height="252"/><ellipse cx="260" cy="252" rx="92" ry="53.4"/></clipPath>
-      </defs>
-      <ellipse cx="264" cy="312" rx="214" ry="112" fill="#13308F" opacity=".16" filter="url(#blur)"/>
-      <!-- anneau extérieur -->
-      <path d="M60 270 L60 296 A200 116 0 0 0 460 296 L460 270 A200 116 0 0 1 60 270 Z" fill="url(#sideO)"/>
-      <path fill-rule="evenodd" fill="url(#topO)" d="M60 270 A200 116 0 1 0 460 270 A200 116 0 1 0 60 270 Z M102 270 A158 91.6 0 1 0 418 270 A158 91.6 0 1 0 102 270 Z"/>
-      <g clip-path="url(#holeO)"><rect x="90" y="170" width="340" height="200" fill="url(#wallO)"/><ellipse cx="260" cy="296" rx="158" ry="91.6" fill="#DCE4FA"/></g>
-      <ellipse cx="260" cy="270" rx="199" ry="115.2" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="1.6"/>
-      <!-- anneau du milieu -->
-      <g clip-path="url(#inO)">
-        <path d="M132 252 L132 296 A128 74.2 0 0 0 388 296 L388 252 A128 74.2 0 0 1 132 252 Z" fill="url(#sideM)"/>
-        <path fill-rule="evenodd" fill="url(#topM)" d="M132 252 A128 74.2 0 1 0 388 252 A128 74.2 0 1 0 132 252 Z M168 252 A92 53.4 0 1 0 352 252 A92 53.4 0 1 0 168 252 Z"/>
-        <g clip-path="url(#holeM)"><rect x="160" y="190" width="200" height="130" fill="url(#wallM)"/><ellipse cx="260" cy="296" rx="92" ry="53.4" fill="#93A9EE"/></g>
-        <ellipse cx="260" cy="252" rx="127" ry="73.5" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.4"/>
-        <!-- cœur -->
-        <g clip-path="url(#inM)">
-          <path d="M202 222 L202 296 A58 33.6 0 0 0 318 296 L318 222 A58 33.6 0 0 1 202 222 Z" fill="url(#sideC)"/>
-          <ellipse cx="260" cy="222" rx="58" ry="33.6" fill="url(#topC)"/>
-          <ellipse cx="260" cy="222" rx="57" ry="33" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="1.3"/>
-          <ellipse cx="243" cy="213" rx="20" ry="8" fill="#fff" opacity=".28"/>
-        </g>
-      </g>
-    </svg>
+    <div class="logo-xl">adjug<span class="mk"><i></i><i></i><i></i><svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".3" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".62" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></span></div>
+    <div class="tag">La réponse aux marchés publics, seul ou à plusieurs.</div>
   </aside>
 </main>
 
