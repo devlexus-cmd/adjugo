@@ -632,11 +632,17 @@ def test_invitation_reseau_email_masque_jusqu_a_la_reponse(client, reg, mails):
     g = client.get(f"/api/invite/{token}").json()               # aperçu minimal avant acceptation
     assert g["apercu_minimal"] is True and g["project"]["client"] is None and g["documents"] == []
     assert "acheteur" not in g["project"]["analysis"] and g["project"]["analysis"]["objet"]
+    assert g["for_member"] is None and g["project"]["source_url"] is None
+    assert client.get(f"/api/invite/{token}/coffre-croise").status_code == 403
+    j = client.get(f"/api/invite/{token}/journal").json()["entries"]
+    assert all(e["who"] in ("vous", "mandataire") for e in j)
     r = client.post(f"/api/invite/{token}/claim", headers=b["headers"])
     assert r.status_code == 200, r.text
     assert r.json()["suggest_profile"] is None                   # B a déjà publié
     g = client.get(f"/api/invite/{token}").json()
     assert g["apercu_minimal"] is False and g["project"]["client"] == "Ville de Quimper"
+    assert g["for_member"] is not None
+    assert client.get(f"/api/invite/{token}/coffre-croise").status_code == 200
     lst = client.get(f"/api/projects/{pid}/invites", headers=a["headers"]).json()
     me = next(x for x in lst if x["id"] == inv["id"])
     assert me["recipient"] == b["email"] and me["recipient_masque"] is False and me["token"] is None

@@ -445,6 +445,8 @@ def _invite_public(inv: ProjectInvite, project: Project, owner_company: Optional
                                       if k != "acheteur"}
         out["documents"] = []
         out["can_view_docs"] = False
+        # Ni composition du groupement, ni score commun avant acceptation (stratégie du chef de file).
+        out["for_member"] = None
         out["apercu_minimal"] = True
         out["apercu_message"] = ("Aperçu limité : acceptez l'invitation depuis votre compte Adjugo pour voir "
                                  "le dossier complet (acheteur, pièces du marché).")
@@ -2012,6 +2014,9 @@ def guest_coffre_croise(token: str, request: Request, db: Session = Depends(get_
     project = db.query(Project).filter(Project.id == inv.project_id, Project.deleted_at.is_(None)).first()
     if not project:
         raise HTTPException(404, "Projet introuvable ou retiré")
+    if _network_pending(inv, db):        # aperçu minimal : pas la composition du groupement
+        raise HTTPException(403, "Acceptez d'abord l'invitation depuis votre compte Adjugo pour voir "
+                                 "les attestations du groupement.")
     return coffre_croise(db, project, active_invites(db, project.id), viewer_invite_id=inv.id, for_owner=False)
 
 
@@ -2358,9 +2363,13 @@ def guest_journal(token: str, request: Request, db: Session = Depends(get_db)):
     événements de groupement du projet. Projection SANS ip, SANS email, SANS target_id
     d'un autre ; l'acteur devient « vous » / « mandataire » / « partenaire »."""
     inv = _valid_invite(token, db)
+    if _network_pending(inv, db):
+        # Invitation réseau pas encore acceptée : SES entrées seulement (pas la composition).
+        cond = (AuditLog.invite_id == inv.id)
+    else:
+        cond = ((AuditLog.invite_id == inv.id) | (AuditLog.action.in_(list(GROUP_EVENTS))))
     rows = db.query(AuditLog).filter(
-        AuditLog.project_id == inv.project_id,
-        ((AuditLog.invite_id == inv.id) | (AuditLog.action.in_(list(GROUP_EVENTS))))
+        AuditLog.project_id == inv.project_id, cond
     ).order_by(AuditLog.created_at.desc()).limit(200).all()
     # Noms d'entreprise des autres invitations (pour les événements de groupement).
     other_ids = {r.invite_id for r in rows if r.invite_id and r.invite_id != inv.id}

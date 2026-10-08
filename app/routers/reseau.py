@@ -632,9 +632,9 @@ def depublier(request: Request, current_user: User = Depends(get_current_user), 
 
 # ── Annuaire (réciprocité) ───────────────────────────────────────────────────────────
 
-def _teaser(n: int) -> str:
+def _teaser(n: int, scope: str = "cette recherche") -> str:
     if n <= 0:
-        return "Aucun partenaire du réseau Adjugo ne correspond encore à cette recherche."
+        return f"Aucun partenaire du réseau Adjugo ne correspond encore à {scope}."
     if n == 1:
         return "Publiez votre profil pour voir le partenaire correspondant."
     return f"Publiez votre profil pour voir les {n} partenaires correspondants."
@@ -953,7 +953,7 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
                 entry["reseau"].append(card)
                 shown.add(p.id)
         else:
-            entry["message"] = _teaser(len(ranked_all))
+            entry["message"] = _teaser(len(ranked_all), "ce lot")
         if len(entry["reseau"]) < 3 and l["metier"]:
             if sirene_calls < MAX_SIRENE_LOTS:
                 sirene_calls += 1
@@ -991,7 +991,7 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
     return {
         "project_id": project.id,
         "reseau_visible": ctx["published"],
-        "message": None if ctx["published"] else _teaser(n_total),
+        "message": None if ctx["published"] else _teaser(n_total, "ces lots"),
         "n_correspondants": n_total,
         "lots": out_lots,
         "lots_couverts": covered,
@@ -1099,10 +1099,13 @@ def invite_reseau(request: Request, project_id: int, body: ReseauInviteIn,
                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Mise en relation en 1 clic avec un profil du réseau : Adjugo remplit l'adresse côté
     serveur et l'envoie ; le chef de file ne la voit qu'une fois que le partenaire a répondu."""
-    from app.routers.invites import (_check_daily_invite_cap, _create_invite, _refuse_demo_sender,
-                                     _require_verified_sender)
+    from app.routers.invites import _check_daily_invite_cap, _create_invite, _refuse_demo_sender
     _refuse_demo_sender(current_user)
-    _require_verified_sender(current_user)
+    # Expéditeur confirmé (même règle anti-spam que les emails d'invitation) : ici pas de repli
+    # « copiez le lien », le lien d'une invitation réseau n'est jamais remis au chef de file.
+    if not getattr(current_user, "email_verified", False):
+        raise HTTPException(403, "Confirmez d'abord votre adresse email (lien reçu à l'inscription) pour "
+                                 "inviter un partenaire du réseau.")
     project = _project(project_id, current_user, db)
     ctx = pn.searcher_context(db, current_user)
     if not ctx["published"]:
