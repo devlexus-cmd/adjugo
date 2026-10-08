@@ -710,7 +710,16 @@ def resend_invite(project_id: int, invite_id: int, request: Request,
             raise HTTPException(429, "Invitation déjà envoyée il y a moins de 15 minutes. "
                                      "Laissez un peu de temps au partenaire avant de relancer.")
     _check_daily_invite_cap(current_user, db)
-    sent = _send_invite_email(inv, project, _settings.APP_BASE_URL or str(request.base_url))
+    sender = _send_invite_email
+    if _is_network_invite(inv):
+        # Relance d'une invitation RÉSEAU : même texte que l'envoi initial (adresse jamais
+        # montrée au chef de file, rappel « comment ne plus être sollicité »).
+        from app.routers.cotraitants import ProjectCotraitant
+        from app.routers.reseau import _network_mailer
+        lk = db.query(ProjectCotraitant).filter(ProjectCotraitant.invite_id == inv.id).first()
+        chef = db.query(Company).filter(Company.user_id == inv.owner_id).first()
+        sender = _network_mailer((lk.lot if lk else "") or "", (chef.name if chef else "") or "")
+    sent = sender(inv, project, _settings.APP_BASE_URL or str(request.base_url))
     db.commit()
     if sent:
         audit.record(db, action="invite.resent", owner_id=inv.owner_id, project_id=project_id,

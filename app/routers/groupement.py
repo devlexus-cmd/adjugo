@@ -127,7 +127,7 @@ def _candidate(gs, details: dict, lead: dict, criteria: dict, member: dict) -> d
         "proof_label": proof_label(member), "ca_label": cl,
         "warnings": warns,
     }
-    for k in ("link_id", "invite_id", "role", "lot", "deja_partenaire", "trade"):
+    for k in ("link_id", "invite_id", "role", "lot", "deja_partenaire", "trade", "profile_id", "rang"):
         if k in member:
             out[k] = member[k]
     return out
@@ -167,10 +167,18 @@ def besoins(request: Request, project_id: int, sirene: int = 0,
     except Exception as e:
         logger.warning("gaps_for en échec (projet %s) : %s", project.id, e)
         gaps = []
+    # Vague 3 : pool « reseau » (profils publiés visibles par moi, si j'ai publié le mien).
+    from app.services import partner_network as pn
+    net_ctx = pn.searcher_context(db, current_user)
     pool = pool_for_project(db, project, ids, include_sirene=bool(sirene), max_sirene_calls=3,
-                            gaps=gaps, lead=lead, criteria=criteria, company_data=company_data)
+                            gaps=gaps, lead=lead, criteria=criteria, company_data=company_data,
+                            network_ctx=net_ctx)
     candidats = {k: _sort([_candidate(gs, details, lead, criteria, m) for m in pool[k]])
                  for k in ("rattaches", "annuaire", "sirene")}
+    # Réseau : l'ORDRE est celui du classement partner_matching (B classe, A calcule le %).
+    candidats["reseau"] = [_candidate(gs, details, lead, criteria, m) for m in pool.get("reseau") or []]
+    if pool.get("reseau"):
+        pn.count_appearances(db, net_ctx["owner_id"], [m.get("_db_id") for m in pool["reseau"]])
     warnings = list(pool.get("warnings") or [])
     if not details:
         warnings.insert(0, "Ce marché n'a pas encore été analysé à partir de son dossier : "

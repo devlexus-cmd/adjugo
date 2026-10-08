@@ -544,6 +544,15 @@ def test_simulation_avec_un_profil_du_reseau(client, reg):
     r = client.post(f"/api/projects/{pid}/groupement/simulate", headers=a["headers"], json=body)
     assert r.status_code == 403 and r.json()["detail"]["code"] == "profil_non_publie"
     _publish(client, reg, a, metiers=("couverture",))
+    # Pool « reseau » du panneau « Ce que le marché exige → Trouver qui l'a ».
+    r = client.get(f"/api/projects/{pid}/groupement/besoins", headers=a["headers"])
+    assert r.status_code == 200, r.text
+    net = r.json()["candidats"]["reseau"]
+    cand = next(c for c in net if c.get("profile_id") == b_pid)
+    assert cand["kind"] == "reseau" and cand["capacites_source"] == "reseau" and cand["rang"] >= 1
+    assert cand["proof_label"].startswith("déclaré par l'entreprise sur son profil Adjugo")
+    assert cand["capacites"]["ca_n1"] is None and "_db_id" not in cand
+    assert _profile_row(b["id"]).appearances_count >= 1
     r = client.post(f"/api/projects/{pid}/groupement/simulate", headers=a["headers"], json=body)
     assert r.status_code == 200, r.text
     m = next(x for x in r.json()["members"] if x["kind"] == "reseau")
@@ -604,6 +613,17 @@ def test_invitation_reseau_email_masque_jusqu_a_la_reponse(client, reg, mails):
     # 409 si une invitation active existe déjà.
     r = client.post(f"/api/projects/{pid}/reseau/invitations", headers=a["headers"], json={"profile_id": b_pid})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "deja_invite"
+    # Relance : même texte réseau, adresse toujours absente de la réponse.
+    from app.models import ProjectInvite
+    db = _db()
+    try:
+        db.get(ProjectInvite, inv["id"]).emailed_at = datetime.utcnow() - timedelta(hours=1)
+        db.commit()
+    finally:
+        db.close()
+    r = client.post(f"/api/projects/{pid}/invites/{inv['id']}/resend", headers=a["headers"])
+    assert r.status_code == 200 and r.json()["sent"] is True and b["email"] not in r.text
+    assert mails[-1][0] == b["email"] and "retirer cette publication" in mails[-1][2]
     # Le partenaire la retrouve dans son espace (même sans email) et l'accepte depuis son compte.
     recues = client.get("/api/reseau/invitations", headers=b["headers"]).json()["invitations"]
     mine = [x for x in recues if x["project"] == "Rénovation de l'école Jules-Ferry" and x["mandataire"] == a["name"]]

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.config import get_settings
+from app.core.ratelimit import limiter
 from app.core.security import get_current_user
 from app.models import User
 from app.services.alerts import (run_document_expiry_alerts, run_tender_alerts, run_amont_alerts,
@@ -126,6 +127,7 @@ def run_trash_purge_endpoint(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/run-partner-network")
+@limiter.limit("12/hour")
 def run_partner_network_endpoint(request: Request, db: Session = Depends(get_db)):
     """Réseau de partenaires (vague 3) : re-vérifie SIRENE / BODACC / DECP des 25 profils
     publiés vérifiés le plus anciennement (timeouts courts, budget temps borné). Dépublie
