@@ -380,7 +380,11 @@
       });
       if (!members.length) ul.appendChild($(`<li class="muted">Aucun autre partenaire invité pour l'instant.</li>`));
       box.appendChild(ul);
-      if (st.offer_frozen) {
+      // Vague 2 : une convention en brouillon ou plus à jour fait foi, et le total n'est révélé
+      // qu'à sa génération. L'encadré « offre figée » ne s'affiche donc que sans convention, ou
+      // avec une convention générée (même total que son annexe).
+      const cvSt = st.convention && st.convention.status;
+      if (st.offer_frozen && (!cvSt || CV_ACTIVE[cvSt])) {
         box.appendChild($(`<div class="offre-box"><i data-lucide="lock"></i><div style="flex:1"><div style="font-weight:700">Offre commune figée${st.frozen_at ? " le " + esc(fmtShort(st.frozen_at)) : ""}</div>${fm.warning_two_members ? '<div class="small muted">À deux, le total révèle mécaniquement la part de l\'autre.</div>' : ""}</div>${st.total_offre_ht != null ? `<div class="offre-total">${esc(eurHT(st.total_offre_ht))}</div>` : ""}</div>`));
       }
       head.appendChild(box);
@@ -827,6 +831,9 @@
       btnSubmit.onclick = async () => {
         if (!(await confirmPartChange())) { msg.textContent = "Envoi annulé : la convention reste à jour."; return; }
         msg.textContent = "Envoi…"; if (!(await save())) return;
+        // L'enregistrement a pu rendre la convention caduque (part soumise repassée en brouillon) :
+        // la carte est rechargée tout de suite, même si l'envoi est ensuite annulé.
+        if (CV.data && CV.data.status !== "aucune") loadConvention();
         // Récapitulatif AVANT envoi : le partenaire relit ce qui entrera dans le pli déposé
         // à l'acheteur (ces éléments alimentent son DC1/DC2) — réduit les envois incomplets.
         const nRefs = refs.value.split("\n").map(s => s.trim()).filter(Boolean).length;
@@ -921,8 +928,17 @@
     // form : nom / qualité saisis dans « Donner mon accord », conservés si la carte est redessinée (même texte).
     const CV = { el: null, data: null, alertEl: null, form: null };
     // Compte Adjugo ouvert dans ce navigateur : joint aux appels de la convention (le serveur ne
-    // s'en sert que si c'est le compte qui a réclamé ce lien → niveau « compte vérifié »).
-    const authHeaders = (extra) => { const h = Object.assign({}, extra || {}); if (MY_TOKEN) h.Authorization = "Bearer " + MY_TOKEN; return h; };
+    // s'en sert que si c'est le compte qui a réclamé ce lien → niveau « compte vérifié »). Relu à
+    // CHAQUE appel : la personne a pu se connecter dans un autre onglet entre-temps.
+    const readMyToken = () => { try { return localStorage.getItem("adjugo_token") || null; } catch (e) { return null; } };
+    const authHeaders = (extra) => { const h = Object.assign({}, extra || {}); MY_TOKEN = readMyToken(); if (MY_TOKEN) h.Authorization = "Bearer " + MY_TOKEN; return h; };
+    // Connexion (ou déconnexion) faite dans un autre onglet : la carte est rechargée d'elle-même,
+    // sans recharger la page (« compte requis » se lève dès le retour sur cet onglet).
+    function cvTokenChanged() { if (readMyToken() !== MY_TOKEN && CV.el && CV.el.isConnected) loadConvention(); }
+    window.addEventListener("storage", (e) => { if (!e || e.key === null || e.key === "adjugo_token") cvTokenChanged(); });
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") cvTokenChanged(); });
+    // Sous-traitant : ni membre du groupement, ni appelé à valider la convention (rôle donné par l'API).
+    const isSousTraitant = () => String((DATA && DATA.invited && DATA.invited.role) || "").trim().toLowerCase().replace(/-/g, "_") === "sous_traitant";
     // Montant au format du texte de la convention : « 125 000 € HT » / « 125 000,50 € HT ».
     const eurHT = (n) => {
       if (n == null || n === "" || isNaN(Number(n))) return "—";
@@ -1038,8 +1054,9 @@
       const rows = Array.isArray(d.membres) ? d.membres : [];
       if (!rows.length) return null;
       const sec = $(`<div class="cv-sec"></div>`);
-      sec.appendChild($(`<h3 class="cv-sec-t">Répartition des parts${d.status === "perimee" && full ? " (ancienne version)" : ""}${tip(full
+      sec.appendChild($(`<h3 class="cv-sec-t">Répartition des parts${tip(full
         ? "L'annexe de répartition est la même pour tous les membres : chacun y voit le prix de vente de chaque part et le total. Les coûts et les marges n'y figurent pas et restent confidentiels."
+        : isSousTraitant() ? "Les membres du groupement et leur part. Les prix de vente n'apparaissent pas tant que la convention n'est pas générée. Les coûts et les marges n'y figurent jamais."
         : "Tant que la convention n'est pas générée, vous ne voyez que votre propre prix. Les coûts et les marges ne figurent jamais dans la convention.")}</h3>`));
       const t = $(`<table class="cv-tbl"><thead><tr><th scope="col">Entreprise</th><th scope="col">Rôle</th><th scope="col">Part</th><th scope="col" class="num">Prix de vente</th></tr></thead><tbody></tbody><tfoot></tfoot></table>`);
       const tb = t.tBodies[0];
@@ -1055,7 +1072,7 @@
       t.tFoot.appendChild($(`<tr><td class="cv-tot-l" colspan="3">Total de l'offre commune</td><td class="num${full ? "" : " muted"}" data-label="Total de l'offre commune">${esc(tot)}</td></tr>`));
       const wrap = document.createElement("div"); wrap.appendChild(t); sec.appendChild(wrap);
       const two = full ? !!d.warning_two_members : rows.length === 2;
-      if (!full) sec.appendChild(cvWarn("À la génération, chaque membre verra le prix de chaque part, le vôtre compris, et le total de l'offre." + (two ? " À deux membres, le total révèle à chacun la part de l'autre." : "")));
+      if (!full) { if (!isSousTraitant()) sec.appendChild(cvWarn("À la génération, chaque membre verra le prix de chaque part, le vôtre compris, et le total de l'offre." + (two ? " À deux membres, le total révèle à chacun la part de l'autre." : ""))); }
       else if (two) sec.appendChild(cvWarn("À deux membres, le total révèle à chacun la part de l'autre."));
       return sec;
     }
@@ -1135,9 +1152,9 @@
       box.appendChild($(`<h3 class="cv-sec-t">Donner mon accord${tip("Votre accord porte sur ce texte précis (son empreinte). Si le texte change, un nouvel accord vous sera demandé.")}</h3>`));
       if ((d.version || 0) > 1) box.appendChild($(`<div class="small" style="margin-top:4px">Nouvelle version n°<b>${esc(d.version)}</b> : le chef de file a régénéré la convention. Relisez-la avant de donner votre accord.</div>`));
       if (ms.compte_requis) {
-        box.appendChild($(`<div class="small" style="margin-top:8px">Ce dossier est rattaché à un compte Adjugo : connectez-vous avec ce compte pour donner votre accord.</div>`));
+        box.appendChild($(`<div class="small" style="margin-top:8px">Ce dossier est rattaché à un compte Adjugo : connectez-vous avec ce compte, puis revenez sur cette page pour donner votre accord.${tip("La connexion s'ouvre dans un nouvel onglet. Cette page se met à jour d'elle-même quand vous y revenez.")}</div>`));
         const acts = $(`<div class="cv-actions"></div>`);
-        acts.appendChild($(`<a class="btn sm primary" href="/app" target="_blank" rel="noopener"><i data-lucide="log-in"></i>Me connecter</a>`));
+        acts.appendChild($(`<a class="btn sm primary" href="/app?shared=${esc(encodeURIComponent(TOKEN))}" target="_blank" rel="noopener"><i data-lucide="log-in"></i>Me connecter</a>`));
         box.appendChild(acts); box.appendChild(live); box.appendChild(cvLegal(d)); sayFlash();
         return box;
       }
@@ -1230,9 +1247,10 @@
         el.appendChild($(`<p class="cv-lead">${esc(d.message || "Le chef de file n'a pas encore préparé la convention de groupement.")} Vous la retrouverez ici dès qu'elle sera prête.</p>`));
         return finish();
       }
-      if (st === "perimee") el.appendChild(cvWarn("La convention n'est plus à jour : une part, un prix ou la composition a changé. Le chef de file va la régénérer ; vous donnerez alors votre accord sur la nouvelle version."));
+      const sousT = isSousTraitant();
+      if (st === "perimee") el.appendChild(cvWarn("La convention n'est plus à jour : une part, un prix ou la composition a changé. Le chef de file va la régénérer" + (sousT ? "." : " ; vous donnerez alors votre accord sur la nouvelle version.")));
       if (st === "signee") el.appendChild($(`<div class="cv-ok-banner">${ico("check-circle-2", 16)}<span><b>Validée par tous les membres.</b> Le PDF reprend le texte et la liste des accords enregistrés.</span></div>`));
-      if (!full) el.appendChild($(`<p class="cv-lead">Le chef de file prépare la convention. Vous pourrez donner votre accord dès qu'il l'aura générée.</p>`));
+      if (!full) el.appendChild($(`<p class="cv-lead">${sousT ? "Vous intervenez en sous-traitance : vous n'êtes pas membre du groupement et n'avez pas à valider la convention." : "Le chef de file prépare la convention. Vous pourrez donner votre accord dès qu'il l'aura générée."}</p>`));
       else {
         const meta = $(`<div class="cv-meta"></div>`);
         meta.appendChild($(`<span>Version n°<b>${esc(d.version || 0)}</b></span>`));
@@ -1248,7 +1266,10 @@
       const legalInBox = st === "a_signer" && ms.peut_valider && ms.signataire && ms.status !== "signed";
       if (!legalInBox) el.appendChild(cvLegal(d));
       el.appendChild(cvForme(d));
-      const rep = cvRepartition(d, full); if (rep) el.appendChild(rep);
+      // Caduque : l'ancienne répartition est dans l'annexe de l'ancien texte (même empreinte). On
+      // ne la redessine pas à partir des données du moment, qui ont pu changer depuis (et n'ont
+      // jamais figuré dans une convention générée).
+      const rep = (st === "perimee" && full) ? null : cvRepartition(d, full); if (rep) el.appendChild(rep);
       const rg = cvRegles(d); if (rg) el.appendChild(rg);
       if (full) {
         const title = st === "perimee" ? "Relire l'ancien texte (version n°" + (d.version || 0) + ", plus à jour)" : "Lire le texte complet de la convention";
