@@ -917,6 +917,7 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
   .rn-suggest-a, .rn-suggest-a .btn { flex:1 1 auto; justify-content:center; }
   .rn-acts .btn { flex:1 1 auto; justify-content:center; }
   .rn-pm .ch .btn { flex:1 1 100%; justify-content:center; }
+}
 
 /* ── Journal vérifiable par chaque membre (co-traitance v2, vague 4) : invite.html et « Partagé avec moi » ── */
 .jv-acts { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; }
@@ -948,6 +949,8 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 
 /* ── Administration : profils du réseau à valider (identité de l'entreprise) ── */
 .adm-rv > * + * { margin-top:12px; }
+.adm-rv-h { gap:8px 10px; align-items:center; }
+.adm-rv-h > b { flex:1 1 220px; min-width:0; display:flex; align-items:center; flex-wrap:wrap; }
 .adm-rv-item { padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:var(--surface); min-width:0; }
 .adm-rv-item > * + * { margin-top:10px; }
 .adm-rv-dl { display:grid; grid-template-columns:minmax(120px,auto) minmax(0,1fr); gap:6px 14px; font-size:13px; line-height:1.45; }

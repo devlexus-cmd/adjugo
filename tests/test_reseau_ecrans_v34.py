@@ -143,6 +143,26 @@ console.log(JSON.stringify({ att: o.rnStatutPill("en_attente"), ref: o.rnStatutP
     assert r == {"att": "a_etudier", "ref": "no_go", "dem": "Demander la publication", "rep": "Publier mon profil"}
 
 
+def test_feuille_de_style_equilibree():
+    """Une accolade manquante (fin du bloc @media des écrans réseau) enfermait TOUTES les règles
+    suivantes (journal vérifiable, tableau de bord de la vague 4, administration) dans la
+    requête « écran de moins de 560 px » : sur ordinateur, ces écrans perdaient leur mise en page."""
+    from tests.test_reseau_ecrans import STATIC
+    css = re.sub(r"/\*.*?\*/", "", (STATIC / "styles.css").read_text(encoding="utf-8"), flags=re.S)
+    depth = 0
+    for i, ch in enumerate(css):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            assert depth >= 0, css[max(0, i - 120):i]
+    assert depth == 0
+    # Les règles du tableau de bord et de l'administration sont au premier niveau.
+    for sel in (".dash-steps {", ".jv-acts {", ".adm-rv-dl {"):
+        i = css.index(sel)
+        assert css[:i].count("{") == css[:i].count("}"), sel
+
+
 def test_administration_valider_ou_refuser_sous_node():
     adm = _between(HTML, "<section v-if=\"view==='admin'\">", "<!-- Mes groupements — hub central")
     for s in ("Profils du réseau à valider", "adminRvValider(it)", "adminRvRefuser(it)", "{{ it.compte.email }}",

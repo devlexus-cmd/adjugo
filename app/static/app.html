@@ -2053,7 +2053,7 @@
         <!-- Administration (visible aux seuls administrateurs) -->
         <section v-if="view==='admin'">
           <div class="card pad adm-rv" style="margin-bottom:14px" role="region" aria-labelledby="adm-rv-h">
-            <div class="row" style="gap:8px;align-items:center"><i data-lucide="user-check" style="color:var(--accent-text)"></i><b id="adm-rv-h" style="flex:1">Profils du réseau à valider<button v-if="admin.rv.explication" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ admin.rv.explication }}</span></button></b>
+            <div class="row wrap adm-rv-h"><b id="adm-rv-h"><i data-lucide="user-check" style="color:var(--accent-text);flex:none;margin-right:8px"></i>Profils du réseau à valider<button v-if="admin.rv.explication" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ admin.rv.explication }}</span></button></b>
               <span v-if="admin.rv.loaded" class="pill rn-pill-sm" :class="admin.rv.list.length?'a_etudier':'neutral'">{{ admin.rv.list.length }} en attente</span>
               <button type="button" class="btn sm" @click="adminRvLoad()" :disabled="admin.rv.loading"><span v-if="admin.rv.loading" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Actualiser</button></div>
             <div v-if="admin.rv.error" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ admin.rv.error }}</div></div>
