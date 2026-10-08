@@ -4,10 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Audit hebdomadaire des dépendances : une faille peut être publiée sans que le code bouge.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 jobs:
   tests:
     name: Tests (pytest)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,7 +20,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt pytest
+          cache-dependency-path: requirements.lock
+      # Même pile que l'image de production (lock + hachages ; pytest y est inclus).
+      - run: pip install --require-hashes -r requirements.lock
       - name: pytest
         run: pytest -q
         env:
@@ -24,6 +31,7 @@ jobs:
 
   a11y:
     name: Accessibilité (RGAA/WCAG 2.1 AA)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +39,8 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt
+          cache-dependency-path: requirements.lock
+      - run: pip install --require-hashes -r requirements.lock
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -47,3 +56,25 @@ jobs:
         run: node scripts/a11y_audit.cjs
         env:
           BASE_URL: http://127.0.0.1:8000
+
+  dependances:
+    name: Dépendances (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit==2.10.1
+      # Audite exactement les versions du lock (aucune installation, aucune résolution).
+      # Échoue sur toute faille connue, sauf les deux résiduels acceptés et documentés
+      # dans docs/DEPENDANCES.md (aucun correctif publié, non exploitables ici) :
+      #  - GHSA-3qf3-8w2g-rqmx (CVE-2026-85394, python-jose <= 3.5.0) : HS256 imposé,
+      #    secret symétrique, aucune clé publique en jeu ;
+      #  - GHSA-wj6h-64fc-37mp (CVE-2024-23342, ecdsa) : ecdsa n'est jamais chargé,
+      #    python-jose utilise cryptography.
+      - name: pip-audit (requirements.lock)
+        run: >-
+          pip-audit -r requirements.lock --require-hashes --disable-pip --strict
+          --ignore-vuln GHSA-3qf3-8w2g-rqmx
+          --ignore-vuln GHSA-wj6h-64fc-37mp
