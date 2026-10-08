@@ -622,7 +622,8 @@ class AuditLog(Base):
     meta = Column(JSON, nullable=True)
 
     # Chaînage cryptographique (tamper-evidence). entry_hash = sha256(prev_hash + payload) ;
-    # toute modification/suppression d'une entrée brise la chaîne et est détectable.
+    # une entrée modifiée ou retirée au milieu brise la chaîne ; la disparition des DERNIÈRES
+    # entrées n'est détectée que par l'ancrage quotidien (app/services/audit_anchor.py).
     prev_hash = Column(String(64), default="")
     entry_hash = Column(String(64), default="", index=True)
 

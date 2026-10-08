@@ -67,6 +67,125 @@ se faire passer pour un autre utilisateur. **À changer absolument.**
 - [ ] Backups Postgres activés.
 - [ ] Base en région UE (ou transfert documenté).
 
+### Chiffrement des sauvegardes par Adjugo (clé détenue hors de Railway)
+
+La sauvegarde quotidienne vers R2 est un export complet de la base. Sans réglage, elle est
+seulement chiffrée « au repos » par Cloudflare : quiconque obtient les identifiants R2 la lit.
+Avec `BACKUP_PUBLIC_KEY`, l'application la chiffre **avant l'envoi** (X25519 + AES-256-GCM,
+fichier `.json.gz.enc`). Railway ne détient que la clé **publique** : il sait chiffrer, pas
+relire. La clé **privée** ne sert qu'à restaurer et reste chez toi, hors ligne.
+
+> Si tu perds la clé privée **ou** son mot de passe, les sauvegardes chiffrées sont
+> définitivement illisibles, y compris pour toi. D'où les deux copies hors ligne ci-dessous.
+
+**1. Générer la paire (sur ton Mac, une seule fois)**
+
+```bash
+cd ~/ADJUGO/01_Code/adjugo-backend
+venv/bin/python scripts/backup_keygen.py            # fichier : ~/adjugo-cle-sauvegardes.txt
+```
+
+Le script demande un mot de passe (12 caractères minimum, une phrase de plusieurs mots est
+idéale), écrit la clé privée chiffrée par ce mot de passe (droits 600, 4 lignes de texte),
+vérifie qu'elle se relit, puis affiche la ligne `BACKUP_PUBLIC_KEY=…` et l'empreinte de la clé.
+
+**2. Ranger la clé privée hors ligne (avant d'activer)**
+
+- Gestionnaire de mots de passe : une fiche « Adjugo — clé des sauvegardes » avec le
+  **mot de passe** et le **contenu du fichier** (copier-coller des 4 lignes).
+- Copie physique rangée à part : impression papier du fichier **ou** clé USB. Le fichier seul
+  ne suffit pas à déchiffrer : il faut aussi le mot de passe, qui ne va jamais avec lui.
+- Jamais sur Railway, dans R2, dans le dépôt Git, ni dans un email.
+
+**3. Activer**
+
+1. Railway → service de l'API → *Variables* → `BACKUP_PUBLIC_KEY` = la ligne affichée
+   (forme une ligne ; la forme PEM est aussi acceptée). Redéploie.
+2. Vue Administration → « Sauvegarder maintenant » (ou `POST /api/admin/run-backup`
+   connecté en admin) : la sauvegarde la plus récente de la liste se termine par
+   `.json.gz.enc` (`GET /api/admin/backups` : le compteur `encrypted` augmente). Dans les logs, l'avertissement « sauvegarde non chiffrée par
+   l'application » ne doit plus apparaître.
+3. Les anciennes sauvegardes en clair disparaissent seules sous 14 jours (`BACKUP_KEEP`).
+   Pour qu'elles disparaissent tout de suite, supprime les `backups/*.json.gz` (sans `.enc`)
+   dans le tableau de bord R2.
+
+Sans `BACKUP_PUBLIC_KEY` (ou avec une valeur mal collée), la sauvegarde **continue en clair**
+comme avant, avec un avertissement dans les logs et dans la réponse de `run-backup` : elle
+n'est jamais bloquée.
+
+**4. Tester la restauration (à faire dès l'activation, puis une fois par trimestre)**
+
+1. Cloudflare → R2 → bucket → dossier `backups/` → télécharge le dernier `.json.gz.enc`.
+2. Déchiffre-le (mot de passe demandé au clavier) :
+   ```bash
+   venv/bin/python scripts/backup_decrypt.py ~/Downloads/adjugo-AAAAMMJJ-HHMMSS.json.gz.enc
+   ```
+   Attendu : « Contenu relu : sauvegarde du …, N tables, M lignes ». Une autre clé, un mauvais
+   mot de passe, un fichier modifié ou tronqué sont refusés, sans fichier partiel.
+3. Restauration complète dans une base jetable (jamais la production) :
+   ```bash
+   DATABASE_URL=sqlite:///./restauration_test.db venv/bin/python -c "
+   import app.main
+   from app.core.database import SessionLocal
+   from app.services.backup import restore_backup
+   print(restore_backup(open('$HOME/Downloads/adjugo-AAAAMMJJ-HHMMSS.json.gz','rb').read(), SessionLocal()))"
+   ```
+   Attendu : `{'ok': True, 'tables': N, 'rows': M}`. Supprime ensuite `restauration_test.db`
+   et le `.json.gz` déchiffré (il est en clair).
+
+**Changer de clé** : génère une nouvelle paire (`--sortie` vers un autre fichier), remplace
+`BACKUP_PUBLIC_KEY`, et garde l'ancienne clé privée 14 jours de plus (les anciennes
+sauvegardes restent chiffrées avec elle ; l'empreinte affichée par le script de
+déchiffrement dit laquelle il faut).
+
+- [ ] Paire générée, clé privée + mot de passe dans le gestionnaire, copie papier ou USB.
+- [ ] `BACKUP_PUBLIC_KEY` posée, dernière sauvegarde en `.json.gz.enc`.
+- [ ] Test de restauration réussi (étape 4).
+
+### Ancrage quotidien du journal d'audit
+
+Le journal d'audit est chaîné par hachage : une entrée modifiée ou retirée au milieu est
+détectée. Mais supprimer les **dernières** entrées laisse une chaîne valide. Le cron
+`POST /api/admin/run-audit-anchor` relève chaque jour la dernière entrée de chaque chaîne,
+en fait une empreinte unique horodatée par une autorité indépendante (RFC 3161, freetsa.org
+par défaut), et la dépose dans R2 sous `anchors/AAAA-MM-JJ.json`. Le contrôle d'intégrité
+(`GET /api/audit/integrity`, journal des partenaires) compare ensuite le journal au dernier
+ancrage : « des entrées antérieures au … ont disparu » si une entrée ancrée manque.
+Un effacement de compte (RGPD) et la réinitialisation du compte démo ne sont jamais signalés.
+
+Variables (facultatives) :
+
+| Variable | Rôle |
+|---|---|
+| `ANCHOR_TSA_URL` | autorité d'horodatage (défaut `https://freetsa.org/tsr`). Vide = ancrage sans horodatage. |
+| `ANCHOR_EMAIL` | adresse qui reçoit chaque jour l'empreinte et la date : copie hors de l'infrastructure Adjugo. Recommandé : ta propre adresse, avec un filtre qui classe ces emails. |
+
+Si l'autorité ne répond pas (délai borné à quelques secondes), l'ancrage est enregistré quand
+même, sans jeton, avec la raison dans `tsa.error` : le cron ne tombe jamais en échec.
+
+**Vérifier un ancrage hors ligne** (preuve opposable, sans faire confiance au serveur) :
+
+1. Télécharge `anchors/AAAA-MM-JJ.json` (et la veille) depuis R2, et les certificats de
+   l'autorité `cacert.pem` et `tsa.crt` depuis https://freetsa.org/files/ (HTTPS).
+2. Contrôle de cohérence + chaînage des ancrages + engagement reçu par email :
+   ```bash
+   venv/bin/python scripts/anchor_verify.py 2026-10-07.json 2026-10-08.json --engagement <reçu par email>
+   ```
+   Le script écrit le jeton `2026-10-08.tsr` et affiche la commande exacte de vérification :
+   ```bash
+   openssl ts -verify -digest <engagement> -in 2026-10-08.tsr -CAfile cacert.pem -untrusted tsa.crt
+   ```
+   Attendu : `Verification: OK`. Une empreinte différente donne `message imprint mismatch`.
+
+**Après une restauration de sauvegarde** : les entrées écrites après la sauvegarde ont
+réellement disparu, et le contrôle d'intégrité le signalera (à juste titre). Une fois
+l'incident documenté, déplace dans R2 les ancrages postérieurs à la sauvegarde restaurée
+vers un dossier `anchors-archive/` (conservés comme preuve, mais plus utilisés pour comparer).
+
+- [ ] Cron quotidien `run-audit-anchor` créé (voir P0-5), premier appel : `"ok": true`,
+      `"timestamped": true`.
+- [ ] `ANCHOR_EMAIL` posée et premier email reçu.
+
 ---
 
 ## 🟠 P0-4 — Emails (Brevo) + authentification DNS
@@ -125,6 +244,7 @@ amont et la sauvegarde R2 tournent seules dans l'application ; les autres non :
 | quotidien | `POST /api/admin/run-tender-alerts` | veille AO (recherches sauvegardées) |
 | quotidien | `POST /api/admin/run-cotraitance-reminders` | relances partenaires J-3 / J-1 |
 | quotidien | `POST /api/admin/run-trash-purge` | **vide la corbeille** : documents supprimés depuis plus de 30 jours (ligne + fichier + anciennes versions). Sans ce cron, la corbeille n'est **jamais** purgée (promesse RGPD non tenue). |
+| quotidien | `POST /api/admin/run-audit-anchor` | **ancre le journal d'audit** : empreinte du jour horodatée par une autorité indépendante (`anchors/AAAA-MM-JJ.json` dans R2, + email si `ANCHOR_EMAIL`). Sans ce cron, la suppression des dernières entrées du journal reste indétectable. Idempotent dans la journée. |
 
 ```bash
 curl -fsS -X POST https://adjugo-api-production.up.railway.app/api/admin/run-trash-purge \
@@ -200,6 +320,13 @@ S3_BUCKET=adjugo-documents
 S3_REGION=auto
 AWS_ACCESS_KEY_ID=<R2 access key>
 AWS_SECRET_ACCESS_KEY=<R2 secret>
+
+# Chiffrement des sauvegardes (P0-3) — clé PUBLIQUE, affichée par scripts/backup_keygen.py
+BACKUP_PUBLIC_KEY=<ligne MCowBQYDK2VuAyEA…>
+
+# Ancrage du journal d'audit (P0-3) — facultatif
+ANCHOR_EMAIL=<ton adresse>
+# ANCHOR_TSA_URL=https://freetsa.org/tsr   (défaut)
 
 # Email Brevo (P0)
 SMTP_HOST=smtp-relay.brevo.com
