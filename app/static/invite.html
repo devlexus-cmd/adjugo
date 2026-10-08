@@ -51,6 +51,7 @@
     .cv-hash { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; padding:1px 6px; border-radius:6px; background:var(--surface-3,#eef0f3); color:var(--text,#16181d); }
     .cv-hashfull { display:block; margin-top:6px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11.5px; word-break:break-all; opacity:.85; }
     .cv-fact { margin-top:12px; }
+    .cv-rules { grid-template-columns:minmax(0,2fr) minmax(0,3fr); font-size:13px; }
     .cv-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
     .cv-tbl th { text-align:left; font-weight:600; color:var(--text-2,#4b5563); padding:7px 8px; border-bottom:1px solid var(--border,#e6e8ec); }
     .cv-tbl td { padding:7px 8px; border-bottom:1px solid var(--hairline,#eef0f3); vertical-align:top; }
@@ -102,7 +103,7 @@
     ol.cv-steps { list-style:none; padding:0 0 4px; margin:8px 0 4px; }
     @media (max-width:640px){
       ol.cv-steps .gs { min-width:0; padding-left:2px; padding-right:2px; font-size:10.5px; line-height:1.3; -webkit-hyphens:auto; hyphens:auto; }
-      .cv-form { grid-template-columns:1fr; }
+      .cv-form, .cv-rules { grid-template-columns:1fr; }
       .cv-tbl thead { display:none; }
       .cv-tbl, .cv-tbl tbody, .cv-tbl tfoot, .cv-tbl tr, .cv-tbl td { display:block; width:100%; }
       .cv-tbl tr { padding:6px 0; border-bottom:1px solid var(--hairline,#eef0f3); }
@@ -239,11 +240,14 @@
         ov.style.cssText = "position:fixed;inset:0;background:rgba(17,24,39,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px";
         const box = document.createElement("div");
         box.style.cssText = "background:var(--card,#fff);border-radius:14px;max-width:440px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3)";
-        box.innerHTML = `<div style="font-size:16px;font-weight:800;margin-bottom:8px">${esc(title || "")}</div><div class="small" style="color:var(--text-2,#4b5563);line-height:1.5">${bodyHtml || ""}</div>`;
+        // Vraie boîte de dialogue pour les lecteurs d'écran (titre annoncé, Échap pour fermer).
+        const uid = "mdl" + Math.random().toString(36).slice(2, 9);
+        box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true"); box.setAttribute("aria-labelledby", uid + "-t");
+        box.innerHTML = `<div id="${uid}-t" style="font-size:16px;font-weight:800;margin-bottom:8px">${esc(title || "")}</div><div class="small" style="color:var(--text-2,#4b5563);line-height:1.5">${bodyHtml || ""}</div>`;
         let input = null;
         if (withInput) {
-          if (inputLabel) box.appendChild($(`<label class="small" style="display:block;font-weight:600;margin:12px 0 4px">${esc(inputLabel)}</label>`));
-          input = document.createElement("input"); input.className = "inp"; input.style.cssText = "width:100%;font-size:18px;letter-spacing:3px;text-align:center";
+          if (inputLabel) box.appendChild($(`<label class="small" for="${uid}-i" style="display:block;font-weight:600;margin:12px 0 4px">${esc(inputLabel)}</label>`));
+          input = document.createElement("input"); input.id = uid + "-i"; input.className = "inp"; input.style.cssText = "width:100%;font-size:18px;letter-spacing:3px;text-align:center";
           input.inputMode = "numeric"; input.autocomplete = "one-time-code"; input.maxLength = 6; input.placeholder = "••••••";
           box.appendChild(input);
         }
@@ -257,7 +261,9 @@
         if (extraLabel) { extraBtn = $(`<button class="btn" style="margin-right:auto">${esc(extraLabel)}</button>`); bar.appendChild(extraBtn); }
         bar.appendChild(cancel); bar.appendChild(ok); box.appendChild(bar);
         ov.appendChild(box); document.body.appendChild(ov); icons();
-        const close = (val) => { ov.remove(); resolve(val); };
+        const prevFocus = document.activeElement;
+        const close = (val) => { ov.remove(); try { if (prevFocus && prevFocus.isConnected && prevFocus.focus) prevFocus.focus({ preventScroll: true }); } catch (e) {} resolve(val); };
+        ov.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); close(null); } });
         cancel.onclick = () => close(null);
         ok.onclick = () => close(withInput ? { value: (input.value || "").trim() } : true);
         if (extraBtn) extraBtn.onclick = () => close({ extra: true });
@@ -299,8 +305,11 @@
     const SOON_STEPS = { convention_a_signer: 1, pret_a_deposer: 1 };
     const ROLE_LABEL = { cotraitant: "partenaire", sous_traitant: "sous-traitant", mandataire: "mandataire" };
     const MEMBER_STATUS = { invited: ["invité", "pill neutral"], draft: ["brouillon", "pill neutral"], submitted: ["part soumise", "pill go"] };
-    const fmtShort = (s) => { if (!s) return ""; try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch (e) { return s; } };
-    const fmtDT = (s) => { if (!s) return ""; try { const d = new Date(s); return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } };
+    // Horodatages de l'API : UTC « naïf » (sans fuseau, ex. 2026-10-08T01:30:11) → lus comme UTC,
+    // affichés à l'heure locale. Une date seule (2026-11-07) ou déjà datée d'un fuseau reste telle quelle.
+    const apiDate = (s) => new Date(typeof s === "string" && /T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s) ? s + "Z" : s);
+    const fmtShort = (s) => { if (!s) return ""; try { return apiDate(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch (e) { return s; } };
+    const fmtDT = (s) => { if (!s) return ""; try { const d = apiDate(s); return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } };
     // Stepper 1→5 (vague 2) : étapes du parcours dérivées par le serveur (fait / en cours / à faire).
     const ETAPE_SR = { fait: "fait", en_cours: "en cours", a_faire: "à venir" };
     function renderEtapes(st, etapes) {
@@ -594,7 +603,9 @@
           PIECE_TYPES.forEach(([k, l]) => sel.appendChild($(`<option value="${k}">${esc(l)}</option>`)));
           sel.value = PIECE_LABEL[pc.piece_type] ? pc.piece_type : "autre";
           const dt = document.createElement("input"); dt.type = "date"; dt.className = "inp"; dt.value = pc.expiration_date || ""; dt.setAttribute("aria-label", "Date de validité de la pièce " + (pc.name || ""));
+          const sel0 = PIECE_LABEL[pc.piece_type] ? pc.piece_type : "autre", dt0 = pc.expiration_date || "";
           const patch = async (body) => {
+            if (!(await confirmPartChange())) { sel.value = sel0; dt.value = dt0; upMsg.textContent = "Modification annulée : la convention reste à jour."; return; }
             upMsg.textContent = "Mise à jour…";
             const r = await fetch(pieceUrl + "/" + pc.id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
             if (r && r.ok) { okMsg(upMsg, "Pièce mise à jour"); reloadPieces(); }
@@ -608,7 +619,7 @@
           const acts = document.createElement("div"); acts.className = "row"; acts.style.gap = "6px";
           acts.appendChild($(`<a class="btn sm" href="${pieceUrl}/${encodeURIComponent(pc.id)}">Voir</a>`));
           const rm = $(`<button class="btn sm">Retirer</button>`);
-          rm.onclick = async () => { rm.disabled = true; await fetch(pieceUrl + "/" + pc.id, { method: "DELETE" }); reloadPieces(); };
+          rm.onclick = async () => { if (!(await confirmPartChange())) { upMsg.textContent = "Retrait annulé : la convention reste à jour."; return; } rm.disabled = true; await fetch(pieceUrl + "/" + pc.id, { method: "DELETE" }); reloadPieces(); };
           acts.appendChild(rm); row.appendChild(acts); piecesList.appendChild(row);
         });
         if (!pieces || !pieces.length) piecesList.appendChild($(`<div class="muted small">Aucune pièce déposée.</div>`));
@@ -616,7 +627,9 @@
       async function reloadPieces() { const c = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/contribution").then(r => r.ok ? r.json() : null).catch(() => null); renderPieces(c ? c.pieces : []); if (c) { renderChecklist(c.pieces_checklist); curVer = c.version || curVer; setStatus(c.status); } reloadCoffre(); if (cvPartLocksConvention()) loadConvention(); }
       addBtn.onclick = () => fileIn.click();
       fileIn.onchange = async () => {
-        if (!fileIn.files.length) return; upMsg.textContent = "Envoi…";
+        if (!fileIn.files.length) return;
+        if (!(await confirmPartChange())) { fileIn.value = ""; upMsg.textContent = "Ajout annulé : la convention reste à jour."; return; }
+        upMsg.textContent = "Envoi…";
         const fd = new FormData(); fd.append("file", fileIn.files[0]);
         if (typeSel.value) fd.append("piece_type", typeSel.value);
         if (expIn.value) fd.append("expiration_date", expIn.value);
@@ -634,7 +647,7 @@
       const declineWrap = $(`<div style="margin-top:14px;text-align:right"></div>`);
       const btnDecline = $(`<button class="g-link" type="button">Décliner l'invitation</button>`);
       btnDecline.onclick = async () => {
-        const ok = await openModal({ title: "Décliner l'invitation ?", bodyHtml: "Vous ne ferez plus partie de ce groupement ; le mandataire sera prévenu. Ce lien ne fonctionnera plus ensuite.", confirmLabel: "Décliner l'invitation", cancelLabel: "Annuler" });
+        const ok = await openModal({ title: "Décliner l'invitation ?", bodyHtml: "Vous ne ferez plus partie de ce groupement ; le mandataire sera prévenu. Ce lien ne fonctionnera plus ensuite." + (cvPartLocksConvention() ? " La convention de groupement <b>ne sera plus à jour</b> : le chef de file devra la régénérer." : ""), confirmLabel: "Décliner l'invitation", cancelLabel: "Annuler" });
         if (!ok) return;
         btnDecline.disabled = true;
         const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/decline", { method: "POST" }).catch(() => null);
@@ -904,7 +917,9 @@
     const CV_PILL = { aucune: "neutral", draft: "neutral", a_signer: "st-envoye", signee: "go", perimee: "a_etudier" };
     const SIG_PILL = { signed: "go", hors_ligne: "go", pending: "neutral", perimee: "neutral" };
     const CV_LEGAL_DEFAULT = "Modèle à faire relire par un conseil (avocat, juriste, CCI) : ce n'est pas un conseil juridique.";
-    const CV = { el: null, data: null, alertEl: null };
+    const CV_ID_EMAIL = "accord enregistré via le lien, adresse email vérifiée par code";   // identity_label « email_verifie » (contrat §2)
+    // form : nom / qualité saisis dans « Donner mon accord », conservés si la carte est redessinée (même texte).
+    const CV = { el: null, data: null, alertEl: null, form: null };
     // Compte Adjugo ouvert dans ce navigateur : joint aux appels de la convention (le serveur ne
     // s'en sert que si c'est le compte qui a réclamé ce lien → niveau « compte vérifié »).
     const authHeaders = (extra) => { const h = Object.assign({}, extra || {}); if (MY_TOKEN) h.Authorization = "Bearer " + MY_TOKEN; return h; };
@@ -920,8 +935,8 @@
     // ── Rendu sûr du Markdown simple de la convention ──
     // Les valeurs saisies y sont échappées (\* \_ \` \\ \# \[ \]) : on les protège d'abord (caractères
     // privés), on applique **gras** / *italique*, puis on les restitue en texte littéral.
-    const mdProtect = (s) => String(s == null ? "" : s).replace(/[-]/g, "").replace(/\\([\\*_`#\[\]])/g, (m, c) => String.fromCharCode(0xE000 + c.charCodeAt(0)));
-    const mdRestore = (s) => String(s).replace(/[-]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xE000));
+    const mdProtect = (s) => String(s == null ? "" : s).replace(/[\uE000-\uE0FF]/g, "").replace(/\\([\\*_`#\[\]])/g, (m, c) => String.fromCharCode(0xE000 + c.charCodeAt(0)));
+    const mdRestore = (s) => String(s).replace(/[\uE000-\uE0FF]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xE000));
     function mdInline(parent, s) {
       String(s).split(/(\*\*[^*\n]+?\*\*|\*[^*\n]+?\*)/g).forEach(part => {
         if (!part) return;
@@ -1011,7 +1026,7 @@
       }
       if (params.length) {
         box.appendChild($(`<b style="display:block;margin-top:12px">Règles du groupement</b>`));
-        const dl = $(`<dl class="g-fact" style="margin-top:6px"></dl>`);
+        const dl = $(`<dl class="g-fact cv-rules" style="margin-top:6px"></dl>`);
         params.forEach(p => { dl.appendChild($(`<dt>${esc(p.libelle || p.key || "")}</dt>`)); dl.appendChild($(`<dd>${esc(p.valeur_libelle || "—")}</dd>`)); });
         box.appendChild(dl);
       }
@@ -1023,7 +1038,7 @@
       const rows = Array.isArray(d.membres) ? d.membres : [];
       if (!rows.length) return null;
       const sec = $(`<div class="cv-sec"></div>`);
-      sec.appendChild($(`<h3 class="cv-sec-t">Répartition des parts${tip(full
+      sec.appendChild($(`<h3 class="cv-sec-t">Répartition des parts${d.status === "perimee" && full ? " (ancienne version)" : ""}${tip(full
         ? "L'annexe de répartition est la même pour tous les membres : chacun y voit le prix de vente de chaque part et le total. Les coûts et les marges n'y figurent pas et restent confidentiels."
         : "Tant que la convention n'est pas générée, vous ne voyez que votre propre prix. Les coûts et les marges ne figurent jamais dans la convention.")}</h3>`));
       const t = $(`<table class="cv-tbl"><thead><tr><th scope="col">Entreprise</th><th scope="col">Rôle</th><th scope="col">Part</th><th scope="col" class="num">Prix de vente</th></tr></thead><tbody></tbody><tfoot></tfoot></table>`);
@@ -1127,11 +1142,14 @@
         return box;
       }
       const uid = "cv" + (d.version || 0);
+      const keep = (CV.form && CV.form.hash === d.content_hash) ? CV.form : null;
       const form = $(`<div class="cv-form"></div>`);
       const nW = $(`<div><label for="${uid}-nom">Nom et prénom de la personne qui donne l'accord</label></div>`);
-      const nIn = inp("ex. Jean Le Gall", ms.signataire_nom); nIn.id = uid + "-nom"; nIn.autocomplete = "name"; nIn.maxLength = 255; nW.appendChild(nIn);
+      const nIn = inp("ex. Jean Le Gall", keep ? keep.nom : ms.signataire_nom); nIn.id = uid + "-nom"; nIn.autocomplete = "name"; nIn.maxLength = 255; nW.appendChild(nIn);
       const qW = $(`<div><label for="${uid}-qual">Qualité</label></div>`);
-      const qIn = inp("ex. Gérant, Présidente", ms.signataire_qualite); qIn.id = uid + "-qual"; qIn.autocomplete = "organization-title"; qIn.maxLength = 120; qW.appendChild(qIn);
+      const qIn = inp("ex. Gérant, Présidente", keep ? keep.qual : ms.signataire_qualite); qIn.id = uid + "-qual"; qIn.autocomplete = "organization-title"; qIn.maxLength = 120; qW.appendChild(qIn);
+      const remember = () => { CV.form = { hash: d.content_hash, nom: nIn.value, qual: qIn.value }; };
+      nIn.addEventListener("input", remember); qIn.addEventListener("input", remember);
       form.appendChild(nW); form.appendChild(qW); box.appendChild(form);
       const chkW = $(`<label class="cv-check" for="${uid}-ok"><input type="checkbox" id="${uid}-ok"><span>J'ai lu la convention et je donne mon accord</span></label>`);
       const chk = chkW.querySelector("input");
@@ -1140,7 +1158,9 @@
       const btn = $(`<button class="btn primary" type="button"><i data-lucide="check"></i>Donner mon accord</button>`);
       acts.appendChild(btn); box.appendChild(acts); box.appendChild(live);
       // Ce qui sera imprimé dans le PDF, la nature de l'accord, l'avertissement : visibles ici.
-      box.appendChild($(`<div class="cv-note">${ico("fingerprint", 14)}<span>Niveau d'identité imprimé dans le PDF : <b>${esc(ms.identite_libelle || "")}</b>.${ms.verification_requise ? " Un code à 6 chiffres vous sera d'abord envoyé par email pour vérifier votre adresse." : ""}</span></div>`));
+      // Code exigé : l'accord ne peut être donné qu'après vérification → niveau « email vérifié ».
+      const idLab = ms.verification_requise ? CV_ID_EMAIL : (ms.identite_libelle || "");
+      box.appendChild($(`<div class="cv-note">${ico("fingerprint", 14)}<span>Niveau d'identité imprimé dans le PDF : <b>${esc(idLab)}</b>.${ms.verification_requise ? " Vous recevrez d'abord un code à 6 chiffres par email pour vérifier votre adresse." : ""}</span></div>`));
       if (d.nature_accord) box.appendChild($(`<div class="cv-note">${ico("stamp", 14)}<span>${esc(d.nature_accord)}</span></div>`));
       box.appendChild(cvLegal(d)); sayFlash();
       btn.onclick = async () => {
@@ -1182,6 +1202,7 @@
       const el = CV.el; if (!el || !el.isConnected) return;
       CV.data = d;
       const openKeys = Array.from(el.querySelectorAll("details[open]")).map(x => x.dataset.k);
+      const textShown = el.dataset.cvText || "";   // version du texte déjà affichée (repli choisi par la personne respecté)
       el.innerHTML = "";
       const st = d.status || "aucune", ms = d.ma_signature || {};
       const full = !!d.content_md && (!!CV_ACTIVE[st] || st === "perimee");
@@ -1199,6 +1220,8 @@
         el.appendChild(cardMsg);
         if (flash && !flash.shown) { cardMsg.classList.toggle("err", !!flash.err); cardMsg.textContent = flash.text || ""; }
         el.querySelectorAll("details").forEach(x => { if (openKeys.indexOf(x.dataset.k) >= 0) x.open = true; });
+        const tx = el.querySelector('details[data-k="texte"]');
+        if (tx) { const v = String(d.version || 0); if (textShown !== v && ms.peut_valider) tx.open = true; el.dataset.cvText = v; }
         icons(); syncConvAlert(); syncContribWarn();
         if (flash && flash.focus) { const t = el.querySelector("#cv-accord .cv-okline") || el.querySelector("#cv-title"); if (t) t.focus(); }
       };
@@ -1277,7 +1300,7 @@
     function syncContribWarn() {
       const w = document.getElementById("cv-contrib-warn"); if (!w) return;
       w.innerHTML = "";
-      if (cvPartLocksConvention()) { w.appendChild(cvWarn("La convention est générée : si vous modifiez votre part (enregistrement, pièce ajoutée ou retirée), elle ne sera plus à jour. Le chef de file devra la régénérer et chaque membre redonner son accord.")); icons(); }
+      if (cvPartLocksConvention()) { w.appendChild(cvWarn("La convention est générée : si vous modifiez votre part (enregistrement, pièce ajoutée, modifiée ou retirée), elle ne sera plus à jour. Le chef de file devra la régénérer et chaque membre redonner son accord.")); icons(); }
     }
     async function confirmPartChange() {
       if (!cvPartLocksConvention()) return true;
