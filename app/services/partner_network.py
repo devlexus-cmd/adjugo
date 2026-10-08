@@ -924,9 +924,12 @@ def notify_admins_validation(p) -> bool:
             return False
         _ADMIN_NOTIFY["n"] += 1
         _ADMIN_NOTIFY["last"][p.id] = now
-    subj = f"Réseau Adjugo : profil à valider — {(p.name or 'entreprise')[:60]}"
+    # Nom saisi par l'entreprise : une ligne, sans caractère de contrôle (un saut de ligne dans
+    # l'objet faisait échouer l'envoi SMTP, et l'email ne partait pas).
+    nom = re.sub(r"[\x00-\x1f\x7f]+", " ", p.name or "").strip()
+    subj = f"Réseau Adjugo : profil à valider — {(nom or 'entreprise')[:60]}"
     text = ("Bonjour,\n\nUne entreprise demande la publication de son profil partenaire sur le réseau Adjugo.\n\n"
-            f"Nom : {p.name or 'non renseigné'}\nSIREN : {p.siren or 'non renseigné'}\n\n"
+            f"Nom : {nom[:255] or 'non renseigné'}\nSIREN : {p.siren or 'non renseigné'}\n\n"
             "Vérifiez que le compte représente bien cette entreprise, puis validez ou refusez la demande "
             "dans Adjugo > Administration > Profils du réseau à valider.\n\n— Adjugo")
     _send_async([(to, subj, text) for to in admin_recipients()])

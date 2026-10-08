@@ -562,6 +562,17 @@ def test_invitations_recues_seul_le_proprietaire_peut_accepter(client, reg, mail
     assert b["email"] not in json.dumps(other)
 
 
+def test_notification_admin_objet_sur_une_ligne(client, reg):
+    """Un saut de ligne dans le nom de l'entreprise ne doit jamais casser l'objet de l'email
+    envoyé à l'équipe Adjugo (l'envoi SMTP échouait, la demande restait sans notification)."""
+    o = _org(client, "Ligne\r\nCc: x@y.fr")
+    _demande(client, reg, o)
+    assert reg.admin_mails
+    for _to, subj, text in reg.admin_mails:
+        assert "\n" not in subj and "\r" not in subj
+        assert "ligne cc: x@y.fr" in subj.lower()
+
+
 def test_badge_identite_validee_par_adjugo_date_et_retire_au_changement_de_siret(client, reg):
     """« Trouvez des partenaires vérifiés » : la fiche dit QUI a vérifié l'identité et QUAND
     (décision de l'administrateur Adjugo), jamais supposé ; un SIRET modifié le retire."""
