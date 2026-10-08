@@ -1556,6 +1556,9 @@ const __adjApp = createApp({
       return m[a.action] || a.action;
     },
     auditWhen(s) { if (!s) return ""; try { return new Date(s).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } },
+    // Horodatage du journal (audit_logs.created_at) : UTC « naïf » côté serveur → lu comme UTC,
+    // affiché à l'heure locale (sinon décalé d'une ou deux heures par rapport à « Vérifié le … »).
+    auditAt(s) { return s ? this.auditWhen(_isoUtc(s)) : ""; },
     verifWhen(c) { const s = (c && (c.freshness_date || (c.provenance && c.provenance.fetched_at))) || ""; if (!s) return ""; try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch (e) { return String(s).slice(0, 10); } },
     async aoLoadDocs() {
       try { const r = await this.api("GET", "/api/projects/" + this.ao.project.id + "/documents"); this.ao.documents = r.folders || []; } catch (e) {}
@@ -2147,7 +2150,8 @@ const __adjApp = createApp({
     depotShown() {
       const st = this.ao.grp.state; if (!st || !this.convVisible()) return false;
       const cv = this.ao.conv.d && this.ao.conv.d.status;
-      return (Number(st.etape) || 1) >= 3 || (!!cv && cv !== "aucune") || st.state === "depose" || !!(this.ao.depot.d && this.ao.depot.d.depose);
+      // Dès qu'un partenaire est invité (état « invitation » et au-delà) ou qu'une convention existe.
+      return (Number(st.index) || 0) >= 3 || (Number(st.etape) || 1) >= 3 || (!!cv && cv !== "aucune") || st.state === "depose" || !!(this.ao.depot.d && this.ao.depot.d.depose);
     },
     aoDepotLoadSoon() {
       clearTimeout(this._depotT);
@@ -2180,8 +2184,8 @@ const __adjApp = createApp({
         { key: "parts_soumises", label: "Parts de tous les partenaires soumises, avec leur prix de vente", cta: relance ? "Relancer les partenaires" : "Voir les parts", icon: relance ? "send" : "users-round", action: () => relance ? this.aoRelanceRetardataires() : this.aoConvShowCoffre() },
         { key: "attestations_ok", label: "Attestations de tous les membres valides à la date limite", cta: "Voir les attestations", icon: "folder-lock", action: () => this.aoConvShowCoffre() },
         Object.assign({ key: "convention_signee", label: "Convention validée par tous les membres" }, conv),
-        generated ? { key: "cerfa_generes", label: "Formulaires officiels préparés après la convention", codes: "DC1, DC2, ATTRI1", cta: "Préparer mes documents", icon: "file-text", action: () => this.aoConvPrepareDocs() }
-                  : { key: "cerfa_generes", label: "Formulaires officiels préparés après la convention", codes: "DC1, DC2, ATTRI1", wait: "Après la convention" },
+        generated ? { key: "cerfa_generes", label: "Formulaires officiels (DC1, DC2, ATTRI1) préparés après la convention", cta: "Préparer mes documents", icon: "file-text", action: () => this.aoConvPrepareDocs() }
+                  : { key: "cerfa_generes", label: "Formulaires officiels (DC1, DC2, ATTRI1) préparés après la convention", wait: "Après la convention" },
       ].filter(k => k.key in ch).map(k => Object.assign(k, { label: lib[k.key] || k.label, ok: !!ch[k.key], manques: man.filter(m => this._convPretGroup(m) === k.key) }));
     },
     convPretRest() {   // manques qui ne se rangent sous aucun contrôle encore à faire (jamais masqués)

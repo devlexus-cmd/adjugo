@@ -118,6 +118,10 @@
     }
     /* ── Vague 4 : journal vérifiable par le membre + DPGF de lot — styles locaux à cette page ── */
     /* .jv-acts / .jv (verdict du journal) : styles partagés dans styles.css */
+    /* Les bulles (i) masquées restent dans le calcul du défilement : sans ceci, la zone de travail
+       défilait horizontalement (bulles de la convention près du bord droit). Les bulles visibles
+       sont recadrées dans l'écran par fitTip(). */
+    .work { overflow-x:hidden; }
     .dp-share { display:grid; gap:6px; margin-top:12px; font-size:12.5px; color:var(--text-2,#4b5563); }
     .dp-share > div { display:flex; gap:7px; align-items:flex-start; line-height:1.45; }
     .dp-share b { color:var(--text,#16181d); font-weight:600; }
@@ -136,8 +140,12 @@
     .dp-acts { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:16px; }
     .dp-prev { max-height:42vh; overflow:auto; margin-top:10px; border:1px solid var(--border,#e6e8ec); border-radius:8px; background:var(--surface,#fff); }
     .dp-prev:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring,rgba(27,79,255,.26)); }
-    .dp-prev table { border-collapse:collapse; font-size:11.5px; }
-    .dp-prev td { padding:4px 8px; border-bottom:1px solid var(--hairline,#eef0f3); white-space:nowrap; color:var(--text,#16181d); }
+    .dp-prev table { border-collapse:collapse; font-size:11.5px; width:100%; }
+    .dp-prev th { padding:5px 8px; border-bottom:1px solid var(--border,#e6e8ec); text-align:left; font-weight:600; color:var(--text-2,#4b5563); white-space:nowrap; }
+    .dp-prev td { padding:4px 8px; border-bottom:1px solid var(--hairline,#eef0f3); white-space:nowrap; color:var(--text,#16181d); vertical-align:top; }
+    .dp-prev .num { text-align:right; font-variant-numeric:tabular-nums; }
+    .dp-prev td.des { white-space:normal; min-width:140px; }
+    .dp-card { scroll-margin-top:84px; }
     @media (max-width:640px){
       .dp-head { display:none; }
       .dp-row { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px 10px; padding:12px 0; }
@@ -145,7 +153,17 @@
       .dp-lab { display:block; margin-bottom:3px; font-size:11px; font-weight:600; color:var(--text-2,#4b5563); }
       .dp-amt { text-align:left; align-self:end; padding-bottom:7px; }
       .dp-amt .dp-lab { margin-bottom:5px; }
-      .dp-del { grid-column:1 / -1; justify-self:start; width:auto; padding:0 10px; gap:6px; }
+      .dp-row .btn.dp-del { grid-column:1 / -1; justify-self:start; width:auto; min-width:0; padding:0 10px; gap:6px; }
+      /* Aperçu du fichier : une ligne de la DPGF par bloc (aucun défilement horizontal à 375 px) */
+      .dp-prev thead { display:none; }
+      .dp-prev table, .dp-prev tbody, .dp-prev tfoot, .dp-prev tr, .dp-prev td { display:block; width:100%; }
+      .dp-prev tr { padding:7px 10px; border-bottom:1px solid var(--hairline,#eef0f3); }
+      .dp-prev td { display:flex; justify-content:space-between; gap:12px; padding:1px 0; border:0; white-space:normal; text-align:right; }
+      .dp-prev td::before { content:attr(data-label); flex:none; max-width:50%; text-align:left; font-weight:600; color:var(--text-2,#4b5563); }
+      .dp-prev td:empty { display:none; }
+      .dp-prev td.des { min-width:0; }
+      .dp-prev tfoot tr { display:flex; justify-content:space-between; gap:12px; border-bottom:0; }
+      .dp-prev tfoot td { width:auto; }
       .dp-del .dp-lab-inl { display:inline; font-size:12px; }
     }
   </style>
@@ -266,12 +284,12 @@
     // ── Modale légère (récap avant envoi, saisie du code de vérification) ──
     // Remplace window.prompt/confirm (dialogues système gris → perçus comme du phishing par
     // un dirigeant non technique, collage bloqué sur mobile). Renvoie une Promise.
-    function openModal({ title, bodyHtml, confirmLabel, cancelLabel, withInput, inputLabel, extraLabel, noteHtml }) {
+    function openModal({ title, bodyHtml, confirmLabel, cancelLabel, withInput, inputLabel, extraLabel, noteHtml, maxWidth }) {
       return new Promise(resolve => {
         const ov = document.createElement("div");
         ov.style.cssText = "position:fixed;inset:0;background:rgba(17,24,39,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px";
         const box = document.createElement("div");
-        box.style.cssText = "background:var(--card,#fff);border-radius:14px;max-width:440px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3)";
+        box.style.cssText = "background:var(--card,#fff);border-radius:14px;max-width:" + (maxWidth || 440) + "px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3)";
         // Vraie boîte de dialogue pour les lecteurs d'écran (titre annoncé, Échap pour fermer).
         const uid = "mdl" + Math.random().toString(36).slice(2, 9);
         box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true"); box.setAttribute("aria-labelledby", uid + "-t");
@@ -754,7 +772,7 @@
       // Vérification par le membre (vague 4) : verdict, date du dernier horodatage, empreinte,
       // preuve téléchargeable (JSON) et version lisible (PDF). Rien n'est calculé ici.
       const jCard = $(`<section class="card pad" style="margin-bottom:16px" aria-labelledby="jr-title"></section>`);
-      const jHead = $(`<div class="row" style="gap:8px;align-items:center"><span style="flex:1;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="jr-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Mon journal</h2><span class="j-tip" style="display:inline-flex"></span></span></div>`);
+      const jHead = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 150px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="jr-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Mon journal</h2><span class="j-tip" style="display:inline-flex"></span></span></div>`);
       const jTip = jHead.querySelector(".j-tip");
       const setJournalTip = (label, limites) => {
         jTip.innerHTML = tip("Qui a consulté ou modifié quoi sur votre part, et les événements du groupement. <b>" + esc(label || J_LABEL) + ".</b><br><br><b>Limites</b><br>" + (limites && limites.length ? limites : J_LIMITES).map(l => "· " + esc(l)).join("<br>"));
@@ -937,7 +955,7 @@
       const c0 = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
       if (c0) fill(c0); else renderPieces([]);
       // Arrivée depuis « Partagé avec moi » (« Préparer ma DPGF de lot ») : on amène la carte DPGF.
-      if (location.hash === "#dpgf" && dp) setTimeout(() => { dp.el.scrollIntoView({ behavior: "smooth", block: "start" }); dp.el.focus({ preventScroll: true }); }, 300);
+      if (location.hash === "#dpgf" && dp) setTimeout(() => { dp.el.scrollIntoView({ block: "start" }); dp.el.focus({ preventScroll: true }); }, 700);
       function showSubmittedBanner() {
         const b = document.getElementById("g-banner");
         b.style.background = "#e7f7ee"; b.style.borderColor = "#1a7f4b";
@@ -1073,7 +1091,7 @@
     function renderDpgf(api) {
       const CRY = window.AdjugoCrypto || null, D = CRY && CRY.dpgf;
       const el = $(`<section class="card pad dp-card" id="dpgf" tabindex="-1" style="margin-bottom:16px;outline:none" aria-labelledby="dp-title"></section>`);
-      const head = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="dp-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Ma DPGF de lot</h2>${tip("<b>DPGF</b> : le détail de vos prix de vente, ligne par ligne (décomposition du prix global et forfaitaire). Souvent demandée avec l'offre.<br><br>Vos lignes sont enregistrées <b>chiffrées dans votre navigateur</b>, avec le détail de votre chiffrage et le même code de récupération. Elles ne partent en clair qu'au dépôt, après votre relecture, dans un fichier au niveau du prix de vente.<br><br>Déposer ou retirer la DPGF ne modifie ni votre part soumise ni la convention.")}</span></div>`);
+      const head = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 170px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="dp-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Ma DPGF de lot</h2>${tip("<b>DPGF</b> : le détail de vos prix de vente, ligne par ligne (décomposition du prix global et forfaitaire). Souvent demandée avec l'offre.<br><br>Vos lignes sont enregistrées <b>chiffrées dans votre navigateur</b>, avec le détail de votre chiffrage et le même code de récupération. Elles ne partent en clair qu'au dépôt, après votre relecture, dans un fichier au niveau du prix de vente.<br><br>Déposer ou retirer la DPGF ne modifie ni votre part soumise ni la convention.")}</span></div>`);
       const pill = $(`<span class="pill neutral" style="font-size:11px">Pas encore déposée</span>`); head.appendChild(pill);
       el.appendChild(head);
       el.appendChild($(`<div class="dp-share"><div>${ico("eye", 14, "margin-top:1px;color:var(--text-2,#6b7280)")}<span><b>Partagé avec le chef de file, au dépôt :</b> vos prix de vente, ligne par ligne, et leur total.</span></div><div>${ico("lock", 14, "margin-top:1px;color:var(--text-2,#6b7280)")}<span><b>Jamais partagé :</b> vos coûts, vos marges, votre méthode. Les autres partenaires ne voient pas votre DPGF.</span></div></div>`));
@@ -1092,7 +1110,9 @@
         totEl.textContent = fmt(t);
         const prix = api.meta().prix;
         cmpEl.innerHTML = "";
-        if (prix == null) cmpEl.innerHTML = ico("circle-alert", 14, "margin-top:1px;color:var(--warning-text,#b8730a)") + "<span>Le prix de vente de votre lot n'est pas encore renseigné dans votre part.</span>";
+        const anyAmount = lignes.some(l => D.montant({ quantite: D.parseNum(l.quantite), pu: D.parseNum(l.pu) }) != null);
+        if (!anyAmount) { /* rien à comparer tant qu'aucune ligne n'a de montant */ }
+        else if (prix == null) cmpEl.innerHTML = ico("circle-alert", 14, "margin-top:1px;color:var(--warning-text,#b8730a)") + "<span>Le prix de vente de votre lot n'est pas encore renseigné dans votre part.</span>";
         else if (Math.abs(t - Number(prix)) < 0.005) cmpEl.innerHTML = ICO_OK(14) + "<span>Égal au prix de vente de votre lot (" + esc(eurHT(prix)) + ").</span>";
         else cmpEl.innerHTML = ico("triangle-alert", 14, "margin-top:1px;color:var(--warning-text,#b8730a)") + "<span>Différent du prix de vente de votre lot (" + esc(eurHT(prix)) + ") : écart de " + esc(eurHT(Math.abs(t - Number(prix)))) + ".</span>";
         if (dirtyEl) dirtyEl.style.display = dirty() ? "" : "none";
@@ -1185,14 +1205,22 @@
         if (dirty() && !(await saveLines(null))) return;
         const opts = fileOpts(), rows = D.rows(opts), t = D.total(opts.lignes), prix = api.meta().prix;
         const old = pieces.filter(p => p.piece_type === "dpgf_lot");
-        const tbl = `<div class="dp-prev" tabindex="0" role="region" aria-label="Aperçu du fichier"><table>${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></div>`;
+        // Aperçu = les lignes du fichier, telles quelles : en-têtes (titre, entreprise, lot), tableau, total.
+        const hi = rows.findIndex(r => r[0] === "N°");
+        const metaRows = rows.slice(1, hi), cols = rows[hi], data = rows.slice(hi + 1, -1), tot = rows[rows.length - 1];
+        const NUMC = { 0: 1, 3: 1, 4: 1, 5: 1 };
+        const td = (c, j) => `<td class="${NUMC[j] ? "num" : j === 1 ? "des" : ""}" data-label="${esc(cols[j] || "")}">${esc(c)}</td>`;
+        const tbl = `<div class="small" style="margin-top:10px">${esc(rows[0][0])}${metaRows.map(r => `<br>${esc(r[0])} : <b>${esc(r[1] || "")}</b>`).join("")}</div>`
+          + `<div class="dp-prev" tabindex="0" role="region" aria-label="Aperçu du fichier"><table><thead><tr>${cols.map((c, j) => `<th scope="col" class="${NUMC[j] ? "num" : ""}">${esc(c)}</th>`).join("")}</tr></thead>`
+          + `<tbody>${data.map(r => `<tr>${r.map(td).join("")}</tr>`).join("")}</tbody>`
+          + `<tfoot><tr><td></td><td class="des" data-label=""><b>${esc(tot[1])}</b></td><td></td><td></td><td></td><td class="num" data-label=""><b>${esc(tot[5])}</b></td></tr></tfoot></table></div>`;
         const ecart = (prix != null && Math.abs(t - Number(prix)) >= 0.005) ? `<p style="margin:10px 0 0;color:var(--warning-text,#b8730a)">Le total (${esc(eurHT(t))}) diffère du prix de vente de votre lot (${esc(eurHT(prix))}) : le chef de file verra les deux montants.</p>` : "";
         const ok = await openModal({
           title: "Relire et déposer votre DPGF",
           bodyHtml: `<p style="margin:0">Voici <b>exactement</b> le fichier que recevra le chef de file, et lui seul : ${esc(D.fileName(opts))}.</p>${tbl}${ecart}`
             + (old.length ? `<p style="margin:10px 0 0">Il remplacera la DPGF déjà déposée (${esc(old.map(p => p.name).join(", "))}).</p>` : "")
             + `<p style="margin:10px 0 0" class="muted">Vos coûts, vos marges et votre méthode n'y figurent pas et restent chiffrés.</p>`,
-          confirmLabel: "Déposer la DPGF", cancelLabel: "Revenir",
+          confirmLabel: "Déposer la DPGF", cancelLabel: "Revenir", maxWidth: 640,
         });
         if (!ok) { say("Dépôt annulé : rien n'a été envoyé."); return; }
         btn.disabled = true; say("Dépôt de la DPGF…");

@@ -129,7 +129,7 @@
             <div v-if="!notifs.length" class="muted small" style="padding:16px 14px">Aucune activité récente de vos co-traitants.</div>
             <div v-for="n in notifs" :key="n.id" @click="openNotif(n)" style="padding:10px 14px;border-bottom:1px solid var(--hairline);cursor:pointer" @mouseover="$event.currentTarget.style.background='var(--surface-2)'" @mouseleave="$event.currentTarget.style.background=''">
               <div class="small"><b>{{ n.actor }}</b> {{ n.label }}<span v-if="n.detail" class="muted"> · {{ n.detail }}</span></div>
-              <div class="muted small">{{ n.project }} · {{ auditWhen(n.at) }}</div>
+              <div class="muted small">{{ n.project }} · {{ auditAt(n.at) }}</div>
             </div>
           </div>
         </div>
@@ -1146,6 +1146,7 @@
                     <span v-if="p.lot" class="muted small"> · {{ p.lot }}</span>
                     <span v-if="p.prix_lot_ht!=null" class="pill neutral" style="font-size:10px" title="Prix de vente du lot (visible du mandataire)">{{ eur(p.prix_lot_ht) }} HT</span>
                     <span v-else-if="p.status==='submitted'" class="pill a_etudier" style="font-size:10px">prix de lot manquant</span>
+                    <span v-if="p.has_dpgf_lot" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="file-check-2" style="width:10px;height:10px"></i>DPGF du lot reçue</span>
                     <i v-if="p.has_detail_chiffre" data-lucide="lock" style="width:11px;height:11px;color:var(--text-2);vertical-align:-1px" title="Détail du chiffrage chiffré par le partenaire — vous ne le voyez pas, c'est voulu" aria-label="Détail du chiffrage chiffré"></i>
                     <!-- Pièces administratives attendues du membre : présentes (vert) / manquantes (rouge) -->
                     <div v-if="(p.pieces_have && p.pieces_have.length) || (p.pieces_missing && p.pieces_missing.length)" class="row wrap" style="gap:4px;margin-top:3px">
@@ -1209,7 +1210,7 @@
                 <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Journal d'accès (RGPD)</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>{{ jvLabel() }}.</b> Qui a consulté ou modifié quoi, et quand. Chaque partenaire peut vérifier la partie de ce journal qui le concerne et en télécharger une preuve, sans jamais voir l'adresse IP ni l'email des autres membres.</span></button></div>
                 <div v-if="!ao.share.audit.length" class="muted small">Aucun accès enregistré pour l'instant.</div>
                 <div v-for="a in ao.share.audit" :key="a.id" class="row small" style="padding:6px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:baseline">
-                  <span class="muted" style="min-width:108px">{{ auditWhen(a.at) }}</span>
+                  <span class="muted" style="min-width:108px">{{ auditAt(a.at) }}</span>
                   <span class="pill" :class="a.actor_kind==='guest'?'neutral':'go'" style="font-size:9px;min-width:54px;justify-content:center">{{ a.actor_kind==='guest'?'Invité':'Vous' }}</span>
                   <span style="flex:1;min-width:0">{{ auditLabel(a) }}<span v-if="a.detail" class="muted"> · {{ a.detail }}</span></span>
                   <span class="muted" style="font-size:11px">{{ a.actor }}</span>
@@ -2286,7 +2287,7 @@
               <div v-if="sharedAo.jv.v.empreinte" class="jv-fp"><span>Empreinte de votre journal :</span><code title="Empreinte complète dans la preuve (JSON)">{{ jvHex(sharedAo.jv.v.empreinte) }} …</code><button type="button" class="btn sm" @click="jvCopy(sharedAo.jv.v)" aria-label="Copier l'empreinte complète de votre journal"><i data-lucide="copy"></i>Copier</button></div>
             </div>
             <ul v-if="sharedAo.journal && sharedAo.journal.entries.length" class="jrn">
-              <li v-for="(e,i) in sharedAo.journal.entries" :key="'jr'+i"><span class="jrn-at">{{ auditWhen(e.at) }}</span><span class="jrn-who" :class="e.who">{{ e.who==='vous'?'Vous':(e.who==='mandataire'?'Mandataire':'Partenaire') }}</span><span style="flex:1;min-width:0">{{ e.label }}<span v-if="e.detail" class="muted"> · {{ e.detail }}</span></span></li>
+              <li v-for="(e,i) in sharedAo.journal.entries" :key="'jr'+i"><span class="jrn-at">{{ auditAt(e.at) }}</span><span class="jrn-who" :class="e.who">{{ e.who==='vous'?'Vous':(e.who==='mandataire'?'Mandataire':'Partenaire') }}</span><span style="flex:1;min-width:0">{{ e.label }}<span v-if="e.detail" class="muted"> · {{ e.detail }}</span></span></li>
             </ul>
             <div v-else-if="sharedAo.journal" class="muted small" style="margin-top:6px">Aucune entrée pour l'instant.</div>
           </details>
@@ -2442,6 +2443,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-0YkP9ubYJjK9LuyQim0RAc9REjEmTJnxyEcMjoujX3LTzJmxcut0CwHOzv2sLq+D" defer></script>
+<script src="/static/app.js" integrity="sha384-Zlt7ORsJzOqgtojgcoIhQY4HoO8SZovfOkrvU9CDpmTVanxNXtuC/ikezNYPZ19d" defer></script>
 </body>
 </html>

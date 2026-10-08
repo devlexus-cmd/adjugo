@@ -59,7 +59,10 @@ def _shared_invite(project_id: int, user: User, db: Session):
 
 
 def _safe_name(s: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._ -]", "_", s or "marche")[:50].strip() or "marche"
+    # Accents translittérés (« Réhabilitation » → « Rehabilitation ») plutôt que remplacés par « _ ».
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s or "marche").encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^A-Za-z0-9._ -]", "_", s)[:50].strip() or "marche"
 
 
 def _export(inv, project, fmt: str, request: Request, db: Session) -> Response:

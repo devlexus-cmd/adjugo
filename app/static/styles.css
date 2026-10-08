@@ -481,6 +481,7 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .jrn .jrn-who { font-size:10.5px; padding:1px 7px; border-radius:999px; background:var(--surface-3); color:var(--text-2); white-space:nowrap; }
 .jrn .jrn-who.vous { background:var(--accent-weak); color:var(--accent-text); }
 .jrn .jrn-who.mandataire { background:var(--info-weak); color:var(--info-text); }
+.jrn li > span:last-child { overflow-wrap:anywhere; }   /* nom de fichier long : pas de débordement à 375 px */
 
 /* ══════════ Tableau de bord — passe d'espacement (oct. 2026) ══════════
    Un seul rythme vertical (16 px) entre les blocs, en-têtes de carte alignés en haut,
