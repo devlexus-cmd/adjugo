@@ -40,10 +40,18 @@ def contact_email() -> str:
     return (os.getenv("CONTACT_EMAIL") or "contact@adjugo.pro").strip()
 
 
+# Page de réservation Cal.com d'Eliot (lien public, non secret). BOOKING_URL la remplace ;
+# BOOKING_URL=off (ou vide) masque le bouton de réservation.
+DEFAULT_BOOKING_URL = "https://cal.com/eliot-viegas-adjugo/reservez-ma-demo-adjugo"
+
+
 def booking_url():
-    """Lien de prise de rendez-vous (Calendly, Cal.com…) — optionnel, https uniquement."""
+    """Lien de prise de rendez-vous (Cal.com, Calendly…) — https uniquement."""
     from app.schemas import safe_link_url
-    u = (os.getenv("BOOKING_URL") or "").strip()
+    raw = os.environ.get("BOOKING_URL")
+    u = (DEFAULT_BOOKING_URL if raw is None else raw).strip()
+    if u.lower() in ("", "off", "non", "none"):
+        return None
     return u if u.lower().startswith("https://") and safe_link_url(u, 500) else None
 
 

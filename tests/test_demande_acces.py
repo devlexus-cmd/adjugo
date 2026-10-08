@@ -80,6 +80,10 @@ def test_echec_d_envoi_signale(client, monkeypatch):
 
 
 def test_lien_de_rendez_vous_https_uniquement(client, monkeypatch):
+    monkeypatch.delenv("BOOKING_URL", raising=False)
+    assert client.get("/api/contact/config").json()["booking_url"] == \
+        "https://cal.com/eliot-viegas-adjugo/reservez-ma-demo-adjugo"
+    monkeypatch.setenv("BOOKING_URL", "off")
     assert client.get("/api/contact/config").json()["booking_url"] is None
     monkeypatch.setenv("BOOKING_URL", "https://cal.example/adjugo")
     assert client.get("/api/contact/config").json()["booking_url"] == "https://cal.example/adjugo"
