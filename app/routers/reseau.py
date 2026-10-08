@@ -389,9 +389,13 @@ def put_profil(request: Request, body: ProfilIn, current_user: User = Depends(ge
         upd["codes_cpv"] = sorted(set(vals))[:pn.MAX_CPV]
     if "departements" in fields:
         raw = [str(d).strip() for d in (body.departements or []) if str(d).strip()]
-        vals = _split_deps(raw)
-        if len(vals) != len({d.upper() for d in raw}):
-            raise HTTPException(422, "Département invalide : indiquez un numéro (ex. 29, 2A, 974).")
+        vals = []
+        for d in raw:
+            n = _norm_dep(d)
+            if not n:
+                raise HTTPException(422, "Département invalide : indiquez un numéro (ex. 29, 2A, 974).")
+            if n not in vals:
+                vals.append(n)
         if len(vals) > pn.MAX_DEPARTEMENTS:
             raise HTTPException(422, f"Au plus {pn.MAX_DEPARTEMENTS} départements.")
         upd["departements"] = vals
