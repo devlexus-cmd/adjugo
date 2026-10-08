@@ -1257,6 +1257,52 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
     return _serialize_contribution(c, db)
 
 
+# ── Détail chiffré SEUL (vague 4, écran « Ma DPGF de lot ») ────────────────────────────
+# Le partenaire enregistre les lignes de sa DPGF (prix de vente, ligne par ligne) DANS son
+# détail chiffré, sans toucher au reste de sa part. Le détail n'est lu par personne d'autre
+# que lui (ni le chef de file, ni Adjugo, ni l'IA) et n'est imprimé nulle part : le modifier
+# ne repasse PAS une part soumise en brouillon, ne défige pas l'offre et ne rend pas la
+# convention caduque (contrairement au PUT complet, où toute modification après soumission
+# repasse la part en brouillon). Verrou optimiste identique au PUT (la version avance).
+class DetailSave(BaseModel):
+    detail_chiffre: Optional[dict] = None
+    version: Optional[int] = None
+
+    @field_validator("detail_chiffre")
+    @classmethod
+    def _env(cls, v):
+        return _validate_envelope(v)
+
+
+@router.put("/api/invite/{token}/contribution/detail")
+@limiter.limit("60/minute")
+def guest_save_detail(token: str, body: DetailSave, request: Request, db: Session = Depends(get_db)):
+    """Remplace UNIQUEMENT l'enveloppe chiffrée `detail_chiffre` de la part de cet invité.
+    Statut, prix de vente, offre figée et convention inchangés. Jamais déchiffrée ici."""
+    inv = _valid_invite(token, db)
+    _refuse_if_demo_invite(inv, db)
+    if not getattr(inv, "can_contribute", True):
+        raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
+    if "detail_chiffre" not in body.model_fields_set:
+        raise HTTPException(422, "Détail chiffré manquant.")
+    c = _get_or_create_contribution(inv, db)
+    if body.version is None:
+        raise HTTPException(428, "Version requise (verrou optimiste). Rechargez la contribution.")
+    expected = int(body.version)
+    claimed = db.query(ProjectContribution).filter(
+        ProjectContribution.id == c.id,
+        ProjectContribution.version == expected,
+    ).update({ProjectContribution.version: expected + 1}, synchronize_session="fetch")
+    if not claimed:
+        db.rollback()
+        raise HTTPException(409, "Cette contribution a été modifiée ailleurs entre-temps. "
+                                 "Rechargez pour récupérer la dernière version avant de réenregistrer.")
+    c.detail_chiffre = body.detail_chiffre       # même écriture que le PUT complet (None = effacer)
+    db.commit()
+    db.refresh(c)
+    return _serialize_contribution(c, db)
+
+
 # ── Binding d'identité par OTP email (sécurité « industrielle ») ─────────────
 class OtpVerify(BaseModel):
     code: str = ""

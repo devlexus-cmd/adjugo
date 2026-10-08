@@ -57,6 +57,8 @@ _BLOCKED = [
     # Dépôt (vague 4) : change le statut du marché et écrit dans le journal de tous les membres.
     ("POST",   "/api/projects/{pid}/groupement/deposer",      "marquer un dossier déposé"),
     ("DELETE", "/api/projects/{pid}/groupement/deposer",      "marquer un dossier déposé"),
+    # Détail chiffré seul (vague 4, DPGF de lot) : écriture dans la part d'un partenaire.
+    ("PUT",    "/api/invite/{token}/contribution/detail",     "modifier le détail de votre chiffrage"),
     ("POST",   "/api/org/invite",                             "inviter un collègue"),
     ("PUT",    "/api/auth/me",                                "modifier le profil du compte"),  # changement d'email
     ("POST",   "/api/auth/change-password",                   "choisir un mot de passe"),
