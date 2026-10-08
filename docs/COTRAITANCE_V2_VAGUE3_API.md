@@ -618,3 +618,31 @@ Réponse : `{"checked": 2, "sirene_ok": 2, "errors": 0, "unpublished": 0, "skipp
 
 Rappels : 0 LLM dans toute la vague ; aucun profil de démonstration n'existe ni n'est créé ; le
 compte démo ne publie rien, n'invite personne du réseau et ne voit aucun profil réel.
+
+## 13. Écrans livrés (front, 08/10/2026)
+
+Fichiers : `app/static/app.html`, `app.js`, `styles.css`, `invite.html` (aucune dépendance ajoutée).
+Garde-fous automatiques : `tests/test_reseau_ecrans.py` (pas de v-html / innerHTML, pas de « % », pas
+d'émoji ni de jargon, adresse jamais affichée dans la modale, mise à jour partielle du profil, syntaxe).
+
+| Écran | Où | Méthodes (`app.js`) |
+|---|---|---|
+| Entrée « Réseau » + pastille « invitations à traiter » | barre latérale, sous « Mes partenaires » | `go('reseau')`, `rnGo(tab)`, `rnRecuesCount()` |
+| Mon profil partenaire (identité, ce que vous proposez, vérification, aperçu exact, publication, effacement) | vue `reseau`, onglet `profil` | `rnLoadProfil`, `rnSave` (PUT partiel `_rnBody`), `rnVerify`, `rnPublish` (enregistre d'abord les modifications), `rnUnpublish`, `rnDelete` |
+| Annuaire (filtres métier / département / rôle / nom, rang + « Pourquoi ce rang », fiche) | onglet `annuaire`, modale fiche | `rnLoadAnnuaire`, `rnOpenFiche`, `rnInviteFromFiche` |
+| Mon historique (deux colonnes, source + avertissement en bulle) | onglet `historique` | `rnLoadHistorique`, `rnHistRows` |
+| Invitations reçues (accepter depuis mon compte, voir, décliner → « Vous avez décliné ») | onglet `recues` (visible si non vide) | `rnLoadRecues`, `rnAccept`, `rnDecline` |
+| Partenaires pour ce marché — « Qui me complète ? » | fiche du marché, sous « Répondre à plusieurs ? » | `aoPmLoad`, `aoPmLot` (`?lot=`), `aoPmSimulate` (ajoute à la simulation existante) |
+| Modale d'invitation en 1 clic (réseau / lien SIRENE, choix du marché depuis l'annuaire) | globale | `rnInviteOpen`, `rinvSend`, `rinvViaReseau` (409 `sur_le_reseau`) |
+| Liste des invitations du marché | carte « Réseau Adjugo » de la fiche | `inviteSourceLabel`, `inviteIsNetwork`, `inviteRelancable` |
+| « A décliné » (cartes, composition retenue, candidats « Qui l'a ? ») | fiche du marché | `inviteDeclinedFor(nom)`, `declinedLabel` |
+| Suggestion « publiez votre profil » (fermable) | haut de page, hors vue Réseau | `_rnSuggest` (inscription, claim, ou `sessionStorage` posé par `invite.html`) |
+| Aperçu minimal + « Accepter depuis mon compte » | `invite.html`, carte du dossier | `claimAndOpen`, `keepSuggestion` |
+
+Choix d'écran à valider : le panneau se lance au clic (« Qui me complète ? ») et non à l'ouverture du
+marché (quota et repli SIRENE) ; « Simuler le groupement » ajoute l'entreprise à la simulation de
+« Répondre à plusieurs ? » et calcule tout de suite ; le statut « a décliné » est rapproché par nom
+d'entreprise (comme « déjà invité » dans la composition retenue) et autorise « Inviter à nouveau » ;
+publier enregistre d'abord les modifications en cours (la fiche publiée est celle de l'aperçu) ;
+l'adresse d'un partenaire réseau apparaît dans la liste seulement quand le serveur la renvoie
+(après acceptation).

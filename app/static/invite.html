@@ -1463,8 +1463,12 @@
         MY_TOKEN = myToken || null;
         if (myToken) {
           const b = document.getElementById("g-banner");
-          b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)";
-          b.innerHTML = '<i data-lucide="user-check"></i><div class="small" style="flex:1">Vous avez un compte Adjugo : <b>ouvrez ce dossier dans votre espace</b>.</div>';
+          // Aperçu minimal (invitation du réseau) : le bouton « Accepter depuis mon compte » du dossier fait
+          // la même chose → pas de bandeau en double (le bouton reste disponible pour le coffre-fort).
+          if (!d.apercu_minimal) {
+            b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)";
+            b.innerHTML = '<i data-lucide="user-check"></i><div class="small" style="flex:1">Vous avez un compte Adjugo : <b>ouvrez ce dossier dans votre espace</b>.</div>';
+          }
           const btn = document.createElement("button"); btn.className = "btn sm primary"; btn.style.flex = "none"; btn.textContent = "Ouvrir dans mon Adjugo";
           CLAIM_BTN = btn;
           btn.onclick = async () => {
@@ -1474,7 +1478,7 @@
               const e = await r.json().catch(() => ({})); btn.disabled = false; btn.textContent = errText(e, "Impossible");
             } catch (e) { btn.disabled = false; btn.textContent = "Erreur"; }
           };
-          b.appendChild(btn);
+          if (!d.apercu_minimal) b.appendChild(btn);
         }
         nav("monao", "Mon appel d'offres");
         icons();

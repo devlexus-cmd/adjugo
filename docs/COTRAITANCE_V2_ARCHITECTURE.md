@@ -81,10 +81,18 @@ production), migration et parcours rejoués sur Postgres 16.** Contrat d'API pou
 - Écart assumé avec le plan initial : **aucun profil `is_demo` n'est créé** (démo publique supprimée,
   règle anti-hallucination) ; la colonne est conservée et toujours filtrée.
 
-**Reste (vague 3) :** front (nav « Réseau », panneau « Qui me complète ? », modale d'invitation,
-invitations reçues, aperçu minimal dans `invite.html`) à partir du contrat ; cron hebdomadaire à
-ajouter dans Railway ; validation par le fondateur des choix listés dans le contrat (poids du
-classement, aperçu minimal, plafonds).
+**Écrans (08/10/2026, même branche, non déployés)** — `app.html`, `app.js`, `styles.css`, `invite.html` :
+entrée « Réseau » (Mon profil partenaire · Annuaire · Mon historique · Invitations reçues), panneau
+« Partenaires pour ce marché » sur la fiche du marché (bouton « Qui me complète ? », lot par lot, rang +
+critères + badges sourcés et datés, repli SIRENE, « Simuler le groupement » = seul %), modale
+d'invitation en 1 clic (adresse jamais affichée, 409 « déjà invité » / « sur le réseau » gérés), statut
+« a décliné » sur les cartes, la composition retenue et les candidats, source et adresse masquée dans
+la liste des invitations, suggestion « publiez votre profil » après inscription et acceptation, aperçu
+minimal dans `invite.html`. Garde-fous : `tests/test_reseau_ecrans.py`. Détail : § 13 du contrat.
+
+**Reste (vague 3) :** cron hebdomadaire à ajouter dans Railway ; validation par le fondateur des
+choix listés dans le contrat (poids du classement, aperçu minimal, plafonds) et des choix d'écran
+(§ 13 du contrat).
 
 ## Vision en une phrase
 

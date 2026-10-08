@@ -489,7 +489,7 @@
                       <label v-for="c in grp.list" :key="candId(c)" class="cand" :class="{sel:isCandSelected(c)}" style="cursor:pointer">
                         <input type="checkbox" :checked="isCandSelected(c)" @change="toggleCand(c)" style="width:auto;height:auto;margin:0" :aria-label="'Simuler avec '+c.name">
                         <div style="flex:1;min-width:0">
-                          <div class="row wrap" style="gap:6px;align-items:center"><span v-if="c.kind==='reseau' && c.rang!=null" class="rn-rang rn-rang-sm">n° {{ c.rang }}<span class="sr-only"> dans le classement du réseau</span></span><span class="cand-name">{{ c.name }}</span><span v-if="c.city" class="muted small">· {{ c.city }}</span><span v-if="c.deja_partenaire" class="pill neutral" style="font-size:9px">déjà partenaire</span><span v-if="inviteDeclinedFor(c.name)" class="pill declined" style="font-size:9px">{{ declinedLabel(inviteDeclinedFor(c.name)) }}</span></div>
+                          <div class="row wrap" style="gap:6px;align-items:center"><span class="cand-name">{{ c.name }}</span><span v-if="c.city" class="muted small">· {{ c.city }}</span><span v-if="c.deja_partenaire" class="pill neutral" style="font-size:9px">déjà partenaire</span><span v-if="inviteDeclinedFor(c.name)" class="pill declined" style="font-size:9px">{{ declinedLabel(inviteDeclinedFor(c.name)) }}</span></div>
                           <div class="cand-proof">{{ c.proof_label }}<span v-if="c.ca_label"> · {{ c.ca_label }}</span></div>
                           <div v-if="c.apporte && c.apporte.length" class="row wrap" style="gap:4px;margin-top:3px"><span v-for="k in c.apporte" :key="candId(c)+k" class="sg-chip by">{{ gapLabel(k) }}</span></div>
                         </div>
