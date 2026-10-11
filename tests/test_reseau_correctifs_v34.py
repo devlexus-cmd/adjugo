@@ -24,6 +24,10 @@ import pytest
 from tests.test_reseau_partenaires import (_admin_headers, _db, _org, _profile_row, _project, _publish,  # noqa: F401
                                            _siren, _validate, mails, reg)
 
+# Le vrai repli SIRENE de « Qui me complète ? », capturé à l'import du module (avant que la
+# fixture `reg` ne le remplace par un faux) : le test du délai par appel l'exerce directement.
+from app.routers.reseau import _sirene_fallback as _VRAI_REPLI_SIRENE
+
 
 @pytest.fixture(autouse=True)
 def _retire_les_profils_publies():
@@ -336,6 +340,56 @@ def test_repli_sirene_lots_en_parallele_et_budget_global(client, reg, monkeypatc
     assert len(slow_lots) == 3
 
 
+def test_repli_sirene_delai_court_par_appel(monkeypatch):
+    """Revue v34 (A26) : sur « Qui me complète ? », chaque appel HTTP du repli (SIRENE, puis
+    BODACC qui écarte les procédures collectives) a un délai de 5 s au plus. Avant : 12 s et
+    8 s, et un fil détaché après le budget global restait occupé jusqu'à 20 s par lot."""
+    import httpx
+    from app.services import groupement_verdict as gv
+    delais = []
+
+    class _Rep:
+        status_code = 200
+
+        def __init__(self, data):
+            self._d = data
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._d
+
+    class _Client:
+        def __init__(self, *a, timeout=None, **kw):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, params=None, **kw):
+            kind = "bodacc" if "bodacc" in url else "sirene"
+            delais.append((kind, self.timeout))
+            if kind == "bodacc":
+                return _Rep({"results": []})
+            return _Rep({"results": [{"siren": "123456782", "nom_complet": "ETANCHEITE DE MAYOTTE",
+                                      "nature_juridique": "5710", "activite_principale": "43.99A",
+                                      "siege": {"siret": "12345678200011", "code_postal": "97600",
+                                                "libelle_commune": "MAMOUDZOU", "etat_administratif": "A"}}]})
+    monkeypatch.setattr(httpx, "Client", _Client)
+    gv._SIRENE_CACHE.pop(("etancheite", "976"), None)
+    try:
+        found = _VRAI_REPLI_SIRENE("etancheite", "976", [])
+    finally:
+        gv._SIRENE_CACHE.pop(("etancheite", "976"), None)
+    assert [m["name"] for m in found] == ["ETANCHEITE DE MAYOTTE"]
+    assert {k for k, _t in delais} == {"sirene", "bodacc"}, delais
+    assert all(t is not None and float(t) <= 5 for _k, t in delais), delais
+
+
 def test_recherche_sirene_en_erreur_jamais_mise_en_cache(monkeypatch):
     from app.services import groupement_verdict as gv
     import app.routers.sourcing as S
@@ -430,6 +484,30 @@ def test_borne_de_lecture_signalee(client, reg, monkeypatch):
         _publish(client, reg, _org(client, f"Borne {i}"), metiers=("etancheite",))
     v = client.get("/api/reseau/annuaire?metier=etancheite", headers=me["headers"]).json()
     assert v.get("avertissement") == pn.TRONQUE_MSG
+
+
+def test_annuaire_filtre_departement_en_base_avant_la_borne(client, reg, monkeypatch):
+    """Revue v34 (A13) : le filtre département s'applique en base AVANT la borne de lecture,
+    comme le métier. Sinon, au-delà de la borne, un profil récent du département cherché
+    disparaissait de l'annuaire (les plus anciens remplissaient la lecture)."""
+    import app.services.partner_network as pn
+    me = _org(client, "Chercheur Département")
+    _publish(client, reg, me, metiers=("couverture",))
+    for i in range(2):
+        _publish(client, reg, _org(client, f"Étanchéité Ancienne {i}"), metiers=("etancheite",), deps=("56",))
+    cible = _publish(client, reg, _org(client, "Mayotte Étanchéité", cp="97600", city="Mamoudzou"),
+                     metiers=("etancheite",), deps=("976",))
+    monkeypatch.setattr(pn, "MAX_VISIBLE_SCAN", 2)
+    v = client.get("/api/reseau/annuaire?departement=976&par_page=50", headers=me["headers"]).json()
+    assert [p["profile_id"] for p in v["profils"]] == [cible], v
+    assert v["total"] == 1 and "avertissement" not in v
+    v = client.get("/api/reseau/annuaire?metier=etancheite&departement=976", headers=me["headers"]).json()
+    assert [p["profile_id"] for p in v["profils"]] == [cible], v
+    # Le siège compte aussi (même règle que le filtre exact de l'annuaire) : zones 29, siège à 976.
+    siege = _publish(client, reg, _org(client, "Siège Mayotte", cp="97600", city="Mamoudzou"),
+                     metiers=("etancheite",), deps=("29",))
+    v = client.get("/api/reseau/annuaire?departement=976&par_page=50", headers=me["headers"]).json()
+    assert {p["profile_id"] for p in v["profils"]} == {cible, siege}, v
 
 
 # ── 7. Badge déclaratif, critères sourcés, département supposé ────────────────────────

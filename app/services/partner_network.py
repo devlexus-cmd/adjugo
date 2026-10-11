@@ -362,12 +362,14 @@ def hidden_pair(ctx: dict, p) -> bool:
     return False
 
 
-def visible_profiles(db, ctx: dict, metiers=None) -> list:
+def visible_profiles(db, ctx: dict, metiers=None, departement: str = "") -> list:
     """Profils PUBLIÉS visibles par ce chercheur : jamais démo, jamais le sien (ni un profil
     du même SIREN), jamais une paire masquée. Borné (MAX_VISIBLE_SCAN), ordre stable.
-    `metiers` (clés) : filtre fait EN BASE avant la borne (texte JSON contenant la clé), pour
-    que la borne ne coupe pas les profils utiles. Borne atteinte → ctx["tronque"] = True
-    (signalé à l'écran, jamais un résultat amputé en silence)."""
+    `metiers` (clés) et `departement` (code normalisé : 29, 2A, 974) : filtres faits EN BASE
+    avant la borne, pour que la borne ne coupe pas les profils utiles — métier = texte JSON
+    contenant la clé ; département = zones déclarées (texte JSON contenant le code) OU
+    département du siège, comme le filtre exact appliqué ensuite par l'annuaire. Borne
+    atteinte → ctx["tronque"] = True (signalé à l'écran, jamais un résultat amputé en silence)."""
     from sqlalchemy import String, cast
     from app.models import PartnerProfile
     excluded = set(ctx.get("member_ids") or []) | {ctx.get("owner_id")} | _demo_user_ids(db)
@@ -378,10 +380,17 @@ def visible_profiles(db, ctx: dict, metiers=None) -> list:
     keys = sorted({str(m) for m in (metiers or []) if m and re.fullmatch(r"[a-z0-9_]{1,40}", str(m))})
     if keys:
         q = q.filter(or_(*[cast(PartnerProfile.metiers, String).like(f'%"{k}"%') for k in keys]))
+    dep = str(departement or "").strip().upper()
+    if dep and re.fullmatch(r"\d{2,3}|2[AB]", dep):
+        q = q.filter(or_(cast(PartnerProfile.departements, String).like(f'%"{dep}"%'),
+                         PartnerProfile.departement == dep))
+    else:
+        dep = ""
     rows = q.order_by(PartnerProfile.id.asc()).limit(MAX_VISIBLE_SCAN).all()
     if len(rows) >= MAX_VISIBLE_SCAN:
         ctx["tronque"] = True
-        logger.warning("réseau : borne de %s profils atteinte (filtre métier : %s)", MAX_VISIBLE_SCAN, keys or "aucun")
+        logger.warning("réseau : borne de %s profils atteinte (filtre métier : %s, département : %s)",
+                       MAX_VISIBLE_SCAN, keys or "aucun", dep or "aucun")
     mine = ctx.get("siren") or ""
     return [p for p in rows if not (mine and p.siren == mine) and not hidden_pair(ctx, p)]
 

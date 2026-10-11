@@ -65,6 +65,7 @@ NETWORK_INVITES_PER_PROFILE_DAY = 10     # invitations réseau reçues par un m�
 MAX_LOTS = 8
 MAX_SIRENE_LOTS = 3
 SIRENE_BUDGET_S = 8.0                    # budget GLOBAL du repli SIRENE de « Qui me complète ? »
+SIRENE_CALL_TIMEOUT_S = 5.0              # délai PAR APPEL HTTP de ce repli (SIRENE, BODACC)
 # Bornes des listes reçues par PUT /profil, vérifiées AVANT tout traitement (corps de 2 Mo =
 # ~160 000 éléments : un dédoublonnage sur liste bloquait l'unique worker plusieurs minutes).
 RAW_LIST_MAX = {"metiers": 60, "codes_cpv": 100, "departements": 120, "roles_acceptes": 10,
@@ -735,7 +736,10 @@ def annuaire(request: Request, metier: str = "", departement: str = "", role: st
         return {**base, "visible": False, "total": None, "message": _invite_publier(ctx), "profils": [],
                 "page": 1, "par_page": par_page}
     today = _today()
-    profiles = pn.visible_profiles(db, ctx, metiers=[metier] if (metier and not cpv_list) else None)
+    # Métier (sans CPV) et département filtrés EN BASE avant la borne de lecture ; _keep
+    # ci-dessous refait le filtre exact (zones normalisées, rôle, nom).
+    profiles = pn.visible_profiles(db, ctx, metiers=[metier] if (metier and not cpv_list) else None,
+                                   departement=dep)
     dicts = [pn.profile_dict(p) for p in profiles]
     by_pid = {d["public_id"]: (p, d) for p, d in zip(profiles, dicts)}
 
@@ -944,9 +948,11 @@ def pn_company_dict_from(company_data: dict) -> dict:
 
 def _sirene_fallback(trade: str, dept: str, warnings: list) -> list:
     """Repli registre SIRENE (cache in-process 10 min par (métier, département) dans
-    groupement_verdict._discover_sirene ; procédures collectives et personnes physiques exclues)."""
+    groupement_verdict._discover_sirene ; procédures collectives et personnes physiques exclues).
+    Délai court par appel HTTP (SIRENE_CALL_TIMEOUT_S), en plus du budget global du lot de
+    requêtes : un fil détaché après le budget se libère vite (process unique)."""
     from app.services.groupement_verdict import _discover_sirene
-    return _discover_sirene(trade, dept, warnings)
+    return _discover_sirene(trade, dept, warnings, timeout=SIRENE_CALL_TIMEOUT_S)
 
 
 def _sirene_batch(jobs: list, budget_s: float = None) -> dict:

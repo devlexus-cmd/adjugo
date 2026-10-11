@@ -259,8 +259,19 @@ def _execution_dept(details: dict, criteria: dict, company_data: dict) -> str:
     return _dept((company_data or {}).get("postal_code") or "")
 
 
-def _discover_sirene(trade: str, dept: str, warnings: list) -> list:
-    """Découverte SIRENE pour UN métier/département, cachée 10 min. Jamais d'exception."""
+def _short_timeout_service(timeout: float):
+    """Service de découverte à délai COURT par appel HTTP (SIRENE et BODACC) : chemin
+    « Qui me complète ? » du réseau de partenaires, sur l'unique worker. Mêmes sources que
+    sourcing._company_service (SIRENE + filtre BODACC), seul le délai change."""
+    from app.sourcing.search import CompanySearchService
+    from app.sourcing.sources.bodacc import BodaccSource
+    from app.sourcing.sources.sirene import SireneSource
+    return CompanySearchService([SireneSource(timeout=timeout)], red_flag_source=BodaccSource(timeout=timeout))
+
+
+def _discover_sirene(trade: str, dept: str, warnings: list, timeout: Optional[float] = None) -> list:
+    """Découverte SIRENE pour UN métier/département, cachée 10 min. Jamais d'exception.
+    `timeout` : délai par appel HTTP (SIRENE, BODACC) ; None = délais habituels du sourcing."""
     key = (trade, dept)
     hit = _SIRENE_CACHE.get(key)
     now = time.time()
@@ -270,10 +281,11 @@ def _discover_sirene(trade: str, dept: str, warnings: list) -> list:
         from app.routers.sourcing import _company_service
         from app.sourcing.sources.sirene import TRADES
         label = next((t["label"] for t in TRADES if t["key"] == trade), trade)
+        svc = _company_service() if timeout is None else _short_timeout_service(float(timeout))
         # limit 4 + PAS d'enrichissement DECP (1 requête HTTP par entreprise) : sur
         # l'unique worker, 3 métiers × (SIRENE + 6 BODACC + 6 DECP) bloquaient ~100 s.
         # BODACC est conservé (filtre « procédure collective » juste en dessous).
-        res = _company_service().discover(activity=trade, departement=dept,
+        res = svc.discover(activity=trade, departement=dept,
                                           tender_departements=[dept] if dept else [],
                                           need_label=label, limit=4, enrich_decp=False)
         out = []
