@@ -63,6 +63,8 @@ import re
 import time
 from datetime import datetime, timezone
 
+from app.services.format import date_heure_fr, libelle_fuseau
+
 logger = logging.getLogger("adjugo")
 
 SCHEMA = "adjugo-journal-membre-v1"
@@ -170,17 +172,6 @@ def _is_email(s) -> bool:
 def _ts(dt) -> str:
     from app.services.audit import _ts as audit_ts
     return audit_ts(dt)
-
-
-def _fr_dt(dt) -> str:
-    if dt is None:
-        return ""
-    try:
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-        return dt.strftime("%d/%m/%Y à %H:%M (UTC)")
-    except Exception:
-        return str(dt)
 
 
 def _fr_day(day: str) -> str:
@@ -527,7 +518,7 @@ def _verify_member(db, inv):
     msg = _message(verdict, perimetre, len(rows), n_ok, n_unchained, first_bad, truncated, ancrage)
     limites = list(LIMITES)
     if n_legacy:
-        avant = (f", antérieure{'s' if n_legacy > 1 else ''} au {_fr_dt(first_sealed_at)[:10]}"
+        avant = (f", antérieure{'s' if n_legacy > 1 else ''} au {date_heure_fr(first_sealed_at)[:10]}"
                  if first_sealed_at else "")
         limites.append(LIMITE_RATTACHEMENT.format(n=n_legacy, s="s" if n_legacy > 1 else "", avant=avant))
     res = {
@@ -558,8 +549,8 @@ def _message(verdict, perimetre, total, n_ok, n_unchained, first_bad, truncated,
         when = ""
         if first_bad and first_bad.get("at"):
             try:
-                when = " (entrée du " + _fr_dt(datetime.fromisoformat(first_bad["at"])) + \
-                       f" : « {first_bad.get('label', '')} »)"
+                when = (" (entrée du " + date_heure_fr(datetime.fromisoformat(first_bad["at"]), suffixe=False)
+                        + f", {libelle_fuseau()} : « {first_bad.get('label', '')} »)")
             except Exception:
                 when = ""
         return ("Une entrée de votre journal a été modifiée, ou une entrée voisine supprimée"
@@ -671,13 +662,16 @@ def export_pdf(payload: dict) -> bytes:
         Paragraph("Journal du groupement — qui a vu quoi", h1),
         Paragraph(f"Marché : {e(payload.get('marche'))}", body),
         Paragraph(f"Partenaire : {e(payload.get('membre'))}", body),
-        Paragraph(f"Exporté le {e(_fr_dt(_parse_iso(payload.get('exporte_le'))))}", body),
+        Paragraph(f"Exporté le {e(date_heure_fr(_parse_iso(payload.get('exporte_le'))))}", body),
         Spacer(1, 4 * mm),
         Paragraph(f"<b>Vérification : {e(v.get('verdict_label'))}</b> — {e(v.get('message'))}", body),
         Paragraph(e(payload.get("integrity_label")), small),
         Spacer(1, 4 * mm),
     ]
-    data = [[Paragraph("<b>n</b>", cell), Paragraph("<b>Date (UTC)</b>", cell), Paragraph("<b>Qui</b>", cell),
+    # Heures à l'heure de Paris (comme l'écran) ; le JSON, lui, garde `at` en UTC : c'est ce
+    # champ qui entre dans les maillons, il ne change jamais.
+    fuseau = libelle_fuseau()
+    data = [[Paragraph("<b>n</b>", cell), Paragraph(f"<b>Date ({e(fuseau)})</b>", cell), Paragraph("<b>Qui</b>", cell),
              Paragraph("<b>Événement</b>", cell), Paragraph("<b>Sceau</b>", cell)]]
     for x in payload.get("entrees") or []:
         label = x.get("label") or ""
@@ -685,7 +679,8 @@ def export_pdf(payload: dict) -> bytes:
             label += f" · {x['detail']}"
         if x.get("statut") == "alteree":
             label += " — ALTÉRÉE"
-        data.append([Paragraph(e(x.get("n")), cell), Paragraph(e(_fr_dt(_parse_iso(x.get("at")))), cell),
+        quand = date_heure_fr(_parse_iso(x.get("at")), suffixe=False)      # affichage seul
+        data.append([Paragraph(e(x.get("n")), cell), Paragraph(e(quand), cell),
                      Paragraph(e(_WHO.get(x.get("qui"), x.get("qui") or "")), cell),
                      Paragraph(e(label), cell), Paragraph(e((x.get("sceau") or "")[:16]), mono)])
     if len(data) == 1:
@@ -694,9 +689,14 @@ def export_pdf(payload: dict) -> bytes:
     t = Table(data, colWidths=[9 * mm, 34 * mm, 22 * mm, 85 * mm, 28 * mm], repeatRows=1)
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), head), ("GRID", (0, 0), (-1, -1), 0.4, line),
                            ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    heures = ("Ce PDF donne les heures à l'heure de Paris ; le fichier JSON les garde en temps "
+              "universel (UTC) pour la vérification." if fuseau != "UTC" else
+              "Ce PDF donne les heures en temps universel (UTC), comme le fichier JSON qui sert "
+              "à la vérification.")
     story += [t, Spacer(1, 5 * mm),
               Paragraph(f"Empreinte de votre journal : <font name='Courier'>{e(payload.get('empreinte'))}</font>", small),
-              Paragraph("Pour vérifier vous-même : téléchargez l'export JSON et conservez-le. Chaque export "
+              Paragraph(f"{e(heures)} "
+                        "Pour vérifier vous-même : téléchargez l'export JSON et conservez-le. Chaque export "
                         "suivant doit reprendre à l'identique toutes ses entrées et la même empreinte pour "
                         "sa dernière entrée ; sinon, une entrée a été modifiée ou supprimée. Algorithme : "
                         f"{e(ALGORITHME['maillon'])}.", small)]
