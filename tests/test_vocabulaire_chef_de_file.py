@@ -166,7 +166,7 @@ def test_avertissement_mandataire_solidaire_formule_simple_d_abord():
           "extrait": "En cas de groupement conjoint, le mandataire sera solidaire de chacun des membres."}
     ctx = {"forme": "conjoint", "mandataire_solidaire": False, "members": []}
     w = [x for x in gc.warnings_for(conv, project, ctx, fi, []) if "solidaire" in x]
-    assert w == ["La phrase citée du règlement demande un chef de file solidaire (« mandataire solidaire ») : "
+    assert w == ["La phrase citée du règlement parle d'un chef de file solidaire (« mandataire solidaire ») : "
                  "vérifiez s'il faut cocher l'option « Le chef de file répond aussi de la part de chaque "
                  "partenaire »."]
 
@@ -225,3 +225,62 @@ def test_pages_partenaire_sans_mandataire_visible():
     assert "'Le chef de file n\\'a pas encore calculé le score du groupement.'" in app_html
     assert "(e.who==='mandataire'?'Chef de file':'Partenaire')" in app_html
     assert "'Mandataire'" not in app_html and "'Le mandataire" not in app_html
+
+
+def test_avertissement_solidaire_n_affirme_pas_ce_que_dit_la_citation():
+    """L'avertissement se déclenche sur les seuls mots « mandataire » et « solidaire » : il doit
+    rester neutre (« parle d'un »), même quand la phrase citée dit le contraire."""
+    from types import SimpleNamespace
+    from app.services import groupement_convention as gc
+    project = SimpleNamespace(estimate={}, groupement_plan={}, id=1)
+    ctx = {"forme": "conjoint", "mandataire_solidaire": False, "members": []}
+    fi = {"extrait": "En cas de groupement conjoint, le mandataire ne sera pas solidaire des autres membres."}
+    w = [x for x in gc.warnings_for(None, project, ctx, fi, []) if "solidaire" in x]
+    assert len(w) == 1 and w[0].startswith("La phrase citée du règlement parle d'un chef de file solidaire")
+    assert not re.search(r"\b(demande|impose|exige)\b", w[0]), w[0]
+
+
+# ═══ 4. Emails sans nom d'entreprise du chef de file : « du / au chef de file » ═══════════
+
+def test_emails_sans_nom_du_chef_de_file_bien_construits(client, auth, mails, monkeypatch):
+    """Profil entreprise sans nom : le repli se construit avec « de » et « à » (« du chef de
+    file », « au chef de file »), jamais « de le chef de file » ni « à le chef de file »."""
+    import app.services.alerts as al
+    import app.services.email as email_mod
+    from tests.test_convention_groupement import _db, _set_company
+    from tests.test_cotraitance_v4 import _alert_project
+    _set_company(auth["email"], name="")
+    sent = []
+    monkeypatch.setattr(al, "send_email", lambda to, subj, body: sent.append((to, subj, body)) or True)
+    monkeypatch.setattr(email_mod, "send_email", lambda to, subj, body, *a, **k: sent.append((to, subj, body)) or True)
+    _p1, (relance,) = _alert_project(client, auth, days=3, n_partners=1, submit=False)
+    _p2, (attest,) = _alert_project(client, auth, days=3, n_partners=1, submit=True)
+    db = _db()
+    try:
+        al.run_cotraitance_reminders(db)
+    finally:
+        db.close()
+    by_to = {}
+    for to, _subj, body in sent:
+        by_to.setdefault(to, []).append(body)
+    # Relance de part (attestations jointes) et alerte d'attestations seule.
+    assert any("pour ajouter votre part au groupement du chef de file sur le marché" in b
+               for b in by_to[relance["recipient"]]), by_to[relance["recipient"]]
+    assert any("le groupement du chef de file a besoin de vos attestations à jour" in b
+               for b in by_to[attest["recipient"]]), by_to[attest["recipient"]]
+    # Accusé de réception au partenaire qui soumet sa part.
+    assert any("a bien été transmise au chef de file." in b for b in by_to[attest["recipient"]])
+    flat = " ".join(b for _to, _s, b in sent)
+    assert "de le chef de file" not in flat and "à le chef de file" not in flat
+    assert not MOT.search(flat)
+
+
+def test_ancienne_convention_de_secours_sans_faute_d_accord():
+    from app.services.agents.redaction import _groupement_convention
+    md = _groupement_convention({}, [{"name": "Martin SAS", "role": "sous_traitant", "lot": "Lot 2"}],
+                                {"intitule_marche": "École", "acheteur": "Ville"})
+    assert "Est désigné chef de file (mandataire du groupement) : Entreprise à préciser." in md
+    assert "Le chef de file représente l'ensemble des membres" in md
+    assert "est désigné" not in md and "Il représente" not in md
+    md2 = _groupement_convention({"name": "Breizh Couverture"}, [], {})
+    assert "Est désigné chef de file (mandataire du groupement) : Breizh Couverture." in md2

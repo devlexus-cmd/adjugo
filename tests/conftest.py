@@ -20,6 +20,14 @@ os.environ["BREVO_API_KEY"] = ""
 # tests IA remplacent le client par un faux ; les autres reçoivent un 503 propre).
 os.environ["ANTHROPIC_API_KEY"] = ""
 os.environ["MISTRAL_API_KEY"] = ""
+# Fuseau de la PRODUCTION (image python:3.12-slim : UTC). Le serveur prend « aujourd'hui » en UTC
+# (relances, dates de vérification) ; les tests, eux, calculent leurs dates avec date.today().
+# Sur un poste à l'heure de Paris, les deux divergeaient entre 00:00 et 02:00 : 3 échecs la nuit.
+# Les heures « de Paris » affichées ne dépendent pas de ce réglage (fuseau explicite, zoneinfo).
+os.environ["TZ"] = "UTC"
+import time as _time
+if hasattr(_time, "tzset"):
+    _time.tzset()
 
 _db = pathlib.Path(_TEST_DB_FILE)
 if _db.exists():

@@ -225,10 +225,12 @@ def _notify_partner_received(inv, db: Session) -> None:
         project = db.query(Project).filter(Project.id == inv.project_id).first()
         pname = (project.name if project else "le marché")
         owner_company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
-        chef = (owner_company.name if owner_company and owner_company.name else "le chef de file")
+        # « transmise à Breizh Couverture » / « au chef de file » (jamais « à le chef de file »).
+        a_chef = (f"à {owner_company.name}" if owner_company and owner_company.name
+                  else "au chef de file")
         subj = f"Votre part a bien été transmise — {pname[:60]}"
-        text = (f"Bonjour,\n\nVotre part sur le marché « {pname} » a bien été transmise à "
-                f"{chef}.\n\nVous pouvez encore l'ajuster (texte et pièces) jusqu'à la date "
+        text = (f"Bonjour,\n\nVotre part sur le marché « {pname} » a bien été transmise "
+                f"{a_chef}.\n\nVous pouvez encore l'ajuster (texte et pièces) jusqu'à la date "
                 f"limite via votre lien. Toute modification après envoi repasse votre part en "
                 f"brouillon : pensez à la re-soumettre.\n\n— Adjugo, le réseau des PME")
         _email.send_email(inv.recipient, subj, text)
@@ -2340,6 +2342,15 @@ def _classify_partner_pieces(names: list, piece_types: list = None) -> dict:
     return {"have": have, "missing": missing, "types": by_name}
 
 
+def _ligne_a_fournir(name: str, labels: list) -> str:
+    """Cockpit : UNE ligne par membre, accordée au nombre (« X : pièce à fournir — Kbis »,
+    « X : pièces à fournir — Kbis, RIB ») ; au-delà de 3, « et N autre(s) » (rien ne disparaît
+    sans le dire)."""
+    n, rest = len(labels), len(labels) - 3
+    return (f"{name} : {'pièce' if n == 1 else 'pièces'} à fournir — {', '.join(labels[:3])}"
+            + (f" et {rest} autre{'s' if rest > 1 else ''}" if rest > 0 else ""))
+
+
 # ── Coffre-fort croisé (E) : statut des attestations de chaque membre ─────────
 _EXPECTED_BASE = ["kbis", "fiscale", "sociale", "assurance", "rib"]
 
@@ -2563,6 +2574,7 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
 
     partners, lots, missing, total_score = [], {}, [], 0.0
+    piece_line = {}      # invite_id → position, dans `missing`, de sa ligne « pièces à fournir »
     for inv in invites:
         c = contribs.get(inv.id)
         lot_clean = (c.lot.strip() if c and c.lot else "")   # évite une clé de lot vide/espaces
@@ -2603,18 +2615,14 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
             missing.append(f"{name} : aucune référence renseignée")
         elif pclass["missing"]:
             # Part soumise mais pièces administratives obligatoires absentes du membre.
-            missing.append(f"{name} : pièce(s) à fournir — {', '.join(pclass['missing'][:3])}")
-
-    # Conformité (politique : AVERTIR, pas bloquer) — un lot ne peut avoir qu'UN attributaire
-    # en groupement conjoint : on signale tout lot revendiqué par plusieurs partenaires.
-    for k, names in lots.items():
-        if len(names) > 1:
-            missing.insert(0, f"Lot « {k} » revendiqué par {len(names)} partenaires "
-                              f"({', '.join(names[:3])}) — un lot ne peut avoir qu'un seul attributaire")
+            piece_line[inv.id] = len(missing)
+            missing.append(_ligne_a_fournir(name, pclass["missing"]))
 
     # Coffre croisé : chaque attestation expirée / expirant avant la date limite, puis les pièces
     # à fournir regroupées en UNE ligne par membre (le tableau du coffre, juste en dessous, et les
-    # pastilles de chaque part montrent déjà le détail) — sauf si la file en a déjà une pour lui.
+    # pastilles de chaque part montrent déjà le détail). Si la file a déjà une ligne « à fournir »
+    # pour ce membre, celle du coffre la REMPLACE : c'est la liste complète (qualification
+    # comprise quand le DCE en demande une), avec « et N autres » au-delà de 3.
     coffre = coffre_croise(db, project, invites, viewer_invite_id=None, for_owner=True)
     a_fournir = {}
     for it in coffre.get("alert_items", []):
@@ -2622,13 +2630,20 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
             a_fournir.setdefault(it.get("invite_id"), (it["company"], []))[1].append(it["label"])
         elif it["text"] not in missing:
             missing.append(it["text"])
-    for who, labels in a_fournir.values():
-        prefix = f"{who} : pièce(s) à fournir"
-        if any(m.startswith(prefix) for m in missing):
-            continue
-        rest = len(labels) - 3
-        missing.append(f"{prefix} — {', '.join(labels[:3])}"
-                       + (f" et {rest} autre{'s' if rest > 1 else ''}" if rest > 0 else ""))
+    for invite_id, (who, labels) in a_fournir.items():
+        line = _ligne_a_fournir(who, labels)
+        if invite_id in piece_line:
+            missing[piece_line[invite_id]] = line
+        else:
+            missing.append(line)
+
+    # Conformité (politique : AVERTIR, pas bloquer) — un lot ne peut avoir qu'UN attributaire
+    # en groupement conjoint : on signale tout lot revendiqué par plusieurs partenaires (en tête
+    # de file ; placé APRÈS le coffre pour que les positions de `piece_line` restent justes).
+    for k, names in lots.items():
+        if len(names) > 1:
+            missing.insert(0, f"Lot « {k} » revendiqué par {len(names)} partenaires "
+                              f"({', '.join(names[:3])}) — un lot ne peut avoir qu'un seul attributaire")
 
     # Journal membre : « le mandataire a consulté votre part » (1 entrée / part / heure).
     _record_owner_views(db, project_id, data_owner_id(current_user, db), f"user:{current_user.id}", "",

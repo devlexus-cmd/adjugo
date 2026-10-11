@@ -5,7 +5,8 @@ Le PDF « journal » d'un partenaire et la section « Accords enregistrés » du
 affichaient l'heure UTC (« 11/10/2026 à 20:28 (UTC) ») alors que l'écran affiche 22:28. Ils
 affichent désormais l'heure de Paris. Invariants vérifiés :
 - conversion hiver (UTC+1), été (UTC+2), changements d'heure (dernier dimanche de mars et
-  d'octobre), datetime naïf (= UTC) ou avec fuseau, passage de jour ;
+  d'octobre), datetime naïf (= UTC) ou avec fuseau, passage de jour ; pendant l'heure répétée
+  d'octobre (02:00-02:59), « heure d'été » / « heure d'hiver » distingue les deux instants ;
 - repli sans base des fuseaux : l'heure UTC, dite « (UTC) » ; la base vient du paquet tzdata
   (l'image de production n'a pas de base système) ;
 - AFFICHAGE SEULEMENT : le JSON du journal garde `at` en UTC (il entre dans les maillons), sa
@@ -90,10 +91,17 @@ def test_hiver_utc_plus_1():
 def test_changement_d_heure_octobre_et_mars():
     from app.services.format import date_heure_fr
     # Dernier dimanche d'octobre 2026 = 25/10 : à 01:00 UTC, 03:00 (été) redevient 02:00 (hiver).
-    assert date_heure_fr(datetime(2026, 10, 25, 0, 59)) == "25/10/2026 à 02:59 (heure de Paris)"
-    assert date_heure_fr(datetime(2026, 10, 25, 1, 0)) == "25/10/2026 à 02:00 (heure de Paris)"
-    # La même heure affichée deux fois (02:30) pour deux instants distincts : c'est l'heure légale.
-    assert date_heure_fr(datetime(2026, 10, 25, 0, 30)) == date_heure_fr(datetime(2026, 10, 25, 1, 30))
+    # De 02:00 à 02:59, chaque heure de Paris existe deux fois : on précise été / hiver pour que
+    # deux instants distincts ne s'affichent jamais pareil.
+    assert date_heure_fr(datetime(2026, 10, 25, 0, 59)) == "25/10/2026 à 02:59 (heure d'été de Paris)"
+    assert date_heure_fr(datetime(2026, 10, 25, 1, 0)) == "25/10/2026 à 02:00 (heure d'hiver de Paris)"
+    assert date_heure_fr(datetime(2026, 10, 25, 0, 30)) == "25/10/2026 à 02:30 (heure d'été de Paris)"
+    assert date_heure_fr(datetime(2026, 10, 25, 1, 30)) == "25/10/2026 à 02:30 (heure d'hiver de Paris)"
+    assert date_heure_fr(datetime(2026, 10, 25, 0, 30), suffixe=False) == "25/10/2026 à 02:30, heure d'été"
+    assert date_heure_fr(datetime(2026, 10, 25, 1, 30), suffixe=False) == "25/10/2026 à 02:30, heure d'hiver"
+    # Juste avant et juste après l'heure répétée : rien de plus.
+    assert date_heure_fr(datetime(2026, 10, 24, 23, 59)) == "25/10/2026 à 01:59 (heure de Paris)"
+    assert date_heure_fr(datetime(2026, 10, 25, 2, 0)) == "25/10/2026 à 03:00 (heure de Paris)"
     # Veille et lendemain : décalage d'été puis d'hiver.
     assert date_heure_fr(datetime(2026, 10, 24, 12, 0)) == "24/10/2026 à 14:00 (heure de Paris)"
     assert date_heure_fr(datetime(2026, 10, 26, 12, 0)) == "26/10/2026 à 13:00 (heure de Paris)"
@@ -185,9 +193,10 @@ def test_pdf_journal_heures_de_paris():
     assert "15/01/2026 à 21:28" in flat and "15/01/2026 à 20:28" not in flat      # hiver
     assert "11/10/2026 à 22:28" in flat and "11/10/2026 à 20:28" not in flat      # été
     # Export fait la nuit du changement d'heure (01:30 UTC = 02:30 heure d'hiver).
-    assert "Exporté le 25/10/2026 à 02:30 (heure de Paris)" in flat
+    assert "Exporté le 25/10/2026 à 02:30 (heure d'hiver de Paris)" in flat
     # La phrase d'explication dit où sont les heures UTC (le fichier JSON, pour la vérification).
-    assert "le fichier JSON les garde en temps universel (UTC) pour la vérification" in flat
+    assert ("Les heures de ce PDF sont à l'heure de Paris ; le fichier JSON les garde en temps "
+            "universel (UTC) pour la vérification.") in flat
 
 
 def test_pdf_journal_repli_utc(sans_fuseau):
@@ -195,7 +204,8 @@ def test_pdf_journal_repli_utc(sans_fuseau):
     flat = _flat(jm.export_pdf(_payload()))
     assert "Date (UTC)" in flat and "heure de Paris" not in flat
     assert "11/10/2026 à 20:28" in flat and "Exporté le 25/10/2026 à 01:30 (UTC)" in flat
-    assert "temps universel (UTC), comme le fichier JSON" in flat
+    assert ("Les heures de ce PDF sont en temps universel (UTC), comme celles du fichier JSON qui "
+            "sert à la vérification.") in flat
 
 
 def test_message_d_alteration_a_l_heure_de_paris():
@@ -270,7 +280,7 @@ def test_accords_md_heures_de_paris():
     md = gc.accords_md(conv, sigs)
     assert "figée le 11/10/2026 à 22:28 (heure de Paris)." in md
     assert "le 15/01/2026 à 21:28 (heure de Paris)" in md
-    assert "le 25/10/2026 à 02:30 (heure de Paris)" in md
+    assert "le 25/10/2026 à 02:30 (heure d'hiver de Paris)" in md
     assert "(UTC)" not in md
     # La ligne d'empreinte ne bouge pas.
     assert f"Empreinte du texte approuvé (SHA-256) : {'e' * 64}" in md

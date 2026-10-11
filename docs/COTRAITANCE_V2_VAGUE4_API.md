@@ -399,7 +399,9 @@ journal montre l'entrée. Ne jamais afficher au partenaire les `manques` du chef
 - Côté partenaire, sous le tableau : `a_fournir.resume` (une ligne) puis seulement les
   `alert_items` dont `kind` n'est pas `a_fournir` — le tableau montre déjà chaque pièce à fournir.
 - Cockpit du chef de file (`readiness.missing`) : expirations une par une, pièces à fournir
-  regroupées en une ligne par membre (« X : pièce(s) à fournir — Kbis, RIB et 2 autres »).
+  regroupées en une ligne par membre (« X : pièces à fournir — Kbis, Attest. fiscale, Attest.
+  sociale (URSSAF) et 2 autres », « X : pièce à fournir — RIB ») ; la ligne du coffre remplace
+  celle de la part soumise (une seule ligne par membre, liste complète).
 - Relances (emails) : « Kbis à fournir », « RIB a expiré », « … expire le 20/10/2026 (avant la
   date limite) ».
 

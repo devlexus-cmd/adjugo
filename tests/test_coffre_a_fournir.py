@@ -114,11 +114,44 @@ def test_cockpit_une_ligne_a_fournir_par_membre(client, auth):
     assert not any("manquante" in m for m in miss)
     assert "Kbis de Beta SAS a expiré" in miss
     assert "Attest. sociale (URSSAF) de Alpha SARL expire avant la date limite" in miss
-    gamma = [m for m in miss if m.startswith("Gamma Électricité : pièce(s) à fournir")]
-    assert gamma == ["Gamma Électricité : pièce(s) à fournir — Kbis, Attest. fiscale, "
+    assert not any("pièce(s)" in m for m in miss)                          # accordé au nombre
+    gamma = [m for m in miss if m.startswith("Gamma Électricité : pièces à fournir")]
+    assert gamma == ["Gamma Électricité : pièces à fournir — Kbis, Attest. fiscale, "
                      "Attest. sociale (URSSAF) et 2 autres"]
+    assert "Alpha SARL : pièces à fournir — Kbis, Attest. fiscale, Assurance (RC/décennale) et 1 autre" in miss
     for who in ("Alpha SARL", "Beta SAS"):
-        assert len([m for m in miss if m.startswith(f"{who} : pièce(s) à fournir")]) == 1
+        assert len([m for m in miss if m.startswith(f"{who} : pièces à fournir")]) == 1
+
+
+def test_cockpit_part_soumise_sans_pieces_liste_complete(client, auth):
+    """Part soumise et complète (lot, prix, mémoire, références) : UNE ligne « à fournir » par
+    membre, et elle dit combien il en reste (avant : 3 pièces annoncées, pas un mot sur
+    l'assurance ni le RIB). Accord au nombre : une seule pièce → « pièce à fournir »."""
+    from tests.test_convention_groupement import _put, _submit
+    h = auth["headers"]
+    pid = _project(client, h)
+    toks = {n: _invite(client, h, pid, n)["token"] for n in ("Delta BTP", "Epsilon Bois")}
+    for fname, ptype in (("kbis.pdf", "kbis"), ("fiscale.pdf", "fiscale"), ("urssaf.pdf", "sociale"),
+                         ("assurance.pdf", "assurance")):
+        _upload(client, toks["Epsilon Bois"], fname, piece_type=ptype)     # tout sauf le RIB
+    for i, (name, tok) in enumerate(toks.items()):
+        r = _put(client, tok, company_name=name, lot=f"Lot {i + 5}", prix_lot_ht=30000,
+                 memoire_paragraph="Équipe de 6 compagnons, 20 ans d'expérience.",
+                 references=[{"name": "École de Lorient", "year": 2024}])
+        assert r.status_code == 200, r.text
+        _submit(client, tok)
+    miss = client.get(f"/api/projects/{pid}/consortium", headers=h).json()["readiness"]["missing"]
+    assert [m for m in miss if m.startswith("Delta BTP")] == [
+        "Delta BTP : pièces à fournir — Kbis, Attest. fiscale, Attest. sociale (URSSAF) et 2 autres"], miss
+    assert [m for m in miss if m.startswith("Epsilon Bois")] == ["Epsilon Bois : pièce à fournir — RIB"], miss
+
+
+def test_ligne_a_fournir_accord_et_reste():
+    from app.routers.invites import _ligne_a_fournir
+    assert _ligne_a_fournir("X", ["RIB"]) == "X : pièce à fournir — RIB"
+    assert _ligne_a_fournir("X", ["Kbis", "RIB"]) == "X : pièces à fournir — Kbis, RIB"
+    assert _ligne_a_fournir("X", ["A", "B", "C", "D"]) == "X : pièces à fournir — A, B, C et 1 autre"
+    assert _ligne_a_fournir("X", list("ABCDEF")) == "X : pièces à fournir — A, B, C et 3 autres"
 
 
 def test_avant_de_deposer_compte_exact_expirations_d_abord(client, auth):

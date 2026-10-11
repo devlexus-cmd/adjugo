@@ -38,10 +38,26 @@ def libelle_fuseau() -> str:
     return "heure de Paris" if _tz_paris() is not None else "UTC"
 
 
+def _heure_repetee(local) -> str:
+    """Nuit du passage à l'heure d'hiver : de 02:00 à 02:59, chaque heure de Paris existe deux
+    fois (d'abord en heure d'été, puis en heure d'hiver). Renvoie alors « heure d'été » ou
+    « heure d'hiver » pour distinguer les deux instants ; '' le reste de l'année."""
+    try:
+        autre = local.replace(fold=1 - local.fold)
+        if autre.utcoffset() == local.utcoffset():
+            return ""
+        return "heure d'été" if local.dst() else "heure d'hiver"
+    except Exception:
+        return ""
+
+
 def date_heure_fr(dt, suffixe: bool = True) -> str:
     """« 11/10/2026 à 22:28 (heure de Paris) » ; sans `suffixe` : « 11/10/2026 à 22:28 » (le
     fuseau est alors dit ailleurs, par exemple dans l'en-tête d'une colonne : libelle_fuseau()).
-    Datetime naïf = UTC. Repli sans base des fuseaux : l'heure UTC, dite « (UTC) ». '' si vide."""
+    Pendant l'heure répétée du passage à l'heure d'hiver : « 25/10/2026 à 02:30 (heure d'été de
+    Paris) » puis « … (heure d'hiver de Paris) » ; sans `suffixe` : « 25/10/2026 à 02:30, heure
+    d'été ». Datetime naïf = UTC. Repli sans base des fuseaux : l'heure UTC, dite « (UTC) ».
+    '' si vide."""
     if not dt:
         return ""
     try:
@@ -50,6 +66,9 @@ def date_heure_fr(dt, suffixe: bool = True) -> str:
         tz = _tz_paris()
         local = dt.astimezone(tz if tz is not None else timezone.utc)
         out = local.strftime("%d/%m/%Y à %H:%M")
-        return f"{out} ({libelle_fuseau()})" if suffixe else out
+        saison = _heure_repetee(local) if tz is not None else ""
+        if not suffixe:
+            return f"{out}, {saison}" if saison else out
+        return f"{out} ({saison} de Paris)" if saison else f"{out} ({libelle_fuseau()})"
     except Exception:
         return str(dt)

@@ -689,10 +689,10 @@ def export_pdf(payload: dict) -> bytes:
     t = Table(data, colWidths=[9 * mm, 34 * mm, 22 * mm, 85 * mm, 28 * mm], repeatRows=1)
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), head), ("GRID", (0, 0), (-1, -1), 0.4, line),
                            ("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    heures = ("Ce PDF donne les heures à l'heure de Paris ; le fichier JSON les garde en temps "
+    heures = ("Les heures de ce PDF sont à l'heure de Paris ; le fichier JSON les garde en temps "
               "universel (UTC) pour la vérification." if fuseau != "UTC" else
-              "Ce PDF donne les heures en temps universel (UTC), comme le fichier JSON qui sert "
-              "à la vérification.")
+              "Les heures de ce PDF sont en temps universel (UTC), comme celles du fichier JSON qui "
+              "sert à la vérification.")
     story += [t, Spacer(1, 5 * mm),
               Paragraph(f"Empreinte de votre journal : <font name='Courier'>{e(payload.get('empreinte'))}</font>", small),
               Paragraph(f"{e(heures)} "

@@ -473,8 +473,11 @@ def _groupement_convention(company, cotraitants, details):
         "l'exécution du marché.",
         "",
         "## Article 3 — Chef de file (mandataire)",
-        f"{mand} est désigné chef de file (mandataire du groupement). Il représente l'ensemble "
-        "des membres vis-à-vis de l'acheteur, coordonne les prestations et est l'interlocuteur unique.",
+        # Tournure sans accord (nom d'entreprise ou repli « Entreprise à préciser ») : jamais
+        # « Entreprise à préciser est désigné … Il représente ».
+        f"Est désigné chef de file (mandataire du groupement) : {mand}. Le chef de file représente "
+        "l'ensemble des membres vis-à-vis de l'acheteur, coordonne les prestations et est "
+        "l'interlocuteur unique.",
         "",
         "## Article 4 — Répartition des prestations et de la rémunération",
         "Chaque membre exécute le(s) lot(s) indiqué(s) à l'article 1 et perçoit la part de "

@@ -824,7 +824,7 @@ def warnings_for(conv, project, ctx: dict, fi: dict, sous_traitants: list, db=No
                    "ne correspond pas. Vérifiez avant de générer.")
     ex = (fi.get("extrait") or "").lower()
     if forme == "conjoint" and not ctx.get("mandataire_solidaire") and "mandataire" in ex and "solidaire" in ex:
-        out.append("La phrase citée du règlement demande un chef de file solidaire (« mandataire solidaire ») : "
+        out.append("La phrase citée du règlement parle d'un chef de file solidaire (« mandataire solidaire ») : "
                    "vérifiez s'il faut cocher l'option « Le chef de file répond aussi de la part de chaque "
                    "partenaire ».")
     members = ctx.get("members") or []

@@ -388,7 +388,7 @@ def _mail_a_valider(db: Session, project: Project, conv, user: User, request: Re
         return 0
     base = (_settings.APP_BASE_URL or str(request.base_url)).rstrip("/")
     company = gc._company_for(db, project)
-    chef = (company.name if company and company.name else "le chef de file")
+    chef = (company.name if company and company.name else "Le chef de file")   # début de phrase
     mails = []
     for s in gc.signatures_of(db, conv):
         if not s.invite_id:

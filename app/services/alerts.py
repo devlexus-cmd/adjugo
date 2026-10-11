@@ -115,10 +115,11 @@ def run_cotraitance_reminders(db: Session) -> dict:
         if not target:
             continue
         company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
-        chef = (company.name if company and company.name else "le chef de file")
+        # « au groupement de Breizh Couverture » / « du chef de file » (jamais « de le chef de file »).
+        du_chef = f"de {company.name}" if company and company.name else "du chef de file"
         base = "il vous reste 1 jour" if days_left <= 1 else f"il vous reste {days_left} jours"
         subj = f"Rappel — {base} pour votre part ({project.name[:50]})"
-        text = (f"Bonjour,\n\n{base} pour ajouter votre part au groupement de {chef} sur le "
+        text = (f"Bonjour,\n\n{base} pour ajouter votre part au groupement {du_chef} sur le "
                 f"marché « {project.name} » (date limite : {_fr(deadline_date)}).\n\n"
                 f"Complétez et soumettez votre part via votre lien Adjugo. Sans elle, votre "
                 f"entreprise ne figurera pas dans la réponse commune.")
@@ -197,7 +198,7 @@ def _piece_alerts_due(db: Session, today) -> list:
         tenant_oid = tenant_owner_id(project, db)
         company = (db.query(Company).filter(Company.user_id == tenant_oid).first()
                    or db.query(Company).filter(Company.user_id == project.user_id).first())
-        chef = (company.name if company and company.name else "le chef de file")
+        du_chef = f"de {company.name}" if company and company.name else "du chef de file"
         by_id = {i.id: i for i in invites}
         for m in grid.get("members", []):
             inv = by_id.get(m.get("invite_id"))
@@ -226,7 +227,7 @@ def _piece_alerts_due(db: Session, today) -> list:
                 continue
             out.append({"project": project, "deadline_date": deadline_date, "palier": palier,
                         "inv": inv, "who": m.get("company") or inv.company_name or "Partenaire",
-                        "problems": problems, "chef": chef, "owner_email": owner_email,
+                        "problems": problems, "du_chef": du_chef, "owner_email": owner_email,
                         "tenant_oid": tenant_oid})
     return out
 
@@ -257,7 +258,7 @@ def _run_piece_expiry_alerts(db: Session, today, due=None, merged=None) -> int:
                 inv.recipient,
                 f"Attestations à mettre à jour avant le {_fr(a['deadline_date'])} — {project.name[:50]}",
                 f"Bonjour,\n\nPour le marché « {project.name} » (date limite : {_fr(a['deadline_date'])}), "
-                f"le groupement de {a['chef']} a besoin de vos attestations à jour :\n{lines}\n\n"
+                f"le groupement {a['du_chef']} a besoin de vos attestations à jour :\n{lines}\n\n"
                 f"Déposez-les depuis votre espace Adjugo (votre lien d'invitation).\n\n— Adjugo")
         # Chaîné sous le propriétaire du tenant (sinon l'entrée sortait de la chaîne
         # d'intégrité de l'entreprise quand un membre a créé le marché).
