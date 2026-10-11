@@ -70,6 +70,10 @@ SIRENE_CALL_TIMEOUT_S = 5.0              # délai PAR APPEL HTTP de ce repli (SI
 # ~160 000 éléments : un dédoublonnage sur liste bloquait l'unique worker plusieurs minutes).
 RAW_LIST_MAX = {"metiers": 60, "codes_cpv": 100, "departements": 120, "roles_acceptes": 10,
                 "references_publiques": 50, "hidden_from_sirens": 300}
+# Libellés français des listes (le message 422 ne montre jamais un nom de champ interne).
+RAW_LIST_LABELS = {"metiers": "métiers", "codes_cpv": "codes CPV", "departements": "départements",
+                   "roles_acceptes": "rôles acceptés", "references_publiques": "références publiques",
+                   "hidden_from_sirens": "entreprises masquées"}
 DAILY_MATCH_CAP = 200                    # par organisation (en plus du limiter par IP)
 DAILY_ANNUAIRE_CAP = 300
 
@@ -407,7 +411,7 @@ def put_profil(request: Request, body: ProfilIn, current_user: User = Depends(ge
     for key, cap in RAW_LIST_MAX.items():
         raw = getattr(body, key, None)
         if key in fields and raw is not None and len(raw) > cap:
-            raise HTTPException(422, f"Liste trop longue ({key.replace('_', ' ')}) : {cap} éléments au plus.")
+            raise HTTPException(422, f"Liste trop longue ({RAW_LIST_LABELS[key]}) : {cap} éléments au plus.")
     if "metiers" in fields:
         keys = _trade_keys()
         vals = [str(m).strip() for m in (body.metiers or []) if str(m).strip()]

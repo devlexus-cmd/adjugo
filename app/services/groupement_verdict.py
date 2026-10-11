@@ -26,7 +26,11 @@ logger = logging.getLogger("adjugo")
 # Cache in-process des découvertes SIRENE par (métier, département) — process unique sans
 # Redis, donc un dict module-level suffit et reste cohérent.
 _SIRENE_CACHE: dict = {}
-_SIRENE_TTL = 600   # 10 min
+_SIRENE_TTL = 600        # 10 min pour une recherche aboutie
+# Recherche en ERREUR : cache court, et son avertissement est RÉ-ÉMIS à chaque lecture. Sans
+# cache, une panne SIRENE bloquait un fil de l'unique worker (jusqu'à 3 métiers × 12 s) à chaque
+# requête ; avec le cache de 10 min, l'écran disait « aucune entreprise » sans l'avertissement.
+_SIRENE_ERR_TTL = 90
 
 WARN_DECLARE = ("Verdict fondé sur des capacités que vous avez déclarées vous-même sur vos "
                 "partenaires — à confirmer auprès d'eux")
@@ -270,13 +274,17 @@ def _short_timeout_service(timeout: float):
 
 
 def _discover_sirene(trade: str, dept: str, warnings: list, timeout: Optional[float] = None) -> list:
-    """Découverte SIRENE pour UN métier/département, cachée 10 min. Jamais d'exception.
+    """Découverte SIRENE pour UN métier/département, cachée 10 min (90 s si la recherche est en
+    erreur, avertissement répété à chaque lecture). Jamais d'exception.
     `timeout` : délai par appel HTTP (SIRENE, BODACC) ; None = délais habituels du sourcing."""
     key = (trade, dept)
     hit = _SIRENE_CACHE.get(key)
     now = time.time()
-    if hit and now - hit[0] < _SIRENE_TTL:
-        return list(hit[1])
+    if hit:
+        _ts, cached, warns = hit
+        if now - _ts < (_SIRENE_ERR_TTL if warns else _SIRENE_TTL):
+            warnings.extend(warns)
+            return list(cached)
     try:
         from app.routers.sourcing import _company_service
         from app.sourcing.sources.sirene import TRADES
@@ -295,19 +303,18 @@ def _discover_sirene(trade: str, dept: str, warnings: list, timeout: Optional[fl
             if getattr(c, "est_personne_physique", False):
                 continue   # entrepreneur individuel : nom = personne physique (RGPD)
             out.append(_member_from_normalized_company(c))
-        errs = list(res.get("errors") or [])
-        for e in errs:
+        warns = []
+        for e in list(res.get("errors") or []):
             msg = getattr(e, "message", None) or str(e)
-            warnings.append(f"Recherche SIRENE ({label}) partielle : {msg[:120]}")
-        # Une recherche en erreur n'est JAMAIS mise en cache : sinon, pendant 10 min, l'écran
-        # disait « aucune entreprise trouvée » sans l'avertissement, alors que le registre
-        # n'avait pas répondu.
-        if not errs:
-            _SIRENE_CACHE[key] = (now, out)
+            warns.append(f"Recherche SIRENE ({label}) partielle : {msg[:120]}")
+        warnings.extend(warns)
+        _SIRENE_CACHE[key] = (now, out, warns)
         return list(out)
     except Exception as e:
         logger.warning("découverte SIRENE %s/%s en échec : %s", trade, dept, e)
-        warnings.append(f"Recherche SIRENE indisponible pour « {trade} » — réessayez plus tard.")
+        warns = [f"Recherche SIRENE indisponible pour « {trade} » — réessayez plus tard."]
+        warnings.extend(warns)
+        _SIRENE_CACHE[key] = (now, [], warns)
         return []
 
 
@@ -349,7 +356,8 @@ def pool_for_project(db, project, owner_ids: list, include_sirene: bool = False,
       rattaches = ProjectCotraitant du projet → Cotraitant (kind 'attached')
       annuaire  = Cotraitant de l'organisation NON rattachés (kind 'annuaire')
       sirene    = (si include_sirene) découverte SIRENE pour les métiers des manques
-                  (≤ max_sirene_calls appels, cache 10 min, erreurs → liste vide + warning)
+                  (≤ max_sirene_calls appels, cache 10 min ; erreurs → liste vide + avertissement,
+                  cache 90 s)
       reseau    = (si network_ctx d'un chercheur au profil PUBLIÉ) profils du réseau Adjugo
                   pour les métiers des manques, dans l'ordre du classement partner_matching
     `gaps` : manques déjà calculés (sinon calculés ici via gaps_for si lead/criteria fournis)."""

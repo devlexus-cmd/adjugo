@@ -172,7 +172,9 @@ Contrat d'API à jour : `docs/COTRAITANCE_V2_VAGUE3_API.md` (§ 3.5 à 3.7, 4, 5
 - **Badge déclaratif.** « N groupements marqués déposés sur Adjugo (déclaratif) au JJ/MM », niveau
   `info`, daté du dernier recalcul (`groupements_checked_at`) : le statut « déposé » est renseigné
   par le chef de file, Adjugo ne voit pas le dépôt chez l'acheteur. Le compteur ne retient que les
-  groupements avec une autre organisation (s'inviter soi-même ne compte plus). **Reste (domaine B)** :
+  groupements avec une autre entreprise distincte : SIREN de la part à 9 chiffres différent du sien,
+  SIRET du chef de file différent du sien, ou identité validée par Adjugo (s'inviter soi-même ou
+  passer par un 2e compte sans SIRET ne compte pas). **Reste (domaine B)** :
   recalcul au marquage et à l'annulation du dépôt ; d'ici là, le badge porte la date du dernier
   recalcul (historique, vérification, cron).
 - **Critères honnêtes.** Zone : « siège SIRENE » lu dans le registre, sinon « code postal déclaré » ;
@@ -181,7 +183,8 @@ Contrat d'API à jour : `docs/COTRAITANCE_V2_VAGUE3_API.md` (§ 3.5 à 3.7, 4, 5
   les recherches de N entreprise(s) ce mois-ci » (une entreprise compte une fois par mois).
 - **Process unique.** Repli SIRENE de « Qui me complète ? » : lots en parallèle (3 fils), **5 s par
   appel** (SIRENE, puis BODACC), **budget global de 8 s** (au-delà : « Le registre SIRENE est lent à
-  répondre : relancez la recherche pour ce lot. »), recherche en erreur jamais mise en cache.
+  répondre : relancez la recherche pour ce lot. »), recherche en erreur en cache 90 s seulement,
+  avertissement répété à chaque lecture (aussi pour GET /groupement/besoins?sirene=1).
   Lecture des profils bornée à 2 000 : **métier et département filtrés en base avant la borne**
   (annuaire ; métier pour « Qui me complète ? » et pour le pool réseau du score de groupement) ;
   contrôle « cette entreprise est sur le réseau » d'une invitation SIRENE par requête ciblée sur le

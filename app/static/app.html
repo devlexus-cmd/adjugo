@@ -2411,7 +2411,7 @@
                 <div v-if="!inv._declined" class="row wrap rn-g8 rn-acts">
                   <span v-if="inv.statut!=='acceptee' && inv.peut_accepter===false" class="muted small">Réservée au compte propriétaire<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ inv.aide }}</span></button></span>
                   <button v-if="inv.statut!=='acceptee' && inv.peut_accepter!==false" type="button" class="btn sm primary" @click="rnAccept(inv)" :disabled="!!reseau.recues.busy" :aria-busy="reseau.recues.busy===inv.token?'true':'false'"><span v-if="reseau.recues.busy===inv.token" class="spin"></span><i v-else data-lucide="check"></i>Accepter depuis mon compte</button>
-                  <button v-else type="button" class="btn sm primary" @click="rnOpenRecue(inv)"><i data-lucide="folder-open"></i>Ouvrir le dossier</button>
+                  <button v-if="inv.statut==='acceptee'" type="button" class="btn sm primary" @click="rnOpenRecue(inv)"><i data-lucide="folder-open"></i>Ouvrir le dossier</button>
                   <a class="btn sm" :href="'/invite/'+encodeURIComponent(inv.token)" target="_blank" rel="noopener"><i data-lucide="external-link"></i>Voir l'invitation</a>
                   <button v-if="inv.statut!=='acceptee' && inv.peut_accepter!==false" type="button" class="btn sm ghost" @click="rnDecline(inv)" :disabled="!!reseau.recues.busy">Décliner</button>
                 </div>

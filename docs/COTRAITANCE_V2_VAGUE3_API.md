@@ -469,7 +469,8 @@ hors de votre organisation ; 404 « Lot introuvable parmi les lots à compléter
   un délai de **5 s par appel** (SIRENE, puis BODACC qui écarte les procédures collectives) et un
   **budget global de 8 s**. Au-delà, le lot revient sans résultat, `sirene_cherche: false` et
   `sirene_message` « Le registre SIRENE est lent à répondre : relancez la recherche pour ce lot. »
-  Une recherche en erreur n'est jamais mise en cache : l'avertissement revient à chaque appel.
+  Une recherche en erreur reste en cache 90 s seulement (pas 10 min), et son avertissement revient
+  à chaque appel : une panne SIRENE ne bloque pas l'unique worker à chaque requête.
 - `departement_source ∈ dce | suppose | null` : `suppose` quand le dossier n'indique pas le lieu
   d'exécution (le département retenu est celui de votre entreprise). `warnings` le dit alors : « Lieu
   d'exécution absent du dossier : le département retenu pour chercher des partenaires est le vôtre
@@ -684,8 +685,12 @@ ni d'identifiant. `?profile_id=` (profil publié requis, sinon 403 ; 404 si invi
 `groupements_deposes` est recalculé (jamais saisi) à chaque ouverture de l'historique, à chaque
 vérification et par le cron ; la date du recalcul est gardée (`groupements_checked_at`). Il ne
 compte que les groupements avec une **autre organisation** (invitation acceptée par un compte
-extérieur, ou profil réseau d'une autre organisation) et écarte une part déclarée sous son propre
-SIREN : s'inviter soi-même ne fabrique pas de badge. > 0, il donne sur la fiche le badge `adjugo`
+extérieur, ou profil réseau d'une autre organisation), et seulement si cette autre entreprise est
+distincte : comme chef de file, la part soumise porte un SIREN à 9 chiffres différent du sien, ou
+l'organisation invitée (ou qui a accepté) a une identité validée par Adjugo sous un autre SIREN ;
+comme membre, le chef de file a un SIRET différent du sien dans son profil entreprise, ou une
+identité validée par Adjugo. S'inviter soi-même, ou faire accepter ses liens par un 2e compte sans
+SIRET, ne fabrique pas de badge. > 0, il donne sur la fiche le badge `adjugo`
 « 1 groupement marqué déposé sur Adjugo (déclaratif) au 11/10 », niveau `info` (jamais « vérifié ») :
 c'est le chef de file qui marque le marché déposé, Adjugo ne voit pas le dépôt sur la plateforme
 de l'acheteur. Afficher `source` et `avertissement` dans la bulle (i). Limite 60/h.

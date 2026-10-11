@@ -246,6 +246,24 @@ def test_put_profil_listes_bornees_avant_traitement(client, reg):
     assert r.status_code == 422
 
 
+def test_listes_trop_longues_message_en_francais(client, reg):
+    """Contre-vérification v34 (v_a4_masquage.py) : le 422 nommait la clé interne en anglais
+    (« hidden from sirens », « codes cpv », « roles acceptes »)."""
+    from app.routers.reseau import RAW_LIST_LABELS, RAW_LIST_MAX
+    assert set(RAW_LIST_LABELS) == set(RAW_LIST_MAX)
+    h = _org(client, "Libellés")["headers"]
+    attendus = {"hidden_from_sirens": "entreprises masquées", "codes_cpv": "codes CPV",
+                "departements": "départements", "metiers": "métiers",
+                "roles_acceptes": "rôles acceptés", "references_publiques": "références publiques"}
+    for key, label in attendus.items():
+        cap = RAW_LIST_MAX[key]
+        r = client.put("/api/reseau/profil", headers=h, json={key: ["x"] * (cap + 1)})
+        assert r.status_code == 422, (key, r.text)
+        assert r.json()["detail"] == f"Liste trop longue ({label}) : {cap} éléments au plus.", r.json()
+        for interne in ("_", "hidden", "sirens", "cpv", "acceptes", "references "):
+            assert interne not in r.json()["detail"], (interne, r.json())
+
+
 def test_annee_de_reference_hors_limites_422(client, reg):
     o = _org(client, "Année Infinie")
     h = {**o["headers"], "Content-Type": "application/json"}
@@ -390,24 +408,83 @@ def test_repli_sirene_delai_court_par_appel(monkeypatch):
     assert all(t is not None and float(t) <= 5 for _k, t in delais), delais
 
 
-def test_recherche_sirene_en_erreur_jamais_mise_en_cache(monkeypatch):
+def test_recherche_sirene_en_erreur_cache_court_avertissement_repete(monkeypatch):
+    """A10 + contre-vérification : une recherche en erreur n'est plus cachée 10 min en silence
+    (l'avertissement revient à chaque lecture), mais elle reste cachée 90 s : sinon une panne
+    SIRENE bloquait l'unique worker à CHAQUE requête."""
+    from app.services import groupement_verdict as gv
+    import app.routers.sourcing as S
+    n = {"calls": 0}
+    horloge = {"t": 1_000_000.0}
+
+    class _Err:
+        message = "SIRENE indisponible"
+
+    class _Svc:
+        def __init__(self, ok=False):
+            self.ok = ok
+
+        def discover(self, **kw):
+            n["calls"] += 1
+            return {"companies": [], "errors": [] if self.ok else [_Err()]}
+    monkeypatch.setattr(S, "_company_service", lambda: _Svc())
+    import types
+    monkeypatch.setattr(gv, "time", types.SimpleNamespace(time=lambda: horloge["t"], sleep=time.sleep,
+                                                          monotonic=time.monotonic, perf_counter=time.perf_counter))
+    monkeypatch.setattr(gv, "_SIRENE_CACHE", {})
+    w = [[], [], []]
+    for x in w:
+        gv._discover_sirene("etancheite", "98", x)
+    assert n["calls"] == 1
+    assert all(x == ["Recherche SIRENE (Étanchéité) partielle : SIRENE indisponible"] for x in w), w
+    horloge["t"] += gv._SIRENE_ERR_TTL + 1          # au-delà de 90 s : nouvelle tentative
+    w4 = []
+    gv._discover_sirene("etancheite", "98", w4)
+    assert n["calls"] == 2 and w4
+    # Exception : même cache court, même avertissement répété.
+    monkeypatch.setattr(S, "_company_service", lambda: (_ for _ in ()).throw(RuntimeError("panne")))
+    e1, e2 = [], []
+    gv._discover_sirene("couverture", "98", e1)
+    gv._discover_sirene("couverture", "98", e2)
+    assert e1 == e2 and "indisponible" in e1[0]
+    # Recherche aboutie : 10 min, sans avertissement.
+    monkeypatch.setattr(S, "_company_service", lambda: _Svc(ok=True))
+    horloge["t"] += gv._SIRENE_ERR_TTL + 1
+    ok1, ok2 = [], []
+    gv._discover_sirene("etancheite", "98", ok1)
+    horloge["t"] += 300
+    gv._discover_sirene("etancheite", "98", ok2)
+    assert n["calls"] == 3 and ok1 == ok2 == []
+
+
+def test_besoins_sirene_en_panne_n_interroge_pas_le_registre_a_chaque_requete(client, monkeypatch):
+    """Contre-vérification v34 (v_regr_cache_besoins.py) : GET /groupement/besoins?sirene=1
+    pendant une panne SIRENE. Le 2e appel ne refait aucun appel au registre et garde
+    l'avertissement « recherche partielle »."""
     from app.services import groupement_verdict as gv
     import app.routers.sourcing as S
     n = {"calls": 0}
 
     class _Err:
-        message = "SIRENE indisponible"
+        message = "délai dépassé"
 
     class _Svc:
         def discover(self, **kw):
             n["calls"] += 1
             return {"companies": [], "errors": [_Err()]}
     monkeypatch.setattr(S, "_company_service", lambda: _Svc())
-    gv._SIRENE_CACHE.pop(("etancheite", "98"), None)
-    w1, w2 = [], []
-    gv._discover_sirene("etancheite", "98", w1)
-    gv._discover_sirene("etancheite", "98", w2)
-    assert n["calls"] == 2 and w1 and w2
+    monkeypatch.setattr(gv, "_SIRENE_CACHE", {})
+    a = _org(client, "Breizh Couverture")
+    pid = _project(client, a)
+    r1 = client.get(f"/api/projects/{pid}/groupement/besoins?sirene=1", headers=a["headers"])
+    assert r1.status_code == 200, r1.text
+    first = n["calls"]
+    assert 1 <= first <= 3
+    r2 = client.get(f"/api/projects/{pid}/groupement/besoins?sirene=1", headers=a["headers"])
+    assert r2.status_code == 200 and n["calls"] == first
+    w1 = [w for w in r1.json()["warnings"] if w.startswith("Recherche SIRENE")]
+    w2 = [w for w in r2.json()["warnings"] if w.startswith("Recherche SIRENE")]
+    assert w1 and w1 == w2
 
 
 # ── 6. Concurrence, cron, borne de lecture ───────────────────────────────────────────
@@ -575,6 +652,75 @@ def test_groupement_avec_soi_meme_non_compte(client, reg, mails):
                        json={"confirmer": True}).status_code == 200
     h = client.get("/api/reseau/historique", headers=a["headers"]).json()
     assert h["groupements_deposes"] == 1, h
+
+
+def _relais(client, name="Compte Relais"):
+    """2e compte gratuit, hors de l'organisation, SANS SIRET (profil entreprise vide)."""
+    o = _org(client, name)
+    from app.models import Company
+    db = _db()
+    try:
+        db.query(Company).filter(Company.user_id == o["id"]).update({Company.siret: ""}, synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
+    return o
+
+
+def _marche_depose(client, lead, claimer, part_siret):
+    """Marché de `lead`, lien réclamé par `claimer` (s'il y en a un), part soumise, marqué déposé."""
+    from tests.test_convention_groupement import _put, _submit
+    pid = _project(client, lead)
+    inv = client.post(f"/api/projects/{pid}/invites", headers=lead["headers"],
+                      json={"company_name": "Partenaire"}).json()
+    if claimer is not None:
+        assert client.post(f"/api/invite/{inv['token']}/claim", headers=claimer["headers"]).status_code == 200
+    assert _put(client, inv["token"], company_name="Partenaire", lot="Lot 2", prix_lot_ht=1,
+                siret=part_siret).status_code == 200
+    _submit(client, inv["token"])
+    r = client.post(f"/api/projects/{pid}/groupement/deposer", headers=lead["headers"], json={"confirmer": True})
+    assert r.status_code == 200, r.text
+
+
+def _compteur(client, org):
+    return client.get("/api/reseau/historique", headers=org["headers"]).json()["groupements_deposes"]
+
+
+def test_lien_reclame_hors_organisation_part_sous_mon_siret_non_compte(client, reg, mails):
+    """Contre-vérification v34 (mutate.py) : un compte d'une autre organisation réclame le lien,
+    mais la part est soumise sous le SIRET du chef de file lui-même : ce n'est pas un partenaire."""
+    a = _org(client, "Chef Soi Meme")
+    _publish(client, reg, a)
+    b = _org(client, "Compte Complice")              # autre organisation, identité non validée
+    _marche_depose(client, a, b, a["siren"] + "00012")
+    assert _compteur(client, a) == 0
+
+
+def test_compte_relais_sans_siret_ne_fabrique_pas_le_badge(client, reg, mails):
+    """Contre-vérification v34 (v_a14_badge.py, cas 3) : un 2e compte gratuit hors de
+    l'organisation, sans SIRET, réclame les liens et soumet des parts au SIRET vide."""
+    t = _org(client, "Triche Relais")
+    _publish(client, reg, t, metiers=("menuiserie",))
+    relais = _relais(client)
+    for _ in range(3):
+        _marche_depose(client, t, relais, "")
+    assert _compteur(client, t) == 0
+    # Sens inverse : le relais (sans SIRET) se pose en chef de file et « dépose » avec t.
+    for _ in range(2):
+        _marche_depose(client, relais, t, t["siren"] + "00012")
+    assert _compteur(client, t) == 0
+    # Une vraie autre entreprise compte : part sous un autre SIREN, ou compte accepteur dont
+    # l'identité est validée par Adjugo (même si la part n'a pas de SIRET).
+    v = _org(client, "Partenaire Valide")
+    _publish(client, reg, v, metiers=("plomberie",))
+    _marche_depose(client, t, v, "")
+    assert _compteur(client, t) == 1
+    _marche_depose(client, t, relais, _siren() + "00012")
+    assert _compteur(client, t) == 2
+    # Membre du groupement d'un chef de file qui a un SIRET (autre organisation) : compté.
+    chef = _org(client, "Chef Avec Siret")
+    _marche_depose(client, chef, t, t["siren"] + "00012")
+    assert _compteur(client, t) == 3
 
 
 def test_badge_marque_depose_declaratif_niveau_info_date():

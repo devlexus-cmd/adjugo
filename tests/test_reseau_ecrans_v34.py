@@ -14,7 +14,9 @@ Aucun appel réseau : lecture des fichiers statiques et exécution locale sous N
 """
 import re
 
-from tests.test_reseau_ecrans import HTML, JS, PANEL, SECTION, _between, _method, _node
+import json
+
+from tests.test_reseau_ecrans import HTML, JS, PANEL, SECTION, STATIC, _between, _method, _node
 
 
 def _obj(*names, extra=""):
@@ -126,6 +128,60 @@ def test_invitations_recues_reservees_a_qui_peut_accepter():
     assert "{{ inv.aide }}" in recues
     accept = _between(JS, "    async rnAccept(inv) {", "    async rnOpenRecue(inv)")
     assert "inv.peut_accepter === false" in accept
+
+
+_VUE_RENDER = r"""
+const fs = require("fs"), vm = require("vm");
+const unesc = (x) => String(x).replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<")
+  .replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
+const mkEl = () => ({ set innerHTML(v) { this._v = v; const m = /^<div foo="([\s\S]*)">/.exec(v);
+  this.children = [{ getAttribute: () => unesc(m ? m[1] : "") }]; }, get textContent() { return unesc(this._v); } });
+const ctx = { console, document: { createElement: mkEl } };
+ctx.window = ctx; ctx.self = ctx; ctx.globalThis = ctx; vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(VUE, "utf8"), ctx);
+const text = (v) => v == null || typeof v === "boolean" ? "" : (typeof v === "string" || typeof v === "number") ? String(v)
+  : Array.isArray(v) ? v.map(text).join("") : (typeof v.type === "symbol" && String(v.type).includes("v-cmt")) ? "" : text(v.children);
+function actions(v, out) {
+  if (!v || typeof v !== "object") return out;
+  if (Array.isArray(v)) { v.forEach(x => actions(x, out)); return out; }
+  if ((v.type === "button" || v.type === "a") && !(v.props && v.props.class === "tip")) {
+    out.push(text(v.children).replace(/\s+/g, " ").trim()); return out;
+  }
+  return actions(v.children, out);
+}
+const render = ctx.Vue.compile(TPL);
+const res = {};
+for (const [k, st] of Object.entries(CASES)) {
+  const state = { inv: Object.assign({ _declined: false, token: "t", statut_label: "", aide: "Seul le propriétaire." }, st),
+                  reseau: { recues: { busy: "" } } };
+  const proxy = new Proxy(state, {
+    get: (t, key) => (key in t ? t[key] : (typeof key === "string" && /^[a-z]/i.test(key) ? () => "" : undefined)),
+    has: (t, key) => (key in t) || (typeof key === "string" && !/^_|^(Object|Array|String|JSON|encodeURIComponent|undefined)$/.test(key)) });
+  res[k] = actions(render.call(proxy, proxy, []), []);
+}
+console.log(JSON.stringify(res));
+"""
+
+
+def test_invitations_recues_rendu_par_le_vrai_compilateur_vue():
+    """Contre-vérification v34 (vnode_render.js) : le bloc est RENDU par le compilateur Vue du
+    dépôt. « Ouvrir le dossier » ne s'affiche que pour une invitation acceptée : un v-else
+    l'attachait au bouton « Accepter », donc un membre non propriétaire le voyait sur une
+    invitation encore à accepter (et rnOpenRecue répondait « plus accessible »)."""
+    recues = _between(SECTION, "<!-- ── Invitations reçues par le réseau", "</template>\n        </section>")
+    i = recues.index('<div v-if="!inv._declined" class="row wrap rn-g8 rn-acts">')
+    j = recues.index("</div>", recues.index("rnDecline(inv)", i)) + len("</div>")
+    vue = sorted((STATIC / "vendor").glob("vue-*.prod.js"))[-1]
+    cases = {"proprietaire": {"statut": "a_repondre", "peut_accepter": True},
+             "membre": {"statut": "a_repondre", "peut_accepter": False},
+             "acceptee": {"statut": "acceptee", "peut_accepter": True},
+             "acceptee_membre": {"statut": "acceptee", "peut_accepter": False}}
+    r = _node(f"const VUE = {json.dumps(str(vue))};\nconst TPL = {json.dumps(recues[i:j])};\n"
+              f"const CASES = {json.dumps(cases)};\n" + _VUE_RENDER)
+    assert r["proprietaire"] == ["Accepter depuis mon compte", "Voir l'invitation", "Décliner"]
+    assert r["membre"] == ["Voir l'invitation"]
+    assert r["acceptee"] == ["Ouvrir le dossier", "Voir l'invitation"]
+    assert r["acceptee_membre"] == ["Ouvrir le dossier", "Voir l'invitation"]
 
 
 def test_profil_en_attente_de_validation_explique_sous_node():

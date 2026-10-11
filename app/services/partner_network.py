@@ -574,12 +574,18 @@ def count_groupements(db, org_ids: list, profile_id: Optional[int] = None, own_s
     """(nombre, date du plus récent) de marchés DISTINCTS au statut envoyé / gagné / perdu
     portant au moins une part soumise d'un membre actif, où l'organisation est :
       - chef de file AVEC une AUTRE organisation : invitation acceptée par un compte hors de
-        l'organisation, ou adressée au profil réseau d'une autre organisation, et part dont le
-        SIREN n'est pas le sien (une invitation à soi-même ne fabrique pas un groupement) ;
+        l'organisation, ou adressée au profil réseau d'une autre organisation ;
       - ou membre du groupement d'une AUTRE organisation (invitation réseau de son profil, ou
         lien réclamé par un de ses comptes).
+    L'autre entreprise doit en plus être DISTINCTE de façon vérifiable, sinon un compte relais
+    (2e compte gratuit, sans SIRET) suffisait à fabriquer le badge :
+      - chef de file : la part soumise porte un SIREN à 9 chiffres différent du sien, ou
+        l'invitation vise (ou a été acceptée par) une organisation dont l'identité est validée
+        par Adjugo sous un autre SIREN ;
+      - membre : le chef de file a un SIRET à 9 chiffres différent du sien dans son profil
+        entreprise, ou une identité validée par Adjugo sous un autre SIREN.
     Le statut « déposé » reste DÉCLARATIF (renseigné par le chef de file) : le badge le dit."""
-    from app.models import PartnerProfile, Project, ProjectContribution, ProjectInvite
+    from app.models import Company, PartnerProfile, Project, ProjectContribution, ProjectInvite
     from app.services.groupement_members import active_invite_filter
     org = list(org_ids or []) or [0]
     others_profiles = db.query(PartnerProfile.id).filter(~PartnerProfile.user_id.in_(org))
@@ -590,17 +596,52 @@ def count_groupements(db, org_ids: list, profile_id: Optional[int] = None, own_s
     if profile_id is not None:
         member_conds.append(ProjectInvite.partner_profile_id == profile_id)
     member_side = and_(~Project.user_id.in_(org), or_(*member_conds))
-    rows = db.query(Project.id, Project.updated_at, Project.user_id, ProjectContribution.siret).select_from(
+    rows = db.query(Project.id, Project.updated_at, Project.user_id, ProjectContribution.siret,
+                    ProjectInvite.accepted_by_user_id, ProjectInvite.partner_profile_id).select_from(
         ProjectInvite).join(Project, Project.id == ProjectInvite.project_id).join(
         ProjectContribution, ProjectContribution.invite_id == ProjectInvite.id).filter(
         active_invite_filter(), Project.deleted_at.is_(None), ProjectContribution.status == "submitted",
         Project.status.in_(_status_values()), or_(lead_side, member_side)).all()
-    mine = clean_siren(own_siren)
+
+    def _company_siren(uids) -> str:
+        for (siret,) in db.query(Company.siret).filter(Company.user_id.in_(list(uids) or [0])).all():
+            if clean_siren(siret):
+                return clean_siren(siret)
+        return ""
+
+    mine = clean_siren(own_siren) or _company_siren(org)
+    orgs: dict = {}
+    validated: dict = {}
+
+    def _org_of(uid) -> tuple:
+        if uid not in orgs:
+            orgs[uid] = tuple(sorted(org_member_ids(db, uid)))
+        return orgs[uid]
+
+    def _validated_elsewhere(uids: tuple) -> bool:
+        """Organisation dont l'identité est validée par Adjugo sous un SIREN autre que le sien."""
+        if uids not in validated:
+            ps = db.query(PartnerProfile).filter(PartnerProfile.user_id.in_(list(uids) or [0])).all()
+            validated[uids] = any(identity_validated(x) and x.siren != mine for x in ps)
+        return validated[uids]
+
     kept = {}
-    for pid, upd, lead_uid, part_siret in rows:
-        if lead_uid in org and mine and clean_siren(part_siret) == mine:
-            continue      # part déclarée sous son propre SIREN : pas un partenaire
-        kept[pid] = upd
+    for pid, upd, lead_uid, part_siret, acc_uid, prof_id in rows:
+        if lead_uid in org:
+            s = clean_siren(part_siret)
+            ok = bool(s and s != mine)
+            if not ok and acc_uid is not None and acc_uid not in org:
+                ok = _validated_elsewhere(_org_of(acc_uid))
+            if not ok and prof_id is not None:
+                prof = db.query(PartnerProfile).filter(PartnerProfile.id == prof_id).first()
+                ok = bool(prof is not None and prof.user_id not in org
+                          and _validated_elsewhere(_org_of(prof.user_id)))
+        else:
+            lead_org = _org_of(lead_uid)
+            s = _company_siren(lead_org)
+            ok = bool(s and s != mine) or _validated_elsewhere(lead_org)
+        if ok:
+            kept[pid] = upd
     dates = [d for d in kept.values() if d is not None]
     return len(kept), (max(dates) if dates else None)
 
