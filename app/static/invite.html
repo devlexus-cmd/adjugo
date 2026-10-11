@@ -42,6 +42,7 @@
     .g-apercu-msg { flex:1 1 100%; color:var(--text-2,#4b5563); }
     .g-apercu-msg:empty { display:none; }
     @media (max-width:640px){ .g-fact { grid-template-columns:1fr; gap:1px 0; } .g-fact dt { margin-top:7px; } }
+    @media (max-width:480px){ .g-hide-sm { display:none; } }
     /* ── Convention de groupement (co-traitance v2, vague 2) — styles locaux à cette page ── */
     .cv-card { margin-bottom:16px; }
     .cv-head { display:flex; gap:6px 8px; align-items:center; flex-wrap:wrap; }
@@ -207,7 +208,7 @@
       <header class="top">
         <div class="top-title"><div style="display:flex;align-items:center;min-width:0"><h1 id="g-title" style="min-width:0">Mon appel d'offres</h1><span id="g-tip" style="flex:none;display:inline-flex"></span></div><div class="sub" id="g-sub"></div></div>
         <div class="spacer"></div>
-        <a class="btn primary" href="/app" target="_blank" rel="noopener"><i data-lucide="sparkles"></i>Créer mon compte Adjugo</a>
+        <a class="btn primary" href="/app" target="_blank" rel="noopener"><i data-lucide="sparkles"></i>Créer mon compte<span class="g-hide-sm">&nbsp;Adjugo</span></a>
       </header>
       <div style="padding:18px 22px 60px;max-width:980px">
         <div class="g-banner" id="g-banner"></div>
@@ -492,7 +493,7 @@
       if (d.for_member) { try { renderForMember(head, d.for_member, d); } catch (e) { console.warn("for_member", e); } }
       const dl = $(`<dl class="g-fact"></dl>`);
       const addFact = (t, h) => { dl.appendChild($(`<dt>${t}</dt>`)); const dd = document.createElement("dd"); dd.innerHTML = h; dl.appendChild(dd); };
-      if (p.deadline) addFact("Date limite", `<b>${esc(fmtDate(p.deadline))}</b>`);
+      if (p.deadline && !a.date_limite) addFact("Date limite", `<b>${esc(fmtDate(p.deadline))}</b>`);   // la date du dossier (avec l'heure) prime
       facts.forEach(k => addFact(LABELS[k], renderVal(a[k])));
       if (p.source_url && safeUrl(p.source_url) !== "#") addFact("Source", `<a href="${esc(safeUrl(p.source_url))}" target="_blank" rel="noopener noreferrer nofollow">Avis d'origine ${ico("external-link", 13)}</a>`);
       if (dl.children.length) head.appendChild(dl);

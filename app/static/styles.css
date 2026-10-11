@@ -916,8 +916,11 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
   .rn-dl { grid-template-columns:minmax(0,1fr); gap:2px 0; }
   .rn-dl dd { margin-bottom:6px; }
   .rn-checks { grid-template-columns:minmax(0,1fr); }
-  .rn-tabs { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); }
-  .rn-tab { justify-content:center; text-align:center; padding:6px 10px; font-size:12.5px; line-height:1.25; min-height:44px; border-radius:14px; }
+  .rn-tabs { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:6px; }
+  .rn-tab { justify-content:center; text-align:center; padding:6px 8px; font-size:12.5px; line-height:1.25; min-height:44px; border-radius:14px; }
+  .rn-tab .lucide { display:none; }
+  .rn-filters { grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
+  .rn-filters-go { grid-column:1 / -1; }
   .rn-suggest-a, .rn-suggest-a .btn { flex:1 1 auto; justify-content:center; }
   .rn-acts .btn { flex:1 1 auto; justify-content:center; }
   .rn-pm .ch .btn { flex:1 1 100%; justify-content:center; }

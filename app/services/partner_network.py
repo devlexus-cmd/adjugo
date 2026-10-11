@@ -935,6 +935,27 @@ def admin_item(db, p) -> dict:
                    "lien_annuaire": (f"https://annuaire-entreprises.data.gouv.fr/entreprise/{siren}"
                                      if re.fullmatch(r"\d{9}", siren) else None)},
         "compte": owner, "demandeur": req, "conflits": conflits,
+        "publication": _publication_preview(p),
+    }
+
+
+def _publication_preview(p) -> dict:
+    """Ce que l'annuaire affichera si la demande est validée (déclaratif, tel que saisi) :
+    l'administrateur valide l'IDENTITÉ, mais voit aussi le texte avant sa première publication."""
+    from app.services.partner_matching import trade_labels
+    labels = trade_labels()
+    refs = []
+    for r in (p.references_publiques if isinstance(p.references_publiques, list) else [])[:10]:
+        if isinstance(r, dict):
+            txt = " — ".join(str(x) for x in (r.get("intitule"), r.get("client"), r.get("annee")) if x not in (None, ""))
+            if txt:
+                refs.append(txt[:300])
+    return {
+        "metiers": [labels.get(m, m) for m in (p.metiers if isinstance(p.metiers, list) else []) if m],
+        "departements": [str(d) for d in (p.departements if isinstance(p.departements, list) else []) if d],
+        "roles": [str(r) for r in (p.roles_acceptes if isinstance(p.roles_acceptes, list) else []) if r],
+        "presentation": (p.presentation or "")[:300],
+        "references": refs,
     }
 
 

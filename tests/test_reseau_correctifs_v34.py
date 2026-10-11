@@ -844,3 +844,22 @@ def test_badge_identite_validee_par_adjugo_date_et_retire_au_changement_de_siret
     v = client.get("/api/reseau/profil", headers=b["headers"]).json()
     assert v["validation"]["identite_validee"] is False
     assert all(x["key"] != "identite" for x in v["badges"])
+
+
+def test_admin_voit_ce_qui_sera_publie(client, reg):
+    """La validation porte sur l'identité, mais l'administrateur voit aussi le contenu déclaré
+    (métiers, zones, rôles, présentation, références) avant sa première publication."""
+    org = _org(client, "Atelier Aperçu")
+    reg.sirene.setdefault(org["siren"], {"nom": "ATELIER APERCU", "etat": "A"})
+    assert client.put("/api/reseau/profil", headers=org["headers"], json={
+        "metiers": ["peinture"], "departements": ["29", "56"], "roles_acceptes": ["cotraitant"],
+        "presentation": "Peinture et finitions.",
+        "references_publiques": [{"intitule": "École de Kerfeunteun", "client": "Ville de Quimper", "annee": 2025}],
+    }).status_code == 200
+    assert client.post("/api/reseau/profil/verifier", headers=org["headers"]).status_code == 200
+    v = client.post("/api/reseau/profil/publier", headers=org["headers"], json={"accepte": True}).json()
+    q = client.get("/api/admin/reseau/validations", headers=_admin_headers(client)).json()
+    pub = next(i for i in q["en_attente"] if i["profile_id"] == v["profile_id"])["publication"]
+    assert pub["metiers"] == ["Peinture / Finitions"] and pub["departements"] == ["29", "56"]
+    assert pub["roles"] == ["cotraitant"] and pub["presentation"] == "Peinture et finitions."
+    assert pub["references"] == ["École de Kerfeunteun — Ville de Quimper — 2025"]

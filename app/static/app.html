@@ -2060,7 +2060,7 @@
             <div v-else-if="admin.rv.loading && !admin.rv.loaded" class="muted small"><span class="spin"></span> Chargement…</div>
             <p v-else-if="admin.rv.loaded && !admin.rv.list.length" class="muted small">Aucune demande en attente.</p>
             <article v-for="it in admin.rv.list" :key="'rv'+it.profile_id" class="adm-rv-item" :aria-labelledby="'rv-'+it.profile_id">
-              <div class="row wrap" style="gap:8px;align-items:baseline"><b :id="'rv-'+it.profile_id">{{ it.name || 'Entreprise sans nom' }}</b><span class="muted small">SIREN {{ it.siren || 'non renseigné' }}</span><span v-if="it.demande_le" class="muted small">· demandé le {{ fmtDate(it.demande_le) }}</span></div>
+              <div class="row wrap" style="gap:8px;align-items:baseline"><b :id="'rv-'+it.profile_id">{{ it.name || 'Entreprise sans nom' }}</b><span class="muted small">SIREN {{ it.siren || 'non renseigné' }}</span><span v-if="it.demande_le" class="muted small">demandé le {{ fmtDate(it.demande_le) }}</span></div>
               <dl class="adm-rv-dl">
                 <dt>Registre SIRENE</dt>
                 <dd>{{ it.sirene.nom || 'nom non trouvé' }} · {{ it.sirene.etat==='actif' ? 'active' : (it.sirene.etat==='cesse' ? 'cessée' : 'non vérifiée') }}<span v-if="it.sirene.code_postal || it.sirene.ville"> · siège {{ [it.sirene.code_postal, it.sirene.ville].filter(Boolean).join(' ') }}</span><span v-if="it.sirene.naf"> · NAF {{ it.sirene.naf }}</span><span v-if="it.sirene.date_creation"> · créée le {{ fmtDate(it.sirene.date_creation) }}</span><span v-if="it.sirene.checked_at" class="muted"> (consulté le {{ fmtDate(it.sirene.checked_at) }})</span>
@@ -2069,6 +2069,10 @@
                 <dd>{{ it.entreprise_declaree.nom || 'non renseigné' }} · SIRET {{ it.entreprise_declaree.siret || 'non renseigné' }}<span v-if="it.entreprise_declaree.code_postal || it.entreprise_declaree.ville"> · {{ [it.entreprise_declaree.code_postal, it.entreprise_declaree.ville].filter(Boolean).join(' ') }}</span></dd>
                 <dt>Compte</dt>
                 <dd><template v-if="it.compte">{{ it.compte.nom || 'nom non renseigné' }} · {{ it.compte.email }} · {{ it.compte.email_confirme ? 'adresse confirmée' : 'adresse non confirmée' }}<span v-if="it.compte.inscrit_le"> · inscrit le {{ fmtDate(it.compte.inscrit_le) }}</span></template><template v-else>compte introuvable</template></dd>
+                <template v-if="it.publication"><dt>Ce qui sera publié</dt>
+                <dd><span v-if="it.publication.metiers.length">{{ it.publication.metiers.join(', ') }}</span><span v-else class="muted">aucun métier</span><span v-if="it.publication.departements.length"> · dép. {{ it.publication.departements.join(', ') }}</span><span v-if="it.publication.roles.length"> · {{ it.publication.roles.map(rnRoleLabel).join(', ') }}</span>
+                  <div v-if="it.publication.presentation" class="muted">« {{ it.publication.presentation }} »</div>
+                  <div v-for="(r, i) in it.publication.references" :key="'rvr'+i" class="muted">Référence : {{ r }}</div></dd></template>
                 <template v-if="it.demandeur"><dt>Demande faite par</dt><dd>{{ it.demandeur.nom || 'nom non renseigné' }} · {{ it.demandeur.email }}</dd></template>
               </dl>
               <div v-if="it.conflits && it.conflits.length" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><div>
@@ -2128,7 +2132,7 @@
             <div class="row" style="gap:12px;align-items:center;cursor:pointer" @click="toggleConsortium(cs.project_id)">
               <div style="flex:1;min-width:0">
                 <div class="strong">{{ cs.project }}</div>
-                <div class="muted small">{{ cs.submitted }}/{{ cs.partners }} part(s) reçue(s)<span v-if="cs.pieces"> · {{ cs.pieces }} pièce(s)</span><span v-if="cs.deadline"> · limite {{ auditWhen(cs.deadline) }}</span></div>
+                <div class="muted small">{{ cs.submitted }}/{{ cs.partners }} part(s) reçue(s)<span v-if="cs.pieces"> · {{ cs.pieces }} pièce(s)</span><span v-if="cs.deadline"> · limite {{ fmtDate(cs.deadline) }}</span></div>
               </div>
               <span class="pill rn-pill-sm" :class="cs.partners && cs.submitted>=cs.partners?'go':'neutral'" style="flex:none">{{ cs.submitted }}/{{ cs.partners }} {{ pl(cs.partners, 'part', 'parts') }}</span>
               <i :data-lucide="copen[cs.project_id]?'chevron-up':'chevron-down'" style="width:16px;height:16px;color:var(--text-2);flex:none"></i>
@@ -2329,7 +2333,7 @@
                 <div class="field"><label for="rn-fm">Métier</label><select id="rn-fm" class="inp" v-model="reseau.an.f.metier"><option value="">Tous les métiers</option><option v-for="m in rnOptions().metiers" :key="'fm'+m.key" :value="m.key">{{ m.label }}</option></select></div>
                 <div class="field"><label for="rn-fd">Département</label><input id="rn-fd" class="inp" v-model="reseau.an.f.departement" placeholder="ex. 29" maxlength="3"></div>
                 <div class="field"><label for="rn-fr">Rôle</label><select id="rn-fr" class="inp" v-model="reseau.an.f.role"><option value="">Tous les rôles</option><option v-for="r in rnOptions().roles" :key="'fr'+r.value" :value="r.value">{{ r.label }}</option></select></div>
-                <div class="field"><label for="rn-fq">Nom</label><input id="rn-fq" class="inp" v-model="reseau.an.f.q" placeholder="Nom de l'entreprise" maxlength="80"></div>
+                <div class="field"><label for="rn-fq">Nom</label><input id="rn-fq" class="inp" v-model="reseau.an.f.q" placeholder="Entreprise" maxlength="80"></div>
                 <div class="rn-filters-go"><button type="submit" class="btn primary" :disabled="reseau.an.loading" :aria-busy="reseau.an.loading?'true':'false'"><span v-if="reseau.an.loading" class="spin"></span><i v-else data-lucide="search"></i>Rechercher</button></div>
               </form>
             </div>
@@ -2429,7 +2433,7 @@
             <div v-for="s in shared" :key="s.token" @click="openShared(s)" @keydown="openSharedKey($event,s)" role="button" tabindex="0" class="row shared-item" style="margin-top:10px;padding:11px 13px;border:1px solid var(--border);border-radius:10px;gap:8px 12px;align-items:center;cursor:pointer;flex-wrap:wrap" @mouseover="$event.currentTarget.style.borderColor='var(--accent)'" @mouseleave="$event.currentTarget.style.borderColor='var(--border)'">
               <div style="flex:1 1 220px;min-width:0">
                 <div class="strong small">{{ s.project }}</div>
-                <div class="muted small">Chef de file : <b>{{ s.mandataire }}</b> · vous êtes {{ s.role==='sous_traitant'?'sous-traitant':'partenaire' }}<span v-if="s.deadline"> · limite {{ auditWhen(s.deadline) }}</span></div>
+                <div class="muted small">Chef de file : <b>{{ s.mandataire }}</b> · vous êtes {{ s.role==='sous_traitant'?'sous-traitant':'partenaire' }}<span v-if="s.deadline"> · limite {{ fmtDate(s.deadline) }}</span></div>
                 <div v-if="sharedGrpLine(s)" class="small" style="color:var(--text-2);margin-top:2px">{{ sharedGrpLine(s) }}</div>
               </div>
               <div class="row wrap" style="gap:6px;align-items:center">
@@ -2460,7 +2464,7 @@
             <div style="font-size:19px;font-weight:800;margin:2px 0 4px;letter-spacing:-.02em">{{ sharedAo.project.name }}</div>
             <div v-if="sharedAo.project.client" class="muted small">{{ sharedAo.project.client }}</div>
             <div style="margin-top:10px">
-              <div v-if="sharedAo.project.deadline" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">Date limite</span><span style="flex:1"><b>{{ auditWhen(sharedAo.project.deadline) }}</b></span></div>
+              <div v-if="sharedAo.project.deadline && !(sharedAo.project.analysis && sharedAo.project.analysis.date_limite)" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">Date limite</span><span style="flex:1"><b>{{ fmtDate(sharedAo.project.deadline) }}</b></span></div>
               <div v-for="f in sharedFact(sharedAo.project.analysis)" :key="f.k" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">{{ f.k }}</span><span style="flex:1">{{ f.v }}</span></div>
               <div v-if="sharedAo.project.source_url" class="row small" style="padding:5px 0"><span class="muted" style="min-width:140px">Source</span><a :href="safeUrl(sharedAo.project.source_url)" target="_blank" rel="noopener noreferrer nofollow" style="color:var(--accent-text)">Avis d'origine ↗</a></div>
             </div>
