@@ -597,8 +597,17 @@ def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody
                         "Confirmez pour marquer le dossier comme déposé quand même."),
             "manques": ready["manques"], "avertissements": ready["avertissements"],
             "checks": ready["checks"]})
-    project.status = ProjectStatus.envoye
+    # Transition ATOMIQUE (deux clics simultanés : un seul passe, une seule entrée au journal).
+    from sqlalchemy import or_
+    closed = [ProjectStatus(v) for v in CLOSED_STATUSES]
+    n = db.query(Project).filter(Project.id == project.id, or_(Project.status.is_(None),
+                                                               Project.status.notin_(closed))).update(
+        {Project.status: ProjectStatus.envoye}, synchronize_session=False)
     db.commit()
+    db.refresh(project)
+    if n != 1:
+        return {"ok": True, "deja_depose": True, "status": _status_value(project), "complet": None,
+                "state": _state_payload(project, db)}
     reste = ready["n_total"] - ready["n_ok"]
     audit.record(db, action="groupement.depose", owner_id=data_owner_id(current_user, db),
                  project_id=project.id, actor=f"user:{current_user.id}", actor_kind="owner",
@@ -616,8 +625,9 @@ def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody
 def annuler_depose(request: Request, project_id: int, current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     """Annule un marquage « déposé » fait par erreur (trace dans le journal) : le marché
-    retrouve son statut d'avant (« nouveau » ou « en cours »). Un marché
-    déjà « gagné » ou « perdu » se change depuis sa fiche."""
+    retrouve EXACTEMENT son statut d'avant (« nouveau », « en cours » ou « abandonné » — un marché
+    abandonné le redevient, ses relances restent coupées). Un marché déjà « gagné » ou « perdu »
+    se change depuis sa fiche. Transition atomique (deux clics : une seule annulation)."""
     from app.models import ProjectStatus
     project = _project(project_id, current_user, db)
     status_v = _status_value(project)
@@ -632,8 +642,18 @@ def annuler_depose(request: Request, project_id: int, current_user: User = Depen
     last = db.query(AuditLog).filter(AuditLog.project_id == project.id,
                                      AuditLog.action == "groupement.depose").order_by(AuditLog.id.desc()).first()
     prev = ((last.meta or {}).get("statut_precedent") if last is not None and isinstance(last.meta, dict) else None)
-    project.status = ProjectStatus.nouveau if prev == "nouveau" else ProjectStatus.en_cours
+    try:
+        restored = ProjectStatus(prev)
+    except (ValueError, TypeError):
+        restored = ProjectStatus.en_cours
+    if restored.value in ("envoye", "gagne", "perdu"):
+        restored = ProjectStatus.en_cours
+    n = db.query(Project).filter(Project.id == project.id, Project.status == ProjectStatus.envoye).update(
+        {Project.status: restored}, synchronize_session=False)
     db.commit()
+    db.refresh(project)
+    if n != 1:
+        return {"ok": True, "etait_depose": False, "status": _status_value(project), "state": _state_payload(project, db)}
     audit.record(db, action="groupement.depot_annule", owner_id=data_owner_id(current_user, db),
                  project_id=project.id, actor=f"user:{current_user.id}", actor_kind="owner",
                  target_type="project", target_id=project.id, ip=audit.client_ip(request),

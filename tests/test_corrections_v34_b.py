@@ -406,3 +406,61 @@ def test_pret_a_deposer_controle_aussi_les_attestations_du_chef_de_file(client, 
     finally:
         db.close()
     assert not any("coffre-fort" in m for m in pret()["manques"])
+
+
+def _set_status(pid, value):
+    from app.models import Project, ProjectStatus
+    db = _db()
+    try:
+        db.get(Project, pid).status = ProjectStatus(value)
+        db.commit()
+    finally:
+        db.close()
+
+
+def _n_depose(pid):
+    from app.models import AuditLog
+    db = _db()
+    try:
+        return db.query(AuditLog).filter(AuditLog.project_id == pid, AuditLog.action == "groupement.depose").count()
+    finally:
+        db.close()
+
+
+def test_marquer_depose_double_clic_une_seule_entree(client, auth, mails):
+    """Deux « Marquer déposé » simultanés : un seul passe (transition atomique), une seule entrée
+    « déposé » dans le journal de tous les membres ; idem pour l'annulation."""
+    import threading
+    h = auth["headers"]
+    doubles = 0
+    for _k in range(4):
+        pid = _project(client, h)
+        _invite(client, h, pid, "Le Gall Électricité")
+        barrier, codes = threading.Barrier(2), []
+
+        def click(method):
+            barrier.wait()
+            r = client.request(method, f"/api/projects/{pid}/groupement/deposer", headers=h, json={"confirmer": True})
+            codes.append(r.status_code)
+        ts = [threading.Thread(target=click, args=("POST",)) for _ in range(2)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+        assert codes == [200, 200]
+        doubles += int(_n_depose(pid) > 1)
+    assert doubles == 0
+
+
+def test_annuler_le_marquage_retrouve_le_statut_abandonne(client, auth, mails):
+    """Un marché « abandonné » marqué déposé puis démarqué redevient « abandonné » (ses relances
+    automatiques restent coupées), pas « en cours »."""
+    h = auth["headers"]
+    pid = _project(client, h)
+    _invite(client, h, pid, "Le Gall Électricité")
+    _set_status(pid, "abandonne")
+    r = client.post(f"/api/projects/{pid}/groupement/deposer", headers=h, json={"confirmer": True})
+    assert r.status_code == 200 and r.json()["status"] == "envoye"
+    r = client.delete(f"/api/projects/{pid}/groupement/deposer", headers=h)
+    assert r.status_code == 200 and r.json()["status"] == "abandonne", r.json()
+    # Une seconde annulation ne fait rien (et n'écrit rien).
+    r = client.delete(f"/api/projects/{pid}/groupement/deposer", headers=h)
+    assert r.json()["etait_depose"] is False and r.json()["status"] == "abandonne"
