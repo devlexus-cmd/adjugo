@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
-  <script src="/static/cotraitance-crypto.js" integrity="sha384-XeXF9c3sWCINLhcn8WsgnQA1g1we3veNODoV1/yHheSJcBMU2lSg+MGGmqFwlXF4"></script>
+  <script src="/static/cotraitance-crypto.js" integrity="sha384-Vho8AEpUucuoYTe4e4OmFl/p1v4rz2nqBKbIC1AUc36adSU7tP5XifKa8ptPtpKH"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -129,9 +129,6 @@
        défilait horizontalement (bulles de la convention près du bord droit). Les bulles visibles
        sont recadrées dans l'écran par fitTip(). */
     .work { overflow-x:hidden; }
-    .dp-share { display:grid; gap:6px; margin-top:12px; font-size:12.5px; color:var(--text-2,#4b5563); }
-    .dp-share > div { display:flex; gap:7px; align-items:flex-start; line-height:1.45; }
-    .dp-share b { color:var(--text,#16181d); font-weight:600; }
     .dp-head, .dp-row { display:grid; grid-template-columns:minmax(0,1fr) 76px 84px 112px 112px 34px; gap:6px; align-items:center; }
     .dp-head { margin-top:16px; padding:0 0 5px; border-bottom:1px solid var(--hairline,#eef0f3); font-size:11.5px; font-weight:600; color:var(--text-2,#4b5563); }
     .dp-row { padding:6px 0; border-bottom:1px solid var(--hairline,#eef0f3); }
@@ -502,10 +499,15 @@
       root.appendChild(head);
 
       // Convention de groupement (vague 2) : état d'attente, brouillon, texte figé + accords.
-      const cvCard = $(`<section class="card pad cv-card" aria-labelledby="cv-title"><div class="cv-head"><h2 class="cv-title" id="cv-title" tabindex="-1">Convention de groupement</h2></div><div class="muted small" style="margin-top:8px">Chargement de la convention…</div></section>`);
-      CV.el = cvCard; CV.data = null;
-      root.appendChild(cvCard);
-      loadConvention();
+      // Aperçu minimal (invitation du réseau pas encore acceptée) : pas de convention (elle cite
+      // l'acheteur et la composition du groupement ; le serveur la refuse aussi).
+      CV.el = null; CV.data = null;
+      if (!d.apercu_minimal) {
+        const cvCard = $(`<section class="card pad cv-card" aria-labelledby="cv-title"><div class="cv-head"><h2 class="cv-title" id="cv-title" tabindex="-1">Convention de groupement</h2></div><div class="muted small" style="margin-top:8px">Chargement de la convention…</div></section>`);
+        CV.el = cvCard;
+        root.appendChild(cvCard);
+        loadConvention();
+      }
 
       const docCard = $(`<div class="card pad" style="margin-bottom:16px"></div>`);
       docCard.appendChild($(`<b style="font-size:13.5px">Pièces partagées${d.documents && d.documents.length ? " (" + d.documents.length + ")" : ""}</b>`));
@@ -812,8 +814,11 @@
       const jVerify = $(`<button class="btn sm primary" type="button"><i data-lucide="shield-check"></i>Vérifier mon journal</button>`);
       const jJson = $(`<button class="btn sm" type="button"><i data-lucide="file-json"></i>Télécharger la preuve (JSON)</button>`);
       const jPdf = $(`<button class="btn sm" type="button"><i data-lucide="file-down"></i>Télécharger le journal (PDF)</button>`);
-      [jVerify, jJson, jPdf].forEach(b => jActs.appendChild(b));
-      jActs.insertAdjacentHTML("beforeend", tip("<b>Vérifier vous-même</b><br>1. Téléchargez la preuve (JSON) et gardez ce fichier.<br>2. Plus tard, téléchargez-en une nouvelle : chaque ligne de l'ancienne doit s'y retrouver à l'identique (date, événement, sceau, maillon). Si une entrée avait été modifiée ou supprimée, la comparaison le montrerait.<br>3. Un informaticien peut aussi recalculer chaque maillon (SHA-256) : la méthode est écrite dans le fichier.<br><br>Le PDF est la version lisible ; la preuve vérifiable est le fichier JSON.", true));
+      // Aperçu minimal (invitation du réseau pas encore acceptée) : ni vérification ni preuve (le
+      // serveur les refuse) — le journal ne montre alors que vos propres entrées.
+      if (d && d.apercu_minimal) jActs.appendChild($(`<span class="muted small" style="display:inline-flex;align-items:center">Vérification disponible après acceptation${tip("Acceptez d'abord l'invitation depuis votre compte Adjugo : vous pourrez alors vérifier votre journal et télécharger la preuve. D'ici là, il ne montre que vos propres entrées.")}</span>`));
+      else [jVerify, jJson, jPdf].forEach(b => jActs.appendChild(b));
+      if (!(d && d.apercu_minimal)) jActs.insertAdjacentHTML("beforeend", tip("<b>Vérifier vous-même</b><br>1. Téléchargez la preuve (JSON) et gardez ce fichier.<br>2. Plus tard, téléchargez-en une nouvelle : chaque ligne de l'ancienne doit s'y retrouver à l'identique (date, événement, sceau, maillon). Si une entrée avait été modifiée ou supprimée, la comparaison le montrerait.<br>3. Un informaticien peut aussi recalculer chaque maillon (SHA-256) : la méthode est écrite dans le fichier.<br><br>Le PDF est la version lisible ; la preuve vérifiable est le fichier JSON.", true));
       jCard.appendChild(jActs);
       const jLive = $(`<div class="cv-msg" role="status" aria-live="polite" style="margin-top:8px"></div>`);
       const jResult = $(`<div aria-live="polite"></div>`);
@@ -1061,7 +1066,8 @@
       "Les entrées écrites depuis la dernière empreinte quotidienne (moins de 24 h) ne sont couvertes que par l'export que vous avez conservé.",
       "Le journal ne montre jamais l'adresse IP ni l'email des autres membres : leurs entrées sont engagées par un sceau, pas révélées.",
     ];
-    const VERDICT_UI = { intact: ["go", "shield-check", "ok"], altere: ["no_go", "shield-alert", "bad"], vide: ["neutral", "shield", ""] };
+    // « indisponible » : erreur technique pendant la vérification — jamais présentée comme une modification.
+    const VERDICT_UI = { intact: ["go", "shield-check", "ok"], altere: ["no_go", "shield-alert", "bad"], vide: ["neutral", "shield", ""], indisponible: ["neutral", "shield-question", ""] };
     const groupHex = (h) => String(h || "").slice(0, 24).replace(/(.{4})/g, "$1 ").trim();
     // Téléchargement d'une réponse fetch : nom tiré de Content-Disposition, sinon `fallback`.
     function saveResponse(r, blob, fallback) {
@@ -1087,6 +1093,8 @@
       if (v.message) box.appendChild($(`<p class="jv-msg">${esc(v.message)}</p>`));
       const fa = v.premiere_alteration;
       if (fa && (fa.label || fa.at)) box.appendChild($(`<div class="jv-line"><b>Entrée concernée :</b> ${esc(fa.label || "")}${fa.at ? " (" + esc(fmtDT(fa.at)) + ")" : ""}</div>`));
+      // Erreur technique : ni ancrage ni empreinte à montrer (le bouton « Vérifier » permet de réessayer).
+      if (v.verdict === "indisponible") { el.appendChild(box); icons(); return; }
       const an = v.ancrage;
       let anLine;
       if (an && an.date) anLine = an.horodate ? "Dernier horodatage : " + (an.date_label || an.date) + ", empreinte quotidienne du journal horodatée par une autorité indépendante."
@@ -1118,11 +1126,11 @@
     function renderDpgf(api) {
       const CRY = window.AdjugoCrypto || null, D = CRY && CRY.dpgf;
       const el = $(`<section class="card pad dp-card" id="dpgf" tabindex="-1" style="margin-bottom:16px;outline:none" aria-labelledby="dp-title"></section>`);
-      const head = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 170px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="dp-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Ma DPGF de lot</h2>${tip("<b>DPGF</b> : le détail de vos prix de vente, ligne par ligne (décomposition du prix global et forfaitaire). Souvent demandée avec l'offre.<br><br>Vos lignes sont enregistrées <b>chiffrées dans votre navigateur</b>, avec le détail de votre chiffrage et le même code de récupération. Elles ne partent en clair qu'au dépôt, après votre relecture, dans un fichier au niveau du prix de vente.<br><br>Déposer ou retirer la DPGF ne modifie ni votre part soumise ni la convention.")}</span></div>`);
+      const head = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 170px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="dp-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Ma DPGF de lot</h2>${tip("<b>DPGF</b> : le détail de vos prix de vente, ligne par ligne (décomposition du prix global et forfaitaire). Souvent demandée avec l'offre.<br><br><b>Partagé avec le chef de file, au dépôt :</b> vos prix de vente, ligne par ligne, et leur total.<br><b>Jamais partagé :</b> vos coûts, vos marges, votre méthode. Les autres partenaires ne voient pas votre DPGF.<br><br>Vos lignes sont enregistrées <b>chiffrées dans votre navigateur</b>, avec le détail de votre chiffrage et le même code de récupération. Elles ne partent en clair qu'au dépôt, après votre relecture, dans un fichier au niveau du prix de vente.<br><br>Déposer ou retirer la DPGF ne modifie ni votre part soumise ni la convention.")}</span></div>`);
       const pill = $(`<span class="pill neutral" style="font-size:11px">Pas encore déposée</span>`); head.appendChild(pill);
       el.appendChild(head);
-      el.appendChild($(`<div class="dp-share"><div>${ico("eye", 14, "margin-top:1px;color:var(--text-2,#6b7280)")}<span><b>Partagé avec le chef de file, au dépôt :</b> vos prix de vente, ligne par ligne, et leur total.</span></div><div>${ico("lock", 14, "margin-top:1px;color:var(--text-2,#6b7280)")}<span><b>Jamais partagé :</b> vos coûts, vos marges, votre méthode. Les autres partenaires ne voient pas votre DPGF.</span></div></div>`));
-      const body = document.createElement("div"); el.appendChild(body);
+      // Ce qui est partagé ou non : dans la bulle (i) du titre (règle : explications en bulle).
+      const body = document.createElement("div"); body.style.marginTop = "16px"; el.appendChild(body);
       const live = $(`<div class="cv-msg" role="status" aria-live="polite" style="margin-top:10px"></div>`); el.appendChild(live);
       const say = (t, err) => { live.classList.toggle("err", !!err); live.textContent = t || ""; };
       let lignes = [], savedKey = "[]", locked = true, lockHint = "Lecture de vos lignes…", pieces = [], busy = false;

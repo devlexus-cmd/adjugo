@@ -35,7 +35,7 @@ from app.schemas import safe_link_url
 from app.services import audit
 from app.services.groupement_members import (active_invite_filter, active_invites,
                                              groupement_state, submitted_contributions,
-                                             total_offre_ht)
+                                             total_offre_ht, visible_contributions)
 from app.services.storage import get_storage
 
 router = APIRouter(tags=["Co-traitance"])
@@ -514,11 +514,32 @@ def _is_network_invite(inv) -> bool:
 
 def _network_responded(inv, contribution=None) -> bool:
     """Invitation RÉSEAU « répondue » : acceptée depuis le compte du partenaire (claim),
-    adresse prouvée par code, ou part soumise. Décliner n'est pas accepter."""
+    adresse prouvée par code, ou part soumise. Décliner n'est pas accepter.
+    DURABLE : une fois répondue (network_accepted_at), elle le reste, même si le compte qui l'avait
+    acceptée est effacé ou si la part repasse en brouillon — l'aperçu minimal et la projection du
+    journal du membre ne reviennent jamais en arrière (un export conservé reste prolongeable)."""
     if not _is_network_invite(inv):
         return True
-    return bool(getattr(inv, "accepted_by_user_id", None) or getattr(inv, "verified_at", None)
+    return bool(getattr(inv, "network_accepted_at", None)
+                or getattr(inv, "accepted_by_user_id", None) or getattr(inv, "verified_at", None)
                 or (contribution is not None and contribution.status == "submitted"))
+
+
+def _owner_hides_part(inv, contribution=None) -> bool:
+    """Part d'une invitation du RÉSEAU déclinée ou pas encore répondue : le chef de file ne la
+    voit pas (ni contact, ni prix, ni note — un brouillon saisi pendant l'aperçu minimal, ou
+    gardé après un refus). Même seuil de divulgation que l'adresse : acceptée depuis le compte,
+    adresse prouvée par code ou part soumise. Décliner n'est pas répondre."""
+    if inv is None or not _is_network_invite(inv):
+        return False
+    return bool(getattr(inv, "declined_at", None)) or not _network_responded(inv, contribution)
+
+
+def _mark_network_accepted(inv) -> None:
+    """Pose la date de PREMIÈRE réponse positive d'une invitation réseau (jamais remise à zéro).
+    À appeler avant le commit de l'acceptation (claim, code vérifié, part soumise)."""
+    if _is_network_invite(inv) and not getattr(inv, "network_accepted_at", None):
+        inv.network_accepted_at = utcnow()
 
 
 def _network_pending(inv, db: Session = None) -> bool:
@@ -696,6 +717,36 @@ def _require_verified_sender(user: User) -> None:
                                  "pour envoyer des invitations par email. En attendant, copiez le lien.")
 
 
+NETWORK_RESEND_REFUSED = ("Ce partenaire ne peut plus être relancé par le réseau Adjugo. Il retrouve toujours "
+                          "l'invitation dans son espace Adjugo.")
+
+
+NETWORK_RESEND_NOT_PUBLISHED = ("Votre profil partenaire n'est plus publié : seul un profil publié peut relancer "
+                                "un partenaire par le réseau Adjugo. Il retrouve toujours l'invitation dans son "
+                                "espace Adjugo.")
+
+
+def _check_network_resend(inv, current_user: User, db: Session) -> None:
+    """Relance d'une invitation RÉSEAU : mêmes conditions qu'à l'envoi — le chef de file est
+    toujours publié, le profil du partenaire aussi, la paire n'est pas masquée (dans un sens ou
+    dans l'autre ; le motif n'est jamais dit au chef de file), et le plafond quotidien de
+    sollicitations du profil (invitations + relances, même compteur qu'à l'envoi) n'est pas
+    atteint. Sinon l'email affirmerait à tort « votre profil est publié »."""
+    from app.models import PartnerProfile
+    from app.routers.reseau import (NETWORK_INVITES_PER_PROFILE_DAY, _TOO_MANY_FOR_PROFILE,
+                                    network_solicitations_24h)
+    from app.services import partner_network as pn
+    ctx = pn.searcher_context(db, current_user)
+    if not ctx["published"]:
+        # Motif propre au chef de file (son profil) : rien n'est dit du partenaire.
+        raise HTTPException(409, {"code": "profil_non_publie", "message": NETWORK_RESEND_NOT_PUBLISHED})
+    p = db.get(PartnerProfile, inv.partner_profile_id) if inv.partner_profile_id else None
+    if p is None or not p.visible or p.is_demo or pn.hidden_pair(ctx, p):
+        raise HTTPException(409, {"code": "plus_sollicitable", "message": NETWORK_RESEND_REFUSED})
+    if network_solicitations_24h(db, p.id) >= NETWORK_INVITES_PER_PROFILE_DAY:
+        raise HTTPException(429, _TOO_MANY_FOR_PROFILE)
+
+
 @router.post("/api/projects/{project_id}/invites/{invite_id}/resend")
 @limiter.limit("20/hour")
 def resend_invite(project_id: int, invite_id: int, request: Request,
@@ -724,6 +775,8 @@ def resend_invite(project_id: int, invite_id: int, request: Request,
         if datetime.now(timezone.utc) - last < RESEND_MIN_INTERVAL:
             raise HTTPException(429, "Invitation déjà envoyée il y a moins de 15 minutes. "
                                      "Laissez un peu de temps au partenaire avant de relancer.")
+    if _is_network_invite(inv):
+        _check_network_resend(inv, current_user, db)
     _check_daily_invite_cap(current_user, db)
     sender = _send_invite_email
     if _is_network_invite(inv):
@@ -1512,6 +1565,7 @@ def guest_otp_verify(token: str, body: OtpVerify, request: Request, db: Session 
     inv.verified_email = inv.recipient
     inv.otp_hash = ""
     inv.otp_expires_at = None
+    _mark_network_accepted(inv)
     db.commit()
     audit.record(db, action="guest.otp_verified", owner_id=inv.owner_id, project_id=inv.project_id,
                  actor=_guest_actor(inv), actor_kind="guest", target_type="invite",
@@ -1536,6 +1590,7 @@ def guest_submit_contribution(token: str, request: Request, db: Session = Depend
     c = _get_or_create_contribution(inv, db)
     c.status = "submitted"
     c.submitted_at = utcnow()
+    _mark_network_accepted(inv)
     db.commit()
     audit.record(db, action="guest.submit_contribution", owner_id=inv.owner_id, project_id=inv.project_id,
                  actor=_guest_actor(inv), actor_kind="guest",
@@ -1651,44 +1706,254 @@ _PIECE_TYPE_VALUES = ("kbis", "fiscale", "sociale", "assurance", "rib", "qualifi
 _DPGF_EXT = {".pdf", ".xlsx", ".xls", ".ods", ".csv"}
 _DPGF_EXT_MSG = "Une DPGF de lot se dépose en PDF, en tableur (xlsx, xls, ods) ou en CSV."
 _DPGF_MAX_ROWS = 20000
+_DPGF_MAX_CELLS = 1_000_000      # par lecture : borne le travail fait en Python (fichier de 20 Mo compris)
+# Taille d'un CSV de DPGF : 20 000 lignes de 200 caractères. Au-delà, le contrôle (en Python, sous
+# le GIL de l'unique process) prendrait plusieurs secondes : tableur ou PDF.
+_DPGF_CSV_MAX_BYTES = 4 * 1024 * 1024
+# Signature des formats binaires : un texte (CSV avec formules, page HTML) renommé en .xls ou en
+# .xlsx échapperait au contrôle du CSV → refusé, au lieu d'être accepté sans aucun contrôle.
+# Le PDF fait exception sur la position : les lecteurs PDF acceptent l'en-tête « %PDF- » n'importe
+# où dans les 1024 premiers octets (quelques octets parasites avant, fréquents à l'export).
+_DPGF_MAGIC = {".pdf": (b"%PDF-",), ".xlsx": (b"PK\x03\x04",), ".ods": (b"PK\x03\x04",),
+               ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",)}
+_PDF_HEADER_WINDOW = 1024
 # Garde-fou de la doctrine (CSV seulement, seul format lisible sans dépendance) : une colonne
-# de coûts ou de marges serait visible du chef de file → refus explicite.
+# de coûts ou de marges serait visible du chef de file → refus explicite. Le motif s'applique à
+# un texte NORMALISÉ (_dpgf_norm : sans accents, minuscules, tout ce qui n'est ni lettre ni
+# chiffre devient une espace) : « Marge_HT », « coût-unitaire », « PRIX D'ACHAT » sont reconnus.
+# MÊME liste et MÊME normalisation que AdjugoCrypto.dpgf.forbiddenWord (cotraitance-crypto.js) :
+# un fichier produit par le navigateur n'est jamais refusé ici. Alternative de littéraux, sans
+# quantificateur imbriqué : temps linéaire.
 _DPGF_FORBIDDEN = re.compile(
-    r"\b(marges?|co[uû]ts?|d[ée]bours[ée]s?|prix\s+d['’]achat|frais\s+g[ée]n[ée]raux|coefficients?)\b",
-    re.IGNORECASE)
-_NUM_CELL = re.compile(r"^-?\d[\d \u00a0\u202f]*([.,]\d+)?\s*(€|%)?$")
+    r"\b(marges?|couts?|debourses?|prix d achat|prix achat|pu achat|prix de revient|frais generaux"
+    r"|coefficients?|coef|taux de marque)\b")
+_DPGF_WORD_LABEL = {"cout": "coût", "couts": "coûts", "debourse": "déboursé", "debourses": "déboursés",
+                    "prix d achat": "prix d'achat", "frais generaux": "frais généraux"}
+_DIGITS = "0123456789"
+_NUM_SEPS = " .,\u00a0\u202f"     # séparateurs de milliers / décimale admis ENTRE deux chiffres
+_NUM_MAX_LEN = 64                 # au-delà, une cellule n'est jamais lue comme un nombre
+
+
+def _dpgf_norm(s: str) -> str:
+    """Normalisation des en-têtes (identique à cotraitance-crypto.js) : NFKD, diacritiques
+    U+0300 à U+036F retirés, minuscules, tout caractère hors a-z et 0-9 → une espace."""
+    import unicodedata
+    s = "".join(ch for ch in unicodedata.normalize("NFKD", s or "") if not ("\u0300" <= ch <= "\u036f"))
+    return " ".join("".join(ch if ("a" <= ch <= "z" or ch in _DIGITS) else " " for ch in s.lower()).split())
+
+
+def _is_num_cell(v: str) -> bool:
+    """Valeur numérique de tableur (« 1 250,50 », « -150,00 », « 12 % », « 1e+21 ») : parseur
+    LINÉAIRE et borné, sans expression régulière. (L'ancienne regex, ambiguë sur les espaces,
+    faisait un retour arrière quadratique : une cellule de 100 000 espaces gelait tout le process.)"""
+    s = (v or "").strip()
+    if not s or len(s) > _NUM_MAX_LEN:
+        return False
+    if s[-1] in "€%":
+        s = s[:-1].rstrip()
+    if s[:1] == "-":
+        s = s[1:]
+    mant, exp = s, None
+    for i, ch in enumerate(s):
+        if ch in "eE":
+            mant, exp = s[:i], s[i + 1:]
+            break
+    if exp is not None:
+        if exp[:1] in ("+", "-"):
+            exp = exp[1:]
+        if not exp or any(ch not in _DIGITS for ch in exp):
+            return False
+    if not mant or mant[0] not in _DIGITS or mant[-1] not in _DIGITS:
+        return False
+    prev_sep = False
+    for ch in mant:
+        if ch in _DIGITS:
+            prev_sep = False
+        elif ch in _NUM_SEPS and not prev_sep:
+            prev_sep = True
+        else:
+            return False
+    return True
+
+
+def _dpgf_directive(text: str) -> str:
+    """Séparateur d'une directive « sep=X » en première ligne (Excel l'applique, quel que soit le
+    reste du fichier), sinon "". La tabulation compte (« sep=<tab> »)."""
+    first = text[:16]
+    for ch in "\r\n":
+        first = first.split(ch, 1)[0]
+    first = first.strip(" ")
+    if len(first) == 5 and first[:4].lower() == "sep=" and first[4] != '"':
+        return first[4]
+    return ""
+
+
+def _dpgf_separators(text: str) -> list:
+    """Séparateurs qu'un tableur peut appliquer à ce fichier : « ; », « , », tabulation, plus celui
+    d'une directive « sep=X » en première ligne (Excel l'applique, quel que soit le reste)."""
+    seps = [";", ",", "\t"]
+    d = _dpgf_directive(text)
+    if d and d not in seps:
+        seps.append(d)
+    return seps
+
+
+_DPGF_SEP_NAMES = {";": "un point-virgule", ",": "une virgule", "\t": "une tabulation"}
+
+
+def _dpgf_file_separators(text: str, counts: dict) -> tuple:
+    """(séparateurs que le tableur du chef de file peut appliquer, séparateur du fichier), d'après
+    `counts` : nombre de cellules de l'en-tête sous « ; », « , » et la tabulation.
+
+    - « ; » toujours : Excel en français découpe au point-virgule un CSV ouvert d'un double-clic ;
+    - celui d'une directive « sep=X » (Excel l'applique) ;
+    - la virgule ou la tabulation quand l'en-tête du fichier est découpé ainsi (au moins 2 cellules,
+      et plus qu'au « ; ») : fichier exporté avec ce séparateur, qu'un tableur réglé de même lira ainsi.
+    Hors de ces cas, une virgule ou une tabulation est du texte (« Fourniture, - y compris
+    accessoires », « Pose, +/- 2 mm ») : un tableur ne la prend pour un séparateur que réglé pour."""
+    directive = _dpgf_directive(text)
+    n = {d: counts.get(d, 0) for d in (";", ",", "\t")}
+    plausible = [";"]
+    for d in (",", "\t"):
+        if d == directive or (n[d] >= 2 and n[d] > n[";"]):
+            plausible.append(d)
+    if directive and directive not in plausible:
+        plausible.append(directive)
+    main = directive or max((";", ",", "\t"), key=lambda d: (n[d], d == ";"))
+    return plausible, main
+
+
+def _dpgf_formula_msg(delim: str, main: str, sign: str, line_no: int) -> str:
+    """Message EXACT : formule dans une cellule du fichier, ou signe placé juste après un séparateur
+    que le fichier n'utilise pas (le tableur du chef de file pourrait, lui, couper là)."""
+    if delim == main:
+        return (f"La DPGF contient une formule ligne {line_no} (cellule commençant par « {sign} ») : "
+                "déposez des valeurs, pas des formules.")
+    after = _DPGF_SEP_NAMES.get(delim, f"le signe « {delim} »")
+    return (f"La DPGF contient, ligne {line_no}, un « {sign} » juste après {after} : le tableur du chef de "
+            "file pourrait y lire le début d'une formule. Retirez ce signe ou placez un mot devant.")
+
+
+def _dpgf_is_data_row(cells: list) -> bool:
+    """Ligne de valeurs : au moins deux cellules numériques, et pas moins que de cellules texte."""
+    n_num = n_txt = 0
+    for v in cells:
+        v = v.strip()
+        if not v:
+            continue
+        if _is_num_cell(v):
+            n_num += 1
+        else:
+            n_txt += 1
+    return n_num >= 2 and n_num >= n_txt
 
 
 def _check_dpgf_csv(content: bytes) -> None:
     """CSV de DPGF : UTF-8, aucune formule (injection à l'ouverture dans un tableur), aucune
-    colonne de coûts ou de marges dans les lignes d'en-tête. 422 explicite sinon."""
+    colonne de coûts ou de marges dans les lignes d'en-tête. 422 explicite sinon.
+
+    En-tête : toutes les lignes non vides situées avant la première ligne de valeurs, quel que soit
+    leur nombre et qu'elles contiennent un nombre ou non.
+    Formules : chaque cellule est contrôlée sous chaque séparateur (« ; », « , », tabulation,
+    directive « sep= »). Sous un séparateur que le tableur du chef de file peut appliquer
+    (_dpgf_file_separators), une cellule ne commence ni par « = », « + », « @ », ni par « - » hors
+    nombre négatif. Sous un autre (virgule dans un fichier au « ; » par exemple), seuls « = » et
+    « @ » sont refusés : « , - y compris » ou « , +/- 2 mm » sont du texte courant.
+    Garde-fou d'aide contre une erreur du déposant, pas une protection contre un fichier piégé :
+    le contenu des PDF et des tableurs n'est pas inspecté."""
     import csv
+    if len(content) > _DPGF_CSV_MAX_BYTES:
+        raise HTTPException(422, "DPGF trop volumineuse pour un CSV (plus de 4 Mo) : déposez-la en tableur ou en PDF.")
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
         raise HTTPException(422, "La DPGF (CSV) doit être encodée en UTF-8.")
-    sample = text[:4096]
-    delim = ";" if sample.count(";") >= sample.count(",") else ","
+    seps = _dpgf_separators(text)
     try:
-        reader = csv.reader(io.StringIO(text), delimiter=delim)
-        header_rows = 0
-        for i, row in enumerate(reader):
-            if i >= _DPGF_MAX_ROWS:
+        # En-tête : lignes non vides avant la première ligne de valeurs (sous l'un des séparateurs).
+        # Bornes AVANT tout travail en Python sur les cellules (lignes, cellules par séparateur) :
+        # un fichier pathologique ne coûte que le découpage, fait en C.
+        header, n_lines = [], 0
+        seen = dict.fromkeys(seps, 0)
+        head_counts, data_counts = dict.fromkeys(seps, 0), None
+        for line in io.StringIO(text, newline=""):
+            if not line.strip():
+                continue
+            n_lines += 1
+            if n_lines > _DPGF_MAX_ROWS:
                 raise HTTPException(422, f"DPGF trop longue (plus de {_DPGF_MAX_ROWS} lignes).")
-            cells = [c.strip() for c in row]
-            for v in cells:
-                if v and (v[0] in "=+@\t\r" or (v[0] == "-" and not _NUM_CELL.match(v))):
-                    raise HTTPException(422, "La DPGF contient une formule (cellule commençant par "
-                                             "« = », « + », « - » ou « @ ») : déposez des valeurs, pas des formules.")
-            # Lignes d'en-tête = premières lignes sans aucune cellule numérique.
-            if header_rows < 5 and cells and not any(_NUM_CELL.match(v) for v in cells if v):
-                header_rows += 1
-                bad = next((v for v in cells if _DPGF_FORBIDDEN.search(v)), None)
-                if bad:
-                    raise HTTPException(422, f"Une DPGF de lot ne contient que des prix de vente : retirez la "
-                                             f"colonne « {bad[:60]} » (elle serait visible du chef de file).")
+            rows = {d: [r for r in csv.reader([line], delimiter=d)] for d in seps}
+            line_counts = {d: sum(len(r) for r in rows[d]) for d in seps}
+            for d in seps:
+                seen[d] += line_counts[d]
+                if seen[d] > _DPGF_MAX_CELLS:
+                    raise HTTPException(422, "DPGF trop volumineuse pour un CSV : déposez-la en tableur ou en PDF.")
+            if any(_dpgf_is_data_row(r) for d in seps for r in rows[d]):
+                data_counts = line_counts
+                break
+            header.append(line)
+            for d in seps:
+                head_counts[d] += line_counts[d]
+        plausible, main = _dpgf_file_separators(text, head_counts if header else (data_counts or {}))
+        for delim in seps:
+            strict = delim in plausible
+            n_cells = 0
+            # newline="" : fins de ligne \r, \n et \r\n reconnues comme un tableur (une ligne terminée par
+            # un \r seul est une nouvelle ligne pour Excel) ; rien d'autre (pas \x85, \u2028…).
+            rd = csv.reader(io.StringIO(text, newline=""), delimiter=delim)
+            for i, row in enumerate(rd):
+                if i >= _DPGF_MAX_ROWS:
+                    raise HTTPException(422, f"DPGF trop longue (plus de {_DPGF_MAX_ROWS} lignes).")
+                n_cells += len(row)
+                if n_cells > _DPGF_MAX_CELLS:
+                    raise HTTPException(422, "DPGF trop volumineuse pour un CSV : déposez-la en tableur ou en PDF.")
+                for cell in row:
+                    v = cell.strip()
+                    if not v:
+                        continue
+                    c0 = v[0]
+                    if c0 in "=@" or (strict and (c0 == "+" or (c0 == "-" and not _is_num_cell(v)))):
+                        raise HTTPException(422, _dpgf_formula_msg(delim, main, c0, rd.line_num))
+        for line in header:
+            m = _DPGF_FORBIDDEN.search(_dpgf_norm(line))
+            if m:
+                raise HTTPException(422, f"Une DPGF de lot ne contient que des prix de vente : retirez la "
+                                         f"colonne « {_DPGF_WORD_LABEL.get(m.group(1), m.group(1))} » "
+                                         "(elle serait visible du chef de file).")
     except csv.Error:
         raise HTTPException(422, "DPGF (CSV) illisible.")
+
+
+def _check_dpgf_signature(content: bytes, ext: str) -> None:
+    """DPGF en PDF ou en tableur : le contenu correspond bien à l'extension. Un « .xls » qui est en
+    réalité une page web ou un XML Excel 2003 (exports de certaines plateformes) reste refusé : ce
+    texte n'est pas contrôlé comme un CSV ; le message dit comment le réenregistrer."""
+    magic = _DPGF_MAGIC.get(ext)
+    if not magic:
+        return
+    if ext == ".pdf":
+        if b"%PDF-" in content[:_PDF_HEADER_WINDOW]:
+            return
+    elif any(content.startswith(m) for m in magic):
+        return
+    if ext == ".pdf":
+        raise HTTPException(422, "Ce fichier n'est pas un vrai PDF : enregistrez la DPGF en PDF depuis votre "
+                                 "logiciel, ou déposez-la en tableur (.xlsx, .ods) ou en CSV.")
+    head = content[:512].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if head.startswith((b"<", b"\xff\xfe<", b"\xfe\xff\x00<")):
+        quoi = "une page web ou un fichier XML renommé"
+    else:
+        quoi = "un fichier texte renommé"
+    raise HTTPException(422, f"Ce fichier n'est pas un vrai {ext[1:].upper()} (c'est {quoi}) : ouvrez-le dans "
+                             "votre tableur et enregistrez-le au format .xlsx ou .ods, ou déposez la DPGF en PDF.")
+
+
+def _check_dpgf_content(content: bytes, ext: str) -> None:
+    """Contrôles d'une DPGF, quel que soit le chemin (dépôt, coffre-fort, changement de type)."""
+    if ext == ".csv":
+        _check_dpgf_csv(content)
+    else:
+        _check_dpgf_signature(content, ext)
 
 
 def _parse_expiration(s) -> Optional[date]:
@@ -1750,8 +2015,7 @@ def guest_upload_piece(token: str, request: Request, file: UploadFile = File(...
     content, ext = _read_upload(file, allowed=(_DPGF_EXT if is_dpgf else None))
     if is_dpgf:
         exp = None                                  # une DPGF n'expire pas
-        if ext == ".csv":
-            _check_dpgf_csv(content)
+        _check_dpgf_content(content, ext)
     safe_mime = _safe_mime(file.filename)        # type dérivé de l'extension, pas du client
     file_key = f"{inv.owner_id}/cotraitant/{uuid.uuid4().hex}{ext}"
     get_storage().save(file_key, content, safe_mime)
@@ -1790,8 +2054,16 @@ def guest_patch_piece(token: str, piece_id: int, body: PiecePatch, request: Requ
     fields = body.model_fields_set
     if "piece_type" in fields:
         new_type = _check_piece_type(body.piece_type) or "autre"
-        if new_type == "dpgf_lot" and os.path.splitext(pc.file_key or pc.name or "")[1].lower() not in _DPGF_EXT:
+        ext = os.path.splitext(pc.file_key or pc.name or "")[1].lower()
+        if new_type == "dpgf_lot" and ext not in _DPGF_EXT:
             raise HTTPException(422, _DPGF_EXT_MSG)
+        if new_type == "dpgf_lot" and (pc.piece_type or "") != "dpgf_lot":
+            # Devenir une DPGF = mêmes contrôles qu'au dépôt (signature du fichier, CSV sans formule).
+            try:
+                content = get_storage().load(pc.file_key)
+            except FileNotFoundError:
+                raise HTTPException(410, "Fichier absent du stockage")
+            _check_dpgf_content(content or b"", ext)
         pc.piece_type = new_type
     if "expiration_date" in fields:
         pc.expiration_date = _parse_expiration(body.expiration_date)
@@ -1846,14 +2118,12 @@ def guest_piece_from_vault(token: str, body: FromVault, request: Request,
     ext = os.path.splitext(doc.file_key or doc.name or "")[1].lower() or os.path.splitext(doc.name or "")[1].lower()
     file_key = f"{inv.owner_id}/cotraitant/{uuid.uuid4().hex}{ext}"
     safe_mime = _safe_mime(file_key)     # extension réelle du fichier, pas le nom (renommable)
-    storage.save(file_key, content, safe_mime)
-    cat = doc.category.value if hasattr(doc.category, "value") else str(doc.category or "")
-    ptype = {"fiscal": "", "assurances": "assurance", "qualifications": "qualification"}.get(cat, "")
-    ptype = ptype or _classify_piece_type(doc.name or "")
-    if cat == "fiscal" and ptype not in ("fiscale", "sociale"):
-        ptype = "fiscale"
+    ptype = vault_doc_type(doc)
     if ptype == "dpgf_lot" and ext not in _DPGF_EXT:
         ptype = "autre"
+    if ptype == "dpgf_lot":
+        _check_dpgf_content(content, ext)      # mêmes contrôles qu'un dépôt direct (avant l'écriture)
+    storage.save(file_key, content, safe_mime)
     pc = ContributionPiece(
         contribution_id=c.id, project_id=inv.project_id, owner_id=inv.owner_id,
         name=os.path.basename(doc.name or "piece")[:500], file_key=file_key,
@@ -1928,6 +2198,8 @@ def owner_download_piece(project_id: int, piece_id: int, request: Request,
     if not pc:
         raise HTTPException(404, "Pièce introuvable")
     cb = db.query(ProjectContribution).filter(ProjectContribution.id == pc.contribution_id).first()
+    if cb is not None and _owner_hides_part(db.get(ProjectInvite, cb.invite_id), cb):
+        raise HTTPException(404, "Pièce introuvable")     # part d'une invitation réseau sans réponse
     # invite_id → l'entrée apparaît dans le JOURNAL DU MEMBRE concerné (« le mandataire a
     # téléchargé votre pièce « … » ») : la confiance est vérifiable, pas déclarée.
     audit.record(db, action="owner.download_piece", owner_id=pc.owner_id, project_id=project_id,
@@ -1970,6 +2242,9 @@ def list_contributions(project_id: int, current_user: User = Depends(get_current
     rows = db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id
     ).order_by(ProjectContribution.updated_at.desc()).all()
+    # Invitation du réseau déclinée ou sans réponse : sa part n'est pas montrée (_owner_hides_part).
+    invs = {i.id: i for i in db.query(ProjectInvite).filter(ProjectInvite.project_id == project_id).all()}
+    rows = [c for c in rows if not _owner_hides_part(invs.get(c.invite_id), c)]
     active_ids = {i.id for i in active_invites(db, project_id)}
     _record_owner_views(db, project_id, data_owner_id(current_user, db), f"user:{current_user.id}", "",
                         [c for c in rows if c.invite_id in active_ids])
@@ -2028,6 +2303,17 @@ def _classify_piece_type(name: str) -> str:
         if any(k in n for k in kw):
             return key
     return ""
+
+
+def vault_doc_type(doc) -> str:
+    """Type de pièce d'un document du coffre-fort (catégorie, puis nom) — source unique : copie
+    d'une pièce depuis le coffre-fort (partenaire) et contrôle des attestations du chef de file."""
+    cat = doc.category.value if hasattr(doc.category, "value") else str(doc.category or "")
+    ptype = {"fiscal": "", "assurances": "assurance", "qualifications": "qualification"}.get(cat, "")
+    ptype = ptype or _classify_piece_type(doc.name or "")
+    if cat == "fiscal" and ptype not in ("fiscale", "sociale"):
+        ptype = "fiscale"
+    return ptype
 
 
 def _classify_partner_pieces(names: list, piece_types: list = None) -> dict:
@@ -2093,8 +2379,9 @@ def coffre_croise(db: Session, project, invites: list, viewer_invite_id: Optiona
     expected_keys = list(_EXPECTED_BASE) + (["qualification"] if _dce_requires_qualification(project) else [])
     expected = [{"key": k, "label": _PIECE_LABELS.get(k, k)} for k in expected_keys]
 
-    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project.id).all()}
+    # Réseau sans réponse : part absente pour le chef de file et les autres membres (seul son
+    # auteur la voit) — ni le nom saisi dans le brouillon, ni ses pièces.
+    contribs = visible_contributions(db, project.id, invites, viewer_invite_id=viewer_invite_id)
     pieces_by_contrib = {}
     for pc in db.query(ContributionPiece).filter(ContributionPiece.project_id == project.id).all():
         pieces_by_contrib.setdefault(pc.contribution_id, []).append(pc)
@@ -2231,6 +2518,9 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
     invites = active_invites(db, project_id)       # membres = invitations actives (ni révoquées ni déclinées)
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id).all()}
+    for inv in invites:          # réseau sans réponse : part non montrée (_owner_hides_part)
+        if inv.id in contribs and _owner_hides_part(inv, contribs[inv.id]):
+            contribs.pop(inv.id)
     piece_counts, piece_names, piece_types = {}, {}, {}
     for pc in db.query(ContributionPiece).filter(
             ContributionPiece.project_id == project_id).all():
@@ -2361,8 +2651,7 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
     invites = active_invites(db, project_id)
     if not invites:
         raise HTTPException(422, "Aucun partenaire actif : invitez au moins un partenaire avant de figer l'offre.")
-    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project_id).all()}
+    contribs = visible_contributions(db, project_id, invites)      # réseau sans réponse : part absente
     manques = []
     for inv in invites:
         c = contribs.get(inv.id)
@@ -2444,9 +2733,10 @@ _CHAIN_CACHE: dict = {}        # owner_id → (ts, intact) — process unique, T
 _CHAIN_TTL = 300
 
 
-def _chain_intact_cached(db: Session, owner_id: int) -> bool:
+def _chain_intact_cached(db: Session, owner_id: int) -> Optional[bool]:
     """verify_chain = full-scan + re-hash de TOUT le journal du tenant : sur une route invitée
-    à 60/min ce serait un DoS trivial de l'unique worker → résultat mis en cache 5 min."""
+    à 60/min ce serait un DoS trivial de l'unique worker → résultat mis en cache 5 min.
+    Erreur technique : None (inconnu), JAMAIS False (« altéré ») et jamais mise en cache."""
     import time as _time
     hit = _CHAIN_CACHE.get(owner_id)
     now = _time.time()
@@ -2455,7 +2745,11 @@ def _chain_intact_cached(db: Session, owner_id: int) -> bool:
     try:
         intact = bool(audit.verify_chain(db, owner_id).get("intact"))
     except Exception:
-        intact = False
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
     _CHAIN_CACHE[owner_id] = (now, intact)
     return intact
 
@@ -2473,7 +2767,7 @@ def guest_journal(token: str, request: Request, db: Session = Depends(get_db)):
     try:
         chained = _chain_intact_cached(db, inv.owner_id)
     except Exception:
-        chained = False
+        chained = None                 # inconnu : une panne n'est pas une altération
     return {"entries": out, "chained": chained, "integrity_label": INTEGRITY_LABEL}
 
 
@@ -2576,6 +2870,7 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
                                      "pour accepter ce partage nominatif.")
     if not inv.accepted_by_user_id:
         inv.accepted_by_user_id = current_user.id
+        _mark_network_accepted(inv)
         db.commit()
         audit.record(db, action="invite.claimed", owner_id=inv.owner_id, project_id=inv.project_id,
                      actor=(inv.company_name or "invité")[:160],
@@ -2648,10 +2943,11 @@ def consortium_report(project_id: int, current_user: User = Depends(get_current_
     # Cloisonnement : le compte-rendu est « partageable » → il ne doit JAMAIS exposer
     # l'apport d'un partenaire RÉVOQUÉ/DÉCLINÉ, ni AUCUN prix par membre (doctrine de
     # visibilité : le PDF n'imprime que le total de l'offre FIGÉE). Vue owner : enveloppe absente.
-    contribs = [_serialize_contribution(c, db, viewer="owner") for c in db.query(ProjectContribution).join(
+    contribs = [_serialize_contribution(c, db, viewer="owner") for c, i in db.query(
+        ProjectContribution, ProjectInvite).join(
         ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
         ProjectContribution.project_id == project_id,
-        active_invite_filter()).all()]
+        active_invite_filter()).all() if not _owner_hides_part(i, c)]
     from app.services.consortium_report import generate_consortium_report_pdf
     pdf = generate_consortium_report_pdf(project.name, (company.name if company else ""), data, contribs)
     safe = re.sub(r'[^A-Za-z0-9._ -]', "_", (project.name or "consortium"))[:50]

@@ -194,6 +194,12 @@ navigateur (la vérification hors ligne est un outil pour l'utilisateur qui le s
   `acheteur-landing.html`) porte `integrity="sha384-…"` : le navigateur refuse un fichier dont le
   contenu ne correspond pas. Les scripts en ligne et le script d'analytics (tiers, optionnel,
   chargé par `app.js`) ne sont pas couverts.
+- **Ce que la SRI protège, dit exactement** : un fichier altéré ou périmé ENTRE le serveur et le
+  navigateur (cache, proxy, fichier servi par erreur). Pas une modification des fichiers sur le
+  serveur lui-même : le filet ci-dessous recalcule les empreintes des pages à partir des fichiers
+  présents, un script modifié sur le serveur part donc avec sa propre empreinte. Cette
+  modification se voit en comparant avec le manifeste versionné (`manifeste_publie_a_jour` et
+  `pages_a_jour` valent alors `false`) et dans les journaux du serveur (« empreintes périmées »).
 - **Règle pour tout le monde (front compris)** : après **toute** modification d'un fichier
   `app/static/*.js` ou `app/static/vendor/*`, lancer `python scripts/sri_update.py` et commiter les
   pages + `app/static/sri-manifest.json`. Sinon `tests/test_cotraitance_v4.py::test_sri_empreintes_a_jour`
@@ -244,13 +250,32 @@ pièce. Rien de tout cela ne va vers le LLM ni dans une DPGF commune.
 - Sans `piece_type`, un nom contenant « DPGF » (ou « décomposition du prix global ») est classé
   `dpgf_lot` (et n'est plus pris pour un RIB : « DPGF_distribution.xlsx »).
 - **Contrôles du CSV** (seul format lisible sans dépendance) — 422 avec message en français :
-  UTF-8 obligatoire (BOM accepté) ; séparateur `;` ou `,` ; aucune formule (cellule commençant par
-  `=`, `+`, `@`, ou `-` suivi d'autre chose qu'un nombre : « -150,00 » est accepté) ; aucune
-  colonne de coûts ou de marges dans les lignes d'en-tête (« marge », « coût », « déboursé »,
-  « prix d'achat », « frais généraux », « coefficient ») : « Une DPGF de lot ne contient que des
-  prix de vente : retirez la colonne « Marge » (elle serait visible du chef de file). » ; 20 000
-  lignes au plus. **Générateur recommandé** : CSV UTF-8 séparé par `;`, montants au format
-  « 1 250,00 », pas de formule. Les PDF/tableurs ne sont pas inspectés (responsabilité du déposant).
+  UTF-8 obligatoire (BOM accepté) ; 4 Mo et 20 000 lignes au plus (au-delà : tableur ou PDF ; le
+  contrôle tourne dans l'unique process) ; aucune formule, contrôlée sous chaque séparateur (`;`,
+  `,`, tabulation, et celui d'une directive `sep=X` en première ligne). Sous un séparateur que le
+  tableur du chef de file peut appliquer — `;` toujours (Excel en français), celui de la directive,
+  `,` ou la tabulation quand l'en-tête du fichier est découpé ainsi (au moins 2 cellules, et plus
+  qu'au `;`) — aucune cellule ne commence par `=`, `+`, `@`, ou `-` suivi d'autre chose qu'un
+  nombre (« -150,00 » est accepté). Sous un autre séparateur (virgule d'une désignation dans un
+  fichier au `;`), seuls `=` et `@` sont refusés : « Fourniture, - y compris accessoires » ou
+  « Pose, +/- 2 mm » sont acceptés. Le message dit la ligne et le signe, et précise « juste après
+  une virgule » quand c'est le cas ; aucune colonne de coûts ou de marges dans les lignes d'en-tête
+  (toutes les lignes non vides avant la première ligne de valeurs, qu'elles contiennent un nombre
+  ou non) : « marge », « coût », « déboursé », « prix d'achat », « PU achat », « prix de revient »,
+  « frais généraux », « coefficient », « coef », « taux de marque », reconnus sans accents ni
+  majuscules et quelle que soit la ponctuation (« Marge_HT », « cout_unitaire ») — « Une DPGF de
+  lot ne contient que des prix de vente : retirez la colonne « marge » (elle serait visible du chef
+  de file). ». Même liste et même normalisation côté navigateur (`AdjugoCrypto.dpgf`) : un CSV
+  produit par le navigateur est toujours accepté. Lecture par des parseurs linéaires, sans
+  expression régulière à retour arrière. **Générateur recommandé** : CSV UTF-8 séparé par `;`,
+  montants au format « 1 250,00 », pas de formule.
+- **PDF et tableurs** : leur contenu n'est pas inspecté (responsabilité du déposant) ; seule leur
+  signature de format est vérifiée (`%PDF-` dans les 1024 premiers octets, comme les lecteurs PDF ;
+  ZIP au début pour `.xlsx`/`.ods`, OLE pour `.xls`) : un texte renommé en `.xls` est refusé, de
+  même qu'un « .xls » qui est en réalité une page web ou un XML Excel 2003 (exports de certaines
+  plateformes), avec un message qui dit de l'enregistrer au format .xlsx ou .ods. Ces contrôles aident le déposant contre une erreur (formule, colonne
+  de marge) ; ils ne garantissent pas au chef de file qu'un fichier déposé ne contient aucune
+  formule.
 - Effets : la part **reste soumise** et la convention **n'est pas rendue caduque** (le prix de
   vente du lot, seul imprimé dans la convention, ne change pas) — vrai aussi pour la suppression
   (`DELETE …/piece/{id}`) et la jonction depuis le coffre-fort.
@@ -324,14 +349,23 @@ dossier comme déposé »). Avertir, pas bloquer :
   → boîte de confirmation (« Le dossier n'est pas complet : le marquer déposé quand même ? Vous avez
   peut-être déposé hors d'Adjugo. »), focus sur « Annuler », puis renvoyer `{"confirmer": true}` ;
 - succès → `{"ok": true, "deja_depose": false, "status": "envoye", "complet": true|false, "pret": {…}, "state": {…}}` ;
-- déjà déposé (ou gagné / perdu) → 200 `{"ok": true, "deja_depose": true, "status": "envoye", "complet": null, "state": {…}}` (aucune nouvelle trace).
+- déjà déposé (ou gagné / perdu) → 200 `{"ok": true, "deja_depose": true, "status": "envoye", "complet": null, "state": {…}}` (aucune nouvelle trace) ;
+- marché abandonné → **409** `{"code": "marche_abandonne", "message": "Ce marché est marqué « abandonné » : rouvrez-le depuis sa fiche avant de le marquer comme déposé."}`
+  (sinon ses relances, coupées à l'abandon, reprendraient à l'annulation du marquage).
+
+Transition atomique (compare-and-set sur le statut lu) : deux clics simultanés donnent un seul
+marquage et une seule entrée au journal. Le compteur « groupements déposés via Adjugo » des profils
+du réseau concernés (chef de file et membres) est recalculé aussitôt (COUNT réel), au marquage
+comme à son annulation.
 
 Après le marquage : plus aucune relance automatique (parts, attestations) pour ce marché.
 
 ### 5.3 `DELETE /api/projects/{id}/groupement/deposer` — annuler un marquage fait par erreur (30/h)
 
-Le marché retrouve son statut d'avant (« nouveau » ou « en cours ») ; trace « Le mandataire a annulé
-le marquage « déposé » ». Réponse `{"ok": true, "etait_depose": true, "status": "nouveau", "state": {…}}` ;
+Le marché retrouve EXACTEMENT son statut d'avant, lu dans l'entrée « déposé » du journal
+(« nouveau », « en cours », ou « abandonné » pour un marquage antérieur à la règle qui le refuse ;
+« en cours » s'il est illisible) ; trace « Le mandataire a annulé le marquage « déposé » ». Deux
+annulations simultanées : une seule passe, une seule trace. Réponse `{"ok": true, "etait_depose": true, "status": "nouveau", "state": {…}}` ;
 pas déposé → `etait_depose: false` ; gagné / perdu → 409 `{"code": "marche_clos", "message": "Le marché est déjà marqué gagné ou perdu : changez son statut depuis sa fiche."}`.
 
 Démo : `POST` et `DELETE …/deposer` → 403 « La démo est en lecture guidée : créez votre compte
@@ -405,9 +439,13 @@ Données réelles de l'organisation uniquement (aucun montant, aucun nom de part
 
 ## 10. Notes d'intégration
 
-- Migration `q1r2s3t4u5v6` : `down_revision = "o9p0q1r2s3t4"` ; **à rechaîner après la révision de
-  la vague 3**. Idempotente, testée SQLite (neuve / révision précédente avec données / rejeu) et
-  Postgres 16 (neuve / production simulée / rejeu). La garde ajoutée dans `n8o9p0q1r2s3` évite
+- Migration `q1r2s3t4u5v6` : rechaînée après la vague 3 (`down_revision = "p0q1r2s3t4u5"`).
+  Expand/contract : `chiffrage_note` est vidée et n'est plus mappée, mais RESTE en base (le code de
+  production la mappe encore) ; sa suppression viendra dans une livraison ultérieure. Idempotente,
+  testée SQLite (neuve / révision précédente avec données / rejeu) et, le 11/10/2026, Postgres avec
+  le code de production (ff8ff27) qui lit et écrit les parts pendant la migration, après elle et
+  après un retour arrière (`alembic downgrade o9p0q1r2s3t4` depuis la nouvelle image, puis image
+  précédente : voir DEPLOIEMENT.md). La garde ajoutée dans `n8o9p0q1r2s3` évite
   de lire une colonne qui n'existe plus sur une base neuve.
 - Après la fusion avec la vague 3 (qui modifie `app.js`), relancer `python scripts/sri_update.py`.
 - `GROUP_EVENTS` (événements visibles de tous les membres) est **figé** pour `adjugo-journal-membre-v1` :

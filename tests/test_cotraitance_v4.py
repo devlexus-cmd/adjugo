@@ -19,8 +19,9 @@ Invariants vérifiés :
   plus aucune relance après dépôt ;
 - tableau de bord : N marchés accessibles en groupement, groupements par étape, données du
   tenant seulement ;
-- migration q1r2s3t4u5v6 : chiffrage_note supprimée (SQLite : base neuve, base à la révision
-  précédente avec données, rejeu).
+- migration q1r2s3t4u5v6 : chiffrage_note vidée (texte recopié dans note_au_mandataire) mais
+  CONSERVÉE en base (expand/contract : le code de production la mappe encore), acceptation durable
+  des invitations réseau (SQLite : base neuve, base à la révision précédente avec données, rejeu).
 """
 import io
 import json
@@ -749,7 +750,10 @@ def test_doctrine_vague4_rien_ne_fuite(client, auth, mails, no_llm):
 
 # ═══ 8. Migration q1r2s3t4u5v6 (SQLite) ═══════════════════════════════════════════════
 
-def test_migration_suppression_chiffrage_note_sqlite(tmp_path):
+def test_migration_chiffrage_note_videe_sans_suppression_sqlite(tmp_path):
+    """Expand/contract : la colonne est vidée (texte recopié, aucune perte) mais PAS supprimée —
+    l'ancien code (production) la mappe encore et doit continuer de lire et d'écrire les parts
+    pendant le déploiement et après un retour arrière. La suppression viendra plus tard."""
     import sqlalchemy as sa
     from alembic.config import Config
     from alembic.script import ScriptDirectory
@@ -768,53 +772,77 @@ def test_migration_suppression_chiffrage_note_sqlite(tmp_path):
             assert r.returncode == 0, r.stdout + r.stderr
         return sa.create_engine(f"sqlite:///{dbfile}"), run
 
-    def cols(eng):
-        return {c["name"] for c in sa.inspect(eng).get_columns("project_contributions")}
+    def cols(eng, table="project_contributions"):
+        return {c["name"] for c in sa.inspect(eng).get_columns(table)}
 
     def version(eng):
         with eng.connect() as cn:
             return cn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
 
-    # (a) Base NEUVE : toute la chaîne passe (n8o9 ne lit plus une colonne absente).
+    # (a) Base NEUVE : toute la chaîne passe ; la colonne n'a jamais existé (le modèle ne la mappe plus).
     eng, run = make("neuve.db")
     run("upgrade", "head")
     assert "chiffrage_note" not in cols(eng) and {"prix_lot_ht", "note_au_mandataire"} <= cols(eng)
+    assert "network_accepted_at" in cols(eng, "project_invites")
     assert version(eng) == head
     eng.dispose()
 
     # (b) Base « production » à la révision précédente, colonne présente + données.
     eng, run = make("prod.db")
-    run("upgrade", "o9p0q1r2s3t4")
+    run("upgrade", "p0q1r2s3t4u5")
     with eng.begin() as cn:
         cn.execute(sa.text("ALTER TABLE project_contributions ADD COLUMN chiffrage_note TEXT"))
+        if "network_accepted_at" in cols(eng, "project_invites"):      # créée par une synchro générique
+            cn.execute(sa.text("ALTER TABLE project_invites DROP COLUMN network_accepted_at"))
         ins = sa.text("INSERT INTO project_contributions (invite_id, project_id, owner_id, company_name, status, "
                       "version, prix_lot_ht, chiffrage_note, note_au_mandataire) VALUES "
-                      "(:i, 1, 1, :c, 'submitted', 2, :p, :n, :m)")
-        cn.execute(ins, {"i": 101, "c": "Alpha", "p": 40000.0, "n": "SECRET marge 18 %", "m": "Merci"})
-        cn.execute(ins, {"i": 102, "c": "Beta", "p": None, "n": "", "m": "Note de Beta"})
-        cn.execute(ins, {"i": 103, "c": "Gamma", "p": 12.5, "n": None, "m": ""})
-    assert "chiffrage_note" in cols(eng)
+                      "(:i, 1, 1, :c, :s, 2, :p, :n, :m)")
+        cn.execute(ins, {"i": 101, "c": "Alpha", "s": "submitted", "p": 40000.0, "n": "SECRET marge 18 %", "m": "Merci"})
+        cn.execute(ins, {"i": 102, "c": "Beta", "s": "submitted", "p": None, "n": "", "m": "Note de Beta"})
+        cn.execute(ins, {"i": 103, "c": "Gamma", "s": "draft", "p": 12.5, "n": None, "m": ""})
+        inv = sa.text("INSERT INTO project_invites (id, token, project_id, owner_id, source, accepted_by_user_id, "
+                      "revoked) VALUES (:i, :t, 1, 1, :s, :a, 0)")
+        cn.execute(inv, {"i": 101, "t": "t101", "s": "reseau_adjugo", "a": None})     # part soumise
+        cn.execute(inv, {"i": 103, "t": "t103", "s": "reseau_adjugo", "a": None})     # rien : en attente
+        cn.execute(inv, {"i": 104, "t": "t104", "s": "reseau_adjugo", "a": 1})        # acceptée (compte)
+        cn.execute(inv, {"i": 105, "t": "t105", "s": "manuel", "a": 1})               # pas du réseau
+    assert "chiffrage_note" in cols(eng) and "network_accepted_at" not in cols(eng, "project_invites")
     run("upgrade", "head")
-    assert "chiffrage_note" not in cols(eng) and version(eng) == head
+    assert version(eng) == head
+    assert "chiffrage_note" in cols(eng), "la colonne doit rester en base (expand/contract)"
     with eng.connect() as cn:
         rows = {r[0]: tuple(r[1:]) for r in cn.execute(sa.text(
-            "SELECT invite_id, note_au_mandataire, prix_lot_ht, version, status FROM project_contributions"))}
-    assert rows[101] == ("(ancienne approche prix) SECRET marge 18 %\n\nMerci", 40000.0, 2, "submitted")
+            "SELECT invite_id, note_au_mandataire, prix_lot_ht, version, status, chiffrage_note "
+            "FROM project_contributions"))}
+        acc = {r[0]: r[1] for r in cn.execute(sa.text("SELECT id, network_accepted_at FROM project_invites"))}
+    assert rows[101] == ("(ancienne approche prix) SECRET marge 18 %\n\nMerci", 40000.0, 2, "submitted", "")
     assert rows[102][0] == "Note de Beta" and rows[103][:2] == ("", 12.5)
-    # Contrainte d'unicité invite_id conservée par la recopie de table (batch SQLite).
-    with pytest.raises(sa.exc.IntegrityError):
+    assert acc[101] and acc[104] and acc[103] is None and acc[105] is None
+    # L'ancien code (son modèle mappe chiffrage_note) lit et écrit toujours les parts.
+    with eng.begin() as cn:
+        cn.execute(sa.text("INSERT INTO project_contributions (invite_id, project_id, owner_id, version, "
+                           "chiffrage_note) VALUES (201, 1, 1, 0, '')"))
+        assert cn.execute(sa.text("SELECT COUNT(chiffrage_note) FROM project_contributions")).scalar() == 3
+    # Le nouveau code (colonne non mappée) écrit sans elle.
+    with eng.begin() as cn:
+        cn.execute(sa.text("INSERT INTO project_contributions (invite_id, project_id, owner_id, version) "
+                           "VALUES (202, 1, 1, 0)"))
+    with pytest.raises(sa.exc.IntegrityError):         # unicité invite_id intacte
         with eng.begin() as cn:
             cn.execute(sa.text("INSERT INTO project_contributions (invite_id, project_id, owner_id, version) "
                                "VALUES (101, 1, 1, 0)"))
-    idx = {i["name"] for i in sa.inspect(eng).get_indexes("project_contributions")}
-    assert {"ix_project_contributions_project_id", "ix_project_contributions_owner_id"} <= idx
 
-    # (c) Rejeu : aucune erreur, rien ne change.
-    run("stamp", "o9p0q1r2s3t4")
+    # (c) Rejeu : aucune erreur, rien ne change (le texte n'est pas recopié deux fois).
+    run("stamp", "p0q1r2s3t4u5")
     run("upgrade", "head")
-    assert "chiffrage_note" not in cols(eng) and version(eng) == head
+    assert "chiffrage_note" in cols(eng) and version(eng) == head
     with eng.connect() as cn:
-        assert cn.execute(sa.text("SELECT COUNT(*) FROM project_contributions")).scalar() == 3
+        assert cn.execute(sa.text("SELECT COUNT(*) FROM project_contributions")).scalar() == 5
+        assert cn.execute(sa.text("SELECT note_au_mandataire FROM project_contributions WHERE invite_id = 101")
+                          ).scalar() == "(ancienne approche prix) SECRET marge 18 %\n\nMerci"
+    # Retour arrière : downgrade ne casse rien (la colonne est toujours là pour l'ancien code).
+    run("downgrade", "p0q1r2s3t4u5")
+    assert "chiffrage_note" in cols(eng)
     eng.dispose()
 
 

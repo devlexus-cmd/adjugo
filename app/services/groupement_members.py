@@ -50,6 +50,22 @@ def active_invite_ids(db: Session, project_id: int) -> list:
     return [i.id for i in active_invites(db, project_id)]
 
 
+def visible_contributions(db: Session, project_id: int, invites: list, viewer_invite_id: Optional[int] = None) -> dict:
+    """{invite_id: part} des parts que le chef de file et les AUTRES membres peuvent lire. La part
+    d'une invitation du RÉSEAU sans réponse (ou déclinée) en est retirée : brouillon saisi pendant
+    l'aperçu minimal, que seul son auteur (`viewer_invite_id`) voit (invites._owner_hides_part).
+    Elle est alors traitée comme absente : nom de l'invitation, aucun champ de la part (ni nom
+    saisi, ni SIRET, ni adresse, ni représentant), statut « invité »."""
+    from app.routers.invites import _owner_hides_part      # import local : pas de cycle
+    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
+        ProjectContribution.project_id == project_id).all()}
+    for inv in invites:
+        c = contribs.get(inv.id)
+        if c is not None and inv.id != viewer_invite_id and _owner_hides_part(inv, c):
+            contribs.pop(inv.id)
+    return contribs
+
+
 def submitted_contributions(db: Session, project_id: int) -> list:
     """Parts SOUMISES des membres ACTIFS uniquement (jamais celles d'un partenaire révoqué
     ou qui a décliné) — base du mémoire fusionné, des CERFA, du ZIP, de la convention."""
@@ -94,8 +110,7 @@ def groupement_state(project: Project, db: Session) -> dict:
     """
     plan = _plan(project)
     invites = active_invites(db, project.id)
-    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project.id).all()}
+    contribs = visible_contributions(db, project.id, invites)   # réseau sans réponse : part absente
 
     members, n_submitted, n_with_price = [], 0, 0
     for inv in invites:
@@ -249,6 +264,44 @@ def _fr_date(d) -> str:
         return str(d or "")
 
 
+def _lead_attestations(db: Session, project, deadline) -> tuple:
+    """Attestations du CHEF DE FILE (membre du groupement) d'après son coffre-fort Adjugo (pièces
+    de l'organisation, hors corbeille, sans projet ou rattachées à ce marché) : même classement et
+    même règle de validité que pour les partenaires (coffre_croise). Renvoie (problèmes, absentes) :
+    une pièce expirée ou qui expire avant la date limite est un MANQUE ; une pièce absente du
+    coffre-fort n'est qu'un avertissement (le chef de file peut la gérer hors d'Adjugo)."""
+    from datetime import date
+    from app.core.org import member_ids
+    from app.models import Document, User
+    from app.routers.invites import (_EXPECTED_BASE, _PIECE_LABELS, _dce_requires_qualification,
+                                     _piece_status, vault_doc_type)
+    owner = db.get(User, project.user_id) if project.user_id else None
+    if owner is None:
+        return [], []
+    ids = member_ids(owner, db)
+    docs = db.query(Document).filter(
+        Document.user_id.in_(ids), Document.parent_id.is_(None), Document.deleted_at.is_(None),
+        (Document.project_id.is_(None)) | (Document.project_id == project.id)).limit(500).all()
+    expected = list(_EXPECTED_BASE) + (["qualification"] if _dce_requires_qualification(project) else [])
+    by_type = {}
+    for d in docs:
+        by_type.setdefault(vault_doc_type(d), []).append(d)
+    problems, missing = [], []
+    for key in expected:
+        cands = by_type.get(key) or []
+        label = _PIECE_LABELS.get(key, key)
+        if not cands:
+            missing.append(label)
+            continue
+        best = max(cands, key=lambda d: (d.expiration_date or date.max))
+        status = _piece_status(best, deadline)
+        if status == "expire":
+            problems.append(f"Votre {label} (coffre-fort) a expiré")
+        elif status == "expire_avant_limite":
+            problems.append(f"Votre {label} (coffre-fort) expire avant la date limite")
+    return problems, missing
+
+
 def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = None) -> dict:
     """« Prêt à déposer » (étape 5), FIABLE et calculable à tout moment (pas seulement quand la
     convention est validée) : parts soumises + attestations valides à la date limite + convention
@@ -271,8 +324,7 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
 
     # 1) Parts : chaque co-traitant ACTIF a soumis sa part avec un prix de vente. Un sous-traitant
     #    n'est pas membre du groupement (DC4) : son retard est un avertissement, pas un manque.
-    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project.id).all()}
+    contribs = visible_contributions(db, project.id, invites)   # réseau sans réponse : part absente
     parts_ok = True
     for inv in invites:
         c = contribs.get(inv.id)
@@ -307,6 +359,19 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
             manques.append("Attestations des partenaires : vérification impossible pour l'instant")
     else:
         checks["attestations_ok"] = True       # aucun partenaire invité : rien à suivre ici
+    # 2 bis) Le chef de file est membre du groupement : ses propres attestations comptent aussi.
+    try:
+        lead_problems, lead_missing = _lead_attestations(db, project, deadline)
+    except Exception:
+        lead_problems, lead_missing = [], []
+        avert.append("Vos propres attestations n'ont pas pu être vérifiées pour l'instant : contrôlez "
+                     "votre coffre-fort avant le dépôt")
+    if lead_problems:
+        checks["attestations_ok"] = False
+        manques += lead_problems
+    if lead_missing:
+        avert.append("Vos propres attestations ne sont pas toutes dans votre coffre-fort Adjugo (absentes : "
+                     + ", ".join(lead_missing) + ") : vérifiez-les vous-même avant le dépôt")
     hors_ligne = 0
     if conv is not None:
         try:

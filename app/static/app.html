@@ -22,7 +22,7 @@
 <script src="/static/vendor/vue-3.5.38.prod.js" integrity="sha384-KYk+4lWOhWTo/BrM+zKkwLtFsD6cs2ClFbaGiX5ozDVHPqF4nOqxVGiHvcyWsw8B"></script>
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
-<script src="/static/cotraitance-crypto.js" integrity="sha384-XeXF9c3sWCINLhcn8WsgnQA1g1we3veNODoV1/yHheSJcBMU2lSg+MGGmqFwlXF4"></script>
+<script src="/static/cotraitance-crypto.js" integrity="sha384-Vho8AEpUucuoYTe4e4OmFl/p1v4rz2nqBKbIC1AUc36adSU7tP5XifKa8ptPtpKH"></script>
 <script src="/static/i18n.js" integrity="sha384-oDik9h0VMLSezjzvjE5icFK+aIpVHzN4CCrDdXTColU7Xknf8tmAL3inncvd+DSq" defer></script>
 </head>
 <body>
@@ -1245,7 +1245,7 @@
                     <span v-if="p.lot" class="muted small"> · {{ p.lot }}</span>
                     <span v-if="p.prix_lot_ht!=null" class="pill neutral" style="font-size:10px" title="Prix de vente du lot (visible du mandataire)">{{ eur(p.prix_lot_ht) }} HT</span>
                     <span v-else-if="p.status==='submitted'" class="pill a_etudier" style="font-size:10px">prix de lot manquant</span>
-                    <span v-if="p.has_dpgf_lot" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="file-check-2" style="width:10px;height:10px"></i>DPGF du lot reçue</span>
+                    <span v-if="p.has_dpgf_lot" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="file-check-2" style="width:10px;height:10px"></i>DPGF du lot reçue</span><button v-if="p.has_dpgf_lot" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">DPGF : le détail des prix de vente du partenaire pour son lot, ligne par ligne. Jamais ses coûts ni ses marges.</span></button>
                     <i v-if="p.has_detail_chiffre" data-lucide="lock" style="width:11px;height:11px;color:var(--text-2);vertical-align:-1px" title="Détail du chiffrage chiffré par le partenaire — vous ne le voyez pas, c'est voulu" aria-label="Détail du chiffrage chiffré"></i>
                     <!-- Pièces administratives attendues du membre : présentes (vert) / manquantes (rouge) -->
                     <div v-if="(p.pieces_have && p.pieces_have.length) || (p.pieces_missing && p.pieces_missing.length)" class="row wrap" style="gap:4px;margin-top:3px">
@@ -2660,7 +2660,7 @@
               <div class="jv-h"><span class="pill" :class="jvPill(sharedAo.jv.v)" style="font-size:11.5px;gap:4px"><i :data-lucide="jvIcon(sharedAo.jv.v)" style="width:13px;height:13px"></i>{{ sharedAo.jv.v.verdict_label }}</span><span v-if="sharedAo.jv.v.verifie_le" class="muted small">Vérifié le {{ jvWhen(sharedAo.jv.v.verifie_le) }}</span></div>
               <p class="jv-msg">{{ sharedAo.jv.v.message }}</p>
               <div v-if="sharedAo.jv.v.premiere_alteration" class="jv-line"><b>Entrée concernée :</b> {{ sharedAo.jv.v.premiere_alteration.label }}<template v-if="sharedAo.jv.v.premiere_alteration.at"> ({{ jvWhen(sharedAo.jv.v.premiere_alteration.at) }})</template></div>
-              <div class="jv-line"><i data-lucide="stamp" style="width:13px;height:13px;vertical-align:-2px;margin-right:4px"></i>{{ jvAncrage(sharedAo.jv.v) }}</div>
+              <div v-if="sharedAo.jv.v.verdict!=='indisponible'" class="jv-line"><i data-lucide="stamp" style="width:13px;height:13px;vertical-align:-2px;margin-right:4px"></i>{{ jvAncrage(sharedAo.jv.v) }}</div>
               <div v-if="jvAncrageExtra(sharedAo.jv.v)" class="jv-line">{{ jvAncrageExtra(sharedAo.jv.v) }}</div>
               <div v-if="sharedAo.jv.v.tronque" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>Seules les 2 000 premières entrées sont vérifiées.</span></div>
               <div v-if="sharedAo.jv.v.empreinte" class="jv-fp"><span>Empreinte de votre journal :</span><code title="Empreinte complète dans la preuve (JSON)">{{ jvHex(sharedAo.jv.v.empreinte) }} …</code><button type="button" class="btn sm" @click="jvCopy(sharedAo.jv.v)" aria-label="Copier l'empreinte complète de votre journal"><i data-lucide="copy"></i>Copier</button></div>

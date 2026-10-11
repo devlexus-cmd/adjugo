@@ -61,7 +61,8 @@ _EN_ATTENTE_MSG = ("Votre profil est en attente de validation par Adjugo : vous 
                    "du réseau dès qu'il sera publié.")
 _SIRENE_LABEL = "Trouvée dans le registre SIRENE — à inviter par lien"
 _NOT_FOUND = "Partenaire introuvable dans le réseau."
-NETWORK_INVITES_PER_PROFILE_DAY = 10     # invitations réseau reçues par un même profil / 24 h
+NETWORK_INVITES_PER_PROFILE_DAY = 10     # sollicitations (invitations + relances) d'un même profil / 24 h
+_TOO_MANY_FOR_PROFILE = "Ce partenaire a reçu beaucoup d'invitations aujourd'hui : réessayez demain."
 MAX_LOTS = 8
 MAX_SIRENE_LOTS = 3
 SIRENE_BUDGET_S = 8.0                    # budget GLOBAL du repli SIRENE de « Qui me complète ? »
@@ -79,6 +80,23 @@ DAILY_ANNUAIRE_CAP = 300
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────────────
+
+def network_solicitations_24h(db: Session, profile_id: int) -> int:
+    """Sollicitations d'un profil du réseau sur 24 h glissantes : invitations créées + relances
+    (« invite.resent ») de ses invitations. Même compteur, donc même plafond
+    (NETWORK_INVITES_PER_PROFILE_DAY), à l'envoi et à la relance : 9 relances puis 10 envois ne
+    font plus 19 emails en un jour."""
+    from sqlalchemy import select
+    from app.models import AuditLog
+    since = utcnow() - timedelta(hours=24)
+    n_created = db.query(ProjectInvite).filter(ProjectInvite.partner_profile_id == profile_id,
+                                               ProjectInvite.created_at >= since).count()
+    ids = select(ProjectInvite.id).where(ProjectInvite.partner_profile_id == profile_id)
+    n_resent = db.query(AuditLog).filter(AuditLog.action == "invite.resent", AuditLog.target_type == "invite",
+                                         AuditLog.target_id.in_(ids),
+                                         AuditLog.created_at >= since.replace(tzinfo=None)).count()
+    return n_created + n_resent
+
 
 def _today() -> date:
     return datetime.now(timezone.utc).date()
@@ -1307,11 +1325,8 @@ def _invite_reseau_locked(request: Request, db: Session, current_user: User, pro
         raise HTTPException(409, {"code": "injoignable",
                                   "message": "Ce partenaire ne peut pas être contacté pour le moment."})
     _check_daily_invite_cap(current_user, db)
-    since = utcnow() - timedelta(hours=24)
-    n_recent = db.query(ProjectInvite).filter(ProjectInvite.partner_profile_id == p.id,
-                                              ProjectInvite.created_at >= since).count()
-    if n_recent >= NETWORK_INVITES_PER_PROFILE_DAY:
-        raise HTTPException(429, "Ce partenaire a reçu beaucoup d'invitations aujourd'hui : réessayez demain.")
+    if network_solicitations_24h(db, p.id) >= NETWORK_INVITES_PER_PROFILE_DAY:   # relances comprises
+        raise HTTPException(429, _TOO_MANY_FOR_PROFILE)
     chef = _company(db, ctx["owner_id"])
     lot = (body.lot or "").strip()[:255]
     inv, emailed = _create_invite(

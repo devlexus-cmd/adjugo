@@ -480,8 +480,7 @@ def collect_members(db, project, conv, company, include_incomplete: bool = False
     `include_incomplete` (aperçu de brouillon seulement) : un membre dont la part n'est pas
     encore soumise apparaît quand même, sans prix (il reste listé dans les manques).
     Renvoie {members:[…], manques:[…], sous_traitants:[…]}. Ne lève jamais."""
-    from app.models import ProjectContribution
-    from app.services.groupement_members import active_invites
+    from app.services.groupement_members import active_invites, visible_contributions
     params = merged_params(conv, project)
     manques, members, sous_traitants = [], [], []
 
@@ -508,8 +507,9 @@ def collect_members(db, project, conv, company, include_incomplete: bool = False
     })
 
     invites = active_invites(db, project.id)
-    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project.id).all()}
+    # Part d'une invitation du réseau sans réponse : absente (nom de l'invitation, aucun SIRET,
+    # adresse ni représentant saisis dans le brouillon) — le chef de file ne la voit pas.
+    contribs = visible_contributions(db, project.id, invites)
     n_partners = 0
     for inv in invites:
         c = contribs.get(inv.id)

@@ -35,6 +35,20 @@ pas voir) : la vérification entrée par entrée est faite par Adjugo, la compar
 le membre. Les entrées écrites depuis le dernier ancrage (moins de 24 h) ne sont couvertes que par
 l'export que le membre a lui-même conservé. Le hachage n'est pas une signature.
 
+Rattachement d'une entrée au membre (invite_id) : scellé dans l'empreinte des entrées écrites en
+VERSION 2 (audit._entry_payload_v2) — un rattachement modifié rend l'entrée « altérée » ; pour les
+entrées v1 (antérieures), il n'est pas scellé : chaque entrée le dit (`rattachement_scelle`), et
+les limites le disent (vérifiable seulement en comparant avec un export conservé).
+
+Fourches historiques (deux écritures simultanées avant le verrou de chaîne) : tolérées ici comme
+dans audit.verify_chain — le maillon d'une entrée peut pointer vers l'une des 64 entrées
+chaînées qui la précèdent dans la chaîne du tenant ; une entrée supprimée reste détectée.
+
+Erreur technique (base indisponible, délai dépassé) : verdict « indisponible », jamais « altéré »,
+jamais mis en cache, export refusé (503). Invitation du réseau pas encore acceptée : vérification
+et export refusés par les routes (aperçu minimal) ; l'acceptation est durable (network_accepted_at),
+la projection ne change donc plus ensuite.
+
 Version figée « adjugo-journal-membre-v1 » : l'ensemble des événements de groupement projetés
 (GROUP_EVENTS) et le format des maillons ne changent plus sans changer de version (ajouter un
 événement ANCIEN ferait apparaître des entrées au milieu de la sous-chaîne et casserait la
@@ -68,6 +82,16 @@ LIMITES = [
     "Le journal ne montre jamais l'adresse IP ni l'email des autres membres : leurs entrées sont "
     "engagées par un sceau, pas révélées.",
 ]
+# Ajoutée quand la sous-chaîne contient des entrées dont le rattachement n'est pas scellé (v1).
+LIMITE_RATTACHEMENT = ("Pour {n} entrée{s} ancienne{s}{avant}, le rattachement à votre journal n'est pas "
+                       "scellé dans son empreinte : il ne se vérifie qu'en comparant avec un export que vous "
+                       "avez conservé. Pour les autres, il est scellé comme le reste de l'entrée.")
+MSG_INDISPONIBLE = ("Vérification momentanément impossible : réessayez dans un instant. Ce n'est pas le "
+                    "signe d'une modification de votre journal.")
+
+
+class VerificationIndisponible(Exception):
+    """La vérification n'a pas pu aboutir (erreur technique) : jamais un verdict d'altération."""
 
 # Événements « de groupement » visibles par TOUS les membres (pas seulement le concerné).
 # Ensemble FIGÉ pour la version v1 (voir la docstring) : seules des actions NOUVELLES (sans
@@ -191,10 +215,27 @@ def partner_names(db, inv, rows) -> dict:
         ProjectInvite.id.in_(list(other_ids))).all()}
 
 
-def project_row(r, inv, names: dict):
+def first_own_id(db, inv):
+    """Id de l'entrée qui marque l'ARRIVÉE du membre dans le journal du marché : « invitation
+    créée » (cible = son invitation, renseignée depuis toujours, même avant la colonne
+    invite_id), à défaut sa première entrée rattachée ; None si aucune."""
+    from sqlalchemy import func
+    from app.models import AuditLog
+    first = db.query(func.min(AuditLog.id)).filter(
+        AuditLog.project_id == inv.project_id, AuditLog.action == "invite.created",
+        AuditLog.target_type == "invite", AuditLog.target_id == inv.id).scalar()
+    if first is None:
+        first = db.query(func.min(AuditLog.id)).filter(AuditLog.project_id == inv.project_id,
+                                                       AuditLog.invite_id == inv.id).scalar()
+    return first
+
+
+def project_row(r, inv, names: dict, first_id=None):
     """Projection d'UNE entrée vers le membre : {at, action, label, who, detail} ou None.
     SANS ip, SANS email, SANS identifiant interne ; l'acteur devient « vous » / « mandataire »
-    / « partenaire »."""
+    / « partenaire ». `first_id` = id de la première entrée du membre (first_own_id) : une
+    « offre figée » ANTÉRIEURE à son invitation ne lui montre pas son total (il n'en faisait pas
+    partie, il n'en est pas signataire)."""
     mine = (r.invite_id == inv.id)
     if mine and r.actor_kind == "guest":
         who, label = "vous", LABELS_ME.get(r.action, r.action)
@@ -216,7 +257,8 @@ def project_row(r, inv, names: dict):
             r.detail if r.action in _DETAIL_OK else "")
         # Un sous-traitant n'est pas membre du groupement : il ne reçoit jamais le total de
         # l'offre commune (règle de la vague 2), pas même dans le détail du journal.
-        if r.action == "offer.frozen" and (getattr(inv, "role", "") or "") == "sous_traitant":
+        if r.action == "offer.frozen" and ((getattr(inv, "role", "") or "") == "sous_traitant"
+                                           or (first_id is not None and r.id < first_id)):
             detail = ""
     else:
         return None
@@ -232,9 +274,10 @@ def journal_entries(db, inv, limit: int = 200) -> list:
     from app.models import AuditLog
     rows = member_query(db, inv).order_by(AuditLog.created_at.desc()).limit(limit).all()
     names = partner_names(db, inv, rows)
+    first_id = first_own_id(db, inv)
     out = []
     for r in rows:
-        e = project_row(r, inv, names)
+        e = project_row(r, inv, names, first_id)
         if e is not None:
             out.append(e)
     return out
@@ -270,7 +313,9 @@ def _get(cache: dict, key, ttl: int):
 
 
 def tenant_result(db, owner_id) -> dict:
-    """verify_chain du tenant (full-scan + comparaison au dernier ancrage), en cache 5 min."""
+    """verify_chain du tenant (full-scan + comparaison au dernier ancrage), en cache 5 min.
+    Erreur technique : {"error": True} — JAMAIS mise en cache (une panne passagère ne doit pas
+    devenir, pendant 5 min, un « journal modifié »)."""
     hit = _get(_TENANT_CACHE, owner_id, _TENANT_TTL)
     if hit is not None:
         return hit
@@ -279,8 +324,12 @@ def tenant_result(db, owner_id) -> dict:
         res = audit.verify_chain(db, owner_id)
     except Exception as e:
         logger.warning("journal membre : vérification du tenant impossible (%s)", type(e).__name__)
-        res = {"intact": False, "truncated": False, "anchor_date": None, "anchor_timestamped": False,
-               "anchor_checked": False, "error": True}
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"intact": None, "truncated": False, "anchor_date": None, "anchor_timestamped": False,
+                "anchor_checked": False, "error": True}
     _put(_TENANT_CACHE, owner_id, res)
     return res
 
@@ -313,6 +362,23 @@ def _predecessors(db, rows) -> dict:
     return out
 
 
+def _fork_window(db, r) -> set:
+    """Empreintes des entrées chaînées qui PRÉCÈDENT r dans la chaîne de son tenant, au plus
+    audit._FORK_WINDOW, en s'arrêtant à une entrée non chaînée — exactement la fenêtre de
+    tolérance de audit.verify_chain. Lue seulement pour une entrée dont le maillon ne pointe pas
+    vers l'entrée immédiatement précédente (cas rare)."""
+    from app.models import AuditLog
+    from app.services.audit import _FORK_WINDOW
+    cond = AuditLog.owner_id.is_(None) if r.owner_id is None else (AuditLog.owner_id == r.owner_id)
+    out = set()
+    for (h,) in db.query(AuditLog.entry_hash).filter(cond, AuditLog.id < r.id).order_by(
+            AuditLog.id.desc()).limit(_FORK_WINDOW).all():
+        if not h:
+            break
+        out.add(h)
+    return out
+
+
 def sceau_of(entry_hash: str) -> str:
     return _sha(SCEAU_PREFIX + (entry_hash or ""))
 
@@ -329,12 +395,39 @@ def _anchor():
         return None
 
 
+def _indisponible() -> dict:
+    """Verdict d'une vérification qui n'a pas pu aboutir (erreur technique) — jamais « altéré »."""
+    return {
+        "schema": SCHEMA, "verdict": "indisponible", "verdict_label": "Vérification impossible pour le moment",
+        "perimetre": None, "message": MSG_INDISPONIBLE, "integrity_label": INTEGRITY_LABEL,
+        "verifie_le": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"),
+        "entrees": None, "premiere_alteration": None, "journal_complet_intact": None, "ancrage": None,
+        "empreinte": None, "tronque": False, "limites": list(LIMITES), "chaine": [],
+    }
+
+
 def verify_member(db, inv, use_cache: bool = True) -> dict:
-    """Recalcule la sous-chaîne du membre et rend le verdict (voir la docstring du module)."""
+    """Recalcule la sous-chaîne du membre et rend le verdict (voir la docstring du module).
+    Erreur technique : verdict « indisponible », jamais mis en cache."""
     if use_cache:
         hit = _get(_INTEGRITY_CACHE, inv.id, _INTEGRITY_TTL)
         if hit is not None:
             return hit
+    try:
+        res, cacheable = _verify_member(db, inv)
+    except Exception as e:
+        logger.warning("journal membre : vérification impossible (%s)", type(e).__name__)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return _indisponible()
+    if cacheable:
+        _put(_INTEGRITY_CACHE, inv.id, res)
+    return res
+
+
+def _verify_member(db, inv):
     from app.models import AuditLog
     from app.services import audit
     q = member_query(db, inv).order_by(AuditLog.id.asc())
@@ -342,6 +435,7 @@ def verify_member(db, inv, use_cache: bool = True) -> dict:
     tronque = len(rows) > MAX_ENTRIES
     rows = rows[:MAX_ENTRIES]
     names = partner_names(db, inv, rows)
+    first_id = first_own_id(db, inv)
     preds = _predecessors(db, rows) if rows else {}
 
     owners = sorted({r.owner_id for r in rows if r.owner_id is not None})
@@ -350,17 +444,32 @@ def verify_member(db, inv, use_cache: bool = True) -> dict:
     heads = (anchor or {}).get("_by_owner") or {}
 
     chaine, maillon = [], ""
-    n_ok = n_bad = n_unchained = n_covered = 0
+    n_ok = n_bad = n_unchained = n_covered = n_legacy = n_legacy_covered = 0
     first_bad = None
+    first_sealed_at = None
     for n, r in enumerate(rows, start=1):
-        proj = project_row(r, inv, names) or {"label": r.action, "who": "", "detail": ""}
+        proj = project_row(r, inv, names, first_id) or {"label": r.action, "who": "", "detail": ""}
+        scelle = False
+        version = None
         if not r.entry_hash:
             statut = "non_chainee"
             n_unchained += 1
         else:
-            hash_ok = audit._hash(r.prev_hash or "", r) == r.entry_hash
-            link_ok = (r.prev_hash or "") == preds.get(r.id, "")
+            version = audit.hash_version(r.prev_hash or "", r)
+            hash_ok = version is not None
+            link = r.prev_hash or ""
+            link_ok = link == preds.get(r.id, "")
+            if hash_ok and not link_ok and link:
+                # Fourche historique (écritures simultanées avant le verrou de chaîne) : même
+                # tolérance que audit.verify_chain — aucune fausse alerte ; une entrée supprimée
+                # (empreinte disparue) reste détectée.
+                link_ok = link in _fork_window(db, r)
             statut = "verifiee" if (hash_ok and link_ok) else "alteree"
+            scelle = version == 2
+            if version == 1:
+                n_legacy += 1
+            elif scelle and first_sealed_at is None:
+                first_sealed_at = r.created_at
             if statut == "verifiee":
                 n_ok += 1
             else:
@@ -371,20 +480,26 @@ def verify_member(db, inv, use_cache: bool = True) -> dict:
         head = heads.get(r.owner_id)
         couverte = bool(head and r.entry_hash and r.id <= head.get("last_id", -1))
         n_covered += int(couverte)
+        # « Anciennes » = entrées v1 SEULEMENT (rattachement non scellé). Une entrée v2 altérée
+        # (version inconnue) n'est pas ancienne : le message d'ancrage ne le dirait qu'à tort.
+        n_legacy_covered += int(couverte and version == 1)
         at = _ts(r.created_at)
         sceau = sceau_of(r.entry_hash)
         maillon = maillon_of(maillon, n, at, r.action, proj["who"], sceau)
         chaine.append({"n": n, "at": at, "action": r.action, "qui": proj["who"],
                        "label": proj["label"], "detail": proj.get("detail", ""),
                        "sceau": sceau, "maillon": maillon, "statut": statut,
-                       "couverte_par_ancrage": couverte})
+                       "couverte_par_ancrage": couverte, "rattachement_scelle": scelle})
 
-    journal_ok = all(bool(t.get("intact")) for t in tenants.values())
+    error = any(t.get("error") for t in tenants.values())
+    journal_ok = all(bool(t.get("intact")) for t in tenants.values() if not t.get("error"))
     truncated = any(bool(t.get("truncated")) for t in tenants.values())
     if not rows:
         verdict, perimetre = "vide", None
     elif n_bad:
-        verdict, perimetre = "altere", "vos_entrees"
+        verdict, perimetre = "altere", "vos_entrees"     # constaté entrée par entrée : réel
+    elif error:
+        return _indisponible(), False                    # jamais « altéré » sur une panne
     elif not journal_ok:
         verdict, perimetre = "altere", "journal"
     else:
@@ -401,11 +516,20 @@ def verify_member(db, inv, use_cache: bool = True) -> dict:
                 f"au {_fr_day(anchor.get('date'))} {'sont' if n_covered > 1 else 'est'} aussi "
                 f"couverte{'s' if n_covered > 1 else ''} par l'empreinte quotidienne du journal"
                 + (", horodatée par une autorité indépendante." if horodate else "."))
+            if n_legacy_covered:
+                ancrage["message"] += (
+                    f" Pour {n_legacy_covered} d'entre elles, anciennes, elle couvre le contenu "
+                    "mais pas le rattachement à votre journal.")
         else:
             ancrage["message"] = (f"Dernière empreinte quotidienne du journal : {_fr_day(anchor.get('date'))}"
                                   + (" (horodatée par une autorité indépendante)." if horodate else "."))
 
     msg = _message(verdict, perimetre, len(rows), n_ok, n_unchained, first_bad, truncated, ancrage)
+    limites = list(LIMITES)
+    if n_legacy:
+        avant = (f", antérieure{'s' if n_legacy > 1 else ''} au {_fr_dt(first_sealed_at)[:10]}"
+                 if first_sealed_at else "")
+        limites.append(LIMITE_RATTACHEMENT.format(n=n_legacy, s="s" if n_legacy > 1 else "", avant=avant))
     res = {
         "schema": SCHEMA,
         "verdict": verdict,
@@ -414,17 +538,17 @@ def verify_member(db, inv, use_cache: bool = True) -> dict:
         "message": msg,
         "integrity_label": INTEGRITY_LABEL,
         "verifie_le": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"),
-        "entrees": {"total": len(rows), "verifiees": n_ok, "alterees": n_bad, "non_chainees": n_unchained},
+        "entrees": {"total": len(rows), "verifiees": n_ok, "alterees": n_bad, "non_chainees": n_unchained,
+                    "rattachement_non_scelle": n_legacy},
         "premiere_alteration": first_bad,
         "journal_complet_intact": journal_ok and not truncated,
         "ancrage": ancrage,
         "empreinte": maillon,
         "tronque": tronque,
-        "limites": list(LIMITES),
+        "limites": limites,
         "chaine": chaine,
     }
-    _put(_INTEGRITY_CACHE, inv.id, res)
-    return res
+    return res, True
 
 
 def _message(verdict, perimetre, total, n_ok, n_unchained, first_bad, truncated, ancrage) -> str:
@@ -471,8 +595,12 @@ ALGORITHME = {
 
 
 def export_payload(db, inv, project, company: str = "") -> dict:
-    """Export JSON du journal du membre : projection + sous-chaîne + verdict + algorithme."""
+    """Export JSON du journal du membre : projection + sous-chaîne + verdict + algorithme.
+    Vérification indisponible (erreur technique) : VerificationIndisponible — la route répond 503,
+    on ne remet jamais une « preuve » fondée sur une panne."""
     res = verify_member(db, inv, use_cache=False)
+    if res.get("verdict") == "indisponible":
+        raise VerificationIndisponible()
     return {
         "schema": SCHEMA,
         "exporte_le": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds") + "Z",
@@ -486,7 +614,7 @@ def export_payload(db, inv, project, company: str = "") -> dict:
         "algorithme": ALGORITHME,
         "limites": res["limites"],
         "entrees": [{k: e[k] for k in ("n", "at", "action", "qui", "label", "detail", "sceau",
-                                       "maillon", "statut")} for e in res["chaine"]],
+                                       "maillon", "statut", "rattachement_scelle")} for e in res["chaine"]],
     }
 
 
