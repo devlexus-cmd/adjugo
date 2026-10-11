@@ -133,13 +133,24 @@ def discover_cotraitants(activity: str = "", departement: str = "",
         params["q"] = q
     if departement:
         params["departement"] = departement
+    params["categorie_entreprise"] = "PME"   # partenaires d'une TPE/PME : pas les grands groupes
     try:
         with _client() as c:
             r = c.get(API, params=params)
             if r.status_code != 200:
                 return {"total": 0, "results": [], "error": f"HTTP {r.status_code}"}
             data = r.json()
-            results = [_normalize(e) for e in data.get("results", [])]
+            from app.sourcing.sources.sirene import local_etablissement
+            results = []
+            for e in data.get("results", []):
+                x = _normalize(e)
+                et = local_etablissement(e, departement)
+                if et:      # l'établissement DU département, pas le siège lointain
+                    x.update({"siret": et.get("siret") or x["siret"], "address": et.get("adresse") or x["address"],
+                              "postal_code": et.get("code_postal") or x["postal_code"],
+                              "city": et.get("libelle_commune") or x["city"],
+                              "departement": (et.get("code_postal") or "")[:2] or x["departement"]})
+                results.append(x)
             # filtre de cohérence : entreprises avec une dénomination
             results = [x for x in results if x["name"]]
             return {"total": data.get("total_results", len(results)),

@@ -295,7 +295,7 @@ def _discover_sirene(trade: str, dept: str, warnings: list, timeout: Optional[fl
         # BODACC est conservé (filtre « procédure collective » juste en dessous).
         res = svc.discover(activity=trade, departement=dept,
                            tender_departements=[dept] if dept else [],
-                           need_label=label, limit=4, enrich_decp=False)
+                           need_label=label, limit=4, enrich_decp=False, pme_only=True)
         out = []
         for c in res.get("companies") or []:
             if getattr(c, "procedure_collective", None):

@@ -590,11 +590,15 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .tip { position:relative; display:inline-grid; place-items:center; width:22px; height:22px; padding:0; margin:0 0 0 4px; border:0; border-radius:50%; background:transparent; color:var(--subtle); cursor:help; vertical-align:middle; flex:none; transition:color .12s, background .12s; }
 .tip > i[data-lucide], .tip > i[data-lucide] .lucide { width:15px; height:15px; }
 .tip:hover, .tip:focus-visible, .tip[aria-expanded="true"] { color:var(--accent-text); background:var(--accent-weak); outline:none; }
-.tip-b { position:absolute; top:calc(100% + 8px); left:-6px; z-index:80; width:max-content; max-width:min(320px, calc(100vw - 48px)); padding:10px 12px; border-radius:10px; background:var(--text); color:var(--bg); font:400 12.5px/1.5 var(--font-body, inherit); letter-spacing:0; text-transform:none; text-align:left; white-space:normal; box-shadow:0 10px 30px rgba(0,0,0,.22); opacity:0; visibility:hidden; transform:translateY(-3px); transition:opacity .14s, transform .14s, visibility 0s linear .14s; pointer-events:none; }
+.tip-b { position:absolute; top:calc(100% + 8px); left:-6px; z-index:80; width:max-content; max-width:min(320px, calc(100vw - 48px)); padding:10px 12px; border-radius:10px; background:var(--text); color:var(--bg); font:400 12.5px/1.5 var(--font-body, inherit); letter-spacing:0; text-transform:none; text-align:left; white-space:normal; box-shadow:0 10px 30px rgba(0,0,0,.22); display:none; pointer-events:none; }
+/* Fermée : hors de la mise en page (display:none). Avec opacity/visibility, une bulle fermée près du bord
+   droit élargissait la zone qui défile → barre de défilement horizontale. Ouverte : fondu par animation. */
+@keyframes tip-in { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce) { .tip-b { animation:none !important; } }
 .tip-b b, .tip-b strong { font-weight:650; }
 .tip.tip-l .tip-b { left:auto; right:-6px; }
-.tip:focus .tip-b, .tip:focus-within .tip-b { opacity:1; visibility:visible; transform:none; transition:opacity .14s, transform .14s, visibility 0s; }
-@media (hover:hover) { .tip:hover .tip-b { opacity:1; visibility:visible; transform:none; transition:opacity .14s, transform .14s, visibility 0s; } }   /* au toucher : seule la bulle touchée s'ouvre */
+.tip:focus .tip-b, .tip:focus-within .tip-b { display:block; animation:tip-in .14s ease-out; }
+@media (hover:hover) { .tip:hover .tip-b { display:block; animation:tip-in .14s ease-out; } }   /* au toucher : seule la bulle touchée s'ouvre */
 @media (hover:none) { .tip { width:30px; height:30px; } }   /* zone tactile confortable */
 /* Bulles sur téléphone : une feuille fixée en bas de l'écran, toujours lisible, jamais coupée */
 @media (max-width:640px) {

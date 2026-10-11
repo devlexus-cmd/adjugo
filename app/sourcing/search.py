@@ -213,6 +213,14 @@ def _dedup_tenders(tenders: list[NormalizedTender]) -> list[NormalizedTender]:
     return out
 
 
+def _accepts(fn, name: str) -> bool:
+    try:
+        import inspect
+        return name in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 class CompanySearchService:
     def __init__(self, sources: list[CompanySource], red_flag_source=None):
         self.sources = sources
@@ -222,13 +230,14 @@ class CompanySearchService:
     def discover(self, activity: str = "", departement: str = "", query: str = "",
                  limit: int = 12, tender_departements: Optional[list] = None,
                  need_label: str = "", lot_montant: Optional[float] = None,
-                 enrich_decp: bool = True) -> dict:
+                 enrich_decp: bool = True, pme_only: bool = False) -> dict:
         companies: list[NormalizedCompany] = []
         errors: list[SourceError] = []
         for s in self.sources:
             try:
+                kw = {"pme_only": True} if pme_only and _accepts(s.search, "pme_only") else {}
                 companies.extend(s.search(activity=activity, departement=departement,
-                                          query=query, limit=limit))
+                                          query=query, limit=limit, **kw))
             except Exception as e:
                 errors.append(SourceError(source=s.name, message=str(e)[:200]))
 

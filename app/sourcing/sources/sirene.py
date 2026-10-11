@@ -38,6 +38,21 @@ TRADES = [
     {"key": "imprimerie", "label": "Imprimerie / Reprographie", "naf": "18.12Z"},
     {"key": "formation", "label": "Formation professionnelle", "naf": "85.59A"},
 ]
+def local_etablissement(e: dict, departement: str):
+    """Établissement de l'entreprise situé DANS le département demandé (l'API filtre le
+    département sur les établissements : sans ça, un grand groupe qui y a une agence
+    s'affichait avec la ville de son siège, loin du marché). None si aucun ne correspond."""
+    dep = (departement or "").strip().upper()
+    if not dep:
+        return None
+    pref = "20" if dep in ("2A", "2B") else dep
+    for et in (e.get("matching_etablissements") or []):
+        cp = str((et or {}).get("code_postal") or "")
+        if cp.startswith(pref) and (et.get("etat_administratif") in (None, "", "A")):
+            return et
+    return None
+
+
 _EFFECTIF = {"NN": None, "00": 0, "01": 2, "02": 4, "03": 8, "11": 15, "12": 30,
              "21": 75, "22": 150, "31": 250, "32": 750, "41": 1500, "42": 3500,
              "51": 7500, "52": 12000}
@@ -58,7 +73,7 @@ class SireneSource(CompanySource):
             return r.json().get("results", [])
 
     def search(self, activity: str = "", departement: str = "", query: str = "",
-               limit: int = 12) -> list[NormalizedCompany]:
+               limit: int = 12, pme_only: bool = False) -> list[NormalizedCompany]:
         # On accepte une ACTIVITÉ LIBRE : si elle correspond à un métier connu (par clé
         # OU par libellé), on gagne le filtre NAF ; sinon recherche par mots-clés libres.
         al = (activity or "").strip().lower()
@@ -76,12 +91,28 @@ class SireneSource(CompanySource):
             params["q"] = q
         if departement:
             params["departement"] = departement
+        if pme_only:
+            # Recherche de PARTENAIRES pour une TPE/PME : catégorie INSEE « PME » (micro-
+            # entreprises comprises) — sans ce filtre, les grands groupes passaient devant.
+            params["categorie_entreprise"] = "PME"
         try:
             rows = self._get(params)
         except Exception as e:
             logger.warning("SIRENE indisponible : %s", e)
             raise
-        out = [self._normalize(e) for e in rows]
+        out = []
+        for e in rows:
+            c = self._normalize(e)
+            et = local_etablissement(e, departement)
+            if et:
+                # Affiche l'établissement DU département (adresse, ville, SIRET de l'établissement).
+                c.adresse = et.get("adresse") or c.adresse
+                c.code_postal = et.get("code_postal") or c.code_postal
+                c.ville = et.get("libelle_commune") or c.ville
+                c.departement = (et.get("code_postal") or "")[:2] or c.departement
+                if et.get("siret"):
+                    c.siret = et.get("siret")
+            out.append(c)
         return [c for c in out if c.nom]
 
     def get_by_siret(self, siret: str) -> Optional[NormalizedCompany]:
