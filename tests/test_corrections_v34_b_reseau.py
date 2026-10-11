@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from tests.test_reseau_partenaires import _org, _project, _publish, reg  # noqa: F401  (fixture autouse)
+from tests.test_reseau_partenaires import _org, _profile_row, _project, _publish, reg  # noqa: F401  (fixture autouse)
 
 
 @pytest.fixture
@@ -206,3 +206,73 @@ def test_relance_reseau_refusee_apres_retrait_ou_masquage_et_plafonnee(client, r
     monkeypatch.setattr(R, "NETWORK_INVITES_PER_PROFILE_DAY", 3)
     _age_email(iid)
     assert client.post(url, headers=chef["headers"]).status_code == 429
+
+
+def test_marquer_depose_recalcule_le_compteur_du_reseau(client, reg, mails):
+    """Complément A14 : le badge « N groupements déposés via Adjugo » (COUNT réel) des profils du
+    chef de file et du partenaire suit le marquage « déposé » et son annulation tout de suite,
+    sans attendre le passage du cron."""
+    part = _org(client, "Le Gall Électricité")
+    part_pid = _publish(client, reg, part)
+    chef = _org(client, "Breizh Couverture")
+    _publish(client, reg, chef, metiers=("couverture",))
+    pid = _project(client, chef)
+    r = client.post(f"/api/projects/{pid}/reseau/invitations", headers=chef["headers"],
+                    json={"profile_id": part_pid, "role": "cotraitant", "lot": "Lot 2 — Électricité"})
+    assert r.status_code == 200, r.text
+    recues = client.get("/api/reseau/invitations", headers=part["headers"]).json()["invitations"]
+    tok = next(x["token"] for x in recues if x["mandataire"] == chef["name"])
+    assert client.post(f"/api/invite/{tok}/claim", headers=part["headers"]).status_code == 200
+    _put_part(client, tok, company_name="Le Gall Électricité", lot="Lot 2 — Électricité", prix_lot_ht=40000)
+    assert client.post(f"/api/invite/{tok}/contribution/submit").status_code == 200
+    assert (_profile_row(part["id"]).groupements_deposes or 0) == 0
+    assert (_profile_row(chef["id"]).groupements_deposes or 0) == 0
+    r = client.post(f"/api/projects/{pid}/groupement/deposer", headers=chef["headers"], json={"confirmer": True})
+    assert r.status_code == 200 and r.json()["status"] == "envoye", r.text
+    assert _profile_row(part["id"]).groupements_deposes == 1
+    assert _profile_row(chef["id"]).groupements_deposes == 1
+    assert _profile_row(part["id"]).last_groupement_at is not None
+    r = client.delete(f"/api/projects/{pid}/groupement/deposer", headers=chef["headers"])
+    assert r.status_code == 200 and r.json()["etait_depose"] is True
+    assert _profile_row(part["id"]).groupements_deposes == 0
+    assert _profile_row(chef["id"]).groupements_deposes == 0
+
+
+def test_part_d_une_invitation_reseau_sans_reponse_invisible_du_chef_de_file(client, reg, mails):
+    """Le brouillon saisi par un partenaire du réseau pendant l'aperçu minimal (contact, prix,
+    note) n'est pas montré au chef de file — ni avant sa réponse, ni après un refus. Même seuil
+    que l'adresse : accepté depuis le compte, adresse prouvée ou part soumise."""
+    chef, part, pid, tok = _scenario_brouillon_et_invitation_reseau(client, reg, mails)
+    h = chef["headers"]
+    _put_part(client, tok, company_name="Le Gall Électricité", lot="Lot 2 — Électricité", prix_lot_ht=41234,
+              note_au_mandataire="Note confidentielle Le Gall",
+              contact={"nom": "Jean Prudent", "email": "jean.prudent@prudent-elec.fr", "telephone": "06 12 34 56 78"})
+    secrets_part = ("jean.prudent@prudent-elec.fr", "06 12 34 56 78", "Jean Prudent", "41234", "41 234",
+                    "Note confidentielle Le Gall")
+
+    def owner_views():
+        out = []
+        for path in ("contributions", "consortium", "invites"):
+            r = client.get(f"/api/projects/{pid}/{path}", headers=h)
+            assert r.status_code == 200, (path, r.text)
+            out.append((path, r.text))
+        return out
+    for path, text in owner_views():
+        assert not [s for s in secrets_part if s in text], path
+    # Aucune entrée « le mandataire a consulté votre part » pour une part qu'il n'a pas vue.
+    assert not any(e["action"] == "owner.view_contribution"
+                   for e in client.get(f"/api/invite/{tok}/journal").json()["entries"])
+    # Refus : toujours rien.
+    assert client.post(f"/api/invite/{tok}/decline", json={}).status_code == 200
+    for path, text in owner_views():
+        assert not [s for s in secrets_part if s in text], path
+
+
+def test_part_d_une_invitation_reseau_acceptee_visible_du_chef_de_file(client, reg, mails):
+    chef, part, pid, tok = _scenario_brouillon_et_invitation_reseau(client, reg, mails)
+    _put_part(client, tok, company_name="Le Gall Électricité", lot="Lot 2 — Électricité", prix_lot_ht=41234,
+              contact={"nom": "Jean Prudent", "email": "jean.prudent@prudent-elec.fr"})
+    assert client.post(f"/api/invite/{tok}/claim", headers=part["headers"]).status_code == 200
+    rows = client.get(f"/api/projects/{pid}/contributions", headers=chef["headers"]).json()
+    mine = [c for c in rows if c["company_name"] == "Le Gall Électricité"]
+    assert mine and mine[0]["contact"]["email"] == "jean.prudent@prudent-elec.fr" and mine[0]["prix_lot_ht"] == 41234

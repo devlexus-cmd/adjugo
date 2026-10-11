@@ -6,20 +6,29 @@ qu'Adjugo sert (cotraitance-crypto.js, app.js, invite.html). Ce n'est pas du zer
 un script modifié pourrait exfiltrer la clé. Deux mitigations simples :
   1. chaque balise <script src="/static/…"> des pages servies porte integrity="sha384-…" : le
      navigateur REFUSE d'exécuter un fichier dont le contenu ne correspond pas à l'empreinte
-     (fichier altéré sur le stockage, le cache, ou servi par erreur) ;
+     posée dans la page (fichier altéré ou périmé ENTRE le serveur et le navigateur : cache,
+     proxy, fichier servi par erreur). Ce n'est PAS une protection contre une modification des
+     fichiers sur le serveur lui-même : le filet de production (plus bas) recalcule les
+     empreintes des pages à partir des fichiers présents sur le disque, donc un script modifié
+     sur le serveur est servi avec SA propre empreinte. Une telle modification se voit en
+     comparant avec le manifeste versionné (sri-manifest.json : `manifeste_publie_a_jour` vaut
+     alors false) et dans les journaux du serveur (« empreintes périmées ») ;
   2. les empreintes sont PUBLIÉES (app/static/sri-manifest.json, versionné dans le dépôt, et
      GET /api/securite/empreintes-scripts calculé à chaud) : n'importe qui peut comparer ce que
      son navigateur reçoit à ce qui est publié (`openssl dgst -sha384 -binary app.js | openssl base64 -A`).
 
 Limite honnête : la page HTML elle-même et ses scripts en ligne (inline) ne sont pas couverts
-par SRI ; un serveur compromis peut servir une page ET des empreintes modifiées. La valeur est
-dans la comparaison avec les empreintes publiées et versionnées (et, à terme, un audit tiers).
+par SRI ; un serveur compromis (ou un fichier modifié sur le disque du serveur, voir le point 1)
+peut servir une page ET des empreintes modifiées. La valeur est dans la comparaison avec les
+empreintes publiées et versionnées (et, à terme, un audit tiers).
 
 Régénération (après toute modification d'un script) :  python scripts/sri_update.py
 Le test tests/test_cotraitance_v4.py::test_sri_empreintes_a_jour échoue avec cette commande si
 une empreinte est périmée. Filet de production : si une page servie porte une empreinte périmée
 (déploiement sans régénération), elle est CORRIGÉE à la volée et l'erreur est journalisée — le
-logiciel ne se bloque jamais pour un oubli de régénération.
+logiciel ne se bloque jamais pour un oubli de régénération. Conséquence assumée (choix écrit au
+§ 3 du contrat de la vague 4) : ce filet ne distingue pas un oubli d'une modification du fichier
+sur le serveur, il sert les deux avec l'empreinte du fichier présent (voir le point 1).
 
 CSP : inchangée (script-src garde 'unsafe-inline' — scripts en ligne dans app.html, invite.html,
 landing… — et 'unsafe-eval' — Vue compile ses gabarits dans le navigateur). Piste de durcissement
@@ -106,7 +115,10 @@ def apply_integrity(html: str, files: dict) -> str:
         src = _SRC.search(tag)
         if not src or src.group(2) not in files:
             return tag
+        # Ancien attribut retiré AVANT de repérer src : sa position change si integrity était
+        # placé avant src (sinon la nouvelle empreinte atterrissait hors de la balise).
         tag = _INTEGRITY.sub("", tag)
+        src = _SRC.search(tag)
         integ = files[src.group(2)]["integrity"]
         end = src.end()
         return tag[:end] + f' integrity="{integ}"' + tag[end:]

@@ -450,17 +450,130 @@ def test_marquer_depose_double_clic_une_seule_entree(client, auth, mails):
     assert doubles == 0
 
 
-def test_annuler_le_marquage_retrouve_le_statut_abandonne(client, auth, mails):
-    """Un marché « abandonné » marqué déposé puis démarqué redevient « abandonné » (ses relances
-    automatiques restent coupées), pas « en cours »."""
+def _depose_entry(pid, statut_precedent):
+    """Marquage « déposé » ANCIEN (avant la règle qui refuse un marché abandonné) : statut envoyé
+    + entrée de journal portant le statut d'avant."""
+    from app.models import Project, ProjectStatus
+    from app.services import audit
+    db = _db()
+    try:
+        p = db.get(Project, pid)
+        p.status = ProjectStatus.envoye
+        db.commit()
+        audit.record(db, action="groupement.depose", owner_id=p.user_id, project_id=pid, actor="user:0",
+                     actor_kind="owner", target_type="project", target_id=pid,
+                     meta={"statut_precedent": statut_precedent}, detail="dossier complet")
+    finally:
+        db.close()
+
+
+def test_marche_abandonne_refuse_et_annulation_restaure_le_statut_precedent(client, auth, mails):
+    """« Marquer déposé » est refusé sur un marché abandonné (409, statut et journal inchangés) ;
+    l'annulation d'un marquage restaure EXACTEMENT le statut d'avant (« nouveau », « en cours »,
+    et « abandonné » pour un marquage antérieur à la règle) — jamais « en cours » par défaut."""
     h = auth["headers"]
     pid = _project(client, h)
     _invite(client, h, pid, "Le Gall Électricité")
     _set_status(pid, "abandonne")
     r = client.post(f"/api/projects/{pid}/groupement/deposer", headers=h, json={"confirmer": True})
-    assert r.status_code == 200 and r.json()["status"] == "envoye"
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "marche_abandonne", r.text
+    assert "rouvrez-le" in r.json()["detail"]["message"]
+    assert _n_depose(pid) == 0
+    assert client.get(f"/api/projects/{pid}/groupement/depot", headers=h).json()["status"] == "abandonne"
+    for avant in ("nouveau", "en_cours"):
+        _set_status(pid, avant)
+        r = client.post(f"/api/projects/{pid}/groupement/deposer", headers=h, json={"confirmer": True})
+        assert r.status_code == 200 and r.json()["status"] == "envoye", r.text
+        r = client.delete(f"/api/projects/{pid}/groupement/deposer", headers=h)
+        assert r.status_code == 200 and r.json()["etait_depose"] is True and r.json()["status"] == avant, r.json()
+    # Marquage ancien d'un marché abandonné : l'annulation le rend « abandonné » (relances coupées).
+    _depose_entry(pid, "abandonne")
     r = client.delete(f"/api/projects/{pid}/groupement/deposer", headers=h)
     assert r.status_code == 200 and r.json()["status"] == "abandonne", r.json()
     # Une seconde annulation ne fait rien (et n'écrit rien).
+    from app.models import AuditLog
+    db = _db()
+    try:
+        n_annul = db.query(AuditLog).filter(AuditLog.project_id == pid,
+                                            AuditLog.action == "groupement.depot_annule").count()
+    finally:
+        db.close()
     r = client.delete(f"/api/projects/{pid}/groupement/deposer", headers=h)
     assert r.json()["etait_depose"] is False and r.json()["status"] == "abandonne"
+    db = _db()
+    try:
+        assert db.query(AuditLog).filter(AuditLog.project_id == pid,
+                                         AuditLog.action == "groupement.depot_annule").count() == n_annul
+    finally:
+        db.close()
+
+
+def test_annulations_simultanees_une_seule_entree(client, auth, mails):
+    """Deux « Retirer le marquage » simultanés : une seule annulation au journal."""
+    import threading
+    from app.models import AuditLog
+    h = auth["headers"]
+    pid = _project(client, h)
+    _invite(client, h, pid, "Le Gall Électricité")
+    for _k in range(3):
+        assert client.post(f"/api/projects/{pid}/groupement/deposer", headers=h,
+                           json={"confirmer": True}).json()["status"] == "envoye"
+        barrier, codes = threading.Barrier(2), []
+
+        def click():
+            barrier.wait()
+            codes.append(client.delete(f"/api/projects/{pid}/groupement/deposer", headers=h).status_code)
+        ts = [threading.Thread(target=click) for _ in range(2)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+        assert codes == [200, 200]
+    db = _db()
+    try:
+        assert db.query(AuditLog).filter(AuditLog.project_id == pid,
+                                         AuditLog.action == "groupement.depot_annule").count() == 3
+    finally:
+        db.close()
+
+
+# ═══ SRI ══════════════════════════════════════════════════════════════════════════════
+
+def test_sri_integrity_place_avant_src_reste_dans_la_balise():
+    """Ancien attribut integrity placé AVANT src : la nouvelle empreinte restait hors de la
+    balise (dans le contenu du script) et la protection disparaissait sans bruit."""
+    from app.core.sri import apply_integrity
+    files = {"/static/app.js": {"integrity": "sha384-NOUVELLE"}}
+    for tag in ('<script integrity="sha384-ancienne" src="/static/app.js" defer></script>',
+                "<script INTEGRITY='sha384-ancienne' defer src='/static/app.js'></script>",
+                '<script src="/static/app.js" integrity="sha384-ancienne" defer></script>'):
+        out = apply_integrity(tag, files)
+        head, _, rest = out.partition(">")
+        assert 'integrity="sha384-NOUVELLE"' in head and "ancienne" not in out, out
+        assert rest == "</script>", out
+        assert apply_integrity(out, files) == out          # stable : plus rien à corriger
+
+
+def test_sri_promesse_exacte_sur_les_fichiers_du_serveur():
+    """Le filet de production sert un script modifié sur le serveur avec SA propre empreinte : la
+    documentation ne promet plus un refus dans ce cas, et dit comment le voir."""
+    from app.core import sri
+    doc = " ".join(sri.__doc__.split())
+    assert "fichier altéré sur le stockage" not in doc
+    assert "PAS une protection contre une modification des fichiers sur le serveur" in doc
+    contrat = open(os.path.join(os.path.dirname(STATIC), "..", "docs", "COTRAITANCE_V2_VAGUE4_API.md"),
+                   encoding="utf-8").read()
+    contrat = " ".join(contrat.split())
+    assert "Ce que la SRI protège, dit exactement" in contrat and "manifeste_publie_a_jour" in contrat
+
+
+def test_dpgf_explications_dans_des_bulles():
+    """Règle d'interface : les phrases d'explication de la carte « Ma DPGF de lot » sont dans la
+    bulle (i) du titre, pas affichées en clair ; la pastille « DPGF du lot reçue » du chef de file
+    a sa bulle (le détail des prix de vente, ligne par ligne)."""
+    inv = open(os.path.join(STATIC, "invite.html"), encoding="utf-8").read()
+    i = inv.index('id="dp-title"')
+    titre = inv[i:inv.index("\n", i)]
+    assert "<b>Partagé avec le chef de file, au dépôt :</b>" in titre and "<b>Jamais partagé :</b>" in titre
+    assert inv.count("Jamais partagé :") == 1 and "dp-share" not in inv
+    app = open(os.path.join(STATIC, "app.html"), encoding="utf-8").read()
+    i = app.index("DPGF du lot reçue")
+    assert 'class="tip"' in app[i:i + 400] and "ligne par ligne" in app[i:i + 400]

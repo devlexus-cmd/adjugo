@@ -573,6 +573,49 @@ def depot(request: Request, project_id: int, current_user: User = Depends(get_cu
             "pret": depot_readiness(project, db)}
 
 
+MSG_ABANDONNE = ("Ce marché est marqué « abandonné » : rouvrez-le depuis sa fiche avant de le "
+                 "marquer comme déposé.")
+
+
+def _recompute_network_counters(db: Session, project) -> None:
+    """Compteur « groupements déposés via Adjugo » des profils du réseau concernés par ce marché
+    (le chef de file, et chaque membre : profil invité par le réseau ou organisation dont un
+    compte a accepté le lien), recalculé tout de suite au marquage et à son annulation (COUNT
+    réel, jamais saisi : partner_network.recompute_groupements). Sans cela, le badge restait
+    faux jusqu'au passage du cron. Best-effort : n'empêche jamais le marquage."""
+    try:
+        from app.models import PartnerProfile, ProjectInvite
+        from app.services import partner_network as pn
+        owners, profile_ids = set(), set()
+        lead = db.get(User, project.user_id) if project.user_id else None
+        if lead is not None:
+            owners.add(data_owner_id(lead, db))
+        for inv in db.query(ProjectInvite).filter(ProjectInvite.project_id == project.id).limit(200).all():
+            if inv.partner_profile_id:
+                profile_ids.add(inv.partner_profile_id)
+            if inv.accepted_by_user_id:
+                u = db.get(User, inv.accepted_by_user_id)
+                if u is not None:
+                    owners.add(data_owner_id(u, db))
+        profiles = {}
+        if profile_ids:
+            for p in db.query(PartnerProfile).filter(PartnerProfile.id.in_(sorted(profile_ids))).all():
+                profiles[p.id] = p
+        for oid in owners:
+            p = pn.own_profile(db, oid)
+            if p is not None:
+                profiles[p.id] = p
+        for p in profiles.values():
+            pn.recompute_groupements(db, p)
+        db.commit()
+    except Exception as e:
+        logger.warning("dépôt : compteur du réseau non recalculé (%s)", type(e).__name__)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 @router.post("/deposer")
 @limiter.limit("30/hour")
 def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody] = None,
@@ -580,7 +623,11 @@ def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody
     """« Marquer déposé » : le marché passe au statut « envoyé » (état 8 « Déposé »), avec une
     trace dans le journal visible de tous les membres. Si des contrôles ne sont pas réglés :
     409 `pas_pret` avec la liste, puis `{"confirmer": true}` pour marquer quand même (le chef
-    de file peut avoir déposé hors d'Adjugo). Idempotent."""
+    de file peut avoir déposé hors d'Adjugo). Idempotent, y compris sous concurrence (deux
+    clics simultanés : une seule transition, une seule entrée au journal). Un marché
+    « abandonné » n'est pas marqué déposé (409 `marche_abandonne`) : il faut d'abord le
+    rouvrir depuis sa fiche — sinon ses relances, coupées à l'abandon, reprendraient à
+    l'annulation du marquage."""
     from app.models import ProjectStatus
     from app.services.groupement_members import CLOSED_STATUSES, depot_readiness
     project = _project(project_id, current_user, db)
@@ -589,6 +636,8 @@ def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody
     if status_v in CLOSED_STATUSES:
         return {"ok": True, "deja_depose": True, "status": status_v, "complet": None,
                 "state": _state_payload(project, db)}
+    if status_v == "abandonne":
+        raise HTTPException(409, {"code": "marche_abandonne", "message": MSG_ABANDONNE})
     ready = depot_readiness(project, db)
     if not ready["pret"] and not (body and body.confirmer):
         raise HTTPException(409, {
@@ -597,17 +646,28 @@ def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody
                         "Confirmez pour marquer le dossier comme déposé quand même."),
             "manques": ready["manques"], "avertissements": ready["avertissements"],
             "checks": ready["checks"]})
-    # Transition ATOMIQUE (deux clics simultanés : un seul passe, une seule entrée au journal).
-    from sqlalchemy import or_
-    closed = [ProjectStatus(v) for v in CLOSED_STATUSES]
-    n = db.query(Project).filter(Project.id == project.id, or_(Project.status.is_(None),
-                                                               Project.status.notin_(closed))).update(
-        {Project.status: ProjectStatus.envoye}, synchronize_session=False)
-    db.commit()
-    db.refresh(project)
-    if n != 1:
-        return {"ok": True, "deja_depose": True, "status": _status_value(project), "complet": None,
-                "state": _state_payload(project, db)}
+    # Transition ATOMIQUE, conditionnée au statut LU (compare-and-set) : deux clics simultanés →
+    # une seule passe (Postgres : la seconde attend le verrou de ligne puis ne trouve plus la
+    # ligne au statut attendu ; SQLite : écritures sérialisées). Un marché abandonné ou clos
+    # entre-temps n'est pas touché. Une seule entrée « déposé » au journal, avec le vrai statut
+    # d'avant (restauré à l'annulation).
+    for _essai in range(3):
+        cond = (Project.status.is_(None) if project.status is None else Project.status == project.status)
+        n = db.query(Project).filter(Project.id == project.id, cond).update(
+            {Project.status: ProjectStatus.envoye}, synchronize_session=False)
+        db.commit()
+        db.refresh(project)
+        if n == 1:
+            break
+        now_v = _status_value(project)
+        if now_v in CLOSED_STATUSES:          # l'autre clic l'a marqué : rien à refaire
+            return {"ok": True, "deja_depose": True, "status": now_v, "complet": None,
+                    "state": _state_payload(project, db)}
+        if now_v == "abandonne":
+            raise HTTPException(409, {"code": "marche_abandonne", "message": MSG_ABANDONNE})
+        status_v = now_v                      # statut changé entre-temps (« nouveau » → « en cours »)
+    else:
+        raise HTTPException(409, "Le statut du marché vient de changer : réessayez.")
     reste = ready["n_total"] - ready["n_ok"]
     audit.record(db, action="groupement.depose", owner_id=data_owner_id(current_user, db),
                  project_id=project.id, actor=f"user:{current_user.id}", actor_kind="owner",
@@ -615,6 +675,7 @@ def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody
                  meta={"statut_precedent": status_v, "controles_ok": ready["n_ok"]},
                  detail=("dossier complet" if ready["pret"]
                          else f"marqué déposé malgré {reste} contrôle(s) non réglé(s)"))
+    _recompute_network_counters(db, project)
     db.refresh(project)
     return {"ok": True, "deja_depose": False, "status": "envoye", "complet": ready["pret"],
             "pret": ready, "state": _state_payload(project, db)}
@@ -625,9 +686,11 @@ def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody
 def annuler_depose(request: Request, project_id: int, current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     """Annule un marquage « déposé » fait par erreur (trace dans le journal) : le marché
-    retrouve EXACTEMENT son statut d'avant (« nouveau », « en cours » ou « abandonné » — un marché
-    abandonné le redevient, ses relances restent coupées). Un marché déjà « gagné » ou « perdu »
-    se change depuis sa fiche. Transition atomique (deux clics : une seule annulation)."""
+    retrouve EXACTEMENT son statut d'avant, lu dans l'entrée « déposé » du journal (« nouveau »,
+    « en cours », ou « abandonné » pour un marquage antérieur à la règle qui le refuse : ses
+    relances restent coupées). « En cours » si ce statut est illisible. Un marché déjà « gagné »
+    ou « perdu » se change depuis sa fiche. Transition atomique (deux clics : une seule
+    annulation, une seule entrée au journal)."""
     from app.models import ProjectStatus
     project = _project(project_id, current_user, db)
     status_v = _status_value(project)
@@ -658,6 +721,7 @@ def annuler_depose(request: Request, project_id: int, current_user: User = Depen
                  project_id=project.id, actor=f"user:{current_user.id}", actor_kind="owner",
                  target_type="project", target_id=project.id, ip=audit.client_ip(request),
                  detail="marquage « déposé » annulé")
+    _recompute_network_counters(db, project)
     db.refresh(project)
     return {"ok": True, "etait_depose": True, "status": _status_value(project), "state": _state_payload(project, db)}
 

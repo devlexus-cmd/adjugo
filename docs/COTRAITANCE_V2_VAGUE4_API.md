@@ -194,6 +194,12 @@ navigateur (la vérification hors ligne est un outil pour l'utilisateur qui le s
   `acheteur-landing.html`) porte `integrity="sha384-…"` : le navigateur refuse un fichier dont le
   contenu ne correspond pas. Les scripts en ligne et le script d'analytics (tiers, optionnel,
   chargé par `app.js`) ne sont pas couverts.
+- **Ce que la SRI protège, dit exactement** : un fichier altéré ou périmé ENTRE le serveur et le
+  navigateur (cache, proxy, fichier servi par erreur). Pas une modification des fichiers sur le
+  serveur lui-même : le filet ci-dessous recalcule les empreintes des pages à partir des fichiers
+  présents, un script modifié sur le serveur part donc avec sa propre empreinte. Cette
+  modification se voit en comparant avec le manifeste versionné (`manifeste_publie_a_jour` et
+  `pages_a_jour` valent alors `false`) et dans les journaux du serveur (« empreintes périmées »).
 - **Règle pour tout le monde (front compris)** : après **toute** modification d'un fichier
   `app/static/*.js` ou `app/static/vendor/*`, lancer `python scripts/sri_update.py` et commiter les
   pages + `app/static/sri-manifest.json`. Sinon `tests/test_cotraitance_v4.py::test_sri_empreintes_a_jour`

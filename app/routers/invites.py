@@ -525,6 +525,16 @@ def _network_responded(inv, contribution=None) -> bool:
                 or (contribution is not None and contribution.status == "submitted"))
 
 
+def _owner_hides_part(inv, contribution=None) -> bool:
+    """Part d'une invitation du RÉSEAU déclinée ou pas encore répondue : le chef de file ne la
+    voit pas (ni contact, ni prix, ni note — un brouillon saisi pendant l'aperçu minimal, ou
+    gardé après un refus). Même seuil de divulgation que l'adresse : acceptée depuis le compte,
+    adresse prouvée par code ou part soumise. Décliner n'est pas répondre."""
+    if inv is None or not _is_network_invite(inv):
+        return False
+    return bool(getattr(inv, "declined_at", None)) or not _network_responded(inv, contribution)
+
+
 def _mark_network_accepted(inv) -> None:
     """Pose la date de PREMIÈRE réponse positive d'une invitation réseau (jamais remise à zéro).
     À appeler avant le commit de l'acceptation (claim, code vérifié, part soumise)."""
@@ -2084,6 +2094,8 @@ def owner_download_piece(project_id: int, piece_id: int, request: Request,
     if not pc:
         raise HTTPException(404, "Pièce introuvable")
     cb = db.query(ProjectContribution).filter(ProjectContribution.id == pc.contribution_id).first()
+    if cb is not None and _owner_hides_part(db.get(ProjectInvite, cb.invite_id), cb):
+        raise HTTPException(404, "Pièce introuvable")     # part d'une invitation réseau sans réponse
     # invite_id → l'entrée apparaît dans le JOURNAL DU MEMBRE concerné (« le mandataire a
     # téléchargé votre pièce « … » ») : la confiance est vérifiable, pas déclarée.
     audit.record(db, action="owner.download_piece", owner_id=pc.owner_id, project_id=project_id,
@@ -2126,6 +2138,9 @@ def list_contributions(project_id: int, current_user: User = Depends(get_current
     rows = db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id
     ).order_by(ProjectContribution.updated_at.desc()).all()
+    # Invitation du réseau déclinée ou sans réponse : sa part n'est pas montrée (_owner_hides_part).
+    invs = {i.id: i for i in db.query(ProjectInvite).filter(ProjectInvite.project_id == project_id).all()}
+    rows = [c for c in rows if not _owner_hides_part(invs.get(c.invite_id), c)]
     active_ids = {i.id for i in active_invites(db, project_id)}
     _record_owner_views(db, project_id, data_owner_id(current_user, db), f"user:{current_user.id}", "",
                         [c for c in rows if c.invite_id in active_ids])
@@ -2398,6 +2413,9 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
     invites = active_invites(db, project_id)       # membres = invitations actives (ni révoquées ni déclinées)
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id).all()}
+    for inv in invites:          # réseau sans réponse : part non montrée (_owner_hides_part)
+        if inv.id in contribs and _owner_hides_part(inv, contribs[inv.id]):
+            contribs.pop(inv.id)
     piece_counts, piece_names, piece_types = {}, {}, {}
     for pc in db.query(ContributionPiece).filter(
             ContributionPiece.project_id == project_id).all():
@@ -2816,10 +2834,11 @@ def consortium_report(project_id: int, current_user: User = Depends(get_current_
     # Cloisonnement : le compte-rendu est « partageable » → il ne doit JAMAIS exposer
     # l'apport d'un partenaire RÉVOQUÉ/DÉCLINÉ, ni AUCUN prix par membre (doctrine de
     # visibilité : le PDF n'imprime que le total de l'offre FIGÉE). Vue owner : enveloppe absente.
-    contribs = [_serialize_contribution(c, db, viewer="owner") for c in db.query(ProjectContribution).join(
+    contribs = [_serialize_contribution(c, db, viewer="owner") for c, i in db.query(
+        ProjectContribution, ProjectInvite).join(
         ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
         ProjectContribution.project_id == project_id,
-        active_invite_filter()).all()]
+        active_invite_filter()).all() if not _owner_hides_part(i, c)]
     from app.services.consortium_report import generate_consortium_report_pdf
     pdf = generate_consortium_report_pdf(project.name, (company.name if company else ""), data, contribs)
     safe = re.sub(r'[^A-Za-z0-9._ -]', "_", (project.name or "consortium"))[:50]

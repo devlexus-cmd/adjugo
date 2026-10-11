@@ -129,9 +129,6 @@
        défilait horizontalement (bulles de la convention près du bord droit). Les bulles visibles
        sont recadrées dans l'écran par fitTip(). */
     .work { overflow-x:hidden; }
-    .dp-share { display:grid; gap:6px; margin-top:12px; font-size:12.5px; color:var(--text-2,#4b5563); }
-    .dp-share > div { display:flex; gap:7px; align-items:flex-start; line-height:1.45; }
-    .dp-share b { color:var(--text,#16181d); font-weight:600; }
     .dp-head, .dp-row { display:grid; grid-template-columns:minmax(0,1fr) 76px 84px 112px 112px 34px; gap:6px; align-items:center; }
     .dp-head { margin-top:16px; padding:0 0 5px; border-bottom:1px solid var(--hairline,#eef0f3); font-size:11.5px; font-weight:600; color:var(--text-2,#4b5563); }
     .dp-row { padding:6px 0; border-bottom:1px solid var(--hairline,#eef0f3); }
@@ -1129,11 +1126,11 @@
     function renderDpgf(api) {
       const CRY = window.AdjugoCrypto || null, D = CRY && CRY.dpgf;
       const el = $(`<section class="card pad dp-card" id="dpgf" tabindex="-1" style="margin-bottom:16px;outline:none" aria-labelledby="dp-title"></section>`);
-      const head = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 170px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="dp-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Ma DPGF de lot</h2>${tip("<b>DPGF</b> : le détail de vos prix de vente, ligne par ligne (décomposition du prix global et forfaitaire). Souvent demandée avec l'offre.<br><br>Vos lignes sont enregistrées <b>chiffrées dans votre navigateur</b>, avec le détail de votre chiffrage et le même code de récupération. Elles ne partent en clair qu'au dépôt, après votre relecture, dans un fichier au niveau du prix de vente.<br><br>Déposer ou retirer la DPGF ne modifie ni votre part soumise ni la convention.")}</span></div>`);
+      const head = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 170px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="dp-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Ma DPGF de lot</h2>${tip("<b>DPGF</b> : le détail de vos prix de vente, ligne par ligne (décomposition du prix global et forfaitaire). Souvent demandée avec l'offre.<br><br><b>Partagé avec le chef de file, au dépôt :</b> vos prix de vente, ligne par ligne, et leur total.<br><b>Jamais partagé :</b> vos coûts, vos marges, votre méthode. Les autres partenaires ne voient pas votre DPGF.<br><br>Vos lignes sont enregistrées <b>chiffrées dans votre navigateur</b>, avec le détail de votre chiffrage et le même code de récupération. Elles ne partent en clair qu'au dépôt, après votre relecture, dans un fichier au niveau du prix de vente.<br><br>Déposer ou retirer la DPGF ne modifie ni votre part soumise ni la convention.")}</span></div>`);
       const pill = $(`<span class="pill neutral" style="font-size:11px">Pas encore déposée</span>`); head.appendChild(pill);
       el.appendChild(head);
-      el.appendChild($(`<div class="dp-share"><div>${ico("eye", 14, "margin-top:1px;color:var(--text-2,#6b7280)")}<span><b>Partagé avec le chef de file, au dépôt :</b> vos prix de vente, ligne par ligne, et leur total.</span></div><div>${ico("lock", 14, "margin-top:1px;color:var(--text-2,#6b7280)")}<span><b>Jamais partagé :</b> vos coûts, vos marges, votre méthode. Les autres partenaires ne voient pas votre DPGF.</span></div></div>`));
-      const body = document.createElement("div"); el.appendChild(body);
+      // Ce qui est partagé ou non : dans la bulle (i) du titre (règle : explications en bulle).
+      const body = document.createElement("div"); body.style.marginTop = "16px"; el.appendChild(body);
       const live = $(`<div class="cv-msg" role="status" aria-live="polite" style="margin-top:10px"></div>`); el.appendChild(live);
       const say = (t, err) => { live.classList.toggle("err", !!err); live.textContent = t || ""; };
       let lignes = [], savedKey = "[]", locked = true, lockHint = "Lecture de vos lignes…", pieces = [], busy = false;
