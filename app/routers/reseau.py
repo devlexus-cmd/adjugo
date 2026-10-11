@@ -1360,11 +1360,12 @@ def invite_sirene(request: Request, project_id: int, body: SireneInviteIn,
         raise HTTPException(422, "C'est votre propre entreprise.")
     if ctx["published"]:
         # Visible pour moi dans le réseau → la mise en relation passe par Adjugo (adresse masquée).
-        for p in pn.visible_profiles(db, ctx):
-            if p.siren == siret[:9]:
-                raise HTTPException(409, {"code": "sur_le_reseau", "profile_id": p.public_id,
-                                          "message": "Cette entreprise est sur le réseau Adjugo : invitez-la depuis sa "
-                                                     "fiche (Adjugo lui transmet l'invitation)."})
+        # Requête ciblée par SIREN : la borne de lecture de l'annuaire ne la coupe jamais.
+        p = pn.find_visible_by_siren(db, ctx, siret[:9])
+        if p is not None:
+            raise HTTPException(409, {"code": "sur_le_reseau", "profile_id": p.public_id,
+                                      "message": "Cette entreprise est sur le réseau Adjugo : invitez-la depuis sa "
+                                                 "fiche (Adjugo lui transmet l'invitation)."})
     _invited_profiles, invited_sirens = _active_invite_sirens(db, project.id)
     if siret[:9] in invited_sirens:
         raise HTTPException(409, {"code": "deja_invite",

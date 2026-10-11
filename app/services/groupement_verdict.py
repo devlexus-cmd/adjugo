@@ -321,7 +321,9 @@ def _reseau_pool(db, project, network_ctx: dict, trades: list, dept: str, per_tr
     from datetime import date as _date
     from app.services import partner_matching as pm
     from app.services import partner_network as pn
-    profiles = pn.visible_profiles(db, network_ctx)
+    # Métiers filtrés EN BASE avant la borne de lecture (un lot sans CPV ne classe que les
+    # profils de son métier) : sinon, au-delà de la borne, les derniers inscrits disparaissaient.
+    profiles = pn.visible_profiles(db, network_ctx, metiers=trades)
     by_pid = {p.public_id: p for p in profiles}
     dicts = [pn.profile_dict(p) for p in profiles]
     out, seen = [], set()
@@ -416,6 +418,9 @@ def pool_for_project(db, project, owner_ids: list, include_sirene: bool = False,
             except Exception as e:
                 logger.warning("pool réseau indisponible (projet %s) : %s", getattr(project, "id", "?"), e)
                 reseau = []
+            if network_ctx.get("tronque"):
+                from app.services.partner_network import TRONQUE_POOL_MSG
+                warnings.append(TRONQUE_POOL_MSG)
             for m in reseau:
                 m["deja_partenaire"] = bool(m.get("siret") and m["siret"] in known)
         seen = set()

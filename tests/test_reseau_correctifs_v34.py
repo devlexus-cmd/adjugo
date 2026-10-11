@@ -510,6 +510,33 @@ def test_annuaire_filtre_departement_en_base_avant_la_borne(client, reg, monkeyp
     assert {p["profile_id"] for p in v["profils"]} == {cible, siege}, v
 
 
+def test_pool_reseau_et_invitation_sirene_jamais_coupes_par_la_borne(client, reg, monkeypatch):
+    """Revue v34 (A13, « ni dans le pool réseau ») : le pool réseau du score de groupement
+    filtre le métier en base avant la borne, et le contrôle « cette entreprise est sur le
+    réseau » d'une invitation SIRENE cherche le SIREN directement (plus de lecture bornée)."""
+    import app.services.partner_network as pn
+    from app.models import User
+    from app.services import groupement_verdict as gv
+    me = _org(client, "Chef Pool Borné")
+    _publish(client, reg, me, metiers=("couverture",))
+    _publish(client, reg, _org(client, "Ancien Inscrit"), metiers=("electricite",))
+    recente = _org(client, "Formation Récente")
+    cible = _publish(client, reg, recente, metiers=("formation",))
+    monkeypatch.setattr(pn, "MAX_VISIBLE_SCAN", 1)
+    db = _db()
+    try:
+        ctx = pn.searcher_context(db, db.query(User).filter(User.id == me["id"]).first())
+        pool = gv._reseau_pool(db, None, ctx, ["formation"], "29")
+    finally:
+        db.close()
+    assert [m["profile_id"] for m in pool] == [cible]
+    pid = _project(client, me)
+    r = client.post(f"/api/projects/{pid}/reseau/invitations-sirene", headers=me["headers"],
+                    json={"siret": recente["siren"] + "00012", "role": "cotraitant"})
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "sur_le_reseau" and r.json()["detail"]["profile_id"] == cible
+
+
 # ── 7. Badge déclaratif, critères sourcés, département supposé ────────────────────────
 def test_groupement_avec_soi_meme_non_compte(client, reg, mails):
     """Revue v34 (contre/c4) : une entreprise s'invite par lien, remplit la part elle-même et

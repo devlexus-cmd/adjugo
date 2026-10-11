@@ -67,7 +67,8 @@ production), migration et parcours rejoués sur Postgres 16.** Contrat d'API pou
   visibilité (réciprocité, `hidden_from_sirens` dans les deux sens, aucun profil démo), compteur
   anonyme d'apparitions, historique COUNT, RGPD, cron borné.
 - `app/routers/reseau.py` : profil (GET pré-rempli Company + `lookup_company` / PUT / DELETE),
-  vérifier, publier (admin, SIRET 14 chiffres, SIRENE actif < 30 j, un seul profil publié par SIREN),
+  vérifier, publier (admin, SIRET 14 chiffres, SIRENE actif < 30 j, un seul profil publié par SIREN ;
+  remplacé le 11/10/2026 par la validation Adjugo, voir « Correctifs de la revue v34 »),
   retirer ; annuaire + fiche ; historique ; invitations reçues ; `partner-matches` (≤ 3 lots SIRENE par
   appel, cache 10 min, 60/h + plafond par organisation) ; mise en relation en 1 clic
   (`_create_invite` factorisé sans changer POST /invites ; adresse remplie côté serveur et masquée au
@@ -130,6 +131,81 @@ carte du tableau de bord (marchés accessibles en groupement, étapes 1→5).
 **Reste (vague 4) :** texte de la page sécurité, point cyber (revue externe du schéma de
 chiffrement et du journal, différée par le fondateur), déploiement.
 
+## Correctifs de la revue v34 — réseau de partenaires (11/10/2026)
+
+**Sur la branche d'intégration des vagues 3 et 4, non déployé.** Une revue adversariale (sécurité,
+RGPD, robustesse, honnêteté) a confirmé 28 constats sur le réseau (certains en double). Tous sont
+traités, sauf un complément confié au domaine B (recalcul du compteur de groupements au marquage
+« déposé »). Tests : `tests/test_reseau_correctifs_v34.py`, `tests/test_reseau_ecrans_v34.py`.
+Contrat d'API à jour : `docs/COTRAITANCE_V2_VAGUE3_API.md` (§ 3.5 à 3.7, 4, 5.1, 6.3, 7, 9, 10).
+
+- **Validation de la publication par Adjugo (décision du fondateur).** La vérification SIRENE
+  prouve que l'entreprise existe et est active, pas que le compte la représente : un compte
+  pouvait publier sous le SIREN d'une autre entreprise réelle (nom officiel, badge « Entreprise
+  active »), recevoir ses invitations et contourner un masquage. Désormais :
+  - `validation_status` : `''` (jamais demandée) → `en_attente` (POST publier ; non visible) →
+    `validee` (visible) ou `refusee` (motif affiché à l'entreprise ; nouvelle demande possible) ;
+  - conditions avant la demande : SIRET à 14 chiffres, vérification SIRENE active de moins de 30
+    jours, au moins un métier et un département, **adresse email du compte confirmée**. Aucune ne
+    dépend des autres profils : fin de l'oracle « un seul profil publié par SIREN » et du 409
+    `siren_deja_publie` ;
+  - routes de l'administrateur Adjugo (`User.is_admin`, jamais la démo, 120/h) :
+    `GET /api/admin/reseau/validations`, `POST /api/admin/reseau/validations/{profile_id}/valider`
+    (option `remplacer` en cas de conflit de SIREN), `POST …/{profile_id}/refuser` (motif de 5 à 300
+    caractères). Seul l'administrateur voit le nom et l'email du compte et les conflits de SIREN ;
+  - notification : un email court (nom, SIREN, objet sur une ligne) à `ADMIN_EMAILS`, à défaut à
+    l'adresse de contact d'Adjugo ; 30 par jour au plus, un par profil et par heure, envoi dans un
+    fil séparé (jamais bloquant). La liste de l'administration reste la référence ;
+  - un SIRET modifié dans le profil entreprise retire la publication et la validation. Une identité
+    validée pour le SIREN actuel permet de republier sans nouvelle demande après un retrait ;
+  - « un seul profil publié par SIREN » est garanti par la base : index unique partiel
+    `uq_partner_profiles_siren_publie` (`siren WHERE visible`) ;
+  - badge `identite` « Identité de l'entreprise validée par Adjugo le JJ/MM/AAAA » (date réelle de
+    la décision, niveau `ok`). C'est lui qui fonde le mot « vérifiés » de l'accroche ; la pastille
+    « nom du registre SIRENE » n'est pas une preuve d'identité.
+- **Aucun oracle pour un compte non publié** (démo comprise, demande en attente comprise) :
+  l'annuaire renvoie `total: null`, n'applique aucun filtre et sert un message fixe ; « Qui me
+  complète ? » ne calcule rien sur les profils (`n_correspondants: null`) et ne retire jamais les
+  membres du réseau du repli SIRENE (la différence avec `/groupement/besoins?sirene=1` disait qui est
+  membre). Libellé du repli : « Trouvée dans le registre SIRENE — à inviter par lien », jamais « Hors
+  réseau » (l'entreprise peut être publiée et masquer le chercheur).
+- **Badge déclaratif.** « N groupements marqués déposés sur Adjugo (déclaratif) au JJ/MM », niveau
+  `info`, daté du dernier recalcul (`groupements_checked_at`) : le statut « déposé » est renseigné
+  par le chef de file, Adjugo ne voit pas le dépôt chez l'acheteur. Le compteur ne retient que les
+  groupements avec une autre organisation (s'inviter soi-même ne compte plus). **Reste (domaine B)** :
+  recalcul au marquage et à l'annulation du dépôt ; d'ici là, le badge porte la date du dernier
+  recalcul (historique, vérification, cron).
+- **Critères honnêtes.** Zone : « siège SIRENE » lu dans le registre, sinon « code postal déclaré » ;
+  département du lot supposé signalé (`departement_source: "suppose"` + avertissement) ; annuaire
+  sans département : « Aucun département choisi dans votre recherche ». Apparitions : « apparu dans
+  les recherches de N entreprise(s) ce mois-ci » (une entreprise compte une fois par mois).
+- **Process unique.** Repli SIRENE de « Qui me complète ? » : lots en parallèle (3 fils), **5 s par
+  appel** (SIRENE, puis BODACC), **budget global de 8 s** (au-delà : « Le registre SIRENE est lent à
+  répondre : relancez la recherche pour ce lot. »), recherche en erreur jamais mise en cache.
+  Lecture des profils bornée à 2 000 : **métier et département filtrés en base avant la borne**
+  (annuaire ; métier pour « Qui me complète ? » et pour le pool réseau du score de groupement) ;
+  contrôle « cette entreprise est sur le réseau » d'une invitation SIRENE par requête ciblée sur le
+  SIREN ; borne atteinte = avertissement, jamais un résultat amputé en silence. Listes de
+  `PUT /api/reseau/profil` bornées avant tout traitement (déni de service CPU). Deux invitations
+  simultanées : verrou en mémoire par (marché, entreprise). Cron : tri sur la dernière tentative
+  (`last_check_at`), jamais regardé d'abord.
+- **RGPD.** Transfert de propriété : les invitations réseau sans réponse sont réadressées au
+  nouveau propriétaire (code envoyé à l'ancienne adresse annulé). Effacement d'un compte : adresse
+  retirée par valeur des invitations réseau (jamais des invitations manuelles, données du chef de
+  file), traces dans la validation d'autres profils effacées. L'export exclut l'identifiant interne
+  de l'administrateur qui a validé.
+- **Écrans.** Statut de la demande avec bulle (i), « Demander la publication » / « Annuler la
+  demande », motif d'un refus ; vue Administration « Profils du réseau à valider » ; invitations
+  reçues « Réservée au compte propriétaire » pour les autres membres ; profil sans rôle déclaré =
+  tous les rôles ; « Chercher dans le registre SIRENE » prérempli depuis un marché ; explications
+  en bulles (i).
+- **Migration `r2s3reseauvalid`** (après `q1r2s3t4u5v6`, idempotente, SQLite et Postgres) : colonnes
+  `validation_status`, `validation_siren`, `validation_requested_at` / `_by`, `validated_at` / `_by`,
+  `validation_motif`, `last_check_at`, `groupements_checked_at`, index unique partiel. **Donnée
+  existante : tout profil publié avant cette révision repasse « en attente de validation » (non
+  visible) ; rien n'est supprimé.** Les profils concernés sont à valider depuis l'administration
+  juste après la mise en production.
+
 ## Vision en une phrase
 
 Adjugo devient le seul outil où une PME voit en un coup d'œil « seul 54 % → avec Le Gall Électricité 81 % », monte le groupement en cinq minutes (convention générée, signée par chacun depuis son espace) et répond à plusieurs sans que personne — ni le mandataire, ni le serveur Adjugo, ni l'IA — ne voie jamais autre chose que le prix de vente de chaque lot et le total de l'offre commune.
@@ -143,7 +219,7 @@ Adjugo devient le seul outil où une PME voit en un coup d'œil « seul 54 % →
 - 5. parts_completes — toutes les parts actives soumises avec prix_lot_ht renseigné ; le mandataire voit les prix de lot, les membres ne voient pas encore le total ; sortie : « Figer l'offre et générer la convention »
 - 6. convention_a_signer — total_offre_ht figé et révélé à tous les membres, convention générée (content_hash unique, annexe de répartition visible par tous les signataires), signatures en attente depuis chaque espace ; toute part modifiée après génération ⇒ convention 'perimee' → retour en 5
 - 7. pret_a_deposer — convention signée par tous (ou hors_ligne coché), grille du coffre croisé entièrement verte à la date limite (aucune attestation manquante ni expirant avant), CERFA DC1/DC2/ATTRI1 générés ; % prêt = 100
-- 8. depose — project.status = envoye (puis gagne/perdu, hors périmètre) ; composition figée, groupements_deposes des profils réseau incrémenté, journal clos. ÉTAT DÉRIVÉ par groupement_state(project, db), jamais stocké.
+- 8. depose — project.status = envoye (puis gagne/perdu, hors périmètre) ; composition figée, compteur groupements_deposes des profils réseau recalculé (déclaratif : « marqués déposés sur Adjugo », groupements avec une autre organisation seulement), journal clos. ÉTAT DÉRIVÉ par groupement_state(project, db), jamais stocké.
 
 ## Modèle de données consolidé
 
@@ -205,6 +281,8 @@ id ; convention_id FK idx ; project_id ; owner_id ; invite_id FK NULL (NULL = ma
 
 id ; user_id FK UNIQUE (= data_owner_id : 1 profil par organisation) ; visible BOOL default false ; name ; siren idx ; siret ; postal_code ; city ; departement ; metiers JSON (clés TRADES) ; codes_cpv JSON ; departements JSON ; roles_acceptes JSON ; disponibilite ; dispo_jusqua ; lot_max_eur ; presentation String(300) (UI : « présentation en une phrase », pas « pitch ») ; hidden_from_sirens JSON ; verified_sirene JSON {etat, date_creation, categorie, est_rge, est_qualiopi, est_personne_physique, checked_at, source} ; verified_bodacc JSON {found, ongoing, nature, date, url, checked_at} (None = « non vérifié », absence = « aucun avis trouvé au JJ/MM ») ; verified_decp JSON {count, last_date, checked_at} (« au moins N ») ; verified_at ; groupements_deposes INT (COUNT recalculé, jamais saisi) ; last_groupement_at ; appearances_count INT + appearances_period String(7) ; is_demo BOOL ; created_at, updated_at. Fiche publique = sous-ensemble strict, jamais email/téléphone/CA/effectif exact/références/documents/résultats.
 
++ (migration r2s3reseauvalid, 11/10/2026) validation_status String(20) ('' | en_attente | validee | refusee) ; validation_siren String(9) (SIREN pour lequel l'identité a été validée : un autre SIREN = non validé) ; validation_requested_at, validation_requested_by (compte demandeur, sans clé étrangère) ; validated_at, validated_by (administrateur Adjugo) ; validation_motif String(300) (refus, affiché à l'entreprise) ; last_check_at (dernière tentative du cron ou de l'entreprise ; verified_at = dernière réussite) ; groupements_checked_at (date du dernier recalcul, affichée sur le badge) ; index UNIQUE partiel uq_partner_profiles_siren_publie (siren WHERE visible).
+
 *Sert à :* B (étape 2) : réseau opt-in vérifié, matching par lot, mise en relation 1-clic ; pool 'reseau' du simulateur A
 
 ### `audit_logs` — modifiée
@@ -238,7 +316,8 @@ details.references_requises, effectif_minimum_requis, capacites_groupement, form
 | Journal « qui a vu quoi » | complet pour son tenant (existant) | projection : entrées où invite_id = le sien + événements de groupement (convention générée/signée, offre figée, simulation retenue) ; acteur = « le mandataire » / nom d'entreprise ; SANS ip, SANS email | chaîne de hash par tenant (existant) ; vague 4 : sous-chaîne vérifiable par le membre | NON |
 | Convention de groupement (texte + annexe de répartition) | OUI | OUI, texte identique pour tous (un seul content_hash) | en clair | JAMAIS (modèle paramétré déterministe) |
 | Documents du marché (DCE) partagés | OUI | OUI si can_view_docs (existant) | tenant mandataire | OUI (analyse) |
-| Recherches réseau (qui cherche qui) | voit ses résultats | ne sait JAMAIS qu'il a été cherché ; compteur mensuel anonyme d'apparitions | audit network.match_query sur le tenant du chercheur uniquement | NON |
+| Recherches réseau (qui cherche qui) | voit ses résultats (profil publié) ; non publié : aucun nombre ni résultat filtré | ne sait JAMAIS qu'il a été cherché ; compteur mensuel anonyme d'apparitions (entreprises distinctes) | audit network.match_query sur le tenant du chercheur uniquement | NON |
+| Demande de publication d'un profil réseau (nom et email du compte, identité SIRENE, conflits de SIREN) | la sienne : statut, date, motif d'un refus ; jamais un conflit de SIREN | NON | administrateur Adjugo seulement (vue Administration, email de notification réduit au nom et au SIREN) | JAMAIS |
 | Clé de chiffrement du membre | JAMAIS | navigateur (IndexedDB) + code de récupération affiché une fois | JAMAIS (seulement sel KDF + fingerprint) | JAMAIS |
 
 ## Schéma de chiffrement (honnête)
@@ -285,10 +364,10 @@ Chiffrement PAR MEMBRE ET PAR MARCHÉ, dans le navigateur, du seul champ detail_
 
 **Objectif.** Sur un marché trop gros, la PME voit lot par lot les entreprises vérifiées (SIRENE, BODACC, RGE, dépôts réels sur Adjugo) qui la complètent, les invite d'un clic sans voir leur email, et se fait trouver sans révéler ce qu'elle vise.
 
-- Table partner_profiles (migration) ; GET/PUT /api/reseau/profil pré-rempli depuis Company + lookup_company ; POST verifier (SIRENE/BODACC/DECP, formulations honnêtes : « aucun avis trouvé au JJ/MM », « au moins N marchés dans DECP », None = « non vérifié ») ; POST publier (admin, siret 14 chiffres, etat actif < 30 j)
+- Table partner_profiles (migration) ; GET/PUT /api/reseau/profil pré-rempli depuis Company + lookup_company ; POST verifier (SIRENE/BODACC/DECP, formulations honnêtes : « aucun avis trouvé au JJ/MM », « au moins N marchés dans DECP », None = « non vérifié ») ; POST publier (admin, siret 14 chiffres, etat actif < 30 j, email confirmé) = demande de publication, validée ou refusée par un administrateur Adjugo (ajout du 11/10/2026)
 - app/services/partner_matching.py déterministe (classement 35/25/15/15/10, badges sourcés et datés) + GET /api/projects/{id}/partner-matches (≤ 3 lots SIRENE par appel, cache in-process 10 min, limiter 60/h) ; bouton « Qui me complète ? » ; RÈGLE : un seul % affiché à l'utilisateur = le score de groupement de A (score_dce) ; le barème B classe et explique (critères + sources) mais n'affiche pas de second pourcentage ; pool 'reseau' branché dans groupement_scoring
 - Mise en relation 1-clic : _create_invite factorisé (comportement inchangé), recipient rempli côté serveur et masqué, actor = company_name, source 'reseau_adjugo', attach annuaire ; invitation SIRENE hors réseau (lien à transmettre) ; 409 si invitation active existante
-- Annuaire réseau (réciprocité : « Publiez votre profil pour voir les N partenaires correspondants »), hidden_from_sirens dans les deux sens, compteur anonyme d'apparitions, GET /api/reseau/historique (COUNT réel sur invitations actives + parts soumises + projet envoyé/gagné/perdu, dans les deux sens)
+- Annuaire réseau (réciprocité : « Publiez votre profil pour voir les partenaires », sans aucun nombre pour un compte non publié depuis le 11/10/2026), hidden_from_sirens dans les deux sens, compteur anonyme d'apparitions, GET /api/reseau/historique (COUNT réel sur invitations actives + parts soumises + projet envoyé/gagné/perdu, dans les deux sens)
 - Cron POST /api/admin/run-partner-network borné (25 profils les plus anciens, timeouts courts, dépublication UNIQUEMENT sur réponse positive « cessé », jamais sur erreur) ; RGPD : partner_profiles dans export_my_data et delete_account + UPDATE project_invites SET recipient='' ; boucle de croissance suggest_profile après claim/inscription ; profils is_demo dans demo_seed
 - Front : nav « Réseau » (Mon profil partenaire / Annuaire / Mon historique), panneau « Partenaires pour ce marché » par lot, modale d'invitation, statut « a décliné »
 

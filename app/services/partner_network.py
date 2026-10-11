@@ -418,6 +418,23 @@ def find_visible(db, ctx: dict, public_id: str):
     return p
 
 
+def find_visible_by_siren(db, ctx: dict, siren: str):
+    """Le profil PUBLIÉ d'un SIREN précis (au plus un : index unique partiel), SEULEMENT s'il
+    est visible pour ce chercheur (mêmes règles que find_visible), sinon None. Requête ciblée :
+    jamais coupée par la borne de lecture de visible_profiles."""
+    from app.models import PartnerProfile
+    s = clean_siren(siren)
+    if not s:
+        return None
+    p = db.query(PartnerProfile).filter(PartnerProfile.siren == s, PartnerProfile.visible.is_(True),
+                                        PartnerProfile.is_demo.isnot(True)).order_by(PartnerProfile.id.asc()).first()
+    return find_visible(db, ctx, p.public_id) if p else None
+
+
+TRONQUE_POOL_MSG = ("Réseau Adjugo : plus de profils de ce métier que ce qu'une recherche peut parcourir, "
+                    "certains partenaires du réseau ne sont pas proposés ici.")
+
+
 # ── Compteur ANONYME d'apparitions ────────────────────────────────────────────────────
 # Dédoublonnage en mémoire (process unique) : un même chercheur ne compte qu'une fois par
 # profil et par mois (un redémarrage peut recompter une fois — limite assumée). AUCUNE trace
