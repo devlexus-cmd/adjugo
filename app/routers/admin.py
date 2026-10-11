@@ -150,3 +150,140 @@ def run_audit_anchor_endpoint(request: Request, db: Session = Depends(get_db)):
     _check_cron(request)
     from app.services.audit_anchor import run_anchor
     return run_anchor(db)
+
+
+# ── Réseau de partenaires : validation de l'identité des profils (décision fondateur) ────
+# La vérification SIRENE prouve que l'entreprise existe et est active, pas que le compte la
+# représente. Une demande de publication arrive ici ; un administrateur Adjugo (is_admin)
+# rapproche le compte (nom, email) de l'identité SIRENE, puis valide (le profil devient
+# visible) ou refuse avec un motif (affiché à l'entreprise). Un conflit de SIREN (un autre
+# profil publié ou en attente pour la même entreprise) n'est visible QUE d'ici.
+import re as _re
+from typing import Optional as _Optional
+
+from pydantic import BaseModel as _BaseModel
+
+
+class ReseauValiderIn(_BaseModel):
+    remplacer: bool = False      # retirer l'autre profil publié pour le même SIREN
+
+
+class ReseauRefuserIn(_BaseModel):
+    motif: str = ""
+
+
+_MOTIF_CTRL = _re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _require_platform_admin(user: User) -> None:
+    from app.services.demo_search import is_demo
+    if not getattr(user, "is_admin", False) or is_demo(user):
+        raise HTTPException(403, "Réservé à l'administrateur")
+
+
+def _pending_profile(db: Session, profile_id: str):
+    from app.models import PartnerProfile
+    from app.services import partner_network as pn
+    pid = str(profile_id or "").strip()
+    if not _re.fullmatch(r"[0-9a-f]{32}", pid):
+        raise HTTPException(404, "Demande introuvable.")
+    p = db.query(PartnerProfile).filter(PartnerProfile.public_id == pid).first()
+    if not p:
+        raise HTTPException(404, "Demande introuvable.")
+    if (p.validation_status or "") != pn.VALIDATION_PENDING:
+        raise HTTPException(409, {"code": "deja_traitee",
+                                  "message": "Cette demande n'est plus en attente (déjà traitée, annulée, "
+                                             "ou SIRET modifié par l'entreprise)."})
+    return p
+
+
+@router.get("/reseau/validations")
+@limiter.limit("120/hour")
+def reseau_validations(request: Request, current_user: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    """Demandes de publication en attente (les plus anciennes d'abord), avec l'identité
+    SIRENE, le nom et l'email du compte, et les conflits de SIREN."""
+    _require_platform_admin(current_user)
+    from app.services import partner_network as pn
+    return {"en_attente": pn.validation_queue(db),
+            "explication": ("Vérifiez que le compte représente bien l'entreprise : nom et adresse email du compte "
+                            "rapprochés de l'identité SIRENE (domaine de l'email, nom du dirigeant, au besoin un "
+                            "appel au numéro public de l'entreprise). Valider rend la fiche visible ; refuser "
+                            "affiche votre motif à l'entreprise.")}
+
+
+@router.post("/reseau/validations/{profile_id}/valider")
+@limiter.limit("120/hour")
+def reseau_valider(request: Request, profile_id: str, body: _Optional[ReseauValiderIn] = None,
+                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_platform_admin(current_user)
+    from app.services import audit
+    from app.services import partner_network as pn
+    p = _pending_profile(db, profile_id)
+    vs = p.verified_sirene if isinstance(p.verified_sirene, dict) else {}
+    if not p.siren or vs.get("etat") != "actif":
+        raise HTTPException(409, {"code": "verification_requise",
+                                  "message": "L'entreprise n'est pas (ou plus) vérifiée active dans SIRENE : "
+                                             "refusez la demande avec un motif, ou attendez une nouvelle vérification."})
+    conflits = [o for o in pn.siren_conflicts(db, p) if o.visible]
+    if conflits and not (body and body.remplacer):
+        raise HTTPException(409, {"code": "conflit_siren",
+                                  "message": "Un autre profil est déjà publié pour ce SIREN. Validez avec « Remplacer » "
+                                             "pour le retirer du réseau, ou refusez cette demande.",
+                                  "conflits": [{"profile_id": o.public_id, "name": o.name or ""} for o in conflits]})
+    now = pn.utcnow_naive()
+    retires = []
+    for o in conflits:
+        o.visible = False
+        o.validation_status = pn.VALIDATION_REFUSED
+        o.validation_siren = ""
+        o.validated_at = now
+        o.validated_by = current_user.id
+        o.validation_motif = ("Fiche retirée : après vérification, Adjugo a attribué cette entreprise à un autre "
+                              "compte. Contactez-nous si c'est une erreur.")
+        retires.append((o.id, o.user_id))
+    db.flush()          # retirer d'abord l'autre fiche (index unique « un profil publié par SIREN »)
+    p.validation_status = pn.VALIDATION_OK
+    p.validation_siren = p.siren
+    p.validated_at = now
+    p.validated_by = current_user.id
+    p.validation_motif = ""
+    if not pn.publish_validated(db, p, now):
+        raise HTTPException(409, {"code": "conflit_siren",
+                                  "message": "Un autre profil vient d'être publié pour ce SIREN : rechargez la liste."})
+    db.refresh(p)
+    for oid, ouid in retires:
+        audit.record(db, action="network.profile_unpublished", owner_id=ouid, actor="adjugo", actor_kind="system",
+                     target_type="partner_profile", target_id=oid,
+                     detail="retiré par Adjugo : entreprise attribuée à un autre compte après vérification")
+    audit.record(db, action="network.profile_validated", owner_id=p.user_id, actor="adjugo", actor_kind="system",
+                 target_type="partner_profile", target_id=p.id,
+                 detail="identité validée par Adjugo : profil publié")
+    return {"ok": True, "message": "Profil validé : il est maintenant visible dans le réseau.",
+            "profile_id": p.public_id, "retires": len(retires)}
+
+
+@router.post("/reseau/validations/{profile_id}/refuser")
+@limiter.limit("120/hour")
+def reseau_refuser(request: Request, profile_id: str, body: ReseauRefuserIn,
+                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_platform_admin(current_user)
+    from app.services import audit
+    from app.services import partner_network as pn
+    motif = _MOTIF_CTRL.sub("", body.motif or "").strip()
+    if len(motif) < 5:
+        raise HTTPException(422, "Indiquez le motif du refus (il sera affiché à l'entreprise).")
+    if len(motif) > 300:
+        raise HTTPException(422, "Motif trop long : 300 caractères au plus.")
+    p = _pending_profile(db, profile_id)
+    p.visible = False
+    p.validation_status = pn.VALIDATION_REFUSED
+    p.validation_siren = ""
+    p.validated_at = pn.utcnow_naive()
+    p.validated_by = current_user.id
+    p.validation_motif = motif
+    db.commit()
+    audit.record(db, action="network.profile_refused", owner_id=p.user_id, actor="adjugo", actor_kind="system",
+                 target_type="partner_profile", target_id=p.id, detail="publication refusée par Adjugo")
+    return {"ok": True, "message": "Demande refusée : l'entreprise voit votre motif sur son profil.",
+            "profile_id": p.public_id}

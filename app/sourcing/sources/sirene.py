@@ -46,8 +46,13 @@ _EFFECTIF = {"NN": None, "00": 0, "01": 2, "02": 4, "03": 8, "11": 15, "12": 30,
 class SireneSource(CompanySource):
     name = "SIRENE"
 
+    def __init__(self, timeout: float = 12):
+        # Délai HTTP par appel (12 s par défaut, inchangé). « Qui me complète ? » (réseau de
+        # partenaires) passe un délai court : process unique, jamais d'attente longue.
+        self.timeout = timeout
+
     def _get(self, params: dict) -> list[dict]:
-        with httpx.Client(timeout=12, headers={"User-Agent": "AdjugoBot/1.0"}) as c:
+        with httpx.Client(timeout=self.timeout, headers={"User-Agent": "AdjugoBot/1.0"}) as c:
             r = c.get(API, params=params)
             r.raise_for_status()
             return r.json().get("results", [])

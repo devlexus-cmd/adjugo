@@ -6,8 +6,9 @@ Invariants vérifiés :
 - formulations honnêtes et datées (BODACC « aucun avis trouvé au JJ/MM », DECP « au moins N »,
   None = « non vérifié ») ; une erreur réseau ne remplace jamais une vérification réussie ;
 - opt-in : visible = false par défaut ; publication = admin + SIRET 14 chiffres + vérification
-  SIRENE active de moins de 30 jours ; un seul profil publié par SIREN ;
-- réciprocité (« Publiez votre profil pour voir les N partenaires correspondants ») ;
+  SIRENE active de moins de 30 jours + VALIDATION de l'identité par Adjugo ; un seul profil
+  publié par SIREN (index unique, conflit traité par l'administrateur, jamais révélé) ;
+- réciprocité SANS oracle : un compte non publié ne reçoit que l'invitation à publier ;
 - hidden_from_sirens dans les deux sens ; compteur d'apparitions ANONYME ;
 - mise en relation en 1 clic : email rempli côté serveur, MASQUÉ au chef de file tant que le
   partenaire n'a pas répondu, lien jamais remis au chef de file, 409 si déjà invité ;
@@ -89,6 +90,9 @@ def reg(monkeypatch):
     monkeypatch.setattr(R, "_sirene_fallback", _fallback)
     for d in (pn._APPEAR_SEEN, pn._QUOTA, R._VERIFY_LAST, R._LOOKUP_CACHE):
         d.clear()
+    pn._ADMIN_NOTIFY.update({"day": "", "n": 0, "last": {}})
+    fake.admin_mails = []
+    monkeypatch.setattr(pn, "_send_async", lambda m: fake.admin_mails.extend(m))
     return fake
 
 
@@ -150,8 +154,41 @@ def _publish(client, reg, org, metiers=("electricite",), deps=("29",), roles=("c
     assert r.status_code == 200, r.text
     r = client.post("/api/reseau/profil/publier", headers=org["headers"], json={"accepte": True})
     assert r.status_code == 200, r.text
-    assert r.json()["visible"] is True
-    return r.json()["profile_id"]
+    # Demande de publication → en attente de validation par Adjugo, puis validée (admin).
+    assert r.json()["visible"] is False and r.json()["statut"] == "en_attente", r.json()
+    pid = r.json()["profile_id"]
+    _validate(client, pid)
+    assert client.get("/api/reseau/profil", headers=org["headers"]).json()["visible"] is True
+    return pid
+
+
+_ADMIN = {}
+
+
+def _admin_headers(client):
+    """Compte administrateur Adjugo (User.is_admin) : valide les demandes de publication."""
+    if not _ADMIN:
+        email = f"admin_{uuid.uuid4().hex[:8]}@adjugo-test.fr"
+        r = client.post("/api/auth/register", json={"email": email, "password": "motdepasse123",
+                                                    "full_name": "Équipe Adjugo", "company_name": "Adjugo"})
+        assert r.status_code == 201, r.text
+        from app.models import User
+        db = _db()
+        try:
+            u = db.query(User).filter(User.email == email).first()
+            u.is_admin, u.email_verified = True, True
+            db.commit()
+        finally:
+            db.close()
+        _ADMIN["h"] = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    return _ADMIN["h"]
+
+
+def _validate(client, profile_id, **body):
+    r = client.post(f"/api/admin/reseau/validations/{profile_id}/valider", headers=_admin_headers(client),
+                    json=body or {})
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
 def _project(client, org, allotissement="Lot 1 : Couverture ; Lot 2 : Électricité ; Lot 3 : Plomberie ; "
@@ -388,15 +425,24 @@ def test_publication_conditions(client, reg):
     assert r.status_code == 403 and "administrateur" in r.text
     assert client.put("/api/reseau/profil", headers=mh, json={"presentation": "x"}).status_code == 403
     assert client.get("/api/reseau/profil", headers=mh).status_code == 200       # lecture : tous les membres
-    # Succès.
+    # Succès : demande envoyée, en attente de validation par Adjugo (pas encore visible).
     r = client.post("/api/reseau/profil/publier", headers=h, json={"accepte": True})
-    assert r.status_code == 200 and r.json()["visible"] is True and r.json()["statut"] == "publie"
-    # Même SIREN sur une autre organisation : un seul profil publié par entreprise.
+    assert r.status_code == 200 and r.json()["visible"] is False and r.json()["statut"] == "en_attente"
+    _validate(client, r.json()["profile_id"])
+    r = client.get("/api/reseau/profil", headers=h)
+    assert r.json()["visible"] is True and r.json()["statut"] == "publie"
+    # Même SIREN sur une autre organisation : la demande part chez Adjugo (aucune réponse ne
+    # révèle qu'un autre profil existe pour ce SIREN) ; le conflit est traité par l'administrateur.
     twin = _org(client, "Kerjean bis", siren=org["siren"])
     client.put("/api/reseau/profil", headers=twin["headers"], json={"metiers": ["menuiserie"], "departements": ["29"]})
     assert client.post("/api/reseau/profil/verifier", headers=twin["headers"]).status_code == 200
+    v = client.get("/api/reseau/profil", headers=twin["headers"]).json()
+    assert "unique" not in {c["key"] for c in v["publication"]["conditions"]}
     r = client.post("/api/reseau/profil/publier", headers=twin["headers"], json={"accepte": True})
-    assert r.status_code == 409 and r.json()["detail"]["code"] == "siren_deja_publie"
+    assert r.status_code == 200 and r.json()["statut"] == "en_attente"
+    r = client.post(f"/api/admin/reseau/validations/{r.json()['profile_id']}/valider",
+                    headers=_admin_headers(client), json={})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "conflit_siren"
     # Entreprise cessée → publication impossible.
     ce = _org(client, "Ancienne SARL")
     client.put("/api/reseau/profil", headers=ce["headers"], json={"metiers": ["peinture"], "departements": ["29"]})
@@ -404,9 +450,11 @@ def test_publication_conditions(client, reg):
     client.post("/api/reseau/profil/verifier", headers=ce["headers"])
     r = client.post("/api/reseau/profil/publier", headers=ce["headers"], json={"accepte": True})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "entreprise_inactive"
-    # Retrait de la publication.
+    # Retrait de la publication, puis republication immédiate (identité déjà validée pour ce SIREN).
     r = client.delete("/api/reseau/profil/publier", headers=h)
     assert r.status_code == 200 and r.json()["visible"] is False and r.json()["statut"] == "retire"
+    r = client.post("/api/reseau/profil/publier", headers=h, json={"accepte": True})
+    assert r.status_code == 200 and r.json()["visible"] is True and r.json()["statut"] == "publie"
 
 
 # ── 3. Réciprocité, masquage dans les deux sens, compteur anonyme ─────────────────────
@@ -417,9 +465,8 @@ def test_reciprocite_annuaire_et_fiche(client, reg):
     r = client.get("/api/reseau/annuaire?metier=electricite&departement=29", headers=a["headers"])
     assert r.status_code == 200, r.text
     v = r.json()
-    assert v["visible"] is False and v["profils"] == [] and v["total"] >= 1
-    assert re.fullmatch(r"Publiez votre profil pour voir (le partenaire correspondant|les \d+ partenaires correspondants)\.",
-                        v["message"]), v["message"]
+    assert v["visible"] is False and v["profils"] == [] and v["total"] is None
+    assert v["message"].startswith("Publiez votre profil partenaire") and not re.search(r"\d", v["message"])
     r = client.get(f"/api/reseau/annuaire/{b_pid}", headers=a["headers"])
     assert r.status_code == 403 and r.json()["detail"]["code"] == "profil_non_publie"
     assert _profile_row(b["id"]).appearances_count == 0              # le teaser ne compte pas
@@ -499,19 +546,20 @@ def test_partner_matches_par_lot_sans_second_pourcentage(client, reg):
     reg.sirene_pool["plomberie"] = [{"name": "PLOMBERIE DU FINISTERE", "siret": "55544433300011",
                                      "city": "BREST", "departement": "29", "specialites": "Plomberie / CVC",
                                      "qualifications": ["RGE (registre ADEME)"], "as_of": date.today().isoformat()}]
-    # Non publié : seulement un compteur et le repli SIRENE.
+    # Non publié : aucun compteur, seulement l'invitation à publier et le repli SIRENE.
     r = client.get(f"/api/projects/{pid}/partner-matches", headers=a["headers"])
     assert r.status_code == 200, r.text
     v = r.json()
-    assert v["reseau_visible"] is False and v["n_correspondants"] >= 1
-    assert v["message"].startswith("Publiez votre profil pour voir")
+    assert v["reseau_visible"] is False and v["n_correspondants"] is None
+    assert v["message"].startswith("Publiez votre profil partenaire")
+    assert all(l["n_correspondants"] is None for l in v["lots"])
     lots = {l["num"]: l for l in v["lots"]}
     assert set(lots) == {"2", "3", "4", "5"}                         # lot 1 (couverture) couvert
     assert [l["num"] for l in v["lots_couverts"]] == ["1"]
     assert all(l["reseau"] == [] for l in v["lots"])
     assert len(reg.fallback_calls) == 3                              # ≤ 3 lots SIRENE par appel
     assert "sirene_message" in lots["5"] and lots["5"]["sirene_cherche"] is False
-    assert lots["3"]["sirene"][0]["statut_reseau"] == "Hors réseau Adjugo — à inviter par lien"
+    assert lots["3"]["sirene"][0]["statut_reseau"] == "Trouvée dans le registre SIRENE — à inviter par lien"
     assert _profile_row(b["id"]).appearances_count == 0
     # Publié : profils classés par lot.
     _publish(client, reg, a, metiers=("couverture",))
@@ -752,9 +800,12 @@ def test_historique_comptes_reels_dans_les_deux_sens(client, reg, mails):
     assert hb["groupements_deposes"] == 1 and _profile_row(b["id"]).groupements_deposes == 1
     avec = client.get(f"/api/reseau/historique?profile_id={b_pid}", headers=a["headers"]).json()["avec"]
     assert avec["marches_deposes"] == 1 and avec["parts_soumises"] == 1
-    # Badge « groupement déposé via Adjugo » (dépôt réel) sur la fiche de B.
+    # Badge « marqué déposé sur Adjugo (déclaratif) », daté, niveau info (jamais « vérifié »).
     fiche = client.get(f"/api/reseau/annuaire/{b_pid}", headers=a["headers"]).json()
-    assert any(x["key"] == "adjugo" and x["label"] == "1 groupement déposé via Adjugo" for x in fiche["badges"])
+    bd = next(x for x in fiche["badges"] if x["key"] == "adjugo")
+    assert bd["label"].startswith("1 groupement marqué déposé sur Adjugo (déclaratif) au ")
+    assert bd["niveau"] == "info" and bd["date"] == date.today().isoformat()
+    assert "chef de file" in bd["source"]
     # COUNT seulement : aucun nom de marché, aucune adresse.
     for h in (ha, hb, avec):
         s = json.dumps(h, ensure_ascii=False)
@@ -800,6 +851,7 @@ def test_cron_borne_et_jamais_de_depublication_sur_erreur(client, reg, monkeypat
     try:
         p = db.query(PartnerProfile).filter(PartnerProfile.user_id == b["id"]).first()
         p.verified_at = datetime(2000, 1, 1)
+        p.last_check_at = datetime(2000, 1, 1)     # dernier passage du cron : le plus ancien
         db.commit()
     finally:
         db.close()

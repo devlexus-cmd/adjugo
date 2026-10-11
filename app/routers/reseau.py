@@ -5,8 +5,9 @@ Réseau de partenaires Adjugo — routes de la vague 3 (co-traitance v2, innovat
   PUT    /api/reseau/profil                    — enregistrer les capacités déclarées (admin)
   DELETE /api/reseau/profil                    — effacer le profil (admin, RGPD)
   POST   /api/reseau/profil/verifier           — vérifier SIRENE / BODACC / DECP (admin)
-  POST   /api/reseau/profil/publier            — publier dans le réseau (admin, conditions)
-  DELETE /api/reseau/profil/publier            — retirer la publication (admin)
+  POST   /api/reseau/profil/publier            — demander la publication (admin, conditions) :
+                                                 validation de l'identité par Adjugo, puis visible
+  DELETE /api/reseau/profil/publier            — retirer la publication ou annuler la demande (admin)
   GET    /api/reseau/annuaire                  — annuaire (réciprocité : profil publié requis)
   GET    /api/reseau/annuaire/{profile_id}     — fiche publique d'un partenaire
   GET    /api/reseau/historique                — COUNT réels, dans les deux sens
@@ -20,6 +21,8 @@ des CRITÈRES sourcés et datés. Fiche publique = sous-ensemble strict (jamais 
 CA, effectif exact, documents, résultats). L'email d'un partenaire réseau est rempli côté
 serveur et MASQUÉ au chef de file tant que le partenaire n'a pas répondu. Un profil ne sait
 jamais qui l'a cherché. Aucun profil de démonstration. 0 LLM.
+Compte NON publié (démo comprise) : aucun compteur, aucun résultat filtré, aucun repli SIRENE
+amputé des membres du réseau — seulement l'invitation à publier (pas d'oracle d'appartenance).
 """
 import logging
 import re
@@ -50,10 +53,27 @@ _settings = get_settings()
 _DEMO_MSG = "La démo est en lecture guidée : créez votre compte gratuit pour rejoindre le réseau de partenaires."
 _NOT_PUBLISHED = {"code": "profil_non_publie",
                   "message": "Publiez votre profil partenaire pour voir les fiches et inviter les entreprises du réseau."}
+# Message UNIQUE servi à un compte non publié (annuaire, « Qui me complète ? ») : aucun nombre,
+# aucun résultat dépendant des filtres (sinon l'annuaire dirait qui est inscrit).
+_INVITE_PUBLIER = ("Publiez votre profil partenaire pour voir les entreprises du réseau Adjugo "
+                   "qui correspondent, et pour être trouvé par elles.")
+_EN_ATTENTE_MSG = ("Votre profil est en attente de validation par Adjugo : vous verrez les entreprises "
+                   "du réseau dès qu'il sera publié.")
+_SIRENE_LABEL = "Trouvée dans le registre SIRENE — à inviter par lien"
 _NOT_FOUND = "Partenaire introuvable dans le réseau."
 NETWORK_INVITES_PER_PROFILE_DAY = 10     # invitations réseau reçues par un même profil / 24 h
 MAX_LOTS = 8
 MAX_SIRENE_LOTS = 3
+SIRENE_BUDGET_S = 8.0                    # budget GLOBAL du repli SIRENE de « Qui me complète ? »
+SIRENE_CALL_TIMEOUT_S = 5.0              # délai PAR APPEL HTTP de ce repli (SIRENE, BODACC)
+# Bornes des listes reçues par PUT /profil, vérifiées AVANT tout traitement (corps de 2 Mo =
+# ~160 000 éléments : un dédoublonnage sur liste bloquait l'unique worker plusieurs minutes).
+RAW_LIST_MAX = {"metiers": 60, "codes_cpv": 100, "departements": 120, "roles_acceptes": 10,
+                "references_publiques": 50, "hidden_from_sirens": 300}
+# Libellés français des listes (le message 422 ne montre jamais un nom de champ interne).
+RAW_LIST_LABELS = {"metiers": "métiers", "codes_cpv": "codes CPV", "departements": "départements",
+                   "roles_acceptes": "rôles acceptés", "references_publiques": "références publiques",
+                   "hidden_from_sirens": "entreprises masquées"}
 DAILY_MATCH_CAP = 200                    # par organisation (en plus du limiter par IP)
 DAILY_ANNUAIRE_CAP = 300
 
@@ -208,20 +228,20 @@ def _options() -> dict:
     }
 
 
-def _conditions(db: Session, p: Optional[PartnerProfile], siret: str) -> list:
+def _conditions(db: Session, p: Optional[PartnerProfile], siret: str, user: User = None) -> list:
+    """Conditions à remplir AVANT la demande de publication. Aucune ne dépend des AUTRES
+    profils (« un seul profil publié par SIREN » révélait qu'une entreprise est inscrite) :
+    un éventuel conflit de SIREN est traité par l'administrateur Adjugo."""
     vs = (p.verified_sirene if p and isinstance(p.verified_sirene, dict) else {}) or {}
     age = pn.verification_age_days(p) if p else None
-    other = None
-    if p and p.siren:
-        other = db.query(PartnerProfile.id).filter(PartnerProfile.siren == p.siren, PartnerProfile.visible.is_(True),
-                                                   PartnerProfile.id != p.id).first()
     return [
         {"key": "siret", "label": "SIRET à 14 chiffres renseigné dans le profil entreprise", "ok": bool(siret)},
         {"key": "verification", "label": f"Entreprise vérifiée active dans SIRENE il y a moins de {pn.PUBLISH_MAX_AGE_DAYS} jours",
          "ok": bool(vs.get("etat") == "actif" and age is not None and age < pn.PUBLISH_MAX_AGE_DAYS)},
         {"key": "metiers", "label": "Au moins un métier", "ok": bool(p and p.metiers)},
         {"key": "zones", "label": "Au moins un département d'intervention", "ok": bool(p and p.departements)},
-        {"key": "unique", "label": "Aucun autre profil publié pour la même entreprise (SIREN)", "ok": other is None},
+        {"key": "email", "label": "Adresse email de votre compte confirmée",
+         "ok": bool(user is not None and getattr(user, "email_verified", False))},
     ]
 
 
@@ -230,6 +250,10 @@ def _status(p: Optional[PartnerProfile]) -> tuple:
         return "aucun", "Pas encore créé"
     if p.visible:
         return "publie", "Publié dans le réseau Adjugo"
+    if (p.validation_status or "") == pn.VALIDATION_PENDING:
+        return "en_attente", "En attente de validation par Adjugo"
+    if (p.validation_status or "") == pn.VALIDATION_REFUSED:
+        return "refuse", "Publication refusée par Adjugo"
     vs = p.verified_sirene if isinstance(p.verified_sirene, dict) else {}
     if p.published_at and vs.get("etat") == "cesse":
         return "retire", "Retiré du réseau : SIRENE indique que l'entreprise a cessé son activité"
@@ -247,6 +271,22 @@ def _verifs(p: Optional[PartnerProfile]) -> dict:
             "decp": {"label": pm.decp_label(vd), "count": (vd or {}).get("count"), "checked_at": (vd or {}).get("checked_at")},
             "verified_at": p.verified_at.isoformat() if p and p.verified_at else None,
             "age_jours": pn.verification_age_days(p) if p else None}
+
+
+_VALIDATION_EXPLICATION = ("Adjugo vérifie que chaque entreprise du réseau est bien celle qu'elle dit être : "
+                           "le registre SIRENE prouve que l'entreprise existe, pas que votre compte la représente. "
+                           "Un membre de l'équipe Adjugo rapproche votre compte de l'entreprise avant de rendre "
+                           "la fiche visible. Si vous changez de SIRET, une nouvelle validation est nécessaire.")
+
+
+def _validation_view(p: Optional[PartnerProfile]) -> dict:
+    st = (p.validation_status or "") if p else ""
+    return {"statut": st or None,
+            "identite_validee": pn.identity_validated(p) if p else False,
+            "demande_le": p.validation_requested_at.isoformat() if p and p.validation_requested_at else None,
+            "decide_le": p.validated_at.isoformat() if p and p.validated_at else None,
+            "motif": (p.validation_motif or "") if p and st == pn.VALIDATION_REFUSED else "",
+            "explication": _VALIDATION_EXPLICATION}
 
 
 def _profile_view(db: Session, user: User, p: Optional[PartnerProfile], owner_id: int, message: str = None) -> dict:
@@ -275,8 +315,9 @@ def _profile_view(db: Session, user: User, p: Optional[PartnerProfile], owner_id
         ident = {"name": pre["name"], "siren": pre["siren"], "siret": pre["siret"], "city": pre["city"],
                  "postal_code": pre["postal_code"], "departement": pre["departement"], "nom_officiel": False}
         card = None
-    conds = _conditions(db, p, siret)
+    conds = _conditions(db, p, siret, user)
     n_app = pn.appearances_this_month(p) if p else 0
+    pending = bool(p and (p.validation_status or "") == pn.VALIDATION_PENDING)
     out = {
         "exists": p is not None,
         "profile_id": p.public_id if p else None,
@@ -288,11 +329,16 @@ def _profile_view(db: Session, user: User, p: Optional[PartnerProfile], owner_id
         "verifications": _verifs(p),
         "badges": pm.badges(pn.profile_dict(p)) if p else [],
         "apercu_fiche": card,
-        "publication": {"peut_publier": all(c["ok"] for c in conds) and p is not None, "conditions": conds,
+        "publication": {"peut_publier": all(c["ok"] for c in conds) and p is not None and not pending
+                                        and not (p and p.visible),
+                        "conditions": conds,
                         "published_at": p.published_at.isoformat() if p and p.published_at else None},
+        "validation": _validation_view(p),
         "apparitions_ce_mois": n_app,
-        "apparitions_label": (f"Votre profil est apparu dans {n_app} recherche{'s' if n_app > 1 else ''} ce mois-ci. "
-                              "Vous ne savez pas qui a cherché, et personne ne sait qui vous a vu."),
+        "apparitions_label": (f"Votre profil est apparu dans les recherches de {n_app} "
+                              f"entreprise{'s' if n_app > 1 else ''} ce mois-ci (une entreprise compte une fois "
+                              "par mois, même si elle cherche plusieurs fois). Vous ne savez pas qui a cherché, "
+                              "et personne ne sait qui vous a vu."),
         "groupements_deposes": int(p.groupements_deposes or 0) if p else 0,
         "peut_modifier": _is_org_admin(user, db),
         "options": _options(),
@@ -335,23 +381,10 @@ def _clean_text(s, n: int) -> str:
 
 
 def _sync_identity(db: Session, p: PartnerProfile, owner_id: int, user: User) -> Optional[str]:
-    """Le SIRET vient du profil entreprise (source unique). S'il change : vérifications
-    remises à zéro et publication retirée (identité à re-vérifier). Renvoie un message."""
+    """Le SIRET vient du profil entreprise (source unique). S'il change : vérifications,
+    publication ET validation Adjugo remises à zéro (pn.sync_siret). Renvoie un message."""
     comp = _company(db, owner_id)
-    siret = pn.clean_siret(comp.siret if comp else "")
-    msg = None
-    if (p.siret or "") != siret:
-        was_visible = bool(p.visible)
-        if p.siret:
-            p.verified_sirene = None
-            p.verified_bodacc = None
-            p.verified_decp = None
-            p.verified_at = None
-            p.visible = False
-            msg = ("Le SIRET de votre profil entreprise a changé : vérifiez à nouveau votre entreprise"
-                   + (" avant de republier (publication retirée)." if was_visible else "."))
-        p.siret = siret
-        p.siren = siret[:9] if siret else ""
+    msg = pn.sync_siret(p, comp.siret if comp else "")
     official = isinstance(p.verified_sirene, dict) and bool(p.verified_sirene.get("nom"))
     if not official:      # tant que SIRENE n'a pas donné le nom officiel : nom du profil entreprise
         p.name = ((comp.name if comp else "") or p.name or "")[:255]
@@ -375,6 +408,10 @@ def put_profil(request: Request, body: ProfilIn, current_user: User = Depends(ge
     fields = body.model_fields_set
     upd = {}
     # ── Validation (messages en français, 422) ──
+    for key, cap in RAW_LIST_MAX.items():
+        raw = getattr(body, key, None)
+        if key in fields and raw is not None and len(raw) > cap:
+            raise HTTPException(422, f"Liste trop longue ({RAW_LIST_LABELS[key]}) : {cap} éléments au plus.")
     if "metiers" in fields:
         keys = _trade_keys()
         vals = [str(m).strip() for m in (body.metiers or []) if str(m).strip()]
@@ -389,12 +426,13 @@ def put_profil(request: Request, body: ProfilIn, current_user: User = Depends(ge
         upd["codes_cpv"] = sorted(set(vals))[:pn.MAX_CPV]
     if "departements" in fields:
         raw = [str(d).strip() for d in (body.departements or []) if str(d).strip()]
-        vals = []
+        vals, seen = [], set()
         for d in raw:
             n = _norm_dep(d)
             if not n:
                 raise HTTPException(422, "Département invalide : indiquez un numéro (ex. 29, 2A, 974).")
-            if n not in vals:
+            if n not in seen:
+                seen.add(n)
                 vals.append(n)
         if len(vals) > pn.MAX_DEPARTEMENTS:
             raise HTTPException(422, f"Au plus {pn.MAX_DEPARTEMENTS} départements.")
@@ -433,7 +471,7 @@ def put_profil(request: Request, body: ProfilIn, current_user: User = Depends(ge
             if annee not in (None, ""):
                 try:
                     annee = int(annee)
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):     # 1e400, Infinity → 422, pas 500
                     raise HTTPException(422, "Année de référence invalide.")
                 if not (1990 <= annee <= _today().year):
                     raise HTTPException(422, "Année de référence invalide.")
@@ -444,15 +482,16 @@ def put_profil(request: Request, body: ProfilIn, current_user: User = Depends(ge
             raise HTTPException(422, f"Au plus {pn.MAX_REFERENCES} références publiques.")
         upd["references_publiques"] = refs
     if "hidden_from_sirens" in fields:
-        vals = []
+        vals, seen = [], set()
         for s in (body.hidden_from_sirens or []):
             sir = pn.clean_siren(s)
             if not sir:
                 raise HTTPException(422, "SIREN invalide dans la liste de masquage (9 chiffres, ou SIRET à 14 chiffres).")
-            if sir not in vals:
+            if sir not in seen:
+                seen.add(sir)
                 vals.append(sir)
-        if len(vals) > pn.MAX_HIDDEN:
-            raise HTTPException(422, f"Au plus {pn.MAX_HIDDEN} entreprises masquées.")
+                if len(seen) > pn.MAX_HIDDEN:
+                    raise HTTPException(422, f"Au plus {pn.MAX_HIDDEN} entreprises masquées.")
         upd["hidden_from_sirens"] = vals
 
     p = pn.own_profile(db, owner)
@@ -543,6 +582,7 @@ def verifier(request: Request, current_user: User = Depends(get_current_user), d
         if len(_VERIFY_LAST) > 20000:
             _VERIFY_LAST.clear()
     now = pn.utcnow_naive()
+    p.last_check_at = now          # le cron passe d'abord aux profils regardés il y a longtemps
     res = pn.run_checks(p.siren, now)
     summary = pn.apply_checks(p, res, now)
     pn.recompute_groupements(db, p)
@@ -568,6 +608,10 @@ class PublierIn(BaseModel):
 @limiter.limit("20/hour")
 def publier(request: Request, body: PublierIn = None, current_user: User = Depends(get_current_user),
             db: Session = Depends(get_db)):
+    """Demande de publication. Conditions remplies → « en attente de validation par Adjugo »
+    (un administrateur Adjugo vérifie que le compte représente bien l'entreprise), puis
+    visible. Identité déjà validée pour ce SIREN (republication après un retrait) → publiée
+    tout de suite. Aucune réponse ne dit si une autre organisation a un profil pour ce SIREN."""
     _refuse_demo(current_user)
     _require_admin(current_user, db)
     owner = data_owner_id(current_user, db)
@@ -583,6 +627,10 @@ def publier(request: Request, body: PublierIn = None, current_user: User = Depen
     if not re.fullmatch(r"\d{14}", p.siret or ""):
         raise HTTPException(422, {"code": "siret_invalide",
                                   "message": "Un SIRET à 14 chiffres est requis (profil entreprise)."})
+    if not getattr(current_user, "email_verified", False):
+        raise HTTPException(403, {"code": "email_non_verifie",
+                                  "message": "Confirmez d'abord l'adresse email de votre compte (lien reçu à "
+                                             "l'inscription) pour demander la publication."})
     vs = p.verified_sirene if isinstance(p.verified_sirene, dict) else {}
     if vs.get("etat") == "cesse":
         raise HTTPException(409, {"code": "entreprise_inactive",
@@ -599,20 +647,29 @@ def publier(request: Request, body: PublierIn = None, current_user: User = Depen
         missing.append("Au moins un département d'intervention")
     if missing:
         raise HTTPException(422, {"code": "profil_incomplet", "message": "Profil incomplet.", "missing": missing})
-    other = db.query(PartnerProfile.id).filter(PartnerProfile.siren == p.siren, PartnerProfile.visible.is_(True),
-                                               PartnerProfile.id != p.id).first()
-    if other:
-        raise HTTPException(409, {"code": "siren_deja_publie",
-                                  "message": "Un profil est déjà publié pour cette entreprise (même SIREN). "
-                                             "Contactez-nous si ce n'est pas vous."})
-    p.visible = True
-    p.is_demo = False
-    p.published_at = pn.utcnow_naive()
+    if p.visible:
+        return _profile_view(db, current_user, p, owner, message="Votre profil est déjà publié.")
+    if (p.validation_status or "") == pn.VALIDATION_PENDING:
+        return _profile_view(db, current_user, p, owner,
+                             message="Votre demande est déjà en attente de validation par Adjugo.")
+    if pn.identity_validated(p):
+        # Identité déjà validée par Adjugo pour CE SIREN : republication immédiate.
+        if pn.publish_validated(db, p):
+            db.refresh(p)
+            audit.record(db, action="network.profile_published", owner_id=owner, actor=f"user:{current_user.id}",
+                         actor_kind="owner", target_type="partner_profile", target_id=p.id,
+                         ip=audit.client_ip(request))
+            return _profile_view(db, current_user, p, owner, message="Profil publié dans le réseau Adjugo.")
+        p = pn.own_profile(db, owner)        # conflit de SIREN : l'administrateur tranche
+    pn.request_validation(p, current_user.id)
     db.commit()
     db.refresh(p)
-    audit.record(db, action="network.profile_published", owner_id=owner, actor=f"user:{current_user.id}",
+    pn.notify_admins_validation(p)
+    audit.record(db, action="network.profile_validation_requested", owner_id=owner, actor=f"user:{current_user.id}",
                  actor_kind="owner", target_type="partner_profile", target_id=p.id, ip=audit.client_ip(request))
-    return _profile_view(db, current_user, p, owner, message="Profil publié dans le réseau Adjugo.")
+    return _profile_view(db, current_user, p, owner,
+                         message="Demande envoyée : Adjugo vérifie que l'entreprise est bien la vôtre avant de "
+                                 "rendre votre fiche visible. Vous la verrez publiée ici.")
 
 
 @router.delete("/api/reseau/profil/publier")
@@ -624,24 +681,31 @@ def depublier(request: Request, current_user: User = Depends(get_current_user), 
     p = pn.own_profile(db, owner)
     if not p:
         raise HTTPException(404, "Aucun profil partenaire.")
+    was_pending = (p.validation_status or "") == pn.VALIDATION_PENDING and not p.visible
     p.visible = False
+    if was_pending:
+        p.validation_status = ""
+        p.validation_requested_at = None
+        p.validation_requested_by = None
     db.commit()
     db.refresh(p)
     audit.record(db, action="network.profile_unpublished", owner_id=owner, actor=f"user:{current_user.id}",
                  actor_kind="owner", target_type="partner_profile", target_id=p.id,
-                 detail="publication retirée par l'entreprise", ip=audit.client_ip(request))
+                 detail=("demande de validation annulée par l'entreprise" if was_pending
+                         else "publication retirée par l'entreprise"), ip=audit.client_ip(request))
     return _profile_view(db, current_user, p, owner,
-                         message="Publication retirée : votre fiche n'apparaît plus dans le réseau.")
+                         message=("Demande de publication annulée." if was_pending else
+                                  "Publication retirée : votre fiche n'apparaît plus dans le réseau."))
 
 
 # ── Annuaire (réciprocité) ───────────────────────────────────────────────────────────
 
-def _teaser(n: int, scope: str = "cette recherche") -> str:
-    if n <= 0:
-        return f"Aucun partenaire du réseau Adjugo ne correspond encore à {scope}."
-    if n == 1:
-        return "Publiez votre profil pour voir le partenaire correspondant."
-    return f"Publiez votre profil pour voir les {n} partenaires correspondants."
+def _invite_publier(ctx: dict) -> str:
+    """Seul message servi à un compte NON publié : aucun nombre, rien qui dépende des filtres."""
+    prof = ctx.get("profile")
+    if prof is not None and (prof.validation_status or "") == pn.VALIDATION_PENDING and not ctx.get("is_demo"):
+        return _EN_ATTENTE_MSG
+    return _INVITE_PUBLIER
 
 
 def _my_sirets(db: Session, ids: list) -> set:
@@ -668,8 +732,18 @@ def annuaire(request: Request, metier: str = "", departement: str = "", role: st
     cpv_list = [c for c in re.split(r"[,;\s]+", cpv or "") if re.fullmatch(r"\d{8}", c)]
     page = max(1, min(int(page or 1), 500))
     par_page = max(1, min(int(par_page or 20), 50))
+    base = {"filtres": {"metier": metier, "departement": dep, "role": role, "cpv": cpv_list, "q": (q or "")[:80]},
+            "explication": pm.EXPLICATION_CLASSEMENT}
+    if not ctx["published"]:
+        # Réciprocité SANS oracle : ni total, ni filtre appliqué (q, métier, département, rôle,
+        # CPV disaient qui est inscrit et ce qu'il déclare), démo comprise.
+        return {**base, "visible": False, "total": None, "message": _invite_publier(ctx), "profils": [],
+                "page": 1, "par_page": par_page}
     today = _today()
-    profiles = pn.visible_profiles(db, ctx)
+    # Métier (sans CPV) et département filtrés EN BASE avant la borne de lecture ; _keep
+    # ci-dessous refait le filtre exact (zones normalisées, rôle, nom).
+    profiles = pn.visible_profiles(db, ctx, metiers=[metier] if (metier and not cpv_list) else None,
+                                   departement=dep)
     dicts = [pn.profile_dict(p) for p in profiles]
     by_pid = {d["public_id"]: (p, d) for p, d in zip(profiles, dicts)}
 
@@ -687,17 +761,15 @@ def annuaire(request: Request, metier: str = "", departement: str = "", role: st
     dicts = [d for d in dicts if _keep(d)]
     ranked = None
     if metier or cpv_list:
-        lot = {"metier": metier, "departement": dep, "cpv": cpv_list, "role": role or "cotraitant"}
+        lot = {"metier": metier, "departement": dep, "cpv": cpv_list, "role": role or "cotraitant",
+               "contexte": "annuaire"}
         ranked = pm.rank(lot, dicts, today, limit=len(dicts))
         total = len(ranked)
     else:
         dicts.sort(key=lambda d: (pm._fold(d["name"]), d["public_id"]))
         total = len(dicts)
-    base = {"filtres": {"metier": metier, "departement": dep, "role": role, "cpv": cpv_list, "q": q[:80]},
-            "explication": pm.EXPLICATION_CLASSEMENT}
-    if not ctx["published"]:
-        return {**base, "visible": False, "total": total, "message": _teaser(total), "profils": [],
-                "page": page, "par_page": par_page}
+    if ctx.get("tronque"):
+        base["avertissement"] = pn.TRONQUE_MSG
     start = (page - 1) * par_page
     known = _my_sirets(db, ctx["member_ids"])
     out = []
@@ -798,6 +870,10 @@ def invitations_recues(request: Request, current_user: User = Depends(get_curren
             continue
         chef = db.query(Company).filter(Company.user_id == inv.owner_id).first()
         lk = db.query(ProjectCotraitant).filter(ProjectCotraitant.invite_id == inv.id).first()
+        # Le lien d'une invitation réseau est réservé à l'adresse à laquelle Adjugo l'a envoyée
+        # (le propriétaire de l'organisation) : les autres membres la voient sans pouvoir l'accepter.
+        rcpt = (inv.recipient or "").strip().lower()
+        peut = bool(inv.accepted_by_user_id or not rcpt or rcpt == (current_user.email or "").strip().lower())
         out.append({
             "token": inv.token, "path": f"/invite/{inv.token}",
             "project": project.name, "mandataire": (chef.name if chef else "") or "",
@@ -806,6 +882,9 @@ def invitations_recues(request: Request, current_user: User = Depends(get_curren
             "recue_le": inv.created_at.isoformat() if inv.created_at else None,
             "statut": "acceptee" if inv.accepted_by_user_id else "a_repondre",
             "statut_label": "Acceptée" if inv.accepted_by_user_id else "À accepter ou décliner",
+            "peut_accepter": peut,
+            "aide": None if peut else ("Seul le compte propriétaire de votre organisation, à qui Adjugo a envoyé "
+                                       "l'invitation, peut l'accepter ou la décliner."),
         })
     return {"invitations": out}
 
@@ -823,12 +902,16 @@ def _project(project_id: int, user: User, db: Session) -> Project:
 def lots_to_complete(details: dict, company_data: dict, criteria: dict, lead: dict) -> tuple:
     """(lots à compléter, lots couverts, lots non reconnus, département d'exécution).
     Déterministe : allotissement du DCE → métier par mots-clés ; marché non alloti → métiers
-    des manques (gaps_for). Montant d'un lot = inconnu (jamais une répartition inventée)."""
+    des manques (gaps_for). Montant d'un lot = inconnu (jamais une répartition inventée).
+    Département : celui du lieu d'exécution du DCE ; à défaut celui de l'entreprise, marqué
+    SUPPOSÉ (departement_source = "suppose") pour que l'écran le dise."""
+    from app.services.dce_scoring import _dept
     from app.services.groupement_verdict import _execution_dept, scoring_module
     from app.sourcing.groupement import infer_trade, own_trades, parse_lots
     labels = pm.trade_labels()
     mine = own_trades({**pn_company_dict_from(company_data), "specialites": (criteria or {}).get("specialites", "")})
     dept = _execution_dept(details, criteria or {}, company_data or {})
+    dep_src = "dce" if _dept((details or {}).get("lieu_execution") or "") else ("suppose" if dept else "")
     lots = parse_lots(str((details or {}).get("allotissement") or ""))
     todo, covered, unknown = [], [], []
     for lot in lots:
@@ -837,7 +920,8 @@ def lots_to_complete(details: dict, company_data: dict, criteria: dict, lead: di
         if k and k in mine:
             covered.append(item)
         elif k:
-            todo.append({**item, "departement": dept, "montant": None, "role": "cotraitant", "cpv": []})
+            todo.append({**item, "departement": dept, "departement_source": dep_src, "montant": None,
+                         "role": "cotraitant", "cpv": []})
         else:
             unknown.append(item)
     if not lots:
@@ -853,8 +937,8 @@ def lots_to_complete(details: dict, company_data: dict, criteria: dict, lead: di
                 trades = []
         for t in sorted(trades):
             todo.append({"num": None, "label": f"Compétence « {labels.get(t, t)} »", "metier": t,
-                         "metier_label": labels.get(t, t), "departement": dept, "montant": None,
-                         "role": "cotraitant", "cpv": []})
+                         "metier_label": labels.get(t, t), "departement": dept, "departement_source": dep_src,
+                         "montant": None, "role": "cotraitant", "cpv": []})
     return todo, covered, unknown, dept
 
 
@@ -868,9 +952,42 @@ def pn_company_dict_from(company_data: dict) -> dict:
 
 def _sirene_fallback(trade: str, dept: str, warnings: list) -> list:
     """Repli registre SIRENE (cache in-process 10 min par (métier, département) dans
-    groupement_verdict._discover_sirene ; procédures collectives et personnes physiques exclues)."""
+    groupement_verdict._discover_sirene ; procédures collectives et personnes physiques exclues).
+    Délai court par appel HTTP (SIRENE_CALL_TIMEOUT_S), en plus du budget global du lot de
+    requêtes : un fil détaché après le budget se libère vite (process unique)."""
     from app.services.groupement_verdict import _discover_sirene
-    return _discover_sirene(trade, dept, warnings)
+    return _discover_sirene(trade, dept, warnings, timeout=SIRENE_CALL_TIMEOUT_S)
+
+
+def _sirene_batch(jobs: list, budget_s: float = None) -> dict:
+    """Repli SIRENE de plusieurs lots EN PARALLÈLE (au plus MAX_SIRENE_LOTS fils), avec un
+    budget GLOBAL : au-delà, le lot est rendu sans résultat et marqué « lent » (jamais
+    d'attente au-delà du budget sur l'unique worker ; un appel qui finit plus tard remplit
+    quand même le cache de 10 min). jobs = [(clé, métier, département)] →
+    {clé: (entreprises, avertissements, trop_lent)}."""
+    from concurrent.futures import ThreadPoolExecutor, wait
+    out = {}
+    if not jobs:
+        return out
+    budget = SIRENE_BUDGET_S if budget_s is None else budget_s
+    ex = ThreadPoolExecutor(max_workers=max(1, min(len(jobs), MAX_SIRENE_LOTS)))
+    try:
+        futs = {}
+        for key, trade, dept in jobs:
+            w: list = []
+            futs[ex.submit(_sirene_fallback, trade, dept, w)] = (key, w)
+        done, _pending = wait(futs, timeout=budget)
+        for fut, (key, w) in futs.items():
+            if fut in done:
+                try:
+                    out[key] = (list(fut.result() or []), list(w), False)
+                except Exception:
+                    out[key] = ([], list(w) + ["Recherche SIRENE indisponible pour ce lot — réessayez plus tard."], False)
+            else:
+                out[key] = ([], [], True)
+    finally:
+        ex.shutdown(wait=False)
+    return out
 
 
 def _active_invite_sirens(db: Session, project_id: int) -> tuple:
@@ -930,23 +1047,40 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
         todo = todo[:MAX_LOTS]
 
     today = _today()
-    profiles = pn.visible_profiles(db, ctx)
+    published = bool(ctx["published"])
+    for l in todo:
+        if l.get("departement_source") == "suppose" and l.get("departement"):
+            w = (f"Lieu d'exécution absent du dossier : le département retenu pour chercher des partenaires "
+                 f"est le vôtre ({l['departement']}), à vérifier.")
+            if w not in warnings:
+                warnings.append(w)
+    # Compte NON publié (démo comprise) : AUCUN calcul sur les profils du réseau — ni compteur,
+    # ni filtre du repli SIRENE (retirer les membres du réseau disait qui en fait partie).
+    if published:
+        profiles = pn.visible_profiles(db, ctx, metiers=[l["metier"] for l in todo if l.get("metier")])
+        if ctx.get("tronque"):
+            warnings.append(pn.TRONQUE_MSG)
+    else:
+        profiles = []
     dicts = [pn.profile_dict(p) for p in profiles]
     by_pid = {d["public_id"]: (p, d) for p, d in zip(profiles, dicts)}
-    network_sirens = {p.siren for p in profiles if p.siren}
     invited_profiles, invited_sirens = _active_invite_sirens(db, project.id)
     known = _my_sirets(db, ctx["member_ids"])
     matched_ids, shown = set(), set()
-    sirene_calls, out_lots = 0, []
-    for l in todo:
+    out_lots, jobs = [], []
+    for idx, l in enumerate(todo):
         lot_in = {"metier": l["metier"], "departement": l["departement"], "montant": l["montant"],
-                  "cpv": l.get("cpv") or [], "role": l.get("role") or "cotraitant"}
-        ranked_all = pm.rank(lot_in, dicts, today, limit=len(dicts))
-        matched_ids |= {r["profile_id"] for r in ranked_all}
+                  "cpv": l.get("cpv") or [], "role": l.get("role") or "cotraitant",
+                  "departement_suppose": l.get("departement_source") == "suppose"}
         entry = {"num": l["num"], "label": l["label"], "metier": l["metier"], "metier_label": l["metier_label"],
-                 "departement": l["departement"] or None, "n_correspondants": len(ranked_all),
-                 "reseau": [], "sirene": [], "sirene_cherche": False}
-        if ctx["published"]:
+                 "departement": l["departement"] or None,
+                 "departement_source": l.get("departement_source") or None,
+                 "n_correspondants": None, "reseau": [], "sirene": [], "sirene_cherche": False}
+        shown_sirens = set()
+        if published:
+            ranked_all = pm.rank(lot_in, dicts, today, limit=len(dicts))
+            matched_ids |= {r["profile_id"] for r in ranked_all}
+            entry["n_correspondants"] = len(ranked_all)
             for r in ranked_all[:5]:
                 p, d = by_pid[r["profile_id"]]
                 card = pm.public_card(d)
@@ -956,36 +1090,54 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
                              "simulation": {"kind": "reseau", "profile_id": p.public_id}})
                 entry["reseau"].append(card)
                 shown.add(p.id)
-        else:
-            entry["message"] = _teaser(len(ranked_all), "ce lot")
+                if p.siren:
+                    shown_sirens.add(p.siren)
         if len(entry["reseau"]) < 3 and l["metier"]:
-            if sirene_calls < MAX_SIRENE_LOTS:
-                sirene_calls += 1
+            if len(jobs) < MAX_SIRENE_LOTS:
+                jobs.append((idx, l["metier"], l["departement"] or ""))
                 entry["sirene_cherche"] = True
-                for m in _sirene_fallback(l["metier"], l["departement"] or "", warnings):
-                    s = pn.clean_siren(m.get("siret"))
-                    if not s or s in network_sirens or s == ctx["siren"]:
-                        continue
-                    badges = [{"key": "sirene", "label": f"Entreprise active (SIRENE au {pm.jjmm(m.get('as_of'))})",
-                               "source": pm._SOURCE_SIRENE, "date": m.get("as_of"), "niveau": "ok"}]
-                    if any("RGE" in str(q) for q in (m.get("qualifications") or [])):
-                        badges.append({"key": "rge", "label": f"Inscrite au registre RGE (ADEME) au {pm.jjmm(m.get('as_of'))} — domaine à vérifier",
-                                       "source": pm._SOURCE_RGE, "date": m.get("as_of"), "niveau": "info"})
-                    entry["sirene"].append({
-                        "name": m.get("name") or "", "siret": m.get("siret") or "", "siren": s,
-                        "city": m.get("city") or "", "departement": m.get("departement") or "",
-                        "activite": m.get("specialites") or "", "badges": badges,
-                        "statut_reseau": "Hors réseau Adjugo — à inviter par lien",
-                        "deja_invite": s in invited_sirens, "deja_partenaire": s in known,
-                        "simulation": {"kind": "sirene", "siret": m.get("siret") or ""},
-                    })
             else:
                 entry["sirene_message"] = (f"Recherche dans le registre SIRENE limitée à {MAX_SIRENE_LOTS} lots par "
                                            f"requête : affichez ce lot seul pour la lancer.")
+        entry["_shown_sirens"] = shown_sirens
         out_lots.append(entry)
 
-    n_total = len(matched_ids)
-    if ctx["published"] and shown:
+    results = _sirene_batch(jobs)
+    for idx, _trade, _dept in jobs:
+        entry = out_lots[idx]
+        found, w_lot, slow = results.get(idx, ([], [], True))
+        for w in w_lot:
+            if w not in warnings:
+                warnings.append(w)
+        if slow:
+            entry["sirene_cherche"] = False
+            entry["sirene_message"] = "Le registre SIRENE est lent à répondre : relancez la recherche pour ce lot."
+            continue
+        for m in found:
+            sn = pn.clean_siren(m.get("siret"))
+            # Seuls les doublons d'une carte du réseau DÉJÀ affichée pour ce lot sont retirés :
+            # rien ne dépend de l'appartenance au réseau d'une entreprise non affichée.
+            if not sn or sn in entry["_shown_sirens"] or sn == ctx["siren"]:
+                continue
+            badges = [{"key": "sirene", "label": f"Entreprise active (SIRENE au {pm.jjmm(m.get('as_of'))})",
+                       "source": pm._SOURCE_SIRENE, "date": m.get("as_of"), "niveau": "ok"}]
+            if any("RGE" in str(q) for q in (m.get("qualifications") or [])):
+                badges.append({"key": "rge", "label": f"Inscrite au registre RGE (ADEME) au {pm.jjmm(m.get('as_of'))} — domaine à vérifier",
+                               "source": pm._SOURCE_RGE, "date": m.get("as_of"), "niveau": "info"})
+            entry["sirene"].append({
+                "name": m.get("name") or "", "siret": m.get("siret") or "", "siren": sn,
+                "city": m.get("city") or "", "departement": m.get("departement") or "",
+                "activite": m.get("specialites") or "", "badges": badges,
+                "statut_reseau": _SIRENE_LABEL,
+                "deja_invite": sn in invited_sirens, "deja_partenaire": sn in known,
+                "simulation": {"kind": "sirene", "siret": m.get("siret") or ""},
+            })
+    for entry in out_lots:
+        entry.pop("_shown_sirens", None)
+        if not published:
+            entry["message"] = _invite_publier(ctx)
+
+    if published and shown:
         pn.count_appearances(db, ctx["owner_id"], shown)
     audit.record(db, action="network.match_query", owner_id=ctx["owner_id"], project_id=project.id,
                  actor=f"user:{current_user.id}", actor_kind="owner", target_type="project", target_id=project.id,
@@ -994,9 +1146,9 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
                  ip=audit.client_ip(request))
     return {
         "project_id": project.id,
-        "reseau_visible": ctx["published"],
-        "message": None if ctx["published"] else _teaser(n_total, "ces lots"),
-        "n_correspondants": n_total,
+        "reseau_visible": published,
+        "message": None if published else _invite_publier(ctx),
+        "n_correspondants": len(matched_ids) if published else None,
         "lots": out_lots,
         "lots_couverts": covered,
         "lots_non_reconnus": unknown,
@@ -1051,6 +1203,24 @@ def _network_mailer(lot: str, chef: str):
     return _send
 
 
+# Verrou en mémoire par (marché, entreprise) autour de « déjà invité ? » + création (process
+# unique : un seul worker, sans Redis) : deux POST simultanés ne créent plus deux invitations.
+_INVITE_LOCKS: dict = {}
+_INVITE_LOCKS_GUARD = threading.Lock()
+
+
+def _invite_lock(project_id: int, siren: str) -> threading.Lock:
+    key = (int(project_id), siren or "")
+    with _INVITE_LOCKS_GUARD:
+        lk = _INVITE_LOCKS.get(key)
+        if lk is None:
+            if len(_INVITE_LOCKS) > 5000:
+                for k in [k for k, v in _INVITE_LOCKS.items() if not v.locked()]:
+                    _INVITE_LOCKS.pop(k, None)
+            lk = _INVITE_LOCKS[key] = threading.Lock()
+        return lk
+
+
 def _role(role: str) -> str:
     r = (role or "cotraitant").strip()
     if r not in ("cotraitant", "sous_traitant"):
@@ -1103,7 +1273,7 @@ def invite_reseau(request: Request, project_id: int, body: ReseauInviteIn,
                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Mise en relation en 1 clic avec un profil du réseau : Adjugo remplit l'adresse côté
     serveur et l'envoie ; le chef de file ne la voit qu'une fois que le partenaire a répondu."""
-    from app.routers.invites import _check_daily_invite_cap, _create_invite, _refuse_demo_sender
+    from app.routers.invites import _refuse_demo_sender
     _refuse_demo_sender(current_user)
     # Expéditeur confirmé (même règle anti-spam que les emails d'invitation) : ici pas de repli
     # « copiez le lien », le lien d'une invitation réseau n'est jamais remis au chef de file.
@@ -1120,6 +1290,14 @@ def invite_reseau(request: Request, project_id: int, body: ReseauInviteIn,
     role = _role(body.role)
     if p.roles_acceptes and role not in (p.roles_acceptes or []):
         raise HTTPException(422, f"Ce partenaire n'accepte pas le rôle « {pm.ROLE_LABELS.get(role, role)} ».")
+    with _invite_lock(project.id, p.siren or f"profil:{p.id}"):
+        return _invite_reseau_locked(request, db, current_user, project, ctx, p, role, body)
+
+
+def _invite_reseau_locked(request: Request, db: Session, current_user: User, project: Project, ctx: dict,
+                          p: PartnerProfile, role: str, body: "ReseauInviteIn") -> dict:
+    from app.routers.invites import _check_daily_invite_cap, _create_invite
+    db.expire_all()       # relire les invitations créées par une requête concurrente
     invited_profiles, invited_sirens = _active_invite_sirens(db, project.id)
     if p.id in invited_profiles or (p.siren and p.siren in invited_sirens):
         raise HTTPException(409, {"code": "deja_invite",
@@ -1174,7 +1352,7 @@ def invite_sirene(request: Request, project_id: int, body: SireneInviteIn,
                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Entreprise HORS réseau trouvée dans SIRENE : identité re-vérifiée côté serveur, lien à
     transmettre par le chef de file (Adjugo ne connaît pas son adresse et n'envoie rien)."""
-    from app.routers.invites import _check_daily_invite_cap, _create_invite, _refuse_demo_sender
+    from app.routers.invites import _refuse_demo_sender
     _refuse_demo_sender(current_user)
     project = _project(project_id, current_user, db)
     siret = pn.clean_siret(body.siret)
@@ -1186,16 +1364,29 @@ def invite_sirene(request: Request, project_id: int, body: SireneInviteIn,
         raise HTTPException(422, "C'est votre propre entreprise.")
     if ctx["published"]:
         # Visible pour moi dans le réseau → la mise en relation passe par Adjugo (adresse masquée).
-        for p in pn.visible_profiles(db, ctx):
-            if p.siren == siret[:9]:
-                raise HTTPException(409, {"code": "sur_le_reseau", "profile_id": p.public_id,
-                                          "message": "Cette entreprise est sur le réseau Adjugo : invitez-la depuis sa "
-                                                     "fiche (Adjugo lui transmet l'invitation)."})
+        # Requête ciblée par SIREN : la borne de lecture de l'annuaire ne la coupe jamais.
+        p = pn.find_visible_by_siren(db, ctx, siret[:9])
+        if p is not None:
+            raise HTTPException(409, {"code": "sur_le_reseau", "profile_id": p.public_id,
+                                      "message": "Cette entreprise est sur le réseau Adjugo : invitez-la depuis sa "
+                                                 "fiche (Adjugo lui transmet l'invitation)."})
     _invited_profiles, invited_sirens = _active_invite_sirens(db, project.id)
     if siret[:9] in invited_sirens:
         raise HTTPException(409, {"code": "deja_invite",
                                   "message": "Cette entreprise a déjà une invitation active sur ce marché."})
     s = pn.fetch_sirene(siret[:9])
+    with _invite_lock(project.id, siret[:9]):
+        db.expire_all()
+        _invited_profiles, invited_sirens = _active_invite_sirens(db, project.id)
+        if siret[:9] in invited_sirens:
+            raise HTTPException(409, {"code": "deja_invite",
+                                      "message": "Cette entreprise a déjà une invitation active sur ce marché."})
+        return _invite_sirene_locked(request, db, current_user, project, siret, role, body, s)
+
+
+def _invite_sirene_locked(request: Request, db: Session, current_user: User, project: Project, siret: str,
+                          role: str, body: "SireneInviteIn", s: dict) -> dict:
+    from app.routers.invites import _check_daily_invite_cap, _create_invite
     if s.get("statut") == "erreur":
         raise HTTPException(503, "Le registre SIRENE est momentanément indisponible : réessayez dans un instant.")
     if s.get("statut") != "ok":

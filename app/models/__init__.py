@@ -4,7 +4,7 @@ Adjugo — Modèles de base de données
 from datetime import datetime, date, timezone
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, Text, DateTime,
-    Date, ForeignKey, JSON, Enum as SAEnum, UniqueConstraint,
+    Date, ForeignKey, JSON, Enum as SAEnum, UniqueConstraint, Index, text as sa_text,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -876,6 +876,30 @@ class PartnerProfile(Base):
     is_demo = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    # Validation de l'identité par Adjugo (décision fondateur) : la vérification SIRENE prouve
+    # que l'entreprise existe et est active, PAS que le compte la représente. Une demande de
+    # publication passe donc « en_attente » et un administrateur Adjugo (User.is_admin) la
+    # valide ou la refuse (motif). Toute modification du SIRET remet la validation à zéro.
+    # '' (jamais demandée) | en_attente | validee | refusee
+    validation_status = Column(String(20), default="")
+    validation_siren = Column(String(9), default="")          # SIREN pour lequel l'identité a été validée
+    validation_requested_at = Column(DateTime, nullable=True)
+    validation_requested_by = Column(Integer, nullable=True)  # compte qui a demandé (id, sans clé étrangère)
+    validated_at = Column(DateTime, nullable=True)             # date de la décision (validation ou refus)
+    validated_by = Column(Integer, nullable=True)              # administrateur Adjugo (id)
+    validation_motif = Column(String(300), default="")        # motif d'un refus (affiché à l'entreprise)
+    # Dernière TENTATIVE de re-vérification par le cron (verified_at = dernière réussite) :
+    # le cron trie par cette date, sinon un profil que SIRENE ne confirme jamais gardait la tête.
+    last_check_at = Column(DateTime, nullable=True)
+    # Date du dernier recalcul de groupements_deposes (le badge l'affiche).
+    groupements_checked_at = Column(DateTime, nullable=True)
+
+    # Un seul profil PUBLIÉ par SIREN, garanti par la base (deux publications simultanées).
+    __table_args__ = (
+        Index("uq_partner_profiles_siren_publie", "siren", unique=True,
+              sqlite_where=sa_text("visible = 1"), postgresql_where=sa_text("visible")),
+    )
 
 
 # === FEEDBACK (beta) ===

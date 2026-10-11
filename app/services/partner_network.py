@@ -4,7 +4,11 @@ vérifications publiques, visibilité, historique réel, RGPD, re-vérification 
 
 Invariants (ne jamais les casser) :
   - OPT-IN : un profil n'est visible que s'il a été PUBLIÉ par un admin de l'organisation
-    (SIRET à 14 chiffres, entreprise active vérifiée dans SIRENE il y a moins de 30 jours).
+    (SIRET à 14 chiffres, entreprise active vérifiée dans SIRENE il y a moins de 30 jours)
+    ET VALIDÉ par un administrateur Adjugo (l'identité : le compte représente bien cette
+    entreprise). Toute modification du SIRET retire la publication et la validation.
+  - AUCUN ORACLE pour un compte non publié : ni compteur filtré, ni « un seul profil par
+    SIREN », ni repli SIRENE amputé des membres du réseau.
   - CONFIANCE VÉRIFIABLE : SIRENE, BODACC, DECP, dépôts réels sur Adjugo. Chaque vérification
     est datée ; un échec réseau donne « non vérifié » (None), jamais une absence prouvée.
   - AUCUN profil de démonstration : la colonne is_demo existe (schéma) mais aucun n'est créé,
@@ -42,6 +46,14 @@ MAX_METIERS = 12
 MAX_DEPARTEMENTS = 30
 MAX_CPV = 20
 MAX_REFERENCES = 5
+
+ADMIN_NOTIFY_DAY_CAP = 30      # emails « demande de validation » envoyés à Adjugo par jour
+ADMIN_NOTIFY_PROFILE_S = 3600  # au plus un email par profil et par heure
+ADMIN_FALLBACK_EMAIL = "contact@adjugo.pro"
+
+VALIDATION_PENDING = "en_attente"
+VALIDATION_OK = "validee"
+VALIDATION_REFUSED = "refusee"
 
 SIRENE_API = "https://recherche-entreprises.api.gouv.fr/search"
 SOURCE_SIRENE = "SIRENE (recherche-entreprises.api.gouv.fr)"
@@ -294,6 +306,9 @@ def profile_dict(p) -> dict:
         "verified_sirene": p.verified_sirene, "verified_bodacc": p.verified_bodacc,
         "verified_decp": p.verified_decp, "verified_at": p.verified_at,
         "groupements_deposes": int(p.groupements_deposes or 0),
+        "groupements_checked_at": p.groupements_checked_at,
+        # Date de la validation de l'identité par Adjugo POUR LE SIREN ACTUEL (sinon None).
+        "identite_validee_le": p.validated_at if identity_validated(p) else None,
     }
 
 
@@ -347,17 +362,41 @@ def hidden_pair(ctx: dict, p) -> bool:
     return False
 
 
-def visible_profiles(db, ctx: dict) -> list:
+def visible_profiles(db, ctx: dict, metiers=None, departement: str = "") -> list:
     """Profils PUBLIÉS visibles par ce chercheur : jamais démo, jamais le sien (ni un profil
-    du même SIREN), jamais une paire masquée. Borné (MAX_VISIBLE_SCAN), ordre stable."""
+    du même SIREN), jamais une paire masquée. Borné (MAX_VISIBLE_SCAN), ordre stable.
+    `metiers` (clés) et `departement` (code normalisé : 29, 2A, 974) : filtres faits EN BASE
+    avant la borne, pour que la borne ne coupe pas les profils utiles — métier = texte JSON
+    contenant la clé ; département = zones déclarées (texte JSON contenant le code) OU
+    département du siège, comme le filtre exact appliqué ensuite par l'annuaire. Borne
+    atteinte → ctx["tronque"] = True (signalé à l'écran, jamais un résultat amputé en silence)."""
+    from sqlalchemy import String, cast
     from app.models import PartnerProfile
     excluded = set(ctx.get("member_ids") or []) | {ctx.get("owner_id")} | _demo_user_ids(db)
-    rows = db.query(PartnerProfile).filter(
+    q = db.query(PartnerProfile).filter(
         PartnerProfile.visible.is_(True), PartnerProfile.is_demo.isnot(True),
         ~PartnerProfile.user_id.in_([i for i in excluded if i is not None] or [0]),
-    ).order_by(PartnerProfile.id.asc()).limit(MAX_VISIBLE_SCAN).all()
+    )
+    keys = sorted({str(m) for m in (metiers or []) if m and re.fullmatch(r"[a-z0-9_]{1,40}", str(m))})
+    if keys:
+        q = q.filter(or_(*[cast(PartnerProfile.metiers, String).like(f'%"{k}"%') for k in keys]))
+    dep = str(departement or "").strip().upper()
+    if dep and re.fullmatch(r"\d{2,3}|2[AB]", dep):
+        q = q.filter(or_(cast(PartnerProfile.departements, String).like(f'%"{dep}"%'),
+                         PartnerProfile.departement == dep))
+    else:
+        dep = ""
+    rows = q.order_by(PartnerProfile.id.asc()).limit(MAX_VISIBLE_SCAN).all()
+    if len(rows) >= MAX_VISIBLE_SCAN:
+        ctx["tronque"] = True
+        logger.warning("réseau : borne de %s profils atteinte (filtre métier : %s, département : %s)",
+                       MAX_VISIBLE_SCAN, keys or "aucun", dep or "aucun")
     mine = ctx.get("siren") or ""
     return [p for p in rows if not (mine and p.siren == mine) and not hidden_pair(ctx, p)]
+
+
+TRONQUE_MSG = ("Le réseau compte plus de profils que ce qu'une recherche peut parcourir : "
+               "précisez le métier ou le département pour voir tous les partenaires correspondants.")
 
 
 def find_visible(db, ctx: dict, public_id: str):
@@ -377,6 +416,23 @@ def find_visible(db, ctx: dict, public_id: str):
     if hidden_pair(ctx, p):
         return None
     return p
+
+
+def find_visible_by_siren(db, ctx: dict, siren: str):
+    """Le profil PUBLIÉ d'un SIREN précis (au plus un : index unique partiel), SEULEMENT s'il
+    est visible pour ce chercheur (mêmes règles que find_visible), sinon None. Requête ciblée :
+    jamais coupée par la borne de lecture de visible_profiles."""
+    from app.models import PartnerProfile
+    s = clean_siren(siren)
+    if not s:
+        return None
+    p = db.query(PartnerProfile).filter(PartnerProfile.siren == s, PartnerProfile.visible.is_(True),
+                                        PartnerProfile.is_demo.isnot(True)).order_by(PartnerProfile.id.asc()).first()
+    return find_visible(db, ctx, p.public_id) if p else None
+
+
+TRONQUE_POOL_MSG = ("Réseau Adjugo : plus de profils de ce métier que ce qu'une recherche peut parcourir, "
+                    "certains partenaires du réseau ne sont pas proposés ici.")
 
 
 # ── Compteur ANONYME d'apparitions ────────────────────────────────────────────────────
@@ -514,30 +570,88 @@ def historique_avec(db, my_org_ids: list, my_profile, other) -> dict:
     return {k: int(a[k]) + int(b[k]) for k in a}
 
 
-def count_groupements(db, org_ids: list, profile_id: Optional[int] = None) -> tuple:
+def count_groupements(db, org_ids: list, profile_id: Optional[int] = None, own_siren: str = "") -> tuple:
     """(nombre, date du plus récent) de marchés DISTINCTS au statut envoyé / gagné / perdu
-    portant au moins une part soumise d'un membre actif, où l'organisation est chef de file
-    OU membre (invitation réseau de son profil, ou lien réclamé par un de ses comptes)."""
-    from app.models import Project, ProjectContribution, ProjectInvite
+    portant au moins une part soumise d'un membre actif, où l'organisation est :
+      - chef de file AVEC une AUTRE organisation : invitation acceptée par un compte hors de
+        l'organisation, ou adressée au profil réseau d'une autre organisation ;
+      - ou membre du groupement d'une AUTRE organisation (invitation réseau de son profil, ou
+        lien réclamé par un de ses comptes).
+    L'autre entreprise doit en plus être DISTINCTE de façon vérifiable, sinon un compte relais
+    (2e compte gratuit, sans SIRET) suffisait à fabriquer le badge :
+      - chef de file : la part soumise porte un SIREN à 9 chiffres différent du sien, ou
+        l'invitation vise (ou a été acceptée par) une organisation dont l'identité est validée
+        par Adjugo sous un autre SIREN ;
+      - membre : le chef de file a un SIRET à 9 chiffres différent du sien dans son profil
+        entreprise, ou une identité validée par Adjugo sous un autre SIREN.
+    Le statut « déposé » reste DÉCLARATIF (renseigné par le chef de file) : le badge le dit."""
+    from app.models import Company, PartnerProfile, Project, ProjectContribution, ProjectInvite
     from app.services.groupement_members import active_invite_filter
     org = list(org_ids or []) or [0]
-    conds = [Project.user_id.in_(org), ProjectInvite.accepted_by_user_id.in_(org)]
+    others_profiles = db.query(PartnerProfile.id).filter(~PartnerProfile.user_id.in_(org))
+    lead_side = and_(Project.user_id.in_(org), or_(
+        and_(ProjectInvite.accepted_by_user_id.isnot(None), ~ProjectInvite.accepted_by_user_id.in_(org)),
+        ProjectInvite.partner_profile_id.in_(others_profiles)))
+    member_conds = [ProjectInvite.accepted_by_user_id.in_(org)]
     if profile_id is not None:
-        conds.append(ProjectInvite.partner_profile_id == profile_id)
-    rows = db.query(Project.id, Project.updated_at).select_from(ProjectInvite).join(
-        Project, Project.id == ProjectInvite.project_id).join(
+        member_conds.append(ProjectInvite.partner_profile_id == profile_id)
+    member_side = and_(~Project.user_id.in_(org), or_(*member_conds))
+    rows = db.query(Project.id, Project.updated_at, Project.user_id, ProjectContribution.siret,
+                    ProjectInvite.accepted_by_user_id, ProjectInvite.partner_profile_id).select_from(
+        ProjectInvite).join(Project, Project.id == ProjectInvite.project_id).join(
         ProjectContribution, ProjectContribution.invite_id == ProjectInvite.id).filter(
         active_invite_filter(), Project.deleted_at.is_(None), ProjectContribution.status == "submitted",
-        Project.status.in_(_status_values()), or_(*conds)).distinct().all()
-    dates = [r[1] for r in rows if r[1] is not None]
-    return len({r[0] for r in rows}), (max(dates) if dates else None)
+        Project.status.in_(_status_values()), or_(lead_side, member_side)).all()
+
+    def _company_siren(uids) -> str:
+        for (siret,) in db.query(Company.siret).filter(Company.user_id.in_(list(uids) or [0])).all():
+            if clean_siren(siret):
+                return clean_siren(siret)
+        return ""
+
+    mine = clean_siren(own_siren) or _company_siren(org)
+    orgs: dict = {}
+    validated: dict = {}
+
+    def _org_of(uid) -> tuple:
+        if uid not in orgs:
+            orgs[uid] = tuple(sorted(org_member_ids(db, uid)))
+        return orgs[uid]
+
+    def _validated_elsewhere(uids: tuple) -> bool:
+        """Organisation dont l'identité est validée par Adjugo sous un SIREN autre que le sien."""
+        if uids not in validated:
+            ps = db.query(PartnerProfile).filter(PartnerProfile.user_id.in_(list(uids) or [0])).all()
+            validated[uids] = any(identity_validated(x) and x.siren != mine for x in ps)
+        return validated[uids]
+
+    kept = {}
+    for pid, upd, lead_uid, part_siret, acc_uid, prof_id in rows:
+        if lead_uid in org:
+            s = clean_siren(part_siret)
+            ok = bool(s and s != mine)
+            if not ok and acc_uid is not None and acc_uid not in org:
+                ok = _validated_elsewhere(_org_of(acc_uid))
+            if not ok and prof_id is not None:
+                prof = db.query(PartnerProfile).filter(PartnerProfile.id == prof_id).first()
+                ok = bool(prof is not None and prof.user_id not in org
+                          and _validated_elsewhere(_org_of(prof.user_id)))
+        else:
+            lead_org = _org_of(lead_uid)
+            s = _company_siren(lead_org)
+            ok = bool(s and s != mine) or _validated_elsewhere(lead_org)
+        if ok:
+            kept[pid] = upd
+    dates = [d for d in kept.values() if d is not None]
+    return len(kept), (max(dates) if dates else None)
 
 
 def recompute_groupements(db, profile) -> int:
-    """groupements_deposes = COUNT recalculé (jamais saisi)."""
-    n, last = count_groupements(db, org_member_ids(db, profile.user_id), profile.id)
+    """groupements_deposes = COUNT recalculé (jamais saisi), daté (groupements_checked_at)."""
+    n, last = count_groupements(db, org_member_ids(db, profile.user_id), profile.id, profile.siren or "")
     profile.groupements_deposes = n
     profile.last_groupement_at = last
+    profile.groupements_checked_at = utcnow_naive()
     return n
 
 
@@ -591,23 +705,67 @@ def erase_profile(db, profile) -> None:
 
 
 def erase_profiles_of(db, user_id: int) -> int:
-    from app.models import PartnerProfile
+    """Effacement du compte (RGPD) : son profil (et l'adresse des invitations qui le visent),
+    puis, PAR VALEUR, son adresse dans les invitations RÉSEAU (remplies par Adjugo, jamais
+    saisies par un chef de file) : après un transfert de propriété, le profil ne pointe plus
+    vers ce compte, mais les invitations auxquelles il a répondu portaient son adresse."""
+    from app.models import PartnerProfile, ProjectInvite, User
     rows = db.query(PartnerProfile).filter(PartnerProfile.user_id == user_id).all()
     for p in rows:
         erase_profile(db, p)
+    # Traces du compte dans la validation d'autres profils (demandeur, administrateur Adjugo).
+    db.query(PartnerProfile).filter(PartnerProfile.validation_requested_by == user_id).update(
+        {PartnerProfile.validation_requested_by: None}, synchronize_session=False)
+    db.query(PartnerProfile).filter(PartnerProfile.validated_by == user_id).update(
+        {PartnerProfile.validated_by: None}, synchronize_session=False)
+    u = db.query(User).filter(User.id == user_id).first()
+    email = ((u.email if u else "") or "").strip().lower()
+    if email:
+        db.query(ProjectInvite).filter(ProjectInvite.source == NETWORK_SOURCE,
+                                       func.lower(ProjectInvite.recipient) == email).update(
+            {ProjectInvite.recipient: ""}, synchronize_session=False)
+        db.query(ProjectInvite).filter(ProjectInvite.source == NETWORK_SOURCE,
+                                       func.lower(ProjectInvite.verified_email) == email).update(
+            {ProjectInvite.verified_email: ""}, synchronize_session=False)
     return len(rows)
 
 
 def transfer_profile(db, old_owner_id: int, new_owner_id: int) -> None:
     """Transfert de propriété d'organisation : le profil suit le nouveau propriétaire
     (user_id UNIQUE → un éventuel profil personnel du nouveau propriétaire est effacé avant,
-    adresses retirées des invitations réseau comprises)."""
-    from app.models import PartnerProfile
+    adresses retirées des invitations réseau comprises). Les invitations réseau du profil
+    auxquelles l'entreprise n'a pas encore répondu sont réadressées au nouveau propriétaire :
+    il peut les accepter, et l'ancienne adresse n'est plus sollicitée (relances comprises)."""
+    from app.models import PartnerProfile, ProjectInvite
     if not db.query(PartnerProfile.id).filter(PartnerProfile.user_id == old_owner_id).first():
         return
-    erase_profiles_of(db, new_owner_id)
+    erase_profiles_of_profile_only(db, new_owner_id)
     db.query(PartnerProfile).filter(PartnerProfile.user_id == old_owner_id).update(
         {PartnerProfile.user_id: new_owner_id}, synchronize_session=False)
+    db.flush()
+    p = own_profile(db, new_owner_id)
+    if p is None:
+        return
+    rcpt = network_recipient(db, p)
+    for inv in db.query(ProjectInvite).filter(ProjectInvite.partner_profile_id == p.id,
+                                              ProjectInvite.source == NETWORK_SOURCE).all():
+        if network_invite_responded(inv, db):
+            continue
+        inv.recipient = rcpt
+        inv.verified_email = ""
+        inv.otp_hash = ""             # un code envoyé à l'ancienne adresse ne vaut plus
+        inv.otp_expires_at = None
+    db.flush()
+
+
+def erase_profiles_of_profile_only(db, user_id: int) -> int:
+    """Profil(s) d'un compte effacé(s), SANS toucher aux autres invitations de son adresse
+    (transfert : le compte continue d'exister)."""
+    from app.models import PartnerProfile
+    rows = db.query(PartnerProfile).filter(PartnerProfile.user_id == user_id).all()
+    for p in rows:
+        erase_profile(db, p)
+    return len(rows)
 
 
 def export_profile(db, user_id: int) -> Optional[dict]:
@@ -616,9 +774,233 @@ def export_profile(db, user_id: int) -> Optional[dict]:
         return None
     out = {}
     for c in p.__table__.columns:
+        if c.name == "validated_by":      # identifiant interne d'un administrateur Adjugo
+            continue
         v = getattr(p, c.name)
         out[c.name] = v.isoformat() if isinstance(v, (datetime, date)) else v
     return out
+
+
+# ── Identité : SIRET, validation par Adjugo ───────────────────────────────────────────
+# La vérification SIRENE prouve que l'entreprise existe et est active, PAS que le compte la
+# représente. Décision du fondateur : une publication passe « en attente de validation » et un
+# administrateur Adjugo (User.is_admin) la valide ou la refuse. Toute modification du SIRET
+# (profil entreprise) retire la publication ET la validation. « Un seul profil publié par
+# SIREN » n'est jamais révélé à l'entreprise : le conflit est traité par l'administrateur.
+
+def _reset_validation(p) -> None:
+    p.validation_status = ""
+    p.validation_siren = ""
+    p.validation_requested_at = None
+    p.validation_requested_by = None
+    p.validated_at = None
+    p.validated_by = None
+    p.validation_motif = ""
+
+
+def sync_siret(p, siret: str) -> Optional[str]:
+    """Le SIRET du profil suit le profil entreprise (source unique). S'il change :
+    vérifications, publication et validation Adjugo remises à zéro. Renvoie un message."""
+    siret = clean_siret(siret)
+    if (p.siret or "") == siret:
+        return None
+    was_visible = bool(p.visible)
+    was_pending = (p.validation_status or "") == VALIDATION_PENDING
+    had = bool(p.siret)
+    if had:
+        p.verified_sirene = None
+        p.verified_bodacc = None
+        p.verified_decp = None
+        p.verified_at = None
+    p.visible = False
+    _reset_validation(p)
+    p.siret = siret
+    p.siren = siret[:9] if siret else ""
+    if was_visible:
+        return ("Le SIRET de votre profil entreprise a changé : publication retirée. Vérifiez à nouveau "
+                "votre entreprise, puis demandez une nouvelle validation à Adjugo.")
+    if was_pending:
+        return ("Le SIRET de votre profil entreprise a changé : la demande de validation est annulée. "
+                "Vérifiez à nouveau votre entreprise, puis renvoyez la demande.")
+    if had:
+        return "Le SIRET de votre profil entreprise a changé : vérifiez à nouveau votre entreprise."
+    return None
+
+
+def on_company_saved(db, owner_id: int) -> Optional[str]:
+    """Appelé après chaque enregistrement du profil entreprise (PUT/POST /api/company) : un
+    SIRET modifié retire la publication et exige une nouvelle validation. Ne lève jamais."""
+    try:
+        from app.models import Company
+        from app.services import audit
+        p = own_profile(db, owner_id)
+        if p is None:
+            return None
+        comp = db.query(Company).filter(Company.user_id == owner_id).first()
+        was_visible = bool(p.visible)
+        msg = sync_siret(p, comp.siret if comp else "")
+        if msg is None:
+            return None
+        if comp and comp.name:
+            p.name = comp.name[:255]          # le nom officiel était celui de l'ancien SIREN
+        db.commit()
+        if was_visible:
+            audit.record(db, action="network.profile_unpublished", owner_id=owner_id, actor="system",
+                         actor_kind="system", target_type="partner_profile", target_id=p.id,
+                         detail="SIRET du profil entreprise modifié : nouvelle validation Adjugo requise")
+        return msg
+    except Exception as e:
+        db.rollback()
+        logger.warning("synchronisation du SIRET du profil réseau en échec : %s", e)
+        return None
+
+
+def identity_validated(p) -> bool:
+    """Identité validée par Adjugo POUR LE SIREN ACTUEL du profil."""
+    return bool(p is not None and (p.validation_status or "") == VALIDATION_OK and p.siren
+                and (p.validation_siren or "") == p.siren)
+
+
+def request_validation(p, user_id: int, now: Optional[datetime] = None) -> None:
+    p.validation_status = VALIDATION_PENDING
+    p.validation_requested_at = now or utcnow_naive()
+    p.validation_requested_by = user_id
+    p.validation_motif = ""
+    p.validated_at = None
+    p.validated_by = None
+    p.visible = False
+
+
+def publish_validated(db, p, now: Optional[datetime] = None) -> bool:
+    """Rend visible un profil dont l'identité est validée. False si un autre profil du même
+    SIREN vient d'être publié (index unique partiel) : rien n'est publié."""
+    from sqlalchemy.exc import IntegrityError
+    p.visible = True
+    p.is_demo = False
+    p.published_at = now or utcnow_naive()
+    try:
+        db.commit()
+        return True
+    except IntegrityError:
+        db.rollback()
+        return False
+
+
+def siren_conflicts(db, p) -> list:
+    """Autres profils du même SIREN publiés ou en attente (vue ADMINISTRATEUR uniquement)."""
+    from app.models import PartnerProfile
+    if not p.siren:
+        return []
+    return db.query(PartnerProfile).filter(PartnerProfile.siren == p.siren, PartnerProfile.id != p.id).filter(
+        or_(PartnerProfile.visible.is_(True), PartnerProfile.validation_status == VALIDATION_PENDING)).order_by(
+        PartnerProfile.id.asc()).limit(20).all()
+
+
+def _account(db, uid) -> Optional[dict]:
+    from app.models import User
+    if not uid:
+        return None
+    u = db.query(User).filter(User.id == uid).first()
+    if not u:
+        return None
+    return {"nom": u.full_name or "", "email": u.email or "", "email_confirme": bool(u.email_verified),
+            "inscrit_le": u.created_at.isoformat() if getattr(u, "created_at", None) else None}
+
+
+def admin_item(db, p) -> dict:
+    """Une demande, vue par l'ADMINISTRATEUR ADJUGO : identité SIRENE, nom et email du compte
+    (seul l'administrateur les voit : c'est ce qu'il doit rapprocher), conflits de SIREN."""
+    from app.models import Company
+    vs = p.verified_sirene if isinstance(p.verified_sirene, dict) else {}
+    comp = db.query(Company).filter(Company.user_id == p.user_id).first()
+    owner = _account(db, p.user_id)
+    req = _account(db, p.validation_requested_by) if p.validation_requested_by not in (None, p.user_id) else None
+    conflits = []
+    for o in siren_conflicts(db, p):
+        acc = _account(db, o.user_id) or {}
+        conflits.append({"profile_id": o.public_id, "name": o.name or "",
+                         "statut": "publie" if o.visible else "en_attente",
+                         "compte_nom": acc.get("nom", ""), "compte_email": acc.get("email", "")})
+    siren = p.siren or ""
+    return {
+        "profile_id": p.public_id, "name": p.name or "", "siren": siren, "siret": p.siret or "",
+        "demande_le": p.validation_requested_at.isoformat() if p.validation_requested_at else None,
+        "entreprise_declaree": {"nom": (comp.name if comp else "") or "", "siret": (comp.siret if comp else "") or "",
+                                "code_postal": (comp.postal_code if comp else "") or "",
+                                "ville": (comp.city if comp else "") or ""},
+        "sirene": {"nom": vs.get("nom") or "", "etat": vs.get("etat"), "siret_siege": vs.get("siret_siege") or "",
+                   "code_postal": vs.get("code_postal") or "", "ville": vs.get("ville") or "",
+                   "naf": vs.get("naf") or "", "date_creation": vs.get("date_creation"),
+                   "checked_at": vs.get("checked_at"),
+                   "lien_annuaire": (f"https://annuaire-entreprises.data.gouv.fr/entreprise/{siren}"
+                                     if re.fullmatch(r"\d{9}", siren) else None)},
+        "compte": owner, "demandeur": req, "conflits": conflits,
+    }
+
+
+def validation_queue(db, limit: int = 200) -> list:
+    from app.models import PartnerProfile
+    rows = db.query(PartnerProfile).filter(PartnerProfile.validation_status == VALIDATION_PENDING,
+                                           PartnerProfile.is_demo.isnot(True)).order_by(
+        PartnerProfile.validation_requested_at.asc(), PartnerProfile.id.asc()).limit(
+        max(1, min(int(limit), 500))).all()
+    return [admin_item(db, p) for p in rows]
+
+
+# Notification de l'équipe Adjugo (best-effort, jamais bloquante, plafonnée).
+_ADMIN_NOTIFY: dict = {"day": "", "n": 0, "last": {}}
+_ADMIN_NOTIFY_LOCK = threading.Lock()
+
+
+def admin_recipients() -> list:
+    from app.core.config import get_settings
+    raw = get_settings().ADMIN_EMAILS or ""
+    out = [e.strip() for e in raw.split(",") if re.fullmatch(r"[^@\s,]+@[^@\s,]+\.[^@\s,]+", e.strip())]
+    return out[:5] or [ADMIN_FALLBACK_EMAIL]
+
+
+def _send_async(mails: list) -> None:
+    """Envoi dans un fil démon (valeurs capturées avant : aucune session de base dans le fil)."""
+    if not mails:
+        return
+
+    def _run():
+        try:
+            from app.services import email as _email
+            for to, subj, text in mails:
+                try:
+                    _email.send_email(to, subj, text)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def notify_admins_validation(p) -> bool:
+    """Email « demande de validation » aux administrateurs Adjugo (ADMIN_EMAILS, à défaut
+    contact@adjugo.pro). Plafonds : ADMIN_NOTIFY_DAY_CAP par jour, un par profil et par heure.
+    Contenu minimal (nom, SIREN) : le reste se lit dans la vue d'administration."""
+    day = utcnow_naive().strftime("%Y-%m-%d")
+    now = time.time()
+    with _ADMIN_NOTIFY_LOCK:
+        if _ADMIN_NOTIFY["day"] != day:
+            _ADMIN_NOTIFY.update({"day": day, "n": 0, "last": {}})
+        last = _ADMIN_NOTIFY["last"].get(p.id)
+        if _ADMIN_NOTIFY["n"] >= ADMIN_NOTIFY_DAY_CAP or (last and now - last < ADMIN_NOTIFY_PROFILE_S):
+            return False
+        _ADMIN_NOTIFY["n"] += 1
+        _ADMIN_NOTIFY["last"][p.id] = now
+    # Nom saisi par l'entreprise : une ligne, sans caractère de contrôle (un saut de ligne dans
+    # l'objet faisait échouer l'envoi SMTP, et l'email ne partait pas).
+    nom = re.sub(r"[\x00-\x1f\x7f]+", " ", p.name or "").strip()
+    subj = f"Réseau Adjugo : profil à valider — {(nom or 'entreprise')[:60]}"
+    text = ("Bonjour,\n\nUne entreprise demande la publication de son profil partenaire sur le réseau Adjugo.\n\n"
+            f"Nom : {nom[:255] or 'non renseigné'}\nSIREN : {p.siren or 'non renseigné'}\n\n"
+            "Vérifiez que le compte représente bien cette entreprise, puis validez ou refusez la demande "
+            "dans Adjugo > Administration > Profils du réseau à valider.\n\n— Adjugo")
+    _send_async([(to, subj, text) for to in admin_recipients()])
+    return True
 
 
 # ── Suggestion d'interface (boucle de croissance, AUCUN email) ────────────────────────
@@ -642,7 +1024,7 @@ def suggest_profile(db, user) -> Optional[dict]:
         if is_demo(user):
             return None
         p = own_profile(db, data_owner_id(user, db))
-        if p and p.visible:
+        if p and (p.visible or (p.validation_status or "") == VALIDATION_PENDING):
             return None
         return dict(SUGGESTION)
     except Exception:
@@ -658,9 +1040,14 @@ def run_partner_network(db, limit: int = CRON_BATCH, budget_s: float = CRON_BUDG
     from app.models import PartnerProfile
     from app.services import audit
     t0 = time.monotonic()
+    # Tri sur la dernière fois qu'Adjugo a REGARDÉ le profil : tentative du cron ou vérification
+    # lancée par l'entreprise (last_check_at, à défaut verified_at), jamais regardé d'abord. Un
+    # profil que SIRENE ne confirme pas ne garde donc plus la tête de file chaque semaine, et un
+    # profil tout juste vérifié ne passe pas devant un profil vérifié il y a des mois.
+    seen_at = func.coalesce(PartnerProfile.last_check_at, PartnerProfile.verified_at)
     rows = db.query(PartnerProfile).filter(
         PartnerProfile.visible.is_(True), PartnerProfile.is_demo.isnot(True),
-    ).order_by(PartnerProfile.verified_at.is_(None).desc(), PartnerProfile.verified_at.asc(),
+    ).order_by(seen_at.is_(None).desc(), seen_at.asc(),
                PartnerProfile.id.asc()).limit(max(0, min(int(limit), CRON_BATCH))).all()
     stats = {"checked": 0, "sirene_ok": 0, "errors": 0, "unpublished": 0, "skipped_budget": 0}
     for p in rows:
@@ -669,6 +1056,7 @@ def run_partner_network(db, limit: int = CRON_BATCH, budget_s: float = CRON_BUDG
             continue
         now = utcnow_naive()
         try:
+            p.last_check_at = now
             res = run_checks(p.siren, now)
             apply_checks(p, res, now)
             stats["checked"] += 1
@@ -690,4 +1078,10 @@ def run_partner_network(db, limit: int = CRON_BATCH, budget_s: float = CRON_BUDG
             db.rollback()
             stats["errors"] += 1
             logger.warning("re-vérification du profil réseau %s en échec : %s", p.id, e)
+            try:          # la tentative compte quand même (sinon ce profil reste en tête)
+                db.query(PartnerProfile).filter(PartnerProfile.id == p.id).update(
+                    {PartnerProfile.last_check_at: now}, synchronize_session=False)
+                db.commit()
+            except Exception:
+                db.rollback()
     return stats

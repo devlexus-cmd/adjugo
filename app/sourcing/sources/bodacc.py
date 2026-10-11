@@ -21,6 +21,10 @@ BODACC = ("https://bodacc-datadila.opendatasoft.com/api/explore/v2.1"
 class BodaccSource:
     name = "BODACC"
 
+    def __init__(self, timeout: float = 8):
+        # Délai HTTP par appel (8 s par défaut, inchangé) ; délai court sur « Qui me complète ? ».
+        self.timeout = timeout
+
     def check(self, siren: Optional[str]) -> Optional[dict]:
         """Renvoie l'avis de procédure collective le plus récent pour ce SIREN,
         ou None si aucun / source indisponible (jamais inventé).
@@ -36,7 +40,7 @@ class BodaccSource:
             "limit": 1,
         }
         try:
-            with httpx.Client(timeout=8, headers={"User-Agent": "AdjugoBot/1.0"}) as c:
+            with httpx.Client(timeout=self.timeout, headers={"User-Agent": "AdjugoBot/1.0"}) as c:
                 r = c.get(BODACC, params=params)
                 r.raise_for_status()
                 results = r.json().get("results", [])

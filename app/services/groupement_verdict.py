@@ -26,7 +26,11 @@ logger = logging.getLogger("adjugo")
 # Cache in-process des découvertes SIRENE par (métier, département) — process unique sans
 # Redis, donc un dict module-level suffit et reste cohérent.
 _SIRENE_CACHE: dict = {}
-_SIRENE_TTL = 600   # 10 min
+_SIRENE_TTL = 600        # 10 min pour une recherche aboutie
+# Recherche en ERREUR : cache court, et son avertissement est RÉ-ÉMIS à chaque lecture. Sans
+# cache, une panne SIRENE bloquait un fil de l'unique worker (jusqu'à 3 métiers × 12 s) à chaque
+# requête ; avec le cache de 10 min, l'écran disait « aucune entreprise » sans l'avertissement.
+_SIRENE_ERR_TTL = 90
 
 WARN_DECLARE = ("Verdict fondé sur des capacités que vous avez déclarées vous-même sur vos "
                 "partenaires — à confirmer auprès d'eux")
@@ -259,23 +263,39 @@ def _execution_dept(details: dict, criteria: dict, company_data: dict) -> str:
     return _dept((company_data or {}).get("postal_code") or "")
 
 
-def _discover_sirene(trade: str, dept: str, warnings: list) -> list:
-    """Découverte SIRENE pour UN métier/département, cachée 10 min. Jamais d'exception."""
+def _short_timeout_service(timeout: float):
+    """Service de découverte à délai COURT par appel HTTP (SIRENE et BODACC) : chemin
+    « Qui me complète ? » du réseau de partenaires, sur l'unique worker. Mêmes sources que
+    sourcing._company_service (SIRENE + filtre BODACC), seul le délai change."""
+    from app.sourcing.search import CompanySearchService
+    from app.sourcing.sources.bodacc import BodaccSource
+    from app.sourcing.sources.sirene import SireneSource
+    return CompanySearchService([SireneSource(timeout=timeout)], red_flag_source=BodaccSource(timeout=timeout))
+
+
+def _discover_sirene(trade: str, dept: str, warnings: list, timeout: Optional[float] = None) -> list:
+    """Découverte SIRENE pour UN métier/département, cachée 10 min (90 s si la recherche est en
+    erreur, avertissement répété à chaque lecture). Jamais d'exception.
+    `timeout` : délai par appel HTTP (SIRENE, BODACC) ; None = délais habituels du sourcing."""
     key = (trade, dept)
     hit = _SIRENE_CACHE.get(key)
     now = time.time()
-    if hit and now - hit[0] < _SIRENE_TTL:
-        return list(hit[1])
+    if hit:
+        _ts, cached, warns = hit
+        if now - _ts < (_SIRENE_ERR_TTL if warns else _SIRENE_TTL):
+            warnings.extend(warns)
+            return list(cached)
     try:
         from app.routers.sourcing import _company_service
         from app.sourcing.sources.sirene import TRADES
         label = next((t["label"] for t in TRADES if t["key"] == trade), trade)
+        svc = _company_service() if timeout is None else _short_timeout_service(float(timeout))
         # limit 4 + PAS d'enrichissement DECP (1 requête HTTP par entreprise) : sur
         # l'unique worker, 3 métiers × (SIRENE + 6 BODACC + 6 DECP) bloquaient ~100 s.
         # BODACC est conservé (filtre « procédure collective » juste en dessous).
-        res = _company_service().discover(activity=trade, departement=dept,
-                                          tender_departements=[dept] if dept else [],
-                                          need_label=label, limit=4, enrich_decp=False)
+        res = svc.discover(activity=trade, departement=dept,
+                           tender_departements=[dept] if dept else [],
+                           need_label=label, limit=4, enrich_decp=False)
         out = []
         for c in res.get("companies") or []:
             if getattr(c, "procedure_collective", None):
@@ -283,14 +303,18 @@ def _discover_sirene(trade: str, dept: str, warnings: list) -> list:
             if getattr(c, "est_personne_physique", False):
                 continue   # entrepreneur individuel : nom = personne physique (RGPD)
             out.append(_member_from_normalized_company(c))
-        for e in res.get("errors") or []:
+        warns = []
+        for e in list(res.get("errors") or []):
             msg = getattr(e, "message", None) or str(e)
-            warnings.append(f"Recherche SIRENE ({label}) partielle : {msg[:120]}")
-        _SIRENE_CACHE[key] = (now, out)
+            warns.append(f"Recherche SIRENE ({label}) partielle : {msg[:120]}")
+        warnings.extend(warns)
+        _SIRENE_CACHE[key] = (now, out, warns)
         return list(out)
     except Exception as e:
         logger.warning("découverte SIRENE %s/%s en échec : %s", trade, dept, e)
-        warnings.append(f"Recherche SIRENE indisponible pour « {trade} » — réessayez plus tard.")
+        warns = [f"Recherche SIRENE indisponible pour « {trade} » — réessayez plus tard."]
+        warnings.extend(warns)
+        _SIRENE_CACHE[key] = (now, [], warns)
         return []
 
 
@@ -304,7 +328,9 @@ def _reseau_pool(db, project, network_ctx: dict, trades: list, dept: str, per_tr
     from datetime import date as _date
     from app.services import partner_matching as pm
     from app.services import partner_network as pn
-    profiles = pn.visible_profiles(db, network_ctx)
+    # Métiers filtrés EN BASE avant la borne de lecture (un lot sans CPV ne classe que les
+    # profils de son métier) : sinon, au-delà de la borne, les derniers inscrits disparaissaient.
+    profiles = pn.visible_profiles(db, network_ctx, metiers=trades)
     by_pid = {p.public_id: p for p in profiles}
     dicts = [pn.profile_dict(p) for p in profiles]
     out, seen = [], set()
@@ -330,7 +356,8 @@ def pool_for_project(db, project, owner_ids: list, include_sirene: bool = False,
       rattaches = ProjectCotraitant du projet → Cotraitant (kind 'attached')
       annuaire  = Cotraitant de l'organisation NON rattachés (kind 'annuaire')
       sirene    = (si include_sirene) découverte SIRENE pour les métiers des manques
-                  (≤ max_sirene_calls appels, cache 10 min, erreurs → liste vide + warning)
+                  (≤ max_sirene_calls appels, cache 10 min ; erreurs → liste vide + avertissement,
+                  cache 90 s)
       reseau    = (si network_ctx d'un chercheur au profil PUBLIÉ) profils du réseau Adjugo
                   pour les métiers des manques, dans l'ordre du classement partner_matching
     `gaps` : manques déjà calculés (sinon calculés ici via gaps_for si lead/criteria fournis)."""
@@ -399,6 +426,9 @@ def pool_for_project(db, project, owner_ids: list, include_sirene: bool = False,
             except Exception as e:
                 logger.warning("pool réseau indisponible (projet %s) : %s", getattr(project, "id", "?"), e)
                 reseau = []
+            if network_ctx.get("tronque"):
+                from app.services.partner_network import TRONQUE_POOL_MSG
+                warnings.append(TRONQUE_POOL_MSG)
             for m in reseau:
                 m["deja_partenaire"] = bool(m.get("siret") and m["siret"] in known)
         seen = set()
