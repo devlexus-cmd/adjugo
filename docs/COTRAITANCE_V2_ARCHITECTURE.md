@@ -130,7 +130,16 @@ l'annuaire, historique réseau.
   l'empreinte des NOUVELLES entrées (contenu haché v2 = « v2| » + v1 + invite_id, ancrage
   inchangé) — pour les anciennes, l'export et l'écran disent qu'il n'est pas scellé ; convention
   refusée (403) à une invitation réseau pas encore acceptée ; DPGF CSV contrôlée par des parseurs
-  linéaires bornés, formules contrôlées sous chaque séparateur plausible.
+  linéaires bornés (4 Mo au plus), formules contrôlées sous chaque séparateur plausible, en-têtes
+  de coûts reconnus après normalisation (même liste que le navigateur), signature des PDF et
+  tableurs vérifiée ; part d'une invitation réseau sans réponse (ou déclinée) invisible du chef de
+  file (liste des parts, cockpit, compte-rendu, pièces) ; « Marquer déposé » refusé sur un marché
+  abandonné, transitions atomiques (compare-and-set : un seul marquage, une seule annulation sous
+  concurrence), statut précédent restauré, compteur « groupements déposés » du réseau recalculé
+  aussitôt ; SRI : promesse corrigée (protège entre serveur et navigateur, pas contre une
+  modification des fichiers sur le serveur), balise correcte quel que soit l'ordre des attributs.
+  Migration vérifiée le 11/10/2026 sur Postgres avec le code de production (ff8ff27) en service
+  pendant la migration, puis retour arrière (`alembic downgrade o9p0q1r2s3t4`, voir DEPLOIEMENT.md).
 
 ### Suppressions différées (livraison ultérieure)
 

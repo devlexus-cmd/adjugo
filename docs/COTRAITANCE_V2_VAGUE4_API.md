@@ -342,14 +342,23 @@ dossier comme déposé »). Avertir, pas bloquer :
   → boîte de confirmation (« Le dossier n'est pas complet : le marquer déposé quand même ? Vous avez
   peut-être déposé hors d'Adjugo. »), focus sur « Annuler », puis renvoyer `{"confirmer": true}` ;
 - succès → `{"ok": true, "deja_depose": false, "status": "envoye", "complet": true|false, "pret": {…}, "state": {…}}` ;
-- déjà déposé (ou gagné / perdu) → 200 `{"ok": true, "deja_depose": true, "status": "envoye", "complet": null, "state": {…}}` (aucune nouvelle trace).
+- déjà déposé (ou gagné / perdu) → 200 `{"ok": true, "deja_depose": true, "status": "envoye", "complet": null, "state": {…}}` (aucune nouvelle trace) ;
+- marché abandonné → **409** `{"code": "marche_abandonne", "message": "Ce marché est marqué « abandonné » : rouvrez-le depuis sa fiche avant de le marquer comme déposé."}`
+  (sinon ses relances, coupées à l'abandon, reprendraient à l'annulation du marquage).
+
+Transition atomique (compare-and-set sur le statut lu) : deux clics simultanés donnent un seul
+marquage et une seule entrée au journal. Le compteur « groupements déposés via Adjugo » des profils
+du réseau concernés (chef de file et membres) est recalculé aussitôt (COUNT réel), au marquage
+comme à son annulation.
 
 Après le marquage : plus aucune relance automatique (parts, attestations) pour ce marché.
 
 ### 5.3 `DELETE /api/projects/{id}/groupement/deposer` — annuler un marquage fait par erreur (30/h)
 
-Le marché retrouve son statut d'avant (« nouveau » ou « en cours ») ; trace « Le mandataire a annulé
-le marquage « déposé » ». Réponse `{"ok": true, "etait_depose": true, "status": "nouveau", "state": {…}}` ;
+Le marché retrouve EXACTEMENT son statut d'avant, lu dans l'entrée « déposé » du journal
+(« nouveau », « en cours », ou « abandonné » pour un marquage antérieur à la règle qui le refuse ;
+« en cours » s'il est illisible) ; trace « Le mandataire a annulé le marquage « déposé » ». Deux
+annulations simultanées : une seule passe, une seule trace. Réponse `{"ok": true, "etait_depose": true, "status": "nouveau", "state": {…}}` ;
 pas déposé → `etait_depose: false` ; gagné / perdu → 409 `{"code": "marche_clos", "message": "Le marché est déjà marqué gagné ou perdu : changez son statut depuis sa fiche."}`.
 
 Démo : `POST` et `DELETE …/deposer` → 403 « La démo est en lecture guidée : créez votre compte
@@ -423,9 +432,13 @@ Données réelles de l'organisation uniquement (aucun montant, aucun nom de part
 
 ## 10. Notes d'intégration
 
-- Migration `q1r2s3t4u5v6` : `down_revision = "o9p0q1r2s3t4"` ; **à rechaîner après la révision de
-  la vague 3**. Idempotente, testée SQLite (neuve / révision précédente avec données / rejeu) et
-  Postgres 16 (neuve / production simulée / rejeu). La garde ajoutée dans `n8o9p0q1r2s3` évite
+- Migration `q1r2s3t4u5v6` : rechaînée après la vague 3 (`down_revision = "p0q1r2s3t4u5"`).
+  Expand/contract : `chiffrage_note` est vidée et n'est plus mappée, mais RESTE en base (le code de
+  production la mappe encore) ; sa suppression viendra dans une livraison ultérieure. Idempotente,
+  testée SQLite (neuve / révision précédente avec données / rejeu) et, le 11/10/2026, Postgres avec
+  le code de production (ff8ff27) qui lit et écrit les parts pendant la migration, après elle et
+  après un retour arrière (`alembic downgrade o9p0q1r2s3t4` depuis la nouvelle image, puis image
+  précédente : voir DEPLOIEMENT.md). La garde ajoutée dans `n8o9p0q1r2s3` évite
   de lire une colonne qui n'existe plus sur une base neuve.
 - Après la fusion avec la vague 3 (qui modifie `app.js`), relancer `python scripts/sri_update.py`.
 - `GROUP_EVENTS` (événements visibles de tous les membres) est **figé** pour `adjugo-journal-membre-v1` :
