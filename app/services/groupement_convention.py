@@ -1054,19 +1054,16 @@ def serialize_signature(sig, for_owner: bool) -> dict:
 # ── PDF ───────────────────────────────────────────────────────────────────────────────
 
 def _fmt_dt(dt) -> str:
-    if not dt:
-        return ""
-    try:
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc)
-        return dt.strftime("%d/%m/%Y à %H:%M (UTC)")
-    except Exception:
-        return str(dt)
+    """Date et heure d'un accord, à l'heure de Paris (format partagé avec le journal du membre).
+    Réservé à accords_md, HORS empreinte : jamais dans render() ni dans content_hash."""
+    from app.services.format import date_heure_fr
+    return date_heure_fr(dt)
 
 
 def accords_md(conv, sigs: list) -> str:
     """Section « Accords enregistrés » ajoutée au PDF (HORS empreinte : elle évolue à chaque
-    accord, le texte approuvé, lui, ne change pas)."""
+    accord, le texte approuvé, lui, ne change pas). Heures à l'heure de Paris : affichage seul,
+    les dates en base (frozen_at, signed_at) restent en UTC."""
     L = ["", "## Accords enregistrés",
          f"Empreinte du texte approuvé (SHA-256) : {conv.content_hash or '—'}",
          f"Version n°{conv.version or 0}, figée le {_fmt_dt(conv.frozen_at)}.", ""]
