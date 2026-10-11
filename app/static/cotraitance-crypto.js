@@ -24,12 +24,12 @@
   const subtle = (typeof crypto !== "undefined" && crypto.subtle) ? crypto.subtle : null;
 
   const LABELS = {
-    lock: "Chiffré dans votre navigateur avec une clé qu'Adjugo ne stocke pas. Ni le mandataire, ni Adjugo, ni l'IA ne peuvent le lire.",
+    lock: "Chiffré dans votre navigateur avec une clé qu'Adjugo ne stocke pas. Ni le chef de file, ni Adjugo, ni l'IA ne peuvent le lire.",
     lost: "Si vous perdez votre code de récupération, ce détail est définitivement perdu : nous ne pouvons pas le récupérer.",
     other_device: "Sur un autre ordinateur ou navigateur, vous devrez ressaisir votre code de récupération.",
-    not_zero_knowledge: "Seul montant visible par le mandataire.",
+    not_zero_knowledge: "Seul montant visible par le chef de file.",
     // Version courte, visible sous le champ (le texte complet lock + lost va dans l'icône d'aide du libellé).
-    lock_short: "Illisible par le mandataire, Adjugo et l'IA. Code perdu = détail perdu.",
+    lock_short: "Illisible par le chef de file, Adjugo et l'IA. Code perdu = détail perdu.",
   };
 
   // ── encodage ──

@@ -107,7 +107,7 @@ class InviteReq(BaseModel):
 def invite(space_id: int, req: InviteReq, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     s = db.query(CoSpace).filter(CoSpace.id == space_id, CoSpace.owner_id == current_user.id).first()
     if not s:
-        raise HTTPException(404, "Espace introuvable (seul le mandataire invite).")
+        raise HTTPException(404, "Espace introuvable (seul le chef de file invite).")
     email = (req.email or "").strip().lower()
     if not email or "@" not in email:
         raise HTTPException(422, "Email invalide.")
@@ -176,10 +176,10 @@ def merged_memoire(space_id: int, req: MergedMemoireReq, request: Request,
     tous les membres acceptés (mandataire inclus)."""
     s = db.query(CoSpace).filter(CoSpace.id == space_id, CoSpace.owner_id == current_user.id).first()
     if not s:
-        raise HTTPException(404, "Espace introuvable (seul le mandataire génère).")
+        raise HTTPException(404, "Espace introuvable (seul le chef de file génère).")
     if len((req.dce_text or "").strip()) < 60:
         raise HTTPException(422, "DCE trop court pour générer un mémoire.")
-    members = [{"user_id": s.owner_id, "name": _company_name(db, s.owner_id) or "Mandataire", "role": "mandataire"}]
+    members = [{"user_id": s.owner_id, "name": _company_name(db, s.owner_id) or "Chef de file", "role": "mandataire"}]
     for m in db.query(CoMember).filter(CoMember.space_id == s.id, CoMember.status == "accepted").all():
         if m.user_id:
             members.append({"user_id": m.user_id, "name": m.company_name or "Co-traitant", "role": m.role})
@@ -208,10 +208,10 @@ def warroom(space_id: int, req: WarRoomReq, request: Request,
     from app.services.agents.warroom import propose_allocation
     s = db.query(CoSpace).filter(CoSpace.id == space_id, CoSpace.owner_id == current_user.id).first()
     if not s:
-        raise HTTPException(404, "Espace introuvable (seul le mandataire pré-répartit).")
+        raise HTTPException(404, "Espace introuvable (seul le chef de file pré-répartit).")
     if len((req.dce_text or "").strip()) < 60:
         raise HTTPException(422, "DCE trop court.")
-    members = [{"user_id": s.owner_id, "name": _company_name(db, s.owner_id) or "Mandataire", "role": "mandataire"}]
+    members = [{"user_id": s.owner_id, "name": _company_name(db, s.owner_id) or "Chef de file", "role": "mandataire"}]
     for m in db.query(CoMember).filter(CoMember.space_id == s.id, CoMember.status == "accepted").all():
         if m.user_id:
             members.append({"user_id": m.user_id, "name": m.company_name or "Co-traitant", "role": m.role})

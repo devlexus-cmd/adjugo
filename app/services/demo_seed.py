@@ -488,7 +488,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
     # ── Contacts (CRM) ────────────────────────────────────────────────────────
     for n, role, org, ctype, email, phone, addr, note in [
         ("Sabine Vidal", "Responsable de la commande publique", "Ville de Bordeaux", "maitre_ouvrage", "marches.publics@mairie-bordeaux.fr", "05 56 10 20 30", "Place Pey-Berland, 33000 Bordeaux", "Interlocutrice marchés bâtiment — réactive, privilégie le dépôt dématérialisé."),
-        ("Studio Vertigo Architectes", "Architecte mandataire (maîtrise d'œuvre)", "Studio Vertigo", "partenaire", "contact@studio-vertigo.fr", "04 72 41 55 30", "18 quai Claude-Bernard, 69007 Lyon", "MOE sur plusieurs marchés scolaires — bon relais pour les visites de site."),
+        ("Studio Vertigo Architectes", "Architecte chef de file (maîtrise d'œuvre)", "Studio Vertigo", "partenaire", "contact@studio-vertigo.fr", "04 72 41 55 30", "18 quai Claude-Bernard, 69007 Lyon", "MOE sur plusieurs marchés scolaires — bon relais pour les visites de site."),
         ("Service comptes pro — Point P", "Responsable comptes professionnels", "Point P — Saint-Gobain Distribution", "fournisseur", "pro@pointp.fr", "03 88 40 22 10", "ZI Nord, 67000 Strasbourg", "Conditions cadre négociées sur l'étanchéité et l'isolation."),
     ]:
         db.add(Contact(user_id=uid, name=n, role=role, organization=org, contact_type=ctype, email=email, phone=phone, address=addr, notes=note))
@@ -626,8 +626,8 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                         marche="Réhabilitation énergétique et désamiantage du gymnase municipal de Lorient",
                         warroom={"lots": [
                             {"lot": "Lot 1 — Désamiantage SS3", "attribue": "Breizh Désamiantage"},
-                            {"lot": "Lot 2 — Isolation / rénovation énergétique", "attribue": "Bâtiment de l'Ouest (mandataire)"},
-                            {"lot": "Lot 3 — Gros œuvre & étanchéité", "attribue": "Bâtiment de l'Ouest (mandataire)"},
+                            {"lot": "Lot 2 — Isolation / rénovation énergétique", "attribue": "Bâtiment de l'Ouest (chef de file)"},
+                            {"lot": "Lot 3 — Gros œuvre & étanchéité", "attribue": "Bâtiment de l'Ouest (chef de file)"},
                         ]})
         db.add(space); db.flush()
         db.add(CoMember(space_id=space.id, user_id=uid, role="mandataire", status="accepted",

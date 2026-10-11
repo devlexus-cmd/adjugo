@@ -197,7 +197,7 @@ def _piece_alerts_due(db: Session, today) -> list:
         tenant_oid = tenant_owner_id(project, db)
         company = (db.query(Company).filter(Company.user_id == tenant_oid).first()
                    or db.query(Company).filter(Company.user_id == project.user_id).first())
-        chef = (company.name if company and company.name else "le mandataire")
+        chef = (company.name if company and company.name else "le chef de file")
         by_id = {i.id: i for i in invites}
         for m in grid.get("members", []):
             inv = by_id.get(m.get("invite_id"))

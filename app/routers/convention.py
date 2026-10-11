@@ -293,7 +293,7 @@ def save_draft(request: Request, project_id: int, data: BrouillonIn,
                        "signataire_qualite": gc._clean(e.signataire_qualite, 120) if e.signataire_qualite else ""})
 
     if fields:
-        _remettre_en_brouillon(db, project, conv, "convention modifiée par le mandataire", current_user, request)
+        _remettre_en_brouillon(db, project, conv, "convention modifiée par le chef de file", current_user, request)
     if data.forme is not None:
         conv.forme = data.forme
         if data.forme != "conjoint":
@@ -442,7 +442,7 @@ def generer(request: Request, project_id: int, data: GenererIn = None,
     frozen = utcnow()
 
     if conv.status in gc.ACTIVE:                      # régénération confirmée : tracé
-        gc.perimer(db, project, "convention régénérée par le mandataire",
+        gc.perimer(db, project, "convention régénérée par le chef de file",
                    actor=f"user:{current_user.id}", actor_kind="owner", ip=audit.client_ip(request))
         db.refresh(conv)
     conv.content_md = content

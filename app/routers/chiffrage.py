@@ -58,7 +58,7 @@ def _unfreeze_after_estimate(db, p, current_user) -> None:
     devient faux → on défige (avec trace offer.unfrozen). Best-effort."""
     try:
         from app.routers.invites import _unfreeze_offer_if_needed
-        _unfreeze_offer_if_needed(db, p.id, "chiffrage du mandataire modifié",
+        _unfreeze_offer_if_needed(db, p.id, "chiffrage du chef de file modifié",
                                   actor=f"user:{current_user.id}", actor_kind="owner")
     except Exception:
         pass

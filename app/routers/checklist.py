@@ -50,7 +50,7 @@ PIECES_STANDARD = [
     {"id": "rib", "name": "Releve d'identite bancaire (RIB)", "category": "administratif", "required": True,
      "help": "RIB au nom de l'entreprise, à télécharger depuis votre banque en ligne."},
     {"id": "pouvoir", "name": "Pouvoir du signataire", "category": "administratif", "required": False,
-     "help": "Délégation de pouvoir si le signataire n'est pas le représentant légal. OBLIGATOIRE pour le mandataire d'un groupement."},
+     "help": "Délégation de pouvoir si le signataire n'est pas le représentant légal. OBLIGATOIRE pour le chef de file d'un groupement."},
     {"id": "dc4", "name": "DC4 - Declaration de sous-traitance", "category": "cerfa", "required": False,
      "help": "Généré par Adjugo si vous déclarez un sous-traitant. À compléter avec sa part du marché."},
     {"id": "memoire_technique", "name": "Memoire technique", "category": "technique", "required": True,
@@ -222,7 +222,7 @@ def get_checklist(
         contextual["rc_decennale"] = "Marché de travaux : assurance décennale obligatoire."
         contextual["planning"] = "Marché de travaux : planning d'exécution généralement exigé."
     if is_groupement:
-        contextual["pouvoir"] = "Groupement : pouvoir / habilitation du mandataire obligatoire."
+        contextual["pouvoir"] = "Groupement : pouvoir / habilitation du chef de file obligatoire."
         contextual["dc4"] = "Groupement avec sous-traitance : DC4 à prévoir le cas échéant."
     # DPGF/BPU imposé par l'acheteur : si une trame figure dans les pièces requises du DCE,
     # il faut la compléter telle quelle — le modèle Adjugo ne sert alors que de chiffrage.

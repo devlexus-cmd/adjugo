@@ -56,7 +56,7 @@ FORMES = {
 MANDATAIRE_SOLIDAIRE = {
     "terme": "Mandataire solidaire",
     "phrase": "Le chef de file répond aussi de la part de chaque partenaire",
-    "explication": ("Option du groupement conjoint : devant l'acheteur, le mandataire (chef de file) "
+    "explication": ("Option du groupement conjoint : devant l'acheteur, le chef de file "
                     "garantit la bonne exécution de la part des autres membres."),
 }
 
@@ -153,7 +153,7 @@ IDENTITY_LABELS = {
     "compte_verifie": "accord enregistré depuis son compte Adjugo (adresse email vérifiée)",
     "email_verifie": "accord enregistré via le lien, adresse email vérifiée par code",
     "lien_seul": "accord enregistré via le lien (identité non vérifiée)",
-    "": "accord recueilli hors ligne, déclaré par le mandataire",
+    "": "accord recueilli hors ligne, déclaré par le chef de file",
 }
 ACTIVE = ("a_signer", "signee")
 
@@ -487,7 +487,7 @@ def collect_members(db, project, conv, company, include_incomplete: bool = False
     comp = company
     lead_name = (comp.name if comp is not None and comp.name else "") or "Le mandataire"
     if comp is None or not (comp.name or "").strip():
-        manques.append("Profil entreprise à compléter : nom de votre entreprise (mandataire)")
+        manques.append("Profil entreprise à compléter : nom de votre entreprise (chef de file)")
     part = params.get("part_mandataire_ht")
     if part is None:
         manques.append("Votre part (chef de file) : montant € HT à indiquer")
@@ -824,8 +824,9 @@ def warnings_for(conv, project, ctx: dict, fi: dict, sous_traitants: list, db=No
                    "ne correspond pas. Vérifiez avant de générer.")
     ex = (fi.get("extrait") or "").lower()
     if forme == "conjoint" and not ctx.get("mandataire_solidaire") and "mandataire" in ex and "solidaire" in ex:
-        out.append("La phrase citée du règlement parle d'un mandataire solidaire : vérifiez s'il faut cocher "
-                   "l'option « mandataire solidaire ».")
+        out.append("La phrase citée du règlement demande un chef de file solidaire (« mandataire solidaire ») : "
+                   "vérifiez s'il faut cocher l'option « Le chef de file répond aussi de la part de chaque "
+                   "partenaire ».")
     members = ctx.get("members") or []
     lots = {}
     for m in members:
@@ -1069,7 +1070,7 @@ def accords_md(conv, sigs: list) -> str:
          f"Version n°{conv.version or 0}, figée le {_fmt_dt(conv.frozen_at)}.", ""]
     for s in sigs:
         who = md(s.company_name) or "Membre"
-        role = {"mandataire": "mandataire", "partenaire": "partenaire", "hors_ligne": "partenaire hors ligne"}[member_kind(s)]
+        role = {"mandataire": "chef de file", "partenaire": "partenaire", "hors_ligne": "partenaire hors ligne"}[member_kind(s)]
         if s.status in ("signed", "hors_ligne"):
             nom = md(s.signataire_nom) or "signataire non précisé"
             qual = md(s.signataire_qualite, 120)

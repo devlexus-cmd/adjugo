@@ -128,23 +128,23 @@ LABELS_ME = {
     "guest.export_journal": "Vous avez exporté votre journal",
 }
 LABELS_OWNER = {
-    "owner.view_contribution": "Le mandataire a consulté votre part",
-    "owner.download_piece": "Le mandataire a téléchargé votre pièce",
-    "owner.view_piece": "Le mandataire a consulté votre pièce",
-    "invite.created": "Le mandataire vous a invité",
-    "invite.resent": "Le mandataire vous a renvoyé l'invitation",
-    "invite.revoked": "Le mandataire vous a retiré du groupement",
-    "offer.frozen": "Le mandataire a figé l'offre commune",
-    "offer.unfrozen": "Le mandataire a défigé l'offre commune",
-    "groupement.retenue": "Le mandataire a retenu la composition du groupement",
-    "convention.generated": "Le mandataire a généré la convention de groupement",
-    "convention.signed": "Le mandataire a validé la convention (accord enregistré)",
-    "convention.perimee": "La convention n'est plus à jour : le mandataire doit la régénérer",
-    "convention.hors_ligne": "Le mandataire a enregistré l'accord hors ligne d'un partenaire",
+    "owner.view_contribution": "Le chef de file a consulté votre part",
+    "owner.download_piece": "Le chef de file a téléchargé votre pièce",
+    "owner.view_piece": "Le chef de file a consulté votre pièce",
+    "invite.created": "Le chef de file vous a invité",
+    "invite.resent": "Le chef de file vous a renvoyé l'invitation",
+    "invite.revoked": "Le chef de file vous a retiré du groupement",
+    "offer.frozen": "Le chef de file a figé l'offre commune",
+    "offer.unfrozen": "Le chef de file a défigé l'offre commune",
+    "groupement.retenue": "Le chef de file a retenu la composition du groupement",
+    "convention.generated": "Le chef de file a généré la convention de groupement",
+    "convention.signed": "Le chef de file a validé la convention (accord enregistré)",
+    "convention.perimee": "La convention n'est plus à jour : le chef de file doit la régénérer",
+    "convention.hors_ligne": "Le chef de file a enregistré l'accord hors ligne d'un partenaire",
     "piece.expiring": "Adjugo vous a alerté : une attestation manque ou expire",
     # Vague 4
-    "groupement.depose": "Le mandataire a marqué le dossier comme déposé",
-    "groupement.depot_annule": "Le mandataire a annulé le marquage « déposé »",
+    "groupement.depose": "Le chef de file a marqué le dossier comme déposé",
+    "groupement.depot_annule": "Le chef de file a annulé le marquage « déposé »",
 }
 LABELS_PARTNER = {
     "invite.created": "Un partenaire a été invité",
@@ -629,7 +629,7 @@ def prolonge(ancien: dict, nouveau: dict) -> bool:
     return all({k: x.get(k) for k in keys} == {k: y.get(k) for k in keys} for x, y in zip(a, b))
 
 
-_WHO = {"vous": "Vous", "mandataire": "Mandataire", "partenaire": "Partenaire"}
+_WHO = {"vous": "Vous", "mandataire": "Chef de file", "partenaire": "Partenaire"}
 
 
 def export_pdf(payload: dict) -> bytes:

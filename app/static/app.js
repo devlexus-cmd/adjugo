@@ -1232,7 +1232,7 @@ const __adjApp = createApp({
     },
     async sharedLostCode() {
       const C = window.AdjugoCrypto; if (!C) return;
-      if (!confirm("Vous avez perdu votre code de récupération ?\n\nL'ancien détail de votre chiffrage sera définitivement perdu : personne (ni Adjugo, ni le mandataire) ne peut le récupérer. Vous pourrez en saisir un nouveau.")) return;
+      if (!confirm("Vous avez perdu votre code de récupération ?\n\nL'ancien détail de votre chiffrage sera définitivement perdu : personne (ni Adjugo, ni le chef de file) ne peut le récupérer. Vous pourrez en saisir un nouveau.")) return;
       try {
         const rr = await C.resetKey(this.sharedAo.token);
         this.sharedAo.envelope = null; this.sharedAo.detailClair = ""; this.sharedAo.detailDpgf = null; this.sharedAo.detailLocked = false;
@@ -2491,6 +2491,9 @@ const __adjApp = createApp({
       const det = String(list[i].detail || "").trim().replace(/\s+/g, " "), low = det.toLowerCase();
       const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
       const fixed = {
+        "défigée par le chef de file": "L'offre commune a été défigée.",
+        "chiffrage du chef de file modifié": "Votre chiffrage (votre part de l'offre) a été modifié.",
+        // Anciennes entrées du journal (avant le passage à « chef de file ») : même message.
         "défigée par le mandataire": "L'offre commune a été défigée.",
         "chiffrage du mandataire modifié": "Votre chiffrage (votre part de l'offre) a été modifié.",
         "composition du groupement modifiée": "La composition du groupement a changé.",

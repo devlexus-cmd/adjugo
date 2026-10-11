@@ -397,7 +397,7 @@ def test_dpgf_lot_deposee_visible_du_chef_de_file_seulement(client, auth, mails,
     assert dl.status_code == 200 and dl.content == CSV_OK
     assert "attachment" in dl.headers["content-disposition"]
     labels = [e["label"] for e in client.get(f"/api/invite/{ta}/journal").json()["entries"]]
-    assert any(l.startswith("Le mandataire a téléchargé votre pièce « dpgf.csv »") for l in labels)
+    assert any(l.startswith("Le chef de file a téléchargé votre pièce « dpgf.csv »") for l in labels)
     # Autre membre : ni la pièce, ni son nom, ni une case « DPGF » dans le coffre croisé.
     assert client.get(f"/api/invite/{tb}/contribution/piece/{p['id']}").status_code == 404
     cc = client.get(f"/api/invite/{tb}/coffre-croise").json()
@@ -512,7 +512,7 @@ def test_marquer_depose_confirmation_journal_idempotent_annulation(client, auth,
     assert body["status"] == "envoye" and body["complet"] is False and body["state"]["state"] == "depose"
     assert client.get(f"/api/projects/{pid}", headers=h).json()["status"] == "envoye"
     labels = [e["label"] for e in client.get(f"/api/invite/{t}/journal").json()["entries"]]
-    assert "Le mandataire a marqué le dossier comme déposé" in labels
+    assert "Le chef de file a marqué le dossier comme déposé" in labels
     rows = _audit_rows(project_id=pid, action="groupement.depose")
     assert len(rows) == 1 and rows[0][2]                                   # chaîné
     # Idempotent : aucune seconde trace.
@@ -525,7 +525,7 @@ def test_marquer_depose_confirmation_journal_idempotent_annulation(client, auth,
     r = client.delete(f"/api/projects/{pid}/groupement/deposer", headers=h)
     assert r.status_code == 200 and r.json()["etait_depose"] is True and r.json()["status"] == "nouveau"   # statut d'avant le marquage
     labels = [e["label"] for e in client.get(f"/api/invite/{t}/journal").json()["entries"]]
-    assert "Le mandataire a annulé le marquage « déposé »" in labels
+    assert "Le chef de file a annulé le marquage « déposé »" in labels
     assert client.delete(f"/api/projects/{pid}/groupement/deposer", headers=h).json()["etait_depose"] is False
     # Intégrité du journal du membre après ces écritures.
     assert client.get(f"/api/invite/{t}/journal/integrity").json()["verdict"] == "intact"
@@ -885,7 +885,7 @@ def test_sous_traitant_ne_voit_pas_le_total_dans_le_journal(client, auth, mails)
     for b in blobs:
         raw = json.dumps(b, ensure_ascii=False)
         assert "€ HT" not in raw and "100 000" not in raw and "100000" not in raw, raw[:400]
-    assert "Le mandataire a figé l'offre commune" in [e["label"] for e in blobs[0]["entries"]]
+    assert "Le chef de file a figé l'offre commune" in [e["label"] for e in blobs[0]["entries"]]
     pdf = _pdf_text(client.get(f"/api/invite/{st['token']}/journal/export?format=pdf").content)
     assert "€ HT" not in pdf
     # Un co-traitant signataire voit le total (doctrine inchangée).

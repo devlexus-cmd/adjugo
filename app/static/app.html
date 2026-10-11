@@ -22,7 +22,7 @@
 <script src="/static/vendor/vue-3.5.38.prod.js" integrity="sha384-KYk+4lWOhWTo/BrM+zKkwLtFsD6cs2ClFbaGiX5ozDVHPqF4nOqxVGiHvcyWsw8B"></script>
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
-<script src="/static/cotraitance-crypto.js" integrity="sha384-Vho8AEpUucuoYTe4e4OmFl/p1v4rz2nqBKbIC1AUc36adSU7tP5XifKa8ptPtpKH"></script>
+<script src="/static/cotraitance-crypto.js" integrity="sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le"></script>
 <script src="/static/i18n.js" integrity="sha384-oDik9h0VMLSezjzvjE5icFK+aIpVHzN4CCrDdXTColU7Xknf8tmAL3inncvd+DSq" defer></script>
 </head>
 <body>
@@ -1051,7 +1051,7 @@
 
           <!-- Sous-traitants rattachés à l'AO -->
           <div class="card" style="margin-top:14px">
-            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake"></i><h3>Partenaires sur ce marché</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>Avant de déposer en groupement</b>, vérifiez le règlement : il peut <b>imposer ou interdire</b> la co-traitance selon le lot ; un opérateur ne peut être <b>mandataire que d'un seul groupement par lot</b>, ni être à la fois <b>candidat seul et membre</b> d'un groupement ; la <b>composition ne doit plus changer</b> entre la remise des candidatures et la signature. « Ajouter » recherche des entreprises réelles (SIRENE) à rattacher comme chef de file, partenaire ou sous-traitant ; leur vérification via les registres officiels donne le statut à la date indiquée.</span></button><div class="spacer"></div>
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake"></i><h3>Partenaires sur ce marché</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>Avant de déposer en groupement</b>, vérifiez le règlement : il peut <b>imposer ou interdire</b> la co-traitance selon le lot ; un opérateur ne peut être <b>chef de file que d'un seul groupement par lot</b>, ni être à la fois <b>candidat seul et membre</b> d'un groupement ; la <b>composition ne doit plus changer</b> entre la remise des candidatures et la signature. « Ajouter » recherche des entreprises réelles (SIRENE) à rattacher comme chef de file, partenaire ou sous-traitant ; leur vérification via les registres officiels donne le statut à la date indiquée.</span></button><div class="spacer"></div>
               <button class="btn sm" @click="aoOptimizeGroup()" :disabled="ao.group&&ao.group.loading"><span v-if="ao.group&&ao.group.loading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répartir entre partenaires</button>
               <button class="btn sm" @click="ao.stOpen=!ao.stOpen"><i data-lucide="plus"></i>Ajouter</button></div>
             <div class="cb">
@@ -1243,7 +1243,7 @@
                     <span class="pill" :class="p.status==='submitted'?'go':p.status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ p.status==='submitted'?'Soumise':p.status==='draft'?'Brouillon':'En attente' }}</span>
                     <span v-if="p.pieces_count" class="pill neutral" style="font-size:10px"><i data-lucide="paperclip" style="width:10px;height:10px"></i>{{ p.pieces_count }} pièce(s)</span>
                     <span v-if="p.lot" class="muted small"> · {{ p.lot }}</span>
-                    <span v-if="p.prix_lot_ht!=null" class="pill neutral" style="font-size:10px" title="Prix de vente du lot (visible du mandataire)">{{ eur(p.prix_lot_ht) }} HT</span>
+                    <span v-if="p.prix_lot_ht!=null" class="pill neutral" style="font-size:10px" title="Prix de vente du lot (visible du chef de file)">{{ eur(p.prix_lot_ht) }} HT</span>
                     <span v-else-if="p.status==='submitted'" class="pill a_etudier" style="font-size:10px">prix de lot manquant</span>
                     <span v-if="p.has_dpgf_lot" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="file-check-2" style="width:10px;height:10px"></i>DPGF du lot reçue</span><button v-if="p.has_dpgf_lot" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">DPGF : le détail des prix de vente du partenaire pour son lot, ligne par ligne. Jamais ses coûts ni ses marges.</span></button>
                     <i v-if="p.has_detail_chiffre" data-lucide="lock" style="width:11px;height:11px;color:var(--text-2);vertical-align:-1px" title="Détail du chiffrage chiffré par le partenaire — vous ne le voyez pas, c'est voulu" aria-label="Détail du chiffrage chiffré"></i>
@@ -2478,13 +2478,13 @@
               <div style="flex:1;min-width:200px">
                 <b style="font-size:13.5px">Pourquoi vous dans ce groupement</b>
                 <div v-if="(sfm().my_apport||[]).length" class="row wrap" style="gap:4px;margin-top:4px;align-items:center"><span class="muted small">Vous apportez :</span><span v-for="a in sfm().my_apport" :key="a.key" class="sg-chip by">{{ a.label }}</span></div>
-                <div v-else class="muted small" style="margin-top:4px">{{ sfm().score_groupement!=null ? 'Le mandataire n\'a pas précisé ce que vous apportez.' : 'Le mandataire n\'a pas encore calculé le score du groupement.' }}</div>
+                <div v-else class="muted small" style="margin-top:4px">{{ sfm().score_groupement!=null ? 'Le chef de file n\'a pas précisé ce que vous apportez.' : 'Le chef de file n\'a pas encore calculé le score du groupement.' }}</div>
                 <div v-if="sfm().seuils" class="row wrap small" style="gap:12px;margin-top:6px"><span :style="sfm().seuils.ca_cumule_ok?'color:var(--success-text)':''"><i :data-lucide="sfm().seuils.ca_cumule_ok?'check':'circle'" style="width:13px;height:13px;vertical-align:-2px"></i> CA cumulé suffisant</span><span :style="sfm().seuils.qualifs_ok?'color:var(--success-text)':''"><i :data-lucide="sfm().seuils.qualifs_ok?'check':'circle'" style="width:13px;height:13px;vertical-align:-2px"></i> Qualifications couvertes</span></div>
               </div>
             </div>
             <div v-if="(sfmState().members||[]).length" style="margin-top:10px">
               <div class="muted small" style="font-weight:600;margin-bottom:3px">Membres du groupement</div>
-              <div class="row wrap" style="gap:6px"><span class="pill neutral" style="font-size:10px">{{ sharedAo.mandataire||'Mandataire' }} · chef de file</span><span v-for="(m,i) in sfmState().members" :key="'fm'+i" class="pill" :class="m.status==='submitted'?'go':'neutral'" style="font-size:10px">{{ m.company }} · {{ m.role==='sous_traitant'?'sous-traitant':'partenaire' }} · {{ memberStatusLabel(m.status) }}</span></div>
+              <div class="row wrap" style="gap:6px"><span class="pill neutral" style="font-size:10px">{{ sharedAo.mandataire ? sharedAo.mandataire + ' · chef de file' : 'Chef de file' }}</span><span v-for="(m,i) in sfmState().members" :key="'fm'+i" class="pill" :class="m.status==='submitted'?'go':'neutral'" style="font-size:10px">{{ m.company }} · {{ m.role==='sous_traitant'?'sous-traitant':'partenaire' }} · {{ memberStatusLabel(m.status) }}</span></div>
             </div>
             <div v-if="sfmState().offer_frozen" class="offre-box" style="flex-wrap:wrap"><i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i><div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b> le {{ fmtDate(sfmState().frozen_at) }}</div><div v-if="sfm().warning_two_members" class="muted small">À deux, le total révèle mécaniquement la part de l'autre.</div></div><div class="offre-total">{{ eur(sfmState().total_offre_ht) }} HT</div></div>
           </div>
@@ -2585,7 +2585,7 @@
             <div class="field"><label>Qualifications (séparées par des virgules)</label><input class="inp" v-model="sharedAo.contrib.quals" placeholder="ex. Qualibat 1112, RGE"></div>
             <div class="field"><label>Références (une par ligne)</label><textarea class="inp" v-model="sharedAo.contrib.refs" rows="3"></textarea></div>
             <!-- Doctrine de visibilité : le prix de VENTE du lot est lisible par le chef de file ; le détail est chiffré dans le navigateur -->
-            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Prix de vente de votre lot (€ HT)</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le prix de vente de votre lot reste lisible par le mandataire : c'est voulu, il en a besoin pour consolider l'offre.</span></button></div><input class="inp" type="number" min="0" step="1" v-model="sharedAo.contrib.prix_lot_ht" placeholder="ex. 280000"><div class="muted small" style="margin-top:3px">{{ cryptoLabels().not_zero_knowledge }}</div></div>
+            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Prix de vente de votre lot (€ HT)</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le prix de vente de votre lot reste lisible par le chef de file : c'est voulu, il en a besoin pour consolider l'offre.</span></button></div><input class="inp" type="number" min="0" step="1" v-model="sharedAo.contrib.prix_lot_ht" placeholder="ex. 280000"><div class="muted small" style="margin-top:3px">{{ cryptoLabels().not_zero_knowledge }}</div></div>
             <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Détail de votre chiffrage (coûts, marges, méthode)</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ cryptoLabels().lock }} {{ cryptoLabels().lost }}</span></button></div>
               <div v-if="sharedAo.detailLocked" style="padding:12px;border:1px dashed var(--border);border-radius:9px;background:var(--surface-2)">
                 <div class="row small" style="gap:6px;align-items:center"><i data-lucide="lock" style="width:14px;height:14px"></i><b>Détail verrouillé</b><span class="muted">— chiffré sur un autre navigateur ou avec un autre code.</span></div>
@@ -2671,7 +2671,7 @@
               <div v-if="sharedAo.jv.v.empreinte" class="jv-fp"><span>Empreinte de votre journal :</span><code title="Empreinte complète dans la preuve (JSON)">{{ jvHex(sharedAo.jv.v.empreinte) }} …</code><button type="button" class="btn sm" @click="jvCopy(sharedAo.jv.v)" aria-label="Copier l'empreinte complète de votre journal"><i data-lucide="copy"></i>Copier</button></div>
             </div>
             <ul v-if="sharedAo.journal && sharedAo.journal.entries.length" class="jrn">
-              <li v-for="(e,i) in sharedAo.journal.entries" :key="'jr'+i"><span class="jrn-at">{{ auditAt(e.at) }}</span><span class="jrn-who" :class="e.who">{{ e.who==='vous'?'Vous':(e.who==='mandataire'?'Mandataire':'Partenaire') }}</span><span style="flex:1;min-width:0">{{ e.label }}<span v-if="e.detail" class="muted"> · {{ e.detail }}</span></span></li>
+              <li v-for="(e,i) in sharedAo.journal.entries" :key="'jr'+i"><span class="jrn-at">{{ auditAt(e.at) }}</span><span class="jrn-who" :class="e.who">{{ e.who==='vous'?'Vous':(e.who==='mandataire'?'Chef de file':'Partenaire') }}</span><span style="flex:1;min-width:0">{{ e.label }}<span v-if="e.detail" class="muted"> · {{ e.detail }}</span></span></li>
             </ul>
             <div v-else-if="sharedAo.journal" class="muted small" style="margin-top:6px">Aucune entrée pour l'instant.</div>
           </details>
@@ -2883,6 +2883,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-/KeZeQhDdCwWD87hUVOWNNlno6GKy4lRyVr7H6keTYhMXLmG0QiN//4CCeCdL9z1" defer></script>
+<script src="/static/app.js" integrity="sha384-+YupJKtZnX5TpZ1N09XoJa6cI2cNeXDchaqQp/2sA6QdmqjnBm8ad3nTzZT41Imn" defer></script>
 </body>
 </html>

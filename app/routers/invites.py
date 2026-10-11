@@ -838,7 +838,7 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
             emailed = _email.send_email(
                 inv.recipient, "Accès à un dossier Adjugo retiré",
                 f"Bonjour,\n\nVotre accès au dossier « {proj.name if proj else 'partagé'} » sur "
-                f"Adjugo a été retiré par le mandataire. Vous n'y avez plus accès.\n\n— Adjugo")
+                f"Adjugo a été retiré par le chef de file. Vous n'y avez plus accès.\n\n— Adjugo")
         except Exception:
             emailed = False
     return {"ok": True, "notified": emailed}
@@ -938,7 +938,7 @@ def _valid_invite(token: str, db: Session) -> ProjectInvite:
     if not inv or inv.revoked:
         raise HTTPException(404, "Lien invalide ou révoqué")
     if getattr(inv, "declined_at", None):
-        raise HTTPException(410, "Vous avez décliné cette invitation. Contactez le mandataire pour la rouvrir.")
+        raise HTTPException(410, "Vous avez décliné cette invitation. Contactez le chef de file pour la rouvrir.")
     if _is_expired(inv.expires_at):
         raise HTTPException(410, "Ce lien de partage a expiré")
     return inv
@@ -1514,7 +1514,7 @@ def guest_otp_request(token: str, request: Request, db: Session = Depends(get_db
     if _otp_cap_reached(inv, db):
         return {"sent": False,
                 "reason": "Trop de codes envoyés aujourd'hui pour ce groupement. Réessayez demain "
-                          "ou demandez au mandataire de vous renvoyer l'invitation.",
+                          "ou demandez au chef de file de vous renvoyer l'invitation.",
                 "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
     code = f"{secrets.randbelow(1_000_000):06d}"
     inv.otp_hash = _hash_otp(code)
@@ -2710,7 +2710,7 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
                                   "missing": manques})
     lead = body.lead_total_ht if body and body.lead_total_ht is not None else None
     if lead is not None and (lead < 0 or lead > 1e10):
-        raise HTTPException(422, "Part du mandataire invalide.")
+        raise HTTPException(422, "Part du chef de file invalide.")
     total = total_offre_ht(project, db, lead_total=lead)
     if total is None:
         raise HTTPException(422, "Impossible de calculer le total : vérifiez les prix de lot.")
@@ -2722,7 +2722,7 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
         # serait faux (somme des seules parts des partenaires).
         raise HTTPException(422, {"message": "Indiquez votre propre part (€ HT) : aucun chiffrage "
                                              "n'est enregistré pour ce marché.",
-                                  "missing": ["Votre part (mandataire) : montant € HT"]})
+                                  "missing": ["Votre part (chef de file) : montant € HT"]})
     frozen_at = utcnow().isoformat()
     parts = [{"invite_id": inv.id,
               "company": (contribs[inv.id].company_name or inv.company_name or "Partenaire"),
@@ -2740,7 +2740,7 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
         base = (_settings.APP_BASE_URL or "").rstrip("/")
         total_txt = f"{total:,.0f}".replace(",", " ")
         mails = [(inv.recipient, f"L'offre commune est figée — {project.name[:60]}",
-                  f"Bonjour,\n\nLe mandataire a figé l'offre commune du groupement sur le marché "
+                  f"Bonjour,\n\nLe chef de file a figé l'offre commune du groupement sur le marché "
                   f"« {project.name} » : total {total_txt} € HT.\n\n"
                   f"Retrouvez le détail dans votre espace : {base}/invite/{inv.token}\n\n— Adjugo")
                  for inv in invites if _is_email(inv.recipient)]
@@ -2758,7 +2758,7 @@ def unfreeze_offer(project_id: int, request: Request,
                    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Défige l'offre commune (le total n'est plus montré aux membres)."""
     _owned_project(project_id, current_user, db)
-    done = _unfreeze_offer_if_needed(db, project_id, "défigée par le mandataire",
+    done = _unfreeze_offer_if_needed(db, project_id, "défigée par le chef de file",
                                      actor=f"user:{current_user.id}", actor_kind="owner",
                                      ip=audit.client_ip(request))
     return {"ok": True, "was_frozen": done}
@@ -2899,7 +2899,7 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
     """Un titulaire de compte réclame un lien → l'AO entre dans son « Partagé avec moi »."""
     inv = _valid_invite(token, db)
     if inv.owner_id in member_ids(current_user, db):
-        raise HTTPException(400, "Vous êtes le mandataire de ce partage.")
+        raise HTTPException(400, "Vous êtes le chef de file de ce partage.")
     if inv.accepted_by_user_id and inv.accepted_by_user_id != current_user.id:
         raise HTTPException(409, "Ce lien a déjà été réclamé par un autre compte.")
     # Binding d'identité : si le lien cible une adresse précise, seul le compte de CETTE

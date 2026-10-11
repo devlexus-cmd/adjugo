@@ -444,7 +444,9 @@ def _groupement_convention(company, cotraitants, details):
     """Brouillon de convention de groupement momentané d'entreprises (à relire/signer).
     Désigne le mandataire et liste les membres + leurs lots. Pièce attendue par
     l'acheteur sur les marchés en groupement."""
-    mand = company.get("name", "le mandataire") if isinstance(company, dict) else "le mandataire"
+    mand = (company.get("name") if isinstance(company, dict) else "") or "Entreprise à préciser"
+    # Rôle affiché en clair (jamais le code brut « sous_traitant » / « mandataire »).
+    role_lbl = {"cotraitant": "co-traitant", "sous_traitant": "sous-traitant", "mandataire": "chef de file"}
     lines = [
         "# Convention de groupement momentané d'entreprises",
         "",
@@ -455,23 +457,24 @@ def _groupement_convention(company, cotraitants, details):
         f"**Acheteur :** {details.get('acheteur','')}",
         "",
         "## Article 1 — Membres du groupement",
-        f"- **{mand}** — mandataire du groupement",
+        f"- **{mand}** — chef de file (mandataire du groupement)",
     ]
     for c in cotraitants:
         ident = c.get("name", "")
         extra = " — ".join(x for x in [c.get("lot") and f"lot : {c['lot']}",
                                        c.get("siret") and f"SIRET {c['siret']}"] if x)
-        lines.append(f"- {ident}" + (f" ({extra})" if extra else "") + f" — {c.get('role','cotraitant')}")
+        role = str(c.get("role") or "cotraitant")
+        lines.append(f"- {ident}" + (f" ({extra})" if extra else "") + f" — {role_lbl.get(role, role)}")
     lines += [
         "",
         "## Article 2 — Forme du groupement",
         "Le groupement est **conjoint** / **solidaire** *(rayer la mention inutile)*. En cas "
-        "de groupement conjoint, le mandataire est solidaire de chacun des membres pour "
+        "de groupement conjoint, le chef de file (mandataire) est solidaire de chacun des membres pour "
         "l'exécution du marché.",
         "",
-        "## Article 3 — Mandataire",
-        f"{mand} est désigné mandataire. Il représente l'ensemble des membres vis-à-vis de "
-        "l'acheteur, coordonne les prestations et est l'interlocuteur unique.",
+        "## Article 3 — Chef de file (mandataire)",
+        f"{mand} est désigné chef de file (mandataire du groupement). Il représente l'ensemble "
+        "des membres vis-à-vis de l'acheteur, coordonne les prestations et est l'interlocuteur unique.",
         "",
         "## Article 4 — Répartition des prestations et de la rémunération",
         "Chaque membre exécute le(s) lot(s) indiqué(s) à l'article 1 et perçoit la part de "
@@ -550,7 +553,7 @@ def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_i
 def _groupement_recap(company, cotraitants, details):
     lines = ["COMPOSITION DU GROUPEMENT — ADJUGO", "=" * 45, ""]
     lines.append(f"Marché : {details.get('intitule_marche','')}")
-    lines.append(f"Mandataire : {company.get('name','')} ({company.get('siret','')})")
+    lines.append(f"Chef de file : {company.get('name','')} ({company.get('siret','')})")
     lines.append("")
     if cotraitants:
         lines.append("Co-traitants :")

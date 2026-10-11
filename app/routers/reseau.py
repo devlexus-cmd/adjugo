@@ -458,7 +458,7 @@ def put_profil(request: Request, body: ProfilIn, current_user: User = Depends(ge
     if "roles_acceptes" in fields:
         vals = [str(r).strip() for r in (body.roles_acceptes or []) if str(r).strip()]
         if any(r not in pn.ROLES for r in vals):
-            raise HTTPException(422, "Rôle inconnu : cotraitant, sous_traitant ou mandataire.")
+            raise HTTPException(422, "Rôle inconnu : partenaire, sous-traitant ou chef de file.")
         upd["roles_acceptes"] = [r for r in pn.ROLES if r in vals]
     if "disponibilite" in fields:
         v = (body.disponibilite or "").strip()

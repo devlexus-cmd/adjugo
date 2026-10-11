@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
-  <script src="/static/cotraitance-crypto.js" integrity="sha384-Vho8AEpUucuoYTe4e4OmFl/p1v4rz2nqBKbIC1AUc36adSU7tP5XifKa8ptPtpKH"></script>
+  <script src="/static/cotraitance-crypto.js" integrity="sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -358,7 +358,7 @@
     // Règle : on n'affiche QUE ce que l'API envoie. Jamais le score seul du mandataire,
     // jamais le prix d'un autre membre (l'API ne les transmet pas au partenaire).
     const SOON_STEPS = { convention_a_signer: 1, pret_a_deposer: 1 };
-    const ROLE_LABEL = { cotraitant: "partenaire", sous_traitant: "sous-traitant", mandataire: "mandataire" };
+    const ROLE_LABEL = { cotraitant: "partenaire", sous_traitant: "sous-traitant", mandataire: "chef de file" };
     const MEMBER_STATUS = { invited: ["invité", "pill neutral"], draft: ["brouillon", "pill neutral"], submitted: ["part soumise", "pill go"] };
     // Horodatages de l'API : UTC « naïf » (sans fuseau, ex. 2026-10-08T01:30:11) → lus comme UTC,
     // affichés à l'heure locale. Une date seule (2026-11-07) ou déjà datée d'un fuseau reste telle quelle.
@@ -400,14 +400,14 @@
       box.appendChild($(`<b style="font-size:13.5px">Pourquoi vous dans ce groupement</b>`));
       const cols = $(`<div class="sg-cols"></div>`);
       const grp = $(`<div class="sg-col grp"></div>`);
-      if (fm.score_groupement == null) grp.innerHTML = `<div class="sg-big" style="font-size:22px">—</div><div class="sg-lab">Score du groupement : calculé par le mandataire après analyse</div>`;
+      if (fm.score_groupement == null) grp.innerHTML = `<div class="sg-big" style="font-size:22px">—</div><div class="sg-lab">Score du groupement : calculé par le chef de file après analyse</div>`;
       else grp.innerHTML = `<div class="sg-big">${esc(fm.score_groupement)}<span style="font-size:15px;font-weight:600;opacity:.75">/100</span></div><div class="sg-lab">score du groupement</div>`;
       cols.appendChild(grp);
       const col2 = $(`<div class="sg-col"></div>`);
       const ap = $(`<div class="row wrap" style="gap:5px;align-items:center;font-size:12.5px"></div>`);
       ap.appendChild($(`<span style="font-weight:600">Vous apportez :</span>`));
       if ((fm.my_apport || []).length) fm.my_apport.forEach(a => ap.appendChild($(`<span class="sg-chip by">${esc(a.label || a.key)}</span>`)));
-      else ap.appendChild($(`<span class="muted">précisé par le mandataire après analyse</span>`));
+      else ap.appendChild($(`<span class="muted">précisé par le chef de file après analyse</span>`));
       col2.appendChild(ap);
       const se = fm.seuils || {};
       const seuil = (ok, yes, no) => $(`<div class="small g-chk" style="margin-top:6px;color:${ok ? "var(--success-text,#1a7f4b)" : "var(--text-2,#6b7280)"}">${ok ? ico("check", 13) + esc(yes) : ico("circle", 13) + esc(no)}</div>`);
@@ -427,7 +427,7 @@
       const nS = st.n_submitted != null ? st.n_submitted : members.filter(m => m.status === "submitted").length;
       box.appendChild($(`<div class="row" style="gap:8px;align-items:center;margin-top:12px"><b style="font-size:13px;flex:1">Les membres du groupement</b><span class="pill neutral" style="font-size:11px">${esc(nS)}/${esc(nM)} parts reçues</span></div>`));
       const ul = $(`<ul class="g-members"></ul>`);
-      if (d.mandataire) ul.appendChild($(`<li><span style="font-weight:600">${esc(d.mandataire)}</span><span class="muted">· mandataire (chef de file)</span></li>`));
+      if (d.mandataire) ul.appendChild($(`<li><span style="font-weight:600">${esc(d.mandataire)}</span><span class="muted">· chef de file</span></li>`));
       members.forEach(m => {
         const stt = MEMBER_STATUS[m.status] || [m.status || "", "pill neutral"];
         const me = !!(d.invited && d.invited.company && m.company === d.invited.company);
@@ -454,7 +454,7 @@
 
       const head = $(`<div class="card pad" style="margin-bottom:16px"></div>`);
       head.appendChild($(`<div class="muted small">${d.mandataire ? "Partagé par <b>" + esc(d.mandataire) + "</b>" : "Dossier partagé"}${d.invited && d.invited.company ? " · pour " + esc(d.invited.company) : ""}</div>`));
-      head.appendChild($(`<div style="font-size:21px;font-weight:800;margin:2px 0 3px;letter-spacing:-.02em">${esc(p.name || "Appel d'offres")}${tip("Vous ne voyez que ce dossier et <b>votre</b> contribution, jamais les données des autres entreprises. Conformément au RGPD, vos actions sont journalisées et visibles par le mandataire.")}</div>`));
+      head.appendChild($(`<div style="font-size:21px;font-weight:800;margin:2px 0 3px;letter-spacing:-.02em">${esc(p.name || "Appel d'offres")}${tip("Vous ne voyez que ce dossier et <b>votre</b> contribution, jamais les données des autres entreprises. Conformément au RGPD, vos actions sont journalisées et visibles par le chef de file.")}</div>`));
       if (p.client) head.appendChild($(`<div class="muted small">${esc(p.client)}</div>`));
       // Invitation du RÉSEAU Adjugo pas encore acceptée (vague 3) : aperçu minimal — ni acheteur, ni
       // lien de l'avis, ni pièces, ni composition du groupement. On l'explique dans une bulle (i) et on
@@ -543,7 +543,7 @@
     async function renderContribution(d) {
       const role = (d.invited && d.invited.role === "sous_traitant") ? "sous-traitant" : "partenaire";
       const card = $(`<div class="card pad" style="margin-bottom:16px;border:1px solid var(--accent,#3b5bdb)"></div>`);
-      card.appendChild($(`<div class="row" style="gap:8px;align-items:center"><span style="flex:1;min-width:0"><b style="font-size:13.5px">Ma contribution au dossier commun</b>${tip("Vous ne voyez que <b>vos</b> données ; le mandataire les assemble et l'IA les fusionne dans la réponse commune.")}</span></div>`));
+      card.appendChild($(`<div class="row" style="gap:8px;align-items:center"><span style="flex:1;min-width:0"><b style="font-size:13.5px">Ma contribution au dossier commun</b>${tip("Vous ne voyez que <b>vos</b> données ; le chef de file les assemble et l'IA les fusionne dans la réponse commune.")}</span></div>`));
       const status = $(`<span class="pill neutral" style="font-size:11px">Brouillon</span>`); card.firstChild.appendChild(status);
       card.appendChild($(`<div class="muted small" style="margin-top:4px">En tant que <b>${role}</b>, renseignez votre part.</div>`));
       card.appendChild($(`<div id="cv-contrib-warn"></div>`));   // rempli si la convention est générée (syncContribWarn)
@@ -597,8 +597,8 @@
       card.appendChild(field("Vos capacités", capBox, "Ces capacités comptent dans le score du groupement. Elles sont déclarées par vous."));
       card.appendChild(field("Références", refs));
       const prixBox = document.createElement("div"); prixBox.appendChild(prix);
-      prixBox.appendChild($(`<div class="muted small" style="margin-top:4px">Seul montant visible par le mandataire.</div>`));
-      card.appendChild(field("Prix de vente de votre lot (€ HT)", prixBox, "C'est le seul montant que voit le mandataire : il en a besoin pour assembler l'offre commune."));
+      prixBox.appendChild($(`<div class="muted small" style="margin-top:4px">Seul montant visible par le chef de file.</div>`));
+      card.appendChild(field("Prix de vente de votre lot (€ HT)", prixBox, "C'est le seul montant que voit le chef de file : il en a besoin pour assembler l'offre commune."));
       const detBox = document.createElement("div"); detBox.className = "g-lockwrap"; detBox.style.position = "relative";
       const lockIcon = $(`<span style="display:none;position:absolute;right:10px;top:8px;line-height:0;color:var(--text-2,#6b7280)" aria-hidden="true">${ico("lock", 14)}</span>`);
       detBox.appendChild(detail); detBox.appendChild(lockIcon);
@@ -609,12 +609,12 @@
       const lockMsg = $(`<div class="small" style="margin-top:4px;color:#b42318"></div>`); detBox.appendChild(lockMsg);
       // Mention de confidentialité courte, visible au moment de la saisie ; l'explication complète
       // (clé non stockée, code de récupération) passe dans la bulle du libellé.
-      const LOCK_SHORT = (CR && CR.LABELS.lock_short) || "Illisible par le mandataire, Adjugo et l'IA. Code perdu = détail perdu.";
+      const LOCK_SHORT = (CR && CR.LABELS.lock_short) || "Illisible par le chef de file, Adjugo et l'IA. Code perdu = détail perdu.";
       detBox.appendChild($(`<div class="lock-note">${ico("lock", 13, "margin-top:1px")}<span>${esc(LOCK_SHORT)}</span></div>`));
       const lockTip = esc(CR ? CR.LABELS.lock : "Chiffré dans votre navigateur avec une clé qu'Adjugo ne stocke pas.") + " " + esc(CR ? CR.LABELS.lost : "Si vous perdez votre code, ce détail est définitivement perdu.");
       card.appendChild(field("Détail de votre chiffrage (coûts, marges, méthode)", detBox, lockTip));
       card.appendChild(field("Paragraphe de mémoire technique", memoire));
-      card.appendChild(field("Message au mandataire (optionnel)", note));
+      card.appendChild(field("Message au chef de file (optionnel)", note));
       const cr = document.createElement("div"); cr.className = "row wrap"; cr.style.gap = "8px";
       [cNom, cMail, cTel].forEach(el => { el.style.flex = "1"; el.style.minWidth = "140px"; cr.appendChild(el); });
       card.appendChild(field("Contact", cr));
@@ -740,7 +740,7 @@
 
       const msg = $(`<span class="muted small"></span>`);
       const btnSave = $(`<button class="btn">Enregistrer le brouillon</button>`);
-      const btnSubmit = $(`<button class="btn primary">Soumettre au mandataire</button>`);
+      const btnSubmit = $(`<button class="btn primary">Soumettre au chef de file</button>`);
       const bar = document.createElement("div"); bar.className = "row wrap"; bar.style.cssText = "gap:8px;margin-top:13px;align-items:center";
       bar.appendChild(btnSave); bar.appendChild(btnSubmit); bar.appendChild(msg);
       card.appendChild(bar);
@@ -748,11 +748,11 @@
       const declineWrap = $(`<div style="margin-top:14px;text-align:right"></div>`);
       const btnDecline = $(`<button class="g-link" type="button">Décliner l'invitation</button>`);
       btnDecline.onclick = async () => {
-        const ok = await openModal({ title: "Décliner l'invitation ?", bodyHtml: "Vous ne ferez plus partie de ce groupement ; le mandataire sera prévenu. Ce lien ne fonctionnera plus ensuite." + (cvPartLocksConvention() ? " La convention de groupement <b>ne sera plus à jour</b> : le chef de file devra la régénérer." : ""), confirmLabel: "Décliner l'invitation", cancelLabel: "Annuler" });
+        const ok = await openModal({ title: "Décliner l'invitation ?", bodyHtml: "Vous ne ferez plus partie de ce groupement ; le chef de file sera prévenu. Ce lien ne fonctionnera plus ensuite." + (cvPartLocksConvention() ? " La convention de groupement <b>ne sera plus à jour</b> : le chef de file devra la régénérer." : ""), confirmLabel: "Décliner l'invitation", cancelLabel: "Annuler" });
         if (!ok) return;
         btnDecline.disabled = true;
         const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/decline", { method: "POST" }).catch(() => null);
-        if (r && r.ok) { finalScreen("hand", "Vous avez décliné cette invitation", "Le mandataire est prévenu. Ce lien ne fonctionne plus ; il pourra vous inviter de nouveau si besoin."); return; }
+        if (r && r.ok) { finalScreen("hand", "Vous avez décliné cette invitation", "Le chef de file est prévenu. Ce lien ne fonctionne plus ; il pourra vous inviter de nouveau si besoin."); return; }
         btnDecline.disabled = false; const e = r ? await r.json().catch(() => ({})) : {}; msg.textContent = errText(e, "Impossible de décliner pour le moment.");
       };
       declineWrap.appendChild(btnDecline); card.appendChild(declineWrap);
@@ -831,7 +831,7 @@
       jCard.appendChild(jLive); jCard.appendChild(jResult);
       const jList = $(`<ul class="jrn"></ul>`);
       jCard.appendChild(jList);
-      const WHO = { vous: "vous", mandataire: "mandataire", partenaire: "partenaire" };
+      const WHO = { vous: "vous", mandataire: "chef de file", partenaire: "partenaire" };
       async function loadJournal() {
         jRefresh.disabled = true;
         let j = null;
@@ -997,7 +997,7 @@
       function showSubmittedBanner() {
         const b = document.getElementById("g-banner");
         b.style.background = "#e7f7ee"; b.style.borderColor = "#1a7f4b";
-        b.innerHTML = ico("check-circle-2", 18, "color:#1a7f4b") + '<div class="small"><b>Votre part est soumise à ' + esc(d.mandataire || "le mandataire") + '.</b> Vous pouvez encore l\'ajuster.</div>';
+        b.innerHTML = ico("check-circle-2", 18, "color:#1a7f4b") + '<div class="small"><b>Votre part est soumise ' + (d.mandataire ? 'à ' + esc(d.mandataire) : 'au chef de file') + '.</b> Vous pouvez encore l\'ajuster.</div>';
         icons();
       }
       if (c0 && c0.status === "submitted") showSubmittedBanner();
@@ -1041,13 +1041,13 @@
         const li = (ok, t) => `<li class="g-chk" style="margin:2px 0">${ok ? ICO_OK() : ico("circle", 13, "color:var(--text-2,#6b7280)")}<span>${t}</span></li>`;
         const recap = await openModal({
           title: "Confirmer l'envoi au chef de file",
-          bodyHtml: "Voici ce que le mandataire va recevoir pour votre part :"
+          bodyHtml: "Voici ce que le chef de file va recevoir pour votre part :"
             + `<ul style="list-style:none;padding:0;margin:10px 0">`
             + li(!!company.value, "Entreprise : <b>" + (esc(company.value) || "—") + "</b>")
             + li(!!lot.value, "Lot / périmètre : " + (esc(lot.value) || "—"))
             + li(!!siret.value, "SIRET : " + (esc(siret.value) || "à compléter"))
             + li(numOrNull(prix.value) != null, "Prix de vente du lot : " + (numOrNull(prix.value) != null ? "<b>" + esc(eur(numOrNull(prix.value))) + " HT</b>" : "à compléter"))
-            + li(serverHasDetail, "Détail du chiffrage : " + (serverHasDetail ? "chiffré (le mandataire ne le voit pas)" : "non renseigné"))
+            + li(serverHasDetail, "Détail du chiffrage : " + (serverHasDetail ? "chiffré (le chef de file ne le voit pas)" : "non renseigné"))
             + li(nRefs > 0, nRefs + " référence(s)")
             + li(!!memoire.value, "Paragraphe de mémoire technique")
             + li(nPieces > 0, nPieces + " pièce(s) jointe(s)")
@@ -1827,7 +1827,7 @@
     // messages ponctuels (part soumise, analyse réservée, compte existant) et se masque s'il est vide.
     function setBanner() {
       document.getElementById("g-banner").innerHTML = "";
-      document.getElementById("g-tip").innerHTML = tip("Vous êtes invité par <b>" + esc(DATA.mandataire || "le mandataire") + "</b> sur ce dossier. Créez votre compte Adjugo pour débloquer tout l'espace.");
+      document.getElementById("g-tip").innerHTML = tip("Vous êtes invité par " + (DATA.mandataire ? "<b>" + esc(DATA.mandataire) + "</b>" : "le chef de file") + " sur ce dossier. Créez votre compte Adjugo pour débloquer tout l'espace.");
     }
     function initials(s) { return (s || "CO").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase(); }
 

@@ -228,7 +228,7 @@ def test_generation_via_api_hash_et_offre_figee(client, auth, mails):
     # Journal membre : génération visible, sans IP ni email.
     j = client.get(f"/api/invite/{invs[0]['token']}/journal").json()
     labels = [e["label"] for e in j["entries"]]
-    assert "Le mandataire a généré la convention de groupement" in labels
+    assert "Le chef de file a généré la convention de groupement" in labels
     assert "@" not in json.dumps(j, ensure_ascii=False)
 
 
@@ -438,7 +438,7 @@ def test_accords_mandataire_lien_hors_ligne_et_pdf(client, auth, mails):
     txt = _pdf_text(pdf.content)
     flat = " ".join(txt.split())
     assert "accord enregistré via le lien (identité non vérifiée)" in flat
-    assert "accord recueilli hors ligne, déclaré par le mandataire" in flat
+    assert "accord recueilli hors ligne, déclaré par le chef de file" in flat
     assert "depuis son compte Adjugo" in flat
     assert c["content_hash"][:16] in flat.replace(" ", "")
     assert "ce n'est pas un conseil juridique" in flat

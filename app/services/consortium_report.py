@@ -46,7 +46,7 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
                                    contributions: list) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=16 * mm,
-                            leftMargin=15 * mm, rightMargin=15 * mm, title="Compte-rendu consortium")
+                            leftMargin=15 * mm, rightMargin=15 * mm, title="Compte-rendu du groupement")
     base = getSampleStyleSheet()["Normal"]
     st = ParagraphStyle("body", parent=base, fontSize=9.5, leading=13, textColor=_INK)
     muted = ParagraphStyle("muted", parent=st, textColor=_MUTED, fontSize=8.5)
@@ -61,11 +61,11 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
     pct = r.get("pct", 0)
 
     el = []
-    el.append(_p("Compte-rendu de consortium", h1))
+    el.append(_p("Compte-rendu du groupement", h1))
     el.append(_p("Réseau Adjugo — co-traitance cloisonnée", muted))
     el.append(Spacer(1, 7))
     el.append(_m(f"<b>{_e(project_name)}</b>", st))
-    el.append(_p(f"Mandataire : {mandataire or '—'} · édité le {date.today().strftime('%d/%m/%Y')}", muted))
+    el.append(_p(f"Chef de file : {mandataire or '—'} · édité le {date.today().strftime('%d/%m/%Y')}", muted))
     el.append(Spacer(1, 9))
 
     # Synthèse / readiness

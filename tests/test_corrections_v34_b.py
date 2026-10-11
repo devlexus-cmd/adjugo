@@ -446,7 +446,7 @@ def test_total_masque_au_cotraitant_ajoute_apres_la_generation(client, auth, mai
              client.get(f"/api/invite/{late}/journal/integrity").json(),
              client.get(f"/api/invite/{late}/journal/export").json()]
     labels = [e["label"] for e in blobs[0]["entries"]]
-    assert "Le mandataire a figé l'offre commune" in labels
+    assert "Le chef de file a figé l'offre commune" in labels
     for b in blobs:
         raw = json.dumps(b, ensure_ascii=False)
         assert "€ HT" not in raw and "100 000" not in raw, raw[:400]

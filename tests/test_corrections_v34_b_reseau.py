@@ -279,7 +279,7 @@ def test_part_d_une_invitation_reseau_sans_reponse_invisible_du_chef_de_file(cli
     conv = client.get(f"/api/projects/{pid}/groupement/convention", headers=h).json()
     reseau = [m for m in conv["membres"] if m["company"] not in ("Breizh Couverture", "Morvan Plomberie")]
     assert [m["company"] for m in reseau] == ["LE GALL ÉLECTRICITÉ"], conv["membres"]
-    # Aucune entrée « le mandataire a consulté votre part » pour une part qu'il n'a pas vue.
+    # Aucune entrée « le chef de file a consulté votre part » pour une part qu'il n'a pas vue.
     assert not any(e["action"] == "owner.view_contribution"
                    for e in client.get(f"/api/invite/{tok}/journal").json()["entries"])
     # Refus : toujours rien.

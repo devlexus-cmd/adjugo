@@ -236,9 +236,9 @@ def test_journal_membre_projection(client, auth):
     assert body["integrity_label"] == "Journal vérifiable : toute modification ou suppression d'entrée est détectable"
     assert body["chained"] is True
     labels = [e["label"] for e in body["entries"]]
-    assert "Le mandataire a consulté votre part" in labels
-    assert labels.count("Le mandataire a consulté votre part") == 1
-    assert any(l.startswith("Le mandataire a téléchargé votre pièce « extrait_kbis.pdf »") for l in labels)
+    assert "Le chef de file a consulté votre part" in labels
+    assert labels.count("Le chef de file a consulté votre part") == 1
+    assert any(l.startswith("Le chef de file a téléchargé votre pièce « extrait_kbis.pdf »") for l in labels)
     assert "Vous avez consulté le dossier" in labels
     assert "Vous avez soumis votre part" in labels
     raw = json.dumps(body, ensure_ascii=False)
@@ -249,13 +249,13 @@ def test_journal_membre_projection(client, auth):
     # Beta ne voit PAS les entrées d'Alpha (hors événements de groupement).
     j2 = client.get(f"/api/invite/{t2}/journal").json()
     labels2 = [e["label"] for e in j2["entries"]]
-    assert "Le mandataire a consulté votre part" not in labels2
+    assert "Le chef de file a consulté votre part" not in labels2
     assert "Vous avez soumis votre part" not in labels2
     assert not any("téléchargé" in l for l in labels2)
     # …mais voit l'événement de groupement « un partenaire a été invité » (Alpha), sans email.
     grp = [e for e in j2["entries"] if e["action"] == "invite.created"]
     assert any(e["who"] == "partenaire" and e["detail"] == "Alpha SARL" for e in grp)
-    assert any(e["who"] == "mandataire" and e["label"] == "Le mandataire vous a invité" for e in grp)
+    assert any(e["who"] == "mandataire" and e["label"] == "Le chef de file vous a invité" for e in grp)
     assert "@" not in json.dumps(j2, ensure_ascii=False)
 
     # Journal mandataire (inchangé) : l'acteur invité est le nom d'entreprise, pas l'email.
@@ -370,9 +370,9 @@ def test_figer_offre(client, auth):
     assert ck["offre"]["frozen"] is True and ck["offre"]["total_ht"] == 100000.0
     assert ck["state"]["offer_frozen"] is True
 
-    # Journal membre : « Le mandataire a figé l'offre commune ».
+    # Journal membre : « Le chef de file a figé l'offre commune ».
     labels = [e["label"] for e in client.get(f"/api/invite/{token}/journal").json()["entries"]]
-    assert "Le mandataire a figé l'offre commune" in labels
+    assert "Le chef de file a figé l'offre commune" in labels
 
     # Le membre modifie son prix → offre DÉFIGÉE.
     r = _put(client, token, prix_lot_ht=41000)
