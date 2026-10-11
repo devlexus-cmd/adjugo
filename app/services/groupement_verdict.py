@@ -286,8 +286,8 @@ def _discover_sirene(trade: str, dept: str, warnings: list, timeout: Optional[fl
         # l'unique worker, 3 métiers × (SIRENE + 6 BODACC + 6 DECP) bloquaient ~100 s.
         # BODACC est conservé (filtre « procédure collective » juste en dessous).
         res = svc.discover(activity=trade, departement=dept,
-                                          tender_departements=[dept] if dept else [],
-                                          need_label=label, limit=4, enrich_decp=False)
+                           tender_departements=[dept] if dept else [],
+                           need_label=label, limit=4, enrich_decp=False)
         out = []
         for c in res.get("companies") or []:
             if getattr(c, "procedure_collective", None):
