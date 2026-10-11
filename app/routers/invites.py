@@ -2367,12 +2367,30 @@ def _piece_status(pc, deadline) -> str:
     return "valide_jusquau"
 
 
+def _a_fournir_resume(total: int, moi: int) -> str:
+    """Une seule ligne de synthèse pour les pièces encore à fournir (le tableau montre le détail)."""
+    if total <= 0:
+        return ""
+    t = f"Il reste {total} pièce{'s' if total > 1 else ''} à fournir"
+    if moi and moi >= total:
+        t += ", toutes de votre côté" if total > 1 else ", de votre côté"
+    elif moi:
+        t += f", dont {moi} de votre côté"
+    return t + "."
+
+
 def coffre_croise(db: Session, project, invites: list, viewer_invite_id: Optional[int],
                   for_owner: bool) -> dict:
     """Grille membres × pièces en STATUT seulement. Chaque membre voit le statut des
     attestations de TOUS (c'est le point du coffre croisé : savoir avant la date limite
     que l'URSSAF d'un partenaire expire), mais jamais le fichier ni même son nom
-    (name/piece_id uniquement pour sa propre ligne ou pour le mandataire)."""
+    (name/piece_id uniquement pour sa propre ligne ou pour le mandataire).
+
+    `alerts` (textes, clé inchangée) : « {pièce} à fournir : {entreprise} », « {pièce} de
+    {entreprise} a expiré / expire avant la date limite ». `alert_items` : les mêmes, typés
+    (kind = a_fournir | expire | expire_avant_limite, piece, label, company, is_me, text) pour
+    que l'écran n'ait pas à découper les textes ; `a_fournir` : total, part du membre qui
+    regarde et UNE ligne de synthèse (le tableau montre déjà chaque pièce à fournir)."""
     deadline = project.deadline
     if isinstance(deadline, datetime):
         deadline = deadline.date()
@@ -2386,7 +2404,16 @@ def coffre_croise(db: Session, project, invites: list, viewer_invite_id: Optiona
     for pc in db.query(ContributionPiece).filter(ContributionPiece.project_id == project.id).all():
         pieces_by_contrib.setdefault(pc.contribution_id, []).append(pc)
 
-    members, alerts, all_complete = [], [], True
+    members, alerts, items, all_complete = [], [], [], True
+
+    def _alert(kind, key, company, is_me, text, invite_id):
+        alerts.append(text)
+        it = {"kind": kind, "piece": key, "label": _PIECE_LABELS.get(key, key), "company": company,
+              "is_me": is_me, "text": text}
+        if for_owner:
+            it["invite_id"] = invite_id
+        items.append(it)
+
     for inv in invites:
         c = contribs.get(inv.id)
         company = (c.company_name if c and c.company_name else inv.company_name) or "Partenaire"
@@ -2402,9 +2429,10 @@ def coffre_croise(db: Session, project, invites: list, viewer_invite_id: Optiona
                 if t == key or (t in ("", "autre") and _classify_piece_type(pc.name) == key):
                     cands.append(pc)
             if not cands:
-                pieces[key] = {"status": "manquant"}
+                pieces[key] = {"status": "manquant"}      # code de statut inchangé (affiché « à fournir »)
                 complete = False
-                alerts.append(f"{_PIECE_LABELS.get(key, key)} manquante : {company}")
+                _alert("a_fournir", key, company, is_me,
+                       f"{_PIECE_LABELS.get(key, key)} à fournir : {company}", inv.id)
                 continue
             best = max(cands, key=lambda p: (p.expiration_date or date.max))
             status = _piece_status(best, deadline)
@@ -2417,16 +2445,21 @@ def coffre_croise(db: Session, project, invites: list, viewer_invite_id: Optiona
             pieces[key] = entry
             if status in ("expire", "expire_avant_limite"):
                 complete = False
-                alerts.append(f"{_PIECE_LABELS.get(key, key)} de {company} "
-                              + ("a expiré" if status == "expire" else "expire avant la date limite"))
+                _alert(status, key, company, is_me,
+                       f"{_PIECE_LABELS.get(key, key)} de {company} "
+                       + ("a expiré" if status == "expire" else "expire avant la date limite"), inv.id)
         all_complete = all_complete and complete
         row = {"company": company, "role": inv.role or "cotraitant", "is_me": is_me,
                "pieces": pieces, "complete": complete}
         if for_owner:
             row["invite_id"] = inv.id
         members.append(row)
+    n_af = sum(1 for it in items if it["kind"] == "a_fournir")
+    n_af_moi = sum(1 for it in items if it["kind"] == "a_fournir" and it["is_me"])
     return {"deadline": deadline.isoformat() if deadline else None, "expected": expected,
-            "members": members, "all_complete": bool(invites) and all_complete, "alerts": alerts}
+            "members": members, "all_complete": bool(invites) and all_complete, "alerts": alerts,
+            "alert_items": items,
+            "a_fournir": {"total": n_af, "moi": n_af_moi, "resume": _a_fournir_resume(n_af, n_af_moi)}}
 
 
 @router.get("/api/projects/{project_id}/coffre-croise")
@@ -2579,11 +2612,23 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
             missing.insert(0, f"Lot « {k} » revendiqué par {len(names)} partenaires "
                               f"({', '.join(names[:3])}) — un lot ne peut avoir qu'un seul attributaire")
 
-    # Coffre croisé : attestations manquantes / expirant avant la date limite.
+    # Coffre croisé : chaque attestation expirée / expirant avant la date limite, puis les pièces
+    # à fournir regroupées en UNE ligne par membre (le tableau du coffre, juste en dessous, et les
+    # pastilles de chaque part montrent déjà le détail) — sauf si la file en a déjà une pour lui.
     coffre = coffre_croise(db, project, invites, viewer_invite_id=None, for_owner=True)
-    for a in coffre.get("alerts", []):
-        if a not in missing:
-            missing.append(a)
+    a_fournir = {}
+    for it in coffre.get("alert_items", []):
+        if it["kind"] == "a_fournir":
+            a_fournir.setdefault(it.get("invite_id"), (it["company"], []))[1].append(it["label"])
+        elif it["text"] not in missing:
+            missing.append(it["text"])
+    for who, labels in a_fournir.values():
+        prefix = f"{who} : pièce(s) à fournir"
+        if any(m.startswith(prefix) for m in missing):
+            continue
+        rest = len(labels) - 3
+        missing.append(f"{prefix} — {', '.join(labels[:3])}"
+                       + (f" et {rest} autre{'s' if rest > 1 else ''}" if rest > 0 else ""))
 
     # Journal membre : « le mandataire a consulté votre part » (1 entrée / part / heure).
     _record_owner_views(db, project_id, data_owner_id(current_user, db), f"user:{current_user.id}", "",

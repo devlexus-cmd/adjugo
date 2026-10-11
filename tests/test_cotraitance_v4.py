@@ -614,7 +614,7 @@ def test_alertes_attestations_une_seule_par_palier(client, auth, mails, monkeypa
     run_on(0)                                                   # J-6 → palier J-7
     assert len(member_mails()) == 2 and len(owner_mails()) == 1          # UN récapitulatif
     assert "Partenaire 0 SARL" in owner_mails()[0][2] and "Partenaire 1 SARL" in owner_mails()[0][2]
-    assert "Kbis manquante" in member_mails()[0][2]
+    assert "Kbis à fournir" in member_mails()[0][2]
     for offset in (0, 1, 2):                                    # même palier : rien de plus
         run_on(offset)
     assert len(member_mails()) == 2 and len(owner_mails()) == 1
@@ -651,7 +651,7 @@ def test_relance_part_et_attestations_en_un_seul_email(client, auth, mails, monk
     to_member = [s for s in sent if s[0] == to]
     assert len(to_member) == 1, [s[1] for s in to_member]
     assert to_member[0][1].startswith("Rappel") and "attestations sont aussi à mettre à jour" in to_member[0][2]
-    assert "Kbis manquante" in to_member[0][2]
+    assert "Kbis à fournir" in to_member[0][2]
     # Re-lancé le même jour : rien de plus pour ce partenaire.
     db = _db()
     try:

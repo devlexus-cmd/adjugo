@@ -644,7 +644,7 @@
       else acct.appendChild($(`<a class="btn sm" href="/app" target="_blank" rel="noopener" style="flex:none">Me connecter</a>`));
       cxBox.appendChild(acct);
       card.appendChild(field("Les pièces de chaque membre du groupement", cxBox, "Chaque membre voit si les pièces des autres sont présentes et à jour avant la date limite. Vous voyez l'état des pièces de chaque membre, jamais leurs fichiers."));
-      const CX_LABEL = (p) => ({ present: "Présente", valide_jusquau: "Valide jusqu'au " + fmtShort(p.expiration_date), expire_avant_limite: "Expire avant la limite", expire: "Expirée", manquant: "Manquante" })[p.status] || p.status || "";
+      const CX_LABEL = (p) => ({ present: "Présente", valide_jusquau: "Valide jusqu'au " + fmtShort(p.expiration_date), expire_avant_limite: "Expire avant la limite", expire: "Expirée", manquant: "À fournir" })[p.status] || p.status || "";
       async function reloadCoffre() {
         let g = null;
         try { g = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/coffre-croise").then(r => r.ok ? r.json() : null); } catch (e) {}
@@ -666,7 +666,12 @@
         });
         t.appendChild(tb); cxWrap.appendChild(t);
         if (g.deadline) cxWrap.appendChild($(`<div class="muted small" style="margin-top:4px">Date limite de dépôt : ${esc(fmtShort(g.deadline))}.</div>`));
-        (g.alerts || []).forEach(a => cxAlerts.appendChild($(`<div class="warn-box"><i data-lucide="alert-triangle"></i><span>${esc(a)}</span></div>`)));
+        // Sous le tableau : seulement ce qu'il ne montre pas (attestations expirées ou qui expirent
+        // avant la date limite) et UNE ligne de synthèse pour les pièces à fournir.
+        const resume = (g.a_fournir && g.a_fournir.resume) || "";
+        if (resume) cxAlerts.appendChild($(`<div class="muted small" style="margin-top:4px">${esc(resume)}</div>`));
+        (g.alert_items || []).filter(a => a && a.kind !== "a_fournir")
+          .forEach(a => cxAlerts.appendChild($(`<div class="warn-box"><i data-lucide="alert-triangle"></i><span>${esc(a.text)}</span></div>`)));
         icons();
       }
       // Checklist « ce qui est fourni / ce qu'il reste » (déduite des pièces déposées) :

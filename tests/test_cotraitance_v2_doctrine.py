@@ -297,7 +297,7 @@ def test_coffre_croise_statuts(client, auth):
     assert alpha["pieces"]["kbis"]["status"] == "manquant" and alpha["complete"] is False
     assert g["all_complete"] is False
     assert any("Attest. sociale (URSSAF) de Alpha SARL expire avant la date limite" == a for a in g["alerts"])
-    assert any(a.startswith("Kbis manquante : Beta SAS") for a in g["alerts"])
+    assert any(a.startswith("Kbis à fournir : Beta SAS") for a in g["alerts"])
 
     # Grille membre (Beta) : statut de la pièce d'Alpha visible, mais SANS nom ni id.
     gb = client.get(f"/api/invite/{t2}/coffre-croise").json()

@@ -2639,7 +2639,8 @@
                 <tbody><tr v-for="(m,mi) in sharedAo.coffre.members" :key="'sxr'+mi" :class="{'cx-me':m.is_me}"><td><b>{{ m.company }}</b><span v-if="m.is_me" class="muted small"> (vous)</span></td>
                   <td v-for="e in sharedAo.coffre.expected" :key="'sxc'+e.key"><span class="cxs" :class="cxPiece(m,e.key).status" :title="cxTitle(m,e.key)">{{ cxLabel(cxPiece(m,e.key)) }}</span></td></tr></tbody>
               </table></div>
-              <div v-if="(sharedAo.coffre.alerts||[]).length" style="margin-top:6px"><div v-for="(a,i) in sharedAo.coffre.alerts" :key="'sca'+i" class="row small" style="gap:6px;color:var(--warning-text)"><i data-lucide="circle-alert" style="width:13px;height:13px;flex:none"></i><span>{{ a }}</span></div></div>
+              <div v-if="cxResume(sharedAo.coffre)" class="muted small" style="margin-top:6px">{{ cxResume(sharedAo.coffre) }}</div>
+              <div v-if="cxExpirations(sharedAo.coffre).length" style="margin-top:6px"><div v-for="(a,i) in cxExpirations(sharedAo.coffre)" :key="'sca'+i" class="row small" style="gap:6px;color:var(--warning-text)"><i data-lucide="circle-alert" style="width:13px;height:13px;flex:none"></i><span>{{ a }}</span></div></div>
             </div>
 
             <div class="row wrap" style="gap:8px;margin-top:13px;align-items:center">
@@ -2882,6 +2883,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-tI6k9Qk7Hpv3/nJfV0OrrGxqFmvlMoszIbsw1yAOK2+1EdSxsbIYbkwrruMnEkSl" defer></script>
+<script src="/static/app.js" integrity="sha384-/KeZeQhDdCwWD87hUVOWNNlno6GKy4lRyVr7H6keTYhMXLmG0QiN//4CCeCdL9z1" defer></script>
 </body>
 </html>

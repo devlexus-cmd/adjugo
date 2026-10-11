@@ -316,7 +316,7 @@ via `GET /api/projects/{id}/groupement/depot` (240/h) :
                 "convention_signee": "Convention validée par tous les membres",
                 "cerfa_generes": "Formulaires officiels (DC1, DC2, ATTRI1) préparés après la convention"},
    "pret": false, "n_ok": 1, "n_total": 4, "pct": 25,
-   "manques": ["Kbis manquante : Le Gall Électricité", "…",
+   "manques": ["Kbis à fournir : Le Gall Électricité", "…",
                "Convention de groupement à générer puis à faire valider par tous les membres",
                "Formulaire DC1 à (re)générer après la convention", "…"],
    "avertissements": []}}
@@ -334,6 +334,9 @@ via `GET /api/projects/{id}/groupement/depot` (240/h) :
 - `avertissements[]` (jamais bloquants) : date limite inconnue (« la validité des attestations est
   vérifiée à aujourd'hui seulement »), date limite dépassée, partenaires hors ligne (« Adjugo ne
   suit pas leurs attestations, vérifiez-les vous-même »), sous-traitants en retard.
+- Attestations : TOUTES les alertes du coffre croisé (plus de plafond à 8, pour que « et N autres »
+  soit exact), les expirées / expirant avant la date limite d'abord, puis « {pièce} à fournir :
+  {entreprise} ».
 - Ranger les `manques` sous leur contrôle : préfixe « Part de » → `parts_soumises` ;
   « Convention » → `convention_signee` ; « Formulaire » → `cerfa_generes` ; le reste →
   `attestations_ok`. Affichage : « 3 contrôles sur 4 » (pas de pourcentage).
@@ -375,6 +378,30 @@ gratuit pour marquer un dossier déposé. » ; 404 « Appel d'offres introuvable
 
 Aucune route nouvelle : `for_member.state` passe à `depose` (stepper : étape 5 « fait ») et le
 journal montre l'entrée. Ne jamais afficher au partenaire les `manques` du chef de file.
+
+### 5.5 Coffre-fort croisé : textes et alertes typées
+
+`GET /api/projects/{id}/coffre-croise` et `GET /api/invite/{token}/coffre-croise` gardent `alerts`
+(liste de textes) et ajoutent :
+
+```json
+{"alerts": ["Kbis à fournir : Le Gall Électricité", "RIB de Martin SAS a expiré"],
+ "alert_items": [
+   {"kind": "a_fournir", "piece": "kbis", "label": "Kbis", "company": "Le Gall Électricité",
+    "is_me": true, "text": "Kbis à fournir : Le Gall Électricité"},
+   {"kind": "expire", "piece": "rib", "label": "RIB", "company": "Martin SAS",
+    "is_me": false, "text": "RIB de Martin SAS a expiré"}],
+ "a_fournir": {"total": 1, "moi": 1, "resume": "Il reste 1 pièce à fournir, de votre côté."}}
+```
+
+- `kind` : `a_fournir` (statut `manquant`, affiché « à fournir »), `expire`, `expire_avant_limite` ;
+  `invite_id` en plus dans la vue chef de file.
+- Côté partenaire, sous le tableau : `a_fournir.resume` (une ligne) puis seulement les
+  `alert_items` dont `kind` n'est pas `a_fournir` — le tableau montre déjà chaque pièce à fournir.
+- Cockpit du chef de file (`readiness.missing`) : expirations une par une, pièces à fournir
+  regroupées en une ligne par membre (« X : pièce(s) à fournir — Kbis, RIB et 2 autres »).
+- Relances (emails) : « Kbis à fournir », « RIB a expiré », « … expire le 20/10/2026 (avant la
+  date limite) ».
 
 ## 6. Relances automatiques (aucune action front)
 

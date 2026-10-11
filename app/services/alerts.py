@@ -207,7 +207,7 @@ def _piece_alerts_due(db: Session, today) -> list:
             for key, st in (m.get("pieces") or {}).items():
                 s_ = st.get("status")
                 if s_ == "manquant":
-                    problems.append(f"{labels.get(key, key)} manquante")
+                    problems.append(f"{labels.get(key, key)} à fournir")
                 elif s_ == "expire_avant_limite":
                     exp = st.get("expiration_date")
                     try:
@@ -216,7 +216,7 @@ def _piece_alerts_due(db: Session, today) -> list:
                         pass
                     problems.append(f"{labels.get(key, key)} expire le {exp} (avant la date limite)")
                 elif s_ == "expire":
-                    problems.append(f"{labels.get(key, key)} expirée")
+                    problems.append(f"{labels.get(key, key)} a expiré")
             if not problems:
                 continue
             already = db.query(AuditLog.id).filter(

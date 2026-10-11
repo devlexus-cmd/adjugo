@@ -2353,8 +2353,12 @@ const __adjApp = createApp({
     cxPiece(m, k) { return (m && m.pieces && m.pieces[k]) || { status: "manquant" }; },
     cxLabel(p) {
       const d = p.expiration_date ? this.fmtDate(p.expiration_date) : "";
-      return ({ present: "présente", valide_jusquau: "valide → " + d, expire_avant_limite: "expire le " + d, expire: "expirée" + (d ? " le " + d : ""), manquant: "manquante" })[p.status] || p.status;
+      return ({ present: "présente", valide_jusquau: "valide → " + d, expire_avant_limite: "expire le " + d, expire: "expirée" + (d ? " le " + d : ""), manquant: "à fournir" })[p.status] || p.status;
     },
+    // Sous le tableau (partenaire) : seulement ce qu'il ne montre pas — les attestations expirées
+    // ou qui expirent avant la date limite — et une ligne de synthèse pour les pièces à fournir.
+    cxExpirations(g) { return ((g && g.alert_items) || []).filter(a => a && a.kind !== "a_fournir").map(a => a.text); },
+    cxResume(g) { return (g && g.a_fournir && g.a_fournir.resume) || ""; },
     cxTitle(m, k) {
       const p = this.cxPiece(m, k);
       return (p.name ? p.name + " — " : "") + (({ present: "Pièce fournie (sans date d'expiration)", valide_jusquau: "Valide au-delà de la date limite", expire_avant_limite: "Expire AVANT la date limite : à renouveler", expire: "Expirée : à renouveler", manquant: "Pièce non fournie" })[p.status] || "");

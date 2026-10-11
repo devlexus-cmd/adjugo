@@ -353,7 +353,11 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
             cc = coffre_croise(db, project, invites, viewer_invite_id=None, for_owner=True)
             checks["attestations_ok"] = bool(cc.get("all_complete"))
             if not checks["attestations_ok"]:
-                manques += list(cc.get("alerts") or [])[:8]
+                # Toutes les alertes (l'écran en montre 3 puis « et N autres » : N doit être exact),
+                # les attestations expirées ou expirant avant la date limite d'abord.
+                items = list(cc.get("alert_items") or [])
+                manques += [a["text"] for a in items if a.get("kind") != "a_fournir"]
+                manques += [a["text"] for a in items if a.get("kind") == "a_fournir"]
         except Exception:
             checks["attestations_ok"] = False
             manques.append("Attestations des partenaires : vérification impossible pour l'instant")
