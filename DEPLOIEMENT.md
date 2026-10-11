@@ -24,6 +24,18 @@ Légende priorité : 🔴 bloquant · 🟠 important · 🟡 qualité · 🟢 po
 - [x] **Bascule SQLite (dev) / PostgreSQL (prod)** : `create_all` n'est appelé qu'en SQLite ; en prod c'est Alembic. Il suffit de pointer `DATABASE_URL` sur le Postgres managé (Neon/RDS/Scaleway ou `docker-compose`).
 - [x] **Migrations Alembic** en place : `alembic/` + migration initiale `db24559dfd46_initial_schema` couvrant les 10 tables (dont `cotraitants` avec `specialites/codes_cpv/departement` et `matching_criteria_ext`). Testée sur base vierge. Déploiement : `alembic upgrade head` (lancé automatiquement par `entrypoint.sh`).
 - [x] **Driver aligné** sur `psycopg2` (config, `docker-compose`, `.env.example`).
+- [x] **Migrations sans casse (« expand/contract »)** : une livraison n'enlève jamais une colonne que la
+  version précédente lit encore (pendant le démarrage du nouveau conteneur, l'ancien sert le trafic).
+  On arrête d'abord de la mapper, on la supprime dans une livraison ULTÉRIEURE. En cours :
+  `project_contributions.chiffrage_note` (vidée, plus mappée depuis `q1r2s3t4u5v6`, suppression
+  différée — voir `docs/COTRAITANCE_V2_ARCHITECTURE.md`, « Suppressions différées »).
+- [x] **Retour arrière vers l'image précédente** : l'image précédente ne connaît pas les révisions
+  plus récentes, son `entrypoint.sh` s'arrête alors sur « Can't locate revision » (vérifié sur
+  Postgres). Procédure : (1) depuis l'image ACTUELLE, `alembic downgrade <tête de l'image
+  précédente>` (pour la co-traitance v2 vagues 3 et 4 : `alembic downgrade o9p0q1r2s3t4`, qui ne
+  supprime rien : ces révisions n'ont que des ajouts) ; (2) redéployer l'image précédente. Vérifié
+  le 11/10/2026 sur Postgres avec le code de production (ff8ff27) : invitations et parts lues,
+  écrites et soumises pendant la migration, après elle et après le retour arrière.
 - [ ] **Sauvegardes automatiques** + PITR (à configurer côté hébergeur).
 
 ## 🔴 Infrastructure & déploiement

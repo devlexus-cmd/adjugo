@@ -216,11 +216,18 @@ def partner_names(db, inv, rows) -> dict:
 
 
 def first_own_id(db, inv):
-    """Id de la PREMIÈRE entrée du membre (son invitation) dans le journal du marché, ou None."""
+    """Id de l'entrée qui marque l'ARRIVÉE du membre dans le journal du marché : « invitation
+    créée » (cible = son invitation, renseignée depuis toujours, même avant la colonne
+    invite_id), à défaut sa première entrée rattachée ; None si aucune."""
     from sqlalchemy import func
     from app.models import AuditLog
-    return db.query(func.min(AuditLog.id)).filter(AuditLog.project_id == inv.project_id,
-                                                  AuditLog.invite_id == inv.id).scalar()
+    first = db.query(func.min(AuditLog.id)).filter(
+        AuditLog.project_id == inv.project_id, AuditLog.action == "invite.created",
+        AuditLog.target_type == "invite", AuditLog.target_id == inv.id).scalar()
+    if first is None:
+        first = db.query(func.min(AuditLog.id)).filter(AuditLog.project_id == inv.project_id,
+                                                       AuditLog.invite_id == inv.id).scalar()
+    return first
 
 
 def project_row(r, inv, names: dict, first_id=None):

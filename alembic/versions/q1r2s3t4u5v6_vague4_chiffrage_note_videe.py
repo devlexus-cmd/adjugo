@@ -23,7 +23,10 @@ qu'une version déployable la mappe. Cette révision :
 Idempotent : chaque étape vérifie la table et la colonne (base neuve : chiffrage_note n'existe pas,
 le modèle ne la mappe plus). downgrade ne fait rien, à dessein : chiffrage_note n'a jamais été
 supprimée ici (l'ancien code la retrouve telle quelle) et network_accepted_at, absente de son
-modèle, est ignorée par l'ancien code.
+modèle, est ignorée par l'ancien code. Retour arrière vers l'image précédente (vérifié sur
+Postgres avec le code de production) : `alembic downgrade o9p0q1r2s3t4` depuis l'image actuelle,
+puis redéploiement de l'image précédente — sans ce downgrade, son entrypoint s'arrête sur une
+révision inconnue (voir DEPLOIEMENT.md).
 
 Revision ID: q1r2s3t4u5v6
 Revises: p0q1r2s3t4u5

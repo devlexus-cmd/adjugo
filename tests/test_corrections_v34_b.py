@@ -365,6 +365,31 @@ def test_total_masque_au_cotraitant_ajoute_apres_la_generation(client, auth, mai
     assert any(e["action"] == "offer.frozen" and "€ HT" in e["detail"] for e in co["entries"])
 
 
+def test_total_montre_au_membre_invite_avant_le_figeage_meme_sans_rattachement_ancien(client, auth, mails):
+    """Précision du masquage : l'arrivée du membre est datée par l'entrée « invitation créée »
+    (cible = son invitation), pas par sa première entrée rattachée — un membre invité AVANT le
+    figeage, dont l'entrée d'invitation est ancienne (sans invite_id), voit bien le total."""
+    from app.models import AuditLog
+    from app.services import audit
+    h = auth["headers"]
+    pid = _project(client, h)
+    t = _invite(client, h, pid, "Le Gall Électricité")["token"]
+    inv_id, owner, _ = _invite_row(t)
+    db = _db()
+    try:
+        audit.record(db, action="offer.frozen", owner_id=owner, project_id=pid, actor="user:0", actor_kind="owner",
+                     target_type="project", target_id=pid, detail="total 100 000 € HT (convention v1)")
+        e = db.query(AuditLog).filter(AuditLog.action == "invite.created", AuditLog.target_id == inv_id).first()
+        e.invite_id = None                     # entrée d'avant la colonne invite_id
+        db.commit()
+    finally:
+        db.close()
+    assert client.get(f"/api/invite/{t}").status_code == 200      # 1re entrée rattachée : après le figeage
+    entries = client.get(f"/api/invite/{t}/journal").json()["entries"]
+    frozen = [e for e in entries if e["action"] == "offer.frozen"]
+    assert frozen and "100 000 € HT" in frozen[0]["detail"], frozen
+
+
 # ═══ Dépôt (étape 5) ══════════════════════════════════════════════════════════════════
 
 def test_pret_a_deposer_controle_aussi_les_attestations_du_chef_de_file(client, auth, mails):
