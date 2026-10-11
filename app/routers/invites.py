@@ -1703,6 +1703,9 @@ _DPGF_EXT = {".pdf", ".xlsx", ".xls", ".ods", ".csv"}
 _DPGF_EXT_MSG = "Une DPGF de lot se dépose en PDF, en tableur (xlsx, xls, ods) ou en CSV."
 _DPGF_MAX_ROWS = 20000
 _DPGF_MAX_CELLS = 1_000_000      # par lecture : borne le travail fait en Python (fichier de 20 Mo compris)
+# Taille d'un CSV de DPGF : 20 000 lignes de 200 caractères. Au-delà, le contrôle (en Python, sous
+# le GIL de l'unique process) prendrait plusieurs secondes : tableur ou PDF.
+_DPGF_CSV_MAX_BYTES = 4 * 1024 * 1024
 # Signature des formats binaires : un texte (CSV avec formules, page HTML) renommé en .xls ou en
 # .xlsx échapperait au contrôle du CSV → refusé, au lieu d'être accepté sans aucun contrôle.
 _DPGF_MAGIC = {".pdf": (b"%PDF-",), ".xlsx": (b"PK\x03\x04",), ".ods": (b"PK\x03\x04",),
@@ -1800,6 +1803,8 @@ def _check_dpgf_csv(content: bytes) -> None:
     leur nombre et qu'elles contiennent un nombre ou non. Garde-fou d'aide contre une erreur du
     déposant : le contenu des PDF et des tableurs n'est pas inspecté."""
     import csv
+    if len(content) > _DPGF_CSV_MAX_BYTES:
+        raise HTTPException(422, "DPGF trop volumineuse pour un CSV (plus de 4 Mo) : déposez-la en tableur ou en PDF.")
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -2629,9 +2634,10 @@ _CHAIN_CACHE: dict = {}        # owner_id → (ts, intact) — process unique, T
 _CHAIN_TTL = 300
 
 
-def _chain_intact_cached(db: Session, owner_id: int) -> bool:
+def _chain_intact_cached(db: Session, owner_id: int) -> Optional[bool]:
     """verify_chain = full-scan + re-hash de TOUT le journal du tenant : sur une route invitée
-    à 60/min ce serait un DoS trivial de l'unique worker → résultat mis en cache 5 min."""
+    à 60/min ce serait un DoS trivial de l'unique worker → résultat mis en cache 5 min.
+    Erreur technique : None (inconnu), JAMAIS False (« altéré ») et jamais mise en cache."""
     import time as _time
     hit = _CHAIN_CACHE.get(owner_id)
     now = _time.time()
@@ -2640,7 +2646,11 @@ def _chain_intact_cached(db: Session, owner_id: int) -> bool:
     try:
         intact = bool(audit.verify_chain(db, owner_id).get("intact"))
     except Exception:
-        intact = False
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
     _CHAIN_CACHE[owner_id] = (now, intact)
     return intact
 
@@ -2658,7 +2668,7 @@ def guest_journal(token: str, request: Request, db: Session = Depends(get_db)):
     try:
         chained = _chain_intact_cached(db, inv.owner_id)
     except Exception:
-        chained = False
+        chained = None                 # inconnu : une panne n'est pas une altération
     return {"entries": out, "chained": chained, "integrity_label": INTEGRITY_LABEL}
 
 

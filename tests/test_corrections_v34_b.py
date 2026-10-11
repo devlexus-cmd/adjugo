@@ -65,6 +65,28 @@ def test_dpgf_cellule_geante_traitee_en_temps_lineaire():
             assert time.perf_counter() - t0 < 0.3, f"{n} espaces : {time.perf_counter() - t0:.2f} s"
 
 
+def test_dpgf_csv_volumineux_borne():
+    """Le contrôle du CSV tourne en Python sous le GIL de l'unique process : au-delà de 4 Mo il
+    est refusé d'emblée (tableur ou PDF) ; en dessous, même le pire fichier reste sous la seconde."""
+    from fastapi import HTTPException
+    from app.routers.invites import _DPGF_CSV_MAX_BYTES, _check_dpgf_csv
+    gros = ("Désignation " * 20 + ";" + "b" * 2000 + "\n").encode() * (_DPGF_CSV_MAX_BYTES // 2000)
+    assert len(gros) > _DPGF_CSV_MAX_BYTES
+    t0 = time.perf_counter()
+    with pytest.raises(HTTPException) as e:
+        _check_dpgf_csv(gros)
+    assert e.value.status_code == 422 and "4 Mo" in e.value.detail
+    assert time.perf_counter() - t0 < 0.1
+    pire = (("1 " * 30000) + "x;" + "\n").encode() * (_DPGF_CSV_MAX_BYTES // 60100)
+    assert len(pire) <= _DPGF_CSV_MAX_BYTES
+    t0 = time.perf_counter()
+    try:
+        _check_dpgf_csv(pire)
+    except HTTPException:
+        pass
+    assert time.perf_counter() - t0 < 2.0
+
+
 def test_dpgf_formule_controlee_sous_chaque_separateur(client, auth, mails):
     h = auth["headers"]
     pid = _project(client, h)
@@ -121,6 +143,53 @@ def test_dpgf_texte_renomme_en_tableur_refuse(client, auth, mails):
     assert up.status_code == 200, up.text
     r = client.patch(f"/api/invite/{t}/contribution/piece/{up.json()['id']}", json={"piece_type": "dpgf_lot"})
     assert r.status_code == 422
+
+
+def test_dpgf_jointe_depuis_le_coffre_fort_controlee(client, auth, mails):
+    """« Joindre depuis mon coffre-fort » une DPGF : mêmes contrôles qu'un dépôt direct (formule
+    refusée, rien n'est copié dans le tenant du chef de file) ; une DPGF saine est jointe."""
+    import uuid as _uuid
+    from app.models import ContributionPiece, DocCategory, Document, User
+    from app.services.storage import get_storage
+    h = auth["headers"]
+    pid = _project(client, h)
+    email = f"part_{_uuid.uuid4().hex[:8]}@test.fr"
+    r = client.post("/api/auth/register", json={"email": email, "password": "motdepasse123",
+                                                "full_name": "Partenaire", "company_name": "Delta Peinture"})
+    assert r.status_code == 201, r.text
+    ph = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    t = _invite(client, h, pid, "Delta Peinture")["token"]
+    assert client.post(f"/api/invite/{t}/claim", headers=ph).status_code == 200
+    db = _db()
+    try:
+        uid = db.query(User).filter(User.email == email).first().id
+        ids = {}
+        for nom, data in (("DPGF_lot2_piege.csv", b"Designation;Prix\nPose;=1+1\n"),
+                          ("DPGF_lot2.csv", b"Designation;Prix HT\nPose;1 250,00\n")):
+            key = f"{uid}/vault/{_uuid.uuid4().hex}.csv"
+            get_storage().save(key, data, "text/csv")
+            d = Document(user_id=uid, name=nom, category=DocCategory.autre, file_key=key, file_size=len(data),
+                         mime_type="text/csv")
+            db.add(d)
+            db.commit()
+            ids[nom] = d.id
+    finally:
+        db.close()
+
+    def n_pieces():
+        db = _db()
+        try:
+            return db.query(ContributionPiece).filter(ContributionPiece.project_id == pid).count()
+        finally:
+            db.close()
+    r = client.post(f"/api/invite/{t}/contribution/piece/from-vault", headers=ph,
+                    json={"document_id": ids["DPGF_lot2_piege.csv"]})
+    assert r.status_code == 422 and "formule" in r.json()["detail"], r.text
+    assert n_pieces() == 0
+    r = client.post(f"/api/invite/{t}/contribution/piece/from-vault", headers=ph,
+                    json={"document_id": ids["DPGF_lot2.csv"]})
+    assert r.status_code == 200 and r.json()["piece_type"] == "dpgf_lot", r.text
+    assert n_pieces() == 1
 
 
 def _node_csvs(batch):
@@ -282,6 +351,27 @@ def test_journal_membre_erreur_technique_jamais_alteree(client, auth, mails, mon
     assert r.json()["verdict"] == "intact", r.json()
     exp = client.get(f"/api/invite/{t}/journal/export").json()
     assert exp["verdict"]["verdict"] == "intact" and jm.verify_export(exp)["ok"]
+
+
+def test_journal_liste_erreur_technique_ni_alteree_ni_mise_en_cache(client, auth, mails, monkeypatch):
+    """GET …/journal : une panne pendant la vérification complète donne « chained » inconnu
+    (None), jamais False, et rien n'est gardé en cache (la requête suivante est normale)."""
+    import sqlalchemy as sa
+    import app.routers.invites as I
+    from app.services import audit
+    h = auth["headers"]
+    pid = _project(client, h)
+    t = _invite(client, h, pid, "Delta Peinture")["token"]
+    I._CHAIN_CACHE.clear()
+    real = audit.verify_chain
+
+    def panne(*a, **k):
+        raise sa.exc.OperationalError("SELECT 1", {}, Exception("base momentanément indisponible"))
+    monkeypatch.setattr(audit, "verify_chain", panne)
+    r = client.get(f"/api/invite/{t}/journal")
+    assert r.status_code == 200 and r.json()["chained"] is None, r.json()
+    monkeypatch.setattr(audit, "verify_chain", real)
+    assert client.get(f"/api/invite/{t}/journal").json()["chained"] is True
 
 
 def test_journal_membre_rattachement_scelle_pour_les_nouvelles_entrees(client, auth, mails):

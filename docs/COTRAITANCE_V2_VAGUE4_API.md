@@ -250,13 +250,25 @@ pièce. Rien de tout cela ne va vers le LLM ni dans une DPGF commune.
 - Sans `piece_type`, un nom contenant « DPGF » (ou « décomposition du prix global ») est classé
   `dpgf_lot` (et n'est plus pris pour un RIB : « DPGF_distribution.xlsx »).
 - **Contrôles du CSV** (seul format lisible sans dépendance) — 422 avec message en français :
-  UTF-8 obligatoire (BOM accepté) ; séparateur `;` ou `,` ; aucune formule (cellule commençant par
-  `=`, `+`, `@`, ou `-` suivi d'autre chose qu'un nombre : « -150,00 » est accepté) ; aucune
-  colonne de coûts ou de marges dans les lignes d'en-tête (« marge », « coût », « déboursé »,
-  « prix d'achat », « frais généraux », « coefficient ») : « Une DPGF de lot ne contient que des
-  prix de vente : retirez la colonne « Marge » (elle serait visible du chef de file). » ; 20 000
-  lignes au plus. **Générateur recommandé** : CSV UTF-8 séparé par `;`, montants au format
-  « 1 250,00 », pas de formule. Les PDF/tableurs ne sont pas inspectés (responsabilité du déposant).
+  UTF-8 obligatoire (BOM accepté) ; 4 Mo et 20 000 lignes au plus (au-delà : tableur ou PDF ; le
+  contrôle tourne dans l'unique process) ; aucune formule (cellule commençant par `=`, `+`, `@`,
+  ou `-` suivi d'autre chose qu'un nombre : « -150,00 » est accepté), contrôlée sous **chaque**
+  séparateur qu'un tableur peut appliquer (`;`, `,`, tabulation, et celui d'une directive
+  `sep=X` en première ligne) ; aucune colonne de coûts ou de marges dans les lignes d'en-tête
+  (toutes les lignes non vides avant la première ligne de valeurs, qu'elles contiennent un nombre
+  ou non) : « marge », « coût », « déboursé », « prix d'achat », « PU achat », « prix de revient »,
+  « frais généraux », « coefficient », « coef », « taux de marque », reconnus sans accents ni
+  majuscules et quelle que soit la ponctuation (« Marge_HT », « cout_unitaire ») — « Une DPGF de
+  lot ne contient que des prix de vente : retirez la colonne « marge » (elle serait visible du chef
+  de file). ». Même liste et même normalisation côté navigateur (`AdjugoCrypto.dpgf`) : un CSV
+  produit par le navigateur est toujours accepté. Lecture par des parseurs linéaires, sans
+  expression régulière à retour arrière. **Générateur recommandé** : CSV UTF-8 séparé par `;`,
+  montants au format « 1 250,00 », pas de formule.
+- **PDF et tableurs** : leur contenu n'est pas inspecté (responsabilité du déposant) ; seule leur
+  signature de format est vérifiée (`%PDF-`, ZIP pour `.xlsx`/`.ods`, OLE pour `.xls`) : un texte
+  renommé en `.xls` est refusé. Ces contrôles aident le déposant contre une erreur (formule, colonne
+  de marge) ; ils ne garantissent pas au chef de file qu'un fichier déposé ne contient aucune
+  formule.
 - Effets : la part **reste soumise** et la convention **n'est pas rendue caduque** (le prix de
   vente du lot, seul imprimé dans la convention, ne change pas) — vrai aussi pour la suppression
   (`DELETE …/piece/{id}`) et la jonction depuis le coffre-fort.
