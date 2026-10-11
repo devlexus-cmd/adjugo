@@ -244,21 +244,41 @@ def test_part_d_une_invitation_reseau_sans_reponse_invisible_du_chef_de_file(cli
     que l'adresse : accepté depuis le compte, adresse prouvée ou part soumise."""
     chef, part, pid, tok = _scenario_brouillon_et_invitation_reseau(client, reg, mails)
     h = chef["headers"]
-    _put_part(client, tok, company_name="Le Gall Électricité", lot="Lot 2 — Électricité", prix_lot_ht=41234,
-              note_au_mandataire="Note confidentielle Le Gall",
+    _put_part(client, tok, company_name="Le Gall Élec SECRET", lot="Lot 2 — Électricité", prix_lot_ht=41234,
+              note_au_mandataire="Note confidentielle Le Gall", siret="98765432100019",
+              address="7 impasse Cachée", representant_legal="Jean Prudent", signataire_qualite="Gérant",
               contact={"nom": "Jean Prudent", "email": "jean.prudent@prudent-elec.fr", "telephone": "06 12 34 56 78"})
     secrets_part = ("jean.prudent@prudent-elec.fr", "06 12 34 56 78", "Jean Prudent", "41234", "41 234",
-                    "Note confidentielle Le Gall")
+                    "Note confidentielle Le Gall", "Le Gall Élec SECRET", "98765432100019", "7 impasse Cachée")
+    from app.core.database import SessionLocal
+    from app.models import ProjectInvite
+    db = SessionLocal()
+    try:
+        tok_m = db.query(ProjectInvite).filter(ProjectInvite.project_id == pid,
+                                               ProjectInvite.company_name == "Morvan Plomberie").first().token
+    finally:
+        db.close()
 
     def owner_views():
         out = []
-        for path in ("contributions", "consortium", "invites"):
+        # Brouillon de convention (aperçu et membres), « prêt à déposer », coffre croisé, état.
+        for path in ("contributions", "consortium", "invites", "groupement/convention", "groupement/depot",
+                     "coffre-croise"):
             r = client.get(f"/api/projects/{pid}/{path}", headers=h)
             assert r.status_code == 200, (path, r.text)
             out.append((path, r.text))
+        # Les autres membres non plus (page partenaire, coffre croisé).
+        for path in ("", "/coffre-croise"):
+            r = client.get(f"/api/invite/{tok_m}{path}")
+            assert r.status_code == 200, (path, r.text)
+            out.append((f"membre{path}", r.text))
         return out
     for path, text in owner_views():
-        assert not [s for s in secrets_part if s in text], path
+        assert not [s for s in secrets_part if s in text], (path, [s for s in secrets_part if s in text])
+    # Le brouillon de convention cite le partenaire sous le NOM DE L'INVITATION (profil publié).
+    conv = client.get(f"/api/projects/{pid}/groupement/convention", headers=h).json()
+    reseau = [m for m in conv["membres"] if m["company"] not in ("Breizh Couverture", "Morvan Plomberie")]
+    assert [m["company"] for m in reseau] == ["LE GALL ÉLECTRICITÉ"], conv["membres"]
     # Aucune entrée « le mandataire a consulté votre part » pour une part qu'il n'a pas vue.
     assert not any(e["action"] == "owner.view_contribution"
                    for e in client.get(f"/api/invite/{tok}/journal").json()["entries"])
@@ -276,3 +296,55 @@ def test_part_d_une_invitation_reseau_acceptee_visible_du_chef_de_file(client, r
     rows = client.get(f"/api/projects/{pid}/contributions", headers=chef["headers"]).json()
     mine = [c for c in rows if c["company_name"] == "Le Gall Électricité"]
     assert mine and mine[0]["contact"]["email"] == "jean.prudent@prudent-elec.fr" and mine[0]["prix_lot_ht"] == 41234
+
+
+def test_relances_comptees_dans_le_plafond_a_l_envoi_aussi(client, reg, mails):
+    """Un même compteur (invitations créées + relances) à l'envoi et à la relance : 9 relances
+    puis des invitations ne font plus 19 sollicitations du même profil en 24 h."""
+    from app.core.database import SessionLocal
+    from app.services import audit
+    part = _org(client, "Le Gall Électricité")
+    part_pid = _publish(client, reg, part)
+    chef = _org(client, "Breizh Couverture")
+    _publish(client, reg, chef, metiers=("couverture",))
+    p1 = _project(client, chef)
+    r = client.post(f"/api/projects/{p1}/reseau/invitations", headers=chef["headers"],
+                    json={"profile_id": part_pid, "lot": "Lot 2 — Électricité"})
+    assert r.status_code == 200, r.text
+    iid = r.json()["invitation"]["id"]
+    db = SessionLocal()
+    try:
+        for _ in range(9):           # 1 envoi + 9 relances = 10 sollicitations sur 24 h
+            audit.record(db, action="invite.resent", owner_id=chef["id"], project_id=p1, actor="user:test",
+                         actor_kind="owner", target_type="invite", target_id=iid, invite_id=iid, detail="relance")
+    finally:
+        db.close()
+    p2 = _project(client, chef)
+    r = client.post(f"/api/projects/{p2}/reseau/invitations", headers=chef["headers"],
+                    json={"profile_id": part_pid, "lot": "Lot 2 — Électricité"})
+    assert r.status_code == 429, r.text
+
+
+def test_relance_reseau_refusee_si_le_chef_de_file_n_est_plus_publie(client, reg, mails):
+    """Mêmes conditions qu'à l'envoi : un chef de file qui a retiré son profil du réseau ne relance
+    plus par le réseau (aucun email) ; le motif dit est le sien, rien n'est dit du partenaire."""
+    part = _org(client, "Le Gall Électricité")
+    part_pid = _publish(client, reg, part)
+    chef = _org(client, "Breizh Couverture")
+    _publish(client, reg, chef, metiers=("couverture",))
+    pid = _project(client, chef)
+    r = client.post(f"/api/projects/{pid}/reseau/invitations", headers=chef["headers"],
+                    json={"profile_id": part_pid, "lot": "Lot 2 — Électricité"})
+    assert r.status_code == 200, r.text
+    iid = r.json()["invitation"]["id"]
+    url = f"/api/projects/{pid}/invites/{iid}/resend"
+    assert client.delete("/api/reseau/profil/publier", headers=chef["headers"]).status_code == 200
+    _age_email(iid)
+    n_mails = len(mails)
+    r = client.post(url, headers=chef["headers"])
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "profil_non_publie", r.text
+    assert "Votre profil" in r.json()["detail"]["message"]
+    assert len(mails) == n_mails
+    assert client.post("/api/reseau/profil/publier", headers=chef["headers"], json={"accepte": True}).status_code == 200
+    _age_email(iid)
+    assert client.post(url, headers=chef["headers"]).json()["sent"] is True

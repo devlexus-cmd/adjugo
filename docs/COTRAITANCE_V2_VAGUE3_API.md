@@ -83,7 +83,10 @@ Nouveaux champs : `source ∈ manuel | reseau_adjugo | sirene` et `recipient_mas
 
 Décliner n'est pas répondre : l'adresse d'un partenaire réseau qui a décliné reste masquée.
 Libellé UI : « Adresse visible quand le partenaire aura accepté ». Pas de bouton « Copier le lien »
-pour `reseau_adjugo` (le bouton « Relancer » existant fonctionne, même texte réseau).
+pour `reseau_adjugo` (le bouton « Relancer » existant fonctionne, même texte réseau). La relance
+refait les contrôles de l'envoi : chef de file toujours publié (sinon 409 `profil_non_publie`, « Votre
+profil partenaire n'est plus publié… »), profil du partenaire publié et paire non masquée (sinon 409
+`plus_sollicitable`, motif jamais dit), plafond de sollicitations du profil (429).
 
 ## 3. Mon profil partenaire
 
@@ -445,7 +448,7 @@ moment. » Le partenaire est rattaché à « Mes partenaires » (source « Rése
 | 422 | « Rôle invalide : cotraitant ou sous_traitant. » · « Ce partenaire n'accepte pas le rôle « Partenaire du groupement (co-traitant) ». » |
 | 409 | `{"code": "deja_invite", "message": "Ce partenaire a déjà une invitation active sur ce marché."}` |
 | 409 | `{"code": "injoignable", "message": "Ce partenaire ne peut pas être contacté pour le moment."}` |
-| 429 | plafond de l'organisation · « Ce partenaire a reçu beaucoup d'invitations aujourd'hui : réessayez demain. » (10 / 24 h par profil) |
+| 429 | plafond de l'organisation · « Ce partenaire a reçu beaucoup d'invitations aujourd'hui : réessayez demain. » (10 sollicitations / 24 h par profil : invitations créées et relances, même compteur à l'envoi et à la relance) |
 
 Email envoyé au partenaire (par Adjugo) : objet « Une entreprise vous propose un groupement — … »,
 nom du chef de file, marché, part proposée, lien, « Votre adresse n'est pas communiquée au chef de

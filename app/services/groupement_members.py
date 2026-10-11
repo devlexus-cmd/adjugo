@@ -50,6 +50,22 @@ def active_invite_ids(db: Session, project_id: int) -> list:
     return [i.id for i in active_invites(db, project_id)]
 
 
+def visible_contributions(db: Session, project_id: int, invites: list, viewer_invite_id: Optional[int] = None) -> dict:
+    """{invite_id: part} des parts que le chef de file et les AUTRES membres peuvent lire. La part
+    d'une invitation du RÉSEAU sans réponse (ou déclinée) en est retirée : brouillon saisi pendant
+    l'aperçu minimal, que seul son auteur (`viewer_invite_id`) voit (invites._owner_hides_part).
+    Elle est alors traitée comme absente : nom de l'invitation, aucun champ de la part (ni nom
+    saisi, ni SIRET, ni adresse, ni représentant), statut « invité »."""
+    from app.routers.invites import _owner_hides_part      # import local : pas de cycle
+    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
+        ProjectContribution.project_id == project_id).all()}
+    for inv in invites:
+        c = contribs.get(inv.id)
+        if c is not None and inv.id != viewer_invite_id and _owner_hides_part(inv, c):
+            contribs.pop(inv.id)
+    return contribs
+
+
 def submitted_contributions(db: Session, project_id: int) -> list:
     """Parts SOUMISES des membres ACTIFS uniquement (jamais celles d'un partenaire révoqué
     ou qui a décliné) — base du mémoire fusionné, des CERFA, du ZIP, de la convention."""
@@ -94,8 +110,7 @@ def groupement_state(project: Project, db: Session) -> dict:
     """
     plan = _plan(project)
     invites = active_invites(db, project.id)
-    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project.id).all()}
+    contribs = visible_contributions(db, project.id, invites)   # réseau sans réponse : part absente
 
     members, n_submitted, n_with_price = [], 0, 0
     for inv in invites:
@@ -309,8 +324,7 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
 
     # 1) Parts : chaque co-traitant ACTIF a soumis sa part avec un prix de vente. Un sous-traitant
     #    n'est pas membre du groupement (DC4) : son retard est un avertissement, pas un manque.
-    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project.id).all()}
+    contribs = visible_contributions(db, project.id, invites)   # réseau sans réponse : part absente
     parts_ok = True
     for inv in invites:
         c = contribs.get(inv.id)

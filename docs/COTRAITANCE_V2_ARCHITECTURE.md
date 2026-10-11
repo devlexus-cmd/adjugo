@@ -130,10 +130,10 @@ l'annuaire, historique réseau.
   l'empreinte des NOUVELLES entrées (contenu haché v2 = « v2| » + v1 + invite_id, ancrage
   inchangé) — pour les anciennes, l'export et l'écran disent qu'il n'est pas scellé ; convention
   refusée (403) à une invitation réseau pas encore acceptée ; DPGF CSV contrôlée par des parseurs
-  linéaires bornés (4 Mo au plus), formules contrôlées sous chaque séparateur plausible, en-têtes
+  linéaires bornés (4 Mo au plus), formules contrôlées sous chaque séparateur (`+`/`-` seulement sous ceux que le tableur du chef de file peut appliquer), en-têtes
   de coûts reconnus après normalisation (même liste que le navigateur), signature des PDF et
   tableurs vérifiée ; part d'une invitation réseau sans réponse (ou déclinée) invisible du chef de
-  file (liste des parts, cockpit, compte-rendu, pièces) ; « Marquer déposé » refusé sur un marché
+  file et des autres membres (liste des parts, cockpit, compte-rendu, pièces, brouillon de convention, « prêt à déposer », coffre croisé, état du groupement : nom de l'invitation, aucun champ du brouillon) ; « Marquer déposé » refusé sur un marché
   abandonné, transitions atomiques (compare-and-set : un seul marquage, une seule annulation sous
   concurrence), statut précédent restauré, compteur « groupements déposés » du réseau recalculé
   aussitôt ; SRI : promesse corrigée (protège entre serveur et navigateur, pas contre une

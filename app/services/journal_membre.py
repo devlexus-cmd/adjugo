@@ -450,6 +450,7 @@ def _verify_member(db, inv):
     for n, r in enumerate(rows, start=1):
         proj = project_row(r, inv, names, first_id) or {"label": r.action, "who": "", "detail": ""}
         scelle = False
+        version = None
         if not r.entry_hash:
             statut = "non_chainee"
             n_unchained += 1
@@ -479,7 +480,9 @@ def _verify_member(db, inv):
         head = heads.get(r.owner_id)
         couverte = bool(head and r.entry_hash and r.id <= head.get("last_id", -1))
         n_covered += int(couverte)
-        n_legacy_covered += int(couverte and not scelle)
+        # « Anciennes » = entrées v1 SEULEMENT (rattachement non scellé). Une entrée v2 altérée
+        # (version inconnue) n'est pas ancienne : le message d'ancrage ne le dirait qu'à tort.
+        n_legacy_covered += int(couverte and version == 1)
         at = _ts(r.created_at)
         sceau = sceau_of(r.entry_hash)
         maillon = maillon_of(maillon, n, at, r.action, proj["who"], sceau)

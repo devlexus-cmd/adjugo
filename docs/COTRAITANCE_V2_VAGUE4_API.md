@@ -251,10 +251,15 @@ pièce. Rien de tout cela ne va vers le LLM ni dans une DPGF commune.
   `dpgf_lot` (et n'est plus pris pour un RIB : « DPGF_distribution.xlsx »).
 - **Contrôles du CSV** (seul format lisible sans dépendance) — 422 avec message en français :
   UTF-8 obligatoire (BOM accepté) ; 4 Mo et 20 000 lignes au plus (au-delà : tableur ou PDF ; le
-  contrôle tourne dans l'unique process) ; aucune formule (cellule commençant par `=`, `+`, `@`,
-  ou `-` suivi d'autre chose qu'un nombre : « -150,00 » est accepté), contrôlée sous **chaque**
-  séparateur qu'un tableur peut appliquer (`;`, `,`, tabulation, et celui d'une directive
-  `sep=X` en première ligne) ; aucune colonne de coûts ou de marges dans les lignes d'en-tête
+  contrôle tourne dans l'unique process) ; aucune formule, contrôlée sous chaque séparateur (`;`,
+  `,`, tabulation, et celui d'une directive `sep=X` en première ligne). Sous un séparateur que le
+  tableur du chef de file peut appliquer — `;` toujours (Excel en français), celui de la directive,
+  `,` ou la tabulation quand l'en-tête du fichier est découpé ainsi (au moins 2 cellules, et plus
+  qu'au `;`) — aucune cellule ne commence par `=`, `+`, `@`, ou `-` suivi d'autre chose qu'un
+  nombre (« -150,00 » est accepté). Sous un autre séparateur (virgule d'une désignation dans un
+  fichier au `;`), seuls `=` et `@` sont refusés : « Fourniture, - y compris accessoires » ou
+  « Pose, +/- 2 mm » sont acceptés. Le message dit la ligne et le signe, et précise « juste après
+  une virgule » quand c'est le cas ; aucune colonne de coûts ou de marges dans les lignes d'en-tête
   (toutes les lignes non vides avant la première ligne de valeurs, qu'elles contiennent un nombre
   ou non) : « marge », « coût », « déboursé », « prix d'achat », « PU achat », « prix de revient »,
   « frais généraux », « coefficient », « coef », « taux de marque », reconnus sans accents ni
@@ -265,8 +270,10 @@ pièce. Rien de tout cela ne va vers le LLM ni dans une DPGF commune.
   expression régulière à retour arrière. **Générateur recommandé** : CSV UTF-8 séparé par `;`,
   montants au format « 1 250,00 », pas de formule.
 - **PDF et tableurs** : leur contenu n'est pas inspecté (responsabilité du déposant) ; seule leur
-  signature de format est vérifiée (`%PDF-`, ZIP pour `.xlsx`/`.ods`, OLE pour `.xls`) : un texte
-  renommé en `.xls` est refusé. Ces contrôles aident le déposant contre une erreur (formule, colonne
+  signature de format est vérifiée (`%PDF-` dans les 1024 premiers octets, comme les lecteurs PDF ;
+  ZIP au début pour `.xlsx`/`.ods`, OLE pour `.xls`) : un texte renommé en `.xls` est refusé, de
+  même qu'un « .xls » qui est en réalité une page web ou un XML Excel 2003 (exports de certaines
+  plateformes), avec un message qui dit de l'enregistrer au format .xlsx ou .ods. Ces contrôles aident le déposant contre une erreur (formule, colonne
   de marge) ; ils ne garantissent pas au chef de file qu'un fichier déposé ne contient aucune
   formule.
 - Effets : la part **reste soumise** et la convention **n'est pas rendue caduque** (le prix de
