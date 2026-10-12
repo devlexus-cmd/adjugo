@@ -231,6 +231,15 @@ def test_lecture_en_cours_dite_honnetement(client, auth):
         db.close()
     st = _creer(client, h, pid)
     assert st["dossier_acheteur"]["message_lecture"] == at.MSG_LECTURE_EN_COURS
+    # La lecture échoue (rien n'est rangé) : l'écran ne dit plus « en cours », il dit comment la relancer.
+    db = _db()
+    try:
+        p = db.get(Project, pid)
+        p.workflow = {"lecture": {"etat": "erreur", "job_id": 999999}}
+        db.commit()
+    finally:
+        db.close()
+    assert _etat(client, h, pid)["dossier_acheteur"]["message_lecture"] == at.MSG_LECTURE_ANCIENNE
 
 
 # ═══ 3. Mesure « fichier imposé » aussi en tâche de fond ════════════════════════════════════

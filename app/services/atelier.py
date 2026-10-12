@@ -347,7 +347,9 @@ def lire_dossier_acheteur(db, project: Project, member_ids: list, integrale: boo
     from app.services import dce_pieces as dp
     cle = cle_dossier_acheteur(db, project, member_ids)
     lec_cle = cle_lecture(project)
-    ck = f"{cle}|{lec_cle}|{'i' if integrale else 'a'}"
+    # Clé du cache : le fichier, la lecture rangée, le mode, et l'état de la lecture en tâche de fond
+    # (« lecture en cours » ne doit pas rester affiché après un échec qui ne range rien).
+    ck = f"{cle}|{lec_cle}|{'i' if integrale else 'a'}|{'c' if _lecture_en_cours(project) else ''}"
     if ck in _LECTURES:
         return dict(_LECTURES[ck])
     out = {"cle": cle, "lecture_cle": lec_cle, "source": "aucun", "nom_fichier": "", "integral": False,
@@ -2230,7 +2232,8 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
     # Ce que le moteur lira à la prochaine rédaction (et non une lecture périmée) : relu (cache du
     # process) si le fichier a changé ou si une nouvelle lecture intégrale a été rangée depuis.
     lu_aff = lu
-    if lu.get("cle") != cle_now or (lu.get("lecture_cle") or "") != cle_lecture(project):
+    if (lu.get("cle") != cle_now or (lu.get("lecture_cle") or "") != cle_lecture(project)
+            or (lu.get("message_lecture") == MSG_LECTURE_EN_COURS) != _lecture_en_cours(project)):
         lu_aff = lire_dossier_acheteur(db, project, member_ids)
     retirees_rows = sections_retirees(db, dossier)
     retirees = [{"id": s.id, "intitule": s.intitule, "retiree_le": _iso(s.retiree_at),
