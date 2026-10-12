@@ -128,9 +128,9 @@ class Settings(BaseSettings):
     # Pendant l'essai : accès niveau Pro. Pro 129,99 € · Business 199,99 € · Sur mesure sur devis.
     # 'starter' = palier résiduel : essai actif→niveau Pro, essai expiré→bloqué, historique/démo→Découverte.
     PLAN_LIMITS: dict = {
-        "starter": {"analyses": 5, "storage_mb": 500, "members": 2, "questions_jour": 20},
-        "pro": {"analyses": 30, "storage_mb": 10240, "members": 10, "questions_jour": 60},
-        "business": {"analyses": 100, "storage_mb": 102400, "members": 50, "questions_jour": 150},
+        "starter": {"analyses": 5, "storage_mb": 500, "members": 2, "questions_jour": 15},
+        "pro": {"analyses": 30, "storage_mb": 10240, "members": 10, "questions_jour": 50},
+        "business": {"analyses": 100, "storage_mb": 102400, "members": 50, "questions_jour": 120},
     }
     # Questions posées à l'IA sur un dossier (hors quota d'analyses) : plafond PAR ORGANISATION et
     # PAR JOUR (heure de Paris). 0 = valeur du forfait (PLAN_LIMITS[...]["questions_jour"]).

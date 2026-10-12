@@ -254,7 +254,7 @@ def questions_limit(user, db) -> int:
     if plan not in ("pro", "business"):
         plan = "pro" if _trial_state(billing) == "active" else "starter"
     lim = (settings.PLAN_LIMITS.get(plan) or {}).get("questions_jour")
-    return int(lim) if lim else 20
+    return int(lim) if lim else 15
 
 
 def _day_start_utc_naive():

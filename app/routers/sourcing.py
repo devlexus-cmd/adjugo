@@ -447,16 +447,6 @@ def _get_progress(job_id) -> dict:
         return dict(_PROGRESS.get(job_id) or {})
 
 
-def _analyze_in_thread(user_id, dce_text, company_data, gonogo, lang_name, pieces):
-    """Analyse IA d'un texte de dossier, exécutée HORS de la boucle d'événements (routes async) :
-    l'appel au fournisseur et l'attente d'une place IA ne figent plus le serveur. L'espace facturé
-    (tenant_scope) est posé ici, dans le fil qui appelle l'IA."""
-    from app.services.analysis import analyze_dce_text
-    from app.services.llm import tenant_scope
-    with tenant_scope(user_id):
-        return analyze_dce_text(dce_text, company_data, gonogo, lang_name=lang_name, pieces=pieces)
-
-
 def _analyze_lecture_in_thread(user_id, lecture, company_data, gonogo, lang_name):
     """Analyse d'un dossier lu en entier, hors de la boucle d'événements, dans l'espace facturé."""
     from app.services.analyse_dossier import analyser
@@ -605,29 +595,26 @@ def _lecture_job_run(jdb, job_id, project_id, user_id, filename, content, lectur
     return out
 
 
-def _run_import(db, project, current_user, filename: str, content: bytes, lecture: dict, stored: bool):
-    """Après la lecture directe : analyse pendant la requête (petit dossier) ou tâche de fond."""
-    from datetime import datetime, timezone
-    from app.core.quota import consume_analysis
+def _context(db, current_user) -> tuple:
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
-    company_data = _company_dict(company)
-    gonogo = _criteria_dict(current_user.id, db)
-    lang_name = _user_lang_name(current_user, db)
-    background = _needs_background(lecture, company_data, gonogo, lang_name)
-    consume_analysis(current_user, db)  # 402 si quota atteint — UNE analyse par import
-    if background:
-        from app.services.jobs import create_job, run_in_thread
-        from app.services.dce_lecture import totaux
-        job = create_job(db, current_user.id, "lecture_dossier", "Lecture du dossier du marché")
-        _set_lecture_state(db, project, {"etat": "en_cours", "job_id": job.id, "source": filename[:200],
-                                         "debut": datetime.now(timezone.utc).isoformat(timespec="seconds")})
-        t = totaux(lecture)
-        _set_progress(job.id, etape="lecture", pieces_total=t["pieces"], pieces_lues=0, pages_lues=0)
-        pid, uid = project.id, current_user.id
-        run_in_thread(job.id, lambda jdb: _lecture_job(jdb, job.id, pid, uid, filename, content, lecture,
-                                                       stored, company_data, gonogo, lang_name))
-        return None, job.id
-    return ("sync", company_data, gonogo, lang_name), None
+    return _company_dict(company), _criteria_dict(current_user.id, db), _user_lang_name(current_user, db)
+
+
+def _start_job(db, project, current_user, filename: str, content: bytes, lecture: dict, stored: bool,
+               company_data, gonogo, lang_name) -> int:
+    """Lance la lecture intégrale et l'analyse en tâche de fond ; renvoie l'identifiant du job."""
+    from datetime import datetime, timezone
+    from app.services.jobs import create_job, run_in_thread
+    from app.services.dce_lecture import totaux
+    job = create_job(db, current_user.id, "lecture_dossier", "Lecture du dossier du marché")
+    _set_lecture_state(db, project, {"etat": "en_cours", "job_id": job.id, "source": filename[:200],
+                                     "debut": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+    t = totaux(lecture)
+    _set_progress(job.id, etape="lecture", pieces_total=t["pieces"], pieces_lues=0, pages_lues=0)
+    pid, uid, jid = project.id, current_user.id, job.id
+    run_in_thread(jid, lambda jdb: _lecture_job(jdb, jid, pid, uid, filename, content, lecture,
+                                                stored, company_data, gonogo, lang_name))
+    return jid
 
 
 def _lecture_response(project_id: int, job_id: int):
@@ -638,16 +625,25 @@ def _lecture_response(project_id: int, job_id: int):
         "progression": _get_progress(job_id)})
 
 
+def _prepare_rangement(db, project, lecture: dict, content: bytes) -> None:
+    lecture["source_empreinte"] = _empreinte(content)
+    _sauver_lecture(db, project, lecture)
+
+
 async def _import_and_analyze(db, project, current_user, filename: str, content: bytes,
                               lecture: dict, stored: bool):
-    from app.core.quota import refund_analysis
-    ctx, job_id = _run_import(db, project, current_user, filename, content, lecture, stored)
-    if job_id is not None:
-        return _lecture_response(project.id, job_id)
-    _tag, company_data, gonogo, lang_name = ctx
+    """Après la lecture directe : petit dossier analysé pendant la requête (d'un seul tenant),
+    gros dossier en tâche de fond. Le travail lourd (assemblage, compression, empreinte, IA) se fait
+    hors de la boucle d'événements. UNE analyse débitée par import."""
+    from app.core.quota import consume_analysis, refund_analysis
+    company_data, gonogo, lang_name = _context(db, current_user)
+    background = await run_in_threadpool(_needs_background, lecture, company_data, gonogo, lang_name)
+    consume_analysis(current_user, db)  # 402 si quota atteint — UNE analyse par import
+    if background:
+        return _lecture_response(project.id, _start_job(db, project, current_user, filename, content, lecture,
+                                                        stored, company_data, gonogo, lang_name))
     if not stored:
-        lecture["source_empreinte"] = _empreinte(content)
-        _sauver_lecture(db, project, lecture)
+        await run_in_threadpool(_prepare_rangement, db, project, lecture, content)
     try:
         analysis = await run_in_threadpool(_analyze_lecture_in_thread, current_user.id, lecture,
                                            company_data, gonogo, lang_name)
@@ -726,8 +722,8 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
         content = get_storage().load(doc.file_key)
     except Exception:
         raise HTTPException(404, "Le fichier du dossier est introuvable dans le stockage.")
-    stored = dce_texte.charger(project)
-    if stored and stored.get("source_empreinte") == _empreinte(content):
+    stored = await run_in_threadpool(dce_texte.charger, project)
+    if stored and stored.get("source_empreinte") == await run_in_threadpool(_empreinte, content):
         lecture = dict(stored)                      # déjà lu en entier : on ne relit pas
         lecture.setdefault("a_poursuivre", False)
         return await _import_and_analyze(db, project, current_user, doc.name, content, lecture, stored=True)
