@@ -14,9 +14,9 @@ profil, équipe, chiffrage, ou texte écrit par l'utilisateur lui-même), avec l
 « Adjugo ne trouve pas d'où vient ce fait : relisez-le. »
 
 Qui parle de quoi (étude §6.5, appliqué dès A0) : une phrase parle de l'entreprise si elle
-contient « nous », « notre », « nos », le nom de l'entreprise, ou si elle se trouve dans une
-section sur les moyens, les références ou la qualité ; elle parle du marché si elle commence par
-« le CCTP », « le maître d'ouvrage », « le site »… En cas de doute : phrase sur l'entreprise.
+contient « nous », « notre », « nos » ou le nom de l'entreprise ; sinon, elle parle du marché si
+elle commence par « le CCTP », « le maître d'ouvrage », « le site »… ; sinon (section sur les
+moyens, les références ou la qualité, ou simple doute) : phrase sur l'entreprise.
 
 RIEN n'est jamais marqué comme bon (aucun libellé positif avant la vague 3) : ce module ne rend
 QUE des faits à relire. Une invention sans chiffre, nom ni certification passe : on le dit.
@@ -111,10 +111,12 @@ def parle_entreprise(phrase: str, noms_entreprise=(), section_entreprise: bool =
         fn = fold(n)
         if len(fn) >= 3 and re.search(r"(?<!\w)" + re.escape(fn) + r"(?!\w)", low):
             return True
-    if section_entreprise:
-        return True
+    # « Le CCTP prévoit… », « Le maître d'ouvrage impose… » (sans « nous » ni le nom de
+    # l'entreprise) : une phrase sur le marché, même dans une partie sur les moyens.
     if _MARCHE.match(low):
         return False
+    if section_entreprise:
+        return True
     return True            # doute : le côté le plus strict
 
 

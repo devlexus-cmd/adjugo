@@ -945,3 +945,74 @@ def test_migration_sqlite_monte_descend_remonte(tmp_path):
     alembic("upgrade", "head")                       # rejeu idempotent
     insp = sa.inspect(sa.create_engine(f"sqlite:///{db}"))
     assert "dossier_section_versions" in insp.get_table_names()
+
+
+# ═══ Compléments : sources citées, tâches génériques, portabilité ══════════════════════
+
+def test_moteur_ne_montre_que_les_extraits_cites_et_aucun_prix(fake_llm):
+    from app.services.agents import memoire as moteur
+    chunks = [{"doc_name": f"d{i}.pdf", "chunk_id": i, "text": f"savoir-faire {i} " * 5} for i in (1, 2, 3)]
+    fake = fake_llm(lambda kw: ("Démarche qualité [S2]. Hors borne [S9].", "end_turn"))
+    out = moteur.rediger_partie({"titre": "Qualité", "chunks": chunks, "faits": {"profil": "Breizh"},
+                                 "dossier_acheteur": "RC", "autres_parties": ["1. Moyens"]})
+    assert [s["ref"] for s in out["sources"]] == ["S2"] and out["erreur"] is False
+    sent = fake.sent()
+    assert "AUTRES PARTIES DU DOSSIER" in sent and "1. Moyens" in sent
+    assert "aucun prix" in sent and "ne prouve RIEN sur l'entreprise" in sent
+    fake_llm(lambda kw: ("", "end_turn"))
+    assert moteur.rediger_partie({"titre": "Qualité"})["erreur"] is True        # réponse vide = échec
+
+
+def test_route_generique_des_taches_ne_montre_pas_le_releve_de_debit(client, auth, fake_llm):
+    h = auth["headers"]
+    pid = _projet(client, h)
+    st = _creer(client, h, pid)
+    ans, _seen = _redige("Texte.")
+    fake_llm(ans)
+    r = client.post(f"/api/atelier/{pid}/sections/{st['sections'][0]['id']}/rediger", headers=h, json={})
+    jid = r.json()["tache"]["id"]
+    _attendre(client, h, pid, jid)
+    g = client.get(f"/api/jobs/{jid}", headers=h)
+    assert g.status_code == 200 and g.json()["status"] == "done"
+    assert '"_debit"' not in g.text and "dossier_id" not in g.text
+    # La tâche d'un autre marché n'est pas lisible par la route de l'atelier d'un autre marché.
+    pid2 = _projet(client, h)
+    _creer(client, h, pid2)
+    assert client.get(f"/api/atelier/{pid2}/taches/{jid}", headers=h).status_code == 404
+
+
+def test_portabilite_et_transfert_de_propriete_suivent_le_dossier(client, auth):
+    h = auth["headers"]
+    pid = _projet(client, h)
+    st = _creer(client, h, pid)
+    _ecrire(client, h, pid, st["sections"][0], "Notre encadrement, écrit par nous.")
+    r = client.get("/api/rgpd/export", headers=h)
+    assert r.status_code == 200
+    data = r.json()
+    d = next(x for x in data["dossiers_de_presentation"] if x["project_id"] == pid)
+    assert d["parties"][0]["texte"] == "Notre encadrement, écrit par nous."
+    # Transfert de propriété de l'organisation : le dossier suit le nouveau propriétaire.
+    from app.models import DossierPresentation, DossierSection, DossierSectionVersion, PlanType, User
+    db = _db()
+    try:
+        u = db.query(User).filter(User.email == auth["email"]).first()
+        u.plan = PlanType.pro
+        db.commit()
+    finally:
+        db.close()
+    r = client.post("/api/org/invite", headers=h, json={"email": f"collegue_{pid}@test.fr"})
+    assert r.status_code == 201, r.text
+    new_id = r.json()["id"]
+    r = client.post("/api/org/transfer-ownership", headers=h, json={"new_owner_id": new_id})
+    assert r.status_code == 200, r.text
+    db = _db()
+    try:
+        assert db.query(DossierPresentation).filter(DossierPresentation.project_id == pid).one().owner_id == new_id
+        assert {s.owner_id for s in db.query(DossierSection).filter(DossierSection.project_id == pid)} == {new_id}
+        assert {v.owner_id for v in db.query(DossierSectionVersion).filter(DossierSectionVersion.project_id == pid)} \
+            == {new_id}
+    finally:
+        db.close()
+    h2 = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    st = _etat(client, h2, pid)                                   # toujours visible par l'organisation
+    assert st["sections"][0]["version_courante"]["texte"] == "Notre encadrement, écrit par nous."

@@ -301,7 +301,9 @@ def to_pdf(ctx: dict) -> tuple:
     if not flow:
         from reportlab.platypus import Paragraph
         flow = [Paragraph(" ", st["body"])]
-    doc.build(flow, onFirstPage=_page_number, onLaterPages=_page_number)
+    # Page de garde sobre : pas de numéro de page sur elle.
+    first = (lambda _c, _d: None) if ctx.get("page_garde", True) else _page_number
+    doc.build(flow, onFirstPage=first, onLaterPages=_page_number)
     return buf.getvalue(), int(doc.page)
 
 

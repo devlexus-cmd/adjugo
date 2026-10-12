@@ -495,11 +495,17 @@ def ia_a_servi(texte: str, textes_ia: list) -> bool:
     """Le texte reprend-il au moins une suite de 8 mots d'un texte de l'IA ? (côté prudent :
     au moindre emprunt, la mention « Préparé avec assistance IA » est due)."""
     mine = _shingles(texte)
-    if not mine:
-        return False
+    flat = " ".join(re.findall(r"\w+", far.fold(texte)))
     for t in textes_ia or []:
-        if mine & _shingles(t):
-            return True
+        theirs = _shingles(t)
+        if theirs:
+            if mine & theirs:
+                return True
+        else:
+            # Texte de l'IA très court (moins de 8 mots) : repris tel quel ?
+            court = " ".join(re.findall(r"\w+", far.fold(t)))
+            if court and court in flat:
+                return True
     return False
 
 
@@ -963,10 +969,13 @@ def evaluer_limites(dossier: DossierPresentation, sections: list, rangs: dict, c
     by_sec = {x.get("id"): x for x in (cpt.get("sections") or [])}
     total = cpt.get("total") or {}
     lims = _limites_doc(dossier)
+    o = options_export(dossier)
+    inclus = [x for x, on in (("page de garde", o["page_garde"]), ("sommaire", o["sommaire"])) if on]
+    suffixe = f" ({' et '.join(inclus)} compris)." if inclus else "."
     for x in lims.get("document") or []:
         k = x.get("type")
         m = _mesure(k, total, True)
-        out.append(_limite_out(x, "document", None, "Dossier de présentation", k, m))
+        out.append(_limite_out(x, "document", None, "Dossier de présentation", k, m, suffixe))
     for s in sections:
         for x in (s.limite or []):
             if not isinstance(x, dict):
@@ -978,7 +987,7 @@ def evaluer_limites(dossier: DossierPresentation, sections: list, rangs: dict, c
     return out
 
 
-def _limite_out(x: dict, portee: str, sid, titre: str, kind: str, mesure) -> dict:
+def _limite_out(x: dict, portee: str, sid, titre: str, kind: str, mesure, suffixe: str = ".") -> dict:
     valeur = x.get("valeur")
     dep = isinstance(mesure, (int, float)) and isinstance(valeur, (int, float)) and mesure > valeur
     unite = _pluriel(valeur, kind)
@@ -986,7 +995,7 @@ def _limite_out(x: dict, portee: str, sid, titre: str, kind: str, mesure) -> dic
         msg = f"{titre} : {_fmt(valeur)} {unite} au plus (mesure indisponible)."
     elif kind == "pages":
         msg = (f"{titre} : environ {_fmt(mesure)} {_pluriel(mesure, kind)} pour {_fmt(valeur)} {unite} au plus"
-               + (" (page de garde et sommaire compris)." if portee == "document" else "."))
+               + suffixe)
     else:
         msg = f"{titre} : {_fmt(mesure)} {_pluriel(mesure, kind)} pour {_fmt(valeur)} {unite} au plus."
     return {"portee": portee, "section_id": sid, "titre": titre, "type": kind, "valeur": valeur,
