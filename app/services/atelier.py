@@ -1528,7 +1528,7 @@ def _verifier_premiere_en_cours(db, d: DossierPresentation, job_id: int) -> None
 
 
 def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accepte_debit: bool,
-             job_id: int) -> dict:
+             job_id: int, estimation_eur: Optional[float] = None) -> dict:
     """Décide et applique le débit d'une action de l'IA (décision 6a). Renvoie le relevé (pour
     rembourser).
       • la 1re action de l'IA sur le dossier : 1 analyse pour tout le dossier ;
@@ -1584,7 +1584,7 @@ def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accep
     prises = 0
     try:
         for _ in range(dues):
-            consume_analysis(user, db)
+            consume_analysis(user, db, "atelier", estimation_eur)
             prises += 1
     except Exception:
         db.rollback()
@@ -1774,6 +1774,12 @@ def lancer(db, user: User, project: Project, dossier: DossierPresentation, secti
             raise AtelierError(422, "deja_assez_court",
                                f"Le texte compte déjà {n} mots, pour {cible} visés : rien à raccourcir.")
         cibles[s.id] = cible
+    # Essai gratuit : la limite d'usage est vérifiée AVANT de lancer, que la rédaction soit débitée ou
+    # comprise (refaire une partie gratuitement coûte aussi un appel à l'IA). Sans effet pour un
+    # forfait payant. Une rédaction lancée va toujours au bout.
+    from app.services.budget_ia import estimer_atelier, verifier
+    estimation = estimer_atelier(len(sections), raccourcir=(action == JOB_RACCOURCIR))
+    verifier(user, db, "atelier", estimation)
     titre = sections[0].intitule if len(sections) == 1 else f"{len(sections)} parties"
     label = ("Dossier de présentation : rédaction de « " if action == JOB_REDIGER
              else "Dossier de présentation : raccourcir « ") + titre[:120] + " »"
@@ -1788,7 +1794,7 @@ def lancer(db, user: User, project: Project, dossier: DossierPresentation, secti
     db.commit()
     ids = [s.id for s in sections]
     try:
-        releve = _debiter(db, user, dossier, sections, accepte_debit, jid)
+        releve = _debiter(db, user, dossier, sections, accepte_debit, jid, estimation)
     except Exception:
         db.rollback()
         _annuler_tache(db, jid, ids)

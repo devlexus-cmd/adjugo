@@ -573,6 +573,15 @@ def _reinitialiser_point_acces() -> None:
                    prochain=0.0)
 
 
+def modele_effectif(model: Optional[str] = None, tache: Optional[str] = None) -> str:
+    """Modèle appelé EN PREMIER pour une tâche (ou, sans tâche, pour le modèle demandé), vu la table,
+    les variables et le forçage : route(tache, model).primaire.modele."""
+    try:
+        return route(tache, model).primaire.modele
+    except Exception:       # noqa: BLE001
+        return model or MODEL
+
+
 # ── Cache de prompt (Anthropic) ─────────────────────────────────────────────────
 # Le SDK épinglé (anthropic 0.34) transmet tel quel un bloc {"type": "text", "text": …,
 # "cache_control": {"type": "ephemeral"}} (clé inconnue de son type conservée, « ttl » compris) et
@@ -636,12 +645,15 @@ class _Block:
 
 class _Resp:
     """Réponse compatible Anthropic (resp.content[0].text, resp.usage.*, resp.stop_reason) : UN seul
-    bloc, le texte de la réponse (blocs de réflexion écartés), quel que soit le fournisseur."""
+    bloc, le texte de la réponse (blocs de réflexion écartés), quel que soit le fournisseur.
+    modele : modèle demandé par la route ; model : modèle renvoyé par le fournisseur quand il le dit
+    (c'est son prix qui est compté : cost_meter, budget de l'essai) ; zone : point d'accès Mistral
+    réellement utilisé (« ue » : +10 %)."""
     __slots__ = ("content", "usage", "stop_reason", "stop_details", "fournisseur", "modele", "tache",
-                 "bascule", "zone")
+                 "bascule", "zone", "model")
 
     def __init__(self, text, usage, stop_reason="end_turn", stop_details=None, fournisseur="", modele="",
-                 tache="", zone=""):
+                 tache="", zone="", model=None):
         self.content = [_Block(text)]
         self.usage = usage
         self.stop_reason = stop_reason
@@ -651,6 +663,7 @@ class _Resp:
         self.tache = tache
         self.bascule = None
         self.zone = zone
+        self.model = model
 
 
 def _int_or_zero(v) -> int:
@@ -683,7 +696,9 @@ def _normaliser_anthropic(resp, modele: str, tache: str) -> _Resp:
                    _int_or_zero(_champ(u, "cache_read_input_tokens")),
                    _int_or_zero(_champ(u, "cache_creation_input_tokens")),
                    _int_or_zero(_champ(cc, "ephemeral_1h_input_tokens")) if cc is not None else 0)
-    return _Resp(texte, usage, stop, getattr(resp, "stop_details", None), ANTHROPIC, modele, tache)
+    m_rendu = getattr(resp, "model", None)
+    return _Resp(texte, usage, stop, getattr(resp, "stop_details", None), ANTHROPIC, modele, tache,
+                 model=m_rendu if isinstance(m_rendu, str) and m_rendu.strip() else None)
 
 
 def _flatten_content(content) -> str:
@@ -771,7 +786,7 @@ def _mistral_create(model=None, max_tokens=1024, temperature=None, system="", me
         raise MistralErreur("Mistral : réponse en erreur", 502, "")
     stop = "max_tokens" if fr in _COUPES else ("end_turn" if fr == "stop" else fr)
     return _Resp(text, _Usage(max(0, pt - lus), ct, cache_read=lus), stop, None, MISTRAL, modele, "",
-                 zone=pa.get("zone") or "")
+                 zone=pa.get("zone") or "", model=str(data.get("model") or "") or None)
 
 
 # ── Compteurs de tokens : global (par process) + PAR TENANT ──────────────────
@@ -931,105 +946,51 @@ def _unmask_response(pz, resp):
     except Exception:
         # Objet non modifiable : on ré-emballe (mêmes attributs que ceux lus par les appelants).
         text = pz.unmask("".join(getattr(b, "text", "") or "" for b in (getattr(resp, "content", None) or [])))
-        return _Resp(text, getattr(resp, "usage", None) or _Usage(0, 0), getattr(resp, "stop_reason", "end_turn"))
+        out = _Resp(text, getattr(resp, "usage", None) or _Usage(0, 0), getattr(resp, "stop_reason", "end_turn"),
+                    getattr(resp, "stop_details", None), getattr(resp, "fournisseur", "") or "",
+                    getattr(resp, "modele", "") or "", getattr(resp, "tache", "") or "",
+                    zone=getattr(resp, "zone", "") or "", model=getattr(resp, "model", None))
+        out.bascule = getattr(resp, "bascule", None)
+        return out
 
 
-# ── Coût IA d'un traitement complet (journalisé, pour décider plus tard du quota) ─
-# `with cost_meter("dossier de réponse", tenant_id):` cumule appels et tokens de tous les appels
-# passés dans la portée (fils compris, via map_in_context), puis JOURNALISE le total et une
-# estimation en dollars au tarif public de chaque fournisseur. Rien n'est montré au client.
+# ── Coût IA d'un traitement complet (journalisé) ──────────────────────────────────
+# `with cost_meter("dossier de réponse", tenant_id):` cumule appels, tokens et coût de tous les
+# appels passés dans la portée (fils compris, via map_in_context), puis JOURNALISE le total. Rien
+# n'est montré au client.
+# Le coût de CHAQUE appel est calculé UNE seule fois, dans _track_usage : au tarif public du modèle
+# réellement appelé (celui que renvoie le fournisseur, sinon celui de la route), au point d'accès
+# réellement utilisé (Mistral UE : +10 %), cache compris (lecture ; écriture de 5 minutes ou d'une
+# heure), secours compris (chaque essai facturé — réponse coupée ou JSON illisible puis secours —
+# compte). Ce même montant va au cost_meter ET au relevé du compte facturé (app/services/budget_ia.py :
+# budget de l'essai gratuit, alerte des forfaits payants), que l'appel soit ou non dans un cost_meter.
+# Seule table des prix : app/services/tarifs_ia.py (Anthropic, Mistral Large 4 soldé puis normal,
+# surcoût UE ; un modèle inconnu y est compté au prix du plus cher, jamais sous-estimé).
 # Les tokens comptés sont ceux RENVOYÉS par l'API : le découpage propre à chaque modèle (≈ +30 % pour
 # Claude 4.7 et suivants par rapport à Sonnet 4.6) y est donc déjà ; estimer_cout() l'applique aux
 # estimations faites à partir d'un nombre de caractères.
-# Tarifs Anthropic (API directe, $ par million de tokens), relevés le 12/10/2026 :
-#   entrée, sortie, lecture du cache, écriture du cache 5 min, écriture du cache 1 h.
-_PRIX_ANTHROPIC = {
-    "claude-sonnet-5-5": (2.0, 10.0, 0.10, 2.50, 4.00),     # lecture du cache : 0,05 × l'entrée
-    "claude-sonnet-4-6": (3.0, 15.0, 0.30, 3.75, 6.00),
-    "claude-haiku-4-5": (1.0, 5.0, 0.10, 1.25, 2.00),
-    "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125, 0.20),   # requêtes ≤ 100 000 tokens
-    "claude-opus-5-5": (4.0, 20.0, 0.20, 5.00, 8.00),
-}
-# Compatibilité : ancien nom (entrée, sortie) des modèles de l'ancien routage.
-_PRICES_USD_PER_MTOK = {m: p[:2] for m, p in _PRIX_ANTHROPIC.items()}
-_CACHE_WRITE_FACTOR, _CACHE_READ_FACTOR = 1.25, 0.10
-
-# Tarifs Mistral (La Plateforme, $ par million : entrée, sortie, entrée lue en cache), 12/10/2026.
-# Large 4 : prix normal 1,36 / 4,18 / 0,14 ; prix soldé affiché 0,68 / 2,09 / 0,07 (lancement à
-# -50 % « pendant 2 semaines » d'après le journal des modifications de Mistral, à partir du
-# 06/10/2026). Point d'accès UE : +10 % sur tout (inférence régionale).
-_PRIX_MISTRAL_FIXES = {
-    "mistral-large-2512": (0.50, 1.50, 0.05),
-    "mistral-medium-2604": (1.50, 7.50, 0.15),
-    "mistral-small-2603": (0.15, 0.60, 0.015),
-}
-
-
-def _env_prix(nom: str, defaut: tuple) -> tuple:
-    v = (os.getenv(nom) or "").strip()
-    if not v:
-        return defaut
-    try:
-        parts = tuple(float(x.strip().replace(",", ".")) for x in v.replace(";", "|").replace("/", "|").split("|"))
-        if len(parts) == 3 and all(p >= 0 for p in parts):
-            return parts
-    except ValueError:
-        pass
-    logger.warning("%s illisible (attendu « entrée|sortie|cache ») : prix par défaut gardé.", nom)
-    return defaut
-
-
-def _solde_en_cours(jour: Optional[_dt.date] = None) -> bool:
-    fin = (os.getenv("MISTRAL_SOLDE_JUSQU_AU") or "2026-10-19").strip()
-    if not fin or fin.lower() in ("aucun", "non", "0"):
-        return False
-    try:
-        return (jour or _dt.date.today()) <= _dt.date.fromisoformat(fin)
-    except ValueError:
-        return False
+from app.services import tarifs_ia as _tarifs      # noqa: E402 — la table des prix n'importe pas llm
 
 
 def prix_mistral(modele: str, jour: Optional[_dt.date] = None) -> Optional[tuple]:
-    m = (modele or "").strip().lower()
-    if m.startswith("mistral-large-4"):
-        if _solde_en_cours(jour):
-            return _env_prix("MISTRAL_PRIX_LARGE4_SOLDE", (0.68, 2.09, 0.07))
-        return _env_prix("MISTRAL_PRIX_LARGE4", (1.36, 4.18, 0.14))
-    return _PRIX_MISTRAL_FIXES.get(m)
-
-
-def _surcout_ue() -> float:
-    try:
-        return max(0.0, float(os.getenv("MISTRAL_SURCOUT_UE", "0.10")))
-    except ValueError:
-        return 0.10
+    """(entrée, sortie, cache lu) en $ par million au point d'accès mondial (Large 4 : prix soldé
+    jusqu'à MISTRAL_SOLDE_JUSQU_AU, puis normal) ; None si le modèle Mistral n'est pas connu."""
+    return _tarifs.prix_mistral(modele, jour)
 
 
 def prix_modele(modele: str, zone: str = "") -> Optional[dict]:
     """Prix en $ par million de tokens : {entree, sortie, cache_lu, cache_ecrit_5m, cache_ecrit_1h}."""
-    m = (modele or "").strip().lower()
-    if m in _PRIX_ANTHROPIC:
-        pin, pout, pcr, pw5, pw1 = _PRIX_ANTHROPIC[m]
-        return {"entree": pin, "sortie": pout, "cache_lu": pcr, "cache_ecrit_5m": pw5, "cache_ecrit_1h": pw1}
-    pm = prix_mistral(m)
-    if pm is None:
-        return None
-    k = 1.0 + (_surcout_ue() if zone == "ue" else 0.0)
-    pin, pout, pcr = (x * k for x in pm)
-    return {"entree": pin, "sortie": pout, "cache_lu": pcr, "cache_ecrit_5m": pin, "cache_ecrit_1h": pin}
+    return _tarifs.prix_modele(modele, zone)
 
 
 def cout_usd(modele: str, tin: int, tout: int, cache_lu: int = 0, cache_ecrit: int = 0,
              cache_ecrit_1h: int = 0, zone: str = "") -> Optional[float]:
     """tin = entrée hors cache ; cache_ecrit = TOUS les tokens écrits dans le cache, dont
-    cache_ecrit_1h écrits pour une heure."""
-    p = prix_modele(modele, zone)
-    if p is None:
+    cache_ecrit_1h écrits pour une heure. None si le modèle n'a pas de tarif connu (le coût MESURÉ
+    d'un appel, lui, compte un modèle inconnu au prix du plus cher : tarifs_ia.cout_usd)."""
+    if not _tarifs.connu(modele):
         return None
-    w1 = min(cache_ecrit_1h, cache_ecrit)
-    w5 = cache_ecrit - w1
-    return (tin * p["entree"] + tout * p["sortie"] + cache_lu * p["cache_lu"]
-            + w5 * p["cache_ecrit_5m"] + w1 * p["cache_ecrit_1h"]) / 1e6
+    return _tarifs.cout_usd(modele, tin, tout, cache_lu, cache_ecrit, cache_ecrit_1h, zone)
 
 
 CARACTERES_PAR_TOKEN = 3.3      # français, ancien découpage de Claude (hypothèse du comparatif)
@@ -1045,7 +1006,9 @@ def estimer_cout(modele: str, caracteres_entree: int, tokens_sortie_base: int, c
                  tokens_reflexion: int = 0) -> Optional[float]:
     """Estimation (en $) d'un appel à partir de CARACTÈRES : le découpage du modèle est appliqué
     (×1,3 pour Sonnet 5.5) à l'entrée comme à la sortie (tokens_sortie_base au découpage de Sonnet 4.6).
-    La réflexion (tokens_reflexion) est facturée comme de la sortie."""
+    La réflexion (tokens_reflexion) est facturée comme de la sortie. Hypothèses de la documentation
+    (3,3 caractères par token) ; le garde-fou de l'essai, lui, estime plus prudemment
+    (budget_ia.estimer*, 3,0 caractères par token)."""
     f = facteur_decoupage(modele)
     ecrits = tokens_estimes(caracteres_cache_ecrits, modele)
     return cout_usd(modele, tokens_estimes(caracteres_entree, modele),
@@ -1070,6 +1033,8 @@ class cost_meter:
         self.truncated = 0
         self.fallbacks = 0
         self.by_model = {}
+        self._usd = 0.0
+        self.sans_tarif = False
         self.provider = ""
         self._parent = None
         self._token = None
@@ -1077,10 +1042,11 @@ class cost_meter:
 
     def add(self, model: str, tin: int, tout: int, stop_reason: str = "",
             cache_read: int = 0, cache_write: int = 0, cache_write_1h: int = 0, zone: str = "",
-            fallback: bool = False) -> None:
+            fallback: bool = False, cout: Optional[float] = None) -> None:
         """tin = tokens d'entrée hors cache ; cache_read / cache_write = tokens d'entrée lus dans
         le cache / écrits dans le cache (dont cache_write_1h pour une heure) ; zone « ue » : point
-        d'accès européen de Mistral (+10 %)."""
+        d'accès européen de Mistral (+10 %) ; cout : coût de l'appel en $ déjà calculé par
+        _track_usage (le même que celui relevé pour le compte facturé), sinon calculé ici."""
         self.calls += 1
         self.input_tokens += tin
         self.output_tokens += tout
@@ -1099,19 +1065,23 @@ class cost_meter:
         m[3] += cache_read
         m[4] += cache_write
         m[5] += cache_write_1h
+        if cout is None:
+            cout = _tarifs.cout_usd(model, tin, tout, cache_read, cache_write, cache_write_1h, zone)
+        self._usd += float(cout or 0.0)
+        if not _tarifs.connu(model):
+            self.sans_tarif = True
         if self._parent is not None:          # un traitement inclus compte aussi dans l'englobant
-            self._parent.add(model, tin, tout, stop_reason, cache_read, cache_write, cache_write_1h, zone, fallback)
+            self._parent.add(model, tin, tout, stop_reason, cache_read, cache_write, cache_write_1h, zone, fallback,
+                             cout)
 
     def cost_usd(self):
-        """Estimation en $ ; None si un modèle n'a pas de tarif connu."""
-        total = 0.0
-        for key, (_n, tin, tout, cr, cw, cw1) in self.by_model.items():
-            model, _, zone = key.partition("@")
-            c = cout_usd(model, tin, tout, cr, cw, cw1, zone)
-            if c is None:
-                return None
-            total += c
-        return round(total, 5)
+        """Coût en $ au tarif public du modèle réellement appelé, cumulé appel par appel (zone, cache
+        et secours compris ; app/services/tarifs_ia.py). Un modèle sans tarif connu est compté au prix
+        du plus cher (jamais sous-estimé) et le journal le signale."""
+        return round(self._usd, 5)
+
+    def cost_eur(self):
+        return round(self._usd * _tarifs.taux_usd_eur(), 5)
 
     def fournisseurs(self) -> str:
         fs = sorted({fournisseur_du_modele(k.partition("@")[0]) for k in self.by_model})
@@ -1123,7 +1093,8 @@ class cost_meter:
                 "tokens_cache_ecrits": self.cache_write_tokens,
                 "tokens_cache_ecrits_1h": self.cache_write_1h_tokens, "reponses_coupees": self.truncated,
                 "bascules_de_secours": self.fallbacks,
-                "cout_estime_usd": self.cost_usd(), "fournisseur": self.fournisseurs(),
+                "cout_estime_usd": self.cost_usd(), "cout_estime_eur": self.cost_eur(),
+                "modele_sans_tarif": self.sans_tarif, "fournisseur": self.fournisseurs(),
                 "par_modele": {k: {"appels": v[0], "tokens_entree": v[1], "tokens_sortie": v[2],
                                    "tokens_cache_lus": v[3], "tokens_cache_ecrits": v[4],
                                    "tokens_cache_ecrits_1h": v[5]}
@@ -1148,7 +1119,8 @@ class cost_meter:
                         self.label, self.tenant_id, " [échec]" if exc_type else "", s["appels"],
                         s["tokens_entree"], s["tokens_cache_lus"], s["tokens_cache_ecrits"],
                         s["tokens_cache_ecrits_1h"], s["tokens_sortie"],
-                        (f"environ {cost:.4f} $" if cost is not None else f"coût non estimé ({s['fournisseur']})"),
+                        (f"environ {cost:.4f} $" + (" (modèle sans tarif connu : compté au prix du plus cher)"
+                                                    if s["modele_sans_tarif"] else "")),
                         s["reponses_coupees"], s["bascules_de_secours"], s["duree_s"], s["par_modele"])
         return False
 
@@ -1182,11 +1154,23 @@ def latency_snapshot() -> dict:
         return {"buckets": dict(_LAT["counts"]), "sum": _LAT["sum"], "count": _LAT["count"]}
 
 
-def _track_usage(model: str, resp, ttl: str = "5m", fallback: bool = False) -> None:
+def _modele_reponse(model: str, resp) -> str:
+    """Modèle réellement appelé : celui que renvoie le fournisseur (s'il a un tarif connu), sinon
+    celui de la route."""
+    m = getattr(resp, "model", None)
+    if isinstance(m, str) and m.strip() and _tarifs.connu(m):
+        return m.strip()
+    return model or MODEL
+
+
+def _track_usage(model: str, resp, ttl: str = "5m", fallback: bool = False):
+    """Compteurs (global, par tenant, cost_meter) et coût de l'appel, calculé ICI une seule fois.
+    Renvoie le relevé (modèle réel, tokens hors cache, sortie, cache lus, cache écrits, coût en $)
+    porté ensuite au compte facturé (_relever_cout), ou None."""
     try:
         u = getattr(resp, "usage", None)
         if not u:
-            return
+            return None
         tin = _int_or_zero(getattr(u, "input_tokens", 0))
         tout = _int_or_zero(getattr(u, "output_tokens", 0))
         # Cache de prompt : tokens d'entrée lus / écrits dans le cache, comptés À PART de
@@ -1200,17 +1184,36 @@ def _track_usage(model: str, resp, ttl: str = "5m", fallback: bool = False) -> N
         TOKENS["input"] += tin + cr + cw
         TOKENS["output"] += tout
         TOKENS["calls"] += 1
+        reel = _modele_reponse(model, resp)
+        zone = getattr(resp, "zone", "") or ""
+        # LE coût de l'appel : modèle réel, point d'accès réel, cache (5 min / 1 h) — compté tel quel
+        # au cost_meter et au compte facturé (budget de l'essai).
+        cout = _tarifs.cout_usd(reel, tin, tout, cr, cw, cw1, zone)
         meter = _METER.get()
         if meter is not None:
-            meter.add(model, tin, tout, getattr(resp, "stop_reason", "") or "", cr, cw, cw1,
-                      getattr(resp, "zone", "") or "", fallback)
+            meter.add(reel, tin, tout, getattr(resp, "stop_reason", "") or "", cr, cw, cw1, zone, fallback, cout)
         tid = _CURRENT_TENANT.get()
         if tid is not None:
             if tid not in _TENANT_TOKENS and len(_TENANT_TOKENS) >= _TENANT_TOKENS_MAX:
                 _TENANT_TOKENS.pop(next(iter(_TENANT_TOKENS)), None)   # éviction FIFO bornée
             _TENANT_TOKENS[tid] = _TENANT_TOKENS.get(tid, 0) + used
+        return (reel, tin, tout, cr, cw, cout)
     except Exception:
-        pass
+        return None
+
+
+def _relever_cout(tid, releve) -> None:
+    """Coût réel de l'appel (celui que _track_usage a calculé et porté au cost_meter), relevé pour le
+    compte facturé, en euros (hors du verrou ; ne lève jamais)."""
+    if not releve:
+        return
+    try:
+        from app.services import budget_ia
+        reel, tin, tout, cr, cw, cout = releve
+        budget_ia.enregistrer_appel(tid, reel, round(float(cout or 0.0) * _tarifs.taux_usd_eur(), 6),
+                                    tin + cr + cw, tout)
+    except Exception as e:      # noqa: BLE001 — la mesure ne casse jamais un appel réussi
+        logger.warning("Relevé du coût IA impossible : %s", type(e).__name__)
 
 
 # ── Disjoncteurs (circuit breaker) PAR FOURNISSEUR + PAR TENANT ──────────────
@@ -1288,20 +1291,36 @@ def _thinking_pour(modele: str, reg: Reglages) -> Optional[dict]:
     return None
 
 
+def plafond_sortie(cible: Cible, r: Route, max_tokens, relance_coupe: bool = False) -> int:
+    """max_tokens RÉELLEMENT envoyé au fournisseur de `cible` pour la route `r` : découpage du modèle
+    (× 1,3 pour Claude 4.7 et suivants et pour Mistral), réserve de réflexion quand elle est active
+    (elle compte dans max_tokens), double pour la relance d'une réponse coupée, borné par
+    LLM_MAX_SORTIE. Le même calcul sert à l'appel et aux estimations du garde-fou de l'essai."""
+    modele = cible.modele
+    mt = _int_or_zero(max_tokens) or 1024
+    if cible.fournisseur == MISTRAL:
+        reg = r.reglages(MISTRAL)
+        mt = int(math.ceil(mt * _facteur_plafond(modele))) + (max(0, reg.reserve_reflexion) if reg.raisonnement else 0)
+    elif _nouvelle_generation(modele):
+        reg = r.reglages(ANTHROPIC)
+        mt = int(math.ceil(mt * facteur_decoupage(modele)))
+        if _thinking_pour(modele, reg) is None and _version_claude(modele)[1] >= (5, 0):
+            # Réflexion adaptative (réglage par défaut des modèles 5.x) : elle compte dans max_tokens.
+            mt += max(0, reg.reserve_reflexion) or 4000
+    if relance_coupe:
+        mt *= 2
+    return max(1, min(mt, _MAX_SORTIE))
+
+
 def _requete_anthropic(cible: Cible, r: Route, kwargs: dict, relance_coupe: bool) -> dict:
     req = dict(kwargs)
     modele = cible.modele
     req["model"] = modele
     reg = r.reglages(ANTHROPIC)
-    mt = _int_or_zero(req.get("max_tokens")) or 1024
     if _nouvelle_generation(modele):
         for p in ("temperature", "top_p", "top_k"):
             req.pop(p, None)                 # Sonnet 5.5 : toute valeur → erreur 400
         th = _thinking_pour(modele, reg)
-        mt = int(math.ceil(mt * facteur_decoupage(modele)))
-        if th is None and _version_claude(modele)[1] >= (5, 0):
-            # Réflexion adaptative (réglage par défaut des modèles 5.x) : elle compte dans max_tokens.
-            mt += max(0, reg.reserve_reflexion) or 4000
         extra = dict(req.pop("extra_body", None) or {})
         if th is not None:
             extra["thinking"] = th
@@ -1309,9 +1328,7 @@ def _requete_anthropic(cible: Cible, r: Route, kwargs: dict, relance_coupe: bool
             extra["output_config"] = dict(extra.get("output_config") or {}, effort=reg.effort)
         if extra:
             req["extra_body"] = extra
-    if relance_coupe:
-        mt *= 2
-    req["max_tokens"] = max(1, min(mt, _MAX_SORTIE))
+    req["max_tokens"] = plafond_sortie(Cible(ANTHROPIC, modele), r, kwargs.get("max_tokens"), relance_coupe)
     if reg.cache_ttl == "1h" and PROMPT_CACHE:
         req = _avec_ttl(req, "1h")
     return req
@@ -1325,12 +1342,9 @@ def _appel_anthropic(cible: Cible, r: Route, kwargs: dict, relance_coupe: bool) 
 
 def _appel_mistral(cible: Cible, r: Route, kwargs: dict, json_attendu: bool, relance_coupe: bool) -> _Resp:
     reg = r.reglages(MISTRAL)
-    mt = _int_or_zero(kwargs.get("max_tokens")) or 1024
-    mt = int(math.ceil(mt * _facteur_plafond(cible.modele))) + (max(0, reg.reserve_reflexion) if reg.raisonnement else 0)
-    if relance_coupe:
-        mt *= 2
+    mt = plafond_sortie(Cible(MISTRAL, cible.modele), r, kwargs.get("max_tokens"), relance_coupe)
     temp = kwargs.get("temperature")
-    resp = _mistral_create(model=cible.modele, max_tokens=max(1, min(mt, _MAX_SORTIE)), temperature=temp,
+    resp = _mistral_create(model=cible.modele, max_tokens=mt, temperature=temp,
                            system=kwargs.get("system") or "", messages=kwargs.get("messages") or [],
                            json_attendu=json_attendu, raisonnement=reg.raisonnement)
     resp.tache = r.tache
@@ -1404,7 +1418,10 @@ def _essayer(cible: Cible, r: Route, kwargs: dict, json_attendu: bool, relance_c
     with _LOCK:
         _cb_succes(f)
         _record_latency(dt)
-        _track_usage(cible.modele, resp, r.reglages(f).cache_ttl if f == ANTHROPIC else "5m", est_secours)
+        releve = _track_usage(cible.modele, resp, r.reglages(f).cache_ttl if f == ANTHROPIC else "5m", est_secours)
+    # Tout essai facturé (réussi, coupé, JSON illisible, refusé ; principal ou secours) est relevé pour
+    # le compte facturé, au même coût que celui du cost_meter : le budget de l'essai compte tout.
+    _relever_cout(_CURRENT_TENANT.get(), releve)
     qualite.noter_appel(f, r.tache, cible.modele, dt, "refus" if refus else "ok", coupee, jinv)
     qualite.marquer_dernier(f, r.tache)
     if refus:

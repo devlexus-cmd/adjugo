@@ -128,7 +128,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...), domaine
         text = await run_in_threadpool(extract_dce_text, file.filename, content)
     except ValueError as e:
         raise HTTPException(422, str(e))
-    consume_analysis(current_user, db)
+    consume_analysis(current_user, db, "deliberation")
     doms = [d.strip() for d in (domaines or "").split(",") if d.strip()]
     # Hors de la boucle d'événements : l'appel IA (et l'attente d'une place) ne fige pas le serveur.
     return await run_in_threadpool(_analyze_text, text, file.filename or "Délibération importée",
@@ -144,7 +144,7 @@ def analyze_text(request: Request, payload: dict,
         text = ""
     if len(text.strip()) < 60:
         raise HTTPException(422, "Texte trop court pour une détection fiable.")
-    consume_analysis(current_user, db)
+    consume_analysis(current_user, db, "deliberation")
     doms = (payload or {}).get("domaines") or []
     return _analyze_text(text, (payload.get("source") or "Texte collé")[:255], current_user, db, domaines=doms)
 
@@ -171,7 +171,7 @@ def scan(request: Request, req: ScanRequest = ScanRequest(),
     if not records:
         return {"scanned": 0, "count": 0, "signals": [], "country": country,
                 "errors": ["Aucune délibération sur ce périmètre (élargissez les régions ou réessayez)."]}
-    consume_analysis(current_user, db)
+    consume_analysis(current_user, db, "veille")
     from app.services.llm import tenant_scope
     try:
         with tenant_scope(current_user.id):

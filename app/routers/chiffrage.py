@@ -78,6 +78,8 @@ def make_estimate(project_id: int, req: EstimateRequest, request: Request,
         raise HTTPException(400, "Analysez d'abord le DCE pour pouvoir le chiffrer.")
     rates, th, su, rates_default = _rates(current_user, db)
     from app.services.llm import LLMUnavailable, tenant_scope
+    from app.services.budget_ia import verifier
+    verifier(current_user, db, "chiffrage")      # essai gratuit : 402 avant l'appel si la limite d'usage est atteinte
     try:
         with tenant_scope(current_user.id):
             tasks = propose_tasks(details, [r.get("label") for r in rates])

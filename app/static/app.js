@@ -471,6 +471,7 @@ const __adjApp = createApp({
       drawer: null, modal: null, cdlg: null,   // cdlg : confirmation d'une action de la convention
       reseau: _reseauInit(),                  // vue « Réseau » (vague 3)
       rinv: null,                             // modale d'invitation en 1 clic (partenaire du réseau ou entreprise SIRENE)
+      offre402: null, essaiAlerteOff: false,   // invitation à choisir un forfait (refus 402, limite d'usage de l'essai)
       reseauSuggest: null, reseauSuggestOff: false,   // suggestion « publiez votre profil » (après inscription / acceptation)
       welcome: { siret: "", busy: false, dismissed: false },   // activation par SIRET (1er lancement)
       ag: { query: "réhabilitation groupe scolaire", running: false, log: [], gonogo: null, coverage: null, lots: [], dossier: null },
@@ -487,7 +488,8 @@ const __adjApp = createApp({
       fb: { open: false, message: "", kind: "idee", busy: false },
       admin: { diag: null, backups: [], busy: false,
                // Profils du réseau à valider (identité) : liste, motif de refus et « remplacer » par demande.
-               rv: { list: [], loaded: false, loading: false, error: "", busy: "", explication: "", motif: {}, remplacer: {}, refuser: {} } },
+               rv: { list: [], loaded: false, loading: false, error: "", busy: "", explication: "", motif: {}, remplacer: {}, refuser: {} },
+               ia: { data: null, loading: false, error: "" } },
       cookiesOk: (function(){ try { return localStorage.getItem("adjugo_cookies_ok") === "1"; } catch(e){ return true; } })(),
       predepot: [false, false, false, false],
       predepotSteps: [
@@ -591,7 +593,21 @@ const __adjApp = createApp({
       if (by) list.sort(by);
       return list;
     },
-    quotaReached() { const u = this.stats.usage; return !!u && u.analyses_remaining <= 0; },
+    quotaReached() { const u = this.stats.usage; return !!u && (u.analyses_remaining <= 0 || u.trial_usage === "atteint"); },
+    // Carte « essai gratuit » en haut de l'écran : refus 402 (choisir un forfait), limite d'usage de
+    // l'essai atteinte ou proche, dernières analyses de l'essai. Jamais de montant.
+    essaiCarte() {
+      if (this.view === "billing") return null;
+      const info = "L'essai gratuit comprend 30 analyses sur toute sa durée (et non par mois) et jusqu'à 15 questions par jour sur vos dossiers. Une limite d'usage de l'IA protège le service pendant l'essai : une opération déjà lancée va toujours au bout. Avec un forfait Pro ou Business, cette limite ne s'applique pas.";
+      if (this.offre402) return { titre: "Choisissez un forfait pour continuer", message: this.offre402.message, info: info, ferme: true };
+      const u = this.stats && this.stats.usage;
+      if (!u || u.quota_scope !== "essai") return null;
+      if (u.trial_usage === "atteint") return { titre: "Votre essai a atteint sa limite d'usage", message: "Les fonctions d'IA sont en pause. Choisissez un forfait pour continuer : vos marchés, documents et dossiers restent accessibles.", info: info, ferme: false };
+      if (this.essaiAlerteOff) return null;
+      if (u.trial_usage === "proche") return { titre: "Votre essai approche de sa limite d'usage", message: "Pour continuer sans interruption, choisissez un forfait.", info: info, ferme: true };
+      if (u.analyses_remaining > 0 && u.analyses_remaining <= 3) return { titre: "Plus que " + u.analyses_remaining + " analyse" + (u.analyses_remaining > 1 ? "s" : "") + " dans votre essai", message: "Votre essai gratuit comprend " + u.analyses_limit + " analyses au total. Choisissez un forfait pour continuer ensuite.", info: info, ferme: true };
+      return null;
+    },
     notifUnseen() { return this.notifs.filter(n => n.at && n.at > this.notifsSeen).length; },
     // Boucle gagné/perdu : synthèse en langage clair de ce que les marchés terminés apprennent.
     // Prudent : on ne conclut que sur des échantillons suffisants (jamais sur 1 marché).
@@ -800,6 +816,7 @@ const __adjApp = createApp({
         // certains écrans enchaînent une confirmation au lieu d'afficher seulement le message.
         const err = new Error(msg);
         err.status = r.status;
+        if (r.status === 402) this.offre402 = { message: msg };   // « Choisir un forfait » proposé en haut de l'écran
         if (d && typeof d === "object" && !Array.isArray(d)) {
           err.code = d.code || ""; if (Array.isArray(d.missing)) err.missing = d.missing; err.detail = d;
           if (typeof d.profile_id === "string" && /^[0-9a-f]{32}$/.test(d.profile_id)) err.profile_id = d.profile_id;
@@ -963,6 +980,7 @@ const __adjApp = createApp({
     },
     async loadAdmin() {
       this.adminRvLoad();
+      this.adminIaLoad();
       try { this.admin.diag = await this.api("GET", "/api/admin/storage-diag"); } catch (e) { this.admin.diag = null; }
       try { this.admin.backups = (await this.api("GET", "/api/admin/backups")).backups || []; } catch (e) { this.admin.backups = []; }
     },
@@ -977,6 +995,15 @@ const __adjApp = createApp({
       } catch (e) { rv.error = (e && e.message) || "Liste momentanément indisponible."; }
       finally { rv.loading = false; }
     },
+    // Coût de l'IA (interne) : budget consommé par les essais, coût du mois des forfaits payants, alertes.
+    async adminIaLoad() {
+      const ia = this.admin.ia; if (ia.loading) return;
+      ia.loading = true; ia.error = "";
+      try { ia.data = await this.api("GET", "/api/admin/usage-ia"); }
+      catch (e) { ia.error = (e && e.message) || "Relevé momentanément indisponible."; }
+      finally { ia.loading = false; }
+    },
+    fmtEur(v) { const n = Number(v); return isFinite(n) ? n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €" : "—"; },
     adminRvPublished(it) { return ((it && it.conflits) || []).filter(c => c.statut === "publie"); },
     // Lien vers l'annuaire officiel des entreprises : seulement l'adresse attendue (SIREN à 9 chiffres).
     adminRvLink(it) { const u = String((it && it.sirene && it.sirene.lien_annuaire) || ""); return /^https:\/\/annuaire-entreprises\.data\.gouv\.fr\/entreprise\/\d{9}$/.test(u) ? u : ""; },
@@ -2194,6 +2221,8 @@ const __adjApp = createApp({
       if (!s || typeof s !== "object" || s.code !== "publier_profil_reseau" || this.reseauSuggestOff) return;
       this.reseauSuggest = { titre: String(s.titre || "Faites-vous trouver pour des groupements"), message: String(s.message || "") };
     },
+    essaiCarteClose() { if (this.offre402) this.offre402 = null; else this.essaiAlerteOff = true; },
+    essaiCarteGo() { this.offre402 = null; this.go("billing"); },
     rnSuggestClose() { this.reseauSuggest = null; this.reseauSuggestOff = true; },
     rnSuggestGo() { this.reseauSuggest = null; this.reseauSuggestOff = true; this.openReseau("profil"); },
 
@@ -3660,9 +3689,14 @@ const __adjApp = createApp({
       this.srcSearch();
     },
     // ── #10 Quota visible avant l'analyse : compteur + garde ──
-    srcQuotaBlocked() { const u = this.stats.usage; return !!u && u.analyses_remaining <= 0 && !u.overage_enabled; },
+    srcQuotaBlocked() { const u = this.stats.usage; return !!u && ((u.analyses_remaining <= 0 && !u.overage_enabled) || u.trial_usage === "atteint"); },
     srcQuotaLabel() {
       const u = this.stats.usage; if (!u || typeof u.analyses_remaining !== "number") return "";
+      if (u.quota_scope === "essai") {   // essai gratuit : compté sur toute sa durée, pas par mois
+        if (u.trial_usage === "atteint") return "Limite d'usage de l'essai atteinte";
+        if (u.analyses_remaining > 0) return u.analyses_remaining + " analyse" + (u.analyses_remaining > 1 ? "s" : "") + " restante" + (u.analyses_remaining > 1 ? "s" : "") + " sur " + u.analyses_limit + " (essai gratuit)";
+        return "Les " + u.analyses_limit + " analyses de l'essai sont utilisées";
+      }
       if (u.analyses_remaining > 0) return u.analyses_remaining + " analyse" + (u.analyses_remaining > 1 ? "s" : "") + " restante" + (u.analyses_remaining > 1 ? "s" : "") + " ce mois";
       if (u.overage_enabled) return "Quota atteint — analyses au tarif à l'usage";
       return "Quota d'analyses atteint ce mois";

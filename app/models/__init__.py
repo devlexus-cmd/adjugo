@@ -3,7 +3,7 @@ Adjugo — Modèles de base de données
 """
 from datetime import datetime, date, timezone
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, Text, DateTime,
+    Column, Integer, BigInteger, String, Float, Boolean, Text, DateTime,
     Date, ForeignKey, JSON, Enum as SAEnum, UniqueConstraint, Index, text as sa_text,
 )
 from sqlalchemy.orm import relationship
@@ -92,6 +92,9 @@ class User(Base):
     # Essai gratuit 30 jours (sans carte) : date de fin. NULL = compte historique/démo
     # (jamais d'essai attaché → ancien comportement Découverte conservé).
     trial_ends_at = Column(DateTime, nullable=True)
+    # Analyses consommées pendant l'essai, sur TOUTE sa durée (jamais remis à zéro au changement de
+    # mois, contrairement à analyses_used_this_month) : TRIAL_ANALYSES au total (app/core/quota.py).
+    trial_analyses_used = Column(Integer, default=0)
     amont_alerts_enabled = Column(Boolean, default=False)  # veille amont auto (email)
     # Révocation de session : incrémenté au retrait/transfert → les JWT émis avant
     # (qui portent l'ancienne valeur) sont rejetés. Coupe immédiatement un accès.
@@ -541,6 +544,33 @@ class Job(Base):
     label = Column(String(255), default="")           # libellé affiché au client
     result = Column(JSON, nullable=True)              # résultat (quand done)
     error = Column(Text, default="")                  # message d'erreur (quand error)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# === COÛT DE L'IA (interne, jamais montré au client) ===
+# Coût réel des appels à l'IA, au tarif public du fournisseur, cumulé par compte de facturation, par
+# mois et selon que le compte était en essai gratuit ou non (app/services/budget_ia.py). Sert au
+# budget de l'essai (vérifié AVANT chaque opération) et à l'alerte interne des forfaits payants.
+# compte : « u<id> » (propriétaire de l'organisation, qui porte le forfait), « acheteur:<id> » (côté
+# collectivités), « acheteur:anonyme », « plateforme » (appel mutualisé, sans client). Aucune donnée
+# personnelle : un identifiant de compte, des montants et des nombres de tokens.
+
+class UsageIA(Base):
+    __tablename__ = "usage_ia"
+    __table_args__ = (UniqueConstraint("compte", "periode", "essai", name="uq_usage_ia_compte_periode_essai"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    compte = Column(String(40), nullable=False, index=True)
+    billing_user_id = Column(Integer, nullable=True, index=True)   # propriétaire de l'organisation (PME)
+    org_id = Column(Integer, nullable=True, index=True)
+    periode = Column(String(7), nullable=False)                    # « AAAA-MM » (UTC)
+    essai = Column(Boolean, default=False, nullable=False)         # coût engagé pendant l'essai gratuit
+    cout_eur = Column(Float, default=0.0, nullable=False)
+    appels = Column(Integer, default=0, nullable=False)
+    tokens_entree = Column(BigInteger, default=0, nullable=False)
+    tokens_sortie = Column(BigInteger, default=0, nullable=False)
+    alerte_le = Column(DateTime, nullable=True)   # forfait payant : seuil du mois dépassé (alerte interne)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 

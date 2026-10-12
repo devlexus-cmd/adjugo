@@ -1,6 +1,11 @@
 """
 Quotas d'analyses IA par plan (PLAN_LIMITS).
 Compteur mensuel avec reset automatique au changement de mois.
+
+Essai gratuit (30 jours, comptes en essai actif SEULEMENT) : TRIAL_ANALYSES analyses sur TOUTE la
+durée de l'essai (compteur users.trial_analyses_used, jamais remis à zéro au changement de mois),
+TRIAL_QUESTIONS_PAR_JOUR questions par jour, et le budget IA de l'essai vérifié avant chaque
+opération (app/services/budget_ia.py). Forfaits payants : comportement inchangé.
 """
 from datetime import datetime, timezone
 from fastapi import HTTPException
@@ -67,6 +72,27 @@ def _trial_days_left(user) -> int:
     return max(0, math.ceil((ends - datetime.now(timezone.utc)).total_seconds() / 86400))
 
 
+def essai_actif(user) -> bool:
+    """Compte en essai gratuit EN COURS (plan non payant, essai pas encore terminé)."""
+    return _plan_key(user) not in ("pro", "business") and _trial_state(user) == "active"
+
+
+def trial_analyses_limit() -> int:
+    try:
+        v = int(getattr(settings, "TRIAL_ANALYSES", 30))
+        return v if v >= 0 else 30
+    except (TypeError, ValueError):
+        return 30
+
+
+def _trial_used(user) -> int:
+    """Analyses consommées pendant l'essai, sur toute sa durée. Le compteur du mois (s'il est bien
+    celui du mois en cours) est un minimum : une analyse du mois est toujours une analyse de l'essai."""
+    t = int(getattr(user, "trial_analyses_used", 0) or 0)
+    m = int(getattr(user, "analyses_used_this_month", 0) or 0) if getattr(user, "analyses_period", "") == _period() else 0
+    return max(t, m)
+
+
 def _limit(user) -> int:
     plan = _plan_key(user)
     if plan in ("pro", "business"):
@@ -74,7 +100,7 @@ def _limit(user) -> int:
     # plan 'starter' (ou inconnu) : le quota depend de l'essai gratuit.
     st = _trial_state(user)
     if st == "active":
-        return int(settings.PLAN_LIMITS.get("pro", {}).get("analyses", 30))   # acces Pro pendant l'essai
+        return trial_analyses_limit()   # essai : TRIAL_ANALYSES au total, sur toute sa durée
     if st == "expired":
         return 0   # essai termine → bloque
     return int(settings.PLAN_LIMITS.get("starter", {}).get("analyses", 5))     # historique/demo
@@ -123,7 +149,10 @@ def usage(user, db: Session = None) -> dict:
     plan = _plan_key(user)
     tstate = _trial_state(user) if plan not in ("pro", "business") else None
     ends = _as_utc(getattr(user, "trial_ends_at", None))
-    return {
+    essai = tstate == "active"
+    if essai:
+        used = _trial_used(user)          # l'essai se compte sur toute sa durée, pas par mois
+    out = {
         "plan": plan,
         "analyses_used": used,
         "analyses_limit": lim,
@@ -136,12 +165,26 @@ def usage(user, db: Session = None) -> dict:
         "trial_days_left": _trial_days_left(user) if tstate == "active" else 0,
         "trial_ends_at": ends.isoformat() if ends else None,
     }
+    if essai:
+        # Compteur de l'essai : analyses sur 30 (toute la durée), questions par jour, et l'état de la
+        # limite d'usage SANS aucun montant (« ok » | « proche » | « atteint »).
+        out["quota_scope"] = "essai"
+        out["trial_questions_per_day"] = questions_limit(user, db) if db is not None else _trial_questions()
+        try:
+            from app.services.budget_ia import etat_essai
+            out["trial_usage"] = etat_essai(db, user)
+        except Exception:
+            out["trial_usage"] = "ok"
+    return out
 
 
-def consume_analysis(user, db: Session) -> None:
+def consume_analysis(user, db: Session, operation: str = "analyse", estimation_eur: float = None) -> None:
     """Vérifie le quota et incrémente, de façon ATOMIQUE (verrou de ligne Postgres :
     ferme la course read-modify-write qui permettait de contourner le quota en lançant
-    2 analyses en parallèle). Au-delà du quota : overage si activé, sinon 402."""
+    2 analyses en parallèle). Au-delà du quota : overage si activé, sinon 402.
+    Essai gratuit en cours : TRIAL_ANALYSES analyses sur toute la durée de l'essai, et le budget IA
+    de l'essai vérifié AVANT l'opération (`operation` et `estimation_eur` : son coût estimé, prudent ;
+    app/services/budget_ia.py). Forfaits payants : inchangé."""
     # Compte démo public (vitrine en lecture guidée) : AUCUN appel IA réel. Les analyses des
     # marchés DEMO- sont servies en amont, sans passer par ici ; tout ce qui arrive ici est
     # donc un vrai appel payant (défense en profondeur derrière le middleware demo_guard).
@@ -176,6 +219,22 @@ def consume_analysis(user, db: Session) -> None:
             detail="Votre essai gratuit de 30 jours est termine. Abonnez-vous (Pro ou Business) "
                    "pour continuer a lancer des analyses.",
         )
+    if essai_actif(locked):
+        # Essai : analyses comptées sur TOUTE sa durée (un essai à cheval sur deux mois n'en donne
+        # pas deux fois plus), jamais de paiement à l'usage (rien à facturer).
+        t_used = _trial_used(locked)
+        if t_used >= lim:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Quota d'analyses de l'essai gratuit atteint ({t_used} sur {lim}, pour toute la durée "
+                       f"de l'essai). Choisissez un forfait (Pro ou Business) pour continuer.",
+            )
+        from app.services.budget_ia import verifier
+        verifier(locked, db, operation, estimation_eur)        # 402 avant tout appel si la limite d'usage est atteinte
+        locked.trial_analyses_used = t_used + 1
+        locked.analyses_used_this_month = used + 1
+        db.commit()
+        return
     if used >= lim:
         # Overage SEULEMENT s'il est facturable (abonnement payant + client Stripe) : un flag
         # activé pendant l'essai, ou laissé après une résiliation, ne doit jamais ouvrir des
@@ -215,6 +274,14 @@ def refund_analysis(user, db: Session) -> None:
                   .populate_existing().with_for_update().first() or billing)   # populate_existing : cf. consume_analysis
         _sync_period(locked)   # remboursement après bascule de mois → ne pas décrémenter la nouvelle période
         used = locked.analyses_used_this_month or 0
+        if essai_actif(locked):
+            # Essai : le compteur de toute la durée est rendu, même après un changement de mois.
+            t_used = _trial_used(locked)
+            locked.trial_analyses_used = max(0, t_used - 1)
+            if used > 0:
+                locked.analyses_used_this_month = used - 1
+            db.commit()
+            return
         if used <= 0:
             return
         was_overage = used > _limit(locked) and (locked.overage_count or 0) > 0
@@ -245,11 +312,23 @@ def refund_analysis(user, db: Session) -> None:
 QUESTION_KIND = "question_dossier"
 
 
+def _trial_questions() -> int:
+    try:
+        v = int(getattr(settings, "TRIAL_QUESTIONS_PAR_JOUR", 15) or 0)
+        return v if v > 0 else 15
+    except (TypeError, ValueError):
+        return 15
+
+
 def questions_limit(user, db) -> int:
-    """Questions par jour pour l'organisation de l'utilisateur (forfait du propriétaire)."""
-    if int(getattr(settings, "QUESTIONS_PAR_JOUR", 0) or 0) > 0:
-        return int(settings.QUESTIONS_PAR_JOUR)
+    """Questions par jour pour l'organisation de l'utilisateur (forfait du propriétaire). Essai en
+    cours : TRIAL_QUESTIONS_PAR_JOUR (au plus QUESTIONS_PAR_JOUR s'il est réglé)."""
+    override = int(getattr(settings, "QUESTIONS_PAR_JOUR", 0) or 0)
     billing = _billing_user(user, db)
+    if essai_actif(billing):
+        return min(_trial_questions(), override) if override > 0 else _trial_questions()
+    if override > 0:
+        return override
     plan = _plan_key(billing)
     if plan not in ("pro", "business"):
         plan = "pro" if _trial_state(billing) == "active" else "starter"
@@ -288,6 +367,9 @@ def reserve_question(user, db) -> int:
     if questions_today(user, db) >= lim:
         raise HTTPException(429, f"Limite de questions atteinte pour aujourd'hui ({lim} par organisation et "
                                  f"par jour). Elle repart demain matin.")
+    # Essai gratuit : limite d'usage vérifiée avant la question (sans effet pour un forfait payant).
+    from app.services.budget_ia import verifier
+    verifier(user, db, "question")
     j = Job(user_id=user.id, kind=QUESTION_KIND, status="done", label="Question sur le dossier")
     db.add(j)
     db.commit()

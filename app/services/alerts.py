@@ -444,8 +444,11 @@ def run_amont_alerts(db: Session) -> dict:
                               for d in re.split(r"[,;]", str(criteria_dict(u.id, db).get("specialites", "") or ""))
                               if d.strip()})
     from app.services.llm import tenant_scope
+    from app.services.budget_ia import mutualise
     try:
-        with tenant_scope(opted[0].id):   # un scope (auditabilité/quota) pour l'appel mutualisé
+        # Un scope (auditabilité, disjoncteur) pour l'appel mutualisé ; son coût est celui de la
+        # plateforme (un seul appel sert tous les abonnés) : jamais imputé au budget d'un essai.
+        with tenant_scope(opted[0].id), mutualise("veille amont planifiée"):
             projets = detect_from_deliberations(records, domaines=cohort_domaines or None)
     except Exception as e:
         # detect_from_deliberations propage désormais une panne IA → dégradation gracieuse du

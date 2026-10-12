@@ -302,7 +302,7 @@ def renewals(request: Request, req: RenewalRequest,
     # 2) Repli : BOAMP + enrichissement IA (consomme un quota, remboursé si rien).
     from app.core.quota import consume_analysis, refund_analysis
     from app.services.renewal import detect_renewals
-    consume_analysis(current_user, db)
+    consume_analysis(current_user, db, "renouvellements")
     from app.services.llm import tenant_scope
     try:
         with tenant_scope(current_user.id):
@@ -465,6 +465,21 @@ def _lire_direct(filename, content):
 def _empreinte(content: bytes) -> str:
     import hashlib
     return hashlib.sha256(content or b"").hexdigest()
+
+
+def _estimation_import(current_user, db, lecture: dict, company_data, gonogo, lang_name):
+    """Essai gratuit seulement : coût estimé (prudent) de l'analyse de ce dossier, d'après sa taille
+    et sa façon d'être lu (d'un seul tenant ou en deux temps). None pour tout autre compte."""
+    from app.core.quota import _billing_user, essai_actif
+    if not essai_actif(_billing_user(current_user, db)):
+        return None
+    from app.services.analyse_dossier import plan
+    from app.services.budget_ia import estimer_import
+    try:
+        return estimer_import(lecture, plan(lecture, company_data, gonogo, lang_name))
+    except Exception as e:      # noqa: BLE001 — l'estimation par défaut d'une analyse s'applique
+        logger.warning("estimation du coût de l'analyse impossible : %s", type(e).__name__)
+        return None
 
 
 def _needs_background(lecture: dict, company_data, gonogo, lang_name) -> bool:
@@ -696,7 +711,12 @@ async def _import_and_analyze(db, project, current_user, filename: str, content:
     if background:
         from app.services import lecture_taches
         await run_in_threadpool(lecture_taches.admettre, db, current_user)   # 429 avant tout débit
-    await run_in_threadpool(consume_analysis, current_user, db)  # 402 si quota atteint — UNE analyse par import
+    # Essai gratuit : la limite d'usage est vérifiée AVANT de commencer, sur le coût estimé de CE
+    # dossier ; une lecture commencée va toujours au bout (jamais un dossier à moitié lu).
+    estimation = await run_in_threadpool(_estimation_import, current_user, db, lecture, company_data, gonogo,
+                                         lang_name)
+    await run_in_threadpool(consume_analysis, current_user, db, "analyse",
+                            estimation)  # 402 si quota atteint — UNE analyse par import
     if background:
         jid = await run_in_threadpool(_start_job, db, project, current_user, filename, content, lecture,
                                       stored, company_data, gonogo, lang_name, file_key)

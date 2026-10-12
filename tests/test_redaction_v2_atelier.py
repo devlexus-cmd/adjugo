@@ -952,11 +952,11 @@ def test_migration_sqlite_monte_descend_remonte(tmp_path):
     assert {"options_export", "cout_ia"} <= {c["name"] for c in insp.get_columns("dossiers_presentation")}
     assert {"premieres_incluses", "job_analyse_id"} <= {c["name"] for c in insp.get_columns("dossiers_presentation")}
     assert "poids_source" in {c["name"] for c in insp.get_columns("dossier_sections")}
-    alembic("downgrade", "-1")                       # quota par dossier, provenance du poids
+    alembic("downgrade", "s3t4redactionv2")          # quota par dossier, provenance du poids (révisions suivantes comprises)
     insp = sa.inspect(sa.create_engine(f"sqlite:///{db}"))
     assert "premieres_incluses" not in {c["name"] for c in insp.get_columns("dossiers_presentation")}
     assert "poids_source" not in {c["name"] for c in insp.get_columns("dossier_sections")}
-    alembic("downgrade", "-1")                       # l'atelier lui-même
+    alembic("downgrade", "r2s3reseauvalid")          # l'atelier lui-même
     insp = sa.inspect(sa.create_engine(f"sqlite:///{db}"))
     assert "dossiers_presentation" not in insp.get_table_names()
     assert "dce_importe_le" not in {c["name"] for c in insp.get_columns("projects")}
