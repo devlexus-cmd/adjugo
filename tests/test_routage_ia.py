@@ -725,10 +725,13 @@ def test_cle_mistral_seule_n_envoie_rien_chez_mistral(client, monkeypatch):
     t = {x["tache"]: x for x in d["taches"]}
     assert t["analyse"]["part_maintenant_chez"] == {"fournisseur": "anthropic", "modele": "claude-sonnet-5-5"}
     assert any("Mistral non utilisé (MISTRAL_ACTIF non posé)" in x for x in llm.resume_routage())
+    assert any("mistral:mistral-large-4 (non utilisable : part chez anthropic:claude-sonnet-5-5) ← analyse" in x
+               for x in llm.resume_routage())
     # MISTRAL_ACTIF posé, désinscription non confirmée : toujours rien chez Mistral, et le diagnostic le dit.
     monkeypatch.setattr(llm.settings, "MISTRAL_ACTIF", True)
     llm.messages_create(tache="analyse", max_tokens=100, system="s", messages=[{"role": "user", "content": "d"}])
     assert m.calls == [] and llm.etat_mistral() == "entrainement"
+    assert any(x.startswith("IA — ATTENTION : Mistral non utilisé") for x in llm.resume_routage())
     assert any("désinscription de l'entraînement n'est pas confirmée" in x
                for x in llm.diagnostic(verifier=False)["messages"])
     # Les trois réunis : Mistral lit le dossier.

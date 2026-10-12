@@ -52,12 +52,16 @@ Tarifs relevés le 12/10/2026 (vérifiés en ligne) :
 | `claude-sonnet-5-5` | 2 $ | 10 $ | 0,10 $ (0,05 ×) | 2,50 $ / 4 $ | découpage ≈ +30 % de tokens |
 | `claude-haiku-5-5` | 0,10 $ | 0,50 $ | 0,01 $ | 0,125 $ / 0,20 $ | au-delà de 100 000 tokens d'entrée : 0,50 / 2,50 $ |
 | `claude-opus-5-5` | 4 $ | 20 $ | 0,20 $ | 5 $ / 8 $ | |
+| `claude-fable-5-1`, `claude-mythos-5-1` | 10 $ | 50 $ | 0,25 $ (0,025 ×) | 12,50 $ / 20 $ | jamais routés ; dans la table parce que le code les accepte |
+| `claude-fable-5`, `claude-mythos-5` | 10 $ | 50 $ | 1 $ | 12,50 $ / 20 $ | idem |
+| `claude-opus-5`, `claude-opus-4-8` à `-4-5` | 5 $ | 25 $ | 0,50 $ | 6,25 $ / 10 $ | idem |
+| `claude-sonnet-5` | 2 $ | 10 $ | 0,20 $ | 2,50 $ / 4 $ | idem |
 | `claude-sonnet-4-6` | 3 $ | 15 $ | 0,30 $ | 3,75 $ / 6 $ | ancien routage (`LLM_ROUTAGE=ancien`) |
 | `claude-haiku-4-5` | 1 $ | 5 $ | 0,10 $ | 1,25 $ / 2 $ | ancien routage |
 | `mistral-large-4` (préversion publique du 06/10/2026), prix normal | 1,36 $ (1,156 €) | 4,18 $ (3,553 €) | 0,14 $ (10 %) | — | `api.eu.mistral.ai` : + 10 % (`MISTRAL_SURCOUT_UE`) |
 | `mistral-large-4`, prix de lancement | 0,68 $ | 2,09 $ | 0,07 $ | — | « 50 % off for 2 weeks » (journal des modifications de Mistral, vérifié le 12/10/2026) : jusqu'au `MISTRAL_SOLDE_JUSQU_AU` inclus (2026-10-19) |
 | `mistral-large-latest` | compté comme Large 4 | | | | l'alias désigne Large 3 au 12/10/2026 ; jamais utilisé |
-| modèle inconnu | prix d'Opus 5.5 (4 / 20 $, cache non remisé) | | | | signalé une fois au journal : jamais sous-estimé |
+| modèle inconnu | 10 $ | 50 $ | 10 $ (non remisé) | 12,50 $ / 20 $ | tarif le plus haut des modèles servis par l'API directe (Fable 5.1) ; signalé une fois au journal : jamais sous-estimé. Une version suivante non publiée (« claude-opus-5-6 ») est comptée comme inconnue, jamais au prix d'un modèle voisin |
 
 Conversion : 1 $ = `AI_USD_EUR` € (0,85, rapport des deux affichages de Mistral). Cache de Mistral :
 les tokens relus (`usage.prompt_tokens_details.cached_tokens`) sont facturés 10 % du prix d'entrée.
@@ -99,8 +103,9 @@ s'il est configuré, **le plus cher des deux** (une panne de Mistral fait tout p
 plafond de sortie tel qu'il est envoyé (`llm.plafond_sortie` : découpage du modèle, réserve de
 réflexion) ; point d'accès de Mistral (UE : +10 %) ; durée du cache de la route (rédaction : une
 heure, écrite à 2 × l'entrée). `LLM_PROVIDER`, `LLM_ROUTAGE=ancien` et les variables `LLM_TACHE_*`
-sont donc pris en compte. Valeurs au 12/10/2026, les deux fournisseurs configurés (ou
-`LLM_PROVIDER=anthropic`), prix normal de Large 4 : analyse 0,15 € ; question 0,08 € ; chiffrage
+sont donc pris en compte. Valeurs au 12/10/2026, Mistral activé ou non (`MISTRAL_ACTIF`, ou
+`LLM_PROVIDER=anthropic` : Sonnet 5.5, le plus cher, est compté dans tous les cas), prix normal de
+Large 4 : analyse 0,15 € ; question 0,08 € ; chiffrage
 0,06 € ; atelier 0,50 € pour une partie, 1,70 € pour neuf ; raccourcir 0,08 € ; questionnaire de 40
 questions 0,68 € ; veille 0,17 € ; dossier de 50 000 caractères 0,12 €, 600 000 caractères (deux temps)
 1,34 €, 6 000 000 caractères 8,72 €. Mistral seul (secours coupé, `LLM_TACHE_<TACHE>_SECOURS=aucun`) :
@@ -155,7 +160,16 @@ l'IA » dans la vue Administration.
 - Deux opérations lancées exactement en même temps passent chacune la vérification : le dépassement
   est borné par leur coût (une lecture de dossier à la fois par organisation, de toute façon).
 - Un essai expiré garde le comportement d'avant pour les questions (15 par jour, plafond « starter ») :
-  hors du périmètre « essai actif ».
+  hors du périmètre « essai actif », donc **sans garde-fou de coût et sans limite de durée**. Avec le
+  routage par tâche, ces questions passent de Haiku 4.5 à Sonnet 5.5 : pire cas 15 × 31 questions
+  par mois et par organisation ≈ 34 à 37 € (contre 13 € avant), pour un compte qui ne paie pas.
+  **Décision à prendre par le fondateur** (rien n'est changé dans le code) :
+  - a) aucune question après l'essai (forfait à prendre) ;
+  - b) questions d'un essai expiré comptées sur le budget de l'essai (le garde-fou reste actif tant
+    que le compte n'a pas de forfait payant ; un compte qui a épuisé son budget reste en pause) ;
+  - c) garder 15 questions par jour (coût accepté).
+
+  Les forfaits payants ne changent dans aucun cas.
 - Le relevé `usage_ia` n'est pas effacé avec un compte (aucune donnée personnelle : un identifiant de
   compte, des montants, des nombres de tokens) ; il sert au coût de la plateforme.
 - Les tarifs sont codés dans `tarifs_ia.py` : les revoir à chaque changement de prix. Le prix de

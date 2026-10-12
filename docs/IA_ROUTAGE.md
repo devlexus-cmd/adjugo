@@ -12,6 +12,13 @@ Décisions du fondateur du 12/10/2026, prises sans test préalable :
 
 Règle : « économiser le coût de l'IA sans jamais baisser la performance ».
 
+**Mistral n'est utilisé que s'il est activé**, avec les trois réunis : une clé
+(`MISTRAL_API_KEY_ADJUGO`), `MISTRAL_ACTIF=1` et `MISTRAL_ENTRAINEMENT_DESACTIVE=1`. Tant que ce
+n'est pas le cas (c'est le cas au déploiement : seule la clé est dans Railway), les tâches de lecture
+partent chez leur secours, Claude Sonnet 5.5, et aucune tâche Claude n'a de secours Mistral. Raison :
+nouveau sous-traitant à annoncer aux clients avec préavis (article 6 du DPA), et pages juridiques qui
+disent « jamais utilisés pour entraîner » (docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md, § 5).
+
 | Tâche (`tache=`) | Appel | Fournisseur, modèle | Réglages | Secours | Ancien routage |
 |---|---|---|---|---|---|
 | `analyse` | `analysis.analyze_dce_text` (avis, DCE, lecture intégrale, synthèse en deux temps) | Mistral `mistral-large-4` | JSON (`response_format`) | Sonnet 5.5 (`between_tools`, effort high) si Mistral est absent, en panne, en erreur de modèle, coupé ou si son JSON est illisible | Sonnet 4.6 |
@@ -69,7 +76,9 @@ Les garde-fous des appelants s'appliquent donc à l'identique :
 - `between_tools` (le réglage le plus bas, sans réflexion préalable) n'est accepté qu'avec un
   effort ≤ high ;
 - refus (`stop_reason: "refusal"`) : secours Mistral, sinon `LLMRefus` (sous-classe de
-  `LLMUnavailable`) ; l'appelant rembourse ;
+  `LLMUnavailable`) ; l'appelant rembourse. Un refus de Claude appelé en secours d'une tâche de
+  lecture (Mistral non activé ou disjoncteur ouvert) lève aussi `LLMRefus` et son message, jamais
+  « Service IA non configuré » ;
 - cache d'une heure (`"ttl": "1h"`, sans en-tête bêta) pour la tâche `redaction`. Prix sur
   Sonnet 5.5 : écriture 2 × le prix d'entrée, relecture 0,05 ×. Calcul détaillé :
   `docs/REDACTION_V2_API.md` § 4.4.
@@ -124,7 +133,11 @@ Prix en $ par million de tokens, relevés le 12/10/2026 :
 - Cache de Mistral : les tokens relus sont signalés par `usage.prompt_tokens_details.cached_tokens`
   et facturés 10 % du prix d'entrée (documentation de Mistral, vérifiée le 12/10/2026).
 - Modèle compté : celui que renvoie le fournisseur s'il a un tarif connu, sinon celui de la route. Un
-  modèle sans tarif est compté au prix d'Opus 5.5 (jamais sous-estimé) et signalé au journal.
+  modèle sans tarif est compté au tarif le plus haut de la page des prix d'Anthropic pour un modèle
+  servi par l'API directe (Claude Fable 5.1 et Mythos 5.1 : 10 / 50 $, écriture du cache 12,50 / 20 $,
+  cache relu non remisé) : jamais sous-estimé, et signalé au journal. Fable 5.x, Mythos 5.x, Opus 5 et
+  4.5 à 4.8, Sonnet 5 et 4.5 sont dans la table à leur prix réel ; une version suivante non publiée
+  (« claude-opus-5-6 ») n'emprunte jamais le prix d'un modèle voisin.
 - Les tokens comptés sont ceux renvoyés par l'API : le découpage propre à chaque modèle y est déjà.
 - `llm.estimer_cout()` applique le facteur 1,3 aux estimations faites à partir de caractères.
 - `llm.plafond_sortie()` donne le `max_tokens` réellement envoyé (découpage, réserve de réflexion) :
@@ -166,12 +179,17 @@ Réservé à un compte administrateur de la plateforme (`is_admin`). **Aucune cl
 valeur, ni extrait, ni longueur) : seulement le nom de la variable lue et si elle est présente.
 
 Ce qu'il indique :
-- le routage (nouveau ou ancien) et un éventuel forçage par `LLM_PROVIDER` ;
+- le routage (nouveau ou ancien) et un éventuel forçage par `LLM_PROVIDER`, tel qu'il s'applique
+  vraiment (`LLM_PROVIDER=mistral` sans Mistral utilisable : « toutes les tâches partent chez
+  Claude ») ;
 - pour chaque fournisseur : clé présente, variable lue, disjoncteur ;
 - pour Mistral :
+  - `etat` : `absent` (aucune clé), `inactif` (clé sans `MISTRAL_ACTIF`), `entrainement`
+    (`MISTRAL_ACTIF` sans `MISTRAL_ENTRAINEMENT_DESACTIVE`) ou `actif` ; `activation` donne les deux
+    drapeaux ;
   - le point d'accès utilisé et pourquoi ;
   - le résultat de `models.list` sur le point d'accès UE (`large4_sur_ue`), vérifié en direct sauf
-    avec `?verifier=0` ;
+    avec `?verifier=0` ; la clé suffit, avant même l'activation ;
   - l'état de la désinscription de l'entraînement ;
 - pour chaque tâche : fournisseur, modèle, réglages, secours, et où elle part MAINTENANT, vu les
   clés et les disjoncteurs ;
@@ -186,9 +204,10 @@ La route publique `GET /api/llm/info` ne donne que la liste des fournisseurs sol
 | Variable | Défaut | Rôle |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | — | Clé Anthropic (déjà posée). |
-| `MISTRAL_API_KEY_ADJUGO` | — | Clé Mistral, lue en priorité (déjà posée dans Railway). |
+| `MISTRAL_API_KEY_ADJUGO` | — | Clé Mistral, lue en priorité (déjà posée dans Railway). Seule, elle n'envoie rien chez Mistral. |
 | `MISTRAL_API_KEY` | — | Nom historique, accepté par compatibilité. Ne déclenche plus rien d'autre. |
-| `MISTRAL_ENTRAINEMENT_DESACTIVE` | `false` | À mettre à `1` une fois « Anonymous improvement data » désactivé dans la console Mistral : les pages juridiques le disent alors. |
+| `MISTRAL_ENTRAINEMENT_DESACTIVE` | `false` | À mettre à `1` une fois « Anonymous improvement data » désactivé dans la console Mistral. Condition nécessaire pour que Mistral reçoive quoi que ce soit. |
+| `MISTRAL_ACTIF` | `false` | `1` : Mistral Large 4 lit les dossiers (avec la clé et `MISTRAL_ENTRAINEMENT_DESACTIVE=1`). À poser à la fin du préavis donné aux clients, le jour où les textes juridiques sont publiés. |
 | `MISTRAL_POINT_ACCES` | `auto` | `auto` \| `ue` \| `mondial`. |
 | `LLM_ROUTAGE` | `nouveau` | `ancien` : retour en une minute à Sonnet 4.6 / Haiku 4.5, réglages d'origine, aucun secours. |
 | `LLM_PROVIDER` | `auto` | `anthropic` \| `mistral` : toutes les tâches chez un seul fournisseur, sans secours. Le diagnostic et le journal le disent. |
@@ -209,6 +228,10 @@ La route publique `GET /api/llm/info` ne donne que la liste des fournisseurs sol
 ## 7. Retour arrière
 
 - `LLM_ROUTAGE=ancien`, puis redémarrage : tout repasse par Claude Sonnet 4.6 et Haiku 4.5, avec
-  les temperatures et plafonds d'origine, le cache de 5 minutes et aucun secours. Rien n'est
-  envoyé chez Mistral, même avec une clé.
-- Pour ne couper que Mistral, en gardant Sonnet 5.5 : `LLM_PROVIDER=anthropic`.
+  les temperatures et plafonds d'origine, le cache de 5 minutes et aucun secours. Les variables
+  `LLM_TACHE_*` (fournisseur, secours, réglages) sont ignorées ; le journal de démarrage et le
+  diagnostic nomment celles qui sont posées. Rien n'est envoyé chez Mistral, même activé, sauf
+  forçage explicite `LLM_PROVIDER=mistral` (annoncé au journal et au diagnostic ; `ANALYSE_MODELE_PIECES`
+  reste lu, comme avant).
+- Pour ne couper que Mistral, en gardant Sonnet 5.5 : retirer `MISTRAL_ACTIF` (ou
+  `LLM_PROVIDER=anthropic`).

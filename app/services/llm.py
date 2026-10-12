@@ -12,8 +12,8 @@ modèle la traitent, avec quels réglages, et vers qui basculer si ce fournisseu
     secours Claude Sonnet 5.5 si Mistral est absent, en panne, en erreur de modèle, coupé ou si son
     JSON est illisible ;
   • questions-réponses, rédaction (atelier), questionnaire, chiffrage, côté acheteur → Claude Sonnet
-    5.5 (`claude-sonnet-5-5`), secours Mistral Large 4 si Anthropic est en panne (et si la clé
-    Mistral existe).
+    5.5 (`claude-sonnet-5-5`), secours Mistral Large 4 si Anthropic est en panne (et si Mistral est
+    activé).
 
 Mistral n'est utilisé QUE pour les tâches routées vers lui (ou en secours), et seulement s'il est
 ACTIVÉ : une clé (MISTRAL_API_KEY_ADJUGO, lue en priorité, ou MISTRAL_API_KEY par compatibilité),
@@ -1664,7 +1664,11 @@ def resume_routage() -> list:
         par = {}
         for t in TACHES:
             r = route(t)
-            par.setdefault(f"{r.primaire.fournisseur}:{r.primaire.modele}", []).append(t)
+            k = f"{r.primaire.fournisseur}:{r.primaire.modele}"
+            if (not _disponible(r.primaire.fournisseur) and r.secours is not None and "absent" in r.secours_sur
+                    and _disponible(r.secours.fournisseur)):
+                k += f" (non utilisable : part chez {r.secours.fournisseur}:{r.secours.modele})"
+            par.setdefault(k, []).append(t)
         lignes.append("IA — routage par tâche : " + " ; ".join(f"{k} ← {', '.join(v)}" for k, v in par.items()))
     if fz:
         lignes.append("IA — " + _phrase_forcage(fz))
@@ -1675,7 +1679,8 @@ def resume_routage() -> list:
     if e == "actif":
         lignes.append("IA — Mistral activé (MISTRAL_ACTIF, désinscription de l'entraînement confirmée).")
     else:
-        lignes.append(f"IA — Mistral non utilisé ({_raison_mistral()}) : les tâches routées vers Mistral partent "
+        lignes.append(("IA — ATTENTION : " if e == "entrainement" else "IA — ")
+                      + f"Mistral non utilisé ({_raison_mistral()}) : les tâches routées vers Mistral partent "
                       "chez Claude (secours).")
     return lignes
 
