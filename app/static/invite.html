@@ -445,10 +445,64 @@
       head.appendChild(box);
     }
 
+    // ── « Comment vous serez noté » : la grille de l'acheteur, en LECTURE (même grille que le chef
+    // de file). Critères et poids TELS QU'ÉCRITS dans le règlement, avec leur phrase ; ce que le
+    // dossier impose (cadre de réponse, limites, visite). Tout passe par esc().
+    function gnLim(x) {
+      if (x.type === "police") { const s = [x.police, x.taille != null ? x.taille : ""].filter(v => v !== "" && v != null).join(" "); return "Police : " + (s || x.texte || ""); }
+      const u = ({ pages: "pages", mots: "mots", caracteres: "caractères", lignes: "lignes" })[x.type] || x.type;
+      return (x.valeur != null ? Number(x.valeur).toLocaleString("fr-FR") + " " + u : (x.texte || "")) + " au maximum";
+    }
+    function renderGrille(g) {
+      const card = $(`<section class="card pad gn-card" style="margin-bottom:16px" aria-labelledby="gn-title"></section>`);
+      card.appendChild($(`<div class="row" style="gap:4px;align-items:center"><h2 id="gn-title" style="font-size:15px;font-weight:800;margin:0">Comment vous serez noté</h2>${tip("Les critères de jugement et leurs poids, recopiés <b>tels qu'écrits</b> dans le règlement de la consultation, avec leur phrase. C'est la même grille que celle du chef de file : elle sert de base commune au groupement.")}</div>`));
+      const crit = Array.isArray(g.criteres) ? g.criteres : [];
+      if (crit.length) {
+        const ul = $(`<ul class="gn-list"></ul>`);
+        crit.forEach(l => {
+          const pill = l.ecarte ? `<span class="pill neutral gn-pill">retiré</span>`
+            : (l.confirme && l.statut === "a_verifier") ? `<span class="pill neutral gn-pill">confirmé par le chef de file</span>`
+            : l.statut === "a_verifier" ? `<span class="pill a_etudier gn-pill">à vérifier dans le règlement</span>` : "";
+          ul.appendChild($(`<li class="gn-row${l.ecarte ? " off" : ""}"><span class="gn-crit">${esc(l.critere)}</span>${l.poids ? `<span class="gn-poids num">${esc(l.poids)}</span>` : ""}${pill}</li>`));
+        });
+        card.appendChild(ul);
+      }
+      const pm = g.ponderation && g.ponderation.message, ct = g.controle_total || {};
+      if (pm) card.appendChild($(`<p class="muted small gn-note">${esc(pm)}</p>`));
+      if (ct.statut === "ecart" || ct.statut === "incomplet") card.appendChild($(`<div class="warn-box">${ico("triangle-alert", 15, "margin-top:1px")}<span>${esc(ct.message)}</span></div>`));
+      else if (ct.message) card.appendChild($(`<p class="muted small gn-note">${esc(ct.message)}</p>`));
+      const withPhrase = crit.filter(l => l.phrase);
+      const ordre = (g.ordre && g.ordre.phrase) || "";
+      if (withPhrase.length || ordre) {
+        const det = $(`<details class="gn-det"><summary>Voir les phrases du règlement</summary></details>`);
+        crit.forEach(l => det.appendChild($(`<div class="gn-src"><div class="gn-src-t">${esc(l.critere)}${l.poids ? ` <span class="muted">· ${esc(l.poids)}</span>` : ""}</div>${l.phrase ? `<blockquote class="gn-q">${esc(l.phrase)}</blockquote>` : `<div class="muted small">Phrase non retrouvée dans le dossier importé.</div>`}</div>`)));
+        if (ordre) det.appendChild($(`<div class="gn-src"><div class="gn-src-t">Ordre des critères</div><blockquote class="gn-q">${esc(ordre)}</blockquote></div>`));
+        card.appendChild(det);
+      }
+      const c = g.contraintes || {}, lim = (c.limites || []).filter(x => x && x.type), vis = c.visite && c.visite.phrase ? c.visite : null;
+      card.appendChild($(`<div class="gn-sub">Ce que le dossier impose${tip("Repéré dans le texte, sans IA : un cadre de réponse fourni ou imposé, des limites de pages, de mots, de caractères ou de police, une visite obligatoire. Chaque repérage garde sa phrase.")}</div>`));
+      if (c.fichier_impose) card.appendChild($(`<div class="warn-box">${ico("triangle-alert", 15, "margin-top:1px")}<span>${esc(c.message_fichier || "")}</span></div>`));
+      else if (c.cadre_fourni) card.appendChild($(`<p class="small gn-note">Un cadre de réponse est fourni avec le dossier.</p>`));
+      else if (c.cadre_mentionne) card.appendChild($(`<p class="small gn-note">Le règlement parle d'un cadre de réponse, mais il ne figure pas dans les fichiers lus.</p>`));
+      if (lim.length || vis) card.appendChild($(`<ul class="gn-chips">${lim.map(x => `<li>${esc(gnLim(x))}</li>`).join("")}${vis ? "<li>Visite obligatoire</li>" : ""}</ul>`));
+      const rien = !c.fichier_impose && !c.cadre_fourni && !c.cadre_mentionne && !lim.length && !vis;
+      if (rien) card.appendChild($(`<p class="muted small gn-note">Ni cadre de réponse, ni limite de pages ou de police, ni visite obligatoire repérés dans le règlement.</p>`));
+      else {
+        const det = $(`<details class="gn-det"><summary>Voir les phrases</summary></details>`);
+        if (c.phrase_obligation) det.appendChild($(`<div class="gn-src"><div class="gn-src-t">Cadre de réponse</div><blockquote class="gn-q">${esc(c.phrase_obligation)}</blockquote></div>`));
+        lim.forEach(x => det.appendChild($(`<div class="gn-src"><div class="gn-src-t">${esc(gnLim(x))}</div>${x.phrase ? `<blockquote class="gn-q">${esc(x.phrase)}</blockquote>` : ""}</div>`)));
+        if (vis) det.appendChild($(`<div class="gn-src"><div class="gn-src-t">Visite obligatoire</div><blockquote class="gn-q">${esc(vis.phrase)}</blockquote></div>`));
+        if (det.children.length > 1) card.appendChild(det);
+      }
+      return card;
+    }
+
     // ── Vue : Mon appel d'offres (vue bridée + contribution + pièces) ──
     function renderMonAO() {
       const d = DATA, p = d.project || {}, a = p.analysis || {};
-      const facts = Object.keys(LABELS).filter(k => a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length));
+      const grille = (!d.apercu_minimal && a.grille_notation && Array.isArray(a.grille_notation.criteres)) ? a.grille_notation : null;
+      // Avec la grille, les critères s'affichent dans sa carte (phrase et poids tels qu'écrits).
+      const facts = Object.keys(LABELS).filter(k => !(grille && k === "criteres_attribution") && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length));
       const root = content(); root.innerHTML = "";
       RELOAD_JOURNAL = null;
 
@@ -498,6 +552,7 @@
       if (p.source_url && safeUrl(p.source_url) !== "#") addFact("Source", `<a href="${esc(safeUrl(p.source_url))}" target="_blank" rel="noopener noreferrer nofollow">Avis d'origine ${ico("external-link", 13)}</a>`);
       if (dl.children.length) head.appendChild(dl);
       root.appendChild(head);
+      if (grille) { try { root.appendChild(renderGrille(grille)); } catch (e) { console.warn("grille", e); } }
 
       // Convention de groupement (vague 2) : état d'attente, brouillon, texte figé + accords.
       // Aperçu minimal (invitation du réseau pas encore acceptée) : pas de convention (elle cite

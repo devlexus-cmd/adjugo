@@ -853,7 +853,8 @@ def public_grille(grille: Optional[dict]) -> Optional[dict]:
             "fichier_impose": bool(c.get("fichier_impose")),
             "message_fichier": c.get("message_fichier", "") if c.get("fichier_impose") else "",
             "phrase_obligation": ob.get("phrase", "") if ob else "",
-            "limites": [{"type": x.get("type"), "texte": x.get("texte", ""), "phrase": x.get("phrase", "")}
+            "limites": [{"type": x.get("type"), "valeur": x.get("valeur"), "police": x.get("police", ""),
+                         "taille": x.get("taille"), "texte": x.get("texte", ""), "phrase": x.get("phrase", "")}
                         for x in (c.get("limites") or []) if isinstance(x, dict)][:20],
             "visite": {"phrase": vis.get("phrase", "")} if vis else None,
         },
