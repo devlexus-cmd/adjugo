@@ -231,7 +231,10 @@ def _consigne_partie(p: dict) -> str:
     if p.get("source_plan") == "cadre" and p.get("question"):
         out.append(f"QUESTION DU CADRE DE RÉPONSE (n° {p.get('numero') or '?'}) : {p['question']}")
     if p.get("critere"):
-        if p.get("poids"):
+        if p.get("poids") and p.get("poids_source") == "utilisateur":
+            out.append(f"CRITÈRE DE L'ACHETEUR : {p['critere']} (poids lu dans le règlement par l'entreprise : "
+                       f"{p['poids']})")
+        elif p.get("poids"):
             out.append(f"CRITÈRE DE L'ACHETEUR : {p['critere']} (poids écrit dans le règlement : {p['poids']})")
         else:
             out.append(f"CRITÈRE DE L'ACHETEUR : {p['critere']} (aucun poids écrit : ne suppose aucune importance)")

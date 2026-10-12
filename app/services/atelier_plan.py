@@ -43,12 +43,44 @@ MSG_CADRE_IMPOSE = ("Plan construit sur le cadre de réponse imposé par l'achet
 MSG_CADRE_FOURNI = "Plan construit sur le cadre de réponse fourni par l'acheteur : mêmes numéros, mêmes intitulés."
 MSG_CADRE_NON_DECOUPE = ("Ce marché impose son propre fichier de réponse, mais Adjugo n'y a pas repéré les "
                          "questions une à une : suivez l'ordre du fichier de l'acheteur.")
-MSG_GRILLE = "Plan construit sur les critères retrouvés dans le règlement, avec leur poids tel qu'il est écrit."
+MSG_GRILLE = ("Plan construit sur les critères de « Comment vous serez noté », avec leur poids tel qu'il est écrit "
+              "ou tel que vous l'avez lu.")
 MSG_GRILLE_UN_CRITERE = ("Le règlement ne donne qu'un critère à traiter dans ce dossier (« {c} »). Adjugo propose "
                          "de le découper en parties : ce découpage n'est pas imposé par l'acheteur.")
+MSG_GRILLE_UN_CONFIRME = ("Un seul critère est retenu pour l'instant (« {c} ») : Adjugo propose de le découper en "
+                          "parties. Ce découpage n'est pas imposé par l'acheteur.")
 MSG_LIBRE = ("Aucun critère n'a été retrouvé dans le règlement : Adjugo propose un plan simple, sans IA. "
              "Adaptez-le au marché.")
+MSG_LIBRE_EN_ATTENTE = ("Aucun critère n'est encore retenu : Adjugo propose un plan simple, sans IA, à adapter au "
+                        "marché.")
+MSG_LIBRE_CHOISI = "Plan simple choisi par vous, sans IA : adaptez-le au marché."
+MSG_SANS_DOSSIER = ("Adjugo n'a pas encore le dossier du marché : importez-le pour que le plan suive les critères et "
+                    "le cadre de l'acheteur. En attendant, Adjugo propose un plan simple, sans IA.")
+MSG_PAS_DE_CADRE = "Aucun cadre de réponse découpé en questions n'a été repéré dans le dossier."
+MSG_PAS_DE_CRITERE = "Aucun critère n'est retenu dans « Comment vous serez noté »."
+MSG_A_VERIFIER = ("{n} critère{s} reste{nt} à vérifier dans « Comment vous serez noté » : confirmez-{le} pour qu'{il} "
+                  "entre{nt} dans le plan.")
 MSG_PRIX = "Jugé sur votre offre de prix (bordereau), pas dans le dossier de présentation."
+
+# Fichier de réponse imposé (décision 11) : UNE phrase par cas, jamais deux consignes accolées.
+AVERT_FICHIER_CADRE = ("Ce marché impose son propre fichier de réponse. Le fichier Word d'Adjugo suit l'ordre, les "
+                       "numéros et les intitulés de ce cadre : recopiez-en le texte dans le fichier de l'acheteur.")
+AVERT_FICHIER_AUTRE = ("Ce marché impose son propre fichier de réponse : recopiez votre texte dans le fichier de "
+                       "l'acheteur, ne déposez pas le fichier Word d'Adjugo seul.")
+
+
+def avertissement_fichier(impose: bool, source: str) -> str:
+    if not impose:
+        return ""
+    return AVERT_FICHIER_CADRE if source == CADRE else AVERT_FICHIER_AUTRE
+
+
+def msg_a_verifier(n: int) -> str:
+    if not n:
+        return ""
+    un = n == 1
+    return MSG_A_VERIFIER.format(n=n, s="" if un else "s", nt="" if un else "nt", le="le" if un else "les",
+                                 il="il" if un else "ils")
 
 # Critère jugé sur le prix : pas de texte à rédiger pour lui.
 _PRIX = re.compile(r"\bprix\b|\bmontant|\bcouts?\b|\btarif|financ|\beconomique|\bprix global")
@@ -264,10 +296,44 @@ def _grille_lines(grille: Optional[dict]) -> list:
     out = []
     for ln in grille.get("criteres") or []:
         if isinstance(ln, dict) and ln.get("dans_le_plan"):
+            poids = _flat(ln.get("poids_retenu"))[:40]
+            src = str(ln.get("poids_source") or "")
             out.append({"id": str(ln.get("id") or "")[:20], "critere": _flat(ln.get("critere"))[:300],
-                        "poids": _flat(ln.get("poids_retenu"))[:40], "phrase": _flat(ln.get("phrase"))[:QUESTION_MAX],
-                        "poids_source": ln.get("poids_source") or ""})
+                        "poids": poids, "phrase": _flat(ln.get("phrase"))[:QUESTION_MAX],
+                        "poids_source": (src if src in ("reglement", "utilisateur") else "") if poids else ""})
     return out
+
+
+def _grille(analysis: Optional[dict]) -> Optional[dict]:
+    a = analysis if isinstance(analysis, dict) else {}
+    det = a.get("details") if isinstance(a.get("details"), dict) else {}
+    g = det.get("grille_notation")
+    return g if isinstance(g, dict) else None
+
+
+def lignes_techniques(analysis: Optional[dict]) -> list:
+    """Lignes de « Comment vous serez noté » qui appellent du texte (le prix est jugé sur le
+    bordereau) : [{id, critere, poids, poids_source, phrase}], dans l'ordre de la grille."""
+    return [ln for ln in _grille_lines(_grille(analysis)) if not est_critere_prix(ln["critere"])]
+
+
+def criteres_a_verifier(analysis: Optional[dict]) -> int:
+    g = _grille(analysis) or {}
+    try:
+        return int((g.get("compteurs") or {}).get("a_verifier") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def empreinte_grille(analysis: Optional[dict]) -> list:
+    """Ce que le plan a lu de la grille (pour dire ensuite ce qui a changé) : [[id, critère, poids, source]]."""
+    return [[ln["id"], ln["critere"], ln["poids"], ln["poids_source"]] for ln in lignes_techniques(analysis)]
+
+
+def bases_disponibles(analysis: Optional[dict], cadre_text: str = "") -> dict:
+    """Les bases de plan qui existent pour ce marché : {cadre, grille} (auto et libre existent toujours)."""
+    return {"auto": True, "cadre": bool(parse_cadre(cadre_text)) if cadre_text else False,
+            "grille": bool(lignes_techniques(analysis)), "libre": True}
 
 
 def _libres(en_groupement: bool, critere: Optional[dict] = None) -> list:
@@ -280,20 +346,45 @@ def _libres(en_groupement: bool, critere: Optional[dict] = None) -> list:
              "limite": []}
         if critere:
             s.update(critere=critere["critere"], critere_id=critere["id"], poids=critere["poids"],
-                     partie_de_critere=True, question=critere["phrase"])
+                     poids_source=critere.get("poids_source") or "", partie_de_critere=True,
+                     question=critere["phrase"])
         out.append(s)
     return out
 
 
+def section_de_critere(ln: dict, numero: str = "") -> dict:
+    """Une partie pour une ligne de « Comment vous serez noté » (intitulé = le critère, poids et
+    provenance tels quels, question = la phrase du règlement)."""
+    return {"numero": numero, "intitule": ln["critere"][:INTITULE_MAX], "niveau": 1, "parents": [],
+            "question": ln["phrase"], "source_plan": GRILLE, "critere": ln["critere"], "critere_id": ln["id"],
+            "poids": ln["poids"], "poids_source": ln.get("poids_source") or "", "partie_de_critere": False,
+            "limite": []}
+
+
 def build_plan(analysis: Optional[dict], cadre_text: str = "", base: str = "auto",
-               en_groupement: bool = False) -> dict:
+               en_groupement: bool = False, dossier_present: bool = True) -> dict:
     """Plan proposé, SANS IA. base : auto (cadre imposé > grille > libre) | grille | cadre | libre.
-    Renvoie {source, message, fichier_impose, message_fichier, cadre_non_decoupe,
-    criteres_hors_dossier, limites (limites_du_dossier), sections: [...]}."""
+    Renvoie {source, message, fichier_impose, message_fichier, avertissement_fichier,
+    cadre_non_decoupe, criteres_hors_dossier, criteres_a_verifier, message_a_verifier,
+    dossier_present, bases, grille, limites (limites_du_dossier), sections: [...]}.
+    dossier_present=False : aucun dossier du marché importé (rien n'a été lu) — on le dit."""
+    out = _build_plan(analysis, cadre_text, base, en_groupement, dossier_present)
+    n_av = criteres_a_verifier(analysis)
+    out["criteres_a_verifier"] = n_av
+    out["message_a_verifier"] = msg_a_verifier(n_av) if out["source"] != CADRE and base != LIBRE else ""
+    if out["message_a_verifier"]:
+        out["message"] = (out["message"] + " " + out["message_a_verifier"]).strip()
+    out["avertissement_fichier"] = avertissement_fichier(out["fichier_impose"], out["source"])
+    out["dossier_present"] = bool(dossier_present)
+    out["bases"] = bases_disponibles(analysis, cadre_text)
+    out["grille"] = empreinte_grille(analysis)
+    return out
+
+
+def _build_plan(analysis: Optional[dict], cadre_text: str, base: str, en_groupement: bool,
+                dossier_present: bool) -> dict:
     base = base if base in BASES else "auto"
-    a = analysis if isinstance(analysis, dict) else {}
-    det = a.get("details") if isinstance(a.get("details"), dict) else {}
-    g = det.get("grille_notation") if isinstance(det.get("grille_notation"), dict) else None
+    g = _grille(analysis)
     cont = (g or {}).get("contraintes") or {}
     impose = bool(cont.get("fichier_impose"))
     lims = limites_du_dossier(g)
@@ -312,6 +403,7 @@ def build_plan(analysis: Optional[dict], cadre_text: str = "", base: str = "auto
 
     # 1. Le cadre de réponse (imposé, ou choisi par l'utilisateur).
     par_question = lims.pop("_par_question", [])
+    prefixe = ""
     if base in ("auto", CADRE) and (impose or base == CADRE):
         qs = qs_all
         if qs:
@@ -319,11 +411,13 @@ def build_plan(analysis: Optional[dict], cadre_text: str = "", base: str = "auto
             out["message"] = MSG_CADRE_IMPOSE if impose else MSG_CADRE_FOURNI
             for q in qs:
                 out["sections"].append({**q, "source_plan": CADRE, "critere": "", "critere_id": "", "poids": "",
-                                        "partie_de_critere": False,
+                                        "poids_source": "", "partie_de_critere": False,
                                         "limite": limites_section(q["question"], lims["chaque_question"])})
             return out
         if impose:
             out["cadre_non_decoupe"] = True
+        elif base == CADRE:
+            prefixe = MSG_PAS_DE_CADRE       # demandé, mais introuvable : on le dit
     # Plan hors cadre : les limites propres à une question ne sont pas contrôlées par l'atelier.
     for x in par_question:
         lims["non_controlees"].append(dict(x, portee="question", objet="question"))
@@ -336,22 +430,32 @@ def build_plan(analysis: Optional[dict], cadre_text: str = "", base: str = "auto
             out["criteres_hors_dossier"].append({"critere": ln["critere"], "poids": ln["poids"], "raison": MSG_PRIX})
         else:
             tech.append(ln)
+    en_attente = criteres_a_verifier(analysis) > 0
     if len(tech) >= 2:
         out["source"] = GRILLE
         out["message"] = MSG_GRILLE
         for i, ln in enumerate(tech[:MAX_SECTIONS], 1):
-            out["sections"].append({"numero": str(i), "intitule": ln["critere"][:INTITULE_MAX], "niveau": 1,
-                                    "parents": [], "question": ln["phrase"], "source_plan": GRILLE,
-                                    "critere": ln["critere"], "critere_id": ln["id"], "poids": ln["poids"],
-                                    "partie_de_critere": False, "limite": []})
+            out["sections"].append(section_de_critere(ln, str(i)))
     elif len(tech) == 1:
         out["source"] = GRILLE
-        out["message"] = MSG_GRILLE_UN_CRITERE.format(c=tech[0]["critere"])
+        # « ne donne qu'un critère » : jamais tant que d'autres lignes sont à vérifier.
+        out["message"] = (MSG_GRILLE_UN_CONFIRME if en_attente else MSG_GRILLE_UN_CRITERE).format(c=tech[0]["critere"])
         out["sections"] = _libres(en_groupement, critere=tech[0])
     else:
         out["source"] = LIBRE
-        out["message"] = MSG_LIBRE
+        if base == LIBRE:
+            out["message"] = MSG_LIBRE_CHOISI
+        elif not dossier_present and not g:
+            out["message"] = MSG_SANS_DOSSIER
+        elif base == GRILLE:
+            out["message"] = MSG_PAS_DE_CRITERE + " Adjugo propose un plan simple, sans IA, à adapter au marché."
+        elif en_attente:
+            out["message"] = MSG_LIBRE_EN_ATTENTE
+        else:
+            out["message"] = MSG_LIBRE
         out["sections"] = _libres(en_groupement)
     if out["cadre_non_decoupe"]:
         out["message"] = MSG_CADRE_NON_DECOUPE + " " + out["message"]
+    elif prefixe:
+        out["message"] = prefixe + " " + out["message"]
     return out

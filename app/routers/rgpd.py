@@ -87,15 +87,19 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
                                       for r in rows]
     except Exception:
         data["conventions_groupement"], data["accords_convention"] = [], []
-    # Dossiers de présentation (atelier, rédaction vague 2) : plan, parties et texte courant.
+    # Dossiers de présentation (atelier, rédaction vague 2) : plan, parties et texte courant — de SES
+    # parties ; pour la partie d'un partenaire (vague 4), seulement le texte qu'il a envoyé (validé).
     try:
-        from app.models import DossierPresentation, DossierSection, DossierSectionVersion
+        from app.models import DossierPresentation, DossierSection
+        from app.services import atelier as _at
         out = []
         for d in db.query(DossierPresentation).filter(DossierPresentation.owner_id == uid).all():
             secs = []
-            for sec in (db.query(DossierSection).filter(DossierSection.dossier_id == d.id)
-                        .order_by(DossierSection.ordre.asc()).all()):
-                v = db.get(DossierSectionVersion, sec.current_version_id) if sec.current_version_id else None
+            rows = (db.query(DossierSection).filter(DossierSection.dossier_id == d.id)
+                    .order_by(DossierSection.ordre.asc()).all())
+            communes = _at.versions_communes(db, rows, _at.Lecteur.organisation(d.owner_id))
+            for sec in rows:
+                v = communes.get(sec.id)
                 secs.append({"numero": sec.numero, "intitule": sec.intitule, "statut": sec.statut,
                              "retiree": sec.retiree_at is not None, "texte": (v.texte if v else "") or ""})
             out.append(dict(_ser(d, ["id", "project_id", "plan_source", "created_at"]), parties=secs))

@@ -951,6 +951,13 @@ class DossierPresentation(Base):
     analyse_debitee = Column(Boolean, default=False)
     regenerations = Column(Integer, default=0)
     regenerations_payantes = Column(Integer, default=0)
+    # Premières rédactions comprises dans l'analyse du dossier : au plus une par partie du plan
+    # (au plus le nombre de parties actives) ; au-delà — partie ajoutée, plan reconstruit — une
+    # rédaction compte comme une refonte. Le plafond ne se contourne donc pas en changeant de plan.
+    premieres_incluses = Column(Integer, default=0)
+    # Tâche qui porte l'analyse du dossier (1re action de l'IA) : tant qu'elle tourne, aucune autre
+    # action de l'IA ne démarre (si elle tombe en panne, l'analyse est rendue, sans passager clandestin).
+    job_analyse_id = Column(Integer, nullable=True)
 
     # Dernière dérogation à l'export (décision 2b), valable pour UN état du texte (etat_hash) :
     # {etat_hash, raisons[], raison, texte, par, le, avertissement}. Aussi au journal chaîné.
@@ -985,7 +992,10 @@ class DossierSection(Base):
     source_plan = Column(String(12), default="libre")
     critere = Column(String(300), default="")      # critère de la grille, tel que retrouvé
     critere_id = Column(String(20), default="")
-    poids = Column(String(40), default="")         # poids TEL QU'ÉCRIT dans le règlement, sinon ''
+    poids = Column(String(40), default="")         # poids retenu dans « Comment vous serez noté », sinon ''
+    # D'où vient ce poids : 'reglement' (écrit dans le règlement) | 'utilisateur' (lu et saisi par
+    # vous en confirmant la ligne) | '' (aucun poids). Dit tel quel à l'écran et à l'IA.
+    poids_source = Column(String(20), default="")
     partie_de_critere = Column(Boolean, default=False)   # partie d'un critère découpé par Adjugo
     lot = Column(String(120), default="")          # vague 6 (plusieurs lots), vide aujourd'hui
     limite = Column(JSON, nullable=True)           # limite applicable : {type, valeur, objet, phrase, source}

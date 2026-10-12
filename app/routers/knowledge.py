@@ -104,8 +104,8 @@ def search(request: Request, req: SearchReq, current_user: User = Depends(get_cu
 
 
 # ── Dossier de présentation : remplacé par l'atelier (page du marché) ───────────────
-MSG_ATELIER = ("Le dossier de présentation se rédige maintenant sur la page du marché, étape « Préparer » : "
-               "« Dossier de présentation ». Vos documents restent ici et servent de source.")
+MSG_ATELIER = ("Le dossier de présentation se rédige maintenant sur la page du marché, carte « Dossier de "
+               "présentation ». Vos documents restent ici et servent de source.")
 
 
 @router.post("/memoire-upload")

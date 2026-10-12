@@ -122,10 +122,24 @@ def reconstruire(request: Request, project_id: int, body: PlanIn, current_user: 
         raise HTTPException(422, {"code": "base_invalide", "message": "Plan inconnu : auto, grille, cadre ou libre."})
     try:
         at.reconstruire_plan(db, acc.project, acc.exiger_dossier(), current_user, acc.mids, base=body.base,
-                             remplacer=body.remplacer)
+                             remplacer=body.remplacer, lecteur=acc.lecteur)
     except at.AtelierError as e:
         raise _err(e)
     return acc.etat()
+
+
+@router.post("/{project_id}/plan/grille")
+@limiter.limit("60/hour")
+def appliquer_grille(request: Request, project_id: int, current_user: User = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    """« Comment vous serez noté » a changé depuis le plan : ajoute une partie par critère confirmé
+    depuis et reprend les poids, SANS rien retirer ni reconstruire (aucune IA, aucun débit)."""
+    acc = _Acces(db, current_user, project_id)
+    try:
+        res = at.appliquer_grille(db, acc.project, acc.exiger_dossier(), acc.lecteur)
+    except at.AtelierError as e:
+        raise _err(e)
+    return dict(acc.etat(), application=res)
 
 
 class OptionsIn(BaseModel):

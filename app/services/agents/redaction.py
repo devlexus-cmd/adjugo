@@ -132,10 +132,10 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
                                                 project_id, type(e).__name__)
             memoire_files, memoire_md = {}, ""
             warnings.append("BLOQUANT — Le dossier de présentation n'a pas pu être joint : ouvrez l'atelier "
-                            "(étape « Préparer » du marché) puis relancez l'assemblage.")
+                            "(sur la page du marché, carte « Dossier de présentation ») puis relancez l'assemblage.")
     else:
-        warnings.append("BLOQUANT — Dossier de présentation non rédigé : préparez-le dans l'atelier (étape "
-                        "« Préparer » du marché).")
+        warnings.append("BLOQUANT — Dossier de présentation non rédigé : préparez-le dans l'atelier (sur la page "
+                        "du marché, carte « Dossier de présentation »).")
     # Le règlement impose son propre cadre de réponse : le fichier Word d'Adjugo ne se dépose pas
     # seul (avertissement non bloquant, affiché avec le dossier).
     _gn = details.get("grille_notation") if isinstance(details, dict) else None

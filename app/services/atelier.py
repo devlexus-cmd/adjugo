@@ -51,8 +51,8 @@ logger = logging.getLogger("adjugo")
 # ── Constantes ────────────────────────────────────────────────────────────────────────
 
 A_ECRIRE, BROUILLON, RELU, VALIDE, A_REVALIDER = "a_ecrire", "brouillon", "relu", "valide", "a_revalider"
-STATUTS = {A_ECRIRE: "À écrire", BROUILLON: "Brouillon", RELU: "Relu", VALIDE: "Validé",
-           A_REVALIDER: "À revalider"}
+STATUTS = {A_ECRIRE: "À écrire", BROUILLON: "Brouillon", RELU: "Relue", VALIDE: "Validée",
+           A_REVALIDER: "À revalider"}       # le sujet est la partie : « Relue », « Validée »
 IA, UTILISATEUR, RACCOURCI = "ia", "utilisateur", "raccourci"
 ORIGINES = {IA: "Rédigé avec Adjugo", UTILISATEUR: "Écrit ou modifié par vous", RACCOURCI: "Raccourci avec Adjugo"}
 AUTEUR_ORG, AUTEUR_INVITATION = "organisation", "invitation"
@@ -73,16 +73,42 @@ MSG_IA_PANNE = ("La rédaction n'a pas abouti : le service d'IA est indisponible
 MSG_IRREGULIERE = "L'acheteur peut juger votre offre irrégulière."
 MSG_DCE_CHANGE = ("Le dossier du marché a été importé de nouveau depuis la création du plan : vous pouvez "
                   "reconstruire le plan.")
+MSG_DCE_ABSENT = ("Aucun dossier du marché importé : Adjugo rédige sans le règlement ni le cadre de réponse. "
+                  "Importez-le sur la page du marché pour que le plan et le texte suivent l'acheteur.")
 MSG_NON_VALIDE = "Dossier de présentation non validé"
 
-# Dérogation à l'export (décision 2b) : une raison choisie + un texte libre court.
+# Dérogation à l'export (décision 2b) : une raison choisie + un texte libre court. Seules les
+# raisons qui répondent à ce qui bloque sont proposées (et acceptées).
 RAISONS_DEROGATION = {
     "completerai_dans_word": "Je compléterai ces passages dans le fichier Word avant de déposer.",
     "relu_moi_meme": "J'ai relu ces faits moi-même.",
+    "reduirai_dans_word": "Je réduirai le texte dans le fichier Word avant de déposer.",
+    "redigerai_dans_word": "J'écrirai ces parties dans le fichier Word avant de déposer.",
+    "partenaire_dans_word": "J'ajouterai la partie du partenaire dans le fichier Word avant de déposer.",
     "depot_en_l_etat": "Je dépose en l'état, en connaissance de cause.",
     "autre": "Autre raison.",
 }
+_RAISONS_PAR_BLOCAGE = {
+    "a_completer": "completerai_dans_word",
+    "faits_a_relire": "relu_moi_meme",
+    "limite_depassee": "reduirai_dans_word",
+    "parties_vides": "redigerai_dans_word",
+    "attente_partenaire": "partenaire_dans_word",
+}
 DEROGATION_TEXTE_MIN, DEROGATION_TEXTE_MAX = 3, 300
+MSG_PREMIERE_EN_COURS = ("Adjugo termine la première rédaction de ce dossier (celle qui compte pour l'analyse) : "
+                         "attendez qu'elle se termine avant d'en lancer une autre.")
+
+
+def derogations_possibles(gate: dict) -> list:
+    """[{code, libelle}] des raisons qui répondent à CE qui bloque (aucune si rien ne bloque ou
+    si le dossier n'a aucune partie)."""
+    codes = [r["code"] for r in (gate or {}).get("raisons") or []]
+    if not codes or "dossier_vide" in codes:
+        return []
+    keep = [_RAISONS_PAR_BLOCAGE[c] for c in codes if c in _RAISONS_PAR_BLOCAGE]
+    keep += ["depot_en_l_etat", "autre"]
+    return [{"code": k, "libelle": RAISONS_DEROGATION[k]} for k in dict.fromkeys(keep)]
 
 
 def regen_gratuites() -> int:
@@ -159,6 +185,30 @@ def peut_voir_prive(section: DossierSection, lecteur: Lecteur) -> bool:
 
 def peut_ecrire(section: DossierSection, lecteur: Lecteur) -> bool:
     return peut_voir_prive(section, lecteur)
+
+
+def versions_communes(db, sections: list, lecteur: Lecteur) -> dict:
+    """LE texte qu'un lecteur partage, partie par partie : la version courante des parties dont il
+    est l'auteur ; pour la partie d'un autre auteur (vague 4 : un partenaire), SEULEMENT la version
+    validée (envoyée), sinon rien. Seul accès au texte pour l'export, le compteur, le blocage, les
+    limites, la mention IA, le dossier commun et l'export RGPD : un brouillon non envoyé ne sort
+    jamais de chez son auteur."""
+    propres = [s for s in sections if peut_voir_prive(s, lecteur)]
+    autres = [s for s in sections if not peut_voir_prive(s, lecteur)]
+    out = _courantes(db, propres)
+    ids = [s.validated_version_id for s in autres if s.validated_version_id]
+    if ids:
+        by_id = {v.id: v for v in db.query(DossierSectionVersion).filter(DossierSectionVersion.id.in_(ids)).all()}
+        for s in autres:
+            v = by_id.get(s.validated_version_id)
+            if v is not None and v.section_id == s.id:
+                out[s.id] = v
+    return out
+
+
+def en_attente_d_un_partenaire(sections: list, lecteur: Lecteur, communes: dict) -> list:
+    """Parties d'un autre auteur dont le texte n'a pas encore été envoyé (validé)."""
+    return [s for s in sections if not peut_voir_prive(s, lecteur) and communes.get(s.id) is None]
 
 
 # ── Le dossier de l'acheteur, lu sans IA (C0 : règlement et cadre en entier) ──────────
@@ -245,18 +295,27 @@ def _en_groupement(db, project: Project) -> bool:
 
 # ── Le plan ───────────────────────────────────────────────────────────────────────────
 
+def _plan(db, project: Project, member_ids: list, lu: dict, base: str) -> dict:
+    return ap.build_plan(_analysis(project), lu.get("cadre") or "", base=base,
+                         en_groupement=_en_groupement(db, project),
+                         dossier_present=(lu.get("cle") or "aucun") != "aucun")
+
+
 def proposition(db, project: Project, member_ids: list, base: str = "auto") -> dict:
     """Plan proposé (sans IA, sans rien enregistrer)."""
-    lu = lire_dossier_acheteur(db, project, member_ids)
-    return ap.build_plan(_analysis(project), lu.get("cadre") or "", base=base,
-                         en_groupement=_en_groupement(db, project))
+    return _plan(db, project, member_ids, lire_dossier_acheteur(db, project, member_ids), base)
 
 
-def _plan_meta(plan: dict, base: str) -> dict:
+def _plan_meta(plan: dict, base: str, cle_dce: str = "") -> dict:
     return {"source": plan.get("source"), "message": plan.get("message") or "",
             "fichier_impose": bool(plan.get("fichier_impose")), "message_fichier": plan.get("message_fichier") or "",
+            "avertissement_fichier": plan.get("avertissement_fichier") or "",
             "cadre_non_decoupe": bool(plan.get("cadre_non_decoupe")),
             "criteres_hors_dossier": plan.get("criteres_hors_dossier") or [],
+            "dossier_present": plan.get("dossier_present", True) is not False,
+            # Ce que le plan a lu : le dossier du marché (clé) et la grille (lignes, poids) — pour
+            # dire ensuite ce qui a changé, sans confondre avec la lecture que le moteur rafraîchit.
+            "cle_dce": cle_dce, "grille": plan.get("grille") or [],
             "limites": plan.get("limites") or {}, "base_demandee": base, "construit_le": _now_iso()}
 
 
@@ -267,6 +326,7 @@ def _section_from_plan(dossier: DossierPresentation, s: dict, ordre: int) -> Dos
         niveau=int(s.get("niveau") or 1), parents=s.get("parents") or [], question=str(s.get("question") or ""),
         source_plan=str(s.get("source_plan") or ap.LIBRE)[:12], critere=str(s.get("critere") or "")[:300],
         critere_id=str(s.get("critere_id") or "")[:20], poids=str(s.get("poids") or "")[:40],
+        poids_source=str(s.get("poids_source") or "")[:20] if s.get("poids") else "",
         partie_de_critere=bool(s.get("partie_de_critere")), lot="", limite=s.get("limite") or [],
         author_kind=AUTEUR_ORG, author_invite_id=None, statut=A_ECRIRE, lock_version=0)
 
@@ -283,12 +343,11 @@ def creer_dossier(db, project: Project, owner_id: int, user: User, member_ids: l
     if get_dossier(db, project.id, owner_id) is not None:
         raise AtelierError(409, "dossier_existe", "Le dossier de présentation de ce marché existe déjà.")
     lu = lire_dossier_acheteur(db, project, member_ids)
-    plan = ap.build_plan(_analysis(project), lu.get("cadre") or "", base=base,
-                         en_groupement=_en_groupement(db, project))
+    plan = _plan(db, project, member_ids, lu, base)
     d = DossierPresentation(project_id=project.id, owner_id=owner_id, created_by_user_id=user.id,
-                            plan_source=plan["source"], plan_meta=_plan_meta(plan, base), dce_lu=lu,
-                            analyse_debitee=False, regenerations=0, regenerations_payantes=0,
-                            options_export={"page_garde": True, "sommaire": True}, version=0)
+                            plan_source=plan["source"], plan_meta=_plan_meta(plan, base, lu.get("cle") or ""),
+                            dce_lu=lu, analyse_debitee=False, regenerations=0, regenerations_payantes=0,
+                            premieres_incluses=0, options_export={"page_garde": True, "sommaire": True}, version=0)
     db.add(d)
     try:
         db.flush()
@@ -322,29 +381,35 @@ def _a_du_texte(db, section_ids) -> bool:
 
 
 def reconstruire_plan(db, project: Project, dossier: DossierPresentation, user: User, member_ids: list,
-                      base: str = "auto", remplacer: bool = False) -> DossierPresentation:
-    """Reconstruit le plan. Les parties actuelles sont RETIRÉES (jamais supprimées : leurs versions
-    restent consultables et peuvent être remises) ; si l'une a déjà du texte, l'utilisateur doit
-    le confirmer (remplacer=True)."""
-    _verifier_aucune_tache(db, sections_actives(db, dossier))
+                      base: str = "auto", remplacer: bool = False, lecteur: Optional[Lecteur] = None) -> DossierPresentation:
+    """Reconstruit le plan. Les parties actuelles QUE LE LECTEUR PEUT ÉCRIRE sont RETIRÉES (jamais
+    supprimées : leurs versions restent consultables et peuvent être remises) ; si l'une a déjà du
+    texte, l'utilisateur doit le confirmer (remplacer=True). La partie d'un partenaire (vague 4)
+    reste dans le plan : on ne retire jamais la part d'un autre."""
+    lecteur = lecteur or Lecteur.organisation(dossier.owner_id, user)
     act = sections_actives(db, dossier)
-    if _a_du_texte(db, [s.id for s in act]) and not remplacer:
+    miennes = [s for s in act if peut_ecrire(s, lecteur)]
+    _verifier_aucune_tache(db, miennes)
+    if _a_du_texte(db, [s.id for s in miennes]) and not remplacer:
         raise AtelierError(409, "plan_remplacement_a_confirmer",
                            "Des parties ont déjà du texte. Reconstruire le plan les retire (leurs textes restent "
                            "dans l'historique et peuvent être remis) : confirmez pour continuer.")
     _LECTURES.pop(cle_dossier_acheteur(db, project, member_ids), None)
     lu = lire_dossier_acheteur(db, project, member_ids)
-    plan = ap.build_plan(_analysis(project), lu.get("cadre") or "", base=base,
-                         en_groupement=_en_groupement(db, project))
+    plan = _plan(db, project, member_ids, lu, base)
     now = utcnow()
-    for s in act:
+    for s in miennes:
         s.retiree_at = now
     dossier.plan_source = plan["source"]
-    dossier.plan_meta = _plan_meta(plan, base)
+    dossier.plan_meta = _plan_meta(plan, base, lu.get("cle") or "")
     dossier.dce_lu = lu
     dossier.version = (dossier.version or 0) + 1
-    for i, s in enumerate(plan["sections"][:SECTIONS_MAX]):
-        db.add(_section_from_plan(dossier, s, i))
+    gardees = [s for s in act if s not in miennes]
+    n = 0
+    for n, s in enumerate(plan["sections"][:max(0, SECTIONS_MAX - len(gardees))]):
+        db.add(_section_from_plan(dossier, s, n))
+    for i, s in enumerate(gardees):
+        s.ordre = n + 1 + i
     db.commit()
     db.refresh(dossier)
     return dossier
@@ -353,6 +418,16 @@ def reconstruire_plan(db, project: Project, dossier: DossierPresentation, user: 
 def _renumeroter(db, dossier: DossierPresentation) -> None:
     for i, s in enumerate(sections_actives(db, dossier)):
         s.ordre = i
+
+
+def _place_dans_le_cadre(act: list, section: DossierSection) -> int:
+    """Rang où remettre une question du cadre imposé : avant la première question du cadre dont le
+    numéro est plus grand (le cadre de l'acheteur commande l'ordre)."""
+    k = ap._num_key(section.numero or "")
+    for i, x in enumerate(act):
+        if x.source_plan == ap.CADRE and ap._num_key(x.numero or "") > k:
+            return i
+    return len(act)
 
 
 def ajouter_section(db, dossier: DossierPresentation, intitule: str, apres_id: Optional[int] = None) -> DossierSection:
@@ -431,13 +506,105 @@ def remettre_section(db, dossier: DossierPresentation, section: DossierSection, 
         return section
     if len(sections_actives(db, dossier)) >= SECTIONS_MAX:
         raise AtelierError(422, "trop_de_parties", f"Un dossier compte au plus {SECTIONS_MAX} parties.")
+    act = sections_actives(db, dossier)
+    if dossier.plan_source == ap.CADRE and section.source_plan == ap.CADRE:
+        # Le cadre imposé commande : la question reprend SA place (son numéro), pas la dernière.
+        act.insert(_place_dans_le_cadre(act, section), section)
+    else:
+        act.append(section)
     section.retiree_at = None
-    section.ordre = 10 ** 6
-    db.flush()
-    _renumeroter(db, dossier)
+    for i, x in enumerate(act):
+        x.ordre = i
     db.commit()
     db.refresh(section)
     return section
+
+
+# ── La grille a changé depuis le plan (« Comment vous serez noté ») ───────────────────
+
+def changements_grille(project: Project, dossier: DossierPresentation, actives: list, retirees: list) -> Optional[dict]:
+    """Ce qui a changé dans « Comment vous serez noté » depuis le plan : critères confirmés depuis
+    (à AJOUTER au plan, jamais en reconstruisant tout), poids confirmés ou modifiés, critères qui ne
+    sont plus retenus. None quand rien n'a changé ou quand le plan suit le cadre imposé (le cadre
+    commande, la grille n'y crée pas de partie)."""
+    if dossier.plan_source == ap.CADRE:
+        return None
+    lignes = ap.lignes_techniques(_analysis(project))
+    par_id = {ln["id"]: ln for ln in lignes}
+    meta = dossier.plan_meta if isinstance(dossier.plan_meta, dict) else {}
+    # Connus : rattachés à une partie (même retirée) ou déjà lus quand le plan a été construit
+    # (un plan simple choisi exprès ne fait pas réapparaître les critères qu'il a laissés de côté).
+    connus = {str(s.critere_id) for s in list(actives) + list(retirees) if s.critere_id}
+    connus |= {str(x[0]) for x in (meta.get("grille") or []) if isinstance(x, (list, tuple)) and x}
+    nouveaux = [{"id": ln["id"], "critere": ln["critere"], "poids": ln["poids"], "poids_source": ln["poids_source"]}
+                for ln in lignes if ln["id"] not in connus]
+    poids, plus_retenus = [], []
+    for s in actives:
+        if not s.critere_id or s.author_kind != AUTEUR_ORG:
+            continue
+        ln = par_id.get(str(s.critere_id))
+        if ln is None:
+            if s.source_plan == ap.GRILLE or s.partie_de_critere:
+                plus_retenus.append({"section_id": s.id, "critere": s.critere})
+            continue
+        change = ln["poids"] != (s.poids or "") or (bool(s.poids_source) and ln["poids_source"] != s.poids_source)
+        if change:
+            poids.append({"section_id": s.id, "critere": s.critere, "ancien": s.poids or "", "nouveau": ln["poids"],
+                          "poids_source": ln["poids_source"]})
+    if not (nouveaux or poids or plus_retenus):
+        return None
+    parts = []
+    if nouveaux:
+        n = len(nouveaux)
+        parts.append(("Un critère a été confirmé" if n == 1 else f"{n} critères ont été confirmés")
+                     + " dans « Comment vous serez noté » depuis la création du plan : "
+                     + ", ".join(f"« {x['critere']} »" for x in nouveaux[:6]) + ".")
+    if poids:
+        parts.append(("Le poids retenu pour " if len(poids) == 1 else "Les poids retenus pour ")
+                     + ", ".join(f"« {x['critere']} »" for x in poids[:6])
+                     + (" a changé dans « Comment vous serez noté »." if len(poids) == 1
+                        else " ont changé dans « Comment vous serez noté »."))
+    if plus_retenus:
+        parts.append(", ".join(f"« {x['critere']} »" for x in plus_retenus[:6])
+                     + (" n'est plus retenu" if len(plus_retenus) == 1 else " ne sont plus retenus")
+                     + " : vous pouvez retirer la partie.")
+    return {"nouveaux": nouveaux, "poids": poids, "plus_retenus": plus_retenus, "message": " ".join(parts),
+            "peut_appliquer": bool(nouveaux or poids)}
+
+
+def appliquer_grille(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur) -> dict:
+    """Met le plan à jour d'après « Comment vous serez noté » SANS rien retirer : une partie de plus
+    par critère confirmé depuis (à la fin du plan, déplaçable), le poids et sa provenance repris
+    pour les parties existantes. Aucune IA, aucun débit."""
+    if dossier.plan_source == ap.CADRE:
+        raise AtelierError(409, "plan_du_cadre", "Le plan suit le cadre de réponse de l'acheteur : la grille n'y "
+                                                 "ajoute pas de partie.")
+    act = sections_actives(db, dossier)
+    ch = changements_grille(project, dossier, act, sections_retirees(db, dossier))
+    if not ch or not ch["peut_appliquer"]:
+        raise AtelierError(409, "rien_a_appliquer", "Le plan suit déjà « Comment vous serez noté ».")
+    if len(act) + len(ch["nouveaux"]) > SECTIONS_MAX:
+        raise AtelierError(422, "trop_de_parties", f"Un dossier compte au plus {SECTIONS_MAX} parties.")
+    par_id = {ln["id"]: ln for ln in ap.lignes_techniques(_analysis(project))}
+    for x in ch["poids"]:
+        s = next((y for y in act if y.id == x["section_id"]), None)
+        if s is not None and peut_ecrire(s, lecteur):
+            s.poids, s.poids_source = x["nouveau"][:40], (x["poids_source"] or "")[:20] if x["nouveau"] else ""
+            s.lock_version = (s.lock_version or 0) + 1
+    rang = len(act)
+    for x in ch["nouveaux"]:
+        db.add(_section_from_plan(dossier, ap.section_de_critere(par_id[x["id"]]), rang))
+        rang += 1
+    meta = dict(dossier.plan_meta) if isinstance(dossier.plan_meta, dict) else {}
+    meta["grille"] = ap.empreinte_grille(_analysis(project))
+    if ch["nouveaux"]:
+        meta["message"] = ("Plan construit d'après le dossier du marché, complété par les critères que vous avez "
+                           "confirmés dans « Comment vous serez noté ».")
+    dossier.plan_meta = meta
+    flag_modified(dossier, "plan_meta")
+    dossier.version = (dossier.version or 0) + 1
+    db.commit()
+    return {"ajoutees": len(ch["nouveaux"]), "poids_mis_a_jour": len(ch["poids"])}
 
 
 # ── Les versions ──────────────────────────────────────────────────────────────────────
@@ -1029,15 +1196,21 @@ def etat_hash(dossier: DossierPresentation, sections: list, courantes: dict, lim
                           .encode("utf-8")).hexdigest()
 
 
-def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs: dict, limites: list) -> dict:
+def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs: dict, limites: list,
+            attente: Optional[list] = None) -> dict:
     """Ce qui empêche l'export (décision 2b) et ce qui reste à signaler. {bloque, raisons, etat_hash,
-    derogation (valable pour cet état) | None, avertissements}."""
+    derogation (valable pour cet état) | None, avertissements}. `courantes` est le texte COMMUN
+    (versions_communes) ; `attente` : parties d'un partenaire dont le texte n'est pas encore envoyé."""
     raisons = []
-    trous, faits, vides, non_valides = [], [], [], []
+    trous, faits, vides, non_valides, partenaires = [], [], [], [], []
+    attente_ids = {s.id for s in (attente or [])}
     for s in sections:
         v = courantes.get(s.id)
         titre = ax.titre_section({"numero": rangs.get(s.id, ""), "intitule": s.intitule})
         texte = (v.texte if v is not None else "") or ""
+        if s.id in attente_ids:
+            partenaires.append({"section_id": s.id, "titre": titre})
+            continue
         if not texte.strip():
             vides.append({"section_id": s.id, "titre": titre})
         n = len(me.placeholders(texte))
@@ -1046,7 +1219,8 @@ def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs
         nf = far.non_traites(v.faits if v is not None else [])
         if nf:
             faits.append({"section_id": s.id, "titre": titre, "nombre": nf})
-        if s.statut != VALIDE:
+        # La partie d'un partenaire est commune quand il l'a envoyée (validée) : rien à valider ici.
+        if s.statut != VALIDE and s.author_kind == AUTEUR_ORG:
             non_valides.append({"section_id": s.id, "titre": titre, "statut": s.statut})
     if not sections:
         raisons.append({"code": "dossier_vide", "message": "Le dossier de présentation n'a aucune partie.",
@@ -1054,6 +1228,11 @@ def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs
     if vides:
         raisons.append({"code": "parties_vides", "nombre": len(vides), "sections": vides,
                         "message": f"{len(vides)} partie{'s' if len(vides) > 1 else ''} sans texte."})
+    if partenaires:
+        n = len(partenaires)
+        raisons.append({"code": "attente_partenaire", "nombre": n, "sections": partenaires,
+                        "message": (f"{n} partie{'s' if n > 1 else ''} en attente du partenaire qui "
+                                    f"{'les rédige' if n > 1 else 'la rédige'}.")})
     if trous:
         n = sum(x["nombre"] for x in trous)
         raisons.append({"code": "a_completer", "nombre": n, "sections": trous,
@@ -1077,11 +1256,9 @@ def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs
     avert = []
     meta = dossier.plan_meta if isinstance(dossier.plan_meta, dict) else {}
     if meta.get("fichier_impose"):
-        avert.append({"code": "fichier_impose", "message": (meta.get("message_fichier") or
-                                                           "Ce marché impose son propre fichier de réponse.")
-                      + (" Ce fichier Word reprend l'ordre, les numéros et les intitulés de son cadre : recopiez-y "
-                         "votre texte." if dossier.plan_source == ap.CADRE else
-                         " Recopiez-y votre texte : ne déposez pas ce fichier Word seul.")})
+        # Une seule phrase par cas (décision 11) : jamais deux consignes accolées.
+        avert.append({"code": "fichier_impose",
+                      "message": ap.avertissement_fichier(True, dossier.plan_source)})
     if non_valides:
         avert.append({"code": "non_valide", "nombre": len(non_valides), "sections": non_valides,
                       "message": (f"{MSG_NON_VALIDE} : {len(non_valides)} partie"
@@ -1103,8 +1280,8 @@ def enregistrer_derogation(db, project: Project, dossier: DossierPresentation, g
     journal chaîné AVANT d'être retenue (sans inscription, pas de dérogation)."""
     from app.models import AuditLog
     from app.services import audit
-    if raison not in RAISONS_DEROGATION:
-        raise AtelierError(422, "raison_invalide", "Choisissez une raison.")
+    if raison not in {x["code"] for x in derogations_possibles(gate)}:
+        raise AtelierError(422, "raison_invalide", "Choisissez une des raisons proposées.")
     t = _flat(texte)
     if not (DEROGATION_TEXTE_MIN <= len(t) <= DEROGATION_TEXTE_MAX):
         raise AtelierError(422, "texte_invalide",
@@ -1140,13 +1317,14 @@ def enregistrer_derogation(db, project: Project, dossier: DossierPresentation, g
 
 # ── Quota (décision 6a) ───────────────────────────────────────────────────────────────
 
-def quota_out(dossier: DossierPresentation) -> dict:
+def quota_out(dossier: DossierPresentation, n_parties: Optional[int] = None) -> dict:
     cap = regen_gratuites()
     used = int(dossier.regenerations or 0)
     left = max(0, cap - used)
     if not dossier.analyse_debitee:
         msg = ("La première rédaction avec Adjugo compte pour 1 analyse de votre forfait, une seule fois pour tout "
-               f"le dossier. Ensuite, refaire une partie est gratuit {cap} fois.")
+               f"le dossier : chaque partie du plan y est comprise une fois. Ensuite, refaire une partie est gratuit "
+               f"{cap} fois.")
         prochaine = 1
     elif left:
         msg = f"Refaire une partie est gratuit : encore {left} fois sur {cap} pour ce dossier."
@@ -1155,10 +1333,13 @@ def quota_out(dossier: DossierPresentation) -> dict:
         msg = (f"Vous avez refait {cap} parties gratuitement. Chaque nouvelle rédaction d'une partie déjà rédigée "
                "compte maintenant pour 1 analyse.")
         prochaine = 1
-    return {"analyse_debitee": bool(dossier.analyse_debitee), "regenerations_gratuites": cap,
-            "regenerations_utilisees": used, "regenerations_restantes": left,
-            "regenerations_payantes": int(dossier.regenerations_payantes or 0), "message": msg,
-            "prochaine_refonte_coute": prochaine}
+    out = {"analyse_debitee": bool(dossier.analyse_debitee), "regenerations_gratuites": cap,
+           "regenerations_utilisees": used, "regenerations_restantes": left,
+           "regenerations_payantes": int(dossier.regenerations_payantes or 0), "message": msg,
+           "prochaine_refonte_coute": prochaine, "premieres_incluses": int(dossier.premieres_incluses or 0)}
+    if n_parties is not None:
+        out["premieres_restantes"] = max(0, int(n_parties) - int(dossier.premieres_incluses or 0))
+    return out
 
 
 def _deja_redigee_par_ia(db, section: DossierSection) -> bool:
@@ -1167,26 +1348,74 @@ def _deja_redigee_par_ia(db, section: DossierSection) -> bool:
         DossierSectionVersion.origine.in_([IA, RACCOURCI])).first() is not None
 
 
-def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accepte_debit: bool) -> dict:
-    """Décide et applique le débit d'une action de l'IA. Renvoie le relevé (pour rembourser).
-    Toutes les analyses dues sont prises AVANT de toucher au dossier : si l'une est refusée
-    (quota atteint), celles déjà prises sont rendues et rien ne change."""
+def _verifier_premiere_en_cours(db, d: DossierPresentation, job_id: int) -> None:
+    """Tant que la tâche qui porte l'analyse du dossier tourne, aucune autre action de l'IA : si
+    elle tombait en panne, son analyse serait rendue et l'autre rédaction serait gratuite."""
+    jid = d.job_analyse_id
+    if d.analyse_debitee and jid and jid != job_id:
+        j = db.get(Job, jid)
+        if j is not None and j.status in ("pending", "running"):
+            raise AtelierError(409, "premiere_redaction_en_cours", MSG_PREMIERE_EN_COURS, job_id=jid)
+
+
+def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accepte_debit: bool,
+             job_id: int) -> dict:
+    """Décide et applique le débit d'une action de l'IA (décision 6a). Renvoie le relevé (pour
+    rembourser).
+      • la 1re action de l'IA sur le dossier : 1 analyse pour tout le dossier ;
+      • la 1re rédaction d'une partie est comprise dans cette analyse, au plus une fois par partie
+        du plan (au plus le nombre de parties actives) ; au-delà — partie ajoutée puis retirée,
+        plan reconstruit — c'est une refonte : le plafond ne se contourne pas ;
+      • refaire une partie (refonte) : gratuit jusqu'au plafond par dossier, puis 1 analyse chacune
+        après accord exprès.
+    Le dossier est relu verrouillé et réservé par une mise à jour CONDITIONNELLE (rien n'a changé
+    depuis la lecture) AVANT de prendre les analyses : deux requêtes simultanées ne débitent jamais
+    deux fois la première analyse. Si une analyse est refusée (quota atteint), tout est rendu."""
+    from sqlalchemy import func, update
     from app.core.quota import consume_analysis, refund_analysis
-    releve = {"analyse": False, "sections": {}}
-    cap = regen_gratuites()
-    premiere = not dossier.analyse_debitee
-    # Première action de l'IA sur ce dossier : 1 analyse pour tout le dossier ; toutes les parties
-    # de cette action sont incluses (aucune n'est une « refonte »).
-    regen = [] if premiere else [s for s in sections if _deja_redigee_par_ia(db, s)]
-    free_left = max(0, cap - int(dossier.regenerations or 0))
-    payantes = max(0, len(regen) - free_left)
-    if payantes and not accepte_debit:
-        raise AtelierError(409, "debit_a_confirmer",
-                           f"Vous avez refait {cap} parties gratuitement : "
-                           + ("cette nouvelle rédaction compte pour 1 analyse de votre forfait."
-                              if payantes == 1 else
-                              f"ces nouvelles rédactions comptent pour {payantes} analyses de votre forfait.")
-                           + " Confirmez pour continuer.", cout=payantes)
+    D = DossierPresentation
+    for _essai in range(5):
+        d = (db.query(D).filter(D.id == dossier.id).populate_existing().with_for_update().first())
+        if d is None:
+            raise AtelierError(404, "dossier_introuvable", "Le dossier de présentation de ce marché n'existe plus.")
+        _verifier_premiere_en_cours(db, d, job_id)
+        cap = regen_gratuites()
+        premiere = not d.analyse_debitee
+        n_act = len(sections_actives(db, d))
+        incl0, regen0, pay0 = int(d.premieres_incluses or 0), int(d.regenerations or 0), int(d.regenerations_payantes or 0)
+        place = max(0, n_act - incl0)
+        incluses, regen = [], []
+        for s in sections:
+            if not _deja_redigee_par_ia(db, s) and place > 0:
+                incluses.append(s)
+                place -= 1
+            else:
+                regen.append(s)
+        free_left = max(0, cap - regen0)
+        payantes = max(0, len(regen) - free_left)
+        if payantes and not accepte_debit:
+            raise AtelierError(409, "debit_a_confirmer",
+                               f"Vous avez refait {cap} parties gratuitement : "
+                               + ("cette nouvelle rédaction compte pour 1 analyse de votre forfait."
+                                  if payantes == 1 else
+                                  f"ces nouvelles rédactions comptent pour {payantes} analyses de votre forfait.")
+                               + " Confirmez pour continuer.", cout=payantes)
+        gratuites = len(regen) - payantes
+        vals = {"premieres_incluses": incl0 + len(incluses), "regenerations": regen0 + gratuites,
+                "regenerations_payantes": pay0 + payantes}
+        if premiere:
+            vals.update(analyse_debitee=True, job_analyse_id=job_id)
+        res = db.execute(update(D).where(
+            D.id == d.id, func.coalesce(D.analyse_debitee, False) == bool(d.analyse_debitee),
+            func.coalesce(D.premieres_incluses, 0) == incl0, func.coalesce(D.regenerations, 0) == regen0,
+            func.coalesce(D.regenerations_payantes, 0) == pay0).values(**vals)
+            .execution_options(synchronize_session=False))
+        if res.rowcount == 1:
+            db.commit()
+            break
+        db.rollback()                       # une autre requête est passée entre-temps : on relit
+    else:
+        raise AtelierError(409, "reessayer", "Le dossier a été modifié au même moment : réessayez.")
     dues = (1 if premiere else 0) + payantes
     prises = 0
     try:
@@ -1197,25 +1426,33 @@ def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accep
         db.rollback()
         for _ in range(prises):
             refund_analysis(user, db)
+        undo = {"premieres_incluses": D.premieres_incluses - len(incluses),
+                "regenerations": D.regenerations - gratuites,
+                "regenerations_payantes": D.regenerations_payantes - payantes}
+        if premiere:
+            undo.update(analyse_debitee=False, job_analyse_id=None)
+        db.execute(update(D).where(D.id == d.id).values(**undo).execution_options(synchronize_session=False))
+        db.commit()
         raise
-    if premiere:
-        dossier.analyse_debitee = True
-        releve["analyse"] = True
+    releve = {"analyse": premiere, "sections": {}}
+    for s in incluses:
+        releve["sections"][str(s.id)] = "incluse"
     for i, s in enumerate(regen):
-        if i < free_left:
-            dossier.regenerations = int(dossier.regenerations or 0) + 1
-            releve["sections"][str(s.id)] = "gratuite"
-        else:
-            dossier.regenerations_payantes = int(dossier.regenerations_payantes or 0) + 1
-            releve["sections"][str(s.id)] = "payante"
-    for s in sections:
-        releve["sections"].setdefault(str(s.id), "incluse")
+        releve["sections"][str(s.id)] = "gratuite" if i < gratuites else "payante"
     return releve
+
+
+def _autre_texte_de_l_ia(db, dossier_id: int, job_id: int) -> bool:
+    return db.query(DossierSectionVersion.id).filter(
+        DossierSectionVersion.dossier_id == dossier_id, DossierSectionVersion.ia.is_(True),
+        DossierSectionVersion.job_id.isnot(None), DossierSectionVersion.job_id != job_id).first() is not None
 
 
 def rembourser(db, job: Job, section_ids_en_echec=None) -> None:
     """Rend ce qu'une action de l'IA a débité, quand elle n'a rien produit : tout (job en échec)
-    ou les seules parties en échec (échec partiel). Idempotent (le relevé est marqué rendu)."""
+    ou les seules parties en échec (échec partiel). Idempotent (le relevé est marqué rendu).
+    L'analyse du dossier n'est jamais rendue si une autre action a déjà produit un texte de l'IA
+    sur ce dossier (l'IA a servi : elle reste due)."""
     from app.core.quota import refund_analysis
     res = job.result if isinstance(job.result, dict) else {}
     releve = res.get("_debit") if isinstance(res.get("_debit"), dict) else None
@@ -1229,7 +1466,9 @@ def rembourser(db, job: Job, section_ids_en_echec=None) -> None:
     for sid, kind in (releve.get("sections") or {}).items():
         if not (tout or sid in ids) or sid in rendu:
             continue
-        if kind == "gratuite" and dossier is not None:
+        if kind == "incluse" and dossier is not None:
+            dossier.premieres_incluses = max(0, int(dossier.premieres_incluses or 0) - 1)
+        elif kind == "gratuite" and dossier is not None:
             dossier.regenerations = max(0, int(dossier.regenerations or 0) - 1)
         elif kind == "payante":
             if dossier is not None:
@@ -1238,10 +1477,15 @@ def rembourser(db, job: Job, section_ids_en_echec=None) -> None:
                 refund_analysis(user, db)
         rendu[sid] = kind
     if tout and releve.get("analyse") and not releve.get("analyse_rendue"):
-        if dossier is not None:
-            dossier.analyse_debitee = False
-        if user is not None:
-            refund_analysis(user, db)
+        if dossier is not None and _autre_texte_de_l_ia(db, dossier.id, job.id):
+            releve["analyse_conservee"] = True
+        else:
+            if dossier is not None:
+                dossier.analyse_debitee = False
+                if dossier.job_analyse_id == job.id:
+                    dossier.job_analyse_id = None
+            if user is not None:
+                refund_analysis(user, db)
         releve["analyse_rendue"] = True
     releve["rendus"] = rendu
     if tout:
@@ -1281,6 +1525,7 @@ def _partie_ia(dossier: DossierPresentation, section: DossierSection, numero: st
                chunks: list, dossier_acheteur: str, cible: Optional[int]) -> dict:
     return {"titre": section.intitule, "numero": numero, "question": section.question or "",
             "critere": section.critere or "", "poids": section.poids or "",
+            "poids_source": (section.poids_source or "") if section.poids else "",
             "partie_de_critere": bool(section.partie_de_critere), "source_plan": section.source_plan,
             "cible_mots": cible, "faits": ctx.faits_autorises(), "chunks": chunks,
             "dossier_acheteur": dossier_acheteur, "autres_parties": autres}
@@ -1290,7 +1535,7 @@ def lancer(db, user: User, project: Project, dossier: DossierPresentation, secti
            lecteur: Lecteur, member_ids: list, cible: Optional[int] = None, accepte_debit: bool = False) -> Job:
     """Lance « Rédiger avec Adjugo » (une ou plusieurs parties) ou « Raccourcir » (une partie) en
     tâche de fond. Débite selon la décision 6a, rembourse si l'IA tombe en panne."""
-    from app.services.jobs import create_job, run_in_thread
+    from app.services.jobs import run_in_thread
     if action not in (JOB_REDIGER, JOB_RACCOURCIR):
         raise AtelierError(422, "action_inconnue", "Action inconnue.")
     if not sections:
@@ -1320,17 +1565,28 @@ def lancer(db, user: User, project: Project, dossier: DossierPresentation, secti
             raise AtelierError(422, "deja_assez_court",
                                f"Le texte compte déjà {n} mots, pour {cible} visés : rien à raccourcir.")
         cibles[s.id] = cible
-    releve = _debiter(db, user, dossier, sections, accepte_debit)
     titre = sections[0].intitule if len(sections) == 1 else f"{len(sections)} parties"
     label = ("Dossier de présentation : rédaction de « " if action == JOB_REDIGER
              else "Dossier de présentation : raccourcir « ") + titre[:120] + " »"
-    job = create_job(db, user.id, action, label)
-    releve.update(dossier_id=dossier.id, rendu=False)
-    job.result = {"_debit": releve}
+    # La tâche et la réservation des parties dans LA MÊME transaction que le verrou des parties :
+    # une seconde requête sur la même partie voit la tâche (« rédaction en cours »).
+    job = Job(user_id=user.id, kind=action, status="pending", label=label[:255])
+    db.add(job)
+    db.flush()
     for s in sections:
         s.job_id = job.id
     db.commit()
     ids = [s.id for s in sections]
+    try:
+        releve = _debiter(db, user, dossier, sections, accepte_debit, job.id)
+    except Exception:
+        db.rollback()
+        _annuler_tache(db, job.id, ids)
+        raise
+    job = db.get(Job, job.id)
+    releve.update(dossier_id=dossier.id, rendu=False)
+    job.result = {"_debit": releve}
+    db.commit()
     jid, pid, owner, mids = job.id, project.id, dossier.owner_id, list(member_ids)
     uid = user.id
 
@@ -1343,6 +1599,19 @@ def lancer(db, user: User, project: Project, dossier: DossierPresentation, secti
 
     run_in_thread(jid, _work, on_error=_on_error, tenant_id=owner, error_message=MSG_IA_PANNE)
     return db.get(Job, jid)
+
+
+def _annuler_tache(db, job_id: int, section_ids: list) -> None:
+    """Débit refusé (accord à donner, quota atteint, première rédaction en cours) : la tâche n'a
+    jamais démarré, elle disparaît et ses parties sont libérées."""
+    try:
+        _liberer(db, section_ids, job_id)
+        j = db.get(Job, job_id)
+        if j is not None:
+            db.delete(j)
+        db.commit()
+    except Exception:       # noqa: BLE001 — au pire, la reprise au démarrage la clôt
+        db.rollback()
 
 
 def liberer_job(db, job_id: int) -> None:
@@ -1457,10 +1726,13 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
         rembourser(db, j, section_ids_en_echec=echecs)
         db.refresh(j)
     debit = (j.result or {}).get("_debit") if j is not None and isinstance(j.result, dict) else None
-    return {"sections": sortie, "echecs": len(echecs), "_debit": debit,
-            "message": ("" if not echecs else
-                        f"{len(echecs)} partie{'s' if len(echecs) > 1 else ''} n'a pas pu être rédigée "
-                        "(service d'IA indisponible) : rien n'a été débité pour elle, réessayez.")}
+    n = len(echecs)
+    return {"sections": sortie, "echecs": n, "_debit": debit,
+            "message": ("" if not n else
+                        "1 partie n'a pas pu être rédigée (service d'IA indisponible) : rien n'a été débité pour "
+                        "elle, réessayez." if n == 1 else
+                        f"{n} parties n'ont pas pu être rédigées (service d'IA indisponible) : rien n'a été "
+                        "débité pour elles, réessayez.")}
 
 
 def _cumuler_cout(dossier: Optional[DossierPresentation], summary: dict) -> None:
@@ -1532,18 +1804,17 @@ def exporter(db, user: User, project: Project, dossier: DossierPresentation, fmt
     if fmt not in MIMES:
         raise AtelierError(422, "format_invalide", "Format inconnu : docx ou pdf.")
     sections = sections_actives(db, dossier)
-    cour = _courantes(db, sections)
+    cour = versions_communes(db, sections, lecteur)          # jamais le brouillon d'un autre auteur
     ctx = contexte_rendu(db, project, dossier, sections, cour)
     cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
     rangs = _rangs(dossier, sections)
     lims = evaluer_limites(dossier, sections, rangs, cpt)
-    gate = blocage(dossier, sections, cour, rangs, lims)
+    gate = blocage(dossier, sections, cour, rangs, lims, attente=en_attente_d_un_partenaire(sections, lecteur, cour))
     if not gate["peut_exporter"]:
         raise AtelierError(409, "export_bloque",
                            "L'export est bloqué : " + " ".join(r["message"] for r in gate["raisons"]),
                            raisons=gate["raisons"], etat_hash=gate["etat_hash"],
-                           derogations_possibles=[{"code": k, "libelle": v} for k, v in RAISONS_DEROGATION.items()]
-                           if "dossier_vide" not in {r["code"] for r in gate["raisons"]} else [])
+                           derogations_possibles=derogations_possibles(gate))
     if etat and etat != gate["etat_hash"]:
         raise AtelierError(409, "etat_modifie", "Le dossier a changé depuis l'affichage : relisez-le avant d'exporter.",
                            etat_hash=gate["etat_hash"])
@@ -1585,10 +1856,11 @@ def _archiver(db, user: User, project: Project, dossier: DossierPresentation, no
         logger.warning("atelier : archivage de l'export impossible (projet %s) : %s", project.id, type(e).__name__)
 
 
-def _validees_de_preference(db, sections: list, cour: dict) -> tuple:
+def _validees_de_preference(db, sections: list, communes: dict, lecteur: Lecteur) -> tuple:
     """Texte retenu pour le dossier commun : la version VALIDÉE de chaque partie quand elle existe
-    (le dirigeant l'a approuvée), sinon le texte courant. Renvoie (versions retenues, parties
-    modifiées depuis leur validation)."""
+    (le dirigeant l'a approuvée), sinon le texte commun (versions_communes : le texte courant de SES
+    parties, rien pour la partie d'un partenaire qui n'a rien envoyé). Renvoie (versions retenues,
+    parties modifiées depuis leur validation)."""
     ids = [s.validated_version_id for s in sections if s.validated_version_id]
     by_id = {v.id: v for v in db.query(DossierSectionVersion).filter(DossierSectionVersion.id.in_(ids)).all()} \
         if ids else {}
@@ -1597,10 +1869,10 @@ def _validees_de_preference(db, sections: list, cour: dict) -> tuple:
         v = by_id.get(s.validated_version_id) if s.validated_version_id else None
         if v is not None and v.section_id == s.id:
             out[s.id] = v
-            if s.current_version_id and s.current_version_id != v.id:
+            if peut_voir_prive(s, lecteur) and s.current_version_id and s.current_version_id != v.id:
                 modifiees.append(s)
-        elif s.id in cour:
-            out[s.id] = cour[s.id]
+        elif s.id in communes:
+            out[s.id] = communes[s.id]
     return out, modifiees
 
 
@@ -1613,15 +1885,18 @@ def dossier_commun(db, project: Project, owner_id: int) -> dict:
     out = {"files": {}, "markdown": "", "etat": None, "warnings": []}
     dossier = get_dossier(db, project.id, owner_id)
     if dossier is None:
-        out["warnings"].append("BLOQUANT — Dossier de présentation non rédigé : préparez-le dans l'atelier (étape "
-                               "« Préparer » du marché), puis validez chaque partie.")
+        out["warnings"].append("BLOQUANT — Dossier de présentation non rédigé : préparez-le dans l'atelier (sur la "
+                               "page du marché, carte « Dossier de présentation »), puis validez chaque partie.")
         return out
+    lecteur = Lecteur.organisation(owner_id)
     sections = sections_actives(db, dossier)
-    cour, modifiees = _validees_de_preference(db, sections, _courantes(db, sections))
+    communes = versions_communes(db, sections, lecteur)
+    cour, modifiees = _validees_de_preference(db, sections, communes, lecteur)
     ctx = contexte_rendu(db, project, dossier, sections, cour)
     cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
     rangs = _rangs(dossier, sections)
-    gate = blocage(dossier, sections, cour, rangs, evaluer_limites(dossier, sections, rangs, cpt))
+    gate = blocage(dossier, sections, cour, rangs, evaluer_limites(dossier, sections, rangs, cpt),
+                   attente=en_attente_d_un_partenaire(sections, lecteur, cour))
     md = "\n\n".join(f"## {ax.titre_section(x)}\n\n{ax.texte_export(x['texte'])}".strip()
                       for x in ctx["sections"])
     out["markdown"] = md
@@ -1632,7 +1907,7 @@ def dossier_commun(db, project: Project, owner_id: int) -> dict:
                                + " ".join(r["message"] for r in gate["raisons"])
                                + " Traitez ces points dans l'atelier, ou enregistrez-y une dérogation.")
         return out
-    sans_validation = [s for s in sections if not s.validated_version_id]
+    sans_validation = [s for s in sections if not s.validated_version_id and s.author_kind == AUTEUR_ORG]
     if sans_validation:
         n = len(sans_validation)
         out["warnings"].append(f"BLOQUANT — {MSG_NON_VALIDE} : {n} partie{'s' if n > 1 else ''} à valider. "
@@ -1674,7 +1949,8 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
            "intitule": s.intitule, "titre": ax.titre_section({"numero": rang_affiche, "intitule": s.intitule}),
            "niveau": s.niveau, "parents": s.parents or [], "question": s.question or "",
            "source_plan": s.source_plan, "critere": s.critere or "", "critere_id": s.critere_id or "",
-           "poids": s.poids or "", "partie_de_critere": bool(s.partie_de_critere), "lot": s.lot or "",
+           "poids": s.poids or "", "poids_source": (s.poids_source or "") if s.poids else "",
+           "partie_de_critere": bool(s.partie_de_critere), "lot": s.lot or "",
            "limite": s.limite or [],
            "auteur": {"type": s.author_kind, "invite_id": s.author_invite_id,
                       "libelle": "Votre entreprise" if s.author_kind == AUTEUR_ORG else "Un partenaire du groupement"},
@@ -1701,29 +1977,49 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
     return out
 
 
+def savoir_faire(db, member_ids: list) -> dict:
+    """« Mon savoir-faire » de l'organisation : vide, Adjugo écrira surtout des « [À compléter] »."""
+    try:
+        from app.models import KnowledgeChunk
+        vide = db.query(KnowledgeChunk.id).filter(KnowledgeChunk.user_id.in_(list(member_ids))).first() is None
+    except Exception:       # noqa: BLE001
+        vide = False
+    return {"vide": vide, "message": ("Ajoutez d'anciens dossiers ou des fiches dans « Mon savoir-faire » : sans eux, "
+                                      "Adjugo écrira surtout des « [À compléter] ».") if vide else ""}
+
+
 def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, member_ids: list) -> dict:
     sections = sections_actives(db, dossier)
-    cour = _courantes(db, sections)
+    cour = versions_communes(db, sections, lecteur)          # jamais le brouillon d'un autre auteur
     ctx = contexte_rendu(db, project, dossier, sections, cour)
     cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
     rangs = _rangs(dossier, sections)
     lims = evaluer_limites(dossier, sections, rangs, cpt)
-    gate = blocage(dossier, sections, cour, rangs, lims)
+    gate = blocage(dossier, sections, cour, rangs, lims, attente=en_attente_d_un_partenaire(sections, lecteur, cour))
     by_sec = {x.get("id"): x for x in (cpt.get("sections") or [])}
     meta = dossier.plan_meta if isinstance(dossier.plan_meta, dict) else {}
     lu = dossier.dce_lu if isinstance(dossier.dce_lu, dict) else {}
-    a_change = bool(lu.get("cle")) and lu.get("cle") != cle_dossier_acheteur(db, project, member_ids)
+    # Le dossier du marché lu POUR LE PLAN (pas la lecture que le moteur rafraîchit à chaque rédaction).
+    cle_plan = meta.get("cle_dce") or lu.get("cle") or ""
+    cle_now = cle_dossier_acheteur(db, project, member_ids)
+    a_change = bool(cle_plan) and cle_plan != cle_now
+    retirees_rows = sections_retirees(db, dossier)
     retirees = [{"id": s.id, "intitule": s.intitule, "retiree_le": _iso(s.retiree_at),
                  "nb_versions": db.query(DossierSectionVersion.id).filter(
                      DossierSectionVersion.section_id == s.id).count()}
-                for s in sections_retirees(db, dossier) if peut_voir_prive(s, lecteur)]
+                for s in retirees_rows if peut_voir_prive(s, lecteur)]
     return {
         "projet": {"id": project.id, "nom": project.name},
         "dossier": {"id": dossier.id, "plan_source": dossier.plan_source, "version": dossier.version,
                     "cree_le": _iso(dossier.created_at), "maj_le": _iso(dossier.updated_at),
-                    "plan": {k: meta.get(k) for k in ("source", "message", "fichier_impose", "message_fichier",
-                                                      "cadre_non_decoupe", "criteres_hors_dossier", "limites",
-                                                      "base_demandee", "construit_le")},
+                    "plan": dict({k: meta.get(k) for k in ("source", "message", "fichier_impose", "message_fichier",
+                                                           "avertissement_fichier", "cadre_non_decoupe",
+                                                           "criteres_hors_dossier", "limites", "base_demandee",
+                                                           "construit_le")},
+                                 bases=ap.bases_disponibles(_analysis(project), (lu.get("cadre") or "")),
+                                 criteres_a_verifier=ap.criteres_a_verifier(_analysis(project)),
+                                 message_a_verifier=(ap.msg_a_verifier(ap.criteres_a_verifier(_analysis(project)))
+                                                     if dossier.plan_source != ap.CADRE else "")),
                     "dernier_export": dossier.dernier_export or None},
         "sections": [section_out(db, dossier, s, rangs.get(s.id, ""), lecteur, cour.get(s.id), by_sec.get(s.id))
                      for s in sections],
@@ -1732,14 +2028,18 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
                      "message": cpt.get("message")},
         "limites": lims,
         "blocage": gate,
-        "quota": quota_out(dossier),
+        "quota": quota_out(dossier, n_parties=len(sections)),
         "export": apercu_export(project, dossier, ctx),
-        "dossier_acheteur": {"source": lu.get("source") or "aucun", "nom_fichier": lu.get("nom_fichier") or "",
+        "dossier_acheteur": {"source": (lu.get("source") or "aucun") if cle_now != "aucun" else "aucun",
+                             "present": cle_now != "aucun", "nom_fichier": lu.get("nom_fichier") or "",
                              "pieces": [{k: p.get(k) for k in ("nom", "libelle", "lu_en_entier")}
                                         for p in (lu.get("pieces") or [])],
-                             "a_change": a_change, "message": MSG_DCE_CHANGE if a_change else ""},
+                             "a_change": a_change, "message": MSG_DCE_CHANGE if a_change else "",
+                             "message_absent": MSG_DCE_ABSENT if cle_now == "aucun" else ""},
+        "grille": changements_grille(project, dossier, sections, retirees_rows),
+        "savoir_faire": savoir_faire(db, member_ids),
         "statuts": STATUTS,
-        "derogations_possibles": [{"code": k, "libelle": v} for k, v in RAISONS_DEROGATION.items()],
+        "derogations_possibles": derogations_possibles(gate),
     }
 
 

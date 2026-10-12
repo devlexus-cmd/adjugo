@@ -220,8 +220,12 @@ def test_creation_proposition_sans_rien_enregistrer_puis_dossier_unique(client, 
     assert all(s["statut"] == "a_ecrire" for s in st["sections"])
     assert st["dossier_acheteur"]["source"] == "fichier"
     assert st["export"]["fichier_impose"] is True and st["export"]["plan_du_cadre"] is True
-    assert any(a["code"] == "fichier_impose" and "reprend l'ordre, les numéros et les intitulés" in a["message"]
-               for a in st["blocage"]["avertissements"])
+    av = next(a for a in st["blocage"]["avertissements"] if a["code"] == "fichier_impose")
+    # Une seule consigne, qui désigne le bon fichier (décision 11) : jamais « recopiez-y » vers le Word d'Adjugo.
+    assert av["message"] == ("Ce marché impose son propre fichier de réponse. Le fichier Word d'Adjugo suit l'ordre, "
+                             "les numéros et les intitulés de ce cadre : recopiez-en le texte dans le fichier de "
+                             "l'acheteur.")
+    assert st["dossier"]["plan"]["avertissement_fichier"] == av["message"]
     r = client.post(f"/api/atelier/{pid}", headers=h, json={})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "dossier_existe"
 
@@ -659,10 +663,15 @@ def test_export_bloque_puis_derogation_au_journal_et_export(client, auth, fake_l
     assert r.status_code == 409
     d = r.json()["detail"]
     assert d["code"] == "export_bloque" and [x["code"] for x in d["raisons"]] == ["parties_vides"]
-    assert {x["code"] for x in d["derogations_possibles"]} == set(at.RAISONS_DEROGATION)
+    # Seules les raisons qui répondent à ce qui bloque sont proposées.
+    assert [x["code"] for x in d["derogations_possibles"]] == ["redigerai_dans_word", "depot_en_l_etat", "autre"]
     st = _valider_tout(client, h, pid, "Nous intervenons par zones. [À compléter : planning détaillé]")
     gate = st["blocage"]
     assert gate["bloque"] and [x["code"] for x in gate["raisons"]] == ["a_completer"] and gate["raisons"][0]["nombre"] == 4
+    assert [x["code"] for x in st["derogations_possibles"]] == ["completerai_dans_word", "depot_en_l_etat", "autre"]
+    r = client.post(f"/api/atelier/{pid}/derogation", headers=h,
+                    json={"raison": "relu_moi_meme", "texte": "Planning", "etat_hash": gate["etat_hash"]})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "raison_invalide"     # aucun fait à relire ici
     r = client.post(f"/api/atelier/{pid}/derogation", headers=h,
                     json={"raison": "completerai_dans_word", "texte": "Planning", "etat_hash": "faux"})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "etat_modifie"
@@ -941,7 +950,13 @@ def test_migration_sqlite_monte_descend_remonte(tmp_path):
     assert {"dossiers_presentation", "dossier_sections", "dossier_section_versions"} <= set(insp.get_table_names())
     assert {"dce_importe_le", "dce_fichier_impose"} <= {c["name"] for c in insp.get_columns("projects")}
     assert {"options_export", "cout_ia"} <= {c["name"] for c in insp.get_columns("dossiers_presentation")}
-    alembic("downgrade", "-1")
+    assert {"premieres_incluses", "job_analyse_id"} <= {c["name"] for c in insp.get_columns("dossiers_presentation")}
+    assert "poids_source" in {c["name"] for c in insp.get_columns("dossier_sections")}
+    alembic("downgrade", "-1")                       # quota par dossier, provenance du poids
+    insp = sa.inspect(sa.create_engine(f"sqlite:///{db}"))
+    assert "premieres_incluses" not in {c["name"] for c in insp.get_columns("dossiers_presentation")}
+    assert "poids_source" not in {c["name"] for c in insp.get_columns("dossier_sections")}
+    alembic("downgrade", "-1")                       # l'atelier lui-même
     insp = sa.inspect(sa.create_engine(f"sqlite:///{db}"))
     assert "dossiers_presentation" not in insp.get_table_names()
     assert "dce_importe_le" not in {c["name"] for c in insp.get_columns("projects")}
@@ -949,6 +964,7 @@ def test_migration_sqlite_monte_descend_remonte(tmp_path):
     alembic("upgrade", "head")                       # rejeu idempotent
     insp = sa.inspect(sa.create_engine(f"sqlite:///{db}"))
     assert "dossier_section_versions" in insp.get_table_names()
+    assert "poids_source" in {c["name"] for c in insp.get_columns("dossier_sections")}
 
 
 # ═══ Compléments : sources citées, tâches génériques, portabilité ══════════════════════

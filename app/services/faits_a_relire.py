@@ -14,9 +14,19 @@ profil, équipe, chiffrage, ou texte écrit par l'utilisateur lui-même), avec l
 « Adjugo ne trouve pas d'où vient ce fait : relisez-le. »
 
 Qui parle de quoi (étude §6.5, appliqué dès A0) : une phrase parle de l'entreprise si elle
-contient « nous », « notre », « nos » ou le nom de l'entreprise ; sinon, elle parle du marché si
-elle commence par « le CCTP », « le maître d'ouvrage », « le site »… ; sinon (section sur les
-moyens, les références ou la qualité, ou simple doute) : phrase sur l'entreprise.
+contient « nous », « notre », « nos » ou le nom de l'entreprise. Sinon, elle parle du marché
+SEULEMENT si elle rapporte ce que demande une pièce du dossier ou l'acheteur (« Le CCTP prévoit… »,
+« Selon le règlement, … », « Le maître d'ouvrage impose… » : un sujet qui désigne une pièce ou
+l'acheteur ET un verbe d'exigence). Dans une partie sur les moyens, les références ou la qualité,
+c'est la seule exception. Ailleurs, une phrase qui décrit le lieu ou l'opération (« Le site
+comprend… », « La commune souhaite… ») parle aussi du marché ; mais « Le marché sera exécuté par
+15 compagnons » ou « Le site sera sécurisé par 4 agents » parlent de l'entreprise. Dans le doute :
+phrase sur l'entreprise (le côté le plus strict).
+
+Tableaux : une ligne est contrôlée en entier (ses cases ne sont pas jetées) ; un nombre seul dans
+une case prend pour unité le libellé de la ligne (« Compagnons couvreurs | 15 » : 15 compagnons).
+Noms propres : en tête de phrase ou de case, deux mots à majuscule au moins (« Paul Durand »,
+« Vinci Construction ») ; « M. », « Mme », « Dr »… ne coupent pas la phrase.
 
 RIEN n'est jamais marqué comme bon (aucun libellé positif avant la vague 3) : ce module ne rend
 QUE des faits à relire. Une invention sans chiffre, nom ni certification passe : on le dit.
@@ -37,8 +47,11 @@ CERTIFICATION = "certification"
 NOM_PROPRE = "nom_propre"
 MATERIEL = "materiel"
 
-MAX_FAITS = 60
+RESTE = "reste"            # faits au-delà de MAX_FAITS : comptés (et bloquants), pas détaillés
+MAX_FAITS = 2000           # garde-fou de stockage : au-delà, un seul élément « reste » les compte
 PHRASE_MAX = 300
+MSG_RESTE = ("Et {n} autres faits à relire, non détaillés : découpez ou raccourcissez cette partie pour les "
+             "voir.")
 
 
 def fold(s) -> str:
@@ -55,32 +68,51 @@ _CITE = re.compile(r"\[\s*S\s*\d[^\]]{0,40}\]")
 _MD = re.compile(r"\*\*|__|`|(?<!\w)\*(?!\s)|(?<!\s)\*(?!\w)")
 
 
+# Titre de civilité ou initiale (« M. », « Mme », « Dr. », « J. ») : jamais une fin de phrase.
+_ABREV = re.compile(r"(?:^|[\s(«\"'])(?:M|MM|Mme|Mmes|Mlle|Mlles|Me|Mes|Dr|Pr|Mgr|St|Ste|[A-ZÀ-Ý])\.$")
+CASE = " ; "               # séparateur des cases d'une ligne de tableau (ligne contrôlée en entier)
+
+
+def _couper(line: str) -> list:
+    """Phrases d'une ligne : coupe après « . ! ? ; », jamais après un titre ou une initiale."""
+    out = []
+    for piece in re.split(r"(?<=[.!?;])\s+(?=\S)", line):
+        if out and _ABREV.search(out[-1]):
+            out[-1] = out[-1] + " " + piece
+        else:
+            out.append(piece)
+    return out
+
+
 def phrases(texte: str) -> list:
-    """[(phrase, est_titre)] dans l'ordre du texte. Les passages « [À compléter …] » et les renvois
-    « [S1] » sont retirés (ce ne sont pas des faits)."""
+    """[(phrase, est_titre, est_ligne_de_tableau)] dans l'ordre du texte. Les passages « [À compléter …] »
+    et les renvois « [S1] » sont retirés (ce ne sont pas des faits). Une ligne de tableau est UNE
+    phrase (ses cases jointes par « ; ») : un nombre seul dans une case n'est jamais perdu."""
     out = []
     for raw in str(texte or "").replace("\r", "\n").split("\n"):
         line = raw.strip()
-        if not line or re.match(r"^\|?\s*:?-{2,}", line):
+        if not line or re.match(r"^\|?\s*:?-{2,}[-:|\s]*$", line):
             continue
         titre = bool(re.match(r"^#{1,6}\s", line))
         line = re.sub(r"^#{1,6}\s+", "", line)
         line = re.sub(r"^\s*(?:[-*+•]|\d{1,2}[.)])\s+", "", line)
-        if line.startswith("|"):
-            line = " ; ".join(c.strip() for c in line.strip("|").split("|") if c.strip())
+        tableau = line.startswith("|") and line.count("|") >= 2
+        if tableau:
+            cells = [_MD.sub("", _CITE.sub("", _TODO.sub(" ", c))).strip() for c in line.strip("|").split("|")]
+            line = CASE.join(c for c in cells if c)
         line = _TODO.sub(" ", line)
         line = _CITE.sub("", line)
         line = _MD.sub("", line)
-        line = re.sub(r"\s+", " ", line).strip()
+        line = re.sub(r"[ \t]+", " ", line).strip()
         if not line:
             continue
-        if titre:
-            out.append((line, True))
+        if titre or tableau:
+            out.append((line, titre, tableau))
             continue
-        for ph in re.split(r"(?<=[.!?;])\s+(?=\S)", line):
+        for ph in _couper(line):
             ph = ph.strip()
-            if len(ph) >= 3:
-                out.append((ph, False))
+            if len(ph) >= 3 or re.search(r"\d", ph):
+                out.append((ph, False, False))
     return out
 
 
@@ -88,11 +120,27 @@ def phrases(texte: str) -> list:
 
 _ENTREPRISE = re.compile(r"\b(?:nous|notre|nos|l'entreprise|la societe|notre societe|le candidat|"
                          r"notre groupement|le groupement|nos equipes|notre equipe)\b")
-_MARCHE = re.compile(r"^(?:le |la |les |l'|selon le |selon la |conformement au |conformement a la )?"
-                     r"(?:cctp|ccap|rc\b|reglement|dossier de (?:la )?consultation|dce\b|maitre d'ouvrage|"
-                     r"maitre d'oeuvre|maitrise d'ouvrage|maitrise d'oeuvre|acheteur|pouvoir adjudicateur|"
-                     r"commune|ville\b|mairie|collectivite|departement|region|site\b|batiment existant|"
-                     r"marche\b|cahier des charges|programme\b|consultation)")
+# Une pièce du dossier ou l'acheteur, en sujet (« Le CCTP… », « Le maître d'ouvrage… »).
+_PIECE = (r"(?:cctp|ccap|ccag|rc\b|reglement(?: de (?:la )?consultation)?|dossier de (?:la )?consultation|dce\b|"
+          r"cahier des (?:charges|clauses (?:techniques|administratives) particulieres)|programme fonctionnel|"
+          r"maitre d'ouvrage|maitre d'oeuvre|maitrise d'ouvrage|maitrise d'oeuvre|acheteur|pouvoir adjudicateur)")
+_DET = r"(?:le |la |les |l'|ce |cette )?"
+# … et un verbe d'exigence (ce que la pièce ou l'acheteur demande) peu après le sujet.
+_EXIGE = re.compile(r"\b(?:prevoi\w*|prevu\w*|impos\w*|exig\w*|demand\w*|prescri\w*|fix(?:e|ent|es|ee|ees)|"
+                    r"precise\w*|indiqu\w*|requier\w*|requis\w*|stipul\w*|mentionn\w*|attend\w*|souhait\w*|"
+                    r"defini\w*|decri\w*|limite\w*|interdi\w*|autorise\w*)\b")
+_MARCHE_PIECE = re.compile(r"^" + _DET + _PIECE + r"(?P<suite>.{0,90})")
+_MARCHE_SELON = re.compile(r"^(?:selon|d'apres|comme (?:le |la |l')?(?:prevoit|precise|indique|exige))\s+"
+                           + _DET + _PIECE + r"\b")
+# Hors des parties sur l'entreprise : le lieu ou l'opération, décrits (jamais « exécuté par… »).
+_LIEU = (r"(?:site|batiments? existants?|batiment|commune|ville|mairie|collectivite|departement|region|"
+         r"marche|operation|programme|consultation|terrain|parcelle|etablissement|ecole|groupe scolaire|projet)")
+_DECRIT = re.compile(r"\b(?:comprend|comprennent|compte|comptent|comporte|comportent|se (?:situe|trouve)\w*|"
+                     r"(?:est|sont) (?:situe|implante|constitue|compose)\w*|porte sur|portent sur|concerne\w*|"
+                     r"consiste\w*|accueille\w*|s'etend\w*|date\w* de|represente\w*|totalise\w*|mesure\w*|"
+                     r"vise\w*|a pour objet|ont pour objet|souhaite\w*|prevoi\w*|impose\w*|exige\w*|"
+                     r"demande\w*)\b")
+_MARCHE_LIEU = re.compile(r"^" + _DET + _LIEU + r"\b(?P<suite>.{0,70})")
 _SECTION_ENTREPRISE = re.compile(r"moyens?\b|humain|materiel|equipe|effectif|encadrement|personnel|reference|"
                                  r"experience|qualite|certification|qualification|securite|environnement|\brse\b|"
                                  r"presentation de l'entreprise|presentation du groupement|savoir[- ]faire|"
@@ -103,6 +151,20 @@ def section_sur_l_entreprise(*libelles) -> bool:
     return any(_SECTION_ENTREPRISE.search(fold(x)) for x in libelles if x)
 
 
+def _rapporte_une_exigence(low: str) -> bool:
+    """« Le CCTP prévoit… », « Le maître d'ouvrage impose… », « Selon le règlement, … »."""
+    if _MARCHE_SELON.match(low):
+        return True
+    m = _MARCHE_PIECE.match(low)
+    return bool(m and _EXIGE.search(m.group("suite")))
+
+
+def _decrit_le_lieu(low: str) -> bool:
+    """« Le site comprend… », « La commune souhaite… » ; jamais « Le marché sera exécuté par… »."""
+    m = _MARCHE_LIEU.match(low)
+    return bool(m and _DECRIT.search(m.group("suite")) and not re.search(r"\bpar\s+(?:\d|[a-z]+ \d)", low))
+
+
 def parle_entreprise(phrase: str, noms_entreprise=(), section_entreprise: bool = False) -> bool:
     low = fold(phrase)
     if _ENTREPRISE.search(low):
@@ -111,19 +173,23 @@ def parle_entreprise(phrase: str, noms_entreprise=(), section_entreprise: bool =
         fn = fold(n)
         if len(fn) >= 3 and re.search(r"(?<!\w)" + re.escape(fn) + r"(?!\w)", low):
             return True
-    # « Le CCTP prévoit… », « Le maître d'ouvrage impose… » (sans « nous » ni le nom de
+    # Ce que demande une pièce du dossier ou l'acheteur (sans « nous » ni le nom de
     # l'entreprise) : une phrase sur le marché, même dans une partie sur les moyens.
-    if _MARCHE.match(low):
+    if _rapporte_une_exigence(low):
         return False
     if section_entreprise:
-        return True
+        return True        # partie sur les moyens, les références, la qualité : l'entreprise
+    if _decrit_le_lieu(low):
+        return False
     return True            # doute : le côté le plus strict
 
 
 # ── Repérage des faits ────────────────────────────────────────────────────────────────
 
 _UNIT_WORDS = (r"%|pour ?cent|€|k€|m€|eur\b|euros?\b|ht\b|ttc\b|m2|m²|m3|m³|ml\b|km\b|kg\b|tonnes?\b|t\b|"
-               r"h\b|heures?\b|jours?\b|j\b|semaines?\b|mois\b|ans?\b|annees?\b|[a-z][a-z'\-]{2,}")
+               r"h\b|heures?\b|jours?\b|j\b|semaines?\b|mois\b|ans?\b|annees?\b|"
+               # un mot (accents compris : « 3 équipes », « 2 bâtiments » ont bien une unité)
+               r"[a-zà-öø-ÿœ][a-zà-öø-ÿœ'\-]{2,}")
 _NUMBER = re.compile(r"(?<![\w.,])(\d{1,3}(?:[   .]\d{3})+|\d+)(?:[.,](\d+))?(?![\w])"
                      r"(?:\s?(" + _UNIT_WORDS + r"))?", re.IGNORECASE)
 _WORDS = {"zero": 0, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7, "huit": 8,
@@ -214,10 +280,43 @@ def _unit_key(u: str) -> str:
     return re.sub(r"s$", "", u)[:5]
 
 
-def _facts_in(phrase: str) -> list:
-    """[(fait tel qu'écrit, type, clé de rapprochement)] d'une phrase."""
+# Mots qui ouvrent une phrase sans être un nom propre (« Le », « Nous », « Pour »…).
+_OUVERTURE = {
+    "le", "la", "les", "l", "un", "une", "des", "du", "de", "ce", "cet", "cette", "ces", "nous", "notre", "nos",
+    "votre", "vos", "leur", "leurs", "son", "sa", "ses", "mon", "ma", "mes", "il", "elle", "ils", "elles", "on",
+    "pour", "dans", "en", "au", "aux", "a", "chaque", "tout", "tous", "toute", "toutes", "afin", "sur", "sous",
+    "par", "avec", "selon", "depuis", "apres", "avant", "pendant", "lors", "puis", "ensuite", "enfin", "ainsi",
+    "grace", "et", "ou", "mais", "donc", "si", "quand", "comme", "chez", "entre", "vers", "outre", "aussi",
+}
+_TITRE_CIVIL = re.compile(r"(?:^|[\s(«\"'])(?:M|MM|Mme|Mmes|Mlle|Me|Dr|Pr|Mgr|[A-ZÀ-Ý])\.\s$")
+
+
+def _debuts(phrase: str) -> set:
+    """Positions où commence une proposition : début de la phrase, de chaque case d'un tableau,
+    après « : » ou une ponctuation forte (jamais après « M. », « Dr. » ou une initiale)."""
+    out = {len(phrase) - len(phrase.lstrip(" «\"'(“-•"))}
+    for m in re.finditer(r"[:.!?;]\s+[«\"'(“]?", phrase):
+        if m.group(0).startswith(".") and _TITRE_CIVIL.search(phrase[:m.start() + 1] + " "):
+            continue
+        out.add(m.end())
+    return out
+
+
+def _unite_de_ligne(phrase: str) -> str:
+    """Ligne de tableau : le libellé (première case sans chiffre) sert d'unité aux nombres seuls."""
+    for c in phrase.split(CASE):
+        if c.strip() and not re.search(r"\d", c):
+            w = re.findall(r"[a-z][a-z'\-]{2,}", fold(c))
+            if w:
+                return w[0]
+    return ""
+
+
+def _facts_in(phrase: str, tableau: bool = False) -> list:
+    """[(fait tel qu'écrit, type, clé de rapprochement)] d'une phrase (ou d'une ligne de tableau)."""
     out, taken = [], []
     low = _fold_same(phrase)
+    unite_ligne = _unite_de_ligne(phrase) if tableau else ""
 
     def _free(a, b):
         return all(b <= x or a >= y for x, y in taken)
@@ -244,6 +343,8 @@ def _facts_in(phrase: str) -> list:
         if unit and fold(unit) in _PAS_UNITE:
             unit = ""
             b = m.end(2) if m.group(2) else m.end(1)
+        if not unit and unite_ligne:
+            unit = unite_ligne           # « Compagnons couvreurs ; 15 » : 15 compagnons
         taken.append((a, b))
         out.append((phrase[a:b].strip(), CHIFFRE, (val, _unit_key(unit))))
     for m in _WORD_RE.finditer(low):
@@ -251,7 +352,9 @@ def _facts_in(phrase: str) -> list:
             continue
         taken.append((m.start(), m.end()))
         after = low[m.end():m.end() + 25].split()
-        unit = after[0] if after and after[0] not in ("de", "des", "d'", "et", "a") else ""
+        unit = after[0] if after and after[0] not in ("de", "des", "d'", "et", "a", ";", ":") else ""
+        if not unit and unite_ligne:
+            unit = unite_ligne
         out.append((phrase[m.start():m.end()], EN_LETTRES,
                     (_word_value(m.group(1)), _unit_key(unit))))
     for m in _MATERIEL.finditer(low):
@@ -259,18 +362,28 @@ def _facts_in(phrase: str) -> list:
             taken.append((m.start(), m.end()))
             stem = re.sub(r"s\b", "", m.group(0))[:12]
             out.append((phrase[m.start():m.end()], MATERIEL, stem))
-    # Noms propres : majuscule hors début de phrase, sigles hors liste du dossier.
-    start = len(phrase) - len(phrase.lstrip(" «\"'(“-•"))
+    # Noms propres : un mot à majuscule (hors sigles du dossier) au fil de la phrase ; en tête de
+    # phrase, de case ou après « : », au moins deux mots à majuscule (« Paul Durand », « Vinci
+    # Construction », « Mairie de Lorient ») après les mots d'ouverture (« Le », « Nous »…).
+    debuts = _debuts(phrase)
     for m in _PROPRE.finditer(phrase):
         a, b = m.span()
-        if a <= start or not _free(a, b):
+        if not _free(a, b):
             continue
         tok = m.group(1).strip()
+        if a in debuts:
+            mots = tok.split(" ")
+            while mots and fold(mots[0]).strip("'’") in _OUVERTURE:
+                mots = mots[1:]
+            while mots and fold(mots[0]) in ("de", "du", "des", "d'", "la", "le"):
+                mots = mots[1:]
+            majuscules = [w for w in mots if w[:1].isupper() and fold(w) not in _OUVERTURE]
+            if len(majuscules) < 2:
+                continue
+            tok = " ".join(mots)
+            a = b - len(tok)
         words = [w for w in re.split(r"[ \-]", fold(tok)) if w]
         if not words or all(w in _PROPRE_IGNORES or len(w) < 2 for w in words):
-            continue
-        prev = phrase[max(0, a - 2):a]
-        if re.search(r"[:.!?]\s?$", prev):          # début de proposition après « : »
             continue
         taken.append((a, b))
         out.append((tok, NOM_PROPRE, fold(tok)))
@@ -322,19 +435,68 @@ def _fid(kind: str, fait: str, phrase: str) -> str:
     return hashlib.sha1(f"{kind}|{fold(fait)}|{fold(phrase)}".encode("utf-8")).hexdigest()[:12]
 
 
-def _key(kind: str, fait: str) -> str:
-    return f"{kind}|{fold(fait)}"
+_NUMERIQUES = (CHIFFRE, EN_LETTRES)
+
+
+def _valeur(fait: str):
+    m = _NUMBER.search(str(fait or ""))
+    if m:
+        v = _num_value(m.group(1), m.group(2))
+        return v if v == v else None
+    m = _WORD_RE.search(fold(fait))
+    return _word_value(m.group(1)) if m else None
+
+
+def cle_souple(kind: str, fait: str) -> tuple:
+    """Le MÊME fait quelle que soit son écriture : valeur d'un nombre (en chiffres ou en lettres,
+    quel que soit le mot qui le suit : « quinze compagnons » = « 15 couvreurs »), sigle compact
+    d'une certification (« ISO 14001 » = « ISO14001 »), matériel au singulier, nom replié."""
+    f = fold(fait)
+    if kind in _NUMERIQUES:
+        v = _valeur(fait)
+        return ("n", round(v, 6)) if v is not None else (kind, f)
+    if kind == CERTIFICATION:
+        return ("c", re.sub(r"[\s\-:'.]", "", f))
+    if kind == MATERIEL:
+        return ("m", re.sub(r"s\b", "", f)[:12])
+    return (kind, f)
+
+
+def cle_stricte(x: dict) -> tuple:
+    """Le même fait AVEC son unité (« 15 compagnons » ≠ « 15 nacelles ») : sert à reprendre le
+    statut « relu par vous », jamais à décider qu'un fait n'est plus à relire."""
+    kind, fait = x.get("type", ""), x.get("fait", "")
+    if kind in _NUMERIQUES:
+        for f2, k2, key in _facts_in(x.get("phrase") or "", tableau=CASE in (x.get("phrase") or "")):
+            if k2 in _NUMERIQUES and fold(f2) == fold(fait):
+                return ("n", round(key[0], 6), key[1])
+        v = _valeur(fait)
+        return ("n", round(v, 6) if v is not None else fold(fait), "")
+    return cle_souple(kind, fait)
+
+
+def _meme_fait(cle_nouveau: tuple, cles_anciennes: set, unite_nouveau: str, avec_unite: bool,
+               unites_anciennes: dict) -> bool:
+    if cle_nouveau not in cles_anciennes:
+        return False
+    if not avec_unite or cle_nouveau[0] != "n":
+        return True
+    # Écrit par l'utilisateur : même valeur ET unité compatible (« quinze compagnons » →
+    # « 15 compagnons » reste à relire ; « 12 salariés » n'est pas « 12 mois »).
+    olds = unites_anciennes.get(cle_nouveau, set())
+    return not unite_nouveau or "" in olds or unite_nouveau in olds
 
 
 def a_relire(texte: str, sources_entreprise, *, noms_entreprise=(), section_entreprise: bool = False) -> list:
-    """Faits « à relire » d'un texte : [{id, fait, type, phrase, message, statut}]. Les sources sont
-    celles de l'ENTREPRISE (textes). Le dossier de l'acheteur ne doit JAMAIS y figurer."""
+    """Faits « à relire » d'un texte : [{id, fait, type, phrase, message, statut}], TOUS (au-delà
+    de MAX_FAITS, un dernier élément « reste » les compte : l'export reste bloqué). Les sources
+    sont celles de l'ENTREPRISE (textes). Le dossier de l'acheteur ne doit JAMAIS y figurer."""
     src = sources_entreprise if isinstance(sources_entreprise, Sources) else Sources(sources_entreprise)
     out, seen = [], set()
-    for ph, titre in phrases(texte):
+    for ph, titre, tableau in phrases(texte):
         if titre or not parle_entreprise(ph, noms_entreprise, section_entreprise):
             continue
-        for fait, kind, key in _facts_in(ph):
+        for fait, kind, key in _facts_in(ph, tableau=tableau):
             if src.has(kind, key):
                 continue
             fid = _fid(kind, fait, ph)
@@ -343,41 +505,70 @@ def a_relire(texte: str, sources_entreprise, *, noms_entreprise=(), section_entr
             seen.add(fid)
             out.append({"id": fid, "fait": fait[:120], "type": kind, "phrase": ph[:PHRASE_MAX],
                         "message": MESSAGE, "statut": A_RELIRE})
-            if len(out) >= MAX_FAITS:
-                return out
     return out
+
+
+def _plafonner(items: list) -> list:
+    """Garde-fou de stockage : au-delà de MAX_FAITS, les faits non détaillés sont COMPTÉS dans un
+    élément « reste » (toujours à relire, jamais « relu » : il bloque l'export comme les autres)."""
+    if len(items) <= MAX_FAITS:
+        return items
+    n = len(items) - MAX_FAITS
+    return items[:MAX_FAITS] + [{"id": RESTE, "fait": "", "type": RESTE, "phrase": "", "nombre": n,
+                                 "message": MSG_RESTE.format(n=n), "statut": A_RELIRE}]
 
 
 def controle(texte: str, sources_entreprise, *, declares=(), anciens=(), reprise: str = "phrase",
              noms_entreprise=(), section_entreprise: bool = False) -> list:
     """Faits à relire d'une NOUVELLE version.
-    • declares : textes écrits par l'utilisateur (ses déclarations) — un fait qui y figure ne vient
-      pas de l'IA : il n'est pas signalé… sauf s'il était déjà « à relire » dans `anciens` ;
+    • declares : textes qui ne viennent pas de l'IA (ce que l'utilisateur a écrit, ou le texte de
+      départ de « Raccourcir ») — un fait qui y figure n'est pas signalé… sauf s'il était déjà
+      « à relire » ou relu dans `anciens` : il le reste, même réécrit (« quinze » → « 15 »,
+      « ISO 14001 » → « ISO14001 ») ;
     • anciens : faits de la version de départ ; un fait encore présent garde son traitement
-      (reprise='phrase' : même fait dans la même phrase ; reprise='fait' : même fait).
-    """
+      « relu par vous » (reprise='phrase' : même fait dans la même phrase ; reprise='fait' : même
+      fait avec la même unité, où qu'il soit — « Raccourcir » réécrit les phrases).
+    Rapprochement d'un ancien fait : reprise='fait' (l'IA a réécrit) → même valeur quel que soit
+    le mot qui suit ; sinon (l'utilisateur a écrit) → même valeur et unité compatible."""
     src_all = Sources(list(sources_entreprise or []) + list(declares or []))
     items = a_relire(texte, src_all, noms_entreprise=noms_entreprise, section_entreprise=section_entreprise)
-    anciens = [x for x in (anciens or []) if isinstance(x, dict)]
+    anciens = [x for x in (anciens or []) if isinstance(x, dict) and x.get("type") != RESTE]
     if anciens:
-        old_keys = {_key(x.get("type", ""), x.get("fait", "")) for x in anciens}
+        cles = set()
+        unites = {}
+        for x in anciens:
+            c = cle_souple(x.get("type", ""), x.get("fait", ""))
+            cles.add(c)
+            st = cle_stricte(x)
+            unites.setdefault(c, set()).add(st[2] if len(st) == 3 else "")
         strict = a_relire(texte, Sources(sources_entreprise), noms_entreprise=noms_entreprise,
                           section_entreprise=section_entreprise)
         ids = {x["id"] for x in items}
         for x in strict:
-            if x["id"] not in ids and _key(x["type"], x["fait"]) in old_keys:
+            if x["id"] in ids:
+                continue
+            st = cle_stricte(x)
+            if _meme_fait(cle_souple(x["type"], x["fait"]), cles, st[2] if len(st) == 3 else "",
+                          reprise != "fait", unites):
                 items.append(x)
                 ids.add(x["id"])
         by_id = {x.get("id"): x for x in anciens}
-        by_key = {}
+        by_cle = {}
         for x in anciens:
-            by_key.setdefault(_key(x.get("type", ""), x.get("fait", "")), x)
+            if x.get("statut") == RELU:
+                by_cle.setdefault(cle_stricte(x), x)
         for x in items:
-            old = by_id.get(x["id"]) or (by_key.get(_key(x["type"], x["fait"])) if reprise == "fait" else None)
+            old = by_id.get(x["id"]) or (by_cle.get(cle_stricte(x)) if reprise == "fait" else None)
             if old and old.get("statut") == RELU:
                 x.update(statut=RELU, relu_par=old.get("relu_par"), relu_le=old.get("relu_le"))
-    return items[:MAX_FAITS]
+    return _plafonner(items)
 
 
 def non_traites(faits) -> int:
-    return sum(1 for x in (faits or []) if isinstance(x, dict) and x.get("statut") != RELU)
+    """Faits à relire non traités (un élément « reste » compte pour tous les faits qu'il résume)."""
+    n = 0
+    for x in faits or []:
+        if not isinstance(x, dict) or x.get("statut") == RELU:
+            continue
+        n += max(1, int(x.get("nombre") or 1)) if x.get("type") == RESTE else 1
+    return n

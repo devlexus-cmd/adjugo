@@ -167,9 +167,11 @@ def _styles(pol: dict):
 
 
 def _inline(s: str, pol: dict) -> str:
-    from app.services.md_pdf import _inline as md_inline
-    return md_inline(_s(s)).replace("<b>", f"<font name='{pol['pdf_bold']}'>").replace("</b>", "</font>") \
-        .replace("<i>", f"<font name='{pol['pdf_italic']}'>").replace("</i>", "</font>")
+    """Gras, italique et passages « [À compléter …] » surlignés (comme dans le fichier Word : un
+    export avec dérogation les montre, pour qu'on les complète avant de déposer)."""
+    from app.services.md_pdf import _inline as md_inline, _mark_todo
+    return _mark_todo(md_inline(_s(s))).replace("<b>", f"<font name='{pol['pdf_bold']}'>") \
+        .replace("</b>", "</font>").replace("<i>", f"<font name='{pol['pdf_italic']}'>").replace("</i>", "</font>")
 
 
 def _section_flowables(md: str, level: int, st: dict, pol: dict, width: float) -> list:
