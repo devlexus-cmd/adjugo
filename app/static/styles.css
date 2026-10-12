@@ -1116,6 +1116,17 @@ span.atl-ref { vertical-align:baseline; cursor:default; }
 .atl-srcs li { padding:8px 0; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere; border-radius:6px; }
 .atl-srcs li:last-child { border-bottom:0; }
 .atl-srcs li.on, .atl-srcs li:focus { outline:none; background:var(--accent-weak); }
+/* « Chaque fait a sa source » (rédaction, vague 3) : ajouter une source, faits reliés, passage */
+.atl-src-form { margin-top:8px; padding:10px 12px; border:1px solid var(--hairline); border-radius:10px; background:var(--surface-2); }
+.atl-src-champs { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:8px; }
+.atl-src-champs label { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.atl-src-champs .inp { width:100%; min-width:0; }
+.atl-fsrc { list-style:none; margin:6px 0 0; padding:0; }
+.atl-fsrc li { padding:8px 6px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere; border-radius:6px; }
+.atl-fsrc li:last-child { border-bottom:0; }
+.atl-fsrc li.on, .atl-fsrc li:focus { outline:none; background:var(--accent-weak); }
+.atl-passage { padding:8px 10px; border-left:3px solid var(--accent-weak); background:var(--surface-2); border-radius:6px; line-height:1.5; }
+mark.atl-pas { background:var(--accent-weak); color:inherit; border-radius:3px; padding:0 2px; }
 /* Fenêtres */
 .atl-irreg { display:flex; gap:8px; align-items:center; margin-top:12px; padding:10px 12px; border-radius:10px; background:var(--danger-weak); border:1px solid var(--danger); color:var(--danger-text); font-size:13px; }
 .atl-irreg > i[data-lucide] { width:16px; height:16px; flex:none; }

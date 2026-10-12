@@ -373,7 +373,7 @@ class Fiche:
 
     def __init__(self, ref: str, type_source: str, libelle: str, texte: str, texte_ia: str = None, *,
                  extra=(), lien: str = "", doc_nom: str = "", extrait: str = "", preuve_id=None, chunk_id=None,
-                 nature: str = "", valeur: Optional[dict] = None, proprietaire: str = ""):
+                 nature: str = "", valeur: Optional[dict] = None, proprietaire: str = "", document_id=None):
         self.ref, self.type, self.libelle = ref, type_source, libelle
         self.texte = str(texte or "")
         self.texte_ia = self.texte if texte_ia is None else str(texte_ia or "")
@@ -382,6 +382,7 @@ class Fiche:
         self.preuve_id, self.chunk_id = preuve_id, chunk_id
         self.nature, self.valeur = nature or "", dict(valeur or {})
         self.proprietaire = proprietaire or ""
+        self.document_id = document_id
         self._idx = None
 
     @property
@@ -418,6 +419,8 @@ class Fiche:
             out["preuve_id"] = self.preuve_id
         if self.chunk_id:
             out["chunk_id"] = self.chunk_id
+        if self.document_id:
+            out["document_id"] = self.document_id
         if self.proprietaire:
             out["partenaire"] = self.proprietaire[:120]
         return out
@@ -469,7 +472,8 @@ def fiches_preuves(db, owner_id: int, project_id: Optional[int] = None, pseudony
             extrait = ""
         out.append(Fiche(f["ref"], t, f["source_libelle"], f["texte"], pv.texte_pour_ia(f, pseudonymiseur),
                          extra=_adjacents(f["nature"], f.get("valeur") or {}), lien=lien, doc_nom=doc,
-                         extrait=extrait, preuve_id=f["id"], nature=f["nature"], valeur=f.get("valeur") or {}))
+                         extrait=extrait, preuve_id=f["id"], nature=f["nature"], valeur=f.get("valeur") or {},
+                         document_id=src.get("document_id") if t == T_JUSTIFICATIF else None))
     return out
 
 

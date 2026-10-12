@@ -213,7 +213,7 @@ function _atlInit() {
            mode: "lire", edit: { texte: "", base: null, dirty: false, sid: null }, draft: null, conflict: "",
            busy: "", hist: { open: false, loading: false, list: [], sid: null }, vue: null, derog: null, debit: null,
            plan: null, planOpen: false, add: "", ren: { on: false, v: "" }, factFocus: "", srcFocus: "", note: "",
-           exportOpen: false, lastDerog: "", live: "" };
+           exportOpen: false, lastDerog: "", live: "", src: null, passage: null };
 }
 function _atlCardInit() { return { loading: false, loaded: false, d: null, error: "" }; }
 // « Pièces du dossier de l'acheteur lues par Adjugo » : ce que la LECTURE a donné pour une pièce
@@ -235,7 +235,7 @@ function atlManqueLecture(da) {
   return (c && c.message && !c.complet) ? c.message : "";
 }
 const ATL_FAIT_TYPES = { chiffre: "Chiffre", nombre_en_lettres: "Nombre en lettres", certification: "Certification",
-  nom_propre: "Nom propre", materiel: "Matériel" };
+  nom_propre: "Nom propre", materiel: "Matériel", engagement: "Engagement" };
 const ATL_BASES = [
   { k: "auto", l: "Automatique", d: "Le cadre de réponse imposé s'il existe, sinon les critères retrouvés dans le règlement, sinon un plan simple." },
   { k: "cadre", l: "Le cadre de réponse de l'acheteur", d: "Ses numéros, ses intitulés et son ordre, tels quels.", non: "Aucun cadre de réponse découpé en questions dans le dossier." },
@@ -285,7 +285,7 @@ function _atlMarks(s, re, ids) {
     if (!m[0]) { re.lastIndex++; continue; }
     out += _escHtml(_atlSans(s.slice(last, m.index)));
     if (m[1]) out += '<span class="atl-todo">' + _escHtml(_atlSans(m[1])) + "</span>";
-    else if (m[2]) out += '<sup class="atl-ref" data-ref="S' + Number(m[3]) + '">S' + Number(m[3]) + "</sup>";
+    else if (m[2]) out += atlRefsHtml(m[3]);
     else {
       const id = ids[Number(m[4])] || "";
       out += '<mark class="atl-fait"' + (id ? ' data-fait="' + _escHtml(id) + '"' : "") + ">" + _escHtml(_atlSans(m[5])) + "</mark>";
@@ -294,6 +294,27 @@ function _atlMarks(s, re, ids) {
   }
   return out + _escHtml(_atlSans(s.slice(last)));
 }
+// Renvois d'un bloc « F3, S2 » (le préfixe se reporte : « F3, 4 » = F3 et F4) → étiquettes sûres.
+function atlRefs(inner) {
+  const out = []; let pref = "";
+  String(inner || "").replace(/([FSPECG])?\s*(\d{1,4})/g, (m0, p, n) => { pref = p || pref; if (pref) out.push(pref + Number(n)); return m0; });
+  return out;
+}
+function atlRefsHtml(inner) {
+  return atlRefs(inner).map(r => '<sup class="atl-ref" data-ref="' + _escHtml(r) + '">' + _escHtml(r) + "</sup>").join("");
+}
+// « Chaque fait a sa source » (vague 3) : libellé court d'une source, jamais « vérifié ».
+const ATL_SRC_TYPES = { documents: "trouvé dans vos documents", justificatif: "justificatif déposé", declare: "déclaré par vous",
+  public: "source publique", estimation: "votre estimation", partenaire: "déclaré par votre partenaire",
+  acheteur: "dans le dossier de l'acheteur", calcul: "calculé à partir de vos faits", vous: "déclaré par vous" };
+function atlSrcLib(src) { return (src && (src.libelle || ATL_SRC_TYPES[src.type])) || ""; }
+// Champs proposés pour déclarer un fait (les autres restent dans « Mes preuves »).
+const ATL_DECL_CHAMPS = { reference: ["objet", "acheteur", "annee", "montant_ht"], qualification: ["nom", "organisme", "numero"],
+  salarie: ["nom", "fonction"], materiel: ["designation", "quantite"], chiffre_cle: ["libelle", "valeur", "unite", "annee"] };
+const ATL_DECL_LIB = { objet: "Objet", acheteur: "Acheteur", annee: "Année", montant_ht: "Montant HT (€)", nom: "Nom",
+  organisme: "Organisme", numero: "Numéro", fonction: "Fonction", designation: "Désignation", quantite: "Quantité",
+  libelle: "Libellé", valeur: "Valeur", unite: "Unité" };
+const ATL_NATURES = { reference: "Référence", qualification: "Qualification", salarie: "Équipe", materiel: "Matériel", chiffre_cle: "Chiffre clé" };
 // Une ligne : le gras (**…**) d'abord, puis les marques dans chaque morceau (jamais de balise croisée).
 function _atlInline(raw, re, idx) {
   const s = String(raw == null ? "" : raw), bold = /\*\*(.+?)\*\*/g;
@@ -321,7 +342,7 @@ function atlMdToHtml(md, faits) {
   spans.sort((a, b) => b[0] - a[0]).forEach(x => {
     src = src.slice(0, x[0]) + _ATL_M0 + x[2] + _ATL_M1 + src.slice(x[0], x[1]) + _ATL_M2 + src.slice(x[1]);
   });
-  const re = new RegExp("(\\[\\s*[ÀAà]\\s+compl[ée]ter[^\\]]*\\])|(\\[\\s*S\\s*(\\d{1,2})\\s*\\])|\\uE000(\\d+)\\uE001([^\\uE002]*)\\uE002", "gi");
+  const re = new RegExp("(\\[\\s*[ÀAà]\\s+compl[ée]ter[^\\]]*\\])|(\\[\\s*([FSPECG]\\s*\\d{1,4}(?:\\s*[,;]\\s*[FSPECG]?\\s*\\d{1,4})*)\\s*\\])|\\uE000(\\d+)\\uE001([^\\uE002]*)\\uE002", "g");
   const inl = (t) => _atlInline(t, re, ids);
   const out = [];
   let ul = null, ol = null, table = null, para = [];
@@ -378,7 +399,7 @@ function atlLimNiveau(l) {
 }
 // Nombre de mots (approché, comme le serveur) d'un texte Markdown, sans renvois ni syntaxe.
 function atlMots(md) {
-  const t = String(md || "").replace(/\[\s*S\s*\d{1,2}\s*\]/gi, " ").replace(/^\s*(#{1,6}|[-*+•]|\d{1,2}[.)])\s+/gm, " ").replace(/[|*_`]/g, " ");
+  const t = String(md || "").replace(/\[\s*[FSPECG]\s*\d{1,4}(?:\s*[,;]\s*[FSPECG]?\s*\d{1,4})*\s*\]/g, " ").replace(/\[\s*CV\s+F\s*\d{1,4}\s*\]/gi, " ").replace(/^\s*(#{1,6}|[-*+•]|\d{1,2}[.)])\s+/gm, " ").replace(/[|*_`]/g, " ");
   const m = t.match(/[0-9A-Za-zÀ-ÖØ-öø-ÿŒœ]+(?:['’-][0-9A-Za-zÀ-ÖØ-öø-ÿŒœ]+)*/g);
   return m ? m.length : 0;
 }
@@ -4117,7 +4138,7 @@ const __adjApp = createApp({
       if (a.mode === "modifier" && a.edit.sid === sid) { if (this.atlMobile) a.planOpen = false; return; }   // déjà en cours d'écriture
       if (a.mode === "modifier" && a.edit.dirty) { clearTimeout(this._atlDT); this._atlDraftSave(); this.notify("Votre texte non enregistré est gardé sur cet appareil."); }
       a.sel = sid; a.mode = "lire"; a.edit = { texte: "", base: null, dirty: false, sid: null };
-      a.conflict = ""; a.factFocus = ""; a.srcFocus = ""; a.note = ""; a.ren = { on: false, v: "" };
+      a.conflict = ""; a.factFocus = ""; a.srcFocus = ""; a.note = ""; a.ren = { on: false, v: "" }; a.src = null; a.passage = null;
       a.hist = { open: false, loading: false, list: [], sid: null };
       if (this.atlMobile) a.planOpen = false;
       this._atlDraftCheck();
@@ -4129,6 +4150,13 @@ const __adjApp = createApp({
     atlPreviewClick(ev) {
       const el = ev && ev.target && ev.target.closest ? ev.target.closest("[data-fait],[data-ref]") : null; if (!el) return;
       const f = el.getAttribute("data-fait"), r = el.getAttribute("data-ref");
+      if (!f && r && r.charAt(0) !== "S") {
+        const s = this.atlSec(), hit = this.atlFaitsSources(s).find(x => x.source && x.source.ref === r);
+        if (!hit) return;
+        this.atl.factFocus = hit.id;
+        this.$nextTick(() => { const x = document.getElementById("atl-fs-" + hit.id); if (x) { const d = x.closest("details"); if (d) d.open = true; if (x.scrollIntoView) x.scrollIntoView({ block: "nearest", behavior: "smooth" }); x.focus(); } });
+        return;
+      }
       const id = f ? "atl-f-" + f : "atl-s-" + r;
       if (f) this.atl.factFocus = f; else this.atl.srcFocus = r;
       this.$nextTick(() => { const x = document.getElementById(id); if (x) { if (x.scrollIntoView) x.scrollIntoView({ block: "nearest", behavior: "smooth" }); x.focus(); } });
@@ -4454,6 +4482,62 @@ const __adjApp = createApp({
       try { const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/faits/" + encodeURIComponent(f.id)), { statut }); this._atlPut(r.section); this.atlLoad(true); }
       catch (e) { this.notify(e.message, "err"); }
       finally { a.busy = ""; }
+    },
+    // ── « Chaque fait a sa source » (vague 3) : libellés seulement après la calibration ──
+    atlLib() { const st = this.atl.st; return !!(st && st.sources_faits && st.sources_faits.libelles); },
+    atlBulleSources() { const st = this.atl.st; return (st && st.sources_faits && st.sources_faits.bulle) || ""; },
+    atlControle(s) { const v = s && s.version_courante; return (v && v.controle && v.controle.libelles && v.controle.total) ? v.controle : null; },
+    atlFaitsSources(s) { const v = s && s.version_courante; return (v && v.faits_sources) || []; },
+    atlEcartees() { const st = this.atl.st; return (st && st.sources_faits && st.sources_faits.preuves_ecartees) || []; },
+    atlSrcLib(src) { return atlSrcLib(src); },
+    atlNatureLib(n) { return ATL_NATURES[n] || n; },
+    atlDeclChamps() { const x = this.atl.src; return (x && ATL_DECL_CHAMPS[x.nature]) || []; },
+    atlDeclLib(k) { return ATL_DECL_LIB[k] || k; },
+    // Relit les sources de la partie (une preuve ajoutée, retirée ou expirée) : sans IA, sans changer le texte.
+    async atlRecontroler() {
+      const a = this.atl, s = this.atlSec(); if (!s || a.busy) return;
+      a.busy = "controle";
+      try { const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/controle")); this._atlPut(r); this.notify("Sources relues"); this.atlLoad(true); }
+      catch (e) { this.notify(e.message, "err"); }
+      finally { a.busy = ""; }
+    },
+    // « Ajouter une source » : relier une preuve qui contient ce fait, ou le déclarer (jamais l'IA, texte intact).
+    async atlSourceOuvrir(f) {
+      const a = this.atl, s = this.atlSec(); if (!s) return;
+      if (a.src && a.src.fid === f.id) { a.src = null; return; }
+      a.src = { fid: f.id, fait: f.fait, loading: true, d: null, nature: "", valeur: {}, err: "" };
+      try {
+        const d = await this.api("GET", this._atlUrl("/sections/" + s.id + "/faits/" + encodeURIComponent(f.id) + "/sources"));
+        if (!a.src || a.src.fid !== f.id) return;
+        const prop = d.proposition || {};
+        a.src.d = d; a.src.nature = prop.nature || ""; a.src.valeur = Object.assign({}, prop.valeur || {});
+      } catch (e) { if (a.src) a.src.err = e.message; }
+      finally { if (a.src) a.src.loading = false; }
+    },
+    atlSourceNature(n) { const x = this.atl.src; if (!x) return; x.nature = n; const keep = {}; (ATL_DECL_CHAMPS[n] || []).forEach(k => { if (x.valeur[k] != null) keep[k] = x.valeur[k]; }); x.valeur = keep; },
+    async _atlSourceEnvoyer(body) {
+      const a = this.atl, s = this.atlSec(), x = a.src; if (!s || !x || a.busy) return;
+      a.busy = "source"; x.err = "";
+      try {
+        const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/faits/" + encodeURIComponent(x.fid) + "/source"), body);
+        this._atlPut(r.section); a.src = null; this.notify("Source ajoutée : le fait est relié à « Mes preuves »."); this.atlLoad(true);
+      } catch (e) { x.err = e.message; }
+      finally { a.busy = ""; }
+    },
+    atlSourceRelier(p) { return this._atlSourceEnvoyer({ preuve_id: p.id }); },
+    atlSourceDeclarer() {
+      const x = this.atl.src; if (!x) return;
+      const v = {}; Object.keys(x.valeur || {}).forEach(k => { const val = x.valeur[k]; if (val !== "" && val != null) v[k] = val; });
+      return this._atlSourceEnvoyer({ nature: x.nature, valeur: v });
+    },
+    // Le passage exact d'une preuve « trouvé dans vos documents » (lien vers le passage).
+    async atlPassage(f) {
+      const a = this.atl, src = f && f.source; if (!src) return;
+      if (a.passage && a.passage.id === f.id) { a.passage = null; return; }
+      if (!src.lien || src.lien.indexOf("/api/preuves/") !== 0) { a.passage = { id: f.id, d: { passage: src.extrait || "", avant: "", apres: "", doc_nom: src.doc_nom || "" } }; return; }
+      a.passage = { id: f.id, d: null };
+      try { const d = await this.api("GET", src.lien); if (a.passage && a.passage.id === f.id) a.passage.d = d; }
+      catch (e) { a.passage = null; this.notify(e.message, "err"); }
     },
     // Corriger / Retirer : c'est VOUS qui modifiez le texte (jamais l'IA) ; rien ne part sans « Enregistrer ».
     atlFaitCorriger(f) {

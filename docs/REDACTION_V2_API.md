@@ -70,6 +70,10 @@ sa provenance `poids_source` ; intitulé non modifiable), `libre` (plan simple p
 
 ### Fait « à relire » (A0)
 
+Depuis la vague 3, le contrôle est celui de A « Chaque fait a sa source » (faits numérotés et typés,
+rapprochement par renvoi, recalcul, engagements à confirmer, « Ajouter une source ») : contrat dans
+`docs/REDACTION_V3_SOURCES.md`. La forme ci-dessous reste celle des éléments à relire (`faits`).
+
 `{id, fait, type, phrase, message, statut}` — `type` : `chiffre`, `nombre_en_lettres`,
 `certification`, `nom_propre`, `materiel` ; `message` : « Adjugo ne trouve pas d'où vient ce
 fait : relisez-le. » ; `statut` : `a_relire` ou `relu_par_vous` (+ `relu_par`, `relu_le`).

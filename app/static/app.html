@@ -1974,6 +1974,7 @@
                       <button v-if="atlSec().partie_de_critere" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Découpage proposé par Adjugo : il n'est pas imposé par l'acheteur.</span></button>
                       <span v-for="(l,i) in atlSecLims(atlSec())" :key="'sl'+i" class="atl-lim" :class="atlLimCls(l)">{{ atlLimCourt(l) }}<button v-if="l.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du dossier</span><span class="tip-b" role="tooltip">Le dossier de l'acheteur dit : « {{ l.phrase }} »<template v-if="l.source"> ({{ l.source }})</template></span></button></span>
                       <span v-if="atlSec().compteur" class="muted">Environ {{ atlNum(atlSec().compteur.mots) }} {{ atlMotsLib(atlSec().compteur.mots) }}<template v-if="atlSec().compteur.pages_estimees"> · {{ atlNum(atlSec().compteur.pages_estimees) }} page{{ atlSec().compteur.pages_estimees > 1 ? 's' : '' }}</template></span>
+                      <span v-if="atlLib() && atlControle(atlSec())" class="muted">{{ atlControle(atlSec()).message }}</span>
                     </div>
                     <details v-if="atlSec().question" class="atl-det atl-mt8"><summary>Ce que demande l'acheteur</summary><blockquote class="atl-q">{{ atlSec().question }}</blockquote></details>
                     <div v-if="atlSec().validation" class="muted small atl-mt4">Validée le {{ atlWhen(atlSec().validation.le) }}<template v-if="atlSec().statut==='a_revalider'"> : le texte a changé depuis, validez de nouveau.</template></div>
@@ -2061,10 +2062,14 @@
                 <div v-else class="muted small" style="padding:16px">Choisissez une partie dans le plan.</div>
               </div>
 
-              <!-- À droite : faits à relire et extraits de vos documents (privés : visibles par l'auteur seul) -->
+              <!-- À droite : faits à relire, faits avec une source (vague 3) et extraits de vos documents (privés : visibles par l'auteur seul) -->
               <aside class="card atl-droite" aria-label="Faits à relire et extraits de vos documents">
                 <template v-if="atlSec() && atlSec().prive_visible">
-                  <div class="atl-col-h"><b class="small">À relire</b><span class="atl-badge-f" v-if="atlFaitsARelire(atlSec()).length">{{ atlFaitsARelire(atlSec()).length }}</span><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo signale les chiffres, certifications, noms et matériels qu'il ne retrouve pas dans vos documents, votre profil, votre équipe ou votre chiffrage. Le dossier de l'acheteur ne compte jamais comme source pour une phrase sur votre entreprise. Il ne juge pas les phrases générales : relisez-les.</span></button></div>
+                  <!-- Compteur « Faits avec une source : 7 sur 8 » : seulement après la calibration (sinon l'affichage d'A0) -->
+                  <div v-if="atlLib() && atlControle(atlSec())" class="atl-col-h"><b class="small">{{ atlControle(atlSec()).message }}</b><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atlBulleSources() }}</span></button></div>
+                  <div class="atl-col-h" :class="{'atl-sep': atlLib() && atlControle(atlSec())}"><b class="small">À relire</b><span class="atl-badge-f" v-if="atlFaitsARelire(atlSec()).length">{{ atlFaitsARelire(atlSec()).length }}</span><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo signale les chiffres, certifications, noms et matériels qu'il ne retrouve pas dans vos documents, vos preuves, votre profil, votre équipe ou votre chiffrage, les calculs qui ne tombent pas juste, et les engagements à confirmer. Le dossier de l'acheteur ne compte jamais comme source pour une phrase sur votre entreprise. Il ne juge pas les phrases générales : relisez-les.</span></button><div class="spacer"></div>
+                    <button v-if="atlSec().peut_ecrire && atlSec().version_courante" type="button" class="btn ghost sm" @click="atlRecontroler()" :disabled="!!atl.busy || !!atlSec().redaction_en_cours" title="Relire les sources de cette partie, sans IA"><span v-if="atl.busy==='controle'" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Recontrôler</button></div>
+                  <div v-if="atlEcartees().length" class="muted small atl-pad">{{ atlEcartees().length }} preuve{{ atlEcartees().length > 1 ? 's' : '' }} de « Mes preuves » {{ atlEcartees().length > 1 ? 'ne servent' : 'ne sert' }} pas : <template v-for="(x,i) in atlEcartees().slice(0, 3)" :key="'pe'+x.id">{{ i ? ' ; ' : '' }}{{ x.ref }}, {{ x.message }}</template><template v-if="atlEcartees().length > 3"> ; et {{ atlEcartees().length - 3 }} autre{{ atlEcartees().length - 3 > 1 ? 's' : '' }}</template></div>
                   <div v-if="!atlSec().version_courante" class="muted small atl-pad">Rien à relire tant que la partie n'a pas de texte.</div>
                   <!-- Texte écrit par l'utilisateur : ses faits sont ses déclarations (aucun contrôle de son texte, voulu) -->
                   <div v-else-if="!atlFaitsARelire(atlSec()).length && atlSec().version_courante.origine === 'utilisateur'" class="muted small atl-pad">Texte écrit par vous : vos chiffres et noms sont vos déclarations. Adjugo signale les faits ajoutés par l'IA.</div>
@@ -2074,15 +2079,53 @@
                       <div class="atl-fait-k">{{ atlFaitType(f.type) }}</div>
                       <div class="small atl-fait-p" v-html="atlPhrase(f)"></div>
                       <div class="muted small atl-mt4">{{ f.message || "Adjugo ne trouve pas d'où vient ce fait : relisez-le." }}</div>
+                      <div v-if="f.detail" class="muted small atl-mt4">{{ f.detail }}</div>
                       <div v-if="atlSec().peut_ecrire" class="row wrap atl-g6 atl-mt8">
                         <template v-if="!atlMobile"><button type="button" class="btn sm" @click="atlFaitCorriger(f)" :disabled="!!atlSec().redaction_en_cours">Corriger</button><button type="button" class="btn sm" @click="atlFaitRetirer(f)" :disabled="!!atlSec().redaction_en_cours">Retirer</button></template>
-                        <button type="button" class="btn sm ghost" @click="atlFait(f, 'relu_par_vous')" :disabled="!!atl.busy || !!atlSec().redaction_en_cours"><span v-if="atl.busy==='fait:'+f.id" class="spin"></span>Je l'ai relu</button>
+                        <button v-if="f.type !== 'engagement'" type="button" class="btn sm" @click="atlSourceOuvrir(f)" :disabled="!!atl.busy || !!atlSec().redaction_en_cours" :aria-expanded="atl.src && atl.src.fid===f.id ? 'true' : 'false'">Ajouter une source</button>
+                        <button type="button" class="btn sm ghost" @click="atlFait(f, 'relu_par_vous')" :disabled="!!atl.busy || !!atlSec().redaction_en_cours"><span v-if="atl.busy==='fait:'+f.id" class="spin"></span>{{ f.type === 'engagement' ? 'Je confirme cet engagement' : "Je l'ai relu" }}</button>
+                      </div>
+                      <!-- « Ajouter une source » : relier une preuve qui contient ce fait, ou le déclarer. Jamais l'IA, texte intact. -->
+                      <div v-if="atl.src && atl.src.fid===f.id" class="atl-src-form">
+                        <div v-if="atl.src.loading" class="muted small" role="status"><span class="spin"></span> Recherche dans vos preuves…</div>
+                        <template v-else-if="atl.src.d">
+                          <template v-if="atl.src.d.preuves.length">
+                            <div class="small"><b>Relier à une de vos preuves</b></div>
+                            <div v-for="p in atl.src.d.preuves" :key="'sp'+p.id" class="row atl-g6 atl-mt4 small"><span style="flex:1;min-width:0"><span class="atl-ref">{{ p.ref }}</span> {{ p.texte }}<span class="muted"> · {{ p.source_libelle }}</span></span><button type="button" class="btn sm" @click="atlSourceRelier(p)" :disabled="!!atl.busy">Relier</button></div>
+                          </template>
+                          <template v-if="atl.src.d.natures.length">
+                            <div class="small" :class="{'atl-mt8': atl.src.d.preuves.length}"><b>Le déclarer vous-même</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">La fiche est enregistrée dans « Mes preuves », « déclaré par vous ». Elle doit dire le fait tel qu'il est écrit (même nombre, même unité). Pour un passage de vos documents ou un justificatif, ajoutez la preuve dans « Mes preuves », puis « Recontrôler ».</span></button></div>
+                            <div v-if="atl.src.d.natures.length > 1" class="row wrap atl-g6 atl-mt4" role="group" aria-label="Type de fiche">
+                              <button v-for="n in atl.src.d.natures" :key="'sn'+n.code" type="button" class="btn sm" :class="{primary: atl.src.nature===n.code}" @click="atlSourceNature(n.code)">{{ n.libelle }}</button>
+                            </div>
+                            <div class="atl-src-champs atl-mt4">
+                              <label v-for="k in atlDeclChamps()" :key="'sc'+k" class="small"><span class="muted">{{ atlDeclLib(k) }}</span><input class="inp" v-model="atl.src.valeur[k]" :inputmode="['valeur','quantite','annee','montant_ht'].includes(k) ? 'decimal' : 'text'" maxlength="300"></label>
+                            </div>
+                            <div class="row wrap atl-g6 atl-mt8"><button type="button" class="btn sm primary" @click="atlSourceDeclarer()" :disabled="!!atl.busy"><span v-if="atl.busy==='source'" class="spin"></span>Enregistrer dans « Mes preuves »</button><button type="button" class="btn sm ghost" @click="atl.src=null">Annuler</button></div>
+                          </template>
+                        </template>
+                        <div v-if="atl.src.err" class="conv-err atl-mt8" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ atl.src.err }}</div></div>
                       </div>
                     </li>
                   </ul>
                   <div v-if="atlFaitsReste(atlSec())" class="muted small atl-pad">{{ atlFaitsReste(atlSec()).message }}</div>
                   <details v-if="atlFaitsRelus(atlSec()).length" class="atl-det atl-pad"><summary>Relus par vous ({{ atlFaitsRelus(atlSec()).length }})</summary>
                     <div v-for="f in atlFaitsRelus(atlSec())" :key="'fr'+f.id" class="row atl-g6 small atl-mt4"><span style="flex:1;min-width:0">{{ f.fait }}</span><button v-if="atlSec().peut_ecrire" type="button" class="btn ghost sm" @click="atlFait(f, 'a_relire')" :disabled="!!atl.busy">Remettre à relire</button></div>
+                  </details>
+                  <!-- Faits avec une source : où Adjugo les a trouvés (jamais « vérifié »), repliés -->
+                  <details v-if="atlLib() && atlFaitsSources(atlSec()).length" class="atl-det atl-pad"><summary>Faits avec une source ({{ atlFaitsSources(atlSec()).length }})</summary>
+                    <ul class="atl-fsrc">
+                      <li v-for="f in atlFaitsSources(atlSec())" :key="'fs'+f.id" :id="'atl-fs-'+f.id" tabindex="-1" :class="{on: atl.factFocus===f.id}">
+                        <div class="small"><b>{{ f.fait }}</b><span v-if="f.source && f.source.ref" class="atl-ref">{{ f.source.ref }}</span> <span class="muted">· {{ atlSrcLib(f.source) }}<template v-if="f.source && f.source.doc_nom"> · {{ f.source.doc_nom }}</template></span></div>
+                        <div v-if="f.source && f.source.detail" class="muted small atl-mt4">{{ f.source.detail }}</div>
+                        <button v-if="f.source && f.source.extrait && ['documents','acheteur'].includes(f.source.type)" type="button" class="atl-lien small atl-mt4" @click="atlPassage(f)" :aria-expanded="atl.passage && atl.passage.id===f.id ? 'true' : 'false'">{{ atl.passage && atl.passage.id===f.id ? 'Masquer le passage' : 'Voir le passage' }}</button>
+                        <button v-else-if="f.source && f.source.type==='justificatif' && f.source.document_id" type="button" class="atl-lien small atl-mt4" @click="downloadDoc({id: f.source.document_id, name: f.source.doc_nom})">Ouvrir le justificatif</button>
+                        <div v-if="atl.passage && atl.passage.id===f.id" class="atl-passage small atl-mt4">
+                          <span v-if="!atl.passage.d" class="spin"></span>
+                          <template v-else><span class="muted">{{ atl.passage.d.avant ? '… ' + atl.passage.d.avant.slice(-120) : '' }}</span><mark class="atl-pas">{{ atl.passage.d.passage }}</mark><span class="muted">{{ atl.passage.d.apres ? atl.passage.d.apres.slice(0, 120) + ' …' : '' }}</span></template>
+                        </div>
+                      </li>
+                    </ul>
                   </details>
 
                   <div class="atl-col-h atl-sep"><b class="small">Extraits de vos documents</b><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les passages de « Mon savoir-faire » qu'Adjugo a cités en rédigeant cette version (S1, S2…). Ils restent privés : ils ne partent jamais chez l'acheteur, et les renvois sont retirés à l'export. Un extrait cité ne prouve pas que la phrase est exacte.</span></button></div>
@@ -3345,6 +3388,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-1Q5OkNoZOr8fjywdAPW5tXgXBOIQbPc/HivuGcq76HNgVs+qX31mtOOH5/+fmz0x" defer></script>
+<script src="/static/app.js" integrity="sha384-wuu0SMrbHr1dlQn2PbQ6Xjx4u7ji1CFieT/ZwKYVo8pdQrQPJgGesrKnaZJ3hbB3" defer></script>
 </body>
 </html>
