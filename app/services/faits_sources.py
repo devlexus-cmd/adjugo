@@ -300,7 +300,8 @@ class Index:
             self.nums.append((far._word_value(m.group(1)), u, _ctx(m.start(), m.end(), not unit), m.start(),
                               m.end()))
         self.certs = [(re.sub(r"[\s\-:'.]", "", m.group(0)), m.start(), m.end()) for m in far._CERT.finditer(same)]
-        self.cert_quelconque = bool(self.certs or re.search(r"certifi|qualifi|label|agre", self.low))
+        self.cert_quelconque = bool(self.certs or re.search(r"\bcertifi|\bqualification|\blabel|\bagre(?:e|ment)",
+                                                            self.low))
 
     def nombre(self, val: float, unite: str) -> Optional[tuple]:
         """(début, fin) du nombre `val` avec une unité compatible, ou None. Sans unité dans le fait :
@@ -330,7 +331,11 @@ class Index:
             for k, a, b in self.certs:
                 if k == key:
                     return a, b
-            return (-1, -1) if key in self.compact else None
+            # Écrit autrement (« ISO-14001 ») : le sigle compact, seulement s'il est assez long pour ne
+            # pas se trouver au milieu d'un autre mot (« RGE » dans « charge », « MASE » dans « base »).
+            if len(key) >= 6 or re.search(r"\d", key):
+                return (-1, -1) if key in self.compact else None
+            return (-1, -1) if re.search(r"(?<![a-z0-9])" + re.escape(key) + r"(?![a-z0-9])", self.low) else None
         if kind == far.MATERIEL:
             return self._pos(key) if key and key in self.low else None
         if kind == far.NOM_PROPRE:
@@ -587,40 +592,65 @@ def _decimales(fait: str) -> int:
     return len(m.group(1)) if m else 0
 
 
-def recalcul(v: float, u: str, fait: str, phrase_low: str, pool: list) -> tuple:
-    """Un pourcentage ou un total absent tel quel, recalculé à partir des nombres connus (faits de la
-    phrase reliés à une source, faits cités). (ok, détail) ; ok None = rien à recalculer."""
-    pool = [(a, ua) for a, ua in pool if a is not None and not _egal(a, v)][:10]
+def _annee(a: float, ua: str) -> bool:
+    return not ua and 1900 <= a <= 2100 and float(a).is_integer()
+
+
+def _dedoublonner(pool: list, v: float, n: int) -> list:
+    """Nombres distincts (une année n'entre jamais dans un calcul), sans le nombre recalculé."""
+    out, vus = [], []
+    for a, ua in pool:
+        if a is None or _egal(a, v) or _annee(a, ua) or any(_egal(a, b) for b, _ub in vus):
+            continue
+        vus.append((a, ua))
+        out.append((a, ua))
+        if len(out) >= n:
+            break
+    return out
+
+
+def recalcul(v: float, u: str, fait: str, phrase_low: str, phrase: list, cites: list = ()) -> tuple:
+    """Un pourcentage ou un total absent tel quel, recalculé à partir des nombres connus : ceux de la
+    phrase reliés à une source (`phrase`), puis ceux des faits cités (`cites`). (ok, détail) ; ok None
+    = rien à recalculer. « Ne tombe pas juste » n'est dit que si la phrase donne elle-même ses deux
+    nombres (« 6 sur 12 », « 3 + 15 ») : sinon, le fait reste simplement à relire."""
+    propres = _dedoublonner(phrase, v, 6)
+    pool = _dedoublonner(list(propres) + list(cites or ()), v, 12)
     if u == "%":
         dec = _decimales(fait)
         tol = 0.5 * (10 ** -dec) + 1e-9
-        paires = []
-        for (a, ua), (b, ub) in itertools.permutations(pool, 2):
-            if b <= 0 or a > b or (ua and ub and ua != ub) or ua == "%" or ub == "%":
-                continue
-            paires.append((a, b))
+
+        def _paires(p, meme_unite: bool):
+            # Une part d'un tout : « 6 couvreurs sur 12 salariés ». Jamais un nombre sur lui-même.
+            for (a, ua), (b, ub) in itertools.permutations(p, 2):
+                if b <= 0 or a >= b or ua == "%" or ub == "%" or (meme_unite and ua and ub and ua != ub):
+                    continue
+                yield a, b
+        for a, b in itertools.chain(_paires(propres, False), _paires(pool, True)):
             if abs(100.0 * a / b - v) <= tol:
                 return True, f"{_fmt(a)} sur {_fmt(b)} font {_fmt(round(100.0 * a / b, dec))} %"
+        paires = list(_paires(propres, False))
         if len(paires) == 1:
             a, b = paires[0]
             return False, (f"Le calcul ne tombe pas juste : {_fmt(a)} sur {_fmt(b)} font "
-                           f"{_fmt(round(100.0 * a / b, max(dec, 1)))} %, pas {_fmt(v)} %.")
+                           f"{_fmt(round(100.0 * a / b, max(dec, 0)))} %, pas {_fmt(v)} %.")
         return None, ""
     if not _TOTAL.search(phrase_low):
         return None, ""
     meme = [a for a, ua in pool if ua == u or not ua or not u]
     if len(meme) < 2:
         return None, ""
-    for n in range(2, len(meme) + 1):
+    for n in range(2, min(len(meme), 8) + 1):
         for combo in itertools.combinations(meme, n):
             if _egal(sum(combo), v):
                 return True, " + ".join(_fmt(x) for x in combo) + f" font {_fmt(v)}"
     for a, b in itertools.combinations(meme, 2):
         if _egal(a * b, v):
             return True, f"{_fmt(a)} × {_fmt(b)} font {_fmt(v)}"
-    if len(meme) == 2:
-        return False, (f"Le total ne tombe pas juste : {_fmt(meme[0])} + {_fmt(meme[1])} font "
-                       f"{_fmt(meme[0] + meme[1])}, pas {_fmt(v)}.")
+    siens = [a for a, ua in propres if ua == u or not ua or not u]
+    if len(siens) == 2:
+        return False, (f"Le total ne tombe pas juste : {_fmt(siens[0])} + {_fmt(siens[1])} font "
+                       f"{_fmt(siens[0] + siens[1])}, pas {_fmt(v)}.")
     return None, ""
 
 
@@ -659,6 +689,38 @@ def _cle(x: dict) -> tuple:
 def _unite_fait(x: dict) -> str:
     st = far.cle_stricte(x)
     return st[2] if len(st) == 3 else ""
+
+
+_GENERIQUES = {"", "h", "jour", "semai", "mois", "an", "%"}
+_MOTS_VIDES_CTX = {"nous", "notre", "nos", "votre", "vos", "pour", "dans", "avec", "sans", "sous", "sur", "chez",
+                   "cette", "ces", "leur", "leurs", "depuis", "plus", "moins", "tous", "toutes", "tout", "chaque",
+                   "sera", "seront", "sont", "avons", "disposons", "dispose", "comptons", "compte", "entre",
+                   "apres", "avant", "ainsi", "afin", "aussi", "environ", "elle", "elles", "ils", "lors"}
+_PRIORITE = {T_DOCUMENTS: 0, T_JUSTIFICATIF: 1, T_PUBLIC: 2, T_DECLARE: 3, T_ESTIMATION: 4, T_PARTENAIRE: 5}
+
+
+def _priorite(f) -> tuple:
+    return (_PRIORITE.get(f.type, 9), 0 if f.ref.startswith(PREUVE) else 1)
+
+
+def _mots_contexte(phrase: str, fait: str) -> set:
+    """Mots porteurs de sens de la phrase, hors le fait lui-même (pour un rapprochement non cité)."""
+    du_fait = {re.sub(r"s$", "", w) for w in re.findall(r"[a-z0-9]{3,}", far.fold(fait))}
+    return {re.sub(r"s$", "", w) for w in re.findall(r"[a-z]{4,}", far.fold(phrase))
+            if w not in _MOTS_VIDES_CTX} - du_fait
+
+
+def _fallback_permis(kind: str, fait: str, key, mots: set, f) -> bool:
+    """Un fait que l'IA n'a pas cité ne se relie à un fait remis que si le rapprochement ne tient pas du
+    hasard : un nombre sans unité, une durée ou un pourcentage exigent un mot commun entre la phrase
+    et la fiche (« La pose durera 15 jours » et « Pose du zinc : 15 jours »)."""
+    if kind not in (far.CHIFFRE, far.EN_LETTRES):
+        return True
+    _v, u = cle_nombre(kind, fait, key)
+    if u not in _GENERIQUES:
+        return True
+    autres = {re.sub(r"s$", "", w) for w in re.findall(r"[a-z]{4,}", far.fold(f.texte))}
+    return bool(mots & autres)
 
 
 class _Anciens:
@@ -726,6 +788,17 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
             src["detail"] = detail
         return _item(kind, fait, ph, AVEC_SOURCE, LIB_VOUS, a_propos, source=src)
 
+    def _reprise(old_src):
+        """La source d'un fait de la version de départ, si elle tient encore : votre déclaration, le
+        dossier de l'acheteur, ou un fait encore remis (rafraîchi) ; None si elle est perdue."""
+        osrc = dict(old_src.get("source") or {})
+        if osrc.get("type") in (T_VOUS, T_ACHETEUR):
+            return osrc
+        f = par_ref.get(osrc.get("ref") or "")
+        if f is not None and osrc.get("type") in _SOURCES_FICHES:
+            return f.source(None, cite=False)
+        return None
+
     def _sans_source(kind, fait, key, ph, a_propos, detail):
         """Aucune source dans ce texte : ce que le fait était, votre déclaration, ou à relire."""
         msg = MESSAGE if a_propos == ENTREPRISE else MSG_MARCHE
@@ -736,16 +809,19 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
             if anc.etait_a_relire(it, avec_unite=True):
                 return it
             if old_src is not None:
-                osrc = dict(old_src.get("source") or {})
-                return _item(kind, fait, ph, AVEC_SOURCE, osrc.get("libelle") or LIB_VOUS, a_propos, source=osrc)
+                osrc = _reprise(old_src)
+                if osrc is not None:
+                    return _item(kind, fait, ph, AVEC_SOURCE, osrc.get("libelle") or LIB_VOUS, a_propos, source=osrc)
+                it["detail"] = DET_SOURCE_PERDUE        # sa preuve a été retirée ou a expiré
+                return it
             return _vous(kind, fait, ph, a_propos)
         if mode == "raccourci":
             if old_src is not None:
-                osrc = dict(old_src.get("source") or {})
-                f = par_ref.get(osrc.get("ref") or "")
-                if f is not None:
-                    osrc = f.source(None, cite=False)
-                return _item(kind, fait, ph, AVEC_SOURCE, osrc.get("libelle") or LIB_VOUS, a_propos, source=osrc)
+                osrc = _reprise(old_src)
+                if osrc is not None:
+                    return _item(kind, fait, ph, AVEC_SOURCE, osrc.get("libelle") or LIB_VOUS, a_propos, source=osrc)
+                it["detail"] = DET_SOURCE_PERDUE
+                return it
             if anc.etait_a_relire(it, avec_unite=False):
                 old = anc.relire.get(c)
                 if old and old.get("statut") == RELU and far.cle_stricte(old) == far.cle_stricte(it):
@@ -756,7 +832,7 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
                 return _vous(kind, fait, ph, a_propos, detail="repris du texte de départ")
             return it
         # « ia » : à relire ; une source qui existait et n'existe plus est dite.
-        if old_src is not None and (old_src.get("source") or {}).get("type") in _SOURCES_FICHES and not detail:
+        if old_src is not None and (old_src.get("source") or {}).get("type") in _SOURCES_FICHES:
             it["detail"] = DET_SOURCE_PERDUE
         return it
 
@@ -769,9 +845,10 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
         citees = [par_ref[r] for r in refs if r in par_ref]
         inconnus = [r for r in refs if r not in par_ref]
         low = far.fold(ph)
-        pool = []          # nombres reliés à une source (faits cités, faits de la phrase), pour le recalcul
+        # Nombres reliés à une source, pour le recalcul : ceux de la phrase, puis ceux des faits cités.
+        pool, pool_cites = [], []
         for f in citees:
-            pool += [(v, u) for v, u, _c, _a, _b in f.index.nums]
+            pool_cites += [(v, u) for v, u, _c, _a, _b in f.index.nums]
         releves = []
         for fait, kind, key in far._facts_in(ph, tableau=p["tableau"]):
             if kind == far.NOM_PROPRE and _nom_connu(key, noms):
@@ -779,10 +856,13 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
             src, detail = None, ""
             if sur_entreprise:
                 # 1. Un fait CITÉ dans la phrase, du bon type ; 2. à défaut, un fait remis non cité.
-                autres = [f for f in fiches if f not in citees]
+                autres = sorted((f for f in fiches if f not in citees), key=_priorite)
+                mots = _mots_contexte(ph, fait)
                 for groupe, cite in ((citees, True), (autres, False)):
                     for f in groupe:
                         if not f.appuie(kind):
+                            continue
+                        if not cite and not _fallback_permis(kind, fait, key, mots, f):
                             continue
                         pos = f.index.trouve(kind, key, fait)
                         if pos is not None:
@@ -805,7 +885,7 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
         for fait, kind, key, src, detail in releves:
             if src is None and sur_entreprise and kind in (far.CHIFFRE, far.EN_LETTRES):
                 v, u = cle_nombre(kind, fait, key)
-                ok, det = recalcul(v, u, fait, low, pool)
+                ok, det = recalcul(v, u, fait, low, pool, pool_cites)
                 if ok:
                     src = {"ref": "", "type": T_CALCUL, "libelle": LIB_CALCUL, "cite": False, "detail": det}
                 elif ok is False:
