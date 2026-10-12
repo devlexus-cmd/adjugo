@@ -142,7 +142,7 @@ def _mistral(monkeypatch, repondre=None, cle=CLE_MISTRAL, modeles=("mistral-larg
 # ── 1. Routage par tâche ────────────────────────────────────────────────────────
 
 def test_table_de_routage_decisions_du_fondateur():
-    lecture = ("analyse", "lecture_pieces", "exigences", "veille", "deliberation", "renouvellements")
+    lecture = ("analyse", "lecture_pieces", "exigences", "veille", "deliberation", "renouvellements", "fiches_preuves")
     for t in lecture:
         r = llm.route(t)
         assert (r.primaire.fournisseur, r.primaire.modele) == ("mistral", "mistral-large-4"), t

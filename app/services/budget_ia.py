@@ -378,6 +378,9 @@ ENVELOPPES = {
     "questionnaire": (14_000, 600, 0),        # PAR question
     "partie": (40_000, 4000, 0),              # une partie de l'atelier, hors dossier commun
     "raccourcir": (45_000, 4000, 0),
+    # PAR partie d'un ancien document lu pour proposer des fiches (60 000 caractères au plus + consignes ;
+    # app/services/fiches_import.py : SEGMENT_MAX, SORTIE_MAX).
+    "fiches": (64_000, 8000, 0),
 }
 # opération → tâche du routage (app/services/llm.py, _TABLE) : le modèle, le point d'accès, la
 # réflexion et la durée du cache comptés sont ceux de CETTE tâche, secours compris.
@@ -391,6 +394,7 @@ TACHE_DE = {
     "questionnaire": "questionnaire",
     "partie": "redaction",
     "raccourcir": "raccourcir",
+    "fiches": "fiches_preuves",
 }
 
 

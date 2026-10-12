@@ -7,7 +7,8 @@ DE LA TÂCHE (`tache=`). La table _TABLE ci-dessous dit, pour chaque tâche, que
 modèle la traitent, avec quels réglages, et vers qui basculer si ce fournisseur fait défaut :
 
   • lecture et extraction de documents (analyse du dossier, y compris la lecture en deux temps,
-    exigences, délibérations de la veille, renouvellements) → Mistral Large 4 (`mistral-large-4`,
+    exigences, délibérations de la veille, renouvellements, fiches proposées à partir des anciens
+    documents de l'entreprise) → Mistral Large 4 (`mistral-large-4`,
     préversion publique du 06/10/2026 ; JAMAIS l'alias mistral-large-latest, qui désigne Large 3),
     secours Claude Sonnet 5.5 si Mistral est absent, en panne, en erreur de modèle, coupé ou si son
     JSON est illisible ;
@@ -286,6 +287,11 @@ _TABLE = {
     "renouvellements": dict(
         libelle="Renouvellements de marchés (radar des échéances)",
         fournisseur=MISTRAL, json=True, anthropic=_BT_MEDIUM, secours_sur=_SUR_MISTRAL, ancien=MODEL),
+    # Rédaction, vague 3 (chantier I) : lecture des anciens documents de l'entreprise, fiches PROPOSÉES
+    # (chaque passage retrouvé tel quel, sans IA, avant d'être montré) — lecture et extraction.
+    "fiches_preuves": dict(
+        libelle="Fiches de preuves proposées à partir des anciens documents de l'entreprise",
+        fournisseur=MISTRAL, json=True, anthropic=_BT_MEDIUM, secours_sur=_SUR_MISTRAL, ancien=MODEL_FAST),
     "questions": dict(
         libelle="Questions sur le dossier du marché",
         fournisseur=ANTHROPIC, json=True, anthropic=_BT_MEDIUM, secours_sur=_SUR_ANTHROPIC, ancien=MODEL_FAST),
