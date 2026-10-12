@@ -136,6 +136,28 @@ class Settings(BaseSettings):
     # PAR JOUR (heure de Paris). 0 = valeur du forfait (PLAN_LIMITS[...]["questions_jour"]).
     QUESTIONS_PAR_JOUR: int = 0
 
+    # ── Garde-fou de l'ESSAI GRATUIT (comptes en essai actif SEULEMENT ; app/services/budget_ia.py) ──
+    # Les forfaits payants ne sont JAMAIS bridés par ces réglages (alerte interne seulement, plus bas).
+    # Analyses comprises dans l'essai, sur TOUTE sa durée (et non par mois civil : un essai à cheval
+    # sur deux mois ne donne plus 2 × 30 analyses).
+    TRIAL_ANALYSES: int = 30
+    # Questions sur un dossier pendant l'essai : par organisation et par jour (heure de Paris).
+    TRIAL_QUESTIONS_PAR_JOUR: int = 15
+    # Budget IA total de l'essai, en euros, mesuré appel par appel (coût réel au tarif public du
+    # fournisseur) et rattaché au compte de facturation. Vérifié AVANT chaque opération (estimation
+    # prudente) ; une opération commencée va toujours au bout. Jamais montré au client. 0 = désactivé.
+    TRIAL_AI_BUDGET_EUR: float = 15.0
+    # Part du budget de l'essai à partir de laquelle l'écran dit « limite d'usage bientôt atteinte ».
+    TRIAL_AI_BUDGET_PROCHE: float = 0.8
+    # Forfaits payants : ALERTE interne (journal + /api/admin/usage-ia) quand le coût IA du mois d'une
+    # organisation dépasse cette part du prix de son forfait. Aucun blocage. 0 = alerte coupée.
+    PAID_AI_ALERT_RATIO: float = 0.5
+    # Prix mensuel des forfaits (€ HT) : base de l'alerte ci-dessus (un forfait absent de la liste
+    # est comparé au plus cher).
+    PLAN_PRICES_EUR: dict = {"pro": 129.99, "business": 199.99}
+    # Taux de conversion des tarifs publiés en dollars (Anthropic) : 1 $ = AI_USD_EUR €.
+    AI_USD_EUR: float = 0.85
+
     @field_validator("*", mode="before")
     @classmethod
     def _strip_env_whitespace(cls, v):

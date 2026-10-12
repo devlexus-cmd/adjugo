@@ -297,3 +297,19 @@ def reseau_refuser(request: Request, profile_id: str, body: ReseauRefuserIn,
                  target_type="partner_profile", target_id=p.id, detail="publication refusée par Adjugo")
     return {"ok": True, "message": "Demande refusée : l'entreprise voit votre motif sur son profil.",
             "profile_id": p.public_id}
+
+
+@router.get("/usage-ia")
+@limiter.limit("120/hour")
+def usage_ia(request: Request, periode: str = "", current_user: User = Depends(get_current_user),
+             db: Session = Depends(get_db)):
+    """Coût réel de l'IA (interne, jamais montré aux clients), réservé à l'administrateur de la
+    plateforme : budget consommé par chaque essai gratuit en cours (avec ses analyses sur 30), coût du
+    mois des organisations payantes et leurs alertes (seuil PAID_AI_ALERT_RATIO × prix du forfait,
+    jamais de blocage), coût de la plateforme (appels mutualisés) et du côté acheteur."""
+    _require_platform_admin(current_user)
+    p = (periode or "").strip()
+    if p and not _re.fullmatch(r"\d{4}-\d{2}", p):
+        raise HTTPException(422, "Période attendue : AAAA-MM.")
+    from app.services.budget_ia import releve_admin
+    return releve_admin(db, periode=p or None)

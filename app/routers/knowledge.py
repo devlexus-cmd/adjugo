@@ -133,7 +133,8 @@ def questionnaire(request: Request, req: QuestionnaireReq, current_user: User = 
     if db.query(KnowledgeChunk.id).filter(KnowledgeChunk.user_id.in_(uids)).first() is None:
         raise HTTPException(422, "La base de connaissances de votre organisation est vide : ajoutez au moins "
                                  "un document avant de répondre à un questionnaire.")
-    consume_analysis(current_user, db)
+    from app.services.budget_ia import estimer
+    consume_analysis(current_user, db, "questionnaire", estimer("questionnaire", n=len(qs)))
     # Asynchrone (anti-timeout) : jusqu'à 40 questions × LLM, traitées en tâche de fond.
     from app.services.jobs import create_job, run_in_thread, job_out
     job = create_job(db, current_user.id, "questionnaire", f"Questionnaire ({len(qs)} questions)")
