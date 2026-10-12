@@ -3887,7 +3887,7 @@ const __adjApp = createApp({
       const e = this.fxEtat(d); const st = e ? e.statut : "a_lire";
       if (st === "lu") return "Voir les fiches proposées";
       if (st === "en_cours") return "Lecture en cours";
-      if (st === "cv" || st === "piece_acheteur" || st === "rien_a_lire") return "Fiches : pourquoi aucune";
+      if (st === "cv" || st === "piece_acheteur" || st === "rien_a_lire") return "Pourquoi aucune fiche";
       return "Proposer des fiches";
     },
     fxResume(d) {
@@ -3974,6 +3974,12 @@ const __adjApp = createApp({
       try {
         const p = await this.api("GET", "/api/preuves/" + f.id + "/passage");
         this.kb.fx.contexte = Object.assign({}, this.kb.fx.contexte, { [f.id]: p });
+        // Le passage surligné est amené en vue dans sa boîte (sans faire défiler la page).
+        this.$nextTick(() => {
+          const box = document.querySelector('[data-fx-ctx="' + f.id + '"]');
+          const m = box && box.querySelector("mark");
+          if (box && m) box.scrollTop = Math.max(0, m.offsetTop - box.offsetTop - 24);
+        });
       } catch (e) { this.notify(e.message, "err"); }
     },
     kbKindLabel(k) { return ({ memoire: "Dossier de présentation", rse: "RSE", methodologie: "Méthodologie", certification: "Certification", reference: "Référence", autre: "Autre" })[k] || k; },

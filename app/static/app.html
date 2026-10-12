@@ -1739,7 +1739,7 @@
           <!-- Dépôt de documents — onboarding "Do It For You" -->
           <div class="card pad">
             <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="library" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Votre savoir-faire</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo range vos documents pour que l'IA s'en serve quand elle rédige vos réponses. Elle indique les extraits qu'elle a cités. Relisez chaque fait avant de déposer : vous restez responsable de votre offre.</span></button></div>
-            <div class="muted small" style="margin-bottom:13px">Déposez vos <b>anciens dossiers de présentation</b>, fiches RSE, méthodologies, certifications.</div>
+            <div class="muted small" style="margin-bottom:13px">Pour commencer : importez vos <b>3 derniers dossiers de présentation</b>, votre plaquette et vos attestations. Adjugo vous propose ensuite des fiches à cocher, document par document.</div>
             <div class="row wrap" style="gap:8px;align-items:center">
               <select class="inp" v-model="kb.kind" style="width:190px">
                 <option value="memoire">Dossier de présentation</option><option value="methodologie">Méthodologie</option>
@@ -1785,16 +1785,17 @@
                   <div v-if="kb.fx.data.document.message" class="warn-box" style="margin-top:0"><i data-lucide="info" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ kb.fx.data.document.message }}</span></div>
                   <div v-else-if="fxStatut()==='a_lire' || fxStatut()==='echec'">
                     <div v-if="fxStatut()==='echec'" class="warn-box" style="margin:0 0 10px"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ kb.fx.data.lecture.message }}</span></div>
-                    <div class="row wrap fx-ligne">
-                      <label class="small" :for="'fxdate'+d.id">Date du document</label>
-                      <input :id="'fxdate'+d.id" type="date" class="inp" style="width:160px" v-model="kb.fx.date" :max="fxAujourdhui()">
-                      <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo l'affiche sur chaque fiche. Un document de plus de 3 ans donne des fiches « à reconfirmer ». La date proposée est la plus récente écrite en première page : corrigez-la si besoin, ou laissez vide.</span></button>
-                    </div>
-                    <div class="row wrap fx-ligne">
-                      <button type="button" class="btn primary sm" @click="fxLancer(d)" :disabled="kb.fx.busy"><span v-if="kb.fx.busy" class="spin"></span><i v-else data-lucide="list-checks"></i>Proposer des fiches à partir de ce document</button>
+                    <div class="row fx-ligne">
+                      <b class="small">Partir de ce document</b>
                       <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo lit ce document une seule fois et propose des fiches : références, qualifications, matériel, chiffres clés. Chacune montre le passage où il l'a trouvée ; une proposition dont le passage n'est pas retrouvé tel quel dans le document est écartée. Rien n'est gardé sans vous : cochez ce qui est juste. Les noms des salariés sont masqués avant l'envoi à l'IA et un CV n'est jamais envoyé : les fiches Équipe se saisissent à la main.</span></button>
                     </div>
-                    <div v-if="kb.fx.plafond" class="muted small">Gratuit : encore {{ kb.fx.plafond.restants }} document(s) ce mois-ci, sur {{ kb.fx.plafond.limite }}.</div>
+                    <div class="fx-champ">
+                      <div class="row" style="gap:2px;align-items:center"><label class="small" :for="'fxdate'+d.id">Date du document</label>
+                        <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo l'affiche sur chaque fiche. Un document de plus de 3 ans donne des fiches « à reconfirmer ». La date proposée est la plus récente écrite en première page : corrigez-la si besoin, ou laissez vide.</span></button></div>
+                      <input :id="'fxdate'+d.id" type="date" class="inp" style="width:170px" v-model="kb.fx.date" :max="fxAujourdhui()">
+                    </div>
+                    <button type="button" class="btn primary sm fx-lancer" @click="fxLancer(d)" :disabled="kb.fx.busy"><span v-if="kb.fx.busy" class="spin"></span><i v-else data-lucide="list-checks"></i>Proposer des fiches à partir de ce document</button>
+                    <div v-if="kb.fx.plafond" class="muted small" style="margin-top:8px">Gratuit : encore {{ kb.fx.plafond.restants }} document(s) ce mois-ci, sur {{ kb.fx.plafond.limite }}.</div>
                   </div>
                   <div v-else-if="fxStatut()==='en_cours'" class="muted small" role="status"><span class="spin"></span> Lecture du document en cours : les fiches s'affichent ici dès qu'elles sont prêtes. Vous pouvez continuer ailleurs.</div>
                   <div v-else-if="fxStatut()==='lu'">
@@ -1808,12 +1809,11 @@
                     <div v-for="f in kb.fx.data.fiches" :key="'fx'+f.id" class="fx-fiche">
                       <div class="conv-check"><label><input type="checkbox" :checked="f.statut==='acceptee'" :disabled="kb.fx.coche===f.id" @change="fxCocher(f, $event)"><span><span><span class="pill neutral" style="font-size:10px;margin-right:6px">{{ f.nature_libelle }}</span>{{ fxTexte(f) }}</span></span></label></div>
                       <blockquote class="fx-passage">« {{ f.source.passage }} »</blockquote>
-                      <div v-if="kb.fx.contexte[f.id]" class="fx-contexte small">{{ kb.fx.contexte[f.id].avant }}<mark>{{ kb.fx.contexte[f.id].passage }}</mark>{{ kb.fx.contexte[f.id].apres }}</div>
+                      <div v-if="kb.fx.contexte[f.id]" class="fx-contexte small" :data-fx-ctx="f.id">{{ kb.fx.contexte[f.id].avant }}<mark>{{ kb.fx.contexte[f.id].passage }}</mark>{{ kb.fx.contexte[f.id].apres }}</div>
                       <div class="row wrap small muted fx-meta">
                         <span>{{ f.source_libelle }}<template v-if="f.source.doc_nom"> : {{ f.source.doc_nom }}</template></span>
-                        <button v-if="f.source.lien_passage" type="button" class="btn ghost sm" @click="fxContexte(f)">{{ kb.fx.contexte[f.id] ? 'Masquer le contexte' : 'Voir le passage dans le document' }}</button>
-                        <span v-if="f.date_fin_validite">valable jusqu'au {{ fxDate(f.date_fin_validite) }}</span>
                         <span v-if="f.a_reconfirmer" class="pill a_etudier" style="font-size:10px">à reconfirmer</span>
+                        <button v-if="f.source.lien_passage" type="button" class="btn ghost sm fx-voir" @click="fxContexte(f)">{{ kb.fx.contexte[f.id] ? 'Masquer le contexte' : 'Voir le passage dans le document' }}</button>
                       </div>
                     </div>
                     <div class="muted small" style="margin-top:8px">Les fiches cochées rejoignent vos preuves.</div>
@@ -3397,6 +3397,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-O6+DqE3NdKvQPNjAmH9O4JaxDhXlRxUs2Juwv+q683LpYODWWY0mxcgwt2sk6dV8" defer></script>
+<script src="/static/app.js" integrity="sha384-Ygu2/Z7WudmiLR+OQFoZAb/u3HG2lAGGiAUrfyFSPYlgdhIFRL7HVlfy0QyFVY/S" defer></script>
 </body>
 </html>

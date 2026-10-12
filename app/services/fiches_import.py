@@ -84,7 +84,7 @@ ECARTS = {
     "passage_introuvable": "passage non retrouvé tel quel dans le document",
     "valeur_hors_passage": "fiche qui disait plus que son passage",
     "exigence_acheteur": "passage qui rapporte une exigence d'un acheteur",
-    "equipe": "fiche sur une personne (les fiches « Équipe » se saisissent à la main)",
+    "equipe": "fiche sur une personne (les fiches\u00a0« Équipe\u00a0» se saisissent à la main)",
     "incomplete": "fiche incomplète",
     "passage_trop_long": "passage trop long",
     "trop_de_fiches": "trop de fiches pour un seul document",
@@ -497,20 +497,39 @@ def _racine(mot: str) -> str:
     return mot[:5] if len(mot) > 5 else mot
 
 
-def mots_hors_passage(valeur_txt: str, passage: str) -> list:
+# Libellé d'un chiffre clé : quelques mots de catégorie admis SEULEMENT si le passage dit la même
+# chose avec ses mots (« Effectif » pour « 12 salariés »). Liste fermée : un chiffre n'est jamais
+# rangé sous une autre catégorie que celle que le passage écrit (85 chantiers ≠ chiffre d'affaires).
+_CATEGORIES = {
+    "effectif": r"salari|compagnon|personnes|employe|collaborat|ouvrier|effectif|equipe",
+    "effectifs": r"salari|compagnon|personnes|employe|collaborat|ouvrier|effectif|equipe",
+    "chiffre": r"chiffre d'affaires|\bca\b",
+    "affaires": r"chiffre d'affaires|\bca\b",
+    "surface": r"m2|m²|metres? carres|surface",
+    "creation": r"\bcree|creation|fonde|fondation|depuis (?:19|20)\d\d",
+    "anciennete": r"\bcree|creation|fonde|fondation|depuis (?:19|20)\d\d|anciennete",
+}
+
+
+def mots_hors_passage(valeur_txt: str, passage: str, champ: str = "") -> list:
     """Mots porteurs de sens d'un champ écrit qui n'apparaissent pas dans le passage (repliés, à la
     racine près : « réalisée » / « réalisé », « toitures » / « toiture »). Une reformulation de l'IA
-    (« rénovation » pour « réfection ») n'est jamais gardée."""
+    (« rénovation » pour « réfection ») n'est jamais gardée. Le libellé d'un chiffre clé admet en plus
+    un mot de catégorie que le passage justifie (_CATEGORIES)."""
+    low = _fold(passage)
     mots_p = set()
-    for w in re.findall(r"[a-z0-9]+", _fold(passage)):
+    for w in re.findall(r"[a-z0-9]+", low):
         mots_p.add(w)
         mots_p.add(_racine(w))
     out = []
     for w in re.findall(r"[a-z]+", _fold(valeur_txt)):
         if len(w) < 4 or w in _MOTS_VIDES:
             continue
-        if w not in mots_p and _racine(w) not in mots_p:
-            out.append(w)
+        if w in mots_p or _racine(w) in mots_p:
+            continue
+        if champ == "libelle" and w in _CATEGORIES and re.search(_CATEGORIES[w], low):
+            continue
+        out.append(w)
     return out
 
 
@@ -601,7 +620,7 @@ def controler(nature, champs, passage, texte: "_Texte", date_fin=None) -> tuple:
         v = val[k]
         trop = pv.elements_hors_passage(nature, {k: v}, ext)
         if not trop and isinstance(v, str) and k in _TXT:
-            trop = mots_hors_passage(v, ext)
+            trop = mots_hors_passage(v, ext, k)
         if trop:
             if k in pv.REQUIS.get(nature, ()):
                 return None, None, None, "valeur_hors_passage"

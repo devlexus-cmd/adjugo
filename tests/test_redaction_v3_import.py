@@ -560,6 +560,14 @@ def test_controler_une_fiche_ne_dit_jamais_plus_que_son_passage():
     # Un passage trop court pour être un passage : introuvable.
     assert fi.controler("materiel", {"designation": "nacelle"}, "nacelles", t)[3] == "passage_introuvable"
     assert fi.controler("inconnue", {}, P_MAT, t)[3] == "incomplete"
+    # Chiffre clé : « Effectif » admis pour « 12 salariés » ; jamais rangé sous une autre catégorie.
+    t2 = fi._Texte("Plaquette 2024\nBreizh Couverture compte 12 salariés et a réalisé 85 chantiers en 2023.\n")
+    p2 = "Breizh Couverture compte 12 salariés et a réalisé 85 chantiers en 2023."
+    val, _e, _f, motif = fi.controler("chiffre_cle", {"libelle": "Effectif", "valeur": 12, "unite": "salariés"}, p2, t2)
+    assert motif is None and val == {"libelle": "Effectif", "valeur": 12, "unite": "salariés"}
+    assert fi.controler("chiffre_cle", {"libelle": "Chiffre d'affaires", "valeur": 85}, p2, t2)[3] == \
+        "valeur_hors_passage"
+    assert fi.controler("chiffre_cle", {"libelle": "Effectif", "valeur": 15}, p2, t2)[3] == "valeur_hors_passage"
 
 
 def test_noms_probables_reperes_sans_ia():

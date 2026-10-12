@@ -1142,13 +1142,17 @@ span.atl-ref { vertical-align:baseline; cursor:default; }
 /* ── Fiches proposées à partir d'un document (rédaction, vague 3, chantier I) ── */
 .fx-panel { margin:8px 0 12px 26px; padding:12px 14px; background:var(--surface-2); border-radius:10px; }
 .fx-ligne { gap:8px; align-items:center; margin-bottom:8px; }
+.fx-champ { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; margin-bottom:12px; }
+.btn.sm.fx-lancer { white-space:normal; height:auto; min-height:34px; max-width:100%; text-align:left; line-height:1.35; padding:7px 14px; }
 .fx-fiche { padding:10px 0; border-top:1px solid var(--hairline); }
 .fx-fiche:first-of-type { border-top:0; }
 .fx-passage { margin:6px 0 4px 26px; padding:6px 10px; border-left:2px solid var(--accent); font-size:12.5px; line-height:1.5; color:var(--text-2); white-space:pre-wrap; overflow-wrap:anywhere; }
 .fx-contexte { margin:4px 0 4px 26px; padding:8px 10px; background:var(--surface-3); border-radius:8px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:220px; overflow:auto; }
 .fx-contexte mark { background:var(--accent-weak); color:inherit; }
 .fx-meta { gap:6px 10px; align-items:center; margin-left:26px; }
+.btn.sm.fx-voir { padding:0 2px; height:auto; min-height:24px; text-decoration:underline; text-underline-offset:2px; }
 @media (max-width:520px) {
   .fx-panel { margin-left:0; padding:12px; }
   .fx-passage, .fx-contexte, .fx-meta { margin-left:0; }
+  .btn.sm.fx-lancer { width:100%; justify-content:center; text-align:center; }
 }
