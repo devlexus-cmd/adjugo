@@ -30,10 +30,15 @@ def create_checkout(plan: str, current_user: User = Depends(get_current_user), d
             current_user.stripe_customer_id = customer.id
             db.commit()
 
+        # Forfait + prix « à l'usage » (dépassement au-delà du quota) quand il est configuré : sans
+        # lui dans l'abonnement, les unités envoyées au compteur Stripe ne seraient jamais facturées.
+        line_items = [{"price": prices[plan], "quantity": 1}]
+        if (settings.STRIPE_PRICE_OVERAGE or "").strip():
+            line_items.append({"price": settings.STRIPE_PRICE_OVERAGE.strip()})
         session = stripe.checkout.Session.create(
             customer=current_user.stripe_customer_id,
             payment_method_types=["card"],
-            line_items=[{"price": prices[plan], "quantity": 1}],
+            line_items=line_items,
             mode="subscription",
             success_url=settings.APP_BASE_URL + "/app?payment=success",
             cancel_url=settings.APP_BASE_URL + "/app?payment=cancel",
@@ -78,7 +83,8 @@ def get_subscription_status(current_user: User = Depends(get_current_user),
             return _persisted()
 
         sub = subscriptions.data[0]
-        price_id = sub["items"]["data"][0]["price"]["id"]
+        from app.services.billing_usage import plan_price_id
+        price_id = plan_price_id(sub["items"]["data"])    # le forfait, pas le prix à l'usage
         if price_id == settings.STRIPE_PRICE_PRO:
             plan = "pro"
         elif price_id == settings.STRIPE_PRICE_BUSINESS:
@@ -120,6 +126,17 @@ def set_overage(enabled: bool = True, current_user: User = Depends(get_current_u
     if enabled and not overage_billable(bu):
         raise HTTPException(402, "Le paiement à l'usage nécessite un abonnement Pro ou Business "
                                  "actif. Abonnez-vous d'abord, puis activez-le.")
+    if enabled:
+        # L'abonnement doit porter le prix à l'usage (abonnements souscrits avant) : sinon les
+        # analyses au-delà du forfait ne seraient jamais facturées.
+        from app.services.billing_usage import ensure_overage_item
+        try:
+            ok = ensure_overage_item(bu)
+        except Exception:
+            ok = False
+        if not ok:
+            raise HTTPException(502, "Le paiement à l'usage n'a pas pu être ajouté à votre abonnement. "
+                                     "Réessayez dans un instant.")
     bu.overage_enabled = bool(enabled)
     db.commit()
     return {"overage_enabled": bu.overage_enabled,
@@ -224,7 +241,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         if user:
             if sub.get("status") in ("active", "trialing"):
                 try:
-                    price_id = sub["items"]["data"][0]["price"]["id"]
+                    from app.services.billing_usage import plan_price_id
+                    price_id = plan_price_id(sub["items"]["data"])   # le forfait, pas le prix à l'usage
                 except (KeyError, IndexError, TypeError):
                     price_id = None
                 _set_plan(user, _plan_for_price(price_id))

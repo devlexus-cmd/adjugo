@@ -63,6 +63,22 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
                    "go_decision", "created_at"], "appels_offres")
     dump(Contact, ["id", "name", "email", "phone", "organization", "created_at"], "contacts")
     dump(Document, ["id", "name", "category", "file_size", "expiration_date", "created_at"], "documents_coffre_fort")
+    # Texte intégral lu dans le dossier de chaque marché (rangé avec ses fichiers, cf.
+    # app.services.dce_texte) : listé comme les autres fichiers du dossier — pièce par pièce, ce
+    # qui a été lu (nom, type, statut, caractères, pages), sans recopier le texte.
+    try:
+        rows = db.query(Project).filter(Project.user_id == uid, Project.dce_file_key.isnot(None)).all()
+        data["texte_lu_des_dossiers"] = [{
+            "appel_offres_id": p.id, "fichier": "texte intégral lu du dossier",
+            "taille": ((p.ai_analysis or {}).get("lecture") or {}).get("taille_stockee")
+            if isinstance(p.ai_analysis, dict) else None,
+            "lu_le": ((p.ai_analysis or {}).get("lecture") or {}).get("lu_le") if isinstance(p.ai_analysis, dict) else None,
+            "pieces": [{k: x.get(k) for k in ("nom", "libelle", "statut", "detail", "caracteres", "pages")}
+                       for x in ((((p.ai_analysis or {}).get("lecture") or {}).get("pieces") or [])
+                                 if isinstance(p.ai_analysis, dict) else [])],
+        } for p in rows]
+    except Exception:
+        data["texte_lu_des_dossiers"] = []
     dump(Invoice, ["id", "type", "client_name", "total_ttc", "created_at"], "factures")
     dump(Signal, ["id", "intitule", "collectivite", "pertinence", "created_at"], "signaux_veille")
     dump(SavedSearch, ["id", "name", "query", "frequency", "created_at"], "alertes")

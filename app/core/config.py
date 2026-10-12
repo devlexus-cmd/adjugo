@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PRICE_PRO: str = ""
     STRIPE_PRICE_BUSINESS: str = ""
+    # Facturation au-delà du forfait (5 € HT par analyse) : prix « à l'usage » (metered) relié au
+    # compteur Stripe ci-dessous. Vide = dépassement compté en base seulement (facturable à la main).
+    # DÉCLARÉ ICI : une variable d'environnement non déclarée n'est pas lue par pydantic-settings.
+    STRIPE_PRICE_OVERAGE: str = ""
+    # Nom de l'événement du compteur Stripe (Billing → Meters) qui reçoit une unité par analyse.
+    STRIPE_METER_EVENT_OVERAGE: str = "adjugo_analyse_overage"
 
     # Connexion Google (OAuth 2.0). Inactive tant que CLIENT_ID/SECRET ne sont pas fournis.
     # REDIRECT_URI doit correspondre EXACTEMENT à celui enregistré dans la Google Cloud Console.
@@ -122,10 +128,13 @@ class Settings(BaseSettings):
     # Pendant l'essai : accès niveau Pro. Pro 129,99 € · Business 199,99 € · Sur mesure sur devis.
     # 'starter' = palier résiduel : essai actif→niveau Pro, essai expiré→bloqué, historique/démo→Découverte.
     PLAN_LIMITS: dict = {
-        "starter": {"analyses": 5, "storage_mb": 500, "members": 2},
-        "pro": {"analyses": 30, "storage_mb": 10240, "members": 10},
-        "business": {"analyses": 100, "storage_mb": 102400, "members": 50},
+        "starter": {"analyses": 5, "storage_mb": 500, "members": 2, "questions_jour": 15},
+        "pro": {"analyses": 30, "storage_mb": 10240, "members": 10, "questions_jour": 50},
+        "business": {"analyses": 100, "storage_mb": 102400, "members": 50, "questions_jour": 120},
     }
+    # Questions posées à l'IA sur un dossier (hors quota d'analyses) : plafond PAR ORGANISATION et
+    # PAR JOUR (heure de Paris). 0 = valeur du forfait (PLAN_LIMITS[...]["questions_jour"]).
+    QUESTIONS_PAR_JOUR: int = 0
 
     @field_validator("*", mode="before")
     @classmethod

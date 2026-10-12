@@ -186,7 +186,7 @@ def consume_analysis(user, db: Session) -> None:
             db.commit()
             try:
                 from app.services.billing_usage import report_overage
-                report_overage(locked)
+                report_overage(locked, db=db)
             except Exception as e:
                 import logging
                 logging.getLogger("adjugo").warning("Report d'usage facturable échoué (user %s) : %s", locked.id, e)
@@ -217,10 +217,105 @@ def refund_analysis(user, db: Session) -> None:
         used = locked.analyses_used_this_month or 0
         if used <= 0:
             return
-        if used > _limit(locked) and (locked.overage_count or 0) > 0:
+        was_overage = used > _limit(locked) and (locked.overage_count or 0) > 0
+        if was_overage:
             locked.overage_count -= 1  # c'était une analyse hors quota facturée
         locked.analyses_used_this_month = used - 1
         db.commit()
+        if was_overage:
+            # L'unité déjà envoyée à Stripe est annulée (sinon le client paierait une analyse
+            # que l'IA n'a pas rendue).
+            try:
+                from app.services.billing_usage import cancel_overage
+                cancel_overage(locked, db=db)
+            except Exception as e:      # noqa: BLE001
+                import logging
+                logging.getLogger("adjugo").warning("Annulation d'usage Stripe échouée (user %s) : %s",
+                                                    locked.id, e)
     except Exception as e:
         import logging
         logging.getLogger("adjugo").warning("Remboursement quota échoué (user %s) : %s", getattr(user, "id", "?"), e)
+
+
+# ── Questions sur un dossier : hors quota d'analyses, bornées par organisation et par jour ──
+# Avant, seule l'adresse IP les limitait (90 par heure) : dix membres derrière dix adresses, ou un
+# script, pouvaient poser des milliers de questions par jour à la charge d'Adjugo. Chaque question
+# réservée laisse une ligne `jobs` (kind « question_dossier », sans le texte de la question) : le
+# compte est PERSISTANT (redémarrage compris) et partagé par tous les membres de l'organisation.
+QUESTION_KIND = "question_dossier"
+
+
+def questions_limit(user, db) -> int:
+    """Questions par jour pour l'organisation de l'utilisateur (forfait du propriétaire)."""
+    if int(getattr(settings, "QUESTIONS_PAR_JOUR", 0) or 0) > 0:
+        return int(settings.QUESTIONS_PAR_JOUR)
+    billing = _billing_user(user, db)
+    plan = _plan_key(billing)
+    if plan not in ("pro", "business"):
+        plan = "pro" if _trial_state(billing) == "active" else "starter"
+    lim = (settings.PLAN_LIMITS.get(plan) or {}).get("questions_jour")
+    return int(lim) if lim else 15
+
+
+def _day_start_utc_naive():
+    """Début du jour en cours, heure de Paris, exprimé en UTC sans fuseau (format des dates en base)."""
+    from datetime import datetime as _dt, timezone as _tz
+    try:
+        from zoneinfo import ZoneInfo
+        now = _dt.now(ZoneInfo("Europe/Paris"))
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start.astimezone(_tz.utc).replace(tzinfo=None)
+    except Exception:
+        now = _dt.now(_tz.utc)
+        return now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+
+
+def questions_today(user, db) -> int:
+    from sqlalchemy import func
+    from app.models import Job
+    from app.core.org import member_ids
+    return int(db.query(func.count(Job.id)).filter(
+        Job.user_id.in_(member_ids(user, db)), Job.kind == QUESTION_KIND,
+        Job.created_at >= _day_start_utc_naive()).scalar() or 0)
+
+
+def reserve_question(user, db) -> int:
+    """Réserve une question pour aujourd'hui ; 429 si l'organisation a atteint sa borne. Renvoie
+    l'identifiant de la réservation (à libérer si l'IA ne répond pas)."""
+    from datetime import timedelta
+    from app.models import Job
+    lim = questions_limit(user, db)
+    if questions_today(user, db) >= lim:
+        raise HTTPException(429, f"Limite de questions atteinte pour aujourd'hui ({lim} par organisation et "
+                                 f"par jour). Elle repart demain matin.")
+    j = Job(user_id=user.id, kind=QUESTION_KIND, status="done", label="Question sur le dossier")
+    db.add(j)
+    db.commit()
+    db.refresh(j)
+    # Course entre deux questions simultanées : la réservation de trop est rendue.
+    if questions_today(user, db) > lim:
+        release_question(db, j.id)
+        raise HTTPException(429, f"Limite de questions atteinte pour aujourd'hui ({lim} par organisation et "
+                                 f"par jour). Elle repart demain matin.")
+    # Ménage : réservations de plus de 7 jours de cette organisation (le compte ne lit que le jour).
+    try:
+        from app.core.org import member_ids
+        old = _day_start_utc_naive() - timedelta(days=7)
+        db.query(Job).filter(Job.user_id.in_(member_ids(user, db)), Job.kind == QUESTION_KIND,
+                             Job.created_at < old).delete(synchronize_session=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+    return j.id
+
+
+def release_question(db, job_id) -> None:
+    """Rend une question réservée (l'IA n'a pas répondu : la question ne compte pas)."""
+    if not job_id:
+        return
+    try:
+        from app.models import Job
+        db.query(Job).filter(Job.id == job_id, Job.kind == QUESTION_KIND).delete(synchronize_session=False)
+        db.commit()
+    except Exception:
+        db.rollback()

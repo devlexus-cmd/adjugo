@@ -992,6 +992,13 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 .gn-inp { width:160px; max-width:100%; }
 .gn-pieces { list-style:none; margin:6px 0 0; padding:0; font-size:12.5px; }
 .gn-pieces li { padding:4px 0; overflow-wrap:anywhere; }
+.gn-pieces .gn-manque { color:var(--warning-text); font-weight:600; }
+/* Couverture de la lecture du dossier (lu en entier / pièces non lues et pourquoi) */
+.lect-cov { margin:10px 0 2px; padding:10px 12px; border-radius:10px; background:var(--surface-2); border:1px solid var(--hairline); }
+.lect-cov.partiel { background:var(--warning-weak); border-color:color-mix(in srgb,var(--warning) 35%,transparent); color:var(--warning-text); }
+.lect-cov .muted { color:inherit; opacity:.85; }
+/* Sources d'une réponse : phrase exacte du dossier, pièce, page */
+.qa-src { margin-top:6px; display:flex; flex-direction:column; gap:6px; }
 @media (prefers-reduced-motion: reduce) { .gn-det > summary::before { transition:none; } }
 
 /* ══════════ Atelier du dossier de présentation (rédaction, vague 2) ══════════

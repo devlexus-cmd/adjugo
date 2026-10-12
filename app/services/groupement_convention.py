@@ -403,8 +403,16 @@ def _fi(code, extrait, source, clauses=None, libelle=None) -> dict:
 
 
 def dce_text(db, project, owner_ids: list) -> Optional[str]:
-    """Texte intégral du dossier du marché archivé (dossier « DCE »), extraction BORNÉE
-    (mêmes plafonds que /reanalyze). None si aucun dossier importé ou illisible."""
+    """Texte intégral du dossier du marché : la lecture intégrale rangée avec les fichiers du marché
+    (app.services.dce_texte) ; à défaut (analyse antérieure), relecture BORNÉE du dossier archivé
+    (dossier « DCE »). None si aucun dossier importé ou illisible."""
+    try:
+        from app.services.dce_texte import dce_fulltext
+        full = dce_fulltext(project)
+        if full:
+            return full
+    except Exception as e:      # noqa: BLE001
+        logger.info("texte intégral rangé illisible (projet %s) : %s", project.id, type(e).__name__)
     try:
         from app.models import Document
         from app.services.analysis import extract_dce_text

@@ -531,7 +531,7 @@ const __adjApp = createApp({
       src: {
         query: "", dept: "", country: "FR", advOpen: false, type_marche: "", cpv: "", searching: false, tenders: [], errors: [], sources: [], expanded: null,
         offset: 0, hasMore: false, loadingMore: false,
-        analyzing: false, analysis: null, projectId: null, chosen: null,
+        analyzing: false, analysis: null, projectId: null, chosen: null, lectureMsg: "",
         ct: { trade: "", dept: "", searching: false, companies: [], selected: [], errors: [] },
         generating: false, dossier: null, alerts: [],
         renewals: { list: [], loading: false, done: false },
@@ -542,7 +542,7 @@ const __adjApp = createApp({
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             chkHelp: null, grp: _grpInit(), conv: _convInit(), pm: _pmInit(), depot: _depotInit(),
-            qa: [], qaInput: "", qaLoading: false, grilleBusy: "", atl: _atlCardInit(),
+            qa: [], qaInput: "", qaLoading: false, grilleBusy: "", atl: _atlCardInit(), lectureMsg: "", lectureBusy: false, lecturePid: null,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
       titles: { atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
@@ -1222,6 +1222,7 @@ const __adjApp = createApp({
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
       this.loadPredepot(p.id);   // état du wizard pré-dépôt propre à cet AO
       this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites(); this.aoLoadConsortium(); this.aoGrpLoad(); this.atlCardLoad();
+      this.aoResumeLecture();   // gros dossier en cours de lecture (tâche de fond) : on reprend le suivi
       setTimeout(() => this.aoLoadBuyer(), 700);   // profil acheteur (BOAMP, lent) en différé, après le cœur de l'AO
     },
     loadPredepot(pid) {
@@ -1285,10 +1286,13 @@ const __adjApp = createApp({
       const q = (this.ao.qaInput || "").trim();
       if (!q || this.ao.qaLoading) return;
       this.ao.qaLoading = true;
-      const entry = { q, a: "__loading__" };
-      this.ao.qa.push(entry); this.ao.qaInput = "";
+      this.ao.qa.push({ q, a: "__loading__", sources: [], msg: "" }); this.ao.qaInput = "";
+      const entry = this.ao.qa[this.ao.qa.length - 1];
       try {
         const r = await this.api("POST", "/api/sourcing/ask", { project_id: this.ao.project.id, question: q });
+        // Chaque source = une phrase du dossier retrouvée telle quelle, avec sa pièce et sa page.
+        entry.sources = Array.isArray(r.sources) ? r.sources.filter(x => x && x.citation) : [];
+        entry.msg = r.message || "";
         entry.a = r.answer || "—";
       } catch (e) { entry.a = "Erreur : " + e.message; }
       finally { this.ao.qaLoading = false; }
@@ -3222,36 +3226,103 @@ const __adjApp = createApp({
       const d = this.ao.dossier;
       if (d && d.zip_b64) { this.aoDownload(); this.notify(this.dossierToast(d, "Dossier commun assemblé et téléchargé"), this.dossierWarnKind(d)); }
     },
+    // Lecture d'un dossier : liée au MARCHÉ suivi (ao.lecturePid). Ouvrir un autre marché pendant la
+    // lecture n'y montre ni le voile ni les messages, et n'y bloque pas les boutons ; à la fin, seul
+    // le marché lu est rechargé.
+    aoBusy() { return !!(this.ao.uploading && this.ao.project && this.ao.lecturePid === this.ao.project.id); },
+    aoLectureDebut(pid) { this.ao.uploading = true; this.ao.lecturePid = pid; this.ao.lectureMsg = ""; },
+    aoLectureFin(pid) { if (this.ao.lecturePid === pid) { this.ao.uploading = false; this.ao.lectureMsg = ""; this.ao.lecturePid = null; } },
+    aoLectureMsg(pid) { return m => { if (this.ao.lecturePid === pid) this.ao.lectureMsg = m; }; },
+    async aoApresLecture(pid, toast) {
+      if (!(this.ao.project && this.ao.project.id === pid)) { this.notify(toast); return; }
+      this.ao.project = await this.api("GET", "/api/projects/" + pid);
+      this.aoLoadDocs(); this.atlCardLoad();
+      this.notify(toast === null ? this.couvertureToast(this.ao.project.ai_analysis) : toast);
+    },
     async aoUploadDce(e) {
       const file = e.target.files[0]; if (!file) return;
       e.target.value = "";
       if (!this.gateCriteria()) return;
-      this.ao.uploading = true;
+      const pid = this.ao.project.id;
+      this.aoLectureDebut(pid);
       try {
-        const fd = new FormData(); fd.append("file", file); fd.append("project_id", this.ao.project.id);
-        await this.api("POST", "/api/sourcing/analyze-upload", fd, true);
-        this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id);
-        this.aoLoadDocs(); this.atlCardLoad();
-        this.notify("Dossier analysé — analyse complète");
+        const fd = new FormData(); fd.append("file", file); fd.append("project_id", pid);
+        const r = await this.api("POST", "/api/sourcing/analyze-upload", fd, true);
+        if (r && r.en_cours) await this.waitLecture(pid, this.aoLectureMsg(pid));
+        await this.aoApresLecture(pid, (this.ao.project && this.ao.project.id === pid) ? null : "Dossier du marché analysé");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
-      } finally { this.ao.uploading = false; }
+      } finally { this.aoLectureFin(pid); }
     },
     async aoReanalyze() {
       if (!this.ao.project) return;
-      this.ao.uploading = true;
+      const pid = this.ao.project.id;
+      this.aoLectureDebut(pid);
       try {
-        const fd = new FormData(); fd.append("project_id", this.ao.project.id);
-        await this.api("POST", "/api/sourcing/reanalyze", fd, true);
-        this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id);
-        this.aoLoadDocs(); this.atlCardLoad();
-        this.notify("Ré-analyse terminée");
+        const fd = new FormData(); fd.append("project_id", pid);
+        const r = await this.api("POST", "/api/sourcing/reanalyze", fd, true);
+        if (r && r.en_cours) await this.waitLecture(pid, this.aoLectureMsg(pid));
+        await this.aoApresLecture(pid, "Ré-analyse terminée");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
-      } finally { this.ao.uploading = false; }
+      } finally { this.aoLectureFin(pid); }
     },
+    // Lecture d'un gros dossier en tâche de fond : progression lue toutes les 3 s jusqu'à la fin.
+    // Renvoie le résultat de l'analyse (même forme que la réponse d'import), ou lève l'erreur.
+    async waitLecture(pid, onMsg) {
+      for (let i = 0; i < 1000; i++) {
+        let st = null;
+        try { st = await this.api("GET", "/api/sourcing/lecture/" + pid); } catch (e) { st = null; }
+        if (st && st.etat === "erreur") throw new Error(st.erreur || "La lecture du dossier a échoué.");
+        if (st && st.etat === "termine") {
+          if (st.job_id) { try { const j = await this.api("GET", "/api/jobs/" + st.job_id); if (j && j.result) return j.result; } catch (e) {} }
+          return null;
+        }
+        if (st && onMsg) onMsg(this.lectureMsg(st.progression || {}));
+        await new Promise(res => setTimeout(res, 3000));
+      }
+      throw new Error("La lecture du dossier prend plus de temps que prévu : revenez sur ce marché un peu plus tard.");
+    },
+    lectureMsg(p) {
+      p = p || {};
+      const n = (v, mot) => v + " " + mot + (v > 1 ? "s" : "");
+      if (p.etape === "synthese") return "Analyse : rassemblement de ce qui a été lu dans chaque pièce…";
+      if (p.etape === "analyse" && p.parties_total) return "Analyse : " + n(p.parties_lues || 0, "partie") + " lue" + ((p.parties_lues || 0) > 1 ? "s" : "") + " par l'IA sur " + p.parties_total + "…";
+      if (p.etape === "analyse") return "Analyse du dossier lu en entier…";
+      const lues = p.pieces_lues || 0;
+      let m = "Lecture du dossier : " + n(lues, "pièce") + " lue" + (lues > 1 ? "s" : "");
+      if (p.pieces_total) m += " sur " + p.pieces_total;
+      if (p.pages_lues) m += ", " + n(p.pages_lues, "page");
+      return m + "…";
+    },
+    async aoResumeLecture() {
+      const p = this.ao.project; if (!p || this.ao.lecturePid === p.id) return;   // déjà suivie
+      const st = p.workflow && p.workflow.lecture;
+      if (!st || st.etat !== "en_cours") return;
+      this.aoLectureDebut(p.id); this.ao.lectureBusy = true; this.ao.lectureMsg = "Lecture du dossier en cours…";
+      try {
+        await this.waitLecture(p.id, this.aoLectureMsg(p.id));
+        if (this.ao.project && this.ao.project.id === p.id) {
+          this.ao.project = await this.api("GET", "/api/projects/" + p.id);
+          this.atlCardLoad();
+          this.notify(this.couvertureToast(this.ao.project.ai_analysis));
+        }
+      } catch (e) { if (this.ao.project && this.ao.project.id === p.id) this.notify(e.message, "err"); }
+      finally { this.ao.lectureBusy = false; this.aoLectureFin(p.id); }
+    },
+    // Couverture honnête de la lecture : « Dossier lu en entier : N pièces, P pages » ou les manques.
+    couvertureToast(a) {
+      const c = a && a.couverture;
+      if (!c || !c.message) return "Dossier analysé";
+      return c.complet ? "Dossier analysé. " + c.message : c.message;
+    },
+    aoCouverture() { const a = this.ao.project && this.ao.project.ai_analysis; return (a && a.couverture && a.couverture.message) ? a.couverture : null; },
+    aoAncienneLecture() { const a = this.ao.project && this.ao.project.ai_analysis; return !!(a && a.dce_available && a.dce_excerpt && !a.lecture); },
+    // Ce qui manque : pièces non lues ou lues en partie, ET parties que l'IA n'a pas pu exploiter
+    // (lecture en deux temps), chacune avec sa raison.
+    couvManques(c) { return c ? [].concat(c.non_lues || [], c.partielles || [], (c.analyse && c.analyse.manques) || []) : []; },
     async aoExport() {
       try {
         const r = await fetch("/api/export/" + this.ao.project.id, { method: "POST", headers: { Authorization: "Bearer " + this.token } });
@@ -3611,26 +3682,30 @@ const __adjApp = createApp({
       this.src.analyzing = true;
       try {
         const fd = new FormData(); fd.append("file", file); fd.append("project_id", this.src.projectId);
-        const r = await this.api("POST", "/api/sourcing/analyze-upload", fd, true);
-        this.src.analysis = r; this.loadProjects(); this.loadStats();
-        this.notify("Dossier analysé — analyse complète");
+        let r = await this.api("POST", "/api/sourcing/analyze-upload", fd, true);
+        if (r && r.en_cours) r = await this.waitLecture(this.src.projectId, m => { this.src.lectureMsg = m; });
+        if (r) this.src.analysis = r;
+        this.loadProjects(); this.loadStats();
+        this.notify(this.couvertureToast(r));
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
-      } finally { this.src.analyzing = false; }
+      } finally { this.src.analyzing = false; this.src.lectureMsg = ""; }
     },
     async srcReanalyze() {
       if (!this.src.projectId) { this.notify("Importez d'abord le dossier du marché", "err"); return; }
       this.src.analyzing = true;
       try {
         const fd = new FormData(); fd.append("project_id", this.src.projectId);
-        const r = await this.api("POST", "/api/sourcing/reanalyze", fd, true);
-        this.src.analysis = r; this.loadProjects();
+        let r = await this.api("POST", "/api/sourcing/reanalyze", fd, true);
+        if (r && r.en_cours) r = await this.waitLecture(this.src.projectId, m => { this.src.lectureMsg = m; });
+        if (r) this.src.analysis = r;
+        this.loadProjects();
         this.notify("Ré-analyse terminée");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
-      } finally { this.src.analyzing = false; }
+      } finally { this.src.analyzing = false; this.src.lectureMsg = ""; }
     },
 
     // ── Veille amont (signaux d'investissement) ──
@@ -4434,6 +4509,11 @@ __adjApp.component("grille-carte", {
         lecture: (g.lecture && Array.isArray(g.lecture.pieces)) ? g.lecture : null };
     },
     alerteTotal() { const s = this.vm.total.statut; return s === "ecart" || s === "incomplet"; },
+    piecesResume() {
+      const ps = (this.vm.lecture && this.vm.lecture.pieces) || [];
+      const manque = ps.filter(p => p.statut === "non_lu" || p.statut === "lu_en_partie" || p.ia || (!p.statut && p.lu_en_entier === false)).length;
+      return manque ? ps.length + ", dont " + manque + " non lue" + (manque > 1 ? "s" : "") + " ou lue" + (manque > 1 ? "s" : "") + " en partie" : String(ps.length);
+    },
     rienImpose() { const v = this.vm; return !v.impose && !v.cadreFourni && !v.cadreMentionne && !v.limites.length && !v.visite; },
     cadreManquant() { const v = this.vm; return v.impose && !v.cadreFourni; },
   },
@@ -4487,9 +4567,12 @@ __adjApp.component("grille-carte", {
     + '<div v-for="(x,i) in vm.limites" :key="\'lp\'+i" class="gn-src"><div class="gn-src-t">{{ lim(x) }}</div><blockquote v-if="x.phrase" class="gn-q">{{ x.phrase }}</blockquote><div v-if="x.source" class="muted small">Trouvée dans : {{ x.source }}</div></div>'
     + '<div v-if="vm.visite" class="gn-src"><div class="gn-src-t">Visite obligatoire</div><blockquote class="gn-q">{{ vm.visite.phrase }}</blockquote><div v-if="vm.visite.source" class="muted small">Trouvée dans : {{ vm.visite.source }}</div></div>'
     + '</details>'
-    + '<details v-if="vm.lecture && vm.lecture.pieces.length" class="gn-det"><summary>Pièces lues ({{ vm.lecture.pieces.length }})</summary>'
-    + '<ul class="gn-pieces"><li v-for="(p,i) in vm.lecture.pieces" :key="\'pc\'+i"><span>{{ p.libelle }}</span><span v-if="p.nom" class="muted"> · {{ p.nom }}</span>'
-    + '<span v-if="p.lu_en_entier===true" class="muted"> · lue en entier</span><span v-else-if="p.lu_en_entier===false" class="muted"> · lue en partie</span></li></ul>'
+    + '<details v-if="vm.lecture && vm.lecture.pieces.length" class="gn-det"><summary>Pièces lues ({{ piecesResume }})</summary>'
+    + '<ul class="gn-pieces"><li v-for="(p,i) in vm.lecture.pieces" :key="\'pc\'+i" :class="{\'gn-nonlue\':p.statut===\'non_lu\'}"><span>{{ p.libelle }}</span><span v-if="p.nom" class="muted"> · {{ p.nom }}</span>'
+    + '<template v-if="p.statut===\'non_lu\'"><span class="gn-manque"> · non lue</span><span v-if="p.raison" class="muted"> : {{ p.raison }}</span></template>'
+    + '<template v-else-if="p.statut===\'lu_en_partie\' || (!p.statut && p.lu_en_entier===false)"><span class="gn-manque"> · lue en partie</span><span v-if="p.raison" class="muted"> : {{ p.raison }}</span></template>'
+    + '<span v-else-if="(p.statut===\'lu_en_entier\' || p.lu_en_entier===true) && !p.ia" class="muted"> · lue en entier<template v-if="p.pages"> ({{ p.pages }} {{ p.pages > 1 ? "pages" : "page" }})</template></span>'
+    + '<template v-if="p.ia"><span class="gn-manque"> · {{ p.ia }}</span></template></li></ul>'
     + '</details>'
     + '</div>',
 });

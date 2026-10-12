@@ -851,7 +851,7 @@ def test_dossier_commun_prend_le_texte_de_l_atelier_et_n_appelle_pas_l_ia(client
 def test_mesure_fichier_impose_a_l_import_et_metrics(client, auth, monkeypatch):
     from app.services import analysis as an
 
-    def fake_analyze(dce_text, company, gonogo, lang_name=None, pieces=None):
+    def fake_analyze(dce_text, company, gonogo, lang_name=None, pieces=None, **_lecture):   # lecture intégrale
         return _analysis(dce_text, pieces)
     monkeypatch.setattr(an, "analyze_dce_text", fake_analyze)
     h = auth["headers"]

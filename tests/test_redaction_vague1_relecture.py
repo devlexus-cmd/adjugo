@@ -301,7 +301,7 @@ def test_analyse_d_un_dossier_importe_hors_de_la_boucle(client, auth, monkeypatc
     import app.services.analysis as an
     seen = {}
 
-    def _fake(text, company=None, criteria=None, lang_name=None, pieces=None):
+    def _fake(text, company=None, criteria=None, lang_name=None, pieces=None, **_lecture):   # lecture intégrale : integral, note, texte complet
         try:
             asyncio.get_running_loop()
             seen["loop"] = True

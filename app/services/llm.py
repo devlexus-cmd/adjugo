@@ -87,6 +87,24 @@ def _use_mistral() -> bool:
     return _resolve_provider() == "mistral"
 
 
+# ── Cache de prompt (Anthropic) ─────────────────────────────────────────────────
+# Le SDK épinglé (anthropic 0.34) transmet tel quel un bloc {"type": "text", "text": …,
+# "cache_control": {"type": "ephemeral"}} (clé inconnue de son type conservée) et l'API l'accepte
+# sans en-tête bêta depuis la disponibilité générale du cache de prompt. Lecture du cache : 10 % du
+# prix d'entrée ; écriture : 125 % ; durée 5 minutes. Longueur minimale d'un préfixe mis en cache :
+# 1 024 tokens pour Sonnet 4.6, 4 096 pour Haiku 4.5 (en dessous, rien n'est mis en cache, sans
+# erreur). Mistral ignore le marquage (contenu aplati). Coupure : LLM_PROMPT_CACHE=0.
+PROMPT_CACHE = os.getenv("LLM_PROMPT_CACHE", "1").strip().lower() not in ("0", "false", "non", "no")
+
+
+def cached_text_block(text: str) -> dict:
+    """Bloc de texte marqué pour le cache de prompt (préfixe stable : consigne, règlement)."""
+    blk = {"type": "text", "text": text or ""}
+    if PROMPT_CACHE:
+        blk["cache_control"] = {"type": "ephemeral"}
+    return blk
+
+
 class _Usage:
     __slots__ = ("input_tokens", "output_tokens")
 
@@ -331,6 +349,8 @@ def _unmask_response(pz, resp):
 # estimation en dollars au tarif public du fournisseur. Rien n'est montré au client.
 # Tarifs Anthropic (API directe, $ par million de tokens, entrée / sortie), relevés le 12/10/2026.
 _PRICES_USD_PER_MTOK = {MODEL: (3.0, 15.0), MODEL_FAST: (1.0, 5.0)}
+# Cache de prompt : écriture = 1,25 × le prix d'entrée (5 min), lecture = 0,1 ×.
+_CACHE_WRITE_FACTOR, _CACHE_READ_FACTOR = 1.25, 0.10
 _METER = contextvars.ContextVar("adjugo_cost_meter", default=None)
 
 
@@ -342,6 +362,8 @@ class cost_meter:
         self.calls = 0
         self.input_tokens = 0
         self.output_tokens = 0
+        self.cache_read_tokens = 0
+        self.cache_write_tokens = 0
         self.truncated = 0
         self.by_model = {}
         self.provider = "anthropic"
@@ -349,36 +371,45 @@ class cost_meter:
         self._token = None
         self._t0 = 0.0
 
-    def add(self, model: str, tin: int, tout: int, stop_reason: str = "") -> None:
+    def add(self, model: str, tin: int, tout: int, stop_reason: str = "",
+            cache_read: int = 0, cache_write: int = 0) -> None:
+        """tin = tokens d'entrée hors cache ; cache_read / cache_write = tokens d'entrée lus dans
+        le cache / écrits dans le cache (facturés 0,1 × et 1,25 × le prix d'entrée)."""
         self.calls += 1
         self.input_tokens += tin
         self.output_tokens += tout
+        self.cache_read_tokens += cache_read
+        self.cache_write_tokens += cache_write
         if stop_reason == "max_tokens":
             self.truncated += 1
-        m = self.by_model.setdefault(model or "?", [0, 0, 0])
+        m = self.by_model.setdefault(model or "?", [0, 0, 0, 0, 0])
         m[0] += 1
         m[1] += tin
         m[2] += tout
+        m[3] += cache_read
+        m[4] += cache_write
         if self._parent is not None:          # un traitement inclus compte aussi dans l'englobant
-            self._parent.add(model, tin, tout, stop_reason)
+            self._parent.add(model, tin, tout, stop_reason, cache_read, cache_write)
 
     def cost_usd(self):
         """Estimation en $ ; None si un modèle n'a pas de tarif connu (ex. Mistral)."""
         if self.provider != "anthropic":
             return None
         total = 0.0
-        for model, (_n, tin, tout) in self.by_model.items():
+        for model, (_n, tin, tout, cr, cw) in self.by_model.items():
             if model not in _PRICES_USD_PER_MTOK:
                 return None
             pin, pout = _PRICES_USD_PER_MTOK[model]
-            total += tin / 1e6 * pin + tout / 1e6 * pout
+            total += (tin + cr * _CACHE_READ_FACTOR + cw * _CACHE_WRITE_FACTOR) / 1e6 * pin + tout / 1e6 * pout
         return round(total, 5)
 
     def summary(self) -> dict:
         return {"traitement": self.label, "appels": self.calls, "tokens_entree": self.input_tokens,
-                "tokens_sortie": self.output_tokens, "reponses_coupees": self.truncated,
+                "tokens_sortie": self.output_tokens, "tokens_cache_lus": self.cache_read_tokens,
+                "tokens_cache_ecrits": self.cache_write_tokens, "reponses_coupees": self.truncated,
                 "cout_estime_usd": self.cost_usd(), "fournisseur": self.provider,
-                "par_modele": {k: {"appels": v[0], "tokens_entree": v[1], "tokens_sortie": v[2]}
+                "par_modele": {k: {"appels": v[0], "tokens_entree": v[1], "tokens_sortie": v[2],
+                                   "tokens_cache_lus": v[3], "tokens_cache_ecrits": v[4]}
                                for k, v in self.by_model.items()},
                 "duree_s": round(time.monotonic() - self._t0, 1) if self._t0 else None}
 
@@ -398,10 +429,10 @@ class cost_meter:
         if self.log:
             s = self.summary()
             cost = s["cout_estime_usd"]
-            logger.info("Coût IA « %s » (espace %s)%s : %d appel(s), %d tokens en entrée, %d en sortie, "
-                        "%s, %d réponse(s) coupée(s), %ss — détail %s",
+            logger.info("Coût IA « %s » (espace %s)%s : %d appel(s), %d tokens en entrée (+ %d lus et %d écrits "
+                        "dans le cache), %d en sortie, %s, %d réponse(s) coupée(s), %ss — détail %s",
                         self.label, self.tenant_id, " [échec]" if exc_type else "", s["appels"],
-                        s["tokens_entree"], s["tokens_sortie"],
+                        s["tokens_entree"], s["tokens_cache_lus"], s["tokens_cache_ecrits"], s["tokens_sortie"],
                         (f"environ {cost:.4f} $" if cost is not None else f"coût non estimé ({s['fournisseur']})"),
                         s["reponses_coupees"], s["duree_s"], s["par_modele"])
         return False
@@ -436,19 +467,31 @@ def latency_snapshot() -> dict:
         return {"buckets": dict(_LAT["counts"]), "sum": _LAT["sum"], "count": _LAT["count"]}
 
 
+def _int_or_zero(v) -> int:
+    try:
+        return int(v or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _track_usage(model: str, resp) -> None:
     try:
         u = getattr(resp, "usage", None)
         if not u:
             return
-        used = (getattr(u, "input_tokens", 0) or 0) + (getattr(u, "output_tokens", 0) or 0)
-        TOKENS["input"] += getattr(u, "input_tokens", 0) or 0
-        TOKENS["output"] += getattr(u, "output_tokens", 0) or 0
+        tin = getattr(u, "input_tokens", 0) or 0
+        tout = getattr(u, "output_tokens", 0) or 0
+        # Cache de prompt : tokens d'entrée lus / écrits dans le cache, comptés À PART de
+        # input_tokens par l'API (champs absents du type Usage du SDK 0.34, lus s'ils sont là).
+        cr = _int_or_zero(getattr(u, "cache_read_input_tokens", 0))
+        cw = _int_or_zero(getattr(u, "cache_creation_input_tokens", 0))
+        used = tin + cr + cw + tout
+        TOKENS["input"] += tin + cr + cw
+        TOKENS["output"] += tout
         TOKENS["calls"] += 1
         meter = _METER.get()
         if meter is not None:
-            meter.add(model, getattr(u, "input_tokens", 0) or 0, getattr(u, "output_tokens", 0) or 0,
-                      getattr(resp, "stop_reason", "") or "")
+            meter.add(model, tin, tout, getattr(resp, "stop_reason", "") or "", cr, cw)
         tid = _CURRENT_TENANT.get()
         if tid is not None:
             if tid not in _TENANT_TOKENS and len(_TENANT_TOKENS) >= _TENANT_TOKENS_MAX:
