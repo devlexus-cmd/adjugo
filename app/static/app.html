@@ -144,6 +144,15 @@
       </header>
       <div class="content">
 
+        <!-- Essai gratuit : choisir un forfait (refus 402), limite d'usage atteinte ou proche, dernières
+             analyses. Sobre, fermable (sauf limite atteinte), jamais de montant. -->
+        <div v-if="essaiCarte" class="card pad rn-suggest" role="region" aria-labelledby="essai-c-t">
+          <i data-lucide="gauge" class="rn-ic"></i>
+          <div class="rn-suggest-t"><b id="essai-c-t">{{ essaiCarte.titre }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ essaiCarte.info }}</span></button>
+            <div class="muted small" style="margin-top:4px">{{ essaiCarte.message }}</div></div>
+          <div class="row wrap rn-g8 rn-suggest-a"><button type="button" class="btn sm primary" @click="essaiCarteGo()"><i data-lucide="sparkles"></i>Voir les forfaits</button><button v-if="essaiCarte.ferme" type="button" class="btn sm ghost" @click="essaiCarteClose()">Plus tard</button></div>
+        </div>
+
         <!-- Suggestion d'interface « publiez votre profil partenaire » (après une inscription ou l'acceptation
              d'une invitation, vague 3). Simple carte fermable : aucun email n'est envoyé pour ça. -->
         <div v-if="reseauSuggest && view!=='reseau'" class="card pad rn-suggest" role="region" aria-labelledby="rn-sg-t">
@@ -2371,7 +2380,8 @@
             <div class="plan">
               <h3>Essai gratuit</h3><div class="muted small">30 jours, sans carte</div>
               <div class="price">0€<small>/30 jours</small></div>
-              <ul><li>Accès complet niveau Pro</li><li>30 analyses IA / mois</li><li>Aucune carte bancaire</li><li>Puis Pro ou Business pour continuer</li></ul>
+              <ul><li>Accès complet niveau Pro</li><li>30 analyses IA pendant l'essai<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">L'essai gratuit comprend 30 analyses sur toute sa durée (et non par mois) et jusqu'à 15 questions par jour sur vos dossiers. Une limite d'usage de l'IA protège le service pendant l'essai : une opération déjà lancée va toujours au bout. Avec un forfait Pro ou Business, cette limite ne s'applique pas.</span></button></li><li>15 questions par jour sur vos dossiers</li><li>Aucune carte bancaire</li><li>Puis Pro ou Business pour continuer</li></ul>
+              <div v-if="plan.trial_state==='active' && stats.usage && stats.usage.quota_scope==='essai'" class="muted small" style="margin-bottom:8px">{{ stats.usage.analyses_remaining }} analyse{{ stats.usage.analyses_remaining>1?'s':'' }} restante{{ stats.usage.analyses_remaining>1?'s':'' }} sur {{ stats.usage.analyses_limit }}<span v-if="stats.usage.trial_usage==='atteint'"> · limite d'usage atteinte : choisissez un forfait pour continuer</span><span v-else-if="stats.usage.trial_usage==='proche'"> · limite d'usage bientôt atteinte</span></div>
               <div class="cur" v-if="plan.trial_state==='active'">Essai en cours · {{ plan.trial_days_left }} j</div>
               <div class="cur" v-else-if="plan.trial_state==='expired'" style="background:#fdeceb;color:#c0392b">Essai terminé</div>
               <button v-else class="btn block" disabled>Inclus</button>
@@ -2443,6 +2453,31 @@
                 <div class="row" style="gap:8px;margin-top:6px"><button type="button" class="btn sm" @click="adminRvRefuser(it)" :disabled="!!admin.rv.busy || String(admin.rv.motif[it.profile_id]||'').trim().length<5"><span v-if="admin.rv.busy===it.profile_id" class="spin"></span>Confirmer le refus</button></div>
               </div>
             </article>
+          </div>
+          <div class="card pad adm-rv" style="margin-bottom:14px" role="region" aria-labelledby="adm-ia-h">
+            <div class="row wrap adm-rv-h"><b id="adm-ia-h"><i data-lucide="gauge" style="color:var(--accent-text);flex:none;margin-right:8px"></i>Coût de l'IA<span v-if="admin.ia.data" class="muted small" style="font-weight:400;margin-left:6px">{{ admin.ia.data.periode }} · {{ fmtEur(admin.ia.data.cout_ia_total_mois_eur) }} ce mois</span><button v-if="admin.ia.data" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ admin.ia.data.explication }}</span></button></b>
+              <button type="button" class="btn sm" @click="adminIaLoad()" :disabled="admin.ia.loading"><span v-if="admin.ia.loading" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Actualiser</button></div>
+            <div v-if="admin.ia.error" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ admin.ia.error }}</div></div>
+            <template v-else-if="admin.ia.data">
+              <div class="small" style="margin:10px 0 6px"><b>Essais en cours</b> <span class="muted">(budget de {{ fmtEur(admin.ia.data.budget_essai_eur) }} par essai)</span></div>
+              <p v-if="!admin.ia.data.essais.length" class="muted small">Aucun essai en cours.</p>
+              <div v-for="e in admin.ia.data.essais" :key="'ia-e'+e.compte" class="row wrap small" style="padding:6px 0;border-bottom:1px solid var(--hairline);gap:8px">
+                <span style="flex:1;min-width:180px">{{ e.organisation || e.email }} <span class="muted">· {{ e.email }}</span></span>
+                <span>{{ e.analyses_utilisees }} / {{ e.analyses_comprises }} analyses</span>
+                <span>{{ fmtEur(e.cout_ia_eur) }} sur {{ fmtEur(e.budget_eur) }}</span>
+                <span class="pill rn-pill-sm" :class="e.etat==='atteint'?'a_etudier':(e.etat==='proche'?'neutral':'go')">{{ e.etat==='atteint' ? 'limite atteinte' : (e.etat==='proche' ? 'limite proche' : 'normal') }}</span>
+                <span class="muted">{{ e.jours_restants }} j</span>
+              </div>
+              <div class="small" style="margin:14px 0 6px"><b>Forfaits payants, ce mois</b> <span class="muted">(alerte au-delà de {{ Math.round((admin.ia.data.seuil_alerte_ratio||0)*100) }} % du prix du forfait, jamais de blocage)</span></div>
+              <p v-if="!admin.ia.data.forfaits_payants.length" class="muted small">Aucun coût relevé ce mois.</p>
+              <div v-for="p in admin.ia.data.forfaits_payants" :key="'ia-p'+p.compte" class="row wrap small" style="padding:6px 0;border-bottom:1px solid var(--hairline);gap:8px">
+                <span style="flex:1;min-width:180px">{{ p.organisation || p.email }} <span class="muted">· {{ p.forfait }}</span></span>
+                <span>{{ fmtEur(p.cout_ia_mois_eur) }}</span>
+                <span class="muted">seuil {{ fmtEur(p.seuil_alerte_eur) }}</span>
+                <span v-if="p.au_dela_du_seuil" class="pill rn-pill-sm a_etudier">alerte<span v-if="p.alerte_le"> du {{ fmtDate(p.alerte_le) }}</span></span>
+              </div>
+            </template>
+            <div v-else-if="admin.ia.loading" class="muted small"><span class="spin"></span> Chargement…</div>
           </div>
           <div class="card pad">
             <div class="row" style="gap:8px;align-items:center"><i data-lucide="hard-drive" style="color:var(--accent-text)"></i><b style="flex:1">Stockage</b>
@@ -3309,6 +3344,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-kc/oE7yspAmd9rw1g3R/CfL326scbd/mnoDG8SDkz3r3wx+DAjAK2tMlX6qDLRuB" defer></script>
+<script src="/static/app.js" integrity="sha384-oqH0QyySBNAVokBQxnugYtfCYd6kmXaEvIyO+9Tk+09Iv8x+d4NP0S8CbABH45Aw" defer></script>
 </body>
 </html>
