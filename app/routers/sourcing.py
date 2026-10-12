@@ -395,6 +395,9 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         ai_summary=analysis.get("summary", ""), ai_analysis=analysis,
         source_url=_safe_link(tender.provenance.source_url),
     )
+    # Décision 11 (rédaction) : ce dossier importé impose-t-il son fichier de réponse ? (agrégat)
+    from app.services.atelier import mesurer_import
+    mesurer_import(project, analysis)
     db.add(project); db.commit(); db.refresh(project)
 
     # Verdict de groupement SEULEMENT sur un vrai DCE scoré (sans DCE : pas de score, rien).
@@ -479,6 +482,9 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     project.go_decision = decision
     project.ai_summary = analysis.get("summary", "")
     project.ai_analysis = analysis
+    # Décision 11 (rédaction) : ce dossier importé impose-t-il son fichier de réponse ? (agrégat)
+    from app.services.atelier import mesurer_import
+    mesurer_import(project, analysis)
     intitule = analysis.get("details", {}).get("intitule_marche")
     if intitule:
         project.name = intitule[:500]
@@ -565,6 +571,9 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     project.go_decision = decision
     project.ai_summary = analysis.get("summary", "")
     project.ai_analysis = analysis
+    # Décision 11 (rédaction) : ce dossier importé impose-t-il son fichier de réponse ? (agrégat)
+    from app.services.atelier import mesurer_import
+    mesurer_import(project, analysis)
     intitule = analysis.get("details", {}).get("intitule_marche")
     if intitule:
         project.name = intitule[:500]
@@ -818,10 +827,10 @@ def generate_documents(request: Request, req: DocumentsRequest,
                     "role": lk.role or "sous_traitant",
                 })
 
-    from app.services.llm import tenant_scope, cost_meter
-    # Coût IA d'un dossier complet (rédaction + fusion des apports) : journalisé, pour décider
-    # plus tard du quota ; rien n'est montré au client.
-    with tenant_scope(current_user.id), cost_meter("dossier de réponse complet", current_user.id):
+    # Le dossier de présentation vient de l'atelier (rédaction, vague 2) : plus aucun appel à
+    # l'IA ici. La portée reste posée, par sécurité, pour tout appel futur.
+    from app.services.llm import tenant_scope
+    with tenant_scope(current_user.id):
         dossier = redaction.build_dossier(project.ai_analysis, company_data, verified, project.id,
                                           lang_name=_user_lang_name(current_user, db),
                                           country=_user_country(current_user, db),

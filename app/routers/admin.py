@@ -197,6 +197,16 @@ def _pending_profile(db: Session, profile_id: str):
     return p
 
 
+@router.get("/mesures/redaction")
+def mesures_redaction(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Décision 11 de l'étude « rédaction » : part des dossiers importés dont le règlement impose
+    son propre fichier de réponse (on passe au remplissage du fichier de l'acheteur dès qu'un
+    dossier sur cinq le fait). Agrégat seulement, réservé à l'administrateur de la plateforme."""
+    _require_platform_admin(current_user)
+    from app.services.atelier import mesure_fichier_impose
+    return mesure_fichier_impose(db)
+
+
 @router.get("/reseau/validations")
 @limiter.limit("120/hour")
 def reseau_validations(request: Request, current_user: User = Depends(get_current_user),

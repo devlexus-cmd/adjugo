@@ -62,23 +62,34 @@ def run_in_thread(job_id: int, work, on_error=None, tenant_id=None, error_messag
             db.commit()
         except Exception as e:
             logger.warning("job %s en échec : %s", job_id, e)
+            msg = (error_message or str(e))[:1000]
             try:
                 db.rollback()
                 j = db.get(Job, job_id)
                 if j:
+                    # Le statut « error » n'est rendu visible qu'AVEC le remboursement (même
+                    # validation) : le client qui voit l'échec voit aussi son quota rendu.
                     j.status = "error"
-                    j.error = (error_message or str(e))[:1000]
+                    j.error = msg
+                    try:
+                        if on_error is not None:
+                            on_error(db, j)
+                        else:
+                            # Le traitement a consommé une analyse à la soumission mais n'a rien
+                            # produit → on rembourse le client.
+                            from app.core.quota import refund_analysis
+                            from app.models import User
+                            u = db.get(User, j.user_id)
+                            if u:
+                                refund_analysis(u, db)
+                    except Exception as e3:
+                        logger.warning("job %s : remboursement après échec impossible : %s", job_id, e3)
+                        db.rollback()
+                        j = db.get(Job, job_id)
+                        if j:
+                            j.status = "error"
+                            j.error = msg
                     db.commit()
-                    if on_error is not None:
-                        on_error(db, j)
-                    else:
-                        # Le traitement a consommé une analyse à la soumission mais n'a rien
-                        # produit → on rembourse le client.
-                        from app.core.quota import refund_analysis
-                        from app.models import User
-                        u = db.get(User, j.user_id)
-                        if u:
-                            refund_analysis(u, db)
             except Exception as e2:
                 logger.warning("job %s : nettoyage après échec impossible : %s", job_id, e2)
         finally:
@@ -88,7 +99,12 @@ def run_in_thread(job_id: int, work, on_error=None, tenant_id=None, error_messag
 
 
 def job_out(j: Job) -> dict:
+    # Les clés « _… » d'un résultat sont internes (ex. relevé de débit de l'atelier) : jamais
+    # renvoyées au client.
+    res = j.result if j.status == "done" else None
+    if isinstance(res, dict):
+        res = {k: v for k, v in res.items() if not str(k).startswith("_")}
     return {"id": j.id, "kind": j.kind, "status": j.status, "label": j.label,
-            "result": j.result if j.status == "done" else None,
+            "result": res,
             "error": j.error if j.status == "error" else "",
             "created_at": j.created_at.isoformat() if j.created_at else None}

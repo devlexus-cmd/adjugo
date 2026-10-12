@@ -116,7 +116,6 @@ _UPLOAD_ROUTES = [(m, _re.compile(rx)) for m, rx in (
     ("POST", r"^/api/sourcing/analyze-upload/?$"),
     ("POST", r"^/api/amont/analyze-upload/?$"),
     ("POST", r"^/api/knowledge/upload/?$"),
-    ("POST", r"^/api/knowledge/memoire-upload/?$"),
     ("POST", r"^/api/invite/[^/]+/contribution/piece/?$"),
 )]
 _MSG_TOO_BIG_UPLOAD = "Fichier trop volumineux : 60 Mo maximum."
@@ -308,6 +307,10 @@ from app.routers.amont import router as amont_router
 app.include_router(amont_router)
 from app.routers.knowledge import router as knowledge_router
 app.include_router(knowledge_router)
+# Rédaction, vague 2 : l'atelier du dossier de présentation (sections, versions, validation,
+# rédaction en tâche de fond, « à relire », export Word et PDF bloqué sauf dérogation).
+from app.routers.atelier import router as atelier_router
+app.include_router(atelier_router)
 from app.routers.rgpd import router as rgpd_router
 app.include_router(rgpd_router)
 from app.routers.feedback import router as feedback_router
@@ -560,6 +563,14 @@ def _recover_orphan_jobs():
                                  .values(status="error", error="Interrompu par un redémarrage du serveur."))
                 db.commit()
                 if res.rowcount == 1:
+                    from app.services import atelier as _atelier
+                    if j.kind in _atelier.JOB_KINDS:
+                        # Atelier : rend EXACTEMENT ce que la tâche a débité (rien pour une refonte
+                        # gratuite) et libère les parties qu'elle rédigeait.
+                        db.refresh(j)
+                        _atelier.rembourser(db, j)
+                        _atelier.liberer_job(db, j.id)
+                        continue
                     u = db.get(User, j.user_id)
                     if u:
                         refund_analysis(u, db)

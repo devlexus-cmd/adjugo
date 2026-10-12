@@ -91,6 +91,10 @@ _BLOCKED = [
     ("POST",   "/api/knowledge/text",                         "enrichir votre savoir-faire"),
     ("POST",   "/api/knowledge/memoire",                      "générer un mémoire technique"),
     ("POST",   "/api/knowledge/questionnaire",                "remplir un questionnaire avec l'IA"),
+    # Atelier du dossier de présentation (rédaction, vague 2) : les actions de l'IA.
+    ("POST",   "/api/atelier/{pid}/sections/{sid}/rediger",   "rédiger avec Adjugo"),
+    ("POST",   "/api/atelier/{pid}/sections/{sid}/raccourcir", "rédiger avec Adjugo"),
+    ("POST",   "/api/atelier/{pid}/rediger",                  "rédiger avec Adjugo"),
     ("POST",   "/api/amont/analyze-text",                     "lancer une analyse IA"),
     ("POST",   "/api/amont/scan",                             "lancer une analyse IA"),
     # (d) compte, abonnement, équipe, organisation

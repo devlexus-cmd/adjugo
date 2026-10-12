@@ -958,6 +958,9 @@ class DossierPresentation(Base):
     # Compteur (pages estimées) mis en cache pour un état du texte : {etat_hash, …}.
     compteur = Column(JSON, nullable=True)
     dernier_export = Column(JSON, nullable=True)  # {le, par, format, nom, empreinte, ia}
+    options_export = Column(JSON, nullable=True)  # {page_garde, sommaire}
+    # Coût IA réel cumulé (cost_meter) : interne, jamais montré au client (décision 6a).
+    cout_ia = Column(JSON, nullable=True)
 
     version = Column(Integer, default=0, nullable=False)   # verrou optimiste (plan)
     created_at = Column(DateTime, default=utcnow)

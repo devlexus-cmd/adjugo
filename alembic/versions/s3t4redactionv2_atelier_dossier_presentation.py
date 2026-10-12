@@ -4,7 +4,7 @@ Idempotent (comme les révisions précédentes) : chaque table / colonne / index
 manque. SQLite (tests, démo) et Postgres (production). Ajoute :
 - dossiers_presentation      → un par marché et par entreprise (UNIQUE(project_id, owner_id)) :
   source du plan, texte du dossier de l'acheteur lu pour la rédaction, quota (analyse débitée,
-  régénérations), dérogation à l'export, compteur, dernier export ;
+  régénérations, coût IA mesuré), dérogation à l'export, compteur, options et dernier export ;
 - dossier_sections           → sections ordonnées (numéro et intitulé du cadre ou critère de la
   grille, poids tel que retrouvé, lot, auteur, statut, limite, validation : qui / quand / empreinte) ;
 - dossier_section_versions   → versions EN AJOUT SEUL (texte, origine ia | utilisateur | raccourci,
@@ -51,6 +51,8 @@ _DOSSIER_COLS = [
     ("derogation", sa.JSON, None),
     ("compteur", sa.JSON, None),
     ("dernier_export", sa.JSON, None),
+    ("options_export", sa.JSON, None),
+    ("cout_ia", sa.JSON, None),
     ("version", sa.Integer, "0"),
     ("created_at", sa.DateTime, None),
     ("updated_at", sa.DateTime, None),

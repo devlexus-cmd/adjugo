@@ -229,6 +229,19 @@ def limites_du_dossier(grille: Optional[dict]) -> dict:
     return out
 
 
+def _cle_phrase(s) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", dp.fold(_flat(s))).strip()
+
+
+def _limite_d_une_question(x: dict, questions: list) -> bool:
+    """La phrase de cette limite est-elle celle d'une question du cadre (« Présentez l'encadrement
+    (2 pages maximum) ») ? Alors elle vaut pour cette question, pas pour tout le document."""
+    ph = _cle_phrase(x.get("phrase"))
+    if len(ph) < 8:
+        return False
+    return any(ph in _cle_phrase(q.get("question")) for q in questions or [])
+
+
 def limites_section(question: str, chaque_question: list) -> list:
     """Limites d'une section du cadre : celles écrites dans sa question, puis celles qui valent
     pour chaque question."""
@@ -284,13 +297,23 @@ def build_plan(analysis: Optional[dict], cadre_text: str = "", base: str = "auto
     cont = (g or {}).get("contraintes") or {}
     impose = bool(cont.get("fichier_impose"))
     lims = limites_du_dossier(g)
+    # Une limite écrite DANS une question du cadre vaut pour cette question : elle est rattachée à
+    # la partie quand le plan suit le cadre ; sinon elle n'est pas contrôlée (dit comme tel).
+    qs_all = parse_cadre(cadre_text) if cadre_text else []
+    if qs_all:
+        doc, par_question = [], []
+        for x in lims["document"]:
+            (par_question if _limite_d_une_question(x, qs_all) else doc).append(x)
+        lims["document"] = doc
+        lims["_par_question"] = par_question
     out = {"source": LIBRE, "message": "", "fichier_impose": impose,
            "message_fichier": gn.MSG_FICHIER_IMPOSE if impose else "",
            "cadre_non_decoupe": False, "criteres_hors_dossier": [], "limites": lims, "sections": []}
 
     # 1. Le cadre de réponse (imposé, ou choisi par l'utilisateur).
+    par_question = lims.pop("_par_question", [])
     if base in ("auto", CADRE) and (impose or base == CADRE):
-        qs = parse_cadre(cadre_text)
+        qs = qs_all
         if qs:
             out["source"] = CADRE
             out["message"] = MSG_CADRE_IMPOSE if impose else MSG_CADRE_FOURNI
@@ -301,6 +324,9 @@ def build_plan(analysis: Optional[dict], cadre_text: str = "", base: str = "auto
             return out
         if impose:
             out["cadre_non_decoupe"] = True
+    # Plan hors cadre : les limites propres à une question ne sont pas contrôlées par l'atelier.
+    for x in par_question:
+        lims["non_controlees"].append(dict(x, portee="question", objet="question"))
 
     # 2. La grille confirmée (sauf choix explicite du plan libre).
     lines = _grille_lines(g) if base != LIBRE else []

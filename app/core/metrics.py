@@ -111,6 +111,26 @@ def render() -> str:
     except Exception:
         pass
 
+    # ── Rédaction, décision 11 : dossiers importés qui imposent leur fichier de réponse ──
+    try:
+        from app.core.database import SessionLocal
+        from app.services.atelier import mesure_fichier_impose
+        db = SessionLocal()
+        try:
+            m = mesure_fichier_impose(db)
+        finally:
+            db.close()
+        out += [
+            "# HELP adjugo_dossiers_importes Dossiers de marché importés et lus (grille construite).",
+            "# TYPE adjugo_dossiers_importes gauge",
+            _fmt("adjugo_dossiers_importes", m["dossiers_importes"]),
+            "# HELP adjugo_dossiers_fichier_impose Dossiers importés dont le règlement impose son fichier de réponse.",
+            "# TYPE adjugo_dossiers_fichier_impose gauge",
+            _fmt("adjugo_dossiers_fichier_impose", m["fichier_impose"]),
+        ]
+    except Exception:
+        pass
+
     # ── Configuration (rate-limit partagé ?) ─────────────────────────────────
     try:
         from app.core.config import get_settings

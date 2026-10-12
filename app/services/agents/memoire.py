@@ -243,24 +243,31 @@ def _consigne_partie(p: dict) -> str:
         out.append(f"LONGUEUR : au plus {p['cible_mots']} mots.")
     else:
         out.append("LONGUEUR : 250 à 450 mots.")
+    autres = [str(x) for x in (p.get("autres_parties") or []) if x]
+    if autres:
+        out.append("AUTRES PARTIES DU DOSSIER (traitées ailleurs, ne les développe pas ici) : "
+                   + " ; ".join(autres[:40]))
     return "\n".join(out)
 
 
 def rediger_partie(p: dict, billing_id=None) -> dict:
     """Rédige une partie. p = {titre, numero, question, critere, poids, partie_de_critere,
-    source_plan, cible_mots, faits: {profil, equipe, chiffrage}, chunks: [...], dossier_acheteur}.
+    source_plan, cible_mots, autres_parties, faits: {profil, equipe, chiffrage, partenaires},
+    chunks: [...], dossier_acheteur}.
     Renvoie {texte, sources, coupe, extraits_fournis, erreur}. Ne lève pas : une panne de l'IA rend
     erreur=True (l'appelant décide du remboursement)."""
     from app.services.memoire_export import TRUNCATED_NOTE
     chunks = p.get("chunks") or []
     f = p.get("faits") or {}
     src = rag.sources_block(chunks) if chunks else "(aucun extrait de vos documents ne correspond)"
+    partenaires = (f"\n— Apports SOUMIS par les partenaires du groupement (chacun parle de sa propre entreprise) :\n"
+                   f"{f['partenaires']}") if f.get("partenaires") else ""
     user = f"""{_consigne_partie(p)}
 
 FAITS AUTORISÉS SUR L'ENTREPRISE (seule matière permise pour parler d'elle) :
 — Profil : {f.get('profil') or '(non renseigné)'}
 — Équipe : {f.get('equipe') or '(non renseignée)'}
-— Chiffrage (phases, tâches, jours ; aucun prix) : {f.get('chiffrage') or '(pas de chiffrage)'}
+— Chiffrage (phases, tâches, jours ; aucun prix) : {f.get('chiffrage') or '(pas de chiffrage)'}{partenaires}
 — Extraits de vos documents :
 {src}
 
