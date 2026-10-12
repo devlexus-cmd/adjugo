@@ -530,7 +530,10 @@ def test_redaction_ne_recoit_que_le_plan():
     g = _grille_simple()
     txt = _criteres_du_plan({"grille_notation": g, "criteres_attribution": [{"critere": "Délai"}]})
     assert "Valeur technique (60 %)" in txt and "Prix (30 %)" in txt and "Délai" not in txt
-    assert _criteres_du_plan({"criteres_attribution": [{"critere": "X"}]}) == "[{'critere': 'X'}]"
+    # Analyse ancienne, sans grille : les noms seulement, jamais un poids non contrôlé.
+    old = _criteres_du_plan({"criteres_attribution": [{"critere": "X", "ponderation": "70 %"}, "Prix"]})
+    assert old.startswith("X; Prix (poids non contrôlés") and "70" not in old
+    assert _criteres_du_plan({}) == "" and _criteres_du_plan({"criteres_attribution": "Prix 60 %"}) == ""
 
 
 # ── Parcours complet : import du DCE, carte, confirmation (IA simulée) ───────────────

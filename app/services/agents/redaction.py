@@ -60,12 +60,26 @@ def _fuse_consortium(raw_block: str, details: dict, lang_name: str = None) -> st
 def _criteres_du_plan(details: dict) -> str:
     """Critères remis à la rédaction. Avec la grille « Comment vous serez noté » : seulement
     les lignes retrouvées dans le règlement ou confirmées par l'utilisateur, poids TEL QU'ÉCRIT
-    (une ligne « à vérifier » n'entre pas dans le plan). Analyse plus ancienne : liste brute."""
+    (une ligne « à vérifier » n'entre pas dans le plan). Analyse plus ancienne (sans grille) :
+    les NOMS proposés par l'IA, sans leurs poids, jamais contrôlés contre le texte."""
     g = (details or {}).get("grille_notation")
     if isinstance(g, dict):
         from app.services.grille_notation import plan_text
         return plan_text(g) or "non retrouvés dans le règlement (ne pas en inventer)"
-    return str((details or {}).get("criteres_attribution", "") or "")
+    raw = (details or {}).get("criteres_attribution")
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        return ""
+    noms = []
+    for x in raw:
+        n = (x.get("critere") or x.get("intitule") or x.get("nom") or "") if isinstance(x, dict) else x
+        n = re.sub(r"\s+", " ", str(n or "")).strip()[:160]
+        if n and n not in noms:
+            noms.append(n)
+    if not noms:
+        return ""
+    return "; ".join(noms) + " (poids non contrôlés : n'en cite aucun et ne suppose aucun ordre d'importance)"
 
 
 def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,

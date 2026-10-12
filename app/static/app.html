@@ -448,7 +448,7 @@
 
           <!-- Comment vous serez noté — la grille de l'acheteur retrouvée dans le règlement (rédaction, vague 1) -->
           <div v-if="aoGrille()" class="card gn-card" style="margin-top:14px">
-            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Comment vous serez noté</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase. Une ligne dont la phrase n'a pas été retrouvée est marquée « à vérifier » : elle n'entre dans le plan de votre dossier de présentation (le « mémoire technique ») qu'après votre confirmation. Adjugo peut se tromper ou manquer un critère : le règlement fait foi.</span></button><div class="spacer"></div>
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Comment vous serez noté</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase, ou si vous l'avez saisi en confirmant la ligne. Une ligne dont la phrase n'a pas été retrouvée est marquée « à vérifier » : elle n'entre dans le plan de votre dossier de présentation (le « mémoire technique ») qu'après votre confirmation. Adjugo peut se tromper ou manquer un critère : le règlement fait foi.</span></button><div class="spacer"></div>
               <span class="pill neutral" style="font-size:11px">{{ grilleResume(aoGrille()) }}</span></div>
             <div class="cb"><grille-carte :key="'gn'+ao.project.id" :g="aoGrille()" :edit="true" :busy="ao.grilleBusy" @choix="aoGrilleChoix"></grille-carte></div>
           </div>
@@ -2505,7 +2505,7 @@
           </div>
           <!-- Comment vous serez noté : la même grille que le chef de file, en lecture seule -->
           <div v-if="sharedGrille(sharedAo.project.analysis)" class="card gn-card" style="margin-bottom:14px">
-            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Comment vous serez noté</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase. C'est la même grille que celle du chef de file : elle sert de base commune au groupement. Le règlement fait foi.</span></button></div>
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Comment vous serez noté</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase, ou s'il a été saisi par le chef de file (c'est alors indiqué). C'est la même grille que celle du chef de file : elle sert de base commune au groupement. Le règlement fait foi.</span></button></div>
             <div class="cb"><grille-carte :g="sharedGrille(sharedAo.project.analysis)" :edit="false"></grille-carte></div>
           </div>
 
@@ -2922,6 +2922,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-uTCvsHnrfemB2qhrTFwiyaZt4+6ExnYiAn0RnmMSz0WeoMqg6nDP261PDWQiokCG" defer></script>
+<script src="/static/app.js" integrity="sha384-MgyT71NkBy5/k/GKVDoeuqJ8Ngqi8p9shDnTutdkj+VSbAECDEu86FYynDHYhb1e" defer></script>
 </body>
 </html>

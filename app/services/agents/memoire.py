@@ -35,7 +35,8 @@ def extract_requirements(dce_text: str) -> dict:
 {{
   "objet": "objet du marché en une phrase",
   "criteres_attribution": [
-    {{"intitule": "critère (ex. valeur technique)", "ponderation": "pondération si citée, sinon \\"\\""}}
+    {{"intitule": "critère (ex. valeur technique)", "ponderation": "pondération si citée, sinon \\"\\"",
+      "extrait": "la phrase du règlement où figurent ce critère et son poids, recopiée MOT POUR MOT"}}
   ],
   "exigences": [
     {{"theme": "thème (ex. méthodologie, sécurité, délais, RSE, moyens humains, références)",
@@ -82,6 +83,35 @@ Renvoie EXACTEMENT ce JSON :
         return []
 
 
+# ── 2 bis. La grille, contrôlée contre le texte du dossier (sans IA) ─────────
+def _criteres_controles(requirements: dict, dce_text: str) -> list:
+    """Critères PROPOSÉS par l'IA, passés par la grille « Comment vous serez noté »
+    (app/services/grille_notation.py) : seules restent les lignes dont la phrase est retrouvée
+    dans le dossier, avec leur poids TEL QU'ÉCRIT dans cette phrase (sinon sans poids). Une ligne
+    non retrouvée n'entre pas dans le plan. Jamais de poids ni d'ordre inventés (étude §7)."""
+    try:
+        from app.services import grille_notation as gn
+        g = gn.build_grille({"criteres_attribution": (requirements or {}).get("criteres_attribution") or []},
+                            dce_text or "")
+        return [{"intitule": x["critere"], "ponderation": x["poids"]} for x in gn.criteres_plan(g)]
+    except Exception as e:      # noqa: BLE001 — jamais bloquant : la rédaction se fait sans grille
+        logger.warning("memoire.grille en échec : %s", type(e).__name__)
+        return []
+
+
+def _grille_consigne(criteres) -> str:
+    """Bloc « grille » de la consigne : critères et poids tels qu'écrits, jamais « ? »."""
+    rows = [c for c in (criteres or []) if isinstance(c, dict) and c.get("intitule")]
+    if not rows:
+        return ""
+    items = "; ".join(c["intitule"] + (f" ({c['ponderation']})" if c.get("ponderation") else "") for c in rows)
+    if all(c.get("ponderation") for c in rows):
+        return (f"\n\nGRILLE DE NOTATION DE L'ACHETEUR (poids tels qu'écrits dans le règlement) : {items}"
+                "\nInsiste sur les critères les plus pondérés liés à cette section.")
+    return (f"\n\nCRITÈRES DE JUGEMENT DE L'ACHETEUR : {items}"
+            "\nPoids non retrouvés pour tout ou partie : ne suppose aucune pondération ni aucun ordre d'importance.")
+
+
 # ── 3. Rédaction d'une section (RAG + citations) ─────────────────────────────
 _WRITE_SYS = """Tu rédiges une section de mémoire technique pour un appel d'offres.
 RÈGLES ABSOLUES :
@@ -90,9 +120,9 @@ RÈGLES ABSOLUES :
 - Si une partie de l'objectif n'est couverte par aucune source, tu écris une phrase
   explicite : « [À compléter : information non présente dans votre base de connaissances] ».
 - Style professionnel, concret, orienté preuve. Pas d'invention, pas de superlatifs creux.
-- ALIGNEMENT SUR LA GRILLE : développe davantage et apporte le plus de preuves sur les
-  critères d'attribution les plus PONDÉRÉS (ex. 40 % valeur technique, 20 % RSE) — c'est
-  là que se gagnent les points.
+- ALIGNEMENT SUR LA GRILLE : si la grille de l'acheteur donne des poids, développe davantage
+  les critères les plus pondérés. Sans poids écrit, ne suppose aucune pondération ni aucun
+  ordre d'importance, et ne cite jamais un poids qui ne t'est pas donné.
 Réponds en texte (pas de JSON), prêt à intégrer dans le mémoire."""
 
 
@@ -101,12 +131,7 @@ def write_section(section: dict, chunks: list, criteres=None, user_id=None) -> d
         src = rag.sources_block(chunks)
     else:
         src = "(aucune source disponible)"
-    grille = ""
-    if criteres:
-        items = "; ".join(f"{c.get('intitule','')} ({c.get('ponderation') or '?'})"
-                          for c in criteres if isinstance(c, dict) and c.get("intitule"))
-        if items:
-            grille = f"\n\nGRILLE DE NOTATION PONDÉRÉE DE L'ACHETEUR : {items}\nMaximise le score : insiste sur les critères les plus pondérés liés à cette section."
+    grille = _grille_consigne(criteres)
     user = f"""Section à rédiger : {section.get('titre')}
 Objectif : {section.get('objectif', '')}{grille}
 
@@ -202,12 +227,14 @@ def _generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: in
                       kb_user_ids: list = None) -> dict:
     requirements = extract_requirements(dce_text)
     objet = requirements.get("objet", "")
-    plan = build_plan(objet, requirements)[:max_sections]
+    # Critères contrôlés contre le texte (sans IA) AVANT le plan : ni le plan ni les sections ne
+    # reçoivent un poids que le règlement n'écrit pas.
+    criteres = _criteres_controles(requirements, dce_text)
+    plan = build_plan(objet, dict(requirements, criteres_attribution=criteres))[:max_sections]
     if not plan:
         plan = [{"titre": "Méthodologie et organisation", "objectif": "Démontrer la démarche",
                  "requete": "méthodologie organisation qualité"}]
 
-    criteres = requirements.get("criteres_attribution") or []
     # Récupération RAG (rapide) puis rédaction des sections EN PARALLÈLE (latence ÷ ~6)
     from concurrent.futures import ThreadPoolExecutor
     pool = kb_user_ids or [user_id]   # base COMMUNE de l'organisation (sinon le seul user)
@@ -232,7 +259,7 @@ def _generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: in
 
     return {
         "objet": objet,
-        "criteres_attribution": requirements.get("criteres_attribution", []),
+        "criteres_attribution": criteres,
         "exigences": requirements.get("exigences", []),
         "sections": sections,
         "conformity": conformity,
@@ -252,18 +279,14 @@ RÈGLES ABSOLUES :
 - Attribue chaque savoir-faire à la BONNE entreprise et, quand c'est pertinent, CROISE
   les apports (ex. « la méthodologie de [Entreprise A] s'appuie sur les moyens de [Entreprise B] »).
 - Si l'objectif n'est pas couvert par les sources, écris « [À compléter : … ] » plutôt qu'inventer.
-- Insiste sur les critères les plus PONDÉRÉS de la grille de notation.
+- Si la grille de notation donne des poids, insiste sur les critères les plus pondérés ;
+  sans poids écrit, ne suppose aucune pondération ni aucun ordre d'importance.
 Réponds en texte (pas de JSON)."""
 
 
 def _write_merged_section(section, chunks, names_by_user, criteres=None, billing_user_id=None):
     src = rag.sources_block_attributed(chunks, names_by_user) if chunks else "(aucune source)"
-    grille = ""
-    if criteres:
-        items = "; ".join(f"{c.get('intitule','')} ({c.get('ponderation') or '?'})"
-                          for c in criteres if isinstance(c, dict) and c.get("intitule"))
-        if items:
-            grille = f"\n\nGRILLE PONDÉRÉE : {items}"
+    grille = _grille_consigne(criteres)
     companies = ", ".join(sorted(set(names_by_user.values())))
     user = f"""Section : {section.get('titre')}
 Objectif : {section.get('objectif','')}
@@ -301,11 +324,11 @@ def _generate_merged_memoire(db, members: list, dce_text: str, max_sections: int
 
     requirements = extract_requirements(dce_text)
     objet = requirements.get("objet", "")
-    plan = build_plan(objet, requirements)[:max_sections]
+    criteres = _criteres_controles(requirements, dce_text)
+    plan = build_plan(objet, dict(requirements, criteres_attribution=criteres))[:max_sections]
     if not plan:
         plan = [{"titre": "Méthodologie et organisation du groupement",
                  "objectif": "Démontrer l'organisation conjointe", "requete": "méthodologie organisation"}]
-    criteres = requirements.get("criteres_attribution") or []
 
     from concurrent.futures import ThreadPoolExecutor
     prepared, contributors = [], set()

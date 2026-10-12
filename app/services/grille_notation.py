@@ -866,6 +866,9 @@ def public_grille(grille: Optional[dict]) -> Optional[dict]:
                    "phrase": str(ln.get("phrase") or "")[:PHRASE_MAX + 100],
                    "statut": ln.get("statut") if ln.get("statut") in (RETROUVE, A_VERIFIER) else A_VERIFIER,
                    "dans_le_plan": bool(ln.get("dans_le_plan")),
+                   # Poids saisi par le chef de file en confirmant la ligne (pas lu par Adjugo) :
+                   # le partenaire le voit dit comme tel.
+                   "poids_saisi": bool(ln.get("dans_le_plan")) and ln.get("poids_source") == "utilisateur",
                    "confirme": (ln.get("choix_utilisateur") or {}).get("choix") == "confirme",
                    "ecarte": (ln.get("choix_utilisateur") or {}).get("choix") == "ecarte"})
     c = grille.get("contraintes") if isinstance(grille.get("contraintes"), dict) else {}

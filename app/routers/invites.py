@@ -292,7 +292,9 @@ _SAFE_KEY_MAP = {
     "type_marche": "type_marche",
     "nature_marche": "procedure", "procedure": "procedure",
     "allotissement": "allotissement",
-    "criteres_attribution": "criteres_attribution",
+    # PAS « criteres_attribution » : les critères n'arrivent au partenaire que par la grille
+    # « Comment vous serez noté » (phrase retrouvée, poids tel qu'écrit). La liste brute proposée
+    # par l'IA, aux poids jamais contrôlés, ne sort plus (une seule façon d'afficher la grille).
     "date_limite": "date_limite",
 }
 

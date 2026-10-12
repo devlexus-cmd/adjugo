@@ -273,7 +273,7 @@
       return fallback;
     }
 
-    const LABELS = { objet: "Objet", acheteur: "Acheteur", lieu: "Lieu d'exécution", duree: "Durée", delais: "Délais", lots: "Lots / allotissement", allotissement: "Allotissement", pieces_requises: "Pièces attendues", criteres_attribution: "Critères d'attribution", criteres: "Critères", montant_estime: "Montant estimé", type_marche: "Type de marché", procedure: "Procédure", date_limite: "Date limite" };
+    const LABELS = { objet: "Objet", acheteur: "Acheteur", lieu: "Lieu d'exécution", duree: "Durée", delais: "Délais", lots: "Lots / allotissement", allotissement: "Allotissement", pieces_requises: "Pièces attendues", montant_estime: "Montant estimé", type_marche: "Type de marché", procedure: "Procédure", date_limite: "Date limite" };
     function objLabel(x) {
       const name = x.nom || x.name || x.label || x.intitule || x.critere || x.libelle || x.titre || x.designation || x.lot || "";
       const weight = x.ponderation || x.poids || x.pourcentage || x.coefficient || x.pct || "";
@@ -455,7 +455,7 @@
     }
     function renderGrille(g) {
       const card = $(`<section class="card pad gn-card" style="margin-bottom:16px" aria-labelledby="gn-title"></section>`);
-      card.appendChild($(`<div class="row" style="gap:4px;align-items:center"><h2 id="gn-title" style="font-size:15px;font-weight:800;margin:0">Comment vous serez noté</h2>${tip("Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase. C'est la même grille que celle du chef de file : elle sert de base commune au groupement. Le règlement fait foi.")}</div>`));
+      card.appendChild($(`<div class="row" style="gap:4px;align-items:center"><h2 id="gn-title" style="font-size:15px;font-weight:800;margin:0">Comment vous serez noté</h2>${tip("Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase, ou s'il a été saisi par le chef de file (c'est alors indiqué). C'est la même grille que celle du chef de file : elle sert de base commune au groupement. Le règlement fait foi.")}</div>`));
       const crit = Array.isArray(g.criteres) ? g.criteres : [];
       if (crit.length) {
         const ul = $(`<ul class="gn-list"></ul>`);
@@ -475,7 +475,7 @@
       const ordre = (g.ordre && g.ordre.phrase) || "";
       if (withPhrase.length || ordre) {
         const det = $(`<details class="gn-det"><summary>Voir les phrases du règlement</summary></details>`);
-        crit.forEach(l => det.appendChild($(`<div class="gn-src"><div class="gn-src-t">${esc(l.critere)}${l.poids ? ` <span class="muted">· ${esc(l.poids)}</span>` : ""}</div>${l.phrase ? `<blockquote class="gn-q">${esc(l.phrase)}</blockquote>` : `<div class="muted small">Phrase non retrouvée dans le dossier importé.</div>`}</div>`)));
+        crit.forEach(l => det.appendChild($(`<div class="gn-src"><div class="gn-src-t">${esc(l.critere)}${l.poids ? ` <span class="muted">· ${esc(l.poids)}${l.poids_saisi ? " (lu par le chef de file)" : ""}</span>` : ""}</div>${l.phrase ? `<blockquote class="gn-q">${esc(l.phrase)}</blockquote>` : `<div class="muted small">Phrase non retrouvée dans le dossier importé.</div>`}</div>`)));
         if (ordre) det.appendChild($(`<div class="gn-src"><div class="gn-src-t">Ordre des critères</div><blockquote class="gn-q">${esc(ordre)}</blockquote></div>`));
         card.appendChild(det);
       }
@@ -501,8 +501,9 @@
     function renderMonAO() {
       const d = DATA, p = d.project || {}, a = p.analysis || {};
       const grille = (!d.apercu_minimal && a.grille_notation && Array.isArray(a.grille_notation.criteres)) ? a.grille_notation : null;
-      // Avec la grille, les critères s'affichent dans sa carte (phrase et poids tels qu'écrits).
-      const facts = Object.keys(LABELS).filter(k => !(grille && k === "criteres_attribution") && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length));
+      // Les critères ne s'affichent QUE dans la carte de la grille (phrase retrouvée, poids tel
+      // qu'écrit) : le serveur n'envoie plus la liste brute proposée par l'IA.
+      const facts = Object.keys(LABELS).filter(k => a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length));
       const root = content(); root.innerHTML = "";
       RELOAD_JOURNAL = null;
 

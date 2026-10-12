@@ -1530,10 +1530,10 @@ const __adjApp = createApp({
       return "Étape " + g.etape + (all.length ? " sur " + all.length : "") + (e ? " · " + e.label : "");
     },
     openSharedKey(ev, s) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); this.openShared(s); } },
-    // Avec la grille « Comment vous serez noté », les critères s'affichent dans sa carte (phrase
-    // du règlement, poids tel qu'écrit) : plus de ligne « Critères » brute, aux poids non contrôlés.
+    // Les critères ne s'affichent QUE dans la carte « Comment vous serez noté » (phrase du
+    // règlement, poids tel qu'écrit) : le serveur n'envoie plus la liste brute, aux poids non contrôlés.
     sharedGrille(a) { const g = a && a.grille_notation; return (g && Array.isArray(g.criteres)) ? g : null; },
-    sharedFact(a) { const L = { acheteur: "Acheteur", allotissement: "Allotissement", lieu: "Lieu", type_marche: "Type", date_limite: "Date limite", criteres_attribution: "Critères", duree: "Durée" }; if (this.sharedGrille(a)) delete L.criteres_attribution; return Object.entries(L).filter(([k]) => a && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length)).map(([k, lab]) => ({ k: lab, v: Array.isArray(a[k]) ? a[k].map(x => (x && typeof x === "object") ? (x.critere || x.nom || x.label || "") + (x.ponderation ? " — " + x.ponderation : "") : x).join(" · ") : a[k] })); },
+    sharedFact(a) { const L = { acheteur: "Acheteur", allotissement: "Allotissement", lieu: "Lieu", type_marche: "Type", date_limite: "Date limite", duree: "Durée" }; return Object.entries(L).filter(([k]) => a && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length)).map(([k, lab]) => ({ k: lab, v: Array.isArray(a[k]) ? a[k].map(x => (x && typeof x === "object") ? (x.critere || x.nom || x.label || "") + (x.ponderation ? " — " + x.ponderation : "") : x).join(" · ") : a[k] })); },
     // ── Notifications (activité des partenaires) ──
     async loadNotifs() { try { this.notifs = await this.api("GET", "/api/notifications") || []; } catch (e) {} },
     toggleNotifs() {
@@ -3637,7 +3637,7 @@ __adjApp.component("grille-carte", {
         const ch = (x.choix_utilisateur && x.choix_utilisateur.choix) || (x.confirme ? "confirme" : x.ecarte ? "ecarte" : "");
         return { id: x.id || "", critere: x.critere || "", phrase: x.phrase || "", source: x.source || "", statut: x.statut,
           plan: !!x.dans_le_plan, choix: ch, poids: x.dans_le_plan ? (x.poids_retenu != null ? x.poids_retenu : (x.poids || "")) : "",
-          poidsVous: x.poids_source === "utilisateur" };
+          poidsVous: x.poids_source === "utilisateur" || x.poids_saisi === true };
       });
       const lim = (c.limites || []).filter(x => x && x.type);
       const vis = c.visite && (c.visite.phrase || c.visite.obligatoire) ? c.visite : null;
