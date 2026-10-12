@@ -42,6 +42,8 @@ CODE_LIMITE = "essai_limite_usage"
 MSG_LIMITE = ("Votre essai gratuit a atteint sa limite d'usage : les fonctions d'IA sont en pause. "
               "Choisissez un forfait (Pro ou Business) pour continuer. Vos marchés, documents et "
               "dossiers restent accessibles.")
+MSG_DEPASSE = ("Cette opération dépasserait la limite d'usage de votre essai gratuit. Choisissez un forfait "
+               "(Pro ou Business) pour la lancer ; les questions sur vos dossiers restent possibles.")
 MSG_PROCHE = ("Votre essai gratuit approche de sa limite d'usage. Pour continuer sans interruption, "
               "choisissez un forfait.")
 
@@ -228,9 +230,9 @@ def est_payant(user) -> bool:
 
 
 def essai_actif(user) -> bool:
-    """Compte de facturation en essai gratuit en cours (même règle que quota._limit)."""
-    from app.core.quota import _trial_state
-    return _plan(user) not in ("pro", "business") and _trial_state(user) == "active"
+    """Compte de facturation en essai gratuit en cours (règle unique : quota.essai_actif)."""
+    from app.core.quota import essai_actif as _essai_actif
+    return _essai_actif(user)
 
 
 def _tenant_entier(tenant):
@@ -469,7 +471,8 @@ def verifier(user, db, operation: str = "analyse", estimation_eur: float = None,
     if conso + est > budget:
         logger.info("Essai gratuit : « %s » refusée avant tout appel (compte u%s) : %.4f € engagés + %.4f € "
                     "estimés > budget de %.2f €.", operation, billing.id, conso, est, budget)
-        raise HTTPException(402, {"code": CODE_LIMITE, "message": MSG_LIMITE})
+        epuise = operation == "question" or conso + estimer("question") > budget
+        raise HTTPException(402, {"code": CODE_LIMITE, "message": MSG_LIMITE if epuise else MSG_DEPASSE})
 
 
 def etat_essai(db, billing_user) -> str:

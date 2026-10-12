@@ -283,8 +283,9 @@ ré-analyse dans les 5 minutes est rare. Coupure : `LLM_PROMPT_CACHE=0`. Mistral
   (« Pas trouvé dans les extraits consultés (le règlement de la consultation ; les 8 passages du
   dossier les plus proches de la question). Reformulez la question avec les mots du dossier… ») et
   nomme les pièces non lues — jamais « cette information ne figure pas dans le dossier ».
-- **Borne hors quota** par organisation et par jour (heure de Paris) : 15 (essai expiré,
-  historique), 50 (Pro et essai), 120 (Business) ; réglable (`PLAN_LIMITS[…]["questions_jour"]`,
+- **Borne hors quota** par organisation et par jour (heure de Paris) : 15 (essai en cours —
+  `TRIAL_QUESTIONS_PAR_JOUR`, cf. `docs/ESSAI_GARDE_FOU.md` —, essai expiré, historique), 50 (Pro),
+  120 (Business) ; réglable (`PLAN_LIMITS[…]["questions_jour"]`,
   ou `QUESTIONS_PAR_JOUR` pour tous). Compteur **persistant** dans la table `jobs` existante
   (une ligne `question_dossier` par question, sans le texte de la question, purgée après 7 jours) ;
   une question dont l'IA n'a pas répondu ne compte pas. La limite par adresse IP reste.
@@ -393,7 +394,9 @@ par mois et par organisation ; Business 120 × 31 × 0,033 $ ≈ 123 $ (106 €)
 0,033 $ ≈ 15 $ (13 €). Usage courant (cache, ≈ 10 questions par jour) ≈ 1,3 $ par mois. Avant, seule
 l'adresse IP limitait : ≈ 84 € par mois et par adresse.
 
-**Essai gratuit — à décider.** Pendant l'essai (30 jours, sans carte), `quota._limit` donne 30
+**Essai gratuit — décidé le 12/10/2026 (chantier E, `docs/ESSAI_GARDE_FOU.md`) : 30 analyses sur
+toute la durée de l'essai, 15 questions par jour, budget IA de l'essai vérifié avant chaque opération
+(une lecture commencée va toujours au bout). Constat d'origine :** Pendant l'essai (30 jours, sans carte), `quota._limit` donne 30
 analyses (niveau Pro) et 50 questions par jour. Pire cas réaliste d'un compte d'essai qui n'importerait
 que des dossiers au plafond technique : 30 × 3,7 $ + 50 × 30 × 0,033 $ ≈ 160 $ (≈ 140 €), contre
 ≈ 4,5 $ d'analyses avant (0,15 $ au plus chacune, mais sur une partie du dossier seulement). Un dossier courant (moins de 400 000 caractères) coûte

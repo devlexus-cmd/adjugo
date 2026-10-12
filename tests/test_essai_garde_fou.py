@@ -242,6 +242,27 @@ def test_budget_atteint_refus_avant_toute_operation(client, auth, monkeypatch):
     _sans_montant(client.get("/api/stripe/status", headers=h).json())
 
 
+def test_operation_trop_lourde_pour_ce_qui_reste_les_questions_restent_possibles(client, auth, monkeypatch):
+    _fake(monkeypatch, lambda kw: ("Le 3 mars.", "end_turn"))
+    h = auth["headers"]
+    uid = _user_id(auth["email"])
+    pid = _project(client, h, "Marché presque au bout")
+    _set_analysis(pid, {"summary": "s", "details": {"intitule_marche": "Marché presque au bout"},
+                        "dce_excerpt": "REGLEMENT. Date limite le 3 mars."})
+    _cout_essai(uid, 14.85)          # reste ≈ 0,15 € : plus de place pour une analyse, assez pour une question
+    tender = {"objet": "Test", "provenance": {"source": "BOAMP", "source_url": "https://www.boamp.fr/x",
+                                              "official_ref": "x"}}
+    r = client.post("/api/sourcing/analyze", headers=h, json={"tender": tender})
+    assert r.status_code == 402 and r.json()["detail"]["code"] == "essai_limite_usage"
+    assert "dépasserait la limite d'usage" in r.json()["detail"]["message"]
+    _sans_montant(r.json())
+    r = client.post("/api/sourcing/ask", headers=h, json={"project_id": pid, "question": "Date limite ?"})
+    assert r.status_code == 200, r.text
+    st = client.get("/api/agent/stats", headers=h).json()["usage"]
+    assert st["trial_usage"] == "proche"
+    _sans_montant(st)
+
+
 def test_atelier_refuse_avant_de_lancer_quand_le_budget_est_atteint(client, auth, monkeypatch):
     from app.models import Job
     fake = _fake(monkeypatch, _memoire_answer("Texte de la partie."))
@@ -535,7 +556,7 @@ def test_migration_essai_a_neuf_existante_et_retour_arriere(tmp_path):
     assert ("compte", "periode", "essai") in uq
     eng.dispose()
     run("upgrade", "head")                               # rejouée : aucun effet, aucune erreur
-    run("downgrade", "-1")
+    run("downgrade", "t4u5redactionv2b")
     eng = sa.create_engine(f"sqlite:///{dbfile}")
     insp = sa.inspect(eng)
     assert "usage_ia" not in insp.get_table_names()
