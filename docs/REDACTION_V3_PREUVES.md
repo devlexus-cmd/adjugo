@@ -14,6 +14,9 @@ les règles, seul point d'écriture), `app/routers/preuves.py` (HTTP), migration
 `alembic/versions/v6w7preuves_mes_preuves.py` (révision `v6w7preuves`, après
 `u5v6essaigardefou`). Tests : `tests/test_redaction_v3_preuves.py`.
 
+Comment A, I et E1 se branchent ensemble (parcours complet, règles d'assemblage) :
+`docs/REDACTION_V3_ENSEMBLE.md`.
+
 Règles fermes (doctrine § 7) que le socle garantit et que A, I et E1 ne doivent jamais
 contourner :
 

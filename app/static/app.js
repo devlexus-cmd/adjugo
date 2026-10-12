@@ -4640,6 +4640,13 @@ const __adjApp = createApp({
       if (a.mode === "modifier" && a.edit.dirty) { this._atlDraftSave(); this.notify("Votre texte non enregistré est gardé sur cet appareil : vous le retrouverez dans la partie."); }
       this.go("kb");
     },
+    // « Ajouter une source » → « Mes preuves » (vague 3) : un texte en cours d'écriture est gardé sur l'appareil.
+    atlVersPreuves() {
+      const a = this.atl;
+      if (a.mode === "modifier" && a.edit.dirty) { this._atlDraftSave(); this.notify("Votre texte non enregistré est gardé sur cet appareil : vous le retrouverez dans la partie."); }
+      a.src = null;
+      this.go("preuves");
+    },
     async atlCreer() {
       const a = this.atl; if (a.busy) return; a.busy = "creer";
       try {

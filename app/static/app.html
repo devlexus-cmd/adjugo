@@ -1788,7 +1788,7 @@
                     <div v-if="fxStatut()==='echec'" class="warn-box" style="margin:0 0 10px"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ kb.fx.data.lecture.message }}</span></div>
                     <div class="row fx-ligne">
                       <b class="small">Partir de ce document</b>
-                      <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo lit ce document une seule fois et propose des fiches : références, qualifications, matériel, chiffres clés. Chacune montre le passage où il l'a trouvée ; une proposition dont le passage n'est pas retrouvé tel quel dans le document est écartée. Rien n'est gardé sans vous : cochez ce qui est juste. Les noms des salariés sont masqués avant l'envoi à l'IA et un CV n'est jamais envoyé : les fiches Équipe se saisissent à la main.</span></button>
+                      <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo lit ce document une seule fois et propose des fiches : références, qualifications, matériel, chiffres clés. Chacune montre le passage où il l'a trouvée ; une proposition dont le passage n'est pas retrouvé tel quel dans le document est écartée. Rien n'est gardé sans vous : cochez ce qui est juste. Les noms des salariés sont masqués avant l'envoi à l'IA et un CV n'est jamais envoyé : les fiches Équipe se saisissent dans « Mes preuves ».</span></button>
                     </div>
                     <div class="fx-champ">
                       <div class="row" style="gap:2px;align-items:center"><label class="small" :for="'fxdate'+d.id">Date du document</label>
@@ -1817,7 +1817,7 @@
                         <button v-if="f.source.lien_passage" type="button" class="btn ghost sm fx-voir" @click="fxContexte(f)">{{ kb.fx.contexte[f.id] ? 'Masquer le contexte' : 'Voir le passage dans le document' }}</button>
                       </div>
                     </div>
-                    <div class="muted small" style="margin-top:8px">Les fiches cochées rejoignent vos preuves.</div>
+                    <div class="muted small" style="margin-top:8px">Les fiches cochées rejoignent <button type="button" class="linkbtn" @click="go('preuves')">« Mes preuves »</button>.</div>
                   </div>
                 </template>
               </div>
@@ -2158,6 +2158,7 @@
                             </div>
                             <div class="row wrap atl-g6 atl-mt8"><button type="button" class="btn sm primary" @click="atlSourceDeclarer()" :disabled="!!atl.busy"><span v-if="atl.busy==='source'" class="spin"></span>Enregistrer dans « Mes preuves »</button><button type="button" class="btn sm ghost" @click="atl.src=null">Annuler</button></div>
                           </template>
+                          <div class="muted small atl-mt8">Un passage de vos documents ou un justificatif : <button type="button" class="linkbtn" @click="atlVersPreuves()">ouvrir « Mes preuves »</button>, puis « Recontrôler ».</div>
                         </template>
                         <div v-if="atl.src.err" class="conv-err atl-mt8" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ atl.src.err }}</div></div>
                       </div>
@@ -3651,6 +3652,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-jUBogBwIZRmUsro24fBTTuFS9DRAUDCe/UY2THBmi8x0W/bxfqDOrEg8mb09q2so" defer></script>
+<script src="/static/app.js" integrity="sha384-4Eysc5rbjDKQF89ptMff6UuqSGf08xIne19bH7U5QIPoiS3pkMEoN/damHWjfkgT" defer></script>
 </body>
 </html>

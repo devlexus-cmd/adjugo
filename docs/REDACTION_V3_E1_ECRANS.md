@@ -76,8 +76,10 @@ date_fin_validite, provenance (entreprise | reseau | documents), provenance_libe
 
 ## 5. À savoir pour A et I
 
-- Le profil (`Company.team`, ses qualifications et références) reste tel quel et reste envoyé à l'IA comme
-  en vague 2 (bulle « Collaborateurs ») ; c'est A qui remplacera ces faits par `faits_autorises()`.
+- Le profil (`Company.team`, ses qualifications et références) n'est jamais modifié. Depuis
+  l'assemblage de la vague 3 (`docs/REDACTION_V3_ENSEMBLE.md`), un élément repris (fiche du même intitulé
+  acceptée ou retirée) n'est plus remis à l'IA depuis le profil : sa fiche décide. Le reste du profil est
+  remis en `[P#]` / `[E#]` (A).
 - I crée des fiches `proposee` : l'écran les montre déjà (accepter une à une ou par lot).
 - « Mon savoir-faire » : la suppression d'un document prévient quand des fiches perdent leur source
   (`preuves_sans_source`).

@@ -31,13 +31,21 @@ partent jamais à l'IA ; `tenant_scope` et `pii_scope` sur chaque appel (inchang
 
 - Le préfixe `F` est réservé aux preuves enregistrées ; `P`, `E`, `C`, `G` sont construits à chaque
   rédaction (`fs.fiches_contexte`), `S` suit la numérotation des extraits (`[S1]` existant).
+- **Le profil est gouverné par « Mes preuves » une fois repris** (assemblage de la vague 3,
+  `docs/REDACTION_V3_ENSEMBLE.md`) : un élément du profil (personne, référence, qualification,
+  effectif, chiffre d'affaires) qui a sa fiche du même intitulé, acceptée ou retirée
+  (`preuves_reprise.cles_gerees`), n'est plus remis en `[P#]` / `[E#]` : sa fiche décide (`[F#]` si
+  elle est utilisable, rien si elle est retirée ou expirée). Une fiche seulement proposée ne gouverne
+  rien. Une qualification du profil dont la date d'expiration est dépassée n'est pas remise.
 - Ligne remise à l'IA (`Fiche.ligne_ia`) : `[F1] (déclaré par vous) Matériel : Nacelle articulée ;
   quantité : 2 ; en propre`. Une fiche « Équipe » : `[F2] (déclaré par vous) Équipe : [Conductrice de
   travaux 2], Conductrice de travaux — CV : écris « [CV F2] » seul sur une ligne pour l'insérer tel
   quel.` (étiquette du pseudonymiseur de l'appel ; ni nom, ni expérience, ni diplômes, ni chantiers).
 - **CV (décision 8a)** : la réponse de l'IA est relue sans IA ; chaque « [CV F2] » est remplacé par le CV
   minimal de la fiche (`fs.inserer_cv`), chaque ligne portant `[F2]` ; un renvoi qui ne désigne pas une
-  fiche « Équipe » utilisable devient « [À compléter : CV de la personne] ».
+  fiche « Équipe » utilisable devient « [À compléter : CV de la personne] ». Les lignes du CV sont celles
+  de « Mes preuves » (`preuves_atelier.lignes_cv`) : le même CV qu'« Insérer une fiche », que le
+  garde-fou de « Raccourcir » (409 `cv_dans_la_partie`) reconnaît.
 - Budget du bloc (économie d'IA sans perte) : toutes les lignes si elles tiennent en
   `ATELIER_FAITS_MAX_CARACTERES` (12 000 par défaut) ; sinon les preuves les plus proches de la partie
   (mots communs, sans IA) d'abord ; profil, équipe, chiffrage et partenaires toujours. Le bloc commun
