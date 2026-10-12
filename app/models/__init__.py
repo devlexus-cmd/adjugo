@@ -4,7 +4,7 @@ Adjugo — Modèles de base de données
 from datetime import datetime, date, timezone
 from sqlalchemy import (
     Column, Integer, BigInteger, String, Float, Boolean, Text, DateTime,
-    Date, ForeignKey, JSON, Enum as SAEnum, UniqueConstraint, Index, text as sa_text,
+    Date, ForeignKey, JSON, Enum as SAEnum, UniqueConstraint, Index, text as sa_text, false as sa_false,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -565,11 +565,13 @@ class UsageIA(Base):
     billing_user_id = Column(Integer, nullable=True, index=True)   # propriétaire de l'organisation (PME)
     org_id = Column(Integer, nullable=True, index=True)
     periode = Column(String(7), nullable=False)                    # « AAAA-MM » (UTC)
-    essai = Column(Boolean, default=False, nullable=False)         # coût engagé pendant l'essai gratuit
-    cout_eur = Column(Float, default=0.0, nullable=False)
-    appels = Column(Integer, default=0, nullable=False)
-    tokens_entree = Column(BigInteger, default=0, nullable=False)
-    tokens_sortie = Column(BigInteger, default=0, nullable=False)
+    # Valeurs par défaut côté base identiques à celles de la migration u5v6essaigardefou : une base
+    # neuve (table créée depuis les modèles) et la production montée ont le même schéma.
+    essai = Column(Boolean, default=False, nullable=False, server_default=sa_false())   # coût engagé pendant l'essai
+    cout_eur = Column(Float, default=0.0, nullable=False, server_default="0")
+    appels = Column(Integer, default=0, nullable=False, server_default="0")
+    tokens_entree = Column(BigInteger, default=0, nullable=False, server_default="0")
+    tokens_sortie = Column(BigInteger, default=0, nullable=False, server_default="0")
     alerte_le = Column(DateTime, nullable=True)   # forfait payant : seuil du mois dépassé (alerte interne)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
