@@ -245,8 +245,10 @@ def _tenant_entier(tenant):
     return None
 
 
-def _compte(db, tenant, mutualise_: bool = False, cache=None) -> dict:
-    """{compte, billing_user_id, org_id, essai} du tenant d'un appel (sans exception)."""
+def _compte(db, tenant, mutualise_: bool = False, cache=None, strict: bool = False) -> dict:
+    """{compte, billing_user_id, org_id, essai} du tenant d'un appel. strict (écriture en base) : une
+    lecture impossible est propagée (le lot sera réécrit plus tard) plutôt que de ranger le coût sur
+    un compte deviné ; sinon (lecture du garde-fou), repli sur le tenant lui-même."""
     if mutualise_ or tenant is None:
         return {"compte": PLATEFORME, "billing_user_id": None, "org_id": None, "essai": False}
     key = repr(tenant)
@@ -272,6 +274,8 @@ def _compte(db, tenant, mutualise_: bool = False, cache=None) -> dict:
             else:
                 out = dict(out, compte=f"u{tid}", billing_user_id=tid)
         except Exception:       # noqa: BLE001
+            if strict:
+                raise
             out = dict(out, compte=f"u{tid}", billing_user_id=tid)
     if cache is not None:
         cache[key] = out
@@ -287,7 +291,7 @@ def _persister(lot: list) -> list:
     try:
         cache, groupes = {}, {}
         for e in lot:
-            c = _compte(db, e["tenant"], e["mutualise"], cache)
+            c = _compte(db, e["tenant"], e["mutualise"], cache, strict=True)
             k = (c["compte"], e["periode"], bool(c["essai"]))
             g = groupes.setdefault(k, {"billing_user_id": c["billing_user_id"], "org_id": c["org_id"],
                                        "payant": bool(c.get("payant")), "cout": 0.0, "n": 0, "tin": 0, "tout": 0})
