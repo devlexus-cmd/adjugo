@@ -365,15 +365,15 @@ def build_plan(analysis: Optional[dict], cadre_text: str = "", base: str = "auto
                en_groupement: bool = False, dossier_present: bool = True) -> dict:
     """Plan proposé, SANS IA. base : auto (cadre imposé > grille > libre) | grille | cadre | libre.
     Renvoie {source, message, fichier_impose, message_fichier, avertissement_fichier,
-    cadre_non_decoupe, criteres_hors_dossier, criteres_a_verifier, message_a_verifier,
+    cadre_non_decoupe, criteres_hors_dossier, criteres_en_attente, message_en_attente,
     dossier_present, bases, grille, limites (limites_du_dossier), sections: [...]}.
     dossier_present=False : aucun dossier du marché importé (rien n'a été lu) — on le dit."""
     out = _build_plan(analysis, cadre_text, base, en_groupement, dossier_present)
     n_av = criteres_a_verifier(analysis)
-    out["criteres_a_verifier"] = n_av
-    out["message_a_verifier"] = msg_a_verifier(n_av) if out["source"] != CADRE and base != LIBRE else ""
-    if out["message_a_verifier"]:
-        out["message"] = (out["message"] + " " + out["message_a_verifier"]).strip()
+    out["criteres_en_attente"] = n_av
+    out["message_en_attente"] = msg_a_verifier(n_av) if out["source"] != CADRE and base != LIBRE else ""
+    if out["message_en_attente"]:
+        out["message"] = (out["message"] + " " + out["message_en_attente"]).strip()
     out["avertissement_fichier"] = avertissement_fichier(out["fichier_impose"], out["source"])
     out["dossier_present"] = bool(dossier_present)
     out["bases"] = bases_disponibles(analysis, cadre_text)

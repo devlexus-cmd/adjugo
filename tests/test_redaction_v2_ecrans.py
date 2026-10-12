@@ -101,7 +101,7 @@ def test_atelier_plan_texte_faits_sources_et_actions():
     # Mention IA visible AVANT l'export (décision 9a) ; rappel du cadre imposé (décision 11).
     assert "atl.st.export.mention_ia" in a and "atl.st.export.message_ia" in a
     assert "atlAvert(atl.st, 'fichier_impose')" in a
-    assert "reprendra l'ordre, les numéros et les intitulés de son cadre" in a
+    assert "atl.prop.proposition.avertissement_fichier" in a                # une phrase par cas, venue du serveur
     # Les parties d'un partenaire (vague 4) : jamais supposées modifiables, matière privée cachée.
     assert "atlSec().peut_ecrire" in a and "atlSec().prive_visible" in a
     assert "Les extraits et les faits à relire de cette partie restent chez son auteur." in a
@@ -414,3 +414,73 @@ def test_parcours_plan_et_carte_du_savoir_faire(client, auth):
     # « Mon savoir-faire » : l'ancienne rédaction répond 410 et renvoie au marché.
     g = client.post("/api/knowledge/memoire-upload", headers=h)
     assert g.status_code == 410 and "marché" in json.dumps(g.json(), ensure_ascii=False)
+
+
+# ═══ 4. Relecture croisée de la vague 2 (écrans) ═════════════════════════════════════════
+
+def test_seule_l_occurrence_du_fait_dans_sa_phrase_est_surlignee_sous_node():
+    md = ("Nous disposons de 12 salariés. Le CCTP prévoit 12 mois de travaux.\n\n"
+          "| Poste | Effectif |\n| --- | --- |\n| Chefs d'équipe | 12 |\n| Compagnons couvreurs | 15 |")
+    faits = [{"id": "f1", "fait": "12", "phrase": "Nous disposons de 12 salariés.", "statut": "a_relire"},
+             {"id": "f2", "fait": "15", "phrase": "Compagnons couvreurs ; 15", "statut": "a_relire"},
+             {"id": "f3", "fait": "12", "phrase": "Chefs d'équipe ; 12", "statut": "a_relire"}]
+    r = _node(f"const md = {json.dumps(md)}, faits = {json.dumps(faits)};\n"
+              "console.log(JSON.stringify({h: atlMdToHtml(md, faits),"
+              " p: atlFaitPos(md, '15', 'Compagnons couvreurs ; 15'), q: atlFaitPos(md, '12', 'Chefs d\\'équipe ; 12'),"
+              " m: atlFaitPos('M. Paul Durand pilotera. Paul Durand signe.', 'Paul Durand', 'M. Paul Durand pilotera.')}));")
+    h = r["h"]
+    assert h.count('<mark class="atl-fait"') == 3
+    assert 'de <mark class="atl-fait" data-fait="f1">12</mark> salariés' in h
+    assert "prévoit 12 mois" in h                                   # la phrase du CCTP n'est pas surlignée
+    assert '<td><mark class="atl-fait" data-fait="f3">12</mark></td>' in h
+    assert '<td><mark class="atl-fait" data-fait="f2">15</mark></td>' in h
+    assert "" not in h and "" not in h and "" not in h
+    assert md[r["p"][0]:r["p"][1]] == "15" and md[r["q"][0]:r["q"][1]] == "12"
+    assert "Chefs d'équipe" in md[md.rfind("\n", 0, r["q"][0]):r["q"][0]]         # la bonne ligne du tableau
+    assert r["m"] == [3, 14]                                          # « M. » ne coupe pas la phrase
+
+
+def test_brouillons_locaux_effaces_a_la_deconnexion_et_apres_sept_jours_sous_node():
+    r = _node("const store = {}; global.localStorage = { get length() { return Object.keys(store).length; },"
+              " key(i) { return Object.keys(store)[i]; }, getItem(k) { return k in store ? store[k] : null; },"
+              " setItem(k, v) { store[k] = String(v); }, removeItem(k) { delete store[k]; } };\n"
+              "const now = Date.now();\n"
+              "localStorage.setItem('adjugo_atl_1_2_3', JSON.stringify({t: 'récent', at: now}));\n"
+              "localStorage.setItem('adjugo_atl_1_2_4', JSON.stringify({t: 'ancien', at: now - 8 * 24 * 3600 * 1000}));\n"
+              "localStorage.setItem('adjugo_atl_1_2_5', 'pas du JSON');\n"
+              "localStorage.setItem('adjugo_theme', 'dark');\n"
+              "atlPurgeDrafts(false); const apres7j = Object.keys(store).sort();\n"
+              "atlPurgeDrafts(true); const apresDeco = Object.keys(store).sort();\n"
+              "console.log(JSON.stringify({apres7j, apresDeco, b: atlBasesDispo({cadre: false, grille: true}).map(x => [x.k, x.off])}));")
+    assert r["apres7j"] == ["adjugo_atl_1_2_3", "adjugo_theme"]
+    assert r["apresDeco"] == ["adjugo_theme"]
+    assert r["b"] == [["auto", False], ["cadre", True], ["grille", False], ["libre", False]]
+    # Déconnexion (y compris par inactivité) et suppression du compte effacent les brouillons.
+    assert 'logout() { localStorage.removeItem("adjugo_token"); localStorage.removeItem("adjugo_active"); atlPurgeDrafts(true);' in JS
+    assert 'localStorage.removeItem("adjugo_token"); atlPurgeDrafts(true); this.notify("Compte supprimé")' in JS
+    assert "if (atlDraftPerime(d)) { this._atlDraftClear(s.id); return; }" in JS_METH
+
+
+def test_etat_d_export_honnete_bases_poids_grille_et_dossier_absent_dans_les_gabarits():
+    c = _sans_commentaires_html(CARTE)
+    a = _sans_commentaires_html(ATELIER)
+    f = _sans_commentaires_html(FENETRES)
+    # Jamais « Prêt à exporter » quand l'export ne passe que par une dérogation ou que des parties restent à valider.
+    assert ":class=\"atlEtatExport(ao.atl.d).cls\"" in c and "{{ atlEtatExport(ao.atl.d).label }}" in c
+    assert "'Prêt à exporter'" not in c and "Encore ouvert, exporté avec votre dérogation" in c
+    for lib in ('"Export avec dérogation"', '" parties à valider"', '"Prêt à exporter"'):
+        assert lib in JS_METH, lib
+    # Bases disponibles seulement (les autres désactivées, avec leur raison), dans la proposition et la fenêtre.
+    assert "atlBases(atl.prop.proposition.bases)" in a and ":disabled=\"atl.loading || b.off\"" in a
+    assert "atlBases(atl.st && atl.st.dossier.plan.bases)" in f and ":disabled=\"b.off\"" in f
+    # Poids lu par vous ≠ poids écrit dans le règlement.
+    assert "atlPoidsTexte(atlSec())" in a and "(lu par vous)" in a and '"poids lu par vous : "' in JS_METH
+    # « Comment vous serez noté » a changé : ajouter au plan, sans reconstruire.
+    assert "atl.st.grille.message" in a and "Mettre le plan à jour" in a and "\"/plan/grille\"" in JS_METH
+    # Dossier du marché absent : dit, avec le chemin vers l'import ; la bulle « Rédiger » suit.
+    assert "atl.st.dossier_acheteur.message_absent" in a and "atlImporterDce()" in a and "atlImporterDce()" in c
+    assert "Aucun dossier du marché importé : Adjugo rédige sans le règlement ni le cadre de réponse." in a
+    # « Mon savoir-faire » vide : signalé, et confirmé avant la première analyse.
+    assert "atl.st.savoir_faire.message" in a and "_atlSavoirFaireOk()" in JS_METH
+    # Le reste des faits (au-delà de ce qui est détaillé) est compté.
+    assert "atlFaitsReste(atlSec())" in a

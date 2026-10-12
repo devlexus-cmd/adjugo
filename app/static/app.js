@@ -220,10 +220,31 @@ const ATL_FAIT_TYPES = { chiffre: "Chiffre", nombre_en_lettres: "Nombre en lettr
   nom_propre: "Nom propre", materiel: "Matériel" };
 const ATL_BASES = [
   { k: "auto", l: "Automatique", d: "Le cadre de réponse imposé s'il existe, sinon les critères retrouvés dans le règlement, sinon un plan simple." },
-  { k: "cadre", l: "Le cadre de réponse de l'acheteur", d: "Ses numéros, ses intitulés et son ordre, tels quels." },
-  { k: "grille", l: "Les critères du règlement", d: "Une partie par critère retrouvé, avec son poids tel qu'il est écrit." },
+  { k: "cadre", l: "Le cadre de réponse de l'acheteur", d: "Ses numéros, ses intitulés et son ordre, tels quels.", non: "Aucun cadre de réponse découpé en questions dans le dossier." },
+  { k: "grille", l: "Les critères du règlement", d: "Une partie par critère retenu dans « Comment vous serez noté », avec son poids.", non: "Aucun critère retenu dans « Comment vous serez noté »." },
   { k: "libre", l: "Un plan simple", d: "Proposé par Adjugo, sans IA, à adapter au marché." },
 ];
+// Les bases de plan qui existent pour ce marché (le serveur dit lesquelles) : les autres restent
+// visibles mais désactivées, avec leur raison.
+function atlBasesDispo(bases) {
+  const b = bases || {};
+  return ATL_BASES.map(x => Object.assign({}, x, { off: (x.k === "cadre" || x.k === "grille") && b[x.k] === false }));
+}
+// Brouillons locaux de l'atelier (texte d'une partie, qui peut citer des salariés) : effacés à la
+// déconnexion, à la suppression du compte, et ignorés puis effacés au-delà de 7 jours.
+const ATL_DRAFT_TTL = 7 * 24 * 3600 * 1000;
+function atlDraftPerime(d) { return !d || !d.at || !isFinite(Number(d.at)) || (Date.now() - Number(d.at)) > ATL_DRAFT_TTL; }
+function atlPurgeDrafts(tous) {
+  try {
+    const ks = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf("adjugo_atl_") === 0) ks.push(k); }
+    ks.forEach(k => {
+      let out = !!tous;
+      if (!out) { try { out = atlDraftPerime(JSON.parse(localStorage.getItem(k) || "null")); } catch (e) { out = true; } }
+      if (out) localStorage.removeItem(k);
+    });
+  } catch (e) { /* stockage interdit : rien à effacer */ }
+}
 function _atlReEsc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function _atlKey(s) { return String(s || "").toLowerCase().replace(/\s+/g, " ").trim(); }
 // Motif d'un fait : espaces souples (une espace insécable du texte vaut une espace), bornes de mot
@@ -233,22 +254,27 @@ function _atlFaitRe(f) {
   const core = _atlReEsc(s).replace(/\s+/g, "\\s+");
   return (/^[A-Za-z0-9]/.test(s) ? "\\b" : "") + core + (/[A-Za-z0-9]$/.test(s) ? "\\b" : "");
 }
-// Marques d'un morceau de ligne : [À compléter …], renvoi [S1], fait à relire (3 groupes dans `re`).
-function _atlMarks(s, re, idx) {
+// Un fait « à relire » est repéré UNE fois, dans SA phrase (atlFaitPos), puis entouré de marques
+// privées (zone Unicode réservée) que le rendu transforme en <mark> : jamais toutes les occurrences
+// de la même valeur (« 12 » dans « Le CCTP prévoit 12 mois » n'est pas un fait sur l'entreprise).
+const _ATL_M0 = "\uE000", _ATL_M1 = "\uE001", _ATL_M2 = "\uE002";
+function _atlSans(s) { return String(s).replace(/\uE000\d*\uE001?/g, "").replace(/[\uE000-\uE002]/g, ""); }
+// Marques d'un morceau de ligne : [À compléter …], renvoi [S1], fait à relire repéré (groupes de `re`).
+function _atlMarks(s, re, ids) {
   let out = "", last = 0, m;
   re.lastIndex = 0;
   while ((m = re.exec(s))) {
     if (!m[0]) { re.lastIndex++; continue; }
-    out += _escHtml(s.slice(last, m.index));
-    if (m[1]) out += '<span class="atl-todo">' + _escHtml(m[1]) + "</span>";
+    out += _escHtml(_atlSans(s.slice(last, m.index)));
+    if (m[1]) out += '<span class="atl-todo">' + _escHtml(_atlSans(m[1])) + "</span>";
     else if (m[2]) out += '<sup class="atl-ref" data-ref="S' + Number(m[3]) + '">S' + Number(m[3]) + "</sup>";
     else {
-      const id = idx[_atlKey(m[0])] || "";
-      out += '<mark class="atl-fait"' + (id ? ' data-fait="' + _escHtml(id) + '"' : "") + ">" + _escHtml(m[0]) + "</mark>";
+      const id = ids[Number(m[4])] || "";
+      out += '<mark class="atl-fait"' + (id ? ' data-fait="' + _escHtml(id) + '"' : "") + ">" + _escHtml(_atlSans(m[5])) + "</mark>";
     }
     last = m.index + m[0].length;
   }
-  return out + _escHtml(s.slice(last));
+  return out + _escHtml(_atlSans(s.slice(last)));
 }
 // Une ligne : le gras (**…**) d'abord, puis les marques dans chaque morceau (jamais de balise croisée).
 function _atlInline(raw, re, idx) {
@@ -263,19 +289,22 @@ function _atlInline(raw, re, idx) {
 function _atlCells(line) { return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim()); }
 const _atlHtmlCache = new Map();
 function atlMdToHtml(md, faits) {
-  const src = String(md || "");
+  let src = _atlSans(String(md || ""));
   const list = (Array.isArray(faits) ? faits : []).filter(f => f && f.statut !== "relu_par_vous" && String(f.fait || "").trim());
-  const ck = src + "\u0000" + list.map(f => f.id + ":" + f.fait).join("|");
+  const ck = src + "\u0000" + list.map(f => f.id + ":" + f.fait + ":" + (f.phrase || "")).join("|");
   if (_atlHtmlCache.has(ck)) return _atlHtmlCache.get(ck);
-  const idx = {}, alts = [];
+  // Chaque fait : SA position (la phrase où le serveur l'a relevé), sans chevauchement.
+  const ids = [], spans = [];
   list.slice().sort((a, b) => String(b.fait).length - String(a.fait).length).forEach(f => {
-    const k = _atlKey(f.fait); if (k in idx) return;
-    const r = _atlFaitRe(f.fait); if (!r) return;
-    idx[k] = f.id; alts.push(r);
+    const p = atlFaitPos(src, f.fait, f.phrase); if (!p) return;
+    if (spans.some(x => p[0] < x[1] && x[0] < p[1])) return;
+    spans.push([p[0], p[1], ids.length]); ids.push(f.id);
   });
-  const re = new RegExp("(\\[\\s*[ÀAà]\\s+compl[ée]ter[^\\]]*\\])|(\\[\\s*S\\s*(\\d{1,2})\\s*\\])"
-    + (alts.length ? "|(?:" + alts.join("|") + ")" : ""), "gi");
-  const inl = (t) => _atlInline(t, re, idx);
+  spans.sort((a, b) => b[0] - a[0]).forEach(x => {
+    src = src.slice(0, x[0]) + _ATL_M0 + x[2] + _ATL_M1 + src.slice(x[0], x[1]) + _ATL_M2 + src.slice(x[1]);
+  });
+  const re = new RegExp("(\\[\\s*[ÀAà]\\s+compl[ée]ter[^\\]]*\\])|(\\[\\s*S\\s*(\\d{1,2})\\s*\\])|\\uE000(\\d+)\\uE001([^\\uE002]*)\\uE002", "gi");
+  const inl = (t) => _atlInline(t, re, ids);
   const out = [];
   let ul = null, ol = null, table = null, para = [];
   const flush = (keep) => {
@@ -335,6 +364,8 @@ function atlMots(md) {
   const m = t.match(/[0-9A-Za-zÀ-ÖØ-öø-ÿŒœ]+(?:['’-][0-9A-Za-zÀ-ÖØ-öø-ÿŒœ]+)*/g);
   return m ? m.length : 0;
 }
+// « M. », « Mme. », « Dr. » ou une initiale ne finissent pas une phrase (comme côté serveur).
+function _atlAbrev(t, i) { return /(?:^|[\s(«"'])(?:M|MM|Mme|Mmes|Mlle|Me|Dr|Pr|Mgr|[A-ZÀ-Ý])\.$/.test(t.slice(Math.max(0, i - 5), i + 1)); }
 // Bornes de la phrase qui contient [a, b) dans le texte : jusqu'à la ponctuation forte, sans
 // sortir de la ligne ; dans un tableau, la cellule.
 function _atlSentence(t, a, b) {
@@ -345,12 +376,19 @@ function _atlSentence(t, a, b) {
     return [Math.max(ls, cs), ce < 0 || ce > le ? le : ce, true];
   }
   let s = ls, e = le;
-  for (let i = a - 1; i >= ls; i--) { if (/[.!?;]/.test(t[i]) && /\s/.test(t[i + 1] || "")) { s = i + 1; break; } }
-  for (let i = b; i < le; i++) { if (/[.!?]/.test(t[i]) && (i + 1 === le || /\s/.test(t[i + 1]))) { e = i + 1; break; } }
+  for (let i = a - 1; i >= ls; i--) { if (/[.!?;]/.test(t[i]) && /\s/.test(t[i + 1] || "") && !(t[i] === "." && _atlAbrev(t, i))) { s = i + 1; break; } }
+  for (let i = b; i < le; i++) { if (/[.!?]/.test(t[i]) && (i + 1 === le || /\s/.test(t[i + 1])) && !(t[i] === "." && _atlAbrev(t, i))) { e = i + 1; break; } }
   while (s < e && /\s/.test(t[s])) s++;
   return [s, e, false];
 }
-// Position du fait dans le texte : l'occurrence dont la phrase ressemble le plus à `phrase`.
+// Ligne de tableau telle que le serveur la contrôle : ses cases jointes par « ; ».
+function _atlRow(t, a) {
+  const ls = t.lastIndexOf("\n", a - 1) + 1;
+  let le = t.indexOf("\n", a); if (le < 0) le = t.length;
+  return t.slice(ls, le).trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim()).filter(Boolean).join(" ; ");
+}
+// Position du fait dans le texte : l'occurrence dont la phrase (ou la ligne de tableau) est celle
+// où le serveur l'a relevé ; à défaut, la première.
 function atlFaitPos(texte, fait, phrase) {
   const t = String(texte || ""), r = _atlFaitRe(fait); if (!r) return null;
   const re = new RegExp(r, "gi"), hint = _atlKey(phrase).replace(/[*_`#|]/g, "").slice(0, 24);
@@ -359,7 +397,8 @@ function atlFaitPos(texte, fait, phrase) {
     const pos = [m.index, m.index + m[0].length];
     if (!best) best = pos;
     const sr = _atlSentence(t, pos[0], pos[1]);
-    if (hint && _atlKey(t.slice(sr[0], sr[1]).replace(/[*_`#|]/g, "")).indexOf(hint) >= 0) return pos;
+    const where = sr[2] ? _atlRow(t, pos[0]) : t.slice(sr[0], sr[1]);
+    if (hint && _atlKey(where.replace(/[*_`#|]/g, "")).indexOf(hint) >= 0) return pos;
   }
   return best;
 }
@@ -657,7 +696,8 @@ const __adjApp = createApp({
     const _idleStale = () => { const l = parseInt(localStorage.getItem("adjugo_active") || "0", 10); return !!(l && (Date.now() - l) > this.idleLimitMs); };
     setInterval(() => { if (this.token && _idleStale()) { this.notify("Déconnecté par sécurité après une période d'inactivité.", "err"); this.logout(); } }, 60000);
     // Session STOCKÉE (pas une connexion fraîche) trop ancienne → on l'efface, retour à l'écran de connexion.
-    if (this.token && !_freshLogin && _idleStale()) { localStorage.removeItem("adjugo_token"); this.token = ""; }
+    if (this.token && !_freshLogin && _idleStale()) { localStorage.removeItem("adjugo_token"); this.token = ""; atlPurgeDrafts(true); }
+    else atlPurgeDrafts(false);      // brouillons locaux de plus de 7 jours : effacés
 
     const _oauthCfg = () => this.api("GET", "/api/auth/oauth-config").then(c => this.googleEnabled = !!(c && c.google)).catch(() => {});
     if (!this.token && !_gc) _oauthCfg();
@@ -817,7 +857,7 @@ const __adjApp = createApp({
         this.notify("Mot de passe réinitialisé"); await this.boot();
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
-    logout() { localStorage.removeItem("adjugo_token"); localStorage.removeItem("adjugo_active"); window.location.href = "/"; },
+    logout() { localStorage.removeItem("adjugo_token"); localStorage.removeItem("adjugo_active"); atlPurgeDrafts(true); window.location.href = "/"; },
     dismissOnboarding() { try { localStorage.setItem("adjugo_onboarding_done", "1"); } catch (e) {} this.$forceUpdate(); },
     // ── Feedback in-app ──
     openFeedback() { this.fb.open = true; this.fb.message = ""; this.fb.kind = "idee"; },
@@ -844,7 +884,7 @@ const __adjApp = createApp({
       if ((cf || "").trim().toUpperCase() !== "SUPPRIMER") { this.notify("Suppression annulée", "err"); return; }
       try {
         await this.api("POST", "/api/rgpd/delete-account", { password: pw, confirm: "SUPPRIMER" });
-        localStorage.removeItem("adjugo_token"); this.notify("Compte supprimé"); setTimeout(() => window.location.href = "/", 1200);
+        localStorage.removeItem("adjugo_token"); atlPurgeDrafts(true); this.notify("Compte supprimé"); setTimeout(() => window.location.href = "/", 1200);
       } catch (e) { this.notify(e.message, "err"); }
     },
     acceptCookies() { try { localStorage.setItem("adjugo_cookies_ok", "1"); } catch (e) {} this.cookiesOk = true; },
@@ -3833,7 +3873,9 @@ const __adjApp = createApp({
     atlSec() { const a = this.atl; return (a.st && a.st.sections.find(s => s.id === a.sel)) || null; },
     atlSecLims(s) { const st = this.atl.st; return (st && s) ? (st.limites || []).filter(l => l.portee === "section" && l.section_id === s.id) : []; },
     atlDocLims(st) { return ((st && st.limites) || []).filter(l => l.portee === "document"); },
-    atlFaitsARelire(s) { const v = s && s.version_courante; return ((v && v.faits) || []).filter(f => f.statut !== "relu_par_vous"); },
+    atlFaitsARelire(s) { const v = s && s.version_courante; return ((v && v.faits) || []).filter(f => f.statut !== "relu_par_vous" && f.type !== "reste"); },
+    // Au-delà de ce que l'atelier détaille, les faits restants sont comptés (et bloquent l'export).
+    atlFaitsReste(s) { const v = s && s.version_courante; return ((v && v.faits) || []).find(f => f.type === "reste" && f.statut !== "relu_par_vous") || null; },
     atlFaitsRelus(s) { const v = s && s.version_courante; return ((v && v.faits) || []).filter(f => f.statut === "relu_par_vous"); },
     atlFaitType(t) { return ATL_FAIT_TYPES[t] || "Fait"; },
     atlHtml(s) { const v = s && s.version_courante; return v ? atlMdToHtml(v.texte, v.faits) : ""; },
@@ -3842,7 +3884,25 @@ const __adjApp = createApp({
     atlAEcrire() { const st = this.atl.st; return st ? st.sections.filter(s => s.statut === "a_ecrire" && s.peut_ecrire && !s.redaction_en_cours).length : 0; },
     atlEnCours() { const pid = this.atl.pid; return Object.values(this.atlJobs).filter(j => j.pid === pid); },
     atlAvert(st, code) { return ((st && st.blocage && st.blocage.avertissements) || []).find(x => x.code === code) || null; },
-    atlBases() { return ATL_BASES; },
+    atlBases(bases) { return atlBasesDispo(bases); },
+    // Poids d'une partie et d'où il vient (comme dans « Comment vous serez noté »).
+    atlPoidsTexte(s) {
+      if (!s || !s.poids) return "";
+      if (s.poids_source === "utilisateur") return "poids lu par vous : " + s.poids;
+      if (s.poids_source === "reglement") return "poids écrit dans le règlement : " + s.poids;
+      return "poids : " + s.poids;
+    },
+    // État de l'export en une pastille : jamais « Prêt » quand l'export ne passe que par une
+    // dérogation, ni quand des parties restent à valider.
+    atlEtatExport(d) {
+      const b = d && d.blocage; if (!b) return { cls: "neutral", label: "" };
+      if (!b.peut_exporter) return { cls: "neutral", label: "En préparation" };
+      if (b.derogation) return { cls: "a_etudier", label: "Export avec dérogation" };
+      const nv = (b.avertissements || []).find(x => x.code === "non_valide");
+      if (nv) return { cls: "neutral", label: nv.nombre > 1 ? nv.nombre + " parties à valider" : "1 partie à valider" };
+      return { cls: "go", label: "Prêt à exporter" };
+    },
+    atlEncoreOuvert(d) { const b = d && d.blocage; return b && b.derogation ? (b.raisons || []).map(r => r.message).join(" ") : ""; },
     // Une dérogation enregistrée pendant cette visite ne vaut plus : le dossier a changé depuis.
     atlDerogPerimee() { const st = this.atl.st, b = st && st.blocage; return !!(b && this.atl.lastDerog && b.bloque && !b.derogation && b.etat_hash !== this.atl.lastDerog); },
 
@@ -3907,7 +3967,30 @@ const __adjApp = createApp({
     },
 
     // ── Proposition (aucun dossier) et plan ──
-    atlBase(b) { const a = this.atl; if (a.base === b) return; a.base = b; this.atlLoad(); },
+    atlBase(b) { const a = this.atl; if (a.base === b.k || b.off) return; a.base = b.k; this.atlLoad(); },
+    // « Comment vous serez noté » a changé depuis le plan : ajouter les critères confirmés et reprendre
+    // les poids, sans rien retirer (aucune IA, aucun débit).
+    async atlAppliquerGrille() {
+      const a = this.atl; if (a.busy) return; a.busy = "grille";
+      try {
+        const d = await this.api("POST", this._atlUrl("/plan/grille"));
+        a.st = d; const n = (d.application && d.application.ajoutees) || 0;
+        this.notify(n ? (n > 1 ? n + " parties ajoutées au plan" : "1 partie ajoutée au plan") : "Poids mis à jour dans le plan");
+        if (!a.st.sections.some(s => s.id === a.sel)) this.atlSelect((a.st.sections[0] || {}).id || null);
+      } catch (e) { this.notify(e.message, "err"); this.atlLoad(true); }
+      finally { a.busy = ""; }
+    },
+    // Aucun dossier du marché : l'import se fait sur la page du marché.
+    atlImporterDce() {
+      if (this.view === "atelier") this.atlBack();
+      this.$nextTick(() => { const i = this.$refs.aoDce; if (i && i.click) i.click(); });
+    },
+    srcOuvrirAtelier() { if (this.src.projectId) this.kbOuvrirAtelier({ id: this.src.projectId }); },
+    atlVersSavoirFaire() {
+      const a = this.atl;
+      if (a.mode === "modifier" && a.edit.dirty) { this._atlDraftSave(); this.notify("Votre texte non enregistré est gardé sur cet appareil : vous le retrouverez dans la partie."); }
+      this.go("kb");
+    },
     async atlCreer() {
       const a = this.atl; if (a.busy) return; a.busy = "creer";
       try {
@@ -3974,6 +4057,7 @@ const __adjApp = createApp({
       const a = this.atl, s = this.atlSec(); a.draft = null; if (!s || !s.peut_ecrire) return;
       let d = null; try { d = JSON.parse(localStorage.getItem(this._atlDraftKey(s.id)) || "null"); } catch (e) { d = null; }
       if (!d || typeof d.t !== "string") return;
+      if (atlDraftPerime(d)) { this._atlDraftClear(s.id); return; }        // plus de 7 jours : effacé
       const cur = (s.version_courante && s.version_courante.texte) || "";
       if (d.t.trim() === cur.trim()) { this._atlDraftClear(s.id); return; }
       a.draft = d;
@@ -4061,13 +4145,21 @@ const __adjApp = createApp({
     },
 
     // ── Le moteur : rédiger, raccourcir (tâches de fond, suivies toutes les 2 s) ──
+    // « Mon savoir-faire » vide, première rédaction (1 analyse) : on prévient avant de débiter.
+    _atlSavoirFaireOk() {
+      const st = this.atl.st;
+      if (!st || !st.savoir_faire || !st.savoir_faire.vide || (st.quota && st.quota.analyse_debitee)) return true;
+      return confirm("« Mon savoir-faire » est vide : sans vos anciens dossiers ni vos fiches, Adjugo écrira surtout des « [À compléter] ». La première rédaction compte pour 1 analyse de votre forfait. Continuer quand même ?");
+    },
     atlRediger(s) {
       if (s.version_courante && !confirm("Adjugo va rédiger une nouvelle version de « " + s.titre + " ». Le texte actuel reste dans l'historique : vous pourrez y revenir.")) return;
+      if (!this._atlSavoirFaireOk()) return;
       this._atlLancer("/sections/" + s.id + "/rediger", { accepte_debit: false }, "rediger");
     },
-    atlRaccourcir(s) { this._atlLancer("/sections/" + s.id + "/raccourcir", { accepte_debit: false }, "raccourcir"); },
+    atlRaccourcir(s) { if (!this._atlSavoirFaireOk()) return; this._atlLancer("/sections/" + s.id + "/raccourcir", { accepte_debit: false }, "raccourcir"); },
     atlRedigerTout() {
       const n = this.atlAEcrire(); if (!n) return;
+      if (!this._atlSavoirFaireOk()) return;
       this._atlLancer("/rediger", { accepte_debit: false }, "rediger");
     },
     async _atlLancer(path, body, action) {

@@ -953,14 +953,15 @@
           <!-- Dossier de présentation (rédaction, vague 2) : l'état en bref et UN bouton qui ouvre l'atelier -->
           <div id="atl-card" class="card atl-card" style="margin-top:14px">
             <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="file-pen-line"></i><h3>Dossier de présentation</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">C'est le « mémoire technique » demandé par l'acheteur. Vous le préparez partie par partie dans l'atelier : Adjugo propose le plan d'après le dossier du marché et peut rédiger chaque partie à partir de vos documents. Vous relisez, corrigez et validez, puis vous exportez en Word ou en PDF.</span></button><div class="spacer"></div>
-              <span v-if="ao.atl.d && ao.atl.d.dossier" class="pill" :class="ao.atl.d.blocage.peut_exporter ? 'go' : 'neutral'" style="font-size:11px">{{ ao.atl.d.blocage.peut_exporter ? 'Prêt à exporter' : 'En préparation' }}</span></div>
+              <span v-if="ao.atl.d && ao.atl.d.dossier" class="pill" :class="atlEtatExport(ao.atl.d).cls" style="font-size:11px">{{ atlEtatExport(ao.atl.d).label }}</span></div>
             <div class="cb">
               <div v-if="ao.atl.loading && !ao.atl.d" class="muted small" role="status"><span class="spin"></span> Chargement…</div>
               <div v-else-if="ao.atl.error && !ao.atl.d" class="muted small">{{ ao.atl.error }} <a href="#" @click.prevent="atlCardLoad()" style="color:var(--accent-text)">Réessayer</a></div>
               <template v-else-if="ao.atl.d && !ao.atl.d.dossier">
                 <p class="small atl-m0">{{ ao.atl.d.proposition.message }}</p>
+                <p v-if="ao.atl.d.proposition.dossier_present === false" class="small atl-mt8"><a href="#" @click.prevent="atlImporterDce()" style="color:var(--accent-text)">Importer le dossier du marché</a></p>
                 <p class="muted small atl-mt8">{{ (ao.atl.d.proposition.sections || []).length }} partie{{ (ao.atl.d.proposition.sections || []).length > 1 ? 's' : '' }} proposée{{ (ao.atl.d.proposition.sections || []).length > 1 ? 's' : '' }}, sans IA. Rien n'est enregistré tant que vous n'avez pas choisi le plan dans l'atelier.</p>
-                <div v-if="ao.atl.d.proposition.fichier_impose" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ ao.atl.d.proposition.message_fichier || "Ce marché impose son propre fichier de réponse." }} {{ ao.atl.d.proposition.source === 'cadre' ? "Le fichier Word d'Adjugo reprendra l'ordre, les numéros et les intitulés de son cadre." : "Ne déposez pas le fichier Word d'Adjugo seul." }}</span></div>
+                <div v-if="ao.atl.d.proposition.avertissement_fichier" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ ao.atl.d.proposition.avertissement_fichier }}</span></div>
               </template>
               <template v-else-if="ao.atl.d && ao.atl.d.dossier">
                 <div class="small">{{ atlCompteTexte(ao.atl.d) }}</div>
@@ -968,6 +969,9 @@
                 <div v-if="atlDocLims(ao.atl.d).length" class="row wrap atl-g6 atl-mt8">
                   <span v-for="(l,i) in atlDocLims(ao.atl.d)" :key="'cl'+i" class="atl-lim" :class="atlLimCls(l)">{{ l.message }}</span></div>
                 <div v-if="!ao.atl.d.blocage.peut_exporter" class="muted small atl-mt8">Avant l'export : {{ ao.atl.d.blocage.raisons.map(r => r.message).join(' ') }}</div>
+                <div v-else-if="atlEncoreOuvert(ao.atl.d)" class="small atl-mt8">Encore ouvert, exporté avec votre dérogation : {{ atlEncoreOuvert(ao.atl.d) }}<b v-if="ao.atl.d.blocage.derogation.avertissement" class="atl-ko"> {{ ao.atl.d.blocage.derogation.avertissement }}</b></div>
+                <div v-if="ao.atl.d.grille" class="muted small atl-mt8">« Comment vous serez noté » a changé depuis le plan : ouvrez l'atelier pour le mettre à jour.</div>
+                <div v-if="ao.atl.d.dossier_acheteur && ao.atl.d.dossier_acheteur.present === false" class="muted small atl-mt8">{{ ao.atl.d.dossier_acheteur.message_absent }}</div>
                 <div v-if="atlAvert(ao.atl.d, 'fichier_impose')" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ atlAvert(ao.atl.d, 'fichier_impose').message }}</span></div>
               </template>
               <button type="button" class="btn primary sm atl-mt12" @click="atlOpen()" :disabled="!ao.atl.loaded && ao.atl.loading"><i data-lucide="pen-line"></i>{{ ao.atl.d && ao.atl.d.dossier ? "Ouvrir l'atelier" : "Préparer le dossier de présentation" }}</button>
@@ -1001,7 +1005,7 @@
                       <span style="flex:1">{{ w }}</span>
                     </div>
                     <!-- Le dossier de présentation se corrige dans l'atelier (rédaction, vague 2) -->
-                    <button v-if="ao.dossier.warnings.some(x => x.indexOf('Dossier de présentation') >= 0)" type="button" class="btn sm" @click="atlOpen()"><i data-lucide="pen-line"></i>Ouvrir l'atelier du dossier de présentation</button>
+                    <button v-if="ao.dossier.warnings.some(x => x.toLowerCase().indexOf('dossier de présentation') >= 0)" type="button" class="btn sm" @click="atlOpen()"><i data-lucide="pen-line"></i>Ouvrir l'atelier du dossier de présentation</button>
                   </div>
                   <button class="btn primary block" @click="aoDownload()" style="margin-bottom:12px"><i data-lucide="download"></i>Télécharger ({{ ao.dossier.zip_name }})</button>
                   <div class="row wrap" style="gap:6px">
@@ -1625,6 +1629,7 @@
                 <i :data-lucide="w.startsWith('BLOQUANT')?'octagon-alert':'triangle-alert'" style="width:14px;height:14px;flex-shrink:0;margin-top:1px"></i>
                 <span style="flex:1">{{ w }}</span>
               </div>
+              <button v-if="src.dossier.warnings.some(x => x.toLowerCase().indexOf('dossier de présentation') >= 0)" type="button" class="btn sm" @click="srcOuvrirAtelier()"><i data-lucide="pen-line"></i>Ouvrir l'atelier du dossier de présentation</button>
             </div>
             <p class="muted small" style="margin-top:10px">{{ src.dossier.memoire_preview }}</p>
           </div>
@@ -1802,10 +1807,12 @@
             <div class="cb">
               <div class="muted small">{{ atl.prop.projet && atl.prop.projet.nom }}</div>
               <p class="small atl-mt8">{{ atl.prop.proposition.message }}</p>
-              <div v-if="atl.prop.proposition.fichier_impose" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ atl.prop.proposition.message_fichier || "Ce marché impose son propre fichier de réponse." }} {{ atl.prop.proposition.source === 'cadre' ? "Le fichier Word d'Adjugo reprendra l'ordre, les numéros et les intitulés de son cadre, pour que la recopie soit rapide." : "Ne déposez pas le fichier Word d'Adjugo seul." }}</span></div>
+              <div v-if="atl.prop.proposition.dossier_present === false" class="atl-info"><i data-lucide="file-x"></i><span style="flex:1;min-width:0">Aucun dossier du marché importé : rien n'a été lu dans le règlement.</span><button type="button" class="btn sm" @click="atlImporterDce()">Importer le dossier du marché</button></div>
+              <div v-if="atl.prop.proposition.avertissement_fichier" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ atl.prop.proposition.avertissement_fichier }}</span></div>
               <div class="atl-bases" role="radiogroup" aria-label="Plan à utiliser">
-                <button v-for="b in atlBases()" :key="'pb'+b.k" type="button" class="atl-base" :class="{on: atl.base===b.k}" role="radio" :aria-checked="atl.base===b.k ? 'true' : 'false'" @click="atlBase(b.k)" :disabled="atl.loading">{{ b.l }}</button>
+                <button v-for="b in atlBases(atl.prop.proposition.bases)" :key="'pb'+b.k" type="button" class="atl-base" :class="{on: atl.base===b.k}" role="radio" :aria-checked="atl.base===b.k ? 'true' : 'false'" @click="atlBase(b)" :disabled="atl.loading || b.off" :title="b.off ? b.non : null">{{ b.l }}</button>
               </div>
+              <div v-if="atlBases(atl.prop.proposition.bases).some(b => b.off)" class="muted small atl-mt4">{{ atlBases(atl.prop.proposition.bases).filter(b => b.off).map(b => b.non).join(' ') }}</div>
               <div v-if="atlPropLims(atl.prop.proposition).length" class="row wrap atl-g6 atl-mt12"><span class="muted small">Repéré dans le règlement :</span>
                 <span v-for="(x,i) in atlPropLims(atl.prop.proposition)" :key="'pl'+i" class="atl-lim">{{ x.t }}<button v-if="x.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ x.phrase }} »<template v-if="x.source"> ({{ x.source }})</template></span></button></span></div>
               <div v-if="atlNonControlees(atl.prop.proposition.limites).length" class="muted small atl-mt4">Adjugo ne compte pas : {{ atlNonControlees(atl.prop.proposition.limites).join(' ; ') }}. Vérifiez-les vous-même.</div>
@@ -1814,7 +1821,7 @@
                   <div class="atl-prop-t"><span v-if="s.numero" class="atl-num">{{ s.numero + ' ' }}</span>{{ s.intitule }}</div>
                   <div v-if="s.parents && s.parents.length" class="muted small">{{ s.parents.map(x => (x.numero ? x.numero + ' ' : '') + x.intitule).join(' › ') }}</div>
                   <div class="row wrap atl-g6 small">
-                    <span v-if="s.critere" class="muted">Critère : {{ s.critere }}<template v-if="s.poids"> · {{ s.poids }}</template></span>
+                    <span v-if="s.critere" class="muted">Critère : {{ s.critere }}<template v-if="s.poids"> · {{ atlPoidsTexte(s) }}</template></span>
                     <span v-for="(x,j) in (s.limite || [])" :key="'psl'+j" class="atl-lim">{{ atlLimTexte(x) }}</span>
                   </div>
                 </li>
@@ -1853,11 +1860,15 @@
               <details v-if="atl.st.dossier_acheteur && (atl.st.dossier_acheteur.pieces || []).length" class="atl-det atl-mt8"><summary>Pièces du dossier de l'acheteur lues par Adjugo ({{ atl.st.dossier_acheteur.pieces.length }})</summary>
                 <ul class="atl-pieces"><li v-for="(p,i) in atl.st.dossier_acheteur.pieces" :key="'pc'+i">{{ p.libelle || p.nom }}<span v-if="p.nom && p.libelle" class="muted"> · {{ p.nom }}</span><span v-if="p.lu_en_entier===true" class="muted"> · lue en entier</span><span v-else-if="p.lu_en_entier===false" class="muted"> · lue en partie</span></li></ul></details>
               <div v-if="atl.st.dossier_acheteur && atl.st.dossier_acheteur.a_change" class="atl-info"><i data-lucide="refresh-cw"></i><span style="flex:1;min-width:0">{{ atl.st.dossier_acheteur.message }}</span><button v-if="!atlMobile" type="button" class="btn sm" @click="atlPlanOpen()">Reconstruire le plan</button></div>
+              <div v-if="atl.st.dossier_acheteur && atl.st.dossier_acheteur.present === false" class="atl-info"><i data-lucide="file-x"></i><span style="flex:1;min-width:0">{{ atl.st.dossier_acheteur.message_absent }}</span><button v-if="!atlMobile" type="button" class="btn sm" @click="atlImporterDce()">Importer le dossier du marché</button></div>
+              <div v-if="atl.st.grille" class="atl-info"><i data-lucide="list-checks"></i><span style="flex:1;min-width:0">{{ atl.st.grille.message }}</span>
+                <template v-if="!atlMobile"><button v-if="atl.st.grille.peut_appliquer" type="button" class="btn sm" @click="atlAppliquerGrille()" :disabled="!!atl.busy"><span v-if="atl.busy==='grille'" class="spin"></span>Mettre le plan à jour</button><button v-if="atl.st.dossier.plan_source === 'libre'" type="button" class="btn sm ghost" @click="atlPlanOpen()">Reconstruire le plan</button></template></div>
+              <div v-else-if="atl.st.dossier.plan.message_en_attente" class="muted small atl-mt4">{{ atl.st.dossier.plan.message_en_attente }}</div>
               <!-- État de l'export : ce qui bloque, la dérogation, la mention IA (avant l'export, décision 9a) -->
               <div class="atl-export">
                 <div class="row wrap atl-g6">
                   <i :data-lucide="atl.st.blocage.peut_exporter ? 'circle-check' : 'octagon-alert'" :class="atl.st.blocage.peut_exporter ? 'atl-ok' : 'atl-ko'" style="width:15px;height:15px"></i>
-                  <b class="small">{{ atl.st.blocage.peut_exporter ? (atl.st.blocage.derogation ? "Export possible avec votre dérogation" : "Prêt à exporter") : "L'export est bloqué" }}</b>
+                  <b class="small">{{ atl.st.blocage.peut_exporter ? (atl.st.blocage.derogation ? "Export possible avec votre dérogation" : (atlEtatExport(atl.st).cls === 'go' ? "Prêt à exporter" : "Export possible, " + atlEtatExport(atl.st).label)) : "L'export est bloqué" }}</b>
                   <button v-if="atl.st.blocage.raisons.length" type="button" class="btn ghost sm" @click="atl.exportOpen=!atl.exportOpen" :aria-expanded="atl.exportOpen ? 'true' : 'false'"><i :data-lucide="atl.exportOpen ? 'chevron-up' : 'chevron-down'"></i>{{ atl.exportOpen ? 'Replier' : 'Voir pourquoi' }}</button>
                 </div>
                 <div v-if="atlDerogPerimee()" class="muted small atl-mt4">Le dossier a changé depuis votre dérogation : elle ne vaut plus pour ce texte.</div>
@@ -1891,7 +1902,7 @@
                   <li v-for="s in atl.st.sections" :key="'p'+s.id">
                     <button type="button" class="atl-part" :class="{on: s.id===atl.sel}" @click="atlSelect(s.id)" :aria-current="s.id===atl.sel ? 'true' : null" :aria-label="atlPartLabel(s)">
                       <span class="atl-part-t"><span v-if="s.numero_affiche" class="atl-num">{{ s.numero_affiche + ' ' }}</span>{{ s.intitule }}</span>
-                      <span v-if="s.critere && s.source_plan !== 'cadre'" class="atl-part-m">{{ s.critere }}<template v-if="s.poids"> · {{ s.poids }}</template><template v-else-if="s.source_plan==='grille'"> · sans poids écrit</template></span>
+                      <span v-if="s.critere && s.source_plan !== 'cadre'" class="atl-part-m">{{ s.critere }}<template v-if="s.poids"> · {{ s.poids }}<template v-if="s.poids_source==='utilisateur'"> (lu par vous)</template></template><template v-else-if="s.source_plan==='grille'"> · sans poids écrit</template></span>
                       <span class="atl-part-m row wrap atl-g6">
                         <span class="pill" :class="atlStatutCls(s.statut)" style="font-size:10.5px">{{ s.statut_libelle }}</span>
                         <span v-if="s.redaction_en_cours" class="muted"><span class="spin" style="width:10px;height:10px"></span> en cours</span>
@@ -1925,7 +1936,7 @@
                       <span class="pill" :class="atlStatutCls(atlSec().statut)" style="font-size:11px">{{ atlSec().statut_libelle }}</span>
                     </div>
                     <div class="row wrap atl-g6 small atl-mt4">
-                      <span v-if="atlSec().critere" class="muted">Critère : {{ atlSec().critere }}<template v-if="atlSec().poids"> · poids écrit dans le règlement : {{ atlSec().poids }}</template><template v-else> · aucun poids écrit dans le règlement</template></span>
+                      <span v-if="atlSec().critere" class="muted">Critère : {{ atlSec().critere }}<template v-if="atlSec().poids"> · {{ atlPoidsTexte(atlSec()) }}</template><template v-else> · aucun poids écrit dans le règlement</template></span>
                       <button v-if="atlSec().partie_de_critere" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Découpage proposé par Adjugo : il n'est pas imposé par l'acheteur.</span></button>
                       <span v-for="(l,i) in atlSecLims(atlSec())" :key="'sl'+i" class="atl-lim" :class="atlLimCls(l)">{{ atlLimCourt(l) }}<button v-if="l.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du dossier</span><span class="tip-b" role="tooltip">Le dossier de l'acheteur dit : « {{ l.phrase }} »<template v-if="l.source"> ({{ l.source }})</template></span></button></span>
                       <span v-if="atlSec().compteur" class="muted">Environ {{ atlNum(atlSec().compteur.mots) }} {{ atlMotsLib(atlSec().compteur.mots) }}<template v-if="atlSec().compteur.pages_estimees"> · {{ atlNum(atlSec().compteur.pages_estimees) }} page{{ atlSec().compteur.pages_estimees > 1 ? 's' : '' }}</template></span>
@@ -1941,7 +1952,7 @@
                       <button type="button" class="btn sm primary" @click="atlRediger(atlSec())" :disabled="!!atl.busy || !!atlSec().redaction_en_cours"><i data-lucide="sparkles"></i>Rédiger avec Adjugo</button>
                       <button type="button" class="btn sm" @click="atlRaccourcir(atlSec())" :disabled="!!atl.busy || !!atlSec().redaction_en_cours || !atlSec().version_courante"><i data-lucide="scissors"></i>Raccourcir</button>
                       <button type="button" class="btn sm" @click="atlEdit()" :disabled="!!atl.busy || !!atlSec().redaction_en_cours"><i data-lucide="pen-line"></i>J'écris moi-même</button>
-                      <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Ce que fait Adjugo</span><span class="tip-b" role="tooltip">Adjugo lit le règlement et le cadre de réponse en entier. Il s'appuie seulement sur vos documents, votre profil, votre équipe (les noms sont remplacés par des étiquettes avant l'envoi), votre chiffrage et les parts envoyées par vos partenaires. Tout fait absent est écrit « [À compléter : …] ». Le texte précédent reste dans l'historique. « Raccourcir » vise la limite de la partie quand le règlement en donne une.</span></button>
+                      <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Ce que fait Adjugo</span><span class="tip-b" role="tooltip"><template v-if="atl.st.dossier_acheteur && atl.st.dossier_acheteur.present === false">Aucun dossier du marché importé : Adjugo rédige sans le règlement ni le cadre de réponse. </template><template v-else>Adjugo lit le règlement et le cadre de réponse en entier. </template>Il s'appuie seulement sur vos documents, votre profil, votre équipe (les noms sont remplacés par des étiquettes avant l'envoi), votre chiffrage et les parts envoyées par vos partenaires. Tout fait absent est écrit « [À compléter : …] ». Le texte précédent reste dans l'historique. « Raccourcir » vise la limite de la partie quand le règlement en donne une.</span></button>
                     </template>
                     <div class="spacer"></div>
                     <template v-if="atl.mode !== 'modifier' && atlSec().version_courante">
@@ -1951,6 +1962,7 @@
                     </template>
                   </div>
                   <div v-if="atlSec().peut_ecrire && !atlMobile && atl.mode !== 'modifier' && atl.st.quota" class="muted small atl-quota">{{ atl.st.quota.message }}</div>
+                  <div v-if="atlSec().peut_ecrire && !atlMobile && atl.mode !== 'modifier' && atl.st.savoir_faire && atl.st.savoir_faire.vide" class="atl-info"><i data-lucide="library"></i><span style="flex:1;min-width:0">{{ atl.st.savoir_faire.message }}</span><button type="button" class="btn sm" @click="atlVersSavoirFaire()">Ouvrir « Mon savoir-faire »</button></div>
 
                   <!-- Brouillon local retrouvé -->
                   <div v-if="atl.draft && !atlMobile && atl.mode !== 'modifier'" class="atl-info"><i data-lucide="history"></i><span style="flex:1;min-width:0">Un texte non enregistré a été gardé sur cet appareil<template v-if="atlDraftWhen(atl.draft)"> (le {{ atlDraftWhen(atl.draft) }})</template>.</span><button type="button" class="btn sm" @click="atlDraftResume()">Reprendre</button><button type="button" class="btn sm ghost" @click="atlDraftDrop()">Effacer</button></div>
@@ -2030,6 +2042,7 @@
                       </div>
                     </li>
                   </ul>
+                  <div v-if="atlFaitsReste(atlSec())" class="muted small atl-pad">{{ atlFaitsReste(atlSec()).message }}</div>
                   <details v-if="atlFaitsRelus(atlSec()).length" class="atl-det atl-pad"><summary>Relus par vous ({{ atlFaitsRelus(atlSec()).length }})</summary>
                     <div v-for="f in atlFaitsRelus(atlSec())" :key="'fr'+f.id" class="row atl-g6 small atl-mt4"><span style="flex:1;min-width:0">{{ f.fait }}</span><button v-if="atlSec().peut_ecrire" type="button" class="btn ghost sm" @click="atlFait(f, 'a_relire')" :disabled="!!atl.busy">Remettre à relire</button></div>
                   </details>
@@ -3060,7 +3073,7 @@
       <div class="modal-b">
         <p class="small atl-m0">Les parties actuelles sont retirées du plan, jamais supprimées : leurs textes restent dans l'historique et vous pouvez les remettre.</p>
         <fieldset class="atl-fs atl-mt8"><legend class="small strong">Construire le plan sur</legend>
-          <label v-for="b in atlBases()" :key="'rb'+b.k" class="atl-radio"><input type="radio" name="atl-base" :value="b.k" v-model="atl.plan.base"><span><b>{{ b.l }}</b><br><span class="muted">{{ b.d }}</span></span></label>
+          <label v-for="b in atlBases(atl.st && atl.st.dossier.plan.bases)" :key="'rb'+b.k" class="atl-radio"><input type="radio" name="atl-base" :value="b.k" v-model="atl.plan.base" :disabled="b.off"><span><b>{{ b.l }}</b><br><span class="muted">{{ b.off ? b.non : b.d }}</span></span></label>
         </fieldset>
         <div v-if="atl.plan.confirm" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ atl.plan.confirm }}</span></div>
       </div>
@@ -3268,6 +3281,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-RIhMCZR6QWZFk5nJ7+/Ja2+eD2K/4d+T82xb6eaPh0E7hoisA/kv6wHHxCzGdPJR" defer></script>
+<script src="/static/app.js" integrity="sha384-nqTbEUUf27Uh9Lr3Gp+6QrkXlac8njVF20gzPjNZL5YAeZWGWdW1fqVXDkYx4aNe" defer></script>
 </body>
 </html>

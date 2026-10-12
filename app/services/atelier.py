@@ -1330,8 +1330,8 @@ def quota_out(dossier: DossierPresentation, n_parties: Optional[int] = None) -> 
         msg = f"Refaire une partie est gratuit : encore {left} fois sur {cap} pour ce dossier."
         prochaine = 0
     else:
-        msg = (f"Vous avez refait {cap} parties gratuitement. Chaque nouvelle rédaction d'une partie déjà rédigée "
-               "compte maintenant pour 1 analyse.")
+        msg = (f"Les {cap} refontes gratuites de ce dossier sont utilisées : refaire une partie, ou rédiger une partie "
+               "de plus que celles comprises dans l'analyse, compte maintenant pour 1 analyse.")
         prochaine = 1
     out = {"analyse_debitee": bool(dossier.analyse_debitee), "regenerations_gratuites": cap,
            "regenerations_utilisees": used, "regenerations_restantes": left,
@@ -1346,6 +1346,18 @@ def _deja_redigee_par_ia(db, section: DossierSection) -> bool:
     return db.query(DossierSectionVersion.id).filter(
         DossierSectionVersion.section_id == section.id,
         DossierSectionVersion.origine.in_([IA, RACCOURCI])).first() is not None
+
+
+def _msg_debit(cap: int, free_left: int, payantes: int) -> str:
+    cout = ("cette rédaction compte pour 1 analyse de votre forfait." if payantes == 1 else
+            f"ces rédactions comptent pour {payantes} analyses de votre forfait.")
+    if free_left:
+        tete = (f"Il reste {free_left} refonte{'s' if free_left > 1 else ''} gratuite{'s' if free_left > 1 else ''} "
+                f"pour ce dossier ; au-delà, ")
+    else:
+        tete = f"Les {cap} refontes gratuites de ce dossier sont utilisées : "
+    return (tete + cout + " (Une refonte : refaire une partie déjà rédigée, ou rédiger une partie de plus que celles "
+            "comprises dans l'analyse du dossier.) Confirmez pour continuer.")
 
 
 def _verifier_premiere_en_cours(db, d: DossierPresentation, job_id: int) -> None:
@@ -1394,12 +1406,7 @@ def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accep
         free_left = max(0, cap - regen0)
         payantes = max(0, len(regen) - free_left)
         if payantes and not accepte_debit:
-            raise AtelierError(409, "debit_a_confirmer",
-                               f"Vous avez refait {cap} parties gratuitement : "
-                               + ("cette nouvelle rédaction compte pour 1 analyse de votre forfait."
-                                  if payantes == 1 else
-                                  f"ces nouvelles rédactions comptent pour {payantes} analyses de votre forfait.")
-                               + " Confirmez pour continuer.", cout=payantes)
+            raise AtelierError(409, "debit_a_confirmer", _msg_debit(cap, free_left, payantes), cout=payantes)
         gratuites = len(regen) - payantes
         vals = {"premieres_incluses": incl0 + len(incluses), "regenerations": regen0 + gratuites,
                 "regenerations_payantes": pay0 + payantes}
@@ -2017,8 +2024,8 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
                                                            "criteres_hors_dossier", "limites", "base_demandee",
                                                            "construit_le")},
                                  bases=ap.bases_disponibles(_analysis(project), (lu.get("cadre") or "")),
-                                 criteres_a_verifier=ap.criteres_a_verifier(_analysis(project)),
-                                 message_a_verifier=(ap.msg_a_verifier(ap.criteres_a_verifier(_analysis(project)))
+                                 criteres_en_attente=ap.criteres_a_verifier(_analysis(project)),
+                                 message_en_attente=(ap.msg_a_verifier(ap.criteres_a_verifier(_analysis(project)))
                                                      if dossier.plan_source != ap.CADRE else "")),
                     "dernier_export": dossier.dernier_export or None},
         "sections": [section_out(db, dossier, s, rangs.get(s.id, ""), lecteur, cour.get(s.id), by_sec.get(s.id))
