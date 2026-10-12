@@ -427,11 +427,13 @@ def run_amont_alerts(db: Session) -> dict:
     from app.services.profile import criteria_dict
     from app.models import Signal
 
-    # Personne n'a activé la veille auto → aucun scan (zéro appel IA inutile).
+    # Personne n'a activé la veille auto → aucun scan (zéro appel IA inutile). Un compte dont l'essai
+    # est terminé sans forfait n'est pas servi : les fonctions d'IA sont en pause (quota.exiger_ia).
+    from app.core.quota import _billing_user, essai_termine
     demo_ids = _demo_user_ids(db)
     opted = [u for u in db.query(User).filter(User.email.isnot(None),
                                               User.amont_alerts_enabled.is_(True)).all()
-             if u.id not in demo_ids]
+             if u.id not in demo_ids and not essai_termine(_billing_user(u, db))]
     if not opted:
         return {"scanned": 0, "users_notified": 0, "new_signals": 0, "opted_in": 0}
 

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.ratelimit import limiter
-from app.core.quota import consume_analysis, refund_analysis
+from app.core.quota import consume_analysis, exiger_ia, refund_analysis
 from app.models import User, Signal, Organization
 from app.services.analysis import extract_dce_text
 from app.core.uploads import aread_upload_limited
@@ -123,6 +123,7 @@ def _analyze_text(text: str, source_name: str, current_user: User, db: Session, 
 @limiter.limit("30/hour")
 async def analyze_upload(request: Request, file: UploadFile = File(...), domaines: str = Form(""),
                          current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    exiger_ia(current_user, db)                  # essai terminé sans forfait : 402 avant de lire le fichier
     content = await aread_upload_limited(file)   # lecture bornée : 413 au-delà de 50 Mo
     try:
         text = await run_in_threadpool(extract_dce_text, file.filename, content)
@@ -161,6 +162,7 @@ def scan(request: Request, req: ScanRequest = ScanRequest(),
     """Adjugo VA CHERCHER les délibérations récentes des collectivités (open data),
     pré-filtre l'investissement, puis l'IA détecte les projets futurs.
     Si des départements sont ciblés, on ne garde que ces zones."""
+    exiger_ia(current_user, db)                  # essai terminé sans forfait : 402 avant toute recherche
     country = _country(current_user, db)
     deps = {d.strip()[:3] for d in (req.departements or []) if d.strip()}
     doms = [d.strip() for d in (req.domaines or []) if d.strip()]
@@ -199,6 +201,8 @@ def auto_status(current_user: User = Depends(get_current_user)):
 def set_auto(req: AutoRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Active/désactive la veille amont automatique : un scan régulier détecte les
     nouveaux projets et envoie un email des nouveautés pertinentes."""
+    if req.enabled:
+        exiger_ia(current_user, db)              # essai terminé sans forfait : la veille par l'IA est en pause
     current_user.amont_alerts_enabled = bool(req.enabled)
     db.commit()
     return {"enabled": current_user.amont_alerts_enabled}

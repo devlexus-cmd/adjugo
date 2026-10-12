@@ -143,7 +143,8 @@ def test_trial_states_and_lockout(client, auth):
         assert False, "l'essai expiré aurait dû bloquer"
     except HTTPException as e:
         assert e.status_code == 402
-        assert "essai" in e.detail.lower()
+        # Essai terminé sans forfait : refus structuré (code + message, toutes les fonctions d'IA en pause).
+        assert e.detail["code"] == "essai_termine" and "essai" in e.detail["message"].lower()
     db.close()
 
 

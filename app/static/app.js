@@ -595,12 +595,15 @@ const __adjApp = createApp({
     },
     quotaReached() { const u = this.stats.usage; return !!u && (u.analyses_remaining <= 0 || u.trial_usage === "atteint"); },
     // Carte « essai gratuit » en haut de l'écran : refus 402 (choisir un forfait), limite d'usage de
-    // l'essai atteinte ou proche, dernières analyses de l'essai. Jamais de montant.
+    // l'essai atteinte ou proche, dernières analyses de l'essai, essai terminé. Jamais de montant.
     essaiCarte() {
       if (this.view === "billing") return null;
       const info = "L'essai gratuit comprend 30 analyses sur toute sa durée (et non par mois) et jusqu'à 15 questions par jour sur vos dossiers. Une limite d'usage de l'IA protège le service pendant l'essai : une opération déjà lancée va toujours au bout. Avec un forfait Pro ou Business, cette limite ne s'applique pas.";
-      if (this.offre402) return { titre: "Choisissez un forfait pour continuer", message: this.offre402.message, info: info, ferme: true };
+      const infoFin = "Votre essai gratuit de 30 jours est terminé. Les fonctions d'IA (analyses, questions sur vos dossiers, rédaction, chiffrage, veille) reprennent dès que vous choisissez un forfait Pro ou Business. Un traitement lancé pendant l'essai va toujours au bout.";
       const u = this.stats && this.stats.usage;
+      const fini = !!u && u.trial_state === "expired" && u.plan === "starter";
+      if (this.offre402) return { titre: "Choisissez un forfait pour continuer", message: this.offre402.message, info: (fini || this.offre402.code === "essai_termine") ? infoFin : info, ferme: true };
+      if (fini) return this.essaiAlerteOff ? null : { titre: "Votre essai gratuit est terminé", message: "Les fonctions d'IA sont en pause. Choisissez un forfait pour continuer : vos marchés, documents et dossiers restent accessibles.", info: infoFin, ferme: true };
       if (!u || u.quota_scope !== "essai") return null;
       if (u.trial_usage === "atteint") return { titre: "Votre essai a atteint sa limite d'usage", message: "Les fonctions d'IA sont en pause. Choisissez un forfait pour continuer : vos marchés, documents et dossiers restent accessibles.", info: info, ferme: false };
       if (this.essaiAlerteOff) return null;
@@ -816,7 +819,7 @@ const __adjApp = createApp({
         // certains écrans enchaînent une confirmation au lieu d'afficher seulement le message.
         const err = new Error(msg);
         err.status = r.status;
-        if (r.status === 402) this.offre402 = { message: msg };   // « Choisir un forfait » proposé en haut de l'écran
+        if (r.status === 402) this.offre402 = { message: msg, code: (d && typeof d === "object" && !Array.isArray(d) && d.code) || "" };   // « Choisir un forfait » proposé en haut de l'écran
         if (d && typeof d === "object" && !Array.isArray(d)) {
           err.code = d.code || ""; if (Array.isArray(d.missing)) err.missing = d.missing; err.detail = d;
           if (typeof d.profile_id === "string" && /^[0-9a-f]{32}$/.test(d.profile_id)) err.profile_id = d.profile_id;
@@ -3689,9 +3692,10 @@ const __adjApp = createApp({
       this.srcSearch();
     },
     // ── #10 Quota visible avant l'analyse : compteur + garde ──
-    srcQuotaBlocked() { const u = this.stats.usage; return !!u && ((u.analyses_remaining <= 0 && !u.overage_enabled) || u.trial_usage === "atteint"); },
+    srcQuotaBlocked() { const u = this.stats.usage; return !!u && ((u.analyses_remaining <= 0 && !u.overage_enabled) || u.trial_usage === "atteint" || (u.trial_state === "expired" && u.plan === "starter")); },
     srcQuotaLabel() {
       const u = this.stats.usage; if (!u || typeof u.analyses_remaining !== "number") return "";
+      if (u.trial_state === "expired" && u.plan === "starter") return "Essai gratuit terminé : choisissez un forfait pour lancer une analyse";
       if (u.quota_scope === "essai") {   // essai gratuit : compté sur toute sa durée, pas par mois
         if (u.trial_usage === "atteint") return "Limite d'usage de l'essai atteinte";
         if (u.analyses_remaining > 0) return u.analyses_remaining + " analyse" + (u.analyses_remaining > 1 ? "s" : "") + " restante" + (u.analyses_remaining > 1 ? "s" : "") + " sur " + u.analyses_limit + " (essai gratuit)";

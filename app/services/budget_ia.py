@@ -19,6 +19,9 @@ choisir un forfait. Une opération commencée va toujours au bout : aucun appel 
 cours de route (jamais un dossier à moitié lu). Aucun montant n'est jamais montré au client : l'écran
 reçoit au plus un état « ok » / « proche » / « atteint ».
 
+Essai terminé sans formule payante : `verifier` refuse aussi (402, code « essai_termine »,
+quota.exiger_ia) : toutes les fonctions d'IA sont en pause jusqu'à la souscription d'un forfait.
+
 Forfaits payants (pro, business, et tout forfait autre que « starter ») : AUCUN plafond, aucun
 changement de comportement. Seule une ALERTE interne (journal, route /api/admin/usage-ia) signale
 une organisation dont le coût IA du mois dépasse PAID_AI_ALERT_RATIO × le prix de son forfait.
@@ -484,9 +487,11 @@ def estimer_import(lecture: dict, plan_info: dict = None) -> float:
 
 def verifier(user, db, operation: str = "analyse", estimation_eur: float = None, n: int = 1) -> None:
     """Refus propre (402) AVANT l'opération si le compte de facturation est en essai et que le coût
-    engagé plus l'estimation prudente dépasse le budget de l'essai. Sans effet pour tout autre
+    engagé plus l'estimation prudente dépasse le budget de l'essai, ou si son essai est terminé sans
+    formule payante (quota.exiger_ia : toutes les fonctions d'IA en pause). Sans effet pour tout autre
     compte (forfaits payants : aucun plafond). Jamais de montant dans la réponse."""
-    from app.core.quota import _billing_user
+    from app.core.quota import _billing_user, exiger_ia
+    exiger_ia(user, db)
     billing = _billing_user(user, db) if db is not None else user
     if not essai_actif(billing):
         return

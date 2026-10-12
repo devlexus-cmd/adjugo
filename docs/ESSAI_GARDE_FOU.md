@@ -121,7 +121,8 @@ analyse 0,09 €, dossier de 6 000 000 caractères 5,46 €.
   l'essai atteinte ».
 - Carte sobre en haut de l'écran (bulle (i), bouton « Voir les forfaits », « Plus tard ») : après tout
   refus 402 (quota, essai terminé, limite d'usage, membres), quand la limite d'usage est proche ou
-  atteinte, ou quand il reste 3 analyses ou moins dans l'essai.
+  atteinte, quand il reste 3 analyses ou moins dans l'essai, et quand l'essai est terminé sans forfait
+  (« Votre essai gratuit est terminé », § 9).
 - Page « Forfaits », carte « Essai gratuit » : « 30 analyses IA pendant l'essai » (bulle (i)), « 15
   questions par jour sur vos dossiers », analyses restantes sur 30 et, à l'approche de la limite, une
   phrase sobre.
@@ -152,24 +153,16 @@ l'IA » dans la vue Administration.
 - Variables (Railway) : rien d'obligatoire, les valeurs par défaut sont celles de la décision.
   À régler au besoin : `TRIAL_AI_BUDGET_EUR`, `TRIAL_ANALYSES`, `TRIAL_QUESTIONS_PAR_JOUR`,
   `TRIAL_AI_BUDGET_PROCHE`, `PAID_AI_ALERT_RATIO`, `PLAN_PRICES_EUR` (JSON), `AI_USD_EUR`.
-- Pages juridiques : l'article 3.5 des CGV parle encore de « 30 analyses par mois » pendant l'essai.
-  Texte proposé dans `docs/A_VALIDER_CGV_essai_gratuit.md` (non publié).
+- Pages juridiques : article 3.5 des CGV publié le 12/10/2026 (version détaillée de
+  `docs/A_VALIDER_CGV_essai_gratuit.md` § 2, plus la fin de l'essai : fonctions d'IA inaccessibles sans
+  formule payante), page `/cgv` régénérée (`scripts/build_legal.py`).
 
 ## 8. Limites connues
 
 - Deux opérations lancées exactement en même temps passent chacune la vérification : le dépassement
   est borné par leur coût (une lecture de dossier à la fois par organisation, de toute façon).
-- Un essai expiré garde le comportement d'avant pour les questions (15 par jour, plafond « starter ») :
-  hors du périmètre « essai actif », donc **sans garde-fou de coût et sans limite de durée**. Avec le
-  routage par tâche, ces questions passent de Haiku 4.5 à Sonnet 5.5 : pire cas 15 × 31 questions
-  par mois et par organisation ≈ 34 à 37 € (contre 13 € avant), pour un compte qui ne paie pas.
-  **Décision à prendre par le fondateur** (rien n'est changé dans le code) :
-  - a) aucune question après l'essai (forfait à prendre) ;
-  - b) questions d'un essai expiré comptées sur le budget de l'essai (le garde-fou reste actif tant
-    que le compte n'a pas de forfait payant ; un compte qui a épuisé son budget reste en pause) ;
-  - c) garder 15 questions par jour (coût accepté).
-
-  Les forfaits payants ne changent dans aucun cas.
+- ~~Un essai expiré garde le comportement d'avant pour les questions (15 par jour)~~ : **tranché le
+  12/10/2026, option a)** (aucune question après l'essai, forfait à prendre). Voir § 9.
 - Le relevé `usage_ia` n'est pas effacé avec un compte (aucune donnée personnelle : un identifiant de
   compte, des montants, des nombres de tokens) ; il sert au coût de la plateforme.
 - Les tarifs sont codés dans `tarifs_ia.py` : les revoir à chaque changement de prix. Le prix de
@@ -178,3 +171,34 @@ l'IA » dans la vue Administration.
 - Une estimation compte le plus cher du principal et du secours, pas leur somme : une réponse coupée
   puis reprise par le secours (deux appels facturés) peut dépasser l'estimation ; elle est comptée au
   coût réel ensuite.
+
+## 9. Essai terminé sans forfait payant (décision du 12/10/2026, option a)
+
+Un compte dont l'essai est terminé et qui n'a pas de formule payante (forfait « starter », date de fin
+d'essai passée, compte de facturation = propriétaire de l'organisation) n'a plus accès à **aucune
+fonction d'IA**, en cohérence avec l'article 3.5 des CGV. Règle unique : `quota.essai_termine`, refus
+`quota.exiger_ia` : **402** avant tout appel à l'IA et tout débit, `detail = {"code": "essai_termine",
+"message": …}`, message sans montant : « Votre essai gratuit est terminé : les fonctions d'IA sont en
+pause. Choisissez un forfait (Pro ou Business) pour continuer. Vos marchés, documents et dossiers
+restent accessibles. »
+
+| Fonction | Où le refus tombe |
+|---|---|
+| Analyse d'un avis, renouvellements par l'IA, veille par texte collé, questionnaire, mémoire et répartition d'un espace de groupement | `consume_analysis` (avant le débit) |
+| Import et ré-analyse d'un dossier | début de `/api/sourcing/analyze-upload` et `/reanalyze` (avant la lecture et le rangement du fichier), puis `consume_analysis` |
+| Questions sur un dossier | `reserve_question` (avant la borne du jour : rien n'est réservé) |
+| Chiffrage, atelier (rédiger, raccourcir) | `budget_ia.verifier` (avant la tâche et le débit) |
+| Veille : délibération importée, recherche des délibérations | début de `/api/amont/analyze-upload` et `/api/amont/scan` (avant la lecture du fichier ou la recherche) |
+| Veille automatique | activation refusée (`POST /api/amont/auto`, la désactivation reste possible) ; la veille planifiée ne sert plus ces comptes (`alerts.run_amont_alerts`) |
+
+- **Un traitement commencé avant la fin de l'essai va au bout** : aucune vérification en cours de route
+  (lecture d'un dossier en tâche de fond, rédaction de plusieurs parties).
+- **Restent accessibles** (sans IA) : marchés, documents, dossiers, atelier (lecture, écrire soi-même),
+  chiffrage manuel, renouvellements tirés des données publiques des marchés (DECP), export.
+- **Inchangés** : essai en cours (30 analyses, 15 questions par jour, budget), comptes historiques sans
+  essai (`trial_ends_at` NULL), compte de démonstration (refus « lecture guidée », 403), forfaits Pro et
+  Business (y compris un ancien essai devenu payant).
+- Écran : carte « Votre essai gratuit est terminé » en haut de l'écran (bulle (i), « Voir les
+  forfaits », « Plus tard ») ; recherche d'appels d'offres : « Essai gratuit terminé : choisissez un
+  forfait pour lancer une analyse ».
+- Tests : `tests/test_essai_termine.py`.

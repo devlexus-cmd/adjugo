@@ -1,9 +1,12 @@
 # À valider : corrections des pages juridiques après le garde-fou de l'essai gratuit
 
-**Statut : proposition, rien n'est publié.** Les sources (`docs/legal/*.md`) et les pages servies
-(`app/static/legal/*`) ne sont **pas** modifiées par ce chantier. Après validation par Eliot :
-recopier le texte retenu dans `docs/legal/cgv.md` (et, si retenu, `docs/legal/politique-confidentialite.md`),
-puis lancer `python scripts/build_legal.py` et vérifier le rendu de `/cgv`.
+**Statut : CGV publiées le 12/10/2026 (décision d'Eliot).** L'article 3.5 de `docs/legal/cgv.md` reprend
+la **version détaillée** du § 2 (« limite d'usage », « quinze (15) questions par jour »), suivie d'une
+phrase sur la fin de l'essai : les fonctions d'intelligence artificielle ne sont plus accessibles sans
+formule payante (un traitement commencé pendant l'essai est mené à son terme). Page `/cgv` régénérée
+par `python scripts/build_legal.py`. La politique de confidentialité (§ 4) n'est pas modifiée.
+
+Texte d'origine de la proposition, conservé ci-dessous pour mémoire.
 
 Pourquoi : depuis le chantier E (garde-fou de l'essai), l'essai ne donne plus « 30 analyses par mois »
 mais **30 analyses sur toute sa durée**, **15 questions par jour** sur les dossiers, et une **limite

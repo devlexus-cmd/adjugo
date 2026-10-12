@@ -6,6 +6,12 @@ Essai gratuit (30 jours, comptes en essai actif SEULEMENT) : TRIAL_ANALYSES anal
 durée de l'essai (compteur users.trial_analyses_used, jamais remis à zéro au changement de mois),
 TRIAL_QUESTIONS_PAR_JOUR questions par jour, et le budget IA de l'essai vérifié avant chaque
 opération (app/services/budget_ia.py). Forfaits payants : comportement inchangé.
+
+Essai TERMINÉ sans formule payante (décision du fondateur, 12/10/2026, option a) : toutes les
+fonctions d'IA sont en pause (analyses, questions, atelier, questionnaire, chiffrage, veille…) ;
+`exiger_ia` refuse (402, code « essai_termine ») AVANT tout appel et tout débit. Un traitement
+commencé avant la fin de l'essai va au bout (aucune vérification en cours de route). Comptes
+historiques sans essai (trial_ends_at NULL), compte de démonstration et forfaits payants : inchangés.
 """
 from datetime import datetime, timezone
 from fastapi import HTTPException
@@ -75,6 +81,38 @@ def _trial_days_left(user) -> int:
 def essai_actif(user) -> bool:
     """Compte en essai gratuit EN COURS (plan non payant, essai pas encore terminé)."""
     return _plan_key(user) not in ("pro", "business") and _trial_state(user) == "active"
+
+
+CODE_ESSAI_TERMINE = "essai_termine"
+MSG_ESSAI_TERMINE = ("Votre essai gratuit est terminé : les fonctions d'IA sont en pause. Choisissez un "
+                     "forfait (Pro ou Business) pour continuer. Vos marchés, documents et dossiers restent "
+                     "accessibles.")
+
+
+def essai_termine(user) -> bool:
+    """Essai gratuit TERMINÉ sans formule payante : forfait « starter » (seul forfait non payant, même
+    règle que budget_ia.est_payant) et date de fin d'essai passée. Faux pour un compte historique sans
+    essai (trial_ends_at NULL) et pour tout forfait payant."""
+    p = getattr(user, "plan", None)
+    plan = p.value if hasattr(p, "value") else str(p or "starter")
+    return plan in ("starter", "") and _trial_state(user) == "expired"
+
+
+def _refus_essai_termine() -> HTTPException:
+    return HTTPException(status_code=402, detail={"code": CODE_ESSAI_TERMINE, "message": MSG_ESSAI_TERMINE})
+
+
+def exiger_ia(user, db) -> None:
+    """Refus propre (402) AVANT tout appel à l'IA et tout débit quand le compte de facturation
+    (propriétaire de l'organisation) a terminé son essai sans formule payante. Sans effet pour tout
+    autre compte. Le compte de démonstration garde son propre refus (lecture guidée, 403)."""
+    if _is_demo(user):
+        return
+    billing = _billing_user(user, db) if db is not None else user
+    if _is_demo(billing):
+        return
+    if essai_termine(billing):
+        raise _refus_essai_termine()
 
 
 def trial_analyses_limit() -> int:
@@ -211,14 +249,10 @@ def consume_analysis(user, db: Session, operation: str = "analyse", estimation_e
     _sync_period(locked)
     lim = _limit(locked)
     used = locked.analyses_used_this_month or 0
-    # Essai gratuit 30j termine (plan starter, essai expire) → blocage net, SANS overage
-    # (aucun abonnement pour le facturer). Message dedie orientant vers l'abonnement.
-    if _plan_key(locked) == "starter" and _trial_state(locked) == "expired":
-        raise HTTPException(
-            status_code=402,
-            detail="Votre essai gratuit de 30 jours est termine. Abonnez-vous (Pro ou Business) "
-                   "pour continuer a lancer des analyses.",
-        )
+    # Essai gratuit terminé sans formule payante → blocage net, SANS overage (aucun abonnement pour
+    # le facturer), avant tout débit : toutes les fonctions d'IA sont en pause (exiger_ia).
+    if essai_termine(locked):
+        raise _refus_essai_termine()
     if essai_actif(locked):
         # Essai : analyses comptées sur TOUTE sa durée (un essai à cheval sur deux mois n'en donne
         # pas deux fois plus), jamais de paiement à l'usage (rien à facturer).
@@ -363,6 +397,7 @@ def reserve_question(user, db) -> int:
     l'identifiant de la réservation (à libérer si l'IA ne répond pas)."""
     from datetime import timedelta
     from app.models import Job
+    exiger_ia(user, db)          # essai terminé sans forfait : aucune question (402), rien n'est réservé
     lim = questions_limit(user, db)
     if questions_today(user, db) >= lim:
         raise HTTPException(429, f"Limite de questions atteinte pour aujourd'hui ({lim} par organisation et "

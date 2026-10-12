@@ -745,6 +745,8 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
         raise HTTPException(404, "Projet introuvable — analysez d'abord l'avis.")
     if _lecture_en_cours(db, project):
         raise HTTPException(409, "Une lecture du dossier est déjà en cours pour ce marché. Attendez sa fin.")
+    from app.core.quota import exiger_ia
+    exiger_ia(current_user, db)                  # essai terminé sans forfait : 402 avant de lire le fichier
 
     content = await aread_upload_limited(file)   # lecture bornée : 413 au-delà de 50 Mo
 
@@ -792,6 +794,8 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
         raise HTTPException(404, "Projet introuvable.")
     if _lecture_en_cours(db, project):
         raise HTTPException(409, "Une lecture du dossier est déjà en cours pour ce marché. Attendez sa fin.")
+    from app.core.quota import exiger_ia
+    exiger_ia(current_user, db)                  # essai terminé sans forfait : 402 avant de relire le dossier
 
     doc = (db.query(Document)
            .filter(Document.user_id.in_(member_ids(current_user, db)), Document.project_id == project.id,

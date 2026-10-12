@@ -1,7 +1,9 @@
 # Fournisseurs d'IA et pages juridiques — corrections à valider
 
 Document de travail du 12/10/2026 (chantier R, routage de l'IA par tâche). **Rien de ce qui suit
-n'est publié** : les pages `app/static/legal/*.html` et `docs/legal/*.md` n'ont pas été modifiées.
+n'est publié**, sauf la puce « Strict nécessaire » de la page Sécurité (§ 3.3, publiée le 12/10/2026,
+indépendante de Mistral) : les autres textes de `app/static/legal/*.html` et `docs/legal/*.md` n'ont
+pas été modifiés par ce chantier.
 Eliot valide (ou corrige) chaque texte proposé, puis le publie lui-même.
 
 Ce qui a changé dans le code, et qui rend ces corrections nécessaires :
@@ -166,7 +168,11 @@ Texte proposé :
 > 30 jours glissants chez Mistral AI, pour détecter les abus. Fournisseurs, sous-traitants et lieux
 > de calcul : voir le DPA (annexe 3).
 
-### 3.3 Section 3, deuxième puce « Strict nécessaire » (à revoir aussi)
+### 3.3 Section 3, deuxième puce « Strict nécessaire » (publiée le 12/10/2026)
+
+**Publiée** dans `app/static/legal/securite.html` le 12/10/2026 (décision d'Eliot) : elle ne dépend
+pas de l'activation de Mistral (lecture intégrale du dossier). Le reste du présent document attend
+toujours le jour de l'activation (§ 5).
 
 Texte actuel :
 
@@ -242,8 +248,8 @@ gênant s'il est déjà posé ; à retirer à l'étape 3).
    les dossiers, alors que le serveur injecte encore « Anthropic, PBC » seul.
 3. **Le jour de l'activation, en une fois** :
    - publier les corrections du présent document :
-     - `dpa.html` et `securite.html` (§ 2 et § 3 ci-dessus) : directement dans `app/static/legal/`
-       (pas de source Markdown) ;
+     - `dpa.html` et `securite.html` (§ 2, § 3.1 et § 3.2 ci-dessus ; le § 3.3 est déjà publié) :
+       directement dans `app/static/legal/` (pas de source Markdown) ;
      - politique de confidentialité (§ 4 ci-dessus) : dans `docs/legal/politique-confidentialite.md`,
        puis `python scripts/build_legal.py` ;
    - poser **`MISTRAL_ACTIF=1`** dans Railway (et retirer `LLM_PROVIDER` s'il est posé), puis
