@@ -781,6 +781,10 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
     fiches = [f for f in (fiches or []) if isinstance(f, Fiche)]
     par_ref = {f.ref: f for f in fiches}
     noms = [far.fold(n) for n in (noms_entreprise or []) if n and len(far.fold(n)) >= 3]
+    # Qui affirme quoi entre membres du groupement : l'apport d'un partenaire n'appuie que les phrases
+    # qui le nomment ; une phrase qui nomme un partenaire (sans « nous ») ne s'appuie que sur son apport.
+    partenaires = {far.fold(f.proprietaire) for f in fiches if f.type == T_PARTENAIRE and len(far.fold(f.proprietaire)) >= 3}
+    les_notres = [n for n in noms if n not in partenaires]
     anc = _Anciens(anciens)
     base_src = far.Sources([base_texte]) if base_texte else None
     out, seen = [], set()
@@ -854,9 +858,16 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
             continue
         sur_entreprise = far.parle_entreprise(ph, noms_entreprise, section_entreprise)
         a_propos = ENTREPRISE if sur_entreprise else MARCHE
-        citees = [par_ref[r] for r in refs if r in par_ref]
-        inconnus = [r for r in refs if r not in par_ref]
         low = far.fold(ph)
+        nommes = {n for n in partenaires if re.search(r"(?<!\w)" + re.escape(n) + r"(?!\w)", low)}
+        de_nous = bool(far._ENTREPRISE.search(low)) or any(
+            re.search(r"(?<!\w)" + re.escape(n) + r"(?!\w)", low) for n in les_notres)
+        if nommes and not de_nous:
+            permises = [f for f in fiches if f.type == T_PARTENAIRE and far.fold(f.proprietaire) in nommes]
+        else:
+            permises = [f for f in fiches if f.type != T_PARTENAIRE or far.fold(f.proprietaire) in nommes]
+        citees = [par_ref[r] for r in refs if r in par_ref and (par_ref[r] in permises or par_ref[r].type == T_PARTENAIRE)]
+        inconnus = [r for r in refs if r not in par_ref]
         # Nombres reliés à une source, pour le recalcul : ceux de la phrase, puis ceux des faits cités.
         pool, pool_cites = [], []
         for f in citees:
@@ -868,7 +879,7 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
             src, detail = None, ""
             if sur_entreprise:
                 # 1. Un fait CITÉ dans la phrase, du bon type ; 2. à défaut, un fait remis non cité.
-                autres = sorted((f for f in fiches if f not in citees), key=_priorite)
+                autres = sorted((f for f in permises if f not in citees), key=_priorite)
                 mots = _mots_contexte(ph, fait)
                 for groupe, cite in ((citees, True), (autres, False)):
                     for f in groupe:

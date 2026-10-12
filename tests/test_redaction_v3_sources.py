@@ -75,6 +75,23 @@ def test_qui_affirme_quoi_le_dossier_de_l_acheteur_n_appuie_jamais_l_entreprise(
     assert iso["source"]["libelle"] == "dans le dossier de l'acheteur" and "ISO 14001" in iso["source"]["extrait"]
 
 
+@pytest.mark.parametrize("phrase,ref", [
+    ("Armor Zinc dispose de 4 nacelles.", "G1"),                    # l'apport du partenaire nommé
+    ("Armor Zinc dispose de 2 nacelles articulées.", None),        # nos nacelles ne sont pas les siennes
+    ("Nous disposons de 4 nacelles.", None),                       # ses nacelles ne sont pas les nôtres
+    ("Nous disposons de 4 nacelles [G1].", "G1"),                  # attribuées explicitement au groupement
+    ("Avec Armor Zinc, nous disposons de 4 nacelles.", "G1"),
+])
+def test_qui_affirme_quoi_entre_membres_du_groupement(phrase, ref):
+    fi = ps.fiches() + fs.fiches_contexte("", "", "", [{"nom": "Armor Zinc", "texte": (
+        "- Armor Zinc (lot : zinguerie) ; apport rédigé par le partenaire : nous disposons de 4 nacelles")}])
+    x = [y for y in fs.controler(phrase, fi, noms_entreprise=["Breizh Couverture", "Armor Zinc"]) if "nacelles" in y["fait"]][0]
+    assert (x["source"] or {}).get("ref") == ref and (x["statut"] == fs.A_RELIRE) == (ref is None)
+    if ref:
+        assert x["source"]["type"] == fs.T_PARTENAIRE and x["source"]["libelle"] == "déclaré par votre partenaire"
+        assert x["source"]["partenaire"] == "Armor Zinc"
+
+
 def test_un_fait_cite_doit_etre_du_bon_type_et_de_la_bonne_unite():
     # Votre estimation n'appuie que des nombres (délais, effectifs prévus, quantités).
     grue = ps.fait_de(ps.controler("Nous possédons une grue mobile [C4]."), "grue")[0]
