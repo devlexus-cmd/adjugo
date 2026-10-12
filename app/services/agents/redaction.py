@@ -57,6 +57,17 @@ def _fuse_consortium(raw_block: str, details: dict, lang_name: str = None) -> st
     return (out or "").strip()
 
 
+def _criteres_du_plan(details: dict) -> str:
+    """Critères remis à la rédaction. Avec la grille « Comment vous serez noté » : seulement
+    les lignes retrouvées dans le règlement ou confirmées par l'utilisateur, poids TEL QU'ÉCRIT
+    (une ligne « à vérifier » n'entre pas dans le plan). Analyse plus ancienne : liste brute."""
+    g = (details or {}).get("grille_notation")
+    if isinstance(g, dict):
+        from app.services.grille_notation import plan_text
+        return plan_text(g) or "non retrouvés dans le règlement (ne pas en inventer)"
+    return str((details or {}).get("criteres_attribution", "") or "")
+
+
 def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
                            lang_name: str = None, db=None, user_id: int = None,
                            estimate: dict = None, contributions: list = None) -> tuple:
@@ -208,7 +219,7 @@ ACHETEUR : {details.get('acheteur','')}
 ALLOTISSEMENT : {details.get('allotissement','')}
 DÉLAI : {details.get('delai_execution','')}
 EXIGENCES RSE : {details.get('critere_rse','')}
-CRITÈRES D'ATTRIBUTION : {details.get('criteres_attribution','')}
+CRITÈRES D'ATTRIBUTION : {_criteres_du_plan(details)}
 
 {entreprise_ligne} — {company.get('forme_juridique','')},
 {company.get('city','')}, effectif {company.get('effectif','')}, qualifications : {quals}.{cot_line}{team_block}{consortium_block}{sources_block}{chiffrage_block}

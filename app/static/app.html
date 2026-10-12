@@ -446,6 +446,14 @@
             </div>
           </div>
 
+          <!-- Comment vous serez noté — la grille de l'acheteur retrouvée dans le règlement (rédaction, vague 1) -->
+          <div v-if="aoGrille()" class="card gn-card" style="margin-top:14px">
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Comment vous serez noté</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase. Une ligne dont la phrase n'a pas été retrouvée est marquée « à vérifier » : elle n'entre dans le plan de votre dossier de présentation (le « mémoire technique ») qu'après votre confirmation. Adjugo peut se tromper ou manquer un critère : le règlement fait foi.</span></button><div class="spacer"></div>
+              <span class="pill neutral" style="font-size:11px">{{ grilleResume(aoGrille()) }}</span></div>
+            <div class="cb"><grille-carte :key="'gn'+ao.project.id" :g="aoGrille()" :edit="true" :busy="ao.grilleBusy" @choix="aoGrilleChoix"></grille-carte></div>
+          </div>
+          <div v-else-if="aoDceAvailable() && ao.project.ai_analysis.dce_excerpt" class="card pad muted small" style="margin-top:14px"><i data-lucide="list-checks" style="width:14px;height:14px;vertical-align:-2px"></i> Comment vous serez noté : cette analyse est antérieure à la lecture des critères dans le règlement. Ré-analysez le dossier pour les retrouver, avec leur phrase.</div>
+
           <!-- Répondre à plusieurs ? — score de groupement, manques du dossier, candidats, simulation (co-traitance v2) -->
           <div v-if="ao.project.ai_analysis" class="card" style="margin-top:14px;border:1.5px solid var(--accent)">
             <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="users-round" style="color:var(--accent-text)"></i><h3>Répondre à plusieurs ?</h3><div class="spacer"></div>
@@ -2495,6 +2503,11 @@
               <div v-if="sharedAo.project.source_url" class="row small" style="padding:5px 0"><span class="muted" style="min-width:140px">Source</span><a :href="safeUrl(sharedAo.project.source_url)" target="_blank" rel="noopener noreferrer nofollow" style="color:var(--accent-text)">Avis d'origine ↗</a></div>
             </div>
           </div>
+          <!-- Comment vous serez noté : la même grille que le chef de file, en lecture seule -->
+          <div v-if="sharedGrille(sharedAo.project.analysis)" class="card gn-card" style="margin-bottom:14px">
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Comment vous serez noté</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase. C'est la même grille que celle du chef de file : elle sert de base commune au groupement. Le règlement fait foi.</span></button></div>
+            <div class="cb"><grille-carte :g="sharedGrille(sharedAo.project.analysis)" :edit="false"></grille-carte></div>
+          </div>
 
           <!-- Pourquoi vous dans ce groupement : le % COMMUN, votre apport, les seuils — jamais le score seul du mandataire ni le prix des autres -->
           <div v-if="sharedAo.forMember" class="card pad" style="margin-bottom:14px;border:1.5px solid var(--accent)">
@@ -2909,6 +2922,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-t1a4TNKmMGhxkjZ654c6v6L2r7UJEe6+m4tc9Q5AwqUAGR6XfcHAfYox9BdBFYln" defer></script>
+<script src="/static/app.js" integrity="sha384-uTCvsHnrfemB2qhrTFwiyaZt4+6ExnYiAn0RnmMSz0WeoMqg6nDP261PDWQiokCG" defer></script>
 </body>
 </html>

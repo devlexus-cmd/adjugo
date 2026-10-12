@@ -436,7 +436,8 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     # max_chars élevé : on lit l'INTÉGRALITÉ du dossier (RC+CCAP+CCTP+DPGF d'un ZIP),
     # sinon l'analyse variait d'un import à l'autre selon ce qui passait sous le plafond.
     try:
-        dce_text = await run_in_threadpool(extract_dce_text, file.filename, content, max_chars=120000)
+        dce_text, pieces = await run_in_threadpool(extract_dce_text, file.filename, content,
+                                                   max_chars=120000, with_pieces=True)
     except ValueError as e:
         raise HTTPException(422, str(e))
 
@@ -450,7 +451,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     try:
         with tenant_scope(current_user.id):
             analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                        lang_name=_user_lang_name(current_user, db))
+                                        lang_name=_user_lang_name(current_user, db), pieces=pieces)
     except Exception:
         refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
         raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
@@ -458,6 +459,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     analysis["dce_available"] = True
     analysis["dce_excerpt"] = (dce_text or "")[:30000]   # contexte pour le Q&A IA
     prev = project.ai_analysis or {}
+    _keep_grille_choices(prev, analysis)
     analysis["source"] = _safe_source(prev.get("source"))
     analysis["lead_score"] = prev.get("lead_score")
 
@@ -526,7 +528,8 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     except Exception:
         raise HTTPException(404, "Le fichier du dossier est introuvable dans le stockage.")
     try:
-        dce_text = await run_in_threadpool(extract_dce_text, doc.name, content, max_chars=120000)
+        dce_text, pieces = await run_in_threadpool(extract_dce_text, doc.name, content,
+                                                   max_chars=120000, with_pieces=True)
     except ValueError as e:
         raise HTTPException(422, str(e))
 
@@ -538,7 +541,7 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     try:
         with tenant_scope(current_user.id):
             analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                        lang_name=_user_lang_name(current_user, db))
+                                        lang_name=_user_lang_name(current_user, db), pieces=pieces)
     except Exception:
         refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
         raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
@@ -546,6 +549,7 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     analysis["dce_available"] = True
     analysis["dce_excerpt"] = (dce_text or "")[:30000]
     prev = project.ai_analysis or {}
+    _keep_grille_choices(prev, analysis)
     analysis["source"] = _safe_source(prev.get("source"))
     analysis["lead_score"] = prev.get("lead_score")
     score = analysis.get("match_score", 0)
@@ -570,6 +574,66 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
         "groupement": analysis.get("groupement"),
         "groupement_score": project.groupement_score,
     }
+
+
+# ── « Comment vous serez noté » : choix de l'utilisateur sur une ligne (0 IA) ─────
+
+def _keep_grille_choices(prev: dict, analysis: dict) -> None:
+    """Ré-analyse : les lignes que l'utilisateur avait confirmées ou écartées le restent."""
+    try:
+        from app.services.grille_notation import carry_over
+        old = ((prev or {}).get("details") or {}).get("grille_notation")
+        det = analysis.get("details") if isinstance(analysis.get("details"), dict) else None
+        if det is not None and isinstance(det.get("grille_notation"), dict) and isinstance(old, dict):
+            det["grille_notation"] = carry_over(old, det["grille_notation"])
+    except Exception as e:      # noqa: BLE001 — jamais bloquant pour une analyse déjà payée
+        logger.warning("reprise des choix de la grille impossible : %s", type(e).__name__)
+
+
+class GrilleChoixRequest(BaseModel):
+    project_id: int
+    critere_id: str = PydField(..., min_length=1, max_length=12)
+    choix: str = PydField(..., pattern="^(confirme|ecarte|annule)$")
+    poids: str = PydField("", max_length=40)
+
+
+@router.post("/grille/choix")
+@limiter.limit("120/hour")
+def grille_choix(request: Request, req: GrilleChoixRequest,
+                 current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Le chef de file confirme (« je l'ai lu dans le règlement », avec le poids tel qu'il
+    l'a lu s'il le souhaite) ou écarte une ligne de la grille. Une ligne « à vérifier »
+    n'entre dans le plan qu'après cette confirmation. Aucun appel à l'IA, aucun quota."""
+    import copy
+    from app.models import utcnow
+    from app.services.grille_notation import apply_choice
+    project = db.query(Project).filter(Project.id == req.project_id,
+                                       Project.user_id.in_(member_ids(current_user, db)),
+                                       Project.deleted_at.is_(None)).first()
+    if not project:
+        raise HTTPException(404, "Projet introuvable.")
+    a = copy.deepcopy(project.ai_analysis) if isinstance(project.ai_analysis, dict) else {}
+    det = a.get("details") if isinstance(a.get("details"), dict) else {}
+    try:
+        g = apply_choice(det.get("grille_notation"), req.critere_id, req.choix,
+                         poids=req.poids, when=utcnow().isoformat())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    det["grille_notation"] = g
+    a["details"] = det
+    project.ai_analysis = a                  # NOUVEAU dict : colonne JSON bien marquée modifiée
+    db.commit()
+    try:
+        from app.services import audit
+        from app.routers.invites import tenant_owner_id
+        ln = next((x for x in g.get("criteres") or [] if x.get("id") == req.critere_id), {})
+        audit.record(db, action="grille.choix", owner_id=tenant_owner_id(project, db), project_id=project.id,
+                     actor=f"user:{current_user.id}", actor_kind="owner", target_type="project",
+                     target_id=project.id, detail=f"{req.choix} : {str(ln.get('critere') or '')[:120]}",
+                     ip=audit.client_ip(request), meta={"critere_id": req.critere_id, "choix": req.choix})
+    except Exception:
+        pass
+    return {"grille_notation": g}
 
 
 # ── Q&A IA sur un AO (après import du DCE réel) ──────────────────────────────────

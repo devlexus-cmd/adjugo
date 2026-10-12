@@ -311,6 +311,16 @@ def _safe_analysis(ai_analysis) -> dict:
         v = details.get(real_key)
         if v not in (None, "", [], {}):
             out[front_key] = v
+    # « Comment vous serez noté » : la grille de l'acheteur, en LECTURE, projetée champ par
+    # champ (critères tels qu'écrits, phrase publique du règlement, ce que le dossier impose).
+    # Jamais la grille brute : ni noms de fichiers, ni dates des choix du chef de file.
+    try:
+        from app.services.grille_notation import public_grille
+        g = public_grille(details.get("grille_notation"))
+        if g:
+            out["grille_notation"] = g
+    except Exception:
+        pass
     return out
 
 
@@ -456,8 +466,10 @@ def _invite_public(inv: ProjectInvite, project: Project, owner_company: Optional
     if _network_pending(inv, db):
         out["project"]["client"] = None
         out["project"]["source_url"] = None
+        # Ni acheteur, ni grille de notation (ses phrases recopiées du règlement nomment souvent
+        # l'acheteur) tant que l'invitation n'est pas acceptée.
         out["project"]["analysis"] = {k: v for k, v in (out["project"].get("analysis") or {}).items()
-                                      if k != "acheteur"}
+                                      if k not in ("acheteur", "grille_notation")}
         out["documents"] = []
         out["can_view_docs"] = False
         # Ni composition du groupement, ni score commun avant acceptation (stratégie du chef de file).

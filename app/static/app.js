@@ -316,7 +316,7 @@ const __adjApp = createApp({
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             chkHelp: null, grp: _grpInit(), conv: _convInit(), pm: _pmInit(), depot: _depotInit(),
-            qa: [], qaInput: "", qaLoading: false,
+            qa: [], qaInput: "", qaLoading: false, grilleBusy: "",
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
       titles: { kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
@@ -984,7 +984,7 @@ const __adjApp = createApp({
       this.ao.back = this.view; this.ao.dossier = null; this.ao.project = p;
       this.ao.cotraitants = []; this.ao.stOpen = false; this.ao.st.results = [];
       this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.buyerLoading = true; this.ao.checklist = null; this.ao.group = null;
-      this.ao.qa = []; this.ao.qaInput = ""; this.ao.grp = _grpInit(); this.ao.conv = _convInit(); this.ao.pm = _pmInit(); this.ao.depot = _depotInit(); this.rinv = null;
+      this.ao.qa = []; this.ao.qaInput = ""; this.ao.grilleBusy = ""; this.ao.grp = _grpInit(); this.ao.conv = _convInit(); this.ao.pm = _pmInit(); this.ao.depot = _depotInit(); this.rinv = null;
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
       this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
@@ -1530,7 +1530,10 @@ const __adjApp = createApp({
       return "Étape " + g.etape + (all.length ? " sur " + all.length : "") + (e ? " · " + e.label : "");
     },
     openSharedKey(ev, s) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); this.openShared(s); } },
-    sharedFact(a) { const L = { acheteur: "Acheteur", allotissement: "Allotissement", lieu: "Lieu", type_marche: "Type", date_limite: "Date limite", criteres_attribution: "Critères", duree: "Durée" }; return Object.entries(L).filter(([k]) => a && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length)).map(([k, lab]) => ({ k: lab, v: Array.isArray(a[k]) ? a[k].map(x => (x && typeof x === "object") ? (x.critere || x.nom || x.label || "") + (x.ponderation ? " — " + x.ponderation : "") : x).join(" · ") : a[k] })); },
+    // Avec la grille « Comment vous serez noté », les critères s'affichent dans sa carte (phrase
+    // du règlement, poids tel qu'écrit) : plus de ligne « Critères » brute, aux poids non contrôlés.
+    sharedGrille(a) { const g = a && a.grille_notation; return (g && Array.isArray(g.criteres)) ? g : null; },
+    sharedFact(a) { const L = { acheteur: "Acheteur", allotissement: "Allotissement", lieu: "Lieu", type_marche: "Type", date_limite: "Date limite", criteres_attribution: "Critères", duree: "Durée" }; if (this.sharedGrille(a)) delete L.criteres_attribution; return Object.entries(L).filter(([k]) => a && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length)).map(([k, lab]) => ({ k: lab, v: Array.isArray(a[k]) ? a[k].map(x => (x && typeof x === "object") ? (x.critere || x.nom || x.label || "") + (x.ponderation ? " — " + x.ponderation : "") : x).join(" · ") : a[k] })); },
     // ── Notifications (activité des partenaires) ──
     async loadNotifs() { try { this.notifs = await this.api("GET", "/api/notifications") || []; } catch (e) {} },
     toggleNotifs() {
@@ -1648,6 +1651,7 @@ const __adjApp = createApp({
         // Vague 4 : dépôt, journal vérifiable, pièces
         "groupement.depose": "Dossier marqué déposé", "groupement.depot_annule": "Marquage « déposé » retiré",
         "guest.export_journal": "Le partenaire a exporté son journal", "guest.update_piece": "Pièce mise à jour par le partenaire (type ou date de validité)",
+        "grille.choix": "Critère de notation confirmé ou retiré",
       };
       return m[a.action] || a.action;
     },
@@ -2888,6 +2892,26 @@ const __adjApp = createApp({
     aoSource() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.source) || null; },
     aoContact() { const c = this.aoDetails().contact; return (c && (c.nom || c.email)) ? c : null; },
     aoDceAvailable() { return !!(this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.dce_available); },
+    // « Comment vous serez noté » : la grille retrouvée dans le règlement (analyse ≥ vague 1 rédaction).
+    aoGrille() { const g = this.aoDetails().grille_notation; return (g && Array.isArray(g.criteres)) ? g : null; },
+    grilleResume(g) {
+      if (!g) return "";
+      const n = (g.criteres || []).filter(x => x.dans_le_plan).length, av = (g.compteurs && g.compteurs.a_verifier) || 0;
+      const s = (g.ponderation || {}).statut;
+      const base = n ? n + " critère" + (n > 1 ? "s" : "") : "aucun critère retenu";
+      return base + (s === "non_ponderes" ? " · non pondérés" : "") + (av ? " · " + av + " à vérifier" : "");
+    },
+    async aoGrilleChoix(id, choix, poids) {
+      const p = this.ao.project; if (!p || this.ao.grilleBusy) return;
+      this.ao.grilleBusy = id;
+      try {
+        const r = await this.api("POST", "/api/sourcing/grille/choix", { project_id: p.id, critere_id: id, choix, poids: poids || "" });
+        const a = Object.assign({}, p.ai_analysis || {}); a.details = Object.assign({}, a.details || {}, { grille_notation: r.grille_notation });
+        p.ai_analysis = a;
+        this.notify(choix === "confirme" ? "Critère ajouté à votre plan" : choix === "ecarte" ? "Critère retiré de votre plan" : "Choix annulé");
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.ao.grilleBusy = ""; }
+    },
     // Détail du score : on affiche le VRAI score déterministe du DCE (score_breakdown,
     // 6 critères pondérés) ; repli sur le pré-score de l'avis (lead_score) si absent.
     aoBreakdown() {
@@ -3596,6 +3620,97 @@ __adjApp.config.errorHandler = function (err, vm, info) {
     }, 60);
   } catch (e) {}
 };
+
+// « Comment vous serez noté » (rédaction, vague 1) : la grille de l'acheteur, retrouvée dans le
+// texte du règlement. Accepte la grille complète (chef de file, edit=true) ou la vue publique des
+// partenaires (edit=false, lecture seule). N'affiche QUE ce que le serveur a retrouvé : critère,
+// poids tel qu'écrit, phrase source. Texte toujours rendu en {{ }} (jamais v-html).
+function _gnNum(v) { const n = Number(v); return isFinite(n) ? n.toLocaleString("fr-FR") : String(v || ""); }
+__adjApp.component("grille-carte", {
+  props: { g: { type: Object, default: null }, edit: { type: Boolean, default: false }, busy: { type: String, default: "" } },
+  emits: ["choix"],
+  data() { return { poids: {} }; },
+  computed: {
+    vm() {
+      const g = this.g || {}, c = g.contraintes || {}, cad = c.cadre || {};
+      const lignes = (g.criteres || []).map(x => {
+        const ch = (x.choix_utilisateur && x.choix_utilisateur.choix) || (x.confirme ? "confirme" : x.ecarte ? "ecarte" : "");
+        return { id: x.id || "", critere: x.critere || "", phrase: x.phrase || "", source: x.source || "", statut: x.statut,
+          plan: !!x.dans_le_plan, choix: ch, poids: x.dans_le_plan ? (x.poids_retenu != null ? x.poids_retenu : (x.poids || "")) : "",
+          poidsVous: x.poids_source === "utilisateur" };
+      });
+      const lim = (c.limites || []).filter(x => x && x.type);
+      const vis = c.visite && (c.visite.phrase || c.visite.obligatoire) ? c.visite : null;
+      return { lignes, pond: g.ponderation || {}, ordre: g.ordre || {}, total: g.controle_total || {},
+        impose: !!c.fichier_impose, msgImpose: c.message_fichier || "",
+        phraseOblig: (cad.obligatoire && cad.obligatoire.phrase) || c.phrase_obligation || "",
+        cadreSource: (cad.obligatoire && cad.obligatoire.source) || cad.source || "",
+        cadreFourni: cad.fourni != null ? !!cad.fourni : !!c.cadre_fourni,
+        cadreMentionne: cad.mentionne != null ? !!cad.mentionne : !!c.cadre_mentionne,
+        cadrePhrase: cad.phrase || "", limites: lim, visite: vis,
+        lecture: (g.lecture && Array.isArray(g.lecture.pieces)) ? g.lecture : null };
+    },
+    alerteTotal() { const s = this.vm.total.statut; return s === "ecart" || s === "incomplet"; },
+    rienImpose() { const v = this.vm; return !v.impose && !v.cadreFourni && !v.cadreMentionne && !v.limites.length && !v.visite; },
+  },
+  methods: {
+    lim(x) {
+      if (x.type === "police") { const s = [x.police, x.taille != null ? x.taille : ""].filter(v => v !== "" && v != null).join(" "); return "Police : " + (s || x.texte || ""); }
+      const u = ({ pages: "pages", mots: "mots", caracteres: "caractères", lignes: "lignes" })[x.type] || x.type;
+      return (x.valeur != null ? _gnNum(x.valeur) + " " + u : (x.texte || "")) + " au maximum";
+    },
+    send(l, choix) { this.$emit("choix", l.id, choix, choix === "confirme" ? String(this.poids[l.id] || "").trim() : ""); },
+  },
+  template: '<div class="gn">'
+    + '<ul v-if="vm.lignes.length" class="gn-list">'
+    + '<li v-for="l in vm.lignes" :key="l.id||l.critere" class="gn-row" :class="{off:l.choix===\'ecarte\'}">'
+    + '<span class="gn-crit">{{ l.critere }}</span>'
+    + '<span v-if="l.poids" class="gn-poids num">{{ l.poids }}</span>'
+    + '<span v-if="l.choix===\'ecarte\'" class="pill neutral gn-pill">retiré</span>'
+    + '<span v-else-if="l.choix===\'confirme\' && l.statut===\'a_verifier\'" class="pill neutral gn-pill">{{ edit ? "confirmé par vous" : "confirmé par le chef de file" }}</span>'
+    + '<span v-else-if="l.statut===\'a_verifier\'" class="pill a_etudier gn-pill">à vérifier dans le règlement</span>'
+    + '</li></ul>'
+    + '<p v-if="vm.pond.message" class="muted small gn-note">{{ vm.pond.message }}</p>'
+    + '<div v-if="alerteTotal" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ vm.total.message }}</span></div>'
+    + '<p v-else-if="vm.total.message" class="muted small gn-note">{{ vm.total.message }}</p>'
+    + '<p v-if="vm.lecture && vm.lecture.pieces.length && !vm.lecture.reglement" class="muted small gn-note">Adjugo n\'a pas reconnu de règlement de la consultation parmi les pièces lues : comparez avec le règlement.</p>'
+    + '<details v-if="vm.lignes.length" class="gn-det"><summary>Voir les phrases du règlement</summary>'
+    + '<div v-for="l in vm.lignes" :key="\'p\'+(l.id||l.critere)" class="gn-src">'
+    + '<div class="gn-src-t">{{ l.critere }}<span v-if="l.poids" class="muted"> · {{ l.poids }}<template v-if="l.poidsVous"> (lu par {{ edit ? "vous" : "le chef de file" }})</template></span></div>'
+    + '<blockquote v-if="l.phrase" class="gn-q">{{ l.phrase }}</blockquote>'
+    + '<div v-else class="muted small">Phrase non retrouvée dans le dossier importé.</div>'
+    + '<div v-if="l.source" class="muted small">Trouvée dans : {{ l.source }}</div>'
+    + '<div v-if="edit" class="gn-act">'
+    + '<template v-if="!l.choix && (l.statut===\'a_verifier\' || (!l.poids && vm.pond.statut!==\'non_ponderes\'))">'
+    + '<input class="inp gn-inp" v-model="poids[l.id]" maxlength="40" placeholder="Poids lu, ex. 60 %" :aria-label="\'Poids lu dans le règlement pour \' + l.critere">'
+    + '<button type="button" class="btn sm" :disabled="busy===l.id" @click="send(l,\'confirme\')"><i data-lucide="check"></i>Je l\'ai lu dans le règlement</button>'
+    + '<button type="button" class="btn ghost sm" :disabled="busy===l.id" @click="send(l,\'ecarte\')">Retirer</button>'
+    + '</template>'
+    + '<button v-else-if="l.choix" type="button" class="btn ghost sm" :disabled="busy===l.id" @click="send(l,\'annule\')">Annuler mon choix</button>'
+    + '<button v-else type="button" class="btn ghost sm" :disabled="busy===l.id" @click="send(l,\'ecarte\')">Retirer de mon plan</button>'
+    + '</div></div>'
+    + '<div v-if="vm.ordre.phrase" class="gn-src"><div class="gn-src-t">Ordre des critères</div><blockquote class="gn-q">{{ vm.ordre.phrase }}</blockquote></div>'
+    + '</details>'
+    + '<div class="gn-sub">Ce que le dossier impose'
+    + '<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Repéré dans le texte, sans IA : un cadre de réponse fourni ou imposé, des limites de pages, de mots, de caractères ou de police, une visite obligatoire. Chaque repérage garde sa phrase : relisez-la avant de rédiger. Un repérage peut en manquer : le règlement fait foi.</span></button></div>'
+    + '<div v-if="vm.impose" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ vm.msgImpose }}</span></div>'
+    + '<p v-else-if="vm.cadreFourni" class="small gn-note">Un cadre de réponse est fourni avec le dossier.</p>'
+    + '<p v-else-if="vm.cadreMentionne" class="small gn-note">Le règlement parle d\'un cadre de réponse, mais il ne figure pas dans les fichiers lus.</p>'
+    + '<ul v-if="vm.limites.length || vm.visite" class="gn-chips">'
+    + '<li v-for="(x,i) in vm.limites" :key="\'l\'+i">{{ lim(x) }}</li>'
+    + '<li v-if="vm.visite">Visite obligatoire</li></ul>'
+    + '<p v-if="rienImpose" class="muted small gn-note">Ni cadre de réponse, ni limite de pages ou de police, ni visite obligatoire repérés dans le règlement.</p>'
+    + '<details v-if="!rienImpose" class="gn-det"><summary>Voir les phrases</summary>'
+    + '<div v-if="vm.phraseOblig || vm.cadrePhrase" class="gn-src"><div class="gn-src-t">Cadre de réponse</div><blockquote class="gn-q">{{ vm.phraseOblig || vm.cadrePhrase }}</blockquote><div v-if="vm.cadreSource" class="muted small">Trouvée dans : {{ vm.cadreSource }}</div></div>'
+    + '<div v-for="(x,i) in vm.limites" :key="\'lp\'+i" class="gn-src"><div class="gn-src-t">{{ lim(x) }}</div><blockquote v-if="x.phrase" class="gn-q">{{ x.phrase }}</blockquote><div v-if="x.source" class="muted small">Trouvée dans : {{ x.source }}</div></div>'
+    + '<div v-if="vm.visite" class="gn-src"><div class="gn-src-t">Visite obligatoire</div><blockquote class="gn-q">{{ vm.visite.phrase }}</blockquote><div v-if="vm.visite.source" class="muted small">Trouvée dans : {{ vm.visite.source }}</div></div>'
+    + '</details>'
+    + '<details v-if="vm.lecture && vm.lecture.pieces.length" class="gn-det"><summary>Pièces lues ({{ vm.lecture.pieces.length }})</summary>'
+    + '<ul class="gn-pieces"><li v-for="(p,i) in vm.lecture.pieces" :key="\'pc\'+i"><span>{{ p.libelle }}</span><span v-if="p.nom" class="muted"> · {{ p.nom }}</span>'
+    + '<span v-if="p.lu_en_entier===true" class="muted"> · lue en entier</span><span v-else-if="p.lu_en_entier===false" class="muted"> · lue en partie</span></li></ul>'
+    + '</details>'
+    + '</div>',
+});
 
 // ── Réseau de partenaires (vague 3) : petits composants d'affichage, SANS état propre ──
 // Ils ne font qu'afficher ce que l'API renvoie (libellé, source, date) : aucune note, aucun calcul,
