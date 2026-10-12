@@ -71,7 +71,7 @@ def get_subscription_status(current_user: User = Depends(get_current_user),
         u = _usage(bu, db)
         return {"plan": u["plan"], "status": "active", "analyses_limit": u["analyses_limit"],
                 "trial_state": u.get("trial_state"), "trial_days_left": u.get("trial_days_left"),
-                "trial_ends_at": u.get("trial_ends_at")}
+                "trial_ends_at": u.get("trial_ends_at"), "ia_pause": u.get("ia_pause")}
 
     if not bu.stripe_customer_id:
         return _persisted()

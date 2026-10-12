@@ -1698,7 +1698,8 @@
             <div class="row" style="margin-top:12px;gap:10px;align-items:center;padding:10px 13px;background:var(--surface-2);border-radius:8px">
               <i data-lucide="bell-ring" style="width:16px;height:16px;color:var(--accent-text)"></i>
               <div style="flex:1;min-width:0"><b class="small">Veille automatique</b><div class="muted small">Nouveaux projets <b>pertinents</b> envoyés par email.</div></div>
-              <span v-if="amont.auto" class="pill go" style="font-size:10px">Active</span>
+              <template v-if="amont.auto && amont.autoPause"><span class="pill neutral" style="font-size:10px">En pause</span><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ amontPauseInfo() }}</span></button></template>
+              <span v-else-if="amont.auto" class="pill go" style="font-size:10px">Active</span>
               <button class="btn sm" :class="amont.auto?'':'primary'" @click="amontToggleAuto()">{{ amont.auto?'Désactiver':'Activer' }}</button>
             </div>
           </div>
@@ -2373,7 +2374,7 @@
         <section v-if="view==='billing'">
           <div class="row" style="margin-bottom:18px"><span class="muted">Votre offre :</span>
             <span v-if="plan.trial_state==='active'" class="pill go">Essai gratuit · {{ plan.trial_days_left }} j restants</span>
-            <span v-else-if="plan.trial_state==='expired'" class="pill" style="background:#fdeceb;color:#c0392b">Essai terminé — abonnez-vous</span>
+            <span v-else-if="plan.trial_state==='expired'" class="pill" style="background:#fdeceb;color:#c0392b">{{ plan.ia_pause==='forfait' ? 'Aucun forfait actif' : 'Essai terminé — abonnez-vous' }}</span>
             <span v-else class="pill go" style="text-transform:capitalize">{{ plan.plan||'starter' }}</span>
             <div class="spacer"></div><button v-if="(plan.plan||'starter')!=='starter'" class="btn" @click="portal"><i data-lucide="settings"></i>Gérer mon abonnement</button></div>
           <div class="plans">
@@ -3344,6 +3345,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-UwdEvOeqIKOD1kJpxRSmEi8VTw035+itTdNbXU0gLDrCgY7zzueMBkD+h1oaq6OI" defer></script>
+<script src="/static/app.js" integrity="sha384-1Q5OkNoZOr8fjywdAPW5tXgXBOIQbPc/HivuGcq76HNgVs+qX31mtOOH5/+fmz0x" defer></script>
 </body>
 </html>

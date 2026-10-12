@@ -12,6 +12,9 @@ fonctions d'IA sont en pause (analyses, questions, atelier, questionnaire, chiff
 `exiger_ia` refuse (402, code « essai_termine ») AVANT tout appel et tout débit. Un traitement
 commencé avant la fin de l'essai va au bout (aucune vérification en cours de route). Comptes
 historiques sans essai (trial_ends_at NULL), compte de démonstration et forfaits payants : inchangés.
+Tout NOUVEAU compte a une date de fin d'essai, quel que soit le mode d'inscription (mot de passe ou
+Google). Un compte déjà passé par le paiement (client Stripe connu) dont le forfait n'est plus actif
+reçoit le même refus, avec un message qui ne lui parle pas d'essai (motif « forfait »).
 """
 from datetime import datetime, timezone
 from fastapi import HTTPException
@@ -87,6 +90,11 @@ CODE_ESSAI_TERMINE = "essai_termine"
 MSG_ESSAI_TERMINE = ("Votre essai gratuit est terminé : les fonctions d'IA sont en pause. Choisissez un "
                      "forfait (Pro ou Business) pour continuer. Vos marchés, documents et dossiers restent "
                      "accessibles.")
+# Même pause, pour un compte déjà passé par le paiement (ancien abonné, paiement en échec, paiement
+# commencé puis abandonné) : on ne lui parle pas d'un essai.
+MSG_SANS_FORFAIT = ("Aucun forfait n'est actif sur votre compte : les fonctions d'IA sont en pause. "
+                    "Choisissez un forfait (Pro ou Business) pour continuer. Vos marchés, documents et "
+                    "dossiers restent accessibles.")
 
 
 def essai_termine(user) -> bool:
@@ -98,21 +106,40 @@ def essai_termine(user) -> bool:
     return plan in ("starter", "") and _trial_state(user) == "expired"
 
 
-def _refus_essai_termine() -> HTTPException:
-    return HTTPException(status_code=402, detail={"code": CODE_ESSAI_TERMINE, "message": MSG_ESSAI_TERMINE})
+def motif_pause_ia(user):
+    """Pourquoi les fonctions d'IA sont en pause pour ce compte de facturation, ou None :
+      'essai'   → essai gratuit terminé, compte jamais passé par le paiement ;
+      'forfait' → même règle (essai_termine), mais le compte est déjà passé par le paiement (client
+                  Stripe connu : ancien abonné, paiement en échec, ou paiement commencé puis
+                  abandonné). Le refus et l'écran ne lui parlent pas d'un essai."""
+    if not essai_termine(user):
+        return None
+    return "forfait" if getattr(user, "stripe_customer_id", None) else "essai"
+
+
+def pause_ia(user, db):
+    """Motif de la pause de l'IA (voir motif_pause_ia) porté par le compte de facturation
+    (propriétaire de l'organisation), ou None. Toujours None pour le compte de démonstration."""
+    if _is_demo(user):
+        return None
+    billing = _billing_user(user, db) if db is not None else user
+    if _is_demo(billing):
+        return None
+    return motif_pause_ia(billing)
+
+
+def _refus_essai_termine(motif: str = "essai") -> HTTPException:
+    msg = MSG_SANS_FORFAIT if motif == "forfait" else MSG_ESSAI_TERMINE
+    return HTTPException(status_code=402, detail={"code": CODE_ESSAI_TERMINE, "motif": motif, "message": msg})
 
 
 def exiger_ia(user, db) -> None:
     """Refus propre (402) AVANT tout appel à l'IA et tout débit quand le compte de facturation
     (propriétaire de l'organisation) a terminé son essai sans formule payante. Sans effet pour tout
     autre compte. Le compte de démonstration garde son propre refus (lecture guidée, 403)."""
-    if _is_demo(user):
-        return
-    billing = _billing_user(user, db) if db is not None else user
-    if _is_demo(billing):
-        return
-    if essai_termine(billing):
-        raise _refus_essai_termine()
+    motif = pause_ia(user, db)
+    if motif:
+        raise _refus_essai_termine(motif)
 
 
 def trial_analyses_limit() -> int:
@@ -202,6 +229,8 @@ def usage(user, db: Session = None) -> dict:
         "trial_state": tstate,                                   # 'active'|'expired'|'none'|None (payant)
         "trial_days_left": _trial_days_left(user) if tstate == "active" else 0,
         "trial_ends_at": ends.isoformat() if ends else None,
+        # Fonctions d'IA en pause (essai terminé sans forfait) : 'essai' | 'forfait' | None.
+        "ia_pause": None if _is_demo(user) else motif_pause_ia(user),
     }
     if essai:
         # Compteur de l'essai : analyses sur 30 (toute la durée), questions par jour, et l'état de la
@@ -252,7 +281,7 @@ def consume_analysis(user, db: Session, operation: str = "analyse", estimation_e
     # Essai gratuit terminé sans formule payante → blocage net, SANS overage (aucun abonnement pour
     # le facturer), avant tout débit : toutes les fonctions d'IA sont en pause (exiger_ia).
     if essai_termine(locked):
-        raise _refus_essai_termine()
+        raise _refus_essai_termine(motif_pause_ia(locked))
     if essai_actif(locked):
         # Essai : analyses comptées sur TOUTE sa durée (un essai à cheval sur deux mois n'en donne
         # pas deux fois plus), jamais de paiement à l'usage (rien à facturer).

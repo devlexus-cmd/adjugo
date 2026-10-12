@@ -23,7 +23,7 @@ import logging
 import secrets as _secrets
 import threading
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, quote, urlparse
 
 import requests
@@ -221,9 +221,13 @@ def google_callback(request: Request, code: str = "", state: str = "", error: st
     else:
         # Création via Google : mot de passe aléatoire INUTILISABLE (il peut en définir un plus tard
         # via « mot de passe oublié »). email_verified=False → il devra confirmer son adresse comme
-        # une inscription classique.
+        # une inscription classique. Essai gratuit de 30 jours comme à l'inscription par mot de passe
+        # (CGV 3.5 : tout nouveau compte) : sans date de fin, le compte serait pris pour un compte
+        # historique et échapperait à la fin de l'essai. Les comptes déjà en base ne sont pas touchés.
+        from app.core.quota import TRIAL_DAYS
         user = User(email=email, hashed_password=hash_password(_secrets.token_urlsafe(24)),
-                    full_name=name, org_role="admin", email_verified=False)
+                    full_name=name, org_role="admin", email_verified=False,
+                    trial_ends_at=datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS))
         db.add(user)
         db.flush()
         org = Organization(name=(f"Équipe {name}" if name else "Mon organisation"), owner_id=user.id)

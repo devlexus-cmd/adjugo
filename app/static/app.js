@@ -529,7 +529,7 @@ const __adjApp = createApp({
         {code:"15000000",label:"Produits alimentaires"},
       ],
       countries2: [], adaptedCountries: [], orgCountry: "FR", lang: "fr",
-      amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false, pasteOpen: false, pasteText: "", pasting: false },
+      amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false, autoPause: "", pasteOpen: false, pasteText: "", pasting: false },
       amontDomaines: ["bâtiment", "voirie / VRD", "réseaux", "énergie / rénovation énergétique", "espaces verts / aménagement", "numérique / télécom", "équipement", "études / maîtrise d'œuvre"],
       kb: { docs: [], totalChunks: 0, uploading: false, kind: "memoire", text: "", textName: "", busyText: false,
             searchQ: "", searchRes: null, searching: false, qText: "", qResults: null, qLoading: false },
@@ -599,11 +599,16 @@ const __adjApp = createApp({
     essaiCarte() {
       if (this.view === "billing") return null;
       const info = "L'essai gratuit comprend 30 analyses sur toute sa durée (et non par mois) et jusqu'à 15 questions par jour sur vos dossiers. Une limite d'usage de l'IA protège le service pendant l'essai : une opération déjà lancée va toujours au bout. Avec un forfait Pro ou Business, cette limite ne s'applique pas.";
-      const infoFin = "Votre essai gratuit de 30 jours est terminé. Les fonctions d'IA (analyses, questions sur vos dossiers, rédaction, chiffrage, veille) reprennent dès que vous choisissez un forfait Pro ou Business. Un traitement lancé pendant l'essai va toujours au bout.";
       const u = this.stats && this.stats.usage;
-      const fini = !!u && u.trial_state === "expired" && u.plan === "starter";
-      if (this.offre402) return { titre: "Choisissez un forfait pour continuer", message: this.offre402.message, info: (fini || this.offre402.code === "essai_termine") ? infoFin : info, ferme: true };
-      if (fini) return this.essaiAlerteOff ? null : { titre: "Votre essai gratuit est terminé", message: "Les fonctions d'IA sont en pause. Choisissez un forfait pour continuer : vos marchés, documents et dossiers restent accessibles.", info: infoFin, ferme: true };
+      // IA en pause : « essai » (essai terminé sans forfait) ou « forfait » (compte déjà passé par le
+      // paiement, dont le forfait n'est plus actif) : à celui-là, on ne parle pas d'un essai.
+      const pause = this.iaPause();
+      const motif = (this.offre402 && this.offre402.code === "essai_termine" && this.offre402.motif) || pause;
+      const infoFin = motif === "forfait"
+        ? "Aucun forfait n'est actif sur votre compte. Les fonctions d'IA (analyses, questions sur vos dossiers, rédaction, chiffrage, veille) reprennent dès que vous choisissez un forfait Pro ou Business. Un traitement déjà lancé va toujours au bout."
+        : "Votre essai gratuit de 30 jours est terminé. Les fonctions d'IA (analyses, questions sur vos dossiers, rédaction, chiffrage, veille) reprennent dès que vous choisissez un forfait Pro ou Business. Un traitement lancé pendant l'essai va toujours au bout.";
+      if (this.offre402) return { titre: "Choisissez un forfait pour continuer", message: this.offre402.message, info: (pause || this.offre402.code === "essai_termine") ? infoFin : info, ferme: true };
+      if (pause) return this.essaiAlerteOff ? null : { titre: pause === "forfait" ? "Aucun forfait actif" : "Votre essai gratuit est terminé", message: "Les fonctions d'IA sont en pause. Choisissez un forfait pour continuer : vos marchés, documents et dossiers restent accessibles.", info: infoFin, ferme: true };
       if (!u || u.quota_scope !== "essai") return null;
       if (u.trial_usage === "atteint") return { titre: "Votre essai a atteint sa limite d'usage", message: "Les fonctions d'IA sont en pause. Choisissez un forfait pour continuer : vos marchés, documents et dossiers restent accessibles.", info: info, ferme: false };
       if (this.essaiAlerteOff) return null;
@@ -819,7 +824,7 @@ const __adjApp = createApp({
         // certains écrans enchaînent une confirmation au lieu d'afficher seulement le message.
         const err = new Error(msg);
         err.status = r.status;
-        if (r.status === 402) this.offre402 = { message: msg, code: (d && typeof d === "object" && !Array.isArray(d) && d.code) || "" };   // « Choisir un forfait » proposé en haut de l'écran
+        if (r.status === 402) this.offre402 = { message: msg, code: (d && typeof d === "object" && !Array.isArray(d) && d.code) || "", motif: (d && typeof d === "object" && !Array.isArray(d) && d.motif) || "" };   // « Choisir un forfait » proposé en haut de l'écran
         if (d && typeof d === "object" && !Array.isArray(d)) {
           err.code = d.code || ""; if (Array.isArray(d.missing)) err.missing = d.missing; err.detail = d;
           if (typeof d.profile_id === "string" && /^[0-9a-f]{32}$/.test(d.profile_id)) err.profile_id = d.profile_id;
@@ -3692,10 +3697,19 @@ const __adjApp = createApp({
       this.srcSearch();
     },
     // ── #10 Quota visible avant l'analyse : compteur + garde ──
-    srcQuotaBlocked() { const u = this.stats.usage; return !!u && ((u.analyses_remaining <= 0 && !u.overage_enabled) || u.trial_usage === "atteint" || (u.trial_state === "expired" && u.plan === "starter")); },
+    // Fonctions d'IA en pause (essai terminé sans forfait) : "essai" | "forfait" (compte déjà passé par
+    // le paiement, dont le forfait n'est plus actif) | "". Repli sur l'état de l'essai si le serveur ne le dit pas.
+    iaPause() {
+      const u = this.stats && this.stats.usage; if (!u) return "";
+      if ("ia_pause" in u) return u.ia_pause || "";
+      return (u.trial_state === "expired" && u.plan === "starter") ? "essai" : "";
+    },
+    srcQuotaBlocked() { const u = this.stats.usage; return !!u && ((u.analyses_remaining <= 0 && !u.overage_enabled) || u.trial_usage === "atteint" || !!this.iaPause()); },
     srcQuotaLabel() {
       const u = this.stats.usage; if (!u || typeof u.analyses_remaining !== "number") return "";
-      if (u.trial_state === "expired" && u.plan === "starter") return "Essai gratuit terminé : choisissez un forfait pour lancer une analyse";
+      const pause = this.iaPause();
+      if (pause === "forfait") return "Aucun forfait actif : choisissez un forfait pour lancer une analyse";
+      if (pause) return "Essai gratuit terminé : choisissez un forfait pour lancer une analyse";
       if (u.quota_scope === "essai") {   // essai gratuit : compté sur toute sa durée, pas par mois
         if (u.trial_usage === "atteint") return "Limite d'usage de l'essai atteinte";
         if (u.analyses_remaining > 0) return u.analyses_remaining + " analyse" + (u.analyses_remaining > 1 ? "s" : "") + " restante" + (u.analyses_remaining > 1 ? "s" : "") + " sur " + u.analyses_limit + " (essai gratuit)";
@@ -3773,12 +3787,23 @@ const __adjApp = createApp({
     // ── Veille amont (signaux d'investissement) ──
     async loadAmont() {
       try { this.amont.signals = await this.api("GET", "/api/amont/"); } catch (e) {}
-      try { this.amont.auto = (await this.api("GET", "/api/amont/auto")).enabled; } catch (e) {}
+      try {
+        const a = await this.api("GET", "/api/amont/auto");
+        this.amont.auto = a.enabled;
+        // Activée mais en pause (essai terminé sans forfait) : la veille planifiée ne sert plus ce compte.
+        this.amont.autoPause = a.en_pause ? (a.motif || "essai") : "";
+      } catch (e) {}
+    },
+    amontPauseInfo() {
+      return this.amont.autoPause === "forfait"
+        ? "Aucun forfait n'est actif sur votre compte : la veille automatique reprend dès que vous choisissez un forfait."
+        : "Votre essai gratuit est terminé : la veille automatique reprend dès que vous choisissez un forfait.";
     },
     async amontToggleAuto() {
       try {
         const r = await this.api("POST", "/api/amont/auto", { enabled: !this.amont.auto });
         this.amont.auto = r.enabled;
+        this.amont.autoPause = "";   // accepté : activée hors pause, ou désactivée
         this.notify(r.enabled ? "Veille automatique activée — alertes par email" : "Veille automatique désactivée");
       } catch (e) { this.notify(e.message, "err"); }
     },

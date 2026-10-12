@@ -420,14 +420,21 @@ def test_veille_automatique_ne_sert_plus_un_essai_termine(client, auth, monkeypa
 
 # ═══ 5. Écran : carte sobre « essai terminé » (bulle (i), forfaits proposés, aucun montant) ════
 
+def _bloc_js(js, debut):
+    j = js.index(debut)
+    return js[j:js.index("\n    },", j)]
+
+
 def test_ecran_carte_essai_termine_sans_montant():
     js = (ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
-    j = js.index("essaiCarte() {")
-    bloc = js[j:js.index("\n    },", j)]
-    assert "Votre essai gratuit est terminé" in bloc and 'u.trial_state === "expired"' in bloc
+    bloc = _bloc_js(js, "essaiCarte() {")
+    assert "Votre essai gratuit est terminé" in bloc and "this.iaPause()" in bloc
     assert 'this.offre402.code === "essai_termine"' in bloc
     assert "€" not in bloc and "budget" not in bloc.lower()
+    pause = _bloc_js(js, "iaPause() {")
+    assert '"ia_pause" in u' in pause and 'u.trial_state === "expired"' in pause
     assert 'code: (d && typeof d === "object" && !Array.isArray(d) && d.code) || ""' in js
+    assert 'motif: (d && typeof d === "object" && !Array.isArray(d) && d.motif) || ""' in js
     assert "Essai gratuit terminé : choisissez un forfait pour lancer une analyse" in js
 
 
@@ -485,3 +492,170 @@ def test_page_securite_puce_strict_necessaire(client):
     assert "jamais utilisés pour entraîner un modèle d'IA" in html
     assert "encadrée par ses conditions applicables à l'API" in html
     assert "<strong>Transferts encadrés</strong>" in html
+
+
+# ═══ 7. Inscription par Google : un essai de 30 jours, qui se termine comme les autres ══════════
+
+@pytest.fixture
+def google_essai(monkeypatch, client):
+    """Google SIMULÉ (aucun appel réseau), comme dans test_secu5_durcissement."""
+    from app.core.config import get_settings
+    from app.routers import google_auth as ga
+    from tests.test_secu5_durcissement import _FakeGoogle
+    s = get_settings()
+    monkeypatch.setattr(s, "GOOGLE_CLIENT_ID", "client-id-de-test")
+    monkeypatch.setattr(s, "GOOGLE_CLIENT_SECRET", "client-secret-de-test")
+    fake = _FakeGoogle(f"g_essai_{uuid.uuid4().hex[:8]}@exemple-test.fr")
+    monkeypatch.setattr(ga, "requests", fake)
+    client.cookies.clear()
+    yield fake
+    client.cookies.clear()
+
+
+def _connexion_google(client):
+    from urllib.parse import parse_qs, urlparse
+    from tests.test_secu5_durcissement import _callback, _login
+    state, morsel, _ = _login(client)
+    r = _callback(client, state, nonce=morsel.value)
+    assert r.status_code in (302, 307), r.text
+    code = parse_qs(urlparse(r.headers["location"]).fragment)["gcode"][0]
+    ex = client.post("/api/auth/google/exchange", json={"code": code})
+    assert ex.status_code == 200, ex.text
+    return {"Authorization": f"Bearer {ex.json()['access_token']}"}
+
+
+def test_compte_cree_par_google_a_un_essai_de_30_jours_qui_se_termine(client, google_essai):
+    from app.core import quota
+    h = _connexion_google(client)
+    u = _user(google_essai.email)
+    fin = quota._as_utc(u.trial_ends_at)
+    assert fin is not None, "un compte créé par Google doit avoir une date de fin d'essai"
+    restant = fin - datetime.now(timezone.utc)
+    assert timedelta(days=29, hours=23) < restant <= timedelta(days=30)
+    assert quota._trial_state(u) == "active" and quota.essai_actif(u)
+    us = client.get("/api/agent/stats", headers=h).json()["usage"]
+    assert us["quota_scope"] == "essai" and us["analyses_limit"] == 30 and us["ia_pause"] is None
+    # Fin de l'essai : même refus qu'un compte inscrit par mot de passe, avant tout appel et tout débit.
+    _set(google_essai.email, email_verified=True)
+    _expirer(google_essai.email)
+    _termine(client.post("/api/sourcing/analyze", headers=h, json={"tender": TENDER}))
+    us = client.get("/api/agent/stats", headers=h).json()["usage"]
+    assert us["ia_pause"] == "essai" and us["analyses_remaining"] == 0
+    assert (_user(google_essai.email).trial_analyses_used or 0) == 0
+
+
+def test_compte_deja_en_base_connecte_par_google_inchange(client, google_essai, monkeypatch):
+    """Un compte historique (sans essai) qui se connecte par Google n'en reçoit pas un : rien n'est
+    modifié pour les comptes déjà en base."""
+    from app.core import quota
+    from app.models import PlanType
+    email, _h = _inscrire(client)
+    _set(email, trial_ends_at=None, plan=PlanType.starter)
+    google_essai.email = email
+    h = _connexion_google(client)
+    u = _user(email)
+    assert u.trial_ends_at is None and quota._trial_state(u) == "none" and not quota.essai_termine(u)
+    _fake(monkeypatch, lambda kw: ("Le 3 mars.", "end_turn"))
+    pid = _project(client, h, "Marché historique Google")
+    _set_analysis(pid, ANALYSE)
+    r = client.post("/api/sourcing/ask", headers=h, json={"project_id": pid, "question": "Date limite ?"})
+    assert r.status_code == 200, r.text
+
+
+# ═══ 8. Compte déjà passé par le paiement : même pause, sans parler d'un essai ═════════════════
+
+def test_ancien_abonne_sans_forfait_actif_message_sans_essai(client, auth, monkeypatch):
+    """Abonnement résilié ou paiement en échec : le webhook Stripe remet le forfait à « starter ».
+    Même pause que la fin de l'essai (décision du 12/10/2026), mais le message ne parle pas d'essai."""
+    import stripe
+    from types import SimpleNamespace
+    from app.core import quota
+    from app.models import PlanType, User
+    monkeypatch.setattr(stripe.Subscription, "list", lambda *a, **k: SimpleNamespace(data=[]))
+    h = auth["headers"]
+    _set(auth["email"], plan=PlanType.starter, trial_ends_at=_hier(), stripe_customer_id="cus_test_ancien")
+    r = client.post("/api/sourcing/analyze", headers=h, json={"tender": TENDER})
+    assert r.status_code == 402, r.text
+    d = r.json()["detail"]
+    assert d["code"] == "essai_termine" and d["motif"] == "forfait", d
+    assert d["message"].startswith("Aucun forfait n'est actif sur votre compte")
+    assert "essai" not in d["message"].lower() and "restent accessibles" in d["message"]
+    _sans_montant(r.json())
+    us = client.get("/api/agent/stats", headers=h).json()["usage"]
+    assert us["ia_pause"] == "forfait"
+    st = client.get("/api/stripe/status", headers=h).json()
+    assert st["ia_pause"] == "forfait"
+    db = _db()
+    try:
+        u = db.query(User).filter(User.email == auth["email"]).first()
+        with pytest.raises(HTTPException) as e:
+            quota.consume_analysis(u, db)
+        assert e.value.detail["motif"] == "forfait" and "essai" not in e.value.detail["message"].lower()
+    finally:
+        db.close()
+    # Il reprend un forfait : tout repart, comme avant.
+    _set(auth["email"], plan=PlanType.pro, analyses_used_this_month=0, analyses_period=quota._period())
+    db = _db()
+    try:
+        u = db.query(User).filter(User.email == auth["email"]).first()
+        quota.exiger_ia(u, db)
+        assert quota.usage(u, db)["ia_pause"] is None
+    finally:
+        db.close()
+
+
+def test_essai_termine_sans_paiement_motif_essai(client, auth):
+    h = auth["headers"]
+    _expirer(auth["email"])
+    d = _termine(client.post("/api/sourcing/analyze", headers=h, json={"tender": TENDER}))
+    assert d["motif"] == "essai"
+    assert client.get("/api/agent/stats", headers=h).json()["usage"]["ia_pause"] == "essai"
+    assert client.get("/api/stripe/status", headers=h).json()["ia_pause"] == "essai"
+
+
+def test_ecran_aucun_forfait_actif_sans_parler_d_essai():
+    js = (ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+    html = (ROOT / "app" / "static" / "app.html").read_text(encoding="utf-8")
+    bloc = _bloc_js(js, "essaiCarte() {")
+    assert '"Aucun forfait actif"' in bloc and "Aucun forfait n'est actif sur votre compte." in bloc
+    assert "Aucun forfait actif : choisissez un forfait pour lancer une analyse" in js
+    assert "plan.ia_pause==='forfait' ? 'Aucun forfait actif' : 'Essai terminé — abonnez-vous'" in html
+
+
+# ═══ 9. Veille automatique activée pendant l'essai : « En pause » à l'écran, pas « Active » ═══
+
+def test_veille_automatique_en_pause_a_l_ecran(client, auth):
+    from app.models import PlanType
+    h = auth["headers"]
+    _set(auth["email"], amont_alerts_enabled=True)
+    try:
+        a = client.get("/api/amont/auto", headers=h).json()
+        assert a == {"enabled": True, "en_pause": False, "motif": None}       # essai en cours : servie
+        _expirer(auth["email"])
+        a = client.get("/api/amont/auto", headers=h).json()
+        assert a == {"enabled": True, "en_pause": True, "motif": "essai"}     # choix gardé, en pause
+        assert _user(auth["email"]).amont_alerts_enabled is True
+        _set(auth["email"], stripe_customer_id="cus_test_veille")
+        assert client.get("/api/amont/auto", headers=h).json()["motif"] == "forfait"
+        # Un forfait est choisi : la veille reprend seule, sans rien réactiver.
+        _set(auth["email"], plan=PlanType.pro)
+        assert client.get("/api/amont/auto", headers=h).json() == {"enabled": True, "en_pause": False,
+                                                                   "motif": None}
+        # Compte historique sans essai : jamais en pause.
+        _set(auth["email"], plan=PlanType.starter, trial_ends_at=None)
+        assert client.get("/api/amont/auto", headers=h).json()["en_pause"] is False
+    finally:
+        _set(auth["email"], amont_alerts_enabled=False)
+
+
+def test_ecran_veille_automatique_en_pause():
+    js = (ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+    html = (ROOT / "app" / "static" / "app.html").read_text(encoding="utf-8")
+    assert '<template v-if="amont.auto && amont.autoPause"><span class="pill neutral" style="font-size:10px">En pause</span>' in html
+    assert '<span class="tip-b" role="tooltip">{{ amontPauseInfo() }}</span>' in html
+    assert '<span v-else-if="amont.auto" class="pill go" style="font-size:10px">Active</span>' in html
+    load = _bloc_js(js, "async loadAmont() {")
+    assert 'this.amont.autoPause = a.en_pause ? (a.motif || "essai") : "";' in load
+    info = _bloc_js(js, "amontPauseInfo() {")
+    assert "Votre essai gratuit est terminé : la veille automatique reprend dès que vous choisissez un forfait." in info
+    assert "€" not in info

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.ratelimit import limiter
-from app.core.quota import consume_analysis, exiger_ia, refund_analysis
+from app.core.quota import consume_analysis, exiger_ia, pause_ia, refund_analysis
 from app.models import User, Signal, Organization
 from app.services.analysis import extract_dce_text
 from app.core.uploads import aread_upload_limited
@@ -193,8 +193,13 @@ class AutoRequest(BaseModel):
 
 
 @router.get("/auto")
-def auto_status(current_user: User = Depends(get_current_user)):
-    return {"enabled": bool(getattr(current_user, "amont_alerts_enabled", False))}
+def auto_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """État de la veille automatique. `en_pause` : activée, mais la veille planifiée ne sert plus ce
+    compte (essai terminé sans forfait, alerts.run_amont_alerts). Le choix est gardé tel quel : la
+    veille reprend seule dès qu'un forfait est choisi. `motif` : 'essai' | 'forfait' | None."""
+    motif = pause_ia(current_user, db)
+    return {"enabled": bool(getattr(current_user, "amont_alerts_enabled", False)),
+            "en_pause": bool(motif), "motif": motif}
 
 
 @router.post("/auto")

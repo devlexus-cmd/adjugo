@@ -200,5 +200,19 @@ restent accessibles. »
   Business (y compris un ancien essai devenu payant).
 - Écran : carte « Votre essai gratuit est terminé » en haut de l'écran (bulle (i), « Voir les
   forfaits », « Plus tard ») ; recherche d'appels d'offres : « Essai gratuit terminé : choisissez un
-  forfait pour lancer une analyse ».
+  forfait pour lancer une analyse ». Veille automatique activée pendant l'essai : pastille « En pause »
+  (bulle (i) : elle reprend dès qu'un forfait est choisi) au lieu de « Active » ; le choix est gardé
+  en base, la veille reprend seule à la souscription (`GET /api/amont/auto` : `en_pause`, `motif`).
+- **Compte déjà passé par le paiement** (client Stripe connu : ancien abonné dont l'abonnement est
+  résilié ou en échec de paiement, que le webhook remet en « starter », ou paiement commencé puis
+  abandonné) : même pause, mais le refus et l'écran ne parlent pas d'un essai. `detail.motif =
+  "forfait"`, message « Aucun forfait n'est actif sur votre compte : les fonctions d'IA sont en pause.
+  Choisissez un forfait (Pro ou Business) pour continuer. Vos marchés, documents et dossiers restent
+  accessibles. », carte « Aucun forfait actif », page Forfaits « Aucun forfait actif ». Sinon
+  `detail.motif = "essai"`. `quota.usage` et `/api/stripe/status` exposent `ia_pause` (`"essai"`,
+  `"forfait"` ou `null`). **À trancher par Eliot** : couper aussi questions et rédaction pendant un
+  simple retard de paiement (règle actuelle, celle de la décision) ou laisser un délai de grâce.
+- **Inscription par Google** : un compte créé par « Se connecter avec Google » reçoit la même date de
+  fin d'essai (30 jours) qu'une inscription par mot de passe. Les comptes Google déjà en base ne sont
+  pas modifiés (sans date de fin d'essai, ils restent traités comme des comptes historiques).
 - Tests : `tests/test_essai_termine.py`.
