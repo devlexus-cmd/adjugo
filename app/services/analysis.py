@@ -602,19 +602,81 @@ def _docx_sizes_ok(data: bytes) -> bool:
         return False   # archive illisible → python-docx échouerait de toute façon
 
 
+def _ref_key(raw):
+    """Identité d'un objet PDF référencé (numéro d'objet), None pour un objet direct."""
+    return (raw.idnum, raw.generation) if hasattr(raw, "idnum") else None
+
+
+def _res_signature(obj, budget: list, depth: int = 0):
+    """Signature d'un dictionnaire de ressources DIRECT (inscrit dans la page) : sa structure, les
+    objets référencés étant identifiés par leur numéro (sans les suivre). Deux pages aux ressources
+    écrites à l'identique (même police, même formulaire référencé) ont la même signature. None si
+    la structure est trop grande ou contient un flux direct (pas de signature sûre)."""
+    budget[0] -= 1
+    if budget[0] < 0 or depth > 6:
+        return None
+    if hasattr(obj, "idnum"):
+        return ("ref", obj.idnum, obj.generation)
+    if hasattr(obj, "get_data"):
+        return None                               # flux direct
+    if hasattr(obj, "items"):
+        out = []
+        for k in sorted(obj.keys(), key=str):
+            v = _res_signature(obj.raw_get(k) if hasattr(obj, "raw_get") else obj[k], budget, depth + 1)
+            if v is None:
+                return None
+            out.append((str(k), v))
+        return ("dict", tuple(out))
+    if isinstance(obj, (list, tuple)):
+        out = []
+        for x in obj:
+            v = _res_signature(x, budget, depth + 1)
+            if v is None:
+                return None
+            out.append(v)
+        return ("list", tuple(out))
+    return ("val", str(obj)[:200])
+
+
 def _page_content_key(page):
-    """Identité des flux de contenu d'une page (références indirectes). Deux pages qui
-    pointent vers le MÊME flux ont le même texte : inutile de le redécompresser."""
+    """Identité de ce qui fait le texte d'une page : ses flux de contenu ET ses ressources
+    (polices, formulaires, images). Deux pages qui pointent vers les MÊMES flux et les MÊMES
+    ressources ont le même texte : inutile de le redécompresser. Un flux partagé par des pages
+    aux ressources différentes (PDF optimisé : « /Fm0 Do » sur chaque page, chacune avec SON
+    formulaire ou SON image) n'est PAS un doublon. None si l'identité n'est pas sûre (objet
+    direct) : la page est alors lue normalement."""
     try:
         raw = page.raw_get("/Contents") if hasattr(page, "raw_get") else page.get("/Contents")
         if hasattr(raw, "idnum"):
-            return ((raw.idnum, raw.generation),)
-        refs = []
-        for x in (raw or []):
-            if not hasattr(x, "idnum"):
-                return None                       # flux direct : pas de clé fiable
-            refs.append((x.idnum, x.generation))
-        return tuple(refs) or None
+            contents = (_ref_key(raw),)
+        else:
+            refs = []
+            for x in (raw or []):
+                if not hasattr(x, "idnum"):
+                    return None                   # flux direct : pas de clé fiable
+                refs.append(_ref_key(x))
+            contents = tuple(refs)
+        if not contents:
+            return None
+        # Ressources : propres à la page (objet référencé) ou héritées d'un nœud parent.
+        node, hops, res = page, 0, None
+        while node is not None and hops < 32:
+            if "/Resources" in node:
+                r = node.raw_get("/Resources") if hasattr(node, "raw_get") else node.get("/Resources")
+                if hasattr(r, "idnum"):
+                    res = ("objet",) + _ref_key(r)
+                elif node is not page and hasattr(getattr(node, "indirect_reference", None), "idnum"):
+                    res = ("noeud",) + _ref_key(node.indirect_reference)
+                else:
+                    sig = _res_signature(r, [400])   # ressources écrites dans la page
+                    if sig is None:
+                        return None
+                    res = ("direct", sig)
+                break
+            parent = node.raw_get("/Parent") if hasattr(node, "raw_get") else node.get("/Parent")
+            node = parent.get_object() if parent is not None else None
+            hops += 1
+        return (contents, res or ("aucune",))
     except Exception:
         return None
 
@@ -741,14 +803,79 @@ def _page_has_images(page) -> bool:
         return False
 
 
+# Page « scannée » : une image couvre l'essentiel de la page et le texte tapé est court (bandeau
+# « Annexe 2 – document numérisé », tampon de la plateforme de téléchargement) — elle passe par la
+# reconnaissance de caractères comme une page sans texte.
+SCAN_COUVERTURE_MIN = 0.5            # part de la surface de la page couverte par une image
+SCAN_TEXTE_MAX = 200                 # caractères tapés au plus sur une page scannée
+
+
+class _ImageCover:
+    """Suit, pendant l'extraction du texte d'une page, la plus grande surface couverte par une
+    image (XObject /Image), y compris dans un formulaire : surface = |déterminant| de la matrice
+    courante × celles des formulaires englobants. Ne lève jamais."""
+
+    def __init__(self, page):
+        self.max_area = 0.0
+        try:
+            res = page.get("/Resources")
+            res = res.get_object() if res is not None else None
+        except Exception:
+            res = None
+        self.stack = [(res, 1.0)]
+        try:
+            mb = page.mediabox
+            self.page_area = abs(float(mb.width) * float(mb.height))
+        except Exception:
+            self.page_area = 0.0
+
+    @staticmethod
+    def _det(m) -> float:
+        try:
+            return abs(float(m[0]) * float(m[3]) - float(m[1]) * float(m[2]))
+        except Exception:
+            return 0.0
+
+    def before(self, op, args, cm):
+        if op != b"Do":
+            return
+        res, scale = self.stack[-1]
+        push = (res, scale)
+        try:
+            xo = res.get("/XObject") if hasattr(res, "get") else None
+            xo = xo.get_object() if xo is not None else None
+            obj = xo[args[0]].get_object() if (xo is not None and args and args[0] in xo) else None
+            if obj is not None:
+                area = self._det(cm) * scale
+                sub = obj.get("/Subtype")
+                if sub == "/Image":
+                    self.max_area = max(self.max_area, area)
+                elif sub == "/Form":
+                    fres = obj.get("/Resources")
+                    fres = fres.get_object() if fres is not None else res
+                    mtx = obj.get("/Matrix")
+                    mdet = self._det([float(x) for x in mtx]) if mtx is not None else 1.0
+                    push = (fres, area * mdet)
+        except Exception:
+            pass
+        self.stack.append(push)
+
+    def after(self, op):
+        if op == b"Do" and len(self.stack) > 1:
+            self.stack.pop()
+
+    def couverture(self) -> float:
+        return (self.max_area / self.page_area) if self.page_area > 0 else 0.0
+
+
 def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars: int = None,
                           deadline: float = None, budget: "_Budget" = None, info: dict = None,
                           pages_out: list = None):
     """Extrait le texte d'un PDF — au plus `max_pages` pages, arrêt dès `max_chars`
     caractères (le texte au-delà serait de toute façon tronqué par l'appelant).
     Garde-fous CPU et mémoire (process unique) :
-      • une page qui réutilise un flux déjà lu est sautée (« toutes les pages pointent vers
-        le même flux de 74 Mo ») ;
+      • une page qui réutilise les flux ET les ressources d'une page déjà lue reprend son texte
+        sans le redécompresser (« toutes les pages pointent vers le même flux de 74 Mo ») ;
       • une page dont le contenu décompressé (flux + formulaires) dépasse
         PDF_PAGE_CONTENT_MAX_BYTES est sautée, et le cumul est plafonné par dossier ;
       • chaque page dispose d'une tranche de temps, contrôlée PENDANT l'analyse (à chaque
@@ -758,10 +885,12 @@ def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars:
     pages, page trop lourde sautée, temps écoulé, page interrompue) — jamais « lu en entier » à
     tort ; "pages" = nombre de pages du PDF ; "protege" = True pour un PDF chiffré illisible.
     pages_out (liste facultative, lecture intégrale) : reçoit UNE entrée par page du PDF,
-    {"num", "texte", "etat"}, etat ∈ lu | vide (page blanche) | image (page scannée, sans
-    texte) | lourde (plan ou dessin trop lourd) | double (même contenu qu'une page déjà lue) |
-    coupee (lecture interrompue) | temps (temps écoulé) | plafond (au-delà de max_pages ou de
-    max_chars) : chaque page non lue est nommée, avec sa raison."""
+    {"num", "texte", "etat"}, etat ∈ lu | vide (page blanche) | image (page scannée : sans
+    texte, ou image couvrant la page avec un simple bandeau tapé) | lourde (plan ou dessin trop
+    lourd) | coupee (lecture interrompue) | temps (temps écoulé) | plafond (au-delà de max_pages) |
+    plafond_caracteres (au-delà de max_chars) : chaque page non lue est nommée, avec sa raison.
+    Une page identique à une page déjà vue (mêmes flux, mêmes ressources) reprend son état et son
+    texte."""
     import time
     if info is not None:
         info["complet"] = True
@@ -794,7 +923,7 @@ def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars:
         total_pages = len(reader.pages)
         if info is not None:
             info["pages"] = total_pages
-        parts, total, seen = [], 0, set()
+        parts, total, seen = [], 0, {}
         n = min(total_pages, max_pages)
         if info is not None and total_pages > n:
             info["complet"] = False                # plafond de pages atteint
@@ -813,11 +942,20 @@ def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars:
                 continue
             page = reader.pages[i]
             key = _page_content_key(page)
-            if key is not None:
-                if key in seen:
-                    _mark(i, "double")
-                    continue
-                seen.add(key)
+            if key is not None and key in seen:
+                # Même contenu ET mêmes ressources qu'une page déjà vue : même texte, même état.
+                etat0, txt0 = seen[key]
+                _mark(i, etat0, txt0)
+                if txt0:
+                    parts.append(txt0)
+                    total += len(txt0) + 2
+                    if max_chars and total >= max_chars:
+                        if i + 1 < total_pages and info is not None:
+                            info["complet"] = False
+                        if not track:
+                            break
+                        stopped = "plafond_caracteres"
+                continue
             size = _page_content_bytes(page, min(PDF_PAGE_CONTENT_MAX_BYTES, content_left))
             if size > PDF_PAGE_CONTENT_MAX_BYTES or size > content_left:
                 # Page trop lourde (plan vectoriel, bombe) ou budget presque épuisé : on la
@@ -827,15 +965,24 @@ def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars:
                 if info is not None:
                     info["complet"] = False
                 _mark(i, "lourde")
+                if key is not None:
+                    seen[key] = ("lourde", "")
                 continue
             content_left -= size
             page_deadline = min(deadline, time.monotonic() + PDF_PAGE_TIME_S)
             cap = (max_chars - total + 2000) if max_chars else 2_000_000
             frags, got = [], [0]
+            cover = _ImageCover(page) if track else None
 
             def _before(_op, _args, _cm, _tm):
                 if time.monotonic() > page_deadline:
                     raise _PdfAbort()
+                if cover is not None:
+                    cover.before(_op, _args, _cm)
+
+            def _after(_op, _args, _cm, _tm):
+                if cover is not None:
+                    cover.after(_op)
 
             def _text(t, _cm, _tm, _font, _size):
                 if t:
@@ -850,15 +997,22 @@ def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars:
 
             etat = "lu"
             try:
-                page_text = page.extract_text(visitor_operand_before=_before, visitor_text=_text)
+                page_text = page.extract_text(visitor_operand_before=_before, visitor_operand_after=_after,
+                                              visitor_text=_text)
             except _PdfAbort:
                 page_text = "".join(frags)         # ce qui a été lu avant l'interruption
                 etat = "coupee"
                 if info is not None:
                     info["complet"] = False
-            if track and etat == "lu" and len((page_text or "").strip()) < 20:
-                etat = "image" if _page_has_images(page) else "vide"
+            if track and etat == "lu":
+                court = len((page_text or "").strip())
+                if court < 20:
+                    etat = "image" if _page_has_images(page) else "vide"
+                elif court < SCAN_TEXTE_MAX and cover is not None and cover.couverture() >= SCAN_COUVERTURE_MIN:
+                    etat = "image"          # page scannée portant un bandeau tapé
             _mark(i, etat, page_text or "")
+            if key is not None:
+                seen[key] = (etat, page_text or "")
             if page_text:
                 parts.append(page_text)
                 total += len(page_text) + 2
@@ -867,7 +1021,7 @@ def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars:
                         info["complet"] = False
                     if not track:
                         break
-                    stopped = "plafond"
+                    stopped = "plafond_caracteres"
         for i in range(n, total_pages if track else n):
             _mark(i, "plafond")
         return "\n\n".join(parts).strip()
@@ -1300,7 +1454,11 @@ def extract_odf(data: bytes, info: dict = None) -> str:
 
 
 _W_NS ="{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-_DOCX_MAX_BLOCKS = 20000             # paragraphes + lignes de tableau parcourus dans un .docx
+# Blocs parcourus dans un .docx (paragraphes, où qu'ils soient, et lignes de tableau) : plafond
+# TECHNIQUE (temps processeur), bien au-delà d'un vrai document — le XML lu est déjà borné
+# (DOCX_XML_MAX_BYTES). Atteint : la pièce est dite « lue en partie ».
+_DOCX_MAX_BLOCKS = 200000
+_CT_DOCM = "application/vnd.ms-word.document.macroEnabled.main+xml"
 
 
 def _roman(n: int) -> str:
@@ -1432,22 +1590,89 @@ class _DocxNumbering:
 
 
 _MC_FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
+_DML_A_NS = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+# Sous-arbres d'un paragraphe dont le texte n'est PAS celui du document : texte supprimé par une
+# modification suivie (w:del, w:moveFrom), double de compatibilité (mc:Fallback), encadrés (lus à
+# part, à leur place), propriétés.
+_DOCX_SKIP = frozenset({_W_NS + "del", _W_NS + "moveFrom", _W_NS + "txbxContent", _MC_FALLBACK,
+                        _W_NS + "pPr", _W_NS + "rPr", _W_NS + "sdtPr", _W_NS + "sdtEndPr",
+                        _W_NS + "instrText", _W_NS + "delText"})
+_DOCX_WRAPPERS = (_W_NS + "sdt", _W_NS + "customXml")
+
+
+def _docx_inline_text(el, parts: list, notes=None) -> None:
+    """Texte d'un paragraphe Word à partir de TOUS ses descendants (w:t, tabulations, sauts de
+    ligne) : zones de saisie en ligne (w:sdt), insertions suivies (w:ins, w:moveTo), champs
+    (w:fldSimple, résultat des champs complexes), liens, balises personnalisées compris — que
+    python-docx (Paragraph.text) ne lit pas. notes : appels de notes « (note n) » à leur place."""
+    for ch in el:
+        tag = ch.tag
+        if not isinstance(tag, str) or tag in _DOCX_SKIP:
+            continue
+        if tag == _W_NS + "t":
+            parts.append(ch.text or "")
+        elif tag in (_W_NS + "tab", _W_NS + "ptab"):
+            parts.append("\t")
+        elif tag == _W_NS + "br":
+            if (ch.get(_W_NS + "type") or "textWrapping") == "textWrapping":
+                parts.append("\n")
+        elif tag == _W_NS + "cr":
+            parts.append("\n")
+        elif tag == _W_NS + "noBreakHyphen":
+            parts.append("-")
+        elif tag in (_W_NS + "footnoteReference", _W_NS + "endnoteReference") and notes is not None:
+            parts.append(notes.ref(tag, ch.get(_W_NS + "id")))
+        else:
+            _docx_inline_text(ch, parts, notes)
+
+
+class _DocxNotes:
+    """Appels de notes de bas de page et de fin, numérotés dans l'ordre où le texte les appelle."""
+
+    def __init__(self):
+        self.num = {}
+
+    def ref(self, tag, nid) -> str:
+        kind = "fin" if tag.endswith("endnoteReference") else "bas"
+        key = (kind, str(nid))
+        if key not in self.num:
+            self.num[key] = sum(1 for k in self.num if k[0] == kind) + 1
+        n = self.num[key]
+        return f" (note {n})" if kind == "bas" else f" (note de fin {n})"
+
+
+def _docx_unwrap(container, tag):
+    """Enfants `tag` d'un élément, y compris ceux rangés dans une zone de saisie (w:sdt) ou une
+    balise personnalisée (w:customXml) : section répétitive de lignes, cellule dans un contrôle."""
+    for ch in container.iterchildren():
+        if ch.tag == tag:
+            yield ch
+        elif ch.tag == _W_NS + "sdt":
+            c = ch.find(_W_NS + "sdtContent")
+            if c is not None:
+                yield from _docx_unwrap(c, tag)
+        elif ch.tag == _W_NS + "customXml":
+            yield from _docx_unwrap(ch, tag)
 
 
 def _docx_blocks(doc, info: dict = None) -> list:
-    """Texte du corps d'un .docx DANS L'ORDRE du document : paragraphes (avec leur numéro de
-    liste), tableaux ligne par ligne (« cellule | cellule », fusion verticale lue une fois,
-    tableaux imbriqués compris), contrôles de contenu (w:sdt) et zones de texte (encadrés) —
-    un cadre de réponse range souvent ses questions dans des tableaux, des zones de saisie ou
-    des encadrés. info["complet"] = False si le plafond de blocs est atteint (jamais « lu en
-    entier » à tort)."""
-    from docx.text.paragraph import Paragraph
+    """Texte d'un .docx DANS L'ORDRE du document : paragraphes (avec leur numéro de liste et tout
+    leur contenu : zones de saisie, insertions suivies, champs), tableaux ligne par ligne
+    (« cellule | cellule », fusion verticale lue une fois, tableaux imbriqués, lignes et cellules
+    rangées dans des zones de saisie), contrôles de contenu (w:sdt) et zones de texte (encadrés) —
+    un cadre de réponse range souvent ses questions dans des tableaux, des zones de saisie ou des
+    encadrés. Puis les notes de bas de page et de fin, les en-têtes et pieds de page et le texte des
+    schémas (SmartArt), chacun dans sa rubrique. info["complet"] = False si le plafond de blocs
+    est atteint (jamais « lu en entier » à tort)."""
     numbering = _DocxNumbering(doc)
+    notes = _DocxNotes()
     out, seen = [], [0]
 
-    def _para(el, parent) -> str:
-        t = Paragraph(el, parent).text
-        return (numbering.prefix(el) + t) if t else ""
+    def _para(el) -> str:
+        parts = []
+        _docx_inline_text(el, parts, notes)
+        t = "".join(parts)
+        return (numbering.prefix(el) + t) if t.strip() else ""
 
     def _over() -> bool:
         if seen[0] > _DOCX_MAX_BLOCKS:
@@ -1456,63 +1681,141 @@ def _docx_blocks(doc, info: dict = None) -> list:
             return True
         return False
 
-    def _textboxes(el, parent):
+    def _textboxes(el, dest):
         # Encadrés (wps/v:textbox) : le contenu est rangé deux fois (mc:Choice et mc:Fallback),
         # on ne lit que le premier.
         for tb in el.iter(_W_NS + "txbxContent"):
             if any(a.tag == _MC_FALLBACK for a in tb.iterancestors()):
                 continue
-            _walk(tb, parent)
+            _walk(tb, dest)
 
-    def _cell_text(tc, parent) -> str:
-        parts = []
-        for ch in tc.iterchildren():
-            if ch.tag == _W_NS + "p":
-                t = _para(ch, parent)
-                if t:
-                    parts.append(t)
-            elif ch.tag == _W_NS + "tbl":
-                for tr in ch.iterchildren(_W_NS + "tr"):
-                    sub = [x for x in (_cell_text(c, parent) for c in tr.iterchildren(_W_NS + "tc")) if x]
-                    if sub:
-                        parts.append(" / ".join(sub))
-        return "\n".join(parts)
+    def _cell_text(tc) -> str:
+        sub = []
+        _walk(tc, sub, sep=" / ")
+        return "\n".join(sub)
 
-    def _walk(container, parent):
+    def _walk(container, dest, sep=" | "):
         for el in container.iterchildren():
             if _over():
                 return
             tag = el.tag
             if tag == _W_NS + "p":
                 seen[0] += 1
-                t = _para(el, parent)
+                t = _para(el)
                 if t:
-                    out.append(t)
+                    dest.append(t)
                 if el.find(".//" + _W_NS + "txbxContent") is not None:
-                    _textboxes(el, parent)
+                    _textboxes(el, dest)
             elif tag == _W_NS + "tbl":
-                for tr in el.iterchildren(_W_NS + "tr"):
+                for tr in _docx_unwrap(el, _W_NS + "tr"):
                     seen[0] += 1
                     if _over():
                         return
                     cells = []
-                    for tc in tr.iterchildren(_W_NS + "tc"):
+                    for tc in _docx_unwrap(tr, _W_NS + "tc"):
                         tcpr = tc.find(_W_NS + "tcPr")
                         vm = tcpr.find(_W_NS + "vMerge") if tcpr is not None else None
                         if vm is not None and (vm.get(_W_NS + "val") or "continue") == "continue":
                             continue        # suite d'une fusion verticale : déjà lue au-dessus
-                        txt = _cell_text(tc, parent)
+                        txt = _cell_text(tc)
                         if txt:
                             cells.append(txt)
                     if cells:
-                        out.append(" | ".join(cells))
+                        dest.append(sep.join(cells))
             elif tag == _W_NS + "sdt":
                 content = el.find(_W_NS + "sdtContent")
                 if content is not None:
-                    _walk(content, parent)
+                    _walk(content, dest, sep)
+            elif tag == _W_NS + "customXml":
+                _walk(el, dest, sep)
 
-    _walk(doc.element.body, doc._body)
+    _walk(doc.element.body, out)
+    _docx_other_parts(doc, _walk, notes, out)
     return out
+
+
+def _docx_part_root(part):
+    el = getattr(part, "element", None) if hasattr(type(part), "element") else None
+    if el is not None:
+        return el
+    from docx.oxml.parser import parse_xml
+    return parse_xml(part.blob)
+
+
+def _docx_other_parts(doc, walk, notes, out) -> None:
+    """Notes de bas de page et de fin, en-têtes et pieds de page, texte des schémas (SmartArt) :
+    rangés ailleurs que dans le corps du document, lus ici, chacun dans sa rubrique."""
+    try:
+        rels = list(doc.part.rels.values())
+    except Exception:
+        return
+    groups = {"bas": [], "fin": [], "entete": [], "schema": []}
+    seen_parts, seen_lines = set(), set()
+    for rel in rels:
+        try:
+            if getattr(rel, "is_external", False):
+                continue
+            kind = str(rel.reltype or "").rsplit("/", 1)[-1]
+            if kind not in ("footnotes", "endnotes", "header", "footer", "diagramData"):
+                continue
+            part = rel.target_part
+            if id(part) in seen_parts:
+                continue
+            seen_parts.add(id(part))
+            root = _docx_part_root(part)
+            if kind in ("footnotes", "endnotes"):
+                tag = _W_NS + ("footnote" if kind == "footnotes" else "endnote")
+                nk = "bas" if kind == "footnotes" else "fin"
+                for fn in root.iterchildren(tag):
+                    if (fn.get(_W_NS + "type") or "normal") != "normal":
+                        continue          # séparateurs
+                    lines = []
+                    walk(fn, lines)
+                    txt = " ".join(x.strip() for x in lines if x.strip())
+                    if not txt:
+                        continue
+                    n = notes.num.get((nk, str(fn.get(_W_NS + "id"))))
+                    lab = (f"(note {n})" if nk == "bas" else f"(note de fin {n})") if n else "(note)"
+                    groups[nk].append(f"{lab} {txt}")
+            elif kind in ("header", "footer"):
+                lines = []
+                walk(root, lines)
+                for x in lines:
+                    k = " ".join(x.split())
+                    if k and k not in seen_lines:
+                        seen_lines.add(k)
+                        groups["entete"].append(x)
+            else:
+                txt = " ".join((t.text or "").strip() for t in root.iter(_DML_A_NS + "t") if (t.text or "").strip())
+                if txt:
+                    groups["schema"].append(txt)
+        except Exception:
+            continue
+    for key, title in (("bas", "Notes de bas de page :"), ("fin", "Notes de fin :"),
+                       ("entete", "En-têtes et pieds de page :"), ("schema", "Texte des schémas :")):
+        if groups[key]:
+            out.append("")
+            out.append(title)
+            out.extend(groups[key])
+
+
+def _docx_open(data: bytes):
+    """Ouvre un .docx (ou un .docm, document à macros : même contenu, autre type déclaré, que
+    docx.Document refuse) avec python-docx."""
+    import io
+    import docx
+    try:
+        return docx.Document(io.BytesIO(data))
+    except ValueError:
+        from docx.opc.constants import CONTENT_TYPE as CT
+        from docx.opc.part import PartFactory
+        from docx.package import Package
+        from docx.parts.document import DocumentPart
+        PartFactory.part_type_for.setdefault(_CT_DOCM, DocumentPart)
+        part = Package.open(io.BytesIO(data)).main_document_part
+        if part.content_type not in (CT.WML_DOCUMENT_MAIN, _CT_DOCM):
+            raise
+        return part.document
 
 
 def _extract_docx(data: bytes, info: dict = None) -> str:
@@ -1527,9 +1830,7 @@ def _extract_docx(data: bytes, info: dict = None) -> str:
             info["complet"] = False
         return ""
     try:
-        import io
-        import docx
-        d = docx.Document(io.BytesIO(data))
+        d = _docx_open(data)
     except Exception:
         if info is not None:
             info["complet"] = False
@@ -1550,7 +1851,7 @@ def _extract_docx(data: bytes, info: dict = None) -> str:
             return ""
 
 
-_ZIP_OKEXT = (".pdf", ".docx", ".txt", ".md", ".csv", ".xlsx", ".ods", ".odt")
+_ZIP_OKEXT = (".pdf", ".docx", ".docm", ".txt", ".md", ".csv", ".xlsx", ".xlsm", ".ods", ".odt")
 
 
 def _extract_zip(content: bytes, max_chars: int, budget: "_Budget", depth: int, parts: list) -> None:
@@ -1624,9 +1925,9 @@ def _extract_zip(content: bytes, max_chars: int, budget: "_Budget", depth: int, 
                         oinfo = {}
                         t = _ocr_pdf(data, budget=budget, info=oinfo)
                         complet = bool(oinfo.get("complet"))     # scan lu sur 15 pages au plus
-                elif ln.endswith(".docx"):
+                elif ln.endswith((".docx", ".docm")):
                     t = _extract_docx(data)
-                elif ln.endswith(".xlsx"):
+                elif ln.endswith((".xlsx", ".xlsm")):
                     t = extract_xlsx(data)
                 elif ln.endswith((".ods", ".odt")):
                     t = extract_odf(data)
@@ -1678,7 +1979,7 @@ def extract_dce_pieces(filename: str, content: bytes, max_chars: int = 40000) ->
                              "Si c'est un scan, l'OCR n'a rien pu extraire.")
         return _single_piece(filename, txt, max_chars, complet=pinfo.get("complet", True)), False
 
-    if name.endswith(".docx"):   # AVANT le ZIP : un .docx est aussi une archive PK
+    if name.endswith((".docx", ".docm")):   # AVANT le ZIP : un .docx est aussi une archive PK
         if not _docx_sizes_ok(content):
             raise ValueError("Document Word trop volumineux ou illisible. Exportez-le en PDF puis réessayez.")
         t = _extract_docx(content)
@@ -1686,8 +1987,8 @@ def extract_dce_pieces(filename: str, content: bytes, max_chars: int = 40000) ->
             return _single_piece(filename, t, max_chars), False
         raise ValueError("Document Word illisible ou vide. Exportez-le en PDF si le souci persiste.")
 
-    if name.endswith((".xlsx", ".ods", ".odt")):   # AVANT le ZIP : archives PK elles aussi
-        t = extract_xlsx(content) if name.endswith(".xlsx") else extract_odf(content)
+    if name.endswith((".xlsx", ".xlsm", ".ods", ".odt")):   # AVANT le ZIP : archives PK elles aussi
+        t = extract_xlsx(content) if name.endswith((".xlsx", ".xlsm")) else extract_odf(content)
         if t and len(t) >= 20:
             return _single_piece(filename, t, max_chars), False
         raise ValueError("Tableur ou document illisible ou vide. Exportez-le en PDF si le souci persiste.")

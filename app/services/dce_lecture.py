@@ -66,7 +66,8 @@ TEMPS_FOND_S = _env_float("LECTURE_TEMPS_FOND_S", 1200.0)            # tâche de
 OCR_MAX_PAGES = _env_int("LECTURE_OCR_MAX_PAGES", 300)               # pages en image lues par OCR
 
 # Formats lus. Les autres sont SIGNALÉS (jamais ignorés en silence).
-FORMATS = {".pdf": "pdf", ".docx": "docx", ".xlsx": "xlsx", ".ods": "ods", ".odt": "odt",
+FORMATS = {".pdf": "pdf", ".docx": "docx", ".docm": "docx", ".xlsx": "xlsx", ".xlsm": "xlsx",
+           ".ods": "ods", ".odt": "odt",
            ".txt": "texte", ".md": "texte", ".csv": "texte",
            ".png": "image", ".jpg": "image", ".jpeg": "image", ".tif": "image", ".tiff": "image"}
 # Formats reconnus mais non lisibles : conseil donné à l'utilisateur.
@@ -109,7 +110,8 @@ RAISONS = {
     "page_illisible": "pages abîmées ou illisibles",
 }
 
-_PAGE_RAISON = {"lourde": "lourde", "temps": "temps", "plafond": "plafond_pages", "coupee": "coupee",
+_PAGE_RAISON = {"lourde": "lourde", "temps": "temps", "plafond": "plafond_pages",
+                "plafond_caracteres": "plafond_caracteres", "coupee": "coupee",
                 "image": "scan_a_lire", "plafond_ocr": "plafond_ocr", "ocr_indisponible": "ocr_indisponible",
                 "rendu": "rendu", "scan_illisible": "scan_illisible"}
 
@@ -168,7 +170,14 @@ def _piece(nom: str, chemin: str, fmt: str) -> dict:
 
 
 def _finish(p: dict, texte: str, complet: bool, raison: str = "", detail: str = "") -> dict:
-    texte = (texte or "").strip("\n")
+    texte = (texte or "").rstrip("\n")
+    lead = len(texte) - len(texte.lstrip("\n"))
+    if lead:
+        # Pages sans texte en tête (page blanche, couverture en image) : les positions de début
+        # de page suivent le texte (sinon toutes les pages citées seraient décalées).
+        texte = texte[lead:]
+        if p.get("page_starts"):
+            p["page_starts"] = [max(0, st - lead) for st in p["page_starts"]]
     p["texte"] = texte
     p["caracteres"] = len(texte)
     p["type"] = dp.classify_piece(p["nom"], texte)
@@ -223,6 +232,15 @@ def _detail_pages(non_lues: dict, total: int) -> tuple:
     return main, f"{n} page{'s' if n > 1 else ''} sur {total} non lue{'s' if n > 1 else ''} : {causes}"
 
 
+def _avec_bandeau(tape: str, reconnu: str) -> str:
+    """Texte d'une page scannée : le texte reconnu, précédé du bandeau tapé de la page (« Annexe 2
+    – document numérisé ») s'il n'y figure pas déjà tel quel (citations vérifiables mot pour mot)."""
+    t = " ".join((tape or "").split())
+    if not t or " ".join(dp.fold(t).split()) in " ".join(dp.fold(reconnu).split()):
+        return reconnu
+    return tape.strip() + "\n" + reconnu
+
+
 def _read_pdf(etat: _Etat, data: bytes, p: dict) -> dict:
     info, pages = {}, []
     an.extract_text_from_pdf(data, max_pages=MAX_PAGES_PDF,
@@ -248,9 +266,9 @@ def _read_pdf(etat: _Etat, data: bytes, p: dict) -> dict:
                 if pg["num"] in res:
                     txt = res[pg["num"]] or ""
                     if txt.strip():
-                        pg["texte"], pg["etat"] = txt, "lu"
+                        pg["texte"], pg["etat"] = _avec_bandeau(pg.get("texte") or "", txt), "lu"
                     else:
-                        pg["etat"] = "scan_illisible"
+                        pg["etat"] = "scan_illisible"      # le bandeau tapé, s'il y en a un, reste
                 elif pg["num"] in out["non_lues"]:
                     pg["etat"] = out["non_lues"][pg["num"]]
         else:
@@ -310,8 +328,14 @@ def _read_data(etat: _Etat, nom: str, chemin: str, data: bytes) -> dict:
     if fmt == "pdf" or data[:5] == b"%PDF-":
         p["format"] = "pdf"
         return _read_pdf(etat, data, p)
+    if fmt in ("docx", "xlsx", "ods", "odt"):
+        code = _office_chiffre(data, ext)
+        if code:
+            return _finish(p, "", False, code[0], code[1])
     info = {"complet": True}
     if fmt == "docx":
+        if not _est_archive(data):
+            return _finish(p, "", False, "illisible")
         if not an._docx_sizes_ok(data):
             return _finish(p, "", False, "trop_gros")
         t = an._extract_docx(data, info=info)
@@ -346,6 +370,42 @@ def _read_data(etat: _Etat, nom: str, chemin: str, data: bytes) -> dict:
     t, coupe = _cap_text(etat, t)
     complet = bool(info.get("complet", True)) and not coupe
     return _finish(p, t, complet, "" if complet else "plafond_caracteres")
+
+
+def _est_archive(data: bytes) -> bool:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)):
+            return True
+    except Exception:
+        return False
+
+
+_CFB = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"      # conteneur OLE (Office chiffré ou ancien format)
+_ENCRYPTED_PACKAGE = "EncryptedPackage".encode("utf-16-le")
+
+
+def _office_chiffre(data: bytes, ext: str):
+    """(raison, détail) si un fichier Office n'est pas lisible en l'état : protégé par un mot de
+    passe (Word ou Excel enregistré avec mot de passe : conteneur chiffré, pas une archive ;
+    OpenDocument : contenu chiffré dans l'archive) ou ancien format binaire renommé. None sinon."""
+    if data[:8] == _CFB:
+        if _ENCRYPTED_PACKAGE in data:
+            return ("protege", raison_texte("protege") + " : demandez à l'acheteur une version sans mot de passe")
+        # Sans la marque du chiffrement : le plus souvent un fichier protégé tout de même, parfois
+        # un ancien format (.doc, .xls) renommé. Les deux causes sont dites.
+        return ("protege", raison_texte("protege") + " ou ancien format renommé : demandez à l'acheteur "
+                "une version sans mot de passe, en PDF ou au format actuel")
+    if ext in (".odt", ".ods") and data[:2] == b"PK":
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                info = z.getinfo("META-INF/manifest.xml")
+                if info.file_size <= 2 * MB and info.compress_type in an._ZIP_SAFE_COMPRESSION:
+                    if b"encryption-data" in z.read(info):
+                        return ("protege", raison_texte("protege")
+                                + " : demandez à l'acheteur une version sans mot de passe")
+        except Exception:
+            return None
+    return None
 
 
 # ── Archive ────────────────────────────────────────────────────────────────────────────
@@ -475,7 +535,7 @@ def lire_dossier(filename: str, content: bytes, mode: str = "direct", progress=N
         if isinstance(pc, dict) and pc.get("chemin"):
             reprise_map[pc["chemin"]] = pc
     ln = name.lower()
-    is_office = ln.endswith((".docx", ".xlsx", ".ods", ".odt"))
+    is_office = ln.endswith((".docx", ".docm", ".xlsx", ".xlsm", ".ods", ".odt"))
     archive = (ln.endswith(".zip") or content[:2] == b"PK") and not is_office and not content[:5] == b"%PDF-"
     if archive:
         _read_zip(etat, content, 0, "", reprise_map)
@@ -493,6 +553,7 @@ def lire_dossier(filename: str, content: bytes, mode: str = "direct", progress=N
                 raise ValueError(f"Fichier trop volumineux ({MAX_OCTETS_FICHIER // MB} Mo au plus).")
             etat.tick(base)
             etat.pieces.append(_read_data(etat, base, base, content))
+    _noms_affiches(etat.pieces)
     pieces = sorted(etat.pieces, key=lambda x: (dp.compose_rank(x["type"]), 0))
     lecture = {
         "version": 1, "source": base[:300], "archive": bool(archive), "mode": etat.mode,
@@ -508,6 +569,26 @@ def lire_dossier(filename: str, content: bytes, mode: str = "direct", progress=N
     return lecture
 
 
+NOM_MAX = 180       # nom affiché d'une pièce (en-tête « === nom === » : 200 caractères au plus)
+
+
+def _noms_affiches(pieces: list) -> None:
+    """Nom affiché de chaque pièce (en-têtes remis à l'IA, sources des réponses, liste des pièces
+    lues) : son chemin dans l'archive, sans le dossier commun à toutes les pièces. Dans un dossier
+    rangé par lots (« LOT 01/CCTP.pdf », « LOT 02/CCTP.pdf »), chaque pièce garde ainsi son lot ;
+    dans une archive à plat, le nom reste celui du fichier. Le type de pièce est reconnu sur le
+    nom du fichier seul (déjà fait à la lecture)."""
+    chemins = [str(p.get("chemin") or p.get("nom") or "").replace("\\", "/") for p in pieces]
+    dirs = [c.split("/")[:-1] for c in chemins]
+    common = os.path.commonprefix(dirs) if dirs else []
+    for p, c in zip(pieces, chemins):
+        segs = c.split("/")
+        rel = "/".join(segs[len(common):]) or os.path.basename(c) or p.get("nom") or ""
+        if len(rel) > NOM_MAX:
+            rel = "…" + rel[-(NOM_MAX - 1):]
+        p["nom"] = rel
+
+
 def _message_rien_lu(pieces: list) -> str:
     codes = {p.get("raison") for p in pieces}
     if codes == {"trop_gros"} or ("trop_gros" in codes and len(codes) == 1):
@@ -515,7 +596,7 @@ def _message_rien_lu(pieces: list) -> str:
                 "au plus par fichier). Importez directement les pièces utiles (RC, CCAP, CCTP, DPGF).")
     if codes == {"imbrique"}:
         return "Archive trop imbriquée (un ZIP dans un ZIP dans un ZIP). Décompressez-la puis importez les pièces."
-    if "protege" in codes and len(codes) == 1:
+    if "protege" in codes and codes <= {"protege", "format", "compression", "vide"}:
         return "Le dossier est protégé par un mot de passe : demandez à l'acheteur une version sans mot de passe."
     if codes <= {"format", "compression"}:
         return ("Aucun fichier lisible : formats non pris en charge. Importez le dossier en PDF, Word (.docx), "
@@ -532,7 +613,7 @@ def manifeste(lecture: dict) -> dict:
     l'écran) : nom, type, statut, raison, caractères, pages."""
     out = []
     for p in (lecture or {}).get("pieces") or []:
-        out.append({"nom": str(p.get("nom") or "")[:200], "chemin": str(p.get("chemin") or "")[:300],
+        out.append({"nom": str(p.get("nom") or "")[:NOM_MAX + 20], "chemin": str(p.get("chemin") or "")[:300],
                     "format": p.get("format") or "", "type": p.get("type") or dp.AUTRE,
                     "libelle": p.get("libelle") or dp.label(p.get("type")),
                     "statut": p.get("statut") or NON_LU, "raison": p.get("raison") or "",
