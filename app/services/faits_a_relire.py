@@ -141,6 +141,11 @@ _DECRIT = re.compile(r"\b(?:comprend|comprennent|compte|comptent|comporte|compor
                      r"vise\w*|a pour objet|ont pour objet|souhaite\w*|prevoi\w*|impose\w*|exige\w*|"
                      r"demande\w*)\b")
 _MARCHE_LIEU = re.compile(r"^" + _DET + _LIEU + r"\b(?P<suite>.{0,70})")
+# … sauf si elle cite des moyens (personnes, matériel, certification) : c'est alors l'entreprise
+# (« Le projet comprend une équipe de 15 compagnons »).
+_RESSOURCES = re.compile(r"\b(?:compagnons?|salaries?|ouvriers?|agents?|techniciens?|equipes?|personnes?|"
+                         r"collaborateurs?|chefs? d'equipe|chefs? de chantier|conducteurs? de travaux|"
+                         r"sous-traitants?|interimaires?|apprentis?|effectifs?|encadrants?)\b")
 _SECTION_ENTREPRISE = re.compile(r"moyens?\b|humain|materiel|equipe|effectif|encadrement|personnel|reference|"
                                  r"experience|qualite|certification|qualification|securite|environnement|\brse\b|"
                                  r"presentation de l'entreprise|presentation du groupement|savoir[- ]faire|"
@@ -162,7 +167,10 @@ def _rapporte_une_exigence(low: str) -> bool:
 def _decrit_le_lieu(low: str) -> bool:
     """« Le site comprend… », « La commune souhaite… » ; jamais « Le marché sera exécuté par… »."""
     m = _MARCHE_LIEU.match(low)
-    return bool(m and _DECRIT.search(m.group("suite")) and not re.search(r"\bpar\s+(?:\d|[a-z]+ \d)", low))
+    if not (m and _DECRIT.search(m.group("suite"))):
+        return False
+    return not (re.search(r"\bpar\s+(?:\d|[a-z]+ \d)", low) or _RESSOURCES.search(low) or _CERT.search(low)
+                or _MATERIEL.search(low))
 
 
 def parle_entreprise(phrase: str, noms_entreprise=(), section_entreprise: bool = False) -> bool:

@@ -20,10 +20,13 @@ Doctrine (étude §7) appliquée ici :
     dérogation explicite enregistrée au journal chaîné (décision 2b) ;
   • la matière PRIVÉE d'une partie (sources, extraits, faits à relire, versions de travail) n'est
     lue que par son AUTEUR (`peut_voir_prive`) : aujourd'hui l'organisation, demain (vague 4) un
-    membre du groupement par son invitation ;
+    membre du groupement par son invitation. Le texte commun passe par UN seul accès
+    (`versions_communes`) : export, compteur, blocage, limites, mention IA, dossier commun, RGPD ;
   • quota (décision 6a) : le dossier complet compte pour UNE analyse, débitée à la première action
-    de l'IA ; refaire une partie est gratuit jusqu'à ATELIER_REGEN_GRATUITES fois par dossier
-    (défaut 10), au-delà chaque nouvelle rédaction compte pour une analyse, après accord exprès.
+    de l'IA ; elle comprend la première rédaction de chaque partie du plan (au plus autant que de
+    parties actives) ; toute autre rédaction est une refonte, gratuite jusqu'à
+    ATELIER_REGEN_GRATUITES fois par dossier (défaut 10), au-delà une analyse chacune, après accord
+    exprès. Tant que la tâche qui porte l'analyse tourne, aucune autre action de l'IA ne démarre.
     Remboursement si l'IA tombe en panne. Le coût réel est mesuré (cost_meter) et cumulé sur le
     dossier (jamais montré au client) ;
   • mention « Préparé avec assistance IA » dans les propriétés du fichier SEULEMENT si l'IA a
@@ -559,15 +562,18 @@ def changements_grille(project: Project, dossier: DossierPresentation, actives: 
         parts.append(("Un critère a été confirmé" if n == 1 else f"{n} critères ont été confirmés")
                      + " dans « Comment vous serez noté » depuis la création du plan : "
                      + ", ".join(f"« {x['critere']} »" for x in nouveaux[:6]) + ".")
-    if poids:
-        parts.append(("Le poids retenu pour " if len(poids) == 1 else "Les poids retenus pour ")
-                     + ", ".join(f"« {x['critere']} »" for x in poids[:6])
-                     + (" a changé dans « Comment vous serez noté »." if len(poids) == 1
+    noms_poids = list(dict.fromkeys(x["critere"] for x in poids))       # un critère découpé : dit une fois
+    if noms_poids:
+        parts.append(("Le poids retenu pour " if len(noms_poids) == 1 else "Les poids retenus pour ")
+                     + ", ".join(f"« {c} »" for c in noms_poids[:6])
+                     + (" a changé dans « Comment vous serez noté »." if len(noms_poids) == 1
                         else " ont changé dans « Comment vous serez noté »."))
-    if plus_retenus:
-        parts.append(", ".join(f"« {x['critere']} »" for x in plus_retenus[:6])
-                     + (" n'est plus retenu" if len(plus_retenus) == 1 else " ne sont plus retenus")
-                     + " : vous pouvez retirer la partie.")
+    noms_retires = list(dict.fromkeys(x["critere"] for x in plus_retenus))
+    if noms_retires:
+        parts.append(", ".join(f"« {c} »" for c in noms_retires[:6])
+                     + (" n'est plus retenu" if len(noms_retires) == 1 else " ne sont plus retenus")
+                     + (" : vous pouvez retirer la partie." if len(plus_retenus) == 1 else
+                        " : vous pouvez retirer les parties qui s'y rattachent."))
     return {"nouveaux": nouveaux, "poids": poids, "plus_retenus": plus_retenus, "message": " ".join(parts),
             "peut_appliquer": bool(nouveaux or poids)}
 
@@ -821,6 +827,9 @@ def traiter_fait(db, section: DossierSection, lecteur: Lecteur, fait_id: str, st
     hit = next((x for x in faits if x.get("id") == fait_id), None)
     if hit is None:
         raise AtelierError(404, "fait_introuvable", "Ce fait n'est plus dans le texte : rechargez la partie.")
+    if hit.get("type") == far.RESTE:
+        raise AtelierError(409, "faits_non_detailles", "Ces faits ne sont pas détaillés : découpez ou raccourcissez la "
+                                                       "partie pour les relire un par un.")
     if statut == far.RELU:
         hit.update(statut=far.RELU, relu_par=lecteur.user_id, relu_le=_now_iso())
     else:
@@ -1582,15 +1591,16 @@ def lancer(db, user: User, project: Project, dossier: DossierPresentation, secti
     db.flush()
     for s in sections:
         s.job_id = job.id
+    jid = job.id
     db.commit()
     ids = [s.id for s in sections]
     try:
-        releve = _debiter(db, user, dossier, sections, accepte_debit, job.id)
+        releve = _debiter(db, user, dossier, sections, accepte_debit, jid)
     except Exception:
         db.rollback()
-        _annuler_tache(db, job.id, ids)
+        _annuler_tache(db, jid, ids)
         raise
-    job = db.get(Job, job.id)
+    job = db.get(Job, jid)
     releve.update(dossier_id=dossier.id, rendu=False)
     job.result = {"_debit": releve}
     db.commit()

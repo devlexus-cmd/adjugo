@@ -1027,6 +1027,7 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 .atl-base { font-size:12.5px; font-weight:600; padding:5px 12px; border-radius:999px; border:1px solid var(--border-2); background:var(--surface); color:var(--text-2); }
 .atl-base.on { background:var(--accent-weak); border-color:var(--accent); color:var(--accent-text); }
 .atl-base:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); }
+.atl-base:disabled { opacity:.5; cursor:not-allowed; }   /* base de plan absente du dossier (raison dite dessous) */
 .atl-prop { list-style:none; margin:12px 0 0; padding:0; }
 .atl-prop > li { padding:8px 0; border-bottom:1px solid var(--hairline); }
 .atl-prop > li:last-child { border-bottom:0; }

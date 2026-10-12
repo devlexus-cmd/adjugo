@@ -73,6 +73,9 @@ def test_a0_lieu_decrit_hors_des_parties_sur_l_entreprise_seulement():
     t = "Le site comprend 3 bâtiments."
     assert _faits(t, False) == []                                     # « Compréhension du besoin »
     assert _faits(t, True) == [("3 bâtiments", far.CHIFFRE)]          # partie Moyens : côté strict
+    # Une description qui cite des moyens parle de l'entreprise, partout.
+    assert ("15 compagnons", far.CHIFFRE) in _faits("Le projet comprend une équipe de 15 compagnons.", False)
+    assert ("2 nacelles", far.CHIFFRE) in _faits("Le site comprend 2 nacelles.", False)
 
 
 def test_a0_tableau_de_moyens_chaque_nombre_seul_est_controle_avec_le_libelle_de_sa_ligne():
