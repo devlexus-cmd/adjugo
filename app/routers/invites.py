@@ -2608,7 +2608,7 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
         elif not has_price:
             missing.append(f"{name} : prix de lot manquant")
         elif not flags["memoire"]:
-            missing.append(f"{name} : paragraphe de mémoire manquant")
+            missing.append(f"{name} : paragraphe du dossier de présentation manquant")
         elif not flags["lot"]:
             missing.append(f"{name} : lot/périmètre non précisé")
         elif not flags["references"]:
@@ -2959,9 +2959,13 @@ def dossier_preview(project_id: int, current_user: User = Depends(get_current_us
                     db: Session = Depends(get_db)):
     """Liste les fichiers que contiendra le dossier commun, SANS lancer la génération
     (pas de LLM, pas de quota) — pour voir avant d'exporter."""
-    _owned_project(project_id, current_user, db)
+    project = _owned_project(project_id, current_user, db)
+    # Même nom que dans le ZIP : celui du règlement s'il y est retrouvé, sinon « Mémoire technique ».
+    from app.services.memoire_export import file_stem, memoire_label
+    _stem = file_stem(memoire_label(project.ai_analysis))
     files = [
-        {"name": "memoire_technique.pdf", "kind": "Mémoire technique (savoir-faire fusionnés)"},
+        {"name": f"{_stem}.docx", "kind": "Dossier de présentation (mémoire technique), en Word à relire"},
+        {"name": f"{_stem}.pdf", "kind": "Dossier de présentation (mémoire technique), en PDF"},
         {"name": "cerfa/DC1.pdf", "kind": "CERFA — lettre de candidature (groupement)"},
         {"name": "cerfa/DC2.pdf", "kind": "CERFA — déclaration du candidat"},
         {"name": "cerfa/ATTRI1.pdf", "kind": "CERFA — acte d'engagement"},
@@ -2993,16 +2997,19 @@ def dossier_preview(project_id: int, current_user: User = Depends(get_current_us
     return {"files": files, "count": len(files), "pieces_count": n_pieces}
 
 
-# ── Compte-rendu PDF du consortium (synthèse partageable) ────────────────────
+# ── Compte-rendu PDF du groupement : DOCUMENT INTERNE AU CHEF DE FILE ─────────
+# Seule l'organisation du chef de file peut le télécharger ; il reprend ce qu'elle voit déjà à
+# l'écran. Ce n'est pas une pièce du dossier remis à l'acheteur.
 @router.get("/api/projects/{project_id}/consortium/report")
 def consortium_report(project_id: int, current_user: User = Depends(get_current_user),
                       db: Session = Depends(get_db)):
     project = _owned_project(project_id, current_user, db)
     data = consortium_cockpit(project_id, current_user, db)
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
-    # Cloisonnement : le compte-rendu est « partageable » → il ne doit JAMAIS exposer
-    # l'apport d'un partenaire RÉVOQUÉ/DÉCLINÉ, ni AUCUN prix par membre (doctrine de
-    # visibilité : le PDF n'imprime que le total de l'offre FIGÉE). Vue owner : enveloppe absente.
+    # Cloisonnement : même interne, le document peut être transféré par le chef de file → il ne
+    # doit JAMAIS exposer l'apport d'un partenaire RÉVOQUÉ/DÉCLINÉ, ni AUCUN prix par membre
+    # (doctrine de visibilité : le PDF n'imprime que le total de l'offre FIGÉE). Vue owner :
+    # enveloppe absente.
     contribs = [_serialize_contribution(c, db, viewer="owner") for c, i in db.query(
         ProjectContribution, ProjectInvite).join(
         ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
@@ -3012,4 +3019,4 @@ def consortium_report(project_id: int, current_user: User = Depends(get_current_
     pdf = generate_consortium_report_pdf(project.name, (company.name if company else ""), data, contribs)
     safe = re.sub(r'[^A-Za-z0-9._ -]', "_", (project.name or "consortium"))[:50]
     return Response(content=pdf, media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="Compte-rendu_{safe}.pdf"'})
+                    headers={"Content-Disposition": f'attachment; filename="Compte-rendu_interne_{safe}.pdf"'})

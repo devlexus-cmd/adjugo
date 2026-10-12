@@ -616,7 +616,9 @@ def test_llm_ne_recoit_jamais_la_convention_et_zip(client, auth, mails, monkeypa
     c = _gen(client, h, pid).json()
     prompts = []
     import app.services.agents.redaction as red
-    monkeypatch.setattr(red, "complete", lambda system, prompt, **k: (prompts.append(system + "\n" + prompt) or "# Mémoire\n\nTexte."))
+    # La rédaction passe par complete_ex (détection d'un texte coupé) : (texte, motif d'arrêt).
+    monkeypatch.setattr(red, "complete_ex", lambda system, prompt, **k: (
+        prompts.append(system + "\n" + prompt) or ("# Mémoire\n\nTexte.", "end_turn")))
     from app.models import Project
     db = _db()
     try:

@@ -566,7 +566,7 @@
       const ca = inp("ex. 1850000"); ca.type = "number"; ca.min = "0"; ca.step = "1"; ca.inputMode = "decimal";
       const effectif = inp("ex. 14"); effectif.type = "number"; effectif.min = "0"; effectif.step = "1"; effectif.inputMode = "numeric";
       const repr = inp("Nom et prénom du représentant légal"), qualite = inp("Qualité (ex. Président, Gérante)");
-      const memoire = ta("Votre paragraphe de mémoire technique — votre savoir-faire sur ce lot", 4);
+      const memoire = ta("Votre savoir-faire sur ce lot, pour le dossier de présentation commun", 4);
       const note = ta("Un mot au chef de file (optionnel) — une question, une précision sur votre lot…", 2);
       const cNom = inp("Contact — nom"), cMail = inp("Email"), cTel = inp("Téléphone");
       card.appendChild(field("Entreprise", company));
@@ -613,7 +613,7 @@
       detBox.appendChild($(`<div class="lock-note">${ico("lock", 13, "margin-top:1px")}<span>${esc(LOCK_SHORT)}</span></div>`));
       const lockTip = esc(CR ? CR.LABELS.lock : "Chiffré dans votre navigateur avec une clé qu'Adjugo ne stocke pas.") + " " + esc(CR ? CR.LABELS.lost : "Si vous perdez votre code, ce détail est définitivement perdu.");
       card.appendChild(field("Détail de votre chiffrage (coûts, marges, méthode)", detBox, lockTip));
-      card.appendChild(field("Paragraphe de mémoire technique", memoire));
+      card.appendChild(field("Paragraphe pour le dossier de présentation", memoire, "Le dossier de présentation est le « mémoire technique » commun du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun."));
       card.appendChild(field("Message au chef de file (optionnel)", note));
       const cr = document.createElement("div"); cr.className = "row wrap"; cr.style.gap = "8px";
       [cNom, cMail, cTel].forEach(el => { el.style.flex = "1"; el.style.minWidth = "140px"; cr.appendChild(el); });
@@ -1049,7 +1049,7 @@
             + li(numOrNull(prix.value) != null, "Prix de vente du lot : " + (numOrNull(prix.value) != null ? "<b>" + esc(eur(numOrNull(prix.value))) + " HT</b>" : "à compléter"))
             + li(serverHasDetail, "Détail du chiffrage : " + (serverHasDetail ? "chiffré (le chef de file ne le voit pas)" : "non renseigné"))
             + li(nRefs > 0, nRefs + " référence(s)")
-            + li(!!memoire.value, "Paragraphe de mémoire technique")
+            + li(!!memoire.value, "Paragraphe pour le dossier de présentation")
             + li(nPieces > 0, nPieces + " pièce(s) jointe(s)")
             + `</ul><div class="muted small">Ces éléments alimenteront votre DC1/DC2 dans la réponse commune. Vous pourrez encore les ajuster jusqu'à la date limite.</div>`,
           confirmLabel: "Confirmer l'envoi", cancelLabel: "Revenir",

@@ -1,12 +1,16 @@
 """
-Compte-rendu de consortium (PDF, partageable) — Réseau Adjugo.
+Compte-rendu du groupement (PDF) — DOCUMENT INTERNE AU CHEF DE FILE.
 
 Synthèse de l'état d'un groupement : partenaires, lots couverts, complétude de chaque
 part, pièces reçues, % de réponse commune prête (calcul déterministe), et ce qu'il reste
 à compléter. Même style reportlab que les CERFA / la DPGF.
 
-DOCTRINE DE VISIBILITÉ (oct. 2026) : document PARTAGEABLE → jamais un prix par membre
-(prix de lot, approche prix, décomposition). Seul le total de l'offre commune FIGÉE.
+Seule l'organisation du chef de file le télécharge, et il reprend ce qu'elle voit déjà à
+l'écran (l'ancien libellé « partageable » était trompeur). Ce n'est pas une pièce remise à
+l'acheteur.
+
+DOCTRINE DE VISIBILITÉ (oct. 2026) : le chef de file peut le transférer → jamais un prix par
+membre (prix de lot, approche prix, décomposition). Seul le total de l'offre commune FIGÉE.
 """
 import io
 from datetime import date
@@ -62,7 +66,7 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
 
     el = []
     el.append(_p("Compte-rendu du groupement", h1))
-    el.append(_p("Réseau Adjugo — co-traitance cloisonnée", muted))
+    el.append(_p("Document interne au chef de file — ne fait pas partie du dossier remis à l'acheteur", muted))
     el.append(Spacer(1, 7))
     el.append(_m(f"<b>{_e(project_name)}</b>", st))
     el.append(_p(f"Chef de file : {mandataire or '—'} · édité le {date.today().strftime('%d/%m/%Y')}", muted))
@@ -81,7 +85,7 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
                                ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
     el.append(synth)
 
-    # Offre commune figée (seul montant autorisé dans un document partageable : le TOTAL).
+    # Offre commune figée (seul montant imprimé, le document pouvant être transféré : le TOTAL).
     state = data.get("state") if isinstance(data.get("state"), dict) else {}
     if state.get("offer_frozen") and state.get("total_offre_ht") is not None:
         frozen = str(state.get("frozen_at") or "")[:10]
@@ -127,11 +131,11 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
             refs = [r.get("intitule", "") for r in (c.get("references") or []) if isinstance(r, dict) and r.get("intitule")]
             if refs:
                 el.append(_p("Références : " + " · ".join(refs), muted))
-            # DOCTRINE DE VISIBILITÉ : ce compte-rendu est PARTAGEABLE → AUCUN prix par membre
+            # DOCTRINE DE VISIBILITÉ : ce compte-rendu peut être transféré → AUCUN prix par membre
             # (ni approche prix, ni prix de lot, ni décomposition). Seul le total de l'offre
             # commune FIGÉE apparaît (bloc « Offre commune » ci-dessous).
             if c.get("memoire_paragraph"):
-                el.append(_p("Mémoire : " + c["memoire_paragraph"][:600], muted))
+                el.append(_p("Paragraphe pour le dossier de présentation : " + c["memoire_paragraph"][:600], muted))
             el.append(Spacer(1, 5))
 
     # À compléter

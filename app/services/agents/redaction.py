@@ -12,7 +12,7 @@ import base64
 import zipfile
 from typing import Optional
 
-from app.services.llm import complete, MODEL_FAST
+from app.services.llm import complete_ex, MODEL_FAST
 
 # Seuil (€ HT) au-delà duquel le DUME est ajouté d'office au dossier. Les procédures
 # formalisées le rendent quasi incontournable ; ajustable selon la stratégie commerciale.
@@ -47,25 +47,42 @@ def _fuse_consortium(raw_block: str, details: dict, lang_name: str = None) -> st
     if lang_name and lang_name.lower() != "français":
         prompt += f"\n\nLANGUE : rédige en {lang_name}."
     try:
-        out = complete(_FUSION_SYSTEM, prompt, max_tokens=700, temperature=0.25, model=MODEL_FAST)
-        return (out or "").strip()
+        out, stop = complete_ex(_FUSION_SYSTEM, prompt, max_tokens=700, temperature=0.25, model=MODEL_FAST)
     except Exception:
         return ""
+    # Synthèse coupée avant la fin : on ne la fait pas passer pour complète → repli sur les
+    # apports bruts (l'appelant les injecte tels quels, avec la consigne de les fusionner).
+    if stop == "max_tokens":
+        return ""
+    return (out or "").strip()
 
 
 def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
                            lang_name: str = None, db=None, user_id: int = None,
-                           estimate: dict = None, contributions: list = None) -> str:
-    """Mémoire technique en UN seul appel LLM. SOURCÉ sur la base de connaissances de
-    l'entreprise quand elle existe (extraits injectés + citations [S1]) → traçabilité ;
-    sinon mémoire générique (l'entreprise est invitée à alimenter sa base)."""
+                           estimate: dict = None, contributions: list = None) -> tuple:
+    """Dossier de présentation (mémoire technique) en UN appel LLM. Renvoie (texte, coupé) :
+    coupé = True si l'IA a atteint sa limite de longueur (texte incomplet, jamais livré comme
+    complet). Les noms des salariés ne partent pas à l'IA : tout l'appel (fusion comprise) passe
+    dans une portée qui les remplace par des étiquettes, remises en clair sans IA."""
+    from app.services.llm import pii_scope
+    from app.services.pii import from_team
+    with pii_scope(from_team((company or {}).get("team"))):
+        return _generate_memoire_fast_inner(analysis, company, cotraitants, lang_name, db=db,
+                                            user_id=user_id, estimate=estimate, contributions=contributions)
+
+
+def _generate_memoire_fast_inner(analysis: dict, company: dict, cotraitants: list,
+                                 lang_name: str = None, db=None, user_id: int = None,
+                                 estimate: dict = None, contributions: list = None) -> tuple:
     details = analysis.get("details", {}) if analysis else {}
     quals = company.get("qualifications", [])
     if isinstance(quals, list):
         quals = ", ".join(q.get("name", "") if isinstance(q, dict) else str(q) for q in quals)
     cot = "; ".join(f"{c.get('name')} ({c.get('specialites','')})" for c in cotraitants) or "aucun"
 
-    # Équipe interne (moyens humains) : présentée nommément dans le mémoire si renseignée.
+    # Équipe interne (moyens humains), saisie dans le profil entreprise. Les noms sont remplacés
+    # par des étiquettes (« [Chef de chantier 1] ») avant l'envoi : l'IA recopie l'étiquette, le
+    # nom est remis à sa place après la rédaction, sans IA (voir app/services/pii.py).
     team_block = ""
     team = company.get("team") or []
     if isinstance(team, list):
@@ -75,8 +92,10 @@ def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
             + (f" ; réf. : {m.get('references','')}" if m.get('references') else "")
             for m in team if isinstance(m, dict) and m.get('nom'))
         if members:
-            team_block = ("\n\nÉQUIPE INTERNE DÉDIÉE (présente-la NOMMÉMENT dans « Moyens humains », "
-                          f"avec rôles et qualifications) :\n{members}")
+            team_block = ("\n\nÉQUIPE INTERNE DÉDIÉE (présente chaque personne dans « Moyens humains » avec "
+                          "sa fonction et ses qualifications, en recopiant son nom exactement comme écrit "
+                          "ci-dessous ; n'ajoute aucune qualification ni expérience non listée) :\n"
+                          f"{members}")
 
     # Chiffrage : si un devis a été établi, la méthodologie et le planning du mémoire
     # DOIVENT refléter le découpage chiffré (cohérence prix / discours).
@@ -161,12 +180,26 @@ def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
             pass
     # Anti-invention : AUCUNE source réelle (ni savoir-faire indexé, ni apport de co-traitant)
     # → on interdit explicitement d'inventer plutôt que de produire un mémoire fabriqué de toutes
-    # pièces présenté comme la réponse réelle de l'entreprise (promesse « Aucune invention »).
+    # pièces présenté comme la réponse réelle de l'entreprise.
     if not chunks and not subs:
         src_rule = ("\n\nRÈGLE ANTI-INVENTION (aucune source réelle disponible) : tu n'as NI savoir-faire "
                     "indexé NI apport de co-traitant. N'invente AUCUN chiffre, référence client, "
                     "certification, ni moyen humain/matériel précis. Pour tout élément factuel non fourni, "
                     "écris « [À compléter par l'entreprise] ». Reste sur une trame méthodologique générale.")
+
+    # Entreprise SEULE (ni partenaire retenu, ni part de partenaire reçue) : pas de « groupement »
+    # ni de « co-traitance par lot » à décrire — sinon l'IA invente un groupement qui n'existe pas.
+    en_groupement = bool(cotraitants) or bool(subs)
+    if en_groupement:
+        entreprise_ligne = f"ENTREPRISE CHEF DE FILE (mandataire du groupement) : {company.get('name','')}"
+        section_1 = "1. Présentation du groupement et répartition des lots"
+        consigne = "Sois concret, mentionne explicitement la co-traitance par lot."
+        cot_line = f"\nCO-TRAITANTS DU GROUPEMENT : {cot}."
+    else:
+        cot_line = ""
+        entreprise_ligne = f"ENTREPRISE CANDIDATE (candidature seule, sans groupement) : {company.get('name','')}"
+        section_1 = "1. Présentation de l'entreprise"
+        consigne = "Sois concret. L'entreprise répond seule : ne parle ni de groupement ni de co-traitance."
 
     prompt = f"""Rédige un mémoire technique pour cet appel d'offres.
 
@@ -177,21 +210,21 @@ DÉLAI : {details.get('delai_execution','')}
 EXIGENCES RSE : {details.get('critere_rse','')}
 CRITÈRES D'ATTRIBUTION : {details.get('criteres_attribution','')}
 
-ENTREPRISE MANDATAIRE : {company.get('name','')} — {company.get('forme_juridique','')},
-{company.get('city','')}, effectif {company.get('effectif','')}, qualifications : {quals}.
-CO-TRAITANTS DU GROUPEMENT : {cot}.{team_block}{consortium_block}{sources_block}{chiffrage_block}
+{entreprise_ligne} — {company.get('forme_juridique','')},
+{company.get('city','')}, effectif {company.get('effectif','')}, qualifications : {quals}.{cot_line}{team_block}{consortium_block}{sources_block}{chiffrage_block}
 
 Structure en Markdown avec ces sections :
-1. Présentation du groupement et répartition des lots
+{section_1}
 2. Méthodologie et organisation du chantier
 3. Moyens humains et matériels
 4. Démarche qualité, sécurité et RSE (clause d'insertion)
 5. Planning et engagements de délai
-Sois concret, mentionne explicitement la co-traitance par lot. ~600 mots.{src_rule}{chiffrage_rule}{consortium_rule}"""
+{consigne} ~600 mots.{src_rule}{chiffrage_rule}{consortium_rule}"""
     if lang_name and lang_name.lower() != "français":
         prompt += (f"\n\nLANGUE : rédige l'intégralité du mémoire en {lang_name} "
                    f"(titres de sections compris).")
-    return complete(MEMOIRE_SYSTEM, prompt, max_tokens=2000, temperature=0.3, model=MODEL_FAST)
+    text, stop = complete_ex(MEMOIRE_SYSTEM, prompt, max_tokens=2000, temperature=0.3, model=MODEL_FAST)
+    return text, stop == "max_tokens"
 
 
 def build_dossier(analysis: dict, company: dict, cotraitants: list,
@@ -253,12 +286,34 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         except Exception:
             cotraitant_pieces = []
 
-    # ── Mémoire technique (IA, un seul appel) ──
+    # ── Dossier de présentation = mémoire technique (IA, un seul appel) ──
+    # Rien d'interne ne part chez l'acheteur : si la rédaction échoue, AUCUN fichier de mémoire
+    # n'est produit (jamais un message d'erreur technique dans le livrable) ; l'utilisateur est
+    # averti. Texte coupé par l'IA : marqué comme tel dans le fichier ET signalé.
+    from app.services import memoire_export
+    memoire_label = memoire_export.memoire_label(analysis)
+    memoire_state, memoire_files = None, {}
     try:
-        memoire_md = _generate_memoire_fast(analysis, company, cotraitants, lang_name, db=db, user_id=user_id, estimate=estimate, contributions=contributions)
+        raw_md, truncated = _generate_memoire_fast(analysis, company, cotraitants, lang_name, db=db, user_id=user_id,
+                                                   estimate=estimate, contributions=contributions)
+        if not (raw_md or "").strip():
+            raise ValueError("réponse vide")
+        memoire_state = memoire_export.finalize(raw_md, truncated=truncated)
     except Exception as e:
-        memoire_md = f"# Mémoire technique\n\n(génération indisponible : {e})"
-        warnings.append(f"mémoire: {e}")
+        import logging
+        logging.getLogger("adjugo").warning("dossier de présentation non rédigé (projet %s) : %s", project_id, e)
+        warnings.append("BLOQUANT — Le dossier de présentation n'a pas pu être rédigé (service d'IA indisponible "
+                        "pour le moment). Les autres pièces sont prêtes : relancez la génération dans quelques "
+                        "minutes.")
+    memoire_md = memoire_state["markdown"] if memoire_state else ""
+    if memoire_state:
+        warnings.extend(memoire_export.warnings_for(memoire_state, memoire_label))
+        try:
+            memoire_files = memoire_export.render_files(memoire_md, memoire_label)
+        except Exception as e:
+            import logging
+            logging.getLogger("adjugo").warning("mise en forme du dossier de présentation impossible : %s", e)
+            warnings.append("BLOQUANT — Le dossier de présentation n'a pas pu être mis en forme : relancez la génération.")
 
     # Taux de TVA piloté par le projet (0 % par défaut — art. 293 B CGI).
     tva_rate = 0
@@ -422,7 +477,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
                      (_groupement_convention(company, cerfa_cotraitants, details) if cerfa_cotraitants else ""))
 
     # ── ZIP ──
-    zip_bytes, zip_name, failed_pieces = _build_zip(memoire_md, cerfa_files, company, details, cerfa_cotraitants, project_id,
+    zip_bytes, zip_name, failed_pieces = _build_zip(memoire_files, cerfa_files, company, details, cerfa_cotraitants, project_id,
                                                     cotraitant_pieces, convention_md, convention_pdf=convention_pdf)
     if failed_pieces:
         warnings.append("Pièces partenaires non jointes au dossier (à re-déposer) : "
@@ -431,6 +486,13 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     return {
         "memoire_markdown": memoire_md,
         "memoire_preview": _preview(memoire_md, 400),
+        "memoire_nom": memoire_label,
+        "memoire_fichiers": [name for name, _b in memoire_files.values()],
+        "memoire_etat": ({"a_completer": memoire_state["a_completer"], "coupe": memoire_state["coupe"]}
+                         if memoire_state else None),
+        # Octets des fichiers (archivage dans le dossier du marché) : retirés par la route avant la
+        # réponse JSON (ils sont déjà dans le ZIP).
+        "_memoire_files": memoire_files,
         "cerfas": [{"id": c["id"], "name": c["name"],
                     "content_b64": base64.b64encode(_as_bytes(c["content"])).decode()}
                    for c in cerfa_files],
@@ -496,8 +558,10 @@ def _groupement_convention(company, cotraitants, details):
     return "\n".join(lines)
 
 
-def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces=None, convention_md="",
+def _build_zip(memoire_files, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces=None, convention_md="",
                convention_pdf=None):
+    """`memoire_files` = {"docx": (nom, octets), "pdf": (nom, octets)} (vide si la rédaction a
+    échoué : aucun fichier de mémoire plutôt qu'un fichier qui contiendrait un message d'erreur)."""
     import os
     buf = io.BytesIO()
     failed_pieces = []
@@ -505,12 +569,10 @@ def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_i
     zip_name = f"Adjugo_Dossier_{ao}.zip".replace(" ", "_")
 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Tout en PDF : les utilisateurs n'ouvrent pas des .md/.txt.
+        # Dossier de présentation en Word (à relire et compléter) ET en PDF, sous le nom du règlement.
         from app.services.md_pdf import markdown_to_pdf, text_to_pdf
-        try:
-            zf.writestr("memoire_technique.pdf", markdown_to_pdf(memoire_md, "Mémoire technique"))
-        except Exception:
-            zf.writestr("memoire_technique.txt", memoire_md.encode("utf-8"))   # repli sûr
+        for _kind, (name, content) in sorted((memoire_files or {}).items()):
+            zf.writestr(name, content)
         for c in cerfa_files:
             zf.writestr(f"cerfa/{c['name']}", _as_bytes(c["content"]))
         zf.writestr("synthese_groupement.pdf",

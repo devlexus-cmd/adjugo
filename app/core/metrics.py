@@ -52,6 +52,22 @@ def render() -> str:
             "# TYPE adjugo_llm_tracked_tenants gauge",
             _fmt("adjugo_llm_tracked_tenants", len(llm._TENANT_TOKENS)),
         ]
+        # Limite d'appels IA simultanés (LLM_MAX_CONCURRENT) : en vol, plafond, attentes.
+        cc = llm.concurrency_snapshot()
+        out += [
+            "# HELP adjugo_llm_inflight Appels IA en cours (plafond : adjugo_llm_inflight_max).",
+            "# TYPE adjugo_llm_inflight gauge",
+            _fmt("adjugo_llm_inflight", cc["now"]),
+            "# TYPE adjugo_llm_inflight_max gauge",
+            _fmt("adjugo_llm_inflight_max", cc["max"]),
+            "# TYPE adjugo_llm_inflight_peak gauge",
+            _fmt("adjugo_llm_inflight_peak", cc["peak"]),
+            "# HELP adjugo_llm_slot_waits_total Appels IA qui ont dû attendre une place libre.",
+            "# TYPE adjugo_llm_slot_waits_total counter",
+            _fmt("adjugo_llm_slot_waits_total", cc["waits"]),
+            "# TYPE adjugo_llm_slot_timeouts_total counter",
+            _fmt("adjugo_llm_slot_timeouts_total", cc["timeouts"]),
+        ]
         # Histogramme de latence des appels IA (→ p50/p95/p99 via histogram_quantile).
         lat = llm.latency_snapshot()
         out += ["# HELP adjugo_llm_call_duration_seconds Durée des appels Claude réussis.",

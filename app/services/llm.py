@@ -201,6 +201,203 @@ def tenant_usage(tenant_id) -> int:
     return _TENANT_TOKENS.get(tenant_id, 0)
 
 
+# ── Limite GLOBALE d'appels IA simultanés (process unique, sans Redis) ─────────
+# 4 tâches de fond × 6 sections rédigées en parallèle = jusqu'à 24 appels à la fois, plus les
+# requêtes directes : de quoi saturer le fournisseur (429 en cascade, disjoncteur ouvert pour
+# tous). Un sémaphore de process borne le nombre d'appels EN VOL ; les suivants attendent leur
+# tour (au plus LLM_SLOT_WAIT secondes, puis LLMUnavailable → la tâche échoue et le quota est
+# remboursé par le mécanisme existant). Réglable : LLM_MAX_CONCURRENT (défaut prudent : 6).
+# Sans interblocage : la place n'est tenue QUE pendant l'appel HTTP au fournisseur (jamais
+# pendant qu'un appelant attend d'autres appels), et un appel imbriqué dans le même fil
+# (réentrance) ne redemande pas de place.
+_MAX_CONCURRENT = max(1, int(os.getenv("LLM_MAX_CONCURRENT", "6")))
+_SLOT_WAIT = float(os.getenv("LLM_SLOT_WAIT", "300"))
+_SLOTS = threading.BoundedSemaphore(_MAX_CONCURRENT)
+_SLOT_LOCAL = threading.local()
+_INFLIGHT = {"now": 0, "peak": 0, "waits": 0, "timeouts": 0}
+
+
+class _llm_slot:
+    """Une place parmi LLM_MAX_CONCURRENT, réentrante dans un même fil."""
+
+    def __enter__(self):
+        depth = getattr(_SLOT_LOCAL, "depth", 0)
+        if depth == 0:
+            if not _SLOTS.acquire(blocking=False):
+                with _LOCK:
+                    _INFLIGHT["waits"] += 1
+                if not _SLOTS.acquire(timeout=_SLOT_WAIT):
+                    with _LOCK:
+                        _INFLIGHT["timeouts"] += 1
+                    logger.warning("Appel IA abandonné : aucune place libre après %ss (%s appels en cours).",
+                                   _SLOT_WAIT, _INFLIGHT["now"])
+                    raise LLMUnavailable("Service IA très demandé en ce moment. Réessayez dans quelques minutes.")
+            with _LOCK:
+                _INFLIGHT["now"] += 1
+                _INFLIGHT["peak"] = max(_INFLIGHT["peak"], _INFLIGHT["now"])
+        _SLOT_LOCAL.depth = depth + 1
+        return self
+
+    def __exit__(self, *exc):
+        _SLOT_LOCAL.depth -= 1
+        if _SLOT_LOCAL.depth == 0:
+            with _LOCK:
+                _INFLIGHT["now"] -= 1
+            _SLOTS.release()
+        return False
+
+
+def concurrency_snapshot() -> dict:
+    """Appels IA en vol / plafond / pic / attentes — pour /metrics."""
+    with _LOCK:
+        return dict(_INFLIGHT, max=_MAX_CONCURRENT)
+
+
+# ── Noms des salariés masqués avant l'IA (doctrine : ils ne partent jamais) ────
+# `with pii_scope(pseudonymiseur):` → tout appel passé dans la portée voit ses textes masqués
+# (« Yann Tanguy » → « [Chef de chantier 1] ») et sa réponse remise en clair SANS IA. Voir
+# app/services/pii.py. Comme tenant_scope, la portée est un contextvar : les fils d'un
+# ThreadPoolExecutor ne l'héritent pas → utiliser map_in_context() ci-dessous.
+_PII = contextvars.ContextVar("adjugo_pii", default=None)
+
+
+class pii_scope:
+    def __init__(self, pseudonymizer):
+        active = pseudonymizer is not None and getattr(pseudonymizer, "active", False)
+        self.pz = pseudonymizer if active else None
+        self._token = None
+
+    def __enter__(self):
+        self._token = _PII.set(self.pz) if self.pz is not None else None
+        return self
+
+    def __exit__(self, *exc):
+        if self._token is not None:
+            _PII.reset(self._token)
+        return False
+
+
+def _mask_request(pz, kwargs: dict) -> dict:
+    """Copie de la requête dont tous les textes (consigne + messages) sont masqués ; ajoute à la
+    consigne la règle « recopie les étiquettes » dès qu'une étiquette y figure."""
+    kw = dict(kwargs)
+    kw["messages"] = [dict(m, content=pz.mask_content(m.get("content"))) if isinstance(m, dict) else m
+                      for m in (kwargs.get("messages") or [])]
+    system = pz.mask_content(kwargs.get("system") or "")
+    flat = _flatten_content(system) + " " + " ".join(
+        _flatten_content(m.get("content")) for m in kw["messages"] if isinstance(m, dict))
+    if any(lbl in flat for lbl, _n in pz.labels) or "[Nom " in flat:
+        hint = pz.hint()
+        system = (system + "\n\n" + hint) if isinstance(system, str) else (list(system) + [{"type": "text", "text": hint}])
+    if system or "system" in kwargs:
+        kw["system"] = system
+    return kw
+
+
+def _unmask_response(pz, resp):
+    """Remet les noms en clair dans la réponse (simple remplacement, sans IA)."""
+    try:
+        for b in (getattr(resp, "content", None) or []):
+            if isinstance(getattr(b, "text", None), str):
+                b.text = pz.unmask(b.text)
+        return resp
+    except Exception:
+        # Objet non modifiable : on ré-emballe (mêmes attributs que ceux lus par les appelants).
+        text = pz.unmask("".join(getattr(b, "text", "") or "" for b in (getattr(resp, "content", None) or [])))
+        return _Resp(text, getattr(resp, "usage", None) or _Usage(0, 0), getattr(resp, "stop_reason", "end_turn"))
+
+
+# ── Coût IA d'un traitement complet (journalisé, pour décider plus tard du quota) ─
+# `with cost_meter("dossier de réponse", tenant_id):` cumule appels et tokens de tous les appels
+# passés dans la portée (fils compris, via map_in_context), puis JOURNALISE le total et une
+# estimation en dollars au tarif public du fournisseur. Rien n'est montré au client.
+# Tarifs Anthropic (API directe, $ par million de tokens, entrée / sortie), relevés le 12/10/2026.
+_PRICES_USD_PER_MTOK = {MODEL: (3.0, 15.0), MODEL_FAST: (1.0, 5.0)}
+_METER = contextvars.ContextVar("adjugo_cost_meter", default=None)
+
+
+class cost_meter:
+    def __init__(self, label: str, tenant_id=None, log: bool = True):
+        self.label = label
+        self.tenant_id = tenant_id
+        self.log = log
+        self.calls = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.truncated = 0
+        self.by_model = {}
+        self.provider = "anthropic"
+        self._parent = None
+        self._token = None
+        self._t0 = 0.0
+
+    def add(self, model: str, tin: int, tout: int, stop_reason: str = "") -> None:
+        self.calls += 1
+        self.input_tokens += tin
+        self.output_tokens += tout
+        if stop_reason == "max_tokens":
+            self.truncated += 1
+        m = self.by_model.setdefault(model or "?", [0, 0, 0])
+        m[0] += 1
+        m[1] += tin
+        m[2] += tout
+        if self._parent is not None:          # un traitement inclus compte aussi dans l'englobant
+            self._parent.add(model, tin, tout, stop_reason)
+
+    def cost_usd(self):
+        """Estimation en $ ; None si un modèle n'a pas de tarif connu (ex. Mistral)."""
+        if self.provider != "anthropic":
+            return None
+        total = 0.0
+        for model, (_n, tin, tout) in self.by_model.items():
+            if model not in _PRICES_USD_PER_MTOK:
+                return None
+            pin, pout = _PRICES_USD_PER_MTOK[model]
+            total += tin / 1e6 * pin + tout / 1e6 * pout
+        return round(total, 5)
+
+    def summary(self) -> dict:
+        return {"traitement": self.label, "appels": self.calls, "tokens_entree": self.input_tokens,
+                "tokens_sortie": self.output_tokens, "reponses_coupees": self.truncated,
+                "cout_estime_usd": self.cost_usd(), "fournisseur": self.provider,
+                "par_modele": {k: {"appels": v[0], "tokens_entree": v[1], "tokens_sortie": v[2]}
+                               for k, v in self.by_model.items()},
+                "duree_s": round(time.monotonic() - self._t0, 1) if self._t0 else None}
+
+    def __enter__(self):
+        self._parent = _METER.get()
+        self._token = _METER.set(self)
+        self._t0 = time.monotonic()
+        try:
+            self.provider = _resolve_provider()
+        except Exception:
+            self.provider = "?"
+        return self
+
+    def __exit__(self, exc_type, *exc):
+        if self._token is not None:
+            _METER.reset(self._token)
+        if self.log:
+            s = self.summary()
+            cost = s["cout_estime_usd"]
+            logger.info("Coût IA « %s » (espace %s)%s : %d appel(s), %d tokens en entrée, %d en sortie, "
+                        "%s, %d réponse(s) coupée(s), %ss — détail %s",
+                        self.label, self.tenant_id, " [échec]" if exc_type else "", s["appels"],
+                        s["tokens_entree"], s["tokens_sortie"],
+                        (f"environ {cost:.4f} $" if cost is not None else f"coût non estimé ({s['fournisseur']})"),
+                        s["reponses_coupees"], s["duree_s"], s["par_modele"])
+        return False
+
+
+def map_in_context(executor, fn, items) -> list:
+    """executor.map qui PROPAGE les contextvars du fil appelant (espace facturé, noms masqués,
+    compteur de coût) à chaque tâche. Chaque tâche reçoit sa propre copie du contexte, prise
+    ici, dans le fil appelant (un même Context ne peut pas être entré par deux fils à la fois)."""
+    items = list(items)
+    ctxs = [contextvars.copy_context() for _ in items]
+    return list(executor.map(lambda pair: pair[0].run(fn, pair[1]), zip(ctxs, items)))
+
+
 # ── Latence des appels IA (histogramme Prometheus) ───────────────────────────
 _LAT_BUCKETS = [0.5, 1, 2, 5, 10, 30]
 _LAT = {"counts": {b: 0 for b in _LAT_BUCKETS}, "sum": 0.0, "count": 0}
@@ -230,6 +427,10 @@ def _track_usage(model: str, resp) -> None:
         TOKENS["input"] += getattr(u, "input_tokens", 0) or 0
         TOKENS["output"] += getattr(u, "output_tokens", 0) or 0
         TOKENS["calls"] += 1
+        meter = _METER.get()
+        if meter is not None:
+            meter.add(model, getattr(u, "input_tokens", 0) or 0, getattr(u, "output_tokens", 0) or 0,
+                      getattr(resp, "stop_reason", "") or "")
         tid = _CURRENT_TENANT.get()
         if tid is not None:
             if tid not in _TENANT_TOKENS and len(_TENANT_TOKENS) >= _TENANT_TOKENS_MAX:
@@ -278,12 +479,21 @@ def messages_create(**kwargs):
         logger.warning("Plafond de tokens IA atteint pour le tenant %s (%s) — appel refusé.",
                        tid, _TOKEN_CAP_PER_TENANT)
         raise LLMUnavailable("Plafond de tokens IA atteint pour votre espace. Réessayez plus tard.")
+    pz = _PII.get()
+    if pz is not None:
+        kwargs = _mask_request(pz, kwargs)      # aucun nom de salarié ne part au fournisseur
     t0 = time.monotonic()
     try:
-        if _use_mistral():
-            resp = _mistral_create(**kwargs)            # ré-emballé en réponse façon Anthropic
-        else:
-            resp = client().messages.create(**kwargs)
+        # Place limitée tenue pendant le SEUL appel au fournisseur (LLMUnavailable si aucune ne
+        # se libère : levée avant d'avoir appelé, elle ne compte pas comme une panne ci-dessous).
+        with _llm_slot():
+            t0 = time.monotonic()
+            if _use_mistral():
+                resp = _mistral_create(**kwargs)            # ré-emballé en réponse façon Anthropic
+            else:
+                resp = client().messages.create(**kwargs)
+    except LLMUnavailable:
+        raise
     except Exception:
         with _LOCK:
             _CB["fails"] += 1
@@ -308,6 +518,8 @@ def messages_create(**kwargs):
             _TENANT_CB[tid]["open_until"] = 0.0
         _record_latency(dt)
         _track_usage(kwargs.get("model", MODEL), resp)
+    if pz is not None:
+        resp = _unmask_response(pz, resp)
     return resp
 
 

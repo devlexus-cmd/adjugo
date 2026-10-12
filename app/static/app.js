@@ -320,7 +320,7 @@ const __adjApp = createApp({
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
       titles: { kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
-      subtitles: { kb: "Déposez vos documents → l'IA rédige des mémoires et réponses 100% sourcés", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires vérifiés et faites-vous trouver" },
+      subtitles: { kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires vérifiés et faites-vous trouver" },
     };
   },
   computed: {
@@ -330,7 +330,7 @@ const __adjApp = createApp({
       // (tous les documents sont déjà chargés), donc instantané et sans appel réseau.
       let list = (this.documents || []).slice();
       const q = (this.docQuery || "").trim().toLowerCase();
-      if (q) list = list.filter(d => ((d.name || "") + " " + (d.folder || "") + " " + (d.category || "") + " " + (d.project_name || "")).toLowerCase().includes(q));
+      if (q) list = list.filter(d => ((d.name || "") + " " + (d.folder || "") + " " + this.folderLabel(d.folder) + " " + (d.category || "") + " " + (d.project_name || "")).toLowerCase().includes(q));
       const by = {
         recent: (a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")),
         name: (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }),
@@ -1148,7 +1148,15 @@ const __adjApp = createApp({
       this.notify("Assemblage du dossier commun (présentation fusionnée + pièces des partenaires)…");
       try {
         const r = await this.api("POST", "/api/sourcing/documents", { project_id: pid, cotraitants: [] });
-        if (r.dossier && r.dossier.zip_b64) { this._downloadB64(r.dossier.zip_b64, r.dossier.zip_name); this.notify("Dossier commun exporté"); }
+        if (r.dossier && r.dossier.zip_b64) {
+          this._downloadB64(r.dossier.zip_b64, r.dossier.zip_name);
+          // Téléchargé sans passer par la fiche du marché : le point bloquant (dossier de présentation
+          // coupé ou non rédigé, passages à compléter) est dit tout de suite, jamais tu.
+          const ws = r.dossier.warnings || [];
+          const w = ws.find(x => x.startsWith("BLOQUANT")) || ws.find(x => x.startsWith("Dossier de présentation"));
+          if (w) this.notify("Dossier commun exporté. À traiter avant le dépôt : " + w.replace(/^BLOQUANT — /, ""), "err");
+          else this.notify("Dossier commun exporté");
+        }
         else this.notify("Rien à exporter pour ce groupement", "err");
       } catch (e) {
         if ((e.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
@@ -1163,8 +1171,8 @@ const __adjApp = createApp({
       try {
         const r = await fetch("/api/projects/" + pid + "/consortium/report", { headers: { Authorization: "Bearer " + this.token } });
         if (!r.ok) throw new Error("indispo");
-        this.saveBlob(await r.blob(), "Compte-rendu_groupement.pdf");
-        this.notify("Compte-rendu PDF téléchargé");
+        this.saveBlob(await r.blob(), "Compte-rendu_interne_groupement.pdf");
+        this.notify("Compte-rendu interne téléchargé (document du chef de file, pas pour l'acheteur)");
       } catch (e) { this.notify("Compte-rendu indisponible", "err"); }
     },
 
@@ -2860,7 +2868,16 @@ const __adjApp = createApp({
       if (run) await run(vals);
     },
     roleLabel(r) { return ({ mandataire: "Chef de file", cotraitant: "Partenaire", sous_traitant: "Sous-traitant" })[r] || r; },
-    checklistLabel(s) { return ({ ok: "Disponible", manquant: "Manquant", expire: "Expiré", generable: "Généré auto" })[s] || s; },
+    checklistLabel(s) { return ({ ok: "Disponible", manquant: "Manquant", expire: "Expiré", generable: "Généré auto", a_completer: "À terminer" })[s] || s; },
+    // Dossiers du coffre : l'identifiant « Mémoire technique » reste en base, l'écran dit « Dossier de présentation ».
+    folderLabel(f) { return f === "Mémoire technique" ? "Dossier de présentation" : (f || ""); },
+    // Copie le texte affiché d'un bloc (ex. note d'information aux salariés).
+    async copyRefText(ref, ok) {
+      const el = this.$refs[ref]; const txt = el ? (el.innerText || "").trim() : "";
+      if (!txt) return;
+      try { await navigator.clipboard.writeText(txt); this.notify(ok || "Texte copié"); }
+      catch (e) { this.notify("Copie impossible : sélectionnez le texte et copiez-le à la main", "err"); }
+    },
     aoStAttached(c) { return this.ao.cotraitants.some(x => x.siret && x.siret === c.siret); },
     async aoDetachSt(link_id) {
       try { await this.api("DELETE", "/api/cotraitants/project/" + this.ao.project.id + "/" + link_id); this.aoLoadCotraitants(); }
@@ -3472,7 +3489,9 @@ const __adjApp = createApp({
         const fd = new FormData(); fd.append("file", file);
         const job = await this.api("POST", "/api/knowledge/memoire-upload", fd, true);
         this.kb.memoire = await this.pollJob(job.id);
-        this.notify("Mémoire généré (" + (this.kb.memoire.n_sections || 0) + " sections)");
+        const nc = this.kb.memoire.n_coupees || 0;
+        this.notify("Dossier de présentation rédigé (" + (this.kb.memoire.n_sections || 0) + " sections), à relire"
+          + (nc ? " · " + nc + " section(s) coupée(s) à terminer" : ""), nc ? "err" : "ok");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
@@ -3487,7 +3506,7 @@ const __adjApp = createApp({
         const job = await this.api("POST", "/api/knowledge/questionnaire", { questions: qs });
         const r = await this.pollJob(job.id); this.kb.qResults = r;
         const errs = r.errors || 0;
-        let msg = r.covered + "/" + (r.count - errs) + " réponses trouvées dans votre base";
+        let msg = r.covered + "/" + (r.count - errs) + " réponse(s) proposée(s), à relire";
         if (errs) msg += " · " + errs + " non générée(s), réessayez";
         this.notify(msg);
       } catch (err) {

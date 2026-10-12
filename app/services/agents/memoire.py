@@ -8,15 +8,16 @@ Au lieu d'un prompt monolithique, 4 étapes spécialisées :
                    connaissances de l'entreprise (RAG), avec citations [S1], [S2]…
   4. CONFORMITÉ  — vérifie que la réponse couvre bien chaque exigence extraite.
 
-Traçabilité : chaque section porte les sources (doc + extrait) réellement utilisées.
-Anti-hallucination : si aucune source ne couvre un point, l'IA l'indique au lieu
-d'inventer (« information non disponible dans votre base de connaissances »).
+Ce qu'on affiche, sans promettre plus : chaque section porte les extraits que l'IA a
+effectivement cités ([S1]…). Un renvoi ne prouve pas que la phrase est exacte : le contrôle
+des faits arrive en vague 3 ; d'ici là, aucun badge « sourcé ». La consigne demande à l'IA
+d'écrire « [À compléter] » quand rien ne couvre un point, sans garantie qu'elle s'y tienne.
 """
 import logging
 
 from sqlalchemy.orm import Session
 
-from app.services.llm import complete, complete_json, tenant_scope
+from app.services.llm import complete_ex, complete_json, tenant_scope
 from app.services import rag
 
 logger = logging.getLogger("adjugo")
@@ -114,33 +115,44 @@ SOURCES AUTORISÉES (savoir-faire de l'entreprise) :
 
 Rédige la section (250-450 mots) en citant [S1], [S2]… Si rien ne couvre l'objectif,
 indique-le explicitement plutôt que d'inventer."""
-    err = False
+    err, coupe = False, False
     try:
         # tenant_scope reposé : le contextvar (quota/disjoncteur PAR TENANT) n'est pas hérité
         # par les threads du ThreadPoolExecutor appelant → sinon ces appels (le gros du coût)
         # échappent à l'isolation « voisin bruyant ».
         with tenant_scope(user_id):
-            content = complete(_WRITE_SYS, user, max_tokens=1400, temperature=0.3)
+            content, stop = complete_ex(_WRITE_SYS, user, max_tokens=1400, temperature=0.3)
+        coupe = stop == "max_tokens"
     except Exception as e:
         logger.warning("memoire.write en échec : %s", e)
         content = "[À compléter : la génération de cette section a échoué.]"
-        err = True   # échec TECHNIQUE (IA indispo) → ne pas le déguiser en livrable « sourcé »
-    # Citations VÉRIFIÉES : on n'expose comme « sources » que les chunks réellement cités
-    # [S1]…[Sn] dans le texte (fin de la citation décorative). grounded=False si le texte cite
-    # une source hors-borne ou n'en cite aucune → le front peut signaler « à vérifier ».
-    cited = rag.cited_refs(content)
+        err = True   # échec TECHNIQUE (IA indispo)
+    return _section_out(section, content, chunks, err, coupe)
+
+
+def _section_out(section, content, chunks, err, coupe, names_by_user=None) -> dict:
+    """Section rédigée + ce qu'on peut en dire HONNÊTEMENT, sans badge « sourcé » :
+    - `sources` : SEULS les extraits que l'IA a effectivement cités ([S1]…[Sn], numéros valides).
+      Plus de repli « tous les extraits fournis » : un extrait non cité n'est pas une source.
+      Un renvoi cité ne prouve pas que la phrase est exacte (contrôle des faits : vague 3) ;
+    - `extraits_fournis` : combien d'extraits de vos documents l'IA avait sous les yeux ;
+    - `coupe` : texte interrompu par la limite de longueur → marqué à la fin, jamais complet."""
+    from app.services.memoire_export import TRUNCATED_NOTE
+    if coupe and not err:
+        content = (content or "").rstrip() + "\n\n" + TRUNCATED_NOTE
     n = len(chunks)
-    # Souple : sources précises si l'IA a cité, sinon les extraits réellement fournis à la section
-    # (le filtre de pertinence garantit qu'ils sont à propos). On ne signale « non sourcée » que
-    # s'il n'y avait AUCUNE source pertinente (chunks vide), pas si l'IA a juste omis le marqueur.
-    keep = cited if cited else set(range(1, n + 1))
-    used = [{"ref": f"S{i+1}", "doc_name": c["doc_name"], "chunk_id": c["chunk_id"],
-             "excerpt": c["text"][:240]} for i, c in enumerate(chunks) if (i + 1) in keep]
-    grounded = bool(chunks)
-    if err:                       # une section en erreur n'a NI sources NI ancrage (sinon faux badge)
-        used, grounded = [], False
+    cited = rag.cited_refs(content) & set(range(1, n + 1))
+    used = []
+    if not err:
+        for i, c in enumerate(chunks):
+            if (i + 1) in cited:
+                s = {"ref": f"S{i+1}", "doc_name": c["doc_name"], "chunk_id": c["chunk_id"],
+                     "excerpt": c["text"][:240]}
+                if names_by_user is not None:
+                    s["company"] = names_by_user.get(c.get("user_id"), "Entreprise")
+                used.append(s)
     return {"titre": section.get("titre"), "content": content, "sources": used,
-            "grounded": grounded, "error": err}
+            "extraits_fournis": 0 if err else n, "coupe": bool(coupe and not err), "error": err}
 
 
 # ── 4. Contrôle de conformité ────────────────────────────────────────────────
@@ -174,8 +186,20 @@ Renvoie EXACTEMENT ce JSON :
 # ── Orchestration ────────────────────────────────────────────────────────────
 def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int = 9,
                      kb_user_ids: list = None) -> dict:
-    """Pipeline complet. Renvoie un mémoire structuré, sourcé et contrôlé.
-    kb_user_ids = base COMMUNE à interroger (membres de l'organisation) ; défaut = [user_id]."""
+    """Pipeline complet. Renvoie un dossier de présentation structuré, avec les extraits cités.
+    kb_user_ids = base COMMUNE à interroger (membres de l'organisation) ; défaut = [user_id].
+    Les noms des salariés de l'organisation (équipe du profil entreprise) sont masqués avant
+    chaque appel à l'IA (documents du savoir-faire compris) et remis en clair sans IA ; le coût
+    IA du dossier complet est journalisé."""
+    from app.services.llm import cost_meter, pii_scope
+    from app.services.pii import from_team, team_of_users
+    pz = from_team(team_of_users(db, kb_user_ids or [user_id]))
+    with pii_scope(pz), cost_meter("dossier de présentation (savoir-faire)", user_id):
+        return _generate_memoire(db, user_id, dce_text, max_sections, kb_user_ids)
+
+
+def _generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int = 9,
+                      kb_user_ids: list = None) -> dict:
     requirements = extract_requirements(dce_text)
     objet = requirements.get("objet", "")
     plan = build_plan(objet, requirements)[:max_sections]
@@ -191,8 +215,11 @@ def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int
     for sec in plan:
         chunks = rag.retrieve_multi(db, pool, sec.get("requete") or sec.get("titre", ""), k=5, relevance=True)
         prepared.append((sec, chunks))
+    # map_in_context : chaque fil reçoit la portée du job (noms masqués, compteur de coût).
+    from app.services.llm import map_in_context
     with ThreadPoolExecutor(max_workers=min(6, len(prepared) or 1)) as ex:
-        sections = list(ex.map(lambda pc: write_section(pc[0], pc[1], criteres=criteres, user_id=user_id), prepared))
+        sections = map_in_context(ex, lambda pc: write_section(pc[0], pc[1], criteres=criteres, user_id=user_id),
+                                  prepared)
     # Si TOUTES les sections ont échoué techniquement (IA indispo / plafond / panne), le mémoire
     # est 100 % « [À compléter] » : on LÈVE pour que le job passe en 'error' et que le quota soit
     # REMBOURSÉ — au lieu de débiter le client pour un livrable vide.
@@ -200,9 +227,6 @@ def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int
     if sections and errs == len(sections):
         from app.services.llm import LLMUnavailable
         raise LLMUnavailable("Service IA indisponible — mémoire non généré.")
-    # kb_used HONNÊTE : vrai seulement si au moins une section RÉUSSIE est ancrée (on exclut les
-    # sections en erreur) → pas de badge « Basé sur votre savoir-faire » sur un mémoire raté.
-    kb_used = any(s.get("grounded") for s in sections if not s.get("error"))
 
     conformity = conformity_check(requirements, sections)
 
@@ -212,8 +236,8 @@ def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int
         "exigences": requirements.get("exigences", []),
         "sections": sections,
         "conformity": conformity,
-        "kb_used": kb_used,
         "n_sections": len(sections),
+        "n_coupees": sum(1 for s in sections if s.get("coupe")),
     }
 
 
@@ -249,29 +273,29 @@ SOURCES ATTRIBUÉES :
 {src}
 
 Rédige la section unifiée (250-450 mots), en attribuant et en croisant les apports."""
-    err = False
+    err, coupe = False, False
     try:
         with tenant_scope(billing_user_id):
-            content = complete(_MERGED_SYS, user, max_tokens=1500, temperature=0.3)
+            content, stop = complete_ex(_MERGED_SYS, user, max_tokens=1500, temperature=0.3)
+        coupe = stop == "max_tokens"
     except Exception as e:
         logger.warning("merged.write en échec : %s", e)
         content = "[À compléter : génération échouée.]"
         err = True
-    cited = rag.cited_refs(content)
-    keep = cited if cited else set(range(1, len(chunks) + 1))
-    used = [{"ref": f"S{i+1}", "company": names_by_user.get(c.get("user_id"), "Entreprise"),
-             "doc_name": c["doc_name"], "chunk_id": c["chunk_id"], "excerpt": c["text"][:220]}
-            for i, c in enumerate(chunks) if (i + 1) in keep]
-    grounded = bool(chunks)
-    if err:
-        used, grounded = [], False
-    return {"titre": section.get("titre"), "content": content, "sources": used,
-            "grounded": grounded, "error": err}
+    return _section_out(section, content, chunks, err, coupe, names_by_user=names_by_user)
 
 
 def generate_merged_memoire(db, members: list, dce_text: str, max_sections: int = 9, billing_user_id=None) -> dict:
-    """Mémoire UNIFIÉ d'un groupement. members = [{user_id, name, role}].
-    Récupère le savoir-faire de TOUTES les bases et rédige une offre cohérente et croisée."""
+    """Mémoire UNIFIÉ d'un groupement. members = [{user_id, name, role}] (routeur archivé, non monté).
+    Les noms des salariés de TOUS les membres sont masqués avant l'IA."""
+    from app.services.llm import cost_meter, pii_scope
+    from app.services.pii import from_team, team_of_users
+    pz = from_team(team_of_users(db, [m.get("user_id") for m in members if m.get("user_id")]))
+    with pii_scope(pz), cost_meter("dossier de présentation (groupement)", billing_user_id):
+        return _generate_merged_memoire(db, members, dce_text, max_sections, billing_user_id)
+
+
+def _generate_merged_memoire(db, members: list, dce_text: str, max_sections: int = 9, billing_user_id=None) -> dict:
     user_ids = [m["user_id"] for m in members if m.get("user_id")]
     names_by_user = {m["user_id"]: (m.get("name") or "Entreprise") for m in members if m.get("user_id")}
 
@@ -290,9 +314,10 @@ def generate_merged_memoire(db, members: list, dce_text: str, max_sections: int 
         for c in chunks:
             contributors.add(names_by_user.get(c.get("user_id")))
         prepared.append((sec, chunks))
+    from app.services.llm import map_in_context
     with ThreadPoolExecutor(max_workers=min(6, len(prepared) or 1)) as ex:
-        sections = list(ex.map(lambda pc: _write_merged_section(pc[0], pc[1], names_by_user, criteres,
-                                                                billing_user_id=billing_user_id), prepared))
+        sections = map_in_context(ex, lambda pc: _write_merged_section(pc[0], pc[1], names_by_user, criteres,
+                                                                       billing_user_id=billing_user_id), prepared)
 
     errs = sum(1 for s in sections if s.get("error"))
     if sections and errs == len(sections):

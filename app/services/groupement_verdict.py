@@ -107,7 +107,9 @@ def lead_member(company_data: dict, criteria: dict) -> dict:
     if isinstance(deps, str):
         import re
         deps = [d.strip() for d in re.split(r"[,;\s]+", deps) if d.strip()]
-    m = dict(company_data)
+    # L'équipe interne (noms des salariés) n'a rien à faire dans un membre de groupement : ce
+    # dict est stocké (groupement_plan) et peut être montré aux partenaires.
+    m = {k: v for k, v in company_data.items() if k != "team"}
     m.update({
         "kind": "lead", "id": None, "invite_id": None,
         "name": company_data.get("name") or "Votre entreprise",

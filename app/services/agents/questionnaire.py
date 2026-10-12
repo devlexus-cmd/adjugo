@@ -10,7 +10,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.services.llm import complete, tenant_scope, LLMUnavailable
+from app.services.llm import complete_ex, tenant_scope, LLMUnavailable
 from app.services import rag
 
 logger = logging.getLogger("adjugo")
@@ -40,29 +40,36 @@ Réponds en citant [S1], [S2]…"""
     try:
         # tenant_scope reposé (perdu dans le ThreadPoolExecutor → isolation quota/disjoncteur).
         with tenant_scope(user_id):
-            ans = complete(_SYS, user, max_tokens=600, temperature=0.2)
+            ans, stop = complete_ex(_SYS, user, max_tokens=600, temperature=0.2)
     except Exception as e:
         # Panne IA (disjoncteur/plafond) ≠ « base ne couvre pas » : on le marque comme ERREUR
         # technique (error=True) au lieu de faire croire que le savoir-faire est absent.
         logger.warning("questionnaire.answer en échec : %s", e)
         return {"question": question, "answer": "Génération momentanément indisponible — réessayez.",
                 "sources": [], "covered": False, "error": True}
-    # « Couvert » = réponse SUBSTANTIELLE (pas la formule d'abstention) à partir des sources
-    # fournies. Souple : une bonne réponse non explicitement citée compte quand même (on ne se
-    # base plus sur une devinette de 30 caractères, mais sur la phrase d'abstention canonique).
+    # « Couvert » = l'IA a PROPOSÉ une réponse (pas la formule d'abstention). Ce n'est pas une
+    # preuve que la réponse est exacte : l'écran dit « réponse proposée, à relire ».
     is_abstention = ans.strip().lower().startswith(("à compl", "a compl", "non couvert"))
     covered = not is_abstention
+    coupe = stop == "max_tokens"
+    if coupe:     # réponse interrompue : jamais présentée comme complète
+        from app.services.memoire_export import TRUNCATED_NOTE
+        ans = ans.rstrip() + "\n\n" + TRUNCATED_NOTE
+    # Extraits affichés : SEULS ceux que l'IA a effectivement cités (plus de repli « tous les
+    # extraits fournis », qui faisait passer une réponse non étayée pour « sourcée »).
     valid = rag.cited_refs(ans) & set(range(1, len(chunks) + 1))
-    # Sources affichées : précises si l'IA a cité ; sinon les extraits fournis (tant que couvert).
-    keep = valid if valid else (set(range(1, len(chunks) + 1)) if covered else set())
     used = [{"ref": f"S{i+1}", "doc_name": c["doc_name"], "chunk_id": c["chunk_id"],
-             "excerpt": c["text"][:200]} for i, c in enumerate(chunks) if (i + 1) in keep]
-    return {"question": question, "answer": ans, "sources": used, "covered": covered}
+             "excerpt": c["text"][:200]} for i, c in enumerate(chunks) if (i + 1) in valid]
+    return {"question": question, "answer": ans, "sources": used, "covered": covered, "coupe": coupe}
 
 
 def answer_question(db: Session, user_id: int, question: str, kb_user_ids: list = None) -> dict:
     pool = kb_user_ids or [user_id]
-    return _answer_from_chunks(question, rag.retrieve_multi(db, pool, question, k=5, relevance=True), user_id=user_id)
+    from app.services.llm import pii_scope
+    from app.services.pii import from_team, team_of_users
+    chunks = rag.retrieve_multi(db, pool, question, k=5, relevance=True)
+    with pii_scope(from_team(team_of_users(db, pool))):
+        return _answer_from_chunks(question, chunks, user_id=user_id)
 
 
 def answer_questions(db: Session, user_id: int, questions: list, limit: int = 40, kb_user_ids: list = None) -> dict:
@@ -72,10 +79,15 @@ def answer_questions(db: Session, user_id: int, questions: list, limit: int = 40
     pool = kb_user_ids or [user_id]   # base COMMUNE de l'organisation
     # 1) Récupération RAG SÉQUENTIELLE (la session SQLAlchemy n'est pas thread-safe)
     prepared = [(q, rag.retrieve_multi(db, pool, q, k=5, relevance=True)) for q in qs]
-    # 2) Réponses LLM EN PARALLÈLE (I/O-bound, aucun accès DB) — latence divisée
+    # 2) Réponses LLM EN PARALLÈLE (I/O-bound, aucun accès DB) — latence divisée. Noms des
+    #    salariés masqués avant l'IA (documents du savoir-faire compris), coût journalisé.
     from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=min(8, len(qs))) as ex:
-        results = list(ex.map(lambda pc: _answer_from_chunks(pc[0], pc[1], user_id=user_id), prepared))
+    from app.services.llm import cost_meter, map_in_context, pii_scope
+    from app.services.pii import from_team, team_of_users
+    pz = from_team(team_of_users(db, pool))
+    with pii_scope(pz), cost_meter("questionnaire", user_id), \
+            ThreadPoolExecutor(max_workers=min(8, len(qs))) as ex:
+        results = map_in_context(ex, lambda pc: _answer_from_chunks(pc[0], pc[1], user_id=user_id), prepared)
     # Panne IA TOTALE → on fait échouer le job (jobs.py rembourse + statut 'error') au lieu
     # de facturer un faux « 0 couvert ». Les erreurs partielles sont exclues de la couverture.
     errors = sum(1 for r in results if r.get("error"))

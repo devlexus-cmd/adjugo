@@ -4,7 +4,7 @@ Router BASE DE CONNAISSANCES + génération assistée (parité TenderCrunch).
 - Base de connaissances : l'entreprise dépose ses documents (mémoires passés, RSE,
   méthodologies…) → indexés (RAG) pour servir de SEULE source au contenu généré.
 - Mémoire IA : pipeline multi-agents (extraction critères → plan → rédaction citée →
-  contrôle conformité), 100% sourcé sur la base de connaissances.
+  contrôle conformité) ; les extraits cités sont affichés (pas de badge « sourcé » : vague 3).
 - Questionnaire : auto-complétion cellule par cellule (RFP/RFI/DDQ) avec sources.
 
 Onboarding "Do It For You" : import en masse pour construire la base rapidement.
@@ -105,7 +105,7 @@ def search(request: Request, req: SearchReq, current_user: User = Depends(get_cu
     return {"results": res, "count": len(res)}
 
 
-# ── Mémoire IA (multi-agents, sourcé) ────────────────────────────────────────
+# ── Dossier de présentation IA (multi-agents) ────────────────────────────────────────
 def _gen_memoire(text: str, current_user: User, db: Session) -> dict:
     # Base COMMUNE de l'organisation (chaque base perso reste inchangée ; on les met en commun
     # pour la génération). Vide → on NE débite PAS un quota pour un livrable 100% « [À compléter] ».
@@ -116,7 +116,7 @@ def _gen_memoire(text: str, current_user: User, db: Session) -> dict:
     # Génération longue → asynchrone (anti-timeout). Le client interroge /api/jobs/{id}.
     consume_analysis(current_user, db)
     from app.services.jobs import create_job, run_in_thread, job_out
-    job = create_job(db, current_user.id, "memoire", "Mémoire technique")
+    job = create_job(db, current_user.id, "memoire", "Dossier de présentation")
     uid = current_user.id
     run_in_thread(job.id, lambda jdb: generate_memoire(jdb, uid, text, kb_user_ids=uids))
     return job_out(job)
@@ -132,7 +132,7 @@ async def memoire_upload(request: Request, file: UploadFile = File(...),
     except ValueError as e:
         raise HTTPException(422, str(e))
     if len((text or "").strip()) < 60:
-        raise HTTPException(422, "DCE trop court pour générer un mémoire.")
+        raise HTTPException(422, "Dossier du marché trop court pour rédiger un dossier de présentation.")
     return _gen_memoire(text, current_user, db)
 
 
@@ -144,7 +144,7 @@ class MemoireText(BaseModel):
 @limiter.limit("20/hour")
 def memoire_text(request: Request, req: MemoireText, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if len((req.dce_text or "").strip()) < 60:
-        raise HTTPException(422, "DCE trop court pour générer un mémoire.")
+        raise HTTPException(422, "Dossier du marché trop court pour rédiger un dossier de présentation.")
     return _gen_memoire(req.dce_text, current_user, db)
 
 

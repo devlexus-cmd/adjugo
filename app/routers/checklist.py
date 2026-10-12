@@ -42,7 +42,8 @@ PIECES_STANDARD = [
      "help": "Certificat en cours de validité délivré par Qualibat/Qualifelec selon votre métier.",
      "help_url": "https://www.qualibat.com/"},
     {"id": "references", "name": "Liste des references / travaux similaires", "category": "administratif", "required": True,
-     "help": "Renseignez vos références dans votre profil Adjugo : elles alimentent le mémoire et le DC2."},
+     "help": ("Préparez la liste de vos travaux similaires (objet, client, année, montant) et déposez-la dans "
+              "« Mes documents » : Adjugo ne la remplit pas à votre place.")},
     {"id": "moyens_humains", "name": "Declaration des moyens humains", "category": "administratif", "required": False,
      "help": "Effectif, organigramme, CV des intervenants clés — souvent demandé au mémoire technique."},
     {"id": "moyens_techniques", "name": "Declaration des moyens techniques", "category": "administratif", "required": False,
@@ -53,8 +54,9 @@ PIECES_STANDARD = [
      "help": "Délégation de pouvoir si le signataire n'est pas le représentant légal. OBLIGATOIRE pour le chef de file d'un groupement."},
     {"id": "dc4", "name": "DC4 - Declaration de sous-traitance", "category": "cerfa", "required": False,
      "help": "Généré par Adjugo si vous déclarez un sous-traitant. À compléter avec sa part du marché."},
-    {"id": "memoire_technique", "name": "Memoire technique", "category": "technique", "required": True,
-     "help": "Généré par Adjugo à partir de l'analyse du DCE. À personnaliser : c'est lui qui fait la note technique."},
+    {"id": "memoire_technique", "name": "Dossier de présentation (mémoire technique)", "category": "technique", "required": True,
+     "help": ("Préparé par Adjugo (Word et PDF, dans le dossier du marché) quand vous générez le dossier. "
+              "À relire et compléter : c'est lui qui fait la note technique, et vous restez responsable de son contenu.")},
     {"id": "dpgf", "name": "DPGF / Bordereau des prix", "category": "technique", "required": True,
      "help": "Générée par Adjugo depuis le chiffrage. Reprenez la trame de l'acheteur si elle est imposée dans le DCE."},
     {"id": "planning", "name": "Planning previsionnel", "category": "technique", "required": False,
@@ -124,6 +126,28 @@ def _convention_item(project, db) -> dict:
     }
 
 
+def _piece_name(ap) -> str:
+    """Nom d'une pièce exigée (l'analyse donne une chaîne ou {"nom": …}) ; '' sinon."""
+    if isinstance(ap, str):
+        return ap.strip()
+    if isinstance(ap, dict):
+        return str(ap.get("nom") or "").strip()
+    return ""
+
+
+def pieces_requises(analysis) -> list:
+    """Pièces exigées par le dossier. L'analyse les range dans `details.pieces_requises` ; les
+    analyses plus anciennes (ou importées) les avaient à la racine : lues en repli. La clé peut
+    valoir null (IA) : toujours une liste, jamais d'erreur."""
+    if not isinstance(analysis, dict):
+        return []
+    det = analysis.get("details") if isinstance(analysis.get("details"), dict) else {}
+    for src in (det.get("pieces_requises"), analysis.get("pieces_requises")):
+        if isinstance(src, list) and src:
+            return [p for p in src if _piece_name(p)]
+    return []
+
+
 def _norm(s: str) -> str:
     """Minuscule + sans accents : un document nommé « décennale » doit matcher le
     mot-clé « decennale ». Sans ça, l'accent casse silencieusement la détection."""
@@ -151,7 +175,9 @@ def match_document(piece_name, documents):
         "moyens_techniques": ["moyens techniques", "materiel", "equipement"],
         "rib": ["rib", "bancaire", "iban", "identite bancaire"],
         "pouvoir": ["pouvoir", "habilitation", "delegation"],
-        "memoire_technique": ["memoire technique", "offre technique", "methodologie"],
+        # « memoire » seul : le fichier généré porte le nom du règlement (« Mémoire justificatif »…).
+        "memoire_technique": ["memoire technique", "memoire", "offre technique", "methodologi",
+                              "note technique", "dossier de presentation"],
         "dpgf": ["dpgf", "bordereau", "prix unitaire", "decomposition"],
         "planning": ["planning", "calendrier", "delai", "gantt"],
     }
@@ -202,17 +228,15 @@ def get_checklist(
         ((Document.project_id == project_id) | (Document.project_id.is_(None))),
     ).all()
 
+    # L'ancienne archive brute du mémoire (« memoire_technique.md », texte avec renvois internes)
+    # n'a jamais compté comme pièce déposable : elle ne la valide pas non plus aujourd'hui.
+    documents = [d for d in documents if d.name != "memoire_technique.md"]
+
     # Construire la checklist
     checklist = []
 
-    # Pieces extraites par l'IA (si analyse faite)
-    ai_pieces = []
-    if project.ai_analysis and isinstance(project.ai_analysis, dict):
-        # `or []` : la clé peut exister avec la valeur null (IA) → sans ça, l'itération
-        # plus bas plante en 500 (« NoneType is not iterable »).
-        ai_pieces = project.ai_analysis.get("pieces_requises") or []
-        if not isinstance(ai_pieces, list):
-            ai_pieces = []
+    # Pièces exigées par le dossier (extraites par l'analyse), lues là où l'analyse les range.
+    ai_pieces = pieces_requises(project.ai_analysis)
 
     # Contexte du marché : réévalue les pièces « conditionnelles » en obligatoires.
     is_travaux = _is_travaux(project)
@@ -226,8 +250,7 @@ def get_checklist(
         contextual["dc4"] = "Groupement avec sous-traitance : DC4 à prévoir le cas échéant."
     # DPGF/BPU imposé par l'acheteur : si une trame figure dans les pièces requises du DCE,
     # il faut la compléter telle quelle — le modèle Adjugo ne sert alors que de chiffrage.
-    _pieces_txt = " ".join(
-        (ap if isinstance(ap, str) else ap.get("nom", "")) for ap in ai_pieces).lower()
+    _pieces_txt = " ".join(_piece_name(ap) for ap in ai_pieces).lower()
     if any(k in _pieces_txt for k in ("dpgf", "bordereau", "bpu", "décomposition", "decomposition")):
         contextual["dpgf"] = ("Trame DPGF/BPU imposée par l'acheteur (détectée dans le DCE) : "
                               "téléchargez-la et complétez-la — n'envoyez pas le modèle Adjugo seul.")
@@ -240,9 +263,20 @@ def get_checklist(
             p["required"] = True
             p["context_note"] = contextual[p["id"]]
 
+    # Le dossier de présentation porte le nom du règlement quand il y est retrouvé mot pour mot.
+    from app.services.memoire_export import DEFAULT_LABEL, memoire_label, is_memoire_name
+    _label = memoire_label(project.ai_analysis)
+    for p in all_pieces:
+        if p["id"] == "memoire_technique" and _label != DEFAULT_LABEL:
+            p["name"] = f"Dossier de présentation ({_label[0].lower() + _label[1:]})"
+
     # Ajouter les pieces IA qui ne sont pas dans la liste standard
     for ap in ai_pieces:
-        name = ap if isinstance(ap, str) else ap.get("nom", "")
+        name = _piece_name(ap)
+        # Le mémoire, sous quelque nom que ce soit (« Mémoire justificatif »…), EST la pièce
+        # « Dossier de présentation » ci-dessus : pas de doublon.
+        if is_memoire_name(name):
+            continue
         # _norm (sans accents) : « Références » de l'IA dédoublonne bien « references »
         # standard — sinon la pièce apparaissait en double et faussait le % de complétion.
         if name and not any(_norm(name) in _norm(p["name"]) for p in all_pieces):
@@ -283,6 +317,22 @@ def get_checklist(
         if item["expired"]:
             item["status"] = "expire"
 
+        # Dossier de présentation préparé par Adjugo mais encore troué ou coupé : il n'est PAS
+        # « disponible » (jamais de « prêt » sur un texte incomplet).
+        if piece["id"] == "memoire_technique" and item["status"] == "ok":
+            _dp = (project.workflow or {}).get("dossier_presentation") if isinstance(project.workflow, dict) else None
+            if isinstance(_dp, dict) and item["document_name"] in (_dp.get("fichiers") or []):
+                n_todo = int(_dp.get("a_completer") or 0) - (1 if _dp.get("coupe") else 0)
+                if _dp.get("coupe") or n_todo > 0:
+                    item["status"] = "a_completer"
+                    parts = []
+                    if _dp.get("coupe"):
+                        parts.append("texte coupé avant la fin")
+                    if n_todo > 0:
+                        parts.append(f"{n_todo} passage{'s' if n_todo > 1 else ''} « À compléter »")
+                    item["context_note"] = ("Préparé par Adjugo, à terminer avant le dépôt : "
+                                            + " et ".join(parts) + " (surligné dans le fichier Word).")
+
         # Les CERFA sont toujours "ok" car generables
         if piece["category"] == "cerfa":
             item["status"] = "generable"
@@ -297,6 +347,7 @@ def get_checklist(
     ok = len([c for c in checklist if c["status"] in ("ok", "generable")])
     manquant = len([c for c in checklist if c["status"] == "manquant"])
     expire = len([c for c in checklist if c["status"] == "expire"])
+    a_completer = len([c for c in checklist if c["status"] == "a_completer"])
 
     return {
         "project_id": project_id,
@@ -308,6 +359,7 @@ def get_checklist(
             "ok": ok,
             "manquant": manquant,
             "expire": expire,
+            "a_completer": a_completer,
             "completion": round(ok / total * 100) if total > 0 else 0,
         }
     }

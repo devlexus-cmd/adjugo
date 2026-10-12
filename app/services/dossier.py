@@ -31,13 +31,15 @@ def save_to_dossier(db, user_id: int, project_id: int, folder: str,
     return doc
 
 
-def replace_in_dossier(db, user_id: int, project_id: int, folder: str,
-                       name: str, content: bytes, mime: str = "application/pdf") -> Document:
-    """Comme save, mais remplace une pièce du même nom dans le même dossier
-    (évite les doublons quand on régénère les CERFA)."""
+def remove_from_dossier(db, user_id: int, project_id: int, folder: str, names) -> int:
+    """Retire du dossier d'un AO les pièces GÉNÉRÉES de ces noms exacts (ex. ancienne archive
+    « memoire_technique.md »). Ne touche à rien d'autre (ni autre dossier, ni autre marché)."""
+    names = [n for n in (names or []) if n]
+    if not names:
+        return 0
     old = db.query(Document).filter(
         Document.user_id == user_id, Document.project_id == project_id,
-        Document.folder == folder, Document.name == name).all()
+        Document.folder == folder, Document.name.in_(names)).all()
     for d in old:
         try:
             get_storage().delete(d.file_key)
@@ -45,4 +47,12 @@ def replace_in_dossier(db, user_id: int, project_id: int, folder: str,
             pass
         db.delete(d)
     db.commit()
+    return len(old)
+
+
+def replace_in_dossier(db, user_id: int, project_id: int, folder: str,
+                       name: str, content: bytes, mime: str = "application/pdf") -> Document:
+    """Comme save, mais remplace une pièce du même nom dans le même dossier
+    (évite les doublons quand on régénère les CERFA)."""
+    remove_from_dossier(db, user_id, project_id, folder, [name])
     return save_to_dossier(db, user_id, project_id, folder, name, content, mime)

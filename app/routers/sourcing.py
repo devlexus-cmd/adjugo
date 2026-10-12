@@ -668,6 +668,43 @@ class DocumentsRequest(BaseModel):
     cotraitants: list[dict] = []   # NormalizedCompany choisis (avec SIRET)
 
 
+# Dossier du coffre où est rangé le dossier de présentation (identifiant inchangé : l'écran
+# l'affiche « Dossier de présentation »). Ancienne archive, jamais reconnue par la liste des pièces.
+MEMOIRE_FOLDER = "Mémoire technique"
+_LEGACY_MEMOIRE_ARCHIVE = "memoire_technique.md"
+
+
+def _archive_memoire(db: Session, user: User, project: Project, dossier: dict, files: dict) -> None:
+    """Range le dossier de présentation (Word + PDF) dans le dossier du marché, sous le nom du
+    règlement, et mémorise son état (passages à compléter, texte coupé) pour la liste des pièces.
+    Remplace la génération précédente (y compris l'ancienne archive .md) ; jamais bloquant."""
+    from datetime import datetime, timezone
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.services.dossier import remove_from_dossier, replace_in_dossier
+    mimes = {"docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+             "pdf": "application/pdf"}
+    try:
+        wf = dict(project.workflow) if isinstance(project.workflow, dict) else {}
+        before = (wf.get("dossier_presentation") or {}).get("fichiers") or []
+        names = [name for name, _b in files.values()]
+        remove_from_dossier(db, user.id, project.id, MEMOIRE_FOLDER,
+                            [n for n in before if n not in names] + [_LEGACY_MEMOIRE_ARCHIVE])
+        for kind, (name, content) in files.items():
+            replace_in_dossier(db, user.id, project.id, MEMOIRE_FOLDER, name, content, mimes.get(kind, ""))
+        etat = dossier.get("memoire_etat") or {}
+        wf["dossier_presentation"] = {
+            "nom": dossier.get("memoire_nom") or "", "fichiers": names,
+            "a_completer": int(etat.get("a_completer") or 0), "coupe": bool(etat.get("coupe")),
+            "genere_le": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        project.workflow = wf
+        flag_modified(project, "workflow")
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logging.getLogger("adjugo").warning("archivage du dossier de présentation (projet %s) : %s", project.id, e)
+
+
 @router.post("/documents")
 @limiter.limit("20/hour")
 def generate_documents(request: Request, req: DocumentsRequest,
@@ -711,26 +748,27 @@ def generate_documents(request: Request, req: DocumentsRequest,
                     "role": lk.role or "sous_traitant",
                 })
 
-    from app.services.llm import tenant_scope
-    with tenant_scope(current_user.id):
+    from app.services.llm import tenant_scope, cost_meter
+    # Coût IA d'un dossier complet (rédaction + fusion des apports) : journalisé, pour décider
+    # plus tard du quota ; rien n'est montré au client.
+    with tenant_scope(current_user.id), cost_meter("dossier de réponse complet", current_user.id):
         dossier = redaction.build_dossier(project.ai_analysis, company_data, verified, project.id,
                                           lang_name=_user_lang_name(current_user, db),
                                           country=_user_country(current_user, db),
                                           db=db, user_id=current_user.id, estimate=project.estimate)
+    memoire_files = dossier.pop("_memoire_files", None) or {}
 
-    # Archiver les CERFA + mémoire dans le dossier de l'AO (coffre-fort)
+    # Archiver les CERFA + le dossier de présentation (Word ET PDF) dans le dossier de l'AO.
     try:
         import base64
         from app.services.dossier import replace_in_dossier
         for c in dossier.get("cerfas", []):
             replace_in_dossier(db, current_user.id, project.id, "CERFA",
                                c["name"], base64.b64decode(c["content_b64"]), "application/pdf")
-        memo = dossier.get("memoire_markdown")
-        if memo:
-            replace_in_dossier(db, current_user.id, project.id, "Mémoire technique",
-                               "memoire_technique.md", memo.encode("utf-8"), "text/markdown")
     except Exception:
         pass
+    if memoire_files:
+        _archive_memoire(db, current_user, project, dossier, memoire_files)
 
     return {
         "cotraitants_verifies": len(verified),

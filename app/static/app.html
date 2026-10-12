@@ -972,7 +972,7 @@
                   <button class="btn primary block" @click="aoDownload()" style="margin-bottom:12px"><i data-lucide="download"></i>Télécharger ({{ ao.dossier.zip_name }})</button>
                   <div class="row wrap" style="gap:6px">
                     <span v-for="c in ao.dossier.cerfas" :key="c.name" class="pill neutral row" style="gap:5px"><i data-lucide="file-text" style="width:13px;height:13px"></i>{{ c.name }}</span>
-                    <span class="pill neutral row" style="gap:5px"><i data-lucide="file-pen-line" style="width:13px;height:13px"></i>dossier de présentation</span>
+                    <span v-if="ao.dossier.memoire_fichiers && ao.dossier.memoire_fichiers.length" class="pill neutral row" style="gap:5px"><i data-lucide="file-pen-line" style="width:13px;height:13px"></i>dossier de présentation</span><button v-if="ao.dossier.memoire_fichiers && ao.dossier.memoire_fichiers.length" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">C'est le <b>« mémoire technique »</b> demandé par l'acheteur, nommé « {{ ao.dossier.memoire_nom }} » comme dans le règlement quand il y figure. Fourni en Word, à relire et compléter, et en PDF ; rangé dans le dossier du marché.</span></button>
                   </div>
                   <p class="muted small" style="margin-top:10px">{{ ao.dossier.memoire_preview }}</p>
                   <!-- Wizard pré-dépôt INTERACTIF : on coche chaque étape, progression suivie -->
@@ -1006,10 +1006,10 @@
                   <div style="max-height:320px;overflow:auto">
                     <div v-for="c in ao.checklist.checklist" :key="c.id" style="padding:5px 0;border-bottom:1px solid var(--hairline)">
                       <div class="row small" style="gap:7px">
-                        <i :data-lucide="c.status==='ok'?'check':c.status==='generable'?'sparkles':c.status==='expire'?'clock':'circle'" :style="c.status==='ok'?'color:var(--success)':c.status==='manquant'?'color:var(--subtle)':c.status==='expire'?'color:var(--warning)':'color:var(--accent-text)'" style="width:15px;height:15px"></i>
+                        <i :data-lucide="c.status==='ok'?'check':c.status==='generable'?'sparkles':c.status==='expire'?'clock':c.status==='a_completer'?'pencil-line':'circle'" :style="c.status==='ok'?'color:var(--success)':c.status==='manquant'?'color:var(--subtle)':(c.status==='expire'||c.status==='a_completer')?'color:var(--warning)':'color:var(--accent-text)'" style="width:15px;height:15px"></i>
                         <span style="flex:1;min-width:0">{{ c.name }}<b v-if="c.required" style="color:#b91c1c"> *</b></span>
                         <button v-if="c.help" class="icon-btn xs" :title="c.help" aria-label="Aide" @click="ao.chkHelp = (ao.chkHelp===c.id?null:c.id)" style="padding:2px"><i data-lucide="help-circle" style="width:14px;height:14px"></i></button>
-                        <span class="pill" :class="c.status==='ok'?'go':c.status==='manquant'?'neutral':c.status==='expire'?'a_etudier':'st-nouveau'" style="font-size:10px">{{ checklistLabel(c.status) }}</span>
+                        <span class="pill" :class="c.status==='ok'?'go':c.status==='manquant'?'neutral':(c.status==='expire'||c.status==='a_completer')?'a_etudier':'st-nouveau'" style="font-size:10px">{{ checklistLabel(c.status) }}</span>
                       </div>
                       <div v-if="c.context_note" class="small" style="color:#b45309;margin:2px 0 0 22px">{{ c.context_note }}</div>
                       <div v-if="ao.chkHelp===c.id" class="muted small" style="margin:4px 0 4px 22px;padding:6px 9px;background:var(--surface-2);border-radius:7px">
@@ -1299,7 +1299,7 @@
                 </div>
 
                 <div class="row wrap" style="margin-top:13px;gap:9px;align-items:center">
-                  <button class="btn primary" @click="aoAssemble()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="combine"></i>Assembler &amp; télécharger</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Fusionne les parts soumises dans le mémoire <b>et joint les pièces des partenaires</b> dans un ZIP, téléchargé directement.</span></button>
+                  <button class="btn primary" @click="aoAssemble()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="combine"></i>Assembler &amp; télécharger</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Fusionne les parts soumises dans le dossier de présentation (le « mémoire technique ») <b>et joint les pièces des partenaires</b> dans un ZIP, téléchargé directement.</span></button>
                   <button v-if="ao.dossier" class="btn" @click="aoDownload()"><i data-lucide="download"></i>Re-télécharger ({{ ao.dossier.zip_name }})</button>
                 </div>
               </div>
@@ -1346,7 +1346,7 @@
             <div class="cb">
               <div v-if="!ao.documents.length" class="muted small">Aucune pièce classée pour l'instant.</div>
               <div v-for="g in ao.documents" :key="g.folder" style="margin-bottom:12px">
-                <div class="row" style="gap:6px;margin-bottom:6px"><i data-lucide="folder" style="width:15px;height:15px;color:var(--muted)"></i><b class="small">{{ g.folder }}</b><span class="muted small">({{ (g.documents||[]).length }})</span></div>
+                <div class="row" style="gap:6px;margin-bottom:6px"><i data-lucide="folder" style="width:15px;height:15px;color:var(--muted)"></i><b class="small">{{ folderLabel(g.folder) }}</b><span class="muted small">({{ (g.documents||[]).length }})</span></div>
                 <div v-for="d in (g.documents||[])" :key="d.id" class="row" style="padding:6px 0 6px 22px;border-bottom:1px solid var(--hairline)">
                   <i data-lucide="file-text" style="width:14px;height:14px;color:var(--muted)"></i>
                   <span class="small" style="flex:1;min-width:0">{{ d.name }}</span>
@@ -1574,7 +1574,15 @@
               <button class="btn primary" @click="srcDownload()"><i data-lucide="download"></i>Télécharger ({{ src.dossier.zip_name }})</button></div>
             <div class="row wrap" style="margin-top:12px;gap:6px">
               <span v-for="c in src.dossier.cerfas" :key="c.name" class="pill neutral row" style="gap:5px"><i data-lucide="file-text" style="width:13px;height:13px"></i>{{ c.name }}</span>
-              <span class="pill neutral row" style="gap:5px"><i data-lucide="file-pen-line" style="width:13px;height:13px"></i>dossier de présentation</span>
+              <span v-if="src.dossier.memoire_fichiers && src.dossier.memoire_fichiers.length" class="pill neutral row" style="gap:5px"><i data-lucide="file-pen-line" style="width:13px;height:13px"></i>dossier de présentation</span><button v-if="src.dossier.memoire_fichiers && src.dossier.memoire_fichiers.length" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">C'est le <b>« mémoire technique »</b> demandé par l'acheteur, nommé « {{ src.dossier.memoire_nom }} » comme dans le règlement quand il y figure. Fourni en Word, à relire et compléter, et en PDF.</span></button>
+            </div>
+            <!-- Avertissements (dossier de présentation coupé, passages à compléter, pièces bloquantes) -->
+            <div v-if="src.dossier.warnings && src.dossier.warnings.length" style="margin-top:10px">
+              <div v-for="(w,i) in src.dossier.warnings" :key="'sw'+i" class="row small" style="gap:6px;align-items:flex-start;padding:7px 9px;border-radius:8px;margin-bottom:5px"
+                   :style="w.startsWith('BLOQUANT')?'background:rgba(220,38,38,.08);color:#b91c1c':'background:rgba(234,179,8,.10);color:#92400e'">
+                <i :data-lucide="w.startsWith('BLOQUANT')?'octagon-alert':'triangle-alert'" style="width:14px;height:14px;flex-shrink:0;margin-top:1px"></i>
+                <span style="flex:1">{{ w }}</span>
+              </div>
             </div>
             <p class="muted small" style="margin-top:10px">{{ src.dossier.memoire_preview }}</p>
           </div>
@@ -1652,7 +1660,7 @@
         <section v-if="view==='kb'">
           <!-- Dépôt de documents — onboarding "Do It For You" -->
           <div class="card pad">
-            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="library" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Votre savoir-faire, indexé et traçable</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo range vos documents pour rédiger vos futures réponses <b>uniquement à partir de votre savoir-faire réel</b> — chaque phrase générée cite sa source. Aucune invention.</span></button></div>
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="library" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Votre savoir-faire, indexé et traçable</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo range vos documents pour que l'IA s'en serve quand elle rédige vos réponses. Elle indique les extraits qu'elle a cités. Relisez chaque fait avant de déposer : vous restez responsable de votre offre.</span></button></div>
             <div class="muted small" style="margin-bottom:13px">Déposez vos <b>anciens dossiers de présentation</b>, fiches RSE, méthodologies, certifications.</div>
             <div class="row wrap" style="gap:8px;align-items:center">
               <select class="inp" v-model="kb.kind" style="width:190px">
@@ -1703,9 +1711,9 @@
             </div>
           </div>
 
-          <!-- Mémoire IA — multi-agents sourcé -->
+          <!-- Dossier de présentation (mémoire technique) rédigé à partir du savoir-faire -->
           <div class="card pad" style="margin-top:14px">
-            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="file-pen-line" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Rédiger un dossier de présentation (sourcé)</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Importez le dossier du marché : l'IA en extrait les exigences, bâtit un plan, rédige <b>en citant votre savoir-faire</b>, puis vérifie la conformité.</span></button></div>
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="file-pen-line" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Rédiger un dossier de présentation</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est le <b>« mémoire technique »</b> demandé par l'acheteur. Importez le dossier du marché : l'IA en extrait les exigences, bâtit un plan et rédige à partir de vos documents, en indiquant les extraits cités. À relire avant le dépôt.</span></button></div>
             <button class="btn primary" @click="$refs.kbMem.click()" :disabled="kb.memoireLoading"><span v-if="kb.memoireLoading" class="spin"></span><i v-else data-lucide="sparkles"></i>Importer le dossier & rédiger</button>
             <input ref="kbMem" type="file" accept=".pdf,.zip,.docx,.txt" class="hidden" @change="kbMemoire">
             <div v-if="kb.memoireLoading" class="muted small" style="margin-top:9px"><span class="spin"></span> Rédaction en cours — cela peut prendre quelques minutes, ne fermez pas la page.</div>
@@ -1713,18 +1721,19 @@
             <div v-if="kb.memoire" style="margin-top:14px">
               <div class="row wrap" style="gap:8px;margin-bottom:10px">
                 <span class="pill" :class="(kb.memoire.conformity && kb.memoire.conformity.score_conformite>=70)?'go':'a_etudier'" v-if="kb.memoire.conformity && kb.memoire.conformity.score_conformite!=null">Conformité {{ kb.memoire.conformity.score_conformite }}/100</span>
-                <span class="pill" :class="kb.memoire.kb_used?'go':'no_go'">{{ kb.memoire.kb_used?'Basé sur votre savoir-faire':'Aucune source utilisée' }}</span>
                 <span class="pill neutral">{{ kb.memoire.n_sections }} sections</span>
+                <span class="muted small" style="align-self:center">Extraits cités par l'IA, à relire<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Sous chaque section : les extraits de vos documents que l'IA a cités. Un extrait cité ne garantit pas que la phrase est exacte : vérifiez chaque chiffre, nom et engagement avant de déposer.</span></button></span>
               </div>
               <div class="strong small" v-if="kb.memoire.objet" style="margin-bottom:8px">Objet : {{ kb.memoire.objet }}</div>
               <div v-for="(s,i) in kb.memoire.sections" :key="'s'+i" style="padding:11px 0;border-top:1px solid var(--hairline)">
                 <div class="strong" style="font-size:13.5px;margin-bottom:5px">{{ i+1 }}. {{ s.titre }}</div>
                 <div class="small" style="white-space:pre-wrap;line-height:1.55;color:var(--text-2)">{{ s.content }}</div>
+                <div v-if="s.coupe" class="row small" style="gap:5px;margin-top:6px;color:var(--warn)"><i data-lucide="alert-triangle" style="width:11px;height:11px"></i><span>Section coupée avant la fin : à terminer</span></div>
                 <div v-if="s.sources && s.sources.length" class="row wrap" style="gap:5px;margin-top:7px">
-                  <span class="muted small">Sources :</span>
+                  <span class="muted small">Extraits cités :</span>
                   <span v-for="src in s.sources" :key="src.ref+s.titre" class="pill neutral" style="font-size:10px" :title="src.excerpt">{{ src.ref }} · {{ src.doc_name }}</span>
                 </div>
-                <div v-else class="row small" style="gap:5px;margin-top:6px;color:var(--warn)"><i data-lucide="alert-triangle" style="width:11px;height:11px"></i><span>Section non sourcée — à étayer avec votre savoir-faire avant dépôt</span></div>
+                <div v-else-if="!s.error" class="muted small" style="margin-top:6px">Aucun extrait cité : vérifiez chaque fait de cette section.</div>
               </div>
               <div v-if="kb.memoire.conformity && kb.memoire.conformity.manques && kb.memoire.conformity.manques.length" class="alert-callout" style="margin-top:12px">
                 <i data-lucide="alert-triangle"></i>
@@ -1735,17 +1744,18 @@
 
           <!-- Questionnaire RFP/RFI/DDQ -->
           <div class="card pad" style="margin-top:14px">
-            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="list-checks" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Répondre à un questionnaire</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo répond à partir de votre savoir-faire, en citant ses sources.</span></button></div>
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="list-checks" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Répondre à un questionnaire</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">L'IA propose une réponse à partir de vos documents et indique les extraits qu'elle a cités. Relisez chaque réponse avant de l'envoyer.</span></button></div>
             <div class="muted small" style="margin-bottom:9px">Collez vos questions, une par ligne.</div>
             <textarea class="inp" v-model="kb.qText" placeholder="Quelle est votre démarche qualité ?&#10;Disposez-vous de certifications environnementales ?&#10;Citez 3 références similaires." style="width:100%;height:90px;padding:9px 12px"></textarea>
             <div class="row" style="margin-top:8px"><button class="btn primary" @click="kbQuestionnaire" :disabled="kb.qLoading"><span v-if="kb.qLoading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répondre</button>
-              <span v-if="kb.qResults" class="muted small" style="margin-left:10px">{{ kb.qResults.covered }}/{{ kb.qResults.count - (kb.qResults.errors||0) }} couvertes ({{ kb.qResults.coverage_rate }}%)<span v-if="kb.qResults.errors" style="color:var(--warn)"> · {{ kb.qResults.errors }} non générée(s)</span></span>
+              <span v-if="kb.qResults" class="muted small" style="margin-left:10px">{{ kb.qResults.covered }}/{{ kb.qResults.count - (kb.qResults.errors||0) }} réponse(s) proposée(s), à relire<span v-if="kb.qResults.errors" style="color:var(--warn)"> · {{ kb.qResults.errors }} non générée(s)</span></span>
               <span v-if="kb.qLoading" class="muted small" style="margin-left:10px"><span class="spin"></span> Rédaction des réponses en cours — quelques minutes, ne fermez pas la page.</span></div>
             <div v-if="kb.qResults" style="margin-top:11px">
               <div v-for="(a,i) in kb.qResults.answers" :key="'q'+i" style="padding:10px 0;border-top:1px solid var(--hairline)">
-                <div class="row small" style="gap:6px;font-weight:600"><i :data-lucide="a.error?'alert-triangle':(a.covered?'circle-check':'circle-help')" :style="a.error?'color:var(--warn)':(a.covered?'color:var(--success)':'color:var(--subtle)')" style="width:14px;height:14px"></i><span>{{ a.question }}</span></div>
+                <div class="row small" style="gap:6px;font-weight:600"><i :data-lucide="a.error?'alert-triangle':(a.covered?'message-square-text':'circle-help')" :style="a.error||a.coupe?'color:var(--warn)':'color:var(--subtle)'" style="width:14px;height:14px"></i><span>{{ a.question }}</span></div>
                 <div class="small" style="margin-top:5px;padding:9px 12px;background:var(--surface-2);border-radius:8px;white-space:pre-wrap;line-height:1.5">{{ a.answer }}</div>
                 <div v-if="a.sources && a.sources.length" class="row wrap" style="gap:5px;margin-top:5px">
+                  <span class="muted small">Extraits cités :</span>
                   <span v-for="src in a.sources" :key="src.ref+i" class="pill neutral" style="font-size:10px" :title="src.excerpt">{{ src.ref }} · {{ src.doc_name }}</span>
                 </div>
               </div>
@@ -1824,7 +1834,7 @@
               <span class="muted small" style="flex:none" aria-live="polite">{{ filteredDocuments.length }} / {{ documents.length }}</span>
             </div>
             <div v-if="filteredDocuments.length" class="t-wrap"><table><thead><tr><th>Document</th><th>Catégorie</th><th>Taille</th><th>Expiration</th><th></th></tr></thead><tbody>
-              <tr v-for="d in filteredDocuments" :key="d.id"><td><b>{{ d.name }}</b><div v-if="d.project_name" class="muted small">{{ d.folder }} · {{ (d.project_name||'').slice(0,40) }}</div></td><td><span class="pill st-nouveau">{{ d.folder || d.category }}</span></td>
+              <tr v-for="d in filteredDocuments" :key="d.id"><td><b>{{ d.name }}</b><div v-if="d.project_name" class="muted small">{{ folderLabel(d.folder) }} · {{ (d.project_name||'').slice(0,40) }}</div></td><td><span class="pill st-nouveau">{{ folderLabel(d.folder) || d.category }}</span></td>
                 <td class="small">{{ koSize(d.file_size) }}</td><td class="small">{{ fmtDate(d.expiration_date) }}</td>
                 <td class="row"><button class="btn icon sm ghost" @click="renameDoc(d)" aria-label="Renommer"><i data-lucide="pencil"></i></button><button class="btn icon sm ghost" @click="downloadDoc(d)" aria-label="Télécharger"><i data-lucide="download"></i></button><button class="btn icon sm ghost" @click="delDoc(d)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button></td></tr>
             </tbody></table></div>
@@ -1890,8 +1900,24 @@
             <div class="frow t3"><div class="field"><label>CA N-1 (€)</label><input type="number" v-model.number="company.ca_n1"></div>
               <div class="field"><label>CA N-2 (€)</label><input type="number" v-model.number="company.ca_n2"></div>
               <div class="field"><label>CA N-3 (€)</label><input type="number" v-model.number="company.ca_n3"></div></div>
-            <div class="sectitle">Collaborateurs<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Vos moyens humains, présentés nommément dans vos dossiers de présentation.</span></button></div>
+            <div class="sectitle">Collaborateurs<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Vos moyens humains, présentés nommément dans vos dossiers de présentation. Leurs <b>noms ne sont pas envoyés à l'IA</b> : pendant la rédaction, chacun est remplacé par sa fonction (« Chef de chantier 1 »), puis son nom est remis à sa place.</span></button></div>
             <div class="muted small" style="margin:-2px 0 8px;padding:8px 10px;background:var(--surface-2);border-radius:8px"><i data-lucide="info" style="width:12px;height:12px;display:inline;vertical-align:-1px"></i> Repris <b>tels quels</b> dans vos dossiers : une <b>fausse déclaration</b> peut faire écarter votre offre.</div>
+            <details class="rn-det" style="margin:0 0 10px">
+              <summary>Note d'information à remettre à vos salariés</summary>
+              <div ref="teamNote" class="small" style="margin-top:8px;padding:10px 12px;background:var(--surface-2);border-radius:8px;line-height:1.55">
+                <p style="margin:0 0 6px"><b>Vos informations dans nos dossiers de candidature</b></p>
+                <p style="margin:0 0 6px">{{ company.name || 'Notre entreprise' }} prépare ses réponses aux marchés publics avec le logiciel Adjugo. Pour présenter l'équipe, nous y enregistrons votre nom, votre fonction, vos qualifications et vos références de chantier.</p>
+                <p style="margin:0 0 6px"><b>Pourquoi :</b> présenter les moyens humains de l'entreprise dans nos dossiers de candidature.</p>
+                <p style="margin:0 0 6px"><b>Qui les voit :</b> les personnes de l'entreprise qui préparent ces dossiers, et l'acheteur public qui reçoit le dossier.</p>
+                <p style="margin:0 0 6px"><b>Intelligence artificielle :</b> Adjugo fait appel à un service d'IA pour aider à rédiger. Votre nom, tel qu'il est enregistré dans l'équipe, ne lui est pas envoyé : il est remplacé par votre fonction (par exemple « Chef de chantier 1 »), puis remis à sa place dans le texte. Votre fonction, vos qualifications et vos références peuvent, elles, lui être transmises.</p>
+                <p style="margin:0 0 6px"><b>Durée :</b> tant que vous faites partie de l'équipe présentée ; nous retirons vos informations quand vous quittez l'entreprise.</p>
+                <p style="margin:0">Vous pouvez demander à consulter, corriger ou retirer ces informations en vous adressant à {{ company.representant_legal || 'la direction' }}. Vous pouvez aussi saisir la CNIL (cnil.fr).</p>
+              </div>
+              <div class="row wrap" style="gap:8px;margin-top:8px;align-items:center">
+                <button type="button" class="btn sm" @click="copyRefText('teamNote', 'Note copiée')"><i data-lucide="copy"></i>Copier le texte</button>
+                <span class="muted small">Modèle à adapter à votre entreprise ; ce n'est pas un conseil juridique.</span>
+              </div>
+            </details>
             <div v-for="(m,i) in (company.team||[])" :key="'tm'+i" class="card pad" style="background:var(--surface-2);margin-bottom:8px;padding:12px">
               <div class="frow"><div class="field" style="margin:0"><label>Nom</label><input v-model="m.nom" placeholder="Yann Tanguy"></div>
                 <div class="field" style="margin:0"><label>Fonction</label><input v-model="m.fonction" placeholder="Conducteur de travaux"></div></div>
@@ -2027,7 +2053,7 @@
               <div class="tag">Le plus choisi</div>
               <h3>Pro</h3><div class="muted small">Pour répondre régulièrement</div>
               <div class="price">129,99€<small>/mois</small></div>
-              <ul><li>30 analyses IA / mois (puis 5 €/analyse)</li><li>Savoir-faire & rédaction IA sourcée</li><li>Projets à venir & partenaires vérifiés</li><li>Formulaires officiels (CERFA, DUME)</li><li>Espace documents 10 Go</li></ul>
+              <ul><li>30 analyses IA / mois (puis 5 €/analyse)</li><li>Savoir-faire & aide à la rédaction</li><li>Projets à venir & partenaires vérifiés</li><li>Formulaires officiels (CERFA, DUME)</li><li>Espace documents 10 Go</li></ul>
               <div class="cur" v-if="plan.plan==='pro'">Votre plan actuel</div>
               <button v-else class="btn primary block" @click="checkout('pro')">Passer au Pro</button>
             </div>
@@ -2158,7 +2184,7 @@
                 <div class="row wrap" style="gap:8px;margin-top:13px">
                   <button class="btn primary" @click="exportConsortium(cs.project_id)" :disabled="cexport[cs.project_id]"><span v-if="cexport[cs.project_id]" class="spin"></span><i v-else data-lucide="download"></i>Exporter le dossier commun</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier ZIP contient le dossier de présentation commun (vos savoir-faire croisés) + les formulaires officiels + les pièces administratives de chaque partenaire.</span></button>
                   <button class="btn" @click="dossierPreview(cs.project_id)"><i data-lucide="list"></i>{{ cpreview[cs.project_id]?'Masquer l\'aperçu':'Aperçu du dossier' }}</button>
-                  <button class="btn" @click="consortiumReportPdf(cs.project_id)"><i data-lucide="file-text"></i>Compte-rendu PDF</button>
+                  <button class="btn" @click="consortiumReportPdf(cs.project_id)"><i data-lucide="file-text"></i>Compte-rendu interne (PDF)</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>Document interne au chef de file</b> : l'avancement du groupement et les apports reçus. Il ne fait pas partie du dossier remis à l'acheteur. Aucun prix par membre n'y figure.</span></button>
                   <button class="btn ghost" @click="openProjectById(cs.project_id)"><i data-lucide="external-link"></i>Ouvrir le marché</button>
                 </div>
                 <!-- Aperçu : ce que contiendra le ZIP, sans le générer -->
@@ -2569,7 +2595,7 @@
           <div v-if="sharedAo.docs.length" class="card pad" style="margin-bottom:14px">
             <b style="font-size:13.5px">Pièces partagées</b>
             <div v-for="d in sharedAo.docs" :key="d.id" class="row" style="padding:8px 0;border-bottom:1px solid var(--hairline);gap:10px;align-items:center">
-              <div style="flex:1;min-width:0"><span class="strong small">{{ d.name }}</span><div class="muted small">{{ d.folder||d.category||'' }}</div></div>
+              <div style="flex:1;min-width:0"><span class="strong small">{{ d.name }}</span><div class="muted small">{{ folderLabel(d.folder)||d.category||'' }}</div></div>
               <a class="btn sm" :href="'/api/invite/'+sharedAo.token+'/doc/'+d.id">Télécharger</a>
             </div>
           </div>
@@ -2596,7 +2622,7 @@
             </div>
             <div class="field"><label>Vos capacités (déclarées par vous, visibles du chef de file)</label><div class="row wrap" style="gap:8px"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.ca_n1" placeholder="Votre CA du dernier exercice (€)" style="flex:1;min-width:200px" aria-label="Votre CA du dernier exercice"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.effectif" placeholder="Effectif" style="width:120px" aria-label="Effectif"></div></div>
             <div class="field"><label>Signataire de votre part</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.representant_legal" placeholder="Représentant légal (nom)" style="flex:1;min-width:160px" aria-label="Représentant légal"><input class="inp" v-model="sharedAo.contrib.signataire_qualite" placeholder="Qualité (gérant, président…)" style="flex:1;min-width:140px" aria-label="Qualité du signataire"></div></div>
-            <div class="field"><label>Paragraphe de présentation</label><textarea class="inp" v-model="sharedAo.contrib.memoire_paragraph" rows="4" placeholder="Votre savoir-faire sur ce lot"></textarea></div>
+            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Paragraphe pour le dossier de présentation</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est le « mémoire technique » commun du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun.</span></button></div><textarea class="inp" v-model="sharedAo.contrib.memoire_paragraph" rows="4" placeholder="Votre savoir-faire sur ce lot"></textarea></div>
             <div class="field"><label>Contact</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.contact.nom" placeholder="Nom" style="flex:1;min-width:130px"><input type="email" class="inp" v-model="sharedAo.contrib.contact.email" placeholder="Email" style="flex:1;min-width:130px"><input type="tel" class="inp" v-model="sharedAo.contrib.contact.telephone" placeholder="Téléphone" style="flex:1;min-width:130px"></div></div>
 
             <div class="field"><label>Mes pièces administratives (attestations, Kbis, formulaire DC2…)</label>
@@ -2620,7 +2646,7 @@
                 <div v-else-if="sharedAo.vault.needClaim" class="small row wrap" style="gap:8px;align-items:center"><span>Rattachez d'abord ce dossier à votre compte pour joindre vos pièces depuis votre coffre-fort.</span><button class="btn sm primary" @click="sharedClaimThenVault()"><i data-lucide="link"></i>Rattacher et joindre</button></div>
                 <div v-else-if="!sharedAo.vault.docs.length" class="muted small">Aucun document dans votre coffre-fort. Ajoutez-en depuis « Mes documents ».</div>
                 <div v-for="d in sharedAo.vault.docs" :key="'vd'+d.id" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
-                  <span style="flex:1;min-width:0">{{ d.name }}<span class="muted"> · {{ d.folder||d.category||'' }}<span v-if="d.expiration_date"> · expire le {{ fmtDate(d.expiration_date) }}</span></span></span>
+                  <span style="flex:1;min-width:0">{{ d.name }}<span class="muted"> · {{ folderLabel(d.folder)||d.category||'' }}<span v-if="d.expiration_date"> · expire le {{ fmtDate(d.expiration_date) }}</span></span></span>
                   <button class="btn sm" @click="sharedFromVault(d)" :disabled="sharedAo.busy"><i data-lucide="paperclip"></i>Joindre</button>
                 </div>
               </div>
@@ -2883,6 +2909,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-+YupJKtZnX5TpZ1N09XoJa6cI2cNeXDchaqQp/2sA6QdmqjnBm8ad3nTzZT41Imn" defer></script>
+<script src="/static/app.js" integrity="sha384-t1a4TNKmMGhxkjZ654c6v6L2r7UJEe6+m4tc9Q5AwqUAGR6XfcHAfYox9BdBFYln" defer></script>
 </body>
 </html>
