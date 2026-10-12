@@ -452,7 +452,7 @@
               <span class="pill neutral" style="font-size:11px">{{ grilleResume(aoGrille()) }}</span></div>
             <div class="cb"><grille-carte :key="'gn'+ao.project.id" :g="aoGrille()" :edit="true" :busy="ao.grilleBusy" @choix="aoGrilleChoix"></grille-carte></div>
           </div>
-          <div v-else-if="aoDceAvailable()" class="card pad muted small" style="margin-top:14px"><i data-lucide="list-checks" style="width:14px;height:14px;vertical-align:-2px"></i> Comment vous serez noté : cette analyse est antérieure à la lecture des critères dans le règlement. Ré-analysez le dossier pour les retrouver, avec leur phrase.</div>
+          <div v-else-if="aoDceAvailable() && ao.project.ai_analysis.dce_excerpt" class="card pad muted small" style="margin-top:14px"><i data-lucide="list-checks" style="width:14px;height:14px;vertical-align:-2px"></i> Comment vous serez noté : cette analyse est antérieure à la lecture des critères dans le règlement. Ré-analysez le dossier pour les retrouver, avec leur phrase.</div>
 
           <!-- Répondre à plusieurs ? — score de groupement, manques du dossier, candidats, simulation (co-traitance v2) -->
           <div v-if="ao.project.ai_analysis" class="card" style="margin-top:14px;border:1.5px solid var(--accent)">
@@ -2896,6 +2896,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-uPE5cxnxroW3UKhc/B+pwS8JvJA89cPN+ZJw1qpEwQJvbwJA/pjmUBa0Wv1+FlII" defer></script>
+<script src="/static/app.js" integrity="sha384-3usJHlP5nlHOB94KdQZk0DT3jVkvdzzpCUz9ER0uarf1pIfuc9cR+Qm9ki4y7bDk" defer></script>
 </body>
 </html>

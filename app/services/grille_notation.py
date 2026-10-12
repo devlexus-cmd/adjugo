@@ -19,6 +19,7 @@ visite obligatoire. Stockés dans l'analyse : ils serviront au compteur de l'ate
 
 Rien ici n'appelle l'IA ni le réseau : fonctions pures sur le texte déjà extrait.
 """
+import bisect
 import copy
 import re
 from typing import Optional
@@ -105,20 +106,32 @@ def _flat_breaks(s: str):
 
 
 class _Piece:
-    __slots__ = ("nom", "type", "libelle", "flat", "low", "idx", "breaks")
+    __slots__ = ("nom", "type", "libelle", "flat", "low", "idx", "breaks", "cuts")
 
     def __init__(self, idx, nom, kind, texte):
         self.idx, self.nom, self.type = idx, nom or "", kind
         self.libelle = dp.label(kind)
         self.flat, self.breaks = _flat_breaks(texte)
         self.low = _fold(self.flat)
+        # Fins de phrase (blanc qui suit . ; ! ?), calculées une fois : recherche par bisection.
+        self.cuts = [m.start() for m in _BOUND.finditer(self.flat)]
+
+    def sentence(self, a: int, b: int) -> tuple:
+        """Même résultat que _sentence_bounds(self.flat, a, b), sans relire le texte."""
+        i = bisect.bisect_left(self.cuts, a)
+        j = bisect.bisect_left(self.cuts, b)
+        return (self.cuts[i - 1] + 1 if i else 0), (self.cuts[j] if j < len(self.cuts) else len(self.flat))
 
     def line_phrase(self, a: int, b: int) -> tuple:
         """(début, phrase) de la ligne ∩ phrase qui contient [a, b] (repli : la phrase)."""
-        s, e = _sentence_bounds(self.flat, a, b)
-        ls = max([x for x in self.breaks if x <= a] or [0])
-        le = min([x for x in self.breaks if x >= b] or [len(self.flat)])
-        if not any(a < x < b for x in self.breaks):
+        s, e = self.sentence(a, b)
+        br = self.breaks
+        i = bisect.bisect_right(br, a)
+        ls = br[i - 1] if i else 0
+        j = bisect.bisect_left(br, b)
+        le = br[j] if j < len(br) else len(self.flat)
+        inside = bisect.bisect_right(br, a) < bisect.bisect_left(br, b)     # un retour à la ligne dans ]a, b[
+        if not inside:
             s, e = max(s, ls), min(e, le)
         s, e = _clip(self.flat, s, e, a, b)
         raw = self.flat[s:e]
@@ -452,7 +465,7 @@ def _limit_word_near(p: _Piece, a: int, b: int, kind: str):
     """Position d'un mot de LIMITE rattaché au nombre : dans la même proposition, juste avant
     (« ne devra pas excéder 10 pages ») ou juste après (« 10 pages A4 maximum »). « Le CCTP
     comporte 45 pages et les pénalités sont plafonnées » n'est pas une limite."""
-    s, e = _sentence_bounds(p.flat, a, b)
+    s, e = p.sentence(a, b)
     before = p.low[max(s, a - 45):a]
     cut = [m.end() for m in _CLAUSE_CUT.finditer(before)]
     b0 = max(s, a - 45) + (cut[-1] if cut else 0)
@@ -501,7 +514,7 @@ def _limites(scope: list) -> list:
                     val = _int(m.group(1))
                 except ValueError:
                     continue
-                s, e = _sentence_bounds(p.flat, m.start(), m.end())
+                s, e = p.sentence(m.start(), m.end())
                 before = p.low[max(s, m.start() - 35):m.start()]
                 after = p.low[m.end():min(e, m.end() + 30)]
                 # « minimum 2 pages », « au moins 3 pages » : un plancher, pas une limite.
@@ -598,6 +611,36 @@ def _fmt_total(v: float) -> str:
     return str(int(v)) if float(v).is_integer() else str(round(v, 2)).replace(".", ",")
 
 
+def _pond_message(g: dict, pond: str, partenaire: bool = False) -> str:
+    """Phrase d'état de la pondération, pour le chef de file ou (partenaire=True) pour les
+    membres du groupement, qui lisent la grille sans pouvoir la modifier."""
+    cpt = g.get("compteurs") or {}
+    n_av, n_sp = int(cpt.get("a_verifier") or 0), int(cpt.get("sans_poids") or 0)
+    if pond == "aucun":
+        if not cpt.get("criteres"):
+            return "Aucun critère de jugement n'a été retrouvé : lisez le règlement de la consultation."
+        return ("Aucun critère n'est retenu : le chef de file les a tous retirés." if partenaire
+                else "Aucun critère n'est retenu : vous les avez tous retirés.")
+    if pond == "non_ponderes":
+        return MSG_NON_PONDERES_ORDRE if (g.get("ordre") or {}).get("indique") is True else MSG_NON_PONDERES
+    if pond != "incomplet":
+        return ""
+    parts = []
+    if n_av:
+        un = n_av == 1
+        tete = "1 critère est à vérifier dans le règlement" if un else f"{n_av} critères sont à vérifier dans le règlement"
+        if partenaire:
+            parts.append(tete + (" : le chef de file doit le confirmer." if un else " : le chef de file doit les confirmer."))
+        else:
+            parts.append(tete + (" : il n'entre dans votre plan qu'une fois confirmé." if un
+                                 else " : ils n'entrent dans votre plan qu'une fois confirmés."))
+    if n_sp:
+        parts.append("Le poids d'un critère n'a pas été retrouvé dans sa phrase : vérifiez-le dans le règlement."
+                     if n_sp == 1 else
+                     f"Le poids de {n_sp} critères n'a pas été retrouvé dans leur phrase : vérifiez-les dans le règlement.")
+    return " ".join(parts)
+
+
 def refresh(g: dict) -> dict:
     """Recalcule, SANS IA et sans le texte, ce qui dépend des lignes et des choix de
     l'utilisateur : lignes du plan, poids retenus, pondération, contrôle du total."""
@@ -619,30 +662,19 @@ def refresh(g: dict) -> dict:
     pending = [ln for ln in lines if ln.get("statut") == A_VERIFIER and not (ln.get("choix_utilisateur") or {}).get("choix")]
     weighted = [ln for ln in plan if ln["_v"] is not None]
     g["compteurs"] = {"criteres": len(lines), "dans_le_plan": len(plan), "a_verifier": len(pending),
+                      "sans_poids": len(plan) - len(weighted),
                       "ecartes": sum(1 for ln in lines if (ln.get("choix_utilisateur") or {}).get("choix") == "ecarte")}
 
     ordre = g.get("ordre") or {}
     if not lines or (not plan and not pending):
         pond = "aucun"
-        msg = ("Aucun critère de jugement n'a été retrouvé : lisez le règlement de la consultation."
-               if not lines else "Aucun critère n'est retenu : vous les avez tous écartés.")
     elif plan and len(weighted) == len(plan) and not pending:
-        pond, msg = "ponderes", ""
+        pond = "ponderes"
     elif not weighted and not pending and not g.get("poids_dans_le_texte"):
         pond = "non_ponderes"
-        msg = MSG_NON_PONDERES_ORDRE if ordre.get("indique") is True else MSG_NON_PONDERES
     else:
         pond = "incomplet"
-        sans_poids = len(plan) - len(weighted)
-        parts = []
-        if pending:
-            parts.append(f"{len(pending)} critère(s) à vérifier dans le règlement : ils n'entrent pas dans "
-                         "votre plan tant que vous ne les avez pas confirmés.")
-        if sans_poids:
-            parts.append(f"Le poids de {sans_poids} critère(s) n'a pas été retrouvé dans sa phrase : "
-                         "vérifiez-le dans le règlement.")
-        msg = " ".join(parts)
-    g["ponderation"] = {"statut": pond, "message": msg}
+    g["ponderation"] = {"statut": pond, "message": _pond_message(g, pond)}
 
     units = {ln["_u"] for ln in weighted}
     total = sum(ln["_v"] for ln in weighted) if weighted else 0.0
@@ -652,8 +684,10 @@ def refresh(g: dict) -> dict:
     elif len(units) > 1 or None in units:
         ct = {"statut": "ecart", "message": "Les poids ne sont pas exprimés dans la même unité : vérifiez dans le règlement."}
     elif len(weighted) < len(plan):
+        n = len(plan) - len(weighted)
         ct = {"statut": "incomplet",
-              "message": f"Total non vérifiable : {len(plan) - len(weighted)} critère(s) sans poids retrouvé."}
+              "message": "Total non vérifiable : " + ("un critère n'a pas de poids retrouvé." if n == 1
+                                                      else f"{n} critères n'ont pas de poids retrouvé.")}
     else:
         unit = next(iter(units))
         attendu = 100.0 if unit == "%" else (ann.get("valeur") if ann else None)
@@ -669,8 +703,9 @@ def refresh(g: dict) -> dict:
                   "message": f"Les poids retrouvés font {_fmt_total(total)} {label} au lieu de {_fmt_total(attendu)} "
                              f"{label} : un critère manque peut-être, vérifiez dans le règlement."}
         ct.update({"total": total, "unite": unit, "attendu": attendu})
-    if pending and ct.get("statut") in ("ok", "non_verifiable"):
-        ct["message"] += f" {len(pending)} ligne(s) à vérifier ne sont pas comptées."
+    if pending and ct.get("statut") == "ok":
+        ct["message"] = ct["message"][:-1] + (", sans la ligne à vérifier." if len(pending) == 1
+                                              else f", sans les {len(pending)} lignes à vérifier.")
     g["controle_total"] = ct
     for ln in lines:
         ln.pop("_v", None)
@@ -712,7 +747,9 @@ def build_grille(details: dict, text: str, pieces: Optional[list] = None) -> dic
                 "libelle": m.get("libelle") or dp.label(m.get("type")),
                 "lu_en_entier": bool(m.get("lu_en_entier"))} for m in pieces if isinstance(m, dict)][:30]
     else:
-        lus = [{"nom": p.nom, "type": p.type, "libelle": p.libelle, "lu_en_entier": None} for p in P][:30]
+        # Texte sans fichier (annonce seule, texte collé) : rien à lister pièce par pièce.
+        lus = []
+    kinds = [x["type"] for x in lus] if lus else [p.type for p in P]
 
     cadre = _cadre(P, scope_cadre)
     g = {
@@ -722,8 +759,8 @@ def build_grille(details: dict, text: str, pieces: Optional[list] = None) -> dic
         "total_annonce": _total_annonce(scope_rc),
         "poids_dans_le_texte": poids_texte,
         "lecture": {"pieces": lus,
-                    "reglement": any(x["type"] == dp.REGLEMENT for x in lus),
-                    "cadre": any(x["type"] == dp.CADRE for x in lus)},
+                    "reglement": any(k == dp.REGLEMENT for k in kinds),
+                    "cadre": any(k == dp.CADRE for k in kinds)},
         "contraintes": {
             "cadre": cadre,
             "fichier_impose": bool(cadre.get("obligatoire")),
@@ -844,7 +881,8 @@ def public_grille(grille: Optional[dict]) -> Optional[dict]:
     pond = grille.get("ponderation") if isinstance(grille.get("ponderation"), dict) else {}
     return {
         "criteres": cr,
-        "ponderation": {"statut": pond.get("statut", ""), "message": pond.get("message", "")},
+        "ponderation": {"statut": pond.get("statut", ""),
+                        "message": _pond_message(grille, pond.get("statut", ""), partenaire=True)},
         "ordre": {"indique": ordre.get("indique"), "phrase": ordre.get("phrase", "")},
         "controle_total": {"statut": ct.get("statut", ""), "message": ct.get("message", "")},
         "contraintes": {

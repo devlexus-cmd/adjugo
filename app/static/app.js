@@ -3689,6 +3689,7 @@ __adjApp.component("grille-carte", {
       return { lignes, pond: g.ponderation || {}, ordre: g.ordre || {}, total: g.controle_total || {},
         impose: !!c.fichier_impose, msgImpose: c.message_fichier || "",
         phraseOblig: (cad.obligatoire && cad.obligatoire.phrase) || c.phrase_obligation || "",
+        cadreSource: (cad.obligatoire && cad.obligatoire.source) || cad.source || "",
         cadreFourni: cad.fourni != null ? !!cad.fourni : !!c.cadre_fourni,
         cadreMentionne: cad.mentionne != null ? !!cad.mentionne : !!c.cadre_mentionne,
         cadrePhrase: cad.phrase || "", limites: lim, visite: vis,
@@ -3717,7 +3718,7 @@ __adjApp.component("grille-carte", {
     + '<p v-if="vm.pond.message" class="muted small gn-note">{{ vm.pond.message }}</p>'
     + '<div v-if="alerteTotal" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ vm.total.message }}</span></div>'
     + '<p v-else-if="vm.total.message" class="muted small gn-note">{{ vm.total.message }}</p>'
-    + '<p v-if="vm.lecture && !vm.lecture.reglement" class="muted small gn-note">Adjugo n\'a pas reconnu de règlement de la consultation parmi les pièces lues : comparez avec le règlement.</p>'
+    + '<p v-if="vm.lecture && vm.lecture.pieces.length && !vm.lecture.reglement" class="muted small gn-note">Adjugo n\'a pas reconnu de règlement de la consultation parmi les pièces lues : comparez avec le règlement.</p>'
     + '<details v-if="vm.lignes.length" class="gn-det"><summary>Voir les phrases du règlement</summary>'
     + '<div v-for="l in vm.lignes" :key="\'p\'+(l.id||l.critere)" class="gn-src">'
     + '<div class="gn-src-t">{{ l.critere }}<span v-if="l.poids" class="muted"> · {{ l.poids }}<template v-if="l.poidsVous"> (lu par {{ edit ? "vous" : "le chef de file" }})</template></span></div>'
@@ -3745,7 +3746,7 @@ __adjApp.component("grille-carte", {
     + '<li v-if="vm.visite">Visite obligatoire</li></ul>'
     + '<p v-if="rienImpose" class="muted small gn-note">Ni cadre de réponse, ni limite de pages ou de police, ni visite obligatoire repérés dans le règlement.</p>'
     + '<details v-if="!rienImpose" class="gn-det"><summary>Voir les phrases</summary>'
-    + '<div v-if="vm.phraseOblig || vm.cadrePhrase" class="gn-src"><div class="gn-src-t">Cadre de réponse</div><blockquote class="gn-q">{{ vm.phraseOblig || vm.cadrePhrase }}</blockquote></div>'
+    + '<div v-if="vm.phraseOblig || vm.cadrePhrase" class="gn-src"><div class="gn-src-t">Cadre de réponse</div><blockquote class="gn-q">{{ vm.phraseOblig || vm.cadrePhrase }}</blockquote><div v-if="vm.cadreSource" class="muted small">Trouvée dans : {{ vm.cadreSource }}</div></div>'
     + '<div v-for="(x,i) in vm.limites" :key="\'lp\'+i" class="gn-src"><div class="gn-src-t">{{ lim(x) }}</div><blockquote v-if="x.phrase" class="gn-q">{{ x.phrase }}</blockquote><div v-if="x.source" class="muted small">Trouvée dans : {{ x.source }}</div></div>'
     + '<div v-if="vm.visite" class="gn-src"><div class="gn-src-t">Visite obligatoire</div><blockquote class="gn-q">{{ vm.visite.phrase }}</blockquote><div v-if="vm.visite.source" class="muted small">Trouvée dans : {{ vm.visite.source }}</div></div>'
     + '</details>'
