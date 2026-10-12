@@ -26,9 +26,8 @@ import pytest
 
 from app.services import faits_a_relire as far
 from app.services import faits_sources as fs
-from app.services import llm
 from tests import pieges_sources as ps
-from tests.test_redaction_socle0 import _company, _db, _user_id, fake_llm  # noqa: F401
+from tests.test_redaction_socle0 import _company, _db, fake_llm  # noqa: F401
 from tests.test_redaction_v2_atelier import _attendre, _creer, _ecrire, _etat, _projet
 
 

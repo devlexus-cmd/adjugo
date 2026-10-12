@@ -16,7 +16,9 @@ y ajoute le RAPPROCHEMENT fait par fait avec des sources NUMÉROTÉES et TYPÉES
      [E1]  une personne de l'équipe du profil (nom masqué avant l'IA) : « déclaré par vous » ;
      [C1]  une ligne du chiffrage du marché : « votre estimation » (délais, effectifs prévus,
            quantités SEULEMENT) ;
-     [G1]  l'apport envoyé par un partenaire du groupement : « déclaré par votre partenaire ».
+     [G1]  l'apport envoyé par un partenaire du groupement : « déclaré par votre partenaire » — il
+           n'appuie qu'une phrase qui nomme ce partenaire (ou qui le cite), et une phrase qui nomme un
+           partenaire sans parler de « nous » ne s'appuie que sur son apport (qui affirme quoi).
    Le préfixe F est réservé aux preuves enregistrées ; les autres sont construits à la volée pour
    une rédaction. Le dossier de l'acheteur (« exigé par l'acheteur ») n'a pas de renvoi : il n'appuie
    JAMAIS une phrase sur l'entreprise, seulement une phrase sur le marché, l'acheteur ou le chantier.
@@ -52,7 +54,6 @@ relire ») est montré. On ne dit JAMAIS « vérifié » : on dit où le fait a 
 Limites assumées (à dire dans la bulle (i)) : une invention sans chiffre, nom, certification ni
 matériel passe ; un document peut être périmé ; le contrôle dit où un fait est ÉCRIT, pas qu'il est vrai.
 """
-import hashlib
 import itertools
 import os
 import re
@@ -1111,11 +1112,3 @@ def proposition_declaration(item: dict) -> dict:
         return {"natures": ["reference", "salarie"], "nature": "reference",
                 "valeur": {"objet": "", "acheteur": fait[:200]}}
     return {"natures": [], "nature": "", "valeur": {}}
-
-
-def empreinte_controle(fiches: list) -> str:
-    """Empreinte des sources d'un contrôle (diagnostic : deux contrôles sur les mêmes sources)."""
-    h = hashlib.sha256()
-    for f in fiches or []:
-        h.update(f"{f.ref}|{f.type}|{f.texte}".encode("utf-8"))
-    return h.hexdigest()[:16]

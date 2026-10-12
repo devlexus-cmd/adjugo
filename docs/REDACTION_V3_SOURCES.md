@@ -26,7 +26,7 @@ partent jamais à l'IA ; `tenant_scope` et `pii_scope` sur chaque appel (inchang
 | `[P1]` | une ligne du profil (entreprise, effectif, chiffre d'affaires, qualifications, références) | `declare` | « déclaré par vous » | tout fait |
 | `[E1]` | une personne de l'équipe du profil (nom masqué avant l'IA) | `declare` | « déclaré par vous » | tout fait |
 | `[C1]` | une ligne du chiffrage du marché (phases, tâches, jours ; aucun prix) | `estimation` | « votre estimation » | des nombres seulement |
-| `[G1]` | l'apport ENVOYÉ par un partenaire du groupement | `partenaire` | « déclaré par votre partenaire » | tout fait |
+| `[G1]` | l'apport ENVOYÉ par un partenaire du groupement | `partenaire` | « déclaré par votre partenaire » | une phrase qui nomme ce partenaire, ou qui cite `[G1]` |
 | — | le dossier de l'acheteur (« exigé par l'acheteur ») | `acheteur` | « dans le dossier de l'acheteur » | **jamais** : seulement une phrase sur le marché, l'acheteur ou le chantier |
 
 - Le préfixe `F` est réservé aux preuves enregistrées ; `P`, `E`, `C`, `G` sont construits à chaque
@@ -66,6 +66,9 @@ phrase qui précède) :
    (« Effectif : 12 » = « 12 salariés » ; « 12 m3 de béton et 3 tonnes » ≠ « 12 tonnes ») ; « 85 k€ » =
    « 85 000 € » ; les sigles courts (RGE, MASE, PEFC) ne se trouvent jamais au milieu d'un mot.
    Phrase sur le marché : rapprochée du dossier de l'acheteur (toutes les pièces lues).
+   Entre membres du groupement : une phrase qui nomme un partenaire sans parler de « nous » ne
+   s'appuie que sur l'apport de ce partenaire ; l'apport d'un partenaire n'appuie pas une phrase sur
+   « nous » qui ne le nomme pas (sauf renvoi `[G1]` explicite).
 4. **Recalcul** : un pourcentage ou un total absent tel quel est recalculé à partir des nombres de la
    phrase reliés à une source, puis de ceux des faits cités (jamais une année, jamais un nombre sur
    lui-même) ; juste à l'arrondi écrit près → « calculé à partir de vos faits » (« 6 sur 12 font
