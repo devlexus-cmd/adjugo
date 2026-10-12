@@ -480,7 +480,8 @@ def test_questions_absent_non_verifie_ancienne_analyse_et_borne(client, auth, fa
     r = client.post("/api/sourcing/ask", headers=h, json={"project_id": pid, "question": "Date de la visite ?"})
     assert r.status_code == 200, r.text
     assert r.json()["trouve"] is False and r.json()["sources"] == []
-    assert "ne figure pas" in r.json()["answer"] and "vieux.xls" in r.json()["answer"]
+    assert "Pas trouvé dans les extraits consultés" in r.json()["answer"] and "vieux.xls" in r.json()["answer"]
+    assert "ne figure pas" not in r.json()["answer"]
 
     # Phrase inventée par l'IA : jamais présentée comme une citation.
     def invente(kw):

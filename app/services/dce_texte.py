@@ -17,11 +17,15 @@ Accès commun (à utiliser par l'atelier de rédaction lors de la fusion) :
                                    pages_lues, page_starts, texte}] ou None ;
   • dce_fulltext(project, max_chars=None) → texte complet « === nom === », règlement et cadre de
                                    réponse en tête, ou None ;
-  • dce_reglement(project)     → texte du règlement de la consultation (s'il est reconnu) ou None ;
+  • dce_reglement(project)     → texte du ou des règlements de la consultation (RC, RC modificatif,
+                                   RC de chaque lot : tous, avec leur en-tête « === nom === » quand
+                                   il y en a plusieurs, le modificatif en premier) ou None ;
+  • reglements(pieces)         → les pièces « règlement », modificatifs en premier ;
   • dce_texte_ou_extrait(project) → (texte, "integral" | "extrait" | "") : repli sur l'ancien
                                    extrait de 30 000 caractères pour les analyses antérieures ;
-  • passages(project, question, k) → passages les plus pertinents de TOUTES les pièces (BM25,
-                                   app.services.rag), avec pièce et page ;
+  • passages(project, question, k) → passages les plus pertinents de TOUTES les pièces (BM25
+                                   sans accents ni pluriels : « penalites » retrouve « pénalité »),
+                                   avec pièce et page ;
   • couverture(project)        → ce qui a été lu (message, pièces non lues et raisons).
 Le texte rendu par ces fonctions est la source contre laquelle toute citation est vérifiée
 (analysis.citation_guard).
@@ -30,11 +34,12 @@ import gzip
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
 import zlib
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict
 
 from app.services import dce_lecture as lec
 from app.services import dce_pieces as dp
@@ -46,11 +51,18 @@ FOLDER_KEY = "lecture"                  # préfixe de clé de stockage : {owner}
 MAX_BUNDLE_BYTES = 128 * 1024 * 1024    # décompression bornée du fichier relu (bombe gzip)
 
 # Petit cache mémoire (process unique) : texte et index de recherche des derniers dossiers lus,
-# pour qu'une série de questions ne relise pas le fichier à chaque fois. Borné en caractères.
-_CACHE_MAX_CHARS = int(os.getenv("LECTURE_CACHE_CARACTERES", "30000000"))
+# pour qu'une série de questions ne relise pas le fichier à chaque fois. Borné en MÉMOIRE estimée :
+# le texte compte 2 octets par caractère (un texte français contient presque toujours « ’ » ou
+# « € », ce qui double la taille d'une chaîne Python) et l'index de recherche INDEX_OCTETS_PAR_CAR
+# octets par caractère (mesuré avec tracemalloc sur 3 millions de caractères au vocabulaire très
+# varié, pire cas : 10,7 octets par caractère ; construit en ≈ 2 s). Au plus 4 index gardés.
+_CACHE_MAX_BYTES = int(os.getenv("LECTURE_CACHE_MO", "200")) * 1024 * 1024
 _CACHE_MAX_ENTRIES = 32
+_CACHE_MAX_INDEX = 4                     # dossiers dont l'index de recherche est gardé
+TEXTE_OCTETS_PAR_CAR = 2
+INDEX_OCTETS_PAR_CAR = 11
 _CACHE_TTL_S = 1800.0
-_CACHE = OrderedDict()                   # key -> (expire, chars, payload, index|None)
+_CACHE = OrderedDict()                   # key -> (expire, octets, payload, index|None)
 _LOCK = threading.Lock()
 
 
@@ -121,15 +133,25 @@ def _cache_get(key: str):
     return None
 
 
-def _cache_put(key: str, payload: dict, index=None) -> None:
+def _taille(payload: dict, index=None) -> int:
+    """Mémoire estimée d'une entrée du cache (octets) : texte, et index de recherche s'il y en a un."""
     chars = sum(len(p.get("texte") or "") for p in payload.get("pieces") or [])
-    chars *= 2 if index is not None else 1      # l'index de recherche garde une copie des passages
-    if chars > _CACHE_MAX_CHARS:
+    return chars * (TEXTE_OCTETS_PAR_CAR + (INDEX_OCTETS_PAR_CAR if index is not None else 0))
+
+
+def _cache_put(key: str, payload: dict, index=None) -> None:
+    size = _taille(payload, index)
+    if size > _CACHE_MAX_BYTES:
         return
     with _LOCK:
-        _CACHE[key] = (time.monotonic() + _CACHE_TTL_S, chars, payload, index)
+        _CACHE[key] = (time.monotonic() + _CACHE_TTL_S, size, payload, index)
         _CACHE.move_to_end(key)
-        while len(_CACHE) > _CACHE_MAX_ENTRIES or sum(v[1] for v in _CACHE.values()) > _CACHE_MAX_CHARS:
+        # Index de recherche gardés pour les derniers dossiers seulement (les plus lourds).
+        with_idx = [k for k, v in _CACHE.items() if v[3] is not None]
+        for k in with_idx[:-_CACHE_MAX_INDEX] if len(with_idx) > _CACHE_MAX_INDEX else []:
+            exp, _sz, pl, _ix = _CACHE[k]
+            _CACHE[k] = (exp, _taille(pl), pl, None)
+        while len(_CACHE) > _CACHE_MAX_ENTRIES or sum(v[1] for v in _CACHE.values()) > _CACHE_MAX_BYTES:
             _CACHE.popitem(last=False)
 
 
@@ -185,12 +207,32 @@ def dce_fulltext(project, max_chars: int = None) -> str:
     return texte or None
 
 
+_MODIFICATIF = ("modif", "rectif", "additif", "erratum", "complement", "avenant", "report")
+
+
+def est_modificatif(piece: dict) -> bool:
+    """Pièce qui modifie le dossier (RC modificatif, rectificatif, additif, erratum) : souvent la
+    date limite reportée ; à lire AVANT la pièce d'origine."""
+    return any(m in dp.fold(str(piece.get("nom") or "")) for m in _MODIFICATIF)
+
+
+def reglements(pieces: list) -> list:
+    """Les pièces « règlement de la consultation » lues (RC, RC modificatif, RC de chaque lot…),
+    les modificatifs en premier, puis dans l'ordre du dossier."""
+    regs = [p for p in pieces or [] if p.get("type") == dp.REGLEMENT and (p.get("texte") or "").strip()]
+    return [p for p in regs if est_modificatif(p)] + [p for p in regs if not est_modificatif(p)]
+
+
 def dce_reglement(project) -> str:
-    """Texte du règlement de la consultation, s'il est reconnu parmi les pièces lues."""
-    for p in dce_pieces_text(project) or []:
-        if p.get("type") == dp.REGLEMENT and p.get("texte"):
-            return p["texte"]
-    return None
+    """Texte du règlement de la consultation : TOUS les règlements reconnus parmi les pièces lues
+    (le modificatif en premier), chacun précédé de « === nom === » s'il y en a plusieurs ; None
+    s'il n'y en a aucun."""
+    regs = reglements(dce_pieces_text(project) or [])
+    if not regs:
+        return None
+    if len(regs) == 1:
+        return regs[0]["texte"]
+    return "\n\n".join(dp.header(p.get("nom")) + "\n" + p["texte"] for p in regs)
 
 
 def dce_texte_ou_extrait(project) -> tuple:
@@ -213,9 +255,56 @@ def couverture(project) -> dict:
 
 
 # ── Recherche des passages pertinents (questions-réponses, atelier) ────────────────────
+#
+# BM25 lexical (sans IA, sans réseau), avec une normalisation COMMUNE au dossier et à la question :
+# minuscules, accents retirés, apostrophes, pluriels et terminaisons muettes (« pénalités »,
+# « penalites », « PÉNALITÉ » donnent le même mot). Index compact (tableaux d'entiers) : un dossier
+# de 6 millions de caractères tient en quelques dizaines de Mo.
 
 PASSAGE_CHARS = 1400                     # taille cible d'un passage
-_Row = namedtuple("_Row", "id doc_id doc_name ordinal user_id text")
+_K1, _B = 1.5, 0.75
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _stem(w: str) -> str:
+    """Racinisation française légère et symétrique : pluriels (s, x, -aux → -al) et « e » muets
+    finaux (« fixées » → « fixe », « pénalité » → « penalit »)."""
+    if len(w) > 4 and w.endswith("aux"):
+        w = w[:-3] + "al"
+    elif len(w) > 3 and w[-1] in "sx":
+        w = w[:-1]
+    while len(w) > 4 and w.endswith("e"):
+        w = w[:-1]
+    return w
+
+
+def _fold_table() -> dict:
+    """Table de repli des lettres accentuées (Latin-1 et Latin étendu A) vers l'ASCII, pour
+    str.translate (bien plus rapide qu'une normalisation caractère par caractère)."""
+    import unicodedata
+    t = {0x153: "oe", 0x152: "oe", 0xE6: "ae", 0xC6: "ae", 0xDF: "ss", 0x2019: "'", 0x2018: "'"}
+    for cp in range(0xC0, 0x250):
+        if cp in t:
+            continue
+        d = "".join(x for x in unicodedata.normalize("NFKD", chr(cp)) if not unicodedata.combining(x))
+        if d and d != chr(cp) and d.isascii():
+            t[cp] = d.lower()
+    return t
+
+
+_FOLD = _fold_table()
+
+
+def norm_tokens(text: str) -> list:
+    """Mots d'un texte pour la recherche : sans accents, en minuscules, racinisés ; sans mots vides
+    ni petits nombres (numéros d'article, années partielles)."""
+    from app.services.rag import _STOP
+    out = []
+    for w in _WORD_RE.findall((text or "").lower().translate(_FOLD)):
+        if len(w) <= 2 or w in _STOP or (w.isdigit() and len(w) < 4):
+            continue
+        out.append(_stem(w))
+    return out
 
 
 def _chunks(texte: str, target: int = PASSAGE_CHARS) -> list:
@@ -238,15 +327,49 @@ def _chunks(texte: str, target: int = PASSAGE_CHARS) -> list:
     return out
 
 
-def _index(payload: dict):
-    from app.services import rag
-    rows, spans = [], []
+def _index(payload: dict) -> dict:
+    from array import array
+    from collections import Counter
+    spans, doc_len, postings, total = [], array("I"), {}, 0
     for pi, p in enumerate(payload.get("pieces") or []):
         t = p.get("texte") or ""
-        for j, (a, b) in enumerate(_chunks(t)):
-            rows.append(_Row(len(rows), pi, p.get("nom") or "", j, 0, t[a:b]))
+        for a, b in _chunks(t):
+            toks = norm_tokens(t[a:b])
+            i = len(spans)
             spans.append((pi, a, b))
-    return {"bm25": rag._build_index(rows), "spans": spans}
+            doc_len.append(len(toks))
+            total += len(toks)
+            for w, c in Counter(toks).items():
+                e = postings.get(w)
+                if e is None:
+                    e = postings[w] = (array("I"), array("H"))
+                e[0].append(i)
+                e[1].append(min(c, 65535))
+    n = len(spans)
+    return {"postings": postings, "doc_len": doc_len, "N": n, "avgdl": (total / n) if n else 0.0,
+            "spans": spans}
+
+
+def _search(idx: dict, question: str, k: int, keep=None) -> list:
+    """[(score, numéro du passage)] les k meilleurs, BM25 ; keep(numéro) : passages admis."""
+    import heapq
+    import math
+    n = idx["N"]
+    q = list(dict.fromkeys(norm_tokens(question)))
+    if not n or not q:
+        return []
+    avgdl = idx["avgdl"] or 1.0
+    doc_len, scores = idx["doc_len"], {}
+    for w in q:
+        e = idx["postings"].get(w)
+        if not e:
+            continue
+        df = len(e[0])
+        idf = math.log(1 + (n - df + 0.5) / (df + 0.5))
+        for i, tf in zip(e[0], e[1]):
+            dl = doc_len[i]
+            scores[i] = scores.get(i, 0.0) + idf * (tf * (_K1 + 1)) / (tf + _K1 * (1 - _B + _B * dl / avgdl))
+    return heapq.nlargest(k, ((sc, i) for i, sc in scores.items() if keep is None or keep(i)))
 
 
 def _index_for(project, payload: dict):
@@ -260,24 +383,25 @@ def _index_for(project, payload: dict):
     return idx
 
 
-def passages(project, question: str, k: int = 8, exclude_types=(), payload: dict = None) -> list:
+def passages(project, question: str, k: int = 8, exclude_types=(), payload: dict = None,
+             exclude_pieces=()) -> list:
     """Les k passages du dossier les plus pertinents pour `question`, dans TOUTES les pièces lues
-    (BM25 lexical, sans IA, sans réseau). Chaque passage : {piece, type, libelle, page, debut,
-    fin, texte, score}. exclude_types : types de pièces déjà remises en entier (ex. règlement)."""
-    from app.services import rag
+    (BM25 normalisé, sans IA, sans réseau). Chaque passage : {piece, type, libelle, page, debut,
+    fin, texte, score, piece_index}. exclude_pieces : numéros des pièces déjà remises EN ENTIER à
+    l'IA (ex. le ou les règlements) ; exclude_types : types de pièces à écarter."""
     payload = payload or charger(project)
     if not payload:
         return []
     idx = _index_for(project, payload)
     pieces = payload.get("pieces") or []
     want = max(1, int(k))
-    hits = rag._bm25_indexed(idx["bm25"], question or "", want * 3 + 6)
+    ex = set(exclude_pieces or ())
+    skip = {i for i, p in enumerate(pieces) if i in ex or p.get("type") in exclude_types}
+    spans = idx["spans"]
     out = []
-    for score, meta in hits:
-        pi, a, b = idx["spans"][meta[0]]
+    for score, i in _search(idx, question or "", want, keep=(lambda j: spans[j][0] not in skip) if skip else None):
+        pi, a, b = spans[i]
         p = pieces[pi]
-        if p.get("type") in exclude_types:
-            continue
         out.append({"piece": p.get("nom") or "", "type": p.get("type"), "libelle": p.get("libelle") or "",
                     "page": lec.page_of(p, a), "debut": a, "fin": b, "texte": (p.get("texte") or "")[a:b],
                     "score": round(score, 3), "piece_index": pi})

@@ -79,6 +79,7 @@ def citation_guard(text_integral: str, extrait: str, min_len: int = 12) -> str:
 _NORM_CACHE = {}
 _NORM_CACHE_MAX = 8
 _NORM_CACHE_MIN_LEN = 20000
+_NORM_CACHE_MAX_CHARS = 12_000_000   # ≈ 24 Mo au plus (deux dossiers au plafond de 6 M caractères)
 import threading as _threading
 _NORM_LOCK = _threading.Lock()
 
@@ -93,8 +94,11 @@ def _norm_cached(text) -> str:
     if hit is not None:
         return hit
     nt = _norm_citation(t)
+    if len(nt) > _NORM_CACHE_MAX_CHARS:
+        return nt
     with _NORM_LOCK:
-        while len(_NORM_CACHE) >= _NORM_CACHE_MAX:
+        while _NORM_CACHE and (len(_NORM_CACHE) >= _NORM_CACHE_MAX
+                               or sum(len(v) for v in _NORM_CACHE.values()) + len(nt) > _NORM_CACHE_MAX_CHARS):
             _NORM_CACHE.pop(next(iter(_NORM_CACHE)), None)
         _NORM_CACHE[key] = nt
     return nt

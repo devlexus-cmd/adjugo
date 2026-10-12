@@ -826,11 +826,12 @@ def grille_choix(request: Request, req: GrilleChoixRequest,
 # ── Q&A IA sur un AO (après import du DCE réel) — sur TOUT le dossier ────────────
 #
 # Le texte intégral rangé (app.services.dce_texte) est interrogé par une recherche des passages
-# pertinents dans TOUTES les pièces (BM25 lexical, app.services.rag) ; le règlement de la
-# consultation est toujours remis (en entier s'il n'est pas démesuré). La réponse cite la pièce et
-# la page ; chaque phrase citée est vérifiée contre le texte (citation_guard) — une phrase non
-# retrouvée n'est jamais présentée comme une citation. Si la réponse n'est pas dans le dossier,
-# l'IA le dit (et Adjugo signale les pièces qui n'ont pas pu être lues).
+# pertinents dans TOUTES les pièces (BM25 sans accents ni pluriels) ; le ou les règlements de la
+# consultation (RC, RC modificatif, RC de chaque lot) sont toujours remis, en entier dans la limite
+# d'ASK_REGLEMENT_MAX, le modificatif en premier. La réponse cite la pièce et la page ; chaque
+# phrase citée est vérifiée contre le texte (citation_guard) — une phrase non retrouvée n'est
+# jamais présentée comme une citation. Si la réponse n'est pas dans les extraits remis, Adjugo dit
+# ce qui a été consulté (jamais « absent du dossier ») et nomme les pièces non lues.
 # Hors quota d'analyses, mais borné par organisation et par jour (app.core.quota).
 
 class AskRequest(BaseModel):
@@ -848,15 +849,17 @@ ASK_SYSTEM = (
 
 ASK_SYSTEM_INTEGRAL = (
     "Tu es un assistant expert des marchés publics. Tu réponds à une question sur un appel d'offres "
-    "à partir des SEULS extraits du dossier de consultation fournis : le règlement de la consultation "
-    "(repère [R]) et les passages des autres pièces les plus proches de la question (repères [P1], "
-    "[P2]…, avec le nom de la pièce et la page).\n"
+    "à partir des SEULS extraits du dossier de consultation fournis : le ou les règlements de la "
+    "consultation (repères [R], ou [R1], [R2]… s'il y en a plusieurs : un règlement modificatif "
+    "l'emporte sur le règlement d'origine) et les passages des autres pièces les plus proches de la "
+    "question (repères [P1], [P2]…, avec le nom de la pièce et la page).\n"
     "Règles :\n"
     "- Réponds de façon précise et concise (montant, délai, clause exacte), en t'appuyant UNIQUEMENT "
     "sur ces extraits. N'invente jamais.\n"
     "- Pour chaque élément de ta réponse, donne la phrase du dossier recopiée MOT POUR MOT (300 "
     "caractères au plus) et son repère. Une phrase qui n'est pas une copie exacte sera rejetée.\n"
-    "- Si la réponse n'est pas dans ces extraits, dis-le clairement (\"trouve\": false).\n"
+    "- Si la réponse n'est pas dans ces extraits, dis-le clairement (\"trouve\": false) : elle n'a pas "
+    "été trouvée dans les extraits fournis — n'écris jamais qu'elle n'existe pas dans le dossier.\n"
     "Réponds UNIQUEMENT en JSON : {\"trouve\": true, \"reponse\": \"...\", "
     "\"citations\": [{\"ref\": \"P1\", \"phrase\": \"...\"}]}"
 )
@@ -886,22 +889,24 @@ def _ask_legacy(project, q: str, lang: str) -> dict:
             "trouve": None, "verifiee": False, "message": MSG_ANCIENNE_ANALYSE}
 
 
-def _verify_citation(phrase: str, ref: str, reg: dict, hits: list, pieces: list, locs: dict):
+def _verify_citation(phrase: str, ref: str, regs: list, hits: list, pieces: list, locs: dict):
     """Source vérifiée d'une phrase citée : {piece, libelle, page, citation} ou None. La phrase doit
-    se trouver dans un des extraits REMIS à l'IA (règlement, passages) : l'IA n'a rien lu d'autre.
-    Repère erroné : la phrase est cherchée dans les autres extraits remis."""
+    se trouver dans un des extraits REMIS à l'IA (règlements, passages) : l'IA n'a rien lu d'autre.
+    regs : [(repère, pièce, texte remis)]. Repère erroné : la phrase est cherchée dans les autres
+    extraits remis."""
     from app.services.analysis import citation_guard, Localisateur
     from app.services.dce_lecture import page_of
     cand = []
     r = (ref or "").strip().upper().strip("[]")
-    if r == "R" and reg:
-        cand.append(("R", reg, reg.get("texte") or "", 0))
-    elif r.startswith("P") and r[1:].isdigit() and 1 <= int(r[1:]) <= len(hits):
+    for key, piece, texte in regs:
+        if r == key:
+            cand.append((key, piece, texte, 0))
+    if r.startswith("P") and r[1:].isdigit() and 1 <= int(r[1:]) <= len(hits):
         k = int(r[1:])
         h = hits[k - 1]
         cand.append((f"P{k}", pieces[h["piece_index"]], h["texte"], h["debut"]))
-    if reg:
-        cand.append(("R", reg, reg.get("texte") or "", 0))
+    for key, piece, texte in regs:
+        cand.append((key, piece, texte, 0))
     for k, h in enumerate(hits, 1):
         cand.append((f"P{k}", pieces[h["piece_index"]], h["texte"], h["debut"]))
     for key, piece, src, base in cand:
@@ -915,23 +920,46 @@ def _verify_citation(phrase: str, ref: str, reg: dict, hits: list, pieces: list,
     return None
 
 
+def _reglements_remis(pieces: list) -> tuple:
+    """Règlements remis à l'IA : TOUS ceux du dossier (RC, RC modificatif, RC de chaque lot), le
+    modificatif en premier, en entier dans la limite d'ASK_REGLEMENT_MAX caractères au total ; un
+    règlement qui n'y tient pas est remis en partie (son début), les suivants pas du tout — leurs
+    passages restent alors cherchés comme ceux des autres pièces. Renvoie ([(repère, pièce, texte
+    remis, en entier ?)], numéros des pièces remises EN ENTIER, à écarter de la recherche)."""
+    from app.services import dce_texte
+    regs = dce_texte.reglements(pieces)
+    index = {id(p): i for i, p in enumerate(pieces)}
+    room, out, entiers = ASK_REGLEMENT_MAX, [], set()
+    for p in regs:
+        t = p.get("texte") or ""
+        if len(t) <= room:
+            out.append((p, t, True))
+            entiers.add(index[id(p)])
+            room -= len(t)
+        elif room >= 4000:
+            out.append((p, t[:room], False))
+            room = 0
+    keys = ["R"] if len(out) == 1 else [f"R{i}" for i in range(1, len(out) + 1)]
+    return [(k, p, t, full) for k, (p, t, full) in zip(keys, out)], entiers
+
+
 def _ask_integral(project, payload: dict, q: str, lang: str) -> dict:
-    from app.services import dce_texte, dce_pieces as _dp
+    from app.services import dce_texte
     from app.services.dce_lecture import couverture
     from app.services.llm import messages_create, MODEL_FAST, cached_text_block, parse_json
     pieces = payload.get("pieces") or []
-    reg = next((p for p in pieces if p.get("type") == _dp.REGLEMENT and p.get("texte")), None)
-    reg_full = bool(reg) and len(reg.get("texte") or "") <= ASK_REGLEMENT_MAX
-    hits = dce_texte.passages(project, q, k=ASK_PASSAGES, payload=payload,
-                              exclude_types=(_dp.REGLEMENT,) if reg_full else ())
+    regs, entiers = _reglements_remis(pieces)
+    hits = dce_texte.passages(project, q, k=ASK_PASSAGES, payload=payload, exclude_pieces=entiers)
     blocks = []
-    if reg:
-        rt = reg["texte"] if reg_full else reg["texte"][:ASK_REGLEMENT_MAX]
-        tag = "en entier" if reg_full else f"début ({ASK_REGLEMENT_MAX} premiers caractères)"
+    head = f"Appel d'offres « {project.name} » (acheteur : {project.client or 'n/d'})."
+    if regs:
+        parts = []
+        for key, p, t, full in regs:
+            tag = "en entier" if full else f"début ({len(t)} premiers caractères)"
+            modif = ", règlement modificatif" if dce_texte.est_modificatif(p) else ""
+            parts.append(f"[{key}] Règlement de la consultation{modif} — pièce « {p.get('nom')} », {tag} :\n<<<\n{t}\n>>>")
         # Préfixe STABLE d'une question à l'autre : mis en cache de prompt (lu à 10 % du prix).
-        blocks.append(cached_text_block(
-            f"Appel d'offres « {project.name} » (acheteur : {project.client or 'n/d'}).\n\n"
-            f"[R] Règlement de la consultation — pièce « {reg.get('nom')} », {tag} :\n<<<\n{rt}\n>>>"))
+        blocks.append(cached_text_block(head + "\n\n" + "\n\n".join(parts)))
     lines = []
     for i, h in enumerate(hits, 1):
         pg = f", page {h['page']}" if h.get("page") else ""
@@ -944,8 +972,8 @@ def _ask_integral(project, payload: dict, q: str, lang: str) -> dict:
                 + "; ".join(f"{m['nom']} ({m['raison']})" for m in manque[:15]))
     tail = ("Passages du dossier les plus proches de la question :\n\n" + ("\n\n".join(lines) or "(aucun)")
             + note + f"\n\nQUESTION : {q}\n\nRéponds en {lang}, en JSON.")
-    if not reg:
-        tail = f"Appel d'offres « {project.name} » (acheteur : {project.client or 'n/d'}).\n\n" + tail
+    if not regs:
+        tail = head + "\n\n" + tail
     blocks.append({"type": "text", "text": tail})
     resp = messages_create(model=MODEL_FAST, max_tokens=ASK_MAX_TOKENS, temperature=0,
                            system=ASK_SYSTEM_INTEGRAL, messages=[{"role": "user", "content": blocks}])
@@ -958,17 +986,30 @@ def _ask_integral(project, payload: dict, q: str, lang: str) -> dict:
     trouve = data.get("trouve")
     reponse = str(data.get("reponse") or "").strip()
     sources, seen, locs = [], set(), {}
+    reg_src = [(k, p, t) for k, p, t, _full in regs]
     for c in (data.get("citations") or [])[:8]:
         if not isinstance(c, dict):
             continue
-        src = _verify_citation(str(c.get("phrase") or ""), str(c.get("ref") or ""), reg, hits, pieces, locs)
+        src = _verify_citation(str(c.get("phrase") or ""), str(c.get("ref") or ""), reg_src, hits, pieces, locs)
         if src and (src["piece"], src["citation"]) not in seen:
             seen.add((src["piece"], src["citation"]))
             sources.append(src)
     out = {"integral": True, "trouve": trouve, "sources": sources, "verifiee": bool(sources),
            "message": "", "couverture": cov["message"]}
     if trouve is False:
-        msg = reponse or "Cette information ne figure pas dans le dossier importé."
+        # Ce qui a été consulté, honnêtement : jamais « absent du dossier » (seuls des extraits ont
+        # été remis à l'IA).
+        nr, nh = len(regs), len(hits)
+        reg_txt = ("le règlement de la consultation" if nr == 1 else f"{nr} règlements de la consultation") if nr else ""
+        if nh == 0:
+            pas_txt = "aucun autre passage du dossier ne contient les mots de la question"
+        elif nh == 1:
+            pas_txt = "le seul passage du dossier proche de la question"
+        else:
+            pas_txt = f"les {nh} passages du dossier les plus proches de la question"
+        consulte = f"{reg_txt} ; {pas_txt}" if reg_txt else pas_txt
+        msg = (f"Pas trouvé dans les extraits consultés ({consulte}). Reformulez la question avec les mots "
+               "du dossier, ou vérifiez dans les pièces.")
         if manque:
             msg += (f" Attention : {len(manque)} pièce{'s' if len(manque) > 1 else ''} n'"
                     f"{'ont' if len(manque) > 1 else 'a'} pas pu être lue{'s' if len(manque) > 1 else ''} en entier "
