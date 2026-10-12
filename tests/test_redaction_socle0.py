@@ -1,7 +1,9 @@
 """
 Rédaction, vague 1 — socle 0 « réparations et promesses honnêtes » (étude rédaction § 6.2).
 
-Chaque test échoue sur le code d'avant (commit f91b9c1) :
+Chaque test échoue sur le code d'avant (commit f91b9c1). Depuis la vague 2, le dossier de
+présentation est rédigé dans l'ATELIER (le moteur qui écrivait tout le mémoire d'un seul appel est
+retiré) : les mêmes garanties y sont vérifiées.
  1. l'équipe arrive au dossier de présentation, ses NOMS ne partent jamais à l'IA (faux client IA
     qui reçoit le prompt), y compris quand un document du savoir-faire les contient ;
  2. la liste des pièces lit les pièces exigées là où l'analyse les range (details), sans casser
@@ -202,9 +204,45 @@ def test_pseudonymiseur_ni_mauvaise_attribution_ni_mot_courant_abime():
     assert pz.unmask(m) == txt                     # « M. Martin » de la mairie reste « M. Martin »
 
 
+def _atelier(client, h, pid):
+    r = client.post(f"/api/atelier/{pid}", headers=h, json={})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def _attendre_tache(client, h, pid, jid):
+    for _ in range(200):
+        j = client.get(f"/api/atelier/{pid}/taches/{jid}", headers=h).json()
+        if j["status"] in ("done", "error"):
+            return j
+        time.sleep(0.05)
+    raise AssertionError("tâche jamais terminée")
+
+
+def _rediger_tout(client, h, pid):
+    r = client.post(f"/api/atelier/{pid}/rediger", headers=h, json={})
+    assert r.status_code == 202, r.text
+    return _attendre_tache(client, h, pid, r.json()["tache"]["id"])
+
+
+def _ecrire_tout(client, h, pid, texte, valider=False):
+    st = client.get(f"/api/atelier/{pid}", headers=h).json()
+    for sec in st["sections"]:
+        base = (sec.get("version_courante") or {}).get("id")
+        r = client.put(f"/api/atelier/{pid}/sections/{sec['id']}/texte", headers=h,
+                       json={"texte": texte, "base_version_id": base})
+        assert r.status_code == 200, r.text
+        if valider:
+            r = client.post(f"/api/atelier/{pid}/sections/{sec['id']}/valider", headers=h,
+                            json={"version_id": r.json()["version_courante"]["id"]})
+            assert r.status_code == 200, r.text
+    return client.get(f"/api/atelier/{pid}", headers=h).json()
+
+
 def test_dossier_route_equipe_presentee_et_aucun_nom_a_l_ia(client, auth, fake_llm):
-    """Bout en bout : profil avec équipe + CV dans le savoir-faire → le prompt ne contient aucun nom,
-    le dossier livré (Word) les contient, remis sans IA à la place des étiquettes."""
+    """Bout en bout : profil avec équipe + CV dans le savoir-faire → l'atelier rédige sans qu'aucun
+    nom ne parte à l'IA ; le dossier livré (Word) les contient, remis sans IA à la place des
+    étiquettes."""
     h = auth["headers"]
     _company(client, h)
     r = client.post("/api/knowledge/text", headers=h, json={
@@ -215,16 +253,17 @@ def test_dossier_route_equipe_presentee_et_aucun_nom_a_l_ia(client, auth, fake_l
     pid = _project(client, h)
     _set_analysis(pid, ANALYSIS)
     fake = fake_llm(_memoire_answer(
-        "# Mémoire technique\n\n## Moyens humains\n[Chef de chantier 1] encadre le chantier [S1]. "
-        "[Conductrice de travaux 1] assure la conduite des travaux."))
-    r = client.post("/api/sourcing/documents", headers=h, json={"project_id": pid, "cotraitants": []})
-    assert r.status_code == 200, r.text
+        "[Chef de chantier 1] encadre le chantier [S1]. [Conductrice de travaux 1] assure la conduite des travaux."))
+    _atelier(client, h, pid)
+    assert _rediger_tout(client, h, pid)["status"] == "done"
     sent = fake.sent()
-    assert fake.calls, "le dossier de présentation doit avoir été demandé à l'IA (simulée)"
+    assert fake.calls, "les parties doivent avoir été demandées à l'IA (simulée)"
     for nom in NOMS:
         assert nom not in sent, f"« {nom} » est parti à l'IA"
     assert "[Chef de chantier 1]" in sent and "12 toitures scolaires" in sent   # l'équipe est bien là
     assert "recopie ces étiquettes" in sent.lower() or "Recopie ces étiquettes" in sent
+    r = client.post("/api/sourcing/documents", headers=h, json={"project_id": pid, "cotraitants": []})
+    assert r.status_code == 200, r.text
     d = r.json()["dossier"]
     assert "Yann Tanguy encadre le chantier" in d["memoire_markdown"]
     assert "[Chef de chantier 1]" not in d["memoire_markdown"]
@@ -233,13 +272,12 @@ def test_dossier_route_equipe_presentee_et_aucun_nom_a_l_ia(client, auth, fake_l
     assert "Yann Tanguy encadre le chantier." in word and "Hélène Le Gall assure" in word
 
 
-def test_entreprise_seule_pas_de_groupement_invente(fake_llm):
-    from app.services.agents import redaction as red
-    fake = fake_llm(_memoire_answer("# Mémoire\n\nTexte."))
-    red.build_dossier({"details": {"intitule_marche": "X"}}, {"name": "Solo SARL", "team": []}, [])
-    prompt = fake.sent()
-    assert "Présentation de l'entreprise" in prompt
-    assert "Présentation du groupement" not in prompt and "co-traitance par lot" not in prompt
+def test_entreprise_seule_pas_de_groupement_invente():
+    from app.services import atelier_plan as ap
+    seule = [s["intitule"] for s in ap.build_plan({"details": {}}, en_groupement=False)["sections"]]
+    assert seule[0] == "Présentation de l'entreprise" and "Présentation du groupement" not in seule
+    grp = [s["intitule"] for s in ap.build_plan({"details": {}}, en_groupement=True)["sections"]]
+    assert grp[0] == "Présentation du groupement"
 
 
 def test_note_d_information_aux_salaries_dans_le_profil():
@@ -282,60 +320,68 @@ Nous intervenons en site occupé [S1]. Équipe de 6 compagnons [S1, S2].
 ```"""
 
 
-def test_export_propre_sans_marque_interne_avec_tableau_et_alerte(fake_llm):
-    from app.services.agents import redaction as red
-    fake_llm(_memoire_answer(MD_SALE))
-    out = red.build_dossier({"details": {"intitule_marche": "X"}}, {"name": "Solo SARL"}, [])
-    assert "[S1" not in out["memoire_markdown"] and "```" not in out["memoire_markdown"]
-    zf = _zip(out)
-    assert "Mémoire technique.docx" in zf.namelist() and "Mémoire technique.pdf" in zf.namelist()
-    assert "memoire_technique.pdf" not in zf.namelist() and not any(n.endswith(".txt") for n in zf.namelist())
-    pdf = _pdf_text(zf.read("Mémoire technique.pdf"))
-    assert "[S1" not in pdf and "S2]" not in pdf and "site occupé." in pdf
-    doc = _docx(zf.read("Mémoire technique.docx"))
+def _ctx_rendu(texte):
+    from app.services import atelier_export as ax
+    return {"titre": "Mémoire technique", "marche": "X", "acheteur": "", "entreprise": "Solo SARL",
+            "date": "Octobre 2026", "sections": [{"id": 1, "numero": "1", "intitule": "Méthodologie", "parents": [],
+                                                  "texte": texte}],
+            "police_rendu": ax.police(None), "ia": True}
+
+
+def test_export_propre_sans_marque_interne_avec_tableau_et_alerte():
+    from app.services import atelier_export as ax
+    from app.services.memoire_export import placeholders
+    ctx = _ctx_rendu(MD_SALE)
+    assert len(placeholders(MD_SALE)) == 2                       # compté : l'export de l'atelier se bloque
+    pdf = _pdf_text(ax.to_pdf(ctx)[0])
+    assert "[S1" not in pdf and "S2]" not in pdf and "site occupé." in pdf and "```" not in pdf
+    doc = _docx(ax.to_docx(ctx))
     assert doc.tables and [c.text for c in doc.tables[0].rows[1].cells] == ["Dépose", "5 j"]
     word = " ".join(p.text for p in doc.paragraphs)
-    assert "[S" not in word and "[À compléter par l'entreprise] : références" in word
+    assert "[S" not in word and "[À compléter par l'entreprise] : références" in word and "```" not in word
     # Le passage à compléter est surligné dans Word.
     hl = [r for p in doc.paragraphs for r in p.runs if r.font.highlight_color is not None]
     assert any("À compléter" in r.text for r in hl)
-    assert any("2 passages « À compléter »" in w for w in out["warnings"]), out["warnings"]
-    assert out["memoire_etat"] == {"a_completer": 2, "coupe": False}
 
 
-def test_panne_ia_aucun_message_technique_dans_le_livrable(fake_llm, monkeypatch):
-    from app.services.agents import redaction as red
+def test_panne_ia_aucun_message_technique_dans_le_livrable(client, auth, fake_llm, monkeypatch):
+    h = auth["headers"]
+    pid = _project(client, h, "Marché panne")
+    _set_analysis(pid, {"details": {"intitule_marche": "Marché panne"}})
 
     def boom(**kw):
         raise RuntimeError("Error code: 529 overloaded_error — request_id=req_123")
     fake = fake_llm(_memoire_answer("x"))
     monkeypatch.setattr(fake, "create", boom)
-    out = red.build_dossier({"details": {"intitule_marche": "X"}}, {"name": "Solo SARL"}, [])
+    _atelier(client, h, pid)
+    j = _rediger_tout(client, h, pid)
+    assert j["status"] == "error" and "529" not in j["error"] and "req_123" not in j["error"]
+    out = client.post("/api/sourcing/documents", headers=h, json={"project_id": pid}).json()["dossier"]
     zf = _zip(out)
     assert not any("moire" in n.lower() for n in zf.namelist()), zf.namelist()
     everything = " ".join(_pdf_text(zf.read(n)) for n in zf.namelist() if n.endswith(".pdf"))
     assert "indisponible :" not in everything and "529" not in everything and "req_123" not in everything
-    assert out["memoire_markdown"] == "" and out["memoire_fichiers"] == []
-    assert any(w.startswith("BLOQUANT") and "dossier de présentation" in w for w in out["warnings"])
+    assert out["memoire_fichiers"] == []
+    assert any(w.startswith("BLOQUANT") and "Dossier de présentation" in w for w in out["warnings"])
     assert not any("529" in w or "req_123" in w for w in out["warnings"])
 
 
-def test_texte_coupe_signale_et_jamais_livre_comme_complet(fake_llm):
-    from app.services.agents import redaction as red
+def test_texte_coupe_signale_et_jamais_livre_comme_complet(client, auth, fake_llm):
     from app.services.memoire_export import TRUNCATED_NOTE
-    fake_llm(_memoire_answer("# Mémoire\n\n## Méthodologie\nNous commençons par la dépose des", "max_tokens"))
-    out = red.build_dossier({"details": {"intitule_marche": "X"}}, {"name": "Solo SARL"}, [])
-    assert any(w.startswith("BLOQUANT") and "coupé" in w for w in out["warnings"])
-    assert out["memoire_etat"]["coupe"] is True
-    word = " ".join(p.text for p in _docx(_zip(out).read("Mémoire technique.docx")).paragraphs)
-    assert word.rstrip().endswith(TRUNCATED_NOTE)
-
-
-def test_fusion_coupee_repli_sur_les_apports_bruts(fake_llm):
-    from app.services.agents import redaction as red
-    fake = fake_llm(lambda kw: ("Synthèse interrompue au milieu d", "max_tokens"))
-    assert red._fuse_consortium("- Alpha — lot 1", {"intitule_marche": "X"}) == ""
-    assert fake.calls
+    h = auth["headers"]
+    pid = _project(client, h, "Marché coupé")
+    _set_analysis(pid, {"details": {"intitule_marche": "Marché coupé"}})
+    fake_llm(_memoire_answer("Nous commençons par la dépose des", "max_tokens"))
+    st = _atelier(client, h, pid)
+    sid = st["sections"][0]["id"]
+    r = client.post(f"/api/atelier/{pid}/sections/{sid}/rediger", headers=h, json={})
+    assert _attendre_tache(client, h, pid, r.json()["tache"]["id"])["status"] == "done"
+    st = client.get(f"/api/atelier/{pid}", headers=h).json()
+    v = next(s for s in st["sections"] if s["id"] == sid)["version_courante"]
+    assert v["coupe"] is True and v["texte"].rstrip().endswith(TRUNCATED_NOTE)
+    # Jamais livré comme complet : la mention compte comme un passage « À compléter », l'export bloque.
+    assert any(x["code"] == "a_completer" and any(y["section_id"] == sid for y in x["sections"])
+               for x in st["blocage"]["raisons"])
 
 
 def test_section_et_reponse_coupees_marquees(fake_llm):
@@ -350,7 +396,7 @@ def test_section_et_reponse_coupees_marquees(fake_llm):
 
 # ═══ 5. Archivage Word + PDF, reconnu par la liste des pièces ═════════════════════════════════════
 
-def test_archivage_word_pdf_reconnu_par_la_liste_des_pieces(client, auth, fake_llm):
+def test_archivage_word_pdf_reconnu_par_la_liste_des_pieces(client, auth):
     h = auth["headers"]
     _company(client, h, team=[])
     pid = _project(client, h, "Marché archivage")
@@ -365,11 +411,13 @@ def test_archivage_word_pdf_reconnu_par_la_liste_des_pieces(client, auth, fake_l
     ck = client.get(f"/api/checklist/{pid}", headers=h).json()
     item = next(i for i in ck["checklist"] if i["id"] == "memoire_technique")
     assert item["status"] == "manquant"            # l'ancienne archive .md ne compte pas
-    fake_llm(_memoire_answer("# Mémoire\n\n## Méthodologie\nTexte complet et relu."))
+    _atelier(client, h, pid)
+    _ecrire_tout(client, h, pid, "Texte complet et relu.", valider=True)
     r = client.post("/api/sourcing/documents", headers=h, json={"project_id": pid, "cotraitants": []})
     assert r.status_code == 200, r.text
     d = r.json()["dossier"]
     assert "_memoire_files" not in d and d["memoire_nom"] == "Mémoire justificatif"
+    assert not any(w.startswith("BLOQUANT — Dossier de présentation") for w in d["warnings"])
     folders = client.get(f"/api/projects/{pid}/documents", headers=h).json()["folders"]
     names = {doc["name"] for f in folders if f["folder"] == "Mémoire technique" for doc in f["documents"]}
     assert names == {"Mémoire justificatif.docx", "Mémoire justificatif.pdf"}, names
@@ -384,18 +432,32 @@ def test_archivage_word_pdf_reconnu_par_la_liste_des_pieces(client, auth, fake_l
     assert {"Mémoire justificatif.docx", "Mémoire justificatif.pdf"} <= {f["name"] for f in prev["files"]}
 
 
-def test_dossier_avec_trous_ou_coupe_pas_disponible_dans_la_liste(client, auth, fake_llm):
+def test_dossier_avec_trous_ou_coupe_pas_disponible_dans_la_liste(client, auth):
     h = auth["headers"]
     _company(client, h, team=[])
     pid = _project(client, h, "Marché à compléter")
     _set_analysis(pid, {"details": {"intitule_marche": "Marché à compléter"}})
-    fake_llm(_memoire_answer("# Mémoire\n\nRéférences : [À compléter par l'entreprise]", "max_tokens"))
+    _atelier(client, h, pid)
+    st = _ecrire_tout(client, h, pid, "Texte relu.")
+    sec = st["sections"][0]
+    r = client.put(f"/api/atelier/{pid}/sections/{sec['id']}/texte", headers=h,
+                   json={"texte": "Références : [À compléter par l'entreprise]",
+                         "base_version_id": sec["version_courante"]["id"]})
+    assert r.status_code == 200
+    # Export bloqué : rien n'est joint tant qu'une dérogation n'est pas enregistrée.
+    d = client.post("/api/sourcing/documents", headers=h, json={"project_id": pid}).json()["dossier"]
+    assert d["memoire_fichiers"] == []
+    gate = client.get(f"/api/atelier/{pid}", headers=h).json()["blocage"]
+    r = client.post(f"/api/atelier/{pid}/derogation", headers=h,
+                    json={"raison": "completerai_dans_word", "texte": "Références à joindre",
+                          "etat_hash": gate["etat_hash"]})
+    assert r.status_code == 200, r.text
     assert client.post("/api/sourcing/documents", headers=h,
                        json={"project_id": pid, "cotraitants": []}).status_code == 200
     ck = client.get(f"/api/checklist/{pid}", headers=h).json()
     item = next(i for i in ck["checklist"] if i["id"] == "memoire_technique")
     assert item["status"] == "a_completer", item
-    assert "coupé" in item["context_note"] and "1 passage « À compléter »" in item["context_note"]
+    assert "1 passage « À compléter »" in item["context_note"]
     assert ck["stats"]["a_completer"] == 1
     assert 'a_completer: "À terminer"' in _static("app.js")
 
@@ -437,38 +499,23 @@ def test_seuls_les_extraits_reellement_cites_sont_montres(fake_llm):
 
 
 def test_moteur_savoir_faire_noms_masques_dans_les_fils(client, auth, fake_llm):
-    """Pipeline multi-sections (fils parallèles) : la portée « noms masqués » suit chaque fil."""
+    """Rédaction de plusieurs parties (fils parallèles) : la portée « noms masqués » suit chaque fil."""
     h = auth["headers"]
     _company(client, h)
     client.post("/api/knowledge/text", headers=h, json={
         "name": "CV Yann Tanguy", "kind": "reference",
         "text": "Yann Tanguy dirige les chantiers de couverture : sécurité, méthodologie, encadrement."})
-
-    def answer(kw):
-        system = llm._flatten_content(kw.get("system"))
-        if "analyste de la commande publique" in system:
-            return json.dumps({"objet": "Toiture", "criteres_attribution": [], "exigences": []}), "end_turn"
-        if "SOMMAIRE" in system:
-            return json.dumps({"sections": [
-                {"titre": "Encadrement", "objectif": "x", "requete": "chantiers couverture encadrement"},
-                {"titre": "Sécurité", "objectif": "y", "requete": "sécurité chantiers"}]}), "end_turn"
-        if "contrôleur qualité" in system:
-            return "{}", "end_turn"
-        return "[Chef de chantier 1] encadre [S1].", "end_turn"
-    fake = fake_llm(answer)
-    from app.services.agents.memoire import generate_memoire
-    db = _db()
-    try:
-        out = generate_memoire(db, _user_id(auth["email"]), "Règlement : toiture de l'école, sécurité. " * 5)
-    finally:
-        db.close()
+    pid = _project(client, h, "Marché fils")
+    _set_analysis(pid, {"details": {"intitule_marche": "Marché fils"}})
+    fake = fake_llm(lambda kw: ("[Chef de chantier 1] encadre [S1].", "end_turn"))
+    _atelier(client, h, pid)
+    assert _rediger_tout(client, h, pid)["status"] == "done"
     assert len(fake.calls) >= 4
     for nom in NOMS:
         assert nom not in fake.sent(), f"« {nom} » est parti à l'IA"
-    assert all("Yann Tanguy encadre" in s["content"] for s in out["sections"])
+    st = client.get(f"/api/atelier/{pid}", headers=h).json()
+    assert all("Yann Tanguy encadre" in s["version_courante"]["texte"] for s in st["sections"])
 
-
-# ═══ 8. Compte-rendu : document interne au chef de file ═══════════════════════════════════════════
 
 def test_compte_rendu_document_interne_au_chef_de_file():
     from app.services.consortium_report import generate_consortium_report_pdf
@@ -608,14 +655,23 @@ def test_cout_ia_d_un_dossier_complet_journalise(monkeypatch, caplog):
                for r in caplog.records)
 
 
-def test_route_dossier_journalise_son_cout(client, auth, fake_llm, caplog):
+def test_atelier_journalise_son_cout_et_le_cumule(client, auth, fake_llm, caplog):
     h = auth["headers"]
     _company(client, h, team=[])
     pid = _project(client, h, "Marché coût")
     _set_analysis(pid, {"details": {"intitule_marche": "Marché coût"}})
-    fake_llm(_memoire_answer("# Mémoire\n\nTexte."))
+    fake_llm(_memoire_answer("Texte."))
     caplog.set_level(logging.INFO, logger="adjugo")
-    assert client.post("/api/sourcing/documents", headers=h,
-                       json={"project_id": pid, "cotraitants": []}).status_code == 200
-    assert any("Coût IA « dossier de réponse complet »" in r.getMessage() and "1 appel" in r.getMessage()
-               for r in caplog.records)
+    st = _atelier(client, h, pid)
+    r = client.post(f"/api/atelier/{pid}/sections/{st['sections'][0]['id']}/rediger", headers=h, json={})
+    assert _attendre_tache(client, h, pid, r.json()["tache"]["id"])["status"] == "done"
+    assert any("Coût IA « atelier : rédiger »" in rec.getMessage() and "1 appel" in rec.getMessage()
+               for rec in caplog.records)
+    from app.models import DossierPresentation
+    db = _db()
+    try:
+        d = db.query(DossierPresentation).filter(DossierPresentation.project_id == pid).first()
+        assert d.cout_ia["appels"] == 1 and d.cout_ia["tokens_entree"] == 100
+    finally:
+        db.close()
+    assert "cout_ia" not in json.dumps(client.get(f"/api/atelier/{pid}", headers=h).json())   # jamais montré

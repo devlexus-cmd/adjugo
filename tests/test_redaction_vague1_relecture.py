@@ -380,10 +380,19 @@ def test_noms_de_l_equipe_d_un_partenaire_jamais_envoyes_a_l_ia(client, auth, mo
                              "encadrera le lot 2 avec Yann Tanguy."})
     assert r.status_code == 200, r.text
     assert client.post(f"/api/invite/{inv['token']}/contribution/submit").status_code == 200
-    r = client.post("/api/sourcing/documents", headers=h, json={"project_id": pid, "cotraitants": []})
-    assert r.status_code == 200, r.text
+    # Rédaction, vague 2 : l'apport SOUMIS du partenaire est remis à l'IA de l'atelier comme fait
+    # autorisé ; les noms de son équipe (son profil entreprise) sont masqués comme les nôtres.
+    st = client.post(f"/api/atelier/{pid}", headers=h, json={}).json()
+    r = client.post(f"/api/atelier/{pid}/sections/{st['sections'][0]['id']}/rediger", headers=h, json={})
+    assert r.status_code == 202, r.text
+    for _ in range(200):
+        j = client.get(f"/api/atelier/{pid}/taches/{r.json()['tache']['id']}", headers=h).json()
+        if j["status"] in ("done", "error"):
+            break
+        time.sleep(0.05)
+    assert j["status"] == "done", j
     sent = fake.sent()
-    assert any("architecte d'un groupement" in llm._flatten_content(k.get("system")) for k in fake.calls)
+    assert "Lot 2 Électricité" in sent and "habilité B2V" in sent
     for nom in ("Paul Durand", "Durand", "paul.durand", "Yann Tanguy", "Tanguy"):
         assert nom not in sent, f"« {nom} » est parti à l'IA"
     assert "[Chef de chantier 1]" in sent and "[Chef d'équipe électricité 1]" in sent

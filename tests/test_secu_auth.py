@@ -223,10 +223,9 @@ def _wait_job(client, jid, headers):
 def test_ex_membre_ne_lit_plus_les_jobs(client, monkeypatch):
     import app.routers.knowledge as K
 
-    def fake_generate_memoire(db, user_id, text, max_sections=9, kb_user_ids=None):
-        return {"objet": "Marché X", "kb_used": True, "n_sections": 1,
-                "sections": [{"titre": "Méthodo", "texte": "SAVOIR-FAIRE-ORG-A"}]}
-    monkeypatch.setattr(K, "generate_memoire", fake_generate_memoire)
+    def fake_answer_questions(db, user_id, questions, kb_user_ids=None):
+        return {"answers": [{"question": q, "answer": "SAVOIR-FAIRE-ORG-A"} for q in questions]}
+    monkeypatch.setattr(K, "answer_questions", fake_answer_questions)
 
     owner_email, owner_tok = _register(client)
     _set_verified(owner_email)
@@ -259,8 +258,8 @@ def test_ex_membre_ne_lit_plus_les_jobs(client, monkeypatch):
     stranger_email, stranger_tok = _register(client)
 
     # A2 lance une génération (parcours réel, seul le LLM est simulé).
-    r = client.post("/api/knowledge/memoire", headers=a2,
-                    json={"dce_text": "CCTP " + "lorem ipsum " * 20})
+    r = client.post("/api/knowledge/questionnaire", headers=a2,
+                    json={"questions": ["Votre méthodologie ?"]})
     assert r.status_code == 200, r.text
     jid = r.json()["id"]
     r = _wait_job(client, jid, a2)

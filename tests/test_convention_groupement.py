@@ -615,10 +615,29 @@ def test_llm_ne_recoit_jamais_la_convention_et_zip(client, auth, mails, monkeypa
     pid, invs = _groupement(client, auth, n=1)
     c = _gen(client, h, pid).json()
     prompts = []
-    import app.services.agents.redaction as red
-    # La rédaction passe par complete_ex (détection d'un texte coupé) : (texte, motif d'arrêt).
-    monkeypatch.setattr(red, "complete_ex", lambda system, prompt, **k: (
-        prompts.append(system + "\n" + prompt) or ("# Mémoire\n\nTexte.", "end_turn")))
+    import app.services.agents.memoire as moteur
+    # Rédaction, vague 2 : seul l'atelier appelle l'IA (complete_ex : texte, motif d'arrêt).
+    monkeypatch.setattr(moteur, "complete_ex", lambda system, prompt, **k: (
+        prompts.append(system + "\n" + prompt) or ("Texte de la partie.", "end_turn")))
+    r = client.post(f"/api/atelier/{pid}", headers=h, json={})
+    assert r.status_code == 201, r.text
+    sid = r.json()["sections"][0]["id"]
+    r = client.post(f"/api/atelier/{pid}/sections/{sid}/rediger", headers=h, json={})
+    assert r.status_code == 202, r.text
+    import time as _t
+    for _ in range(200):
+        j = client.get(f"/api/atelier/{pid}/taches/{r.json()['tache']['id']}", headers=h).json()
+        if j["status"] in ("done", "error"):
+            break
+        _t.sleep(0.05)
+    assert j["status"] == "done", j
+    assert prompts, "la partie doit avoir été demandée au LLM (mocké)"
+    joined = "\n".join(prompts)
+    assert c["content_hash"] not in joined
+    assert "Convention de groupement" not in joined and "Article 6" not in joined
+    assert "40000" not in joined and "40 000" not in joined          # aucun prix au LLM
+    assert "Le Gall Électricité" in joined and "Lot 2" in joined      # l'apport SOUMIS du partenaire, sans prix
+    n_avant = len(prompts)
     from app.models import Project
     db = _db()
     try:
@@ -626,14 +645,10 @@ def test_llm_ne_recoit_jamais_la_convention_et_zip(client, auth, mails, monkeypa
         analysis = {"details": {"intitule_marche": p.name, "acheteur": "Ville de Lorient"}}
         company = {"name": "Breizh Couverture", "siret": "12345678900011", "representant_legal": "Eliot Viegas",
                    "address": "1 rue du Port", "city": "Lorient", "postal_code": "56100"}
-        out = red.build_dossier(analysis, company, [], project_id=pid, db=db, user_id=None, estimate=None)
+        out = red_build(analysis, company, pid, db)
     finally:
         db.close()
-    assert prompts, "le mémoire doit avoir été demandé au LLM (mocké)"
-    joined = "\n".join(prompts)
-    assert c["content_hash"] not in joined
-    assert "Convention de groupement" not in joined and "Article 6" not in joined
-    assert "40000" not in joined and "40 000" not in joined          # aucun prix au LLM
+    assert len(prompts) == n_avant                                     # le dossier commun n'appelle plus l'IA
     import zipfile
     zf = zipfile.ZipFile(io.BytesIO(base64.b64decode(out["zip_b64"])))
     assert "convention_groupement.pdf" in zf.namelist()
@@ -652,6 +667,11 @@ def test_llm_ne_recoit_jamais_la_convention_et_zip(client, auth, mails, monkeypa
     ck = client.get(f"/api/checklist/{pid}", headers=h).json()
     item = next(i for i in ck["checklist"] if i["id"] == "convention_groupement")
     assert item["status"] == "manquant" and "0/2" in item["context_note"]
+
+
+def red_build(analysis, company, pid, db):
+    import app.services.agents.redaction as red
+    return red.build_dossier(analysis, company, [], project_id=pid, db=db, user_id=None, estimate=None)
 
 
 # ── 5. Cohérence DC1 / ATTRI1 ────────────────────────────────────────────────

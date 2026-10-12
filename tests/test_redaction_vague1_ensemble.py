@@ -7,9 +7,9 @@ grille « Comment vous serez noté » (chantier C).
    présentation » ;
  • une seule façon d'afficher les critères : la carte de la grille. La liste brute proposée
    par l'IA, aux poids jamais contrôlés, ne sort plus vers les partenaires ;
- • les deux moteurs de rédaction ne reçoivent que des poids écrits dans le règlement :
-   le dossier de présentation (moteur A) prend le plan de la grille, ses noms de salariés
-   masqués ; le moteur du savoir-faire (moteur B) passe les critères de l'IA par la grille.
+ • l'atelier (vague 2) ne reçoit que des poids écrits dans le règlement : son plan suit la
+   grille contrôlée, les noms des salariés sont masqués ; le moteur du savoir-faire (fusion de
+   groupement archivée) passe toujours les critères de l'IA par la grille.
 Aucun appel réseau : le client IA est simulé.
 """
 import json
@@ -93,66 +93,69 @@ def test_poids_saisi_par_le_chef_de_file_dit_comme_tel_au_partenaire():
     assert "(lu par le chef de file)" in _static("invite.html") and "x.poids_saisi === true" in _static("app.js")
 
 
-# ── Moteur A : le dossier de présentation ne reçoit que le plan de la grille ──────────
+# ── L'atelier (vague 2) : le plan suit la grille, l'IA ne reçoit que des poids écrits ──────
+# Le moteur A (dossier complet en un appel) est retiré ; le moteur du savoir-faire est devenu le
+# moteur de l'atelier, partie par partie. Ce qui était vérifié ici l'est désormais sur l'atelier.
 
-def test_dossier_de_presentation_plan_de_la_grille_et_noms_masques(fake_llm):  # noqa: F811
-    from app.services.agents import redaction as red
+def _atelier_redige(client, h, pid):
+    import time
+    st = client.post(f"/api/atelier/{pid}", headers=h, json={}).json()
+    r = client.post(f"/api/atelier/{pid}/rediger", headers=h, json={})
+    assert r.status_code == 202, r.text
+    for _ in range(200):
+        j = client.get(f"/api/atelier/{pid}/taches/{r.json()['tache']['id']}", headers=h).json()
+        if j["status"] in ("done", "error"):
+            break
+        time.sleep(0.05)
+    assert j["status"] == "done", j
+    return st
+
+
+def test_dossier_de_presentation_plan_de_la_grille_et_noms_masques(client, auth, fake_llm):  # noqa: F811
+    from tests.test_redaction_socle0 import _project, _set_analysis
+    h = auth["headers"]
+    _company(client, h)
     g = gn.build_grille({"criteres_attribution": PROPOSES}, RC)
     assert next(x for x in g["criteres"] if x["critere"].startswith("Délai"))["statut"] == gn.A_VERIFIER
-    fake = fake_llm(_memoire_answer("# Mémoire\n\n## Moyens humains\n[Chef de chantier 1] encadre le chantier."))
-    out = red.build_dossier({"details": {"intitule_marche": "Couverture", "grille_notation": g,
-                                         "criteres_attribution": PROPOSES}},
-                            {"name": "Breizh Couverture", "team": TEAM}, [])
+    pid = _project(client, h, "Couverture")
+    _set_analysis(pid, {"details": {"intitule_marche": "Couverture", "grille_notation": g,
+                                    "criteres_attribution": PROPOSES}})
+    fake = fake_llm(_memoire_answer("[Chef de chantier 1] encadre le chantier."))
+    st = _atelier_redige(client, h, pid)
+    # Un seul critère technique retrouvé (le prix est jugé sur le bordereau) : découpage proposé,
+    # chaque partie porte le critère et son poids TEL QU'ÉCRIT.
+    assert st["dossier"]["plan_source"] == "grille"
+    assert {(s["critere"], s["poids"]) for s in st["sections"]} == {("Valeur technique", "60 %")}
     sent = fake.sent()
-    assert "Valeur technique (60 %) ; Prix (40 %)" in sent
+    assert "CRITÈRE DE L'ACHETEUR : Valeur technique (poids écrit dans le règlement : 60 %)" in sent
     assert "Délai d'intervention" not in sent and "25 %" not in sent      # ligne à vérifier : hors du plan
     for nom in NOMS:
         assert nom not in sent, f"« {nom} » est parti à l'IA"
-    assert "Yann Tanguy encadre le chantier." in out["memoire_markdown"]
+    texts = [s["version_courante"]["texte"] for s in client.get(f"/api/atelier/{pid}", headers=h).json()["sections"]]
+    assert all("Yann Tanguy encadre le chantier." == t for t in texts)
 
 
-def test_analyse_ancienne_sans_grille_aucun_poids_non_controle_a_l_ia(fake_llm):  # noqa: F811
-    from app.services.agents import redaction as red
-    fake = fake_llm(_memoire_answer("# Mémoire\n\nTexte."))
-    red.build_dossier({"details": {"intitule_marche": "Couverture", "criteres_attribution": PROPOSES}},
-                      {"name": "Solo SARL"}, [])
-    sent = fake.sent()
-    assert "Valeur technique; Prix; Délai d'intervention (poids non contrôlés" in sent
-    assert "60 %" not in sent and "25 %" not in sent
-
-
-# ── Moteur B : les critères de l'IA passent par la grille avant le plan et les sections ─
-
-def test_moteur_savoir_faire_poids_controles_par_la_grille(client, auth, fake_llm):  # noqa: F811
+def test_analyse_ancienne_sans_grille_aucun_poids_non_controle_a_l_ia(client, auth, fake_llm):  # noqa: F811
+    from tests.test_redaction_socle0 import _project, _set_analysis
     h = auth["headers"]
-    _company(client, h)
-    extraits = [{"intitule": c["critere"], "ponderation": c["ponderation"], "extrait": c["extrait"]} for c in PROPOSES]
+    pid = _project(client, h, "Couverture ancienne")
+    _set_analysis(pid, {"details": {"intitule_marche": "Couverture", "criteres_attribution": PROPOSES}})
+    fake = fake_llm(_memoire_answer("Texte."))
+    st = _atelier_redige(client, h, pid)
+    assert st["dossier"]["plan_source"] == "libre" and all(s["poids"] == "" for s in st["sections"])
+    sent = fake.sent()
+    assert "60 %" not in sent and "25 %" not in sent and "Délai d'intervention" not in sent
+    assert "CRITÈRE DE L'ACHETEUR" not in sent
 
-    def answer(kw):
-        system = llm._flatten_content(kw.get("system"))
-        if "analyste de la commande publique" in system:
-            return json.dumps({"objet": "Toiture", "criteres_attribution": extraits, "exigences": []}), "end_turn"
-        if "SOMMAIRE" in system:
-            return json.dumps({"sections": [{"titre": "Méthodologie", "objectif": "x", "requete": "méthodologie"}]}), "end_turn"
-        if "contrôleur qualité" in system:
-            return "{}", "end_turn"
-        return "Notre méthodologie.", "end_turn"
-    fake = fake_llm(answer)
-    from app.services.agents.memoire import generate_memoire
-    db = _db()
-    try:
-        out = generate_memoire(db, _user_id(auth["email"]), RC * 3)
-    finally:
-        db.close()
-    plan_et_sections = "\n".join(
-        llm._flatten_content(m.get("content")) for k in fake.calls
-        if "analyste de la commande publique" not in llm._flatten_content(k.get("system"))
-        for m in k.get("messages") or [])
-    assert "Valeur technique (60 %)" in plan_et_sections and "Prix (40 %)" in plan_et_sections
-    assert "25 %" not in plan_et_sections and "Délai d'intervention" not in plan_et_sections
-    assert "?)" not in plan_et_sections
-    assert out["criteres_attribution"] == [{"intitule": "Valeur technique", "ponderation": "60 %"},
-                                           {"intitule": "Prix", "ponderation": "40 %"}]
+
+def test_moteur_savoir_faire_poids_controles_par_la_grille():
+    """Le plan de l'atelier ne vient jamais de l'IA : il est calculé sur la grille contrôlée."""
+    from app.services import atelier_plan as ap
+    g = gn.build_grille({"criteres_attribution": PROPOSES}, RC)
+    plan = ap.build_plan({"details": {"grille_notation": g}})
+    joined = json.dumps(plan, ensure_ascii=False)
+    assert "25 %" not in joined and "?)" not in joined
+    assert plan["criteres_hors_dossier"] == [{"critere": "Prix", "poids": "40 %", "raison": ap.MSG_PRIX}]
 
 
 def test_moteur_savoir_faire_sans_poids_ecrit_aucune_priorite_supposee():

@@ -87,6 +87,21 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
                                       for r in rows]
     except Exception:
         data["conventions_groupement"], data["accords_convention"] = [], []
+    # Dossiers de présentation (atelier, rédaction vague 2) : plan, parties et texte courant.
+    try:
+        from app.models import DossierPresentation, DossierSection, DossierSectionVersion
+        out = []
+        for d in db.query(DossierPresentation).filter(DossierPresentation.owner_id == uid).all():
+            secs = []
+            for sec in (db.query(DossierSection).filter(DossierSection.dossier_id == d.id)
+                        .order_by(DossierSection.ordre.asc()).all()):
+                v = db.get(DossierSectionVersion, sec.current_version_id) if sec.current_version_id else None
+                secs.append({"numero": sec.numero, "intitule": sec.intitule, "statut": sec.statut,
+                             "retiree": sec.retiree_at is not None, "texte": (v.texte if v else "") or ""})
+            out.append(dict(_ser(d, ["id", "project_id", "plan_source", "created_at"]), parties=secs))
+        data["dossiers_de_presentation"] = out
+    except Exception:
+        data["dossiers_de_presentation"] = []
     # Profil partenaire du réseau Adjugo (vague 3) : tout son contenu, y compris la liste de
     # masquage et le compteur anonyme d'apparitions (jamais QUI a cherché : non stocké).
     try:
@@ -245,7 +260,8 @@ def _erase_member(db, uid: int, owner_id: int) -> None:
     # Co-traitance et simulations portées par ce membre → suivent le propriétaire
     # (registres du tenant : on ne les détruit pas, on ne les laisse pas orphelins).
     for model in (M.ProjectInvite, M.ProjectContribution, M.ContributionPiece,
-                  M.GroupementSimulation, M.GroupementConvention, M.GroupementSignature):
+                  M.GroupementSimulation, M.GroupementConvention, M.GroupementSignature,
+                  M.DossierPresentation, M.DossierSection, M.DossierSectionVersion):
         db.query(model).filter(model.owner_id == uid).update(
             {model.owner_id: owner_id}, synchronize_session=False)
     # JOURNAL D'AUDIT : JAMAIS réécrit. owner_id entre dans le hash de chaque entrée et la
@@ -288,7 +304,7 @@ def _drop_or_anonymize_user(db, uid: int) -> None:
     still_referenced = any(
         db.query(model.id).filter(model.owner_id == uid).first() is not None
         for model in (M.AuditLog, M.ProjectInvite, M.ProjectContribution, M.ContributionPiece,
-                      M.GroupementSimulation, M.GroupementConvention)
+                      M.GroupementSimulation, M.GroupementConvention, M.DossierPresentation)
     ) or db.query(M.Project.id).filter(M.Project.user_id == uid).first() is not None   # pierres tombales
     if not still_referenced:
         db.query(User).filter(User.id == uid).delete(synchronize_session=False)
@@ -340,6 +356,8 @@ def _erase_solo(db, uid: int, org_id) -> list:
     _del(db, M.GroupementSignature, in_p(M.GroupementSignature.project_id),
          M.GroupementSignature.cotraitant_link_id.in_(_link_ids0) if _link_ids0 else None)
     _del(db, M.GroupementConvention, in_p(M.GroupementConvention.project_id))
+    # 0 ter) atelier du dossier de présentation (versions → parties → dossiers).
+    _erase_dossiers_presentation(db, M, uid, pids)
     # 1) co-traitance (pièces → contributions → liaisons → journal → invitations)
     _del(db, M.ContributionPiece, in_p(M.ContributionPiece.project_id))
     _del(db, M.ProjectContribution, in_p(M.ProjectContribution.project_id))
@@ -387,12 +405,48 @@ def _erase_solo(db, uid: int, org_id) -> list:
     return [k for k in dict.fromkeys(keys) if k]
 
 
+def _erase_dossiers_presentation(db, M, uid: int, pids: list) -> None:
+    """Atelier (rédaction, vague 2) : versions, parties et dossiers des marchés effacés, et ceux
+    encore portés par ce compte (le reste a été rendu au tenant du marché juste avant)."""
+    _erase_dossier_rows(db, M, M.DossierPresentation.project_id.in_(pids) if pids else None,
+                        M.DossierPresentation.owner_id == uid)
+
+
+def _erase_dossier_rows(db, M, *dossier_conds) -> None:
+    """Dossiers de présentation désignés par ces conditions, avec TOUTES leurs parties et versions
+    (rattachées par dossier_id / section_id, quelles que soient leurs autres colonnes)."""
+    dids = _ids(db, M.DossierPresentation.id, *dossier_conds)
+    if not dids:
+        return
+    sids = _ids(db, M.DossierSection.id, M.DossierSection.dossier_id.in_(dids))
+    _del(db, M.DossierSectionVersion, M.DossierSectionVersion.dossier_id.in_(dids),
+         M.DossierSectionVersion.section_id.in_(sids) if sids else None)
+    _del(db, M.DossierSection, M.DossierSection.dossier_id.in_(dids))
+    _del(db, M.DossierPresentation, M.DossierPresentation.id.in_(dids))
+
+
 def _hand_over_foreign_rows(db, uid: int, pids: list) -> None:
     """Invitations, parts, pièces et simulations dont owner_id == uid mais posées sur un
     marché qui n'appartient plus à uid → réaffectées au propriétaire du tenant du marché."""
     M, _, _ = _models()
     from app.routers.invites import tenant_owner_id
     owners = {}
+    # Dossiers de présentation d'abord : un seul par marché et par entreprise. Si le tenant du
+    # marché en a déjà un, celui de uid reste à uid (effacé avec son compte).
+    for d in db.query(M.DossierPresentation).filter(M.DossierPresentation.owner_id == uid).all():
+        if pids and d.project_id in pids:
+            continue
+        proj = db.query(M.Project).filter(M.Project.id == d.project_id).first()
+        new_owner = tenant_owner_id(proj, db) if proj else None
+        if not new_owner or new_owner == uid or db.query(M.DossierPresentation.id).filter(
+                M.DossierPresentation.project_id == d.project_id,
+                M.DossierPresentation.owner_id == new_owner).first() is not None:
+            continue
+        for model in (M.DossierSectionVersion, M.DossierSection):
+            db.query(model).filter(model.dossier_id == d.id).update({model.owner_id: new_owner},
+                                                                    synchronize_session=False)
+        d.owner_id = new_owner
+    db.flush()
     for model in (M.ContributionPiece, M.ProjectContribution, M.ProjectInvite, M.GroupementSimulation,
                   M.GroupementConvention, M.GroupementSignature):
         q = db.query(model.project_id).filter(model.owner_id == uid)
@@ -554,6 +608,7 @@ def _purge_trashed_projects(db, cutoff) -> dict:
         keys += _ids(db, M.Project.dce_file_key, M.Project.id.in_(pids))
         _del(db, M.GroupementSignature, M.GroupementSignature.project_id.in_(pids))
         _del(db, M.GroupementConvention, M.GroupementConvention.project_id.in_(pids))
+        _erase_dossier_rows(db, M, M.DossierPresentation.project_id.in_(pids))
         _del(db, M.ContributionPiece, M.ContributionPiece.project_id.in_(pids))
         _del(db, M.ProjectContribution, M.ProjectContribution.project_id.in_(pids))
         _del(db, ProjectCotraitant, ProjectCotraitant.project_id.in_(pids))

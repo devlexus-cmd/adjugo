@@ -258,8 +258,8 @@ def test_coffre_fort_413_au_dela_de_la_limite(client, auth):
 
 def test_routes_dossier_413_au_dela_de_50mo(client, auth):
     big = b"PK" + b"0" * (50 * MB + 10)
-    for url, data in (("/api/knowledge/upload", {}), ("/api/knowledge/memoire-upload", {}),
-                      ("/api/amont/analyze-upload", {})):
+    # (/api/knowledge/memoire-upload ne lit plus de fichier : le dossier se rédige dans l'atelier.)
+    for url, data in (("/api/knowledge/upload", {}), ("/api/amont/analyze-upload", {})):
         r = client.post(url, headers=auth["headers"], data=data,
                         files={"file": ("dce.zip", big, "application/zip")})
         assert r.status_code == 413, (url, r.status_code)

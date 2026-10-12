@@ -312,8 +312,11 @@ def transfer_ownership(data: TransferIn, request: Request,
     # (b) co-traitance et simulations « Répondre à plusieurs ? » (owner_id = tenant
     #     mandataire) : simple réaffectation — sinon elles restaient à l'ex-propriétaire
     #     (invisibles pour l'org, et effacées avec son compte).
+    # Dossiers de présentation de l'atelier (rédaction, vague 2) : portés par le tenant aussi.
+    from app.models import DossierPresentation, DossierSection, DossierSectionVersion
     for M in (CoSpace, ProjectInvite, ProjectContribution, ContributionPiece, GroupementSimulation,
-              GroupementConvention, GroupementSignature):
+              GroupementConvention, GroupementSignature, DossierPresentation, DossierSection,
+              DossierSectionVersion):
         db.query(M).filter(M.owner_id == old_id).update({M.owner_id: new_id}, synchronize_session=False)
     # (c) profil partenaire du réseau (vague 3, user_id UNIQUE = data_owner_id) : il suit le
     #     nouveau propriétaire, sinon il devenait orphelin et inéditable par l'organisation.
