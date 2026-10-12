@@ -403,23 +403,30 @@ pendant l'essai, ou réduire le nombre d'analyses d'essai.
 
 ## 4. Points restants
 
-- **Fusion avec la vague 2 (atelier de rédaction)** — conflits confirmés (`git merge-tree`) dans
-  `app/routers/sourcing.py`, `app/static/app.html`, `app/static/app.js` et
-  `app/static/sri-manifest.json`. Consignes :
-  1. la vague 2 appelle `mesurer_import(project, analysis)` (de `app.services.atelier`) dans
-     `analyze_upload` et `reanalyze_project`, juste après `project.ai_analysis = analysis`. Ici ce code
-     est dans `_finish_analysis`, commun à l'analyse pendant la requête ET en tâche de fond : placer
-     l'appel dans `_finish_analysis`, après `project.ai_analysis = analysis` (sinon les gros dossiers,
-     analysés en tâche de fond, ne sont jamais mesurés) ;
-  2. l'atelier lit le dossier par l'accès commun : `dce_texte.dce_fulltext(project)` ou
-     `dce_texte.dce_pieces_text(project)` (règlements : `dce_reglement`, passages : `passages`) — à la
-     place de `extract_dce_text` (40 000 caractères) dans `routers/knowledge.py:131` et des
-     24 000 caractères de `agents/memoire.py:48` (non modifiés ici) ;
-  3. `app/services/jobs.py` n'est **pas** modifié ici (la vague 2 élargit `run_in_thread`) : les
-     lectures ont leur propre exécuteur (`app/services/lecture_taches.py`, même cycle de vie) ;
-  4. après résolution : `python scripts/sri_update.py`, `--check`, `node --check app/static/app.js`,
-     puis `tests/test_redaction_v2_*`, `tests/test_lecture_integrale.py` et
-     `tests/test_lecture_integrale_relecture.py` sur la branche fusionnée.
+- **Fusion avec la vague 2 (atelier de rédaction) : FAITE** (branche de mise en ligne commune).
+  1. `mesurer_import(project, analysis)` est appelé dans `_finish_analysis`, après
+     `project.ai_analysis = analysis` : l'analyse pendant la requête ET en tâche de fond sont mesurées
+     (testé : `tests/test_redaction_v2_lecture_integrale.py`, analyse forcée en tâche de fond).
+  2. Le moteur de l'atelier (`app/services/atelier.py`, `agents/memoire.py`) lit le dossier par
+     l'accès commun : `dce_texte.pieces_remises(payload, ATELIER_DOSSIER_MAX_CARACTERES)` remet TOUS
+     les règlements (modificatif en premier) et TOUS les cadres de réponse en entier, précédés de
+     `dce_lecture.note_pour_ia` (pièces non lues), dans un bloc commun mis en cache de prompt ; puis,
+     pour chaque partie, `dce_texte.passages(project, partie, k=ATELIER_PASSAGES, exclude_pieces=…)`
+     dans toutes les autres pièces. La lecture rangée n'est prise que si elle est celle du fichier
+     importé le plus récent (même empreinte) ; sinon (ancienne analyse, lecture en cours) l'ancienne
+     lecture bornée reste, et l'écran le dit avec le moyen d'obtenir la lecture intégrale
+     (« Ré-analyser »). « Pièces du dossier de l'acheteur lues par Adjugo » montre la couverture
+     honnête (lue en entier, en partie, non lue et pourquoi, et ce qui est remis à l'IA). Le texte
+     intégral n'est jamais recopié dans `dossiers_presentation.dce_lu`.
+     `routers/knowledge.py:131` (ancien `memoire-upload`) ne rédige plus (410, vague 2) : plus aucun
+     plafond à y retirer ; les 24 000 caractères de `agents/memoire.py` (exigences du mémoire de
+     groupement, routeur archivé) passent par `texte_pour_exigences` : lecture intégrale du marché
+     quand elle est rangée (règlements et cadres en entier, passages sur critères, moyens, délais,
+     pénalités), sinon le texte fourni composé règlement et cadre en tête (120 000 caractères).
+  3. `app/services/jobs.py` : inchangé par la lecture intégrale (exécuteur à part pour les lectures).
+  4. SRI, `node --check`, suite complète verte ; migrations et tests de l'atelier, de la lecture
+     intégrale, de la rédaction V1 et de la co-traitance rejoués sur Postgres depuis l'état exact de
+     la production.
 - **Stripe** : créer le compteur et le prix à l'usage, puis renseigner `STRIPE_PRICE_OVERAGE`
   (§ 2.5).
 - **Progression** d'une lecture en tâche de fond : gardée en mémoire du process (process unique) ;

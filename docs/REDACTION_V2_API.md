@@ -140,8 +140,11 @@ Avec dossier (forme complète, voir aussi §5) :
  "quota": Quota,
  "export": Apercu,
  "dossier_acheteur": {"source": "fichier|extrait|aucun", "present": true, "nom_fichier",
-                      "pieces": [{"nom", "libelle", "lu_en_entier"}], "a_change": false, "message": "",
-                      "message_absent": ""},
+                      "integral": true, "couverture": {"complet": false, "message": "Dossier lu en partie : …"} | null,
+                      "message_lecture": "",
+                      "pieces": [{"nom", "libelle", "type", "lu_en_entier", "statut", "raison", "pages",
+                                  "pages_lues", "remise", "remise_libelle"}],
+                      "a_change": false, "message": "", "message_absent": ""},
  "grille": {"nouveaux": [{"id", "critere", "poids", "poids_source"}], "poids": [{"section_id", "critere",
             "ancien", "nouveau", "poids_source"}], "plus_retenus": [{"section_id", "critere"}],
             "message": "...", "peut_appliquer": true} | null,
@@ -154,6 +157,23 @@ plan (comparé à la clé lue POUR LE PLAN, pas à la lecture que le moteur rafr
 « Reconstruire le plan » (message fourni). `present: false` : aucun dossier du marché importé →
 `message_absent` (« Aucun dossier du marché importé : Adjugo rédige sans le règlement ni le cadre
 de réponse… ») et le chemin vers l'import ; la bulle de « Rédiger avec Adjugo » le dit aussi.
+
+« Pièces du dossier de l'acheteur lues par Adjugo » (lecture intégrale, `docs/LECTURE_INTEGRALE.md`) :
+la couverture HONNÊTE de ce que lit le moteur, toujours celle du dossier actuel (relue si le fichier
+a changé ou si une nouvelle lecture intégrale a été rangée depuis). `integral: true` : chaque pièce a
+son `statut` de lecture — `lu_en_entier` (avec `pages`), `lu_en_partie` ou `non_lu` — et sa `raison`
+en clair (« format non pris en charge (ancien format Word : enregistrez-le en .docx ou en PDF) »,
+« scan : aucun texte reconnu »…) ; `remise` dit ce que le moteur en remet à l'IA : `entiere`
+(règlements et cadres de réponse, « remise en entier à chaque partie »), `debut` (règlement ou cadre
+trop long : son début, le reste cherché par passages), `passages` (« passages choisis pour chaque
+partie »), vide (pièce non lue). `couverture.message` : « Dossier lu en entier : N pièces, P pages. »
+ou « Dossier lu en partie : … (voir la liste) » — à afficher HORS de la liste repliée quand
+`complet` est faux. `integral: false` : `message_lecture` dit pourquoi et comment obtenir la
+lecture intégrale — ancienne analyse (« … relancez « Ré-analyser » sur la page du marché (compte
+pour une analyse) »), lecture en tâche de fond pas encore terminée, ou seul l'extrait de l'analyse
+disponible ; `statut` y vaut `lu_en_entier` ou `lu_en_partie` (= remis en entier ou seulement son
+début). Le texte d'une lecture intégrale n'est jamais recopié dans la base du dossier (il reste
+dans le stockage du marché, supprimé avec lui).
 `grille` non nul : « Comment vous serez noté » a changé depuis le plan (critère confirmé, poids
 saisi ou modifié, critère écarté) → `message` et, si `peut_appliquer`, « Mettre le plan à jour »
 (`POST /plan/grille`), sans reconstruire. `savoir_faire.vide` : « Mon savoir-faire » est vide →
@@ -262,12 +282,30 @@ Routes :
   403 démo (« La démo est en lecture guidée… »).
 - Pendant une rédaction, la partie est verrouillée (`redaction_en_cours` non nul) : désactiver
   l'édition et les boutons de cette partie.
+- Échec (`status: error`, ou une partie `ok: false` dans `result.sections`) : en plus du message
+  éphémère, le message reste affiché DANS la partie concernée jusqu'à la prochaine action sur elle
+  (rédiger, raccourcir, écrire, enregistrer, marquer relue, valider, traiter un fait, revenir à une
+  version, retirer).
+- Confirmations (nouvelle version, « Mon savoir-faire » vide, abandon d'une modification, valider
+  avec des points ouverts, revenir à une version, retirer une partie) : la fenêtre de confirmation
+  de l'application (comme « Marquer déposé »), jamais celle du navigateur ; une seule fenêtre réunit
+  tout ce qu'il faut savoir avant de lancer.
 
-Ce que fait le moteur (à dire dans une bulle (i) près de « Rédiger avec Adjugo ») : il lit le
-règlement et le cadre de réponse en entier (ou, sans dossier du marché importé, le dit), s'appuie seulement sur vos documents, votre profil,
-votre équipe (noms remplacés par des étiquettes avant l'envoi), votre chiffrage et les parts
-envoyées par vos partenaires ; tout fait absent est écrit « [À compléter : …] ». Le texte
-précédent est gardé dans l'historique.
+Ce que fait le moteur (à dire dans une bulle (i) près de « Rédiger avec Adjugo ») : avec la lecture
+intégrale du dossier du marché (`dossier_acheteur.integral`), il lit TOUS les règlements et TOUS les
+cadres de réponse en entier (jusqu'à `ATELIER_DOSSIER_MAX_CARACTERES` = 240 000 caractères, ≈ 80 000
+tokens ; au-delà, le début de la pièce et le reste par passages), puis, pour chaque partie, les
+passages des autres pièces les plus proches de la partie (`ATELIER_PASSAGES` = 8 passages
+d'≈ 1 400 caractères, recherche sans IA dans toutes les pièces lues, pièces remises en entier
+écartées), avec la liste des pièces non lues (« jamais conclure qu'une information n'existe pas »).
+Le bloc commun (règlements et cadres) vient en tête et est mis en cache de prompt : d'une partie à
+l'autre, il est relu à 10 % du prix. Sans lecture intégrale (ancienne analyse, lecture en cours) :
+règlement et cadre en tête et en entier, le reste borné (le début des autres pièces) ; sans dossier
+du marché importé, il le dit. Il s'appuie seulement sur vos documents, votre profil, votre équipe
+(noms remplacés par des étiquettes avant l'envoi), votre chiffrage et les parts envoyées par vos
+partenaires ; tout fait absent est écrit « [À compléter : …] ». Le dossier de l'acheteur, passages
+compris, ne prouve jamais rien sur l'entreprise (un chiffre qu'il contient reste « à relire » dans
+une phrase sur l'entreprise). Le texte précédent est gardé dans l'historique.
 
 ### 4.4 Quota (décision 6a)
 
@@ -391,7 +429,8 @@ reconstruction du plan ne retire jamais la partie d'un autre.
 ## 6. Mesure « fichier de réponse imposé » (décision 11)
 
 À chaque import réel du dossier du marché, `projects.dce_importe_le` et `dce_fichier_impose` sont
-posés. Agrégats seulement : `/metrics` (`adjugo_dossiers_importes`,
+posés — dans `sourcing._finish_analysis`, commun à l'analyse pendant la requête ET en tâche de fond
+(gros dossier lu en deux temps) : aucun dossier analysé n'échappe à la mesure. Agrégats seulement : `/metrics` (`adjugo_dossiers_importes`,
 `adjugo_dossiers_fichier_impose`) et `GET /api/admin/mesures/redaction` (administrateur de la
 plateforme) → `{"dossiers_importes", "fichier_impose", "part", "seuil_decision": 0.2}`. On passe au
 remplissage du fichier de l'acheteur dès qu'un dossier sur cinq l'impose.

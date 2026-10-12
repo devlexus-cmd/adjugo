@@ -169,7 +169,8 @@ def test_ancrage_ne_dit_ancienne_qu_une_entree_v1(client, auth, mails, monkeypat
     try:
         last = db.query(AuditLog).filter(AuditLog.owner_id == owner).order_by(AuditLog.id.desc()).first()
         head = {"owner_id": owner, "last_id": last.id, "last_hash": last.entry_hash, "status": "active"}
-        e = db.query(AuditLog).filter(AuditLog.invite_id == b_id, AuditLog.action == "guest.view_project").first()
+        e = (db.query(AuditLog).filter(AuditLog.invite_id == b_id, AuditLog.action == "guest.view_project")
+             .order_by(AuditLog.id).first())
         e.invite_id = a_id                  # entrée v2 de Beta attribuée à Alpha : altérée
         db.commit()
         moved = e.id
@@ -189,8 +190,11 @@ def test_ancrage_ne_dit_ancienne_qu_une_entree_v1(client, auth, mails, monkeypat
         e = db.get(AuditLog, moved)
         e.invite_id = b_id
         chain = db.query(AuditLog).filter(AuditLog.owner_id == owner).order_by(AuditLog.id).all()
-        mine = db.query(AuditLog).filter(AuditLog.invite_id == a_id,
-                                         AuditLog.action == "guest.view_project").first()
+        # ORDER BY : la session ne vide pas ses écritures avant une requête (autoflush coupé), l'entrée
+        # de Beta est donc encore rattachée à Alpha en base ; sans ordre, Postgres peut la renvoyer
+        # en premier (place physique de la ligne mise à jour) et le test vise la mauvaise entrée.
+        mine = (db.query(AuditLog).filter(AuditLog.invite_id == a_id, AuditLog.action == "guest.view_project")
+                .order_by(AuditLog.id).first())
         i = [x.id for x in chain].index(mine.id)
         mine.entry_hash = audit._hash(mine.prev_hash, mine)          # empreinte v1
         for x in chain[i + 1:]:
