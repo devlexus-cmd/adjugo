@@ -1,21 +1,20 @@
 """
-AGENT MÉMOIRE TECHNIQUE — pipeline multi-agents segmenté (façon TenderCrunch).
+MOTEUR DE RÉDACTION du dossier de présentation (le « mémoire technique »).
 
-Au lieu d'un prompt monolithique, 4 étapes spécialisées :
-  1. EXTRACTION  — lit le DCE (RC/CCTP/CCAP) → exigences + critères d'attribution.
-  2. PLAN        — génère le sommaire de la réponse, calé sur les critères.
-  3. RÉDACTION   — rédige chaque section en s'appuyant UNIQUEMENT sur la base de
-                   connaissances de l'entreprise (RAG), avec citations [S1], [S2]…
-  4. CONFORMITÉ  — vérifie que la réponse couvre bien chaque exigence extraite.
+Depuis la vague 2 de la rédaction, c'est le moteur de l'ATELIER (app/services/atelier.py) :
+une partie à la fois, en tâche de fond, Sonnet, extraits cités [S1], [S2]… (`rediger_partie`,
+`raccourcir_partie`). Le plan ne vient plus de l'IA : il suit le cadre de réponse imposé, la
+grille retrouvée dans le règlement ou un plan simple (app/services/atelier_plan.py), et la
+« conformité notée par l'IA » a disparu (doctrine : jamais une note produite par l'IA).
+
+Restent ici, pour le mémoire FUSIONNÉ de l'ancien espace co-traitance (routeur archivé, non
+monté ; repris en vague 4) : extraction des exigences, plan, rédaction par section, contrôle.
 
 Ce qu'on affiche, sans promettre plus : chaque section porte les extraits que l'IA a
-effectivement cités ([S1]…). Un renvoi ne prouve pas que la phrase est exacte : le contrôle
-des faits arrive en vague 3 ; d'ici là, aucun badge « sourcé ». La consigne demande à l'IA
-d'écrire « [À compléter] » quand rien ne couvre un point, sans garantie qu'elle s'y tienne.
+effectivement cités ([S1]…). Un renvoi ne prouve pas que la phrase est exacte : les faits sans
+source sont signalés « à relire » (app/services/faits_a_relire.py), rien n'est marqué comme bon.
 """
 import logging
-
-from sqlalchemy.orm import Session
 
 from app.services.llm import complete_ex, complete_json, tenant_scope
 from app.services import rag
@@ -180,6 +179,138 @@ def _section_out(section, content, chunks, err, coupe, names_by_user=None) -> di
             "extraits_fournis": 0 if err else n, "coupe": bool(coupe and not err), "error": err}
 
 
+# ── L'ATELIER (rédaction, vague 2) : une section à la fois, en tâche de fond ──────────
+# Le moteur du savoir-faire devient le moteur de l'atelier : Sonnet, sources citées [S1]…,
+# section par section. L'IA reçoit la LISTE DES FAITS AUTORISÉS (extraits du savoir-faire, profil
+# de l'entreprise, équipe — noms masqués par pii_scope —, chiffrage sans prix) : tout autre fait
+# sur l'entreprise doit être écrit « [À compléter : …] ». Le dossier de l'acheteur (règlement et
+# cadre de réponse EN ENTIER, extraits ciblés du reste) ne sert qu'à parler du marché.
+# Ces fonctions n'ouvrent AUCUNE session de base : elles tournent dans les fils d'une tâche de fond
+# (app/services/atelier.py prépare tout avant, enregistre tout après).
+
+_ATELIER_SYS = """Tu rédiges UNE partie du dossier de présentation (le « mémoire technique ») d'une
+entreprise qui répond à un marché public. L'entreprise reste l'auteur : tu proposes un texte qu'elle relira.
+RÈGLES ABSOLUES :
+- Un fait sur l'entreprise (chiffre, effectif, nom, certification, qualification, référence, matériel,
+  délai, engagement) ne peut venir QUE des FAITS AUTORISÉS (profil, équipe, chiffrage, extraits [S1], [S2]…).
+  Cite [S1], [S2]… à la fin des phrases qui s'appuient sur un extrait.
+- Tout autre fait sur l'entreprise s'écrit « [À compléter : ce qui manque] ». N'invente jamais.
+- Le DOSSIER DE L'ACHETEUR ne sert qu'à parler du marché, de l'acheteur ou du chantier (« le CCTP prévoit… »).
+  Une exigence de l'acheteur n'est JAMAIS la preuve que l'entreprise la remplit.
+- Réponds exactement à la question ou au critère de cette partie, dans l'ordre demandé. Pas de superlatifs
+  creux, pas de remplissage, aucun prix ni montant de l'offre.
+- Si la partie porte un poids écrit dans le règlement, tu peux t'y référer ; sans poids écrit, ne suppose
+  aucune importance ni aucun ordre.
+- Format : paragraphes courts, listes à puces et tableaux simples en Markdown si utile. N'écris pas le titre
+  de la partie (il est déjà posé) ; sous-titres « ### » seulement si nécessaire.
+Réponds en texte (pas de JSON)."""
+
+_RACCOURCIR_SYS = """Tu raccourcis une partie du dossier de présentation d'une entreprise (mémoire technique).
+RÈGLES ABSOLUES :
+- Garde le sens et l'ordre. N'ajoute AUCUN fait, chiffre, nom, certification, matériel ni engagement.
+- Garde tels quels les passages « [À compléter …] » et les renvois [S1], [S2]…
+- Respecte la longueur demandée. Markdown simple (paragraphes, listes, tableaux simples).
+Réponds avec le texte raccourci seul (pas de JSON, pas de commentaire)."""
+
+
+def _strip_answer(text: str, titre: str = "") -> str:
+    """Retire la clôture de code et un titre qui répète celui de la partie."""
+    import re as _re
+    t = (text or "").strip()
+    t = _re.sub(r"^\s*```[a-zA-Z]*\s*\n|\n?\s*```\s*$", "", t).strip()
+    lines = t.split("\n")
+    if lines and _re.match(r"^#{1,6}\s+", lines[0]):
+        head = _re.sub(r"^#{1,6}\s+", "", lines[0]).strip().lower()
+        if titre and (head == titre.strip().lower() or titre.strip().lower() in head):
+            t = "\n".join(lines[1:]).strip()
+    return t
+
+
+def _consigne_partie(p: dict) -> str:
+    out = [f"PARTIE À RÉDIGER : {p.get('titre') or ''}"]
+    if p.get("source_plan") == "cadre" and p.get("question"):
+        out.append(f"QUESTION DU CADRE DE RÉPONSE (n° {p.get('numero') or '?'}) : {p['question']}")
+    if p.get("critere"):
+        if p.get("poids"):
+            out.append(f"CRITÈRE DE L'ACHETEUR : {p['critere']} (poids écrit dans le règlement : {p['poids']})")
+        else:
+            out.append(f"CRITÈRE DE L'ACHETEUR : {p['critere']} (aucun poids écrit : ne suppose aucune importance)")
+        if p.get("partie_de_critere"):
+            out.append("Cette partie est un découpage proposé par Adjugo, pas une rubrique imposée par l'acheteur.")
+        if p.get("question") and p.get("source_plan") != "cadre":
+            out.append(f"Phrase du règlement : {p['question']}")
+    if p.get("cible_mots"):
+        out.append(f"LONGUEUR : au plus {p['cible_mots']} mots.")
+    else:
+        out.append("LONGUEUR : 250 à 450 mots.")
+    return "\n".join(out)
+
+
+def rediger_partie(p: dict, billing_id=None) -> dict:
+    """Rédige une partie. p = {titre, numero, question, critere, poids, partie_de_critere,
+    source_plan, cible_mots, faits: {profil, equipe, chiffrage}, chunks: [...], dossier_acheteur}.
+    Renvoie {texte, sources, coupe, extraits_fournis, erreur}. Ne lève pas : une panne de l'IA rend
+    erreur=True (l'appelant décide du remboursement)."""
+    from app.services.memoire_export import TRUNCATED_NOTE
+    chunks = p.get("chunks") or []
+    f = p.get("faits") or {}
+    src = rag.sources_block(chunks) if chunks else "(aucun extrait de vos documents ne correspond)"
+    user = f"""{_consigne_partie(p)}
+
+FAITS AUTORISÉS SUR L'ENTREPRISE (seule matière permise pour parler d'elle) :
+— Profil : {f.get('profil') or '(non renseigné)'}
+— Équipe : {f.get('equipe') or '(non renseignée)'}
+— Chiffrage (phases, tâches, jours ; aucun prix) : {f.get('chiffrage') or '(pas de chiffrage)'}
+— Extraits de vos documents :
+{src}
+
+DOSSIER DE L'ACHETEUR (ne prouve RIEN sur l'entreprise) :
+{p.get('dossier_acheteur') or '(dossier non disponible)'}
+
+Rédige la partie. Tout fait sur l'entreprise absent des faits autorisés : « [À compléter : …] »."""
+    target = int(p.get("cible_mots") or 450)
+    max_tokens = max(900, min(4000, int(target * 2.6)))
+    try:
+        with tenant_scope(billing_id):
+            content, stop = complete_ex(_ATELIER_SYS, user, max_tokens=max_tokens, temperature=0.3)
+    except Exception as e:
+        logger.warning("atelier.rediger en échec : %s", type(e).__name__)
+        return {"texte": "", "sources": [], "coupe": False, "extraits_fournis": 0, "erreur": True}
+    texte = _strip_answer(content, p.get("titre") or "")
+    coupe = stop == "max_tokens"
+    if coupe:
+        texte = (texte.rstrip() + "\n\n" + TRUNCATED_NOTE).strip()
+    if not texte.strip():
+        return {"texte": "", "sources": [], "coupe": False, "extraits_fournis": 0, "erreur": True}
+    cited = rag.cited_refs(texte) & set(range(1, len(chunks) + 1))
+    sources = [{"ref": f"S{i + 1}", "doc_name": c.get("doc_name", ""), "chunk_id": c.get("chunk_id"),
+                "extrait": (c.get("text") or "")[:240]} for i, c in enumerate(chunks) if (i + 1) in cited]
+    return {"texte": texte, "sources": sources, "coupe": coupe, "extraits_fournis": len(chunks), "erreur": False}
+
+
+def raccourcir_partie(texte: str, cible_mots: int, titre: str = "", billing_id=None) -> dict:
+    """Raccourcit un texte vers `cible_mots` sans rien y ajouter. Renvoie {texte, coupe, erreur}."""
+    from app.services.memoire_export import TRUNCATED_NOTE
+    import re as _re
+    n = len(_re.findall(r"\w+", texte or ""))
+    user = (f"TEXTE À RACCOURCIR (environ {n} mots) :\n\"\"\"\n{texte}\n\"\"\"\n\n"
+            f"CIBLE : au plus {int(cible_mots)} mots.")
+    try:
+        with tenant_scope(billing_id):
+            content, stop = complete_ex(_RACCOURCIR_SYS, user, max_tokens=max(600, min(4000, int(cible_mots * 2.6))),
+                                        temperature=0.2)
+    except Exception as e:
+        logger.warning("atelier.raccourcir en échec : %s", type(e).__name__)
+        return {"texte": "", "coupe": False, "erreur": True}
+    out = _strip_answer(content, titre)
+    coupe = stop == "max_tokens"
+    if coupe:
+        out = (out.rstrip() + "\n\n" + TRUNCATED_NOTE).strip()
+    if not out.strip():
+        return {"texte": "", "coupe": False, "erreur": True}
+    return {"texte": out, "coupe": coupe, "erreur": False}
+
+
 # ── 4. Contrôle de conformité ────────────────────────────────────────────────
 _CHECK_SYS = """Tu es un contrôleur qualité. Tu vérifies qu'un mémoire technique couvre
 bien CHAQUE exigence extraite du dossier de consultation. Pour chaque exigence : couverte,
@@ -206,66 +337,6 @@ Renvoie EXACTEMENT ce JSON :
     except Exception as e:
         logger.warning("memoire.check en échec : %s", e)
         return {}
-
-
-# ── Orchestration ────────────────────────────────────────────────────────────
-def generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int = 9,
-                     kb_user_ids: list = None) -> dict:
-    """Pipeline complet. Renvoie un dossier de présentation structuré, avec les extraits cités.
-    kb_user_ids = base COMMUNE à interroger (membres de l'organisation) ; défaut = [user_id].
-    Les noms des salariés de l'organisation (équipe du profil entreprise) sont masqués avant
-    chaque appel à l'IA (documents du savoir-faire compris) et remis en clair sans IA ; le coût
-    IA du dossier complet est journalisé."""
-    from app.services.llm import cost_meter, pii_scope
-    from app.services.pii import from_team, team_of_users
-    pz = from_team(team_of_users(db, kb_user_ids or [user_id]))
-    with pii_scope(pz), cost_meter("dossier de présentation (savoir-faire)", user_id):
-        return _generate_memoire(db, user_id, dce_text, max_sections, kb_user_ids)
-
-
-def _generate_memoire(db: Session, user_id: int, dce_text: str, max_sections: int = 9,
-                      kb_user_ids: list = None) -> dict:
-    requirements = extract_requirements(dce_text)
-    objet = requirements.get("objet", "")
-    # Critères contrôlés contre le texte (sans IA) AVANT le plan : ni le plan ni les sections ne
-    # reçoivent un poids que le règlement n'écrit pas.
-    criteres = _criteres_controles(requirements, dce_text)
-    plan = build_plan(objet, dict(requirements, criteres_attribution=criteres))[:max_sections]
-    if not plan:
-        plan = [{"titre": "Méthodologie et organisation", "objectif": "Démontrer la démarche",
-                 "requete": "méthodologie organisation qualité"}]
-
-    # Récupération RAG (rapide) puis rédaction des sections EN PARALLÈLE (latence ÷ ~6)
-    from concurrent.futures import ThreadPoolExecutor
-    pool = kb_user_ids or [user_id]   # base COMMUNE de l'organisation (sinon le seul user)
-    prepared = []
-    for sec in plan:
-        chunks = rag.retrieve_multi(db, pool, sec.get("requete") or sec.get("titre", ""), k=5, relevance=True)
-        prepared.append((sec, chunks))
-    # map_in_context : chaque fil reçoit la portée du job (noms masqués, compteur de coût).
-    from app.services.llm import map_in_context
-    with ThreadPoolExecutor(max_workers=min(6, len(prepared) or 1)) as ex:
-        sections = map_in_context(ex, lambda pc: write_section(pc[0], pc[1], criteres=criteres, user_id=user_id),
-                                  prepared)
-    # Si TOUTES les sections ont échoué techniquement (IA indispo / plafond / panne), le mémoire
-    # est 100 % « [À compléter] » : on LÈVE pour que le job passe en 'error' et que le quota soit
-    # REMBOURSÉ — au lieu de débiter le client pour un livrable vide.
-    errs = sum(1 for s in sections if s.get("error"))
-    if sections and errs == len(sections):
-        from app.services.llm import LLMUnavailable
-        raise LLMUnavailable("Service IA indisponible — mémoire non généré.")
-
-    conformity = conformity_check(requirements, sections)
-
-    return {
-        "objet": objet,
-        "criteres_attribution": criteres,
-        "exigences": requirements.get("exigences", []),
-        "sections": sections,
-        "conformity": conformity,
-        "n_sections": len(sections),
-        "n_coupees": sum(1 for s in sections if s.get("coupe")),
-    }
 
 
 # ── MERGED BRAIN : mémoire unifié de co-traitance ────────────────────────────

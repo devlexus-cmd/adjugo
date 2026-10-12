@@ -1123,6 +1123,19 @@ def plan_text(grille: Optional[dict]) -> str:
     return body
 
 
+def limites_texte(text: str, kind: str = dp.CADRE) -> list:
+    """Limites (pages, mots, caractères, lignes, police) écrites dans UN texte (une question du
+    cadre de réponse, par exemple « 2 pages maximum »), repérées SANS IA avec les mêmes motifs que
+    la grille. [] si rien (ou texte vide). Ne lève jamais."""
+    try:
+        t = str(text or "")
+        if len(t.strip()) < 6:
+            return []
+        return _limites([_Piece(0, "", kind, t)])
+    except Exception:          # noqa: BLE001 — repérage facultatif
+        return []
+
+
 def public_grille(grille: Optional[dict]) -> Optional[dict]:
     """Vue LECTURE SEULE pour les partenaires du groupement : les critères tels qu'écrits
     dans le règlement (phrase publique du dossier de l'acheteur), la pondération, le

@@ -207,6 +207,12 @@ class Project(Base):
     groupement_score = Column(Integer, nullable=True)
     groupement_plan = Column(JSON, nullable=True)
 
+    # Mesure de la décision 11 de l'étude « rédaction » (le règlement impose-t-il son propre fichier
+    # de réponse ?) : posé à chaque import du dossier du marché (analyse d'un fichier réel), lu
+    # seulement en agrégat (/metrics). NULL = aucun dossier importé.
+    dce_importe_le = Column(DateTime, nullable=True)
+    dce_fichier_impose = Column(Boolean, nullable=True)
+
     # Résultat (capture Gagné/Perdu pour les analytics de win-rate)
     outcome_reason = Column(String(255), nullable=True)
     outcome_rank = Column(Integer, nullable=True)        # classement obtenu
@@ -907,6 +913,124 @@ class PartnerProfile(Base):
         Index("uq_partner_profiles_siren_publie", "siren", unique=True,
               sqlite_where=sa_text("visible = 1"), postgresql_where=sa_text("visible")),
     )
+
+
+# === DOSSIER DE PRÉSENTATION (rédaction, vague 2 — l'atelier) ===
+# Le « mémoire technique » de l'acheteur, rédigé section par section. UN dossier par marché et par
+# entreprise (UNIQUE(project_id, owner_id) ; owner_id = data_owner_id de l'organisation). Modèle
+# défini une fois pour l'entreprise seule (vague 2) et pour le groupement (vague 4) :
+#   • chaque section a un AUTEUR : aujourd'hui l'organisation propriétaire (author_kind
+#     'organisation') ; en vague 4, un membre du groupement (author_kind 'invitation' +
+#     author_invite_id). La matière PRIVÉE d'une section (sources, extraits, faits à relire,
+#     brouillons) n'est lue que par son auteur (app/services/atelier.can_see_private) ;
+#   • une génération ou une modification ne DÉTRUIT jamais rien : chaque texte est une nouvelle
+#     version (table dossier_section_versions, en ajout seul) ; une section validée puis modifiée
+#     repasse « à revalider ».
+# Rien ici n'est envoyé à l'acheteur tel quel : l'export (app/services/atelier_export.py) retire
+# les renvois internes et refuse un dossier troué sauf dérogation enregistrée au journal chaîné.
+
+class DossierPresentation(Base):
+    __tablename__ = "dossiers_presentation"
+    __table_args__ = (UniqueConstraint("project_id", "owner_id", name="uq_dossier_presentation_projet_owner"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)   # tenant (data_owner_id)
+    created_by_user_id = Column(Integer, nullable=True)
+
+    # Plan : 'grille' (critères retrouvés dans le règlement), 'cadre' (questions du cadre de
+    # réponse imposé, dans leur ordre et leurs numéros) ou 'libre' (plan simple, sans IA).
+    plan_source = Column(String(10), default="libre")
+    plan_meta = Column(JSON, nullable=True)       # {message, criteres_hors_dossier[], fichier_impose, …}
+    # Texte du dossier de l'acheteur LU pour la rédaction (C0) : règlement et cadre EN ENTIER, puis
+    # le reste borné. Lecture faite une fois, sans IA ; jamais montré à un tiers.
+    dce_lu = Column(JSON, nullable=True)
+
+    # Quota (décision 6a) : le dossier complet compte pour 1 analyse (débitée à la 1re action IA),
+    # refaire une section est gratuit jusqu'à ATELIER_REGEN_GRATUITES fois par dossier.
+    analyse_debitee = Column(Boolean, default=False)
+    regenerations = Column(Integer, default=0)
+    regenerations_payantes = Column(Integer, default=0)
+
+    # Dernière dérogation à l'export (décision 2b), valable pour UN état du texte (etat_hash) :
+    # {etat_hash, raisons[], raison, texte, par, le, avertissement}. Aussi au journal chaîné.
+    derogation = Column(JSON, nullable=True)
+    # Compteur (pages estimées) mis en cache pour un état du texte : {etat_hash, …}.
+    compteur = Column(JSON, nullable=True)
+    dernier_export = Column(JSON, nullable=True)  # {le, par, format, nom, empreinte, ia}
+
+    version = Column(Integer, default=0, nullable=False)   # verrou optimiste (plan)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class DossierSection(Base):
+    __tablename__ = "dossier_sections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    dossier_id = Column(Integer, ForeignKey("dossiers_presentation.id"), nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+
+    ordre = Column(Integer, default=0)
+    numero = Column(String(20), default="")        # numéro du cadre (« 2.1 ») ou rang dans le plan
+    intitule = Column(String(300), default="")
+    niveau = Column(Integer, default=1)
+    parents = Column(JSON, nullable=True)          # [{numero, intitule}] (titres du cadre au-dessus)
+    question = Column(Text, default="")            # texte de la question du cadre / phrase du critère
+    # D'où vient la section : grille | cadre | libre (plan simple d'Adjugo) | utilisateur (ajoutée)
+    source_plan = Column(String(12), default="libre")
+    critere = Column(String(300), default="")      # critère de la grille, tel que retrouvé
+    critere_id = Column(String(20), default="")
+    poids = Column(String(40), default="")         # poids TEL QU'ÉCRIT dans le règlement, sinon ''
+    partie_de_critere = Column(Boolean, default=False)   # partie d'un critère découpé par Adjugo
+    lot = Column(String(120), default="")          # vague 6 (plusieurs lots), vide aujourd'hui
+    limite = Column(JSON, nullable=True)           # limite applicable : {type, valeur, objet, phrase, source}
+
+    # Auteur (vague 4 : un membre du groupement par son invitation). Aujourd'hui : l'organisation.
+    author_kind = Column(String(12), default="organisation")    # organisation | invitation
+    author_invite_id = Column(Integer, nullable=True, index=True)
+
+    # a_ecrire | brouillon | relu | valide | a_revalider
+    statut = Column(String(12), default="a_ecrire")
+    current_version_id = Column(Integer, nullable=True)
+    validated_version_id = Column(Integer, nullable=True)
+    validated_hash = Column(String(64), default="")
+    validated_at = Column(DateTime, nullable=True)
+    validated_by = Column(Integer, nullable=True)
+    job_id = Column(Integer, nullable=True)        # rédaction en cours (tâche de fond)
+    retiree_at = Column(DateTime, nullable=True)   # section retirée du plan (ses versions restent)
+    lock_version = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class DossierSectionVersion(Base):
+    __tablename__ = "dossier_section_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("dossier_sections.id"), nullable=False, index=True)
+    dossier_id = Column(Integer, nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+
+    numero = Column(Integer, default=1)            # 1, 2, 3… dans la section
+    texte = Column(Text, default="")
+    origine = Column(String(12), default="utilisateur")   # ia | utilisateur | raccourci
+    # Préparé avec l'aide de l'IA (texte de l'IA, ou texte modifié à partir d'un texte de l'IA) :
+    # décide la mention « préparé avec assistance IA » des propriétés du fichier (décision 9a).
+    ia = Column(Boolean, default=False)
+    sources = Column(JSON, nullable=True)          # PRIVÉ : extraits cités [{ref, doc_name, chunk_id, extrait}]
+    faits = Column(JSON, nullable=True)            # PRIVÉ : faits « à relire » (A0)
+    empreinte = Column(String(64), default="")     # sha256 du texte
+    coupe = Column(Boolean, default=False)         # texte interrompu par la limite de longueur de l'IA
+    base_version_id = Column(Integer, nullable=True)
+    restaure_de = Column(Integer, nullable=True)
+    author_kind = Column(String(12), default="organisation")
+    author_invite_id = Column(Integer, nullable=True)
+    auteur_user_id = Column(Integer, nullable=True)   # compte qui a écrit / lancé la rédaction
+    job_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
 
 
 # === FEEDBACK (beta) ===
