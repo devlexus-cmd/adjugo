@@ -106,6 +106,7 @@ RAISONS = {
     "lourde": "pages de plan ou de dessin trop lourdes",
     "rendu": "pages en image impossibles à ouvrir",
     "coupee": "page interrompue (trop longue à lire)",
+    "page_illisible": "pages abîmées ou illisibles",
 }
 
 _PAGE_RAISON = {"lourde": "lourde", "temps": "temps", "plafond": "plafond_pages", "coupee": "coupee",
@@ -265,6 +266,13 @@ def _read_pdf(etat: _Etat, data: bytes, p: dict) -> dict:
     for pg in pages:
         if pg["etat"] in _PAGE_RAISON:
             non_lues[pg["num"]] = _PAGE_RAISON[pg["etat"]]
+    # Lecture interrompue par une erreur du fichier : les pages jamais atteintes sont nommées.
+    vues = {pg["num"] for pg in pages}
+    for n in range(1, total + 1):
+        if n not in vues:
+            non_lues[n] = "page_illisible"
+            pages.append({"num": n, "texte": "", "etat": "page_illisible"})
+    pages.sort(key=lambda pg: pg["num"])
     texte, starts = _assemble_pages(pages)
     texte, coupe = _cap_text(etat, texte)
     if coupe:
@@ -289,6 +297,8 @@ def _read_pdf(etat: _Etat, data: bytes, p: dict) -> dict:
 def _read_data(etat: _Etat, nom: str, chemin: str, data: bytes) -> dict:
     ext = _ext(nom)
     fmt = FORMATS.get(ext, "")
+    if not fmt and data[:5] == b"%PDF-":
+        fmt = "pdf"                      # PDF sans extension (ou mal nommé)
     p = _piece(nom, chemin, fmt or ext.lstrip(".") or "inconnu")
     if not fmt:
         return _finish(p, "", False, "format", f"{raison_texte('format')}"
@@ -328,14 +338,28 @@ def _read_data(etat: _Etat, nom: str, chemin: str, data: bytes) -> dict:
         p["pages_non_lues"] = [] if t.strip() else [1]
         if not t.strip():
             return _finish(p, "", False, raison or "scan_illisible")
-    else:   # texte, csv, md
-        t = data.decode("utf-8", errors="replace")
+    else:   # texte, csv, md — UTF-8, sinon Windows-1252 (CSV exportés par Excel)
+        try:
+            t = data.decode("utf-8")
+        except UnicodeDecodeError:
+            t = data.decode("cp1252", errors="replace")
     t, coupe = _cap_text(etat, t)
     complet = bool(info.get("complet", True)) and not coupe
     return _finish(p, t, complet, "" if complet else "plafond_caracteres")
 
 
 # ── Archive ────────────────────────────────────────────────────────────────────────────
+
+def _pdf_magic(zf, info) -> bool:
+    """Le membre commence-t-il par « %PDF- » ? Lecture de 5 octets seulement."""
+    try:
+        if info.compress_type not in an._ZIP_SAFE_COMPRESSION:
+            return False
+        with zf.open(info) as fh:
+            return fh.read(5) == b"%PDF-"
+    except Exception:
+        return False
+
 
 def _read_zip(etat: _Etat, content: bytes, depth: int, prefix: str, reprise: dict) -> None:
     if not an._zip_entry_count_ok(content):
@@ -379,8 +403,9 @@ def _read_zip(etat: _Etat, content: bytes, depth: int, prefix: str, reprise: dic
                 etat.pieces.append(_finish(_piece(nom, chemin, FORMATS.get(ext, ext.lstrip("."))), "", False,
                                            "compression"))
                 continue
-            if not is_zip and ext not in FORMATS:
-                # Format non lisible : signalé SANS décompresser le fichier.
+            if not is_zip and ext not in FORMATS and not _pdf_magic(zf, info):
+                # Format non lisible : signalé SANS décompresser le fichier (seul son en-tête est lu,
+                # pour reconnaître un PDF sans extension).
                 etat.fichiers += 1
                 etat.pieces.append(_read_data(etat, nom, chemin, b""))
                 continue

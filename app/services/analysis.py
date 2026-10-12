@@ -122,23 +122,37 @@ def _norm_with_map(text: str):
     return "".join(out), pos
 
 
-def citation_offset(text: str, extrait: str):
-    """Position (dans `text`) du début d'un extrait déjà vérifié par citation_guard, ou None.
-    Recherche exacte d'abord, puis tolérante (casse, accents, espaces, apostrophes)."""
-    try:
-        t = str(text or "")
-        ex = str(extrait or "").strip().strip(_QUOTE_CHARS + " \t\r\n")[:400].strip()
-        if not t or not ex:
+class Localisateur:
+    """Localise des extraits (déjà vérifiés) dans UN texte : recherche exacte d'abord, puis
+    tolérante (casse, accents, espaces, apostrophes). La table de correspondance du texte normalisé
+    n'est construite qu'une fois, au premier extrait qui en a besoin (plusieurs citations d'une même
+    pièce ne refont pas le travail)."""
+
+    def __init__(self, text: str):
+        self.t = str(text or "")
+        self._map = None
+
+    def offset(self, extrait: str):
+        try:
+            ex = str(extrait or "").strip().strip(_QUOTE_CHARS + " \t\r\n")[:400].strip()
+            if not self.t or not ex:
+                return None
+            i = self.t.find(ex)
+            if i >= 0:
+                return i
+            if self._map is None:
+                self._map = _norm_with_map(self.t)
+            nt, pos = self._map
+            nx = _norm_citation(ex)
+            j = nt.find(nx) if nx else -1
+            return pos[j] if 0 <= j < len(pos) else None
+        except Exception:
             return None
-        i = t.find(ex)
-        if i >= 0:
-            return i
-        nt, pos = _norm_with_map(t)
-        nx = _norm_citation(ex)
-        j = nt.find(nx) if nx else -1
-        return pos[j] if 0 <= j < len(pos) else None
-    except Exception:
-        return None
+
+
+def citation_offset(text: str, extrait: str):
+    """Position (dans `text`) du début d'un extrait déjà vérifié par citation_guard, ou None."""
+    return Localisateur(text).offset(extrait)
 
 
 # Exigences dont le DCE doit être CITÉ (clé → présente dans details.exigences_sources).

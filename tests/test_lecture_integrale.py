@@ -526,7 +526,7 @@ def test_questions_absent_non_verifie_ancienne_analyse_et_borne(client, auth, fa
     fake._answer = lambda kw: ("Le 3 mars.", "end_turn")
     r = client.post("/api/sourcing/ask", headers=h, json={"project_id": oid, "question": "Date limite ?"})
     assert r.status_code == 200 and r.json()["integral"] is False
-    assert "Ré-analysez le dossier" in r.json()["message"]
+    assert "Ré-analysez ou ré-importez le dossier" in r.json()["message"]
 
 
 # ═══ 5. Stockage : rangé avec le marché, dans l'export RGPD, supprimé avec lui ═══════════════════
@@ -652,7 +652,7 @@ def test_ecrans_couverture_sources_et_progression():
     assert "piecesResume" in js and "· non lue" in js and "· lue en partie" in js and "p.raison" in js
     # Carte d'analyse : la couverture, et l'invitation à ré-analyser une ancienne analyse.
     assert "aoCouverture().message" in html and "aoAncienneLecture()" in html
-    assert "Ré-analysez le dossier pour qu'Adjugo lise toutes les pièces" in html
+    assert "Ré-analysez ou ré-importez le dossier pour qu'Adjugo lise toutes les pièces" in html
     # Réponse d'une question : la phrase, la pièce, la page.
     assert 'v-for="(sc,si) in m.sources"' in html and "sc.piece" in html and "page {{ sc.page }}" in html
     # Gros dossier : progression de la lecture affichée pendant la tâche de fond.
@@ -660,3 +660,58 @@ def test_ecrans_couverture_sources_et_progression():
     # Sobre : aucun émoji dans ce qui a été ajouté.
     zone = html[html.index("Couverture de la lecture"):html.index("Couverture de la lecture") + 2500]
     assert not re.search(r"[\U0001F300-\U0001FAFF☀-➿]", zone)
+
+
+# ═══ 8. Lecture pièce par pièce : cas particuliers (sans IA) ═════════════════════════════════════
+
+def test_lecture_cas_particuliers(monkeypatch):
+    from app.services import dce_lecture as lec, analysis as an
+    # Plafond technique : pièce lue en partie, raison dite (jamais « lue en entier » à tort).
+    monkeypatch.setattr(lec, "MAX_CARACTERES_PIECE", 5000)
+    lu = lec.lire_dossier("DCE.zip", _zip({"RC.txt": (RC_TETE + _texte("RC", 20000, 31)).encode(),
+                                           "notes.csv": "Désignation;Prix\nBordure;45 €\n".encode("cp1252")}))
+    rc = next(p for p in lu["pieces"] if p["nom"] == "RC.txt")
+    assert rc["statut"] == "lu_en_partie" and "plafond technique" in rc["detail"] and rc["caracteres"] == 5000
+    csv = next(p for p in lu["pieces"] if p["nom"] == "notes.csv")
+    assert "Désignation" in csv["texte"] and "45 €" in csv["texte"]          # export Excel (Windows-1252)
+    monkeypatch.undo()
+
+    # PDF sans extension reconnu, PDF chiffré sans mot de passe d'ouverture lisible.
+    from pypdf import PdfReader, PdfWriter
+    w = PdfWriter()
+    for pg in PdfReader(io.BytesIO(_pdf("REGLEMENT DE LA CONSULTATION lisible malgre le chiffrement"))).pages:
+        w.add_page(pg)
+    w.encrypt(user_password="", owner_password="proprietaire")
+    buf = io.BytesIO()
+    w.write(buf)
+    lu = lec.lire_dossier("DCE.zip", _zip({"reglement": _pdf("REGLEMENT DE LA CONSULTATION sans extension"),
+                                           "droits_restreints.pdf": buf.getvalue()}))
+    noms = {p["nom"]: p for p in lu["pieces"]}
+    assert noms["reglement"]["statut"] == "lu_en_entier" and noms["reglement"]["format"] == "pdf"
+    assert noms["droits_restreints.pdf"]["statut"] == "lu_en_entier"
+
+    # Word : tableaux imbriqués lus.
+    import docx
+    d = docx.Document()
+    d.add_paragraph("CADRE DE REPONSE TECHNIQUE")
+    t = d.add_table(rows=1, cols=2)
+    inner = t.cell(0, 1).add_table(rows=1, cols=1)
+    inner.cell(0, 0).text = "Question 4 : moyens humains affectes"
+    t.cell(0, 0).text = "Rubrique"
+    b = io.BytesIO()
+    d.save(b)
+    lu = lec.lire_dossier("Cadre.docx", b.getvalue())
+    assert "Question 4 : moyens humains affectes" in lu["pieces"][0]["texte"]
+
+    # Citation retrouvée malgré accents, casse et espaces : position dans le texte d'origine.
+    texte = "Préambule.\n\nLe  Titulaire   fournit\nla carte grise du compacteur."
+    loc = an.Localisateur(texte)
+    assert loc.offset("le titulaire fournit la carte grise") == texte.index("Le  Titulaire")
+    assert an.citation_offset(texte, "phrase absente du texte") is None
+
+
+def test_ancienne_extraction_lit_aussi_les_tableurs():
+    from app.services.analysis import extract_dce_text
+    z = _zip({"RC.txt": RC_TETE.encode(), "BPU.xlsx": _xlsx([["Poste", "Bordure T2", "45 EUR"]])})
+    t = extract_dce_text("DCE.zip", z, max_chars=50000)
+    assert "Bordure T2 | 45 EUR" in t

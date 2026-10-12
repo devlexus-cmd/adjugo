@@ -8,6 +8,9 @@ Aucune étape ne s'auto-exécute : l'utilisateur déclenche chaque action.
   4. POST /api/sourcing/documents    — génération du dossier (LLM, sur les choisis)
 """
 import logging
+import threading as _threading
+import time as _time
+from collections import OrderedDict as _OrderedDict
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
@@ -423,10 +426,6 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
 # tâche de fond et sa progression se lit sur GET /api/sourcing/lecture/{project_id}.
 # Quota : UNE analyse par import, remboursée si l'IA tombe.
 
-import threading as _threading
-import time as _time
-from collections import OrderedDict as _OrderedDict
-
 _PROGRESS = _OrderedDict()          # job_id -> progression (process unique ; bornée)
 _PROGRESS_LOCK = _threading.Lock()
 _PROGRESS_MAX = 500
@@ -503,9 +502,12 @@ def _finish_analysis(db, project, analysis, company_data, gonogo, user, lecture=
     renvoie la réponse de la route. Commun à l'analyse pendant la requête et en tâche de fond."""
     from datetime import datetime, timezone
     analysis["dce_available"] = True
-    if lecture is not None and isinstance(analysis.get("lecture"), dict):
-        analysis["lecture"]["taille_stockee"] = lecture.get("taille_stockee")
     prev = project.ai_analysis or {}
+    if lecture is not None and isinstance(analysis.get("lecture"), dict):
+        # Taille du texte intégral rangé (export RGPD) ; ré-analyse du même texte : celle d'avant.
+        analysis["lecture"]["taille_stockee"] = (lecture.get("taille_stockee")
+                                                 or ((prev.get("lecture") or {}).get("taille_stockee")
+                                                     if isinstance(prev, dict) else None))
     _keep_grille_choices(prev, analysis)
     analysis["source"] = _safe_source(prev.get("source"))
     analysis["lead_score"] = prev.get("lead_score")
@@ -863,7 +865,7 @@ ASK_REGLEMENT_MAX = 60000      # règlement remis en entier jusqu'à 60 000 cara
 ASK_PASSAGES = 8
 ASK_MAX_TOKENS = 1200
 MSG_ANCIENNE_ANALYSE = ("Cette analyse date d'avant la lecture intégrale du dossier : la réponse ne s'appuie "
-                        "que sur le début du dossier. Ré-analysez le dossier pour qu'Adjugo le lise en entier.")
+                        "que sur le début du dossier. Ré-analysez ou ré-importez le dossier pour qu'Adjugo le lise en entier.")
 
 
 def _ask_legacy(project, q: str, lang: str) -> dict:
@@ -884,35 +886,32 @@ def _ask_legacy(project, q: str, lang: str) -> dict:
             "trouve": None, "verifiee": False, "message": MSG_ANCIENNE_ANALYSE}
 
 
-def _verify_citation(phrase: str, ref: str, reg: dict, hits: list, pieces: list):
-    """Source vérifiée d'une phrase citée : {piece, libelle, page, citation} ou None."""
-    from app.services.analysis import citation_guard, citation_offset
+def _verify_citation(phrase: str, ref: str, reg: dict, hits: list, pieces: list, locs: dict):
+    """Source vérifiée d'une phrase citée : {piece, libelle, page, citation} ou None. La phrase doit
+    se trouver dans un des extraits REMIS à l'IA (règlement, passages) : l'IA n'a rien lu d'autre.
+    Repère erroné : la phrase est cherchée dans les autres extraits remis."""
+    from app.services.analysis import citation_guard, Localisateur
     from app.services.dce_lecture import page_of
     cand = []
     r = (ref or "").strip().upper().strip("[]")
     if r == "R" and reg:
-        cand.append((reg, reg.get("texte") or "", 0))
+        cand.append(("R", reg, reg.get("texte") or "", 0))
     elif r.startswith("P") and r[1:].isdigit() and 1 <= int(r[1:]) <= len(hits):
-        h = hits[int(r[1:]) - 1]
-        cand.append((pieces[h["piece_index"]], h["texte"], h["debut"]))
-    # Repère erroné : la phrase est cherchée dans tous les extraits fournis, puis dans tout le dossier.
+        k = int(r[1:])
+        h = hits[k - 1]
+        cand.append((f"P{k}", pieces[h["piece_index"]], h["texte"], h["debut"]))
     if reg:
-        cand.append((reg, reg.get("texte") or "", 0))
-    for h in hits:
-        cand.append((pieces[h["piece_index"]], h["texte"], h["debut"]))
-    for piece, src, base in cand:
+        cand.append(("R", reg, reg.get("texte") or "", 0))
+    for k, h in enumerate(hits, 1):
+        cand.append((f"P{k}", pieces[h["piece_index"]], h["texte"], h["debut"]))
+    for key, piece, src, base in cand:
         cit = citation_guard(src, phrase, min_len=12)
         if cit:
-            off = citation_offset(src, cit)
+            loc = locs.setdefault(key, Localisateur(src))
+            off = loc.offset(cit)
             page = page_of(piece, base + off) if off is not None else None
             return {"piece": piece.get("nom") or "", "libelle": piece.get("libelle") or "",
                     "page": page, "citation": cit}
-    for piece in pieces:
-        cit = citation_guard(piece.get("texte") or "", phrase, min_len=12)
-        if cit:
-            off = citation_offset(piece.get("texte") or "", cit)
-            return {"piece": piece.get("nom") or "", "libelle": piece.get("libelle") or "",
-                    "page": page_of(piece, off) if off is not None else None, "citation": cit}
     return None
 
 
@@ -958,11 +957,11 @@ def _ask_integral(project, payload: dict, q: str, lang: str) -> dict:
         data = {"trouve": None, "reponse": raw, "citations": []}
     trouve = data.get("trouve")
     reponse = str(data.get("reponse") or "").strip()
-    sources, seen = [], set()
+    sources, seen, locs = [], set(), {}
     for c in (data.get("citations") or [])[:8]:
         if not isinstance(c, dict):
             continue
-        src = _verify_citation(str(c.get("phrase") or ""), str(c.get("ref") or ""), reg, hits, pieces)
+        src = _verify_citation(str(c.get("phrase") or ""), str(c.get("ref") or ""), reg, hits, pieces, locs)
         if src and (src["piece"], src["citation"]) not in seen:
             seen.add((src["piece"], src["citation"]))
             sources.append(src)

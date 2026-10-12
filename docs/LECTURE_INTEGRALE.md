@@ -152,7 +152,7 @@ délibérations) ; elle lit désormais aussi les `.xlsx`, `.ods`, `.odt` et les 
 - `ai_analysis["lecture"]` garde le résumé de la lecture (sans le texte) ;
   `ai_analysis["dce_excerpt"]` reste rempli (30 000 premiers caractères) pour les anciens usages.
 - **Anciennes analyses** (sans texte intégral) : comportement inchangé, l'écran et les réponses
-  invitent à ré-analyser ; la ré-analyse relit alors le dossier archivé en entier. Une ré-analyse
+  invitent à ré-analyser ou ré-importer le dossier ; la ré-analyse relit alors le dossier archivé en entier. Une ré-analyse
   du même fichier réutilise le texte déjà rangé (aucune relecture).
 
 ### 2.3 Analyse complète (`app/services/analyse_dossier.py`)

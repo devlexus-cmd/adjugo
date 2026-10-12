@@ -24,7 +24,6 @@ Budget de contexte (modèle d'analyse actuel, Claude Sonnet 4.6) :
 Coût mesuré par llm.cost_meter (journal) ; aucun quota ici : l'appelant débite UNE analyse par
 import (et la rembourse si l'IA tombe).
 """
-import json
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -151,6 +150,7 @@ def _read_part(job: dict) -> dict:
     except Exception:
         out["illisible"] = True
         return out
+    loc = an.Localisateur(seg)
     for f in (data.get("faits") or [])[:80] if isinstance(data, dict) else []:
         if not isinstance(f, dict):
             continue
@@ -158,7 +158,7 @@ def _read_part(job: dict) -> dict:
         if not cit:
             out["ecartes"] += 1
             continue
-        off = an.citation_offset(seg, cit)
+        off = loc.offset(cit)
         page = lec.page_of(p, a + off) if off is not None else None
         rub = str(f.get("rubrique") or "autre").strip().lower()[:30]
         out["faits"].append({"rubrique": rub if rub in RUBRIQUES else "autre",

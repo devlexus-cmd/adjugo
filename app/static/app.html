@@ -421,7 +421,7 @@
                   <li v-if="couvManques(aoCouverture()).length > 6" class="muted">et {{ couvManques(aoCouverture()).length - 6 }} autre(s) : voir « Pièces lues ».</li>
                 </ul>
               </div>
-              <p v-else-if="aoAncienneLecture()" class="muted small lect-cov partiel">Cette analyse date d'avant la lecture intégrale du dossier : elle n'en a lu qu'une partie. Ré-analysez le dossier pour qu'Adjugo lise toutes les pièces.</p>
+              <p v-else-if="aoAncienneLecture()" class="muted small lect-cov partiel">Cette analyse date d'avant la lecture intégrale du dossier : elle n'en a lu qu'une partie. Ré-analysez ou ré-importez le dossier pour qu'Adjugo lise toutes les pièces.</p>
               <!-- Synthèse rédigée de l'analyse (recommandation) + points d'attention : le vrai texte d'analyse du dossier -->
               <div v-if="aoDetails() && aoDetails().recommandation" class="small" style="margin:12px 0 2px;padding:13px 15px;background:var(--surface-2);border-radius:10px;line-height:1.65;white-space:pre-line">{{ aoDetails().recommandation }}</div>
               <div v-if="aoDetails() && aoDetails().points_attention && aoDetails().points_attention.length" style="margin-top:12px">
