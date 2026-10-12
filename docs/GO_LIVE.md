@@ -352,6 +352,13 @@ LLM_PROVIDER=anthropic            # tout chez Claude Sonnet 5.5 ; retirer à la 
 MISTRAL_ENTRAINEMENT_DESACTIVE=1
 # Retour arrière en une minute, si besoin : LLM_ROUTAGE=ancien (Sonnet 4.6 / Haiku 4.5)
 
+# Essai gratuit : garde-fou de coût (docs/ESSAI_GARDE_FOU.md) — rien d'obligatoire, valeurs par
+# défaut = décision du 12/10/2026. Migration u5v6essaigardefou à appliquer (alembic upgrade head).
+# Le budget compte le coût réel de chaque appel, calculé par le routage (même table des prix :
+# app/services/tarifs_ia.py). À régler au besoin :
+# TRIAL_AI_BUDGET_EUR=15  TRIAL_ANALYSES=30  TRIAL_QUESTIONS_PAR_JOUR=15  PAID_AI_ALERT_RATIO=0.5
+# MISTRAL_SOLDE_JUSQU_AU=2026-10-19 (fin du prix de lancement de Mistral Large 4 ; « aucun » = prix normal)
+
 # Déjà posé : ANTHROPIC_API_KEY, APP_BASE_URL=https://adjugo.pro
 ```
 

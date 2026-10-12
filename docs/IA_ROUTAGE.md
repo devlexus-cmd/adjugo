@@ -96,7 +96,14 @@ pour quel motif) :
 Une réponse coupée relancée au secours a deux fois plus de place. Si le secours échoue aussi, la
 réponse coupée ou au JSON illisible est rendue à l'appelant, qui la traite comme avant.
 
-## 3. Coût (`cost_meter`, journal et `dossiers_presentation.cout_ia`)
+## 3. Coût (`cost_meter`, journal, `dossiers_presentation.cout_ia` et budget de l'essai)
+
+Une seule table des prix : `app/services/tarifs_ia.py`. Le coût de chaque appel est calculé une seule
+fois (`llm._track_usage`) : modèle réellement appelé, point d'accès réellement utilisé, cache (lecture,
+écriture de 5 minutes ou d'une heure). Ce montant va tel quel au `cost_meter` et au relevé du compte
+facturé (`app/services/budget_ia.py` : budget de l'essai gratuit, alerte interne des forfaits payants,
+voir docs/ESSAI_GARDE_FOU.md). Chaque essai facturé est compté, secours compris : une analyse coupée
+chez Mistral puis reprise par Sonnet 5.5 coûte les deux appels.
 
 Prix en $ par million de tokens, relevés le 12/10/2026 :
 
@@ -114,8 +121,14 @@ Prix en $ par million de tokens, relevés le 12/10/2026 :
   prix normal.
 - Les deux prix de Mistral sont réglables : `MISTRAL_PRIX_LARGE4` et `MISTRAL_PRIX_LARGE4_SOLDE`,
   au format « entrée|sortie|cache ».
+- Cache de Mistral : les tokens relus sont signalés par `usage.prompt_tokens_details.cached_tokens`
+  et facturés 10 % du prix d'entrée (documentation de Mistral, vérifiée le 12/10/2026).
+- Modèle compté : celui que renvoie le fournisseur s'il a un tarif connu, sinon celui de la route. Un
+  modèle sans tarif est compté au prix d'Opus 5.5 (jamais sous-estimé) et signalé au journal.
 - Les tokens comptés sont ceux renvoyés par l'API : le découpage propre à chaque modèle y est déjà.
 - `llm.estimer_cout()` applique le facteur 1,3 aux estimations faites à partir de caractères.
+- `llm.plafond_sortie()` donne le `max_tokens` réellement envoyé (découpage, réserve de réflexion) :
+  le même calcul sert à l'appel et aux estimations du garde-fou de l'essai.
 - Aucun montant n'est montré au client.
 
 ## 4. Surveillance (`/metrics` et `GET /api/admin/ia/qualite`)

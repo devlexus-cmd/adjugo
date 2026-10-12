@@ -435,6 +435,10 @@ Ce qu'il faut retenir :
 - La borne par jour du pire cas d'un Business passe à 272 € par mois et par organisation. Clients payants :
   aucun plafond réduit (décision du fondateur). Garde-fou de coût : sur l'essai seulement.
 - À suivre sur `cost_meter` et `GET /api/admin/ia/qualite`.
+- Essai gratuit en cours : 15 questions par jour, et surtout le budget de l'essai (15 € par défaut),
+  qui compte le coût réel de chaque appel calculé par ce routage (même table des prix,
+  `app/services/tarifs_ia.py` ; secours et cache compris) : la borne d'un compte d'essai est ce budget,
+  pas les lignes ci-dessus (docs/ESSAI_GARDE_FOU.md).
 
 **Essai gratuit — décidé le 12/10/2026 (chantier E, `docs/ESSAI_GARDE_FOU.md`) : 30 analyses sur
 toute la durée de l'essai, 15 questions par jour, budget IA de l'essai vérifié avant chaque opération

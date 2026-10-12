@@ -23,11 +23,16 @@ qui compte est le **compte de facturation** : le propriétaire de l'organisation
 
 ## 2. Mesure du coût (tous usages)
 
-- **Chaque appel réussi** passe par `llm.messages_create` → `budget_ia.enregistrer_appel` : coût réel
-  au tarif public du modèle **réellement appelé** (celui que renvoie le fournisseur, sinon le modèle
-  demandé traduit vers Mistral quand il est actif), cache compris (`app/services/tarifs_ia.py`). Sont
-  couverts : analyses (avis et dossier), lecture en deux temps, questions, atelier, questionnaire,
-  chiffrage, veille (manuelle et planifiée), renouvellements, côté acheteur.
+- **Chaque appel facturé** passe par `llm.messages_create` (routage par tâche, docs/IA_ROUTAGE.md).
+  Son coût est calculé **une seule fois**, dans `llm._track_usage`, et porté au même montant au
+  `cost_meter` (journal) et à `budget_ia.enregistrer_appel` (compte facturé) : tarif public du modèle
+  **réellement appelé** (celui que renvoie le fournisseur s'il a un tarif connu, sinon celui de la
+  route), point d'accès **réellement utilisé** (Mistral UE : +10 %), cache compris (lecture ; écriture
+  de 5 minutes, ou d'une heure pour la rédaction), **secours compris** : une réponse coupée ou au JSON
+  illisible puis reprise par l'autre fournisseur est facturée deux fois, et comptée deux fois. Table
+  des prix unique : `app/services/tarifs_ia.py`. Sont couverts : analyses (avis et dossier), lecture
+  en deux temps, questions, atelier, questionnaire, chiffrage, veille (manuelle et planifiée),
+  renouvellements, côté acheteur.
 - **Rattachement** : tenant de l'appel (`tenant_scope`) → propriétaire de l'organisation → ligne
   `usage_ia` (`compte = "u<id>"`, mois, essai oui/non). Appel mutualisé (veille planifiée, un appel pour
   tous les abonnés) : `budget_ia.mutualise(...)` → compte `plateforme`, jamais imputé à un essai. Côté
@@ -36,23 +41,28 @@ qui compte est le **compte de facturation** : le propriétaire de l'organisation
   (`adjugo-cout-ia`) quelques instants plus tard ; une base indisponible → réessai, rien n'est perdu
   tant que le process vit. Les lectures (garde-fou, écran, administration) ajoutent ce qui n'est pas
   encore écrit (process unique). Un redémarrage perd au plus les relevés des dernières secondes.
-- `cost_meter` (journal d'un traitement) utilise les mêmes tarifs : le coût de Mistral et des modèles
-  5.5 est désormais calculé (avant : « non estimé »).
+- `cost_meter` (journal d'un traitement) cumule exactement les mêmes montants (vérifié par
+  `tests/test_fusion_routage_essai.py` : Mistral au point d'accès UE avec cache, secours après une
+  réponse coupée, rédaction avec cache d'une heure).
 
 Tarifs relevés le 12/10/2026 (vérifiés en ligne) :
 
-| Modèle (identifiant exact) | Entrée | Sortie | Cache lu | Cache écrit | Remarque |
+| Modèle (identifiant exact) | Entrée | Sortie | Cache lu | Cache écrit (5 min / 1 h) | Remarque |
 |---|---|---|---|---|---|
-| `claude-sonnet-5-5` | 2 $ | 10 $ | 0,10 $ (0,05 ×) | 2,50 $ | découpage ≈ +30 % de tokens |
-| `claude-haiku-5-5` | 0,10 $ | 0,50 $ | 0,01 $ | 0,125 $ | au-delà de 100 000 tokens d'entrée : 0,50 / 2,50 $ |
-| `claude-sonnet-4-6` | 3 $ | 15 $ | 0,30 $ | 3,75 $ | production actuelle |
-| `claude-haiku-4-5` | 1 $ | 5 $ | 0,10 $ | 1,25 $ | production actuelle |
-| `mistral-large-4` (préversion publique du 06/10/2026) | 1,156 € | 3,553 € | — | — | prix **normal** retenu (le prix soldé n'a pas de fin publiée) ; `api.eu.mistral.ai` : × 1,1 |
-| `mistral-large-latest` | compté comme Large 4 | | | | l'alias désigne Large 3 au 12/10/2026 ; ne pas l'utiliser |
-| modèle inconnu | prix d'Opus 5.5 (4 / 20 $) | | | | signalé une fois au journal : jamais sous-estimé |
+| `claude-sonnet-5-5` | 2 $ | 10 $ | 0,10 $ (0,05 ×) | 2,50 $ / 4 $ | découpage ≈ +30 % de tokens |
+| `claude-haiku-5-5` | 0,10 $ | 0,50 $ | 0,01 $ | 0,125 $ / 0,20 $ | au-delà de 100 000 tokens d'entrée : 0,50 / 2,50 $ |
+| `claude-opus-5-5` | 4 $ | 20 $ | 0,20 $ | 5 $ / 8 $ | |
+| `claude-sonnet-4-6` | 3 $ | 15 $ | 0,30 $ | 3,75 $ / 6 $ | ancien routage (`LLM_ROUTAGE=ancien`) |
+| `claude-haiku-4-5` | 1 $ | 5 $ | 0,10 $ | 1,25 $ / 2 $ | ancien routage |
+| `mistral-large-4` (préversion publique du 06/10/2026), prix normal | 1,36 $ (1,156 €) | 4,18 $ (3,553 €) | 0,14 $ (10 %) | — | `api.eu.mistral.ai` : + 10 % (`MISTRAL_SURCOUT_UE`) |
+| `mistral-large-4`, prix de lancement | 0,68 $ | 2,09 $ | 0,07 $ | — | « 50 % off for 2 weeks » (journal des modifications de Mistral, vérifié le 12/10/2026) : jusqu'au `MISTRAL_SOLDE_JUSQU_AU` inclus (2026-10-19) |
+| `mistral-large-latest` | compté comme Large 4 | | | | l'alias désigne Large 3 au 12/10/2026 ; jamais utilisé |
+| modèle inconnu | prix d'Opus 5.5 (4 / 20 $, cache non remisé) | | | | signalé une fois au journal : jamais sous-estimé |
 
-Conversion : 1 $ = `AI_USD_EUR` € (0,85). Mistral ne distingue pas le cache dans son relevé : tout
-le texte envoyé est compté au prix d'entrée.
+Conversion : 1 $ = `AI_USD_EUR` € (0,85, rapport des deux affichages de Mistral). Cache de Mistral :
+les tokens relus (`usage.prompt_tokens_details.cached_tokens`) sont facturés 10 % du prix d'entrée.
+Prix de Mistral réglables sans changer le code : `MISTRAL_PRIX_LARGE4`, `MISTRAL_PRIX_LARGE4_SOLDE`
+(« entrée|sortie|cache », en $), `MISTRAL_SOLDE_JUSQU_AU` (`aucun` = prix normal).
 
 ## 3. Le garde-fou, avant chaque opération
 
@@ -83,11 +93,18 @@ Points de vérification :
 | Veille manuelle, délibération importée ou collée | `consume_analysis` (amont) | enveloppes « veille », « deliberation » |
 | Renouvellements (repli IA) | `consume_analysis` | enveloppe « renouvellements » |
 
-Les enveloppes sont prises sur les plafonds du code et comptées au prix du **plus cher** des modèles
-configurés (aujourd'hui Sonnet 4.6) : l'estimation ne dépend pas de l'aiguillage d'une tâche vers un
-modèle moins cher. Valeurs au 12/10/2026 : analyse 0,17 € ; question 0,09 € ; chiffrage 0,03 € ;
-atelier 0,34 € pour une partie, 1,18 € pour neuf ; questionnaire de 40 questions 0,78 € ; dossier de
-50 000 caractères 0,14 €, 600 000 caractères (deux temps) 0,82 €, 6 000 000 caractères 3,66 €.
+Les enveloppes sont prises sur les plafonds du code et comptées sur la **route de la tâche**
+(`budget_ia.estimer_appel`, même table des prix que le coût mesuré) : modèle principal ET secours
+s'il est configuré, **le plus cher des deux** (une panne de Mistral fait tout passer chez Sonnet 5.5) ;
+plafond de sortie tel qu'il est envoyé (`llm.plafond_sortie` : découpage du modèle, réserve de
+réflexion) ; point d'accès de Mistral (UE : +10 %) ; durée du cache de la route (rédaction : une
+heure, écrite à 2 × l'entrée). `LLM_PROVIDER`, `LLM_ROUTAGE=ancien` et les variables `LLM_TACHE_*`
+sont donc pris en compte. Valeurs au 12/10/2026, les deux fournisseurs configurés (ou
+`LLM_PROVIDER=anthropic`), prix normal de Large 4 : analyse 0,15 € ; question 0,08 € ; chiffrage
+0,06 € ; atelier 0,50 € pour une partie, 1,70 € pour neuf ; raccourcir 0,08 € ; questionnaire de 40
+questions 0,68 € ; veille 0,17 € ; dossier de 50 000 caractères 0,12 €, 600 000 caractères (deux temps)
+1,34 €, 6 000 000 caractères 8,72 €. Mistral seul (secours coupé, `LLM_TACHE_<TACHE>_SECOURS=aucun`) :
+analyse 0,09 €, dossier de 6 000 000 caractères 5,46 €.
 
 ## 4. Écrans (aucun montant, jamais)
 
@@ -141,5 +158,9 @@ l'IA » dans la vue Administration.
   hors du périmètre « essai actif ».
 - Le relevé `usage_ia` n'est pas effacé avec un compte (aucune donnée personnelle : un identifiant de
   compte, des montants, des nombres de tokens) ; il sert au coût de la plateforme.
-- Les tarifs sont codés dans `tarifs_ia.py` : les revoir à chaque changement de prix (le solde de
-  Mistral Large 4 n'est pas compté, par prudence).
+- Les tarifs sont codés dans `tarifs_ia.py` : les revoir à chaque changement de prix. Le prix de
+  lancement de Mistral Large 4 est compté jusqu'au `MISTRAL_SOLDE_JUSQU_AU` (2026-10-19) : si Mistral
+  prolonge ou arrête plus tôt son offre, changer cette date (`aucun` = prix normal).
+- Une estimation compte le plus cher du principal et du secours, pas leur somme : une réponse coupée
+  puis reprise par le secours (deux appels facturés) peut dépasser l'estimation ; elle est comptée au
+  coût réel ensuite.
