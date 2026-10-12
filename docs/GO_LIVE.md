@@ -348,7 +348,7 @@ ANALYTICS_DOMAIN=adjugo.pro
 # variables ci-dessous ne sont pas posées, tout part chez Claude Sonnet 5.5 (rien à poser pour déployer).
 # Après la désinscription (console Mistral, Admin > Privacy, « Anonymous improvement data ») :
 MISTRAL_ENTRAINEMENT_DESACTIVE=1
-# À la fin du préavis donné aux clients (DPA, art. 6), le jour où les textes juridiques sont publiés :
+# Juste après la mise en ligne (décision du 12/10/2026 ; pages juridiques déjà publiées, elles s'adaptent) :
 MISTRAL_ACTIF=1                   # Mistral Large 4 lit alors les dossiers
 # Retour arrière en une minute, si besoin : LLM_ROUTAGE=ancien (Sonnet 4.6 / Haiku 4.5)
 

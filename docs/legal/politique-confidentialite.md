@@ -81,11 +81,13 @@ Les données sont traitées par les équipes habilitées de l'Éditeur et par le
 |---|---|---|---|
 | **Railway Corporation** | Hébergement applicatif (calcul) et base de données | l'ensemble des données du Service | **Base de données : Union européenne** ; hébergement applicatif : voir art. 7 |
 | **Cloudflare, Inc.** (stockage R2) | Stockage des fichiers téléversés et des sauvegardes | DCE, pièces administratives et documents d'entreprise (données personnelles éventuelles) | **Union européenne** (Europe de l'Ouest — WEUR) |
-| **{{AI_PROVIDER}}** ({{AI_PRODUCT}}) | Fournisseur du modèle d'IA pour l'analyse et la génération de documents | contenus soumis à l'analyse (extraits de DCE, données d'entreprise) | {{AI_LOCATION_FULL}} |
+| **{{AI_PROVIDER}}** ({{AI_PRODUCT}}) | Fournisseur du modèle d'IA pour l'analyse et la génération de documents | dossiers de consultation analysés (lus en entier), questions posées, données d'entreprise utiles à la rédaction (noms des salariés remplacés par des étiquettes avant tout envoi) | {{AI_LOCATION_FULL}} |
 | **Brevo** (Sendinblue SAS) | Envoi des e-mails transactionnels | adresse e-mail du destinataire, contenu des notifications | **Union européenne** (France) |
 | **Google** (Google Cloud France / Google LLC — Google Workspace) | Messagerie de l'Éditeur (adresses @adjugo.pro) : réception des demandes d'accès et des échanges par e-mail | coordonnées et message des demandes d'accès, correspondance | Union européenne / **États-Unis** (encadré par CCT et EU-U.S. Data Privacy Framework) |
 | **Functional Software, Inc.** (Sentry) | Observabilité et suivi technique des erreurs | journaux techniques, identifiants techniques, adresse IP | **États-Unis** (encadré par CCT) |
 | **Stripe** (Stripe Payments Europe, Ltd. / Stripe, Inc.) | Traitement des paiements | données de facturation et de paiement (l'Éditeur n'accède pas aux numéros de carte) | UE / États-Unis |
+
+**Intelligence artificielle.** {{AI_ROLES}} Les contenus envoyés ne sont pas utilisés pour entraîner un modèle d'IA ({{AI_ENTRAINEMENT}}). La conservation est encadrée par les conditions applicables à l'API ({{AI_CONSERVATION}}).{{AI_SOUS_TRAITANTS_MISTRAL}} Lieux de stockage et de calcul : tableau ci-dessus.
 
 Les données peuvent également être communiquées aux **autorités administratives ou judiciaires** lorsque la loi l'exige.
 
@@ -99,7 +101,7 @@ Des **transferts résiduels vers des pays tiers** subsistent toutefois pour cert
 
 Ces transferts sont encadrés par des **garanties appropriées** au sens du chapitre V du RGPD, notamment :
 
-- la signature de **clauses contractuelles types** (CCT / SCC) adoptées par la Commission européenne ;
+- la signature de **clauses contractuelles types** (CCT / SCC) adoptées par la Commission européenne{{AI_CCT_MISTRAL}} ;
 - le cas échéant, l'adhésion du prestataire au **EU-U.S. Data Privacy Framework** ;
 - des mesures techniques et organisationnelles complémentaires (chiffrement en transit et au repos, minimisation des données transmises).
 

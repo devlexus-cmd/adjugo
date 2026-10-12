@@ -17,7 +17,7 @@ Règle : « économiser le coût de l'IA sans jamais baisser la performance ».
 n'est pas le cas (c'est le cas au déploiement : seule la clé est dans Railway), les tâches de lecture
 partent chez leur secours, Claude Sonnet 5.5, et aucune tâche Claude n'a de secours Mistral. Raison :
 nouveau sous-traitant à annoncer aux clients avec préavis (article 6 du DPA), et pages juridiques qui
-disent « jamais utilisés pour entraîner » (docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md, § 5).
+disent que les contenus ne servent pas à entraîner les modèles (docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md).
 
 | Tâche (`tache=`) | Appel | Fournisseur, modèle | Réglages | Secours | Ancien routage |
 |---|---|---|---|---|---|
@@ -207,7 +207,7 @@ La route publique `GET /api/llm/info` ne donne que la liste des fournisseurs sol
 | `MISTRAL_API_KEY_ADJUGO` | — | Clé Mistral, lue en priorité (déjà posée dans Railway). Seule, elle n'envoie rien chez Mistral. |
 | `MISTRAL_API_KEY` | — | Nom historique, accepté par compatibilité. Ne déclenche plus rien d'autre. |
 | `MISTRAL_ENTRAINEMENT_DESACTIVE` | `false` | À mettre à `1` une fois « Anonymous improvement data » désactivé dans la console Mistral. Condition nécessaire pour que Mistral reçoive quoi que ce soit. |
-| `MISTRAL_ACTIF` | `false` | `1` : Mistral Large 4 lit les dossiers (avec la clé et `MISTRAL_ENTRAINEMENT_DESACTIVE=1`). À poser à la fin du préavis donné aux clients, le jour où les textes juridiques sont publiés. |
+| `MISTRAL_ACTIF` | `false` | `1` : Mistral Large 4 lit les dossiers (avec la clé et `MISTRAL_ENTRAINEMENT_DESACTIVE=1`). À poser juste après la mise en ligne (décision du 12/10/2026) ; les pages juridiques, déjà publiées, s'adaptent d'elles-mêmes. |
 | `MISTRAL_POINT_ACCES` | `auto` | `auto` \| `ue` \| `mondial`. |
 | `LLM_ROUTAGE` | `nouveau` | `ancien` : retour en une minute à Sonnet 4.6 / Haiku 4.5, réglages d'origine, aucun secours. |
 | `LLM_PROVIDER` | `auto` | `anthropic` \| `mistral` : toutes les tâches chez un seul fournisseur, sans secours. Le diagnostic et le journal le disent. |

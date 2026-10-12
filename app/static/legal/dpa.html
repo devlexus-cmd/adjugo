@@ -131,7 +131,7 @@
 <li>cloisonnement strict des données par client (multi-tenant) et contrôle des accès / habilitations ;</li>
 <li>journalisation des accès et supervision (suivi des erreurs) ;</li>
 <li>sauvegardes quotidiennes stockées chiffrées au repos chez notre hébergeur européen, avec une rétention de 14 jours ;</li>
-<li>modèle d'IA ({{AI_PROVIDER}}, appelé via une API) : les contenus qui lui sont envoyés ne sont jamais utilisés pour entraîner un modèle ; la conservation éventuelle par le fournisseur est encadrée par ses conditions ;</li>
+<li>modèles d'IA ({{AI_PROVIDER}}, appelés via une API) : les contenus qui leur sont envoyés ne sont pas utilisés pour entraîner un modèle ({{AI_ENTRAINEMENT}}) ; les noms des salariés sont remplacés par des étiquettes avant tout envoi ; la conservation est encadrée par les conditions applicables à l'API ({{AI_CONSERVATION}}) ;</li>
 <li>minimisation des données transmises aux sous-traitants ultérieurs ;</li>
 <li>procédure de gestion des violations de données et de notification.</li>
 </ul>
@@ -145,7 +145,7 @@
 <tr><td><strong>Functional Software, Inc.</strong> (Sentry)</td><td>Observabilité et suivi technique des erreurs</td><td>États-Unis (CCT)</td></tr>
 <tr><td><strong>Stripe</strong> (Stripe Payments Europe, Ltd. / Stripe, Inc.)</td><td>Traitement des paiements</td><td>UE / États-Unis</td></tr>
 </tbody></table>
-<p>Fournisseur d'IA : les contenus envoyés au modèle ne sont jamais utilisés pour entraîner un modèle d'IA ; leur conservation éventuelle par {{AI_PROVIDER}} est encadrée par ses conditions applicables à l'API ({{AI_PRODUCT}}).</p>
+<p>Intelligence artificielle : {{AI_ROLES}} Les contenus envoyés ne sont pas utilisés pour entraîner un modèle d'IA ({{AI_ENTRAINEMENT}}).{{AI_SOUS_TRAITANTS_MISTRAL}} Les lieux de stockage et de calcul figurent dans le tableau ci-dessus. La conservation est encadrée par les conditions applicables à l'API ({{AI_CONSERVATION}}).</p>
 <p>Cette liste est tenue à jour ; toute modification est notifiée au Client conformément à l'article 6.</p>
 </main>
 <footer class="lg-foot">

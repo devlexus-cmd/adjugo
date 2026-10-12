@@ -241,8 +241,8 @@ def test_dpa_wording_matches_security_page(client):
     phrase = "stockées chiffrées au repos chez notre hébergeur européen"
     assert phrase in t and phrase in sec
     assert "sauvegardes quotidiennes chiffrées, stockées en Union européenne" not in t
-    assert "jamais utilisés pour entraîner un modèle" in t
-    assert "encadrée par ses conditions" in t
+    assert "ne sont pas utilisés pour entraîner un modèle" in t
+    assert "encadrée par les conditions applicables à l'API" in t
     assert "{{AI_" not in t
 
 

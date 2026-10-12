@@ -150,7 +150,7 @@ def _use_mistral() -> bool:
     """Mistral est-il UTILISABLE ? Il faut les TROIS : une clé, MISTRAL_ACTIF=1 (décision explicite, à
     poser à la fin du préavis donné aux clients, article 6 du DPA) et MISTRAL_ENTRAINEMENT_DESACTIVE=1
     (désinscription de l'entraînement faite sur le compte). Ainsi, déployer avec la seule clé (déjà dans
-    Railway) n'envoie rien chez Mistral, et les pages juridiques (« jamais utilisés pour entraîner »)
+    Railway) n'envoie rien chez Mistral, et les pages juridiques (« pas utilisés pour entraîner »)
     restent vraies dans toutes les configurations. Ne décide de rien d'autre : seules les tâches routées
     vers Mistral (ou en secours) y partent."""
     return etat_mistral() == "actif"
@@ -1713,8 +1713,8 @@ def diagnostic(verifier: bool = True) -> dict:
             messages.append("Clé Mistral présente, mais Mistral n'est PAS activé : rien ne lui est envoyé, la lecture "
                             "des dossiers part chez Claude Sonnet 5.5. Pour l'activer, à la fin du préavis donné aux "
                             "clients (article 6 du DPA) : MISTRAL_ENTRAINEMENT_DESACTIVE=1 (désinscription faite) et "
-                            "MISTRAL_ACTIF=1, le jour où les textes de docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md sont "
-                            "publiés.")
+                            "MISTRAL_ACTIF=1 (les pages juridiques, déjà publiées, décrivent alors d'elles-mêmes "
+                            "les deux fournisseurs : docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md).")
         elif em == "entrainement":
             messages.append("MISTRAL_ACTIF=1, mais la désinscription de l'entraînement n'est pas confirmée : Mistral "
                             "reste coupé (la lecture des dossiers part chez Claude Sonnet 5.5). Désactivez « Anonymous "

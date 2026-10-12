@@ -674,15 +674,18 @@ def test_pages_juridiques_avec_mistral_ue(client, monkeypatch):
     html = client.get("/confidentialite").text
     assert "Anthropic, PBC et Mistral AI" in html and "api.eu.mistral.ai" in html
     assert "Union européenne et de l&#x27;AELE" in html
-    assert "Microsoft, CoreWeave et Cloudflare" in html and "désactivée par l&#x27;Éditeur sur son compte" in html
+    # Sous-traitants de Mistral AI : aucun nom (liste non vérifiée), renvoi vers la liste qu'il publie.
+    assert ("Mistral AI s&#x27;appuie sur ses propres sous-traitants techniques, dont la liste à jour est publiée "
+            "sur son centre de confiance") in html and "trust.mistral.ai/subprocessors" in html
+    assert "droit américain" not in html and "désactivée par l&#x27;Éditeur sur son compte" in html
     assert "non encore confirmée" not in html
     assert "France — api.mistral.ai" not in html and "{{AI_" not in html
     # Transferts (§ 7) : UE ET AELE, rôles et relais tirés du routage effectif.
     assert "calcul dans l&#x27;Union européenne et l&#x27;AELE" in html
     assert ("Anthropic (États-Unis ; calcul possiblement dans d&#x27;autres pays) pour les questions "
             "sur les dossiers et la rédaction, et en relais pour la lecture et l&#x27;analyse des dossiers") in html
-    assert ("Cloudflare) pour la lecture et l&#x27;analyse des dossiers, et en relais pour les questions sur les "
-            "dossiers et la rédaction") in html
+    assert ("le fournisseur d&#x27;IA Mistral AI et ses propres sous-traitants techniques pour la lecture et "
+            "l&#x27;analyse des dossiers, et en relais pour les questions sur les dossiers et la rédaction") in html
     dpa = client.get("/dpa").text
     assert ("Anthropic : États-Unis pour le stockage, calcul possiblement hors des États-Unis (CCT) ; "
             "Mistral AI : Union européenne et AELE pour le calcul") in dpa

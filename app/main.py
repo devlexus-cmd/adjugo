@@ -400,16 +400,54 @@ def _usage_transfert(principal, secours) -> str:
     return ", ".join(parts)
 
 
+# Mistral AI : la liste de SES sous-traitants n'a pas pu être vérifiée (12/10/2026). Aucun nom ici,
+# seulement le renvoi vers la liste qu'il publie lui-même.
+_MISTRAL_SOUS_TRAITANTS_URL = "https://trust.mistral.ai/subprocessors"
+_MISTRAL_SOUS_TRAITANTS = ("Mistral AI s'appuie sur ses propres sous-traitants techniques, dont la liste à jour est "
+                           "publiée sur son centre de confiance "
+                           f"(<a href=\"{_MISTRAL_SOUS_TRAITANTS_URL}\">{_MISTRAL_SOUS_TRAITANTS_URL}</a>)")
+_MISTRAL_SOUS_TRAITANTS_COURT = "sous-traitants de Mistral AI : liste publiée sur trust.mistral.ai/subprocessors"
+# Entraînement et conservation, par fournisseur (faits vérifiés le 12/10/2026). Mistral AI : « jusqu'à »
+# 30 jours, jamais « aucune conservation » (la non-conservation n'est pas confirmée pour le compte).
+_ANTH_ENTRAINEMENT = "Anthropic : jamais sans autorisation"
+_MISTRAL_ENTRAINEMENT = "Mistral AI : utilisation pour l'amélioration des modèles désactivée sur le compte de l'Éditeur"
+_MISTRAL_ENTRAINEMENT_NON_CONFIRME = ("Mistral AI : utilisation pour l'amélioration des modèles active par défaut, "
+                                      "sa désactivation sur le compte de l'Éditeur n'étant pas encore confirmée")
+_ANTH_CONSERVATION = ("Anthropic : 30 jours en règle générale, jusqu'à 2 ans pour les contenus signalés pour "
+                      "non-respect de ses règles d'usage")
+_MISTRAL_CONSERVATION = "Mistral AI : jusqu'à 30 jours glissants, pour la surveillance des abus"
+
+
+def _phrase_roles(intervenants) -> str:
+    """Qui fait quoi, d'après les tâches RÉELLEMENT confiées à chacun (principal) et celles qu'il reprend
+    en cas de panne (secours). intervenants : [(libellé, principal, secours), …].
+    Cas habituel (chacun est le relais exact de l'autre) : « A intervient pour … ; B, pour … ; chacun
+    prend le relais de l'autre en cas de panne ou d'erreur. » Sinon, le détail de chacun."""
+    actifs = [(lib, list(p or []), list(s or [])) for lib, p, s in intervenants if p or s]
+    if len(actifs) == 2:
+        (la, pa, sa), (lb, pb, sb) = actifs
+        if pa and pb and set(sa) == set(pb) and set(sb) == set(pa):
+            return (f"{la} intervient {_usage_transfert(pa, None)} ; {lb}, {_usage_transfert(pb, None)} ; "
+                    "chacun prend le relais de l'autre en cas de panne ou d'erreur.")
+    phrase = " ; ".join(f"{lib} intervient {_usage_transfert(p, s)}" for lib, p, s in actifs)
+    if any(s for _lib, _p, s in actifs):
+        phrase += " ; un relais ne joue qu'en cas de panne ou d'erreur de l'autre fournisseur"
+    return phrase + "."
+
+
 def _ai_subprocessor_fragments():
     """Fragments décrivant les fournisseurs d'IA RÉELLEMENT sollicités avec la configuration du serveur
-    (routage par tâche ET secours, app.services.llm), injectés dans les pages légales (confidentialité
-    + DPA). Exacts et factuels : Anthropic (stockage aux États-Unis, calcul possiblement hors des
-    États-Unis par son routage mondial, CCT) ; Mistral AI, dès qu'il est ACTIVÉ (clé, MISTRAL_ACTIF et
-    désinscription de l'entraînement confirmée), avec le lieu de calcul du point d'accès RÉELLEMENT
-    utilisé (UE et AELE par api.eu.mistral.ai, ou sans engagement de lieu par le point d'accès mondial),
-    ses sous-traitants de droit américain et l'état de la désinscription. Le rôle de chacun (et les
-    relais) est tiré du routage effectif, jamais écrit en dur. Phrases fixes de dpa.html et securite.html
-    à compléter : docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md."""
+    (routage par tâche ET secours, app.services.llm), injectés dans les pages légales (confidentialité,
+    DPA, sécurité). Exacts dans TOUTES les configurations : Anthropic seul (Mistral non activé, ou
+    LLM_PROVIDER=anthropic), Anthropic et Mistral AI (point d'accès UE ou mondial), Mistral AI seul
+    (LLM_PROVIDER=mistral). Anthropic : stockage aux États-Unis, calcul possiblement hors des États-Unis
+    par son routage mondial, CCT ; jamais d'entraînement sans autorisation ; conservation de 30 jours en
+    règle générale. Mistral AI, dès qu'il est ACTIVÉ (clé, MISTRAL_ACTIF et désinscription de
+    l'entraînement confirmée) : lieu de calcul du point d'accès RÉELLEMENT utilisé (UE et AELE par
+    api.eu.mistral.ai, ou sans engagement de lieu par le point d'accès mondial), désinscription,
+    conservation jusqu'à 30 jours glissants, renvoi vers la liste de SES sous-traitants (aucun nom).
+    Le rôle de chacun (et les relais) est tiré du routage effectif, jamais écrit en dur. Repères et textes
+    publiés : docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md."""
     anth_full = ("<strong>États-Unis</strong> pour le stockage (API standard api.anthropic.com) ; calcul "
                  "possiblement hors des États-Unis (routage mondial d'Anthropic) — encadré par CCT")
     anth_court = "États-Unis pour le stockage, calcul possiblement hors des États-Unis (CCT)"
@@ -421,6 +459,12 @@ def _ai_subprocessor_fragments():
         "{{AI_LOCATION_SHORT}}": _h(anth_court),
         "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA (Anthropic, {anth_transfert}) pour l'analyse et la génération de "
                                       "documents, "),
+        "{{AI_ROLES}}": _h("Anthropic (Claude API) intervient pour la lecture des dossiers, les questions et la rédaction."),
+        "{{AI_ENTRAINEMENT}}": _h(_ANTH_ENTRAINEMENT),
+        "{{AI_ENTRAINEMENT_FOURNISSEURS}}": _h("de notre fournisseur, Anthropic"),
+        "{{AI_CONSERVATION}}": _h(_ANTH_CONSERVATION),
+        "{{AI_SOUS_TRAITANTS_MISTRAL}}": "",
+        "{{AI_CCT_MISTRAL}}": "",
     }
     try:
         from app.services.llm import etat_juridique
@@ -447,26 +491,40 @@ def _ai_subprocessor_fragments():
                   "stockage dans l'Union européenne par défaut")
         lieu_m_court = "lieu de calcul non garanti, possiblement hors Union européenne"
         transfert_m = "calcul possiblement hors de l'Union européenne"
-    sous_traitants = ("sous-traitants de Mistral AI, dont Microsoft, CoreWeave et Cloudflare (sociétés de droit "
-                      "américain) ; transferts encadrés par CCT")
-    if e.get("mistral_entrainement_desactive"):
+    # Phrase complète (avec le lien) sous le tableau : ici, la forme courte.
+    sous_traitants = f"{_MISTRAL_SOUS_TRAITANTS_COURT} ; transferts encadrés par CCT"
+    desinscrit = bool(e.get("mistral_entrainement_desactive"))
+    if desinscrit:
         entr = ("utilisation des contenus pour l'amélioration des modèles de Mistral AI désactivée par "
                 "l'Éditeur sur son compte")
     else:
         entr = ("utilisation des contenus pour l'amélioration des modèles de Mistral AI : active par défaut "
                 "chez ce fournisseur, sa désactivation étant à la charge du titulaire du compte (l'Éditeur), "
                 "non encore confirmée")
+    entr_m = _MISTRAL_ENTRAINEMENT if desinscrit else _MISTRAL_ENTRAINEMENT_NON_CONFIRME
     relais_m = " ; relais d'Anthropic en cas de panne" if t_m.get("secours") else ""
     relais_a = " ; relais de Mistral AI en cas de panne" if t_a.get("secours") else ""
     mistral_full = f"<strong>Mistral AI</strong> ({role_m}{relais_m}) : {lieu_m} ; {sous_traitants} ; {entr}."
+    communs_mistral = {
+        "{{AI_SOUS_TRAITANTS_MISTRAL}}": _h(f" {_MISTRAL_SOUS_TRAITANTS}."),
+        "{{AI_CCT_MISTRAL}}": _h(" (pour Mistral AI : celles prévues par son accord de sous-traitance)"),
+    }
     if not e.get("anthropic"):
         return {
             "{{AI_PROVIDER}}": "Mistral AI",
             "{{AI_PRODUCT}}": "La Plateforme",
             "{{AI_LOCATION_FULL}}": _h(mistral_full),
-            "{{AI_LOCATION_SHORT}}": _h(f"{lieu_m_court} ; sous-traitants de droit américain (CCT)"),
-            "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA Mistral AI et ses sous-traitants de droit américain "
-                                          f"(dont Microsoft, CoreWeave et Cloudflare) — {transfert_m} —, "),
+            "{{AI_LOCATION_SHORT}}": _h(f"{lieu_m_court} ; {_MISTRAL_SOUS_TRAITANTS_COURT} (CCT)"),
+            "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA Mistral AI et ses propres sous-traitants techniques "
+                                          f"— {transfert_m} —, "),
+            "{{AI_ROLES}}": _h(_phrase_roles([("Mistral AI (La Plateforme)", t_m.get("principal"),
+                                               t_m.get("secours"))])),
+            "{{AI_ENTRAINEMENT}}": _h(entr_m),
+            "{{AI_ENTRAINEMENT_FOURNISSEURS}}": _h("de notre fournisseur, Mistral AI"
+                                                   + (" (nous avons désactivé cette utilisation sur notre compte)"
+                                                      if desinscrit else "")),
+            "{{AI_CONSERVATION}}": _h(_MISTRAL_CONSERVATION),
+            **communs_mistral,
         }
     usage_a = _usage_transfert(t_a.get("principal"), t_a.get("secours"))
     usage_m = _usage_transfert(t_m.get("principal"), t_m.get("secours"))
@@ -474,11 +532,19 @@ def _ai_subprocessor_fragments():
         "{{AI_PROVIDER}}": "Anthropic, PBC et Mistral AI",
         "{{AI_PRODUCT}}": "Claude API ; La Plateforme de Mistral AI",
         "{{AI_LOCATION_FULL}}": _h(f"<strong>Anthropic</strong> ({role_a}{relais_a}) : {anth_full}. ") + _h(mistral_full),
-        "{{AI_LOCATION_SHORT}}": _h(f"Anthropic : {anth_court} ; Mistral AI : {lieu_m_court}, "
-                                    "sous-traitants de droit américain (CCT)"),
+        "{{AI_LOCATION_SHORT}}": _h(f"Anthropic : {anth_court} ; Mistral AI : {lieu_m_court} ; "
+                                    f"{_MISTRAL_SOUS_TRAITANTS_COURT} (CCT)"),
         "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA Anthropic ({anth_transfert}) {usage_a}, le fournisseur "
-                                      f"d'IA Mistral AI et ses sous-traitants de droit américain (dont Microsoft, "
-                                      f"CoreWeave et Cloudflare) {usage_m} — {transfert_m} —, "),
+                                      f"d'IA Mistral AI et ses propres sous-traitants techniques {usage_m} "
+                                      f"— {transfert_m} —, "),
+        "{{AI_ROLES}}": _h(_phrase_roles([("Anthropic (Claude API)", t_a.get("principal"), t_a.get("secours")),
+                                          ("Mistral AI (La Plateforme)", t_m.get("principal"), t_m.get("secours"))])),
+        "{{AI_ENTRAINEMENT}}": _h(f"{_ANTH_ENTRAINEMENT} ; {entr_m}"),
+        "{{AI_ENTRAINEMENT_FOURNISSEURS}}": _h("de nos fournisseurs, Anthropic et Mistral AI"
+                                               + (" (chez Mistral AI, nous avons désactivé cette utilisation sur "
+                                                  "notre compte)" if desinscrit else "")),
+        "{{AI_CONSERVATION}}": _h(f"{_ANTH_CONSERVATION} ; {_MISTRAL_CONSERVATION}"),
+        **communs_mistral,
     }
 
 

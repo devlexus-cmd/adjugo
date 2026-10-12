@@ -488,9 +488,11 @@ def test_page_securite_puce_strict_necessaire(client):
             "avant tout envoi.</li>")
     assert puce in html
     assert "on ne transmet au modèle que les extraits utiles" not in html
-    # Les autres engagements ne bougent pas (les corrections liées à Mistral attendent son activation).
-    assert "jamais utilisés pour entraîner un modèle d'IA" in html
-    assert "encadrée par ses conditions applicables à l'API" in html
+    # Engagement « entraînement » publié le 12/10/2026 (exact avec ou sans Mistral :
+    # tests/test_pages_juridiques_ia.py) ; la puce « Transferts encadrés » ne bouge pas.
+    assert "ne sont <strong>pas utilisés pour entraîner un modèle d'IA</strong> (" in html
+    assert "jamais utilisés pour entraîner" not in html
+    assert "encadrée par les conditions applicables à l'API" in html
     assert "<strong>Transferts encadrés</strong>" in html
 
 
