@@ -410,14 +410,22 @@ pendant l'essai, ou réduire le nombre d'analyses d'essai.
   2. Le moteur de l'atelier (`app/services/atelier.py`, `agents/memoire.py`) lit le dossier par
      l'accès commun : `dce_texte.pieces_remises(payload, ATELIER_DOSSIER_MAX_CARACTERES)` remet TOUS
      les règlements (modificatif en premier) et TOUS les cadres de réponse en entier, précédés de
-     `dce_lecture.note_pour_ia` (pièces non lues), dans un bloc commun mis en cache de prompt ; puis,
+     `dce_texte.note_remise(…, pour_acheteur=True)` (ce qui est remis en entier, par passages, non
+     lu ; jamais « dossier lu en entier », jamais de remarque sur la lecture dans le texte rendu à
+     l'acheteur — `dce_lecture.note_pour_ia` reste celle de l'analyse et des questions), dans un bloc
+     commun mis en cache de prompt (la première partie de « Rédiger tout » part seule, les suivantes
+     relisent le cache) ; puis,
      pour chaque partie, `dce_texte.passages(project, partie, k=ATELIER_PASSAGES, exclude_pieces=…)`
      dans toutes les autres pièces. La lecture rangée n'est prise que si elle est celle du fichier
      importé le plus récent (même empreinte) ; sinon (ancienne analyse, lecture en cours) l'ancienne
      lecture bornée reste, et l'écran le dit avec le moyen d'obtenir la lecture intégrale
      (« Ré-analyser »). « Pièces du dossier de l'acheteur lues par Adjugo » montre la couverture
      honnête (lue en entier, en partie, non lue et pourquoi, et ce qui est remis à l'IA). Le texte
-     intégral n'est jamais recopié dans `dossiers_presentation.dce_lu`.
+     intégral n'est jamais recopié dans `dossiers_presentation.dce_lu`, ni celui des cadres de
+     réponse : seul `cadre_decoupable` y est gardé, le plan relit le cadre depuis la lecture rangée.
+     « Lecture en cours » n'est dit que si la tâche de lecture tourne vraiment (une lecture morte au
+     redémarrage du serveur n'est plus dite « pas encore terminée »). Coût IA de l'atelier avec la
+     lecture intégrale : `docs/REDACTION_V2_API.md` § 4.4.
      `routers/knowledge.py:131` (ancien `memoire-upload`) ne rédige plus (410, vague 2) : plus aucun
      plafond à y retirer ; les 24 000 caractères de `agents/memoire.py` (exigences du mémoire de
      groupement, routeur archivé) passent par `texte_pour_exigences` : lecture intégrale du marché

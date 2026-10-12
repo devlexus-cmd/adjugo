@@ -172,8 +172,11 @@ ou « Dossier lu en partie : … (voir la liste) » — à afficher HORS de la l
 lecture intégrale — ancienne analyse (« … relancez « Ré-analyser » sur la page du marché (compte
 pour une analyse) »), lecture en tâche de fond pas encore terminée, ou seul l'extrait de l'analyse
 disponible ; `statut` y vaut `lu_en_entier` ou `lu_en_partie` (= remis en entier ou seulement son
-début). Le texte d'une lecture intégrale n'est jamais recopié dans la base du dossier (il reste
-dans le stockage du marché, supprimé avec lui).
+début). Le texte d'une lecture intégrale n'est jamais recopié dans la base du dossier, ni celui de
+ses cadres de réponse (il reste dans le stockage du marché, supprimé avec lui ; le plan le relit de
+là) : seul « le cadre se découpe en questions » y est gardé. « Pas encore terminée » n'est dit que
+si la tâche de lecture tourne vraiment (une lecture interrompue par un redémarrage ne l'est plus).
+L'écran recharge l'atelier ouvert sur ce marché à la fin d'une lecture (terminée ou en échec).
 `grille` non nul : « Comment vous serez noté » a changé depuis le plan (critère confirmé, poids
 saisi ou modifié, critère écarté) → `message` et, si `peut_appliquer`, « Mettre le plan à jour »
 (`POST /plan/grille`), sans reconstruire. `savoir_faire.vide` : « Mon savoir-faire » est vide →
@@ -297,9 +300,14 @@ cadres de réponse en entier (jusqu'à `ATELIER_DOSSIER_MAX_CARACTERES` = 240 00
 tokens ; au-delà, le début de la pièce et le reste par passages), puis, pour chaque partie, les
 passages des autres pièces les plus proches de la partie (`ATELIER_PASSAGES` = 8 passages
 d'≈ 1 400 caractères, recherche sans IA dans toutes les pièces lues, pièces remises en entier
-écartées), avec la liste des pièces non lues (« jamais conclure qu'une information n'existe pas »).
-Le bloc commun (règlements et cadres) vient en tête et est mis en cache de prompt : d'une partie à
-l'autre, il est relu à 10 % du prix. Sans lecture intégrale (ancienne analyse, lecture en cours) :
+écartées), avec une note qui dit ce qui est remis en entier, par passages et non lu (pour l'IA
+seulement : n'affirmer jamais qu'une exigence est absente, n'écrire jamais de remarque sur la
+lecture du dossier dans le texte, qui va à l'acheteur).
+Le bloc commun (règlements et cadres) vient en tête et est mis en cache de prompt (5 minutes) : le
+premier appel l'ÉCRIT (1,25 × le prix d'entrée), les appels suivants dans les 5 minutes le RELISENT
+(0,1 ×). « Rédiger tout » rédige donc la première partie seule, puis les autres en parallèle (3 à la
+fois) : une seule écriture. Une partie rédigée seule, plus de 5 minutes après la précédente, paie
+l'écriture sans relecture (voir le coût au § 4.4). Sans lecture intégrale (ancienne analyse, lecture en cours) :
 règlement et cadre en tête et en entier, le reste borné (le début des autres pièces) ; sans dossier
 du marché importé, il le dit. Il s'appuie seulement sur vos documents, votre profil, votre équipe
 (noms remplacés par des étiquettes avant l'envoi), votre chiffrage et les parts envoyées par vos
@@ -327,6 +335,29 @@ une phrase sur l'entreprise). Le texte précédent est gardé dans l'historique.
   « Confirmer » qui renvoie la même requête avec `"accepte_debit": true`.
 - Panne de l'IA : tout est rendu (analyse comprise si c'était la première action) ; échec partiel :
   seules les parties en échec sont rendues.
+
+**Coût IA d'un dossier avec la lecture intégrale (recalculé le 12/10/2026, interne).** Hypothèses :
+Sonnet à 3 $ / 15 $ par million de tokens (entrée / sortie), cache écrit à 1,25 ×, relu à 0,1 ×,
+3,3 caractères par token, 1 100 tokens de sortie par partie, ≈ 23 400 caractères propres à chaque
+partie (consigne, faits, extraits, 8 passages) ; messages construits par le vrai code. Le dossier
+garde le coût mesuré dans `dossiers_presentation.cout_ia` (`tokens_entree` hors cache,
+`tokens_cache_ecrits`, `tokens_cache_lus`, `cout_estime_usd`).
+
+| Dossier | Bloc en cache | Écriture | Relecture | 20 parties : « Rédiger tout » + 10 refontes isolées | 20 parties une à une (> 5 min) + 10 refontes |
+|---|---|---|---|---|---|
+| Courant (RC 40 000 + cadre 15 000 car.) | ≈ 57 000 car. | 0,10 $ | 0,04 $ | 1,95 $ (≈ 1,7 €) | 3,08 $ (≈ 2,6 €) |
+| Plusieurs lots (RC 60 000 + modificatif 30 000 + 4 cadres de 25 000) | ≈ 192 000 car. | 0,26 $ | 0,06 $ | 3,87 $ (≈ 3,3 €) | 7,68 $ (≈ 6,6 €) |
+| Plafond (`ATELIER_DOSSIER_MAX_CARACTERES` = 240 000) | ≈ 242 000 car. | 0,31 $ | 0,06 $ | 4,58 $ (≈ 3,9 €) | 9,39 $ (≈ 8,1 €) |
+
+Au plafond avec 60 parties : « Rédiger tout » + 10 refontes ≈ 6,97 $ (≈ 6,0 €). Avant la fusion
+(dossier borné à 80 000 caractères, sans cache) : ≈ 0,10 $ par appel, 3,0 $ pour 20 parties + 10
+refontes. Avant le correctif « première partie seule », « Rédiger tout » écrivait le cache 3 fois
+(+ 0,4 à 0,5 $ par dossier à plusieurs lots). Repère de la décision 6a : une analyse hors forfait
+vaut 5 € HT. Un dossier courant reste nettement en dessous ; un dossier à plusieurs lots ou au
+plafond le dépasse si l'utilisateur rédige partie par partie à plus de 5 minutes d'intervalle. À
+trancher sur le coût MESURÉ (`cout_ia`) : ramener `ATELIER_REGEN_GRATUITES` à 5, abaisser
+`ATELIER_DOSSIER_MAX_CARACTERES` (≈ 120 000 : environ 0,17 $ l'écriture), ou ne remettre en entier
+que le règlement et le cadre du lot visé.
 
 ### 4.5 Limites, blocage, dérogation, export
 

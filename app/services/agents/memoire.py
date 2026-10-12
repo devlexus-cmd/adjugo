@@ -302,7 +302,9 @@ def _consigne_partie(p: dict) -> str:
 def _contenu_partie(p: dict):
     """Message envoyé à l'IA pour une partie. Le DOSSIER DE L'ACHETEUR commun à toutes les parties
     (règlements et cadres de réponse en entier) vient EN TÊTE, dans un bloc marqué pour le cache de
-    prompt : d'une partie à l'autre, il est relu à 10 % du prix. Puis ce qui est propre à la partie :
+    prompt : le premier appel l'écrit (1,25 × le prix d'entrée), les suivants dans les 5 minutes le
+    relisent (0,1 ×) — d'où la première partie de « Rédiger tout » lancée seule (atelier._executer).
+    Puis ce qui est propre à la partie :
     consigne, faits autorisés, passages des autres pièces du dossier."""
     from app.services.llm import cached_text_block
     chunks = p.get("chunks") or []
