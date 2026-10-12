@@ -534,7 +534,8 @@ def test_vocabulaire_dossier_de_presentation_a_l_ecran():
     html, inv, js = _static("app.html"), _static("invite.html"), _static("app.js")
     assert "Paragraphe de mémoire technique" not in inv and "Paragraphe pour le dossier de présentation" in inv
     assert "parts soumises dans le mémoire" not in html
-    assert "Mémoire généré" not in js and "Dossier de présentation rédigé" in js
+    # Rédaction, vague 2 : le dossier se rédige dans l'atelier du marché, qui s'appelle ainsi à l'écran.
+    assert "Mémoire généré" not in js and 'atelier: "Dossier de présentation"' in js
     assert 'folderLabel(f) { return f === "Mémoire technique" ? "Dossier de présentation"' in js
     assert "{{ g.folder }}" not in html
     # Bulle (i) « mémoire technique » à côté du dossier de présentation livré.

@@ -1000,6 +1000,8 @@
                       <i :data-lucide="w.startsWith('BLOQUANT')?'octagon-alert':'triangle-alert'" style="width:14px;height:14px;flex-shrink:0;margin-top:1px"></i>
                       <span style="flex:1">{{ w }}</span>
                     </div>
+                    <!-- Le dossier de présentation se corrige dans l'atelier (rédaction, vague 2) -->
+                    <button v-if="ao.dossier.warnings.some(x => x.indexOf('Dossier de présentation') >= 0)" type="button" class="btn sm" @click="atlOpen()"><i data-lucide="pen-line"></i>Ouvrir l'atelier du dossier de présentation</button>
                   </div>
                   <button class="btn primary block" @click="aoDownload()" style="margin-bottom:12px"><i data-lucide="download"></i>Télécharger ({{ ao.dossier.zip_name }})</button>
                   <div class="row wrap" style="gap:6px">
@@ -1987,7 +1989,7 @@
                   <div class="atl-sec-f">
                     <span v-if="atlSec().version_courante" class="muted small">Version {{ atlSec().version_courante.numero }} · {{ atlSec().version_courante.origine_libelle }} · {{ atlWhen(atlSec().version_courante.cree_le) }}</span>
                     <div class="spacer"></div>
-                    <button v-if="atlSec().prive_visible && (atlSec().nb_versions || 0) > 0" type="button" class="btn ghost sm" @click="atlHist()" :aria-expanded="atl.hist.open ? 'true' : 'false'"><i data-lucide="history"></i>Historique ({{ atlSec().nb_versions }})</button>
+                    <button v-if="atlSec().prive_visible && atlSec().nb_versions" type="button" class="btn ghost sm" @click="atlHist()" :aria-expanded="atl.hist.open ? 'true' : 'false'"><i data-lucide="history"></i>Historique ({{ atlSec().nb_versions }})</button>
                     <template v-if="!atlMobile && atlSec().peut_ecrire && atl.mode !== 'modifier'">
                       <button v-if="atlSec().intitule_modifiable" type="button" class="btn ghost sm" @click="atlRenOn()" title="Renommer"><i data-lucide="pencil"></i><span class="sr-only">Renommer la partie</span></button>
                       <template v-if="atl.st.dossier.plan_source !== 'cadre'">
@@ -3005,6 +3007,67 @@
     </main>
   </div>
 
+  <!-- ══════════ ATELIER : FENÊTRES (rédaction, vague 2) ══════════
+       Dérogation à l'export (décision 2b) : jamais de contournement silencieux. Débit au-delà des
+       refontes gratuites (décision 6a) : accord exprès. Version ancienne : lecture seule. -->
+  <div v-if="atl.derog" class="overlay" @click.self="atl.derog=null" @keydown.esc="atl.derog=null">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="atl-dg-t">
+      <div class="modal-h"><h3 id="atl-dg-t">L'export est bloqué</h3><button type="button" class="x" @click="atl.derog=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+      <div class="modal-b">
+        <p class="small atl-m0">Le dossier contient encore :</p>
+        <ul class="atl-raisons">
+          <li v-for="r in atl.derog.raisons" :key="'dr'+r.code"><div>{{ r.message }}</div>
+            <span v-if="(r.sections || []).length" class="row wrap atl-g6 atl-mt4"><button v-for="x in r.sections" :key="'drs'+r.code+x.section_id" type="button" class="atl-lien" @click="atlGoSection(x.section_id)">{{ x.titre }}<template v-if="x.nombre"> ({{ x.nombre }})</template></button></span>
+            <span v-if="(r.limites || []).length" class="row wrap atl-g6 atl-mt4"><span v-for="(l,i) in r.limites" :key="'drl'+i" class="atl-lim atl-lim-rouge">{{ l.message }}</span></span></li>
+        </ul>
+        <template v-if="atl.derog.possibles.length">
+          <p class="small atl-mt12">Vous pouvez corriger ces points, ou exporter en l'état. Votre choix est inscrit au journal du dossier ; il ne vaut que pour le texte actuel.</p>
+          <div v-if="atl.derog.avert" class="atl-irreg" role="alert"><i data-lucide="octagon-alert"></i><b>{{ atl.derog.avert }}</b></div>
+          <fieldset class="atl-fs"><legend class="small strong">Pourquoi exporter en l'état ?</legend>
+            <label v-for="p in atl.derog.possibles" :key="'dp'+p.code" class="atl-radio"><input type="radio" name="atl-raison" :value="p.code" v-model="atl.derog.raison"><span>{{ p.libelle }}</span></label>
+          </fieldset>
+          <div class="field atl-mt8" style="margin-bottom:0"><label for="atl-dg-x">En quelques mots (obligatoire)</label><textarea id="atl-dg-x" class="inp" v-model="atl.derog.texte" maxlength="300" rows="2" placeholder="Ex. je complète le planning dans le fichier Word ce soir."></textarea><div class="muted small">{{ (atl.derog.texte || '').trim().length }} / 300</div></div>
+          <div v-if="atl.derog.err" class="conv-err atl-mt8" role="alert"><i data-lucide="circle-alert"></i><div>{{ atl.derog.err }}</div></div>
+        </template>
+        <p v-else class="muted small atl-mt12">Ajoutez au moins une partie avant d'exporter.</p>
+      </div>
+      <div class="modal-f"><button type="button" class="btn" @click="atl.derog=null">Corriger d'abord</button><button v-if="atl.derog.possibles.length" type="button" class="btn primary btn-wrap" @click="atlDerogOk()" :disabled="atl.derog.busy"><span v-if="atl.derog.busy" class="spin"></span>{{ atl.derog.fmt ? 'Enregistrer et exporter' : 'Enregistrer ma dérogation' }}</button></div>
+    </div>
+  </div>
+
+  <div v-if="atl.debit" class="overlay" @click.self="atl.debit=null" @keydown.esc="atl.debit=null">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="atl-db-t">
+      <div class="modal-h"><h3 id="atl-db-t">Confirmer le débit</h3><button type="button" class="x" @click="atl.debit=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+      <div class="modal-b"><p class="small atl-m0">{{ atl.debit.message }}</p></div>
+      <div class="modal-f"><button type="button" class="btn" @click="atl.debit=null">Annuler</button><button type="button" class="btn primary" @click="atlDebitOk()">Confirmer</button></div>
+    </div>
+  </div>
+
+  <div v-if="atl.vue" class="overlay" @click.self="atl.vue=null" @keydown.esc="atl.vue=null">
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="atl-vv-t">
+      <div class="modal-h"><h3 id="atl-vv-t">{{ atl.vue.titre }} : version {{ atl.vue.v.numero }}</h3><button type="button" class="x" @click="atl.vue=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+      <div class="modal-b">
+        <div class="muted small">{{ atl.vue.v.origine_libelle }} · {{ atlWhen(atl.vue.v.cree_le) }}</div>
+        <div class="atl-texte atl-mt8" v-html="atlVueHtml()"></div>
+      </div>
+      <div class="modal-f"><button type="button" class="btn" @click="atl.vue=null">Fermer</button><button v-if="!atl.vue.courante && !atlMobile && atlSec() && atlSec().peut_ecrire" type="button" class="btn primary" @click="atlRestaurer(atl.vue.v)" :disabled="!!atl.busy">Revenir à cette version</button></div>
+    </div>
+  </div>
+
+  <div v-if="atl.plan" class="overlay" @click.self="atl.plan=null" @keydown.esc="atl.plan=null">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="atl-pl-t">
+      <div class="modal-h"><h3 id="atl-pl-t">Reconstruire le plan</h3><button type="button" class="x" @click="atl.plan=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+      <div class="modal-b">
+        <p class="small atl-m0">Les parties actuelles sont retirées du plan, jamais supprimées : leurs textes restent dans l'historique et vous pouvez les remettre.</p>
+        <fieldset class="atl-fs atl-mt8"><legend class="small strong">Construire le plan sur</legend>
+          <label v-for="b in atlBases()" :key="'rb'+b.k" class="atl-radio"><input type="radio" name="atl-base" :value="b.k" v-model="atl.plan.base"><span><b>{{ b.l }}</b><br><span class="muted">{{ b.d }}</span></span></label>
+        </fieldset>
+        <div v-if="atl.plan.confirm" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ atl.plan.confirm }}</span></div>
+      </div>
+      <div class="modal-f"><button type="button" class="btn" @click="atl.plan=null">Annuler</button><button type="button" class="btn primary" @click="atlPlanOk(!!atl.plan.confirm)" :disabled="atl.plan.busy"><span v-if="atl.plan.busy" class="spin"></span>{{ atl.plan.confirm ? 'Reconstruire quand même' : 'Reconstruire' }}</button></div>
+    </div>
+  </div>
+
   <!-- ══════════ DRAWER PROJET ══════════ -->
   <div v-if="drawer" class="drawer">
     <div class="modal-h"><h3>{{ (drawer.name||'').slice(0,50) }}</h3><button class="x" @click="drawer=null"><i data-lucide="x"></i></button></div>
@@ -3103,67 +3166,6 @@
           <button type="button" class="btn primary" @click="rinvSend()" :disabled="rinv.busy || rinv.noRole || rinv.errCode==='deja_invite' || rinv.errCode==='sur_le_reseau'" :aria-busy="rinv.busy?'true':'false'"><span v-if="rinv.busy" class="spin"></span><i v-else :data-lucide="rinv.kind==='reseau'?'send':'link'"></i>{{ rinv.kind==='reseau' ? 'Envoyer l\'invitation' : 'Créer le lien' }}</button></template>
         <button v-else type="button" class="btn primary" @click="rinvClose()">Fermer</button>
       </div>
-    </div>
-  </div>
-
-  <!-- ══════════ ATELIER : FENÊTRES (rédaction, vague 2) ══════════
-       Dérogation à l'export (décision 2b) : jamais de contournement silencieux. Débit au-delà des
-       refontes gratuites (décision 6a) : accord exprès. Version ancienne : lecture seule. -->
-  <div v-if="atl.derog" class="overlay" @click.self="atl.derog=null" @keydown.esc="atl.derog=null">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="atl-dg-t">
-      <div class="modal-h"><h3 id="atl-dg-t">L'export est bloqué</h3><button type="button" class="x" @click="atl.derog=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
-      <div class="modal-b">
-        <p class="small atl-m0">Le dossier contient encore :</p>
-        <ul class="atl-raisons">
-          <li v-for="r in atl.derog.raisons" :key="'dr'+r.code"><div>{{ r.message }}</div>
-            <span v-if="(r.sections || []).length" class="row wrap atl-g6 atl-mt4"><button v-for="x in r.sections" :key="'drs'+r.code+x.section_id" type="button" class="atl-lien" @click="atlGoSection(x.section_id)">{{ x.titre }}<template v-if="x.nombre"> ({{ x.nombre }})</template></button></span>
-            <span v-if="(r.limites || []).length" class="row wrap atl-g6 atl-mt4"><span v-for="(l,i) in r.limites" :key="'drl'+i" class="atl-lim atl-lim-rouge">{{ l.message }}</span></span></li>
-        </ul>
-        <template v-if="atl.derog.possibles.length">
-          <p class="small atl-mt12">Vous pouvez corriger ces points, ou exporter en l'état. Votre choix est inscrit au journal du dossier ; il ne vaut que pour le texte actuel.</p>
-          <div v-if="atl.derog.avert" class="atl-irreg" role="alert"><i data-lucide="octagon-alert"></i><b>{{ atl.derog.avert }}</b></div>
-          <fieldset class="atl-fs"><legend class="small strong">Pourquoi exporter en l'état ?</legend>
-            <label v-for="p in atl.derog.possibles" :key="'dp'+p.code" class="atl-radio"><input type="radio" name="atl-raison" :value="p.code" v-model="atl.derog.raison"><span>{{ p.libelle }}</span></label>
-          </fieldset>
-          <div class="field atl-mt8" style="margin-bottom:0"><label for="atl-dg-x">En quelques mots (obligatoire)</label><textarea id="atl-dg-x" class="inp" v-model="atl.derog.texte" maxlength="300" rows="2" placeholder="Ex. je complète le planning dans le fichier Word ce soir."></textarea><div class="muted small">{{ (atl.derog.texte || '').trim().length }} / 300</div></div>
-          <div v-if="atl.derog.err" class="conv-err atl-mt8" role="alert"><i data-lucide="circle-alert"></i><div>{{ atl.derog.err }}</div></div>
-        </template>
-        <p v-else class="muted small atl-mt12">Ajoutez au moins une partie avant d'exporter.</p>
-      </div>
-      <div class="modal-f"><button type="button" class="btn" @click="atl.derog=null">Corriger d'abord</button><button v-if="atl.derog.possibles.length" type="button" class="btn primary btn-wrap" @click="atlDerogOk()" :disabled="atl.derog.busy"><span v-if="atl.derog.busy" class="spin"></span>{{ atl.derog.fmt ? 'Enregistrer et exporter' : 'Enregistrer ma dérogation' }}</button></div>
-    </div>
-  </div>
-
-  <div v-if="atl.debit" class="overlay" @click.self="atl.debit=null" @keydown.esc="atl.debit=null">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="atl-db-t">
-      <div class="modal-h"><h3 id="atl-db-t">Confirmer le débit</h3><button type="button" class="x" @click="atl.debit=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
-      <div class="modal-b"><p class="small atl-m0">{{ atl.debit.message }}</p></div>
-      <div class="modal-f"><button type="button" class="btn" @click="atl.debit=null">Annuler</button><button type="button" class="btn primary" @click="atlDebitOk()">Confirmer</button></div>
-    </div>
-  </div>
-
-  <div v-if="atl.vue" class="overlay" @click.self="atl.vue=null" @keydown.esc="atl.vue=null">
-    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="atl-vv-t">
-      <div class="modal-h"><h3 id="atl-vv-t">{{ atl.vue.titre }} : version {{ atl.vue.v.numero }}</h3><button type="button" class="x" @click="atl.vue=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
-      <div class="modal-b">
-        <div class="muted small">{{ atl.vue.v.origine_libelle }} · {{ atlWhen(atl.vue.v.cree_le) }}</div>
-        <div class="atl-texte atl-mt8" v-html="atlVueHtml()"></div>
-      </div>
-      <div class="modal-f"><button type="button" class="btn" @click="atl.vue=null">Fermer</button><button v-if="!atl.vue.courante && !atlMobile && atlSec() && atlSec().peut_ecrire" type="button" class="btn primary" @click="atlRestaurer(atl.vue.v)" :disabled="!!atl.busy">Revenir à cette version</button></div>
-    </div>
-  </div>
-
-  <div v-if="atl.plan" class="overlay" @click.self="atl.plan=null" @keydown.esc="atl.plan=null">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="atl-pl-t">
-      <div class="modal-h"><h3 id="atl-pl-t">Reconstruire le plan</h3><button type="button" class="x" @click="atl.plan=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
-      <div class="modal-b">
-        <p class="small atl-m0">Les parties actuelles sont retirées du plan, jamais supprimées : leurs textes restent dans l'historique et vous pouvez les remettre.</p>
-        <fieldset class="atl-fs atl-mt8"><legend class="small strong">Construire le plan sur</legend>
-          <label v-for="b in atlBases()" :key="'rb'+b.k" class="atl-radio"><input type="radio" name="atl-base" :value="b.k" v-model="atl.plan.base"><span><b>{{ b.l }}</b><br><span class="muted">{{ b.d }}</span></span></label>
-        </fieldset>
-        <div v-if="atl.plan.confirm" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ atl.plan.confirm }}</span></div>
-      </div>
-      <div class="modal-f"><button type="button" class="btn" @click="atl.plan=null">Annuler</button><button type="button" class="btn primary" @click="atlPlanOk(!!atl.plan.confirm)" :disabled="atl.plan.busy"><span v-if="atl.plan.busy" class="spin"></span>{{ atl.plan.confirm ? 'Reconstruire quand même' : 'Reconstruire' }}</button></div>
     </div>
   </div>
 
@@ -3266,6 +3268,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-+CuJFBBY4BO+URc6AAvWxvZsHF5hAWRUNdsKZ8JPFX+BT1Epgb0X2d0pCjCdMpXD" defer></script>
+<script src="/static/app.js" integrity="sha384-MCTvHOEVn64NS/f/X3BplVWYAWpCTq6+33o6WYiJqzXzvMITrYbaumjK7jCU4slX" defer></script>
 </body>
 </html>

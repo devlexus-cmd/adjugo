@@ -234,9 +234,8 @@ function _atlFaitRe(f) {
   const core = _atlReEsc(s).replace(/\s+/g, "\\s+");
   return (/^[A-Za-z0-9]/.test(s) ? "\\b" : "") + core + (/[A-Za-z0-9]$/.test(s) ? "\\b" : "");
 }
-// Marques d'une ligne : [À compléter …], renvoi [S1], fait à relire. `re` a 4 groupes.
-function _atlInline(raw, re, idx) {
-  const s = String(raw == null ? "" : raw);
+// Marques d'un morceau de ligne : [À compléter …], renvoi [S1], fait à relire (3 groupes dans `re`).
+function _atlMarks(s, re, idx) {
   let out = "", last = 0, m;
   re.lastIndex = 0;
   while ((m = re.exec(s))) {
@@ -250,8 +249,17 @@ function _atlInline(raw, re, idx) {
     }
     last = m.index + m[0].length;
   }
-  out += _escHtml(s.slice(last));
-  return out.replace(/\*\*([^*<>]+?)\*\*/g, "<strong>$1</strong>");
+  return out + _escHtml(s.slice(last));
+}
+// Une ligne : le gras (**…**) d'abord, puis les marques dans chaque morceau (jamais de balise croisée).
+function _atlInline(raw, re, idx) {
+  const s = String(raw == null ? "" : raw), bold = /\*\*(.+?)\*\*/g;
+  let out = "", last = 0, m;
+  while ((m = bold.exec(s))) {
+    out += _atlMarks(s.slice(last, m.index), re, idx) + "<strong>" + _atlMarks(m[1], re, idx) + "</strong>";
+    last = m.index + m[0].length;
+  }
+  return out + _atlMarks(s.slice(last), re, idx);
 }
 function _atlCells(line) { return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim()); }
 const _atlHtmlCache = new Map();
@@ -3879,7 +3887,8 @@ const __adjApp = createApp({
     },
     atlSelect(sid) {
       const a = this.atl;
-      if (a.mode === "modifier" && a.edit.dirty && a.edit.sid !== sid) { this._atlDraftSave(); this.notify("Votre texte non enregistré est gardé sur cet appareil."); }
+      if (a.mode === "modifier" && a.edit.sid === sid) { if (this.atlMobile) a.planOpen = false; return; }   // déjà en cours d'écriture
+      if (a.mode === "modifier" && a.edit.dirty) { clearTimeout(this._atlDT); this._atlDraftSave(); this.notify("Votre texte non enregistré est gardé sur cet appareil."); }
       a.sel = sid; a.mode = "lire"; a.edit = { texte: "", base: null, dirty: false, sid: null };
       a.conflict = ""; a.factFocus = ""; a.srcFocus = ""; a.note = ""; a.ren = { on: false, v: "" };
       a.hist = { open: false, loading: false, list: [], sid: null };
@@ -3960,7 +3969,8 @@ const __adjApp = createApp({
     },
 
     // ── Brouillon local (coupure, onglet fermé) : jamais envoyé sans « Enregistrer » ──
-    _atlDraftKey(sid) { return "adjugo_atl_" + this.atl.pid + "_" + sid; },
+    // Clé propre à l'utilisateur : un collègue sur le même poste ne retrouve pas le brouillon d'un autre.
+    _atlDraftKey(sid) { return "adjugo_atl_" + ((this.user && this.user.id) || 0) + "_" + this.atl.pid + "_" + sid; },
     _atlDraftCheck() {
       const a = this.atl, s = this.atlSec(); a.draft = null; if (!s || !s.peut_ecrire) return;
       let d = null; try { d = JSON.parse(localStorage.getItem(this._atlDraftKey(s.id)) || "null"); } catch (e) { d = null; }
