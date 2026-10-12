@@ -264,8 +264,13 @@ def team_of_users(db, user_ids: Iterable) -> list:
         people = []
         for c in db.query(Company).filter(Company.user_id.in_(list(owners))).all() if owners else []:
             people += [m for m in (c.team or []) if isinstance(m, dict)]
-        from app.services.preuves import personnes
-        people += personnes(db, owners)
+        try:
+            from app.services.preuves import personnes
+            people += personnes(db, owners)
+        except Exception:   # jamais au prix des noms du profil, déjà réunis ci-dessus
+            import logging
+            logging.getLogger("adjugo").warning("fiches « Équipe » illisibles pour masquer les noms (comptes %s)",
+                                                user_ids)
         for m in people:
             k = _plain(m.get("nom"))
             if k and k not in seen:

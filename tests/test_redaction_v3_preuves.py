@@ -600,6 +600,25 @@ def test_noms_des_fiches_equipe_masques_avant_l_ia(client, auth):
         db.close()
 
 
+def test_fiches_equipe_illisibles_les_noms_du_profil_restent_masques(client, auth, monkeypatch):
+    """Une panne de lecture des fiches « Équipe » ne doit jamais faire partir les noms du profil."""
+    r = client.put("/api/company/", headers=auth["headers"], json={
+        "name": "Breizh Couverture", "team": [{"nom": "Yann Tanguy", "fonction": "Chef de chantier"}]})
+    assert r.status_code == 200, r.text
+
+    def panne(*a, **k):
+        raise RuntimeError("table absente")
+
+    monkeypatch.setattr(pv, "personnes", panne)
+    db = _db()
+    try:
+        from app.services.pii import from_team, team_of_users
+        pz = from_team(team_of_users(db, [_uid(auth["email"])]))
+        assert "Tanguy" not in pz.mask("Yann Tanguy dirigera le chantier.")
+    finally:
+        db.close()
+
+
 def test_jamais_le_mot_verifie(client, auth):
     """Doctrine § 7, règle 3 : Adjugo dit où il a trouvé le fait, jamais qu'il est « vérifié »."""
     import ast

@@ -165,6 +165,13 @@ pv.faits_autorises(db, owner_id, *, natures=None, project_id=None, jour=None) ->
 - `pv.elements_hors_passage(nature, valeur, passage)` et `pv.localiser(texte, passage)` sont
   réutilisables pour le rapprochement.
 - Les CV sont insérés tels quels, sans IA (décision 8a) : A lit `valeur` des faits `salarie`.
+- Le préfixe `F` est RÉSERVÉ aux preuves enregistrées : un fait construit à la volée par A (chiffrage
+  du marché, profil de l'entreprise pas encore repris en preuves) prend un autre préfixe, pour qu'un
+  `[F3]` désigne toujours la même preuve, d'une version de texte à l'autre.
+- Le profil existant (`Company.references`, `qualifications`, `team`) n'est pas repris
+  automatiquement : l'origine `profil` est prévue pour qu'E1 (ou A) le PROPOSE en preuves
+  « déclaré par vous » que l'utilisateur coche (`pv.proposer(..., type_source="declare",
+  origine="profil")`).
 
 Ce que A doit faire de son côté (hors socle) : numéroter les faits `[F3]` avec `ref`, écrire
 « [À compléter : …] » pour tout autre fait, contrôler chaque phrase sans IA (de qui parle la
