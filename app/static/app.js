@@ -316,7 +316,7 @@ const __adjApp = createApp({
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             chkHelp: null, grp: _grpInit(), conv: _convInit(), pm: _pmInit(), depot: _depotInit(),
-            qa: [], qaInput: "", qaLoading: false, grilleBusy: "", lectureMsg: "", lectureBusy: false,
+            qa: [], qaInput: "", qaLoading: false, grilleBusy: "", lectureMsg: "", lectureBusy: false, lecturePid: null,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
       titles: { kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
@@ -2994,37 +2994,48 @@ const __adjApp = createApp({
       const d = this.ao.dossier;
       if (d && d.zip_b64) { this.aoDownload(); this.notify(this.dossierToast(d, "Dossier commun assemblé et téléchargé"), this.dossierWarnKind(d)); }
     },
+    // Lecture d'un dossier : liée au MARCHÉ suivi (ao.lecturePid). Ouvrir un autre marché pendant la
+    // lecture n'y montre ni le voile ni les messages, et n'y bloque pas les boutons ; à la fin, seul
+    // le marché lu est rechargé.
+    aoBusy() { return !!(this.ao.uploading && this.ao.project && this.ao.lecturePid === this.ao.project.id); },
+    aoLectureDebut(pid) { this.ao.uploading = true; this.ao.lecturePid = pid; this.ao.lectureMsg = ""; },
+    aoLectureFin(pid) { if (this.ao.lecturePid === pid) { this.ao.uploading = false; this.ao.lectureMsg = ""; this.ao.lecturePid = null; } },
+    aoLectureMsg(pid) { return m => { if (this.ao.lecturePid === pid) this.ao.lectureMsg = m; }; },
+    async aoApresLecture(pid, toast) {
+      if (!(this.ao.project && this.ao.project.id === pid)) { this.notify(toast); return; }
+      this.ao.project = await this.api("GET", "/api/projects/" + pid);
+      this.aoLoadDocs();
+      this.notify(toast === null ? this.couvertureToast(this.ao.project.ai_analysis) : toast);
+    },
     async aoUploadDce(e) {
       const file = e.target.files[0]; if (!file) return;
       e.target.value = "";
       if (!this.gateCriteria()) return;
-      this.ao.uploading = true;
+      const pid = this.ao.project.id;
+      this.aoLectureDebut(pid);
       try {
-        const fd = new FormData(); fd.append("file", file); fd.append("project_id", this.ao.project.id);
+        const fd = new FormData(); fd.append("file", file); fd.append("project_id", pid);
         const r = await this.api("POST", "/api/sourcing/analyze-upload", fd, true);
-        if (r && r.en_cours) await this.waitLecture(this.ao.project.id, m => { this.ao.lectureMsg = m; });
-        this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id);
-        this.aoLoadDocs();
-        this.notify(this.couvertureToast(this.ao.project.ai_analysis));
+        if (r && r.en_cours) await this.waitLecture(pid, this.aoLectureMsg(pid));
+        await this.aoApresLecture(pid, (this.ao.project && this.ao.project.id === pid) ? null : "Dossier du marché analysé");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
-      } finally { this.ao.uploading = false; this.ao.lectureMsg = ""; }
+      } finally { this.aoLectureFin(pid); }
     },
     async aoReanalyze() {
       if (!this.ao.project) return;
-      this.ao.uploading = true;
+      const pid = this.ao.project.id;
+      this.aoLectureDebut(pid);
       try {
-        const fd = new FormData(); fd.append("project_id", this.ao.project.id);
+        const fd = new FormData(); fd.append("project_id", pid);
         const r = await this.api("POST", "/api/sourcing/reanalyze", fd, true);
-        if (r && r.en_cours) await this.waitLecture(this.ao.project.id, m => { this.ao.lectureMsg = m; });
-        this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id);
-        this.aoLoadDocs();
-        this.notify("Ré-analyse terminée");
+        if (r && r.en_cours) await this.waitLecture(pid, this.aoLectureMsg(pid));
+        await this.aoApresLecture(pid, "Ré-analyse terminée");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");
-      } finally { this.ao.uploading = false; this.ao.lectureMsg = ""; }
+      } finally { this.aoLectureFin(pid); }
     },
     // Lecture d'un gros dossier en tâche de fond : progression lue toutes les 3 s jusqu'à la fin.
     // Renvoie le résultat de l'analyse (même forme que la réponse d'import), ou lève l'erreur.
@@ -3055,18 +3066,18 @@ const __adjApp = createApp({
       return m + "…";
     },
     async aoResumeLecture() {
-      const p = this.ao.project; if (!p || this.ao.lectureBusy) return;
+      const p = this.ao.project; if (!p || this.ao.lecturePid === p.id) return;   // déjà suivie
       const st = p.workflow && p.workflow.lecture;
       if (!st || st.etat !== "en_cours") return;
-      this.ao.lectureBusy = true; this.ao.uploading = true; this.ao.lectureMsg = "Lecture du dossier en cours…";
+      this.aoLectureDebut(p.id); this.ao.lectureBusy = true; this.ao.lectureMsg = "Lecture du dossier en cours…";
       try {
-        await this.waitLecture(p.id, m => { if (this.ao.project && this.ao.project.id === p.id) this.ao.lectureMsg = m; });
+        await this.waitLecture(p.id, this.aoLectureMsg(p.id));
         if (this.ao.project && this.ao.project.id === p.id) {
           this.ao.project = await this.api("GET", "/api/projects/" + p.id);
           this.notify(this.couvertureToast(this.ao.project.ai_analysis));
         }
-      } catch (e) { this.notify(e.message, "err"); }
-      finally { this.ao.lectureBusy = false; this.ao.uploading = false; this.ao.lectureMsg = ""; }
+      } catch (e) { if (this.ao.project && this.ao.project.id === p.id) this.notify(e.message, "err"); }
+      finally { this.ao.lectureBusy = false; this.aoLectureFin(p.id); }
     },
     // Couverture honnête de la lecture : « Dossier lu en entier : N pièces, P pages » ou les manques.
     couvertureToast(a) {
@@ -3076,7 +3087,9 @@ const __adjApp = createApp({
     },
     aoCouverture() { const a = this.ao.project && this.ao.project.ai_analysis; return (a && a.couverture && a.couverture.message) ? a.couverture : null; },
     aoAncienneLecture() { const a = this.ao.project && this.ao.project.ai_analysis; return !!(a && a.dce_available && a.dce_excerpt && !a.lecture); },
-    couvManques(c) { return c ? [].concat(c.non_lues || [], c.partielles || []) : []; },
+    // Ce qui manque : pièces non lues ou lues en partie, ET parties que l'IA n'a pas pu exploiter
+    // (lecture en deux temps), chacune avec sa raison.
+    couvManques(c) { return c ? [].concat(c.non_lues || [], c.partielles || [], (c.analyse && c.analyse.manques) || []) : []; },
     async aoExport() {
       try {
         const r = await fetch("/api/export/" + this.ao.project.id, { method: "POST", headers: { Authorization: "Bearer " + this.token } });
@@ -3744,7 +3757,7 @@ __adjApp.component("grille-carte", {
     alerteTotal() { const s = this.vm.total.statut; return s === "ecart" || s === "incomplet"; },
     piecesResume() {
       const ps = (this.vm.lecture && this.vm.lecture.pieces) || [];
-      const manque = ps.filter(p => p.statut === "non_lu" || p.statut === "lu_en_partie" || (!p.statut && p.lu_en_entier === false)).length;
+      const manque = ps.filter(p => p.statut === "non_lu" || p.statut === "lu_en_partie" || p.ia || (!p.statut && p.lu_en_entier === false)).length;
       return manque ? ps.length + ", dont " + manque + " non lue" + (manque > 1 ? "s" : "") + " ou lue" + (manque > 1 ? "s" : "") + " en partie" : String(ps.length);
     },
     rienImpose() { const v = this.vm; return !v.impose && !v.cadreFourni && !v.cadreMentionne && !v.limites.length && !v.visite; },
@@ -3804,7 +3817,8 @@ __adjApp.component("grille-carte", {
     + '<ul class="gn-pieces"><li v-for="(p,i) in vm.lecture.pieces" :key="\'pc\'+i" :class="{\'gn-nonlue\':p.statut===\'non_lu\'}"><span>{{ p.libelle }}</span><span v-if="p.nom" class="muted"> · {{ p.nom }}</span>'
     + '<template v-if="p.statut===\'non_lu\'"><span class="gn-manque"> · non lue</span><span v-if="p.raison" class="muted"> : {{ p.raison }}</span></template>'
     + '<template v-else-if="p.statut===\'lu_en_partie\' || (!p.statut && p.lu_en_entier===false)"><span class="gn-manque"> · lue en partie</span><span v-if="p.raison" class="muted"> : {{ p.raison }}</span></template>'
-    + '<span v-else-if="p.statut===\'lu_en_entier\' || p.lu_en_entier===true" class="muted"> · lue en entier<template v-if="p.pages"> ({{ p.pages }} {{ p.pages > 1 ? "pages" : "page" }})</template></span></li></ul>'
+    + '<span v-else-if="(p.statut===\'lu_en_entier\' || p.lu_en_entier===true) && !p.ia" class="muted"> · lue en entier<template v-if="p.pages"> ({{ p.pages }} {{ p.pages > 1 ? "pages" : "page" }})</template></span>'
+    + '<template v-if="p.ia"><span class="gn-manque"> · {{ p.ia }}</span></template></li></ul>'
     + '</details>'
     + '</div>',
 });

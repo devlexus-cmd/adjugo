@@ -481,7 +481,8 @@ def _deux_temps(lecture: dict, company, criteria, lang_name, budget: int, progre
     groupes = _groupes(a_appeler, seg_chars)
     rapport = {"parties": len(segs), "appels": 0, "reprises": len(segs) - len(a_appeler), "non_analysees": [],
                "illisibles": [], "erreurs": [], "coupees": [], "faits": 0, "faits_ecartes": 0,
-               "pieces_entieres": [p.get("nom") for p in prio if id(p) in entiers], "synthese_partielle": False}
+               "pieces_entieres": [p.get("nom") for p in prio if id(p) in entiers], "synthese_partielle": False,
+               "manques": [], "ia_pieces": {}}
     plafond = set()
     if len(groupes) > MAX_APPELS:
         for g in groupes[MAX_APPELS:]:
@@ -524,9 +525,10 @@ def _deux_temps(lecture: dict, company, criteria, lang_name, budget: int, progre
         raise llm.LLMUnavailable("La lecture du dossier par l'IA a échoué pour trop de parties.")
     by_piece = {}
     for sg in segs:
-        nom = f"{sg['piece'].get('nom')} (partie {sg['i']} sur {sg['n']})"
+        nom = f"{sg['piece'].get('nom')}" + (f" (partie {sg['i']} sur {sg['n']})" if sg["n"] > 1 else "")
         if sg["cle"] in plafond:
             rapport["non_analysees"].append(nom + " : plafond technique")
+            rapport["manques"].append({"nom": nom, "raison": "non analysée par l'IA (plafond technique)"})
             continue
         r = results.get(sg["cle"])
         if r is None:
@@ -536,10 +538,13 @@ def _deux_temps(lecture: dict, company, criteria, lang_name, budget: int, progre
         rapport["faits_ecartes"] += r["ecartes"]
         if r["erreur"]:
             rapport["erreurs"].append(nom + " : IA indisponible")
+            rapport["manques"].append({"nom": nom, "raison": "non analysée par l'IA (IA indisponible)"})
         elif r["illisible"]:
             rapport["illisibles"].append(nom + " : réponse de l'IA illisible")
+            rapport["manques"].append({"nom": nom, "raison": "non analysée par l'IA (réponse illisible)"})
         elif r["coupee"]:
             rapport["coupees"].append(nom + " : réponse de l'IA trop longue, exploitée en partie")
+            rapport["manques"].append({"nom": nom, "raison": "analysée en partie par l'IA (réponse trop longue)"})
     # Synthèse : règlement et cadre en entier, puis ce qui a été relevé pièce par pièce.
     blocs_prio = []
     for p in prio:
@@ -560,11 +565,14 @@ def _deux_temps(lecture: dict, company, criteria, lang_name, budget: int, progre
         n = n_of.get(pi, 0)
         if not parts:
             manques_ia = True
+            rapport["ia_pieces"][p.get("nom") or ""] = "non analysée par l'IA (plafond technique)"
             blocs.append(f"=== {p.get('nom')} : {(p.get('libelle') or '').lower()} — non analysée par l'IA "
                          "(plafond technique) : n'en conclus rien ===")
             continue
-        if not _etat_ia(parts, n)[0]:
+        entier_ia, nuance = _etat_ia(parts, n)
+        if not entier_ia:
             manques_ia = True
+            rapport["ia_pieces"][p.get("nom") or ""] = nuance
         blocs.append(_bloc_faits(p, parts, n))
     used = sum(len(b) + 2 for b in blocs_prio)
     room = max(0, budget - used - 1200)
@@ -630,7 +638,16 @@ def analyser(lecture: dict, company=None, criteria=None, lang_name=None, progres
                           "parties_relues_en_deux": rapport.get("relances", 0),
                           "parties_reprises": rapport["reprises"], "faits_releves": rapport["faits"],
                           "faits_ecartes": rapport["faits_ecartes"], "non_analysees": manques[:100],
-                          "coupees": rapport["coupees"][:100], "synthese_partielle": rapport["synthese_partielle"]}
+                          "coupees": rapport["coupees"][:100], "manques": rapport["manques"][:200],
+                          "synthese_partielle": rapport["synthese_partielle"]}
+        # « Pièces lues » : une pièce lue en entier mais pas (entièrement) exploitée par l'IA le dit.
+        etats = rapport["ia_pieces"]
+        if etats:
+            g = ((analysis.get("details") or {}).get("grille_notation") or {}) if isinstance(analysis.get("details"), dict) else {}
+            for lst in (mani.get("pieces") or [], ((g.get("lecture") or {}).get("pieces") or []) if isinstance(g, dict) else []):
+                for m in lst:
+                    if isinstance(m, dict) and m.get("nom") in etats:
+                        m["ia"] = etats[m["nom"]]
         if manques or rapport["coupees"] or rapport["synthese_partielle"]:
             cov["complet"] = False
             if manques or rapport["coupees"]:
