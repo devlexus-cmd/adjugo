@@ -15,10 +15,13 @@ modèle la traitent, avec quels réglages, et vers qui basculer si ce fournisseu
     5.5 (`claude-sonnet-5-5`), secours Mistral Large 4 si Anthropic est en panne (et si la clé
     Mistral existe).
 
-Mistral n'est utilisé QUE pour les tâches routées vers lui (ou en secours), et seulement si sa clé
-est présente : MISTRAL_API_KEY_ADJUGO (lue en priorité), ou MISTRAL_API_KEY (compatibilité). La
-présence d'une clé ne fait plus RIEN basculer d'autre (l'ancien mode « auto » envoyait tout chez
-Mistral Large 3 dès qu'une MISTRAL_API_KEY existait). LLM_PROVIDER=anthropic|mistral force encore
+Mistral n'est utilisé QUE pour les tâches routées vers lui (ou en secours), et seulement s'il est
+ACTIVÉ : une clé (MISTRAL_API_KEY_ADJUGO, lue en priorité, ou MISTRAL_API_KEY par compatibilité),
+MISTRAL_ACTIF=1 (décision explicite, à la fin du préavis donné aux clients) et
+MISTRAL_ENTRAINEMENT_DESACTIVE=1 (désinscription de l'entraînement faite). La seule présence d'une clé
+n'envoie RIEN chez Mistral (l'ancien mode « auto » envoyait tout chez Mistral Large 3 dès qu'une
+MISTRAL_API_KEY existait) : tant que Mistral n'est pas activé, la lecture des dossiers part chez
+Claude Sonnet 5.5, son secours. LLM_PROVIDER=anthropic|mistral force encore
 toutes les tâches chez un seul fournisseur, mais le diagnostic d'administration et le journal de
 démarrage le disent. LLM_ROUTAGE=ancien revient en une minute à l'ancien routage (Claude Sonnet 4.6
 et Haiku 4.5, réglages d'origine, aucun secours).
@@ -124,10 +127,33 @@ def _cle_mistral() -> tuple:
     return "", ""
 
 
+def _drapeau(nom: str) -> bool:
+    v = getattr(settings, nom, False)
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "oui", "yes", "on")
+    return bool(v)
+
+
+def etat_mistral() -> str:
+    """« absent » (aucune clé) | « inactif » (clé présente, MISTRAL_ACTIF non posé) | « entrainement »
+    (MISTRAL_ACTIF posé, désinscription de l'entraînement non confirmée) | « actif »."""
+    if not _cle_mistral()[0]:
+        return "absent"
+    if not _drapeau("MISTRAL_ACTIF"):
+        return "inactif"
+    if not _drapeau("MISTRAL_ENTRAINEMENT_DESACTIVE"):
+        return "entrainement"
+    return "actif"
+
+
 def _use_mistral() -> bool:
-    """Mistral est-il UTILISABLE (clé présente) ? Ne décide plus de rien d'autre : seules les tâches
-    routées vers Mistral (ou en secours) y partent."""
-    return bool(_cle_mistral()[0])
+    """Mistral est-il UTILISABLE ? Il faut les TROIS : une clé, MISTRAL_ACTIF=1 (décision explicite, à
+    poser à la fin du préavis donné aux clients, article 6 du DPA) et MISTRAL_ENTRAINEMENT_DESACTIVE=1
+    (désinscription de l'entraînement faite sur le compte). Ainsi, déployer avec la seule clé (déjà dans
+    Railway) n'envoie rien chez Mistral, et les pages juridiques (« jamais utilisés pour entraîner »)
+    restent vraies dans toutes les configurations. Ne décide de rien d'autre : seules les tâches routées
+    vers Mistral (ou en secours) y partent."""
+    return etat_mistral() == "actif"
 
 
 def _anthropic_disponible() -> bool:
@@ -398,7 +424,9 @@ def route(tache: Optional[str], modele: Optional[str] = None) -> Route:
         if tache == "lecture_pieces" and (os.getenv("ANALYSE_MODELE_PIECES") or "").strip():
             c = _parse_cible(os.getenv("ANALYSE_MODELE_PIECES"))
             r = _remplacer(r, primaire=c, origine="env")
-    if spec is not None:
+    if spec is not None and mode != "ancien":
+        # Variables LLM_TACHE_* : routage par tâche seulement. Le retour à l'ancien routage les ignore
+        # (Sonnet 4.6 et Haiku 4.5, réglages d'origine, aucun secours : ce que le journal annonce).
         p = _parse_cible(_env_tache(tache))
         if p is not None:
             r = _remplacer(r, primaire=p, origine="env")
@@ -513,7 +541,7 @@ def point_acces_mistral(verifier: bool = True) -> dict:
         snap = dict(_PA)
     if snap["decision"] and now < snap["prochain"]:
         return _pa_out(snap)
-    if not (verifier and _use_mistral()):
+    if not (verifier and _cle_mistral()[0]):      # la clé suffit pour vérifier (avant même l'activation)
         return {"mode": "auto", "zone": "ue", "url": MISTRAL_URL_UE, "verifie": False,
                 "raison": "point d'accès UE par défaut (disponibilité du modèle pas encore vérifiée)"}
     res = verifier_modeles_ue()
@@ -1472,7 +1500,9 @@ def messages_create(tache: Optional[str] = None, json_attendu: Optional[bool] = 
         if exc is not None:
             if appel_reel:
                 erreur_reelle = exc
-            elif erreur_autre is None:
+            elif erreur_autre is None or isinstance(exc, LLMRefus):
+                # Un refus (le secours a bien été appelé et a refusé) l'emporte sur l'erreur d'un essai
+                # sans appel (« non configuré », disjoncteur ouvert) : message et type exacts.
                 erreur_autre = exc
         sec = r.secours
         if (i == 0 and sec is not None and etat in r.secours_sur and _disponible(sec.fournisseur)
@@ -1592,6 +1622,33 @@ def active_provider() -> dict:
             "model_fast": route("questions").primaire.modele}
 
 
+def _variables_tache_posees() -> list:
+    """Noms des variables LLM_TACHE_* renseignées (jamais leur valeur dans un journal)."""
+    pref = tuple(f"LLM_TACHE_{t.upper()}" for t in TACHES)
+    return sorted(k for k, v in os.environ.items() if k.startswith(pref) and (v or "").strip())
+
+
+def _phrase_forcage(fz: str) -> str:
+    """Ce que fait VRAIMENT LLM_PROVIDER : forcé chez Mistral alors que Mistral n'est pas utilisable,
+    tout part chez Claude (route()) — le dire, et jamais l'inverse."""
+    if fz == MISTRAL and not _use_mistral():
+        return ("LLM_PROVIDER=mistral demandé, mais Mistral n'est pas utilisable (" + _raison_mistral() + ") : "
+                "toutes les tâches partent chez Claude (Anthropic), sans secours.")
+    return (f"LLM_PROVIDER={fz} : toutes les tâches partent chez {fz} (routage par tâche et secours "
+            "désactivés).")
+
+
+def _raison_mistral() -> str:
+    e = etat_mistral()
+    if e == "absent":
+        return "aucune clé Mistral"
+    if e == "inactif":
+        return "MISTRAL_ACTIF non posé"
+    if e == "entrainement":
+        return "désinscription de l'entraînement non confirmée, MISTRAL_ENTRAINEMENT_DESACTIVE non posé"
+    return "utilisable"
+
+
 def resume_routage() -> list:
     """Phrases du journal de démarrage (aucune clé, aucun réseau)."""
     lignes = []
@@ -1600,6 +1657,9 @@ def resume_routage() -> list:
     fz = forcage()
     if mode == "ancien":
         lignes.append("IA — ANCIEN routage (LLM_ROUTAGE=ancien) : Claude Sonnet 4.6 et Haiku 4.5, sans secours.")
+        ignorees = _variables_tache_posees()
+        if ignorees:
+            lignes.append("IA — variables ignorées par l'ancien routage : " + ", ".join(ignorees) + ".")
     else:
         par = {}
         for t in TACHES:
@@ -1607,16 +1667,16 @@ def resume_routage() -> list:
             par.setdefault(f"{r.primaire.fournisseur}:{r.primaire.modele}", []).append(t)
         lignes.append("IA — routage par tâche : " + " ; ".join(f"{k} ← {', '.join(v)}" for k, v in par.items()))
     if fz:
-        lignes.append(f"IA — LLM_PROVIDER={fz} : TOUTES les tâches partent chez {fz} (routage par tâche et "
-                      "secours désactivés).")
+        lignes.append("IA — " + _phrase_forcage(fz))
+    e = etat_mistral()
     if nom:
         lignes.append(f"IA — clé Mistral lue dans {nom}."
                       + ("" if nom == "MISTRAL_API_KEY_ADJUGO" else " (nom historique, accepté par compatibilité)"))
-        if not getattr(settings, "MISTRAL_ENTRAINEMENT_DESACTIVE", False):
-            lignes.append("IA — ATTENTION : désinscription de l'entraînement chez Mistral non confirmée "
-                          "(MISTRAL_ENTRAINEMENT_DESACTIVE) ; les pages juridiques le disent.")
+    if e == "actif":
+        lignes.append("IA — Mistral activé (MISTRAL_ACTIF, désinscription de l'entraînement confirmée).")
     else:
-        lignes.append("IA — aucune clé Mistral : les tâches routées vers Mistral partent chez Claude (secours).")
+        lignes.append(f"IA — Mistral non utilisé ({_raison_mistral()}) : les tâches routées vers Mistral partent "
+                      "chez Claude (secours).")
     return lignes
 
 
@@ -1628,23 +1688,33 @@ def diagnostic(verifier: bool = True) -> dict:
     fz = forcage()
     now = time.monotonic()
     messages = []
+    em = etat_mistral()
     if fz:
-        messages.append(f"LLM_PROVIDER={fz} : toutes les tâches partent chez {fz} ; le routage par tâche et les "
-                        "secours croisés sont désactivés. Retirez la variable (ou mettez « auto ») pour les rétablir.")
+        messages.append(_phrase_forcage(fz) + " Retirez la variable (ou mettez « auto ») pour rétablir le routage "
+                        "par tâche et les secours croisés.")
     if mode == "ancien":
         messages.append("LLM_ROUTAGE=ancien : ancien routage (Claude Sonnet 4.6 et Haiku 4.5, réglages d'origine, "
                         "aucun secours). Retirez la variable pour revenir au routage par tâche.")
+        ignorees = _variables_tache_posees()
+        if ignorees:
+            messages.append("Variables ignorées par l'ancien routage : " + ", ".join(ignorees) + ".")
     if not cle_a:
         messages.append("Clé Anthropic absente (ANTHROPIC_API_KEY) : questions et rédaction impossibles.")
     pa = point_acces_mistral(verifier=verifier) if cle_m else None
     if cle_m:
         if nom_m == "MISTRAL_API_KEY":
             messages.append("Clé Mistral lue dans MISTRAL_API_KEY (nom historique) : préférez MISTRAL_API_KEY_ADJUGO.")
-        if not getattr(settings, "MISTRAL_ENTRAINEMENT_DESACTIVE", False):
-            messages.append("Désinscription de l'entraînement chez Mistral NON confirmée : désactivez « Anonymous "
+        if em == "inactif":
+            messages.append("Clé Mistral présente, mais Mistral n'est PAS activé : rien ne lui est envoyé, la lecture "
+                            "des dossiers part chez Claude Sonnet 5.5. Pour l'activer, à la fin du préavis donné aux "
+                            "clients (article 6 du DPA) : MISTRAL_ENTRAINEMENT_DESACTIVE=1 (désinscription faite) et "
+                            "MISTRAL_ACTIF=1, le jour où les textes de docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md sont "
+                            "publiés.")
+        elif em == "entrainement":
+            messages.append("MISTRAL_ACTIF=1, mais la désinscription de l'entraînement n'est pas confirmée : Mistral "
+                            "reste coupé (la lecture des dossiers part chez Claude Sonnet 5.5). Désactivez « Anonymous "
                             "improvement data » (console Mistral, Admin > Privacy), puis posez "
-                            "MISTRAL_ENTRAINEMENT_DESACTIVE=1. Tant que ce n'est pas fait, les pages juridiques le disent "
-                            "et dpa.html / securite.html restent à corriger (docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md).")
+                            "MISTRAL_ENTRAINEMENT_DESACTIVE=1.")
         if pa and pa.get("zone") == "mondial":
             messages.append("Mistral passe par le point d'accès MONDIAL (api.mistral.ai) : " + pa.get("raison", ""))
     else:
@@ -1687,6 +1757,9 @@ def diagnostic(verifier: bool = True) -> dict:
                         "disjoncteur": "ouvert" if _CB["open_until"] > now else "fermé",
                         "echecs_consecutifs": _CB["fails"]},
             MISTRAL: {"configure": bool(cle_m), "variable": nom_m or None,
+                      "actif": em == "actif", "etat": em,
+                      "activation": {"MISTRAL_ACTIF": _drapeau("MISTRAL_ACTIF"),
+                                     "MISTRAL_ENTRAINEMENT_DESACTIVE": _drapeau("MISTRAL_ENTRAINEMENT_DESACTIVE")},
                       "variables_acceptees": list(_NOMS_CLE_MISTRAL),
                       "point_acces": pa, "verification_ue": verif if cle_m else None,
                       "large4_sur_ue": ((verif.get("presents") or {}).get(modele_mistral()) if cle_m else None),

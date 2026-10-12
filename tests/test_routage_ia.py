@@ -35,6 +35,7 @@ def _propre(monkeypatch):
     monkeypatch.setattr(llm.settings, "LLM_PROVIDER", "auto")
     monkeypatch.setattr(llm.settings, "LLM_ROUTAGE", "nouveau")
     monkeypatch.setattr(llm.settings, "MISTRAL_ENTRAINEMENT_DESACTIVE", False)
+    monkeypatch.setattr(llm.settings, "MISTRAL_ACTIF", False)
 
     def reset():
         llm._CB.update(fails=0, open_until=0.0)
@@ -120,8 +121,12 @@ def _anthropic(monkeypatch, repondre=None):
     return fake
 
 
-def _mistral(monkeypatch, repondre=None, cle=CLE_MISTRAL, modeles=("mistral-large-4",)):
+def _mistral(monkeypatch, repondre=None, cle=CLE_MISTRAL, modeles=("mistral-large-4",), actif=True):
+    """Mistral simulé. actif : clé + MISTRAL_ACTIF + désinscription de l'entraînement (les trois sont
+    nécessaires pour que Mistral reçoive quoi que ce soit) ; actif=False : la clé seule."""
     monkeypatch.setattr(llm.settings, "MISTRAL_API_KEY_ADJUGO", cle)
+    monkeypatch.setattr(llm.settings, "MISTRAL_ACTIF", bool(actif))
+    monkeypatch.setattr(llm.settings, "MISTRAL_ENTRAINEMENT_DESACTIVE", bool(actif))
     fake = FakeMistral(repondre)
     monkeypatch.setattr(llm.httpx, "post", fake)
     vus = {"n": 0}
@@ -299,6 +304,8 @@ def test_aucune_bascule_silencieuse_avec_une_cle_mistral(monkeypatch):
         monkeypatch.setattr(llm.settings, "MISTRAL_API_KEY_ADJUGO", "")
         monkeypatch.setattr(llm.settings, "MISTRAL_API_KEY", "")
         monkeypatch.setattr(llm.settings, nom, CLE_MISTRAL)
+        monkeypatch.setattr(llm.settings, "MISTRAL_ACTIF", True)
+        monkeypatch.setattr(llm.settings, "MISTRAL_ENTRAINEMENT_DESACTIVE", True)
         post = FakeMistral()
         monkeypatch.setattr(llm.httpx, "post", post)
         monkeypatch.setattr(llm.httpx, "get", lambda *a, **k: _HR(200, {"data": [{"id": "mistral-large-4"}]}))
@@ -561,7 +568,9 @@ def test_diagnostic_sans_fuite_de_cle(monkeypatch):
     t = {x["tache"]: x for x in d["taches"]}
     assert t["analyse"]["fournisseur"] == "mistral" and t["analyse"]["part_maintenant_chez"]["fournisseur"] == "mistral"
     assert t["questions"]["modele"] == "claude-sonnet-5-5"
-    assert any("Désinscription de l'entraînement chez Mistral NON confirmée" in m for m in d["messages"])
+    assert mi["actif"] is True and mi["etat"] == "actif"
+    assert not any("PAS activé" in m or "désinscription de l'entraînement n'est pas confirmée" in m
+                   for m in d["messages"])
 
 
 def test_diagnostic_sans_cle_mistral_dit_ou_part_l_analyse(monkeypatch):
@@ -660,16 +669,28 @@ def test_pages_juridiques_sans_mistral_inchangees(client):
 
 
 def test_pages_juridiques_avec_mistral_ue(client, monkeypatch):
+    monkeypatch.setattr(llm.settings, "ANTHROPIC_API_KEY", CLE_ANTHROPIC)    # chacun relais de l'autre
     _mistral(monkeypatch)
     html = client.get("/confidentialite").text
     assert "Anthropic, PBC et Mistral AI" in html and "api.eu.mistral.ai" in html
     assert "Union européenne et de l&#x27;AELE" in html
-    assert "Microsoft, CoreWeave et Cloudflare" in html and "non encore confirmée" in html
+    assert "Microsoft, CoreWeave et Cloudflare" in html and "désactivée par l&#x27;Éditeur sur son compte" in html
+    assert "non encore confirmée" not in html
     assert "France — api.mistral.ai" not in html and "{{AI_" not in html
+    # Transferts (§ 7) : UE ET AELE, rôles et relais tirés du routage effectif.
+    assert "calcul dans l&#x27;Union européenne et l&#x27;AELE" in html
+    assert ("Anthropic (États-Unis ; calcul possiblement dans d&#x27;autres pays) pour les questions "
+            "sur les dossiers et la rédaction, et en relais pour la lecture et l&#x27;analyse des dossiers") in html
+    assert ("Cloudflare) pour la lecture et l&#x27;analyse des dossiers, et en relais pour les questions sur les "
+            "dossiers et la rédaction") in html
     dpa = client.get("/dpa").text
-    assert "Anthropic : États-Unis (CCT) ; Mistral AI : Union européenne et AELE pour le calcul" in dpa
-    monkeypatch.setattr(llm.settings, "MISTRAL_ENTRAINEMENT_DESACTIVE", True)
-    assert "désactivée par l&#x27;Éditeur sur son compte" in client.get("/confidentialite").text
+    assert ("Anthropic : États-Unis pour le stockage, calcul possiblement hors des États-Unis (CCT) ; "
+            "Mistral AI : Union européenne et AELE pour le calcul") in dpa
+    # Désinscription non confirmée : Mistral coupé, les pages reviennent à Anthropic seul (jamais une
+    # page qui dirait « jamais utilisés pour entraîner » alors que Mistral reçoit des contenus).
+    monkeypatch.setattr(llm.settings, "MISTRAL_ENTRAINEMENT_DESACTIVE", False)
+    for page in ("/confidentialite", "/dpa"):
+        assert "Mistral" not in client.get(page).text
 
 
 def test_pages_juridiques_avec_mistral_mondial(client, monkeypatch):
@@ -677,3 +698,110 @@ def test_pages_juridiques_avec_mistral_mondial(client, monkeypatch):
     html = client.get("/confidentialite").text
     assert "sans engagement de lieu de calcul" in html and "possiblement hors de l&#x27;Union européenne" in html
     assert "api.eu.mistral.ai" not in html
+
+
+# ── 11. Relecture du 12/10/2026 ─────────────────────────────────────────────────────────────────
+
+def test_cle_mistral_seule_n_envoie_rien_chez_mistral(client, monkeypatch):
+    """Clé déjà dans Railway, MISTRAL_ACTIF non posé : rien ne part chez Mistral, la lecture des dossiers
+    part chez Claude Sonnet 5.5, et les pages juridiques ne parlent que d'Anthropic (aucun nouveau
+    sous-traitant sans préavis, aucune page qui se contredit)."""
+    monkeypatch.setattr(llm.settings, "ANTHROPIC_API_KEY", CLE_ANTHROPIC)
+    m = _mistral(monkeypatch, actif=False)
+    fake = _anthropic(monkeypatch, lambda kw: ([_B("text", "{\"x\": 1}")], "end_turn"))
+    resp = llm.messages_create(tache="analyse", max_tokens=6000, system="s",
+                               messages=[{"role": "user", "content": "dossier"}])
+    assert resp.fournisseur == "anthropic" and resp.bascule == "absent" and m.calls == []
+    assert fake.calls[-1]["model"] == "claude-sonnet-5-5"
+    assert llm.etat_mistral() == "inactif" and llm.active_provider()["provider"] == "anthropic"
+    for page in ("/confidentialite", "/dpa"):
+        html = client.get(page).text
+        assert "Mistral" not in html and "Anthropic, PBC" in html and "{{AI_" not in html
+    d = llm.diagnostic(verifier=True)
+    mi = d["fournisseurs"]["mistral"]
+    assert mi["configure"] is True and mi["actif"] is False and mi["etat"] == "inactif"
+    assert mi["large4_sur_ue"] is True          # la clé suffit pour vérifier le point d'accès UE avant d'activer
+    assert any("PAS activé" in x and "MISTRAL_ACTIF=1" in x for x in d["messages"])
+    t = {x["tache"]: x for x in d["taches"]}
+    assert t["analyse"]["part_maintenant_chez"] == {"fournisseur": "anthropic", "modele": "claude-sonnet-5-5"}
+    assert any("Mistral non utilisé (MISTRAL_ACTIF non posé)" in x for x in llm.resume_routage())
+    # MISTRAL_ACTIF posé, désinscription non confirmée : toujours rien chez Mistral, et le diagnostic le dit.
+    monkeypatch.setattr(llm.settings, "MISTRAL_ACTIF", True)
+    llm.messages_create(tache="analyse", max_tokens=100, system="s", messages=[{"role": "user", "content": "d"}])
+    assert m.calls == [] and llm.etat_mistral() == "entrainement"
+    assert any("désinscription de l'entraînement n'est pas confirmée" in x
+               for x in llm.diagnostic(verifier=False)["messages"])
+    # Les trois réunis : Mistral lit le dossier.
+    monkeypatch.setattr(llm.settings, "MISTRAL_ENTRAINEMENT_DESACTIVE", True)
+    r = llm.messages_create(tache="analyse", max_tokens=100, system="s", messages=[{"role": "user", "content": "d"}])
+    assert r.fournisseur == "mistral" and len(m.calls) == 1 and llm.etat_mistral() == "actif"
+
+
+def test_refus_du_secours_claude_l_emporte_sur_mistral_absent(monkeypatch):
+    """Tâche de lecture, Mistral non utilisable, Claude (secours) refuse : LLMRefus et son message, pas
+    « Service IA non configuré » (essai sans appel)."""
+    monkeypatch.setattr(llm.settings, "ANTHROPIC_API_KEY", CLE_ANTHROPIC)
+    _anthropic(monkeypatch, lambda kw: ([], "refusal"))
+    with pytest.raises(llm.LLMRefus) as e:
+        llm.messages_create(tache="analyse", max_tokens=100, system="s", messages=[{"role": "user", "content": "d"}])
+    assert str(e.value) == llm._MSG_REFUS
+    # Disjoncteur de Mistral ouvert (clé et activation présentes) : même règle.
+    _mistral(monkeypatch)
+    llm._CB_MISTRAL.update(fails=5, open_until=llm.time.monotonic() + 600)
+    with pytest.raises(llm.LLMRefus) as e:
+        llm.messages_create(tache="veille", max_tokens=100, system="s", messages=[{"role": "user", "content": "d"}])
+    assert str(e.value) == llm._MSG_REFUS
+    # Une tâche Claude qui refuse sans secours possible : inchangé.
+    llm._CB_MISTRAL.update(fails=0, open_until=0.0)
+    monkeypatch.setattr(llm.settings, "MISTRAL_ACTIF", False)
+    with pytest.raises(llm.LLMRefus):
+        llm.complete("s", "u", tache="questions")
+
+
+def test_llm_provider_mistral_sans_mistral_utilisable_dit_claude(monkeypatch):
+    monkeypatch.setattr(llm.settings, "ANTHROPIC_API_KEY", CLE_ANTHROPIC)
+    monkeypatch.setenv("LLM_PROVIDER", "mistral")
+    for actif in (None, False):                      # aucune clé, puis clé sans activation
+        if actif is False:
+            _mistral(monkeypatch, actif=False)
+        assert all(llm.route(t).primaire.fournisseur == "anthropic" for t in llm.TACHES)
+        lignes = llm.resume_routage()
+        assert not any("TOUTES les tâches partent chez mistral" in x for x in lignes)
+        assert any("LLM_PROVIDER=mistral demandé, mais Mistral n'est pas utilisable" in x
+                   and "partent chez Claude (Anthropic)" in x for x in lignes)
+        msgs = llm.diagnostic(verifier=False)["messages"]
+        assert not any("toutes les tâches partent chez mistral" in x for x in msgs)
+        assert any("partent chez Claude (Anthropic)" in x for x in msgs)
+    _mistral(monkeypatch)                             # utilisable : le forçage s'applique et le dit
+    assert all(llm.route(t).primaire.fournisseur == "mistral" for t in llm.TACHES)
+    assert any("LLM_PROVIDER=mistral : toutes les tâches partent chez mistral" in x for x in llm.resume_routage())
+
+
+def test_ancien_routage_ignore_les_variables_par_tache(monkeypatch):
+    monkeypatch.setenv("LLM_ROUTAGE", "ancien")
+    _mistral(monkeypatch)
+    monkeypatch.setenv("LLM_TACHE_QUESTIONS", "mistral:mistral-large-4")
+    monkeypatch.setenv("LLM_TACHE_ANALYSE_SECOURS", "mistral:mistral-large-4")
+    monkeypatch.setenv("LLM_TACHE_REDACTION_EFFORT", "max")
+    assert llm.route("questions").primaire == llm.Cible("anthropic", "claude-haiku-4-5")
+    assert llm.route("analyse").primaire == llm.Cible("anthropic", "claude-sonnet-4-6")
+    assert all(llm.route(t).secours is None for t in llm.TACHES)
+    assert llm.route("redaction").anthropic.effort == ""
+    d = llm.diagnostic(verifier=False)
+    assert d["secours"]["actifs"] is False
+    ignorees = [x for x in d["messages"] if x.startswith("Variables ignorées par l'ancien routage")]
+    assert ignorees and "LLM_TACHE_QUESTIONS" in ignorees[0] and "mistral-large-4" not in ignorees[0]
+    assert any("variables ignorées par l'ancien routage" in x for x in llm.resume_routage())
+    # Routage par tâche : les mêmes variables s'appliquent.
+    monkeypatch.setenv("LLM_ROUTAGE", "nouveau")
+    assert llm.route("questions").primaire == llm.Cible("mistral", "mistral-large-4")
+
+
+def test_pages_juridiques_anthropic_seul_lieu_de_calcul_exact(client):
+    """Anthropic par défaut (inference_geo « global ») : stockage aux États-Unis, calcul possiblement
+    ailleurs (documentation Anthropic sur la résidence des données, relue le 12/10/2026)."""
+    html = client.get("/confidentialite").text
+    assert "pour le stockage (API standard api.anthropic.com) ; calcul possiblement hors des États-Unis" in html
+    assert "(Anthropic, États-Unis ; calcul possiblement dans d&#x27;autres pays) pour l&#x27;analyse" in html
+    dpa = client.get("/dpa").text
+    assert "États-Unis pour le stockage, calcul possiblement hors des États-Unis (CCT)" in dpa

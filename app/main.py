@@ -378,22 +378,49 @@ def _role_ia(taches) -> str:
     return "questions sur les dossiers et rédaction"
 
 
+def _role_transfert(taches) -> str:
+    """Même découpage que _role_ia, avec les articles (phrase sur les transferts)."""
+    t = set(taches or [])
+    lect, autres = bool(t & _TACHES_LECTURE), bool(t - _TACHES_LECTURE)
+    if lect and autres:
+        return "la lecture des dossiers, les questions et la rédaction"
+    if lect:
+        return "la lecture et l'analyse des dossiers"
+    return "les questions sur les dossiers et la rédaction"
+
+
+def _usage_transfert(principal, secours) -> str:
+    """« pour … », « pour …, et en relais pour … » ou « en relais pour … », d'après les tâches
+    RÉELLEMENT confiées au fournisseur (principal) et celles qu'il reprend en cas de panne (secours)."""
+    parts = []
+    if principal:
+        parts.append("pour " + _role_transfert(principal))
+    if secours:
+        parts.append(("et " if principal else "") + "en relais pour " + _role_transfert(secours))
+    return ", ".join(parts)
+
+
 def _ai_subprocessor_fragments():
     """Fragments décrivant les fournisseurs d'IA RÉELLEMENT sollicités avec la configuration du serveur
     (routage par tâche ET secours, app.services.llm), injectés dans les pages légales (confidentialité
-    + DPA). Exacts et factuels : Anthropic (États-Unis, CCT) pour les questions et la rédaction ;
-    Mistral AI, dès qu'une clé Mistral est présente, pour la lecture des dossiers, avec le lieu de calcul
-    du point d'accès RÉELLEMENT utilisé (UE et AELE par api.eu.mistral.ai, ou sans engagement de lieu par
-    le point d'accès mondial), ses sous-traitants de droit américain et l'état de la désinscription de
-    l'entraînement (à la charge du titulaire du compte). Les phrases fixes de dpa.html et securite.html
-    (« jamais utilisés pour entraîner ») sont à corriger : docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md."""
-    anth_full = "<strong>États-Unis</strong> (API standard api.anthropic.com — encadré par CCT)"
+    + DPA). Exacts et factuels : Anthropic (stockage aux États-Unis, calcul possiblement hors des
+    États-Unis par son routage mondial, CCT) ; Mistral AI, dès qu'il est ACTIVÉ (clé, MISTRAL_ACTIF et
+    désinscription de l'entraînement confirmée), avec le lieu de calcul du point d'accès RÉELLEMENT
+    utilisé (UE et AELE par api.eu.mistral.ai, ou sans engagement de lieu par le point d'accès mondial),
+    ses sous-traitants de droit américain et l'état de la désinscription. Le rôle de chacun (et les
+    relais) est tiré du routage effectif, jamais écrit en dur. Phrases fixes de dpa.html et securite.html
+    à compléter : docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md."""
+    anth_full = ("<strong>États-Unis</strong> pour le stockage (API standard api.anthropic.com) ; calcul "
+                 "possiblement hors des États-Unis (routage mondial d'Anthropic) — encadré par CCT")
+    anth_court = "États-Unis pour le stockage, calcul possiblement hors des États-Unis (CCT)"
+    anth_transfert = "États-Unis ; calcul possiblement dans d'autres pays"
     defaut = {
         "{{AI_PROVIDER}}": "Anthropic, PBC",
         "{{AI_PRODUCT}}": "Claude API",
-        "{{AI_LOCATION_FULL}}": anth_full,
-        "{{AI_LOCATION_SHORT}}": "États-Unis (CCT)",
-        "{{AI_TRANSFER_MENTION}}": "le fournisseur d&#x27;IA (Anthropic, États-Unis) pour l&#x27;analyse et la génération de documents, ",
+        "{{AI_LOCATION_FULL}}": _h(anth_full),
+        "{{AI_LOCATION_SHORT}}": _h(anth_court),
+        "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA (Anthropic, {anth_transfert}) pour l'analyse et la génération de "
+                                      "documents, "),
     }
     try:
         from app.services.llm import etat_juridique
@@ -413,7 +440,7 @@ def _ai_subprocessor_fragments():
                   "(point d'accès régional api.eu.mistral.ai), les données de fonctionnement du compte "
                   "(facturation, configuration) pouvant être traitées hors de cette zone")
         lieu_m_court = "Union européenne et AELE pour le calcul (api.eu.mistral.ai)"
-        transfert_m = "calcul dans l'Union européenne"
+        transfert_m = "calcul dans l'Union européenne et l'AELE"
     else:
         lieu_m = ("point d'accès mondial (api.mistral.ai) <strong>sans engagement de lieu de calcul</strong> : "
                   "centres de données de ses sous-traitants, possiblement hors de l'Union européenne ; "
@@ -441,16 +468,17 @@ def _ai_subprocessor_fragments():
             "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA Mistral AI et ses sous-traitants de droit américain "
                                           f"(dont Microsoft, CoreWeave et Cloudflare) — {transfert_m} —, "),
         }
+    usage_a = _usage_transfert(t_a.get("principal"), t_a.get("secours"))
+    usage_m = _usage_transfert(t_m.get("principal"), t_m.get("secours"))
     return {
         "{{AI_PROVIDER}}": "Anthropic, PBC et Mistral AI",
         "{{AI_PRODUCT}}": "Claude API ; La Plateforme de Mistral AI",
         "{{AI_LOCATION_FULL}}": _h(f"<strong>Anthropic</strong> ({role_a}{relais_a}) : {anth_full}. ") + _h(mistral_full),
-        "{{AI_LOCATION_SHORT}}": _h(f"Anthropic : États-Unis (CCT) ; Mistral AI : {lieu_m_court}, "
+        "{{AI_LOCATION_SHORT}}": _h(f"Anthropic : {anth_court} ; Mistral AI : {lieu_m_court}, "
                                     "sous-traitants de droit américain (CCT)"),
-        "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA Anthropic (États-Unis) pour les questions et la "
-                                      f"rédaction, le fournisseur d'IA Mistral AI et ses sous-traitants de droit "
-                                      f"américain (dont Microsoft, CoreWeave et Cloudflare) pour la lecture des "
-                                      f"dossiers — {transfert_m} —, "),
+        "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA Anthropic ({anth_transfert}) {usage_a}, le fournisseur "
+                                      f"d'IA Mistral AI et ses sous-traitants de droit américain (dont Microsoft, "
+                                      f"CoreWeave et Cloudflare) {usage_m} — {transfert_m} —, "),
     }
 
 

@@ -88,9 +88,13 @@ class Settings(BaseSettings):
     # Adresse particulière (rare) : seule une valeur différente des deux points d'accès officiels compte.
     MISTRAL_BASE_URL: str = "https://api.mistral.ai/v1"
     # Mettre à 1 APRÈS avoir désactivé « Anonymous improvement data » dans la console Mistral
-    # (Admin > Privacy) : les pages juridiques le disent alors. Sans cela, elles disent que la
-    # désinscription reste à faire par le titulaire du compte.
+    # (Admin > Privacy). Condition nécessaire pour que Mistral reçoive quoi que ce soit (avec
+    # MISTRAL_ACTIF) : les pages juridiques disent que les contenus ne servent pas à entraîner.
     MISTRAL_ENTRAINEMENT_DESACTIVE: bool = False
+    # Décision explicite d'activer Mistral (lecture des dossiers) : à poser à la fin du préavis donné aux
+    # clients (article 6 du DPA), le jour où les textes juridiques à valider sont publiés. Sans elle, la
+    # clé seule n'envoie rien chez Mistral : tout part chez Claude.
+    MISTRAL_ACTIF: bool = False
 
     # Stripe
     STRIPE_SECRET_KEY: str = ""

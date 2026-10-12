@@ -399,8 +399,20 @@ def test_tarifs_des_modeles_retenus(monkeypatch):
     monkeypatch.setenv("MISTRAL_SOLDE_JUSQU_AU", "2999-12-31")
     assert t.cout_eur("mistral-large-4", 1_000_000, 1_000_000) == pytest.approx((0.68 + 2.09) * k, rel=1e-6)
     monkeypatch.setenv("MISTRAL_SOLDE_JUSQU_AU", "aucun")
-    # Modèle inconnu : compté au prix du plus cher (jamais sous-estimé).
-    assert t.cout_eur("modele-inconnu-x", 1_000_000, 0) == pytest.approx(4.0 * k, rel=1e-6)
+    # Modèle inconnu : compté au tarif le plus haut des modèles servis (Fable 5.1 : 10 / 50 $), cache relu
+    # non remisé : jamais sous-estimé.
+    assert t.cout_eur("modele-inconnu-x", 1_000_000, 0) == pytest.approx(10.0 * k, rel=1e-6)
+    assert t.cout_eur("modele-inconnu-x", 0, 1_000_000, cache_lus=1_000_000) == pytest.approx(60.0 * k, rel=1e-6)
+    # Fable 5.1 et Mythos 5.1 (acceptés par le code) : à leur prix réel, jamais au prix d'Opus 5.5.
+    for m in ("claude-fable-5-1", "claude-mythos-5-1"):
+        assert t.cout_usd(m, 1_000_000, 1_000_000) == pytest.approx(60.0)
+        assert t.cout_usd(m, 0, 0, cache_lus=1_000_000) == pytest.approx(0.25)
+        assert t.cout_usd(m, 0, 0, cache_ecrits=1_000_000, cache_ecrits_1h=1_000_000) == pytest.approx(20.0)
+    assert t.cout_usd("claude-opus-5-5", 1_000_000, 1_000_000) == pytest.approx(24.0)
+    assert t.cout_usd("claude-opus-4-8", 1_000_000, 1_000_000) == pytest.approx(30.0)
+    # Une version suivante non publiée (« claude-opus-5-6 ») n'emprunte pas le prix d'un modèle voisin.
+    assert not t.connu("claude-opus-5-6") and not t.connu("claude-sonnet-5-6")
+    assert t.connu("anthropic.claude-opus-4-5-20251101-v1:0") and t.connu("claude-sonnet-5-5-20260928")
 
 
 def test_point_d_acces_europeen_de_mistral_majore_de_10_pour_cent(monkeypatch):

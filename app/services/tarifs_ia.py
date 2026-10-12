@@ -14,8 +14,10 @@ Tarifs relevés le 12/10/2026, en dollars par million de tokens (conversion en e
       Sonnet 5.5 (`claude-sonnet-5-5`) 2 / 10, lecture du cache 0,10 (0,05 × l'entrée), écriture
       2,50 (5 minutes) ou 4 (1 heure) ; Haiku 5.5 (`claude-haiku-5-5`) 0,10 / 0,50 jusqu'à 100 000
       tokens d'entrée par requête (cache compris), puis 0,50 / 2,50 pour toute la requête ; Opus 5.5
-      4 / 20 ; Sonnet 4.6 3 / 15 ; Haiku 4.5 1 / 5. Écriture du cache : 1,25 × l'entrée (5 minutes),
-      2 × (1 heure) ; lecture : 0,1 × (0,05 × sur la génération 5.5).
+      4 / 20 ; Fable 5.1 et Mythos 5.1 10 / 50 (cache lu 0,25 : 0,025 ×) ; Fable 5 et Mythos 5 10 / 50 ;
+      Opus 5, 4.8, 4.7, 4.6, 4.5 5 / 25 ; Sonnet 5 2 / 10 ; Sonnet 4.6 et 4.5 3 / 15 ; Haiku 4.5 1 / 5.
+      Écriture du cache : 1,25 × l'entrée (5 minutes), 2 × (1 heure) ; lecture : 0,1 × (0,05 × sur
+      Opus 5.5 et Sonnet 5.5, 0,025 × sur Fable 5.1 et Mythos 5.1).
   • Mistral, La Plateforme (docs.mistral.ai, prix publiés en $ et en €, rapport 0,85) :
       Large 4 (`mistral-large-4`, préversion publique du 06/10/2026) 1,36 / 4,18, cache lu 0,14 ;
       soldé de moitié à son lancement (0,68 / 2,09 / 0,07), « 50 % off for 2 weeks » d'après le
@@ -28,14 +30,15 @@ Tarifs relevés le 12/10/2026, en dollars par million de tokens (conversion en e
       facturée à part. Point d'accès européen (api.eu.mistral.ai) : + MISTRAL_SURCOUT_UE (10 %) sur
       tout, appliqué selon la zone RÉELLEMENT utilisée par l'appel (resp.zone).
   • L'alias `mistral-large-latest` (Large 3 au 12/10/2026, susceptible de changer) est compté au prix
-    de Large 4, le plus cher des deux. Un modèle inconnu est compté au prix d'Opus 5.5 (le plus cher
-    des modèles utilisables, cache non remisé) et signalé une fois au journal : le coût n'est jamais
-    sous-estimé. `connu()` permet aux journaux de dire « coût non estimé » plutôt qu'un prix deviné.
+    de Large 4, le plus cher des deux. Un modèle inconnu est compté au tarif le plus haut de la page des
+    prix d'Anthropic pour un modèle servi par l'API directe (Fable 5.1 et Mythos 5.1 : 10 / 50, cache
+    relu non remisé) et signalé une fois au journal : le coût n'est jamais sous-estimé. `connu()` permet aux journaux de dire « coût non estimé » plutôt qu'un prix deviné.
 Conversion : 1 $ = AI_USD_EUR € (0,85 par défaut, rapport des deux affichages de Mistral).
 """
 import datetime as _dt
 import logging
 import os
+import re
 import threading
 from typing import Optional
 
@@ -56,11 +59,39 @@ _ANTHROPIC = [
                                    "cache_1h": 1.00}}),
     ("claude-opus-5-5", {"entree": 4.0, "sortie": 20.0, "cache_lu": 0.20, "cache_5m": 5.00, "cache_1h": 8.00,
                          "facteur_tokens": 1.3}),
+    # Familles acceptées par llm._RE_CLAUDE (fable, mythos) et autres versions encore servies par l'API
+    # directe : comptées à leur prix réel (page des prix relue le 12/10/2026).
+    ("claude-fable-5-1", {"entree": 10.0, "sortie": 50.0, "cache_lu": 0.25, "cache_5m": 12.50, "cache_1h": 20.00,
+                          "facteur_tokens": 1.3}),
+    ("claude-mythos-5-1", {"entree": 10.0, "sortie": 50.0, "cache_lu": 0.25, "cache_5m": 12.50, "cache_1h": 20.00,
+                           "facteur_tokens": 1.3}),
+    ("claude-fable-5", {"entree": 10.0, "sortie": 50.0, "cache_lu": 1.00, "cache_5m": 12.50, "cache_1h": 20.00,
+                        "facteur_tokens": 1.3}),
+    ("claude-mythos-5", {"entree": 10.0, "sortie": 50.0, "cache_lu": 1.00, "cache_5m": 12.50, "cache_1h": 20.00,
+                         "facteur_tokens": 1.3}),
+    ("claude-opus-5", {"entree": 5.0, "sortie": 25.0, "cache_lu": 0.50, "cache_5m": 6.25, "cache_1h": 10.00,
+                       "facteur_tokens": 1.3}),
+    ("claude-opus-4-8", {"entree": 5.0, "sortie": 25.0, "cache_lu": 0.50, "cache_5m": 6.25, "cache_1h": 10.00,
+                         "facteur_tokens": 1.3}),
+    ("claude-opus-4-7", {"entree": 5.0, "sortie": 25.0, "cache_lu": 0.50, "cache_5m": 6.25, "cache_1h": 10.00,
+                         "facteur_tokens": 1.3}),
+    ("claude-opus-4-6", {"entree": 5.0, "sortie": 25.0, "cache_lu": 0.50, "cache_5m": 6.25, "cache_1h": 10.00,
+                         "facteur_tokens": 1.0}),
+    ("claude-opus-4-5", {"entree": 5.0, "sortie": 25.0, "cache_lu": 0.50, "cache_5m": 6.25, "cache_1h": 10.00,
+                         "facteur_tokens": 1.0}),
+    ("claude-sonnet-5", {"entree": 2.0, "sortie": 10.0, "cache_lu": 0.20, "cache_5m": 2.50, "cache_1h": 4.00,
+                         "facteur_tokens": 1.3}),
     ("claude-sonnet-4-6", {"entree": 3.0, "sortie": 15.0, "cache_lu": 0.30, "cache_5m": 3.75, "cache_1h": 6.00,
+                           "facteur_tokens": 1.0}),
+    ("claude-sonnet-4-5", {"entree": 3.0, "sortie": 15.0, "cache_lu": 0.30, "cache_5m": 3.75, "cache_1h": 6.00,
                            "facteur_tokens": 1.0}),
     ("claude-haiku-4-5", {"entree": 1.0, "sortie": 5.0, "cache_lu": 0.10, "cache_5m": 1.25, "cache_1h": 2.00,
                           "facteur_tokens": 1.0}),
 ]
+# Une clé n'est retenue que si elle n'est pas suivie d'un autre numéro de version (« claude-opus-5 » ne
+# vaut ni pour « claude-opus-5-5 » ni pour une future « claude-opus-5-6 », comptée alors comme inconnue,
+# au prix le plus haut) ; une date (« -20260101 ») ou un suffixe Bedrock (« -v1:0 », « @… ») est accepté.
+_RE_VERSION_SUIVANTE = re.compile(r"^-\d{1,2}(?!\d)")
 # Mistral : (clé, prix fixe (entrée, sortie, cache lu) en $ ; None = Large 4, prix soldé ou normal).
 # Découpage du français non publié : 1,3 pour les estimations (prudent, comme les plafonds de sortie).
 _MISTRAL = [
@@ -75,8 +106,10 @@ _FACTEUR_MISTRAL = 1.3
 LARGE4_NORMAL = (1.36, 4.18, 0.14)
 LARGE4_SOLDE = (0.68, 2.09, 0.07)
 SOLDE_JUSQU_AU_DEFAUT = "2026-10-19"         # lancement du 06/10/2026, « 50 % off for 2 weeks »
-# Modèle inconnu : prix d'Opus 5.5, cache non remisé (jamais sous-estimé).
-_INCONNU = {"entree": 4.0, "sortie": 20.0, "cache_lu": 4.0, "cache_5m": 5.0, "cache_1h": 8.0,
+# Modèle inconnu : tarif le plus haut de la page des prix d'Anthropic pour un modèle servi par l'API
+# directe (Claude Fable 5.1 et Mythos 5.1 : 10 / 50 $, écriture du cache 12,50 / 20 $), cache relu NON
+# remisé (au prix de l'entrée) : jamais sous-estimé.
+_INCONNU = {"entree": 10.0, "sortie": 50.0, "cache_lu": 10.0, "cache_5m": 12.50, "cache_1h": 20.0,
             "facteur_tokens": 1.3}
 _SIGNALES = set()
 _SIGNALES_LOCK = threading.Lock()
@@ -134,7 +167,8 @@ def prix_mistral(modele, jour: Optional[_dt.date] = None) -> Optional[tuple]:
 
 def _anthropic(m: str) -> Optional[dict]:
     for cle, t in _ANTHROPIC:
-        if cle in m:
+        i = m.find(cle)
+        if i >= 0 and not _RE_VERSION_SUIVANTE.match(m[i + len(cle):]):
             return t
     return None
 
@@ -162,7 +196,8 @@ def tarif(modele, zone: str = "", jour: Optional[_dt.date] = None) -> dict:
         if nouveau and len(_SIGNALES) < 200:
             _SIGNALES.add(m)
     if nouveau:
-        logger.warning("Tarif IA inconnu pour le modèle « %s » : compté au prix du modèle le plus cher.", m or "?")
+        logger.warning("Tarif IA inconnu pour le modèle « %s » : compté au tarif le plus haut (10 / 50 $ par "
+                       "million, cache non remisé).", m or "?")
     return dict(_INCONNU, mistral=False)
 
 

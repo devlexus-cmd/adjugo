@@ -94,7 +94,7 @@ def render() -> str:
                  {"fournisseur": "anthropic"}),
             _fmt("adjugo_llm_fournisseur_circuit_open", 1 if llm._CB_MISTRAL["open_until"] > now else 0,
                  {"fournisseur": "mistral"}),
-            "# HELP adjugo_llm_fournisseur_configure Clé du fournisseur présente (1) ou non (0).",
+            "# HELP adjugo_llm_fournisseur_configure Fournisseur utilisable (1) ou non (0) : clé présente ; pour Mistral, activé aussi.",
             "# TYPE adjugo_llm_fournisseur_configure gauge",
             _fmt("adjugo_llm_fournisseur_configure", 1 if llm._anthropic_disponible() else 0,
                  {"fournisseur": "anthropic"}),
