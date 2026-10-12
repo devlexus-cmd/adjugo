@@ -715,3 +715,24 @@ def test_ancienne_extraction_lit_aussi_les_tableurs():
     z = _zip({"RC.txt": RC_TETE.encode(), "BPU.xlsx": _xlsx([["Poste", "Bordure T2", "45 EUR"]])})
     t = extract_dce_text("DCE.zip", z, max_chars=50000)
     assert "Bordure T2 | 45 EUR" in t
+
+
+def test_plafond_d_appels_signale_dans_la_couverture(fake_ia, monkeypatch):
+    """Plafond technique de la lecture en deux temps : les parties non lues par l'IA sont listées,
+    la couverture n'est pas « complète » et la synthèse ne dit pas « lue en entier »."""
+    from app.services import analyse_dossier as ad, dce_lecture as lec
+    fake = fake_ia()
+    monkeypatch.setattr(ad, "BUDGET_TOKENS", 20_000)          # force la lecture en deux temps
+    monkeypatch.setattr(ad, "SEGMENT_TOKENS", 7_000)          # ≈ 21 000 caractères par partie
+    monkeypatch.setattr(ad, "MAX_APPELS", 3)
+    lecture = lec.lire_dossier("DCE.zip", _zip({
+        "RC.txt": (RC_TETE + _texte("RC", 2000, 41)).encode(),
+        "CCTP.txt": ("CAHIER DES CLAUSES TECHNIQUES PARTICULIERES\n" + _texte("CCTP", 90000, 42)).encode()}))
+    with llm.tenant_scope(424242):
+        a = ad.analyser(lecture, {"name": "Test"}, {}, lang_name="français")
+    cov = a["couverture"]
+    assert a["mode_lecture"] == "deux_temps" and cov["complet"] is False
+    assert cov["analyse"]["parties_lues_par_l_ia"] == 3 and cov["analyse"]["non_analysees"]
+    assert "CCTP.txt (partie 4 sur" in cov["analyse"]["non_analysees"][0]
+    synth = llm._flatten_content(fake.calls[-1]["messages"][0]["content"])
+    assert "lue en partie par l'IA (3 parties sur" in synth and "FIN-PIECE-RC" in synth

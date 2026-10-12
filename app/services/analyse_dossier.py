@@ -167,10 +167,15 @@ def _read_part(job: dict) -> dict:
 
 
 def _bloc_faits(p: dict, parts: list) -> str:
-    n = len(parts)
+    k = len(parts)
+    n = max([k] + [int(r.get("n") or 0) for r in parts])
     faits = [f for r in parts for f in r["faits"]]
-    head = (f"=== {p.get('nom') or 'pièce'} : {(p.get('libelle') or '').lower()}, lue en entier par l'IA"
-            + (f" en {n} parties" if n > 1 else "") + " — informations relevées, avec la phrase exacte ===")
+    if k < n:      # plafond technique : toutes les parties n'ont pas été lues par l'IA
+        lu = f"lue en partie par l'IA ({k} parties sur {n})"
+    else:
+        lu = "lue en entier par l'IA" + (f" en {n} parties" if n > 1 else "")
+    head = (f"=== {p.get('nom') or 'pièce'} : {(p.get('libelle') or '').lower()}, {lu}"
+            " — informations relevées, avec la phrase exacte ===")
     if not faits:
         return head + "\n- (aucune information utile relevée dans cette pièce)"
     lignes = []
