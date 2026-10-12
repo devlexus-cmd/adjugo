@@ -1994,7 +1994,7 @@
                   <!-- Rédaction en cours : la partie est verrouillée -->
                   <div v-if="atlSec().redaction_en_cours" class="atl-lock" role="status"><span class="spin"></span><span>Adjugo {{ atlSec().redaction_en_cours.action === 'raccourcir' ? 'raccourcit' : 'rédige' }} cette partie. Vous pouvez quitter cette page : la rédaction continue<template v-if="atlSec().version_courante"> et le texte actuel reste dans l'historique</template>.</span></div>
                   <!-- Échec de la dernière rédaction : gardé dans la partie jusqu'à la prochaine action sur elle -->
-                  <div v-else-if="atlEchec(atlSec())" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ atlEchec(atlSec()) }}</div></div>
+                  <div v-else-if="atlEchec(atlSec())" class="conv-err atl-mt12" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ atlEchec(atlSec()) }}</div></div>
 
                   <!-- Éditeur simple : titres, listes, tableaux ; enregistrement explicite -->
                   <div v-if="atl.mode==='modifier' && !atlMobile" class="atl-editor">

@@ -320,17 +320,27 @@ def _lu_integral(out: dict, payload: dict) -> dict:
     remis = {x["index"]: x["entier"] for x in rem["pieces"]}
     cadre = "\n\n".join(p.get("texte") or "" for p in pieces if p.get("type") == dp.CADRE)
     cov = lec.couverture(payload)
-    out.update(integral=True, texte="", cadre=cadre[:CADRE_PLAN_MAX],
+    cadre = cadre[:CADRE_PLAN_MAX]
+    out.update(integral=True, texte="", cadre=cadre, cadre_decoupable=ap.cadre_decoupable(cadre),
                couverture={"complet": bool(cov.get("complet")), "message": cov.get("message") or ""},
                message_lecture="",
                pieces=[_piece_affichee(i, p, remis) for i, p in enumerate(pieces)][:PIECES_AFFICHEES_MAX])
     return out
 
 
-def _lecture_en_cours(project: Project) -> bool:
+def _lecture_en_cours(db, project: Project) -> bool:
+    """Une lecture en tâche de fond tourne VRAIMENT pour ce marché : l'état « en cours » ET sa tâche
+    en attente ou en cours (comme la page du marché). Une lecture morte au redémarrage du serveur
+    (tâche passée en erreur, état du marché resté « en cours ») n'est plus dite « pas encore terminée »."""
     wf = project.workflow if isinstance(project.workflow, dict) else {}
     st = wf.get("lecture") if isinstance(wf.get("lecture"), dict) else {}
-    return st.get("etat") == "en_cours"
+    if st.get("etat") != "en_cours" or not st.get("job_id"):
+        return False
+    try:
+        j = db.get(Job, int(st["job_id"]))
+    except (TypeError, ValueError):
+        return False
+    return bool(j is not None and j.status in ("pending", "running"))
 
 
 def lire_dossier_acheteur(db, project: Project, member_ids: list, integrale: bool = True) -> dict:
@@ -349,11 +359,13 @@ def lire_dossier_acheteur(db, project: Project, member_ids: list, integrale: boo
     lec_cle = cle_lecture(project)
     # Clé du cache : le fichier, la lecture rangée, le mode, et l'état de la lecture en tâche de fond
     # (« lecture en cours » ne doit pas rester affiché après un échec qui ne range rien).
-    ck = f"{cle}|{lec_cle}|{'i' if integrale else 'a'}|{'c' if _lecture_en_cours(project) else ''}"
+    en_cours = _lecture_en_cours(db, project)
+    ck = f"{cle}|{lec_cle}|{'i' if integrale else 'a'}|{'c' if en_cours else ''}"
     if ck in _LECTURES:
         return dict(_LECTURES[ck])
     out = {"cle": cle, "lecture_cle": lec_cle, "source": "aucun", "nom_fichier": "", "integral": False,
-           "pieces": [], "couverture": None, "message_lecture": "", "cadre": "", "texte": "", "lu_le": _now_iso()}
+           "pieces": [], "couverture": None, "message_lecture": "", "cadre": "", "cadre_decoupable": False,
+           "texte": "", "lu_le": _now_iso()}
     pieces = []
     if cle.startswith("fichier:"):
         doc = _dce_document(db, project, member_ids)
@@ -368,7 +380,7 @@ def lire_dossier_acheteur(db, project: Project, member_ids: list, integrale: boo
                 return out
             from app.services.analysis import extract_dce_pieces
             pieces, _archive = extract_dce_pieces(doc.name, content, max_chars=LECTURE_MAX)
-            out["message_lecture"] = MSG_LECTURE_EN_COURS if _lecture_en_cours(project) else MSG_LECTURE_ANCIENNE
+            out["message_lecture"] = MSG_LECTURE_EN_COURS if en_cours else MSG_LECTURE_ANCIENNE
         except Exception as e:      # noqa: BLE001 — fichier illisible : repli sur l'extrait
             logger.warning("atelier : lecture du dossier du marché impossible (projet %s) : %s",
                            project.id, type(e).__name__)
@@ -384,7 +396,7 @@ def lire_dossier_acheteur(db, project: Project, member_ids: list, integrale: boo
     if pieces:
         cadre = "\n\n".join(p.get("texte") or "" for p in pieces if p.get("type") == dp.CADRE)
         texte, meta = dp.compose(pieces, DOSSIER_ACHETEUR_MAX)
-        out.update(cadre=cadre[:CADRE_MAX], texte=texte,
+        out.update(cadre=cadre[:CADRE_MAX], texte=texte, cadre_decoupable=ap.cadre_decoupable(cadre[:CADRE_MAX]),
                    pieces=[{"nom": str(m.get("nom") or "")[:200], "type": m.get("type"),
                             "libelle": m.get("libelle"), "caracteres": int(m.get("caracteres") or 0),
                             "lu_en_entier": bool(m.get("lu_en_entier")),
@@ -410,10 +422,13 @@ def _oublier_lectures(cle: str) -> None:
 
 def dce_lu_en_base(lu: dict) -> dict:
     """Ce que le dossier garde de la lecture (dossier_presentations.dce_lu) : jamais le texte d'une
-    lecture intégrale (il reste dans le stockage du marché, supprimé avec lui)."""
+    lecture intégrale, ni celui de ses cadres de réponse (il reste dans le stockage du marché,
+    supprimé avec lui ; le plan le relit de là). Seul est gardé si le cadre se découpe en questions
+    (`cadre_decoupable`, pour proposer la base « cadre » sans le relire à chaque affichage)."""
     out = dict(lu or {})
     if out.get("integral"):
         out["texte"] = ""
+        out["cadre"] = ""
     return out
 
 
@@ -1682,13 +1697,13 @@ def _partie_ia(dossier: DossierPresentation, section: DossierSection, numero: st
 
 def _dossier_pour_ia(project: Project, lu: dict) -> tuple:
     """Ce que le moteur remet à l'IA, commun à toutes les parties : (texte, lecture rangée ou None,
-    numéros des pièces remises en entier). Lecture intégrale : l'avertissement des pièces non lues
-    (« jamais conclure qu'une information n'existe pas »), puis TOUS les règlements et TOUS les
+    numéros des pièces remises en entier). Lecture intégrale : l'avertissement de ce qui est remis
+    (règlements et cadres en entier, le reste par passages, pièces non lues ; jamais de remarque sur
+    la lecture dans le texte rendu à l'acheteur), puis TOUS les règlements et TOUS les
     cadres de réponse en entier. Ancienne lecture : son texte borné. ("", None, set()) si la lecture
     rangée est devenue illisible (l'appelant relit alors l'ancienne)."""
     if not lu.get("integral"):
         return lu.get("texte") or "", None, set()
-    from app.services import dce_lecture as lec
     from app.services import dce_texte
     try:
         payload = dce_texte.charger(project)
@@ -1697,9 +1712,10 @@ def _dossier_pour_ia(project: Project, lu: dict) -> tuple:
     if not payload or not any((p.get("texte") or "").strip() for p in payload.get("pieces") or []):
         return "", None, set()
     rem = dce_texte.pieces_remises(payload, DOSSIER_COMMUN_MAX)
-    note = lec.note_pour_ia(payload)
-    corps = rem["texte"] or "(aucun règlement ni cadre de réponse reconnu parmi les pièces lues)"
-    return note + "\n\n" + corps, payload, set(rem["entiers"])
+    # Note PROPRE à l'atelier (son texte va à l'acheteur) : ce qui est remis en entier, par passages,
+    # non lu — jamais « dossier lu en entier », jamais de remarque sur la lecture dans le texte.
+    note = dce_texte.note_remise(payload, rem, pour_acheteur=True)
+    return (note + "\n\n" + rem["texte"]).strip(), payload, set(rem["entiers"])
 
 
 def _passages_pour_ia(project: Project, payload: Optional[dict], section: DossierSection, entiers: set) -> str:
@@ -1882,8 +1898,16 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
         if len(taches) == 1:
             resultats = [_un(taches[0])]
         else:
-            with ThreadPoolExecutor(max_workers=min(3, len(taches))) as ex:
-                resultats = map_in_context(ex, _un, taches)
+            # Le dossier de l'acheteur commun (jusqu'à DOSSIER_COMMUN_MAX caractères) est mis en cache
+            # de prompt : le cache n'existe qu'une fois la première réponse commencée. Lancées ensemble,
+            # les 3 premières parties l'écriraient chacune (1,25 × le prix d'entrée) ; la première
+            # partie part donc SEULE, les suivantes (en parallèle) le relisent à 0,1 ×.
+            premiers = []
+            if action == JOB_REDIGER and dossier_acheteur.strip():
+                premiers = [_un(taches[0])]
+            reste = taches[len(premiers):]
+            with ThreadPoolExecutor(max_workers=min(3, len(reste))) as ex:
+                resultats = premiers + list(map_in_context(ex, _un, reste))
     # Enregistrement (nouvelle session de lecture : la tâche a pu durer plusieurs minutes).
     dossier = get_dossier(db, project_id, owner_id)
     _cumuler_cout(dossier, cm.summary())
@@ -1946,9 +1970,14 @@ def _cumuler_cout(dossier: Optional[DossierPresentation], summary: dict) -> None
         return
     cur = dossier.cout_ia if isinstance(dossier.cout_ia, dict) else {}
     usd = summary.get("cout_estime_usd")
-    out = {"appels": int(cur.get("appels") or 0) + int(summary.get("appels") or 0),
-           "tokens_entree": int(cur.get("tokens_entree") or 0) + int(summary.get("tokens_entree") or 0),
-           "tokens_sortie": int(cur.get("tokens_sortie") or 0) + int(summary.get("tokens_sortie") or 0),
+
+    def _somme(k):
+        return int(cur.get(k) or 0) + int(summary.get(k) or 0)
+    # tokens_entree = entrée HORS cache ; le dossier de l'acheteur commun passe par le cache de prompt
+    # (écrit à 1,25 ×, relu à 0,1 × le prix d'entrée) : compté à part, pour lire le volume réel envoyé.
+    out = {"appels": _somme("appels"), "tokens_entree": _somme("tokens_entree"),
+           "tokens_cache_ecrits": _somme("tokens_cache_ecrits"), "tokens_cache_lus": _somme("tokens_cache_lus"),
+           "tokens_sortie": _somme("tokens_sortie"),
            "cout_estime_usd": (round(float(cur.get("cout_estime_usd") or 0) + float(usd), 5)
                                if usd is not None and cur.get("cout_estime_usd", 0) is not None else None),
            "fournisseur": summary.get("fournisseur")}
@@ -2233,7 +2262,7 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
     # process) si le fichier a changé ou si une nouvelle lecture intégrale a été rangée depuis.
     lu_aff = lu
     if (lu.get("cle") != cle_now or (lu.get("lecture_cle") or "") != cle_lecture(project)
-            or (lu.get("message_lecture") == MSG_LECTURE_EN_COURS) != _lecture_en_cours(project)):
+            or (lu.get("message_lecture") == MSG_LECTURE_EN_COURS) != _lecture_en_cours(db, project)):
         lu_aff = lire_dossier_acheteur(db, project, member_ids)
     retirees_rows = sections_retirees(db, dossier)
     retirees = [{"id": s.id, "intitule": s.intitule, "retiree_le": _iso(s.retiree_at),
@@ -2248,7 +2277,8 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
                                                            "avertissement_fichier", "cadre_non_decoupe",
                                                            "criteres_hors_dossier", "limites", "base_demandee",
                                                            "construit_le")},
-                                 bases=ap.bases_disponibles(_analysis(project), (lu.get("cadre") or "")),
+                                 bases=ap.bases_disponibles(_analysis(project), (lu_aff.get("cadre") or ""),
+                                                            decoupable=lu_aff.get("cadre_decoupable")),
                                  criteres_en_attente=ap.criteres_a_verifier(_analysis(project)),
                                  message_en_attente=(ap.msg_a_verifier(ap.criteres_a_verifier(_analysis(project)))
                                                      if dossier.plan_source != ap.CADRE else "")),

@@ -124,8 +124,15 @@ def test_l_atelier_lit_reglement_et_cadre_en_entier_et_les_passages_de_toutes_le
         assert RC_FIN in user and CADRE_FIN in user and "Les entreprises devront être certifiées ISO 14001" in user
         # Jamais le CCTP entier : seulement ses passages utiles à la partie.
         assert CCTP_FIN not in user and HORS_SUJET not in user
-        # Les pièces non lues sont dites à l'IA (jamais « l'information n'existe pas »).
-        assert "jamais qu'elle n'existe pas" in user and "04_BPU.doc" in user
+        # Note PROPRE à l'atelier (son texte va à l'acheteur) : ce qui est remis en entier (2 pièces), le
+        # reste par passages, les pièces non lues pour l'IA seulement ; jamais « dossier lu en entier »
+        # ni « écris qu'elle n'a pas été trouvée dans les pièces lues ».
+        assert "Ci-dessous, remis à chaque fois : 2 pièces du dossier du marché" in user
+        assert "L'autre pièce lue n'est remise que par passages choisis pour chaque partie." in user
+        assert "N'affirme jamais qu'une exigence est absente du dossier" in user
+        assert "n'y écris jamais de remarque sur la lecture du dossier" in user
+        assert "pour toi seulement, à ne jamais mentionner dans le texte" in user and "04_BPU.doc" in user
+        assert "[Dossier lu en entier" not in user and "pas été trouvée dans les pièces lues" not in user
         # Le dossier commun vient en tête, marqué pour le cache de prompt, identique d'une partie à l'autre.
         blocs = k["messages"][0]["content"]
         assert isinstance(blocs, list) and blocs[0].get("cache_control") == {"type": "ephemeral"}
@@ -150,6 +157,10 @@ def test_l_atelier_lit_reglement_et_cadre_en_entier_et_les_passages_de_toutes_le
     try:
         d = db.query(DossierPresentation).filter(DossierPresentation.project_id == pid).first()
         assert d.dce_lu["integral"] is True and d.dce_lu["texte"] == "" and RC_FIN not in str(d.dce_lu)
+        # Ni le texte du cadre de réponse : seul « le cadre se découpe en questions » est gardé.
+        assert d.dce_lu["cadre"] == "" and CADRE_FIN not in str(d.dce_lu) and d.dce_lu["cadre_decoupable"] is True
+        # Le coût mesuré compte à part ce qui passe par le cache de prompt (écrit, relu).
+        assert {"tokens_cache_ecrits", "tokens_cache_lus"} <= set(d.cout_ia)
     finally:
         db.close()
     assert tenants and all(t == owner for t in tenants)        # espace facturé reposé dans chaque fil
@@ -215,18 +226,23 @@ def test_ancienne_lecture_dite_puis_lecture_integrale_apres_reanalyse(client, au
     r = client.post(f"/api/atelier/{pid}/sections/{st['sections'][0]['id']}/rediger", headers=h, json={})
     assert _attendre(client, h, pid, r.json()["tache"]["id"])["status"] == "done"
     user = _user(_appels_rediger(fake)[0])
-    assert "[Dossier lu en entier" in user and "=== 01_Reglement_de_la_consultation.txt ===" in user
+    assert "Ci-dessous, remis à chaque fois : 2 pièces" in user and "=== 01_Reglement_de_la_consultation.txt ===" in user
+    assert "[Dossier lu en entier" not in user
 
 
 def test_lecture_en_cours_dite_honnetement(client, auth):
-    from app.models import Project
+    from app.models import Job, Project
+    from app.services.jobs import create_job
     h = auth["headers"]
     pid = _projet(client, h)
     db = _db()
     try:
         p = db.get(Project, pid)
-        p.workflow = {"lecture": {"etat": "en_cours", "job_id": 999999}}
+        j = create_job(db, p.user_id, "lecture_dossier", "Lecture du dossier du marché")
+        j.status = "running"
+        p.workflow = {"lecture": {"etat": "en_cours", "job_id": j.id}}
         db.commit()
+        jid = j.id
     finally:
         db.close()
     st = _creer(client, h, pid)
@@ -235,7 +251,8 @@ def test_lecture_en_cours_dite_honnetement(client, auth):
     db = _db()
     try:
         p = db.get(Project, pid)
-        p.workflow = {"lecture": {"etat": "erreur", "job_id": 999999}}
+        p.workflow = {"lecture": {"etat": "erreur", "job_id": jid}}
+        db.get(Job, jid).status = "error"
         db.commit()
     finally:
         db.close()
@@ -311,7 +328,8 @@ def test_ecrans_texte_ecrit_par_vous_confirmations_echec_garde_et_bulle_du_compt
         corps = JS_METH[JS_METH.index(fn):JS_METH.index(fn) + 900]
         assert "this._convAsk(" in corps, fn
     # (c) Échec d'une rédaction : gardé DANS la partie jusqu'à la prochaine action sur elle.
-    assert 'v-else-if="atlEchec(atlSec())" class="conv-err" role="alert"' in a
+    # (avec la même marge que le verrou de rédaction placé au même endroit : jamais collé au-dessus).
+    assert 'v-else-if="atlEchec(atlSec())" class="conv-err atl-mt12" role="alert"' in a
     assert "this._atlEchecNoter(j.pid, j.ids, msg)" in JS_METH and "this._atlEchecNoter(j.pid, ko," in JS_METH
     for fn in ("_atlLancer(path, body, action) {", "atlEdit() {", "atlSave() {", "_atlValider(s, v) {", "atlRelu() {",
                "atlFait(f, statut) {", "_atlRestaurer(s, v) {", "_atlRetirer(s) {"):

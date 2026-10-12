@@ -189,18 +189,24 @@ def parse_cadre(text: str) -> list:
         if k not in best or size > best[k][1]:
             best[k] = (i, size)
     kept = [it for i, it in enumerate(items) if best[it["numero"]][0] == i]
-    nums = {it["numero"] for it in kept}
+    # Linéaire (un cadre de 200 000 caractères peut compter des milliers de rubriques) : les numéros
+    # qui ont au moins un descendant, et chaque rubrique par son numéro.
+    par_numero = {it["numero"]: it for it in kept}
+    avec_enfant = set()
+    for n in par_numero:
+        ps = n.split(".")
+        for k in range(1, len(ps)):
+            avec_enfant.add(".".join(ps[:k]))
     out = []
     for it in kept:
         num = it["numero"]
-        has_child = any(n != num and n.startswith(num + ".") for n in nums)
-        if has_child:
+        if num in avec_enfant:
             continue
         parents = []
         parts = num.split(".")
         for k in range(1, len(parts)):
             pn = ".".join(parts[:k])
-            par = next((x for x in kept if x["numero"] == pn), None)
+            par = par_numero.get(pn)
             if par is not None:
                 parents.append({"numero": pn, "intitule": _flat(par["titre"])[:INTITULE_MAX]})
         body = " ".join(it["body"])
@@ -330,10 +336,16 @@ def empreinte_grille(analysis: Optional[dict]) -> list:
     return [[ln["id"], ln["critere"], ln["poids"], ln["poids_source"]] for ln in lignes_techniques(analysis)]
 
 
-def bases_disponibles(analysis: Optional[dict], cadre_text: str = "") -> dict:
-    """Les bases de plan qui existent pour ce marché : {cadre, grille} (auto et libre existent toujours)."""
-    return {"auto": True, "cadre": bool(parse_cadre(cadre_text)) if cadre_text else False,
-            "grille": bool(lignes_techniques(analysis)), "libre": True}
+def cadre_decoupable(cadre_text: str = "") -> bool:
+    """Le cadre de réponse se découpe en questions numérotées (base « cadre » disponible)."""
+    return bool(parse_cadre(cadre_text)) if cadre_text else False
+
+
+def bases_disponibles(analysis: Optional[dict], cadre_text: str = "", decoupable: Optional[bool] = None) -> dict:
+    """Les bases de plan qui existent pour ce marché : {cadre, grille} (auto et libre existent toujours).
+    `decoupable` : déjà calculé (lecture du dossier) — le cadre n'est alors pas relu."""
+    ok = bool(decoupable) if decoupable is not None else cadre_decoupable(cadre_text)
+    return {"auto": True, "cadre": ok, "grille": bool(lignes_techniques(analysis)), "libre": True}
 
 
 def _libres(en_groupement: bool, critere: Optional[dict] = None) -> list:
@@ -376,7 +388,7 @@ def build_plan(analysis: Optional[dict], cadre_text: str = "", base: str = "auto
         out["message"] = (out["message"] + " " + out["message_en_attente"]).strip()
     out["avertissement_fichier"] = avertissement_fichier(out["fichier_impose"], out["source"])
     out["dossier_present"] = bool(dossier_present)
-    out["bases"] = bases_disponibles(analysis, cadre_text)
+    out["bases"] = bases_disponibles(analysis, decoupable=out.pop("_cadre_decoupable"))
     out["grille"] = empreinte_grille(analysis)
     return out
 
@@ -399,7 +411,8 @@ def _build_plan(analysis: Optional[dict], cadre_text: str, base: str, en_groupem
         lims["_par_question"] = par_question
     out = {"source": LIBRE, "message": "", "fichier_impose": impose,
            "message_fichier": gn.MSG_FICHIER_IMPOSE if impose else "",
-           "cadre_non_decoupe": False, "criteres_hors_dossier": [], "limites": lims, "sections": []}
+           "cadre_non_decoupe": False, "criteres_hors_dossier": [], "limites": lims, "sections": [],
+           "_cadre_decoupable": bool(qs_all)}       # le cadre n'est découpé qu'une fois par plan
 
     # 1. Le cadre de réponse (imposé, ou choisi par l'utilisateur).
     par_question = lims.pop("_par_question", [])

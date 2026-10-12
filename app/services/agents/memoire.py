@@ -44,7 +44,6 @@ def texte_pour_exigences(dce_text: str = "", project=None) -> str:
     from app.services import dce_pieces as dp
     if project is not None:
         try:
-            from app.services import dce_lecture as lec
             from app.services import dce_texte
             payload = dce_texte.charger(project)
             if payload and any((p.get("texte") or "").strip() for p in payload.get("pieces") or []):
@@ -61,7 +60,7 @@ def texte_pour_exigences(dce_text: str = "", project=None) -> str:
                     parts.append(t)
                     used += len(t)
                 bloc = ("\n\nPASSAGES DES AUTRES PIÈCES (extraits) :\n" + "\n\n".join(parts)) if parts else ""
-                return lec.note_pour_ia(payload) + "\n\n" + rem["texte"] + bloc
+                return dce_texte.note_remise(payload, rem) + "\n\n" + rem["texte"] + bloc
         except Exception as e:      # noqa: BLE001 — repli sur le texte fourni
             logger.warning("memoire.exigences : lecture intégrale illisible : %s", type(e).__name__)
     pieces = [x for x in dp.typed_pieces(dce_text or "") if (x.get("texte") or "").strip()]

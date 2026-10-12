@@ -32,7 +32,9 @@ Accès commun (à utiliser par l'atelier de rédaction lors de la fusion) :
                                    avec pièce et page ;
   • couverture(project)        → ce qui a été lu (message, pièces non lues et raisons) ;
   • pieces_remises(payload, n) → règlements puis cadres de réponse remis EN ENTIER (dans n
-                                   caractères) et les numéros de ces pièces, à écarter de la recherche.
+                                   caractères) et les numéros de ces pièces, à écarter de la recherche ;
+  • note_remise(payload, rem)  → l'avertissement à mettre en tête de ces pièces (ce qui est remis en
+                                   entier, par passages, non lu) ; pour_acheteur=True pour l'atelier.
 Le texte rendu par ces fonctions est la source contre laquelle toute citation est vérifiée
 (analysis.citation_guard).
 """
@@ -292,6 +294,47 @@ def pieces_remises(payload: dict, max_chars: int, min_debut: int = 4000) -> dict
         tag = "" if x["entier"] else f"\n[Début de la pièce seulement : ses {len(x['texte'])} premiers caractères.]"
         parts.append(dp.header(x["nom"]) + tag + "\n" + x["texte"])
     return {"pieces": out, "entiers": entiers, "texte": "\n\n".join(parts)}
+
+
+def note_remise(payload: dict, rem: dict, pour_acheteur: bool = False) -> str:
+    """Avertissement remis à l'IA en tête de ce que `pieces_remises` lui donne : CE QUI est remis en
+    entier (règlements et cadres de réponse), ce qui ne l'est que par passages, et les pièces non lues
+    ou lues en partie. Jamais « dossier lu en entier » quand seules quelques pièces sont remises.
+    pour_acheteur=True (atelier de rédaction : le texte produit va à l'acheteur) : l'IA n'affirme
+    jamais qu'une exigence est absente et n'écrit jamais de remarque sur la lecture du dossier."""
+    pieces = (payload or {}).get("pieces") or []
+    remises = (rem or {}).get("pieces") or []
+    idx_remis = {x.get("index") for x in remises}
+    n_debut = sum(1 for x in remises if not x.get("entier"))
+    autres = sum(1 for i, p in enumerate(pieces) if i not in idx_remis and (p.get("texte") or "").strip())
+    if remises:
+        n = len(remises)
+        tete = (f"Ci-dessous, remis à chaque fois : {n} pièce{'s' if n > 1 else ''} du dossier du marché — les "
+                "règlements de la consultation et les cadres de réponse, chacune précédée de « === nom === »")
+        if n_debut:
+            tete += (f" ; {n_debut} d'entre elles seulement en partie (leur début, le reste par passages)"
+                     if n_debut > 1 else " ; l'une d'elles seulement en partie (son début, le reste par passages)")
+        tete += "."
+    else:
+        tete = "Aucun règlement ni cadre de réponse n'a été reconnu parmi les pièces lues."
+    if autres:
+        suite = " pour chaque partie." if pour_acheteur else "."
+        autre_s, autre_1 = ("autres ", "autre ") if remises else ("", "")
+        tete += (f" Les {autres} {autre_s}pièces lues ne sont remises que par passages choisis{suite}" if autres > 1
+                 else f" L'{autre_1 or 'unique '}pièce lue n'est remise que par passages choisis{suite}")
+    if pour_acheteur:
+        tete += (" N'affirme jamais qu'une exigence est absente du dossier. Le texte que tu rédiges est remis "
+                 "à l'acheteur : n'y écris jamais de remarque sur la lecture du dossier ni sur les pièces remises.")
+    else:
+        tete += " Si une information n'est pas dans le texte fourni, ne conclus jamais qu'elle n'existe pas."
+    manquent = [p for p in pieces if p.get("statut") != lec.LU]
+    if not manquent:
+        return "[" + tete + "]"
+    titre = ("Pièces non lues ou lues en partie (pour toi seulement, à ne jamais mentionner dans le texte) :"
+             if pour_acheteur else "Pièces non lues ou lues en partie :")
+    lignes = [f"- {p.get('nom')} : {'non lue' if p.get('statut') == lec.NON_LU else 'lue en partie'} "
+              f"({p.get('detail') or lec.raison_texte(p.get('raison'))})" for p in manquent[:40]]
+    return "[" + tete + "]\n" + titre + "\n" + "\n".join(lignes)
 
 
 def dce_texte_ou_extrait(project) -> tuple:

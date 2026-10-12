@@ -3250,7 +3250,12 @@ const __adjApp = createApp({
     // le marché lu est rechargé.
     aoBusy() { return !!(this.ao.uploading && this.ao.project && this.ao.lecturePid === this.ao.project.id); },
     aoLectureDebut(pid) { this.ao.uploading = true; this.ao.lecturePid = pid; this.ao.lectureMsg = ""; },
-    aoLectureFin(pid) { if (this.ao.lecturePid === pid) { this.ao.uploading = false; this.ao.lectureMsg = ""; this.ao.lecturePid = null; } },
+    aoLectureFin(pid) {
+      if (this.ao.lecturePid === pid) { this.ao.uploading = false; this.ao.lectureMsg = ""; this.ao.lecturePid = null; }
+      // L'atelier ouvert sur ce marché pendant la lecture relit « Pièces du dossier de l'acheteur lues
+      // par Adjugo » (lecture terminée ou en échec) : plus de « pas encore terminée » resté affiché.
+      if (this.view === "atelier" && this.atl.pid === pid) this.atlLoad(true);
+    },
     aoLectureMsg(pid) { return m => { if (this.ao.lecturePid === pid) this.ao.lectureMsg = m; }; },
     async aoApresLecture(pid, toast) {
       if (!(this.ao.project && this.ao.project.id === pid)) { this.notify(toast); return; }

@@ -65,17 +65,30 @@ def compose_rank(kind: str) -> int:
 
 # ── Normalisation ────────────────────────────────────────────────────────────────────
 
+_FOLD_CHARS = {}          # caractère → caractère replié (mémoire bornée par les caractères rencontrés)
+_FOLD_CHARS_MAX = 50000
+
+
+def _fold_char(c: str) -> str:
+    d = "".join(x for x in unicodedata.normalize("NFKD", c) if not unicodedata.combining(x))
+    if len(d) != 1:
+        d = c
+    lo = d.lower()
+    r = lo if len(lo) == 1 else d
+    if len(_FOLD_CHARS) < _FOLD_CHARS_MAX:
+        _FOLD_CHARS[c] = r
+    return r
+
+
 def fold(s: str) -> str:
     """Minuscules sans accents, MÊME LONGUEUR que l'entrée (caractère par caractère) :
-    une position trouvée dans la version repliée vaut dans l'original."""
-    out = []
-    for c in str(s or ""):
-        d = "".join(x for x in unicodedata.normalize("NFKD", c) if not unicodedata.combining(x))
-        if len(d) != 1:
-            d = c
-        lo = d.lower()
-        out.append(lo if len(lo) == 1 else d)
-    t = "".join(out)
+    une position trouvée dans la version repliée vaut dans l'original. Chaque caractère n'est
+    décomposé qu'une fois par process (un cadre de 200 000 caractères se replie en quelques ms)."""
+    s = str(s or "")
+    if s.isascii():
+        return s.lower()
+    f = _FOLD_CHARS
+    t = "".join([f.get(c) or _fold_char(c) for c in s])
     return t.replace("’", "'").replace("‘", "'").replace("ʼ", "'")
 
 
