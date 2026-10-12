@@ -137,16 +137,81 @@ def _normalize_exigences(details: dict, text_integral: str) -> dict:
     return details
 
 
+# Ce que l'IA reçoit EN ENTIER (règlement + cadre de réponse), et le budget minimal laissé aux
+# fenêtres ciblées sur les autres pièces. Borne haute de l'entrée ≈ 84 000 caractères.
+SELECT_PRIORITY_MAX = 60000
+SELECT_REST_MIN = 24000
+
+
 def select_dce_content(text: str, head: int = 9000, budget: int = 30000, window: int = 700) -> str:
     """
     Sélection pertinente du DCE plutôt qu'une troncature aveugle des N premiers caractères.
 
-    On conserve toujours la tête du dossier (objet, acheteur, contexte) puis, dans tout
-    le reste du document, on extrait des fenêtres autour des CLAUSES SENSIBLES (pénalités,
-    retenue de garantie, critères de pondération, délais…) où qu'elles se trouvent. Ainsi
-    une clause de pénalité située page 180 d'un CCAP est bien analysée — ce qu'une coupe à
-    15 000 caractères manquait systématiquement. Budget borné pour la fenêtre de contexte.
+    Dossier assemblé pièce par pièce (« === nom === », cf. extract_dce_text) : le règlement de
+    la consultation et le cadre de réponse, reconnus sans IA, sont remis EN ENTIER (dans la
+    limite de SELECT_PRIORITY_MAX), puis chaque autre pièce reçoit des fenêtres ciblées
+    autour des clauses sensibles, avec un budget partagé équitablement.
+
+    Texte d'un seul tenant sans règlement reconnu : comportement historique — tête du dossier
+    (objet, acheteur, contexte) puis fenêtres autour des CLAUSES SENSIBLES (pénalités, retenue
+    de garantie, critères de pondération, délais…) où qu'elles se trouvent. Ainsi une clause de
+    pénalité située page 180 d'un CCAP est bien analysée. Budget borné pour la fenêtre de contexte.
     """
+    text = text or ""
+    if len(text) <= budget:
+        return text
+    try:
+        out = _select_by_piece(text, head, budget, window)
+        if out:
+            return out
+    except Exception:
+        pass
+    return _select_windows(text, head, budget, window)
+
+
+def _select_by_piece(text: str, head: int, budget: int, window: int) -> str:
+    """Sélection pièce par pièce ; '' si aucun règlement ni cadre n'est reconnu (repli)."""
+    from app.services import dce_pieces as _dp
+    pieces = _dp.typed_pieces(text)
+    prio = [p for p in pieces if p["type"] in _dp.PRIORITAIRES]
+    if not prio:
+        return ""
+    rest = [p for p in pieces if p["type"] not in _dp.PRIORITAIRES]
+    alloc = _dp.water_fill([len(p["texte"]) for p in prio], SELECT_PRIORITY_MAX)
+    out, overflow = [], []
+    for p, n in zip(prio, alloc):
+        body = p["texte"].strip("\n")
+        complet = n >= len(p["texte"])
+        out.append(f"=== {p['nom'] or 'dossier'} : {p['libelle'].lower()}, "
+                   f"{'lu en entier' if complet else 'début'} ===\n{body[:n]}")
+        if not complet:
+            overflow.append(dict(p, texte=p["texte"][n:], libelle=p["libelle"] + " (suite)"))
+    rest = overflow + rest
+    used = sum(len(x) for x in out)
+    rest_budget = max(SELECT_REST_MIN, budget - used)
+    rest = [p for p in rest if p["texte"].strip()]
+    if rest:
+        shares = _dp.water_fill([len(p["texte"]) for p in rest], rest_budget)
+        picked = []
+        for p, share in zip(rest, shares):
+            if share <= 0:
+                continue
+            body = p["texte"]
+            if len(body) > share:
+                body = _select_windows(body, head=min(head, max(500, share // 4)), budget=share, window=window)
+                tag = "extraits ciblés"
+            else:
+                tag = "lu en entier"
+            picked.append(f"=== {p['nom'] or 'dossier'} : {p['libelle'].lower()}, {tag} ===\n{body.strip()}")
+        if picked:
+            out.append("[… autres pièces du dossier : extraits ciblés des clauses sensibles "
+                       "(pénalités, garanties, critères, délais) …]")
+            out.extend(picked)
+    return "\n\n".join(out)
+
+
+def _select_windows(text: str, head: int = 9000, budget: int = 30000, window: int = 700) -> str:
+    """Tête + fenêtres autour des clauses sensibles (sélection historique, d'un seul tenant)."""
     text = text or ""
     if len(text) <= budget:
         return text
@@ -200,8 +265,8 @@ Tu dois TOUJOURS repondre en JSON valide, sans texte avant ou apres. Voici le fo
     "lieu_execution": "Quimper (29)",
     "allotissement": "Lot unique / Lot 1 : Gros oeuvre, Lot 2 : Electricite...",
     "criteres_attribution": [
-      {"critere": "Prix", "ponderation": "60%"},
-      {"critere": "Valeur technique", "ponderation": "40%"}
+      {"critere": "Prix", "ponderation": "60 %", "extrait": "ligne ou phrase litterale du reglement qui cite ce critere et son poids"},
+      {"critere": "Valeur technique", "ponderation": "40 %", "extrait": "ligne ou phrase litterale du reglement"}
     ],
     "garanties_exigees": "Garantie a premiere demande 5% / Retenue de garantie 5%",
     "penalites": "1/1000 du montant HT par jour de retard, plafonnees a 10%",
@@ -259,6 +324,7 @@ Regles importantes :
 - Pour "contact" : n'extrais le nom/email/telephone QUE s'ils figurent dans le DCE (souvent dans le reglement de consultation, rubrique "renseignements"). Si rien n'est indique, laisse les champs vides "" — n'invente JAMAIS de contact.
 - Exigences de candidature et de GROUPEMENT ("ca_minimum_requis", "qualifications_requises", "references_requises", "effectif_minimum_requis", "capacites_groupement", "forme_groupement") : n'extrais QUE si c'est ecrit dans le DCE, sinon "Non specifie dans le DCE". "capacites_groupement" dit comment les capacites sont appreciees quand plusieurs entreprises repondent ensemble : "cumul admis" (les capacites des membres s'additionnent), "chaque membre doit satisfaire individuellement", "mandataire seul", ou "Non specifie dans le DCE". "forme_groupement.imposee" vaut "conjoint" ou "solidaire" UNIQUEMENT si le reglement impose cette forme, "libre" s'il laisse le choix, "non_specifie" sinon.
 - Pour CHAQUE extrait ("exigences_sources".*, "forme_groupement.extrait") : recopie LITTERALEMENT la phrase du DCE (300 caracteres maximum), sans reformuler, sans resumer, sans corriger. Laisse "" si l'information n'est pas dans le DCE. Un extrait qui n'est pas une copie exacte du DCE sera rejete.
+- "criteres_attribution" : les criteres de jugement des OFFRES ecrits dans le reglement de la consultation (criteres principaux seulement, pas les sous-criteres), dans l'ORDRE ou le reglement les cite. "ponderation" : le poids TEL QU'ECRIT dans le reglement ("60 %", "40 points"...), ou "" si le reglement ne donne pas de poids. N'invente JAMAIS de poids ni d'ordre d'importance. "extrait" : recopie LITTERALEMENT la ligne ou la phrase du reglement qui cite ce critere (avec son poids s'il existe), 300 caracteres maximum, sans reformuler ; "" si tu ne la trouves pas. Un extrait qui n'est pas une copie exacte du DCE sera rejete.
 - Si une information n'est pas dans le DCE, indique "Non specifie dans le DCE"
 - Extrais TOUTES les pieces demandees dans le reglement de consultation"""
 
@@ -331,9 +397,10 @@ def build_user_prompt(text, company=None, criteria=None, lang_name=None):
     selected = select_dce_content(text)
     prompt += selected
     if len(selected) < len(text):
-        prompt += ("\n\n[... DCE volumineux : tête du dossier + extraits ciblés des clauses "
-                   "sensibles (pénalités, garanties, critères, délais) sélectionnés dans "
-                   "l'ensemble du document. Analyse sur la base de ces éléments.]")
+        prompt += ("\n\n[... DCE volumineux : règlement de la consultation et cadre de réponse "
+                   "remis en entier quand ils sont reconnus (sinon tête du dossier), puis extraits "
+                   "ciblés des clauses sensibles (pénalités, garanties, critères, délais) dans les "
+                   "autres pièces. Analyse sur la base de ces éléments.]")
 
     return prompt
 
@@ -719,24 +786,213 @@ def _ocr_pdf(content: bytes, max_pages: int = OCR_MAX_PAGES, budget: "_Budget" =
     return "\n\n".join(t for t in out if t).strip()
 
 
+_W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_DOCX_MAX_BLOCKS = 20000             # paragraphes + lignes de tableau parcourus dans un .docx
+
+
+def _roman(n: int) -> str:
+    vals = ((1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"),
+            (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i"))
+    out, n = "", max(1, min(int(n), 3999))
+    for v, r in vals:
+        while n >= v:
+            out += r
+            n -= v
+    return out
+
+
+def _fmt_list_number(n: int, fmt: str) -> str:
+    """Numéro d'un niveau de liste Word selon son format (w:numFmt)."""
+    fmt = fmt or "decimal"
+    if fmt == "bullet":
+        return "-"
+    if fmt == "none":
+        return ""
+    if fmt == "decimalZero":
+        return f"{n:02d}"
+    if fmt in ("lowerLetter", "upperLetter"):
+        k = max(1, n)
+        s = chr(ord("a") + (k - 1) % 26) * ((k - 1) // 26 + 1)
+        return s.upper() if fmt == "upperLetter" else s
+    if fmt in ("lowerRoman", "upperRoman"):
+        r = _roman(n)
+        return r.upper() if fmt == "upperRoman" else r
+    return str(n)
+
+
+class _DocxNumbering:
+    """Rejoue la numérotation AUTOMATIQUE des listes Word (« Question 1 », « 2.1 », « a) »),
+    absente de paragraph.text : sans elle, un cadre de réponse perdait ses numéros de
+    questions. Gère les formats courants, les niveaux, les styles numérotés (titres) et les
+    redémarrages (startOverride). Tout écart de format → numéro décimal (jamais d'exception)."""
+
+    def __init__(self, doc):
+        self.nums, self.abstracts, self.style_num = {}, {}, {}
+        self.counters, self.started = {}, set()
+        try:
+            root = doc.part.numbering_part.element
+            for an in root.findall(_W_NS + "abstractNum"):
+                lvls = {}
+                for lvl in an.findall(_W_NS + "lvl"):
+                    il = int(lvl.get(_W_NS + "ilvl") or 0)
+                    f, t, st, ps = (lvl.find(_W_NS + x) for x in ("numFmt", "lvlText", "start", "pStyle"))
+                    lvls[il] = {"fmt": f.get(_W_NS + "val") if f is not None else "decimal",
+                                "text": t.get(_W_NS + "val") if t is not None else f"%{il + 1}.",
+                                "start": int(st.get(_W_NS + "val")) if st is not None else 1,
+                                "pstyle": ps.get(_W_NS + "val") if ps is not None else None}
+                self.abstracts[an.get(_W_NS + "abstractNumId")] = lvls
+            for num in root.findall(_W_NS + "num"):
+                a = num.find(_W_NS + "abstractNumId")
+                ov = {}
+                for o in num.findall(_W_NS + "lvlOverride"):
+                    so = o.find(_W_NS + "startOverride")
+                    if so is not None:
+                        ov[int(o.get(_W_NS + "ilvl") or 0)] = int(so.get(_W_NS + "val"))
+                self.nums[num.get(_W_NS + "numId")] = (a.get(_W_NS + "val") if a is not None else None, ov)
+        except Exception:
+            self.nums, self.abstracts = {}, {}
+        try:
+            styles = {}
+            for st in doc.styles.element.findall(_W_NS + "style"):
+                sid = st.get(_W_NS + "styleId")
+                ppr = st.find(_W_NS + "pPr")
+                npr = ppr.find(_W_NS + "numPr") if ppr is not None else None
+                based = st.find(_W_NS + "basedOn")
+                styles[sid] = (self._numpr(npr), based.get(_W_NS + "val") if based is not None else None)
+            for sid in styles:
+                cur, hops = sid, 0
+                while cur in styles and hops < 10:
+                    npr, based = styles[cur]
+                    if npr and npr[0]:
+                        self.style_num[sid] = npr
+                        break
+                    cur, hops = based, hops + 1
+        except Exception:
+            self.style_num = {}
+
+    @staticmethod
+    def _numpr(npr):
+        if npr is None:
+            return None
+        nid, il = npr.find(_W_NS + "numId"), npr.find(_W_NS + "ilvl")
+        return (nid.get(_W_NS + "val") if nid is not None else None,
+                int(il.get(_W_NS + "val")) if il is not None else None)
+
+    def prefix(self, p_el) -> str:
+        try:
+            ppr = p_el.find(_W_NS + "pPr")
+            direct = self._numpr(ppr.find(_W_NS + "numPr")) if ppr is not None else None
+            sid = None
+            if ppr is not None:
+                ps = ppr.find(_W_NS + "pStyle")
+                sid = ps.get(_W_NS + "val") if ps is not None else None
+            from_style = self.style_num.get(sid) if sid else None
+            num_id = (direct[0] if direct and direct[0] else None) or (from_style[0] if from_style else None)
+            if not num_id or num_id == "0" or num_id not in self.nums:
+                return ""
+            abs_id, overrides = self.nums[num_id]
+            lvls = self.abstracts.get(abs_id) or {}
+            il = direct[1] if direct and direct[1] is not None else (from_style[1] if from_style else None)
+            if il is None:
+                il = next((k for k, v in lvls.items() if sid and v.get("pstyle") == sid), 0)
+            il = max(0, min(int(il), 8))
+            st = self.counters.setdefault(abs_id, {})
+            if num_id not in self.started:
+                self.started.add(num_id)
+                for k, v in overrides.items():
+                    st[k] = v - 1
+            lv = lvls.get(il) or {"fmt": "decimal", "text": f"%{il + 1}.", "start": 1}
+            st[il] = st.get(il, lv["start"] - 1) + 1
+            for k in [k for k in st if k > il]:
+                del st[k]
+            if lv["fmt"] == "bullet":
+                return "- "
+
+            def _sub(m):
+                k = int(m.group(1)) - 1
+                lk = lvls.get(k) or {"fmt": "decimal", "start": 1}
+                return _fmt_list_number(st.get(k, lk.get("start", 1)), lk.get("fmt"))
+            txt = re.sub(r"%([1-9])", _sub, lv.get("text") or "")
+            return (txt.strip() + " ") if txt.strip() else ""
+        except Exception:
+            return ""
+
+
+def _docx_blocks(doc) -> list:
+    """Texte du corps d'un .docx DANS L'ORDRE du document : paragraphes (avec leur numéro de
+    liste), tableaux ligne par ligne (« cellule | cellule », fusion verticale lue une fois) et
+    contrôles de contenu (w:sdt) — un cadre de réponse range souvent ses questions dans des
+    tableaux ou des zones de saisie."""
+    from docx.text.paragraph import Paragraph
+    numbering = _DocxNumbering(doc)
+    out, seen = [], [0]
+
+    def _para(el, parent) -> str:
+        t = Paragraph(el, parent).text
+        return (numbering.prefix(el) + t) if t else ""
+
+    def _walk(container, parent):
+        for el in container.iterchildren():
+            if seen[0] > _DOCX_MAX_BLOCKS:
+                return
+            tag = el.tag
+            if tag == _W_NS + "p":
+                seen[0] += 1
+                t = _para(el, parent)
+                if t:
+                    out.append(t)
+            elif tag == _W_NS + "tbl":
+                for tr in el.iterchildren(_W_NS + "tr"):
+                    seen[0] += 1
+                    if seen[0] > _DOCX_MAX_BLOCKS:
+                        return
+                    cells = []
+                    for tc in tr.iterchildren(_W_NS + "tc"):
+                        tcpr = tc.find(_W_NS + "tcPr")
+                        vm = tcpr.find(_W_NS + "vMerge") if tcpr is not None else None
+                        if vm is not None and (vm.get(_W_NS + "val") or "continue") == "continue":
+                            continue        # suite d'une fusion verticale : déjà lue au-dessus
+                        txt = "\n".join(x for x in (_para(p, parent) for p in tc.iterchildren(_W_NS + "p")) if x)
+                        if txt:
+                            cells.append(txt)
+                    if cells:
+                        out.append(" | ".join(cells))
+            elif tag == _W_NS + "sdt":
+                content = el.find(_W_NS + "sdtContent")
+                if content is not None:
+                    _walk(content, parent)
+
+    _walk(doc.element.body, doc._body)
+    return out
+
+
 def _extract_docx(data: bytes) -> str:
-    """Extrait le texte d'un .docx (Word), tableaux compris. Gracieux si python-docx absent.
-    Tailles décompressées vérifiées AVANT ouverture (un .docx est une archive ZIP)."""
+    """Extrait le texte d'un .docx (Word), tableaux compris, DANS L'ORDRE du document et avec
+    la numérotation automatique des listes (numéros des questions d'un cadre de réponse).
+    Gracieux si python-docx absent. Tailles décompressées vérifiées AVANT ouverture (un .docx
+    est une archive ZIP)."""
     if not _docx_sizes_ok(data):
         return ""
     try:
         import io
         import docx
         d = docx.Document(io.BytesIO(data))
-        parts = [p.text for p in d.paragraphs if p.text]
-        for tbl in d.tables:
-            for row in tbl.rows:
-                cells = [c.text for c in row.cells if c.text]
-                if cells:
-                    parts.append(" | ".join(cells))
-        return "\n".join(parts).strip()
     except Exception:
         return ""
+    try:
+        return "\n".join(_docx_blocks(d)).strip()
+    except Exception:
+        # Repli historique : paragraphes puis tableaux (sans numérotation).
+        try:
+            parts = [p.text for p in d.paragraphs if p.text]
+            for tbl in d.tables:
+                for row in tbl.rows:
+                    cells = [c.text for c in row.cells if c.text]
+                    if cells:
+                        parts.append(" | ".join(cells))
+            return "\n".join(parts).strip()
+        except Exception:
+            return ""
 
 
 _ZIP_OKEXT = (".pdf", ".docx", ".txt", ".md", ".csv")
@@ -744,8 +1000,16 @@ _ZIP_OKEXT = (".pdf", ".docx", ".txt", ".md", ".csv")
 
 def _extract_zip(content: bytes, max_chars: int, budget: "_Budget", depth: int, parts: list) -> None:
     """Parcourt une archive (et au plus 1 niveau d'archive imbriquée) en ajoutant à
-    `parts` le texte des fichiers exploitables. Toute lecture est bornée par `budget`."""
-    import io, os, zipfile
+    `parts` une pièce {nom, texte, type, complet} par fichier exploitable. Toute lecture est
+    bornée par `budget`.
+
+    Lecture PIÈCE PAR PIÈCE (rédaction, vague 1) : le règlement de la consultation et le
+    cadre de réponse sont lus EN PREMIER (reconnus par leur nom, sans IA), puis les pièces au
+    nom inconnu, l'acte d'engagement, le CCAP, les bordereaux, et le CCTP en dernier. Chaque
+    pièce a son propre plafond (`max_chars`) et la lecture totale reste bornée à
+    2 × `max_chars` : un gros CCTP ne fait plus disparaître le règlement ni le cadre."""
+    import io, os, time, zipfile
+    from app.services import dce_pieces as _dp
     if not _zip_entry_count_ok(content):
         raise ValueError("Archive ZIP trop complexe (trop de fichiers). "
                          "Importez directement les pièces utiles (RC, CCAP, CCTP, DPGF).")
@@ -753,13 +1017,18 @@ def _extract_zip(content: bytes, max_chars: int, budget: "_Budget", depth: int, 
         zf = zipfile.ZipFile(io.BytesIO(content))
     except Exception:
         raise ValueError("Archive ZIP corrompue ou illisible.")
+    read_cap = 2 * max(1, int(max_chars))
     with zf:
-        # PDF d'abord (le cœur du DCE), puis Word/texte, puis archives imbriquées ; triés par nom
+        # Règlement et cadre d'abord, archives imbriquées en dernier ; à rang égal, PDF puis
+        # Word/texte, puis par nom (ordre stable, reproductible d'un import à l'autre).
         def _rank(i):
             ln = i.filename.lower()
-            return (0 if ln.endswith(".pdf") else 2 if ln.endswith(".zip") else 1, ln)
+            if ln.endswith(".zip"):
+                return (9, 2, ln)
+            kind, _sure = _dp.classify_name(os.path.basename(i.filename))
+            return (_dp.read_rank(kind), 0 if ln.endswith(".pdf") else 1, ln)
         for info in sorted(zf.infolist(), key=_rank):
-            if _chars(parts) > max_chars or len(parts) >= ZIP_MAX_FILES or budget.bytes_left <= 0:
+            if _chars(parts) > read_cap or len(parts) >= ZIP_MAX_FILES or budget.bytes_left <= 0:
                 break
             n = info.filename
             ln = n.lower()
@@ -782,10 +1051,15 @@ def _extract_zip(content: bytes, max_chars: int, budget: "_Budget", depth: int, 
                 if is_zip:
                     _extract_zip(data, max_chars, budget, depth + 1, parts)
                     continue
-                remaining = max(0, max_chars - _chars(parts)) + 1
+                # Plafond PAR PIÈCE (et jamais au-delà du plafond de lecture total).
+                remaining = max(0, min(max_chars, read_cap - _chars(parts))) + 1
+                complet = True
                 if ln.endswith(".pdf"):
                     heavy_before = budget.pdf_heavy_pages
                     t = extract_text_from_pdf(data, max_chars=remaining, budget=budget)
+                    # Budget de temps épuisé pendant cette pièce : elle n'a peut-être pas été lue en entier.
+                    if time.monotonic() > budget.deadline:
+                        complet = False
                     # PDF scanné dans l'archive → OCR de repli. Pas pour un PDF dont on a sauté
                     # des pages trop lourdes (plans vectoriels) : l'OCR y serait long et inutile.
                     if (not (t and not t.startswith("Erreur") and len(t) > 30)
@@ -797,7 +1071,11 @@ def _extract_zip(content: bytes, max_chars: int, budget: "_Budget", depth: int, 
                     t = data[:remaining * 4].decode("utf-8", errors="replace")
                 del data
                 if t and not t.startswith("Erreur") and len(t) > 30:
-                    parts.append(f"=== {os.path.basename(n)} ===\n{t[:remaining]}")
+                    base = os.path.basename(n)
+                    body = t[:remaining - 1] if len(t) >= remaining else t
+                    parts.append({"nom": base, "texte": body,
+                                  "type": _dp.classify_piece(base, body),
+                                  "complet": complet and len(t) < remaining})
             except ValueError:
                 continue    # archive imbriquée illisible : on passe aux autres pièces
             except Exception:
@@ -805,15 +1083,23 @@ def _extract_zip(content: bytes, max_chars: int, budget: "_Budget", depth: int, 
 
 
 def _chars(parts: list) -> int:
-    return sum(len(p) for p in parts)
+    return sum(len(p["texte"]) if isinstance(p, dict) else len(p) for p in parts)
 
 
-def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000) -> str:
-    """
-    Extrait le texte d'un DCE réel : PDF unique OU archive ZIP de plusieurs PDF.
-    Lève ValueError avec un message clair si illisible/vide/non supporté.
-    Mémoire et CPU BORNÉS quel que soit le fichier (cf. plafonds ci-dessus).
-    """
+def _single_piece(filename: str, text: str, max_chars: int) -> list:
+    from app.services import dce_pieces as _dp
+    import os
+    base = os.path.basename((filename or "").replace("\\", "/"))
+    body = text[:max_chars]
+    return [{"nom": base, "texte": body, "type": _dp.classify_piece(base, body),
+             "complet": len(text) < max_chars}]
+
+
+def extract_dce_pieces(filename: str, content: bytes, max_chars: int = 40000) -> tuple:
+    """Lecture PIÈCE PAR PIÈCE d'un dossier : renvoie (pieces, archive) où pieces =
+    [{nom, texte, type, complet}] (type reconnu sans IA, cf. app.services.dce_pieces) et
+    archive = True pour un ZIP. Lève ValueError avec un message clair si illisible/vide/non
+    supporté. Mémoire et CPU BORNÉS quel que soit le fichier (cf. plafonds ci-dessus)."""
     name = (filename or "").lower()
 
     if name.endswith(".pdf") or content[:5] == b"%PDF-":
@@ -822,23 +1108,23 @@ def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000) -> s
             # PDF sans couche texte → tentative OCR (document scanné).
             ocr = _ocr_pdf(content)
             if ocr and len(ocr) >= 30:
-                return ocr[:max_chars]
+                return _single_piece(filename, ocr, max_chars), False
             raise ValueError("PDF illisible (document scanné/protégé ?) ou vide. "
                              "Si c'est un scan, l'OCR n'a rien pu extraire.")
-        return txt[:max_chars]
+        return _single_piece(filename, txt, max_chars), False
 
     if name.endswith(".docx"):   # AVANT le ZIP : un .docx est aussi une archive PK
         if not _docx_sizes_ok(content):
             raise ValueError("Document Word trop volumineux ou illisible. Exportez-le en PDF puis réessayez.")
         t = _extract_docx(content)
         if t and len(t) >= 20:
-            return t[:max_chars]
+            return _single_piece(filename, t, max_chars), False
         raise ValueError("Document Word illisible ou vide. Exportez-le en PDF si le souci persiste.")
 
     if name.endswith((".txt", ".md", ".csv")):
         t = content[:max_chars * 4].decode("utf-8", errors="replace").strip()
         if t:
-            return t[:max_chars]
+            return _single_piece(filename, t, max_chars), False
         raise ValueError("Fichier texte vide ou illisible.")
 
     if name.endswith(".zip") or content[:2] == b"PK":
@@ -854,9 +1140,27 @@ def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000) -> s
                 raise ValueError("Archive trop imbriquée (un ZIP dans un ZIP dans un ZIP). "
                                  "Décompressez-la puis importez les pièces ou un seul ZIP.")
             raise ValueError("Aucun fichier exploitable dans l'archive (PDF scanné ou format non géré ?).")
-        return "\n\n".join(parts)[:max_chars]
+        return parts, True
 
     raise ValueError("Format non supporté. Importez le dossier en PDF, Word (.docx), texte ou archive ZIP.")
+
+
+def extract_dce_text(filename: str, content: bytes, max_chars: int = 40000, with_pieces: bool = False):
+    """
+    Extrait le texte d'un DCE réel : PDF unique OU archive ZIP de plusieurs pièces.
+    Lève ValueError avec un message clair si illisible/vide/non supporté.
+    Mémoire et CPU BORNÉS quel que soit le fichier (cf. plafonds ci-dessus).
+
+    Archive : une pièce par fichier, précédée de « === nom === ». Le règlement de la
+    consultation et le cadre de réponse viennent EN PREMIER et EN ENTIER ; les autres pièces
+    se partagent équitablement le reste du plafond (app.services.dce_pieces.compose).
+    with_pieces=True → (texte, meta) avec meta = [{nom, type, libelle, caracteres,
+    lu_en_entier}] (ce qui a été lu, pièce par pièce, pour l'écran).
+    """
+    from app.services import dce_pieces as _dp
+    pieces, archive = extract_dce_pieces(filename, content, max_chars=max_chars)
+    text, meta = _dp.compose(pieces, max_chars, headers=archive)
+    return (text, meta) if with_pieces else text
 
 
 def _detect_groupement(details: dict, company: dict = None) -> dict:
@@ -907,9 +1211,11 @@ def _detect_groupement(details: dict, company: dict = None) -> dict:
     return {"recommande": bool(raisons), "raisons": raisons[:3], "exigences": exigences}
 
 
-def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
+def analyze_dce_text(text, company=None, criteria=None, lang_name=None, pieces=None):
     """Analyse un DCE depuis du texte brut (notice BOAMP, DCE déjà extrait...).
-    lang_name : langue de rédaction des valeurs textuelles (adaptation par pays)."""
+    lang_name : langue de rédaction des valeurs textuelles (adaptation par pays).
+    pieces : ce qui a été lu, pièce par pièce (meta de extract_dce_text(with_pieces=True)),
+    repris tel quel dans la grille « Comment vous serez noté »."""
     if not text or len(text) < 50:
         return {
             "match_score": 0,
@@ -967,6 +1273,17 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None):
         # vérifié contre le texte INTÉGRAL du DCE (pas la fenêtre envoyée au LLM) ; un extrait
         # non retrouvé devient '' (jamais affiché). Exigences de groupement normalisées.
         _normalize_exigences(result["details"], text)
+
+        # « COMMENT VOUS SEREZ NOTÉ » (rédaction, vague 1) : critères retrouvés dans le texte
+        # avec leur phrase (citation_guard), poids TEL QU'ÉCRIT, contrôle du total et ce que le
+        # dossier impose (cadre de réponse, limites, visite) — tout est vérifié SANS IA. Une
+        # erreur ici ne casse jamais l'analyse déjà payée : la grille est simplement absente.
+        try:
+            from app.services.grille_notation import build_grille
+            result["details"]["grille_notation"] = build_grille(result["details"], text, pieces=pieces)
+        except Exception as e:      # noqa: BLE001
+            import logging
+            logging.getLogger("adjugo").warning("grille de notation non construite : %s", type(e).__name__)
 
         # SCORE GO/NO-GO DÉTERMINISTE : l'IA a EXTRAIT les faits ci-dessus ; le score est
         # recalculé par un barème ouvert et reproductible (jamais laissé au LLM).
