@@ -82,11 +82,15 @@ Avant :
 Publié :
 
 > Intelligence artificielle : {{AI_ROLES}} Les contenus envoyés ne sont pas utilisés pour entraîner
-> un modèle d'IA ({{AI_ENTRAINEMENT}}).{{AI_SOUS_TRAITANTS_MISTRAL}} Les lieux de stockage et de
-> calcul figurent dans le tableau ci-dessus. La conservation est encadrée par les conditions
-> applicables à l'API ({{AI_CONSERVATION}}).
+> un modèle d'IA ({{AI_ENTRAINEMENT}}).{{AI_SOUS_TRAITANTS_MISTRAL}} Les lieux de calcul (et de
+> stockage, lorsque le fournisseur s'y engage) figurent dans le tableau ci-dessus. La conservation
+> est encadrée par les conditions applicables à l'API ({{AI_CONSERVATION}}).
 
-Le tableau lui-même n'a pas changé : sa ligne « IA » est remplie par le serveur (§ 6).
+Le tableau lui-même n'a pas changé : sa ligne « IA » est remplie par le serveur (§ 6). Il donne le
+lieu de stockage d'Anthropic (États-Unis) mais pas celui de Mistral AI au point d'accès UE (non
+vérifié) : d'où « et de stockage, lorsque le fournisseur s'y engage », et jamais « les lieux de
+stockage et de calcul » sans condition. Un lieu de stockage de Mistral AI ne s'ajoute au texte
+injecté qu'une fois vérifié pour le point d'accès utilisé.
 
 ### 2.3 Article 6 — un nouveau sous-traitant ultérieur
 
@@ -154,8 +158,8 @@ Publié (la lecture intégrale remet tout le dossier du marché) :
 
 > **Intelligence artificielle.** {{AI_ROLES}} Les contenus envoyés ne sont pas utilisés pour
 > entraîner un modèle d'IA ({{AI_ENTRAINEMENT}}). La conservation est encadrée par les conditions
-> applicables à l'API ({{AI_CONSERVATION}}).{{AI_SOUS_TRAITANTS_MISTRAL}} Lieux de stockage et de
-> calcul : tableau ci-dessus.
+> applicables à l'API ({{AI_CONSERVATION}}).{{AI_SOUS_TRAITANTS_MISTRAL}} Lieux de calcul (et de
+> stockage, lorsque le fournisseur s'y engage) : tableau ci-dessus.
 
 ### 4.3 § 7, liste des garanties appropriées, première puce
 

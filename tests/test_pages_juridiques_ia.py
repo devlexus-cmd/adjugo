@@ -51,8 +51,9 @@ def _attendus(prov, roles, entr, cons, st, cct, essentiel):
             f"étiquettes avant tout envoi ; la conservation est encadrée par les conditions applicables à "
             f"l'API ({cons}) ;",
             f"Intelligence artificielle : {roles} Les contenus envoyés ne sont pas utilisés pour entraîner un "
-            f"modèle d'IA ({entr}).{st} Les lieux de stockage et de calcul figurent dans le tableau ci-dessus. "
-            f"La conservation est encadrée par les conditions applicables à l'API ({cons}).",
+            f"modèle d'IA ({entr}).{st} Les lieux de calcul (et de stockage, lorsque le fournisseur s'y "
+            f"engage) figurent dans le tableau ci-dessus. La conservation est encadrée par les conditions "
+            f"applicables à l'API ({cons}).",
         ],
         "/securite": [
             f"Et vos contenus ne sont pas utilisés pour entraîner les modèles d'IA {essentiel}.",
@@ -66,7 +67,8 @@ def _attendus(prov, roles, entr, cons, st, cct, essentiel):
             "la rédaction (noms des salariés remplacés par des étiquettes avant tout envoi)",
             f"Intelligence artificielle. {roles} Les contenus envoyés ne sont pas utilisés pour entraîner un "
             f"modèle d'IA ({entr}). La conservation est encadrée par les conditions applicables à l'API "
-            f"({cons}).{st} Lieux de stockage et de calcul : tableau ci-dessus.",
+            f"({cons}).{st} Lieux de calcul (et de stockage, lorsque le fournisseur s'y engage) : tableau "
+            f"ci-dessus.",
             f"la signature de clauses contractuelles types (CCT / SCC) adoptées par la Commission "
             f"européenne{cct} ;",
         ],
@@ -176,6 +178,37 @@ def test_lieu_de_calcul_point_d_acces_mondial_aucune_promesse_ue(client, monkeyp
     for page, t in p.items():
         assert "AELE" not in t and "api.eu.mistral.ai" not in t, page
         assert "calcul dans l'Union européenne" not in t, page
+
+
+@pytest.mark.parametrize("nom", ["inactif", "ue", "mondial", "force_mistral", "force_anthropic"])
+def test_stockage_jamais_promis_quand_le_tableau_ne_le_donne_pas(client, monkeypatch, nom):
+    """Le tableau donne le lieu de stockage d'Anthropic (États-Unis), pas celui de Mistral AI au point
+    d'accès UE (non vérifié) : la phrase fixe sous le tableau ne parle du stockage que « lorsque le
+    fournisseur s'y engage », et le texte injecté n'invente aucun lieu de stockage pour Mistral AI."""
+    _configurer(monkeypatch, nom)
+    p = {k: _texte(v) for k, v in _pages(client).items()}
+    for page in ("/dpa", "/confidentialite"):
+        assert "lieux de stockage et de calcul" not in p[page].lower(), (nom, page)
+        assert "Lieux de calcul (et de stockage, lorsque le fournisseur s'y engage)" in p[page].replace(
+            "Les lieux de calcul", "Lieux de calcul"), (nom, page)
+        if nom != "force_mistral":
+            assert "États-Unis pour le stockage" in p[page], (nom, page)
+    if nom in ("ue", "force_mistral", "mondial"):
+        # La partie « Mistral AI » de la ligne IA de chaque tableau (jusqu'au renvoi vers ses sous-traitants).
+        dpa = p["/dpa"]
+        m_dpa = dpa[dpa.index("Modèle d'IA pour l'analyse et la génération de documents"):]
+        m_dpa = m_dpa[m_dpa.index("Mistral AI : ") if nom != "force_mistral" else 0:]
+        m_dpa = m_dpa[:m_dpa.index("sous-traitants de Mistral AI")]
+        conf = p["/confidentialite"]
+        m_conf = conf[conf.index("Fournisseur du modèle d'IA pour l'analyse et la génération de documents"):]
+        m_conf = m_conf[m_conf.index("Mistral AI ("):]
+        m_conf = m_conf[:m_conf.index("sous-traitants de Mistral AI")]
+        assert "stockage" not in m_dpa, (nom, m_dpa)
+        if nom == "mondial":
+            # Seul fait vérifié sur le stockage chez Mistral AI : point d'accès mondial, UE par défaut.
+            assert "stockage dans l'Union européenne par défaut" in m_conf, m_conf
+        else:
+            assert "stockage" not in m_conf, (nom, m_conf)
 
 
 # ── 2. Faits vérifiés : conservation, sous-traitants, vocabulaire ──────────────────────────────────

@@ -87,7 +87,7 @@ Les données sont traitées par les équipes habilitées de l'Éditeur et par le
 | **Functional Software, Inc.** (Sentry) | Observabilité et suivi technique des erreurs | journaux techniques, identifiants techniques, adresse IP | **États-Unis** (encadré par CCT) |
 | **Stripe** (Stripe Payments Europe, Ltd. / Stripe, Inc.) | Traitement des paiements | données de facturation et de paiement (l'Éditeur n'accède pas aux numéros de carte) | UE / États-Unis |
 
-**Intelligence artificielle.** {{AI_ROLES}} Les contenus envoyés ne sont pas utilisés pour entraîner un modèle d'IA ({{AI_ENTRAINEMENT}}). La conservation est encadrée par les conditions applicables à l'API ({{AI_CONSERVATION}}).{{AI_SOUS_TRAITANTS_MISTRAL}} Lieux de stockage et de calcul : tableau ci-dessus.
+**Intelligence artificielle.** {{AI_ROLES}} Les contenus envoyés ne sont pas utilisés pour entraîner un modèle d'IA ({{AI_ENTRAINEMENT}}). La conservation est encadrée par les conditions applicables à l'API ({{AI_CONSERVATION}}).{{AI_SOUS_TRAITANTS_MISTRAL}} Lieux de calcul (et de stockage, lorsque le fournisseur s'y engage) : tableau ci-dessus.
 
 Les données peuvent également être communiquées aux **autorités administratives ou judiciaires** lorsque la loi l'exige.
 
