@@ -553,14 +553,14 @@ def _sauver_lecture(db, project, lecture) -> None:
         logger.warning("texte intégral du marché %s non rangé : %s", getattr(project, "id", "?"), type(e).__name__)
 
 
-def _lecture_job(jdb, job_id: int, project_id: int, user_id: int, filename: str, content: bytes,
+def _lecture_job(jdb, job_id: int, project_id: int, user_id: int, filename: str, file_key, content,
                  lecture: dict, stored: bool, company_data, gonogo, lang_name) -> dict:
     """Tâche de fond : lecture intégrale (OCR compris), rangement du texte, analyse, enregistrement.
-    Toute exception passe le job en erreur ET rembourse l'analyse (app.services.jobs) ; le message
-    gardé est toujours lisible par l'utilisateur (jamais un détail technique)."""
+    Toute exception passe le job en erreur, le marché en « erreur » ET rembourse l'analyse
+    (app.services.lecture_taches) ; le message gardé est toujours lisible par l'utilisateur."""
     from app.services.llm import LLMUnavailable
     try:
-        return _lecture_job_run(jdb, job_id, project_id, user_id, filename, content, lecture, stored,
+        return _lecture_job_run(jdb, job_id, project_id, user_id, filename, file_key, content, lecture, stored,
                                 company_data, gonogo, lang_name)
     except (ValueError, LLMUnavailable):
         raise
@@ -569,7 +569,23 @@ def _lecture_job(jdb, job_id: int, project_id: int, user_id: int, filename: str,
         raise RuntimeError(_ECHEC_LECTURE) from e
 
 
-def _lecture_job_run(jdb, job_id, project_id, user_id, filename, content, lecture, stored,
+def _lecture_en_erreur(project_id: int):
+    """Après l'échec d'une lecture en tâche de fond : le marché passe « erreur » (et non plus « en
+    cours » : l'écran cesse d'en suivre la progression)."""
+    def on_error(db, job):
+        from datetime import datetime, timezone
+        project = db.get(Project, project_id)
+        if project is None:
+            return
+        st = dict(_lecture_state(project))
+        if st.get("job_id") == job.id and st.get("etat") == "en_cours":
+            st.update({"etat": "erreur", "erreur": (job.error or _ECHEC_LECTURE)[:500],
+                       "fin": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+            _set_lecture_state(db, project, st)
+    return on_error
+
+
+def _lecture_job_run(jdb, job_id, project_id, user_id, filename, file_key, content, lecture, stored,
                      company_data, gonogo, lang_name) -> dict:
     from app.models import Project, User
     from app.services.analyse_dossier import analyser
@@ -579,9 +595,22 @@ def _lecture_job_run(jdb, job_id, project_id, user_id, filename, content, lectur
         _set_progress(job_id, **d)
 
     if not stored:
+        if content is None:
+            # Le fichier n'est pas gardé en mémoire dans la file : relu depuis le dossier du marché.
+            try:
+                from app.services.storage import get_storage
+                content = get_storage().load(file_key)
+            except Exception:
+                raise ValueError("Le fichier du dossier est introuvable : importez-le à nouveau. "
+                                 "Votre analyse n'a pas été débitée.")
         _set_progress(job_id, etape="lecture", pieces_lues=0)
+        prev_parties = (lecture or {}).get("analyse_parties")
         lecture = lire_dossier(filename, content, mode="fond", progress=prog, reprise=lecture)
         lecture["source_empreinte"] = _empreinte(content)
+        if isinstance(prev_parties, dict) and prev_parties:
+            # Parties déjà lues par l'IA (clé = contenu exact de la partie) : reprises telles quelles.
+            lecture["analyse_parties"] = prev_parties
+        content = None
     project = jdb.get(Project, project_id)
     if project is None:
         raise ValueError("Ce marché n'existe plus.")
@@ -615,20 +644,24 @@ def _context(db, current_user) -> tuple:
     return _company_dict(company), _criteria_dict(current_user.id, db), _user_lang_name(current_user, db)
 
 
-def _start_job(db, project, current_user, filename: str, content: bytes, lecture: dict, stored: bool,
-               company_data, gonogo, lang_name) -> int:
-    """Lance la lecture intégrale et l'analyse en tâche de fond ; renvoie l'identifiant du job."""
+def _start_job(db, project, current_user, filename: str, content, lecture: dict, stored: bool,
+               company_data, gonogo, lang_name, file_key=None) -> int:
+    """Lance la lecture intégrale et l'analyse en tâche de fond (exécuteur des lectures) ; renvoie
+    l'identifiant du job. Le fichier est relu depuis le stockage (file_key) quand il y est rangé."""
     from datetime import datetime, timezone
-    from app.services.jobs import create_job, run_in_thread
+    from app.services.jobs import create_job
+    from app.services import lecture_taches
     from app.services.dce_lecture import totaux
-    job = create_job(db, current_user.id, "lecture_dossier", "Lecture du dossier du marché")
+    job = create_job(db, current_user.id, lecture_taches.KIND, "Lecture du dossier du marché")
     _set_lecture_state(db, project, {"etat": "en_cours", "job_id": job.id, "source": filename[:200],
                                      "debut": datetime.now(timezone.utc).isoformat(timespec="seconds")})
     t = totaux(lecture)
     _set_progress(job.id, etape="lecture", pieces_total=t["pieces"], pieces_lues=0, pages_lues=0)
     pid, uid, jid = project.id, current_user.id, job.id
-    run_in_thread(jid, lambda jdb: _lecture_job(jdb, jid, pid, uid, filename, content, lecture,
-                                                stored, company_data, gonogo, lang_name))
+    data = None if (stored or file_key) else content
+    lecture_taches.lancer(jid, lambda jdb: _lecture_job(jdb, jid, pid, uid, filename, file_key, data, lecture,
+                                                        stored, company_data, gonogo, lang_name),
+                          on_error=_lecture_en_erreur(pid))
     return jid
 
 
@@ -646,24 +679,29 @@ def _prepare_rangement(db, project, lecture: dict, content: bytes) -> None:
 
 
 async def _import_and_analyze(db, project, current_user, filename: str, content: bytes,
-                              lecture: dict, stored: bool):
+                              lecture: dict, stored: bool, file_key=None):
     """Après la lecture directe : petit dossier analysé pendant la requête (d'un seul tenant),
-    gros dossier en tâche de fond. Le travail lourd (assemblage, compression, empreinte, IA) se fait
-    hors de la boucle d'événements. UNE analyse débitée par import."""
+    gros dossier en tâche de fond. Le travail lourd (assemblage, compression, empreinte, IA) et le
+    débit (qui peut appeler Stripe, au-delà du forfait) se font hors de la boucle d'événements : un
+    appel réseau lent n'y fige jamais les autres clients. UNE analyse débitée par import."""
     from app.core.quota import consume_analysis, refund_analysis
     company_data, gonogo, lang_name = _context(db, current_user)
     background = await run_in_threadpool(_needs_background, lecture, company_data, gonogo, lang_name)
-    consume_analysis(current_user, db)  # 402 si quota atteint — UNE analyse par import
     if background:
-        return _lecture_response(project.id, _start_job(db, project, current_user, filename, content, lecture,
-                                                        stored, company_data, gonogo, lang_name))
+        from app.services import lecture_taches
+        await run_in_threadpool(lecture_taches.admettre, db, current_user)   # 429 avant tout débit
+    await run_in_threadpool(consume_analysis, current_user, db)  # 402 si quota atteint — UNE analyse par import
+    if background:
+        jid = await run_in_threadpool(_start_job, db, project, current_user, filename, content, lecture,
+                                      stored, company_data, gonogo, lang_name, file_key)
+        return _lecture_response(project.id, jid)
     if not stored:
         await run_in_threadpool(_prepare_rangement, db, project, lecture, content)
     try:
         analysis = await run_in_threadpool(_analyze_lecture_in_thread, current_user.id, lecture,
                                            company_data, gonogo, lang_name)
     except Exception:
-        refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
+        await run_in_threadpool(refund_analysis, current_user, db)   # l'IA a échoué → on ne débite pas le quota
         raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
                                  "Réessayez — votre quota n'a pas été débité.")
     return _finish_analysis(db, project, analysis, company_data, gonogo, current_user, lecture)
@@ -695,15 +733,17 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     # replace_in_dossier (et non save) : un ré-import du même nom REMPLACE l'ancien
     # au lieu d'empiler des doublons (l'utilisateur croyait ses documents « écrasés »).
     # Archivé AVANT l'analyse : une analyse longue ou en échec peut être relancée sans ré-import.
+    file_key = None
     try:
         from app.services.dossier import replace_in_dossier
-        replace_in_dossier(db, current_user.id, project.id, "DCE",
-                           file.filename or "DCE.pdf", content, file.content_type or "application/pdf")
+        doc = replace_in_dossier(db, current_user.id, project.id, "DCE",
+                                 file.filename or "DCE.pdf", content, file.content_type or "application/pdf")
+        file_key = getattr(doc, "file_key", None)
     except Exception as e:
         logger.warning("Archivage DCE échoué (projet %s): %s", project.id, e)
 
     return await _import_and_analyze(db, project, current_user, file.filename or "DCE.pdf", content,
-                                     lecture, stored=False)
+                                     lecture, stored=False, file_key=file_key)
 
 
 # ── Ré-analyser le DCE DÉJÀ importé (sans re-télécharger) ────────────────────────
@@ -739,14 +779,45 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
         raise HTTPException(404, "Le fichier du dossier est introuvable dans le stockage.")
     stored = await run_in_threadpool(dce_texte.charger, project)
     if stored and stored.get("source_empreinte") == await run_in_threadpool(_empreinte, content):
-        lecture = dict(stored)                      # déjà lu en entier : on ne relit pas
-        lecture.setdefault("a_poursuivre", False)
+        lecture = dict(stored)
+        if _a_relire(lecture):
+            # Des pièces n'ont pas été lues pour une raison PASSAGÈRE (temps écoulé, pages en image
+            # pas encore lues…) : relecture en tâche de fond, en reprenant les pièces déjà lues en
+            # entier — sinon « Ré-analyser » débiterait une analyse sans jamais compléter la lecture.
+            lecture["a_poursuivre"] = True
+            return await _import_and_analyze(db, project, current_user, doc.name, content, lecture,
+                                             stored=False, file_key=doc.file_key)
+        lecture["a_poursuivre"] = False             # déjà lu (en entier ou pour de bon) : on ne relit pas
         return await _import_and_analyze(db, project, current_user, doc.name, content, lecture, stored=True)
     try:
         lecture = await run_in_threadpool(_lire_direct, doc.name, content)
     except ValueError as e:
         raise HTTPException(422, str(e))
-    return await _import_and_analyze(db, project, current_user, doc.name, content, lecture, stored=False)
+    return await _import_and_analyze(db, project, current_user, doc.name, content, lecture, stored=False,
+                                     file_key=doc.file_key)
+
+
+# Raisons PASSAGÈRES de non-lecture : une nouvelle lecture peut les lever.
+_RAISONS_PASSAGERES = ("temps", "scan_a_lire", "plafond_ocr")
+
+
+def _a_relire(lecture: dict) -> bool:
+    """Une pièce (ou des pages) n'a pas été lue pour une raison passagère : temps de lecture écoulé,
+    pages en image pas encore lues, plafond de pages lues par OCR dans une tâche (la relecture
+    reprend les pages déjà reconnues et avance) — ou lecture des images indisponible alors qu'elle
+    l'est maintenant."""
+    from app.services import analysis as _an
+    from app.services.dce_lecture import LU, raison_texte
+    codes = list(_RAISONS_PASSAGERES)
+    if _an.ocr_available():
+        codes.append("ocr_indisponible")
+    textes = [raison_texte(c) for c in codes]
+    for p in lecture.get("pieces") or []:
+        if p.get("statut") == LU:
+            continue
+        if p.get("raison") in codes or any(t in str(p.get("detail") or "") for t in textes):
+            return True
+    return False
 
 
 @router.get("/lecture/{project_id}")
@@ -764,15 +835,25 @@ def lecture_status(project_id: int, current_user: User = Depends(get_current_use
     a = project.ai_analysis if isinstance(project.ai_analysis, dict) else {}
     out["couverture"] = a.get("couverture")
     out["integral"] = bool(a.get("lecture"))
-    if st.get("etat") == "en_cours" and st.get("job_id"):
+    defaut = "La lecture du dossier a échoué. Votre analyse n'a pas été débitée."
+    if st.get("etat") in ("en_cours", "termine") and st.get("job_id"):
         j = db.get(Job, st["job_id"])
         if j is None or j.status == "error":
             out["etat"] = "erreur"
-            out["erreur"] = (j.error if j else "") or "La lecture du dossier a échoué. Votre analyse n'a pas été débitée."
+            out["erreur"] = (j.error if j else "") or defaut
+            if st.get("etat") == "en_cours":
+                # Échec (ou redémarrage du serveur) : le marché ne reste pas « en cours » — l'écran
+                # cesse d'en suivre la progression à chaque ouverture.
+                st2 = dict(st, etat="erreur", erreur=out["erreur"][:500])
+                _set_lecture_state(db, project, st2)
         elif j.status == "done":
-            out["etat"] = "termine"
+            out["etat"] = "termine"         # le résultat du job est enregistré
         else:
+            # « termine » n'est dit qu'une fois le résultat du job enregistré.
+            out["etat"] = "en_cours"
             out["progression"] = _get_progress(j.id)
+    elif st.get("etat") == "erreur":
+        out["erreur"] = st.get("erreur") or defaut
     return out
 
 

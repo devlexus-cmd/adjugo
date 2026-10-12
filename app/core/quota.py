@@ -186,7 +186,7 @@ def consume_analysis(user, db: Session) -> None:
             db.commit()
             try:
                 from app.services.billing_usage import report_overage
-                report_overage(locked)
+                report_overage(locked, db=db)
             except Exception as e:
                 import logging
                 logging.getLogger("adjugo").warning("Report d'usage facturable échoué (user %s) : %s", locked.id, e)
@@ -227,7 +227,7 @@ def refund_analysis(user, db: Session) -> None:
             # que l'IA n'a pas rendue).
             try:
                 from app.services.billing_usage import cancel_overage
-                cancel_overage(locked)
+                cancel_overage(locked, db=db)
             except Exception as e:      # noqa: BLE001
                 import logging
                 logging.getLogger("adjugo").warning("Annulation d'usage Stripe échouée (user %s) : %s",

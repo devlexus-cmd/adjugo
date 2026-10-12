@@ -241,7 +241,25 @@ def _avec_bandeau(tape: str, reconnu: str) -> str:
     return tape.strip() + "\n" + reconnu
 
 
-def _read_pdf(etat: _Etat, data: bytes, p: dict) -> dict:
+def _pages_precedentes(prev: dict) -> dict:
+    """Texte des pages LUES par une lecture précédente de la même pièce (PDF) : {numéro: texte}.
+    Sert à ne pas refaire la reconnaissance de caractères des pages déjà reconnues (une relecture
+    avance au lieu de recommencer)."""
+    if not isinstance(prev, dict) or prev.get("format") != "pdf" or not prev.get("page_starts"):
+        return {}
+    non = set(prev.get("pages_non_lues") or [])
+    if len(non) >= 2000:                       # liste tronquée : pas de reprise page à page
+        return {}
+    starts, t, out = prev["page_starts"], prev.get("texte") or "", {}
+    for i, st in enumerate(starts):
+        if i + 1 in non:
+            continue
+        end = starts[i + 1] if i + 1 < len(starts) else len(t)
+        out[i + 1] = t[st:end].strip("\n")
+    return out
+
+
+def _read_pdf(etat: _Etat, data: bytes, p: dict, prev: dict = None) -> dict:
     info, pages = {}, []
     an.extract_text_from_pdf(data, max_pages=MAX_PAGES_PDF,
                              max_chars=max(1, min(MAX_CARACTERES_PIECE, MAX_CARACTERES_TOTAL - etat.chars)),
@@ -257,6 +275,14 @@ def _read_pdf(etat: _Etat, data: bytes, p: dict) -> dict:
     # PDF entièrement scanné (aucun texte sur aucune page) : toutes les pages sont à lire.
     if not any(len((pg.get("texte") or "").strip()) >= 20 for pg in pages):
         a_lire = [pg["num"] for pg in pages if pg["etat"] in ("image", "vide", "lu")]
+    # Relecture : les pages déjà reconnues par une lecture précédente sont reprises telles quelles.
+    deja = _pages_precedentes(prev) if a_lire else {}
+    if deja:
+        sel = set(a_lire)
+        for pg in pages:
+            if pg["num"] in sel and (deja.get(pg["num"]) or "").strip():
+                pg["texte"], pg["etat"] = deja[pg["num"]], "lu"
+        a_lire = [n for n in a_lire if not (deja.get(n) or "").strip()]
     non_lues = {}
     if a_lire:
         if etat.ocr:
@@ -312,7 +338,7 @@ def _read_pdf(etat: _Etat, data: bytes, p: dict) -> dict:
 
 # ── Autres formats ─────────────────────────────────────────────────────────────────────
 
-def _read_data(etat: _Etat, nom: str, chemin: str, data: bytes) -> dict:
+def _read_data(etat: _Etat, nom: str, chemin: str, data: bytes, prev: dict = None) -> dict:
     ext = _ext(nom)
     fmt = FORMATS.get(ext, "")
     if not fmt and data[:5] == b"%PDF-":
@@ -327,7 +353,7 @@ def _read_data(etat: _Etat, nom: str, chemin: str, data: bytes) -> dict:
         return _finish(p, "", False, "plafond_caracteres")
     if fmt == "pdf" or data[:5] == b"%PDF-":
         p["format"] = "pdf"
-        return _read_pdf(etat, data, p)
+        return _read_pdf(etat, data, p, prev)
     if fmt in ("docx", "xlsx", "ods", "odt"):
         code = _office_chiffre(data, ext)
         if code:
@@ -504,7 +530,7 @@ def _read_zip(etat: _Etat, content: bytes, depth: int, prefix: str, reprise: dic
             etat.fichiers += 1
             etat.tick(nom)
             try:
-                piece = _read_data(etat, nom, chemin, data)
+                piece = _read_data(etat, nom, chemin, data, prev)
             except Exception as e:      # noqa: BLE001 — une pièce abîmée n'arrête pas les autres
                 logger.info("lecture de la pièce %s impossible : %s", nom[:80], type(e).__name__)
                 piece = _finish(_piece(nom, chemin, FORMATS.get(ext, "")), "", False, "illisible")
@@ -552,7 +578,7 @@ def lire_dossier(filename: str, content: bytes, mode: str = "direct", progress=N
             if len(content) > MAX_OCTETS_FICHIER:
                 raise ValueError(f"Fichier trop volumineux ({MAX_OCTETS_FICHIER // MB} Mo au plus).")
             etat.tick(base)
-            etat.pieces.append(_read_data(etat, base, base, content))
+            etat.pieces.append(_read_data(etat, base, base, content, prev))
     _noms_affiches(etat.pieces)
     pieces = sorted(etat.pieces, key=lambda x: (dp.compose_rank(x["type"]), 0))
     lecture = {
