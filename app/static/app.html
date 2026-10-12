@@ -1837,7 +1837,7 @@
                   <div class="small atl-mt4">{{ atlCompteTexte(atl.st) }}</div>
                 </div>
                 <div v-if="!atlMobile" class="row wrap atl-g6">
-                  <button v-if="atlAEcrire()" type="button" class="btn sm" @click="atlRedigerTout()" :disabled="!!atl.busy"><i data-lucide="sparkles"></i>Rédiger les {{ atlAEcrire() }} parties à écrire</button>
+                  <button v-if="atlAEcrire()" type="button" class="btn sm" @click="atlRedigerTout()" :disabled="!!atl.busy"><i data-lucide="sparkles"></i>{{ atlAEcrire() > 1 ? "Rédiger les " + atlAEcrire() + " parties à écrire" : "Rédiger la partie à écrire" }}</button>
                   <button type="button" class="btn sm" @click="atlExport('docx')" :disabled="!!atl.busy"><span v-if="atl.busy==='export:docx'" class="spin"></span><i v-else data-lucide="file-down"></i>Exporter en Word</button>
                   <button type="button" class="btn sm" @click="atlExport('pdf')" :disabled="!!atl.busy"><span v-if="atl.busy==='export:pdf'" class="spin"></span><i v-else data-lucide="file-down"></i>PDF</button>
                 </div>
@@ -3268,6 +3268,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-MCTvHOEVn64NS/f/X3BplVWYAWpCTq6+33o6WYiJqzXzvMITrYbaumjK7jCU4slX" defer></script>
+<script src="/static/app.js" integrity="sha384-RIhMCZR6QWZFk5nJ7+/Ja2+eD2K/4d+T82xb6eaPh0E7hoisA/kv6wHHxCzGdPJR" defer></script>
 </body>
 </html>

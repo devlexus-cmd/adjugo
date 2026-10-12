@@ -218,7 +218,6 @@ function _atlInit() {
 function _atlCardInit() { return { loading: false, loaded: false, d: null, error: "" }; }
 const ATL_FAIT_TYPES = { chiffre: "Chiffre", nombre_en_lettres: "Nombre en lettres", certification: "Certification",
   nom_propre: "Nom propre", materiel: "Matériel" };
-const ATL_FAIT_MSG = "Adjugo ne trouve pas d'où vient ce fait : relisez-le.";
 const ATL_BASES = [
   { k: "auto", l: "Automatique", d: "Le cadre de réponse imposé s'il existe, sinon les critères retrouvés dans le règlement, sinon un plan simple." },
   { k: "cadre", l: "Le cadre de réponse de l'acheteur", d: "Ses numéros, ses intitulés et son ordre, tels quels." },

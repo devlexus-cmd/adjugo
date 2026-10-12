@@ -86,7 +86,7 @@ def test_atelier_plan_texte_faits_sources_et_actions():
                     "Valider", "Marquer relue", "À relire", "Corriger", "Retirer", "Je l'ai relu",
                     "Remettre à relire", "Extraits de vos documents", "Historique", "Revenir à cette version",
                     "Exporter en Word", "PDF", "Page de garde", "Sommaire", "Ce que demande l'acheteur",
-                    "Rédiger les {{ atlAEcrire() }} parties à écrire", "Reprendre", "Copier mon texte",
+                    "\"Rédiger les \" + atlAEcrire() + \" parties à écrire\"", "Rédiger la partie à écrire", "Reprendre", "Copier mon texte",
                     "Titre", "Liste", "Tableau", "Enregistrer", "Commencer avec ce plan", "Exporter malgré tout…"):
         assert libelle in a, libelle
     # Le message A0 exact, le poids tel qu'écrit, le découpage proposé dit comme tel.
