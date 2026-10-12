@@ -12,6 +12,10 @@ et contrôle des références avant destruction d'un fichier (`rgpd._purge_files
 lecture (sans le texte) est dans `ai_analysis["lecture"]` et l'export RGPD le liste avec les
 autres fichiers du dossier.
 
+Le même fichier garde aussi, pour un gros dossier lu en deux temps, les informations relevées par
+l'IA partie par partie (`analyse_parties`, phrases vérifiées) : une nouvelle analyse du même
+dossier ne relit que les parties manquantes.
+
 Accès commun (à utiliser par l'atelier de rédaction lors de la fusion) :
   • dce_pieces_text(project)   → [{nom, type, libelle, statut, raison, detail, caracteres, pages,
                                    pages_lues, page_starts, texte}] ou None ;
@@ -71,10 +75,32 @@ _LOCK = threading.Lock()
 def _payload(lecture: dict) -> dict:
     keep = ("nom", "chemin", "format", "type", "libelle", "statut", "raison", "detail", "caracteres",
             "pages", "pages_lues", "pages_non_lues", "page_starts", "texte")
-    return {"version": BUNDLE_VERSION, "source": lecture.get("source") or "",
-            "source_empreinte": lecture.get("source_empreinte") or "",
-            "lu_le": lecture.get("lu_le"), "mode": lecture.get("mode"),
-            "pieces": [{k: p.get(k) for k in keep} for p in (lecture.get("pieces") or [])]}
+    out = {"version": BUNDLE_VERSION, "source": lecture.get("source") or "",
+           "source_empreinte": lecture.get("source_empreinte") or "",
+           "lu_le": lecture.get("lu_le"), "mode": lecture.get("mode"),
+           "pieces": [{k: p.get(k) for k in keep} for p in (lecture.get("pieces") or [])]}
+    parties = lecture.get("analyse_parties")
+    if isinstance(parties, dict) and parties:
+        # Informations relevées par l'IA pièce par pièce (lecture en deux temps), avec leur phrase
+        # vérifiée : une nouvelle analyse du même dossier ne relit que ce qui manque.
+        out["analyse_parties"] = dict(list(parties.items())[-PARTIES_MAX:])
+    return out
+
+
+PARTIES_MAX = 3000                       # parties lues par l'IA gardées avec la lecture
+
+
+def ranger_parties(db, project, parties: dict) -> None:
+    """Ajoute à la lecture rangée du marché les informations relevées par l'IA, partie par partie
+    (même fichier, rangé à nouveau : supprimé avec le marché comme le texte)."""
+    payload = charger(project)
+    if not payload or not parties:
+        return
+    lecture = dict(payload)
+    merged = dict(payload.get("analyse_parties") or {})
+    merged.update(parties)
+    lecture["analyse_parties"] = merged
+    sauver(db, project, lecture)
 
 
 def sauver(db, project, lecture: dict) -> str:

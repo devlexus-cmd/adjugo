@@ -297,7 +297,11 @@ def test_gros_dossier_toutes_les_pieces_lues_par_l_ia(client, auth, fake_ia, mon
     assert sent.count("XQZ-4471") >= 2                          # fin du dernier CCTP ET annexe
     piece_calls = [k for k in fake.calls if "Tu lis UNE pièce" in llm._flatten_content(k.get("system"))]
     synth = [k for k in fake.calls if "Tu lis UNE pièce" not in llm._flatten_content(k.get("system"))]
-    assert len(piece_calls) >= 9 and len(synth) == 1            # lecture en deux temps + synthèse
+    assert len(synth) == 1                                      # lecture en deux temps + synthèse
+    # Petites pièces voisines regroupées dans un même appel (chacune sous son nom) : moins d'appels
+    # que de parties, et chaque pièce reste nommée.
+    users = [llm._flatten_content(k["messages"][0]["content"]) for k in piece_calls]
+    assert 4 <= len(piece_calls) < 12 and any(u.count("Pièce : ") >= 2 for u in users)
     synth_user = llm._flatten_content(synth[0]["messages"][0]["content"])
     # Synthèse : règlement en entier, en tête ; les faits relevés citent la phrase exacte, page comprise.
     assert synth_user.index("FIN-PIECE-RC") < synth_user.index("05_CCTP_lot1.txt")
@@ -733,7 +737,7 @@ def test_plafond_d_appels_signale_dans_la_couverture(fake_ia, monkeypatch):
         a = ad.analyser(lecture, {"name": "Test"}, {}, lang_name="français")
     cov = a["couverture"]
     assert a["mode_lecture"] == "deux_temps" and cov["complet"] is False
-    assert cov["analyse"]["parties_lues_par_l_ia"] == 3 and cov["analyse"]["non_analysees"]
+    assert cov["analyse"]["appels_ia"] == 3 and cov["analyse"]["non_analysees"]
     assert "CCTP.txt (partie 4 sur" in cov["analyse"]["non_analysees"][0]
     synth = llm._flatten_content(fake.calls[-1]["messages"][0]["content"])
-    assert "lue en partie par l'IA (3 parties sur" in synth and "FIN-PIECE-RC" in synth
+    assert "lue en partie par l'IA (3 parties exploitées sur" in synth and "FIN-PIECE-RC" in synth

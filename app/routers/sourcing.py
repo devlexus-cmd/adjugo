@@ -589,7 +589,20 @@ def _lecture_job_run(jdb, job_id, project_id, user_id, filename, content, lectur
         _sauver_lecture(jdb, project, lecture)
     t = totaux(lecture)
     _set_progress(job_id, etape="analyse", pieces_lues=t["pieces"], pages_lues=t["pages_lues"])
-    analysis = analyser(lecture, company_data, gonogo, lang_name=lang_name, progress=prog)
+
+    def ranger(parties):
+        # Informations relevées pièce par pièce, rangées avec la lecture : si la synthèse échoue,
+        # une nouvelle analyse ne relira que ce qui manque (best-effort, jamais bloquant).
+        from app.services import dce_texte
+        pr = jdb.get(Project, project_id)
+        if pr is not None:
+            try:
+                dce_texte.ranger_parties(jdb, pr, parties)
+            except Exception as e:      # noqa: BLE001
+                jdb.rollback()
+                logger.warning("informations relevées du marché %s non rangées : %s", project_id, type(e).__name__)
+
+    analysis = analyser(lecture, company_data, gonogo, lang_name=lang_name, progress=prog, on_parties=ranger)
     project = jdb.get(Project, project_id)
     user = jdb.get(User, user_id)
     out = _finish_analysis(jdb, project, analysis, company_data, gonogo, user, lecture)
