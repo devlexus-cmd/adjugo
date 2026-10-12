@@ -20,6 +20,11 @@ os.environ["BREVO_API_KEY"] = ""
 # tests IA remplacent le client par un faux ; les autres reçoivent un 503 propre).
 os.environ["ANTHROPIC_API_KEY"] = ""
 os.environ["MISTRAL_API_KEY"] = ""
+os.environ["MISTRAL_API_KEY_ADJUGO"] = ""
+# Routage IA par défaut (indépendant du shell du poste) : routage par tâche, sans forçage.
+os.environ["LLM_PROVIDER"] = "auto"
+os.environ["LLM_ROUTAGE"] = "nouveau"
+os.environ["MISTRAL_POINT_ACCES"] = "auto"
 # Fuseau de la PRODUCTION (image python:3.12-slim : UTC). Le serveur prend « aujourd'hui » en UTC
 # (relances, dates de vérification) ; les tests, eux, calculent leurs dates avec date.today().
 # Sur un poste à l'heure de Paris, les deux divergeaient entre 00:00 et 02:00 : 3 échecs la nuit.

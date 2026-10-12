@@ -133,9 +133,10 @@ def test_l_atelier_lit_reglement_et_cadre_en_entier_et_les_passages_de_toutes_le
         assert "n'y écris jamais de remarque sur la lecture du dossier" in user
         assert "pour toi seulement, à ne jamais mentionner dans le texte" in user and "04_BPU.doc" in user
         assert "[Dossier lu en entier" not in user and "pas été trouvée dans les pièces lues" not in user
-        # Le dossier commun vient en tête, marqué pour le cache de prompt, identique d'une partie à l'autre.
+        # Le dossier commun vient en tête, marqué pour le cache de prompt, identique d'une partie à l'autre,
+        # pour UNE HEURE (tâche « redaction » : relu d'une partie à l'autre même à plus de 5 minutes d'écart).
         blocs = k["messages"][0]["content"]
-        assert isinstance(blocs, list) and blocs[0].get("cache_control") == {"type": "ephemeral"}
+        assert isinstance(blocs, list) and blocs[0].get("cache_control") == {"type": "ephemeral", "ttl": "1h"}
         assert blocs[0]["text"].startswith("DOSSIER DE L'ACHETEUR (ne prouve RIEN sur l'entreprise)")
         assert "PARTIE À RÉDIGER" not in blocs[0]["text"]
         premiers.add(blocs[0]["text"])

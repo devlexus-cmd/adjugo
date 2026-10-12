@@ -465,6 +465,12 @@ def _line(i, j, name, pond, ex, text, scope_crit, scope_rc, crit_stems) -> dict:
     phrase, piece, pos, poids, unite, valeur = "", None, None, "", None, None
 
     verified = citation_guard(text, ex) if ex else ""
+    if ex:
+        try:
+            from app.services import llm_qualite as _q
+            _q.noter_citations(1 if verified else 0, 0 if verified else 1)
+        except Exception:
+            pass
     vp, vpos, vorig = _locate(verified, scope_crit) if verified else (None, None, "")
     if vorig and not _names_ok(_fold(vorig), stems):
         vp, vpos, vorig = None, None, ""            # la phrase ne parle pas de ce critère

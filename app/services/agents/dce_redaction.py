@@ -30,7 +30,7 @@ produit (prochaine révision des seuils formalisés : 1er janvier 2028).
 """
 import os
 from concurrent.futures import ThreadPoolExecutor
-from app.services.llm import complete_ex, parse_json, tenant_scope, MODEL_FAST, LLMUnavailable
+from app.services.llm import complete_ex, parse_json, tenant_scope, LLMUnavailable
 from app.services.format import format_eur
 
 # ── Seuils de DISPENSE de publicité/mise en concurrence — gré à gré (€ HT) ────
@@ -281,34 +281,37 @@ PROCÉDURE IMPOSÉE (déterminée par les seuils, ne la recalcule pas) :
 
 
 def _gen_core(user: str, tenant) -> dict:
-    """Cœur juridique (Sonnet) : objet, synthèse, allotissement, critères. Re-pose le scope.
+    """Cœur juridique (tâche « acheteur_dce », Claude Sonnet 5.5) : objet, synthèse, allotissement,
+    critères. Re-pose le scope.
     Une troncature (max_tokens) est FATALE : un cœur amputé (lots/critères coupés) ne doit
     jamais passer en silence pour un DCE complet."""
     with tenant_scope(tenant):
         raw, stop = complete_ex(_SYSTEM_CORE, "Rédige le cœur du DCE pour :\n\n" + user,
-                                max_tokens=3500, temperature=0.25)
+                                max_tokens=3500, temperature=0.25, tache="acheteur_dce")
     if stop == "max_tokens":
         raise LLMUnavailable("Réponse IA tronquée (cœur du DCE incomplet). Réessayez.")
     return parse_json(raw)
 
 
 def _gen_admin(user: str, tenant) -> dict:
-    """Volets administratifs (Haiku, rapide) : CCAP, RSE, pièces, conseils, garde-fous.
+    """Volets administratifs (tâche « acheteur_annexes » ; ancien routage : Haiku) : CCAP, RSE, pièces,
+    conseils, garde-fous.
     Troncature → ValueError (best-effort : remontée en avertissement, non bloquant)."""
     with tenant_scope(tenant):
         raw, stop = complete_ex(_SYSTEM_ADMIN, "Rédige les volets administratifs pour :\n\n" + user,
-                                max_tokens=2500, temperature=0.3, model=MODEL_FAST)
+                                max_tokens=2500, temperature=0.3, tache="acheteur_annexes")
     if stop == "max_tokens":
         raise ValueError("volets administratifs tronqués")
     return parse_json(raw)
 
 
 def _gen_cctp(user: str, tenant) -> dict:
-    """Appel CCTP (Haiku, prose rapide). Re-pose tenant_scope (thread du pool).
+    """Appel CCTP (tâche « acheteur_annexes » ; ancien routage : Haiku). Re-pose tenant_scope
+    (thread du pool).
     Troncature → ValueError (best-effort : avertissement, non bloquant)."""
     with tenant_scope(tenant):
         raw, stop = complete_ex(_SYSTEM_CCTP, "Rédige le CCTP pour :\n\n" + user,
-                                max_tokens=3000, temperature=0.3, model=MODEL_FAST)
+                                max_tokens=3000, temperature=0.3, tache="acheteur_annexes")
     if stop == "max_tokens":
         raise ValueError("CCTP tronqué")
     return parse_json(raw)

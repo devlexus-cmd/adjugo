@@ -1900,8 +1900,9 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
         else:
             # Le dossier de l'acheteur commun (jusqu'à DOSSIER_COMMUN_MAX caractères) est mis en cache
             # de prompt : le cache n'existe qu'une fois la première réponse commencée. Lancées ensemble,
-            # les 3 premières parties l'écriraient chacune (1,25 × le prix d'entrée) ; la première
-            # partie part donc SEULE, les suivantes (en parallèle) le relisent à 0,1 ×.
+            # les 3 premières parties l'écriraient chacune (2 × le prix d'entrée pour un cache d'une
+            # heure, tâche « redaction » de app.services.llm) ; la première partie part donc SEULE, les
+            # suivantes (en parallèle) le relisent à 0,05 × (Sonnet 5.5).
             premiers = []
             if action == JOB_REDIGER and dossier_acheteur.strip():
                 premiers = [_un(taches[0])]
@@ -1974,7 +1975,8 @@ def _cumuler_cout(dossier: Optional[DossierPresentation], summary: dict) -> None
     def _somme(k):
         return int(cur.get(k) or 0) + int(summary.get(k) or 0)
     # tokens_entree = entrée HORS cache ; le dossier de l'acheteur commun passe par le cache de prompt
-    # (écrit à 1,25 ×, relu à 0,1 × le prix d'entrée) : compté à part, pour lire le volume réel envoyé.
+    # (Sonnet 5.5 : écrit à 2 × le prix d'entrée pour 1 h, relu à 0,05 ×) : compté à part, pour lire
+    # le volume réel envoyé.
     out = {"appels": _somme("appels"), "tokens_entree": _somme("tokens_entree"),
            "tokens_cache_ecrits": _somme("tokens_cache_ecrits"), "tokens_cache_lus": _somme("tokens_cache_lus"),
            "tokens_sortie": _somme("tokens_sortie"),

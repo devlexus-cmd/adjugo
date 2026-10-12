@@ -81,7 +81,7 @@ DOCUMENT :
 {text[:18000]}"""
     from app.services.llm import LLMUnavailable
     try:
-        data = complete_json(SYSTEM, user, max_tokens=2800, temperature=0.1)
+        data = complete_json(SYSTEM, user, max_tokens=2800, temperature=0.1, tache="deliberation")
     except LLMUnavailable:
         raise   # panne IA → le routeur rembourse + 503 (pas un faux « rien détecté » facturé)
     except Exception:
@@ -130,7 +130,7 @@ INTITULÉS :
 {lines}"""
     from app.services.llm import LLMUnavailable
     try:
-        data = complete_json(BATCH_SYSTEM, user, max_tokens=3200, temperature=0.1)
+        data = complete_json(BATCH_SYSTEM, user, max_tokens=3200, temperature=0.1, tache="veille")
     except LLMUnavailable:
         raise   # panne IA → remboursement côté routeur ; le cron l'attrape (dégradation gracieuse)
     except Exception:

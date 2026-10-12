@@ -189,6 +189,7 @@ def _normalize_exigences(details: dict, text_integral: str) -> dict:
                 v = v.get("extrait") or v.get("texte") or ""
             sources[k] = citation_guard(text_integral, v)
         details["exigences_sources"] = sources
+        _soumis = [k for k in _EXIGENCE_KEYS if str(raw_src.get(k) or "").strip()]
 
         fg = details.get("forme_groupement")
         if isinstance(fg, str):                     # l'IA a parfois renvoyé « conjoint » tout court
@@ -202,6 +203,15 @@ def _normalize_exigences(details: dict, text_integral: str) -> dict:
             fg_extrait = " ".join(str(x) for x in fg_extrait if x)
         details["forme_groupement"] = {"imposee": imposee,
                                        "extrait": citation_guard(text_integral, fg_extrait)}
+        # Surveillance de la qualité (par fournisseur et par tâche) : citations retenues / rejetées.
+        try:
+            from app.services import llm_qualite as _q
+            _acc = sum(1 for k in _soumis if sources.get(k))
+            _fg_ok = bool(str(fg_extrait or "").strip())
+            _q.noter_citations(_acc + (1 if _fg_ok and details["forme_groupement"]["extrait"] else 0),
+                               (len(_soumis) - _acc) + (1 if _fg_ok and not details["forme_groupement"]["extrait"] else 0))
+        except Exception:
+            pass
 
         for k in ("capacites_groupement", "references_requises", "effectif_minimum_requis"):
             v = details.get(k)
@@ -2087,8 +2097,10 @@ def _detect_groupement(details: dict, company: dict = None) -> dict:
     return {"recommande": bool(raisons), "raisons": raisons[:3], "exigences": exigences}
 
 
-ANALYSE_MODEL = "claude-sonnet-4-6"   # = app.services.llm.MODEL (raisonnement)
+ANALYSE_MODEL = "claude-sonnet-4-6"   # modèle de l'ANCIEN routage ; le modèle réel = llm.route("analyse")
+ANALYSE_TACHE = "analyse"              # Mistral Large 4, secours Claude Sonnet 5.5 (app.services.llm)
 ANALYSE_MAX_TOKENS = 6000              # sortie JSON (~30 champs) ; payée à l'usage, pas au plafond
+                                       # (×1,3 pour le découpage des nouveaux modèles, dans llm.py)
 
 
 class AnalyseCoupee(RuntimeError):
@@ -2193,9 +2205,10 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None, pieces=N
     try:
         from app.services.llm import messages_create
         response = messages_create(
+            tache=ANALYSE_TACHE,
             model=ANALYSE_MODEL,
             max_tokens=ANALYSE_MAX_TOKENS,
-            temperature=0,  # extraction reproductible (le score, lui, est déterministe)
+            temperature=0,  # extraction reproductible (jamais envoyée à Sonnet 5.5, qui la refuse)
             system=_system_blocks(),
             messages=[{"role": "user", "content": user_prompt}]
         )

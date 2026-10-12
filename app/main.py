@@ -360,30 +360,97 @@ def root():
         return HTMLResponse(f.read())
 
 
+_TACHES_LECTURE = {"analyse", "lecture_pieces", "exigences", "veille", "deliberation", "renouvellements"}
+
+
+def _h(texte: str) -> str:
+    """Apostrophes échappées comme dans les pages juridiques générées."""
+    return texte.replace("'", "&#x27;")
+
+
+def _role_ia(taches) -> str:
+    t = set(taches or [])
+    lect, autres = bool(t & _TACHES_LECTURE), bool(t - _TACHES_LECTURE)
+    if lect and autres:
+        return "lecture des dossiers, questions et rédaction"
+    if lect:
+        return "lecture et analyse des dossiers"
+    return "questions sur les dossiers et rédaction"
+
+
 def _ai_subprocessor_fragments():
-    """Fragments décrivant le sous-traitant IA RÉELLEMENT actif, injectés dans les pages
-    légales (confidentialité + DPA). Ainsi le doc reflète toujours la vérité : Anthropic (US)
-    tant que c'est Anthropic, Mistral (FR/UE) dès qu'on bascule — aucune mise à jour manuelle,
-    aucun risque que la politique « mente » sur la localisation des données."""
-    try:
-        from app.services.llm import active_provider
-        if active_provider().get("provider") == "mistral":
-            return {
-                "{{AI_PROVIDER}}": "Mistral AI",
-                "{{AI_PRODUCT}}": "La Plateforme",
-                "{{AI_LOCATION_FULL}}": "<strong>Union européenne</strong> (France — api.mistral.ai)",
-                "{{AI_LOCATION_SHORT}}": "Union européenne (France)",
-                "{{AI_TRANSFER_MENTION}}": "",   # IA hébergée en UE → plus de transfert pays tiers pour ce traitement
-            }
-    except Exception:
-        pass
-    # Défaut sûr : Anthropic (état de production actuel).
-    return {
+    """Fragments décrivant les fournisseurs d'IA RÉELLEMENT sollicités avec la configuration du serveur
+    (routage par tâche ET secours, app.services.llm), injectés dans les pages légales (confidentialité
+    + DPA). Exacts et factuels : Anthropic (États-Unis, CCT) pour les questions et la rédaction ;
+    Mistral AI, dès qu'une clé Mistral est présente, pour la lecture des dossiers, avec le lieu de calcul
+    du point d'accès RÉELLEMENT utilisé (UE et AELE par api.eu.mistral.ai, ou sans engagement de lieu par
+    le point d'accès mondial), ses sous-traitants de droit américain et l'état de la désinscription de
+    l'entraînement (à la charge du titulaire du compte). Les phrases fixes de dpa.html et securite.html
+    (« jamais utilisés pour entraîner ») sont à corriger : docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md."""
+    anth_full = "<strong>États-Unis</strong> (API standard api.anthropic.com — encadré par CCT)"
+    defaut = {
         "{{AI_PROVIDER}}": "Anthropic, PBC",
         "{{AI_PRODUCT}}": "Claude API",
-        "{{AI_LOCATION_FULL}}": "<strong>États-Unis</strong> (API standard api.anthropic.com — encadré par CCT)",
+        "{{AI_LOCATION_FULL}}": anth_full,
         "{{AI_LOCATION_SHORT}}": "États-Unis (CCT)",
         "{{AI_TRANSFER_MENTION}}": "le fournisseur d&#x27;IA (Anthropic, États-Unis) pour l&#x27;analyse et la génération de documents, ",
+    }
+    try:
+        from app.services.llm import etat_juridique
+        e = etat_juridique()
+    except Exception:
+        return defaut
+    if not e.get("mistral"):
+        return defaut
+    taches = e.get("taches") or {}
+    t_m = taches.get("mistral") or {}
+    t_a = taches.get("anthropic") or {}
+    role_m = _role_ia(t_m.get("principal") or t_m.get("secours"))
+    role_a = _role_ia(t_a.get("principal") or t_a.get("secours"))
+    ue = e.get("mistral_zone") == "ue"
+    if ue:
+        lieu_m = ("calcul dans des centres de données de l'<strong>Union européenne et de l'AELE</strong> "
+                  "(point d'accès régional api.eu.mistral.ai), les données de fonctionnement du compte "
+                  "(facturation, configuration) pouvant être traitées hors de cette zone")
+        lieu_m_court = "Union européenne et AELE pour le calcul (api.eu.mistral.ai)"
+        transfert_m = "calcul dans l'Union européenne"
+    else:
+        lieu_m = ("point d'accès mondial (api.mistral.ai) <strong>sans engagement de lieu de calcul</strong> : "
+                  "centres de données de ses sous-traitants, possiblement hors de l'Union européenne ; "
+                  "stockage dans l'Union européenne par défaut")
+        lieu_m_court = "lieu de calcul non garanti, possiblement hors Union européenne"
+        transfert_m = "calcul possiblement hors de l'Union européenne"
+    sous_traitants = ("sous-traitants de Mistral AI, dont Microsoft, CoreWeave et Cloudflare (sociétés de droit "
+                      "américain) ; transferts encadrés par CCT")
+    if e.get("mistral_entrainement_desactive"):
+        entr = ("utilisation des contenus pour l'amélioration des modèles de Mistral AI désactivée par "
+                "l'Éditeur sur son compte")
+    else:
+        entr = ("utilisation des contenus pour l'amélioration des modèles de Mistral AI : active par défaut "
+                "chez ce fournisseur, sa désactivation étant à la charge du titulaire du compte (l'Éditeur), "
+                "non encore confirmée")
+    relais_m = " ; relais d'Anthropic en cas de panne" if t_m.get("secours") else ""
+    relais_a = " ; relais de Mistral AI en cas de panne" if t_a.get("secours") else ""
+    mistral_full = f"<strong>Mistral AI</strong> ({role_m}{relais_m}) : {lieu_m} ; {sous_traitants} ; {entr}."
+    if not e.get("anthropic"):
+        return {
+            "{{AI_PROVIDER}}": "Mistral AI",
+            "{{AI_PRODUCT}}": "La Plateforme",
+            "{{AI_LOCATION_FULL}}": _h(mistral_full),
+            "{{AI_LOCATION_SHORT}}": _h(f"{lieu_m_court} ; sous-traitants de droit américain (CCT)"),
+            "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA Mistral AI et ses sous-traitants de droit américain "
+                                          f"(dont Microsoft, CoreWeave et Cloudflare) — {transfert_m} —, "),
+        }
+    return {
+        "{{AI_PROVIDER}}": "Anthropic, PBC et Mistral AI",
+        "{{AI_PRODUCT}}": "Claude API ; La Plateforme de Mistral AI",
+        "{{AI_LOCATION_FULL}}": _h(f"<strong>Anthropic</strong> ({role_a}{relais_a}) : {anth_full}. ") + _h(mistral_full),
+        "{{AI_LOCATION_SHORT}}": _h(f"Anthropic : États-Unis (CCT) ; Mistral AI : {lieu_m_court}, "
+                                    "sous-traitants de droit américain (CCT)"),
+        "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA Anthropic (États-Unis) pour les questions et la "
+                                      f"rédaction, le fournisseur d'IA Mistral AI et ses sous-traitants de droit "
+                                      f"américain (dont Microsoft, CoreWeave et Cloudflare) pour la lecture des "
+                                      f"dossiers — {transfert_m} —, "),
     }
 
 
@@ -489,8 +556,8 @@ def health():
 
 @app.get("/api/llm/info", tags=["Sante"])
 def llm_info():
-    """Fournisseur IA actif (sans secret). Prouve que l'architecture est découplée :
-    bascule Anthropic ↔ Mistral (souverain FR/EU) par simple variable d'environnement."""
+    """Fournisseurs d'IA sollicités (sans secret ni détail du routage) : le détail par tâche est dans
+    le diagnostic d'administration (GET /api/admin/ia/diagnostic)."""
     from app.services.llm import active_provider
     return active_provider()
 
@@ -540,6 +607,18 @@ def metrics(request: Request):
             return JSONResponse(status_code=401, content={"error": "jeton metrics requis"})
     from app.core.metrics import render
     return PlainTextResponse(render(), media_type="text/plain; version=0.0.4")
+
+
+# ── Routage de l'IA : résumé au démarrage (aucune clé, aucun appel réseau) ──
+@app.on_event("startup")
+def _journaliser_routage_ia():
+    try:
+        from app.services.llm import resume_routage, forcage
+        log = _logging.getLogger("adjugo")
+        for ligne in resume_routage():
+            (log.warning if (forcage() or "ATTENTION" in ligne) else log.info)(ligne)
+    except Exception as e:      # noqa: BLE001 — jamais bloquant
+        _logging.getLogger("adjugo").warning("résumé du routage IA indisponible : %s", type(e).__name__)
 
 
 # ── Récupération des jobs orphelins au démarrage ────────────────────────────

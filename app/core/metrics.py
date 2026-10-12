@@ -70,7 +70,7 @@ def render() -> str:
         ]
         # Histogramme de latence des appels IA (→ p50/p95/p99 via histogram_quantile).
         lat = llm.latency_snapshot()
-        out += ["# HELP adjugo_llm_call_duration_seconds Durée des appels Claude réussis.",
+        out += ["# HELP adjugo_llm_call_duration_seconds Durée des appels IA réussis (tous fournisseurs).",
                 "# TYPE adjugo_llm_call_duration_seconds histogram"]
         cumulative = lat["buckets"]
         for b in sorted(cumulative):
@@ -80,6 +80,27 @@ def render() -> str:
             _fmt("adjugo_llm_call_duration_seconds_sum", round(lat["sum"], 3)),
             _fmt("adjugo_llm_call_duration_seconds_count", lat["count"]),
         ]
+    except Exception:
+        pass
+
+    # ── IA par fournisseur et par tâche : qualité, secours, délais (app.services.llm_qualite) ──
+    try:
+        from app.services import llm, llm_qualite
+        now = time.monotonic()
+        out += [
+            "# HELP adjugo_llm_fournisseur_circuit_open Disjoncteur IA ouvert (1) ou fermé (0), par fournisseur.",
+            "# TYPE adjugo_llm_fournisseur_circuit_open gauge",
+            _fmt("adjugo_llm_fournisseur_circuit_open", 1 if llm._CB["open_until"] > now else 0,
+                 {"fournisseur": "anthropic"}),
+            _fmt("adjugo_llm_fournisseur_circuit_open", 1 if llm._CB_MISTRAL["open_until"] > now else 0,
+                 {"fournisseur": "mistral"}),
+            "# HELP adjugo_llm_fournisseur_configure Clé du fournisseur présente (1) ou non (0).",
+            "# TYPE adjugo_llm_fournisseur_configure gauge",
+            _fmt("adjugo_llm_fournisseur_configure", 1 if llm._anthropic_disponible() else 0,
+                 {"fournisseur": "anthropic"}),
+            _fmt("adjugo_llm_fournisseur_configure", 1 if llm._use_mistral() else 0, {"fournisseur": "mistral"}),
+        ]
+        out += llm_qualite.prometheus_lignes(_fmt)
     except Exception:
         pass
 

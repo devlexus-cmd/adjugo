@@ -64,23 +64,33 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+psycopg2://adjugo:adjugo_password@localhost:5432/adjugo_db"
 
-    # Moteur IA — fournisseur interchangeable (souveraineté).
-    # "auto" (défaut) | "anthropic" | "mistral". L'architecture est découplée du fournisseur :
-    # tous les appels passent par app/services/llm.py:messages_create.
-    # En "auto" : on bascule sur MISTRAL dès qu'une MISTRAL_API_KEY est présente, sinon Anthropic.
-    # → il SUFFIT d'ajouter la clé Mistral dans Railway pour passer au souverain, rien d'autre.
-    # Forçable : LLM_PROVIDER=anthropic (rester sur Claude même avec une clé Mistral) ou =mistral.
-    # Si "mistral" est demandé sans clé → repli auto sur Anthropic (jamais de panne due à un flag).
+    # Moteur IA — ROUTAGE PAR TÂCHE (app/services/llm.py, table _TABLE ; docs/IA_ROUTAGE.md).
+    # Lecture et extraction de documents → Mistral Large 4 ; questions, rédaction, questionnaire,
+    # chiffrage, côté acheteur → Claude Sonnet 5.5 ; secours croisé si un fournisseur fait défaut.
+    # LLM_PROVIDER : "auto" (défaut) = routage par tâche. "anthropic" | "mistral" FORCE toutes les
+    # tâches chez un seul fournisseur (le diagnostic d'administration et le journal le disent).
+    # La seule présence d'une clé Mistral ne fait plus rien basculer.
     LLM_PROVIDER: str = "auto"
+    # LLM_ROUTAGE=ancien : retour en une minute à l'ancien routage (Claude Sonnet 4.6 / Haiku 4.5,
+    # réglages d'origine, aucun secours). Défaut : "nouveau".
+    LLM_ROUTAGE: str = "nouveau"
 
     # Claude (Anthropic)
     ANTHROPIC_API_KEY: str = ""
 
-    # Mistral (souverain, hébergé FR/EU) — sa seule présence suffit à activer Mistral (mode auto)
+    # Mistral (La Plateforme). Clé lue dans MISTRAL_API_KEY_ADJUGO en priorité, puis MISTRAL_API_KEY
+    # (nom historique, accepté par compatibilité) ; aucune des deux ne déclenche de bascule globale.
+    MISTRAL_API_KEY_ADJUGO: str = ""
     MISTRAL_API_KEY: str = ""
+    # Point d'accès : "auto" (défaut : UE si le modèle y est servi d'après models.list, sinon
+    # mondial) | "ue" (api.eu.mistral.ai, +10 %) | "mondial" (api.mistral.ai).
+    MISTRAL_POINT_ACCES: str = "auto"
+    # Adresse particulière (rare) : seule une valeur différente des deux points d'accès officiels compte.
     MISTRAL_BASE_URL: str = "https://api.mistral.ai/v1"
-    MISTRAL_MODEL: str = "mistral-large-latest"        # raisonnement (analyse, stratégie)
-    MISTRAL_MODEL_FAST: str = "mistral-small-latest"   # rédaction rapide (mémoire, Q&A)
+    # Mettre à 1 APRÈS avoir désactivé « Anonymous improvement data » dans la console Mistral
+    # (Admin > Privacy) : les pages juridiques le disent alors. Sans cela, elles disent que la
+    # désinscription reste à faire par le titulaire du compte.
+    MISTRAL_ENTRAINEMENT_DESACTIVE: bool = False
 
     # Stripe
     STRIPE_SECRET_KEY: str = ""

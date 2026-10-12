@@ -203,7 +203,7 @@ def _generer_conseils(lots_out: list, glob: dict, tenant) -> list:
             f"{compact}\n\nDonne 3 à 6 conseils concrets et chiffrés pour réduire ce risque.")
     try:
         with tenant_scope(tenant):
-            data = complete_json(_CONSEILS_SYSTEM, user, max_tokens=900, temperature=0.3)
+            data = complete_json(_CONSEILS_SYSTEM, user, max_tokens=900, temperature=0.3, tache="acheteur_conseils")
         return [str(c) for c in (data.get("conseils") or []) if str(c).strip()][:6]
     except Exception as e:   # best-effort : les conseils ne doivent jamais casser le sourcing
         logger.info("conseils sourcing non générés : %s", e)

@@ -40,7 +40,7 @@ Réponds en citant [S1], [S2]…"""
     try:
         # tenant_scope reposé (perdu dans le ThreadPoolExecutor → isolation quota/disjoncteur).
         with tenant_scope(user_id):
-            ans, stop = complete_ex(_SYS, user, max_tokens=600, temperature=0.2)
+            ans, stop = complete_ex(_SYS, user, max_tokens=600, temperature=0.2, tache="questionnaire")
     except Exception as e:
         # Panne IA (disjoncteur/plafond) ≠ « base ne couvre pas » : on le marque comme ERREUR
         # technique (error=True) au lieu de faire croire que le savoir-faire est absent.

@@ -86,7 +86,7 @@ def detect_renewals(query: str, departements, criteria: dict, domaines=None, lan
 LISTE :
 {lines}"""
     try:
-        data = complete_json(_SYS, user, max_tokens=2600, temperature=0.1)
+        data = complete_json(_SYS, user, max_tokens=2600, temperature=0.1, tache="renouvellements")
         enrich = {a.get("index"): a for a in (data.get("avis") or []) if isinstance(a, dict)}
     except Exception as e:
         logger.warning("Radar échéances : enrichissement IA en échec : %s", e)

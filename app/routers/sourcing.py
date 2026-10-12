@@ -974,7 +974,7 @@ MSG_ANCIENNE_ANALYSE = ("Cette analyse date d'avant la lecture intégrale du dos
 def _ask_legacy(project, q: str, lang: str) -> dict:
     """Analyse antérieure à la lecture intégrale : comportement d'origine (extrait de l'analyse),
     en signalant la limite et en invitant à ré-analyser."""
-    from app.services.llm import complete, MODEL_FAST
+    from app.services.llm import complete
     a = project.ai_analysis or {}
     ctx = a.get("dce_excerpt") or ""
     if not ctx:
@@ -984,7 +984,7 @@ def _ask_legacy(project, q: str, lang: str) -> dict:
     user = (f"DCE de l'appel d'offres « {project.name} » (acheteur : {project.client or 'n/d'}) :\n"
             f"\"\"\"\n{ctx[:30000]}\n\"\"\"\n\nQUESTION : {q}\n\n"
             f"Réponds en {lang}, fondé uniquement sur le DCE ci-dessus.")
-    answer = complete(ASK_SYSTEM, user, max_tokens=700, temperature=0.1, model=MODEL_FAST)
+    answer = complete(ASK_SYSTEM, user, max_tokens=700, temperature=0.1, tache="questions", json_attendu=False)
     return {"answer": (answer or "").strip() or "—", "sources": [], "integral": False,
             "trouve": None, "verifiee": False, "message": MSG_ANCIENNE_ANALYSE}
 
@@ -1046,7 +1046,7 @@ def _reglements_remis(pieces: list) -> tuple:
 def _ask_integral(project, payload: dict, q: str, lang: str) -> dict:
     from app.services import dce_texte
     from app.services.dce_lecture import couverture
-    from app.services.llm import messages_create, MODEL_FAST, cached_text_block, parse_json
+    from app.services.llm import messages_create, cached_text_block, parse_json
     pieces = payload.get("pieces") or []
     regs, entiers = _reglements_remis(pieces)
     hits = dce_texte.passages(project, q, k=ASK_PASSAGES, payload=payload, exclude_pieces=entiers)
@@ -1075,7 +1075,7 @@ def _ask_integral(project, payload: dict, q: str, lang: str) -> dict:
     if not regs:
         tail = head + "\n\n" + tail
     blocks.append({"type": "text", "text": tail})
-    resp = messages_create(model=MODEL_FAST, max_tokens=ASK_MAX_TOKENS, temperature=0,
+    resp = messages_create(tache="questions", max_tokens=ASK_MAX_TOKENS, temperature=0,
                            system=ASK_SYSTEM_INTEGRAL, messages=[{"role": "user", "content": blocks}])
     raw = "".join(getattr(b, "text", "") or "" for b in (getattr(resp, "content", None) or [])
                   if getattr(b, "type", "text") == "text").strip()
@@ -1087,13 +1087,25 @@ def _ask_integral(project, payload: dict, q: str, lang: str) -> dict:
     reponse = str(data.get("reponse") or "").strip()
     sources, seen, locs = [], set(), {}
     reg_src = [(k, p, t) for k, p, t, _full in regs]
+    cit_ok = cit_ko = 0
     for c in (data.get("citations") or [])[:8]:
         if not isinstance(c, dict):
             continue
         src = _verify_citation(str(c.get("phrase") or ""), str(c.get("ref") or ""), reg_src, hits, pieces, locs)
+        if src:
+            cit_ok += 1
+        elif str(c.get("phrase") or "").strip():
+            cit_ko += 1
         if src and (src["piece"], src["citation"]) not in seen:
             seen.add((src["piece"], src["citation"]))
             sources.append(src)
+    try:
+        # Surveillance de la qualité (par fournisseur) : citations rejetées, abstentions.
+        from app.services import llm_qualite as _q
+        _q.noter_citations(cit_ok, cit_ko)
+        _q.noter_question(trouve)
+    except Exception:
+        pass
     out = {"integral": True, "trouve": trouve, "sources": sources, "verifiee": bool(sources),
            "message": "", "couverture": cov["message"]}
     if trouve is False:

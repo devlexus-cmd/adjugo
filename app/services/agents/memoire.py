@@ -87,7 +87,7 @@ def extract_requirements(dce_text: str, project=None) -> dict:
 DOSSIER :
 {texte_pour_exigences(dce_text, project)}"""
     try:
-        data = complete_json(_EXTRACT_SYS, user, max_tokens=2200, temperature=0.1)
+        data = complete_json(_EXTRACT_SYS, user, max_tokens=2200, temperature=0.1, tache="exigences")
     except Exception as e:
         logger.warning("memoire.extract en échec : %s", e)
         return {"objet": "", "criteres_attribution": [], "exigences": []}
@@ -115,7 +115,7 @@ Renvoie EXACTEMENT ce JSON :
 ]}}
 6 à 9 sections maximum, couvrant les critères et exigences."""
     try:
-        data = complete_json(_PLAN_SYS, user, max_tokens=1800, temperature=0.2)
+        data = complete_json(_PLAN_SYS, user, max_tokens=1800, temperature=0.2, tache="plan")
         secs = data.get("sections") if isinstance(data, dict) else None
         return [s for s in (secs or []) if isinstance(s, dict) and s.get("titre")]
     except Exception as e:
@@ -186,7 +186,7 @@ indique-le explicitement plutôt que d'inventer."""
         # par les threads du ThreadPoolExecutor appelant → sinon ces appels (le gros du coût)
         # échappent à l'isolation « voisin bruyant ».
         with tenant_scope(user_id):
-            content, stop = complete_ex(_WRITE_SYS, user, max_tokens=1400, temperature=0.3)
+            content, stop = complete_ex(_WRITE_SYS, user, max_tokens=1400, temperature=0.3, tache="redaction")
         coupe = stop == "max_tokens"
     except Exception as e:
         logger.warning("memoire.write en échec : %s", e)
@@ -302,8 +302,10 @@ def _consigne_partie(p: dict) -> str:
 def _contenu_partie(p: dict):
     """Message envoyé à l'IA pour une partie. Le DOSSIER DE L'ACHETEUR commun à toutes les parties
     (règlements et cadres de réponse en entier) vient EN TÊTE, dans un bloc marqué pour le cache de
-    prompt : le premier appel l'écrit (1,25 × le prix d'entrée), les suivants dans les 5 minutes le
-    relisent (0,1 ×) — d'où la première partie de « Rédiger tout » lancée seule (atelier._executer).
+    prompt pour UNE HEURE (tâche « redaction », app.services.llm) : le premier appel l'écrit (2 × le prix
+    d'entrée sur Sonnet 5.5), les suivants le relisent (0,05 ×) tant qu'une partie est rédigée moins
+    d'une heure après la précédente (chaque relecture prolonge l'heure) — d'où la première partie de
+    « Rédiger tout » lancée seule (atelier._executer).
     Puis ce qui est propre à la partie :
     consigne, faits autorisés, passages des autres pièces du dossier."""
     from app.services.llm import cached_text_block
@@ -348,7 +350,8 @@ def rediger_partie(p: dict, billing_id=None) -> dict:
     max_tokens = max(900, min(4000, int(target * 2.6)))
     try:
         with tenant_scope(billing_id):
-            content, stop = complete_ex(_ATELIER_SYS, user, max_tokens=max_tokens, temperature=0.3)
+            content, stop = complete_ex(_ATELIER_SYS, user, max_tokens=max_tokens, temperature=0.3,
+                                        tache="redaction")
     except Exception as e:
         logger.warning("atelier.rediger en échec : %s", type(e).__name__)
         return {"texte": "", "sources": [], "coupe": False, "extraits_fournis": 0, "erreur": True}
@@ -374,7 +377,7 @@ def raccourcir_partie(texte: str, cible_mots: int, titre: str = "", billing_id=N
     try:
         with tenant_scope(billing_id):
             content, stop = complete_ex(_RACCOURCIR_SYS, user, max_tokens=max(600, min(4000, int(cible_mots * 2.6))),
-                                        temperature=0.2)
+                                        temperature=0.2, tache="raccourcir")
     except Exception as e:
         logger.warning("atelier.raccourcir en échec : %s", type(e).__name__)
         return {"texte": "", "coupe": False, "erreur": True}
@@ -408,7 +411,7 @@ Renvoie EXACTEMENT ce JSON :
   {{"exigence": "...", "statut": "couverte|partielle|absente", "commentaire": "court"}}
 ], "score_conformite": <0-100>, "manques": ["points à compléter avant dépôt"]}}"""
     try:
-        data = complete_json(_CHECK_SYS, user, max_tokens=1800, temperature=0.1)
+        data = complete_json(_CHECK_SYS, user, max_tokens=1800, temperature=0.1, tache="controle")
         return data if isinstance(data, dict) else {}
     except Exception as e:
         logger.warning("memoire.check en échec : %s", e)
@@ -446,7 +449,7 @@ Rédige la section unifiée (250-450 mots), en attribuant et en croisant les app
     err, coupe = False, False
     try:
         with tenant_scope(billing_user_id):
-            content, stop = complete_ex(_MERGED_SYS, user, max_tokens=1500, temperature=0.3)
+            content, stop = complete_ex(_MERGED_SYS, user, max_tokens=1500, temperature=0.3, tache="redaction")
         coupe = stop == "max_tokens"
     except Exception as e:
         logger.warning("merged.write en échec : %s", e)

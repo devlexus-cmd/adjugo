@@ -22,13 +22,17 @@ Deux façons, choisies par le volume du dossier, sans jamais en couper une parti
     (premier arrivé, premier servi) : les questions et analyses des autres clients gardent leurs
     places.
 
-Budget de contexte (modèle d'analyse actuel, Claude Sonnet 4.6) :
-  fenêtre documentée : 1 000 000 de tokens ; on s'impose un budget d'entrée SÛR, réglable,
-  ANALYSE_BUDGET_TOKENS = 150 000 tokens (coût, temps de réponse sous le délai LLM_TIMEOUT, et
-  fiabilité de lecture des très longs contextes), dont on retire une marge de 10 %, la consigne,
-  le profil et les critères ; conversion PRUDENTE de 3,0 caractères par token (français chiffré :
-  3,0 à 3,6). Soit environ 390 000 caractères de dossier lus d'un seul tenant.
-  Lecture des pièces (premier temps) : Claude Haiku 4.5 (fenêtre de 200 000 tokens), parties de
+Budget de contexte (modèle d'analyse : llm.route("analyse") — Mistral Large 4, secours Claude
+Sonnet 5.5 ; ancien routage : Claude Sonnet 4.6) :
+  fenêtre documentée : 1 000 000 de tokens pour les trois ; on s'impose un budget d'entrée SÛR,
+  réglable, ANALYSE_BUDGET_TOKENS = 150 000 tokens (coût, temps de réponse sous le délai
+  LLM_TIMEOUT, et fiabilité de lecture des très longs contextes), dont on retire une marge de 10 %,
+  la consigne, le profil et les critères ; conversion PRUDENTE de 3,0 caractères par token
+  (français chiffré : 3,0 à 3,6). Soit environ 390 000 caractères de dossier lus d'un seul tenant
+  (≈ 195 000 tokens de Sonnet 5.5, dont le découpage compte ≈ 30 % de plus, si le secours prend le
+  relais : toujours très en dessous de sa fenêtre). Rien n'est retiré de ce qui est lu.
+  Lecture des pièces (premier temps) : llm.route("lecture_pieces") — Mistral Large 4, secours
+  Claude Sonnet 5.5 (ancien routage : Claude Haiku 4.5, fenêtre de 200 000 tokens), parties de
   40 000 tokens au plus (≈ 120 000 caractères).
 
 Coût mesuré par llm.cost_meter (journal) ; aucun quota ici : l'appelant débite UNE analyse par
@@ -62,13 +66,14 @@ def _env_float(name, default):
         return default
 
 
-# Fenêtres de contexte documentées (tokens) des modèles actuels.
-FENETRES_TOKENS = {llm.MODEL: 1_000_000, llm.MODEL_FAST: 200_000}
+# Fenêtres de contexte documentées (tokens) des modèles routés.
+FENETRES_TOKENS = {llm.MODEL: 1_000_000, llm.MODEL_FAST: 200_000, llm.MODELE_SONNET_DEFAUT: 1_000_000,
+                   llm.MODELE_MISTRAL_DEFAUT: 1_000_000}
 BUDGET_TOKENS = _env_int("ANALYSE_BUDGET_TOKENS", 150_000)
 CARACTERES_PAR_TOKEN = _env_float("ANALYSE_CARACTERES_PAR_TOKEN", 3.0)
 MARGE = min(0.5, _env_float("ANALYSE_MARGE", 0.10))
 SEGMENT_TOKENS = _env_int("ANALYSE_SEGMENT_TOKENS", 40_000)
-MODELE_PIECES = os.getenv("ANALYSE_MODELE_PIECES", "").strip() or llm.MODEL_FAST
+TACHE_PIECES = "lecture_pieces"          # modèle : llm.route(TACHE_PIECES) (ANALYSE_MODELE_PIECES reste lu)
 # Sortie d'une partie : 40 informations au plus (≈ 130 tokens chacune avec sa citation de 300
 # caractères, soit ≈ 5 200 tokens) sous un plafond de 8 000 tokens (payé à l'usage, pas au plafond).
 PIECES_MAX_TOKENS = _env_int("ANALYSE_PIECES_MAX_TOKENS", 8000)
@@ -86,6 +91,10 @@ VERSION_LECTURE = "2"                                    # consigne de lecture :
 PART_REGLEMENT = 0.6                                     # part du budget de synthèse : règlement + cadre
 
 
+def _modele_pieces() -> str:
+    return llm.route(TACHE_PIECES).primaire.modele
+
+
 def _tokens(chars: int) -> int:
     return int(chars / CARACTERES_PAR_TOKEN) + 1
 
@@ -94,9 +103,13 @@ def budget_caracteres(overhead_chars: int = 0, modele: str = None, max_sortie: i
     """Caractères de dossier remis d'un seul tenant à l'IA, en sécurité : budget d'entrée borné par
     la fenêtre du modèle (sortie comprise), moins une marge, moins la consigne et le reste du
     prompt (overhead_chars), converti avec une hypothèse prudente de caractères par token."""
-    modele = modele or an.ANALYSE_MODEL
     max_sortie = an.ANALYSE_MAX_TOKENS if max_sortie is None else max_sortie
-    fenetre = FENETRES_TOKENS.get(modele, 200_000)
+    if modele:
+        fenetre = FENETRES_TOKENS.get(modele, 200_000)
+    else:
+        # Fenêtre la plus petite entre le modèle de l'analyse et son secours (le secours relit tout).
+        r = llm.route(an.ANALYSE_TACHE)
+        fenetre = min(FENETRES_TOKENS.get(c.modele, 200_000) for c in (r.primaire, r.secours) if c is not None)
     tokens = min(BUDGET_TOKENS, fenetre - max_sortie)
     utiles = tokens * (1.0 - MARGE) - _tokens(overhead_chars)
     return max(0, int(utiles * CARACTERES_PAR_TOKEN))
@@ -205,7 +218,7 @@ def _cle(seg: dict) -> str:
     import hashlib
     p, (a, b) = seg["piece"], seg["span"]
     h = hashlib.sha256()
-    h.update(f"{VERSION_LECTURE}|{MODELE_PIECES}|{p.get('nom')}|{seg['i']}/{seg['n']}|".encode("utf-8"))
+    h.update(f"{VERSION_LECTURE}|{_modele_pieces()}|{p.get('nom')}|{seg['i']}/{seg['n']}|".encode("utf-8"))
     h.update((p.get("texte") or "")[a:b].encode("utf-8", "surrogatepass"))
     return h.hexdigest()[:32]
 
@@ -272,7 +285,7 @@ def _appel(groupe: list):
         if not _PLACES.acquire(ATTENTE_PLACE_S):
             raise llm.LLMUnavailable("Lecture du dossier : aucune place libre pour l'IA.")
         try:
-            resp = llm.messages_create(model=MODELE_PIECES, max_tokens=PIECES_MAX_TOKENS, temperature=0,
+            resp = llm.messages_create(tache=TACHE_PIECES, max_tokens=PIECES_MAX_TOKENS, temperature=0,
                                        system=PIECE_SYSTEM, messages=[{"role": "user", "content": user}])
             text = "".join(getattr(x, "text", "") or "" for x in (getattr(resp, "content", None) or [])
                            if getattr(x, "type", "text") == "text")
@@ -288,7 +301,21 @@ def _verifier(groupe: list, faits: list, res: dict) -> None:
     """Range dans res[clé de la partie] les informations dont la citation est retrouvée MOT POUR
     MOT dans la partie (celle que l'IA nomme d'abord, sinon les autres de l'appel)."""
     from app.services import dce_pieces as _dp
-    locs = {}
+    avant = {k: (len(r["faits"]), r["ecartes"]) for k, r in res.items()}
+    try:
+        _verifier_faits(groupe, faits, res, {}, _dp)
+    finally:
+        # Surveillance de la qualité : informations retenues / écartées (citation introuvable).
+        try:
+            from app.services import llm_qualite as _q
+            acc = sum(len(r["faits"]) - avant.get(k, (0, 0))[0] for k, r in res.items())
+            rej = sum(r["ecartes"] - avant.get(k, (0, 0))[1] for k, r in res.items())
+            _q.noter_citations(acc, rej)
+        except Exception:
+            pass
+
+
+def _verifier_faits(groupe: list, faits: list, res: dict, locs: dict, _dp) -> None:
     for f in faits[:FAITS_MAX * 2]:
         if not isinstance(f, dict):
             continue

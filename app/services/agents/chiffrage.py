@@ -6,7 +6,7 @@ demande du DCE), avec un profil de prestation et un nombre de jours par tâche. 
 est ensuite calculé de façon DÉTERMINISTE — jours × tarif(profil) × majoration distance —
 jamais sorti du LLM (cohérent avec la charte anti-hallucination d'Adjugo).
 """
-from app.services.llm import complete_json, MODEL_FAST
+from app.services.llm import complete_json
 
 # Profils par défaut proposés à une entreprise qui n'a rien configuré.
 DEFAULT_RATES = [
@@ -50,7 +50,7 @@ PROFILS DE PRESTATION DISPONIBLES (choisis-en un par tâche) : {profiles}
 Découpe la réponse en 5 à 12 tâches. Réponds EXACTEMENT ce JSON :
 {{"taches": [{{"phase": "...", "tache": "intitulé court et concret", "profil": "<un des profils ci-dessus>", "jours": <nombre>}}]}}{lang}"""
     try:
-        data = complete_json(_SYSTEM, user, max_tokens=1800, temperature=0.2)
+        data = complete_json(_SYSTEM, user, max_tokens=1800, temperature=0.2, tache="chiffrage")
     except Exception:
         return []
     out = []

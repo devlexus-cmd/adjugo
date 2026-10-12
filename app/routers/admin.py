@@ -297,3 +297,28 @@ def reseau_refuser(request: Request, profile_id: str, body: ReseauRefuserIn,
                  target_type="partner_profile", target_id=p.id, detail="publication refusée par Adjugo")
     return {"ok": True, "message": "Demande refusée : l'entreprise voit votre motif sur son profil.",
             "profile_id": p.public_id}
+
+
+# ── IA : diagnostic du routage et surveillance de la qualité (chantier R) ─────────────────────
+# Réservé à l'administrateur de la plateforme. JAMAIS de clé dans les réponses : seulement le nom de
+# la variable lue (« MISTRAL_API_KEY_ADJUGO », « ANTHROPIC_API_KEY ») et si elle est présente.
+
+@router.get("/ia/diagnostic")
+@limiter.limit("60/hour")
+def ia_diagnostic(request: Request, verifier: bool = True, current_user: User = Depends(get_current_user)):
+    """Quels fournisseurs sont configurés, quelle tâche part où (et maintenant, vu les clés et les
+    disjoncteurs), si Mistral Large 4 est servi sur le point d'accès UE (models.list, vérifié en direct
+    si `verifier`), le dernier état des secours, et ce qu'il reste à faire (messages)."""
+    _require_platform_admin(current_user)
+    from app.services import llm
+    return llm.diagnostic(verifier=verifier)
+
+
+@router.get("/ia/qualite")
+@limiter.limit("120/hour")
+def ia_qualite(request: Request, current_user: User = Depends(get_current_user)):
+    """Qualité de l'IA par fournisseur et par tâche depuis le démarrage : JSON invalides, réponses
+    coupées, refus, citations rejetées, abstentions, bascules de secours, délais, alertes."""
+    _require_platform_admin(current_user)
+    from app.services import llm_qualite
+    return llm_qualite.instantane()
