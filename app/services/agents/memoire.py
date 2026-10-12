@@ -29,7 +29,49 @@ traités dans le mémoire technique. N'invente rien : n'extrais que ce qui est d
 texte. Réponds en JSON strict."""
 
 
-def extract_requirements(dce_text: str) -> dict:
+EXIGENCES_MAX = 120000      # caractères du dossier remis pour relever les exigences (≈ 40 000 tokens)
+EXIGENCES_PASSAGES = 12
+_EXIGENCES_REQUETE = ("critères de jugement pondération note mémoire technique exigences moyens humains matériels "
+                      "méthodologie délais d'exécution pénalités garanties sécurité environnement références")
+
+
+def texte_pour_exigences(dce_text: str = "", project=None) -> str:
+    """Le dossier remis à l'IA pour relever les exigences, SANS couper à l'aveugle. Lecture intégrale
+    rangée du marché (app/services/dce_texte.py) : pièces non lues signalées, tous les règlements et
+    cadres de réponse en entier, puis les passages des autres pièces sur les critères, moyens,
+    délais, pénalités… Sinon : le texte fourni, règlement et cadre en tête et en entier, le reste
+    partagé équitablement (app/services/dce_pieces.compose)."""
+    from app.services import dce_pieces as dp
+    if project is not None:
+        try:
+            from app.services import dce_lecture as lec
+            from app.services import dce_texte
+            payload = dce_texte.charger(project)
+            if payload and any((p.get("texte") or "").strip() for p in payload.get("pieces") or []):
+                rem = dce_texte.pieces_remises(payload, EXIGENCES_MAX)
+                room = max(0, EXIGENCES_MAX - len(rem["texte"]))
+                hits = dce_texte.passages(project, _EXIGENCES_REQUETE, k=EXIGENCES_PASSAGES, payload=payload,
+                                          exclude_pieces=rem["entiers"]) if room else []
+                parts, used = [], 0
+                for h in hits:
+                    t = (f"Pièce « {h.get('piece') or ''} »{', page ' + str(h['page']) if h.get('page') else ''} :\n"
+                         f"{(h.get('texte') or '').strip()}")
+                    if used + len(t) > room:
+                        break
+                    parts.append(t)
+                    used += len(t)
+                bloc = ("\n\nPASSAGES DES AUTRES PIÈCES (extraits) :\n" + "\n\n".join(parts)) if parts else ""
+                return lec.note_pour_ia(payload) + "\n\n" + rem["texte"] + bloc
+        except Exception as e:      # noqa: BLE001 — repli sur le texte fourni
+            logger.warning("memoire.exigences : lecture intégrale illisible : %s", type(e).__name__)
+    pieces = [x for x in dp.typed_pieces(dce_text or "") if (x.get("texte") or "").strip()]
+    if not pieces:
+        return (dce_text or "")[:EXIGENCES_MAX]
+    texte, _meta = dp.compose(pieces, EXIGENCES_MAX)
+    return texte
+
+
+def extract_requirements(dce_text: str, project=None) -> dict:
     user = f"""Analyse ce dossier et renvoie EXACTEMENT ce JSON :
 {{
   "objet": "objet du marché en une phrase",
@@ -44,7 +86,7 @@ def extract_requirements(dce_text: str) -> dict:
 }}
 
 DOSSIER :
-{(dce_text or '')[:24000]}"""
+{texte_pour_exigences(dce_text, project)}"""
     try:
         data = complete_json(_EXTRACT_SYS, user, max_tokens=2200, temperature=0.1)
     except Exception as e:
@@ -183,8 +225,11 @@ def _section_out(section, content, chunks, err, coupe, names_by_user=None) -> di
 # Le moteur du savoir-faire devient le moteur de l'atelier : Sonnet, sources citées [S1]…,
 # section par section. L'IA reçoit la LISTE DES FAITS AUTORISÉS (extraits du savoir-faire, profil
 # de l'entreprise, équipe — noms masqués par pii_scope —, chiffrage sans prix) : tout autre fait
-# sur l'entreprise doit être écrit « [À compléter : …] ». Le dossier de l'acheteur (règlement et
-# cadre de réponse EN ENTIER, extraits ciblés du reste) ne sert qu'à parler du marché.
+# sur l'entreprise doit être écrit « [À compléter : …] ». Le dossier de l'acheteur ne sert qu'à
+# parler du marché : lecture intégrale (app/services/dce_texte.py) → tous les règlements et tous les
+# cadres de réponse EN ENTIER (bloc commun à toutes les parties, en tête, mis en cache de prompt),
+# puis les passages des AUTRES pièces les plus proches de la partie (recherche sans IA dans toutes
+# les pièces lues) ; ancienne lecture → règlement et cadre en tête, le reste borné.
 # Ces fonctions n'ouvrent AUCUNE session de base : elles tournent dans les fils d'une tâche de fond
 # (app/services/atelier.py prépare tout avant, enregistre tout après).
 
@@ -195,8 +240,10 @@ RÈGLES ABSOLUES :
   délai, engagement) ne peut venir QUE des FAITS AUTORISÉS (profil, équipe, chiffrage, extraits [S1], [S2]…).
   Cite [S1], [S2]… à la fin des phrases qui s'appuient sur un extrait.
 - Tout autre fait sur l'entreprise s'écrit « [À compléter : ce qui manque] ». N'invente jamais.
-- Le DOSSIER DE L'ACHETEUR ne sert qu'à parler du marché, de l'acheteur ou du chantier (« le CCTP prévoit… »).
-  Une exigence de l'acheteur n'est JAMAIS la preuve que l'entreprise la remplit.
+- Le DOSSIER DE L'ACHETEUR (et ses passages) ne sert qu'à parler du marché, de l'acheteur ou du chantier
+  (« le CCTP prévoit… »). Une exigence de l'acheteur n'est JAMAIS la preuve que l'entreprise la remplit.
+  Les passages des autres pièces ne sont que des extraits : ne conclus jamais qu'une exigence n'existe pas,
+  et ne les cite jamais avec un renvoi entre crochets.
 - Réponds exactement à la question ou au critère de cette partie, dans l'ordre demandé. Pas de superlatifs
   creux, pas de remplissage, aucun prix ni montant de l'offre.
 - Si la partie porte un poids écrit dans le règlement, tu peux t'y référer ; sans poids écrit, ne suppose
@@ -253,31 +300,49 @@ def _consigne_partie(p: dict) -> str:
     return "\n".join(out)
 
 
-def rediger_partie(p: dict, billing_id=None) -> dict:
-    """Rédige une partie. p = {titre, numero, question, critere, poids, partie_de_critere,
-    source_plan, cible_mots, autres_parties, faits: {profil, equipe, chiffrage, partenaires},
-    chunks: [...], dossier_acheteur}.
-    Renvoie {texte, sources, coupe, extraits_fournis, erreur}. Ne lève pas : une panne de l'IA rend
-    erreur=True (l'appelant décide du remboursement)."""
-    from app.services.memoire_export import TRUNCATED_NOTE
+def _contenu_partie(p: dict):
+    """Message envoyé à l'IA pour une partie. Le DOSSIER DE L'ACHETEUR commun à toutes les parties
+    (règlements et cadres de réponse en entier) vient EN TÊTE, dans un bloc marqué pour le cache de
+    prompt : d'une partie à l'autre, il est relu à 10 % du prix. Puis ce qui est propre à la partie :
+    consigne, faits autorisés, passages des autres pièces du dossier."""
+    from app.services.llm import cached_text_block
     chunks = p.get("chunks") or []
     f = p.get("faits") or {}
     src = rag.sources_block(chunks) if chunks else "(aucun extrait de vos documents ne correspond)"
     partenaires = (f"\n— Apports SOUMIS par les partenaires du groupement (chacun parle de sa propre entreprise) :\n"
                    f"{f['partenaires']}") if f.get("partenaires") else ""
-    user = f"""{_consigne_partie(p)}
+    dossier = (p.get("dossier_acheteur") or "").strip()
+    passages = (p.get("passages_acheteur") or "").strip()
+    bloc_passages = (
+        "\n\nPASSAGES DES AUTRES PIÈCES DU DOSSIER DE L'ACHETEUR LES PLUS PROCHES DE CETTE PARTIE (extraits choisis "
+        "par Adjugo, sans IA : le reste de ces pièces n'est pas remis ; ils ne prouvent RIEN sur l'entreprise) :\n"
+        + passages) if passages else ""
+    propre = f"""{_consigne_partie(p)}
 
 FAITS AUTORISÉS SUR L'ENTREPRISE (seule matière permise pour parler d'elle) :
 — Profil : {f.get('profil') or '(non renseigné)'}
 — Équipe : {f.get('equipe') or '(non renseignée)'}
 — Chiffrage (phases, tâches, jours ; aucun prix) : {f.get('chiffrage') or '(pas de chiffrage)'}{partenaires}
 — Extraits de vos documents :
-{src}
-
-DOSSIER DE L'ACHETEUR (ne prouve RIEN sur l'entreprise) :
-{p.get('dossier_acheteur') or '(dossier non disponible)'}
+{src}{bloc_passages}
 
 Rédige la partie. Tout fait sur l'entreprise absent des faits autorisés : « [À compléter : …] »."""
+    commun = ("DOSSIER DE L'ACHETEUR (ne prouve RIEN sur l'entreprise) :\n"
+              + (dossier or "(dossier non disponible)") + "\n\n")
+    if not dossier:
+        return commun + propre
+    return [cached_text_block(commun), {"type": "text", "text": propre}]
+
+
+def rediger_partie(p: dict, billing_id=None) -> dict:
+    """Rédige une partie. p = {titre, numero, question, critere, poids, partie_de_critere,
+    source_plan, cible_mots, autres_parties, faits: {profil, equipe, chiffrage, partenaires},
+    chunks: [...], dossier_acheteur, passages_acheteur}.
+    Renvoie {texte, sources, coupe, extraits_fournis, erreur}. Ne lève pas : une panne de l'IA rend
+    erreur=True (l'appelant décide du remboursement)."""
+    from app.services.memoire_export import TRUNCATED_NOTE
+    chunks = p.get("chunks") or []
+    user = _contenu_partie(p)
     target = int(p.get("cible_mots") or 450)
     max_tokens = max(900, min(4000, int(target * 2.6)))
     try:
@@ -389,23 +454,35 @@ Rédige la section unifiée (250-450 mots), en attribuant et en croisant les app
     return _section_out(section, content, chunks, err, coupe, names_by_user=names_by_user)
 
 
-def generate_merged_memoire(db, members: list, dce_text: str, max_sections: int = 9, billing_user_id=None) -> dict:
+def generate_merged_memoire(db, members: list, dce_text: str, max_sections: int = 9, billing_user_id=None,
+                            project=None) -> dict:
     """Mémoire UNIFIÉ d'un groupement. members = [{user_id, name, role}] (routeur archivé, non monté).
-    Les noms des salariés de TOUS les membres sont masqués avant l'IA."""
+    Les noms des salariés de TOUS les membres sont masqués avant l'IA. `project` : le marché, pour
+    lire son dossier par la lecture intégrale (app/services/dce_texte.py) plutôt que le texte fourni."""
     from app.services.llm import cost_meter, pii_scope
     from app.services.pii import from_team, team_of_users
+    from contextlib import nullcontext
     pz = from_team(team_of_users(db, [m.get("user_id") for m in members if m.get("user_id")]))
-    with pii_scope(pz), cost_meter("dossier de présentation (groupement)", billing_user_id):
-        return _generate_merged_memoire(db, members, dce_text, max_sections, billing_user_id)
+    portee = tenant_scope(billing_user_id) if billing_user_id is not None else nullcontext()
+    with portee, pii_scope(pz), cost_meter("dossier de présentation (groupement)", billing_user_id):
+        return _generate_merged_memoire(db, members, dce_text, max_sections, billing_user_id, project=project)
 
 
-def _generate_merged_memoire(db, members: list, dce_text: str, max_sections: int = 9, billing_user_id=None) -> dict:
+def _generate_merged_memoire(db, members: list, dce_text: str, max_sections: int = 9, billing_user_id=None,
+                             project=None) -> dict:
     user_ids = [m["user_id"] for m in members if m.get("user_id")]
     names_by_user = {m["user_id"]: (m.get("name") or "Entreprise") for m in members if m.get("user_id")}
 
-    requirements = extract_requirements(dce_text)
+    requirements = extract_requirements(dce_text, project=project)
     objet = requirements.get("objet", "")
-    criteres = _criteres_controles(requirements, dce_text)
+    texte_controle = dce_text
+    if project is not None:
+        try:
+            from app.services.dce_texte import dce_fulltext
+            texte_controle = dce_fulltext(project) or dce_text
+        except Exception:       # noqa: BLE001
+            texte_controle = dce_text
+    criteres = _criteres_controles(requirements, texte_controle)
     plan = build_plan(objet, dict(requirements, criteres_attribution=criteres))[:max_sections]
     if not plan:
         plan = [{"titre": "Méthodologie et organisation du groupement",

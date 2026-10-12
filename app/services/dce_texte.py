@@ -30,7 +30,9 @@ Accès commun (à utiliser par l'atelier de rédaction lors de la fusion) :
   • passages(project, question, k) → passages les plus pertinents de TOUTES les pièces (BM25
                                    sans accents ni pluriels : « penalites » retrouve « pénalité »),
                                    avec pièce et page ;
-  • couverture(project)        → ce qui a été lu (message, pièces non lues et raisons).
+  • couverture(project)        → ce qui a été lu (message, pièces non lues et raisons) ;
+  • pieces_remises(payload, n) → règlements puis cadres de réponse remis EN ENTIER (dans n
+                                   caractères) et les numéros de ces pièces, à écarter de la recherche.
 Le texte rendu par ces fonctions est la source contre laquelle toute citation est vérifiée
 (analysis.citation_guard).
 """
@@ -259,6 +261,37 @@ def dce_reglement(project) -> str:
     if len(regs) == 1:
         return regs[0]["texte"]
     return "\n\n".join(dp.header(p.get("nom")) + "\n" + p["texte"] for p in regs)
+
+
+def pieces_remises(payload: dict, max_chars: int, min_debut: int = 4000) -> dict:
+    """Pièces remises EN ENTIER à l'IA à chaque appel (atelier de rédaction, exigences) : TOUS les
+    règlements de la consultation (modificatif en premier) puis TOUS les cadres de réponse, dans la
+    limite de `max_chars` caractères au total. Une pièce qui n'y tient pas est remise en partie
+    (son début, s'il reste au moins `min_debut` caractères), les suivantes pas du tout : leurs
+    passages restent alors cherchés comme ceux des autres pièces (`passages`).
+    Renvoie {"pieces": [{index, nom, type, libelle, texte, entier}], "entiers": {numéros des pièces
+    remises en entier, à écarter de la recherche}, "texte": « === nom === » + texte de chacune}."""
+    pieces = (payload or {}).get("pieces") or []
+    index = {id(p): i for i, p in enumerate(pieces)}
+    cadres = [p for p in pieces if p.get("type") == dp.CADRE and (p.get("texte") or "").strip()]
+    room, out, entiers = max(0, int(max_chars or 0)), [], set()
+    for p in reglements(pieces) + cadres:
+        t = p.get("texte") or ""
+        i = index[id(p)]
+        x = {"index": i, "nom": p.get("nom") or "", "type": p.get("type"),
+             "libelle": p.get("libelle") or dp.label(p.get("type"))}
+        if len(t) <= room:
+            out.append(dict(x, texte=t, entier=True))
+            entiers.add(i)
+            room -= len(t)
+        elif room >= min_debut:
+            out.append(dict(x, texte=t[:room], entier=False))
+            room = 0
+    parts = []
+    for x in out:
+        tag = "" if x["entier"] else f"\n[Début de la pièce seulement : ses {len(x['texte'])} premiers caractères.]"
+        parts.append(dp.header(x["nom"]) + tag + "\n" + x["texte"])
+    return {"pieces": out, "entiers": entiers, "texte": "\n\n".join(parts)}
 
 
 def dce_texte_ou_extrait(project) -> tuple:
