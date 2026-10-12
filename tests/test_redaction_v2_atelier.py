@@ -876,7 +876,11 @@ def test_demo_ne_lance_pas_l_ia_de_l_atelier(client):
     from app.core.demo_guard import blocked_action
     for path in ("/api/atelier/3/sections/4/rediger", "/api/atelier/3/sections/4/raccourcir", "/api/atelier/3/rediger"):
         assert blocked_action("POST", path) == "rédiger avec Adjugo"
-    assert blocked_action("PUT", "/api/atelier/3/sections/4/texte") is None
+    for m, path in (("POST", "/api/atelier/3"), ("PUT", "/api/atelier/3/sections/4/texte"),
+                    ("POST", "/api/atelier/3/derogation"), ("POST", "/api/atelier/3/export"),
+                    ("POST", "/api/atelier/3/sections/4/faits/abc")):
+        assert blocked_action(m, path) == "préparer votre dossier de présentation", path
+    assert blocked_action("GET", "/api/atelier/3") is None
 
 
 # ═══ Vague 4 préparée : la matière privée d'un auteur partenaire n'est jamais exposée ══
@@ -1016,3 +1020,43 @@ def test_portabilite_et_transfert_de_propriete_suivent_le_dossier(client, auth):
     h2 = {"Authorization": f"Bearer {r.json()['access_token']}"}
     st = _etat(client, h2, pid)                                   # toujours visible par l'organisation
     assert st["sections"][0]["version_courante"]["texte"] == "Notre encadrement, écrit par nous."
+
+
+def test_dossier_commun_joint_le_texte_valide_de_preference(client, auth):
+    import base64
+    import docx
+    h = auth["headers"]
+    _company(client, h)
+    pid = _projet(client, h)
+    _creer(client, h, pid)
+    st = _valider_tout(client, h, pid, "Texte validé par le dirigeant.")
+    s = st["sections"][2]
+    _ecrire(client, h, pid, s, "Brouillon postérieur, jamais validé.")
+    d = client.post("/api/sourcing/documents", headers=h, json={"project_id": pid}).json()["dossier"]
+    assert any("2. Méthodologie" in w and "texte VALIDÉ" in w for w in d["warnings"])
+    assert not any(w.startswith("BLOQUANT — Dossier de présentation non validé") for w in d["warnings"])
+    zf = zipfile.ZipFile(io.BytesIO(base64.b64decode(d["zip_b64"])))
+    word = "\n".join(p.text for p in docx.Document(io.BytesIO(zf.read("Mémoire justificatif.docx"))).paragraphs)
+    assert "Brouillon postérieur" not in word and word.count("Texte validé par le dirigeant.") == 4
+
+
+def test_logo_de_l_entreprise_sur_la_page_de_garde(client, auth):
+    import docx
+    from app.services.dossier import save_to_dossier
+    h = auth["headers"]
+    pid = _projet(client, h)
+    _creer(client, h, pid)
+    _valider_tout(client, h, pid, "Nous intervenons par zones.")
+    png = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+           b"\x00\x00\x00\rIDATx\x9cc\xf8\xcf\xc0\xf0\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`\x82")
+    db = _db()
+    try:
+        save_to_dossier(db, _user_id(auth["email"]), None, "", "logo-entreprise.png", png, "image/png")
+    finally:
+        db.close()
+    st = _etat(client, h, pid)
+    assert st["export"]["logo"] is True
+    r = client.post(f"/api/atelier/{pid}/export", headers=h, json={"format": "docx"})
+    assert r.status_code == 200 and len(docx.Document(io.BytesIO(r.content)).inline_shapes) == 1
+    r = client.post(f"/api/atelier/{pid}/export", headers=h, json={"format": "pdf"})
+    assert r.status_code == 200

@@ -35,6 +35,9 @@ moi-même ». Jamais « vérifié », jamais de libellé positif sur un fait. Z�
   `message` tel quel (français, sans jargon). Exceptions : le quota (`402`, `403` démo / email non
   confirmé) renvoie `detail` en texte, comme le reste de l'application.
 - Dates : ISO 8601 UTC (`2026-10-12T09:30:00+00:00`) ; afficher à l'heure de Paris.
+- Compte démo (vitrine partagée) : lecture seule. Toute écriture de l'atelier répond **403**
+  `detail` texte « La démo est en lecture guidée : créez votre compte gratuit pour préparer votre
+  dossier de présentation » (ou « … pour rédiger avec Adjugo »). Seul `GET` reste ouvert.
 - Les montants, coûts IA et relevés de débit ne sont jamais renvoyés.
 
 ## 3. États
@@ -293,11 +296,15 @@ propriétés sans auteur ni outil.
 ### 4.6 Dossier commun (ZIP, formulaires)
 
 `POST /api/sourcing/documents` n'appelle plus l'IA : le dossier de présentation vient de
-l'atelier. Avertissements possibles dans `dossier.warnings` :
+l'atelier, avec la version VALIDÉE de chaque partie de préférence (sinon son texte courant).
+Avertissements possibles dans `dossier.warnings` :
 - « BLOQUANT — Dossier de présentation non rédigé : préparez-le dans l'atelier… » (pas de dossier) ;
 - « BLOQUANT — Dossier de présentation non joint : … » (export bloqué sans dérogation : aucun
   fichier joint) ;
-- « BLOQUANT — Dossier de présentation non validé : N parties à valider… » (fichiers joints) ;
+- « BLOQUANT — Dossier de présentation non validé : N parties à valider… » (parties jamais
+  validées ; fichiers joints avec leur texte courant) ;
+- « Dossier de présentation : « 2. Méthodologie » a été modifiée depuis la validation : le dossier
+  joint le texte VALIDÉ… » ;
 - « Dossier de présentation joint avec une dérogation enregistrée : … ».
 `dossier.memoire_fichiers` liste les fichiers joints (vide si non joint).
 

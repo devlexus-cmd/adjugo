@@ -513,6 +513,14 @@ def _textes_ia(db, section: DossierSection) -> list:
     return [v.texte or "" for v in versions(db, section) if v.ia]
 
 
+def _verrouiller(db, section: DossierSection) -> DossierSection:
+    """Relit la partie en la verrouillant jusqu'à la fin de la transaction (Postgres : SELECT … FOR
+    UPDATE ; sans effet sur SQLite, qui sérialise déjà les écritures) : deux enregistrements
+    simultanés ne peuvent pas partir de la même version courante."""
+    return (db.query(DossierSection).filter(DossierSection.id == section.id)
+            .populate_existing().with_for_update().first() or section)
+
+
 def _verifier_aucune_tache(db, sections: list) -> None:
     for s in sections:
         if s.job_id:
@@ -540,6 +548,7 @@ def enregistrer_texte(db, ctx: "Contexte", section: DossierSection, lecteur: Lec
     le texte reste à relire."""
     if not peut_ecrire(section, lecteur):
         raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+    section = _verrouiller(db, section)
     if section.retiree_at is not None:
         raise AtelierError(409, "partie_retiree", "Cette partie a été retirée du plan : remettez-la d'abord.")
     _verifier_aucune_tache(db, [section])
@@ -566,6 +575,7 @@ def restaurer_version(db, ctx: "Contexte", section: DossierSection, lecteur: Lec
     """Remet un ancien texte : c'est une NOUVELLE version (copie), l'historique reste entier."""
     if not peut_ecrire(section, lecteur):
         raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+    section = _verrouiller(db, section)
     _verifier_aucune_tache(db, [section])
     _verifier_base(section, base_version_id)
     src = db.get(DossierSectionVersion, int(version_id))
@@ -605,6 +615,7 @@ def valider(db, project: Project, section: DossierSection, lecteur: Lecteur, ver
     au journal chaîné. Une modification ultérieure le fera repasser « à revalider »."""
     if not peut_ecrire(section, lecteur):
         raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+    section = _verrouiller(db, section)
     _verifier_aucune_tache(db, [section])
     v = version_courante(db, section)
     if v is None or v.id != int(version_id):
@@ -1284,6 +1295,7 @@ def lancer(db, user: User, project: Project, dossier: DossierPresentation, secti
         raise AtelierError(422, "action_inconnue", "Action inconnue.")
     if not sections:
         raise AtelierError(422, "aucune_partie", "Aucune partie à rédiger.")
+    sections = [_verrouiller(db, s) for s in sections]
     for s in sections:
         if not peut_ecrire(s, lecteur):
             raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
@@ -1533,7 +1545,7 @@ def exporter(db, user: User, project: Project, dossier: DossierPresentation, fmt
                            derogations_possibles=[{"code": k, "libelle": v} for k, v in RAISONS_DEROGATION.items()]
                            if "dossier_vide" not in {r["code"] for r in gate["raisons"]} else [])
     if etat and etat != gate["etat_hash"]:
-        raise AtelierError(409, "etat_modifie", "Le dossier a changé depuis l'affichage : vérifiez-le avant d'exporter.",
+        raise AtelierError(409, "etat_modifie", "Le dossier a changé depuis l'affichage : relisez-le avant d'exporter.",
                            etat_hash=gate["etat_hash"])
     data = ax.to_docx(ctx) if fmt == "docx" else ax.to_pdf(ctx)[0]
     nom = nom_fichier(project, fmt)
@@ -1573,12 +1585,31 @@ def _archiver(db, user: User, project: Project, dossier: DossierPresentation, no
         logger.warning("atelier : archivage de l'export impossible (projet %s) : %s", project.id, type(e).__name__)
 
 
+def _validees_de_preference(db, sections: list, cour: dict) -> tuple:
+    """Texte retenu pour le dossier commun : la version VALIDÉE de chaque partie quand elle existe
+    (le dirigeant l'a approuvée), sinon le texte courant. Renvoie (versions retenues, parties
+    modifiées depuis leur validation)."""
+    ids = [s.validated_version_id for s in sections if s.validated_version_id]
+    by_id = {v.id: v for v in db.query(DossierSectionVersion).filter(DossierSectionVersion.id.in_(ids)).all()} \
+        if ids else {}
+    out, modifiees = {}, []
+    for s in sections:
+        v = by_id.get(s.validated_version_id) if s.validated_version_id else None
+        if v is not None and v.section_id == s.id:
+            out[s.id] = v
+            if s.current_version_id and s.current_version_id != v.id:
+                modifiees.append(s)
+        elif s.id in cour:
+            out[s.id] = cour[s.id]
+    return out, modifiees
+
+
 def dossier_commun(db, project: Project, owner_id: int) -> dict:
     """Pour le dossier commun (ZIP / formulaires) : {files: {"docx": (nom, octets), "pdf": (nom, octets)},
     markdown, etat: {a_completer, coupe} | None, warnings}. Le texte vient de l'ATELIER (le moteur
-    de l'ancien « dossier complet » est retiré) ; mêmes règles que l'export : rien si l'export est
-    bloqué sans dérogation ; avertissement BLOQUANT « dossier de présentation non validé » tant
-    que toutes les parties ne sont pas validées."""
+    de l'ancien « dossier complet » est retiré) : la version VALIDÉE de chaque partie de
+    préférence, sinon le texte courant avec l'avertissement BLOQUANT « dossier de présentation non
+    validé ». Mêmes règles que l'export : rien n'est joint si l'export est bloqué sans dérogation."""
     out = {"files": {}, "markdown": "", "etat": None, "warnings": []}
     dossier = get_dossier(db, project.id, owner_id)
     if dossier is None:
@@ -1586,7 +1617,7 @@ def dossier_commun(db, project: Project, owner_id: int) -> dict:
                                "« Préparer » du marché), puis validez chaque partie.")
         return out
     sections = sections_actives(db, dossier)
-    cour = _courantes(db, sections)
+    cour, modifiees = _validees_de_preference(db, sections, _courantes(db, sections))
     ctx = contexte_rendu(db, project, dossier, sections, cour)
     cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
     rangs = _rangs(dossier, sections)
@@ -1601,9 +1632,17 @@ def dossier_commun(db, project: Project, owner_id: int) -> dict:
                                + " ".join(r["message"] for r in gate["raisons"])
                                + " Traitez ces points dans l'atelier, ou enregistrez-y une dérogation.")
         return out
-    nv = next((a for a in gate["avertissements"] if a["code"] == "non_valide"), None)
-    if nv:
-        out["warnings"].append(f"BLOQUANT — {nv['message']} Validez chaque partie dans l'atelier avant de déposer.")
+    sans_validation = [s for s in sections if not s.validated_version_id]
+    if sans_validation:
+        n = len(sans_validation)
+        out["warnings"].append(f"BLOQUANT — {MSG_NON_VALIDE} : {n} partie{'s' if n > 1 else ''} à valider. "
+                               "Validez chaque partie dans l'atelier avant de déposer.")
+    if modifiees:
+        out["warnings"].append("Dossier de présentation : " + ", ".join(
+            f"« {ax.titre_section({'numero': rangs.get(s.id, ''), 'intitule': s.intitule})} »" for s in modifiees[:6])
+            + (" a été modifiée" if len(modifiees) == 1 else " ont été modifiées")
+            + " depuis la validation : le dossier joint le texte VALIDÉ. Revalidez dans l'atelier pour joindre le "
+              "nouveau texte.")
     if gate["derogation"]:
         out["warnings"].append("Dossier de présentation joint avec une dérogation enregistrée : "
                                + " ".join(r["message"] for r in gate["raisons"])

@@ -91,10 +91,26 @@ _BLOCKED = [
     ("POST",   "/api/knowledge/text",                         "enrichir votre savoir-faire"),
     ("POST",   "/api/knowledge/memoire",                      "générer un mémoire technique"),
     ("POST",   "/api/knowledge/questionnaire",                "remplir un questionnaire avec l'IA"),
-    # Atelier du dossier de présentation (rédaction, vague 2) : les actions de l'IA.
+    # Atelier du dossier de présentation (rédaction, vague 2) : les actions de l'IA, et toute
+    # écriture (la vitrine est partagée entre visiteurs : elle ne doit pas changer). La démo
+    # garde la lecture : le plan proposé à partir du dossier du marché.
     ("POST",   "/api/atelier/{pid}/sections/{sid}/rediger",   "rédiger avec Adjugo"),
     ("POST",   "/api/atelier/{pid}/sections/{sid}/raccourcir", "rédiger avec Adjugo"),
     ("POST",   "/api/atelier/{pid}/rediger",                  "rédiger avec Adjugo"),
+    ("POST",   "/api/atelier/{pid}",                          "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/plan",                     "préparer votre dossier de présentation"),
+    ("PUT",    "/api/atelier/{pid}/options",                  "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/sections",                 "préparer votre dossier de présentation"),
+    ("PATCH",  "/api/atelier/{pid}/sections/{sid}",           "préparer votre dossier de présentation"),
+    ("DELETE", "/api/atelier/{pid}/sections/{sid}",           "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/sections/{sid}/remettre",  "préparer votre dossier de présentation"),
+    ("PUT",    "/api/atelier/{pid}/sections/{sid}/texte",     "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/sections/{sid}/restaurer", "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/sections/{sid}/relu",      "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/sections/{sid}/valider",   "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/sections/{sid}/faits/{fid}", "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/derogation",               "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/export",                   "préparer votre dossier de présentation"),
     ("POST",   "/api/amont/analyze-text",                     "lancer une analyse IA"),
     ("POST",   "/api/amont/scan",                             "lancer une analyse IA"),
     # (d) compte, abonnement, équipe, organisation
