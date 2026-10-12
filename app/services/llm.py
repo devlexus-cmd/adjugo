@@ -217,6 +217,17 @@ _SLOT_LOCAL = threading.local()
 _INFLIGHT = {"now": 0, "peak": 0, "waits": 0, "timeouts": 0}
 
 
+def _in_event_loop() -> bool:
+    """Vrai si ce fil fait tourner la boucle asyncio du serveur : y attendre une place figerait
+    TOUTES les requêtes (process unique) — on n'y attend jamais."""
+    try:
+        import asyncio
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
+
+
 class _llm_slot:
     """Une place parmi LLM_MAX_CONCURRENT, réentrante dans un même fil."""
 
@@ -226,6 +237,13 @@ class _llm_slot:
             if not _SLOTS.acquire(blocking=False):
                 with _LOCK:
                     _INFLIGHT["waits"] += 1
+                # Filet : un appel fait depuis la boucle d'événements (route async qui aurait
+                # oublié run_in_threadpool) n'attend pas — il échoue tout de suite, proprement.
+                if _in_event_loop():
+                    with _LOCK:
+                        _INFLIGHT["timeouts"] += 1
+                    logger.warning("Appel IA refusé : aucune place libre, et l'appel vient de la boucle d'événements.")
+                    raise LLMUnavailable("Service IA très demandé en ce moment. Réessayez dans quelques minutes.")
                 if not _SLOTS.acquire(timeout=_SLOT_WAIT):
                     with _LOCK:
                         _INFLIGHT["timeouts"] += 1
@@ -286,7 +304,7 @@ def _mask_request(pz, kwargs: dict) -> dict:
     system = pz.mask_content(kwargs.get("system") or "")
     flat = _flatten_content(system) + " " + " ".join(
         _flatten_content(m.get("content")) for m in kw["messages"] if isinstance(m, dict))
-    if any(lbl in flat for lbl, _n in pz.labels) or "[Nom " in flat:
+    if pz.uses_labels(flat):
         hint = pz.hint()
         system = (system + "\n\n" + hint) if isinstance(system, str) else (list(system) + [{"type": "text", "text": hint}])
     if system or "system" in kwargs:

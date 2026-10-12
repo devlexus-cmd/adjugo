@@ -63,6 +63,9 @@ PIECES_STANDARD = [
      "help": "Calendrier d'exécution (Gantt). Demandé sur les marchés de travaux et certaines prestations."},
 ]
 
+CADRE_IMPOSE_NOTE = ("L'acheteur impose son propre cadre de réponse : recopiez-y ce texte, ne déposez pas le "
+                     "fichier Word d'Adjugo seul.")
+
 # Mots-clés détectant un marché de TRAVAUX (→ décennale + planning obligatoires).
 _TRAVAUX_KW = ("travaux", "batiment", "bâtiment", "construction", "rénovation", "renovation",
                "réhabilitation", "rehabilitation", "voirie", "vrd", "btp", "chantier",
@@ -254,6 +257,13 @@ def get_checklist(
     if any(k in _pieces_txt for k in ("dpgf", "bordereau", "bpu", "décomposition", "decomposition")):
         contextual["dpgf"] = ("Trame DPGF/BPU imposée par l'acheteur (détectée dans le DCE) : "
                               "téléchargez-la et complétez-la — n'envoyez pas le modèle Adjugo seul.")
+    # Cadre de réponse imposé par le règlement (grille « Comment vous serez noté ») : le fichier
+    # Word d'Adjugo ne se dépose pas seul.
+    _det = (project.ai_analysis or {}).get("details") if isinstance(project.ai_analysis, dict) else None
+    _gn = (_det or {}).get("grille_notation") if isinstance(_det, dict) else None
+    _cadre_impose = isinstance(_gn, dict) and bool((_gn.get("contraintes") or {}).get("fichier_impose"))
+    if _cadre_impose:
+        contextual["memoire_technique"] = CADRE_IMPOSE_NOTE
 
     # Combiner pieces standard + pieces IA
     seen_ids = set()
@@ -330,8 +340,11 @@ def get_checklist(
                         parts.append("texte coupé avant la fin")
                     if n_todo > 0:
                         parts.append(f"{n_todo} passage{'s' if n_todo > 1 else ''} « À compléter »")
-                    item["context_note"] = ("Préparé par Adjugo, à terminer avant le dépôt : "
-                                            + " et ".join(parts) + " (surligné dans le fichier Word).")
+                    n_hl = n_todo + (1 if _dp.get("coupe") else 0)    # mentions surlignées dans le fichier
+                    item["context_note"] = ("Préparé par Adjugo, à terminer avant le dépôt : " + " et ".join(parts)
+                                            + (" (passages surlignés dans le fichier Word et le PDF)." if n_hl > 1
+                                               else " (passage surligné dans le fichier Word et le PDF).")
+                                            + (" " + CADRE_IMPOSE_NOTE if _cadre_impose else ""))
 
         # Les CERFA sont toujours "ok" car generables
         if piece["category"] == "cerfa":

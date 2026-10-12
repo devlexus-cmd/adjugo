@@ -90,7 +90,10 @@ def _name_key(name: str) -> str:
 
 # Motifs « en toutes lettres » (sûrs) et abréviations (à confirmer par le contenu).
 _NAME_STRONG = (
-    (REGLEMENT, r"reglement (particulier )?(de |du )?(la )?consult|reglement de (la )?mise en concurrence|\breglement\b"),
+    # « Règlement » seul vaut règlement de la consultation (« 01_Reglement.pdf »), mais pas
+    # « Règlement de voirie », « Règlement du PLU », « règlement des comptes » (CCAP)…
+    (REGLEMENT, r"reglement (particulier )?(de |du )?(la )?consult|reglement de (la )?mise en concurrence"
+                r"|\breglement\b(?! (?:de |du |des |d'|interieur|sanitaire|general|municipal|local))"),
     (CADRE, r"cadre (de |du )?(la )?(reponse|memoire)|cadre (technique|de reponse technique)|trame (de |du )?(la )?(reponse|memoire)"
             r"|modele (de |du )?memoire|questionnaire( technique)?|memoire technique|cadre memoire"),
     (CCAP, r"cahier (des )?clauses administratives|clauses administratives particulieres"),
@@ -120,31 +123,64 @@ _HEAD = (
 HEAD_CHARS = 2000
 
 
-def _earliest(patterns, s: str):
-    best = None
+def _matches(patterns, s: str) -> list:
+    """[(type, position)] du premier repérage de chaque type, dans l'ordre du texte."""
+    out = []
     for kind, pat in patterns:
         m = re.search(pat, s)
-        if m and (best is None or m.start() < best[1]):
-            best = (kind, m.start())
-    return best[0] if best else None
+        if m:
+            out.append((kind, m.start()))
+    return sorted(out, key=lambda x: x[1])
+
+
+def _earliest(patterns, s: str):
+    found = _matches(patterns, s)
+    return found[0][0] if found else None
+
+
+_ANNEXE = re.compile(r"\bannexe")
+
+
+def _annexe_du_reglement(s: str, found: list):
+    """« Annexe 1 au règlement de la consultation – Cadre de réponse », « Annexe_1_RC_DPGF » : la
+    pièce est l'ANNEXE (cadre, bordereau…), pas le règlement qu'elle cite. Renvoie son type, ou
+    None si ce n'est pas le cas."""
+    if not _ANNEXE.search(s) or not any(k == REGLEMENT for k, _p in found):
+        return None
+    autres = [x for x in found if x[0] != REGLEMENT]
+    return autres[0][0] if autres else None
 
 
 def classify_name(name: str):
     """(type, sûr) d'après le NOM seul. sûr=False pour une abréviation (RC, AE…)."""
     k = _name_key(name)
-    strong = _earliest(_NAME_STRONG, k)
+    strong, abbr = _matches(_NAME_STRONG, k), _matches(_NAME_ABBR, k)
+    annexe = _annexe_du_reglement(k, strong + abbr)
+    if annexe:
+        return annexe, True
     if strong:
-        return strong, True
-    abbr = _earliest(_NAME_ABBR, k)
+        return strong[0][0], True
     if abbr:
-        return abbr, False
+        return abbr[0][0], False
     return AUTRE, False
 
 
 def classify_head(text: str) -> str:
-    """Type d'après les PREMIÈRES lignes (le titre arrive en tête) ; AUTRE si rien."""
+    """Type d'après les PREMIÈRES lignes (le titre arrive en tête) ; AUTRE si rien. Une annexe
+    titrée « Annexe 2 au règlement de la consultation – Cadre de réponse technique » est un
+    cadre de réponse."""
     head = re.sub(r"\s+", " ", fold((text or "")[:HEAD_CHARS]))
-    return _earliest(_HEAD, head) or AUTRE
+    found = _matches(_HEAD, head)
+    if found and found[0][0] == REGLEMENT:
+        lead = head[max(0, found[0][1] - 40):found[0][1]]
+        if _ANNEXE.search(lead):
+            autres = [x for x in found if x[0] != REGLEMENT and x[1] - found[0][1] < 200]
+            if autres:
+                return autres[0][0]
+            abbr = [x for x in _matches(_NAME_ABBR, head[found[0][1]:found[0][1] + 200]) if x[0] != REGLEMENT]
+            if abbr:
+                return abbr[0][0]
+    return found[0][0] if found else AUTRE
 
 
 def classify_piece(name: str, text: str = "") -> str:

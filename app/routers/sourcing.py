@@ -416,6 +416,16 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
 
 # ── Étape 2 bis : analyse du DCE RÉEL importé (PDF/ZIP) ──────────────────────────
 
+def _analyze_in_thread(user_id, dce_text, company_data, gonogo, lang_name, pieces):
+    """Analyse IA d'un dossier, exécutée HORS de la boucle d'événements (routes async) : l'appel
+    au fournisseur et l'attente d'une place IA ne figent plus le serveur. L'espace facturé
+    (tenant_scope) est posé ici, dans le fil qui appelle l'IA."""
+    from app.services.analysis import analyze_dce_text
+    from app.services.llm import tenant_scope
+    with tenant_scope(user_id):
+        return analyze_dce_text(dce_text, company_data, gonogo, lang_name=lang_name, pieces=pieces)
+
+
 @router.post("/analyze-upload")
 @limiter.limit("30/hour")
 async def analyze_upload(request: Request, file: UploadFile = File(...),
@@ -423,7 +433,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
                          current_user: User = Depends(get_current_user),
                          db: Session = Depends(get_db)):
     from app.core.quota import consume_analysis, refund_analysis
-    from app.services.analysis import analyze_dce_text, extract_dce_text
+    from app.services.analysis import extract_dce_text
 
     project = db.query(Project).filter(Project.id == project_id,
                                        Project.user_id.in_(member_ids(current_user, db))).first()
@@ -447,11 +457,9 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
     company_data = _company_dict(company)
     gonogo = _criteria_dict(current_user.id, db)
 
-    from app.services.llm import tenant_scope
     try:
-        with tenant_scope(current_user.id):
-            analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                        lang_name=_user_lang_name(current_user, db), pieces=pieces)
+        analysis = await run_in_threadpool(_analyze_in_thread, current_user.id, dce_text, company_data, gonogo,
+                                           _user_lang_name(current_user, db), pieces)
     except Exception:
         refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
         raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
@@ -508,7 +516,7 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     """Relance l'analyse sur le dossier déjà importé — utile après avoir affiné ses
     critères, ou si l'analyse précédente semblait incomplète."""
     from app.core.quota import consume_analysis, refund_analysis
-    from app.services.analysis import analyze_dce_text, extract_dce_text
+    from app.services.analysis import extract_dce_text
     from app.services.storage import get_storage
     from app.models import Document
 
@@ -537,11 +545,9 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     company_data = _company_dict(company)
     gonogo = _criteria_dict(current_user.id, db)
-    from app.services.llm import tenant_scope
     try:
-        with tenant_scope(current_user.id):
-            analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                        lang_name=_user_lang_name(current_user, db), pieces=pieces)
+        analysis = await run_in_threadpool(_analyze_in_thread, current_user.id, dce_text, company_data, gonogo,
+                                           _user_lang_name(current_user, db), pieces)
     except Exception:
         refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
         raise HTTPException(503, "L'analyse IA est momentanément indisponible. "

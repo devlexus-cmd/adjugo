@@ -130,7 +130,9 @@ async def analyze_upload(request: Request, file: UploadFile = File(...), domaine
         raise HTTPException(422, str(e))
     consume_analysis(current_user, db)
     doms = [d.strip() for d in (domaines or "").split(",") if d.strip()]
-    return _analyze_text(text, file.filename or "Délibération importée", current_user, db, domaines=doms)
+    # Hors de la boucle d'événements : l'appel IA (et l'attente d'une place) ne fige pas le serveur.
+    return await run_in_threadpool(_analyze_text, text, file.filename or "Délibération importée",
+                                   current_user, db, domaines=doms)
 
 
 @router.post("/analyze-text")

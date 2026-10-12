@@ -21,6 +21,7 @@ Rien ici n'appelle l'IA ni le réseau : fonctions pures sur le texte déjà extr
 """
 import bisect
 import copy
+import functools
 import re
 from typing import Optional
 
@@ -35,8 +36,12 @@ RETROUVE = "retrouve"
 A_VERIFIER = "a_verifier"
 
 MSG_FICHIER_IMPOSE = "Ce marché impose son propre fichier de réponse : vous devrez y recopier votre texte."
+# Côté partenaire : c'est le chef de file qui assemble et recopie le texte commun.
+MSG_FICHIER_IMPOSE_PARTENAIRE = ("Ce marché impose son propre fichier de réponse : le chef de file y recopiera "
+                                 "le texte commun.")
 MSG_NON_PONDERES = "Critères non pondérés, sans ordre indiqué."
 MSG_NON_PONDERES_ORDRE = "Critères non pondérés, classés dans l'ordre que donne le règlement."
+MSG_CRITERE_UNIQUE = "Un seul critère retrouvé, sans poids indiqué."
 MSG_A_VERIFIER = "à vérifier dans le règlement"
 
 _STOP = {"de", "des", "du", "la", "le", "les", "et", "en", "au", "aux", "a", "l", "d", "un", "une",
@@ -221,9 +226,14 @@ def _stems(name: str) -> list:
     return [w[:5] if len(w) > 5 else w for w in sig][:6]
 
 
+@functools.lru_cache(maxsize=512)
+def _stem_rx(stem: str):
+    return re.compile(r"(?<![a-z0-9])" + re.escape(stem))
+
+
 def _stem_at(low: str, stem: str, start: int = 0) -> int:
-    m = re.search(r"(?<![a-z0-9])" + re.escape(stem), low[start:])
-    return (m.start() + start) if m else -1
+    m = _stem_rx(stem).search(low, max(0, start))
+    return m.start() if m else -1
 
 
 def _names_ok(low: str, stems: list) -> bool:
@@ -245,33 +255,177 @@ def _crit_zones(p: _Piece, span: int = 1500) -> list:
     return [(m.start(), min(len(p.low), m.end() + span)) for m in _CRIT_ZONE.finditer(p.low)]
 
 
-def _recover(stems: list, claimed: Optional[dict], scope: list):
-    """Recherche SANS IA de la phrase d'un critère que l'IA n'a pas su recopier :
-    • poids annoncé : le nom suivi, à moins de 120 caractères, du même poids écrit ;
-    • sans poids : le nom, seulement dans la zone « critères de jugement / d'attribution »
-      du règlement (« prix » apparaît partout ailleurs)."""
+def _in_zone(p: _Piece, pos: int) -> bool:
+    return any(z0 <= pos < z1 for z0, z1 in _crit_zones(p))
+
+
+# ── Rattachement d'un poids à SON critère (sans IA) ─────────────────────────────────
+# Un poids n'est attribué à un critère que s'il lui est RATTACHÉ dans le texte : le premier
+# poids écrit après son nom (« Prix 40 % ; Valeur technique 60 % »), ou le dernier écrit juste
+# avant (« 60 % pour la valeur technique et 40 % pour le prix ») — le sens est choisi pour toute
+# la phrase —, sans le nom d'un autre critère entre les deux, sans fin de phrase ni « ; », et
+# sans passer à la ligne suivante si autre chose qu'une ponctuation les sépare (« Valeur
+# technique » puis, à la ligne, « Méthodologie : 40 % » : le poids d'un sous-critère). Un poids
+# présent ailleurs dans la phrase, même de même valeur, n'est jamais retenu.
+
+_GAP_APRES = 60          # « Valeur technique de l'offre, appréciée au vu du mémoire : 60 % »
+_GAP_AVANT = 30          # « 60 % pour la valeur technique »
+_GAP_PONCT = re.compile(r"^[\s:|=()\[\]\-–—,./]*$")
+_GAP_STOP = re.compile(r";|[.!?](?:\s|$)")
+
+
+def _name_spans(p: _Piece, w0: int, w1: int, crit_stems: list) -> list:
+    """Occurrences des noms des critères dans [w0, w1) : [(début, fin, index du critère ou None
+    si l'occurrence est ambiguë)], triées, sans chevauchement. Le nom s'étend sur les mots du
+    critère qui se suivent (« prix des prestations », « délai d'exécution ») ; à une même
+    position, le critère dont le plus de mots se suivent l'emporte (« valeur technique » contre
+    « valeur environnementale ») ; à égalité, l'occurrence est ambiguë."""
+    def _word_end(e):
+        while e < w1 and p.low[e].isalnum():
+            e += 1
+        return e
+    found = {}
+    for j, stems in enumerate(crit_stems):
+        if not stems:
+            continue
+        pos = w0
+        while True:
+            i = _stem_at(p.low, stems[0], pos)
+            if i < 0 or i >= w1:
+                break
+            pos = i + 1
+            e, hits = _word_end(i + len(stems[0])), 1
+            for s in stems[1:]:
+                k = _stem_at(p.low, s, e)
+                if 0 <= k <= e + 14 and k + len(s) <= w1:
+                    e, hits = _word_end(k + len(s)), hits + 1
+            if hits * 2 < len(stems):
+                continue
+            found.setdefault(i, []).append((hits, e, j))
+    spans = []
+    for i in sorted(found):
+        cands = sorted(found[i], key=lambda c: (c[0], c[1]), reverse=True)
+        hits, e, j = cands[0]
+        if len(cands) > 1 and cands[1][0] == hits:
+            j = None                              # « Valeur » seul : technique ou environnementale ?
+        if spans and i < spans[-1][1]:
+            continue                              # déjà dans le nom précédent
+        spans.append((i, e, j))
+    return spans
+
+
+def _gap_cost(p: _Piece, a: int, b: int, max_len: int):
+    """Coût de l'écart [a, b) entre un nom et un poids (None : pas de rattachement possible).
+    Passer à la ligne coûte cher : dans un tableau, un nom et le poids de la ligne suivante
+    ne vont pas ensemble, sauf cellule seule sur sa ligne (« Valeur technique » / « 60 % »)."""
+    if b < a or b - a > max_len:
+        return None
+    gap = p.flat[a:b]
+    if _GAP_STOP.search(gap):
+        return None
+    crosses = bisect.bisect_left(p.breaks, a) < bisect.bisect_left(p.breaks, b)    # un retour à la ligne dans [a, b)
+    if crosses and not _GAP_PONCT.match(gap):
+        return None
+    return (b - a) + (20 if crosses else 0)
+
+
+def _attribute(p: _Piece, w0: int, w1: int, crit_stems: list) -> dict:
+    """{index du critère: (valeur, unité, texte tel qu'écrit, début, fin)} pour la fenêtre
+    [w0, w1) de la pièce : chaque poids rattaché à SON critère (voir plus haut). Un critère dont
+    le rattachement est ambigu n'a pas de poids."""
+    names = _name_spans(p, w0, w1, crit_stems)
+    if not names:
+        return {}
+    weights = [(v, u, raw, a + w0, b + w0) for v, u, raw, a, b in _weights_in(p.flat[w0:w1])]
+    weights = [w for w in weights if not any(s <= w[3] < e for s, e, _j in names)]
+    if not weights:
+        return {}
+    after, before = {}, {}
+    for k, (s, e, _j) in enumerate(names):
+        nxt = names[k + 1][0] if k + 1 < len(names) else w1
+        w = next((w for w in weights if e <= w[3] < nxt), None)
+        cost = _gap_cost(p, e, w[3], _GAP_APRES) if w else None
+        if cost is not None:
+            after[k] = (w, cost)
+        prev = names[k - 1][1] if k else w0
+        w = next((w for w in reversed(weights) if prev <= w[3] and w[4] <= s), None)
+        cost = _gap_cost(p, w[4], s, _GAP_AVANT) if w else None
+        if cost is not None:
+            before[k] = (w, cost)
+
+    def _score(d):
+        return (len(d), -sum(g for _w, g in d.values()))
+    if not after and not before:
+        return {}
+    if _score(after) == _score(before) and {k: w for k, (w, _g) in after.items()} != {k: w for k, (w, _g) in before.items()}:
+        return {}                                  # aucun sens ne l'emporte : rien n'est rattaché
+    chosen = after if _score(after) >= _score(before) else before
+    out = {}
+    for k, (w, _g) in chosen.items():
+        j = names[k][2]
+        if j is None:
+            continue
+        if j in out and out[j] is not None and out[j][:2] != w[:2]:
+            out[j] = None                          # même critère, deux poids différents
+        elif j not in out:
+            out[j] = w
+    return {j: w for j, w in out.items() if w is not None}
+
+
+def _same_weight(w, claimed: dict) -> bool:
+    return bool(w) and abs(w[0] - claimed["valeur"]) < 0.001 and claimed.get("unite") in (None, w[1])
+
+
+_CRIT_WORD = re.compile(r"crit[e]res?|ponder|jugement des offres|notation|bareme|attribution")
+
+
+def _window(p: _Piece, a: int, b: int, next_line: bool = False):
+    """Fenêtre d'analyse autour de [a, b) : la phrase qui le contient, bornée aux lignes qu'il
+    occupe (et, si next_line, à la ligne suivante : un tableau mis en page coupe souvent
+    « Valeur technique » / « 60 % »)."""
+    s, e = p.sentence(a, b)
+    br = p.breaks
+    i = bisect.bisect_right(br, a)
+    ls = br[i - 1] if i else 0
+    j = bisect.bisect_left(br, b)
+    if next_line and j < len(br):
+        j += 1
+    le = br[j] if j < len(br) else len(p.flat)
+    return max(s, ls), min(e, le)
+
+
+def _recover(j: int, crit_stems: list, claimed: Optional[dict], scope: list):
+    """Recherche SANS IA de la phrase d'un critère que l'IA n'a pas su recopier, dans la seule
+    zone « critères de jugement / d'attribution » du règlement (« prix » ou « 60 % »
+    apparaissent partout ailleurs : acomptes, retenues, pénalités) :
+    • poids annoncé : le nom ET le même poids, rattaché à ce critère (voir _attribute) ;
+    • sans poids : le nom."""
+    stems = crit_stems[j]
     if not stems:
         return None
     for p in scope:
+        zones = _crit_zones(p)
+        if not zones:
+            continue
         pos = 0
-        zones = _crit_zones(p) if claimed is None else []
         while True:
             i = _stem_at(p.low, stems[0], pos)
             if i < 0:
                 break
             pos = i + 1
+            if not any(z0 <= i < z1 for z0, z1 in zones):
+                continue
             if claimed is not None:
-                w = _weight_match(p.flat[i:i + 120], claimed)
-                if not w:
+                w0, w1 = _window(p, i, i + len(stems[0]), next_line=True)
+                w = _attribute(p, w0, w1, crit_stems).get(j)
+                if not _same_weight(w, claimed):
                     continue
-                a, b = i, i + w[4]
+                a, b = min(i, w[3]), max(i + len(stems[0]), w[4])
             else:
-                if not any(z0 <= i < z1 for z0, z1 in zones):
-                    continue
                 a, b = i, i + len(stems[0])
             s, phrase = p.line_phrase(a, b)
             if len(phrase) >= 4 and _names_ok(_fold(phrase), stems):
-                return p, s, phrase
+                return p, s, phrase, (w if claimed is not None else None)
     return None
 
 
@@ -300,29 +454,37 @@ def _raw_criteres(raw) -> list:
     return out
 
 
-def _line(i, name, pond, ex, text, pieces, scope_rc) -> dict:
+def _line(i, j, name, pond, ex, text, scope_crit, scope_rc, crit_stems) -> dict:
+    """Ligne du critère n° j (index dans crit_stems). La phrase de l'IA n'est retenue que si elle
+    est retrouvée mot pour mot dans le règlement (ou le cadre de réponse) et parle de ce
+    critère ; un poids n'est affiché que s'il y est écrit ET rattaché à ce critère."""
     claimed = parse_weight(pond) if pond else None
     if claimed is not None and claimed.get("valeur", 0) <= 0:
         claimed = None
-    stems = _stems(name)
+    stems = crit_stems[j]
     phrase, piece, pos, poids, unite, valeur = "", None, None, "", None, None
 
     verified = citation_guard(text, ex) if ex else ""
-    vp, vpos, vorig = _locate(verified, pieces) if verified else (None, None, "")
+    vp, vpos, vorig = _locate(verified, scope_crit) if verified else (None, None, "")
     if vorig and not _names_ok(_fold(vorig), stems):
         vp, vpos, vorig = None, None, ""            # la phrase ne parle pas de ce critère
 
     if claimed is not None:
-        w = _weight_match(vorig, claimed) if vorig else None
-        if w:
+        w = None
+        if vorig:
+            w0, w1 = _window(vp, vpos, vpos + len(vorig))
+            # Un poids lu hors de la zone des critères n'est retenu que si la phrase parle de
+            # notation (« le prix est payé par acompte à hauteur de 60 % » n'est pas un poids).
+            if _in_zone(vp, vpos) or _CRIT_WORD.search(vp.low[w0:w1]):
+                w = _attribute(vp, w0, w1, crit_stems).get(j)
+        if _same_weight(w, claimed):
             phrase, piece, pos = vorig, vp, vpos
             valeur, unite, poids = w[0], w[1], w[2]
         else:
-            rec = _recover(stems, claimed, scope_rc + [p for p in pieces if p not in scope_rc])
+            rec = _recover(j, crit_stems, claimed, scope_rc)
             if rec:
-                piece, pos, phrase = rec
-                w = _weight_match(phrase, claimed)
-                valeur, unite, poids = (w[0], w[1], w[2]) if w else (None, None, "")
+                piece, pos, phrase, w = rec
+                valeur, unite, poids = w[0], w[1], w[2]
             else:
                 phrase, piece, pos = vorig, vp, vpos   # vraie phrase, mais sans le poids annoncé
     else:
@@ -331,9 +493,9 @@ def _line(i, name, pond, ex, text, pieces, scope_rc) -> dict:
         if vorig:
             phrase, piece, pos = vorig, vp, vpos
         else:
-            rec = _recover(stems, None, scope_rc)
+            rec = _recover(j, crit_stems, None, scope_rc)
             if rec:
-                piece, pos, phrase = rec
+                piece, pos, phrase, _w = rec
 
     if phrase and not citation_guard(text, phrase, min_len=4):
         phrase, piece, pos, poids, unite, valeur = "", None, None, "", None, None
@@ -356,6 +518,10 @@ _ORDER_NEG = re.compile(r"(?:ne sont pas|non) (?:hierarchis|classes|ponderes|ord
                         r"|(?:egale|meme) importance|aucun ordre|aucune hierarchie")
 _ORDER_POS = re.compile(r"ordre (?:decroissant|d'importance|de priorite|hierarchique)|par ordre (?:decroissant|d'importance)"
                         r"|classes? par ordre|hierarchises?|importance decroissante")
+# « Les offres seront classées par ordre décroissant de la note obtenue au regard des critères » :
+# c'est le CLASSEMENT DES OFFRES, pas un ordre d'importance entre les critères.
+_ORDER_OFFRES_AVANT = re.compile(r"(?:offres?|candidats?|notes?)\b[^.;]{0,30}class(?:ee|es|ees)?\s*$|classement (?:des|de l')\s?(?:offres?|candidats?)[^.;]{0,30}$")
+_ORDER_OFFRES_APRES = re.compile(r"\s*(?:de (?:la|leur|leurs|sa) |des |du )(?:notes?|total|totaux|offres?|points|scores?|resultats?|moyennes?)\b")
 _TOTAL_RE = (
     re.compile(r"sur un total de (\d{1,4}) ?(?:points?|pts?)\b"),
     re.compile(r"\bnote (?:globale|finale|totale|maximale)\b[^.;]{0,30}?\b(?:sur|de|:) ?(\d{1,4})\b"),
@@ -373,6 +539,9 @@ def _ordre(scope: list) -> dict:
     for rx, indique in ((_ORDER_NEG, False), (_ORDER_POS, True)):
         for p in scope:
             for m in rx.finditer(p.low):
+                if indique and (_ORDER_OFFRES_AVANT.search(p.low[max(0, m.start() - 60):m.start()])
+                                or _ORDER_OFFRES_APRES.match(p.low, m.end())):
+                    continue
                 ph = _phrase_at(p, m.start(), m.end())
                 if "crit" in _fold(ph):
                     return {"indique": indique, "phrase": ph, "source": _source_label(p)}
@@ -436,7 +605,11 @@ _FONT_RES = (
 )
 _VISITE_RE = re.compile(r"\bvisites?\b(?P<mid>[^.;]{0,90}?)\bobligatoires?\b|\bobligatoires?\b(?P<mid2>[^.;]{0,25}?)\bvisites?\b")
 _VISITE_NEG = re.compile(r"\b(?:pas|non|nullement|aucune?|plus)\b|facultati")
-_VISITE_NEG_AVANT = re.compile(r"\b(?:pas|non|aucune?|sans|ni)\b(?: d[e'] ?| la | une )?\s*$")
+_VISITE_NEG_AVANT = re.compile(r"\b(?:pas|non|aucune?|sans|ni)\b(?: d[e'] ?| la | une )?\s*$"
+                               r"|\b(?:pas|aucune?|non)\s+(?:prevue?s?|organisee?s?|exigee?s?|imposee?s?|requise?s?|programmee?s?)"
+                               r"\s*(?:d[e'] ?|une |la )?\s*$")
+# « Visite obligatoire : non », « Visite obligatoire : sans objet », « … : néant ».
+_VISITE_NEG_APRES = re.compile(r"\s*(?:[:\-–=]\s*)?(?:non\b|sans objet|neant\b|aucune?\b|pas\b|n'est pas|ne sera pas|n'a pas lieu)")
 _VISITE_HORS = re.compile(r"medical|maintenance|periodique|entretien|reception|reunion")
 _CADRE_MENTION = re.compile(r"cadre (?:de |du )?(?:la )?(?:reponse|memoire)|cadre technique de reponse|trame (?:de |du )?(?:la )?(?:reponse|memoire)"
                             r"|questionnaire technique|\bcrt\b|\bcrmt\b")
@@ -489,6 +662,50 @@ _KIND_OF = {"page": "pages", "pages": "pages", "feuillet": "pages", "feuillets":
             "caracteres": "caracteres", "lignes": "lignes"}
 
 
+# Limite qui porte sur une PARTIE du dossier (un CV, une fiche référence, une question) et non
+# sur le mémoire entier : gardée (le compteur de la vague 2 en aura besoin), dite comme telle.
+_OBJETS = (
+    ("cv", r"\bcv\b|curriculum"),
+    ("reference", r"\breferences?\b"),
+    ("question", r"\bquestions?\b"),
+    ("fiche", r"\bfiches?\b"),
+    ("synthese", r"\bsynthese\b|\bresume\b"),
+    ("lettre", r"\blettre\b"),
+    ("annexe", r"\bchaque annexe\b"),
+)
+_OBJET_GLOBAL = re.compile(r"memoire|offre technique|note (?:methodologique|technique)|dossier de presentation"
+                           r"|cadre (?:de |du )?(?:la )?reponse|\breponse technique|\bdocument\b|\bproposition\b")
+_OBJET_APRES = re.compile(r"[^.;]{0,25}?\b(?:par|pour chaque|chacune?)\b\s*(cv|curriculum|references?|questions?|fiches?)?")
+
+
+def _objet_limite(p: _Piece, a: int) -> str:
+    """'' (le mémoire, le cadre ou l'offre) ou la partie visée : « cv », « reference »,
+    « question » (« question_chaque » pour « chaque question »), « fiche »…"""
+    s, _e = p.sentence(a, a + 1)
+    before = p.low[max(s, a - 160):a]
+    best, best_pos = "", -1
+    for key, rx in _OBJETS:
+        for m in re.finditer(rx, before):
+            # « Le mémoire, CV compris, … », « hors annexes » : une précision sur le mémoire.
+            if re.match(r"\s*(?:\w+\s+)?(?:compris|comprises?|inclus|incluses?|exclus|exclues?)\b", before[m.end():]) \
+                    or re.search(r"\b(?:hors|sans|y compris|avec|dont)\s+(?:les |le |la |des |l')?$", before[:m.start()]):
+                continue
+            if m.start() > best_pos:
+                best, best_pos = key, m.start()
+    g = None
+    for m in _OBJET_GLOBAL.finditer(before):
+        g = m.start()
+    m2 = _OBJET_APRES.match(p.low, a)
+    if m2 and m2.group(1):
+        w = m2.group(1)
+        best = "cv" if w in ("cv", "curriculum") else w.rstrip("s")
+    elif best and g is not None and g > best_pos:
+        best = ""                                 # « … des CV, le mémoire ne dépassera pas 10 pages »
+    if best == "question" and re.search(r"chaque question|par question", p.low[max(s, a - 160):a + 40]):
+        best = "question_chaque"
+    return best
+
+
 def _limites(scope: list) -> list:
     out, seen = [], set()
 
@@ -500,7 +717,8 @@ def _limites(scope: list) -> list:
         if key in seen:
             return
         seen.add(key)
-        out.append({"type": kind, "valeur": val, "texte": texte, "phrase": ph, "source": _source_label(p)})
+        out.append({"type": kind, "valeur": val, "texte": texte, "phrase": ph, "source": _source_label(p),
+                    "objet": _objet_limite(p, a)})
 
     bounds = {k: (lo, hi) for k, _rx, (lo, hi) in _UNITS}
     for p in scope:
@@ -558,8 +776,9 @@ def _visite(scope: list) -> Optional[dict]:
             mid = m.group("mid") if m.group("mid") is not None else (m.group("mid2") or "")
             ph = _phrase_at(p, m.start(), m.end())
             low = _fold(ph)
-            before = p.low[max(0, m.start() - 25):m.start()]
-            if _VISITE_NEG.search(mid) or _VISITE_NEG_AVANT.search(before) or "facultati" in low:
+            before = p.low[max(0, m.start() - 40):m.start()]
+            if (_VISITE_NEG.search(mid) or _VISITE_NEG_AVANT.search(before) or "facultati" in low
+                    or _VISITE_NEG_APRES.match(p.low, m.end())):
                 continue
             if _VISITE_HORS.search(p.low[m.start():m.end() + 30]):
                 continue
@@ -573,6 +792,39 @@ def _sentences_with(rx, scope: list):
             yield p, m, _phrase_at(p, m.start(), m.end())
 
 
+# Négation qui porte sur le cadre lui-même (dans la proposition qui le cite) : « aucun cadre de
+# réponse n'est imposé », « n'est pas tenu d'utiliser un cadre », « sans cadre imposé ».
+_CADRE_NEG = re.compile(
+    r"\baucune?\b[^.;:]{0,25}\b(?:cadre|trame|questionnaire)|\b(?:pas|non) tenue?s?\b"
+    r"|\bsans (?:utiliser |recourir a )?(?:le |un |de |d')?(?:cadre|trame)"
+    r"|n'(?:est|sont) (?:pas )?(?:imposee?s?|obligatoires?|exigee?s?|requise?s?|fournie?s?)\b"
+    r"|\bpas (?:de|d'un|d'une) (?:cadre|trame)|n'impose (?:pas|aucun)|\blibres? (?:de|d')|facultati")
+_PROPOSITION = re.compile(r"\s*(?:[;:]|\bmais\b)\s*")
+
+
+def _obligation(low: str, m_start: int) -> bool:
+    """La phrase rend-elle le cadre obligatoire ? Seulement la proposition qui le cite (et, après
+    « Cadre de réponse : », celle qui suit) ; jamais si cette proposition le dément, et jamais à
+    cause d'un « obligatoirement » qui porte sur autre chose plus loin dans la phrase."""
+    props, start = [], 0
+    for sep in _PROPOSITION.finditer(low):
+        props.append((start, sep.start(), sep.group(0).strip()))
+        start = sep.end()
+    props.append((start, len(low), ""))
+    k = max(i for i, (a, _b, _s) in enumerate(props) if a <= m_start)
+    a, b, sep = props[k]
+    prop = low[a:b]
+    if _CADRE_NEG.search(prop) or _FACULT.search(prop):
+        return False
+    if _OBLIG.search(prop):
+        return True
+    label = len(prop.split()) <= 6 and not re.search(r"\b(?:est|sont|sera|seront|doit|doivent|devra|devront|peut|pourra)\b", prop)
+    if sep == ":" and label and k + 1 < len(props):     # « Cadre de réponse technique : obligatoire »
+        nxt = low[props[k + 1][0]:props[k + 1][1]]
+        return bool(_OBLIG.search(nxt)) and not (_CADRE_NEG.search(nxt) or _FACULT.search(nxt))
+    return False
+
+
 def _cadre(pieces: list, scope: list) -> dict:
     cadres = [p for p in pieces if p.type == dp.CADRE]
     mention, oblig = None, None
@@ -580,8 +832,10 @@ def _cadre(pieces: list, scope: list) -> dict:
         low = _fold(ph)
         if mention is None:
             mention = (ph, _source_label(p))
-        if oblig is None and _OBLIG.search(low) and not _FACULT.search(low):
-            oblig = (ph, _source_label(p))
+        if oblig is None:
+            mm = _CADRE_MENTION.search(low)
+            if mm and _obligation(low, mm.start()):
+                oblig = (ph, _source_label(p))
         if mention and oblig:
             break
     return {
@@ -618,6 +872,8 @@ def _pond_message(g: dict, pond: str, partenaire: bool = False) -> str:
         return ("Aucun critère n'est retenu : le chef de file les a tous retirés." if partenaire
                 else "Aucun critère n'est retenu : vous les avez tous retirés.")
     if pond == "non_ponderes":
+        if int(cpt.get("dans_le_plan") or 0) == 1:
+            return MSG_CRITERE_UNIQUE          # ni pluriel ni « ordre » pour un seul critère
         return MSG_NON_PONDERES_ORDRE if (g.get("ordre") or {}).get("indique") is True else MSG_NON_PONDERES
     if pond != "incomplet":
         return ""
@@ -725,13 +981,19 @@ def build_grille(details: dict, text: str, pieces: Optional[list] = None) -> dic
     scope_visite = [p for p in P if p.type in (dp.REGLEMENT, dp.CADRE, dp.AUTRE, dp.ACTE_ENGAGEMENT)] or P
     scope_cadre = [p for p in P if p.type in (dp.REGLEMENT, dp.CADRE, dp.AUTRE)] or P
 
-    lines, seen = [], set()
+    # Phrases des critères : dans le règlement (et le cadre de réponse, qui reprend souvent la
+    # grille) quand il est reconnu ; sinon dans tout le texte.
+    scope_crit = [p for p in P if p.type in (dp.REGLEMENT, dp.CADRE)] if rc else P
+    raws, seen = [], set()
     for i, (name, pond, ex) in enumerate(_raw_criteres(details.get("criteres_attribution"))[:MAX_CRITERES]):
         key = _fold(name)
         if key in seen:
             continue
         seen.add(key)
-        lines.append(_line(i, name, pond, ex, text, P, scope_rc))
+        raws.append((i, name, pond, ex))
+    crit_stems = [_stems(name) for _i, name, _p, _e in raws]
+    lines = [_line(i, j, name, pond, ex, text, scope_crit, scope_rc, crit_stems)
+             for j, (i, name, pond, ex) in enumerate(raws)]
     # Ordre du règlement (position de la phrase) ; lignes non retrouvées à la suite.
     lines.sort(key=lambda ln: (ln["_pos"] is None, ln["_pos"] or (0, 0)))
     poids_texte = _poids_dans_le_texte(scope_rc, lines)
@@ -805,7 +1067,8 @@ def apply_choice(grille: dict, critere_id: str, choix: str, poids: str = "", whe
 
 def carry_over(previous: Optional[dict], fresh: Optional[dict]) -> Optional[dict]:
     """Ré-analyse : les choix de l'utilisateur sur une ligne du même nom sont repris (une
-    confirmation seulement si la ligne est encore à vérifier)."""
+    confirmation seulement si la ligne est encore à vérifier, ou si elle porte le poids que
+    l'utilisateur a lu et que la ligne retrouvée n'a pas)."""
     if not isinstance(fresh, dict) or not isinstance(previous, dict):
         return fresh
     old = {_fold(x.get("critere")): x.get("choix_utilisateur") for x in (previous.get("criteres") or [])
@@ -816,7 +1079,11 @@ def carry_over(previous: Optional[dict], fresh: Optional[dict]) -> Optional[dict
         ch = old.get(_fold(ln.get("critere")))
         if not ch:
             continue
-        if ch.get("choix") == "ecarte" or (ch.get("choix") == "confirme" and ln.get("statut") == A_VERIFIER):
+        # Confirmation reprise sur une ligne encore à vérifier, ou sur une ligne retrouvée SANS
+        # poids quand l'utilisateur avait saisi le poids lu (sinon sa saisie se perdrait).
+        if (ch.get("choix") == "ecarte"
+                or (ch.get("choix") == "confirme" and ln.get("statut") == A_VERIFIER)
+                or (ch.get("choix") == "confirme" and ch.get("poids") and not ln.get("poids"))):
             ln["choix_utilisateur"] = dict(ch)
     return refresh(fresh)
 
@@ -844,6 +1111,8 @@ def plan_text(grille: Optional[dict]) -> str:
     body = " ; ".join(x["critere"] + (f" ({x['poids']})" if x["poids"] else "") for x in lines)
     pond = ((grille or {}).get("ponderation") or {}).get("statut")
     if pond == "non_ponderes":
+        if len(lines) == 1:
+            return "un seul critère retrouvé, sans poids indiqué : " + body
         indique = ((grille or {}).get("ordre") or {}).get("indique") is True
         return ("critères non pondérés, dans l'ordre du règlement : " if indique
                 else "critères non pondérés, sans ordre indiqué : ") + body
@@ -888,10 +1157,11 @@ def public_grille(grille: Optional[dict]) -> Optional[dict]:
             "cadre_fourni": bool(cadre.get("fourni")),
             "cadre_mentionne": bool(cadre.get("mentionne")),
             "fichier_impose": bool(c.get("fichier_impose")),
-            "message_fichier": c.get("message_fichier", "") if c.get("fichier_impose") else "",
+            "message_fichier": MSG_FICHIER_IMPOSE_PARTENAIRE if c.get("fichier_impose") else "",
             "phrase_obligation": ob.get("phrase", "") if ob else "",
             "limites": [{"type": x.get("type"), "valeur": x.get("valeur"), "police": x.get("police", ""),
-                         "taille": x.get("taille"), "texte": x.get("texte", ""), "phrase": x.get("phrase", "")}
+                         "taille": x.get("taille"), "texte": x.get("texte", ""), "phrase": x.get("phrase", ""),
+                         "objet": x.get("objet", "")}
                         for x in (c.get("limites") or []) if isinstance(x, dict)][:20],
             "visite": {"phrase": vis.get("phrase", "")} if vis else None,
         },

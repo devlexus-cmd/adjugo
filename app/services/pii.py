@@ -20,9 +20,16 @@ Ce qui est reconnu, sans tenir compte des accents ni de la casse :
 - un morceau qui est aussi un mot courant (« Petit », « Claire ») n'est masqué seul que derrière
   une civilité (« M. Petit »).
 
-Limite assumée : un nom écrit autrement (initiale seule, faute de frappe) n'est pas reconnu.
+- une adresse e-mail qui contient un morceau du nom, quelle que soit la casse
+  (« yann.tanguy@btp-breizh.fr », « ytanguy29@gmail.com ») : remplacée en entier par une
+  étiquette « [Courriel N] », remise en clair telle quelle.
+
+Limites assumées : un nom écrit autrement (initiale seule, faute de frappe) n'est pas reconnu ; un
+prénom qui est aussi un mot courant (« Claire », « Pierre ») n'est masqué seul que derrière une
+civilité ; les autres informations d'un CV (téléphone, adresse postale) ne sont pas masquées.
 """
 import re
+import threading
 import unicodedata
 from typing import Iterable, Optional
 
@@ -52,6 +59,7 @@ _LABEL_BAD = re.compile(r"[\[\]{}<>\"\\|#*_`]+")
 _HINT = ("Les noms de personnes sont remplacés par des étiquettes entre crochets (par exemple "
          "« {ex} » ou « [Nom 1] »). Recopie ces étiquettes telles quelles, crochets compris, sans les "
          "modifier et sans inventer de nom.")
+_EMAIL = re.compile(r"(?<![\w.%+\-])[A-Za-z0-9][A-Za-z0-9._%+\-]{0,63}@[A-Za-z0-9](?:[A-Za-z0-9\-]{0,62}\.)+[A-Za-z]{2,24}\b")
 
 
 def _plain(s) -> str:
@@ -94,6 +102,9 @@ class Pseudonymizer:
         self._back = {}           # étiquette (minuscule) → texte remis en clair
         self.labels = []          # [(étiquette, nom)] dans l'ordre de l'équipe
         self._rx = None
+        self._mail_tokens = set()  # morceaux de nom cherchés dans les adresses e-mail
+        self._mails = {}          # adresse (minuscule) → étiquette « [Courriel N] »
+        self._lock = threading.Lock()
         self._build([p for p in (people or []) if isinstance(p, dict)])
 
     # ── Construction ──────────────────────────────────────────────────────────
@@ -144,6 +155,11 @@ class Pseudonymizer:
                 self._back[neutral.lower()] = t
                 self._to_label[pt] = neutral
                 self._first_upper.add(pt)
+        for name, _f in persons:
+            for t in _tokens(name):
+                for w in _plain(t).split():
+                    if len(w) >= 3 and w not in _PARTICULES:
+                        self._mail_tokens.add(w)
         if self._to_label:
             alts = sorted(self._to_label.keys(), key=len, reverse=True)
             body = "|".join(_pattern(a) for a in alts)
@@ -160,9 +176,32 @@ class Pseudonymizer:
     def label_of(self, name: str) -> str:
         return self._to_label.get(_plain(name), "")
 
+    def _mask_mails(self, text: str) -> str:
+        """Adresses e-mail qui contiennent un morceau d'un nom de l'équipe → « [Courriel N] »."""
+        def _sub(m):
+            raw = m.group(0)
+            local = _plain(raw.split("@", 1)[0].replace(".", " "))
+            flat = local.replace(" ", "")
+            if not any(t in flat for t in self._mail_tokens):
+                return raw
+            with self._lock:
+                label = self._mails.get(raw.lower())
+                if label is None:
+                    label = f"[Courriel {len(self._mails) + 1}]"
+                    self._mails[raw.lower()] = label
+                    self._back[label.lower()] = raw
+            return label
+        return _EMAIL.sub(_sub, text)
+
+    def uses_labels(self, text: str) -> bool:
+        """Le texte contient-il une étiquette posée par ce pseudonymiseur ?"""
+        t = str(text or "")
+        return any(lbl in t for lbl, _n in self.labels) or "[Nom " in t or "[Courriel " in t
+
     def mask(self, text: str) -> str:
         if not self._rx or not text:
             return text or ""
+        text = self._mask_mails(str(text))
 
         def _sub(m):
             raw = m.group(0)
@@ -183,9 +222,11 @@ class Pseudonymizer:
     def unmask(self, text: str) -> str:
         if not self._back or not text:
             return text or ""
-        rx = re.compile("|".join(re.escape(k) for k in sorted(self._back, key=len, reverse=True)),
+        with self._lock:
+            back = dict(self._back)
+        rx = re.compile("|".join(re.escape(k) for k in sorted(back, key=len, reverse=True)),
                         re.IGNORECASE)
-        return rx.sub(lambda m: self._back.get(m.group(0).lower(), m.group(0)), str(text))
+        return rx.sub(lambda m: back.get(m.group(0).lower(), m.group(0)), str(text))
 
     def hint(self) -> str:
         ex = self.labels[0][0] if self.labels else "[Chef de chantier 1]"

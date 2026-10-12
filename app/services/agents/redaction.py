@@ -14,6 +14,10 @@ from typing import Optional
 
 from app.services.llm import complete_ex, MODEL_FAST
 
+# Avertissement (non bloquant) quand le règlement impose son propre cadre de réponse.
+FICHIER_IMPOSE_WARNING = ("Dossier de présentation : l'acheteur impose son propre cadre de réponse. Recopiez-y "
+                          "ce texte ; ne déposez pas le fichier Word d'Adjugo seul.")
+
 # Seuil (€ HT) au-delà duquel le DUME est ajouté d'office au dossier. Les procédures
 # formalisées le rendent quasi incontournable ; ajustable selon la stratégie commerciale.
 DUME_THRESHOLD = 90000
@@ -84,14 +88,19 @@ def _criteres_du_plan(details: dict) -> str:
 
 def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
                            lang_name: str = None, db=None, user_id: int = None,
-                           estimate: dict = None, contributions: list = None) -> tuple:
+                           estimate: dict = None, contributions: list = None,
+                           partner_team: list = None) -> tuple:
     """Dossier de présentation (mémoire technique) en UN appel LLM. Renvoie (texte, coupé) :
     coupé = True si l'IA a atteint sa limite de longueur (texte incomplet, jamais livré comme
-    complet). Les noms des salariés ne partent pas à l'IA : tout l'appel (fusion comprise) passe
-    dans une portée qui les remplace par des étiquettes, remises en clair sans IA."""
+    complet). Les noms des salariés ne partent pas à l'IA : tout l'appel (fusion des apports des
+    partenaires comprise) passe dans une portée qui les remplace par des étiquettes, remises en
+    clair sans IA. partner_team : équipes (profil entreprise) des partenaires dont la part est
+    fusionnée — leurs noms sont masqués comme ceux de l'équipe du chef de file."""
     from app.services.llm import pii_scope
     from app.services.pii import from_team
-    with pii_scope(from_team((company or {}).get("team"))):
+    team = [m for m in ((company or {}).get("team") or []) if isinstance(m, dict)]
+    team += [m for m in (partner_team or []) if isinstance(m, dict)]
+    with pii_scope(from_team(team)):
         return _generate_memoire_fast_inner(analysis, company, cotraitants, lang_name, db=db,
                                             user_id=user_id, estimate=estimate, contributions=contributions)
 
@@ -266,18 +275,20 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     warnings = []
 
     # Contributions cloisonnées des co-traitants (réseau Adjugo) à fusionner dans le mémoire.
-    contributions = []
+    contributions, partner_uids = [], []
     if db is not None and project_id:
         try:
             from app.models import ProjectContribution, ProjectInvite
             from app.services.groupement_members import active_invite_filter
             # On EXCLUT les parts dont le lien a été révoqué OU décliné (partenaire sorti du
             # groupement) → jamais dans le dossier déposé.
-            rows = db.query(ProjectContribution).join(
+            pairs = db.query(ProjectContribution, ProjectInvite.accepted_by_user_id).join(
                 ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
                 ProjectContribution.project_id == project_id,
                 ProjectContribution.status == "submitted",
                 active_invite_filter()).all()
+            rows = [c for c, _uid in pairs]
+            partner_uids = [uid for _c, uid in pairs if uid]
             # DOCTRINE DE VISIBILITÉ : seul le PRIX DE VENTE du lot (prix_lot_ht) est lisible
             # ici (ATTRI1/convention) ; detail_chiffre (enveloppe chiffrée) n'est JAMAIS lu,
             # et aucun prix n'est injecté dans le prompt du mémoire (cf. _generate_memoire_fast).
@@ -292,7 +303,14 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
                 "status": c.status,
             } for c in rows]
         except Exception:
-            contributions = []
+            contributions, partner_uids = [], []
+
+    # Noms des salariés des PARTENAIRES (leur profil entreprise) : masqués avant l'IA, comme ceux
+    # de l'équipe du chef de file, quand leurs apports sont fusionnés dans le dossier commun.
+    partner_team = []
+    if partner_uids and db is not None:
+        from app.services.pii import team_of_users
+        partner_team = team_of_users(db, partner_uids)
 
     # Pièces administratives des co-traitants (parts SOUMISES) → assemblées dans le ZIP.
     cotraitant_pieces = []
@@ -320,7 +338,8 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     memoire_state, memoire_files = None, {}
     try:
         raw_md, truncated = _generate_memoire_fast(analysis, company, cotraitants, lang_name, db=db, user_id=user_id,
-                                                   estimate=estimate, contributions=contributions)
+                                                   estimate=estimate, contributions=contributions,
+                                                   partner_team=partner_team)
         if not (raw_md or "").strip():
             raise ValueError("réponse vide")
         memoire_state = memoire_export.finalize(raw_md, truncated=truncated)
@@ -339,6 +358,11 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
             import logging
             logging.getLogger("adjugo").warning("mise en forme du dossier de présentation impossible : %s", e)
             warnings.append("BLOQUANT — Le dossier de présentation n'a pas pu être mis en forme : relancez la génération.")
+    # Le règlement impose son propre cadre de réponse : le fichier Word d'Adjugo ne se dépose pas
+    # seul (avertissement non bloquant, affiché avec le dossier).
+    _gn = details.get("grille_notation") if isinstance(details, dict) else None
+    if isinstance(_gn, dict) and ((_gn.get("contraintes") or {}).get("fichier_impose")):
+        warnings.append(FICHIER_IMPOSE_WARNING)
 
     # Taux de TVA piloté par le projet (0 % par défaut — art. 293 B CGI).
     tva_rate = 0

@@ -613,7 +613,7 @@ def _page_content_bytes(page, limit: int) -> int:
 
 
 def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars: int = None,
-                          deadline: float = None, budget: "_Budget" = None):
+                          deadline: float = None, budget: "_Budget" = None, info: dict = None):
     """Extrait le texte d'un PDF — au plus `max_pages` pages, arrêt dès `max_chars`
     caractères (le texte au-delà serait de toute façon tronqué par l'appelant).
     Garde-fous CPU et mémoire (process unique) :
@@ -623,8 +623,12 @@ def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars:
         PDF_PAGE_CONTENT_MAX_BYTES est sautée, et le cumul est plafonné par dossier ;
       • chaque page dispose d'une tranche de temps, contrôlée PENDANT l'analyse (à chaque
         opérateur, y compris dans les formulaires appelés en boucle) ;
-      • l'extraction s'arrête au-delà du budget de temps global (partagé par une archive)."""
+      • l'extraction s'arrête au-delà du budget de temps global (partagé par une archive).
+    info (dict facultatif) : reçoit "complet" = False si des pages n'ont pas été lues (plafond de
+    pages, page trop lourde sautée, temps écoulé, page interrompue) — jamais « lu en entier » à tort."""
     import time
+    if info is not None:
+        info["complet"] = True
     if budget is not None:
         deadline = budget.deadline
     if deadline is None:
@@ -636,8 +640,12 @@ def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars:
         reader = PdfReader(io.BytesIO(file_bytes))
         parts, total, seen = [], 0, set()
         n = min(len(reader.pages), max_pages)
+        if info is not None and len(reader.pages) > n:
+            info["complet"] = False                # plafond de pages atteint
         for i in range(n):
             if time.monotonic() > deadline:
+                if info is not None:
+                    info["complet"] = False
                 break
             page = reader.pages[i]
             key = _page_content_key(page)
@@ -651,6 +659,8 @@ def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars:
                 # saute, les pages de texte (quelques Ko) suivantes passent encore.
                 if budget is not None:
                     budget.pdf_heavy_pages += 1
+                if info is not None:
+                    info["complet"] = False
                 continue
             content_left -= size
             page_deadline = min(deadline, time.monotonic() + PDF_PAGE_TIME_S)
@@ -676,6 +686,8 @@ def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars:
                 page_text = page.extract_text(visitor_operand_before=_before, visitor_text=_text)
             except _PdfAbort:
                 page_text = "".join(frags)         # ce qui a été lu avant l'interruption
+                if info is not None:
+                    info["complet"] = False
             if page_text:
                 parts.append(page_text)
                 total += len(page_text) + 2
@@ -683,6 +695,8 @@ def extract_text_from_pdf(file_bytes, max_pages: int = PDF_MAX_PAGES, max_chars:
                     break
         return "\n\n".join(parts).strip()
     except Exception as e:
+        if info is not None:
+            info["complet"] = False
         return f"Erreur extraction PDF : {str(e)}"
     finally:
         if budget is not None:
@@ -733,12 +747,17 @@ def _ocr_render_kw(page) -> dict:
     return {"dpi": OCR_DPI // 2, "size": OCR_MAX_SIDE_PX}
 
 
-def _ocr_pdf(content: bytes, max_pages: int = OCR_MAX_PAGES, budget: "_Budget" = None) -> str:
+def _ocr_pdf(content: bytes, max_pages: int = OCR_MAX_PAGES, budget: "_Budget" = None,
+             info: dict = None) -> str:
     """OCR de repli pour les DCE SCANNÉS (PDF image, fréquents chez les petites
     collectivités). Gracieux : retourne '' si l'OCR n'est pas disponible (binaire
     tesseract/poppler absent) — le code appelant retombe alors sur l'erreur claire.
     BORNÉ : poppler ne rend QUE les premières pages (first_page/last_page), une à la fois,
-    au lieu de rendre tout le PDF en images puis d'en garder 15."""
+    au lieu de rendre tout le PDF en images puis d'en garder 15.
+    info (dict facultatif) : reçoit "complet" = True seulement si TOUTES les pages ont été lues
+    (un scan de 40 pages lu sur 15 n'est jamais dit « lu en entier »)."""
+    if info is not None:
+        info["complet"] = False
     try:
         import pytesseract
         from pdf2image import convert_from_bytes
@@ -748,15 +767,16 @@ def _ocr_pdf(content: bytes, max_pages: int = OCR_MAX_PAGES, budget: "_Budget" =
         max_pages = min(max_pages, budget.ocr_pages_left)
     if max_pages <= 0:
         return ""
-    pages = None
+    pages, total_pages = None, None
     try:
         import io
         from pypdf import PdfReader
         pages = PdfReader(io.BytesIO(content)).pages
+        total_pages = len(pages)
         max_pages = min(max_pages, len(pages))
     except Exception:
         pages = None   # PDF que pypdf ne lit pas : poppler borne quand même via last_page
-    out = []
+    out, rendered, reached_end = [], 0, False
     for num in range(1, max_pages + 1):
         try:
             page = pages[num - 1] if pages is not None else None
@@ -771,7 +791,9 @@ def _ocr_pdf(content: bytes, max_pages: int = OCR_MAX_PAGES, budget: "_Budget" =
         except Exception:
             break
         if not images:
+            reached_end = True
             break          # au-delà de la dernière page
+        rendered += 1
         if budget is not None:
             budget.ocr_pages_left -= 1
         for img in images[:1]:
@@ -783,6 +805,8 @@ def _ocr_pdf(content: bytes, max_pages: int = OCR_MAX_PAGES, budget: "_Budget" =
                 except Exception:
                     pass
         del images
+    if info is not None:
+        info["complet"] = bool(reached_end or (total_pages is not None and rendered >= total_pages))
     return "\n\n".join(t for t in out if t).strip()
 
 
@@ -1056,15 +1080,19 @@ def _extract_zip(content: bytes, max_chars: int, budget: "_Budget", depth: int, 
                 complet = True
                 if ln.endswith(".pdf"):
                     heavy_before = budget.pdf_heavy_pages
-                    t = extract_text_from_pdf(data, max_chars=remaining, budget=budget)
-                    # Budget de temps épuisé pendant cette pièce : elle n'a peut-être pas été lue en entier.
-                    if time.monotonic() > budget.deadline:
+                    pinfo = {}
+                    t = extract_text_from_pdf(data, max_chars=remaining, budget=budget, info=pinfo)
+                    # Pages non lues (plafond, page trop lourde sautée, temps écoulé) : la pièce
+                    # n'est pas « lue en entier ».
+                    if time.monotonic() > budget.deadline or pinfo.get("complet") is False:
                         complet = False
                     # PDF scanné dans l'archive → OCR de repli. Pas pour un PDF dont on a sauté
                     # des pages trop lourdes (plans vectoriels) : l'OCR y serait long et inutile.
                     if (not (t and not t.startswith("Erreur") and len(t) > 30)
                             and budget.pdf_heavy_pages == heavy_before):
-                        t = _ocr_pdf(data, budget=budget)
+                        oinfo = {}
+                        t = _ocr_pdf(data, budget=budget, info=oinfo)
+                        complet = bool(oinfo.get("complet"))     # scan lu sur 15 pages au plus
                 elif ln.endswith(".docx"):
                     t = _extract_docx(data)
                 else:
@@ -1086,13 +1114,13 @@ def _chars(parts: list) -> int:
     return sum(len(p["texte"]) if isinstance(p, dict) else len(p) for p in parts)
 
 
-def _single_piece(filename: str, text: str, max_chars: int) -> list:
+def _single_piece(filename: str, text: str, max_chars: int, complet: bool = True) -> list:
     from app.services import dce_pieces as _dp
     import os
     base = os.path.basename((filename or "").replace("\\", "/"))
     body = text[:max_chars]
     return [{"nom": base, "texte": body, "type": _dp.classify_piece(base, body),
-             "complet": len(text) < max_chars}]
+             "complet": bool(complet) and len(text) < max_chars}]
 
 
 def extract_dce_pieces(filename: str, content: bytes, max_chars: int = 40000) -> tuple:
@@ -1103,15 +1131,17 @@ def extract_dce_pieces(filename: str, content: bytes, max_chars: int = 40000) ->
     name = (filename or "").lower()
 
     if name.endswith(".pdf") or content[:5] == b"%PDF-":
-        txt = extract_text_from_pdf(content, max_chars=max_chars)
+        pinfo = {}
+        txt = extract_text_from_pdf(content, max_chars=max_chars, info=pinfo)
         if not txt or txt.startswith("Erreur") or len(txt) < 30:
             # PDF sans couche texte → tentative OCR (document scanné).
-            ocr = _ocr_pdf(content)
+            oinfo = {}
+            ocr = _ocr_pdf(content, info=oinfo)
             if ocr and len(ocr) >= 30:
-                return _single_piece(filename, ocr, max_chars), False
+                return _single_piece(filename, ocr, max_chars, complet=oinfo.get("complet", False)), False
             raise ValueError("PDF illisible (document scanné/protégé ?) ou vide. "
                              "Si c'est un scan, l'OCR n'a rien pu extraire.")
-        return _single_piece(filename, txt, max_chars), False
+        return _single_piece(filename, txt, max_chars, complet=pinfo.get("complet", True)), False
 
     if name.endswith(".docx"):   # AVANT le ZIP : un .docx est aussi une archive PK
         if not _docx_sizes_ok(content):

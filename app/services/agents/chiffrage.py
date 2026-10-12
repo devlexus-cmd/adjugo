@@ -32,13 +32,17 @@ def propose_tasks(details: dict, rate_labels: list, lang_name: str = None) -> li
     """L'IA découpe l'AO en tâches {phase, tache, profil, jours}. Liste vide si échec."""
     profiles = " | ".join(rate_labels) if rate_labels else " | ".join(r["label"] for r in DEFAULT_RATES)
     lang = f"\nRédige les libellés en {lang_name}." if (lang_name and lang_name != "français") else ""
+    # Critères : ceux du plan contrôlé (grille « Comment vous serez noté »), jamais la liste brute
+    # proposée par l'IA (poids non contrôlés, extraits recopiés).
+    from app.services.agents.redaction import _criteres_du_plan
+    criteres = _criteres_du_plan(details or {})
     user = f"""APPEL D'OFFRES :
 - Intitulé : {details.get('intitule_marche', '')}
 - Type : {details.get('type_marche', '')}
 - Lieu d'exécution : {details.get('lieu_execution', '')}
 - Délai d'exécution : {details.get('delai_execution', '')}
 - Allotissement : {details.get('allotissement', '')}
-- Critères d'attribution : {details.get('criteres_attribution', '')}
+- Critères d'attribution : {criteres}
 - Exigences RSE : {details.get('critere_rse', '')}
 
 PROFILS DE PRESTATION DISPONIBLES (choisis-en un par tâche) : {profiles}

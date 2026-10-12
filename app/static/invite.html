@@ -669,7 +669,7 @@
       detBox.appendChild($(`<div class="lock-note">${ico("lock", 13, "margin-top:1px")}<span>${esc(LOCK_SHORT)}</span></div>`));
       const lockTip = esc(CR ? CR.LABELS.lock : "Chiffré dans votre navigateur avec une clé qu'Adjugo ne stocke pas.") + " " + esc(CR ? CR.LABELS.lost : "Si vous perdez votre code, ce détail est définitivement perdu.");
       card.appendChild(field("Détail de votre chiffrage (coûts, marges, méthode)", detBox, lockTip));
-      card.appendChild(field("Paragraphe pour le dossier de présentation", memoire, "Le dossier de présentation est le « mémoire technique » commun du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun."));
+      card.appendChild(field("Paragraphe pour le dossier de présentation", memoire, "Le dossier de présentation est le « mémoire technique » commun du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun. Évitez d'y écrire le nom de vos salariés : un nom n'est remplacé par la fonction de la personne, avant l'envoi à l'IA, que s'il figure dans l'équipe de votre profil entreprise Adjugo."));
       card.appendChild(field("Message au chef de file (optionnel)", note));
       const cr = document.createElement("div"); cr.className = "row wrap"; cr.style.gap = "8px";
       [cNom, cMail, cTel].forEach(el => { el.style.flex = "1"; el.style.minWidth = "140px"; cr.appendChild(el); });
