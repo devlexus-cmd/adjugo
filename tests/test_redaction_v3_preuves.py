@@ -199,6 +199,8 @@ def test_passage_introuvable_refuse(client, auth):
     ({"objet": "Réfection de la toiture de l'école Jules Ferry et du gymnase Jean Moulin"}, "Jean Moulin"),
     ({"lieu": "Concarneau"}, "Concarneau"),
     ({"description": "Chantier certifié ISO 14001"}, "ISO 14001"),
+    ({"description": "Le maître d'ouvrage imposait 3 phases de travaux."}, "3 phases"),   # même « le CCTP… »
+    ({"description": "Avec une nacelle articulée."}, "nacelle"),
 ])
 def test_un_element_de_la_fiche_absent_du_passage_est_refuse(client, auth, modif, attendu):
     """Le libellé « trouvé dans vos documents » n'est donné que si la fiche ne dit RIEN de plus

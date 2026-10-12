@@ -421,8 +421,12 @@ def elements_hors_passage(nature: str, valeur: dict, passage: str) -> list:
             if not src.has_number(float(v), ""):
                 _ajoute(str(v) if genre == "int" else _nombre(v))
             continue
-        for x in far.a_relire(str(v), src, section_entreprise=True):
-            _ajoute(x["fait"])
+        # Tous les faits du champ, quelle que soit la phrase (même « Le CCTP prévoit… ») : la fiche
+        # ne doit rien dire de plus que le passage.
+        for ph, _titre, tableau in far.phrases(str(v)):
+            for fait, kind, key in far._facts_in(ph, tableau=tableau):
+                if not src.has(kind, key):
+                    _ajoute(fait)
         if champ in _CHAMPS_EXACTS:
             fv = far.fold(v)
             if fv and re.search(r"(?<!\w)" + re.escape(fv) + r"(?!\w)", low) is None:
@@ -539,15 +543,17 @@ def _appliquer_source(db, owner_id: int, p: Preuve, nature: str, valeur: dict, t
     ds = _date(date_source, "date_source")
     if ds is not None and ds > aujourd_hui() + timedelta(days=1):
         raise _err_champ("date_source", "La date du document ne peut pas être dans le futur.")
-    p.source_doc_id = p.source_document_id = None
+    # Tout est contrôlé AVANT de toucher à la preuve : une erreur ne laisse rien à moitié changé.
+    doc_id = document_id = None
     if type_source == DOCUMENTS:
-        p.source, p.source_doc_id, p.source_document_id = _source_documents(db, owner_id, nature, valeur, source)
+        src, doc_id, document_id = _source_documents(db, owner_id, nature, valeur, source)
     elif type_source == PUBLIC:
-        p.source, ds = _source_publique(source)
+        src, ds = _source_publique(source)
     elif type_source == ESTIMATION:
-        p.source = _source_estimation(db, owner_id, source)
+        src = _source_estimation(db, owner_id, source)
     else:
-        p.source = {}
+        src = {}
+    p.source, p.source_doc_id, p.source_document_id = src, doc_id, document_id
     p.type_source = type_source
     p.date_source = ds
 
@@ -640,11 +646,11 @@ def modifier(db, p: Preuve, *, user=None, valeur=_ABSENT, type_source=_ABSENT, s
     else:
         src = None
     ds = date_source if date_source is not _ABSENT else p.date_source
+    fin = _date(date_fin_validite, "date_fin_validite") if date_fin_validite is not _ABSENT else p.date_fin_validite
     if valeur is not _ABSENT or type_source is not _ABSENT or source is not _ABSENT or date_source is not _ABSENT:
         _appliquer_source(db, p.owner_id, p, p.nature, propre, ts, src, ds)
     p.valeur = propre
-    if date_fin_validite is not _ABSENT:
-        p.date_fin_validite = _date(date_fin_validite, "date_fin_validite")
+    p.date_fin_validite = fin
     p.empreinte = empreinte_de(p.nature, propre)
     if p.statut == ACCEPTEE:
         p.accepte_par, p.accepte_le = getattr(user, "id", None) or p.accepte_par, _now()
