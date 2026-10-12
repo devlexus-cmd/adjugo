@@ -324,3 +324,30 @@ def test_un_cv_insere_par_l_ia_ou_par_une_fiche_bloque_raccourcir_meme_sans_expe
     r = client.post(f"/api/atelier/{pid}/sections/{sid}/raccourcir", headers=h, json={"cible_mots": 30})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "cv_dans_la_partie", r.text
     assert not ia
+
+
+def test_profil_gouverne_par_mes_preuves_et_qualification_expiree_sans_base():
+    """Sans base : ce que le profil remet quand « Mes preuves » gouverne un élément, et une qualification
+    expirée. Une clé « même intitulé » se compare aux accents, à la casse et aux espaces près."""
+    from datetime import date
+    from types import SimpleNamespace
+    from app.services import atelier as at
+    from app.services.preuves_reprise import cle_intitule
+    comp = SimpleNamespace(name="Breizh Couverture", forme_juridique=None, city="Quimper", effectif=12, ca_n1=900000,
+                           ca_n2=None, ca_n3=None,
+                           qualifications=[{"name": "Qualibat 1311", "expiration": "2025-01-31"},
+                                           {"name": "Qualibat 3194", "expiration": "2030-12-31"}, "RGE Eco Artisan"],
+                           references=[{"intitule": "Couverture de la salle des sports de Kerlouan", "client": "Kerlouan"},
+                                       {"name": "Crèche de Pont-l'Abbé", "client": "Mairie"}])
+    tout = at._profil_texte(comp)
+    assert "Qualibat 1311" in tout and "Kerlouan" in tout and "Effectif : 12" in tout   # sans exclusion : inchangé
+    gerees = {cle_intitule("reference", "COUVERTURE de la salle des sports de  Kerlouan"),
+              cle_intitule("chiffre_cle", "Effectif"), cle_intitule("qualification", "rge eco artisan")}
+    t = at._profil_texte(comp, exclure=gerees, jour=date(2026, 10, 13))
+    assert "Kerlouan" not in t and "Effectif" not in t and "RGE Eco Artisan" not in t
+    assert "Qualibat 1311" not in t                                   # expirée
+    assert "Qualibat 3194" in t and "Crèche de Pont-l'Abbé" in t and "Chiffre d'affaires N-1 : 900000 €" in t
+    team = [{"nom": "Maëlys Kerbrat", "fonction": "Conductrice de travaux", "qualifications": "CACES R486"},
+            {"nom": "Yann Tanguy", "fonction": "Couvreur"}]
+    e = at._equipe_texte(team, exclure={cle_intitule("salarie", "maelys kerbrat")})
+    assert "Kerbrat" not in e and "CACES" not in e and "Yann Tanguy, Couvreur" in e
