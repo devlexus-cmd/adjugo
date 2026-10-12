@@ -310,6 +310,9 @@ app.include_router(knowledge_router)
 # Rédaction, vague 3 : « Mes preuves » (faits de l'entreprise, chacun avec sa source typée).
 from app.routers.preuves import router as preuves_router
 app.include_router(preuves_router)
+# Rédaction, vague 3 (chantier I) : fiches PROPOSÉES à partir des anciens documents de « Mon savoir-faire ».
+from app.routers.fiches_import import router as fiches_import_router
+app.include_router(fiches_import_router)
 # Rédaction, vague 2 : l'atelier du dossier de présentation (sections, versions, validation,
 # rédaction en tâche de fond, « à relire », export Word et PDF bloqué sauf dérogation).
 from app.routers.atelier import router as atelier_router
@@ -363,7 +366,10 @@ def root():
         return HTMLResponse(f.read())
 
 
-_TACHES_LECTURE = {"analyse", "lecture_pieces", "exigences", "veille", "deliberation", "renouvellements"}
+# « Lecture et analyse » : lire un document et en extraire des éléments (dossiers des acheteurs, et
+# anciens documents de l'entreprise pour proposer des fiches de preuves, rédaction vague 3).
+_TACHES_LECTURE = {"analyse", "lecture_pieces", "exigences", "veille", "deliberation", "renouvellements",
+                   "fiches_preuves"}
 
 
 def _h(texte: str) -> str:
@@ -740,6 +746,11 @@ def _recover_orphan_jobs():
                 db.commit()
                 if res.rowcount == 1:
                     from app.services import atelier as _atelier
+                    from app.services import fiches_import as _fiches
+                    if j.kind in _fiches.JOB_KINDS:
+                        # Fiches proposées (rédaction, vague 3) : lecture gratuite, rien n'a été débité ;
+                        # passée en erreur, elle n'est plus comptée dans le plafond du mois.
+                        continue
                     if j.kind in _atelier.JOB_KINDS:
                         # Atelier : rend EXACTEMENT ce que la tâche a débité (rien pour une refonte
                         # gratuite) et libère les parties qu'elle rédigeait.

@@ -553,7 +553,9 @@ const __adjApp = createApp({
       amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false, autoPause: "", pasteOpen: false, pasteText: "", pasting: false },
       amontDomaines: ["bâtiment", "voirie / VRD", "réseaux", "énergie / rénovation énergétique", "espaces verts / aménagement", "numérique / télécom", "équipement", "études / maîtrise d'œuvre"],
       kb: { docs: [], totalChunks: 0, uploading: false, kind: "memoire", text: "", textName: "", busyText: false,
-            searchQ: "", searchRes: null, searching: false, qText: "", qResults: null, qLoading: false },
+            searchQ: "", searchRes: null, searching: false, qText: "", qResults: null, qLoading: false,
+            // Fiches proposées à partir d'un document (rédaction, vague 3, chantier I).
+            fx: { open: null, data: null, busy: false, date: "", etat: {}, plafond: null, poll: 0, coche: null, contexte: {} } },
       amontRegions: [
         { code: "IDF", nom: "Île-de-France", deps: ["75", "77", "78", "91", "92", "93", "94", "95"] },
         { code: "ARA", nom: "Auvergne-Rhône-Alpes", deps: ["01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"] },
@@ -3891,6 +3893,115 @@ const __adjApp = createApp({
     async kbLoad() {
       try { const r = await this.api("GET", "/api/knowledge/"); this.kb.docs = r.docs || []; this.kb.totalChunks = r.total_chunks || 0; }
       catch (e) {}
+      this.fxEtats();
+    },
+
+    // ── Fiches proposées à partir d'un document (rédaction, vague 3, chantier I) ──
+    // Contrat : docs/REDACTION_V3_IMPORT.md. Adjugo lit le document une fois (tâche de fond) et
+    // propose des fiches, chacune avec son passage exact ; l'utilisateur coche (routes du socle).
+    async fxEtats() {
+      try { const r = await this.api("GET", "/api/knowledge/fiches"); this.kb.fx.etat = r.documents || {}; this.kb.fx.plafond = r.plafond || null; }
+      catch (e) {}
+    },
+    fxEtat(d) { return (this.kb.fx.etat || {})[String(d.id)] || null; },
+    fxBouton(d) {
+      const e = this.fxEtat(d); const st = e ? e.statut : "a_lire";
+      if (st === "lu") return "Voir les fiches proposées";
+      if (st === "en_cours") return "Lecture en cours";
+      if (st === "cv" || st === "piece_acheteur" || st === "rien_a_lire") return "Pourquoi aucune fiche";
+      return "Proposer des fiches";
+    },
+    fxResume(d) {
+      const e = this.fxEtat(d);
+      if (!e || e.statut !== "lu") return "";
+      return e.a_cocher + " à cocher · " + e.cochees + " cochée(s)";
+    },
+    fxAujourdhui() {
+      const n = new Date(); const p = x => String(x).padStart(2, "0");
+      return n.getFullYear() + "-" + p(n.getMonth() + 1) + "-" + p(n.getDate());
+    },
+    fxDate(iso) {
+      if (!iso) return "";
+      const [y, m, j] = String(iso).slice(0, 10).split("-");
+      return j + "/" + m + "/" + y;
+    },
+    fxStatut() {
+      const x = this.kb.fx.data;
+      if (!x) return "";
+      return (x.lecture && x.lecture.statut) || x.document.statut;
+    },
+    fxTexte(f) { return String(f.texte || "").replace(/^[^:]{1,20} : /, ""); },
+    fxEcarts() {
+      const l = (this.kb.fx.data && this.kb.fx.data.lecture) || {};
+      const n = l.ecartees || 0;
+      if (!n) return "";
+      const detail = (l.ecarts || []).map(e => e.libelle + " (" + e.nombre + ")").join(", ");
+      return n + (n > 1 ? " propositions écartées" : " proposition écartée") + " par Adjugo, sans IA : " + detail + ".";
+    },
+    async fxOuvrir(d) {
+      if (this.kb.fx.open === d.id) { this.kb.fx.open = null; this.kb.fx.data = null; this.kb.fx.poll++; return; }
+      this.kb.fx.open = d.id; this.kb.fx.data = null; this.kb.fx.date = ""; this.kb.fx.contexte = {};
+      await this.fxCharger(d.id);
+      const doc = this.kb.fx.data && this.kb.fx.data.document;
+      if (doc && doc.date_suggeree) this.kb.fx.date = doc.date_suggeree;
+      this.fxSuivre(d.id);
+    },
+    async fxCharger(id) {
+      try {
+        const r = await this.api("GET", "/api/knowledge/" + id + "/fiches");
+        if (this.kb.fx.open === id) { this.kb.fx.data = r; this.kb.fx.plafond = r.plafond || this.kb.fx.plafond; }
+      } catch (e) { this.notify(e.message, "err"); }
+    },
+    async fxLancer(d) {
+      if (this.kb.fx.busy) return;
+      this.kb.fx.busy = true;
+      try {
+        const r = await this.api("POST", "/api/knowledge/" + d.id + "/fiches", { date_document: this.kb.fx.date || null });
+        if (this.kb.fx.open === d.id) { this.kb.fx.data = r; this.kb.fx.plafond = r.plafond || this.kb.fx.plafond; }
+        this.fxEtats();
+        this.fxSuivre(d.id);
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.kb.fx.busy = false; }
+    },
+    fxSuivre(id) {
+      // Lecture en tâche de fond : l'écran se met à jour seul, sans bloquer la page.
+      const tour = ++this.kb.fx.poll;
+      const step = async (n) => {
+        if (tour !== this.kb.fx.poll || this.kb.fx.open !== id) return;
+        if (this.fxStatut() !== "en_cours") { if (n > 0) this.fxEtats(); return; }
+        if (n > 240) return;
+        await new Promise(r => setTimeout(r, 2500));
+        if (tour !== this.kb.fx.poll || this.kb.fx.open !== id) return;
+        await this.fxCharger(id);
+        step(n + 1);
+      };
+      step(0);
+    },
+    async fxCocher(f, ev) {
+      const on = !!ev.target.checked;
+      this.kb.fx.coche = f.id;
+      try {
+        const r = await this.api("POST", "/api/preuves/" + f.id + (on ? "/accepter" : "/retirer"), { version: f.version });
+        Object.assign(f, r);
+        this.fxEtats();
+      } catch (e) {
+        ev.target.checked = !on;
+        this.notify(e.message, "err");
+        if (e.status === 409 && this.kb.fx.open) this.fxCharger(this.kb.fx.open);
+      } finally { this.kb.fx.coche = null; }
+    },
+    async fxContexte(f) {
+      if (this.kb.fx.contexte[f.id]) { const c = Object.assign({}, this.kb.fx.contexte); delete c[f.id]; this.kb.fx.contexte = c; return; }
+      try {
+        const p = await this.api("GET", "/api/preuves/" + f.id + "/passage");
+        this.kb.fx.contexte = Object.assign({}, this.kb.fx.contexte, { [f.id]: p });
+        // Le passage surligné est amené en vue dans sa boîte (sans faire défiler la page).
+        this.$nextTick(() => {
+          const box = document.querySelector('[data-fx-ctx="' + f.id + '"]');
+          const m = box && box.querySelector("mark");
+          if (box && m) box.scrollTop = Math.max(0, m.offsetTop - box.offsetTop - 24);
+        });
+      } catch (e) { this.notify(e.message, "err"); }
     },
     kbKindLabel(k) { return ({ memoire: "Dossier de présentation", rse: "RSE", methodologie: "Méthodologie", certification: "Certification", reference: "Référence", autre: "Autre" })[k] || k; },
     async kbUpload(e) {
