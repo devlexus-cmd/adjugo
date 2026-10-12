@@ -14,7 +14,7 @@ Deux façons, choisies par le volume du dossier, sans jamais en couper une parti
     relevé dans toutes les autres pièces. Chaque pièce passe donc par l'IA.
     Robustesse : une partie dont la réponse est coupée est relue en deux moitiés (les informations
     complètes de la réponse coupée sont gardées sinon) ; une réponse illisible ou une panne de l'IA
-    est relancée une fois ; une partie qui échoue encore est NOMMÉE (« non exploitée par l'IA »)
+    est relancée une fois (après une courte pause) ; une partie qui échoue encore est NOMMÉE (« non exploitée par l'IA »)
     dans la synthèse et la couverture, et l'analyse n'échoue (et n'est remboursée) que si plus de
     la moitié des parties échoue. Les informations relevées sont rangées avec la lecture
     (on_parties) : une nouvelle analyse du même dossier ne relit que les parties manquantes.
@@ -359,12 +359,10 @@ def _lire_groupe(groupe: list, budget_relances: list, profondeur: int = 0) -> di
     try:
         text, coupee = _appel(groupe)
     except Exception as e:      # noqa: BLE001
+        # Panne persistante (déjà relancée une fois) : la partie est nommée « non exploitée ». Pas
+        # de nouvelles relances ici : une panne du fournisseur n'est presque jamais liée au contenu,
+        # et des échecs en rafale ouvriraient le disjoncteur IA de l'espace pour tout le reste.
         logger.info("lecture d'une partie du dossier en échec : %s", type(e).__name__)
-        # Plusieurs pièces dans l'appel : chacune de ses moitiés est retentée (une pièce en cause
-        # n'emporte pas ses voisines) ; sinon la partie est nommée « non exploitée ».
-        moit = _moities(groupe) if len(groupe) > 1 else []
-        if not isinstance(e, llm.LLMUnavailable) and _relance_possible(moit):
-            return _par_moities(moit)
         for r in res.values():
             r["erreur"] = True
         return res
