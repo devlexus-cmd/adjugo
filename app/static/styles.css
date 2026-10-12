@@ -997,13 +997,14 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 /* ══════════ Atelier du dossier de présentation (rédaction, vague 2) ══════════
    Plan à gauche, texte au centre, faits « à relire » et extraits à droite. Sobre : filets fins,
    rythme 16 px, rien collé aux bords ; lisible à 375 px (une colonne, aucune barre horizontale). */
+.atl { position:relative; }
 .atl-m0 { margin:0; } .atl-mt4 { margin-top:4px; } .atl-mt8 { margin-top:8px; } .atl-mt12 { margin-top:12px; } .atl-mt16 { margin-top:16px; }
 .atl-g6 { gap:6px; } .atl-g8 { gap:8px; } .atl-g12 { gap:12px; }
 .atl-pad { padding:0 16px 12px; }
 .atl-ok { color:var(--success-text); } .atl-ko { color:var(--danger-text); }
-.atl-num { font-weight:700; color:var(--text-2); margin-right:6px; font-variant-numeric:tabular-nums; }
+.atl-num { font-weight:700; color:var(--text-2); margin-right:4px; font-variant-numeric:tabular-nums; white-space:pre; }
 /* Limites : vert / orange / rouge sobres (texte coloré sur fond pâle, jamais criard) */
-.atl-lim { display:inline-flex; align-items:center; gap:2px; font-size:12px; line-height:1.45; padding:2px 9px; border-radius:999px; background:var(--surface-3); color:var(--text-2); overflow-wrap:anywhere; max-width:100%; }
+.atl-lim { display:inline-flex; align-items:center; gap:2px; font-size:12px; line-height:1.45; padding:2px 9px; border-radius:10px; background:var(--surface-3); color:var(--text-2); overflow-wrap:anywhere; max-width:100%; }
 .atl-lim.sm { font-size:10.5px; padding:1px 7px; }
 .atl-lim .tip { width:18px; height:18px; margin-left:2px; color:inherit; }
 .atl-lim-vert { background:var(--success-weak); color:var(--success-text); }
@@ -1058,7 +1059,9 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 .atl-part-t { font-size:12.5px; font-weight:600; line-height:1.35; overflow-wrap:anywhere; }
 .atl-part-m { font-size:11.5px; color:var(--muted); overflow-wrap:anywhere; }
 .atl-plan-f { padding:8px 16px 16px; border-top:1px solid var(--hairline); }
-.atl-plan-f .inp { height:32px; min-width:0; flex:1; }
+.atl-plan-f .inp { height:32px; min-width:0; flex:1 1 140px; }
+.atl-pieces { list-style:none; margin:6px 0 0; padding:0; font-size:12.5px; }
+.atl-pieces li { padding:3px 0; overflow-wrap:anywhere; }
 .atl-centre { padding:16px; scroll-margin-top:84px; }
 .atl-sec-t { margin:0; font-family:var(--font-display); font-size:15px; font-weight:700; line-height:1.35; overflow-wrap:anywhere; }
 .atl-actions { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:12px; padding-top:12px; border-top:1px solid var(--hairline); }

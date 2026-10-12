@@ -365,7 +365,7 @@ function atlRetirerPhrase(texte, fait, phrase) {
   const ls = t.lastIndexOf("\n", s - 1) + 1;
   let le = t.indexOf("\n", e); if (le < 0) le = t.length;
   if (/^\s*(?:[-*+•]|\d{1,2}[.)]|#{1,6})?\s*$/.test(t.slice(ls, s)) && !t.slice(e, le).trim()) {
-    return (t.slice(0, ls) + t.slice(le < t.length ? le + 1 : le)).replace(/\n{3,}/g, "\n\n");
+    return (t.slice(0, ls) + t.slice(le < t.length ? le + 1 : le)).replace(/\n{3,}/g, "\n\n").replace(/^\s*\n/, "");
   }
   const avant = t.slice(0, s).replace(/[ \t]+$/, ""), apres = t.slice(e).replace(/^[ \t]+/, "");
   const sep = avant && !/\n$/.test(avant) && apres && !/^\n/.test(apres) ? " " : "";
@@ -3812,6 +3812,17 @@ const __adjApp = createApp({
     atlStatutCls(st) { return ({ a_ecrire: "neutral", brouillon: "atl-st-brouillon", relu: "st-envoye", valide: "go", a_revalider: "a_etudier" })[st] || "neutral"; },
     atlPlanLabel(src) { return ({ cadre: "Cadre de l'acheteur", grille: "Critères du règlement", libre: "Plan simple" })[src] || ""; },
     atlLimTexte(x) { return _gnLim(x || {}); },
+    atlLimCourt(l) { const m = String((l && l.message) || ""), p = (l && l.titre ? l.titre + " : " : ""); const r = p && m.indexOf(p) === 0 ? m.slice(p.length) : m; return r.charAt(0).toUpperCase() + r.slice(1); },
+    atlPartLabel(s) { return (s.numero_affiche ? s.numero_affiche + " " : "") + s.intitule + ", " + s.statut_libelle + (s.faits_a_relire ? ", " + s.faits_a_relire + " fait" + (s.faits_a_relire > 1 ? "s" : "") + " à relire" : "") + (s.redaction_en_cours ? ", rédaction en cours" : ""); },
+    atlMotsLib(n) { return Number(n) > 1 ? "mots" : "mot"; },
+    atlPropLims(p) {   // limites repérées dans le règlement, montrées avec le plan proposé
+      const l = (p && p.limites) || {}, out = [];
+      (l.document || []).forEach(x => out.push({ t: _gnLim(x) + " pour tout le dossier", phrase: x.phrase, source: x.source }));
+      (l.chaque_question || []).forEach(x => out.push({ t: _gnLim(x) + " par question", phrase: x.phrase, source: x.source }));
+      if (l.police && (l.police.police || l.police.taille)) out.push({ t: _gnLim(Object.assign({ type: "police" }, l.police)), phrase: l.police.phrase, source: l.police.source });
+      return out;
+    },
+    atlNonControlees(lims) { return ((lims && lims.non_controlees) || []).map(x => _gnLim(x)).filter(Boolean); },
     atlSec() { const a = this.atl; return (a.st && a.st.sections.find(s => s.id === a.sel)) || null; },
     atlSecLims(s) { const st = this.atl.st; return (st && s) ? (st.limites || []).filter(l => l.portee === "section" && l.section_id === s.id) : []; },
     atlDocLims(st) { return ((st && st.limites) || []).filter(l => l.portee === "document"); },
