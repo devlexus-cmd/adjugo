@@ -23,10 +23,13 @@ DEFAULT_LABEL = "Mémoire technique"
 TRUNCATED_NOTE = "[À compléter : la rédaction a été interrompue ici, la suite du texte manque.]"
 
 # Renvois internes aux sources (même forme que rag.cited_refs : « [S1] », « [S1, S2] », « [S1;S3] »,
-# et les plages « [S1-S3] », « [S1–S3] »).
-_CITE = re.compile(r"[ \t]*\[S\s*\d[\dS,;\s\-–—]*\]")
-# Dernier filet : tout reste de renvoi « [S2 … ] » (forme imprévue) est retiré aussi.
-_CITE_RESTE = re.compile(r"[ \t]*\[\s*S\s*\d[^\]\n]{0,40}\]")
+# et les plages « [S1-S3] », « [S1–S3] ») et, depuis la vague 3, aux faits numérotés remis à l'IA
+# (« [F3] », « [P1] », « [E2] », « [C4] », « [G1] », « [F3, S2] » : app/services/faits_sources.py).
+_CITE = re.compile(r"[ \t]*\[[FSPECG]\s*\d[\dFSPECG,;\s\-–—]*\]")
+# Dernier filet : tout reste de renvoi « [S2 … ] », « [F3 … ] » (forme imprévue) est retiré aussi.
+_CITE_RESTE = re.compile(r"[ \t]*\[\s*[FSPECG]\s*\d[^\]\n]{0,40}\]")
+# Place d'un CV que l'IA n'a pas pu faire insérer (« [CV F7] ») : jamais chez l'acheteur.
+_CV = re.compile(r"[ \t]*\[\s*CV\s+F\s*\d{1,4}\s*\]", re.IGNORECASE)
 _TODO = re.compile(r"\[\s*[ÀAà]\s+compl[ée]ter[^\]]*\]", re.IGNORECASE)
 _FENCE = re.compile(r"^\s*```[a-zA-Z]*\s*\n|\n?\s*```\s*$")
 # Noms que les règlements donnent au document de réponse technique.
@@ -48,6 +51,7 @@ def clean_markdown(md: str) -> str:
     t = _FENCE.sub("", t.strip())
     t = _CITE.sub("", t)
     t = _CITE_RESTE.sub("", t)
+    t = _CV.sub("", t)
     # L'espace AVANT le renvoi part avec lui (« texte [S1]. » → « texte. ») ; celle d'avant « : »
     # reste (typographie française). Reste d'une liste de renvois : « texte, . » → « texte. ».
     t = re.sub(r",[ \t]*([.;])", r"\1", t)

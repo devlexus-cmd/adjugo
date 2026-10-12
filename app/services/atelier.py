@@ -47,6 +47,7 @@ from app.models import (Company, DossierPresentation, DossierSection, DossierSec
 from app.services import atelier_export as ax
 from app.services import atelier_plan as ap
 from app.services import faits_a_relire as far
+from app.services import faits_sources as fs
 from app.services import memoire_export as me
 
 logger = logging.getLogger("adjugo")
@@ -881,9 +882,11 @@ def enregistrer_texte(db, ctx: "Contexte", section: DossierSection, lecteur: Lec
     if base is not None and base.empreinte == empreinte(t):
         return base
     ia = ia_a_servi(t, _textes_ia(db, section))
-    faits = far.controle(t, ctx.sources_entreprise, declares=[t], anciens=(base.faits if base else []),
-                         reprise="phrase", noms_entreprise=ctx.noms_entreprise,
-                         section_entreprise=section_sur_l_entreprise(section))
+    # Vos faits sont vos déclarations ; un fait déjà à relire le reste, un fait relié à sa source la
+    # garde (vague 3, app/services/faits_sources.py).
+    faits = fs.controler(t, ctx.fiches_de_version(db, base), acheteur=None, noms_entreprise=ctx.noms_entreprise,
+                         section_entreprise=section_sur_l_entreprise(section), mode="utilisateur",
+                         anciens=(base.faits if base else []), base_texte=(base.texte if base else ""))
     v = ajouter_version(db, section, texte=t, origine=UTILISATEUR, ia=ia, sources=(base.sources if base and ia else []),
                         faits=faits, base_version_id=base.id if base else None, auteur_user_id=lecteur.user_id)
     db.commit()
@@ -963,7 +966,9 @@ def valider(db, project: Project, section: DossierSection, lecteur: Lecteur, ver
 
 def traiter_fait(db, section: DossierSection, lecteur: Lecteur, fait_id: str, statut: str) -> dict:
     """« Relu par vous » (ou retour à « à relire ») sur un fait signalé de la version courante.
-    Adjugo ne dit jamais qu'un fait est bon : c'est l'utilisateur qui déclare l'avoir relu."""
+    Adjugo ne dit jamais qu'un fait est bon : c'est l'utilisateur qui déclare l'avoir relu. Un fait
+    relié à sa source ne se « relit » pas (409), sauf si sa source n'est plus utilisable : il
+    redevient alors à relire, comme à l'écran."""
     if not peut_ecrire(section, lecteur):
         raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
     if statut not in (far.RELU, far.A_RELIRE):
@@ -978,6 +983,12 @@ def traiter_fait(db, section: DossierSection, lecteur: Lecteur, fait_id: str, st
     if hit.get("type") == far.RESTE:
         raise AtelierError(409, "faits_non_detailles", "Ces faits ne sont pas détaillés : découpez ou raccourcissez la "
                                                        "partie pour les relire un par un.")
+    if hit.get("statut") == fs.AVEC_SOURCE:
+        val = _valides_de(db, section.owner_id, section.project_id, [faits])
+        if fs.ajuster([hit], val)[0].get("statut") == fs.AVEC_SOURCE:
+            raise AtelierError(409, "fait_avec_source", "Ce fait est déjà relié à l'endroit où Adjugo l'a trouvé.")
+        i = faits.index(hit)
+        faits[i] = hit = fs.source_perdue(hit)
     if statut == far.RELU:
         hit.update(statut=far.RELU, relu_par=lecteur.user_id, relu_le=_now_iso())
     else:
@@ -989,6 +1000,111 @@ def traiter_fait(db, section: DossierSection, lecteur: Lecteur, fait_id: str, st
     section.lock_version = (section.lock_version or 0) + 1
     db.commit()
     return hit
+
+
+# ── Vague 3 (A) : relire les sources d'une partie, ajouter une source à un fait ─────────
+
+def _valides_de(db, owner_id: int, project_id: Optional[int], faits_listes) -> dict:
+    """Preuves et extraits encore utilisables pour ces listes de faits (relu à chaque lecture)."""
+    from app.services import preuves as pv
+    try:
+        return fs.valides(db, owner_id, pv.membres(db, owner_id), project_id, faits_listes)
+    except Exception as e:      # noqa: BLE001 — au pire, rien n'est ajusté (jamais bloquant)
+        logger.warning("atelier : validité des sources illisible (compte %s) : %s", owner_id, type(e).__name__)
+        return None
+
+
+def recontroler(db, ctx: "Contexte", project: Project, section: DossierSection, lecteur: Lecteur,
+                commit: bool = True) -> DossierSectionVersion:
+    """Relit les sources de la version courante, SANS IA et sans changer le texte : une preuve
+    ajoutée relie le fait qu'elle contient, une preuve retirée ou expirée le rend à relire. « Relu
+    par vous » est gardé pour le même fait dans la même phrase ; vos déclarations restent les vôtres."""
+    if not peut_ecrire(section, lecteur):
+        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+    section = _verrouiller(db, section)
+    _verifier_aucune_tache(db, [section])
+    v = version_courante(db, section)
+    if v is None or not (v.texte or "").strip():
+        raise AtelierError(422, "partie_vide", "Cette partie n'a pas encore de texte.")
+    ecrit_par_vous = v.origine == UTILISATEUR
+    acheteur = None if ecrit_par_vous else acheteur_du_marche(db, project, ctx.member_ids)
+    faits = fs.controler(v.texte or "", ctx.fiches_de_version(db, v), acheteur=acheteur,
+                         noms_entreprise=ctx.noms_entreprise, section_entreprise=section_sur_l_entreprise(section),
+                         mode="utilisateur" if ecrit_par_vous else "ia", anciens=v.faits or [])
+    v.faits = faits
+    flag_modified(v, "faits")
+    section.lock_version = (section.lock_version or 0) + 1
+    if commit:
+        db.commit()
+        db.refresh(v)
+    return v
+
+
+def _fait_a_relire(db, section: DossierSection, fait_id: str) -> tuple:
+    v = version_courante(db, section)
+    if v is None:
+        raise AtelierError(404, "fait_introuvable", "Ce fait n'est plus dans le texte : rechargez la partie.")
+    hit = next((x for x in (v.faits or []) if isinstance(x, dict) and x.get("id") == fait_id), None)
+    if hit is None or hit.get("type") == far.RESTE:
+        raise AtelierError(404, "fait_introuvable", "Ce fait n'est plus dans le texte : rechargez la partie.")
+    if hit.get("type") == fs.ENGAGEMENT:
+        raise AtelierError(409, "engagement", "Un engagement ne se prouve pas par une fiche : confirmez-le, corrigez-le "
+                                              "ou retirez-le.")
+    return v, dict(hit)
+
+
+def candidats_source(db, ctx: "Contexte", section: DossierSection, lecteur: Lecteur, fait_id: str) -> dict:
+    """Pour « Ajouter une source » : les preuves utilisables qui CONTIENNENT ce fait (même valeur et
+    même unité, même certification, nom ou matériel), et la fiche « déclaré par vous » proposée."""
+    if not peut_voir_prive(section, lecteur):
+        raise AtelierError(404, "fait_introuvable", "Ce fait n'est plus dans le texte : rechargez la partie.")
+    _v, hit = _fait_a_relire(db, section, fait_id)
+    from app.services import preuves as pv
+    preuves = [{"ref": f.ref, "id": f.preuve_id, "nature": f.nature, "texte": f.texte, "source_libelle": f.libelle}
+               for f in ctx.fiches(db) if f.ref.startswith(fs.PREUVE) and fs.fiche_contient(f, hit)]
+    prop = fs.proposition_declaration(hit)
+    return {"fait": {k: hit.get(k) for k in ("id", "fait", "type", "phrase", "statut")}, "preuves": preuves,
+            "proposition": prop,
+            "natures": [{"code": n, "libelle": pv.NATURE_LIBELLES[n], "champs": list(pv.CHAMPS[n]),
+                         "requis": list(pv.REQUIS[n])} for n in prop.get("natures") or []]}
+
+
+def ajouter_source(db, ctx: "Contexte", project: Project, section: DossierSection, lecteur: Lecteur, fait_id: str,
+                   *, preuve_id=None, nature: str = None, valeur: dict = None, user: Optional[User] = None) -> dict:
+    """« Ajouter une source » à un fait à relire, SANS IA et sans toucher au texte : relier une
+    preuve utilisable qui le contient, ou le DÉCLARER (nouvelle preuve « déclaré par vous », dans
+    « Mes preuves »). La fiche doit contenir le fait tel qu'il est écrit, sinon rien n'est créé.
+    Puis la partie est recontrôlée : tout fait que la fiche contient y est relié."""
+    from app.services import preuves as pv
+    if not peut_ecrire(section, lecteur):
+        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+    _v, hit = _fait_a_relire(db, section, fait_id)
+    if preuve_id not in (None, ""):
+        f = next((x for x in ctx.fiches(db) if x.ref.startswith(fs.PREUVE) and str(x.preuve_id) == str(preuve_id)),
+                 None)
+        if f is None:
+            raise AtelierError(404, "preuve_introuvable", "Preuve introuvable, ou plus utilisable (retirée ou "
+                                                          "expirée).")
+        if not fs.fiche_contient(f, hit):
+            raise AtelierError(422, "preuve_sans_ce_fait",
+                               f"Cette preuve ne contient pas « {hit.get('fait')} » : choisissez-en une autre, ou "
+                               "corrigez le texte.")
+    else:
+        propre = pv.valider_valeur(nature, valeur)
+        essai = fs.Fiche("F0", fs.T_DECLARE, fs.LIB_DECLARE, pv.texte_de(nature, propre),
+                         extra=fs._adjacents(nature, propre), nature=nature, valeur=propre)
+        if not fs.fiche_contient(essai, hit):
+            raise AtelierError(422, "fiche_sans_ce_fait",
+                               f"Cette fiche ne contient pas « {hit.get('fait')} » tel qu'il est écrit (même nombre, "
+                               "même unité) : corrigez la fiche, ou corrigez le texte.")
+        pv.creer(db, ctx.owner_id, nature=nature, valeur=propre, type_source=pv.DECLARE, origine="saisie",
+                 user=user, commit=False)
+        ctx._fiches = None          # la nouvelle preuve fait partie des faits autorisés
+    v = recontroler(db, ctx, project, section, lecteur, commit=False)
+    db.commit()
+    db.refresh(v)
+    nouveau = next((x for x in (v.faits or []) if isinstance(x, dict) and x.get("id") == fait_id), None)
+    return nouveau or hit
 
 
 # ── Le contexte de l'entreprise : faits autorisés et sources (jamais le dossier de l'acheteur) ─
@@ -1140,6 +1256,85 @@ class Contexte:
     def pseudonymiseur(self):
         from app.services.pii import from_team
         return from_team(self.team + self.preuves_team + self.partner_team)
+
+    # ── Vague 3 (A) : les faits NUMÉROTÉS et TYPÉS (app/services/faits_sources.py) ──
+    def fiches(self, db, pseudonymiseur=None) -> list:
+        """Les faits autorisés de l'entreprise pour ce marché, numérotés et typés : preuves
+        utilisables de « Mes preuves » [F#] (numéros stables), profil [P#], équipe du profil [E#],
+        chiffrage [C#] (votre estimation), apports envoyés par les partenaires [G#]. Les extraits de
+        « Mon savoir-faire » [S#] s'y ajoutent partie par partie. Jamais le dossier de l'acheteur."""
+        if getattr(self, "_fiches", None) is None or pseudonymiseur is not None:
+            try:
+                preuves = fs.fiches_preuves(db, self.owner_id, project_id=self.project_id,
+                                            pseudonymiseur=pseudonymiseur)
+            except Exception as e:      # noqa: BLE001 — « Mes preuves » illisible : le reste suffit
+                logger.warning("atelier : preuves illisibles (compte %s) : %s", self.owner_id, type(e).__name__)
+                preuves = []
+            self._fiches = preuves + fs.fiches_contexte(self.profil, self.equipe, self.chiffrage, self.partenaires)
+        return list(self._fiches)
+
+    def fiches_de_version(self, db, v) -> list:
+        """Fiches pour relire une version déjà écrite : celles de l'entreprise, plus les extraits
+        de « Mon savoir-faire » qu'elle cite ou dont un fait dépend (relus par leur numéro, dans
+        l'organisation seulement ; un morceau retiré ne revient pas)."""
+        out = self.fiches(db)
+        if v is None:
+            return out
+        refs = {}
+        for x in (v.sources or []):
+            if isinstance(x, dict) and str(x.get("ref") or "").startswith(fs.EXTRAIT) and x.get("chunk_id"):
+                refs[x["ref"]] = x
+        for x in fs.avec_source(v.faits):
+            src = x.get("source") or {}
+            if str(src.get("ref") or "").startswith(fs.EXTRAIT) and src.get("chunk_id"):
+                refs.setdefault(src["ref"], {"ref": src["ref"], "chunk_id": src["chunk_id"],
+                                             "doc_name": src.get("doc_nom") or ""})
+        ids = []
+        for x in refs.values():
+            try:
+                ids.append(int(x["chunk_id"]))
+            except (TypeError, ValueError):
+                pass
+        if not ids:
+            return out
+        from app.models import KnowledgeChunk
+        rows = {c.id: c for c in db.query(KnowledgeChunk).filter(KnowledgeChunk.id.in_(ids),
+                                                                 KnowledgeChunk.user_id.in_(self.member_ids)).all()}
+        chunks = []
+        for ref, x in sorted(refs.items(), key=lambda kv: int(kv[0][1:]) if kv[0][1:].isdigit() else 0):
+            c = rows.get(int(x["chunk_id"])) if str(x["chunk_id"]).isdigit() else None
+            if c is not None:
+                chunks.append({"ref": ref, "chunk_id": c.id, "text": c.text or "",
+                               "doc_name": x.get("doc_name") or ""})
+        return out + fs.fiches_extraits(chunks)
+
+
+def _acheteur(project: Project, lu: dict, payload: Optional[dict]) -> "fs.Acheteur":
+    """Le dossier de l'acheteur, pièce par pièce, pour rapprocher les phrases sur le marché (et dire
+    qu'un fait d'une phrase sur l'entreprise vient de lui). Lecture intégrale : toutes les pièces
+    lues ; sinon le texte de l'ancienne lecture ; rien si aucun dossier n'est importé."""
+    pieces = []
+    if payload:
+        pieces = [(p.get("libelle") or p.get("nom") or "", p.get("texte") or "") for p in payload.get("pieces") or []
+                  if (p.get("texte") or "").strip()]
+    elif (lu or {}).get("texte"):
+        pieces = [("Dossier de l'acheteur", lu.get("texte") or "")]
+    return fs.Acheteur(pieces)
+
+
+def acheteur_du_marche(db, project: Project, member_ids: list) -> "fs.Acheteur":
+    """Le dossier de l'acheteur tel qu'il est maintenant (recontrôle d'une partie)."""
+    lu = lire_dossier_acheteur(db, project, member_ids)
+    payload = None
+    if lu.get("integral"):
+        from app.services import dce_texte
+        try:
+            payload = dce_texte.charger(project)
+        except Exception:       # noqa: BLE001
+            payload = None
+        if not payload:
+            lu = lire_dossier_acheteur(db, project, member_ids, integrale=False)
+    return _acheteur(project, lu, payload)
 
 
 # ── Compteur, limites et blocage de l'export ──────────────────────────────────────────
@@ -1342,13 +1537,19 @@ def _limite_out(x: dict, portee: str, sid, titre: str, kind: str, mesure, suffix
             "avertissement": MSG_IRREGULIERE if dep else ""}
 
 
-def etat_hash(dossier: DossierPresentation, sections: list, courantes: dict, limites: list) -> str:
+def _faits_tels_quels(v) -> list:
+    return (v.faits or []) if v is not None else []
+
+
+def etat_hash(dossier: DossierPresentation, sections: list, courantes: dict, limites: list, faits_de=None) -> str:
     """Empreinte de l'état exporté (textes, faits traités, options, limites) : une dérogation ne
-    vaut que pour CET état ; au moindre changement, l'export se contrôle de nouveau."""
+    vaut que pour CET état ; au moindre changement, l'export se contrôle de nouveau. `faits_de` :
+    les faits d'une version tels qu'ils sont lus (une source perdue rend un fait à relire)."""
+    fd = faits_de or _faits_tels_quels
     payload = {"o": options_export(dossier), "l": [(x["portee"], x["section_id"], x["type"], x["valeur"], x["mesure"])
                                                    for x in limites],
                "s": [(s.id, s.ordre, s.intitule, (courantes.get(s.id).empreinte if courantes.get(s.id) else ""),
-                      sorted((f.get("id"), f.get("statut")) for f in ((courantes.get(s.id).faits or [])
+                      sorted((f.get("id"), f.get("statut")) for f in (fd(courantes.get(s.id))
                                                                        if courantes.get(s.id) else [])
                              if isinstance(f, dict)))
                      for s in sections]}
@@ -1357,7 +1558,7 @@ def etat_hash(dossier: DossierPresentation, sections: list, courantes: dict, lim
 
 
 def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs: dict, limites: list,
-            attente: Optional[list] = None) -> dict:
+            attente: Optional[list] = None, faits_de=None) -> dict:
     """Ce qui empêche l'export (décision 2b) et ce qui reste à signaler. {bloque, raisons, etat_hash,
     derogation (valable pour cet état) | None, avertissements}. `courantes` est le texte COMMUN
     (versions_communes) ; `attente` : parties d'un partenaire dont le texte n'est pas encore envoyé."""
@@ -1376,7 +1577,7 @@ def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs
         n = len(me.placeholders(texte))
         if n:
             trous.append({"section_id": s.id, "titre": titre, "nombre": n})
-        nf = far.non_traites(v.faits if v is not None else [])
+        nf = far.non_traites((faits_de or _faits_tels_quels)(v) if v is not None else [])
         if nf:
             faits.append({"section_id": s.id, "titre": titre, "nombre": nf})
         # La partie d'un partenaire est commune quand il l'a envoyée (validée) : rien à valider ici.
@@ -1408,7 +1609,7 @@ def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs
                         "message": ("Une limite fixée par le règlement est dépassée." if len(dep) == 1 else
                                     f"{len(dep)} limites fixées par le règlement sont dépassées."),
                         "avertissement": MSG_IRREGULIERE})
-    eh = etat_hash(dossier, sections, courantes, limites)
+    eh = etat_hash(dossier, sections, courantes, limites, faits_de=faits_de)
     der = dossier.derogation if isinstance(dossier.derogation, dict) else None
     codes = {r["code"] for r in raisons}
     valide = bool(der and der.get("etat_hash") == eh and codes <= set(der.get("raisons") or []) and raisons
@@ -1426,6 +1627,28 @@ def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs
     return {"bloque": bool(raisons), "raisons": raisons, "etat_hash": eh,
             "derogation": _derogation_out(der) if valide else None,
             "peut_exporter": (not raisons) or valide, "avertissements": avert}
+
+
+def faits_lus(db, dossier: DossierPresentation, project: Project, courantes: dict):
+    """Les faits d'une version tels que l'export les lit : un fait relié à une preuve retirée ou
+    expirée (ou à un extrait retiré) redevient à relire et bloque l'export comme les autres."""
+    listes = [v.faits for v in courantes.values() if v is not None and fs.avec_source(v.faits)]
+    if not listes:
+        return None
+    val = _valides_de(db, dossier.owner_id, project.id, listes)
+    return (lambda v: fs.ajuster(v.faits or [], val)) if val else None
+
+
+def sources_faits_out(db, owner_id: int) -> dict:
+    """Ce que l'écran dit des sources (vague 3) : libellés activés ou non, la bulle (i), et les
+    preuves acceptées qu'Adjugo n'utilise pas (expirée, document retiré) avec la raison."""
+    try:
+        from app.services import preuves as pv
+        ecartees = [{k: x.get(k) for k in ("ref", "id", "nature", "raison", "message")}
+                    for x in pv.faits_ecartes(db, owner_id)][:50]
+    except Exception:       # noqa: BLE001
+        ecartees = []
+    return {"libelles": fs.libelles_actifs(), "bulle": fs.BULLE, "preuves_ecartees": ecartees}
 
 
 def _derogation_out(der: dict) -> dict:
@@ -1689,13 +1912,19 @@ def _requete(section: DossierSection) -> str:
 
 
 def _partie_ia(dossier: DossierPresentation, section: DossierSection, numero: str, autres: list, ctx: Contexte,
-               chunks: list, dossier_acheteur: str, cible: Optional[int], passages_acheteur: str = "") -> dict:
-    return {"titre": section.intitule, "numero": numero, "question": section.question or "",
-            "critere": section.critere or "", "poids": section.poids or "",
-            "poids_source": (section.poids_source or "") if section.poids else "",
-            "partie_de_critere": bool(section.partie_de_critere), "source_plan": section.source_plan,
-            "cible_mots": cible, "faits": ctx.faits_autorises(), "chunks": chunks,
-            "dossier_acheteur": dossier_acheteur, "passages_acheteur": passages_acheteur, "autres_parties": autres}
+               chunks: list, dossier_acheteur: str, cible: Optional[int], passages_acheteur: str = "",
+               fiches: Optional[list] = None) -> dict:
+    """Ce que le moteur remet à l'IA pour une partie. `fiches` : les faits autorisés NUMÉROTÉS et
+    typés (vague 3) — l'IA cite leur renvoi [F3], [P1]… ; l'ancien bloc `faits` reste pour mémoire."""
+    out = {"titre": section.intitule, "numero": numero, "question": section.question or "",
+           "critere": section.critere or "", "poids": section.poids or "",
+           "poids_source": (section.poids_source or "") if section.poids else "",
+           "partie_de_critere": bool(section.partie_de_critere), "source_plan": section.source_plan,
+           "cible_mots": cible, "faits": ctx.faits_autorises(), "chunks": chunks,
+           "dossier_acheteur": dossier_acheteur, "passages_acheteur": passages_acheteur, "autres_parties": autres}
+    if fiches is not None:
+        out["fiches"] = fs.lignes_ia(fiches, _requete(section))
+    return out
 
 
 def _dossier_pour_ia(project: Project, lu: dict) -> tuple:
@@ -1883,19 +2112,27 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
             # Lecture rangée devenue illisible : l'ancienne lecture, bornée, plutôt que rien.
             lu = lire_dossier_acheteur(db, project, member_ids, integrale=False)
             dossier_acheteur = lu.get("texte") or ""
+    # Vague 3 (A) : les faits autorisés NUMÉROTÉS et typés ; les noms de l'équipe sont masqués par
+    # CE pseudonymiseur (le même pour les lignes remises à l'IA et pour la portée de l'appel).
+    pz = ctx.pseudonymiseur()
+    fiches_ent = ctx.fiches(db, pseudonymiseur=pz)
+    acheteur = _acheteur(project, lu, payload) if action == JOB_REDIGER else None
     taches = []
     for s in sections:
         base = version_courante(db, s)
         if action == JOB_RACCOURCIR:
             taches.append({"sid": s.id, "base": base, "texte": base.texte if base else "", "chunks": [],
-                           "cible": cibles.get(s.id), "titre": s.intitule})
+                           "cible": cibles.get(s.id), "titre": s.intitule,
+                           "fiches": ctx.fiches_de_version(db, base)})
             continue
         chunks = rag.retrieve_multi(db, member_ids, _requete(s), k=6, relevance=True)
         autres = [ax.titre_section({"numero": rangs.get(x.id, ""), "intitule": x.intitule}) for x in act if x.id != s.id]
         cible = cible_mots(s, None)
-        taches.append({"sid": s.id, "base": base, "chunks": chunks,
+        fiches = fiches_ent + fs.fiches_extraits(chunks)
+        taches.append({"sid": s.id, "base": base, "chunks": chunks, "fiches": fiches,
                        "partie": _partie_ia(dossier, s, rangs.get(s.id, ""), autres, ctx, chunks, dossier_acheteur,
-                                            cible, passages_acheteur=_passages_pour_ia(project, payload, s, entiers))})
+                                            cible, passages_acheteur=_passages_pour_ia(project, payload, s, entiers),
+                                            fiches=fiches_ent)})
 
     def _un(t):
         if action == JOB_RACCOURCIR:
@@ -1903,7 +2140,7 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
         return moteur.rediger_partie(t["partie"], billing_id=owner_id)
 
     label = "atelier : rédiger" if action == JOB_REDIGER else "atelier : raccourcir"
-    with pii_scope(ctx.pseudonymiseur()), cost_meter(label, owner_id) as cm:
+    with pii_scope(pz), cost_meter(label, owner_id) as cm:
         if len(taches) == 1:
             resultats = [_un(taches[0])]
         else:
@@ -1935,19 +2172,22 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
         base = t["base"]
         texte = r["texte"]
         if action == JOB_RACCOURCIR:
-            faits = far.controle(texte, ctx.sources_entreprise, declares=[t["texte"]],
-                                 anciens=(base.faits if base else []), reprise="fait",
-                                 noms_entreprise=ctx.noms_entreprise, section_entreprise=section_sur_l_entreprise(s))
+            # « Raccourcir » n'ajoute rien et ne blanchit rien : un fait garde ce qu'il était.
+            faits = fs.controler(texte, t["fiches"], acheteur=None, noms_entreprise=ctx.noms_entreprise,
+                                 section_entreprise=section_sur_l_entreprise(s), mode="raccourci",
+                                 anciens=(base.faits if base else []), base_texte=t["texte"])
             sources = (base.sources or []) if base else []
-            refs = {f"S{n}" for n in rag.cited_refs(texte)}
+            refs = {f"S{n}" for n in rag.cited_refs(texte)} | {x for x in fs.refs_de(texte) if x.startswith("S")}
             sources = [x for x in sources if x.get("ref") in refs]
             v = ajouter_version(db, s, texte=texte, origine=RACCOURCI, ia=True, sources=sources, faits=faits,
                                 coupe=bool(r.get("coupe")), base_version_id=base.id if base else None,
                                 auteur_user_id=user_id, job_id=job_id)
         else:
-            src = ctx.sources_entreprise + [c.get("text") or "" for c in t["chunks"]]
-            faits = far.controle(texte, src, declares=[], anciens=(base.faits if base else []), reprise="phrase",
-                                 noms_entreprise=ctx.noms_entreprise, section_entreprise=section_sur_l_entreprise(s))
+            # Le CV d'une personne est inséré tel quel, sans IA (décision 8a), puis tout est contrôlé.
+            texte = fs.inserer_cv(texte, t["fiches"])
+            faits = fs.controler(texte, t["fiches"], acheteur=acheteur, noms_entreprise=ctx.noms_entreprise,
+                                 section_entreprise=section_sur_l_entreprise(s), mode="ia",
+                                 anciens=(base.faits if base else []))
             v = ajouter_version(db, s, texte=texte, origine=IA, ia=True, sources=r.get("sources") or [], faits=faits,
                                 coupe=bool(r.get("coupe")), base_version_id=base.id if base else None,
                                 auteur_user_id=user_id, job_id=job_id)
@@ -2053,7 +2293,8 @@ def exporter(db, user: User, project: Project, dossier: DossierPresentation, fmt
     cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
     rangs = _rangs(dossier, sections)
     lims = evaluer_limites(dossier, sections, rangs, cpt)
-    gate = blocage(dossier, sections, cour, rangs, lims, attente=en_attente_d_un_partenaire(sections, lecteur, cour))
+    gate = blocage(dossier, sections, cour, rangs, lims, attente=en_attente_d_un_partenaire(sections, lecteur, cour),
+                   faits_de=faits_lus(db, dossier, project, cour))
     if not gate["peut_exporter"]:
         raise AtelierError(409, "export_bloque",
                            "L'export est bloqué : " + " ".join(r["message"] for r in gate["raisons"]),
@@ -2140,7 +2381,8 @@ def dossier_commun(db, project: Project, owner_id: int) -> dict:
     cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
     rangs = _rangs(dossier, sections)
     gate = blocage(dossier, sections, cour, rangs, evaluer_limites(dossier, sections, rangs, cpt),
-                   attente=en_attente_d_un_partenaire(sections, lecteur, cour))
+                   attente=en_attente_d_un_partenaire(sections, lecteur, cour),
+                   faits_de=faits_lus(db, dossier, project, cour))
     md = "\n\n".join(f"## {ax.titre_section(x)}\n\n{ax.texte_export(x['texte'])}".strip()
                       for x in ctx["sections"])
     out["markdown"] = md
@@ -2173,22 +2415,45 @@ def dossier_commun(db, project: Project, owner_id: int) -> dict:
 
 # ── Vue d'ensemble (GET) ──────────────────────────────────────────────────────────────
 
-def _version_out(v: DossierSectionVersion, prive: bool, texte: bool = True) -> dict:
+def controle_out(faits, libelles: Optional[bool] = None) -> dict:
+    """Le compteur « Faits avec une source : 7 sur 8 » d'une version (vague 3) — seulement quand
+    les libellés positifs sont activés (ATELIER_LIBELLES_SOURCES=1, après la calibration) ; sinon
+    {"libelles": false} et l'écran garde l'affichage d'A0 (« à relire » seulement)."""
+    lib = fs.libelles_actifs() if libelles is None else libelles
+    b = fs.bilan(faits)
+    if not lib or b is None:
+        return {"libelles": False}
+    return dict(b, libelles=True)
+
+
+def _version_out(v: DossierSectionVersion, prive: bool, texte: bool = True, valides: Optional[dict] = None) -> dict:
+    """Une version. `faits` : les faits À RELIRE (ou relus par vous), forme d'A0 ; avec les libellés
+    activés, `faits_sources` : les faits reliés à leur source (où Adjugo les a trouvés) et `controle` :
+    le compteur. `valides` : sources encore utilisables (un fait dont la preuve a été retirée ou a
+    expiré redevient à relire)."""
+    faits = fs.ajuster(v.faits or [], valides) if valides else (v.faits or [])
     out = {"id": v.id, "numero": v.numero, "origine": v.origine, "origine_libelle": ORIGINES.get(v.origine, ""),
            "ia": bool(v.ia), "empreinte": v.empreinte, "coupe": bool(v.coupe), "cree_le": _iso(v.created_at),
            "auteur_user_id": v.auteur_user_id, "restaure_de": v.restaure_de,
-           "a_completer": len(me.placeholders(v.texte or "")), "faits_a_relire": far.non_traites(v.faits)}
+           "a_completer": len(me.placeholders(v.texte or "")), "faits_a_relire": far.non_traites(faits)}
     if texte:
         out["texte"] = v.texte or ""
     if prive:
+        lib = fs.libelles_actifs()
         out["sources"] = v.sources or []
-        out["faits"] = v.faits or []
+        out["faits"] = fs.a_relire(faits)
+        out["controle"] = controle_out(faits, lib)
+        if lib:
+            out["faits_sources"] = fs.avec_source(faits)
     return out
 
 
 def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affiche: str, lecteur: Lecteur,
-                courante: Optional[DossierSectionVersion], cpt_section: Optional[dict]) -> dict:
+                courante: Optional[DossierSectionVersion], cpt_section: Optional[dict],
+                valides: Optional[dict] = None) -> dict:
     prive = peut_voir_prive(s, lecteur)
+    if prive and valides is None and courante is not None and fs.avec_source(courante.faits):
+        valides = _valides_de(db, s.owner_id, s.project_id, [courante.faits])
     out = {"id": s.id, "ordre": s.ordre, "numero": s.numero, "numero_affiche": rang_affiche,
            "intitule": s.intitule, "titre": ax.titre_section({"numero": rang_affiche, "intitule": s.intitule}),
            "niveau": s.niveau, "parents": s.parents or [], "question": s.question or "",
@@ -2206,7 +2471,7 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
                            "le": _iso(s.validated_at), "par": s.validated_by} if s.validated_version_id else None),
            "lock_version": s.lock_version, "retiree": s.retiree_at is not None}
     if prive:
-        out["version_courante"] = _version_out(courante, True) if courante is not None else None
+        out["version_courante"] = _version_out(courante, True, valides=valides) if courante is not None else None
         out["nb_versions"] = db.query(DossierSectionVersion.id).filter(
             DossierSectionVersion.section_id == s.id).count()
     else:
@@ -2216,6 +2481,7 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
     v = out["version_courante"]
     out["a_completer"] = v["a_completer"] if v else 0
     out["faits_a_relire"] = v["faits_a_relire"] if v else 0
+    out["controle"] = (v.get("controle") if v and prive else None) or {"libelles": False}
     out["compteur"] = ({k: cpt_section.get(k) for k in ("mots", "caracteres", "pages_estimees", "lignes_estimees")}
                        if cpt_section else None)
     return out
@@ -2261,7 +2527,10 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
     cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
     rangs = _rangs(dossier, sections)
     lims = evaluer_limites(dossier, sections, rangs, cpt)
-    gate = blocage(dossier, sections, cour, rangs, lims, attente=en_attente_d_un_partenaire(sections, lecteur, cour))
+    val = _valides_de(db, dossier.owner_id, project.id,
+                      [v.faits for v in cour.values() if v is not None and fs.avec_source(v.faits)])
+    gate = blocage(dossier, sections, cour, rangs, lims, attente=en_attente_d_un_partenaire(sections, lecteur, cour),
+                   faits_de=(lambda v: fs.ajuster(v.faits or [], val)) if val else None)
     by_sec = {x.get("id"): x for x in (cpt.get("sections") or [])}
     meta = dossier.plan_meta if isinstance(dossier.plan_meta, dict) else {}
     lu = dossier.dce_lu if isinstance(dossier.dce_lu, dict) else {}
@@ -2294,7 +2563,8 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
                                  message_en_attente=(ap.msg_a_verifier(ap.criteres_a_verifier(_analysis(project)))
                                                      if dossier.plan_source != ap.CADRE else "")),
                     "dernier_export": dossier.dernier_export or None},
-        "sections": [section_out(db, dossier, s, rangs.get(s.id, ""), lecteur, cour.get(s.id), by_sec.get(s.id))
+        "sections": [section_out(db, dossier, s, rangs.get(s.id, ""), lecteur, cour.get(s.id), by_sec.get(s.id),
+                                 valides=val)
                      for s in sections],
         "sections_retirees": retirees,
         "compteur": {"total": cpt.get("total"), "police": cpt.get("police"), "environ": True,
@@ -2308,6 +2578,7 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
         "savoir_faire": savoir_faire(db, member_ids),
         "statuts": STATUTS,
         "derogations_possibles": derogations_possibles(gate),
+        "sources_faits": sources_faits_out(db, dossier.owner_id),
     }
 
 

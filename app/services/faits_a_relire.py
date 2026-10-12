@@ -64,7 +64,9 @@ def fold(s) -> str:
 # ── Découpage en phrases (Markdown simple : titres, listes, tableaux) ───────────────────
 
 _TODO = re.compile(r"\[\s*[ÀAà]\s+compl[ée]ter[^\]]*\]", re.IGNORECASE)
-_CITE = re.compile(r"\[\s*S\s*\d[^\]]{0,40}\]")
+# Renvois internes : extraits [S1] et, depuis la vague 3, faits numérotés [F3], [P1], [E1], [C1], [G1]
+# (app/services/faits_sources.py) — jamais des faits, retirés avant le repérage.
+_CITE = re.compile(r"\[\s*[FSPECG]\s*\d[^\]]{0,40}\]")
 _MD = re.compile(r"\*\*|__|`|(?<!\w)\*(?!\s)|(?<!\s)\*(?!\w)")
 
 
@@ -572,11 +574,15 @@ def controle(texte: str, sources_entreprise, *, declares=(), anciens=(), reprise
     return _plafonner(items)
 
 
+AVEC_SOURCE = "avec_source"     # vague 3 (A) : fait relié à sa source — jamais « à relire »
+
+
 def non_traites(faits) -> int:
-    """Faits à relire non traités (un élément « reste » compte pour tous les faits qu'il résume)."""
+    """Faits à relire non traités (un élément « reste » compte pour tous les faits qu'il résume).
+    Depuis la vague 3, la liste peut aussi porter les faits reliés à leur source (A) : ignorés ici."""
     n = 0
     for x in faits or []:
-        if not isinstance(x, dict) or x.get("statut") == RELU:
+        if not isinstance(x, dict) or x.get("statut") in (RELU, AVEC_SOURCE):
             continue
         n += max(1, int(x.get("nombre") or 1)) if x.get("type") == RESTE else 1
     return n

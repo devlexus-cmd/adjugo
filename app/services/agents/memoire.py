@@ -236,13 +236,21 @@ _ATELIER_SYS = """Tu rédiges UNE partie du dossier de présentation (le « mém
 entreprise qui répond à un marché public. L'entreprise reste l'auteur : tu proposes un texte qu'elle relira.
 RÈGLES ABSOLUES :
 - Un fait sur l'entreprise (chiffre, effectif, nom, certification, qualification, référence, matériel,
-  délai, engagement) ne peut venir QUE des FAITS AUTORISÉS (profil, équipe, chiffrage, extraits [S1], [S2]…).
-  Cite [S1], [S2]… à la fin des phrases qui s'appuient sur un extrait.
+  délai, engagement) ne peut venir QUE des FAITS AUTORISÉS. Chacun porte un renvoi entre crochets ([F3],
+  [P1], [E2], [C4], [G1], [S2]…) : écris le renvoi du fait à la fin de chaque phrase qui s'en sert, juste
+  avant le point (« … deux nacelles articulées [F4]. »). N'invente jamais de renvoi.
 - Tout autre fait sur l'entreprise s'écrit « [À compléter : ce qui manque] ». N'invente jamais.
-- Le DOSSIER DE L'ACHETEUR (et ses passages) ne sert qu'à parler du marché, de l'acheteur ou du chantier
-  (« le CCTP prévoit… »). Une exigence de l'acheteur n'est JAMAIS la preuve que l'entreprise la remplit.
-  Les passages des autres pièces ne sont que des extraits : ne conclus jamais qu'une exigence n'existe pas,
-  et ne les cite jamais avec un renvoi entre crochets.
+- Recopie les nombres comme ils sont écrits dans les faits (même unité, pas d'arrondi, pas de conversion).
+  Un pourcentage ou un total que tu calcules doit tomber juste à partir des faits que tu cites.
+- « Votre estimation » ne sert qu'aux délais, aux effectifs prévus et aux quantités du chantier.
+- N'écris aucun engagement (garantie, délai d'intervention, « zéro », « 100 % ») qui ne figure pas dans les
+  faits autorisés : l'entreprise en serait tenue pendant le chantier.
+- Une personne de l'équipe n'est désignée que par son étiquette entre crochets. Son CV n'est jamais écrit par
+  toi : pour l'insérer, écris « [CV F7] » seul sur une ligne (avec le renvoi de sa fiche) ; Adjugo l'insère tel quel.
+- Le DOSSIER DE L'ACHETEUR (et ses passages) est « exigé par l'acheteur » : il ne sert qu'à parler du marché,
+  de l'acheteur ou du chantier (« le CCTP prévoit… »). Une exigence de l'acheteur n'est JAMAIS la preuve que
+  l'entreprise la remplit. Les passages des autres pièces ne sont que des extraits : ne conclus jamais qu'une
+  exigence n'existe pas, et ne les cite jamais avec un renvoi entre crochets.
 - Réponds exactement à la question ou au critère de cette partie, dans l'ordre demandé. Pas de superlatifs
   creux, pas de remplissage, aucun prix ni montant de l'offre.
 - Si la partie porte un poids écrit dans le règlement, tu peux t'y référer ; sans poids écrit, ne suppose
@@ -254,7 +262,8 @@ Réponds en texte (pas de JSON)."""
 _RACCOURCIR_SYS = """Tu raccourcis une partie du dossier de présentation d'une entreprise (mémoire technique).
 RÈGLES ABSOLUES :
 - Garde le sens et l'ordre. N'ajoute AUCUN fait, chiffre, nom, certification, matériel ni engagement.
-- Garde tels quels les passages « [À compléter …] » et les renvois [S1], [S2]…
+- Garde tels quels les passages « [À compléter …] » et les renvois entre crochets ([S1], [F3], [P1], [E2],
+  [C4], [G1]…), à la fin des phrases qui s'en servent. Ne change aucun nombre ni aucune unité.
 - Respecte la longueur demandée. Markdown simple (paragraphes, listes, tableaux simples).
 Réponds avec le texte raccourci seul (pas de JSON, pas de commentaire)."""
 
@@ -299,6 +308,19 @@ def _consigne_partie(p: dict) -> str:
     return "\n".join(out)
 
 
+def _faits_numerotes(p: dict) -> str:
+    """Bloc des FAITS AUTORISÉS numérotés et typés (vague 3, app/services/faits_sources.py) : une
+    ligne par fait « [F3] (trouvé dans vos documents) … », puis les extraits [S1]… Les fiches
+    « Équipe » n'y portent que la fonction et l'étiquette de la personne (jamais son nom ni son CV)."""
+    lignes = [str(x) for x in (p.get("fiches") or []) if x]
+    chunks = p.get("chunks") or []
+    src = rag.sources_block(chunks) if chunks else "(aucun extrait de vos documents ne correspond)"
+    corps = "\n".join(lignes) if lignes else "(aucun fait renseigné : profil, équipe, preuves et chiffrage vides)"
+    return (f"FAITS AUTORISÉS SUR L'ENTREPRISE (seule matière permise pour parler d'elle ; écris le renvoi entre "
+            f"crochets à la fin de chaque phrase qui s'en sert) :\n{corps}\n"
+            f"— Extraits de vos documents (trouvés dans vos documents) :\n{src}")
+
+
 def _contenu_partie(p: dict):
     """Message envoyé à l'IA pour une partie. Le DOSSIER DE L'ACHETEUR commun à toutes les parties
     (règlements et cadres de réponse en entier) vient EN TÊTE, dans un bloc marqué pour le cache de
@@ -306,31 +328,36 @@ def _contenu_partie(p: dict):
     d'entrée sur Sonnet 5.5), les suivants le relisent (0,05 ×) tant qu'une partie est rédigée moins
     d'une heure après la précédente (chaque relecture prolonge l'heure) — d'où la première partie de
     « Rédiger tout » lancée seule (atelier._executer).
-    Puis ce qui est propre à la partie :
-    consigne, faits autorisés, passages des autres pièces du dossier."""
+    Puis ce qui est propre à la partie : consigne, faits autorisés (numérotés et typés depuis la vague 3 :
+    `p["fiches"]`, sinon l'ancien bloc `p["faits"]`), passages des autres pièces du dossier."""
     from app.services.llm import cached_text_block
     chunks = p.get("chunks") or []
     f = p.get("faits") or {}
-    src = rag.sources_block(chunks) if chunks else "(aucun extrait de vos documents ne correspond)"
-    partenaires = (f"\n— Apports SOUMIS par les partenaires du groupement (chacun parle de sa propre entreprise) :\n"
-                   f"{f['partenaires']}") if f.get("partenaires") else ""
     dossier = (p.get("dossier_acheteur") or "").strip()
     passages = (p.get("passages_acheteur") or "").strip()
     bloc_passages = (
-        "\n\nPASSAGES DES AUTRES PIÈCES DU DOSSIER DE L'ACHETEUR LES PLUS PROCHES DE CETTE PARTIE (extraits choisis "
-        "par Adjugo, sans IA : le reste de ces pièces n'est pas remis ; ils ne prouvent RIEN sur l'entreprise) :\n"
-        + passages) if passages else ""
-    propre = f"""{_consigne_partie(p)}
-
-FAITS AUTORISÉS SUR L'ENTREPRISE (seule matière permise pour parler d'elle) :
+        "\n\nPASSAGES DES AUTRES PIÈCES DU DOSSIER DE L'ACHETEUR LES PLUS PROCHES DE CETTE PARTIE (exigé par "
+        "l'acheteur ; extraits choisis par Adjugo, sans IA : le reste de ces pièces n'est pas remis ; ils ne "
+        "prouvent RIEN sur l'entreprise) :\n" + passages) if passages else ""
+    if "fiches" in p:
+        faits = _faits_numerotes(p)
+    else:
+        src = rag.sources_block(chunks) if chunks else "(aucun extrait de vos documents ne correspond)"
+        partenaires = (f"\n— Apports SOUMIS par les partenaires du groupement (chacun parle de sa propre "
+                       f"entreprise) :\n{f['partenaires']}") if f.get("partenaires") else ""
+        faits = f"""FAITS AUTORISÉS SUR L'ENTREPRISE (seule matière permise pour parler d'elle) :
 — Profil : {f.get('profil') or '(non renseigné)'}
 — Équipe : {f.get('equipe') or '(non renseignée)'}
 — Chiffrage (phases, tâches, jours ; aucun prix) : {f.get('chiffrage') or '(pas de chiffrage)'}{partenaires}
 — Extraits de vos documents :
-{src}{bloc_passages}
+{src}"""
+    propre = f"""{_consigne_partie(p)}
+
+{faits}{bloc_passages}
 
 Rédige la partie. Tout fait sur l'entreprise absent des faits autorisés : « [À compléter : …] »."""
-    commun = ("DOSSIER DE L'ACHETEUR (ne prouve RIEN sur l'entreprise) :\n"
+    commun = ("DOSSIER DE L'ACHETEUR (ne prouve RIEN sur l'entreprise) — « exigé par l'acheteur » : seulement pour "
+              "les phrases sur le marché, l'acheteur ou le chantier :\n"
               + (dossier or "(dossier non disponible)") + "\n\n")
     if not dossier:
         return commun + propre
@@ -339,8 +366,9 @@ Rédige la partie. Tout fait sur l'entreprise absent des faits autorisés : « [
 
 def rediger_partie(p: dict, billing_id=None) -> dict:
     """Rédige une partie. p = {titre, numero, question, critere, poids, partie_de_critere,
-    source_plan, cible_mots, autres_parties, faits: {profil, equipe, chiffrage, partenaires},
-    chunks: [...], dossier_acheteur, passages_acheteur}.
+    source_plan, cible_mots, autres_parties, fiches: [lignes « [F3] (type) fait »] (vague 3 ; sinon
+    l'ancien faits: {profil, equipe, chiffrage, partenaires}), chunks: [...], dossier_acheteur,
+    passages_acheteur}. Les renvois [F3]… restent dans le texte (contrôle sans IA, retirés à l'export).
     Renvoie {texte, sources, coupe, extraits_fournis, erreur}. Ne lève pas : une panne de l'IA rend
     erreur=True (l'appelant décide du remboursement)."""
     from app.services.memoire_export import TRUNCATED_NOTE
@@ -361,7 +389,9 @@ def rediger_partie(p: dict, billing_id=None) -> dict:
         texte = (texte.rstrip() + "\n\n" + TRUNCATED_NOTE).strip()
     if not texte.strip():
         return {"texte": "", "sources": [], "coupe": False, "extraits_fournis": 0, "erreur": True}
-    cited = rag.cited_refs(texte) & set(range(1, len(chunks) + 1))
+    from app.services.faits_sources import refs_de
+    cited = (rag.cited_refs(texte) | {int(r[1:]) for r in refs_de(texte) if r.startswith("S")}) \
+        & set(range(1, len(chunks) + 1))
     sources = [{"ref": f"S{i + 1}", "doc_name": c.get("doc_name", ""), "chunk_id": c.get("chunk_id"),
                 "extrait": (c.get("text") or "")[:240]} for i, c in enumerate(chunks) if (i + 1) in cited]
     return {"texte": texte, "sources": sources, "coupe": coupe, "extraits_fournis": len(chunks), "erreur": False}

@@ -109,6 +109,9 @@ _BLOCKED = [
     ("POST",   "/api/atelier/{pid}/sections/{sid}/relu",      "préparer votre dossier de présentation"),
     ("POST",   "/api/atelier/{pid}/sections/{sid}/valider",   "préparer votre dossier de présentation"),
     ("POST",   "/api/atelier/{pid}/sections/{sid}/faits/{fid}", "préparer votre dossier de présentation"),
+    # Vague 3 (A) : relier un fait à sa source (crée une preuve « déclaré par vous »), recontrôler.
+    ("POST",   "/api/atelier/{pid}/sections/{sid}/faits/{fid}/source", "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/sections/{sid}/controle",  "préparer votre dossier de présentation"),
     ("POST",   "/api/atelier/{pid}/derogation",               "préparer votre dossier de présentation"),
     ("POST",   "/api/atelier/{pid}/export",                   "préparer votre dossier de présentation"),
     # « Mes preuves » (rédaction, vague 3) : toute écriture (la vitrine partagée ne change pas).

@@ -339,6 +339,69 @@ def traiter_fait(request: Request, project_id: int, section_id: int, fait_id: st
     return {"fait": fait, "section": _section(acc, s)}
 
 
+# ── Vague 3 (A) : « Chaque fait a sa source » — sans IA, sans toucher au texte ─────────
+
+def _err_preuve(e):
+    return HTTPException(e.status, e.detail())
+
+
+@router.post("/{project_id}/sections/{section_id}/controle")
+@limiter.limit("300/hour")
+def recontroler(request: Request, project_id: int, section_id: int, current_user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    """Relit les sources de la partie (une preuve ajoutée, retirée ou expirée), sans IA."""
+    acc = _Acces(db, current_user, project_id)
+    s = acc.section(section_id)
+    try:
+        at.recontroler(db, acc.contexte(), acc.project, s, acc.lecteur)
+    except at.AtelierError as e:
+        raise _err(e)
+    return _section(acc, s)
+
+
+@router.get("/{project_id}/sections/{section_id}/faits/{fait_id}/sources")
+def sources_possibles(project_id: int, section_id: int, fait_id: str, current_user: User = Depends(get_current_user),
+                      db: Session = Depends(get_db)):
+    """Pour « Ajouter une source » : les preuves qui contiennent ce fait et la fiche proposée."""
+    acc = _Acces(db, current_user, project_id)
+    s = acc.section(section_id)
+    try:
+        return at.candidats_source(db, acc.contexte(), s, acc.lecteur, fait_id[:40])
+    except at.AtelierError as e:
+        raise _err(e)
+
+
+class SourceIn(BaseModel):
+    preuve_id: Optional[int] = None
+    nature: Optional[str] = None
+    valeur: Optional[dict] = None
+
+
+@router.post("/{project_id}/sections/{section_id}/faits/{fait_id}/source")
+@limiter.limit("300/hour")
+def ajouter_source(request: Request, project_id: int, section_id: int, fait_id: str, body: SourceIn,
+                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Relie le fait à une preuve qui le contient, ou le déclare (nouvelle preuve « déclaré par
+    vous ») ; puis la partie est recontrôlée. Jamais l'IA, jamais une modification du texte."""
+    from app.services import preuves as pv
+    acc = _Acces(db, current_user, project_id)
+    s = acc.section(section_id)
+    if body.preuve_id is None and not body.nature:
+        raise HTTPException(422, {"code": "source_requise",
+                                  "message": "Choisissez une preuve, ou déclarez ce fait avec une fiche."})
+    try:
+        fait = at.ajouter_source(db, acc.contexte(), acc.project, s, acc.lecteur, fait_id[:40],
+                                 preuve_id=body.preuve_id, nature=body.nature, valeur=body.valeur or {},
+                                 user=current_user)
+    except at.AtelierError as e:
+        db.rollback()
+        raise _err(e)
+    except pv.PreuveError as e:
+        db.rollback()
+        raise _err_preuve(e)
+    return {"fait": fait, "section": _section(acc, s)}
+
+
 # ── Le moteur (tâches de fond) ────────────────────────────────────────────────────────
 
 class RedigerIn(BaseModel):
