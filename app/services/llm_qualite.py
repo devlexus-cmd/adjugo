@@ -169,12 +169,10 @@ def noter_bascule(tache: str, de: str, vers: str, motif: str, detail: str = "", 
         cle = (de or "?", tache)
         _stats(cle)["bascules_depuis"] += 1
         fen = _fen(_FEN, cle)
+        # Fournisseur absent (clé non posée) : un état de configuration, pas un défaut de qualité →
+        # compté, mais hors de la fenêtre des seuils d'alerte (le diagnostic le dit).
         if fen and motif != "absent":
             fen[-1]["bascule"] = True
-        elif motif == "absent":
-            # Fournisseur absent : pas d'appel tenté, la bascule compte quand même dans la fenêtre.
-            fen.append({"ok": False, "erreur": False, "refus": False, "json": False, "coupee": False,
-                        "bascule": True, "duree": 0.0, "absent": True})
     msg = ("Bascule de secours IA — tâche « %s » : %s (%s) → %s (%s), motif : %s%s"
            % (tache, de, modele_de or "?", vers, modele_vers or "?", motif, (" — " + detail[:160]) if detail else ""))
     if motif == "absent":

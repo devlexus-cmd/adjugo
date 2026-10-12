@@ -585,6 +585,36 @@ def test_routes_d_administration_ia(client, auth, monkeypatch):
     assert q.status_code == 200 and "par_fournisseur_et_tache" in q.json()
 
 
+def test_diagnostic_sans_verification_ne_touche_pas_au_reseau(monkeypatch):
+    _mistral(monkeypatch)
+
+    def interdit(*a, **k):
+        raise AssertionError("appel réseau interdit")
+    monkeypatch.setattr(llm.httpx, "get", interdit)
+    d = llm.diagnostic(verifier=False)
+    assert d["fournisseurs"]["mistral"]["point_acces"]["verifie"] is False
+    assert d["fournisseurs"]["mistral"]["large4_sur_ue"] is None
+
+
+def test_route_publique_llm_info_sans_detail_ni_souverainete(client, monkeypatch):
+    j = client.get("/api/llm/info").json()
+    assert j["provider"] == "anthropic" and j["sovereign"] is False and j["fournisseurs"] == ["anthropic"]
+    _mistral(monkeypatch)
+    j = client.get("/api/llm/info").json()
+    assert j["provider"] == "mixte" and set(j["fournisseurs"]) == {"anthropic", "mistral"} and j["sovereign"] is False
+
+
+def test_fournisseur_absent_compte_mais_ne_declenche_pas_d_alerte(monkeypatch, caplog):
+    monkeypatch.setenv("LLM_ALERTE_MIN_APPELS", "3")
+    _anthropic(monkeypatch, lambda kw: ([_B("text", "{}")], "end_turn"))
+    caplog.set_level(logging.INFO, logger="adjugo")
+    for _ in range(6):
+        llm.complete_json("s", "u", tache="analyse")          # pas de clé Mistral : Sonnet 5.5 à chaque fois
+    assert qualite.instantane()["bascules"][0]["nombre"] == 6
+    assert not [r for r in caplog.records if "Alerte qualité IA" in r.getMessage()]
+    assert len([r for r in caplog.records if "Bascule de secours IA" in r.getMessage()]) == 1   # 1 fois / heure
+
+
 # ── 9. Surveillance : /metrics, seuils journalisés sans bloquer ─────────────────────────────────
 
 def test_metrics_et_seuils_d_alerte(monkeypatch, caplog):
