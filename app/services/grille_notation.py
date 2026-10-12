@@ -527,6 +527,8 @@ _TOTAL_RE = (
     re.compile(r"\bnote (?:globale|finale|totale|maximale)\b[^.;]{0,30}?\b(?:sur|de|:) ?(\d{1,4})\b"),
     re.compile(r"\b(\d{1,4}) ?points? au total\b"),
     re.compile(r"\btotal (?:de|des notes ?:?|:) ?(\d{1,4}) ?(?:points?|pts?)\b"),
+    # « Les offres seront notées sur 100 points » (jamais « chaque critère est noté sur 20 »).
+    re.compile(r"\boffres? (?:sont |seront )?notees? sur (\d{1,4}) ?(?:points?|pts?)\b"),
 )
 
 

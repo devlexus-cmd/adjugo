@@ -217,7 +217,7 @@ const __adjApp = createApp({
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
       grpDash: null,   // tableau de bord « Répondre à plusieurs » (vague 4) : GET /api/groupement/tableau-de-bord
       grpDashErr: "",  // échec du chargement : jamais l'état vide « Aucun groupement » à la place
-      cdetail: {}, copen: {}, cexport: {}, cpreview: {}, cerror: {},
+      cdetail: {}, copen: {}, cexport: {}, cexportWarn: {}, cpreview: {}, cerror: {},
       shared: [],
       sharedAo: _sharedInit(),
       pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "dpgf_lot", l: "DPGF du lot (prix de vente)" }, { k: "autre", l: "Autre" }],
@@ -1150,12 +1150,11 @@ const __adjApp = createApp({
         const r = await this.api("POST", "/api/sourcing/documents", { project_id: pid, cotraitants: [] });
         if (r.dossier && r.dossier.zip_b64) {
           this._downloadB64(r.dossier.zip_b64, r.dossier.zip_name);
-          // Téléchargé sans passer par la fiche du marché : le point bloquant (dossier de présentation
-          // coupé ou non rédigé, passages à compléter) est dit tout de suite, jamais tu.
-          const ws = r.dossier.warnings || [];
-          const w = ws.find(x => x.startsWith("BLOQUANT")) || ws.find(x => x.startsWith("Dossier de présentation"));
-          if (w) this.notify("Dossier commun exporté. À traiter avant le dépôt : " + w.replace(/^BLOQUANT — /, ""), "err");
-          else this.notify("Dossier commun exporté");
+          // Téléchargé sans passer par la fiche du marché : les points à traiter (dossier de
+          // présentation coupé ou non rédigé, pièces de partenaires manquantes…) restent affichés
+          // sur la carte du groupement, et le plus grave est dit tout de suite — jamais tu.
+          this.cexportWarn[pid] = (r.dossier.warnings || []).slice();
+          this.notify(this.dossierToast(r.dossier, "Dossier commun exporté"), this.dossierWarnKind(r.dossier));
         }
         else this.notify("Rien à exporter pour ce groupement", "err");
       } catch (e) {
@@ -2899,16 +2898,19 @@ const __adjApp = createApp({
       const n = (g.criteres || []).filter(x => x.dans_le_plan).length, av = (g.compteurs && g.compteurs.a_verifier) || 0;
       const s = (g.ponderation || {}).statut;
       const base = n ? n + " critère" + (n > 1 ? "s" : "") : "aucun critère retenu";
-      return base + (s === "non_ponderes" ? " · non pondérés" : "") + (av ? " · " + av + " à vérifier" : "");
+      return base + (s === "non_ponderes" ? (n === 1 ? " · sans poids" : " · non pondérés") : "") + (av ? " · " + av + " à vérifier" : "");
     },
     async aoGrilleChoix(id, choix, poids) {
       const p = this.ao.project; if (!p || this.ao.grilleBusy) return;
       this.ao.grilleBusy = id;
+      const avant = ((this.aoGrille() || {}).criteres || []).find(x => x.id === id) || {};
       try {
         const r = await this.api("POST", "/api/sourcing/grille/choix", { project_id: p.id, critere_id: id, choix, poids: poids || "" });
         const a = Object.assign({}, p.ai_analysis || {}); a.details = Object.assign({}, a.details || {}, { grille_notation: r.grille_notation });
         p.ai_analysis = a;
-        this.notify(choix === "confirme" ? "Critère ajouté à votre plan" : choix === "ecarte" ? "Critère retiré de votre plan" : "Choix annulé");
+        // Une ligne déjà dans le plan (retrouvée sans poids) n'y est pas « ajoutée » : on dit ce qui a changé.
+        const msgConfirme = !avant.dans_le_plan ? "Critère ajouté à votre plan" : (poids ? "Poids enregistré" : "Critère confirmé");
+        this.notify(choix === "confirme" ? msgConfirme : choix === "ecarte" ? "Critère retiré de votre plan" : "Choix annulé");
       } catch (e) { this.notify(e.message, "err"); }
       finally { this.ao.grilleBusy = ""; }
     },
@@ -2939,13 +2941,27 @@ const __adjApp = createApp({
         this.notify("Bilan enregistré"); this.loadStats();
       } catch (e) { this.notify(e.message, "err"); }
     },
-    async aoGenerate() {
+    // Message après génération : le point le plus grave d'abord (BLOQUANT, puis dossier de
+    // présentation), le succès seulement quand il n'y a rien à traiter. Jamais « archivé » quand
+    // aucun dossier de présentation n'a été rangé.
+    dossierWarnKind(d) { return ((d && d.warnings) || []).length ? "err" : "ok"; },
+    dossierToast(d, okMsg) {
+      const ws = (d && d.warnings) || [];
+      if (!ws.length) return okMsg;
+      const w = ws.find(x => x.startsWith("BLOQUANT")) || ws.find(x => x.startsWith("Dossier de présentation")) || ws[0];
+      const n = ws.length - 1, x = n > 1 ? "s" : "";
+      const plus = n ? " (et " + n + " autre" + x + " point" + x + ", détaillé" + x + " sur la page)" : "";
+      return okMsg + ". À traiter avant le dépôt : " + w.replace(/^BLOQUANT — /, "") + plus;
+    },
+    async aoGenerate(opts) {
+      const silent = opts && opts.silent;
       this.ao.generating = true; this.ao.dossier = null;
       try {
         const r = await this.api("POST", "/api/sourcing/documents", { project_id: this.ao.project.id, cotraitants: [] });
         this.ao.dossier = r.dossier; this.aoLoadDocs();
         if (this.convVisible()) this.aoGrpReloadState();   // « Prêt à déposer » : formulaires préparés après la convention
-        this.notify("Documents générés et archivés dans le dossier");
+        const range = r.dossier && r.dossier.memoire_fichiers && r.dossier.memoire_fichiers.length;
+        if (!silent) this.notify(this.dossierToast(r.dossier, range ? "Documents préparés et rangés dans le dossier du marché" : "Documents préparés"), this.dossierWarnKind(r.dossier));
       } catch (e) {
         if ((e.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
         else this.notify(e.message, "err");
@@ -2970,8 +2986,9 @@ const __adjApp = createApp({
     // Cockpit : assemble la réponse commune PUIS télécharge directement (sinon on ne
     // « trouve pas le doc » : il était généré mais le bouton de téléchargement était ailleurs).
     async aoAssemble() {
-      await this.aoGenerate();
-      if (this.ao.dossier && this.ao.dossier.zip_b64) { this.aoDownload(); this.notify("Dossier commun assemblé et téléchargé"); }
+      await this.aoGenerate({ silent: true });
+      const d = this.ao.dossier;
+      if (d && d.zip_b64) { this.aoDownload(); this.notify(this.dossierToast(d, "Dossier commun assemblé et téléchargé"), this.dossierWarnKind(d)); }
     },
     async aoUploadDce(e) {
       const file = e.target.files[0]; if (!file) return;
@@ -3132,7 +3149,7 @@ const __adjApp = createApp({
       return this.ringStyle(p.match_score);
     },
     decLabel(d) { return ({ go: "Bon potentiel", go_groupement: "Bon potentiel en groupement", no_go: "Peu adapté", a_etudier: "À étudier" })[d] || "—"; },
-    decColor(d) { return ({ go: "color:var(--go)", go_groupement: "color:var(--accent-text)", no_go: "color:var(--danger)", a_etudier: "color:var(--warn)" })[d] || "color:var(--muted)"; },
+    decColor(d) { return ({ go: "color:var(--go)", go_groupement: "color:var(--accent-text)", no_go: "color:var(--danger)", a_etudier: "color:var(--warning-text)" })[d] || "color:var(--muted)"; },
     // Kanban : un marché « bon potentiel en groupement » affiche son score de groupement (le score seul reste au survol).
     kanbanScore(p) { if (p.go_decision === "go_groupement" && p.groupement_score != null) return p.groupement_score; return p.match_score != null ? p.match_score : ""; },
     kanbanScoreTitle(p) {
@@ -3626,6 +3643,16 @@ __adjApp.config.errorHandler = function (err, vm, info) {
 // partenaires (edit=false, lecture seule). N'affiche QUE ce que le serveur a retrouvé : critère,
 // poids tel qu'écrit, phrase source. Texte toujours rendu en {{ }} (jamais v-html).
 function _gnNum(v) { const n = Number(v); return isFinite(n) ? n.toLocaleString("fr-FR") : String(v || ""); }
+// « 20 pages au maximum », « 1 page au maximum par référence » : accord et partie visée.
+const _GN_OBJET = { cv: "par CV", reference: "par référence", question: "pour une question", question_chaque: "par question",
+  fiche: "par fiche", synthese: "pour la synthèse", lettre: "pour la lettre", annexe: "par annexe" };
+function _gnLim(x) {
+  if (x.type === "police") { const s = [x.police, x.taille != null ? x.taille : ""].filter(v => v !== "" && v != null).join(" "); return "Police : " + (s || x.texte || ""); }
+  const un = Number(x.valeur) === 1;
+  const u = ({ pages: un ? "page" : "pages", mots: un ? "mot" : "mots", caracteres: un ? "caractère" : "caractères", lignes: un ? "ligne" : "lignes" })[x.type] || x.type;
+  const o = x.objet ? " " + (_GN_OBJET[x.objet] || "") : "";
+  return ((x.valeur != null ? _gnNum(x.valeur) + " " + u : (x.texte || "")) + " au maximum" + o).trim();
+}
 __adjApp.component("grille-carte", {
   props: { g: { type: Object, default: null }, edit: { type: Boolean, default: false }, busy: { type: String, default: "" } },
   emits: ["choix"],
@@ -3641,7 +3668,10 @@ __adjApp.component("grille-carte", {
       });
       const lim = (c.limites || []).filter(x => x && x.type);
       const vis = c.visite && (c.visite.phrase || c.visite.obligatoire) ? c.visite : null;
+      // Pastilles : les limites du mémoire, du cadre ou de l'offre (et la police) ; celles d'une
+      // partie (un CV, une fiche référence, une question) restent dans « Voir les phrases ».
       return { lignes, pond: g.ponderation || {}, ordre: g.ordre || {}, total: g.controle_total || {},
+        chips: lim.filter(x => !x.objet), partielles: lim.filter(x => x.objet).length,
         impose: !!c.fichier_impose, msgImpose: c.message_fichier || "",
         phraseOblig: (cad.obligatoire && cad.obligatoire.phrase) || c.phrase_obligation || "",
         cadreSource: (cad.obligatoire && cad.obligatoire.source) || cad.source || "",
@@ -3652,13 +3682,10 @@ __adjApp.component("grille-carte", {
     },
     alerteTotal() { const s = this.vm.total.statut; return s === "ecart" || s === "incomplet"; },
     rienImpose() { const v = this.vm; return !v.impose && !v.cadreFourni && !v.cadreMentionne && !v.limites.length && !v.visite; },
+    cadreManquant() { const v = this.vm; return v.impose && !v.cadreFourni; },
   },
   methods: {
-    lim(x) {
-      if (x.type === "police") { const s = [x.police, x.taille != null ? x.taille : ""].filter(v => v !== "" && v != null).join(" "); return "Police : " + (s || x.texte || ""); }
-      const u = ({ pages: "pages", mots: "mots", caracteres: "caractères", lignes: "lignes" })[x.type] || x.type;
-      return (x.valeur != null ? _gnNum(x.valeur) + " " + u : (x.texte || "")) + " au maximum";
-    },
+    lim(x) { return _gnLim(x); },
     send(l, choix) { this.$emit("choix", l.id, choix, choix === "confirme" ? String(this.poids[l.id] || "").trim() : ""); },
   },
   template: '<div class="gn">'
@@ -3694,11 +3721,13 @@ __adjApp.component("grille-carte", {
     + '<div class="gn-sub">Ce que le dossier impose'
     + '<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Repéré dans le texte, sans IA : un cadre de réponse fourni ou imposé, des limites de pages, de mots, de caractères ou de police, une visite obligatoire. Chaque repérage garde sa phrase : relisez-la avant de rédiger. Un repérage peut en manquer : le règlement fait foi.</span></button></div>'
     + '<div v-if="vm.impose" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ vm.msgImpose }}</span></div>'
-    + '<p v-else-if="vm.cadreFourni" class="small gn-note">Un cadre de réponse est fourni avec le dossier.</p>'
-    + '<p v-else-if="vm.cadreMentionne" class="small gn-note">Le règlement parle d\'un cadre de réponse, mais il ne figure pas dans les fichiers lus.</p>'
-    + '<ul v-if="vm.limites.length || vm.visite" class="gn-chips">'
-    + '<li v-for="(x,i) in vm.limites" :key="\'l\'+i">{{ lim(x) }}</li>'
+    + '<p v-if="cadreManquant" class="small gn-note">{{ edit ? "Ce fichier ne figure pas dans les pièces importées : récupérez-le sur la plateforme de l\'acheteur." : "Ce fichier ne figure pas dans les pièces importées : le chef de file doit le récupérer sur la plateforme de l\'acheteur." }}</p>'
+    + '<p v-else-if="!vm.impose && vm.cadreFourni" class="small gn-note">Un cadre de réponse est fourni avec le dossier.</p>'
+    + '<p v-else-if="!vm.impose && vm.cadreMentionne" class="small gn-note">Le règlement parle d\'un cadre de réponse, mais il ne figure pas dans les fichiers lus.</p>'
+    + '<ul v-if="vm.chips.length || vm.visite" class="gn-chips">'
+    + '<li v-for="(x,i) in vm.chips" :key="\'l\'+i">{{ lim(x) }}</li>'
     + '<li v-if="vm.visite">Visite obligatoire</li></ul>'
+    + '<p v-if="vm.partielles" class="muted small gn-note">{{ vm.partielles > 1 ? "D\'autres limites portent" : "Une autre limite porte" }} sur une partie du dossier (un CV, une question…) : voir les phrases.</p>'
     + '<p v-if="rienImpose" class="muted small gn-note">Ni cadre de réponse, ni limite de pages ou de police, ni visite obligatoire repérés dans le règlement.</p>'
     + '<details v-if="!rienImpose" class="gn-det"><summary>Voir les phrases</summary>'
     + '<div v-if="vm.phraseOblig || vm.cadrePhrase" class="gn-src"><div class="gn-src-t">Cadre de réponse</div><blockquote class="gn-q">{{ vm.phraseOblig || vm.cadrePhrase }}</blockquote><div v-if="vm.cadreSource" class="muted small">Trouvée dans : {{ vm.cadreSource }}</div></div>'
