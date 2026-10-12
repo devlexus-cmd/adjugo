@@ -27,6 +27,7 @@ disent que les contenus ne servent pas à entraîner les modèles (docs/IA_FOURN
 | `veille` | `amont.detect_from_deliberations` (veille planifiée et manuelle) | Mistral Large 4 | JSON | Sonnet 5.5 (effort medium) | Sonnet 4.6 |
 | `deliberation` | `amont.detect_projets` (délibération importée) | Mistral Large 4 | JSON | Sonnet 5.5 | Sonnet 4.6 |
 | `renouvellements` | `renewal.detect_renewals` | Mistral Large 4 | JSON | Sonnet 5.5 (effort medium) | Sonnet 4.6 |
+| `fiches_preuves` | `fiches_import._appel` (fiches proposées à partir des anciens documents de l'entreprise, rédaction vague 3, chantier I : docs/REDACTION_V3_IMPORT.md) | Mistral Large 4 | JSON | Sonnet 5.5 (effort medium ; sauf coupure : la partie est relue en deux moitiés) | Haiku 4.5 |
 | `questions` | `sourcing._ask_integral`, `_ask_legacy` | Claude `claude-sonnet-5-5` | `between_tools`, effort medium, cache 5 min | Mistral Large 4 si Anthropic est absent, en panne, en erreur ou refuse | Haiku 4.5 |
 | `redaction` | atelier (`memoire.rediger_partie`), dossier complet (`write_section`), groupement (`_write_merged_section`) | Sonnet 5.5 | réflexion adaptative, effort high, +8 000 tokens de réserve, **cache d'une heure** | Mistral Large 4 | Sonnet 4.6 |
 | `raccourcir` | `memoire.raccourcir_partie` | Sonnet 5.5 | `between_tools`, effort high | Mistral Large 4 | Sonnet 4.6 |

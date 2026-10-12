@@ -42,6 +42,7 @@ comptée (elle est rendue).
 import logging
 import os
 import re
+import threading
 from datetime import date, datetime, timezone
 from typing import Optional
 
@@ -271,6 +272,7 @@ def texte_a_lire(doc: KnowledgeDoc) -> dict:
 
 _CACHE_STATUT = {}          # (id, longueur, empreinte) → statut : le texte d'un document ne change jamais
 _CACHE_MAX = 2000
+_CACHE_LOCK = threading.Lock()
 
 
 def statut_document(doc: KnowledgeDoc) -> Optional[str]:
@@ -278,8 +280,9 @@ def statut_document(doc: KnowledgeDoc) -> Optional[str]:
     savoir-faire » ne change jamais après son import."""
     t = doc.text or ""
     cle = (doc.id, len(t), hash(t[:2000]), hash(doc.name or ""))
-    if cle in _CACHE_STATUT:
-        return _CACHE_STATUT[cle]
+    with _CACHE_LOCK:
+        if cle in _CACHE_STATUT:
+            return _CACHE_STATUT[cle]
     if est_cv(doc):
         st = DOC_CV
     elif est_piece_acheteur(doc):
@@ -288,9 +291,10 @@ def statut_document(doc: KnowledgeDoc) -> Optional[str]:
         st = DOC_VIDE
     else:
         st = None
-    if len(_CACHE_STATUT) >= _CACHE_MAX:
-        _CACHE_STATUT.pop(next(iter(_CACHE_STATUT)), None)
-    _CACHE_STATUT[cle] = st
+    with _CACHE_LOCK:
+        if len(_CACHE_STATUT) >= _CACHE_MAX:
+            _CACHE_STATUT.pop(next(iter(_CACHE_STATUT)), None)
+        _CACHE_STATUT[cle] = st
     return st
 
 
@@ -815,9 +819,12 @@ def lancer(db, user: User, owner_id: int, doc_id, date_document=None) -> tuple:
     db.add(job)
     db.commit()
     db.refresh(job)
-    # Deux demandes au même moment : une seule lecture par document, et le plafond tient.
+    # Deux demandes au même moment : une seule lecture par document (la plus ancienne garde la
+    # main), et le plafond tient (seules les lectures au-delà des `lim` premières du mois sont
+    # refusées, jamais toutes).
     premiere = _derniere_lecture(db, owner_id, doc.id)
-    if (premiere is not None and premiere.id != job.id) or lectures_du_mois(db, owner_id) > lim:
+    du_mois = [j.id for j in _jobs(db, owner_id, _debut_du_mois()) if j.status != "error"]
+    if (premiere is not None and premiere.id != job.id) or job.id not in du_mois[:lim]:
         db.delete(job)
         db.commit()
         if premiere is not None and premiere.id != job.id:
