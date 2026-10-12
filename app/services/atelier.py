@@ -1765,6 +1765,9 @@ def lancer(db, user: User, project: Project, dossier: DossierPresentation, secti
         v = version_courante(db, s)
         if v is None or not (v.texte or "").strip():
             raise AtelierError(422, "partie_vide", "Il n'y a pas encore de texte à raccourcir dans cette partie.")
+        # « Mes preuves » (vague 3, décision 8a) : un CV inséré tel quel n'est jamais envoyé à l'IA.
+        from app.services.preuves_atelier import refuser_cv_pour_ia
+        refuser_cv_pour_ia(db, dossier.owner_id, v.texte)
         n = len(re.findall(r"\w+", v.texte or ""))
         if cible is None:
             cc = (dossier.compteur or {}).get("resultat", {}) if isinstance(dossier.compteur, dict) else {}
