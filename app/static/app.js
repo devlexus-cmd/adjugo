@@ -179,7 +179,8 @@ const PV_SOURCES = [
   { code: "public", l: "Source publique", natures: ["reference", "qualification"] },
   { code: "estimation", l: "Votre estimation", natures: ["chiffre_cle"] },
 ];
-const PV_VALIDITE = { qualification: true, salarie: true, materiel: true };
+// Natures qui ont une fin de validité, et son libellé dans le formulaire.
+const PV_VALIDITE = { qualification: "Valable jusqu'au", salarie: "Habilitations valables jusqu'au", materiel: "Valable jusqu'au" };
 const PV_ALERTE_JOURS = 60;
 // Texte d'une fiche à l'écran : titre et détails tels que saisis, sans rien compléter.
 function pvNombre(x) { const n = Number(x); return (x === "" || x == null || !isFinite(n)) ? String(x == null ? "" : x) : n.toLocaleString("fr-FR"); }
@@ -214,9 +215,16 @@ function pvTexteLong(p) { const v = (p && p.valeur) || {}; return p.nature === "
 function pvValidite(p) {
   if (!p || !p.date_fin_validite) return null;
   const d = _pvJj(p.date_fin_validite), j = p.jours_restants;
-  if (p.expiree) return { t: "Fin de validité dépassée (" + d + ")", cls: "pv-ko" };
+  if (p.expiree) return { t: "Fin de validité dépassée (" + d + ")" + (p.statut === "acceptee" ? " : Adjugo ne s'en sert plus" : ""), cls: "pv-ko" };
   if (j != null && j <= PV_ALERTE_JOURS) return { t: "Valable jusqu'au " + d + (j === 0 ? " (dernier jour)" : " (encore " + j + " jour" + (j > 1 ? "s" : "") + ")"), cls: "pv-warn" };
   return { t: "Valable jusqu'au " + d, cls: "" };
+}
+// Ligne de l'encadré « à mettre à jour » (minuscule initiale : elle suit le nom de la fiche).
+function pvEcheance(p) {
+  const d = _pvJj(p && p.date_fin_validite), j = p && p.jours_restants;
+  if (!d) return "";
+  if (p.expiree) return "fin de validité dépassée le " + d;
+  return "valable jusqu'au " + d + (j === 0 ? " (dernier jour)" : (j != null ? " (encore " + j + " jour" + (j > 1 ? "s" : "") + ")" : ""));
 }
 function pvAlertes(list) {
   return (list || []).filter(p => p.statut === "acceptee" && p.date_fin_validite && (p.expiree || (p.jours_restants != null && p.jours_restants <= PV_ALERTE_JOURS)))
@@ -1377,7 +1385,8 @@ const __adjApp = createApp({
     pvChamps(n) { return PV_CHAMPS[n] || []; },
     pvTypesSource(n) { return PV_SOURCES.filter(t => !t.natures || t.natures.includes(n)); },
     pvAvecValidite(n) { return !!PV_VALIDITE[n]; },
-    pvTitre, pvDetail, pvTexteLong, pvValidite, pvSrcIcone, pvJj: _pvJj,
+    pvLibValidite(n) { return PV_VALIDITE[n] || ""; },
+    pvTitre, pvDetail, pvTexteLong, pvValidite, pvEcheance, pvSrcIcone, pvJj: _pvJj,
     pvAlertes() { return pvAlertes(this.pv.list); },
     pvOnglet(n) { this.pv.tab = n; if (this.pv.form && this.pv.form.nature !== n && !this.pv.form.id) this.pv.form = null; },
     async pvLoad() {
@@ -1523,6 +1532,8 @@ const __adjApp = createApp({
       const fs = ((d && d.fiches) || []).filter(f => !q || _atlKey(f.titre + " " + f.bloc).indexOf(q) >= 0);
       return PV_NATURES.map(n => ({ code: n.code, l: n.l, fiches: fs.filter(f => f.nature === n.code) })).filter(g => g.fiches.length);
     },
+    // Aperçu du texte inséré : rendu sûr de l'atelier (tout est échappé ; seuls le gras et les listes passent).
+    pvApercuHtml(f) { return atlMdToHtml((f && f.bloc) || "", []); },
     pvAtlFermer() { this.pvAtl = _pvAtlInit(); },
     pvAtlVersPreuves() { this.pvAtlFermer(); this.go("preuves"); },
     async pvAtlInserer() {

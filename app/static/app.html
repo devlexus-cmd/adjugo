@@ -2304,7 +2304,7 @@
             <div v-if="pvAlertes().length" class="pv-ech" role="status">
               <i data-lucide="calendar-clock"></i>
               <div class="pv-grow"><b class="small">{{ pvAlertes().length > 1 ? pvAlertes().length + " fiches à mettre à jour" : "Une fiche à mettre à jour" }}</b>
-                <ul class="pv-ech-l"><li v-for="p in pvAlertes().slice(0, 3)" :key="'al'+p.id"><button type="button" class="linkbtn" @click="pvOnglet(p.nature)">{{ pvTitre(p) }}</button> : {{ pvValidite(p).t.toLowerCase() }}</li></ul>
+                <ul class="pv-ech-l"><li v-for="p in pvAlertes().slice(0, 3)" :key="'al'+p.id"><button type="button" class="linkbtn" @click="pvOnglet(p.nature)">{{ pvTitre(p) }}</button> : {{ pvEcheance(p) }}</li></ul>
                 <div v-if="pvAlertes().length > 3" class="muted small">et {{ pvAlertes().length - 3 }} autre{{ pvAlertes().length - 3 > 1 ? 's' : '' }}.</div>
               </div>
             </div>
@@ -2323,7 +2323,7 @@
                   <div class="pv-sub">{{ g.l }}</div>
                   <label v-for="e in g.els" :key="'re'+e.cle" class="pv-rep-i" :class="{'pv-off': e.manque}">
                     <input type="checkbox" v-model="pv.rep.sel[e.cle]" :disabled="!!e.manque">
-                    <span class="pv-grow"><span class="small">{{ e.texte }}</span>
+                    <span class="pv-grow"><span class="small"><b>{{ pvTitre(e) }}</b><template v-if="pvDetail(e)"> · {{ pvDetail(e) }}</template></span>
                       <span class="muted small pv-block">{{ e.provenance_libelle }} · {{ e.source_libelle }}<template v-if="e.date_fin_validite"> · valable jusqu'au {{ pvJj(e.date_fin_validite) }}</template></span>
                       <span v-if="e.manque" class="pv-raison small pv-block">{{ e.manque }}</span></span>
                   </label>
@@ -2358,7 +2358,7 @@
                   <input v-else :id="'pvf-'+c.k" class="inp" type="text" v-model="pv.form.v[c.k]" :maxlength="c.n" :placeholder="c.ph" :required="c.req">
                 </div>
                 <div v-if="pvAvecValidite(pv.form.nature)" class="field">
-                  <label for="pvf-fin">Fin de validité</label>
+                  <label for="pvf-fin">{{ pvLibValidite(pv.form.nature) }}</label>
                   <input id="pvf-fin" class="inp" type="date" v-model="pv.form.date_fin_validite">
                 </div>
               </div>
@@ -2374,7 +2374,7 @@
                       <select id="pvf-doc" class="inp" v-model="pv.form.doc_id"><option value="">Aucun</option><option v-for="d in pvKbDocs()" :key="'pkd'+d.id" :value="d.id">{{ d.name }}</option></select>
                       <div v-if="!pvKbDocs().length" class="muted small pv-mt4">Aucun document dans « Mon savoir-faire » pour l'instant.</div></div>
                     <div v-if="pv.form.doc_id" class="field pv-wide"><label for="pvf-pass">Passage, recopié tel qu'il est écrit</label>
-                      <textarea id="pvf-pass" class="inp" v-model="pv.form.passage" maxlength="1200" rows="3" placeholder="En 2024, réfection de la toiture de l'école Jules Ferry pour la Mairie de Quimper (85 000 € HT)"></textarea></div>
+                      <textarea id="pvf-pass" class="inp" v-model="pv.form.passage" maxlength="1200" rows="3" placeholder="Recopiez la phrase du document qui contient ce fait, telle qu'elle est écrite"></textarea></div>
                     <div v-if="pv.form.doc_id" class="field"><label for="pvf-dsrc">Date du document</label><input id="pvf-dsrc" class="inp" type="date" v-model="pv.form.date_source"></div>
                     <div class="field pv-wide"><label for="pvf-just">Justificatif de « Mes documents »</label>
                       <select id="pvf-just" class="inp" v-model="pv.form.document_id"><option value="">Aucun</option><option v-for="d in pvJustificatifs()" :key="'pj'+d.id" :value="d.id">{{ d.name }}</option></select></div>
@@ -2403,15 +2403,15 @@
             <div v-else-if="pv.error && !pv.loaded" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div>{{ pv.error }} <button type="button" class="linkbtn" @click="pvLoad()">Réessayer</button></div></div>
             <template v-else>
               <!-- Propositions (par exemple tirées de vos anciens dossiers) : l'utilisateur coche ce qui est juste. -->
-              <div v-if="pvProposees(pv.tab).length" class="pv-prop">
-                <div class="row wrap pv-g8"><b class="small pv-grow">{{ pvProposees(pv.tab).length > 1 ? pvProposees(pv.tab).length + " fiches proposées" : "Une fiche proposée" }} : cochez celles qui sont justes</b>
+              <div v-if="pvProposees(pv.tab).length > 1" class="pv-prop">
+                <div class="row wrap pv-g8"><b class="small pv-prop-t">{{ pvProposees(pv.tab).length }} fiches proposées : cochez celles qui sont justes.</b>
                   <button type="button" class="btn ghost sm" @click="pvToutCocher(pv.tab)">{{ pvProposees(pv.tab).every(p => pv.sel[p.id]) ? "Tout décocher" : "Tout cocher" }}</button>
                   <button type="button" class="btn sm" @click="pvAccepterCoches(pv.tab)" :disabled="!!pv.busy || !pvCoches(pv.tab).length"><span v-if="pv.busy==='lot'" class="spin"></span><i v-else data-lucide="check"></i>Accepter{{ pvCoches(pv.tab).length ? ' (' + pvCoches(pv.tab).length + ')' : '' }}</button></div>
               </div>
               <ul v-if="pvListe(pv.tab).length" class="pv-items">
                 <li v-for="p in pvListe(pv.tab)" :key="'pv'+p.id" class="pv-item" :class="{'pv-off': !p.utilisable, 'pv-prop-i': p.statut==='proposee'}">
                   <div class="pv-item-h">
-                    <input v-if="p.statut==='proposee'" type="checkbox" class="pv-chk" v-model="pv.sel[p.id]" :aria-label="'Cocher : ' + pvTitre(p)">
+                    <input v-if="p.statut==='proposee' && pvProposees(pv.tab).length > 1" type="checkbox" class="pv-chk" v-model="pv.sel[p.id]" :aria-label="'Cocher : ' + pvTitre(p)">
                     <div class="pv-grow">
                       <b class="pv-t">{{ pvTitre(p) }}</b>
                       <div v-if="pvDetail(p)" class="muted small">{{ pvDetail(p) }}</div>
@@ -2429,7 +2429,7 @@
                     <span v-if="p.a_reconfirmer" class="pv-tag">à reconfirmer<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Pourquoi</span><span class="tip-b" role="tooltip">Le document d'où vient ce fait a plus de 3 ans : relisez la fiche et corrigez-la si besoin.</span></button></span>
                     <span v-if="pvValidite(p)" :class="pvValidite(p).cls || 'muted'">{{ pvValidite(p).t }}</span>
                   </div>
-                  <div v-if="p.statut==='acceptee' && p.raison_message" class="pv-raison small">{{ p.raison_message }}</div>
+                  <div v-if="p.raison_message && p.raison!=='expiree' && (p.statut==='acceptee' || (p.statut==='proposee' && pvProposees(pv.tab).length === 1))" class="pv-raison small">{{ p.raison_message }}</div>
                   <div class="pv-actions">
                     <button v-if="p.statut==='proposee'" type="button" class="btn sm" @click="pvStatut(p, 'accepter')" :disabled="!!pv.busy"><i data-lucide="check"></i>Accepter</button>
                     <button v-if="p.statut==='retiree'" type="button" class="btn sm" @click="pvStatut(p, 'accepter')" :disabled="!!pv.busy"><i data-lucide="undo-2"></i>Remettre</button>
@@ -3466,7 +3466,7 @@
       <div class="modal-b">
         <div class="small"><b>{{ pv.passage.titre }}</b></div>
         <div class="muted small pv-mt4">Document : {{ pv.passage.doc_nom }}</div>
-        <blockquote class="pv-ps"><span v-if="pv.passage.avant" class="muted">… {{ pv.passage.avant }}</span><mark>{{ pv.passage.passage }}</mark><span v-if="pv.passage.apres" class="muted">{{ pv.passage.apres }} …</span></blockquote>
+        <blockquote class="pv-ps"><span v-if="pv.passage.avant" class="muted">… {{ pv.passage.avant.trimStart() }}</span><mark>{{ pv.passage.passage }}</mark><span v-if="pv.passage.apres" class="muted">{{ pv.passage.apres.trimEnd() }} …</span></blockquote>
         <p class="muted small pv-m0">Ce passage montre que le fait est écrit dans ce document. Il ne dit pas si le document est à jour : relisez-le.</p>
       </div>
     </div>
@@ -3484,11 +3484,11 @@
             <div v-for="g in pvAtlGroupes()" :key="'ag'+g.code" class="pv-mt8">
               <div class="pv-sub">{{ g.l }}</div>
               <ul class="pv-pick">
-                <li v-for="f in g.fiches" :key="'af'+f.id"><button type="button" class="pv-pick-b" :class="{on: pvAtl.choix && pvAtl.choix.id===f.id}" :aria-pressed="pvAtl.choix && pvAtl.choix.id===f.id ? 'true' : 'false'" @click="pvAtl.choix=f"><span class="pv-t">{{ f.titre }}</span><span class="muted small">{{ f.source_libelle }}<template v-if="f.a_reconfirmer"> · à reconfirmer</template><template v-if="f.date_fin_validite"> · valable jusqu'au {{ pvJj(f.date_fin_validite) }}</template></span></button></li>
+                <li v-for="f in g.fiches" :key="'af'+f.id"><button type="button" class="pv-pick-b" :class="{on: pvAtl.choix && pvAtl.choix.id===f.id}" :aria-pressed="pvAtl.choix && pvAtl.choix.id===f.id ? 'true' : 'false'" @click="pvAtl.choix=f"><span class="pv-t">{{ f.titre }}</span><span class="muted small">{{ f.source_libelle }}<template v-if="f.a_reconfirmer"> · à reconfirmer</template><template v-if="f.date_fin_validite"> · valable jusqu'au {{ pvJj(f.date_fin_validite) }}</template></span></button>
+                  <div v-if="pvAtl.choix && pvAtl.choix.id===f.id" class="pv-apercu-w"><div class="pv-sub">Texte inséré</div><div class="pv-apercu" v-html="pvApercuHtml(f)"></div></div></li>
               </ul>
             </div>
             <p v-if="!pvAtlGroupes().length" class="muted small pv-mt8">Aucune fiche ne correspond.</p>
-            <div v-if="pvAtl.choix" class="pv-mt12"><div class="pv-sub">Texte inséré</div><pre class="pv-apercu">{{ pvAtl.choix.bloc }}</pre></div>
           </template>
           <p v-else class="muted small pv-mt8">Aucune fiche utilisable pour l'instant : ajoutez vos références, qualifications, CV et matériel dans « Mes preuves ».<template v-if="atl.mode!=='modifier'"> <button type="button" class="linkbtn" @click="pvAtlVersPreuves()">Ouvrir « Mes preuves »</button></template></p>
           <details v-if="pvAtl.d.ecartees.length" class="rn-det pv-mt8"><summary>Fiches non utilisées ({{ pvAtl.d.ecartees.length }})</summary>
@@ -3556,6 +3556,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-2lEXmYJJyKOxJQMNtwcId67bjG4V+6A3g5ZDWH+Lo4GKOW7bKLe+8xFQh6nEO8/0" defer></script>
+<script src="/static/app.js" integrity="sha384-5eSNAojN5748Mz5R6EvDcFqDkhi8wodgo6Aqj1yfFp91LNm2l5P7BUc7dHVM4aCN" defer></script>
 </body>
 </html>
