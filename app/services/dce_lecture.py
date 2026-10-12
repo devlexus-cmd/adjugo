@@ -360,10 +360,10 @@ def _read_data(etat: _Etat, nom: str, chemin: str, data: bytes, prev: dict = Non
             return _finish(p, "", False, code[0], code[1])
     info = {"complet": True}
     if fmt == "docx":
-        if not _est_archive(data):
-            return _finish(p, "", False, "illisible")
         if not an._docx_sizes_ok(data):
-            return _finish(p, "", False, "trop_gros")
+            # Archive trop volumineuse une fois décompressée, ou fichier qui n'est pas une archive
+            # Word (abîmé) : deux raisons différentes, dites telles quelles.
+            return _finish(p, "", False, "trop_gros" if _est_archive(data) else "illisible")
         t = an._extract_docx(data, info=info)
         if not t:
             return _finish(p, "", False, "illisible")
@@ -399,6 +399,11 @@ def _read_data(etat: _Etat, nom: str, chemin: str, data: bytes, prev: dict = Non
 
 
 def _est_archive(data: bytes) -> bool:
+    """Le fichier est-il une archive ZIP lisible ? (Nombre d'entrées vérifié AVANT d'ouvrir.)"""
+    if data[:2] != b"PK":
+        return False
+    if not an._zip_entry_count_ok(data):
+        return True                      # archive, mais trop complexe
     try:
         with zipfile.ZipFile(io.BytesIO(data)):
             return True
