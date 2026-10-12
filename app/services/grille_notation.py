@@ -473,9 +473,11 @@ def _line(i, j, name, pond, ex, text, scope_crit, scope_rc, crit_stems) -> dict:
         w = None
         if vorig:
             w0, w1 = _window(vp, vpos, vpos + len(vorig))
-            # Un poids lu hors de la zone des critères n'est retenu que si la phrase parle de
+            # Hors du règlement et du cadre de réponse (dossier en un seul fichier non reconnu), un
+            # poids n'est retenu que dans la zone des critères ou dans une phrase qui parle de
             # notation (« le prix est payé par acompte à hauteur de 60 % » n'est pas un poids).
-            if _in_zone(vp, vpos) or _CRIT_WORD.search(vp.low[w0:w1]):
+            if (vp.type in (dp.REGLEMENT, dp.CADRE) or _in_zone(vp, vpos)
+                    or _CRIT_WORD.search(vp.low[w0:w1])):
                 w = _attribute(vp, w0, w1, crit_stems).get(j)
         if _same_weight(w, claimed):
             phrase, piece, pos = vorig, vp, vpos
