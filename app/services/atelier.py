@@ -37,7 +37,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from sqlalchemy.orm.attributes import flag_modified
@@ -1125,32 +1125,53 @@ def _fmt_nombre(v) -> str:
     return str(int(f)) if f.is_integer() else str(f).replace(".", ",")
 
 
-def _profil_texte(c: Optional[Company]) -> str:
+def _expiree(v, jour) -> bool:
+    """Date d'expiration d'une qualification du profil dépassée (jour de Paris) ; illisible : non."""
+    if jour is None or not v:
+        return False
+    try:
+        return date.fromisoformat(str(v).strip()[:10]) < jour
+    except ValueError:
+        return False
+
+
+def _profil_texte(c: Optional[Company], exclure=None, jour=None) -> str:
+    """Le profil de l'entreprise, ligne par ligne. Pour la rédaction (vague 3) : `exclure` = clés
+    « même intitulé » des éléments que « Mes preuves » gouverne (`preuves_reprise.cles_gerees`) — ils
+    ne sont plus remis depuis le profil, leur fiche décide ; `jour` : une qualification du profil dont
+    la date d'expiration est dépassée n'est pas remise."""
     if c is None:
         return ""
+    from app.services.preuves_reprise import cle_intitule
+    ex = exclure or set()
+
+    def _garde(nature, intitule) -> bool:
+        return not ex or cle_intitule(nature, intitule) not in ex
     lines = [f"Entreprise : {c.name or ''}" + (f" ({c.forme_juridique})" if c.forme_juridique else "")
              + (f", {c.city}" if c.city else "") + "."]
-    if c.effectif:
+    if c.effectif and _garde("chiffre_cle", "Effectif"):
         n = int(c.effectif)
         lines.append(f"Effectif : {n} (salariés, personnes, collaborateurs, compagnons, employés).")
     for lab, val in (("Chiffre d'affaires N-1", c.ca_n1), ("Chiffre d'affaires N-2", c.ca_n2),
                      ("Chiffre d'affaires N-3", c.ca_n3)):
         s = _fmt_nombre(val)
-        if s:
+        if s and _garde("chiffre_cle", lab):
             lines.append(f"{lab} : {s} €.")
     quals = []
     for q in (c.qualifications or []):
         if isinstance(q, dict):
             name = _flat(q.get("name") or q.get("nom"))
             det = _flat(q.get("detail"))
-            if name:
+            if name and _garde("qualification", q.get("name") or q.get("nom")) and not _expiree(q.get("expiration"), jour):
                 quals.append(name + (f" ({det})" if det else ""))
-        elif q:
+        elif q and _garde("qualification", q):
             quals.append(_flat(q))
     if quals:
         lines.append("Qualifications et certifications : " + " ; ".join(quals) + ".")
     for r in (c.references or []):
         if not isinstance(r, dict):
+            continue
+        if not _garde("reference", r.get("intitule") or r.get("name") or r.get("objet")):
             continue
         parts = [_flat(r.get("name") or r.get("intitule"))]
         if r.get("client"):
@@ -1164,10 +1185,17 @@ def _profil_texte(c: Optional[Company]) -> str:
     return "\n".join(lines)
 
 
-def _equipe_texte(team) -> str:
+def _equipe_texte(team, exclure=None) -> str:
+    """L'équipe du profil (noms masqués avant l'IA par pii_scope). `exclure` : une personne qui a sa
+    fiche « Équipe » dans « Mes preuves » n'est plus remise depuis le profil (sa fiche [F#] la remplace :
+    la fonction seule, le CV inséré tel quel)."""
+    from app.services.preuves_reprise import cle_intitule
+    ex = exclure or set()
     out = []
     for m in team or []:
         if not isinstance(m, dict) or not _flat(m.get("nom")):
+            continue
+        if ex and cle_intitule("salarie", m.get("nom")) in ex:
             continue
         s = f"- {_flat(m.get('nom'))}, {_flat(m.get('fonction')) or 'membre de l équipe'}"
         if _flat(m.get("qualifications")):
@@ -1262,15 +1290,25 @@ class Contexte:
         """Les faits autorisés de l'entreprise pour ce marché, numérotés et typés : preuves
         utilisables de « Mes preuves » [F#] (numéros stables), profil [P#], équipe du profil [E#],
         chiffrage [C#] (votre estimation), apports envoyés par les partenaires [G#]. Les extraits de
-        « Mon savoir-faire » [S#] s'y ajoutent partie par partie. Jamais le dossier de l'acheteur."""
+        « Mon savoir-faire » [S#] s'y ajoutent partie par partie. Jamais le dossier de l'acheteur.
+
+        Un élément du profil qui a sa fiche dans « Mes preuves » (reprise E1, ou fiche du même intitulé
+        acceptée ou retirée) n'est remis que par sa fiche : jamais deux fois (économie sans perte), et
+        jamais par le profil quand sa fiche est retirée ou expirée. Une qualification du profil dont la
+        date d'expiration est dépassée n'est pas remise."""
         if getattr(self, "_fiches", None) is None or pseudonymiseur is not None:
+            from app.services.preuves import aujourd_hui
+            from app.services.preuves_reprise import cles_gerees
             try:
                 preuves = fs.fiches_preuves(db, self.owner_id, project_id=self.project_id,
                                             pseudonymiseur=pseudonymiseur)
-            except Exception as e:      # noqa: BLE001 — « Mes preuves » illisible : le reste suffit
+                gerees = cles_gerees(db, self.owner_id)
+            except Exception as e:      # noqa: BLE001 — « Mes preuves » illisible : le profil entier suffit
                 logger.warning("atelier : preuves illisibles (compte %s) : %s", self.owner_id, type(e).__name__)
-                preuves = []
-            self._fiches = preuves + fs.fiches_contexte(self.profil, self.equipe, self.chiffrage, self.partenaires)
+                preuves, gerees = [], set()
+            profil = _profil_texte(self.company, exclure=gerees, jour=aujourd_hui())
+            equipe = _equipe_texte(self.team, exclure=gerees)
+            self._fiches = preuves + fs.fiches_contexte(profil, equipe, self.chiffrage, self.partenaires)
         return list(self._fiches)
 
     def fiches_de_version(self, db, v) -> list:

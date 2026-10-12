@@ -47,6 +47,22 @@ def cle_souple(nature: str, valeur: dict) -> str:
     return f"{nature}|{_fold((valeur or {}).get(PRINCIPAL.get(nature, '')) or '')}"
 
 
+def cle_intitule(nature: str, intitule) -> str:
+    """La clé « même intitulé » d'un élément du profil, à partir de son seul intitulé."""
+    return cle_souple(nature, {PRINCIPAL.get(nature, ""): str(intitule or "").strip()})
+
+
+def cles_gerees(db, owner_id: int) -> set:
+    """Clés « même intitulé » des éléments que « Mes preuves » GOUVERNE désormais (vague 3, ensemble) :
+    fiches acceptées (utilisables, expirées ou sans source) et retirées de l'organisation. Un élément
+    du profil qui a sa fiche n'est plus remis à la rédaction depuis le profil : sa fiche décide (remise
+    [F#] si elle est utilisable ; rien si elle est retirée, expirée ou sans source). Une fiche
+    seulement PROPOSÉE (lecture d'un ancien dossier, I) ne gouverne rien : la déclaration du profil
+    reste remise tant que l'utilisateur n'a pas coché."""
+    return {cle_souple(p.nature, p.valeur or {})
+            for p in pv._q_org(db, owner_id).filter(Preuve.statut.in_([pv.ACCEPTEE, pv.RETIREE])).all()}
+
+
 def _cle(provenance: str, nature: str, valeur: dict, document_id=None) -> str:
     base = f"{provenance}|{cle_souple(nature, valeur)}|{document_id or ''}"
     return hashlib.sha256(base.encode()).hexdigest()[:24]

@@ -1026,18 +1026,19 @@ def valides(db, owner_id: int, member_ids: list, project_id: Optional[int], fait
 
 def cv_texte(fiche: Fiche) -> str:
     """Le CV minimal d'une fiche « Équipe », en Markdown, chaque ligne avec son renvoi (pour que le
-    contrôle relie chaque fait à la fiche). Jamais remis à l'IA."""
+    contrôle relie chaque fait à la fiche). Jamais remis à l'IA.
+
+    Les lignes du CV sont CELLES de « Mes preuves » (`preuves_atelier.lignes_cv`, E1) : un CV inséré
+    par « [CV F2] » et un CV inséré par « Insérer une fiche » s'écrivent pareil, et le garde-fou de
+    « Raccourcir » (`preuves_atelier.refuser_cv_pour_ia`) les reconnaît tous les deux."""
+    from app.services.preuves_atelier import lignes_cv
     v = fiche.valeur or {}
     r = f" [{fiche.ref}]"
     fonction = str(v.get("fonction") or "")
     if len(fonction) > 1 and fonction[:1].isupper() and fonction[1:2].islower():
         fonction = fonction[:1].lower() + fonction[1:]       # « Maëlys Kerbrat, conductrice de travaux »
     lignes = [f"**{v.get('nom', '')}**, {fonction}{r}"]
-    if v.get("experience_annees") is not None:
-        lignes.append(f"- Expérience : {v['experience_annees']} ans{r}")
-    for k, lab in (("diplomes", "Diplômes"), ("qualifications", "Qualifications"), ("chantiers", "Chantiers")):
-        if v.get(k):
-            lignes.append(f"- {lab} : {re.sub(r'[ \t]*\n[ \t]*', ' ; ', str(v[k]))}{r}")
+    lignes += [f"- {ln}{r}" for ln in lignes_cv(v)]
     return "\n".join(lignes)
 
 
