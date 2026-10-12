@@ -192,7 +192,10 @@ délibérations) ; elle lit désormais aussi les `.xlsx`, `.ods`, `.odt` et les 
 
 ### 2.3 Analyse complète (`app/services/analyse_dossier.py`)
 
-**Fenêtre de contexte et budget sûr.** Modèles actuels (non migrés) : Claude Sonnet 4.6
+**Fenêtre de contexte et budget sûr.** Modèles (routage par tâche du 12/10/2026, `app/services/llm.py`) :
+analyse et lecture des pièces par Mistral Large 4 (`mistral-large-4`, fenêtre de **1 000 000 de
+tokens**), secours Claude Sonnet 5.5 (`claude-sonnet-5-5`, 1 000 000 de tokens, ≈ +30 % de tokens
+pour le même texte). Ancien routage (`LLM_ROUTAGE=ancien`) : Claude Sonnet 4.6
 (`claude-sonnet-4-6`), fenêtre documentée de **1 000 000 de tokens**, 128 000 en sortie ;
 Claude Haiku 4.5 (`claude-haiku-4-5`), **200 000 tokens**, 64 000 en sortie. On ne remplit pas la
 fenêtre : le budget d'entrée sûr de l'analyse est `ANALYSE_BUDGET_TOKENS = 150 000` tokens (coût,
@@ -210,10 +213,12 @@ le français chiffré varie de 3,0 à 3,6) :
   les pièces lues — jamais qu'elle n'existe pas »). Toutes les citations sont vérifiées contre le
   texte intégral (`citation_guard`), comme avant.
 - **Au-delà : lecture en deux temps.** (1) Chaque pièce (sauf règlement et cadre s'ils tiennent en
-  entier dans la synthèse) est lue **séparément** par Claude Haiku 4.5, découpée en parties de
+  entier dans la synthèse) est lue **séparément** par l'IA (tâche `lecture_pieces` : Mistral Large 4 ;
+  ancien routage : Claude Haiku 4.5), découpée en parties de
   40 000 tokens au plus (`ANALYSE_SEGMENT_TOKENS`) : l'IA relève les informations utiles, chacune
   avec la phrase exacte ; une phrase introuvable dans la pièce fait **écarter** l'information
-  (`citation_guard`), la page est retrouvée par Adjugo (pas par l'IA). (2) Une synthèse (Sonnet 4.6,
+  (`citation_guard`), la page est retrouvée par Adjugo (pas par l'IA). (2) Une synthèse (tâche `analyse` :
+  Mistral Large 4 ; ancien routage : Sonnet 4.6,
   même consigne et même format qu'avant) reçoit le règlement et le cadre en entier, puis ce qui a
   été relevé dans toutes les autres pièces. Chaque pièce passe donc par l'IA. Parallélisme : 3 appels
   (`ANALYSE_PARALLELE`), sous le sémaphore IA global ; espace facturé et compteur de coût propagés
@@ -392,6 +397,43 @@ jours du mois — la borne s'applique chaque jour du calendrier) : Pro 50 × 31 
 par mois et par organisation ; Business 120 × 31 × 0,033 $ ≈ 123 $ (106 €) ; essai expiré 15 × 31 ×
 0,033 $ ≈ 15 $ (13 €). Usage courant (cache, ≈ 10 questions par jour) ≈ 1,3 $ par mois. Avant, seule
 l'adresse IP limitait : ≈ 84 € par mois et par adresse.
+
+**Routage par tâche du 12/10/2026 (`app/services/llm.py`, docs/IA_ROUTAGE.md) : coûts recalculés.**
+Les tableaux ci-dessus restent ceux de l'ancien routage (`LLM_ROUTAGE=ancien`).
+
+Hypothèses du nouveau routage :
+- lecture des pièces et synthèse : Mistral Large 4, point d'accès UE, **prix normal** (1,36 $ / 4,18 $
+  par million, +10 % pour l'UE ; le prix de lancement à −50 % divise ces montants par deux) ;
+- découpage de Mistral pour le français : non publié, pris égal à celui de Sonnet 4.6 (hypothèse) ;
+- plafonds de sortie relevés de 30 % (payés à l'usage) : une partie lue a droit à 10 400 tokens ;
+- questions : Claude Sonnet 5.5 (2 $ / 10 $ ; ≈ +30 % de tokens ; cache de 5 minutes écrit à 1,25 ×,
+  relu à 0,05 ×), sans réflexion préalable (`between_tools`), effort `medium`.
+
+| Cas | Nouveau routage | Ancien |
+|---|---|---|
+| Analyse, ZIP de 50 000 caractères | 0,043 $ (secours Sonnet 5.5 : 0,093 $) | 0,11 $ |
+| Analyse, 150 000 caractères | 0,089 $ (secours : 0,17 $) | 0,20 $ |
+| Analyse, ≈ 390 000 caractères, sortie maximale | 0,22 $ (secours : 0,39 $) | 0,45 $ |
+| Analyse, 600 000 caractères, deux temps | 0,41 $ | 0,41 $ |
+| Analyse, 6 M caractères, sortie courante | 3,39 $ (2,9 €) | 2,8 $ |
+| Analyse, 6 M caractères, 40 informations par appel | 4,25 $ (3,6 €) | 3,7 $ |
+| Analyse, 6 M caractères, pire théorique (plafond de 10 400 tokens) | 7,26 $ (6,2 €) | 5,8 $ |
+| Question, règlement de 20 000 caractères, cache froid | 0,034 $ | 0,013 $ |
+| Question suivante dans les 5 minutes | 0,015 $ | 0,006 $ |
+| Question, 60 000 caractères, cache froid, sortie maximale | 0,085 $ | 0,033 $ |
+| Borne par jour, pire cas, Pro (50 × 31) | 132 $ (113 €) par mois et par organisation | 51 $ |
+| Borne par jour, pire cas, Business (120 × 31) | 316 $ (272 €) | 123 $ |
+| Borne par jour, pire cas, essai expiré (15 × 31) | 39 $ (34 €) | 15 $ |
+
+Ce qu'il faut retenir :
+- Les analyses d'un seul tenant coûtent environ deux fois moins cher.
+- Les très gros dossiers en deux temps coûtent un peu plus : l'entrée de Mistral au point d'accès UE
+  (1,50 $) est plus chère que celle de Haiku 4.5 (1 $).
+- **Les questions coûtent ≈ 2,6 fois plus** (Sonnet 5.5 au lieu de Haiku 4.5) : décision du fondateur,
+  pour la fidélité des réponses.
+- La borne par jour du pire cas d'un Business passe à 272 € par mois et par organisation. Clients payants :
+  aucun plafond réduit (décision du fondateur). Garde-fou de coût : sur l'essai seulement.
+- À suivre sur `cost_meter` et `GET /api/admin/ia/qualite`.
 
 **Essai gratuit — à décider.** Pendant l'essai (30 jours, sans carte), `quota._limit` donne 30
 analyses (niveau Pro) et 50 questions par jour. Pire cas réaliste d'un compte d'essai qui n'importerait

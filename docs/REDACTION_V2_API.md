@@ -303,11 +303,12 @@ d'≈ 1 400 caractères, recherche sans IA dans toutes les pièces lues, pièces
 écartées), avec une note qui dit ce qui est remis en entier, par passages et non lu (pour l'IA
 seulement : n'affirmer jamais qu'une exigence est absente, n'écrire jamais de remarque sur la
 lecture du dossier dans le texte, qui va à l'acheteur).
-Le bloc commun (règlements et cadres) vient en tête et est mis en cache de prompt (5 minutes) : le
-premier appel l'ÉCRIT (1,25 × le prix d'entrée), les appels suivants dans les 5 minutes le RELISENT
-(0,1 ×). « Rédiger tout » rédige donc la première partie seule, puis les autres en parallèle (3 à la
-fois) : une seule écriture. Une partie rédigée seule, plus de 5 minutes après la précédente, paie
-l'écriture sans relecture (voir le coût au § 4.4). Sans lecture intégrale (ancienne analyse, lecture en cours) :
+Le bloc commun (règlements et cadres) vient en tête et est mis en cache de prompt pour UNE HEURE
+(tâche `redaction`, Claude Sonnet 5.5) : le premier appel l'ÉCRIT (2 × le prix d'entrée), les appels
+suivants le RELISENT (0,05 ×), et chaque relecture prolonge l'heure. « Rédiger tout » rédige donc la
+première partie seule, puis les autres en parallèle (3 à la fois) : une seule écriture. Une partie
+rédigée seule plus d'une heure après la précédente paie l'écriture sans relecture (voir le coût au
+§ 4.4). Sans lecture intégrale (ancienne analyse, lecture en cours) :
 règlement et cadre en tête et en entier, le reste borné (le début des autres pièces) ; sans dossier
 du marché importé, il le dit. Il s'appuie seulement sur vos documents, votre profil, votre équipe
 (noms remplacés par des étiquettes avant l'envoi), votre chiffrage et les parts envoyées par vos
@@ -336,28 +337,62 @@ une phrase sur l'entreprise). Le texte précédent est gardé dans l'historique.
 - Panne de l'IA : tout est rendu (analyse comprise si c'était la première action) ; échec partiel :
   seules les parties en échec sont rendues.
 
-**Coût IA d'un dossier avec la lecture intégrale (recalculé le 12/10/2026, interne).** Hypothèses :
-Sonnet à 3 $ / 15 $ par million de tokens (entrée / sortie), cache écrit à 1,25 ×, relu à 0,1 ×,
-3,3 caractères par token, 1 100 tokens de sortie par partie, ≈ 23 400 caractères propres à chaque
-partie (consigne, faits, extraits, 8 passages) ; messages construits par le vrai code. Le dossier
-garde le coût mesuré dans `dossiers_presentation.cout_ia` (`tokens_entree` hors cache,
-`tokens_cache_ecrits`, `tokens_cache_lus`, `cout_estime_usd`).
+**Coût IA d'un dossier avec la lecture intégrale (recalculé le 12/10/2026 pour Claude Sonnet 5.5 et
+un cache d'une heure, interne).** La rédaction passe par la tâche `redaction` de `app/services/llm.py` :
+Claude Sonnet 5.5 (`claude-sonnet-5-5`), réflexion adaptative et effort `high` (qualité), dossier de
+l'acheteur commun mis en cache pour **une heure** (`"ttl": "1h"`, sans en-tête bêta, transmis tel quel par
+le SDK 0.34). Chaque relecture du cache prolonge l'heure : tant que deux actions de l'IA sur le dossier se
+suivent à moins d'une heure, le bloc commun n'est écrit qu'une fois. Avant, avec le cache de 5 minutes, il
+était réécrit à chaque partie rédigée plus de 5 minutes après la précédente.
 
-| Dossier | Bloc en cache | Écriture | Relecture | 20 parties : « Rédiger tout » + 10 refontes isolées | 20 parties une à une (> 5 min) + 10 refontes |
-|---|---|---|---|---|---|
-| Courant (RC 40 000 + cadre 15 000 car.) | ≈ 57 000 car. | 0,10 $ | 0,04 $ | 1,95 $ (≈ 1,7 €) | 3,08 $ (≈ 2,6 €) |
-| Plusieurs lots (RC 60 000 + modificatif 30 000 + 4 cadres de 25 000) | ≈ 192 000 car. | 0,26 $ | 0,06 $ | 3,87 $ (≈ 3,3 €) | 7,68 $ (≈ 6,6 €) |
-| Plafond (`ATELIER_DOSSIER_MAX_CARACTERES` = 240 000) | ≈ 242 000 car. | 0,31 $ | 0,06 $ | 4,58 $ (≈ 3,9 €) | 9,39 $ (≈ 8,1 €) |
+Hypothèses :
+- Sonnet 5.5 : 2 $ / 10 $ par million de tokens (entrée / sortie) ; cache d'une heure écrit à 2 × le prix
+  d'entrée (4 $), relu à 0,05 × (0,10 $) ; cache de 5 minutes écrit à 1,25 × (2,50 $) ;
+- découpage : ≈ 30 % de tokens en plus que Sonnet 4.6 (3,3 caractères par token × 1,3) ;
+- préfixe en cache : la consigne (1 495 caractères) et le dossier de l'acheteur commun ;
+- par partie : ≈ 23 400 caractères propres (consigne de la partie, faits, extraits, 8 passages) et
+  1 100 tokens de sortie au découpage de Sonnet 4.6 (1 430 sur Sonnet 5.5) ;
+- réflexion : 0, ou 3 000 tokens par partie entre crochets (hypothèse non mesurée, facturée comme de la
+  sortie ; l'appel lui réserve 8 000 tokens de plus dans `max_tokens`) ;
+- 30 actions de l'IA : 20 parties + 10 refontes ; 1 $ = 0,85 €.
 
-Au plafond avec 60 parties : « Rédiger tout » + 10 refontes ≈ 6,97 $ (≈ 6,0 €). Avant la fusion
-(dossier borné à 80 000 caractères, sans cache) : ≈ 0,10 $ par appel, 3,0 $ pour 20 parties + 10
-refontes. Avant le correctif « première partie seule », « Rédiger tout » écrivait le cache 3 fois
-(+ 0,4 à 0,5 $ par dossier à plusieurs lots). Repère de la décision 6a : une analyse hors forfait
-vaut 5 € HT. Un dossier courant reste nettement en dessous ; un dossier à plusieurs lots ou au
-plafond le dépasse si l'utilisateur rédige partie par partie à plus de 5 minutes d'intervalle. À
-trancher sur le coût MESURÉ (`cout_ia`) : ramener `ATELIER_REGEN_GRATUITES` à 5, abaisser
-`ATELIER_DOSSIER_MAX_CARACTERES` (≈ 120 000 : environ 0,17 $ l'écriture), ou ne remettre en entier
-que le règlement et le cadre du lot visé.
+Calcul : `llm.estimer_cout`. Le dossier garde le coût mesuré dans `dossiers_presentation.cout_ia`
+(`tokens_entree` hors cache, `tokens_cache_ecrits` dont `tokens_cache_ecrits_1h`, `tokens_cache_lus`,
+`cout_estime_usd`).
+
+| Dossier | Préfixe en cache (tokens Sonnet 5.5) | Écriture 1 h / relecture | Moins d'une heure entre deux actions | « Rédiger tout », puis 10 refontes isolées (plus d'une heure après) | Plus d'une heure entre CHAQUE action (pire cas absolu) | Avant : Sonnet 4.6, cache 5 min, parties une à une à plus de 5 min |
+|---|---|---|---|---|---|---|
+| Courant (RC 40 000 + cadre 15 000 car.) | 23 044 | 0,092 $ / 0,0023 $ | 1,14 $ ≈ 0,97 € [2,04 $ ≈ 1,73 €] | 2,04 $ ≈ 1,73 € [2,94 $ ≈ 2,50 €] | 3,75 $ ≈ 3,19 € [4,65 $ ≈ 3,95 €] | 3,13 $ ≈ 2,7 € |
+| Plusieurs lots (RC 60 000 + modificatif 30 000 + 4 cadres de 25 000) | 76 226 | 0,305 $ / 0,0076 $ | 1,51 $ ≈ 1,28 € [2,41 $ ≈ 2,05 €] | 4,48 $ ≈ 3,81 € [5,38 $ ≈ 4,57 €] | 10,13 $ ≈ 8,61 € [11,03 $ ≈ 9,37 €] | 7,73 $ ≈ 6,6 € |
+| Plafond (`ATELIER_DOSSIER_MAX_CARACTERES` = 240 000) | 95 923 | 0,384 $ / 0,0096 $ | 1,64 $ ≈ 1,40 € [2,54 $ ≈ 2,16 €] | 5,39 $ ≈ 4,58 € [6,29 $ ≈ 5,34 €] | 12,49 $ ≈ 10,62 € [13,39 $ ≈ 11,38 €] | 9,43 $ ≈ 8,0 € |
+
+Entre crochets : avec 3 000 tokens de réflexion par partie.
+
+Lecture :
+- **Le pire cas d'origine est divisé par 5.** Il valait ≈ 7 € : 20 parties rédigées une à une à plus de
+  5 minutes d'intervalle, puis 10 refontes, sur un dossier à plusieurs lots. Il tombe à 1,28 € (2,05 € avec
+  réflexion) dès que deux actions se suivent à moins d'une heure, ce qui est le cas d'une séance de travail.
+- **Le cache d'une heure ne coûte plus cher que si chaque action est isolée** (plus d'une heure après la
+  précédente) : 30 écritures à 2 × au lieu de 1,25 ×. Exemple : un dossier rédigé sur plusieurs jours, une
+  partie à la fois. Pire cas absolu : 8,61 € (plusieurs lots) et 10,62 € (plafond), contre 6,6 € et 8,0 €
+  avant.
+- Avec le seul cache de 5 minutes, Sonnet 5.5 coûterait 6,70 $ (plusieurs lots) et 8,18 $ (plafond) dans
+  le scénario « parties une à une ».
+- Retour au cache de 5 minutes, sans toucher au code : `LLM_TACHE_REDACTION_CACHE=5m`.
+- Rien n'est retiré de ce qui est lu : règlements et cadres de réponse restent remis en entier à chaque
+  partie.
+
+Repère de la décision 6a : une analyse hors forfait vaut 5 € HT. Un dossier courant reste nettement en
+dessous dans tous les cas. Un dossier à plusieurs lots ou au plafond ne la dépasse que dans le cas d'actions
+toutes isolées.
+
+À trancher sur le coût MESURÉ (`cout_ia`, et `GET /api/admin/ia/qualite` pour les délais et les
+bascules) :
+- garder le cache d'une heure (défaut) ;
+- revenir à 5 minutes si les actions isolées dominent ;
+- ramener `ATELIER_REGEN_GRATUITES` à 5 ;
+- abaisser `ATELIER_DOSSIER_MAX_CARACTERES` (≈ 120 000) ;
+- ne remettre en entier que le règlement et le cadre du lot visé.
 
 ### 4.5 Limites, blocage, dérogation, export
 

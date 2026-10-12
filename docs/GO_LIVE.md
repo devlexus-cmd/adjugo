@@ -343,6 +343,15 @@ SENTRY_DSN=<DSN Sentry>
 ANALYTICS_SRC=https://plausible.io/js/script.js
 ANALYTICS_DOMAIN=adjugo.pro
 
+# IA : routage par tâche (docs/IA_ROUTAGE.md, docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md)
+# Déjà posée : MISTRAL_API_KEY_ADJUGO (lecture des dossiers par Mistral Large 4).
+# AVANT le premier déploiement de ce routage, tant que les clients n'ont pas été prévenus du nouveau
+# sous-traitant (DPA, art. 6) et que la désinscription de l'entraînement n'est pas faite :
+LLM_PROVIDER=anthropic            # tout chez Claude Sonnet 5.5 ; retirer à la fin du préavis
+# Après la désinscription (console Mistral, Admin > Privacy, « Anonymous improvement data ») :
+MISTRAL_ENTRAINEMENT_DESACTIVE=1
+# Retour arrière en une minute, si besoin : LLM_ROUTAGE=ancien (Sonnet 4.6 / Haiku 4.5)
+
 # Déjà posé : ANTHROPIC_API_KEY, APP_BASE_URL=https://adjugo.pro
 ```
 
