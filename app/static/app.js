@@ -216,6 +216,24 @@ function _atlInit() {
            exportOpen: false, lastDerog: "", live: "" };
 }
 function _atlCardInit() { return { loading: false, loaded: false, d: null, error: "" }; }
+// « Pièces du dossier de l'acheteur lues par Adjugo » : ce que la LECTURE a donné pour une pièce
+// (lue en entier avec ses pages, lue en partie, non lue) ; la raison s'affiche à côté.
+function atlLecturePiece(p) {
+  p = p || {};
+  const st = p.statut || (p.lu_en_entier === true ? "lu_en_entier" : (p.lu_en_entier === false ? "lu_en_partie" : ""));
+  if (st === "lu_en_entier") return "lue en entier" + (p.pages ? " (" + p.pages + " page" + (p.pages > 1 ? "s" : "") + ")" : "");
+  if (st === "non_lu") return "non lue";
+  if (st === "lu_en_partie") return "lue en partie";
+  return "";
+}
+// Ce qui manque à la lecture du dossier, à dire hors de la liste repliée : ancienne lecture (et
+// comment obtenir la lecture intégrale), lecture en cours, ou pièces non lues ou lues en partie.
+function atlManqueLecture(da) {
+  if (!da || da.present === false) return "";
+  if (da.message_lecture) return da.message_lecture;
+  const c = da.couverture;
+  return (c && c.message && !c.complet) ? c.message : "";
+}
 const ATL_FAIT_TYPES = { chiffre: "Chiffre", nombre_en_lettres: "Nombre en lettres", certification: "Certification",
   nom_propre: "Nom propre", materiel: "Matériel" };
 const ATL_BASES = [
@@ -446,6 +464,7 @@ const __adjApp = createApp({
       sharedAo: _sharedInit(),
       atl: _atlInit(),        // atelier du dossier de présentation (rédaction, vague 2)
       atlJobs: {},            // rédactions en cours (tâches de fond), suivies toutes les 2 s, toutes pages confondues
+      atlEchecs: {},          // « marché:partie » → message d'échec de la dernière rédaction, gardé jusqu'à la prochaine action
       atlMobile: false,       // écran étroit : lire et valider seulement
       pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "dpgf_lot", l: "DPGF du lot (prix de vente)" }, { k: "autre", l: "Autre" }],
       veille: { q: "", loc: "", results: [], loading: false },
@@ -3948,6 +3967,8 @@ const __adjApp = createApp({
     atlSec() { const a = this.atl; return (a.st && a.st.sections.find(s => s.id === a.sel)) || null; },
     atlSecLims(s) { const st = this.atl.st; return (st && s) ? (st.limites || []).filter(l => l.portee === "section" && l.section_id === s.id) : []; },
     atlDocLims(st) { return ((st && st.limites) || []).filter(l => l.portee === "document"); },
+    atlPieceLecture(p) { return atlLecturePiece(p); },
+    atlCouvertureManque(st) { return atlManqueLecture(st && st.dossier_acheteur); },
     atlFaitsARelire(s) { const v = s && s.version_courante; return ((v && v.faits) || []).filter(f => f.statut !== "relu_par_vous" && f.type !== "reste"); },
     // Au-delà de ce que l'atelier détaille, les faits restants sont comptés (et bloquent l'export).
     atlFaitsReste(s) { const v = s && s.version_courante; return ((v && v.faits) || []).find(f => f.type === "reste" && f.statut !== "relu_par_vous") || null; },
@@ -4017,6 +4038,10 @@ const __adjApp = createApp({
       ((d && d.sections) || []).forEach(s => {
         const rc = s.redaction_en_cours;
         if (rc && rc.job_id && !this.atlJobs[rc.job_id]) this._atlTrack({ id: rc.job_id, status: rc.statut, label: "" }, pid, [s.id], rc.action);
+        else if (rc && rc.job_id) {
+          const j = this.atlJobs[rc.job_id];          // une tâche pour plusieurs parties : toutes suivies
+          if (j.pid === pid && !j.ids.includes(s.id)) j.ids.push(s.id);
+        }
       });
     },
     atlSelect(sid) {
@@ -4110,9 +4135,15 @@ const __adjApp = createApp({
       catch (e) { this.notify(e.message, "err"); }
       finally { a.busy = ""; }
     },
-    async atlRetirerPartie(s) {
+    // Confirmations de l'atelier : la fenêtre de l'application (comme « Marquer déposé »), jamais celle du navigateur.
+    atlRetirerPartie(s) {
       const a = this.atl; if (!s || a.busy) return;
-      if (!confirm("Retirer « " + s.titre + " » du plan ? Ses versions restent gardées : vous pourrez la remettre.")) return;
+      this._convAsk({ title: "Retirer cette partie du plan ?", ok: "Retirer la partie", run: () => this._atlRetirer(s),
+        lines: ["« " + s.titre + " » sort du plan. Ses versions restent gardées : vous pourrez la remettre."] });
+    },
+    async _atlRetirer(s) {
+      const a = this.atl; if (!s || a.busy) return;
+      this._atlEchecOublier(s.id);
       a.busy = "retirer";
       try { await this.api("DELETE", this._atlUrl("/sections/" + s.id)); this.notify("Partie retirée du plan"); await this.atlLoad(true); }
       catch (e) { this.notify(e.message, "err"); }
@@ -4156,6 +4187,7 @@ const __adjApp = createApp({
     atlEdit() {
       const a = this.atl, s = this.atlSec(); if (!s || !s.peut_ecrire || this.atlMobile) return;
       if (s.redaction_en_cours) { this.notify("Adjugo rédige cette partie : attendez la fin de la rédaction.", "err"); return; }
+      this._atlEchecOublier(s.id);
       if (a.draft) { this.atlDraftResume(); return; }
       const v = s.version_courante;
       a.mode = "modifier"; a.conflict = ""; a.note = "";
@@ -4165,7 +4197,12 @@ const __adjApp = createApp({
     atlInput() { this.atl.edit.dirty = true; clearTimeout(this._atlDT); this._atlDT = setTimeout(() => this._atlDraftSave(), 500); },
     atlEditCancel() {
       const a = this.atl;
-      if (a.edit.dirty && !confirm("Abandonner les modifications non enregistrées de cette partie ?")) return;
+      if (!a.edit.dirty) { this._atlEditFermer(); return; }
+      this._convAsk({ title: "Abandonner vos modifications ?", ok: "Abandonner les modifications", run: () => this._atlEditFermer(),
+        lines: ["Les modifications non enregistrées de cette partie seront perdues, y compris la copie gardée sur cet appareil."] });
+    },
+    _atlEditFermer() {
+      const a = this.atl;
       clearTimeout(this._atlDT);
       if (a.edit.sid) this._atlDraftClear(a.edit.sid);
       a.mode = "lire"; a.edit = { texte: "", base: null, dirty: false, sid: null }; a.conflict = ""; a.note = "";
@@ -4191,6 +4228,7 @@ const __adjApp = createApp({
       const a = this.atl, s = this.atlSec(); if (!s || a.busy || a.mode !== "modifier") return;
       if (a.edit.texte.length > 60000) { this.notify("Le texte dépasse 60 000 caractères : raccourcissez-le avant d'enregistrer.", "err"); return; }
       clearTimeout(this._atlDT); this._atlDraftSave();
+      this._atlEchecOublier(s.id);
       a.busy = "save";
       try {
         const r = await this.api("PUT", this._atlUrl("/sections/" + s.id + "/texte"), { texte: a.edit.texte, base_version_id: a.edit.base });
@@ -4221,27 +4259,45 @@ const __adjApp = createApp({
 
     // ── Le moteur : rédiger, raccourcir (tâches de fond, suivies toutes les 2 s) ──
     // « Mon savoir-faire » vide, première rédaction (1 analyse) : on prévient avant de débiter.
-    _atlSavoirFaireOk() {
+    _atlLignesSavoirFaire() {
       const st = this.atl.st;
-      if (!st || !st.savoir_faire || !st.savoir_faire.vide || (st.quota && st.quota.analyse_debitee)) return true;
-      return confirm("« Mon savoir-faire » est vide : sans vos anciens dossiers ni vos fiches, Adjugo écrira surtout des « [À compléter] ». La première rédaction compte pour 1 analyse de votre forfait. Continuer quand même ?");
+      if (!st || !st.savoir_faire || !st.savoir_faire.vide || (st.quota && st.quota.analyse_debitee)) return [];
+      return [{ t: "« Mon savoir-faire » est vide : sans vos anciens dossiers ni vos fiches, Adjugo écrira surtout des « [À compléter] ».", warn: true },
+              "La première rédaction compte pour 1 analyse de votre forfait."];
+    },
+    // Une seule fenêtre de confirmation, avec tout ce qu'il faut savoir avant de lancer (rien si rien à dire).
+    _atlAvantLancer(title, ok, lines, go) {
+      const all = (lines || []).concat(this._atlLignesSavoirFaire());
+      if (!all.length) { go(); return; }
+      this._convAsk({ title, ok, lines: all, run: go });
     },
     atlRediger(s) {
-      if (s.version_courante && !confirm("Adjugo va rédiger une nouvelle version de « " + s.titre + " ». Le texte actuel reste dans l'historique : vous pourrez y revenir.")) return;
-      if (!this._atlSavoirFaireOk()) return;
-      this._atlLancer("/sections/" + s.id + "/rediger", { accepte_debit: false }, "rediger");
+      const nouvelle = !!s.version_courante;
+      this._atlAvantLancer(nouvelle ? "Rédiger une nouvelle version ?" : "Rédiger avec Adjugo ?",
+        nouvelle ? "Rédiger une nouvelle version" : "Rédiger quand même",
+        nouvelle ? ["Adjugo va rédiger une nouvelle version de « " + s.titre + " ». Le texte actuel reste dans l'historique : vous pourrez y revenir."] : [],
+        () => this._atlLancer("/sections/" + s.id + "/rediger", { accepte_debit: false }, "rediger"));
     },
-    atlRaccourcir(s) { if (!this._atlSavoirFaireOk()) return; this._atlLancer("/sections/" + s.id + "/raccourcir", { accepte_debit: false }, "raccourcir"); },
+    atlRaccourcir(s) {
+      this._atlAvantLancer("Raccourcir avec Adjugo ?", "Raccourcir quand même", [],
+        () => this._atlLancer("/sections/" + s.id + "/raccourcir", { accepte_debit: false }, "raccourcir"));
+    },
     atlRedigerTout() {
       const n = this.atlAEcrire(); if (!n) return;
-      if (!this._atlSavoirFaireOk()) return;
-      this._atlLancer("/rediger", { accepte_debit: false }, "rediger");
+      this._atlAvantLancer("Rédiger avec Adjugo ?", "Rédiger quand même", [],
+        () => this._atlLancer("/rediger", { accepte_debit: false }, "rediger"));
     },
+    // Échec d'une rédaction : le message reste affiché DANS la partie jusqu'à la prochaine action sur elle.
+    _atlEchecCle(pid, sid) { return pid + ":" + sid; },
+    atlEchec(s) { return (s && this.atlEchecs[this._atlEchecCle(this.atl.pid, s.id)]) || ""; },
+    _atlEchecNoter(pid, ids, msg) { (ids || []).forEach(id => { this.atlEchecs[this._atlEchecCle(pid, id)] = msg; }); },
+    _atlEchecOublier(sid) { const k = this._atlEchecCle(this.atl.pid, sid); if (this.atlEchecs[k]) delete this.atlEchecs[k]; },
     async _atlLancer(path, body, action) {
       const a = this.atl, pid = a.pid; if (a.busy) return;
       a.busy = "lancer";
       try {
         const r = await this.api("POST", this._atlUrl(path), body);
+        (r.section_ids || []).forEach(id => this._atlEchecOublier(id));
         if (a.st && r.quota) a.st.quota = r.quota;
         this._atlTrack(r.tache, pid, r.section_ids, action);
         (r.section_ids || []).forEach(id => { const x = a.st && a.st.sections.find(y => y.id === id); if (x) x.redaction_en_cours = { job_id: r.tache.id, action, statut: r.tache.status }; });
@@ -4275,14 +4331,22 @@ const __adjApp = createApp({
       } finally { this._atlPolling = false; }
     },
     _atlJobFini(j, r) {
-      if (r.status === "error") this.notify(r.error || "La rédaction n'a pas abouti. Rien n'a été débité.", "err");
-      else {
+      const raccourcir = j.action === "raccourcir" || r.kind === "atelier_raccourcir";
+      if (r.status === "error") {
+        const msg = r.error || "La rédaction n'a pas abouti. Rien n'a été débité.";
+        this.notify(msg, "err");
+        this._atlEchecNoter(j.pid, j.ids, msg);
+        if (this.atl.pid === j.pid) this.atl.live = msg;
+      } else {
         const res = r.result || {}, ok = (res.sections || []).filter(x => x.ok).length;
-        let msg = j.action === "raccourcir" || r.kind === "atelier_raccourcir" ? "Partie raccourcie : relisez-la"
+        let msg = raccourcir ? "Partie raccourcie : relisez-la"
           : (ok > 1 ? ok + " parties rédigées : relisez-les" : "Partie rédigée : relisez-la");
         if (res.message) msg += ". " + res.message;
         this.notify(msg, res.echecs ? "err" : "ok");
         if (this.atl.pid === j.pid) this.atl.live = msg;
+        const ko = (res.sections || []).filter(x => !x.ok).map(x => x.section_id);
+        if (ko.length) this._atlEchecNoter(j.pid, ko, (raccourcir ? "Le raccourcissement" : "La rédaction")
+          + " de cette partie n'a pas abouti (service d'IA indisponible) : rien n'a été débité pour elle, réessayez.");
       }
       if (this.view === "atelier" && this.atl.pid === j.pid) this.atlLoad(true);
       if (this.view === "aodetail" && this.ao.project && this.ao.project.id === j.pid) this.atlCardLoad();
@@ -4291,17 +4355,25 @@ const __adjApp = createApp({
     // ── Relire, valider, traiter un fait « à relire » ──
     async atlRelu() {
       const a = this.atl, s = this.atlSec(), v = s && s.version_courante; if (!v || a.busy) return;
+      this._atlEchecOublier(s.id);
       a.busy = "relu";
       try { const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/relu"), { version_id: v.id }); this._atlPut(r); this.notify("Partie marquée comme relue"); this.atlLoad(true); }
       catch (e) { this.notify(e.message, "err"); if (e.code === "texte_modifie_entre_temps") this.atlLoad(true); }
       finally { a.busy = ""; }
     },
-    async atlValider() {
+    atlValider() {
       const a = this.atl, s = this.atlSec(), v = s && s.version_courante; if (!v || a.busy) return;
       const open = [];
       if (s.faits_a_relire) open.push(s.faits_a_relire + " fait" + (s.faits_a_relire > 1 ? "s" : "") + " à relire");
       if (s.a_completer) open.push(s.a_completer + " passage" + (s.a_completer > 1 ? "s" : "") + " « À compléter »");
-      if (open.length && !confirm("Il reste " + open.join(" et ") + " dans cette partie. La valider quand même ? L'export restera bloqué tant qu'ils ne sont pas traités.")) return;
+      if (!open.length) { this._atlValider(s, v); return; }
+      this._convAsk({ title: "Valider cette partie ?", ok: "Valider quand même", run: () => this._atlValider(s, v),
+        lines: ["Il reste " + open.join(" et ") + " dans cette partie.",
+                { t: "L'export restera bloqué tant qu'ils ne sont pas traités.", warn: true }] });
+    },
+    async _atlValider(s, v) {
+      const a = this.atl; if (!s || !v || a.busy) return;
+      this._atlEchecOublier(s.id);
       a.busy = "valider";
       try { const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/valider"), { version_id: v.id }); this._atlPut(r); this.notify("Partie validée"); this.atlLoad(true); }
       catch (e) { this.notify(e.message, "err"); if (e.code === "texte_modifie_entre_temps") this.atlLoad(true); }
@@ -4309,6 +4381,7 @@ const __adjApp = createApp({
     },
     async atlFait(f, statut) {
       const a = this.atl, s = this.atlSec(); if (!s || a.busy) return;
+      this._atlEchecOublier(s.id);
       a.busy = "fait:" + f.id;
       try { const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/faits/" + encodeURIComponent(f.id)), { statut }); this._atlPut(r.section); this.atlLoad(true); }
       catch (e) { this.notify(e.message, "err"); }
@@ -4354,10 +4427,15 @@ const __adjApp = createApp({
       try { const r = await this.api("GET", this._atlUrl("/sections/" + s.id + "/versions/" + v.id)); this.atl.vue = { v: r, titre: s.titre, courante: !!(s.version_courante && s.version_courante.id === v.id) }; }
       catch (e) { this.notify(e.message, "err"); }
     },
-    async atlRestaurer(v) {
+    atlRestaurer(v) {
       const a = this.atl, s = this.atlSec(); if (!s || a.busy) return;
       if (a.mode === "modifier" && a.edit.dirty) { this.notify("Enregistrez ou annulez d'abord votre modification en cours.", "err"); return; }
-      if (!confirm("Revenir à la version " + v.numero + " ? Elle devient la version actuelle ; le texte actuel reste dans l'historique.")) return;
+      this._convAsk({ title: "Revenir à la version " + v.numero + " ?", ok: "Revenir à cette version", run: () => this._atlRestaurer(s, v),
+        lines: ["Elle devient la version actuelle ; le texte actuel reste dans l'historique."] });
+    },
+    async _atlRestaurer(s, v) {
+      const a = this.atl; if (!s || a.busy) return;
+      this._atlEchecOublier(s.id);
       a.busy = "restaurer";
       try {
         const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/restaurer"), { version_id: v.id, base_version_id: s.version_courante ? s.version_courante.id : null });

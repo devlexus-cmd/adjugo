@@ -480,7 +480,8 @@ def test_etat_d_export_honnete_bases_poids_grille_et_dossier_absent_dans_les_gab
     # Dossier du marché absent : dit, avec le chemin vers l'import ; la bulle « Rédiger » suit.
     assert "atl.st.dossier_acheteur.message_absent" in a and "atlImporterDce()" in a and "atlImporterDce()" in c
     assert "Aucun dossier du marché importé : Adjugo rédige sans le règlement ni le cadre de réponse." in a
-    # « Mon savoir-faire » vide : signalé, et confirmé avant la première analyse.
-    assert "atl.st.savoir_faire.message" in a and "_atlSavoirFaireOk()" in JS_METH
+    # « Mon savoir-faire » vide : signalé, et confirmé avant la première analyse (fenêtre de l'application).
+    assert "atl.st.savoir_faire.message" in a and "this._atlLignesSavoirFaire()" in JS_METH
+    assert "_atlAvantLancer(title, ok, lines, go)" in JS_METH
     # Le reste des faits (au-delà de ce qui est détaillé) est compté.
     assert "atlFaitsReste(atlSec())" in a

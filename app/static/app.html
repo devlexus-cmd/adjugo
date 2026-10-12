@@ -1872,14 +1872,17 @@
               </div>
               <!-- Compteur : toujours « environ » (une page Word n'est pas calculable exactement) -->
               <div class="row wrap atl-g6 atl-mt12">
-                <span v-if="atl.st.compteur.total" class="atl-cpt">Environ {{ atlNum(atl.st.compteur.total.mots) }} {{ atlMotsLib(atl.st.compteur.total.mots) }} · {{ atlNum(atl.st.compteur.total.caracteres) }} caractères · {{ atlNum(atl.st.compteur.total.pages) }} page{{ atl.st.compteur.total.pages > 1 ? 's' : '' }}</span>
+                <!-- La bulle (i) du compteur est collée à son dernier mot : jamais seule sur sa ligne à 375 px -->
+                <span v-if="atl.st.compteur.total" class="atl-cpt">Environ {{ atlNum(atl.st.compteur.total.mots) }} {{ atlMotsLib(atl.st.compteur.total.mots) }} · {{ atlNum(atl.st.compteur.total.caracteres) }} caractères · <span class="atl-nowrap">{{ atlNum(atl.st.compteur.total.pages) }} page{{ atl.st.compteur.total.pages > 1 ? 's' : '' }}<button v-if="atl.st.compteur.message" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Comment c'est compté</span><span class="tip-b" role="tooltip">{{ atl.st.compteur.message }}</span></button></span></span>
                 <span v-for="(l,i) in atlDocLims(atl.st)" :key="'dl'+i" class="atl-lim" :class="atlLimCls(l)">{{ l.message }}<button v-if="l.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ l.phrase }} »<template v-if="l.source"> ({{ l.source }})</template></span></button></span>
-                <button v-if="atl.st.compteur.message" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Comment c'est compté</span><span class="tip-b" role="tooltip">{{ atl.st.compteur.message }}</span></button>
               </div>
               <div v-if="atlNonControlees(atl.st.dossier.plan.limites).length" class="muted small atl-mt4">Adjugo ne compte pas : {{ atlNonControlees(atl.st.dossier.plan.limites).join(' ; ') }}. Vérifiez-les vous-même.</div>
               <div v-if="atlAvert(atl.st, 'fichier_impose')" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ atlAvert(atl.st, 'fichier_impose').message }}</span></div>
+              <!-- Ce que lit le moteur, honnêtement : chaque pièce lue en entier, en partie ou non lue (et pourquoi) -->
+              <div v-if="atlCouvertureManque(atl.st)" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ atlCouvertureManque(atl.st) }}</span></div>
               <details v-if="atl.st.dossier_acheteur && (atl.st.dossier_acheteur.pieces || []).length" class="atl-det atl-mt8"><summary>Pièces du dossier de l'acheteur lues par Adjugo ({{ atl.st.dossier_acheteur.pieces.length }})</summary>
-                <ul class="atl-pieces"><li v-for="(p,i) in atl.st.dossier_acheteur.pieces" :key="'pc'+i">{{ p.libelle || p.nom }}<span v-if="p.nom && p.libelle" class="muted"> · {{ p.nom }}</span><span v-if="p.lu_en_entier===true" class="muted"> · lue en entier</span><span v-else-if="p.lu_en_entier===false" class="muted"> · lue en partie</span></li></ul></details>
+                <div v-if="atl.st.dossier_acheteur.couverture && atl.st.dossier_acheteur.couverture.complet" class="small atl-mt4">{{ atl.st.dossier_acheteur.couverture.message }}<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Ce que lit Adjugo</span><span class="tip-b" role="tooltip">Pour chaque partie, Adjugo remet à l'IA le règlement et le cadre de réponse en entier, puis les passages des autres pièces les plus proches de la partie.</span></button></div>
+                <ul class="atl-pieces"><li v-for="(p,i) in atl.st.dossier_acheteur.pieces" :key="'pc'+i">{{ p.libelle || p.nom }}<span v-if="p.nom && p.libelle" class="muted"> · {{ p.nom }}</span><span class="muted"> · {{ atlPieceLecture(p) }}</span><span v-if="p.raison" :class="p.statut === 'non_lu' ? 'atl-ko' : 'muted'"> : {{ p.raison }}</span><span v-if="p.remise_libelle" class="muted"> · {{ p.remise_libelle }}</span></li></ul></details>
               <div v-if="atl.st.dossier_acheteur && atl.st.dossier_acheteur.a_change" class="atl-info"><i data-lucide="refresh-cw"></i><span style="flex:1;min-width:0">{{ atl.st.dossier_acheteur.message }}</span><button v-if="!atlMobile" type="button" class="btn sm" @click="atlPlanOpen()">Reconstruire le plan</button></div>
               <div v-if="atl.st.dossier_acheteur && atl.st.dossier_acheteur.present === false" class="atl-info"><i data-lucide="file-x"></i><span style="flex:1;min-width:0">{{ atl.st.dossier_acheteur.message_absent }}</span><button v-if="!atlMobile" type="button" class="btn sm" @click="atlImporterDce()">Importer le dossier du marché</button></div>
               <div v-if="atl.st.grille" class="atl-info"><i data-lucide="list-checks"></i><span style="flex:1;min-width:0">{{ atl.st.grille.message }}</span>
@@ -1973,7 +1976,7 @@
                       <button type="button" class="btn sm primary" @click="atlRediger(atlSec())" :disabled="!!atl.busy || !!atlSec().redaction_en_cours"><i data-lucide="sparkles"></i>Rédiger avec Adjugo</button>
                       <button type="button" class="btn sm" @click="atlRaccourcir(atlSec())" :disabled="!!atl.busy || !!atlSec().redaction_en_cours || !atlSec().version_courante"><i data-lucide="scissors"></i>Raccourcir</button>
                       <button type="button" class="btn sm" @click="atlEdit()" :disabled="!!atl.busy || !!atlSec().redaction_en_cours"><i data-lucide="pen-line"></i>J'écris moi-même</button>
-                      <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Ce que fait Adjugo</span><span class="tip-b" role="tooltip"><template v-if="atl.st.dossier_acheteur && atl.st.dossier_acheteur.present === false">Aucun dossier du marché importé : Adjugo rédige sans le règlement ni le cadre de réponse. </template><template v-else>Adjugo lit le règlement et le cadre de réponse en entier. </template>Il s'appuie seulement sur vos documents, votre profil, votre équipe (les noms sont remplacés par des étiquettes avant l'envoi), votre chiffrage et les parts envoyées par vos partenaires. Tout fait absent est écrit « [À compléter : …] ». Le texte précédent reste dans l'historique. « Raccourcir » vise la limite de la partie quand le règlement en donne une.</span></button>
+                      <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Ce que fait Adjugo</span><span class="tip-b" role="tooltip"><template v-if="atl.st.dossier_acheteur && atl.st.dossier_acheteur.present === false">Aucun dossier du marché importé : Adjugo rédige sans le règlement ni le cadre de réponse. </template><template v-else-if="atl.st.dossier_acheteur && atl.st.dossier_acheteur.integral">Adjugo lit le règlement et le cadre de réponse en entier et, pour chaque partie, les passages des autres pièces du dossier les plus proches de la partie. </template><template v-else>Adjugo lit le règlement et le cadre de réponse en entier, puis le début des autres pièces. </template>Il s'appuie seulement sur vos documents, votre profil, votre équipe (les noms sont remplacés par des étiquettes avant l'envoi), votre chiffrage et les parts envoyées par vos partenaires. Tout fait absent est écrit « [À compléter : …] ». Le texte précédent reste dans l'historique. « Raccourcir » vise la limite de la partie quand le règlement en donne une.</span></button>
                     </template>
                     <div class="spacer"></div>
                     <template v-if="atl.mode !== 'modifier' && atlSec().version_courante">
@@ -1990,6 +1993,8 @@
 
                   <!-- Rédaction en cours : la partie est verrouillée -->
                   <div v-if="atlSec().redaction_en_cours" class="atl-lock" role="status"><span class="spin"></span><span>Adjugo {{ atlSec().redaction_en_cours.action === 'raccourcir' ? 'raccourcit' : 'rédige' }} cette partie. Vous pouvez quitter cette page : la rédaction continue<template v-if="atlSec().version_courante"> et le texte actuel reste dans l'historique</template>.</span></div>
+                  <!-- Échec de la dernière rédaction : gardé dans la partie jusqu'à la prochaine action sur elle -->
+                  <div v-else-if="atlEchec(atlSec())" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ atlEchec(atlSec()) }}</div></div>
 
                   <!-- Éditeur simple : titres, listes, tableaux ; enregistrement explicite -->
                   <div v-if="atl.mode==='modifier' && !atlMobile" class="atl-editor">
@@ -2051,6 +2056,8 @@
                 <template v-if="atlSec() && atlSec().prive_visible">
                   <div class="atl-col-h"><b class="small">À relire</b><span class="atl-badge-f" v-if="atlFaitsARelire(atlSec()).length">{{ atlFaitsARelire(atlSec()).length }}</span><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo signale les chiffres, certifications, noms et matériels qu'il ne retrouve pas dans vos documents, votre profil, votre équipe ou votre chiffrage. Le dossier de l'acheteur ne compte jamais comme source pour une phrase sur votre entreprise. Il ne juge pas les phrases générales : relisez-les.</span></button></div>
                   <div v-if="!atlSec().version_courante" class="muted small atl-pad">Rien à relire tant que la partie n'a pas de texte.</div>
+                  <!-- Texte écrit par l'utilisateur : ses faits sont ses déclarations (aucun contrôle de son texte, voulu) -->
+                  <div v-else-if="!atlFaitsARelire(atlSec()).length && atlSec().version_courante.origine === 'utilisateur'" class="muted small atl-pad">Texte écrit par vous : vos chiffres et noms sont vos déclarations. Adjugo signale les faits ajoutés par l'IA.</div>
                   <div v-else-if="!atlFaitsARelire(atlSec()).length" class="muted small atl-pad">Aucun fait signalé dans ce texte. Relisez tout de même les phrases générales.</div>
                   <ul class="atl-faits">
                     <li v-for="f in atlFaitsARelire(atlSec())" :key="'f'+f.id" :id="'atl-f-'+f.id" tabindex="-1" class="atl-fait-c" :class="{on: atl.factFocus===f.id}">
@@ -3302,6 +3309,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-jQlcaS0fD7QtL7TTSoyQ3JIaDmuotZhptwQG/jPt/IOzdBX+nPoPUCG8nA+ensiF" defer></script>
+<script src="/static/app.js" integrity="sha384-jbeMw4dC7QN9oitoX5+s4szgW03Azzem77CQeovbzs9NVV7U7bcalGk/fxxUhM39" defer></script>
 </body>
 </html>
