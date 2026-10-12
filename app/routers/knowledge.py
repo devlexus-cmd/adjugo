@@ -84,10 +84,15 @@ def delete_doc(doc_id: int, current_user: User = Depends(get_current_user), db: 
                                         KnowledgeDoc.user_id == current_user.id).first()
     if not doc:
         raise HTTPException(404, "Document introuvable.")
+    # « Mes preuves » (vague 3) : les fiches dont le passage vient de ce document perdent leur
+    # source (Adjugo ne s'en sert plus tant qu'une autre source n'est pas donnée) — on le dit.
+    from app.core.org import data_owner_id
+    from app.services.preuves import preuves_du_document
+    sans_source = preuves_du_document(db, data_owner_id(current_user, db), doc.id)
     db.query(KnowledgeChunk).filter(KnowledgeChunk.doc_id == doc.id).delete()
     db.delete(doc)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "preuves_sans_source": sans_source}
 
 
 class SearchReq(BaseModel):

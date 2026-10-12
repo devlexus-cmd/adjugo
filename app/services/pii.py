@@ -251,7 +251,8 @@ def from_team(team) -> Pseudonymizer:
 
 
 def team_of_users(db, user_ids: Iterable) -> list:
-    """Équipes (profil entreprise) des organisations de ces comptes, sans doublon."""
+    """Équipes des organisations de ces comptes, sans doublon : profil entreprise (Company.team)
+    ET fiches « Équipe » de « Mes preuves » (rédaction, vague 3), quel que soit leur statut."""
     out, seen = [], set()
     try:
         from app.models import Company, User
@@ -260,13 +261,16 @@ def team_of_users(db, user_ids: Iterable) -> list:
         for uid in {u for u in (user_ids or []) if u}:
             u = db.get(User, uid)
             owners.add(data_owner_id(u, db) if u is not None else uid)
+        people = []
         for c in db.query(Company).filter(Company.user_id.in_(list(owners))).all() if owners else []:
-            for m in (c.team or []):
-                if isinstance(m, dict):
-                    k = _plain(m.get("nom"))
-                    if k and k not in seen:
-                        seen.add(k)
-                        out.append(m)
+            people += [m for m in (c.team or []) if isinstance(m, dict)]
+        from app.services.preuves import personnes
+        people += personnes(db, owners)
+        for m in people:
+            k = _plain(m.get("nom"))
+            if k and k not in seen:
+                seen.add(k)
+                out.append(m)
     except Exception:
         import logging
         logging.getLogger("adjugo").warning("équipe introuvable pour masquer les noms (comptes %s)", user_ids)

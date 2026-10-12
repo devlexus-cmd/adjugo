@@ -111,6 +111,12 @@ _BLOCKED = [
     ("POST",   "/api/atelier/{pid}/sections/{sid}/faits/{fid}", "préparer votre dossier de présentation"),
     ("POST",   "/api/atelier/{pid}/derogation",               "préparer votre dossier de présentation"),
     ("POST",   "/api/atelier/{pid}/export",                   "préparer votre dossier de présentation"),
+    # « Mes preuves » (rédaction, vague 3) : toute écriture (la vitrine partagée ne change pas).
+    ("POST",   "/api/preuves",                                "renseigner vos preuves"),
+    ("PATCH",  "/api/preuves/{id}",                           "renseigner vos preuves"),
+    ("DELETE", "/api/preuves/{id}",                           "renseigner vos preuves"),
+    ("POST",   "/api/preuves/{id}/accepter",                  "renseigner vos preuves"),
+    ("POST",   "/api/preuves/{id}/retirer",                   "renseigner vos preuves"),
     ("POST",   "/api/amont/analyze-text",                     "lancer une analyse IA"),
     ("POST",   "/api/amont/scan",                             "lancer une analyse IA"),
     # (d) compte, abonnement, équipe, organisation

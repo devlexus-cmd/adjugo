@@ -307,6 +307,9 @@ from app.routers.amont import router as amont_router
 app.include_router(amont_router)
 from app.routers.knowledge import router as knowledge_router
 app.include_router(knowledge_router)
+# Rédaction, vague 3 : « Mes preuves » (faits de l'entreprise, chacun avec sa source typée).
+from app.routers.preuves import router as preuves_router
+app.include_router(preuves_router)
 # Rédaction, vague 2 : l'atelier du dossier de présentation (sections, versions, validation,
 # rédaction en tâche de fond, « à relire », export Word et PDF bloqué sauf dérogation).
 from app.routers.atelier import router as atelier_router

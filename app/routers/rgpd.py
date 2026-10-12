@@ -122,6 +122,12 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
         data["dossiers_de_presentation"] = out
     except Exception:
         data["dossiers_de_presentation"] = []
+    # « Mes preuves » (rédaction, vague 3) : faits de l'entreprise avec leur source, CV compris.
+    try:
+        from app.services.preuves import exporter as _exporter_preuves
+        data["mes_preuves"] = _exporter_preuves(db, uid)
+    except Exception:
+        data["mes_preuves"] = []
     # Profil partenaire du réseau Adjugo (vague 3) : tout son contenu, y compris la liste de
     # masquage et le compteur anonyme d'apparitions (jamais QUI a cherché : non stocké).
     try:
@@ -205,7 +211,7 @@ def delete_account(request: Request, data: DeleteIn,
 #   contribution_pieces → project_contributions → project_invites → projects / users
 #   project_cotraitants → projects, cotraitants ; groupement_simulations → projects, users
 #   audit_logs, documents, invoices, generated_docs → projects ; documents.parent_id → documents
-#   knowledge_chunks → knowledge_docs ; co_members → co_spaces ; jobs, feedback → users
+#   knowledge_chunks → knowledge_docs ; co_members → co_spaces ; jobs, feedback, preuves → users
 #   users.org_id ↔ organizations.owner_id (cycle)
 
 _DELETE_FAILED = ("La suppression n'a pas pu aboutir. Réessayez dans quelques minutes "
@@ -284,6 +290,9 @@ def _erase_member(db, uid: int, owner_id: int) -> None:
                   M.DossierPresentation, M.DossierSection, M.DossierSectionVersion):
         db.query(model).filter(model.owner_id == uid).update(
             {model.owner_id: owner_id}, synchronize_session=False)
+    # « Mes preuves » : registre de l'entreprise, suit le propriétaire (numéros jamais heurtés).
+    from app.services.preuves import transferer as _transferer_preuves
+    _transferer_preuves(db, uid, owner_id, numeros="destination")
     # JOURNAL D'AUDIT : JAMAIS réécrit. owner_id entre dans le hash de chaque entrée et la
     # chaîne est tenue par owner_id → déplacer une entrée chaînée cassait la chaîne de
     # l'entreprise (fausse alerte de falsification). Seules les entrées historiques NON
@@ -324,7 +333,7 @@ def _drop_or_anonymize_user(db, uid: int) -> None:
     still_referenced = any(
         db.query(model.id).filter(model.owner_id == uid).first() is not None
         for model in (M.AuditLog, M.ProjectInvite, M.ProjectContribution, M.ContributionPiece,
-                      M.GroupementSimulation, M.GroupementConvention, M.DossierPresentation)
+                      M.GroupementSimulation, M.GroupementConvention, M.DossierPresentation, M.Preuve)
     ) or db.query(M.Project.id).filter(M.Project.user_id == uid).first() is not None   # pierres tombales
     if not still_referenced:
         db.query(User).filter(User.id == uid).delete(synchronize_session=False)
@@ -404,6 +413,9 @@ def _erase_solo(db, uid: int, org_id) -> list:
     _del(db, M.KnowledgeChunk, M.KnowledgeChunk.user_id == uid,
          M.KnowledgeChunk.doc_id.in_(kd_ids) if kd_ids else None)
     _del(db, M.KnowledgeDoc, M.KnowledgeDoc.user_id == uid)
+    # « Mes preuves » (rédaction, vague 3) : toutes, CV compris, numéros réservés compris.
+    from app.services.preuves import effacer_tout as _effacer_preuves
+    _effacer_preuves(db, uid)
     _del(db, M.Job, M.Job.user_id == uid)                      # mémoires/questionnaires générés
     _erase_personal_rows(db, uid)
     # 4) projets, puis les données métier restantes

@@ -1127,6 +1127,9 @@ class Contexte:
         self.chiffrage = _chiffrage_texte(project.estimate)
         self.partenaires, partner_uids = _apports_partenaires(db, project.id)
         self.partner_team = team_of_users(db, partner_uids) if partner_uids else []
+        # Noms des fiches « Équipe » de « Mes preuves » (vague 3) : masqués eux aussi avant l'IA.
+        from app.services.preuves import personnes
+        self.preuves_team = personnes(db, [owner_id])
         self.noms_entreprise = [x for x in ([comp.name if comp else ""] + [p["nom"] for p in self.partenaires]) if x]
         self.sources_entreprise = [self.profil, self.equipe, self.chiffrage] + [p["texte"] for p in self.partenaires]
 
@@ -1136,7 +1139,7 @@ class Contexte:
 
     def pseudonymiseur(self):
         from app.services.pii import from_team
-        return from_team(self.team + self.partner_team)
+        return from_team(self.team + self.preuves_team + self.partner_team)
 
 
 # ── Compteur, limites et blocage de l'export ──────────────────────────────────────────

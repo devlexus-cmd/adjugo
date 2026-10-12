@@ -1078,6 +1078,54 @@ class DossierSectionVersion(Base):
     created_at = Column(DateTime, default=utcnow)
 
 
+# === MES PREUVES (rédaction, vague 3 — socle commun de A, I et E1) ===
+# Les faits de l'entreprise, chacun avec SA source typée (doctrine § 7, règles 1 à 3 : un fait ne
+# vient jamais de l'IA ; on dit où on l'a trouvé, jamais « vérifié »). Contrat :
+# docs/REDACTION_V3_PREUVES.md ; règles : app/services/preuves.py (seul point d'écriture).
+#   • owner_id = data_owner_id de l'organisation (tenant, comme l'atelier) ;
+#   • proprietaire_kind / proprietaire_invite_id : le membre du groupement qui DÉTIENT le fait
+#     (vague 4 : 'invitation' + id de l'invitation ; aujourd'hui toujours 'organisation' / 0).
+#     Jamais exposé par l'API ; un fait d'une invitation n'est jamais lu par le chef de file ;
+#   • numero : identifiant STABLE dans la portée (owner_id, proprietaire_invite_id) → « F3 ».
+#     Jamais réutilisé : une suppression efface le contenu et garde la ligne (statut interne
+#     'supprimee'), pour qu'un ancien renvoi [F3] ne désigne jamais un autre fait ;
+#   • source_doc_id / source_document_id : SANS clé étrangère (supprimer un document de « Mon
+#     savoir-faire » ou du coffre-fort ne doit jamais échouer) ; contrôlés à chaque lecture.
+class Preuve(Base):
+    __tablename__ = "preuves"
+    __table_args__ = (UniqueConstraint("owner_id", "proprietaire_invite_id", "numero",
+                                       name="uq_preuves_owner_proprietaire_numero"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)   # tenant (data_owner_id)
+    proprietaire_kind = Column(String(12), nullable=False, default="organisation", server_default="organisation")
+    proprietaire_invite_id = Column(Integer, nullable=False, default=0, server_default="0", index=True)
+    numero = Column(Integer, nullable=False)
+    # reference | qualification | salarie | materiel | chiffre_cle
+    nature = Column(String(20), nullable=False)
+    valeur = Column(JSON, nullable=True)            # champs structurés de la nature (liste fermée)
+    # documents (dans vos documents) | declare (déclaré par vous) | public (source publique) |
+    # estimation (votre estimation)
+    type_source = Column(String(12), nullable=False, default="declare", server_default="declare")
+    source = Column(JSON, nullable=True)            # détail de la source (passage exact, URL datée…)
+    source_doc_id = Column(Integer, nullable=True, index=True)        # KnowledgeDoc (« Mon savoir-faire »)
+    source_document_id = Column(Integer, nullable=True, index=True)   # Document (justificatif déposé)
+    date_source = Column(Date, nullable=True)       # date du document d'origine, ou de consultation
+    date_fin_validite = Column(Date, nullable=True)
+    # proposee | acceptee | retiree (+ 'supprimee' : interne, contenu effacé, jamais listé)
+    statut = Column(String(12), nullable=False, default="proposee", server_default="proposee")
+    # saisie | import_document (I) | import_public (E2) | profil | chiffrage
+    origine = Column(String(20), nullable=False, default="saisie", server_default="saisie")
+    empreinte = Column(String(64), nullable=False, default="", server_default="", index=True)
+    cree_par = Column(Integer, nullable=True)
+    accepte_par = Column(Integer, nullable=True)
+    accepte_le = Column(DateTime, nullable=True)
+    retire_le = Column(DateTime, nullable=True)
+    version = Column(Integer, nullable=False, default=0, server_default="0")   # verrou optimiste
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 # === FEEDBACK (beta) ===
 # Retours des utilisateurs (bouton « Signaler / Idée ») — précieux en phase de test PME.
 class Feedback(Base):

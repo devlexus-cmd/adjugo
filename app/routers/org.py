@@ -318,6 +318,9 @@ def transfer_ownership(data: TransferIn, request: Request,
               GroupementConvention, GroupementSignature, DossierPresentation, DossierSection,
               DossierSectionVersion):
         db.query(M).filter(M.owner_id == old_id).update({M.owner_id: new_id}, synchronize_session=False)
+    # « Mes preuves » (rédaction, vague 3, owner_id = tenant) : elles suivent le nouveau propriétaire.
+    from app.services.preuves import transferer as _transferer_preuves
+    _transferer_preuves(db, old_id, new_id)
     # (c) profil partenaire du réseau (vague 3, user_id UNIQUE = data_owner_id) : il suit le
     #     nouveau propriétaire, sinon il devenait orphelin et inéditable par l'organisation.
     from app.services.partner_network import transfer_profile
