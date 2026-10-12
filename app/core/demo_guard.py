@@ -121,6 +121,8 @@ _BLOCKED = [
     ("POST",   "/api/preuves/{id}/accepter",                  "renseigner vos preuves"),
     ("POST",   "/api/preuves/{id}/retirer",                   "renseigner vos preuves"),
     ("POST",   "/api/knowledge/{doc_id}/fiches",              "proposer des fiches à partir de vos documents"),
+    ("POST",   "/api/preuves/reprise",                        "renseigner vos preuves"),
+    ("POST",   "/api/atelier/{pid}/sections/{sid}/inserer-preuve", "préparer votre dossier de présentation"),
     ("POST",   "/api/amont/analyze-text",                     "lancer une analyse IA"),
     ("POST",   "/api/amont/scan",                             "lancer une analyse IA"),
     # (d) compte, abonnement, équipe, organisation

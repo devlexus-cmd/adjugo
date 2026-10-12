@@ -308,6 +308,10 @@ app.include_router(amont_router)
 from app.routers.knowledge import router as knowledge_router
 app.include_router(knowledge_router)
 # Rédaction, vague 3 : « Mes preuves » (faits de l'entreprise, chacun avec sa source typée).
+# Les routes des écrans (reprise de l'existant, insertion dans l'atelier) passent AVANT le socle :
+# « /api/preuves/reprise » ne doit pas être lu comme la preuve n° « reprise ».
+from app.routers.preuves_ecrans import router as preuves_ecrans_router
+app.include_router(preuves_ecrans_router)
 from app.routers.preuves import router as preuves_router
 app.include_router(preuves_router)
 # Rédaction, vague 3 (chantier I) : fiches PROPOSÉES à partir des anciens documents de « Mon savoir-faire ».

@@ -113,6 +113,160 @@ function _reseauInit() {
 // Panneau « Partenaires pour ce marché » (bouton « Qui me complète ? ») — réinitialisé à chaque ouverture de marché.
 function _pmInit() { return { loading: false, loaded: false, error: "", d: null, lotBusy: "", live: "" }; }
 
+// ══════════ « Mes preuves » (rédaction, vague 3, E1) — état et listes fermées ══════════
+// Contrat : docs/REDACTION_V3_PREUVES.md. L'écran montre ce que dit le serveur (où le fait a été
+// trouvé, validité, raison) : aucune note de confiance, jamais le mot interdit, aucune IA.
+function _pvInit() {
+  return { loaded: false, loading: false, error: "", list: [], tab: "reference", form: null, sel: {}, busy: "",
+           passage: null, rep: { open: false, loading: false, d: null, sel: {}, err: "", busy: false } };
+}
+function _pvAtlInit() { return { open: false, loading: false, d: null, q: "", err: "", choix: null, busy: false, pos: null, sid: null }; }
+function _pvJj(s) { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "/" + m[2] + "/" + m[1] : ""; }
+const PV_NATURES = [
+  { code: "reference", l: "Références", ic: "briefcase-business", ajout: "Ajouter une référence",
+    tip: "Les marchés que vous avez réalisés. Adjugo ne complète jamais une fiche : l'acheteur, l'année ou le montant viennent de vous ou de vos documents." },
+  { code: "qualification", l: "Qualifications", ic: "scroll-text", ajout: "Ajouter une qualification",
+    tip: "Certifications et qualifications professionnelles (Qualibat, RGE…), avec leur date de fin de validité : une fiche dont la date est dépassée n'est plus utilisée." },
+  { code: "salarie", l: "Équipe", ic: "hard-hat", ajout: "Ajouter une personne",
+    tip: "Un CV court par personne : fonction, expérience, diplômes, habilitations, chantiers. Ni photo, ni adresse, ni date de naissance. Le CV n'est jamais envoyé à l'IA : Adjugo l'insère tel quel dans votre dossier quand vous le choisissez." },
+  { code: "materiel", l: "Matériel", ic: "truck", ajout: "Ajouter du matériel",
+    tip: "Vos engins et équipements, en propre ou en location." },
+  { code: "chiffre_cle", l: "Chiffres clés", ic: "hash", ajout: "Ajouter un chiffre clé",
+    tip: "Effectif, chiffre d'affaires, ou une estimation (délai, effectif prévu, quantité). Une estimation peut ne valoir que pour un marché." },
+];
+// Champs de chaque nature (liste fermée du serveur, § 2 du contrat). n : longueur max ; t : num | area | select.
+const PV_CHAMPS = {
+  reference: [
+    { k: "objet", l: "Objet du marché", req: true, n: 300, ph: "Réfection de la toiture de l'école", w: true },
+    { k: "acheteur", l: "Acheteur", n: 200, ph: "Mairie de Quimper" },
+    { k: "lieu", l: "Lieu", n: 120, ph: "Quimper" },
+    { k: "annee", l: "Année", t: "num", min: 1900, max: 2100, ph: "2024" },
+    { k: "montant_ht", l: "Montant HT (€)", t: "num", min: 0, ph: "85000" },
+    { k: "role", l: "Réalisé", t: "select", opts: [["", "Non précisé"], ["seul", "Seul"], ["groupement_conjoint", "En groupement conjoint"],
+                                                  ["groupement_solidaire", "En groupement solidaire"], ["sous_traitant", "En sous-traitance"]] },
+    { k: "description", l: "Description", t: "area", n: 1000, w: true, ph: "Ce qui a été fait, en quelques lignes" },
+  ],
+  qualification: [
+    { k: "nom", l: "Qualification", req: true, n: 200, ph: "Qualibat 3194", w: true },
+    { k: "organisme", l: "Délivrée par", n: 120, ph: "Qualibat" },
+    { k: "numero", l: "Numéro", n: 60, ph: "12345" },
+    { k: "detail", l: "Détail", n: 300, w: true, ph: "Couverture en ardoises" },
+  ],
+  salarie: [
+    { k: "nom", l: "Nom", req: true, n: 120, ph: "Yann Tanguy" },
+    { k: "fonction", l: "Fonction", req: true, n: 120, ph: "Conducteur de travaux" },
+    { k: "experience_annees", l: "Années d'expérience", t: "num", min: 0, max: 70, ph: "15" },
+    { k: "diplomes", l: "Diplômes", n: 300, ph: "BTS Bâtiment" },
+    { k: "qualifications", l: "Qualifications et habilitations", n: 300, w: true, ph: "CACES R486, SST" },
+    { k: "chantiers", l: "Chantiers", t: "area", n: 1000, w: true, ph: "12 réfections de toiture scolaire" },
+  ],
+  materiel: [
+    { k: "designation", l: "Désignation", req: true, n: 200, ph: "Nacelle 18 m", w: true },
+    { k: "quantite", l: "Quantité", t: "num", min: 1, ph: "2" },
+    { k: "possession", l: "Possession", t: "select", opts: [["", "Non précisé"], ["propriete", "En propre"], ["location", "En location"]] },
+    { k: "caracteristiques", l: "Caractéristiques", n: 300, w: true, ph: "Ciseaux, électrique" },
+  ],
+  chiffre_cle: [
+    { k: "libelle", l: "Libellé", req: true, n: 120, ph: "Effectif", w: true },
+    { k: "valeur", l: "Valeur", req: true, t: "num", ph: "14" },
+    { k: "unite", l: "Unité", n: 40, ph: "personnes" },
+    { k: "annee", l: "Année", t: "num", min: 1900, max: 2100, ph: "2025" },
+  ],
+};
+const PV_SOURCES = [
+  { code: "declare", l: "Déclaré par vous", natures: null },
+  { code: "documents", l: "Dans vos documents", natures: null },
+  { code: "public", l: "Source publique", natures: ["reference", "qualification"] },
+  { code: "estimation", l: "Votre estimation", natures: ["chiffre_cle"] },
+];
+// Natures qui ont une fin de validité, et son libellé dans le formulaire.
+const PV_VALIDITE = { qualification: "Valable jusqu'au", salarie: "Habilitations valables jusqu'au", materiel: "Valable jusqu'au" };
+const PV_ALERTE_JOURS = 60;
+// Texte d'une fiche à l'écran : titre et détails tels que saisis, sans rien compléter.
+function pvNombre(x) { const n = Number(x); return (x === "" || x == null || !isFinite(n)) ? String(x == null ? "" : x) : n.toLocaleString("fr-FR"); }
+function pvTitre(p) {
+  const v = (p && p.valeur) || {};
+  if (p.nature === "salarie") return [v.nom, v.fonction].filter(Boolean).join(", ");
+  if (p.nature === "chiffre_cle") return (v.libelle || "") + " : " + pvNombre(v.valeur) + (v.unite ? " " + v.unite : "");
+  return v.objet || v.nom || v.designation || "";
+}
+function pvDetail(p) {
+  const v = (p && p.valeur) || {}, out = [];
+  const role = { seul: "réalisé seul", groupement_conjoint: "en groupement conjoint", groupement_solidaire: "en groupement solidaire", sous_traitant: "en sous-traitance" };
+  const a = (x) => { if (x != null && x !== "") out.push(String(x)); };
+  if (p.nature === "reference") {
+    a(v.acheteur); a(v.lieu); a(v.annee);
+    if (v.montant_ht != null && v.montant_ht !== "") out.push(pvNombre(v.montant_ht) + " € HT");
+    if (role[v.role]) out.push(role[v.role]);
+  } else if (p.nature === "qualification") {
+    a(v.organisme); if (v.numero) out.push("n° " + v.numero); a(v.detail);
+  } else if (p.nature === "salarie") {
+    if (v.experience_annees != null && v.experience_annees !== "") out.push(v.experience_annees + (Number(v.experience_annees) > 1 ? " ans" : " an") + " d'expérience");
+    a(v.diplomes); a(v.qualifications);
+  } else if (p.nature === "materiel") {
+    if (v.quantite != null && v.quantite !== "") out.push("quantité : " + v.quantite);
+    a(v.caracteristiques);
+    if (v.possession) out.push(v.possession === "location" ? "en location" : "en propre");
+  } else if (p.nature === "chiffre_cle") a(v.annee);
+  return out.join(" · ");
+}
+function pvTexteLong(p) { const v = (p && p.valeur) || {}; return p.nature === "reference" ? (v.description || "") : (p.nature === "salarie" ? (v.chantiers || "") : ""); }
+// Validité affichée, sobre : la date, et le nombre de jours restants seulement à l'approche.
+function pvValidite(p) {
+  if (!p || !p.date_fin_validite) return null;
+  const d = _pvJj(p.date_fin_validite), j = p.jours_restants;
+  if (p.expiree) return { t: "Fin de validité dépassée (" + d + ")" + (p.statut === "acceptee" ? " : Adjugo ne s'en sert plus" : ""), cls: "pv-ko" };
+  if (j != null && j <= PV_ALERTE_JOURS) return { t: "Valable jusqu'au " + d + (j === 0 ? " (dernier jour)" : " (encore " + j + " jour" + (j > 1 ? "s" : "") + ")"), cls: "pv-warn" };
+  return { t: "Valable jusqu'au " + d, cls: "" };
+}
+// Ligne de l'encadré « à mettre à jour » (minuscule initiale : elle suit le nom de la fiche).
+function pvEcheance(p) {
+  const d = _pvJj(p && p.date_fin_validite), j = p && p.jours_restants;
+  if (!d) return "";
+  if (p.expiree) return "fin de validité dépassée le " + d;
+  return "valable jusqu'au " + d + (j === 0 ? " (dernier jour)" : (j != null ? " (encore " + j + " jour" + (j > 1 ? "s" : "") + ")" : ""));
+}
+function pvAlertes(list) {
+  return (list || []).filter(p => p.statut === "acceptee" && p.date_fin_validite && (p.expiree || (p.jours_restants != null && p.jours_restants <= PV_ALERTE_JOURS)))
+    .sort((a, b) => String(a.date_fin_validite).localeCompare(String(b.date_fin_validite)));
+}
+function pvSrcIcone(p) {
+  const s = (p && p.source) || {};
+  if (p.type_source === "documents") return s.lien_passage ? "text-quote" : "paperclip";
+  return ({ public: "landmark", estimation: "calculator" })[p.type_source] || "pen-line";
+}
+// Corps envoyé au serveur : champs vides retirés, nombres lus à la française ; le serveur contrôle tout.
+function pvCorps(f, avecValidite) {
+  const valeur = {};
+  (PV_CHAMPS[f.nature] || []).forEach(c => {
+    const x = f.v[c.k];
+    if (x === "" || x == null) return;
+    if (c.t === "num") { const s = String(x).replace(/[\s  ]/g, "").replace(",", "."); const n = Number(s); valeur[c.k] = (s !== "" && isFinite(n)) ? n : String(x); }
+    else { const s = String(x).trim(); if (s) valeur[c.k] = s; }
+  });
+  const body = { valeur, type_source: f.type_source, source: null, date_source: null };
+  if (avecValidite) body.date_fin_validite = f.date_fin_validite || null;
+  if (f.type_source === "documents") {
+    const s = {};
+    if (f.doc_id) { s.doc_id = Number(f.doc_id); s.passage = f.passage || ""; }
+    if (f.document_id) s.document_id = Number(f.document_id);
+    body.source = s; body.date_source = (f.doc_id && f.date_source) || null;
+  } else if (f.type_source === "public") {
+    body.source = { nom: f.pub.nom, url: f.pub.url, consulte_le: f.pub.consulte_le || null, identifiant: f.pub.identifiant };
+  } else if (f.type_source === "estimation") {
+    body.source = { project_id: f.est.project_id ? Number(f.est.project_id) : null, detail: f.est.detail };
+  }
+  return body;
+}
+// Fiche insérée dans le texte en cours de l'atelier (« J'écris moi-même ») : une ligne vide autour.
+function pvInsererTexte(t, pos, bloc) {
+  t = String(t || ""); const at = pos == null ? t.length : Math.max(0, Math.min(Number(pos) || 0, t.length));
+  const avant = t.slice(0, at).replace(/\s+$/, ""), apres = t.slice(at).replace(/^\s+/, "");
+  const ins = (avant ? "\n\n" : "") + bloc + (apres ? "\n\n" : "");
+  return { texte: avant + ins + apres, pos: (avant + ins).length };
+}
+// ══════════ fin « Mes preuves » — fonctions pures ══════════
+
 // Rendu SÛR du texte de la convention (Markdown simple renvoyé par l'API : # titres, - listes,
 // **gras**, *italique*). JAMAIS de v-html brut : on échappe TOUT le HTML d'abord, puis on
 // applique ce rendu minimal sur le texte échappé. Les valeurs saisies arrivent échappées par le
@@ -552,6 +706,7 @@ const __adjApp = createApp({
       countries2: [], adaptedCountries: [], orgCountry: "FR", lang: "fr",
       amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false, autoPause: "", pasteOpen: false, pasteText: "", pasting: false },
       amontDomaines: ["bâtiment", "voirie / VRD", "réseaux", "énergie / rénovation énergétique", "espaces verts / aménagement", "numérique / télécom", "équipement", "études / maîtrise d'œuvre"],
+      pv: _pvInit(), pvAtl: _pvAtlInit(),   // « Mes preuves » (rédaction, vague 3, E1)
       kb: { docs: [], totalChunks: 0, uploading: false, kind: "memoire", text: "", textName: "", busyText: false,
             searchQ: "", searchRes: null, searching: false, qText: "", qResults: null, qLoading: false,
             // Fiches proposées à partir d'un document (rédaction, vague 3, chantier I).
@@ -589,8 +744,8 @@ const __adjApp = createApp({
             qa: [], qaInput: "", qaLoading: false, grilleBusy: "", atl: _atlCardInit(), lectureMsg: "", lectureBusy: false, lecturePid: null,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
-      titles: { atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
-      subtitles: { atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires vérifiés et faites-vous trouver" },
+      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
+      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires vérifiés et faites-vous trouver" },
     };
   },
   computed: {
@@ -1003,6 +1158,7 @@ const __adjApp = createApp({
       if (v === "sourcing") { this.loadTrades(); this.loadAlerts(); this.loadCountries(); this.loadStats(); this.srcPrefillFromProfile(); }
       if (v === "amont") this.loadAmont();
       if (v === "kb") this.kbLoad();
+      if (v === "preuves") { this.pvLoad(); this._pvSourcesCharger(); }
       if (v === "team") this.loadOrg();
       if (v === "billing") { this.loadPlan(); this.loadStats(); }
       if (v === "admin") this.loadAdmin();
@@ -1243,6 +1399,186 @@ const __adjApp = createApp({
     async loadCompany() { try { const c = await this.api("GET", "/api/company/"); if (c && !c.detail) this.company = c; } catch (e) {} },
     async loadLlmInfo() { try { this.llmInfo = await this.api("GET", "/api/llm/info"); } catch (e) {} },
     async loadCriteria() { try { this.criteria = await this.api("GET", "/api/criteria/") || {}; } catch (e) {} },
+
+    // ══════════ « Mes preuves » (rédaction, vague 3, E1) ══════════
+    // Sous « Mon entreprise ». Contrat : docs/REDACTION_V3_PREUVES.md (routes /api/preuves) et
+    // app/routers/preuves_ecrans.py (reprise de l'existant, insertion dans l'atelier). Aucune IA.
+    pvNatures() { return PV_NATURES; },
+    pvNature(code) { return PV_NATURES.find(n => n.code === code) || PV_NATURES[0]; },
+    pvChamps(n) { return PV_CHAMPS[n] || []; },
+    pvTypesSource(n) { return PV_SOURCES.filter(t => !t.natures || t.natures.includes(n)); },
+    pvAvecValidite(n) { return !!PV_VALIDITE[n]; },
+    pvLibValidite(n) { return PV_VALIDITE[n] || ""; },
+    pvTitre, pvDetail, pvTexteLong, pvValidite, pvEcheance, pvSrcIcone, pvJj: _pvJj,
+    pvAlertes() { return pvAlertes(this.pv.list); },
+    pvOnglet(n) { this.pv.tab = n; if (this.pv.form && this.pv.form.nature !== n && !this.pv.form.id) this.pv.form = null; },
+    async pvLoad() {
+      const pv = this.pv; if (pv.loading) return;
+      pv.loading = true; pv.error = "";
+      try { const d = await this.api("GET", "/api/preuves"); pv.list = (d && d.preuves) || []; pv.loaded = true; }
+      catch (e) { pv.error = e.message || "Liste momentanément indisponible."; }
+      finally { pv.loading = false; }
+      try { pv.rep.d = await this.api("GET", "/api/preuves/reprise"); } catch (e) { pv.rep.d = null; }
+    },
+    _pvSourcesCharger() {
+      if (!this.kb.docs.length) this.kbLoad();
+      if (!this.documents.length) this.loadDocuments();
+      if (!this.projects.length) this.loadProjects();
+    },
+    pvListe(n) {
+      const ordre = { proposee: 0, acceptee: 1, retiree: 2 };
+      return this.pv.list.filter(p => p.nature === n).sort((a, b) => ((ordre[a.statut] || 0) - (ordre[b.statut] || 0)) || (a.numero - b.numero));
+    },
+    pvCompte(n) { return this.pv.list.filter(p => p.nature === n && p.statut !== "retiree").length; },
+    pvProposees(n) { return this.pv.list.filter(p => p.nature === n && p.statut === "proposee"); },
+    pvCoches(n) { return this.pvProposees(n).filter(p => this.pv.sel[p.id]); },
+    pvRepriseNombre() { const d = this.pv.rep.d; return (d && d.a_reprendre) || 0; },
+    pvUrlSure(u) { return /^https:\/\/[^\s"'<>]+$/.test(String(u || "")); },
+    pvKbDocs() { return (this.kb.docs || []).filter(d => d && d.id); },
+    pvJustificatifs() { return (this.documents || []).filter(d => d && d.id); },
+    // ── Ajouter / modifier une fiche ──
+    pvNouveau(n) {
+      this._pvSourcesCharger();
+      const v = {}; this.pvChamps(n).forEach(c => { v[c.k] = ""; });
+      this.pv.tab = n;
+      this.pv.form = { id: null, nature: n, v, type_source: "declare", doc_id: "", passage: "", date_source: "", document_id: "",
+                       pub: { nom: "", url: "", consulte_le: "", identifiant: "" }, est: { project_id: "", detail: "" },
+                       date_fin_validite: "", version: null, err: "" };
+      this.$nextTick(() => { const el = document.getElementById("pvf-" + this.pvChamps(n)[0].k); if (el) el.focus(); });
+    },
+    pvModifier(p) {
+      this._pvSourcesCharger();
+      const v = {}; this.pvChamps(p.nature).forEach(c => { const x = (p.valeur || {})[c.k]; v[c.k] = x == null ? "" : x; });
+      const s = p.source || {}, doc = p.type_source === "documents";
+      this.pv.form = { id: p.id, nature: p.nature, v, type_source: p.type_source, doc_id: (doc && s.doc_id) || "", passage: (doc && s.passage) || "",
+                       date_source: (doc && s.doc_id && p.date_source) || "", document_id: (doc && s.document_id) || "",
+                       pub: { nom: s.nom || "", url: s.url || "", consulte_le: s.consulte_le || "", identifiant: s.identifiant || "" },
+                       est: { project_id: s.project_id || "", detail: s.detail || "" }, date_fin_validite: p.date_fin_validite || "",
+                       version: p.version, err: "" };
+      this.$nextTick(() => { const el = document.getElementById("pvf-" + this.pvChamps(p.nature)[0].k); if (el) { el.focus(); el.scrollIntoView({ block: "center" }); } });
+    },
+    async pvEnregistrer() {
+      const pv = this.pv, f = pv.form; if (!f || pv.busy) return;
+      const manque = this.pvChamps(f.nature).filter(c => c.req && !String(f.v[c.k] == null ? "" : f.v[c.k]).trim()).map(c => c.l);
+      if (manque.length) { f.err = "À remplir : " + manque.join(", ") + "."; return; }
+      const body = pvCorps(f, this.pvAvecValidite(f.nature));
+      pv.busy = "form"; f.err = "";
+      try {
+        if (f.id) { body.version = f.version; await this.api("PATCH", "/api/preuves/" + f.id, body); }
+        else { body.nature = f.nature; await this.api("POST", "/api/preuves", body); }
+        pv.form = null; this.notify(f.id ? "Fiche modifiée" : "Fiche ajoutée"); await this.pvLoad();
+      } catch (e) {
+        f.err = e.message || "Enregistrement impossible.";
+        if (e.code === "modifiee_ailleurs") this.pvLoad();
+      } finally { pv.busy = ""; }
+    },
+    // ── Cocher, retirer, supprimer ──
+    async pvStatut(p, action) {
+      if (this.pv.busy) return;
+      this.pv.busy = "p" + p.id;
+      try {
+        await this.api("POST", "/api/preuves/" + p.id + "/" + action, { version: p.version }); delete this.pv.sel[p.id];
+        this.notify(action === "accepter" ? "Fiche acceptée : Adjugo peut s'en servir" : "Fiche retirée : Adjugo ne s'en sert plus");
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.pv.busy = ""; }
+      await this.pvLoad();
+    },
+    async pvAccepterCoches(n) {
+      const ps = this.pvCoches(n); if (!ps.length || this.pv.busy) return;
+      this.pv.busy = "lot"; let ok = 0; const errs = [];
+      for (const p of ps) {
+        try { await this.api("POST", "/api/preuves/" + p.id + "/accepter", { version: p.version }); ok++; delete this.pv.sel[p.id]; }
+        catch (e) { errs.push(pvTitre(p) + " : " + e.message); }
+      }
+      this.pv.busy = "";
+      if (errs.length) this.notify(errs[0], "err"); else if (ok) this.notify(ok + (ok > 1 ? " fiches acceptées" : " fiche acceptée"));
+      await this.pvLoad();
+    },
+    pvToutCocher(n) { const ps = this.pvProposees(n), tout = ps.every(p => this.pv.sel[p.id]); ps.forEach(p => { this.pv.sel[p.id] = !tout; }); },
+    pvSupprimer(p) {
+      this._convAsk({ title: "Supprimer cette fiche ?", ok: "Supprimer définitivement", run: () => this._pvSupprimer(p),
+        lines: ["« " + pvTitre(p) + " » sera effacée de « Mes preuves »" + (p.nature === "salarie" ? ", CV compris" : "") + ". Les dossiers où vous l'avez déjà insérée ne changent pas.",
+                "Pour qu'Adjugo ne s'en serve plus tout en la gardant, choisissez plutôt « Retirer »."] });
+    },
+    async _pvSupprimer(p) {
+      try { await this.api("DELETE", "/api/preuves/" + p.id); if (this.pv.form && this.pv.form.id === p.id) this.pv.form = null; this.notify("Fiche supprimée"); }
+      catch (e) { this.notify(e.message, "err"); }
+      await this.pvLoad();
+    },
+    // ── Où le fait a été trouvé : le passage exact, ou le justificatif ──
+    async pvPassage(p) {
+      try { this.pv.passage = Object.assign({ titre: pvTitre(p) }, await this.api("GET", "/api/preuves/" + p.id + "/passage")); }
+      catch (e) { this.notify(e.message, "err"); }
+    },
+    pvJustificatif(p) { const s = p.source || {}; if (s.document_id) this.downloadDoc({ id: s.document_id, name: s.document_nom || "justificatif" }); },
+    // ── Reprendre ce qui existe déjà (profil, réseau, coffre-fort) : l'utilisateur coche ──
+    async pvRepriseOuvrir() {
+      const r = this.pv.rep; r.open = true; r.loading = true; r.err = "";
+      try {
+        r.d = await this.api("GET", "/api/preuves/reprise");
+        const sel = {}; ((r.d && r.d.elements) || []).forEach(e => { if (!e.manque) sel[e.cle] = true; }); r.sel = sel;
+      } catch (e) { r.err = e.message || "Reprise momentanément indisponible."; }
+      finally { r.loading = false; }
+    },
+    pvRepriseGroupes() {
+      const els = (this.pv.rep.d && this.pv.rep.d.elements) || [];
+      return PV_NATURES.map(n => ({ code: n.code, l: n.l, els: els.filter(e => e.nature === n.code) })).filter(g => g.els.length);
+    },
+    pvRepriseCoches() { return ((this.pv.rep.d && this.pv.rep.d.elements) || []).filter(e => !e.manque && this.pv.rep.sel[e.cle]).length; },
+    async pvReprendre() {
+      const r = this.pv.rep; if (!r.d || r.busy) return;
+      const cles = (r.d.elements || []).filter(e => !e.manque && r.sel[e.cle]).map(e => e.cle);
+      if (!cles.length) return;
+      r.busy = true; r.err = "";
+      try {
+        const x = await this.api("POST", "/api/preuves/reprise", { cles });
+        const n = ((x && x.creees) || []).length;
+        this.notify(n ? n + (n > 1 ? " fiches reprises" : " fiche reprise") + " dans « Mes preuves »" : "Rien de nouveau à reprendre");
+        if (x && (x.ignorees || []).length) r.err = x.ignorees.map(i => i.texte + " : " + i.message).join(" ");
+        else r.open = false;
+      } catch (e) { r.err = e.message || "Reprise impossible."; }
+      finally { r.busy = false; }
+      await this.pvLoad();
+    },
+    // ── Dans l'atelier : insérer une fiche choisie, telle quelle, sans IA ──
+    async pvAtlOuvrir() {
+      const s = this.atlSec(); if (!s || !s.peut_ecrire || this.atlMobile || this.atl.busy) return;
+      const ta = this.$refs.atlTa;
+      this.pvAtl = Object.assign(_pvAtlInit(), { open: true, loading: true, sid: s.id,
+                                                 pos: (this.atl.mode === "modifier" && ta) ? (ta.selectionEnd || 0) : null });
+      try { this.pvAtl.d = await this.api("GET", this._atlUrl("/preuves")); }
+      catch (e) { this.pvAtl.err = e.message || "Fiches momentanément indisponibles."; }
+      finally { this.pvAtl.loading = false; }
+    },
+    pvAtlGroupes() {
+      const d = this.pvAtl.d, q = _atlKey(this.pvAtl.q);
+      const fs = ((d && d.fiches) || []).filter(f => !q || _atlKey(f.titre + " " + f.bloc).indexOf(q) >= 0);
+      return PV_NATURES.map(n => ({ code: n.code, l: n.l, fiches: fs.filter(f => f.nature === n.code) })).filter(g => g.fiches.length);
+    },
+    // Aperçu du texte inséré : rendu sûr de l'atelier (tout est échappé ; seuls le gras et les listes passent).
+    pvApercuHtml(f) { return atlMdToHtml((f && f.bloc) || "", []); },
+    pvAtlFermer() { this.pvAtl = _pvAtlInit(); },
+    pvAtlVersPreuves() { this.pvAtlFermer(); this.go("preuves"); },
+    async pvAtlInserer() {
+      const x = this.pvAtl, f = x.choix, a = this.atl, s = this.atlSec(); if (!f || !s || s.id !== x.sid || x.busy) return;
+      if (a.mode === "modifier") {
+        const r = pvInsererTexte(a.edit.texte, x.pos, f.bloc);
+        a.edit.texte = r.texte; this.atlInput(); this.pvAtlFermer();
+        this.$nextTick(() => { const ta = this.$refs.atlTa; if (ta) { ta.focus(); ta.setSelectionRange(r.pos, r.pos); } });
+        this.notify("Fiche insérée : enregistrez le texte pour la garder");
+        return;
+      }
+      const v = s.version_courante;
+      this._atlEchecOublier(s.id);
+      x.busy = true; x.err = "";
+      try {
+        const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/inserer-preuve"), { preuve_id: f.id, base_version_id: v ? v.id : null });
+        this._atlPut(r); this.pvAtlFermer(); this.notify("Fiche insérée à la fin de la partie"); this.atlLoad(true);
+      } catch (e) {
+        x.err = e.message || "Insertion impossible.";
+        if (e.code === "texte_modifie_entre_temps") this.atlLoad(true);
+      } finally { x.busy = false; }
+    },
 
     // ── Company / Criteria ──
     async saveCompany() {
@@ -4029,7 +4365,12 @@ const __adjApp = createApp({
     async kbDelete(d) {
       if (!confirm("Retirer ce document de votre savoir-faire ?")) return;
       // kbLoad() rafraîchit aussi le compteur d'extraits indexés (sinon il restait périmé).
-      try { await this.api("DELETE", "/api/knowledge/" + d.id); await this.kbLoad(); }
+      try {
+        const r = await this.api("DELETE", "/api/knowledge/" + d.id); await this.kbLoad();
+        // « Mes preuves » : les fiches dont le passage venait de ce document n'ont plus de source.
+        const n = (r && r.preuves_sans_source) || 0;
+        if (n) this.notify(n + (n > 1 ? " fiches de « Mes preuves » n'ont plus de source : Adjugo ne s'en sert plus." : " fiche de « Mes preuves » n'a plus de source : Adjugo ne s'en sert plus."), "err");
+      }
       catch (e) { this.notify(e.message, "err"); }
     },
     async kbSearch() {
