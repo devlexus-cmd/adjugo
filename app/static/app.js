@@ -202,6 +202,184 @@ function _isoUtc(s) {
   return (/T\d{2}:\d{2}/.test(s) && !/(Z|[+-]\d{2}:?\d{2})$/.test(s)) ? s + "Z" : s;
 }
 
+// ══════════ Atelier du dossier de présentation (rédaction, vague 2) — fonctions pures ══════════
+// Contrat : docs/REDACTION_V2_API.md. Le texte d'une partie est du Markdown simple (titres « ## »,
+// listes « - » ou « 1. », tableaux « | »). Rendu SÛR : chaque morceau de texte est échappé ; seuls
+// des éléments fixes sont produits (titres, listes, tableaux, gras, faits « à relire » surlignés,
+// passages « [À compléter] », renvois [S1] vers les extraits privés de la partie). Jamais de lien,
+// d'image ni d'attribut venu du texte.
+function _atlInit() {
+  return { pid: null, loading: false, error: "", st: null, prop: null, base: "auto", sel: null,
+           mode: "lire", edit: { texte: "", base: null, dirty: false, sid: null }, draft: null, conflict: "",
+           busy: "", hist: { open: false, loading: false, list: [], sid: null }, vue: null, derog: null, debit: null,
+           plan: null, planOpen: false, add: "", ren: { on: false, v: "" }, factFocus: "", srcFocus: "", note: "",
+           exportOpen: false, lastDerog: "", live: "" };
+}
+function _atlCardInit() { return { loading: false, loaded: false, d: null, error: "" }; }
+const ATL_FAIT_TYPES = { chiffre: "Chiffre", nombre_en_lettres: "Nombre en lettres", certification: "Certification",
+  nom_propre: "Nom propre", materiel: "Matériel" };
+const ATL_FAIT_MSG = "Adjugo ne trouve pas d'où vient ce fait : relisez-le.";
+const ATL_BASES = [
+  { k: "auto", l: "Automatique", d: "Le cadre de réponse imposé s'il existe, sinon les critères retrouvés dans le règlement, sinon un plan simple." },
+  { k: "cadre", l: "Le cadre de réponse de l'acheteur", d: "Ses numéros, ses intitulés et son ordre, tels quels." },
+  { k: "grille", l: "Les critères du règlement", d: "Une partie par critère retrouvé, avec son poids tel qu'il est écrit." },
+  { k: "libre", l: "Un plan simple", d: "Proposé par Adjugo, sans IA, à adapter au marché." },
+];
+function _atlReEsc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function _atlKey(s) { return String(s || "").toLowerCase().replace(/\s+/g, " ").trim(); }
+// Motif d'un fait : espaces souples (une espace insécable du texte vaut une espace), bornes de mot
+// quand le fait commence ou finit par une lettre ou un chiffre (« 12 » ne marque pas « 2012 »).
+function _atlFaitRe(f) {
+  const s = String(f || "").trim(); if (!s) return "";
+  const core = _atlReEsc(s).replace(/\s+/g, "\\s+");
+  return (/^[A-Za-z0-9]/.test(s) ? "\\b" : "") + core + (/[A-Za-z0-9]$/.test(s) ? "\\b" : "");
+}
+// Marques d'une ligne : [À compléter …], renvoi [S1], fait à relire. `re` a 4 groupes.
+function _atlInline(raw, re, idx) {
+  const s = String(raw == null ? "" : raw);
+  let out = "", last = 0, m;
+  re.lastIndex = 0;
+  while ((m = re.exec(s))) {
+    if (!m[0]) { re.lastIndex++; continue; }
+    out += _escHtml(s.slice(last, m.index));
+    if (m[1]) out += '<span class="atl-todo">' + _escHtml(m[1]) + "</span>";
+    else if (m[2]) out += '<sup class="atl-ref" data-ref="S' + Number(m[3]) + '">S' + Number(m[3]) + "</sup>";
+    else {
+      const id = idx[_atlKey(m[0])] || "";
+      out += '<mark class="atl-fait"' + (id ? ' data-fait="' + _escHtml(id) + '"' : "") + ">" + _escHtml(m[0]) + "</mark>";
+    }
+    last = m.index + m[0].length;
+  }
+  out += _escHtml(s.slice(last));
+  return out.replace(/\*\*([^*<>]+?)\*\*/g, "<strong>$1</strong>");
+}
+function _atlCells(line) { return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim()); }
+const _atlHtmlCache = new Map();
+function atlMdToHtml(md, faits) {
+  const src = String(md || "");
+  const list = (Array.isArray(faits) ? faits : []).filter(f => f && f.statut !== "relu_par_vous" && String(f.fait || "").trim());
+  const ck = src + "\u0000" + list.map(f => f.id + ":" + f.fait).join("|");
+  if (_atlHtmlCache.has(ck)) return _atlHtmlCache.get(ck);
+  const idx = {}, alts = [];
+  list.slice().sort((a, b) => String(b.fait).length - String(a.fait).length).forEach(f => {
+    const k = _atlKey(f.fait); if (k in idx) return;
+    const r = _atlFaitRe(f.fait); if (!r) return;
+    idx[k] = f.id; alts.push(r);
+  });
+  const re = new RegExp("(\\[\\s*[ÀAà]\\s+compl[ée]ter[^\\]]*\\])|(\\[\\s*S\\s*(\\d{1,2})\\s*\\])"
+    + (alts.length ? "|(?:" + alts.join("|") + ")" : ""), "gi");
+  const inl = (t) => _atlInline(t, re, idx);
+  const out = [];
+  let ul = null, ol = null, table = null, para = [];
+  const flush = (keep) => {
+    if (para.length && keep !== "p") { out.push("<p>" + para.map(inl).join("<br>") + "</p>"); para = []; }
+    if (ul && keep !== "ul") { out.push("<ul>" + ul.map(x => "<li>" + inl(x) + "</li>").join("") + "</ul>"); ul = null; }
+    if (ol && keep !== "ol") { out.push("<ol>" + ol.map(x => "<li>" + inl(x) + "</li>").join("") + "</ol>"); ol = null; }
+    if (table && keep !== "table") {
+      const head = table[0] || [], body = table.slice(1);
+      out.push('<div class="atl-tw"><table class="atl-table"><thead><tr>' + head.map(c => '<th scope="col">' + inl(c) + "</th>").join("")
+        + "</tr></thead><tbody>" + body.map(r => "<tr>" + r.map(c => "<td>" + inl(c) + "</td>").join("") + "</tr>").join("")
+        + "</tbody></table></div>");
+      table = null;
+    }
+  };
+  src.replace(/\r\n?/g, "\n").split("\n").forEach(raw => {
+    const t = raw.trim();
+    if (!t) { flush(); return; }
+    if (/^```/.test(t)) return;
+    let m = t.match(/^(#{1,6})\s+(.+)$/);
+    if (m) { flush(); const lv = Math.min(6, m[1].length + 3); out.push("<h" + lv + ' class="atl-h">' + inl(m[2]) + "</h" + lv + ">"); return; }
+    m = t.match(/^[-*+•]\s+(.+)$/);
+    if (m) { flush("ul"); (ul = ul || []).push(m[1]); return; }
+    m = t.match(/^\d{1,2}[.)]\s+(.+)$/);
+    if (m) { flush("ol"); (ol = ol || []).push(m[1]); return; }
+    if (/^\|.*\|?$/.test(t) && t.indexOf("|", 1) > 0) {
+      flush("table");
+      if (!/^\|?[\s:|-]+\|?$/.test(t)) (table = table || []).push(_atlCells(t));
+      return;
+    }
+    flush("p"); para.push(t);
+  });
+  flush();
+  const html = out.join("");
+  if (_atlHtmlCache.size > 40) _atlHtmlCache.clear();
+  _atlHtmlCache.set(ck, html);
+  return html;
+}
+// Phrase d'un fait, le fait surligné (première occurrence) : HTML sûr.
+function atlPhraseHtml(phrase, fait) {
+  const p = String(phrase || ""), f = String(fait || "").trim();
+  const r = f ? _atlFaitRe(f) : "";
+  const m = r ? new RegExp(r, "i").exec(p) : null;
+  if (!m) return _escHtml(p);
+  return _escHtml(p.slice(0, m.index)) + '<mark class="atl-fait">' + _escHtml(m[0]) + "</mark>" + _escHtml(p.slice(m.index + m[0].length));
+}
+// Limite comparée au texte : « rouge » dépassée, « orange » à moins de 10 %, « vert » sinon, "" sans mesure.
+function atlLimNiveau(l) {
+  if (!l) return "";
+  if (l.depassee) return "rouge";
+  const m = Number(l.mesure), v = Number(l.valeur);
+  if (l.mesure == null || !isFinite(m) || !isFinite(v) || v <= 0) return "";
+  return m / v >= 0.9 ? "orange" : "vert";
+}
+// Nombre de mots (approché, comme le serveur) d'un texte Markdown, sans renvois ni syntaxe.
+function atlMots(md) {
+  const t = String(md || "").replace(/\[\s*S\s*\d{1,2}\s*\]/gi, " ").replace(/^\s*(#{1,6}|[-*+•]|\d{1,2}[.)])\s+/gm, " ").replace(/[|*_`]/g, " ");
+  const m = t.match(/[0-9A-Za-zÀ-ÖØ-öø-ÿŒœ]+(?:['’-][0-9A-Za-zÀ-ÖØ-öø-ÿŒœ]+)*/g);
+  return m ? m.length : 0;
+}
+// Bornes de la phrase qui contient [a, b) dans le texte : jusqu'à la ponctuation forte, sans
+// sortir de la ligne ; dans un tableau, la cellule.
+function _atlSentence(t, a, b) {
+  const ls = t.lastIndexOf("\n", a - 1) + 1;
+  let le = t.indexOf("\n", b); if (le < 0) le = t.length;
+  if (/^\s*\|/.test(t.slice(ls, le))) {
+    const cs = t.lastIndexOf("|", a - 1) + 1, ce = t.indexOf("|", b);
+    return [Math.max(ls, cs), ce < 0 || ce > le ? le : ce, true];
+  }
+  let s = ls, e = le;
+  for (let i = a - 1; i >= ls; i--) { if (/[.!?;]/.test(t[i]) && /\s/.test(t[i + 1] || "")) { s = i + 1; break; } }
+  for (let i = b; i < le; i++) { if (/[.!?]/.test(t[i]) && (i + 1 === le || /\s/.test(t[i + 1]))) { e = i + 1; break; } }
+  while (s < e && /\s/.test(t[s])) s++;
+  return [s, e, false];
+}
+// Position du fait dans le texte : l'occurrence dont la phrase ressemble le plus à `phrase`.
+function atlFaitPos(texte, fait, phrase) {
+  const t = String(texte || ""), r = _atlFaitRe(fait); if (!r) return null;
+  const re = new RegExp(r, "gi"), hint = _atlKey(phrase).replace(/[*_`#|]/g, "").slice(0, 24);
+  let best = null, m;
+  while ((m = re.exec(t))) {
+    const pos = [m.index, m.index + m[0].length];
+    if (!best) best = pos;
+    const sr = _atlSentence(t, pos[0], pos[1]);
+    if (hint && _atlKey(t.slice(sr[0], sr[1]).replace(/[*_`#|]/g, "")).indexOf(hint) >= 0) return pos;
+  }
+  return best;
+}
+// « Retirer » : le texte sans la phrase qui porte le fait (null si le fait n'est plus dans le texte).
+// Une puce ou un paragraphe réduit à cette phrase disparaît ; une cellule de tableau est vidée.
+function atlRetirerPhrase(texte, fait, phrase) {
+  const t = String(texte || ""), pos = atlFaitPos(t, fait, phrase); if (!pos) return null;
+  const [s, e, cell] = _atlSentence(t, pos[0], pos[1]);
+  if (cell) return t.slice(0, s) + " " + t.slice(e);
+  const ls = t.lastIndexOf("\n", s - 1) + 1;
+  let le = t.indexOf("\n", e); if (le < 0) le = t.length;
+  if (/^\s*(?:[-*+•]|\d{1,2}[.)]|#{1,6})?\s*$/.test(t.slice(ls, s)) && !t.slice(e, le).trim()) {
+    return (t.slice(0, ls) + t.slice(le < t.length ? le + 1 : le)).replace(/\n{3,}/g, "\n\n");
+  }
+  const avant = t.slice(0, s).replace(/[ \t]+$/, ""), apres = t.slice(e).replace(/^[ \t]+/, "");
+  const sep = avant && !/\n$/.test(avant) && apres && !/^\n/.test(apres) ? " " : "";
+  return avant + sep + apres;
+}
+// Nom du fichier exporté (en-tête Content-Disposition : « filename* » UTF-8 d'abord).
+function atlNomFichier(cd, repli) {
+  const s = String(cd || "");
+  let m = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(s);
+  if (m) { try { return decodeURIComponent(m[1].trim()); } catch (e) { /* repli */ } }
+  m = /filename\s*=\s*"?([^";]+)"?/i.exec(s);
+  return (m && m[1].trim()) || repli || "document";
+}
+
 const __adjApp = createApp({
   data() {
     return {
@@ -220,6 +398,9 @@ const __adjApp = createApp({
       cdetail: {}, copen: {}, cexport: {}, cexportWarn: {}, cpreview: {}, cerror: {},
       shared: [],
       sharedAo: _sharedInit(),
+      atl: _atlInit(),        // atelier du dossier de présentation (rédaction, vague 2)
+      atlJobs: {},            // rédactions en cours (tâches de fond), suivies toutes les 2 s, toutes pages confondues
+      atlMobile: false,       // écran étroit : lire et valider seulement
       pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "dpgf_lot", l: "DPGF du lot (prix de vente)" }, { k: "autre", l: "Autre" }],
       veille: { q: "", loc: "", results: [], loading: false },
       drawer: null, modal: null, cdlg: null,   // cdlg : confirmation d'une action de la convention
@@ -284,8 +465,7 @@ const __adjApp = createApp({
       amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false, pasteOpen: false, pasteText: "", pasting: false },
       amontDomaines: ["bâtiment", "voirie / VRD", "réseaux", "énergie / rénovation énergétique", "espaces verts / aménagement", "numérique / télécom", "équipement", "études / maîtrise d'œuvre"],
       kb: { docs: [], totalChunks: 0, uploading: false, kind: "memoire", text: "", textName: "", busyText: false,
-            searchQ: "", searchRes: null, searching: false, qText: "", qResults: null, qLoading: false,
-            memoire: null, memoireLoading: false },
+            searchQ: "", searchRes: null, searching: false, qText: "", qResults: null, qLoading: false },
       amontRegions: [
         { code: "IDF", nom: "Île-de-France", deps: ["75", "77", "78", "91", "92", "93", "94", "95"] },
         { code: "ARA", nom: "Auvergne-Rhône-Alpes", deps: ["01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"] },
@@ -316,11 +496,11 @@ const __adjApp = createApp({
             cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             chkHelp: null, grp: _grpInit(), conv: _convInit(), pm: _pmInit(), depot: _depotInit(),
-            qa: [], qaInput: "", qaLoading: false, grilleBusy: "",
+            qa: [], qaInput: "", qaLoading: false, grilleBusy: "", atl: _atlCardInit(),
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
-      titles: { kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
-      subtitles: { kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires vérifiés et faites-vous trouver" },
+      titles: { atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
+      subtitles: { atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires vérifiés et faites-vous trouver" },
     };
   },
   computed: {
@@ -403,6 +583,11 @@ const __adjApp = createApp({
   },
   mounted() {
     this.applyTheme();
+    // Atelier : sur un écran étroit (téléphone), on lit et on valide seulement.
+    if (window.matchMedia) {
+      const mq = window.matchMedia("(max-width:640px)"), upd = () => { this.atlMobile = mq.matches; };
+      upd(); if (mq.addEventListener) mq.addEventListener("change", upd); else if (mq.addListener) mq.addListener(upd);
+    }
     // Bulles d'information (i) : au toucher on donne le focus (iOS ne le fait pas pour un
     // bouton), Échap referme, et la bulle est recadrée pour ne jamais sortir de l'écran
     // (à droite comme en bas : elle s'ouvre alors au-dessus de l'icône).
@@ -984,12 +1169,12 @@ const __adjApp = createApp({
       this.ao.back = this.view; this.ao.dossier = null; this.ao.project = p;
       this.ao.cotraitants = []; this.ao.stOpen = false; this.ao.st.results = [];
       this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.buyerLoading = true; this.ao.checklist = null; this.ao.group = null;
-      this.ao.qa = []; this.ao.qaInput = ""; this.ao.grilleBusy = ""; this.ao.grp = _grpInit(); this.ao.conv = _convInit(); this.ao.pm = _pmInit(); this.ao.depot = _depotInit(); this.rinv = null;
+      this.ao.qa = []; this.ao.qaInput = ""; this.ao.grilleBusy = ""; this.ao.atl = _atlCardInit(); this.ao.grp = _grpInit(); this.ao.conv = _convInit(); this.ao.pm = _pmInit(); this.ao.depot = _depotInit(); this.rinv = null;
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
       this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
       this.loadPredepot(p.id);   // état du wizard pré-dépôt propre à cet AO
-      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites(); this.aoLoadConsortium(); this.aoGrpLoad();
+      this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites(); this.aoLoadConsortium(); this.aoGrpLoad(); this.atlCardLoad();
       setTimeout(() => this.aoLoadBuyer(), 700);   // profil acheteur (BOAMP, lent) en différé, après le cœur de l'AO
     },
     loadPredepot(pid) {
@@ -2999,7 +3184,7 @@ const __adjApp = createApp({
         const fd = new FormData(); fd.append("file", file); fd.append("project_id", this.ao.project.id);
         await this.api("POST", "/api/sourcing/analyze-upload", fd, true);
         this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id);
-        this.aoLoadDocs();
+        this.aoLoadDocs(); this.atlCardLoad();
         this.notify("Dossier analysé — analyse complète");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
@@ -3013,7 +3198,7 @@ const __adjApp = createApp({
         const fd = new FormData(); fd.append("project_id", this.ao.project.id);
         await this.api("POST", "/api/sourcing/reanalyze", fd, true);
         this.ao.project = await this.api("GET", "/api/projects/" + this.ao.project.id);
-        this.aoLoadDocs();
+        this.aoLoadDocs(); this.atlCardLoad();
         this.notify("Ré-analyse terminée");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
@@ -3522,22 +3707,6 @@ const __adjApp = createApp({
       }
       throw new Error("Délai dépassé — réessayez");
     },
-    async kbMemoire(e) {
-      const file = e.target.files[0]; if (!file) return; e.target.value = "";
-      if (!this.kb.docs.length) { this.notify("Ajoutez d'abord des documents à votre base", "err"); return; }
-      this.kb.memoireLoading = true; this.kb.memoire = null;
-      try {
-        const fd = new FormData(); fd.append("file", file);
-        const job = await this.api("POST", "/api/knowledge/memoire-upload", fd, true);
-        this.kb.memoire = await this.pollJob(job.id);
-        const nc = this.kb.memoire.n_coupees || 0;
-        this.notify("Dossier de présentation rédigé (" + (this.kb.memoire.n_sections || 0) + " sections), à relire"
-          + (nc ? " · " + nc + " section(s) coupée(s) à terminer" : ""), nc ? "err" : "ok");
-      } catch (err) {
-        if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
-        else this.notify(err.message, "err");
-      } finally { this.kb.memoireLoading = false; }
-    },
     async kbQuestionnaire() {
       const qs = (this.kb.qText || "").split("\n").map(s => s.trim()).filter(Boolean);
       if (!qs.length) { this.notify("Collez vos questions (une par ligne)", "err"); return; }
@@ -3601,6 +3770,478 @@ const __adjApp = createApp({
     },
     confClass(c) { return c >= 0.8 ? "go" : c >= 0.5 ? "a_etudier" : "neutral"; },
     critStatus(s) { return ({ ok: "go", partiel: "a_etudier", inconnu: "neutral" })[s] || "neutral"; },
+    // ══════════ Atelier du dossier de présentation (rédaction, vague 2) ══════════
+    // Contrat : docs/REDACTION_V2_API.md. Carte sur la page du marché (état + UN bouton) et vue
+    // « atelier » : plan à gauche, texte au centre, extraits privés et faits « à relire » à droite.
+    // Le dirigeant reste l'auteur : chaque enregistrement crée une version (rien n'est écrasé),
+    // un brouillon local protège la saisie en cas de coupure, et l'IA ne corrige jamais un fait.
+    _atlUrl(path) { return "/api/atelier/" + this.atl.pid + (path || ""); },
+    async atlCardLoad() {
+      const p = this.ao.project; if (!p) return;
+      const c = this.ao.atl; c.loading = true; c.error = "";
+      try {
+        const d = await this.api("GET", "/api/atelier/" + p.id);
+        if (this.ao.project && this.ao.project.id === p.id) { c.d = d; this._atlResume(d, p.id); }
+      } catch (e) { c.error = e.message || "Dossier de présentation indisponible pour le moment."; }
+      finally { c.loading = false; c.loaded = true; }
+    },
+    atlCompte(d) {
+      const ss = (d && d.sections) || [], n = {};
+      ss.forEach(s => { n[s.statut] = (n[s.statut] || 0) + 1; });
+      return { total: ss.length, n, enCours: ss.filter(s => s.redaction_en_cours).length };
+    },
+    // « 2 validées sur 5 · 1 brouillon · 2 à écrire »
+    atlCompteTexte(d) {
+      const c = this.atlCompte(d); if (!c.total) return "Aucune partie dans le plan";
+      const v = c.n.valide || 0;
+      const parts = [v + " validée" + (v > 1 ? "s" : "") + " sur " + c.total];
+      const lab = { a_revalider: ["à revalider", "à revalider"], relu: ["relue", "relues"], brouillon: ["brouillon", "brouillons"], a_ecrire: ["à écrire", "à écrire"] };
+      Object.keys(lab).forEach(k => { const x = c.n[k] || 0; if (x) parts.push(x + " " + lab[k][x > 1 ? 1 : 0]); });
+      return parts.join(" · ");
+    },
+    atlLimCls(l) { const n = atlLimNiveau(l); return n ? "atl-lim-" + n : ""; },
+    atlNum(n) { const x = Number(n); return isFinite(x) ? x.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) : ""; },
+    atlWhen(s) {
+      if (!s) return "";
+      try {
+        const d = new Date(_isoUtc(s)); if (isNaN(d.getTime())) return "";
+        return d.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" })
+          + " à " + d.toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" });
+      } catch (e) { return ""; }
+    },
+    atlStatutCls(st) { return ({ a_ecrire: "neutral", brouillon: "atl-st-brouillon", relu: "st-envoye", valide: "go", a_revalider: "a_etudier" })[st] || "neutral"; },
+    atlPlanLabel(src) { return ({ cadre: "Cadre de l'acheteur", grille: "Critères du règlement", libre: "Plan simple" })[src] || ""; },
+    atlLimTexte(x) { return _gnLim(x || {}); },
+    atlSec() { const a = this.atl; return (a.st && a.st.sections.find(s => s.id === a.sel)) || null; },
+    atlSecLims(s) { const st = this.atl.st; return (st && s) ? (st.limites || []).filter(l => l.portee === "section" && l.section_id === s.id) : []; },
+    atlDocLims(st) { return ((st && st.limites) || []).filter(l => l.portee === "document"); },
+    atlFaitsARelire(s) { const v = s && s.version_courante; return ((v && v.faits) || []).filter(f => f.statut !== "relu_par_vous"); },
+    atlFaitsRelus(s) { const v = s && s.version_courante; return ((v && v.faits) || []).filter(f => f.statut === "relu_par_vous"); },
+    atlFaitType(t) { return ATL_FAIT_TYPES[t] || "Fait"; },
+    atlHtml(s) { const v = s && s.version_courante; return v ? atlMdToHtml(v.texte, v.faits) : ""; },
+    atlPhrase(f) { return atlPhraseHtml(f.phrase, f.fait); },
+    atlMotsEdit() { return atlMots(this.atl.edit.texte); },
+    atlAEcrire() { const st = this.atl.st; return st ? st.sections.filter(s => s.statut === "a_ecrire" && s.peut_ecrire && !s.redaction_en_cours).length : 0; },
+    atlEnCours() { const pid = this.atl.pid; return Object.values(this.atlJobs).filter(j => j.pid === pid); },
+    atlAvert(st, code) { return ((st && st.blocage && st.blocage.avertissements) || []).find(x => x.code === code) || null; },
+    atlBases() { return ATL_BASES; },
+    // Une dérogation enregistrée pendant cette visite ne vaut plus : le dossier a changé depuis.
+    atlDerogPerimee() { const st = this.atl.st, b = st && st.blocage; return !!(b && this.atl.lastDerog && b.bloque && !b.derogation && b.etat_hash !== this.atl.lastDerog); },
+
+    // ── Ouvrir, recharger, choisir une partie ──
+    atlOpen() {
+      const p = this.ao.project; if (!p) return;
+      if (this.atl.pid !== p.id) { this.atl = _atlInit(); this.atl.pid = p.id; }
+      this.view = "atelier";
+      this.$nextTick(() => { const w = document.querySelector(".work"); if (w) w.scrollTop = 0; });
+      this.atlLoad();
+    },
+    atlBack() {
+      const a = this.atl;
+      if (a.mode === "modifier" && a.edit.dirty) { this._atlDraftSave(); this.notify("Votre texte non enregistré est gardé sur cet appareil : vous le retrouverez dans la partie."); }
+      this.view = "aodetail"; this.atlCardLoad();
+      this.$nextTick(() => { const el = document.getElementById("atl-card"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" }); });
+    },
+    async atlLoad(silent) {
+      const a = this.atl, pid = a.pid; if (!pid) return;
+      if (!silent) { a.loading = true; a.error = ""; }
+      try {
+        const q = (!a.st && a.base && a.base !== "auto") ? "?base=" + encodeURIComponent(a.base) : "";
+        const d = await this.api("GET", "/api/atelier/" + pid + q);
+        if (this.atl.pid !== pid) return;
+        if (d.dossier) { a.st = d; a.prop = null; } else { a.st = null; a.prop = d; }
+        this._atlResume(d, pid);
+        if (a.st) {
+          const ids = a.st.sections.map(s => s.id);
+          if (!ids.includes(a.sel)) this.atlSelect(ids[0] || null);
+          else if (a.mode !== "modifier") this._atlDraftCheck();
+        }
+      } catch (e) { if (silent) this.notify(e.message, "err"); else a.error = e.message || "Atelier indisponible pour le moment."; }
+      finally { a.loading = false; }
+    },
+    // Reprise : une rédaction lancée avant (autre onglet, page rechargée) est suivie jusqu'au bout.
+    _atlResume(d, pid) {
+      ((d && d.sections) || []).forEach(s => {
+        const rc = s.redaction_en_cours;
+        if (rc && rc.job_id && !this.atlJobs[rc.job_id]) this._atlTrack({ id: rc.job_id, status: rc.statut, label: "" }, pid, [s.id], rc.action);
+      });
+    },
+    atlSelect(sid) {
+      const a = this.atl;
+      if (a.mode === "modifier" && a.edit.dirty && a.edit.sid !== sid) { this._atlDraftSave(); this.notify("Votre texte non enregistré est gardé sur cet appareil."); }
+      a.sel = sid; a.mode = "lire"; a.edit = { texte: "", base: null, dirty: false, sid: null };
+      a.conflict = ""; a.factFocus = ""; a.srcFocus = ""; a.note = ""; a.ren = { on: false, v: "" };
+      a.hist = { open: false, loading: false, list: [], sid: null };
+      if (this.atlMobile) a.planOpen = false;
+      this._atlDraftCheck();
+    },
+    atlGoSection(sid) {
+      this.atlSelect(sid); if (this.atl.derog) this.atl.derog = null;
+      this.$nextTick(() => { const el = document.getElementById("atl-centre"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "start", behavior: "smooth" }); });
+    },
+    atlPreviewClick(ev) {
+      const el = ev && ev.target && ev.target.closest ? ev.target.closest("[data-fait],[data-ref]") : null; if (!el) return;
+      const f = el.getAttribute("data-fait"), r = el.getAttribute("data-ref");
+      const id = f ? "atl-f-" + f : "atl-s-" + r;
+      if (f) this.atl.factFocus = f; else this.atl.srcFocus = r;
+      this.$nextTick(() => { const x = document.getElementById(id); if (x) { if (x.scrollIntoView) x.scrollIntoView({ block: "nearest", behavior: "smooth" }); x.focus(); } });
+    },
+
+    // ── Proposition (aucun dossier) et plan ──
+    atlBase(b) { const a = this.atl; if (a.base === b) return; a.base = b; this.atlLoad(); },
+    async atlCreer() {
+      const a = this.atl; if (a.busy) return; a.busy = "creer";
+      try {
+        const d = await this.api("POST", this._atlUrl(""), { base: a.base || "auto" });
+        a.st = d; a.prop = null; this.atlSelect(((d.sections || [])[0] || {}).id || null);
+        this.notify("Dossier de présentation créé : " + (d.sections || []).length + " parties");
+      } catch (e) { if (e.code === "dossier_existe") this.atlLoad(); else this.notify(e.message, "err"); }
+      finally { a.busy = ""; }
+    },
+    atlPlanOpen() { this.atl.plan = { base: "auto", busy: false, confirm: "" }; },
+    async atlPlanOk(remplacer) {
+      const a = this.atl, p = a.plan; if (!p || p.busy) return; p.busy = true;
+      try {
+        const d = await this.api("POST", this._atlUrl("/plan"), { base: p.base, remplacer: !!remplacer });
+        a.st = d; a.plan = null; this.atlSelect(((d.sections || [])[0] || {}).id || null); this.notify("Plan reconstruit");
+      } catch (e) { if (e.code === "plan_remplacement_a_confirmer") p.confirm = e.message; else this.notify(e.message, "err"); }
+      finally { if (a.plan) a.plan.busy = false; }
+    },
+    async atlAjouter() {
+      const a = this.atl, t = (a.add || "").trim(); if (a.busy) return;
+      if (t.length < 2) { this.notify("Donnez un intitulé à cette partie.", "err"); return; }
+      a.busy = "ajout";
+      try { const r = await this.api("POST", this._atlUrl("/sections"), { intitule: t }); a.add = ""; await this.atlLoad(true); this.atlSelect(r.id); this.notify("Partie ajoutée au plan"); }
+      catch (e) { this.notify(e.message, "err"); }
+      finally { a.busy = ""; }
+    },
+    atlRenOn() { const s = this.atlSec(); if (s) this.atl.ren = { on: true, v: s.intitule }; },
+    async atlRenOk() {
+      const a = this.atl, s = this.atlSec(), v = (a.ren.v || "").trim(); if (!s || a.busy) return;
+      if (v === s.intitule) { a.ren = { on: false, v: "" }; return; }
+      a.busy = "ren";
+      try { await this.api("PATCH", this._atlUrl("/sections/" + s.id), { intitule: v }); a.ren = { on: false, v: "" }; await this.atlLoad(true); }
+      catch (e) { this.notify(e.message, "err"); }
+      finally { a.busy = ""; }
+    },
+    async atlMove(s, dir) {
+      const a = this.atl; if (!a.st || a.busy) return;
+      const i = a.st.sections.findIndex(x => x.id === s.id), j = i + dir;
+      if (i < 0 || j < 0 || j >= a.st.sections.length) return;
+      a.busy = "move";
+      try { await this.api("PATCH", this._atlUrl("/sections/" + s.id), { position: j }); await this.atlLoad(true); }
+      catch (e) { this.notify(e.message, "err"); }
+      finally { a.busy = ""; }
+    },
+    async atlRetirerPartie(s) {
+      const a = this.atl; if (!s || a.busy) return;
+      if (!confirm("Retirer « " + s.titre + " » du plan ? Ses versions restent gardées : vous pourrez la remettre.")) return;
+      a.busy = "retirer";
+      try { await this.api("DELETE", this._atlUrl("/sections/" + s.id)); this.notify("Partie retirée du plan"); await this.atlLoad(true); }
+      catch (e) { this.notify(e.message, "err"); }
+      finally { a.busy = ""; }
+    },
+    async atlRemettre(r) {
+      const a = this.atl; if (a.busy) return; a.busy = "remettre";
+      try { const s = await this.api("POST", this._atlUrl("/sections/" + r.id + "/remettre")); await this.atlLoad(true); this.atlSelect(s.id); this.notify("Partie remise dans le plan"); }
+      catch (e) { this.notify(e.message, "err"); }
+      finally { a.busy = ""; }
+    },
+
+    // ── Brouillon local (coupure, onglet fermé) : jamais envoyé sans « Enregistrer » ──
+    _atlDraftKey(sid) { return "adjugo_atl_" + this.atl.pid + "_" + sid; },
+    _atlDraftCheck() {
+      const a = this.atl, s = this.atlSec(); a.draft = null; if (!s || !s.peut_ecrire) return;
+      let d = null; try { d = JSON.parse(localStorage.getItem(this._atlDraftKey(s.id)) || "null"); } catch (e) { d = null; }
+      if (!d || typeof d.t !== "string") return;
+      const cur = (s.version_courante && s.version_courante.texte) || "";
+      if (d.t.trim() === cur.trim()) { this._atlDraftClear(s.id); return; }
+      a.draft = d;
+    },
+    _atlDraftSave() {
+      const a = this.atl; if (!a.edit.sid) return;
+      try { localStorage.setItem(this._atlDraftKey(a.edit.sid), JSON.stringify({ t: a.edit.texte, b: a.edit.base, at: Date.now() })); } catch (e) { /* stockage plein ou interdit : rien de plus */ }
+    },
+    _atlDraftClear(sid) { try { localStorage.removeItem(this._atlDraftKey(sid)); } catch (e) { /* rien */ } if (this.atl.sel === sid) this.atl.draft = null; },
+    atlDraftWhen(d) { try { return d && d.at ? this.atlWhen(new Date(d.at).toISOString()) : ""; } catch (e) { return ""; } },
+    atlDraftResume() {
+      const a = this.atl, s = this.atlSec(), d = a.draft; if (!s || !d || this.atlMobile) return;
+      const base = s.version_courante ? s.version_courante.id : null;
+      a.mode = "modifier"; a.conflict = ""; a.edit = { texte: d.t, base, dirty: true, sid: s.id }; a.draft = null;
+      a.note = d.b !== base ? "Ce brouillon partait d'une version plus ancienne : relisez-le avant d'enregistrer. La version actuelle restera dans l'historique." : "";
+      this.$nextTick(() => { const ta = this.$refs.atlTa; if (ta) ta.focus(); });
+    },
+    atlDraftDrop() { const s = this.atlSec(); if (s) this._atlDraftClear(s.id); this.atl.draft = null; },
+
+    // ── « J'écris moi-même » : éditeur simple (titres, listes, tableaux), enregistrement explicite ──
+    atlEdit() {
+      const a = this.atl, s = this.atlSec(); if (!s || !s.peut_ecrire || this.atlMobile) return;
+      if (s.redaction_en_cours) { this.notify("Adjugo rédige cette partie : attendez la fin de la rédaction.", "err"); return; }
+      if (a.draft) { this.atlDraftResume(); return; }
+      const v = s.version_courante;
+      a.mode = "modifier"; a.conflict = ""; a.note = "";
+      a.edit = { texte: (v && v.texte) || "", base: v ? v.id : null, dirty: false, sid: s.id };
+      this.$nextTick(() => { const ta = this.$refs.atlTa; if (ta) ta.focus(); });
+    },
+    atlInput() { this.atl.edit.dirty = true; clearTimeout(this._atlDT); this._atlDT = setTimeout(() => this._atlDraftSave(), 500); },
+    atlEditCancel() {
+      const a = this.atl;
+      if (a.edit.dirty && !confirm("Abandonner les modifications non enregistrées de cette partie ?")) return;
+      clearTimeout(this._atlDT);
+      if (a.edit.sid) this._atlDraftClear(a.edit.sid);
+      a.mode = "lire"; a.edit = { texte: "", base: null, dirty: false, sid: null }; a.conflict = ""; a.note = "";
+    },
+    atlTool(kind) {
+      const ta = this.$refs.atlTa, a = this.atl; if (!ta) return;
+      const t = a.edit.texte, s0 = ta.selectionStart || 0, s1 = ta.selectionEnd || 0;
+      const ls = t.lastIndexOf("\n", s0 - 1) + 1;
+      let pos;
+      if (kind === "titre" || kind === "liste") {
+        const pre = kind === "titre" ? "## " : "- ";
+        let le = t.indexOf("\n", Math.max(s0, s1 > s0 && t[s1 - 1] === "\n" ? s1 - 1 : s1)); if (le < 0) le = t.length;
+        const bloc = t.slice(ls, le).split("\n").map(l => pre + l.replace(/^\s*(#{1,6}\s+|[-*+•]\s+)/, "")).join("\n");
+        a.edit.texte = t.slice(0, ls) + bloc + t.slice(le); pos = ls + bloc.length;
+      } else {
+        const ins = (s1 === 0 || t[s1 - 1] === "\n" ? "" : "\n") + "\n| Colonne 1 | Colonne 2 |\n| --- | --- |\n|  |  |\n";
+        a.edit.texte = t.slice(0, s1) + ins + t.slice(s1); pos = s1 + ins.length;
+      }
+      this.atlInput();
+      this.$nextTick(() => { ta.focus(); ta.setSelectionRange(pos, pos); });
+    },
+    async atlSave() {
+      const a = this.atl, s = this.atlSec(); if (!s || a.busy || a.mode !== "modifier") return;
+      if (a.edit.texte.length > 60000) { this.notify("Le texte dépasse 60 000 caractères : raccourcissez-le avant d'enregistrer.", "err"); return; }
+      clearTimeout(this._atlDT); this._atlDraftSave();
+      a.busy = "save";
+      try {
+        const r = await this.api("PUT", this._atlUrl("/sections/" + s.id + "/texte"), { texte: a.edit.texte, base_version_id: a.edit.base });
+        this._atlDraftClear(s.id); this._atlPut(r);
+        a.mode = "lire"; a.edit = { texte: "", base: null, dirty: false, sid: null }; a.note = ""; a.conflict = "";
+        this.notify(r.statut === "a_revalider" ? "Texte enregistré : cette partie est à revalider" : "Texte enregistré");
+        this.atlLoad(true);
+      } catch (e) {
+        if (e.code === "texte_modifie_entre_temps") a.conflict = e.message;
+        else this.notify(e.message, "err");
+      } finally { a.busy = ""; }
+    },
+    // Conflit : le texte saisi reste gardé sur l'appareil ; on recharge la partie, puis « Reprendre ».
+    async atlConflitRecharger() {
+      const a = this.atl; this._atlDraftSave();
+      a.mode = "lire"; a.edit = { texte: "", base: null, dirty: false, sid: null }; a.conflict = ""; a.note = "";
+      await this.atlLoad(true); this._atlDraftCheck();
+    },
+    async atlCopier() {
+      try { await navigator.clipboard.writeText(this.atl.edit.texte || ""); this.notify("Votre texte est copié"); }
+      catch (e) { this.notify("Copie impossible : sélectionnez le texte et copiez-le à la main", "err"); }
+    },
+    _atlPut(r) {
+      const st = this.atl.st; if (!st || !r || !r.id) return;
+      const i = st.sections.findIndex(x => x.id === r.id);
+      if (i >= 0) { if (!r.compteur) r.compteur = st.sections[i].compteur; st.sections.splice(i, 1, r); }
+    },
+
+    // ── Le moteur : rédiger, raccourcir (tâches de fond, suivies toutes les 2 s) ──
+    atlRediger(s) {
+      if (s.version_courante && !confirm("Adjugo va rédiger une nouvelle version de « " + s.titre + " ». Le texte actuel reste dans l'historique : vous pourrez y revenir.")) return;
+      this._atlLancer("/sections/" + s.id + "/rediger", { accepte_debit: false }, "rediger");
+    },
+    atlRaccourcir(s) { this._atlLancer("/sections/" + s.id + "/raccourcir", { accepte_debit: false }, "raccourcir"); },
+    atlRedigerTout() {
+      const n = this.atlAEcrire(); if (!n) return;
+      this._atlLancer("/rediger", { accepte_debit: false }, "rediger");
+    },
+    async _atlLancer(path, body, action) {
+      const a = this.atl, pid = a.pid; if (a.busy) return;
+      a.busy = "lancer";
+      try {
+        const r = await this.api("POST", this._atlUrl(path), body);
+        if (a.st && r.quota) a.st.quota = r.quota;
+        this._atlTrack(r.tache, pid, r.section_ids, action);
+        (r.section_ids || []).forEach(id => { const x = a.st && a.st.sections.find(y => y.id === id); if (x) x.redaction_en_cours = { job_id: r.tache.id, action, statut: r.tache.status }; });
+        const n = (r.section_ids || []).length;
+        this.notify(action === "raccourcir" ? "Adjugo raccourcit la partie. Vous pouvez continuer ailleurs." : (n > 1 ? "Adjugo rédige " + n + " parties. Vous pouvez continuer ailleurs." : "Adjugo rédige la partie. Vous pouvez continuer ailleurs."));
+      } catch (e) {
+        if (e.code === "debit_a_confirmer") a.debit = { message: e.message, cout: (e.detail && e.detail.cout) || 1, path, body, action };
+        else this.notify(e.message, "err");
+      } finally { a.busy = ""; }
+    },
+    atlDebitOk() { const d = this.atl.debit; if (!d) return; this.atl.debit = null; this._atlLancer(d.path, Object.assign({}, d.body, { accepte_debit: true }), d.action); },
+    _atlTrack(t, pid, ids, action) {
+      if (!t || !t.id) return;
+      this.atlJobs[t.id] = { id: t.id, pid, ids: ids || [], status: t.status || "pending", action: action || "rediger" };
+      if (!this._atlTimer) this._atlTimer = setInterval(() => this._atlPoll(), 2000);
+    },
+    async _atlPoll() {
+      const ids = Object.keys(this.atlJobs);
+      if (!ids.length) { clearInterval(this._atlTimer); this._atlTimer = null; return; }
+      if (this._atlPolling || !this.token) return;
+      this._atlPolling = true;
+      try {
+        for (const id of ids) {
+          const j = this.atlJobs[id]; if (!j) continue;
+          let r;
+          try { r = await this.api("GET", "/api/atelier/" + j.pid + "/taches/" + j.id); }
+          catch (e) { if (e.status === 404) delete this.atlJobs[id]; continue; }
+          j.status = r.status;
+          if (r.status === "done" || r.status === "error") { delete this.atlJobs[id]; this._atlJobFini(j, r); }
+        }
+      } finally { this._atlPolling = false; }
+    },
+    _atlJobFini(j, r) {
+      if (r.status === "error") this.notify(r.error || "La rédaction n'a pas abouti. Rien n'a été débité.", "err");
+      else {
+        const res = r.result || {}, ok = (res.sections || []).filter(x => x.ok).length;
+        let msg = j.action === "raccourcir" || r.kind === "atelier_raccourcir" ? "Partie raccourcie : relisez-la"
+          : (ok > 1 ? ok + " parties rédigées : relisez-les" : "Partie rédigée : relisez-la");
+        if (res.message) msg += ". " + res.message;
+        this.notify(msg, res.echecs ? "err" : "ok");
+        if (this.atl.pid === j.pid) this.atl.live = msg;
+      }
+      if (this.view === "atelier" && this.atl.pid === j.pid) this.atlLoad(true);
+      if (this.view === "aodetail" && this.ao.project && this.ao.project.id === j.pid) this.atlCardLoad();
+    },
+
+    // ── Relire, valider, traiter un fait « à relire » ──
+    async atlRelu() {
+      const a = this.atl, s = this.atlSec(), v = s && s.version_courante; if (!v || a.busy) return;
+      a.busy = "relu";
+      try { const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/relu"), { version_id: v.id }); this._atlPut(r); this.notify("Partie marquée comme relue"); this.atlLoad(true); }
+      catch (e) { this.notify(e.message, "err"); if (e.code === "texte_modifie_entre_temps") this.atlLoad(true); }
+      finally { a.busy = ""; }
+    },
+    async atlValider() {
+      const a = this.atl, s = this.atlSec(), v = s && s.version_courante; if (!v || a.busy) return;
+      const open = [];
+      if (s.faits_a_relire) open.push(s.faits_a_relire + " fait" + (s.faits_a_relire > 1 ? "s" : "") + " à relire");
+      if (s.a_completer) open.push(s.a_completer + " passage" + (s.a_completer > 1 ? "s" : "") + " « À compléter »");
+      if (open.length && !confirm("Il reste " + open.join(" et ") + " dans cette partie. La valider quand même ? L'export restera bloqué tant qu'ils ne sont pas traités.")) return;
+      a.busy = "valider";
+      try { const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/valider"), { version_id: v.id }); this._atlPut(r); this.notify("Partie validée"); this.atlLoad(true); }
+      catch (e) { this.notify(e.message, "err"); if (e.code === "texte_modifie_entre_temps") this.atlLoad(true); }
+      finally { a.busy = ""; }
+    },
+    async atlFait(f, statut) {
+      const a = this.atl, s = this.atlSec(); if (!s || a.busy) return;
+      a.busy = "fait:" + f.id;
+      try { const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/faits/" + encodeURIComponent(f.id)), { statut }); this._atlPut(r.section); this.atlLoad(true); }
+      catch (e) { this.notify(e.message, "err"); }
+      finally { a.busy = ""; }
+    },
+    // Corriger / Retirer : c'est VOUS qui modifiez le texte (jamais l'IA) ; rien ne part sans « Enregistrer ».
+    atlFaitCorriger(f) {
+      const a = this.atl; if (this.atlMobile) return;
+      if (a.mode !== "modifier") this.atlEdit();
+      this.$nextTick(() => {
+        const ta = this.$refs.atlTa; if (!ta) return;
+        const r = atlFaitPos(a.edit.texte, f.fait, f.phrase);
+        if (!r) { a.note = "Ce fait n'est plus dans le texte modifié."; return; }
+        ta.focus(); ta.setSelectionRange(r[0], r[1]);
+        const lignes = a.edit.texte.slice(0, r[0]).split("\n").length;
+        ta.scrollTop = Math.max(0, (lignes - 3) * 21);
+        a.note = "Corrigez le fait sélectionné dans le texte, puis enregistrez.";
+      });
+    },
+    atlFaitRetirer(f) {
+      const a = this.atl; if (this.atlMobile) return;
+      if (a.mode !== "modifier") this.atlEdit();
+      this.$nextTick(() => {
+        if (a.mode !== "modifier") return;
+        const t2 = atlRetirerPhrase(a.edit.texte, f.fait, f.phrase);
+        if (t2 == null) { a.note = "Adjugo ne retrouve plus cette phrase dans le texte : retirez-la à la main."; return; }
+        a.edit.texte = t2; this.atlInput();
+        a.note = "Phrase retirée du texte : enregistrez pour confirmer, ou annulez.";
+      });
+    },
+
+    // ── Historique des versions ──
+    async atlHist() {
+      const a = this.atl, s = this.atlSec(); if (!s) return;
+      if (a.hist.open && a.hist.sid === s.id) { a.hist.open = false; return; }
+      a.hist = { open: true, loading: true, list: [], sid: s.id };
+      try { const r = await this.api("GET", this._atlUrl("/sections/" + s.id)); if (a.hist.sid === s.id) a.hist.list = r.versions || []; }
+      catch (e) { this.notify(e.message, "err"); a.hist.open = false; }
+      finally { a.hist.loading = false; }
+    },
+    async atlVoir(v) {
+      const s = this.atlSec(); if (!s) return;
+      try { const r = await this.api("GET", this._atlUrl("/sections/" + s.id + "/versions/" + v.id)); this.atl.vue = { v: r, titre: s.titre, courante: !!(s.version_courante && s.version_courante.id === v.id) }; }
+      catch (e) { this.notify(e.message, "err"); }
+    },
+    async atlRestaurer(v) {
+      const a = this.atl, s = this.atlSec(); if (!s || a.busy) return;
+      if (a.mode === "modifier" && a.edit.dirty) { this.notify("Enregistrez ou annulez d'abord votre modification en cours.", "err"); return; }
+      if (!confirm("Revenir à la version " + v.numero + " ? Elle devient la version actuelle ; le texte actuel reste dans l'historique.")) return;
+      a.busy = "restaurer";
+      try {
+        const r = await this.api("POST", this._atlUrl("/sections/" + s.id + "/restaurer"), { version_id: v.id, base_version_id: s.version_courante ? s.version_courante.id : null });
+        this._atlPut(r); a.vue = null; a.hist.open = false; a.mode = "lire";
+        this.notify("Version " + v.numero + " remise"); this.atlLoad(true);
+      } catch (e) { this.notify(e.message, "err"); if (e.code === "texte_modifie_entre_temps") this.atlLoad(true); }
+      finally { a.busy = ""; }
+    },
+    atlVueHtml() { const x = this.atl.vue; return x ? atlMdToHtml(x.v.texte, []) : ""; },
+
+    // ── Export (Word, PDF), blocage et dérogation inscrite au journal (décision 2b) ──
+    async atlOption(k, val) {
+      const a = this.atl; if (!a.st) return;
+      try { const r = await this.api("PUT", this._atlUrl("/options"), { [k]: !!val }); a.st.export.options = r.options; this.atlLoad(true); }
+      catch (e) { this.notify(e.message, "err"); this.atlLoad(true); }
+    },
+    async atlExport(fmt) {
+      const a = this.atl, st = a.st; if (!st || a.busy) return;
+      if (a.mode === "modifier" && a.edit.dirty) { this.notify("Enregistrez d'abord votre texte : l'export reprend les textes enregistrés.", "err"); return; }
+      a.busy = "export:" + fmt; this.pending++;
+      try {
+        const r = await fetch(this._atlUrl("/export"), { method: "POST", headers: { Authorization: "Bearer " + this.token, "Content-Type": "application/json" },
+          body: JSON.stringify({ format: fmt, etat_hash: st.blocage && st.blocage.etat_hash }) });
+        if (r.status === 401) { this.logout(); return; }
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({})), d = j && j.detail;
+          const msg = (d && typeof d === "object" && d.message) || (typeof d === "string" && d) || (r.status === 429 ? TOO_MANY_MSG : "Export impossible pour le moment.");
+          if (d && d.code === "export_bloque") { this._atlDerogOpen(d, fmt); return; }
+          if (d && d.code === "etat_modifie") { await this.atlLoad(true); this.notify(msg, "err"); return; }
+          throw new Error(msg);
+        }
+        const nom = atlNomFichier(r.headers.get("content-disposition"), fmt === "pdf" ? st.export.nom_fichier_pdf : st.export.nom_fichier_docx);
+        this.saveBlob(await r.blob(), nom);
+        this.notify("Fichier téléchargé et rangé dans le dossier du marché : " + nom);
+        this.atlLoad(true);
+      } catch (e) { this.notify(e.message || "Export impossible pour le moment.", "err"); }
+      finally { a.busy = ""; this.pending = Math.max(0, this.pending - 1); }
+    },
+    _atlDerogOpen(d, fmt) {
+      const st = this.atl.st, raisons = (d && d.raisons) || [];
+      this.atl.derog = { raisons, hash: (d && d.etat_hash) || (st && st.blocage.etat_hash) || "",
+        possibles: (d && d.derogations_possibles && d.derogations_possibles.length ? d.derogations_possibles : (st && st.derogations_possibles)) || [],
+        fmt: fmt || "", raison: "", texte: "", err: "", busy: false,
+        avert: (raisons.find(x => x.avertissement) || {}).avertissement || "" };
+    },
+    atlDerogDepuisEtat() {
+      const st = this.atl.st, b = st && st.blocage; if (!b || !b.bloque) return;
+      this._atlDerogOpen({ raisons: b.raisons, etat_hash: b.etat_hash, derogations_possibles: st.derogations_possibles }, "");
+    },
+    async atlDerogOk() {
+      const a = this.atl, g = a.derog; if (!g || g.busy) return;
+      const t = (g.texte || "").trim();
+      if (!g.raison) { g.err = "Choisissez une raison."; return; }
+      if (t.length < 3 || t.length > 300) { g.err = "Expliquez en quelques mots (3 à 300 caractères)."; return; }
+      g.busy = true; g.err = "";
+      try {
+        const r = await this.api("POST", this._atlUrl("/derogation"), { raison: g.raison, texte: t, etat_hash: g.hash });
+        a.lastDerog = g.hash; if (a.st && r.blocage) a.st.blocage = r.blocage;
+        const fmt = g.fmt; a.derog = null;
+        this.notify("Dérogation inscrite au journal");
+        if (fmt) this.atlExport(fmt); else this.atlLoad(true);
+      } catch (e) {
+        if (e.code === "rien_a_deroger") { const fmt = g.fmt; a.derog = null; if (fmt) this.atlExport(fmt); else this.atlLoad(true); return; }
+        if (e.code === "etat_modifie") { a.derog = null; await this.atlLoad(true); this.notify(e.message, "err"); return; }
+        g.err = e.message;
+      } finally { if (a.derog) a.derog.busy = false; }
+    },
+
+    // « Mon savoir-faire » : le dossier de présentation se prépare sur la page du marché.
+    kbMarches() { return (this.projects || []).filter(p => !["perdu", "abandonne", "gagne"].includes(p.status)).slice(0, 3); },
+    async kbOuvrirAtelier(p) { await this.openAo(p); this.atlOpen(); },
     saveBlob(blob, name) {
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
       document.body.appendChild(a); a.click(); a.remove();
