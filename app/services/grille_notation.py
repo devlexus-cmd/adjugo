@@ -1005,9 +1005,22 @@ def build_grille(details: dict, text: str, pieces: Optional[list] = None) -> dic
         ln.pop("_pos", None)
 
     if pieces:
-        lus = [{"nom": str(m.get("nom") or "")[:200], "type": m.get("type") or dp.AUTRE,
-                "libelle": m.get("libelle") or dp.label(m.get("type")),
-                "lu_en_entier": bool(m.get("lu_en_entier"))} for m in pieces if isinstance(m, dict)][:30]
+        # Lecture intégrale : chaque pièce garde son statut (lue en entier, en partie, non lue) et
+        # la raison d'une lecture incomplète — la liste dit honnêtement ce qui a été lu.
+        lus = []
+        for m in pieces:
+            if not isinstance(m, dict):
+                continue
+            ln = {"nom": str(m.get("nom") or "")[:200], "type": m.get("type") or dp.AUTRE,
+                  "libelle": m.get("libelle") or dp.label(m.get("type")),
+                  "lu_en_entier": bool(m.get("lu_en_entier"))}
+            if m.get("statut"):
+                ln["statut"] = str(m.get("statut"))[:20]
+                ln["raison"] = str(m.get("detail") or "")[:300]
+                if m.get("pages"):
+                    ln["pages"] = m.get("pages")
+            lus.append(ln)
+        lus = lus[:400]
     else:
         # Texte sans fichier (annonce seule, texte collé) : rien à lister pièce par pièce.
         lus = []
