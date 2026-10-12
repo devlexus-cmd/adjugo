@@ -89,10 +89,35 @@ Stripe**. De plus :
 ### 2.1 Lecture de chaque pièce en entier (`app/services/dce_lecture.py`)
 
 - **Toutes les pièces** d'une archive sont parcourues, règlement et cadre de réponse d'abord.
-  Formats lus : PDF texte (page par page), Word `.docx` (tableaux, tableaux imbriqués, zones de
-  saisie, encadrés), tableurs `.xlsx` et `.ods`, `.odt`, `.txt`, `.md`, `.csv` ; les pages
-  scannées (dans un PDF texte ou un PDF entièrement scanné) et les images `.png/.jpg/.tif` passent
-  par la reconnaissance de caractères (OCR) **en tâche de fond**, sous un budget de pages et de temps.
+  Formats lus : PDF texte (page par page), Word `.docx` et `.docm`, tableurs `.xlsx`, `.xlsm` et
+  `.ods`, `.odt`, `.txt`, `.md`, `.csv` ; les pages scannées (dans un PDF texte ou un PDF entièrement
+  scanné) et les images `.png/.jpg/.tif` passent par la reconnaissance de caractères (OCR) **en
+  tâche de fond**, sous un budget de pages et de temps.
+- **Word lu en entier** : le texte de chaque paragraphe vient de tous ses descendants, et non plus
+  de `Paragraph.text` de python-docx (qui ne lit que les fragments directs). Sont donc lus : les
+  zones de saisie en ligne, dans une cellule ou autour de lignes de tableau (`w:sdt`), les insertions
+  d'une modification suivie non acceptée (`w:ins`, `w:moveTo` ; le texte supprimé, `w:del` et
+  `w:moveFrom`, ne l'est pas), les champs (`w:fldSimple`, résultat des champs complexes), les liens,
+  les tableaux imbriqués et les encadrés ; puis, chacun dans sa rubrique en fin de pièce, les notes de
+  bas de page et de fin (appel « (note 1) » à sa place dans le texte), les en-têtes et pieds de page
+  (sans doublons) et le texte des schémas SmartArt.
+- **PDF** : une page qui partage son flux de contenu avec une autre (PDF optimisé, « `/Fm0 Do` » sur
+  chaque page) n'est sautée comme doublon que si ses **ressources** sont aussi les mêmes (même objet,
+  ou mêmes références écrites dans la page) ; elle reprend alors le texte et l'état de la page
+  identique. Une page **scannée qui porte une ligne tapée** (bandeau « Annexe 2 – document numérisé »,
+  tampon de la plateforme) est envoyée à l'OCR : moins de 200 caractères tapés et une image qui couvre
+  au moins la moitié de la page (surface calculée pendant la lecture, formulaires compris) ; le texte
+  reconnu est précédé du bandeau s'il n'y figure pas déjà. Les numéros de page restent justes quand le
+  PDF commence par des pages sans texte. Une pièce coupée par le plafond de caractères le dit
+  (« texte trop long »), plus « trop de pages ».
+- **Pièces nommées par leur chemin** dans l'archive, sans le dossier commun à toutes les pièces :
+  dans un dossier rangé par lots, « LOT 02 - Eclairage/CCTP.pdf » et non deux « CCTP.pdf » (en-têtes
+  remis à l'IA, sources des réponses, liste des pièces lues) ; dans une archive à plat, le nom du
+  fichier. Le type de pièce est toujours reconnu sur le nom du fichier.
+- **Fichiers Office protégés** : un `.docx`, `.xlsx`, `.odt` ou `.ods` enregistré avec un mot de
+  passe (conteneur chiffré, ou contenu OpenDocument chiffré) est signalé « fichier protégé par un mot
+  de passe : demandez à l'acheteur une version sans mot de passe » (et non plus « trop volumineux »
+  ou « abîmé »).
 - **Rien n'est ignoré en silence.** Chaque pièce a un statut : *lue en entier*, *lue en partie*
   ou *non lue*, avec sa raison en clair : format non pris en charge (avec un conseil : « ancien format
   Word : enregistrez-le en .docx ou en PDF »), fichier protégé par un mot de passe, fichier abîmé,
@@ -118,9 +143,9 @@ Stripe**. De plus :
 
 - **Deux temps.** La requête d'import lit le dossier sans OCR (20 s au plus). Si des pages en image
   restent à lire, si le temps est écoulé, ou si le dossier se lit en deux temps (§ 2.3), la suite part
-  en **tâche de fond** (pool borné existant, `app/services/jobs.py`, non modifié) : la lecture
-  reprend les pièces déjà lues en entier, lit le reste avec l'OCR, puis l'analyse. La progression se
-  lit sur `GET /api/sourcing/lecture/{project_id}` (pièces lues, pages, parties analysées).
+  en **tâche de fond** (§ 2.7) : la lecture reprend les pièces déjà lues en entier, lit le reste avec
+  l'OCR, puis l'analyse. La progression se lit sur `GET /api/sourcing/lecture/{project_id}` (pièces
+  lues, pages, parties analysées).
 
 L'ancienne fonction `extract_dce_text` (plafonnée) reste pour les usages hors marché (savoir-faire,
 délibérations) ; elle lit désormais aussi les `.xlsx`, `.ods`, `.odt` et les encadrés Word.
@@ -143,12 +168,22 @@ délibérations) ; elle lit désormais aussi les `.xlsx`, `.ods`, `.odt` et les 
 |---|---|
 | `dce_pieces_text(project)` | les pièces avec leur texte intégral, statut, raison, pages (`page_starts`) |
 | `dce_fulltext(project, max_chars=None)` | le texte complet « === nom === », règlement et cadre en tête |
-| `dce_reglement(project)` | le texte du règlement de la consultation |
+| `dce_reglement(project)` | le texte de **tous** les règlements de la consultation (RC, RC modificatif, RC de chaque lot), le modificatif en premier, chacun sous « === nom === » s'il y en a plusieurs |
+| `reglements(pieces)` | les pièces « règlement », modificatifs en premier |
 | `dce_texte_ou_extrait(project)` | `(texte, "integral")`, ou l'ancien extrait de 30 000 caractères `(texte, "extrait")` |
-| `passages(project, question, k)` | les passages les plus pertinents de toutes les pièces (pièce, page) |
+| `passages(project, question, k, exclude_pieces=…)` | les passages les plus pertinents de toutes les pièces (pièce, page), recherche sans accents, sans casse et sans pluriels (« penalites » retrouve « pénalités ») ; `exclude_pieces` écarte les pièces déjà remises en entier |
 | `couverture(project)` | ce qui a été lu, et les pièces non lues avec leur raison |
 
 - La convention de groupement (`groupement_convention.dce_text`) lit ce texte intégral.
+- Le même fichier garde, pour un dossier lu en deux temps, les **informations relevées par l'IA
+  partie par partie** (`analyse_parties`, phrases vérifiées, clé = empreinte du texte de la partie, de
+  la consigne et du modèle) : une nouvelle analyse du même dossier ne relit que les parties
+  manquantes (§ 2.3). Supprimées avec le texte.
+- **Mémoire bornée** (process unique) : le cache des derniers dossiers lus compte le texte à
+  2 octets par caractère et l'index de recherche à 11 octets par caractère (mesuré avec `tracemalloc`
+  sur 3 millions de caractères au vocabulaire très varié : 10,7 ; construit en ≈ 2 s), dans
+  `LECTURE_CACHE_MO` = 200 Mo, et garde au plus 4 index. Le cache des textes normalisés pour la
+  vérification des citations est borné à 12 millions de caractères.
 - `ai_analysis["lecture"]` garde le résumé de la lecture (sans le texte) ;
   `ai_analysis["dce_excerpt"]` reste rempli (30 000 premiers caractères) pour les anciens usages.
 - **Anciennes analyses** (sans texte intégral) : comportement inchangé, l'écran et les réponses
@@ -182,8 +217,35 @@ le français chiffré varie de 3,0 à 3,6) :
   même consigne et même format qu'avant) reçoit le règlement et le cadre en entier, puis ce qui a
   été relevé dans toutes les autres pièces. Chaque pièce passe donc par l'IA. Parallélisme : 3 appels
   (`ANALYSE_PARALLELE`), sous le sémaphore IA global ; espace facturé et compteur de coût propagés
-  dans les fils (`map_in_context`). Plafond : 80 parties (`ANALYSE_MAX_APPELS`) — au-delà, les
+  dans les fils (`map_in_context`). Plafond : 80 appels (`ANALYSE_MAX_APPELS`) — au-delà, les
   parties non analysées sont **listées** dans la couverture.
+- **Petites pièces regroupées** : les parties voisines sont lues dans un même appel, chacune sous
+  « Pièce : nom », jusqu'à 120 000 caractères et 12 pièces (`ANALYSE_GROUPE_MAX_PIECES`) ; chaque
+  citation est vérifiée dans la pièce qu'elle nomme (ou les autres pièces de l'appel). Un dossier de
+  RC + 12 CCTP + 90 plans d'une page (470 000 caractères) : 10 appels au lieu de 103, plus aucun plan
+  « non analysé (plafond technique) ».
+- **Réponse coupée** : la consigne demande 40 informations au plus (≈ 5 200 tokens) sous un plafond
+  de sortie de 8 000 tokens (`ANALYSE_PIECES_MAX_TOKENS`, payé à l'usage). Si la réponse est quand même
+  coupée, l'appel est relu en deux moitiés (jusqu'à trois fois de suite, 12 fois au plus par dossier,
+  `ANALYSE_RELANCES_MAX`) ; au-delà, les informations complètes de la réponse coupée sont gardées et la
+  partie est dite « exploitée en partie ».
+- **Panne** : une réponse illisible ou une panne de l'IA est relancée une fois (après 2 s). Une partie
+  qui échoue encore est nommée « non exploitée par l'IA (IA indisponible) » dans son en-tête, dans
+  l'introduction de la synthèse (« n'en conclus rien ») et dans la couverture ; l'analyse continue.
+  Elle n'échoue (et n'est remboursée) que si plus de la moitié des parties échoue. Pas de découpage
+  sur panne : des échecs en rafale ouvriraient le disjoncteur IA de l'espace pour tout le reste.
+- **Étiquettes honnêtes** : « lue en entier par l'IA » seulement si toutes les parties de la pièce ont
+  été exploitées ; sinon « lue en partie par l'IA (k parties exploitées sur n…) » ou « non exploitée
+  par l'IA (raison) ». Une pièce dont le texte n'a été lu qu'en partie (pages abîmées, scan) le dit
+  aussi (« texte de la pièce lu en partie (…) »), y compris le règlement et le cadre remis tels quels.
+- **Reprise** : les informations relevées sont rangées avec la lecture dès la fin du premier temps ;
+  une nouvelle analyse (après une panne de la synthèse, ou « Ré-analyser » après avoir changé ses
+  critères) ne relit que les parties manquantes.
+- **Places de l'IA** : toutes les lectures en deux temps du serveur se partagent 3 places
+  (`ANALYSE_PLACES_IA`, moitié de `LLM_MAX_CONCURRENT`), attribuées dans l'ordre d'arrivée (une place
+  rendue passe au premier qui attend). Deux gros dossiers ne prennent donc plus les 6 places du
+  process : les questions, analyses et rédactions des autres clients gardent les leurs. Le sémaphore
+  global (`llm._llm_slot`) n'est pas modifié.
 - **Couverture dans l'analyse** : `ai_analysis["couverture"]` = « Dossier lu en entier : N pièces,
   P pages. », ou « Dossier lu en partie : … » avec la liste des pièces non lues ou lues en partie et
   leur raison ; en deux temps, les parties que l'IA n'a pas pu exploiter.
@@ -206,12 +268,21 @@ ré-analyse dans les 5 minutes est rare. Coupure : `LLM_PROMPT_CACHE=0`. Mistral
 
 ### 2.4 Questions-réponses sur tout le dossier (`/api/sourcing/ask`)
 
-- Recherche des passages pertinents dans **toutes** les pièces (BM25 de `app/services/rag.py`, sans
-  IA ni réseau, index mis en cache mémoire par dossier), 8 passages de ≈ 1 400 caractères ; le
-  règlement est **toujours** remis (en entier jusqu'à 60 000 caractères, en cache de prompt).
+- Recherche des passages pertinents dans **toutes** les pièces (BM25, sans IA ni réseau, index
+  compact mis en cache mémoire par dossier) avec une normalisation commune au dossier et à la question
+  : minuscules, accents retirés, pluriels et « e » muets (« penalites », « PÉNALITÉ », « pénalités »
+  retrouvent la même phrase) ; 8 passages de ≈ 1 400 caractères.
+- **Tous les règlements** (RC, RC modificatif, RC de chaque lot) sont **toujours** remis, le
+  modificatif en premier (repères [R1], [R2]… ; « un règlement modificatif l'emporte »), en entier
+  dans la limite de 60 000 caractères au total (en cache de prompt) ; seuls les règlements remis EN
+  ENTIER sont écartés de la recherche (par pièce, et non plus par type) : un règlement qui n'a pas
+  tenu reste cherché comme les autres pièces.
 - La réponse cite la pièce et la page ; chaque phrase citée est vérifiée contre le texte
   (`citation_guard`) : une phrase non retrouvée n'est jamais montrée comme une citation, et l'écran le
-  dit. Si l'information n'est pas dans le dossier, la réponse le dit et nomme les pièces non lues.
+  dit. Si l'information n'est pas dans les extraits remis, la réponse dit **ce qui a été consulté**
+  (« Pas trouvé dans les extraits consultés (le règlement de la consultation ; les 8 passages du
+  dossier les plus proches de la question). Reformulez la question avec les mots du dossier… ») et
+  nomme les pièces non lues — jamais « cette information ne figure pas dans le dossier ».
 - **Borne hors quota** par organisation et par jour (heure de Paris) : 15 (essai expiré,
   historique), 50 (Pro et essai), 120 (Business) ; réglable (`PLAN_LIMITS[…]["questions_jour"]`,
   ou `QUESTIONS_PAR_JOUR` pour tous). Compteur **persistant** dans la table `jobs` existante
@@ -225,6 +296,14 @@ ré-analyse dans les 5 minutes est rare. Coupure : `LLM_PROMPT_CACHE=0`. Mistral
 - Chemin vérifié et testé (Stripe simulé) : analyse au-delà du forfait, paiement à l'usage activé et
   facturable → `overage_count` + 1 → `stripe.billing.MeterEvent.create` avec un identifiant unique ;
   remboursement → `MeterEventAdjustment` d'annulation de cette unité.
+- **Hors de la boucle d'événements** : à l'import, le débit et le remboursement (qui appellent Stripe
+  au-delà du forfait, jusqu'à 80 s de délai par défaut) passent par `run_in_threadpool` ; un appel lent
+  ne fige plus le serveur (testé : l'appel simulé à Stripe vérifie qu'aucune boucle ne tourne dans son
+  fil).
+- **Annulable après un redémarrage** : l'identifiant de chaque unité envoyée est rangé en base (une
+  ligne `jobs` de type `unite_depassement`, sans autre donnée, gardée 62 jours), écrite AVANT l'envoi.
+  Une longue lecture interrompue par un déploiement est remboursée au démarrage et son unité annulée
+  (dans les 24 h permises par Stripe).
 - Le paiement d'un forfait ajoute le prix à l'usage à l'abonnement ; l'activation du paiement à
   l'usage l'ajoute à un abonnement plus ancien (sinon refus clair) ; la détection du forfait ignore
   le prix à l'usage, quel que soit son rang.
@@ -240,15 +319,41 @@ ré-analyse dans les 5 minutes est rare. Coupure : `LLM_PROMPT_CACHE=0`. Mistral
 - Réponse d'une question : la phrase du dossier, sa pièce et sa page.
 - Gros dossier : la progression de la lecture (« Lecture du dossier : 7 pièces lues sur 18,
   412 pages… », puis « Analyse : 3 parties lues par l'IA sur 12… ») ; le suivi reprend si l'on
-  revient sur le marché.
+  revient sur le marché. Le voile « lecture en cours » et les boutons bloqués ne concernent que le
+  marché lu : un autre marché ouvert pendant la lecture reste utilisable, et c'est le marché lu (pas
+  celui affiché) qui est rechargé à la fin.
+- Les parties que l'IA n'a pas pu exploiter (plafond, panne, réponse coupée) sont **listées** avec
+  leur raison sous le message de couverture (« voir la liste » renvoie enfin à une liste), et « Pièces
+  lues » marque la pièce « non exploitée par l'IA (…) » au lieu de « lue en entier ».
+- Champs d'import : `.docm` et `.xlsm` acceptés.
+
+### 2.7 Lectures en tâche de fond (`app/services/lecture_taches.py`)
+
+- **Exécuteur à part** (`LECTURE_TACHES` = 2 fils) : une lecture de plusieurs dizaines de minutes
+  n'occupe plus le pool commun (4 fils) des mémoires et questionnaires de tous les clients.
+- **Bornes** : une lecture en attente ou en cours par organisation, `LECTURE_FILE_MAX` = 6 pour tout
+  le serveur ; au-delà, refus immédiat **avant tout débit** (429 : « Votre dossier est bien importé :
+  relancez « Ré-analyser » … Rien n'a été débité. »).
+- **Mémoire** : le fichier importé n'est plus gardé dans la file ; la tâche le relit depuis le dossier
+  « DCE » du marché (`storage.py`) quand elle démarre (repli : le fichier reçu, si l'archivage a échoué).
+- **Fin honnête** : un échec passe le marché en « erreur » (l'écran cesse d'en suivre la progression
+  à chaque ouverture ; après un redémarrage, `GET /lecture` le fait au premier passage) et rembourse
+  l'analyse ; « terminé » n'est dit qu'une fois le résultat du job enregistré.
+- **Ré-analyser complète une lecture inachevée** : si des pièces n'ont pas été lues pour une raison
+  passagère (temps écoulé, pages en image pas encore lues, plafond de pages lues par OCR dans une
+  tâche, ou lecture des images indisponible alors qu'elle l'est maintenant), la ré-analyse relit en
+  tâche de fond en reprenant les pièces lues en entier ET, page par page, les pages déjà reconnues :
+  un scan de 500 pages avance de 300 pages à chaque passage au lieu de recommencer.
 
 ---
 
 ## 3. Coût de l'IA (tarifs publics, 3,3 caractères par token en moyenne)
 
 Sonnet 4.6 : 3 $ / 15 $ par million de tokens (entrée / sortie) ; Haiku 4.5 : 1 $ / 5 $ ; lecture
-du cache 0,1 ×, écriture 1,25 ×. Les sorties sont estimées (≈ 3 500 tokens pour l'analyse,
-≈ 1 500 par partie lue, ≈ 300 par réponse) ; les relevés de `cost_meter` les remplaceront.
+du cache 0,1 ×, **écriture 1,25 ×** (cache de 5 minutes). Les sorties « courantes » sont estimées
+(≈ 3 500 tokens pour l'analyse, ≈ 1 500 par partie lue, ≈ 300 par réponse) ; les pires cas prennent
+la sortie **maximale** permise. Les relevés de `cost_meter` remplaceront ces estimations.
+1 $ ≈ 0,86 €.
 
 **Une analyse (une seule débitée au quota)**
 
@@ -256,42 +361,75 @@ du cache 0,1 ×, écriture 1,25 ×. Les sorties sont estimées (≈ 3 500 tokens
 |---|---|---|---|
 | ZIP courant, 50 000 caractères | d'un seul tenant | (10 400 + 50 000) / 3,3 = 18 300 tokens × 3 $ + 3 500 × 15 $ | ≈ 0,11 $ |
 | 150 000 caractères | d'un seul tenant | 48 600 × 3 $ + 3 500 × 15 $ | ≈ 0,20 $ |
-| ≈ 390 000 caractères (limite) | d'un seul tenant | 121 000 × 3 $ + 3 500 × 15 $ | ≈ 0,42 $ (pire cas ≈ 0,50 $) |
-| 600 000 caractères, 12 pièces (dossier du test) | deux temps | Haiku : 179 000 × 1 $ + 15 000 × 5 $ = 0,25 $ ; synthèse : 35 000 × 3 $ + 3 500 × 15 $ = 0,16 $ | ≈ 0,41 $ |
-| 2 000 000 caractères | deux temps (17 parties) | Haiku : 0,74 $ ; synthèse : 0,21 $ | ≈ 0,95 $ |
-| 6 000 000 caractères (plafond technique) | deux temps (50 parties) | Haiku : 2,22 $ ; synthèse : 0,41 $ | ≈ 2,6 $ (2,2 €) |
+| ≈ 390 000 caractères (limite) | d'un seul tenant | 121 000 × 3 $ + 6 000 × 15 $ (sortie maximale) | ≈ 0,45 $ |
+| 600 000 caractères, 12 pièces | deux temps | Haiku : 179 000 × 1 $ + 15 000 × 5 $ = 0,25 $ ; synthèse : 35 000 × 3 $ + 3 500 × 15 $ = 0,16 $ | ≈ 0,41 $ |
+| 2 000 000 caractères | deux temps (≈ 17 appels) | Haiku : 0,74 $ ; synthèse : 0,21 $ | ≈ 0,95 $ |
+| 6 000 000 caractères (plafond technique), sortie courante | deux temps (≈ 50 appels) | Haiku : 1 870 000 × 1 $ + 50 × 1 500 × 5 $ = 2,25 $ ; synthèse : 150 000 × 3 $ + 6 000 × 15 $ = 0,54 $ | ≈ 2,8 $ (2,4 €) |
+| 6 000 000 caractères, chaque appel à 40 informations | deux temps | Haiku : 1,87 $ + 50 × 5 200 × 5 $ = 3,17 $ ; synthèse 0,54 $ | ≈ 3,7 $ (3,2 €) |
+| 6 000 000 caractères, pire théorique (chaque sortie au plafond de 8 000 tokens, 12 appels relus en deux) | deux temps | Haiku : 1,87 $ + relectures 0,44 $ + 74 × 8 000 × 5 $ = 5,27 $ ; synthèse 0,54 $ | ≈ 5,8 $ (5,0 €) |
+| Ré-analyse du même gros dossier (parties déjà relevées) | deux temps | synthèse seule | ≈ 0,54 $ |
 
-Avant : au plus 0,15 $ (84 600 caractères), mais l'IA ne voyait qu'une partie du dossier. Même au
-plafond technique, une analyse reste sous le prix d'une analyse du forfait Pro (129,99 € / 30 =
-4,33 €) et sous le prix du dépassement (5 € HT).
+Avant : au plus 0,15 $ (84 600 caractères), mais l'IA ne voyait qu'une partie du dossier. Une
+analyse courante reste très en dessous du prix d'une analyse du forfait Pro (129,99 € / 30 = 4,33 €)
+et du dépassement (5 € HT). **Au plafond technique** (≈ 2 000 pages de texte), le pire cas réaliste
+(3,2 €) reste dessous ; le pire théorique (5,0 €) l'atteint — il suppose que l'IA ignore la consigne
+de 40 informations sur chacun des 50 appels.
 
 **Une question**
 
 | Cas | Calcul | Coût |
 |---|---|---|
-| Règlement de 20 000 caractères + 8 passages, sans cache | 10 000 tokens × 1 $ + 300 × 5 $ | ≈ 0,012 $ |
-| Même chose, question suivante dans les 5 minutes (règlement lu dans le cache) | 6 100 × 0,1 $ + 3 900 × 1 $ + 300 × 5 $ | ≈ 0,006 $ |
-| Règlement de 60 000 caractères, sans cache | 22 000 × 1 $ + 300 × 5 $ | ≈ 0,024 $ |
+| Règlement de 20 000 caractères + 8 passages, cache froid | 6 100 × 1,25 + 3 900 = 11 500 tokens × 1 $ + 300 × 5 $ | ≈ 0,013 $ |
+| Même chose, question suivante dans les 5 minutes (règlement lu dans le cache) | 6 100 × 0,1 + 3 900 = 4 500 × 1 $ + 300 × 5 $ | ≈ 0,006 $ |
+| Règlements de 60 000 caractères au total, cache froid, sortie maximale | 18 200 × 1,25 + 3 900 = 26 650 × 1 $ + 1 200 × 5 $ | ≈ 0,033 $ |
 
-Avant : 0,0063 $ pour les 14 000 premiers caractères seulement. Borne par jour, pire cas (règlement
-de 60 000 caractères, sans cache, 22 jours ouvrés) : Pro 50 × 0,024 $ × 22 ≈ 26 $ (22 €) par mois et
-par organisation ; Business 120 × … ≈ 63 $ (54 €) ; usage courant (cache, ≈ 10 questions par jour)
-≈ 1,3 $ par mois. Avant, seule l'adresse IP limitait : ≈ 84 € par mois et par adresse.
+Haiku 4.5 ne met en cache qu'un bloc d'au moins 4 096 tokens (≈ 13 500 caractères) : en dessous, pas
+de cache, donc pas de surcoût d'écriture. Avant : 0,0063 $ pour les 14 000 premiers caractères
+seulement.
 
----
+**Borne par jour, pire cas** (règlements de 60 000 caractères, cache froid, sortie maximale, tous les
+jours du mois — la borne s'applique chaque jour du calendrier) : Pro 50 × 31 × 0,033 $ ≈ 51 $ (44 €)
+par mois et par organisation ; Business 120 × 31 × 0,033 $ ≈ 123 $ (106 €) ; essai expiré 15 × 31 ×
+0,033 $ ≈ 15 $ (13 €). Usage courant (cache, ≈ 10 questions par jour) ≈ 1,3 $ par mois. Avant, seule
+l'adresse IP limitait : ≈ 84 € par mois et par adresse.
+
+**Essai gratuit — à décider.** Pendant l'essai (30 jours, sans carte), `quota._limit` donne 30
+analyses (niveau Pro) et 50 questions par jour. Pire cas réaliste d'un compte d'essai qui n'importerait
+que des dossiers au plafond technique : 30 × 3,7 $ + 50 × 30 × 0,033 $ ≈ 160 $ (≈ 140 €), contre
+≈ 4,5 $ d'analyses avant (0,15 $ au plus chacune, mais sur une partie du dossier seulement). Un dossier courant (moins de 400 000 caractères) coûte
+moins de 0,50 $. Rien n'est bridé ici (la consigne est de ne jamais analyser une moitié de dossier) ;
+pistes si besoin : compter un dossier de plus de 2 millions de caractères comme plusieurs analyses
+pendant l'essai, ou réduire le nombre d'analyses d'essai.
 
 ## 4. Points restants
 
-- **Rédaction depuis le savoir-faire (moteur B)** : `routers/knowledge.py:131` lit encore le dossier
-  envoyé avec `extract_dce_text` (40 000 caractères) puis `agents/memoire.py:48` n'en garde que
-  24 000. Fichiers en chantier dans la vague 2 (atelier de rédaction), non modifiés ici : à la
-  fusion, l'atelier lit le dossier par `dce_texte.dce_fulltext(project)` ou
-  `dce_texte.dce_pieces_text(project)` (règlement et cadre : `dce_reglement`, passages : `passages`).
+- **Fusion avec la vague 2 (atelier de rédaction)** — conflits confirmés (`git merge-tree`) dans
+  `app/routers/sourcing.py`, `app/static/app.html`, `app/static/app.js` et
+  `app/static/sri-manifest.json`. Consignes :
+  1. la vague 2 appelle `mesurer_import(project, analysis)` (de `app.services.atelier`) dans
+     `analyze_upload` et `reanalyze_project`, juste après `project.ai_analysis = analysis`. Ici ce code
+     est dans `_finish_analysis`, commun à l'analyse pendant la requête ET en tâche de fond : placer
+     l'appel dans `_finish_analysis`, après `project.ai_analysis = analysis` (sinon les gros dossiers,
+     analysés en tâche de fond, ne sont jamais mesurés) ;
+  2. l'atelier lit le dossier par l'accès commun : `dce_texte.dce_fulltext(project)` ou
+     `dce_texte.dce_pieces_text(project)` (règlements : `dce_reglement`, passages : `passages`) — à la
+     place de `extract_dce_text` (40 000 caractères) dans `routers/knowledge.py:131` et des
+     24 000 caractères de `agents/memoire.py:48` (non modifiés ici) ;
+  3. `app/services/jobs.py` n'est **pas** modifié ici (la vague 2 élargit `run_in_thread`) : les
+     lectures ont leur propre exécuteur (`app/services/lecture_taches.py`, même cycle de vie) ;
+  4. après résolution : `python scripts/sri_update.py`, `--check`, `node --check app/static/app.js`,
+     puis `tests/test_redaction_v2_*`, `tests/test_lecture_integrale.py` et
+     `tests/test_lecture_integrale_relecture.py` sur la branche fusionnée.
 - **Stripe** : créer le compteur et le prix à l'usage, puis renseigner `STRIPE_PRICE_OVERAGE`
-  (§ 2.5). Une unité envoyée avant un redémarrage du serveur ne peut pas être annulée
-  automatiquement si l'analyse est remboursée ensuite (journalisé, à reprendre dans Stripe).
+  (§ 2.5).
 - **Progression** d'une lecture en tâche de fond : gardée en mémoire du process (process unique) ;
-  après un redémarrage, le job est passé en erreur et l'analyse remboursée (mécanisme existant).
+  après un redémarrage, le job est passé en erreur, l'analyse remboursée et l'unité Stripe annulée.
+- **Images insérées dans un Word** (une annexe scannée collée dans un `.docx`) : non lues par OCR ;
+  la pièce est dite lue en entier si son texte l'est. À traiter si cela se rencontre (extraire les
+  images de `word/media` et les passer à l'OCR en tâche de fond).
+- **Sémaphore IA global** (`llm._llm_slot`) : non rendu équitable (fichier partagé, tests existants
+  qui le remplacent) ; les lectures en deux temps sont bornées à part (§ 2.3), ce qui suffit à garder
+  des places aux autres clients.
 - **Audit d'accessibilité** (`scripts/a11y_audit.cjs`, Playwright) : non lancé en local (pas de
   navigateur installable sans réseau) ; les ajouts suivent les motifs existants (bulle (i) avec
   libellé lu par les lecteurs d'écran, progression annoncée par `aria-live`).
