@@ -300,6 +300,9 @@ class Index:
             self.nums.append((far._word_value(m.group(1)), u, _ctx(m.start(), m.end(), not unit), m.start(),
                               m.end()))
         self.certs = [(re.sub(r"[\s\-:'.]", "", m.group(0)), m.start(), m.end()) for m in far._CERT.finditer(same)]
+        self.par_valeur = {}         # valeur arrondie → nombres (un gros dossier : pas de parcours complet)
+        for x in self.nums:
+            self.par_valeur.setdefault(round(x[0], 4), []).append(x)
         self.cert_quelconque = bool(self.certs or re.search(r"\bcertifi|\bqualification|\blabel|\bagre(?:e|ment)",
                                                             self.low))
 
@@ -309,7 +312,7 @@ class Index:
         pas, dans le libellé de la même proposition (« Effectif : 12 » = « 12 salariés »)."""
         if val is None:
             return None
-        for v, u, ctx, a, b in self.nums:
+        for v, u, ctx, a, b in self.par_valeur.get(round(val, 4), ()):
             if not _egal(v, val):
                 continue
             if not unite or u == unite or (not u and unite in ctx):
@@ -546,7 +549,7 @@ class Acheteur:
         self.pieces = []
         for nom, texte in pieces or ():
             if str(texte or "").strip():
-                self.pieces.append((str(nom or "Dossier de l'acheteur")[:200], Index(texte)))
+                self.pieces.append((str(nom or "")[:200], Index(texte)))
 
     @property
     def disponible(self) -> bool:
@@ -556,8 +559,11 @@ class Acheteur:
         for nom, idx in self.pieces:
             pos = idx.trouve(kind, key, fait)
             if pos is not None:
-                return {"ref": "", "type": T_ACHETEUR, "libelle": LIB_ACHETEUR, "cite": False,
-                        "doc_nom": nom, "extrait": idx.extrait(pos)[:EXTRAIT_MAX + 8]}
+                out = {"ref": "", "type": T_ACHETEUR, "libelle": LIB_ACHETEUR, "cite": False,
+                       "extrait": idx.extrait(pos)[:EXTRAIT_MAX + 8]}
+                if nom:
+                    out["doc_nom"] = nom
+                return out
         return None
 
 
@@ -565,8 +571,10 @@ class Acheteur:
 
 _NB_LETTRES = (r"(?:\d+|un|une|deux|trois|quatre|cinq|six|sept|huit|dix|douze|quinze|vingt|trente|quarante(?:-huit)?|"
                r"soixante(?:-douze)?)")
+# Formules qui ENGAGENT l'entreprise (étude § 6.5) ; « afin de garantir la sécurité » n'en est pas une.
 _ENGAGE = re.compile(
-    r"\bnous nous engageons\b|\bs'engagent? a\b|\bnous garantissons\b|\bgarantir\b|\bgarantit\b|\bgarantissent\b|"
+    r"\bnous nous engageons\b|\bnous vous engageons\b|\bs'engagent? a\b|\bnous (?:vous )?garantissons\b|"
+    r"\bnous (?:pouvons|savons|allons) (?:vous )?garantir\b|\bnous (?:vous )?assurons (?:que|une?|le|la|les)\b|"
     r"\b(?:delais?|interventions?|resultats?|qualite|performances?|disponibilite|prix|duree) garanti(?:e|s|es)?\b|"
     r"\bzero (?:accident|defaut|reserve|dechet|retard|incident|nuisance|plainte|sinistre|panne)s?\b|"
     r"(?<![\d,.])100 ?%|"
@@ -1009,7 +1017,10 @@ def cv_texte(fiche: Fiche) -> str:
     contrôle relie chaque fait à la fiche). Jamais remis à l'IA."""
     v = fiche.valeur or {}
     r = f" [{fiche.ref}]"
-    lignes = [f"**{v.get('nom', '')}**, {v.get('fonction', '')}{r}"]
+    fonction = str(v.get("fonction") or "")
+    if len(fonction) > 1 and fonction[:1].isupper() and fonction[1:2].islower():
+        fonction = fonction[:1].lower() + fonction[1:]       # « Maëlys Kerbrat, conductrice de travaux »
+    lignes = [f"**{v.get('nom', '')}**, {fonction}{r}"]
     if v.get("experience_annees") is not None:
         lignes.append(f"- Expérience : {v['experience_annees']} ans{r}")
     for k, lab in (("diplomes", "Diplômes"), ("qualifications", "Qualifications"), ("chantiers", "Chantiers")):

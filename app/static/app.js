@@ -4064,7 +4064,8 @@ const __adjApp = createApp({
     atlFaitsRelus(s) { const v = s && s.version_courante; return ((v && v.faits) || []).filter(f => f.statut === "relu_par_vous"); },
     atlFaitType(t) { return ATL_FAIT_TYPES[t] || "Fait"; },
     atlHtml(s) { const v = s && s.version_courante; return v ? atlMdToHtml(v.texte, v.faits) : ""; },
-    atlPhrase(f) { return atlPhraseHtml(f.phrase, f.fait); },
+    // La phrase telle qu'A0 la range garde l'espace laissée par un renvoi retiré (« salariés . ») : pas à l'écran.
+    atlPhrase(f) { return atlPhraseHtml(String(f.phrase || "").replace(/\s+([.,])(?=\s|$)/g, "$1"), f.fait); },
     atlMotsEdit() { return atlMots(this.atl.edit.texte); },
     atlAEcrire() { const st = this.atl.st; return st ? st.sections.filter(s => s.statut === "a_ecrire" && s.peut_ecrire && !s.redaction_en_cours).length : 0; },
     atlEnCours() { const pid = this.atl.pid; return Object.values(this.atlJobs).filter(j => j.pid === pid); },

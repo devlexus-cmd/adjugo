@@ -1318,7 +1318,7 @@ def _acheteur(project: Project, lu: dict, payload: Optional[dict]) -> "fs.Achete
         pieces = [(p.get("libelle") or p.get("nom") or "", p.get("texte") or "") for p in payload.get("pieces") or []
                   if (p.get("texte") or "").strip()]
     elif (lu or {}).get("texte"):
-        pieces = [("Dossier de l'acheteur", lu.get("texte") or "")]
+        pieces = [("", lu.get("texte") or "")]
     return fs.Acheteur(pieces)
 
 

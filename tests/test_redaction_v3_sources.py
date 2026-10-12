@@ -128,6 +128,15 @@ def test_engagements_a_confirmer(phrase, formule):
     assert eng[0]["statut"] == fs.A_RELIRE and eng[0]["message"] == fs.MSG_ENGAGEMENT
 
 
+@pytest.mark.parametrize("phrase", [
+    "Nous balisons la zone afin de garantir la sécurité des usagers.",
+    "Notre démarche qualité repose sur des contrôles réguliers.",
+    "Nous disposons d'une garantie décennale.",
+])
+def test_pas_d_engagement_dans_une_phrase_ordinaire(phrase):
+    assert not [x for x in ps.controler(phrase) if x["type"] == fs.ENGAGEMENT]
+
+
 def test_pas_d_engagement_pour_une_phrase_sur_le_marche_ni_pour_votre_texte():
     assert not [x for x in ps.controler("Le CCTP impose une intervention sous 24 h.") if x["type"] == fs.ENGAGEMENT]
     vous = fs.controler("Nous garantissons une intervention sous 24 h.", ps.fiches(), mode="utilisateur")
@@ -182,7 +191,7 @@ def test_cv_insere_tel_quel_sans_ia():
     f = fs.Fiche("F2", fs.T_DECLARE, fs.LIB_DECLARE, pv.texte_de("salarie", val), nature="salarie", valeur=val,
                  extra=fs._adjacents("salarie", val))
     t = fs.inserer_cv("Encadrement :\n\n[CV F2]\n\n[CV F8]\n", [f])
-    assert "**Maëlys Kerbrat**, Conductrice de travaux [F2]" in t and "- Expérience : 17 ans [F2]" in t
+    assert "**Maëlys Kerbrat**, conductrice de travaux [F2]" in t and "- Expérience : 17 ans [F2]" in t
     assert "- Chantiers : École Jules Ferry ; Gymnase de Brest [F2]" in t
     assert "[À compléter : CV de la personne]" in t and "[CV" not in t
     items = fs.controler(t, [f], mode="ia")
@@ -297,7 +306,7 @@ def test_redaction_faits_numerotes_types_cv_jamais_a_l_ia_et_controle(client, au
     s = _sec(client, h, pid, sid)
     v = s["version_courante"]
     # Le CV est inséré tel quel, sans IA, et ses faits sont reliés à sa fiche.
-    assert "**Maëlys Kerbrat**, Conductrice de travaux [F2]" in v["texte"] and "- Expérience : 17 ans [F2]" in v["texte"]
+    assert "**Maëlys Kerbrat**, conductrice de travaux [F2]" in v["texte"] and "- Expérience : 17 ans [F2]" in v["texte"]
     a_relire = {(f["type"], f["fait"]) for f in v["faits"]}
     assert ("certification", "ISO 14001") in a_relire and ("engagement", "Nous garantissons") in a_relire
     assert all(f["statut"] in ("a_relire", "relu_par_vous") for f in v["faits"])
