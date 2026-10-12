@@ -88,6 +88,7 @@
       <a class="nav-item" :class="{active:view==='reseau'}" @click="go('reseau')"><i data-lucide="network"></i>Réseau <span v-if="rnRecuesCount()" class="badge" :title="rnRecuesCount()+' invitation(s) reçue(s) à traiter'">{{ rnRecuesCount() }}<span class="sr-only"> invitation(s) reçue(s) à traiter</span></span></a>
       <a class="nav-item" :class="{active:view==='documents'}" @click="go('documents')"><i data-lucide="folder-lock"></i>Mes documents</a>
       <a class="nav-item" :class="{active:view==='company'}" @click="go('company')"><i data-lucide="briefcase"></i>Mon entreprise</a>
+      <a class="nav-item nav-sub" :class="{active:view==='preuves'}" @click="go('preuves')"><i data-lucide="paperclip"></i>Mes preuves</a>
       <a v-if="shared.length" class="nav-item" :class="{active:view==='shared'||view==='sharedao'}" @click="go('shared')"><i data-lucide="inbox"></i>Partagé avec moi <span class="badge">{{ shared.length }}</span></a>
       <a class="nav-item" @click="navMore=!navMore" style="opacity:.7"><i :data-lucide="navMore?'chevron-down':'chevron-right'"></i>Plus</a>
       <template v-if="navMore">
@@ -1986,6 +1987,7 @@
                       <button type="button" class="btn sm primary" @click="atlRediger(atlSec())" :disabled="!!atl.busy || !!atlSec().redaction_en_cours"><i data-lucide="sparkles"></i>Rédiger avec Adjugo</button>
                       <button type="button" class="btn sm" @click="atlRaccourcir(atlSec())" :disabled="!!atl.busy || !!atlSec().redaction_en_cours || !atlSec().version_courante"><i data-lucide="scissors"></i>Raccourcir</button>
                       <button type="button" class="btn sm" @click="atlEdit()" :disabled="!!atl.busy || !!atlSec().redaction_en_cours"><i data-lucide="pen-line"></i>J'écris moi-même</button>
+                      <button type="button" class="btn sm" @click="pvAtlOuvrir()" :disabled="!!atl.busy || !!atlSec().redaction_en_cours"><i data-lucide="paperclip"></i>Insérer une fiche</button>
                       <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Ce que fait Adjugo</span><span class="tip-b" role="tooltip"><template v-if="atl.st.dossier_acheteur && atl.st.dossier_acheteur.present === false">Aucun dossier du marché importé : Adjugo rédige sans le règlement ni le cadre de réponse. </template><template v-else-if="atl.st.dossier_acheteur && atl.st.dossier_acheteur.integral">Adjugo lit le règlement et le cadre de réponse en entier et, pour chaque partie, les passages des autres pièces du dossier les plus proches de la partie. </template><template v-else>Adjugo lit le règlement et le cadre de réponse en entier, puis le début des autres pièces. </template>Il s'appuie seulement sur vos documents, votre profil, votre équipe (les noms sont remplacés par des étiquettes avant l'envoi), votre chiffrage et les parts envoyées par vos partenaires. Tout fait absent est écrit « [À compléter : …] ». Le texte précédent reste dans l'historique. « Raccourcir » vise la limite de la partie quand le règlement en donne une.</span></button>
                     </template>
                     <div class="spacer"></div>
@@ -2014,6 +2016,7 @@
                       <button type="button" class="btn ghost sm" @click="atlTool('titre')"><i data-lucide="heading"></i>Titre</button>
                       <button type="button" class="btn ghost sm" @click="atlTool('liste')"><i data-lucide="list"></i>Liste</button>
                       <button type="button" class="btn ghost sm" @click="atlTool('tableau')"><i data-lucide="table"></i>Tableau</button>
+                      <button type="button" class="btn ghost sm" @click="pvAtlOuvrir()"><i data-lucide="paperclip"></i>Fiche</button>
                       <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Mise en forme</span><span class="tip-b" role="tooltip">Un titre commence par « ## », une ligne de liste par « - », un tableau a ses cellules séparées par « | ». Les passages « [À compléter : …] » bloquent l'export tant qu'ils restent dans le texte.</span></button>
                       <div class="spacer"></div><span class="muted small">Environ {{ atlNum(atlMotsEdit()) }} {{ atlMotsLib(atlMotsEdit()) }}</span>
                     </div>
@@ -2201,6 +2204,10 @@
 
         <!-- ░░ COMPANY ░░ -->
         <section v-if="view==='company'">
+          <nav class="rn-tabs pv-onglets" aria-label="Mon entreprise">
+            <button type="button" class="rn-tab on" aria-current="page"><i data-lucide="briefcase"></i>Profil de l'entreprise</button>
+            <button type="button" class="rn-tab" @click="go('preuves')"><i data-lucide="paperclip"></i>Mes preuves</button>
+          </nav>
           <div class="card pad" style="max-width:820px;margin-bottom:16px">
             <div class="row" style="gap:11px;align-items:flex-start"><i data-lucide="globe" style="color:var(--accent-text);margin-top:2px"></i>
               <div style="flex:1">
@@ -2255,6 +2262,7 @@
                 <span class="muted small">Modèle à adapter à votre entreprise ; ce n'est pas un conseil juridique.</span>
               </div>
             </details>
+            <div class="pv-renvoi small"><i data-lucide="paperclip"></i><span>Le CV de chaque personne (expérience, diplômes, habilitations, chantiers) se renseigne dans <button type="button" class="linkbtn" @click="go('preuves')">« Mes preuves »</button> : il n'est jamais envoyé à l'IA.</span></div>
             <div v-for="(m,i) in (company.team||[])" :key="'tm'+i" class="card pad" style="background:var(--surface-2);margin-bottom:8px;padding:12px">
               <div class="frow"><div class="field" style="margin:0"><label>Nom</label><input v-model="m.nom" placeholder="Yann Tanguy"></div>
                 <div class="field" style="margin:0"><label>Fonction</label><input v-model="m.fonction" placeholder="Conducteur de travaux"></div></div>
@@ -2273,6 +2281,166 @@
             <div class="frow"><div class="field"><label>Frais de déplacement au-delà de (km)</label><input type="number" min="0" v-model.number="company.distance_threshold_km" placeholder="50"></div>
               <div class="field"><label>Frais de déplacement (%)</label><input type="number" min="0" v-model.number="company.distance_surcharge_pct" placeholder="0"></div></div>
             <button class="btn primary" @click="saveCompany" :disabled="busy"><span v-if="busy" class="spin"></span><i v-else data-lucide="check"></i>Enregistrer</button>
+          </div>
+        </section>
+
+        <!-- ░░ MES PREUVES (rédaction, vague 3, E1) ░░
+             Sous « Mon entreprise » : références, qualifications, équipe (CV minimal), matériel et
+             chiffres clés. Chaque fiche dit OÙ le fait a été trouvé (jamais qu'il est juste) ; un CV
+             n'est jamais envoyé à l'IA. Texte toujours rendu en {{ }}, jamais v-html. -->
+        <section v-if="view==='preuves'" class="pv">
+          <nav class="rn-tabs pv-onglets" aria-label="Mon entreprise">
+            <button type="button" class="rn-tab" @click="go('company')"><i data-lucide="briefcase"></i>Profil de l'entreprise</button>
+            <button type="button" class="rn-tab on" aria-current="page"><i data-lucide="paperclip"></i>Mes preuves</button>
+          </nav>
+
+          <div class="card pad pv-intro">
+            <h2 class="pv-h2">Mes preuves<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo relie chaque fait à l'endroit où il l'a trouvé : un passage de vos documents, un justificatif, une source publique, ou votre déclaration. Il ne sait pas si ce document est à jour : relisez vos preuves.</span></button></h2>
+            <p class="muted small pv-m0">Adjugo se sert des fiches acceptées et encore valables pour rédiger vos dossiers. Il n'en invente aucune.</p>
+            <div v-if="pvRepriseNombre() && !pv.rep.open" class="pv-info">
+              <i data-lucide="import"></i><span class="pv-grow">{{ pvRepriseNombre() > 1 ? pvRepriseNombre() + " éléments déjà saisis ailleurs dans Adjugo peuvent être repris ici." : "Un élément déjà saisi ailleurs dans Adjugo peut être repris ici." }}</span>
+              <button type="button" class="btn sm" @click="pvRepriseOuvrir()">Voir et reprendre</button>
+            </div>
+            <div v-if="pvAlertes().length" class="pv-ech" role="status">
+              <i data-lucide="calendar-clock"></i>
+              <div class="pv-grow"><b class="small">{{ pvAlertes().length > 1 ? pvAlertes().length + " fiches à mettre à jour" : "Une fiche à mettre à jour" }}</b>
+                <ul class="pv-ech-l"><li v-for="p in pvAlertes().slice(0, 3)" :key="'al'+p.id"><button type="button" class="linkbtn" @click="pvOnglet(p.nature)">{{ pvTitre(p) }}</button> : {{ pvValidite(p).t.toLowerCase() }}</li></ul>
+                <div v-if="pvAlertes().length > 3" class="muted small">et {{ pvAlertes().length - 3 }} autre{{ pvAlertes().length - 3 > 1 ? 's' : '' }}.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reprise de l'existant : rien n'est repris sans être coché ; les données d'origine ne changent pas. -->
+          <div v-if="pv.rep.open" class="card pad pv-rep" role="region" aria-labelledby="pv-rep-h">
+            <div class="row pv-g8"><h3 id="pv-rep-h" class="pv-h3 pv-grow">Reprendre ce que vous avez déjà saisi<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Repris de votre profil d'entreprise, de votre profil du réseau de partenaires et des justificatifs rangés en « Qualifications » dans « Mes documents ». Rien n'y est modifié ni supprimé, et un élément déjà présent dans « Mes preuves » n'est jamais repris deux fois.</span></button></h3>
+              <button type="button" class="btn ghost sm" @click="pv.rep.open=false" aria-label="Fermer la reprise"><i data-lucide="x"></i></button></div>
+            <div v-if="pv.rep.loading" class="muted small" role="status"><span class="spin"></span> Chargement…</div>
+            <template v-else-if="pv.rep.d">
+              <p v-if="!pv.rep.d.elements.length" class="muted small pv-m0">Rien de nouveau à reprendre<template v-if="pv.rep.d.deja"> : {{ pv.rep.d.deja > 1 ? pv.rep.d.deja + " éléments sont déjà" : "l'élément est déjà" }} dans vos preuves</template>.</p>
+              <template v-else>
+                <p class="muted small pv-m0">Décochez ce qui n'est plus juste. Les fiches cochées sont ajoutées à « Mes preuves », acceptées.</p>
+                <div v-for="g in pvRepriseGroupes()" :key="'rg'+g.code" class="pv-rep-g">
+                  <div class="pv-sub">{{ g.l }}</div>
+                  <label v-for="e in g.els" :key="'re'+e.cle" class="pv-rep-i" :class="{'pv-off': e.manque}">
+                    <input type="checkbox" v-model="pv.rep.sel[e.cle]" :disabled="!!e.manque">
+                    <span class="pv-grow"><span class="small">{{ e.texte }}</span>
+                      <span class="muted small pv-block">{{ e.provenance_libelle }} · {{ e.source_libelle }}<template v-if="e.date_fin_validite"> · valable jusqu'au {{ pvJj(e.date_fin_validite) }}</template></span>
+                      <span v-if="e.manque" class="pv-raison small pv-block">{{ e.manque }}</span></span>
+                  </label>
+                </div>
+                <div v-if="pv.rep.d.deja" class="muted small pv-mt8">{{ pv.rep.d.deja > 1 ? pv.rep.d.deja + " autres éléments sont déjà" : "Un autre élément est déjà" }} dans vos preuves.</div>
+              </template>
+            </template>
+            <div v-if="pv.rep.err" class="conv-err pv-mt8" role="alert"><i data-lucide="circle-alert"></i><div>{{ pv.rep.err }}</div></div>
+            <div v-if="pv.rep.d && pv.rep.d.elements.length" class="row wrap pv-g8 pv-mt12">
+              <button type="button" class="btn primary sm" @click="pvReprendre()" :disabled="pv.rep.busy || !pvRepriseCoches()"><span v-if="pv.rep.busy" class="spin"></span><i v-else data-lucide="import"></i>Reprendre {{ pvRepriseCoches() > 1 ? 'les ' + pvRepriseCoches() + ' fiches' : 'la fiche' }}</button>
+              <button type="button" class="btn ghost sm" @click="pv.rep.open=false">Plus tard</button>
+            </div>
+          </div>
+
+          <nav class="pv-natures" aria-label="Types de preuves">
+            <button v-for="n in pvNatures()" :key="'pn'+n.code" type="button" class="rn-tab" :class="{on: pv.tab===n.code}" :aria-current="pv.tab===n.code ? 'page' : null" @click="pvOnglet(n.code)"><i :data-lucide="n.ic"></i>{{ n.l }}<span v-if="pvCompte(n.code)" class="pv-n">{{ pvCompte(n.code) }}</span></button>
+          </nav>
+
+          <div class="card pad pv-liste">
+            <div class="row pv-g8 pv-liste-h"><h3 class="pv-h3 pv-grow">{{ pvNature(pv.tab).l }}<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ pvNature(pv.tab).tip }}</span></button></h3>
+              <button v-if="!(pv.form && !pv.form.id && pv.form.nature===pv.tab)" type="button" class="btn sm" @click="pvNouveau(pv.tab)"><i data-lucide="plus"></i>{{ pvNature(pv.tab).ajout }}</button></div>
+
+            <!-- Formulaire compact : champs de la nature, puis « Où se trouve ce fait ? » -->
+            <div v-if="pv.form && pv.form.nature===pv.tab" class="pv-form" role="group" :aria-label="pv.form.id ? 'Modifier la fiche' : 'Nouvelle fiche'">
+              <div class="pv-sub">{{ pv.form.id ? "Modifier la fiche" : "Nouvelle fiche" }}</div>
+              <div class="pv-grid">
+                <div v-for="c in pvChamps(pv.form.nature)" :key="'pf'+c.k" class="field" :class="{'pv-wide': c.w}">
+                  <label :for="'pvf-'+c.k">{{ c.l }}<span v-if="c.req" aria-hidden="true"> *</span></label>
+                  <textarea v-if="c.t==='area'" :id="'pvf-'+c.k" class="inp" v-model="pv.form.v[c.k]" :maxlength="c.n" rows="2" :placeholder="c.ph"></textarea>
+                  <select v-else-if="c.t==='select'" :id="'pvf-'+c.k" class="inp" v-model="pv.form.v[c.k]"><option v-for="o in c.opts" :key="'po'+o[0]" :value="o[0]">{{ o[1] }}</option></select>
+                  <input v-else-if="c.t==='num'" :id="'pvf-'+c.k" class="inp" type="text" inputmode="decimal" v-model="pv.form.v[c.k]" :placeholder="c.ph">
+                  <input v-else :id="'pvf-'+c.k" class="inp" type="text" v-model="pv.form.v[c.k]" :maxlength="c.n" :placeholder="c.ph" :required="c.req">
+                </div>
+                <div v-if="pvAvecValidite(pv.form.nature)" class="field">
+                  <label for="pvf-fin">Fin de validité</label>
+                  <input id="pvf-fin" class="inp" type="date" v-model="pv.form.date_fin_validite">
+                </div>
+              </div>
+              <div v-if="pv.form.nature==='salarie'" class="pv-note small"><i data-lucide="shield"></i><span>Le CV ne contient ni photo, ni adresse, ni date de naissance. Il n'est jamais envoyé à l'IA : pendant la rédaction, le nom est remplacé par la fonction.</span></div>
+              <fieldset class="pv-fs">
+                <legend class="small strong">Où se trouve ce fait ?<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">« Dans vos documents » : un passage d'un document de « Mon savoir-faire », recopié tel qu'il est écrit, qui contient chaque chiffre, nom et année de la fiche ; ou un justificatif de « Mes documents ». Sinon, choisissez « Déclaré par vous ».</span></button></legend>
+                <div class="pv-srcs">
+                  <label v-for="t in pvTypesSource(pv.form.nature)" :key="'ps'+t.code" class="pv-radio" :class="{on: pv.form.type_source===t.code}"><input type="radio" name="pv-src" :value="t.code" v-model="pv.form.type_source">{{ t.l }}</label>
+                </div>
+                <template v-if="pv.form.type_source==='documents'">
+                  <div class="pv-grid">
+                    <div class="field pv-wide"><label for="pvf-doc">Document de « Mon savoir-faire »</label>
+                      <select id="pvf-doc" class="inp" v-model="pv.form.doc_id"><option value="">Aucun</option><option v-for="d in pvKbDocs()" :key="'pkd'+d.id" :value="d.id">{{ d.name }}</option></select>
+                      <div v-if="!pvKbDocs().length" class="muted small pv-mt4">Aucun document dans « Mon savoir-faire » pour l'instant.</div></div>
+                    <div v-if="pv.form.doc_id" class="field pv-wide"><label for="pvf-pass">Passage, recopié tel qu'il est écrit</label>
+                      <textarea id="pvf-pass" class="inp" v-model="pv.form.passage" maxlength="1200" rows="3" placeholder="En 2024, réfection de la toiture de l'école Jules Ferry pour la Mairie de Quimper (85 000 € HT)"></textarea></div>
+                    <div v-if="pv.form.doc_id" class="field"><label for="pvf-dsrc">Date du document</label><input id="pvf-dsrc" class="inp" type="date" v-model="pv.form.date_source"></div>
+                    <div class="field pv-wide"><label for="pvf-just">Justificatif de « Mes documents »</label>
+                      <select id="pvf-just" class="inp" v-model="pv.form.document_id"><option value="">Aucun</option><option v-for="d in pvJustificatifs()" :key="'pj'+d.id" :value="d.id">{{ d.name }}</option></select></div>
+                  </div>
+                </template>
+                <div v-else-if="pv.form.type_source==='public'" class="pv-grid">
+                  <div class="field"><label for="pvf-pnom">Nom de la source</label><input id="pvf-pnom" class="inp" v-model="pv.form.pub.nom" maxlength="120" placeholder="DECP, liste RGE de l'ADEME…"></div>
+                  <div class="field"><label for="pvf-pdate">Consultée le</label><input id="pvf-pdate" class="inp" type="date" v-model="pv.form.pub.consulte_le"></div>
+                  <div class="field pv-wide"><label for="pvf-purl">Adresse de la page</label><input id="pvf-purl" class="inp" type="url" v-model="pv.form.pub.url" maxlength="500" placeholder="https://"></div>
+                  <div class="field"><label for="pvf-pid">Identifiant (facultatif)</label><input id="pvf-pid" class="inp" v-model="pv.form.pub.identifiant" maxlength="120"></div>
+                </div>
+                <div v-else-if="pv.form.type_source==='estimation'" class="pv-grid">
+                  <div class="field pv-wide"><label for="pvf-emar">Pour un marché précis (facultatif)</label>
+                    <select id="pvf-emar" class="inp" v-model="pv.form.est.project_id"><option value="">Tous vos marchés</option><option v-for="m in projects" :key="'pm'+m.id" :value="m.id">{{ m.name }}</option></select></div>
+                  <div class="field pv-wide"><label for="pvf-edet">Comment vous l'estimez (facultatif)</label><input id="pvf-edet" class="inp" v-model="pv.form.est.detail" maxlength="300"></div>
+                </div>
+              </fieldset>
+              <div v-if="pv.form.err" class="conv-err pv-mt8" role="alert"><i data-lucide="circle-alert"></i><div>{{ pv.form.err }}</div></div>
+              <div class="row wrap pv-g8 pv-mt12">
+                <button type="button" class="btn primary sm" @click="pvEnregistrer()" :disabled="!!pv.busy"><span v-if="pv.busy==='form'" class="spin"></span><i v-else data-lucide="check"></i>Enregistrer</button>
+                <button type="button" class="btn ghost sm" @click="pv.form=null">Annuler</button>
+              </div>
+            </div>
+
+            <div v-if="pv.loading && !pv.loaded" class="muted small" role="status"><span class="spin"></span> Chargement…</div>
+            <div v-else-if="pv.error && !pv.loaded" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div>{{ pv.error }} <button type="button" class="linkbtn" @click="pvLoad()">Réessayer</button></div></div>
+            <template v-else>
+              <!-- Propositions (par exemple tirées de vos anciens dossiers) : l'utilisateur coche ce qui est juste. -->
+              <div v-if="pvProposees(pv.tab).length" class="pv-prop">
+                <div class="row wrap pv-g8"><b class="small pv-grow">{{ pvProposees(pv.tab).length > 1 ? pvProposees(pv.tab).length + " fiches proposées" : "Une fiche proposée" }} : cochez celles qui sont justes</b>
+                  <button type="button" class="btn ghost sm" @click="pvToutCocher(pv.tab)">{{ pvProposees(pv.tab).every(p => pv.sel[p.id]) ? "Tout décocher" : "Tout cocher" }}</button>
+                  <button type="button" class="btn sm" @click="pvAccepterCoches(pv.tab)" :disabled="!!pv.busy || !pvCoches(pv.tab).length"><span v-if="pv.busy==='lot'" class="spin"></span><i v-else data-lucide="check"></i>Accepter{{ pvCoches(pv.tab).length ? ' (' + pvCoches(pv.tab).length + ')' : '' }}</button></div>
+              </div>
+              <ul v-if="pvListe(pv.tab).length" class="pv-items">
+                <li v-for="p in pvListe(pv.tab)" :key="'pv'+p.id" class="pv-item" :class="{'pv-off': !p.utilisable, 'pv-prop-i': p.statut==='proposee'}">
+                  <div class="pv-item-h">
+                    <input v-if="p.statut==='proposee'" type="checkbox" class="pv-chk" v-model="pv.sel[p.id]" :aria-label="'Cocher : ' + pvTitre(p)">
+                    <div class="pv-grow">
+                      <b class="pv-t">{{ pvTitre(p) }}</b>
+                      <div v-if="pvDetail(p)" class="muted small">{{ pvDetail(p) }}</div>
+                      <div v-if="pvTexteLong(p)" class="muted small pv-long">{{ pvTexteLong(p) }}</div>
+                    </div>
+                    <span v-if="p.statut!=='acceptee'" class="pill" :class="p.statut==='proposee' ? 'a_etudier' : 'neutral'">{{ p.statut_libelle }}</span>
+                  </div>
+                  <div class="pv-meta small">
+                    <span class="pv-src"><i :data-lucide="pvSrcIcone(p)"></i>{{ p.source_libelle }}</span>
+                    <button v-if="p.source && p.source.lien_passage" type="button" class="linkbtn" @click="pvPassage(p)">Voir le passage</button>
+                    <button v-if="p.source && p.source.lien_justificatif" type="button" class="linkbtn" @click="pvJustificatif(p)">Ouvrir le justificatif</button>
+                    <a v-if="p.type_source==='public' && pvUrlSure(p.source.url)" :href="safeUrl(p.source.url)" target="_blank" rel="noopener noreferrer" class="linkbtn">Voir la page</a>
+                    <span v-if="p.type_source==='public' && p.source.consulte_le" class="muted">consultée le {{ pvJj(p.source.consulte_le) }}</span>
+                    <span v-if="p.type_source==='documents' && p.date_source" class="muted">document du {{ pvJj(p.date_source) }}</span>
+                    <span v-if="p.a_reconfirmer" class="pv-tag">à reconfirmer<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Pourquoi</span><span class="tip-b" role="tooltip">Le document d'où vient ce fait a plus de 3 ans : relisez la fiche et corrigez-la si besoin.</span></button></span>
+                    <span v-if="pvValidite(p)" :class="pvValidite(p).cls || 'muted'">{{ pvValidite(p).t }}</span>
+                  </div>
+                  <div v-if="p.statut==='acceptee' && p.raison_message" class="pv-raison small">{{ p.raison_message }}</div>
+                  <div class="pv-actions">
+                    <button v-if="p.statut==='proposee'" type="button" class="btn sm" @click="pvStatut(p, 'accepter')" :disabled="!!pv.busy"><i data-lucide="check"></i>Accepter</button>
+                    <button v-if="p.statut==='retiree'" type="button" class="btn sm" @click="pvStatut(p, 'accepter')" :disabled="!!pv.busy"><i data-lucide="undo-2"></i>Remettre</button>
+                    <button type="button" class="btn ghost sm" @click="pvModifier(p)" :disabled="!!pv.busy"><i data-lucide="pencil"></i>Modifier</button>
+                    <button v-if="p.statut!=='retiree'" type="button" class="btn ghost sm" @click="pvStatut(p, 'retirer')" :disabled="!!pv.busy"><i data-lucide="archive"></i>Retirer</button>
+                    <button type="button" class="btn ghost sm pv-del" @click="pvSupprimer(p)" :disabled="!!pv.busy" :aria-label="'Supprimer : ' + pvTitre(p)" title="Supprimer"><i data-lucide="trash-2"></i></button>
+                  </div>
+                </li>
+              </ul>
+              <p v-else-if="!(pv.form && pv.form.nature===pv.tab)" class="muted small pv-vide">Aucune fiche pour l'instant.<template v-if="pvRepriseNombre()"> Vous pouvez aussi <button type="button" class="linkbtn" @click="pvRepriseOuvrir()">reprendre ce que vous avez déjà saisi</button>.</template></p>
+            </template>
           </div>
         </section>
 
@@ -3289,6 +3457,49 @@
     </div>
   </div>
 
+  <!-- ══════════ MES PREUVES : FENÊTRES (rédaction, vague 3, E1) ══════════
+       Le passage exact où le fait a été trouvé ; dans l'atelier, le choix d'une fiche à insérer
+       TELLE QUELLE (sans IA). Texte rendu en {{ }} uniquement. -->
+  <div v-if="pv.passage" class="overlay" @click.self="pv.passage=null" @keydown.esc="pv.passage=null">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pv-ps-t">
+      <div class="modal-h"><h3 id="pv-ps-t">Trouvé dans vos documents</h3><button type="button" class="x" @click="pv.passage=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+      <div class="modal-b">
+        <div class="small"><b>{{ pv.passage.titre }}</b></div>
+        <div class="muted small pv-mt4">Document : {{ pv.passage.doc_nom }}</div>
+        <blockquote class="pv-ps"><span v-if="pv.passage.avant" class="muted">… {{ pv.passage.avant }}</span><mark>{{ pv.passage.passage }}</mark><span v-if="pv.passage.apres" class="muted">{{ pv.passage.apres }} …</span></blockquote>
+        <p class="muted small pv-m0">Ce passage montre que le fait est écrit dans ce document. Il ne dit pas si le document est à jour : relisez-le.</p>
+      </div>
+    </div>
+  </div>
+  <div v-if="pvAtl.open" class="overlay" @click.self="pvAtlFermer()" @keydown.esc="pvAtlFermer()">
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="pv-at-t">
+      <div class="modal-h"><h3 id="pv-at-t">Insérer une fiche de « Mes preuves »</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">La fiche est recopiée telle quelle dans la partie, sans IA : seuls ses faits, jamais d'où ils viennent. Un CV n'est jamais envoyé à l'IA ; une partie qui en contient un ne peut pas être raccourcie par Adjugo.</span></button><button type="button" class="x" @click="pvAtlFermer()" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+      <div class="modal-b">
+        <p class="muted small pv-m0">{{ atl.mode==='modifier' ? "Elle est ajoutée à l'endroit du curseur ; enregistrez ensuite le texte." : "Elle est ajoutée à la fin de la partie, comme une nouvelle version." }}</p>
+        <div v-if="pvAtl.loading" class="muted small pv-mt8" role="status"><span class="spin"></span> Chargement…</div>
+        <div v-else-if="pvAtl.err && !pvAtl.d" class="conv-err pv-mt8" role="alert"><i data-lucide="circle-alert"></i><div>{{ pvAtl.err }}</div></div>
+        <template v-else-if="pvAtl.d">
+          <template v-if="pvAtl.d.fiches.length">
+            <input class="inp pv-mt8" v-model="pvAtl.q" placeholder="Chercher une fiche" aria-label="Chercher une fiche">
+            <div v-for="g in pvAtlGroupes()" :key="'ag'+g.code" class="pv-mt8">
+              <div class="pv-sub">{{ g.l }}</div>
+              <ul class="pv-pick">
+                <li v-for="f in g.fiches" :key="'af'+f.id"><button type="button" class="pv-pick-b" :class="{on: pvAtl.choix && pvAtl.choix.id===f.id}" :aria-pressed="pvAtl.choix && pvAtl.choix.id===f.id ? 'true' : 'false'" @click="pvAtl.choix=f"><span class="pv-t">{{ f.titre }}</span><span class="muted small">{{ f.source_libelle }}<template v-if="f.a_reconfirmer"> · à reconfirmer</template><template v-if="f.date_fin_validite"> · valable jusqu'au {{ pvJj(f.date_fin_validite) }}</template></span></button></li>
+              </ul>
+            </div>
+            <p v-if="!pvAtlGroupes().length" class="muted small pv-mt8">Aucune fiche ne correspond.</p>
+            <div v-if="pvAtl.choix" class="pv-mt12"><div class="pv-sub">Texte inséré</div><pre class="pv-apercu">{{ pvAtl.choix.bloc }}</pre></div>
+          </template>
+          <p v-else class="muted small pv-mt8">Aucune fiche utilisable pour l'instant : ajoutez vos références, qualifications, CV et matériel dans « Mes preuves ».<template v-if="atl.mode!=='modifier'"> <button type="button" class="linkbtn" @click="pvAtlVersPreuves()">Ouvrir « Mes preuves »</button></template></p>
+          <details v-if="pvAtl.d.ecartees.length" class="rn-det pv-mt8"><summary>Fiches non utilisées ({{ pvAtl.d.ecartees.length }})</summary>
+            <ul class="pv-ecart"><li v-for="x in pvAtl.d.ecartees" :key="'ae'+x.id" class="small"><span>{{ x.texte }}</span><span class="muted"> : {{ x.message }}</span></li></ul></details>
+          <div v-if="pvAtl.err" class="conv-err pv-mt8" role="alert"><i data-lucide="circle-alert"></i><div>{{ pvAtl.err }}</div></div>
+        </template>
+      </div>
+      <div class="modal-f"><button type="button" class="btn ghost" @click="pvAtlFermer()">Annuler</button><button type="button" class="btn primary" @click="pvAtlInserer()" :disabled="!pvAtl.choix || pvAtl.busy"><span v-if="pvAtl.busy" class="spin"></span>Insérer</button></div>
+    </div>
+  </div>
+
   <!-- ══════════ MODAL DÉCOUVERTE CO-TRAITANTS RÉELS ══════════ -->
   <div v-if="discover.open" class="overlay" @click.self="discover.open=false">
     <div class="modal wide">
@@ -3345,6 +3556,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-1Q5OkNoZOr8fjywdAPW5tXgXBOIQbPc/HivuGcq76HNgVs+qX31mtOOH5/+fmz0x" defer></script>
+<script src="/static/app.js" integrity="sha384-2lEXmYJJyKOxJQMNtwcId67bjG4V+6A3g5ZDWH+Lo4GKOW7bKLe+8xFQh6nEO8/0" defer></script>
 </body>
 </html>
