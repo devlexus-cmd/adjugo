@@ -112,8 +112,8 @@ _HEAD = (
     (REGLEMENT, r"reglement (particulier )?(de |du )?(la )?consultation"),
     (CADRE, r"cadre (de |du )?(la )?(reponse|memoire)|trame (de |du )?(la )?(reponse|memoire)|questionnaire technique"
             r"|cadre technique de reponse"),
-    (CCAP, r"cahier des clauses administratives particulieres|\bc\.?c\.?a\.?p\.?\b"),
-    (CCTP, r"cahier des clauses techniques particulieres|\bc\.?c\.?t\.?p\.?\b|cahier des charges"),
+    (CCAP, r"cahier des clauses administratives particulieres"),
+    (CCTP, r"cahier des clauses techniques particulieres|cahier des charges"),
     (BORDEREAU, r"decomposition du prix global|bordereau des prix|detail quantitatif estimatif|bordereau de prix"),
     (ACTE_ENGAGEMENT, r"acte d'engagement"),
 )

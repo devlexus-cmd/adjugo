@@ -301,6 +301,22 @@ def test_poids_invente_par_l_ia_jamais_affiche(monkeypatch):
     assert _crit(g, "Prix")["poids"] == "40 %"
 
 
+def test_poids_non_annonce_jamais_ajoute(monkeypatch):
+    """L'IA ne donne pas de poids : on n'en prend jamais un « à côté du nom » (ici celui d'un
+    sous-critère), et la pondération reste à vérifier, sans prétendre « non pondérés »."""
+    rc = ("REGLEMENT DE LA CONSULTATION\nArticle 7 - Critères de jugement des offres\n"
+          "Valeur technique : sous-critère méthodologie 30 points\nPrix\n")
+    g = _analyze(rc, [{"critere": "Valeur technique", "ponderation": "",
+                       "extrait": "Valeur technique : sous-critère méthodologie 30 points"}],
+                 monkeypatch)["details"]["grille_notation"]
+    vt = _crit(g, "Valeur technique")
+    assert vt["statut"] == gn.RETROUVE and vt["poids"] == "" and vt["poids_retenu"] == ""
+    assert g["ponderation"]["statut"] == "incomplet"
+    # L'utilisateur peut alors donner le poids qu'il a lu (ligne retrouvée sans poids).
+    g2 = gn.apply_choice(g, vt["id"], "confirme", poids="60 %")
+    assert _crit(g2, "Valeur technique")["poids_retenu"] == "60 %"
+
+
 def test_total_incoherent_avertit(monkeypatch):
     rc = ("REGLEMENT DE LA CONSULTATION\nArticle 7 - Critères de jugement des offres\n"
           "Valeur technique : 60 %\nPrix : 30 %\n")
@@ -584,7 +600,7 @@ def test_ecrans_carte_comment_vous_serez_note():
     assert "Comment vous serez noté" in html and "Comment vous serez noté" in inv
     assert "function renderGrille" in inv
     # Détails repliés par défaut : <details> sans attribut open.
-    comp = js[js.index('__adjApp.component("grille-carte"'):js.index("window.__adjugo = __adjApp.mount")]
+    comp = js[js.index('__adjApp.component("grille-carte"'):js.index("// ── Réseau de partenaires (vague 3) : petits composants")]
     assert "<details" in comp and not re.search(r"<details[^>]*\bopen\b", comp) and ":open" not in comp
     assert "à vérifier dans le règlement" in comp
     # On ne dit jamais « vérifié » ; jamais de v-html.

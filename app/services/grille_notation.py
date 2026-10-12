@@ -254,6 +254,7 @@ def _recover(stems: list, claimed: Optional[dict], scope: list):
         return None
     for p in scope:
         pos = 0
+        zones = _crit_zones(p) if claimed is None else []
         while True:
             i = _stem_at(p.low, stems[0], pos)
             if i < 0:
@@ -265,7 +266,7 @@ def _recover(stems: list, claimed: Optional[dict], scope: list):
                     continue
                 a, b = i, i + w[4]
             else:
-                if not any(z0 <= i < z1 for z0, z1 in _crit_zones(p)):
+                if not any(z0 <= i < z1 for z0, z1 in zones):
                     continue
                 a, b = i, i + len(stems[0])
             s, phrase = p.line_phrase(a, b)
@@ -325,19 +326,14 @@ def _line(i, name, pond, ex, text, pieces, scope_rc) -> dict:
             else:
                 phrase, piece, pos = vorig, vp, vpos   # vraie phrase, mais sans le poids annoncé
     else:
+        # Aucun poids annoncé : on n'en ajoute jamais un, même lu à côté du nom (ce peut être
+        # celui d'un sous-critère). Si le règlement en écrit, la pondération reste « à vérifier ».
         if vorig:
             phrase, piece, pos = vorig, vp, vpos
         else:
             rec = _recover(stems, None, scope_rc)
             if rec:
                 piece, pos, phrase = rec
-        if phrase and len(phrase) <= 160:
-            # Poids écrit juste après le nom, unique dans une phrase courte : repris tel quel.
-            low = _fold(phrase)
-            at = _stem_at(low, stems[0]) if stems else -1
-            ws = [w for w in _weights_in(phrase) if at >= 0 and 0 <= w[3] - at <= 80]
-            if len(ws) == 1 and len(_weights_in(phrase)) == 1:
-                valeur, unite, poids = ws[0][0], ws[0][1], ws[0][2]
 
     if phrase and not citation_guard(text, phrase, min_len=4):
         phrase, piece, pos, poids, unite, valeur = "", None, None, "", None, None

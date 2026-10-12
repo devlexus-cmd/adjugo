@@ -3602,6 +3602,97 @@ __adjApp.config.errorHandler = function (err, vm, info) {
   } catch (e) {}
 };
 
+// « Comment vous serez noté » (rédaction, vague 1) : la grille de l'acheteur, retrouvée dans le
+// texte du règlement. Accepte la grille complète (chef de file, edit=true) ou la vue publique des
+// partenaires (edit=false, lecture seule). N'affiche QUE ce que le serveur a retrouvé : critère,
+// poids tel qu'écrit, phrase source. Texte toujours rendu en {{ }} (jamais v-html).
+function _gnNum(v) { const n = Number(v); return isFinite(n) ? n.toLocaleString("fr-FR") : String(v || ""); }
+__adjApp.component("grille-carte", {
+  props: { g: { type: Object, default: null }, edit: { type: Boolean, default: false }, busy: { type: String, default: "" } },
+  emits: ["choix"],
+  data() { return { poids: {} }; },
+  computed: {
+    vm() {
+      const g = this.g || {}, c = g.contraintes || {}, cad = c.cadre || {};
+      const lignes = (g.criteres || []).map(x => {
+        const ch = (x.choix_utilisateur && x.choix_utilisateur.choix) || (x.confirme ? "confirme" : x.ecarte ? "ecarte" : "");
+        return { id: x.id || "", critere: x.critere || "", phrase: x.phrase || "", source: x.source || "", statut: x.statut,
+          plan: !!x.dans_le_plan, choix: ch, poids: x.dans_le_plan ? (x.poids_retenu != null ? x.poids_retenu : (x.poids || "")) : "",
+          poidsVous: x.poids_source === "utilisateur" };
+      });
+      const lim = (c.limites || []).filter(x => x && x.type);
+      const vis = c.visite && (c.visite.phrase || c.visite.obligatoire) ? c.visite : null;
+      return { lignes, pond: g.ponderation || {}, ordre: g.ordre || {}, total: g.controle_total || {},
+        impose: !!c.fichier_impose, msgImpose: c.message_fichier || "",
+        phraseOblig: (cad.obligatoire && cad.obligatoire.phrase) || c.phrase_obligation || "",
+        cadreSource: (cad.obligatoire && cad.obligatoire.source) || cad.source || "",
+        cadreFourni: cad.fourni != null ? !!cad.fourni : !!c.cadre_fourni,
+        cadreMentionne: cad.mentionne != null ? !!cad.mentionne : !!c.cadre_mentionne,
+        cadrePhrase: cad.phrase || "", limites: lim, visite: vis,
+        lecture: (g.lecture && Array.isArray(g.lecture.pieces)) ? g.lecture : null };
+    },
+    alerteTotal() { const s = this.vm.total.statut; return s === "ecart" || s === "incomplet"; },
+    rienImpose() { const v = this.vm; return !v.impose && !v.cadreFourni && !v.cadreMentionne && !v.limites.length && !v.visite; },
+  },
+  methods: {
+    lim(x) {
+      if (x.type === "police") { const s = [x.police, x.taille != null ? x.taille : ""].filter(v => v !== "" && v != null).join(" "); return "Police : " + (s || x.texte || ""); }
+      const u = ({ pages: "pages", mots: "mots", caracteres: "caractères", lignes: "lignes" })[x.type] || x.type;
+      return (x.valeur != null ? _gnNum(x.valeur) + " " + u : (x.texte || "")) + " au maximum";
+    },
+    send(l, choix) { this.$emit("choix", l.id, choix, choix === "confirme" ? String(this.poids[l.id] || "").trim() : ""); },
+  },
+  template: '<div class="gn">'
+    + '<ul v-if="vm.lignes.length" class="gn-list">'
+    + '<li v-for="l in vm.lignes" :key="l.id||l.critere" class="gn-row" :class="{off:l.choix===\'ecarte\'}">'
+    + '<span class="gn-crit">{{ l.critere }}</span>'
+    + '<span v-if="l.poids" class="gn-poids num">{{ l.poids }}</span>'
+    + '<span v-if="l.choix===\'ecarte\'" class="pill neutral gn-pill">retiré</span>'
+    + '<span v-else-if="l.choix===\'confirme\' && l.statut===\'a_verifier\'" class="pill neutral gn-pill">{{ edit ? "confirmé par vous" : "confirmé par le chef de file" }}</span>'
+    + '<span v-else-if="l.statut===\'a_verifier\'" class="pill a_etudier gn-pill">à vérifier dans le règlement</span>'
+    + '</li></ul>'
+    + '<p v-if="vm.pond.message" class="muted small gn-note">{{ vm.pond.message }}</p>'
+    + '<div v-if="alerteTotal" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ vm.total.message }}</span></div>'
+    + '<p v-else-if="vm.total.message" class="muted small gn-note">{{ vm.total.message }}</p>'
+    + '<p v-if="vm.lecture && vm.lecture.pieces.length && !vm.lecture.reglement" class="muted small gn-note">Adjugo n\'a pas reconnu de règlement de la consultation parmi les pièces lues : comparez avec le règlement.</p>'
+    + '<details v-if="vm.lignes.length" class="gn-det"><summary>Voir les phrases du règlement</summary>'
+    + '<div v-for="l in vm.lignes" :key="\'p\'+(l.id||l.critere)" class="gn-src">'
+    + '<div class="gn-src-t">{{ l.critere }}<span v-if="l.poids" class="muted"> · {{ l.poids }}<template v-if="l.poidsVous"> (lu par {{ edit ? "vous" : "le chef de file" }})</template></span></div>'
+    + '<blockquote v-if="l.phrase" class="gn-q">{{ l.phrase }}</blockquote>'
+    + '<div v-else class="muted small">Phrase non retrouvée dans le dossier importé.</div>'
+    + '<div v-if="l.source" class="muted small">Trouvée dans : {{ l.source }}</div>'
+    + '<div v-if="edit" class="gn-act">'
+    + '<template v-if="!l.choix && (l.statut===\'a_verifier\' || (!l.poids && vm.pond.statut!==\'non_ponderes\'))">'
+    + '<input class="inp gn-inp" v-model="poids[l.id]" maxlength="40" placeholder="Poids lu, ex. 60 %" :aria-label="\'Poids lu dans le règlement pour \' + l.critere">'
+    + '<button type="button" class="btn sm" :disabled="busy===l.id" @click="send(l,\'confirme\')"><i data-lucide="check"></i>Je l\'ai lu dans le règlement</button>'
+    + '<button type="button" class="btn ghost sm" :disabled="busy===l.id" @click="send(l,\'ecarte\')">Retirer</button>'
+    + '</template>'
+    + '<button v-else-if="l.choix" type="button" class="btn ghost sm" :disabled="busy===l.id" @click="send(l,\'annule\')">Annuler mon choix</button>'
+    + '<button v-else type="button" class="btn ghost sm" :disabled="busy===l.id" @click="send(l,\'ecarte\')">Retirer de mon plan</button>'
+    + '</div></div>'
+    + '<div v-if="vm.ordre.phrase" class="gn-src"><div class="gn-src-t">Ordre des critères</div><blockquote class="gn-q">{{ vm.ordre.phrase }}</blockquote></div>'
+    + '</details>'
+    + '<div class="gn-sub">Ce que le dossier impose'
+    + '<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Repéré dans le texte, sans IA : un cadre de réponse fourni ou imposé, des limites de pages, de mots, de caractères ou de police, une visite obligatoire. Chaque repérage garde sa phrase : relisez-la avant de rédiger.</span></button></div>'
+    + '<div v-if="vm.impose" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ vm.msgImpose }}</span></div>'
+    + '<p v-else-if="vm.cadreFourni" class="small gn-note">Un cadre de réponse est fourni avec le dossier.</p>'
+    + '<p v-else-if="vm.cadreMentionne" class="small gn-note">Le règlement parle d\'un cadre de réponse, mais il ne figure pas dans les fichiers lus.</p>'
+    + '<ul v-if="vm.limites.length || vm.visite" class="gn-chips">'
+    + '<li v-for="(x,i) in vm.limites" :key="\'l\'+i">{{ lim(x) }}</li>'
+    + '<li v-if="vm.visite">Visite obligatoire</li></ul>'
+    + '<p v-if="rienImpose" class="muted small gn-note">Ni cadre de réponse, ni limite de pages ou de police, ni visite obligatoire repérés dans le règlement.</p>'
+    + '<details v-if="!rienImpose" class="gn-det"><summary>Voir les phrases</summary>'
+    + '<div v-if="vm.phraseOblig || vm.cadrePhrase" class="gn-src"><div class="gn-src-t">Cadre de réponse</div><blockquote class="gn-q">{{ vm.phraseOblig || vm.cadrePhrase }}</blockquote><div v-if="vm.cadreSource" class="muted small">Trouvée dans : {{ vm.cadreSource }}</div></div>'
+    + '<div v-for="(x,i) in vm.limites" :key="\'lp\'+i" class="gn-src"><div class="gn-src-t">{{ lim(x) }}</div><blockquote v-if="x.phrase" class="gn-q">{{ x.phrase }}</blockquote><div v-if="x.source" class="muted small">Trouvée dans : {{ x.source }}</div></div>'
+    + '<div v-if="vm.visite" class="gn-src"><div class="gn-src-t">Visite obligatoire</div><blockquote class="gn-q">{{ vm.visite.phrase }}</blockquote><div v-if="vm.visite.source" class="muted small">Trouvée dans : {{ vm.visite.source }}</div></div>'
+    + '</details>'
+    + '<details v-if="vm.lecture && vm.lecture.pieces.length" class="gn-det"><summary>Pièces lues ({{ vm.lecture.pieces.length }})</summary>'
+    + '<ul class="gn-pieces"><li v-for="(p,i) in vm.lecture.pieces" :key="\'pc\'+i"><span>{{ p.libelle }}</span><span v-if="p.nom" class="muted"> · {{ p.nom }}</span>'
+    + '<span v-if="p.lu_en_entier===true" class="muted"> · lue en entier</span><span v-else-if="p.lu_en_entier===false" class="muted"> · lue en partie</span></li></ul>'
+    + '</details>'
+    + '</div>',
+});
+
 // ── Réseau de partenaires (vague 3) : petits composants d'affichage, SANS état propre ──
 // Ils ne font qu'afficher ce que l'API renvoie (libellé, source, date) : aucune note, aucun calcul,
 // aucun « % ». Texte toujours rendu en {{ }} (jamais v-html). Les icônes sont peintes par le
@@ -3663,97 +3754,6 @@ __adjApp.component("rn-fiche", {
     + '<template v-if="c.references && c.references.length"><div class="rn-sub">Références choisies par l\'entreprise</div>'
     + '<ul class="rn-refs"><li v-for="(r,i) in c.references" :key="\'rf\'+i">{{ r.intitule }}<span v-if="r.client" class="muted"> — {{ r.client }}</span><span v-if="r.annee" class="muted"> ({{ r.annee }})</span></li></ul></template>'
     + '<div v-if="c.declare_le" class="muted small rn-decl">Informations déclarées par l\'entreprise, mises à jour le {{ jj(c.declare_le) }}.</div>'
-    + '</div>',
-});
-
-// « Comment vous serez noté » (rédaction, vague 1) : la grille de l'acheteur, retrouvée dans le
-// texte du règlement. Accepte la grille complète (chef de file, edit=true) ou la vue publique des
-// partenaires (edit=false, lecture seule). N'affiche QUE ce que le serveur a retrouvé : critère,
-// poids tel qu'écrit, phrase source. Texte toujours rendu en {{ }} (jamais v-html).
-function _gnNum(v) { const n = Number(v); return isFinite(n) ? n.toLocaleString("fr-FR") : String(v || ""); }
-__adjApp.component("grille-carte", {
-  props: { g: { type: Object, default: null }, edit: { type: Boolean, default: false }, busy: { type: String, default: "" } },
-  emits: ["choix"],
-  data() { return { poids: {} }; },
-  computed: {
-    vm() {
-      const g = this.g || {}, c = g.contraintes || {}, cad = c.cadre || {};
-      const lignes = (g.criteres || []).map(x => {
-        const ch = (x.choix_utilisateur && x.choix_utilisateur.choix) || (x.confirme ? "confirme" : x.ecarte ? "ecarte" : "");
-        return { id: x.id || "", critere: x.critere || "", phrase: x.phrase || "", source: x.source || "", statut: x.statut,
-          plan: !!x.dans_le_plan, choix: ch, poids: x.dans_le_plan ? (x.poids_retenu != null ? x.poids_retenu : (x.poids || "")) : "",
-          poidsVous: x.poids_source === "utilisateur" };
-      });
-      const lim = (c.limites || []).filter(x => x && x.type);
-      const vis = c.visite && (c.visite.phrase || c.visite.obligatoire) ? c.visite : null;
-      return { lignes, pond: g.ponderation || {}, ordre: g.ordre || {}, total: g.controle_total || {},
-        impose: !!c.fichier_impose, msgImpose: c.message_fichier || "",
-        phraseOblig: (cad.obligatoire && cad.obligatoire.phrase) || c.phrase_obligation || "",
-        cadreSource: (cad.obligatoire && cad.obligatoire.source) || cad.source || "",
-        cadreFourni: cad.fourni != null ? !!cad.fourni : !!c.cadre_fourni,
-        cadreMentionne: cad.mentionne != null ? !!cad.mentionne : !!c.cadre_mentionne,
-        cadrePhrase: cad.phrase || "", limites: lim, visite: vis,
-        lecture: (g.lecture && Array.isArray(g.lecture.pieces)) ? g.lecture : null };
-    },
-    alerteTotal() { const s = this.vm.total.statut; return s === "ecart" || s === "incomplet"; },
-    rienImpose() { const v = this.vm; return !v.impose && !v.cadreFourni && !v.cadreMentionne && !v.limites.length && !v.visite; },
-  },
-  methods: {
-    lim(x) {
-      if (x.type === "police") { const s = [x.police, x.taille != null ? x.taille : ""].filter(v => v !== "" && v != null).join(" "); return "Police : " + (s || x.texte || ""); }
-      const u = ({ pages: "pages", mots: "mots", caracteres: "caractères", lignes: "lignes" })[x.type] || x.type;
-      return (x.valeur != null ? _gnNum(x.valeur) + " " + u : (x.texte || "")) + " au maximum";
-    },
-    send(l, choix) { this.$emit("choix", l.id, choix, choix === "confirme" ? String(this.poids[l.id] || "").trim() : ""); },
-  },
-  template: '<div class="gn">'
-    + '<ul v-if="vm.lignes.length" class="gn-list">'
-    + '<li v-for="l in vm.lignes" :key="l.id||l.critere" class="gn-row" :class="{off:l.choix===\'ecarte\'}">'
-    + '<span class="gn-crit">{{ l.critere }}</span>'
-    + '<span v-if="l.poids" class="gn-poids num">{{ l.poids }}</span>'
-    + '<span v-if="l.choix===\'ecarte\'" class="pill neutral gn-pill">retiré</span>'
-    + '<span v-else-if="l.choix===\'confirme\' && l.statut===\'a_verifier\'" class="pill neutral gn-pill">{{ edit ? "confirmé par vous" : "confirmé par le chef de file" }}</span>'
-    + '<span v-else-if="l.statut===\'a_verifier\'" class="pill a_etudier gn-pill">à vérifier dans le règlement</span>'
-    + '</li></ul>'
-    + '<p v-if="vm.pond.message" class="muted small gn-note">{{ vm.pond.message }}</p>'
-    + '<div v-if="alerteTotal" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ vm.total.message }}</span></div>'
-    + '<p v-else-if="vm.total.message" class="muted small gn-note">{{ vm.total.message }}</p>'
-    + '<p v-if="vm.lecture && vm.lecture.pieces.length && !vm.lecture.reglement" class="muted small gn-note">Adjugo n\'a pas reconnu de règlement de la consultation parmi les pièces lues : comparez avec le règlement.</p>'
-    + '<details v-if="vm.lignes.length" class="gn-det"><summary>Voir les phrases du règlement</summary>'
-    + '<div v-for="l in vm.lignes" :key="\'p\'+(l.id||l.critere)" class="gn-src">'
-    + '<div class="gn-src-t">{{ l.critere }}<span v-if="l.poids" class="muted"> · {{ l.poids }}<template v-if="l.poidsVous"> (lu par {{ edit ? "vous" : "le chef de file" }})</template></span></div>'
-    + '<blockquote v-if="l.phrase" class="gn-q">{{ l.phrase }}</blockquote>'
-    + '<div v-else class="muted small">Phrase non retrouvée dans le dossier importé.</div>'
-    + '<div v-if="l.source" class="muted small">Trouvée dans : {{ l.source }}</div>'
-    + '<div v-if="edit" class="gn-act">'
-    + '<template v-if="l.statut===\'a_verifier\' && !l.choix">'
-    + '<input class="inp gn-inp" v-model="poids[l.id]" maxlength="40" placeholder="Poids lu, ex. 60 %" :aria-label="\'Poids lu dans le règlement pour \' + l.critere">'
-    + '<button type="button" class="btn sm" :disabled="busy===l.id" @click="send(l,\'confirme\')"><i data-lucide="check"></i>Je l\'ai lu dans le règlement</button>'
-    + '<button type="button" class="btn ghost sm" :disabled="busy===l.id" @click="send(l,\'ecarte\')">Retirer</button>'
-    + '</template>'
-    + '<button v-else-if="l.choix" type="button" class="btn ghost sm" :disabled="busy===l.id" @click="send(l,\'annule\')">Annuler mon choix</button>'
-    + '<button v-else type="button" class="btn ghost sm" :disabled="busy===l.id" @click="send(l,\'ecarte\')">Retirer de mon plan</button>'
-    + '</div></div>'
-    + '<div v-if="vm.ordre.phrase" class="gn-src"><div class="gn-src-t">Ordre des critères</div><blockquote class="gn-q">{{ vm.ordre.phrase }}</blockquote></div>'
-    + '</details>'
-    + '<div class="gn-sub">Ce que le dossier impose'
-    + '<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Repéré dans le texte, sans IA : un cadre de réponse fourni ou imposé, des limites de pages, de mots, de caractères ou de police, une visite obligatoire. Chaque repérage garde sa phrase : relisez-la avant de rédiger.</span></button></div>'
-    + '<div v-if="vm.impose" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ vm.msgImpose }}</span></div>'
-    + '<p v-else-if="vm.cadreFourni" class="small gn-note">Un cadre de réponse est fourni avec le dossier.</p>'
-    + '<p v-else-if="vm.cadreMentionne" class="small gn-note">Le règlement parle d\'un cadre de réponse, mais il ne figure pas dans les fichiers lus.</p>'
-    + '<ul v-if="vm.limites.length || vm.visite" class="gn-chips">'
-    + '<li v-for="(x,i) in vm.limites" :key="\'l\'+i">{{ lim(x) }}</li>'
-    + '<li v-if="vm.visite">Visite obligatoire</li></ul>'
-    + '<p v-if="rienImpose" class="muted small gn-note">Ni cadre de réponse, ni limite de pages ou de police, ni visite obligatoire repérés dans le règlement.</p>'
-    + '<details v-if="!rienImpose" class="gn-det"><summary>Voir les phrases</summary>'
-    + '<div v-if="vm.phraseOblig || vm.cadrePhrase" class="gn-src"><div class="gn-src-t">Cadre de réponse</div><blockquote class="gn-q">{{ vm.phraseOblig || vm.cadrePhrase }}</blockquote><div v-if="vm.cadreSource" class="muted small">Trouvée dans : {{ vm.cadreSource }}</div></div>'
-    + '<div v-for="(x,i) in vm.limites" :key="\'lp\'+i" class="gn-src"><div class="gn-src-t">{{ lim(x) }}</div><blockquote v-if="x.phrase" class="gn-q">{{ x.phrase }}</blockquote><div v-if="x.source" class="muted small">Trouvée dans : {{ x.source }}</div></div>'
-    + '<div v-if="vm.visite" class="gn-src"><div class="gn-src-t">Visite obligatoire</div><blockquote class="gn-q">{{ vm.visite.phrase }}</blockquote><div v-if="vm.visite.source" class="muted small">Trouvée dans : {{ vm.visite.source }}</div></div>'
-    + '</details>'
-    + '<details v-if="vm.lecture && vm.lecture.pieces.length" class="gn-det"><summary>Pièces lues ({{ vm.lecture.pieces.length }})</summary>'
-    + '<ul class="gn-pieces"><li v-for="(p,i) in vm.lecture.pieces" :key="\'pc\'+i"><span>{{ p.libelle }}</span><span v-if="p.nom" class="muted"> · {{ p.nom }}</span>'
-    + '<span v-if="p.lu_en_entier===true" class="muted"> · lue en entier</span><span v-else-if="p.lu_en_entier===false" class="muted"> · lue en partie</span></li></ul>'
-    + '</details>'
     + '</div>',
 });
 
