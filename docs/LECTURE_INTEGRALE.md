@@ -277,3 +277,23 @@ Avant : 0,0063 $ pour les 14 000 premiers caractères seulement. Borne par jour,
 de 60 000 caractères, sans cache, 22 jours ouvrés) : Pro 50 × 0,024 $ × 22 ≈ 26 $ (22 €) par mois et
 par organisation ; Business 120 × … ≈ 63 $ (54 €) ; usage courant (cache, ≈ 10 questions par jour)
 ≈ 1,3 $ par mois. Avant, seule l'adresse IP limitait : ≈ 84 € par mois et par adresse.
+
+---
+
+## 4. Points restants
+
+- **Rédaction depuis le savoir-faire (moteur B)** : `routers/knowledge.py:131` lit encore le dossier
+  envoyé avec `extract_dce_text` (40 000 caractères) puis `agents/memoire.py:48` n'en garde que
+  24 000. Fichiers en chantier dans la vague 2 (atelier de rédaction), non modifiés ici : à la
+  fusion, l'atelier lit le dossier par `dce_texte.dce_fulltext(project)` ou
+  `dce_texte.dce_pieces_text(project)` (règlement et cadre : `dce_reglement`, passages : `passages`).
+- **Stripe** : créer le compteur et le prix à l'usage, puis renseigner `STRIPE_PRICE_OVERAGE`
+  (§ 2.5). Une unité envoyée avant un redémarrage du serveur ne peut pas être annulée
+  automatiquement si l'analyse est remboursée ensuite (journalisé, à reprendre dans Stripe).
+- **Progression** d'une lecture en tâche de fond : gardée en mémoire du process (process unique) ;
+  après un redémarrage, le job est passé en erreur et l'analyse remboursée (mécanisme existant).
+- **Audit d'accessibilité** (`scripts/a11y_audit.cjs`, Playwright) : non lancé en local (pas de
+  navigateur installable sans réseau) ; les ajouts suivent les motifs existants (bulle (i) avec
+  libellé lu par les lecteurs d'écran, progression annoncée par `aria-live`).
+- **Modèles 5.5** : non migrés (chantier séparé). Le budget de contexte et les prix de `cost_meter`
+  sont à revoir à cette occasion (découpage en tokens × 1,3).
