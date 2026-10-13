@@ -985,7 +985,7 @@ def test_exigences_du_marche_toiture_citees_par_son_dossier(client, demo):
     from app.services import demo_redaction as dr
     from app.services.analysis import citation_guard
     from app.services.dce_lecture import lire_dossier
-    pid = demo["ctx"]["toiture"]
+    pid = _contexte()["toiture"]       # relu en base : un test précédent a pu remettre la vitrine à neuf (Postgres ne réutilise pas les identifiants)
     det = client.get(f"/api/projects/{pid}", headers=demo["pme"]).json()["ai_analysis"]["details"]
     assert det["exigences_verifiees"]["ca_minimum_requis"] is True
     assert det["exigences_verifiees"]["qualifications_requises"] is True
