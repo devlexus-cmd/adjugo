@@ -27,7 +27,9 @@ Sonnet 5.5 ; ancien routage : Claude Sonnet 4.6) :
   fenêtre documentée : 1 000 000 de tokens pour les trois ; on s'impose un budget d'entrée SÛR,
   réglable, ANALYSE_BUDGET_TOKENS = 150 000 tokens (coût, temps de réponse sous le délai
   LLM_TIMEOUT, et fiabilité de lecture des très longs contextes), dont on retire une marge de 10 %,
-  la consigne, le profil et les critères ; conversion PRUDENTE de 3,0 caractères par token
+  la consigne et le reste du prompt (analyse en deux temps, défaut : l'extraction ne reçoit ni profil ni
+  critères — docs/ANALYSE_PARTAGEE.md ; analyse d'origine : profil et critères compris) ; conversion
+  PRUDENTE de 3,0 caractères par token
   (français chiffré : 3,0 à 3,6). Soit environ 390 000 caractères de dossier lus d'un seul tenant
   (≈ 195 000 tokens de Sonnet 5.5, dont le découpage compte ≈ 30 % de plus, si le secours prend le
   relais : toujours très en dessous de sa fenêtre). Rien n'est retiré de ce qui est lu.

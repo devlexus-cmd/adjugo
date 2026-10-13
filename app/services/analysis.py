@@ -448,7 +448,10 @@ Regles importantes :
 #       avance, délai de remise) et une clause du dossier qui dépasse un seuil et manquerait à la liste.
 # ANALYSE_PARTAGEE=0 : retour à l'analyse d'origine en un seul appel (consigne SYSTEM_PROMPT, profil et
 # critères dans le prompt), à l'identique.
-VERSION_CONSIGNES = "1"     # consignes de l'extraction et de la partie propre à l'entreprise : changer → nouvelle clé
+# Version des consignes de l'EXTRACTION (clé de l'analyse partagée ; le texte de SYSTEM_EXTRACTION y entre
+# aussi : le modifier sans changer ce numéro invalide quand même). La consigne de la partie propre à
+# l'entreprise n'y entre pas : cette partie n'est jamais gardée, elle est refaite à chaque analyse.
+VERSION_CONSIGNES = "1"
 
 # (texte d'origine, texte de l'extraction) : TOUT le reste de SYSTEM_PROMPT est repris mot pour mot.
 _EXTRACTION_REMPLACEMENTS = (
@@ -2454,7 +2457,9 @@ def build_entreprise_prompt(result: dict, company=None, criteria=None, lang_name
     faits = {k: v for k, v in det.items() if k not in _HORS_FAITS}
     p = "Redige la partie propre a l'entreprise candidate et produis le JSON demande.\n\n"
     p += "=== ANALYSE OBJECTIVE DU MARCHE (extraite du dossier complet) ===\n"
-    p += json.dumps({"summary": result.get("summary") or "", "details": faits}, ensure_ascii=False, indent=1)
+    # JSON compact : toute l'analyse objective, sans les blancs de mise en forme (moins de tokens, rien de retiré).
+    p += json.dumps({"summary": result.get("summary") or "", "details": faits}, ensure_ascii=False,
+                    separators=(",", ":"))
     p += "\n\n=== CLAUSES A RISQUE (liste numerotee) ===\n"
     clauses = det.get("clauses_risque") if isinstance(det.get("clauses_risque"), list) else []
     lignes = []
