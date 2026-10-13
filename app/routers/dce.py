@@ -39,7 +39,12 @@ def _has_valid_acheteur_token(request: Request) -> bool:
     if not auth.lower().startswith("bearer "):
         return False
     try:
-        return decode_token(auth[7:].strip()).get("typ") == "acheteur"
+        p = decode_token(auth[7:].strip())
+        if p.get("typ") != "acheteur":
+            return False
+        # Session démo ouverte par le lien privé : refusée dès que la clé a changé (sans base).
+        from app.core.demo_guard import DEMO_LIEN_CLAIM, demo_lien_jeton_valide
+        return not p.get(DEMO_LIEN_CLAIM) or demo_lien_jeton_valide(p)
     except Exception:
         return False
 

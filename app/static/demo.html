@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Démonstration — Adjugo</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="preload" href="/static/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:'Bricolage Grotesque';src:url(/static/fonts/bricolage-grotesque.woff2) format('woff2');font-weight:200 800;font-display:swap}
+:root{
+  --paper:#FFFFFF; --paper-2:#F7F9FC;
+  --ink:#0C1526; --ink-2:#46536E; --muted:#6B778A; --faint:#A2ABBC;
+  --line:#E3E8F1; --line-2:#EEF1F7;
+  --blue:#1B4FFF; --blue-deep:#1440D6; --blue-soft:#EEF2FF;
+  --err-soft:#FDF0EF;
+  --display:'Bricolage Grotesque', ui-sans-serif, sans-serif;
+  --body:ui-sans-serif,-apple-system,'Segoe UI',system-ui,'Helvetica Neue',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:var(--paper);color:var(--ink);
+  font-family:var(--body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2.5px solid var(--blue);outline-offset:3px;border-radius:6px}
+[hidden]{display:none!important}
+
+/* ── En-tête ── */
+.top{border-bottom:1px solid var(--line-2)}
+.top-in{max-width:1180px;margin:0 auto;padding:0 32px;height:76px;display:flex;align-items:center}
+.brand{display:inline-flex;align-items:center;gap:2px;font-family:var(--display);font-weight:700;font-size:24px;
+  letter-spacing:-.045em;color:var(--blue)}
+.brand svg{width:.82em;height:.82em;margin-left:.01em}
+
+/* ── Page ── */
+.page{flex:1;width:100%;max-width:640px;margin:0 auto;padding:56px 32px 72px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--blue)}
+h1{font-family:var(--display);font-weight:600;letter-spacing:-.028em;line-height:1.1;text-wrap:balance;
+  font-size:clamp(28px,3.3vw,36px);margin:10px 0 14px}
+.fictif{position:relative;display:flex;align-items:center;gap:8px;margin:0 0 28px;font-size:14.5px;color:var(--ink-2)}
+.pill{display:inline-flex;align-items:center;min-width:0;padding:4px 12px;border-radius:999px;background:var(--blue-soft);
+  color:var(--blue-deep);font-weight:600;font-size:13.5px;line-height:1.4}
+
+/* Bulle d'information (i) : la phrase d'explication sort de la page. Elle s'ouvre sous la ligne
+   qui la porte, calée sur la largeur du contenu : jamais coupée par le bord de l'écran. */
+.tip{position:static;display:inline-grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:50%;
+  background:transparent;color:var(--muted);cursor:help;flex:none}
+.tip svg{width:16px;height:16px}
+.tip:hover,.tip:focus-visible{color:var(--blue);background:var(--blue-soft);outline:none}
+.tip-b{position:absolute;top:calc(100% + 8px);left:0;z-index:5;width:max-content;max-width:min(360px,100%);
+  padding:10px 12px;border-radius:10px;background:var(--ink);color:#fff;
+  font:400 13px/1.5 var(--body);text-align:left;box-shadow:0 10px 30px rgba(0,0,0,.2);display:none;pointer-events:none}
+.tip:hover .tip-b,.tip:focus .tip-b,.tip[aria-expanded="true"] .tip-b{display:block}
+
+/* Choix d'espace */
+.choix{display:grid;gap:14px}
+.espace{display:flex;align-items:center;gap:16px;width:100%;padding:20px 22px;border:1px solid var(--line);border-radius:16px;
+  background:#fff;color:var(--ink);font:inherit;text-align:left;cursor:pointer;
+  transition:border-color .18s,box-shadow .18s,transform .18s}
+.espace:hover{border-color:var(--blue);box-shadow:0 14px 30px -18px rgba(27,79,255,.55);transform:translateY(-1px)}
+.espace:disabled{cursor:wait;opacity:.7;transform:none}
+.espace .ic{width:46px;height:46px;border-radius:12px;background:var(--blue-soft);color:var(--blue);display:grid;place-items:center;flex:none}
+.espace .ic svg{width:22px;height:22px}
+.espace .tx{flex:1;min-width:0}
+.espace b{display:block;font-family:var(--display);font-weight:600;font-size:19px;letter-spacing:-.015em;line-height:1.25}
+.espace small{display:block;margin-top:2px;font-size:14px;color:var(--muted);line-height:1.45}
+.espace .go{width:20px;height:20px;color:var(--faint);flex:none}
+.espace:hover .go{color:var(--blue)}
+
+/* États */
+.etat{display:flex;align-items:center;gap:12px;color:var(--ink-2)}
+.spin{width:20px;height:20px;border:2px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;flex:none}
+.espace .spin{width:22px;height:22px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.alert{display:flex;gap:10px;align-items:flex-start;margin-top:18px;padding:13px 15px;border-radius:12px;font-size:14.5px;line-height:1.5;
+  background:var(--err-soft);color:#8E241E;border:1px solid #F3D3D0}
+.alert svg{width:18px;height:18px;flex-shrink:0;margin-top:2px}
+.carte{border:1px solid var(--line);border-radius:20px;padding:32px 28px;background:linear-gradient(180deg,#fff,var(--paper-2))}
+.carte .ic{width:52px;height:52px;border-radius:50%;background:var(--blue-soft);color:var(--blue);display:grid;place-items:center;margin-bottom:18px}
+.carte .ic svg{width:24px;height:24px}
+.carte h1{font-size:clamp(24px,2.8vw,28px);margin:0 0 6px}
+.carte .ligne{position:relative;margin:0 0 22px;color:var(--ink-2);font-size:15px}
+.carte .ligne .tip{vertical-align:middle;margin-left:2px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 22px;border:0;border-radius:12px;
+  background:var(--blue);color:#fff;font:600 15.5px/1 var(--body);cursor:pointer;box-shadow:0 14px 30px -14px rgba(27,79,255,.65);
+  transition:background .18s}
+.btn:hover{background:var(--blue-deep)}
+.btn.sec{background:#fff;color:var(--ink);border:1px solid var(--line);box-shadow:none;margin-top:12px}
+.btn.sec:hover{border-color:var(--blue);color:var(--blue)}
+
+/* ── Pied de page ── */
+.foot{border-top:1px solid var(--line-2)}
+.foot-in{max-width:1180px;margin:0 auto;padding:26px 32px;display:flex;flex-wrap:wrap;gap:12px 26px;align-items:center;
+  font-size:14px;color:var(--muted)}
+.foot-in nav{display:flex;flex-wrap:wrap;gap:8px 22px;margin-left:auto}
+.foot-in a:hover{color:var(--ink)}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:2s}.espace{transition:none}}
+
+@media (max-width:560px){
+  .top-in{padding:0 16px;height:66px}
+  .brand{font-size:22px}
+  .page{padding:32px 16px 56px}
+  .pill{font-size:12.5px;padding:4px 10px}
+  .espace{padding:16px;gap:14px}
+  .espace .ic{width:42px;height:42px}
+  .espace b{font-size:17.5px}
+  .carte{padding:26px 20px}
+  .btn{width:100%}
+  .foot-in{padding:22px 16px}
+  .foot-in nav{margin-left:0}
+}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="brand" href="/" aria-label="Adjugo, accueil">adjug<svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".3" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".62" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></a>
+</div></header>
+
+<main class="page">
+  <!-- Vérification du lien (jamais affichée sans clé : la page passe directement à « plus valide ») -->
+  <section id="verif" class="etat" aria-live="polite"><span class="spin" aria-hidden="true"></span> Vérification du lien…</section>
+
+  <!-- Clé valide : deux espaces -->
+  <section id="choix" hidden aria-labelledby="t-choix">
+    <div class="eyebrow">Démonstration</div>
+    <h1 id="t-choix">Choisissez l'espace à découvrir</h1>
+    <p class="fictif"><span class="pill">Démonstration : entreprise et données fictives</span>
+      <button type="button" class="tip" aria-expanded="false" aria-label="En savoir plus sur la démonstration"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><span class="tip-b" role="tooltip">Lecture guidée : rien n'est envoyé à des tiers, aucun fichier n'est déposé et l'IA n'est pas sollicitée. L'entreprise, la collectivité et les marchés de la démonstration sont fictifs.</span></button></p>
+    <div class="choix">
+      <button type="button" class="espace" id="go-entreprises">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 20h20"/><path d="M5 20V8l7-4 7 4v12"/><path d="M9 20v-6h6v6"/></svg></span>
+        <span class="tx"><b>Espace entreprises</b><small>TPE, PME et artisans : trouver les marchés, décider, répondre seul ou en groupement.</small></span>
+        <svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+      <button type="button" class="espace" id="go-collectivites">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M4 21V10M20 21V10M8 21V10M12 21V10M16 21V10"/><path d="M2 10 12 3l10 7Z"/></svg></span>
+        <span class="tx"><b>Espace collectivités</b><small>Acheteurs publics : préparer une consultation et sonder les entreprises.</small></span>
+        <svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    </div>
+  </section>
+
+  <!-- Clé absente, fausse ou retirée -->
+  <section id="invalide" class="carte" hidden aria-labelledby="t-inv" tabindex="-1">
+    <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+    <h1 id="t-inv">Ce lien de démonstration n'est plus valide.</h1>
+    <p class="ligne">Découvrez Adjugo avec nous en 30 minutes.
+      <button type="button" class="tip" aria-expanded="false" aria-label="Vous avez reçu ce lien récemment ?"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><span class="tip-b" role="tooltip">Vous avez reçu ce lien récemment ? Rouvrez-le depuis votre message : s'il est toujours actif, la démonstration s'ouvrira.</span></button></p>
+    <a class="btn" href="/demande-acces">Demander un accès</a>
+  </section>
+
+  <!-- Panne passagère (réseau, trop de tentatives) : la clé reste en mémoire, on peut réessayer -->
+  <section id="erreur" hidden>
+    <div class="alert" role="alert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg><span id="erreurTxt"></span></div>
+    <button type="button" class="btn sec" id="reessayer">Réessayer</button>
+  </section>
+</main>
+
+<footer class="foot"><div class="foot-in">
+  <span>© 2026 Adjugo · PADIS</span>
+  <nav aria-label="Informations légales"><a href="/mentions-legales">Mentions légales</a><a href="/cgv">CGV</a><a href="/confidentialite">Confidentialité</a><a href="/securite">Sécurité</a></nav>
+</div></footer>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var RESEAU = "Connexion impossible. Vérifiez votre réseau, puis réessayez.";
+  var TROP = "Plusieurs tentatives viennent d'être faites depuis votre connexion. Réessayez dans quelques minutes.";
+  var PANNE = "La démonstration n'a pas pu s'ouvrir. Réessayez dans un instant.";
+
+  // 1. La clé arrive dans le FRAGMENT (#<clé>) : le navigateur ne l'envoie jamais au serveur dans
+  //    l'adresse. Retour arrière ou rechargement : elle est relue dans l'état de CETTE entrée
+  //    d'historique (propre à l'onglet, jamais transmise).
+  function lireCle(){
+    var c = "";
+    try {
+      var h = (location.hash || "").replace(/^#/, "");
+      try { h = decodeURIComponent(h); } catch (e) {}
+      var st = (history.state && typeof history.state.demoCle === "string") ? history.state.demoCle : "";
+      c = String(h || st || "").trim();
+    } catch (e) { c = ""; }
+    // 2. Effacée aussitôt de la barre d'adresse (et donc de tout lien copié depuis celle-ci).
+    try { history.replaceState(c ? { demoCle: c } : null, "", location.pathname); } catch (e) {}
+    return c;
+  }
+  var cle = lireCle();
+
+  var actif = null;   // tâche à relancer par « Réessayer »
+  var aRetablir = null;
+  window.addEventListener("pageshow", function(ev){
+    if (ev.persisted && aRetablir) { aRetablir(); aRetablir = null; }
+  });
+
+  function montrer(id){
+    ["verif", "choix", "invalide", "erreur"].forEach(function(k){ $(k).hidden = (k !== id); });
+    if (id === "invalide") $("invalide").focus();
+  }
+  function erreur(msg, relance){ $("erreurTxt").textContent = msg; actif = relance; montrer("erreur"); }
+
+  // La clé part dans le CORPS de la requête, jamais dans l'adresse.
+  function poster(url){
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cle: cle }), credentials: "same-origin", cache: "no-store", referrerPolicy: "no-referrer" });
+  }
+
+  function verifier(){
+    montrer("verif");
+    poster("/api/auth/demo/lien").then(function(r){
+      if (r.ok) { montrer("choix"); return; }
+      if (r.status === 429) { erreur(TROP, verifier); return; }
+      if (r.status >= 500) { erreur(PANNE, verifier); return; }
+      montrer("invalide");
+    }).catch(function(){ erreur(RESEAU, verifier); });
+  }
+
+  var ESPACES = {
+    entreprises: { route: "/api/auth/demo", page: "/app", btn: "go-entreprises",
+      garder: function(t){
+        localStorage.setItem("adjugo_token", t);
+        // Horodatage d'activité à jour : sinon le verrou d'inactivité du logiciel effacerait la session.
+        localStorage.setItem("adjugo_active", String(Date.now()));
+      } },
+    collectivites: { route: "/api/acheteur/demo", page: "/acheteur/app", btn: "go-collectivites",
+      garder: function(t){ localStorage.setItem("adjugo_acheteur_token", t); } }
+  };
+
+  function ouvrir(nom){
+    var e = ESPACES[nom], b = $(e.btn), go = b.querySelector(".go"), spin = null;
+    var tous = document.querySelectorAll(".espace");
+    for (var i = 0; i < tous.length; i++) tous[i].disabled = true;
+    if (go) { spin = document.createElement("span"); spin.className = "spin"; spin.setAttribute("aria-hidden", "true"); go.replaceWith(spin); }
+    function fin(){
+      for (var i = 0; i < tous.length; i++) tous[i].disabled = false;
+      if (spin && go) spin.replaceWith(go);
+    }
+    poster(e.route)
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(d){ return { s: r.status, d: d }; }); })
+      .then(function(res){
+        if (res.s === 200 && res.d && res.d.access_token) {
+          try { e.garder(res.d.access_token); }
+          catch (x) { fin(); erreur("Votre navigateur refuse d'enregistrer la session. Autorisez les données de ce site, puis réessayez.", function(){ montrer("choix"); }); return; }
+          aRetablir = fin;      // retour arrière servi depuis le cache du navigateur : boutons rétablis
+          location.assign(e.page);
+          return;
+        }
+        fin();
+        if (res.s === 404) { montrer("invalide"); return; }
+        if (res.s === 429) { erreur(TROP, function(){ montrer("choix"); }); return; }
+        erreur(PANNE, function(){ montrer("choix"); });
+      })
+      .catch(function(){ fin(); erreur(RESEAU, function(){ montrer("choix"); }); });
+  }
+
+  $("go-entreprises").addEventListener("click", function(){ ouvrir("entreprises"); });
+  $("go-collectivites").addEventListener("click", function(){ ouvrir("collectivites"); });
+  $("reessayer").addEventListener("click", function(){ if (actif) actif(); });
+
+  // Bulles (i) au toucher : Safari sur iPhone ne donne pas le focus à un bouton touché.
+  document.addEventListener("click", function(ev){
+    var t = ev.target && ev.target.closest ? ev.target.closest(".tip") : null;
+    var tips = document.querySelectorAll(".tip");
+    for (var i = 0; i < tips.length; i++) {
+      if (tips[i] !== t) tips[i].setAttribute("aria-expanded", "false");
+    }
+    if (t) t.setAttribute("aria-expanded", t.getAttribute("aria-expanded") === "true" ? "false" : "true");
+  });
+
+  // Clé absente (ou manifestement pas une clé) : aucune requête, la page le dit tout de suite.
+  function demarrer(){
+    if (!cle || cle.length > 256) { montrer("invalide"); return; }
+    verifier();
+  }
+  // Lien collé dans un onglet déjà ouvert sur /demo : le navigateur ne recharge pas la page, il
+  // change seulement le fragment. On relit la clé et on l'efface de la même façon.
+  window.addEventListener("hashchange", function(){
+    if (!location.hash || location.hash === "#") return;
+    cle = lireCle();
+    demarrer();
+  });
+  demarrer();
+})();
+</script>
+</body>
+</html>

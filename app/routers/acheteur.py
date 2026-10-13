@@ -25,10 +25,11 @@ router = APIRouter(prefix="/api/acheteur", tags=["Espace acheteur (collectivité
 _MAX_DCES = 200   # garde-fou par compte
 
 
-def _token(a: Acheteur) -> str:
-    # `typ="acheteur"` = la clé du cloisonnement (refusé par l'auth PME).
-    return create_access_token(data={"sub": str(a.id), "tv": int(a.token_version or 0),
-                                     "typ": "acheteur"})
+def _token(a: Acheteur, extra: dict | None = None) -> str:
+    # `typ="acheteur"` = la clé du cloisonnement (refusé par l'auth PME). `extra` : seulement
+    # l'empreinte du lien privé de démonstration (cf. demo_guard.demo_ouverture).
+    return create_access_token(data={**(extra or {}), "sub": str(a.id),
+                                     "tv": int(a.token_version or 0), "typ": "acheteur"})
 
 
 def _norm_email(e: str) -> str:
@@ -94,17 +95,24 @@ def login(request: Request, data: LoginIn, db: Session = Depends(get_db)):
             "nom_collectivite": a.nom_collectivite, "email": a.email}
 
 
+class DemoLienIn(BaseModel):
+    """Corps de la route de démonstration : la clé du lien privé (jamais dans l'adresse)."""
+    cle: str = Field(default="", max_length=256)
+
+
 @router.post("/demo")
 @limiter.limit("30/hour")
-def demo(request: Request, db: Session = Depends(get_db)):
+def demo(request: Request, data: DemoLienIn | None = None, db: Session = Depends(get_db)):
     """Connexion au compte de DÉMONSTRATION (collectivité fictive pré-remplie), SANS mot de
-    passe — bac à sable public, pour découvrir le produit immédiatement."""
-    from app.core.demo_guard import demo_public
-    if not demo_public():
+    passe, en lecture seule. S'ouvre si la démo publique est rouverte (DEMO_PUBLIC=1) ou avec
+    la clé du lien privé (corps de la requête, DEMO_LIEN_CLE) ; sinon 404."""
+    from app.core.demo_guard import demo_ouverture
+    extra = demo_ouverture(data.cle if data else "")
+    if extra is None:
         raise HTTPException(status_code=404, detail="Not Found")
     from app.services.acheteur_demo_seed import ensure_demo_acheteur
     a = ensure_demo_acheteur(db)
-    return {"access_token": _token(a), "token_type": "bearer", "demo": True,
+    return {"access_token": _token(a, extra), "token_type": "bearer", "demo": True,
             "nom_collectivite": a.nom_collectivite, "email": a.email}
 
 

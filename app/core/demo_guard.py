@@ -16,6 +16,8 @@ existantes (lecture seule) et on renvoie 403 si c'est le compte démo. Toute aut
 passe sans aucun coût supplémentaire. Défense en profondeur : consume_analysis (quota.py)
 refuse aussi tout appel IA du compte démo (les analyses DEMO- ne passent jamais par là).
 """
+import hashlib
+import hmac
 import logging
 import os
 import re
@@ -30,6 +32,87 @@ def demo_public() -> bool:
     Réactivable sans code via DEMO_PUBLIC=1. Fermée, les routes de connexion démo répondent
     404 et toute session démo déjà ouverte est refusée (401)."""
     return os.getenv("DEMO_PUBLIC", "").strip().lower() in ("1", "true", "yes", "oui")
+
+
+# ── Lien privé de démonstration (13/10/2026) ─────────────────────────────────────────────
+# La démo reste fermée au public ; Eliot la redonne à qui il veut (Mathys, prospection) par un
+# lien https://adjugo.pro/demo#<clé>. La clé est dans le FRAGMENT : le navigateur ne l'envoie
+# jamais au serveur dans l'adresse (ni journaux d'accès, ni Referer) ; la page /demo la lit,
+# l'efface de la barre d'adresse et l'envoie dans le CORPS d'un POST. Voir docs/DEMO_LIEN_PRIVE.md.
+#
+# Révocation : une session ouverte par le lien porte l'empreinte de la clé (revendication
+# « dl » du jeton). Elle n'est acceptée que si cette empreinte est celle de la clé ACTUELLE :
+# changer ou retirer DEMO_LIEN_CLE coupe toutes les sessions ouvertes avec l'ancienne clé.
+# Les sessions ouvertes par DEMO_PUBLIC=1 (sans « dl ») gardent leur comportement.
+# La clé n'est JAMAIS journalisée : le corps des requêtes ne part pas chez Sentry, et la valeur
+# exacte de la clé est masquée dans tout journal (app.core.redact).
+DEMO_LIEN_MIN = 32      # en dessous, la clé est ignorée : lien fermé
+DEMO_LIEN_CLAIM = "dl"
+
+
+def demo_lien_cle() -> str:
+    """Clé du lien privé (DEMO_LIEN_CLE), ou "" si absente ou trop courte (lien fermé)."""
+    v = (os.getenv("DEMO_LIEN_CLE") or "").strip()
+    return v if len(v) >= DEMO_LIEN_MIN else ""
+
+
+def _empreinte(cle: str) -> str:
+    """16 premiers caractères d'un HMAC-SHA256 de la clé (clé du HMAC : SECRET_KEY). Elle ne
+    permet pas de retrouver la clé et ne se fabrique pas sans SECRET_KEY."""
+    from app.core.config import get_settings
+    k = (get_settings().SECRET_KEY or "").encode("utf-8")
+    return hmac.new(k, b"adjugo-demo-lien:" + cle.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+
+
+def demo_lien_empreinte() -> str:
+    """Empreinte de la clé ACTUELLE, ou "" si le lien est fermé."""
+    cle = demo_lien_cle()
+    return _empreinte(cle) if cle else ""
+
+
+def demo_lien_valide(cle) -> bool:
+    """Vrai si `cle` est la clé du lien privé (comparaison à temps constant). Lien fermé
+    (variable absente ou trop courte), clé vide ou d'un autre type : False."""
+    attendue = demo_lien_cle()
+    if not attendue or not isinstance(cle, str):
+        return False
+    fournie = cle.strip()
+    if not fournie:
+        return False
+    # Sur des octets : compare_digest sur des chaînes non ASCII lève TypeError.
+    return hmac.compare_digest(fournie.encode("utf-8"), attendue.encode("utf-8"))
+
+
+def demo_ouverture(cle) -> Optional[dict]:
+    """Revendications à ajouter au jeton d'une session démo, ou None si la démo ne s'ouvre
+    pas (les routes répondent alors 404, comme une démo fermée : rien ne révèle le lien).
+    Clé valide → session « lien privé » (révocable) ; sinon démo publique si DEMO_PUBLIC=1."""
+    if demo_lien_valide(cle):
+        return {DEMO_LIEN_CLAIM: demo_lien_empreinte()}
+    if demo_public():
+        return {}
+    return None
+
+
+def demo_lien_jeton_valide(payload: dict) -> bool:
+    """Jeton ouvert par le lien privé : son empreinte est-elle celle de la clé ACTUELLE ?"""
+    dl = (payload or {}).get(DEMO_LIEN_CLAIM)
+    actuelle = demo_lien_empreinte()
+    if not actuelle or not isinstance(dl, str) or not dl:
+        return False
+    return hmac.compare_digest(dl.encode("utf-8"), actuelle.encode("utf-8"))
+
+
+def demo_session_valide(payload: dict) -> bool:
+    """Une session du compte démo (PME ou collectivités) est-elle encore acceptée ?
+    Ouverte par le lien privé (revendication « dl ») : seulement si la clé n'a pas changé.
+    Ouverte autrement (démo publique) : seulement si la démo publique est ouverte."""
+    if (payload or {}).get(DEMO_LIEN_CLAIM):
+        return demo_lien_jeton_valide(payload)
+    return demo_public()
+
+
+DEMO_LIEN_PERIME = "Ce lien de démonstration n'est plus valide."
 
 _ID = r"[^/]+"
 

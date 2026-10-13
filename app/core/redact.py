@@ -12,6 +12,7 @@ Un seul jeu de règles, utilisé par :
   - les crochets Sentry `before_send` / `before_breadcrumb` (`app.core.observability`).
 
 Règles :
+  - valeur exacte de la clé du lien privé de démonstration (DEMO_LIEN_CLE) → `***` ;
   - `/invite/<jeton>`            → `/invite/***` (le reste du chemin est conservé) ;
   - `verify=…`, `token=…`, `code=…`, `reset=…` et autres paramètres secrets → `nom=***` ;
   - JWT (`eyJ…`) et `Bearer <jeton>` → `***` ;
@@ -57,10 +58,25 @@ SENSITIVE_KEYS = frozenset({
 })
 
 
+def _secrets_exacts():
+    """Secrets de configuration à masquer par leur VALEUR exacte, où qu'ils apparaissent :
+    la clé du lien privé de démonstration (DEMO_LIEN_CLE). Elle ne doit atteindre aucun
+    journal ni Sentry, même recopiée par erreur dans un message."""
+    try:
+        from app.core.demo_guard import demo_lien_cle   # même règle que les routes (≥ 32 caractères)
+        v = demo_lien_cle()
+    except Exception:
+        return ()
+    return (v,) if v else ()
+
+
 def mask_text(text):
     """Masque jetons, secrets et adresses email dans une chaîne. Non-chaîne : inchangé."""
     if not isinstance(text, str) or not text:
         return text
+    for v in _secrets_exacts():
+        if v in text:
+            text = text.replace(v, MASK)
     s = _RE_JWT.sub(MASK, text)
     s = _RE_BEARER.sub(lambda m: m.group(1) + MASK, s)
     s = _RE_INVITE.sub(lambda m: m.group(1) + MASK, s)

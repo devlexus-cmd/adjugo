@@ -109,13 +109,22 @@ def get_current_acheteur(token: str = Depends(oauth2_acheteur), db: Session = De
     if int(payload.get("tv") or 0) != int(getattr(acheteur, "token_version", 0) or 0):
         raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
                             headers={"WWW-Authenticate": "Bearer"})
-    from app.core.demo_guard import demo_public
-    if not demo_public():
-        from app.services.acheteur_demo_seed import DEMO_EMAIL as _ACH_DEMO
-        if (getattr(acheteur, "email", "") or "").strip().lower() == _ACH_DEMO:
-            raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
-                                headers={"WWW-Authenticate": "Bearer"})
+    # Compte démo : accepté seulement si la démo publique est ouverte ou, pour une session
+    # ouverte par le lien privé, si la clé du lien n'a pas changé (cf. demo_guard).
+    from app.services.acheteur_demo_seed import DEMO_EMAIL as _ACH_DEMO
+    if (getattr(acheteur, "email", "") or "").strip().lower() == _ACH_DEMO:
+        _refuser_session_demo_perimee(payload)
     return acheteur
+
+
+def _refuser_session_demo_perimee(payload: dict) -> None:
+    """401 si la session démo (PME ou collectivités) n'est plus acceptée : démo publique
+    fermée, ou lien privé dont la clé a changé ou a été retirée."""
+    from app.core.demo_guard import demo_session_valide, DEMO_LIEN_CLAIM, DEMO_LIEN_PERIME
+    if demo_session_valide(payload):
+        return
+    detail = DEMO_LIEN_PERIME if payload.get(DEMO_LIEN_CLAIM) else "Session expirée, reconnectez-vous"
+    raise HTTPException(status_code=401, detail=detail, headers={"WWW-Authenticate": "Bearer"})
 
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -154,11 +163,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if int(payload.get("tv") or 0) != int(getattr(user, "token_version", 0) or 0):
         raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
                             headers={"WWW-Authenticate": "Bearer"})
-    # Démo publique fermée : une session démo ouverte auparavant ne donne plus accès.
-    from app.core.demo_guard import demo_public
-    if not demo_public():
-        from app.services.demo_seed import DEMO_EMAIL
-        if (getattr(user, "email", "") or "").strip().lower() == DEMO_EMAIL:
-            raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
-                                headers={"WWW-Authenticate": "Bearer"})
+    # Démo publique fermée : une session démo ouverte auparavant ne donne plus accès, sauf
+    # session ouverte par le lien privé avec la clé ACTUELLE (cf. demo_guard).
+    from app.services.demo_seed import DEMO_EMAIL
+    if (getattr(user, "email", "") or "").strip().lower() == DEMO_EMAIL:
+        _refuser_session_demo_perimee(payload)
     return user

@@ -417,6 +417,18 @@ function atlPurgeDrafts(tous) {
     });
   } catch (e) { /* stockage interdit : rien à effacer */ }
 }
+// Session ouverte par le lien privé de démonstration (/demo#<clé>) : son jeton porte « dl »
+// (empreinte de la clé). Session refusée → retour sur /demo, qui dit si le lien vaut encore.
+function jetonDemoLien(t) {
+  try {
+    let p = String(t || "").split(".")[1];
+    if (!p) return false;
+    p = p.replace(/-/g, "+").replace(/_/g, "/");
+    while (p.length % 4) p += "=";
+    const j = JSON.parse(atob(p));
+    return !!(j && j.dl);
+  } catch (e) { return false; }
+}
 function _atlReEsc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function _atlKey(s) { return String(s || "").toLowerCase().replace(/\s+/g, " ").trim(); }
 // Motif d'un fait : espaces souples (une espace insécable du texte vaut une espace), bornes de mot
@@ -984,7 +996,7 @@ const __adjApp = createApp({
       if (body && !isForm) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
       if (isForm) opt.body = body;
       const r = await fetch(path, opt);
-      if (r.status === 401) { this.logout(); throw new Error("Session expirée"); }
+      if (r.status === 401) { this.sessionPerdue(); throw new Error("Session expirée"); }
       const txt = await r.text();
       let data = null;
       try { data = txt ? JSON.parse(txt) : null; } catch (e) { data = null; }   // réponse non-JSON (ex. 500 « Internal Server Error »)
@@ -1082,6 +1094,12 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
     logout() { localStorage.removeItem("adjugo_token"); localStorage.removeItem("adjugo_active"); atlPurgeDrafts(true); window.location.href = "/"; },
+    // Session refusée par le serveur (401) : même nettoyage que la déconnexion ; une session du
+    // lien privé de démonstration revient sur /demo (qui dit si le lien vaut encore).
+    sessionPerdue() {
+      if (!jetonDemoLien(this.token)) { this.logout(); return; }
+      localStorage.removeItem("adjugo_token"); localStorage.removeItem("adjugo_active"); atlPurgeDrafts(true); window.location.href = "/demo";
+    },
     dismissOnboarding() { try { localStorage.setItem("adjugo_onboarding_done", "1"); } catch (e) {} this.$forceUpdate(); },
     // ── Feedback in-app ──
     openFeedback() { this.fb.open = true; this.fb.message = ""; this.fb.kind = "idee"; },
@@ -5073,7 +5091,7 @@ const __adjApp = createApp({
       try {
         const r = await fetch(this._atlUrl("/export"), { method: "POST", headers: { Authorization: "Bearer " + this.token, "Content-Type": "application/json" },
           body: JSON.stringify({ format: fmt, etat_hash: st.blocage && st.blocage.etat_hash }) });
-        if (r.status === 401) { this.logout(); return; }
+        if (r.status === 401) { this.sessionPerdue(); return; }
         if (!r.ok) {
           const j = await r.json().catch(() => ({})), d = j && j.detail;
           const msg = (d && typeof d === "object" && d.message) || (typeof d === "string" && d) || (r.status === 429 ? TOO_MANY_MSG : "Export impossible pour le moment.");
