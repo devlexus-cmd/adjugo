@@ -141,6 +141,11 @@ _BLOCKED = [
     ("POST",   "/api/projects/{pid}/groupement/convention/generer",    "monter un groupement"),
     ("POST",   "/api/projects/{pid}/groupement/convention/valider",    "monter un groupement"),
     ("POST",   "/api/projects/{pid}/groupement/convention/hors-ligne/{lid}", "monter un groupement"),
+    # Composition retenue et offre figée du groupement de la vitrine : les défaire (ou retenir une
+    # autre composition) rendrait caduque la convention validée par tous, pour chaque visiteur.
+    ("POST",   "/api/projects/{pid}/groupement/retenir",       "monter un groupement"),
+    ("DELETE", "/api/projects/{pid}/groupement/plan",          "monter un groupement"),
+    ("DELETE", "/api/projects/{pid}/offre/figer",              "monter un groupement"),
     # Réseau de partenaires (vague 3) : la démo ne publie rien, n'invite personne du réseau et
     # ne voit aucun profil réel (réciprocité : il faudrait un profil publié).
     ("PUT",    "/api/reseau/profil",                          "rejoindre le réseau de partenaires"),

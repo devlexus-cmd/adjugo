@@ -221,23 +221,31 @@ def _pdf(titre: str, paragraphes: list) -> bytes:
     return buf.getvalue()
 
 
-def dossier_zip() -> bytes:
-    """Le dossier du marché, en archive ZIP (dates fixes : octets stables)."""
+def dossier_zip(pieces=None, dossier: str = None) -> bytes:
+    """Le dossier du marché, en archive ZIP (dates fixes : octets stables). Par défaut celui du marché
+    « toiture » ; `pieces` / `dossier` servent au dossier fictif du gymnase de Kerhel (demo_groupement)."""
+    pieces = PIECES if pieces is None else pieces
+    dossier = _DOSSIER_ZIP if dossier is None else dossier
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for nom, titre, paras in PIECES:
-            zi = zipfile.ZipInfo(f"{_DOSSIER_ZIP}/{nom}", date_time=(2026, 10, 1, 9, 0, 0))
+        for nom, titre, paras in pieces:
+            zi = zipfile.ZipInfo(f"{dossier}/{nom}", date_time=(2026, 10, 1, 9, 0, 0))
             zi.compress_type = zipfile.ZIP_DEFLATED
             z.writestr(zi, _pdf(titre, paras))
     return buf.getvalue()
 
 
-def lecture_toiture(contenu: bytes) -> dict:
-    """La lecture INTÉGRALE du dossier, par le vrai moteur (sans IA, sans OCR : PDF texte)."""
+def lecture_dossier(nom: str, contenu: bytes) -> dict:
+    """La lecture INTÉGRALE d'un dossier, par le vrai moteur (sans IA, sans OCR : PDF texte)."""
     from app.services.dce_lecture import lire_dossier
-    lecture = lire_dossier(DCE_NOM, contenu, mode="direct")
+    lecture = lire_dossier(nom, contenu, mode="direct")
     lecture["source_empreinte"] = hashlib.sha256(contenu).hexdigest()
     return lecture
+
+
+def lecture_toiture(contenu: bytes) -> dict:
+    """La lecture INTÉGRALE du dossier du marché « toiture »."""
+    return lecture_dossier(DCE_NOM, contenu)
 
 
 def analyse_toiture(base: dict, lecture: dict, company: dict, criteria: dict) -> dict:
@@ -283,37 +291,56 @@ def _sauver_si_absent(storage, key: str, data: bytes, mime: str) -> None:
     storage.save(key, data, mime)
 
 
-def ranger_dossier(db, user, project, contenu: bytes, lecture: dict) -> None:
-    """Le fichier du dossier dans le coffre du marché (dossier « DCE ») et sa lecture intégrale rangée
-    (Project.dce_file_key), sous des clés liées au contenu : relancer le seed ne crée aucun fichier."""
+def ranger_lecture(project, contenu: bytes, lecture: dict, prefixe: str = "toiture",
+                   version: str = None) -> str:
+    """Le fichier du dossier et sa lecture intégrale rangés dans le stockage, sous des clés liées au
+    contenu (relancer le seed ne crée aucun fichier), la lecture rattachée au marché
+    (Project.dce_file_key). Renvoie la clé du fichier du dossier."""
     import gzip
     import json
-    from app.models import DocCategory, Document
     from app.services import dce_texte
     from app.services.storage import get_storage
     storage = get_storage()
     h = hashlib.sha256(contenu).hexdigest()[:16]
-    zkey = f"demo/dce_toiture_{h}.zip"
+    zkey = f"demo/dce_{prefixe}_{h}.zip"
     _sauver_si_absent(storage, zkey, contenu, "application/zip")
     # Même format que dce_texte.sauver, sous une clé stable (sauver tire une clé neuve à chaque appel).
-    lkey = f"demo/{dce_texte.FOLDER_KEY}/toiture_{h}_{_VERSION}.json.gz"
+    lkey = f"demo/{dce_texte.FOLDER_KEY}/{prefixe}_{h}_{version or _VERSION}.json.gz"
     try:
         storage.load(lkey)
     except Exception:       # noqa: BLE001 — absente : on la range
         data = gzip.compress(json.dumps(dce_texte._payload(lecture), ensure_ascii=False).encode("utf-8"),
                              compresslevel=6)
         storage.save(lkey, data, "application/gzip")
+    project.dce_file_key = lkey
+    return zkey
+
+
+def ranger_document(db, user, project, contenu: bytes, nom: str = None, prefixe: str = "toiture") -> None:
+    """Le fichier du dossier dans le coffre du marché (dossier « DCE »), comme après un vrai import.
+    Clé liée au contenu : le fichier est rangé une seule fois."""
+    from app.models import DocCategory, Document
+    from app.services.storage import get_storage
+    h = hashlib.sha256(contenu).hexdigest()[:16]
+    zkey = f"demo/dce_{prefixe}_{h}.zip"
+    _sauver_si_absent(get_storage(), zkey, contenu, "application/zip")
     doc = (db.query(Document).filter(Document.user_id == user.id, Document.project_id == project.id,
                                      Document.folder == "DCE").order_by(Document.id.desc()).first())
     if doc is None:
         doc = Document(user_id=user.id, project_id=project.id, folder="DCE", category=DocCategory.autre)
         db.add(doc)
-    doc.name = DCE_NOM
+    doc.name = nom or DCE_NOM
     doc.file_key = zkey
     doc.file_size = len(contenu)
     doc.mime_type = "application/zip"
-    project.dce_file_key = lkey
     db.flush()
+
+
+def ranger_dossier(db, user, project, contenu: bytes, lecture: dict) -> None:
+    """Le fichier du dossier dans le coffre du marché (dossier « DCE ») et sa lecture intégrale rangée
+    (Project.dce_file_key), sous des clés liées au contenu : relancer le seed ne crée aucun fichier."""
+    ranger_lecture(project, contenu, lecture)
+    ranger_document(db, user, project, contenu)
 
 
 # ── 2. « Mon savoir-faire » complété et « Mes preuves » ────────────────────────────────────────────

@@ -7,7 +7,9 @@ LLM), avec détail du score, clauses à risque, pièces requises, source BOAMP, 
 co-traitants rattachés (dont un désamianteur sur le marché « à étudier » pour illustrer le
 groupement). Idempotent ; force=True réinitialise.
 La rédaction (grille « Comment vous serez noté », dossier du marché lu en entier, « Mes preuves »,
-dossier de présentation déjà rédigé) est remplie par app/services/demo_redaction.py, sans IA.
+dossier de présentation déjà rédigé) est remplie par app/services/demo_redaction.py, sans IA ; le groupement
+de Kerhel (dossier lu en entier, convention générée et validée par les deux membres, formulaires officiels)
+par app/services/demo_groupement.py, sans IA.
 
 Branché au démarrage (main.py) et accessible via /api/auth/demo (connexion sans mot de passe).
 """
@@ -141,11 +143,11 @@ def _projects():
         "criteres_attribution": [{"critere": "Prix", "ponderation": "50%"}, {"critere": "Valeur technique", "ponderation": "50%"}],
         "garanties_exigees": "Retenue de garantie 5% + garantie à première demande", "penalites": "1/1000 du HT par jour",
         "sous_traitance": "Autorisée", "variantes": "Non autorisées", "critere_rse": "Oui — bilan carbone exigé",
-        "ca_minimum_requis": "CA > 3 000 000 EUR sur 3 ans", "qualifications_requises": ["Qualification désamiantage SS3", "Certification amiante sous-section 3"],
+        "ca_minimum_requis": "CA annuel moyen ≥ 3 000 000 EUR (3 derniers exercices)", "qualifications_requises": ["Qualification désamiantage SS3", "Certification amiante sous-section 3"],
         "assurances_requises": ["RC Professionnelle", "Garantie décennale", "Assurance amiante"],
         "visite_obligatoire": "Obligatoire — 05/12/2026 à 14h",
         "points_attention": ["Désamiantage : qualification SS3 exigée (non détenue)", "CA minimum exigé (3 M€) supérieur à votre CA", "Garantie à première demande"],
-        "recommandation": "Réhabilitation énergétique et désamiantage d'un gymnase, pour 1,25 M€ HT, allotie en trois lots (désamiantage, isolation/énergie, gros œuvre/étanchéité), portée par Kerhel Agglomération. Le marché est en zone et sur votre cœur de métier (rénovation énergétique), ce qui en fait une opportunité réelle — mais deux verrous conditionnent la recevabilité.\n\nPremier verrou : la qualification désamiantage sous-section 3 (SS3), exigée et non détenue en interne. Deuxième verrou : le chiffre d'affaires minimum demandé (3 M€ sur 3 ans), supérieur à votre CA. Répondre seul est donc impossible sur ces deux critères. S'y ajoute une garantie à première demande, appelable sans justification, qui engage lourdement la trésorerie.\n\nLa bonne stratégie est claire : répondre en GROUPEMENT conjoint avec un désamianteur certifié SS3. Il apporte la qualification manquante et, en groupement, les chiffres d'affaires se cumulent — les deux verrous sautent d'un coup. Adjugo a d'ailleurs déjà identifié un partenaire complémentaire qualifié SS3 (voir la co-traitance). Sur la garantie à première demande, proposer une caution bancaire classique en substitution.\n\nEn synthèse : à étudier sérieusement, mais uniquement en groupement. Seul, il est hors d'atteinte ; à plusieurs, c'est un marché à 1,25 M€ à portée de main. La visite est obligatoire (05/12) — à ne pas manquer, sous peine d'irrecevabilité.",
+        "recommandation": "Réhabilitation énergétique et désamiantage d'un gymnase, pour 1,25 M€ HT, allotie en trois lots (désamiantage, isolation/énergie, gros œuvre/étanchéité), portée par Kerhel Agglomération. Le marché est en zone et sur votre cœur de métier (rénovation énergétique), ce qui en fait une opportunité réelle — mais deux verrous conditionnent la recevabilité.\n\nPremier verrou : la qualification désamiantage sous-section 3 (SS3), exigée et non détenue en interne. Deuxième verrou : le chiffre d'affaires minimum demandé (3 M€ par an en moyenne sur les trois derniers exercices), supérieur à votre CA. Répondre seul est donc impossible sur ces deux critères. S'y ajoute une garantie à première demande, appelable sans justification, qui engage lourdement la trésorerie.\n\nLa bonne stratégie est claire : répondre en GROUPEMENT conjoint avec un désamianteur certifié SS3. Il apporte la qualification manquante et, en groupement, les chiffres d'affaires se cumulent — les deux verrous sautent d'un coup. Adjugo a d'ailleurs déjà identifié un partenaire complémentaire qualifié SS3 (voir la co-traitance). Sur la garantie à première demande, proposer une caution bancaire classique en substitution.\n\nEn synthèse : à étudier sérieusement, mais uniquement en groupement. Seul, il est hors d'atteinte ; à plusieurs, c'est un marché à 1,25 M€ à portée de main. La visite est obligatoire (05/12) — à ne pas manquer, sous peine d'irrecevabilité.",
         "clauses_risque": [
             {"clause": "Capacité financière", "niveau": "eleve", "pourquoi": "CA exigé 3 M€ supérieur à votre CA N-1", "levier_negociation": "Répondre en groupement conjoint pour cumuler les chiffres d'affaires"},
             {"clause": "Garantie à première demande", "niveau": "eleve", "pourquoi": "Engage la trésorerie sans recours, appelable sans justification", "levier_negociation": "Proposer une caution bancaire classique en substitution"},
@@ -335,6 +337,15 @@ def ensure_demo(db, force: bool = False) -> User:
     db.commit()
     _marquer_espace_demo(user)      # compte enregistré : son espace ne peut plus appeler l'IA
 
+    # Kerhel : son dossier (fictif) lu en entier, exigences et forme du groupement citées par le
+    # règlement. AVANT le calcul du groupement (il lit les exigences citées). Transaction propre.
+    try:
+        from app.services.demo_groupement import seed_dossier
+        seed_dossier(db, user, proj_by_key)
+    except Exception as e:
+        db.rollback()
+        logger.warning("seed démo (dossier de Kerhel) ignoré : %s", e)
+
     # « Répondre à plusieurs ? » : verdict de groupement CALCULÉ sur Kerhel (CA 3 M€ + SS3
     # apportés par Breizh Désamiantage). Transaction propre ; skip si le service pur est absent.
     try:
@@ -361,6 +372,16 @@ def ensure_demo(db, force: bool = False) -> User:
     except Exception as e:
         db.rollback()
         logger.warning("seed démo (rédaction) ignoré : %s", e)
+
+    # Groupement de Kerhel jusqu'au dépôt : convention générée (offre figée) et validée par le chef de
+    # file et par Breizh Désamiantage, formulaires officiels remplis après elle, journal chaîné — avec
+    # le code des routes (app/services/demo_groupement.py). Transaction propre.
+    try:
+        from app.services.demo_groupement import seed_convention
+        seed_convention(db, user, proj_by_key)
+    except Exception as e:
+        db.rollback()
+        logger.warning("seed démo (convention de Kerhel) ignoré : %s", e)
 
     db.refresh(user)
     logger.info("Compte démo prêt (%s) — 3 AO + %d co-traitants + vitrine complète.", DEMO_EMAIL, len(_COTRAITANTS))
@@ -464,10 +485,11 @@ def _demo_pdf(title: str, subtitle: str = "") -> bytes:
 def _seed_extras(db, user, proj_by_key, ct_by_name):
     """Matérialise TOUTES les fonctionnalités sur le compte démo, comme si une PME
     s'en servait réellement : factures/devis, coffre-fort (avec vrais PDF + alertes
-    d'expiration), CERFA générés (dont le DC4 du consortium), veille amont, alertes
-    sauvegardées, base de connaissances interrogeable, contacts CRM, espace de
-    co-construction, et le groupement de Kerhel entièrement instancié (invitation +
-    contribution soumise + pièces). Idempotent : purge d'abord les entités démo."""
+    d'expiration), CERFA générés, veille amont, alertes sauvegardées, base de connaissances
+    interrogeable, contacts CRM, espace de co-construction, et le groupement de Kerhel
+    instancié (invitation + part soumise + pièces ; la convention et les formulaires du
+    groupement viennent ensuite, app/services/demo_groupement.py). Idempotent : purge d'abord
+    les entités démo."""
     import datetime
     import secrets
     from datetime import timedelta
@@ -625,6 +647,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
     ])
 
     # ── Co-construction et groupement : Kerhel entièrement instancié ──────────
+    invite_ids = None
     if lorient:
         breizh = ct_by_name.get("Breizh Désamiantage")
         breizh_siret = (breizh.siret if breizh else "") or "53219876500011"
@@ -633,8 +656,9 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
             token=secrets.token_hex(24), project_id=lorient, owner_id=uid,
             recipient="contact@breizh-desamiantage.exemple", company_name="Breizh Désamiantage",
             can_view_docs=True, role="cotraitant", can_contribute=True, revoked=False,
-            view_count=4, last_viewed_at=now, verified_email="contact@breizh-desamiantage.exemple",
-            verified_at=now)
+            view_count=4, last_viewed_at=now)
+        # Aucune adresse « vérifiée par code » : la démo n'en envoie aucun. L'accord du partenaire
+        # porte donc le niveau d'identité réellement prouvé par le lien (identité non vérifiée).
         db.add(invite); db.flush()
         # Le partenaire rattaché au marché EST celui qui a été invité (comme après une invitation
         # depuis le réseau) : sans ce lien, « Monter le groupement » le disait « ni invité ni ajouté
@@ -658,12 +682,14 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
             # Doctrine de visibilité : le mandataire ne voit que le PRIX DE VENTE du lot ;
             # la décomposition (detail_chiffre) serait chiffrée dans le navigateur du membre.
             prix_lot_ht=280000.0,
-            capacites={"ca_n1": 1850000, "effectif": 14, "declared_at": now.isoformat()},
+            # Mêmes capacités que sa fiche dans « Mes partenaires » (comme après _sync_annuaire_capacites).
+            capacites={"ca_n1": 2100000, "effectif": 18, "declared_at": now.isoformat()},
             representant_legal="Soizic Morvan", signataire_qualite="Présidente",
             memoire_paragraph="Breizh Désamiantage réalise le retrait d'amiante en sous-section 3 conformément au plan de retrait validé. Confinement dynamique, contrôles d'empoussièrement libératoires et traçabilité complète des déchets (BSDA).",
             contact={"nom": "Soizic Morvan", "email": "contact@breizh-desamiantage.exemple", "telephone": ""},
             status="submitted", submitted_at=now, version=1)
         db.add(contrib); db.flush()
+        invite_ids = (invite.id, contrib.id)
 
         for pname, pkey, ptype, pexp in [
                 ("Kbis — Breizh Désamiantage", "demo/breizh_kbis.pdf", "kbis",
@@ -705,8 +731,10 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
     if toiture:
         _gen(toiture, ["dc1", "dc2", "honneur", "attri1"])
     if lorient:
-        # DC4 = déclaration de sous-traitance/co-traitance → matérialise le consortium
-        _gen(lorient, ["dc1", "dc2", "dc4", "honneur"])
+        # Déclaration sur l'honneur ; DC1, DC2 et ATTRI1 du groupement sont remplis APRÈS la convention
+        # (demo_groupement.seed_convention). Pas de DC4 : Breizh Désamiantage est co-traitant, pas
+        # sous-traitant. Ceux-ci restent si la convention de la vitrine ne se fait pas.
+        _gen(lorient, ["dc1", "dc2", "honneur"])
 
     # ── Historique d'AO décidés (gagné/perdu) : peuple le tableau de bord ──────
     # Win-rate, pipeline et analytics n'ont de sens qu'avec des marchés clôturés.
@@ -799,5 +827,16 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                        outcome_reason=p.get("outcome_reason"), competitor_winner=p.get("competitor_winner")))
 
     db.commit()
-    logger.info("Vitrine démo : coffre-fort, factures, veille amont, KB, groupement Kerhel + DC4, "
+    # Journal chaîné du groupement (après le commit, comme les routes) : invitation créée par le chef
+    # de file, part soumise par le partenaire. Best-effort (audit.record n'échoue jamais).
+    if lorient and invite_ids:
+        from app.services import audit
+        inv_id, contrib_id = invite_ids
+        audit.record(db, action="invite.created", owner_id=uid, project_id=lorient, actor=f"user:{uid}",
+                     actor_kind="owner", target_type="invite", target_id=inv_id, invite_id=inv_id,
+                     detail="Breizh Désamiantage")
+        audit.record(db, action="guest.submit_contribution", owner_id=uid, project_id=lorient,
+                     actor="Breizh Désamiantage", actor_kind="guest", target_type="contribution",
+                     target_id=contrib_id, invite_id=inv_id, detail="Breizh Désamiantage")
+    logger.info("Vitrine démo : coffre-fort, factures, veille amont, KB, groupement Kerhel, "
                 "%d AO décidés (win-rate) seedés.", len(PAST))

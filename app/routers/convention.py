@@ -181,17 +181,25 @@ def _owner_payload(db: Session, project: Project, conv, user: User) -> dict:
     return out
 
 
+def nouveau_brouillon(db: Session, project: Project) -> GroupementConvention:
+    """Brouillon NEUF de la convention (sans commit) : la forme imposée par le règlement (citation
+    vérifiée) est proposée d'office, pouvoirs du chef de file par défaut. Partagé avec le seed de
+    la démo (app/services/demo_groupement.py)."""
+    fi = gc.forme_imposee(project)
+    conv = GroupementConvention(
+        project_id=project.id, owner_id=_inv().tenant_owner_id(project, db),
+        forme=(fi["forme_imposee"] if fi["forme_imposee"] in gc.FORMES else ""),
+        mandataire_solidaire=False, forme_imposee=fi["forme_imposee"],
+        forme_imposee_extrait=fi.get("extrait") or "",
+        habilitation=gc.default_habilitation(), params={}, status="draft", version=0)
+    db.add(conv)
+    return conv
+
+
 def _get_or_create_draft(db: Session, project: Project, user: User) -> GroupementConvention:
     conv = gc.get_convention(db, project.id)
     if conv is None:
-        fi = gc.forme_imposee(project)
-        conv = GroupementConvention(
-            project_id=project.id, owner_id=_inv().tenant_owner_id(project, db),
-            forme=(fi["forme_imposee"] if fi["forme_imposee"] in gc.FORMES else ""),
-            mandataire_solidaire=False, forme_imposee=fi["forme_imposee"],
-            forme_imposee_extrait=fi.get("extrait") or "",
-            habilitation=gc.default_habilitation(), params={}, status="draft", version=0)
-        db.add(conv)
+        conv = nouveau_brouillon(db, project)
         try:
             db.commit()
         except Exception:
@@ -351,6 +359,67 @@ class GenererIn(BaseModel):
     regenerer: bool = False
 
 
+def contexte_generation(db: Session, project: Project, conv, company) -> dict:
+    """Faits ACTUELS de la convention à générer (membres, parts, prix). 422 s'il manque un élément
+    indispensable au texte. Partagé avec le seed de la démo."""
+    built = gc.build_context(db, project, conv, company)
+    if built["manques"]:
+        raise HTTPException(422, {"message": "Impossible de générer la convention : il manque des éléments.",
+                                  "missing": built["manques"]})
+    return built
+
+
+def appliquer_generation(db: Session, project: Project, conv, built: dict, owner_ids: list) -> None:
+    """Fige l'offre commune ET le texte (modèle déterministe, 0 LLM), SANS commit : texte, empreinte
+    unique, total, version, ce que le règlement impose (trace), valeurs effectives des paramètres,
+    offre figée dans groupement_plan, un accord attendu par membre. Partagé avec le seed de la démo
+    (app/services/demo_groupement.py) : la vitrine est générée par le même code que l'écran."""
+    ctx = built["ctx"]
+    ctx["brouillon"] = False
+    content = gc.render(ctx)
+    members = ctx["members"]
+    total = ctx["total_ht"]
+    frozen = utcnow()
+    conv.content_md = content
+    conv.content_hash = gc.sha256(content)
+    conv.total_offre_ht = total
+    conv.version = ctx["version"]
+    conv.frozen_at = frozen
+    conv.status = "a_signer"
+    # Ce que le règlement impose, tel qu'affiché au moment de la génération (trace).
+    fi = _fi_payload(conv, project, db, owner_ids)
+    conv.forme_imposee = fi.get("forme_imposee") or "non_verifie"
+    conv.forme_imposee_extrait = fi.get("extrait") or ""
+    params = dict(conv.params or {})
+    # Valeurs EFFECTIVES figées avec le texte (un défaut dérivé — estimation, « travaux » —
+    # ne doit pas faire dériver la convention générée).
+    effective = gc.merged_params(conv, project)
+    for k in gc.PARAM_KEYS + ["part_mandataire_ht", "lot_mandataire", "mandataire_qualite"]:
+        params[k] = effective.get(k)
+    params["masquer_repartition"] = False             # n'existe qu'en brouillon
+    conv.params = params
+    db.flush()                                        # conv.id (offre figée, accords)
+    lead = next((m for m in members if m["kind"] == "mandataire"), {})
+    plan = dict(project.groupement_plan) if isinstance(project.groupement_plan, dict) else {}
+    plan["offre"] = {"total_ht": total, "frozen_at": frozen.isoformat(),
+                     "parts": gc.snapshot_parts(members), "lead_total_ht": lead.get("prix_lot_ht"),
+                     "convention_id": conv.id, "convention_version": conv.version}
+    project.groupement_plan = plan                    # NOUVEAU dict : SQLAlchemy détecte le changement
+    gc.sync_signatures(db, conv, members)
+
+
+def journaliser_generation(db: Session, project: Project, conv, actor: str, ip: str = "") -> None:
+    """Journal (chaîné) de la génération : offre figée puis convention générée. Après le commit."""
+    owner = _inv().tenant_owner_id(project, db)
+    audit.record(db, action="offer.frozen", owner_id=owner, project_id=project.id,
+                 actor=actor, actor_kind="owner", target_type="project",
+                 target_id=project.id, detail=f"total {gc.eur(conv.total_offre_ht)} HT (convention v{conv.version})"[:255],
+                 ip=ip)
+    audit.record(db, action="convention.generated", owner_id=owner, project_id=project.id,
+                 actor=actor, actor_kind="owner", target_type="convention",
+                 target_id=conv.id, detail=f"version {conv.version} — empreinte {(conv.content_hash or '')[:12]}", ip=ip)
+
+
 # Plafonds des emails « convention à valider » (process unique : en mémoire suffit, comme
 # l'anti-rafale des notifications de groupement). Une régénération en boucle ne doit pas
 # transformer Adjugo en canal de spam vers les partenaires déjà invités.
@@ -429,58 +498,17 @@ def generer(request: Request, project_id: int, data: GenererIn = None,
                                   "message": f"La convention est déjà générée (version {conv.version}). La "
                                              "régénérer annule les accords déjà enregistrés : confirmez."})
     company = gc._company_for(db, project)
-    built = gc.build_context(db, project, conv, company)
-    if built["manques"]:
-        raise HTTPException(422, {"message": "Impossible de générer la convention : il manque des éléments.",
-                                  "missing": built["manques"]})
-    ctx = built["ctx"]
-    ctx["brouillon"] = False
-    content = gc.render(ctx)
-    h = gc.sha256(content)
-    members = ctx["members"]
-    total = ctx["total_ht"]
-    frozen = utcnow()
+    built = contexte_generation(db, project, conv, company)
 
     if conv.status in gc.ACTIVE:                      # régénération confirmée : tracé
         gc.perimer(db, project, "convention régénérée par le chef de file",
                    actor=f"user:{current_user.id}", actor_kind="owner", ip=audit.client_ip(request))
         db.refresh(conv)
-    conv.content_md = content
-    conv.content_hash = h
-    conv.total_offre_ht = total
-    conv.version = ctx["version"]
-    conv.frozen_at = frozen
-    conv.status = "a_signer"
-    # Ce que le règlement impose, tel qu'affiché au moment de la génération (trace).
-    fi = _fi_payload(conv, project, db, member_ids(current_user, db))
-    conv.forme_imposee = fi.get("forme_imposee") or "non_verifie"
-    conv.forme_imposee_extrait = fi.get("extrait") or ""
-    params = dict(conv.params or {})
-    # Valeurs EFFECTIVES figées avec le texte (un défaut dérivé — estimation, « travaux » —
-    # ne doit pas faire dériver la convention générée).
-    effective = gc.merged_params(conv, project)
-    for k in gc.PARAM_KEYS + ["part_mandataire_ht", "lot_mandataire", "mandataire_qualite"]:
-        params[k] = effective.get(k)
-    params["masquer_repartition"] = False             # n'existe qu'en brouillon
-    conv.params = params
-    lead = next((m for m in members if m["kind"] == "mandataire"), {})
-    plan = dict(project.groupement_plan) if isinstance(project.groupement_plan, dict) else {}
-    plan["offre"] = {"total_ht": total, "frozen_at": frozen.isoformat(),
-                     "parts": gc.snapshot_parts(members), "lead_total_ht": lead.get("prix_lot_ht"),
-                     "convention_id": conv.id, "convention_version": conv.version}
-    project.groupement_plan = plan                    # NOUVEAU dict : SQLAlchemy détecte le changement
-    gc.sync_signatures(db, conv, members)
+    appliquer_generation(db, project, conv, built, member_ids(current_user, db))
     db.commit()
     db.refresh(conv)
 
-    owner = _inv().tenant_owner_id(project, db)
-    ip = audit.client_ip(request)
-    audit.record(db, action="offer.frozen", owner_id=owner, project_id=project.id,
-                 actor=f"user:{current_user.id}", actor_kind="owner", target_type="project",
-                 target_id=project.id, detail=f"total {gc.eur(total)} HT (convention v{conv.version})"[:255], ip=ip)
-    audit.record(db, action="convention.generated", owner_id=owner, project_id=project.id,
-                 actor=f"user:{current_user.id}", actor_kind="owner", target_type="convention",
-                 target_id=conv.id, detail=f"version {conv.version} — empreinte {h[:12]}", ip=ip)
+    journaliser_generation(db, project, conv, actor=f"user:{current_user.id}", ip=audit.client_ip(request))
     sent = 0
     try:
         sent = _mail_a_valider(db, project, conv, current_user, request)
@@ -519,11 +547,34 @@ def _status_conflict(conv) -> HTTPException:
     return HTTPException(409, {"code": "statut", "message": "Accord impossible dans l'état actuel de la convention."})
 
 
+def enregistrer_accord(sig, conv, *, nom: str, qualite: str, identity_level: str, email: str = "",
+                       user_id=None, ip: str = "") -> None:
+    """Accord d'un membre sur LE texte (sans commit) : date, empreinte approuvée, niveau d'identité
+    réellement prouvé, signataire. Partagé par l'accord du chef de file, celui du partenaire et le
+    seed de la démo."""
+    sig.status = "signed"
+    sig.signed_at = utcnow()
+    sig.user_id = user_id
+    sig.identity_level = identity_level
+    sig.verified_email = (email or "")[:255]
+    sig.signataire_nom = gc._clean(nom, 255)
+    sig.signataire_qualite = gc._clean(qualite, 120)
+    sig.content_hash = conv.content_hash
+    sig.ip = ip or ""
+
+
+def tous_d_accord(db: Session, conv) -> bool:
+    """Tous les membres ont donné leur accord sur le texte généré → 'signee' (sans commit). Vrai si
+    le statut vient de changer."""
+    if conv.status == "a_signer" and gc.all_agreed(gc.signatures_of(db, conv)):
+        conv.status = "signee"
+        return True
+    return False
+
+
 def _after_agreement(db: Session, project: Project, conv, by_owner: bool) -> None:
     """Tous d'accord → 'signee' (+ email au mandataire, si l'accord vient d'un partenaire)."""
-    sigs = gc.signatures_of(db, conv)
-    if conv.status == "a_signer" and gc.all_agreed(sigs):
-        conv.status = "signee"
+    if tous_d_accord(db, conv):
         db.commit()
         if not by_owner:
             try:
@@ -561,15 +612,9 @@ def valider_mandataire(request: Request, project_id: int, data: ValiderIn,
                                   "message": "Confirmez d'abord votre adresse email (lien reçu par mail) pour "
                                              "enregistrer votre accord."})
     _check_valider_body(data, conv)
-    mine.status = "signed"
-    mine.signed_at = utcnow()
-    mine.user_id = current_user.id
-    mine.identity_level = "compte_verifie"
-    mine.verified_email = (current_user.email or "")[:255]
-    mine.signataire_nom = gc._clean(data.signataire_nom, 255)
-    mine.signataire_qualite = gc._clean(data.signataire_qualite, 120)
-    mine.content_hash = conv.content_hash
-    mine.ip = audit.client_ip(request)
+    enregistrer_accord(mine, conv, nom=data.signataire_nom, qualite=data.signataire_qualite,
+                       identity_level="compte_verifie", email=current_user.email or "",
+                       user_id=current_user.id, ip=audit.client_ip(request))
     db.commit()
     audit.record(db, action="convention.signed", owner_id=_inv().tenant_owner_id(project, db),
                  project_id=project.id, actor=f"user:{current_user.id}", actor_kind="owner",
@@ -839,15 +884,9 @@ def guest_valider(token: str, data: ValiderIn, request: Request, db: Session = D
         raise HTTPException(403, {"code": "identity_unverified",
                                   "message": "Vérifiez votre adresse email avant de valider la convention."})
     _check_valider_body(data, conv)
-    mine.status = "signed"
-    mine.signed_at = utcnow()
-    mine.user_id = user.id if level == "compte_verifie" else None
-    mine.identity_level = level
-    mine.verified_email = (email or "")[:255]
-    mine.signataire_nom = gc._clean(data.signataire_nom, 255)
-    mine.signataire_qualite = gc._clean(data.signataire_qualite, 120)
-    mine.content_hash = conv.content_hash
-    mine.ip = audit.client_ip(request)
+    enregistrer_accord(mine, conv, nom=data.signataire_nom, qualite=data.signataire_qualite,
+                       identity_level=level, email=email or "",
+                       user_id=(user.id if level == "compte_verifie" else None), ip=audit.client_ip(request))
     db.commit()
     audit.record(db, action="convention.signed", owner_id=inv_mod.tenant_owner_id(project, db),
                  project_id=project.id, actor=inv_mod._guest_actor(inv), actor_kind="guest",

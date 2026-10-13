@@ -1347,6 +1347,9 @@ def guest_get_contribution(token: str, request: Request, db: Session = Depends(g
 def guest_save_contribution(token: str, body: ContributionSave, request: Request, db: Session = Depends(get_db)):
     """Enregistre le brouillon de la contribution de cet invité (ses champs uniquement)."""
     inv = _valid_invite(token, db)
+    # Vitrine partagée : la part de la démo figure dans la convention générée et validée par tous ;
+    # la modifier la rendrait caduque pour les visiteurs suivants.
+    _refuse_if_demo_invite(inv, db)
     if not getattr(inv, "can_contribute", True):
         raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
     c = _get_or_create_contribution(inv, db)

@@ -71,6 +71,18 @@ nouveau lien aux personnes qui doivent garder l'accès.
   « Votre client (l'acheteur) » ne cherche rien sur le BOAMP pour la démo.
 - Les exigences affichées sur le marché « toiture » (chiffre d'affaires minimum, qualifications,
   variantes) sont écrites dans son règlement fictif : la démo les montre avec la phrase du dossier.
+- Le groupement du gymnase de Kerhel se montre jusqu'au dépôt (`app/services/demo_groupement.py`) :
+  dossier fictif lu en entier (forme du groupement et exigences citées par le règlement), convention
+  générée et validée par Bâtiment de l'Ouest et Breizh Désamiantage, DC1, DC2 et ATTRI1 préparés après
+  elle. Le lien d'invitation du partenaire (bouton « Copier le lien » de la fiche du marché, à ouvrir
+  dans un autre onglet) montre la même convention, le même total, les accords et son journal.
+  « Avant de déposer » affiche volontairement 3 contrôles sur 4 : l'attestation URSSAF du chef de file
+  expire avant la date limite. Elle est datée de 22 jours après le démarrage du serveur : démarré après
+  le 27/11/2026, le marché passe « Prêt à déposer ».
+- La vitrine du groupement reste la même pour tous : la démo refuse de modifier la convention, de
+  retenir une autre composition, de défiger l'offre ou de modifier la part du partenaire. En revanche,
+  changer le profil entreprise ou le nom du marché rend la convention « plus à jour » jusqu'au
+  redémarrage suivant : à éviter pendant une présentation.
 - Les dates sont fixes : Cap-Aurèle le 10/12/2026, Kerhel le 20/12/2026, toiture le 30/12/2026,
   « Trouver des marchés » jusqu'au 27/01/2027. Après, la démo affiche des échéances passées.
 

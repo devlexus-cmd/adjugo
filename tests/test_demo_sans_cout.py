@@ -155,8 +155,10 @@ SANS_COUT = {
     ("DELETE", "/api/cotraitants/{ct_id}"): _I, ("POST", "/api/cotraitants/project/{project_id}"): _I,
     ("DELETE", "/api/cotraitants/project/{project_id}/{link_id}"): _I,
     ("POST", "/api/projects/{project_id}/groupement/simulate"): "simulation déterministe (score de groupement)",
-    ("POST", "/api/projects/{project_id}/groupement/retenir"): _I,
-    ("DELETE", "/api/projects/{project_id}/groupement/plan"): _I,
+    # Groupement de la vitrine (Kerhel) : convention validée par tous ; retenir une autre composition, retirer
+    # le plan ou défiger l'offre la rendrait caduque pour chaque visiteur (tests/test_demo_groupement_kerhel.py).
+    ("POST", "/api/projects/{project_id}/groupement/retenir"): _V,
+    ("DELETE", "/api/projects/{project_id}/groupement/plan"): _V,
     ("POST", "/api/projects/{project_id}/groupement/deposer"): _V,
     ("DELETE", "/api/projects/{project_id}/groupement/deposer"): _V,
     ("POST", "/api/projects/{project_id}/groupement/convention/relire-dce"): _V + " (0 IA)",
@@ -203,13 +205,13 @@ SANS_COUT = {
     ("POST", "/api/atelier/{project_id}/sections/{section_id}/controle"): _V + " (0 IA)",
     ("POST", "/api/atelier/{project_id}/sections/{section_id}/faits/{fait_id}/source"): _V + " (0 IA)",
     ("POST", "/api/atelier/{project_id}/derogation"): _V,
-    ("PUT", "/api/invite/{token}/contribution"): "lien partenaire : brouillon de sa part (aucun email)",
+    ("PUT", "/api/invite/{token}/contribution"): "lien partenaire de la démo : refusé dans la route (part figée par la convention)",
     ("PUT", "/api/invite/{token}/contribution/detail"): "lien partenaire de la démo : refusé dans la route",
     ("POST", "/api/invite/{token}/otp/verify"): "lien partenaire : vérification d'un code (aucun envoi)",
     ("POST", "/api/invite/{token}/search"): "lien partenaire : recherche publique (BOAMP), sans IA",
     ("PATCH", "/api/invite/{token}/contribution/piece/{piece_id}"): "lien partenaire de la démo : refusé dans la route",
     ("DELETE", "/api/invite/{token}/contribution/piece/{piece_id}"): "lien partenaire de la démo : refusé dans la route",
-    ("DELETE", "/api/projects/{project_id}/offre/figer"): _I + " (aucun email)",
+    ("DELETE", "/api/projects/{project_id}/offre/figer"): _V,
     ("POST", "/api/invite/{token}/claim"): "lien nominatif : réservé au compte de l'adresse invitée",
     ("PUT", "/api/reseau/profil"): _V, ("DELETE", "/api/reseau/profil"): _V,
     ("DELETE", "/api/reseau/profil/publier"): _V,
@@ -618,7 +620,8 @@ def test_vitrine_de_lorient_intacte(client, demo):
     c = client.get(f"/api/projects/{pid}/contributions", headers=demo["pme"]).json()
     assert [x["company_name"] for x in c] == ["Breizh Désamiantage"] and c[0]["status"] == "submitted"
     st = client.get(f"/api/projects/{pid}/groupement/state", headers=demo["pme"]).json()
-    assert st["state"] == "parts_completes"
+    # Groupement montré jusqu'au dépôt (tests/test_demo_groupement_kerhel.py) : convention validée par tous.
+    assert st["state"] == "pret_a_deposer" and st["convention_status"] == "signee"
     assert client.get(f"/api/invite/{demo['ctx']['token']}").status_code == 200
 
 
