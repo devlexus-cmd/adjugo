@@ -1976,7 +1976,8 @@
                 </div>
                 <div v-else class="muted small atl-mt8">Sur téléphone, vous pouvez lire et valider. L'écriture et l'export se font depuis un ordinateur.</div>
               </div>
-              <div v-if="atlEnCours().length" class="small atl-mt8 atl-encours" role="status"><span class="spin"></span> Adjugo travaille sur {{ atlEnCours().reduce((n, j) => n + j.ids.length, 0) }} partie{{ atlEnCours().reduce((n, j) => n + j.ids.length, 0) > 1 ? 's' : '' }}. Vous pouvez quitter cette page : la rédaction continue.</div>
+              <div v-if="atlEnCours().reduce((n, j) => n + j.ids.length, 0)" class="small atl-mt8 atl-encours" role="status"><span class="spin"></span> Adjugo travaille sur {{ atlEnCours().reduce((n, j) => n + j.ids.length, 0) }} partie{{ atlEnCours().reduce((n, j) => n + j.ids.length, 0) > 1 ? 's' : '' }}. Vous pouvez quitter cette page : la rédaction continue.</div>
+              <div v-else-if="atlRepHarmEnCours()" class="small atl-mt8 atl-encours" role="status"><span class="spin"></span> Adjugo relie les parts des membres du groupement. Vous pouvez quitter cette page : l'harmonisation continue.</div>
               <div class="sr-only" aria-live="polite">{{ atl.live }}</div>
             </div>
 
@@ -2019,6 +2020,16 @@
                     <button type="button" class="btn sm" @click="atlRepDemander()" :disabled="!!atl.rep.busy || !atlRepEnvoyerA().length"><span v-if="atl.rep.busy==='demander'" class="spin"></span><i v-else data-lucide="send"></i>Demander les parts</button><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Un email à chaque partenaire qui a une partie à rédiger ou à revalider : la liste de ses parties, leur date limite interne et son lien. Au plus un envoi toutes les 15 minutes par partenaire ; ces emails comptent dans la limite quotidienne des invitations.</span></button>
                   </div>
                   <div class="small atl-mt8"><b>{{ atl.rep.d.dossier.pret.message }}</b><span class="muted"> · {{ atlRepValidations() }}</span></div>
+                  <!-- « Prêt à déposer » (assemblage) : ce qui reste, membre par membre ; jamais ce qui manque au
+                       chef de file comme entreprise, seulement les gestes de rédaction et de validation. -->
+                  <div v-if="atl.rep.d.dossier.pret.complet" class="atl-info" role="status"><i data-lucide="circle-check"></i><span style="flex:1;min-width:0">Prêt à déposer : chaque partie et le dossier assemblé sont validés par tous les membres du groupement.</span></div>
+                  <details v-else-if="atlRepManques().length" class="atl-det atl-mt8"><summary>Ce qui reste avant de déposer ({{ atlRepManques().length }})</summary>
+                    <ul class="atl-rep-manques small"><li v-for="(m,i) in atlRepManques()" :key="'rmq'+i">{{ m.message }}</li></ul></details>
+                  <div class="row wrap atl-g8 atl-mt8">
+                    <template v-if="atlRepMaValidation() !== 'valide'"><button type="button" class="btn sm" @click="atlRepValiderDossier()" :disabled="!!atl.rep.busy"><span v-if="atl.rep.busy==='dossier'" class="spin"></span><i v-else data-lucide="check"></i>Valider le dossier assemblé</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Valider dit que vous avez lu le dossier assemblé tel qu'il est. Validez d'abord vos parties, « Organisation du groupement » et « Qui fait quoi dans le groupement » dans l'onglet « Rédaction ». Toute modification ensuite le fait repasser « à revalider » par chaque membre.</span></button></template>
+                    <span v-else class="muted small">Vous avez validé le dossier assemblé.</span>
+                    <template v-if="atlRepHarm()"><button type="button" class="btn sm" @click="atlRepHarmoniser()" :disabled="!!atl.rep.busy || !!atl.busy || atlRepHarmEnCours()"><span v-if="atlRepHarmEnCours()" class="spin"></span><i v-else data-lucide="link-2"></i>Harmoniser le ton</button><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atlRepHarm().message }} Compte comme une nouvelle rédaction du dossier ; rien n'est décompté si aucune phrase n'est retenue ou si le service d'IA ne répond pas.</span></button></template>
+                  </div>
                   <div v-if="!atlRepEnvoyerA().length" class="muted small atl-mt4">Aucune partie à demander : chaque partenaire a envoyé ses parties, ou aucune ne lui est confiée.</div>
                   <div v-if="atl.rep.demande" class="atl-info" role="status"><i data-lucide="send"></i><span style="flex:1;min-width:0"><template v-for="(t,i) in atlRepDemandeLignes()" :key="'rd'+i">{{ (i ? ' ' : '') + t }}</template></span></div>
                   <div v-if="atlRepIndispo().length" class="muted small atl-mt8"><template v-for="(m,i) in atlRepIndispo()" :key="'ri'+m.invite_id">{{ (i ? ' ; ' : '') + m.nom + ' : ' + m.raison }}</template>.</div>
@@ -2033,6 +2044,33 @@
                     </div>
                     <div v-if="l.critere" class="muted small atl-mt4">Critère : {{ l.critere }}<template v-if="l.poids"> · {{ atlPoidsTexte(l) }}</template><template v-else> · aucun poids écrit dans le règlement</template></div>
                     <div v-if="l.mention" class="small atl-rep-mention atl-mt4">{{ l.mention }}</div>
+                    <!-- Une partie TIRÉE DU GROUPEMENT (assemblage) : écrite par Adjugo sans IA, personne ne la rédige ;
+                         elle se lit ici et se valide dans l'onglet « Rédaction ». -->
+                    <template v-if="l.genere">
+                      <div class="row wrap atl-g6 small atl-mt8"><span class="muted" style="flex:1;min-width:0">Écrite par Adjugo, sans IA, à partir de la convention et des parts des membres.</span><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">D'où vient cette partie</span><span class="tip-b" role="tooltip">{{ l.message }}</span></button></div>
+                      <div v-if="atlRepQfqTexte(l)" class="small atl-mt4">{{ atlRepQfqTexte(l) }}</div>
+                      <div class="row wrap atl-g6 atl-mt8">
+                        <button type="button" class="btn sm" @click="atlRepOuvrir(l)" :aria-expanded="atl.rep.open===l.section_id ? 'true' : 'false'"><i :data-lucide="atl.rep.open===l.section_id ? 'chevron-up' : 'file-text'"></i>{{ atl.rep.open===l.section_id ? 'Replier' : 'Lire cette partie' }}</button>
+                        <button v-if="l.statut !== 'validee'" type="button" class="atl-lien" @click="atlRepVersAtelier(l)">La valider dans l'onglet « Rédaction »</button>
+                      </div>
+                      <div v-if="atl.rep.open===l.section_id" class="atl-rep-det">
+                        <div v-if="atl.rep.detLoading && !atl.rep.det" class="muted small" role="status"><span class="spin"></span> Chargement…</div>
+                        <template v-else-if="atl.rep.det && atl.rep.det.section_id===l.section_id">
+                          <div v-if="atl.rep.det.genere==='grp_orga' && atl.rep.det.message" class="small">{{ atl.rep.det.message }}</div>
+                          <div v-for="b in atlRepBlocs()" :key="'rg'+b.k" class="atl-rep-bloc atl-mt8"><div class="atl-texte atl-rep-texte" v-html="atlRepHtml(b.v)"></div></div>
+                          <ul v-if="atl.rep.det.genere==='grp_qfq' && (atl.rep.det.membres || []).length" class="atl-rep-qfq small atl-mt8">
+                            <li v-for="(m,i) in atl.rep.det.membres" :key="'rqm'+i"><b>{{ m.nom }}</b><span v-if="m.lot" class="muted"> · {{ m.lot }}</span>
+                              <div v-if="(m.qualifications || []).length">Qualifications : <template v-for="(q,j) in m.qualifications" :key="'rqq'+i+'_'+j">{{ (j ? ', ' : '') + q.libelle }} <span class="muted">({{ q.statut_libelle }})</span></template></div></li>
+                          </ul>
+                          <div v-if="atl.rep.det.genere==='grp_qfq'" class="muted small atl-mt4">« justifiée » : un justificatif ou une source l'appuie ; « déclarée » : écrite par le membre. Ces mentions restent à l'écran : elles ne partent pas chez l'acheteur.</div>
+                          <div v-if="atl.rep.det.note_interne" class="atl-rep-note atl-mt8">
+                            <div class="row atl-g6 small"><b>Note interne, pour vous seul</b><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.rep.det.note_interne.message }}</span></button></div>
+                            <ul class="small"><li v-for="(t,i) in atl.rep.det.note_interne.lignes" :key="'rni'+i">{{ t }}</li></ul>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                    <template v-else>
                     <div class="atl-rep-champs atl-mt8">
                       <div class="atl-rep-f small">
                         <div class="row atl-g6"><label class="muted" :for="'atl-rs-'+l.section_id">Rédigée par</label><button v-if="atlRepPropMsg(l)" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Pourquoi cette proposition</span><span class="tip-b" role="tooltip">{{ atlRepPropMsg(l) }} Proposition faite sans IA : vous pouvez la changer.</span></button></div>
@@ -2083,6 +2121,7 @@
                     </template>
                     <!-- Une partie du chef de file : elle s'écrit dans l'atelier -->
                     <div v-else class="atl-mt8"><button type="button" class="atl-lien" @click="atlRepVersAtelier(l)">Votre partie : l'écrire dans l'onglet « Rédaction »</button></div>
+                    </template>
                   </li>
                 </ol>
               </template>
@@ -3772,7 +3811,7 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/redaction-partenaire.js" integrity="sha384-cm+/0l8CsbtUA3z3U2hV+1WvWJzv0l8ZIrjVPAgUcVAePdzNI1TmLIgkuEFEhQMa" defer></script>
-<script src="/static/app.js" integrity="sha384-OHEh8CIhGs2yrhx6rPuy2EeaFGT/TymBhhEvfuv09cVnz66GKeCuWoK6d1HgduB4" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-f9E/a4M4e9t07lY3p8yxDytGbgtqOyXEMLgRo3dS9d2YzQAOhA4fvuuTuylzhODx" defer></script>
+<script src="/static/app.js" integrity="sha384-jBnVfc2xRyPbIU3dCdKk8OZXjsd4ZTe3O1RJB20wc1KJvzP/2rrZfN8k+13YGzK7" defer></script>
 </body>
 </html>

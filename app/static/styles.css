@@ -1268,6 +1268,14 @@ mark.atl-pas { background:var(--accent-weak); color:inherit; border-radius:3px; 
 .atl-rep-bloc > .atl-rep-texte:first-child { margin-top:0; }
 .atl-rep-ed { margin-top:12px; }
 .atl-rep-ta { min-height:240px; }
+.atl-rep-manques { margin:8px 0 0; padding-left:18px; }
+.atl-rep-manques li { margin:3px 0; overflow-wrap:anywhere; }
+.atl-rep-qfq { list-style:none; margin:0; padding:0; }
+.atl-rep-qfq li { padding:6px 0; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere; }
+.atl-rep-qfq li:last-child { border-bottom:0; }
+.atl-rep-note { padding:12px; border-radius:10px; border:1px dashed var(--border); background:var(--surface); }
+.atl-rep-note ul { margin:6px 0 0; padding-left:18px; }
+.atl-rep-note li { margin:2px 0; overflow-wrap:anywhere; }
 /* Renvoi d'une part de partenaire : « source du partenaire », sans lien (ses sources restent chez lui) */
 sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background:var(--surface-3); border-radius:4px; padding:0 4px; margin-left:2px; vertical-align:super; cursor:help; }
 @media (max-width:860px) {
@@ -1365,6 +1373,11 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
 .rp-ok-msg { display:flex; gap:7px; align-items:flex-start; margin-top:12px; color:var(--success-text); }
 .rp-msg { margin-top:12px; }
 .rp-dos { margin-top:16px; padding-top:16px; border-top:1px solid var(--hairline); }
+.rp-qfq { margin-top:16px; padding:12px 14px; border-radius:12px; background:var(--surface-2); border:1px solid var(--border); }
+.rp-qfq .gn-det { margin-top:8px; }
+.rp-qfq-m { list-style:none; margin:8px 0 0; padding:0; }
+.rp-qfq-m > li { padding:6px 0; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere; }
+.rp-qfq-m > li:last-child { border-bottom:0; }
 .rp-assemble { margin-top:12px; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:var(--surface-2); max-height:70vh; overflow:auto; }
 .rp-assemble:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); }
 .rp-dp { padding:12px 0; border-bottom:1px solid var(--hairline); }

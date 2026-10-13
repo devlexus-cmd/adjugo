@@ -380,8 +380,8 @@ function _atlRepInit() {
 }
 // Statut d'une partie dans « Qui écrit quoi » → pastille (mêmes couleurs que l'atelier).
 function atlRepStatutCls(st) {
-  return ({ a_rediger: "neutral", en_cours: "atl-st-brouillon", envoyee: "st-envoye", a_revalider: "a_etudier",
-            validee: "go" })[st] || "neutral";
+  return ({ a_rediger: "neutral", en_cours: "atl-st-brouillon", envoyee: "st-envoye", a_valider: "st-envoye",
+            a_revalider: "a_etudier", validee: "go" })[st] || "neutral";
 }
 // Ce que le chef de file reçoit avec le texte envoyé : des COMPTEURS de sources par type, jamais les sources.
 // « 5 faits avec une source : 3 déclarés, 2 trouvés dans ses documents · 1 fait à relire · 1 « [À compléter] » ».
@@ -430,6 +430,19 @@ function atlRepValidationsTexte(pret) {
   if (par.a_revalider.length) out.push("à revalider par " + par.a_revalider.join(", "));
   if (par.a_faire.length) out.push("à valider par " + par.a_faire.join(", "));
   return out.length ? "Dossier assemblé " + out.join(" ; ") + "." : "";
+}
+// « Qui fait quoi dans le groupement » (assemblage) : qui l'a validée, en une phrase : « Validée par vous, A ;
+// à revalider par B ; à valider par C. » (validée quand chaque membre a validé son texte courant).
+function atlRepQfqValidationsTexte(vals) {
+  const par = { valide: [], a_revalider: [], a_faire: [] };
+  (vals || []).forEach(m => { (par[m.statut] || par.a_faire).push(m.invite_id ? m.nom : "vous"); });
+  const out = [];
+  if (par.valide.length) out.push("validée par " + par.valide.join(", "));
+  if (par.a_revalider.length) out.push("à revalider par " + par.a_revalider.join(", "));
+  if (par.a_faire.length) out.push("à valider par " + par.a_faire.join(", "));
+  if (!out.length) return "";
+  const t = out.join(" ; ");
+  return t.charAt(0).toUpperCase() + t.slice(1) + ".";
 }
 // Résultat de « Demander les parts », en phrases (aucune adresse n'est jamais montrée).
 function atlRepDemandeTexte(r) {
@@ -4986,7 +4999,8 @@ const __adjApp = createApp({
         this._atlTrack(r.tache, pid, r.section_ids, action);
         (r.section_ids || []).forEach(id => { const x = a.st && a.st.sections.find(y => y.id === id); if (x) x.redaction_en_cours = { job_id: r.tache.id, action, statut: r.tache.status }; });
         const n = (r.section_ids || []).length;
-        this.notify(action === "raccourcir" ? "Adjugo raccourcit la partie. Vous pouvez continuer ailleurs." : (n > 1 ? "Adjugo rédige " + n + " parties. Vous pouvez continuer ailleurs." : "Adjugo rédige la partie. Vous pouvez continuer ailleurs."));
+        this.notify(action === "harmoniser" ? "Adjugo relie les parts des membres. Vous pouvez continuer ailleurs."
+          : action === "raccourcir" ? "Adjugo raccourcit la partie. Vous pouvez continuer ailleurs." : (n > 1 ? "Adjugo rédige " + n + " parties. Vous pouvez continuer ailleurs." : "Adjugo rédige la partie. Vous pouvez continuer ailleurs."));
       } catch (e) {
         if (e.code === "debit_a_confirmer") a.debit = { message: e.message, cout: (e.detail && e.detail.cout) || 1, path, body, action };
         else this.notify(e.message, "err");
@@ -5015,6 +5029,15 @@ const __adjApp = createApp({
       } finally { this._atlPolling = false; }
     },
     _atlJobFini(j, r) {
+      if (j.action === "harmoniser" || r.kind === "atelier_harmoniser") {
+        const res = r.result || {}, ok = r.status !== "error";
+        const msg = ok ? (res.message || "Harmonisation terminée : relisez les parties touchées.")
+          : (r.error || "L'harmonisation n'a pas abouti. Rien n'a été décompté.");
+        this.notify(msg, ok && Number(res.ajoutees) > 0 ? "ok" : "err");
+        if (this.atl.pid === j.pid) { this.atl.live = msg; if (this.atlRepVue()) this.atlRepLoad(); }
+        if (this.view === "atelier" && this.atl.pid === j.pid) this.atlLoad(true);
+        return;
+      }
       const raccourcir = j.action === "raccourcir" || r.kind === "atelier_raccourcir";
       if (r.status === "error") {
         const msg = r.error || "La rédaction n'a pas abouti. Rien n'a été débité.";
@@ -5422,6 +5445,41 @@ const __adjApp = createApp({
       this.$nextTick(() => { const el = document.getElementById("atl-rep-" + sid); if (el && el.scrollIntoView) el.scrollIntoView({ block: "start", behavior: "smooth" }); });
     },
     atlRepVersAtelier(l) { this.atl.onglet = "redaction"; this.atlGoSection(l.section_id); },
+    // « Prêt à déposer » (assemblage) : ce qui reste, qui a validé « Qui fait quoi », la validation du dossier
+    // assemblé par le chef de file et « Harmoniser le ton » (des transitions entre les parts, rien d'autre).
+    atlRepManques() { const d = this.atl.rep.d; return (d && d.dossier && d.dossier.pret && d.dossier.pret.manques) || []; },
+    atlRepQfqTexte(l) { return l && l.genere === "grp_qfq" ? atlRepQfqValidationsTexte(l.validations) : ""; },
+    atlRepMaValidation() {
+      const d = this.atl.rep.d, ms = (d && d.dossier && d.dossier.pret && d.dossier.pret.membres) || [];
+      const moi = ms.find(m => m.membre === "chef_de_file"); return moi ? moi.statut : "a_faire";
+    },
+    atlRepValiderDossier() {
+      const r = this.atl.rep, d = r.d; if (r.busy || !d) return;
+      this._convAsk({ title: "Valider le dossier assemblé ?", ok: "Valider le dossier",
+        run: () => this._atlRepValiderDossier(d.dossier.empreinte),
+        lines: ["Vous validez le dossier assemblé tel qu'il est aujourd'hui, toutes les parties comprises.",
+                "Toute modification ensuite le fera repasser « à revalider » par chaque membre."] });
+    },
+    async _atlRepValiderDossier(empreinte) {
+      const r = this.atl.rep; if (r.busy) return; r.busy = "dossier";
+      try {
+        await this.api("POST", this._atlRepUrl("/valider-dossier"), { empreinte: empreinte || null });
+        this.notify("Dossier assemblé validé");
+        await this.atlRepLoad();
+      } catch (e) {
+        const det = (e.detail && e.detail.sections) || [];
+        this.notify(e.message + (det.length ? " " + det.map(x => "« " + x.titre + " »").join(", ") + "." : ""), "err");
+        if (e.code === "dossier_modifie") this.atlRepLoad();
+      } finally { r.busy = ""; }
+    },
+    atlRepHarm() { const d = this.atl.rep.d, h = d && d.harmoniser; return h && h.jonctions > 0 ? h : null; },
+    atlRepHarmEnCours() { const pid = this.atl.pid; return Object.values(this.atlJobs || {}).some(j => j.pid === pid && j.action === "harmoniser"); },
+    atlRepHarmoniser() {
+      const h = this.atlRepHarm(); if (!h || this.atlRepHarmEnCours()) return;
+      this._convAsk({ title: "Harmoniser le ton ?", ok: "Harmoniser",
+        run: () => this._atlLancer("/repartition/harmoniser", { accepte_debit: false }, "harmoniser"),
+        lines: [h.message, "Compte comme une nouvelle rédaction du dossier ; rien n'est décompté si aucune phrase n'est retenue."] });
+    },
     atlRepEnvoyeeLe(l) { return l && l.envoyee_le ? this.atlWhen(l.envoyee_le) : ""; },
     // Ce qui se passe pour la partie d'un partenaire, en une phrase.
     atlRepEtat(l) {

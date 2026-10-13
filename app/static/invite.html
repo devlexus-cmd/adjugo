@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
   <script src="/static/cotraitance-crypto.js" integrity="sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le"></script>
-  <script src="/static/redaction-partenaire.js" integrity="sha384-cm+/0l8CsbtUA3z3U2hV+1WvWJzv0l8ZIrjVPAgUcVAePdzNI1TmLIgkuEFEhQMa"></script>
+  <script src="/static/redaction-partenaire.js" integrity="sha384-f9E/a4M4e9t07lY3p8yxDytGbgtqOyXEMLgRo3dS9d2YzQAOhA4fvuuTuylzhODx"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -828,7 +828,11 @@
       const btnSave = $(`<button class="btn">Enregistrer le brouillon</button>`);
       const btnSubmit = $(`<button class="btn primary">Soumettre au chef de file</button>`);
       const bar = document.createElement("div"); bar.className = "row wrap"; bar.style.cssText = "gap:8px;margin-top:13px;align-items:center";
-      bar.appendChild(btnSave); bar.appendChild(btnSubmit); bar.appendChild(msg);
+      bar.appendChild(btnSave); bar.appendChild(btnSubmit);
+      // Rédaction, vague 4 (assemblage) : la part soumise d'un co-traitant nourrit « Qui fait quoi dans le
+      // groupement », que lisent tous les membres (décision 3a) — à dire avant qu'il soumette.
+      if (!(d.invited && d.invited.role === "sous_traitant")) bar.appendChild($(tip("Une fois soumis, votre lot, vos qualifications et votre effectif sont repris dans la partie « Qui fait quoi dans le groupement » du dossier de présentation, que lisent tous les membres du groupement. Vos pièces, vos prix et votre détail chiffré n'y figurent jamais.")));
+      bar.appendChild(msg);
       card.appendChild(bar);
       // Décliner : lien discret → confirmation → POST /decline → écran final (le lien renvoie ensuite 410).
       const declineWrap = $(`<div style="margin-top:14px;text-align:right"></div>`);

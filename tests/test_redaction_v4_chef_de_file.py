@@ -521,6 +521,54 @@ def test_ecran_repartir_relancer_recevoir_modifier():
     assert "atlRepEcrire() {\n      const r = this.atl.rep, d = r.det; if (!d || this.atlMobile) return;" in JS_REP
 
 
+def test_ecran_pret_a_deposer_parties_du_groupement_et_harmoniser():
+    """Assemblage dans « Qui écrit quoi » : ce qui reste avant de déposer (jamais ce qui manque au chef de file
+    comme entreprise), « Valider le dossier assemblé », les parties tirées du groupement en lecture (validées dans
+    l'onglet « Rédaction »), la note interne au chef de file seul, « Harmoniser le ton » proposé seulement quand
+    des parts de membres différents se suivent."""
+    r = _sans_commentaires_html(REP)
+    for libelle in ("Prêt à déposer", "Ce qui reste avant de déposer", "Valider le dossier assemblé",
+                    "Écrite par Adjugo, sans IA", "La valider dans l'onglet « Rédaction »", "Lire cette partie",
+                    "Note interne, pour vous seul", "Harmoniser le ton", "elles ne partent pas chez l'acheteur"):
+        assert libelle in r, libelle
+    assert '<template v-if="l.genere">' in r and "atlRepManques()" in r and "atlRepHarm()" in r
+    # Une partie tirée du groupement n'a ni « Rédigée par », ni longueur, ni date : personne ne la rédige.
+    gen = r[r.index('<template v-if="l.genere">'):r.index("<template v-else>", r.index('<template v-if="l.genere">'))]
+    assert "Rédigée par" not in gen and "atlRepRedacteur" not in gen and "<textarea" not in gen
+    for route in ('"/valider-dossier"', '"/repartition/harmoniser"'):
+        assert route in JS_REP, route
+    assert 'action === "harmoniser"' in JS and 'r.kind === "atelier_harmoniser"' in JS
+    out = _node("console.log(JSON.stringify({q: atlRepQfqValidationsTexte(["
+                " {membre: 'chef_de_file', invite_id: null, nom: 'Chef', statut: 'valide'},"
+                " {membre: 'partenaire', invite_id: 4, nom: 'A', statut: 'a_revalider'},"
+                " {membre: 'partenaire', invite_id: 5, nom: 'B', statut: 'a_faire'}]),"
+                " v: atlRepQfqValidationsTexte([]), st: atlRepStatutCls('a_valider')}));")
+    assert out == {"q": "Validée par vous ; à revalider par A ; à valider par B.", "v": "", "st": "st-envoye"}
+
+
+def test_vue_du_chef_harmoniser_propose_seulement_entre_membres_differents(client, auth, fake_llm):
+    fake = fake_llm(lambda kw: (_ for _ in ()).throw(AssertionError("aucune IA pour lire la répartition")))
+    h = auth["headers"]
+    pid, st, a, b, vue = _groupement(client, auth, avec_b=False)
+    assert vue["harmoniser"]["jonctions"] == 0 and vue["harmoniser"]["message"]
+    pa = P(client, a["token"])
+    sid = _part_a(vue)["section_id"]
+    _ecrire(pa, sid, "Nous trions les déchets amiantés sur place.")
+    _envoyer(pa, sid)
+    for s in _etat(client, h, pid)["sections"]:
+        if s["auteur"]["type"] == "organisation":
+            r = client.put(f"/api/atelier/{pid}/sections/{s['id']}/texte", headers=h,
+                           json={"texte": f"Notre réponse pour {s['intitule']}.", "base_version_id": None})
+            assert r.status_code == 200, r.text
+    v = client.get(f"/api/atelier/{pid}/repartition", headers=h).json()
+    assert v["harmoniser"]["jonctions"] >= 1 and fake.calls == []
+    # La partie « Qui fait quoi », ouverte par le chef de file : son texte, ce que chacun apporte, la note interne.
+    q = next(l for l in v["sections"] if l.get("genere") == "grp_qfq")
+    d = client.get(f"/api/atelier/{pid}/repartition/{q['section_id']}", headers=h).json()
+    assert d["texte_commun"]["texte"] and d["note_interne"]["lignes"] and d["validations"]
+    assert all({"nom", "lot", "qualifications"} <= set(m) for m in d["membres"])
+
+
 def test_ecran_regles_d_interface():
     r = _sans_commentaires_html(REP)
     chaines = " ".join(re.findall(r'"((?:[^"\\\n]|\\.)*)"', _sans_commentaires_js(JS_REP)))
@@ -533,7 +581,7 @@ def test_ecran_regles_d_interface():
     for m in re.finditer(r"<button\b(?:[^>\"]|\"[^\"]*\")*>", r):
         assert 'type="button"' in m.group(0), m.group(0)[:120]
     assert r.count('class="tip-b" role="tooltip"') == r.count("tip-b") >= 4          # bulles (i)
-    assert re.findall(r'v-html="([^"]+)"', REP) == ["atlRepHtml(b.v)"]               # rendu sûr seulement
+    assert set(re.findall(r'v-html="([^"]+)"', REP)) == {"atlRepHtml(b.v)"}         # rendu sûr seulement
     assert "atlRepHtml(v) { return v ? atlMdToHtml(v.texte, [], { refsPartenaire: true }) : \"\"; }" in JS_REP
     # 375 px : champs empilés, avant / après l'un sous l'autre, aucune barre horizontale.
     assert ".atl-rep-champs { display:grid;" in CSS_REP and "minmax(0," in CSS_REP

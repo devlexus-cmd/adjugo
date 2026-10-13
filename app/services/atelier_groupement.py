@@ -1834,7 +1834,10 @@ def vue_chef(db, project: Project, dossier: DossierPresentation) -> dict:
     return {"actif": bool(reps), "membres": cands, "sections": sections,
             "dossier": {"empreinte": empreinte_dossier(db, dossier, act), "validations": validations_out(db, dossier),
                         "pret": pret(db, project, dossier, act)},
-            "statuts": STATUTS, "avertissement_envoi": AVERTISSEMENT_ENVOI, "plafond_aide_par_partie": plafond_partie()}
+            "statuts": STATUTS, "avertissement_envoi": AVERTISSEMENT_ENVOI, "plafond_aide_par_partie": plafond_partie(),
+            # « Harmoniser le ton » (assemblage) : proposé seulement s'il y a des parts de membres différents à relier.
+            "harmoniser": {"message": asm.MSG_HARMONISER,
+                           "jonctions": len(asm.jonctions(db, dossier)) if reps else 0}}
 
 
 def detail_chef(db, project: Project, dossier: DossierPresentation, section: DossierSection) -> dict:

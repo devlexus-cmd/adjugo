@@ -151,7 +151,7 @@
 
   const FAIT_TYPES = { chiffre: "Chiffre", nombre_en_lettres: "Nombre en lettres", certification: "Certification",
     nom_propre: "Nom propre", materiel: "Matériel", engagement: "Engagement" };
-  const PILL = { a_rediger: "neutral", en_cours: "a_etudier", envoyee: "st-envoye", a_revalider: "a_etudier", validee: "go" };
+  const PILL = { a_rediger: "neutral", en_cours: "a_etudier", envoyee: "st-envoye", a_valider: "st-envoye", a_revalider: "a_etudier", validee: "go" };
 
   // ── Petits gabarits ─────────────────────────────────────────────────────────────────────────────
 
@@ -167,6 +167,7 @@
   const BULLE_VALIDER = "Valider dit que ce texte est votre version définitive. S'il change ensuite, par vous ou par le chef de file, la partie repasse « à revalider ».";
   const BULLE_DOSSIER = "Le dossier assemblé réunit, dans l'ordre du cadre de l'acheteur, le texte envoyé par chaque membre et le texte validé du chef de file. Il est en lecture seule. Le valider dit que vous l'avez lu : toute modification ensuite le fait repasser « à revalider ».";
   const BULLE_ESPACE = "Vos brouillons, vos sources et l'aide d'Adjugo restent dans un espace privé, lié à ce navigateur : même la personne qui vous a transmis ce lien ne peut pas les lire. Avec un compte Adjugo, rien à ouvrir : retrouvez ce dossier dans « Partagé avec moi ».";
+  const BULLE_QFQ = "Adjugo l'écrit sans IA, à partir de la convention et de la part envoyée par chaque membre : ce que chacun apporte (part, qualifications, moyens), jamais ce qui manque. Tous les membres la lisent et chacun la valide. Pour la changer, modifiez votre part dans « Ma contribution » et renvoyez-la.";
   const BULLE_EXTRAITS = "Les passages de vos documents qu'Adjugo a cités en rédigeant (S1, S2…). Ils restent privés : ni le chef de file ni l'acheteur ne les voient, et les renvois sont retirés à l'export. Un extrait cité ne prouve pas que la phrase est exacte.";
 
   function errMessage(data, status) {
@@ -219,7 +220,7 @@
   function mount(el, opts) {
     const o = Object.assign({ mode: "lien", headers: () => ({}) }, opts || {});
     const st = { vue: null, open: null, edits: {}, moi: {}, msgs: {}, busy: "", jobs: {}, timer: null, dossier: null,
-      dossierOpen: false, msgDossier: null, hist: {}, err: "", gone: false, destroyed: false };
+      dossierOpen: false, msgDossier: null, msgQfq: null, hist: {}, err: "", gone: false, destroyed: false };
     const ENTETE = "X-Adjugo-Espace";
     const KEY_ED = "rp_ed_" + (o.cleStockage || o.base);
 
@@ -560,13 +561,44 @@
       h += '<div class="rp-acts">' + btn("lire-dossier", ico("book-open", 14) + (st.dossierOpen ? "Fermer le dossier assemblé" : "Lire le dossier assemblé"), "", ' aria-expanded="' + (st.dossierOpen ? "true" : "false") + '"');
       if (ecrire && !(ma && ma.statut === "valide")) h += btn("valider-dossier", ico("check", 14) + "Valider le dossier assemblé", lu && d.peut_valider ? "primary" : "", lu && d.peut_valider ? "" : " disabled");
       h += "</div>";
+      const q = v.qui_fait_quoi, qOk = !q || (q.ma_validation && q.ma_validation.statut === "valide");
       if (ecrire && !(ma && ma.statut === "valide")) {
-        if (!d.peut_valider) h += '<div class="muted small rp-p">Validez d\'abord chacune de vos parties, puis lisez le dossier assemblé.</div>';
+        if (!d.peut_valider) h += '<div class="muted small rp-p">' + (qOk ? "Validez d'abord chacune de vos parties, puis lisez le dossier assemblé." : "Validez d'abord chacune de vos parties et « " + rpEsc(q.titre || q.intitule || "Qui fait quoi dans le groupement") + " », puis lisez le dossier assemblé.") + "</div>";
         else if (!lu) h += '<div class="muted small rp-p">Lisez le dossier assemblé avant de le valider.</div>';
       }
+      if (q) h += renderQfq(q, ecrire);
       const m = st.msgDossier;
       if (m) h += m.err ? '<div class="conv-err rp-msg" role="alert">' + ico("circle-alert", 15) + "<div>" + rpEsc(m.txt) + "</div></div>" : '<div class="rp-ok-msg small" role="status">' + ico("check", 14) + "<span>" + rpEsc(m.txt) + "</span></div>";
       if (st.dossierOpen && st.dossier) h += renderAssemble(st.dossier);
+      return h + "</div>";
+    }
+
+    // « Qui fait quoi dans le groupement » (assemblage) : lue par tous les membres, validée par chacun. Les
+    // mentions « justifiée » / « déclarée » restent à l'écran (elles ne partent pas chez l'acheteur).
+    function renderQfq(q, ecrire) {
+      const tc = q.texte_commun || {}, mv = q.ma_validation || {};
+      const fait = mv.statut === "valide", todo = Number(tc.a_completer) || 0;
+      let h = '<div class="rp-qfq"><div class="rp-lbl">' + rpEsc(q.titre || q.intitule || "Qui fait quoi dans le groupement") + tip(rpEsc(BULLE_QFQ)) + "</div>";
+      h += '<div class="small muted">Votre validation : ' + rpEsc(fait ? "validée" + (mv.le ? " le " + rpJour(mv.le) : "") : (mv.statut === "a_revalider" ? "à refaire, le texte a changé" : "à faire")) + "</div>";
+      h += '<details class="gn-det"><summary>Lire ce que dit cette partie</summary>';
+      if (tc.texte) h += '<div class="rp-txt rp-txt-b">' + rpTexte(tc.texte, "source du chef de file") + "</div>";
+      const ms = q.membres || [];
+      if (ms.length) {
+        h += '<ul class="rp-qfq-m">' + ms.map(m => {
+          const ql = (m.qualifications || []).map(x => rpEsc(x.libelle) + (x.statut_libelle ? ' <span class="muted">(' + rpEsc(x.statut_libelle) + ")</span>" : "")).join(", ");
+          return '<li class="small"><b>' + rpEsc(m.nom) + "</b>" + (m.lot ? '<span class="muted"> · ' + rpEsc(m.lot) + "</span>" : "")
+            + (ql ? "<div>Qualifications : " + ql + "</div>" : "")
+            + (!m.part_envoyee && m.role === "partenaire" ? '<div class="muted">Part pas encore envoyée.</div>' : "") + "</li>";
+        }).join("") + "</ul>";
+        h += '<div class="muted small rp-p">« justifiée » : un justificatif ou une source l\'appuie ; « déclarée » : écrite par le membre. Ces mentions restent à l\'écran : elles ne partent pas chez l\'acheteur.</div>';
+      }
+      h += "</details>";
+      if (ecrire && !fait) {
+        h += '<div class="rp-acts">' + btn("valider-qfq", ico("check", 14) + "Valider cette partie", todo ? "" : "primary", (todo ? " disabled" : "") + ' data-qid="' + Number(q.section_id) + '"') + "</div>";
+        if (todo) h += '<div class="muted small rp-p">Elle attend encore ' + (todo > 1 ? todo + " éléments" : "un élément") + " « [À compléter] » (une part pas encore envoyée, par exemple) : vous pourrez la valider ensuite.</div>";
+      }
+      const m = st.msgQfq;
+      if (m) h += m.err ? '<div class="conv-err rp-msg" role="alert">' + ico("circle-alert", 15) + "<div>" + rpEsc(m.txt) + "</div></div>" : '<div class="rp-ok-msg small" role="status">' + ico("check", 14) + "<span>" + rpEsc(m.txt) + "</span></div>";
       return h + "</div>";
     }
 
@@ -576,7 +608,7 @@
         const r = p.redacteur || {};
         const lib = r.vous ? "votre source" : r.type === "partenaire" ? "source du partenaire" : "source du chef de file";
         h += '<article class="rp-dp"><div class="rp-dp-h"><b>' + rpEsc(p.titre || p.intitule) + '</b><span class="pill ' + (PILL[p.statut] || "neutral") + ' rp-pill">' + rpEsc(p.statut_libelle) + "</span></div>"
-          + '<div class="muted small">Rédigée par ' + rpEsc(r.vous ? "vous" : (r.nom || "")) + (p.ecrit_par === "chef_de_file" && r.type === "partenaire" ? ", modifiée par le chef de file" : "") + "</div>"
+          + '<div class="muted small">' + (p.genere ? "Écrite par Adjugo à partir de la convention et des parts des membres" : "Rédigée par " + rpEsc(r.vous ? "vous" : (r.nom || "")) + (p.ecrit_par === "chef_de_file" && r.type === "partenaire" ? ", modifiée par le chef de file" : "")) + "</div>"
           + (p.texte ? '<div class="rp-txt">' + rpTexte(p.texte, lib) + "</div>" : '<div class="muted small rp-p">Pas encore de texte commun pour cette partie.</div>') + "</article>";
       });
       return h + "</div>";
@@ -690,6 +722,14 @@
           const r = await call("POST", "/sections/" + sid + "/faits/" + encodeURIComponent(b.dataset.fid || ""), { statut: a === "relu" ? "relu_par_vous" : "a_relire" });
           if (!r.ok) say(sid, r.message, true);
           await load();
+        }
+        else if (a === "valider-qfq") {
+          const q = st.vue && st.vue.qui_fait_quoi, tc = q && q.texte_commun;
+          if (!q || !tc) return;
+          const r = await avecIdentite(() => call("POST", "/sections/" + Number(q.section_id) + "/valider", { version_id: tc.version_id }), null, "Pour valider cette partie");
+          st.msgQfq = r.ok ? { txt: "Partie validée. Si elle change, elle repassera « à revalider »." } : { txt: r.message, err: true };
+          if (r.ok) live("Partie validée.");
+          await load(); if (r.ok) changed();
         }
         else if (a === "valider-dossier") {
           const r = await avecIdentite(() => call("POST", "/dossier/valider", { empreinte: st.dossier ? st.dossier.empreinte : null }), null, "Pour valider le dossier assemblé");

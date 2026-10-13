@@ -999,7 +999,11 @@ def test_demo_entierement_fictive(client, demo):
     domaines = {m.group(1).lower() for m in _COURRIEL.finditer(tout)}
     assert domaines and all(d.endswith(".exemple") or d in ("adjugo.fr", "collectivites.adjugo.fr")
                             for d in domaines), sorted(domaines)
-    assert not _TEL.findall(tout), _TEL.findall(tout)[:5]
+    # Les empreintes (hexadécimal tiré au hasard : jetons, fichiers, convention) peuvent contenir dix chiffres
+    # de suite : ce ne sont pas des numéros de téléphone.
+    sans_empreintes = re.sub(r"[0-9a-fA-F]{32,}", "", tout)
+    assert not _TEL.search(sans_empreintes), [sans_empreintes[max(0, m.start() - 60):m.end() + 20]
+                                              for m in _TEL.finditer(sans_empreintes)][:5]
 
 
 def test_panneau_acheteur_de_la_demo_sans_boamp(client, demo, espions):

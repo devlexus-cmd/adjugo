@@ -346,7 +346,8 @@ def test_aide_indisponible_neutre_dans_tout_l_ecran_et_aide_rendue_si_l_ia_tombe
     r = pa.post(f"/sections/{sid}/aide", {"action": "rediger"})
     assert r.status_code == 409 and r.json()["detail"] == {"code": "aide_indisponible", "message": ag.MSG_AIDE_INDISPONIBLE}
     for lu in (pa.get().text, pa.get(f"/sections/{sid}").text, pa.get("/dossier").text):
-        low = lu.lower()
+        # Les empreintes (hexadécimal tiré au hasard) peuvent contenir « 402 » : elles ne disent rien du forfait.
+        low = re.sub(r"[0-9a-f]{32,}", "", lu.lower())
         for mot in FORFAIT:
             assert mot not in low, mot
     # Il écrit toujours lui-même, et envoie.
