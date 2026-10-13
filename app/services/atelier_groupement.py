@@ -1850,8 +1850,9 @@ def resume_partenaire(db, inv: ProjectInvite) -> Optional[dict]:
     """Pour « Partagé avec moi » : combien de parties sont confiées à ce partenaire et combien attendent quelque
     chose de lui (à rédiger, en cours, à revalider). Statuts seulement ; None si le dossier n'est pas préparé."""
     try:
-        if (inv.role or "cotraitant") != "cotraitant" or not inv.project_id:
-            return None
+        from app.routers.invites import _network_pending
+        if (inv.role or "cotraitant") != "cotraitant" or not inv.project_id or _network_pending(inv, db):
+            return None             # sous-traitant, ou invitation du réseau pas encore acceptée (aperçu limité)
         project = db.get(Project, inv.project_id)
         d = dossier_du_marche(db, project, inv.owner_id) if project is not None else None
         if d is None or not repartition_active(db, d):

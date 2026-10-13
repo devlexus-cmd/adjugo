@@ -461,11 +461,11 @@
     }
 
     function renderEditeur(v, p) {
-      const sid = p.section_id, b = p.brouillon, cur = p.texte_commun, aide = p.aide || {};
+      const sid = p.section_id, b = p.brouillon, cur = p.texte_commun, aide = p.aide || {}, cap = Number(aide.plafond || 0);
       const loc = st.edits[sid];
       const reste = Number(aide.restantes || 0);
-      const bulleAide = rpEsc(v.message_mode || "") + " Adjugo n'invente aucun fait : ce qu'il ne trouve pas devient « [À compléter] »." + (aide.plafond ? " Aide d'Adjugo pour cette partie : " + reste + " sur " + aide.plafond + " restante" + (reste > 1 ? "s" : "") + "." : "");
-      const plafond = !reste && aide.plafond ? '<div class="muted small rp-p">L\'aide d\'Adjugo a déjà servi ' + aide.plafond + " fois pour cette partie : écrivez la suite vous-même, votre texte sera contrôlé de la même façon.</div>" : "";
+      const bulleAide = rpEsc(v.message_mode || "") + " Adjugo n'invente aucun fait : ce qu'il ne trouve pas devient « [À compléter] »." + (cap ? " Aide d'Adjugo pour cette partie : " + reste + " sur " + cap + " restante" + (reste > 1 ? "s" : "") + "." : "");
+      const plafond = !reste && cap ? '<div class="muted small rp-p">L\'aide d\'Adjugo a déjà servi ' + cap + " fois pour cette partie : écrivez la suite vous-même, votre texte sera contrôlé de la même façon.</div>" : "";
       if (!b && !loc && !st.moi[sid]) {
         let h = '<div class="rp-choix"><div class="rp-lbl">Rédiger cette partie' + tip(bulleAide) + '</div><div class="rp-acts">'
           + btn("aide", ico("sparkles", 14) + "Rédiger avec Adjugo", "primary", ' data-sid="' + sid + '"' + (reste ? "" : " disabled")) + btn("moi", ico("pencil", 14) + "J'écris moi-même", "", ' data-sid="' + sid + '"') + "</div>" + plafond;
