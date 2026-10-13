@@ -421,6 +421,14 @@ son texte validé. Conséquences, sans autre changement :
    Ces sections ne sont pas construites ici.
 4. Un seul process serveur : aucune connexion permanente, aucun temps réel, aucune suggestion façon
    traitement de texte (la revalidation par l'auteur suffit).
+5. Retirer du plan une partie confiée à un partenaire : la reprendre d'abord (`PUT /repartition/{sid}`
+   `{"redacteur": "chef_de_file", "confirmer": true}`) ; la reconstruction du plan ne retire jamais la
+   partie d'un partenaire.
+6. Les textes des partenaires sont affichés comme du texte (échappés), jamais interprétés comme du HTML ;
+   les renvois `[F3]`, `[S2]`… d'une part envoyée renvoient à SES sources : à montrer comme « source du
+   partenaire » (sans lien), retirés à l'export comme les autres.
+7. La clé de l'espace (lien) se garde dans le navigateur du partenaire et part dans l'en-tête
+   `X-Adjugo-Espace` de chaque appel ; elle n'apparaît jamais dans une URL ni dans un journal.
 
 ---
 
