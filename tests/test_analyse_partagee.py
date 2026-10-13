@@ -383,6 +383,53 @@ def test_partie_entreprise_illisible_traitee_comme_une_panne(client, ia, attente
     assert _used(a["email"]) == u0 + 1 and r.json()["details"]["recommandation"].endswith("Pour Zorglub Toitures SARL.")
 
 
+def test_mot_cle_exclu_present_seulement_dans_le_dossier_toujours_signale(client, ia, attentes):
+    """L'analyse d'origine confrontait les « mots-clés à exclure » au dossier entier. En deux temps, le
+    dossier entier est confronté aux exclusions SANS IA : un mot exclu écrit seulement dans un article du
+    dossier (jamais dans l'extraction) est remis à l'appel court avec la phrase exacte du dossier et la
+    pièce, et un point d'attention l'annonce. Rien de tout cela n'entre dans l'extraction partagée."""
+    from app.services import analysis as an
+    fake = ia()
+    rc = (RC_TETE + "Article 7 : le titulaire réalise le DÉSAMIANTAGE des plaques en amiante-ciment de la "
+          "sous-section 3.\n" + _texte("RC", 3000, 41)).encode()
+    a = _compte(client, profil=PROFIL_A, criteres=dict(CRITERES_A, excluded_keywords="désamiantage, plomberie"))
+    _pid, r = _importer(client, a, _zip({"RC.txt": rc}))
+    assert "AMIANT" not in json.dumps(EXTRACTION, ensure_ascii=False).upper()     # jamais dans l'extraction
+    pts = r.json()["details"]["points_attention"]
+    exclu = [x for x in pts if "un mot-clé que vous excluez" in x]
+    assert len(exclu) == 1 and "« désamiantage »" in exclu[0] and "RC.txt" in exclu[0]
+    assert "réalise le DÉSAMIANTAGE des plaques en amiante-ciment de la sous-section 3" in exclu[0]
+    assert pts[:2] == EXTRACTION["details"]["points_attention"] and POINT_ENT in pts   # rien de retiré
+    ent = llm._flatten_content(appels_entreprise(fake.calls)[0]["messages"][0]["content"])
+    assert "MOTS-CLES EXCLUS" in ent and "« désamiantage » : ecrit « DÉSAMIANTAGE » (RC.txt)" in ent
+    assert "plomberie" in ent and "Mots-cles exclus" in an.SYSTEM_ENTREPRISE   # la consigne en parle
+    # L'extraction (prompt et entrée partagée) ne contient ni l'exclusion ni le point.
+    envoye = llm._flatten_content(appels_dossier(fake.calls)[0]["messages"][0]["content"])
+    assert "plomberie" not in envoye and "Mots-cles a exclure" not in envoye
+    assert "mot-clé que vous excluez" not in json.dumps(_lignes_partagees(), default=str, ensure_ascii=False)
+    # Une autre entreprise, sans cette exclusion, reçoit la même extraction sans ce point.
+    b = _compte(client, profil={"name": "Bretagne Couverture"})
+    _pid, rb = _importer(client, b, _zip({"RC.txt": rc}))
+    assert not [x for x in rb.json()["details"]["points_attention"] if "excluez" in x]
+
+
+def test_mots_cles_exclus_recherche_sans_ia():
+    """Casse, accents, tirets et apostrophes indifférents ; mot court en mot entier (« bois » jamais dans
+    « boissons ») ; mot long aussi à l'intérieur d'un mot (« amiante » dans « désamiantée »)."""
+    from app.services import analysis as an
+    t = ("=== CCTP.pdf ===\nLes boissons sont interdites. Charpente en BOIS massif.\n"
+         "Plaques desamiantees avant pose. Travaux en hauteur : nacelle.")
+
+    def trouves(kw):
+        return [(x["mot"], x["trouve"], x["piece"]) for x in an.mots_exclus_trouves(t, {"excluded_keywords": kw})]
+    assert trouves("bois") == [("bois", "BOIS", "CCTP.pdf")]
+    assert trouves("amiante") == [("amiante", "amiante", "CCTP.pdf")]
+    assert trouves("travaux-en-hauteur") == [("travaux-en-hauteur", "Travaux en hauteur", "CCTP.pdf")]
+    assert trouves("verre ; zinc") == [] and trouves("ab") == [] and trouves("") == []
+    x = an.mots_exclus_trouves(t, {"excluded_keywords": "bois"})[0]
+    assert x["extrait"] == "Charpente en BOIS massif." == an.citation_guard(t, x["extrait"])
+
+
 # ═══ 2. Extraction partagée ═══════════════════════════════════════════════════════════════════════
 
 def test_second_import_autre_organisation_servi_sans_extraction(client, ia, attentes):

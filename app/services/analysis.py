@@ -522,6 +522,7 @@ Regles importantes :
 - "strategie" est le 4e et dernier paragraphe de l'analyse (les 3 premiers, sur le marche lui-meme, te sont fournis : ne les repete pas) : y aller ou non, comment, seul ou en groupement, et ce qui fera la difference pour CETTE entreprise. Il doit etre COHERENT avec la compatibilite calculee, que l'entreprise voit a l'ecran : ne la contredis jamais. Compatibilite « a etudier » : dis ce qu'il faut verifier ; « peu adapte » : explique pourquoi ne pas y aller, ou a quelle condition (par exemple en groupement si une opportunite est detectee). Parle de compatibilite en %, jamais de « Go » ni de « No-Go ».
 - "points_attention_entreprise" : 0 a 4 points PROPRES a cette entreprise (seuil de l'entreprise depasse, chiffre d'affaires exige superieur au sien, qualification exigee absente de son profil, delai de remise inferieur a son minimum, lieu hors de sa zone...), jamais un point deja present dans les points d'attention fournis.
 - "clauses" : pour CHAQUE clause de la liste numerotee fournie qui depasse un seuil de l'entreprise (penalites de retard max, garantie a premiere demande max, retenue de garantie max, avance minimale souhaitee, delai de remise minimal) : "index" est son numero, "niveau" vaut "eleve", et "pourquoi_entreprise" le dit explicitement, avec le seuil de l'entreprise. N'inclus aucune autre clause. Liste vide [] si aucun seuil n'est fourni ou depasse.
+- Mots-cles exclus : les mots-cles que l'entreprise exclut et qui sont ecrits dans le dossier te sont donnes (avec la phrase exacte du dossier). La "strategie" doit le dire et en tenir compte (y aller ou non, sous-traiter cette partie, ou s'associer). Un point d'attention est deja ajoute pour chacun : ne le repete pas dans "points_attention_entreprise". Si l'analyse fournie fait apparaitre une activite que l'entreprise exclut sous une autre forme (par exemple de l'amiante a retirer quand elle exclut le desamiantage), signale-le dans "points_attention_entreprise" en citant l'element de l'analyse.
 - "clauses_ajoutees" : seulement une clause du dossier (presente dans les faits fournis) qui depasse un seuil de l'entreprise et qui manque a la liste numerotee, au format {"clause": "...", "niveau": "eleve", "pourquoi": "...", "levier_negociation": "contre-proposition concrete et actionnable (article du CCP si pertinent)"} ; sinon [].
 - Fonde-toi UNIQUEMENT sur les elements fournis : n'invente jamais un chiffre, une exigence, une echeance, ni une capacite de l'entreprise. Si une donnee du profil manque, dis-le plutot que de la supposer."""
 
@@ -2400,7 +2401,142 @@ def completer(extraction: dict, text_integral: str, company=None, criteria=None,
         result = finalize_analysis(copy.deepcopy(extraction), text_integral, company, criteria, pieces)
     finally:
         _QUALITE.reset(tok)
-    return personnaliser(result, company, criteria, lang_name, annonce_seule=annonce_seule)
+    # Mots-clés que l'entreprise exclut, cherchés SANS IA dans le texte ENTIER de CE dossier (l'appel court
+    # ne reçoit pas le dossier : c'est ici que le dossier entier est confronté aux exclusions).
+    exclus = mots_exclus_trouves(text_integral, criteria)
+    return personnaliser(result, company, criteria, lang_name, annonce_seule=annonce_seule, exclus=exclus)
+
+
+# ── Mots-clés exclus par l'entreprise, retrouvés dans le dossier (sans IA) ────────────────────────
+# L'analyse d'origine remettait à l'IA, dans le même appel, les « Mots-cles a exclure » et le dossier
+# entier. En deux temps, l'appel court ne reçoit plus le dossier : chaque mot-clé exclu est donc cherché
+# dans le texte ENTIER du dossier, sans IA (casse, accents, espaces, tirets et apostrophes indifférents ;
+# un mot de 6 lettres ou plus est trouvé aussi à l'intérieur d'un mot plus long, « amiante » dans
+# « désamiantage » ; plus court, en mot entier, pluriel compris). Chaque mot retrouvé, avec la phrase
+# exacte du dossier (vérifiée par citation_guard) et la pièce, est (1) remis à l'appel court, qui doit en
+# tenir compte dans la stratégie, et (2) ajouté, sans IA, aux points d'attention. Une forme très
+# différente (« amiante » pour « désamiantage ») reste à l'appel court, qui la cherche dans l'analyse.
+EXCLUS_MAX = 10                       # mots-clés exclus examinés (dans l'ordre saisi)
+_VARIANTES = {"a": "aàâäáã", "c": "cç", "e": "eéèêë", "i": "iîïíì", "o": "oôöóò", "u": "uùûüú", "y": "yÿý",
+              "n": "nñ"}
+_SEP_MOTS = " -'"
+
+
+def _mots_exclus(criteria) -> list:
+    brut = (criteria or {}).get("excluded_keywords")
+    if isinstance(brut, (list, tuple)):
+        mots = [str(x) for x in brut]
+    else:
+        mots = re.split(r"[,;\n]+", str(brut or ""))
+    out, vus = [], set()
+    for m in mots:
+        m = m.strip().strip("\"'«»“”.:").strip()
+        n = _norm_citation(m)
+        if m and n and n not in vus:
+            vus.add(n)
+            out.append(m)
+    return out[:EXCLUS_MAX]
+
+
+def _motif_exclu(mot: str):
+    """Expression régulière d'un mot-clé exclu, appliquée au texte d'ORIGINE (positions exactes)."""
+    nk = _norm_citation(mot)
+    lettres = re.sub(r"[\W_]+", "", nk)
+    if len(lettres) < 3:
+        return None
+    out, i = [], 0
+    while i < len(nk):
+        c = nk[i]
+        if nk.startswith("oe", i) or c == "œ":
+            out.append("(?:oe|œ)")
+            i += 1 if c == "œ" else 2
+            continue
+        if nk.startswith("ae", i) or c == "æ":
+            out.append("(?:ae|æ)")
+            i += 1 if c == "æ" else 2
+            continue
+        if c in _SEP_MOTS:
+            while i < len(nk) and nk[i] in _SEP_MOTS:
+                i += 1
+            out.append(r"[\s\-'’ʼ]+")
+            continue
+        out.append("[" + _VARIANTES[c] + "]" if c in _VARIANTES else re.escape(c))
+        i += 1
+    motif = "".join(out)
+    if len(lettres) < 6:
+        motif = r"(?<!\w)" + motif + r"(?:s|x|es)?(?!\w)"
+    return re.compile(motif, re.IGNORECASE)
+
+
+def _phrase_autour(texte: str, a: int, b: int, max_len: int = 280) -> str:
+    """La phrase du dossier autour de [a, b), blancs réduits ; trop longue, coupée autour du mot, sur
+    des mots entiers (reste une suite exacte du dossier : vérifiable par citation_guard)."""
+    debut, fin = max(0, a - 200), min(len(texte), b + 200)
+    k = max(texte.rfind(x, debut, a) for x in (". ", "\n", "; ", "! ", "? "))
+    if k >= 0:
+        debut = k + 1
+    fins = [j for j in (texte.find(x, b, fin) for x in (". ", "\n", "; ", "! ", "? ")) if j >= 0]
+    if fins:
+        fin = min(fins) + 1
+    gauche = re.sub(r"\s+", " ", texte[debut:a]).lstrip(" ;:")
+    mot = re.sub(r"\s+", " ", texte[a:b])
+    droite = re.sub(r"\s+", " ", texte[b:fin]).rstrip(" ;:")
+    if len(gauche) + len(mot) + len(droite) > max_len:
+        place = max(0, max_len - len(mot))
+        d = min(len(droite), max(place // 2, place - len(gauche)))
+        g = min(len(gauche), place - d)
+        g_coupe, d_coupe = gauche[len(gauche) - g:], droite[:d]
+        if g < len(gauche) and " " in g_coupe:
+            g_coupe = g_coupe[g_coupe.index(" ") + 1:]
+        if d < len(droite) and " " in d_coupe:
+            d_coupe = d_coupe[:d_coupe.rindex(" ")]
+        gauche, droite = g_coupe, d_coupe
+    return (gauche + mot + droite).strip()
+
+
+def _piece_de(texte: str, pos: int) -> str:
+    """Nom de la pièce (en-tête « === nom === » du texte assemblé) qui contient la position `pos`."""
+    try:
+        from app.services.dce_pieces import HEADER_RE
+        nom = ""
+        for m in HEADER_RE.finditer(texte, 0, pos):
+            nom = m.group(1)
+        return nom.strip()
+    except Exception:       # noqa: BLE001
+        return ""
+
+
+def mots_exclus_trouves(text_integral: str, criteria) -> list:
+    """[{mot, trouve, extrait, piece}] : chaque mot-clé exclu par l'entreprise écrit dans le dossier
+    (première occurrence), avec la phrase exacte du dossier (vérifiée) et la pièce. Sans IA ; ne lève
+    jamais."""
+    texte = str(text_integral or "")
+    out = []
+    if not texte:
+        return out
+    for mot in _mots_exclus(criteria):
+        try:
+            rx = _motif_exclu(mot)
+            m = rx.search(texte) if rx is not None else None
+            if m is None:
+                continue
+            extrait = citation_guard(texte, _phrase_autour(texte, m.start(), m.end()), min_len=12)
+            out.append({"mot": mot, "trouve": re.sub(r"\s+", " ", m.group(0)).strip(), "extrait": extrait,
+                        "piece": _piece_de(texte, m.start())})
+        except Exception:       # noqa: BLE001 — un mot-clé illisible n'empêche jamais l'analyse
+            continue
+    return out
+
+
+def _point_exclu(x: dict) -> str:
+    """Point d'attention (sans IA) pour un mot-clé exclu retrouvé dans le dossier."""
+    if _norm_citation(x["trouve"]) == _norm_citation(x["mot"]):
+        tete = f"Le dossier mentionne « {x['mot']} », un mot-clé que vous excluez"
+    else:
+        tete = f"Le dossier mentionne « {x['trouve']} » (vous excluez « {x['mot']} »)"
+    if x.get("piece"):
+        tete += f" — {x['piece']}"
+    return tete + (f" : « {x['extrait']} »" if x.get("extrait") else "")
 
 
 # ── (b) Partie propre à l'entreprise ──────────────────────────────────────────────────────────
@@ -2450,7 +2586,7 @@ def _bloc_activite(company, criteria) -> str:
 
 
 def build_entreprise_prompt(result: dict, company=None, criteria=None, lang_name=None,
-                            annonce_seule: bool = False) -> str:
+                            annonce_seule: bool = False, exclus: list = None) -> str:
     """Prompt de la partie propre à l'entreprise : l'analyse objective (faits vérifiés, jamais le
     dossier entier), la compatibilité calculée, le profil et les critères (les champs que l'analyse
     d'origine remettait, plus l'activité que le score compare)."""
@@ -2486,6 +2622,16 @@ def build_entreprise_prompt(result: dict, company=None, criteria=None, lang_name
         p += ("=== OPPORTUNITE DE GROUPEMENT DETECTEE ===\n"
               + "\n".join("- " + str(r) for r in (grp.get("raisons") or [])) + "\n\n")
     p += _bloc_profil(company) + _bloc_activite(company, criteria) + _bloc_criteres(criteria)
+    if _mots_exclus(criteria):
+        p += ("=== MOTS-CLES EXCLUS PAR L'ENTREPRISE, RETROUVES DANS LE DOSSIER COMPLET (recherche sans IA dans "
+              "tout le texte) ===\n")
+        if exclus:
+            for x in exclus:
+                p += (f"- « {x['mot']} » : ecrit « {x['trouve']} »" + (f" ({x['piece']})" if x.get("piece") else "")
+                      + (f" : « {x['extrait']} »" if x.get("extrait") else "") + "\n")
+        else:
+            p += "(aucun n'est ecrit tel quel dans le dossier)\n"
+        p += "\n"
     if not _seuils_fournis(criteria):
         p += "(Aucun seuil de clause n'est fourni par l'entreprise : \"clauses\" et \"clauses_ajoutees\" sont vides.)\n\n"
     if lang_name and lang_name.lower() != "français":
@@ -2506,17 +2652,21 @@ MESSAGE_ENTREPRISE_ILLISIBLE = ("Les conseils propres à votre entreprise n'ont 
                                 "Votre analyse n'a pas été débitée : relancez-la.")
 
 
-def personnaliser(result: dict, company=None, criteria=None, lang_name=None, annonce_seule: bool = False) -> dict:
+def personnaliser(result: dict, company=None, criteria=None, lang_name=None, annonce_seule: bool = False,
+                  exclus: list = None) -> dict:
     """(b) Partie propre à l'entreprise, après le calcul déterministe du score : un appel court (même
     tâche, même modèle, mêmes réglages que l'analyse d'origine), dans l'espace facturé du client, qui
     reçoit l'extraction, la compatibilité calculée, le profil et les critères — jamais le dossier entier.
     Noms des salariés masqués (pii_scope). Une réponse illisible est relancée une fois ; illisible
     encore : PartieEntrepriseIllisible (panne : l'appelant rembourse, l'utilisateur relance). Propage
-    une panne de l'IA (l'appelant rembourse)."""
+    une panne de l'IA (l'appelant rembourse).
+    exclus (mots_exclus_trouves) : mots-clés exclus par l'entreprise écrits dans le dossier — remis à
+    l'appel court et ajoutés, sans IA, aux points d'attention."""
     import logging
     from app.services.llm import pii_scope
     from app.services.pii import from_team
-    user = build_entreprise_prompt(result, company, criteria, lang_name, annonce_seule=annonce_seule)
+    user = build_entreprise_prompt(result, company, criteria, lang_name, annonce_seule=annonce_seule,
+                                   exclus=exclus)
     perso = None
     with pii_scope(from_team((company or {}).get("team") or [])):
         for _essai in range(2):
@@ -2532,6 +2682,9 @@ def personnaliser(result: dict, company=None, criteria=None, lang_name=None, ann
             # Comme l'analyse d'origine : une clause n'est « au-delà du seuil de l'entreprise » que si
             # l'entreprise a donné ce seuil (jamais un seuil supposé).
             perso = dict(perso, clauses=[], clauses_ajoutees=[])
+        if exclus:
+            det = result.get("details") if isinstance(result.get("details"), dict) else result.setdefault("details", {})
+            det["points_attention"] = _liste(det.get("points_attention")) + [_point_exclu(x) for x in exclus]
         fusionner_entreprise(result, perso)
     else:
         logging.getLogger("adjugo").warning("partie propre à l'entreprise illisible deux fois : traitée comme une panne")
