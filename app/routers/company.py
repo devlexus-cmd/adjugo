@@ -17,6 +17,12 @@ from app.schemas import CompanyCreate, CompanyOut, CriteriaUpdate, CriteriaOut
 company_router = APIRouter(prefix="/api/company", tags=["Mon entreprise"])
 
 
+def _refuser_demo(user) -> None:
+    """Défense en profondeur (middleware démo) : le profil de la vitrine partagée ne change pas."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(user, "modifier le profil de votre entreprise")
+
+
 @company_router.get("/", response_model=CompanyOut)
 def get_company(
     current_user: User = Depends(get_current_user),
@@ -34,6 +40,7 @@ def create_company(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _refuser_demo(current_user)
     oid = data_owner_id(current_user, db)
     existing = db.query(Company).filter(Company.user_id == oid).first()
     if existing:
@@ -53,6 +60,7 @@ def update_company(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _refuser_demo(current_user)
     oid = data_owner_id(current_user, db)
     company = db.query(Company).filter(Company.user_id == oid).first()
     if not company:

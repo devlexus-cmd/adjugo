@@ -110,6 +110,9 @@ def demo(request: Request, data: DemoLienIn | None = None, db: Session = Depends
     extra = demo_ouverture(data.cle if data else "")
     if extra is None:
         raise HTTPException(status_code=404, detail="Not Found")
+    # Même remise à neuf que côté entreprises (les deux démos), avant d'ouvrir la session.
+    from app.services.demo_remise import remettre_a_neuf_si_inactive
+    remettre_a_neuf_si_inactive(db)
     from app.services.acheteur_demo_seed import ensure_demo_acheteur
     a = ensure_demo_acheteur(db)
     return {"access_token": _token(a, extra), "token_type": "bearer", "demo": True,

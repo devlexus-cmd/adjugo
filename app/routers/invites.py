@@ -959,6 +959,10 @@ def _valid_invite(token: str, db: Session) -> ProjectInvite:
         raise HTTPException(410, "Vous avez décliné cette invitation. Contactez le chef de file pour la rouvrir.")
     if _is_expired(inv.expires_at):
         raise HTTPException(410, "Ce lien de partage a expiré")
+    if _invite_is_demo(inv, db):
+        # Le lien partenaire de la vitrine montré pendant une présentation : la démo est active.
+        from app.services.demo_remise import noter_activite
+        noter_activite()
     return inv
 
 

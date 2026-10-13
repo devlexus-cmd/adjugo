@@ -114,7 +114,15 @@ def get_current_acheteur(token: str = Depends(oauth2_acheteur), db: Session = De
     from app.services.acheteur_demo_seed import DEMO_EMAIL as _ACH_DEMO
     if (getattr(acheteur, "email", "") or "").strip().lower() == _ACH_DEMO:
         _refuser_session_demo_perimee(payload)
+        _noter_activite_demo()
     return acheteur
+
+
+def _noter_activite_demo() -> None:
+    """Une session démo est active : pas de remise à neuf de la vitrine sous ses pieds
+    (app/services/demo_remise.py)."""
+    from app.services.demo_remise import noter_activite
+    noter_activite()
 
 
 def _refuser_session_demo_perimee(payload: dict) -> None:
@@ -168,4 +176,5 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     from app.services.demo_seed import DEMO_EMAIL
     if (getattr(user, "email", "") or "").strip().lower() == DEMO_EMAIL:
         _refuser_session_demo_perimee(payload)
+        _noter_activite_demo()
     return user

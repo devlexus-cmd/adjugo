@@ -7,7 +7,11 @@ simulation de groupement, filtres, chiffrage manuel, CERFA…), mais ne peut plu
   (a) faire envoyer un email (invitations partenaire / équipe, relances, changement d'email…),
   (b) téléverser un fichier,
   (c) lancer un appel IA payant (hors analyses canned des marchés DEMO-),
-  (d) supprimer le compte, toucher à l'abonnement, à l'équipe ou à l'organisation.
+  (d) supprimer le compte, toucher à l'abonnement, à l'équipe ou à l'organisation,
+  (e) abîmer la vitrine PARTAGÉE entre les présentations : supprimer ou modifier un marché (seul le
+      changement d'étape reste permis), un document, le profil entreprise, les critères, les
+      partenaires et leurs rattachements aux marchés. Entre deux présentations, la vitrine est en
+      plus recréée automatiquement (app/services/demo_remise.py).
 
 Mise en œuvre CENTRALE : un middleware (enregistré dans app/main.py) consulte une liste
 explicite de (méthode, motif de route). Seules les requêtes qui tombent dans cette liste
@@ -227,6 +231,20 @@ _BLOCKED = [
     ("DELETE", "/api/org/members/{mid}",                      "gérer votre équipe"),
     ("PUT",    "/api/org/members/{mid}/role",                 "gérer votre équipe"),
     ("POST",   "/api/org/transfer-ownership",                 "gérer votre équipe"),
+    # (e) vitrine partagée entre les présentations : ce qu'un visiteur y supprime ou modifie resterait
+    # pour les suivants (la remise à neuf automatique, app/services/demo_remise.py, ne passe qu'après
+    # une période sans aucune session démo). Le changement d'étape d'un marché reste permis : PUT
+    # /api/projects/{pid} est filtré DANS la route (seul le champ « status » passe pour la démo).
+    ("DELETE", "/api/projects/{pid}",                         "supprimer un marché"),
+    ("PATCH",  "/api/documents/{did}",                        "gérer vos documents"),
+    ("DELETE", "/api/documents/{did}",                        "gérer vos documents"),
+    ("POST",   "/api/company",                                "modifier le profil de votre entreprise"),
+    ("PUT",    "/api/company",                                "modifier le profil de votre entreprise"),
+    ("PUT",    "/api/criteria",                               "régler vos critères"),
+    ("PUT",    "/api/cotraitants/{cid}",                      "gérer vos partenaires"),
+    ("DELETE", "/api/cotraitants/{cid}",                      "gérer vos partenaires"),
+    ("POST",   "/api/cotraitants/project/{pid}",              "gérer vos partenaires"),
+    ("DELETE", "/api/cotraitants/project/{pid}/{lid}",        "gérer vos partenaires"),
 ]
 _RULES = [(m, _p(path), action) for m, path, action in _BLOCKED]
 

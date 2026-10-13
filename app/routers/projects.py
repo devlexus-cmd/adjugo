@@ -94,7 +94,12 @@ def update_project(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Mettre à jour un projet."""
+    """Mettre à jour un projet. Compte démo (vitrine partagée) : seul le changement d'étape
+    (« status ») est permis, pour que le tableau des marchés reste interactif."""
+    changes = data.model_dump(exclude_unset=True)
+    if set(changes) - {"status"}:
+        from app.core.demo_guard import refuser_demo
+        refuser_demo(current_user, "modifier un marché")
     project = db.query(Project).filter(
         Project.id == project_id, Project.user_id.in_(member_ids(current_user, db)),
         Project.deleted_at.is_(None),
@@ -102,7 +107,7 @@ def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Projet introuvable")
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    for key, value in changes.items():
         setattr(project, key, value)
 
     db.commit()
@@ -117,6 +122,8 @@ def delete_project(
     db: Session = Depends(get_db),
 ):
     """Mettre un projet à la corbeille (suppression douce, réversible)."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "supprimer un marché")   # défense en profondeur (middleware démo)
     project = db.query(Project).filter(
         Project.id == project_id, Project.user_id.in_(member_ids(current_user, db)),
         Project.deleted_at.is_(None),

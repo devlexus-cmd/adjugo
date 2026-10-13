@@ -854,6 +854,8 @@ def _ensure_demo_account():
     try:
         from app.services.demo_seed import ensure_demo
         ensure_demo(db, force=True)   # repart propre à chaque démarrage (anti-dérive)
+        from app.services.demo_remise import noter_remise
+        noter_remise()                # vitrine neuve : pas de remise à neuf à la première ouverture
     except Exception as e:
         _logging.getLogger("adjugo").warning("seed démo ignoré : %s", e)
     finally:

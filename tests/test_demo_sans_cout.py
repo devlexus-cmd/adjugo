@@ -140,20 +140,26 @@ SANS_COUT = {
     ("POST", "/api/auth/demo"): "connexion à la démo (aucun email, aucune IA)",
     ("POST", "/api/auth/demo/lien"): "vérification de la clé du lien privé de démonstration (n'ouvre aucune session)",
     ("POST", "/api/auth/reset-password"): _H, ("POST", "/api/auth/google/exchange"): _H,
-    ("POST", "/api/projects/"): _I, ("PUT", "/api/projects/{project_id}"): _I,
-    ("DELETE", "/api/projects/{project_id}"): _I, ("POST", "/api/projects/{project_id}/restore"): _I,
-    ("PATCH", "/api/documents/{doc_id}"): _I, ("DELETE", "/api/documents/{doc_id}"): _I,
+    # Vitrine PARTAGÉE entre les présentations (tests/test_demo_remise_a_neuf.py) : supprimer ou modifier un
+    # marché, un document, le profil, les critères, les partenaires est refusé à la démo ; seul le changement
+    # d'étape d'un marché reste ouvert (filtré dans la route).
+    ("POST", "/api/projects/"): _I,
+    ("PUT", "/api/projects/{project_id}"): ("vitrine : seul le changement d'étape (status) reste ouvert à la démo, "
+                                           "tout autre champ est refusé dans la route"),
+    ("DELETE", "/api/projects/{project_id}"): _V, ("POST", "/api/projects/{project_id}/restore"): _I,
+    ("PATCH", "/api/documents/{doc_id}"): _V, ("DELETE", "/api/documents/{doc_id}"): _V,
     ("POST", "/api/documents/{doc_id}/restore"): _I,
     ("POST", "/api/invoices/"): _I, ("PUT", "/api/invoices/{invoice_id}"): _I,
     ("POST", "/api/invoices/{invoice_id}/convert"): _I,
     ("POST", "/api/contacts/"): _I, ("PUT", "/api/contacts/{contact_id}"): _I,
     ("DELETE", "/api/contacts/{contact_id}"): _I,
-    ("POST", "/api/company/"): _I, ("PUT", "/api/company/"): _I, ("PUT", "/api/criteria/"): _I,
+    ("POST", "/api/company/"): _V, ("PUT", "/api/company/"): _V, ("PUT", "/api/criteria/"): _V,
     ("POST", "/api/cerfa/{project_id}/{doc_type}"): "formulaire rempli sans IA, rien n'est rangé",
     ("POST", "/api/stripe/webhook"): "hors démo : appel signé de Stripe",
-    ("POST", "/api/cotraitants/"): _I, ("PUT", "/api/cotraitants/{ct_id}"): _I,
-    ("DELETE", "/api/cotraitants/{ct_id}"): _I, ("POST", "/api/cotraitants/project/{project_id}"): _I,
-    ("DELETE", "/api/cotraitants/project/{project_id}/{link_id}"): _I,
+    ("POST", "/api/cotraitants/"): _I + " (un partenaire ajouté s'efface à la remise à neuf)",
+    ("PUT", "/api/cotraitants/{ct_id}"): _V,
+    ("DELETE", "/api/cotraitants/{ct_id}"): _V, ("POST", "/api/cotraitants/project/{project_id}"): _V,
+    ("DELETE", "/api/cotraitants/project/{project_id}/{link_id}"): _V,
     ("POST", "/api/projects/{project_id}/groupement/simulate"): "simulation déterministe (score de groupement)",
     # Groupement de la vitrine (Kerhel) : convention validée par tous ; retenir une autre composition, retirer
     # le plan ou défiger l'offre la rendrait caduque pour chaque visiteur (tests/test_demo_groupement_kerhel.py).

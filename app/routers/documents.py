@@ -226,6 +226,8 @@ def rename_document(
     db: Session = Depends(get_db),
 ):
     """Renommer un document (titre affiché dans le coffre-fort)."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "gérer vos documents")     # défense en profondeur (middleware démo)
     doc = db.query(Document).filter(
         Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
         Document.deleted_at.is_(None), Document.parent_id.is_(None),
@@ -248,6 +250,8 @@ def delete_document(
 ):
     """Mettre un document à la corbeille (suppression douce, réversible).
     Le fichier de stockage est conservé tant que la corbeille n'est pas purgée."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "gérer vos documents")     # défense en profondeur (middleware démo)
     doc = db.query(Document).filter(
         Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
         Document.deleted_at.is_(None),

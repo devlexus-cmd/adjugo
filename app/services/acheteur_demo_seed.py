@@ -54,8 +54,10 @@ def _empreinte(payload) -> str:
     return json.dumps(payload, sort_keys=True, ensure_ascii=False)
 
 
-def ensure_demo_acheteur(db):
-    """Garantit l'existence du compte démo acheteur + ses DCE d'exemple. Renvoie l'Acheteur."""
+def ensure_demo_acheteur(db, force: bool = False):
+    """Garantit l'existence du compte démo acheteur + ses DCE d'exemple. Renvoie l'Acheteur.
+    force=True (remise à neuf entre deux présentations, app/services/demo_remise.py) : les DCE
+    d'exemple sont recréés, dates de pilotage recalculées à aujourd'hui."""
     a = db.query(Acheteur).filter(Acheteur.email == DEMO_EMAIL).first()
     if not a:
         # Mot de passe aléatoire jamais communiqué : on n'entre QUE par /api/acheteur/demo.
@@ -81,10 +83,11 @@ def ensure_demo_acheteur(db):
     items = _items()
     q = db.query(AcheteurDce).filter(AcheteurDce.acheteur_id == a.id)
     presents = q.all()
-    if items and presents and (sorted(_empreinte(d.payload) for d in presents)
+    if items and presents and (force or sorted(_empreinte(d.payload) for d in presents)
                                != sorted(_empreinte(it["payload"]) for it in items)):
         # Les DCE d'exemple ont changé depuis le dernier seed (13/10/2026 : la commune réelle des
-        # exemples remplacée par Démoville, fictive) : ceux du compte démo sont remplacés. Le compte est
+        # exemples remplacée par Démoville, fictive), ou remise à neuf entre deux présentations
+        # (force) : ceux du compte démo sont remplacés. Le compte est
         # en lecture seule (403 sur toute écriture) : il n'a jamais d'autres DCE que ceux du seed.
         q.delete(synchronize_session=False)
         db.flush()

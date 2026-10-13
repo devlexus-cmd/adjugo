@@ -238,6 +238,10 @@ def demo_login(request: Request, data: Optional[DemoLienIn] = None, db: Session 
     extra = demo_ouverture(data.cle if data else "")
     if extra is None:
         raise HTTPException(status_code=404, detail="Not Found")
+    # Nouvelle présentation après une période sans aucune session démo : la vitrine partagée est
+    # recréée AVANT d'ouvrir la session (app/services/demo_remise.py ; jamais bloquant).
+    from app.services.demo_remise import remettre_a_neuf_si_inactive
+    remettre_a_neuf_si_inactive(db)
     from app.services.demo_seed import ensure_demo
     user = ensure_demo(db)   # crée le compte démo s'il n'existe pas encore
     token = create_access_token(data={**extra, "sub": str(user.id), "tv": int(user.token_version or 0)})

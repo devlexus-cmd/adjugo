@@ -77,12 +77,20 @@ nouveau lien aux personnes qui doivent garder l'accès.
   elle. Le lien d'invitation du partenaire (bouton « Copier le lien » de la fiche du marché, à ouvrir
   dans un autre onglet) montre la même convention, le même total, les accords et son journal.
   « Avant de déposer » affiche volontairement 3 contrôles sur 4 : l'attestation URSSAF du chef de file
-  expire avant la date limite. Elle est datée de 22 jours après le démarrage du serveur : démarré après
-  le 27/11/2026, le marché passe « Prêt à déposer ».
-- La vitrine du groupement reste la même pour tous : la démo refuse de modifier la convention, de
-  retenir une autre composition, de défiger l'offre ou de modifier la part du partenaire. En revanche,
-  changer le profil entreprise ou le nom du marché rend la convention « plus à jour » jusqu'au
-  redémarrage suivant : à éviter pendant une présentation.
+  expire avant la date limite. Elle est datée de 22 jours après le démarrage du serveur (ou la dernière
+  remise à neuf) : à partir du 28/11/2026, le marché passe « Prêt à déposer ».
+- La vitrine reste la même pour tous : la démo refuse de modifier la convention, de retenir une autre
+  composition, de défiger l'offre, de modifier la part du partenaire, de supprimer ou de modifier un
+  marché (on peut seulement le changer d'étape), de renommer ou supprimer un document, de modifier le
+  profil entreprise, les critères ou les partenaires. Le visiteur voit alors « La démo est en lecture
+  guidée ».
+- Remise à neuf automatique : si personne n'a utilisé la démo depuis 30 minutes, la prochaine personne
+  qui l'ouvre (par le lien ou depuis /demo) retrouve la démo d'origine, comme au démarrage du serveur :
+  marchés ajoutés, étapes déplacées, contacts ou devis laissés par la présentation précédente sont
+  effacés (moins d'une seconde d'attente à l'ouverture). Tant qu'une présentation est en cours, rien ne
+  bouge. Entre deux présentations rapprochées (moins de 30 minutes), la démo n'est pas remise à neuf :
+  redémarrez le serveur si besoin. Le délai se règle avec `DEMO_REMISE_A_NEUF_MIN` (en minutes, 0 pour
+  ne jamais remettre à neuf).
 - Les dates sont fixes : Cap-Aurèle le 10/12/2026, Kerhel le 20/12/2026, toiture le 30/12/2026,
   « Trouver des marchés » jusqu'au 27/01/2027. Après, la démo affiche des échéances passées.
 

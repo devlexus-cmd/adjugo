@@ -122,6 +122,14 @@ def _clean_siret(v):
 
 router = APIRouter(prefix="/api/cotraitants", tags=["Co-traitants"])
 
+
+def _refuser_demo(user) -> None:
+    """Défense en profondeur (middleware démo) : les partenaires de la vitrine partagée et leurs
+    rattachements aux marchés ne changent pas (le groupement de Kerhel en dépend). Ajouter un
+    partenaire reste permis : la remise à neuf automatique l'efface entre deux présentations."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(user, "gérer vos partenaires")
+
 @router.get("/")
 def list_cotraitants(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(Cotraitant).filter(Cotraitant.user_id.in_(member_ids(current_user, db))).all()
@@ -141,6 +149,7 @@ def create_cotraitant(data: CotraitantCreate, current_user: User = Depends(get_c
 
 @router.put("/{ct_id}")
 def update_cotraitant(ct_id: int, data: CotraitantCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _refuser_demo(current_user)
     ct = db.query(Cotraitant).filter(Cotraitant.id == ct_id, Cotraitant.user_id.in_(member_ids(current_user, db))).first()
     if not ct:
         raise HTTPException(404, "Co-traitant introuvable")
@@ -167,6 +176,7 @@ def update_cotraitant(ct_id: int, data: CotraitantCreate, current_user: User = D
 
 @router.delete("/{ct_id}")
 def delete_cotraitant(ct_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _refuser_demo(current_user)
     ct = db.query(Cotraitant).filter(Cotraitant.id == ct_id, Cotraitant.user_id.in_(member_ids(current_user, db))).first()
     if not ct:
         raise HTTPException(404, "Co-traitant introuvable")
@@ -247,6 +257,7 @@ def list_project_cotraitants(project_id: int, current_user: User = Depends(get_c
 @router.post("/project/{project_id}")
 def attach_cotraitant(project_id: int, req: AttachRequest,
                       current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _refuser_demo(current_user)
     _own_project(project_id, current_user, db)
 
     # 1) Résoudre / créer le co-traitant (réseau)
@@ -306,6 +317,7 @@ def attach_cotraitant(project_id: int, req: AttachRequest,
 @router.delete("/project/{project_id}/{link_id}")
 def detach_cotraitant(project_id: int, link_id: int,
                       current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _refuser_demo(current_user)
     _own_project(project_id, current_user, db)
     link = db.query(ProjectCotraitant).filter(ProjectCotraitant.id == link_id,
                                               ProjectCotraitant.project_id == project_id).first()
