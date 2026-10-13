@@ -577,6 +577,47 @@ class UsageIA(Base):
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+# === ANALYSE PARTAGÉE (moins de coût d'IA, sans rien changer à la qualité) ===
+# Extraction d'un dossier de consultation (document PUBLIC de l'acheteur) faite par l'IA SANS aucune
+# donnée d'entreprise, gardée pour être resservie quand ce même dossier, exactement, est analysé à
+# nouveau, par n'importe quelle organisation. Clé = empreinte de TOUT ce que l'IA reçoit pour
+# l'extraction (consignes, modèles, version de la lecture, langue, texte et état de chaque pièce).
+# AUCUNE colonne de propriétaire : rien ne relie une entrée à une organisation. Pas une donnée
+# personnelle (document public de l'acheteur). Voir docs/ANALYSE_PARTAGEE.md.
+class AnalysePartagee(Base):
+    __tablename__ = "analyses_partagees"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cle = Column(String(64), nullable=False, unique=True, index=True)
+    nature = Column(String(12), nullable=False, default="dossier", server_default="dossier")   # dossier | avis
+    mode = Column(String(20), nullable=False, default="", server_default="")   # integral | deux_temps | avis
+    version = Column(String(40), nullable=False, default="", server_default="")
+    modele = Column(String(200), nullable=False, default="", server_default="")
+    extraction = Column(JSON, nullable=False)       # réponse de l'IA (faits du dossier), avant tout calcul
+    rapport = Column(JSON, nullable=True)           # lecture en deux temps : ce qui a été lu, partie par partie
+    duree_s = Column(Float, nullable=False, default=0.0, server_default="0")
+    cout_eur = Column(Float, nullable=False, default=0.0, server_default="0")
+    created_at = Column(DateTime, default=utcnow)
+    utilise_le = Column(DateTime, default=utcnow, index=True)
+
+
+# Mesure des doublons (interne, jamais montrée à un client) : une ligne par analyse d'un dossier, avec
+# l'empreinte NORMALISÉE de ses pièces (triées) — jamais leur contenu —, pour compter les dossiers
+# analysés par plusieurs organisations. Sans clé étrangère (comme usage_ia) ; effacée avec le compte
+# (RGPD) et au-delà de la durée de mesure.
+class AnalyseEmpreinte(Base):
+    __tablename__ = "analyse_empreintes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)        # organisation (data_owner_id)
+    nature = Column(String(12), nullable=False, default="dossier", server_default="dossier")
+    empreinte = Column(String(64), nullable=False, index=True)    # contenu normalisé, pièces triées
+    cle = Column(String(64), nullable=True, index=True)            # clé exacte de l'extraction
+    servi_du_cache = Column(Boolean, nullable=False, default=False, server_default=sa_false())
+    economie_eur = Column(Float, nullable=False, default=0.0, server_default="0")
+    created_at = Column(DateTime, default=utcnow, index=True)
+
+
 # === INVITATION CO-TRAITANT (vue bridée par jeton) ===
 # Un mandataire partage UN appel d'offres avec un co-traitant externe via un lien
 # secret. Le co-traitant accède à une vue LIMITÉE au seul projet partagé — sans

@@ -1,8 +1,11 @@
 """
 Adjugo - Service d'analyse IA des DCE
 Prompt expert marches publics francais.
-Utilise le profil entreprise + criteres Go/No-Go pour un matching precis.
+Analyse en deux temps (docs/ANALYSE_PARTAGEE.md) : extraction du dossier SANS donnée d'entreprise
+(partageable entre organisations pour un même dossier), puis partie propre à l'entreprise — score
+Go/No-Go déterministe (dce_scoring) et appel court qui reçoit l'extraction, le profil et les critères.
 """
+import copy
 import json
 import re
 import unicodedata
@@ -424,12 +427,98 @@ Regles importantes :
 - Extrais TOUTES les pieces demandees dans le reglement de consultation"""
 
 
-def build_user_prompt(text, company=None, criteria=None, lang_name=None, integral: bool = False,
-                      note_lecture: str = ""):
-    """Construit le prompt utilisateur avec le contexte entreprise. integral=True : le contenu
-    du dossier est remis tel quel (lecture intégrale), précédé de `note_lecture`."""
-    prompt = "Analyse le DCE suivant et produis l'analyse JSON.\n\n"
+# ── Analyse PARTAGÉE (docs/ANALYSE_PARTAGEE.md) : l'extraction du dossier ne reçoit plus le profil ──
+# L'analyse d'un dossier se fait en deux temps :
+#   (a) EXTRACTION, qui ne dépend QUE du dossier : la consigne d'origine (SYSTEM_PROMPT), dont seules
+#       les phrases qui parlaient de l'entreprise candidate sont retirées ou ramenées au dossier (liste
+#       exacte ci-dessous, vérifiée à l'import du module) ; l'IA ne reçoit plus ni le profil ni les
+#       critères. Cette extraction peut donc être resservie, telle quelle, à toute organisation qui
+#       analyse EXACTEMENT le même dossier (app.services.analyse_partagee) ;
+#   (b) PARTIE PROPRE À L'ENTREPRISE : score et verdict (déjà calculés sans IA : dce_scoring), puis un
+#       appel IA court (SYSTEM_ENTREPRISE) qui reçoit l'extraction, le profil, les critères et la
+#       compatibilité calculée — jamais le dossier entier — et rédige ce que l'IA personnalisait
+#       jusqu'ici : la stratégie (4e paragraphe de la recommandation), les points d'attention propres à
+#       l'entreprise, le niveau des clauses au regard de SES seuils (pénalités, garanties, retenue,
+#       avance, délai de remise) et une clause du dossier qui dépasse un seuil et manquerait à la liste.
+# ANALYSE_PARTAGEE=0 : retour à l'analyse d'origine en un seul appel (consigne SYSTEM_PROMPT, profil et
+# critères dans le prompt), à l'identique.
+VERSION_CONSIGNES = "1"     # consignes de l'extraction et de la partie propre à l'entreprise : changer → nouvelle clé
 
+# (texte d'origine, texte de l'extraction) : TOUT le reste de SYSTEM_PROMPT est repris mot pour mot.
+_EXTRACTION_REMPLACEMENTS = (
+    # Score et verdict : propres à l'entreprise, calculés sans IA (dce_scoring) — ceux de l'IA n'étaient
+    # déjà jamais gardés (finalize_analysis les remplace).
+    ('{\n  "match_score": 75,\n  "go_decision": "go",\n  "summary"', '{\n  "summary"'),
+    ('"recommandation": "Analyse redigee en 3 a 4 paragraphes (180 a 350 mots), separes par une ligne vide : '
+     '(1) de quoi parle le marche et ce qu\'il exige, (2) les attentes de l\'acheteur et la mecanique '
+     'd\'attribution, (3) les points techniques et administratifs a maitriser et les clauses a negocier, '
+     '(4) la strategie et la recommandation finale"',
+     '"recommandation": "Analyse du marche redigee en 3 paragraphes (140 a 280 mots), separes par une ligne '
+     'vide : (1) de quoi parle le marche et ce qu\'il exige, (2) les attentes de l\'acheteur et la mecanique '
+     'd\'attribution, (3) les points techniques et administratifs a maitriser et les clauses a negocier"'),
+    ('"pourquoi": "1/1000 du HT par jour plafonnees a 10%, au-dela du seuil tolere par l\'entreprise"',
+     '"pourquoi": "1/1000 du HT par jour, plafonnees a 10% du montant du marche"'),
+    ('- "match_score" est un entier entre 0 et 100\n- "go_decision" est "go", "no_go" ou "a_etudier"\n', ''),
+    ('3 a 4 paragraphes, entre 180 et 350 mots (jamais moins de 180), separes par une ligne vide (double saut '
+     'de ligne \n\n). Structure attendue : (1) de quoi parle le marche et ce qu\'il demande concretement ; (2) '
+     'les attentes de l\'acheteur et la mecanique d\'attribution (poids des criteres, ce qui fait gagner) ; (3) '
+     'les points techniques et administratifs a maitriser + les clauses a negocier ; (4) la strategie et la '
+     'recommandation finale (y aller ou non, comment, seul ou en groupement). Reste factuel',
+     '3 paragraphes, entre 140 et 280 mots (jamais moins de 140), separes par une ligne vide (double saut de '
+     'ligne \n\n). Structure attendue : (1) de quoi parle le marche et ce qu\'il demande concretement ; (2) '
+     'les attentes de l\'acheteur et la mecanique d\'attribution (poids des criteres, ce qui fait gagner) ; (3) '
+     'les points techniques et administratifs a maitriser + les clauses a negocier. La strategie propre a '
+     'l\'entreprise (y aller ou non, seul ou en groupement) est redigee ensuite, a part. Reste factuel'),
+    ('  * "niveau" vaut "faible", "moyen" ou "eleve"\n'
+     '  * Tu DOIS comparer aux seuils de l\'entreprise fournis dans les criteres (penalites max, garantie max, '
+     'retenue max, avance min, delai de reponse min) : marque "eleve" des qu\'un seuil est depasse, et dis-le '
+     'explicitement dans "pourquoi"\n',
+     '  * "niveau" vaut "faible", "moyen" ou "eleve", au regard des usages des marches publics (les seuils de '
+     'chaque entreprise sont compares ensuite)\n'
+     '  * Dans "pourquoi", donne les valeurs EXACTES du DCE (taux, plafond, duree, montant)\n'),
+    ('- Extrais TOUTES les pieces demandees dans le reglement de consultation',
+     '- Extrais TOUTES les pieces demandees dans le reglement de consultation\n'
+     '- Tu ne connais pas l\'entreprise candidate : n\'ecris rien qui suppose son profil (taille, CA, '
+     'qualifications, lieu)'),
+)
+
+
+def _consigne_extraction() -> str:
+    out = SYSTEM_PROMPT
+    for avant, apres in _EXTRACTION_REMPLACEMENTS:
+        if out.count(avant) != 1:       # la consigne d'origine a changé : à revoir ici, jamais en silence
+            raise RuntimeError("consigne d'extraction : passage d'origine introuvable : " + avant[:60])
+        out = out.replace(avant, apres)
+    return out
+
+
+SYSTEM_EXTRACTION = _consigne_extraction()
+
+
+SYSTEM_ENTREPRISE = """Tu es un expert en marches publics francais. Tu travailles pour un logiciel appele Adjugo qui aide les entreprises du BTP et des services a repondre aux appels d'offres.
+
+On te donne : (1) l'analyse OBJECTIVE d'un appel d'offres, deja extraite du dossier de consultation complet (faits, criteres et poids, exigences, clauses a risque, points d'attention, analyse du marche en 3 paragraphes) ; (2) la compatibilite de l'entreprise avec ce marche, calculee par un bareme ouvert et deterministe (score en %, detail par critere), et la detection d'une opportunite de groupement ; (3) le profil de l'entreprise candidate et ses criteres.
+
+Ton role : rediger la partie PROPRE A CETTE ENTREPRISE de l'analyse. Tu dois TOUJOURS repondre en JSON valide, sans texte avant ou apres. Voici le format exact attendu :
+
+{
+  "strategie": "Un paragraphe de 60 a 130 mots : la strategie et la recommandation finale pour cette entreprise",
+  "points_attention_entreprise": ["CA exige (1 500 000 EUR sur 3 ans) superieur a votre CA N-1 (900 000 EUR)"],
+  "clauses": [{"index": 0, "niveau": "eleve", "pourquoi_entreprise": "Au-dela de votre seuil de penalites de retard (5%)."}],
+  "clauses_ajoutees": []
+}
+
+Regles importantes :
+- "strategie" est le 4e et dernier paragraphe de l'analyse (les 3 premiers, sur le marche lui-meme, te sont fournis : ne les repete pas) : y aller ou non, comment, seul ou en groupement, et ce qui fera la difference pour CETTE entreprise. Il doit etre COHERENT avec la compatibilite calculee, que l'entreprise voit a l'ecran : ne la contredis jamais. Compatibilite « a etudier » : dis ce qu'il faut verifier ; « peu adapte » : explique pourquoi ne pas y aller, ou a quelle condition (par exemple en groupement si une opportunite est detectee). Parle de compatibilite en %, jamais de « Go » ni de « No-Go ».
+- "points_attention_entreprise" : 0 a 4 points PROPRES a cette entreprise (seuil de l'entreprise depasse, chiffre d'affaires exige superieur au sien, qualification exigee absente de son profil, delai de remise inferieur a son minimum, lieu hors de sa zone...), jamais un point deja present dans les points d'attention fournis.
+- "clauses" : pour CHAQUE clause de la liste numerotee fournie qui depasse un seuil de l'entreprise (penalites de retard max, garantie a premiere demande max, retenue de garantie max, avance minimale souhaitee, delai de remise minimal) : "index" est son numero, "niveau" vaut "eleve", et "pourquoi_entreprise" le dit explicitement, avec le seuil de l'entreprise. N'inclus aucune autre clause. Liste vide [] si aucun seuil n'est fourni ou depasse.
+- "clauses_ajoutees" : seulement une clause du dossier (presente dans les faits fournis) qui depasse un seuil de l'entreprise et qui manque a la liste numerotee, au format {"clause": "...", "niveau": "eleve", "pourquoi": "...", "levier_negociation": "contre-proposition concrete et actionnable (article du CCP si pertinent)"} ; sinon [].
+- Fonde-toi UNIQUEMENT sur les elements fournis : n'invente jamais un chiffre, une exigence, une echeance, ni une capacite de l'entreprise. Si une donnee du profil manque, dis-le plutot que de la supposer."""
+
+
+def _bloc_profil(company) -> str:
+    """Profil de l'entreprise tel que l'analyse d'origine le remettait à l'IA (mêmes champs)."""
+    prompt = ""
     if company:
         prompt += "=== PROFIL DE L'ENTREPRISE CANDIDATE ===\n"
         if company.get("name"):
@@ -451,7 +540,13 @@ def build_user_prompt(text, company=None, criteria=None, lang_name=None, integra
         if company.get("effectif"):
             prompt += f"Effectif : {company['effectif']} salaries\n"
         prompt += "\n"
+    return prompt
 
+
+def _bloc_criteres(criteria) -> str:
+    """Critères Go/No-Go de l'entreprise tels que l'analyse d'origine les remettait à l'IA (sans la
+    phrase finale « Utilise ces critères… », propre à l'analyse d'origine)."""
+    prompt = ""
     if criteria:
         prompt += "=== CRITERES GO/NO-GO DE L'ENTREPRISE ===\n"
         if criteria.get("budget_min"):
@@ -477,6 +572,17 @@ def build_user_prompt(text, company=None, criteria=None, lang_name=None, integra
         if criteria.get("excluded_keywords"):
             prompt += f"Mots-cles a exclure : {criteria['excluded_keywords']}\n"
         prompt += "\n"
+    return prompt
+
+
+def build_user_prompt(text, company=None, criteria=None, lang_name=None, integral: bool = False,
+                      note_lecture: str = ""):
+    """Construit le prompt utilisateur avec le contexte entreprise. integral=True : le contenu
+    du dossier est remis tel quel (lecture intégrale), précédé de `note_lecture`."""
+    prompt = "Analyse le DCE suivant et produis l'analyse JSON.\n\n"
+    prompt += _bloc_profil(company)
+    if criteria:
+        prompt += _bloc_criteres(criteria)
         prompt += "Utilise ces criteres pour ajuster le match_score et la go_decision.\n"
         prompt += "Si le budget du marche est hors des limites, penalise le score.\n"
         prompt += "Si le lieu d'execution est trop loin, penalise le score.\n"
@@ -2108,11 +2214,12 @@ class AnalyseCoupee(RuntimeError):
     comme une panne (le quota est remboursé, l'utilisateur relance)."""
 
 
-def _system_blocks():
-    """Consigne de l'analyse, identique pour tous les clients : marquée pour le cache de prompt
-    (relue à 10 % du prix par l'analyse suivante, dans les 5 minutes)."""
+def _system_blocks(consigne: str = None):
+    """Consigne de l'analyse (d'origine, d'extraction ou de la partie propre à l'entreprise), identique
+    pour tous les clients : marquée pour le cache de prompt (relue à 10 % du prix par l'appel suivant,
+    dans les 5 minutes)."""
     from app.services.llm import cached_text_block
-    return [cached_text_block(SYSTEM_PROMPT)]
+    return [cached_text_block(SYSTEM_PROMPT if consigne is None else consigne)]
 
 
 def _parse_analysis_json(response_text: str) -> dict:
@@ -2181,7 +2288,9 @@ def finalize_analysis(result: dict, text_integral: str, company=None, criteria=N
 
 
 def analyze_dce_text(text, company=None, criteria=None, lang_name=None, pieces=None,
-                     integral: bool = False, note_lecture: str = "", text_integral: str = None):
+                     integral: bool = False, note_lecture: str = "", text_integral: str = None,
+                     extraction: dict = None, on_extraction=None, mutualiser: bool = False,
+                     annonce_seule: bool = False):
     """Analyse un DCE depuis du texte brut (notice BOAMP, DCE déjà extrait...).
     lang_name : langue de rédaction des valeurs textuelles (adaptation par pays).
     pieces : ce qui a été lu, pièce par pièce (meta de la lecture), repris tel quel dans la
@@ -2189,7 +2298,14 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None, pieces=N
     integral=True (lecture intégrale, app.services.analyse_dossier) : `text` est remis TEL QUEL
     à l'IA (pas de sélection de passages) ; `note_lecture` la prévient des pièces non lues ;
     `text_integral` (défaut : `text`) est le texte complet du dossier contre lequel toutes les
-    citations sont vérifiées (en lecture en deux temps, `text` est la synthèse des pièces)."""
+    citations sont vérifiées (en lecture en deux temps, `text` est la synthèse des pièces).
+    Analyse partagée (défaut, docs/ANALYSE_PARTAGEE.md) : (a) extraction du dossier SANS donnée
+    d'entreprise — ou `extraction` déjà faite pour ce même dossier (app.services.analyse_partagee) —,
+    `on_extraction(extraction, coût €, durée s)` appelé dès qu'une extraction neuve est prête,
+    `mutualiser` : son coût compté à la plateforme ; puis (b) post-traitement déterministe (score,
+    grille, groupement) et partie propre à l'entreprise (appel court : extraction + profil).
+    `annonce_seule` : avis sans dossier complet (aucune compatibilité affichée).
+    ANALYSE_PARTAGEE=0 : analyse d'origine en un seul appel."""
     if not text or len(text) < 50:
         return {
             "match_score": 0,
@@ -2197,24 +2313,228 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None, pieces=N
             "summary": "Contenu insuffisant pour une analyse fiable.",
             "details": {}
         }
+    ti = text_integral if text_integral is not None else text
+    from app.services import analyse_partagee as _ap
+    if not _ap.actif():
+        return _analyse_un_appel(text, company, criteria, lang_name, pieces, integral, note_lecture, ti)
+    # Toute PANNE de l'IA (extraction ou partie propre à l'entreprise : timeout, 5xx/429, disjoncteur,
+    # réponse coupée…) est PROPAGÉE, jamais transformée en verdict : l'appelant rembourse le quota et
+    # propose de relancer (voir _analyse_un_appel).
+    if extraction is None:
+        extraction, response_text, cout, duree = extraire(text, lang_name, integral=integral,
+                                                          note_lecture=note_lecture, mutualiser=mutualiser)
+        if not isinstance(extraction, dict):
+            # Le LLM a bien RÉPONDU mais dans un format illisible : verdict NEUTRE honnête
+            # (« à étudier »), jamais un faux NO-GO — comme l'analyse d'origine.
+            return _resultat_illisible(response_text)
+        if on_extraction is not None:
+            try:
+                on_extraction(copy.deepcopy(extraction), cout, duree)
+            except Exception as e:      # noqa: BLE001 — le rangement ne casse jamais l'analyse
+                import logging
+                logging.getLogger("adjugo").warning("extraction non rangée : %s", type(e).__name__)
+    result = finalize_analysis(copy.deepcopy(extraction), ti, company, criteria, pieces)
+    return personnaliser(result, company, criteria, lang_name, annonce_seule=annonce_seule)
 
-    # Construire le prompt
+
+def extraire(text, lang_name=None, integral: bool = False, note_lecture: str = "", mutualiser: bool = False):
+    """(a) EXTRACTION du dossier : la consigne SYSTEM_EXTRACTION et le dossier, AUCUNE donnée
+    d'entreprise (le prompt est celui de l'analyse d'origine sans profil ni critères). Même tâche,
+    même modèle, mêmes réglages que l'analyse d'origine. Renvoie (réponse décodée ou None si
+    illisible, texte brut, coût €, durée s). Propage une panne et une réponse coupée."""
+    import contextlib
+    import time as _time
+    from app.services import budget_ia, llm
+    user_prompt = build_user_prompt(text, None, None, lang_name, integral=integral, note_lecture=note_lecture)
+    portee = budget_ia.mutualise("extraction partagée d'un dossier") if mutualiser else contextlib.nullcontext()
+    t0 = _time.monotonic()
+    with portee, llm.cost_meter("extraction du dossier", llm._CURRENT_TENANT.get(), log=False) as cm:
+        response_text, stop = _appel_analyse(SYSTEM_EXTRACTION, user_prompt, ANALYSE_MAX_TOKENS)
+    duree = _time.monotonic() - t0
+    try:
+        data = _parse_analysis_json(response_text)
+    except json.JSONDecodeError:
+        if stop == "max_tokens":
+            raise AnalyseCoupee("Réponse de l'IA coupée avant la fin.")
+        return None, response_text, cm.cost_eur(), duree
+    return (data if isinstance(data, dict) else None), response_text, cm.cost_eur(), duree
+
+
+# ── (b) Partie propre à l'entreprise ──────────────────────────────────────────────────────────
+
+ENTREPRISE_MAX_TOKENS = 2000           # un paragraphe et quelques points ; payée à l'usage, pas au plafond
+_NIVEAUX = {"faible": 0, "moyen": 1, "eleve": 2}
+_COMPATIBILITE = {"go": "bon potentiel", "a_etudier": "a etudier", "no_go": "peu adapte"}
+_HORS_FAITS = ("grille_notation", "clauses_risque")   # grille : dérivée des critères ; clauses : numérotées à part
+
+
+def build_entreprise_prompt(result: dict, company=None, criteria=None, lang_name=None,
+                            annonce_seule: bool = False) -> str:
+    """Prompt de la partie propre à l'entreprise : l'analyse objective (faits vérifiés, jamais le
+    dossier entier), la compatibilité calculée, le profil et les critères (mêmes champs que l'analyse
+    d'origine)."""
+    det = result.get("details") if isinstance(result.get("details"), dict) else {}
+    faits = {k: v for k, v in det.items() if k not in _HORS_FAITS}
+    p = "Redige la partie propre a l'entreprise candidate et produis le JSON demande.\n\n"
+    p += "=== ANALYSE OBJECTIVE DU MARCHE (extraite du dossier complet) ===\n"
+    p += json.dumps({"summary": result.get("summary") or "", "details": faits}, ensure_ascii=False, indent=1)
+    p += "\n\n=== CLAUSES A RISQUE (liste numerotee) ===\n"
+    clauses = det.get("clauses_risque") if isinstance(det.get("clauses_risque"), list) else []
+    lignes = []
+    for i, c in enumerate(clauses):
+        if isinstance(c, dict):
+            lignes.append(f"{i}. {c.get('clause') or ''} (niveau {c.get('niveau') or 'non precise'}) : "
+                          f"{c.get('pourquoi') or ''} — levier : {c.get('levier_negociation') or ''}")
+    p += ("\n".join(lignes) if lignes else "(aucune)") + "\n\n"
+    if annonce_seule:
+        p += ("=== ANNONCE SEULE ===\nLe dossier complet du marche n'a pas encore ete importe : aucune "
+              "compatibilite n'est affichee. N'annonce aucune decision ferme ; dis ce qu'il faudra verifier "
+              "dans le dossier complet.\n\n")
+    else:
+        dec = _COMPATIBILITE.get(str(result.get("go_decision") or ""), "a etudier")
+        p += "=== COMPATIBILITE CALCULEE (bareme deterministe, affichee a l'entreprise) ===\n"
+        p += f"Compatibilite : {result.get('match_score')} % ({dec})\n"
+        for c in result.get("score_breakdown") or []:
+            if isinstance(c, dict):
+                p += f"- {c.get('label')} : {c.get('points')}/{c.get('max_points')} — {c.get('detail')}\n"
+        p += "\n"
+    grp = result.get("groupement") if isinstance(result.get("groupement"), dict) else {}
+    if grp.get("recommande"):
+        p += ("=== OPPORTUNITE DE GROUPEMENT DETECTEE ===\n"
+              + "\n".join("- " + str(r) for r in (grp.get("raisons") or [])) + "\n\n")
+    p += _bloc_profil(company) + _bloc_criteres(criteria)
+    if lang_name and lang_name.lower() != "français":
+        p += (f"=== LANGUE DE SORTIE ===\nRédige TOUTES les valeurs textuelles (strategie, "
+              f"points_attention_entreprise, pourquoi_entreprise, clauses_ajoutees) en {lang_name}. Conserve "
+              f"les CLÉS JSON et les énumérations en l'état (niveau: faible/moyen/eleve).\n\n")
+    return p.rstrip() + "\n"
+
+
+def personnaliser(result: dict, company=None, criteria=None, lang_name=None, annonce_seule: bool = False) -> dict:
+    """(b) Partie propre à l'entreprise, après le calcul déterministe du score : un appel court (même
+    tâche et même modèle que l'analyse d'origine) qui reçoit l'extraction, la compatibilité calculée,
+    le profil et les critères. Noms des salariés masqués (pii_scope). Une réponse illisible est
+    relancée une fois ; illisible encore, l'analyse objective reste entière (rien n'est inventé).
+    Propage une panne de l'IA (l'appelant rembourse)."""
+    import logging
+    from app.services.llm import pii_scope
+    from app.services.pii import from_team
+    user = build_entreprise_prompt(result, company, criteria, lang_name, annonce_seule=annonce_seule)
+    perso = None
+    with pii_scope(from_team((company or {}).get("team") or [])):
+        for _essai in range(2):
+            txt, _stop = _appel_analyse(SYSTEM_ENTREPRISE, user, ENTREPRISE_MAX_TOKENS)
+            try:
+                perso = _parse_analysis_json(txt)
+            except json.JSONDecodeError:
+                perso = None
+            if isinstance(perso, dict):
+                break
+    if isinstance(perso, dict):
+        fusionner_entreprise(result, perso)
+    else:
+        logging.getLogger("adjugo").warning("partie propre à l'entreprise illisible : analyse objective seule")
+    return result
+
+
+def _liste(v) -> list:
+    if isinstance(v, list):
+        return v
+    return [v] if isinstance(v, str) and v.strip() else []
+
+
+def fusionner_entreprise(result: dict, perso: dict) -> dict:
+    """Ajoute la partie propre à l'entreprise à l'analyse objective, sans rien en retirer : la
+    stratégie devient le dernier paragraphe de la recommandation, les points propres à l'entreprise
+    s'ajoutent à ceux du dossier (sans doublon), une clause qui dépasse un seuil de l'entreprise passe
+    au niveau « élevé » (jamais abaissé) avec la raison, une clause manquante qui dépasse un seuil
+    s'ajoute (3 au plus)."""
+    det = result.get("details")
+    if not isinstance(det, dict):
+        det = result["details"] = {}
+    strat = perso.get("strategie")
+    if isinstance(strat, str) and strat.strip():
+        base = str(det.get("recommandation") or "").strip()
+        det["recommandation"] = (base + "\n\n" + strat.strip()) if base else strat.strip()
+    pts = perso.get("points_attention_entreprise")
+    if isinstance(pts, list) and pts:
+        cur = [x for x in _liste(det.get("points_attention"))]
+        vus = {_norm_citation(x) for x in cur if isinstance(x, str)}
+        for x in pts[:4]:
+            if isinstance(x, str) and x.strip() and _norm_citation(x) not in vus:
+                cur.append(x.strip())
+                vus.add(_norm_citation(x))
+        det["points_attention"] = cur
+    clauses = det.get("clauses_risque")
+    if not isinstance(clauses, list):
+        clauses = None
+    for adj in perso.get("clauses") or []:
+        if clauses is None or not isinstance(adj, dict):
+            continue
+        try:
+            i = int(adj.get("index"))
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= i < len(clauses)) or not isinstance(clauses[i], dict):
+            continue
+        cl = clauses[i]
+        niv = str(adj.get("niveau") or "").strip().lower()
+        if _NIVEAUX.get(niv, -1) > _NIVEAUX.get(str(cl.get("niveau") or "").strip().lower(), -1):
+            cl["niveau"] = niv
+        why = str(adj.get("pourquoi_entreprise") or "").strip()
+        if why and _norm_citation(why) not in _norm_citation(cl.get("pourquoi") or ""):
+            cl["pourquoi"] = (str(cl.get("pourquoi") or "").strip() + " " + why).strip()
+    ajouts = [c for c in (perso.get("clauses_ajoutees") or []) if isinstance(c, dict)
+              and isinstance(c.get("clause"), str) and c["clause"].strip()][:3]
+    if ajouts:
+        if clauses is None:
+            clauses = det["clauses_risque"] = []
+        noms = {_norm_citation(c.get("clause") or "") for c in clauses if isinstance(c, dict)}
+        for c in ajouts:
+            if _norm_citation(c["clause"]) in noms:
+                continue
+            niv = str(c.get("niveau") or "").strip().lower()
+            clauses.append({"clause": c["clause"].strip(), "niveau": niv if niv in _NIVEAUX else "eleve",
+                            "pourquoi": str(c.get("pourquoi") or "").strip(),
+                            "levier_negociation": str(c.get("levier_negociation") or "").strip()})
+            noms.add(_norm_citation(c["clause"]))
+    return result
+
+
+def _appel_analyse(consigne: str, user_prompt: str, max_tokens: int):
+    """Un appel de la tâche « analyse » (même route, mêmes réglages que l'analyse d'origine) :
+    (texte de la réponse, raison de l'arrêt)."""
+    from app.services.llm import messages_create
+    response = messages_create(
+        tache=ANALYSE_TACHE,
+        model=ANALYSE_MODEL,
+        max_tokens=max_tokens,
+        temperature=0,  # extraction reproductible (jamais envoyée à Sonnet 5.5, qui la refuse)
+        system=_system_blocks(consigne),
+        messages=[{"role": "user", "content": user_prompt}]
+    )
+    text = "".join(getattr(b, "text", "") or "" for b in (response.content or [])
+                   if getattr(b, "type", "text") == "text").strip()
+    return text, (getattr(response, "stop_reason", "") or "")
+
+
+def _resultat_illisible(response_text: str) -> dict:
+    return {
+        "match_score": 50,
+        "go_decision": "a_etudier",
+        "summary": response_text[:500] if response_text else "Erreur de format dans la reponse IA.",
+        "details": {}
+    }
+
+
+def _analyse_un_appel(text, company, criteria, lang_name, pieces, integral, note_lecture, text_integral):
+    """Analyse d'ORIGINE en un seul appel (ANALYSE_PARTAGEE=0) : consigne SYSTEM_PROMPT, profil et
+    critères dans le prompt — à l'identique de l'avant-partage."""
     user_prompt = build_user_prompt(text, company, criteria, lang_name, integral=integral,
                                     note_lecture=note_lecture)
     response_text = ""
     try:
-        from app.services.llm import messages_create
-        response = messages_create(
-            tache=ANALYSE_TACHE,
-            model=ANALYSE_MODEL,
-            max_tokens=ANALYSE_MAX_TOKENS,
-            temperature=0,  # extraction reproductible (jamais envoyée à Sonnet 5.5, qui la refuse)
-            system=_system_blocks(),
-            messages=[{"role": "user", "content": user_prompt}]
-        )
-        response_text = "".join(getattr(b, "text", "") or "" for b in (response.content or [])
-                                if getattr(b, "type", "text") == "text").strip()
-        stop = getattr(response, "stop_reason", "") or ""
+        response_text, stop = _appel_analyse(SYSTEM_PROMPT, user_prompt, ANALYSE_MAX_TOKENS)
         try:
             result = _parse_analysis_json(response_text)
         except json.JSONDecodeError:
@@ -2223,18 +2543,12 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None, pieces=N
                 # propage (l'appelant rembourse le quota et propose de relancer).
                 raise AnalyseCoupee("Réponse de l'IA coupée avant la fin.")
             raise
-        return finalize_analysis(result, text_integral if text_integral is not None else text,
-                                 company, criteria, pieces)
+        return finalize_analysis(result, text_integral, company, criteria, pieces)
 
     except json.JSONDecodeError:
         # Le LLM a bien RÉPONDU mais dans un format illisible : verdict NEUTRE honnête
         # (« à étudier »), jamais un faux NO-GO.
-        return {
-            "match_score": 50,
-            "go_decision": "a_etudier",
-            "summary": response_text[:500] if response_text else "Erreur de format dans la reponse IA.",
-            "details": {}
-        }
+        return _resultat_illisible(response_text)
     except Exception:
         # PANNE de l'IA (timeout, coupure réseau, 5xx/429 du fournisseur, plafond de tokens,
         # disjoncteur ouvert, réponse coupée…) : on NE fabrique JAMAIS un verdict — un faux

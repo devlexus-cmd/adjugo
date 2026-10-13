@@ -32,6 +32,9 @@ from app.services import dce_pieces as dp
 
 logger = logging.getLogger("adjugo")
 MB = 1024 * 1024
+# Version de la façon de lire (extraction du texte, OCR, classement des pièces) : entre dans la clé de
+# l'analyse partagée (app.services.analyse_partagee) — à augmenter quand la lecture change.
+VERSION = 1
 
 
 def _env_int(name: str, default: int) -> int:
@@ -587,7 +590,7 @@ def lire_dossier(filename: str, content: bytes, mode: str = "direct", progress=N
     _noms_affiches(etat.pieces)
     pieces = sorted(etat.pieces, key=lambda x: (dp.compose_rank(x["type"]), 0))
     lecture = {
-        "version": 1, "source": base[:300], "archive": bool(archive), "mode": etat.mode,
+        "version": VERSION, "source": base[:300], "archive": bool(archive), "mode": etat.mode,
         "lu_le": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "pieces": pieces,
         "a_poursuivre": etat.mode == "direct" and (etat.besoin_fond or etat.expired() or any(
