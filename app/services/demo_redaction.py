@@ -510,10 +510,11 @@ PARTIES = [
      "texte": [
          "Selon le règlement de la consultation, le délai d'exécution est de 5 mois à compter de l'ordre de "
          "service.",
-         "Notre planning prévoit 4 jours de préparation et d'installation de chantier [C1], 12 jours de dépose "
-         "de la couverture existante [C3], 22 jours d'isolation et d'étanchéité [C4] puis 8 jours de zinguerie "
-         "et d'évacuation des eaux pluviales [C5].",
-         "Les essais d'étanchéité, la levée des réserves et la réception occupent 4 jours [C6].",
+         "Notre estimation compte 12 jours de travail pour la préparation et l'installation de chantier [C1], "
+         "60 jours de travail pour la dépose de la couverture existante [C3], 150 jours de travail pour "
+         "l'isolation et l'étanchéité [C4] puis 45 jours de travail pour la zinguerie et l'évacuation des eaux "
+         "pluviales [C5].",
+         "Les essais d'étanchéité, la levée des réserves et la réception comptent 8 jours de travail [C6].",
          "Les travaux au droit des salles de classe sont regroupés sur 7 semaines pendant les vacances d'été.",
      ]},
     {"critere_debut": "Gestion environnementale", "statut": "valide",

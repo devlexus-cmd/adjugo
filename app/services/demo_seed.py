@@ -27,13 +27,13 @@ _DAY_RATES = [
 ]
 # Estimation pré-calculée (déterministe) pour l'AO toiture — vitrine du chiffrage.
 _TOITURE_TASKS = [
-    {"phase": "Préparation", "tache": "Installation de chantier, sécurité et protections", "profil": "Exécution / terrain", "jours": 4},
-    {"phase": "Étude", "tache": "Relevés, calepinage et plans d'exécution étanchéité", "profil": "Étude / conception", "jours": 5},
-    {"phase": "Production", "tache": "Dépose de la couverture existante et évacuation", "profil": "Exécution / terrain", "jours": 12},
-    {"phase": "Production", "tache": "Pose de l'isolation thermique et de la membrane d'étanchéité", "profil": "Exécution / terrain", "jours": 22},
-    {"phase": "Production", "tache": "Zinguerie, relevés et évacuations des eaux pluviales", "profil": "Exécution / terrain", "jours": 8},
-    {"phase": "Contrôle", "tache": "Tests d'étanchéité, levée de réserves et réception", "profil": "Étude / conception", "jours": 4},
-    {"phase": "Pilotage", "tache": "Encadrement, coordination et suivi de chantier", "profil": "Encadrement / direction", "jours": 10},
+    {"phase": "Préparation", "tache": "Installation de chantier, sécurité et protections", "profil": "Exécution / terrain", "jours": 12},
+    {"phase": "Étude", "tache": "Relevés, calepinage et plans d'exécution étanchéité", "profil": "Étude / conception", "jours": 8},
+    {"phase": "Production", "tache": "Dépose de la couverture existante et évacuation", "profil": "Exécution / terrain", "jours": 60},
+    {"phase": "Production", "tache": "Pose de l'isolation thermique et de la membrane d'étanchéité", "profil": "Exécution / terrain", "jours": 150},
+    {"phase": "Production", "tache": "Zinguerie, relevés et évacuations des eaux pluviales", "profil": "Exécution / terrain", "jours": 45},
+    {"phase": "Contrôle", "tache": "Tests d'étanchéité, levée de réserves et réception", "profil": "Étude / conception", "jours": 8},
+    {"phase": "Pilotage", "tache": "Encadrement, coordination et suivi de chantier", "profil": "Encadrement / direction", "jours": 40},
 ]
 
 logger = logging.getLogger("adjugo")
@@ -127,7 +127,7 @@ def _projects():
     }
     P.append(dict(key="toiture", name="Réfection toiture — Groupe scolaire Jean Moulin", client="Ville de Marvejac",
                   budget=480000, status=ProjectStatus.en_cours,
-                  ai=_analysis(d1, "Réfection de toiture d'un groupe scolaire à Marvejac — travaux en lot unique, 480 k€, valeur technique prépondérante (60%). Métier, zone et qualifications alignés : cible prioritaire.", "25-114207",
+                  ai=_analysis(d1, "Réfection de toiture d'un groupe scolaire à Marvejac — travaux en lot unique, 480 k€, valeur technique prépondérante (60%). Métier, zone et qualifications alignés : cible prioritaire.", "DEMO-25114207",
                                ["Certificat Qualibat 3212 (en cours de validité)", "Attestation RGE", "Mémoire technique — méthodologie étanchéité", "3 références de toitures scolaires (< 3 ans)", "Attestation d'assurance décennale"])))
 
     # 2) À ÉTUDIER — réhabilitation énergétique + désamiantage (groupement)
@@ -154,7 +154,7 @@ def _projects():
     }
     P.append(dict(key="lorient", name="Réhabilitation énergétique — Gymnase de Kerhel", client="Kerhel Agglomération",
                   budget=1250000, status=ProjectStatus.nouveau,
-                  ai=_analysis(d2, "Réhabilitation énergétique d'un gymnase à Kerhel — 1,25 M€. En zone et dans votre métier, mais qualification désamiantage SS3 non détenue et CA exigé élevé : candidature en GROUPEMENT à étudier.", "25-118934",
+                  ai=_analysis(d2, "Réhabilitation énergétique d'un gymnase à Kerhel — 1,25 M€. En zone et dans votre métier, mais qualification désamiantage SS3 non détenue et CA exigé élevé : candidature en GROUPEMENT à étudier.", "DEMO-25118934",
                                ["Qualification désamiantage SS3 (ou co-traitant)", "Bilan carbone de l'entreprise", "Garantie à première demande", "Plan de retrait amiante", "Attestation de visite obligatoire"])))
 
     # 3) NO-GO — hors métier et hors zone
@@ -176,7 +176,7 @@ def _projects():
     }
     P.append(dict(key="info", name="Infogérance SI — Métropole Cap-Aurèle", client="Métropole Cap-Aurèle",
                   budget=35000, status=ProjectStatus.nouveau,
-                  ai=_analysis(d3, "Marché de services d'infogérance informatique à Cap-Aurèle — hors métier BTP, hors zone, CA exigé inatteignable. Classé « à écarter » par le barème, sans IA.", "25-121650",
+                  ai=_analysis(d3, "Marché de services d'infogérance informatique à Cap-Aurèle — hors métier BTP, hors zone, CA exigé inatteignable. Classé « à écarter » par le barème, sans IA.", "DEMO-25121650",
                                ["Certification ITIL", "ISO 27001"])))
     return P
 
@@ -547,10 +547,10 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                        total_ttc=round(sub + tva, 2), issue_date=issue, due_date=due,
                        paid_date=paid, project_id=project_id, notes=notes))
 
-    _inv("DEV-2026-0142", InvoiceType.devis, InvoiceStatus.accepte, "Ville de Marvejac",
+    _inv("DEV-2026-0142", InvoiceType.devis, InvoiceStatus.brouillon, "Ville de Marvejac",
          [{"description": "Réfection toiture et étanchéité — groupe scolaire Jean Moulin (lot unique)", "qty": 1, "unit_price": 468500}],
          toiture, today - timedelta(days=20), due=today + timedelta(days=10),
-         notes="Devis remis à l'appui de l'offre — réf. AO 25-114207.")
+         notes="Devis préparé pour l'offre (à joindre au dépôt) — réf. AO DEMO-25114207.")
     _inv("FAC-2026-0087", InvoiceType.facture, InvoiceStatus.paye, "Ville de Bréhaut",
          [{"description": "Réfection de la couverture — école élémentaire", "qty": 1, "unit_price": 96000}],
          None, today - timedelta(days=95), due=today - timedelta(days=65), paid=today - timedelta(days=70))
@@ -713,7 +713,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
     from app.models import ProjectStatus
     PAST = [
         dict(name="Réfection de toiture-terrasse — médiathèque d'Anjoumont", client="Ville d'Anjoumont",
-             budget=212000, status=ProjectStatus.gagne, ref="24-098112",
+             budget=212000, status=ProjectStatus.gagne, ref="DEMO-24098112",
              outcome_rank=1, awarded_amount=212000, outcome_reason="Offre la mieux-disante (valeur technique 60 %).",
              details={"intitule_marche": "Réfection de la toiture-terrasse d'étanchéité de la médiathèque municipale",
                       "acheteur": "Ville d'Anjoumont",
@@ -738,7 +738,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
              summary="Réfection de toiture-terrasse à Anjoumont — métier et zone alignés. Marché remporté en 2024.",
              pieces=["Attestation Qualibat 3212 (en cours de validité)", "Attestation RGE", "Mémoire technique — méthodologie étanchéité toiture-terrasse", "3 références de toitures-terrasses (< 3 ans)", "Attestation d'assurance décennale", "DC1, DC2 et attestations fiscales et sociales à jour"]),
         dict(name="Couverture et zinguerie — école de Riquebach", client="Ville de Riquebach",
-             budget=138000, status=ProjectStatus.gagne, ref="24-061330",
+             budget=138000, status=ProjectStatus.gagne, ref="DEMO-24061330",
              outcome_rank=1, awarded_amount=138000, outcome_reason="Meilleur rapport valeur technique / prix.",
              details={"intitule_marche": "Réfection de la couverture et de la zinguerie du groupe scolaire",
                       "acheteur": "Ville de Riquebach",
@@ -763,7 +763,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
              summary="Couverture et zinguerie d'une école à Riquebach — cœur de métier. Marché remporté en 2024.",
              pieces=["Attestation Qualibat 3212", "Mémoire technique — couverture et zinguerie", "3 références de couvertures scolaires (< 3 ans)", "Attestation d'assurance décennale", "Planning prévisionnel (travaux hors période scolaire)", "DC1, DC2 et attestations à jour"]),
         dict(name="Rénovation de couverture — gendarmerie de Limauzac", client="Ville de Limauzac",
-             budget=175000, status=ProjectStatus.perdu, ref="24-076550",
+             budget=175000, status=ProjectStatus.perdu, ref="DEMO-24076550",
              outcome_rank=2, competitor_winner="SARL Couvertures du Val de Limauzac",
              outcome_reason="Classé 2e — offre supérieure de 6 % au prix retenu.",
              details={"intitule_marche": "Rénovation de la couverture de la caserne de gendarmerie",
