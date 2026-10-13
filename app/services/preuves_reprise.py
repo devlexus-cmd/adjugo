@@ -52,11 +52,12 @@ def cle_intitule(nature: str, intitule) -> str:
     return cle_souple(nature, {PRINCIPAL.get(nature, ""): str(intitule or "").strip()})
 
 
-# Une fiche RETIRÉE ne fait taire le profil que si elle REPRENAIT le profil : l'utilisateur a repris
-# l'élément puis l'a retiré (« ne plus s'en servir »). Une proposition d'un ancien dossier (I) écartée,
-# acceptée ou non, ne fait jamais taire la déclaration actuelle du profil (« Effectif : 8 » d'un mémoire
-# de 2019 retiré : l'effectif de 12 du profil reste remis et reprenable).
-ORIGINES_QUI_GOUVERNENT_RETIREES = ("profil",)
+# Une fiche RETIRÉE ne fait taire le profil que si c'était la déclaration de l'utilisateur lui-même : il
+# a repris l'élément du profil, ou l'a saisi dans « Mes preuves », puis l'a retiré (« ne plus s'en
+# servir » : une qualification expirée ne revient pas par le profil). Une proposition d'un ancien dossier
+# (I) écartée, acceptée ou non, ne fait jamais taire la déclaration actuelle du profil (« Effectif : 8 »
+# d'un mémoire de 2019 retiré : l'effectif de 12 du profil reste remis et reprenable).
+ORIGINES_QUI_GOUVERNENT_RETIREES = ("profil", "saisie")
 
 
 def _gouverne(p: Preuve) -> bool:

@@ -46,8 +46,9 @@ la lecture, et l'export est bloqué.
 ## 2. Règles d'assemblage (ajoutées en réunissant les morceaux)
 
 - **« Mes preuves » gouverne le profil une fois repris.** Un élément du profil a parfois sa fiche du
-  même intitulé, acceptée (quelle que soit son origine), ou retirée après l'avoir REPRISE du profil
-  (origine `profil`) (`preuves_reprise.cles_gerees`). C'est le cas d'une personne,
+  même intitulé, acceptée (quelle que soit son origine), ou retirée alors que c'était la déclaration de
+  l'utilisateur lui-même (reprise du profil ou saisie dans « Mes preuves » : origine `profil` ou `saisie`)
+  (`preuves_reprise.cles_gerees`). C'est le cas d'une personne,
   d'une référence, d'une qualification, de l'effectif ou d'un chiffre d'affaires. L'atelier ne le
   remet alors plus depuis le profil (`atelier.Contexte.fiches`), et sa fiche décide :
   - utilisable : remise en `[F#]` ;

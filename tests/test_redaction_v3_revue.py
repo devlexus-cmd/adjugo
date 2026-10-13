@@ -276,6 +276,12 @@ def test_une_proposition_ecartee_ne_fait_pas_taire_le_profil(client):
         pv.retirer(db, p)
         ctx = at.Contexte(db, db.get(Project, pid), uid, [uid])
         assert "Effectif : 12" not in "\n".join(f.ligne_ia() for f in ctx.fiches(db))
+        # Saisie dans « Mes preuves » puis retirée (qualification qu'on ne veut plus voir) : elle gouverne aussi.
+        q = pv.creer(db, uid, nature=pv.QUALIFICATION, valeur={"nom": "Qualibat 3194"}, statut=pv.ACCEPTEE,
+                     origine="saisie")
+        pv.retirer(db, q)
+        ctx = at.Contexte(db, db.get(Project, pid), uid, [uid])
+        assert "Qualibat 3194" not in "\n".join(f.ligne_ia() for f in ctx.fiches(db))
     finally:
         db.close()
 
