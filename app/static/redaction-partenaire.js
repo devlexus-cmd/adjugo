@@ -311,7 +311,7 @@
       const aFaire = parts.filter(p => ["a_rediger", "en_cours", "a_revalider"].includes(p.statut)).length;
       const pret = (v.dossier && v.dossier.pret) || null;
       let h = '<section class="card pad rp-card" aria-labelledby="rp-titre">';
-      h += '<div class="rp-head"><h2 class="rp-title" id="rp-titre">Mes parties du dossier de présentation</h2>' + tip(rpEsc(BULLE_CARTE))
+      h += '<div class="rp-head"><div class="rp-head-t"><h2 class="rp-title" id="rp-titre">Mes parties du dossier de présentation</h2>' + tip(rpEsc(BULLE_CARTE)) + "</div>"
         + (aFaire ? '<span class="pill a_etudier rp-pill">' + aFaire + " à faire</span>" : (parts.length ? '<span class="pill go rp-pill">À jour</span>' : "")) + "</div>";
       h += '<div class="muted small rp-sub">' + (parts.length ? parts.length + (parts.length > 1 ? " parties confiées" : " partie confiée") + (v.membre && v.membre.nom ? " à " + rpEsc(v.membre.nom) : "") : "Aucune partie ne vous est confiée pour le moment.")
         + (pret && pret.sections_total ? " · " + rpEsc(pret.message) : "") + "</div>";
@@ -519,7 +519,7 @@
         if (ecrire) h += '<div class="rp-acts">' + btn("valider", ico("check", 14) + "Valider ma partie", "primary", ' data-sid="' + sid + '"') + "</div>";
       }
       if (!(p.statut === "a_revalider" && cur.ecrit_par === "chef_de_file"))      // sinon : déjà côte à côte plus haut
-        h += '<details class="gn-det"><summary>' + (cur.ecrit_par === "chef_de_file" ? "Voir le texte commun actuel" : (p.statut === "validee" ? "Voir le texte validé" : "Voir le texte envoyé")) + '</summary><div class="rp-txt rp-txt-b">' + rpTexte(cur.texte, cur.ecrit_par === "chef_de_file" ? "source du chef de file" : "votre source") + "</div></details>";
+        h += '<details class="gn-det"><summary>' + (p.statut === "validee" ? "Voir le texte validé" : (cur.ecrit_par === "chef_de_file" ? "Voir le texte commun actuel" : "Voir le texte envoyé")) + '</summary><div class="rp-txt rp-txt-b">' + rpTexte(cur.texte, cur.ecrit_par === "chef_de_file" ? "source du chef de file" : "votre source") + "</div></details>";
       return h + "</div>";
     }
 

@@ -1260,9 +1260,10 @@ mark.atl-pas { background:var(--accent-weak); color:inherit; border-radius:3px; 
 /* ── Rédaction, vague 4 : l'écran du partenaire, « Mes parties du dossier de présentation »
    (app/static/redaction-partenaire.js, lien d'invitation et « Partagé avec moi ») ── */
 .rp-card { margin-bottom:16px; }
-.rp-head { display:flex; align-items:center; flex-wrap:wrap; gap:4px 6px; }
-.rp-title { margin:0; font-family:inherit; font-size:15px; font-weight:800; letter-spacing:-.01em; }
-.rp-head .rp-pill { margin-left:auto; }
+.rp-head { display:flex; align-items:flex-start; gap:8px; }
+.rp-head-t { flex:1 1 auto; min-width:0; }
+.rp-title { display:inline; margin:0; font-family:inherit; font-size:15px; font-weight:800; letter-spacing:-.01em; line-height:1.4; }
+.rp-head .rp-pill { flex:none; margin-top:2px; }
 .rp-pill { font-size:10.5px; white-space:nowrap; }
 .rp-sub { margin-top:4px; }
 .rp-p { margin:8px 0 0; line-height:1.5; }

@@ -290,6 +290,7 @@ d'une partie du chef de file n'y est que VALIDÉ ; celui d'un partenaire, que EN
 |---|---|---|---|
 | `POST /espace` (lien seul) | `{code?, reinitialiser?}` | § 3.1 | 409 `espace_deja_ouvert`, 400 `code_absent` / `code_incorrect`, 429 |
 | `GET /sections/{sid}` | — | SA partie + `brouillons` (historique, sans textes) | 404 `partie_introuvable` (toute partie qui n'est pas la sienne) |
+| `GET /sections/{sid}/brouillons/{bid}` | — | un de SES brouillons précédents, avec son texte (« Reprendre ce texte » ; chantier du partenaire, § 15) | 404 `brouillon_introuvable` / `partie_introuvable`, 403 `cle_espace_requise` |
 | `PUT /sections/{sid}/brouillon` | `{texte, base_brouillon_id}` | « J'écris moi-même » : nouveau brouillon, faits contrôlés sur SES faits (ce qu'il écrit est sa déclaration ; un fait déjà à relire le reste) | 409 `brouillon_modifie`, 422 `texte_trop_long`, 403 `cle_espace_requise` |
 | `POST /sections/{sid}/faits/{fid}` | `{statut: relu_par_vous|a_relire}` | sur son brouillon courant | 404 `fait_introuvable`, 409 `fait_avec_source` |
 | `POST /sections/{sid}/aide` | `{action: rediger|raccourcir, cible_mots?}` | 202 `{tache, section_id}` (§ 6) | 409 `aide_en_cours`, `plafond_partie`, `aide_indisponible`, `aide_occupee`, `cv_dans_la_partie` ; 422 `partie_vide`, `deja_assez_court`, `cible_invalide` |
@@ -408,6 +409,7 @@ son texte validé. Conséquences, sans autre changement :
 | `valider_dossier`, `perimer_validations`, `apres_changement_commun`, `rafraichir_validations`, `pret` | validation |
 | `retirer_invitation`, `effacer_dossiers`, `effacer_compte`, `exporter_chef`, `exporter_partenaire`, `exporter_invitation`, `purger` | RGPD |
 | `fiches_depot_par_lien(db, inv)` | EMPLACEMENT de l'option (a) de D5 (aujourd'hui : rien) |
+| `note_acheteur(project, section)`, `resume_partenaire(db, inv)`, `brouillon_du_partenaire(db, acces, sid, bid)` | chantier du partenaire (§ 15) |
 
 À respecter par les chantiers :
 1. Ne jamais lire `dossier_parts_brouillons` hors de `atelier_groupement` ni l'exposer hors de l'accès du
@@ -505,3 +507,72 @@ raccourcir et reprise au redémarrage ; message neutre (essai terminé) ; modifi
 revalidation, rétablissement ; partenaire absent ; validation du dossier assemblé et péremption ;
 **isolation entre deux groupements** ; **invitation retirée, déclinée, expirée** ; export bloqué par la part
 envoyée ; RGPD (exports, effacement des comptes) ; purge ; demande des parts et relance ; démo ; migration.
+
+---
+
+## 15. Chantier du partenaire : l'écran « Mes parties du dossier de présentation » (fait)
+
+Étude § 6.8, parcours point 2. Un SEUL écran pour les deux accès : `app/static/redaction-partenaire.js`
+(script servi avec son empreinte SRI dans `invite.html` et `app.html`, styles `.rp-*` dans `styles.css`).
+
+### 15.1 Montage
+
+```js
+const h = window.AdjugoRedactionPartenaire.mount(el, {
+  base: "/api/invite/<token>/redaction" | "/api/shared/<projet>/redaction",
+  mode: "lien" | "compte",
+  headers: () => ({Authorization: "Bearer …"}),           // compte
+  cleStockage: "adjugo_espace_<token>",                    // lien : la clé de l'espace, dans CE navigateur
+  invite: "/api/invite/<token>",                           // lien : demande d'un code par email
+  verifyIdentity: (msgEl, {purpose}) => Promise<bool>,     // lien : code reçu par email (identity_unverified)
+  onChange: () => {},                                       // après une action (ex. « Mon journal »)
+});
+h.reload(); h.destroy();
+```
+- **Lien** (`invite.html`, `renderMonAO`) : monté après la convention, sauf aperçu limité (réseau non accepté)
+  et sous-traitant. La clé part dans l'en-tête `X-Adjugo-Espace` de chaque appel, jamais dans une adresse.
+- **Compte** (« Partagé avec moi », `app.html`) : composant Vue `<redaction-partenaire :pid :token>` au gabarit
+  statique (Vue ne redessine jamais son contenu). La liste « Partagé avec moi » montre une pastille
+  « Partie(s) à rédiger » / « à revalider » (`/api/shared` → `redaction: {parties, a_faire, a_revalider}`,
+  statuts seulement, `null` si le dossier n'est pas préparé).
+- Réponse 403 / 404 / 410 de la vue (dossier pas préparé, sous-traitant, aperçu limité, lien coupé) : l'écran
+  reste vide.
+
+### 15.2 Ce que l'écran montre et fait
+
+| élément | données (API) |
+|---|---|
+| En-tête : « n parties confiées à X · Sections validées k sur n », pastille « n à faire » / « À jour » | `membre`, `parties[].statut`, `dossier.pret` |
+| Espace privé (lien) : « Ouvrir mon espace », « Recevoir un code » (si l'invitation vise une adresse), « Réinitialiser mon espace » (confirmation : brouillons non envoyés effacés) | `espace`, `POST /espace`, `POST /api/invite/{token}/otp/request` |
+| Une partie (accordéon, la première « à rédiger / en cours / à revalider » ouverte) : titre, statut, longueur conseillée, date limite, mention « Modifié par le chef de file, à revalider par X » | `parties[]` |
+| « Ce que l'acheteur note » : critère, poids TEL QU'ÉCRIT et d'où il vient, phrase du règlement retrouvée ; question du cadre ; sans critère (plan du cadre), les critères techniques de la grille et leurs phrases (le prix n'en fait pas partie) ; limites | `note = {critere, poids, poids_source, poids_libelle, phrase, question, source_plan, grille[]}`, `limite` |
+| « Rédiger avec Adjugo » / « J'écris moi-même » ; « Partir de mon paragraphe » (mode simple) ; aides restantes dans la bulle (i) ; plafond atteint : phrase neutre | `aide`, `POST /aide`, `mode_simple` |
+| Tâche en cours : suivie toutes les 2 s (`GET /taches/{id}`), reprise au rechargement ; échec : le message du serveur (IA en panne : aide rendue, rien débité) | `aide.en_cours` |
+| Éditeur : texte, mots / longueur conseillée, « [À compléter] » à remplir, « Enregistrer », « Rédiger / Refaire avec Adjugo », « Raccourcir avec Adjugo » (au-delà de la longueur conseillée), « Envoyer au groupement » / « Envoyer cette version » ; saisie non enregistrée gardée dans l'onglet (sessionStorage) | `brouillon`, `PUT /brouillon` |
+| « Vos brouillons précédents » → « Reprendre ce texte » (aucune génération n'écrase un texte sans version qu'on peut reprendre) | `GET /sections/{sid}` (`brouillons`), `GET /sections/{sid}/brouillons/{bid}` |
+| À relire : type, phrase (fait surligné), message, « Je l'ai relu » / « Je confirme cet engagement », « Relus par vous » ; libellés de source et « Faits avec une source » seulement si `controle.libelles` (mêmes règles que l'atelier) ; ses extraits cités (privés) | `brouillon.faits`, `controle`, `faits_sources`, `sources`, `POST /faits/{fid}` |
+| Envoyer : fenêtre qui affiche « Ce texte sera lu par le chef de file et par les autres membres du groupement. », ce que reçoit le chef de file (texte, faits à relire, compteurs par type ; jamais sources, extraits ni brouillons), les « [À compléter] » restants ; puis `avertissement_lu: true` ; identité prouvée si demandée | `avertissement_envoi`, `identite`, `POST /envoyer` |
+| Envoyée : « Valider ma partie » (bulle : une modification ensuite fait repasser « à revalider ») ; Validée : date ; texte commun replié | `texte_commun`, `validation`, `POST /valider` |
+| Modifiée par le chef de file : l'avant et l'après côte à côte, mot à mot (retiré / ajouté surlignés, sans IA), « Valider la modification » / « Rétablir ma version » (ou « Valider ce texte » quand il l'a écrit à sa place), « Écrire une autre version », « Partir du texte du chef de file » | `comparaison`, `POST /valider`, `POST /retablir` |
+| Le dossier assemblé : « Lire le dossier assemblé » (lecture seule, renvois montrés comme « votre source », « source du partenaire », « source du chef de file »), « Valider le dossier assemblé » (après ses parties, sur l'empreinte lue) | `GET /dossier`, `POST /dossier/valider` |
+| Mode simple : le paragraphe de sa part, tel quel (toujours modifiable dans « Ma contribution ») | `mode_simple` |
+| « Télécharger mes textes » (portabilité) | `GET /export` |
+
+Champs ajoutés à `GET …/redaction` par ce chantier : `membre {nom, lot}`, `identite {a_prouver, message}`,
+`mode_simple {petit_texte, message}`, `parties[].note`, `dossier.pret`.
+
+### 15.3 Démo
+
+Toutes les routes d'écriture V4 sont classées dans `tests/test_demo_sans_cout.py` (aide de l'IA et envois
+à coût ; le reste sans coût) et refusées à la démo dans la route, derrière le garde central : compte démo
+(`refuser_demo`) et lien partenaire de la démo (`_par_lien(…, ecrire=True)`, refusé AVANT tout autre
+contrôle, 403 `demo` « lecture guidée »). La remise à neuf de la vitrine efface aussi brouillons,
+répartition et validations (clés étrangères sous Postgres).
+
+### 15.4 Tests
+
+`tests/test_redaction_v4_partenaire.py` : parcours de l'écran contre l'API (lien), « Ce que l'acheteur
+note » (grille et cadre), « Partagé avec moi » (pastille, compte, sources du compte réservées au compte),
+brouillons précédents (seul leur auteur), aide indisponible neutre (essai terminé, IA en panne : aide
+rendue), isolation entre membres et 404, démo (lien et compte, même sans le garde), règles d'interface et
+fonctions pures de l'écran sous Node (échappement, renvois, avant / après mot à mot).
