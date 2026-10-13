@@ -109,10 +109,16 @@ def test_repartition_preremplie_sans_ia_champs_lus_par_l_ecran(client, auth, fak
     h = auth["headers"]
     pid, st, a, b, vue = _groupement(client, auth)
     assert fake.calls == []
-    assert vue["actif"] is True and len(vue["sections"]) == 4
+    # Les 4 parties du cadre, et les deux parties tirées du groupement (assemblage) : personne ne les rédige.
+    cadre = [l for l in vue["sections"] if not l.get("genere")]
+    gen = [l for l in vue["sections"] if l.get("genere")]
+    assert vue["actif"] is True and len(cadre) == 4
+    assert [(l["genere"], l["choix"], l["redacteur"]["type"]) for l in gen] == [
+        ("grp_orga", "genere", "groupement"), ("grp_qfq", "genere", "groupement")]
+    assert all(l["message"] and l["longueur_mots"] is None and l["proposition"] is None for l in gen)
     assert {m["nom"]: (m["role"], m["peut_rediger"], m["raison"]) for m in vue["membres"]} == {
         "Breizh Désamiantage": ("cotraitant", True, ""), "Le Gall Électricité": ("cotraitant", True, "")}
-    for l in vue["sections"]:
+    for l in cadre:
         # Chaque champ lu par l'écran existe.
         for k in ("section_id", "numero_affiche", "intitule", "critere", "poids", "poids_source", "redacteur",
                   "proposition", "choix", "longueur_mots", "date_limite", "demandee_le", "statut",
@@ -125,7 +131,7 @@ def test_repartition_preremplie_sans_ia_champs_lus_par_l_ecran(client, auth, fak
     assert "lot de Breizh Désamiantage" in env["proposition"]["message"]
     for k in ("message", "membres", "sections_validees", "sections_total"):
         assert k in vue["dossier"]["pret"]
-    assert vue["dossier"]["pret"]["message"] == "Sections validées 0 sur 4"
+    assert vue["dossier"]["pret"]["message"] == "Sections validées 0 sur 6"
     # Choisir le rédacteur, la longueur et la date (verrou optimiste comme l'écran l'envoie).
     met = _section_par(vue, "méthodologie")
     url = f"/api/atelier/{pid}/repartition/{met['section_id']}"

@@ -155,8 +155,30 @@ def test_parcours_de_l_ecran_par_le_lien(client, auth, fake_llm):
     moi = next(x for x in dos["parties"] if x["section_id"] == sid)
     assert moi["redacteur"]["vous"] is True and moi["ecrit_par"] == "chef_de_file" and "5 bennes" in moi["texte"]
     assert all({"titre", "statut", "statut_libelle", "redacteur", "texte"} <= set(x) for x in dos["parties"])
+    # « Qui fait quoi dans le groupement » (assemblage) : il la valide aussi avant le dossier ; elle attend sa part
+    # envoyée et la part du chef de file (« [À compléter] » d'ici là, rien d'inventé).
     v = client.get(base, headers=H).json()
+    q = v["qui_fait_quoi"]
+    assert v["dossier"]["peut_valider"] is False and q["genere"] == "grp_qfq" and q["message"]
+    for k in ("section_id", "statut", "statut_libelle", "texte_commun", "membres", "validations", "ma_validation"):
+        assert k in q, k
+    assert "note_interne" not in q
+    r = client.post(base + f"/sections/{q['section_id']}/valider", json={"version_id": q["texte_commun"]["version_id"]},
+                    headers=H)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "partie_incomplete"
+    from tests.test_convention_groupement import _submit
+    _submit(client, a["token"])
+    assert client.put(f"/api/projects/{pid}/groupement/convention", headers=h,
+                      json={"params": {"lot_mandataire": "Couverture et zinguerie"}}).status_code == 200
+    q = client.get(base, headers=H).json()["qui_fait_quoi"]
+    assert q["texte_commun"]["a_completer"] == 0 and q["ma_validation"]["statut"] == "a_faire"
+    r = client.post(base + f"/sections/{q['section_id']}/valider", json={"version_id": q["texte_commun"]["version_id"]},
+                    headers=H)
+    assert r.status_code == 200, r.text
+    v = client.get(base, headers=H).json()
+    assert v["qui_fait_quoi"]["ma_validation"]["statut"] == "valide"
     assert v["dossier"]["peut_valider"] is True and v["dossier"]["ma_validation"] is None
+    dos = client.get(base + "/dossier", headers=H).json()
     r = client.post(base + "/dossier/valider", json={"empreinte": dos["empreinte"]}, headers=H)
     assert r.status_code == 200 and r.json()["validation"]["statut"] == "valide"
     assert client.get(base, headers=H).json()["dossier"]["ma_validation"]["statut_libelle"] == "Validé"
@@ -187,7 +209,7 @@ def test_ce_que_l_acheteur_note_critere_poids_et_phrase_retrouvee(client, auth):
     _put(client, a["token"], company_name="Breizh Désamiantage", lot=LOT_A)
     assert client.post(f"/api/atelier/{pid}/repartition", headers=h, json={}).status_code == 200
     vue = client.get(f"/api/atelier/{pid}/repartition", headers=h).json()
-    s = vue["sections"][0]
+    s = next(x for x in vue["sections"] if not x.get("genere"))       # la 1re partie du plan (pas celles du groupement)
     assert s["critere"] == "Valeur technique"
     r = client.put(f"/api/atelier/{pid}/repartition/{s['section_id']}", headers=h,
                    json={"redacteur": "partenaire", "invite_id": a["id"], "confirmer": True})
