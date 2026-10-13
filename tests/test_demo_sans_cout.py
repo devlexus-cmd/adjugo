@@ -80,7 +80,9 @@ COUTS = [
          corps={"objet": "Réfection de la toiture de l'école", "type_marche": "travaux", "montant_estime": 300000}),
     Cout("POST", "/api/dce/sourcing", "ia", "ouvert", session="acheteur", lectures=True,
          corps={"lots": [{"intitule": "Couverture", "montant": 200000}], "departement": "44"}),
-    # Rédaction, vague 4 : l'aide de l'IA du partenaire (par le lien de la vitrine, ou « Partagé avec moi »).
+    # Rédaction, vague 4 : l'aide de l'IA du partenaire (par le lien de la vitrine, ou « Partagé avec moi ») et
+    # « Harmoniser le ton » du chef de file (assemblage).
+    Cout("POST", "/api/atelier/{project_id}/repartition/harmoniser", "ia", corps={}, params=_P),
     Cout("POST", "/api/invite/{token}/redaction/sections/{section_id}/aide", "ia", session="lien",
          corps={"action": "rediger"}, params=_TS),
     Cout("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/aide", "ia", corps={"action": "rediger"},

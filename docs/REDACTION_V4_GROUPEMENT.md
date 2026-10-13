@@ -11,7 +11,9 @@ Source de vérité du code :
 - atelier (V2/V3), adapté : `app/services/atelier.py` (`versions_communes`, `ajouter_version`, `blocage`,
   `_debiter`, `rembourser`, `section_out`, `valider`) ;
 - migration : `alembic/versions/x8y9redactionv4_dossier_groupement.py` (après `w7x8analysepartagee`) ;
-- tests : `tests/test_redaction_v4_groupement.py`.
+- tests : `tests/test_redaction_v4_groupement.py` ;
+- assemblage et validation (chantier 3, § 17) : `app/services/atelier_assemblage.py`,
+  `tests/test_redaction_v4_assemblage.py`.
 
 Vocabulaire à l'écran : « groupement », « partenaire », « chef de file », « partie » (le code dit
 « section »), « valider » (jamais « signer »), jamais « consortium », jamais « vérifié ». Zéro émoji.
@@ -426,7 +428,7 @@ son texte validé. Conséquences, sans autre changement :
    du groupement » vient de la convention ; « Qui fait quoi » montre lots, qualifications (libellé, justifiée
    ou déclarée) et moyens, validée par chaque membre (`valider_dossier`) et **ne liste JAMAIS les manques du
    chef de file** ; « Harmoniser le ton » ne retouche que les transitions et refuse tout fait absent avant.
-   Ces sections ne sont pas construites ici.
+   Construites par le chantier 3 : voir § 17 (`app/services/atelier_assemblage.py`).
 4. Un seul process serveur : aucune connexion permanente, aucun temps réel, aucune suggestion façon
    traitement de texte (la revalidation par l'auteur suffit).
 5. Retirer du plan une partie confiée à un partenaire : la reprendre d'abord (`PUT /repartition/{sid}`
@@ -630,3 +632,168 @@ tests : `tests/test_redaction_v4_chef_de_file.py`.
 Pas dans ce chantier : la validation du dossier assemblé et « Prêt à déposer » (chantier 3 ; l'écran montre
 seulement « Sections validées k sur n » et qui a validé le dossier), l'harmonisation du ton, les écrans du
 partenaire (chantier 1).
+
+## 17. Assemblage et validation (chantier 3)
+
+Étude § 6.8 B, parcours points 4 et 5. Code : `app/services/atelier_assemblage.py` (`asm`), DERRIÈRE
+`atelier_groupement` (appelé par lui, et par deux crochets de l'atelier : la validation d'une partie tirée du
+groupement, et leur rafraîchissement avant toute lecture du texte commun). Tests :
+`tests/test_redaction_v4_assemblage.py`. **Aucune migration** : tout tient dans les tables du socle.
+
+### 17.1 Choix faits par défaut (à valider par Eliot)
+
+1. **Deux parties TIRÉES DU GROUPEMENT**, de vraies parties du dossier (`dossier_sections.author_kind =
+   'groupement'`, `source_plan = 'grp_orga' | 'grp_qfq'`), écrites par Adjugo SANS IA, jamais à la main :
+   « Organisation du groupement » et « Qui fait quoi dans le groupement ». Créées à la préparation de « Qui
+   écrit quoi » (`POST /repartition`, idempotent), placées en tête du dossier, ou juste après la partie du plan
+   dont l'intitulé parle du groupement (« Présentation du groupement » du plan simple) ; l'ordre et les numéros
+   du cadre de l'acheteur ne bougent pas (dans un cadre imposé, elles n'ont pas de numéro, comme une partie
+   ajoutée). Le chef de file peut les retirer et les remettre (elles reprennent leur place) ; une partie retirée
+   n'est jamais recréée. Leur texte suit les faits à CHAQUE lecture (convention régénérée ou périmée, part d'un
+   membre modifiée) : nouvelle version (l'historique reste entier), « à revalider » si elle était validée,
+   validations du dossier assemblé périmées (`apres_changement_commun`), journal `redaction.partie_groupement_a_jour`.
+2. **« Organisation du groupement »** : tirée de la convention EN VIGUEUR (générée — `a_signer` ou `signee` — et à
+   jour : `groupement_convention.refresh`) : forme (conjoint, solidaire, mandataire solidaire), chef de file et
+   les pouvoirs que les membres lui donnent, répartition des parts (« X, co-traitant : lot »). **Jamais un prix**
+   (le dossier de présentation n'est pas l'offre de prix). Pas de convention, convention en brouillon ou
+   périmée : le texte le DIT (« [À compléter : la convention de groupement n'est pas encore préparée…] »), ce qui
+   bloque l'export (décision 2b) ; rien n'est inventé. Validée par le CHEF DE FILE seul, une fois la convention
+   validée par tous les membres (sinon 409 `convention_a_valider`, qui nomme les accords en attente).
+3. **« Qui fait quoi dans le groupement »** : ce que chaque membre APPORTE — sa part, ses qualifications, ses
+   moyens — et JAMAIS ce qui lui manque (aucune ligne « aucune qualification », aucun écart de « Répondre à
+   plusieurs ? ») :
+   - chef de file : sa part = `lot_mandataire` de la convention (brouillon compris) ; qualifications de « Mes
+     preuves » (acceptées, valables : **justifiée** si trouvée dans ses documents ou une source publique,
+     **déclarée** sinon) puis de son profil (déclarées, non périmées) ; moyens : effectif du profil, matériel de
+     « Mes preuves » ;
+   - partenaire (co-traitant actif ; jamais un sous-traitant ni une invitation du réseau sans réponse) : sa part
+     ENVOYÉE seulement (jamais un brouillon : sinon « [À compléter : la part de X n'est pas encore envoyée…] ») ;
+     qualifications déclarées dans sa part, **justifiée** quand il a joint un justificatif de type qualification,
+     valable, dont le nom porte tous les mots distinctifs (« Qualibat 1552 » ↔ « Qualibat_1552_2026.pdf »),
+     **déclarée** sinon ; moyens : effectif déclaré ;
+   - partenaire hors ligne de la convention : sa part seulement.
+   Les libellés « justifiée » / « déclarée » sont rendus À L'ÉCRAN (`membres[].qualifications[].statut_libelle`),
+   jamais écrits dans le texte (le fichier de l'acheteur). La justification du groupement au sens de la décision
+   09-D-18 (« pourquoi répondre à plusieurs » : scores et écarts comblés de la composition retenue) est une
+   **note interne** (`note_interne`) rendue au chef de file SEUL : jamais exportée, jamais montrée aux
+   partenaires. Validée par CHAQUE membre attendu (les mêmes que pour le dossier assemblé : le chef de file et
+   les partenaires qui peuvent rédiger) : `dossier_validations` avec `membre_cle = 'qfq:chef_de_file' |
+   'qfq:invitation:<id>'` ; la partie est VALIDÉE quand tous ont validé son texte courant (empreinte). Ces lignes
+   ne comptent jamais comme validation du dossier assemblé (`validations_out`, `pret`, `perimer_validations` les
+   écartent).
+4. **Valider le dossier assemblé** exige d'avoir validé « Qui fait quoi » (et, pour le chef de file,
+   « Organisation du groupement ») : 409 `parties_a_valider` les liste.
+5. **« Harmoniser le ton »** (option, IA) : jonctions entre deux parties qui se suivent, écrites par des membres
+   DIFFÉRENTS (parties tirées du groupement mises à part) ; l'IA propose UNE phrase de transition par partie, placée
+   au début de la partie, en paragraphe séparé ; le corps du membre n'est jamais réécrit ; une transition d'une
+   harmonisation précédente est remplacée, jamais empilée (`dossiers_presentation.plan_meta.transitions`). Chaque
+   phrase est contrôlée SANS IA (`asm.controle_transition`) : refusée si elle n'est pas une transition (plusieurs
+   phrases, plus de 40 mots, titre, liste, renvoi, « [À compléter] », adresse email ou web) ou si elle apporte UN
+   fait absent du dossier avant l'harmonisation — nombre (chiffres, lettres, pourcentage, montant, durée, année),
+   date, période ou fréquence (« quotidien », « chaque semaine »),
+   quantité (« une centaine », « la moitié »), certification ou qualification, nom propre (au fil de la phrase, ou
+   en tête quand ce n'est pas un mot d'ouverture connu du dossier), matériel, engagement (repérage du contrôle A :
+   `faits_a_relire`, `faits_sources.engagement`). Une partie touchée repasse « à revalider » par son auteur (partie
+   d'un partenaire : texte commun « écrit par le chef de file », avant / après, valider ou rétablir ; partie du chef
+   de file : nouvelle version, origine `harmonise`, ses sources et faits gardés) ; un fait de la phrase absent de
+   CETTE partie y est à relire. Débit : une refonte du dossier (décision 6a ; la 1re action de l'IA du dossier
+   compte pour 1 analyse), RENDUE si l'IA tombe ou si aucune phrase n'est retenue. Tâche `atelier_harmoniser`
+   (même relevé, même remboursement, même reprise au redémarrage que l'atelier). Routage : tâche IA « raccourcir »
+   (même modèle, aucune route nouvelle). Ce qui part à l'IA : intitulés, fin de la partie précédente et début de la
+   partie (700 caractères), auteurs anonymisés (« membre A »), noms des salariés masqués (`pii_scope`), aucun CV
+   (passage non transmis), espace facturé du chef de file.
+
+### 17.2 Routes (nouvelles ou étendues)
+
+| route | effet |
+|---|---|
+| `GET /api/atelier/{pid}/repartition/dossier` | Le dossier assemblé du chef de file (ordre du cadre, parties tirées du groupement), `pret` (avec `manques`), `note_interne`, `harmoniser: {message, jonctions}`. 404 `groupement_non_prepare`. |
+| `POST /api/atelier/{pid}/repartition/harmoniser` `{accepte_debit?}` | 202 `{tache, quota}` ; suivre `GET /api/atelier/{pid}/taches/{job_id}` : `result = {transitions: [{section_id, ok, texte, raison?, faits?: [{fait, type}], version_id?}], ajoutees, refusees, message}`. 409 `groupement_non_prepare`, `harmonisation_en_cours`, `debit_a_confirmer`, `premiere_redaction_en_cours`, `redaction_en_cours` ; 422 `rien_a_harmoniser` ; 402 essai ; 403 démo, `email_non_confirme`. |
+| `POST /api/atelier/{pid}/sections/{sid}/valider` `{version_id}` | Partie tirée du groupement : validation du chef de file (« Qui fait quoi » : SA validation). 409 `convention_a_valider`, `partie_incomplete`, `texte_modifie_entre_temps`. |
+| `GET /api/atelier/{pid}/repartition/{sid}` | Partie tirée du groupement : la ligne + `texte_commun` (avec texte), `message`, `convention` ou `membres` (qualifications avec `statut_libelle`), `validations`, `ma_validation`, `note_interne` (« Qui fait quoi »). |
+| `GET …/redaction` (partenaire) | + `qui_fait_quoi` (bloc ci-dessous) ; `dossier.peut_valider` tient compte de SA validation de « Qui fait quoi ». |
+| `GET …/redaction/sections/{qfq}` · `POST …/redaction/sections/{qfq}/valider` `{version_id}` | Le bloc « Qui fait quoi » et sa validation par le partenaire (mêmes exigences d'identité qu'envoyer). 403 `membre_non_attendu`, 409 `partie_incomplete`, `texte_modifie_entre_temps`. |
+| écritures ordinaires d'une partie tirée du groupement | 403 `partie_du_groupement` (texte, rédiger, raccourcir, faits, restaurer, relu, contrôle, source) ; 409 `intitule_impose` (intitulé) ; 409 `partie_du_groupement` sur `PUT /repartition/{sid}` et `/texte`. |
+
+Bloc d'une partie tirée du groupement (`asm.detail`) : `{section_id, genere: grp_orga|grp_qfq, intitule, statut
+(a_valider · a_revalider · validee), statut_libelle, texte_commun: {version_id, numero, empreinte, cree_le,
+a_completer, texte}, message, …}` — Organisation : `convention: {statut, libelle, version, toutes_validees,
+en_vigueur, accords_en_attente}`, `membres: [{nom, role, lot}]`, `validation` ; Qui fait quoi : `membres: [{nom,
+role, lot, qualifications: [{libelle, justifiee, statut_libelle}], effectif, materiel, part_envoyee}]`,
+`validations: [{membre, invite_id, nom, statut valide|a_revalider|a_faire, statut_libelle, le}]`, `ma_validation`.
+
+Ligne de « Qui écrit quoi » : `enregistre: false`, `redacteur: {type: "groupement", nom}`, `choix: "genere"`,
+`genere`, `message`, `validations` (« Qui fait quoi »). Dossier assemblé : `genere`, `redacteur.type =
+"groupement"`, `validations` + `membres` (« Qui fait quoi ») ou `convention` (Organisation). Atelier
+(`section_out`) : `genere`, `auteur.type = "groupement"`, `peut_ecrire: false` ; le statut `STATUTS["a_valider"] =
+"À valider"`.
+
+`pret` gagne `manques: [{section_id | null, titre, statut, statut_libelle, qui: [noms], message}]` : « « 3. Démarche
+environnementale » : à valider par Breizh Désamiantage », « « Qui fait quoi dans le groupement » : à valider par le
+chef de file et Breizh Désamiantage », « Dossier assemblé : à revalider par le chef de file ». Jamais ce qui manque
+au chef de file comme entreprise : seulement les gestes de rédaction et de validation.
+
+### 17.3 Journal chaîné
+
+| action | qui | journal du membre |
+|---|---|---|
+| `redaction.partie_groupement_validee` | membre | événement de groupement (« … a validé « Qui fait quoi » ») |
+| `redaction.partie_groupement_a_jour` | Adjugo (system) | événement de groupement (« … a suivi la convention ou la part d'un membre : à revalider ») |
+| `redaction.harmonisation` | chef de file | événement de groupement |
+| `redaction.transition_ajoutee` | chef de file | le partenaire concerné (« … phrase de transition au début de votre partie : à revalider ») |
+
+### 17.4 Export (D2 étendu)
+
+L'export Word / PDF de l'atelier rend le dossier assemblé COMPLET, dans l'ordre du plan, parties tirées du groupement
+comprises (rafraîchies juste avant) ; renvois `[F#]` / `[S#]` retirés ; aucun libellé interne (justifiée, déclarée,
+mention de rédaction, note interne), aucun prix dans les parties tirées du groupement. Blocage avec dérogation
+journalisée : les « [À compléter] » d'une partie tirée du groupement (convention absente ou périmée, part pas
+envoyée, part du chef de file inconnue) bloquent comme ceux d'une part de partenaire (socle) ; non validée :
+avertissement `non_valide`.
+
+### 17.5 Démo
+
+`POST /repartition/harmoniser` : garde central (`demo_guard`) + `refuser_demo` dans la route. Par le lien du
+partenaire de la démo, toute écriture `…/redaction…` est refusée dans la route AVANT tout (« lecture guidée »).
+`tests/test_demo_sans_cout.py` classe toutes les routes de la vague 4 (COUTS : harmoniser, aide du partenaire, demander
+les parts, modifier la part d'un partenaire, envoyer ; SANS_COUT : les autres).
+
+### 17.6 Limites connues
+
+- « Justifiée » pour la qualification d'un partenaire repose sur le NOM du justificatif joint (rapprochement de mots,
+  prudent) : on dit qu'un justificatif existe, jamais qu'il est bon.
+- Une part modifiée après son envoi repasse en brouillon (co-traitance v2) : elle disparaît de « Qui fait quoi »
+  (« à compléter ») jusqu'à son renvoi — on n'expose jamais un brouillon.
+- Le contrôle des transitions refuse tout fait nouveau, pas une phrase creuse ; un mot d'ouverture inconnu du dossier
+  en tête de phrase est pris pour un nom (refus prudent).
+- « Qui fait quoi » est lue par tous les membres dès sa création (décision 3a : le dossier assemblé se lit en entier) :
+  la part, les qualifications et l'effectif que chacun a déclarés dans sa part envoyée, et les qualifications et le
+  matériel acceptés dans « Mes preuves » du chef de file, deviennent communs — jamais un document, une source, un
+  prix ni un brouillon. Chaque membre valide ce qui est dit de lui avant l'export ; le chef de file peut retirer la
+  partie. À dire sur l'écran de la part du partenaire (chantier écrans).
+- Écrans : l'atelier montre une bulle (i) et « Valider » pour une partie tirée du groupement ; les écrans complets
+  (« Prêt à déposer », « Harmoniser le ton », « Qui fait quoi » côté partenaire) sont ceux des chantiers écrans, sur
+  ce contrat.
+
+### 17.7 Vérifications
+
+- `tests/test_redaction_v4_assemblage.py` (13 tests) : ordre du cadre et place des parties tirées du groupement (cadre
+  imposé, plan simple, retrait, remise, plan reconstruit, quota) ; « Organisation » tirée de la convention (en attente
+  d'accords, validée par tous, sans prix) ; convention absente, en brouillon, périmée (« à compléter », export bloqué,
+  « à revalider », historique) ; « Qui fait quoi » sans manque, libellés à l'écran seulement, note interne au chef de
+  file seul, validation par chaque membre, part modifiée ; part non envoyée ; 28 transitions refusées, de 8 genres de
+  faits et de formes variées (chiffre, nombre en lettres, pourcentage, année, date, mois, saison, fréquence, montant,
+  décimal, ISO, Qualibat, RGE, MASE, « certifiées », noms propres en tête ou au fil de la phrase, matériel,
+  engagements, quantités), les formes refusées et des transitions acceptées ; harmonisation de bout en bout (texte des membres intact,
+  « à revalider », débit, noms masqués, rétablir, transition remplacée) ; panne et rien de retenu : rien n'est
+  décompté ; compteur « Sections validées k sur n », ce qui manque, revalidation ; export Word et PDF propre et bloqué
+  (dérogation journalisée) ; démo.
+- Le test du socle `test_validation_du_dossier_assemble_puis_a_revalider` suit l'assemblage : parts envoyées, convention
+  validée par tous, « Organisation » et « Qui fait quoi » validées, « Sections validées 6 sur 6 ».
+- Postgres 16 depuis l'état EXACT de la production (`0767372`, `w7x8analysepartagee`), script
+  `scratchpad/pgtest/run_v4_assemblage_depuis_prod.py` : une seule révision appliquée (`x8y9redactionv4`, aucune pour
+  l'assemblage), aucune donnée perdue, rejeu, code de production redémarré sur la base montée, schéma identique,
+  retour arrière et remontée ; tests rejoués sur cette base : assemblage 13, socle 23, démo (sans coût, lien privé,
+  Kerhel, remise à neuf) 186, atelier 105, V3 227, essai et routage 87, analyse partagée 40, journal et vocabulaire 30 —
+  verts ; seuls échecs, les mêmes qu'au passage du socle et sans lien avec la vague 4 : 6 tests propres à SQLite
+  (`PRAGMA foreign_keys`, clés étrangères non contrôlées : `test_secu2_donnees.py`, `test_hotfix_v2_fuites.py`).

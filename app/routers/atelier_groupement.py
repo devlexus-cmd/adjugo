@@ -13,6 +13,8 @@ Chef de file (compte, portée organisation — le marché doit appartenir à son
   PUT  /api/atelier/{pid}/repartition/{sid}/texte           modifier la part d'un partenaire (à revalider)
   POST /api/atelier/{pid}/repartition/demander              « Demander les parts »
   POST /api/atelier/{pid}/repartition/valider-dossier       valider le dossier assemblé
+  GET  /api/atelier/{pid}/repartition/dossier               le dossier assemblé, « Prêt à déposer », note interne
+  POST /api/atelier/{pid}/repartition/harmoniser            « Harmoniser le ton » (IA : transitions seulement)
 
 Partenaire — par le lien de son invitation (/api/invite/{token}/redaction…) ou par le compte qui a
 rattaché ce lien (/api/shared/{project_id}/redaction…, mêmes sous-routes) :
@@ -66,6 +68,7 @@ DEMO_ACTION_PART = "co-construire une réponse avec vos partenaires"
 
 
 def _refuser_demo(user: User, action: str = DEMO_ACTION) -> None:
+    """Défense en profondeur, derrière le garde central : la vitrine de la démo ne change pas."""
     from app.core.demo_guard import refuser_demo
     refuser_demo(user, action)
 
@@ -90,6 +93,19 @@ class _Chef:
 def chef_lire(project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     c = _Chef(db, current_user, project_id)
     return ag.vue_chef(db, c.project, c.dossier)
+
+
+# Déclarée AVANT /repartition/{section_id} (sinon « dossier » serait lu comme un numéro de partie).
+@router.get("/api/atelier/{project_id}/repartition/dossier")
+def chef_dossier(project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Le dossier assemblé tel que le lit le chef de file (assemblage, docs/REDACTION_V4_GROUPEMENT.md § 17) :
+    l'ordre du cadre, les parties tirées du groupement, « Prêt à déposer » et ce qui manque, plus la note
+    interne (jamais exportée, jamais montrée aux partenaires)."""
+    c = _Chef(db, current_user, project_id)
+    if not ag.repartition_active(db, c.dossier):
+        raise HTTPException(404, {"code": "groupement_non_prepare",
+                                  "message": "Préparez d'abord « Qui écrit quoi » pour assembler le dossier du groupement."})
+    return ag.dossier_assemble(db, c.project, c.dossier, pour_chef=True)
 
 
 class ActiverIn(BaseModel):
@@ -214,6 +230,32 @@ def chef_valider_dossier(request: Request, project_id: int, body: Optional[Valid
     return {"validation": v, "pret": ag.pret(db, c.project, c.dossier)}
 
 
+class HarmoniserIn(BaseModel):
+    accepte_debit: bool = False
+
+
+@router.post("/api/atelier/{project_id}/repartition/harmoniser", status_code=202)
+@limiter.limit("10/hour")
+def chef_harmoniser(request: Request, project_id: int, body: Optional[HarmoniserIn] = None,
+                    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """« Harmoniser le ton » : l'IA propose une phrase de transition au début des parties qui suivent la part d'un
+    autre membre ; toute phrase qui apporte un fait absent du dossier est refusée sans IA ; les parties touchées
+    repassent « à revalider » par leur auteur. Tâche de fond : suivre /api/atelier/{pid}/taches/{job_id}."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "rédiger avec Adjugo")
+    if not getattr(current_user, "email_verified", True):
+        raise HTTPException(403, {"code": "email_non_confirme",
+                                  "message": "Confirmez votre adresse email pour utiliser cette fonctionnalité."})
+    c = _Chef(db, current_user, project_id)
+    try:
+        job = ag.lancer_harmonisation(db, current_user, c.project, c.dossier, c.acc.lecteur, c.acc.mids,
+                                      accepte_debit=bool(body and body.accepte_debit))
+    except at.AtelierError as e:
+        raise _err(e)
+    db.refresh(c.dossier)
+    return {"tache": at.job_public(job), "quota": at.quota_out(c.dossier)}
+
+
 # ── Partenaire : résolution de l'accès (lien ou compte) ──────────────────────────────
 
 def _project_of(inv, db: Session) -> Project:
@@ -240,6 +282,8 @@ def _par_lien(token: str, db: Session, request: Request, ecrire: bool = False) -
 
 
 def _par_compte(project_id: int, user: User, db: Session) -> ag.Acces:
+    """Le compte qui a rattaché le lien (« Partagé avec moi »). Les routes d'écriture refusent la démo elles-mêmes
+    (`_refuser_demo`, derrière le garde central)."""
     from app.routers.journal_membre import _shared_invite
     inv, project = _shared_invite(project_id, user, db)     # lien rattaché à CE compte, actif, non expiré
     try:

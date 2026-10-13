@@ -428,6 +428,56 @@ def raccourcir_partie(texte: str, cible_mots: int, titre: str = "", billing_id=N
     return {"texte": out, "coupe": coupe, "erreur": False}
 
 
+# ── Rédaction, vague 4 (assemblage) : « Harmoniser le ton » — des transitions, rien d'autre ──
+_HARMONISER_SYS = """Tu harmonises le ton d'un dossier de présentation (le « mémoire technique ») rédigé à
+plusieurs par les membres d'un groupement d'entreprises qui répond à un marché public. Le texte de chaque membre
+NE CHANGE PAS : tu écris seulement, pour certaines parties, UNE courte phrase de transition qui sera placée au
+début de la partie, pour la relier à la partie précédente (écrite par un autre membre).
+RÈGLES ABSOLUES :
+- Une seule phrase par partie, 30 mots au plus, sans retour à la ligne.
+- N'apporte AUCUN fait : aucun chiffre ni nombre (même en lettres), aucune date ni période, aucun nom (d'entreprise,
+  de personne, de lieu, de produit), aucune certification ni qualification, aucun matériel, aucun délai, aucune
+  quantité, aucun engagement (« nous garantissons », « nous nous engageons », « sans retard »…). Ne reprends aucun
+  élément précis des extraits : la phrase doit rester vraie quel que soit le détail des parties.
+- Ne résume pas, ne juge pas, ne promets rien, aucun superlatif.
+- Aucun renvoi entre crochets, aucun « [À compléter] », aucun titre, aucune liste, aucune mise en forme.
+- Ton sobre et professionnel, à la troisième personne (« le groupement », « cette partie ») : jamais « nous ».
+- Si aucune transition sobre n'est utile pour une partie, ne l'écris pas.
+Réponds UNIQUEMENT en JSON : {"transitions": [{"id": "<identifiant de la partie>", "texte": "<la phrase>"}]}"""
+
+
+def harmoniser_transitions(items: list, billing_id=None) -> dict:
+    """Une phrase de transition par jonction entre deux parts de membres différents. items = [{id, titre,
+    titre_precedent, auteur, auteur_precedent, fin_precedente, debut}] (extraits : le texte des membres, jamais
+    un CV ; noms des salariés masqués par l'appelant). Renvoie {transitions: {id: phrase}, erreur}. Ne lève
+    pas : une panne de l'IA rend erreur=True (l'appelant rembourse). Chaque phrase est ensuite contrôlée SANS IA
+    (app/services/atelier_assemblage.controle_transition) avant d'entrer dans le dossier."""
+    from app.services.llm import parse_json
+    blocs = []
+    for x in items or []:
+        blocs.append(f"PARTIE {x['id']} : « {x.get('titre') or ''} » ({x.get('auteur') or 'un membre'}), qui suit "
+                     f"« {x.get('titre_precedent') or ''} » ({x.get('auteur_precedent') or 'un autre membre'}).\n"
+                     f"Fin de la partie précédente : \"\"\"{x.get('fin_precedente') or ''}\"\"\"\n"
+                     f"Début de cette partie : \"\"\"{x.get('debut') or ''}\"\"\"")
+    if not blocs:
+        return {"transitions": {}, "erreur": False}
+    user = ("Écris au plus une phrase de transition pour chacune de ces parties (identifiant entre « PARTIE » et "
+            "les deux-points) :\n\n" + "\n\n".join(blocs))
+    try:
+        with tenant_scope(billing_id):
+            content, _stop = complete_ex(_HARMONISER_SYS, user, max_tokens=min(4000, 200 + 120 * len(blocs)),
+                                         temperature=0.2, tache="raccourcir", json_attendu=True)
+        data = parse_json(content)
+    except Exception as e:
+        logger.warning("atelier.harmoniser en échec : %s", type(e).__name__)
+        return {"transitions": {}, "erreur": True}
+    out = {}
+    for t in (data.get("transitions") or []) if isinstance(data, dict) else []:
+        if isinstance(t, dict) and str(t.get("id") or "").strip() and isinstance(t.get("texte"), str):
+            out.setdefault(str(t["id"]).strip(), t["texte"].strip())
+    return {"transitions": out, "erreur": False}
+
+
 # ── 4. Contrôle de conformité ────────────────────────────────────────────────
 _CHECK_SYS = """Tu es un contrôleur qualité. Tu vérifies qu'un mémoire technique couvre
 bien CHAQUE exigence extraite du dossier de consultation. Pour chaque exigence : couverte,

@@ -62,6 +62,10 @@ REDACTEURS = (CHEF, PARTENAIRE)
 A_REDIGER, EN_COURS, ENVOYEE, A_REVALIDER, VALIDEE = "a_rediger", "en_cours", "envoyee", "a_revalider", "validee"
 STATUTS = {A_REDIGER: "À rédiger", EN_COURS: "En cours", ENVOYEE: "Envoyée", A_REVALIDER: "À revalider",
            VALIDEE: "Validée"}
+# Partie tirée du groupement (assemblage, app/services/atelier_assemblage.py) : personne ne la rédige, on la
+# valide (« Organisation du groupement » : le chef de file ; « Qui fait quoi » : chaque membre).
+A_VALIDER = "a_valider"
+STATUTS[A_VALIDER] = "À valider"
 ECRIT_PAR_PARTENAIRE, ECRIT_PAR_CHEF = "partenaire", "chef_de_file"
 PORTEE_PARTENAIRE = "partenaire"
 JOB_REDIGER = "partenaire_rediger"
@@ -340,7 +344,11 @@ def a_un_brouillon(db, section_id: int, invite_id: Optional[int]) -> bool:
 
 def statut_de(db, section: DossierSection, rep: Optional[DossierRepartition] = None) -> str:
     """Statut CALCULÉ d'une partie (jamais stocké : impossible d'être incohérent) :
-       à rédiger · en cours · envoyée · à revalider (par l'auteur) · validée."""
+       à rédiger · en cours · envoyée · à revalider (par l'auteur) · validée ; une partie tirée du
+       groupement : à valider · à revalider · validée."""
+    if at.est_generee(section):
+        from app.services import atelier_assemblage as asm
+        return asm.statut(db, section)
     if section.author_kind != at.AUTEUR_INVITATION:
         return {at.A_ECRIRE: A_REDIGER, at.BROUILLON: EN_COURS, at.RELU: EN_COURS, at.VALIDE: VALIDEE,
                 at.A_REVALIDER: A_REVALIDER}.get(section.statut or at.A_ECRIRE, EN_COURS)
@@ -986,9 +994,16 @@ def envoyer(db, acces: Acces, section_id: int, brouillon_id: int, avertissement_
 def valider_part(db, acces: Acces, section_id: int, version_id: int, ip: str = "") -> DossierSection:
     """Le partenaire VALIDE le texte commun courant de sa partie (le sien, ou celui que le chef de file a
     écrit ou modifié : il l'accepte). Pour un texte du chef de file, le contrôle des faits tourne d'abord
-    chez lui, sur SES faits : ce qu'il ne peut pas sourcer reste à relire (rien n'est blanchi)."""
+    chez lui, sur SES faits : ce qu'il ne peut pas sourcer reste à relire (rien n'est blanchi). « Qui fait quoi
+    dans le groupement » (assemblage) se valide par le même geste."""
     _exiger_ecriture(acces)
     _exiger_identite(acces)
+    from app.services import atelier_assemblage as asm
+    qfq = asm.qfq_de(db, acces.dossier)
+    if qfq is not None and qfq.id == int(section_id or 0):
+        return asm.valider(db, acces.project, acces.dossier, qfq, membre=PARTENAIRE, invite_id=acces.invite_id,
+                           user_id=getattr(acces.user, "id", None), version_id=version_id, actor=acces.acteur,
+                           actor_kind="guest", ip=ip)
     section, rep = _partie(db, acces, section_id)
     rep = _verrouiller_rep(db, rep)
     section = at._verrouiller(db, section)
@@ -1384,6 +1399,8 @@ def activer(db, project: Project, dossier: DossierPresentation, lecteur: at.Lect
         raise AtelierError(409, "pas_de_groupement", MSG_SANS_GROUPEMENT)
     crees, reproposees = 0, 0
     for s in at.sections_actives(db, dossier):
+        if at.est_generee(s):
+            continue                # tirée du groupement : personne ne la rédige
         r = reps.get(s.id)
         prop = proposition(s, cands)
         if r is None:
@@ -1409,7 +1426,10 @@ def activer(db, project: Project, dossier: DossierPresentation, lecteur: at.Lect
     _journal_confiees(db, project, dossier, lecteur, ip)
     apres_changement_commun(db, project, dossier, "répartition des parties", actor=lecteur.email or "",
                             actor_kind="owner", ip=ip)
-    return {"crees": crees, "reproposees": reproposees}
+    # Assemblage (chantier 3) : « Organisation du groupement » et « Qui fait quoi », tirées du groupement.
+    from app.services import atelier_assemblage as asm
+    gen = asm.assurer_generees(db, project, dossier)
+    return {"crees": crees, "reproposees": reproposees, "parties_du_groupement": gen["crees"]}
 
 
 def _journal_confiees(db, project, dossier, lecteur, ip) -> None:
@@ -1459,7 +1479,10 @@ def repartir(db, project: Project, dossier: DossierPresentation, section: Dossie
              confirmer: bool = False, lock_version=None, ip: str = "") -> DossierRepartition:
     """Le chef de file choisit qui rédige la partie, sa longueur conseillée et sa date limite interne.
     Confier une partie qui a déjà du texte demande `confirmer` : ce texte est mis de côté (il reste dans
-    l'historique). Une partie en cours de rédaction par l'IA ne change pas de mains."""
+    l'historique). Une partie en cours de rédaction par l'IA ne change pas de mains. Une partie tirée du
+    groupement n'a pas de rédacteur."""
+    if at.est_generee(section):
+        raise AtelierError(409, "partie_du_groupement", at.MSG_PARTIE_GROUPEMENT)
     if section.retiree_at is not None:
         raise AtelierError(409, "partie_retiree", "Cette partie a été retirée du plan : remettez-la d'abord.")
     reps = repartitions(db, dossier)
@@ -1556,6 +1579,8 @@ def modifier_part(db, project: Project, dossier: DossierPresentation, section: D
     nouveau texte commun (« écrit par le chef de file »), aucune IA, qui passe « à revalider par » le
     partenaire (avant et après côte à côte). Aucune source du chef de file n'appuie un fait sur le
     partenaire : tout fait sur lui reste à relire jusqu'à ce que LUI le valide sur ses propres faits."""
+    if at.est_generee(section):
+        raise AtelierError(409, "partie_du_groupement", at.MSG_PARTIE_GROUPEMENT)
     reps = repartitions(db, dossier)
     rep = reps.get(section.id)
     if rep is None or rep.redacteur != PARTENAIRE or section.author_kind != at.AUTEUR_INVITATION:
@@ -1778,7 +1803,11 @@ def vue_chef(db, project: Project, dossier: DossierPresentation) -> dict:
     rangs = at._rangs(dossier, act)
     com = textes_communs(db, act)
     sections = []
+    from app.services import atelier_assemblage as asm
     for s in act:
+        if at.est_generee(s):
+            sections.append(asm.ligne_chef(db, project, dossier, s, rangs.get(s.id, "")))
+            continue
         r = reps.get(s.id)
         prop = (r.proposition if r is not None and isinstance(r.proposition, dict) else None) or proposition(s, cands)
         red = (r.redacteur if r is not None else (PARTENAIRE if s.author_kind == at.AUTEUR_INVITATION else CHEF))
@@ -1810,7 +1839,17 @@ def vue_chef(db, project: Project, dossier: DossierPresentation) -> dict:
 
 def detail_chef(db, project: Project, dossier: DossierPresentation, section: DossierSection) -> dict:
     """Une partie, côté chef de file : sa ligne de « Qui écrit quoi », son texte commun en entier et, si le
-    chef de file l'a modifiée, l'avant et l'après côte à côte. Jamais un brouillon ni une source."""
+    chef de file l'a modifiée, l'avant et l'après côte à côte. Jamais un brouillon ni une source. Une partie
+    tirée du groupement : son texte, d'où il vient, ses validations et (« Qui fait quoi ») la note interne."""
+    if at.est_generee(section):
+        from app.services import atelier_assemblage as asm
+        rafraichir_validations(db, project, dossier)
+        act = at.sections_actives(db, dossier)
+        if section.id not in {s.id for s in act}:
+            raise AtelierError(404, "partie_introuvable", "Partie introuvable.")
+        rang = at._rangs(dossier, act).get(section.id, "")
+        return dict(asm.ligne_chef(db, project, dossier, section, rang),
+                    **asm.detail(db, project, dossier, section, pour="chef"))
     vue = vue_chef(db, project, dossier)
     ligne = next((x for x in vue["sections"] if x["section_id"] == section.id), None)
     if ligne is None:
@@ -1819,7 +1858,8 @@ def detail_chef(db, project: Project, dossier: DossierPresentation, section: Dos
     return dict(ligne, texte_commun=_version_commune_out(cur), comparaison=comparer(db, section) if cur else None)
 
 
-def dossier_assemble(db, project: Project, dossier: DossierPresentation, pour_invite_id: Optional[int] = None) -> dict:
+def dossier_assemble(db, project: Project, dossier: DossierPresentation, pour_invite_id: Optional[int] = None,
+                     pour_chef: bool = False) -> dict:
     """Le DOSSIER ASSEMBLÉ, en lecture, tel que le lit chaque membre (décision 3a) : l'ordre du cadre de
     l'acheteur, chaque partie avec son rédacteur, son statut et son texte commun (le texte envoyé par un
     partenaire ; le texte validé du chef de file) — jamais un brouillon, une source, un extrait, ni rien du
@@ -1832,8 +1872,13 @@ def dossier_assemble(db, project: Project, dossier: DossierPresentation, pour_in
     chef = db.query(Company).filter(Company.user_id == dossier.owner_id).first()
     nom_chef = (chef.name if chef and chef.name else "") or "Chef de file"
     parties = []
+    from app.services import atelier_assemblage as asm
     for s in act:
         v = com.get(s.id)
+        if at.est_generee(s):
+            parties.append(asm.partie_assemblee(db, project, dossier, s, _section_base_out(dossier, s, rangs.get(s.id, "")),
+                                                v, pour_invite_id=pour_invite_id))
+            continue
         part = s.author_kind == at.AUTEUR_INVITATION
         st = statut_de(db, s)
         item = dict(_section_base_out(dossier, s, rangs.get(s.id, "")),
@@ -1850,6 +1895,10 @@ def dossier_assemble(db, project: Project, dossier: DossierPresentation, pour_in
     out = {"marche": {"id": project.id, "nom": project.name}, "chef_de_file": nom_chef, "message": MSG_LECTURE,
            "empreinte": empreinte_dossier(db, dossier, act), "parties": parties,
            "validations": validations_out(db, dossier), "pret": pret(db, project, dossier, act)}
+    if pour_chef:
+        # La justification du groupement (décision 09-D-18) : au chef de file SEUL, jamais exportée.
+        out["note_interne"] = asm.note_interne(db, project)
+        out["harmoniser"] = {"message": asm.MSG_HARMONISER, "jonctions": len(asm.jonctions(db, dossier))}
     return out
 
 
@@ -1956,6 +2005,12 @@ def vue_partenaire(db, acces: Acces) -> dict:
                                   "en_cours": _tache_en_cours_out(db, r) if acces.cle_ok else None}))
     ma = _validation_de(db, acces.dossier, f"invitation:{acces.invite_id}")
     emp = empreinte_dossier(db, acces.dossier, act)
+    # Assemblage : « Qui fait quoi dans le groupement », que chaque membre valide aussi.
+    from app.services import atelier_assemblage as asm
+    qfq = asm.qfq_de(db, acces.dossier)
+    qfq_bloc = asm.detail(db, acces.project, acces.dossier, qfq, pour="partenaire",
+                          invite_id=acces.invite_id) if qfq is not None else None
+    qfq_ok = qfq_bloc is None or ((qfq_bloc.get("ma_validation") or {}).get("statut") == "valide")
     from app.routers.invites import _binding_required
     espace = {"cle_valide": bool(acces.cle_ok), "ouvert": bool(getattr(acces.inv, "espace_hash", "")),
               "entete": ENTETE_CLE, "code_possible": bool(_binding_required(acces.inv)) if acces.mode == "lien" else False,
@@ -1978,14 +2033,20 @@ def vue_partenaire(db, acces: Acces) -> dict:
             # Le petit texte de sa part (mode simple) : le sien, déjà lu tel quel par le chef de file.
             "mode_simple": {"petit_texte": ((contrib.memoire_paragraph if contrib is not None else "") or "")[:TEXTE_MAX],
                             "message": MSG_MODE_SIMPLE},
-            "parties": parties, "statuts": STATUTS, "origines": ORIGINES,
+            "parties": parties, "statuts": STATUTS, "origines": ORIGINES, "qui_fait_quoi": qfq_bloc,
             "dossier": {"empreinte": emp, "ma_validation": _validation_out(ma, emp),
-                        "peut_valider": bool(parties) and all(p["statut"] == VALIDEE for p in parties),
+                        "peut_valider": bool(parties) and all(p["statut"] == VALIDEE for p in parties) and qfq_ok,
                         "pret": pret(db, acces.project, acces.dossier, act)}}
 
 
 def detail_partenaire(db, acces: Acces, section_id: int) -> dict:
-    """Une partie du partenaire, avec l'historique de SES brouillons (sans leurs textes)."""
+    """Une partie du partenaire, avec l'historique de SES brouillons (sans leurs textes) ; ou « Qui fait quoi
+    dans le groupement », qu'il valide aussi."""
+    from app.services import atelier_assemblage as asm
+    qfq = asm.qfq_de(db, acces.dossier)
+    if qfq is not None and qfq.id == int(section_id):
+        rafraichir_validations(db, acces.project, acces.dossier)
+        return asm.detail(db, acces.project, acces.dossier, qfq, pour="partenaire", invite_id=acces.invite_id)
     vue = vue_partenaire(db, acces)
     ligne = next((x for x in vue["parties"] if x["section_id"] == int(section_id)), None)
     if ligne is None:
@@ -2035,6 +2096,8 @@ def validations_out(db, dossier: DossierPresentation) -> list:
     noms = {}
     out = []
     for v in db.query(DossierValidation).filter(DossierValidation.dossier_id == dossier.id).order_by(DossierValidation.id):
+        if str(v.membre_cle or "").startswith("qfq:"):
+            continue                # validation de « Qui fait quoi » (assemblage), pas du dossier assemblé
         if v.invite_id and v.invite_id not in noms:
             noms[v.invite_id] = nom_partenaire(db.get(ProjectInvite, v.invite_id), _contribution(db, v.invite_id))
         out.append(dict(_validation_out(v, emp), membre=v.membre,
@@ -2050,6 +2113,7 @@ def perimer_validations(db, project: Project, dossier: DossierPresentation, rais
         emp = empreinte_dossier(db, dossier)
         rows = db.query(DossierValidation).filter(DossierValidation.dossier_id == dossier.id,
                                                   DossierValidation.statut == "valide",
+                                                  ~DossierValidation.membre_cle.like("qfq:%"),
                                                   DossierValidation.empreinte != emp).all()
         if not rows:
             return 0
@@ -2087,7 +2151,15 @@ def apres_changement_commun(db, project: Project, dossier, raison: str, *, actor
 
 def rafraichir_validations(db, project: Project, dossier: DossierPresentation) -> None:
     """Filet de sécurité à la lecture (comme la convention) : une validation dont l'empreinte ne correspond
-    plus au dossier assemblé passe « à revalider », avec trace."""
+    plus au dossier assemblé passe « à revalider », avec trace. Avant : les parties tirées du groupement
+    suivent la convention et les parts des membres (assemblage)."""
+    try:
+        from app.services import atelier_assemblage as asm
+        asm.rafraichir_generees(db, project, dossier)
+    except Exception as e:      # noqa: BLE001 — au pire, le texte de la dernière lecture
+        db.rollback()
+        logger.warning("groupement : parties tirées du groupement non rafraîchies (dossier %s) : %s",
+                       getattr(dossier, "id", "?"), type(e).__name__)
     perimer_validations(db, project, dossier, "le dossier assemblé a changé depuis la validation")
 
 
@@ -2095,7 +2167,10 @@ def valider_dossier(db, project: Project, dossier: DossierPresentation, *, membr
                     empreinte_vue: Optional[str] = None, actor: str = "", actor_kind: str = "owner",
                     ip: str = "") -> dict:
     """Un membre (chef de file compris) VALIDE le dossier assemblé qu'il a lu, sur SON empreinte, après
-    avoir validé chacune de ses parties. Toute modification ensuite le fait repasser « à revalider »."""
+    avoir validé chacune de ses parties (et « Qui fait quoi dans le groupement » ; le chef de file aussi
+    « Organisation du groupement »). Toute modification ensuite le fait repasser « à revalider »."""
+    from app.services import atelier_assemblage as asm
+    rafraichir_validations(db, project, dossier)
     act = at.sections_actives(db, dossier)
     emp = empreinte_dossier(db, dossier, act)
     if empreinte_vue and empreinte_vue != emp:
@@ -2104,8 +2179,12 @@ def valider_dossier(db, project: Project, dossier: DossierPresentation, *, membr
     if membre == PARTENAIRE:
         miennes = [s for s in act if s.author_kind == at.AUTEUR_INVITATION and s.author_invite_id == invite_id]
     else:
-        miennes = [s for s in act if s.author_kind == at.AUTEUR_ORG]
+        miennes = [s for s in act if s.author_kind == at.AUTEUR_ORG or (at.est_generee(s) and s.source_plan == asm.ORGA)]
     rest = [{"section_id": s.id, "titre": at._flat(s.intitule)[:160]} for s in miennes if statut_de(db, s) != VALIDEE]
+    qfq = next((s for s in act if at.est_generee(s) and s.source_plan == asm.QFQ), None)
+    cle_qfq = f"invitation:{int(invite_id)}" if membre == PARTENAIRE else CHEF
+    if qfq is not None and not asm.a_valide_qfq(db, project, dossier, cle_qfq):
+        rest.append({"section_id": qfq.id, "titre": at._flat(qfq.intitule)[:160]})
     if rest:
         raise AtelierError(409, "parties_a_valider", f"Validez d'abord vos parties ({len(rest)} restante"
                                                      f"{'s' if len(rest) > 1 else ''}).", sections=rest)
@@ -2125,13 +2204,16 @@ def valider_dossier(db, project: Project, dossier: DossierPresentation, *, membr
 
 
 def pret(db, project: Project, dossier: DossierPresentation, sections: Optional[list] = None) -> dict:
-    """« Prêt à déposer » : « Sections validées 4 sur 5 » et la validation du dossier assemblé par chaque
-    membre (chef de file + partenaires qui peuvent rédiger)."""
+    """« Prêt à déposer » : « Sections validées 4 sur 5 », la validation du dossier assemblé par chaque
+    membre (chef de file + partenaires qui peuvent rédiger) et la liste de ce qui manque (« manques » :
+    qui doit rédiger, valider ou revalider quoi)."""
     act = sections if sections is not None else at.sections_actives(db, dossier)
     n = len(act)
-    k = sum(1 for s in act if statut_de(db, s) == VALIDEE)
+    statuts = {s.id: statut_de(db, s) for s in act}
+    k = sum(1 for s in act if statuts[s.id] == VALIDEE)
     emp = empreinte_dossier(db, dossier, act)
-    vals = {v.membre_cle: v for v in db.query(DossierValidation).filter(DossierValidation.dossier_id == dossier.id)}
+    vals = {v.membre_cle: v for v in db.query(DossierValidation).filter(DossierValidation.dossier_id == dossier.id)
+            if not str(v.membre_cle or "").startswith("qfq:")}
     attendus = [("chef_de_file", None, "Chef de file")] + [
         (f"invitation:{m['invite_id']}", m["invite_id"], m["nom"]) for m in membres(db, project) if m["peut_rediger"]]
     mem = []
@@ -2139,8 +2221,55 @@ def pret(db, project: Project, dossier: DossierPresentation, sections: Optional[
         v = vals.get(cle)
         st = "a_faire" if v is None else ("valide" if v.statut == "valide" and v.empreinte == emp else "a_revalider")
         mem.append({"membre": PARTENAIRE if iid else CHEF, "invite_id": iid, "nom": nom, "statut": st})
+    manques = _manques(db, project, dossier, act, statuts, mem)
     return {"sections_validees": k, "sections_total": n, "message": f"Sections validées {k} sur {n}",
-            "membres": mem, "complet": bool(n) and k == n and all(m["statut"] == "valide" for m in mem)}
+            "membres": mem, "manques": manques,
+            "complet": bool(n) and k == n and all(m["statut"] == "valide" for m in mem)}
+
+
+_VERBES = {A_REDIGER: "à rédiger par", EN_COURS: "en cours chez", ENVOYEE: "à valider par",
+           A_REVALIDER: "à revalider par", A_VALIDER: "à valider par"}
+
+
+def _manques(db, project: Project, dossier: DossierPresentation, act: list, statuts: dict, mem: list) -> list:
+    """Ce qui manque pour « Prêt à déposer », partie par partie puis membre par membre : « « 3. Démarche
+    environnementale » : à valider par Breizh Désamiantage ». Jamais ce qui manque au chef de file comme
+    entreprise (capacités, qualifications) : seulement les gestes de rédaction et de validation."""
+    from app.services import atelier_assemblage as asm
+    rangs = at._rangs(dossier, act)
+    noms = {m["invite_id"]: m["nom"] for m in membres(db, project)}
+    out = []
+    for s in act:
+        st = statuts.get(s.id) or statut_de(db, s)
+        if st == VALIDEE:
+            continue
+        if at.est_generee(s):
+            if s.source_plan == asm.QFQ:
+                qui = [("le chef de file" if x["invite_id"] is None else x["nom"])
+                       for x in asm.qfq_validations(db, project, dossier, s) if x["statut"] != "valide"]
+            else:
+                qui = ["le chef de file"]
+            verbe = _VERBES.get(st, "à valider par")
+        elif s.author_kind == at.AUTEUR_INVITATION:
+            qui = [noms.get(s.author_invite_id) or nom_partenaire(db.get(ProjectInvite, s.author_invite_id))]
+            verbe = _VERBES.get(st, "à valider par")
+        else:
+            qui = ["le chef de file"]
+            verbe = "à rédiger par" if st == A_REDIGER else ("à revalider par" if st == A_REVALIDER else "à valider par")
+        titre = ax_titre(rangs.get(s.id, ""), s.intitule)
+        if not qui:
+            continue
+        out.append({"section_id": s.id, "titre": titre, "statut": st, "statut_libelle": STATUTS.get(st, ""),
+                    "qui": qui, "message": f"« {titre} » : {verbe} {' et '.join(qui) if len(qui) <= 2 else ', '.join(qui)}"})
+    for m in mem:
+        if m["statut"] == "valide":
+            continue
+        qui = "le chef de file" if m["membre"] == CHEF else m["nom"]
+        verbe = "à revalider par" if m["statut"] == "a_revalider" else "à valider par"
+        out.append({"section_id": None, "titre": "Dossier assemblé", "statut": m["statut"],
+                    "statut_libelle": "À revalider" if m["statut"] == "a_revalider" else "À valider",
+                    "qui": [qui], "message": f"Dossier assemblé : {verbe} {qui}"})
+    return out
 
 
 # ── RGPD : effacement, retrait d'une invitation, export, purge ───────────────────────
@@ -2237,8 +2366,12 @@ def exporter_chef(db, owner_id: int) -> list:
             lignes.append({"partie": s.intitule, "redacteur": r.redacteur, "invite_id": r.invite_id,
                            "longueur_mots": r.longueur_mots, "date_limite": _jour(r.date_limite),
                            "demandee_le": _iso(r.demandee_le), "statut": statut_de(db, s, r)})
+        from app.services import atelier_assemblage as asm
+        p = db.get(Project, d.project_id)
         out.append({"dossier_id": d.id, "project_id": d.project_id, "repartition": lignes,
-                    "validations": validations_out(db, d)})
+                    "validations": validations_out(db, d),
+                    "validations_qui_fait_quoi": asm.qfq_validations(db, p, d) if p is not None and asm.qfq_de(db, d)
+                    else []})
     return out
 
 
@@ -2292,3 +2425,19 @@ def purger(db, jours: int = PURGE_JOURS) -> dict:
                              Job.created_at < limite).delete(synchronize_session=False)
     db.commit()
     return {"brouillons_partenaires_effaces": int(n or 0), "taches_partenaires_effacees": int(t or 0)}
+
+
+# ── Assemblage (chantier 3 : app/services/atelier_assemblage.py, derrière ce module) ──
+
+def lancer_harmonisation(db, user: User, project: Project, dossier: DossierPresentation, lecteur: at.Lecteur,
+                         member_ids: list, accepte_debit: bool = False) -> Job:
+    """« Harmoniser le ton » (chef de file) : des phrases de transition, rien d'autre (docs § 17.1, point 5)."""
+    from app.services import atelier_assemblage as asm
+    return asm.lancer_harmonisation(db, user, project, dossier, lecteur, member_ids, accepte_debit=accepte_debit)
+
+
+def valider_generee_par_le_chef(db, project: Project, section: DossierSection, lecteur: at.Lecteur, version_id,
+                                ip: str = "") -> DossierSection:
+    """Le chef de file valide une partie tirée du groupement depuis l'atelier (docs § 17.1, points 2 à 4)."""
+    from app.services import atelier_assemblage as asm
+    return asm.valider_par_le_chef(db, project, section, lecteur, version_id, ip=ip)

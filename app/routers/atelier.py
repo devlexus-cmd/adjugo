@@ -234,7 +234,8 @@ def lire_section(project_id: int, section_id: int, current_user: User = Depends(
     acc = _Acces(db, current_user, project_id)
     s = acc.section(section_id, active=False)
     out = _section(acc, s)
-    if at.peut_voir_prive(s, acc.lecteur):
+    if at.peut_voir_prive(s, acc.lecteur) or at.est_generee(s):
+        # Partie tirée du groupement (vague 4) : toutes ses versions sont communes (aucune matière privée).
         out["versions"] = [at._version_out(v, False, texte=False) for v in at.versions(db, s)]
     else:
         out["versions"] = []
