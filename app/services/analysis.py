@@ -11,6 +11,7 @@ import re
 import unicodedata
 from app.core.config import get_settings
 from app.services.llm import client  # client Anthropic LAZY partagé (pas d'instanciation à l'import)
+from app.services.llm import LLMUnavailable
 
 settings = get_settings()
 
@@ -2494,13 +2495,24 @@ def build_entreprise_prompt(result: dict, company=None, criteria=None, lang_name
     return p.rstrip() + "\n"
 
 
+class PartieEntrepriseIllisible(LLMUnavailable):
+    """La partie propre à l'entreprise est restée illisible (deux réponses de suite) : traitée comme une
+    panne — jamais une analyse en apparence complète mais privée de ses alertes propres à l'entreprise.
+    L'appelant rembourse le quota ; l'utilisateur relance (l'extraction du dossier, déjà rangée dans le
+    partage, n'est alors pas refaite)."""
+
+
+MESSAGE_ENTREPRISE_ILLISIBLE = ("Les conseils propres à votre entreprise n'ont pas pu être rédigés par l'IA. "
+                                "Votre analyse n'a pas été débitée : relancez-la.")
+
+
 def personnaliser(result: dict, company=None, criteria=None, lang_name=None, annonce_seule: bool = False) -> dict:
     """(b) Partie propre à l'entreprise, après le calcul déterministe du score : un appel court (même
     tâche, même modèle, mêmes réglages que l'analyse d'origine), dans l'espace facturé du client, qui
     reçoit l'extraction, la compatibilité calculée, le profil et les critères — jamais le dossier entier.
     Noms des salariés masqués (pii_scope). Une réponse illisible est relancée une fois ; illisible
-    encore, l'analyse objective reste entière (rien n'est inventé). Propage une panne de l'IA
-    (l'appelant rembourse)."""
+    encore : PartieEntrepriseIllisible (panne : l'appelant rembourse, l'utilisateur relance). Propage
+    une panne de l'IA (l'appelant rembourse)."""
     import logging
     from app.services.llm import pii_scope
     from app.services.pii import from_team
@@ -2522,7 +2534,8 @@ def personnaliser(result: dict, company=None, criteria=None, lang_name=None, ann
             perso = dict(perso, clauses=[], clauses_ajoutees=[])
         fusionner_entreprise(result, perso)
     else:
-        logging.getLogger("adjugo").warning("partie propre à l'entreprise illisible : analyse objective seule")
+        logging.getLogger("adjugo").warning("partie propre à l'entreprise illisible deux fois : traitée comme une panne")
+        raise PartieEntrepriseIllisible(MESSAGE_ENTREPRISE_ILLISIBLE)
     return result
 
 

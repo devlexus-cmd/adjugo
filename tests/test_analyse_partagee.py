@@ -357,9 +357,10 @@ def test_sans_seuil_aucune_clause_marquee_au_dela_d_un_seuil(ia):
     assert r["details"]["recommandation"].endswith("Pour Sans Seuil.")       # stratégie quand même
 
 
-def test_partie_entreprise_illisible_analyse_objective_entiere(ia):
-    """Réponse illisible deux fois : l'analyse objective reste entière (rien d'inventé), jamais un
-    échec facturé ni un faux verdict."""
+def test_partie_entreprise_illisible_traitee_comme_une_panne(client, ia, attentes):
+    """Réponse illisible deux fois : jamais une analyse en apparence complète mais privée de ses alertes
+    propres à l'entreprise — traitée comme une panne (quota remboursé, message lisible) ; la relance ne
+    refait pas l'extraction du dossier (déjà rangée)."""
     from app.services import analysis as an
 
     def ans(kw):
@@ -367,10 +368,19 @@ def test_partie_entreprise_illisible_analyse_objective_entiere(ia):
             return "pas du json", "end_turn"
         return _repondre(kw)
     fake = ia(ans)
-    r = an.analyze_dce_text(_texte_dce(), dict(PROFIL_A), CRITERES_A, integral=True)
+    with pytest.raises(an.PartieEntrepriseIllisible) as e:
+        an.analyze_dce_text(_texte_dce(), dict(PROFIL_A), CRITERES_A, integral=True)
     assert len(appels_entreprise(fake.calls)) == 2                          # relancée une fois
-    assert r["details"]["recommandation"] == RECO_3 and r["score_deterministe"] is True
-    assert r["details"]["grille_notation"]["criteres"]
+    assert "pas été débitée" in str(e.value) and isinstance(e.value, llm.LLMUnavailable)
+    # Par la route : remboursée, puis la relance ne refait que la partie propre à l'entreprise.
+    a = _compte(client, profil=PROFIL_A, criteres=CRITERES_A)
+    u0 = _used(a["email"])
+    _importer(client, a, attendu=503)
+    assert _used(a["email"]) == u0 and len(_lignes_partagees()) == 1
+    fake = ia()
+    _pid, r = _importer(client, a)
+    assert appels_dossier(fake.calls) == [] and len(appels_entreprise(fake.calls)) == 1
+    assert _used(a["email"]) == u0 + 1 and r.json()["details"]["recommandation"].endswith("Pour Zorglub Toitures SARL.")
 
 
 # ═══ 2. Extraction partagée ═══════════════════════════════════════════════════════════════════════
