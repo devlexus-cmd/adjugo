@@ -1224,3 +1224,76 @@ def test_cache_de_prompt_sur_chaque_long_texte_relu(ia, monkeypatch):
     for k in fake.calls:
         assert k["system"][0].get("cache_control") == {"type": "ephemeral"}, llm._flatten_content(k["system"])[:60]
     assert llm._flatten_content(lus[0]["system"]) == ad.PIECE_SYSTEM
+
+
+def test_migration_analyse_partagee_a_neuf_rejeu_colonnes_manquantes_et_retour_arriere(tmp_path):
+    """SQLite : la révision w7x8analysepartagee crée les tables (même schéma qu'une base neuve, colonne
+    par colonne, index par index), ajoute les colonnes qui manquent à une table déjà là (parties,
+    deroule), se rejoue sans erreur en gardant les lignes, et son retour arrière supprime les deux tables."""
+    import os
+    import subprocess
+    import sys
+    import sqlalchemy as sa
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    dbfile = tmp_path / "ap.db"
+    env = {**os.environ, "DATABASE_URL": f"sqlite:///{dbfile}"}
+    tables = ("analyses_partagees", "analyse_empreintes")
+
+    def run(*args):
+        r = subprocess.run([sys.executable, "-m", "alembic"] + list(args), cwd=root, env=env,
+                           capture_output=True, text=True, timeout=300)
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def schema():
+        eng = sa.create_engine(f"sqlite:///{dbfile}")
+        try:
+            insp = sa.inspect(eng)
+            out = {}
+            for t in tables:
+                out[t] = ({c["name"]: (str(c["type"]), c["nullable"], str(c.get("default")))
+                           for c in insp.get_columns(t)},
+                          {i["name"]: (tuple(i["column_names"]), bool(i.get("unique"))) for i in insp.get_indexes(t)})
+            return out
+        finally:
+            eng.dispose()
+
+    run("upgrade", "head")
+    neuf = schema()
+    assert {"parties", "deroule", "extraction", "rapport"} <= set(neuf["analyses_partagees"][0])
+    assert neuf["analyses_partagees"][1]["ix_analyses_partagees_cle"] == (("cle",), True)
+    # Base d'avant la révision : pas de tables ; la révision les crée elle-même, au même schéma.
+    eng = sa.create_engine(f"sqlite:///{dbfile}")
+    with eng.begin() as cn:
+        for t in tables:
+            cn.execute(sa.text(f"DROP TABLE {t}"))
+    eng.dispose()
+    run("stamp", "v6w7preuves")
+    run("upgrade", "head")
+    assert schema() == neuf
+    # Table déjà là sans les colonnes de la lecture en deux temps : ajoutées, la ligne gardée.
+    eng = sa.create_engine(f"sqlite:///{dbfile}")
+    with eng.begin() as cn:
+        cn.execute(sa.text("ALTER TABLE analyses_partagees DROP COLUMN parties"))
+        cn.execute(sa.text("ALTER TABLE analyses_partagees DROP COLUMN deroule"))
+        cn.execute(sa.text("INSERT INTO analyses_partagees (cle, extraction) VALUES (:c, :e)"),
+                   {"c": "a" * 64, "e": json.dumps({"summary": "s", "details": {}})})
+    eng.dispose()
+    run("stamp", "v6w7preuves")
+    run("upgrade", "head")
+    cols = schema()["analyses_partagees"][0]
+    assert {"parties", "deroule"} <= set(cols) and cols["parties"][1] is True
+    eng = sa.create_engine(f"sqlite:///{dbfile}")
+    with eng.connect() as cn:
+        row = cn.execute(sa.text("SELECT nature, mode, duree_s, parties FROM analyses_partagees")).one()
+        assert tuple(row) == ("dossier", "", 0.0, None)
+    eng.dispose()
+    run("downgrade", "v6w7preuves")
+    eng = sa.create_engine(f"sqlite:///{dbfile}")
+    try:
+        assert not set(tables) & set(sa.inspect(eng).get_table_names())
+        assert "preuves" in sa.inspect(eng).get_table_names()
+    finally:
+        eng.dispose()
+    run("upgrade", "head")
+    assert schema() == neuf
+
