@@ -572,18 +572,99 @@ class ContextePartenaire:
         return from_team(equipe_avec_noms_reperes(self.team + self.preuves_team, textes, exclure=self.noms_entreprise))
 
 
+# ── L'espace PRIVÉ du lien : une clé que seul le navigateur du partenaire détient ─────
+# Le lien d'une invitation manuelle a été remis au chef de file (pour qu'il le transmette) : le lien seul
+# ne prouve donc pas qu'on est le partenaire. Sa matière privée (brouillons, sources, extraits, résultat de
+# ses tâches) et ses actions (écrire, lancer l'aide de l'IA, envoyer, valider) exigent en plus la CLÉ de
+# son espace, tirée au hasard à la première ouverture et rendue UNE fois à son navigateur (le serveur n'en
+# garde que l'empreinte). Elle se récupère avec le code envoyé à l'adresse de l'invitation (brouillons
+# gardés) ; sinon l'espace se RÉINITIALISE, et ses brouillons non envoyés sont alors EFFACÉS : celui qui
+# réinitialise ne lit jamais rien (inscrit au journal du membre). Par le compte qui a rattaché le lien,
+# aucune clé : le compte suffit.
+
+ENTETE_CLE = "X-Adjugo-Espace"
+MSG_CLE_REQUISE = ("Ouvrez votre espace privé sur cet appareil pour lire vos brouillons et rédiger votre partie.")
+MSG_ESPACE_OUVERT = ("Votre espace privé est déjà ouvert sur un autre appareil. Saisissez le code reçu par email "
+                     "pour l'ouvrir ici, ou réinitialisez-le : vos brouillons non envoyés seront alors effacés (vos "
+                     "textes envoyés restent).")
+
+
+def _hash_cle(cle: str) -> str:
+    return hashlib.sha256(("adjugo-espace:" + (cle or "")).encode("utf-8")).hexdigest()
+
+
+def cle_valide(inv: ProjectInvite, cle: Optional[str]) -> bool:
+    import hmac
+    h = getattr(inv, "espace_hash", "") or ""
+    return bool(h and cle) and hmac.compare_digest(_hash_cle(str(cle).strip()), h)
+
+
+def ouvrir_espace(db, inv: ProjectInvite, *, code: Optional[str] = None, reinitialiser: bool = False,
+                  ip: str = "") -> dict:
+    """Ouvre l'espace privé du lien et rend sa clé (une seule fois) :
+      • première ouverture : une nouvelle clé ;
+      • déjà ouvert, avec le code reçu à l'adresse de l'invitation (otp/request) : une nouvelle clé,
+        brouillons GARDÉS (l'adresse est prouvée) ;
+      • déjà ouvert, `reinitialiser` : une nouvelle clé, brouillons non envoyés EFFACÉS ;
+      • sinon 409 « espace_deja_ouvert »."""
+    import secrets
+    from app.routers.invites import (_OTP_MAX_ATTEMPTS, _binding_required, _guest_actor, _hash_otp, _invite_is_demo,
+                                     _is_expired)
+    if _invite_is_demo(inv, db):
+        raise AtelierError(403, "demo", "La démo est en lecture guidée : créez votre compte gratuit pour co-construire "
+                                        "une réponse avec vos partenaires.")
+    effaces = 0
+    mode = "ouverture"
+    if getattr(inv, "espace_hash", ""):
+        if code:
+            if not _binding_required(inv) or not inv.otp_hash or not inv.otp_expires_at \
+                    or _is_expired(inv.otp_expires_at):
+                raise AtelierError(400, "code_absent", "Aucun code en attente : demandez d'abord un code.")
+            if (inv.otp_attempts or 0) >= _OTP_MAX_ATTEMPTS:
+                raise AtelierError(429, "trop_de_tentatives", "Trop de tentatives. Demandez un nouveau code.")
+            if _hash_otp(str(code).strip()) != inv.otp_hash:
+                inv.otp_attempts = (inv.otp_attempts or 0) + 1
+                db.commit()
+                raise AtelierError(400, "code_incorrect", "Code incorrect.")
+            inv.otp_hash, inv.otp_expires_at = "", None
+            mode = "code"
+        elif reinitialiser:
+            effaces = db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == inv.id).delete(
+                synchronize_session=False)
+            mode = "reinitialisation"
+        else:
+            raise AtelierError(409, "espace_deja_ouvert", MSG_ESPACE_OUVERT,
+                               code_possible=bool(_binding_required(inv)))
+    cle = secrets.token_urlsafe(24)
+    inv.espace_hash = _hash_cle(cle)
+    db.commit()
+    action = {"ouverture": "redaction.espace_ouvert", "code": "redaction.espace_rouvert",
+              "reinitialisation": "redaction.espace_reinitialise"}[mode]
+    detail = {"ouverture": "Espace privé ouvert", "code": "Espace privé rouvert sur un autre appareil (code reçu "
+                                                         "par email)",
+              "reinitialisation": f"Espace privé réinitialisé : {effaces} brouillon{'s' if effaces > 1 else ''} "
+                                  f"effacé{'s' if effaces > 1 else ''}"}[mode]
+    d = dossier_du_marche(db, db.get(Project, inv.project_id), inv.owner_id) if inv.project_id else None
+    _journal(db, action=action, project_id=inv.project_id, owner_id=(d.owner_id if d else inv.owner_id),
+             actor=_guest_actor(inv), actor_kind="guest", invite_id=inv.id, target_type="invite", target_id=inv.id,
+             ip=ip, detail=detail)
+    return {"cle": cle, "entete": ENTETE_CLE, "brouillons_effaces": int(effaces or 0)}
+
+
 # ── Accès d'un partenaire ────────────────────────────────────────────────────────────
 
 class Acces:
     """L'accès d'UN partenaire à la rédaction du dossier commun d'UN marché : par le lien de son invitation
-    (mode « lien »), ou par le compte Adjugo qui a rattaché ce lien (mode « compte »). Il ne voit et
-    n'écrit que SES parties, et lit le dossier assemblé (décision 3a)."""
+    (mode « lien », avec la clé de son espace privé pour sa matière privée et ses actions), ou par le compte
+    Adjugo qui a rattaché ce lien (mode « compte »). Il ne voit et n'écrit que SES parties, et lit le dossier
+    assemblé (décision 3a)."""
 
     def __init__(self, db, inv: ProjectInvite, project: Project, dossier: DossierPresentation,
-                 user: Optional[User] = None, mode: str = "lien"):
+                 user: Optional[User] = None, mode: str = "lien", cle: Optional[str] = None):
         self.db, self.inv, self.project, self.dossier = db, inv, project, dossier
         self.user = user if mode == "compte" else None
         self.mode = mode
+        self.cle_ok = mode == "compte" or cle_valide(inv, cle)
         self.lecteur = at.Lecteur(at.AUTEUR_INVITATION, dossier.owner_id,
                                   user_id=getattr(self.user, "id", None), invite_id=inv.id)
 
@@ -608,10 +689,12 @@ def dossier_du_marche(db, project: Project, owner_hint: Optional[int] = None) ->
 
 
 def acces_partenaire(db, inv: ProjectInvite, project: Project, user: Optional[User] = None,
-                     mode: str = "lien") -> Acces:
+                     mode: str = "lien", cle: Optional[str] = None) -> Acces:
     """Contrôles communs aux deux chemins (le lien lui-même — révoqué, décliné, expiré — est contrôlé par
     l'appelant : invites._valid_invite, journal_membre._shared_invite). Un sous-traitant n'est pas membre :
-    même réponse qu'un dossier inexistant. Invitation du réseau pas encore acceptée : aperçu minimal."""
+    même réponse qu'un dossier inexistant. Invitation du réseau pas encore acceptée : aperçu minimal. Un
+    compte de l'organisation du chef de file n'est jamais le partenaire (même réponse qu'un dossier
+    inexistant), même s'il avait rattaché le lien avant d'y entrer."""
     from app.routers.invites import _network_pending
     if (inv.role or "cotraitant") != "cotraitant":
         raise AtelierError(404, "dossier_commun_introuvable", MSG_PAS_DE_DOSSIER)
@@ -621,11 +704,25 @@ def acces_partenaire(db, inv: ProjectInvite, project: Project, user: Optional[Us
     d = dossier_du_marche(db, project, inv.owner_id)
     if d is None or not repartition_active(db, d):
         raise AtelierError(404, "dossier_commun_introuvable", MSG_PAS_DE_DOSSIER)
-    return Acces(db, inv, project, d, user=user, mode=mode)
+    if mode == "compte" and user is not None:
+        from app.core.org import member_ids
+        from app.services.preuves import membres as membres_org
+        chef = set(membres_org(db, d.owner_id)) | {d.owner_id, inv.owner_id}
+        if set(member_ids(user, db)) & chef:
+            raise AtelierError(404, "dossier_commun_introuvable", MSG_PAS_DE_DOSSIER)
+    return Acces(db, inv, project, d, user=user, mode=mode, cle=cle)
+
+
+def _exiger_espace(acces: Acces) -> None:
+    """La matière privée et les actions du partenaire exigent la clé de son espace (mode « lien »)."""
+    if not acces.cle_ok:
+        raise AtelierError(403, "cle_espace_requise", MSG_CLE_REQUISE,
+                           espace_ouvert=bool(getattr(acces.inv, "espace_hash", "")))
 
 
 def _exiger_ecriture(acces: Acces) -> None:
     from app.routers.invites import _invite_is_demo
+    _exiger_espace(acces)
     if not getattr(acces.inv, "can_contribute", True):
         raise AtelierError(403, "co_construction_fermee", "La co-construction n'est pas activée pour ce lien.")
     if _invite_is_demo(acces.inv, acces.db):
@@ -1223,7 +1320,9 @@ def ax_titre(numero: str, intitule: str) -> str:
 
 
 def tache(db, acces: Acces, job_id: int) -> dict:
-    """La tâche d'un partenaire, lue avec SON accès seulement (sinon 404, comme une tâche inexistante)."""
+    """La tâche d'un partenaire, lue avec SON accès seulement (sinon 404, comme une tâche inexistante) ; par le
+    lien, avec la clé de son espace."""
+    _exiger_espace(acces)
     j = db.query(Job).filter(Job.id == int(job_id), Job.portee == PORTEE_PARTENAIRE,
                              Job.invite_id == acces.invite_id, Job.kind.in_(JOB_KINDS)).first()
     if j is None:
@@ -1710,17 +1809,22 @@ def vue_partenaire(db, acces: Acces) -> dict:
         parties.append(dict(_section_base_out(acces.dossier, s, rangs.get(s.id, "")),
                             longueur_mots=r.longueur_mots, date_limite=_jour(r.date_limite),
                             statut=st, statut_libelle=STATUTS[st], mention=mention(db, s, nom),
-                            brouillon=_brouillon_out(b, acces), texte_commun=_version_commune_out(cur),
+                            brouillon=_brouillon_out(b, acces) if acces.cle_ok else None,
+                            texte_commun=_version_commune_out(cur),
                             comparaison=comparer(db, s) if cur is not None and cur.ecrit_par == ECRIT_PAR_CHEF else None,
                             validation=({"version_id": s.validated_version_id, "empreinte": s.validated_hash,
                                          "le": _iso(s.validated_at)} if s.validated_version_id else None),
                             aide={"utilisees": int(r.aides_ia or 0), "plafond": cap,
                                   "restantes": max(0, cap - int(r.aides_ia or 0)),
-                                  "en_cours": _tache_en_cours_out(db, r)}))
+                                  "en_cours": _tache_en_cours_out(db, r) if acces.cle_ok else None}))
     ma = _validation_de(db, acces.dossier, f"invitation:{acces.invite_id}")
     emp = empreinte_dossier(db, acces.dossier, act)
+    from app.routers.invites import _binding_required
+    espace = {"cle_valide": bool(acces.cle_ok), "ouvert": bool(getattr(acces.inv, "espace_hash", "")),
+              "entete": ENTETE_CLE, "code_possible": bool(_binding_required(acces.inv)) if acces.mode == "lien" else False,
+              "message": "" if acces.cle_ok else MSG_CLE_REQUISE}
     return {"marche": {"id": acces.project.id, "nom": acces.project.name},
-            "mode": acces.mode, "message_mode": MSG_MODE_COMPTE if ContextePartenaire(db, acces).avec_compte else MSG_MODE_LIEN,
+            "mode": acces.mode, "espace": espace, "message_mode": MSG_MODE_COMPTE if ContextePartenaire(db, acces).avec_compte else MSG_MODE_LIEN,
             "avertissement_envoi": AVERTISSEMENT_ENVOI, "peut_ecrire": bool(getattr(acces.inv, "can_contribute", True)),
             "parties": parties, "statuts": STATUTS, "origines": ORIGINES,
             "dossier": {"empreinte": emp, "ma_validation": _validation_out(ma, emp),
@@ -1733,7 +1837,9 @@ def detail_partenaire(db, acces: Acces, section_id: int) -> dict:
     ligne = next((x for x in vue["parties"] if x["section_id"] == int(section_id)), None)
     if ligne is None:
         raise AtelierError(404, "partie_introuvable", "Partie introuvable.")
-    ligne["brouillons"] = [_brouillon_out(b, acces, texte=False) for b in brouillons(db, int(section_id), acces.invite_id)]
+    ligne["brouillons"] = ([_brouillon_out(b, acces, texte=False) for b in brouillons(db, int(section_id),
+                                                                                       acces.invite_id)]
+                           if acces.cle_ok else [])
     return ligne
 
 
@@ -1964,10 +2070,15 @@ def exporter_chef(db, owner_id: int) -> list:
     return out
 
 
-def exporter_invitation(db, inv: ProjectInvite) -> dict:
-    """Portabilité pour un partenaire : SES brouillons (texte, sources, faits) et les textes qu'il a envoyés."""
+def exporter_invitation(db, inv: ProjectInvite, sources_du_compte: bool = True) -> dict:
+    """Portabilité pour un partenaire : SES brouillons (texte, sources, faits) et les textes qu'il a envoyés.
+    Par le lien (`sources_du_compte` faux), les sources et les faits d'un brouillon écrit depuis le compte
+    (extraits de son savoir-faire) ne sont pas rendus : ils ne se lisent que depuis ce compte."""
+    def _prives(b):
+        return sources_du_compte or not b.auteur_user_id
     bro = [{"section_id": b.section_id, "numero": b.numero, "origine": b.origine, "texte": b.texte or "",
-            "sources": b.sources or [], "faits": b.faits or [], "compteurs": b.compteurs, "cree_le": _iso(b.created_at)}
+            "sources": (b.sources or []) if _prives(b) else [], "faits": (b.faits or []) if _prives(b) else [],
+            "compteurs": b.compteurs, "cree_le": _iso(b.created_at)}
            for b in db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == inv.id)
            .order_by(DossierPartBrouillon.id).all()]
     env = [{"section_id": v.section_id, "numero": v.numero, "texte": v.texte or "", "envoye_le": _iso(v.created_at)}

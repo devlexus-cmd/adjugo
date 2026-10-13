@@ -5,11 +5,12 @@ Contrat : docs/REDACTION_V4_GROUPEMENT.md. Invariants vérifiés :
  • « Qui écrit quoi » : une ligne par partie, rédacteur pré-rempli SANS IA (lot ↔ critère), longueur
    conseillée, date limite interne, statut CALCULÉ (à rédiger, en cours, envoyée, à revalider, validée),
    « rédigé par le chef de file, à valider par X » ;
- • portée partenaire : un partenaire (lien ou compte rattaché) ne voit et n'écrit que SES parties et lit
-   le dossier assemblé ; son brouillon, ses sources et ses extraits ne sont JAMAIS vus du chef de file
-   (texte envoyé + compteurs de sources par type seulement) ; aucune lecture croisée ;
+ • portée partenaire : un partenaire (lien + clé de son espace privé, ou compte rattaché) ne voit et n'écrit
+   que SES parties et lit le dossier assemblé ; son brouillon, ses sources et ses extraits ne sont JAMAIS vus
+   du chef de file (texte envoyé + compteurs de sources par type seulement), même s'il détient le lien ;
+   aucune lecture croisée ;
  • tâches : celle d'un partenaire n'a aucun compte propriétaire ; 404 sur /api/jobs/{id} pour le chef de
-   file ET pour un membre de son organisation ; lue seulement avec le lien ou le compte du partenaire ;
+   file ET pour un membre de son organisation ; lue seulement avec l'accès du partenaire ;
  • facturation : quota du chef de file, portée technique « inv:<id> », plafond par partie, message neutre
    (rien du forfait du chef de file), remboursement si l'IA tombe ; le chef de file ne lance jamais l'aide
    à la place du partenaire ;
@@ -27,12 +28,8 @@ import os
 import subprocess
 import sys
 import time
-import uuid
 from datetime import date, datetime, timedelta, timezone
 
-import pytest
-
-from app.services import atelier as at
 from app.services import atelier_groupement as ag
 from app.services import llm
 from tests.test_convention_groupement import _invite, _put, _register
@@ -46,9 +43,42 @@ SECRET_CHEF = "CHEFSAVOIRFAIRE91"
 
 LOT_A = "Désamiantage et gestion des déchets amiantés"
 LOT_B = "Électricité courants forts"
+TEXTE_IA_A = ("Nous mobilisons 4 bennes étanches pour les déchets amiantés [S1]. Notre équipe compte 9 salariés "
+              "[P4]. Nous assurons 3 rotations de bennes par semaine. [À compléter : planning des rotations]")
 
 
-# ── Mise en place ─────────────────────────────────────────────────────────────────────
+# ── Le partenaire : par son lien (et la clé de son espace), ou par son compte ──────────
+
+class P:
+    """Le partenaire par son LIEN : la clé de son espace privé est jointe à chaque requête."""
+
+    def __init__(self, client, token, ouvrir=True):
+        self.c, self.token = client, token
+        self.base = f"/api/invite/{token}/redaction"
+        self.h = {}
+        if ouvrir:
+            r = client.post(f"{self.base}/espace", json={})
+            assert r.status_code == 200, r.text
+            self.h = {ag.ENTETE_CLE: r.json()["cle"]}
+
+    def get(self, chemin=""):
+        return self.c.get(self.base + chemin, headers=self.h)
+
+    def put(self, chemin, body):
+        return self.c.put(self.base + chemin, json=body, headers=self.h)
+
+    def post(self, chemin, body=None):
+        return self.c.post(self.base + chemin, json=body if body is not None else {}, headers=self.h)
+
+
+class PC(P):
+    """Le partenaire par le COMPTE Adjugo qui a rattaché son lien (aucune clé : le compte suffit)."""
+
+    def __init__(self, client, project_id, headers):
+        self.c, self.token = client, None
+        self.base = f"/api/shared/{project_id}/redaction"
+        self.h = dict(headers)
+
 
 def _section_par(st_or_list, mot):
     items = st_or_list["sections"] if isinstance(st_or_list, dict) and "sections" in st_or_list else st_or_list
@@ -80,10 +110,10 @@ def _part_a(vue):
     return _section_par(vue, "environnement")
 
 
-def _attendre_partenaire(client, url_base, jid):
+def _attendre(p, jid):
     r = None
     for _ in range(300):
-        r = client.get(f"{url_base}/taches/{jid}")
+        r = p.get(f"/taches/{jid}")
         assert r.status_code == 200, r.text
         if r.json()["status"] in ("done", "error"):
             return r.json()
@@ -91,34 +121,35 @@ def _attendre_partenaire(client, url_base, jid):
     raise AssertionError(f"tâche {jid} jamais terminée : {r.json() if r is not None else None}")
 
 
-def _ecrire(client, base, sid, texte):
-    cur = client.get(f"{base}/sections/{sid}").json()
+def _aide(p, sid, **body):
+    r = p.post(f"/sections/{sid}/aide", body)
+    assert r.status_code == 202, r.text
+    return _attendre(p, r.json()["tache"]["id"]), r.json()["tache"]["id"]
+
+
+def _ecrire(p, sid, texte):
+    cur = p.get(f"/sections/{sid}").json()
     bid = (cur.get("brouillon") or {}).get("id")
-    r = client.put(f"{base}/sections/{sid}/brouillon", json={"texte": texte, "base_brouillon_id": bid})
+    r = p.put(f"/sections/{sid}/brouillon", {"texte": texte, "base_brouillon_id": bid})
     assert r.status_code == 200, r.text
     return r.json()
 
 
-def _envoyer(client, base, sid):
-    cur = client.get(f"{base}/sections/{sid}").json()
-    r = client.post(f"{base}/sections/{sid}/envoyer", json={"brouillon_id": cur["brouillon"]["id"],
-                                                             "avertissement_lu": True})
+def _envoyer(p, sid):
+    cur = p.get(f"/sections/{sid}").json()
+    r = p.post(f"/sections/{sid}/envoyer", {"brouillon_id": cur["brouillon"]["id"], "avertissement_lu": True})
     assert r.status_code == 200, r.text
     return r.json()
 
 
 def _reponse_partenaire(texte):
-    """Faux fournisseur IA : la partie d'un PARTENAIRE reçoit `texte` ; note chaque appel et sa portée."""
+    """Faux fournisseur IA : rend `texte` ; note chaque appel et sa portée de facturation."""
     vus = []
 
     def ans(kw):
         vus.append(llm._CURRENT_TENANT.get())
         return texte, "end_turn"
     return ans, vus
-
-
-TEXTE_IA_A = ("Nous mobilisons 4 bennes étanches pour les déchets amiantés [S1]. Notre équipe compte 9 salariés "
-              "[P4]. Nous assurons 3 rotations de bennes par semaine. [À compléter : planning des rotations]")
 
 
 def _audit(**flt):
@@ -133,8 +164,18 @@ def _audit(**flt):
         db.close()
 
 
-def _vues_du_chef(client, h, pid, sid):
-    """Tout ce que le chef de file peut lire du dossier (JSON concaténé)."""
+def _brouillons_de(invite_id):
+    from app.models import DossierPartBrouillon
+    db = _db()
+    try:
+        return db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == invite_id).count()
+    finally:
+        db.close()
+
+
+def _vues_du_chef(client, h, pid, sid, token=None):
+    """Tout ce que le chef de file peut lire du dossier (JSON concaténé), y compris — s'il détient le lien
+    du partenaire — ce que ce lien rend SANS la clé de l'espace privé."""
     out = [client.get(f"/api/atelier/{pid}", headers=h).text,
            client.get(f"/api/atelier/{pid}/repartition", headers=h).text,
            client.get(f"/api/atelier/{pid}/repartition/{sid}", headers=h).text,
@@ -147,6 +188,10 @@ def _vues_du_chef(client, h, pid, sid):
     cv = (st.get("version_courante") or {}).get("id")
     if cv:
         out.append(client.get(f"/api/atelier/{pid}/sections/{sid}/versions/{cv}", headers=h).text)
+    if token:
+        base = f"/api/invite/{token}/redaction"
+        for chemin in ("", "/dossier", f"/sections/{sid}", "/export"):
+            out.append(client.get(base + chemin).text)
     return "\n".join(out)
 
 
@@ -169,7 +214,6 @@ def test_preremplissage_sans_ia_lot_et_critere(client, auth, fake_llm):
     s = next(x for x in st["sections"] if x["id"] == env["section_id"])
     assert s["auteur"]["type"] == "invitation" and s["auteur"]["libelle"] == "Breizh Désamiantage"
     assert s["peut_ecrire"] is False
-    # Membres : B peut rédiger (part sans réponse au réseau : non concerné ici).
     assert {m["nom"]: m["peut_rediger"] for m in vue["membres"]} == {"Breizh Désamiantage": True,
                                                                      "Le Gall Électricité": True}
     # Rejouer la préparation ne change rien (idempotent) ; journal.
@@ -190,7 +234,6 @@ def test_repartir_redacteur_longueur_date_et_garde_fous(client, auth):
     d = r.json()
     assert d["redacteur"]["invite_id"] == b["id"] and d["longueur_mots"] == 400 and d["choix"] == "manuel"
     assert d["date_limite"] == (date.today() + timedelta(days=5)).isoformat()
-    # Longueur invalide, partenaire d'un autre marché, sous-traitant (pas membre du groupement).
     assert client.put(url, headers=h, json={"longueur_mots": 5}).json()["detail"]["code"] == "longueur_invalide"
     assert client.put(url, headers=h, json={"redacteur": "partenaire", "invite_id": 999999}).status_code == 404
     r = client.post(f"/api/projects/{pid}/invites", headers=h, json={"company_name": "Sous-traitant Peinture",
@@ -202,8 +245,7 @@ def test_repartir_redacteur_longueur_date_et_garde_fous(client, auth):
     assert client.get(f"/api/invite/{st_inv['token']}/redaction").status_code == 404
     # La partie du chef de file qui a déjà du texte ne change de mains que sur confirmation.
     enc = _section_par(vue, "encadrement")
-    sec = next(x for x in _etat(client, h, pid)["sections"] if x["id"] == enc["section_id"])
-    assert client.put(f"/api/atelier/{pid}/sections/{sec['id']}/texte", headers=h,
+    assert client.put(f"/api/atelier/{pid}/sections/{enc['section_id']}/texte", headers=h,
                       json={"texte": f"Brouillon du chef {SECRET_CHEF}.", "base_version_id": None}).status_code == 200
     url2 = f"/api/atelier/{pid}/repartition/{enc['section_id']}"
     r = client.put(url2, headers=h, json={"redacteur": "partenaire", "invite_id": a["id"]})
@@ -211,11 +253,10 @@ def test_repartir_redacteur_longueur_date_et_garde_fous(client, auth):
     r = client.put(url2, headers=h, json={"redacteur": "partenaire", "invite_id": a["id"], "confirmer": True})
     assert r.status_code == 200, r.text
     # Le brouillon privé du chef de file n'arrive jamais chez le partenaire.
-    vue_a = client.get(f"/api/invite/{a['token']}/redaction").json()
-    raw = json.dumps(vue_a, ensure_ascii=False)
+    pa = P(client, a["token"])
+    raw = pa.get().text + pa.get("/dossier").text
     assert SECRET_CHEF not in raw
-    assert client.get(f"/api/invite/{a['token']}/redaction/dossier").text.count(SECRET_CHEF) == 0
-    p = _section_par(vue_a["parties"], "encadrement")
+    p = _section_par(pa.get().json()["parties"], "encadrement")
     assert p["texte_commun"] is None and p["brouillon"] is None and p["statut"] == "a_rediger"
 
 
@@ -224,39 +265,122 @@ def test_repartir_redacteur_longueur_date_et_garde_fous(client, auth):
 def test_partenaire_ne_voit_et_n_ecrit_que_ses_parties(client, auth):
     h = auth["headers"]
     pid, st, a, b, vue = _groupement(client, auth)
-    ba, bb = f"/api/invite/{a['token']}/redaction", f"/api/invite/{b['token']}/redaction"
-    va = client.get(ba).json()
+    pa, pb = P(client, a["token"]), P(client, b["token"])
+    va = pa.get().json()
     assert [p["intitule"] for p in va["parties"]] == ["Démarche environnementale"]
     p = va["parties"][0]
     assert p["question"] and p["aide"]["plafond"] == ag.plafond_partie() and p["brouillon"] is None
-    assert va["avertissement_envoi"] == ag.AVERTISSEMENT_ENVOI
-    # Aucune partie d'un autre : 404, en lecture comme en écriture.
+    assert va["avertissement_envoi"] == ag.AVERTISSEMENT_ENVOI and va["espace"]["cle_valide"] is True
     enc = _section_par(vue, "encadrement")
-    assert client.get(f"{ba}/sections/{enc['section_id']}").status_code == 404
-    r = client.put(f"{ba}/sections/{enc['section_id']}/brouillon", json={"texte": "x", "base_brouillon_id": None})
-    assert r.status_code == 404
-    assert client.get(bb).json()["parties"] == []
-    r = client.put(f"{bb}/sections/{p['section_id']}/brouillon", json={"texte": "intrus", "base_brouillon_id": None})
-    assert r.status_code == 404
+    assert pa.get(f"/sections/{enc['section_id']}").status_code == 404
+    assert pa.put(f"/sections/{enc['section_id']}/brouillon", {"texte": "x", "base_brouillon_id": None}).status_code == 404
+    assert pb.get().json()["parties"] == []
+    assert pb.put(f"/sections/{p['section_id']}/brouillon", {"texte": "intrus", "base_brouillon_id": None}).status_code == 404
     # Le dossier assemblé se lit en entier (décision 3a), sans aucun brouillon.
-    _ecrire(client, ba, p["section_id"], f"Notre tri des déchets {SECRET_BROUILLON}.")
-    d = client.get(f"{bb}/dossier")
+    _ecrire(pa, p["section_id"], f"Notre tri des déchets {SECRET_BROUILLON}.")
+    d = pb.get("/dossier")
     assert d.status_code == 200 and SECRET_BROUILLON not in d.text
     parties = d.json()["parties"]
     assert len(parties) == 4 and d.json()["message"] == ag.MSG_LECTURE
     env = _section_par(parties, "environnement")
     assert env["texte"] is None and env["statut"] == "en_cours" and env["redacteur"]["nom"] == "Breizh Désamiantage"
-    # Chef de file : le statut « en cours » se voit, le texte non.
     assert _section_par(client.get(f"/api/atelier/{pid}/repartition", headers=h).json(),
                         "environnement")["statut"] == "en_cours"
-    assert SECRET_BROUILLON not in _vues_du_chef(client, h, pid, p["section_id"])
+    assert SECRET_BROUILLON not in _vues_du_chef(client, h, pid, p["section_id"], token=a["token"])
     # Envoi : il faut avoir lu l'avertissement.
-    cur = client.get(f"{ba}/sections/{p['section_id']}").json()
-    r = client.post(f"{ba}/sections/{p['section_id']}/envoyer", json={"brouillon_id": cur["brouillon"]["id"]})
+    cur = pa.get(f"/sections/{p['section_id']}").json()
+    r = pa.post(f"/sections/{p['section_id']}/envoyer", {"brouillon_id": cur["brouillon"]["id"]})
     assert r.status_code == 422 and r.json()["detail"]["message"] == ag.AVERTISSEMENT_ENVOI
-    _envoyer(client, ba, p["section_id"])
-    env = _section_par(client.get(f"{bb}/dossier").json()["parties"], "environnement")
+    _envoyer(pa, p["section_id"])
+    env = _section_par(pb.get("/dossier").json()["parties"], "environnement")
     assert SECRET_BROUILLON in env["texte"] and env["statut"] == "envoyee"
+
+
+def test_le_lien_seul_ne_lit_jamais_la_matiere_privee(client, auth, fake_llm, monkeypatch):
+    """Le chef de file a transmis le lien (invitation manuelle) : avec le lien SEUL, il ne lit ni brouillon,
+    ni source, ni tâche, et n'agit pas à la place du partenaire. Réinitialiser l'espace efface les brouillons
+    non envoyés (personne ne les lit) ; le code reçu par email rouvre l'espace en les gardant."""
+    h = auth["headers"]
+    pid, st, a, b, vue = _groupement(client, auth, avec_b=False)
+    fake_llm(_reponse_partenaire(TEXTE_IA_A)[0])
+    sid = _part_a(vue)["section_id"]
+    pa = P(client, a["token"])
+    _ecrire(pa, sid, f"Brouillon privé {SECRET_BROUILLON}.")
+    job, jid = _aide(pa, sid)
+    assert job["status"] == "done"
+    chef = P(client, a["token"], ouvrir=False)                 # le lien, sans la clé
+    v = chef.get().json()
+    assert v["espace"] == {"cle_valide": False, "ouvert": True, "entete": ag.ENTETE_CLE, "code_possible": False,
+                           "message": ag.MSG_CLE_REQUISE}
+    assert v["parties"][0]["brouillon"] is None and v["parties"][0]["aide"]["en_cours"] is None
+    assert chef.get(f"/sections/{sid}").json()["brouillons"] == []
+    tout = _vues_du_chef(client, h, pid, sid, token=a["token"])
+    assert SECRET_BROUILLON not in tout and "4 bennes" not in tout
+    for m, chemin, body in (("put", f"/sections/{sid}/brouillon", {"texte": "x", "base_brouillon_id": None}),
+                            ("post", f"/sections/{sid}/aide", {}), ("post", f"/sections/{sid}/envoyer",
+                                                                     {"brouillon_id": 1, "avertissement_lu": True}),
+                            ("post", f"/sections/{sid}/valider", {"version_id": 1}),
+                            ("post", f"/sections/{sid}/faits/x", {"statut": "relu_par_vous"}),
+                            ("post", "/dossier/valider", {})):
+        r = getattr(chef, m)(chemin, body)
+        assert r.status_code == 403 and r.json()["detail"]["code"] == "cle_espace_requise", chemin
+    assert chef.get(f"/taches/{jid}").status_code == 403 and chef.get("/export").status_code == 403
+    # Une clé inventée ne vaut rien ; l'espace déjà ouvert ne se rouvre pas sans code ni réinitialisation.
+    chef.h = {ag.ENTETE_CLE: "cle-inventee"}
+    assert chef.get().json()["espace"]["cle_valide"] is False
+    r = chef.post("/espace")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "espace_deja_ouvert"
+    # Réinitialiser : les brouillons non envoyés sont EFFACÉS, l'ancienne clé ne vaut plus, journal du membre.
+    n0 = _brouillons_de(a["id"])
+    assert n0 == 2
+    r = chef.post("/espace", {"reinitialiser": True})
+    assert r.status_code == 200 and r.json()["brouillons_effaces"] == 2
+    chef.h = {ag.ENTETE_CLE: r.json()["cle"]}
+    assert chef.get().json()["parties"][0]["brouillon"] is None and _brouillons_de(a["id"]) == 0
+    assert pa.get().json()["espace"]["cle_valide"] is False
+    j = client.get(f"/api/invite/{a['token']}/journal").json()
+    assert any(e["action"] == "redaction.espace_reinitialise" for e in j["entries"])
+    # Le partenaire rouvre son espace avec le code reçu à son adresse : les brouillons sont gardés.
+    _ecrire(chef, sid, "Brouillon écrit après la réinitialisation.")
+    import app.routers.invites as invites
+    from app.models import ProjectInvite
+    monkeypatch.setattr(invites, "_binding_required", lambda inv: True)
+    db = _db()
+    try:
+        inv = db.get(ProjectInvite, a["id"])
+        inv.otp_hash = invites._hash_otp("123456")
+        inv.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+        inv.otp_attempts = 0
+        db.commit()
+    finally:
+        db.close()
+    assert pa.post("/espace", {"code": "000000"}).json()["detail"]["code"] == "code_incorrect"
+    r = pa.post("/espace", {"code": "123456"})
+    assert r.status_code == 200 and r.json()["brouillons_effaces"] == 0
+    pa.h = {ag.ENTETE_CLE: r.json()["cle"]}
+    assert pa.get().json()["parties"][0]["brouillon"]["texte"] == "Brouillon écrit après la réinitialisation."
+    assert chef.get().json()["espace"]["cle_valide"] is False
+
+
+def test_envoyer_et_valider_exigent_l_identite_prouvee(client, auth, monkeypatch):
+    pid, st, a, b, vue = _groupement(client, auth, avec_b=False)
+    sid = _part_a(vue)["section_id"]
+    pa = P(client, a["token"])
+    _ecrire(pa, sid, "Nous trions les déchets amiantés.")
+    import app.routers.invites as invites
+    monkeypatch.setattr(invites, "_binding_required", lambda inv: True)
+    cur = pa.get(f"/sections/{sid}").json()
+    r = pa.post(f"/sections/{sid}/envoyer", {"brouillon_id": cur["brouillon"]["id"], "avertissement_lu": True})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "identity_unverified"
+    from app.models import ProjectInvite
+    db = _db()
+    try:
+        db.get(ProjectInvite, a["id"]).verified_at = datetime.now(timezone.utc)
+        db.commit()
+    finally:
+        db.close()
+    assert pa.post(f"/sections/{sid}/envoyer", {"brouillon_id": cur["brouillon"]["id"],
+                                                 "avertissement_lu": True}).status_code == 200
 
 
 def test_texte_envoye_compteurs_jamais_sources_ni_extraits(client, auth, fake_llm):
@@ -275,28 +399,23 @@ def test_texte_envoye_compteurs_jamais_sources_ni_extraits(client, auth, fake_ll
     assert client.post(f"/api/invite/{a['token']}/claim", headers=hp).status_code == 200
     ans, vus = _reponse_partenaire(TEXTE_IA_A)
     fake = fake_llm(ans)
-    base = f"/api/shared/{pid}/redaction"
+    pc = PC(client, pid, hp)
     sid = _part_a(vue)["section_id"]
-    r = client.post(f"{base}/sections/{sid}/aide", headers=hp, json={"action": "rediger"})
-    assert r.status_code == 202, r.text
-    jid = r.json()["tache"]["id"]
-    job = None
-    for _ in range(300):
-        job = client.get(f"{base}/taches/{jid}", headers=hp).json()
-        if job["status"] in ("done", "error"):
-            break
-        time.sleep(0.05)
+    job, jid = _aide(pc, sid, action="rediger")
     assert job["status"] == "done", job
     assert "_debit" not in json.dumps(job) and "texte" not in json.dumps(job["result"])
-    det = client.get(f"{base}/sections/{sid}", headers=hp).json()
-    br = det["brouillon"]
+    br = pc.get(f"/sections/{sid}").json()["brouillon"]
     assert br["origine"] == "ia" and any(SECRET_EXTRAIT in (s.get("extrait") or "") for s in br["sources"])
-    # Le partenaire voit ses sources ; l'IA a reçu SON extrait, sous la portée de son invitation.
     assert SECRET_EXTRAIT in fake.sent() and vus and all(v == f"inv:{a['id']}" for v in vus)
-    r = client.post(f"{base}/sections/{sid}/envoyer", headers=hp,
-                    json={"brouillon_id": br["id"], "avertissement_lu": True})
+    assert pc.get().json()["message_mode"] == ag.MSG_MODE_COMPTE
+    # Par le lien (même invitation), sans la clé : rien ; avec la clé, les sources écrites depuis le compte
+    # restent réservées au compte.
+    pl = P(client, a["token"])
+    brl = pl.get(f"/sections/{sid}").json()["brouillon"]
+    assert brl["sources"] == [] and brl["sources_depuis_le_compte"] is True
+    r = pc.post(f"/sections/{sid}/envoyer", {"brouillon_id": br["id"], "avertissement_lu": True})
     assert r.status_code == 200, r.text
-    tout = _vues_du_chef(client, h, pid, sid)
+    tout = _vues_du_chef(client, h, pid, sid, token=a["token"])
     assert "Nous mobilisons 4 bennes étanches" in tout               # le texte envoyé : oui
     for secret in (SECRET_EXTRAIT, SECRET_DOC):                       # les sources : jamais
         assert secret not in tout, secret
@@ -305,7 +424,6 @@ def test_texte_envoye_compteurs_jamais_sources_ni_extraits(client, auth, fake_ll
     assert set(c) == {"par_type", "avec_source", "a_relire", "engagements"}
     assert c["par_type"]["documents"] >= 1 and c["par_type"]["declare"] >= 1 and c["a_relire"] >= 1
     assert ligne["statut"] == "envoyee" and ligne["texte_commun"]["a_completer"] == 1
-    # La version commune elle-même ne garde aucune source, et ses faits n'ont plus la leur.
     from app.models import DossierSectionVersion
     db = _db()
     try:
@@ -315,8 +433,7 @@ def test_texte_envoye_compteurs_jamais_sources_ni_extraits(client, auth, fake_ll
         assert v.ecrit_par == "partenaire" and v.author_invite_id == a["id"]
     finally:
         db.close()
-    # Les autres membres lisent le texte et les compteurs, jamais les sources.
-    d = client.get(f"/api/invite/{b['token']}/redaction/dossier").text
+    d = P(client, b["token"]).get("/dossier").text
     assert "Nous mobilisons 4 bennes étanches" in d and SECRET_EXTRAIT not in d and SECRET_DOC not in d
 
 
@@ -330,19 +447,18 @@ def test_ia_du_partenaire_n_utilise_que_ses_faits(client, auth, fake_llm):
         "text": f"Gestion des déchets du chantier par le chef de file {SECRET_CHEF}."}).status_code == 200
     ans, vus = _reponse_partenaire("Nous trions les déchets amiantés [P3].")
     fake = fake_llm(ans)
-    ba = f"/api/invite/{a['token']}/redaction"
+    pa = P(client, a["token"])
     sid = _part_a(vue)["section_id"]
-    r = client.post(f"{ba}/sections/{sid}/aide", json={})
-    assert r.status_code == 202, r.text
-    assert _attendre_partenaire(client, ba, r.json()["tache"]["id"])["status"] == "done"
+    assert _aide(pa, sid)[0]["status"] == "done"
     sent = fake.sent()
-    assert "Qualibat 1552" in sent and "Désamiantage du collège Brizeux" in sent      # SA part déclarée
+    assert "Qualibat 1552" in sent and "Désamiantage du collège Brizeux" in sent
     assert "CETTE PARTIE EST RÉDIGÉE PAR Breizh Désamiantage" in sent
-    assert "REGLEMENT DE LA CONSULTATION" in sent                                      # dossier de l'acheteur
+    assert "REGLEMENT DE LA CONSULTATION" in sent
     for interdit in (SECRET_CHEF, "Yann", "Tanguy", "Le Gall", LOT_B, "Breizh Couverture"):
         assert interdit not in sent, interdit
-    br = client.get(f"{ba}/sections/{sid}").json()["brouillon"]
+    br = pa.get(f"/sections/{sid}").json()["brouillon"]
     assert br["sources"] == [] and br["origine"] == "ia"
+    assert pa.get().json()["message_mode"] == ag.MSG_MODE_LIEN
 
 
 # ═══ 3. Tâches d'un partenaire : propriétaire distinct, 404 pour tout autre ════════
@@ -351,26 +467,22 @@ def test_tache_partenaire_404_pour_le_chef_et_son_organisation(client, auth, fak
     h = auth["headers"]
     pid, st, a, b, vue = _groupement(client, auth)
     fake_llm(_reponse_partenaire(TEXTE_IA_A)[0])
-    ba = f"/api/invite/{a['token']}/redaction"
+    pa = P(client, a["token"])
     sid = _part_a(vue)["section_id"]
-    r = client.post(f"{ba}/sections/{sid}/aide", json={})
-    jid = r.json()["tache"]["id"]
-    assert _attendre_partenaire(client, ba, jid)["status"] == "done"
+    job, jid = _aide(pa, sid)
+    assert job["status"] == "done"
     from app.models import Job, User
     db = _db()
     try:
         j = db.get(Job, jid)
         assert j.user_id is None and j.portee == "partenaire" and j.invite_id == a["id"]
-        # Un collègue de l'organisation du chef de file.
-        chef = db.query(User).filter(User.email == auth["email"]).first()
-        org_id = chef.org_id
+        org_id = db.query(User).filter(User.email == auth["email"]).first().org_id
     finally:
         db.close()
     hc, ec = _register(client, company="Collègue")
     db = _db()
     try:
-        u = db.query(User).filter(User.email == ec).first()
-        u.org_id = org_id
+        db.query(User).filter(User.email == ec).first().org_id = org_id
         db.commit()
     finally:
         db.close()
@@ -378,13 +490,22 @@ def test_tache_partenaire_404_pour_le_chef_et_son_organisation(client, auth, fak
         r = client.get(f"/api/jobs/{jid}", headers=hh)
         assert r.status_code == 404, r.text                                       # test de non-régression
         assert client.get(f"/api/atelier/{pid}/taches/{jid}", headers=hh).status_code == 404
-    assert client.get(f"/api/invite/{b['token']}/redaction/taches/{jid}").status_code == 404   # autre membre
-    assert client.get(f"{ba}/taches/{jid}").status_code == 200                                   # lui seul
+    assert P(client, b["token"]).get(f"/taches/{jid}").status_code == 404        # un autre membre
+    assert pa.get(f"/taches/{jid}").status_code == 200                           # lui seul
+    # Un compte de l'organisation du chef de file n'est jamais « le partenaire ».
+    from app.models import ProjectInvite
+    db = _db()
+    try:
+        db.get(ProjectInvite, a["id"]).accepted_by_user_id = _user_id(ec)
+        db.commit()
+    finally:
+        db.close()
+    assert client.get(f"/api/shared/{pid}/redaction", headers=hc).status_code == 404
+    assert client.get(f"/api/shared/{pid}/redaction/taches/{jid}", headers=hc).status_code == 404
     # Le chef de file ne lance jamais l'aide de l'IA sur la partie du partenaire.
     r = client.post(f"/api/atelier/{pid}/sections/{sid}/rediger", headers=h, json={})
     assert r.status_code == 403 and r.json()["detail"]["code"] == "partie_d_un_partenaire"
-    r = client.post(f"/api/atelier/{pid}/rediger", headers=h, json={"section_ids": [sid]})
-    assert r.status_code == 403
+    assert client.post(f"/api/atelier/{pid}/rediger", headers=h, json={"section_ids": [sid]}).status_code == 403
 
 
 # ═══ 4. Facturation : quota du chef de file, plafond, message neutre, remboursement ══
@@ -410,31 +531,26 @@ def _dossier_db(pid):
         db.close()
 
 
-def test_facturation_quota_du_chef_portee_propre_plafond_et_panne(client, auth, fake_llm, monkeypatch):
-    h = auth["headers"]
+def test_facturation_quota_du_chef_portee_propre_plafond_et_panne(client, auth, fake_llm):
     pid, st, a, b, vue = _groupement(client, auth)
-    ba = f"/api/invite/{a['token']}/redaction"
+    pa = P(client, a["token"])
     sid = _part_a(vue)["section_id"]
-    # Panne de l'IA : tout est rendu (analyse du dossier, quota du chef de file, aide du partenaire).
+
     def boom(kw):
         raise RuntimeError("fournisseur indisponible")
     fake_llm(boom)
     t0 = _trial(auth["email"])
-    r = client.post(f"{ba}/sections/{sid}/aide", json={})
-    assert r.status_code == 202, r.text
-    job = _attendre_partenaire(client, ba, r.json()["tache"]["id"])
+    job, _ = _aide(pa, sid)
     assert job["status"] == "error" and job["error"] == ag.MSG_IA_PANNE
     assert _trial(auth["email"]) == t0 and _dossier_db(pid)["analyse_debitee"] is False
-    p = client.get(f"{ba}/sections/{sid}").json()
+    p = pa.get(f"/sections/{sid}").json()
     assert p["aide"]["utilisees"] == 0 and p["brouillon"] is None
     # Réussite : l'analyse du dossier est débitée au CHEF DE FILE (une fois), la partie y est comprise.
     ans, vus = _reponse_partenaire(TEXTE_IA_A)
     fake_llm(ans)
-    r = client.post(f"{ba}/sections/{sid}/aide", json={})
-    assert _attendre_partenaire(client, ba, r.json()["tache"]["id"])["status"] == "done"
+    assert _aide(pa, sid)[0]["status"] == "done"
     t1 = _trial(auth["email"])
     assert t1[0] == t0[0] + 1 and _dossier_db(pid) == {"analyse_debitee": True, "premieres": 1, "regen": 0}
-    # Portée technique propre à l'invitation ; coût rangé au compte de facturation du chef de file.
     assert vus == [f"inv:{a['id']}"]
     from app.services import budget_ia
     db = _db()
@@ -445,41 +561,82 @@ def test_facturation_quota_du_chef_portee_propre_plafond_et_panne(client, auth, 
         db.close()
     # Refaire : gratuit (refonte du dossier), puis plafond PAR PARTIE.
     for _ in range(ag.plafond_partie() - 1):
-        r = client.post(f"{ba}/sections/{sid}/aide", json={})
-        assert r.status_code == 202, r.text
-        assert _attendre_partenaire(client, ba, r.json()["tache"]["id"])["status"] == "done"
+        assert _aide(pa, sid)[0]["status"] == "done"
     assert _trial(auth["email"]) == t1 and _dossier_db(pid)["regen"] == ag.plafond_partie() - 1
-    r = client.post(f"{ba}/sections/{sid}/aide", json={})
+    r = pa.post(f"/sections/{sid}/aide", {})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "plafond_partie"
 
 
-def test_message_neutre_quand_l_essai_du_chef_est_termine(client, auth, fake_llm):
-    h = auth["headers"]
-    pid, st, a, b, vue = _groupement(client, auth)
-    fake = fake_llm(_reponse_partenaire(TEXTE_IA_A)[0])
-    from app.models import User
+def test_raccourcir_et_reprise_au_redemarrage(client, auth, fake_llm):
+    """« Raccourcir » chez le partenaire (aucun fait ajouté) ; une tâche de partenaire interrompue par un
+    redémarrage est close, son débit rendu au chef de file et son aide rendue au partenaire."""
+    pid, st, a, b, vue = _groupement(client, auth, avec_b=False)
+    pa = P(client, a["token"])
+    sid = _part_a(vue)["section_id"]
+    long_ = " ".join(["Nous trions les déchets amiantés sur place avec soin."] * 12)
+    _ecrire(pa, sid, long_)
+    fake_llm(lambda kw: ("Nous trions les déchets amiantés sur place.", "end_turn"))
+    job, _ = _aide(pa, sid, action="raccourcir", cible_mots=30)
+    assert job["status"] == "done", job
+    br = pa.get(f"/sections/{sid}").json()["brouillon"]
+    assert br["origine"] == "raccourci" and br["texte"] == "Nous trions les déchets amiantés sur place."
+    # Reprise au démarrage : la tâche « en cours » (thread mort) est close et tout est rendu.
+    from app.models import DossierRepartition, Job
     db = _db()
     try:
-        u = db.query(User).filter(User.email == auth["email"]).first()
-        u.trial_ends_at = datetime.now(timezone.utc) - timedelta(days=1)
+        d0 = _dossier_db(pid)
+        j = Job(user_id=None, portee="partenaire", invite_id=a["id"], kind=ag.JOB_REDIGER, status="running",
+                label="test", result={"_debit": {"analyse": False, "sections": {str(sid): "gratuite"},
+                                                 "payeur_id": _user_id(auth["email"]), "dossier_id": None,
+                                                 "rendu": False}})
+        db.add(j)
+        db.flush()
+        from app.models import DossierPresentation
+        dossier = db.query(DossierPresentation).filter(DossierPresentation.project_id == pid).first()
+        j.result = dict(j.result, _debit=dict(j.result["_debit"], dossier_id=dossier.id))
+        dossier.regenerations = int(dossier.regenerations or 0) + 1
+        rep = db.query(DossierRepartition).filter(DossierRepartition.section_id == sid).first()
+        rep.job_id, rep.aides_ia = j.id, int(rep.aides_ia or 0) + 1
+        jid, aides = j.id, rep.aides_ia
         db.commit()
     finally:
         db.close()
-    ba = f"/api/invite/{a['token']}/redaction"
+    from app.main import _recover_orphan_jobs
+    _recover_orphan_jobs()
+    db = _db()
+    try:
+        assert db.get(Job, jid).status == "error"
+        rep = db.query(DossierRepartition).filter(DossierRepartition.section_id == sid).first()
+        assert rep.job_id is None and rep.aides_ia == aides - 1
+    finally:
+        db.close()
+    assert _dossier_db(pid)["regen"] == d0["regen"]
+
+
+def test_message_neutre_quand_l_essai_du_chef_est_termine(client, auth, fake_llm):
+    pid, st, a, b, vue = _groupement(client, auth)
+    fake = fake_llm(_reponse_partenaire(TEXTE_IA_A)[0])
+    from app.models import Job, User
+    db = _db()
+    try:
+        db.query(User).filter(User.email == auth["email"]).first().trial_ends_at = \
+            datetime.now(timezone.utc) - timedelta(days=1)
+        db.commit()
+    finally:
+        db.close()
+    pa = P(client, a["token"])
     sid = _part_a(vue)["section_id"]
-    r = client.post(f"{ba}/sections/{sid}/aide", json={})
+    r = pa.post(f"/sections/{sid}/aide", {})
     assert r.status_code == 409, r.text
     d = r.json()["detail"]
     assert d["code"] == "aide_indisponible" and d["message"] == ag.MSG_AIDE_INDISPONIBLE
     for mot in ("essai", "forfait", "quota", "analyse", "abonn", "pro", "business", "402"):
         assert mot not in json.dumps(d, ensure_ascii=False).lower(), mot
     assert fake.calls == []
-    p = client.get(f"{ba}/sections/{sid}").json()
+    p = pa.get(f"/sections/{sid}").json()
     assert p["aide"]["utilisees"] == 0 and p["aide"]["en_cours"] is None
-    # Il peut toujours écrire lui-même et envoyer.
-    _ecrire(client, ba, sid, "Nous trions les déchets amiantés sur place.")
-    _envoyer(client, ba, sid)
-    from app.models import Job
+    _ecrire(pa, sid, "Nous trions les déchets amiantés sur place.")       # il écrit toujours lui-même
+    _envoyer(pa, sid)
     db = _db()
     try:
         assert db.query(Job).filter(Job.invite_id == a["id"]).count() == 0
@@ -492,42 +649,37 @@ def test_message_neutre_quand_l_essai_du_chef_est_termine(client, auth, fake_llm
 def test_chef_modifie_a_revalider_avant_apres_puis_retablir_et_valider(client, auth):
     h = auth["headers"]
     pid, st, a, b, vue = _groupement(client, auth)
-    ba = f"/api/invite/{a['token']}/redaction"
+    pa = P(client, a["token"])
     sid = _part_a(vue)["section_id"]
-    _ecrire(client, ba, sid, "Nous trions les déchets amiantés sur place.")
-    _envoyer(client, ba, sid)
-    d = client.get(f"/api/atelier/{pid}/repartition/{sid}", headers=h).json()
-    v1 = d["texte_commun"]["version_id"]
-    # Le chef de file modifie : « à revalider par » le partenaire ; aucune source du chef n'appuie ses faits.
+    _ecrire(pa, sid, "Nous trions les déchets amiantés sur place.")
+    _envoyer(pa, sid)
+    v1 = client.get(f"/api/atelier/{pid}/repartition/{sid}", headers=h).json()["texte_commun"]["version_id"]
     r = client.put(f"/api/atelier/{pid}/repartition/{sid}/texte", headers=h,
                    json={"texte": "Nous trions les déchets amiantés sur place avec 12 compagnons.",
                          "base_version_id": v1})
     assert r.status_code == 200, r.text
     d = r.json()
-    assert d["statut"] == "a_revalider" and d["mention"] == "Modifié par le chef de file, à revalider par Breizh Désamiantage"
+    assert d["statut"] == "a_revalider"
+    assert d["mention"] == "Modifié par le chef de file, à revalider par Breizh Désamiantage"
     assert d["comparaison"]["avant"]["version_id"] == v1 and "12 compagnons" in d["comparaison"]["apres"]["texte"]
     assert d["texte_commun"]["faits_a_relire"] >= 1                         # « 12 compagnons » : à relire
     v2 = d["texte_commun"]["version_id"]
-    # Conflit : une base périmée est refusée.
     r = client.put(f"/api/atelier/{pid}/repartition/{sid}/texte", headers=h, json={"texte": "x", "base_version_id": v1})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "texte_modifie_entre_temps"
-    p = client.get(f"{ba}/sections/{sid}").json()
+    p = pa.get(f"/sections/{sid}").json()
     assert p["statut"] == "a_revalider" and p["comparaison"]["avant"]["version_id"] == v1
-    # Le partenaire rétablit sa version.
-    r = client.post(f"{ba}/sections/{sid}/retablir", json={"base_version_id": v2})
+    r = pa.post(f"/sections/{sid}/retablir", {"base_version_id": v2})
     assert r.status_code == 200, r.text
     assert r.json()["statut"] == "envoyee" and "12 compagnons" not in r.json()["texte_commun"]["texte"]
     v3 = r.json()["texte_commun"]["version_id"]
-    # Le partenaire valide, puis le chef de file modifie de nouveau : « à revalider ».
-    r = client.post(f"{ba}/sections/{sid}/valider", json={"version_id": v3})
+    r = pa.post(f"/sections/{sid}/valider", {"version_id": v3})
     assert r.status_code == 200 and r.json()["statut"] == "validee"
     assert r.json()["validation"]["empreinte"] == r.json()["texte_commun"]["empreinte"]
     r = client.put(f"/api/atelier/{pid}/repartition/{sid}/texte", headers=h,
                    json={"texte": "Nous trions et évacuons les déchets amiantés.", "base_version_id": v3})
     assert r.json()["statut"] == "a_revalider"
     v4 = r.json()["texte_commun"]["version_id"]
-    # Il accepte le texte du chef de file : contrôle des faits chez lui, puis validée.
-    r = client.post(f"{ba}/sections/{sid}/valider", json={"version_id": v4})
+    r = pa.post(f"/sections/{sid}/valider", {"version_id": v4})
     assert r.status_code == 200 and r.json()["statut"] == "validee"
     assert r.json()["mention"] == "Modifié par le chef de file, validé par Breizh Désamiantage"
     assert r.json()["brouillon"]["origine"] == "acceptee"
@@ -535,7 +687,6 @@ def test_chef_modifie_a_revalider_avant_apres_puis_retablir_et_valider(client, a
     for act in ("redaction.part_envoyee", "redaction.part_modifiee", "redaction.part_retablie",
                 "redaction.part_validee"):
         assert act in actions, act
-    # Journal du membre : il lit ce que le chef de file a fait sur SA partie.
     j = client.get(f"/api/invite/{a['token']}/journal").json()
     assert any(e["action"] == "redaction.part_modifiee" and e["who"] == "mandataire" for e in j["entries"])
 
@@ -550,14 +701,12 @@ def test_partenaire_absent_redige_par_le_chef_a_valider_par_x(client, auth):
     assert r.json()["mention"] == "Rédigé par le chef de file, à valider par Breizh Désamiantage"
     assert r.json()["statut"] == "a_revalider"
     assert ("redaction.part_redigee_par_chef", a["id"]) in [(x[0], x[1]) for x in _audit(project_id=pid)]
-    # Le chef de file ne passe pas par l'écriture ordinaire de l'atelier (personne ne change la part d'un autre
-    # en silence).
     r = client.put(f"/api/atelier/{pid}/sections/{sid}/texte", headers=h, json={"texte": "x", "base_version_id": None})
-    assert r.status_code == 403
-    ba = f"/api/invite/{a['token']}/redaction"
-    p = client.get(f"{ba}/sections/{sid}").json()
+    assert r.status_code == 403                    # jamais par l'écriture ordinaire de l'atelier
+    pa = P(client, a["token"])
+    p = pa.get(f"/sections/{sid}").json()
     assert p["comparaison"]["avant"] is None and p["texte_commun"]["ecrit_par"] == "chef_de_file"
-    r = client.post(f"{ba}/sections/{sid}/retablir", json={"base_version_id": p["texte_commun"]["version_id"]})
+    r = pa.post(f"/sections/{sid}/retablir", {"base_version_id": p["texte_commun"]["version_id"]})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "rien_a_retablir"
 
 
@@ -566,21 +715,19 @@ def test_partenaire_absent_redige_par_le_chef_a_valider_par_x(client, auth):
 def test_validation_du_dossier_assemble_puis_a_revalider(client, auth):
     h = auth["headers"]
     pid, st, a, b, vue = _groupement(client, auth, avec_b=False)
-    ba = f"/api/invite/{a['token']}/redaction"
+    pa = P(client, a["token"])
     sid = _part_a(vue)["section_id"]
-    _ecrire(client, ba, sid, "Nous trions les déchets amiantés sur place.")
-    _envoyer(client, ba, sid)
-    # Le partenaire ne valide le dossier qu'après ses parties.
-    r = client.post(f"{ba}/dossier/valider", json={})
+    _ecrire(pa, sid, "Nous trions les déchets amiantés sur place.")
+    _envoyer(pa, sid)
+    r = pa.post("/dossier/valider", {})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "parties_a_valider"
-    cur = client.get(f"{ba}/sections/{sid}").json()["texte_commun"]["version_id"]
-    assert client.post(f"{ba}/sections/{sid}/valider", json={"version_id": cur}).status_code == 200
-    emp = client.get(f"{ba}/dossier").json()["empreinte"]
-    r = client.post(f"{ba}/dossier/valider", json={"empreinte": "0" * 64})
+    cur = pa.get(f"/sections/{sid}").json()["texte_commun"]["version_id"]
+    assert pa.post(f"/sections/{sid}/valider", {"version_id": cur}).status_code == 200
+    emp = pa.get("/dossier").json()["empreinte"]
+    r = pa.post("/dossier/valider", {"empreinte": "0" * 64})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "dossier_modifie"
-    r = client.post(f"{ba}/dossier/valider", json={"empreinte": emp})
+    r = pa.post("/dossier/valider", {"empreinte": emp})
     assert r.status_code == 200 and r.json()["validation"]["statut"] == "valide"
-    # Le chef de file valide ses parties puis le dossier.
     for s in _etat(client, h, pid)["sections"]:
         if s["auteur"]["type"] != "organisation":
             continue
@@ -588,15 +735,15 @@ def test_validation_du_dossier_assemble_puis_a_revalider(client, auth):
                         json={"texte": f"Texte du chef pour {s['intitule']}.", "base_version_id": None}).json()
         assert client.post(f"/api/atelier/{pid}/sections/{s['id']}/valider", headers=h,
                            json={"version_id": s2["version_courante"]["id"]}).status_code == 200
-    # Les parties validées du chef de file sont lues par le partenaire (le dossier a changé : à revalider).
-    assert client.get(f"{ba}").json()["dossier"]["ma_validation"]["statut"] == "a_revalider"
+    # Les parties validées du chef de file entrent dans le dossier assemblé : sa validation est à refaire.
+    assert pa.get().json()["dossier"]["ma_validation"]["statut"] == "a_revalider"
     assert "redaction.dossier_a_revalider" in [x[0] for x in _audit(project_id=pid)]
     vue = client.get(f"/api/atelier/{pid}/repartition", headers=h).json()
     r = client.post(f"/api/atelier/{pid}/repartition/valider-dossier", headers=h,
                     json={"empreinte": vue["dossier"]["empreinte"]})
     assert r.status_code == 200, r.text
-    emp2 = client.get(f"{ba}/dossier").json()["empreinte"]
-    assert client.post(f"{ba}/dossier/valider", json={"empreinte": emp2}).status_code == 200
+    emp2 = pa.get("/dossier").json()["empreinte"]
+    assert pa.post("/dossier/valider", {"empreinte": emp2}).status_code == 200
     pret = client.get(f"/api/atelier/{pid}/repartition", headers=h).json()["dossier"]["pret"]
     assert pret["message"] == "Sections validées 4 sur 4" and pret["complet"] is True
     # Toute modification ensuite : « à revalider » pour TOUS les membres (même mécanisme que la convention).
@@ -607,8 +754,9 @@ def test_validation_du_dossier_assemble_puis_a_revalider(client, auth):
     assert {m["statut"] for m in vue["dossier"]["pret"]["membres"]} == {"a_revalider"}
     assert vue["dossier"]["pret"]["complet"] is False
     assert vue["dossier"]["pret"]["message"] == "Sections validées 3 sur 4"
-    # Journal chaîné : chaque entrée a son empreinte.
-    assert all(x[4] for x in _audit(project_id=pid) if x[0].startswith("redaction."))
+    assert all(x[4] for x in _audit(project_id=pid) if x[0].startswith("redaction."))     # journal chaîné
+    j = client.get(f"/api/invite/{a['token']}/journal").json()
+    assert any(e["action"] == "redaction.dossier_a_revalider" for e in j["entries"])
 
 
 # ═══ 7. Isolation entre deux groupements ══════════════════════════════════════════
@@ -617,26 +765,24 @@ def test_isolation_entre_deux_groupements(client, auth, fake_llm):
     fake_llm(_reponse_partenaire(TEXTE_IA_A)[0])
     pid1, st1, a1, b1, vue1 = _groupement(client, auth, avec_b=False)
     h2, e2 = _register(client, company="Autre Chef SARL")
-    auth2 = {"headers": h2, "email": e2}
-    pid2, st2, a2, b2, vue2 = _groupement(client, auth2, avec_b=False)
+    pid2, st2, a2, b2, vue2 = _groupement(client, {"headers": h2, "email": e2}, avec_b=False)
     s1, s2 = _part_a(vue1)["section_id"], _part_a(vue2)["section_id"]
-    b1u, b2u = f"/api/invite/{a1['token']}/redaction", f"/api/invite/{a2['token']}/redaction"
-    _ecrire(client, b2u, s2, f"Texte privé du groupement 2 {SECRET_BROUILLON}.")
-    r = client.post(f"{b2u}/sections/{s2}/aide", json={})
-    j2 = r.json()["tache"]["id"]
-    _attendre_partenaire(client, b2u, j2)
-    # Le partenaire du groupement 1 n'atteint rien du groupement 2.
-    assert client.get(f"{b1u}/sections/{s2}").status_code == 404
-    assert client.put(f"{b1u}/sections/{s2}/brouillon", json={"texte": "x", "base_brouillon_id": None}).status_code == 404
-    assert client.get(f"{b1u}/taches/{j2}").status_code == 404
-    assert SECRET_BROUILLON not in client.get(f"{b1u}/dossier").text
-    # Les chefs de file : 404 sur le marché de l'autre.
+    p1, p2 = P(client, a1["token"]), P(client, a2["token"])
+    _ecrire(p2, s2, f"Texte privé du groupement 2 {SECRET_BROUILLON}.")
+    _, j2 = _aide(p2, s2)
+    assert p1.get(f"/sections/{s2}").status_code == 404
+    assert p1.put(f"/sections/{s2}/brouillon", {"texte": "x", "base_brouillon_id": None}).status_code == 404
+    assert p1.get(f"/taches/{j2}").status_code == 404
+    assert SECRET_BROUILLON not in p1.get("/dossier").text
+    # La clé d'un espace ne vaut que pour SON lien.
+    croise = P(client, a1["token"], ouvrir=False)
+    croise.h = dict(p2.h)
+    assert croise.get().json()["espace"]["cle_valide"] is False
     for url in (f"/api/atelier/{pid2}/repartition", f"/api/atelier/{pid2}/repartition/{s2}"):
         assert client.get(url, headers=auth["headers"]).status_code == 404
     assert client.put(f"/api/atelier/{pid2}/repartition/{s2}/texte", headers=auth["headers"],
                       json={"texte": "x"}).status_code == 404
     assert client.get(f"/api/jobs/{j2}", headers=h2).status_code == 404
-    # Compte rattaché au lien du groupement 1 : rien sur le marché 2.
     hp, _ = _register(client, company="Partenaire Compte")
     assert client.post(f"/api/invite/{a1['token']}/claim", headers=hp).status_code == 200
     assert client.get(f"/api/shared/{pid1}/redaction", headers=hp).status_code == 200
@@ -646,61 +792,50 @@ def test_isolation_entre_deux_groupements(client, auth, fake_llm):
 
 # ═══ 8. Invitation retirée, déclinée ou expirée : accès coupé ══════════════════════
 
-def _brouillons_de(invite_id):
-    from app.models import DossierPartBrouillon
-    db = _db()
-    try:
-        return db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == invite_id).count()
-    finally:
-        db.close()
-
-
 def test_invitation_retiree_coupe_l_acces_et_efface_les_brouillons(client, auth):
     h = auth["headers"]
     pid, st, a, b, vue = _groupement(client, auth)
-    ba = f"/api/invite/{a['token']}/redaction"
+    pa = P(client, a["token"])
     sid = _part_a(vue)["section_id"]
-    _ecrire(client, ba, sid, "Nous trions les déchets amiantés.")
-    _envoyer(client, ba, sid)
-    _ecrire(client, ba, sid, f"Deuxième brouillon {SECRET_BROUILLON}.")
+    _ecrire(pa, sid, "Nous trions les déchets amiantés.")
+    _envoyer(pa, sid)
+    _ecrire(pa, sid, f"Deuxième brouillon {SECRET_BROUILLON}.")
     assert _brouillons_de(a["id"]) == 2
     assert client.delete(f"/api/projects/{pid}/invites/{a['id']}", headers=h).status_code == 200
-    for m, url, body in (("get", ba, None), ("get", f"{ba}/dossier", None), ("get", f"{ba}/sections/{sid}", None),
-                         ("put", f"{ba}/sections/{sid}/brouillon", {"texte": "x", "base_brouillon_id": None}),
-                         ("post", f"{ba}/sections/{sid}/aide", {})):
-        r = getattr(client, m)(url, json=body) if body is not None else getattr(client, m)(url)
-        assert r.status_code == 404, (url, r.status_code)
+    for m, chemin, body in (("get", "", None), ("get", "/dossier", None), ("get", f"/sections/{sid}", None),
+                            ("put", f"/sections/{sid}/brouillon", {"texte": "x", "base_brouillon_id": None}),
+                            ("post", f"/sections/{sid}/aide", {}), ("post", "/espace", {"reinitialiser": True})):
+        r = getattr(pa, m)(chemin, body) if body is not None else getattr(pa, m)(chemin)
+        assert r.status_code == 404, (chemin, r.status_code)
     assert _brouillons_de(a["id"]) == 0
-    # La partie revient au chef de file, à rédiger ; le texte envoyé reste dans l'historique seulement.
     d = client.get(f"/api/atelier/{pid}/repartition/{sid}", headers=h).json()
     assert d["redacteur"]["type"] == "chef_de_file" and d["statut"] == "a_rediger" and d["texte_commun"] is None
     sec = client.get(f"/api/atelier/{pid}/sections/{sid}", headers=h).json()
     assert sec["peut_ecrire"] is True and sec["version_courante"] is None and len(sec["versions"]) == 1
     assert ("redaction.parts_reprises", a["id"]) in [(x[0], x[1]) for x in _audit(project_id=pid)]
     # Déclin : même effet.
-    bb = f"/api/invite/{b['token']}/redaction"
+    pb = P(client, b["token"])
     met = _section_par(vue, "méthodologie")["section_id"]
     client.put(f"/api/atelier/{pid}/repartition/{met}", headers=h, json={"redacteur": "partenaire",
                                                                           "invite_id": b["id"]})
-    _ecrire(client, bb, met, "Méthode de l'électricien.")
+    _ecrire(pb, met, "Méthode de l'électricien.")
     assert client.post(f"/api/invite/{b['token']}/decline").status_code == 200
-    assert client.get(bb).status_code == 410 and _brouillons_de(b["id"]) == 0
+    assert pb.get().status_code == 410 and _brouillons_de(b["id"]) == 0
 
 
 def test_invitation_expiree_ou_reseau_non_acceptee(client, auth):
     h = auth["headers"]
     pid, st, a, b, vue = _groupement(client, auth)
+    pa = P(client, a["token"])
     from app.models import ProjectInvite
     db = _db()
     try:
-        inv = db.get(ProjectInvite, a["id"])
-        inv.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
-        inv_b = db.get(ProjectInvite, b["id"])
-        inv_b.source = "reseau_adjugo"
+        db.get(ProjectInvite, a["id"]).expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        db.get(ProjectInvite, b["id"]).source = "reseau_adjugo"
         db.commit()
     finally:
         db.close()
-    assert client.get(f"/api/invite/{a['token']}/redaction").status_code == 410
+    assert pa.get().status_code == 410
     r = client.get(f"/api/invite/{b['token']}/redaction")
     assert r.status_code == 403 and r.json()["detail"]["code"] == "apercu_minimal"
     vue = client.get(f"/api/atelier/{pid}/repartition", headers=h).json()
@@ -720,14 +855,13 @@ def test_export_bloque_par_la_part_envoyee_du_partenaire(client, auth, fake_llm)
     chef de file (décision 2b, étendue aux parts des partenaires), sans qu'il voie la moindre source."""
     h = auth["headers"]
     pid, st, a, b, vue = _groupement(client, auth, avec_b=False)
-    ba = f"/api/invite/{a['token']}/redaction"
+    pa = P(client, a["token"])
     sid = _part_a(vue)["section_id"]
     gate = _etat(client, h, pid)["blocage"]
     assert any(r["code"] == "attente_partenaire" for r in gate["raisons"])
     fake_llm(_reponse_partenaire(TEXTE_IA_A)[0])
-    r = client.post(f"{ba}/sections/{sid}/aide", json={})
-    assert _attendre_partenaire(client, ba, r.json()["tache"]["id"])["status"] == "done"
-    _envoyer(client, ba, sid)
+    assert _aide(pa, sid)[0]["status"] == "done"
+    _envoyer(pa, sid)
     gate = _etat(client, h, pid)["blocage"]
     codes = {r["code"]: r for r in gate["raisons"]}
     assert "attente_partenaire" not in codes
@@ -737,7 +871,6 @@ def test_export_bloque_par_la_part_envoyee_du_partenaire(client, auth, fake_llm)
                                                      if a_["code"] == "non_valide")["sections"])
     r = client.post(f"/api/atelier/{pid}/export", headers=h, json={"format": "docx"})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "export_bloque"
-    # Dérogation explicite journalisée (décision 2b), pour cet état seulement.
     r = client.post(f"/api/atelier/{pid}/derogation", headers=h,
                     json={"raison": "depot_en_l_etat", "texte": "Le partenaire complétera dans Word.",
                           "etat_hash": gate["etat_hash"]})
@@ -753,39 +886,30 @@ def test_rgpd_export_et_effacement_des_comptes(client, auth, fake_llm):
     pid, st, a, b, vue = _groupement(client, auth, avec_b=False)
     hp, ep = _register(client, company="Breizh Désamiantage")
     assert client.post(f"/api/invite/{a['token']}/claim", headers=hp).status_code == 200
-    base = f"/api/shared/{pid}/redaction"
+    pc = PC(client, pid, hp)
     sid = _part_a(vue)["section_id"]
-    cur = client.get(f"{base}/sections/{sid}", headers=hp).json()
-    r = client.put(f"{base}/sections/{sid}/brouillon", headers=hp,
-                   json={"texte": f"Brouillon du compte {SECRET_BROUILLON}.", "base_brouillon_id": None})
-    assert r.status_code == 200, r.text
-    bid = r.json()["brouillon"]["id"]
-    assert client.post(f"{base}/sections/{sid}/envoyer", headers=hp,
-                       json={"brouillon_id": bid, "avertissement_lu": True}).status_code == 200
-    # Export du partenaire : ses brouillons et ses textes envoyés ; celui du chef de file : jamais un brouillon.
+    _ecrire(pc, sid, f"Brouillon du compte {SECRET_BROUILLON}.")
+    _envoyer(pc, sid)
     exp_p = client.get("/api/rgpd/export", headers=hp).json()
     parts = exp_p["parts_redigees_pour_des_groupements"]
-    assert parts and SECRET_BROUILLON in json.dumps(parts, ensure_ascii=False)
-    assert parts[0]["textes_envoyes"]
+    assert parts and SECRET_BROUILLON in json.dumps(parts, ensure_ascii=False) and parts[0]["textes_envoyes"]
     exp_c = client.get("/api/rgpd/export", headers=h).json()
     assert exp_c["dossiers_de_groupement"] and exp_c["dossiers_de_groupement"][0]["repartition"]
-    assert "parts_redigees_pour_des_groupements" in exp_c
     assert SECRET_BROUILLON not in json.dumps(exp_c["dossiers_de_groupement"], ensure_ascii=False)
-    # Portabilité par le lien.
-    r = client.get(f"/api/invite/{a['token']}/redaction/export")
+    pa = P(client, a["token"])
+    r = pa.get("/export")
     assert r.status_code == 200 and SECRET_BROUILLON in r.text
     # Effacement du compte du PARTENAIRE : ses brouillons partent, le texte envoyé reste au groupement.
     r = client.post("/api/rgpd/delete-account", headers=hp, json={"password": "motdepasse123", "confirm": "SUPPRIMER"})
     assert r.status_code == 200, r.text
     assert _brouillons_de(a["id"]) == 0
     d = client.get(f"/api/atelier/{pid}/repartition/{sid}", headers=h).json()
-    assert d["statut"] == "envoyee" and SECRET_BROUILLON in d["texte_commun"]["texte"]
+    assert d["statut"] == "envoyee"
+    assert SECRET_BROUILLON in client.get(f"/api/atelier/{pid}/sections/{sid}/versions/"
+                                          f"{d['texte_commun']['version_id']}", headers=h).text
     # Effacement du compte du CHEF DE FILE : tout le dossier de groupement part avec lui.
     fake_llm(_reponse_partenaire(TEXTE_IA_A)[0])
-    ba = f"/api/invite/{a['token']}/redaction"
-    r = client.post(f"{ba}/sections/{sid}/aide", json={})
-    jid = r.json()["tache"]["id"]
-    _attendre_partenaire(client, ba, jid)
+    _, jid = _aide(pa, sid)
     r = client.post("/api/rgpd/delete-account", headers=h, json={"password": "motdepasse123", "confirm": "SUPPRIMER"})
     assert r.status_code == 200, r.text
     from app.models import DossierPartBrouillon, DossierRepartition, DossierValidation, Job
@@ -799,6 +923,22 @@ def test_rgpd_export_et_effacement_des_comptes(client, auth, fake_llm):
         db.close()
 
 
+def test_purge_brouillons_d_une_invitation_expiree(client, auth):
+    pid, st, a, b, vue = _groupement(client, auth, avec_b=False)
+    pa = P(client, a["token"])
+    sid = _part_a(vue)["section_id"]
+    _ecrire(pa, sid, "Brouillon.")
+    from app.models import ProjectInvite
+    db = _db()
+    try:
+        db.get(ProjectInvite, a["id"]).expires_at = datetime.now(timezone.utc) - timedelta(days=ag.PURGE_JOURS + 1)
+        db.commit()
+        assert ag.purger(db)["brouillons_partenaires_effaces"] >= 1
+    finally:
+        db.close()
+    assert _brouillons_de(a["id"]) == 0
+
+
 # ═══ 11. Demander les parts, relances, démonstration ═══════════════════════════════
 
 def test_demander_les_parts_et_relance_a_la_date_limite(client, auth, monkeypatch):
@@ -810,8 +950,7 @@ def test_demander_les_parts_et_relance_a_la_date_limite(client, auth, monkeypatc
     from app.models import ProjectInvite
     db = _db()
     try:
-        inv = db.get(ProjectInvite, a["id"])
-        inv.recipient = "desamiantage@partenaire.fr"
+        db.get(ProjectInvite, a["id"]).recipient = "desamiantage@partenaire.fr"
         db.commit()
     finally:
         db.close()
@@ -822,10 +961,8 @@ def test_demander_les_parts_et_relance_a_la_date_limite(client, auth, monkeypatc
     assert r.status_code == 200, r.text
     assert r.json()["demandees"][0]["parties"] == 1 and len(sent) == 1
     assert "Démarche environnementale" in sent[0][2] and a["token"] in sent[0][2]
-    # Anti-rafale : une seconde demande dans le quart d'heure n'envoie rien.
     assert client.post(f"/api/atelier/{pid}/repartition/demander", headers=h, json={}).json()["deja_demandees"]
     assert len(sent) == 1
-    # Relance planifiée à J-2, une seule fois par palier.
     db = _db()
     try:
         assert ag.relancer_parts(db, date.today())["parts_relancees"] == 1
@@ -865,7 +1002,7 @@ def test_migration_v4_sqlite_neuve_precedente_rejeu_retour_arriere(tmp_path):
         try:
             insp = sa.inspect(eng)
             out = {}
-            for t in tables + ("jobs", "dossier_section_versions"):
+            for t in tables + ("jobs", "dossier_section_versions", "project_invites"):
                 out[t] = ({c["name"]: (str(c["type"]), c["nullable"], str(c.get("default"))) for c in insp.get_columns(t)},
                           {i["name"]: (tuple(i["column_names"]), bool(i.get("unique"))) for i in insp.get_indexes(t)})
             return out
@@ -876,11 +1013,12 @@ def test_migration_v4_sqlite_neuve_precedente_rejeu_retour_arriere(tmp_path):
     neuf = schema()
     assert neuf["jobs"][0]["user_id"][1] is True and {"portee", "invite_id"} <= set(neuf["jobs"][0])
     assert {"partage", "ecrit_par", "compteurs"} <= set(neuf["dossier_section_versions"][0])
+    assert "espace_hash" in neuf["project_invites"][0]
     assert neuf["dossier_repartitions"][1]["ix_dossier_repartitions_section_id"] == (("section_id",), True)
-    # Retour arrière : tables et colonnes retirées, user_id redevenu obligatoire (tâches sans compte supprimées).
     eng = sa.create_engine(f"sqlite:///{dbfile}")
     with eng.begin() as cn:
-        cn.execute(sa.text("INSERT INTO jobs (user_id, kind, status, portee) VALUES (NULL, 'partenaire_rediger', 'done', 'partenaire')"))
+        cn.execute(sa.text("INSERT INTO jobs (user_id, kind, status, portee) VALUES "
+                           "(NULL, 'partenaire_rediger', 'done', 'partenaire')"))
     eng.dispose()
     run("downgrade", "w7x8analysepartagee")
     eng = sa.create_engine(f"sqlite:///{dbfile}")
@@ -890,14 +1028,13 @@ def test_migration_v4_sqlite_neuve_precedente_rejeu_retour_arriere(tmp_path):
         jc = {c["name"]: c for c in insp.get_columns("jobs")}
         assert "portee" not in jc and "invite_id" not in jc and jc["user_id"]["nullable"] is False
         assert "partage" not in {c["name"] for c in insp.get_columns("dossier_section_versions")}
+        assert "espace_hash" not in {c["name"] for c in insp.get_columns("project_invites")}
         with eng.connect() as cn:
             assert cn.execute(sa.text("SELECT count(*) FROM jobs WHERE user_id IS NULL")).scalar() == 0
     finally:
         eng.dispose()
-    # Base à la révision précédente : la révision crée tout, au même schéma qu'une base neuve.
     run("upgrade", "head")
     assert schema() == neuf
-    # Rejeu (version remise à la précédente, tout est déjà là) : sans erreur, lignes gardées.
     eng = sa.create_engine(f"sqlite:///{dbfile}")
     with eng.begin() as cn:
         cn.execute(sa.text("INSERT INTO dossier_validations (dossier_id, project_id, owner_id, membre_cle) "

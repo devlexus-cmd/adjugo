@@ -668,6 +668,10 @@ class ProjectInvite(Base):
     # acceptée, part repassée en brouillon) : l'aperçu minimal et le journal du membre ne reviennent
     # jamais en arrière (migration q1r2s3t4u5v6).
     network_accepted_at = Column(DateTime, nullable=True)
+    # Rédaction, vague 4 : empreinte de la CLÉ de l'espace privé du lien (brouillons, sources, aide de
+    # l'IA du partenaire). La clé n'est connue que du navigateur du partenaire : le lien seul — que le chef
+    # de file a pu transmettre — ne suffit jamais à lire sa matière privée (migration x8y9redactionv4).
+    espace_hash = Column(String(64), nullable=True, default="", server_default="")
     expires_at = Column(DateTime, nullable=True)       # null = sans expiration
     view_count = Column(Integer, default=0)
     last_viewed_at = Column(DateTime, nullable=True)

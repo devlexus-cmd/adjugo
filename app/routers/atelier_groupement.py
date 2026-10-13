@@ -204,11 +204,14 @@ def _project_of(inv, db: Session) -> Project:
     return p
 
 
-def _par_lien(token: str, db: Session) -> ag.Acces:
+def _par_lien(token: str, db: Session, request: Request) -> ag.Acces:
+    """Le lien de l'invitation, et la clé de l'espace privé du partenaire (en-tête X-Adjugo-Espace) :
+    sans clé valide, seul ce qui est commun se lit (ses parties, les textes envoyés, le dossier assemblé)."""
     from app.routers.invites import _valid_invite
     inv = _valid_invite(token, db)          # révoqué → 404, décliné ou expiré → 410 : l'accès est coupé
     try:
-        return ag.acces_partenaire(db, inv, _project_of(inv, db), mode="lien")
+        return ag.acces_partenaire(db, inv, _project_of(inv, db), mode="lien",
+                                   cle=request.headers.get(ag.ENTETE_CLE))
     except at.AtelierError as e:
         raise _err(e)
 
@@ -320,7 +323,9 @@ def _valider_dossier(acces, db, body: Optional[ValiderDossierIn], ip):
 
 def _export(acces, db):
     import json
-    payload = json.dumps(ag.exporter_invitation(db, acces.inv), ensure_ascii=False, indent=2, default=str)
+    _faire(ag._exiger_espace, acces)
+    payload = json.dumps(ag.exporter_invitation(db, acces.inv, sources_du_compte=(acces.mode == "compte")),
+                         ensure_ascii=False, indent=2, default=str)
     return Response(content=payload, media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="ma_partie_adjugo.json"',
                              "Cache-Control": "no-store"})
@@ -331,79 +336,95 @@ def _export(acces, db):
 L = "/api/invite/{token}/redaction"
 
 
+class EspaceIn(BaseModel):
+    code: Optional[str] = Field(None, max_length=12)
+    reinitialiser: bool = False
+
+
+@router.post(L + "/espace")
+@limiter.limit("20/hour")
+def lien_espace(token: str, request: Request, body: Optional[EspaceIn] = None, db: Session = Depends(get_db)):
+    """Ouvre l'espace privé du lien sur cet appareil et rend sa clé, UNE fois (à garder dans le navigateur, à
+    renvoyer dans l'en-tête X-Adjugo-Espace) : première ouverture ; ou avec le code reçu par email (brouillons
+    gardés) ; ou en réinitialisant (brouillons non envoyés effacés)."""
+    acces = _par_lien(token, db, request)
+    return _faire(ag.ouvrir_espace, db, acces.inv, code=(body.code if body else None),
+                  reinitialiser=bool(body and body.reinitialiser), ip=_ip(request))
+
+
 @router.get(L)
 @limiter.limit("120/minute")
 def lien_vue(token: str, request: Request, db: Session = Depends(get_db)):
-    return _vue(_par_lien(token, db), db)
+    return _vue(_par_lien(token, db, request), db)
 
 
 @router.get(L + "/dossier")
 @limiter.limit("60/minute")
 def lien_dossier(token: str, request: Request, db: Session = Depends(get_db)):
-    return _dossier(_par_lien(token, db), db)
+    return _dossier(_par_lien(token, db, request), db)
 
 
 @router.get(L + "/sections/{section_id}")
 @limiter.limit("120/minute")
 def lien_section(token: str, section_id: int, request: Request, db: Session = Depends(get_db)):
-    return _section(_par_lien(token, db), db, section_id)
+    return _section(_par_lien(token, db, request), db, section_id)
 
 
 @router.put(L + "/sections/{section_id}/brouillon")
 @limiter.limit("90/minute")
 def lien_brouillon(token: str, section_id: int, body: BrouillonIn, request: Request, db: Session = Depends(get_db)):
-    return _brouillon(_par_lien(token, db), db, section_id, body)
+    return _brouillon(_par_lien(token, db, request), db, section_id, body)
 
 
 @router.post(L + "/sections/{section_id}/faits/{fait_id}")
 @limiter.limit("300/hour")
 def lien_fait(token: str, section_id: int, fait_id: str, body: FaitIn, request: Request,
               db: Session = Depends(get_db)):
-    return _fait(_par_lien(token, db), db, section_id, fait_id, body)
+    return _fait(_par_lien(token, db, request), db, section_id, fait_id, body)
 
 
 @router.post(L + "/sections/{section_id}/aide", status_code=202)
 @limiter.limit("20/hour")
 def lien_aide(token: str, section_id: int, request: Request, body: Optional[AideIn] = None,
               db: Session = Depends(get_db)):
-    return _aide(_par_lien(token, db), db, section_id, body)
+    return _aide(_par_lien(token, db, request), db, section_id, body)
 
 
 @router.get(L + "/taches/{job_id}")
 @limiter.limit("120/minute")
 def lien_tache(token: str, job_id: int, request: Request, db: Session = Depends(get_db)):
-    return _tache(_par_lien(token, db), db, job_id)
+    return _tache(_par_lien(token, db, request), db, job_id)
 
 
 @router.post(L + "/sections/{section_id}/envoyer")
 @limiter.limit("60/hour")
 def lien_envoyer(token: str, section_id: int, body: EnvoyerIn, request: Request, db: Session = Depends(get_db)):
-    return _envoyer(_par_lien(token, db), db, section_id, body, _ip(request))
+    return _envoyer(_par_lien(token, db, request), db, section_id, body, _ip(request))
 
 
 @router.post(L + "/sections/{section_id}/valider")
 @limiter.limit("60/hour")
 def lien_valider(token: str, section_id: int, body: ValiderIn, request: Request, db: Session = Depends(get_db)):
-    return _valider(_par_lien(token, db), db, section_id, body, _ip(request))
+    return _valider(_par_lien(token, db, request), db, section_id, body, _ip(request))
 
 
 @router.post(L + "/sections/{section_id}/retablir")
 @limiter.limit("60/hour")
 def lien_retablir(token: str, section_id: int, body: RetablirIn, request: Request, db: Session = Depends(get_db)):
-    return _retablir(_par_lien(token, db), db, section_id, body, _ip(request))
+    return _retablir(_par_lien(token, db, request), db, section_id, body, _ip(request))
 
 
 @router.post(L + "/dossier/valider")
 @limiter.limit("30/hour")
 def lien_valider_dossier(token: str, request: Request, body: Optional[ValiderDossierIn] = None,
                          db: Session = Depends(get_db)):
-    return _valider_dossier(_par_lien(token, db), db, body, _ip(request))
+    return _valider_dossier(_par_lien(token, db, request), db, body, _ip(request))
 
 
 @router.get(L + "/export")
 @limiter.limit("10/hour")
 def lien_export(token: str, request: Request, db: Session = Depends(get_db)):
-    return _export(_par_lien(token, db), db)
+    return _export(_par_lien(token, db, request), db)
 
 
 # ── Partenaire par le COMPTE Adjugo qui a rattaché son lien (« Partagé avec moi ») ───

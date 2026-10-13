@@ -15,7 +15,9 @@ colonne et chaque index ne sont ajoutés que s'ils manquent. SQLite (tests, dém
 - colonnes `dossier_section_versions.partage`, `ecrit_par`, `compteurs` : le texte COMMUN d'une partie
   d'un partenaire (envoyé par lui, ou écrit par le chef de file sur sa partie) ;
 - colonnes `jobs.portee`, `jobs.invite_id` et `jobs.user_id` rendu FACULTATIF : une tâche lancée par
-  un partenaire n'a aucun compte propriétaire (NULL) ; elle appartient à son invitation.
+  un partenaire n'a aucun compte propriétaire (NULL) ; elle appartient à son invitation ;
+- colonne `project_invites.espace_hash` : empreinte de la clé de l'espace privé du lien (le chef de file,
+  qui a pu transmettre le lien, ne lit jamais la matière privée du partenaire).
 Les valeurs par défaut côté base sont celles du modèle : une base neuve (dont une révision ancienne crée
 les tables depuis les modèles) et la production montée ont le même schéma.
 
@@ -45,6 +47,7 @@ BRO = "dossier_parts_brouillons"
 VAL = "dossier_validations"
 VERS = "dossier_section_versions"
 JOBS = "jobs"
+INV = "project_invites"
 
 
 def _colonnes_rep(for_create: bool):
@@ -128,6 +131,7 @@ _AJOUTS = [
     (VERS, sa.Column("compteurs", sa.JSON(), nullable=True)),
     (JOBS, sa.Column("portee", sa.String(12), nullable=True, server_default="")),
     (JOBS, sa.Column("invite_id", sa.Integer(), nullable=True)),
+    (INV, sa.Column("espace_hash", sa.String(64), nullable=True, server_default="")),
 ]
 
 # (table, nom, colonnes, unique) — mêmes noms que ceux que SQLAlchemy donne aux colonnes `index=True`
@@ -215,3 +219,6 @@ def downgrade():
         for name in ("compteurs", "ecrit_par", "partage"):
             if name in vcols:
                 b.drop_column(name)
+    if "espace_hash" in {c["name"] for c in sa.inspect(bind).get_columns(INV)}:
+        with op.batch_alter_table(INV) as b:
+            b.drop_column("espace_hash")
