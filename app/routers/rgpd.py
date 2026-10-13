@@ -417,6 +417,11 @@ def _erase_solo(db, uid: int, org_id) -> list:
     from app.services.preuves import effacer_tout as _effacer_preuves
     _effacer_preuves(db, uid)
     _del(db, M.Job, M.Job.user_id == uid)                      # mémoires/questionnaires générés
+    # Mesure des doublons de l'analyse partagée (une ligne par analyse : organisation, empreinte du
+    # contenu, jamais le contenu) : effacée avec le compte. Les extractions partagées n'appartiennent à
+    # personne (document public de l'acheteur, aucune colonne d'organisation) : rien à effacer.
+    from app.services.analyse_partagee import effacer_organisation as _effacer_mesure
+    _effacer_mesure(db, uid)
     _erase_personal_rows(db, uid)
     # 4) projets, puis les données métier restantes
     q = db.query(M.Project).filter(M.Project.user_id == uid)

@@ -9,42 +9,48 @@ Règle d'Eliot : « économiser le coût de l'IA sans JAMAIS baisser la performa
    triées : jamais le contenu) et la clé exacte de l'extraction. Agrégats dans /metrics et sur
    GET /api/admin/analyse-partagee (administrateur de la plateforme) ; jamais montrés à un client.
 
-2. EXTRACTION PARTAGÉE (ANALYSE_PARTAGEE=1, défaut) : l'analyse est faite en deux temps
-   (app.services.analysis) — (a) l'extraction du dossier, qui ne reçoit AUCUNE donnée d'entreprise,
-   puis (b) la partie propre à l'entreprise (score et verdict sans IA, puis un appel court qui reçoit
-   l'extraction et le profil, jamais le dossier entier). L'extraction (a) est gardée dans
-   `analyses_partagees` et resservie, sans nouvel appel, quand le MÊME dossier est analysé à nouveau,
-   par la même organisation ou par une autre. La clé est l'empreinte de TOUT ce dont l'extraction dépend :
-   la version et le texte des consignes, la route de l'IA (modèles, secours, réglages, fournisseurs
-   disponibles), la version de la lecture intégrale et de la lecture des pièces, la langue, le mode de
-   lecture, le budget de contexte, et le texte, le nom, le type et l'état de CHAQUE pièce, dans l'ordre.
-   Même entrée exacte → même sortie : resservir l'extraction équivaut à la refaire. Un rectificatif
+2. ANALYSE EN DEUX TEMPS (ANALYSE_PARTAGEE=1, défaut ; app.services.analysis) : (a) l'EXTRACTION du
+   dossier, qui ne reçoit AUCUNE donnée d'entreprise, puis (b) la partie propre à l'entreprise (score
+   et verdict sans IA, puis un appel court qui reçoit l'extraction et le profil, jamais le dossier
+   entier). L'extraction (a) est gardée dans `analyses_partagees` et resservie, sans nouvel appel, quand
+   le MÊME dossier est analysé à nouveau, par la même organisation ou par une autre. La clé est
+   l'empreinte de TOUT ce dont l'extraction dépend : la version et le texte des consignes, la route de
+   l'IA (modèles, secours, réglages, fournisseurs disponibles), la version de la lecture intégrale et de
+   la lecture des pièces, la langue, le mode de lecture, le budget de contexte et les réglages de la
+   lecture en deux temps, le texte assemblé du dossier, et le nom, le type, l'état et le texte de CHAQUE
+   pièce. Même entrée exacte → même extraction : la resservir équivaut à la refaire. Un rectificatif
    (contenu différent), un autre modèle, d'autres consignes donnent une autre clé (invalidation
    automatique). « Ré-analyser » force une nouvelle extraction (qui remplace l'entrée).
-   Une extraction n'est gardée que COMPLÈTE : réponse lisible, et, en lecture en deux temps, aucune
-   partie en panne, illisible ou coupée (un incident passager n'est jamais resservi).
+   Une extraction n'est gardée que COMPLÈTE et faite par le modèle prévu : réponse lisible, aucune
+   bascule de secours pendant l'extraction (hors fournisseur non configuré, déjà dans la clé), et, en
+   lecture en deux temps, aucune partie en panne, illisible ou coupée (un incident passager n'est jamais
+   resservi).
 
 3. CONFIDENTIALITÉ : l'entrée partagée ne contient que la réponse de l'IA sur le dossier (document
    public de l'acheteur) et ce qui a été lu ; aucune colonne d'organisation. Rien dans l'API ni à
    l'écran ne dit qu'une extraction vient du partage (même réponse, mêmes champs, même déroulé : tâche
    de fond ou non selon le dossier seul, coût estimé de l'essai calculé comme pour une extraction
-   neuve). Délai : la première fois qu'une organisation reçoit une extraction faite pour une AUTRE,
-   la réponse attend la durée qu'avait prise l'extraction (progression rejouée), pour que la rapidité
-   ne trahisse rien (ANALYSE_PARTAGEE_MASQUE=0 : réponse immédiate). Ses choix (critères confirmés,
-   poids saisis, questions) restent dans son marché : ils ne sont jamais dans l'entrée partagée.
+   neuve, compteurs de la lecture recalculés pour CE marché). Délai : la première fois qu'une
+   organisation reçoit une extraction faite pour une AUTRE, la réponse attend la durée qu'avait prise
+   l'extraction (progression rejouée), pour que la rapidité ne trahisse rien ; ensuite (même
+   organisation), réponse immédiate. ANALYSE_PARTAGEE_MASQUE=0 : réponse toujours immédiate. Ses choix
+   (critères confirmés, poids saisis, questions) restent dans son marché : ils ne sont jamais dans
+   l'entrée partagée.
 
 4. COÛT : le quota du client est débité comme d'habitude. L'extraction est comptée à la plateforme
    (budget_ia.mutualise), sauf l'extraction NEUVE déclenchée par un compte en essai gratuit, comptée à
    son essai comme aujourd'hui (sinon le garde-fou de l'essai ne verrait plus l'essentiel du coût) ;
-   servie depuis le cache, elle ne coûte rien à personne. La partie propre à l'entreprise est comptée
-   au client.
+   servie depuis le partage, elle ne coûte rien à personne. La partie propre à l'entreprise est comptée
+   au client (et à son essai).
 
-Données : l'entrée partagée n'est pas une donnée personnelle (document public de l'acheteur) ; elle
-est effacée quand elle n'a plus servi depuis ANALYSE_PARTAGEE_JOURS jours (purge quotidienne). Les
-lignes de mesure sont effacées avec le compte et au-delà d'ANALYSE_PARTAGEE_MESURE_JOURS jours. Le
-texte intégral de chaque marché reste rangé avec le marché et supprimé avec lui (dce_texte).
+Données : l'entrée partagée n'est pas une donnée personnelle d'un client (document public de
+l'acheteur) ; elle est effacée quand elle n'a plus servi depuis ANALYSE_PARTAGEE_JOURS jours (purge
+quotidienne). Les lignes de mesure sont effacées avec le compte et au-delà
+d'ANALYSE_PARTAGEE_MESURE_JOURS jours. Le texte intégral de chaque marché reste rangé avec le marché et
+supprimé avec lui (dce_texte).
 """
 import contextlib
+import contextvars
 import hashlib
 import json
 import logging
@@ -72,14 +78,17 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+_NON = ("0", "false", "non", "no", "off")
+
+
 def actif() -> bool:
     """Analyse en deux temps avec extraction partagée (défaut). ANALYSE_PARTAGEE=0 : analyse d'origine
     en un seul appel (la mesure des doublons continue)."""
-    return _env("ANALYSE_PARTAGEE", "1") not in ("0", "false", "non", "no", "off")
+    return _env("ANALYSE_PARTAGEE", "1") not in _NON
 
 
 def masque_actif() -> bool:
-    return _env("ANALYSE_PARTAGEE_MASQUE", "1") not in ("0", "false", "non", "no", "off")
+    return _env("ANALYSE_PARTAGEE_MASQUE", "1") not in _NON
 
 
 def masque_max_s() -> float:
@@ -107,12 +116,51 @@ def partage(owner_id, essai: bool = False, forcer: bool = False) -> dict:
             "forcer": bool(forcer)}
 
 
+def partage_de(user, db, forcer: bool = False) -> dict:
+    """partage(...) d'un utilisateur : son organisation et l'état d'essai de son compte de facturation."""
+    from app.core.org import data_owner_id
+    from app.core.quota import _billing_user
+    from app.services.budget_ia import essai_actif
+    try:
+        essai = essai_actif(_billing_user(user, db))
+    except Exception:       # noqa: BLE001 — prudent : compté à l'essai s'il y en a un
+        essai = True
+    return partage(data_owner_id(user, db), essai=essai, forcer=forcer)
+
+
 def portee_extraction(p: dict):
     """Portée de coût de l'EXTRACTION : plateforme (mutualisée), sauf compte en essai."""
     from app.services import budget_ia
     if p and not p.get("essai"):
         return budget_ia.mutualise("extraction partagée d'un dossier")
     return contextlib.nullcontext()
+
+
+# ── Aléas pendant l'extraction (bascule de secours) : l'extraction n'est alors pas gardée ──────
+
+_ALEAS = contextvars.ContextVar("adjugo_analyse_partagee_aleas", default=None)
+
+
+def noter_reponse(resp) -> None:
+    """Appelée après chaque réponse de l'IA pendant une analyse (analysis._appel_analyse,
+    analyse_dossier._appel). Une bascule de secours autre que « fournisseur non configuré » (déjà dans
+    la clé) veut dire qu'un autre modèle que celui de la clé a répondu : l'extraction n'est pas gardée."""
+    lst = _ALEAS.get()
+    if lst is None:
+        return
+    motif = getattr(resp, "bascule", None)
+    if motif and motif != "absent":
+        lst.append(str(motif))
+
+
+@contextlib.contextmanager
+def _collecter_aleas():
+    lst = []
+    tok = _ALEAS.set(lst)       # les fils (map_in_context) copient le contexte : même liste
+    try:
+        yield lst
+    finally:
+        _ALEAS.reset(tok)
 
 
 # ── Empreintes ─────────────────────────────────────────────────────────────────────────────────
@@ -154,15 +202,16 @@ def _route(tache: str) -> str:
     from app.services import llm
     r = llm.route(tache)
     cibles = [c for c in (r.primaire, r.secours) if c is not None]
-    return "|".join([r.tache, r.origine] + [f"{c.fournisseur}:{c.modele}:{int(bool(llm._disponible(c.fournisseur)))}"
-                                            for c in cibles]
-                    + [",".join(sorted(r.secours_sur)), repr(r.anthropic), repr(r.mistral)])
+    return "|".join([str(r.tache), str(r.origine)]
+                    + [f"{c.fournisseur}:{c.modele}:{int(bool(llm._disponible(c.fournisseur)))}" for c in cibles]
+                    + [",".join(sorted(r.secours_sur or ())), repr(r.anthropic), repr(r.mistral),
+                       llm.routage_mode(), llm.forcage() or "-"])
 
 
 def descripteur_modele(nature: str) -> str:
     from app.services import analysis as an
     taches = [an.ANALYSE_TACHE] + (["lecture_pieces"] if nature == NATURE_DOSSIER else [])
-    return " ; ".join(_route(t) for t in taches)[:2000]
+    return " ; ".join(_route(t) for t in taches)
 
 
 def version() -> str:
@@ -175,12 +224,12 @@ def version() -> str:
 def _consignes(nature: str) -> str:
     from app.services import analysis as an
     from app.services import analyse_dossier as ad
-    return _h(an.SYSTEM_EXTRACTION, an.ANALYSE_MAX_TOKENS,
-              *((ad.PIECE_SYSTEM,) if nature == NATURE_DOSSIER else ()))
+    return _h(an.SYSTEM_EXTRACTION, an.ANALYSE_MAX_TOKENS, an.ANALYSE_MODEL,
+              *((ad.PIECE_SYSTEM, ad.PIECES_MAX_TOKENS) if nature == NATURE_DOSSIER else ()))
 
 
-def cle_dossier(lecture: dict, lang_name, note: str, plan_info: dict) -> str:
-    """Clé EXACTE de l'extraction d'un dossier lu en entier : tout ce dont elle dépend."""
+def cle_dossier(lecture: dict, texte: str, note: str, lang_name, plan_info: dict) -> str:
+    """Clé EXACTE de l'extraction d'un dossier lu en entier : tout ce dont elle dépend (voir l'en-tête)."""
     from app.services import analyse_dossier as ad
     h = hashlib.sha256()
 
@@ -190,8 +239,9 @@ def cle_dossier(lecture: dict, lang_name, note: str, plan_info: dict) -> str:
             h.update(b"\x1f")
 
     up("cle-dossier", version(), _consignes(NATURE_DOSSIER), descripteur_modele(NATURE_DOSSIER),
-       str(lang_name or "").strip().lower(), plan_info.get("mode"), plan_info.get("budget_caracteres"),
-       ad.parametres_lecture(), note or "")
+       str(lang_name or "").strip().lower(), (plan_info or {}).get("mode"),
+       (plan_info or {}).get("budget_caracteres"), ad.parametres_lecture(), note or "",
+       hashlib.sha256((texte or "").encode("utf-8", "surrogatepass")).hexdigest())
     for p in (lecture or {}).get("pieces") or []:
         up("piece", p.get("nom"), p.get("type"), p.get("libelle"), p.get("statut"), p.get("raison"),
            p.get("detail"), json.dumps(p.get("page_starts") or [], separators=(",", ":")),
@@ -225,7 +275,8 @@ def lire(cle: str):
         row = db.query(AnalysePartagee).filter(AnalysePartagee.cle == cle).first()
         if row is None or not isinstance(row.extraction, dict):
             return None
-        out = {"extraction": json.loads(json.dumps(row.extraction)), "rapport": row.rapport,
+        out = {"extraction": json.loads(json.dumps(row.extraction)),
+               "rapport": json.loads(json.dumps(row.rapport)) if row.rapport is not None else None,
                "duree_s": float(row.duree_s or 0.0), "cout_eur": float(row.cout_eur or 0.0), "mode": row.mode}
         row.utilise_le = _maintenant()
         db.commit()
@@ -245,9 +296,12 @@ def ecrire(cle: str, nature: str, mode: str, extraction: dict, rapport=None, dur
         return False
     from sqlalchemy.exc import IntegrityError
     from app.models import AnalysePartagee
-    vals = {"nature": nature, "mode": mode or "", "version": version(), "modele": descripteur_modele(nature)[:200],
-            "extraction": extraction, "rapport": rapport, "duree_s": round(float(duree_s or 0.0), 3),
-            "cout_eur": round(float(cout_eur or 0.0), 6), "utilise_le": _maintenant()}
+    vals = {"nature": nature, "mode": mode or "", "version": version()[:40],
+            "modele": descripteur_modele(nature)[:200],
+            "extraction": json.loads(json.dumps(extraction)),
+            "rapport": json.loads(json.dumps(rapport)) if rapport is not None else None,
+            "duree_s": round(float(duree_s or 0.0), 3), "cout_eur": round(float(cout_eur or 0.0), 6),
+            "utilise_le": _maintenant()}
     db = _session()
     try:
         for _essai in range(2):
@@ -286,8 +340,9 @@ def deja_vue(owner_id, cle: str) -> bool:
         db.close()
 
 
-def noter(owner_id, nature: str, empreinte: str, cle: str, servi: bool, economie_eur: float = 0.0) -> None:
-    """Ligne de mesure (jamais bloquant)."""
+def noter(p, nature: str, empreinte: str, cle, servi: bool, economie_eur: float = 0.0) -> None:
+    """Ligne de mesure après une analyse réussie (jamais bloquant)."""
+    owner_id = (p or {}).get("owner_id")
     if owner_id is None or not empreinte:
         return
     from app.models import AnalyseEmpreinte
@@ -307,7 +362,7 @@ def noter(owner_id, nature: str, empreinte: str, cle: str, servi: bool, economie
 # ── Délai : la rapidité d'une extraction resservie ne trahit rien ─────────────────────────────
 
 def attendre(duree_s: float, progress=None, etapes=None) -> None:
-    """Attend `duree_s` (bornée) en rejouant la progression (une étape par partie lue)."""
+    """Attend `duree_s` (bornée) en rejouant la progression (une étape par appel de lecture)."""
     d = max(0.0, min(float(duree_s or 0.0), masque_max_s()))
     etapes = list(etapes or [])
     if not etapes:
@@ -335,53 +390,82 @@ def _complete(rapport) -> bool:
     return not (rapport.get("erreurs") or rapport.get("illisibles") or rapport.get("coupees"))
 
 
-def executer(p: dict, nature: str, cle: str, empreinte: str, mode: str, analyser_fn, progress=None,
-             etapes=None):
-    """Analyse avec l'extraction partagée.
-    analyser_fn(extraction_servie, on_extraction, mutualiser) → (analyse, rapport) : avec une extraction
-    servie, ne fait que la partie propre à l'entreprise ; sinon fait l'extraction et appelle
-    on_extraction(extraction, cout_eur, duree_s, rapport) dès qu'elle est prête (avant la partie propre
-    à l'entreprise : une panne de celle-ci n'oblige pas à refaire l'extraction).
-    p = partage(...) ou None (aucun partage ni mesure). Renvoie (analyse, rapport)."""
-    owner = (p or {}).get("owner_id")
-    partage_ok = p is not None and actif()
-    servi = None
-    if partage_ok and not p.get("forcer"):
+class Rangement:
+    """Extraction NEUVE d'une analyse : portée de coût de l'extraction (plateforme, ou essai du compte ;
+    sans partage : le client) et rangement de l'extraction dans le partage dès qu'elle est prête —
+    seulement si elle est complète et faite par le modèle prévu (aucune bascule de secours)."""
+
+    def __init__(self, p, nature: str, cle: str, mode: str, aleas: list, cm, t0: float):
+        self.p, self.nature, self.cle, self.mode = p, nature, cle, mode
+        self.aleas, self.cm, self.t0 = aleas, cm, t0
+        self.rangee = False
+
+    def portee(self):
+        return portee_extraction(self.p) if self.p is not None else contextlib.nullcontext()
+
+    def apres(self, rapport=None):
+        """Rappel `apres_extraction` d'analysis.analyze_dce_text (appelé avant la partie propre à
+        l'entreprise : le coût et la durée relevés à cet instant sont ceux de l'extraction seule)."""
+        def ranger(extraction, *_ignores):
+            if self.p is None or not isinstance(extraction, dict):
+                return
+            if self.aleas:
+                logger.info("analyse partagée : extraction non gardée (bascule de secours : %s)",
+                            ", ".join(sorted(set(self.aleas))))
+                return
+            if not _complete(rapport):
+                return
+            self.rangee = ecrire(self.cle, self.nature, self.mode, extraction, rapport=rapport,
+                                 duree_s=time.monotonic() - self.t0, cout_eur=self.cm.cost_eur())
+        return ranger
+
+
+def executer(p, nature: str, cle: str, mode: str, analyser_fn, progress=None, etapes=None, ajuster=None,
+             lecture_permise: bool = True):
+    """Analyse avec l'extraction partagée. analyser_fn(extraction, rapport, rangement) → (analyse, rapport) :
+    - extraction resservie (dict) : ne fait que la partie propre à l'entreprise (rangement None) ;
+    - sinon (extraction None) : fait l'extraction dans `rangement.portee()` et passe `rangement.apres(rapport)`
+      à analyze_dce_text (apres_extraction).
+    p = partage(...) ou None (aucun partage : extraction faite et comptée au client, rien de gardé).
+    ajuster(rapport) : rapport resservi recalculé pour CE marché. Renvoie (analyse, rapport, servie,
+    coût de l'extraction resservie). Propage une panne de l'IA."""
+    from app.services import llm
+    partage_ok = p is not None and actif() and bool(cle)
+    if partage_ok and lecture_permise and not p.get("forcer"):
         servi = lire(cle)
-    if servi is not None:
-        if masque_actif() and not deja_vue(owner, cle):
-            attendre(servi.get("duree_s") or 0.0, progress=progress, etapes=etapes)
-        analysis, rapport = analyser_fn(servi["extraction"], None, False, servi.get("rapport"))
-        noter(owner, nature, empreinte, cle, True, servi.get("cout_eur") or 0.0)
-        return analysis, rapport
-
-    def on_extraction(extraction, cout_eur=0.0, duree_s=0.0, rapport=None):
-        if partage_ok and isinstance(extraction, dict) and _complete(rapport):
-            ecrire(cle, nature, mode, extraction, rapport=rapport, duree_s=duree_s, cout_eur=cout_eur)
-
-    analysis, rapport = analyser_fn(None, on_extraction, bool(partage_ok and not p.get("essai")), None)
-    if p is not None:
-        noter(owner, nature, empreinte, cle, False, 0.0)
-    return analysis, rapport
+        if servi is not None:
+            rapport = servi.get("rapport")
+            if ajuster is not None and isinstance(rapport, dict):
+                rapport = ajuster(rapport)
+            if masque_actif() and not deja_vue(p.get("owner_id"), cle):
+                attendre(servi.get("duree_s") or 0.0, progress=progress, etapes=etapes)
+            analysis, rapport = analyser_fn(servi["extraction"], rapport, None)
+            return analysis, rapport, True, float(servi.get("cout_eur") or 0.0)
+    with _collecter_aleas() as aleas, \
+            llm.cost_meter("extraction du dossier", llm._CURRENT_TENANT.get(), log=False) as cm:
+        rg = Rangement(p if partage_ok else None, nature, cle, mode, aleas, cm, time.monotonic())
+        analysis, rapport = analyser_fn(None, None, rg)
+    return analysis, rapport, False, 0.0
 
 
-def analyser_texte(text: str, company=None, criteria=None, lang_name=None, p: dict = None, **kw) -> dict:
-    """Analyse d'un avis (ou d'un dossier déjà extrait, route /analyze) avec l'extraction partagée."""
+def analyser_texte(text: str, company=None, criteria=None, lang_name=None, p: dict = None,
+                   annonce_seule: bool = False) -> dict:
+    """Analyse d'un avis (ou d'un dossier récupéré auprès de la source, route /analyze) avec
+    l'extraction partagée et la mesure. Même résultat qu'analysis.analyze_dce_text."""
     from app.services import analysis as an
-    if not text or len(text) < 50 or p is None:
-        return an.analyze_dce_text(text, company, criteria, lang_name=lang_name, **kw)
-    user_prompt = an.build_user_prompt(text, None, None, lang_name, integral=bool(kw.get("integral")),
-                                       note_lecture=kw.get("note_lecture") or "")
-    cle = cle_texte(user_prompt)
+    if p is None or not text or len(text) < 50:
+        return an.analyze_dce_text(text, company, criteria, lang_name=lang_name, annonce_seule=annonce_seule)
+    cle = cle_texte(an.build_extraction_prompt(text, lang_name)) if actif() else ""
 
-    def fn(extraction, on_extraction, mutualiser, _rapport):
+    def fn(extraction, _rapport, rg):
         if extraction is not None:
-            return an.analyze_dce_text(text, company, criteria, lang_name=lang_name, extraction=extraction, **kw), None
-        cb = (lambda e, c, d: on_extraction(e, c, d, None)) if on_extraction is not None else None
-        return an.analyze_dce_text(text, company, criteria, lang_name=lang_name, on_extraction=cb,
-                                   mutualiser=mutualiser, **kw), None
+            return an.analyze_dce_text(text, company, criteria, lang_name=lang_name, annonce_seule=annonce_seule,
+                                       extraction=extraction), None
+        return an.analyze_dce_text(text, company, criteria, lang_name=lang_name, annonce_seule=annonce_seule,
+                                   portee_extraction=rg.portee(), apres_extraction=rg.apres()), None
 
-    analysis, _ = executer(p, NATURE_AVIS, cle, empreinte_texte(text), NATURE_AVIS, fn)
+    analysis, _r, servie, cout = executer(p, NATURE_AVIS, cle, NATURE_AVIS, fn)
+    noter(p, NATURE_AVIS, empreinte_texte(text), cle or None, servie, cout)
     return analysis
 
 
@@ -428,6 +512,43 @@ def mesure(db) -> dict:
                             "partage peut éviter) ; « clé exacte » : la même chose, à l'identique de ce que l'IA "
                             "reçoit (ce que le partage peut réellement resservir) ; « économie » : coût des "
                             "extractions resservies, au tarif public du modèle.")}
+
+
+def prometheus_lignes(fmt) -> list:
+    """Lignes /metrics (agrégats seulement)."""
+    db = _session()
+    try:
+        m = mesure(db)
+    finally:
+        db.close()
+    out = ["# HELP adjugo_analyse_partagee_analyses Analyses mesurées (une par import), par nature.",
+           "# TYPE adjugo_analyse_partagee_analyses gauge"]
+    for nature, v in m["par_nature"].items():
+        out.append(fmt("adjugo_analyse_partagee_analyses", v["analyses"], {"nature": nature}))
+    out += ["# HELP adjugo_analyse_partagee_contenus_distincts Contenus distincts analysés, par nature.",
+            "# TYPE adjugo_analyse_partagee_contenus_distincts gauge"]
+    for nature, v in m["par_nature"].items():
+        out.append(fmt("adjugo_analyse_partagee_contenus_distincts", v["contenus_distincts"], {"nature": nature}))
+    out += ["# HELP adjugo_analyse_partagee_doublons_entre_organisations Analyses d'un contenu déjà analysé par "
+            "une autre organisation (empreinte normalisée ; « exacte » : clé exacte de l'extraction).",
+            "# TYPE adjugo_analyse_partagee_doublons_entre_organisations gauge"]
+    for nature, v in m["par_nature"].items():
+        out.append(fmt("adjugo_analyse_partagee_doublons_entre_organisations", v["doublons_entre_organisations"],
+                       {"nature": nature, "mesure": "contenu"}))
+        out.append(fmt("adjugo_analyse_partagee_doublons_entre_organisations",
+                       v["doublons_entre_organisations_cle_exacte"], {"nature": nature, "mesure": "exacte"}))
+    out += ["# HELP adjugo_analyse_partagee_servies Extractions resservies depuis le partage, par nature.",
+            "# TYPE adjugo_analyse_partagee_servies gauge"]
+    for nature, v in m["par_nature"].items():
+        out.append(fmt("adjugo_analyse_partagee_servies", v["servies_depuis_le_partage"], {"nature": nature}))
+    out += ["# HELP adjugo_analyse_partagee_economie_eur Coût d'IA des extractions resservies (tarif public).",
+            "# TYPE adjugo_analyse_partagee_economie_eur gauge"]
+    for nature, v in m["par_nature"].items():
+        out.append(fmt("adjugo_analyse_partagee_economie_eur", v["economie_eur"], {"nature": nature}))
+    out += ["# HELP adjugo_analyse_partagee_entrees Extractions gardées dans le partage.",
+            "# TYPE adjugo_analyse_partagee_entrees gauge",
+            fmt("adjugo_analyse_partagee_entrees", m["entrees_partagees"])]
+    return out
 
 
 # ── Purge et effacement ────────────────────────────────────────────────────────────────────────

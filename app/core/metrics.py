@@ -152,6 +152,13 @@ def render() -> str:
     except Exception:
         pass
 
+    # ── Analyse partagée : doublons entre organisations, extractions resservies (agrégats) ──
+    try:
+        from app.services.analyse_partagee import prometheus_lignes
+        out += prometheus_lignes(_fmt)
+    except Exception:
+        pass
+
     # ── Configuration (rate-limit partagé ?) ─────────────────────────────────
     try:
         from app.core.config import get_settings

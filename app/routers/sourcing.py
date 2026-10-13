@@ -329,7 +329,6 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
                    current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     from app.core.quota import consume_analysis, refund_analysis
-    from app.services.analysis import analyze_dce_text
 
     try:
         tender = NormalizedTender(**req.tender)
@@ -366,10 +365,13 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         dce_text = _tender_as_text(tender)
 
     from app.services.llm import tenant_scope
+    from app.services import analyse_partagee
+    partage = analyse_partagee.partage_de(current_user, db)
     try:
         with tenant_scope(current_user.id):
-            analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                        lang_name=_user_lang_name(current_user, db))
+            analysis = analyse_partagee.analyser_texte(dce_text, company_data, gonogo,
+                                                       lang_name=_user_lang_name(current_user, db), p=partage,
+                                                       annonce_seule=not dce_available)
     except Exception:
         refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
         raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
@@ -449,12 +451,13 @@ def _get_progress(job_id) -> dict:
         return dict(_PROGRESS.get(job_id) or {})
 
 
-def _analyze_lecture_in_thread(user_id, lecture, company_data, gonogo, lang_name):
-    """Analyse d'un dossier lu en entier, hors de la boucle d'événements, dans l'espace facturé."""
+def _analyze_lecture_in_thread(user_id, lecture, company_data, gonogo, lang_name, partage=None):
+    """Analyse d'un dossier lu en entier, hors de la boucle d'événements, dans l'espace facturé.
+    partage : extraction du dossier partagée entre organisations (app.services.analyse_partagee)."""
     from app.services.analyse_dossier import analyser
     from app.services.llm import tenant_scope
     with tenant_scope(user_id):
-        return analyser(lecture, company_data, gonogo, lang_name=lang_name)
+        return analyser(lecture, company_data, gonogo, lang_name=lang_name, partage=partage)
 
 
 def _lire_direct(filename, content):
@@ -575,14 +578,14 @@ def _sauver_lecture(db, project, lecture) -> None:
 
 
 def _lecture_job(jdb, job_id: int, project_id: int, user_id: int, filename: str, file_key, content,
-                 lecture: dict, stored: bool, company_data, gonogo, lang_name) -> dict:
+                 lecture: dict, stored: bool, company_data, gonogo, lang_name, partage=None) -> dict:
     """Tâche de fond : lecture intégrale (OCR compris), rangement du texte, analyse, enregistrement.
     Toute exception passe le job en erreur, le marché en « erreur » ET rembourse l'analyse
     (app.services.lecture_taches) ; le message gardé est toujours lisible par l'utilisateur."""
     from app.services.llm import LLMUnavailable
     try:
         return _lecture_job_run(jdb, job_id, project_id, user_id, filename, file_key, content, lecture, stored,
-                                company_data, gonogo, lang_name)
+                                company_data, gonogo, lang_name, partage)
     except (ValueError, LLMUnavailable):
         raise
     except Exception as e:
@@ -607,7 +610,7 @@ def _lecture_en_erreur(project_id: int):
 
 
 def _lecture_job_run(jdb, job_id, project_id, user_id, filename, file_key, content, lecture, stored,
-                     company_data, gonogo, lang_name) -> dict:
+                     company_data, gonogo, lang_name, partage=None) -> dict:
     from app.models import Project, User
     from app.services.analyse_dossier import analyser
     from app.services.dce_lecture import lire_dossier, totaux
@@ -652,7 +655,8 @@ def _lecture_job_run(jdb, job_id, project_id, user_id, filename, file_key, conte
                 jdb.rollback()
                 logger.warning("informations relevées du marché %s non rangées : %s", project_id, type(e).__name__)
 
-    analysis = analyser(lecture, company_data, gonogo, lang_name=lang_name, progress=prog, on_parties=ranger)
+    analysis = analyser(lecture, company_data, gonogo, lang_name=lang_name, progress=prog, on_parties=ranger,
+                        partage=partage)
     project = jdb.get(Project, project_id)
     user = jdb.get(User, user_id)
     out = _finish_analysis(jdb, project, analysis, company_data, gonogo, user, lecture)
@@ -666,7 +670,7 @@ def _context(db, current_user) -> tuple:
 
 
 def _start_job(db, project, current_user, filename: str, content, lecture: dict, stored: bool,
-               company_data, gonogo, lang_name, file_key=None) -> int:
+               company_data, gonogo, lang_name, file_key=None, partage=None) -> int:
     """Lance la lecture intégrale et l'analyse en tâche de fond (exécuteur des lectures) ; renvoie
     l'identifiant du job. Le fichier est relu depuis le stockage (file_key) quand il y est rangé."""
     from datetime import datetime, timezone
@@ -681,7 +685,7 @@ def _start_job(db, project, current_user, filename: str, content, lecture: dict,
     pid, uid, jid = project.id, current_user.id, job.id
     data = None if (stored or file_key) else content
     lecture_taches.lancer(jid, lambda jdb: _lecture_job(jdb, jid, pid, uid, filename, file_key, data, lecture,
-                                                        stored, company_data, gonogo, lang_name),
+                                                        stored, company_data, gonogo, lang_name, partage),
                           on_error=_lecture_en_erreur(pid))
     return jid
 
@@ -700,13 +704,17 @@ def _prepare_rangement(db, project, lecture: dict, content: bytes) -> None:
 
 
 async def _import_and_analyze(db, project, current_user, filename: str, content: bytes,
-                              lecture: dict, stored: bool, file_key=None):
+                              lecture: dict, stored: bool, file_key=None, forcer: bool = False):
     """Après la lecture directe : petit dossier analysé pendant la requête (d'un seul tenant),
     gros dossier en tâche de fond. Le travail lourd (assemblage, compression, empreinte, IA) et le
     débit (qui peut appeler Stripe, au-delà du forfait) se font hors de la boucle d'événements : un
-    appel réseau lent n'y fige jamais les autres clients. UNE analyse débitée par import."""
+    appel réseau lent n'y fige jamais les autres clients. UNE analyse débitée par import (y compris
+    quand l'extraction du dossier est resservie depuis l'analyse partagée). forcer (« Ré-analyser ») :
+    nouvelle extraction du dossier, jamais resservie."""
     from app.core.quota import consume_analysis, refund_analysis
+    from app.services import analyse_partagee
     company_data, gonogo, lang_name = _context(db, current_user)
+    partage = await run_in_threadpool(analyse_partagee.partage_de, current_user, db, forcer)
     background = await run_in_threadpool(_needs_background, lecture, company_data, gonogo, lang_name)
     if background:
         from app.services import lecture_taches
@@ -719,13 +727,13 @@ async def _import_and_analyze(db, project, current_user, filename: str, content:
                             estimation)  # 402 si quota atteint — UNE analyse par import
     if background:
         jid = await run_in_threadpool(_start_job, db, project, current_user, filename, content, lecture,
-                                      stored, company_data, gonogo, lang_name, file_key)
+                                      stored, company_data, gonogo, lang_name, file_key, partage)
         return _lecture_response(project.id, jid)
     if not stored:
         await run_in_threadpool(_prepare_rangement, db, project, lecture, content)
     try:
         analysis = await run_in_threadpool(_analyze_lecture_in_thread, current_user.id, lecture,
-                                           company_data, gonogo, lang_name)
+                                           company_data, gonogo, lang_name, partage)
     except Exception:
         await run_in_threadpool(refund_analysis, current_user, db)   # l'IA a échoué → on ne débite pas le quota
         raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
@@ -783,7 +791,8 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
     """Relance l'analyse sur le dossier déjà importé — utile après avoir affiné ses
     critères, ou si l'analyse précédente semblait incomplète. Le texte intégral déjà lu est
     réutilisé tel quel (même fichier) ; une analyse antérieure à la lecture intégrale relit le
-    dossier en entier."""
+    dossier en entier. L'extraction du dossier par l'IA est TOUJOURS refaite (jamais resservie
+    depuis l'analyse partagée) ; elle remplace alors l'extraction partagée."""
     from app.services import dce_texte
     from app.services.storage import get_storage
     from app.models import Document
@@ -816,15 +825,16 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
             # entier — sinon « Ré-analyser » débiterait une analyse sans jamais compléter la lecture.
             lecture["a_poursuivre"] = True
             return await _import_and_analyze(db, project, current_user, doc.name, content, lecture,
-                                             stored=False, file_key=doc.file_key)
+                                             stored=False, file_key=doc.file_key, forcer=True)
         lecture["a_poursuivre"] = False             # déjà lu (en entier ou pour de bon) : on ne relit pas
-        return await _import_and_analyze(db, project, current_user, doc.name, content, lecture, stored=True)
+        return await _import_and_analyze(db, project, current_user, doc.name, content, lecture, stored=True,
+                                         forcer=True)
     try:
         lecture = await run_in_threadpool(_lire_direct, doc.name, content)
     except ValueError as e:
         raise HTTPException(422, str(e))
     return await _import_and_analyze(db, project, current_user, doc.name, content, lecture, stored=False,
-                                     file_key=doc.file_key)
+                                     file_key=doc.file_key, forcer=True)
 
 
 # Raisons PASSAGÈRES de non-lecture : une nouvelle lecture peut les lever.

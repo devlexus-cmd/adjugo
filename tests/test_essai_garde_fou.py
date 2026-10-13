@@ -321,8 +321,9 @@ def test_operation_lancee_sous_le_budget_va_au_bout(client, auth, monkeypatch):
     sent = fake.sent()
     for code in codes:
         assert f"FIN-PIECE-{code}" in sent, code
-    synth = [k for k in fake.calls if "Tu lis UNE pièce" not in llm._flatten_content(k.get("system"))]
-    assert len(synth) == 1 and len(fake.calls) >= 5
+    from tests.test_lecture_integrale import appels_dossier, appels_entreprise
+    synth = appels_dossier(fake.calls)
+    assert len(synth) == 1 and len(appels_entreprise(fake.calls)) == 1 and len(fake.calls) >= 5
     assert budget_ia.vider()
     db = _db()
     try:

@@ -202,6 +202,20 @@ def _qa_answer(user: str, phrase=None, trouve=True):
     return json.dumps({"trouve": True, "reponse": "La référence exigée est XQZ-4471.", "citations": cites})
 
 
+ENTREPRISE = "partie PROPRE A CETTE ENTREPRISE"     # consigne de la partie propre à l'entreprise
+
+
+def appels_dossier(calls) -> list:
+    """Appels qui reçoivent le dossier (extraction : d'un seul tenant ou synthèse), hors lecture des
+    pièces et hors partie propre à l'entreprise (analyse en deux temps, docs/ANALYSE_PARTAGEE.md)."""
+    return [k for k in calls if "Tu lis UNE pièce" not in llm._flatten_content(k.get("system"))
+            and ENTREPRISE not in llm._flatten_content(k.get("system"))]
+
+
+def appels_entreprise(calls) -> list:
+    return [k for k in calls if ENTREPRISE in llm._flatten_content(k.get("system"))]
+
+
 def _answer(kw):
     system = llm._flatten_content(kw.get("system"))
     content = kw["messages"][0]["content"]
@@ -296,8 +310,12 @@ def test_gros_dossier_toutes_les_pieces_lues_par_l_ia(client, auth, fake_ia, mon
         assert f"FIN-PIECE-{code}" in sent, code
     assert sent.count("XQZ-4471") >= 2                          # fin du dernier CCTP ET annexe
     piece_calls = [k for k in fake.calls if "Tu lis UNE pièce" in llm._flatten_content(k.get("system"))]
-    synth = [k for k in fake.calls if "Tu lis UNE pièce" not in llm._flatten_content(k.get("system"))]
+    synth = appels_dossier(fake.calls)
     assert len(synth) == 1                                      # lecture en deux temps + synthèse
+    # Partie propre à l'entreprise : UN appel court, qui ne reçoit jamais le dossier.
+    ent = appels_entreprise(fake.calls)
+    assert len(ent) == 1 and len(fake.calls) == len(piece_calls) + 2
+    assert "DEBUT-PIECE-" not in llm._flatten_content(ent[0]["messages"][0]["content"])
     # Petites pièces voisines regroupées dans un même appel (chacune sous son nom) : moins d'appels
     # que de parties, et chaque pièce reste nommée.
     users = [llm._flatten_content(k["messages"][0]["content"]) for k in piece_calls]
@@ -371,8 +389,12 @@ def test_petit_dossier_lu_d_un_seul_tenant(client, auth, fake_ia):
     r = client.post("/api/sourcing/analyze-upload", headers=h, data={"project_id": str(pid)},
                     files={"file": ("DCE.zip", _petit_dossier(), "application/zip")})
     assert r.status_code == 200, r.text
-    assert len(fake.calls) == 1                               # tout tient : un seul appel
-    user = fake.calls[0]["messages"][0]["content"]
+    # Tout tient : un seul appel reçoit le dossier ; puis la partie propre à l'entreprise (appel court,
+    # sans le dossier).
+    assert len(appels_dossier(fake.calls)) == 1 and len(appels_entreprise(fake.calls)) == 1
+    assert len(fake.calls) == 2
+    assert "DEBUT-PIECE-" not in llm._flatten_content(appels_entreprise(fake.calls)[0]["messages"][0]["content"])
+    user = appels_dossier(fake.calls)[0]["messages"][0]["content"]
     assert isinstance(user, str)
     for code in ("RC", "CCTP", "BPU"):
         assert f"DEBUT-PIECE-{code}" in user and f"FIN-PIECE-{code}" in user
@@ -410,7 +432,9 @@ def test_petit_dossier_lu_d_un_seul_tenant(client, auth, fake_ia):
     finally:
         mp.undo()
     assert rr.status_code == 200, rr.text
-    assert len(fake.calls) == 2 and FAIT in fake.calls[1]["messages"][0]["content"]
+    # « Ré-analyser » refait TOUJOURS l'extraction du dossier (jamais resservie depuis l'analyse partagée).
+    assert len(appels_dossier(fake.calls)) == 2 and FAIT in appels_dossier(fake.calls)[1]["messages"][0]["content"]
+    assert len(appels_entreprise(fake.calls)) == 2
     assert _project_row(pid).dce_file_key == proj.dce_file_key
 
 
@@ -739,5 +763,5 @@ def test_plafond_d_appels_signale_dans_la_couverture(fake_ia, monkeypatch):
     assert a["mode_lecture"] == "deux_temps" and cov["complet"] is False
     assert cov["analyse"]["appels_ia"] == 3 and cov["analyse"]["non_analysees"]
     assert "CCTP.txt (partie 4 sur" in cov["analyse"]["non_analysees"][0]
-    synth = llm._flatten_content(fake.calls[-1]["messages"][0]["content"])
+    synth = llm._flatten_content(appels_dossier(fake.calls)[-1]["messages"][0]["content"])
     assert "lue en partie par l'IA (3 parties exploitées sur" in synth and "FIN-PIECE-RC" in synth

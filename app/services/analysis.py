@@ -37,6 +37,9 @@ _RISK_TERMS = re.compile(
 # normalisation tolérante : casse, accents, espaces, apostrophes). Sinon '' (jamais affiché).
 
 _QUOTE_CHARS = "«»\"“”„‘’'"
+# Surveillance de la qualité des citations : désactivée pour une extraction resservie (analyse partagée).
+import contextvars as _contextvars
+_QUALITE = _contextvars.ContextVar("adjugo_analyse_qualite", default=True)
 
 
 def _norm_citation(s) -> str:
@@ -207,7 +210,10 @@ def _normalize_exigences(details: dict, text_integral: str) -> dict:
         details["forme_groupement"] = {"imposee": imposee,
                                        "extrait": citation_guard(text_integral, fg_extrait)}
         # Surveillance de la qualité (par fournisseur et par tâche) : citations retenues / rejetées.
+        # Une extraction resservie (analyse partagée) n'est pas recomptée : aucune IA n'a répondu ici.
         try:
+            if not _QUALITE.get():
+                raise LookupError
             from app.services import llm_qualite as _q
             _acc = sum(1 for k in _soumis if sources.get(k))
             _fg_ok = bool(str(fg_extrait or "").strip())
@@ -497,7 +503,7 @@ SYSTEM_EXTRACTION = _consigne_extraction()
 
 SYSTEM_ENTREPRISE = """Tu es un expert en marches publics francais. Tu travailles pour un logiciel appele Adjugo qui aide les entreprises du BTP et des services a repondre aux appels d'offres.
 
-On te donne : (1) l'analyse OBJECTIVE d'un appel d'offres, deja extraite du dossier de consultation complet (faits, criteres et poids, exigences, clauses a risque, points d'attention, analyse du marche en 3 paragraphes) ; (2) la compatibilite de l'entreprise avec ce marche, calculee par un bareme ouvert et deterministe (score en %, detail par critere), et la detection d'une opportunite de groupement ; (3) le profil de l'entreprise candidate et ses criteres.
+On te donne : (1) l'analyse OBJECTIVE d'un appel d'offres, deja extraite du dossier de consultation complet (faits, criteres et poids, exigences, clauses a risque, points d'attention, analyse du marche en 3 paragraphes) ; (2) la compatibilite de l'entreprise avec ce marche, calculee par un bareme ouvert et deterministe (score en %, detail par critere), et la detection d'une opportunite de groupement ; (3) le profil de l'entreprise candidate (identite, chiffres d'affaires, effectif, activite : specialites, zone d'intervention, qualifications) et ses criteres.
 
 Ton role : rediger la partie PROPRE A CETTE ENTREPRISE de l'analyse. Tu dois TOUJOURS repondre en JSON valide, sans texte avant ou apres. Voici le format exact attendu :
 
@@ -2289,8 +2295,8 @@ def finalize_analysis(result: dict, text_integral: str, company=None, criteria=N
 
 def analyze_dce_text(text, company=None, criteria=None, lang_name=None, pieces=None,
                      integral: bool = False, note_lecture: str = "", text_integral: str = None,
-                     extraction: dict = None, on_extraction=None, mutualiser: bool = False,
-                     annonce_seule: bool = False):
+                     annonce_seule: bool = False, extraction: dict = None, apres_extraction=None,
+                     portee_extraction=None):
     """Analyse un DCE depuis du texte brut (notice BOAMP, DCE déjà extrait...).
     lang_name : langue de rédaction des valeurs textuelles (adaptation par pays).
     pieces : ce qui a été lu, pièce par pièce (meta de la lecture), repris tel quel dans la
@@ -2299,13 +2305,15 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None, pieces=N
     à l'IA (pas de sélection de passages) ; `note_lecture` la prévient des pièces non lues ;
     `text_integral` (défaut : `text`) est le texte complet du dossier contre lequel toutes les
     citations sont vérifiées (en lecture en deux temps, `text` est la synthèse des pièces).
-    Analyse partagée (défaut, docs/ANALYSE_PARTAGEE.md) : (a) extraction du dossier SANS donnée
-    d'entreprise — ou `extraction` déjà faite pour ce même dossier (app.services.analyse_partagee) —,
-    `on_extraction(extraction, coût €, durée s)` appelé dès qu'une extraction neuve est prête,
-    `mutualiser` : son coût compté à la plateforme ; puis (b) post-traitement déterministe (score,
-    grille, groupement) et partie propre à l'entreprise (appel court : extraction + profil).
+    Analyse en deux temps (défaut, docs/ANALYSE_PARTAGEE.md) : (a) `extraire` — le dossier SEUL, aucune
+    donnée d'entreprise —, puis (b) `completer` — post-traitement déterministe (citations vérifiées,
+    grille, score, groupement) et partie propre à l'entreprise (appel court : l'extraction et le profil,
+    jamais le dossier entier). Partage (app.services.analyse_partagee) : `extraction` = extraction (a)
+    déjà faite pour CE dossier, exactement (aucun appel pour (a)) ; sinon `portee_extraction` (portée de
+    coût de (a) : plateforme ou essai) et `apres_extraction(extraction, coût €, durée s)`, appelé dès
+    que (a) est prête, avant (b) (une panne de (b) n'oblige pas à refaire (a)).
     `annonce_seule` : avis sans dossier complet (aucune compatibilité affichée).
-    ANALYSE_PARTAGEE=0 : analyse d'origine en un seul appel."""
+    ANALYSE_PARTAGEE=0 : analyse d'origine en un seul appel, à l'identique (partage ignoré)."""
     if not text or len(text) < 50:
         return {
             "match_score": 0,
@@ -2320,59 +2328,128 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None, pieces=N
     # Toute PANNE de l'IA (extraction ou partie propre à l'entreprise : timeout, 5xx/429, disjoncteur,
     # réponse coupée…) est PROPAGÉE, jamais transformée en verdict : l'appelant rembourse le quota et
     # propose de relancer (voir _analyse_un_appel).
-    if extraction is None:
-        extraction, response_text, cout, duree = extraire(text, lang_name, integral=integral,
-                                                          note_lecture=note_lecture, mutualiser=mutualiser)
-        if not isinstance(extraction, dict):
+    servie = isinstance(extraction, dict)
+    if not servie:
+        import contextlib
+        import time as _time
+        from app.services import llm as _llm
+        t0 = _time.monotonic()
+        with (portee_extraction if portee_extraction is not None else contextlib.nullcontext()), \
+                _llm.cost_meter("extraction du dossier", _llm._CURRENT_TENANT.get(), log=False) as cm:
+            ext = extraire(text, lang_name, integral=integral, note_lecture=note_lecture)
+        if ext.donnees is None:
             # Le LLM a bien RÉPONDU mais dans un format illisible : verdict NEUTRE honnête
             # (« à étudier »), jamais un faux NO-GO — comme l'analyse d'origine.
-            return _resultat_illisible(response_text)
-        if on_extraction is not None:
+            return _resultat_illisible(ext.reponse)
+        extraction = ext.donnees
+        if apres_extraction is not None:
             try:
-                on_extraction(copy.deepcopy(extraction), cout, duree)
+                apres_extraction(copy.deepcopy(extraction), cm.cost_eur(), _time.monotonic() - t0)
             except Exception as e:      # noqa: BLE001 — le rangement ne casse jamais l'analyse
                 import logging
                 logging.getLogger("adjugo").warning("extraction non rangée : %s", type(e).__name__)
-    result = finalize_analysis(copy.deepcopy(extraction), ti, company, criteria, pieces)
-    return personnaliser(result, company, criteria, lang_name, annonce_seule=annonce_seule)
+    return completer(extraction, ti, company, criteria, pieces, lang_name, annonce_seule=annonce_seule,
+                     noter_qualite=not servie)
 
 
-def extraire(text, lang_name=None, integral: bool = False, note_lecture: str = "", mutualiser: bool = False):
+class Extraction:
+    """Résultat de (a) : `donnees` (réponse décodée de l'IA, None si illisible) et `reponse` (texte brut)."""
+    __slots__ = ("donnees", "reponse")
+
+    def __init__(self, donnees, reponse: str = ""):
+        self.donnees = donnees if isinstance(donnees, dict) else None
+        self.reponse = reponse or ""
+
+
+def build_extraction_prompt(text, lang_name=None, integral: bool = False, note_lecture: str = "") -> str:
+    """Prompt de l'EXTRACTION : celui de l'analyse d'origine SANS profil ni critères (même dossier, même
+    sélection, même note de lecture, même consigne de langue)."""
+    return build_user_prompt(text, None, None, lang_name, integral=integral, note_lecture=note_lecture)
+
+
+def extraire(text, lang_name=None, integral: bool = False, note_lecture: str = "") -> "Extraction":
     """(a) EXTRACTION du dossier : la consigne SYSTEM_EXTRACTION et le dossier, AUCUNE donnée
-    d'entreprise (le prompt est celui de l'analyse d'origine sans profil ni critères). Même tâche,
-    même modèle, mêmes réglages que l'analyse d'origine. Renvoie (réponse décodée ou None si
-    illisible, texte brut, coût €, durée s). Propage une panne et une réponse coupée."""
-    import contextlib
-    import time as _time
-    from app.services import budget_ia, llm
-    user_prompt = build_user_prompt(text, None, None, lang_name, integral=integral, note_lecture=note_lecture)
-    portee = budget_ia.mutualise("extraction partagée d'un dossier") if mutualiser else contextlib.nullcontext()
-    t0 = _time.monotonic()
-    with portee, llm.cost_meter("extraction du dossier", llm._CURRENT_TENANT.get(), log=False) as cm:
-        response_text, stop = _appel_analyse(SYSTEM_EXTRACTION, user_prompt, ANALYSE_MAX_TOKENS)
-    duree = _time.monotonic() - t0
+    d'entreprise. Même tâche, même modèle, mêmes réglages, même plafond de sortie que l'analyse
+    d'origine ; le dossier remis est exactement le même (rien n'est retiré de ce qui est lu). Propage
+    une panne et une réponse coupée (AnalyseCoupee). L'espace facturé (tenant_scope) et, pour
+    l'extraction partagée, la portée « mutualisé » sont posés par l'appelant."""
+    user_prompt = build_extraction_prompt(text, lang_name, integral=integral, note_lecture=note_lecture)
+    response_text, stop = _appel_analyse(SYSTEM_EXTRACTION, user_prompt, ANALYSE_MAX_TOKENS)
     try:
         data = _parse_analysis_json(response_text)
     except json.JSONDecodeError:
         if stop == "max_tokens":
             raise AnalyseCoupee("Réponse de l'IA coupée avant la fin.")
-        return None, response_text, cm.cost_eur(), duree
-    return (data if isinstance(data, dict) else None), response_text, cm.cost_eur(), duree
+        return Extraction(None, response_text)
+    return Extraction(data, response_text)
+
+
+def completer(extraction: dict, text_integral: str, company=None, criteria=None, pieces=None, lang_name=None,
+              annonce_seule: bool = False, noter_qualite: bool = True) -> dict:
+    """(b) À partir de l'extraction (neuve ou resservie, jamais modifiée) : post-traitement DÉTERMINISTE
+    (finalize_analysis : citations vérifiées contre le texte intégral de CE dossier, grille « Comment
+    vous serez noté » d'après les pièces de CE dossier, score et verdict de CETTE entreprise,
+    opportunité de groupement), puis partie propre à l'entreprise (personnaliser). `noter_qualite` :
+    False pour une extraction resservie (ses citations ont déjà été comptées quand elle a été faite)."""
+    tok = _QUALITE.set(bool(noter_qualite))
+    try:
+        result = finalize_analysis(copy.deepcopy(extraction), text_integral, company, criteria, pieces)
+    finally:
+        _QUALITE.reset(tok)
+    return personnaliser(result, company, criteria, lang_name, annonce_seule=annonce_seule)
 
 
 # ── (b) Partie propre à l'entreprise ──────────────────────────────────────────────────────────
 
 ENTREPRISE_MAX_TOKENS = 2000           # un paragraphe et quelques points ; payée à l'usage, pas au plafond
+ENTREPRISE_POINTS_MAX = 4
+ENTREPRISE_CLAUSES_AJOUTEES_MAX = 3
 _NIVEAUX = {"faible": 0, "moyen": 1, "eleve": 2}
 _COMPATIBILITE = {"go": "bon potentiel", "a_etudier": "a etudier", "no_go": "peu adapte"}
 _HORS_FAITS = ("grille_notation", "clauses_risque")   # grille : dérivée des critères ; clauses : numérotées à part
+# Seuils de l'entreprise auxquels les clauses sont comparées (comme dans l'analyse d'origine).
+SEUILS_CLAUSES = ("penalty_max", "garantie_max", "retenue_garantie_max", "avance_min", "delai_reponse_min")
+
+
+def _seuils_fournis(criteria) -> bool:
+    return any((criteria or {}).get(k) for k in SEUILS_CLAUSES)
+
+
+def _bloc_activite(company, criteria) -> str:
+    """Activité de l'entreprise (spécialités, zone, qualifications) : ce que le score déterministe
+    compare déjà, remis aussi à la partie propre à l'entreprise pour qu'elle en parle juste. Aucun nom
+    de personne (l'équipe n'est jamais remise ; ses noms seraient masqués de toute façon)."""
+    company, criteria = company or {}, criteria or {}
+    lignes = []
+    spe = str(criteria.get("specialites") or "").strip()
+    if spe:
+        lignes.append(f"Specialites : {spe[:400]}")
+    deps = criteria.get("departements")
+    if isinstance(deps, (list, tuple)):
+        deps = ", ".join(str(d).strip() for d in deps if str(d).strip())
+    if str(deps or "").strip():
+        lignes.append(f"Departements d'intervention : {str(deps)[:300]}")
+    quals = company.get("qualifications") or []
+    noms = []
+    if isinstance(quals, (list, tuple)):
+        for q in quals[:20]:
+            n = q.get("name") if isinstance(q, dict) else q
+            if str(n or "").strip():
+                noms.append(str(n).strip()[:120])
+    elif str(quals).strip():
+        noms.append(str(quals).strip()[:400])
+    if noms:
+        lignes.append("Qualifications : " + ", ".join(noms))
+    if not lignes:
+        return ""
+    return "=== ACTIVITE DE L'ENTREPRISE ===\n" + "\n".join(lignes) + "\n\n"
 
 
 def build_entreprise_prompt(result: dict, company=None, criteria=None, lang_name=None,
                             annonce_seule: bool = False) -> str:
     """Prompt de la partie propre à l'entreprise : l'analyse objective (faits vérifiés, jamais le
-    dossier entier), la compatibilité calculée, le profil et les critères (mêmes champs que l'analyse
-    d'origine)."""
+    dossier entier), la compatibilité calculée, le profil et les critères (les champs que l'analyse
+    d'origine remettait, plus l'activité que le score compare)."""
     det = result.get("details") if isinstance(result.get("details"), dict) else {}
     faits = {k: v for k, v in det.items() if k not in _HORS_FAITS}
     p = "Redige la partie propre a l'entreprise candidate et produis le JSON demande.\n\n"
@@ -2402,7 +2479,9 @@ def build_entreprise_prompt(result: dict, company=None, criteria=None, lang_name
     if grp.get("recommande"):
         p += ("=== OPPORTUNITE DE GROUPEMENT DETECTEE ===\n"
               + "\n".join("- " + str(r) for r in (grp.get("raisons") or [])) + "\n\n")
-    p += _bloc_profil(company) + _bloc_criteres(criteria)
+    p += _bloc_profil(company) + _bloc_activite(company, criteria) + _bloc_criteres(criteria)
+    if not _seuils_fournis(criteria):
+        p += "(Aucun seuil de clause n'est fourni par l'entreprise : \"clauses\" et \"clauses_ajoutees\" sont vides.)\n\n"
     if lang_name and lang_name.lower() != "français":
         p += (f"=== LANGUE DE SORTIE ===\nRédige TOUTES les valeurs textuelles (strategie, "
               f"points_attention_entreprise, pourquoi_entreprise, clauses_ajoutees) en {lang_name}. Conserve "
@@ -2412,10 +2491,11 @@ def build_entreprise_prompt(result: dict, company=None, criteria=None, lang_name
 
 def personnaliser(result: dict, company=None, criteria=None, lang_name=None, annonce_seule: bool = False) -> dict:
     """(b) Partie propre à l'entreprise, après le calcul déterministe du score : un appel court (même
-    tâche et même modèle que l'analyse d'origine) qui reçoit l'extraction, la compatibilité calculée,
-    le profil et les critères. Noms des salariés masqués (pii_scope). Une réponse illisible est
-    relancée une fois ; illisible encore, l'analyse objective reste entière (rien n'est inventé).
-    Propage une panne de l'IA (l'appelant rembourse)."""
+    tâche, même modèle, mêmes réglages que l'analyse d'origine), dans l'espace facturé du client, qui
+    reçoit l'extraction, la compatibilité calculée, le profil et les critères — jamais le dossier entier.
+    Noms des salariés masqués (pii_scope). Une réponse illisible est relancée une fois ; illisible
+    encore, l'analyse objective reste entière (rien n'est inventé). Propage une panne de l'IA
+    (l'appelant rembourse)."""
     import logging
     from app.services.llm import pii_scope
     from app.services.pii import from_team
@@ -2431,6 +2511,10 @@ def personnaliser(result: dict, company=None, criteria=None, lang_name=None, ann
             if isinstance(perso, dict):
                 break
     if isinstance(perso, dict):
+        if not _seuils_fournis(criteria):
+            # Comme l'analyse d'origine : une clause n'est « au-delà du seuil de l'entreprise » que si
+            # l'entreprise a donné ce seuil (jamais un seuil supposé).
+            perso = dict(perso, clauses=[], clauses_ajoutees=[])
         fusionner_entreprise(result, perso)
     else:
         logging.getLogger("adjugo").warning("partie propre à l'entreprise illisible : analyse objective seule")
@@ -2446,9 +2530,9 @@ def _liste(v) -> list:
 def fusionner_entreprise(result: dict, perso: dict) -> dict:
     """Ajoute la partie propre à l'entreprise à l'analyse objective, sans rien en retirer : la
     stratégie devient le dernier paragraphe de la recommandation, les points propres à l'entreprise
-    s'ajoutent à ceux du dossier (sans doublon), une clause qui dépasse un seuil de l'entreprise passe
-    au niveau « élevé » (jamais abaissé) avec la raison, une clause manquante qui dépasse un seuil
-    s'ajoute (3 au plus)."""
+    s'ajoutent à ceux du dossier (sans doublon, 4 au plus), une clause qui dépasse un seuil de
+    l'entreprise passe au niveau « élevé » (jamais abaissé) avec la raison, une clause manquante qui
+    dépasse un seuil s'ajoute (3 au plus)."""
     det = result.get("details")
     if not isinstance(det, dict):
         det = result["details"] = {}
@@ -2460,10 +2544,14 @@ def fusionner_entreprise(result: dict, perso: dict) -> dict:
     if isinstance(pts, list) and pts:
         cur = [x for x in _liste(det.get("points_attention"))]
         vus = {_norm_citation(x) for x in cur if isinstance(x, str)}
-        for x in pts[:4]:
+        ajoutes = 0
+        for x in pts:
+            if ajoutes >= ENTREPRISE_POINTS_MAX:
+                break
             if isinstance(x, str) and x.strip() and _norm_citation(x) not in vus:
                 cur.append(x.strip())
                 vus.add(_norm_citation(x))
+                ajoutes += 1
         det["points_attention"] = cur
     clauses = det.get("clauses_risque")
     if not isinstance(clauses, list):
@@ -2485,7 +2573,7 @@ def fusionner_entreprise(result: dict, perso: dict) -> dict:
         if why and _norm_citation(why) not in _norm_citation(cl.get("pourquoi") or ""):
             cl["pourquoi"] = (str(cl.get("pourquoi") or "").strip() + " " + why).strip()
     ajouts = [c for c in (perso.get("clauses_ajoutees") or []) if isinstance(c, dict)
-              and isinstance(c.get("clause"), str) and c["clause"].strip()][:3]
+              and isinstance(c.get("clause"), str) and c["clause"].strip()][:ENTREPRISE_CLAUSES_AJOUTEES_MAX]
     if ajouts:
         if clauses is None:
             clauses = det["clauses_risque"] = []
@@ -2503,7 +2591,8 @@ def fusionner_entreprise(result: dict, perso: dict) -> dict:
 
 def _appel_analyse(consigne: str, user_prompt: str, max_tokens: int):
     """Un appel de la tâche « analyse » (même route, mêmes réglages que l'analyse d'origine) :
-    (texte de la réponse, raison de l'arrêt)."""
+    (texte de la réponse, raison de l'arrêt). Une bascule de secours est signalée à l'analyse partagée
+    (une extraction produite par le secours n'est jamais gardée pour être resservie)."""
     from app.services.llm import messages_create
     response = messages_create(
         tache=ANALYSE_TACHE,
@@ -2513,6 +2602,8 @@ def _appel_analyse(consigne: str, user_prompt: str, max_tokens: int):
         system=_system_blocks(consigne),
         messages=[{"role": "user", "content": user_prompt}]
     )
+    from app.services import analyse_partagee as _ap
+    _ap.noter_reponse(response)
     text = "".join(getattr(b, "text", "") or "" for b in (response.content or [])
                    if getattr(b, "type", "text") == "text").strip()
     return text, (getattr(response, "stop_reason", "") or "")

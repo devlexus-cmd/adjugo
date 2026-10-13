@@ -474,8 +474,14 @@ def estimer_import(lecture: dict, plan_info: dict = None) -> float:
         chars += max(0, int(t.get("pages") or 0) - int(t.get("pages_lues") or 0)) * 3000
     budget = int(plan_info.get("budget_caracteres") or 0) or ad.budget_caracteres(20_000)
     tache_analyse = getattr(an, "ANALYSE_TACHE", "analyse")
+    # Analyse en deux temps (app.services.analyse_partagee) : la partie propre à l'entreprise est un
+    # appel de plus (l'extraction, le profil, la compatibilité). L'estimation compte TOUJOURS
+    # l'extraction comme neuve : prudente, et identique que l'extraction soit resservie ou non.
+    from app.services import analyse_partagee as _ap
+    entreprise = (estimer_appel(tache_analyse, 40_000, getattr(an, "ENTREPRISE_MAX_TOKENS", 2000))
+                  if _ap.actif() else 0.0)
     if chars <= budget:
-        return round(estimer_appel(tache_analyse, chars + 20_000, an.ANALYSE_MAX_TOKENS), 6)
+        return round(estimer_appel(tache_analyse, chars + 20_000, an.ANALYSE_MAX_TOKENS) + entreprise, 6)
     seg_chars = max(1, int(ad.SEGMENT_TOKENS * ad.CARACTERES_PAR_TOKEN))
     n_pieces = len((lecture or {}).get("pieces") or [])
     appels = math.ceil(chars / seg_chars) + math.ceil(max(1, n_pieces) / max(1, ad.GROUPE_MAX_PIECES))
@@ -485,7 +491,7 @@ def estimer_import(lecture: dict, plan_info: dict = None) -> float:
     par_appel = max(1, math.ceil((chars + appels * 6000) / appels))
     lecture_cout = appels * estimer_appel(ad.TACHE_PIECES, par_appel, min(ad.PIECES_MAX_TOKENS, 5200))
     synthese = estimer_appel(tache_analyse, int(ad.BUDGET_TOKENS * ad.CARACTERES_PAR_TOKEN), an.ANALYSE_MAX_TOKENS)
-    return round(lecture_cout + synthese, 6)
+    return round(lecture_cout + synthese + entreprise, 6)
 
 
 # ── Le garde-fou ───────────────────────────────────────────────────────────────────────────

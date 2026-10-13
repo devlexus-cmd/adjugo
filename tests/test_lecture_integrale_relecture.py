@@ -370,7 +370,8 @@ def test_deux_temps_regroupe_relit_les_reponses_coupees_et_nomme_les_pannes(fake
     with llm.tenant_scope(515151):
         a = ad.analyser(lecture, {"name": "Test"}, {}, lang_name="français", on_parties=ranges.update)
     assert a["mode_lecture"] == "deux_temps"
-    synth = llm._flatten_content(fake.calls[-1]["messages"][0]["content"])
+    from tests.test_lecture_integrale import appels_dossier
+    synth = llm._flatten_content(appels_dossier(fake.calls)[-1]["messages"][0]["content"])
     # 30 plans d'une page regroupés : bien moins d'appels que de pièces, chaque plan lu.
     assert len([u for u in vus if u.count("Pièce : ") >= 2]) >= 2
     for i in range(30):
@@ -398,7 +399,7 @@ def test_deux_temps_regroupe_relit_les_reponses_coupees_et_nomme_les_pannes(fake
         a2 = ad.analyser(lecture2, {"name": "Test"}, {}, lang_name="français")
     assert len(vus) == 1 and "DEBUT-PIECE-CCTP3" in vus[0]
     assert a2["couverture"]["complet"] is True and a2["couverture"]["analyse"]["parties_reprises"] >= 30
-    assert "FIN-LOT-3" in llm._flatten_content(fake.calls[-1]["messages"][0]["content"])
+    assert "FIN-LOT-3" in llm._flatten_content(appels_dossier(fake.calls)[-1]["messages"][0]["content"])
 
 
 def test_deux_temps_echec_massif_leve(fake_ia, monkeypatch):

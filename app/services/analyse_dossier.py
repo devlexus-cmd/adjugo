@@ -116,8 +116,23 @@ def budget_caracteres(overhead_chars: int = 0, modele: str = None, max_sortie: i
 
 
 def _overhead(company, criteria, lang_name, note: str) -> int:
+    """Consigne et reste du prompt de l'appel qui reçoit le dossier. Analyse en deux temps (défaut,
+    app.services.analyse_partagee) : l'extraction ne reçoit ni le profil ni les critères — le mode de
+    lecture ne dépend alors que du dossier (et la place du profil revient au dossier). Analyse d'origine
+    (ANALYSE_PARTAGEE=0) : consigne d'origine, profil et critères compris."""
+    from app.services import analyse_partagee as ap
+    if ap.actif():
+        base = an.build_extraction_prompt("", lang_name, integral=True, note_lecture=note)
+        return len(an.SYSTEM_EXTRACTION) + len(base) + 500
     base = an.build_user_prompt("", company, criteria, lang_name, integral=True, note_lecture=note)
     return len(an.SYSTEM_PROMPT) + len(base) + 500
+
+
+def parametres_lecture() -> str:
+    """Réglages dont dépend la lecture en deux temps (clé de l'analyse partagée)."""
+    return "|".join(str(x) for x in (BUDGET_TOKENS, CARACTERES_PAR_TOKEN, MARGE, SEGMENT_TOKENS, PIECES_MAX_TOKENS,
+                                     FAITS_MAX, MAX_APPELS, GROUPE_MAX_PIECES, RELANCES_MAX, PROFONDEUR_MAX,
+                                     ECHEC_MAX, PART_REGLEMENT, VERSION_LECTURE))
 
 
 def plan(lecture: dict, company=None, criteria=None, lang_name=None) -> dict:
@@ -285,8 +300,13 @@ def _appel(groupe: list):
         if not _PLACES.acquire(ATTENTE_PLACE_S):
             raise llm.LLMUnavailable("Lecture du dossier : aucune place libre pour l'IA.")
         try:
+            # Consigne identique pour toutes les parties : marquée pour le cache de prompt (même texte,
+            # relue à prix réduit par les parties suivantes du dossier).
             resp = llm.messages_create(tache=TACHE_PIECES, max_tokens=PIECES_MAX_TOKENS, temperature=0,
-                                       system=PIECE_SYSTEM, messages=[{"role": "user", "content": user}])
+                                       system=[llm.cached_text_block(PIECE_SYSTEM)],
+                                       messages=[{"role": "user", "content": user}])
+            from app.services import analyse_partagee as _ap
+            _ap.noter_reponse(resp)
             text = "".join(getattr(x, "text", "") or "" for x in (getattr(resp, "content", None) or [])
                            if getattr(x, "type", "text") == "text")
             return text, (getattr(resp, "stop_reason", "") or "") == "max_tokens"
@@ -475,10 +495,10 @@ def _bloc_faits(p: dict, parts: list, n: int) -> str:
     return head + "\n" + "\n".join(lignes)
 
 
-def _deux_temps(lecture: dict, company, criteria, lang_name, budget: int, progress=None,
-                on_parties=None) -> tuple:
-    """Premier temps (pièces lues une à une, petites pièces regroupées) + texte de la synthèse.
-    Renvoie (texte, rapport). Lève LLMUnavailable si plus de la moitié des parties échoue."""
+def _preparer(lecture: dict, budget: int) -> dict:
+    """Premier temps, SANS IA : pièces remises en entier, parties à lire, parties déjà lues pour ce
+    marché (reprises), appels groupés et plafond d'appels. Commun à la lecture (_deux_temps) et au
+    calcul des compteurs d'une extraction resservie (analyse partagée)."""
     pieces = [p for p in lecture.get("pieces") or [] if (p.get("texte") or "").strip()]
     prio = [p for p in pieces if p.get("type") in dp.PRIORITAIRES]
     # Règlement et cadre : en entier dans la synthèse s'ils tiennent dans leur part du budget.
@@ -504,16 +524,28 @@ def _deux_temps(lecture: dict, company, criteria, lang_name, budget: int, progre
                                   "coupee": False, "illisible": False, "erreur": False}
     a_appeler = [sg for sg in segs if sg["cle"] not in results]
     groupes = _groupes(a_appeler, seg_chars)
-    rapport = {"parties": len(segs), "appels": 0, "reprises": len(segs) - len(a_appeler), "non_analysees": [],
-               "illisibles": [], "erreurs": [], "coupees": [], "faits": 0, "faits_ecartes": 0,
-               "pieces_entieres": [p.get("nom") for p in prio if id(p) in entiers], "synthese_partielle": False,
-               "manques": [], "ia_pieces": {}}
     plafond = set()
     if len(groupes) > MAX_APPELS:
         for g in groupes[MAX_APPELS:]:
             for sg in g:
                 plafond.add(sg["cle"])
         groupes = groupes[:MAX_APPELS]
+    return {"pieces": pieces, "prio": prio, "entiers": entiers, "segs": segs, "cache": cache,
+            "results": results, "a_appeler": a_appeler, "groupes": groupes, "plafond": plafond}
+
+
+def _deux_temps(lecture: dict, company, criteria, lang_name, budget: int, progress=None,
+                on_parties=None) -> tuple:
+    """Premier temps (pièces lues une à une, petites pièces regroupées) + texte de la synthèse.
+    Renvoie (texte, rapport). Lève LLMUnavailable si plus de la moitié des parties échoue."""
+    prep = _preparer(lecture, budget)
+    pieces, prio, entiers, segs = prep["pieces"], prep["prio"], prep["entiers"], prep["segs"]
+    cache, results, a_appeler = prep["cache"], prep["results"], prep["a_appeler"]
+    groupes, plafond = prep["groupes"], prep["plafond"]
+    rapport = {"parties": len(segs), "appels": 0, "reprises": len(segs) - len(a_appeler), "non_analysees": [],
+               "illisibles": [], "erreurs": [], "coupees": [], "faits": 0, "faits_ecartes": 0,
+               "pieces_entieres": [p.get("nom") for p in prio if id(p) in entiers], "synthese_partielle": False,
+               "manques": [], "ia_pieces": {}}
     done = [0]
     budget_relances = [RELANCES_MAX]
 
@@ -624,12 +656,71 @@ def _deux_temps(lecture: dict, company, criteria, lang_name, budget: int, progre
 
 # ── Point d'entrée ─────────────────────────────────────────────────────────────────────
 
+def _etape_synthese(progress) -> None:
+    if progress is not None:
+        try:
+            progress({"etape": "synthese"})
+        except Exception:       # noqa: BLE001
+            pass
+
+
+def _analyser_partage(lecture, texte, note, pl, pieces_meta, company, criteria, lang_name, progress,
+                      on_parties, partage):
+    """Analyse du dossier (docs/ANALYSE_PARTAGEE.md) : (a) extraction du dossier SANS donnée d'entreprise —
+    d'un seul tenant, ou pièces lues une à une puis synthèse —, resservie depuis le partage quand ce même
+    dossier, exactement, a déjà été extrait ; (b) partie propre à l'entreprise (analysis.completer).
+    ANALYSE_PARTAGEE=0 : analyse d'origine en un seul appel (mesure des doublons seule). Renvoie
+    (analyse, rapport de la lecture en deux temps ou None)."""
+    from app.services import analyse_partagee as ap
+    cle = ap.cle_dossier(lecture, texte, note, lang_name, pl) if (partage is not None and ap.actif()) else ""
+    deux = pl["mode"] != "integral"
+    prep = _preparer(lecture, pl["budget_caracteres"]) if (deux and cle) else None
+    # Des parties de CE marché déjà lues par l'IA (analyse précédente interrompue) : sa lecture les
+    # reprend ; on ne resservirait pas exactement ce qu'elle donnerait (compteurs, plafond) → lecture.
+    lecture_permise = not (prep is not None and len(prep["segs"]) != len(prep["a_appeler"]))
+    etapes = [g[-1]["piece"].get("nom") or "" for g in prep["groupes"]] if prep is not None else None
+
+    def ajuster(rapport):
+        # Compteurs de la lecture recalculés pour CE marché (ce que sa propre lecture aurait donné).
+        r = dict(rapport)
+        if prep is not None:
+            r["appels"] = len(prep["groupes"])
+            r["reprises"] = len(prep["segs"]) - len(prep["a_appeler"])
+        return r
+
+    def fn(extraction, rapport, rg):
+        kw = dict(lang_name=lang_name, pieces=pieces_meta, integral=True, note_lecture=note, text_integral=texte)
+        if extraction is not None:
+            if deux:
+                _etape_synthese(progress)
+            return an.analyze_dce_text(texte, company, criteria, extraction=extraction, **kw), rapport
+        if not deux:
+            return an.analyze_dce_text(texte, company, criteria, portee_extraction=rg.portee(),
+                                       apres_extraction=rg.apres(), **kw), None
+        with rg.portee():
+            synthese, rap = _deux_temps(lecture, company, criteria, lang_name, pl["budget_caracteres"],
+                                        progress=progress, on_parties=on_parties)
+        _etape_synthese(progress)
+        return an.analyze_dce_text(synthese, company, criteria, portee_extraction=rg.portee(),
+                                   apres_extraction=rg.apres(rap), **kw), rap
+
+    analysis, rapport, servie, cout = ap.executer(partage, ap.NATURE_DOSSIER, cle, pl["mode"], fn,
+                                                  progress=progress, etapes=etapes, ajuster=ajuster,
+                                                  lecture_permise=lecture_permise)
+    if partage is not None:
+        ap.noter(partage, ap.NATURE_DOSSIER, ap.empreinte_dossier(lecture), cle or None, servie, cout)
+    return analysis, rapport
+
+
 def analyser(lecture: dict, company=None, criteria=None, lang_name=None, progress=None,
-             on_parties=None) -> dict:
+             on_parties=None, partage=None) -> dict:
     """Analyse complète d'un dossier lu en entier. Renvoie l'analyse (format d'analyze_dce_text)
     complétée de : lecture (pièces lues, sans le texte), couverture (« dossier lu en entier : N
     pièces, P pages » ou les pièces non lues et pourquoi), mode_lecture, dce_excerpt.
     on_parties(dict) : range les informations relevées pièce par pièce (lecture en deux temps).
+    partage : app.services.analyse_partagee.partage(...) — extraction du dossier partagée entre
+    organisations (resservie si ce même dossier, exactement, a déjà été extrait ; mesure des doublons) ;
+    None : extraction faite pour cette analyse seulement.
     Propage toute panne de l'IA (l'appelant rembourse le quota) ; en deux temps, une partie en
     échec est nommée dans la couverture sans faire échouer l'analyse (sauf échec massif)."""
     texte, _meta = lec.texte_integral(lecture)
@@ -640,21 +731,9 @@ def analyser(lecture: dict, company=None, criteria=None, lang_name=None, progres
     tenant = llm._CURRENT_TENANT.get()
     t = mani["totaux"]
     label = f"analyse du dossier ({pl['mode']}, {t['pieces']} pièces, {pl['caracteres']} caractères)"
-    rapport = None
     with llm.cost_meter(label, tenant):
-        if pl["mode"] == "integral":
-            analysis = an.analyze_dce_text(texte, company, criteria, lang_name=lang_name, pieces=pieces_meta,
-                                           integral=True, note_lecture=note, text_integral=texte)
-        else:
-            synthese, rapport = _deux_temps(lecture, company, criteria, lang_name, pl["budget_caracteres"],
-                                            progress=progress, on_parties=on_parties)
-            if progress is not None:
-                try:
-                    progress({"etape": "synthese"})
-                except Exception:
-                    pass
-            analysis = an.analyze_dce_text(synthese, company, criteria, lang_name=lang_name, pieces=pieces_meta,
-                                           integral=True, note_lecture=note, text_integral=texte)
+        analysis, rapport = _analyser_partage(lecture, texte, note, pl, pieces_meta, company, criteria, lang_name,
+                                              progress, on_parties, partage)
     cov = lec.couverture(lecture)
     cov["mode"] = pl["mode"]
     if rapport is not None:

@@ -74,3 +74,25 @@ def auth(client):
     finally:
         db.close()
     return {"headers": {"Authorization": f"Bearer {token}"}, "email": email}
+
+
+@pytest.fixture(autouse=True)
+def _analyse_partagee_vide():
+    """Analyse partagée (app.services.analyse_partagee) : chaque test part sans extraction gardée ni
+    mesure, pour que l'ordre des tests ne change rien (des tests différents importent le même dossier
+    simulé, depuis des comptes différents). tests/test_analyse_partagee.py exerce le partage lui-même."""
+    def vider():
+        try:
+            from app.core.database import SessionLocal
+            from app.models import AnalyseEmpreinte, AnalysePartagee
+            db = SessionLocal()
+            try:
+                db.query(AnalysePartagee).delete(synchronize_session=False)
+                db.query(AnalyseEmpreinte).delete(synchronize_session=False)
+                db.commit()
+            finally:
+                db.close()
+        except Exception:       # base pas encore créée (premier test) : rien à vider
+            pass
+    vider()
+    yield

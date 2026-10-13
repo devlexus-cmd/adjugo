@@ -125,7 +125,11 @@ def run_trash_purge_endpoint(request: Request, db: Session = Depends(get_db)):
     (ligne + fichier du stockage + anciennes versions). À cron-er quotidiennement."""
     _check_cron(request)
     from app.routers.rgpd import purge_trash
-    return purge_trash(db)
+    from app.services.analyse_partagee import purger
+    res = purge_trash(db)
+    # Analyse partagée : extractions plus resservies depuis ANALYSE_PARTAGEE_JOURS jours, mesures anciennes.
+    res.update(purger(db))
+    return res
 
 
 @router.post("/run-partner-network")
@@ -322,6 +326,19 @@ def ia_qualite(request: Request, current_user: User = Depends(get_current_user))
     _require_platform_admin(current_user)
     from app.services import llm_qualite
     return llm_qualite.instantane()
+
+
+@router.get("/analyse-partagee")
+@limiter.limit("120/hour")
+def analyse_partagee_mesure(request: Request, current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)):
+    """Analyse partagée (interne, jamais montré aux clients), réservé à l'administrateur de la
+    plateforme : dossiers et avis analysés, contenus distincts, doublons entre organisations (contenu
+    normalisé, et clé exacte de l'extraction), extractions resservies et coût d'IA évité. Agrégats
+    seulement : aucune organisation, aucun dossier, aucune empreinte n'est listé."""
+    _require_platform_admin(current_user)
+    from app.services.analyse_partagee import mesure
+    return mesure(db)
 
 
 @router.get("/usage-ia")
