@@ -367,9 +367,84 @@ function _atlInit() {
            mode: "lire", edit: { texte: "", base: null, dirty: false, sid: null }, draft: null, conflict: "",
            busy: "", hist: { open: false, loading: false, list: [], sid: null }, vue: null, derog: null, debit: null,
            plan: null, planOpen: false, add: "", ren: { on: false, v: "" }, factFocus: "", srcFocus: "", note: "",
-           exportOpen: false, lastDerog: "", live: "", src: null, passage: null };
+           exportOpen: false, lastDerog: "", live: "", src: null, passage: null,
+           onglet: "redaction", rep: _atlRepInit() };
 }
 function _atlCardInit() { return { loading: false, loaded: false, d: null, error: "" }; }
+// « Qui écrit quoi » (rédaction, vague 4, chef de file) : la répartition lue (GET …/repartition), la partie
+// ouverte et son détail (texte envoyé, avant / après), la saisie du chef de file sur la part d'un partenaire,
+// le résultat de « Demander les parts ». `v` : clé de rendu des menus (remis à la valeur enregistrée).
+function _atlRepInit() {
+  return { loading: false, d: null, err: "", busy: "", open: null, det: null, detLoading: false, edit: null,
+           demande: null, v: 0 };
+}
+// Statut d'une partie dans « Qui écrit quoi » → pastille (mêmes couleurs que l'atelier).
+function atlRepStatutCls(st) {
+  return ({ a_rediger: "neutral", en_cours: "atl-st-brouillon", envoyee: "st-envoye", a_revalider: "a_etudier",
+            validee: "go" })[st] || "neutral";
+}
+// Ce que le chef de file reçoit avec le texte envoyé : des COMPTEURS de sources par type, jamais les sources.
+// « 5 faits avec une source : 3 déclarés, 2 trouvés dans ses documents · 1 fait à relire · 1 « [À compléter] » ».
+const ATL_REP_TYPES = [["documents", "trouvé dans ses documents", "trouvés dans ses documents"],
+  ["declare", "déclaré", "déclarés"], ["public", "de source publique", "de source publique"],
+  ["estimation", "selon son estimation", "selon son estimation"],
+  ["calcul", "calculé à partir de ses faits", "calculés à partir de ses faits"],
+  ["acheteur", "tiré du dossier de l'acheteur", "tirés du dossier de l'acheteur"]];
+function atlRepCompteurs(tc) {
+  if (!tc) return "";
+  const c = tc.compteurs && typeof tc.compteurs === "object" ? tc.compteurs : null, out = [];
+  const pl = (n, un, des) => n + " " + (n > 1 ? des : un);
+  if (c) {
+    const n = Number(c.avec_source) || 0, par = c.par_type || {};
+    const det = ATL_REP_TYPES.map(([k, un, des]) => [Number(par[k]) || 0, un, des]).filter(x => x[0] > 0)
+      .map(([k, un, des]) => k + " " + (k > 1 ? des : un));
+    out.push(n ? pl(n, "fait avec une source", "faits avec une source") + (det.length ? " : " + det.join(", ") : "")
+               : "Aucun fait avec une source");
+    if (Number(c.a_relire) > 0) out.push(pl(Number(c.a_relire), "fait à relire", "faits à relire"));
+    if (Number(c.engagements) > 0) out.push(pl(Number(c.engagements), "engagement à confirmer", "engagements à confirmer"));
+  } else if (Number(tc.faits_a_relire) > 0) {
+    out.push(pl(Number(tc.faits_a_relire), "fait à relire", "faits à relire"));
+  }
+  if (Number(tc.a_completer) > 0) out.push(pl(Number(tc.a_completer), "passage « [À compléter] »", "passages « [À compléter] »"));
+  return out.join(" · ");
+}
+// Le texte contient-il des renvois (F1, S2…) ? Ils désignent alors des sources du partenaire.
+function atlRepARenvois(md) { return /\[\s*[FSPECG]\s*\d{1,4}(?:\s*[,;]\s*[FSPECG]?\s*\d{1,4})*\s*\]/.test(String(md || "")); }
+// Partenaires qui recevront « Demander les parts » : une partie à rédiger, en cours ou à revalider.
+function atlRepADemander(d) {
+  const par = {};
+  ((d && d.sections) || []).forEach(l => {
+    const r = l.redacteur || {};
+    if (r.type !== "partenaire" || !r.invite_id || ["envoyee", "validee"].indexOf(l.statut) >= 0) return;
+    (par[r.invite_id] = par[r.invite_id] || { invite_id: r.invite_id, nom: r.nom, parties: 0 }).parties++;
+  });
+  return Object.keys(par).map(k => par[k]);
+}
+// Validation du dossier assemblé par chaque membre, en une phrase : « Dossier assemblé validé par X ; à
+// revalider par Y ; à valider par vous, Z. »
+function atlRepValidationsTexte(pret) {
+  const ms = (pret && pret.membres) || [], par = { valide: [], a_revalider: [], a_faire: [] };
+  ms.forEach(m => { (par[m.statut] || par.a_faire).push(m.membre === "chef_de_file" ? "vous" : m.nom); });
+  const out = [];
+  if (par.valide.length) out.push("validé par " + par.valide.join(", "));
+  if (par.a_revalider.length) out.push("à revalider par " + par.a_revalider.join(", "));
+  if (par.a_faire.length) out.push("à valider par " + par.a_faire.join(", "));
+  return out.length ? "Dossier assemblé " + out.join(" ; ") + "." : "";
+}
+// Résultat de « Demander les parts », en phrases (aucune adresse n'est jamais montrée).
+function atlRepDemandeTexte(r) {
+  if (!r) return [];
+  const noms = (xs) => (xs || []).map(x => x.nom).join(", "), out = [];
+  const partis = (r.demandees || []).filter(x => x.email_parti), rates = (r.demandees || []).filter(x => !x.email_parti);
+  if (partis.length) out.push("Demande envoyée à " + noms(partis) + ".");
+  if (rates.length) out.push("L'email à " + noms(rates) + " n'est pas parti : réessayez dans quelques minutes.");
+  const sa = r.sans_adresse || [];
+  if (sa.length) out.push("Aucune adresse email sur le lien de " + noms(sa) + (sa.length > 1 ? " : transmettez-leur leur lien" : " : transmettez-lui son lien") + " vous-même, depuis la page du marché.");
+  if ((r.deja_demandees || []).length) out.push("Déjà demandée il y a moins de 15 minutes à " + noms(r.deja_demandees) + ".");
+  if ((r.plafond_atteint || []).length) out.push("Limite d'envois du jour atteinte : " + noms(r.plafond_atteint) + " recevra la demande si vous réessayez demain.");
+  if (!out.length) out.push("Aucune partie à demander : chaque partenaire a envoyé ses parties.");
+  return out;
+}
 // « Pièces du dossier de l'acheteur lues par Adjugo » : ce que la LECTURE a donné pour une pièce
 // (lue en entier avec ses pages, lue en partie, non lue) ; la raison s'affiche à côté.
 function atlLecturePiece(p) {
@@ -447,14 +522,15 @@ function _atlFaitRe(f) {
 const _ATL_M0 = "\uE000", _ATL_M1 = "\uE001", _ATL_M2 = "\uE002";
 function _atlSans(s) { return String(s).replace(/\uE000\d*\uE001?/g, "").replace(/[\uE000-\uE002]/g, ""); }
 // Marques d'un morceau de ligne : [À compléter …], renvoi [S1], fait à relire repéré (groupes de `re`).
-function _atlMarks(s, re, ids) {
+// `refs` : rendu des renvois (par défaut atlRefsHtml ; atlRefsPartHtml pour la part d'un partenaire).
+function _atlMarks(s, re, ids, refs) {
   let out = "", last = 0, m;
   re.lastIndex = 0;
   while ((m = re.exec(s))) {
     if (!m[0]) { re.lastIndex++; continue; }
     out += _escHtml(_atlSans(s.slice(last, m.index)));
     if (m[1]) out += '<span class="atl-todo">' + _escHtml(_atlSans(m[1])) + "</span>";
-    else if (m[2]) out += atlRefsHtml(m[3]);
+    else if (m[2]) out += (refs || atlRefsHtml)(m[3]);
     else {
       const id = ids[Number(m[4])] || "";
       out += '<mark class="atl-fait"' + (id ? ' data-fait="' + _escHtml(id) + '"' : "") + ">" + _escHtml(_atlSans(m[5])) + "</mark>";
@@ -472,6 +548,12 @@ function atlRefs(inner) {
 function atlRefsHtml(inner) {
   return atlRefs(inner).map(r => '<sup class="atl-ref" data-ref="' + _escHtml(r) + '">' + _escHtml(r) + "</sup>").join("");
 }
+// Renvois d'une part ENVOYÉE par un partenaire (rédaction, vague 4) : ils désignent SES sources, qui restent
+// chez lui. Montrés comme « source du partenaire », sans lien ni identifiant cliquable ; retirés à l'export.
+function atlRefsPartHtml(inner) {
+  return atlRefs(inner).map(r => '<sup class="atl-ref-p" title="Source du partenaire">' + _escHtml(r)
+    + '<span class="sr-only"> : source du partenaire</span></sup>').join("");
+}
 // « Chaque fait a sa source » (vague 3) : libellé court d'une source, jamais « vérifié ».
 const ATL_SRC_TYPES = { documents: "trouvé dans vos documents", justificatif: "justificatif déposé", declare: "déclaré par vous",
   public: "source publique", estimation: "votre estimation", partenaire: "déclaré par votre partenaire",
@@ -485,21 +567,23 @@ const ATL_DECL_LIB = { objet: "Objet", acheteur: "Acheteur", annee: "Année", mo
   libelle: "Libellé", valeur: "Valeur", unite: "Unité" };
 const ATL_NATURES = { reference: "Référence", qualification: "Qualification", salarie: "Équipe", materiel: "Matériel", chiffre_cle: "Chiffre clé" };
 // Une ligne : le gras (**…**) d'abord, puis les marques dans chaque morceau (jamais de balise croisée).
-function _atlInline(raw, re, idx) {
+function _atlInline(raw, re, idx, refs) {
   const s = String(raw == null ? "" : raw), bold = /\*\*(.+?)\*\*/g;
   let out = "", last = 0, m;
   while ((m = bold.exec(s))) {
-    out += _atlMarks(s.slice(last, m.index), re, idx) + "<strong>" + _atlMarks(m[1], re, idx) + "</strong>";
+    out += _atlMarks(s.slice(last, m.index), re, idx, refs) + "<strong>" + _atlMarks(m[1], re, idx, refs) + "</strong>";
     last = m.index + m[0].length;
   }
-  return out + _atlMarks(s.slice(last), re, idx);
+  return out + _atlMarks(s.slice(last), re, idx, refs);
 }
 function _atlCells(line) { return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim()); }
 const _atlHtmlCache = new Map();
-function atlMdToHtml(md, faits) {
+// `opts.refsPartenaire` : le texte est la part d'un partenaire (ses renvois : « source du partenaire »).
+function atlMdToHtml(md, faits, opts) {
   let src = _atlSans(String(md || ""));
+  const part = !!(opts && opts.refsPartenaire), refs = part ? atlRefsPartHtml : atlRefsHtml;
   const list = (Array.isArray(faits) ? faits : []).filter(f => f && f.statut !== "relu_par_vous" && String(f.fait || "").trim());
-  const ck = src + "\u0000" + list.map(f => f.id + ":" + f.fait + ":" + (f.phrase || "")).join("|");
+  const ck = (part ? "p" : "o") + "\u0001" + src + "\u0000" + list.map(f => f.id + ":" + f.fait + ":" + (f.phrase || "")).join("|");
   if (_atlHtmlCache.has(ck)) return _atlHtmlCache.get(ck);
   // Chaque fait : SA position (la phrase où le serveur l'a relevé), sans chevauchement.
   const ids = [], spans = [];
@@ -514,7 +598,7 @@ function atlMdToHtml(md, faits) {
   // « [À compléter …] » quelle que soit la casse (« [A COMPLETER …] », « [à Compléter …] ») comme le serveur
   // (far._TODO, re.IGNORECASE), sans rouvrir les renvois aux minuscules (« [f3] » n'est pas un renvoi).
   const re = new RegExp("(\\[\\s*[ÀàAa]\\s+[Cc][Oo][Mm][Pp][Ll][ÉéEe][Tt][Ee][Rr][^\\]]*\\])|(\\[\\s*([FSPECG]\\s*\\d{1,4}(?:\\s*[,;]\\s*[FSPECG]?\\s*\\d{1,4})*)\\s*\\])|\\uE000(\\d+)\\uE001([^\\uE002]*)\\uE002", "g");
-  const inl = (t) => _atlInline(t, re, ids);
+  const inl = (t) => _atlInline(t, re, ids, refs);
   const out = [];
   let ul = null, ol = null, table = null, para = [];
   const flush = (keep) => {
@@ -4520,6 +4604,15 @@ const __adjApp = createApp({
       } catch (e) { return ""; }
     },
     atlStatutCls(st) { return ({ a_ecrire: "neutral", brouillon: "atl-st-brouillon", relu: "st-envoye", valide: "go", a_revalider: "a_etudier" })[st] || "neutral"; },
+    // La partie d'un partenaire (vague 4) porte le statut du groupement (à rédiger, envoyée, à revalider…).
+    atlPillCls(s) { return s && s.part ? atlRepStatutCls(s.part.statut) : this.atlStatutCls(s && s.statut); },
+    atlPillLib(s) { return s && s.part ? s.part.statut_libelle : ((s && s.statut_libelle) || ""); },
+    // Qui a écrit la version affichée : pour la part d'un partenaire, lui ou vous (jamais « par vous » à tort).
+    atlOrigine(s) {
+      const v = s && s.version_courante; if (!v) return "";
+      if (s.prive_visible || !v.ecrit_par) return v.origine_libelle;
+      return v.ecrit_par === "chef_de_file" ? "écrite par vous sur sa partie" : "envoyée par " + s.auteur.libelle;
+    },
     atlPlanLabel(src) { return ({ cadre: "Cadre de l'acheteur", grille: "Critères du règlement", libre: "Plan simple" })[src] || ""; },
     atlLimTexte(x) { return _gnLim(x || {}); },
     atlLimCourt(l) { const m = String((l && l.message) || ""), p = (l && l.titre ? l.titre + " : " : ""); const r = p && m.indexOf(p) === 0 ? m.slice(p.length) : m; return r.charAt(0).toUpperCase() + r.slice(1); },
@@ -4543,7 +4636,7 @@ const __adjApp = createApp({
     atlFaitsReste(s) { const v = s && s.version_courante; return ((v && v.faits) || []).find(f => f.type === "reste" && f.statut !== "relu_par_vous") || null; },
     atlFaitsRelus(s) { const v = s && s.version_courante; return ((v && v.faits) || []).filter(f => f.statut === "relu_par_vous"); },
     atlFaitType(t) { return ATL_FAIT_TYPES[t] || "Fait"; },
-    atlHtml(s) { const v = s && s.version_courante; return v ? atlMdToHtml(v.texte, v.faits) : ""; },
+    atlHtml(s) { const v = s && s.version_courante; return v ? atlMdToHtml(v.texte, v.faits, { refsPartenaire: !s.prive_visible }) : ""; },
     // La phrase telle qu'A0 la range garde l'espace laissée par un renvoi retiré (« salariés . ») : pas à l'écran.
     atlPhrase(f) { return atlPhraseHtml(String(f.phrase || "").replace(/\s+([.,])(?=\s|$)/g, "$1"), f.fait); },
     atlMotsEdit() { return atlMots(this.atl.edit.texte); },
@@ -4579,6 +4672,7 @@ const __adjApp = createApp({
       this.view = "atelier";
       this.$nextTick(() => { const w = document.querySelector(".work"); if (w) w.scrollTop = 0; });
       this.atlLoad();
+      if (this.atl.onglet === "repartition") this.atlRepLoad();      // « Qui écrit quoi » relu au retour
     },
     atlBack() {
       const a = this.atl;
@@ -5142,6 +5236,196 @@ const __adjApp = createApp({
         if (e.code === "etat_modifie") { a.derog = null; await this.atlLoad(true); this.notify(e.message, "err"); return; }
         g.err = e.message;
       } finally { if (a.derog) a.derog.busy = false; }
+    },
+
+    // ── « Qui écrit quoi » (rédaction, vague 4, chef de file) ──
+    // Contrat : docs/REDACTION_V4_GROUPEMENT.md § 4. Seulement pour un marché en groupement
+    // (atl.st.groupement.onglet) : sans groupement, l'atelier ne change pas. Le chef de file répartit les
+    // parties (pré-remplissage SANS IA d'après les lots), demande les parts (email, mêmes garde-fous que les
+    // relances de la co-traitance), reçoit le texte envoyé et ses COMPTEURS de sources (jamais une source ni
+    // un extrait), modifie une part (« à revalider par X », avant et après côte à côte) ou l'écrit à la place
+    // d'un partenaire absent. Il ne lance JAMAIS l'aide de l'IA d'un partenaire : aucun bouton ici, et le
+    // serveur refuse. Aucun temps réel : « Actualiser » relit la répartition.
+    atlGrp() { const st = this.atl.st; return !!(st && st.groupement && st.groupement.onglet); },
+    atlRepVue() { return this.atlGrp() && this.atl.onglet === "repartition"; },
+    atlOnglet(o) {
+      const a = this.atl;
+      a.onglet = o === "repartition" ? "repartition" : "redaction";
+      if (a.onglet === "repartition") this.atlRepLoad();
+    },
+    _atlRepUrl(p) { return this._atlUrl("/repartition" + (p || "")); },
+    async atlRepLoad() {
+      const a = this.atl, r = a.rep, pid = a.pid; if (!pid) return;
+      r.loading = true; r.err = "";
+      try {
+        const d = await this.api("GET", this._atlRepUrl());
+        if (this.atl.pid !== pid) return;
+        r.d = d; r.v++;
+        if (r.open && !d.sections.some(l => l.section_id === r.open)) { r.open = null; r.det = null; r.edit = null; }
+      } catch (e) { r.err = e.message || "« Qui écrit quoi » est indisponible pour le moment."; }
+      finally { r.loading = false; }
+    },
+    async atlRepPreparer() {
+      const r = this.atl.rep; if (r.busy) return; r.busy = "preparer";
+      try {
+        r.d = await this.api("POST", this._atlRepUrl(), {}); r.v++;
+        this.notify("Répartition préparée : vérifiez qui rédige chaque partie");
+        this.atlLoad(true);
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { r.busy = ""; }
+    },
+    atlRepLigne(sid) { const d = this.atl.rep.d; return (d && d.sections.find(l => l.section_id === sid)) || null; },
+    // Les partenaires proposés dans « Rédigée par » : les co-traitants (un sous-traitant n'est pas membre du
+    // groupement) ; ceux qui ne peuvent pas rédiger restent visibles, désactivés, avec leur raison.
+    atlRepMembres() { const d = this.atl.rep.d; return ((d && d.membres) || []).filter(m => (m.role || "cotraitant") === "cotraitant"); },
+    atlRepIndispo() { const d = this.atl.rep.d; return ((d && d.membres) || []).filter(m => !m.peut_rediger); },
+    atlRepChoix(l) { const r = l && l.redacteur; return r && r.type === "partenaire" && r.invite_id ? "p:" + r.invite_id : "chef_de_file"; },
+    // La raison de la proposition (sans IA), tant que le chef de file ne l'a pas changée.
+    atlRepPropMsg(l) { return l && l.choix === "propose" && l.proposition ? (l.proposition.message || "") : ""; },
+    // Libellé d'un partenaire dans « Rédigée par » : son nom et son lot (court) ; « indisponible » sinon.
+    atlRepOption(m) {
+      const lot = String(m.lot || ""), court = lot.length > 48 ? lot.slice(0, 47) + "…" : lot;
+      return m.nom + (court ? " · " + court : "") + (m.peut_rediger ? "" : " (indisponible)");
+    },
+    atlRepStatutCls(st) { return atlRepStatutCls(st); },
+    atlRepCompteurs(tc) { return atlRepCompteurs(tc); },
+    atlRepEnvoyerA() { return atlRepADemander(this.atl.rep.d); },
+    atlRepDemandeLignes() { return atlRepDemandeTexte(this.atl.rep.demande); },
+    atlRepValidations() { const d = this.atl.rep.d; return atlRepValidationsTexte(d && d.dossier && d.dossier.pret); },
+    atlRepRedacteur(l, val) {
+      if (!l || val === this.atlRepChoix(l)) return;
+      const body = val === "chef_de_file" ? { redacteur: "chef_de_file", invite_id: null }
+        : { redacteur: "partenaire", invite_id: Number(String(val).slice(2)) };
+      this._atlRepPut(l, body, false);
+    },
+    atlRepLongueur(l, val) {
+      const t = String(val == null ? "" : val).trim(), n = t ? Math.round(Number(t)) : null;
+      if (n !== null && (!isFinite(n) || n < 30 || n > 20000)) { this.atl.rep.v++; this.notify("Indiquez une longueur entre 30 et 20 000 mots.", "err"); return; }
+      if (n === (l.longueur_mots || null)) return;
+      this._atlRepPut(l, { longueur_mots: n }, false);
+    },
+    atlRepDate(l, val) {
+      const d = String(val || "").slice(0, 10) || null;
+      if (d === (l.date_limite || null)) return;
+      this._atlRepPut(l, { date_limite: d }, false);
+    },
+    async _atlRepPut(l, body, confirmer) {
+      const a = this.atl, r = a.rep; if (r.busy) { r.v++; return; }
+      r.busy = "ligne:" + l.section_id;
+      try {
+        await this.api("PUT", this._atlRepUrl("/" + l.section_id), Object.assign({}, body, { lock_version: l.lock_version, confirmer: !!confirmer }));
+        if (body.redacteur) this.notify(body.redacteur === "partenaire" ? "Partie confiée au partenaire" : "Partie reprise par vous");
+        await this.atlRepLoad();
+        if (r.open === l.section_id) this._atlRepDetail(l.section_id);
+        if (body.redacteur) this.atlLoad(true);
+      } catch (e) {
+        r.v++;                                         // le menu revient à ce qui est enregistré
+        if (e.code === "changement_a_confirmer") {
+          this._convAsk({ title: "Confier cette partie à quelqu'un d'autre ?", ok: "Confier la partie", run: () => this._atlRepPut(l, body, true),
+            lines: [e.message, "Le nouveau rédacteur repart d'une page vide : il ne voit pas le texte mis de côté."] });
+        } else {
+          this.notify(e.message, "err");
+          if (e.code === "repartition_modifiee" || e.code === "partie_retiree") this.atlRepLoad();
+        }
+      } finally { r.busy = ""; }
+    },
+    // « Demander les parts » : un email par partenaire qui a une partie à rédiger, en cours ou à revalider.
+    atlRepDemander() {
+      const r = this.atl.rep, qui = this.atlRepEnvoyerA(); if (r.busy || !qui.length) return;
+      this._convAsk({ title: "Demander les parts ?", ok: "Envoyer la demande", run: () => this._atlRepDemander(),
+        lines: qui.map(x => x.nom + " : " + x.parties + " partie" + (x.parties > 1 ? "s" : "") + " à rédiger ou à revalider.")
+          .concat(["Chacun reçoit par email la liste de ses parties, leur date limite interne et son lien."]) });
+    },
+    async _atlRepDemander() {
+      const r = this.atl.rep; if (r.busy) return; r.busy = "demander"; r.demande = null;
+      try { r.demande = await this.api("POST", this._atlRepUrl("/demander"), {}); await this.atlRepLoad(); }
+      catch (e) { this.notify(e.message, "err"); }
+      finally { r.busy = ""; }
+    },
+    // Réception : le texte envoyé (ou écrit par vous sur sa partie), l'avant et l'après d'une modification.
+    atlRepOuvrir(l) {
+      const r = this.atl.rep;
+      if (r.open === l.section_id) {
+        if (r.edit && r.edit.dirty) { this._convAsk({ title: "Abandonner votre texte ?", ok: "Abandonner", run: () => { r.edit = null; r.open = null; r.det = null; }, lines: ["Votre saisie sur cette partie n'est pas enregistrée."] }); return; }
+        r.open = null; r.det = null; r.edit = null; return;
+      }
+      if (r.edit && r.edit.dirty) { this.notify("Enregistrez ou annulez d'abord votre texte en cours.", "err"); return; }
+      r.open = l.section_id; r.det = null; r.edit = null;
+      this._atlRepDetail(l.section_id);
+    },
+    async _atlRepDetail(sid) {
+      const r = this.atl.rep; r.detLoading = true;
+      try { const d = await this.api("GET", this._atlRepUrl("/" + sid)); if (r.open === sid) r.det = d; }
+      catch (e) { this.notify(e.message, "err"); if (r.open === sid) r.open = null; }
+      finally { r.detLoading = false; }
+    },
+    // Blocs de texte montrés : avant / après côte à côte quand vous avez modifié sa part, sinon le texte commun.
+    atlRepBlocs() {
+      const r = this.atl.rep, d = r.det; if (!d) return [];
+      const nom = (d.redacteur && d.redacteur.nom) || "le partenaire", c = d.comparaison;
+      if (c && c.avant && c.apres) return [{ k: "av", titre: "Avant : le texte envoyé par " + nom, v: c.avant }, { k: "ap", titre: "Après : votre modification", v: c.apres }];
+      return d.texte_commun ? [{ k: "tc", titre: "", v: d.texte_commun }] : [];
+    },
+    atlRepHtml(v) { return v ? atlMdToHtml(v.texte, [], { refsPartenaire: true }) : ""; },
+    atlRenvoisPart(s) { const v = s && s.version_courante; return !!(v && !s.prive_visible && atlRepARenvois(v.texte)); },
+    atlRepRenvois() { return this.atlRepBlocs().some(b => atlRepARenvois(b.v && b.v.texte)); },
+    atlRepMotsEdit() { const e = this.atl.rep.edit; return e ? atlMots(e.texte) : 0; },
+    atlRepEcrire() {
+      const r = this.atl.rep, d = r.det; if (!d || this.atlMobile) return;
+      const tc = d.texte_commun;
+      r.edit = { sid: d.section_id, texte: tc ? (tc.texte || "") : "", base: tc ? tc.version_id : null, dirty: false, conflict: "" };
+      this.$nextTick(() => { const ta = this.$refs.atlRepTa; const el = Array.isArray(ta) ? ta[0] : ta; if (el && el.focus) el.focus(); });
+    },
+    atlRepAnnuler() {
+      const r = this.atl.rep; if (!r.edit) return;
+      if (!r.edit.dirty) { r.edit = null; return; }
+      this._convAsk({ title: "Abandonner votre texte ?", ok: "Abandonner", run: () => { r.edit = null; }, lines: ["Votre saisie sur cette partie n'est pas enregistrée."] });
+    },
+    async atlRepEnregistrer() {
+      const r = this.atl.rep, e = r.edit; if (!e || r.busy) return;
+      if (!e.texte.trim()) { this.notify("Écrivez un texte.", "err"); return; }
+      if (e.texte.length > 60000) { this.notify("Le texte dépasse 60 000 caractères : raccourcissez-le avant d'enregistrer.", "err"); return; }
+      r.busy = "texte"; e.conflict = "";
+      try {
+        const d = await this.api("PUT", this._atlRepUrl("/" + e.sid + "/texte"), { texte: e.texte, base_version_id: e.base });
+        if (r.open === e.sid) r.det = d;
+        r.edit = null;
+        this.notify(d.mention || "Texte enregistré : la partie est à valider par le partenaire");
+        await this.atlRepLoad(); this.atlLoad(true);
+      } catch (err) {
+        if (err.code === "texte_modifie_entre_temps") { e.conflict = err.message; this._atlRepDetail(e.sid); }
+        else this.notify(err.message, "err");
+      } finally { r.busy = ""; }
+    },
+    async atlRepCopier() {
+      const e = this.atl.rep.edit; if (!e) return;
+      try { await navigator.clipboard.writeText(e.texte || ""); this.notify("Votre texte est copié"); }
+      catch (x) { this.notify("Copie impossible : sélectionnez le texte et copiez-le à la main", "err"); }
+    },
+    // Repartir avec le texte actuel du partenaire (après un conflit) : votre saisie est remplacée.
+    atlRepRepartir() {
+      const r = this.atl.rep, d = r.det, e = r.edit; if (!d || !e) return;
+      const tc = d.texte_commun;
+      r.edit = { sid: d.section_id, texte: tc ? (tc.texte || "") : "", base: tc ? tc.version_id : null, dirty: false, conflict: "" };
+    },
+    // Passer d'un onglet à l'autre sur une partie précise.
+    async atlRepVoir(sid) {
+      this.atl.onglet = "repartition";
+      await this.atlRepLoad();
+      const x = this.atlRepLigne(sid); if (x && this.atl.rep.open !== sid) this.atlRepOuvrir(x);
+      this.$nextTick(() => { const el = document.getElementById("atl-rep-" + sid); if (el && el.scrollIntoView) el.scrollIntoView({ block: "start", behavior: "smooth" }); });
+    },
+    atlRepVersAtelier(l) { this.atl.onglet = "redaction"; this.atlGoSection(l.section_id); },
+    atlRepEnvoyeeLe(l) { return l && l.envoyee_le ? this.atlWhen(l.envoyee_le) : ""; },
+    // Ce qui se passe pour la partie d'un partenaire, en une phrase.
+    atlRepEtat(l) {
+      const nom = (l.redacteur && l.redacteur.nom) || "Le partenaire";
+      if (l.statut === "a_rediger") return l.demandee_le ? "Demandée le " + this.atlWhen(l.demandee_le) + " : rien d'envoyé pour l'instant." : "Rien d'envoyé pour l'instant.";
+      if (l.statut === "en_cours") return nom + " rédige sa partie : rien d'envoyé pour l'instant.";
+      if (l.statut === "envoyee") return "Envoyée le " + this.atlRepEnvoyeeLe(l) + " : lisez-la ; " + nom + " doit encore la valider.";
+      if (l.statut === "a_revalider") return l.mention ? "" : nom + " doit revalider sa partie.";
+      if (l.statut === "validee") return l.mention ? "" : "Validée par " + nom + ".";
+      return "";
     },
 
     // « Mon savoir-faire » : le dossier de présentation se prépare sur la page du marché.

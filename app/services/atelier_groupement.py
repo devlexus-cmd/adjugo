@@ -1673,10 +1673,12 @@ def demander_parts(db, project: Project, dossier: DossierPresentation, user: Use
             db.rollback()                   # libère le verrou de l'organisation pris pour compter
             plafond.append({"invite_id": iid, "nom": nom})
             continue
-        liste = "\n".join(f"- « {_titre(dossier, s)} »" + (f" (date limite interne : {r.date_limite.strftime('%d/%m/%Y')})"
-                                                          if r.date_limite else "") for s, r in lignes)
+        liste = "\n".join(f"- « {_titre(dossier, s)} »"
+                          + (" : texte du chef de file, à relire et valider" if statut_de(db, s, r) == A_REVALIDER else "")
+                          + (f" (date limite interne : {r.date_limite.strftime('%d/%m/%Y')})" if r.date_limite else "")
+                          for s, r in lignes)
         sent = _email.send_email(inv.recipient, f"Votre partie du dossier de présentation — {project.name[:60]}",
-                                 f"Bonjour,\n\n{de} vous demande de rédiger votre partie du dossier de présentation du "
+                                 f"Bonjour,\n\n{de} attend votre partie du dossier de présentation du "
                                  f"marché « {project.name} » :\n{liste}\n\nÉcrivez-la vous-même ou avec l'aide d'Adjugo, "
                                  f"depuis votre lien :\n{base}/invite/{inv.token}\n\nVos documents et vos brouillons "
                                  f"restent privés : seul le texte que vous envoyez est lu par le groupement.\n\n— Adjugo")

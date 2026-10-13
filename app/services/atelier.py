@@ -2589,7 +2589,22 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
     out["controle"] = (v.get("controle") if v and prive else None) or {"libelles": False}
     out["compteur"] = ({k: cpt_section.get(k) for k in ("mots", "caracteres", "pages_estimees", "lignes_estimees")}
                        if cpt_section else None)
+    if s.author_kind == AUTEUR_INVITATION and not prive:
+        out["part"] = _part_out(db, s, out["auteur"]["libelle"])
     return out
+
+
+def _part_out(db, s: DossierSection, nom: str) -> Optional[dict]:
+    """Vague 4 : la partie d'un partenaire, vue du chef de file, porte le statut du groupement (à rédiger,
+    en cours, envoyée, à revalider, validée) et la mention « rédigé / modifié par le chef de file, à valider
+    par X » (atelier_groupement.statut_de, calculés, jamais stockés). Lecture seule ; jamais bloquante."""
+    try:
+        from app.services import atelier_groupement as ag
+        st = ag.statut_de(db, s)
+        return {"statut": st, "statut_libelle": ag.STATUTS[st], "mention": ag.mention(db, s, nom)}
+    except Exception as e:      # noqa: BLE001 — l'atelier reste lisible sans le statut du groupement
+        logger.warning("atelier : statut de la part illisible (partie %s) : %s", s.id, type(e).__name__)
+        return None
 
 
 def _noms_auteurs(db, sections: list) -> dict:
