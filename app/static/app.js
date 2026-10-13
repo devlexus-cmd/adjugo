@@ -2205,6 +2205,12 @@ const __adjApp = createApp({
       const all = g.etapes || [], e = all.find(x => x.n === g.etape);
       return "Étape " + g.etape + (all.length ? " sur " + all.length : "") + (e ? " · " + e.label : "");
     },
+    // Rédaction, vague 4 : ce qui attend le partenaire dans le dossier de présentation commun (statuts seulement).
+    sharedRedLine(r) {
+      if (!r) return "";
+      if (r.a_revalider) return r.a_revalider > 1 ? r.a_revalider + " parties à revalider" : "Partie à revalider";
+      return r.a_faire > 1 ? r.a_faire + " parties à rédiger" : "Partie à rédiger";
+    },
     openSharedKey(ev, s) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); this.openShared(s); } },
     // Les critères ne s'affichent QUE dans la carte « Comment vous serez noté » (phrase du
     // règlement, poids tel qu'écrit) : le serveur n'envoie plus la liste brute, aux poids non contrôlés.
@@ -5199,6 +5205,20 @@ function _gnLim(x) {
   const o = x.objet ? " " + (_GN_OBJET[x.objet] || "") : "";
   return ((x.valeur != null ? _gnNum(x.valeur) + " " + u : (x.texte || "")) + " au maximum" + o).trim();
 }
+// Rédaction, vague 4 : « Mes parties du dossier de présentation », vues par le COMPTE du partenaire (« Partagé
+// avec moi ») — le même écran que par le lien (app/static/redaction-partenaire.js), monté une fois : Vue ne
+// redessine jamais son contenu (gabarit statique).
+__adjApp.component("redaction-partenaire", {
+  props: { pid: { type: [Number, String], required: true }, token: { type: String, default: "" } },
+  template: '<div class="rp-host"></div>',
+  mounted() {
+    const RP = window.AdjugoRedactionPartenaire;
+    if (!RP) return;
+    this._h = RP.mount(this.$el, { base: "/api/shared/" + encodeURIComponent(this.pid) + "/redaction", mode: "compte",
+      headers: () => (this.token ? { Authorization: "Bearer " + this.token } : {}) });
+  },
+  unmounted() { if (this._h) this._h.destroy(); },
+});
 __adjApp.component("grille-carte", {
   props: { g: { type: Object, default: null }, edit: { type: Boolean, default: false }, busy: { type: String, default: "" } },
   emits: ["choix"],

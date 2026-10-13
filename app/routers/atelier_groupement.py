@@ -19,6 +19,7 @@ rattaché ce lien (/api/shared/{project_id}/redaction…, mêmes sous-routes) :
   GET  …/redaction                                          ses parties, son brouillon, l'état du dossier
   GET  …/redaction/dossier                                  le dossier assemblé, en lecture (décision 3a)
   GET  …/redaction/sections/{sid}                           une de SES parties (+ historique de ses brouillons)
+  GET  …/redaction/sections/{sid}/brouillons/{bid}          un de SES brouillons précédents, avec son texte
   PUT  …/redaction/sections/{sid}/brouillon                 « J'écris moi-même »
   POST …/redaction/sections/{sid}/faits/{fid}               relu par vous / à relire
   POST …/redaction/sections/{sid}/aide                      « Rédiger avec Adjugo » (tâche de fond)
@@ -295,6 +296,10 @@ def _section(acces, db, sid):
     return _faire(ag.detail_partenaire, db, acces, sid)
 
 
+def _brouillon_lu(acces, db, sid, bid):
+    return _faire(ag.brouillon_du_partenaire, db, acces, sid, bid)
+
+
 def _brouillon(acces, db, sid, body: BrouillonIn):
     _faire(ag.enregistrer_brouillon, db, acces, sid, body.texte, body.base_brouillon_id)
     return _section(acces, db, sid)
@@ -391,6 +396,12 @@ def lien_section(token: str, section_id: int, request: Request, db: Session = De
     return _section(_par_lien(token, db, request), db, section_id)
 
 
+@router.get(L + "/sections/{section_id}/brouillons/{brouillon_id}")
+@limiter.limit("120/minute")
+def lien_brouillon_lu(token: str, section_id: int, brouillon_id: int, request: Request, db: Session = Depends(get_db)):
+    return _brouillon_lu(_par_lien(token, db, request), db, section_id, brouillon_id)
+
+
 @router.put(L + "/sections/{section_id}/brouillon")
 @limiter.limit("90/minute")
 def lien_brouillon(token: str, section_id: int, body: BrouillonIn, request: Request, db: Session = Depends(get_db)):
@@ -472,6 +483,13 @@ def compte_dossier(project_id: int, request: Request, current_user: User = Depen
 def compte_section(project_id: int, section_id: int, request: Request, current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     return _section(_par_compte(project_id, current_user, db), db, section_id)
+
+
+@router.get(C + "/sections/{section_id}/brouillons/{brouillon_id}")
+@limiter.limit("120/minute")
+def compte_brouillon_lu(project_id: int, section_id: int, brouillon_id: int, request: Request,
+                        current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _brouillon_lu(_par_compte(project_id, current_user, db), db, section_id, brouillon_id)
 
 
 @router.put(C + "/sections/{section_id}/brouillon")
