@@ -1240,6 +1240,48 @@ mark.atl-pas { background:var(--accent-weak); color:inherit; border-radius:3px; 
   .atl-texte { font-size:14px; }
 }
 
+/* ── « Qui écrit quoi » (rédaction, vague 4, chef de file) ──
+   Deux onglets seulement pour un marché en groupement ; une carte par partie ; avant / après côte à côte
+   (empilés sur un écran étroit) ; champs empilés à 375 px, rien collé aux bords, aucune barre horizontale. */
+.atl-onglets { margin-top:16px; }
+.atl-rep { margin-top:16px; display:flex; flex-direction:column; gap:16px; }
+.atl-rep-head { padding:16px; }
+.atl-rep-h { font-size:15px; }
+.atl-rep-mbs { list-style:none; margin:8px 0 0; padding:0; }
+.atl-rep-mbs li { padding:3px 0; overflow-wrap:anywhere; }
+.atl-rep-liste { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px; }
+.atl-rep-l { padding:16px; scroll-margin-top:84px; }
+.atl-rep-t { font-weight:600; font-size:13.5px; line-height:1.35; overflow-wrap:anywhere; }
+.atl-rep-mention { color:var(--warning-text); }
+.atl-rep-champs { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr); gap:8px 12px; }
+.atl-rep-champs label, .atl-rep-f { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.atl-rep-f > .row { align-items:center; min-height:18px; }
+.atl-rep-f > .row .tip { width:18px; height:18px; }
+.atl-rep-champs .inp { width:100%; min-width:0; height:34px; }
+.atl-rep-cpt { display:flex; flex-wrap:wrap; align-items:center; gap:2px; overflow-wrap:anywhere; }
+.atl-rep-det { margin-top:12px; padding-top:12px; border-top:1px solid var(--hairline); }
+.atl-rep-cmp { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
+.atl-rep-cmp.deux { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.atl-rep-bloc { min-width:0; padding:12px; border:1px solid var(--hairline); border-radius:10px; background:var(--surface-2); }
+.atl-rep-bt { font-weight:600; color:var(--text-2); }
+.atl-rep-texte { margin-top:8px; }
+.atl-rep-bloc > .atl-rep-texte:first-child { margin-top:0; }
+.atl-rep-ed { margin-top:12px; }
+.atl-rep-ta { min-height:240px; }
+/* Renvoi d'une part de partenaire : « source du partenaire », sans lien (ses sources restent chez lui) */
+sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background:var(--surface-3); border-radius:4px; padding:0 4px; margin-left:2px; vertical-align:super; cursor:help; }
+@media (max-width:860px) {
+  .atl-rep-cmp.deux { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width:640px) {
+  .atl-rep-head, .atl-rep-l { padding:12px; }
+  .atl-rep-champs { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  .atl-rep-champs > :first-child { grid-column:1 / -1; }
+}
+@media (max-width:560px) {
+  .rn-tabs.atl-onglets { grid-template-columns:repeat(2, minmax(0,1fr)); }
+}
+
 /* ── Fiches proposées à partir d'un document (rédaction, vague 3, chantier I) ── */
 .fx-panel { margin:8px 0 12px 26px; padding:12px 14px; background:var(--surface-2); border-radius:10px; }
 .fx-ligne { gap:8px; align-items:center; margin-bottom:8px; }

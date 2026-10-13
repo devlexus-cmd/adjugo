@@ -1980,7 +1980,115 @@
               <div class="sr-only" aria-live="polite">{{ atl.live }}</div>
             </div>
 
-            <div class="atl-grid">
+            <!-- ░░ « QUI ÉCRIT QUOI » (rédaction, vague 4, chef de file) ░░
+                 Contrat : docs/REDACTION_V4_GROUPEMENT.md § 4. Seulement pour un marché en groupement
+                 (atlGrp) : sans groupement, ni onglets ni panneau, l'atelier ne change pas. Le chef de file
+                 répartit (pré-remplissage sans IA), demande les parts, reçoit le texte envoyé et des COMPTEURS
+                 de sources (jamais une source ni un extrait), modifie une part (« à revalider par X ») ou
+                 l'écrit à la place d'un partenaire absent. Aucun bouton d'IA pour la part d'un partenaire.
+                 Les textes des partenaires passent par le rendu sûr de l'atelier (tout est échappé). -->
+            <nav v-if="atlGrp()" class="rn-tabs atl-onglets" aria-label="Vues de l'atelier">
+              <button type="button" class="rn-tab" :class="{on: !atlRepVue()}" :aria-current="!atlRepVue() ? 'page' : null" @click="atlOnglet('redaction')"><i data-lucide="file-pen-line"></i>Rédaction</button>
+              <button type="button" class="rn-tab" :class="{on: atlRepVue()}" :aria-current="atlRepVue() ? 'page' : null" @click="atlOnglet('repartition')"><i data-lucide="users-round"></i>Qui écrit quoi</button>
+            </nav>
+            <div v-if="atlRepVue()" class="atl-rep">
+              <div v-if="atl.rep.loading && !atl.rep.d" class="card pad muted small" role="status"><span class="spin"></span> Chargement de la répartition…</div>
+              <div v-else-if="atl.rep.err && !atl.rep.d" class="card pad"><div class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ atl.rep.err }} <a href="#" @click.prevent="atlRepLoad()" style="color:var(--accent-text)">Réessayer</a></div></div></div>
+
+              <!-- Pas encore préparé : la proposition se fait sans IA, d'après le lot de chaque partenaire -->
+              <div v-else-if="atl.rep.d && !atl.rep.d.actif" class="card">
+                <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="users-round"></i><h3>Qui écrit quoi</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Chaque partenaire du groupement peut écrire sa partie chez lui, avec ses propres documents. Vous recevez le texte qu'il envoie et le nombre de faits appuyés sur une source, jamais ses documents, ses extraits ni ses brouillons.</span></button></div>
+                <div class="cb">
+                  <p class="small atl-m0">Adjugo propose qui rédige chaque partie d'après le lot de chaque partenaire. Vous pourrez tout changer ensuite.</p>
+                  <ul class="atl-rep-mbs atl-mt8">
+                    <li v-for="m in atl.rep.d.membres" :key="'rm'+m.invite_id" class="small"><b>{{ m.nom }}</b><span v-if="m.lot" class="muted"> · {{ m.lot }}</span><span v-if="!m.peut_rediger" class="muted"> · {{ m.raison }}</span></li>
+                  </ul>
+                  <div class="row wrap atl-g8 atl-mt16">
+                    <button type="button" class="btn primary" @click="atlRepPreparer()" :disabled="!!atl.rep.busy"><span v-if="atl.rep.busy==='preparer'" class="spin"></span><i v-else data-lucide="users-round"></i>Préparer la répartition</button>
+                    <span class="muted small">Aucune IA à cette étape : rien n'est débité.</span>
+                  </div>
+                </div>
+              </div>
+
+              <template v-else-if="atl.rep.d">
+                <div class="card atl-rep-head">
+                  <div class="row wrap atl-g8">
+                    <h3 class="atl-titre atl-rep-h">Qui écrit quoi</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Chaque partenaire écrit sa partie chez lui, avec ses propres documents. Vous recevez le texte qu'il envoie et le nombre de faits appuyés sur une source, par type ; ses documents, ses extraits et ses brouillons restent chez lui. Vous ne pouvez pas lancer l'aide d'Adjugo à sa place.</span></button>
+                    <div class="spacer"></div>
+                    <button type="button" class="btn ghost sm" @click="atlRepLoad()" :disabled="atl.rep.loading"><span v-if="atl.rep.loading" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Actualiser</button>
+                    <button type="button" class="btn sm" @click="atlRepDemander()" :disabled="!!atl.rep.busy || !atlRepEnvoyerA().length"><span v-if="atl.rep.busy==='demander'" class="spin"></span><i v-else data-lucide="send"></i>Demander les parts</button><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Un email à chaque partenaire qui a une partie à rédiger ou à revalider : la liste de ses parties, leur date limite interne et son lien. Au plus un envoi toutes les 15 minutes par partenaire ; ces emails comptent dans la limite quotidienne des invitations.</span></button>
+                  </div>
+                  <div class="small atl-mt8"><b>{{ atl.rep.d.dossier.pret.message }}</b><span class="muted"> · {{ atlRepValidations() }}</span></div>
+                  <div v-if="!atlRepEnvoyerA().length" class="muted small atl-mt4">Aucune partie à demander : chaque partenaire a envoyé ses parties, ou aucune ne lui est confiée.</div>
+                  <div v-if="atl.rep.demande" class="atl-info" role="status"><i data-lucide="send"></i><span style="flex:1;min-width:0"><template v-for="(t,i) in atlRepDemandeLignes()" :key="'rd'+i">{{ (i ? ' ' : '') + t }}</template></span></div>
+                  <div v-if="atlRepIndispo().length" class="muted small atl-mt8"><template v-for="(m,i) in atlRepIndispo()" :key="'ri'+m.invite_id">{{ (i ? ' ; ' : '') + m.nom + ' : ' + m.raison }}</template>.</div>
+                  <div v-if="atlMobile" class="muted small atl-mt8">Sur téléphone, vous pouvez lire et répartir les parties. Modifier le texte d'un partenaire se fait depuis un ordinateur.</div>
+                </div>
+
+                <ol class="atl-rep-liste">
+                  <li v-for="l in atl.rep.d.sections" :key="'rl'+l.section_id" :id="'atl-rep-'+l.section_id" class="card atl-rep-l">
+                    <div class="row atl-g6" style="align-items:flex-start">
+                      <div class="atl-rep-t" style="flex:1;min-width:0"><span v-if="l.numero_affiche" class="atl-num">{{ l.numero_affiche + ' ' }}</span>{{ l.intitule }}</div>
+                      <span class="pill" :class="atlRepStatutCls(l.statut)" style="font-size:11px">{{ l.statut_libelle }}</span>
+                    </div>
+                    <div v-if="l.critere" class="muted small atl-mt4">Critère : {{ l.critere }}<template v-if="l.poids"> · {{ atlPoidsTexte(l) }}</template><template v-else> · aucun poids écrit dans le règlement</template></div>
+                    <div v-if="l.mention" class="small atl-rep-mention atl-mt4">{{ l.mention }}</div>
+                    <div class="atl-rep-champs atl-mt8">
+                      <div class="atl-rep-f small">
+                        <div class="row atl-g6"><label class="muted" :for="'atl-rs-'+l.section_id">Rédigée par</label><button v-if="atlRepPropMsg(l)" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Pourquoi cette proposition</span><span class="tip-b" role="tooltip">{{ atlRepPropMsg(l) }} Proposition faite sans IA : vous pouvez la changer.</span></button></div>
+                        <select :id="'atl-rs-'+l.section_id" :key="'rs'+l.section_id+'_'+atl.rep.v" class="inp" :value="atlRepChoix(l)" @change="atlRepRedacteur(l, $event.target.value)" :disabled="!!atl.rep.busy">
+                          <option value="chef_de_file">Vous (chef de file)</option>
+                          <option v-for="m in atlRepMembres()" :key="'ro'+l.section_id+'_'+m.invite_id" :value="'p:'+m.invite_id" :disabled="!m.peut_rediger && atlRepChoix(l) !== 'p:'+m.invite_id">{{ atlRepOption(m) }}</option>
+                        </select></div>
+                      <label class="small"><span class="muted">Mots conseillés</span>
+                        <input :key="'rn'+l.section_id+'_'+atl.rep.v" class="inp" type="number" inputmode="numeric" min="30" max="20000" step="10" :value="l.longueur_mots || ''" placeholder="Libre" @change="atlRepLongueur(l, $event.target.value)" :disabled="!!atl.rep.busy"></label>
+                      <label class="small"><span class="muted">Date limite interne</span>
+                        <input :key="'rdl'+l.section_id+'_'+atl.rep.v" class="inp" type="date" :value="l.date_limite || ''" @change="atlRepDate(l, $event.target.value)" :disabled="!!atl.rep.busy"></label>
+                    </div>
+
+                    <!-- La part d'un partenaire : ce qui est reçu (texte envoyé, compteurs), jamais sa matière -->
+                    <template v-if="l.redacteur.type === 'partenaire'">
+                      <div v-if="atlRepEtat(l)" class="small atl-mt8">{{ atlRepEtat(l) }}</div>
+                      <div v-if="atlRepCompteurs(l.texte_commun)" class="small atl-mt4 atl-rep-cpt"><span>{{ atlRepCompteurs(l.texte_commun) }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ce que vous recevez avec le texte : le nombre de faits que le partenaire a appuyés sur une source, par type, et ce qu'il reste à relire. Ses sources, ses extraits et ses documents restent chez lui. Les faits à relire et les « [À compléter] » bloquent l'export tant qu'ils restent.</span></button></div>
+                      <div class="row wrap atl-g6 atl-mt8">
+                        <button type="button" class="btn sm" @click="atlRepOuvrir(l)" :aria-expanded="atl.rep.open===l.section_id ? 'true' : 'false'"><i :data-lucide="atl.rep.open===l.section_id ? 'chevron-up' : (l.texte_commun ? 'file-text' : 'pen-line')"></i>{{ atl.rep.open===l.section_id ? 'Replier' : (l.texte_commun ? 'Lire le texte' : 'Rédiger à sa place') }}</button>
+                        <span v-if="!l.texte_commun && atl.rep.open!==l.section_id" class="muted small">Partenaire absent ? Vous pouvez écrire sa partie : il la validera.</span>
+                      </div>
+                      <div v-if="atl.rep.open===l.section_id" class="atl-rep-det">
+                        <div v-if="atl.rep.detLoading && !atl.rep.det" class="muted small" role="status"><span class="spin"></span> Chargement…</div>
+                        <template v-else-if="atl.rep.det && atl.rep.det.section_id===l.section_id">
+                          <div v-if="atlRepBlocs().length" class="atl-rep-cmp" :class="{deux: atlRepBlocs().length > 1}">
+                            <div v-for="b in atlRepBlocs()" :key="'rb'+b.k" class="atl-rep-bloc"><div v-if="b.titre" class="atl-rep-bt small">{{ b.titre }}</div><div class="atl-texte atl-rep-texte" v-html="atlRepHtml(b.v)"></div></div>
+                          </div>
+                          <div v-else-if="!atl.rep.edit" class="muted small">{{ l.redacteur.nom }} n'a rien envoyé. Vous pouvez rédiger sa partie : elle sera marquée « Rédigé par le chef de file, à valider par {{ l.redacteur.nom }} ».</div>
+                          <div v-if="atlRepRenvois()" class="muted small atl-mt4">Les renvois (F1, S2…) désignent des sources de {{ l.redacteur.nom }} : elles restent chez lui et disparaissent à l'export.</div>
+                          <!-- Écrire sur la part d'un partenaire : un nouveau texte commun, à revalider par lui (aucune IA) -->
+                          <div v-if="atl.rep.edit && atl.rep.edit.sid===l.section_id && !atlMobile" class="atl-rep-ed">
+                            <div v-if="atl.rep.edit.conflict" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ atl.rep.edit.conflict }}
+                              <div class="row wrap atl-g6 atl-mt8"><button type="button" class="btn sm" @click="atlRepCopier()"><i data-lucide="copy"></i>Copier mon texte</button><button type="button" class="btn sm" @click="atlRepRepartir()"><i data-lucide="refresh-cw"></i>Repartir du texte actuel</button></div></div></div>
+                            <textarea ref="atlRepTa" class="atl-ta atl-rep-ta" v-model="atl.rep.edit.texte" @input="atl.rep.edit.dirty = true" :aria-label="'Texte de la partie de ' + l.redacteur.nom" spellcheck="true" placeholder="Écrivez le texte de cette partie."></textarea>
+                            <div class="muted small atl-mt4">Environ {{ atlNum(atlRepMotsEdit()) }} {{ atlMotsLib(atlRepMotsEdit()) }}<template v-if="l.longueur_mots"> · longueur conseillée : {{ atlNum(l.longueur_mots) }} mots</template></div>
+                            <div v-if="atl.rep.edit.base" class="small atl-mt8">En enregistrant, la partie passe « à revalider par {{ l.redacteur.nom }} » : il lit l'avant et l'après, puis valide votre texte ou rétablit le sien.</div>
+                            <div v-else class="small atl-mt8">En enregistrant, la partie est marquée « Rédigé par le chef de file, à valider par {{ l.redacteur.nom }} » : il la lit, puis la valide ou envoie sa propre version.</div>
+                            <div class="row wrap atl-g6 atl-mt8">
+                              <button type="button" class="btn sm primary" @click="atlRepEnregistrer()" :disabled="!!atl.rep.busy"><span v-if="atl.rep.busy==='texte'" class="spin"></span><i v-else data-lucide="save"></i>Enregistrer</button>
+                              <button type="button" class="btn sm ghost" @click="atlRepAnnuler()">Annuler</button>
+                            </div>
+                          </div>
+                          <div v-else-if="!atlMobile" class="row wrap atl-g6 atl-mt8">
+                            <button type="button" class="btn sm" @click="atlRepEcrire()" :disabled="!!atl.rep.busy"><i data-lucide="pen-line"></i>{{ atl.rep.det.texte_commun ? 'Modifier ce texte' : 'Rédiger sa partie' }}</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Votre texte remplace le sien dans le dossier commun et la partie passe « à revalider » : il voit l'avant et l'après, puis valide ou rétablit sa version. Aucune IA, rien n'est débité. Un fait sur son entreprise reste à relire tant qu'il ne l'a pas validé.</span></button>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                    <!-- Une partie du chef de file : elle s'écrit dans l'atelier -->
+                    <div v-else class="atl-mt8"><button type="button" class="atl-lien" @click="atlRepVersAtelier(l)">Votre partie : l'écrire dans l'onglet « Rédaction »</button></div>
+                  </li>
+                </ol>
+              </template>
+            </div>
+
+            <div v-show="!atlRepVue()" class="atl-grid">
               <!-- À gauche : le plan -->
               <nav class="card atl-plan" aria-label="Plan du dossier de présentation">
                 <div class="atl-col-h"><b class="small">Plan</b><span class="muted small">{{ atl.st.sections.length }} partie{{ atl.st.sections.length > 1 ? 's' : '' }}</span><div class="spacer"></div>
@@ -1990,9 +2098,10 @@
                   <li v-for="s in atl.st.sections" :key="'p'+s.id">
                     <button type="button" class="atl-part" :class="{on: s.id===atl.sel}" @click="atlSelect(s.id)" :aria-current="s.id===atl.sel ? 'true' : null" :aria-label="atlPartLabel(s)">
                       <span class="atl-part-t"><span v-if="s.numero_affiche" class="atl-num">{{ s.numero_affiche + ' ' }}</span>{{ s.intitule }}</span>
+                      <span v-if="!s.peut_ecrire" class="atl-part-m">Rédigée par {{ s.auteur.libelle }}</span>
                       <span v-if="s.critere && s.source_plan !== 'cadre'" class="atl-part-m">{{ s.critere }}<template v-if="s.poids"> · {{ s.poids }}<template v-if="s.poids_source==='utilisateur'"> (lu par vous)</template></template><template v-else-if="s.source_plan==='grille'"> · sans poids écrit</template></span>
                       <span class="atl-part-m row wrap atl-g6">
-                        <span class="pill" :class="atlStatutCls(s.statut)" style="font-size:10.5px">{{ s.statut_libelle }}</span>
+                        <span class="pill" :class="atlPillCls(s)" style="font-size:10.5px">{{ atlPillLib(s) }}</span>
                         <span v-if="s.redaction_en_cours" class="muted"><span class="spin" style="width:10px;height:10px"></span> en cours</span>
                         <span v-for="(l,i) in atlSecLims(s)" :key="'pl'+s.id+i" class="atl-lim sm" :class="atlLimCls(l)">{{ atlLimTexte(l) }}</span>
                         <span v-if="s.faits_a_relire" class="atl-badge-f">{{ s.faits_a_relire }} à relire</span>
@@ -2021,7 +2130,7 @@
                     <div class="row atl-g6" style="align-items:flex-start">
                       <h3 v-if="!atl.ren.on" class="atl-sec-t" style="flex:1;min-width:0"><span v-if="atlSec().numero_affiche" class="atl-num">{{ atlSec().numero_affiche + ' ' }}</span>{{ atlSec().intitule }}</h3>
                       <div v-else class="row atl-g6" style="flex:1;min-width:0"><input class="inp" v-model="atl.ren.v" maxlength="200" aria-label="Intitulé de la partie" @keydown.enter.prevent="atlRenOk()" @keydown.esc="atl.ren.on=false"><button type="button" class="btn sm primary" @click="atlRenOk()" :disabled="!!atl.busy">Enregistrer</button><button type="button" class="btn sm ghost" @click="atl.ren.on=false">Annuler</button></div>
-                      <span class="pill" :class="atlStatutCls(atlSec().statut)" style="font-size:11px">{{ atlSec().statut_libelle }}</span>
+                      <span class="pill" :class="atlPillCls(atlSec())" style="font-size:11px">{{ atlPillLib(atlSec()) }}</span>
                     </div>
                     <div class="row wrap atl-g6 small atl-mt4">
                       <span v-if="atlSec().critere" class="muted">Critère : {{ atlSec().critere }}<template v-if="atlSec().poids"> · {{ atlPoidsTexte(atlSec()) }}</template><template v-else> · aucun poids écrit dans le règlement</template></span>
@@ -2032,7 +2141,7 @@
                     </div>
                     <details v-if="atlSec().question" class="atl-det atl-mt8"><summary>Ce que demande l'acheteur</summary><blockquote class="atl-q">{{ atlSec().question }}</blockquote></details>
                     <div v-if="atlSec().validation" class="muted small atl-mt4">Validée le {{ atlWhen(atlSec().validation.le) }}<template v-if="atlSec().statut==='a_revalider'"> : le texte a changé depuis, validez de nouveau.</template></div>
-                    <div v-if="!atlSec().peut_ecrire" class="muted small atl-mt4">Partie rédigée par : {{ atlSec().auteur.libelle }}. Vous lisez le texte qu'il a envoyé.</div>
+                    <div v-if="!atlSec().peut_ecrire" class="muted small atl-mt4">Partie rédigée par : {{ atlSec().auteur.libelle }}. {{ atlSec().part && atlSec().part.mention ? atlSec().part.mention + '.' : (atlSec().version_courante ? "Vous lisez le texte qu'il a envoyé." : "Rien d'envoyé pour l'instant.") }}<template v-if="atlGrp()"> <button type="button" class="atl-lien" @click="atlRepVoir(atlSec().id)">Le modifier ou l'écrire à sa place</button></template></div>
                   </div>
 
                   <!-- Actions de la partie -->
@@ -2092,7 +2201,7 @@
 
                   <!-- Pied : version affichée, historique, déplacer / renommer / retirer -->
                   <div class="atl-sec-f">
-                    <span v-if="atlSec().version_courante" class="muted small">Version {{ atlSec().version_courante.numero }} · {{ atlSec().version_courante.origine_libelle }} · {{ atlWhen(atlSec().version_courante.cree_le) }}</span>
+                    <span v-if="atlSec().version_courante" class="muted small">Version {{ atlSec().version_courante.numero }} · {{ atlOrigine(atlSec()) }} · {{ atlWhen(atlSec().version_courante.cree_le) }}</span>
                     <div class="spacer"></div>
                     <button v-if="atlSec().prive_visible && atlSec().nb_versions" type="button" class="btn ghost sm" @click="atlHist()" :aria-expanded="atl.hist.open ? 'true' : 'false'"><i data-lucide="history"></i>Historique ({{ atlSec().nb_versions }})</button>
                     <template v-if="!atlMobile && atlSec().peut_ecrire && atl.mode !== 'modifier'">
@@ -2194,7 +2303,11 @@
                   </ul>
                   <div v-else class="muted small atl-pad">{{ atlSec().version_courante ? "Aucun extrait de vos documents n'est cité dans cette version." : "Les extraits cités apparaîtront ici quand Adjugo rédigera cette partie." }}</div>
                 </template>
-                <div v-else-if="atlSec()" class="muted small atl-pad">Les extraits et les faits à relire de cette partie restent chez son auteur.</div>
+                <div v-else-if="atlSec()" class="atl-pad atl-mt12">
+                  <div v-if="atlRepCompteurs(atlSec().version_courante)" class="small">{{ atlRepCompteurs(atlSec().version_courante) }}</div>
+                  <div class="muted small atl-mt4">Les extraits et les faits à relire de cette partie restent chez son auteur.</div>
+                  <div v-if="atlRenvoisPart(atlSec())" class="muted small atl-mt4">Les renvois (F1, S2…) du texte désignent des sources du partenaire : elles restent chez lui.</div>
+                </div>
               </aside>
             </div>
           </template>
@@ -3659,6 +3772,6 @@
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
 <script src="/static/redaction-partenaire.js" integrity="sha384-cm+/0l8CsbtUA3z3U2hV+1WvWJzv0l8ZIrjVPAgUcVAePdzNI1TmLIgkuEFEhQMa" defer></script>
-<script src="/static/app.js" integrity="sha384-ZXoTNbv6hXYKtbHwUFQMATXw4mnZAm6Ue9CRwXLcEKj+MViLxIG1F7AeyDxfxA4J" defer></script>
+<script src="/static/app.js" integrity="sha384-OHEh8CIhGs2yrhx6rPuy2EeaFGT/TymBhhEvfuv09cVnz66GKeCuWoK6d1HgduB4" defer></script>
 </body>
 </html>

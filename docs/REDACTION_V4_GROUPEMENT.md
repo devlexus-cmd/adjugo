@@ -184,7 +184,7 @@ Authentification `Bearer`, portée organisation : un marché d'une autre organis
 ```json
 {"actif": true,
  "membres": [{"invite_id": 7, "nom": "Breizh Désamiantage", "lot": "...", "role": "cotraitant",
-              "peut_rediger": true, "raison": ""}],
+              "peut_rediger": true, "raison": "", "par_email": true}],
  "sections": [Ligne],
  "dossier": {"empreinte": "64 hex", "validations": [Validation], "pret": Pret},
  "statuts": {"a_rediger": "À rédiger", ...}, "avertissement_envoi": "...", "plafond_aide_par_partie": 3}
@@ -204,11 +204,13 @@ Authentification `Bearer`, portée organisation : un marché d'une autre organis
  "lock_version": 2}
 ```
 `enregistre: false` : partie ajoutée après la préparation (proposition calculée, rien d'enregistré).
-`membres[].peut_rediger: false` avec `raison` (« son lien a expiré », « n'a pas encore accepté
-l'invitation », « un sous-traitant n'est pas membre du groupement »…).
+`membres[].peut_rediger: false` avec `raison`, une phrase qui se lit seule (« son lien a expiré », « il n'a
+pas encore accepté l'invitation », « un sous-traitant n'est pas membre du groupement », « il n'est plus membre
+du groupement »…) ; `par_email` : son lien porte une adresse (un booléen, jamais l'adresse).
 
 ### `POST /api/atelier/{pid}/repartition` `{"reproposer": false}`
-Prépare « Qui écrit quoi » (idempotent) → même réponse + `preparation: {crees, reproposees}`.
+Prépare « Qui écrit quoi » (idempotent) → même réponse + `preparation: {crees, reproposees}`. Un marché sans
+partenaire co-traitant (aucun groupement) → 409 `pas_de_groupement`, rien n'est créé.
 `reproposer` refait la proposition des lignes jamais choisies à la main et encore sans texte.
 
 ### `GET /api/atelier/{pid}/repartition/{sid}`
@@ -233,9 +235,13 @@ restent à relire tant que le partenaire ne l'a pas validé sur SES faits. Erreu
 
 ### `POST /api/atelier/{pid}/repartition/demander` `{"invite_ids"?: [..]}`
 « Demander les parts » : un email par partenaire qui a des parties à rédiger, en cours ou à revalider
-(liste, date limite interne, lien). Exige l'adresse confirmée du chef de file ; démo refusée.
-→ `{"demandees": [{invite_id, nom, parties, email_parti}], "sans_adresse": [...], "deja_demandees": [...]}`
-(anti-rafale : 15 minutes par partenaire).
+(liste, date limite interne, « texte du chef de file, à relire et valider » le cas échéant, lien). Mêmes
+garde-fous que les relances de la co-traitance : adresse confirmée du chef de file, démo refusée, anti-rafale
+de 15 minutes par partenaire, même plafond quotidien que les invitations et leurs renvois
+(`invites._daily_invite_count` : `invite.resent` et `redaction.parts_demandees` comptent ensemble). Seul un
+email PARTI horodate la demande (`demandee_le`) et s'inscrit au journal : un envoi raté se retente aussitôt.
+→ `{"demandees": [{invite_id, nom, parties, email_parti}], "sans_adresse": [...], "deja_demandees": [...],
+"plafond_atteint": [...]}` (noms seulement, jamais une adresse).
 
 ### `POST /api/atelier/{pid}/repartition/valider-dossier` `{"empreinte"?}`
 Le chef de file valide le dossier assemblé, après avoir validé chacune de SES parties.
@@ -475,6 +481,13 @@ Testée :
   base montée** (une tâche de partenaire en cours ne le casse pas), schéma identique à une base neuve (hors
   écart déjà admis des tables de l'atelier), retour arrière puis remontée ; puis les vrais tests rejoués sur
   cette base.
+- rejoué depuis l'état exact de la production APRÈS la démo par lien privé (`0767372`, même tête
+  `w7x8analysepartagee`), script `scratchpad/pgtest/run_v4_chef_depuis_prod.py` : migration, rejeu, code de
+  production redémarré, retour arrière et remontée verts ; tests de la vague 4, de « Qui écrit quoi » et de la
+  démo verts sur cette base. Deux groupes restent en échec sur Postgres, déjà en échec au socle et propres à
+  SQLite (aucun lien avec la vague 4) : `test_secu2_donnees.py` (`PRAGMA foreign_keys`) et
+  `test_hotfix_v2_fuites.py::test_fourche_historique_toleree_alteration_detectee` (journal écrit pour un compte
+  inexistant, refusé par la clé étrangère de Postgres).
 
 Déploiement sans casse : le code de production ne lit ni n'écrit les nouvelles tables et colonnes ; il crée
 toujours ses tâches avec un compte. Retour arrière du CODE après la mise en ligne : une tâche de partenaire
@@ -576,3 +589,44 @@ note » (grille et cadre), « Partagé avec moi » (pastille, compte, sources du
 brouillons précédents (seul leur auteur), aide indisponible neutre (essai terminé, IA en panne : aide
 rendue), isolation entre membres et 404, démo (lien et compte, même sans le garde), règles d'interface et
 fonctions pures de l'écran sous Node (échappement, renvois, avant / après mot à mot).
+
+## 16. Écran « Qui écrit quoi » du chef de file (chantier 2 — fait)
+
+Étude § 6.8, parcours 1 et 3. Fichiers : `app/static/app.html` (bloc « QUI ÉCRIT QUOI » de l'atelier),
+`app/static/app.js` (méthodes `atlRep…`, fonctions pures `atlRepCompteurs`, `atlRepADemander`,
+`atlRepDemandeTexte`, `atlRepValidationsTexte`, `atlRefsPartHtml`), `app/static/styles.css` (`.atl-rep…`) ;
+tests : `tests/test_redaction_v4_chef_de_file.py`.
+
+- **Seulement en groupement.** `GET /api/atelier/{pid}` porte `groupement: {onglet, actif, membres}`
+  (`ag.indicateur` : au moins un partenaire co-traitant actif, ou une répartition déjà préparée). Sans
+  groupement : tout à faux, aucun onglet, l'atelier est exactement celui d'une seule entreprise.
+- **Deux onglets** sous l'en-tête de l'atelier : « Rédaction » (l'atelier V2/V3, inchangé) et « Qui écrit
+  quoi ». Le menu de l'application n'est pas réorganisé.
+- **Répartir** : par partie, « Rédigée par » (pré-rempli sans IA ; la raison de la proposition dans une bulle
+  (i)), son critère et son poids, « Mots conseillés », « Date limite interne » (verrou optimiste
+  `lock_version` ; une partie écrite ne change de mains qu'après confirmation, `changement_a_confirmer`).
+- **Demander les parts** : confirmation (qui reçoit, combien de parties), puis le résultat en phrases
+  (envoyée à, sans adresse, déjà demandée, limite du jour atteinte).
+- **Recevoir** : statut de chaque part, « Envoyée le … », et les COMPTEURS : « 5 faits avec une source : 3
+  déclarés, 2 trouvés dans ses documents · 1 fait à relire · 1 passage « [À compléter] » ». Jamais une
+  source, un extrait ni un nom de document (l'écran ne lit aucun de ces champs).
+- **Lire, modifier, écrire à sa place** : texte commun rendu par le moteur sûr de l'atelier
+  (`atlMdToHtml(texte, [], {refsPartenaire: true})` : renvois montrés « source du partenaire », sans lien) ;
+  « Modifier ce texte » → `PUT …/texte` → « à revalider par X », avant et après côte à côte ; « Rédiger à sa
+  place » (rien d'envoyé) → « Rédigé par le chef de file, à valider par X ». Sur téléphone : lire et répartir ;
+  écrire depuis un ordinateur.
+- **Aucune IA pour la part d'un partenaire** : aucun bouton dans cet écran ; le serveur refuse (403
+  `partie_d_un_partenaire`, 404 par « Partagé avec moi », 403 `cle_espace_requise` par le lien sans clé).
+- **Dans l'atelier** (onglet « Rédaction »), une partie de partenaire porte `part: {statut, statut_libelle,
+  mention}` (`atelier.section_out` → `ag.statut_de`, `ag.mention`) : le plan et la pastille disent « Envoyée »,
+  « À revalider »… au lieu du statut de l'atelier ; « Rédigée par X » dans le plan ; ses compteurs à droite ;
+  lien « Le modifier ou l'écrire à sa place ».
+- **Démo** : chaque route d'écriture du chef de file appelle `refuser_demo` (en plus du garde central) ; le
+  lien partenaire de la vitrine est refusé dans la route (`_par_lien(…, ecrire=True)` → 403 `{code: demo}`),
+  même sans dossier commun ; « Partagé avec moi » : `refuser_demo`. Toutes les routes de la vague 4 sont
+  classées dans `tests/test_demo_sans_cout.py` (`COUTS` : aide de l'IA, demander, texte du chef de file,
+  envoyer ; `SANS_COUT` : le reste).
+
+Pas dans ce chantier : la validation du dossier assemblé et « Prêt à déposer » (chantier 3 ; l'écran montre
+seulement « Sections validées k sur n » et qui a validé le dossier), l'harmonisation du ton, les écrans du
+partenaire (chantier 1).

@@ -158,8 +158,10 @@ def peut_rediger(db, inv: ProjectInvite) -> tuple:
     non expirée, co-traitant — un sous-traitant n'est pas membre —, co-construction ouverte) et, invitation
     du réseau, s'il l'a acceptée."""
     from app.routers.invites import _is_expired, _network_pending
+    # Raisons écrites pour se lire seules (« Le Gall Électricité : son lien a expiré ») ou après « Ce partenaire
+    # ne peut pas rédiger : ».
     if inv is None or inv.revoked or inv.declined_at is not None:
-        return False, "n'est plus membre du groupement"
+        return False, "il n'est plus membre du groupement"
     if _is_expired(inv.expires_at):
         return False, "son lien a expiré"
     if (inv.role or "cotraitant") != "cotraitant":
@@ -167,14 +169,16 @@ def peut_rediger(db, inv: ProjectInvite) -> tuple:
     if not getattr(inv, "can_contribute", True):
         return False, "la co-construction n'est pas ouverte sur son lien"
     if _network_pending(inv, db):
-        return False, "n'a pas encore accepté l'invitation"
+        return False, "il n'a pas encore accepté l'invitation"
     return True, ""
 
 
 def membres(db, project: Project) -> list:
-    """[{invite_id, nom, lot, role, peut_rediger, raison}] des invitations actives du marché, dans l'ordre
-    d'invitation. Le lot d'une invitation du réseau sans réponse n'est pas lu (sa part est invisible du chef
-    de file)."""
+    """[{invite_id, nom, lot, role, peut_rediger, raison, par_email}] des invitations actives du marché, dans
+    l'ordre d'invitation. Le lot d'une invitation du réseau sans réponse n'est pas lu (sa part est invisible du
+    chef de file). `par_email` : « Demander les parts » peut lui écrire (une adresse sur son lien) — un
+    booléen seulement, jamais l'adresse (celle d'une invitation du réseau reste masquée)."""
+    from app.routers.invites import _is_email
     from app.services.groupement_members import active_invites, visible_contributions
     invites = active_invites(db, project.id)
     contribs = visible_contributions(db, project.id, invites)
@@ -183,8 +187,28 @@ def membres(db, project: Project) -> list:
         c = contribs.get(inv.id)
         ok, raison = peut_rediger(db, inv)
         out.append({"invite_id": inv.id, "nom": nom_partenaire(inv, c), "lot": at._flat(c.lot if c else "")[:255],
-                    "role": inv.role or "cotraitant", "peut_rediger": ok, "raison": raison})
+                    "role": inv.role or "cotraitant", "peut_rediger": ok, "raison": raison,
+                    "par_email": bool(_is_email(inv.recipient or ""))})
     return out
+
+
+MSG_SANS_GROUPEMENT = ("Ce marché n'a aucun partenaire du groupement : invitez d'abord un partenaire depuis la page "
+                       "du marché. Sans groupement, l'atelier reste celui de votre seule entreprise.")
+
+
+def indicateur(db, project: Project, dossier: Optional[DossierPresentation]) -> dict:
+    """Pour l'atelier du chef de file (`atelier.etat`) : le marché est-il en groupement, et « Qui écrit quoi »
+    est-il préparé ? Sans IA, sans écriture, deux requêtes. `onglet` : l'atelier montre l'onglet « Qui écrit
+    quoi » (au moins un partenaire co-traitant actif, ou une répartition déjà préparée — le chef de file y
+    reprend alors les parties d'un partenaire parti). Un marché sans groupement : tout à faux, l'atelier
+    reste exactement celui d'une seule entreprise."""
+    from app.services.groupement_members import active_invite_filter
+    from sqlalchemy import or_
+    n = (db.query(ProjectInvite.id).filter(ProjectInvite.project_id == project.id, active_invite_filter(),
+                                            or_(ProjectInvite.role == "cotraitant", ProjectInvite.role.is_(None),
+                                                ProjectInvite.role == "")).count())
+    actif = repartition_active(db, dossier)
+    return {"onglet": bool(n or actif), "actif": bool(actif), "membres": int(n)}
 
 
 # ── Pré-remplissage SANS IA du rédacteur : lot du membre ↔ critère de la partie ─────────
@@ -1355,6 +1379,9 @@ def activer(db, project: Project, dossier: DossierPresentation, lecteur: at.Lect
     proposition des seules lignes jamais choisies à la main et encore sans texte."""
     cands = membres(db, project)
     reps = repartitions(db, dossier)
+    if not reps and not any((m.get("role") or "cotraitant") == "cotraitant" for m in cands):
+        # Un marché sans groupement : rien à répartir, l'atelier reste celui d'une seule entreprise.
+        raise AtelierError(409, "pas_de_groupement", MSG_SANS_GROUPEMENT)
     crees, reproposees = 0, 0
     for s in at.sections_actives(db, dossier):
         r = reps.get(s.id)
@@ -1465,7 +1492,7 @@ def repartir(db, project: Project, dossier: DossierPresentation, section: Dossie
                 raise AtelierError(404, "partenaire_introuvable", "Partenaire introuvable sur ce marché.")
             ok, raison = peut_rediger(db, inv)
             if not ok:
-                raise AtelierError(409, "partenaire_indisponible", f"Ce partenaire ne peut pas rédiger : il {raison}.")
+                raise AtelierError(409, "partenaire_indisponible", f"Ce partenaire ne peut pas rédiger : {raison}.")
             iid = inv.id
         else:
             iid = None
@@ -1601,25 +1628,43 @@ def comparer(db, section: DossierSection) -> dict:
     return {"avant": _version_commune_out(av), "apres": _version_commune_out(cur)}
 
 
+def _a_faire(db, section: DossierSection, rep: DossierRepartition) -> str:
+    """Ce qu'on attend du partenaire sur cette partie, pour l'email de « Demander les parts »."""
+    if statut_de(db, section, rep) != A_REVALIDER:
+        return ""
+    cur = _commune(db, section)
+    if cur is not None and cur.ecrit_par == ECRIT_PAR_CHEF:
+        return " : texte du chef de file, à relire et valider"
+    return " : à revalider"
+
+
 def demander_parts(db, project: Project, dossier: DossierPresentation, user: User, invite_ids=None, ip: str = "") -> dict:
-    """« Demander les parts » : un email à chaque partenaire qui a des parties à rédiger ou à revalider,
-    avec leur liste et la date limite interne (relances existantes : même expéditeur, anti-rafale de 15 min
-    par partenaire). Rien n'est envoyé pour le compte de démonstration ni sans adresse."""
+    """« Demander les parts » : un email à chaque partenaire qui a des parties à rédiger, en cours ou à
+    revalider, avec leur liste et la date limite interne. Mêmes garde-fous d'envoi que les relances de la
+    co-traitance (routeur : démo refusée, adresse du chef de file confirmée) : anti-rafale de 15 min par
+    partenaire (un email PARTI seulement), même plafond quotidien que les invitations et leurs renvois
+    (`invites._daily_invite_count`, une entrée de journal par partenaire sollicité), jamais d'email pour la
+    démonstration ni sans adresse. Chaque demande partie est inscrite au journal chaîné (journal du membre :
+    « partie demandée »)."""
     from app.core.config import get_settings
-    from app.routers.invites import _invite_is_demo, _is_email
+    from app.routers.invites import DAILY_INVITE_CAP, _daily_invite_count, _invite_is_demo, _is_email
     from app.services import email as _email
     base = (get_settings().APP_BASE_URL or "").rstrip("/")
     now = utcnow()
+    voulues = set(int(x) for x in invite_ids) if invite_ids else None
+    reps = repartitions(db, dossier)
     par_invite = {}
     for s in at.sections_actives(db, dossier):
-        r = repartitions(db, dossier).get(s.id)
+        r = reps.get(s.id)
         if r is None or r.redacteur != PARTENAIRE or not r.invite_id:
             continue
-        if invite_ids and r.invite_id not in set(int(x) for x in invite_ids):
+        if voulues is not None and r.invite_id not in voulues:
             continue
         if statut_de(db, s, r) in (A_REDIGER, EN_COURS, A_REVALIDER):
             par_invite.setdefault(r.invite_id, []).append((s, r))
-    demandees, sans_adresse, recentes = [], [], []
+    demandees, sans_adresse, recentes, plafond = [], [], [], []
+    chef = db.query(Company).filter(Company.user_id == dossier.owner_id).first()
+    de = f"{chef.name}" if chef and chef.name else "Le chef de file"
     for iid, lignes in par_invite.items():
         inv = db.get(ProjectInvite, iid)
         nom = nom_partenaire(inv, _contribution(db, iid))
@@ -1634,24 +1679,32 @@ def demander_parts(db, project: Project, dossier: DossierPresentation, user: Use
             if datetime.now(timezone.utc) - last < DEMANDE_INTERVALLE:
                 recentes.append({"invite_id": iid, "nom": nom})
                 continue
-        liste = "\n".join(f"- « {_titre(dossier, s)} »" + (f" (date limite interne : {r.date_limite.strftime('%d/%m/%Y')})"
-                                                          if r.date_limite else "") for s, r in lignes)
-        chef = db.query(Company).filter(Company.user_id == dossier.owner_id).first()
-        de = f"{chef.name}" if chef and chef.name else "Le chef de file"
+        if _daily_invite_count(user, db) >= DAILY_INVITE_CAP:
+            db.rollback()                   # libère le verrou de l'organisation pris pour compter
+            plafond.append({"invite_id": iid, "nom": nom})
+            continue
+        liste = "\n".join(f"- « {_titre(dossier, s)} »" + _a_faire(db, s, r)
+                          + (f" (date limite interne : {r.date_limite.strftime('%d/%m/%Y')})" if r.date_limite else "")
+                          for s, r in lignes)
         sent = _email.send_email(inv.recipient, f"Votre partie du dossier de présentation — {project.name[:60]}",
-                                 f"Bonjour,\n\n{de} vous demande de rédiger votre partie du dossier de présentation du "
+                                 f"Bonjour,\n\n{de} attend votre partie du dossier de présentation du "
                                  f"marché « {project.name} » :\n{liste}\n\nÉcrivez-la vous-même ou avec l'aide d'Adjugo, "
                                  f"depuis votre lien :\n{base}/invite/{inv.token}\n\nVos documents et vos brouillons "
                                  f"restent privés : seul le texte que vous envoyez est lu par le groupement.\n\n— Adjugo")
-        for _s, r in lignes:
-            r.demandee_le = now
+        if sent:
+            # L'anti-rafale ne compte qu'un email PARTI : un envoi échoué se retente aussitôt (comme le
+            # renvoi d'une invitation, qui n'horodate que l'envoi réussi).
+            for _s, r in lignes:
+                r.demandee_le = now
         db.commit()
-        _journal(db, action="redaction.parts_demandees", project_id=project.id, owner_id=dossier.owner_id,
-                 actor=user.email or f"user:{user.id}", actor_kind="owner", invite_id=iid,
-                 target_type="dossier_presentation", target_id=dossier.id, ip=ip,
-                 detail=f"Parties demandées : {len(lignes)}", meta={"email": bool(sent)})
+        if sent:
+            _journal(db, action="redaction.parts_demandees", project_id=project.id, owner_id=dossier.owner_id,
+                     actor=user.email or f"user:{user.id}", actor_kind="owner", invite_id=iid,
+                     target_type="dossier_presentation", target_id=dossier.id, ip=ip,
+                     detail=f"Parties demandées : {len(lignes)}", meta={"email": True, "parties": len(lignes)})
         demandees.append({"invite_id": iid, "nom": nom, "parties": len(lignes), "email_parti": bool(sent)})
-    return {"demandees": demandees, "sans_adresse": sans_adresse, "deja_demandees": recentes}
+    return {"demandees": demandees, "sans_adresse": sans_adresse, "deja_demandees": recentes,
+            "plafond_atteint": plafond}
 
 
 def relancer_parts(db, today: Optional[date] = None) -> dict:

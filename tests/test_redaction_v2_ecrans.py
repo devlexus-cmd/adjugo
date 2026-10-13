@@ -168,9 +168,10 @@ def test_regles_d_interface_zero_emoji_jamais_verifie_boutons_types_bulles():
         for m in re.finditer(r"<button\b(?:[^>\"]|\"[^\"]*\")*>", s):
             assert 'type="button"' in m.group(0), m.group(0)[:120]
         assert s.count('class="tip-b" role="tooltip"') == s.count("tip-b")
-    # v-html seulement sur le rendu sûr de l'atelier.
+    # v-html seulement sur le rendu sûr de l'atelier (vague 4 : la part d'un partenaire dans « Qui écrit
+    # quoi », par le même rendu, renvois montrés comme « source du partenaire »).
     vh = re.findall(r'v-html="([^"]+)"', ATELIER + FENETRES)
-    assert sorted(set(vh)) == ["atlHtml(atlSec())", "atlPhrase(f)", "atlVueHtml()"]
+    assert sorted(set(vh)) == ["atlHtml(atlSec())", "atlPhrase(f)", "atlRepHtml(b.v)", "atlVueHtml()"]
 
 
 def test_routes_branchees_suivi_des_taches_et_brouillon_local():

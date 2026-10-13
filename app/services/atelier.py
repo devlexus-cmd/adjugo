@@ -2589,7 +2589,22 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
     out["controle"] = (v.get("controle") if v and prive else None) or {"libelles": False}
     out["compteur"] = ({k: cpt_section.get(k) for k in ("mots", "caracteres", "pages_estimees", "lignes_estimees")}
                        if cpt_section else None)
+    if s.author_kind == AUTEUR_INVITATION and not prive:
+        out["part"] = _part_out(db, s, out["auteur"]["libelle"])
     return out
+
+
+def _part_out(db, s: DossierSection, nom: str) -> Optional[dict]:
+    """Vague 4 : la partie d'un partenaire, vue du chef de file, porte le statut du groupement (à rédiger,
+    en cours, envoyée, à revalider, validée) et la mention « rédigé / modifié par le chef de file, à valider
+    par X » (atelier_groupement.statut_de, calculés, jamais stockés). Lecture seule ; jamais bloquante."""
+    try:
+        from app.services import atelier_groupement as ag
+        st = ag.statut_de(db, s)
+        return {"statut": st, "statut_libelle": ag.STATUTS[st], "mention": ag.mention(db, s, nom)}
+    except Exception as e:      # noqa: BLE001 — l'atelier reste lisible sans le statut du groupement
+        logger.warning("atelier : statut de la part illisible (partie %s) : %s", s.id, type(e).__name__)
+        return None
 
 
 def _noms_auteurs(db, sections: list) -> dict:
@@ -2698,7 +2713,19 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
         "statuts": STATUTS,
         "derogations_possibles": derogations_possibles(gate),
         "sources_faits": sources_faits_out(db, dossier.owner_id),
+        "groupement": _groupement_out(db, project, dossier),
     }
+
+
+def _groupement_out(db, project: Project, dossier: DossierPresentation) -> dict:
+    """Vague 4 : l'atelier montre l'onglet « Qui écrit quoi » seulement pour un marché en groupement
+    (atelier_groupement.indicateur). Un marché sans groupement : tout à faux, l'atelier ne change pas."""
+    try:
+        from app.services import atelier_groupement as ag
+        return ag.indicateur(db, project, dossier)
+    except Exception as e:      # noqa: BLE001 — l'atelier d'une seule entreprise ne dépend jamais du groupement
+        logger.warning("atelier : état du groupement illisible (projet %s) : %s", project.id, type(e).__name__)
+        return {"onglet": False, "actif": False, "membres": 0}
 
 
 def definir_options(db, dossier: DossierPresentation, page_garde=None, sommaire=None) -> dict:

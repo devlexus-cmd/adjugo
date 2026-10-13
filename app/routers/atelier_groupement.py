@@ -164,7 +164,8 @@ class TexteChefIn(BaseModel):
 @limiter.limit("600/hour")
 def chef_modifier_part(request: Request, project_id: int, section_id: int, body: TexteChefIn,
                        current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Le chef de file modifie la part d'un partenaire, ou l'écrit à sa place : « à revalider par » lui."""
+    """Le chef de file modifie la part d'un partenaire, ou l'écrit à sa place : « à revalider par » lui (le
+    partenaire en est prévenu par email : jamais pour la démo)."""
     _refuser_demo(current_user)
     c = _Chef(db, current_user, project_id)
     s = c.section(section_id)
