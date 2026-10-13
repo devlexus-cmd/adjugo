@@ -285,14 +285,18 @@ def ensure_demo(db, force: bool = False) -> User:
     from app.models import (Document, GeneratedDoc, Invoice, ProjectInvite,
                             ProjectContribution, ContributionPiece, AuditLog,
                             GroupementSimulation, GroupementConvention, GroupementSignature,
-                            DossierPresentation, DossierSection, DossierSectionVersion, Preuve)
+                            DossierPresentation, DossierSection, DossierSectionVersion, Preuve,
+                            DossierPartBrouillon, DossierRepartition, DossierValidation)
     old_ids = [p.id for p in db.query(Project).filter(Project.user_id == user.id).all()]
     if old_ids:
         # Ordre : enfants des contributions/invites d'abord, puis le reste. TOUTES les
         # tables qui référencent projects doivent être purgées sinon la FK bloque le reseed
         # (ex. project_invites créés en testant la co-traitance, simulations de groupement,
-        # dossier de présentation de l'atelier, convention de groupement et ses accords).
-        for M in (DossierSectionVersion, DossierSection, DossierPresentation, GroupementSignature,
+        # dossier de présentation de l'atelier, convention de groupement et ses accords ;
+        # rédaction, vague 4 : brouillons des partenaires, « Qui écrit quoi » et validations du
+        # dossier assemblé, qui pointent vers les parties et le dossier).
+        for M in (DossierPartBrouillon, DossierRepartition, DossierValidation,
+                  DossierSectionVersion, DossierSection, DossierPresentation, GroupementSignature,
                   GroupementConvention, ContributionPiece, ProjectContribution, ProjectInvite,
                   GroupementSimulation, ProjectCotraitant, Document, GeneratedDoc, Invoice, AuditLog):
             db.query(M).filter(M.project_id.in_(old_ids)).delete(synchronize_session=False)
