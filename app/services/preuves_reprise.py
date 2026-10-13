@@ -52,15 +52,27 @@ def cle_intitule(nature: str, intitule) -> str:
     return cle_souple(nature, {PRINCIPAL.get(nature, ""): str(intitule or "").strip()})
 
 
+# Une fiche RETIRÉE ne fait taire le profil que si elle REPRENAIT le profil : l'utilisateur a repris
+# l'élément puis l'a retiré (« ne plus s'en servir »). Une proposition d'un ancien dossier (I) écartée,
+# acceptée ou non, ne fait jamais taire la déclaration actuelle du profil (« Effectif : 8 » d'un mémoire
+# de 2019 retiré : l'effectif de 12 du profil reste remis et reprenable).
+ORIGINES_QUI_GOUVERNENT_RETIREES = ("profil",)
+
+
+def _gouverne(p: Preuve) -> bool:
+    return p.statut == pv.ACCEPTEE or (p.statut == pv.RETIREE and p.origine in ORIGINES_QUI_GOUVERNENT_RETIREES)
+
+
 def cles_gerees(db, owner_id: int) -> set:
     """Clés « même intitulé » des éléments que « Mes preuves » GOUVERNE désormais (vague 3, ensemble) :
-    fiches acceptées (utilisables, expirées ou sans source) et retirées de l'organisation. Un élément
-    du profil qui a sa fiche n'est plus remis à la rédaction depuis le profil : sa fiche décide (remise
-    [F#] si elle est utilisable ; rien si elle est retirée, expirée ou sans source). Une fiche
-    seulement PROPOSÉE (lecture d'un ancien dossier, I) ne gouverne rien : la déclaration du profil
-    reste remise tant que l'utilisateur n'a pas coché."""
+    fiches acceptées (utilisables, expirées ou sans source), et fiches retirées qui reprenaient le
+    profil (`ORIGINES_QUI_GOUVERNENT_RETIREES`). Un élément du profil qui a sa fiche n'est plus remis à
+    la rédaction depuis le profil : sa fiche décide (remise [F#] si elle est utilisable ; rien si elle
+    est retirée, expirée ou sans source). Une fiche seulement PROPOSÉE (lecture d'un ancien dossier, I)
+    ne gouverne rien, ni une proposition écartée : la déclaration du profil reste remise."""
     return {cle_souple(p.nature, p.valeur or {})
-            for p in pv._q_org(db, owner_id).filter(Preuve.statut.in_([pv.ACCEPTEE, pv.RETIREE])).all()}
+            for p in pv._q_org(db, owner_id).filter(Preuve.statut.in_([pv.ACCEPTEE, pv.RETIREE])).all()
+            if _gouverne(p)}
 
 
 def _cle(provenance: str, nature: str, valeur: dict, document_id=None) -> str:
@@ -163,9 +175,13 @@ def _depuis_reseau(prof: Optional[PartnerProfile]) -> list:
 
 
 def _existant(db, owner_id: int) -> tuple:
-    """(empreintes, clés souples, justificatifs liés) des preuves de l'organisation (tous statuts)."""
+    """(empreintes, clés souples, justificatifs liés) des preuves de l'organisation (tous statuts), sauf
+    une proposition d'un ancien dossier écartée (retirée sans reprendre le profil) : elle ne rend pas
+    l'élément du profil « déjà dans vos preuves » (même règle que `cles_gerees`)."""
     emp, souples, docs = set(), set(), set()
     for p in pv._q_org(db, owner_id).all():
+        if p.statut == pv.RETIREE and not _gouverne(p):
+            continue
         if p.empreinte:
             emp.add(p.empreinte)
         souples.add(cle_souple(p.nature, p.valeur or {}))

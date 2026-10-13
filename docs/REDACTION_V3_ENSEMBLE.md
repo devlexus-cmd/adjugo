@@ -46,7 +46,8 @@ la lecture, et l'export est bloqué.
 ## 2. Règles d'assemblage (ajoutées en réunissant les morceaux)
 
 - **« Mes preuves » gouverne le profil une fois repris.** Un élément du profil a parfois sa fiche du
-  même intitulé, acceptée ou retirée (`preuves_reprise.cles_gerees`). C'est le cas d'une personne,
+  même intitulé, acceptée (quelle que soit son origine), ou retirée après l'avoir REPRISE du profil
+  (origine `profil`) (`preuves_reprise.cles_gerees`). C'est le cas d'une personne,
   d'une référence, d'une qualification, de l'effectif ou d'un chiffre d'affaires. L'atelier ne le
   remet alors plus depuis le profil (`atelier.Contexte.fiches`), et sa fiche décide :
   - utilisable : remise en `[F#]` ;
@@ -56,7 +57,10 @@ la lecture, et l'export est bloqué.
   fiche retirée ou expirée revienne par le profil. Une personne reprise n'est plus remise que par sa
   fonction. Sa qualification et ses chantiers font partie de son CV : ils ne partent plus à l'IA
   (décision 8a). Une fiche seulement PROPOSÉE ne gouverne rien : la déclaration du profil reste remise
-  tant que l'utilisateur n'a pas coché. Le profil lui-même n'est jamais modifié.
+  tant que l'utilisateur n'a pas coché. Une proposition d'un ancien dossier ÉCARTÉE (« Retirer »,
+  acceptée avant ou non) ne gouverne rien non plus : « Effectif : 8 » d'un mémoire de 2019 retiré, l'effectif
+  de 12 du profil reste remis en `[P#]`, et la reprise le propose encore (`preuves_reprise._existant`).
+  Le profil lui-même n'est jamais modifié.
 - **Une qualification du profil expirée** (date d'expiration dépassée, jour de Paris) n'est pas
   remise.
 - **Un seul format de CV.** Il y a deux façons d'insérer un CV :

@@ -240,3 +240,41 @@ def test_forme_d_un_cv_reconnue_sans_sa_fiche():
         "Maëlys Kerbrat"]
     assert pa._cv_par_forme("Nos références :\n- Acheteur : Mairie de Quimper\n- Année : 2024") == []
     assert pa._cv_par_forme("Notre entreprise a une expérience de 15 ans.") == []
+
+
+# ═══ 4. « Mes preuves » ne fait jamais taire le profil par une proposition écartée ═══════════════
+
+def test_une_proposition_ecartee_ne_fait_pas_taire_le_profil(client):
+    from app.models import Project
+    from app.services import atelier as at
+    from app.services import preuves as pv
+    from app.services import preuves_reprise as rp
+    from tests.test_redaction_v3_ensemble import _db
+    _e, h, uid = _register(client)
+    _ok(client.put("/api/company/", headers=h, json={"name": "Breizh Couverture", "effectif": 12,
+                                                    "qualifications": [{"name": "Qualibat 3194",
+                                                                        "expiration": "2030-12-31"}]}))
+    pid = _projet(client, h)
+    db = _db()
+    try:
+        a = pv.creer(db, uid, nature=pv.CHIFFRE_CLE, valeur={"libelle": "Effectif", "valeur": 8, "unite": "personnes"},
+                     statut=pv.PROPOSEE, origine="import_document")
+        b = pv.creer(db, uid, nature=pv.QUALIFICATION, valeur={"nom": "Qualibat 3194"}, statut=pv.PROPOSEE,
+                     origine="import_document")
+        pv.retirer(db, a)
+        pv.accepter(db, b)
+        pv.retirer(db, b)                        # cochée puis décochée : elle non plus ne gouverne rien
+        ctx = at.Contexte(db, db.get(Project, pid), uid, [uid])
+        textes = "\n".join(f.ligne_ia() for f in ctx.fiches(db))
+        assert "(déclaré par vous) Effectif : 12" in textes and "Qualibat 3194" in textes
+        ap = rp.apercu(db, uid)
+        cles = {(e["nature"], e["valeur"].get("libelle") or e["valeur"].get("nom")) for e in ap["elements"]}
+        assert ("chiffre_cle", "Effectif") in cles and ("qualification", "Qualibat 3194") in cles
+        # Reprise du profil, puis retrait : là, la fiche gouverne (« ne plus s'en servir »).
+        rp.reprendre(db, uid, [e["cle"] for e in ap["elements"] if e["nature"] == "chiffre_cle"])
+        p = next(x for x in pv.lister(db, uid, nature=pv.CHIFFRE_CLE) if x.origine == "profil")
+        pv.retirer(db, p)
+        ctx = at.Contexte(db, db.get(Project, pid), uid, [uid])
+        assert "Effectif : 12" not in "\n".join(f.ligne_ia() for f in ctx.fiches(db))
+    finally:
+        db.close()
