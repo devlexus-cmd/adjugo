@@ -174,10 +174,14 @@ def rafraichir_generees(db, project: Project, dossier: DossierPresentation) -> i
 
 def _ecrire(db, project: Project, dossier: DossierPresentation, section: DossierSection, texte: str) -> bool:
     t = at.normaliser_texte(texte)
-    section = at._verrouiller(db, section)
+    emp = at.empreinte(t)
     cur = at.version_courante(db, section)
-    if cur is not None and cur.empreinte == at.empreinte(t):
-        db.rollback()               # rien à écrire : le verrou est rendu
+    if cur is not None and cur.empreinte == emp:
+        return False                # le cas courant : rien à écrire, aucun verrou pris
+    section = at._verrouiller(db, section)      # deux lectures simultanées n'écrivent qu'une version
+    cur = at.version_courante(db, section)
+    if cur is not None and cur.empreinte == emp:
+        db.commit()                 # écrite entre-temps par une autre lecture : le verrou est rendu
         return False
     premiere = cur is None
     v = at.ajouter_version(db, section, texte=t, origine=at.GENERE, ia=False, sources=[], faits=[],
@@ -603,14 +607,21 @@ def valider(db, project: Project, dossier: DossierPresentation, section: Dossier
         if cle not in {c for c, _i, _n in attendus(db, project)}:
             raise AtelierError(403, "membre_non_attendu", "Seuls les membres du groupement qui rédigent valident cette "
                                                           "partie.")
-        v = _qfq_vals(db, dossier).get(cle)
-        if v is None:
-            v = DossierValidation(dossier_id=dossier.id, project_id=project.id, owner_id=dossier.owner_id,
-                                  membre=membre, membre_cle=PREFIXE_QFQ + cle,
-                                  invite_id=(int(invite_id) if membre == ag.PARTENAIRE else None))
-            db.add(v)
-        v.empreinte, v.statut, v.valide_le, v.perime_le, v.user_id = cur.empreinte, "valide", utcnow(), None, user_id
-        db.commit()
+        from sqlalchemy.exc import IntegrityError
+        for _essai in range(2):         # deux validations simultanées du même membre : une seule ligne
+            v = _qfq_vals(db, dossier).get(cle)
+            if v is None:
+                v = DossierValidation(dossier_id=dossier.id, project_id=project.id, owner_id=dossier.owner_id,
+                                      membre=membre, membre_cle=PREFIXE_QFQ + cle,
+                                      invite_id=(int(invite_id) if membre == ag.PARTENAIRE else None))
+                db.add(v)
+            v.empreinte, v.statut, v.valide_le, v.perime_le, v.user_id = (cur.empreinte, "valide", utcnow(), None,
+                                                                          user_id)
+            try:
+                db.commit()
+                break
+            except IntegrityError:
+                db.rollback()
         synchroniser_qfq(db, project, dossier, section)
     ag._journal(db, action="redaction.partie_groupement_validee", project_id=project.id, owner_id=dossier.owner_id,
                 actor=actor, actor_kind=actor_kind, invite_id=(invite_id if membre == ag.PARTENAIRE else None),
@@ -657,8 +668,9 @@ def detail(db, project: Project, dossier: DossierPresentation, section: DossierS
                                 "le": at._iso(section.validated_at)} if section.validated_version_id else None))
     else:
         _t, info = qui_fait_quoi(db, project, dossier)
-        membres = [{k: m[k] for k in ("nom", "role", "lot", "qualifications", "effectif", "materiel", "part_envoyee",
-                                      "invite_id")} for m in info["membres"]]
+        cles = ("nom", "role", "lot", "qualifications", "effectif", "materiel", "part_envoyee") \
+            + (("invite_id",) if pour == "chef" else ())
+        membres = [{k: m[k] for k in cles} for m in info["membres"]]
         vals = qfq_validations(db, project, dossier, section)
         out.update(message=info["message"], membres=membres, valide_par="chaque_membre", validations=vals)
         cle = ag.CHEF if pour == "chef" else f"invitation:{invite_id}"
