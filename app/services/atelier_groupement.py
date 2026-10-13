@@ -158,8 +158,10 @@ def peut_rediger(db, inv: ProjectInvite) -> tuple:
     non expirée, co-traitant — un sous-traitant n'est pas membre —, co-construction ouverte) et, invitation
     du réseau, s'il l'a acceptée."""
     from app.routers.invites import _is_expired, _network_pending
+    # Raisons écrites pour se lire seules (« Le Gall Électricité : son lien a expiré ») ou après « Ce partenaire
+    # ne peut pas rédiger : ».
     if inv is None or inv.revoked or inv.declined_at is not None:
-        return False, "n'est plus membre du groupement"
+        return False, "il n'est plus membre du groupement"
     if _is_expired(inv.expires_at):
         return False, "son lien a expiré"
     if (inv.role or "cotraitant") != "cotraitant":
@@ -167,7 +169,7 @@ def peut_rediger(db, inv: ProjectInvite) -> tuple:
     if not getattr(inv, "can_contribute", True):
         return False, "la co-construction n'est pas ouverte sur son lien"
     if _network_pending(inv, db):
-        return False, "n'a pas encore accepté l'invitation"
+        return False, "il n'a pas encore accepté l'invitation"
     return True, ""
 
 
@@ -1490,7 +1492,7 @@ def repartir(db, project: Project, dossier: DossierPresentation, section: Dossie
                 raise AtelierError(404, "partenaire_introuvable", "Partenaire introuvable sur ce marché.")
             ok, raison = peut_rediger(db, inv)
             if not ok:
-                raise AtelierError(409, "partenaire_indisponible", f"Ce partenaire ne peut pas rédiger : il {raison}.")
+                raise AtelierError(409, "partenaire_indisponible", f"Ce partenaire ne peut pas rédiger : {raison}.")
             iid = inv.id
         else:
             iid = None

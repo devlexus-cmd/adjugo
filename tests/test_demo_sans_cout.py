@@ -52,6 +52,8 @@ _P = (("project_id", "toiture"),)
 _L = (("project_id", "lorient"),)
 _S = (("project_id", "toiture"), ("section_id", "sid"))
 _T = (("token", "token"),)
+_TS = _T + (("section_id", "sid"),)                     # lien partenaire de la démo, une partie
+_LS = (("project_id", "lorient"), ("section_id", "sid"))  # « Partagé avec moi » (le compte démo n'en a aucun)
 _TENDER = "tender"          # remplacé par un avis (voir _corps)
 
 COUTS = [
@@ -78,6 +80,10 @@ COUTS = [
          corps={"objet": "Réfection de la toiture de l'école", "type_marche": "travaux", "montant_estime": 300000}),
     Cout("POST", "/api/dce/sourcing", "ia", "ouvert", session="acheteur", lectures=True,
          corps={"lots": [{"intitule": "Couverture", "montant": 200000}], "departement": "44"}),
+    # Rédaction, vague 4 : l'aide de l'IA du partenaire (par le lien de la vitrine, ou « Partagé avec moi »).
+    Cout("POST", "/api/invite/{token}/redaction/sections/{section_id}/aide", "ia", session="lien", corps={},
+         params=_TS),
+    Cout("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/aide", "ia", corps={}, params=_LS),
     # ── Emails ──────────────────────────────────────────────────────────────────────────────────────
     Cout("POST", "/api/projects/{project_id}/invites", "email",
          corps={"recipient": "partenaire@exemple.invalid", "company_name": "Partenaire"}, params=_L),
@@ -103,6 +109,15 @@ COUTS = [
     Cout("POST", "/api/invite/{token}/otp/request", "email", "ouvert", session="lien", params=_T),
     Cout("POST", "/api/invite/{token}/contribution/submit", "email", "ouvert", session="lien", params=_T),
     Cout("POST", "/api/invite/{token}/decline", "email", session="lien", params=_T),
+    # Rédaction, vague 4 : « Demander les parts », part modifiée par le chef de file (le partenaire est
+    # prévenu), part envoyée par un partenaire (le chef de file est prévenu).
+    Cout("POST", "/api/atelier/{project_id}/repartition/demander", "email", corps={}, params=_L),
+    Cout("PUT", "/api/atelier/{project_id}/repartition/{section_id}/texte", "email",
+         corps={"texte": "Texte écrit par le chef de file.", "base_version_id": None}, params=_S),
+    Cout("POST", "/api/invite/{token}/redaction/sections/{section_id}/envoyer", "email", session="lien",
+         corps={"brouillon_id": 1, "avertissement_lu": True}, params=_TS),
+    Cout("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/envoyer", "email",
+         corps={"brouillon_id": 1, "avertissement_lu": True}, params=_LS),
     # ── Téléversements (et fichiers rangés) ─────────────────────────────────────────────────────────
     Cout("POST", "/api/documents/", "fichier", corps=("fichier", {"category": "kbis"})),
     Cout("PUT", "/api/documents/{doc_id}/replace", "fichier", corps=("fichier", {}), params=(("doc_id", "doc"),)),
@@ -211,6 +226,22 @@ SANS_COUT = {
     ("POST", "/api/atelier/{project_id}/sections/{section_id}/controle"): _V + " (0 IA)",
     ("POST", "/api/atelier/{project_id}/sections/{section_id}/faits/{fait_id}/source"): _V + " (0 IA)",
     ("POST", "/api/atelier/{project_id}/derogation"): _V,
+    # Rédaction, vague 4 : « Qui écrit quoi » (chef de file) et parts des partenaires — refusées par le garde
+    # ET dans la route (tests/test_redaction_v4_chef_de_file.py) ; le lien partenaire de la vitrine n'écrit rien.
+    ("POST", "/api/atelier/{project_id}/repartition"): _V + " (0 IA : pré-remplissage d'après les lots)",
+    ("PUT", "/api/atelier/{project_id}/repartition/{section_id}"): _V,
+    ("POST", "/api/atelier/{project_id}/repartition/valider-dossier"): _V,
+    ("POST", "/api/invite/{token}/redaction/espace"): "lien partenaire de la démo : refusé dans la route",
+    ("PUT", "/api/invite/{token}/redaction/sections/{section_id}/brouillon"): "lien partenaire de la démo : refusé dans la route",
+    ("POST", "/api/invite/{token}/redaction/sections/{section_id}/faits/{fait_id}"): "lien partenaire de la démo : refusé dans la route",
+    ("POST", "/api/invite/{token}/redaction/sections/{section_id}/valider"): "lien partenaire de la démo : refusé dans la route",
+    ("POST", "/api/invite/{token}/redaction/sections/{section_id}/retablir"): "lien partenaire de la démo : refusé dans la route",
+    ("POST", "/api/invite/{token}/redaction/dossier/valider"): "lien partenaire de la démo : refusé dans la route",
+    ("PUT", "/api/shared/{project_id}/redaction/sections/{section_id}/brouillon"): _V + " (« Partagé avec moi »)",
+    ("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/faits/{fait_id}"): _V + " (« Partagé avec moi »)",
+    ("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/valider"): _V + " (« Partagé avec moi »)",
+    ("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/retablir"): _V + " (« Partagé avec moi »)",
+    ("POST", "/api/shared/{project_id}/redaction/dossier/valider"): _V + " (« Partagé avec moi »)",
     ("PUT", "/api/invite/{token}/contribution"): "lien partenaire de la démo : refusé dans la route (part figée par la convention)",
     ("PUT", "/api/invite/{token}/contribution/detail"): "lien partenaire de la démo : refusé dans la route",
     ("POST", "/api/invite/{token}/otp/verify"): "lien partenaire : vérification d'un code (aucun envoi)",
