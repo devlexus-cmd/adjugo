@@ -78,6 +78,13 @@ COUTS = [
          corps={"objet": "Réfection de la toiture de l'école", "type_marche": "travaux", "montant_estime": 300000}),
     Cout("POST", "/api/dce/sourcing", "ia", "ouvert", session="acheteur", lectures=True,
          corps={"lots": [{"intitule": "Couverture", "montant": 200000}], "departement": "44"}),
+    # Rédaction, vague 4 (dossier de groupement) : l'aide de l'IA du partenaire (par son lien ou par son compte)
+    # et « Harmoniser le ton » du chef de file.
+    Cout("POST", "/api/atelier/{project_id}/repartition/harmoniser", "ia", corps={}, params=_P),
+    Cout("POST", "/api/invite/{token}/redaction/sections/{section_id}/aide", "ia", session="lien", corps={},
+         params=_T + (("section_id", "sid"),)),
+    Cout("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/aide", "ia", corps={},
+         params=_L + (("section_id", "sid"),)),
     # ── Emails ──────────────────────────────────────────────────────────────────────────────────────
     Cout("POST", "/api/projects/{project_id}/invites", "email",
          corps={"recipient": "partenaire@exemple.invalid", "company_name": "Partenaire"}, params=_L),
@@ -103,6 +110,15 @@ COUTS = [
     Cout("POST", "/api/invite/{token}/otp/request", "email", "ouvert", session="lien", params=_T),
     Cout("POST", "/api/invite/{token}/contribution/submit", "email", "ouvert", session="lien", params=_T),
     Cout("POST", "/api/invite/{token}/decline", "email", session="lien", params=_T),
+    # Rédaction, vague 4 : « Demander les parts », la part d'un partenaire modifiée par le chef de file (le
+    # partenaire est prévenu), la part envoyée (le chef de file est prévenu).
+    Cout("POST", "/api/atelier/{project_id}/repartition/demander", "email", corps={}, params=_P),
+    Cout("PUT", "/api/atelier/{project_id}/repartition/{section_id}/texte", "email",
+         corps={"texte": "Texte du chef de file.", "base_version_id": None}, params=_S),
+    Cout("POST", "/api/invite/{token}/redaction/sections/{section_id}/envoyer", "email", session="lien",
+         corps={"brouillon_id": 1, "avertissement_lu": True}, params=_T + (("section_id", "sid"),)),
+    Cout("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/envoyer", "email",
+         corps={"brouillon_id": 1, "avertissement_lu": True}, params=_L + (("section_id", "sid"),)),
     # ── Téléversements (et fichiers rangés) ─────────────────────────────────────────────────────────
     Cout("POST", "/api/documents/", "fichier", corps=("fichier", {"category": "kbis"})),
     Cout("PUT", "/api/documents/{doc_id}/replace", "fichier", corps=("fichier", {}), params=(("doc_id", "doc"),)),
@@ -135,6 +151,7 @@ COUTS = [
 _V = "vitrine : écriture bloquée par le garde démo, sans coût"
 _I = "interaction sans coût (base de données seulement)"
 _H = "hors démo : pas de session démo sur cette route"
+_LR = "lien partenaire de la démo : écriture refusée dans la route (« lecture guidée »), sans IA ni email"
 SANS_COUT = {
     ("POST", "/api/auth/register"): _H, ("POST", "/api/auth/verify-email"): _H, ("POST", "/api/auth/login"): _H,
     ("POST", "/api/auth/demo"): "connexion à la démo (aucun email, aucune IA)",
@@ -232,6 +249,23 @@ SANS_COUT = {
     ("DELETE", "/api/acheteur/dce/{dce_id}"): "vitrine collectivités : refusé dans la route",
     ("POST", "/api/contact/demande-acces"): ("formulaire public, sans session : un email vers l'adresse fixe "
                                              "d'Adjugo seulement (tests/test_demande_acces.py)"),
+    # Rédaction, vague 4 (dossier de groupement) : écritures sans IA ni email. Côté chef de file, bloquées par
+    # le garde (vitrine partagée) ; par le lien du partenaire de la démo, refusées dans la route avant tout
+    # (« lecture guidée ») ; par le compte, bloquées par le garde (et le lien n'est rattaché à aucun compte).
+    ("POST", "/api/atelier/{project_id}/repartition"): _V,
+    ("PUT", "/api/atelier/{project_id}/repartition/{section_id}"): _V,
+    ("POST", "/api/atelier/{project_id}/repartition/valider-dossier"): _V,
+    ("POST", "/api/invite/{token}/redaction/espace"): _LR,
+    ("PUT", "/api/invite/{token}/redaction/sections/{section_id}/brouillon"): _LR,
+    ("POST", "/api/invite/{token}/redaction/sections/{section_id}/faits/{fait_id}"): _LR,
+    ("POST", "/api/invite/{token}/redaction/sections/{section_id}/valider"): _LR,
+    ("POST", "/api/invite/{token}/redaction/sections/{section_id}/retablir"): _LR,
+    ("POST", "/api/invite/{token}/redaction/dossier/valider"): _LR,
+    ("PUT", "/api/shared/{project_id}/redaction/sections/{section_id}/brouillon"): _V,
+    ("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/faits/{fait_id}"): _V,
+    ("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/valider"): _V,
+    ("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/retablir"): _V,
+    ("POST", "/api/shared/{project_id}/redaction/dossier/valider"): _V,
 }
 
 

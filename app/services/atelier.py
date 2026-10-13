@@ -60,6 +60,19 @@ STATUTS = {A_ECRIRE: "À écrire", BROUILLON: "Brouillon", RELU: "Relue", VALIDE
 IA, UTILISATEUR, RACCOURCI = "ia", "utilisateur", "raccourci"
 ORIGINES = {IA: "Rédigé avec Adjugo", UTILISATEUR: "Écrit ou modifié par vous", RACCOURCI: "Raccourci avec Adjugo"}
 AUTEUR_ORG, AUTEUR_INVITATION = "organisation", "invitation"
+# Rédaction, vague 4 (assemblage, docs/REDACTION_V4_GROUPEMENT.md § 15) : partie TIRÉE DU GROUPEMENT —
+# « Organisation du groupement » (de la convention en vigueur) et « Qui fait quoi dans le groupement » (des
+# parts des membres) —, écrite SANS IA par app/services/atelier_groupement.py ; personne ne l'écrit à la main.
+AUTEUR_GROUPEMENT = "groupement"
+GEN_ORGANISATION, GEN_QUI_FAIT_QUOI = "grp_orga", "grp_qfq"     # dossier_sections.source_plan
+GENERE = "genere"                  # origine (et ecrit_par) d'une version tirée du groupement : aucune IA
+HARMONISE = "harmonise"            # origine d'une version dont seule une phrase de transition a été ajoutée
+ORIGINES[GENERE] = "Tiré de la convention et des parts des membres, sans IA"
+ORIGINES[HARMONISE] = "Phrase de transition ajoutée avec Adjugo (le reste du texte est inchangé)"
+LIBELLES_GENERES = {GEN_ORGANISATION: "Tirée de la convention de groupement",
+                    GEN_QUI_FAIT_QUOI: "Tirée des parts des membres du groupement"}
+MSG_PARTIE_GROUPEMENT = ("Cette partie est tirée de la convention et des parts des membres : Adjugo la met à jour "
+                         "tout seul, sans IA. Pour la changer, modifiez la convention ou la part du membre concerné.")
 
 TEXTE_MAX = 60000              # caractères par partie
 INTITULE_MAX = 200
@@ -88,7 +101,10 @@ PIECES_AFFICHEES_MAX = 400     # pièces listées à l'écran (comme le plafond 
 
 JOB_REDIGER = "atelier_rediger"
 JOB_RACCOURCIR = "atelier_raccourcir"
-JOB_KINDS = (JOB_REDIGER, JOB_RACCOURCIR)
+# Vague 4 (assemblage) : « Harmoniser le ton » du dossier de groupement (app/services/atelier_assemblage.py) —
+# même relevé de débit, même remboursement et même reprise au redémarrage que les rédactions de l'atelier.
+JOB_HARMONISER = "atelier_harmoniser"
+JOB_KINDS = (JOB_REDIGER, JOB_RACCOURCIR, JOB_HARMONISER)
 
 MSG_IA_PANNE = ("La rédaction n'a pas abouti : le service d'IA est indisponible pour le moment. Rien n'a été "
                 "débité, réessayez dans quelques minutes.")
@@ -213,11 +229,70 @@ def peut_voir_prive(section: DossierSection, lecteur: Lecteur) -> bool:
     if section.author_kind == AUTEUR_INVITATION:
         return lecteur.kind == AUTEUR_INVITATION and lecteur.invite_id is not None \
             and lecteur.invite_id == section.author_invite_id
+    if section.author_kind == AUTEUR_GROUPEMENT:
+        return False            # tirée du groupement : aucune matière privée, personne ne l'écrit à la main
     return lecteur.kind == AUTEUR_ORG and lecteur.owner_id == section.owner_id
 
 
 def peut_ecrire(section: DossierSection, lecteur: Lecteur) -> bool:
     return peut_voir_prive(section, lecteur)
+
+
+def est_generee(section) -> bool:
+    """Partie tirée du groupement (vague 4, assemblage) : « Organisation du groupement » ou « Qui fait
+    quoi dans le groupement »."""
+    return getattr(section, "author_kind", "") == AUTEUR_GROUPEMENT
+
+
+def peut_organiser(section: DossierSection, lecteur: Lecteur) -> bool:
+    """Retirer, remettre ou déplacer une partie : son auteur ; pour une partie tirée du groupement, le
+    chef de file (l'organisation qui porte le dossier). Son texte, lui, ne s'écrit jamais à la main."""
+    if est_generee(section):
+        return lecteur.kind == AUTEUR_ORG and lecteur.owner_id == section.owner_id
+    return peut_ecrire(section, lecteur)
+
+
+def refus_ecriture(section: DossierSection) -> "AtelierError":
+    """L'erreur d'une écriture refusée : la partie d'un partenaire, ou une partie tirée du groupement."""
+    if est_generee(section):
+        return AtelierError(403, "partie_du_groupement", MSG_PARTIE_GROUPEMENT)
+    return AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+
+
+def _libelle_auteur(section: DossierSection, noms: Optional[dict] = None) -> str:
+    if section.author_kind == AUTEUR_ORG:
+        return "Votre entreprise"
+    if est_generee(section):
+        return LIBELLES_GENERES.get(section.source_plan, "Tirée du groupement")
+    return (noms or {}).get(section.author_invite_id) or "Un partenaire du groupement"
+
+
+def _rafraichir_groupement(db, project: Project, dossier: Optional[DossierPresentation]) -> None:
+    """Vague 4 (assemblage) : les parties tirées du groupement suivent la convention et les parts des
+    membres AVANT toute lecture du texte commun (état de l'atelier, export, dossier commun). Sans IA,
+    jamais bloquant (au pire, le texte de la dernière lecture)."""
+    if dossier is None:
+        return
+    try:
+        from app.services import atelier_assemblage as asm
+        asm.rafraichir_generees(db, project, dossier)
+    except Exception as e:      # noqa: BLE001
+        try:
+            db.rollback()
+        except Exception:       # noqa: BLE001
+            pass
+        logger.warning("atelier : parties du groupement non rafraîchies (dossier %s) : %s",
+                       getattr(dossier, "id", "?"), type(e).__name__)
+
+
+def _placer_generees(db, dossier: DossierPresentation) -> None:
+    try:
+        from app.services import atelier_assemblage as asm
+        asm.placer_generees(db, dossier)
+    except Exception as e:      # noqa: BLE001
+        db.rollback()
+        logger.warning("atelier : parties du groupement non replacées (dossier %s) : %s",
+                       getattr(dossier, "id", "?"), type(e).__name__)
 
 
 def versions_communes(db, sections: list, lecteur: Lecteur) -> dict:
@@ -245,8 +320,10 @@ def versions_communes(db, sections: list, lecteur: Lecteur) -> dict:
 
 
 def en_attente_d_un_partenaire(sections: list, lecteur: Lecteur, communes: dict) -> list:
-    """Parties d'un autre auteur dont le texte n'a pas encore été envoyé (validé)."""
-    return [s for s in sections if not peut_voir_prive(s, lecteur) and communes.get(s.id) is None]
+    """Parties d'un autre auteur dont le texte n'a pas encore été envoyé (validé). Une partie tirée du
+    groupement n'attend personne : sans texte, elle est « sans texte »."""
+    return [s for s in sections if not peut_voir_prive(s, lecteur) and not est_generee(s)
+            and communes.get(s.id) is None]
 
 
 # ── Le dossier de l'acheteur, lu sans IA (C0 : règlement et cadre en entier) ──────────
@@ -568,6 +645,8 @@ def reconstruire_plan(db, project: Project, dossier: DossierPresentation, user: 
     for i, s in enumerate(gardees):
         s.ordre = n + 1 + i
     db.commit()
+    if any(est_generee(s) for s in gardees):
+        _placer_generees(db, dossier)       # les parties tirées du groupement gardent leur place
     db.refresh(dossier)
     return dossier
 
@@ -620,10 +699,13 @@ def modifier_section(db, dossier: DossierPresentation, section: DossierSection, 
                      intitule: Optional[str] = None, position: Optional[int] = None) -> DossierSection:
     """Intitulé et place d'une partie. Le cadre de l'acheteur commande : une partie du cadre
     imposé garde son numéro, son intitulé et sa place ; une partie de la grille garde l'intitulé
-    du critère."""
-    if not peut_ecrire(section, lecteur):
-        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+    du critère. Une partie tirée du groupement se déplace (hors cadre imposé) mais garde son intitulé."""
+    if not peut_organiser(section, lecteur):
+        raise refus_ecriture(section)
     if intitule is not None:
+        if est_generee(section):
+            raise AtelierError(409, "intitule_impose", "L'intitulé de cette partie est fixé : elle est tirée du "
+                                                       "groupement.")
         if section.source_plan in (ap.CADRE, ap.GRILLE):
             raise AtelierError(409, "intitule_impose",
                                "Cet intitulé vient du dossier de l'acheteur : il ne se modifie pas.")
@@ -647,8 +729,8 @@ def modifier_section(db, dossier: DossierPresentation, section: DossierSection, 
 
 
 def retirer_section(db, dossier: DossierPresentation, section: DossierSection, lecteur: Lecteur) -> None:
-    if not peut_ecrire(section, lecteur):
-        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+    if not peut_organiser(section, lecteur):
+        raise refus_ecriture(section)
     _verifier_aucune_tache(db, [section])
     section.retiree_at = utcnow()
     db.flush()
@@ -657,8 +739,8 @@ def retirer_section(db, dossier: DossierPresentation, section: DossierSection, l
 
 
 def remettre_section(db, dossier: DossierPresentation, section: DossierSection, lecteur: Lecteur) -> DossierSection:
-    if not peut_ecrire(section, lecteur):
-        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+    if not peut_organiser(section, lecteur):
+        raise refus_ecriture(section)
     if section.retiree_at is None:
         return section
     if len(sections_actives(db, dossier)) >= SECTIONS_MAX:
@@ -673,6 +755,8 @@ def remettre_section(db, dossier: DossierPresentation, section: DossierSection, 
     for i, x in enumerate(act):
         x.ordre = i
     db.commit()
+    if est_generee(section):
+        _placer_generees(db, dossier)       # elle reprend SA place (en tête, ou après la partie sur le groupement)
     db.refresh(section)
     return section
 
@@ -878,7 +962,7 @@ def enregistrer_texte(db, ctx: "Contexte", section: DossierSection, lecteur: Lec
     l'utilisateur écrit lui-même sont ses déclarations ; un fait déjà « à relire » qui reste dans
     le texte reste à relire."""
     if not peut_ecrire(section, lecteur):
-        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+        raise refus_ecriture(section)
     section = _verrouiller(db, section)
     if section.retiree_at is not None:
         raise AtelierError(409, "partie_retiree", "Cette partie a été retirée du plan : remettez-la d'abord.")
@@ -907,7 +991,7 @@ def restaurer_version(db, ctx: "Contexte", section: DossierSection, lecteur: Lec
                       base_version_id) -> DossierSectionVersion:
     """Remet un ancien texte : c'est une NOUVELLE version (copie), l'historique reste entier."""
     if not peut_ecrire(section, lecteur):
-        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+        raise refus_ecriture(section)
     section = _verrouiller(db, section)
     _verifier_aucune_tache(db, [section])
     _verifier_base(section, base_version_id)
@@ -929,7 +1013,7 @@ def restaurer_version(db, ctx: "Contexte", section: DossierSection, lecteur: Lec
 
 def marquer_relu(db, section: DossierSection, lecteur: Lecteur, version_id: int) -> DossierSection:
     if not peut_ecrire(section, lecteur):
-        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+        raise refus_ecriture(section)
     if not section.current_version_id or section.current_version_id != int(version_id):
         raise AtelierError(409, "texte_modifie_entre_temps",
                            "Le texte de cette partie a changé : rechargez-le avant de le marquer comme relu.",
@@ -945,9 +1029,13 @@ def marquer_relu(db, section: DossierSection, lecteur: Lecteur, version_id: int)
 def valider(db, project: Project, section: DossierSection, lecteur: Lecteur, version_id: int,
             ip: str = "") -> DossierSection:
     """Le dirigeant valide CE texte (identifié par sa version) : qui, quand, empreinte ; inscrit
-    au journal chaîné. Une modification ultérieure le fera repasser « à revalider »."""
+    au journal chaîné. Une modification ultérieure le fera repasser « à revalider ». Une partie tirée du
+    groupement (vague 4) se valide par atelier_groupement (« Qui fait quoi » : par chaque membre)."""
+    if est_generee(section):
+        from app.services import atelier_groupement as ag
+        return ag.valider_generee_par_le_chef(db, project, section, lecteur, version_id, ip=ip)
     if not peut_ecrire(section, lecteur):
-        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+        raise refus_ecriture(section)
     section = _verrouiller(db, section)
     _verifier_aucune_tache(db, [section])
     v = version_courante(db, section)
@@ -988,7 +1076,7 @@ def traiter_fait(db, section: DossierSection, lecteur: Lecteur, fait_id: str, st
     relié à sa source ne se « relit » pas (409), sauf si sa source n'est plus utilisable : il
     redevient alors à relire, comme à l'écran."""
     if not peut_ecrire(section, lecteur):
-        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+        raise refus_ecriture(section)
     if statut not in (far.RELU, far.A_RELIRE):
         raise AtelierError(422, "statut_invalide", "Statut inconnu.")
     v = version_courante(db, section)
@@ -1038,7 +1126,7 @@ def recontroler(db, ctx: "Contexte", project: Project, section: DossierSection, 
     ajoutée relie le fait qu'elle contient, une preuve retirée ou expirée le rend à relire. « Relu
     par vous » est gardé pour le même fait dans la même phrase ; vos déclarations restent les vôtres."""
     if not peut_ecrire(section, lecteur):
-        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+        raise refus_ecriture(section)
     section = _verrouiller(db, section)
     _verifier_aucune_tache(db, [section])
     v = version_courante(db, section)
@@ -1095,7 +1183,7 @@ def ajouter_source(db, ctx: "Contexte", project: Project, section: DossierSectio
     Puis la partie est recontrôlée : tout fait que la fiche contient y est relié."""
     from app.services import preuves as pv
     if not peut_ecrire(section, lecteur):
-        raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+        raise refus_ecriture(section)
     _v, hit = _fait_a_relire(db, section, fait_id)
     if preuve_id not in (None, ""):
         f = next((x for x in ctx.fiches(db) if x.ref.startswith(fs.PREUVE) and str(x.preuve_id) == str(preuve_id)),
@@ -1845,7 +1933,8 @@ def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accep
         _verifier_premiere_en_cours(db, d, job_id)
         cap = regen_gratuites()
         premiere = not d.analyse_debitee
-        n_act = len(sections_actives(db, d))
+        # Une partie tirée du groupement (vague 4) n'est jamais rédigée par l'IA : hors du compte.
+        n_act = len([x for x in sections_actives(db, d) if not est_generee(x)])
         incl0, regen0, pay0 = int(d.premieres_incluses or 0), int(d.regenerations or 0), int(d.regenerations_payantes or 0)
         place = max(0, n_act - incl0)
         incluses, regen = [], []
@@ -2062,7 +2151,7 @@ def lancer(db, user: User, project: Project, dossier: DossierPresentation, secti
     sections = [_verrouiller(db, s) for s in sections]
     for s in sections:
         if not peut_ecrire(s, lecteur):
-            raise AtelierError(403, "partie_d_un_partenaire", "Cette partie est rédigée par un partenaire.")
+            raise refus_ecriture(s)
         if s.retiree_at is not None:
             raise AtelierError(409, "partie_retiree", "Cette partie a été retirée du plan : remettez-la d'abord.")
     _verifier_aucune_tache(db, sections)
@@ -2377,6 +2466,7 @@ def exporter(db, user: User, project: Project, dossier: DossierPresentation, fmt
     """(octets, nom du fichier, type) — ou AtelierError 409 « export_bloque » avec les raisons."""
     if fmt not in MIMES:
         raise AtelierError(422, "format_invalide", "Format inconnu : docx ou pdf.")
+    _rafraichir_groupement(db, project, dossier)
     sections = sections_actives(db, dossier)
     cour = versions_communes(db, sections, lecteur)          # jamais le brouillon d'un autre auteur
     ctx = contexte_rendu(db, project, dossier, sections, cour)
@@ -2467,6 +2557,7 @@ def dossier_commun(db, project: Project, owner_id: int) -> dict:
                                "page du marché, carte « Dossier de présentation »), puis validez chaque partie.")
         return out
     lecteur = Lecteur.organisation(owner_id)
+    _rafraichir_groupement(db, project, dossier)
     sections = sections_actives(db, dossier)
     communes = versions_communes(db, sections, lecteur)
     cour, modifiees = _validees_de_preference(db, sections, communes, lecteur)
@@ -2560,9 +2651,9 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
            "poids": s.poids or "", "poids_source": (s.poids_source or "") if s.poids else "",
            "partie_de_critere": bool(s.partie_de_critere), "lot": s.lot or "",
            "limite": s.limite or [],
-           "auteur": {"type": s.author_kind, "invite_id": s.author_invite_id,
-                      "libelle": "Votre entreprise" if s.author_kind == AUTEUR_ORG else
-                      ((noms or {}).get(s.author_invite_id) or "Un partenaire du groupement")},
+           "auteur": {"type": s.author_kind, "invite_id": s.author_invite_id, "libelle": _libelle_auteur(s, noms)},
+           # Vague 4 (assemblage) : partie tirée du groupement (grp_orga | grp_qfq), sinon None.
+           "genere": s.source_plan if est_generee(s) else None,
            "statut": s.statut, "statut_libelle": STATUTS.get(s.statut, s.statut),
            "intitule_modifiable": s.source_plan not in (ap.CADRE, ap.GRILLE) and prive,
            "peut_ecrire": peut_ecrire(s, lecteur), "prive_visible": prive,
@@ -2639,6 +2730,7 @@ def dossier_acheteur_out(lu: dict, cle_now: str, a_change: bool) -> dict:
 
 
 def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, member_ids: list) -> dict:
+    _rafraichir_groupement(db, project, dossier)
     sections = sections_actives(db, dossier)
     cour = versions_communes(db, sections, lecteur)          # jamais le brouillon d'un autre auteur
     ctx = contexte_rendu(db, project, dossier, sections, cour)
@@ -2666,7 +2758,7 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
     retirees = [{"id": s.id, "intitule": s.intitule, "retiree_le": _iso(s.retiree_at),
                  "nb_versions": db.query(DossierSectionVersion.id).filter(
                      DossierSectionVersion.section_id == s.id).count()}
-                for s in retirees_rows if peut_voir_prive(s, lecteur)]
+                for s in retirees_rows if peut_organiser(s, lecteur)]
     noms = _noms_auteurs(db, sections)
     return {
         "projet": {"id": project.id, "nom": project.name},
@@ -2690,7 +2782,7 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
                      "message": cpt.get("message")},
         "limites": lims,
         "blocage": gate,
-        "quota": quota_out(dossier, n_parties=len(sections)),
+        "quota": quota_out(dossier, n_parties=len([s for s in sections if not est_generee(s)])),
         "export": apercu_export(project, dossier, ctx),
         "dossier_acheteur": dossier_acheteur_out(lu_aff, cle_now, a_change),
         "grille": changements_grille(project, dossier, sections, retirees_rows),

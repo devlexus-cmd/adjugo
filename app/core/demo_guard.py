@@ -217,6 +217,8 @@ _BLOCKED = [
     ("PUT",    "/api/atelier/{pid}/repartition/{sid}/texte",  "préparer votre dossier de présentation"),
     ("POST",   "/api/atelier/{pid}/repartition/demander",     "inviter un partenaire"),
     ("POST",   "/api/atelier/{pid}/repartition/valider-dossier", "préparer votre dossier de présentation"),
+    # Assemblage (vague 4, chantier 3) : « Harmoniser le ton » appelle l'IA (phrases de transition).
+    ("POST",   "/api/atelier/{pid}/repartition/harmoniser",   "rédiger avec Adjugo"),
     ("PUT",    "/api/shared/{pid}/redaction/sections/{sid}/brouillon", "co-construire une réponse"),
     ("POST",   "/api/shared/{pid}/redaction/sections/{sid}/faits/{fid}", "co-construire une réponse"),
     ("POST",   "/api/shared/{pid}/redaction/sections/{sid}/aide", "rédiger avec Adjugo"),

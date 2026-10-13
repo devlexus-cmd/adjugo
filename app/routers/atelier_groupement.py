@@ -13,6 +13,8 @@ Chef de file (compte, portée organisation — le marché doit appartenir à son
   PUT  /api/atelier/{pid}/repartition/{sid}/texte           modifier la part d'un partenaire (à revalider)
   POST /api/atelier/{pid}/repartition/demander              « Demander les parts »
   POST /api/atelier/{pid}/repartition/valider-dossier       valider le dossier assemblé
+  GET  /api/atelier/{pid}/repartition/dossier               le dossier assemblé, « Prêt à déposer », note interne
+  POST /api/atelier/{pid}/repartition/harmoniser            « Harmoniser le ton » (IA : transitions seulement)
 
 Partenaire — par le lien de son invitation (/api/invite/{token}/redaction…) ou par le compte qui a
 rattaché ce lien (/api/shared/{project_id}/redaction…, mêmes sous-routes) :
@@ -76,6 +78,19 @@ class _Chef:
 def chef_lire(project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     c = _Chef(db, current_user, project_id)
     return ag.vue_chef(db, c.project, c.dossier)
+
+
+# Déclarée AVANT /repartition/{section_id} (sinon « dossier » serait lu comme un numéro de partie).
+@router.get("/api/atelier/{project_id}/repartition/dossier")
+def chef_dossier(project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Le dossier assemblé tel que le lit le chef de file (assemblage, docs/REDACTION_V4_GROUPEMENT.md § 15) :
+    l'ordre du cadre, les parties tirées du groupement, « Prêt à déposer » et ce qui manque, plus la note
+    interne (jamais exportée, jamais montrée aux partenaires)."""
+    c = _Chef(db, current_user, project_id)
+    if not ag.repartition_active(db, c.dossier):
+        raise HTTPException(404, {"code": "groupement_non_prepare",
+                                  "message": "Préparez d'abord « Qui écrit quoi » pour assembler le dossier du groupement."})
+    return ag.dossier_assemble(db, c.project, c.dossier, pour_chef=True)
 
 
 class ActiverIn(BaseModel):
@@ -149,6 +164,8 @@ class TexteChefIn(BaseModel):
 def chef_modifier_part(request: Request, project_id: int, section_id: int, body: TexteChefIn,
                        current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Le chef de file modifie la part d'un partenaire, ou l'écrit à sa place : « à revalider par » lui."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "préparer votre dossier de présentation")     # le partenaire est prévenu par email
     c = _Chef(db, current_user, project_id)
     s = c.section(section_id)
     try:
@@ -195,6 +212,32 @@ def chef_valider_dossier(request: Request, project_id: int, body: Optional[Valid
     return {"validation": v, "pret": ag.pret(db, c.project, c.dossier)}
 
 
+class HarmoniserIn(BaseModel):
+    accepte_debit: bool = False
+
+
+@router.post("/api/atelier/{project_id}/repartition/harmoniser", status_code=202)
+@limiter.limit("10/hour")
+def chef_harmoniser(request: Request, project_id: int, body: Optional[HarmoniserIn] = None,
+                    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """« Harmoniser le ton » : l'IA propose une phrase de transition au début des parties qui suivent la part d'un
+    autre membre ; toute phrase qui apporte un fait absent du dossier est refusée sans IA ; les parties touchées
+    repassent « à revalider » par leur auteur. Tâche de fond : suivre /api/atelier/{pid}/taches/{job_id}."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "rédiger avec Adjugo")
+    if not getattr(current_user, "email_verified", True):
+        raise HTTPException(403, {"code": "email_non_confirme",
+                                  "message": "Confirmez votre adresse email pour utiliser cette fonctionnalité."})
+    c = _Chef(db, current_user, project_id)
+    try:
+        job = ag.lancer_harmonisation(db, current_user, c.project, c.dossier, c.acc.lecteur, c.acc.mids,
+                                      accepte_debit=bool(body and body.accepte_debit))
+    except at.AtelierError as e:
+        raise _err(e)
+    db.refresh(c.dossier)
+    return {"tache": at.job_public(job), "quota": at.quota_out(c.dossier)}
+
+
 # ── Partenaire : résolution de l'accès (lien ou compte) ──────────────────────────────
 
 def _project_of(inv, db: Session) -> Project:
@@ -204,11 +247,14 @@ def _project_of(inv, db: Session) -> Project:
     return p
 
 
-def _par_lien(token: str, db: Session, request: Request) -> ag.Acces:
+def _par_lien(token: str, db: Session, request: Request, ecriture: bool = False) -> ag.Acces:
     """Le lien de l'invitation, et la clé de l'espace privé du partenaire (en-tête X-Adjugo-Espace) :
-    sans clé valide, seul ce qui est commun se lit (ses parties, les textes envoyés, le dossier assemblé)."""
-    from app.routers.invites import _valid_invite
+    sans clé valide, seul ce qui est commun se lit (ses parties, les textes envoyés, le dossier assemblé).
+    Une écriture par le lien de la démo est refusée d'emblée (vitrine en lecture guidée, aucun coût)."""
+    from app.routers.invites import _DEMO_INVITE_MSG, _invite_is_demo, _valid_invite
     inv = _valid_invite(token, db)          # révoqué → 404, décliné ou expiré → 410 : l'accès est coupé
+    if ecriture and _invite_is_demo(inv, db):
+        raise HTTPException(403, {"code": "demo", "message": _DEMO_INVITE_MSG})
     try:
         return ag.acces_partenaire(db, inv, _project_of(inv, db), mode="lien",
                                    cle=request.headers.get(ag.ENTETE_CLE))
@@ -347,7 +393,7 @@ def lien_espace(token: str, request: Request, body: Optional[EspaceIn] = None, d
     """Ouvre l'espace privé du lien sur cet appareil et rend sa clé, UNE fois (à garder dans le navigateur, à
     renvoyer dans l'en-tête X-Adjugo-Espace) : première ouverture ; ou avec le code reçu par email (brouillons
     gardés) ; ou en réinitialisant (brouillons non envoyés effacés)."""
-    acces = _par_lien(token, db, request)
+    acces = _par_lien(token, db, request, ecriture=True)
     return _faire(ag.ouvrir_espace, db, acces.inv, code=(body.code if body else None),
                   reinitialiser=bool(body and body.reinitialiser), ip=_ip(request))
 
@@ -373,21 +419,21 @@ def lien_section(token: str, section_id: int, request: Request, db: Session = De
 @router.put(L + "/sections/{section_id}/brouillon")
 @limiter.limit("90/minute")
 def lien_brouillon(token: str, section_id: int, body: BrouillonIn, request: Request, db: Session = Depends(get_db)):
-    return _brouillon(_par_lien(token, db, request), db, section_id, body)
+    return _brouillon(_par_lien(token, db, request, ecriture=True), db, section_id, body)
 
 
 @router.post(L + "/sections/{section_id}/faits/{fait_id}")
 @limiter.limit("300/hour")
 def lien_fait(token: str, section_id: int, fait_id: str, body: FaitIn, request: Request,
               db: Session = Depends(get_db)):
-    return _fait(_par_lien(token, db, request), db, section_id, fait_id, body)
+    return _fait(_par_lien(token, db, request, ecriture=True), db, section_id, fait_id, body)
 
 
 @router.post(L + "/sections/{section_id}/aide", status_code=202)
 @limiter.limit("20/hour")
 def lien_aide(token: str, section_id: int, request: Request, body: Optional[AideIn] = None,
               db: Session = Depends(get_db)):
-    return _aide(_par_lien(token, db, request), db, section_id, body)
+    return _aide(_par_lien(token, db, request, ecriture=True), db, section_id, body)
 
 
 @router.get(L + "/taches/{job_id}")
@@ -399,26 +445,26 @@ def lien_tache(token: str, job_id: int, request: Request, db: Session = Depends(
 @router.post(L + "/sections/{section_id}/envoyer")
 @limiter.limit("60/hour")
 def lien_envoyer(token: str, section_id: int, body: EnvoyerIn, request: Request, db: Session = Depends(get_db)):
-    return _envoyer(_par_lien(token, db, request), db, section_id, body, _ip(request))
+    return _envoyer(_par_lien(token, db, request, ecriture=True), db, section_id, body, _ip(request))
 
 
 @router.post(L + "/sections/{section_id}/valider")
 @limiter.limit("60/hour")
 def lien_valider(token: str, section_id: int, body: ValiderIn, request: Request, db: Session = Depends(get_db)):
-    return _valider(_par_lien(token, db, request), db, section_id, body, _ip(request))
+    return _valider(_par_lien(token, db, request, ecriture=True), db, section_id, body, _ip(request))
 
 
 @router.post(L + "/sections/{section_id}/retablir")
 @limiter.limit("60/hour")
 def lien_retablir(token: str, section_id: int, body: RetablirIn, request: Request, db: Session = Depends(get_db)):
-    return _retablir(_par_lien(token, db, request), db, section_id, body, _ip(request))
+    return _retablir(_par_lien(token, db, request, ecriture=True), db, section_id, body, _ip(request))
 
 
 @router.post(L + "/dossier/valider")
 @limiter.limit("30/hour")
 def lien_valider_dossier(token: str, request: Request, body: Optional[ValiderDossierIn] = None,
                          db: Session = Depends(get_db)):
-    return _valider_dossier(_par_lien(token, db, request), db, body, _ip(request))
+    return _valider_dossier(_par_lien(token, db, request, ecriture=True), db, body, _ip(request))
 
 
 @router.get(L + "/export")
