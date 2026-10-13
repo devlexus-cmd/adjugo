@@ -122,6 +122,15 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
         data["dossiers_de_presentation"] = out
     except Exception:
         data["dossiers_de_presentation"] = []
+    # Dossier de groupement (rédaction, vague 4) : la répartition « Qui écrit quoi » et les validations du
+    # dossier assemblé de SES dossiers (jamais le brouillon d'un partenaire) ; et, s'il est PARTENAIRE d'un
+    # groupement, ses brouillons et les textes qu'il a envoyés, pour chaque lien qu'il a rattaché.
+    try:
+        from app.services import atelier_groupement as _ag
+        data["dossiers_de_groupement"] = _ag.exporter_chef(db, uid)
+        data["parts_redigees_pour_des_groupements"] = _ag.exporter_partenaire(db, uid)
+    except Exception:
+        data["dossiers_de_groupement"], data["parts_redigees_pour_des_groupements"] = [], []
     # « Mes preuves » (rédaction, vague 3) : faits de l'entreprise avec leur source, CV compris.
     try:
         from app.services.preuves import exporter as _exporter_preuves
@@ -252,6 +261,10 @@ def _release_claims(db, uid: int) -> None:
     # d'identité) reste au registre du groupement, mais le lien vers le compte effacé tombe.
     db.query(GroupementSignature).filter(GroupementSignature.user_id == uid).update(
         {GroupementSignature.user_id: None}, synchronize_session=False)
+    # Rédaction, vague 4 : les brouillons écrits depuis ce compte de partenaire (ses preuves, son
+    # savoir-faire) partent avec lui ; le texte qu'il a envoyé reste la part commune du groupement.
+    from app.services.atelier_groupement import effacer_compte as _effacer_parts
+    _effacer_parts(db, uid)
 
 
 def _erase_personal_rows(db, uid: int) -> None:
@@ -289,7 +302,8 @@ def _erase_member(db, uid: int, owner_id: int) -> None:
     # (registres du tenant : on ne les détruit pas, on ne les laisse pas orphelins).
     for model in (M.ProjectInvite, M.ProjectContribution, M.ContributionPiece,
                   M.GroupementSimulation, M.GroupementConvention, M.GroupementSignature,
-                  M.DossierPresentation, M.DossierSection, M.DossierSectionVersion):
+                  M.DossierPresentation, M.DossierSection, M.DossierSectionVersion,
+                  M.DossierRepartition, M.DossierPartBrouillon, M.DossierValidation):
         db.query(model).filter(model.owner_id == uid).update(
             {model.owner_id: owner_id}, synchronize_session=False)
     # « Mes preuves » : registre de l'entreprise, suit le propriétaire (numéros jamais heurtés).
@@ -457,6 +471,10 @@ def _erase_dossier_rows(db, M, *dossier_conds) -> None:
     dids = _ids(db, M.DossierPresentation.id, *dossier_conds)
     if not dids:
         return
+    # Vague 4 : validations, brouillons des partenaires, répartition et tâches des partenaires d'abord
+    # (clés étrangères vers les parties et les dossiers).
+    from app.services.atelier_groupement import effacer_dossiers
+    effacer_dossiers(db, dids)
     sids = _ids(db, M.DossierSection.id, M.DossierSection.dossier_id.in_(dids))
     _del(db, M.DossierSectionVersion, M.DossierSectionVersion.dossier_id.in_(dids),
          M.DossierSectionVersion.section_id.in_(sids) if sids else None)
@@ -481,7 +499,8 @@ def _hand_over_foreign_rows(db, uid: int, pids: list) -> None:
                 M.DossierPresentation.project_id == d.project_id,
                 M.DossierPresentation.owner_id == new_owner).first() is not None:
             continue
-        for model in (M.DossierSectionVersion, M.DossierSection):
+        for model in (M.DossierSectionVersion, M.DossierSection, M.DossierRepartition, M.DossierPartBrouillon,
+                      M.DossierValidation):
             db.query(model).filter(model.dossier_id == d.id).update({model.owner_id: new_owner},
                                                                     synchronize_session=False)
         d.owner_id = new_owner

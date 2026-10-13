@@ -222,17 +222,22 @@ def peut_ecrire(section: DossierSection, lecteur: Lecteur) -> bool:
 
 def versions_communes(db, sections: list, lecteur: Lecteur) -> dict:
     """LE texte qu'un lecteur partage, partie par partie : la version courante des parties dont il
-    est l'auteur ; pour la partie d'un autre auteur (vague 4 : un partenaire), SEULEMENT la version
-    validée (envoyée), sinon rien. Seul accès au texte pour l'export, le compteur, le blocage, les
-    limites, la mention IA, le dossier commun et l'export RGPD : un brouillon non envoyé ne sort
-    jamais de chez son auteur."""
+    est l'auteur ; pour la partie d'un autre auteur, sa version courante si elle est COMMUNE (vague 4 :
+    texte envoyé par le partenaire, ou écrit par le chef de file sur sa partie — `partage`), sinon
+    SEULEMENT sa version validée, sinon rien. Seul accès au texte pour l'export, le compteur, le
+    blocage, les limites, la mention IA, le dossier commun et l'export RGPD : un brouillon non envoyé
+    ne sort jamais de chez son auteur (ceux d'un partenaire ne sont même pas dans cette table)."""
     propres = [s for s in sections if peut_voir_prive(s, lecteur)]
     autres = [s for s in sections if not peut_voir_prive(s, lecteur)]
     out = _courantes(db, propres)
-    ids = [s.validated_version_id for s in autres if s.validated_version_id]
+    ids = [x for s in autres for x in (s.current_version_id, s.validated_version_id) if x]
     if ids:
         by_id = {v.id: v for v in db.query(DossierSectionVersion).filter(DossierSectionVersion.id.in_(ids)).all()}
         for s in autres:
+            cur = by_id.get(s.current_version_id) if s.current_version_id else None
+            if cur is not None and cur.section_id == s.id and bool(cur.partage):
+                out[s.id] = cur
+                continue
             v = by_id.get(s.validated_version_id)
             if v is not None and v.section_id == s.id:
                 out[s.id] = v
@@ -779,10 +784,13 @@ def version_courante(db, section: DossierSection) -> Optional[DossierSectionVers
 def ajouter_version(db, section: DossierSection, *, texte: str, origine: str, ia: bool, sources=None,
                     faits=None, coupe: bool = False, base_version_id: Optional[int] = None,
                     restaure_de: Optional[int] = None, auteur_user_id: Optional[int] = None,
-                    job_id: Optional[int] = None) -> DossierSectionVersion:
+                    job_id: Optional[int] = None, partage: bool = False, ecrit_par: str = "",
+                    compteurs: Optional[dict] = None) -> DossierSectionVersion:
     """Ajoute une version (jamais de mise à jour ni de suppression d'une version) et fait évoluer
     le statut : une partie validée dont le texte change repasse « à revalider » ; si le texte
-    redevient exactement celui qui a été validé, elle redevient « validée »."""
+    redevient exactement celui qui a été validé, elle redevient « validée ». `partage` (vague 4,
+    app/services/atelier_groupement.py seulement) : texte COMMUN de la partie d'un partenaire, sans
+    aucune matière privée (sources vides, faits à relire sans leur source, compteurs)."""
     from sqlalchemy import func
     n = db.query(func.max(DossierSectionVersion.numero)).filter(
         DossierSectionVersion.section_id == section.id).scalar() or 0
@@ -792,7 +800,8 @@ def ajouter_version(db, section: DossierSection, *, texte: str, origine: str, ia
         owner_id=section.owner_id, numero=n + 1, texte=texte, origine=origine, ia=bool(ia),
         sources=sources or [], faits=faits or [], empreinte=empreinte(texte), coupe=bool(coupe),
         base_version_id=base_version_id, restaure_de=restaure_de, author_kind=section.author_kind,
-        author_invite_id=section.author_invite_id, auteur_user_id=auteur_user_id, job_id=job_id)
+        author_invite_id=section.author_invite_id, auteur_user_id=auteur_user_id, job_id=job_id,
+        partage=bool(partage), ecrit_par=(ecrit_par or "")[:14], compteurs=compteurs)
     db.add(v)
     db.flush()
     section.current_version_id = v.id
@@ -960,6 +969,15 @@ def valider(db, project: Project, section: DossierSection, lecteur: Lecteur, ver
                  actor=lecteur.email, actor_kind="user", target_type="dossier_section", target_id=section.id,
                  detail=f"Partie validée : {section.intitule}"[:255], ip=ip,
                  meta={"version": v.numero, "empreinte": v.empreinte})
+    # Vague 4 : le texte validé d'une partie du chef de file est celui que lisent les membres du
+    # groupement ; s'il change, leur validation du dossier assemblé repasse « à revalider ».
+    try:
+        from app.services import atelier_groupement as ag
+        ag.apres_changement_commun(db, project, section.dossier_id, f"partie « {section.intitule} » validée",
+                                   actor=lecteur.email or "", actor_kind="owner", ip=ip)
+    except Exception as e:      # noqa: BLE001 — le filet à la lecture rattrape
+        logger.warning("atelier : péremption du dossier assemblé impossible (projet %s) : %s", project.id,
+                       type(e).__name__)
     db.refresh(section)
     return section
 
@@ -1624,8 +1642,8 @@ def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs
         nf = far.non_traites((faits_de or _faits_tels_quels)(v) if v is not None else [])
         if nf:
             faits.append({"section_id": s.id, "titre": titre, "nombre": nf})
-        # La partie d'un partenaire est commune quand il l'a envoyée (validée) : rien à valider ici.
-        if s.statut != VALIDE and s.author_kind == AUTEUR_ORG:
+        # Vague 4 : la partie d'un partenaire envoyée (texte commun) doit aussi être validée par lui.
+        if s.statut != VALIDE and (s.author_kind == AUTEUR_ORG or (v is not None and bool(v.partage))):
             non_valides.append({"section_id": s.id, "titre": titre, "statut": s.statut})
     if not sections:
         raisons.append({"code": "dossier_vide", "message": "Le dossier de présentation n'a aucune partie.",
@@ -1795,11 +1813,14 @@ def _verifier_premiere_en_cours(db, d: DossierPresentation, job_id: int) -> None
     if d.analyse_debitee and jid and jid != job_id:
         j = db.get(Job, jid)
         if j is not None and j.status in ("pending", "running"):
+            # Tâche d'un PARTENAIRE (vague 4) : son identifiant n'est jamais donné au chef de file.
+            if (j.portee or "") == "partenaire":
+                raise AtelierError(409, "premiere_redaction_en_cours", MSG_PREMIERE_EN_COURS)
             raise AtelierError(409, "premiere_redaction_en_cours", MSG_PREMIERE_EN_COURS, job_id=jid)
 
 
 def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accepte_debit: bool,
-             job_id: int, estimation_eur: Optional[float] = None) -> dict:
+             job_id: int, estimation_eur: Optional[float] = None, deja_ia=None) -> dict:
     """Décide et applique le débit d'une action de l'IA (décision 6a). Renvoie le relevé (pour
     rembourser).
       • la 1re action de l'IA sur le dossier : 1 analyse pour tout le dossier ;
@@ -1810,7 +1831,10 @@ def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accep
         après accord exprès.
     Le dossier est relu verrouillé et réservé par une mise à jour CONDITIONNELLE (rien n'a changé
     depuis la lecture) AVANT de prendre les analyses : deux requêtes simultanées ne débitent jamais
-    deux fois la première analyse. Si une analyse est refusée (quota atteint), tout est rendu."""
+    deux fois la première analyse. Si une analyse est refusée (quota atteint), tout est rendu.
+    `deja_ia(db, section)` : la partie a-t-elle déjà été rédigée par l'IA (défaut : une version de
+    l'IA dans l'atelier ; vague 4 : un brouillon de l'IA du partenaire). `user` : le compte débité
+    (vague 4 : le chef de file, pour l'aide de l'IA de son partenaire)."""
     from sqlalchemy import func, update
     from app.core.quota import consume_analysis, refund_analysis
     D = DossierPresentation
@@ -1826,7 +1850,7 @@ def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accep
         place = max(0, n_act - incl0)
         incluses, regen = [], []
         for s in sections:
-            if not _deja_redigee_par_ia(db, s) and place > 0:
+            if not (deja_ia or _deja_redigee_par_ia)(db, s) and place > 0:
                 incluses.append(s)
                 place -= 1
             else:
@@ -1869,7 +1893,7 @@ def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accep
         db.execute(update(D).where(D.id == d.id).values(**undo).execution_options(synchronize_session=False))
         db.commit()
         raise
-    releve = {"analyse": premiere, "sections": {}}
+    releve = {"analyse": premiere, "sections": {}, "payeur_id": getattr(user, "id", None)}
     for s in incluses:
         releve["sections"][str(s.id)] = "incluse"
     for i, s in enumerate(regen):
@@ -1878,9 +1902,15 @@ def _debiter(db, user: User, dossier: DossierPresentation, sections: list, accep
 
 
 def _autre_texte_de_l_ia(db, dossier_id: int, job_id: int) -> bool:
-    return db.query(DossierSectionVersion.id).filter(
-        DossierSectionVersion.dossier_id == dossier_id, DossierSectionVersion.ia.is_(True),
-        DossierSectionVersion.job_id.isnot(None), DossierSectionVersion.job_id != job_id).first() is not None
+    """Un autre texte de l'IA existe-t-il pour ce dossier (atelier, ou brouillon de l'IA d'un
+    partenaire — vague 4) ? L'IA a alors servi : l'analyse du dossier reste due."""
+    if db.query(DossierSectionVersion.id).filter(
+            DossierSectionVersion.dossier_id == dossier_id, DossierSectionVersion.ia.is_(True),
+            DossierSectionVersion.job_id.isnot(None), DossierSectionVersion.job_id != job_id).first() is not None:
+        return True
+    from app.models import DossierPartBrouillon as B
+    return db.query(B.id).filter(B.dossier_id == dossier_id, B.ia.is_(True), B.job_id.isnot(None),
+                                 B.job_id != job_id).first() is not None
 
 
 def rembourser(db, job: Job, section_ids_en_echec=None) -> None:
@@ -1894,7 +1924,10 @@ def rembourser(db, job: Job, section_ids_en_echec=None) -> None:
     if not releve or releve.get("rendu"):
         return
     dossier = db.get(DossierPresentation, int(releve.get("dossier_id") or 0))
-    user = db.get(User, job.user_id)
+    # Le compte débité : celui du relevé (vague 4 : le chef de file, pour une tâche de partenaire qui
+    # n'a aucun compte propriétaire), sinon le propriétaire de la tâche.
+    payeur = releve.get("payeur_id") or job.user_id
+    user = db.get(User, payeur) if payeur else None
     tout = section_ids_en_echec is None
     ids = {str(i) for i in (section_ids_en_echec or [])}
     rendu = dict(releve.get("rendus") or {})
@@ -2411,7 +2444,10 @@ def _validees_de_preference(db, sections: list, communes: dict, lecteur: Lecteur
         v = by_id.get(s.validated_version_id) if s.validated_version_id else None
         if v is not None and v.section_id == s.id:
             out[s.id] = v
-            if peut_voir_prive(s, lecteur) and s.current_version_id and s.current_version_id != v.id:
+            com = communes.get(s.id)
+            commune_changee = com is not None and bool(com.partage) and com.id != v.id
+            if (peut_voir_prive(s, lecteur) and s.current_version_id and s.current_version_id != v.id) \
+                    or commune_changee:
                 modifiees.append(s)
         elif s.id in communes:
             out[s.id] = communes[s.id]
@@ -2450,7 +2486,8 @@ def dossier_commun(db, project: Project, owner_id: int) -> dict:
                                + " ".join(r["message"] for r in gate["raisons"])
                                + " Traitez ces points dans l'atelier, ou enregistrez-y une dérogation.")
         return out
-    sans_validation = [s for s in sections if not s.validated_version_id and s.author_kind == AUTEUR_ORG]
+    sans_validation = [s for s in sections if not s.validated_version_id and (
+        s.author_kind == AUTEUR_ORG or (cour.get(s.id) is not None and bool(cour.get(s.id).partage)))]
     if sans_validation:
         n = len(sans_validation)
         out["warnings"].append(f"BLOQUANT — {MSG_NON_VALIDE} : {n} partie{'s' if n > 1 else ''} à valider. "
@@ -2491,8 +2528,13 @@ def _version_out(v: DossierSectionVersion, prive: bool, texte: bool = True, vali
     faits = fs.ajuster(v.faits or [], valides) if valides else (v.faits or [])
     out = {"id": v.id, "numero": v.numero, "origine": v.origine, "origine_libelle": ORIGINES.get(v.origine, ""),
            "ia": bool(v.ia), "empreinte": v.empreinte, "coupe": bool(v.coupe), "cree_le": _iso(v.created_at),
-           "auteur_user_id": v.auteur_user_id, "restaure_de": v.restaure_de,
+           "auteur_user_id": v.auteur_user_id if prive else None, "restaure_de": v.restaure_de,
            "a_completer": len(me.placeholders(v.texte or "")), "faits_a_relire": far.non_traites(faits)}
+    if bool(getattr(v, "partage", False)):
+        # Texte commun d'une partie de partenaire (vague 4) : qui l'a écrit, et ses compteurs de sources
+        # par type — jamais les sources elles-mêmes.
+        out["ecrit_par"] = v.ecrit_par or ""
+        out["compteurs"] = v.compteurs if isinstance(v.compteurs, dict) else None
     if texte:
         out["texte"] = v.texte or ""
     if prive:
@@ -2507,7 +2549,7 @@ def _version_out(v: DossierSectionVersion, prive: bool, texte: bool = True, vali
 
 def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affiche: str, lecteur: Lecteur,
                 courante: Optional[DossierSectionVersion], cpt_section: Optional[dict],
-                valides: Optional[dict] = None) -> dict:
+                valides: Optional[dict] = None, noms: Optional[dict] = None) -> dict:
     prive = peut_voir_prive(s, lecteur)
     if prive and valides is None and courante is not None and fs.avec_source(courante.faits):
         valides = _valides_de(db, s.owner_id, s.project_id, [courante.faits])
@@ -2519,7 +2561,8 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
            "partie_de_critere": bool(s.partie_de_critere), "lot": s.lot or "",
            "limite": s.limite or [],
            "auteur": {"type": s.author_kind, "invite_id": s.author_invite_id,
-                      "libelle": "Votre entreprise" if s.author_kind == AUTEUR_ORG else "Un partenaire du groupement"},
+                      "libelle": "Votre entreprise" if s.author_kind == AUTEUR_ORG else
+                      ((noms or {}).get(s.author_invite_id) or "Un partenaire du groupement")},
            "statut": s.statut, "statut_libelle": STATUTS.get(s.statut, s.statut),
            "intitule_modifiable": s.source_plan not in (ap.CADRE, ap.GRILLE) and prive,
            "peut_ecrire": peut_ecrire(s, lecteur), "prive_visible": prive,
@@ -2532,8 +2575,13 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
         out["nb_versions"] = db.query(DossierSectionVersion.id).filter(
             DossierSectionVersion.section_id == s.id).count()
     else:
-        # Auteur partenaire (vague 4) : seul le texte VALIDÉ (envoyé) est commun, avec ses compteurs.
-        vv = db.get(DossierSectionVersion, s.validated_version_id) if s.validated_version_id else None
+        # Auteur partenaire (vague 4) : seul son texte COMMUN (envoyé, ou écrit par le chef de file sur sa
+        # partie), sinon son texte validé — jamais un brouillon, jamais une source.
+        vv = courante if (courante is not None and courante.section_id == s.id and bool(courante.partage)) else None
+        if vv is None and s.validated_version_id:
+            vv = db.get(DossierSectionVersion, s.validated_version_id)
+            if vv is not None and vv.section_id != s.id:
+                vv = None
         out["version_courante"] = _version_out(vv, False) if vv is not None else None
     v = out["version_courante"]
     out["a_completer"] = v["a_completer"] if v else 0
@@ -2542,6 +2590,19 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
     out["compteur"] = ({k: cpt_section.get(k) for k in ("mots", "caracteres", "pages_estimees", "lignes_estimees")}
                        if cpt_section else None)
     return out
+
+
+def _noms_auteurs(db, sections: list) -> dict:
+    """{invite_id: nom de l'entreprise} des partenaires qui rédigent une partie (vague 4)."""
+    ids = {s.author_invite_id for s in sections if s.author_kind == AUTEUR_INVITATION and s.author_invite_id}
+    if not ids:
+        return {}
+    try:
+        from app.models import ProjectInvite
+        return {i.id: (i.company_name or "") for i in
+                db.query(ProjectInvite).filter(ProjectInvite.id.in_(list(ids))).all()}
+    except Exception:       # noqa: BLE001
+        return {}
 
 
 def savoir_faire(db, member_ids: list) -> dict:
@@ -2606,6 +2667,7 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
                  "nb_versions": db.query(DossierSectionVersion.id).filter(
                      DossierSectionVersion.section_id == s.id).count()}
                 for s in retirees_rows if peut_voir_prive(s, lecteur)]
+    noms = _noms_auteurs(db, sections)
     return {
         "projet": {"id": project.id, "nom": project.name},
         "dossier": {"id": dossier.id, "plan_source": dossier.plan_source, "version": dossier.version,
@@ -2621,7 +2683,7 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
                                                      if dossier.plan_source != ap.CADRE else "")),
                     "dernier_export": dossier.dernier_export or None},
         "sections": [section_out(db, dossier, s, rangs.get(s.id, ""), lecteur, cour.get(s.id), by_sec.get(s.id),
-                                 valides=val)
+                                 valides=val, noms=noms)
                      for s in sections],
         "sections_retirees": retirees,
         "compteur": {"total": cpt.get("total"), "police": cpt.get("police"), "environ": True,
