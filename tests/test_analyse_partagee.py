@@ -120,6 +120,13 @@ class _Fake(FakeLLM):
         return _Resp(text, stop, usage=usage)
 
 
+@pytest.fixture(autouse=True)
+def _partage_active(monkeypatch):
+    """Ces tests exercent l'analyse en deux temps et le partage (ANALYSE_PARTAGEE=1) ; le défaut est la
+    mesure seule (analyse d'origine), exercée par les tests qui le disent."""
+    monkeypatch.setenv("ANALYSE_PARTAGEE", "1")
+
+
 @pytest.fixture
 def ia(monkeypatch):
     def install(answer=_repondre):
@@ -522,7 +529,7 @@ def test_cle_change_avec_le_modele_les_consignes_la_lecture_et_la_langue(monkeyp
     note = lec.note_pour_ia(lecture)
 
     def cle(lang="français"):
-        return ap.cle_dossier(lecture, texte, note, lang, ad.plan(lecture, None, None, lang))
+        return ap.cle_dossier(lecture, texte, note, lang, ad.plan(lecture, None, None, lang, extraction=True))
     base = cle()
     assert cle() == base                                                      # stable
     assert cle("English") != base                                             # autre langue
@@ -559,7 +566,7 @@ def test_cle_change_avec_chaque_texte_fixe_du_prompt(monkeypatch):
     note = lec.note_pour_ia(lecture)
 
     def cle(lang="English"):
-        return ap.cle_dossier(lecture, texte, note, lang, ad.plan(lecture, None, None, lang))
+        return ap.cle_dossier(lecture, texte, note, lang, ad.plan(lecture, None, None, lang, extraction=True))
     base, base_fr = cle(), cle("français")
 
     def change(module, nom, avant, apres):
@@ -870,17 +877,59 @@ def test_avis_partage_par_la_route_analyze(client, ia, attentes, monkeypatch):
     assert [x["nature"] for x in _mesures()] == ["avis", "avis"]
 
 
-def test_analyse_partagee_coupee_analyse_d_origine_a_l_identique(client, ia, monkeypatch):
-    """ANALYSE_PARTAGEE=0 : un seul appel, profil compris (analyse d'origine) ; rien n'est gardé ; la
-    mesure des doublons continue."""
-    monkeypatch.setenv("ANALYSE_PARTAGEE", "0")
+@pytest.mark.parametrize("reglage", ["0", None])
+def test_mesure_seule_par_defaut_analyse_d_origine_a_l_identique(client, ia, monkeypatch, reglage):
+    """Défaut (ANALYSE_PARTAGEE non réglé, ou 0) : MESURE SEULE — un seul appel, consigne et profil
+    d'origine (analyse d'origine, à l'identique) ; rien n'est gardé ; la mesure des doublons continue, clé
+    EXACTE comprise : la même clé que celle sous laquelle le partage rangerait l'extraction (ce que la
+    mesure annonce, le partage le resservirait)."""
+    from app.services import analyse_partagee as ap, analysis as an
+    if reglage is None:
+        monkeypatch.delenv("ANALYSE_PARTAGEE", raising=False)
+    else:
+        monkeypatch.setenv("ANALYSE_PARTAGEE", reglage)
+    assert ap.actif() is False
     fake = ia(lambda kw: (json.dumps(_original(), ensure_ascii=False), "end_turn"))
-    a = _compte(client, profil=PROFIL_A)
+    a = _compte(client, profil=PROFIL_A, criteres=CRITERES_A)
+    b = _compte(client, profil={"name": "Bretagne Couverture"})
     _importer(client, a)
     assert len(fake.calls) == 1 and "Zorglub" in llm._flatten_content(fake.calls[0]["messages"][0]["content"])
-    from app.services import analysis as an
     assert llm._flatten_content(fake.calls[0]["system"]) == an.SYSTEM_PROMPT
-    assert _lignes_partagees() == [] and len(_mesures()) == 1 and _mesures()[0]["cle"] is None
+    _importer(client, b)
+    assert len(fake.calls) == 2                                              # chacun son analyse d'origine
+    m = _mesures()
+    assert _lignes_partagees() == [] and len(m) == 2 and m[0]["cle"] and m[0]["cle"] == m[1]["cle"]
+    assert not any(x["servi_du_cache"] for x in m)
+    # Partage activé : l'extraction est rangée sous CETTE clé, et resservie à la troisième organisation.
+    monkeypatch.setenv("ANALYSE_PARTAGEE", "1")
+    ia()
+    _importer(client, _compte(client))
+    assert [x["cle"] for x in _lignes_partagees()] == [m[0]["cle"]]
+    db = _db()
+    try:
+        from app.services.analyse_partagee import mesure
+        d = mesure(db)["par_nature"]["dossier"]
+    finally:
+        db.close()
+    assert d["doublons_entre_organisations_cle_exacte"] == 2 and d["taux_doublons_entre_organisations_cle_exacte"]
+
+
+def test_mesure_seule_avis_cle_exacte_mesuree(client, ia, monkeypatch):
+    from app.sourcing.sources.boamp import BoampSource
+    from app.services import analyse_partagee as ap
+    monkeypatch.setattr(BoampSource, "fetch_dce", lambda self, t: "")
+    monkeypatch.setenv("ANALYSE_PARTAGEE", "0")
+    fake = ia(lambda kw: (json.dumps(_original(), ensure_ascii=False), "end_turn"))
+    tender = {"objet": "Réfection de la couverture du groupe scolaire Jules Ferry", "acheteur": "Commune de Plomodiern",
+              "departements": ["29"], "cpv": ["45261000"], "procedure": "MAPA", "date_limite": "2099-12-31",
+              "provenance": {"source": "BOAMP", "source_url": "https://www.boamp.fr/avis/detail/26-2",
+                             "official_ref": "26-2"}}
+    for compte in (_compte(client), _compte(client)):
+        r = client.post("/api/sourcing/analyze", headers=compte["headers"], json={"tender": tender})
+        assert r.status_code == 200, r.text
+    assert len(fake.calls) == 2 and _lignes_partagees() == [] and ap.actif() is False
+    m = _mesures()
+    assert [x["nature"] for x in m] == ["avis", "avis"] and m[0]["cle"] and m[0]["cle"] == m[1]["cle"]
 
 
 # ═══ 3. Confidentialité ═══════════════════════════════════════════════════════════════════════════

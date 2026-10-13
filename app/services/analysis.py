@@ -1,9 +1,11 @@
 """
 Adjugo - Service d'analyse IA des DCE
 Prompt expert marches publics francais.
-Analyse en deux temps (docs/ANALYSE_PARTAGEE.md) : extraction du dossier SANS donnée d'entreprise
-(partageable entre organisations pour un même dossier), puis partie propre à l'entreprise — score
-Go/No-Go déterministe (dce_scoring) et appel court qui reçoit l'extraction, le profil et les critères.
+Défaut : analyse d'origine en un seul appel (profil et critères dans le prompt). ANALYSE_PARTAGEE=1 :
+analyse en deux temps (docs/ANALYSE_PARTAGEE.md) — extraction du dossier SANS donnée d'entreprise
+(partageable entre organisations pour un même dossier), puis partie propre à l'entreprise : score
+Go/No-Go déterministe (dce_scoring), mots-clés exclus cherchés sans IA dans tout le dossier, et appel court
+qui reçoit l'extraction, le profil et les critères.
 """
 import copy
 import json
@@ -447,8 +449,8 @@ Regles importantes :
 #       jusqu'ici : la stratégie (4e paragraphe de la recommandation), les points d'attention propres à
 #       l'entreprise, le niveau des clauses au regard de SES seuils (pénalités, garanties, retenue,
 #       avance, délai de remise) et une clause du dossier qui dépasse un seuil et manquerait à la liste.
-# ANALYSE_PARTAGEE=0 : retour à l'analyse d'origine en un seul appel (consigne SYSTEM_PROMPT, profil et
-# critères dans le prompt), à l'identique.
+# Défaut (mesure seule, ANALYSE_PARTAGEE non réglé ou 0) : analyse d'origine en un seul appel (consigne
+# SYSTEM_PROMPT, profil et critères dans le prompt), à l'identique. ANALYSE_PARTAGEE=1 : deux temps.
 # Version des consignes de l'EXTRACTION (clé de l'analyse partagée ; le texte de SYSTEM_EXTRACTION y entre
 # aussi : le modifier sans changer ce numéro invalide quand même). La consigne de la partie propre à
 # l'entreprise n'y entre pas : cette partie n'est jamais gardée, elle est refaite à chaque analyse.
@@ -2310,7 +2312,7 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None, pieces=N
     à l'IA (pas de sélection de passages) ; `note_lecture` la prévient des pièces non lues ;
     `text_integral` (défaut : `text`) est le texte complet du dossier contre lequel toutes les
     citations sont vérifiées (en lecture en deux temps, `text` est la synthèse des pièces).
-    Analyse en deux temps (défaut, docs/ANALYSE_PARTAGEE.md) : (a) `extraire` — le dossier SEUL, aucune
+    Analyse en deux temps (ANALYSE_PARTAGEE=1, docs/ANALYSE_PARTAGEE.md) : (a) `extraire` — le dossier SEUL, aucune
     donnée d'entreprise —, puis (b) `completer` — post-traitement déterministe (citations vérifiées,
     grille, score, groupement) et partie propre à l'entreprise (appel court : l'extraction et le profil,
     jamais le dossier entier). Partage (app.services.analyse_partagee) : `extraction` = extraction (a)
@@ -2318,7 +2320,7 @@ def analyze_dce_text(text, company=None, criteria=None, lang_name=None, pieces=N
     coût de (a) : plateforme ou essai) et `apres_extraction(extraction, coût €, durée s)`, appelé dès
     que (a) est prête, avant (b) (une panne de (b) n'oblige pas à refaire (a)).
     `annonce_seule` : avis sans dossier complet (aucune compatibilité affichée).
-    ANALYSE_PARTAGEE=0 : analyse d'origine en un seul appel, à l'identique (partage ignoré)."""
+    Défaut (mesure seule) : analyse d'origine en un seul appel, à l'identique (partage ignoré)."""
     if not text or len(text) < 50:
         return {
             "match_score": 0,

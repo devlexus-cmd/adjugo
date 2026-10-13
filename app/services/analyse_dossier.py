@@ -27,8 +27,9 @@ Sonnet 5.5 ; ancien routage : Claude Sonnet 4.6) :
   fenêtre documentée : 1 000 000 de tokens pour les trois ; on s'impose un budget d'entrée SÛR,
   réglable, ANALYSE_BUDGET_TOKENS = 150 000 tokens (coût, temps de réponse sous le délai
   LLM_TIMEOUT, et fiabilité de lecture des très longs contextes), dont on retire une marge de 10 %,
-  la consigne et le reste du prompt (analyse en deux temps, défaut : l'extraction ne reçoit ni profil ni
-  critères — docs/ANALYSE_PARTAGEE.md ; analyse d'origine : profil et critères compris) ; conversion
+  la consigne et le reste du prompt (analyse d'origine, défaut : profil et critères compris ; analyse en
+  deux temps, ANALYSE_PARTAGEE=1 : l'extraction ne reçoit ni profil ni critères — docs/ANALYSE_PARTAGEE.md) ;
+  conversion
   PRUDENTE de 3,0 caractères par token
   (français chiffré : 3,0 à 3,6). Soit environ 390 000 caractères de dossier lus d'un seul tenant
   (≈ 195 000 tokens de Sonnet 5.5, dont le découpage compte ≈ 30 % de plus, si le secours prend le
@@ -117,13 +118,14 @@ def budget_caracteres(overhead_chars: int = 0, modele: str = None, max_sortie: i
     return max(0, int(utiles * CARACTERES_PAR_TOKEN))
 
 
-def _overhead(company, criteria, lang_name, note: str) -> int:
-    """Consigne et reste du prompt de l'appel qui reçoit le dossier. Analyse en deux temps (défaut,
-    app.services.analyse_partagee) : l'extraction ne reçoit ni le profil ni les critères — le mode de
-    lecture ne dépend alors que du dossier (et la place du profil revient au dossier). Analyse d'origine
-    (ANALYSE_PARTAGEE=0) : consigne d'origine, profil et critères compris."""
+def _overhead(company, criteria, lang_name, note: str, extraction: bool = None) -> int:
+    """Consigne et reste du prompt de l'appel qui reçoit le dossier. Analyse en deux temps
+    (ANALYSE_PARTAGEE=1, app.services.analyse_partagee) : l'extraction ne reçoit ni le profil ni les
+    critères — le mode de lecture ne dépend alors que du dossier (et la place du profil revient au
+    dossier). Analyse d'origine (défaut) : consigne d'origine, profil et critères compris.
+    extraction=True : comme en deux temps, quel que soit le réglage (clé exacte mesurée)."""
     from app.services import analyse_partagee as ap
-    if ap.actif():
+    if ap.actif() if extraction is None else extraction:
         base = an.build_extraction_prompt("", lang_name, integral=True, note_lecture=note)
         return len(an.SYSTEM_EXTRACTION) + len(base) + 500
     base = an.build_user_prompt("", company, criteria, lang_name, integral=True, note_lecture=note)
@@ -137,11 +139,12 @@ def parametres_lecture() -> str:
                                      ECHEC_MAX, PART_REGLEMENT, VERSION_LECTURE))
 
 
-def plan(lecture: dict, company=None, criteria=None, lang_name=None) -> dict:
-    """Mode de lecture par l'IA : « integral » si tout tient, sinon « deux_temps »."""
+def plan(lecture: dict, company=None, criteria=None, lang_name=None, extraction: bool = None) -> dict:
+    """Mode de lecture par l'IA : « integral » si tout tient, sinon « deux_temps ». extraction=True :
+    plan de l'extraction en deux temps (sans profil), quel que soit le réglage."""
     texte, _meta = lec.texte_integral(lecture)
     note = lec.note_pour_ia(lecture)
-    budget = budget_caracteres(_overhead(company, criteria, lang_name, note))
+    budget = budget_caracteres(_overhead(company, criteria, lang_name, note, extraction=extraction))
     return {"mode": "integral" if len(texte) <= budget else "deux_temps",
             "caracteres": len(texte), "budget_caracteres": budget,
             "tokens_estimes": _tokens(len(texte))}
@@ -719,17 +722,21 @@ def _analyser_partage(lecture, texte, note, pl, pieces_meta, company, criteria, 
     """Analyse du dossier (docs/ANALYSE_PARTAGEE.md) : (a) extraction du dossier SANS donnée d'entreprise —
     d'un seul tenant, ou pièces lues une à une puis synthèse —, resservie depuis le partage quand ce même
     dossier, exactement, a déjà été extrait ; (b) partie propre à l'entreprise (analysis.completer).
-    ANALYSE_PARTAGEE=0 : analyse d'origine en un seul appel (mesure des doublons seule). Renvoie
-    (analyse, rapport de la lecture en deux temps ou None).
+    Renvoie (analyse, rapport de la lecture en deux temps ou None).
+    Mesure seule (défaut, ANALYSE_PARTAGEE non activé) : analyse d'origine, et la clé EXACTE que l'extraction
+    aurait (plan de l'extraction, sans profil) est mesurée — ce que le partage pourrait resservir.
     Extraction resservie en deux temps : les informations relevées partie par partie sont rangées avec CE
     marché (on_parties), exactement comme après sa propre lecture — un « Ré-analyser » ne relit alors que
     ce qu'il relirait sans partage (rien)."""
     import copy
     import time
     from app.services import analyse_partagee as ap
-    cle = ap.cle_dossier(lecture, texte, note, lang_name, pl) if (partage is not None and ap.actif()) else ""
+    cle = ""
+    if partage is not None:
+        pl_cle = pl if ap.actif() else plan(lecture, None, None, lang_name, extraction=True)
+        cle = ap.cle_dossier(lecture, texte, note, lang_name, pl_cle)
     deux = pl["mode"] != "integral"
-    prep = _preparer(lecture, pl["budget_caracteres"]) if (deux and cle) else None
+    prep = _preparer(lecture, pl["budget_caracteres"]) if (deux and cle and ap.actif()) else None
     # Des parties de CE marché déjà lues par l'IA (analyse précédente interrompue) : sa lecture les
     # reprend ; on ne resservirait pas exactement ce qu'elle donnerait (compteurs, plafond) → lecture.
     lecture_permise = not (prep is not None and len(prep["segs"]) != len(prep["a_appeler"]))

@@ -4,38 +4,48 @@ Analyse PARTAGÉE d'un dossier de consultation : moins de coût d'IA, sans rien 
 Règle d'Eliot : « économiser le coût de l'IA sans JAMAIS baisser la performance ». Seules les
 économies sans risque de qualité PAR CONSTRUCTION sont faites ici (docs/ANALYSE_PARTAGEE.md).
 
-1. MESURE (toujours, même ANALYSE_PARTAGEE=0) : à chaque analyse d'un dossier (ou d'un avis), une ligne
+0. RÉGLAGE : par défaut, MESURE SEULE — l'analyse reste celle d'origine (un seul appel, profil compris),
+   à l'identique, et seuls les doublons sont mesurés. ANALYSE_PARTAGEE=1 active l'analyse en deux temps
+   et le partage, sur décision, quand la mesure montre assez de doublons exacts pour que le partage fasse
+   baisser la facture (sans doublon, une analyse neuve en deux temps coûte un peu plus : l'appel court).
+
+1. MESURE (toujours) : à chaque analyse réussie d'un dossier (ou d'un avis), une ligne
    `analyse_empreintes` : l'organisation, l'empreinte NORMALISÉE du contenu (empreinte de chaque pièce,
-   triées : jamais le contenu) et la clé exacte de l'extraction. Agrégats dans /metrics et sur
-   GET /api/admin/analyse-partagee (administrateur de la plateforme) ; jamais montrés à un client.
+   triées : jamais le contenu) et la clé EXACTE sous laquelle le partage rangerait l'extraction (calculée
+   aussi en mesure seule). Agrégats dans /metrics et sur GET /api/admin/analyse-partagee (administrateur
+   de la plateforme) ; jamais montrés à un client.
 
-2. ANALYSE EN DEUX TEMPS (ANALYSE_PARTAGEE=1, défaut ; app.services.analysis) : (a) l'EXTRACTION du
-   dossier, qui ne reçoit AUCUNE donnée d'entreprise, puis (b) la partie propre à l'entreprise (score
-   et verdict sans IA, puis un appel court qui reçoit l'extraction et le profil, jamais le dossier
-   entier). L'extraction (a) est gardée dans `analyses_partagees` et resservie, sans nouvel appel, quand
-   le MÊME dossier est analysé à nouveau, par la même organisation ou par une autre. La clé est
-   l'empreinte de TOUT ce dont l'extraction dépend : la version et le texte des consignes, la route de
-   l'IA (modèles, secours, réglages, fournisseurs disponibles), la version de la lecture intégrale et de
-   la lecture des pièces, la langue, le mode de lecture, le budget de contexte et les réglages de la
-   lecture en deux temps, le texte assemblé du dossier, et le nom, le type, l'état et le texte de CHAQUE
-   pièce. Même entrée exacte → même extraction : la resservir équivaut à la refaire. Un rectificatif
-   (contenu différent), un autre modèle, d'autres consignes donnent une autre clé (invalidation
-   automatique). « Ré-analyser » force une nouvelle extraction (qui remplace l'entrée).
-   Une extraction n'est gardée que COMPLÈTE et faite par le modèle prévu : réponse lisible, aucune
-   bascule de secours pendant l'extraction (hors fournisseur non configuré, déjà dans la clé), et, en
-   lecture en deux temps, aucune partie en panne, illisible ou coupée (un incident passager n'est jamais
-   resservi).
+2. ANALYSE EN DEUX TEMPS (ANALYSE_PARTAGEE=1 ; app.services.analysis) : (a) l'EXTRACTION du dossier, qui
+   ne reçoit AUCUNE donnée d'entreprise, puis (b) la partie propre à l'entreprise (score et verdict sans
+   IA, mots-clés exclus cherchés sans IA dans tout le dossier, puis un appel court qui reçoit
+   l'extraction et le profil, jamais le dossier entier). L'extraction (a) est gardée dans
+   `analyses_partagees` et resservie, sans nouvel appel, quand le MÊME dossier est analysé à nouveau, par
+   la même organisation ou par une autre. La clé est l'empreinte de TOUT ce dont l'extraction dépend : la
+   version et le texte des consignes et de TOUS les textes fixes du prompt (autour du dossier, consigne
+   de langue, lecture d'une partie, synthèse), la route de l'IA (modèles, secours, réglages, fournisseurs
+   disponibles), la version de la lecture intégrale et de la lecture des pièces, la langue, le mode de
+   lecture, le budget de contexte et les réglages de la lecture en deux temps, le texte assemblé du
+   dossier, et le nom, le type, l'état et le texte de CHAQUE pièce. Même entrée exacte → même extraction :
+   la resservir équivaut à la refaire. Un rectificatif (contenu différent), un autre modèle, d'autres
+   consignes donnent une autre clé (invalidation automatique). « Ré-analyser » force une nouvelle
+   extraction (qui remplace l'entrée). Une extraction n'est gardée que COMPLÈTE, faite par le modèle prévu
+   et lue sous les yeux de cette analyse : réponse lisible, aucune bascule de secours (hors fournisseur
+   non configuré, déjà dans la clé), et, en lecture en deux temps, aucune partie en panne, illisible ou
+   coupée, ni reprise d'une lecture précédente du marché. Deux imports du même dossier au même moment :
+   le second attend l'extraction du premier (une seule payée). En deux temps, les informations relevées
+   partie par partie sont gardées avec l'extraction et rangées avec le marché qui la reçoit (un
+   « Ré-analyser » ensuite se passe comme après sa propre lecture).
 
-3. CONFIDENTIALITÉ : l'entrée partagée ne contient que la réponse de l'IA sur le dossier (document
-   public de l'acheteur) et ce qui a été lu ; aucune colonne d'organisation. Rien dans l'API ni à
-   l'écran ne dit qu'une extraction vient du partage (même réponse, mêmes champs, même déroulé : tâche
-   de fond ou non selon le dossier seul, coût estimé de l'essai calculé comme pour une extraction
-   neuve, compteurs de la lecture recalculés pour CE marché). Délai : la première fois qu'une
-   organisation reçoit une extraction faite pour une AUTRE, la réponse attend la durée qu'avait prise
-   l'extraction (progression rejouée), pour que la rapidité ne trahisse rien ; ensuite (même
-   organisation), réponse immédiate. ANALYSE_PARTAGEE_MASQUE=0 : réponse toujours immédiate. Ses choix
-   (critères confirmés, poids saisis, questions) restent dans son marché : ils ne sont jamais dans
-   l'entrée partagée.
+3. CONFIDENTIALITÉ : l'entrée partagée ne contient que ce que l'IA a lu et relevé dans le dossier ;
+   aucune colonne d'organisation. Rien dans l'API ni à l'écran ne dit qu'une extraction vient du partage
+   (même réponse, mêmes champs, même déroulé : tâche de fond ou non selon le dossier seul, coût estimé de
+   l'essai calculé comme pour une extraction neuve, compteurs de la lecture recalculés pour CE marché).
+   Délai : la première fois qu'une organisation reçoit une extraction faite pour une AUTRE, la réponse
+   attend la durée qu'avait prise l'extraction, progression rejouée comme une vraie lecture (parties
+   lues par paquets aux mêmes instants, puis la synthèse), pour que la rapidité ne trahisse rien ;
+   ensuite (même organisation), réponse immédiate. ANALYSE_PARTAGEE_MASQUE=0 : réponse toujours
+   immédiate. Ses choix (critères confirmés, poids saisis, questions) restent dans son marché : ils ne
+   sont jamais dans l'entrée partagée.
 
 4. COÛT : le quota du client est débité comme d'habitude. L'extraction est comptée à la plateforme
    (budget_ia.mutualise), sauf l'extraction NEUVE déclenchée par un compte en essai gratuit, comptée à
@@ -43,11 +53,13 @@ Règle d'Eliot : « économiser le coût de l'IA sans JAMAIS baisser la performa
    servie depuis le partage, elle ne coûte rien à personne. La partie propre à l'entreprise est comptée
    au client (et à son essai).
 
-Données : l'entrée partagée n'est pas une donnée personnelle d'un client (document public de
-l'acheteur) ; elle est effacée quand elle n'a plus servi depuis ANALYSE_PARTAGEE_JOURS jours (purge
-quotidienne). Les lignes de mesure sont effacées avec le compte et au-delà
-d'ANALYSE_PARTAGEE_MESURE_JOURS jours. Le texte intégral de chaque marché reste rangé avec le marché et
-supprimé avec lui (dce_texte).
+Données : l'entrée partagée est la lecture du dossier de l'acheteur, sans aucune donnée d'entreprise
+cliente ; elle peut contenir des données personnelles publiées par l'acheteur (contact d'un agent) et
+les noms de fichiers du dossier. Durée bornée : effacée quand elle n'a plus servi depuis
+ANALYSE_PARTAGEE_JOURS jours, ou faite depuis plus d'ANALYSE_PARTAGEE_DUREE_MAX_JOURS jours (purge
+quotidienne), et avec le compte de la dernière organisation qui l'utilise (effacement RGPD). Les lignes
+de mesure sont effacées avec le compte et au-delà d'ANALYSE_PARTAGEE_MESURE_JOURS jours. Le texte
+intégral de chaque marché reste rangé avec le marché et supprimé avec lui (dce_texte).
 """
 import contextlib
 import contextvars
@@ -83,9 +95,11 @@ _NON = ("0", "false", "non", "no", "off")
 
 
 def actif() -> bool:
-    """Analyse en deux temps avec extraction partagée (défaut). ANALYSE_PARTAGEE=0 : analyse d'origine
-    en un seul appel (la mesure des doublons continue)."""
-    return _env("ANALYSE_PARTAGEE", "1") not in _NON
+    """ANALYSE_PARTAGEE=1 : analyse en deux temps avec extraction partagée. Défaut (non réglé, ou 0) :
+    MESURE SEULE — analyse d'origine en un seul appel, à l'identique, et mesure des doublons, clé exacte
+    comprise (ce que le partage pourrait resservir) : le partage ne s'active que sur décision, quand la
+    mesure montre assez de doublons pour qu'il fasse baisser la facture (docs/ANALYSE_PARTAGEE.md, § 7)."""
+    return _env("ANALYSE_PARTAGEE", "0") not in _NON
 
 
 def masque_actif() -> bool:
@@ -588,7 +602,7 @@ def analyser_texte(text: str, company=None, criteria=None, lang_name=None, p: di
     from app.services import analysis as an
     if p is None or not text or len(text) < 50:
         return an.analyze_dce_text(text, company, criteria, lang_name=lang_name, annonce_seule=annonce_seule)
-    cle = cle_texte(an.build_extraction_prompt(text, lang_name)) if actif() else ""
+    cle = cle_texte(an.build_extraction_prompt(text, lang_name))       # mesurée même sans partage
 
     def fn(servi, rg):
         if servi is not None:
@@ -633,18 +647,22 @@ def mesure(db) -> dict:
             "doublons_entre_organisations": inter, "doublons_meme_organisation": meme,
             "taux_doublons_entre_organisations": round(inter / imports, 4) if imports else 0.0,
             "doublons_entre_organisations_cle_exacte": inter_cle,
+            "taux_doublons_entre_organisations_cle_exacte": round(inter_cle / imports, 4) if imports else 0.0,
             "servies_depuis_le_partage": servies,
             "taux_servies": round(servies / imports, 4) if imports else 0.0,
             "economie_eur": round(eco, 4),
         }
     entrees = db.query(func.count(AnalysePartagee.id)).scalar() or 0
-    return {"actif": actif(), "masque_du_delai": masque_actif(), "version": version(),
+    return {"actif": actif(), "mode": "partage" if actif() else "mesure seule",
+            "masque_du_delai": masque_actif(), "version": version(),
             "entrees_partagees": int(entrees), "par_nature": par_nature,
             "explication": ("Interne, jamais montré à un client. « doublons entre organisations » : analyses d'un "
                             "contenu déjà analysé par une AUTRE organisation (borne haute des extractions que le "
                             "partage peut éviter) ; « clé exacte » : la même chose, à l'identique de ce que l'IA "
-                            "reçoit (ce que le partage peut réellement resservir) ; « économie » : coût des "
-                            "extractions resservies, au tarif public du modèle.")}
+                            "reçoit (ce que le partage peut réellement resservir, mesuré aussi en mesure seule) ; "
+                            "« économie » : coût des extractions resservies, au tarif public du modèle. Le partage "
+                            "fait baisser la facture au-delà d'un taux de doublons exacts qui dépend de la taille "
+                            "des dossiers (docs/ANALYSE_PARTAGEE.md, § 7) : ANALYSE_PARTAGEE=1 l'active.")}
 
 
 def prometheus_lignes(fmt) -> list:

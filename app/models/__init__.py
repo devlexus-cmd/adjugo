@@ -582,8 +582,10 @@ class UsageIA(Base):
 # donnée d'entreprise, gardée pour être resservie quand ce même dossier, exactement, est analysé à
 # nouveau, par n'importe quelle organisation. Clé = empreinte de TOUT ce que l'IA reçoit pour
 # l'extraction (consignes, modèles, version de la lecture, langue, texte et état de chaque pièce).
-# AUCUNE colonne de propriétaire : rien ne relie une entrée à une organisation. Pas une donnée
-# personnelle (document public de l'acheteur). Voir docs/ANALYSE_PARTAGEE.md.
+# AUCUNE colonne de propriétaire : rien ne relie une entrée à une organisation. Aucune donnée
+# d'entreprise cliente ; peut contenir des données personnelles publiées par l'acheteur (contact d'un
+# agent). Durée bornée, effacée avec le compte de la dernière organisation qui l'utilise. Voir
+# docs/ANALYSE_PARTAGEE.md.
 class AnalysePartagee(Base):
     __tablename__ = "analyses_partagees"
 

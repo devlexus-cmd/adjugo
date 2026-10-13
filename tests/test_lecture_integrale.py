@@ -216,6 +216,13 @@ def appels_entreprise(calls) -> list:
     return [k for k in calls if ENTREPRISE in llm._flatten_content(k.get("system"))]
 
 
+def n_entreprise() -> int:
+    """Appels de la partie propre à l'entreprise par analyse : 1 en deux temps (ANALYSE_PARTAGEE=1), 0 en
+    mesure seule (défaut : analyse d'origine en un seul appel)."""
+    from app.services import analyse_partagee
+    return 1 if analyse_partagee.actif() else 0
+
+
 def _answer(kw):
     system = llm._flatten_content(kw.get("system"))
     content = kw["messages"][0]["content"]
@@ -312,10 +319,10 @@ def test_gros_dossier_toutes_les_pieces_lues_par_l_ia(client, auth, fake_ia, mon
     piece_calls = [k for k in fake.calls if "Tu lis UNE pièce" in llm._flatten_content(k.get("system"))]
     synth = appels_dossier(fake.calls)
     assert len(synth) == 1                                      # lecture en deux temps + synthèse
-    # Partie propre à l'entreprise : UN appel court, qui ne reçoit jamais le dossier.
+    # Partie propre à l'entreprise (deux temps) : UN appel court, qui ne reçoit jamais le dossier.
     ent = appels_entreprise(fake.calls)
-    assert len(ent) == 1 and len(fake.calls) == len(piece_calls) + 2
-    assert "DEBUT-PIECE-" not in llm._flatten_content(ent[0]["messages"][0]["content"])
+    assert len(ent) == n_entreprise() and len(fake.calls) == len(piece_calls) + 1 + n_entreprise()
+    assert all("DEBUT-PIECE-" not in llm._flatten_content(k["messages"][0]["content"]) for k in ent)
     # Petites pièces voisines regroupées dans un même appel (chacune sous son nom) : moins d'appels
     # que de parties, et chaque pièce reste nommée.
     users = [llm._flatten_content(k["messages"][0]["content"]) for k in piece_calls]
@@ -389,11 +396,12 @@ def test_petit_dossier_lu_d_un_seul_tenant(client, auth, fake_ia):
     r = client.post("/api/sourcing/analyze-upload", headers=h, data={"project_id": str(pid)},
                     files={"file": ("DCE.zip", _petit_dossier(), "application/zip")})
     assert r.status_code == 200, r.text
-    # Tout tient : un seul appel reçoit le dossier ; puis la partie propre à l'entreprise (appel court,
-    # sans le dossier).
-    assert len(appels_dossier(fake.calls)) == 1 and len(appels_entreprise(fake.calls)) == 1
-    assert len(fake.calls) == 2
-    assert "DEBUT-PIECE-" not in llm._flatten_content(appels_entreprise(fake.calls)[0]["messages"][0]["content"])
+    # Tout tient : un seul appel reçoit le dossier ; en deux temps, puis la partie propre à l'entreprise
+    # (appel court, sans le dossier).
+    assert len(appels_dossier(fake.calls)) == 1 and len(appels_entreprise(fake.calls)) == n_entreprise()
+    assert len(fake.calls) == 1 + n_entreprise()
+    assert all("DEBUT-PIECE-" not in llm._flatten_content(k["messages"][0]["content"])
+               for k in appels_entreprise(fake.calls))
     user = appels_dossier(fake.calls)[0]["messages"][0]["content"]
     assert isinstance(user, str)
     for code in ("RC", "CCTP", "BPU"):
@@ -434,7 +442,7 @@ def test_petit_dossier_lu_d_un_seul_tenant(client, auth, fake_ia):
     assert rr.status_code == 200, rr.text
     # « Ré-analyser » refait TOUJOURS l'extraction du dossier (jamais resservie depuis l'analyse partagée).
     assert len(appels_dossier(fake.calls)) == 2 and FAIT in appels_dossier(fake.calls)[1]["messages"][0]["content"]
-    assert len(appels_entreprise(fake.calls)) == 2
+    assert len(appels_entreprise(fake.calls)) == 2 * n_entreprise()
     assert _project_row(pid).dce_file_key == proj.dce_file_key
 
 
