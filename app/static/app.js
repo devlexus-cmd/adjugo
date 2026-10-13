@@ -496,7 +496,9 @@ function atlMdToHtml(md, faits) {
   spans.sort((a, b) => b[0] - a[0]).forEach(x => {
     src = src.slice(0, x[0]) + _ATL_M0 + x[2] + _ATL_M1 + src.slice(x[0], x[1]) + _ATL_M2 + src.slice(x[1]);
   });
-  const re = new RegExp("(\\[\\s*[ÀAà]\\s+compl[ée]ter[^\\]]*\\])|(\\[\\s*([FSPECG]\\s*\\d{1,4}(?:\\s*[,;]\\s*[FSPECG]?\\s*\\d{1,4})*)\\s*\\])|\\uE000(\\d+)\\uE001([^\\uE002]*)\\uE002", "g");
+  // « [À compléter …] » quelle que soit la casse (« [A COMPLETER …] », « [à Compléter …] ») comme le serveur
+  // (far._TODO, re.IGNORECASE), sans rouvrir les renvois aux minuscules (« [f3] » n'est pas un renvoi).
+  const re = new RegExp("(\\[\\s*[ÀàAa]\\s+[Cc][Oo][Mm][Pp][Ll][ÉéEe][Tt][Ee][Rr][^\\]]*\\])|(\\[\\s*([FSPECG]\\s*\\d{1,4}(?:\\s*[,;]\\s*[FSPECG]?\\s*\\d{1,4})*)\\s*\\])|\\uE000(\\d+)\\uE001([^\\uE002]*)\\uE002", "g");
   const inl = (t) => _atlInline(t, re, ids);
   const out = [];
   let ul = null, ol = null, table = null, para = [];

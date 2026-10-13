@@ -1010,8 +1010,31 @@ def faits_ecartes(db, owner_id: int, *, jour: Optional[date] = None) -> list:
         if r:
             out.append({"ref": ref_de(p), "id": p.id, "nature": p.nature,
                         "texte": texte_de(p.nature, p.valeur or {}, p.date_fin_validite),
-                        "raison": r, "message": RAISONS[r]})
+                        "titre": titre_court(p.nature, p.valeur or {}),
+                        "raison": r, "message": RAISONS[r], "raison_courte": RAISONS_COURTES.get(r, "")})
     return out
+
+
+# La raison en quelques mots, pour une ligne « Qualibat RGE : date de fin de validité dépassée ».
+RAISONS_COURTES = {
+    EXPIREE: "date de fin de validité dépassée",
+    SOURCE_INTROUVABLE: "document d'origine retiré de « Mon savoir-faire »",
+    JUSTIFICATIF_INTROUVABLE: "justificatif retiré de vos documents",
+    RETIREE: "retirée", PROPOSEE: "pas encore cochée",
+}
+
+
+def titre_court(nature: str, valeur: dict) -> str:
+    """Le titre d'une fiche tel que « Mes preuves » l'affiche (jamais son numéro « F6 ») ; pour une
+    personne, sa fonction seule."""
+    v = valeur or {}
+    if nature == SALARIE:
+        return str(v.get("fonction") or "Une personne de l'équipe")[:120]
+    if nature == CHIFFRE_CLE:
+        s = f"{v.get('libelle', '')} : {_nombre(v.get('valeur'))}" + (f" {v['unite']}" if v.get("unite") else "")
+        return s[:120]
+    principal = {REFERENCE: "objet", QUALIFICATION: "nom", MATERIEL: "designation"}.get(nature, "")
+    return str(v.get(principal) or NATURE_LIBELLES.get(nature, "Preuve"))[:120]
 
 
 def compteurs(db, owner_id: int) -> dict:

@@ -155,7 +155,10 @@ API (dans `Partie.version_courante`, pour l'auteur) :
   au niveau de la partie : `Partie.controle`).
 - `faits_sources` : les faits reliés (seulement avec les libellés).
 - État de l'atelier : `sources_faits` = `{"libelles", "bulle", "preuves_ecartees": [{ref, id, nature,
-  raison, message}]}` (preuves acceptées qu'Adjugo n'utilise pas : expirée, document retiré).
+  titre, raison, message, raison_courte}]}` (preuves acceptées qu'Adjugo n'utilise pas : expirée, document
+  retiré). `titre` : celui de « Mes preuves » (une personne : sa fonction seule) ; l'écran affiche
+  « « Qualibat RGE » : date de fin de validité dépassée », avec un lien « Ouvrir « Mes preuves » », jamais
+  le numéro interne « F6 » (qui n'apparaît nulle part dans « Mes preuves »).
 
 **Libellés positifs et compteur : `ATELIER_LIBELLES_SOURCES=1`, désactivés par défaut.** Étude § 6.5,
 calibration : le jeu de phrases piégées passe (85 pièges, zéro présenté comme « trouvé dans vos

@@ -321,3 +321,46 @@ def test_reponse_coupee_les_fiches_completes_gardees_et_la_lecture_reprend(clien
     assert natures == ["materiel", "reference"]                       # la fiche complète n'est pas jetée
     assert len(appels) == 2 and len(appels[1]) < len(appels[0])       # la lecture reprend, sans tout relire
     assert p3 in appels[1] and "Mémoire technique" not in appels[1].split("<<<", 1)[1]
+
+
+# ═══ 6. Écran de l'atelier : « [À compléter] » quelle que soit la casse, jamais un numéro « F6 » seul ══
+
+def test_a_completer_surligne_quelle_que_soit_la_casse_sous_node():
+    from tests.test_redaction_v2_ecrans import _node
+    md = ("[À Compléter : durée] et [A COMPLETER : effectif] puis [a compléter : lieu] et [à compléter : x]. "
+          "Renvoi [F3] mais pas [f3].")
+    h = _node(f"console.log(JSON.stringify(atlMdToHtml({json.dumps(md)}, [])));")
+    for todo in ("[À Compléter : durée]", "[A COMPLETER : effectif]", "[a compléter : lieu]", "[à compléter : x]"):
+        assert f'<span class="atl-todo">{todo}</span>' in h, todo
+    assert '<sup class="atl-ref" data-ref="F3">F3</sup>' in h and "[f3]" in h
+    # Le serveur compte les mêmes trous (l'export est bloqué par ce qui est surligné, et seulement cela).
+    from app.services import faits_a_relire as far
+    assert len(far._TODO.findall(md)) == 4
+
+
+def test_preuves_qui_ne_servent_pas_par_leur_titre_jamais_leur_numero(client):
+    from datetime import date, timedelta
+    from tests.test_redaction_v3_ensemble import _db
+    from app.services import preuves as pv
+    _e, h, uid = _register(client)
+    db = _db()
+    try:
+        q = pv.creer(db, uid, nature=pv.QUALIFICATION, valeur={"nom": "Qualibat RGE"}, statut=pv.ACCEPTEE,
+                     date_fin_validite=(date.today() - timedelta(days=3)).isoformat())
+        s = pv.creer(db, uid, nature=pv.SALARIE, valeur={"nom": "Yann Tanguy", "fonction": "Conducteur de travaux"},
+                     statut=pv.ACCEPTEE, date_fin_validite=(date.today() - timedelta(days=3)).isoformat())
+        assert pv.ref_de(q) and pv.ref_de(s)
+    finally:
+        db.close()
+    pid = _projet(client, h)
+    _creer(client, h, pid)
+    ec = _etat(client, h, pid)["sources_faits"]["preuves_ecartees"]
+    titres = {x["titre"]: x["raison_courte"] for x in ec}
+    assert titres == {"Qualibat RGE": "date de fin de validité dépassée",
+                      "Conducteur de travaux": "date de fin de validité dépassée"}
+    assert not any("Tanguy" in json.dumps(x) for x in ec)             # une personne : sa fonction seule
+    html = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "static",
+                             "app.html"), encoding="utf-8").read()
+    ligne = next(x for x in html.split("\n") if "atlEcartees().slice(0, 3)" in x)
+    assert "x.titre" in ligne and "x.raison_courte" in ligne and "x.ref" not in ligne
+    assert "atlVersPreuves()" in ligne

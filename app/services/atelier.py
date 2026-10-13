@@ -1688,7 +1688,8 @@ def sources_faits_out(db, owner_id: int) -> dict:
     preuves acceptées qu'Adjugo n'utilise pas (expirée, document retiré) avec la raison."""
     try:
         from app.services import preuves as pv
-        ecartees = [{k: x.get(k) for k in ("ref", "id", "nature", "raison", "message")}
+        # Le titre de la fiche (une personne : sa fonction seule), jamais son numéro « F6 » seul.
+        ecartees = [{k: x.get(k) for k in ("ref", "id", "nature", "titre", "raison", "message", "raison_courte")}
                     for x in pv.faits_ecartes(db, owner_id)][:50]
     except Exception:       # noqa: BLE001
         ecartees = []
