@@ -1090,6 +1090,7 @@
               <span v-if="ao.buyer && ao.buyer.recurrent" class="pill go" style="font-size:10px">Client régulier</span></div>
             <div class="cb">
               <div v-if="ao.buyerLoading" class="muted small"><span class="spin"></span> Analyse de l'historique de publication…</div>
+              <div v-else-if="ao.buyer && ao.buyer.demo" class="muted small">Acheteur fictif de la démonstration : il n'a pas d'historique de publication.</div>
               <div v-else-if="!ao.buyer || ao.buyer.found===false" class="muted small">Aucun historique de publication trouvé pour « {{ ao.project.client||'cet acheteur' }} » sur le BOAMP.</div>
               <div v-else>
                 <div class="cards cols-2" style="gap:10px">
@@ -3652,6 +3653,6 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-qsuUQ4PhA1eYU+W9r3BJmIC235FGQPsh0GmLPdtPgia+1+yiDxNtaOT8RUFheYD+" defer></script>
+<script src="/static/app.js" integrity="sha384-6uTisHMvh3p9nJK8PvaE3Vedc3xngGSqBLsNWNfRsUe3iqADaE4Hi/OVmqWhZ9iJ" defer></script>
 </body>
 </html>

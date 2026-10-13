@@ -1,10 +1,10 @@
 [
   {
-    "objet": "Rénovation énergétique de l'école primaire des Tilleuls à Quimper (29) : isolation thermique par l'extérieur (ITE), remplacement des menuiseries extérieures et installation d'une chaufferie biomasse",
+    "objet": "Rénovation énergétique de l'école primaire des Tilleuls à Démoville (29) : isolation thermique par l'extérieur (ITE), remplacement des menuiseries extérieures et installation d'une chaufferie biomasse",
     "payload": {
-      "objet": "Rénovation énergétique de l'école primaire des Tilleuls à Quimper (29) : isolation thermique par l'extérieur (ITE), remplacement des menuiseries extérieures et installation d'une chaufferie biomasse",
+      "objet": "Rénovation énergétique de l'école primaire des Tilleuls à Démoville (29) : isolation thermique par l'extérieur (ITE), remplacement des menuiseries extérieures et installation d'une chaufferie biomasse",
       "type_marche": "travaux",
-      "synthese_besoin": "La commune de Quimper souhaite améliorer la performance énergétique de l'école primaire des Tilleuls par un programme de travaux comprenant trois composantes complémentaires : la mise en œuvre d'une isolation thermique par l'extérieur (ITE) sur l'ensemble des façades, le remplacement des menuiseries extérieures vétustes par des éléments à haute performance thermique, et l'installation d'une chaufferie biomasse en remplacement du système de chauffage existant. Le chantier se déroule en site occupé et devra impérativement être phasé pour concentrer les interventions les plus impactantes sur les périodes de vacances scolaires, afin de garantir la continuité de l'accueil des élèves. Le montant estimé est de 850 000 € HT pour une durée d'exécution de 10 mois. Des exigences environnementales (matériaux biosourcés, valorisation des déchets) et sociales (clause d'insertion) sont intégrées au marché.",
+      "synthese_besoin": "La commune de Démoville souhaite améliorer la performance énergétique de l'école primaire des Tilleuls par un programme de travaux comprenant trois composantes complémentaires : la mise en œuvre d'une isolation thermique par l'extérieur (ITE) sur l'ensemble des façades, le remplacement des menuiseries extérieures vétustes par des éléments à haute performance thermique, et l'installation d'une chaufferie biomasse en remplacement du système de chauffage existant. Le chantier se déroule en site occupé et devra impérativement être phasé pour concentrer les interventions les plus impactantes sur les périodes de vacances scolaires, afin de garantir la continuité de l'accueil des élèves. Le montant estimé est de 850 000 € HT pour une durée d'exécution de 10 mois. Des exigences environnementales (matériaux biosourcés, valorisation des déchets) et sociales (clause d'insertion) sont intégrées au marché.",
       "procedure": {
         "type": "Procédure adaptée (MAPA)",
         "code": "mapa",
@@ -90,7 +90,7 @@
       "cctp_sections": [
         {
           "titre": "1. Objet et consistance des travaux",
-          "contenu": "Le marché porte sur la rénovation énergétique complète de l'école primaire des Tilleuls à Quimper (29), comprenant : (1) la mise en œuvre d'une isolation thermique par l'extérieur (ITE) sur les façades et toitures accessibles ; (2) le remplacement intégral des menuiseries extérieures (fenêtres et portes) par des éléments performants thermiquement ; (3) l'installation d'une chaufferie biomasse avec ses circuits de distribution et régulation. Les travaux s'exécutent en site occupé, exclusivement durant les périodes de vacances scolaires, selon un phasage défini au dossier de consultation. La durée maximale d'exécution est fixée à 10 mois calendaires à compter de l'ordre de service initial."
+          "contenu": "Le marché porte sur la rénovation énergétique complète de l'école primaire des Tilleuls à Démoville (29), comprenant : (1) la mise en œuvre d'une isolation thermique par l'extérieur (ITE) sur les façades et toitures accessibles ; (2) le remplacement intégral des menuiseries extérieures (fenêtres et portes) par des éléments performants thermiquement ; (3) l'installation d'une chaufferie biomasse avec ses circuits de distribution et régulation. Les travaux s'exécutent en site occupé, exclusivement durant les périodes de vacances scolaires, selon un phasage défini au dossier de consultation. La durée maximale d'exécution est fixée à 10 mois calendaires à compter de l'ordre de service initial."
         },
         {
           "titre": "2. Spécifications techniques et performances énergétiques",
@@ -147,7 +147,7 @@
         "Matériaux biosourcés : Exiger des fiches techniques et certifications (ACERMI, Natureplus) dès la candidature pour éviter des substitutions tardives ; prévoir une visite de site commune avant notification."
       ],
       "garde_fous": [
-        "Neutralité : Aucune préférence pour les entreprises locales (Quimper, Finistère) ; critères d'attribution basés uniquement sur la compétence technique, le prix et la qualité du plan de phasage (égalité de traitement).",
+        "Neutralité : Aucune préférence pour les entreprises locales (Démoville, Finistère) ; critères d'attribution basés uniquement sur la compétence technique, le prix et la qualité du plan de phasage (égalité de traitement).",
         "PME : Ne pas imposer de chiffre d'affaires minimum excluant les PME ; accepter les groupements temporaires (GIE, SARL) et les sous-traitances déclarées.",
         "Transparence : Publier le RC et les pièces du DCE sur le profil acheteur de la collectivité au moins 3 semaines avant la date limite de candidature ; communiquer les critères de sélection et d'attribution de manière claire et non discriminatoire.",
         "Environnement : Les conditions d'exécution environnementales (biosourcés, déchets, PES) doivent être vérifiables et mesurables (fiches techniques, rapports mensuels, attestations) ; prévoir des pénalités contractuelles en cas de non-respect (retenue supplémentaire ou résiliation)."
@@ -159,7 +159,7 @@
         "dept": "29",
         "montant_estime": 850000,
         "duree_mois": 10,
-        "lieu": "Quimper",
+        "lieu": "Démoville",
         "contraintes": "Chantier en site occupé (école), phasage sur les vacances scolaires, présence d'amiante à traiter.",
         "exigences_env": "Objectif de performance BBC rénovation, matériaux biosourcés privilégiés, tri et valorisation des déchets de chantier.",
         "exigences_sociales": "Clause d'insertion : heures réservées à des personnes éloignées de l'emploi.",
@@ -175,11 +175,11 @@
     }
   },
   {
-    "objet": "Entretien des espaces verts et fleurissement de la commune de Quimper – Marché de services à bons de commande – 24 mois",
+    "objet": "Entretien des espaces verts et fleurissement de la commune de Démoville – Marché de services à bons de commande – 24 mois",
     "payload": {
-      "objet": "Entretien des espaces verts et fleurissement de la commune de Quimper – Marché de services à bons de commande – 24 mois",
+      "objet": "Entretien des espaces verts et fleurissement de la commune de Démoville – Marché de services à bons de commande – 24 mois",
       "type_marche": "services",
-      "synthese_besoin": "La commune de Quimper (29) souhaite confier à un ou plusieurs prestataires l'entretien courant de ses espaces verts (tonte, taille, désherbage, arrosage, ramassage de feuilles, etc.) ainsi que le fleurissement saisonnier de ses massifs et jardinières, pour une durée de 24 mois. Le marché est passé en procédure adaptée (MAPA), le montant estimé étant de 95 000 € HT sur la durée totale. La collectivité place la transition écologique au cœur de ce marché : les pratiques « zéro phytosanitaire », la gestion différenciée des espaces et le recours systématique au paillage sont des exigences contractuelles. Une clause d'insertion professionnelle est intégrée afin de favoriser le retour à l'emploi de personnes éloignées du marché du travail.",
+      "synthese_besoin": "La commune de Démoville (29) souhaite confier à un ou plusieurs prestataires l'entretien courant de ses espaces verts (tonte, taille, désherbage, arrosage, ramassage de feuilles, etc.) ainsi que le fleurissement saisonnier de ses massifs et jardinières, pour une durée de 24 mois. Le marché est passé en procédure adaptée (MAPA), le montant estimé étant de 95 000 € HT sur la durée totale. La collectivité place la transition écologique au cœur de ce marché : les pratiques « zéro phytosanitaire », la gestion différenciée des espaces et le recours systématique au paillage sont des exigences contractuelles. Une clause d'insertion professionnelle est intégrée afin de favoriser le retour à l'emploi de personnes éloignées du marché du travail.",
       "procedure": {
         "type": "Procédure adaptée (MAPA)",
         "code": "mapa",
@@ -258,7 +258,7 @@
       "cctp_sections": [
         {
           "titre": "1. Objet et consistance de la prestation",
-          "contenu": "Le marché a pour objet l'entretien des espaces verts et le fleurissement de la commune de Quimper sur une période de 24 mois. Les prestations comprennent : la tonte et l'entretien des pelouses, l'élagage et l'abattage d'arbres selon les besoins, l'entretien des massifs et des plantations, le fleurissement saisonnier des espaces publics, le nettoyage et l'évacuation des déchets verts, ainsi que l'entretien des mobiliers et équipements associés aux espaces verts. Le prestataire assurera également le suivi phytosanitaire et la gestion des nuisibles selon les principes de lutte intégrée. L'exécution se fera sur l'ensemble du territoire communal de Quimper (Finistère)."
+          "contenu": "Le marché a pour objet l'entretien des espaces verts et le fleurissement de la commune de Démoville sur une période de 24 mois. Les prestations comprennent : la tonte et l'entretien des pelouses, l'élagage et l'abattage d'arbres selon les besoins, l'entretien des massifs et des plantations, le fleurissement saisonnier des espaces publics, le nettoyage et l'évacuation des déchets verts, ainsi que l'entretien des mobiliers et équipements associés aux espaces verts. Le prestataire assurera également le suivi phytosanitaire et la gestion des nuisibles selon les principes de lutte intégrée. L'exécution se fera sur l'ensemble du territoire communal de Démoville (Finistère)."
         },
         {
           "titre": "2. Spécifications techniques et modalités d'exécution",
@@ -321,7 +321,7 @@
       "garde_fous": [
         "Neutralité : aucune préférence pour les entreprises locales ou de taille donnée ; critères d'attribution objectifs (prix, qualité du plan de gestion différenciée, expérience en gestion sans phytosanitaire)",
         "Égalité de traitement : tous les candidats reçoivent le même RC, CCTP, BPU ; pas de demandes d'informations supplémentaires non prévues au RC",
-        "Interdiction de préférence locale : pas de bonus pour une implantation à Quimper ou en Bretagne ; seule la qualité technique et le prix comptent",
+        "Interdiction de préférence locale : pas de bonus pour une implantation à Démoville ou en Bretagne ; seule la qualité technique et le prix comptent",
         "Vigilance sur l'insertion : vérifier que la clause n'exclut pas les micro-entreprises ; accepter des partenariats avec des structures d'insertion externes (sous-traitance autorisée)"
       ],
       "avertissements": [],

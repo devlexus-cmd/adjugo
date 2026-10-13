@@ -103,40 +103,40 @@ def _projects():
     # 1) GO — toiture groupe scolaire
     d1 = {
         "intitule_marche": "Réfection de la toiture et étanchéité du groupe scolaire Jean Moulin",
-        "acheteur": "Ville de Bordeaux",
-        "contact": {"nom": "Sabine Vidal", "fonction": "Direction de la commande publique", "email": "marches.publics@mairie-bordeaux.fr", "telephone": "05 56 10 20 30"},
+        "acheteur": "Ville de Marvejac",
+        "contact": {"nom": "Sabine Vidal", "fonction": "Direction de la commande publique", "email": "marches@ville-marvejac.exemple", "telephone": ""},
         "type_marche": "Travaux",
         "nature_marche": "Marché à procédure adaptée (MAPA)", "forme_prix": "Prix global et forfaitaire",
         "budget_estime": "480 000 EUR HT", "date_limite": "30/12/2026 à 12h00",
-        "delai_execution": "5 mois à compter de l'ordre de service", "lieu_execution": "Bordeaux (33)",
+        "delai_execution": "5 mois à compter de l'ordre de service", "lieu_execution": "Marvejac (33)",
         "allotissement": "Lot unique",
         "criteres_attribution": [{"critere": "Valeur technique", "ponderation": "60%"}, {"critere": "Prix", "ponderation": "40%"}],
         "garanties_exigees": "Retenue de garantie 5%", "penalites": "1/1000 du montant HT par jour, plafonnées à 10%",
         "avance": "Avance de 10% (marché > 50 000 EUR HT)", "sous_traitance": "Autorisée — déclaration DC4 requise",
         "variantes": "Autorisées sur les matériaux d'étanchéité", "critere_rse": "Oui — clause d'insertion sociale (200 h)",
-        "ca_minimum_requis": "CA > 1 500 000 EUR sur 3 ans", "qualifications_requises": ["Qualibat 3212", "RGE"],
+        "ca_minimum_requis": "CA annuel moyen ≥ 1 500 000 EUR (3 derniers exercices)", "qualifications_requises": ["Qualibat 3212", "RGE"],
         "assurances_requises": ["RC Professionnelle", "Garantie décennale"],
         "visite_obligatoire": "Recommandée, sur rendez-vous avant le 15/12/2026",
         "points_attention": ["Critère technique prépondérant (60%) — soigner le mémoire", "Exigence de CA (1,5 M€) au-dessus de votre CA N-1 — à surveiller", "Clause d'insertion sociale de 200 h"],
-        "recommandation": "Marché de réfection de toiture et d'étanchéité d'un groupe scolaire, en lot unique, pour 480 000 € HT, porté par la Ville de Bordeaux. C'est une cible prioritaire : l'objet est au cœur de votre métier (couverture-étanchéité), le chantier est dans votre zone et les qualifications exigées (Qualibat 3212, RGE) sont détenues. Le seul point de recevabilité à surveiller est le chiffre d'affaires minimum demandé — 1,5 M€ sur 3 ans, légèrement au-dessus de votre CA N-1 — sans être rédhibitoire.\n\nLa mécanique d'attribution est déterminante : la valeur technique pèse 60 % contre 40 % pour le prix. Ce marché ne se gagne donc pas au moins-disant, mais sur la qualité du mémoire technique. Il faut y détailler la méthodologie d'étanchéité (complexe retenu, traitement des relevés et des points singuliers), la gestion d'un chantier en site occupé — une école reste en activité : phasage, sécurité, propreté, limitation des nuisances — et un planning réaliste. C'est là que se creuse l'écart avec les concurrents.\n\nCôté administratif, trois clauses appellent une action : la retenue de garantie de 5 % (à remplacer par une caution bancaire de substitution, art. R2191-33, pour ne pas immobiliser votre trésorerie un an), les pénalités de retard (négocier une franchise de quelques jours ouvrés et un plafond raisonnable) et la clause d'insertion sociale de 200 h (à sécuriser en conventionnant en amont une structure d'insertion locale).\n\nEn synthèse : foncez, en investissant prioritairement le mémoire technique. La visite de site, recommandée avant le 15/12, est vivement conseillée — elle nourrit le mémoire et crédibilise l'offre auprès de l'acheteur.",
+        "recommandation": "Marché de réfection de toiture et d'étanchéité d'un groupe scolaire, en lot unique, pour 480 000 € HT, porté par la Ville de Marvejac. C'est une cible prioritaire : l'objet est au cœur de votre métier (couverture-étanchéité), le chantier est dans votre zone et les qualifications exigées (Qualibat 3212, RGE) sont détenues. Le seul point de recevabilité à surveiller est le chiffre d'affaires minimum demandé : 1,5 M€ par an en moyenne sur les trois derniers exercices, au-dessus de votre CA N-1. Seul, la candidature serait écartée ; avec un partenaire, les chiffres d'affaires s'additionnent (voir « Répondre à plusieurs ? »).\n\nLa mécanique d'attribution est déterminante : la valeur technique pèse 60 % contre 40 % pour le prix. Ce marché ne se gagne donc pas au moins-disant, mais sur la qualité du mémoire technique. Il faut y détailler la méthodologie d'étanchéité (complexe retenu, traitement des relevés et des points singuliers), la gestion d'un chantier en site occupé — une école reste en activité : phasage, sécurité, propreté, limitation des nuisances — et un planning réaliste. C'est là que se creuse l'écart avec les concurrents.\n\nCôté administratif, trois clauses appellent une action : la retenue de garantie de 5 % (à remplacer par une caution bancaire de substitution, art. R2191-33, pour ne pas immobiliser votre trésorerie un an), les pénalités de retard (négocier une franchise de quelques jours ouvrés et un plafond raisonnable) et la clause d'insertion sociale de 200 h (à sécuriser en conventionnant en amont une structure d'insertion locale).\n\nEn synthèse : foncez, avec un partenaire pour le chiffre d'affaires, en investissant prioritairement le mémoire technique. La visite de site, recommandée avant le 15/12, est vivement conseillée — elle nourrit le mémoire et crédibilise l'offre auprès de l'acheteur.",
         "clauses_risque": [
             {"clause": "Retenue de garantie", "niveau": "moyen", "pourquoi": "5% retenus pendant 1 an, immobilise la trésorerie", "levier_negociation": "Caution bancaire de substitution (art. R2191-33)"},
             {"clause": "Pénalités de retard", "niveau": "moyen", "pourquoi": "1/1000 du HT par jour, plafond 10%", "levier_negociation": "Demander une franchise de 5 jours ouvrés et un plafond à 5%"},
             {"clause": "Clause d'insertion sociale", "niveau": "faible", "pourquoi": "200 h d'insertion à réaliser sur le chantier", "levier_negociation": "Conventionner une structure d'insertion locale (facilité opérationnelle)"},
         ],
     }
-    P.append(dict(key="toiture", name="Réfection toiture — Groupe scolaire Jean Moulin", client="Ville de Bordeaux",
+    P.append(dict(key="toiture", name="Réfection toiture — Groupe scolaire Jean Moulin", client="Ville de Marvejac",
                   budget=480000, status=ProjectStatus.en_cours,
-                  ai=_analysis(d1, "Réfection de toiture d'un groupe scolaire à Bordeaux — travaux en lot unique, 480 k€, valeur technique prépondérante (60%). Métier, zone et qualifications alignés : cible prioritaire.", "25-114207",
+                  ai=_analysis(d1, "Réfection de toiture d'un groupe scolaire à Marvejac — travaux en lot unique, 480 k€, valeur technique prépondérante (60%). Métier, zone et qualifications alignés : cible prioritaire.", "25-114207",
                                ["Certificat Qualibat 3212 (en cours de validité)", "Attestation RGE", "Mémoire technique — méthodologie étanchéité", "3 références de toitures scolaires (< 3 ans)", "Attestation d'assurance décennale"])))
 
     # 2) À ÉTUDIER — réhabilitation énergétique + désamiantage (groupement)
     d2 = {
         "intitule_marche": "Réhabilitation énergétique et désamiantage du gymnase municipal",
-        "acheteur": "Lorient Agglomération", "type_marche": "Travaux",
+        "acheteur": "Kerhel Agglomération", "type_marche": "Travaux",
         "nature_marche": "Appel d'offres ouvert", "forme_prix": "Prix global et forfaitaire",
         "budget_estime": "1 250 000 EUR HT", "date_limite": "20/12/2026 à 17h00",
-        "delai_execution": "9 mois", "lieu_execution": "Lorient (56)",
+        "delai_execution": "9 mois", "lieu_execution": "Kerhel (56)",
         "allotissement": "Lot 1 : Désamiantage et retrait d'amiante ; Lot 2 : Isolation thermique et rénovation énergétique ; Lot 3 : Gros œuvre et étanchéité",
         "criteres_attribution": [{"critere": "Prix", "ponderation": "50%"}, {"critere": "Valeur technique", "ponderation": "50%"}],
         "garanties_exigees": "Retenue de garantie 5% + garantie à première demande", "penalites": "1/1000 du HT par jour",
@@ -145,38 +145,38 @@ def _projects():
         "assurances_requises": ["RC Professionnelle", "Garantie décennale", "Assurance amiante"],
         "visite_obligatoire": "Obligatoire — 05/12/2026 à 14h",
         "points_attention": ["Désamiantage : qualification SS3 exigée (non détenue)", "CA minimum exigé (3 M€) supérieur à votre CA", "Garantie à première demande"],
-        "recommandation": "Réhabilitation énergétique et désamiantage d'un gymnase, pour 1,25 M€ HT, allotie en trois lots (désamiantage, isolation/énergie, gros œuvre/étanchéité), portée par Lorient Agglomération. Le marché est en zone et sur votre cœur de métier (rénovation énergétique), ce qui en fait une opportunité réelle — mais deux verrous conditionnent la recevabilité.\n\nPremier verrou : la qualification désamiantage sous-section 3 (SS3), exigée et non détenue en interne. Deuxième verrou : le chiffre d'affaires minimum demandé (3 M€ sur 3 ans), supérieur à votre CA. Répondre seul est donc impossible sur ces deux critères. S'y ajoute une garantie à première demande, appelable sans justification, qui engage lourdement la trésorerie.\n\nLa bonne stratégie est claire : répondre en GROUPEMENT conjoint avec un désamianteur certifié SS3. Il apporte la qualification manquante et, en groupement, les chiffres d'affaires se cumulent — les deux verrous sautent d'un coup. Adjugo a d'ailleurs déjà identifié un partenaire complémentaire qualifié SS3 (voir la co-traitance). Sur la garantie à première demande, proposer une caution bancaire classique en substitution.\n\nEn synthèse : à étudier sérieusement, mais uniquement en groupement. Seul, il est hors d'atteinte ; à plusieurs, c'est un marché à 1,25 M€ à portée de main. La visite est obligatoire (05/12) — à ne pas manquer, sous peine d'irrecevabilité.",
+        "recommandation": "Réhabilitation énergétique et désamiantage d'un gymnase, pour 1,25 M€ HT, allotie en trois lots (désamiantage, isolation/énergie, gros œuvre/étanchéité), portée par Kerhel Agglomération. Le marché est en zone et sur votre cœur de métier (rénovation énergétique), ce qui en fait une opportunité réelle — mais deux verrous conditionnent la recevabilité.\n\nPremier verrou : la qualification désamiantage sous-section 3 (SS3), exigée et non détenue en interne. Deuxième verrou : le chiffre d'affaires minimum demandé (3 M€ sur 3 ans), supérieur à votre CA. Répondre seul est donc impossible sur ces deux critères. S'y ajoute une garantie à première demande, appelable sans justification, qui engage lourdement la trésorerie.\n\nLa bonne stratégie est claire : répondre en GROUPEMENT conjoint avec un désamianteur certifié SS3. Il apporte la qualification manquante et, en groupement, les chiffres d'affaires se cumulent — les deux verrous sautent d'un coup. Adjugo a d'ailleurs déjà identifié un partenaire complémentaire qualifié SS3 (voir la co-traitance). Sur la garantie à première demande, proposer une caution bancaire classique en substitution.\n\nEn synthèse : à étudier sérieusement, mais uniquement en groupement. Seul, il est hors d'atteinte ; à plusieurs, c'est un marché à 1,25 M€ à portée de main. La visite est obligatoire (05/12) — à ne pas manquer, sous peine d'irrecevabilité.",
         "clauses_risque": [
             {"clause": "Capacité financière", "niveau": "eleve", "pourquoi": "CA exigé 3 M€ supérieur à votre CA N-1", "levier_negociation": "Répondre en groupement conjoint pour cumuler les chiffres d'affaires"},
             {"clause": "Garantie à première demande", "niveau": "eleve", "pourquoi": "Engage la trésorerie sans recours, appelable sans justification", "levier_negociation": "Proposer une caution bancaire classique en substitution"},
             {"clause": "Qualification désamiantage SS3", "niveau": "eleve", "pourquoi": "Non détenue en interne", "levier_negociation": "Co-traitance avec un désamianteur certifié SS3"},
         ],
     }
-    P.append(dict(key="lorient", name="Réhabilitation énergétique — Gymnase de Lorient", client="Lorient Agglomération",
+    P.append(dict(key="lorient", name="Réhabilitation énergétique — Gymnase de Kerhel", client="Kerhel Agglomération",
                   budget=1250000, status=ProjectStatus.nouveau,
-                  ai=_analysis(d2, "Réhabilitation énergétique d'un gymnase à Lorient — 1,25 M€. En zone et dans votre métier, mais qualification désamiantage SS3 non détenue et CA exigé élevé : candidature en GROUPEMENT à étudier.", "25-118934",
+                  ai=_analysis(d2, "Réhabilitation énergétique d'un gymnase à Kerhel — 1,25 M€. En zone et dans votre métier, mais qualification désamiantage SS3 non détenue et CA exigé élevé : candidature en GROUPEMENT à étudier.", "25-118934",
                                ["Qualification désamiantage SS3 (ou co-traitant)", "Bilan carbone de l'entreprise", "Garantie à première demande", "Plan de retrait amiante", "Attestation de visite obligatoire"])))
 
     # 3) NO-GO — hors métier et hors zone
     d3 = {
         "intitule_marche": "Maintenance du parc informatique et infogérance du système d'information",
-        "acheteur": "Métropole Nice Côte d'Azur", "type_marche": "Services",
+        "acheteur": "Métropole Cap-Aurèle", "type_marche": "Services",
         "nature_marche": "Appel d'offres ouvert", "forme_prix": "Prix unitaires (bordereau)",
         "budget_estime": "35 000 EUR HT", "date_limite": "10/12/2026 à 12h00",
-        "delai_execution": "Accord-cadre 4 ans", "lieu_execution": "Nice (06)", "allotissement": "Lot unique",
+        "delai_execution": "Accord-cadre 4 ans", "lieu_execution": "Cap-Aurèle (06)", "allotissement": "Lot unique",
         "criteres_attribution": [{"critere": "Prix", "ponderation": "70%"}, {"critere": "Valeur technique", "ponderation": "30%"}],
         "sous_traitance": "Autorisée", "variantes": "Non autorisées", "critere_rse": "Non",
         "ca_minimum_requis": "CA > 5 000 000 EUR", "qualifications_requises": ["Certification ITIL", "ISO 27001"],
         "assurances_requises": ["RC Professionnelle"],
         "points_attention": ["Hors métier (services informatiques)", "Hors zone d'intervention (06)", "CA exigé hors d'atteinte"],
-        "recommandation": "Marché de maintenance et d'infogérance d'un système d'information, sous forme d'accord-cadre de 4 ans, porté par la Métropole Nice Côte d'Azur. L'analyse est sans ambiguïté : ce marché est à écarter, pour trois raisons cumulatives.\n\nD'abord, l'objet — des prestations informatiques (ITIL, ISO 27001) — n'a aucun rapport avec votre activité de bâtiment : l'adéquation métier est nulle. Ensuite, le lieu d'exécution (Nice, 06) est hors de votre zone d'intervention. Enfin, le chiffre d'affaires exigé (5 M€) est hors d'atteinte.\n\nLe barème le classe automatiquement parmi les marchés à écarter. L'intérêt d'Adjugo ici n'est pas de vous faire perdre du temps sur ce dossier, mais de vous montrer, en un coup d'œil, pourquoi ne PAS y aller — pour que vous concentriez votre énergie sur les marchés que vous pouvez réellement gagner. C'est aussi ça, le tri : autant d'heures économisées sur les fausses pistes.\n\nConcrètement, trois signaux auraient dû alerter dès la lecture de l'avis : un code CPV de services informatiques (72xxx) sans rapport avec vos codes travaux, un lieu d'exécution hors de vos départements, et un chiffre d'affaires plancher hors norme pour une PME du bâtiment. Chacun de ces trois critères, pris isolément, suffit à écarter le marché ; ici, les trois se cumulent.\n\nC'est précisément le rôle du tri automatique : sur les dizaines d'avis publiés chaque semaine, beaucoup ne vous concernent pas. Les écarter en un coup d'œil, avec la raison affichée noir sur blanc, vous fait gagner un temps précieux — celui que vous auriez passé à ouvrir le dossier, lire le règlement de consultation et comprendre que ce n'était pas pour vous. Ce temps, vous le réinvestissez sur les marchés réellement gagnables.",
+        "recommandation": "Marché de maintenance et d'infogérance d'un système d'information, sous forme d'accord-cadre de 4 ans, porté par la Métropole Cap-Aurèle. L'analyse est sans ambiguïté : ce marché est à écarter, pour trois raisons cumulatives.\n\nD'abord, l'objet — des prestations informatiques (ITIL, ISO 27001) — n'a aucun rapport avec votre activité de bâtiment : l'adéquation métier est nulle. Ensuite, le lieu d'exécution (Cap-Aurèle, 06) est hors de votre zone d'intervention. Enfin, le chiffre d'affaires exigé (5 M€) est hors d'atteinte.\n\nLe barème le classe automatiquement parmi les marchés à écarter. L'intérêt d'Adjugo ici n'est pas de vous faire perdre du temps sur ce dossier, mais de vous montrer, en un coup d'œil, pourquoi ne PAS y aller — pour que vous concentriez votre énergie sur les marchés que vous pouvez réellement gagner. C'est aussi ça, le tri : autant d'heures économisées sur les fausses pistes.\n\nConcrètement, trois signaux auraient dû alerter dès la lecture de l'avis : un code CPV de services informatiques (72xxx) sans rapport avec vos codes travaux, un lieu d'exécution hors de vos départements, et un chiffre d'affaires plancher hors norme pour une PME du bâtiment. Chacun de ces trois critères, pris isolément, suffit à écarter le marché ; ici, les trois se cumulent.\n\nC'est précisément le rôle du tri automatique : sur les dizaines d'avis publiés chaque semaine, beaucoup ne vous concernent pas. Les écarter en un coup d'œil, avec la raison affichée noir sur blanc, vous fait gagner un temps précieux — celui que vous auriez passé à ouvrir le dossier, lire le règlement de consultation et comprendre que ce n'était pas pour vous. Ce temps, vous le réinvestissez sur les marchés réellement gagnables.",
         "clauses_risque": [
             {"clause": "Adéquation métier", "niveau": "eleve", "pourquoi": "Prestation informatique sans lien avec le BTP", "levier_negociation": "Aucun — marché hors périmètre"},
         ],
     }
-    P.append(dict(key="info", name="Infogérance SI — Métropole Nice", client="Métropole Nice Côte d'Azur",
+    P.append(dict(key="info", name="Infogérance SI — Métropole Cap-Aurèle", client="Métropole Cap-Aurèle",
                   budget=35000, status=ProjectStatus.nouveau,
-                  ai=_analysis(d3, "Marché de services d'infogérance informatique à Nice — hors métier BTP, hors zone, CA exigé inatteignable. Classé « à écarter » par le barème, sans IA.", "25-121650",
+                  ai=_analysis(d3, "Marché de services d'infogérance informatique à Cap-Aurèle — hors métier BTP, hors zone, CA exigé inatteignable. Classé « à écarter » par le barème, sans IA.", "25-121650",
                                ["Certification ITIL", "ISO 27001"])))
     return P
 
@@ -185,18 +185,18 @@ def _projects():
 _COTRAITANTS = [
     dict(name="Charpentes du Léon", siret="51234567800018", code_ape="4391A", city="Tours",
          departement="37", specialites="Charpente bois, ossature, couverture", ca_n1=820000, effectif=9,
-         forme_juridique="SARL", representant_legal="Hervé Quéméner", email="contact@charpentes-leon.fr",
-         phone="02 98 85 21 40", codes_cpv="45261000, 45422000",
+         forme_juridique="SARL", representant_legal="Hervé Quéméner", email="contact@charpentes-leon.exemple",
+         phone="", codes_cpv="45261000, 45422000",
          qualifications="Qualibat 2392 (charpente bois), RGE", attach=[("toiture", "cotraitant", "")]),
     dict(name="Zinguerie Bigoudène", siret="48765432100027", code_ape="4391B", city="Lille",
          departement="59", specialites="Couverture, zinguerie, étanchéité", ca_n1=540000, effectif=6,
-         forme_juridique="SARL", representant_legal="Loïc Le Berre", email="contact@zinguerie-bigoudene.fr",
-         phone="02 98 87 33 12", codes_cpv="45261000, 45261210",
+         forme_juridique="SARL", representant_legal="Loïc Le Berre", email="contact@zinguerie-bigoudene.exemple",
+         phone="", codes_cpv="45261000, 45261210",
          qualifications="Qualibat 3411 (zinguerie)", attach=[("toiture", "cotraitant", "")]),
     dict(name="Breizh Désamiantage", siret="53219876500011", code_ape="4399A", city="Lorient",
          departement="56", specialites="Désamiantage SS3, dépose amiante, retrait", ca_n1=2100000, effectif=18,
-         forme_juridique="SAS", representant_legal="Soizic Morvan", email="contact@breizh-desamiantage.fr",
-         phone="02 97 84 22 10", codes_cpv="45262660",
+         forme_juridique="SAS", representant_legal="Soizic Morvan", email="contact@breizh-desamiantage.exemple",
+         phone="", codes_cpv="45262660",
          qualifications="Qualification désamiantage SS3, certification amiante sous-section 3",
          attach=[("lorient", "cotraitant", "")]),
 ]
@@ -249,13 +249,13 @@ def ensure_demo(db, force: bool = False) -> User:
     comp.address = "12 rue des Chantiers, ZA de Kerlann"
     comp.city = "Nantes"; comp.postal_code = "44000"
     comp.tva_intracom = "FR" + DEMO_SIRET[:11]   # FR + clé + SIREN (format vitrine)
-    comp.phone = "02 98 52 14 30"; comp.email = "contact@batiment-ouest.fr"
+    comp.phone = ""; comp.email = "contact@batiment-ouest.exemple"
     comp.ca_n1 = 1250000; comp.ca_n2 = 1100000; comp.ca_n3 = 980000; comp.effectif = 14
     comp.qualifications = _COMPANY["qualifications"]
     comp.references = [
-        {"intitule": "Réfection de la couverture de l'école élémentaire", "client": "Ville de Niort", "montant": 96000, "annee": 2024},
-        {"intitule": "Étanchéité-toiture du centre technique municipal", "client": "Nantes Métropole", "montant": 182000, "annee": 2023},
-        {"intitule": "Rénovation thermique d'un groupe scolaire (lot couverture/isolation)", "client": "Ville de La Rochelle", "montant": 145000, "annee": 2023},
+        {"intitule": "Réfection de la couverture de l'école élémentaire", "client": "Ville de Bréhaut", "montant": 96000, "annee": 2024},
+        {"intitule": "Étanchéité-toiture du centre technique municipal", "client": "Ville de Lesparrac", "montant": 182000, "annee": 2023},
+        {"intitule": "Rénovation thermique d'un groupe scolaire (lot couverture/isolation)", "client": "Ville de Castelmorin", "montant": 145000, "annee": 2023},
     ]
     comp.team = [
         {"nom": "Yann Tanguy", "fonction": "Conducteur de travaux", "qualifications": "BTS Bâtiment, 18 ans d'expérience", "references": "Chef de chantier sur 12 réfections de toiture scolaire"},
@@ -335,7 +335,7 @@ def ensure_demo(db, force: bool = False) -> User:
     db.commit()
     _marquer_espace_demo(user)      # compte enregistré : son espace ne peut plus appeler l'IA
 
-    # « Répondre à plusieurs ? » : verdict de groupement CALCULÉ sur Lorient (CA 3 M€ + SS3
+    # « Répondre à plusieurs ? » : verdict de groupement CALCULÉ sur Kerhel (CA 3 M€ + SS3
     # apportés par Breizh Désamiantage). Transaction propre ; skip si le service pur est absent.
     try:
         _seed_groupement(db, user, comp, proj_by_key, ct_by_name)
@@ -344,7 +344,7 @@ def ensure_demo(db, force: bool = False) -> User:
         logger.warning("seed démo (groupement) ignoré : %s", e)
 
     # Vitrine complète : factures, coffre-fort, CERFA (dont DC4 du consortium), veille
-    # amont, alertes, base de connaissances, contacts, consortium Lorient matérialisé…
+    # amont, alertes, base de connaissances, contacts, groupement de Kerhel matérialisé…
     # Isolé dans sa propre transaction : un échec ici n'altère jamais le cœur de la démo.
     try:
         _seed_extras(db, user, proj_by_key, ct_by_name)
@@ -368,7 +368,7 @@ def ensure_demo(db, force: bool = False) -> User:
 
 
 def _seed_groupement(db, user, comp, proj_by_key, ct_by_name):
-    """« Répondre à plusieurs ? » sur la vitrine. Le marché de Lorient exige un CA de 3 M€ et la
+    """« Répondre à plusieurs ? » sur la vitrine. Le marché de Kerhel exige un CA de 3 M€ et la
     qualification désamiantage SS3 que Bâtiment de l'Ouest n'a pas ; Breizh Désamiantage les
     apporte. Tout est CALCULÉ par le service pur (score_groupement) — jamais un chiffre codé en
     dur — puis matérialisé : simulation retenue, plan, score et verdict « Bon potentiel en
@@ -432,7 +432,7 @@ def _seed_groupement(db, user, comp, proj_by_key, ct_by_name):
     if res.get("decision") == "go_groupement":
         lorient.go_decision = "go_groupement"   # match_score reste le score SEUL
     db.commit()
-    logger.info("Vitrine démo : groupement Lorient calculé — seul %s → avec Breizh %s (%s).",
+    logger.info("Vitrine démo : groupement Kerhel calculé — seul %s → avec Breizh %s (%s).",
                 res.get("score_seul"), res.get("score_groupement"), res.get("decision"))
 
 
@@ -466,7 +466,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
     s'en servait réellement : factures/devis, coffre-fort (avec vrais PDF + alertes
     d'expiration), CERFA générés (dont le DC4 du consortium), veille amont, alertes
     sauvegardées, base de connaissances interrogeable, contacts CRM, espace de
-    co-construction, et le consortium de Lorient entièrement instancié (invitation +
+    co-construction, et le groupement de Kerhel entièrement instancié (invitation +
     contribution soumise + pièces). Idempotent : purge d'abord les entités démo."""
     import datetime
     import secrets
@@ -531,8 +531,8 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
 
     # ── Contacts (CRM) ────────────────────────────────────────────────────────
     for n, role, org, ctype, email, phone, addr, note in [
-        ("Sabine Vidal", "Responsable de la commande publique", "Ville de Bordeaux", "maitre_ouvrage", "marches.publics@mairie-bordeaux.fr", "05 56 10 20 30", "Place Pey-Berland, 33000 Bordeaux", "Interlocutrice marchés bâtiment — réactive, privilégie le dépôt dématérialisé."),
-        ("Studio Vertigo Architectes", "Architecte chef de file (maîtrise d'œuvre)", "Studio Vertigo", "partenaire", "contact@studio-vertigo.fr", "04 72 41 55 30", "18 quai Claude-Bernard, 69007 Lyon", "MOE sur plusieurs marchés scolaires — bon relais pour les visites de site."),
+        ("Sabine Vidal", "Responsable de la commande publique", "Ville de Marvejac", "maitre_ouvrage", "marches@ville-marvejac.exemple", "", "Hôtel de ville, Marvejac (33)", "Interlocutrice marchés bâtiment — réactive, privilégie le dépôt dématérialisé."),
+        ("Studio Vertigo Architectes", "Architecte chef de file (maîtrise d'œuvre)", "Studio Vertigo", "partenaire", "contact@studio-vertigo.exemple", "", "Lyon (69)", "MOE sur plusieurs marchés scolaires — bon relais pour les visites de site."),
         # Fournisseur FICTIF (jamais une vraie enseigne avec un contact inventé).
         ("Service comptes pro — Négoce des Matériaux de l'Ouest", "Responsable comptes professionnels", "Négoce des Matériaux de l'Ouest (fictif)", "fournisseur", "pro@negoce-materiaux-ouest.exemple", "", "ZA de la Lande, 44000 Nantes", "Conditions cadre négociées sur l'étanchéité et l'isolation."),
     ]:
@@ -547,43 +547,43 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                        total_ttc=round(sub + tva, 2), issue_date=issue, due_date=due,
                        paid_date=paid, project_id=project_id, notes=notes))
 
-    _inv("DEV-2026-0142", InvoiceType.devis, InvoiceStatus.accepte, "Ville de Bordeaux",
+    _inv("DEV-2026-0142", InvoiceType.devis, InvoiceStatus.accepte, "Ville de Marvejac",
          [{"description": "Réfection toiture et étanchéité — groupe scolaire Jean Moulin (lot unique)", "qty": 1, "unit_price": 468500}],
          toiture, today - timedelta(days=20), due=today + timedelta(days=10),
          notes="Devis remis à l'appui de l'offre — réf. AO 25-114207.")
-    _inv("FAC-2026-0087", InvoiceType.facture, InvoiceStatus.paye, "Ville de Niort",
+    _inv("FAC-2026-0087", InvoiceType.facture, InvoiceStatus.paye, "Ville de Bréhaut",
          [{"description": "Réfection de la couverture — école élémentaire", "qty": 1, "unit_price": 96000}],
          None, today - timedelta(days=95), due=today - timedelta(days=65), paid=today - timedelta(days=70))
-    _inv("AV-2026-0009", InvoiceType.avoir, InvoiceStatus.envoye, "Ville de Niort",
+    _inv("AV-2026-0009", InvoiceType.avoir, InvoiceStatus.envoye, "Ville de Bréhaut",
          [{"description": "Avoir — ajustement de métré lot zinguerie", "qty": 1, "unit_price": -2400}],
          None, today - timedelta(days=40))
 
     # ── Veille amont : signaux d'investissement détectés en amont des AO ───────
     for sig in [
         dict(intitule="Construction d'un pôle enfance (crèche + ALSH)", type_projet="construction",
-             budget=3200000, budget_texte="3,2 M€ HT", localisation="Chartres (28)",
-             collectivite="Ville de Chartres", calendrier="AO probable T4 2026",
+             budget=3200000, budget_texte="3,2 M€ HT", localisation="Villebrune (28)",
+             collectivite="Ville de Villebrune", calendrier="AO probable T4 2026",
              metiers=["gros œuvre", "toiture", "étanchéité", "isolation"],
              extrait="« …le conseil approuve l'enveloppe prévisionnelle de 3,2 M€ HT pour la construction du pôle enfance, financée par la DETR et l'autofinancement… »",
-             pertinence="pertinent", pertinence_score=84, source_name="Délibération du conseil municipal de Chartres",
+             pertinence="pertinent", pertinence_score=84, source_name="Délibération du conseil municipal de Villebrune",
              source_url="/static/demo/deliberation.html", source_date="2026-05-14",
              domaine="bâtiment", phase="financement voté", echeance_ao="T4 2026",
              financement="DETR + autofinancement", maturite=78),
         dict(intitule="Rénovation thermique du groupe scolaire des Sables Blancs", type_projet="rénovation",
-             budget=1400000, budget_texte="1,4 M€ HT", localisation="Clermont-Ferrand (63)",
-             collectivite="Clermont Auvergne Métropole", calendrier="AO probable T1 2027",
+             budget=1400000, budget_texte="1,4 M€ HT", localisation="Valdôme (63)",
+             collectivite="Agglomération de Valdôme", calendrier="AO probable T1 2027",
              metiers=["isolation", "couverture", "menuiserie"],
              extrait="« …inscription au plan pluriannuel d'investissement de la rénovation énergétique du groupe scolaire, demande de subvention DSIL en cours… »",
-             pertinence="pertinent", pertinence_score=73, source_name="PPI 2026-2028 — Clermont Auvergne Métropole",
+             pertinence="pertinent", pertinence_score=73, source_name="PPI 2026-2028 — Agglomération de Valdôme",
              source_url="/static/demo/deliberation.html", source_date="2026-04-02",
              domaine="bâtiment", phase="programmation", echeance_ao="T1 2027",
              financement="DSIL", maturite=60),
         dict(intitule="Réhabilitation de la salle des sports municipale", type_projet="rénovation",
-             budget=900000, budget_texte="≈ 900 k€ HT", localisation="Millau (12)",
-             collectivite="Commune de Millau", calendrier="à confirmer",
+             budget=900000, budget_texte="≈ 900 k€ HT", localisation="Larzagues (12)",
+             collectivite="Commune de Larzagues", calendrier="à confirmer",
              metiers=["gros œuvre", "toiture", "désamiantage"],
              extrait="« …lancement d'une étude de faisabilité pour la réhabilitation de la salle des sports, présence d'amiante à confirmer par diagnostic… »",
-             pertinence="a_etudier", pertinence_score=58, source_name="Compte-rendu de la commission travaux — Millau",
+             pertinence="a_etudier", pertinence_score=58, source_name="Compte-rendu de la commission travaux — Larzagues",
              source_url="/static/demo/deliberation.html", source_date="2026-03-19",
              domaine="bâtiment", phase="étude", echeance_ao="",
              financement="à définir", maturite=40),
@@ -611,11 +611,11 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
         for i, ch in enumerate(chunks):
             db.add(KnowledgeChunk(doc_id=kd.id, user_id=uid, ordinal=i, text=ch, doc_name=name))
 
-    _kb("Mémoire technique — Réfection toiture école de Niort (2024)", "memoire", [
+    _kb("Mémoire technique — Réfection toiture école de Bréhaut (2024)", "memoire", [
         "Méthodologie d'étanchéité : dépose soignée de la couverture existante, contrôle du support, pose d'un pare-vapeur, d'une isolation thermique en polyuréthane et d'une membrane d'étanchéité bicouche soudée. Relevés et zinguerie traités en points singuliers.",
         "Sécurité et chantier en site occupé : installation de protections collectives (garde-corps périphériques, filets), phasage permettant le maintien de l'activité scolaire, nettoyage quotidien et évacuation des déchets en filière agréée.",
         "Planning d'exécution : préparation (1 semaine), dépose et reprise du support (2 semaines), isolation et étanchéité (4 semaines), zinguerie et finitions (2 semaines), réception et levée de réserves (1 semaine).",
-        "Références similaires : 12 réfections de toitures scolaires conduites sur les 5 dernières années partout en France, dont l'école élémentaire de Niort (2024) et le centre technique de Nantes (2023).",
+        "Références similaires : 12 réfections de toitures scolaires conduites sur les 5 dernières années partout en France, dont l'école élémentaire de Bréhaut (2024) et le centre technique de Lesparrac (2023).",
         "Engagements environnementaux : tri des déchets de chantier, valorisation des matériaux, recours à des isolants biosourcés lorsque le CCTP le permet, démarche RGE.",
     ])
     _kb("Politique RSE & clause d'insertion sociale", "rse", [
@@ -624,16 +624,16 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
         "Sécurité et conditions de travail : 0 accident avec arrêt en 2025, formations régulières (travail en hauteur, désamiantage sous-section 4), encadrement QSE dédié.",
     ])
 
-    # ── Co-construction & consortium : Lorient entièrement instancié ──────────
+    # ── Co-construction et groupement : Kerhel entièrement instancié ──────────
     if lorient:
         breizh = ct_by_name.get("Breizh Désamiantage")
         breizh_siret = (breizh.siret if breizh else "") or "53219876500011"
 
         invite = ProjectInvite(
             token=secrets.token_hex(24), project_id=lorient, owner_id=uid,
-            recipient="contact@breizh-desamiantage.fr", company_name="Breizh Désamiantage",
+            recipient="contact@breizh-desamiantage.exemple", company_name="Breizh Désamiantage",
             can_view_docs=True, role="cotraitant", can_contribute=True, revoked=False,
-            view_count=4, last_viewed_at=now, verified_email="contact@breizh-desamiantage.fr",
+            view_count=4, last_viewed_at=now, verified_email="contact@breizh-desamiantage.exemple",
             verified_at=now)
         db.add(invite); db.flush()
         # Le partenaire rattaché au marché EST celui qui a été invité (comme après une invitation
@@ -651,8 +651,8 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
             lot="Lot 1 — Désamiantage et retrait d'amiante (SS3)", siret=breizh_siret,
             forme_juridique="SAS", address="8 rue de l'Industrie", postal_code="56100", city="Lorient",
             references=[
-                {"intitule": "Désamiantage avant démolition d'un EHPAD", "client": "Lorient Agglomération", "montant": 320000, "annee": 2024},
-                {"intitule": "Retrait d'amiante en toiture d'un gymnase", "client": "Commune de Lanester", "montant": 185000, "annee": 2023},
+                {"intitule": "Désamiantage avant démolition d'un EHPAD", "client": "Kerhel Agglomération", "montant": 320000, "annee": 2024},
+                {"intitule": "Retrait d'amiante en toiture d'un gymnase", "client": "Commune de Plouvarec", "montant": 185000, "annee": 2023},
             ],
             qualifications=["Qualification désamiantage SS3", "Certification amiante sous-section 3", "Assurance amiante"],
             # Doctrine de visibilité : le mandataire ne voit que le PRIX DE VENTE du lot ;
@@ -661,7 +661,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
             capacites={"ca_n1": 1850000, "effectif": 14, "declared_at": now.isoformat()},
             representant_legal="Soizic Morvan", signataire_qualite="Présidente",
             memoire_paragraph="Breizh Désamiantage réalise le retrait d'amiante en sous-section 3 conformément au plan de retrait validé. Confinement dynamique, contrôles d'empoussièrement libératoires et traçabilité complète des déchets (BSDA).",
-            contact={"nom": "Soizic Morvan", "email": "contact@breizh-desamiantage.fr", "telephone": "02 97 84 22 10"},
+            contact={"nom": "Soizic Morvan", "email": "contact@breizh-desamiantage.exemple", "telephone": ""},
             status="submitted", submitted_at=now, version=1)
         db.add(contrib); db.flush()
 
@@ -683,8 +683,8 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                                      name=pname, file_key=pkey, file_size=11000, mime_type="application/pdf",
                                      piece_type=ptype, expiration_date=pexp))
 
-        space = CoSpace(owner_id=uid, name="Groupement — Gymnase de Lorient",
-                        marche="Réhabilitation énergétique et désamiantage du gymnase municipal de Lorient",
+        space = CoSpace(owner_id=uid, name="Groupement — Gymnase de Kerhel",
+                        marche="Réhabilitation énergétique et désamiantage du gymnase municipal de Kerhel",
                         warroom={"lots": [
                             {"lot": "Lot 1 — Désamiantage SS3", "attribue": "Breizh Désamiantage"},
                             {"lot": "Lot 2 — Isolation / rénovation énergétique", "attribue": "Bâtiment de l'Ouest (chef de file)"},
@@ -693,7 +693,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
         db.add(space); db.flush()
         db.add(CoMember(space_id=space.id, user_id=uid, role="mandataire", status="accepted",
                         company_name="Bâtiment de l'Ouest"))
-        db.add(CoMember(space_id=space.id, email="contact@breizh-desamiantage.fr", role="cotraitant",
+        db.add(CoMember(space_id=space.id, email="contact@breizh-desamiantage.exemple", role="cotraitant",
                         status="accepted", token=secrets.token_hex(16), company_name="Breizh Désamiantage"))
 
     # ── CERFA générés (régénérés à la volée au téléchargement) ────────────────
@@ -712,15 +712,15 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
     # Win-rate, pipeline et analytics n'ont de sens qu'avec des marchés clôturés.
     from app.models import ProjectStatus
     PAST = [
-        dict(name="Réfection de toiture-terrasse — médiathèque d'Angers", client="Ville d'Angers",
+        dict(name="Réfection de toiture-terrasse — médiathèque d'Anjoumont", client="Ville d'Anjoumont",
              budget=212000, status=ProjectStatus.gagne, ref="24-098112",
              outcome_rank=1, awarded_amount=212000, outcome_reason="Offre la mieux-disante (valeur technique 60 %).",
              details={"intitule_marche": "Réfection de la toiture-terrasse d'étanchéité de la médiathèque municipale",
-                      "acheteur": "Ville d'Angers",
-                      "contact": {"nom": "Christophe Marchand", "fonction": "Direction des bâtiments", "email": "marches@ville.angers.fr", "telephone": "02 41 05 40 00"},
+                      "acheteur": "Ville d'Anjoumont",
+                      "contact": {"nom": "Christophe Marchand", "fonction": "Direction des bâtiments", "email": "marches@ville-anjoumont.exemple", "telephone": ""},
                       "type_marche": "Travaux", "nature_marche": "Marché à procédure adaptée (MAPA)", "forme_prix": "Prix global et forfaitaire",
                       "budget_estime": "212 000 EUR HT",
-                      "delai_execution": "4 mois à compter de l'ordre de service", "lieu_execution": "Angers (49)", "allotissement": "Lot unique",
+                      "delai_execution": "4 mois à compter de l'ordre de service", "lieu_execution": "Anjoumont (49)", "allotissement": "Lot unique",
                       "criteres_attribution": [{"critere": "Valeur technique", "ponderation": "60%"}, {"critere": "Prix", "ponderation": "40%"}],
                       "garanties_exigees": "Retenue de garantie 5%", "penalites": "1/1000 du montant HT par jour, plafonnées à 8%",
                       "avance": "Avance de 10% (marché > 50 000 EUR HT)", "sous_traitance": "Autorisée — déclaration DC4",
@@ -729,23 +729,23 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                       "assurances_requises": ["RC Professionnelle", "Garantie décennale"],
                       "visite_obligatoire": "Recommandée, sur rendez-vous",
                       "points_attention": ["Site occupé (médiathèque ouverte au public) — phasage et sécurité", "Critère technique prépondérant (60%)", "Étanchéité de toiture-terrasse : soigner le complexe et les relevés"],
-                      "recommandation": "Réfection de la toiture-terrasse d'étanchéité de la médiathèque municipale d'Angers, en lot unique pour 212 000 € HT. Cible idéale sur le papier : étanchéité de toiture-terrasse, cœur de métier, zone couverte, qualifications détenues (Qualibat 3212, RGE), budget dans votre fourchette.\n\nLe marché s'est joué sur la valeur technique (60 %). L'offre a mis l'accent sur la méthodologie d'étanchéité (complexe et relevés), sur la gestion d'un équipement recevant du public maintenu en activité (phasage, sécurité) et sur un planning maîtrisé. La retenue de garantie a été neutralisée par une caution de substitution.\n\nRésultat : marché remporté comme offre la mieux-disante. À conserver comme référence type pour les prochains marchés d'étanchéité de bâtiments publics — un mémoire technique soigné fait la décision quand la technique pèse plus lourd que le prix.\n\nEn retour d'expérience, deux facteurs ont pesé. D'abord, la visite de site en amont : elle a permis d'identifier les contraintes d'accès et l'état réel des relevés existants, puis de les traiter explicitement dans le mémoire — un signal de sérieux pour l'acheteur. Ensuite, la clarté du phasage proposé pour maintenir la médiathèque ouverte pendant les travaux, qui a rassuré sur la maîtrise des nuisances et de la sécurité du public.\n\nCe marché constitue désormais une référence solide à citer sur les prochains appels d'offres d'étanchéité de bâtiments recevant du public : même typologie de chantier, même exigence de valeur technique, même logique de site occupé. C'est ce type de référence réutilisable qui renforce, marché après marché, la crédibilité de vos futures candidatures.",
+                      "recommandation": "Réfection de la toiture-terrasse d'étanchéité de la médiathèque municipale d'Anjoumont, en lot unique pour 212 000 € HT. Cible idéale sur le papier : étanchéité de toiture-terrasse, cœur de métier, zone couverte, qualifications détenues (Qualibat 3212, RGE), budget dans votre fourchette.\n\nLe marché s'est joué sur la valeur technique (60 %). L'offre a mis l'accent sur la méthodologie d'étanchéité (complexe et relevés), sur la gestion d'un équipement recevant du public maintenu en activité (phasage, sécurité) et sur un planning maîtrisé. La retenue de garantie a été neutralisée par une caution de substitution.\n\nRésultat : marché remporté comme offre la mieux-disante. À conserver comme référence type pour les prochains marchés d'étanchéité de bâtiments publics — un mémoire technique soigné fait la décision quand la technique pèse plus lourd que le prix.\n\nEn retour d'expérience, deux facteurs ont pesé. D'abord, la visite de site en amont : elle a permis d'identifier les contraintes d'accès et l'état réel des relevés existants, puis de les traiter explicitement dans le mémoire — un signal de sérieux pour l'acheteur. Ensuite, la clarté du phasage proposé pour maintenir la médiathèque ouverte pendant les travaux, qui a rassuré sur la maîtrise des nuisances et de la sécurité du public.\n\nCe marché constitue désormais une référence solide à citer sur les prochains appels d'offres d'étanchéité de bâtiments recevant du public : même typologie de chantier, même exigence de valeur technique, même logique de site occupé. C'est ce type de référence réutilisable qui renforce, marché après marché, la crédibilité de vos futures candidatures.",
                       "clauses_risque": [
                           {"clause": "Retenue de garantie", "niveau": "faible", "pourquoi": "5% retenus pendant 1 an", "levier_negociation": "Caution bancaire de substitution (art. R2191-33)"},
                           {"clause": "Site occupé", "niveau": "moyen", "pourquoi": "Médiathèque ouverte au public pendant les travaux", "levier_negociation": "Proposer un phasage et des protections dans le mémoire"},
                           {"clause": "Pénalités de retard", "niveau": "faible", "pourquoi": "1/1000 du HT par jour, plafond 8%", "levier_negociation": "Demander une franchise de 5 jours ouvrés"},
                       ]},
-             summary="Réfection de toiture-terrasse à Angers — métier et zone alignés. Marché remporté en 2024.",
+             summary="Réfection de toiture-terrasse à Anjoumont — métier et zone alignés. Marché remporté en 2024.",
              pieces=["Attestation Qualibat 3212 (en cours de validité)", "Attestation RGE", "Mémoire technique — méthodologie étanchéité toiture-terrasse", "3 références de toitures-terrasses (< 3 ans)", "Attestation d'assurance décennale", "DC1, DC2 et attestations fiscales et sociales à jour"]),
-        dict(name="Couverture et zinguerie — école de Colmar", client="Ville de Colmar",
+        dict(name="Couverture et zinguerie — école de Riquebach", client="Ville de Riquebach",
              budget=138000, status=ProjectStatus.gagne, ref="24-061330",
              outcome_rank=1, awarded_amount=138000, outcome_reason="Meilleur rapport valeur technique / prix.",
              details={"intitule_marche": "Réfection de la couverture et de la zinguerie du groupe scolaire",
-                      "acheteur": "Ville de Colmar",
-                      "contact": {"nom": "Sylvie Muller", "fonction": "Service de la commande publique", "email": "marchespublics@colmar.fr", "telephone": "03 89 20 68 68"},
+                      "acheteur": "Ville de Riquebach",
+                      "contact": {"nom": "Sylvie Muller", "fonction": "Service de la commande publique", "email": "marches@ville-riquebach.exemple", "telephone": ""},
                       "type_marche": "Travaux", "nature_marche": "Marché à procédure adaptée (MAPA)", "forme_prix": "Prix global et forfaitaire",
                       "budget_estime": "138 000 EUR HT",
-                      "delai_execution": "3 mois — travaux hors période scolaire", "lieu_execution": "Colmar (68)", "allotissement": "Lot unique",
+                      "delai_execution": "3 mois — travaux hors période scolaire", "lieu_execution": "Riquebach (68)", "allotissement": "Lot unique",
                       "criteres_attribution": [{"critere": "Valeur technique", "ponderation": "50%"}, {"critere": "Prix", "ponderation": "50%"}],
                       "garanties_exigees": "Retenue de garantie 5%", "penalites": "1/1000 du montant HT par jour, plafonnées à 10%",
                       "avance": "Avance de 10%", "sous_traitance": "Autorisée — déclaration DC4",
@@ -754,24 +754,24 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                       "assurances_requises": ["RC Professionnelle", "Garantie décennale"],
                       "visite_obligatoire": "Recommandée",
                       "points_attention": ["Site scolaire — travaux impérativement pendant les vacances", "Zinguerie et raccords soignés (bâtiment ancien)", "Prix et technique à parité (50/50)"],
-                      "recommandation": "Réfection de la couverture et de la zinguerie du groupe scolaire de Colmar, en lot unique pour 138 000 € HT. Couverture/zinguerie en plein cœur de métier, budget aligné, qualification Qualibat 3212 détenue.\n\nLa contrainte structurante était le calendrier : bâtiment scolaire, les travaux devaient impérativement être réalisés hors présence des élèves, sur les périodes de vacances. L'offre a donc mis en avant un planning verrouillé et un approvisionnement anticipé, en plus du soin apporté à la zinguerie et aux raccords d'un bâtiment ancien. Les 100 h d'insertion ont été sécurisées via une structure locale.\n\nAvec des critères prix et technique à parité (50/50), c'est le meilleur rapport valeur technique/prix qui l'a emporté : marché remporté. Enseignement : sur les chantiers scolaires, la maîtrise du calendrier est un argument différenciant à part entière.\n\nLe point différenciant a été la crédibilité du planning. Sur un marché scolaire, l'acheteur redoute avant tout un chantier qui déborde sur la rentrée : montrer, jalons et chiffres à l'appui, que les travaux tiennent dans les fenêtres de vacances — avec une marge et un approvisionnement sécurisé en amont — vaut souvent plus qu'un écart de quelques points sur le prix.\n\nÀ retenir pour les prochains marchés de couverture en site scolaire : construire l'offre autour de la contrainte de calendrier plutôt que de la subir. Un rétroplanning détaillé, une commande de matériaux anticipée et une équipe dédiée sur la période sont des arguments concrets, faciles à vérifier par l'acheteur, et difficiles à égaler pour un concurrent qui n'aurait pas anticipé.",
+                      "recommandation": "Réfection de la couverture et de la zinguerie du groupe scolaire de Riquebach, en lot unique pour 138 000 € HT. Couverture/zinguerie en plein cœur de métier, budget aligné, qualification Qualibat 3212 détenue.\n\nLa contrainte structurante était le calendrier : bâtiment scolaire, les travaux devaient impérativement être réalisés hors présence des élèves, sur les périodes de vacances. L'offre a donc mis en avant un planning verrouillé et un approvisionnement anticipé, en plus du soin apporté à la zinguerie et aux raccords d'un bâtiment ancien. Les 100 h d'insertion ont été sécurisées via une structure locale.\n\nAvec des critères prix et technique à parité (50/50), c'est le meilleur rapport valeur technique/prix qui l'a emporté : marché remporté. Enseignement : sur les chantiers scolaires, la maîtrise du calendrier est un argument différenciant à part entière.\n\nLe point différenciant a été la crédibilité du planning. Sur un marché scolaire, l'acheteur redoute avant tout un chantier qui déborde sur la rentrée : montrer, jalons et chiffres à l'appui, que les travaux tiennent dans les fenêtres de vacances — avec une marge et un approvisionnement sécurisé en amont — vaut souvent plus qu'un écart de quelques points sur le prix.\n\nÀ retenir pour les prochains marchés de couverture en site scolaire : construire l'offre autour de la contrainte de calendrier plutôt que de la subir. Un rétroplanning détaillé, une commande de matériaux anticipée et une équipe dédiée sur la période sont des arguments concrets, faciles à vérifier par l'acheteur, et difficiles à égaler pour un concurrent qui n'aurait pas anticipé.",
                       "clauses_risque": [
                           {"clause": "Délai contraint (vacances scolaires)", "niveau": "moyen", "pourquoi": "Travaux à caler impérativement hors période scolaire", "levier_negociation": "Sécuriser le planning et l'approvisionnement en amont"},
                           {"clause": "Retenue de garantie", "niveau": "faible", "pourquoi": "5% retenus pendant 1 an", "levier_negociation": "Caution bancaire de substitution"},
                           {"clause": "Clause d'insertion sociale", "niveau": "faible", "pourquoi": "100 h d'insertion à réaliser", "levier_negociation": "Conventionner une structure d'insertion locale"},
                       ]},
-             summary="Couverture et zinguerie d'une école à Colmar — cœur de métier. Marché remporté en 2024.",
+             summary="Couverture et zinguerie d'une école à Riquebach — cœur de métier. Marché remporté en 2024.",
              pieces=["Attestation Qualibat 3212", "Mémoire technique — couverture et zinguerie", "3 références de couvertures scolaires (< 3 ans)", "Attestation d'assurance décennale", "Planning prévisionnel (travaux hors période scolaire)", "DC1, DC2 et attestations à jour"]),
-        dict(name="Rénovation de couverture — gendarmerie de Limoges", client="SGAMI Sud-Ouest",
+        dict(name="Rénovation de couverture — gendarmerie de Limauzac", client="Ville de Limauzac",
              budget=175000, status=ProjectStatus.perdu, ref="24-076550",
-             outcome_rank=2, competitor_winner="SARL Couverture du Limousin",
+             outcome_rank=2, competitor_winner="SARL Couvertures du Val de Limauzac",
              outcome_reason="Classé 2e — offre supérieure de 6 % au prix retenu.",
              details={"intitule_marche": "Rénovation de la couverture de la caserne de gendarmerie",
-                      "acheteur": "SGAMI Sud-Ouest",
-                      "contact": {"nom": "Bureau des marchés — SGAMI Sud-Ouest", "fonction": "Marchés bâtiment", "email": "marches.sgami-so@interieur.gouv.fr", "telephone": "05 55 00 00 00"},
+                      "acheteur": "Ville de Limauzac",
+                      "contact": {"nom": "Service de la commande publique", "fonction": "Marchés bâtiment", "email": "marches@ville-limauzac.exemple", "telephone": ""},
                       "type_marche": "Travaux", "nature_marche": "Appel d'offres ouvert", "forme_prix": "Prix global et forfaitaire",
                       "budget_estime": "175 000 EUR HT",
-                      "delai_execution": "4 mois", "lieu_execution": "Limoges (87)", "allotissement": "Lot unique",
+                      "delai_execution": "4 mois", "lieu_execution": "Limauzac (87)", "allotissement": "Lot unique",
                       "criteres_attribution": [{"critere": "Prix", "ponderation": "60%"}, {"critere": "Valeur technique", "ponderation": "40%"}],
                       "garanties_exigees": "Retenue de garantie 5% + garantie décennale", "penalites": "1/1000 du montant HT par jour",
                       "avance": "Avance de 5%", "sous_traitance": "Autorisée",
@@ -780,13 +780,13 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                       "assurances_requises": ["RC Professionnelle", "Garantie décennale"],
                       "visite_obligatoire": "Obligatoire (site sensible — attestation exigée)",
                       "points_attention": ["Critère PRIX prépondérant (60%) — marché très concurrentiel", "Site sensible (gendarmerie) : contrôles d'accès et habilitations", "Faible marge de manœuvre sur le prix face aux acteurs locaux"],
-                      "recommandation": "Rénovation de la couverture de la caserne de gendarmerie de Limoges, pour 175 000 € HT, portée par le SGAMI Sud-Ouest. Métier et zone alignés, mais un profil de marché défavorable : le critère prix pesait 60 %, sur un secteur où des acteurs locaux sont très compétitifs.\n\nDeux spécificités : un site sensible (contrôles d'accès, habilitations du personnel) et une visite obligatoire sous peine d'irrecevabilité — deux points bien traités dans l'offre. Le mémoire technique était solide, mais sur un marché à dominante prix, il ne suffit pas à compenser un écart tarifaire.\n\nRésultat : offre classée 2e, à 6 % du prix retenu. L'enseignement est net : sur ce type de marché où le prix prime, il faut viser un tarif plus agressif — en optimisant les coûts (approvisionnement, phasage, sous-traitance) plutôt que la marge. Défaite instructive, à capitaliser pour les prochains marchés à dominante prix.\n\nAu-delà du prix, l'analyse a posteriori montre que le marché était structurellement difficile : dominante prix, forte densité d'acteurs locaux déjà implantés et faible différenciation possible sur une rénovation de couverture standard. Sur ce profil, la marge de manœuvre technique est limitée — l'écart se joue à quelques pour-cent près sur le prix.\n\nL'enseignement opérationnel est double. D'une part, sur les marchés à dominante prix, il faut décider tôt si l'on est prêt à comprimer la marge, ou renoncer et réserver son énergie à des marchés où la valeur technique compte davantage. D'autre part, une deuxième place à 6 % du prix retenu reste une candidature crédible : elle mérite d'être analysée finement pour ajuster le curseur tarifaire sur les prochaines consultations de même nature.",
+                      "recommandation": "Rénovation de la couverture de la caserne de gendarmerie de Limauzac, pour 175 000 € HT, portée par la Ville de Limauzac, propriétaire du bâtiment. Métier et zone alignés, mais un profil de marché défavorable : le critère prix pesait 60 %, sur un secteur où des acteurs locaux sont très compétitifs.\n\nDeux spécificités : un site sensible (contrôles d'accès, habilitations du personnel) et une visite obligatoire sous peine d'irrecevabilité — deux points bien traités dans l'offre. Le mémoire technique était solide, mais sur un marché à dominante prix, il ne suffit pas à compenser un écart tarifaire.\n\nRésultat : offre classée 2e, à 6 % du prix retenu. L'enseignement est net : sur ce type de marché où le prix prime, il faut viser un tarif plus agressif — en optimisant les coûts (approvisionnement, phasage, sous-traitance) plutôt que la marge. Défaite instructive, à capitaliser pour les prochains marchés à dominante prix.\n\nAu-delà du prix, l'analyse a posteriori montre que le marché était structurellement difficile : dominante prix, forte densité d'acteurs locaux déjà implantés et faible différenciation possible sur une rénovation de couverture standard. Sur ce profil, la marge de manœuvre technique est limitée — l'écart se joue à quelques pour-cent près sur le prix.\n\nL'enseignement opérationnel est double. D'une part, sur les marchés à dominante prix, il faut décider tôt si l'on est prêt à comprimer la marge, ou renoncer et réserver son énergie à des marchés où la valeur technique compte davantage. D'autre part, une deuxième place à 6 % du prix retenu reste une candidature crédible : elle mérite d'être analysée finement pour ajuster le curseur tarifaire sur les prochaines consultations de même nature.",
                       "clauses_risque": [
                           {"clause": "Critère prix prépondérant (60%)", "niveau": "eleve", "pourquoi": "Marché attribué quasiment au moins-disant, forte concurrence locale", "levier_negociation": "Optimiser les coûts (approvisionnement, phasage) plutôt que la marge"},
                           {"clause": "Site sensible", "niveau": "moyen", "pourquoi": "Contrôles d'accès et habilitations du personnel", "levier_negociation": "Anticiper les demandes d'habilitation dès la notification"},
                           {"clause": "Visite obligatoire", "niveau": "faible", "pourquoi": "Attestation de visite exigée sous peine d'irrecevabilité", "levier_negociation": "Planifier la visite dès la parution de l'avis"},
                       ]},
-             summary="Rénovation de couverture à Limoges — métier et zone alignés. Offre classée 2e (prix) en 2024.",
+             summary="Rénovation de couverture à Limauzac — métier et zone alignés. Offre classée 2e (prix) en 2024.",
              pieces=["Attestation Qualibat 3212", "Mémoire technique — rénovation de couverture", "Attestation de visite obligatoire", "Attestation d'assurance décennale", "DC1, DC2 et attestations fiscales et sociales", "Références de chantiers en site occupé / sensible"]),
     ]
     for p in PAST:
@@ -799,5 +799,5 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                        outcome_reason=p.get("outcome_reason"), competitor_winner=p.get("competitor_winner")))
 
     db.commit()
-    logger.info("Vitrine démo : coffre-fort, factures, veille amont, KB, consortium Lorient + DC4, "
+    logger.info("Vitrine démo : coffre-fort, factures, veille amont, KB, groupement Kerhel + DC4, "
                 "%d AO décidés (win-rate) seedés.", len(PAST))

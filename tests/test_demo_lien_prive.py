@@ -364,3 +364,158 @@ def test_doc_du_lien_prive():
     assert "openssl rand -base64 33 | tr '+/' '-_' | tr -d '='" in doc
     assert "DEMO_LIEN_CLE" in doc and "https://adjugo.pro/demo#" in doc
     assert "consortium" not in doc.lower()
+
+
+# ── Fin de session : « terminée » (rouvrir le lien) ou « plus valide » (clé changée) ───────────────
+PERIME = "Ce lien de démonstration n'est plus valide."
+
+
+def _node(script: str, *args) -> dict:
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node indisponible")
+    out = subprocess.run([node, "-e", script, *args], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+def test_session_du_lien_expiree_ne_se_dit_pas_perimee(client, lien):
+    """Contrat sur lequel s'appuient le logiciel et l'espace collectivités : une session du lien arrivée
+    au bout de ses 12 heures (clé inchangée) est refusée SANS le détail « plus valide », réservé à une
+    clé changée ou retirée."""
+    from datetime import timedelta
+    from app.core.security import create_access_token
+    pme, ach = _ouvrir(client, lien)
+    assert client.post(VERIF, json={"cle": lien}).status_code == 200          # le lien vaut toujours
+    for tok, url in ((pme, "/api/auth/me"), (ach, "/api/acheteur/me")):
+        c = {k: v for k, v in _claims(tok).items() if k != "exp"}
+        assert c.get("dl")
+        expire = create_access_token(c, expires_delta=timedelta(seconds=-5))
+        r = client.get(url, headers=_h(expire))
+        assert r.status_code == 401 and r.json()["detail"] != PERIME, (url, r.json())
+
+
+_DEMO_JS = """
+const [hash, fin] = JSON.parse(process.argv[1]);
+const els = {}, store = {}, appels = [];
+function el(id) {
+  return els[id] || (els[id] = {id, hidden: false, focused: false, textContent: "", disabled: false,
+    focus() { this.focused = true; }, addEventListener() {}, querySelector() { return null; },
+    setAttribute() {}, getAttribute() { return null; }, replaceWith() {}});
+}
+global.document = {getElementById: el, querySelectorAll: () => [], addEventListener() {}, createElement: () => el("x")};
+global.window = {addEventListener() {}};
+global.sessionStorage = {getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); },
+  removeItem: k => { delete store[k]; }};
+global.localStorage = {setItem() {}};
+if (fin) store.adjugo_demo_fin = fin;
+global.location = {hash, pathname: "/demo", assign() {}};
+global.history = {state: null, replaceState(st) { this.state = st; }};
+global.fetch = (url, opt) => { appels.push([url, JSON.parse(opt.body).cle]); return new Promise(() => {}); };
+eval(require("fs").readFileSync(process.argv[2], "utf8"));
+const visibles = ["verif", "choix", "invalide", "terminee", "erreur"].filter(k => !el(k).hidden);
+process.stdout.write(JSON.stringify({visibles, appels, fin: store.adjugo_demo_fin || null,
+  focus: visibles.filter(k => el(k).focused)}));
+"""
+
+
+def _page_demo(tmp_path, hash_: str, fin):
+    page = (STATIC / "demo.html").read_text(encoding="utf-8")
+    script = re.search(r"<script>\n(.*?)\n</script>", page, re.S).group(1)
+    f = tmp_path / "demo_page.js"
+    f.write_text(script, encoding="utf-8")
+    return _node(_DEMO_JS, json.dumps([hash_, fin]), str(f))
+
+
+def test_page_demo_session_terminee_ou_lien_perime(tmp_path):
+    """/demo sans clé : « terminée » (rouvrir le lien) quand le logiciel y renvoie une session du lien
+    simplement terminée ; « plus valide » sinon. Avec une clé : nouvelle visite, la marque est effacée."""
+    r = _page_demo(tmp_path, "", "terminee")
+    assert r["visibles"] == ["terminee"] and r["focus"] == ["terminee"] and r["appels"] == []
+    assert r["fin"] == "terminee"                       # rechargement : même message
+    for fin in ("perime", None, "autre"):
+        r = _page_demo(tmp_path, "", fin)
+        assert r["visibles"] == ["invalide"] and r["appels"] == [], fin
+    cle = "k" * 44
+    r = _page_demo(tmp_path, "#" + cle, "terminee")
+    assert r["visibles"] == ["verif"] and r["appels"] == [[VERIF, cle]] and r["fin"] is None
+    page = (STATIC / "demo.html").read_text(encoding="utf-8")
+    carte = re.search(r'<section id="terminee".*?</section>', page, re.S).group(0)
+    assert "Votre session de démonstration est terminée." in carte and "Rouvrez le lien" in carte
+    assert 'class="tip"' in carte and "/demande-acces" not in carte
+    assert not re.search("[\U0001F300-\U0001FAFF☀-➿]", carte)
+    # Commentaire juste : la clé quitte la barre d'adresse, pas l'historique du navigateur.
+    assert "reste en revanche dans l'HISTORIQUE du navigateur" in page
+
+
+def _methode(js: str, nom: str) -> str:
+    m = re.search(r"\n    " + nom + r"\((\w*)\) \{\n(.*?)\n    \},\n", js, re.S)
+    assert m, nom
+    return f"function {nom}({m.group(1)}) {{\n{m.group(2)}\n}}"
+
+
+def test_logiciel_transmet_la_raison_du_refus_a_la_page_demo():
+    """sessionPerdue(detail) : « perime » seulement sur le détail exact du serveur, sinon « terminee » ;
+    une session ordinaire garde la déconnexion habituelle. Chaque 401 transmet le détail reçu."""
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    const = re.search(r'\nconst DEMO_LIEN_PERIME = "[^"]+";', js).group(0)
+    jeton = re.search(r"\nfunction jetonDemoLien\(t\) \{\n.*?\n\}\n", js, re.S).group(0)
+    script = const + jeton + _methode(js, "sessionPerdue") + """
+const store = {}, res = [];
+global.sessionStorage = {setItem: (k, v) => { store[k] = v; }};
+global.localStorage = {removeItem() {}};
+global.window = {location: {href: "/app"}};
+function atlPurgeDrafts() {}
+const b64 = o => Buffer.from(JSON.stringify(o)).toString("base64url");
+const lien = "e." + b64({sub: "1", dl: "abc"}) + ".s", ordinaire = "e." + b64({sub: "1"}) + ".s";
+for (const [token, detail] of [[lien, DEMO_LIEN_PERIME], [lien, "Token invalide ou expire"], [lien, undefined],
+                               [ordinaire, DEMO_LIEN_PERIME]]) {
+  delete store.adjugo_demo_fin; window.location.href = "/app"; let sortie = false;
+  sessionPerdue.call({token, logout() { sortie = true; }}, detail);
+  res.push([store.adjugo_demo_fin || null, window.location.href, sortie]);
+}
+process.stdout.write(JSON.stringify(res));
+"""
+    assert _node(script) == [["perime", "/demo", False], ["terminee", "/demo", False],
+                             ["terminee", "/demo", False], [None, "/app", True]]
+    assert const == '\nconst DEMO_LIEN_PERIME = "' + PERIME + '";'
+    assert js.count("this.sessionPerdue(await r.json().then(j => j && j.detail") == 2   # api() et export
+    # Inactivité d'une heure : une session du lien revient aussi sur /demo (« terminée »).
+    assert "this.sessionPerdue(); } }, 60000);" in js
+    assert "_idleStale() && jetonDemoLien(this.token)) { this.sessionPerdue(); return; }" in js
+
+
+def test_espace_collectivites_transmet_la_raison_du_refus():
+    ach = (STATIC / "acheteur.html").read_text(encoding="utf-8")
+    fin = re.search(r"\n  (function demoFin\(detail\)\{.*?)\n", ach).group(1)
+    script = fin + """
+const store = {};
+global.sessionStorage = {setItem: (k, v) => { store[k] = v; }};
+const res = [];
+for (const d of [process.argv[1], "Session expirée, reconnectez-vous", "Token invalide ou expire", undefined]) {
+  demoFin(d); res.push(store.adjugo_demo_fin);
+}
+process.stdout.write(JSON.stringify(res));
+"""
+    assert _node(script, PERIME) == ["perime", "terminee", "terminee", "terminee"]
+    assert 'if(demoLien(ATOKEN)){demoFin(detail);setToken("");location.href="/demo";return;}' in ach
+    assert "return detail401(r).then(function(d){sessionLost(d);" in ach
+    assert ach.count("detail401(r).then(function(d){sessionLost(d);") == 2    # aFetch et ouverture
+
+
+def test_guide_historique_mon_avis_et_donnees_fictives():
+    doc = (pathlib.Path(__file__).resolve().parent.parent / "docs" / "DEMO_LIEN_PRIVE.md").read_text(encoding="utf-8")
+    # La clé reste dans l'historique : appareils personnels, sinon navigation privée, sinon changer la clé.
+    assert "historique du navigateur" in doc and "fenêtre de navigation privée" in doc
+    assert "changez la clé (étape 4)" in doc
+    # « Mon avis » : seul message envoyé, au fondateur, signé demo@adjugo.fr.
+    assert "« Mon avis »" in doc and "signé\n  demo@adjugo.fr" in doc
+    assert "Aucun appel d'IA, aucun email, aucun fichier" not in doc
+    # Session terminée ≠ lien plus valide.
+    assert "Votre session de\ndémonstration est terminée" in doc
+    # Données fictives : plus de « à remplacer », aucune collectivité réelle citée.
+    assert "À remplacer" not in doc
+    for nom in ("Bordeaux", "Lorient", "Toulouse", "Nice"):
+        assert nom not in doc, nom

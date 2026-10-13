@@ -251,11 +251,15 @@
   // Session expirée : au lieu de laisser la sidebar « connectée » avec un contenu vide,
   // on déconnecte proprement et on rouvre la connexion.
   // Session ouverte par le lien privé de démonstration (/demo#<clé>) : son jeton porte « dl ».
-  // Refusée → retour sur /demo, qui dit si le lien vaut encore.
+  // Refusée → retour sur /demo avec la raison : « perime » si le serveur dit que le lien a changé
+  // (détail exact de app/core/demo_guard.DEMO_LIEN_PERIME), sinon « terminee » (12 h écoulées) :
+  // /demo invite alors à rouvrir le lien reçu, au lieu de le dire « plus valide ».
   function demoLien(t){try{var p=String(t||"").split(".")[1];if(!p)return false;p=p.replace(/-/g,"+").replace(/_/g,"/");while(p.length%4)p+="=";var j=JSON.parse(atob(p));return !!(j&&j.dl);}catch(e){return false;}}
-  function sessionLost(){if(demoLien(ATOKEN)){setToken("");location.href="/demo";return;}var was=!!AME;setToken("");AME=null;IS_DEMO=false;CURRENT_DCE_ID=null;renderAcct();if(curView!=="creer")refreshCurrentView();if(was){openAuth("login");showAuthErr("Session expirée. Reconnectez-vous pour continuer.");}}
+  function demoFin(detail){try{sessionStorage.setItem("adjugo_demo_fin",detail==="Ce lien de démonstration n'est plus valide."?"perime":"terminee");}catch(e){}}
+  function detail401(r){return r.json().then(function(j){return j&&j.detail;},function(){return "";});}
+  function sessionLost(detail){if(demoLien(ATOKEN)){demoFin(detail);setToken("");location.href="/demo";return;}var was=!!AME;setToken("");AME=null;IS_DEMO=false;CURRENT_DCE_ID=null;renderAcct();if(curView!=="creer")refreshCurrentView();if(was){openAuth("login");showAuthErr("Session expirée. Reconnectez-vous pour continuer.");}}
   // fetch pour les endpoints DATA de l'acheteur : intercepte tout 401 (token expiré/révoqué).
-  function aFetch(url,opts){return fetch(url,opts).then(function(r){if(r.status===401){sessionLost();throw new Error("Session expirée");}return r;});}
+  function aFetch(url,opts){return fetch(url,opts).then(function(r){if(r.status===401){return detail401(r).then(function(d){sessionLost(d);throw new Error("Session expirée");});}return r;});}
   // Le compte de démo est partagé : on bloque les écritures côté client (le backend renvoie aussi 403).
   function demoBlock(){if(IS_DEMO){alert("Compte de démonstration en lecture seule.\n\nCréez votre espace gratuit pour enregistrer, piloter et diffuser vos consultations.");return true;}return false;}
   function initials(s){s=(s||"").trim();var p=s.split(/\s+/);return ((p[0]||"")[0]||"C").toUpperCase()+((p[1]||"")[0]||"").toUpperCase();}
@@ -629,7 +633,7 @@
 
   // ── Init ──
   applyTheme();renderAcct();navTo("dashboard");
-  if(ATOKEN){fetch("/api/acheteur/me",{headers:aHeaders()}).then(function(r){if(r.status===401&&demoLien(ATOKEN)){sessionLost();throw 0;}if(!r.ok)throw 0;return r.json();}).then(function(me){AME=me;IS_DEMO=(me.email==="demo@collectivites.adjugo.fr");renderAcct();refreshCurrentView();}).catch(function(){setToken("");AME=null;renderAcct();refreshCurrentView();});}
+  if(ATOKEN){fetch("/api/acheteur/me",{headers:aHeaders()}).then(function(r){if(r.status===401&&demoLien(ATOKEN)){return detail401(r).then(function(d){sessionLost(d);throw 0;});}if(!r.ok)throw 0;return r.json();}).then(function(me){AME=me;IS_DEMO=(me.email==="demo@collectivites.adjugo.fr");renderAcct();refreshCurrentView();}).catch(function(){setToken("");AME=null;renderAcct();refreshCurrentView();});}
   else if(WANT==="register"){openAuth("register");}
   else if(WANT==="login"){openAuth("login");}
   icons();

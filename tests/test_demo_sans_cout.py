@@ -11,13 +11,14 @@ Démo À JOUR et SANS COÛT (chantier du 13/10/2026, avant de redonner la démo 
    sans coût.
 2. Démo à jour (app/services/demo_redaction.py) : analyse avec grille « Comment vous serez noté » et
    couverture « Dossier lu en entier », « Mes preuves », dossier de présentation déjà rédigé ; seed
-   idempotent, rejouable, sans IA ni réseau, isolé dans sa transaction ; vitrine de Lorient intacte.
+   idempotent, rejouable, sans IA ni réseau, isolé dans sa transaction ; vitrine du groupement (Kerhel) intacte.
 3. Lien privé de démonstration (docs/DEMO_LIEN_PRIVE.md) : démo publique fermée, les sessions ouvertes
    par le lien voient la même démo à jour, avec les mêmes refus et sans coût ; clé changée, coupées.
 
 IA simulée (coupée), emails et réseau coupés : aucun appel réel.
 """
 import io
+import pathlib
 import re
 import sys
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ import pytest
 from app.core.database import SessionLocal
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
+STATIC = pathlib.Path(__file__).resolve().parent.parent / "app" / "static"
 
 
 @dataclass(frozen=True)
@@ -281,7 +283,7 @@ def _contexte() -> dict:
         u = db.query(User).filter(User.email == DEMO_EMAIL).one()
         projets = db.query(Project).filter(Project.user_id == u.id).all()
         toiture = next(p for p in projets if p.name.startswith("Réfection toiture"))
-        lorient = next(p for p in projets if "Lorient" in p.name)
+        lorient = next(p for p in projets if "Kerhel" in p.name)
         d = db.query(DossierPresentation).filter(DossierPresentation.project_id == toiture.id).one()
         sid = db.query(DossierSection).filter(DossierSection.dossier_id == d.id).order_by(DossierSection.ordre).first().id
         inv = db.query(ProjectInvite).filter(ProjectInvite.project_id == lorient.id).first()
@@ -603,7 +605,7 @@ def test_mes_preuves_remplies(client, demo):
     assert qualibat["source_libelle"] == "justificatif déposé" and qualibat["jours_restants"] is not None
     doc = next(p for p in par["reference"] if p["source_libelle"] == "trouvé dans vos documents")
     pas = client.get(f"/api/preuves/{doc['id']}/passage", headers=demo["pme"])
-    assert pas.status_code == 200 and "Ville de Niort" in pas.json()["passage"]
+    assert pas.status_code == 200 and "Ville de Bréhaut" in pas.json()["passage"]
     assert client.get(f"/api/atelier/{demo['ctx']['toiture']}/preuves", headers=demo["pme"]).status_code == 200
     for p in par["salarie"]:
         assert set(p["valeur"]) <= {"nom", "fonction", "experience_annees", "diplomes", "qualifications", "chantiers"}
@@ -744,7 +746,7 @@ def test_seed_redaction_isole_dans_sa_transaction(demo, monkeypatch):
         assert toiture.match_score == 87
         assert db.query(DossierPresentation).filter(DossierPresentation.project_id == toiture.id).count() == 0
         assert db.query(Preuve).filter(Preuve.owner_id == u.id).count() == 0
-        lorient = next(p for p in projets if "Lorient" in p.name)
+        lorient = next(p for p in projets if "Kerhel" in p.name)
         assert lorient.go_decision == "go_groupement"
     finally:
         db.close()
@@ -876,3 +878,160 @@ def test_lien_prive_de_bout_en_bout(client, lien_prive, espions, monkeypatch):
     for route in ("/api/auth/demo", "/api/acheteur/demo", "/api/auth/demo/lien"):
         assert client.post(route, json={"cle": cle}).status_code == 404
     assert espions["ia"] == [] and espions["email"] == [] and espions["fichier"] == []
+
+
+# ── 6. Revue avant de remettre la démo (13/10/2026) : fictive de bout en bout, exigences citées ──────────
+
+# Collectivités et organismes RÉELS qu'une version précédente de la démo nommait (avec des contacts
+# inventés sur leurs vrais domaines). Aucun ne doit revenir, ni en base ni dans les données du seed.
+# (Les entreprises fictives, elles, sont installées dans de vraies villes : Nantes, Lorient, Lille, Tours, Lyon.)
+_REELS = ("Bordeaux", "Lorient Agglomération", "Lorient (56)", "Niort", "Nantes Métropole", "La Rochelle",
+          "Toulouse", "Nice (06)", "Nice Côte", "Angers", "Colmar", "SGAMI", "Limoges", "Limousin", "Chartres",
+          "Clermont", "Millau", "Lanester", "Métropole Européenne de Lille", "Lille (59)", "Strasbourg",
+          "Eurométropole", "Département du Rhône", "collège Ampère", "Quimper", "Pey-Berland", "Claude-Bernard",
+          "interieur.gouv")
+_TEL = re.compile(r"(?<!\d)0[1-9](?:[ .]?\d{2}){4}(?!\d)")
+_COURRIEL = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)")
+
+
+def _lignes(rows) -> str:
+    import json
+    out = []
+    for r in rows:
+        out.append(json.dumps({c.name: getattr(r, c.name) for c in r.__table__.columns},
+                              ensure_ascii=False, default=str))
+    return "\n".join(out)
+
+
+def _donnees_de_la_demo() -> str:
+    """Tout ce que la vitrine contient (PME et collectivités), tel qu'en base, plus les marchés de
+    « Trouver des marchés » et le dossier fictif du marché « toiture »."""
+    import json
+    from app.models import (Acheteur, AcheteurDce, Company, Contact, CoMember, CoSpace, Document, Invoice,
+                            KnowledgeChunk, KnowledgeDoc, Preuve, Project, ProjectContribution, ProjectInvite,
+                            Signal, User)
+    from app.routers.cotraitants import Cotraitant
+    from app.services import demo_redaction as dr
+    from app.services.acheteur_demo_seed import DEMO_EMAIL as ACH_EMAIL
+    from app.services.demo_search import search_results
+    from app.services.demo_seed import DEMO_EMAIL
+    db = _db()
+    try:
+        u = db.query(User).filter(User.email == DEMO_EMAIL).one()
+        pids = [p.id for p in db.query(Project).filter(Project.user_id == u.id).all()]
+        spaces = db.query(CoSpace).filter(CoSpace.owner_id == u.id).all()
+        a = db.query(Acheteur).filter(Acheteur.email == ACH_EMAIL).one()
+        tout = [_lignes(db.query(M).filter(M.user_id == u.id).all())
+                for M in (Project, Company, Contact, Invoice, Signal, KnowledgeDoc, KnowledgeChunk, Document,
+                          Cotraitant)]
+        tout += [_lignes(db.query(Preuve).filter(Preuve.owner_id == u.id).all()),
+                 _lignes(db.query(ProjectContribution).filter(ProjectContribution.project_id.in_(pids)).all()),
+                 _lignes(db.query(ProjectInvite).filter(ProjectInvite.project_id.in_(pids)).all()),
+                 _lignes(spaces),
+                 _lignes(db.query(CoMember).filter(CoMember.space_id.in_([s.id for s in spaces])).all()),
+                 _lignes([a]), _lignes(db.query(AcheteurDce).filter(AcheteurDce.acheteur_id == a.id).all())]
+    finally:
+        db.close()
+    tout.append(json.dumps([t.model_dump(mode="json", exclude={"raw"}) for t in search_results()], ensure_ascii=False))
+    from app.services.demo_search import _TENDERS
+    tout.append(json.dumps(_TENDERS, ensure_ascii=False))
+    tout.append("\n".join(t for _n, titre, paras in dr.PIECES for t in [titre] + paras))
+    tout.append("\n".join(t for p in dr.PARTIES for t in p["texte"]) + "\n".join(dr.REFERENCES_TEXTE))
+    return "\n".join(tout)
+
+
+def test_demo_entierement_fictive(client, demo):
+    """Aucune collectivité réelle, aucun contact sur un vrai domaine, aucun numéro de téléphone : la démo
+    remise pour la prospection ne prête rien (contact, marché, référence) à un organisme qui existe."""
+    from app.services.acheteur_demo_seed import ensure_demo_acheteur
+    db = _db()
+    try:
+        ensure_demo_acheteur(db)
+    finally:
+        db.close()
+    tout = _donnees_de_la_demo()
+    for nom in _REELS:
+        assert nom not in tout, nom
+    domaines = {m.group(1).lower() for m in _COURRIEL.finditer(tout)}
+    assert domaines and all(d.endswith(".exemple") or d in ("adjugo.fr", "collectivites.adjugo.fr")
+                            for d in domaines), sorted(domaines)
+    assert not _TEL.findall(tout), _TEL.findall(tout)[:5]
+
+
+def test_panneau_acheteur_de_la_demo_sans_boamp(client, demo, espions):
+    """« Votre client (l'acheteur) » : jamais une requête au BOAMP pour la démo (acheteur fictif), donc
+    jamais les vrais avis d'une collectivité réelle à côté d'un marché inventé."""
+    for acheteur in ("Ville de Marvejac", "Ville de Bordeaux"):
+        r = client.get("/api/sourcing/buyer-profile", params={"acheteur": acheteur}, headers=demo["pme"])
+        assert r.status_code == 200 and r.json() == {"acheteur": acheteur, "found": False, "demo": True}
+    assert espions["reseau"] == []
+    html = (STATIC / "app.html").read_text(encoding="utf-8")
+    assert 'v-else-if="ao.buyer && ao.buyer.demo"' in html and "Acheteur fictif de la démonstration" in html
+
+
+def test_exigences_du_marche_toiture_citees_par_son_dossier(client, demo):
+    """« Dossier lu en entier » : chaque exigence affichée (chiffre d'affaires minimum, qualifications,
+    variantes) est écrite dans le règlement fictif, citée et vérifiée ; « Répondre à plusieurs ? » montre
+    la phrase du dossier sous le chiffre d'affaires exigé."""
+    from app.services import demo_redaction as dr
+    from app.services.analysis import citation_guard
+    from app.services.dce_lecture import lire_dossier
+    pid = demo["ctx"]["toiture"]
+    det = client.get(f"/api/projects/{pid}", headers=demo["pme"]).json()["ai_analysis"]["details"]
+    assert det["exigences_verifiees"]["ca_minimum_requis"] is True
+    assert det["exigences_verifiees"]["qualifications_requises"] is True
+    assert det["exigences_sources"]["ca_minimum_requis"] == dr.EXIGENCE_CA
+    assert det["exigences_sources"]["qualifications_requises"] == dr.EXIGENCE_QUALIFICATIONS
+    texte = "\n".join(p["texte"] for p in lire_dossier(dr.DCE_NOM, dr.dossier_zip(), mode="direct")["pieces"])
+    for phrase in (dr.EXIGENCE_CA, dr.JUSTIFICATION_CA, dr.EXIGENCE_QUALIFICATIONS, dr.EXIGENCE_VARIANTES):
+        assert citation_guard(texte, phrase), phrase
+    # Ce que la fiche affiche correspond à ce que le règlement écrit.
+    assert "1 500 000" in det["ca_minimum_requis"] and "1 500 000" in dr.EXIGENCE_CA
+    assert all(q in dr.EXIGENCE_QUALIFICATIONS for q in det["qualifications_requises"])
+    assert "matériaux d'étanchéité" in det["variantes"] and "matériaux d'étanchéité" in dr.EXIGENCE_VARIANTES
+    # « Répondre à plusieurs ? » : le chiffre d'affaires exigé, avec la phrase du dossier.
+    b = client.get(f"/api/projects/{pid}/groupement/besoins", headers=demo["pme"]).json()
+    ca = next(g for g in b["gaps"] if g["key"] == "capacite")
+    assert ca["severity"] == "bloquant" and ca["extrait"] == dr.EXIGENCE_CA
+    # La recommandation dit la même chose que la carte : seul, la candidature serait écartée.
+    assert "sans être rédhibitoire" not in det["recommandation"]
+    assert "Seul, la candidature serait écartée" in det["recommandation"]
+
+
+def test_rge_reliee_a_son_justificatif_et_pas_proposee_en_double(client, demo):
+    """« Mes preuves » : la qualification RGE est reliée à l'« Attestation RGE » de Mes documents (comme
+    Qualibat) ; elle n'est donc plus proposée une seconde fois dans « Voir et reprendre »."""
+    pr = client.get("/api/preuves", headers=demo["pme"]).json()["preuves"]
+    rge = next(p for p in pr if p["nature"] == "qualification" and p["valeur"]["nom"] == "RGE")
+    assert rge["source_libelle"] == "justificatif déposé" and rge["jours_restants"] is not None
+    rep = client.get("/api/preuves/reprise", headers=demo["pme"]).json()
+    assert not [e for e in rep["elements"] if e["nature"] == "qualification"], rep["elements"]
+    assert rep["a_reprendre"] == len(rep["elements"])
+
+
+def test_dce_de_la_demo_collectivites_remplaces_quand_le_seed_change(client):
+    """La démo collectivités d'un serveur déjà en service (DCE d'exemple d'avant, avec une commune réelle)
+    reçoit les nouveaux DCE d'exemple au prochain accès ; sinon rien ne bouge (mêmes lignes)."""
+    from app.models import Acheteur, AcheteurDce
+    from app.services import acheteur_demo_seed as ads
+    db = _db()
+    try:
+        a = ads.ensure_demo_acheteur(db)
+        db.query(AcheteurDce).filter(AcheteurDce.acheteur_id == a.id).delete(synchronize_session=False)
+        db.add(AcheteurDce(acheteur_id=a.id, objet="Rénovation de l'école des Tilleuls à Quimper (29)",
+                           payload={"objet": "Rénovation de l'école des Tilleuls à Quimper (29)"}))
+        db.commit()
+        ads.ensure_demo_acheteur(db)
+        rows = db.query(AcheteurDce).filter(AcheteurDce.acheteur_id == a.id).order_by(AcheteurDce.id).all()
+        attendus = ads._items()
+        assert len(rows) == len(attendus) == 2
+        assert sorted(r.objet for r in rows) == sorted(it["objet"] for it in attendus)
+        assert all("Quimper" not in _lignes([r]) for r in rows)
+        ids = [r.id for r in rows]
+        ads.ensure_demo_acheteur(db)
+        assert [r.id for r in db.query(AcheteurDce).filter(AcheteurDce.acheteur_id == a.id)
+                .order_by(AcheteurDce.id).all()] == ids                       # idempotent
+        assert db.query(Acheteur).filter(Acheteur.email == ads.DEMO_EMAIL).one().nom_collectivite.startswith(
+            "Mairie de Démoville")
+    finally:
+        db.close()

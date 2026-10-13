@@ -34,10 +34,21 @@ BANDEAU = ("Dossier fictif de démonstration : l'acheteur, le marché et les chi
            "consultation réelle.")
 DCE_NOM = "DCE — Réfection toiture groupe scolaire Jean Moulin.zip"
 _DOSSIER_ZIP = "DCE groupe scolaire Jean Moulin"
-_VERSION = "1"            # à incrémenter si le texte du dossier change (nouvelles clés de stockage)
+_VERSION = "2"            # à incrémenter si le texte du dossier change (nouvelles clés de stockage)
 
 # ── 1. Le dossier du marché (fictif) ──────────────────────────────────────────────────────────────
 # « ## » = intertitre. Une ligne par critère : la grille lit chaque ligne comme une ligne de tableau.
+
+# Exigences de l'analyse (chiffre d'affaires minimum, qualifications, variantes), écrites mot pour mot dans
+# le règlement : l'analyse les cite (details.exigences_sources) et la garde des citations les vérifie contre
+# le dossier entier. Jamais une exigence affichée sans la phrase du dossier qui la porte.
+EXIGENCE_CA = ("Le candidat justifie d'un chiffre d'affaires annuel moyen d'au moins 1 500 000 € HT sur les trois "
+               "derniers exercices.")
+JUSTIFICATION_CA = ("Ce niveau, supérieur au double du montant estimé, est justifié par les conditions d'exécution : "
+                    "travaux en site occupé, concentrés sur les vacances scolaires.")
+EXIGENCE_QUALIFICATIONS = ("Le candidat justifie d'une qualification Qualibat 3212 ou équivalente et de la mention "
+                           "RGE.")
+EXIGENCE_VARIANTES = "Les variantes sont autorisées sur les matériaux d'étanchéité."
 
 _RC = ("01 - Règlement de la consultation.pdf", "RÈGLEMENT DE LA CONSULTATION", [
     "Réfection de la toiture et de l'étanchéité du groupe scolaire Jean Moulin",
@@ -46,17 +57,22 @@ _RC = ("01 - Règlement de la consultation.pdf", "RÈGLEMENT DE LA CONSULTATION"
     "La consultation porte sur la réfection complète de la toiture et de l'étanchéité du groupe scolaire "
     "Jean Moulin : dépose de la couverture existante, isolation thermique, membrane d'étanchéité bicouche, "
     "zinguerie et évacuation des eaux pluviales. Le marché est passé en lot unique.",
-    "## Article 2 — Délai d'exécution",
+    "## Article 2 — Conditions de participation",
+    EXIGENCE_CA + " " + JUSTIFICATION_CA,
+    EXIGENCE_QUALIFICATIONS,
+    "## Article 3 — Délai d'exécution",
     "Le délai d'exécution est de 5 mois à compter de l'ordre de service. Les travaux en toiture au droit des "
     "salles de classe sont réalisés pendant les vacances scolaires.",
-    "## Article 3 — Visite du site",
+    "## Article 4 — Visite du site",
     "La visite du site est recommandée. Elle se fait sur rendez-vous, avant le 15 décembre 2026.",
-    "## Article 4 — Contenu de l'offre",
+    "## Article 5 — Contenu de l'offre",
     "Chaque candidat remet l'acte d'engagement complété, la décomposition du prix global et forfaitaire et "
     "un mémoire technique.",
     "Le mémoire technique compte 12 pages au maximum, page de garde comprise, en police Arial de taille 11. "
     "Un cadre de mémoire technique est joint au dossier à titre indicatif.",
-    "## Article 5 — Jugement des offres",
+    "## Article 6 — Variantes",
+    EXIGENCE_VARIANTES,
+    "## Article 7 — Jugement des offres",
     "Les offres sont jugées sur les critères pondérés suivants, dont le total fait 100 %.",
     "1.1 Méthodologie d'exécution des travaux de couverture et d'étanchéité : 25 %.",
     "1.2 Organisation du chantier en site occupé et sécurité : 15 %.",
@@ -66,9 +82,9 @@ _RC = ("01 - Règlement de la consultation.pdf", "RÈGLEMENT DE LA CONSULTATION"
     "2. Prix des prestations : 40 %.",
     "Les sous-critères 1.1 à 1.5 forment la valeur technique, appréciée au vu du mémoire technique. Le prix "
     "est apprécié au vu de la décomposition du prix global et forfaitaire.",
-    "## Article 6 — Clause sociale d'insertion",
+    "## Article 8 — Clause sociale d'insertion",
     "Le titulaire réalise au moins 200 heures d'insertion sociale pendant l'exécution du marché.",
-    "## Article 7 — Remise des offres",
+    "## Article 9 — Remise des offres",
     "Les offres sont remises par voie dématérialisée avant le 30 décembre 2026 à 12h00.",
 ])
 
@@ -237,6 +253,10 @@ def analyse_toiture(base: dict, lecture: dict, company: dict, criteria: dict) ->
     ext = copy.deepcopy(base)
     det = dict(ext.get("details") or {})
     det["criteres_attribution"] = copy.deepcopy(CRITERES)     # sous-critères tels qu'écrits au règlement
+    # Phrases exactes du règlement (comme l'extraction les rend) : vérifiées plus bas par la garde des
+    # citations sur le texte intégral, elles s'affichent sous « Le dossier dit ».
+    det["exigences_sources"] = {"ca_minimum_requis": EXIGENCE_CA,
+                                "qualifications_requises": EXIGENCE_QUALIFICATIONS}
     ext["details"] = det
     out = finalize_analysis(ext, texte, company, criteria, mani["pieces"])
     for k in ("summary", "source", "pieces_requises", "lead_score"):
@@ -300,9 +320,9 @@ def ranger_dossier(db, user, project, contenu: bytes, lecture: dict) -> None:
 
 REFERENCES_DOC = "Liste de références — travaux similaires (2022-2025)"
 REFERENCES_TEXTE = [
-    "Réfection de la couverture de l'école élémentaire — Ville de Niort — 2024 — 96 000 € HT — réalisé seul.",
-    "Étanchéité-toiture du centre technique municipal — Nantes Métropole — 2023 — 182 000 € HT — réalisé seul.",
-    "Rénovation thermique d'un groupe scolaire, lot couverture et isolation — Ville de La Rochelle — 2023 — "
+    "Réfection de la couverture de l'école élémentaire — Ville de Bréhaut — 2024 — 96 000 € HT — réalisé seul.",
+    "Étanchéité-toiture du centre technique municipal — Ville de Lesparrac — 2023 — 182 000 € HT — réalisé seul.",
+    "Rénovation thermique d'un groupe scolaire, lot couverture et isolation — Ville de Castelmorin — 2023 — "
     "145 000 € HT — en groupement conjoint.",
 ]
 
@@ -363,17 +383,17 @@ def seed_preuves(db, user, toiture_id) -> dict:
         out[cle] = pv.creer(db, uid, nature=nature, valeur=valeur, type_source=type_source, source=source,
                             user=user, commit=False, **kw)
 
-    creer("ref_niort", pv.REFERENCE,
-          {"objet": "Réfection de la couverture de l'école élémentaire", "acheteur": "Ville de Niort",
+    creer("ref_brehaut", pv.REFERENCE,
+          {"objet": "Réfection de la couverture de l'école élémentaire", "acheteur": "Ville de Bréhaut",
            "annee": 2024, "montant_ht": 96000, "role": "seul"},
           pv.DOCUMENTS, passage(refs, REFERENCES_TEXTE[0]), date_source=date(2025, 1, 15))
-    creer("ref_nantes", pv.REFERENCE,
-          {"objet": "Étanchéité-toiture du centre technique municipal", "acheteur": "Nantes Métropole",
+    creer("ref_lesparrac", pv.REFERENCE,
+          {"objet": "Étanchéité-toiture du centre technique municipal", "acheteur": "Ville de Lesparrac",
            "annee": 2023, "montant_ht": 182000, "role": "seul"},
           pv.DOCUMENTS, passage(refs, REFERENCES_TEXTE[1]), date_source=date(2025, 1, 15))
-    creer("ref_rochelle", pv.REFERENCE,
+    creer("ref_castelmorin", pv.REFERENCE,
           {"objet": "Rénovation thermique d'un groupe scolaire (lot couverture/isolation)",
-           "acheteur": "Ville de La Rochelle", "annee": 2023, "montant_ht": 145000, "role": "groupement_conjoint"})
+           "acheteur": "Ville de Castelmorin", "annee": 2023, "montant_ht": 145000, "role": "groupement_conjoint"})
     qualibat = (db.query(Document).filter(Document.user_id == uid, Document.name.like("Certificat Qualibat%"),
                                           Document.deleted_at.is_(None)).first())
     q_fin = (qualibat.expiration_date if qualibat is not None and qualibat.expiration_date
@@ -386,8 +406,11 @@ def seed_preuves(db, user, toiture_id) -> dict:
         creer("qualibat", pv.QUALIFICATION,
               {"nom": "Qualibat 3212", "organisme": "Qualibat", "detail": "Étanchéité de toiture par éléments"},
               date_fin_validite=q_fin)
+    rge = (db.query(Document).filter(Document.user_id == uid, Document.name.like("Attestation RGE%"),
+                                     Document.deleted_at.is_(None)).first())
+    r_fin = rge.expiration_date if rge is not None and rge.expiration_date else today + timedelta(days=240)
     creer("rge", pv.QUALIFICATION, {"nom": "RGE", "detail": "Reconnu garant de l'environnement"},
-          date_fin_validite=today + timedelta(days=240))
+          pv.DOCUMENTS, {"document_id": rge.id} if rge is not None else None, date_fin_validite=r_fin)
     creer("conducteur", pv.SALARIE,
           {"nom": "Yann Tanguy", "fonction": "Conducteur de travaux", "experience_annees": 18,
            "diplomes": "BTS Bâtiment", "chantiers": "12 réfections de toitures scolaires"})
@@ -412,9 +435,9 @@ def seed_preuves(db, user, toiture_id) -> dict:
                "unite": "compagnons"},
               pv.ESTIMATION, {"project_id": toiture_id, "detail": "Prévu pour ce marché"})
     # « Partir de vos anciens dossiers » : une fiche PROPOSÉE (à cocher par l'utilisateur).
-    niort = _doc_kb(db, uid, "Mémoire technique — Réfection toiture école de Niort")
-    pas = passage(niort, "12 réfections de toitures scolaires conduites sur les 5 dernières années") \
-        if niort is not None else None
+    memoire = _doc_kb(db, uid, _MEMOIRE)
+    pas = passage(memoire, "12 réfections de toitures scolaires conduites sur les 5 dernières années") \
+        if memoire is not None else None
     if pas is not None:
         p, _creee = pv.proposer(db, uid, nature=pv.CHIFFRE_CLE,
                                 valeur={"libelle": "Réfections de toitures scolaires", "valeur": 12,
@@ -434,12 +457,12 @@ def seed_preuves(db, user, toiture_id) -> dict:
 # ensuite contrôlés par faits_sources.controler, comme après une vraie rédaction.
 # extraits : (renvoi, début du nom du document de « Mon savoir-faire », passage contenu dans le morceau).
 
-_NIORT = "Mémoire technique — Réfection toiture école de Niort"
+_MEMOIRE = "Mémoire technique — Réfection toiture école de Bréhaut"
 _RSE = "Politique RSE"
 
 PARTIES = [
     {"critere_debut": "Méthodologie", "statut": "valide",
-     "extraits": [("S1", _NIORT, "Méthodologie d'étanchéité")],
+     "extraits": [("S1", _MEMOIRE, "Méthodologie d'étanchéité")],
      "texte": [
          "Bâtiment de l'Ouest conduit la réfection étape par étape : dépose soignée de la couverture existante, "
          "contrôle du support, pose d'un pare-vapeur et d'une isolation thermique, puis membrane d'étanchéité "
@@ -451,12 +474,12 @@ PARTIES = [
          "La couverture existante est déposée par zones successives, de façon à ne jamais laisser une salle de "
          "classe sans protection en fin de journée.",
          "Nous avons appliqué cette méthode à la réfection de la couverture de l'école élémentaire de la Ville "
-         "de Niort en 2024 {ref_niort} et à l'étanchéité-toiture du centre technique municipal de Nantes "
-         "Métropole en 2023 {ref_nantes}.",
+         "de Bréhaut en 2024 {ref_brehaut} et à l'étanchéité-toiture du centre technique municipal de la Ville "
+         "de Lesparrac en 2023 {ref_lesparrac}.",
          "L'entreprise est qualifiée Qualibat 3212 pour l'étanchéité de toiture par éléments {qualibat}.",
      ]},
     {"critere_debut": "Organisation", "statut": "brouillon",
-     "extraits": [("S1", _NIORT, "Sécurité et chantier en site occupé"), ("S2", _RSE, "Sécurité et conditions")],
+     "extraits": [("S1", _MEMOIRE, "Sécurité et chantier en site occupé"), ("S2", _RSE, "Sécurité et conditions")],
      "texte": [
          "Le phasage suit l'activité de l'école : les zones situées au droit des salles de classe sont traitées "
          "pendant les vacances scolaires, les autres en dehors des heures d'entrée et de sortie des élèves.",
@@ -494,7 +517,7 @@ PARTIES = [
          "Les travaux au droit des salles de classe sont regroupés sur 7 semaines pendant les vacances d'été.",
      ]},
     {"critere_debut": "Gestion environnementale", "statut": "valide",
-     "extraits": [("S1", _NIORT, "Engagements environnementaux"), ("S2", _RSE, "Démarche environnementale"),
+     "extraits": [("S1", _MEMOIRE, "Engagements environnementaux"), ("S2", _RSE, "Démarche environnementale"),
                   ("S3", _RSE, "Insertion sociale")],
      "texte": [
          "Les déchets de chantier sont triés sur place et valorisés dans des filières adaptées [S1].",
