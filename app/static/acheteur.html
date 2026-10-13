@@ -341,6 +341,11 @@
 
   function updateCount(){if(!AME){$("#navCount").textContent="0";return;}aFetch("/api/acheteur/dce",{headers:aHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(l){$("#navCount").textContent=l.length;}).catch(function(){});}
 
+  // Date « 13/10/2026 » (et non « 2026-10-13 ») ; titre coupé sur un mot entier, avec « … ».
+  function jourFr(v){var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v||""));return m?(m[3]+"/"+m[2]+"/"+m[1]):"";}
+  function court(t,n){t=String(t||"");if(t.length<=n)return t;var c=t.slice(0,n),k=c.lastIndexOf(" ");c=k>n*0.6?c.slice(0,k):c;
+    var p;do{p=c;c=c.replace(/[\s,;:–—-]+$/,"").replace(/\s+(et|ou|de|des|du|la|le|les|à|au|aux|en|pour|sur|d'|l')$/i,"");}while(c!==p);return c+"…";}
+
   // ── Tableau de bord ──
   function loadDashboard(){
     var db=$("#demoBanner");
@@ -352,11 +357,11 @@
       if($("#dr_login"))$("#dr_login").onclick=function(){openAuth("login");};icons();return;}
     aFetch("/api/acheteur/dce",{headers:aHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(list){
       $("#navCount").textContent=list.length;$("#statDces").textContent=list.length;
-      $("#statLast").textContent=list.length?(list[0].objet||"Projet").slice(0,26):"—";
-      $("#statLastD").textContent=list.length?("modifié le "+(list[0].updated_at||"").slice(0,10)):"—";
+      $("#statLast").textContent=list.length?court(list[0].objet||"Projet",34):"—";
+      $("#statLastD").textContent=list.length?("modifié le "+jourFr(list[0].updated_at)):"—";
       if(!list.length){$("#dashRecent").innerHTML='<div class="empty"><div class="eic"><i data-lucide="file-plus-2" class="lucide"></i></div><h4>Votre premier DCE</h4><p>Décrivez un besoin, l\'IA rédige le projet complet.</p><button class="btn primary sm" onclick="window.__nav(\'creer\')">Créer un DCE</button></div>';icons();return;}
       $("#dashRecent").innerHTML=list.slice(0,6).map(function(d){
-        return '<div class="ao-row" data-id="'+d.id+'" role="button" tabindex="0"><div class="score-ring" style="background:conic-gradient(var(--accent) 0 100%,var(--surface-3) 0)"><span><i data-lucide="file-text" class="lucide" style="width:16px;height:16px"></i></span></div><div class="ao-mid"><div class="ao-t">'+esc(d.objet||"Projet de DCE")+'</div><div class="ao-c">modifié le '+esc((d.updated_at||"").slice(0,10))+'</div></div><i data-lucide="chevron-right" class="ao-go lucide"></i></div>';}).join("");
+        return '<div class="ao-row" data-id="'+d.id+'" role="button" tabindex="0"><div class="score-ring" style="background:conic-gradient(var(--accent) 0 100%,var(--surface-3) 0)"><span><i data-lucide="file-text" class="lucide" style="width:16px;height:16px"></i></span></div><div class="ao-mid"><div class="ao-t">'+esc(d.objet||"Projet de DCE")+'</div><div class="ao-c">modifié le '+esc(jourFr(d.updated_at))+'</div></div><i data-lucide="chevron-right" class="ao-go lucide"></i></div>';}).join("");
       $$("#dashRecent .ao-row").forEach(function(it){var op=function(){openSavedDce(it.getAttribute("data-id"));};it.onclick=op;it.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();op();}};});icons();});
   }
 
@@ -377,7 +382,7 @@
       var h='<div class="dash-ribbon" style="margin-bottom:16px"><div class="rb"><span class="rb-l">Consultations</span><span class="rb-v">'+list.length+'</span></div><div class="rb"><span class="rb-l">En préparation</span><span class="rb-v">'+by.preparation+'</span></div><div class="rb"><span class="rb-l">En cours</span><span class="rb-v">'+(by.publie+by.analyse)+'</span><span class="rb-d">publiées / en analyse</span></div><div class="rb '+(by.infructueux?"alert":"")+'"><span class="rb-l">Attribuées</span><span class="rb-v">'+by.attribue+'</span><span class="rb-d">'+(by.infructueux?(by.infructueux+" infructueux"):"")+'</span></div></div>';
       h+='<div class="t-wrap"><table><thead><tr><th scope="col">Consultation</th><th scope="col">Statut</th><th scope="col">Échéance des offres</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>';
       list.forEach(function(d){var dl=d.date_limite||"";var late=dl&&dl<today&&d.statut!=="attribue"&&d.statut!=="infructueux";
-        h+='<tr data-id="'+d.id+'"><td><div class="strong row-open" style="cursor:pointer">'+esc(d.objet||"Projet de DCE")+'</div><div class="muted small">modifié le '+esc((d.updated_at||"").slice(0,10))+(d.diffuse?' · <span style="color:var(--accent-text)"><i data-lucide="radio-tower" class="lucide ic"></i>signalé au réseau le '+esc((d.date_diffusion||"").slice(0,10))+'</span>':'')+'</div></td>'+
+        h+='<tr data-id="'+d.id+'"><td><div class="strong row-open" style="cursor:pointer">'+esc(d.objet||"Projet de DCE")+'</div><div class="muted small">modifié le '+esc(jourFr(d.updated_at))+(d.diffuse?' · <span style="color:var(--accent-text)"><i data-lucide="radio-tower" class="lucide ic"></i>signalé au réseau le '+esc((d.date_diffusion||"").slice(0,10))+'</span>':'')+'</div></td>'+
           '<td><select class="inp st-sel" aria-label="Statut de la consultation" style="height:30px;padding:0 8px;width:auto;min-width:148px">'+STATUTS.map(function(s){return '<option value="'+s[0]+'"'+(d.statut===s[0]?" selected":"")+'>'+s[1]+'</option>';}).join("")+'</select></td>'+
           '<td><input type="date" class="inp dl-inp" aria-label="Échéance des offres" value="'+esc(dl)+'" style="height:30px;width:auto'+(late?";border-color:var(--danger)":"")+'">'+(late?' <span class="pill no_go">dépassée</span>':"")+'</td>'+
           '<td style="text-align:right;white-space:nowrap"><button class="btn sm act-open" title="Ouvrir" aria-label="Ouvrir le DCE"><i data-lucide="folder-open" class="lucide"></i></button> <button class="btn sm act-docx">Word</button> <button class="btn sm icon act-del" title="Supprimer" aria-label="Supprimer la consultation"><i data-lucide="trash-2" class="lucide"></i></button></td></tr>';});
