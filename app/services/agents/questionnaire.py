@@ -67,8 +67,10 @@ def answer_question(db: Session, user_id: int, question: str, kb_user_ids: list 
     pool = kb_user_ids or [user_id]
     from app.services.llm import pii_scope
     from app.services.pii import from_team, team_of_users
+    from app.services.fiches_import import equipe_avec_noms_reperes
     chunks = rag.retrieve_multi(db, pool, question, k=5, relevance=True)
-    with pii_scope(from_team(team_of_users(db, pool))):
+    # Noms de l'équipe ET noms de personnes repérés dans les extraits : masqués avant l'IA.
+    with pii_scope(from_team(equipe_avec_noms_reperes(team_of_users(db, pool), [c["text"] for c in chunks]))):
         return _answer_from_chunks(question, chunks, user_id=user_id)
 
 
@@ -83,8 +85,9 @@ def answer_questions(db: Session, user_id: int, questions: list, limit: int = 40
     #    salariés masqués avant l'IA (documents du savoir-faire compris), coût journalisé.
     from concurrent.futures import ThreadPoolExecutor
     from app.services.llm import cost_meter, map_in_context, pii_scope
+    from app.services.fiches_import import equipe_avec_noms_reperes
     from app.services.pii import from_team, team_of_users
-    pz = from_team(team_of_users(db, pool))
+    pz = from_team(equipe_avec_noms_reperes(team_of_users(db, pool), [c["text"] for _q, cs in prepared for c in cs]))
     with pii_scope(pz), cost_meter("questionnaire", user_id), \
             ThreadPoolExecutor(max_workers=min(8, len(qs))) as ex:
         results = map_in_context(ex, lambda pc: _answer_from_chunks(pc[0], pc[1], user_id=user_id), prepared)

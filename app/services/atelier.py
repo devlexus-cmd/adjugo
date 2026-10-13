@@ -1281,9 +1281,15 @@ class Contexte:
         return {"profil": self.profil, "equipe": self.equipe, "chiffrage": self.chiffrage,
                 "partenaires": "\n".join(p["texte"] for p in self.partenaires)}
 
-    def pseudonymiseur(self):
+    def pseudonymiseur(self, textes=()):
+        """Les noms de l'équipe (profil, fiches « Équipe », partenaires) ET les noms de personnes repérés,
+        sans IA, dans les textes remis à l'IA (fiches [F#], extraits [S#], apports [G#], texte à
+        raccourcir) : un nom masqué à la lecture d'un ancien dossier, resté en clair dans la fiche
+        acceptée, ne part pas en clair à la rédaction (doctrine § 7, règle 9)."""
+        from app.services.fiches_import import equipe_avec_noms_reperes
         from app.services.pii import from_team
-        return from_team(self.team + self.preuves_team + self.partner_team)
+        return from_team(equipe_avec_noms_reperes(self.team + self.preuves_team + self.partner_team, textes,
+                                                  exclure=self.noms_entreprise))
 
     # ── Vague 3 (A) : les faits NUMÉROTÉS et TYPÉS (app/services/faits_sources.py) ──
     def fiches(self, db, pseudonymiseur=None) -> list:
@@ -2155,18 +2161,27 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
             dossier_acheteur = lu.get("texte") or ""
     # Vague 3 (A) : les faits autorisés NUMÉROTÉS et typés ; les noms de l'équipe sont masqués par
     # CE pseudonymiseur (le même pour les lignes remises à l'IA et pour la portée de l'appel).
-    pz = ctx.pseudonymiseur()
+    # Les noms de personnes repérés (sans IA) dans tout ce qui part à l'IA sont masqués aussi : fiches,
+    # extraits de « Mon savoir-faire » (jamais un CV : rag.retrieve_multi), apports, texte à raccourcir.
+    bases = {s.id: version_courante(db, s) for s in sections}
+    extraits = {} if action == JOB_RACCOURCIR else {
+        s.id: rag.retrieve_multi(db, member_ids, _requete(s), k=6, relevance=True) for s in sections}
+    textes = [f.texte for f in ctx.fiches(db)] + [p["texte"] for p in ctx.partenaires]
+    textes += [c.get("text") or "" for cs in extraits.values() for c in cs]
+    if action == JOB_RACCOURCIR:
+        textes += [b.texte or "" for b in bases.values() if b is not None]
+    pz = ctx.pseudonymiseur(textes)
     fiches_ent = ctx.fiches(db, pseudonymiseur=pz)
     acheteur = _acheteur(project, lu, payload) if action == JOB_REDIGER else None
     taches = []
     for s in sections:
-        base = version_courante(db, s)
+        base = bases.get(s.id)
         if action == JOB_RACCOURCIR:
             taches.append({"sid": s.id, "base": base, "texte": base.texte if base else "", "chunks": [],
                            "cible": cibles.get(s.id), "titre": s.intitule,
                            "fiches": ctx.fiches_de_version(db, base)})
             continue
-        chunks = rag.retrieve_multi(db, member_ids, _requete(s), k=6, relevance=True)
+        chunks = extraits.get(s.id) or []
         autres = [ax.titre_section({"numero": rangs.get(x.id, ""), "intitule": x.intitule}) for x in act if x.id != s.id]
         cible = cible_mots(s, None)
         fiches = fiches_ent + fs.fiches_extraits(chunks)

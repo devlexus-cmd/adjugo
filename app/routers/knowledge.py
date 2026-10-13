@@ -104,7 +104,7 @@ class SearchReq(BaseModel):
 @limiter.limit("120/hour")
 def search(request: Request, req: SearchReq, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Recherche traçable dans la base : renvoie les extraits sources (clic-vers-source)."""
-    res = rag.retrieve(db, current_user.id, req.query or "", k=max(1, min(req.k, 12)))
+    res = rag.retrieve(db, current_user.id, req.query or "", k=max(1, min(req.k, 12)), pour_ia=False)
     return {"results": res, "count": len(res)}
 
 

@@ -24,11 +24,15 @@ Doctrine (étude § 7) appliquée ici :
      d'un acheteur (règlement, CCAP, CCTP) n'est pas lu.
   3. On ne dit jamais « vérifié » : on dit où on a trouvé le fait.
   9. CV et noms des salariés jamais envoyés à l'IA : un document qui ressemble à un CV n'est jamais
-     lu ; les passages d'un document qui ressemblent à un CV sont retirés avant l'envoi ; les noms
-     connus (profil, fiches « Équipe ») ET les noms de personnes repérés dans le document (« M.
-     Kerjean », « Conducteur de travaux : Anne Le Floch ») sont remplacés par des étiquettes avant
-     l'appel (pii_scope), puis remis en clair sans IA. Aucune fiche « Équipe » n'est proposée par
-     l'IA : elles se saisissent dans « Mes preuves ».
+     lu ; les passages de CV (une section « CV » d'un ancien mémoire, une date de naissance…) et, sous
+     un titre « Moyens humains », « Équipe », « Encadrement »…, les lignes de tableau et les lignes qui
+     nomment une personne sont retirés avant l'envoi (`lignes_privees`) ; les noms connus (profil,
+     fiches « Équipe ») ET les noms de personnes repérés dans le document (« M. Kerjean »,
+     « Conducteur de travaux : Anne Le Floch », une case de tableau, « Encadrement : X et Y ») sont
+     remplacés par des étiquettes avant l'appel (pii_scope), puis remis en clair sans IA. Aucune fiche
+     « Équipe » n'est proposée par l'IA : elles se saisissent dans « Mes preuves ». Sur les AUTRES
+     chemins vers l'IA (rédaction, questionnaire), `sans_cv` écarte les extraits de CV et
+     `equipe_avec_noms_reperes` masque les mêmes noms.
 
 Coût (règle d'Eliot : économiser l'IA sans jamais baisser la qualité) : une lecture par document,
 résultats gardés (relancer sur le même document ne rappelle pas l'IA) ; seuls les paragraphes qui
@@ -141,16 +145,160 @@ _CV_FAIBLES = [re.compile(p) for p in (
     r"\bformations? ?:", r"\blangues? ?:", r"\bcompetences ?:", r"\bdiplomes? ?:")]
 
 
+# Marques qui suffisent SEULES : une date de naissance, une nationalité ou une situation familiale ne
+# s'écrivent que dans un CV (jamais dans une plaquette ni dans un mémoire).
+_CV_SEULS = [re.compile(p) for p in (
+    r"date de naissance", r"\bnee? le \d", r"\bnee? le (?:1er|\d{1,2}) [a-z]+ (?:19|20)\d\d", r"nationalite",
+    r"situation familiale", r"\bmarie(?:e)?,? \d+ enfants?", r"\bcelibataire\b")]
+
+
 def _bloc_cv(bloc: str) -> bool:
-    """Un passage qui ressemble à un CV : titré « CV » / « Curriculum vitae », deux marques propres à
-    un CV (date de naissance, situation familiale, expérience professionnelle, loisirs…), ou une
-    marque propre et deux rubriques ou coordonnées."""
+    """Un passage qui ressemble à un CV : titré « CV » / « Curriculum vitae », une marque qui suffit seule
+    (date de naissance, nationalité, situation familiale), deux marques propres à un CV (expérience
+    professionnelle, loisirs, permis…), ou une marque propre et deux rubriques ou coordonnées."""
     low = _fold(bloc)
     if _TITRE_CV.match(bloc or "") or "curriculum vitae" in low:
+        return True
+    if any(rx.search(low) for rx in _CV_SEULS):
         return True
     forts = sum(1 for rx in _CV_FORTS if rx.search(low))
     faibles = sum(1 for rx in _CV_FAIBLES if rx.search(low))
     return forts >= 2 or (forts >= 1 and faibles >= 2)
+
+
+# ── Sections d'un document : CV en annexe, moyens humains (jamais envoyés à l'IA) ────────────────
+
+_TITRE_SECTION_CV = re.compile(r"(?:^|[^a-z0-9])(?:cv|c\.v\.|curriculum(?: vitae)?)(?:$|[^a-z0-9])")
+_RUBRIQUE_CV = re.compile(r"^(?:experiences?|parcours|formations?|diplomes?|competences|langues?|loisirs|"
+                          r"centres? d'interets?|permis|habilitations?|qualifications?|references? "
+                          r"(?:professionnelles|personnelles)|etat civil|coordonnees|profil)\b")
+_TITRE_RH = re.compile(r"\b(?:moyens humains|ressources humaines|equipes?|encadrement|organigramme|personnel|"
+                       r"effectifs?|composition de l'equipe|intervenants|nos collaborateurs)\b")
+_SECTION_CV_MAX = 80               # lignes au plus dans une section de CV (sans titre de fin repéré)
+
+
+def _titre(ligne: str) -> bool:
+    """Une ligne qui ressemble à un titre : courte, sans ponctuation finale, sans « | »."""
+    t = (ligne or "").strip()
+    if not (3 <= len(t) <= 90) or t.startswith("|") or re.search(r"[.;,!?]$", t):
+        return False
+    if len(t.split()) > 12 or not re.search(r"[A-Za-zÀ-ÿ]", t):
+        return False
+    return bool(re.match(r"^(?:[#*\-•]+\s*)?(?:\d+(?:\.\d+)*[.)]?\s+)?[A-ZÀ-Ý0-9«]", t))
+
+
+def _ligne_nom(ligne: str) -> bool:
+    """Une ligne qui n'est qu'un nom de personne (« Yann Tanguy », « Anne LE FLOCH »)."""
+    t = re.sub(r"^[#*\-•\s]+", "", (ligne or "").strip()).strip(" :")
+    m = re.fullmatch(_PRENOM_NOM_LIGNE, t)
+    return bool(m) and _fold(t.split()[0]) not in _PAS_UN_NOM
+
+
+def _a_un_nom(ligne: str) -> bool:
+    """La ligne contient-elle un nom de personne probable (deux mots à majuscule — « Jean-Yves Le Goff »,
+    « Soizic Le Bris » —, hors mots d'ouverture et noms d'organismes) ?"""
+    from app.services.faits_a_relire import _OUVERTURE
+    if noms_probables(ligne):
+        return True
+    for m in re.finditer(r"(?<![\w’'])(" + _PRENOM_NOM + r")(?![\w])", ligne or ""):
+        premier = _fold(re.split(r"[\s\-]", m.group(1))[0])
+        if premier not in _PAS_UN_NOM and premier not in _OUVERTURE:
+            return True
+    return False
+
+
+# Un titre qui OUVRE une autre partie du document (fin d'une section de CV ou « équipe ») : numéroté,
+# « Annexe… », en capitales, ou une rubrique d'un mémoire. Un nom, une fonction ou une rubrique de CV
+# n'en est pas un.
+_TITRE_MEMOIRE = re.compile(r"\b(?:moyens? materiels?|materiels?|methodolog\w*|references?|qualite|securite|"
+                            r"environnement|planning|organisation|presentation|attestations?|annexes?|"
+                            r"chantiers? realises?|realisations?|prix|delais?|garanties?|sommaire|"
+                            r"memoire technique|offre|propositions?|approvisionnement|dechets|nos moyens)\b")
+
+
+def _fin_de_section(t: str) -> bool:
+    low = _fold(t)
+    if re.match(r"^(?:[#*\-•]+\s*)?(?:\d+(?:\.\d+)*[.)]?\s+\S|annexe|chapitre|partie|article|section)\b", low):
+        return True
+    lettres = re.sub(r"[^A-Za-zÀ-ÿ]", "", t)
+    if len(lettres) >= 6 and lettres.upper() == lettres:
+        return True
+    return bool(_TITRE_MEMOIRE.search(low))
+
+
+def lignes_privees(texte: str) -> dict:
+    """Lignes du document qui ne partent JAMAIS à l'IA (décision 8, doctrine § 7 règle 9), sans IA :
+      • « cv » : une SECTION de CV — un titre court qui contient « CV » ou « curriculum », n'importe où
+        (« Annexe 3 : CV du conducteur de travaux »), marque les lignes suivantes jusqu'au titre qui
+        ouvre une autre partie du document (numéroté, « Annexe… », en capitales, rubrique d'un mémoire ;
+        jamais un nom, une fonction, une date de naissance ni une rubrique de CV), au plus
+        _SECTION_CV_MAX lignes ; un paragraphe qui ressemble à un CV (`_bloc_cv`, une date de naissance
+        suffit) et ses voisins (le nom au-dessus, les rubriques en dessous) ;
+      • « rh » : sous un titre « Moyens humains », « Équipe », « Encadrement », « Organigramme »,
+        « Personnel », « Effectif »… (sans « matériel »), chaque ligne de tableau et chaque ligne qui
+        contient un nom de personne (les fiches « Équipe » se saisissent à la main ; un effectif écrit
+        sans nom reste lu).
+    → {"cv": set(numéros de lignes), "rh": set(numéros de lignes)}."""
+    lignes = str(texte or "").split("\n")
+    cv, rh = set(), set()
+    mode, debut = None, 0
+    for i, ligne in enumerate(lignes):
+        t = ligne.strip()
+        low = _fold(t)
+        if _titre(t) and not _ligne_nom(t):
+            if _TITRE_SECTION_CV.search(low):
+                mode, debut = "cv", i
+                cv.add(i)
+                continue
+            if _TITRE_RH.search(low) and "materiel" not in low and mode != "cv":
+                mode, debut = "rh", i
+                continue
+            if mode is not None and _fin_de_section(t) and not _RUBRIQUE_CV.match(
+                    re.sub(r"^[#*\-•\s\d.)]+", "", low)):
+                mode = None
+        if mode == "cv":
+            if i - debut > _SECTION_CV_MAX:
+                mode = None
+            else:
+                cv.add(i)
+                continue
+        if mode == "rh" and t and (t.startswith("|") or _a_un_nom(t)):
+            rh.add(i)
+    # Un paragraphe qui ressemble à un CV, et ses voisins.
+    paras, cur = [], []
+    for i, ligne in enumerate(lignes):
+        if ligne.strip():
+            cur.append(i)
+        elif cur:
+            paras.append(cur)
+            cur = []
+    if cur:
+        paras.append(cur)
+    for k, para in enumerate(paras):
+        if not _bloc_cv("\n".join(lignes[i] for i in para)):
+            continue
+        cv.update(para)
+        if k > 0 and len(paras[k - 1]) <= 2 and all(_ligne_nom(lignes[i]) for i in paras[k - 1]):
+            cv.update(paras[k - 1])          # le nom au-dessus
+        for suite in paras[k + 1:k + 4]:
+            bloc = "\n".join(lignes[i] for i in suite)
+            lowb = _fold(bloc)
+            if _RUBRIQUE_CV.match(re.sub(r"^[#*\-•\s\d.)]+", "", lowb)) \
+                    or any(rx.search(lowb) for rx in _CV_FAIBLES + _CV_FORTS):
+                cv.update(suite)
+            else:
+                break
+    return {"cv": cv, "rh": rh - cv}
+
+
+def texte_sans_lignes_privees(texte: str) -> tuple:
+    """(texte où les lignes privées sont vidées — mêmes paragraphes —, nombre de caractères de CV retirés)."""
+    lignes = str(texte or "").split("\n")
+    priv = lignes_privees(texte)
+    n_cv = sum(len(lignes[i]) for i in priv["cv"])
+    for i in priv["cv"] | priv["rh"]:
+        lignes[i] = ""
+    return "\n".join(lignes), n_cv
 
 
 def _blocs(texte: str) -> list:
@@ -195,10 +343,9 @@ def est_cv(doc: KnowledgeDoc) -> bool:
     tete = texte.lstrip()[:200]
     if _TITRE_CV.match(tete) or "curriculum vitae" in _fold(texte[:1500]):
         return True
-    blocs = _blocs(texte)
-    total = sum(len(b) for b in blocs) or 1
-    cv = sum(len(b) for b in blocs if _bloc_cv(b))
-    return cv / total >= 0.4
+    total = sum(len(b) for b in _blocs(texte)) or 1
+    _t, n_cv = texte_sans_lignes_privees(texte)
+    return n_cv / total >= 0.4
 
 
 _VOIX_ENTREPRISE = re.compile(r"\b(?:nous|notre|nos)\b")
@@ -249,8 +396,10 @@ def texte_a_lire(doc: KnowledgeDoc) -> dict:
     """Ce qui partira à l'IA (avant masquage des noms) : les blocs utiles, hors passages de CV,
     regroupés en parties de SEGMENT_MAX caractères au plus (paragraphes entiers).
     → {"parties": [str], "caracteres": int, "caracteres_document": int, "blocs_cv": int}."""
-    blocs = _blocs(doc.text or "")
-    garde, n_cv = [], 0
+    texte, _n = texte_sans_lignes_privees(doc.text or "")
+    avant = _blocs(doc.text or "")
+    blocs = _blocs(texte)
+    garde, n_cv = [], max(0, len(avant) - len(blocs))
     for b in blocs:
         if _bloc_cv(b):
             n_cv += 1
@@ -299,6 +448,62 @@ def statut_document(doc: KnowledgeDoc) -> Optional[str]:
 
 
 _MSG_STATUT = {DOC_CV: MSG_CV, DOC_ACHETEUR: MSG_ACHETEUR, DOC_VIDE: MSG_VIDE}
+
+
+# ── Aucun CV vers l'IA, sur TOUS les chemins (rédaction, dossier de groupement, questionnaire) ─────
+
+_CACHE_PRIVE = {}           # (id, longueur, nom) → (est un CV, lignes de CV repliées) : le texte ne change pas
+_LIGNE_CV_MIN = 12          # une ligne de CV plus courte (« Formations ») ne sert pas à reconnaître un extrait
+
+
+def _norm_espaces(s) -> str:
+    return re.sub(r"\s+", " ", _fold(s)).strip()
+
+
+def _prive(doc: KnowledgeDoc) -> tuple:
+    cle = (doc.id, int(doc.char_count or len(doc.text or "")), doc.name or "")
+    with _CACHE_LOCK:
+        if cle in _CACHE_PRIVE:
+            return _CACHE_PRIVE[cle]
+    texte = doc.text or ""
+    lignes = texte.split("\n")
+    cv = est_cv(doc)
+    lcv = frozenset(_norm_espaces(lignes[i]) for i in lignes_privees(texte)["cv"]
+                    if len(_norm_espaces(lignes[i])) >= _LIGNE_CV_MIN)
+    with _CACHE_LOCK:
+        if len(_CACHE_PRIVE) >= _CACHE_MAX:
+            _CACHE_PRIVE.pop(next(iter(_CACHE_PRIVE)), None)
+        _CACHE_PRIVE[cle] = (cv, lcv)
+    return cv, lcv
+
+
+def sans_cv(db, chunks: list) -> list:
+    """Les extraits de « Mon savoir-faire » qui peuvent partir à l'IA (décision 8, doctrine § 7 règle 9) :
+    jamais un extrait d'un document qui ressemble à un CV (le même jugement que « Partir de vos anciens
+    dossiers » : statut « cv »), jamais un extrait qui contient un passage de CV (section « CV » d'un
+    ancien mémoire, date de naissance…). Sans IA ; l'ordre est gardé."""
+    if not chunks:
+        return []
+    ids = {c.get("doc_id") for c in chunks if isinstance(c, dict) and c.get("doc_id")}
+    docs = {d.id: d for d in db.query(KnowledgeDoc).filter(KnowledgeDoc.id.in_(list(ids))).all()} if ids else {}
+    out = []
+    for c in chunks:
+        if not isinstance(c, dict):
+            continue
+        texte = str(c.get("text") or c.get("texte") or "")
+        if _bloc_cv(texte):
+            continue
+        d = docs.get(c.get("doc_id"))
+        if d is not None:
+            cv, lignes = _prive(d)
+            if cv:
+                continue
+            if lignes:
+                plat = _norm_espaces(texte)
+                if any(x in plat for x in lignes):
+                    continue
+        out.append(c)
+    return out
 
 # ── Date du document (suggestion, SANS IA, que l'utilisateur confirme) ─────────────────
 
@@ -365,6 +570,22 @@ _FONCTION_PUIS_NOM = re.compile(r"(?i:" + _FONCTION + r")\s*(?::|–|—|-|,)\s*
 _PAR_NOM = re.compile(r"(?i:sous la (?:conduite|direction|responsabilit[ée]) d[e']|encadr[ée]e?s? par|dirig[ée]e?s? par|"
                       r"suivie?s? par|pilot[ée]e?s? par|men[ée]e?s? par|coordonn[ée]e?s? par)\s*(" + _PRENOM_NOM
                       + r")(?![\w])")
+_PRENOM_NOM_LIGNE = re.compile(_PRENOM_NOM)
+# « Jean-Yves Le Goff, 15 ans d'expérience » : un nom suivi d'une ancienneté.
+_NOM_PUIS_ANS = re.compile(r"(?<![\w’'])(" + _PRENOM_NOM + r")\s*(?:,|\(|–|—|-|:)\s*\d{1,2}\s*ans\b")
+# Une suite de noms après « : » (« Encadrement : Gwenaël Kerhervé et Soizic Le Bris »).
+_LISTE_NOMS = re.compile(r":\s*((?:" + _PRENOM_NOM + r")(?:\s*(?:,|et|&)\s*(?:" + _PRENOM_NOM + r"))*)(?=\s*(?:[.;,)]|$|\n))")
+# Un mot qui fait d'une suite de mots à majuscule un ORGANISME, pas une personne.
+_MOTS_ORGANISME = {"couverture", "construction", "constructions", "batiment", "batiments", "btp", "menuiserie",
+                   "charpente", "charpentes", "metropole", "habitat", "services", "groupe", "industrie", "energie",
+                   "energies", "renovation", "zinguerie", "plomberie", "electricite", "peinture", "maconnerie",
+                   "travaux", "ingenierie", "conseil", "agglomeration", "communaute", "region", "departement",
+                   "immobilier", "logement", "solutions", "environnement", "sarl", "sas", "eurl", "scop", "sa",
+                   "france", "ouest", "est", "nord", "sud", "atlantique", "armor", "bretagne", "finistere",
+                   "morbihan", "agence", "bureau", "cabinet", "architectes", "architecture", "etudes", "technique",
+                   "techniques", "lycee", "college", "ecole", "mairie", "hopital", "clinique", "gymnase",
+                   "mediatheque", "piscine", "residence", "eglise", "chapelle", "salle", "centre", "parc", "zone",
+                   "rue", "avenue", "boulevard", "place", "quai", "chemin", "route", "allee", "impasse"}
 _PAS_UN_NOM = {"mairie", "ville", "commune", "departement", "region", "conseil", "societe", "sarl", "sas", "eurl",
                "ecole", "college", "lycee", "centre", "office", "habitat", "agence", "groupe", "entreprise",
                "communaute", "metropole", "syndicat", "chantier", "projet", "travaux", "service", "direction",
@@ -384,6 +605,8 @@ def noms_probables(texte: str) -> list:
         mots = [w for w in re.split(r"[\s\-’']+", _fold(n)) if w]
         if not mots or any(w in _PAS_UN_NOM for w in mots[:1]) or len(n) < 3 or len(n) > 80:
             return
+        if any(w in _MOTS_ORGANISME for w in mots):
+            return                      # « Breizh Couverture », « Brest Métropole Habitat » : un organisme
         k = _fold(n)
         if k not in vus:
             vus.add(k)
@@ -391,22 +614,46 @@ def noms_probables(texte: str) -> list:
 
     for m in _CIVILITE.finditer(t):
         _ajoute(m.group(1))
-    for rx in (_NOM_PUIS_FONCTION, _FONCTION_PUIS_NOM, _PAR_NOM):
+    for rx in (_NOM_PUIS_FONCTION, _FONCTION_PUIS_NOM, _PAR_NOM, _NOM_PUIS_ANS):
         for m in rx.finditer(t):
             _ajoute(m.group(1))
+    # Une case de tableau qui n'est qu'un nom (« | Jean-Yves Le Goff | Chef de chantier | 15 ans | »).
+    for ligne in t.split("\n"):
+        if ligne.strip().startswith("|"):
+            for case in ligne.strip().strip("|").split("|"):
+                c = case.strip()
+                if c and _PRENOM_NOM_LIGNE.fullmatch(c):
+                    _ajoute(c)
+    # Une suite de noms après « : » (« Encadrement : Gwenaël Kerhervé et Soizic Le Bris. »).
+    for m in _LISTE_NOMS.finditer(t):
+        for n in re.split(r"\s*(?:,|\bet\b|&)\s*", m.group(1)):
+            if n.strip():
+                _ajoute(n)
     return out[:300]
+
+
+def equipe_avec_noms_reperes(equipe: list, textes, exclure=()) -> list:
+    """L'équipe connue + les noms de personnes repérés dans ces textes (sans IA), pour le pseudonymiseur
+    d'un appel : un nom écrit dans un ancien mémoire, une fiche ou un extrait part masqué, comme ceux
+    de l'équipe (doctrine § 7, règle 9). `exclure` : les noms qui ne sont jamais des personnes (le nom
+    de l'entreprise et de ses partenaires : c'est le sujet du texte)."""
+    out = [m for m in (equipe or []) if isinstance(m, dict)]
+    connus = {_fold(m.get("nom")) for m in out}
+    jamais = [_fold(x) for x in (exclure or ()) if x and len(_fold(x)) >= 3]
+    for n in noms_probables("\n\n".join(str(x or "") for x in (textes or []) if x)):
+        fn = _fold(n)
+        if any(fn == j or fn in j or j in fn for j in jamais):
+            continue
+        if fn not in connus:
+            out.append({"nom": n, "fonction": "Personne"})
+            connus.add(_fold(n))
+    return out
 
 
 def pseudonymiseur(db, owner_id: int, parties: list):
     """Noms connus (profil, fiches « Équipe ») + noms repérés dans ce qui part à l'IA."""
     from app.services.pii import from_team, team_of_users
-    equipe = team_of_users(db, [owner_id])
-    connus = {_fold(m.get("nom")) for m in equipe if isinstance(m, dict)}
-    for n in noms_probables("\n\n".join(parties)):
-        if _fold(n) not in connus:
-            equipe.append({"nom": n, "fonction": "Personne"})
-            connus.add(_fold(n))
-    return from_team(equipe)
+    return from_team(equipe_avec_noms_reperes(team_of_users(db, [owner_id]), parties))
 
 
 # ── L'appel à l'IA ────────────────────────────────────────────────────────────────────────

@@ -294,16 +294,24 @@ def _bm25_indexed(idx: dict, query: str, k: int, relevance: bool = False) -> lis
     return [(s, idx["meta"][i]) for i, s in top]
 
 
+def _sans_cv(db, chunks: list, k: int) -> list:
+    """Jamais un CV (document ou passage) vers l'IA : app.services.fiches_import.sans_cv."""
+    from app.services.fiches_import import sans_cv
+    return sans_cv(db, chunks)[:k]
+
+
 def retrieve(db: Session, user_id: int, query: str, k: int = 6, min_score: float = 0.0,
-             relevance: bool = False) -> list:
-    """Renvoie les k chunks les plus pertinents pour `query` dans la base de l'utilisateur."""
+             relevance: bool = False, pour_ia: bool = True) -> list:
+    """Renvoie les k chunks les plus pertinents pour `query` dans la base de l'utilisateur.
+    pour_ia (défaut) : jamais un extrait de CV (décision 8) ; la recherche affichée à l'utilisateur
+    lui-même (pour_ia=False) montre tout."""
     out = []
-    for s, t in _bm25_indexed(_index_for(db, user_id), query, k, relevance=relevance):
+    for s, t in _bm25_indexed(_index_for(db, user_id), query, k * 2 if pour_ia else k, relevance=relevance):
         if s < min_score:
             continue
         out.append({"chunk_id": t[0], "doc_id": t[1], "doc_name": t[2],
                     "ordinal": t[3], "text": t[5], "score": round(s, 3)})
-    return out
+    return _sans_cv(db, out, k) if pour_ia else out
 
 
 def cited_refs(text: str) -> set:
@@ -329,15 +337,16 @@ def retrieve_multi(db: Session, user_ids: list, query: str, k: int = 8,
                    relevance: bool = False) -> list:
     """Récupère les chunks les plus pertinents à travers PLUSIEURS bases (base COMMUNE de
     l'organisation, ou co-traitance), en réutilisant l'index inversé caché de chaque user.
-    Chaque résultat porte son user_id."""
+    Chaque résultat porte son user_id. Ces extraits partent à l'IA : jamais un extrait de CV (document
+    qui ressemble à un CV, ou passage de CV d'un ancien mémoire — décision 8)."""
     if not user_ids:
         return []
     indexes = [_index_for(db, uid) for uid in dict.fromkeys(user_ids)]
     out = []
-    for s, t in _bm25_indexed(_merge_indexes(indexes), query, k, relevance=relevance):
+    for s, t in _bm25_indexed(_merge_indexes(indexes), query, k * 2, relevance=relevance):
         out.append({"chunk_id": t[0], "doc_id": t[1], "doc_name": t[2], "user_id": t[4],
                     "text": t[5], "score": round(s, 3)})
-    return out
+    return _sans_cv(db, out, k)
 
 
 def sources_block_attributed(chunks: list, names_by_user: dict) -> str:

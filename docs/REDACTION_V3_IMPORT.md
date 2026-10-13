@@ -59,17 +59,35 @@ fiches sont « à reconfirmer ».
 
 - **Un CV** (décision 8) : nom de fichier (« CV_… », « curriculum »), titre en tête, ou texte fait
   surtout de passages de CV → document refusé (`document_cv`), aucun appel. Dans un document lu, les
-  **passages qui ressemblent à un CV** (titre « CV », ou deux marques propres à un CV : date de
-  naissance, situation familiale, expérience professionnelle, loisirs… ; ou une marque et deux
-  rubriques ou coordonnées) sont retirés avant l'envoi.
+  **passages de CV** sont retirés avant l'envoi (`fi.lignes_privees`) : une SECTION de CV (un titre
+  court qui contient « CV » ou « curriculum », n'importe où : « Annexe 3 : CV du conducteur de travaux »)
+  jusqu'au titre qui ouvre une autre partie du document (numéroté, « Annexe… », en capitales, rubrique
+  d'un mémoire) — le nom, la date de naissance et les rubriques du CV (« Expériences », « Formations »…)
+  n'y mettent pas fin, même séparés par des lignes vides ; un paragraphe qui ressemble à un CV (une date
+  de naissance, une nationalité ou une situation familiale suffit seule ; sinon deux marques propres à
+  un CV, ou une marque et deux rubriques ou coordonnées), avec le nom au-dessus et les rubriques en
+  dessous.
+- **Les moyens humains** : sous un titre « Moyens humains », « Équipe », « Encadrement »,
+  « Organigramme », « Personnel », « Effectif »… (sans « matériel »), chaque ligne de tableau et chaque
+  ligne qui contient un nom de personne sont retirées avant l'envoi (les fiches « Équipe » se saisissent
+  à la main ; « Notre effectif compte 12 salariés » reste lu).
 - **Une pièce du dossier d'un acheteur** (règlement, CCAP, CCTP en titre ou en nom, sans « nous »,
   « notre », « nos » en première page) → refusée (`document_piece_acheteur`) : le dossier de
   l'acheteur n'appuie jamais un fait sur l'entreprise.
 - **Les noms** : profil (`Company.team`), fiches « Équipe » (tous statuts) et noms repérés sans IA
   dans ce qui part (« M. Kerjean », « Chef d'équipe : Anne Le Floch », « Yann Tanguy, conducteur de
-  travaux », « sous la conduite de … ») sont remplacés par des étiquettes, puis remis en clair dans
-  la réponse, sans IA. Limite : un nom isolé, sans civilité, fonction ni tournure de ce type, et
-  absent du profil, n'est pas reconnu.
+  travaux », « sous la conduite de … », une case de tableau qui n'est qu'un nom, une liste après « : »
+  — « Encadrement : Gwenaël Kerhervé et Soizic Le Bris » —, « Jean-Yves Le Goff, 15 ans ») sont
+  remplacés par des étiquettes, puis remis en clair dans la réponse, sans IA. Les mêmes noms repérés
+  sont masqués à la RÉDACTION (fiches `[F#]` acceptées, extraits `[S#]`, apports `[G#]`, texte à
+  raccourcir) et dans le questionnaire : un nom masqué à la lecture ne part jamais en clair plus tard.
+  Limite : un nom isolé, sans civilité, fonction ni tournure de ce type, hors tableau, liste ou section
+  « équipe », et absent du profil, n'est pas reconnu.
+- **Un CV, sur tous les chemins vers l'IA** (pas seulement cette lecture) : `rag.retrieve_multi` et
+  `rag.retrieve` (rédaction de l'atelier, dossier de groupement, questionnaire) écartent tout extrait
+  d'un document de « Mon savoir-faire » qui ressemble à un CV (statut « cv » de cet écran) et tout
+  extrait qui contient un passage de CV d'un ancien mémoire (`fi.sans_cv`). La recherche affichée à
+  l'utilisateur lui-même (`/api/knowledge/search`) montre tout.
 - **Les paragraphes sans aucun fait** (ni chiffre, ni nom propre, ni certification, ni matériel, ni
   mot comme « référence », « client », « matériel », « qualification », « effectif ») : ils ne
   peuvent donner aucune fiche, ils ne partent pas (économie sans perte de qualité).

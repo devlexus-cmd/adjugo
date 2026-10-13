@@ -70,7 +70,11 @@ date_fin_validite, provenance (entreprise | reseau | documents), provenance_libe
   l'IA ; si une ligne de CV d'une fiche « Équipe » de l'organisation (tous statuts) y figure, la demande est
   refusée AVANT tout appel et tout débit : 409 `cv_dans_la_partie` (appelé dans `atelier.lancer`).
   `preuves_atelier.cv_presents(db, owner_id, texte)` rend les noms concernés (repérage aux accents, à la
-  casse, aux espaces et au gras près).
+  casse, aux espaces et au gras près). Le CV est aussi reconnu **par sa forme** (`_cv_par_forme` : une
+  ligne « Expérience : 15 ans », « Diplômes : … » ou « Qualifications et habilitations : … », sous
+  « **Nom**, fonction » ou « **Nom, fonction** ») : une fiche supprimée depuis l'insertion (le salarié
+  a quitté l'entreprise), ou modifiée, ne fait jamais partir son CV à l'IA. Sans nom reconnaissable, le
+  message dit « un CV (expérience, diplômes…) ».
 - « Rédiger » n'envoie ni le nom ni le CV d'une fiche « Équipe » (test de non-régression : à garder vert
   quand A remettra les faits numérotés à l'IA, avec `texte_ia`).
 

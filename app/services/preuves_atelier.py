@@ -10,8 +10,9 @@ TEL QUEL, sans IA.
     verrou, version de départ, longueur, faits « à relire » des anciennes versions gardés) ;
     seules les fiches UTILISABLES (acceptées, valables, source présente) s'insèrent ;
   • `refuser_cv_pour_ia()` : « Raccourcir » envoie le texte de la partie à l'IA ; une partie qui
-    contient un CV de « Mes preuves » est refusée AVANT tout appel (décision 8a : un CV n'est
-    jamais envoyé à l'IA, il est inséré tel quel).
+    contient un CV de « Mes preuves », ou un bloc qui a la forme d'un CV inséré (même si sa fiche a
+    été supprimée depuis), est refusée AVANT tout appel (décision 8a : un CV n'est jamais envoyé à
+    l'IA, il est inséré tel quel).
 """
 import re
 from typing import Optional
@@ -25,6 +26,9 @@ _POSSESSION = {"propriete": "En propre", "location": "En location"}
 MSG_CV = ("Cette partie contient le CV de {noms}, inséré depuis « Mes preuves » : Adjugo n'envoie jamais un "
           "CV à l'IA. Raccourcissez-la vous-même, ou retirez le CV le temps de raccourcir puis insérez-le de "
           "nouveau.")
+MSG_CV_SANS_NOM = ("Cette partie contient un CV (expérience, diplômes…) : Adjugo n'envoie jamais un CV à l'IA. "
+                   "Raccourcissez-la vous-même, ou retirez le CV le temps de raccourcir puis insérez-le de "
+                   "nouveau.")
 MSG_AUTRE_MARCHE = "Cette estimation vaut pour un autre marché : Adjugo ne s'en sert pas ici."
 
 
@@ -172,9 +176,41 @@ def _plat(s) -> str:
     return re.sub(r"\s+", " ", fold(str(s or "").replace("**", "")).replace(" ;", ";")).strip()
 
 
+# La FORME d'un CV inséré (`bloc` d'une fiche « Équipe », `faits_sources.cv_texte`) : une ligne
+# « Expérience : 15 ans », « Diplômes : … » ou « Qualifications et habilitations : … », en liste ou non,
+# renvoi [F#] compris. Reconnue quel que soit l'état de la fiche (supprimée, modifiée, jamais créée).
+_LIGNE_CV = re.compile(r"^\s*(?:[-*•]\s*)?(?:\*\*)?(?:exp[ée]rience\s*:\s*\d{1,2}\s*ans?\b|dipl[ôo]mes?\s*:\s*\S|"
+                       r"qualifications et habilitations\s*:\s*\S)", re.IGNORECASE | re.MULTILINE)
+# « **Yann Tanguy**, conducteur de travaux [F2] » (rédaction) ou « **Yann Tanguy, Conducteur de travaux** »
+# (« Insérer une fiche ») : le nom est avant la virgule.
+_TETE_CV = re.compile(r"^\s*(?:[-*•]\s*)?\*\*([^*,\n]{2,120})(?:\*\*\s*,\s*\S|,[^*\n]*\*\*)")
+
+
+def _cv_par_forme(texte: str) -> list:
+    """Les CV écrits dans le texte, par leur forme : [nom de la tête « **Nom**, fonction » ou ""]."""
+    lignes = str(texte or "").split("\n")
+    out = []
+    for i, ligne in enumerate(lignes):
+        if not _LIGNE_CV.match(ligne):
+            continue
+        nom = ""
+        for j in range(i - 1, max(-1, i - 6), -1):        # la tête, au-dessus des lignes du CV
+            m = _TETE_CV.match(lignes[j])
+            if m:
+                nom = re.sub(r"\s*\[[^\]]*\]\s*", " ", m.group(1)).strip()
+                break
+            if not lignes[j].strip() or not re.match(r"^\s*[-*•]", lignes[j]):
+                break
+        if nom not in out:
+            out.append(nom)
+    return out
+
+
 def cv_presents(db, owner_id: int, texte: str) -> list:
-    """Noms des personnes dont une ligne de CV (« Expérience : 15 ans », « Diplômes : … ») figure
-    dans le texte. Toutes les fiches « Équipe » de l'organisation, quel que soit leur statut."""
+    """Noms des personnes dont un CV figure dans le texte : une ligne de CV d'une fiche « Équipe » de
+    l'organisation (« Expérience : 15 ans », « Diplômes : … »), quel que soit son statut, OU un bloc
+    qui a la forme d'un CV inséré (`_cv_par_forme`), même si sa fiche a été supprimée depuis (le
+    salarié a quitté l'entreprise) ou modifiée."""
     from app.models import Preuve
     plat = _plat(texte)
     if not plat:
@@ -187,6 +223,9 @@ def cv_presents(db, owner_id: int, texte: str) -> list:
             nom = str(v.get("nom") or "").strip()
             if nom and nom not in noms:
                 noms.append(nom)
+    for nom in _cv_par_forme(texte):
+        if not any(_plat(nom) == _plat(n) for n in noms):
+            noms.append(nom)          # "" : un CV sans nom reconnaissable
     return noms
 
 
@@ -195,4 +234,6 @@ def refuser_cv_pour_ia(db, owner_id: int, texte: Optional[str]) -> None:
     noms = cv_presents(db, owner_id, texte or "")
     if noms:
         from app.services.atelier import AtelierError
-        raise AtelierError(409, "cv_dans_la_partie", MSG_CV.format(noms=", ".join(noms[:3])))
+        nommes = [n for n in noms if n]
+        raise AtelierError(409, "cv_dans_la_partie", MSG_CV.format(noms=", ".join(nommes[:3])) if nommes
+                           else MSG_CV_SANS_NOM)
