@@ -507,7 +507,13 @@ def with_declare_warning(members: list, warnings: list) -> list:
     déclarées par le mandataire lui-même ('declare') ou saisies à la volée ('saisi')."""
     warnings = [w for w in (warnings or []) if w != WARN_DECLARE]
     if any((m.get("source") in ("declare", "saisi")) for m in members if m.get("kind") != "lead"):
-        warnings.insert(0, WARN_DECLARE)
+        # Le barème a déjà nommé le(s) partenaire(s) concerné(s) (« … déclarées par vous (X) … ») : on met
+        # CES lignes en tête plutôt que d'ajouter la phrase générale, qui les répéterait.
+        nommes = [w for w in warnings if w.startswith("Verdict fondé sur des capacités déclarées par vous")]
+        if nommes:
+            warnings = nommes + [w for w in warnings if w not in nommes]
+        else:
+            warnings.insert(0, WARN_DECLARE)
     return warnings
 
 

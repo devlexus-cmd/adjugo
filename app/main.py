@@ -608,6 +608,18 @@ def demande_acces_page():
         return HTMLResponse(f.read())
 
 
+@app.get("/demo", tags=["Site"], include_in_schema=False)
+def demo_lien_page():
+    """Lien privé de démonstration (https://adjugo.pro/demo#<clé>, docs/DEMO_LIEN_PRIVE.md).
+    La clé est dans le fragment : elle n'atteint jamais le serveur dans l'adresse. Cette route
+    ne sert que la page ; son script envoie la clé dans le corps d'un POST. Jamais indexée,
+    jamais en cache, aucun lien vers elle depuis le site."""
+    from fastapi.responses import HTMLResponse
+    with open(os.path.join(_static_dir, "demo.html"), encoding="utf-8") as f:
+        return HTMLResponse(f.read(), headers={"X-Robots-Tag": "noindex, nofollow",
+                                               "Cache-Control": "no-store"})
+
+
 @app.get("/app", tags=["Logiciel"], include_in_schema=False)
 def software():
     from fastapi.responses import HTMLResponse
@@ -854,6 +866,8 @@ def _ensure_demo_account():
     try:
         from app.services.demo_seed import ensure_demo
         ensure_demo(db, force=True)   # repart propre à chaque démarrage (anti-dérive)
+        from app.services.demo_remise import noter_remise
+        noter_remise()                # vitrine neuve : pas de remise à neuf à la première ouverture
     except Exception as e:
         _logging.getLogger("adjugo").warning("seed démo ignoré : %s", e)
     finally:

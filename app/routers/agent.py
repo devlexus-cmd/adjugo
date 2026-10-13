@@ -23,14 +23,16 @@ def _details(p) -> dict:
 
 
 def _zone(p) -> str:
-    """Département déduit du CODE POSTAL (5 chiffres) du lieu d'exécution, sinon 'Inconnu'.
-    On exige un vrai code postal pour ne pas confondre une année (« 2024 ») ou un n° de rue
-    avec un département. DOM-TOM (97x/98x) conservés sur 3 chiffres."""
+    """Département déduit du CODE POSTAL (5 chiffres) du lieu d'exécution, sinon du numéro de
+    département écrit entre parenthèses (« Angers (49) », « Ajaccio (2A) », « Saint-Denis (974) »),
+    sinon 'Inconnu'. On exige un vrai code postal, ou les parenthèses, pour ne pas confondre une
+    année (« 2024 ») ou un n° de rue avec un département. DOM-TOM (97x/98x) conservés sur 3 chiffres."""
     import re
     lieu = str(_details(p).get("lieu_execution") or "")
     m = re.search(r"\b(\d{5})\b", lieu)
     if not m:
-        return "Inconnu"
+        d = re.search(r"\(\s*(0[1-9]|[1-8]\d|9[0-5]|2[AaBb]|97[1-6])\s*\)", lieu)
+        return d.group(1).upper() if d else "Inconnu"
     cp = m.group(1)
     if cp[:2] == "20":                 # Corse : 2A (20000-20199) / 2B (20200-20999), pas « 20 »
         return "2A" if cp < "20200" else "2B"

@@ -102,6 +102,8 @@ def upload_document(
     db: Session = Depends(get_db),
 ):
     """Uploader un document dans le coffre-fort."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "déposer des documents")     # défense en profondeur (middleware démo)
     content, ext = _validate_and_read(file)
     category = category if category in _VALID_CATS else "autre"
     file_key = f"{current_user.id}/{uuid.uuid4().hex}{ext}"
@@ -147,6 +149,8 @@ def replace_document(
     db: Session = Depends(get_db),
 ):
     """Remplacer un document par une nouvelle version."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "déposer des documents")     # défense en profondeur (middleware démo)
     # Seule la version COURANTE et active se remplace : remplacer un document à la corbeille
     # ou une ancienne version créait une version « vivante » orpheline de son historique.
     old_doc = db.query(Document).filter(
@@ -222,6 +226,8 @@ def rename_document(
     db: Session = Depends(get_db),
 ):
     """Renommer un document (titre affiché dans le coffre-fort)."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "gérer vos documents")     # défense en profondeur (middleware démo)
     doc = db.query(Document).filter(
         Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
         Document.deleted_at.is_(None), Document.parent_id.is_(None),
@@ -244,6 +250,8 @@ def delete_document(
 ):
     """Mettre un document à la corbeille (suppression douce, réversible).
     Le fichier de stockage est conservé tant que la corbeille n'est pas purgée."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "gérer vos documents")     # défense en profondeur (middleware démo)
     doc = db.query(Document).filter(
         Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
         Document.deleted_at.is_(None),

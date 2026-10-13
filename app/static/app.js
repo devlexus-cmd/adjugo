@@ -417,6 +417,21 @@ function atlPurgeDrafts(tous) {
     });
   } catch (e) { /* stockage interdit : rien à effacer */ }
 }
+// Session ouverte par le lien privé de démonstration (/demo#<clé>) : son jeton porte « dl »
+// (empreinte de la clé). Session refusée → retour sur /demo, avec la raison (sessionPerdue).
+// Détail exact renvoyé par le serveur quand la clé du lien a changé ou a été retirée
+// (app/core/demo_guard.DEMO_LIEN_PERIME) ; tout autre refus = session simplement terminée.
+const DEMO_LIEN_PERIME = "Ce lien de démonstration n'est plus valide.";
+function jetonDemoLien(t) {
+  try {
+    let p = String(t || "").split(".")[1];
+    if (!p) return false;
+    p = p.replace(/-/g, "+").replace(/_/g, "/");
+    while (p.length % 4) p += "=";
+    const j = JSON.parse(atob(p));
+    return !!(j && j.dl);
+  } catch (e) { return false; }
+}
 function _atlReEsc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function _atlKey(s) { return String(s || "").toLowerCase().replace(/\s+/g, " ").trim(); }
 // Motif d'un fait : espaces souples (une espace insécable du texte vaut une espace), bornes de mot
@@ -917,8 +932,10 @@ const __adjApp = createApp({
     const _touch = () => { if (this.token) { try { localStorage.setItem("adjugo_active", String(Date.now())); } catch (e) {} } };
     ["click", "keydown", "touchstart"].forEach(ev => window.addEventListener(ev, _touch, { passive: true }));
     const _idleStale = () => { const l = parseInt(localStorage.getItem("adjugo_active") || "0", 10); return !!(l && (Date.now() - l) > this.idleLimitMs); };
-    setInterval(() => { if (this.token && _idleStale()) { this.notify("Déconnecté par sécurité après une période d'inactivité.", "err"); this.logout(); } }, 60000);
-    // Session STOCKÉE (pas une connexion fraîche) trop ancienne → on l'efface, retour à l'écran de connexion.
+    setInterval(() => { if (this.token && _idleStale()) { this.notify("Déconnecté par sécurité après une période d'inactivité.", "err"); this.sessionPerdue(); } }, 60000);
+    // Session STOCKÉE (pas une connexion fraîche) trop ancienne → on l'efface, retour à l'écran de connexion
+    // (session du lien privé de démonstration : retour sur /demo, qui invite à rouvrir le lien).
+    if (this.token && !_freshLogin && _idleStale() && jetonDemoLien(this.token)) { this.sessionPerdue(); return; }
     if (this.token && !_freshLogin && _idleStale()) { localStorage.removeItem("adjugo_token"); this.token = ""; atlPurgeDrafts(true); }
     else atlPurgeDrafts(false);      // brouillons locaux de plus de 7 jours : effacés
 
@@ -984,7 +1001,7 @@ const __adjApp = createApp({
       if (body && !isForm) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
       if (isForm) opt.body = body;
       const r = await fetch(path, opt);
-      if (r.status === 401) { this.logout(); throw new Error("Session expirée"); }
+      if (r.status === 401) { this.sessionPerdue(await r.json().then(j => j && j.detail, () => "")); throw new Error("Session expirée"); }
       const txt = await r.text();
       let data = null;
       try { data = txt ? JSON.parse(txt) : null; } catch (e) { data = null; }   // réponse non-JSON (ex. 500 « Internal Server Error »)
@@ -1082,6 +1099,15 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
     logout() { localStorage.removeItem("adjugo_token"); localStorage.removeItem("adjugo_active"); atlPurgeDrafts(true); window.location.href = "/"; },
+    // Session refusée par le serveur (401), ou fermée après une heure sans activité : même nettoyage
+    // que la déconnexion. Une session du lien privé de démonstration revient sur /demo avec la raison :
+    // « perime » si le serveur dit que le lien a changé, sinon « terminee » (12 h écoulées, inactivité) :
+    // /demo invite alors à rouvrir le lien reçu, au lieu de le dire « plus valide ».
+    sessionPerdue(detail) {
+      if (!jetonDemoLien(this.token)) { this.logout(); return; }
+      try { sessionStorage.setItem("adjugo_demo_fin", detail === DEMO_LIEN_PERIME ? "perime" : "terminee"); } catch (e) {}
+      localStorage.removeItem("adjugo_token"); localStorage.removeItem("adjugo_active"); atlPurgeDrafts(true); window.location.href = "/demo";
+    },
     dismissOnboarding() { try { localStorage.setItem("adjugo_onboarding_done", "1"); } catch (e) {} this.$forceUpdate(); },
     // ── Feedback in-app ──
     openFeedback() { this.fb.open = true; this.fb.message = ""; this.fb.kind = "idee"; },
@@ -5073,7 +5099,7 @@ const __adjApp = createApp({
       try {
         const r = await fetch(this._atlUrl("/export"), { method: "POST", headers: { Authorization: "Bearer " + this.token, "Content-Type": "application/json" },
           body: JSON.stringify({ format: fmt, etat_hash: st.blocage && st.blocage.etat_hash }) });
-        if (r.status === 401) { this.logout(); return; }
+        if (r.status === 401) { this.sessionPerdue(await r.json().then(j => j && j.detail, () => "")); return; }
         if (!r.ok) {
           const j = await r.json().catch(() => ({})), d = j && j.detail;
           const msg = (d && typeof d === "object" && d.message) || (typeof d === "string" && d) || (r.status === 429 ? TOO_MANY_MSG : "Export impossible pour le moment.");

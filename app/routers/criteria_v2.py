@@ -113,6 +113,8 @@ def get_criteria(current_user: User = Depends(get_current_user), db: Session = D
 
 @router.put("/")
 def update_criteria(data: CriteriaUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "régler vos critères")      # défense en profondeur (middleware démo)
     c = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == data_owner_id(current_user, db)).first()
     if not c:
         c = MatchingCriteriaExt(user_id=data_owner_id(current_user, db))

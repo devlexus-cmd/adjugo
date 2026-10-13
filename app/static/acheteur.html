@@ -59,7 +59,7 @@
   .conseils-box{background:var(--accent-weak);border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);border-radius:12px;padding:11px 14px;margin:10px 0;font-size:13px}
   .lot-src{border:1px solid var(--border);border-radius:12px;padding:12px 15px;margin:10px 0;background:var(--surface)}
   .lot-src-head{font-size:13.5px;margin-bottom:6px;overflow:hidden}
-  .bk{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0} .bk-i{background:var(--surface-3);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--text-2)}
+  .bk{list-style:none;margin:8px 0;padding:0;display:grid;gap:4px} .bk-i{font-size:12.5px;line-height:1.45;color:var(--text-2)} .bk-i b{color:var(--text);font-weight:600} .bk-p{display:inline-block;margin-left:4px;padding:0 6px;border-radius:6px;background:var(--warning-weak);color:var(--warning-text);font-size:11px;font-weight:600}
   .vivier{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px} @media(max-width:680px){.vivier{grid-template-columns:1fr}}
   .pmecard{border:1px solid var(--border);border-radius:10px;padding:8px 11px;background:var(--surface-2)}
   .pmecard .pn{font-weight:600;font-size:12.5px} .pmecard .pm{font-size:11.5px;color:var(--muted);margin-top:2px}
@@ -250,9 +250,16 @@
   function setToken(t){ATOKEN=t||"";if(t)localStorage.setItem("adjugo_acheteur_token",t);else localStorage.removeItem("adjugo_acheteur_token");}
   // Session expirée : au lieu de laisser la sidebar « connectée » avec un contenu vide,
   // on déconnecte proprement et on rouvre la connexion.
-  function sessionLost(){var was=!!AME;setToken("");AME=null;IS_DEMO=false;CURRENT_DCE_ID=null;renderAcct();if(curView!=="creer")refreshCurrentView();if(was){openAuth("login");showAuthErr("Session expirée. Reconnectez-vous pour continuer.");}}
+  // Session ouverte par le lien privé de démonstration (/demo#<clé>) : son jeton porte « dl ».
+  // Refusée → retour sur /demo avec la raison : « perime » si le serveur dit que le lien a changé
+  // (détail exact de app/core/demo_guard.DEMO_LIEN_PERIME), sinon « terminee » (12 h écoulées) :
+  // /demo invite alors à rouvrir le lien reçu, au lieu de le dire « plus valide ».
+  function demoLien(t){try{var p=String(t||"").split(".")[1];if(!p)return false;p=p.replace(/-/g,"+").replace(/_/g,"/");while(p.length%4)p+="=";var j=JSON.parse(atob(p));return !!(j&&j.dl);}catch(e){return false;}}
+  function demoFin(detail){try{sessionStorage.setItem("adjugo_demo_fin",detail==="Ce lien de démonstration n'est plus valide."?"perime":"terminee");}catch(e){}}
+  function detail401(r){return r.json().then(function(j){return j&&j.detail;},function(){return "";});}
+  function sessionLost(detail){if(demoLien(ATOKEN)){demoFin(detail);setToken("");location.href="/demo";return;}var was=!!AME;setToken("");AME=null;IS_DEMO=false;CURRENT_DCE_ID=null;renderAcct();if(curView!=="creer")refreshCurrentView();if(was){openAuth("login");showAuthErr("Session expirée. Reconnectez-vous pour continuer.");}}
   // fetch pour les endpoints DATA de l'acheteur : intercepte tout 401 (token expiré/révoqué).
-  function aFetch(url,opts){return fetch(url,opts).then(function(r){if(r.status===401){sessionLost();throw new Error("Session expirée");}return r;});}
+  function aFetch(url,opts){return fetch(url,opts).then(function(r){if(r.status===401){return detail401(r).then(function(d){sessionLost(d);throw new Error("Session expirée");});}return r;});}
   // Le compte de démo est partagé : on bloque les écritures côté client (le backend renvoie aussi 403).
   function demoBlock(){if(IS_DEMO){alert("Compte de démonstration en lecture seule.\n\nCréez votre espace gratuit pour enregistrer, piloter et diffuser vos consultations.");return true;}return false;}
   function initials(s){s=(s||"").trim();var p=s.split(/\s+/);return ((p[0]||"")[0]||"C").toUpperCase()+((p[1]||"")[0]||"").toUpperCase();}
@@ -334,6 +341,11 @@
 
   function updateCount(){if(!AME){$("#navCount").textContent="0";return;}aFetch("/api/acheteur/dce",{headers:aHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(l){$("#navCount").textContent=l.length;}).catch(function(){});}
 
+  // Date « 13/10/2026 » (et non « 2026-10-13 ») ; titre coupé sur un mot entier, avec « … ».
+  function jourFr(v){var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v||""));return m?(m[3]+"/"+m[2]+"/"+m[1]):"";}
+  function court(t,n){t=String(t||"");if(t.length<=n)return t;var c=t.slice(0,n),k=c.lastIndexOf(" ");c=k>n*0.6?c.slice(0,k):c;
+    var p;do{p=c;c=c.replace(/[\s,;:–—-]+$/,"").replace(/\s+(et|ou|de|des|du|la|le|les|à|au|aux|en|pour|sur|d'|l')$/i,"");}while(c!==p);return c+"…";}
+
   // ── Tableau de bord ──
   function loadDashboard(){
     var db=$("#demoBanner");
@@ -345,11 +357,11 @@
       if($("#dr_login"))$("#dr_login").onclick=function(){openAuth("login");};icons();return;}
     aFetch("/api/acheteur/dce",{headers:aHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(list){
       $("#navCount").textContent=list.length;$("#statDces").textContent=list.length;
-      $("#statLast").textContent=list.length?(list[0].objet||"Projet").slice(0,26):"—";
-      $("#statLastD").textContent=list.length?("modifié le "+(list[0].updated_at||"").slice(0,10)):"—";
+      $("#statLast").textContent=list.length?court(list[0].objet||"Projet",34):"—";
+      $("#statLastD").textContent=list.length?("modifié le "+jourFr(list[0].updated_at)):"—";
       if(!list.length){$("#dashRecent").innerHTML='<div class="empty"><div class="eic"><i data-lucide="file-plus-2" class="lucide"></i></div><h4>Votre premier DCE</h4><p>Décrivez un besoin, l\'IA rédige le projet complet.</p><button class="btn primary sm" onclick="window.__nav(\'creer\')">Créer un DCE</button></div>';icons();return;}
       $("#dashRecent").innerHTML=list.slice(0,6).map(function(d){
-        return '<div class="ao-row" data-id="'+d.id+'" role="button" tabindex="0"><div class="score-ring" style="background:conic-gradient(var(--accent) 0 100%,var(--surface-3) 0)"><span><i data-lucide="file-text" class="lucide" style="width:16px;height:16px"></i></span></div><div class="ao-mid"><div class="ao-t">'+esc(d.objet||"Projet de DCE")+'</div><div class="ao-c">modifié le '+esc((d.updated_at||"").slice(0,10))+'</div></div><i data-lucide="chevron-right" class="ao-go lucide"></i></div>';}).join("");
+        return '<div class="ao-row" data-id="'+d.id+'" role="button" tabindex="0"><div class="score-ring" style="background:conic-gradient(var(--accent) 0 100%,var(--surface-3) 0)"><span><i data-lucide="file-text" class="lucide" style="width:16px;height:16px"></i></span></div><div class="ao-mid"><div class="ao-t">'+esc(d.objet||"Projet de DCE")+'</div><div class="ao-c">modifié le '+esc(jourFr(d.updated_at))+'</div></div><i data-lucide="chevron-right" class="ao-go lucide"></i></div>';}).join("");
       $$("#dashRecent .ao-row").forEach(function(it){var op=function(){openSavedDce(it.getAttribute("data-id"));};it.onclick=op;it.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();op();}};});icons();});
   }
 
@@ -370,7 +382,7 @@
       var h='<div class="dash-ribbon" style="margin-bottom:16px"><div class="rb"><span class="rb-l">Consultations</span><span class="rb-v">'+list.length+'</span></div><div class="rb"><span class="rb-l">En préparation</span><span class="rb-v">'+by.preparation+'</span></div><div class="rb"><span class="rb-l">En cours</span><span class="rb-v">'+(by.publie+by.analyse)+'</span><span class="rb-d">publiées / en analyse</span></div><div class="rb '+(by.infructueux?"alert":"")+'"><span class="rb-l">Attribuées</span><span class="rb-v">'+by.attribue+'</span><span class="rb-d">'+(by.infructueux?(by.infructueux+" infructueux"):"")+'</span></div></div>';
       h+='<div class="t-wrap"><table><thead><tr><th scope="col">Consultation</th><th scope="col">Statut</th><th scope="col">Échéance des offres</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>';
       list.forEach(function(d){var dl=d.date_limite||"";var late=dl&&dl<today&&d.statut!=="attribue"&&d.statut!=="infructueux";
-        h+='<tr data-id="'+d.id+'"><td><div class="strong row-open" style="cursor:pointer">'+esc(d.objet||"Projet de DCE")+'</div><div class="muted small">modifié le '+esc((d.updated_at||"").slice(0,10))+(d.diffuse?' · <span style="color:var(--accent-text)"><i data-lucide="radio-tower" class="lucide ic"></i>signalé au réseau le '+esc((d.date_diffusion||"").slice(0,10))+'</span>':'')+'</div></td>'+
+        h+='<tr data-id="'+d.id+'"><td><div class="strong row-open" style="cursor:pointer">'+esc(d.objet||"Projet de DCE")+'</div><div class="muted small">modifié le '+esc(jourFr(d.updated_at))+(d.diffuse?' · <span style="color:var(--accent-text)"><i data-lucide="radio-tower" class="lucide ic"></i>signalé au réseau le '+esc((d.date_diffusion||"").slice(0,10))+'</span>':'')+'</div></td>'+
           '<td><select class="inp st-sel" aria-label="Statut de la consultation" style="height:30px;padding:0 8px;width:auto;min-width:148px">'+STATUTS.map(function(s){return '<option value="'+s[0]+'"'+(d.statut===s[0]?" selected":"")+'>'+s[1]+'</option>';}).join("")+'</select></td>'+
           '<td><input type="date" class="inp dl-inp" aria-label="Échéance des offres" value="'+esc(dl)+'" style="height:30px;width:auto'+(late?";border-color:var(--danger)":"")+'">'+(late?' <span class="pill no_go">dépassée</span>':"")+'</td>'+
           '<td style="text-align:right;white-space:nowrap"><button class="btn sm act-open" title="Ouvrir" aria-label="Ouvrir le DCE"><i data-lucide="folder-open" class="lucide"></i></button> <button class="btn sm act-docx">Word</button> <button class="btn sm icon act-del" title="Supprimer" aria-label="Supprimer la consultation"><i data-lucide="trash-2" class="lucide"></i></button></td></tr>';});
@@ -605,7 +617,7 @@
     (s.lots||[]).forEach(function(l){var idx=l.indice||{};
       h+='<div class="lot-src"><div class="lot-src-head"><span class="pill '+pillCls(idx.niveau)+'" style="float:right">'+(idx.risque||0)+'% '+esc(idx.niveau||"")+'</span><b>Lot '+esc(l.numero!=null?l.numero:"")+' — '+esc(l.intitule||"")+'</b></div>';
       if(l.metier_reconnu===false)h+='<div class="note-src" style="margin-top:6px"><i data-lucide="alert-triangle" class="lucide ic"></i>Métier non identifié automatiquement : entreprises trouvées par mots-clés (sans filtre d\'activité) — pertinence à vérifier.</div>';
-      h+='<div class="bk">';(idx.breakdown||[]).forEach(function(b){h+='<span class="bk-i" title="'+esc(b.detail||"")+'">'+esc(b.label)+' : +'+b.risque+'</span>';});h+='</div>';
+      h+='<ul class="bk">';(idx.breakdown||[]).forEach(function(b){var r=Number(b.risque)||0;h+='<li class="bk-i'+(r>0?' bk-r':'')+'"><b>'+esc(b.label)+'</b> : '+esc(b.detail||"")+(r>0?' <span class="bk-p">+'+r+' points de risque</span>':'')+'</li>';});h+='</ul>';
       if((l.vivier||[]).length){h+='<div class="muted small" style="margin-bottom:4px">Candidats potentiels (open data) — liste <b>non classée</b>, ordre alphabétique. Vous restez seul décideur.</div><div class="vivier">';l.vivier.forEach(function(pp){var tags="";if(pp.capacite_domaine)tags+=' <span class="pill go">déjà gagné dans ce domaine'+(pp.capacite_recente?', récent':'')+'</span>';else if(pp.capacite_prouvee)tags+=' <span class="pill">'+pp.past_wins+' marché(s) public(s) gagné(s)</span>';if(pp.est_rge)tags+=' <span class="pill go">RGE</span>';if(pp.procedure_collective)tags+=' <span class="pill no_go">'+esc(pp.procedure_collective)+'</span>';
         var m=[pp.ville,pp.departement&&("dépt "+pp.departement),pp.naf_label].filter(Boolean).join(" · ");
         h+='<div class="pmecard"><div class="pn">'+esc(pp.nom||"")+tags+'</div><div class="pm">'+esc(m)+(pp.score!=null?(" — adéquation estimée (sourcing) "+pp.score+"/100"):"")+'</div></div>';});h+='</div>';}
@@ -626,7 +638,7 @@
 
   // ── Init ──
   applyTheme();renderAcct();navTo("dashboard");
-  if(ATOKEN){fetch("/api/acheteur/me",{headers:aHeaders()}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(me){AME=me;IS_DEMO=(me.email==="demo@collectivites.adjugo.fr");renderAcct();refreshCurrentView();}).catch(function(){setToken("");AME=null;renderAcct();refreshCurrentView();});}
+  if(ATOKEN){fetch("/api/acheteur/me",{headers:aHeaders()}).then(function(r){if(r.status===401&&demoLien(ATOKEN)){return detail401(r).then(function(d){sessionLost(d);throw 0;});}if(!r.ok)throw 0;return r.json();}).then(function(me){AME=me;IS_DEMO=(me.email==="demo@collectivites.adjugo.fr");renderAcct();refreshCurrentView();}).catch(function(){setToken("");AME=null;renderAcct();refreshCurrentView();});}
   else if(WANT==="register"){openAuth("register");}
   else if(WANT==="login"){openAuth("login");}
   icons();
