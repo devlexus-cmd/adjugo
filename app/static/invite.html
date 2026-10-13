@@ -553,7 +553,7 @@
           const txt = past ? "Date limite dépassée — contactez le chef de file."
             : dLeft === 0 ? "Dernier jour : soumettez votre part aujourd'hui."
             : "Il vous reste <b>" + dLeft + " jour" + (dLeft > 1 ? "s" : "") + "</b> pour soumettre votre part au chef de file.";
-          head.appendChild($(`<div style="margin-top:10px;padding:9px 12px;border-radius:9px;background:${bg};border:1px solid ${bd};color:${bd};font-size:13px">${ico("clock", 14, "margin-right:4px")}${txt} <span class="muted" style="color:inherit;opacity:.8">(date limite acheteur : ${esc(fmtDate(p.deadline))})</span></div>`));
+          head.appendChild($(`<div id="g-countdown" style="margin-top:10px;padding:9px 12px;border-radius:9px;background:${bg};border:1px solid ${bd};color:${bd};font-size:13px">${ico("clock", 14, "margin-right:4px")}${txt} <span class="muted" style="color:inherit;opacity:.8">(date limite acheteur : ${esc(fmtDate(p.deadline))})</span></div>`));
         }
       }
       CV.alertEl = document.createElement("div"); head.appendChild(CV.alertEl);   // « Convention à valider »
@@ -1066,6 +1066,8 @@
         const b = document.getElementById("g-banner");
         b.style.background = "#e7f7ee"; b.style.borderColor = "#1a7f4b";
         b.innerHTML = ico("check-circle-2", 18, "color:#1a7f4b") + '<div class="small"><b>Votre part est soumise ' + (d.mandataire ? 'à ' + esc(d.mandataire) : 'au chef de file') + '.</b> Vous pouvez encore l\'ajuster.</div>';
+        // Part soumise : le compte à rebours « pour soumettre votre part » n'a plus lieu d'être.
+        const cd = document.getElementById("g-countdown"); if (cd) cd.remove();
         icons();
       }
       if (c0 && c0.status === "submitted") showSubmittedBanner();

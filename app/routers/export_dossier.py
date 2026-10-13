@@ -184,6 +184,8 @@ def export_dossier(
                 ext = (os.path.splitext(doc.file_key)[1]
                        or os.path.splitext(doc.name)[1] or ".pdf")
                 safe_name = doc.name.replace("/", "_").replace(" ", "_")
+                if safe_name.lower().endswith(ext.lower()):     # « Kbis.pdf » → « Kbis.pdf », jamais « Kbis.pdf.pdf »
+                    ext = ""
                 filename = "02_Documents/{}/{}{}".format(category.capitalize(), safe_name, ext)
                 zf.writestr(filename, content)
             else:
