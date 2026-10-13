@@ -130,7 +130,9 @@ def test_simulate_annuaire_go_groupement(client, auth):
     partner = [m for m in j["members"] if m["kind"] != "lead"][0]
     assert partner["ca_n1"] == 400000 and partner["source"] == "declare"
     # Avertissement PROÉMINENT (en tête) : verdict fondé sur vos propres déclarations.
-    assert "déclarées vous-même" in j["warnings"][0]
+    # En tête, une seule phrase sur les capacités déclarées (celle qui nomme le partenaire), jamais deux.
+    assert "capacités déclarées par vous" in j["warnings"][0] and "à confirmer" in j["warnings"][0]
+    assert sum("déclarées" in w for w in j["warnings"]) == 1
     hist = client.get(_url(pid, "simulations"), headers=h).json()
     assert len(hist) == 1 and hist[0]["id"] == j["simulation_id"] and hist[0]["retained"] is False
     assert hist[0]["members"] == [{"name": PARTNER["name"], "kind": "annuaire"}]
@@ -306,7 +308,8 @@ def test_analyze_upload_pose_go_groupement_et_garde_le_score_seul(client, auth, 
     assert j["groupement_score"] == j["groupement"]["score_groupement"]
     assert [m["name"] for m in j["groupement"]["members"]] == [PARTNER["name"]]
     assert j["groupement"]["members"][0]["id"] == ct["id"]
-    assert "déclarées vous-même" in j["groupement"]["warnings"][0]
+    w0 = j["groupement"]["warnings"]
+    assert "capacités déclarées par vous" in w0[0] and sum("déclarées" in w for w in w0) == 1
 
     p = client.get(f"/api/projects/{pid}", headers=h).json()
     assert p["match_score"] == seul and p["go_decision"] == "go_groupement"

@@ -29,3 +29,14 @@ def _p(lieu):
 ])
 def test_zone(lieu, attendu):
     assert _zone(_p(lieu)) == attendu
+
+
+def test_avertissement_capacites_declarees_sans_doublon():
+    """« Répondre à plusieurs ? » : une seule phrase sur les capacités déclarées, en tête ; celle qui
+    nomme le partenaire si le barème l'a écrite, sinon la phrase générale."""
+    from app.services.groupement_verdict import WARN_DECLARE, with_declare_warning
+    nommee = "Verdict fondé sur des capacités déclarées par vous (Breizh) — à confirmer auprès du partenaire"
+    w = with_declare_warning([{"source": "declare"}], ["Autre remarque", nommee, WARN_DECLARE])
+    assert w == [nommee, "Autre remarque"]
+    assert with_declare_warning([{"source": "saisi"}], ["Autre remarque"]) == [WARN_DECLARE, "Autre remarque"]
+    assert with_declare_warning([{"source": "sirene"}], ["Autre remarque", WARN_DECLARE]) == ["Autre remarque"]
