@@ -650,3 +650,24 @@ les parts, modifier la part d'un partenaire, envoyer ; SANS_COUT : les autres).
 - Écrans : l'atelier montre une bulle (i) et « Valider » pour une partie tirée du groupement ; les écrans complets
   (« Prêt à déposer », « Harmoniser le ton », « Qui fait quoi » côté partenaire) sont ceux des chantiers écrans, sur
   ce contrat.
+
+### 15.7 Vérifications
+
+- `tests/test_redaction_v4_assemblage.py` (13 tests) : ordre du cadre et place des parties tirées du groupement (cadre
+  imposé, plan simple, retrait, remise, plan reconstruit, quota) ; « Organisation » tirée de la convention (en attente
+  d'accords, validée par tous, sans prix) ; convention absente, en brouillon, périmée (« à compléter », export bloqué,
+  « à revalider », historique) ; « Qui fait quoi » sans manque, libellés à l'écran seulement, note interne au chef de
+  file seul, validation par chaque membre, part modifiée ; part non envoyée ; 26 transitions refusées (11 formes de
+  faits) et les formes refusées, transitions acceptées ; harmonisation de bout en bout (texte des membres intact,
+  « à revalider », débit, noms masqués, rétablir, transition remplacée) ; panne et rien de retenu : rien n'est
+  décompté ; compteur « Sections validées k sur n », ce qui manque, revalidation ; export Word et PDF propre et bloqué
+  (dérogation journalisée) ; démo.
+- Le test du socle `test_validation_du_dossier_assemble_puis_a_revalider` suit l'assemblage : parts envoyées, convention
+  validée par tous, « Organisation » et « Qui fait quoi » validées, « Sections validées 6 sur 6 ».
+- Postgres 16 depuis l'état EXACT de la production (`0767372`, `w7x8analysepartagee`), script
+  `scratchpad/pgtest/run_v4_assemblage_depuis_prod.py` : une seule révision appliquée (`x8y9redactionv4`, aucune pour
+  l'assemblage), aucune donnée perdue, rejeu, code de production redémarré sur la base montée, schéma identique,
+  retour arrière et remontée ; tests rejoués sur cette base : assemblage 13, socle 23, démo (sans coût, lien privé,
+  Kerhel, remise à neuf) 186, atelier 105, V3 227, essai et routage 87, analyse partagée 40, journal et vocabulaire 30 —
+  verts ; seuls échecs, les mêmes qu'au passage du socle et sans lien avec la vague 4 : 6 tests propres à SQLite
+  (`PRAGMA foreign_keys`, clés étrangères non contrôlées : `test_secu2_donnees.py`, `test_hotfix_v2_fuites.py`).

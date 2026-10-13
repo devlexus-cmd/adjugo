@@ -53,6 +53,12 @@ def _err(e: at.AtelierError):
     return HTTPException(e.status, e.detail())
 
 
+def _refuser_demo(user: User, action: str = "préparer votre dossier de présentation") -> None:
+    """Défense en profondeur, derrière le garde central : la vitrine de la démo ne change pas."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(user, action)
+
+
 def _ip(request: Request) -> str:
     from app.services.audit import client_ip
     return client_ip(request)
@@ -101,6 +107,7 @@ class ActiverIn(BaseModel):
 @limiter.limit("60/hour")
 def chef_activer(request: Request, project_id: int, body: Optional[ActiverIn] = None,
                  current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _refuser_demo(current_user)
     c = _Chef(db, current_user, project_id)
     try:
         res = ag.activer(db, c.project, c.dossier, c.acc.lecteur, reproposer=bool(body and body.reproposer),
@@ -134,6 +141,7 @@ class RepartirIn(BaseModel):
 @limiter.limit("600/hour")
 def chef_repartir(request: Request, project_id: int, section_id: int, body: RepartirIn,
                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _refuser_demo(current_user)
     c = _Chef(db, current_user, project_id)
     s = c.section(section_id)
     champs = body.model_fields_set
@@ -201,6 +209,7 @@ class ValiderDossierIn(BaseModel):
 @limiter.limit("60/hour")
 def chef_valider_dossier(request: Request, project_id: int, body: Optional[ValiderDossierIn] = None,
                          current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _refuser_demo(current_user)
     c = _Chef(db, current_user, project_id)
     try:
         v = ag.valider_dossier(db, c.project, c.dossier, membre=ag.CHEF, user_id=current_user.id,
@@ -262,8 +271,10 @@ def _par_lien(token: str, db: Session, request: Request, ecriture: bool = False)
         raise _err(e)
 
 
-def _par_compte(project_id: int, user: User, db: Session) -> ag.Acces:
+def _par_compte(project_id: int, user: User, db: Session, ecriture: bool = False) -> ag.Acces:
     from app.routers.journal_membre import _shared_invite
+    if ecriture:
+        _refuser_demo(user, "co-construire une réponse")
     inv, project = _shared_invite(project_id, user, db)     # lien rattaché à CE compte, actif, non expiré
     try:
         return ag.acces_partenaire(db, inv, project, user=user, mode="compte")
@@ -503,14 +514,14 @@ def compte_section(project_id: int, section_id: int, request: Request, current_u
 @limiter.limit("90/minute")
 def compte_brouillon(project_id: int, section_id: int, body: BrouillonIn, request: Request,
                      current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return _brouillon(_par_compte(project_id, current_user, db), db, section_id, body)
+    return _brouillon(_par_compte(project_id, current_user, db, ecriture=True), db, section_id, body)
 
 
 @router.post(C + "/sections/{section_id}/faits/{fait_id}")
 @limiter.limit("300/hour")
 def compte_fait(project_id: int, section_id: int, fait_id: str, body: FaitIn, request: Request,
                 current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return _fait(_par_compte(project_id, current_user, db), db, section_id, fait_id, body)
+    return _fait(_par_compte(project_id, current_user, db, ecriture=True), db, section_id, fait_id, body)
 
 
 @router.post(C + "/sections/{section_id}/aide", status_code=202)
@@ -520,7 +531,7 @@ def compte_aide(project_id: int, section_id: int, request: Request, body: Option
     if not getattr(current_user, "email_verified", True):
         raise HTTPException(403, {"code": "email_non_confirme",
                                   "message": "Confirmez votre adresse email pour utiliser cette fonctionnalité."})
-    return _aide(_par_compte(project_id, current_user, db), db, section_id, body)
+    return _aide(_par_compte(project_id, current_user, db, ecriture=True), db, section_id, body)
 
 
 @router.get(C + "/taches/{job_id}")
@@ -534,28 +545,28 @@ def compte_tache(project_id: int, job_id: int, request: Request, current_user: U
 @limiter.limit("60/hour")
 def compte_envoyer(project_id: int, section_id: int, body: EnvoyerIn, request: Request,
                    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return _envoyer(_par_compte(project_id, current_user, db), db, section_id, body, _ip(request))
+    return _envoyer(_par_compte(project_id, current_user, db, ecriture=True), db, section_id, body, _ip(request))
 
 
 @router.post(C + "/sections/{section_id}/valider")
 @limiter.limit("60/hour")
 def compte_valider(project_id: int, section_id: int, body: ValiderIn, request: Request,
                    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return _valider(_par_compte(project_id, current_user, db), db, section_id, body, _ip(request))
+    return _valider(_par_compte(project_id, current_user, db, ecriture=True), db, section_id, body, _ip(request))
 
 
 @router.post(C + "/sections/{section_id}/retablir")
 @limiter.limit("60/hour")
 def compte_retablir(project_id: int, section_id: int, body: RetablirIn, request: Request,
                     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return _retablir(_par_compte(project_id, current_user, db), db, section_id, body, _ip(request))
+    return _retablir(_par_compte(project_id, current_user, db, ecriture=True), db, section_id, body, _ip(request))
 
 
 @router.post(C + "/dossier/valider")
 @limiter.limit("30/hour")
 def compte_valider_dossier(project_id: int, request: Request, body: Optional[ValiderDossierIn] = None,
                            current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return _valider_dossier(_par_compte(project_id, current_user, db), db, body, _ip(request))
+    return _valider_dossier(_par_compte(project_id, current_user, db, ecriture=True), db, body, _ip(request))
 
 
 @router.get(C + "/export")
