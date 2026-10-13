@@ -731,7 +731,10 @@ MSG_HARMONISER = ("Adjugo propose une phrase de transition au début des parties
                   "qualification, matériel, engagement…) absent du dossier est refusée. Chaque partie touchée repasse "
                   "« à revalider » par son auteur.")
 _MOIS = ("janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre|lundi|mardi|mercredi|"
-         "jeudi|vendredi|samedi|dimanche|trimestre|semestre|printemps|automne|hiver|quinzaine")
+         "jeudi|vendredi|samedi|dimanche|trimestre|semestre|printemps|automne|hiver|quinzaine|"
+         # une fréquence est un engagement de calendrier (« un suivi quotidien »)
+         "quotidien(?:ne)?s?|quotidiennement|hebdomadaires?|mensuel(?:le)?s?|annuel(?:le)?s?|journaliers?|"
+         "journalieres?|chaque (?:jour|semaine|mois|annee)|tous les (?:jours|mois|ans)")
 _DATE = re.compile(r"(?<![a-z])(?:" + _MOIS + r")(?![a-z])")
 _QUANTITE = re.compile(r"(?<![a-z])(?:moitie|tiers|quart|double|triple|quadruple|dizaines?|douzaines?|vingtaines?|"
                        r"trentaines?|centaines?|milliers?|millions?|milliards?)(?![a-z])")
@@ -763,7 +766,7 @@ def controle_transition(texte: str, sources_avant) -> dict:
     if not t:
         out["raison"] = "Phrase vide."
         return out
-    if re.search(r"[\[\]{}<>#|`*_\\]", t) or re.match(r"^(?:[-+•>]|\d{1,2}[.)])\s", t):
+    if re.search(r"[\[\]{}<>#|`*_\\@]|https?://|www\.", t) or re.match(r"^(?:[-+•>]|\d{1,2}[.)])\s", t):
         out["raison"] = "Ce n'est pas une phrase de transition (renvoi, titre, liste ou mise en forme)."
         return out
     mots = re.findall(r"\w+", t)

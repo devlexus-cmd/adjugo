@@ -458,6 +458,8 @@ FAITS_AJOUTES = [
     ("La moitié des équipes intervient sur cette partie.", "quantite"),
     ("Le groupement intervient 24h/24 sur cette partie.", "engagement"),
     ("Cette partie se termine sous huit jours.", "nombre_en_lettres"),
+    ("Le groupement assure un suivi quotidien de cette partie.", "date"),
+    ("Les réunions de cette partie ont lieu chaque semaine.", "date"),
 ]
 
 
@@ -473,7 +475,8 @@ def test_controle_des_transitions_refuse_tout_fait_ajoute():
         assert "absent" in r["raison"]
     assert len({g for _p, g in FAITS_AJOUTES}) >= 7
     for forme in ("[À compléter : une transition]", "### Titre", "- Une liste", "Une. Deux phrases. Trois phrases.",
-                  "Cette partie " + "relie les parts " * 15 + ".", "Cette partie [S1] suit.", ""):
+                  "Cette partie " + "relie les parts " * 15 + ".", "Cette partie [S1] suit.", "",
+                  "Écrivez à contact@exemple.invalid pour cette partie.", "Voir https://exemple.invalid pour la suite."):
         assert asm.controle_transition(forme, SOURCES_AVANT)["ok"] is False, forme
     for bonne in ("Cette partie présente ensuite la démarche environnementale du groupement.",
                   "Après l'organisation du chantier, cette partie décrit la gestion des déchets.",

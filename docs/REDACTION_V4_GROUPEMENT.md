@@ -565,8 +565,9 @@ groupement, et leur rafraîchissement avant toute lecture du texte commun). Test
    au début de la partie, en paragraphe séparé ; le corps du membre n'est jamais réécrit ; une transition d'une
    harmonisation précédente est remplacée, jamais empilée (`dossiers_presentation.plan_meta.transitions`). Chaque
    phrase est contrôlée SANS IA (`asm.controle_transition`) : refusée si elle n'est pas une transition (plusieurs
-   phrases, plus de 40 mots, titre, liste, renvoi, « [À compléter] ») ou si elle apporte UN fait absent du dossier
-   avant l'harmonisation — nombre (chiffres, lettres, pourcentage, montant, durée, année), date ou période,
+   phrases, plus de 40 mots, titre, liste, renvoi, « [À compléter] », adresse email ou web) ou si elle apporte UN
+   fait absent du dossier avant l'harmonisation — nombre (chiffres, lettres, pourcentage, montant, durée, année),
+   date, période ou fréquence (« quotidien », « chaque semaine »),
    quantité (« une centaine », « la moitié »), certification ou qualification, nom propre (au fil de la phrase, ou
    en tête quand ce n'est pas un mot d'ouverture connu du dossier), matériel, engagement (repérage du contrôle A :
    `faits_a_relire`, `faits_sources.engagement`). Une partie touchée repasse « à revalider » par son auteur (partie
@@ -657,8 +658,10 @@ les parts, modifier la part d'un partenaire, envoyer ; SANS_COUT : les autres).
   imposé, plan simple, retrait, remise, plan reconstruit, quota) ; « Organisation » tirée de la convention (en attente
   d'accords, validée par tous, sans prix) ; convention absente, en brouillon, périmée (« à compléter », export bloqué,
   « à revalider », historique) ; « Qui fait quoi » sans manque, libellés à l'écran seulement, note interne au chef de
-  file seul, validation par chaque membre, part modifiée ; part non envoyée ; 26 transitions refusées (11 formes de
-  faits) et les formes refusées, transitions acceptées ; harmonisation de bout en bout (texte des membres intact,
+  file seul, validation par chaque membre, part modifiée ; part non envoyée ; 28 transitions refusées, de 8 genres de
+  faits et de formes variées (chiffre, nombre en lettres, pourcentage, année, date, mois, saison, fréquence, montant,
+  décimal, ISO, Qualibat, RGE, MASE, « certifiées », noms propres en tête ou au fil de la phrase, matériel,
+  engagements, quantités), les formes refusées et des transitions acceptées ; harmonisation de bout en bout (texte des membres intact,
   « à revalider », débit, noms masqués, rétablir, transition remplacée) ; panne et rien de retenu : rien n'est
   décompté ; compteur « Sections validées k sur n », ce qui manque, revalidation ; export Word et PDF propre et bloqué
   (dérogation journalisée) ; démo.
