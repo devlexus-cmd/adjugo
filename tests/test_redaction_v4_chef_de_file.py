@@ -531,7 +531,8 @@ def test_ecran_pret_a_deposer_parties_du_groupement_et_harmoniser():
                     "Écrite par Adjugo, sans IA", "La valider dans l'onglet « Rédaction »", "Lire cette partie",
                     "Note interne, pour vous seul", "Harmoniser le ton", "elles ne partent pas chez l'acheteur"):
         assert libelle in r, libelle
-    assert '<template v-if="l.genere">' in r and "atlRepManques()" in r and "atlRepHarm()" in r
+    assert '<template v-if="l.genere">' in r and "atlRepManques()" in r and "atlRepHarm() && !atlMobile" in r
+    assert 'v-if="atlRepAValider(l)"' in r and ':disabled="!!atl.rep.busy || !atlRepChefPeutValider()"' in r
     # Une partie tirée du groupement n'a ni « Rédigée par », ni longueur, ni date : personne ne la rédige.
     gen = r[r.index('<template v-if="l.genere">'):r.index("<template v-else>", r.index('<template v-if="l.genere">'))]
     assert "Rédigée par" not in gen and "atlRepRedacteur" not in gen and "<textarea" not in gen

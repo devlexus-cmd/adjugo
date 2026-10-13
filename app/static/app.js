@@ -5449,6 +5449,13 @@ const __adjApp = createApp({
     // assemblé par le chef de file et « Harmoniser le ton » (des transitions entre les parts, rien d'autre).
     atlRepManques() { const d = this.atl.rep.d; return (d && d.dossier && d.dossier.pret && d.dossier.pret.manques) || []; },
     atlRepQfqTexte(l) { return l && l.genere === "grp_qfq" ? atlRepQfqValidationsTexte(l.validations) : ""; },
+    // Une partie tirée du groupement attend-elle SA validation ? (« Qui fait quoi » : celle du chef de file, même si
+    // un partenaire n'a pas encore validé.)
+    atlRepAValider(l) {
+      if (!l || l.statut === "validee") return false;
+      if (l.genere !== "grp_qfq") return true;
+      const moi = (l.validations || []).find(v => !v.invite_id); return !moi || moi.statut !== "valide";
+    },
     // « Qui fait quoi » ouverte : les qualifications citées, avec leur mention (justifiée / déclarée) à l'écran.
     atlRepQuals() { const d = this.atl.rep.det; return d && d.genere === "grp_qfq" ? (d.membres || []).filter(m => (m.qualifications || []).length) : []; },
     atlRepMaValidation() {

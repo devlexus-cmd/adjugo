@@ -2052,7 +2052,7 @@
                       <div v-if="atlRepQfqTexte(l)" class="small atl-mt4">{{ atlRepQfqTexte(l) }}</div>
                       <div class="row wrap atl-g6 atl-mt8">
                         <button type="button" class="btn sm" @click="atlRepOuvrir(l)" :aria-expanded="atl.rep.open===l.section_id ? 'true' : 'false'"><i :data-lucide="atl.rep.open===l.section_id ? 'chevron-up' : 'file-text'"></i>{{ atl.rep.open===l.section_id ? 'Replier' : 'Lire cette partie' }}</button>
-                        <button v-if="l.statut !== 'validee'" type="button" class="atl-lien" @click="atlRepVersAtelier(l)">La valider dans l'onglet « Rédaction »</button>
+                        <button v-if="atlRepAValider(l)" type="button" class="atl-lien" @click="atlRepVersAtelier(l)">La valider dans l'onglet « Rédaction »</button>
                       </div>
                       <div v-if="atl.rep.open===l.section_id" class="atl-rep-det">
                         <div v-if="atl.rep.detLoading && !atl.rep.det" class="muted small" role="status"><span class="spin"></span> Chargement…</div>
@@ -3812,6 +3812,6 @@
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
 <script src="/static/redaction-partenaire.js" integrity="sha384-uR05WeOdhU5uB8VBnlKP+R55E01EsoNADjrUGyR9rtAZedSNdACoCmwDKM91NY5T" defer></script>
-<script src="/static/app.js" integrity="sha384-SlGKAmW2volrrJh/M8k5NjMcNiK7ltfmzwf2vwNxkJWtqjMMiTJfr3mh0y/k/eQX" defer></script>
+<script src="/static/app.js" integrity="sha384-QdtCmNyUU3FaOmGChsbAiKLsA+5OkUCNPMISC/mG/o9E1sVeuNyIg4uwDqYQKwyL" defer></script>
 </body>
 </html>
