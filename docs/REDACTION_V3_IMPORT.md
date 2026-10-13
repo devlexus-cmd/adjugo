@@ -98,7 +98,9 @@ fiches sont « à reconfirmer ».
 - **Gratuit jusqu'au plafond du mois** par organisation : `FICHES_DOCUMENTS_PAR_MOIS` (défaut 20 ;
   0 = fonction en pause). Au-delà : 429 `plafond_atteint`. Aucune analyse n'est débitée.
 - **Essai gratuit** : le budget de l'essai est vérifié AVANT (`budget_ia.verifier`, opération
-  `fiches`, estimation prudente par partie de 60 000 caractères) ; essai terminé sans forfait → 402.
+  `fiches`, estimation prudente : le PIRE de la lecture, `fi.appels_au_plus` — 3 appels pour une partie
+  assez longue pour être relue, 1 pour une courte —, chaque appel au prix d'une partie pleine de 60 000
+  caractères et de 8 000 tokens de sortie) ; essai terminé sans forfait → 402.
   Le coût réel est relevé appel par appel pour le compte facturé (`tenant_scope` posé par la tâche
   de fond), donc compté dans le budget de l'essai.
 - **Si l'IA tombe** (panne, réponse illisible) : rien n'est proposé, la lecture passe en échec et
@@ -106,7 +108,10 @@ fiches sont « à reconfirmer ».
   lecture fait de même (`_recover_orphan_jobs` ne rembourse aucune analyse : rien n'a été débité).
 - Route de l'IA : `fiches_preuves` (lecture et extraction), Mistral Large 4 si Mistral est activé,
   Claude Sonnet 5.5 en secours ; JSON ; réflexion « between_tools », effort moyen ; 8 000 tokens de
-  sortie au plus par appel ; une réponse coupée relit la partie en deux moitiés (deux fois au plus).
+  sortie au plus par appel. Une réponse coupée (partie dense) : les fiches déjà complètes sont
+  GARDÉES (rien n'est jeté) et la lecture reprend au paragraphe du dernier passage retrouvé ; si aucune
+  fiche n'est complète, la partie est relue en deux moitiés ; 3 appels au plus par partie
+  (`APPELS_PAR_PARTIE`), ce que compte l'estimation de l'essai.
   Ajoutée à `_TACHES_LECTURE` (`app/main.py`) : les pages juridiques disent toujours « lecture et
   analyse » pour les tâches de Mistral, texte inchangé.
 

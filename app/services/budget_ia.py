@@ -378,8 +378,9 @@ ENVELOPPES = {
     "questionnaire": (14_000, 600, 0),        # PAR question
     "partie": (40_000, 4000, 0),              # une partie de l'atelier, hors dossier commun
     "raccourcir": (45_000, 4000, 0),
-    # PAR partie d'un ancien document lu pour proposer des fiches (60 000 caractères au plus + consignes ;
-    # app/services/fiches_import.py : SEGMENT_MAX, SORTIE_MAX).
+    # PAR APPEL de la lecture d'un ancien document pour proposer des fiches (une partie pleine : 60 000
+    # caractères au plus + consignes ; app/services/fiches_import.py : SEGMENT_MAX, SORTIE_MAX) ; une partie
+    # dense peut coûter jusqu'à APPELS_PAR_PARTIE appels (fiches_import.appels_au_plus).
     "fiches": (64_000, 8000, 0),
 }
 # opération → tâche du routage (app/services/llm.py, _TABLE) : le modèle, le point d'accès, la

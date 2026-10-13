@@ -278,3 +278,46 @@ def test_une_proposition_ecartee_ne_fait_pas_taire_le_profil(client):
         assert "Effectif : 12" not in "\n".join(f.ligne_ia() for f in ctx.fiches(db))
     finally:
         db.close()
+
+
+# ═══ 5. Lecture d'un ancien dossier : le pire est estimé, rien de ce qui est écrit n'est jeté ════
+
+def test_estimation_de_l_essai_couvre_le_pire_de_la_lecture():
+    from app.services import budget_ia
+    courte, longue = "x" * 2000, "y" * (fi.SEGMENT_MIN_COUPE + 10)
+    assert fi.appels_au_plus([courte]) == 1
+    assert fi.appels_au_plus([longue]) == fi.APPELS_PAR_PARTIE == 1 + fi.COUPES_MAX
+    assert fi.appels_au_plus([longue, courte]) == fi.APPELS_PAR_PARTIE + 1
+    assert budget_ia.estimer("fiches", n=fi.appels_au_plus([longue])) == pytest.approx(
+        fi.APPELS_PAR_PARTIE * budget_ia.estimer("fiches", n=1))
+
+
+def test_reponse_coupee_les_fiches_completes_gardees_et_la_lecture_reprend(client, fake_llm, monkeypatch):
+    monkeypatch.setattr(fi, "SEGMENT_MIN_COUPE", 50)
+    p1 = "En 2022, réfection de la toiture du lycée de Brest pour la Région Bretagne (85 000 € HT)."
+    p3 = "Nous disposons en propre de 2 nacelles articulées."
+    doc = ("Mémoire technique\n\nNos références\n" + p1 + "\n\n"
+           "En 2021, couverture de la salle des fêtes de Plouguerneau pour la commune (60 000 € HT).\n\n"
+           "Nos moyens matériels\n" + p3 + "\n")
+    appels = []
+
+    def ans(kw):
+        appels.append(_contenu(kw))
+        if len(appels) == 1:
+            complete = json.dumps({"nature": "reference", "champs": {"objet": "Réfection de la toiture du lycée de "
+                                                                              "Brest", "annee": 2022},
+                                   "passage": p1}, ensure_ascii=False)
+            return '{"fiches": [' + complete + ', {"nature": "materiel", "champs": {"designation": "na', "max_tokens"
+        return json.dumps({"fiches": [{"nature": "materiel", "champs": {"designation": "nacelles articulées",
+                                                                         "quantite": 2}, "passage": p3}]},
+                          ensure_ascii=False), "end_turn"
+    fake_llm(ans)
+    _e, h, _uid = _register(client)
+    doc_id = _kb(client, h, doc)
+    _ok(client.post(f"/api/knowledge/{doc_id}/fiches", headers=h, json={}), 202)
+    etat = _attendre_lecture(client, h, doc_id)
+    assert etat["lecture"]["statut"] == "lu"
+    natures = sorted(f["nature"] for f in etat["fiches"])
+    assert natures == ["materiel", "reference"]                       # la fiche complète n'est pas jetée
+    assert len(appels) == 2 and len(appels[1]) < len(appels[0])       # la lecture reprend, sans tout relire
+    assert p3 in appels[1] and "Mémoire technique" not in appels[1].split("<<<", 1)[1]

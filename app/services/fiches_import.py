@@ -62,8 +62,9 @@ OPERATION = "fiches"                # budget de l'essai (app/services/budget_ia.
 
 NATURES_IA = (pv.REFERENCE, pv.QUALIFICATION, pv.MATERIEL, pv.CHIFFRE_CLE)   # jamais « Équipe »
 SEGMENT_MAX = 60_000                # caractères envoyés par appel (paragraphes entiers)
-SEGMENT_MIN_COUPE = 8_000           # en dessous, une réponse coupée n'est plus redécoupée
-COUPES_MAX = 2                      # une partie trop dense est relue en deux, au plus deux fois
+SEGMENT_MIN_COUPE = 8_000           # en dessous, une réponse coupée n'est plus relue
+COUPES_MAX = 2                      # une partie trop dense est relue au plus deux fois
+APPELS_PAR_PARTIE = 1 + COUPES_MAX  # appels au plus pour UNE partie (estimation du budget de l'essai)
 SORTIE_MAX = 8_000                  # tokens de sortie par appel
 FICHES_PAR_APPEL = 40
 FICHES_PAR_DOCUMENT = 120
@@ -674,6 +675,7 @@ chiffres. Jamais ce qu'un acheteur, un CCTP ou un règlement demande ou prévoit
 4. Aucune fiche sur une personne : ni nom de salarié, ni CV, ni expérience individuelle. Les étiquettes entre \
 crochets (par exemple « [Chef de chantier 1] » ou « [Nom 1] ») restent telles quelles.
 5. Pas de doublon : un même fait, une seule fiche.
+6. Les fiches dans l'ordre du document.
 
 Types de fiches et champs (noms exacts) :
 - "reference" (un chantier ou un marché réalisé) : objet (obligatoire), acheteur, lieu, annee (nombre), \
@@ -693,20 +695,81 @@ Réponds UNIQUEMENT par un objet JSON :
 """ + f"{FICHES_PAR_APPEL} fiches au plus. S'il n'y a rien à proposer : " + '{"fiches": []}.'
 
 
-def _appel(partie: str, rang: int, total: int, profondeur: int = 0) -> list:
-    """Une partie du document → propositions brutes de l'IA. Réponse coupée (partie trop dense) :
-    la partie est relue en deux moitiés (paragraphes entiers), au plus COUPES_MAX fois. Une réponse
-    illisible lève une erreur (rien n'est proposé, la lecture est rendue)."""
+def appels_au_plus(parties: list) -> int:
+    """Appels à l'IA au plus pour lire ces parties (`_appel`) : une partie assez longue pour être relue
+    peut coûter APPELS_PAR_PARTIE appels, une courte un seul. C'est CE nombre que l'estimation du
+    budget de l'essai compte, au prix d'une partie pleine chacun (prudent)."""
+    return sum(APPELS_PAR_PARTIE if len(p or "") >= SEGMENT_MIN_COUPE else 1 for p in parties or [])
+
+
+def _fiches_completes(texte: str) -> list:
+    """Les fiches COMPLÈTES d'une réponse coupée (JSON tronqué) : rien de ce qui est déjà écrit n'est jeté."""
+    import json
+    t = str(texte or "")
+    m = re.search(r'"fiches"\s*:\s*\[', t)
+    if not m:
+        return []
+    dec, pos, out = json.JSONDecoder(), m.end(), []
+    while True:
+        while pos < len(t) and t[pos] in " \t\r\n,":
+            pos += 1
+        if pos >= len(t) or t[pos] != "{":
+            break
+        try:
+            obj, pos = dec.raw_decode(t, pos)
+        except ValueError:
+            break
+        if isinstance(obj, dict):
+            out.append(obj)
+    return out[:FICHES_PAR_APPEL]
+
+
+def _reste_apres(partie: str, fiches: list) -> Optional[str]:
+    """La suite de la partie à relire après une réponse coupée : à partir du paragraphe du dernier
+    passage retrouvé (l'IA propose les fiches dans l'ordre du document). None si aucun passage n'est
+    retrouvé ; "" si tout a été lu."""
+    t = _Texte(partie)
+    fin = -1
+    for f in fiches:
+        loc = t.localiser(str(f.get("passage") or "")) if isinstance(f, dict) else None
+        if loc is not None:
+            fin = max(fin, loc[1])
+    if fin < 0:
+        return None
+    debut = partie.rfind("\n\n", 0, fin)
+    debut = debut + 2 if debut >= 0 else fin
+    if debut <= 0:
+        debut = fin
+    return partie[debut:] if partie[debut:].strip() else ""
+
+
+def _appel(partie: str, rang: int, total: int, reste_appels: Optional[list] = None) -> list:
+    """Une partie du document → propositions brutes de l'IA, en APPELS_PAR_PARTIE appels au plus.
+    Réponse coupée (partie trop dense) : les fiches déjà complètes sont gardées (rien n'est jeté) et la
+    lecture reprend au paragraphe du dernier passage retrouvé ; si aucune fiche n'est complète, la
+    partie est relue en deux moitiés (paragraphes entiers). Une réponse illisible lève une erreur (rien
+    n'est proposé, la lecture est rendue)."""
     from app.services import llm
+    reste_appels = reste_appels if reste_appels is not None else [APPELS_PAR_PARTIE]
+    reste_appels[0] -= 1
     resp = llm.messages_create(
         tache=TACHE, json_attendu=True, max_tokens=SORTIE_MAX, system=CONSIGNES,
         messages=[{"role": "user", "content": f"Document à lire (partie {rang} sur {total}) :\n<<<\n{partie}\n>>>"}])
     texte = (resp.content[0].text if getattr(resp, "content", None) else "") or ""
-    if getattr(resp, "stop_reason", "") == "max_tokens" and profondeur < COUPES_MAX \
-            and len(partie) >= SEGMENT_MIN_COUPE:
-        a, b = _moities(partie)
-        if a and b:
-            return _appel(a, rang, total, profondeur + 1) + _appel(b, rang, total, profondeur + 1)
+    if getattr(resp, "stop_reason", "") == "max_tokens":
+        gardees = _fiches_completes(texte)
+        if reste_appels[0] > 0 and len(partie) >= SEGMENT_MIN_COUPE:
+            suite = _reste_apres(partie, gardees) if gardees else None
+            if suite is not None:
+                return gardees + (_appel(suite, rang, total, reste_appels) if suite.strip() else [])
+            if reste_appels[0] >= 2:
+                a, b = _moities(partie)
+                if a and b:
+                    moitie = reste_appels[0] // 2
+                    reste_appels[0] = 0
+                    return gardees + _appel(a, rang, total, [moitie]) + _appel(b, rang, total, [moitie])
+        if gardees:
+            return gardees              # plus d'appel possible : ce qui est complet est gardé
     data = llm.parse_json(texte)
     fiches = data.get("fiches") if isinstance(data, dict) else None
     if not isinstance(fiches, list):
@@ -1054,9 +1117,10 @@ def lancer(db, user: User, owner_id: int, doc_id, date_document=None) -> tuple:
     if user.email_verified is False:              # adresse pas encore confirmée (comme le quota)
         raise ImportError_(403, "adresse_a_confirmer", MSG_EMAIL)
     lecture = texte_a_lire(doc)
-    # Essai : la limite d'usage est vérifiée AVANT (estimation prudente : chaque partie au plus) ;
-    # essai terminé sans forfait : 402 (budget_ia.verifier appelle quota.exiger_ia).
-    budget_ia.verifier(user, db, OPERATION, budget_ia.estimer(OPERATION, n=len(lecture["parties"])))
+    # Essai : la limite d'usage est vérifiée AVANT (estimation prudente : le pire de `_appel`, chaque
+    # appel au prix d'une partie pleine) ; essai terminé sans forfait : 402 (budget_ia.verifier appelle
+    # quota.exiger_ia).
+    budget_ia.verifier(user, db, OPERATION, budget_ia.estimer(OPERATION, n=appels_au_plus(lecture["parties"])))
     lim = plafond_mensuel()
     if lectures_du_mois(db, owner_id) >= lim:
         raise ImportError_(429, "plafond_atteint", _msg_plafond(lim))
