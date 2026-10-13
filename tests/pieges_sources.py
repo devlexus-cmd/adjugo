@@ -145,7 +145,41 @@ PIEGES = [
     # 17. Année de création.
     ("Créée en 1998, notre entreprise intervient dans tout le Finistère.", "1998", False),
     ("Notre entreprise réalise chaque année 40 chantiers de couverture [P1].", "40 chantiers", False),
+    # 18. Calculs inventés à partir des nombres des faits cités, absents de la phrase (revue de la vague 3) :
+    #     un calcul n'est accepté que s'il est ÉCRIT dans la phrase.
+    ("Nous mobiliserons au total 14 compagnons sur ce chantier [P2][F2].", "14 compagnons", False),
+    ("Nous valorisons 17 % de nos déchets de chantier [P2][F2].", "17 %", False),
+    ("Le chantier durera au total 45 jours [C1][C2].", "45 jours", False),
+    ("Nous mobiliserons au total 24 compagnons [P2][F2].", "24 compagnons", False),
+    ("Nous réduirons nos consommations d'eau de 15 % [S1].", "15 %", False),
+    ("Nous assurons l'ensemble du chantier en 5 jours [C1][C4].", "5 jours", False),
+    ("Nos 6 couvreurs représentent 2 % de l'effectif régional [S1].", "2 %", False),
+    ("Nous recyclons 64 % de nos déchets [S1].", "64 %", False),
+    ("Nous valorisons 20 % de nos déchets de chantier [C1][C2].", "20 %", False),
+    ("Nos 2 nacelles et nos 12 salariés, soit 14 moyens, seront sur place [F2][P2].", "14 moyens", False),
+    # 19. Certification générique sans objet commun : jamais reliée à une qualification quelconque.
+    ("Nous sommes agréés pour le retrait de l'amiante.", "agréés", False),
+    ("Notre entreprise est certifiée pour le désamiantage [S1].", "certifiée", False),
+    ("Nous sommes certifiés depuis 2024 [S1].", "certifiés", False),
+    ("Nos couvreurs sont labellisés pour la pose de panneaux solaires [F3].", "labellisés", False),
+    ("Nous sommes labellisés Reconnu Garant de l'Environnement [S1].", "labellisés", False),
+    # 20. « 12 de nos compagnons » : le nombre compte le nom qui suit (jamais « 12 m3 de béton »).
+    ("Nous mobiliserons 3 de nos compagnons sur ce chantier [S1].", "3", False),
+    ("Plus de 300 de nos chantiers ont été livrés à l'heure [S1].", "300", False),
+    ("Deux de nos conducteurs de travaux encadreront le chantier [S1].", "Deux", False),
+    ("Nous comptons 3 de nos tonnes de stock en atelier [S1].", "3", False),
+    # 21. Engagements sans chiffre : à confirmer.
+    ("Notre entreprise s'engage à livrer le chantier avant la rentrée.", "s'engage à", False),
+    ("Breizh Couverture s'engage à remettre le DOE en fin de chantier.", "s'engage à", False),
+    ("Nous promettons une intervention rapide en cas d'urgence.", "promettons", False),
+    ("Nous intervenons dans l'heure en cas d'urgence.", "dans l'heure", False),
+    ("Nous livrerons les travaux sans aucune réserve.", "sans aucune réserve", False),
+    ("Nous nous obligeons à respecter le planning.", "nous obligeons", False),
 ]
+
+# Pièges dont le fait piégé est un ENGAGEMENT (il doit être relevé comme tel, « à confirmer »).
+ENGAGEMENTS = [p for p in PIEGES if p[1] in ("s'engage à", "promettons", "dans l'heure", "sans aucune réserve",
+                                             "nous obligeons")]
 
 # Contrôles HORS pièges : des faits justes, reliés au bon endroit (sinon l'outil ne servirait à rien).
 JUSTES = [

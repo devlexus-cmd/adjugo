@@ -250,6 +250,25 @@ _PAS_UNITE = {"de", "des", "du", "et", "a", "au", "aux", "en", "le", "la", "les"
               "est", "sont", "sera", "seront", "ont", "plus", "moins", "environ", "chacun", "chacune"}
 
 
+# « 12 de nos compagnons », « 300 de nos chantiers », « deux de nos conducteurs » : le nombre compte le
+# nom qui suit « de nos » (vague 3, revue) — sans cela, il serait relevé SANS unité et se rapprocherait
+# de n'importe quelle valeur égale (« 12 m3 de béton »).
+_DE_NOS = re.compile(r"^\s*(?:de|d['’])\s*(?:nos|vos|leurs|ses|mes|ces)\s+"
+                     r"(?:(?:propres|anciens|anciennes|nouveaux|nouvelles|principaux|principales|meilleurs|"
+                     r"meilleures|fideles|fidèles|propre)\s+)?([a-zà-öø-ÿœ][a-zà-öø-ÿœ'’\-]{2,})", re.IGNORECASE)
+
+
+def _unite_apres_de(suite: str) -> str:
+    """Le nom compté après « de nos » (« 12 de nos compagnons » → « compagnons »), ou ""."""
+    m = _DE_NOS.match(suite or "")
+    if not m:
+        return ""
+    f = fold(m.group(1))
+    if f in _PAS_UNITE or f in _WORDS:
+        return ""
+    return m.group(1)
+
+
 def _num_value(intpart: str, dec: str = None) -> float:
     s = re.sub(r"[   .]", "", intpart)
     try:
@@ -353,6 +372,8 @@ def _facts_in(phrase: str, tableau: bool = False) -> list:
         if unit and fold(unit) in _PAS_UNITE:
             unit = ""
             b = m.end(2) if m.group(2) else m.end(1)
+        if not unit:
+            unit = _unite_apres_de(phrase[b:])         # « 12 de nos compagnons » : 12 compagnons
         if not unit and unite_ligne:
             unit = unite_ligne           # « Compagnons couvreurs ; 15 » : 15 compagnons
         taken.append((a, b))
@@ -363,6 +384,8 @@ def _facts_in(phrase: str, tableau: bool = False) -> list:
         taken.append((m.start(), m.end()))
         after = low[m.end():m.end() + 25].split()
         unit = after[0] if after and after[0] not in ("de", "des", "d'", "et", "a", ";", ":") else ""
+        if not unit:
+            unit = _unite_apres_de(phrase[m.end():])   # « deux de nos conducteurs »
         if not unit and unite_ligne:
             unit = unite_ligne
         out.append((phrase[m.start():m.end()], EN_LETTRES,

@@ -32,12 +32,17 @@ y ajoute le RAPPROCHEMENT fait par fait avec des sources NUMÉROTÉES et TYPÉES
      • rapprochement : chaque fait d'une phrase sur l'entreprise doit se retrouver dans un fait
        CITÉ dans la phrase, du BON type (une estimation n'appuie que des nombres) — à défaut, dans
        un fait autorisé non cité (l'IA oublie parfois le renvoi), avec la même exigence de type et
-       d'unité. Un nombre se rapproche avec SON unité (« 12 salariés » ≠ « 12 mois ») ; un fait
-       trouvé seulement dans le dossier de l'acheteur reste à relire (« il ne prouve rien sur votre
-       entreprise ») ; une phrase sur le marché se rapproche du dossier de l'acheteur ;
-     • recalcul : un pourcentage ou un total absent tel quel est recalculé à partir des faits de la
-       phrase et des faits cités ; s'il ne tombe pas juste, il est signalé ;
-     • engagements (« nous garantissons », « zéro accident », « 100 % », « sous 24 h ») : à confirmer.
+       d'unité. Un nombre se rapproche avec SON unité (« 12 salariés » ≠ « 12 mois ») ; un nombre
+       écrit sans unité ne se relie jamais par sa seule valeur (un mot commun est exigé) ; une
+       certification générique (« agréés », « certifiée ») seulement à un fait cité qui dit le même mot
+       et le même objet ; un fait trouvé seulement dans le dossier de l'acheteur reste à relire (« il ne
+       prouve rien sur votre entreprise ») ; une phrase sur le marché se rapproche du dossier de
+       l'acheteur ;
+     • recalcul : un pourcentage ou un total absent tel quel est recalculé SEULEMENT à partir des
+       nombres écrits dans la phrase et reliés à une source (jamais des autres nombres des faits cités,
+       jamais un produit) ; s'il ne tombe pas juste, il est signalé ;
+     • engagements (« nous garantissons », « l'entreprise s'engage à », « zéro accident », « 100 % »,
+       « sous 24 h », « dans l'heure ») : à confirmer.
 4. Les renvois sont retirés à l'export (app/services/memoire_export.clean_markdown).
 
 Ce qui est rendu pour une version (colonne `faits`, PRIVÉE) : la LISTE de tous les faits relevés,
@@ -257,7 +262,7 @@ class Index:
     leur unité (le mot qui suit, sinon le libellé de la même proposition : « Effectif : 12 »),
     certifications, noms, matériel."""
 
-    def __init__(self, texte: str, extra: Iterable = ()):
+    def __init__(self, texte: str, extra: Iterable = (), large: bool = False):
         import bisect
         self.texte = str(texte or "")
         raw = "\n".join([self.texte] + [str(x) for x in (extra or ()) if x])
@@ -267,14 +272,28 @@ class Index:
         same = _fold_same(raw)
         self.same = same
         self.nums = []       # (valeur, unité, contexte, début, fin) — positions dans raw
+        self.large = bool(large)
+        self.clauses = {}    # début d'un nombre → mots de TOUTE sa proposition (clés d'unité)
         bornes = [0] + [m.end() for m in _COUPE_CLAUSE.finditer(same)] + [len(same) + 1]
 
+        tout = ({_unite(re.sub(r"s$", "", w)[:5]) for w in _MOT.findall(same) if not w.isdigit()} if large
+                else None)
+
         def _ctx(a, b, avec_suite: bool):
+            if tout is not None:        # une fiche courte : un seul fait, tous ses mots en sont le contexte
+                return tout
             i = bisect.bisect_right(bornes, a) - 1
             d, f = bornes[max(0, i)], bornes[min(len(bornes) - 1, i + 1)]
             avant = _MOT.findall(same[max(d, a - 80):a])[-6:]
             apres = _MOT.findall(same[b:min(f, b + 60)])[:6] if avec_suite else []
             return {_unite(re.sub(r"s$", "", w)[:5]) for w in avant + apres}
+
+        def _clause(a):
+            if tout is not None:
+                return tout
+            i = bisect.bisect_right(bornes, a) - 1
+            d, f = bornes[max(0, i)], bornes[min(len(bornes) - 1, i + 1)]
+            return {_unite(re.sub(r"s$", "", w)[:5]) for w in _MOT.findall(same[d:f]) if not w.isdigit()}
 
         taken = []
         for m in far._NUMBER.finditer(raw):
@@ -291,6 +310,7 @@ class Index:
             if u == "milli":
                 u = ""
             self.nums.append((round(v * mult, 6), u, _ctx(m.start(), b, not unit), m.start(), b))
+            self.clauses[m.start()] = _clause(m.start())
             taken.append((m.start(), b))
         for m in far._WORD_RE.finditer(same):
             if any(not (m.end() <= x or m.start() >= y) for x, y in taken):
@@ -300,38 +320,74 @@ class Index:
             u = _unite(far._unit_key(unit))
             self.nums.append((far._word_value(m.group(1)), u, _ctx(m.start(), m.end(), not unit), m.start(),
                               m.end()))
+            self.clauses[m.start()] = _clause(m.start())
         self.certs = [(re.sub(r"[\s\-:'.]", "", m.group(0)), m.start(), m.end()) for m in far._CERT.finditer(same)]
         self.par_valeur = {}         # valeur arrondie → nombres (un gros dossier : pas de parcours complet)
         for x in self.nums:
             self.par_valeur.setdefault(round(x[0], 4), []).append(x)
-        self.cert_quelconque = bool(self.certs or re.search(r"\bcertifi|\bqualification|\blabel|\bagre(?:e|ment)",
-                                                            self.low))
 
-    def nombre(self, val: float, unite: str) -> Optional[tuple]:
-        """(début, fin) du nombre `val` avec une unité compatible, ou None. Sans unité dans le fait :
-        la valeur suffit ; avec une unité : la même juste après le nombre, ou, si le nombre n'en a
-        pas, dans le libellé de la même proposition (« Effectif : 12 » = « 12 salariés »)."""
+    def nombre(self, val: float, unite: str, mots: Optional[set] = None) -> Optional[tuple]:
+        """(début, fin) du nombre `val` avec une unité compatible, ou None.
+        Avec une unité dans le fait : la même juste après le nombre, ou, si le nombre n'en a pas, dans
+        le libellé de la même proposition (« Effectif : 12 » = « 12 salariés »).
+        Sans unité dans le fait (« 12 sur ce chantier ») : la valeur ne suffit JAMAIS quand on connaît
+        les mots de la phrase (`mots`) — un nombre de la source avec une unité ne convient que si la
+        phrase la nomme (« 3 + 15, au total 18 jours » ↔ « 3 jours ») ; un nombre de la source sans
+        unité, que si la phrase et sa proposition ont un mot en commun. `mots` None (dossier de
+        l'acheteur) : la valeur suffit.
+        Dans un EXTRAIT de document (pas une fiche), une durée, une mesure, un montant, un pourcentage ou
+        un nombre de personnes revient souvent avec un autre sens : il faut en plus un mot commun entre
+        la phrase et la proposition de la source (« 3 tonnes de stock » ≠ « 3 tonnes d'acier livrées »)."""
         if val is None:
             return None
         for v, u, ctx, a, b in self.par_valeur.get(round(val, 4), ()):
             if not _egal(v, val):
                 continue
-            if not unite or u == unite or (not u and unite in ctx):
+            if unite:
+                if not (u == unite or (not u and unite in ctx)):
+                    continue
+                if mots is not None and not self.large and unite in _MESURES \
+                        and not (self.clauses.get(a, set()) - {unite}) & mots:
+                    continue
+                return a, b
+            if mots is None or (u and u in mots) or (not u and ctx & mots):
                 return a, b
         return None
 
-    def trouve(self, kind: str, key, fait: str = "") -> Optional[tuple]:
-        """Position (début, fin) du fait dans la source ((-1, -1) : présent, position inconnue), ou None."""
+    def unite_a(self, pos) -> str:
+        """L'unité du nombre de la source à cette position (« 3 jours » → « jour »), ou ""."""
+        if not pos:
+            return ""
+        for _v, u, _c, a, _b in self.nums:
+            if a == pos[0]:
+                return u
+        return ""
+
+    def generique(self, key: str, objets: set) -> Optional[tuple]:
+        """Une certification générique (« agréés », « certifiée », « labellisés ») n'est appuyée que si la
+        source emploie le MÊME mot générique ET, dans la même proposition, un objet commun avec la
+        phrase (« agréés pour le retrait de l'amiante » ↔ « agrément amiante »). Jamais une
+        qualification quelconque (« Qualibat 3194 » n'appuie pas « certifiée pour le désamiantage »)."""
+        rx = _FAMILLE_GENERIQUE.get(_famille_generique(key))
+        if rx is None or not objets:
+            return None
+        for m in rx.finditer(self.same):
+            d = max([0] + [x.end() for x in _COUPE_CLAUSE.finditer(self.same, 0, m.start())])
+            f = _COUPE_CLAUSE.search(self.same, m.end())
+            clause = self.same[d:f.start() if f else len(self.same)]
+            if _objets(clause) & objets:
+                return m.start(), m.end()
+        return None
+
+    def trouve(self, kind: str, key, fait: str = "", mots: Optional[set] = None) -> Optional[tuple]:
+        """Position (début, fin) du fait dans la source ((-1, -1) : présent, position inconnue), ou None.
+        Une certification générique ne se trouve jamais ici (voir `generique`)."""
         if kind in (far.CHIFFRE, far.EN_LETTRES):
             v, u = cle_nombre(kind, fait, key)
-            return self.nombre(v, u)
+            return self.nombre(v, u, mots)
         if kind == far.CERTIFICATION:
-            if not key:
+            if not key or key in _CERT_GENERIQUES:
                 return None
-            if key in _CERT_GENERIQUES:
-                if not self.cert_quelconque:
-                    return None
-                return (self.certs[0][1], self.certs[0][2]) if self.certs else (-1, -1)
             for k, a, b in self.certs:
                 if k == key:
                     return a, b
@@ -368,6 +424,34 @@ class Index:
 
 
 _CERT_GENERIQUES = {"certifi", "labell", "agree", "agreme", "agrees", "agre"}
+# Unités qui reviennent souvent avec un autre sens dans un long document (voir Index.nombre).
+_MESURES = {"h", "jour", "semai", "mois", "an", "%", "€", "m2", "m3", "ml", "km", "kg", "tonne", "litre", "metre",
+            "minut", "personnes"}
+_FAMILLE_GENERIQUE = {"certifi": re.compile(r"\bcertifi\w*"), "label": re.compile(r"\blabel\w*"),
+                      "agre": re.compile(r"\bagre(?:e|ee|es|ees|ment|ments)\b")}
+# Mots trop généraux pour dire l'OBJET d'une certification générique.
+_OBJETS_VIDES = {"entreprise", "societe", "equipe", "compagnon", "salarie", "personnel", "travaux", "chantier",
+                 "pose", "realisation", "activite", "metier", "domaine", "secteur", "prestation", "ensemble",
+                 "annee", "depuis", "sommes", "etre", "avons", "avoir", "toute", "tous", "notre", "nous", "leur",
+                 "pour", "dans", "avec", "selon", "certifie", "certification", "certificat", "labellise", "label",
+                 "agree", "agrement", "qualifie", "qualification", "organisme", "numero", "valable", "jusqu"}
+
+
+def _famille_generique(key: str) -> str:
+    k = str(key or "")
+    return "certifi" if k.startswith("certif") else "label" if k.startswith("label") else \
+        "agre" if k.startswith("agre") else ""
+
+
+def _objets(texte: str) -> set:
+    """Mots porteurs de sens (racines de 6 lettres) d'un texte replié, hors mots vides et généraux."""
+    out = set()
+    for w in re.findall(r"[a-z]{4,}", far.fold(texte)):
+        w2 = re.sub(r"s$", "", w)
+        if {w, w2} & (_OBJETS_VIDES | _MOTS_VIDES_CTX):
+            continue
+        out.add(w2[:6])
+    return out
 
 
 # ── Les fiches : faits numérotés et typés remis à l'IA ────────────────────────────────
@@ -392,7 +476,9 @@ class Fiche:
     @property
     def index(self) -> Index:
         if self._idx is None:
-            self._idx = Index(self.texte, self.extra)
+            # Une fiche (preuve, profil, équipe, chiffrage, apport) dit UN fait : tous ses mots en sont le
+            # contexte. Un extrait de document [S#] : seulement la proposition autour du nombre.
+            self._idx = Index(self.texte, self.extra, large=not self.ref.startswith(EXTRAIT))
         return self._idx
 
     def appuie(self, kind: str) -> bool:
@@ -574,15 +660,16 @@ _NB_LETTRES = (r"(?:\d+|un|une|deux|trois|quatre|cinq|six|sept|huit|dix|douze|qu
                r"soixante(?:-douze)?)")
 # Formules qui ENGAGENT l'entreprise (étude § 6.5) ; « afin de garantir la sécurité » n'en est pas une.
 _ENGAGE = re.compile(
-    r"\bnous nous engageons\b|\bnous vous engageons\b|\bs'engagent? a\b|\bnous (?:vous )?garantissons\b|"
+    r"\bnous nous engageons\b|\bnous vous engageons\b|\bs'engage(?:nt)? a\b|\bnous (?:vous )?garantissons\b|"
+    r"\bnous (?:vous )?promettons\b|\bnous nous obligeons\b|\bnous (?:nous )?astreignons\b|"
     r"\bnous (?:pouvons|savons|allons) (?:vous )?garantir\b|\bnous (?:vous )?assurons (?:que|une?|le|la|les)\b|"
     r"\b(?:delais?|interventions?|resultats?|qualite|performances?|disponibilite|prix|duree) garanti(?:e|s|es)?\b|"
     r"\bzero (?:accident|defaut|reserve|dechet|retard|incident|nuisance|plainte|sinistre|panne)s?\b|"
     r"(?<![\d,.])100 ?%|"
     r"\bsous " + _NB_LETTRES + r"[ -]?(?:h\b|heures?\b|jours?\b|j\b|semaines?\b)|"
     r"\bdans (?:un delai de |les )\d+ ?(?:h\b|heures?\b|jours?\b|j\b|semaines?\b)|"
-    r"\b24 ?h ?/ ?24\b|\b7 ?j ?/ ?7\b|\bau plus tard\b|"
-    r"\bsans (?:aucun |aucune )?(?:retard|surcout|interruption|nuisance)s?\b")
+    r"\b24 ?h ?/ ?24\b|\b7 ?j ?/ ?7\b|\bau plus tard\b|\bdans l'heure\b|\bsans faute\b|"
+    r"\bsans (?:aucun |aucune )?(?:retard|surcout|interruption|nuisance|reserve)s?\b")
 
 
 def engagement(phrase: str) -> Optional[str]:
@@ -622,48 +709,69 @@ def _dedoublonner(pool: list, v: float, n: int) -> list:
     return out
 
 
+# Familles d'unités compatibles dans un calcul : des personnes (« 6 couvreurs sur 12 salariés ») ou du
+# matériel (« 2 nacelles et 4 camions, soit 6 engins ») ; jamais des personnes avec du matériel.
+_METIERS = {"personnes", "couvr", "charp", "macon", "plomb", "elect", "menui", "peint", "plaqu", "carre", "chauf",
+            "soude", "zingu", "condu", "chef", "ingen", "appre", "inter", "encad", "monte", "terra", "manoe"}
+_MATERIELS = {"nacel", "echaf", "grue", "pelle", "mini-", "camio", "benne", "compr", "engin", "machi", "vehic",
+              "fourg", "chari", "treui", "foreu", "carot", "drone", "laser", "pompe", "roule", "dumpe", "charg",
+              "group", "malax", "nivel", "tract", "pelle"}
+
+
+def _famille(u: str) -> str:
+    if not u:
+        return ""
+    if u in _METIERS:
+        return "personnes"
+    if u in _MATERIELS:
+        return "materiel"
+    return u
+
+
+def _compatibles(ua: str, ub: str) -> bool:
+    return bool(ua and ub) and (ua == ub or _famille(ua) == _famille(ub))
+
+
 def recalcul(v: float, u: str, fait: str, phrase_low: str, phrase: list, cites: list = ()) -> tuple:
-    """Un pourcentage ou un total absent tel quel, recalculé à partir des nombres connus : ceux de la
-    phrase reliés à une source (`phrase`), puis ceux des faits cités (`cites`). (ok, détail) ; ok None
-    = rien à recalculer. « Ne tombe pas juste » n'est dit que si la phrase donne elle-même ses deux
-    nombres (« 6 sur 12 », « 3 + 15 ») : sinon, le fait reste simplement à relire."""
-    propres = _dedoublonner(phrase, v, 6)
-    pool = _dedoublonner(list(propres) + list(cites or ()), v, 12)
+    """Un pourcentage ou un total absent tel quel, recalculé SEULEMENT à partir des nombres ÉCRITS dans
+    la phrase et reliés chacun à une source (`phrase` : (valeur, unité), l'unité d'un nombre écrit seul
+    étant celle de sa source) — jamais à partir des autres nombres des faits cités (`cites`, ignoré :
+    « 12 + 2 font 14 » tiré d'un effectif et d'une quantité de nacelles n'est pas un calcul de la phrase).
+      • un pourcentage : ses deux nombres sont dans la phrase, d'unités compatibles (« 6 couvreurs sur
+        12 salariés » font 50 %) ;
+      • un total : la phrase dit « au total », « soit »…, et la SOMME de ses nombres de même unité
+        (ou de même famille : personnes, matériel) tombe juste (« 3 jours et 15 jours, au total 18
+        jours ») ; jamais un produit, jamais un sous-ensemble choisi pour tomber juste.
+    (ok, détail) ; ok None = rien à recalculer. « Ne tombe pas juste » n'est dit que si la phrase
+    donne elle-même ses deux nombres : sinon, le fait reste simplement à relire."""
+    propres = _dedoublonner(phrase, v, 8)
     if u == "%":
         dec = _decimales(fait)
         tol = 0.5 * (10 ** -dec) + 1e-9
-
-        def _paires(p, meme_unite: bool):
+        paires = []
+        for (a, ua), (b, ub) in itertools.permutations(propres, 2):
             # Une part d'un tout : « 6 couvreurs sur 12 salariés ». Jamais un nombre sur lui-même.
-            for (a, ua), (b, ub) in itertools.permutations(p, 2):
-                if b <= 0 or a >= b or ua == "%" or ub == "%" or (meme_unite and ua and ub and ua != ub):
-                    continue
-                yield a, b
-        for a, b in itertools.chain(_paires(propres, False), _paires(pool, True)):
+            if b <= 0 or a >= b or ua == "%" or ub == "%" or not _compatibles(ua, ub):
+                continue
+            paires.append((a, b))
+        for a, b in paires:
             if abs(100.0 * a / b - v) <= tol:
                 return True, f"{_fmt(a)} sur {_fmt(b)} font {_fmt(round(100.0 * a / b, dec))} %"
-        paires = list(_paires(propres, False))
         if len(paires) == 1:
             a, b = paires[0]
             return False, (f"Le calcul ne tombe pas juste : {_fmt(a)} sur {_fmt(b)} font "
                            f"{_fmt(round(100.0 * a / b, max(dec, 0)))} %, pas {_fmt(v)} %.")
         return None, ""
-    if not _TOTAL.search(phrase_low):
+    if not _TOTAL.search(phrase_low) or not u:
         return None, ""
-    meme = [a for a, ua in pool if ua == u or not ua or not u]
-    if len(meme) < 2:
+    termes = [a for a, ua in propres if ua != "%" and _compatibles(ua, u)]
+    if len(termes) < 2:
         return None, ""
-    for n in range(2, min(len(meme), 8) + 1):
-        for combo in itertools.combinations(meme, n):
-            if _egal(sum(combo), v):
-                return True, " + ".join(_fmt(x) for x in combo) + f" font {_fmt(v)}"
-    for a, b in itertools.combinations(meme, 2):
-        if _egal(a * b, v):
-            return True, f"{_fmt(a)} × {_fmt(b)} font {_fmt(v)}"
-    siens = [a for a, ua in propres if ua == u or not ua or not u]
-    if len(siens) == 2:
-        return False, (f"Le total ne tombe pas juste : {_fmt(siens[0])} + {_fmt(siens[1])} font "
-                       f"{_fmt(siens[0] + siens[1])}, pas {_fmt(v)}.")
+    if _egal(sum(termes), v):
+        return True, " + ".join(_fmt(x) for x in termes) + f" font {_fmt(v)}"
+    if len(termes) == 2:
+        return False, (f"Le total ne tombe pas juste : {_fmt(termes[0])} + {_fmt(termes[1])} font "
+                       f"{_fmt(termes[0] + termes[1])}, pas {_fmt(v)}.")
     return None, ""
 
 
@@ -708,7 +816,13 @@ _GENERIQUES = {"", "h", "jour", "semai", "mois", "an", "%"}
 _MOTS_VIDES_CTX = {"nous", "notre", "nos", "votre", "vos", "pour", "dans", "avec", "sans", "sous", "sur", "chez",
                    "cette", "ces", "leur", "leurs", "depuis", "plus", "moins", "tous", "toutes", "tout", "chaque",
                    "sera", "seront", "sont", "avons", "disposons", "dispose", "comptons", "compte", "entre",
-                   "apres", "avant", "ainsi", "afin", "aussi", "environ", "elle", "elles", "ils", "lors"}
+                   "apres", "avant", "ainsi", "afin", "aussi", "environ", "elle", "elles", "ils", "lors",
+                   "sommes", "etre", "avoir", "etes", "serons", "ferons", "fera", "faire", "fait", "faits",
+                   "permet", "permettra", "permettent", "assure", "assurons", "assurera", "assureront",
+                   "mobiliserons", "mobilisons", "mobilise", "mobilisera", "proposons", "propose", "realisons",
+                   "realiserons", "intervenons", "interviendra", "interviendrons", "utiliserons", "utilisons",
+                   "mettons", "mettrons", "atteint", "atteindra", "represente", "representent", "dont", "celui",
+                   "celle", "ceux", "lequel", "laquelle", "lesquels", "chacun", "chacune", "encore", "deja"}
 _PRIORITE = {T_DOCUMENTS: 0, T_JUSTIFICATIF: 1, T_PUBLIC: 2, T_DECLARE: 3, T_ESTIMATION: 4, T_PARTENAIRE: 5}
 
 
@@ -721,6 +835,11 @@ def _mots_contexte(phrase: str, fait: str) -> set:
     du_fait = {re.sub(r"s$", "", w) for w in re.findall(r"[a-z0-9]{3,}", far.fold(fait))}
     return {re.sub(r"s$", "", w) for w in re.findall(r"[a-z]{4,}", far.fold(phrase))
             if w not in _MOTS_VIDES_CTX} - du_fait
+
+
+def _cles_mots(mots: set) -> set:
+    """Les mots de la phrase ramenés aux clés d'unité de l'Index (« compagnons » → personnes)."""
+    return {_unite(w[:5]) for w in mots or ()}
 
 
 def _fallback_permis(kind: str, fait: str, key, mots: set, f) -> bool:
@@ -869,33 +988,43 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
             permises = [f for f in fiches if f.type != T_PARTENAIRE or far.fold(f.proprietaire) in nommes]
         citees = [par_ref[r] for r in refs if r in par_ref and (par_ref[r] in permises or par_ref[r].type == T_PARTENAIRE)]
         inconnus = [r for r in refs if r not in par_ref]
-        # Nombres reliés à une source, pour le recalcul : ceux de la phrase, puis ceux des faits cités.
-        pool, pool_cites = [], []
-        for f in citees:
-            pool_cites += [(v, u) for v, u, _c, _a, _b in f.index.nums]
+        # Nombres ÉCRITS dans la phrase et reliés à une source (le recalcul ne prend rien d'autre) :
+        # (valeur, unité) — l'unité d'un nombre écrit seul (« 3 + 15 ») est celle de sa source.
+        pool = []
         releves = []
         for fait, kind, key in far._facts_in(ph, tableau=p["tableau"]):
             if kind == far.NOM_PROPRE and _nom_connu(key, noms):
                 continue
-            src, detail = None, ""
+            src, detail, unite_src = None, "", ""
             if sur_entreprise:
                 # 1. Un fait CITÉ dans la phrase, du bon type ; 2. à défaut, un fait remis non cité.
                 autres = sorted((f for f in permises if f not in citees), key=_priorite)
                 mots = _mots_contexte(ph, fait)
+                cles = _cles_mots(mots)
+                generique = kind == far.CERTIFICATION and key in _CERT_GENERIQUES
+                objets = _objets(ph) - _objets(fait) if generique else set()
                 for groupe, cite in ((citees, True), (autres, False)):
                     for f in groupe:
                         if not f.appuie(kind):
                             continue
-                        if not cite and not _fallback_permis(kind, fait, key, mots, f):
-                            continue
-                        pos = f.index.trouve(kind, key, fait)
+                        if generique:
+                            # « agréés », « certifiée », « labellisés » : jamais par un fait non cité ;
+                            # un fait cité seulement s'il dit le même mot ET le même objet.
+                            pos = f.index.generique(key, objets) if cite else None
+                        else:
+                            if not cite and not _fallback_permis(kind, fait, key, mots, f):
+                                continue
+                            pos = f.index.trouve(kind, key, fait, mots=cles)
                         if pos is not None:
                             src = f.source(pos, cite=cite)
+                            if kind in (far.CHIFFRE, far.EN_LETTRES):
+                                unite_src = f.index.unite_a(pos)
                             break
                     if src is not None:
                         break
                 if src is None:
-                    if any(f.type == T_ESTIMATION and f.index.trouve(kind, key, fait) is not None for f in fiches):
+                    if any(f.type == T_ESTIMATION and f.index.trouve(kind, key, fait, mots=cles) is not None
+                           for f in fiches):
                         detail = DET_ESTIMATION
                     elif acheteur is not None and acheteur.trouve(kind, key, fait) is not None:
                         detail = DET_ACHETEUR           # copie d'une exigence : ne prouve rien sur vous
@@ -903,13 +1032,16 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
                         detail = DET_RENVOI_INCONNU.format(ref=", ".join(inconnus))
             elif acheteur is not None:
                 src = acheteur.trouve(kind, key, fait)  # phrase sur le marché : le dossier de l'acheteur
-            if src is not None and kind in (far.CHIFFRE, far.EN_LETTRES):
-                pool.append(cle_nombre(kind, fait, key))
+            if src is not None and sur_entreprise and kind in (far.CHIFFRE, far.EN_LETTRES):
+                v_, u_ = cle_nombre(kind, fait, key)
+                pool.append((v_, u_ or unite_src))
             releves.append((fait, kind, key, src, detail))
         for fait, kind, key, src, detail in releves:
             if src is None and sur_entreprise and kind in (far.CHIFFRE, far.EN_LETTRES):
                 v, u = cle_nombre(kind, fait, key)
-                ok, det = recalcul(v, u, fait, low, pool, pool_cites)
+                ok, det = recalcul(v, u, fait, low, pool)
+                if ok and mode == "raccourci" and (base_src is None or not base_src.has(kind, key)):
+                    ok, det = None, ""      # « Raccourcir » n'ajoute aucun nombre, même calculé
                 if ok:
                     src = {"ref": "", "type": T_CALCUL, "libelle": LIB_CALCUL, "cite": False, "detail": det}
                 elif ok is False:
@@ -1062,12 +1194,20 @@ def fiche_contient(fiche: Fiche, item: dict) -> bool:
     kind, fait = item.get("type", ""), item.get("fait", "")
     if kind == ENGAGEMENT or not fait:
         return False
-    for f2, k2, key in far._facts_in(item.get("phrase") or fait, tableau=far.CASE in (item.get("phrase") or "")):
+    phrase = item.get("phrase") or fait
+
+    def _dans(f2, key, ph):
+        if not fiche.appuie(kind):
+            return False
+        if kind == far.CERTIFICATION and key in _CERT_GENERIQUES:
+            return fiche.index.generique(key, _objets(ph) - _objets(f2)) is not None
+        return fiche.index.trouve(kind, key, f2, mots=_cles_mots(_mots_contexte(ph, f2))) is not None
+    for f2, k2, key in far._facts_in(phrase, tableau=far.CASE in phrase):
         if k2 == kind and far.fold(f2) == far.fold(fait):
-            return fiche.appuie(kind) and fiche.index.trouve(kind, key, f2) is not None
+            return _dans(f2, key, phrase)
     for f2, k2, key in far._facts_in(fait):
         if k2 == kind:
-            return fiche.appuie(kind) and fiche.index.trouve(kind, key, f2) is not None
+            return _dans(f2, key, fait)
     return False
 
 
@@ -1106,7 +1246,14 @@ def proposition_declaration(item: dict) -> dict:
             val["unite"] = unite[:40]
         return {"natures": ["chiffre_cle"], "nature": "chiffre_cle", "valeur": val}
     if kind == far.CERTIFICATION:
-        return {"natures": ["qualification"], "nature": "qualification", "valeur": {"nom": fait[:200]}}
+        nom = fait
+        if far.fold(fait)[:4] in ("cert", "labe", "agre"):
+            # « agréés pour le retrait de l'amiante » : le mot générique ET son objet (sinon la fiche ne
+            # dirait pas de quoi l'entreprise est agréée, et ne pourrait appuyer la phrase).
+            i = far.fold(phrase).find(far.fold(fait))
+            if i >= 0:
+                nom = re.split(r"[.;:!?]", phrase[i:])[0].strip()
+        return {"natures": ["qualification"], "nature": "qualification", "valeur": {"nom": nom[:200]}}
     if kind == far.MATERIEL:
         return {"natures": ["materiel"], "nature": "materiel", "valeur": {"designation": fait[:200]}}
     if kind == far.NOM_PROPRE:

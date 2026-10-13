@@ -51,6 +51,12 @@ def test_aucun_piege_n_est_presente_comme_trouve_dans_vos_documents(phrase, pieg
     assert any(x["statut"] == fs.A_RELIRE for x in hits), (phrase, hits)
 
 
+@pytest.mark.parametrize("phrase,formule,section", ps.ENGAGEMENTS)
+def test_les_pieges_d_engagement_sont_a_confirmer(phrase, formule, section):
+    eng = [x for x in ps.controler(phrase, section) if x["type"] == fs.ENGAGEMENT]
+    assert len(eng) == 1 and eng[0]["statut"] == fs.A_RELIRE and eng[0]["message"] == fs.MSG_ENGAGEMENT, phrase
+
+
 def test_bilan_des_pieges_zero_et_zero():
     b = ps.bilan_pieges()
     assert b["pieges"] >= 50 and b["presentes_comme_documents"] == [] and b["non_signales"] == []
@@ -127,6 +133,79 @@ def test_recalcul_des_pourcentages_et_des_totaux():
     assert tot["detail"] == "Le total ne tombe pas juste : 3 + 15 font 18, pas 20."
     juste = ps.fait_de(ps.controler("Soit 3 + 15, au total 18 jours [C1][C2]."), "18 jours")[0]
     assert juste["statut"] == fs.AVEC_SOURCE
+    # Jamais un produit ni un sous-ensemble choisi pour tomber juste (revue de la vague 3).
+    x = ps.fait_de(ps.controler("Nos 2 nacelles et nos 12 salariés, soit 24 moyens [F2][P2]."), "24 moyens")[0]
+    assert x["statut"] == fs.A_RELIRE
+
+
+@pytest.mark.parametrize("refs", ["S1", "P2][F2", "C1][C2", "F1][F4", "C1][C3][C4", "F3][P1][P2][P3"])
+def test_un_calcul_n_est_jamais_tire_des_nombres_des_faits_cites(refs):
+    """« Nous recyclons 64 % de nos déchets [S1] » ne devient jamais « 9 sur 14 font 64 % » : un
+    pourcentage ou un total n'est « calculé à partir de vos faits » que si ses nombres sont ÉCRITS dans la
+    phrase. Aucun pourcentage entier, aucun total de 2 à 199 jours ou compagnons, n'est calculé ici."""
+    for v in range(1, 100):
+        items = ps.controler(f"Nous recyclons {v} % de nos déchets [{refs}].")
+        assert not any((x.get("source") or {}).get("type") == fs.T_CALCUL for x in items), (v, items)
+    for v in range(2, 200):
+        for unite in ("jours", "compagnons"):
+            items = ps.controler(f"Nous mobiliserons au total {v} {unite} sur ce chantier [{refs}].")
+            assert not any((x.get("source") or {}).get("type") == fs.T_CALCUL for x in items), (v, unite, items)
+
+
+def test_raccourcir_ne_calcule_aucun_nombre_absent_du_texte_de_depart():
+    base_t = "Nos 6 couvreurs travaillent avec nos 12 salariés [S1][P2]."
+    base = ps.controler(base_t)
+    court = fs.controler("Nos 6 couvreurs représentent 50 % de nos 12 salariés [S1][P2].", ps.fiches(),
+                         mode="raccourci", anciens=base, base_texte=base_t, noms_entreprise=ps.NOMS)
+    x = ps.fait_de(court, "50 %")[0]
+    assert x["statut"] == fs.A_RELIRE and (x.get("source") or {}).get("type") != fs.T_CALCUL
+    # Le même calcul, écrit par l'IA dans une rédaction, est bien recalculé.
+    assert ps.fait_de(ps.controler("Nos 6 couvreurs représentent 50 % de nos 12 salariés [S1][P2]."),
+                      "50 %")[0]["source"]["type"] == fs.T_CALCUL
+
+
+def test_certification_generique_reliee_seulement_au_meme_mot_et_au_meme_objet():
+    agr = fs.Fiche("F9", fs.T_DECLARE, fs.LIB_DECLARE,
+                   "Qualification : Agrément pour le retrait de l'amiante ; délivré par la préfecture")
+    fiches = ps.fiches() + [agr]
+
+    def _x(phrase):
+        items = fs.controler(phrase, fiches, acheteur=ps.acheteur(), noms_entreprise=ps.NOMS, mode="ia")
+        return [x for x in items if x["type"] == far.CERTIFICATION][0]
+    ok = _x("Nous sommes agréés pour le retrait de l'amiante [F9].")
+    assert ok["statut"] == fs.AVEC_SOURCE and ok["source"]["ref"] == "F9"
+    # Sans renvoi : jamais relié (pas de repli non cité pour une certification générique).
+    assert _x("Nous sommes agréés pour le retrait de l'amiante.")["statut"] == fs.A_RELIRE
+    # Un autre objet, ou une autre famille de mot (« certifiés ») : à relire.
+    assert _x("Nous sommes agréés pour les travaux en hauteur [F9].")["statut"] == fs.A_RELIRE
+    assert _x("Nous sommes certifiés pour le retrait de l'amiante [F9].")["statut"] == fs.A_RELIRE
+    # Une qualification quelconque (« Qualibat 3194 ») n'appuie aucune certification générique.
+    for ph in ("Nous sommes agréés pour le retrait de l'amiante [F3].", "Nous sommes certifiés [S1].",
+               "Notre entreprise est certifiée [P1].", "Nos compagnons sont labellisés [F3][S1]."):
+        assert _x(ph)["statut"] == fs.A_RELIRE, ph
+
+
+def test_un_nombre_suivi_de_de_nos_compte_le_nom_qui_suit():
+    assert far._facts_in("Nous mobiliserons 12 de nos compagnons sur ce chantier.") == [
+        ("12", far.CHIFFRE, (12.0, "compa"))]
+    assert far._facts_in("Deux de nos conducteurs encadreront le chantier.")[0][2] == (2.0, "condu")
+    assert far._facts_in("En 2015 de nombreux chantiers ont été livrés.")[0][2] == (2015.0, "")
+    # « 12 de nos compagnons [S1] » n'est jamais relié à « 12 m3 de béton » du document.
+    x = ps.fait_de(ps.controler("Nous mobiliserons 12 de nos compagnons sur ce chantier [S1]."), "12")[0]
+    assert (x.get("source") or {}).get("type") not in (fs.T_DOCUMENTS, fs.T_JUSTIFICATIF)
+    assert (x.get("source") or {}).get("ref") != "S1"
+
+
+def test_un_nombre_sans_unite_exige_un_mot_commun_avec_sa_source():
+    assert ps.fait_de(ps.controler("Nous mobiliserons 12 sur ce chantier [S1]."), "12")[0]["statut"] == fs.A_RELIRE
+    # « 3 + 15, au total 18 jours » : 3 et 15 prennent l'unité de leur source (3 jours, 15 jours).
+    items = ps.controler("Soit 3 + 15, au total 18 jours [C1][C2].")
+    assert {x["fait"]: (x.get("source") or {}).get("ref") for x in items}["3"] == "C1"
+    # Dans un long document, une mesure revient avec un autre sens : un mot commun est exigé.
+    assert ps.fait_de(ps.controler("Nous stockons 3 tonnes de zinc en atelier [S1]."), "3 tonnes")[0]["statut"] \
+        == fs.A_RELIRE
+    assert ps.fait_de(ps.controler("Nous avons livré 3 tonnes d'acier à Brest [S1]."), "3 tonnes")[0]["source"][
+        "ref"] == "S1"
 
 
 @pytest.mark.parametrize("phrase,formule", [
@@ -137,6 +216,15 @@ def test_recalcul_des_pourcentages_et_des_totaux():
     ("Nous intervenons sous 24 h.", "sous 24 h"),
     ("Une astreinte 24h/24 est assurée par notre équipe.", "24h/24"),
     ("Nous livrerons au plus tard le 15 juin.", "au plus tard"),
+    # Revue de la vague 3 : le singulier « s'engage à » (troisième personne), « nous promettons »…
+    ("Notre entreprise s'engage à livrer le chantier avant la rentrée.", "s'engage à"),
+    ("Breizh Couverture s'engage à remettre le DOE.", "s'engage à"),
+    ("Nos équipes s'engagent à respecter le planning.", "s'engagent à"),
+    ("Nous promettons une intervention dans l'heure en cas d'urgence.", "Nous promettons"),
+    ("Nous intervenons dans l'heure en cas d'urgence.", "dans l'heure"),
+    ("Nous nous obligeons à respecter le planning.", "Nous nous obligeons"),
+    ("Nous livrerons les travaux sans aucune réserve.", "sans aucune réserve"),
+    ("Nous livrerons sans faute le 15 juin.", "sans faute"),
 ])
 def test_engagements_a_confirmer(phrase, formule):
     eng = [x for x in ps.controler(phrase) if x["type"] == fs.ENGAGEMENT]

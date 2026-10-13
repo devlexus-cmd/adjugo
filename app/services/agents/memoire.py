@@ -241,7 +241,8 @@ RÈGLES ABSOLUES :
   avant le point (« … deux nacelles articulées [F4]. »). N'invente jamais de renvoi.
 - Tout autre fait sur l'entreprise s'écrit « [À compléter : ce qui manque] ». N'invente jamais.
 - Recopie les nombres comme ils sont écrits dans les faits (même unité, pas d'arrondi, pas de conversion).
-  Un pourcentage ou un total que tu calcules doit tomber juste à partir des faits que tu cites.
+  Ne calcule ni pourcentage ni total. Si la partie en demande un, écris les nombres des faits dans la même
+  phrase (« 6 couvreurs sur nos 12 salariés [S2][P2] »), ou « [À compléter : …] ».
 - « Votre estimation » ne sert qu'aux délais, aux effectifs prévus et aux quantités du chantier.
 - N'écris aucun engagement (garantie, délai d'intervention, « zéro », « 100 % ») qui ne figure pas dans les
   faits autorisés : l'entreprise en serait tenue pendant le chantier.

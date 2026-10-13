@@ -51,7 +51,9 @@ partent jamais à l'IA ; `tenant_scope` et `pii_scope` sur chaque appel (inchang
   (mots communs, sans IA) d'abord ; profil, équipe, chiffrage et partenaires toujours. Le bloc commun
   mis en cache (dossier de l'acheteur) est inchangé : le cache de prompt d'une heure joue toujours.
 - Consigne (`_ATELIER_SYS`) : citer le renvoi à la fin de chaque phrase qui s'en sert ; tout autre fait
-  en « [À compléter : …] » ; recopier les nombres tels quels ; « votre estimation » pour délais,
+  en « [À compléter : …] » ; recopier les nombres tels quels ; ne calculer ni pourcentage ni total (si
+  la partie en demande un, écrire les nombres des faits dans la même phrase, ou « [À compléter] ») ;
+  « votre estimation » pour délais,
   effectifs prévus et quantités seulement ; aucun engagement absent des faits ; le CV par « [CV F#] ».
   « Raccourcir » garde tous les renvois.
 
@@ -73,17 +75,38 @@ phrase qui précède) :
    qui suit le nombre dans la source, ou, si le nombre n'en a pas, le libellé de la même proposition
    (« Effectif : 12 » = « 12 salariés » ; « 12 m3 de béton et 3 tonnes » ≠ « 12 tonnes ») ; « 85 k€ » =
    « 85 000 € » ; les sigles courts (RGE, MASE, PEFC) ne se trouvent jamais au milieu d'un mot.
+   « 12 de nos compagnons », « deux de nos conducteurs » : le nombre compte le nom qui suit « de nos »
+   (repérage d'A0). Un nombre écrit SANS unité (« 12 sur ce chantier ») ne se relie jamais par sa seule
+   valeur : à un nombre de la source qui a une unité, seulement si la phrase nomme cette unité (« 3 + 15,
+   au total 18 jours » ↔ « 3 jours ») ; à un nombre sans unité, seulement si la phrase et la proposition
+   de la source ont un mot en commun (pour une fiche, qui ne dit qu'un fait : tous ses mots). Dans un
+   EXTRAIT de document `[S#]`, une durée, une mesure (m2, m3, tonnes…), un montant, un pourcentage ou un
+   nombre de personnes exige en plus un mot commun avec la proposition de la source (« 3 tonnes de stock »
+   ≠ « 3 tonnes d'acier livrées »).
+   **Certification générique** (« agréés », « certifiée », « labellisés », sans sigle) : jamais reliée par
+   un fait non cité ; un fait cité seulement s'il emploie le MÊME mot générique et, dans la même
+   proposition, un objet commun avec la phrase (« agréés pour le retrait de l'amiante » ↔ « Agrément pour
+   le retrait de l'amiante ») ; une qualification quelconque (« Qualibat 3194 ») n'appuie jamais
+   « certifiée pour le désamiantage ».
    Phrase sur le marché : rapprochée du dossier de l'acheteur (toutes les pièces lues).
    Entre membres du groupement : une phrase qui nomme un partenaire sans parler de « nous » ne
    s'appuie que sur l'apport de ce partenaire ; l'apport d'un partenaire n'appuie pas une phrase sur
    « nous » qui ne le nomme pas (sauf renvoi `[G1]` explicite).
-4. **Recalcul** : un pourcentage ou un total absent tel quel est recalculé à partir des nombres de la
-   phrase reliés à une source, puis de ceux des faits cités (jamais une année, jamais un nombre sur
-   lui-même) ; juste à l'arrondi écrit près → « calculé à partir de vos faits » (« 6 sur 12 font
+4. **Recalcul** : un pourcentage ou un total absent tel quel n'est recalculé qu'à partir des nombres
+   ÉCRITS dans la phrase et reliés chacun à une source — jamais à partir des autres nombres des faits
+   cités (« au total 14 compagnons [P2][F2] » n'est pas « 12 + 2 », effectif plus nacelles), jamais une
+   année, jamais un nombre sur lui-même, jamais un produit. Un pourcentage : ses deux nombres dans la
+   phrase, d'unités compatibles (même unité, ou des personnes — « 6 couvreurs sur 12 salariés » —, ou du
+   matériel ; jamais des personnes avec du matériel). Un total (« au total », « soit »…) : la SOMME de
+   tous les nombres de la phrase de même unité (ou de même famille) ; un nombre écrit seul prend l'unité
+   de sa source. Juste à l'arrondi écrit près → « calculé à partir de vos faits » (« 6 sur 12 font
    50 % ») ; sinon, si la phrase donne elle-même ses deux nombres : « Le calcul ne tombe pas juste : 6
-   sur 12 font 50 %, pas 60 %. » / « Le total ne tombe pas juste : 3 + 15 font 18, pas 20. ».
-5. **Engagements** (« nous garantissons », « nous nous engageons », « zéro accident », « 100 % »,
-   « sous 24 h », « 24h/24 », « au plus tard », « sans retard ») d'une phrase sur l'entreprise rédigée
+   sur 12 font 50 %, pas 60 %. » / « Le total ne tombe pas juste : 3 + 15 font 18, pas 20. ». En mode
+   « Raccourcir », un nombre absent du texte de départ n'est jamais « calculé » : il est à relire.
+5. **Engagements** (« nous garantissons », « nous nous engageons », « l'entreprise s'engage à »,
+   « nous promettons », « nous nous obligeons », « zéro accident », « 100 % », « sous 24 h »,
+   « dans l'heure », « 24h/24 », « au plus tard », « sans retard », « sans réserve », « sans faute »)
+   d'une phrase sur l'entreprise rédigée
    par l'IA : un élément `engagement` « À confirmer : engagement qui vous liera pendant le chantier. »
    (bouton « Je confirme cet engagement » = `relu_par_vous`). Jamais pour une phrase sur le marché, ni
    pour un engagement que vous écrivez vous-même.
@@ -135,8 +158,8 @@ API (dans `Partie.version_courante`, pour l'auteur) :
   raison, message}]}` (preuves acceptées qu'Adjugo n'utilise pas : expirée, document retiré).
 
 **Libellés positifs et compteur : `ATELIER_LIBELLES_SOURCES=1`, désactivés par défaut.** Étude § 6.5,
-calibration : le jeu de phrases piégées passe (60 pièges, zéro présenté comme « trouvé dans vos
-documents », test en CI) ; la mesure des fausses alertes sur les 20 mémoires réels (accord écrit des PME)
+calibration : le jeu de phrases piégées passe (85 pièges, zéro présenté comme « trouvé dans vos
+documents », chacun à relire, test en CI) ; la mesure des fausses alertes sur les 20 mémoires réels (accord écrit des PME)
 reste à faire par Mathys (§ 6) ; jusque-là l'atelier garde l'affichage d'A0 (« à relire » seulement).
 Le contrôle, lui, est celui de A dès maintenant (renvois, unités, recalcul, engagements).
 
@@ -174,10 +197,14 @@ Isolation : 404 pour un autre compte (marché, partie, fait). Démo : 403 sur le
 
 ## 6. Calibration et mesure (étude § 6.5, § 8)
 
-- **Jeu de pièges** (`tests/pieges_sources.py`, 60 phrases, sources et dossier inventés) : copies
+- **Jeu de pièges** (`tests/pieges_sources.py`, 85 phrases, sources et dossier inventés) : copies
   d'exigences en « nous », objectifs du dossier repris, paraphrases, calculs faux, unités écrites
   autrement, nombres en lettres, matériel, certifications et noms absents, renvois faux, mauvais type de
-  source, phrase sur l'entreprise déguisée, phrase sur le marché mal recopiée, tableaux. Exigé : ZÉRO
+  source, phrase sur l'entreprise déguisée, phrase sur le marché mal recopiée, tableaux ; depuis la revue
+  de la vague 3 : calculs tirés des nombres des faits cités (« au total 14 compagnons [P2][F2] »,
+  « 64 % de nos déchets [S1] »), certifications génériques sans objet (« agréés pour le retrait de
+  l'amiante »), « 3 de nos compagnons », engagements sans chiffre (« s'engage à », « nous
+  promettons », « dans l'heure »), chacun exigé « à relire » (un engagement : relevé comme tel). Exigé : ZÉRO
   piège présenté comme « trouvé dans vos documents » (ni « justificatif déposé »), et chacun à relire ;
   plus 10 faits justes reliés au bon endroit. `python scripts/mesure_fausses_alertes.py pieges`.
 - **Fausses alertes sur 20 vrais mémoires** (Mathys, avec l'accord écrit de chaque PME, anonymisés,
