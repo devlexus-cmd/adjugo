@@ -517,7 +517,10 @@ class ExportIn(BaseModel):
 def exporter(request: Request, project_id: int, body: ExportIn, current_user: User = Depends(get_current_user),
              db: Session = Depends(get_db)):
     """Le fichier Word ou PDF (octets) — ou 409 « export_bloque » avec les raisons."""
+    from app.core.demo_guard import refuser_demo
     from app.services.audit import client_ip
+    # Défense en profondeur : l'export range le fichier dans le dossier du marché (vitrine partagée).
+    refuser_demo(current_user, "préparer votre dossier de présentation")
     acc = _Acces(db, current_user, project_id)
     try:
         data, nom, mime = at.exporter(db, current_user, acc.project, acc.exiger_dossier(), body.format, acc.lecteur,

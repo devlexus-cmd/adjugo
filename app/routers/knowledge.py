@@ -50,6 +50,8 @@ def list_docs(current_user: User = Depends(get_current_user), db: Session = Depe
 @limiter.limit("60/hour")
 async def upload_doc(request: Request, file: UploadFile = File(...), kind: str = Form("autre"),
                      current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "enrichir votre savoir-faire")   # défense en profondeur (middleware démo)
     content = await aread_upload_limited(file)   # lecture bornée : 413 au-delà de 50 Mo
     try:
         text = await run_in_threadpool(extract_dce_text, file.filename, content, max_chars=400000)
@@ -71,6 +73,8 @@ class TextDoc(BaseModel):
 @router.post("/text")
 @limiter.limit("60/hour")
 def add_text(request: Request, req: TextDoc, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "enrichir votre savoir-faire")   # défense en profondeur (middleware démo)
     if len((req.text or "").strip()) < 40:
         raise HTTPException(422, "Texte trop court.")
     k = req.kind if req.kind in _KINDS else "autre"

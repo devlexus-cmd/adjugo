@@ -6,6 +6,8 @@ ensure_demo(db) crée (si absent) demo@adjugo.fr : une entreprise BTP réaliste,
 LLM), avec détail du score, clauses à risque, pièces requises, source BOAMP, et un réseau de
 co-traitants rattachés (dont un désamianteur sur le marché « à étudier » pour illustrer le
 groupement). Idempotent ; force=True réinitialise.
+La rédaction (grille « Comment vous serez noté », dossier du marché lu en entier, « Mes preuves »,
+dossier de présentation déjà rédigé) est remplie par app/services/demo_redaction.py, sans IA.
 
 Branché au démarrage (main.py) et accessible via /api/auth/demo (connexion sans mot de passe).
 """
@@ -69,6 +71,20 @@ _CRITERIA = {
 }
 
 
+def _date_limite(details):
+    """Date limite du marché (colonne Project.deadline) lue dans l'analyse (« 20/12/2026 à 17h00 ») :
+    la même date que celle affichée, pour le tableau de bord, le dépôt et le coffre croisé."""
+    import datetime as _dt
+    import re as _re
+    m = _re.search(r"(\d{2})/(\d{2})/(\d{4})", str((details or {}).get("date_limite") or ""))
+    if not m:
+        return None
+    try:
+        return _dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    except ValueError:
+        return None
+
+
 def _analysis(details, summary, ref, pieces):
     """Reconstitue la sortie complète d'analyze_dce_text (barème déterministe, sans LLM)."""
     det = score_dce(details, _COMPANY, _CRITERIA)
@@ -129,7 +145,7 @@ def _projects():
         "assurances_requises": ["RC Professionnelle", "Garantie décennale", "Assurance amiante"],
         "visite_obligatoire": "Obligatoire — 05/12/2026 à 14h",
         "points_attention": ["Désamiantage : qualification SS3 exigée (non détenue)", "CA minimum exigé (3 M€) supérieur à votre CA", "Garantie à première demande"],
-        "recommandation": "Réhabilitation énergétique et désamiantage d'un gymnase, pour 1,25 M€ HT, allotie en trois lots (désamiantage, isolation/énergie, gros œuvre/étanchéité), portée par Lorient Agglomération. Le marché est en zone et sur votre cœur de métier (rénovation énergétique), ce qui en fait une opportunité réelle — mais deux verrous conditionnent la recevabilité.\n\nPremier verrou : la qualification désamiantage sous-section 3 (SS3), exigée et non détenue en interne. Deuxième verrou : le chiffre d'affaires minimum demandé (3 M€ sur 3 ans), supérieur à votre CA. Répondre seul est donc impossible sur ces deux critères. S'y ajoute une garantie à première demande, appelable sans justification, qui engage lourdement la trésorerie.\n\nLa bonne stratégie est claire : répondre en GROUPEMENT conjoint avec un désamianteur certifié SS3. Il apporte la qualification manquante et, en groupement, les chiffres d'affaires se cumulent — les deux verrous sautent d'un coup. Adjugo a d'ailleurs déjà identifié un partenaire complémentaire qualifié SS3 (voir la co-traitance). Sur la garantie à première demande, proposer une caution bancaire classique en substitution.\n\nEn synthèse : à étudier sérieusement, mais uniquement en groupement. Seul, c'est un No-Go ; à plusieurs, c'est un marché à 1,25 M€ à portée de main. La visite est obligatoire (05/12) — à ne pas manquer, sous peine d'irrecevabilité.",
+        "recommandation": "Réhabilitation énergétique et désamiantage d'un gymnase, pour 1,25 M€ HT, allotie en trois lots (désamiantage, isolation/énergie, gros œuvre/étanchéité), portée par Lorient Agglomération. Le marché est en zone et sur votre cœur de métier (rénovation énergétique), ce qui en fait une opportunité réelle — mais deux verrous conditionnent la recevabilité.\n\nPremier verrou : la qualification désamiantage sous-section 3 (SS3), exigée et non détenue en interne. Deuxième verrou : le chiffre d'affaires minimum demandé (3 M€ sur 3 ans), supérieur à votre CA. Répondre seul est donc impossible sur ces deux critères. S'y ajoute une garantie à première demande, appelable sans justification, qui engage lourdement la trésorerie.\n\nLa bonne stratégie est claire : répondre en GROUPEMENT conjoint avec un désamianteur certifié SS3. Il apporte la qualification manquante et, en groupement, les chiffres d'affaires se cumulent — les deux verrous sautent d'un coup. Adjugo a d'ailleurs déjà identifié un partenaire complémentaire qualifié SS3 (voir la co-traitance). Sur la garantie à première demande, proposer une caution bancaire classique en substitution.\n\nEn synthèse : à étudier sérieusement, mais uniquement en groupement. Seul, il est hors d'atteinte ; à plusieurs, c'est un marché à 1,25 M€ à portée de main. La visite est obligatoire (05/12) — à ne pas manquer, sous peine d'irrecevabilité.",
         "clauses_risque": [
             {"clause": "Capacité financière", "niveau": "eleve", "pourquoi": "CA exigé 3 M€ supérieur à votre CA N-1", "levier_negociation": "Répondre en groupement conjoint pour cumuler les chiffres d'affaires"},
             {"clause": "Garantie à première demande", "niveau": "eleve", "pourquoi": "Engage la trésorerie sans recours, appelable sans justification", "levier_negociation": "Proposer une caution bancaire classique en substitution"},
@@ -153,14 +169,14 @@ def _projects():
         "ca_minimum_requis": "CA > 5 000 000 EUR", "qualifications_requises": ["Certification ITIL", "ISO 27001"],
         "assurances_requises": ["RC Professionnelle"],
         "points_attention": ["Hors métier (services informatiques)", "Hors zone d'intervention (06)", "CA exigé hors d'atteinte"],
-        "recommandation": "Marché de maintenance et d'infogérance d'un système d'information, sous forme d'accord-cadre de 4 ans, porté par la Métropole Nice Côte d'Azur. L'analyse est sans ambiguïté : ce marché est à écarter, pour trois raisons cumulatives.\n\nD'abord, l'objet — des prestations informatiques (ITIL, ISO 27001) — n'a aucun rapport avec votre activité de bâtiment : l'adéquation métier est nulle. Ensuite, le lieu d'exécution (Nice, 06) est hors de votre zone d'intervention. Enfin, le chiffre d'affaires exigé (5 M€) est hors d'atteinte.\n\nLe barème le classe automatiquement en No-Go. L'intérêt d'Adjugo ici n'est pas de vous faire perdre du temps sur ce dossier, mais de vous montrer, en un coup d'œil, pourquoi ne PAS y aller — pour que vous concentriez votre énergie sur les marchés que vous pouvez réellement gagner. C'est aussi ça, le tri : autant d'heures économisées sur les fausses pistes.\n\nConcrètement, trois signaux auraient dû alerter dès la lecture de l'avis : un code CPV de services informatiques (72xxx) sans rapport avec vos codes travaux, un lieu d'exécution hors de vos départements, et un chiffre d'affaires plancher hors norme pour une PME du bâtiment. Chacun de ces trois critères, pris isolément, suffit à écarter le marché ; ici, les trois se cumulent.\n\nC'est précisément le rôle du tri automatique : sur les dizaines d'avis publiés chaque semaine, beaucoup ne vous concernent pas. Les écarter en un coup d'œil, avec la raison affichée noir sur blanc, vous fait gagner un temps précieux — celui que vous auriez passé à ouvrir le dossier, lire le règlement de consultation et comprendre que ce n'était pas pour vous. Ce temps, vous le réinvestissez sur les marchés réellement gagnables.",
+        "recommandation": "Marché de maintenance et d'infogérance d'un système d'information, sous forme d'accord-cadre de 4 ans, porté par la Métropole Nice Côte d'Azur. L'analyse est sans ambiguïté : ce marché est à écarter, pour trois raisons cumulatives.\n\nD'abord, l'objet — des prestations informatiques (ITIL, ISO 27001) — n'a aucun rapport avec votre activité de bâtiment : l'adéquation métier est nulle. Ensuite, le lieu d'exécution (Nice, 06) est hors de votre zone d'intervention. Enfin, le chiffre d'affaires exigé (5 M€) est hors d'atteinte.\n\nLe barème le classe automatiquement parmi les marchés à écarter. L'intérêt d'Adjugo ici n'est pas de vous faire perdre du temps sur ce dossier, mais de vous montrer, en un coup d'œil, pourquoi ne PAS y aller — pour que vous concentriez votre énergie sur les marchés que vous pouvez réellement gagner. C'est aussi ça, le tri : autant d'heures économisées sur les fausses pistes.\n\nConcrètement, trois signaux auraient dû alerter dès la lecture de l'avis : un code CPV de services informatiques (72xxx) sans rapport avec vos codes travaux, un lieu d'exécution hors de vos départements, et un chiffre d'affaires plancher hors norme pour une PME du bâtiment. Chacun de ces trois critères, pris isolément, suffit à écarter le marché ; ici, les trois se cumulent.\n\nC'est précisément le rôle du tri automatique : sur les dizaines d'avis publiés chaque semaine, beaucoup ne vous concernent pas. Les écarter en un coup d'œil, avec la raison affichée noir sur blanc, vous fait gagner un temps précieux — celui que vous auriez passé à ouvrir le dossier, lire le règlement de consultation et comprendre que ce n'était pas pour vous. Ce temps, vous le réinvestissez sur les marchés réellement gagnables.",
         "clauses_risque": [
             {"clause": "Adéquation métier", "niveau": "eleve", "pourquoi": "Prestation informatique sans lien avec le BTP", "levier_negociation": "Aucun — marché hors périmètre"},
         ],
     }
     P.append(dict(key="info", name="Infogérance SI — Métropole Nice", client="Métropole Nice Côte d'Azur",
                   budget=35000, status=ProjectStatus.nouveau,
-                  ai=_analysis(d3, "Marché de services d'infogérance informatique à Nice — hors métier BTP, hors zone, CA exigé inatteignable. Classé No-Go par le barème déterministe.", "25-121650",
+                  ai=_analysis(d3, "Marché de services d'infogérance informatique à Nice — hors métier BTP, hors zone, CA exigé inatteignable. Classé « à écarter » par le barème, sans IA.", "25-121650",
                                ["Certification ITIL", "ISO 27001"])))
     return P
 
@@ -186,8 +202,19 @@ _COTRAITANTS = [
 ]
 
 
+def _marquer_espace_demo(user) -> None:
+    """Dernier rempart : aucun appel à l'IA dans l'espace du compte démo (app.services.llm)."""
+    try:
+        from app.services.llm import marquer_tenant_demo
+        marquer_tenant_demo(user.id)
+    except Exception as e:      # noqa: BLE001 — jamais bloquant : les gardes de quota restent en place
+        logger.warning("espace démo non inscrit auprès de l'IA : %s", type(e).__name__)
+
+
 def ensure_demo(db, force: bool = False) -> User:
     user = db.query(User).filter(User.email == DEMO_EMAIL).first()
+    if user is not None and user.id is not None:
+        _marquer_espace_demo(user)
     if user and not force:
         # Auto-réparation : un compte démo créé AVANT la vérification d'email restait non
         # vérifié → le mur « Confirmez votre adresse email » bloquait toute la vitrine
@@ -255,15 +282,20 @@ def ensure_demo(db, force: bool = False) -> User:
     # étrangère bloque la suppression des projets et fait échouer tout le reseed.
     from app.models import (Document, GeneratedDoc, Invoice, ProjectInvite,
                             ProjectContribution, ContributionPiece, AuditLog,
-                            GroupementSimulation)
+                            GroupementSimulation, GroupementConvention, GroupementSignature,
+                            DossierPresentation, DossierSection, DossierSectionVersion, Preuve)
     old_ids = [p.id for p in db.query(Project).filter(Project.user_id == user.id).all()]
     if old_ids:
         # Ordre : enfants des contributions/invites d'abord, puis le reste. TOUTES les
         # tables qui référencent projects doivent être purgées sinon la FK bloque le reseed
-        # (ex. project_invites créés en testant la co-traitance, simulations de groupement).
-        for M in (ContributionPiece, ProjectContribution, ProjectInvite, GroupementSimulation,
-                  ProjectCotraitant, Document, GeneratedDoc, Invoice, AuditLog):
+        # (ex. project_invites créés en testant la co-traitance, simulations de groupement,
+        # dossier de présentation de l'atelier, convention de groupement et ses accords).
+        for M in (DossierSectionVersion, DossierSection, DossierPresentation, GroupementSignature,
+                  GroupementConvention, ContributionPiece, ProjectContribution, ProjectInvite,
+                  GroupementSimulation, ProjectCotraitant, Document, GeneratedDoc, Invoice, AuditLog):
             db.query(M).filter(M.project_id.in_(old_ids)).delete(synchronize_session=False)
+    # « Mes preuves » du compte démo : recréées par le seed de la rédaction (numéros stables F1, F2…).
+    db.query(Preuve).filter(Preuve.owner_id == user.id).delete(synchronize_session=False)
     db.query(Cotraitant).filter(Cotraitant.user_id == user.id).delete(synchronize_session=False)
     db.query(Project).filter(Project.user_id == user.id).delete(synchronize_session=False)
     db.flush()
@@ -281,7 +313,8 @@ def ensure_demo(db, force: bool = False) -> User:
         proj = Project(user_id=user.id, name=p["name"], client=p["client"], budget=p["budget"],
                        status=p["status"], source_url=ai["source"]["source_url"],
                        match_score=ai["match_score"], go_decision=ai["go_decision"],
-                       ai_summary=ai["summary"], ai_analysis=ai, estimate=est)
+                       ai_summary=ai["summary"], ai_analysis=ai, estimate=est,
+                       deadline=_date_limite(ai.get("details")))
         db.add(proj); db.flush()
         proj_by_key[p["key"]] = proj.id
 
@@ -300,6 +333,7 @@ def ensure_demo(db, force: bool = False) -> User:
                 db.add(ProjectCotraitant(project_id=proj_by_key[key], cotraitant_id=ct.id, role=role, lot=lot))
 
     db.commit()
+    _marquer_espace_demo(user)      # compte enregistré : son espace ne peut plus appeler l'IA
 
     # « Répondre à plusieurs ? » : verdict de groupement CALCULÉ sur Lorient (CA 3 M€ + SS3
     # apportés par Breizh Désamiantage). Transaction propre ; skip si le service pur est absent.
@@ -317,6 +351,16 @@ def ensure_demo(db, force: bool = False) -> User:
     except Exception as e:
         db.rollback()
         logger.warning("seed démo (extras) ignoré : %s", e)
+
+    # Rédaction (vagues 1 à 3) : dossier du marché « toiture » lu en entier (grille « Comment vous serez
+    # noté », couverture), « Mes preuves », dossier de présentation déjà rédigé. Sans IA ni réseau, dans sa
+    # propre transaction (app/services/demo_redaction.py) : un échec laisse le reste de la vitrine intact.
+    try:
+        from app.services.demo_redaction import seed_redaction
+        seed_redaction(db, user, proj_by_key)
+    except Exception as e:
+        db.rollback()
+        logger.warning("seed démo (rédaction) ignoré : %s", e)
 
     db.refresh(user)
     logger.info("Compte démo prêt (%s) — 3 AO + %d co-traitants + vitrine complète.", DEMO_EMAIL, len(_COTRAITANTS))
@@ -489,7 +533,8 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
     for n, role, org, ctype, email, phone, addr, note in [
         ("Sabine Vidal", "Responsable de la commande publique", "Ville de Bordeaux", "maitre_ouvrage", "marches.publics@mairie-bordeaux.fr", "05 56 10 20 30", "Place Pey-Berland, 33000 Bordeaux", "Interlocutrice marchés bâtiment — réactive, privilégie le dépôt dématérialisé."),
         ("Studio Vertigo Architectes", "Architecte chef de file (maîtrise d'œuvre)", "Studio Vertigo", "partenaire", "contact@studio-vertigo.fr", "04 72 41 55 30", "18 quai Claude-Bernard, 69007 Lyon", "MOE sur plusieurs marchés scolaires — bon relais pour les visites de site."),
-        ("Service comptes pro — Point P", "Responsable comptes professionnels", "Point P — Saint-Gobain Distribution", "fournisseur", "pro@pointp.fr", "03 88 40 22 10", "ZI Nord, 67000 Strasbourg", "Conditions cadre négociées sur l'étanchéité et l'isolation."),
+        # Fournisseur FICTIF (jamais une vraie enseigne avec un contact inventé).
+        ("Service comptes pro — Négoce des Matériaux de l'Ouest", "Responsable comptes professionnels", "Négoce des Matériaux de l'Ouest (fictif)", "fournisseur", "pro@negoce-materiaux-ouest.exemple", "", "ZA de la Lande, 44000 Nantes", "Conditions cadre négociées sur l'étanchéité et l'isolation."),
     ]:
         db.add(Contact(user_id=uid, name=n, role=role, organization=org, contact_type=ctype, email=email, phone=phone, address=addr, notes=note))
 
@@ -591,6 +636,14 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
             view_count=4, last_viewed_at=now, verified_email="contact@breizh-desamiantage.fr",
             verified_at=now)
         db.add(invite); db.flush()
+        # Le partenaire rattaché au marché EST celui qui a été invité (comme après une invitation
+        # depuis le réseau) : sans ce lien, « Monter le groupement » le disait « ni invité ni ajouté
+        # hors ligne » et le comptait à part.
+        if breizh is not None:
+            lk = (db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == lorient,
+                                                     ProjectCotraitant.cotraitant_id == breizh.id).first())
+            if lk is not None:
+                lk.invite_id = invite.id
 
         contrib = ProjectContribution(
             invite_id=invite.id, project_id=lorient, owner_id=uid,
@@ -616,7 +669,15 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                 ("Kbis — Breizh Désamiantage", "demo/breizh_kbis.pdf", "kbis",
                  today + timedelta(days=75)),
                 ("Attestation de qualification désamiantage SS3 — Breizh Désamiantage", "demo/breizh_ss3.pdf",
-                 "qualification", today + timedelta(days=400))]:
+                 "qualification", today + timedelta(days=400)),
+                # Coffre croisé (vague 4) : les attestations attendues de chaque membre pour le dépôt.
+                ("Attestation de régularité fiscale — Breizh Désamiantage", "demo/breizh_fiscale.pdf",
+                 "fiscale", today + timedelta(days=150)),
+                ("Attestation de vigilance URSSAF — Breizh Désamiantage", "demo/breizh_urssaf.pdf",
+                 "sociale", today + timedelta(days=95)),
+                ("Attestation d'assurance RC et décennale — Breizh Désamiantage", "demo/breizh_assurance.pdf",
+                 "assurance", today + timedelta(days=320)),
+                ("RIB — Breizh Désamiantage", "demo/breizh_rib.pdf", "rib", None)]:
             _put(pkey, pname)
             db.add(ContributionPiece(contribution_id=contrib.id, project_id=lorient, owner_id=uid,
                                      name=pname, file_key=pkey, file_size=11000, mime_type="application/pdf",

@@ -1294,6 +1294,8 @@ def generate_documents(request: Request, req: DocumentsRequest,
                        current_user: User = Depends(get_current_user),
                        db: Session = Depends(get_db)):
     from app.services.agents import redaction
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "générer vos documents")    # défense en profondeur : rien n'est rangé
 
     project = db.query(Project).filter(Project.id == req.project_id,
                                        Project.user_id.in_(member_ids(current_user, db))).first()

@@ -92,6 +92,15 @@ def run_saved_search_now(search_id: int, current_user: User = Depends(get_curren
                                      SavedSearch.user_id == current_user.id).first()
     if not s:
         raise HTTPException(404, "Alerte introuvable")
+    from app.services.demo_search import is_demo, search_results
+    if is_demo(current_user):
+        # Démo : les marchés FICTIFS de « Trouver des marchés » (déjà notés), sans appel au BOAMP.
+        seuil = s.min_score or 0
+        fresh = [{"objet": t.objet, "acheteur": t.acheteur, "score": t.score.total if t.score else 0,
+                  "date_limite": t.date_limite, "lieu": t.lieu, "source": t.provenance.source,
+                  "url": t.provenance.source_url, "ref": t.provenance.official_ref}
+                 for t in search_results() if (t.score.total if t.score else 0) >= seuil]
+        return {"new_matches": len(fresh), "tenders": fresh}
     from app.services.alerts import run_one_saved_search
     # mark=False : c'est un APERÇU. Avec mark=True, les AO trouvés étaient marqués « déjà vus »
     # et n'étaient JAMAIS inclus dans le prochain digest email — le client les perdait d'un clic

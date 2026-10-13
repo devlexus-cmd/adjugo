@@ -818,6 +818,8 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
                   current_user: User = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     """Révoque un lien : le co-traitant perd l'accès immédiatement."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "retirer un partenaire")   # défense en profondeur : mail « accès retiré »
     # Contrôle d'accès = appartenance de l'AO à l'organisation (l'ancien filtre owner_id
     # servait de garde ; on le remplace par la vérification de périmètre explicite).
     _owned_project(project_id, current_user, db)
