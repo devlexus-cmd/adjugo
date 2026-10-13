@@ -774,15 +774,26 @@ def test_validation_du_dossier_assemble_puis_a_revalider(client, auth):
     assert pa.get().json()["dossier"]["ma_validation"]["statut"] == "a_revalider"
     assert "redaction.dossier_a_revalider" in [x[0] for x in _audit(project_id=pid)]
     vue = client.get(f"/api/atelier/{pid}/repartition", headers=h).json()
+    # Sans convention, « Organisation du groupement » le dit (« à compléter ») : le chef de file ne peut pas encore
+    # valider le dossier assemblé, et le dossier n'est pas prêt.
+    pret = vue["dossier"]["pret"]
+    assert pret["message"] == "Sections validées 5 sur 6" and pret["complet"] is False
+    assert "« Organisation du groupement » : à valider par le chef de file" in [m["message"] for m in pret["manques"]]
+    r = client.post(f"/api/atelier/{pid}/repartition/valider-dossier", headers=h,
+                    json={"empreinte": vue["dossier"]["empreinte"]})
+    assert r.status_code == 409 and [x["titre"] for x in r.json()["detail"]["sections"]] == ["Organisation du groupement"]
+    # La convention générée et validée par tous : le chef de file valide « Organisation », puis le dossier.
+    from tests.test_redaction_v4_assemblage import _convention_validee, _generee, _valider_chef
+    _convention_validee(client, auth, pid, [a])
+    assert _valider_chef(client, h, pid, _generee(_etat(client, h, pid), "grp_orga")["id"]).status_code == 200
+    vue = client.get(f"/api/atelier/{pid}/repartition", headers=h).json()
     r = client.post(f"/api/atelier/{pid}/repartition/valider-dossier", headers=h,
                     json={"empreinte": vue["dossier"]["empreinte"]})
     assert r.status_code == 200, r.text
     emp2 = pa.get("/dossier").json()["empreinte"]
     assert pa.post("/dossier/valider", {"empreinte": emp2}).status_code == 200
     pret = client.get(f"/api/atelier/{pid}/repartition", headers=h).json()["dossier"]["pret"]
-    # Sans convention, « Organisation du groupement » le dit (« à compléter ») : le dossier n'est pas prêt.
-    assert pret["message"] == "Sections validées 5 sur 6" and pret["complet"] is False
-    assert [m["message"] for m in pret["manques"]] == ["« Organisation du groupement » : à valider par le chef de file"]
+    assert pret["message"] == "Sections validées 6 sur 6" and pret["complet"] is True and pret["manques"] == []
     # Toute modification ensuite : « à revalider » pour TOUS les membres (même mécanisme que la convention).
     cur = client.get(f"/api/atelier/{pid}/repartition/{sid}", headers=h).json()["texte_commun"]["version_id"]
     client.put(f"/api/atelier/{pid}/repartition/{sid}/texte", headers=h,
@@ -790,7 +801,7 @@ def test_validation_du_dossier_assemble_puis_a_revalider(client, auth):
     vue = client.get(f"/api/atelier/{pid}/repartition", headers=h).json()
     assert {m["statut"] for m in vue["dossier"]["pret"]["membres"]} == {"a_revalider"}
     assert vue["dossier"]["pret"]["complet"] is False
-    assert vue["dossier"]["pret"]["message"] == "Sections validées 4 sur 6"
+    assert vue["dossier"]["pret"]["message"] == "Sections validées 5 sur 6"
     assert all(x[4] for x in _audit(project_id=pid) if x[0].startswith("redaction."))     # journal chaîné
     j = client.get(f"/api/invite/{a['token']}/journal").json()
     assert any(e["action"] == "redaction.dossier_a_revalider" for e in j["entries"])

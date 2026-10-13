@@ -108,6 +108,9 @@ GROUP_EVENTS = frozenset({
     # Rédaction, vague 4 (dossier de groupement) : actions NOUVELLES, sans entrée ancienne — une partie
     # envoyée, le dossier assemblé validé par un membre, ou repassé « à revalider ».
     "redaction.part_envoyee", "redaction.dossier_valide", "redaction.dossier_a_revalider",
+    # Rédaction, vague 4 (assemblage) : actions NOUVELLES, sans entrée ancienne — une partie tirée du groupement
+    # validée par un membre ou mise à jour (convention, part d'un membre), le ton harmonisé par le chef de file.
+    "redaction.partie_groupement_validee", "redaction.partie_groupement_a_jour", "redaction.harmonisation",
 })
 
 # Libellés en français simple (zéro jargon) selon QUI a agi, vu depuis le membre.
@@ -139,6 +142,7 @@ LABELS_ME = {
     "redaction.espace_rouvert": "Votre espace privé de rédaction a été ouvert sur un autre appareil (code reçu par email)",
     "redaction.espace_reinitialise": "Votre espace privé de rédaction a été réinitialisé : vos brouillons non envoyés "
                                      "ont été effacés",
+    "redaction.partie_groupement_validee": "Vous avez validé « Qui fait quoi dans le groupement »",
 }
 LABELS_OWNER = {
     "owner.view_contribution": "Le chef de file a consulté votre part",
@@ -168,6 +172,12 @@ LABELS_OWNER = {
     "redaction.parts_reprises": "Vos parties ont été reprises par le chef de file",
     "redaction.dossier_valide": "Le chef de file a validé le dossier de présentation assemblé",
     "redaction.dossier_a_revalider": "Le dossier de présentation assemblé a changé : à revalider",
+    "redaction.partie_groupement_validee": "Le chef de file a validé une partie tirée du groupement",
+    "redaction.partie_groupement_a_jour": ("Une partie tirée du groupement a suivi la convention ou la part d'un "
+                                           "membre : à revalider"),
+    "redaction.harmonisation": "Le chef de file a harmonisé le ton du dossier (phrases de transition)",
+    "redaction.transition_ajoutee": ("Le chef de file a ajouté une phrase de transition au début de votre partie : "
+                                     "à revalider"),
 }
 LABELS_PARTNER = {
     "invite.created": "Un partenaire a été invité",
@@ -180,6 +190,7 @@ LABELS_PARTNER = {
     "redaction.dossier_valide": "Un partenaire a validé le dossier de présentation assemblé",
     "redaction.dossier_a_revalider": "Le dossier de présentation assemblé a changé (partie d'un partenaire) : à "
                                      "revalider",
+    "redaction.partie_groupement_validee": "Un partenaire a validé « Qui fait quoi dans le groupement »",
 }
 # Événements de groupement dont le détail (sans donnée personnelle) peut être montré à tous.
 _DETAIL_OK = ("offer.frozen", "convention.generated", "convention.hors_ligne")

@@ -2032,7 +2032,8 @@
                     </div>
                     <details v-if="atlSec().question" class="atl-det atl-mt8"><summary>Ce que demande l'acheteur</summary><blockquote class="atl-q">{{ atlSec().question }}</blockquote></details>
                     <div v-if="atlSec().validation" class="muted small atl-mt4">Validée le {{ atlWhen(atlSec().validation.le) }}<template v-if="atlSec().statut==='a_revalider'"> : le texte a changé depuis, validez de nouveau.</template></div>
-                    <div v-if="!atlSec().peut_ecrire" class="muted small atl-mt4">Partie rédigée par : {{ atlSec().auteur.libelle }}. Vous lisez le texte qu'il a envoyé.</div>
+                    <div v-if="!atlSec().peut_ecrire && atlSec().genere" class="row wrap atl-g6 atl-mt8"><span class="muted small" style="flex:1;min-width:0">{{ atlSec().auteur.libelle }}, sans IA. Elle se met à jour toute seule.</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">D'où vient cette partie</span><span class="tip-b" role="tooltip">Adjugo l'écrit à partir de la convention et des parts des membres. Pour la changer, modifiez la convention ou la part du membre concerné.<template v-if="atlSec().genere === 'grp_qfq'"> Chaque membre du groupement la valide. Elle dit ce que chacun apporte, jamais ce qui manque.</template><template v-else> Vous la validez une fois la convention validée par tous les membres.</template></span></button><button v-if="atlSec().version_courante && atlSec().statut !== 'valide' && !atlSec().a_completer" type="button" class="btn sm" @click="atlValider()" :disabled="!!atl.busy"><i data-lucide="check"></i>Valider</button></div>
+                    <div v-else-if="!atlSec().peut_ecrire" class="muted small atl-mt4">Partie rédigée par : {{ atlSec().auteur.libelle }}. Vous lisez le texte qu'il a envoyé.</div>
                   </div>
 
                   <!-- Actions de la partie -->

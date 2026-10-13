@@ -579,7 +579,7 @@ def test_harmoniser_ajoute_des_transitions_et_refuse_les_faits(client, auth, fak
     assert "redaction.transition_ajoutee" in [x[0] for x in _audit(project_id=pid, invite_id=a["id"])]
     assert "redaction.harmonisation" in [x[0] for x in _audit(project_id=pid)]
     j = [e["label"] for e in client.get(f"/api/invite/{a['token']}/journal").json()["entries"]]
-    assert any("transition" in x for x in j)
+    assert "Le chef de file a ajouté une phrase de transition au début de votre partie : à revalider" in j
     # Débit : la 1re action de l'IA du dossier (1 analyse), comptée comme une refonte.
     assert _usage(auth["email"]) == usage0 + 1
     assert st["quota"]["regenerations_utilisees"] == 1
