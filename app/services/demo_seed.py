@@ -183,9 +183,9 @@ def _projects():
 
 # Réseau de co-traitants de démonstration (rattachés à certains AO) — fiches complètes.
 _COTRAITANTS = [
-    dict(name="Charpentes du Léon", siret="51234567800018", code_ape="4391A", city="Tours",
+    dict(name="Charpentes Arbrevieux", siret="51234567800018", code_ape="4391A", city="Tours",
          departement="37", specialites="Charpente bois, ossature, couverture", ca_n1=820000, effectif=9,
-         forme_juridique="SARL", representant_legal="Hervé Quéméner", email="contact@charpentes-leon.exemple",
+         forme_juridique="SARL", representant_legal="Hervé Quéméner", email="contact@charpentes-arbrevieux.exemple",
          phone="", codes_cpv="45261000, 45422000",
          qualifications="Qualibat 2392 (charpente bois), RGE", attach=[("toiture", "cotraitant", "")]),
     dict(name="Zinguerie Bigoudène", siret="48765432100027", code_ape="4391B", city="Lille",
@@ -532,7 +532,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
     # ── Contacts (CRM) ────────────────────────────────────────────────────────
     for n, role, org, ctype, email, phone, addr, note in [
         ("Sabine Vidal", "Responsable de la commande publique", "Ville de Marvejac", "maitre_ouvrage", "marches@ville-marvejac.exemple", "", "Hôtel de ville, Marvejac (33)", "Interlocutrice marchés bâtiment — réactive, privilégie le dépôt dématérialisé."),
-        ("Studio Vertigo Architectes", "Architecte chef de file (maîtrise d'œuvre)", "Studio Vertigo", "partenaire", "contact@studio-vertigo.exemple", "", "Lyon (69)", "MOE sur plusieurs marchés scolaires — bon relais pour les visites de site."),
+        ("Atelier Lumenval Architectes", "Architecte chef de file (maîtrise d'œuvre)", "Atelier Lumenval", "partenaire", "contact@atelier-lumenval.exemple", "", "Lyon (69)", "MOE sur plusieurs marchés scolaires — bon relais pour les visites de site."),
         # Fournisseur FICTIF (jamais une vraie enseigne avec un contact inventé).
         ("Service comptes pro — Négoce des Matériaux de l'Ouest", "Responsable comptes professionnels", "Négoce des Matériaux de l'Ouest (fictif)", "fournisseur", "pro@negoce-materiaux-ouest.exemple", "", "ZA de la Lande, 44000 Nantes", "Conditions cadre négociées sur l'étanchéité et l'isolation."),
     ]:
