@@ -1800,6 +1800,80 @@ def dossier_assemble(db, project: Project, dossier: DossierPresentation, pour_in
     return out
 
 
+POIDS_LIBELLES = {"reglement": "écrit dans le règlement", "utilisateur": "lu dans le règlement par le chef de file"}
+
+
+def note_acheteur(project: Project, section: DossierSection) -> dict:
+    """Ce que l'acheteur note pour une partie, comme la carte « Comment vous serez noté » (chantier du
+    partenaire) : le critère, son poids TEL QU'ÉCRIT et d'où il vient, la phrase du règlement RETROUVÉE dans le
+    dossier (celle de la grille, jamais reformulée) et la question du cadre de réponse. Sans IA ; rien de plus
+    que la grille que le partenaire lit déjà."""
+    from app.services import atelier_plan as ap
+    phrase = ""
+    try:
+        lignes = ap.lignes_techniques(at._analysis(project))
+    except Exception:       # noqa: BLE001 — grille illisible : la partie garde son critère et sa question
+        lignes = []
+    if section.critere_id:
+        ln = next((x for x in lignes if x.get("id") == section.critere_id), None)
+        phrase = at._flat((ln or {}).get("phrase"))
+    question = at._flat(section.question)
+    if not phrase and section.source_plan == ap.GRILLE:
+        phrase = question                         # partie tirée d'un critère : sa question EST la phrase
+    if question == phrase:
+        question = ""
+    poids = section.poids or ""
+    src = (section.poids_source or "") if poids else ""
+    # Partie sans critère (plan tiré du cadre de réponse) : les critères techniques de la grille, tels
+    # qu'écrits (le mémoire est jugé sur eux), sans prétendre les rattacher à cette partie.
+    grille = []
+    if not section.critere:
+        for ln in lignes[:6]:
+            p = at._flat(ln.get("poids"))
+            s = (ln.get("poids_source") or "") if p else ""
+            grille.append({"critere": at._flat(ln.get("critere"))[:200], "poids": p[:40], "poids_source": s,
+                           "poids_libelle": POIDS_LIBELLES.get(s, ""),
+                           "phrase": at._flat(ln.get("phrase"))[:ap.QUESTION_MAX]})
+    return {"critere": section.critere or "", "poids": poids, "poids_source": src,
+            "poids_libelle": POIDS_LIBELLES.get(src, ""), "phrase": phrase[:ap.QUESTION_MAX],
+            "question": question[:ap.QUESTION_MAX], "source_plan": section.source_plan or "",
+            "grille": [g for g in grille if g["critere"]]}
+
+
+MSG_MODE_SIMPLE = ("Mode simple : le paragraphe de votre part (« Paragraphe pour le dossier de présentation ») reste "
+                   "disponible, tel que vous l'avez écrit. Vous pouvez partir de ce texte pour rédiger une partie.")
+MSG_IDENTITE = ("Avant d'envoyer ou de valider, un code à 6 chiffres vous sera envoyé par email pour confirmer votre "
+                "identité.")
+
+
+def resume_partenaire(db, inv: ProjectInvite) -> Optional[dict]:
+    """Pour « Partagé avec moi » : combien de parties sont confiées à ce partenaire et combien attendent quelque
+    chose de lui (à rédiger, en cours, à revalider). Statuts seulement ; None si le dossier n'est pas préparé."""
+    try:
+        from app.routers.invites import _network_pending
+        if (inv.role or "cotraitant") != "cotraitant" or not inv.project_id or _network_pending(inv, db):
+            return None             # sous-traitant, ou invitation du réseau pas encore acceptée (aperçu limité)
+        project = db.get(Project, inv.project_id)
+        d = dossier_du_marche(db, project, inv.owner_id) if project is not None else None
+        if d is None or not repartition_active(db, d):
+            return None
+        reps = (db.query(DossierRepartition).filter(DossierRepartition.dossier_id == d.id,
+                                                    DossierRepartition.redacteur == PARTENAIRE,
+                                                    DossierRepartition.invite_id == inv.id).all())
+        n, a_faire, a_revalider = 0, 0, 0
+        for r in reps:
+            s = db.get(DossierSection, r.section_id)
+            if s is None or s.retiree_at is not None or s.author_invite_id != inv.id:
+                continue
+            n += 1
+            st = statut_de(db, s, r)
+            a_faire += st in (A_REDIGER, EN_COURS)
+            a_revalider += st == A_REVALIDER
+        return {"parties": n, "a_faire": a_faire, "a_revalider": a_revalider} if n else None
+    except Exception:       # noqa: BLE001 — la liste « Partagé avec moi » ne casse jamais pour ce résumé
+        return None
+
+
 def vue_partenaire(db, acces: Acces) -> dict:
     """Ce que voit un partenaire : SES parties (ce que l'acheteur note, la longueur conseillée, la date limite
     interne, son brouillon PRIVÉ avec ses sources, le texte commun, l'avant et l'après d'une modification du
@@ -1816,6 +1890,7 @@ def vue_partenaire(db, acces: Acces) -> dict:
         st = statut_de(db, s, r)
         nom = nom_partenaire(acces.inv, _contribution(db, acces.invite_id))
         parties.append(dict(_section_base_out(acces.dossier, s, rangs.get(s.id, "")),
+                            note=note_acheteur(acces.project, s),
                             longueur_mots=r.longueur_mots, date_limite=_jour(r.date_limite),
                             statut=st, statut_libelle=STATUTS[st], mention=mention(db, s, nom),
                             brouillon=_brouillon_out(b, acces) if acces.cle_ok else None,
@@ -1832,12 +1907,28 @@ def vue_partenaire(db, acces: Acces) -> dict:
     espace = {"cle_valide": bool(acces.cle_ok), "ouvert": bool(getattr(acces.inv, "espace_hash", "")),
               "entete": ENTETE_CLE, "code_possible": bool(_binding_required(acces.inv)) if acces.mode == "lien" else False,
               "message": "" if acces.cle_ok else MSG_CLE_REQUISE}
+    contrib = _contribution(db, acces.invite_id)
+    ctx = ContextePartenaire(db, acces)
+    try:
+        _exiger_identite(acces)
+        a_prouver = False
+    except AtelierError:
+        a_prouver = True
     return {"marche": {"id": acces.project.id, "nom": acces.project.name},
-            "mode": acces.mode, "espace": espace, "message_mode": MSG_MODE_COMPTE if ContextePartenaire(db, acces).avec_compte else MSG_MODE_LIEN,
+            "mode": acces.mode, "espace": espace, "message_mode": MSG_MODE_COMPTE if ctx.avec_compte else MSG_MODE_LIEN,
             "avertissement_envoi": AVERTISSEMENT_ENVOI, "peut_ecrire": bool(getattr(acces.inv, "can_contribute", True)),
+            # SA part (nom et lot déclarés par lui) : rien d'un autre membre.
+            "membre": {"nom": ctx.nom, "lot": ctx.lot},
+            # Envoyer et valider engagent l'entreprise : un code reçu par email d'abord, quand le lien vise
+            # une adresse pas encore prouvée (l'écran le dit avant d'envoyer).
+            "identite": {"a_prouver": a_prouver, "message": MSG_IDENTITE if a_prouver else ""},
+            # Le petit texte de sa part (mode simple) : le sien, déjà lu tel quel par le chef de file.
+            "mode_simple": {"petit_texte": ((contrib.memoire_paragraph if contrib is not None else "") or "")[:TEXTE_MAX],
+                            "message": MSG_MODE_SIMPLE},
             "parties": parties, "statuts": STATUTS, "origines": ORIGINES,
             "dossier": {"empreinte": emp, "ma_validation": _validation_out(ma, emp),
-                        "peut_valider": bool(parties) and all(p["statut"] == VALIDEE for p in parties)}}
+                        "peut_valider": bool(parties) and all(p["statut"] == VALIDEE for p in parties),
+                        "pret": pret(db, acces.project, acces.dossier, act)}}
 
 
 def detail_partenaire(db, acces: Acces, section_id: int) -> dict:
@@ -1850,6 +1941,25 @@ def detail_partenaire(db, acces: Acces, section_id: int) -> dict:
                                                                                        acces.invite_id)]
                            if acces.cle_ok else [])
     return ligne
+
+
+def brouillon_du_partenaire(db, acces: Acces, section_id: int, brouillon_id: int) -> dict:
+    """Un de SES brouillons précédents, avec son texte (« Reprendre ce texte ») : aucune génération n'écrase un
+    texte sans en garder une version qu'on peut reprendre (doctrine § 7, règle 8). Matière privée : lue avec SON
+    accès seulement (par le lien, avec la clé de son espace) ; le brouillon d'une autre partie ou d'un autre
+    membre n'existe pas pour lui (404)."""
+    _exiger_espace(acces)
+    section, _rep = _partie(db, acces, section_id)
+    try:
+        bid = int(brouillon_id)
+    except (TypeError, ValueError):
+        bid = 0
+    b = (db.query(DossierPartBrouillon).filter(DossierPartBrouillon.id == bid,
+                                               DossierPartBrouillon.section_id == section.id,
+                                               DossierPartBrouillon.invite_id == acces.invite_id).first())
+    if b is None:
+        raise AtelierError(404, "brouillon_introuvable", "Brouillon introuvable.")
+    return _brouillon_out(b, acces)
 
 
 # ── Validation du dossier assemblé (même mécanisme que la convention périmée) ────────

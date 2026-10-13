@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
   <script src="/static/cotraitance-crypto.js" integrity="sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le"></script>
+  <script src="/static/redaction-partenaire.js" integrity="sha384-cm+/0l8CsbtUA3z3U2hV+1WvWJzv0l8ZIrjVPAgUcVAePdzNI1TmLIgkuEFEhQMa"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -229,6 +230,8 @@
     // MY_TOKEN : compte Adjugo de ce navigateur (s'il existe) ; MY_COMPANY : entreprise saisie dans
     // MA part (repère « vous ») ; RELOAD_JOURNAL : rafraîchit « Mon journal » après une action.
     let MY_TOKEN = null, MY_COMPANY = "", RELOAD_JOURNAL = null;
+    // Rédaction, vague 4 : l'écran « Mes parties du dossier de présentation » (redaction-partenaire.js).
+    let RP = null;
     const PIECE_TYPES = [["kbis", "Kbis"], ["fiscale", "Attestation fiscale"], ["sociale", "Attestation sociale (URSSAF)"], ["assurance", "Assurance (RC / décennale)"], ["rib", "RIB"], ["qualification", "Qualification / certificat"], ["dpgf_lot", "DPGF du lot (prix de vente)"], ["autre", "Autre pièce"]];
     const PIECE_LABEL = Object.fromEntries(PIECE_TYPES);
     const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
@@ -576,6 +579,21 @@
         CV.el = cvCard;
         root.appendChild(cvCard);
         loadConvention();
+      }
+
+      // Rédaction, vague 4 : SES parties du dossier de présentation commun, rédigées ici, chez lui. Rien ne
+      // s'affiche tant que le chef de file ne l'a pas préparé, ni pour un sous-traitant (le serveur répond
+      // 404). Sa matière privée exige la clé de son espace, gardée dans ce navigateur et envoyée en en-tête.
+      if (RP) { try { RP.destroy(); } catch (e) {} RP = null; }
+      if (!d.apercu_minimal && window.AdjugoRedactionPartenaire && !(d.invited && d.invited.role === "sous_traitant")) {
+        const rpHost = document.createElement("div");
+        root.appendChild(rpHost);
+        RP = window.AdjugoRedactionPartenaire.mount(rpHost, {
+          base: "/api/invite/" + encodeURIComponent(TOKEN) + "/redaction", mode: "lien",
+          cleStockage: "adjugo_espace_" + TOKEN, invite: "/api/invite/" + encodeURIComponent(TOKEN),
+          verifyIdentity: (el, op) => verifyIdentity(el, op),
+          onChange: () => { if (RELOAD_JOURNAL) RELOAD_JOURNAL(); },
+        });
       }
 
       const docCard = $(`<div class="card pad" style="margin-bottom:16px"></div>`);

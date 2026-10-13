@@ -2936,6 +2936,9 @@ def _shared_item(inv: ProjectInvite, db: Session) -> dict:
             }
         except Exception:
             out["groupement"] = None
+    # Rédaction, vague 4 : parties du dossier de présentation confiées à ce membre (statuts seulement).
+    from app.services.atelier_groupement import resume_partenaire
+    out["redaction"] = resume_partenaire(db, inv) if project is not None else None
     return out
 
 

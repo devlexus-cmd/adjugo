@@ -3100,6 +3100,8 @@
               <div class="row wrap" style="gap:6px;align-items:center">
                 <!-- « À valider » : convention générée, MON accord attendu (statut seulement, jamais un montant) -->
                 <span v-if="s.groupement && s.groupement.a_valider" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="file-signature" style="width:11px;height:11px"></i>Convention à valider</span>
+                <!-- Rédaction, vague 4 : mes parties du dossier de présentation (statuts seulement) -->
+                <span v-if="s.redaction && (s.redaction.a_faire || s.redaction.a_revalider)" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="pen-line" style="width:11px;height:11px"></i>{{ sharedRedLine(s.redaction) }}</span>
                 <span class="pill" :class="s.contribution_status==='submitted'?'go':s.contribution_status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ s.contribution_status==='submitted'?'Soumise':s.contribution_status==='draft'?'Brouillon':'À compléter' }}</span>
                 <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-2)"></i>
               </div>
@@ -3231,6 +3233,9 @@
               <div class="sr-only" aria-live="polite">{{ sharedAo.conv.live }}</div>
             </div>
           </div>
+
+          <!-- Rédaction, vague 4 : MES parties du dossier de présentation commun (redaction-partenaire.js, par le compte : aucune clé) -->
+          <redaction-partenaire v-if="sharedAo.projectId" :key="'rp'+sharedAo.projectId" :pid="sharedAo.projectId" :token="token"></redaction-partenaire>
 
           <div v-if="sharedAo.docs.length" class="card pad" style="margin-bottom:14px">
             <b style="font-size:13.5px">Pièces partagées</b>
@@ -3653,6 +3658,7 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/app.js" integrity="sha384-6uTisHMvh3p9nJK8PvaE3Vedc3xngGSqBLsNWNfRsUe3iqADaE4Hi/OVmqWhZ9iJ" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-cm+/0l8CsbtUA3z3U2hV+1WvWJzv0l8ZIrjVPAgUcVAePdzNI1TmLIgkuEFEhQMa" defer></script>
+<script src="/static/app.js" integrity="sha384-ZXoTNbv6hXYKtbHwUFQMATXw4mnZAm6Ue9CRwXLcEKj+MViLxIG1F7AeyDxfxA4J" defer></script>
 </body>
 </html>
