@@ -2,7 +2,8 @@
 Adjugo — Routes d'authentification
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Optional
 from sqlalchemy.orm import Session
 
 from sqlalchemy import func
@@ -209,20 +210,41 @@ def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
     return {"access_token": token, "token_type": "bearer"}
 
 
+class DemoLienIn(BaseModel):
+    """Corps des routes de démonstration : la clé du lien privé (jamais dans l'adresse)."""
+    cle: str = Field(default="", max_length=256)
+
+
+@router.post("/demo/lien")
+@limiter.limit("60/hour")
+def demo_lien_verifier(request: Request, data: Optional[DemoLienIn] = None):
+    """Page /demo : la clé du lien privé est-elle valide ? N'ouvre aucune session. Lien
+    fermé ou clé fausse : 404, comme une route inexistante (rien ne révèle le lien)."""
+    from app.core.demo_guard import demo_lien_valide
+    if not demo_lien_valide(data.cle if data else ""):
+        raise HTTPException(status_code=404, detail="Not Found")
+    return {"ok": True}
+
+
 @router.post("/demo", response_model=Token)
 @limiter.limit("30/hour")
-def demo_login(request: Request, db: Session = Depends(get_db)):
+def demo_login(request: Request, data: Optional[DemoLienIn] = None, db: Session = Depends(get_db)):
     """Connexion au compte de DÉMONSTRATION (sans mot de passe) — données pré-remplies.
-    Le compte démo est un BAC À SABLE public (réinitialisé à chaque démarrage, aucune donnée
-    client réelle) : son accès sans mot de passe est VOLONTAIRE (vitrine de la landing page).
-    Le risque « passwordless » signalé par l'audit est neutralisé par cette nature sandbox, et
-    le contournement du cron admin via DEMO_MODE a été fermé séparément (CRON_SECRET requis)."""
-    from app.core.demo_guard import demo_public
-    if not demo_public():
+    Le compte démo est un BAC À SABLE (réinitialisé à chaque démarrage, aucune donnée client
+    réelle), en lecture guidée (demo_guard). Il s'ouvre si la démo publique est rouverte
+    (DEMO_PUBLIC=1) ou avec la clé du lien privé (corps de la requête, DEMO_LIEN_CLE) ; sinon
+    404. Le contournement du cron admin via DEMO_MODE a été fermé séparément (CRON_SECRET)."""
+    from app.core.demo_guard import demo_ouverture
+    extra = demo_ouverture(data.cle if data else "")
+    if extra is None:
         raise HTTPException(status_code=404, detail="Not Found")
+    # Nouvelle présentation après une période sans aucune session démo : la vitrine partagée est
+    # recréée AVANT d'ouvrir la session (app/services/demo_remise.py ; jamais bloquant).
+    from app.services.demo_remise import remettre_a_neuf_si_inactive
+    remettre_a_neuf_si_inactive(db)
     from app.services.demo_seed import ensure_demo
     user = ensure_demo(db)   # crée le compte démo s'il n'existe pas encore
-    token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})
+    token = create_access_token(data={**extra, "sub": str(user.id), "tv": int(user.token_version or 0)})
     return {"access_token": token, "token_type": "bearer"}
 
 

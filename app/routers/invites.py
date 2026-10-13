@@ -818,6 +818,8 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
                   current_user: User = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     """Révoque un lien : le co-traitant perd l'accès immédiatement."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "retirer un partenaire")   # défense en profondeur : mail « accès retiré »
     # Contrôle d'accès = appartenance de l'AO à l'organisation (l'ancien filtre owner_id
     # servait de garde ; on le remplace par la vérification de périmètre explicite).
     _owned_project(project_id, current_user, db)
@@ -961,6 +963,10 @@ def _valid_invite(token: str, db: Session) -> ProjectInvite:
         raise HTTPException(410, "Vous avez décliné cette invitation. Contactez le chef de file pour la rouvrir.")
     if _is_expired(inv.expires_at):
         raise HTTPException(410, "Ce lien de partage a expiré")
+    if _invite_is_demo(inv, db):
+        # Le lien partenaire de la vitrine montré pendant une présentation : la démo est active.
+        from app.services.demo_remise import noter_activite
+        noter_activite()
     return inv
 
 
@@ -1349,6 +1355,9 @@ def guest_get_contribution(token: str, request: Request, db: Session = Depends(g
 def guest_save_contribution(token: str, body: ContributionSave, request: Request, db: Session = Depends(get_db)):
     """Enregistre le brouillon de la contribution de cet invité (ses champs uniquement)."""
     inv = _valid_invite(token, db)
+    # Vitrine partagée : la part de la démo figure dans la convention générée et validée par tous ;
+    # la modifier la rendrait caduque pour les visiteurs suivants.
+    _refuse_if_demo_invite(inv, db)
     if not getattr(inv, "can_contribute", True):
         raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
     c = _get_or_create_contribution(inv, db)

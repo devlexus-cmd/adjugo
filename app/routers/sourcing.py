@@ -115,6 +115,11 @@ def buyer_profile(request: Request, acheteur: str = "",
                   current_user: User = Depends(get_current_user)):
     """Intelligence marché : historique de publication réel d'un acheteur (BOAMP).
     Renvoie {} si l'acheteur n'a aucun avis trouvé — jamais de profil inventé."""
+    from app.services.demo_search import is_demo
+    if is_demo(current_user):
+        # Les acheteurs de la démo sont FICTIFS : aucune requête au BOAMP, et jamais les vrais avis d'une
+        # collectivité réelle affichés à côté d'un marché inventé.
+        return {"acheteur": acheteur, "found": False, "demo": True}
     prof = BUYER_SOURCE.profile(acheteur)
     return prof or {"acheteur": acheteur, "found": False}
 
@@ -1294,6 +1299,8 @@ def generate_documents(request: Request, req: DocumentsRequest,
                        current_user: User = Depends(get_current_user),
                        db: Session = Depends(get_db)):
     from app.services.agents import redaction
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "générer vos documents")    # défense en profondeur : rien n'est rangé
 
     project = db.query(Project).filter(Project.id == req.project_id,
                                        Project.user_id.in_(member_ids(current_user, db))).first()

@@ -375,7 +375,11 @@ def test_compte_de_demonstration_inchange(client):
         u.trial_ends_at = _hier()
         db.commit()
         try:
-            quota.exiger_ia(u, db)                              # sans effet : la démo a son propre refus
+            # Jamais le 402 de l'essai terminé : la démo a son propre refus, « lecture guidée » (403), dès
+            # exiger_ia (défense en profondeur derrière le garde central, tests/test_demo_sans_cout.py).
+            with pytest.raises(HTTPException) as e:
+                quota.exiger_ia(u, db)
+            assert e.value.status_code == 403 and "La démo est en lecture guidée" in e.value.detail
             with pytest.raises(HTTPException) as e:
                 quota.consume_analysis(u, db)
             assert e.value.status_code == 403 and "La démo est en lecture guidée" in e.value.detail
