@@ -13,6 +13,8 @@ settings = get_settings()
 
 @router.post("/create-checkout")
 def create_checkout(plan: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "vous abonner")               # défense en profondeur : aucune écriture Stripe
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
     prices = {"pro": settings.STRIPE_PRICE_PRO, "business": settings.STRIPE_PRICE_BUSINESS}
@@ -113,6 +115,8 @@ def get_subscription_status(current_user: User = Depends(get_current_user),
 def set_overage(enabled: bool = True, current_user: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     """Active/désactive le paiement à l'usage au-delà du quota mensuel."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "gérer votre abonnement")     # défense en profondeur (middleware démo)
     # Le quota/overage est porté par le PROPRIÉTAIRE du pool de facturation : on écrit SON
     # flag (sinon le toggle d'un membre n'avait aucun effet — consume_analysis lit l'owner).
     # Et c'est un engagement financier → réservé au propriétaire / admin de l'organisation.
@@ -146,6 +150,8 @@ def set_overage(enabled: bool = True, current_user: User = Depends(get_current_u
 
 @router.post("/portal")
 def create_portal(current_user: User = Depends(get_current_user)):
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "gérer votre abonnement")     # défense en profondeur : aucune écriture Stripe
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
     if not current_user.stripe_customer_id:

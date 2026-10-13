@@ -13,8 +13,12 @@ Mise en œuvre CENTRALE : un middleware (enregistré dans app/main.py) consulte 
 explicite de (méthode, motif de route). Seules les requêtes qui tombent dans cette liste
 sont examinées : on identifie alors le porteur du Bearer avec les fonctions d'auth
 existantes (lecture seule) et on renvoie 403 si c'est le compte démo. Toute autre requête
-passe sans aucun coût supplémentaire. Défense en profondeur : consume_analysis (quota.py)
-refuse aussi tout appel IA du compte démo (les analyses DEMO- ne passent jamais par là).
+passe sans aucun coût supplémentaire. Défense en profondeur : consume_analysis et exiger_ia
+(quota.py, appelés avant tout appel IA) refusent aussi le compte démo (les analyses DEMO- ne
+passent jamais par là) ; llm.messages_create refuse tout appel fait dans l'espace du compte démo ;
+refuser_demo() est posé dans les routes qui téléversent, envoient un email ou écrivent chez un
+tiers. La liste complète des routes à coût et la preuve qu'aucune ne coûte rien à la démo :
+tests/test_demo_sans_cout.py (toute nouvelle route d'écriture doit y être classée).
 """
 import logging
 import os
@@ -99,6 +103,7 @@ _BLOCKED = [
     ("POST",   "/api/atelier/{pid}/rediger",                  "rédiger avec Adjugo"),
     ("POST",   "/api/atelier/{pid}",                          "préparer votre dossier de présentation"),
     ("POST",   "/api/atelier/{pid}/plan",                     "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/plan/grille",              "préparer votre dossier de présentation"),
     ("PUT",    "/api/atelier/{pid}/options",                  "préparer votre dossier de présentation"),
     ("POST",   "/api/atelier/{pid}/sections",                 "préparer votre dossier de présentation"),
     ("PATCH",  "/api/atelier/{pid}/sections/{sid}",           "préparer votre dossier de présentation"),
@@ -155,6 +160,15 @@ def is_demo_user(user) -> bool:
     """Même règle que la recherche/analyse démo (une seule source de vérité)."""
     from app.services.demo_search import is_demo
     return is_demo(user)
+
+
+def refuser_demo(user, action: str) -> None:
+    """Défense en profondeur, DANS la route, derrière le middleware : 403 « lecture guidée » pour le
+    compte démo. Posée sur les routes qui téléversent, envoient un email ou écrivent chez un tiers
+    (Stripe) : si le middleware était un jour contourné, la route refuserait encore."""
+    if is_demo_user(user):
+        from fastapi import HTTPException
+        raise HTTPException(403, demo_message(action))
 
 
 def bearer_is_demo(authorization: str) -> bool:

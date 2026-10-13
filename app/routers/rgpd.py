@@ -153,6 +153,8 @@ def delete_account(request: Request, data: DeleteIn,
     """Effacement (art. 17) : supprime le compte et ses données. Irréversible.
     Confirmé par le mot de passe + le mot « SUPPRIMER ». Suppression ORDONNÉE (enfants
     avant parents) pour respecter les clés étrangères en une seule transaction."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "gérer votre compte")      # défense en profondeur : la vitrine reste en place
     if not verify_password(data.password, current_user.hashed_password):
         raise HTTPException(400, "Mot de passe incorrect")
     if (data.confirm or "").strip().upper() != "SUPPRIMER":

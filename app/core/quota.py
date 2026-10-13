@@ -136,7 +136,12 @@ def _refus_essai_termine(motif: str = "essai") -> HTTPException:
 def exiger_ia(user, db) -> None:
     """Refus propre (402) AVANT tout appel à l'IA et tout débit quand le compte de facturation
     (propriétaire de l'organisation) a terminé son essai sans formule payante. Sans effet pour tout
-    autre compte. Le compte de démonstration garde son propre refus (lecture guidée, 403)."""
+    autre compte. Le compte de démonstration reçoit son propre refus (lecture guidée, 403) : défense en
+    profondeur derrière le middleware demo_guard, sur toutes les routes qui passent par ici avant l'IA
+    (questions, chiffrage, lecture d'un dossier, veille, atelier, propositions de fiches)."""
+    if _is_demo(user) or (db is not None and _is_demo(_billing_user(user, db))):
+        from app.core.demo_guard import demo_message
+        raise HTTPException(403, demo_message("lancer une analyse IA"))
     motif = pause_ia(user, db)
     if motif:
         raise _refus_essai_termine(motif)

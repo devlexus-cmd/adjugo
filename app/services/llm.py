@@ -857,6 +857,20 @@ def tenant_usage(tenant_id) -> int:
     return _TENANT_TOKENS.get(tenant_id, 0)
 
 
+# Compte de DÉMONSTRATION (vitrine) : aucun appel à l'IA dans son espace, quel que soit le chemin —
+# dernier rempart derrière le middleware demo_guard et quota (consume_analysis, exiger_ia). Tout appel
+# passe par tenant_scope (invariant) : l'espace du compte démo est inscrit ici par son seed
+# (demo_seed.ensure_demo) et messages_create le refuse avant tout envoi. Aucun effet sur les autres comptes.
+_TENANTS_DEMO = set()
+_MSG_DEMO = "La démo est en lecture guidée : créez votre compte gratuit pour lancer une analyse IA."
+
+
+def marquer_tenant_demo(tenant_id) -> None:
+    if tenant_id is not None:
+        with _LOCK:
+            _TENANTS_DEMO.add(tenant_id)
+
+
 # ── Limite GLOBALE d'appels IA simultanés (process unique, sans Redis) ─────────
 # 4 tâches de fond × 6 sections rédigées en parallèle = jusqu'à 24 appels à la fois, plus les
 # requêtes directes : de quoi saturer le fournisseur (429 en cascade, disjoncteur ouvert pour
@@ -1475,6 +1489,9 @@ def messages_create(tache: Optional[str] = None, json_attendu: Optional[bool] = 
     json_attendu : la réponse doit être un JSON (défaut : ce que dit la route)."""
     now = time.monotonic()
     tid = _CURRENT_TENANT.get()
+    if tid is not None and tid in _TENANTS_DEMO:
+        logger.warning("Appel IA refusé : espace du compte de démonstration (tâche %s).", tache)
+        raise LLMUnavailable(_MSG_DEMO)
     if tid is not None and _TENANT_CB.get(tid, {}).get("open_until", 0.0) > now:
         raise LLMUnavailable("Service IA momentanément indisponible pour votre espace. Réessayez sous peu.")
     if _TOKEN_HARD_CAP and (TOKENS["input"] + TOKENS["output"]) >= _TOKEN_HARD_CAP:
