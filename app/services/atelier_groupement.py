@@ -1800,6 +1800,65 @@ def dossier_assemble(db, project: Project, dossier: DossierPresentation, pour_in
     return out
 
 
+POIDS_LIBELLES = {"reglement": "écrit dans le règlement", "utilisateur": "lu dans le règlement par le chef de file"}
+
+
+def note_acheteur(project: Project, section: DossierSection) -> dict:
+    """Ce que l'acheteur note pour une partie, comme la carte « Comment vous serez noté » (chantier du
+    partenaire) : le critère, son poids TEL QU'ÉCRIT et d'où il vient, la phrase du règlement RETROUVÉE dans le
+    dossier (celle de la grille, jamais reformulée) et la question du cadre de réponse. Sans IA ; rien de plus
+    que la grille que le partenaire lit déjà."""
+    from app.services import atelier_plan as ap
+    phrase = ""
+    if section.critere_id:
+        try:
+            ln = next((x for x in ap.lignes_techniques(at._analysis(project)) if x["id"] == section.critere_id), None)
+        except Exception:       # noqa: BLE001 — grille illisible : la partie garde son critère et sa question
+            ln = None
+        phrase = at._flat((ln or {}).get("phrase"))
+    question = at._flat(section.question)
+    if not phrase and section.source_plan == ap.GRILLE:
+        phrase = question                         # partie tirée d'un critère : sa question EST la phrase
+    if question == phrase:
+        question = ""
+    poids = section.poids or ""
+    src = (section.poids_source or "") if poids else ""
+    return {"critere": section.critere or "", "poids": poids, "poids_source": src,
+            "poids_libelle": POIDS_LIBELLES.get(src, ""), "phrase": phrase[:ap.QUESTION_MAX],
+            "question": question[:ap.QUESTION_MAX], "source_plan": section.source_plan or ""}
+
+
+MSG_MODE_SIMPLE = ("Mode simple : le paragraphe de votre part (« Paragraphe pour le dossier de présentation ») reste "
+                   "disponible, tel que vous l'avez écrit. Vous pouvez partir de ce texte pour rédiger une partie.")
+
+
+def resume_partenaire(db, inv: ProjectInvite) -> Optional[dict]:
+    """Pour « Partagé avec moi » : combien de parties sont confiées à ce partenaire et combien attendent quelque
+    chose de lui (à rédiger, en cours, à revalider). Statuts seulement ; None si le dossier n'est pas préparé."""
+    try:
+        if (inv.role or "cotraitant") != "cotraitant" or not inv.project_id:
+            return None
+        project = db.get(Project, inv.project_id)
+        d = dossier_du_marche(db, project, inv.owner_id) if project is not None else None
+        if d is None or not repartition_active(db, d):
+            return None
+        reps = (db.query(DossierRepartition).filter(DossierRepartition.dossier_id == d.id,
+                                                    DossierRepartition.redacteur == PARTENAIRE,
+                                                    DossierRepartition.invite_id == inv.id).all())
+        n, a_faire, a_revalider = 0, 0, 0
+        for r in reps:
+            s = db.get(DossierSection, r.section_id)
+            if s is None or s.retiree_at is not None or s.author_invite_id != inv.id:
+                continue
+            n += 1
+            st = statut_de(db, s, r)
+            a_faire += st in (A_REDIGER, EN_COURS)
+            a_revalider += st == A_REVALIDER
+        return {"parties": n, "a_faire": a_faire, "a_revalider": a_revalider} if n else None
+    except Exception:       # noqa: BLE001 — la liste « Partagé avec moi » ne casse jamais pour ce résumé
+        return None
+
+
 def vue_partenaire(db, acces: Acces) -> dict:
     """Ce que voit un partenaire : SES parties (ce que l'acheteur note, la longueur conseillée, la date limite
     interne, son brouillon PRIVÉ avec ses sources, le texte commun, l'avant et l'après d'une modification du
@@ -1816,6 +1875,7 @@ def vue_partenaire(db, acces: Acces) -> dict:
         st = statut_de(db, s, r)
         nom = nom_partenaire(acces.inv, _contribution(db, acces.invite_id))
         parties.append(dict(_section_base_out(acces.dossier, s, rangs.get(s.id, "")),
+                            note=note_acheteur(acces.project, s),
                             longueur_mots=r.longueur_mots, date_limite=_jour(r.date_limite),
                             statut=st, statut_libelle=STATUTS[st], mention=mention(db, s, nom),
                             brouillon=_brouillon_out(b, acces) if acces.cle_ok else None,
@@ -1832,9 +1892,13 @@ def vue_partenaire(db, acces: Acces) -> dict:
     espace = {"cle_valide": bool(acces.cle_ok), "ouvert": bool(getattr(acces.inv, "espace_hash", "")),
               "entete": ENTETE_CLE, "code_possible": bool(_binding_required(acces.inv)) if acces.mode == "lien" else False,
               "message": "" if acces.cle_ok else MSG_CLE_REQUISE}
+    contrib = _contribution(db, acces.invite_id)
     return {"marche": {"id": acces.project.id, "nom": acces.project.name},
             "mode": acces.mode, "espace": espace, "message_mode": MSG_MODE_COMPTE if ContextePartenaire(db, acces).avec_compte else MSG_MODE_LIEN,
             "avertissement_envoi": AVERTISSEMENT_ENVOI, "peut_ecrire": bool(getattr(acces.inv, "can_contribute", True)),
+            # Le petit texte de sa part (mode simple) : le sien, déjà lu tel quel par le chef de file.
+            "mode_simple": {"petit_texte": ((contrib.memoire_paragraph if contrib is not None else "") or "")[:TEXTE_MAX],
+                            "message": MSG_MODE_SIMPLE},
             "parties": parties, "statuts": STATUTS, "origines": ORIGINES,
             "dossier": {"empreinte": emp, "ma_validation": _validation_out(ma, emp),
                         "peut_valider": bool(parties) and all(p["statut"] == VALIDEE for p in parties)}}
