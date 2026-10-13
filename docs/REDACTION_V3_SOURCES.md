@@ -208,11 +208,17 @@ Isolation : 404 pour un autre compte (marché, partie, fait). Démo : 403 sur le
   piège présenté comme « trouvé dans vos documents » (ni « justificatif déposé »), et chacun à relire ;
   plus 10 faits justes reliés au bon endroit. `python scripts/mesure_fausses_alertes.py pieges`.
 - **Fausses alertes sur 20 vrais mémoires** (Mathys, avec l'accord écrit de chaque PME, anonymisés,
-  durée limitée — un mémoire sans `accord.json` valable est ignoré) :
-  `python scripts/mesure_fausses_alertes.py preparer calibration/ --sortie mesure/`, annoter la colonne
-  « verdict » (`vraie` / `fausse`), puis `… bilan mesure/` → fausses alertes par page (objectif < 1),
-  inventions ou oublis détectés, part des faits avec une source ; `bilan.json` ne contient aucun texte
-  (protocole « omissions et inventions » publiable). Objectif atteint sur 20 mémoires →
+  durée limitée — un mémoire sans `accord.json` valable est ignoré), dans des dossiers HORS du dépôt
+  (le script refuse un dossier source ou une sortie situés dans le dépôt, public ; `calibration/` et
+  `mesure/` sont aussi ignorés par git) :
+  `python scripts/mesure_fausses_alertes.py preparer ~/adjugo-calibration --sortie ~/adjugo-mesure`,
+  annoter la colonne « verdict » de `alertes.csv` (`vraie` / `fausse`) ET de `sources.csv` (chaque fait
+  relié à une source, avec son libellé, son renvoi, l'extrait ou le détail du calcul : `juste` / `faux`),
+  puis `… bilan ~/adjugo-mesure` → fausses alertes par page (objectif < 1), libellés positifs faux par
+  type de source, inventions ou oublis détectés, part des faits avec une source ; `bilan.json` ne
+  contient aucun texte (protocole « omissions et inventions » publiable). Objectif atteint = 20 mémoires,
+  tout annoté, moins d'une fausse alerte par page ET aucun « trouvé dans vos documents » (ni
+  « justificatif déposé ») faux (`FAUX_TOLERES`, à ne changer qu'avec Mathys, par écrit) →
   `ATELIER_LIBELLES_SOURCES=1`. Sinon on garde l'affichage d'A0, sans assouplir en silence.
 
 ## 7. Limites assumées

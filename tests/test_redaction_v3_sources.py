@@ -693,10 +693,34 @@ def test_outil_de_mesure_exige_l_accord_ecrit_puis_compte_les_fausses_alertes(tm
         w = csv.DictWriter(f, fieldnames=m.COLONNES_ALERTES)
         w.writeheader()
         w.writerows(lignes)
+    # Les libellés POSITIFS sont montrés aussi (sources.csv), pour être annotés justes ou faux.
+    srcs = list(csv.DictReader(open(sortie / "sources.csv", encoding="utf-8")))
+    assert len(srcs) == 3 and all(x["libelle"] and x["source_type"] for x in srcs)
     b = m.bilan(str(sortie))
     assert b["fausses_alertes"] == 0 and b["inventions_ou_oublis_detectes"] == 1
     assert b["part_des_faits_avec_une_source"] == 0.75 and b["objectif_atteint"] is False   # moins de 20 mémoires
-    assert "provisoire" in m._decision(b)
+    assert b["libelles_positifs_non_annotes"] == 3 and "provisoire" in m._decision(b)
+    # Un « trouvé dans vos documents » annoté faux : l'objectif ne peut pas être atteint.
+    for x in srcs:
+        x["verdict"] = "faux" if x["source_type"] == fs.T_DOCUMENTS else "juste"
+    if not any(x["source_type"] == fs.T_DOCUMENTS for x in srcs):
+        srcs[0]["source_type"], srcs[0]["verdict"] = fs.T_DOCUMENTS, "faux"
+    with open(sortie / "sources.csv", "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=m.COLONNES_SOURCES)
+        w.writeheader()
+        w.writerows(srcs)
+    b = m.bilan(str(sortie))
+    assert b["libelles_documents_faux"] >= 1 and b["objectif_atteint"] is False
+    assert "NON atteint" in m._decision(b)
     bilan_json = (sortie / "bilan.json").read_text(encoding="utf-8")
     assert "ISO 14001" not in bilan_json and "salariés" not in bilan_json          # aucun texte des mémoires
     assert m.main(["pieges"]) == 0
+    # Jamais un dossier de calibration ni une sortie dans le dépôt (public).
+    depot = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with pytest.raises(SystemExit):
+        m.preparer(str(racine), os.path.join(depot, "mesure"))
+    with pytest.raises(SystemExit):
+        m.preparer(os.path.join(depot, "calibration"), str(sortie))
+    with pytest.raises(SystemExit):
+        m.bilan(os.path.join(depot, "mesure"))
+    assert not os.path.exists(os.path.join(depot, "mesure"))

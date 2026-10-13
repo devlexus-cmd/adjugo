@@ -8,12 +8,13 @@ Tant que cet objectif n'est pas mesuré et atteint, les libellés positifs reste
 (ATELIER_LIBELLES_SOURCES non posé) : seul l'affichage « à relire » est montré.
 
 AUCUNE DONNÉE dans le dépôt : ce script lit un dossier LOCAL préparé par Mathys, avec l'accord écrit de
-chaque PME (doctrine § 7, règle 10 : aucun mémoire réel sans accord écrit). Rien n'est envoyé à l'IA ni
-sur le réseau : tout le contrôle est fait sans IA (app/services/faits_sources.py).
+chaque PME (doctrine § 7, règle 10 : aucun mémoire réel sans accord écrit), et REFUSE un dossier source ou
+une sortie situés dans le dépôt (public) : les mémoires et les phrases relevées n'y sont jamais écrits.
+Rien n'est envoyé à l'IA ni sur le réseau : tout le contrôle est fait sans IA (app/services/faits_sources.py).
 
-Dossier attendu (un sous-dossier par mémoire, anonymisé) :
+Dossier attendu, HORS du dépôt (un sous-dossier par mémoire, anonymisé) :
 
-    calibration/
+    ~/adjugo-calibration/
       pme01/
         accord.json      {"accord_ecrit_le": "2026-11-02", "valable_jusqu_au": "2027-03-01", "anonymise": true}
         memoire.docx     le mémoire tel qu'il a été déposé (.docx, .pdf, .md ou .txt)
@@ -30,15 +31,21 @@ Un mémoire sans accord.json valable (accord écrit, date de fin non dépassée,
 
 Étapes :
 
-  1. python scripts/mesure_fausses_alertes.py preparer calibration/ --sortie mesure/
-       → mesure/alertes.csv (une ligne par alerte : mémoire, partie, phrase, fait, type, message) et
-         mesure/memoires.csv (pages, faits relevés, faits avec une source, alertes) ;
-  2. Mathys remplit la colonne « verdict » de alertes.csv : « fausse » (le fait est bien dans les
-     sources, ou ce n'est pas un fait) ou « vraie » (fait absent des sources : une invention ou un oubli
-     de source) ;
-  3. python scripts/mesure_fausses_alertes.py bilan mesure/
-       → fausses alertes par page (par mémoire et en tout), inventions détectées, part des faits avec une
-         source, et la décision (objectif atteint ou non) ;
+  1. python scripts/mesure_fausses_alertes.py preparer ~/adjugo-calibration --sortie ~/adjugo-mesure
+       → alertes.csv (une ligne par alerte : mémoire, partie, phrase, fait, type, message),
+         sources.csv (une ligne par fait relié à une source : son libellé — « trouvé dans vos documents »,
+         « calculé à partir de vos faits »… —, le renvoi, l'extrait ou le détail du calcul) et
+         memoires.csv (pages, faits relevés, faits avec une source, alertes) ;
+  2. Mathys remplit la colonne « verdict » :
+       • de alertes.csv : « fausse » (le fait est bien dans les sources, ou ce n'est pas un fait) ou
+         « vraie » (fait absent des sources : une invention ou un oubli de source) ;
+       • de sources.csv : « juste » (le libellé dit vrai : le fait est bien écrit à cet endroit, ou le
+         calcul est bien celui de la phrase) ou « faux » (libellé positif faux : le pire défaut, celui
+         qui fait passer une invention pour sourcée) ;
+  3. python scripts/mesure_fausses_alertes.py bilan ~/adjugo-mesure
+       → fausses alertes par page (par mémoire et en tout), libellés positifs faux par type, inventions
+         détectées, part des faits avec une source, et la décision (objectif atteint ou non : moins d'une
+         fausse alerte par page ET aucun « trouvé dans vos documents » faux, sur 20 mémoires annotés) ;
   4. python scripts/mesure_fausses_alertes.py pieges
        → le jeu de 50 phrases piégées (aucune présentée comme « trouvé dans vos documents »).
 
@@ -63,6 +70,27 @@ EXTENSIONS = (".docx", ".pdf", ".md", ".txt", ".odt")
 COLONNES_ALERTES = ["memoire", "partie", "numero", "type", "fait", "phrase", "message", "detail", "verdict",
                     "commentaire"]
 COLONNES_MEMOIRES = ["memoire", "pages", "pages_estimees", "faits", "avec_source", "alertes", "engagements"]
+COLONNES_SOURCES = ["memoire", "partie", "numero", "type", "fait", "phrase", "source_type", "renvoi", "libelle",
+                    "cite", "extrait", "detail", "verdict", "commentaire"]
+# Libellés positifs faux tolérés, par type de source, pour allumer les libellés. « trouvé dans vos
+# documents » (et « justificatif déposé ») : AUCUN — c'est le libellé qui ferait passer une invention pour
+# un fait de l'entreprise. À revoir seulement avec Mathys, par écrit, jamais en silence.
+FAUX_TOLERES = {"documents": 0, "justificatif": 0}
+
+
+class HorsDuDepot(SystemExit):
+    """Un dossier de calibration ou de mesure dans le dépôt (public) : refusé."""
+
+
+def hors_du_depot(chemin: str, role: str) -> str:
+    """Le chemin absolu, s'il est HORS du dépôt ; sinon refus (les mémoires des PME, confiés sous accord
+    écrit pour une durée limitée, ne doivent jamais pouvoir être publiés par un « git add »)."""
+    absolu = os.path.realpath(os.path.expanduser(chemin))
+    depot = os.path.realpath(RACINE)
+    if absolu == depot or absolu.startswith(depot + os.sep):
+        raise HorsDuDepot(f"Le dossier {role} « {chemin} » est dans le dépôt Adjugo : choisissez un dossier hors du "
+                          "dépôt (par exemple ~/adjugo-calibration et ~/adjugo-mesure).")
+    return absolu
 
 
 # ── Lecture du dossier ────────────────────────────────────────────────────────────────
@@ -202,8 +230,10 @@ def preparer(racine: str, sortie: str, jour: date = None) -> dict:
     from app.services import atelier_export as ax
     from app.services import faits_a_relire as far
     from app.services import faits_sources as fs
+    racine = hors_du_depot(racine, "des mémoires")
+    sortie = hors_du_depot(sortie, "de sortie")
     os.makedirs(sortie, exist_ok=True)
-    alertes, memoires, ignores = [], [], []
+    alertes, sources, memoires, ignores = [], [], [], []
     for nom in sorted(os.listdir(racine)):
         dossier = os.path.join(racine, nom)
         if not os.path.isdir(dossier):
@@ -219,7 +249,7 @@ def preparer(racine: str, sortie: str, jour: date = None) -> dict:
         texte = lire_fichier(chemin)
         fiches, noms, acheteur = fiches_du_dossier(dossier)
         tous = []
-        n_alerte = 0
+        n_alerte = n_source = 0
         for intitule, corps in parties(texte):
             items = fs.controler(corps, fiches, acheteur=acheteur, noms_entreprise=noms,
                                  section_entreprise=far.section_sur_l_entreprise(intitule), mode="ia")
@@ -231,6 +261,15 @@ def preparer(racine: str, sortie: str, jour: date = None) -> dict:
                 alertes.append({"memoire": nom, "partie": intitule[:120], "numero": n_alerte, "type": x["type"],
                                 "fait": x["fait"], "phrase": x["phrase"], "message": x["message"],
                                 "detail": x.get("detail", ""), "verdict": "", "commentaire": ""})
+            # Les libellés POSITIFS aussi : ce sont eux que l'annotation doit pouvoir dire faux.
+            for x in fs.avec_source(items):
+                src = x.get("source") or {}
+                n_source += 1
+                sources.append({"memoire": nom, "partie": intitule[:120], "numero": n_source, "type": x["type"],
+                                "fait": x["fait"], "phrase": x["phrase"], "source_type": src.get("type", ""),
+                                "renvoi": src.get("ref", ""), "libelle": src.get("libelle", ""),
+                                "cite": "oui" if src.get("cite") else "non", "extrait": src.get("extrait", ""),
+                                "detail": src.get("detail", ""), "verdict": "", "commentaire": ""})
         b = fs.bilan(tous) or {"total": 0, "avec_source": 0, "engagements": 0}
         mots = ax.compter_texte(texte)["mots"]
         pages = ""
@@ -243,18 +282,23 @@ def preparer(racine: str, sortie: str, jour: date = None) -> dict:
         w = csv.DictWriter(f, fieldnames=COLONNES_ALERTES)
         w.writeheader()
         w.writerows(alertes)
+    with open(os.path.join(sortie, "sources.csv"), "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=COLONNES_SOURCES)
+        w.writeheader()
+        w.writerows(sources)
     with open(os.path.join(sortie, "memoires.csv"), "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=COLONNES_MEMOIRES)
         w.writeheader()
         w.writerows(memoires)
-    return {"memoires": len(memoires), "alertes": len(alertes), "ignores": ignores}
+    return {"memoires": len(memoires), "alertes": len(alertes), "sources": len(sources), "ignores": ignores}
 
 
 # ── Étape 3 : le bilan ────────────────────────────────────────────────────────────────
 
 def bilan(sortie: str) -> dict:
-    """Fausses alertes par page, inventions détectées, part des faits avec une source. N'écrit dans
-    bilan.json AUCUN texte de mémoire : seulement des nombres."""
+    """Fausses alertes par page, libellés positifs faux par type, inventions détectées, part des faits avec
+    une source. N'écrit dans bilan.json AUCUN texte de mémoire : seulement des nombres."""
+    sortie = hors_du_depot(sortie, "de sortie")
     with open(os.path.join(sortie, "memoires.csv"), encoding="utf-8") as f:
         memoires = list(csv.DictReader(f))
     with open(os.path.join(sortie, "alertes.csv"), encoding="utf-8") as f:
@@ -273,6 +317,21 @@ def bilan(sortie: str) -> dict:
             m["vraies"] += 1
         else:
             m["non_annotees"] += 1
+    # Les libellés positifs : juste / faux, par type de source (le fichier manque : rien n'est mesuré).
+    libelles, sources_lues = {}, os.path.exists(os.path.join(sortie, "sources.csv"))
+    if sources_lues:
+        with open(os.path.join(sortie, "sources.csv"), encoding="utf-8") as f:
+            for x in csv.DictReader(f):
+                if x.get("memoire") not in par:
+                    continue
+                t = libelles.setdefault(x.get("source_type") or "", {"justes": 0, "faux": 0, "non_annotes": 0})
+                v = (x.get("verdict") or "").strip().lower()
+                if v.startswith("jus"):
+                    t["justes"] += 1
+                elif v.startswith("fau"):
+                    t["faux"] += 1
+                else:
+                    t["non_annotes"] += 1
     pages = sum(m["pages"] for m in par.values()) or 1.0
     fausses = sum(m["fausses"] for m in par.values())
     faits = sum(m["faits"] for m in par.values())
@@ -287,8 +346,15 @@ def bilan(sortie: str) -> dict:
         "par_memoire": {k: {"pages": v["pages"], "fausses_par_page": round(v["fausses"] / (v["pages"] or 1), 3),
                             "vraies": v["vraies"], "non_annotees": v["non_annotees"]} for k, v in par.items()},
         "objectif": OBJECTIF,
+        "libelles_positifs": libelles,
+        "libelles_positifs_faux": sum(t["faux"] for t in libelles.values()),
+        "libelles_positifs_non_annotes": sum(t["non_annotes"] for t in libelles.values()),
+        "faux_toleres": FAUX_TOLERES,
     }
-    out["objectif_atteint"] = (out["alertes_non_annotees"] == 0 and len(par) >= 20
+    trop_de_faux = any(libelles.get(k, {}).get("faux", 0) > n for k, n in FAUX_TOLERES.items())
+    out["libelles_documents_faux"] = sum(libelles.get(k, {}).get("faux", 0) for k in FAUX_TOLERES)
+    out["objectif_atteint"] = (out["alertes_non_annotees"] == 0 and len(par) >= 20 and sources_lues
+                               and out["libelles_positifs_non_annotes"] == 0 and not trop_de_faux
                                and out["fausses_alertes_par_page"] < OBJECTIF)
     with open(os.path.join(sortie, "bilan.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
@@ -298,6 +364,12 @@ def bilan(sortie: str) -> dict:
 def _decision(b: dict) -> str:
     if b["alertes_non_annotees"]:
         return f"Bilan provisoire : {b['alertes_non_annotees']} alertes ne sont pas encore annotées (colonne « verdict »)."
+    if b.get("libelles_positifs_non_annotes"):
+        return (f"Bilan provisoire : {b['libelles_positifs_non_annotes']} faits avec une source ne sont pas encore "
+                "annotés (sources.csv, colonne « verdict »).")
+    if b.get("libelles_documents_faux"):
+        return (f"Objectif NON atteint : {b['libelles_documents_faux']} « trouvé dans vos documents » faux. On garde "
+                "l'affichage « à relire » sans libellé positif, et on corrige le contrôle avant toute nouvelle mesure.")
     if b["memoires"] < 20:
         return (f"Bilan provisoire : {b['memoires']} mémoires sur les 20 prévus. Les libellés positifs restent "
                 "éteints.")
@@ -318,15 +390,17 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Mesure des fausses alertes de « Chaque fait a sa source » (sans IA).")
     sub = ap.add_subparsers(dest="etape", required=True)
     p1 = sub.add_parser("preparer", help="relève les alertes de chaque mémoire (accord écrit exigé)")
-    p1.add_argument("dossier")
-    p1.add_argument("--sortie", default="mesure")
+    p1.add_argument("dossier", help="dossier des mémoires, HORS du dépôt (par exemple ~/adjugo-calibration)")
+    p1.add_argument("--sortie", default=os.path.join("~", "adjugo-mesure"),
+                    help="dossier de sortie, HORS du dépôt (défaut ~/adjugo-mesure)")
     p2 = sub.add_parser("bilan", help="compte les fausses alertes annotées")
     p2.add_argument("sortie")
     sub.add_parser("pieges", help="le jeu de 50 phrases piégées")
     a = ap.parse_args(argv)
     if a.etape == "preparer":
         r = preparer(a.dossier, a.sortie)
-        print(f"{r['memoires']} mémoires lus, {r['alertes']} alertes à annoter dans {a.sortie}/alertes.csv.")
+        print(f"{r['memoires']} mémoires lus : {r['alertes']} alertes à annoter dans {a.sortie}/alertes.csv, "
+              f"{r['sources']} faits avec une source à annoter dans {a.sortie}/sources.csv.")
         for x in r["ignores"]:
             print(f"  ignoré : {x['memoire']} ({x['raison']})")
         return 0
