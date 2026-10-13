@@ -720,7 +720,12 @@ def _analyser_partage(lecture, texte, note, pl, pieces_meta, company, criteria, 
     d'un seul tenant, ou pièces lues une à une puis synthèse —, resservie depuis le partage quand ce même
     dossier, exactement, a déjà été extrait ; (b) partie propre à l'entreprise (analysis.completer).
     ANALYSE_PARTAGEE=0 : analyse d'origine en un seul appel (mesure des doublons seule). Renvoie
-    (analyse, rapport de la lecture en deux temps ou None)."""
+    (analyse, rapport de la lecture en deux temps ou None).
+    Extraction resservie en deux temps : les informations relevées partie par partie sont rangées avec CE
+    marché (on_parties), exactement comme après sa propre lecture — un « Ré-analyser » ne relit alors que
+    ce qu'il relirait sans partage (rien)."""
+    import copy
+    import time
     from app.services import analyse_partagee as ap
     cle = ap.cle_dossier(lecture, texte, note, lang_name, pl) if (partage is not None and ap.actif()) else ""
     deux = pl["mode"] != "integral"
@@ -738,21 +743,47 @@ def _analyser_partage(lecture, texte, note, pl, pieces_meta, company, criteria, 
             r["reprises"] = len(prep["segs"]) - len(prep["a_appeler"])
         return r
 
-    def fn(extraction, rapport, rg):
+    def fn(servi, rg):
         kw = dict(lang_name=lang_name, pieces=pieces_meta, integral=True, note_lecture=note, text_integral=texte)
-        if extraction is not None:
+        if servi is not None:
             if deux:
+                parties = servi.get("parties")
+                if isinstance(parties, dict) and parties and on_parties is not None:
+                    try:
+                        on_parties(copy.deepcopy(parties))
+                    except Exception as e:      # noqa: BLE001 — jamais bloquant
+                        logger.warning("informations relevées non rangées : %s", type(e).__name__)
                 _etape_synthese(progress)
-            return an.analyze_dce_text(texte, company, criteria, extraction=extraction, **kw), rapport
+            return (an.analyze_dce_text(texte, company, criteria, extraction=servi["extraction"], **kw),
+                    servi.get("rapport"))
         if not deux:
             return an.analyze_dce_text(texte, company, criteria, portee_extraction=rg.portee(),
                                        apres_extraction=rg.apres(), **kw), None
+        # Lecture en deux temps : ce qui est relu partie par partie et l'instant de chaque lecture sont
+        # relevés pour le partage (progression d'une extraction resservie rejouée comme une vraie).
+        t0 = time.monotonic()
+        marques, noms, lues = [], [], {}
+
+        def prog(d):
+            if isinstance(d, dict) and d.get("etape") == "analyse":
+                marques.append(time.monotonic() - t0)
+                noms.append(d.get("piece_en_cours") or "")
+            if progress is not None:
+                progress(d)
+
+        def ranger(parties):
+            lues.update(parties)
+            if on_parties is not None:
+                on_parties(parties)
+
         with rg.portee():
             synthese, rap = _deux_temps(lecture, company, criteria, lang_name, pl["budget_caracteres"],
-                                        progress=progress, on_parties=on_parties)
+                                        progress=prog, on_parties=ranger)
+        lecture_s = time.monotonic() - t0
         _etape_synthese(progress)
         return an.analyze_dce_text(synthese, company, criteria, portee_extraction=rg.portee(),
-                                   apres_extraction=rg.apres(rap), **kw), rap
+                                   apres_extraction=rg.apres(rap, parties=lues, lecture_s=lecture_s,
+                                                             marques=marques, noms=noms), **kw), rap
 
     analysis, rapport, servie, cout = ap.executer(partage, ap.NATURE_DOSSIER, cle, pl["mode"], fn,
                                                   progress=progress, etapes=etapes, ajuster=ajuster,

@@ -595,6 +595,8 @@ class AnalysePartagee(Base):
     modele = Column(String(200), nullable=False, default="", server_default="")
     extraction = Column(JSON, nullable=False)       # réponse de l'IA (faits du dossier), avant tout calcul
     rapport = Column(JSON, nullable=True)           # lecture en deux temps : ce qui a été lu, partie par partie
+    parties = Column(JSON, nullable=True)           # deux temps : faits relevés par partie (clé = contenu exact)
+    deroule = Column(JSON, nullable=True)           # deux temps : durées et instants de lecture (progression)
     duree_s = Column(Float, nullable=False, default=0.0, server_default="0")
     cout_eur = Column(Float, nullable=False, default=0.0, server_default="0")
     created_at = Column(DateTime, default=utcnow)

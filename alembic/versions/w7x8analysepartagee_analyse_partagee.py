@@ -6,7 +6,9 @@ colonne et chaque index ne sont ajoutés que s'ils manquent. SQLite (tests, dém
 - table `analyses_partagees` (app.models.AnalysePartagee) : l'extraction d'un dossier de consultation
   par l'IA (faits du document PUBLIC de l'acheteur, aucune donnée d'entreprise, aucune colonne de
   propriétaire), resservie quand ce même dossier, exactement, est analysé à nouveau. Clé unique =
-  empreinte de tout ce que l'IA reçoit (consignes, modèles, lecture, langue, texte des pièces) ;
+  empreinte de tout ce que l'IA reçoit (consignes, modèles, lecture, langue, texte des pièces). En
+  lecture en deux temps, les informations relevées partie par partie (`parties`) et le déroulé de la
+  lecture (`deroule` : durées, instants) ;
 - table `analyse_empreintes` (app.models.AnalyseEmpreinte) : une ligne par analyse, avec l'empreinte
   normalisée des pièces (jamais leur contenu) et l'organisation, pour mesurer les doublons entre
   organisations (interne, jamais montré à un client). Sans clé étrangère, comme usage_ia.
@@ -44,6 +46,8 @@ def _colonnes_cache(for_create: bool):
         sa.Column("modele", sa.String(200), nullable=opt, server_default=""),
         sa.Column("extraction", sa.JSON(), nullable=opt),
         sa.Column("rapport", sa.JSON(), nullable=True),
+        sa.Column("parties", sa.JSON(), nullable=True),
+        sa.Column("deroule", sa.JSON(), nullable=True),
         sa.Column("duree_s", sa.Float(), nullable=opt, server_default="0"),
         sa.Column("cout_eur", sa.Float(), nullable=opt, server_default="0"),
         sa.Column("created_at", sa.DateTime(), nullable=True),

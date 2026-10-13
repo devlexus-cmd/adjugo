@@ -137,7 +137,8 @@ def attentes(monkeypatch):
     """Délai de l'analyse partagée relevé (sans attendre pour de vrai)."""
     from app.services import analyse_partagee as ap
     vus = []
-    monkeypatch.setattr(ap, "attendre", lambda d, progress=None, etapes=None: vus.append((d, list(etapes or []))))
+    monkeypatch.setattr(ap, "rejouer", lambda servi, progress=None, etapes=None, deja_s=0.0:
+                        vus.append((servi.get("duree_s"), list(etapes or []))))
     return vus
 
 
@@ -587,6 +588,162 @@ def test_deux_temps_servi_sans_aucune_lecture_compteurs_recalcules(ia, attentes,
     assert b["couverture"]["analyse"]["appels_ia"] == a["couverture"]["analyse"]["appels_ia"]
     assert len(attentes) == 1 and len(attentes[0][1]) == a["couverture"]["analyse"]["appels_ia"]
     assert prog and prog[-1] == {"etape": "synthese"}
+
+
+def _analyser_dossier(lecture, owner, forcer=False, prog=None, nom="X"):
+    """Analyse d'un dossier par une organisation, comme la tâche de fond : ce qui est relevé partie par
+    partie est rangé avec SON marché (on_parties)."""
+    from app.services import analyse_dossier as ad, analyse_partagee as ap
+    ranges = {}
+    with llm.tenant_scope(owner):
+        a = ad.analyser(lecture, {"name": nom}, {}, lang_name="français",
+                        progress=(prog.append if prog is not None else None), on_parties=ranges.update,
+                        partage=ap.partage(owner, forcer=forcer))
+    return a, ranges
+
+
+def test_reanalyser_apres_extraction_resservie_comme_apres_une_extraction_neuve(ia, attentes, monkeypatch):
+    """Extraction resservie en deux temps : les informations relevées partie par partie sont rangées avec
+    le marché de B comme avec celui de A. « Ré-analyser » chez B : aucune pièce relue, même couverture,
+    mêmes compteurs, même progression que chez A (rien ne trahit le partage, aucun surcoût)."""
+    from app.services import analyse_dossier as ad
+    from tests.test_lecture_integrale_relecture import _lecture_deux_temps
+    monkeypatch.setattr(ad, "BUDGET_TOKENS", 12_000)
+    fake = ia()
+    base = _lecture_deux_temps()
+    _a1, parts_a = _analyser_dossier(copy.deepcopy(base), 990601)
+    n = len(fake.calls)
+    _b1, parts_b = _analyser_dossier(copy.deepcopy(base), 990602)
+    assert [k for k in fake.calls[n:] if PIECES in llm._flatten_content(k.get("system"))] == []
+    assert parts_a and parts_b == parts_a                                    # même rangement que A
+    resultats = {}
+    for owner, parts in ((990601, parts_a), (990602, parts_b)):
+        lec2 = copy.deepcopy(base)
+        lec2["analyse_parties"] = parts
+        n = len(fake.calls)
+        prog = []
+        a2, _ = _analyser_dossier(lec2, owner, forcer=True, prog=prog)
+        lus = [k for k in fake.calls[n:] if PIECES in llm._flatten_content(k.get("system"))]
+        resultats[owner] = (len(lus), a2["couverture"], prog)
+    assert resultats[990601][0] == resultats[990602][0] == 0
+    assert resultats[990601][1] == resultats[990602][1]
+    assert resultats[990601][1]["analyse"]["parties_reprises"] == len(parts_a)
+    assert resultats[990601][2] == resultats[990602][2] == [{"etape": "synthese"}]
+
+
+class _Horloge:
+    """Horloge simulée : time.sleep avance le temps, sans attendre pour de vrai."""
+
+    def __init__(self):
+        self.t = 1000.0
+
+    def monotonic(self):
+        return self.t
+
+    def sleep(self, d):
+        self.t += max(0.0, d)
+
+
+def test_progression_rejouee_comme_une_vraie_lecture(ia, monkeypatch):
+    """La première fois qu'une organisation reçoit une extraction faite pour une autre, la progression est
+    rejouée comme une vraie lecture : chaque partie annoncée à l'instant où elle avait été lue (par
+    paquets, comme les lectures en parallèle), puis l'étape « synthese » PENDANT la durée de la synthèse ;
+    la durée déjà attendue (import simultané) est retirée."""
+    from app.services import analyse_dossier as ad, analyse_partagee as ap
+    from tests.test_lecture_integrale_relecture import _lecture_deux_temps
+    monkeypatch.setattr(ad, "BUDGET_TOKENS", 12_000)
+    ia()
+    _analyser_dossier(_lecture_deux_temps(), 990701)
+    ligne = _lignes_partagees()[0]
+    der = ligne["deroule"]
+    assert der and len(der["marques"]) == len(der["noms"]) >= 2 and der["synthese_s"] >= 0
+    assert ligne["duree_s"] >= der["lecture_s"]
+    h = _Horloge()
+    monkeypatch.setattr(ap, "time", h)
+    servi = {"duree_s": 10.0, "deroule": {"lecture_s": 4.0, "synthese_s": 6.0, "marques": [1.0, 1.0, 1.0, 4.0],
+                                          "noms": ["A", "B", "C", "D"]}}
+    vus = []
+    ap.rejouer(servi, progress=lambda d: vus.append((round(h.t - 1000.0, 3), d)), etapes=["a", "b", "c", "d"])
+    assert [t for t, _d in vus] == [1.0, 1.0, 1.0, 4.0, 4.0]                 # par paquets, puis synthèse
+    assert [d.get("piece_en_cours") for _t, d in vus[:4]] == ["A", "B", "C", "D"]
+    assert vus[-1][1] == {"etape": "synthese"} and vus[0][1]["parties_total"] == 4
+    assert h.t - 1000.0 == pytest.approx(10.0)                               # synthèse : 6 s
+    # Déjà attendu 3 s (import simultané) : seul le reste est attendu.
+    h.t, vus = 1000.0, []
+    ap.rejouer(servi, progress=lambda d: vus.append(d), etapes=["a", "b", "c", "d"], deja_s=3.0)
+    assert h.t - 1000.0 == pytest.approx(7.0) and len(vus) == 5
+    # Plafond ANALYSE_PARTAGEE_MASQUE_MAX_S : tout est ramené dans la même proportion.
+    monkeypatch.setenv("ANALYSE_PARTAGEE_MASQUE_MAX_S", "5")
+    h.t, vus = 1000.0, []
+    ap.rejouer(servi, progress=lambda d: vus.append((round(h.t - 1000.0, 3), d)), etapes=["a", "b", "c", "d"])
+    assert [t for t, _d in vus] == [0.5, 0.5, 0.5, 2.0, 2.0] and h.t - 1000.0 == pytest.approx(5.0)
+
+
+def test_extraction_faite_sur_des_parties_reprises_jamais_gardee(ia, attentes, monkeypatch):
+    """Des parties de CE marché déjà lues (analyse précédente interrompue, lues peut-être par le secours) :
+    l'extraction qui les reprend n'est jamais gardée dans le partage (ni resservie), et elle est comptée
+    au client comme sans partage."""
+    from app.services import analyse_dossier as ad
+    from tests.test_lecture_integrale_relecture import _lecture_deux_temps
+    monkeypatch.setattr(ad, "BUDGET_TOKENS", 12_000)
+
+    def synthese_en_panne(kw):
+        system = llm._flatten_content(kw.get("system"))
+        if PIECES not in system and ENTREPRISE not in system:
+            raise llm.LLMUnavailable("panne simulée de la synthèse")
+        return _repondre(kw)
+    ia(synthese_en_panne)
+    base = _lecture_deux_temps()
+    ranges = {}
+    from app.services import analyse_partagee as ap
+    with pytest.raises(Exception):
+        with llm.tenant_scope(990801):
+            ad.analyser(copy.deepcopy(base), {"name": "A"}, {}, lang_name="français", on_parties=ranges.update,
+                        partage=ap.partage(990801))
+    assert ranges and _lignes_partagees() == []
+    fake = ia()
+    lec2 = copy.deepcopy(base)
+    lec2["analyse_parties"] = ranges
+    with llm.tenant_scope(990801):
+        a = ad.analyser(lec2, {"name": "A"}, {}, lang_name="français", partage=ap.partage(990801))
+    assert a["couverture"]["analyse"]["parties_reprises"] == len(ranges)
+    assert [k for k in fake.calls if PIECES in llm._flatten_content(k.get("system"))] == []
+    assert len(appels_dossier(fake.calls)) == 1 and _lignes_partagees() == []   # jamais gardée
+
+
+def test_deux_imports_simultanes_une_seule_extraction(ia, monkeypatch):
+    """Deux imports du même dossier au même moment (deux organisations) : une seule extraction est faite
+    et payée ; le second attend qu'elle soit rangée, puis la reçoit."""
+    import threading
+    import time as _t
+    from app.services import analyse_partagee as ap
+    monkeypatch.setenv("ANALYSE_PARTAGEE_MASQUE", "0")
+    commence = threading.Event()
+
+    def lente(kw):
+        system = llm._flatten_content(kw.get("system"))
+        if ENTREPRISE not in system:
+            commence.set()
+            _t.sleep(0.4)
+        return _repondre(kw)
+    fake = ia(lente)
+    res = {}
+
+    def lancer(owner):
+        res[owner] = ap.analyser_texte(_texte_dce(), {"name": f"Org{owner}"}, {}, lang_name="français",
+                                       p=ap.partage(owner))
+    t1 = threading.Thread(target=lancer, args=(990901,))
+    t1.start()
+    assert commence.wait(5)
+    t2 = threading.Thread(target=lancer, args=(990902,))
+    t2.start()
+    t1.join(10)
+    t2.join(10)
+    assert len(appels_dossier(fake.calls)) == 1 and len(appels_entreprise(fake.calls)) == 2
+    assert res[990901]["details"]["intitule_marche"] == res[990902]["details"]["intitule_marche"]
+    assert res[990902]["details"]["recommandation"].endswith("Pour Org990902.")
+    assert sorted(m["servi_du_cache"] for m in _mesures()) == [False, True]
+    assert ap._EN_COURS == {}
 
 
 def test_lecture_incomplete_jamais_gardee(ia, attentes, monkeypatch):

@@ -56,6 +56,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
@@ -93,6 +94,11 @@ def masque_actif() -> bool:
 
 def masque_max_s() -> float:
     return _env_float("ANALYSE_PARTAGEE_MASQUE_MAX_S", 600.0)
+
+
+def attente_max_s() -> float:
+    """Attente au plus d'une extraction du même dossier déjà en cours (deux imports au même moment)."""
+    return _env_float("ANALYSE_PARTAGEE_ATTENTE_MAX_S", 1800.0)
 
 
 def jours_cache() -> int:
@@ -282,8 +288,8 @@ def _session():
 
 
 def lire(cle: str):
-    """Entrée partagée de cette clé ({extraction, rapport, duree_s, cout_eur, mode}) ou None. Une
-    erreur de lecture vaut « pas d'entrée » (l'analyse se fait alors comme d'habitude)."""
+    """Entrée partagée de cette clé ({extraction, rapport, parties, deroule, duree_s, cout_eur, mode})
+    ou None. Une erreur de lecture vaut « pas d'entrée » (l'analyse se fait alors comme d'habitude)."""
     if not cle:
         return None
     from app.models import AnalysePartagee
@@ -296,6 +302,8 @@ def lire(cle: str):
             return None             # trop ancienne : refaite (et remplacée), la purge l'efface sinon
         out = {"extraction": json.loads(json.dumps(row.extraction)),
                "rapport": json.loads(json.dumps(row.rapport)) if row.rapport is not None else None,
+               "parties": json.loads(json.dumps(row.parties)) if isinstance(row.parties, dict) else None,
+               "deroule": json.loads(json.dumps(row.deroule)) if isinstance(row.deroule, dict) else None,
                "duree_s": float(row.duree_s or 0.0), "cout_eur": float(row.cout_eur or 0.0), "mode": row.mode}
         row.utilise_le = _maintenant()
         db.commit()
@@ -309,8 +317,11 @@ def lire(cle: str):
 
 
 def ecrire(cle: str, nature: str, mode: str, extraction: dict, rapport=None, duree_s: float = 0.0,
-           cout_eur: float = 0.0) -> bool:
-    """Range (ou remplace) l'entrée partagée. Jamais bloquant : un échec laisse l'analyse intacte."""
+           cout_eur: float = 0.0, parties: dict = None, deroule: dict = None) -> bool:
+    """Range (ou remplace) l'entrée partagée. Jamais bloquant : un échec laisse l'analyse intacte.
+    parties : lecture en deux temps, informations relevées partie par partie (faits du dossier et leurs
+    phrases exactes, clé = contenu exact de la partie) ; deroule : durées de la lecture des pièces et de
+    la synthèse, et instants où chaque partie a été lue (progression rejouée)."""
     if not cle or not isinstance(extraction, dict):
         return False
     from sqlalchemy.exc import IntegrityError
@@ -319,6 +330,8 @@ def ecrire(cle: str, nature: str, mode: str, extraction: dict, rapport=None, dur
             "modele": descripteur_modele(nature)[:200],
             "extraction": json.loads(json.dumps(extraction)),
             "rapport": json.loads(json.dumps(rapport)) if rapport is not None else None,
+            "parties": json.loads(json.dumps(parties)) if isinstance(parties, dict) and parties else None,
+            "deroule": json.loads(json.dumps(deroule)) if isinstance(deroule, dict) else None,
             "duree_s": round(float(duree_s or 0.0), 3), "cout_eur": round(float(cout_eur or 0.0), 6),
             "utilise_le": _maintenant()}
     db = _session()
@@ -381,24 +394,85 @@ def noter(p, nature: str, empreinte: str, cle, servi: bool, economie_eur: float 
 
 # ── Délai : la rapidité d'une extraction resservie ne trahit rien ─────────────────────────────
 
-def attendre(duree_s: float, progress=None, etapes=None) -> None:
-    """Attend `duree_s` (bornée) en rejouant la progression (une étape par appel de lecture)."""
-    d = max(0.0, min(float(duree_s or 0.0), masque_max_s()))
+def _emettre(progress, d: dict) -> None:
+    if progress is not None:
+        try:
+            progress(d)
+        except Exception:       # noqa: BLE001
+            pass
+
+
+def rejouer(servi: dict, progress=None, etapes=None, deja_s: float = 0.0) -> None:
+    """Attend la durée qu'avait prise l'extraction (bornée par ANALYSE_PARTAGEE_MASQUE_MAX_S, moins
+    `deja_s` déjà attendus) en rejouant sa progression COMME UNE VRAIE LECTURE : en deux temps, chaque
+    partie annoncée lue à l'instant où elle l'avait été (par paquets, comme les lectures en parallèle),
+    puis l'étape « synthese » pendant la durée de la synthèse. `etapes` : les appels de lecture de CE
+    marché (un par groupe de parties)."""
+    duree = max(0.0, float(servi.get("duree_s") or 0.0))
+    total = min(duree, masque_max_s())
+    k = (total / duree) if duree > 0 else 0.0
+    der = servi.get("deroule") if isinstance(servi.get("deroule"), dict) else {}
     etapes = list(etapes or [])
-    if not etapes:
-        if d:
-            time.sleep(d)
+    t0 = time.monotonic() - max(0.0, float(deja_s or 0.0))
+
+    def jusqua(t: float) -> None:
+        reste = t - (time.monotonic() - t0)
+        if reste > 0:
+            time.sleep(reste)
+
+    if etapes:
+        marques = [float(m) for m in (der.get("marques") or []) if isinstance(m, (int, float))]
+        noms = [str(x or "") for x in (der.get("noms") or [])]
+        if len(marques) != len(etapes):
+            # Sans déroulé gardé : lectures par paquets (ANALYSE_PARALLELE) sur la durée de lecture.
+            from app.services import analyse_dossier as ad
+            lecture_s = float(der.get("lecture_s") or duree * 0.6)
+            paquets = max(1, -(-len(etapes) // max(1, ad.PARALLELE)))
+            marques = [lecture_s * (i // max(1, ad.PARALLELE) + 1) / paquets for i in range(len(etapes))]
+        if len(noms) != len(etapes):
+            noms = etapes
+        for i, (m, nom) in enumerate(zip(marques, noms), 1):
+            jusqua(m * k)
+            _emettre(progress, {"etape": "analyse", "parties_lues": i, "parties_total": len(etapes),
+                                "piece_en_cours": str(nom or "")[:120]})
+        _emettre(progress, {"etape": "synthese"})
+    jusqua(total)
+
+
+# ── Deux imports du même dossier au même moment : une seule extraction (un seul process) ───────
+
+_EN_COURS = {}
+_EN_COURS_LOCK = threading.Lock()
+
+
+def _reserver(cle: str):
+    """Réserve l'extraction de cette clé : un jeton (à libérer) si personne ne la fait déjà, sinon None."""
+    with _EN_COURS_LOCK:
+        if cle in _EN_COURS:
+            return None
+        ev = threading.Event()
+        _EN_COURS[cle] = ev
+        return ev
+
+
+def _liberer(cle: str, jeton) -> None:
+    if jeton is None:
         return
-    pas = d / len(etapes)
-    for i, nom in enumerate(etapes, 1):
-        if pas:
-            time.sleep(pas)
-        if progress is not None:
-            try:
-                progress({"etape": "analyse", "parties_lues": i, "parties_total": len(etapes),
-                          "piece_en_cours": str(nom or "")[:120]})
-            except Exception:       # noqa: BLE001
-                pass
+    with _EN_COURS_LOCK:
+        if _EN_COURS.get(cle) is jeton:
+            del _EN_COURS[cle]
+    jeton.set()
+
+
+def _attendre_en_cours(cle: str, timeout: float) -> float:
+    """Attend la fin de l'extraction de cette clé en cours (rangée ou en échec) ; renvoie la durée attendue."""
+    with _EN_COURS_LOCK:
+        ev = _EN_COURS.get(cle)
+    if ev is None:
+        return 0.0
+    t = time.monotonic()
+    ev.wait(max(0.0, timeout))
+    return time.monotonic() - t
 
 
 # ── Orchestration commune (dossier lu en entier, avis) ─────────────────────────────────────────
@@ -413,58 +487,97 @@ def _complete(rapport) -> bool:
 class Rangement:
     """Extraction NEUVE d'une analyse : portée de coût de l'extraction (plateforme, ou essai du compte ;
     sans partage : le client) et rangement de l'extraction dans le partage dès qu'elle est prête —
-    seulement si elle est complète et faite par le modèle prévu (aucune bascule de secours)."""
+    seulement si elle est complète et faite par le modèle prévu (aucune bascule de secours). Libère
+    alors les imports du même dossier qui attendaient cette extraction."""
 
-    def __init__(self, p, nature: str, cle: str, mode: str, aleas: list, cm, t0: float):
+    def __init__(self, p, nature: str, cle: str, mode: str, aleas: list, cm, t0: float, jeton=None):
         self.p, self.nature, self.cle, self.mode = p, nature, cle, mode
-        self.aleas, self.cm, self.t0 = aleas, cm, t0
+        self.aleas, self.cm, self.t0, self.jeton = aleas, cm, t0, jeton
         self.rangee = False
 
     def portee(self):
         return portee_extraction(self.p) if self.p is not None else contextlib.nullcontext()
 
-    def apres(self, rapport=None):
+    def liberer(self) -> None:
+        _liberer(self.cle, self.jeton)
+
+    def apres(self, rapport=None, parties=None, lecture_s=None, marques=None, noms=None):
         """Rappel `apres_extraction` d'analysis.analyze_dce_text (appelé avant la partie propre à
-        l'entreprise : le coût et la durée relevés à cet instant sont ceux de l'extraction seule)."""
+        l'entreprise : le coût et la durée relevés à cet instant sont ceux de l'extraction seule).
+        Lecture en deux temps : `parties` (informations relevées partie par partie), `lecture_s`
+        (durée de la lecture des pièces), `marques` / `noms` (instant et pièce de chaque lecture)."""
         def ranger(extraction, *_ignores):
-            if self.p is None or not isinstance(extraction, dict):
-                return
-            if self.aleas:
-                logger.info("analyse partagée : extraction non gardée (bascule de secours : %s)",
-                            ", ".join(sorted(set(self.aleas))))
-                return
-            if not _complete(rapport):
-                return
-            self.rangee = ecrire(self.cle, self.nature, self.mode, extraction, rapport=rapport,
-                                 duree_s=time.monotonic() - self.t0, cout_eur=self.cm.cost_eur())
+            try:
+                if self.p is None or not isinstance(extraction, dict):
+                    return
+                if self.aleas:
+                    logger.info("analyse partagée : extraction non gardée (bascule de secours : %s)",
+                                ", ".join(sorted(set(self.aleas))))
+                    return
+                if not _complete(rapport):
+                    return
+                duree = time.monotonic() - self.t0
+                deroule = None
+                if lecture_s is not None:
+                    deroule = {"lecture_s": round(float(lecture_s), 3),
+                               "synthese_s": round(max(0.0, duree - float(lecture_s)), 3),
+                               "marques": [round(float(m), 3) for m in (marques or [])],
+                               "noms": [str(x or "")[:120] for x in (noms or [])]}
+                self.rangee = ecrire(self.cle, self.nature, self.mode, extraction, rapport=rapport,
+                                     duree_s=duree, cout_eur=self.cm.cost_eur(), parties=parties,
+                                     deroule=deroule)
+            finally:
+                self.liberer()      # rangée (ou non) : ceux qui attendaient la relisent
         return ranger
 
 
 def executer(p, nature: str, cle: str, mode: str, analyser_fn, progress=None, etapes=None, ajuster=None,
              lecture_permise: bool = True):
-    """Analyse avec l'extraction partagée. analyser_fn(extraction, rapport, rangement) → (analyse, rapport) :
-    - extraction resservie (dict) : ne fait que la partie propre à l'entreprise (rangement None) ;
-    - sinon (extraction None) : fait l'extraction dans `rangement.portee()` et passe `rangement.apres(rapport)`
+    """Analyse avec l'extraction partagée. analyser_fn(servi, rangement) → (analyse, rapport) :
+    - servi (dict : extraction, rapport recalculé pour CE marché, parties, deroule) : extraction
+      resservie, ne fait que la partie propre à l'entreprise (rangement None) ;
+    - sinon (servi None) : fait l'extraction dans `rangement.portee()` et passe `rangement.apres(...)`
       à analyze_dce_text (apres_extraction).
     p = partage(...) ou None (aucun partage : extraction faite et comptée au client, rien de gardé).
-    ajuster(rapport) : rapport resservi recalculé pour CE marché. Renvoie (analyse, rapport, servie,
-    coût de l'extraction resservie). Propage une panne de l'IA."""
+    lecture_permise=False : des parties de CE marché ont déjà été lues (reprises) — l'extraction n'est
+    ni resservie ni gardée (ces parties n'ont pas été lues sous les yeux de cette analyse : modèle et
+    consigne de leur lecture non garantis), comptée au client comme sans partage.
+    Deux imports du même dossier au même moment : le second attend que l'extraction du premier soit
+    rangée, puis la reçoit (une seule extraction payée). ajuster(rapport) : rapport resservi recalculé
+    pour CE marché. Renvoie (analyse, rapport, servie, coût de l'extraction resservie). Propage une
+    panne de l'IA."""
     from app.services import llm
     partage_ok = p is not None and actif() and bool(cle)
+    jeton = None
     if partage_ok and lecture_permise and not p.get("forcer"):
-        servi = lire(cle)
+        servi, attendu = lire(cle), 0.0
+        if servi is None:
+            jeton = _reserver(cle)
+            if jeton is None:
+                # Le même dossier est en cours d'extraction pour un autre import : attendre qu'elle soit
+                # rangée plutôt que de la payer deux fois (l'attente fait partie du délai masqué).
+                attendu = _attendre_en_cours(cle, attente_max_s())
+                servi = lire(cle)
+                if servi is None:
+                    jeton = _reserver(cle)
         if servi is not None:
             rapport = servi.get("rapport")
             if ajuster is not None and isinstance(rapport, dict):
                 rapport = ajuster(rapport)
             if masque_actif() and not deja_vue(p.get("owner_id"), cle):
-                attendre(servi.get("duree_s") or 0.0, progress=progress, etapes=etapes)
-            analysis, rapport = analyser_fn(servi["extraction"], rapport, None)
+                rejouer(servi, progress=progress, etapes=etapes, deja_s=attendu)
+            analysis, rapport = analyser_fn(dict(servi, rapport=rapport), None)
             return analysis, rapport, True, float(servi.get("cout_eur") or 0.0)
-    with _collecter_aleas() as aleas, \
-            llm.cost_meter("extraction du dossier", llm._CURRENT_TENANT.get(), log=False) as cm:
-        rg = Rangement(p if partage_ok else None, nature, cle, mode, aleas, cm, time.monotonic())
-        analysis, rapport = analyser_fn(None, None, rg)
+    elif partage_ok and lecture_permise:
+        jeton = _reserver(cle)      # « Ré-analyser » : les imports du même dossier attendent celle-ci
+    try:
+        with _collecter_aleas() as aleas, \
+                llm.cost_meter("extraction du dossier", llm._CURRENT_TENANT.get(), log=False) as cm:
+            rg = Rangement(p if (partage_ok and lecture_permise) else None, nature, cle, mode, aleas, cm,
+                           time.monotonic(), jeton=jeton)
+            analysis, rapport = analyser_fn(None, rg)
+    finally:
+        _liberer(cle, jeton)
     return analysis, rapport, False, 0.0
 
 
@@ -477,10 +590,10 @@ def analyser_texte(text: str, company=None, criteria=None, lang_name=None, p: di
         return an.analyze_dce_text(text, company, criteria, lang_name=lang_name, annonce_seule=annonce_seule)
     cle = cle_texte(an.build_extraction_prompt(text, lang_name)) if actif() else ""
 
-    def fn(extraction, _rapport, rg):
-        if extraction is not None:
+    def fn(servi, rg):
+        if servi is not None:
             return an.analyze_dce_text(text, company, criteria, lang_name=lang_name, annonce_seule=annonce_seule,
-                                       extraction=extraction), None
+                                       extraction=servi["extraction"]), None
         return an.analyze_dce_text(text, company, criteria, lang_name=lang_name, annonce_seule=annonce_seule,
                                    portee_extraction=rg.portee(), apres_extraction=rg.apres()), None
 
