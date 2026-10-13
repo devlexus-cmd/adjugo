@@ -99,6 +99,12 @@ def jours_cache() -> int:
     return int(_env_float("ANALYSE_PARTAGEE_JOURS", 120))
 
 
+def jours_max() -> int:
+    """Durée de vie MAXIMALE d'une extraction gardée, depuis qu'elle a été faite (même resservie
+    souvent : sa durée de conservation est bornée)."""
+    return int(_env_float("ANALYSE_PARTAGEE_DUREE_MAX_JOURS", 365))
+
+
 def jours_mesure() -> int:
     return int(_env_float("ANALYSE_PARTAGEE_MESURE_JOURS", 365))
 
@@ -222,10 +228,21 @@ def version() -> str:
 
 
 def _consignes(nature: str) -> str:
+    """Consignes système et, pour un dossier, TOUS les textes fixes de la lecture en deux temps (prompt
+    de lecture d'une partie, en-têtes et lignes de la synthèse, introduction : gabarits_lecture)."""
     from app.services import analysis as an
     from app.services import analyse_dossier as ad
+    from app.services import dce_pieces as dp
     return _h(an.SYSTEM_EXTRACTION, an.ANALYSE_MAX_TOKENS, an.ANALYSE_MODEL,
-              *((ad.PIECE_SYSTEM, ad.PIECES_MAX_TOKENS) if nature == NATURE_DOSSIER else ()))
+              *((ad.PIECE_SYSTEM, ad.PIECES_MAX_TOKENS, ad.gabarits_lecture(), ",".join(sorted(dp.PRIORITAIRES)))
+                if nature == NATURE_DOSSIER else ()))
+
+
+def _gabarit_extraction(lang_name, note: str) -> str:
+    """Le prompt de l'extraction autour du dossier (consigne d'en-tête, note de lecture, consigne de
+    langue), tel qu'il est envoyé, sans le dossier : un texte modifié change la clé."""
+    from app.services import analysis as an
+    return an.build_extraction_prompt("", lang_name, integral=True, note_lecture=note)
 
 
 def cle_dossier(lecture: dict, texte: str, note: str, lang_name, plan_info: dict) -> str:
@@ -239,7 +256,7 @@ def cle_dossier(lecture: dict, texte: str, note: str, lang_name, plan_info: dict
             h.update(b"\x1f")
 
     up("cle-dossier", version(), _consignes(NATURE_DOSSIER), descripteur_modele(NATURE_DOSSIER),
-       str(lang_name or "").strip().lower(), (plan_info or {}).get("mode"),
+       _gabarit_extraction(lang_name, note), str(lang_name or "").strip().lower(), (plan_info or {}).get("mode"),
        (plan_info or {}).get("budget_caracteres"), ad.parametres_lecture(), note or "",
        hashlib.sha256((texte or "").encode("utf-8", "surrogatepass")).hexdigest())
     for p in (lecture or {}).get("pieces") or []:
@@ -275,6 +292,8 @@ def lire(cle: str):
         row = db.query(AnalysePartagee).filter(AnalysePartagee.cle == cle).first()
         if row is None or not isinstance(row.extraction, dict):
             return None
+        if row.created_at is not None and row.created_at < _maintenant() - timedelta(days=max(1, jours_max())):
+            return None             # trop ancienne : refaite (et remplacée), la purge l'efface sinon
         out = {"extraction": json.loads(json.dumps(row.extraction)),
                "rapport": json.loads(json.dumps(row.rapport)) if row.rapport is not None else None,
                "duree_s": float(row.duree_s or 0.0), "cout_eur": float(row.cout_eur or 0.0), "mode": row.mode}
@@ -310,7 +329,8 @@ def ecrire(cle: str, nature: str, mode: str, extraction: dict, rapport=None, dur
                 if row is None:
                     db.add(AnalysePartagee(cle=cle, created_at=_maintenant(), **vals))
                 else:
-                    for k, v in vals.items():
+                    # Nouvelle extraction (« Ré-analyser », ou entrée trop ancienne) : sa date repart.
+                    for k, v in dict(vals, created_at=_maintenant()).items():
                         setattr(row, k, v)
                 db.commit()
                 return True
@@ -554,13 +574,18 @@ def prometheus_lignes(fmt) -> list:
 # ── Purge et effacement ────────────────────────────────────────────────────────────────────────
 
 def purger(db) -> dict:
-    """Entrées partagées inutilisées depuis ANALYSE_PARTAGEE_JOURS jours, lignes de mesure de plus
-    d'ANALYSE_PARTAGEE_MESURE_JOURS jours. Jamais bloquant pour la purge qui l'appelle."""
+    """Entrées partagées inutilisées depuis ANALYSE_PARTAGEE_JOURS jours ou faites depuis plus
+    d'ANALYSE_PARTAGEE_DUREE_MAX_JOURS jours, lignes de mesure de plus d'ANALYSE_PARTAGEE_MESURE_JOURS
+    jours. Jamais bloquant pour la purge qui l'appelle."""
+    from sqlalchemy import or_
     from app.models import AnalyseEmpreinte, AnalysePartagee
     try:
         c1 = _maintenant() - timedelta(days=max(1, jours_cache()))
         c2 = _maintenant() - timedelta(days=max(1, jours_mesure()))
-        n1 = db.query(AnalysePartagee).filter(AnalysePartagee.utilise_le < c1).delete(synchronize_session=False)
+        c3 = _maintenant() - timedelta(days=max(1, jours_max()))
+        n1 = (db.query(AnalysePartagee)
+              .filter(or_(AnalysePartagee.utilise_le < c1, AnalysePartagee.created_at < c3))
+              .delete(synchronize_session=False))
         n2 = db.query(AnalyseEmpreinte).filter(AnalyseEmpreinte.created_at < c2).delete(synchronize_session=False)
         db.commit()
         return {"analyses_partagees_purgees": int(n1 or 0), "mesures_purgees": int(n2 or 0)}

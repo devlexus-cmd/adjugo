@@ -490,6 +490,77 @@ def test_cle_change_avec_le_modele_les_consignes_la_lecture_et_la_langue(monkeyp
     assert cle() == base
 
 
+def test_cle_change_avec_chaque_texte_fixe_du_prompt(monkeypatch):
+    """Invalidation automatique au changement de N'IMPORTE QUEL texte de ce que l'IA reçoit pour
+    l'extraction, sans numéro de version à changer : prompt autour du dossier (en-tête, consigne de
+    langue), prompt de lecture d'une partie, en-têtes, lignes et introduction de la synthèse."""
+    from app.services import analyse_dossier as ad, analyse_partagee as ap, analysis as an, dce_lecture as lec
+    monkeypatch.setattr(llm, "_use_mistral", lambda: True)
+    lecture = lec.lire_dossier("DCE.zip", _petit_dossier())
+    texte, _m = lec.texte_integral(lecture)
+    note = lec.note_pour_ia(lecture)
+
+    def cle(lang="English"):
+        return ap.cle_dossier(lecture, texte, note, lang, ad.plan(lecture, None, None, lang))
+    base, base_fr = cle(), cle("français")
+
+    def change(module, nom, avant, apres):
+        vrai = getattr(module, nom)
+        monkeypatch.setattr(module, nom, lambda *a, **k: vrai(*a, **k).replace(avant, apres))
+    for module, nom, avant, apres in (
+            (an, "build_user_prompt", "Rédige TOUTES les valeurs textuelles", "Écris toutes les valeurs"),
+            (an, "build_user_prompt", "Analyse le DCE suivant", "Analyse ce DCE"),
+            (ad, "_tete_seg", "Pièce : ", "Document : "),
+            (ad, "_intro", "lu en deux temps", "lu en 2 temps"),
+            (ad, "_bloc_faits", "informations relevées", "faits relevés"),
+            (ad, "_bloc_prio", "remis tel quel", "remis en entier"),
+            (ad, "_bloc_plafond", "plafond technique", "limite technique")):
+        change(module, nom, avant, apres)
+        assert cle() != base, (nom, avant)
+        monkeypatch.undo()
+        monkeypatch.setattr(llm, "_use_mistral", lambda: True)
+        assert cle() == base and cle("français") == base_fr
+    # Le texte réellement envoyé change bien avec la consigne de langue (et la clé avec lui).
+    assert "Rédige TOUTES les valeurs textuelles" in an.build_extraction_prompt("", "English", integral=True)
+
+
+def test_extraction_trop_ancienne_jamais_resservie_et_purgee(ia, monkeypatch):
+    """Durée de conservation BORNÉE, même pour une extraction resservie souvent : au-delà
+    d'ANALYSE_PARTAGEE_DUREE_MAX_JOURS jours depuis qu'elle a été faite, elle n'est plus resservie
+    (refaite, sa date repart) et la purge l'efface."""
+    from datetime import datetime, timedelta
+    from app.models import AnalysePartagee
+    from app.services import analyse_partagee as ap
+    fake = ia()
+    ap.analyser_texte(_texte_dce(), {"name": "A"}, {}, lang_name="français", p=ap.partage(990501))
+    n = len(fake.calls)
+    ap.analyser_texte(_texte_dce(), {"name": "B"}, {}, lang_name="français", p=ap.partage(990502))
+    assert appels_dossier(fake.calls[n:]) == []                              # resservie
+    db = _db()
+    try:
+        db.query(AnalysePartagee).update({AnalysePartagee.created_at: datetime.utcnow()
+                                          - timedelta(days=ap.jours_max() + 1)}, synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
+    n = len(fake.calls)
+    ap.analyser_texte(_texte_dce(), {"name": "C"}, {}, lang_name="français", p=ap.partage(990503))
+    assert len(appels_dossier(fake.calls[n:])) == 1                          # refaite
+    ligne = _lignes_partagees()[0]
+    assert ligne["created_at"] > datetime.utcnow() - timedelta(days=1)       # sa date repart
+    db = _db()
+    try:
+        db.query(AnalysePartagee).update({AnalysePartagee.created_at: datetime.utcnow()
+                                          - timedelta(days=ap.jours_max() + 1),
+                                          AnalysePartagee.utilise_le: datetime.utcnow()},
+                                         synchronize_session=False)
+        db.commit()
+        assert ap.purger(db)["analyses_partagees_purgees"] == 1
+    finally:
+        db.close()
+    assert _lignes_partagees() == []
+
+
 def test_deux_temps_servi_sans_aucune_lecture_compteurs_recalcules(ia, attentes, monkeypatch):
     """Dossier lu en deux temps : la seconde organisation ne fait AUCUN appel de lecture ni de synthèse ;
     même couverture, mêmes compteurs (recalculés pour son marché), progression rejouée."""

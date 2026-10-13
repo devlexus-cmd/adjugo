@@ -290,11 +290,16 @@ def _faits_complets(text: str) -> list:
     return out
 
 
+def _prompt_groupe(groupe: list) -> str:
+    """Ce que l'IA reçoit pour lire un groupe de parties (après la consigne PIECE_SYSTEM)."""
+    return "\n\n".join(_tete_seg(sg) + "\n\n<<<\n" + _texte_seg(sg) + "\n>>>" for sg in groupe)
+
+
 def _appel(groupe: list):
     """Un appel de lecture : (texte de la réponse, coupée ?). Une place de lecture est tenue pendant
     l'appel ; une panne est relancée une fois (après une courte pause)."""
     import time
-    user = "\n\n".join(_tete_seg(sg) + "\n\n<<<\n" + _texte_seg(sg) + "\n>>>" for sg in groupe)
+    user = _prompt_groupe(groupe)
     last = None
     for essai in range(2):
         if essai:
@@ -497,6 +502,67 @@ def _bloc_faits(p: dict, parts: list, n: int) -> str:
     return head + "\n" + "\n".join(lignes)
 
 
+def _bloc_prio(p: dict) -> str:
+    """Règlement ou cadre de réponse remis en entier dans la synthèse."""
+    etat = "lu en entier" if p.get("statut") == lec.LU else ("texte lu en partie ("
+                                                             + (p.get("detail") or lec.raison_texte(p.get("raison"))) + ")")
+    return (f"=== {p.get('nom') or 'pièce'} : {(p.get('libelle') or '').lower()}, remis tel quel, "
+            f"{etat} ===\n" + p["texte"])
+
+
+def _bloc_plafond(p: dict) -> str:
+    """Pièce qu'aucun appel de lecture n'a pu lire (plafond d'appels)."""
+    return (f"=== {p.get('nom')} : {(p.get('libelle') or '').lower()} — non analysée par l'IA "
+            "(plafond technique) : n'en conclus rien ===")
+
+
+SUITE_NON_REPRISE = "\n- (suite des informations relevées : non reprise, place insuffisante)"
+
+
+def _intro(complete: bool, manquants: list) -> str:
+    """En-tête de la synthèse d'un dossier lu en deux temps."""
+    if complete:
+        return ("[Dossier volumineux lu en deux temps : le règlement de la consultation et le cadre de réponse "
+                "sont remis en entier ; chaque autre pièce a été lue en entier par l'IA, pièce par pièce, et voici "
+                "ce qui y a été relevé, chaque information avec la phrase exacte du dossier entre « ».]")
+    return ("[Dossier volumineux lu en deux temps : le règlement de la consultation et le cadre de réponse "
+            "sont remis en entier ; les autres pièces ont été lues par l'IA, pièce par pièce, et voici ce qui y "
+            "a été relevé, chaque information avec la phrase exacte du dossier entre « ». ATTENTION : certaines "
+            "parties n'ont pas pu être exploitées entièrement (voir l'en-tête de chaque pièce"
+            + ("" if not manquants else " et la liste : " + " ; ".join(manquants[:30]))
+            + "). Pour ce qui n'y figure pas, écris que l'information n'a pas été trouvée dans ce qui a été lu "
+            "— jamais qu'elle n'existe pas.]")
+
+
+def gabarits_lecture() -> str:
+    """Tous les TEXTES FIXES de la lecture en deux temps (prompt de lecture d'une partie, en-têtes et
+    lignes de la synthèse, introduction), rendus sur des pièces fictives : entrent dans la clé de
+    l'analyse partagée (app.services.analyse_partagee), pour qu'un texte modifié invalide les
+    extractions gardées sans qu'il faille penser à changer VERSION_LECTURE. (Un changement de LOGIQUE
+    de la lecture, lui, oblige toujours à augmenter VERSION_LECTURE.)"""
+    lu = {"nom": "P1", "libelle": "L1", "statut": lec.LU, "texte": "T1"}
+    partiel = {"nom": "P2", "libelle": "L2", "statut": "partiel", "detail": "D2", "texte": "T2"}
+    sg = {"piece": lu, "span": (0, 2), "i": 1, "n": 2}
+    sg1 = {"piece": partiel, "span": (0, 2), "i": 1, "n": 1}
+
+    def part(**k):
+        r = {"faits": [], "ecartes": 0, "coupee": False, "illisible": False, "erreur": False}
+        r.update(k)
+        return r
+    fait = {"rubrique": "r", "fait": "f", "citation": "c", "page": 3}
+    rendus = [
+        _prompt_groupe([sg, dict(sg, i=2), sg1]),
+        _bloc_prio(lu), _bloc_prio(partiel), _bloc_plafond(lu), SUITE_NON_REPRISE,
+        _intro(True, []), _intro(False, []), _intro(False, ["x : y", "z : w"]),
+        _bloc_faits(lu, [part(faits=[fait])], 1), _bloc_faits(lu, [part(faits=[dict(fait, page=None)])] * 2, 2),
+        _bloc_faits(lu, [part()], 1), _bloc_faits(partiel, [part()], 1),
+        _bloc_faits(lu, [part(erreur=True), part(illisible=True)], 3),
+        _bloc_faits(lu, [part(faits=[fait]), part(coupee=True, faits=[fait]), part(erreur=True)], 4),
+        _bloc_faits(lu, [part(faits=[fait]), part(faits=[fait])], 2),
+    ]
+    return "\x1e".join(rendus)
+
+
 def _preparer(lecture: dict, budget: int) -> dict:
     """Premier temps, SANS IA : pièces remises en entier, parties à lire, parties déjà lues pour ce
     marché (reprises), appels groupés et plafond d'appels. Commun à la lecture (_deux_temps) et au
@@ -605,14 +671,7 @@ def _deux_temps(lecture: dict, company, criteria, lang_name, budget: int, progre
             rapport["coupees"].append(nom + " : réponse de l'IA trop longue, exploitée en partie")
             rapport["manques"].append({"nom": nom, "raison": "analysée en partie par l'IA (réponse trop longue)"})
     # Synthèse : règlement et cadre en entier, puis ce qui a été relevé pièce par pièce.
-    blocs_prio = []
-    for p in prio:
-        if id(p) not in entiers:
-            continue
-        etat = "lu en entier" if p.get("statut") == lec.LU else ("texte lu en partie ("
-                                                                 + (p.get("detail") or lec.raison_texte(p.get("raison"))) + ")")
-        blocs_prio.append(f"=== {p.get('nom') or 'pièce'} : {(p.get('libelle') or '').lower()}, remis tel quel, "
-                          f"{etat} ===\n" + p["texte"])
+    blocs_prio = [_bloc_prio(p) for p in prio if id(p) in entiers]
     n_of = {}
     for sg in segs:
         n_of[sg["piece_index"]] = sg["n"]
@@ -625,8 +684,7 @@ def _deux_temps(lecture: dict, company, criteria, lang_name, budget: int, progre
         if not parts:
             manques_ia = True
             rapport["ia_pieces"][p.get("nom") or ""] = "non analysée par l'IA (plafond technique)"
-            blocs.append(f"=== {p.get('nom')} : {(p.get('libelle') or '').lower()} — non analysée par l'IA "
-                         "(plafond technique) : n'en conclus rien ===")
+            blocs.append(_bloc_plafond(p))
             continue
         entier_ia, nuance = _etat_ia(parts, n)
         if not entier_ia:
@@ -638,21 +696,11 @@ def _deux_temps(lecture: dict, company, criteria, lang_name, budget: int, progre
     if sum(len(b) + 2 for b in blocs) > room:
         rapport["synthese_partielle"] = True
         cuts = dp.water_fill([len(b) for b in blocs], room)
-        blocs = [b[:c].rsplit("\n", 1)[0] + "\n- (suite des informations relevées : non reprise, place insuffisante)"
+        blocs = [b[:c].rsplit("\n", 1)[0] + SUITE_NON_REPRISE
                  if c < len(b) else b for b, c in zip(blocs, cuts)]
-    if not manques_ia and not rapport["synthese_partielle"]:
-        intro = ("[Dossier volumineux lu en deux temps : le règlement de la consultation et le cadre de réponse "
-                 "sont remis en entier ; chaque autre pièce a été lue en entier par l'IA, pièce par pièce, et voici "
-                 "ce qui y a été relevé, chaque information avec la phrase exacte du dossier entre « ».]")
-    else:
-        manquants = rapport["non_analysees"] + rapport["erreurs"] + rapport["illisibles"] + rapport["coupees"]
-        intro = ("[Dossier volumineux lu en deux temps : le règlement de la consultation et le cadre de réponse "
-                 "sont remis en entier ; les autres pièces ont été lues par l'IA, pièce par pièce, et voici ce qui y "
-                 "a été relevé, chaque information avec la phrase exacte du dossier entre « ». ATTENTION : certaines "
-                 "parties n'ont pas pu être exploitées entièrement (voir l'en-tête de chaque pièce"
-                 + ("" if not manquants else " et la liste : " + " ; ".join(manquants[:30]))
-                 + "). Pour ce qui n'y figure pas, écris que l'information n'a pas été trouvée dans ce qui a été lu "
-                 "— jamais qu'elle n'existe pas.]")
+    complete = not manques_ia and not rapport["synthese_partielle"]
+    intro = _intro(complete, [] if complete else
+                   rapport["non_analysees"] + rapport["erreurs"] + rapport["illisibles"] + rapport["coupees"])
     return "\n\n".join([intro] + blocs_prio + blocs), rapport
 
 
