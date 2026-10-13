@@ -105,6 +105,9 @@ GROUP_EVENTS = frozenset({
     "convention.perimee", "convention.hors_ligne",
     # Vague 4 (dépôt) : le chef de file marque le dossier déposé (ou annule ce marquage).
     "groupement.depose", "groupement.depot_annule",
+    # Rédaction, vague 4 (dossier de groupement) : actions NOUVELLES, sans entrée ancienne — une partie
+    # envoyée, le dossier assemblé validé par un membre, ou repassé « à revalider ».
+    "redaction.part_envoyee", "redaction.dossier_valide", "redaction.dossier_a_revalider",
 })
 
 # Libellés en français simple (zéro jargon) selon QUI a agi, vu depuis le membre.
@@ -126,6 +129,16 @@ LABELS_ME = {
     "guest.download_convention": "Vous avez téléchargé la convention",
     # Vague 4
     "guest.export_journal": "Vous avez exporté votre journal",
+    # Rédaction, vague 4 (dossier de groupement)
+    "redaction.part_envoyee": "Vous avez envoyé votre partie du dossier de présentation",
+    "redaction.part_validee": "Vous avez validé votre partie du dossier de présentation",
+    "redaction.part_retablie": "Vous avez rétabli votre version de votre partie",
+    "redaction.dossier_valide": "Vous avez validé le dossier de présentation assemblé",
+    "redaction.dossier_a_revalider": "Votre modification a changé le dossier de présentation assemblé : à revalider",
+    "redaction.espace_ouvert": "Vous avez ouvert votre espace privé de rédaction",
+    "redaction.espace_rouvert": "Votre espace privé de rédaction a été ouvert sur un autre appareil (code reçu par email)",
+    "redaction.espace_reinitialise": "Votre espace privé de rédaction a été réinitialisé : vos brouillons non envoyés "
+                                     "ont été effacés",
 }
 LABELS_OWNER = {
     "owner.view_contribution": "Le chef de file a consulté votre part",
@@ -145,6 +158,16 @@ LABELS_OWNER = {
     # Vague 4
     "groupement.depose": "Le chef de file a marqué le dossier comme déposé",
     "groupement.depot_annule": "Le chef de file a annulé le marquage « déposé »",
+    # Rédaction, vague 4 (dossier de groupement)
+    "redaction.partie_confiee": "Le chef de file vous a confié une partie du dossier de présentation",
+    "redaction.partie_reprise": "Le chef de file a confié votre partie à un autre rédacteur",
+    "redaction.repartition": "Le chef de file a modifié les consignes de votre partie",
+    "redaction.parts_demandees": "Le chef de file vous a demandé votre partie",
+    "redaction.part_modifiee": "Le chef de file a modifié votre partie : à revalider",
+    "redaction.part_redigee_par_chef": "Le chef de file a rédigé votre partie à votre place : à valider",
+    "redaction.parts_reprises": "Vos parties ont été reprises par le chef de file",
+    "redaction.dossier_valide": "Le chef de file a validé le dossier de présentation assemblé",
+    "redaction.dossier_a_revalider": "Le dossier de présentation assemblé a changé : à revalider",
 }
 LABELS_PARTNER = {
     "invite.created": "Un partenaire a été invité",
@@ -153,6 +176,10 @@ LABELS_PARTNER = {
     "convention.signed": "Un partenaire a validé la convention (accord enregistré)",
     "offer.unfrozen": "L'offre commune a été défigée (part d'un partenaire modifiée)",
     "convention.perimee": "La convention n'est plus à jour (part d'un partenaire modifiée)",
+    "redaction.part_envoyee": "Un partenaire a envoyé sa partie du dossier de présentation",
+    "redaction.dossier_valide": "Un partenaire a validé le dossier de présentation assemblé",
+    "redaction.dossier_a_revalider": "Le dossier de présentation assemblé a changé (partie d'un partenaire) : à "
+                                     "revalider",
 }
 # Événements de groupement dont le détail (sans donnée personnelle) peut être montré à tous.
 _DETAIL_OK = ("offer.frozen", "convention.generated", "convention.hors_ligne")

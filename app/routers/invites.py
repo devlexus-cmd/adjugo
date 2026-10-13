@@ -846,6 +846,10 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
                  target_type="invite", target_id=inv.id, invite_id=inv.id,
                  detail=(inv.company_name or "")[:255],
                  ip=audit.client_ip(request))
+    # Rédaction, vague 4 : ses brouillons privés sont effacés, ses parties reviennent au chef de file.
+    from app.services.atelier_groupement import retirer_invitation
+    retirer_invitation(db, inv, "retiré du groupement", actor=f"user:{current_user.id}", actor_kind="owner",
+                       ip=audit.client_ip(request))
     # Notifie le partenaire que son accès est coupé (s'il a une adresse + SMTP configuré).
     # Inutile s'il avait déjà décliné / était déjà révoqué.
     emailed = False
@@ -1650,6 +1654,10 @@ def guest_decline(token: str, request: Request, db: Session = Depends(get_db)):
                  actor=_guest_actor(inv), actor_kind="guest", target_type="invite",
                  target_id=inv.id, invite_id=inv.id, detail=(inv.company_name or "")[:255],
                  ip=audit.client_ip(request))
+    # Rédaction, vague 4 : ses brouillons privés sont effacés, ses parties reviennent au chef de file.
+    from app.services.atelier_groupement import retirer_invitation
+    retirer_invitation(db, inv, "a décliné l'invitation", actor=_guest_actor(inv), actor_kind="guest",
+                       ip=audit.client_ip(request))
     # Email best-effort au mandataire.
     try:
         to = _mandataire_email(inv.owner_id, db)

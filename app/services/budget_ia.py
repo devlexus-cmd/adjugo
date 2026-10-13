@@ -265,6 +265,22 @@ def _compte(db, tenant, mutualise_: bool = False, cache=None, strict: bool = Fal
             out = dict(out, compte=f"acheteur:{int(s[8:])}")
         elif s.startswith("dce:"):
             out = dict(out, compte=ACHETEUR_ANONYME)       # jamais d'adresse IP en base
+        elif s.startswith("inv:") and s[4:].strip().isdigit():
+            # Aide de l'IA d'un PARTENAIRE du groupement (rédaction, vague 4) : portée technique propre à son
+            # invitation (plafonds et disjoncteurs séparés), coût rangé au compte de facturation du CHEF DE
+            # FILE (décision 4a : son quota, et le budget de son essai, s'appliquent).
+            try:
+                from app.models import ProjectInvite, User
+                from app.core.quota import _billing_user
+                inv = db.get(ProjectInvite, int(s[4:]))
+                u = db.get(User, inv.owner_id) if inv is not None else None
+                if u is not None:
+                    b = _billing_user(u, db)
+                    out = {"compte": f"u{b.id}", "billing_user_id": b.id, "org_id": getattr(b, "org_id", None),
+                           "essai": essai_actif(b), "payant": est_payant(b)}
+            except Exception:       # noqa: BLE001
+                if strict:
+                    raise
     else:
         try:
             from app.models import User

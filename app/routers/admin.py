@@ -127,6 +127,10 @@ def run_trash_purge_endpoint(request: Request, db: Session = Depends(get_db)):
     from app.routers.rgpd import purge_trash
     from app.services.analyse_partagee import purger
     res = purge_trash(db)
+    # Rédaction, vague 4 : brouillons des partenaires d'une invitation expirée (ou retirée : filet) et
+    # tâches terminées des partenaires, au-delà de 30 jours.
+    from app.services.atelier_groupement import purger as purger_parts
+    res.update(purger_parts(db))
     # Analyse partagée : extractions plus resservies depuis ANALYSE_PARTAGEE_JOURS jours, mesures anciennes.
     res.update(purger(db))
     return res

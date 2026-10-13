@@ -137,6 +137,14 @@ def run_cotraitance_reminders(db: Session) -> dict:
     pieces_alerted = _run_piece_expiry_alerts(db, today, due=piece_due, merged=merged)
     result = {"scanned": scanned, "reminded": reminded, "pieces_alerted": pieces_alerted,
               "pieces_merged": len(merged)}
+    # Rédaction, vague 4 : parties du dossier de présentation pas encore envoyées, à J-2 puis le jour de
+    # leur date limite interne (un palier par partie, jamais deux fois).
+    try:
+        from app.services.atelier_groupement import relancer_parts
+        result.update(relancer_parts(db, today))
+    except Exception as e:
+        db.rollback()
+        logger.warning("relances co-traitance : parts du dossier de présentation non relancées : %s", e)
     logger.info("relances co-traitance : %s", result)
     return result
 
