@@ -626,11 +626,18 @@ def ouvrir_espace(db, inv: ProjectInvite, *, code: Optional[str] = None, reiniti
                 inv.otp_attempts = (inv.otp_attempts or 0) + 1
                 db.commit()
                 raise AtelierError(400, "code_incorrect", "Code incorrect.")
+            # Le code prouve l'adresse, comme otp/verify.
+            from app.routers.invites import _mark_network_accepted
             inv.otp_hash, inv.otp_expires_at = "", None
+            inv.verified_at, inv.verified_email = utcnow(), inv.recipient
+            _mark_network_accepted(inv)
             mode = "code"
         elif reinitialiser:
             effaces = db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == inv.id).delete(
                 synchronize_session=False)
+            # Celui qui réinitialise n'a rien prouvé : l'adresse de l'invitation est à prouver de nouveau
+            # (par le code envoyé au partenaire) avant d'envoyer ou de valider quoi que ce soit en son nom.
+            inv.verified_at, inv.verified_email = None, ""
             mode = "reinitialisation"
         else:
             raise AtelierError(409, "espace_deja_ouvert", MSG_ESPACE_OUVERT,
@@ -985,7 +992,9 @@ def valider_part(db, acces: Acces, section_id: int, version_id: int, ip: str = "
     section.validated_version_id = cur.id
     section.validated_hash = cur.empreinte
     section.validated_at = utcnow()
-    section.validated_by = getattr(acces.user, "id", None)
+    # Jamais l'identifiant du compte d'un autre membre dans ce que lit le chef de file : qui a validé, c'est
+    # l'auteur de la partie (l'invitation), inscrit au journal.
+    section.validated_by = None
     section.lock_version = (section.lock_version or 0) + 1
     db.commit()
     _journal(db, action="redaction.part_validee", project_id=acces.project.id, owner_id=acces.dossier.owner_id,

@@ -333,8 +333,20 @@ def test_le_lien_seul_ne_lit_jamais_la_matiere_privee(client, auth, fake_llm, mo
     # Réinitialiser : les brouillons non envoyés sont EFFACÉS, l'ancienne clé ne vaut plus, journal du membre.
     n0 = _brouillons_de(a["id"])
     assert n0 == 2
+    from app.models import ProjectInvite
+    db = _db()
+    try:
+        db.get(ProjectInvite, a["id"]).verified_at = datetime.now(timezone.utc)      # adresse prouvée avant
+        db.commit()
+    finally:
+        db.close()
     r = chef.post("/espace", {"reinitialiser": True})
     assert r.status_code == 200 and r.json()["brouillons_effaces"] == 2
+    db = _db()
+    try:
+        assert db.get(ProjectInvite, a["id"]).verified_at is None        # à prouver de nouveau
+    finally:
+        db.close()
     chef.h = {ag.ENTETE_CLE: r.json()["cle"]}
     assert chef.get().json()["parties"][0]["brouillon"] is None and _brouillons_de(a["id"]) == 0
     assert pa.get().json()["espace"]["cle_valide"] is False
@@ -343,8 +355,11 @@ def test_le_lien_seul_ne_lit_jamais_la_matiere_privee(client, auth, fake_llm, mo
     # Le partenaire rouvre son espace avec le code reçu à son adresse : les brouillons sont gardés.
     _ecrire(chef, sid, "Brouillon écrit après la réinitialisation.")
     import app.routers.invites as invites
-    from app.models import ProjectInvite
     monkeypatch.setattr(invites, "_binding_required", lambda inv: True)
+    # Lien qui vise une adresse : celui qui a réinitialisé n'envoie rien au nom du partenaire.
+    cur = chef.get(f"/sections/{sid}").json()
+    r = chef.post(f"/sections/{sid}/envoyer", {"brouillon_id": cur["brouillon"]["id"], "avertissement_lu": True})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "identity_unverified"
     db = _db()
     try:
         inv = db.get(ProjectInvite, a["id"])
@@ -360,6 +375,11 @@ def test_le_lien_seul_ne_lit_jamais_la_matiere_privee(client, auth, fake_llm, mo
     pa.h = {ag.ENTETE_CLE: r.json()["cle"]}
     assert pa.get().json()["parties"][0]["brouillon"]["texte"] == "Brouillon écrit après la réinitialisation."
     assert chef.get().json()["espace"]["cle_valide"] is False
+    db = _db()
+    try:
+        assert db.get(ProjectInvite, a["id"]).verified_at is not None    # le code prouve l'adresse
+    finally:
+        db.close()
 
 
 def test_envoyer_et_valider_exigent_l_identite_prouvee(client, auth, monkeypatch):
