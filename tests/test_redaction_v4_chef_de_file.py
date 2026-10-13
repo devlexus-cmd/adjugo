@@ -440,8 +440,10 @@ def test_demo_ecritures_du_dossier_de_groupement_refusees_dans_la_route(client, 
         u = db.query(User).filter(User.email == DEMO_EMAIL).one()
         toiture = next(p for p in db.query(Project).filter(Project.user_id == u.id) if p.name.startswith("Réfection"))
         kerhel = next(p for p in db.query(Project).filter(Project.user_id == u.id) if "Kerhel" in p.name)
-        d = db.query(DossierPresentation).filter(DossierPresentation.project_id == toiture.id).one()
-        sid = db.query(DossierSection).filter(DossierSection.dossier_id == d.id).first().id
+        # Le refus vient AVANT toute lecture du dossier : une partie de la vitrine si elle existe, sinon un numéro.
+        d = db.query(DossierPresentation).filter(DossierPresentation.project_id == toiture.id).first()
+        s0 = db.query(DossierSection).filter(DossierSection.dossier_id == d.id).first() if d else None
+        sid = s0.id if s0 else 1
         token = db.query(ProjectInvite).filter(ProjectInvite.project_id == kerhel.id).first().token
     finally:
         db.close()

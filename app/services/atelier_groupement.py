@@ -1628,6 +1628,16 @@ def comparer(db, section: DossierSection) -> dict:
     return {"avant": _version_commune_out(av), "apres": _version_commune_out(cur)}
 
 
+def _a_faire(db, section: DossierSection, rep: DossierRepartition) -> str:
+    """Ce qu'on attend du partenaire sur cette partie, pour l'email de « Demander les parts »."""
+    if statut_de(db, section, rep) != A_REVALIDER:
+        return ""
+    cur = _commune(db, section)
+    if cur is not None and cur.ecrit_par == ECRIT_PAR_CHEF:
+        return " : texte du chef de file, à relire et valider"
+    return " : à revalider"
+
+
 def demander_parts(db, project: Project, dossier: DossierPresentation, user: User, invite_ids=None, ip: str = "") -> dict:
     """« Demander les parts » : un email à chaque partenaire qui a des parties à rédiger, en cours ou à
     revalider, avec leur liste et la date limite interne. Mêmes garde-fous d'envoi que les relances de la
@@ -1673,8 +1683,7 @@ def demander_parts(db, project: Project, dossier: DossierPresentation, user: Use
             db.rollback()                   # libère le verrou de l'organisation pris pour compter
             plafond.append({"invite_id": iid, "nom": nom})
             continue
-        liste = "\n".join(f"- « {_titre(dossier, s)} »"
-                          + (" : texte du chef de file, à relire et valider" if statut_de(db, s, r) == A_REVALIDER else "")
+        liste = "\n".join(f"- « {_titre(dossier, s)} »" + _a_faire(db, s, r)
                           + (f" (date limite interne : {r.date_limite.strftime('%d/%m/%Y')})" if r.date_limite else "")
                           for s, r in lignes)
         sent = _email.send_email(inv.recipient, f"Votre partie du dossier de présentation — {project.name[:60]}",

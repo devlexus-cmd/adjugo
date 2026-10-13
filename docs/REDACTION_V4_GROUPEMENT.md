@@ -479,6 +479,13 @@ Testée :
   base montée** (une tâche de partenaire en cours ne le casse pas), schéma identique à une base neuve (hors
   écart déjà admis des tables de l'atelier), retour arrière puis remontée ; puis les vrais tests rejoués sur
   cette base.
+- rejoué depuis l'état exact de la production APRÈS la démo par lien privé (`0767372`, même tête
+  `w7x8analysepartagee`), script `scratchpad/pgtest/run_v4_chef_depuis_prod.py` : migration, rejeu, code de
+  production redémarré, retour arrière et remontée verts ; tests de la vague 4, de « Qui écrit quoi » et de la
+  démo verts sur cette base. Deux groupes restent en échec sur Postgres, déjà en échec au socle et propres à
+  SQLite (aucun lien avec la vague 4) : `test_secu2_donnees.py` (`PRAGMA foreign_keys`) et
+  `test_hotfix_v2_fuites.py::test_fourche_historique_toleree_alteration_detectee` (journal écrit pour un compte
+  inexistant, refusé par la clé étrangère de Postgres).
 
 Déploiement sans casse : le code de production ne lit ni n'écrit les nouvelles tables et colonnes ; il crée
 toujours ses tâches avec un compte. Retour arrière du CODE après la mise en ligne : une tâche de partenaire
