@@ -59,7 +59,7 @@
   .conseils-box{background:var(--accent-weak);border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);border-radius:12px;padding:11px 14px;margin:10px 0;font-size:13px}
   .lot-src{border:1px solid var(--border);border-radius:12px;padding:12px 15px;margin:10px 0;background:var(--surface)}
   .lot-src-head{font-size:13.5px;margin-bottom:6px;overflow:hidden}
-  .bk{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0} .bk-i{background:var(--surface-3);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--text-2)}
+  .bk{list-style:none;margin:8px 0;padding:0;display:grid;gap:4px} .bk-i{font-size:12.5px;line-height:1.45;color:var(--text-2)} .bk-i b{color:var(--text);font-weight:600} .bk-p{display:inline-block;margin-left:4px;padding:0 6px;border-radius:6px;background:var(--warning-weak);color:var(--warning-text);font-size:11px;font-weight:600}
   .vivier{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px} @media(max-width:680px){.vivier{grid-template-columns:1fr}}
   .pmecard{border:1px solid var(--border);border-radius:10px;padding:8px 11px;background:var(--surface-2)}
   .pmecard .pn{font-weight:600;font-size:12.5px} .pmecard .pm{font-size:11.5px;color:var(--muted);margin-top:2px}
@@ -617,7 +617,7 @@
     (s.lots||[]).forEach(function(l){var idx=l.indice||{};
       h+='<div class="lot-src"><div class="lot-src-head"><span class="pill '+pillCls(idx.niveau)+'" style="float:right">'+(idx.risque||0)+'% '+esc(idx.niveau||"")+'</span><b>Lot '+esc(l.numero!=null?l.numero:"")+' — '+esc(l.intitule||"")+'</b></div>';
       if(l.metier_reconnu===false)h+='<div class="note-src" style="margin-top:6px"><i data-lucide="alert-triangle" class="lucide ic"></i>Métier non identifié automatiquement : entreprises trouvées par mots-clés (sans filtre d\'activité) — pertinence à vérifier.</div>';
-      h+='<div class="bk">';(idx.breakdown||[]).forEach(function(b){h+='<span class="bk-i" title="'+esc(b.detail||"")+'">'+esc(b.label)+' : +'+b.risque+'</span>';});h+='</div>';
+      h+='<ul class="bk">';(idx.breakdown||[]).forEach(function(b){var r=Number(b.risque)||0;h+='<li class="bk-i'+(r>0?' bk-r':'')+'"><b>'+esc(b.label)+'</b> : '+esc(b.detail||"")+(r>0?' <span class="bk-p">+'+r+' points de risque</span>':'')+'</li>';});h+='</ul>';
       if((l.vivier||[]).length){h+='<div class="muted small" style="margin-bottom:4px">Candidats potentiels (open data) — liste <b>non classée</b>, ordre alphabétique. Vous restez seul décideur.</div><div class="vivier">';l.vivier.forEach(function(pp){var tags="";if(pp.capacite_domaine)tags+=' <span class="pill go">déjà gagné dans ce domaine'+(pp.capacite_recente?', récent':'')+'</span>';else if(pp.capacite_prouvee)tags+=' <span class="pill">'+pp.past_wins+' marché(s) public(s) gagné(s)</span>';if(pp.est_rge)tags+=' <span class="pill go">RGE</span>';if(pp.procedure_collective)tags+=' <span class="pill no_go">'+esc(pp.procedure_collective)+'</span>';
         var m=[pp.ville,pp.departement&&("dépt "+pp.departement),pp.naf_label].filter(Boolean).join(" · ");
         h+='<div class="pmecard"><div class="pn">'+esc(pp.nom||"")+tags+'</div><div class="pm">'+esc(m)+(pp.score!=null?(" — adéquation estimée (sourcing) "+pp.score+"/100"):"")+'</div></div>';});h+='</div>';}
