@@ -615,9 +615,14 @@ def _refuse_demo_sender(user: User) -> None:
                                  "pour inviter un partenaire.")
 
 
-def _check_daily_invite_cap(user: User, db: Session) -> None:
-    """Anti-spam : au plus DAILY_INVITE_CAP invitations créées par organisation sur 24 h
-    glissantes (toutes les invitations du tenant, quel que soit le membre qui les crée)."""
+# Emails envoyés à des tiers sous le nom d'Adjugo, comptés dans le MÊME plafond quotidien que les
+# invitations : les renvois d'invitation, et « Demander les parts » du dossier de présentation
+# (rédaction, vague 4 — une entrée de journal par partenaire sollicité).
+_DAILY_CAP_ACTIONS = ("invite.resent", "redaction.parts_demandees")
+
+
+def _daily_invite_count(user: User, db: Session) -> int:
+    """Invitations créées + emails de relance envoyés par l'organisation sur 24 h glissantes."""
     if getattr(user, "org_id", None):
         # Verrou de ligne : deux créations simultanées ne contournent pas le plafond.
         db.query(Organization).filter(Organization.id == user.org_id).with_for_update().first()
@@ -627,8 +632,15 @@ def _check_daily_invite_cap(user: User, db: Session) -> None:
                                        ProjectInvite.created_at >= since).count()
     # Les RENVOIS comptent aussi : sinon une seule invitation renvoyée en boucle permettait
     # d'envoyer des emails sans limite depuis l'adresse d'Adjugo.
-    n += db.query(AuditLog).filter(AuditLog.owner_id.in_(owners), AuditLog.action == "invite.resent",
+    n += db.query(AuditLog).filter(AuditLog.owner_id.in_(owners), AuditLog.action.in_(_DAILY_CAP_ACTIONS),
                                    AuditLog.created_at >= since).count()
+    return n
+
+
+def _check_daily_invite_cap(user: User, db: Session) -> None:
+    """Anti-spam : au plus DAILY_INVITE_CAP invitations créées par organisation sur 24 h
+    glissantes (toutes les invitations du tenant, quel que soit le membre qui les crée)."""
+    n = _daily_invite_count(user, db)
     if n >= DAILY_INVITE_CAP:
         raise HTTPException(429, f"Vous avez atteint la limite de {DAILY_INVITE_CAP} invitations "
                                  f"par jour. Réessayez demain.")

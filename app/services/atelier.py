@@ -2698,7 +2698,19 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
         "statuts": STATUTS,
         "derogations_possibles": derogations_possibles(gate),
         "sources_faits": sources_faits_out(db, dossier.owner_id),
+        "groupement": _groupement_out(db, project, dossier),
     }
+
+
+def _groupement_out(db, project: Project, dossier: DossierPresentation) -> dict:
+    """Vague 4 : l'atelier montre l'onglet « Qui écrit quoi » seulement pour un marché en groupement
+    (atelier_groupement.indicateur). Un marché sans groupement : tout à faux, l'atelier ne change pas."""
+    try:
+        from app.services import atelier_groupement as ag
+        return ag.indicateur(db, project, dossier)
+    except Exception as e:      # noqa: BLE001 — l'atelier d'une seule entreprise ne dépend jamais du groupement
+        logger.warning("atelier : état du groupement illisible (projet %s) : %s", project.id, type(e).__name__)
+        return {"onglet": False, "actif": False, "membres": 0}
 
 
 def definir_options(db, dossier: DossierPresentation, page_garde=None, sommaire=None) -> dict:
