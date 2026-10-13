@@ -42,6 +42,18 @@ redéploiement, l'ancien lien affiche « Ce lien de démonstration n'est plus va
 les sessions ouvertes avec l'ancienne clé sont refusées. Avec une nouvelle clé, renvoyez le
 nouveau lien aux personnes qui doivent garder l'accès.
 
+## 5. À savoir avant de la montrer
+
+- La démo est à jour (13/10/2026) et ne coûte rien : marché « toiture » lu en entier avec
+  « Comment vous serez noté », « Mes preuves », dossier de présentation déjà rédigé, groupement
+  de Lorient. Aucun appel d'IA, aucun email, aucun fichier rangé (`tests/test_demo_sans_cout.py`,
+  y compris avec une session ouverte par le lien).
+- Les dates sont fixes : Nice le 10/12/2026, Lorient le 20/12/2026, toiture le 30/12/2026,
+  « Trouver des marchés » jusqu'au 27/01/2027. Après, la démo affiche des échéances passées.
+- Les marchés de la démo portent des noms de vraies collectivités (Ville de Bordeaux, Toulouse
+  Métropole…) avec des contacts inventés sur leurs vrais domaines. À remplacer par des noms
+  fictifs avant de la montrer à des prospects.
+
 ## Pour mémoire (technique)
 
 - Routes : `POST /api/auth/demo/lien` (vérifie la clé, n'ouvre rien), `POST /api/auth/demo` et

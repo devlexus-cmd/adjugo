@@ -12,6 +12,8 @@ Démo À JOUR et SANS COÛT (chantier du 13/10/2026, avant de redonner la démo 
 2. Démo à jour (app/services/demo_redaction.py) : analyse avec grille « Comment vous serez noté » et
    couverture « Dossier lu en entier », « Mes preuves », dossier de présentation déjà rédigé ; seed
    idempotent, rejouable, sans IA ni réseau, isolé dans sa transaction ; vitrine de Lorient intacte.
+3. Lien privé de démonstration (docs/DEMO_LIEN_PRIVE.md) : démo publique fermée, les sessions ouvertes
+   par le lien voient la même démo à jour, avec les mêmes refus et sans coût ; clé changée, coupées.
 
 IA simulée (coupée), emails et réseau coupés : aucun appel réel.
 """
@@ -134,6 +136,7 @@ _H = "hors démo : pas de session démo sur cette route"
 SANS_COUT = {
     ("POST", "/api/auth/register"): _H, ("POST", "/api/auth/verify-email"): _H, ("POST", "/api/auth/login"): _H,
     ("POST", "/api/auth/demo"): "connexion à la démo (aucun email, aucune IA)",
+    ("POST", "/api/auth/demo/lien"): "vérification de la clé du lien privé de démonstration (n'ouvre aucune session)",
     ("POST", "/api/auth/reset-password"): _H, ("POST", "/api/auth/google/exchange"): _H,
     ("POST", "/api/projects/"): _I, ("PUT", "/api/projects/{project_id}"): _I,
     ("DELETE", "/api/projects/{project_id}"): _I, ("POST", "/api/projects/{project_id}/restore"): _I,
@@ -250,19 +253,29 @@ def _vitrine_remise_a_neuf(client):
         db.close()
 
 
+def _sessions(client, corps=None):
+    """Ouvre une session démo PME puis une session démo collectivités (corps : clé du lien privé)."""
+    r = client.post("/api/auth/demo", json=corps)
+    assert r.status_code == 200, r.text
+    pme = _h(r.json()["access_token"])
+    r = client.post("/api/acheteur/demo", json=corps)
+    assert r.status_code == 200, r.text
+    return pme, _h(r.json()["access_token"])
+
+
 @pytest.fixture(scope="module")
 def demo(client):
     """Sessions démo (PME, collectivités) et identifiants de la vitrine."""
+    pme, ach = _sessions(client)
+    return {"pme": pme, "acheteur": ach, "ctx": _contexte()}
+
+
+def _contexte() -> dict:
+    """Identifiants de la vitrine telle qu'elle est en base (ils changent à chaque remise à neuf)."""
     from app.models import (Acheteur, AcheteurDce, Document, DossierPresentation, DossierSection,
                             KnowledgeDoc, Preuve, Project, ProjectInvite, SavedSearch, User)
     from app.services.acheteur_demo_seed import DEMO_EMAIL as ACH_EMAIL
     from app.services.demo_seed import DEMO_EMAIL
-    r = client.post("/api/auth/demo")
-    assert r.status_code == 200, r.text
-    pme = _h(r.json()["access_token"])
-    r = client.post("/api/acheteur/demo")
-    assert r.status_code == 200, r.text
-    ach = _h(r.json()["access_token"])
     db = _db()
     try:
         u = db.query(User).filter(User.email == DEMO_EMAIL).one()
@@ -282,7 +295,7 @@ def demo(client):
                "dce": db.query(AcheteurDce).filter(AcheteurDce.acheteur_id == a.id).first().id}
     finally:
         db.close()
-    return {"pme": pme, "acheteur": ach, "ctx": ctx}
+    return ctx
 
 
 @pytest.fixture
@@ -778,3 +791,88 @@ def test_vitrine_sans_jargon(client):
     tout = "\n".join(textes).lower()
     for mot in ("no-go", "consortium", "mandataire"):
         assert mot not in tout, mot
+
+
+# ── 5. Lien privé de démonstration : démo publique fermée, la démo complète par le lien ──────────
+
+def _cle_neuve(sauf: str = "") -> str:
+    """Clé neuve, même forme que la commande de docs/DEMO_LIEN_PRIVE.md (jamais écrite dans le dépôt)."""
+    import secrets
+    while True:
+        cle = secrets.token_urlsafe(33)
+        if cle != sauf:
+            return cle
+
+
+@pytest.fixture
+def lien_prive(client, monkeypatch):
+    """Comme en production depuis le 13/10/2026 : DEMO_PUBLIC absent, DEMO_LIEN_CLE posée. Vitrine
+    remise à neuf, comme au démarrage du serveur."""
+    from app.services.demo_seed import ensure_demo
+    db = _db()
+    try:
+        ensure_demo(db, force=True)
+    finally:
+        db.close()
+    monkeypatch.delenv("DEMO_PUBLIC", raising=False)
+    cle = _cle_neuve()
+    monkeypatch.setenv("DEMO_LIEN_CLE", cle)
+    return cle
+
+
+# Écrans de la démo à jour (section 2), rejoués avec les sessions ouvertes par le lien privé.
+_ECRANS_PME = (test_analyse_du_marche_grille_et_couverture, test_dossier_du_marche_fictif_et_lu_en_entier,
+               test_atelier_deja_redige, test_mes_preuves_remplies, test_vitrine_de_lorient_intacte)
+
+
+def test_lien_prive_de_bout_en_bout(client, lien_prive, espions, monkeypatch):
+    """Démo publique fermée + lien privé : /demo, bonne clé, session entreprises puis session
+    collectivités, écrans de la démo remplis, routes à coût refusées, aucun appel à l'IA, aucun email,
+    aucun fichier rangé ; puis clé changée : toutes les sessions du lien sont coupées."""
+    cle = lien_prive
+    # Sans la clé, rien ne s'ouvre (démo publique fermée).
+    for route in ("/api/auth/demo", "/api/acheteur/demo", "/api/auth/demo/lien"):
+        assert client.post(route).status_code == 404
+    page = client.get("/demo")
+    assert page.status_code == 200 and "Espace entreprises" in page.text and cle not in page.text
+    assert client.post("/api/auth/demo/lien", json={"cle": cle}).json() == {"ok": True}
+
+    # Espace entreprises, puis espace collectivités.
+    pme, ach = _sessions(client, {"cle": cle})
+    d = {"pme": pme, "acheteur": ach, "ctx": _contexte()}
+    assert client.get("/api/auth/me", headers=pme).json()["email"] == "demo@adjugo.fr"
+    assert len(client.get("/api/projects/", headers=pme).json()) == 6
+    r = client.post("/api/sourcing/search", headers=pme, json={"query": "toiture"}).json()
+    assert r["count"] >= 1 and all(t["provenance"]["official_ref"].startswith("DEMO-") for t in r["tenders"])
+    for ecran in _ECRANS_PME:
+        ecran(client, d)
+    assert client.get("/api/acheteur/me", headers=ach).json()["demo"] is True
+    assert len(client.get("/api/acheteur/dce", headers=ach).json()) == 2
+    test_affichages_de_la_demo_sans_cout(client, d, espions)      # toutes les lectures, sans coût
+
+    # Les routes à coût restent refusées (ou servies sans coût) pour les sessions du lien.
+    for c in COUTS:
+        # Contrôle route par route (lectures de registres publics, avis au fondateur : permis sur leur
+        # seule route) ; IA, email et fichier sont refusés à chaque appel, donc jamais cumulés.
+        espions["reseau"].clear()
+        espions["email"].clear()
+        rep = _appel(client, d, c)
+        if c.attendu == "refus":
+            _refus_demo(rep, c)
+        else:
+            assert rep.status_code < 500 or c.lectures, (c.id, rep.status_code, rep.text[:300])
+        _sans_cout(espions, c)
+
+    # Clé changée : les deux sessions du lien sont coupées, l'ancienne clé n'ouvre plus rien.
+    monkeypatch.setenv("DEMO_LIEN_CLE", _cle_neuve(sauf=cle))
+    perime = "Ce lien de démonstration n'est plus valide."
+    for url in ("/api/auth/me", "/api/projects/", f"/api/atelier/{d['ctx']['toiture']}", "/api/preuves"):
+        rep = client.get(url, headers=pme)
+        assert rep.status_code == 401 and rep.json()["detail"] == perime, url
+    for url in ("/api/acheteur/me", "/api/acheteur/dce"):
+        rep = client.get(url, headers=ach)
+        assert rep.status_code == 401 and rep.json()["detail"] == perime, url
+    assert client.post("/api/sourcing/ask", headers=pme, json={"question": "?"}).status_code == 401
+    for route in ("/api/auth/demo", "/api/acheteur/demo", "/api/auth/demo/lien"):
+        assert client.post(route, json={"cle": cle}).status_code == 404
+    assert espions["ia"] == [] and espions["email"] == [] and espions["fichier"] == []
