@@ -771,9 +771,8 @@ les parts, modifier la part d'un partenaire, envoyer ; SANS_COUT : les autres).
   matériel acceptés dans « Mes preuves » du chef de file, deviennent communs — jamais un document, une source, un
   prix ni un brouillon. Chaque membre valide ce qui est dit de lui avant l'export ; le chef de file peut retirer la
   partie. À dire sur l'écran de la part du partenaire (chantier écrans).
-- Écrans : l'atelier montre une bulle (i) et « Valider » pour une partie tirée du groupement ; les écrans complets
-  (« Prêt à déposer », « Harmoniser le ton », « Qui fait quoi » côté partenaire) sont ceux des chantiers écrans, sur
-  ce contrat.
+- Écrans : l'atelier montre une bulle (i) et « Valider » pour une partie tirée du groupement ; « Prêt à déposer »,
+  « Harmoniser le ton » et « Qui fait quoi » côté partenaire sont branchés à l'intégration (§ 18).
 
 ### 17.7 Vérifications
 
@@ -797,3 +796,58 @@ les parts, modifier la part d'un partenaire, envoyer ; SANS_COUT : les autres).
   Kerhel, remise à neuf) 186, atelier 105, V3 227, essai et routage 87, analyse partagée 40, journal et vocabulaire 30 —
   verts ; seuls échecs, les mêmes qu'au passage du socle et sans lien avec la vague 4 : 6 tests propres à SQLite
   (`PRAGMA foreign_keys`, clés étrangères non contrôlées : `test_secu2_donnees.py`, `test_hotfix_v2_fuites.py`).
+
+## 18. Intégration des trois chantiers (fait)
+
+Fusions, dans l'ordre : socle, partenaire (§ 15), chef de file (§ 16), assemblage (§ 17). Conflits résolus en gardant
+les deux intentions : vue du partenaire (`membre`, `identite`, `mode_simple`, `dossier.pret` du chantier partenaire, plus
+`qui_fait_quoi` et `peut_valider` qui tient compte de « Qui fait quoi » de l'assemblage) ; atelier (bloc d'une partie tirée
+du groupement, puis ligne d'une part de partenaire avec sa mention) ; `tests/test_demo_sans_cout.py` (chaque route de la
+vague 4 classée UNE fois : aide de l'IA et « Harmoniser le ton » dans `COUTS`, refus du lien de la démo « avant tout
+autre contrôle ») ; contrat renuméroté (assemblage en § 17). Aucune migration ajoutée : une seule révision,
+`x8y9redactionv4`.
+
+### 18.1 Écrans branchés sur l'assemblage
+
+| écran | ajout |
+|---|---|
+| Partenaire (`redaction-partenaire.js`) | Bloc « Qui fait quoi dans le groupement » sous le dossier assemblé : bulle (i) (écrite par Adjugo sans IA, ce que chacun apporte, jamais ce qui manque, chacun la valide), sa validation, « Lire ce que dit cette partie » (texte, puis « Qualifications citées » avec « justifiée » / « déclarée » et leur bulle : à l'écran seulement), « Valider cette partie » (désactivé tant qu'il reste un « [À compléter] »). Dossier assemblé : une partie tirée du groupement dit « Écrite par Adjugo à partir de la convention et des parts des membres ». Rappel : « Validez d'abord chacune de vos parties et « Qui fait quoi… » ». |
+| Partenaire, « Ma contribution » (`invite.html`) | Bulle (i) à côté de « Soumettre au chef de file » (co-traitant seulement) : sa part soumise est reprise dans « Qui fait quoi », lue par tous les membres ; ni pièces, ni prix, ni détail chiffré (§ 17.6). |
+| Chef de file, « Qui écrit quoi » (`app.html`, `app.js`) | En-tête : « Prêt à déposer » quand `pret.complet`, sinon « Ce qui reste avant de déposer (n) » (`pret.manques`) ; « Valider le dossier assemblé » (confirmation, empreinte lue ; désactivé tant que SES parties, « Organisation » ou « Qui fait quoi » attendent un geste de lui) ; « Harmoniser le ton » (seulement s'il y a des parts de membres différents à relier, `harmoniser.jonctions` ; jamais sur téléphone ; confirmation, débit confirmé par la fenêtre de l'atelier, tâche suivie toutes les 2 s, message de fin). Partie tirée du groupement : ni « Rédigée par », ni longueur, ni date ; « Écrite par Adjugo, sans IA » et sa bulle ; qui a validé « Qui fait quoi » ; « Lire cette partie » (texte, qualifications citées, note interne pour lui seul) ; « La valider dans l'onglet « Rédaction » ». |
+
+Ajout à `GET /api/atelier/{pid}/repartition` : `harmoniser: {message, jonctions}`.
+
+### 18.2 Correction trouvée par le parcours complet
+
+Quand le partenaire valide un texte écrit ou modifié par le chef de file, le contrôle des faits tourne chez lui, sur ses
+faits, et ce qu'il ne peut pas sourcer reste à relire (rien n'est blanchi). Sa relecture (« Je l'ai relu ») portait sur
+son brouillon seulement : le texte commun gardait le fait « à relire » et l'export du chef de file restait bloqué sans
+recours (sauf dérogation). Désormais `traiter_fait` reporte la relecture sur le texte commun quand son brouillon EST ce
+texte (même empreinte) : faits à relire SANS source et compteurs mis à jour, texte, empreinte et validations inchangés.
+L'écran du partenaire garde ces faits à relire sous ses yeux quand l'éditeur est replié.
+
+### 18.3 Vérifications
+
+- `tests/test_redaction_v4_parcours_complet.py` : le parcours de bout en bout par l'API — répartir, demander les parts
+  (email au partenaire qui a une adresse, « transmettez-lui son lien » sinon), A par son lien SANS compte (aide de
+  l'IA sur sa part déclarée et le dossier de l'acheteur, portée `inv:<id>`, rien du chef de file ni de B ; une partie
+  écrite lui-même, un brouillon privé jamais lu du chef de file), envoi avec l'avertissement exigé, compteurs sans
+  extrait, part modifiée par le chef de file puis revalidée (avant / après, fait relu par A), B par son COMPTE (ses
+  preuves et son savoir-faire, rien de A ni du chef de file), 404 sur `/api/jobs/{id}` et `/taches/{id}` pour un membre
+  de l'organisation du chef de file, partie du chef de file, assemblage (ordre du cadre, parties tirées du groupement
+  en tête, note interne au chef seul, « Qui fait quoi » sans manque ni mention), « Qui fait quoi » validée par chacun,
+  « Sections validées 6 sur 6 », dossier validé par chaque membre, « Prêt à déposer », export Word complet sans renvoi,
+  libellé interne, prix, secret ni « Adjugo », journal chaîné ; marché sans groupement inchangé (aucun onglet, aucune
+  partie tirée du groupement, rien à assembler ni à harmoniser, aucune ligne de répartition).
+- Écrans : tests d'interface et fonctions pures sous Node (partenaire et chef de file) ; aperçu local à 375 px et
+  1 024 px (lien du partenaire, « Qui écrit quoi ») : aucun défilement horizontal.
+- Deux tests rendus insensibles aux empreintes tirées au hasard (« 402 » dans une empreinte ; dix chiffres de suite
+  pris pour un numéro de téléphone).
+- Suite complète verte (SQLite) ; Postgres depuis l'état EXACT de la production (`0767372`, `w7x8analysepartagee`),
+  script `scratchpad/pgtest/run_v4_integration_depuis_prod.py` : une seule révision appliquée, aucune donnée perdue,
+  seconde montée sans effet, rejeu forcé, code de production redémarré sur la base montée, schéma identique à une base
+  neuve, retour arrière et remontée ; tests rejoués sur cette base (parcours complet 2, partenaire 9, chef de file 25,
+  assemblage 13, socle 23, démo 186, atelier 105, V3 227, essai et routage 87, analyse partagée 40, journal 30) verts ;
+  seuls échecs, les 6 tests propres à SQLite déjà connus (`PRAGMA foreign_keys` : `test_secu2_donnees.py`,
+  `test_hotfix_v2_fuites.py`).
+

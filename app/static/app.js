@@ -5449,10 +5449,15 @@ const __adjApp = createApp({
     // assemblé par le chef de file et « Harmoniser le ton » (des transitions entre les parts, rien d'autre).
     atlRepManques() { const d = this.atl.rep.d; return (d && d.dossier && d.dossier.pret && d.dossier.pret.manques) || []; },
     atlRepQfqTexte(l) { return l && l.genere === "grp_qfq" ? atlRepQfqValidationsTexte(l.validations) : ""; },
+    // « Qui fait quoi » ouverte : les qualifications citées, avec leur mention (justifiée / déclarée) à l'écran.
+    atlRepQuals() { const d = this.atl.rep.det; return d && d.genere === "grp_qfq" ? (d.membres || []).filter(m => (m.qualifications || []).length) : []; },
     atlRepMaValidation() {
       const d = this.atl.rep.d, ms = (d && d.dossier && d.dossier.pret && d.dossier.pret.membres) || [];
       const moi = ms.find(m => m.membre === "chef_de_file"); return moi ? moi.statut : "a_faire";
     },
+    // Le chef de file valide le dossier assemblé une fois SES gestes faits (ses parties, « Organisation du
+    // groupement », « Qui fait quoi ») : ce qui reste à faire par lui, partie par partie, d'après « Prêt à déposer ».
+    atlRepChefPeutValider() { return !this.atlRepManques().some(m => m.section_id && (m.qui || []).indexOf("le chef de file") >= 0); },
     atlRepValiderDossier() {
       const r = this.atl.rep, d = r.d; if (r.busy || !d) return;
       this._convAsk({ title: "Valider le dossier assemblé ?", ok: "Valider le dossier",

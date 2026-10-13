@@ -2026,9 +2026,10 @@
                   <details v-else-if="atlRepManques().length" class="atl-det atl-mt8"><summary>Ce qui reste avant de déposer ({{ atlRepManques().length }})</summary>
                     <ul class="atl-rep-manques small"><li v-for="(m,i) in atlRepManques()" :key="'rmq'+i">{{ m.message }}</li></ul></details>
                   <div class="row wrap atl-g8 atl-mt8">
-                    <template v-if="atlRepMaValidation() !== 'valide'"><button type="button" class="btn sm" @click="atlRepValiderDossier()" :disabled="!!atl.rep.busy"><span v-if="atl.rep.busy==='dossier'" class="spin"></span><i v-else data-lucide="check"></i>Valider le dossier assemblé</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Valider dit que vous avez lu le dossier assemblé tel qu'il est. Validez d'abord vos parties, « Organisation du groupement » et « Qui fait quoi dans le groupement » dans l'onglet « Rédaction ». Toute modification ensuite le fait repasser « à revalider » par chaque membre.</span></button></template>
+                    <template v-if="atlRepMaValidation() !== 'valide'"><button type="button" class="btn sm" @click="atlRepValiderDossier()" :disabled="!!atl.rep.busy || !atlRepChefPeutValider()"><span v-if="atl.rep.busy==='dossier'" class="spin"></span><i v-else data-lucide="check"></i>Valider le dossier assemblé</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Valider dit que vous avez lu le dossier assemblé tel qu'il est. Validez d'abord vos parties, « Organisation du groupement » et « Qui fait quoi dans le groupement » dans l'onglet « Rédaction ». Toute modification ensuite le fait repasser « à revalider » par chaque membre.</span></button></template>
                     <span v-else class="muted small">Vous avez validé le dossier assemblé.</span>
-                    <template v-if="atlRepHarm()"><button type="button" class="btn sm" @click="atlRepHarmoniser()" :disabled="!!atl.rep.busy || !!atl.busy || atlRepHarmEnCours()"><span v-if="atlRepHarmEnCours()" class="spin"></span><i v-else data-lucide="link-2"></i>Harmoniser le ton</button><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atlRepHarm().message }} Compte comme une nouvelle rédaction du dossier ; rien n'est décompté si aucune phrase n'est retenue ou si le service d'IA ne répond pas.</span></button></template>
+                    <span v-if="atlRepMaValidation() !== 'valide' && !atlRepChefPeutValider()" class="muted small" style="flex-basis:100%">Validez d'abord vos parties dans l'onglet « Rédaction ».</span>
+                    <template v-if="atlRepHarm() && !atlMobile"><button type="button" class="btn sm" @click="atlRepHarmoniser()" :disabled="!!atl.rep.busy || !!atl.busy || atlRepHarmEnCours()"><span v-if="atlRepHarmEnCours()" class="spin"></span><i v-else data-lucide="link-2"></i>Harmoniser le ton</button><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atlRepHarm().message }} Compte comme une nouvelle rédaction du dossier ; rien n'est décompté si aucune phrase n'est retenue ou si le service d'IA ne répond pas.</span></button></template>
                   </div>
                   <div v-if="!atlRepEnvoyerA().length" class="muted small atl-mt4">Aucune partie à demander : chaque partenaire a envoyé ses parties, ou aucune ne lui est confiée.</div>
                   <div v-if="atl.rep.demande" class="atl-info" role="status"><i data-lucide="send"></i><span style="flex:1;min-width:0"><template v-for="(t,i) in atlRepDemandeLignes()" :key="'rd'+i">{{ (i ? ' ' : '') + t }}</template></span></div>
@@ -2058,11 +2059,10 @@
                         <template v-else-if="atl.rep.det && atl.rep.det.section_id===l.section_id">
                           <div v-if="atl.rep.det.genere==='grp_orga' && atl.rep.det.message" class="small">{{ atl.rep.det.message }}</div>
                           <div v-for="b in atlRepBlocs()" :key="'rg'+b.k" class="atl-rep-bloc atl-mt8"><div class="atl-texte atl-rep-texte" v-html="atlRepHtml(b.v)"></div></div>
-                          <ul v-if="atl.rep.det.genere==='grp_qfq' && (atl.rep.det.membres || []).length" class="atl-rep-qfq small atl-mt8">
-                            <li v-for="(m,i) in atl.rep.det.membres" :key="'rqm'+i"><b>{{ m.nom }}</b><span v-if="m.lot" class="muted"> · {{ m.lot }}</span>
-                              <div v-if="(m.qualifications || []).length">Qualifications : <template v-for="(q,j) in m.qualifications" :key="'rqq'+i+'_'+j">{{ (j ? ', ' : '') + q.libelle }} <span class="muted">({{ q.statut_libelle }})</span></template></div></li>
-                          </ul>
-                          <div v-if="atl.rep.det.genere==='grp_qfq'" class="muted small atl-mt4">« justifiée » : un justificatif ou une source l'appuie ; « déclarée » : écrite par le membre. Ces mentions restent à l'écran : elles ne partent pas chez l'acheteur.</div>
+                          <template v-if="atlRepQuals().length">
+                            <div class="row atl-g6 small atl-mt8"><b>Qualifications citées</b><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">« justifiée » : un justificatif ou une source appuie la qualification ; « déclarée » : le membre l'a écrite. Ces mentions restent à l'écran : elles ne partent pas chez l'acheteur.</span></button></div>
+                            <ul class="atl-rep-qfq small"><li v-for="(m,i) in atlRepQuals()" :key="'rqm'+i"><b>{{ m.nom }}</b> : <template v-for="(q,j) in m.qualifications" :key="'rqq'+i+'_'+j">{{ (j ? ', ' : '') + q.libelle }} <span class="muted">({{ q.statut_libelle }})</span></template></li></ul>
+                          </template>
                           <div v-if="atl.rep.det.note_interne" class="atl-rep-note atl-mt8">
                             <div class="row atl-g6 small"><b>Note interne, pour vous seul</b><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.rep.det.note_interne.message }}</span></button></div>
                             <ul class="small"><li v-for="(t,i) in atl.rep.det.note_interne.lignes" :key="'rni'+i">{{ t }}</li></ul>
@@ -3811,7 +3811,7 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/redaction-partenaire.js" integrity="sha384-f0FkrZ8VtCKJnJ4q7lJDeeuPDj5fDSZHFVLITwiEfNqgM9VU+wYbvFwgiL+6Z/GX" defer></script>
-<script src="/static/app.js" integrity="sha384-jBnVfc2xRyPbIU3dCdKk8OZXjsd4ZTe3O1RJB20wc1KJvzP/2rrZfN8k+13YGzK7" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-uR05WeOdhU5uB8VBnlKP+R55E01EsoNADjrUGyR9rtAZedSNdACoCmwDKM91NY5T" defer></script>
+<script src="/static/app.js" integrity="sha384-SlGKAmW2volrrJh/M8k5NjMcNiK7ltfmzwf2vwNxkJWtqjMMiTJfr3mh0y/k/eQX" defer></script>
 </body>
 </html>

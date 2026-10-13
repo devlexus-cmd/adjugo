@@ -457,7 +457,7 @@ def test_ecran_regles_d_interface_et_branchements():
     # Assemblage : « Qui fait quoi dans le groupement » lue et validée dans la carte ; ses faits encore à relire
     # restent visibles quand l'éditeur est replié ; la bulle avant de soumettre sa part dit qu'elle est reprise.
     assert 'btn("valider-qfq"' in JS and 'a === "valider-qfq"' in JS and "renderQfq(q, ecrire)" in JS
-    assert "elles ne partent pas chez l\\'acheteur" in JS and "jamais ce qui manque" in JS
+    assert "elles ne partent pas chez l'acheteur" in JS and "jamais ce qui manque" in JS
     assert "b.empreinte === cur.empreinte" in JS and 'p.genere ? "Écrite par Adjugo' in JS
     assert "repris dans la partie « Qui fait quoi dans le groupement » du dossier de présentation" in inv
     # Suivi de SA tâche toutes les 2 s (aucun temps réel), reprise au rechargement.

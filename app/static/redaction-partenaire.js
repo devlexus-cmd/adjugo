@@ -168,6 +168,7 @@
   const BULLE_DOSSIER = "Le dossier assemblé réunit, dans l'ordre du cadre de l'acheteur, le texte envoyé par chaque membre et le texte validé du chef de file. Il est en lecture seule. Le valider dit que vous l'avez lu : toute modification ensuite le fait repasser « à revalider ».";
   const BULLE_ESPACE = "Vos brouillons, vos sources et l'aide d'Adjugo restent dans un espace privé, lié à ce navigateur : même la personne qui vous a transmis ce lien ne peut pas les lire. Avec un compte Adjugo, rien à ouvrir : retrouvez ce dossier dans « Partagé avec moi ».";
   const BULLE_QFQ = "Adjugo l'écrit sans IA, à partir de la convention et de la part envoyée par chaque membre : ce que chacun apporte (part, qualifications, moyens), jamais ce qui manque. Tous les membres la lisent et chacun la valide. Pour la changer, modifiez votre part dans « Ma contribution » et renvoyez-la.";
+  const BULLE_MENTIONS = "« justifiée » : un justificatif ou une source appuie la qualification ; « déclarée » : le membre l'a écrite. Ces mentions restent à l'écran : elles ne partent pas chez l'acheteur.";
   const BULLE_EXTRAITS = "Les passages de vos documents qu'Adjugo a cités en rédigeant (S1, S2…). Ils restent privés : ni le chef de file ni l'acheteur ne les voient, et les renvois sont retirés à l'export. Un extrait cité ne prouve pas que la phrase est exacte.";
 
   function errMessage(data, status) {
@@ -588,15 +589,11 @@
       h += '<div class="small muted">Votre validation : ' + rpEsc(fait ? "validée" + (mv.le ? " le " + rpJour(mv.le) : "") : (mv.statut === "a_revalider" ? "à refaire, le texte a changé" : "à faire")) + "</div>";
       h += '<details class="gn-det"><summary>Lire ce que dit cette partie</summary>';
       if (tc.texte) h += '<div class="rp-txt rp-txt-b">' + rpTexte(tc.texte, "source du chef de file") + "</div>";
-      const ms = q.membres || [];
-      if (ms.length) {
-        h += '<ul class="rp-qfq-m">' + ms.map(m => {
-          const ql = (m.qualifications || []).map(x => rpEsc(x.libelle) + (x.statut_libelle ? ' <span class="muted">(' + rpEsc(x.statut_libelle) + ")</span>" : "")).join(", ");
-          return '<li class="small"><b>' + rpEsc(m.nom) + "</b>" + (m.lot ? '<span class="muted"> · ' + rpEsc(m.lot) + "</span>" : "")
-            + (ql ? "<div>Qualifications : " + ql + "</div>" : "")
-            + (!m.part_envoyee && m.role === "partenaire" ? '<div class="muted">Part pas encore envoyée.</div>' : "") + "</li>";
-        }).join("") + "</ul>";
-        h += '<div class="muted small rp-p">« justifiée » : un justificatif ou une source l\'appuie ; « déclarée » : écrite par le membre. Ces mentions restent à l\'écran : elles ne partent pas chez l\'acheteur.</div>';
+      // Les mentions « justifiée » / « déclarée » de chaque qualification citée : à l'écran seulement.
+      const quals = (q.membres || []).filter(m => (m.qualifications || []).length);
+      if (quals.length) {
+        h += '<div class="rp-lbl rp-mt8">Qualifications citées' + tip(rpEsc(BULLE_MENTIONS)) + '</div><ul class="rp-qfq-m">' + quals.map(m => '<li class="small"><b>' + rpEsc(m.nom) + "</b> : "
+          + m.qualifications.map(x => rpEsc(x.libelle) + (x.statut_libelle ? ' <span class="muted">(' + rpEsc(x.statut_libelle) + ")</span>" : "")).join(", ") + "</li>").join("") + "</ul>";
       }
       h += "</details>";
       if (ecrire && !fait) {

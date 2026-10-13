@@ -1375,6 +1375,7 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
 .rp-dos { margin-top:16px; padding-top:16px; border-top:1px solid var(--hairline); }
 .rp-qfq { margin-top:16px; padding:12px 14px; border-radius:12px; background:var(--surface-2); border:1px solid var(--border); }
 .rp-qfq .gn-det { margin-top:8px; }
+.rp-qfq .rp-mt8 { margin-top:8px; }
 .rp-qfq-m { list-style:none; margin:8px 0 0; padding:0; }
 .rp-qfq-m > li { padding:6px 0; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere; }
 .rp-qfq-m > li:last-child { border-bottom:0; }
