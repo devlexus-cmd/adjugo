@@ -228,6 +228,10 @@ Isolation : 404 pour un autre compte (marché, partie, fait). Démo : 403 sur le
 
 - Une invention sans chiffre, nom, certification ni matériel passe (la bulle le dit).
 - Un fait relié est ÉCRIT dans la source ; il n'est pas pour autant vrai ni à jour.
+- Le contrôle est fait par fait, pas par relation : une phrase qui combine des faits écrits à des
+  endroits différents (« l'école Jules Ferry à Brest », quand le document parle de l'école Jules Ferry
+  à Quimper et d'un autre chantier à Brest) relie chaque fait à son passage, sans juger la combinaison ;
+  les passages montrés permettent de la relire.
 - Un fait non cité peut être relié à une fiche qui contient la même valeur avec la même unité pour une
   autre raison (« 12 salariés » formés ≠ effectif de 12) : jamais un libellé « vérifié », et le libellé
   dit d'où vient la valeur.

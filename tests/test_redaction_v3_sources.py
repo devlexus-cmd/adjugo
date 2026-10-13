@@ -206,6 +206,17 @@ def test_un_nombre_sans_unite_exige_un_mot_commun_avec_sa_source():
         == fs.A_RELIRE
     assert ps.fait_de(ps.controler("Nous avons livré 3 tonnes d'acier à Brest [S1]."), "3 tonnes")[0]["source"][
         "ref"] == "S1"
+    # Des personnes : le même mot suffit (« 9 compagnons »), jamais le mot « personnes », trop général.
+    t = ("Créée en 1998, notre entreprise compte 14 salariés dont 9 compagnons couvreurs et 2 apprentis. "
+         "Notre équipe a formé 6 personnes au travail en hauteur.")
+    ext = fs.fiches_extraits([{"ref": "S1", "chunk_id": 1, "text": t}])
+
+    def _st(ph, morceau):
+        return ps.fait_de(fs.controler(ph, ext, noms_entreprise=ps.NOMS, mode="ia"), morceau)[0]
+    x = _st("Nos 9 compagnons représentent 64 % de nos 14 salariés [S1].", "64 %")
+    assert x["source"]["type"] == fs.T_CALCUL and x["source"]["detail"] == "9 sur 14 font 64 %"
+    assert _st("Nos 14 salariés interviendront [S1].", "14 salariés")["statut"] == fs.AVEC_SOURCE
+    assert _st("Nous mobiliserons 6 personnes sur ce chantier [S1].", "6 personnes")["statut"] == fs.A_RELIRE
 
 
 @pytest.mark.parametrize("phrase,formule", [

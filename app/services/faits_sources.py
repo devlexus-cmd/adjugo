@@ -274,6 +274,7 @@ class Index:
         self.nums = []       # (valeur, unité, contexte, début, fin) — positions dans raw
         self.large = bool(large)
         self.clauses = {}    # début d'un nombre → mots de TOUTE sa proposition (clés d'unité)
+        self.brutes = {}     # début d'un nombre → son unité telle qu'écrite (clé d'A0 : « compa », « salar »)
         bornes = [0] + [m.end() for m in _COUPE_CLAUSE.finditer(same)] + [len(same) + 1]
 
         tout = ({_unite(re.sub(r"s$", "", w)[:5]) for w in _MOT.findall(same) if not w.isdigit()} if large
@@ -311,6 +312,7 @@ class Index:
                 u = ""
             self.nums.append((round(v * mult, 6), u, _ctx(m.start(), b, not unit), m.start(), b))
             self.clauses[m.start()] = _clause(m.start())
+            self.brutes[m.start()] = far._unit_key(unit)
             taken.append((m.start(), b))
         for m in far._WORD_RE.finditer(same):
             if any(not (m.end() <= x or m.start() >= y) for x, y in taken):
@@ -321,12 +323,13 @@ class Index:
             self.nums.append((far._word_value(m.group(1)), u, _ctx(m.start(), m.end(), not unit), m.start(),
                               m.end()))
             self.clauses[m.start()] = _clause(m.start())
+            self.brutes[m.start()] = far._unit_key(unit)
         self.certs = [(re.sub(r"[\s\-:'.]", "", m.group(0)), m.start(), m.end()) for m in far._CERT.finditer(same)]
         self.par_valeur = {}         # valeur arrondie → nombres (un gros dossier : pas de parcours complet)
         for x in self.nums:
             self.par_valeur.setdefault(round(x[0], 4), []).append(x)
 
-    def nombre(self, val: float, unite: str, mots: Optional[set] = None) -> Optional[tuple]:
+    def nombre(self, val: float, unite: str, mots: Optional[set] = None, brute: str = "") -> Optional[tuple]:
         """(début, fin) du nombre `val` avec une unité compatible, ou None.
         Avec une unité dans le fait : la même juste après le nombre, ou, si le nombre n'en a pas, dans
         le libellé de la même proposition (« Effectif : 12 » = « 12 salariés »).
@@ -337,7 +340,10 @@ class Index:
         l'acheteur) : la valeur suffit.
         Dans un EXTRAIT de document (pas une fiche), une durée, une mesure, un montant, un pourcentage ou
         un nombre de personnes revient souvent avec un autre sens : il faut en plus un mot commun entre
-        la phrase et la proposition de la source (« 3 tonnes de stock » ≠ « 3 tonnes d'acier livrées »)."""
+        la phrase et la proposition de la source (« 3 tonnes de stock » ≠ « 3 tonnes d'acier livrées ») ;
+        pour des personnes, le même mot suffit aussi (« 9 compagnons » ↔ « 9 compagnons couvreurs »,
+        `brute` : l'unité telle qu'écrite dans la phrase), sauf le mot « personnes », trop général
+        (« 6 personnes formées » n'est pas « 6 personnes sur ce chantier »)."""
         if val is None:
             return None
         for v, u, ctx, a, b in self.par_valeur.get(round(val, 4), ()):
@@ -347,7 +353,8 @@ class Index:
                 if not (u == unite or (not u and unite in ctx)):
                     continue
                 if mots is not None and not self.large and unite in _MESURES \
-                        and not (self.clauses.get(a, set()) - {unite}) & mots:
+                        and not (self.clauses.get(a, set()) - {unite}) & mots \
+                        and not (unite == "personnes" and brute and brute != "perso" and self.brutes.get(a) == brute):
                     continue
                 return a, b
             if mots is None or (u and u in mots) or (not u and ctx & mots):
@@ -384,7 +391,8 @@ class Index:
         Une certification générique ne se trouve jamais ici (voir `generique`)."""
         if kind in (far.CHIFFRE, far.EN_LETTRES):
             v, u = cle_nombre(kind, fait, key)
-            return self.nombre(v, u, mots)
+            brute = key[1] if isinstance(key, tuple) and len(key) == 2 else ""
+            return self.nombre(v, u, mots, brute=brute)
         if kind == far.CERTIFICATION:
             if not key or key in _CERT_GENERIQUES:
                 return None
