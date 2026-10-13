@@ -84,7 +84,8 @@ def test_parcours_de_l_ecran_par_le_lien(client, auth, fake_llm):
     H = {"X-Adjugo-Espace": r.json()["cle"]}
     assert client.get(base, headers=H).json()["espace"]["cle_valide"] is True
     # 3. « Rédiger avec Adjugo » : tâche de fond de SA portée, suivie par l'écran, rien de texte dedans.
-    fake_llm(_reponse_partenaire(TEXTE_IA_A)[0])
+    ans, vus = _reponse_partenaire(TEXTE_IA_A)
+    fake = fake_llm(ans)
     r = client.post(base + f"/sections/{sid}/aide", json={"action": "rediger"}, headers=H)
     assert r.status_code == 202 and r.json()["tache"]["id"]
     jid = r.json()["tache"]["id"]
@@ -94,6 +95,13 @@ def test_parcours_de_l_ecran_par_le_lien(client, auth, fake_llm):
         if j["status"] in ("done", "error"):
             break
     assert j["status"] == "done" and j["result"]["sections"][0]["ok"] is True and "texte" not in json.dumps(j["result"])
+    # D5, sans compte : ce qu'il a déclaré (« déclaré par vous ») et le dossier de l'acheteur, rien du chef de file ;
+    # portée de facturation propre à l'invitation.
+    sent = fake.sent()
+    assert "Qualibat 1552" in sent and "Spécialiste du désamiantage en site occupé." in sent
+    assert "REGLEMENT DE LA CONSULTATION" in sent and "exigé par l'acheteur" in sent
+    assert "Breizh Couverture" not in sent and "Tanguy" not in sent
+    assert vus and all(x == f"inv:{a['id']}" for x in vus)
     p = client.get(base, headers=H).json()["parties"][0]
     b1 = p["brouillon"]
     for k in ("id", "numero", "origine", "origine_libelle", "ia", "empreinte", "base_version_id", "a_completer",
@@ -286,10 +294,24 @@ def test_aide_indisponible_neutre_dans_tout_l_ecran_et_aide_rendue_si_l_ia_tombe
         raise RuntimeError("fournisseur indisponible")
     # IA en panne : la tâche échoue avec un message lisible, l'aide est rendue, rien n'est débité.
     fake_llm(boom)
+    from app.models import DossierPresentation, User
+    db = _db()
+    try:
+        u = db.query(User).filter(User.email == auth["email"]).first()
+        t0 = (int(u.trial_analyses_used or 0), int(u.analyses_used_this_month or 0))
+    finally:
+        db.close()
     job, _ = _aide(pa, sid)
     assert job["status"] == "error" and job["error"] == ag.MSG_IA_PANNE
     p = pa.get(f"/sections/{sid}").json()
     assert p["aide"]["restantes"] == ag.plafond_partie() and p["brouillon"] is None
+    db = _db()
+    try:                                      # remboursé : le quota du chef de file n'a pas bougé
+        u = db.query(User).filter(User.email == auth["email"]).first()
+        assert (int(u.trial_analyses_used or 0), int(u.analyses_used_this_month or 0)) == t0
+        assert not db.query(DossierPresentation).filter(DossierPresentation.project_id == pid).one().analyse_debitee
+    finally:
+        db.close()
     # Essai du chef de file terminé : message neutre ; l'écran ne lit rien de son forfait.
     from app.models import User
     db = _db()

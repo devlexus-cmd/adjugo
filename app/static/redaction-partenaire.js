@@ -329,8 +329,37 @@
       }
       if (cleOk) h += '<div class="rp-export"><button type="button" class="linkbtn small" data-act="export">Télécharger mes textes</button>' + tip("Vos brouillons et les textes que vous avez envoyés, dans un fichier (droit à la portabilité).", true) + "</div>";
       h += '<div class="sr-only" aria-live="polite" data-live></div></section>';
+      // L'écran est redessiné après chaque action : les volets ouverts et le focus (clavier, lecteur d'écran)
+      // sont gardés.
+      const ouverts = new Set(Array.from(el.querySelectorAll("details[open]")).map(cleVolet));
+      const garde = focusGarde();
       el.innerHTML = h;
+      el.querySelectorAll("details").forEach(d => { if (ouverts.has(cleVolet(d))) d.open = true; });
+      focusRendu(garde);
       icons();
+    }
+
+    function cleVolet(d) {
+      const li = d.closest(".rp-part"), s = d.querySelector("summary");
+      return (li ? li.dataset.sid || "" : "") + "|" + (s ? s.textContent.replace(/\(\d+\)/g, "").trim() : "");
+    }
+
+    function focusGarde() {
+      const a = document.activeElement;
+      if (!a || !el.contains(a) || !a.dataset) return null;
+      return { act: a.dataset.act || "", sid: a.dataset.sid || "", fid: a.dataset.fid || "", ta: a.matches && a.matches("textarea.rp-ta"),
+        s: a.selectionStart, e: a.selectionEnd };
+    }
+
+    function focusRendu(g) {
+      if (!g) return;
+      const q = (v) => (window.CSS && CSS.escape) ? CSS.escape(v) : String(v).replace(/["\\]/g, "");
+      let n = null;
+      if (g.ta && g.sid) n = el.querySelector('textarea.rp-ta[data-sid="' + q(g.sid) + '"]');
+      else if (g.act) n = el.querySelector('[data-act="' + q(g.act) + '"]' + (g.sid ? '[data-sid="' + q(g.sid) + '"]' : "") + (g.fid ? '[data-fid="' + q(g.fid) + '"]' : ""));
+      if (!n && g.sid) n = el.querySelector('[data-act="ouvrir"][data-sid="' + q(g.sid) + '"]');
+      if (!n) return;
+      try { n.focus({ preventScroll: true }); if (g.ta && typeof g.s === "number") n.setSelectionRange(g.s, g.e); } catch (e) {}
     }
 
     function icons() { try { root.lucide && root.lucide.createIcons(); } catch (e) {} }
@@ -373,7 +402,7 @@
     function renderPartie(v, p, ecrire) {
       const sid = p.section_id, open = st.open === sid;
       const meta = [p.longueur_mots ? "environ " + Number(p.longueur_mots).toLocaleString("fr-FR") + " mots" : "", p.date_limite ? "avant le " + rpJour(p.date_limite) : ""].filter(Boolean).join(" · ");
-      let h = '<li class="rp-part' + (open ? " open" : "") + '">';
+      let h = '<li class="rp-part' + (open ? " open" : "") + '" data-sid="' + sid + '">';
       h += '<button type="button" class="rp-ph" data-act="ouvrir" data-sid="' + sid + '" aria-expanded="' + (open ? "true" : "false") + '"><span class="rp-chev">' + ico("chevron-right", 15) + '</span><span class="rp-pt"><span class="rp-pn">' + rpEsc(p.titre || p.intitule) + "</span>"
         + (meta ? '<span class="rp-pm muted small">' + rpEsc(meta) + "</span>" : "") + '</span><span class="pill ' + (PILL[p.statut] || "neutral") + ' rp-pill">' + rpEsc(p.statut_libelle) + "</span></button>";
       if (!open) return h + "</li>";
@@ -462,7 +491,7 @@
       if (b && Number(b.numero || 0) > 1) liens.push('<button type="button" class="linkbtn small" data-act="historique" data-sid="' + sid + '" aria-expanded="' + (st.hist[sid] ? "true" : "false") + '">Vos brouillons précédents</button>');
       if (liens.length) h += '<div class="rp-liens">' + liens.join("") + "</div>";
       if (st.hist[sid]) h += renderHistorique(sid, b);
-      if (b) h += renderFaits(b) + renderExtraits(b);
+      if (b) h += renderFaits(b, sid) + renderExtraits(b);
       return h + "</div>";
     }
 
@@ -473,7 +502,7 @@
         + btn("reprendre", "Reprendre ce texte", "ghost", ' data-sid="' + sid + '" data-bid="' + rpEsc(x.id) + '"') + "</li>").join("") + "</ul>";
     }
 
-    function renderFaits(b) {
+    function renderFaits(b, sid) {
       const faits = (b.faits || []).filter(f => f && f.type !== "reste");
       const aRelire = faits.filter(f => f.statut !== "relu_par_vous"), relus = faits.filter(f => f.statut === "relu_par_vous");
       const reste = (b.faits || []).find(f => f && f.type === "reste" && f.statut !== "relu_par_vous");
@@ -487,12 +516,12 @@
         aRelire.forEach(f => {
           h += '<li class="rp-fait"><div class="rp-fk">' + rpEsc(FAIT_TYPES[f.type] || "Fait") + '</div><div class="small">' + rpPhrase(f.phrase || f.fait, f.fait) + "</div>"
             + '<div class="muted small">' + rpEsc(f.message || "Adjugo ne trouve pas d'où vient ce fait : relisez-le.") + "</div>"
-            + '<div class="rp-acts">' + btn("relu", f.type === "engagement" ? "Je confirme cet engagement" : "Je l'ai relu", "ghost", ' data-fid="' + rpEsc(f.id) + '"') + "</div></li>";
+            + '<div class="rp-acts">' + btn("relu", f.type === "engagement" ? "Je confirme cet engagement" : "Je l'ai relu", "ghost", ' data-sid="' + sid + '" data-fid="' + rpEsc(f.id) + '"') + "</div></li>";
         });
         h += "</ul>";
       }
       if (reste) h += '<div class="muted small">' + rpEsc(reste.message || "") + "</div>";
-      if (relus.length) h += '<details class="gn-det"><summary>Relus par vous (' + relus.length + ")</summary>" + relus.map(f => '<div class="rp-relu small"><span>' + rpEsc(f.fait) + "</span>" + btn("a-relire", "Remettre à relire", "ghost", ' data-fid="' + rpEsc(f.id) + '"') + "</div>").join("") + "</details>";
+      if (relus.length) h += '<details class="gn-det"><summary>Relus par vous (' + relus.length + ")</summary>" + relus.map(f => '<div class="rp-relu small"><span>' + rpEsc(f.fait) + "</span>" + btn("a-relire", "Remettre à relire", "ghost", ' data-sid="' + sid + '" data-fid="' + rpEsc(f.id) + '"') + "</div>").join("") + "</details>";
       const fsrc = b.faits_sources || [];
       if (c.libelles && fsrc.length) {
         h += '<details class="gn-det"><summary>Faits avec une source (' + fsrc.length + ")</summary><ul class=\"rp-fl\">" + fsrc.map(f => '<li class="small"><b>' + rpEsc(f.fait) + "</b>"
