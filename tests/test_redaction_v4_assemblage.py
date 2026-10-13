@@ -290,13 +290,11 @@ def test_organisation_convention_absente_brouillon_ou_perimee(client, auth, mail
     rep = client.get(f"/api/atelier/{pid}/repartition/{orga['id']}", headers=h).json()
     assert rep["statut"] == "a_revalider" and rep["convention"]["statut"] == "perimee"
     assert "redaction.partie_groupement_a_jour" in [x[0] for x in _audit(project_id=pid)]
-    # L'historique reste entier (aucune version effacée).
-    from app.models import DossierSectionVersion
-    db = _db()
-    try:
-        assert db.query(DossierSectionVersion).filter(DossierSectionVersion.section_id == orga["id"]).count() >= 4
-    finally:
-        db.close()
+    # L'historique reste entier (aucune version effacée) et se lit : toutes ses versions sont communes.
+    hist = client.get(f"/api/atelier/{pid}/sections/{orga['id']}", headers=h).json()
+    assert len(hist["versions"]) == 4 and {v["origine"] for v in hist["versions"]} == {"genere"}
+    r = client.get(f"/api/atelier/{pid}/sections/{orga['id']}/versions/{hist['versions'][-1]['id']}", headers=h)
+    assert r.status_code == 200 and "n'est pas encore préparée" in r.json()["texte"]
 
 
 # ═══ 3. « Qui fait quoi » : ce que chacun apporte, jamais ce qui manque ══════════════

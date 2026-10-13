@@ -642,6 +642,11 @@ les parts, modifier la part d'un partenaire, envoyer ; SANS_COUT : les autres).
   (« à compléter ») jusqu'à son renvoi — on n'expose jamais un brouillon.
 - Le contrôle des transitions refuse tout fait nouveau, pas une phrase creuse ; un mot d'ouverture inconnu du dossier
   en tête de phrase est pris pour un nom (refus prudent).
+- « Qui fait quoi » est lue par tous les membres dès sa création (décision 3a : le dossier assemblé se lit en entier) :
+  la part, les qualifications et l'effectif que chacun a déclarés dans sa part envoyée, et les qualifications et le
+  matériel acceptés dans « Mes preuves » du chef de file, deviennent communs — jamais un document, une source, un
+  prix ni un brouillon. Chaque membre valide ce qui est dit de lui avant l'export ; le chef de file peut retirer la
+  partie. À dire sur l'écran de la part du partenaire (chantier écrans).
 - Écrans : l'atelier montre une bulle (i) et « Valider » pour une partie tirée du groupement ; les écrans complets
   (« Prêt à déposer », « Harmoniser le ton », « Qui fait quoi » côté partenaire) sont ceux des chantiers écrans, sur
   ce contrat.

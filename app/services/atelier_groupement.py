@@ -2069,7 +2069,7 @@ _VERBES = {A_REDIGER: "à rédiger par", EN_COURS: "en cours chez", ENVOYEE: "à
 
 
 def _manques(db, project: Project, dossier: DossierPresentation, act: list, statuts: dict, mem: list) -> list:
-    """Ce qui manque pour « Prêt à déposer », partie par partie puis membre par membre : « « 3 Démarche
+    """Ce qui manque pour « Prêt à déposer », partie par partie puis membre par membre : « « 3. Démarche
     environnementale » : à valider par Breizh Désamiantage ». Jamais ce qui manque au chef de file comme
     entreprise (capacités, qualifications) : seulement les gestes de rédaction et de validation."""
     from app.services import atelier_assemblage as asm
@@ -2268,13 +2268,13 @@ def purger(db, jours: int = PURGE_JOURS) -> dict:
 
 def lancer_harmonisation(db, user: User, project: Project, dossier: DossierPresentation, lecteur: at.Lecteur,
                          member_ids: list, accepte_debit: bool = False) -> Job:
-    """« Harmoniser le ton » (chef de file) : des phrases de transition, rien d'autre (docs § 15.4)."""
+    """« Harmoniser le ton » (chef de file) : des phrases de transition, rien d'autre (docs § 15.1, point 5)."""
     from app.services import atelier_assemblage as asm
     return asm.lancer_harmonisation(db, user, project, dossier, lecteur, member_ids, accepte_debit=accepte_debit)
 
 
 def valider_generee_par_le_chef(db, project: Project, section: DossierSection, lecteur: at.Lecteur, version_id,
                                 ip: str = "") -> DossierSection:
-    """Le chef de file valide une partie tirée du groupement depuis l'atelier (docs § 15.3)."""
+    """Le chef de file valide une partie tirée du groupement depuis l'atelier (docs § 15.1, points 2 à 4)."""
     from app.services import atelier_assemblage as asm
     return asm.valider_par_le_chef(db, project, section, lecteur, version_id, ip=ip)
