@@ -33,10 +33,21 @@ PROFIL_A = {"name": "Zorglub Toitures SARL", "siret": "98765432100017", "city": 
             "effectif": 17, "email": "contact@zorglub-toitures.fr", "phone": "0298765432",
             "team": [{"nom": "Yann Tanguy", "fonction": "Chef de chantier"}],
             "qualifications": [{"name": "Qualibat 3194 ardoise"}]}
-CRITERES_A = {"penalty_max": 3.7, "garantie_max": 4.3, "retenue_garantie_max": 2.9, "delai_reponse_min": 23,
+# Seuils et CA choisis pour ne jamais se confondre avec une date, une durée ou un coût (cherchés en nombres
+# entiers : « 3.77 » n'est jamais trouvé dans « 13.775 » ni dans « 07:00:13.771 »).
+CRITERES_A = {"penalty_max": 3.77, "garantie_max": 4.31, "retenue_garantie_max": 2.93, "delai_reponse_min": 23,
               "specialites": "couverture zinc ardoise velux", "departements": "29, 56"}
-SECRETS_A = ["Zorglub", "98765432100017", "Plouzané", "731", "zorglub-toitures", "0298765432", "Yann Tanguy",
-             "Tanguy", "3194 ardoise", "3.7", "4.3", "2.9", "velux"]
+SECRETS_A = ["Zorglub", "98765432100017", "Plouzané", "731913", "731 913", "731,913", "zorglub-toitures", "0298765432",
+             "Yann Tanguy", "Tanguy", "3194 ardoise", "3.77", "4.31", "2.93", "velux"]
+
+
+def _contient(texte: str, secret: str) -> bool:
+    """Le secret figure-t-il dans le texte ? Un nombre est cherché en entier (jamais au milieu d'un autre
+    nombre) ; le reste, tel quel."""
+    if re.fullmatch(r"[\d.\s]+", secret):
+        return re.search(r"(?<![\d.])" + re.escape(secret) + r"(?![\d])", texte) is not None
+    return secret in texte
+
 
 RECO_3 = ("Le marché porte sur la réfection de la couverture du groupe scolaire.\n\n"
           "L'acheteur note la valeur technique à 60 % et le prix à 40 %.\n\n"
@@ -599,16 +610,23 @@ def test_extraction_partagee_sans_aucune_donnee_d_entreprise(client, ia, attente
     ext = appels_dossier(fake.calls)[0]
     envoye = llm._flatten_content(ext.get("system")) + "\n" + llm._flatten_content(ext["messages"][0]["content"])
     for s in SECRETS_A + [a["email"]]:
-        assert s not in envoye, s
+        assert not _contient(envoye, s), s
     assert "PROFIL DE L'ENTREPRISE" not in envoye and "CRITERES GO/NO-GO" not in envoye
     # La partie propre à l'entreprise reçoit bien le profil… sans les noms des salariés (masqués).
     ent = llm._flatten_content(appels_entreprise(fake.calls)[0]["messages"][0]["content"])
-    assert "Zorglub Toitures SARL" in ent and "3.7" in ent and "Yann Tanguy" not in ent
+    assert "Zorglub Toitures SARL" in ent and _contient(ent, "3.77") and "Yann Tanguy" not in ent
     lignes = _lignes_partagees()
     assert len(lignes) == 1
-    stocke = json.dumps(lignes[0], default=str, ensure_ascii=False)
-    for s in SECRETS_A + [a["email"], str(a["id"]) + ","]:
-        assert s not in stocke, s
+    # CONTENU de l'entrée (tout ce qui vient du dossier et de l'IA) ; les colonnes techniques (identifiant,
+    # clé, dates, durée, coût) ne sont que des nombres, des dates ou une empreinte : comparées, elles
+    # donnaient des faux positifs (« 22.9 » dans « 06:53:22.935992 »).
+    techniques = {"id", "cle", "created_at", "utilise_le", "duree_s", "cout_eur"}
+    contenu = {k: v for k, v in lignes[0].items() if k not in techniques}
+    assert {"extraction", "rapport", "nature", "mode", "version", "modele"} <= set(contenu)
+    stocke = json.dumps(contenu, default=str, ensure_ascii=False)
+    for s in SECRETS_A + [a["email"]]:
+        assert not _contient(stocke, s), s
+    assert not {k for k in _cles(contenu) if re.search(r"owner|user|org|project|compte", k)}
     cols = {c.name for c in AnalysePartagee.__table__.columns}
     assert not {c for c in cols if "owner" in c or "user" in c or "org" in c or "project" in c}
 
