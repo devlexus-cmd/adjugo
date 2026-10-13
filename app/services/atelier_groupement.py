@@ -918,6 +918,16 @@ def traiter_fait(db, acces: Acces, section_id: int, fait_id: str, statut: str) -
     b.compteurs = compteurs(faits)
     flag_modified(b, "faits")
     flag_modified(b, "compteurs")
+    # Son brouillon EST le texte commun (texte envoyé, ou texte du chef de file qu'il a validé) : sa relecture
+    # vaut pour le texte commun, que lit le chef de file (faits à relire SANS source, compteurs) et qui bloque
+    # l'export tant qu'un fait reste à relire. Le texte ne change pas : son empreinte, ses validations et celle
+    # du dossier assemblé non plus.
+    cur = _commune(db, section)
+    if cur is not None and b.empreinte and cur.empreinte == b.empreinte:
+        cur.faits = faits_communs(faits)
+        cur.compteurs = compteurs(faits)
+        flag_modified(cur, "faits")
+        flag_modified(cur, "compteurs")
     db.commit()
     return hit
 

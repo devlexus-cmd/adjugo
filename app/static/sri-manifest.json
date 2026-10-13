@@ -17,9 +17,9 @@
    "sha256": "c021a8b200b5abda3abb370f13a0569ad038512a57391609b0af420537307354"
   },
   "/static/redaction-partenaire.js": {
-   "integrity": "sha384-f9E/a4M4e9t07lY3p8yxDytGbgtqOyXEMLgRo3dS9d2YzQAOhA4fvuuTuylzhODx",
-   "octets": 63710,
-   "sha256": "2e19928648d58f9ed68309d5708e3ec5c9351a31b33834bf214655720abcb634"
+   "integrity": "sha384-f0FkrZ8VtCKJnJ4q7lJDeeuPDj5fDSZHFVLITwiEfNqgM9VU+wYbvFwgiL+6Z/GX",
+   "octets": 64152,
+   "sha256": "14bd29dfc158590db7d58e8651aafee50c92f22182a6f109c8e044296aeb99f9"
   },
   "/static/vendor/lucide-1.20.0.min.js": {
    "integrity": "sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt",

@@ -454,6 +454,12 @@ def test_ecran_regles_d_interface_et_branchements():
     assert "avertissement_lu: true" in JS and "Ce texte sera lu par le chef de file et par les autres membres du groupement." in JS
     assert '"Rédiger avec Adjugo"' in JS and "J'écris moi-même" in JS
     assert "Valider la modification" in JS and "Rétablir ma version" in JS
+    # Assemblage : « Qui fait quoi dans le groupement » lue et validée dans la carte ; ses faits encore à relire
+    # restent visibles quand l'éditeur est replié ; la bulle avant de soumettre sa part dit qu'elle est reprise.
+    assert 'btn("valider-qfq"' in JS and 'a === "valider-qfq"' in JS and "renderQfq(q, ecrire)" in JS
+    assert "elles ne partent pas chez l\\'acheteur" in JS and "jamais ce qui manque" in JS
+    assert "b.empreinte === cur.empreinte" in JS and 'p.genere ? "Écrite par Adjugo' in JS
+    assert "repris dans la partie « Qui fait quoi dans le groupement » du dossier de présentation" in inv
     # Suivi de SA tâche toutes les 2 s (aucun temps réel), reprise au rechargement.
     assert "}, 2000);" in JS and "p.aide && p.aide.en_cours" in JS
     assert "WebSocket" not in JS and "EventSource" not in JS

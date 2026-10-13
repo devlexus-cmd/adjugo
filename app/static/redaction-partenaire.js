@@ -417,7 +417,13 @@
       else h += renderCommun(v, p, ecrire);
       if (job) h += '<div class="rp-job" role="status"><span class="spin"></span><span>Adjugo rédige votre partie (une à deux minutes). Vous pouvez quitter cette page : le texte vous attendra.</span></div>';
       else if (ecrire && editeurVisible(p)) h += renderEditeur(v, p);
-      else if (ecrire) h += '<div class="rp-acts rp-mt">' + btn("moi", ico("pencil", 14) + (parChef ? "Écrire une autre version" : "Modifier mon texte"), "", ' data-sid="' + sid + '"') + "</div>";
+      else if (ecrire) {
+        // Éditeur replié, et son brouillon EST le texte commun (envoyé, ou celui du chef de file qu'il a validé) :
+        // ses faits encore à relire restent sous ses yeux (ils bloquent l'export du groupement).
+        const b = p.brouillon;
+        if (!parChef && b && cur && b.empreinte === cur.empreinte && (b.faits || []).some(f => f && f.type !== "reste" && f.statut === "a_relire")) h += renderFaits(b, sid);
+        h += '<div class="rp-acts rp-mt">' + btn("moi", ico("pencil", 14) + (parChef ? "Écrire une autre version" : "Modifier mon texte"), "", ' data-sid="' + sid + '"') + "</div>";
+      }
       else if (p.brouillon && p.brouillon.texte) h += '<div class="rp-ed"><div class="rp-lbl">Votre brouillon</div><div class="rp-txt">' + rpTexte(p.brouillon.texte, "votre source") + "</div></div>";
       const m = st.msgs[sid];
       if (m) h += m.err ? '<div class="conv-err rp-msg" role="alert">' + ico("circle-alert", 15) + "<div>" + rpEsc(m.txt) + "</div></div>" : '<div class="rp-ok-msg small" role="status">' + ico("check", 14) + "<span>" + rpEsc(m.txt) + "</span></div>";
