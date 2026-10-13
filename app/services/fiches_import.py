@@ -622,7 +622,7 @@ def controler(nature, champs, passage, texte: "_Texte", date_fin=None) -> tuple:
         val.pop("possession")
     for k in list(val):
         v = val[k]
-        trop = pv.elements_hors_passage(nature, {k: v}, ext)
+        trop = pv.elements_hors_passage(nature, val, ext, champs=[k])
         if not trop and isinstance(v, str) and k in _TXT:
             trop = mots_hors_passage(v, ext, k)
         if trop:

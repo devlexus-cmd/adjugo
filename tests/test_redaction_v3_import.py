@@ -570,6 +570,42 @@ def test_controler_une_fiche_ne_dit_jamais_plus_que_son_passage():
     assert fi.controler("chiffre_cle", {"libelle": "Effectif", "valeur": 15}, p2, t2)[3] == "valeur_hors_passage"
 
 
+def test_un_nombre_de_la_fiche_figure_dans_son_role_jamais_dans_un_autre():
+    """Revue de la vague 3 : une dimension (« de 16 m »), un numéro (« n° 12345 ») ou un nombre qui compte
+    autre chose (« 300 m2 ») ne deviennent jamais une quantité, un montant HT ou un effectif."""
+    def _c(nature, champs, passage):
+        return fi.controler(nature, champs, passage, fi._Texte(passage))
+    p = "Nous disposons en propre de 2 nacelles articulées de 16 m."
+    val, *_ = _c("materiel", {"designation": "nacelles articulées", "quantite": 16, "possession": "propriete"}, p)
+    assert "quantite" not in val                                       # 16 m est une dimension
+    val, *_ = _c("materiel", {"designation": "nacelles articulées", "quantite": 2}, p)
+    assert val["quantite"] == 2
+    assert _c("materiel", {"designation": "Nacelle articulée", "quantite": 2},
+              "| Nacelle articulée | 2 | propriété |")[0]["quantite"] == 2
+    assert _c("materiel", {"designation": "nacelles", "quantite": 2}, "Nous avons deux nacelles.")[0]["quantite"] == 2
+    p = "Notre équipe de 6 couvreurs a posé 300 m2 de zinc en 2023."
+    assert _c("chiffre_cle", {"libelle": "Effectif", "valeur": 300}, p)[3] == "valeur_hors_passage"
+    assert _c("chiffre_cle", {"libelle": "Effectif", "valeur": 6}, p)[3] == "valeur_hors_passage"
+    assert _c("chiffre_cle", {"libelle": "Couvreurs", "valeur": 6}, p)[0] == {"libelle": "Couvreurs", "valeur": 6}
+    assert _c("chiffre_cle", {"libelle": "Surface de l'atelier", "valeur": 300, "unite": "m2"},
+              "Notre atelier de 300 m2 est à Quimper.")[3] is None
+    assert _c("chiffre_cle", {"libelle": "Effectif", "valeur": 12}, "Effectif : 12")[3] is None
+    p = ("En 2024, réfection de la toiture de l'école Jules Ferry pour la Mairie de Quimper (85 000 € HT), "
+         "certificat n° 12345.")
+    val, *_ = _c("reference", {"objet": "Réfection de la toiture de l'école Jules Ferry", "montant_ht": 12345}, p)
+    assert "montant_ht" not in val                                     # un numéro n'est pas un montant
+    val, *_ = _c("reference", {"objet": "Réfection de la toiture de l'école Jules Ferry", "montant_ht": 85000,
+                               "annee": 2024}, p)
+    assert val["montant_ht"] == 85000 and val["annee"] == 2024
+    val, *_ = _c("reference", {"objet": "Réfection de la toiture de l'école Jules Ferry", "annee": 12345}, p)
+    assert "annee" not in val
+    assert _c("reference", {"objet": "Réfection de la toiture du gymnase", "montant_ht": 1200000},
+              "Réfection de la toiture du gymnase pour 1,2 million d'euros HT.")[0]["montant_ht"] == 1200000
+    # La même règle pour une fiche saisie avec un passage de vos documents (socle).
+    assert pv.elements_hors_passage("materiel", {"designation": "nacelles articulées", "quantite": 16},
+                                    "Nous disposons en propre de 2 nacelles articulées de 16 m.") == ["16"]
+
+
 def test_noms_probables_reperes_sans_ia():
     noms = fi.noms_probables("M. Kerjean dirige. Conducteur de travaux : Anne Le Floch. Paul Durand, chef de "
                              "chantier, 15 ans. La Mairie de Quimper, responsable du suivi. M. le Maire. Travaux "

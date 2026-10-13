@@ -397,15 +397,123 @@ def localiser(texte_doc: str, passage: str) -> Optional[tuple]:
     return pos[j], pos[j + len(nx) - 1] + 1
 
 
-def elements_hors_passage(nature: str, valeur: dict, passage: str) -> list:
+# Un nombre précédé de « n° », « numéro », « réf. », « SIRET »… est un numéro, jamais une quantité, un
+# montant, une année ni un chiffre clé (« certificat n° 12345 » n'est pas « 12 345 € HT »).
+_NUMERO_AVANT = re.compile(r"(?:\bn\s?[°ºo]\.?|\bnum(?:ero)?\.?|\bref(?:erence)?\.?|\bsiret|\bsiren|\bcode|#)\s*:?\s*$")
+
+
+def _nombres_du_passage(passage: str) -> list:
+    """Les nombres du passage, tels que la rédaction les repère (A0) : [{valeur (multiplicateur compris :
+    « 85 k€ » = 85 000), unite (clé d'A0 : « nacel », « € », « an », ""), mot (le mot qui suit le
+    nombre, replié), mots (clés des mots de sa phrase ou de sa ligne de tableau), numero (précédé de
+    « n° »…)}]."""
+    from app.services import faits_a_relire as far
+    from app.services import faits_sources as fs
+    out = []
+    for ph, _titre, tableau in far.phrases(passage):
+        same = far._fold_same(ph)
+        mots = {far._unit_key(w) for w in re.findall(r"[a-z][a-z'\-]{2,}", same)}
+        depuis = {}
+        for fait, kind, key in far._facts_in(ph, tableau=tableau):
+            if kind not in (far.CHIFFRE, far.EN_LETTRES):
+                continue
+            i = ph.find(fait, depuis.get(fait, 0))
+            if i < 0:
+                i = ph.find(fait)
+            depuis[fait] = i + 1 if i >= 0 else 0
+            v, _u = fs.cle_nombre(kind, fait, key)
+            suite = same[i + len(fait):] if i >= 0 else ""
+            # Le mot compté : l'unité écrite avec le nombre (« 300 m2 »), sinon le mot qui suit.
+            mot = re.sub(r"^[\d\s.,  ]+", "", far.fold(fait)) if kind == far.CHIFFRE else ""
+            if not mot:
+                m = re.match(r"\s*([^\s\d.,;:()|]+)", suite)
+                mot = m.group(1) if m else ""
+            unite = key[1] if isinstance(key, tuple) else ""
+            if unite in ("milli", "milliard") and re.match(r"\s*(?:d['’ ]\s?|de )?(?:euros?|€)", suite):
+                unite = "€"                    # « 1,2 million d'euros »
+            out.append({"valeur": v, "unite": unite,
+                        "mot": mot, "suite": suite[:30], "mots": mots,
+                        "numero": i >= 0 and bool(_NUMERO_AVANT.search(same[max(0, i - 14):i]))})
+    return out
+
+
+def _cles(texte) -> set:
+    """Clés d'unité (A0) des mots d'un champ : « nacelles articulées » → {nacel, artic} ; « m2 » → {m2}."""
+    from app.services import faits_a_relire as far
+    return {far._unit_key(w) for w in re.findall(r"[a-z€%²³][a-z0-9€%²³'\-]*", far.fold(texte or ""))
+            if len(w) >= 2 or w in ("€", "%")}
+
+
+def _nombre_a_sa_place(nature: str, champ: str, v, valeur: dict, nombres: list) -> bool:
+    """Le nombre du champ figure-t-il dans le passage DANS SON RÔLE (sans IA) ?
+      • quantité d'un matériel : le nombre compte la désignation (« 2 nacelles », « Nacelle | 2 ») — jamais
+        une dimension (« de 16 m ») ;
+      • montant HT : suivi de « € » ou « euros » (« 85 k€ », « 1,2 million d'euros ») ;
+      • année : un nombre seul (« en 2024 », « année 2024 ») ;
+      • expérience : des années (« 15 ans ») ;
+      • chiffre clé : son unité ou son libellé (« 12 salariés », « Effectif : 12 ») — jamais un nombre qui
+        compte autre chose (« 300 m2 » n'est pas un effectif) ;
+    et jamais un numéro (« certificat n° 12345 »)."""
+    from app.services import faits_sources as fs
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return False
+    for n in nombres:
+        if n["valeur"] is None or abs(n["valeur"] - x) > 1e-6 * max(1.0, abs(x)) or n["numero"]:
+            continue
+        u = n["unite"]
+        if nature == MATERIEL and champ == "quantite":
+            if u and u in _cles(valeur.get("designation")):
+                return True
+        elif champ == "montant_ht":
+            if u == "€":
+                return True
+        elif champ == "annee":
+            if not u or u == "an":
+                return True
+        elif champ == "experience_annees":
+            if fs._unite(u) == "an":
+                return True
+        elif nature == CHIFFRE_CLE and champ == "valeur":
+            if _chiffre_cle_a_sa_place(valeur, u, n["mot"], n["mots"]):
+                return True
+        elif not u:
+            return True
+    return False
+
+
+def _chiffre_cle_a_sa_place(valeur: dict, u: str, mot: str, mots: set) -> bool:
+    """Un chiffre clé : l'unité du nombre est celle de la fiche ou un mot de son libellé (« 12 salariés »
+    pour « Effectif »), ou, si le nombre n'a pas d'unité, son libellé est dans la même phrase."""
+    from app.services import faits_sources as fs
+    from app.services.fiches_import import _CATEGORIES
+    permis = _cles(valeur.get("unite")) | _cles(valeur.get("libelle"))
+    familles = {fs._unite(k) for k in permis}
+    cats = [_CATEGORIES[w] for w in re.findall(r"[a-z]+", fs.far.fold(valeur.get("libelle") or "")) if w in _CATEGORIES]
+    if u:
+        if u in permis or fs._unite(u) in familles:
+            return True
+        return any(re.search(c, fs.far.fold(mot)) for c in cats)
+    if mots & permis:
+        return True
+    return any(re.search(c, " ".join(sorted(mots))) for c in cats)
+
+
+def elements_hors_passage(nature: str, valeur: dict, passage: str, champs: Optional[Iterable] = None) -> list:
     """Éléments de la fiche ABSENTS du passage (sans IA, même repérage que « à relire ») : chaque
     chiffre, année, montant, certification, nom propre et matériel des champs ; l'acheteur, le
-    lieu, le nom, le numéro et l'organisme doivent y figurer tels quels. Vide = la fiche ne dit
-    rien de plus que le passage."""
+    lieu, le nom, le numéro et l'organisme doivent y figurer tels quels. Un nombre d'un champ chiffré
+    doit y figurer DANS SON RÔLE (`_nombre_a_sa_place` : « 2 nacelles », « 85 000 € », jamais « de 16 m »
+    ni « n° 12345 »). `champs` : les seuls champs à contrôler (les autres servent de contexte, par
+    exemple la désignation d'un matériel). Vide = la fiche ne dit rien de plus que le passage."""
     from app.services import faits_a_relire as far
     src = far.Sources([passage])
     low = far.fold(passage)
     manquants, vus = [], set()
+    nombres = None
+    valeur = valeur or {}
+    a_voir = set(champs) if champs is not None else None
 
     def _ajoute(x):
         k = far.fold(x)
@@ -414,11 +522,13 @@ def elements_hors_passage(nature: str, valeur: dict, passage: str) -> list:
             manquants.append(str(x)[:120])
 
     for champ, (genre, _b) in CHAMPS.get(nature, {}).items():
-        v = (valeur or {}).get(champ)
-        if v is None or genre == "enum":
+        v = valeur.get(champ)
+        if v is None or genre == "enum" or (a_voir is not None and champ not in a_voir):
             continue
         if genre in ("int", "num"):
-            if not src.has_number(float(v), ""):
+            if nombres is None:
+                nombres = _nombres_du_passage(passage)
+            if not _nombre_a_sa_place(nature, champ, v, valeur, nombres):
                 _ajoute(str(v) if genre == "int" else _nombre(v))
             continue
         # Tous les faits du champ, quelle que soit la phrase (même « Le CCTP prévoit… ») : la fiche

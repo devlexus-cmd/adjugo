@@ -44,7 +44,11 @@ plus :
 - un **montant HT** n'est jamais gardé quand le passage dit TTC sans HT ;
 - une **date de fin de validité** n'est gardée que si elle est écrite dans le passage ;
 - le libellé d'un **chiffre clé** admet un mot de catégorie que le passage justifie (« Effectif »
-  pour « 12 salariés »), liste fermée : un chiffre n'est jamais rangé sous une autre catégorie.
+  pour « 12 salariés »), liste fermée : un chiffre n'est jamais rangé sous une autre catégorie ;
+- chaque **nombre** d'un champ chiffré figure dans le passage DANS SON RÔLE, avec son unité (socle,
+  `pv.elements_hors_passage`) : « Nous disposons de 2 nacelles articulées de 16 m » ne donne jamais
+  « quantité : 16 » ; « équipe de 6 couvreurs a posé 300 m2 » ne donne ni « Effectif : 300 » ni
+  « Effectif : 6 » ; « certificat n° 12345 » ne donne jamais un montant de 12 345 € HT.
 
 Le passage enregistré est celui du document (`pv.proposer` le relit et le recontrôle : défense en
 profondeur). La date du document (`date_source`) est celle que l'utilisateur confirme avant la

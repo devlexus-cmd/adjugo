@@ -98,7 +98,12 @@ Contrôle du passage (sans IA, `pv.localiser` puis `pv.elements_hors_passage`) :
 - le passage ENREGISTRÉ est celui du document (tel qu'il y est écrit), avec sa position (`debut`)
   et le morceau d'index qui le contient (`chunk_id`) ;
 - chaque chiffre, année, montant, certification, nom propre et matériel des champs doit figurer dans
-  le passage (même repérage que « à relire ») ; l'acheteur, le lieu, le nom, le numéro et
+  le passage (même repérage que « à relire ») ; un champ chiffré y figure DANS SON RÔLE
+  (`pv._nombre_a_sa_place`) : la quantité d'un matériel compte sa désignation (« 2 nacelles », ligne
+  « Nacelle | 2 »), jamais une dimension (« de 16 m ») ; un montant HT est suivi de « € » ou « euros »
+  (« 85 k€ », « 1,2 million d'euros ») ; une année est un nombre seul ; une expérience, des années ; un
+  chiffre clé, son unité ou son libellé (« 12 salariés » ou « Effectif : 12 », jamais « 300 m2 » pour un
+  effectif) ; jamais un numéro (« n° 12345 », « réf. », « SIRET ») ; l'acheteur, le lieu, le nom, le numéro et
   l'organisme doivent y figurer tels quels ; sinon 422 `valeur_hors_passage` avec
   `elements: [...]` (« Ces éléments de la fiche ne figurent pas dans le passage : … Corrigez-les,
   choisissez un passage qui les contient, ou choisissez « déclaré par vous ». »).
