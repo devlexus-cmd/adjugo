@@ -700,6 +700,9 @@ def purger(db) -> dict:
               .filter(or_(AnalysePartagee.utilise_le < c1, AnalysePartagee.created_at < c3))
               .delete(synchronize_session=False))
         n2 = db.query(AnalyseEmpreinte).filter(AnalyseEmpreinte.created_at < c2).delete(synchronize_session=False)
+        # Entrées qu'AUCUNE analyse réussie n'utilise (l'analyse qui l'a faite a échoué ensuite, et personne
+        # ne l'a reçue depuis) : effacées après un jour.
+        n1 += _effacer_inutilisees(db, avant=_maintenant() - timedelta(days=1))
         db.commit()
         return {"analyses_partagees_purgees": int(n1 or 0), "mesures_purgees": int(n2 or 0)}
     except Exception as e:      # noqa: BLE001
@@ -708,8 +711,23 @@ def purger(db) -> dict:
         return {"analyses_partagees_purgees": 0, "mesures_purgees": 0, "erreur_analyse_partagee": True}
 
 
+def _effacer_inutilisees(db, avant=None) -> int:
+    """Efface les entrées partagées dont la clé n'apparaît dans AUCUNE ligne de mesure (aucune
+    organisation ne s'en sert). `avant` : seulement celles faites avant cette date."""
+    import sqlalchemy as sa
+    from app.models import AnalyseEmpreinte, AnalysePartagee
+    utilisees = sa.select(AnalyseEmpreinte.cle).where(AnalyseEmpreinte.cle.isnot(None))
+    q = db.query(AnalysePartagee).filter(~AnalysePartagee.cle.in_(utilisees))
+    if avant is not None:
+        q = q.filter(AnalysePartagee.created_at < avant)
+    return int(q.delete(synchronize_session=False) or 0)
+
+
 def effacer_organisation(db, owner_id: int) -> None:
-    """Effacement du compte (RGPD) : ses lignes de mesure. Les entrées partagées n'appartiennent à
-    personne (aucune colonne d'organisation) : rien à effacer."""
+    """Effacement du compte (RGPD) : ses lignes de mesure, puis toute extraction partagée qu'AUCUNE autre
+    organisation n'utilise — dont celles que ce compte était seul à avoir analysées : faites sur SES
+    fichiers, elles partent avec lui (sort des données au terme de la prestation). Une extraction qu'une
+    autre organisation utilise reste : c'est la lecture du même dossier, faite pour elle aussi."""
     from app.models import AnalyseEmpreinte
     db.query(AnalyseEmpreinte).filter(AnalyseEmpreinte.owner_id == owner_id).delete(synchronize_session=False)
+    _effacer_inutilisees(db)

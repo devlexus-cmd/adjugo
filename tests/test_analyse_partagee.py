@@ -1013,6 +1013,33 @@ def test_estimation_de_l_essai_identique_resservie_ou_non(client, ia):
 
 # ═══ 5. Purge, effacement, cache de prompt ════════════════════════════════════════════════════════
 
+def _effacer_compte(client, compte):
+    r = client.post("/api/rgpd/delete-account", headers=compte["headers"],
+                    json={"password": "motdepasse123", "confirm": "SUPPRIMER"})
+    assert r.status_code == 200, r.text
+
+
+def test_effacement_du_compte_emporte_les_extractions_qu_il_etait_seul_a_utiliser(client, ia, attentes):
+    """Effacement du compte (RGPD, sort des données au terme de la prestation) : ses lignes de mesure
+    partent, et toute extraction partagée qu'AUCUNE autre organisation n'utilise (faite sur ses seuls
+    fichiers) part avec lui ; celle qu'une autre organisation utilise reste, jusqu'à son propre départ."""
+    ia()
+    a, b, c = _compte(client), _compte(client), _compte(client)
+    _importer(client, a)                                   # dossier commun à A et B
+    _importer(client, b)
+    rectif = _zip({"RC.txt": (RC_TETE + "Dossier propre à C.\n" + _texte("RC", 3000, 31)).encode()})
+    _importer(client, c, rectif)                           # dossier que C est seul à avoir analysé
+    assert len(_lignes_partagees()) == 2
+    _effacer_compte(client, a)
+    assert {x["owner_id"] for x in _mesures()} == {b["id"], c["id"]} and len(_lignes_partagees()) == 2
+    _effacer_compte(client, c)
+    lignes = _lignes_partagees()
+    assert len(lignes) == 1 and {x["owner_id"] for x in _mesures()} == {b["id"]}
+    assert lignes[0]["cle"] == _mesures()[0]["cle"]          # reste : celle que B utilise
+    _effacer_compte(client, b)
+    assert _lignes_partagees() == [] and _mesures() == []
+
+
 def test_purge_et_effacement_du_compte(client, ia, attentes):
     from datetime import datetime, timedelta
     from app.models import AnalyseEmpreinte, AnalysePartagee
@@ -1021,11 +1048,9 @@ def test_purge_et_effacement_du_compte(client, ia, attentes):
     a, b = _compte(client), _compte(client)
     _importer(client, a)
     _importer(client, b)
-    # Effacement du compte de A (propriétaire seul) : ses lignes de mesure partent ; l'extraction partagée
-    # (document public, à personne) reste.
-    r = client.post("/api/rgpd/delete-account", headers=a["headers"],
-                    json={"password": "motdepasse123", "confirm": "SUPPRIMER"})
-    assert r.status_code == 200, r.text
+    # Effacement du compte de A (propriétaire seul) : ses lignes de mesure partent ; l'extraction que B
+    # utilise aussi reste.
+    _effacer_compte(client, a)
     m = _mesures()
     assert {x["owner_id"] for x in m} == {b["id"]} and len(_lignes_partagees()) == 1
     # Purge : extraction plus resservie depuis ANALYSE_PARTAGEE_JOURS jours, mesures trop anciennes.
@@ -1041,6 +1066,34 @@ def test_purge_et_effacement_du_compte(client, ia, attentes):
         db.close()
     assert out == {"analyses_partagees_purgees": 1, "mesures_purgees": 1}
     assert _lignes_partagees() == [] and _mesures() == []
+
+
+def test_purge_d_une_extraction_qu_aucune_analyse_n_utilise(ia, monkeypatch):
+    """L'analyse qui a fait l'extraction a échoué ensuite (partie propre à l'entreprise en panne) et
+    personne ne l'a reçue depuis : aucune ligne de mesure ne la relie à une organisation ; la purge
+    quotidienne l'efface après un jour."""
+    from datetime import datetime, timedelta
+    from app.models import AnalysePartagee
+    from app.services import analyse_partagee as ap
+
+    def entreprise_en_panne(kw):
+        if ENTREPRISE in llm._flatten_content(kw.get("system")):
+            raise llm.LLMUnavailable("panne simulée")
+        return _repondre(kw)
+    ia(entreprise_en_panne)
+    with pytest.raises(Exception):
+        ap.analyser_texte(_texte_dce(), {"name": "A"}, {}, lang_name="français", p=ap.partage(991001))
+    assert len(_lignes_partagees()) == 1 and _mesures() == []
+    db = _db()
+    try:
+        assert ap.purger(db)["analyses_partagees_purgees"] == 0          # moins d'un jour : gardée
+        db.query(AnalysePartagee).update({AnalysePartagee.created_at: datetime.utcnow() - timedelta(days=2)},
+                                         synchronize_session=False)
+        db.commit()
+        assert ap.purger(db)["analyses_partagees_purgees"] == 1
+    finally:
+        db.close()
+    assert _lignes_partagees() == []
 
 
 def test_cron_de_purge_inclut_l_analyse_partagee(client, monkeypatch):
