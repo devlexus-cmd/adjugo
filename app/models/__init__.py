@@ -538,7 +538,15 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # Compte propriétaire de la tâche (portée « organisation » : lisible par son organisation, GET
+    # /api/jobs/{id}). NULL pour une tâche lancée par un PARTENAIRE du groupement (rédaction, vague 4) :
+    # aucun membre d'aucune organisation n'en est propriétaire (aucune requête `user_id IN (…)` ne la
+    # renvoie) ; elle n'appartient qu'à son invitation (portee « partenaire » + invite_id) et ne se lit
+    # qu'avec le lien de ce partenaire ou le compte qui a rattaché ce lien (migration x8y9redactionv4).
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    # '' (ou NULL, lignes d'avant la vague 4) = organisation de user_id ; 'partenaire' = invite_id.
+    portee = Column(String(12), nullable=True, default="", server_default="")
+    invite_id = Column(Integer, nullable=True, index=True)
     kind = Column(String(40), default="")             # memoire | merged_memoire | warroom | …
     status = Column(String(20), default="pending")    # pending | running | done | error
     label = Column(String(255), default="")           # libellé affiché au client
@@ -1120,7 +1128,104 @@ class DossierSectionVersion(Base):
     author_invite_id = Column(Integer, nullable=True)
     auteur_user_id = Column(Integer, nullable=True)   # compte qui a écrit / lancé la rédaction
     job_id = Column(Integer, nullable=True)
+    # Rédaction, vague 4 (dossier de groupement, docs/REDACTION_V4_GROUPEMENT.md) : texte COMMUN d'une
+    # partie rédigée par un partenaire — le texte qu'il a ENVOYÉ, ou celui que le chef de file a écrit
+    # sur sa partie (ecrit_par 'partenaire' | 'chef_de_file'). Une version commune ne porte JAMAIS de
+    # matière privée : sources vides, faits réduits aux faits à relire sans leur source, compteurs de
+    # sources par type seulement. Le brouillon d'un partenaire n'est jamais ici (dossier_parts_brouillons).
+    partage = Column(Boolean, nullable=True, default=False, server_default=sa_false())
+    ecrit_par = Column(String(14), nullable=True, default="", server_default="")
+    compteurs = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=utcnow)
+
+
+# === DOSSIER DE GROUPEMENT : QUI ÉCRIT QUOI (rédaction, vague 4 — étude § 6.8 B) ===
+# Contrat : docs/REDACTION_V4_GROUPEMENT.md ; règles : app/services/atelier_groupement.py (seul point
+# d'écriture). Une ligne par partie du dossier de présentation d'un marché en groupement :
+#   • redacteur 'chef_de_file' (l'organisation qui porte le dossier) ou 'partenaire' (invite_id) ;
+#     la partie elle-même (dossier_sections.author_kind / author_invite_id) suit ce choix ;
+#   • proposition : le pré-remplissage SANS IA (lot du membre ↔ critère de la partie) et sa raison ;
+#   • longueur conseillée, date limite interne, demande et relance des parts ;
+#   • le STATUT n'est jamais stocké (comme groupement_state) : il se déduit du texte commun de la
+#     partie, de sa validation et de l'existence d'un brouillon (à rédiger, en cours, envoyée, à
+#     revalider par l'auteur, validée) ; l'empreinte du texte validé est celle de la partie
+#     (dossier_sections.validated_hash) ;
+#   • job_id / aides_ia : aide de l'IA lancée PAR le partenaire (jamais exposée au chef de file).
+class DossierRepartition(Base):
+    __tablename__ = "dossier_repartitions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    dossier_id = Column(Integer, ForeignKey("dossiers_presentation.id"), nullable=False, index=True)
+    section_id = Column(Integer, ForeignKey("dossier_sections.id"), nullable=False, unique=True, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)        # tenant du chef de file (data_owner_id)
+    redacteur = Column(String(14), nullable=False, default="chef_de_file", server_default="chef_de_file")
+    invite_id = Column(Integer, nullable=True, index=True)        # le partenaire qui rédige
+    proposition = Column(JSON, nullable=True)                     # pré-remplissage sans IA + raison
+    choix = Column(String(12), nullable=False, default="propose", server_default="propose")   # propose | manuel
+    longueur_mots = Column(Integer, nullable=True)                # longueur conseillée
+    date_limite = Column(Date, nullable=True)                     # date limite interne
+    demandee_le = Column(DateTime, nullable=True)                 # « Demander les parts »
+    relance_palier = Column(Integer, nullable=False, default=0, server_default="0")
+    job_id = Column(Integer, nullable=True)                       # aide de l'IA du partenaire en cours
+    aides_ia = Column(Integer, nullable=False, default=0, server_default="0")   # plafond par partie
+    lock_version = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# Brouillons PRIVÉS d'un partenaire, partie par partie, en AJOUT SEUL : son texte de travail, ses
+# sources (extraits de SES documents), ses faits avec leur source, ses compteurs. Rangés à part :
+# aucun chemin du chef de file ne lit cette table (ni l'atelier, ni l'export, ni le RGPD du chef de
+# file, ni l'IA d'un autre membre). Rattachés à l'INVITATION (le lien du partenaire) ; owner_id =
+# tenant du marché, pour partir avec lui. Effacés au retrait ou au déclin de l'invitation.
+class DossierPartBrouillon(Base):
+    __tablename__ = "dossier_parts_brouillons"
+
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("dossier_sections.id"), nullable=False, index=True)
+    dossier_id = Column(Integer, nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+    invite_id = Column(Integer, nullable=False, index=True)
+    numero = Column(Integer, nullable=False, default=1, server_default="1")
+    texte = Column(Text, nullable=True)
+    # ia | utilisateur | raccourci | acceptee (texte du chef de file accepté) | retablie
+    origine = Column(String(12), nullable=False, default="utilisateur", server_default="utilisateur")
+    ia = Column(Boolean, nullable=False, default=False, server_default=sa_false())
+    sources = Column(JSON, nullable=True)                         # PRIVÉ
+    faits = Column(JSON, nullable=True)                           # PRIVÉ
+    compteurs = Column(JSON, nullable=True)                       # compteurs de sources par type
+    empreinte = Column(String(64), nullable=False, default="", server_default="")
+    coupe = Column(Boolean, nullable=False, default=False, server_default=sa_false())
+    base_id = Column(Integer, nullable=True)                      # brouillon de départ
+    base_version_id = Column(Integer, nullable=True)              # texte commun de départ
+    auteur_user_id = Column(Integer, nullable=True)               # compte du partenaire, s'il en a un
+    job_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
+# Validation du DOSSIER ASSEMBLÉ par chaque membre (chef de file compris), sur SON empreinte : toute
+# modification d'un texte commun ensuite la fait repasser « à revalider » (même mécanisme que la
+# convention périmée : explicite à chaque changement, filet par recalcul de l'empreinte à la lecture).
+class DossierValidation(Base):
+    __tablename__ = "dossier_validations"
+    __table_args__ = (UniqueConstraint("dossier_id", "membre_cle", name="uq_dossier_validations_membre"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    dossier_id = Column(Integer, ForeignKey("dossiers_presentation.id"), nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+    membre = Column(String(14), nullable=False, default="chef_de_file", server_default="chef_de_file")
+    membre_cle = Column(String(24), nullable=False)               # 'chef_de_file' | 'invitation:<id>'
+    invite_id = Column(Integer, nullable=True, index=True)
+    user_id = Column(Integer, nullable=True)
+    empreinte = Column(String(64), nullable=False, default="", server_default="")
+    statut = Column(String(12), nullable=False, default="valide", server_default="valide")   # valide | a_revalider
+    valide_le = Column(DateTime, nullable=True)
+    perime_le = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 # === MES PREUVES (rédaction, vague 3 — socle commun de A, I et E1) ===

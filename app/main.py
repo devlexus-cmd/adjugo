@@ -319,6 +319,10 @@ from app.routers.fiches_import import router as fiches_import_router
 app.include_router(fiches_import_router)
 # Rédaction, vague 2 : l'atelier du dossier de présentation (sections, versions, validation,
 # rédaction en tâche de fond, « à relire », export Word et PDF bloqué sauf dérogation).
+# Rédaction, vague 4 : le dossier de groupement cloisonné (« Qui écrit quoi », parts des partenaires,
+# validation du dossier assemblé). Avant l'atelier : ses chemins sont plus précis.
+from app.routers.atelier_groupement import router as atelier_groupement_router
+app.include_router(atelier_groupement_router)
 from app.routers.atelier import router as atelier_router
 app.include_router(atelier_router)
 from app.routers.rgpd import router as rgpd_router
@@ -762,7 +766,15 @@ def _recover_orphan_jobs():
                         _atelier.rembourser(db, j)
                         _atelier.liberer_job(db, j.id)
                         continue
-                    u = db.get(User, j.user_id)
+                    from app.services import atelier_groupement as _groupement
+                    if j.kind in _groupement.JOB_KINDS:
+                        # Aide de l'IA d'un PARTENAIRE (rédaction, vague 4) : rend au chef de file ce que la
+                        # tâche a débité (relevé : payeur_id), libère la partie et rend l'aide au partenaire.
+                        db.refresh(j)
+                        _atelier.rembourser(db, j)
+                        _groupement.liberer_job(db, j.id, rendre_aide=True)
+                        continue
+                    u = db.get(User, j.user_id) if j.user_id else None
                     if u:
                         refund_analysis(u, db)
             except Exception as e:

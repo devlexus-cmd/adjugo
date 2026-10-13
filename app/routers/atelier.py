@@ -11,6 +11,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -248,8 +249,9 @@ def lire_version(project_id: int, section_id: int, version_id: int, current_user
     v = db.get(DossierSectionVersion, version_id)
     if v is None or v.section_id != s.id:
         raise _nf("version_introuvable", "Version introuvable.")
-    if not at.peut_voir_prive(s, acc.lecteur) and v.id != s.validated_version_id:
-        # Matière privée d'un autre auteur (vague 4) : même réponse qu'une version inexistante.
+    if not at.peut_voir_prive(s, acc.lecteur) and v.id != s.validated_version_id and not bool(v.partage):
+        # Matière privée d'un autre auteur (vague 4) : même réponse qu'une version inexistante. Un texte
+        # COMMUN (envoyé par le partenaire, ou écrit par le chef de file sur sa partie) se lit, sans source.
         raise _nf("version_introuvable", "Version introuvable.")
     return at._version_out(v, at.peut_voir_prive(s, acc.lecteur))
 
@@ -476,7 +478,9 @@ def rediger_tout(request: Request, project_id: int, body: Optional[RedigerToutIn
 def tache(project_id: int, job_id: int, current_user: User = Depends(get_current_user),
           db: Session = Depends(get_db)):
     acc = _Acces(db, current_user, project_id)
-    j = db.query(Job).filter(Job.id == job_id, Job.user_id.in_(acc.mids), Job.kind.in_(at.JOB_KINDS)).first()
+    # Jamais la tâche d'un partenaire (vague 4 : portée « partenaire », aucun compte propriétaire).
+    j = db.query(Job).filter(Job.id == job_id, Job.user_id.in_(acc.mids), Job.kind.in_(at.JOB_KINDS),
+                             or_(Job.portee.is_(None), Job.portee != "partenaire")).first()
     d = acc.dossier
     debit = ((j.result or {}).get("_debit") or {}) if j is not None and isinstance(j.result, dict) else {}
     if j is None or d is None or int(debit.get("dossier_id") or 0) != d.id:

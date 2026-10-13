@@ -284,6 +284,13 @@ def _strip_answer(text: str, titre: str = "") -> str:
 
 def _consigne_partie(p: dict) -> str:
     out = [f"PARTIE À RÉDIGER : {p.get('titre') or ''}"]
+    mg = p.get("membre_groupement")
+    if isinstance(mg, dict) and mg.get("nom"):
+        # Rédaction, vague 4 : la partie d'un PARTENAIRE du groupement, rédigée par lui, sur ses seuls faits.
+        out.append(f"CETTE PARTIE EST RÉDIGÉE PAR {mg['nom']}, MEMBRE DU GROUPEMENT"
+                   + (f" (lot : {mg['lot']})" if mg.get("lot") else "")
+                   + " : « nous » désigne cette entreprise seulement ; ne parle ni du chef de file ni des autres "
+                     "membres.")
     if p.get("source_plan") == "cadre" and p.get("question"):
         out.append(f"QUESTION DU CADRE DE RÉPONSE (n° {p.get('numero') or '?'}) : {p['question']}")
     if p.get("critere"):
