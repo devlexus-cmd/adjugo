@@ -143,6 +143,17 @@
     return Object.keys(TYPES_LIB).filter(k => Number(p[k]) > 0).map(k => Number(p[k]) + " " + TYPES_LIB[k][Number(p[k]) > 1 ? 1 : 0]);
   }
 
+  // Taille d'un fichier, en français : « 812 octets », « 2 Ko », « 2,5 Mo ».
+  function rpTaille(n) {
+    const v = Math.max(0, Math.round(Number(n) || 0));
+    if (v < 1024) return v + (v > 1 ? " octets" : " octet");
+    if (v < 1024 * 1024) return Math.round(v / 1024).toLocaleString("fr-FR") + " Ko";
+    return (Math.round(v / 104857.6) / 10).toLocaleString("fr-FR") + " Mo";
+  }
+
+  // Les extensions que le sélecteur de fichier propose : celles que le serveur accepte.
+  function rpAccept(types) { return (types || []).map(String).join(","); }
+
   // Date « AAAA-MM-JJ » ou horodatage de l'API (UTC « naïf ») → « 2 novembre 2026 ».
   function rpJour(s) {
     if (!s) return "";
@@ -164,11 +175,15 @@
 
   const BULLE_CARTE = "Le chef de file vous a confié ces parties du dossier de présentation commun (le mémoire technique du groupement). Vous les rédigez ici, chez vous : vos brouillons, vos sources et vos extraits restent privés. Le chef de file et les autres membres lisent le texte que vous envoyez.";
   const BULLE_NOTE = "Le critère et son poids sont repris du règlement de la consultation, avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel, ou s'il a été lu par le chef de file (c'est alors indiqué). Le règlement fait foi.";
-  const BULLE_FAITS = "Adjugo signale les chiffres, certifications, noms et matériels qu'il ne retrouve pas dans ce que vous avez déclaré (et, avec un compte Adjugo, dans vos preuves, votre profil et votre savoir-faire), et les engagements à confirmer. Le dossier de l'acheteur ne compte jamais comme source pour une phrase sur votre entreprise. Il ne juge pas les phrases générales : relisez-les.";
+  const BULLE_FAITS = "Adjugo signale les chiffres, certifications, noms et matériels qu'il ne retrouve pas dans ce que vous avez déclaré, dans les passages de vos documents qu'il a cités (et, avec un compte Adjugo, dans vos preuves, votre profil et votre savoir-faire), et les engagements à confirmer. Le dossier de l'acheteur ne compte jamais comme source pour une phrase sur votre entreprise. Il ne juge pas les phrases générales : relisez-les.";
   const BULLE_ENVOI = "Le chef de file reçoit le texte envoyé, le nombre de faits encore à relire et des compteurs de sources par type. Jamais vos sources, vos extraits ni vos brouillons.";
   const BULLE_VALIDER = "Valider dit que ce texte est votre version définitive. S'il change ensuite, par vous ou par le chef de file, la partie repasse « à revalider ».";
   const BULLE_DOSSIER = "Le dossier assemblé réunit, dans l'ordre du cadre de l'acheteur, le texte envoyé par chaque membre et le texte validé du chef de file. Il est en lecture seule. Le valider dit que vous l'avez lu : toute modification ensuite le fait repasser « à revalider ».";
-  const BULLE_ESPACE = "Vos brouillons, vos sources et l'aide d'Adjugo restent dans un espace privé, lié à ce navigateur : même la personne qui vous a transmis ce lien ne peut pas les lire. Avec un compte Adjugo, rien à ouvrir : retrouvez ce dossier dans « Partagé avec moi ».";
+  const BULLE_ESPACE = "Vos brouillons, vos sources, vos documents déposés et l'aide d'Adjugo restent dans un espace privé, lié à ce navigateur : même la personne qui vous a transmis ce lien ne peut pas les lire. Avec un compte Adjugo, rien à ouvrir : retrouvez ce dossier dans « Partagé avec moi ».";
+  // « Vos documents pour Adjugo » (lien sans compte) : qui voit quoi, à quoi ils servent ; la durée de conservation
+  // vient du serveur (réglable).
+  const QUI_VOIT = "Seuls vous et Adjugo les lisez ; le chef de file ne les voit jamais.";
+  const BULLE_DOCS = QUI_VOIT + " Avec votre texte envoyé, il reçoit seulement le nombre de faits « trouvés dans vos documents ». Adjugo les lit sans IA, puis s'en sert uniquement pour rédiger vos parties, en citant le passage exact. Les noms des personnes sont masqués avant l'IA, et un CV n'est jamais envoyé.";
   const BULLE_QFQ = "Adjugo l'écrit sans IA, à partir de la convention et de la part envoyée par chaque membre : ce que chacun apporte (part, qualifications, moyens), jamais ce qui manque. Tous les membres la lisent et chacun la valide. Pour la changer, modifiez votre part dans « Ma contribution » et renvoyez-la.";
   const BULLE_MENTIONS = "« justifiée » : un justificatif ou une source appuie la qualification ; « déclarée » : le membre l'a écrite. Ces mentions restent à l'écran : elles ne partent pas chez l'acheteur.";
   const BULLE_EXTRAITS = "Les passages de vos documents qu'Adjugo a cités en rédigeant (S1, S2…). Ils restent privés : ni le chef de file ni l'acheteur ne les voient, et les renvois sont retirés à l'export. Un extrait cité ne prouve pas que la phrase est exacte.";
@@ -224,7 +239,8 @@
   function mount(el, opts) {
     const o = Object.assign({ mode: "lien", headers: () => ({}) }, opts || {});
     const st = { vue: null, open: null, edits: {}, moi: {}, msgs: {}, busy: "", jobs: {}, timer: null, dossier: null,
-      dossierOpen: false, msgDossier: null, msgQfq: null, hist: {}, err: "", gone: false, destroyed: false };
+      dossierOpen: false, msgDossier: null, msgQfq: null, hist: {}, err: "", gone: false, destroyed: false,
+      docs: null, docsNombre: -1, msgDocs: null };
     const ENTETE = "X-Adjugo-Espace";
     const KEY_ED = "rp_ed_" + (o.cleStockage || o.base);
 
@@ -234,12 +250,19 @@
     const garderLocaux = () => { try { sessionStorage.setItem(KEY_ED, JSON.stringify(st.edits)); } catch (e) {} };
     st.edits = brouillonsLocaux();
 
-    async function call(method, path, body, raw) {
+    // En-têtes de chaque appel : l'authentification du compte, ou la clé de l'espace du lien (jamais dans l'adresse).
+    function entetes() {
       const h = Object.assign({}, o.headers ? o.headers() : {});
       const k = cle(); if (k) h[ENTETE] = k;
-      if (body !== undefined) h["Content-Type"] = "application/json";
+      return h;
+    }
+
+    // `form` : un FormData (dépôt d'un document) envoyé tel quel ; sinon `body` part en JSON.
+    async function call(method, path, body, raw, form) {
+      const h = entetes();
+      if (body !== undefined && !form) h["Content-Type"] = "application/json";
       let r;
-      try { r = await fetch(o.base + path, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined, cache: "no-store" }); }
+      try { r = await fetch(o.base + path, { method, headers: h, body: form || (body !== undefined ? JSON.stringify(body) : undefined), cache: "no-store" }); }
       catch (e) { return { ok: false, status: 0, data: null, code: "", message: "Connexion impossible : vérifiez votre réseau, puis réessayez." }; }
       if (raw) return { ok: r.ok, status: r.status, res: r };
       let data = null; try { data = await r.json(); } catch (e) {}
@@ -271,6 +294,16 @@
         if (loc && p.brouillon && loc.texte === p.brouillon.texte) delete st.edits[p.section_id];
       });
       garderLocaux();
+      // « Vos documents pour Adjugo » : par le lien, dans son espace privé ; par le compte, seulement ce qu'il avait
+      // déposé par le lien avant de le rattacher (à télécharger ou supprimer). Relu quand leur nombre change.
+      const dv = st.vue.documents;
+      if (!dv || !(o.mode === "lien" ? dv.possible : dv.nombre > 0)) { st.docs = null; st.docsNombre = -1; }
+      else if (!st.docs || st.docsNombre !== dv.nombre) {
+        const rd = await call("GET", "/documents");
+        if (st.destroyed) return;
+        st.docs = rd.ok ? rd.data : null;
+        st.docsNombre = rd.ok ? dv.nombre : -1;
+      }
       if (st.open == null) {
         const next = (st.vue.parties || []).find(p => ["a_rediger", "en_cours", "a_revalider"].includes(p.statut));
         st.open = next ? next.section_id : null;
@@ -323,6 +356,7 @@
         + (pret && pret.sections_total ? " · " + rpEsc(pret.message) : "") + "</div>";
       if (o.mode === "lien" && !cleOk) h += renderEspace(v);
       else if (!v.peut_ecrire) h += '<div class="rp-info small">' + ico("lock", 14) + "<span>La co-construction n'est pas ouverte sur ce lien : vous lisez vos parties sans pouvoir les modifier.</span></div>";
+      if (st.docs && cleOk) h += renderDocs(st.docs);
       if (parts.length) {
         h += '<ul class="rp-parts">';
         parts.forEach(p => { h += renderPartie(v, p, ecrire); });
@@ -333,7 +367,7 @@
       if (simple) {
         h += '<details class="gn-det rp-simple"><summary>Mode simple : votre paragraphe</summary><p class="muted small rp-p">' + rpEsc(v.mode_simple.message) + '</p><div class="rp-txt rp-txt-s">' + rpTexte(simple, "votre source") + "</div></details>";
       }
-      if (cleOk) h += '<div class="rp-export"><button type="button" class="linkbtn small" data-act="export">Télécharger mes textes</button>' + tip("Vos brouillons et les textes que vous avez envoyés, dans un fichier (droit à la portabilité).", true) + "</div>";
+      if (cleOk) h += '<div class="rp-export"><button type="button" class="linkbtn small" data-act="export">Télécharger mes textes</button>' + tip("Vos brouillons, les textes que vous avez envoyés et la liste de vos documents déposés avec votre accord, dans un fichier (droit à la portabilité). Chaque document se télécharge depuis « Vos documents pour Adjugo ».", true) + "</div>";
       h += '<div class="sr-only" aria-live="polite" data-live></div></section>';
       // L'écran est redessiné après chaque action : les volets ouverts et le focus (clavier, lecteur d'écran)
       // sont gardés.
@@ -390,6 +424,58 @@
           + btn("espace-reinit", "Réinitialiser mon espace", e.code_possible ? "ghost" : "") + "</div>";
       }
       return h + "</div>";
+    }
+
+    // « Vos documents pour Adjugo » : ses documents privés (anciens mémoires, plaquette, références, attestations),
+    // déposés dans son espace pour que l'aide d'Adjugo rédige SES parties. Accord au premier dépôt, liste,
+    // télécharger, supprimer. Par le compte : la liste seulement (Adjugo ne s'en sert plus).
+    function msgHtml(m) {
+      if (!m) return "";
+      return m.err ? '<div class="conv-err rp-msg" role="alert">' + ico("circle-alert", 15) + "<div>" + rpEsc(m.txt) + "</div></div>"
+        : '<div class="rp-ok-msg small" role="status">' + ico("check", 14) + "<span>" + rpEsc(m.txt) + "</span></div>";
+    }
+
+    function limitesTexte(lim) {
+      const out = [];
+      if (lim.types_libelle) out.push(lim.types_libelle);
+      if (lim.mo_par_fichier) out.push(lim.mo_par_fichier + " Mo au plus par document");
+      if (lim.fichiers) out.push(lim.fichiers + " documents au plus");
+      return out.join(" · ") + (lim.pages_scan ? ". Un document scanné est lu sur ses " + lim.pages_scan + " premières pages." : ".");
+    }
+
+    function renderDocs(dv) {
+      const lim = dv.limites || {}, c = dv.conditions || {}, docs = dv.documents || [];
+      let h = '<div class="rp-docs"><div class="rp-docs-t">' + ico("folder-lock", 15) + "<b>Vos documents pour Adjugo</b>"
+        + tip(rpEsc(BULLE_DOCS + (dv.conservation ? " " + dv.conservation : ""))) + "</div>";
+      h += '<p class="small rp-p">' + rpEsc(dv.message || QUI_VOIT) + "</p>";
+      if (docs.length) {
+        h += '<ul class="rp-fl rp-doclist">' + docs.map(d => '<li class="rp-doc small"><div class="rp-doc-n"><b>' + rpEsc(d.nom) + '</b><span class="muted">'
+          + rpEsc([rpTaille(d.taille), d.depose_le ? "déposé le " + rpJour(d.depose_le) : "", d.lecture_libelle || ""].filter(Boolean).join(" · ")) + "</span>"
+          + (d.complet === false ? '<span class="muted">Lu en partie : document long, ou scan lu sur ses premières pages.</span>' : "")
+          + (d.passages_cv_retires ? '<span class="muted">Les passages en forme de CV ont été retirés : ils ne partent jamais à l\'IA.</span>' : "")
+          + '</div><div class="rp-acts rp-doc-a">' + btn("doc-telecharger", ico("download", 14) + "Télécharger", "ghost", ' data-did="' + rpEsc(d.id) + '"')
+          + btn("doc-supprimer", ico("trash-2", 14) + "Supprimer", "ghost", ' data-did="' + rpEsc(d.id) + '"') + "</div></li>").join("") + "</ul>";
+      }
+      if (dv.peut_deposer) {
+        h += '<div class="rp-dep">';
+        if (!docs.length) h += '<p class="muted small rp-p">Par exemple un ancien mémoire technique, votre plaquette, vos références ou une attestation.</p>';
+        if (c.a_accepter) {
+          h += '<div class="small rp-p">' + rpEsc(c.message || "") + "</div>" + (c.textes || []).map(t => '<label class="rp-chk small"><input type="checkbox" data-cond="' + rpEsc(t.cle) + '"><span>'
+            + (t.cle === "cgu" ? "J'accepte les " : "J'accepte la ") + '<a href="' + rpEsc(t.adresse) + '" target="_blank" rel="noopener">'
+            + rpEsc(t.cle === "cgu" ? "conditions d'utilisation" : "politique de confidentialité") + "</a> (version " + rpEsc(t.version) + ")</span></label>").join("");
+        }
+        h += '<div class="rp-acts"><input type="file" class="rp-file" accept="' + rpEsc(rpAccept(lim.types)) + '" aria-label="Choisir un document à déposer">'
+          + btn("doc-deposer", ico("upload", 14) + "Déposer", "primary") + "</div>";
+        h += '<div class="muted small rp-p">' + rpEsc(limitesTexte(lim)) + "</div></div>";
+      }
+      return h + "<div data-docs-msg>" + msgHtml(st.msgDocs) + "</div></div>";
+    }
+
+    // Un message dans la carte des documents, sans redessiner l'écran (le fichier choisi et les cases restent).
+    function direDocs(txt, err) {
+      st.msgDocs = txt ? { txt, err: !!err } : null;
+      const x = el.querySelector("[data-docs-msg]");
+      if (x) { x.innerHTML = msgHtml(st.msgDocs); icons(); }
     }
 
     function renderNote(p) {
@@ -764,7 +850,61 @@
           else { st.msgDossier = { txt: "Dossier assemblé validé. S'il change, il repassera « à revalider »." }; live("Dossier assemblé validé."); }
           await load(); if (r.ok) changed();
         }
+        else if (a === "doc-deposer") await deposerDoc(b);
+        else if (a === "doc-telecharger") await telechargerDoc(b.dataset.did);
+        else if (a === "doc-supprimer") await supprimerDoc(b.dataset.did);
       } finally { st.busy = ""; if (b.isConnected) b.disabled = false; }
+    }
+
+    const docDe = (did) => ((st.docs && st.docs.documents) || []).find(x => String(x.id) === String(did)) || null;
+
+    async function deposerDoc(b) {
+      const dv = st.docs || {}, lim = dv.limites || {}, c = dv.conditions || {};
+      const box = b.closest(".rp-docs");
+      const inp = box && box.querySelector("input.rp-file");
+      const f = inp && inp.files && inp.files[0];
+      if (!f) { direDocs("Choisissez d'abord un document sur votre appareil.", true); return; }
+      if (lim.mo_par_fichier && f.size > lim.mo_par_fichier * 1024 * 1024) { direDocs("Ce fichier dépasse " + lim.mo_par_fichier + " Mo : déposez une version plus légère.", true); return; }
+      const coches = Array.from(box.querySelectorAll("input[data-cond]")).filter(x => x.checked).map(x => x.dataset.cond);
+      if (c.a_accepter && !(coches.includes("cgu") && coches.includes("confidentialite"))) { direDocs("Cochez les deux cases pour déposer votre premier document.", true); return; }
+      const fd = new FormData();
+      fd.append("file", f, f.name);
+      if (coches.includes("cgu")) fd.append("accepte_cgu", "1");
+      if (coches.includes("confidentialite")) fd.append("accepte_confidentialite", "1");
+      direDocs("Adjugo lit votre document, sans IA. Un document scanné peut demander une minute.", false);
+      const r = await avecIdentite(() => call("POST", "/documents", null, false, fd), null, "Pour déposer un document");
+      if (!r.ok) { direDocs(r.message, true); return; }
+      const dep = (r.data && r.data.depose) || {};
+      st.docs = r.data; st.docsNombre = ((r.data && r.data.documents) || []).length;
+      st.msgDocs = { txt: "Document déposé et lu sans IA" + (dep.complet === false ? " (en partie : document long, ou scan lu sur ses premières pages)" : "") + ". Adjugo s'en servira quand vous lancerez « Rédiger avec Adjugo ».", err: false };
+      live("Document déposé.");
+      await load(); changed();
+    }
+
+    async function telechargerDoc(did) {
+      const d = docDe(did);
+      const r = await call("GET", "/documents/" + encodeURIComponent(did) + "/fichier", undefined, true);
+      if (!r.ok) { direDocs(r.status === 404 ? "Ce document n'est plus dans votre espace." : "Téléchargement impossible pour le moment : réessayez.", true); return; }
+      try {
+        const blob = await r.res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = (d && d.nom) || "document";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      } catch (e) {}
+    }
+
+    async function supprimerDoc(did) {
+      const d = docDe(did);
+      const ok = await modal({ title: "Supprimer ce document ?", danger: true, confirmLabel: "Supprimer", focusCancel: true,
+        bodyHtml: (d ? "<b>" + rpEsc(d.nom) + "</b><br><br>" : "") + "Adjugo ne s'en servira plus. Dans vos brouillons, les passages cités de ce document sont retirés : les faits concernés repassent « à relire ». Vos textes déjà envoyés ne changent pas." });
+      if (!ok) return;
+      const r = await call("DELETE", "/documents/" + encodeURIComponent(did));
+      if (!r.ok) { direDocs(r.message, true); return; }
+      st.docs = r.data; st.docsNombre = ((r.data && r.data.documents) || []).length;
+      st.msgDocs = { txt: "Document supprimé.", err: false };
+      live("Document supprimé.");
+      await load(); changed();
     }
 
     function focusTa(sid) { const t = el.querySelector('textarea[data-sid="' + sid + '"]'); if (t) { t.focus(); } }
@@ -874,5 +1014,5 @@
     };
   }
 
-  root.AdjugoRedactionPartenaire = { mount, _pur: { rpEsc, rpMots, rpTexte, rpPhrase, rpLim, rpCompteurs, rpJour, rpACompleter, rpDiff } };
+  root.AdjugoRedactionPartenaire = { mount, _pur: { rpEsc, rpMots, rpTexte, rpPhrase, rpLim, rpCompteurs, rpJour, rpACompleter, rpDiff, rpTaille, rpAccept } };
 })(typeof window !== "undefined" ? window : this);

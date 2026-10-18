@@ -145,6 +145,12 @@ LABELS_ME = {
     "redaction.partie_groupement_validee": "Vous avez validé « Qui fait quoi dans le groupement »",
     "redaction.fait_relu": "Vous avez relu un fait de votre partie envoyée",
     "redaction.fait_a_relire": "Vous avez remis à relire un fait de votre partie envoyée",
+    # « Vos documents pour Adjugo » (décision 5 a) : jamais le nom d'un document (le journal se lit avec le lien).
+    "redaction.documents_conditions": ("Vous avez accepté les conditions d'utilisation et la politique de "
+                                       "confidentialité pour déposer vos documents"),
+    "redaction.document_depose": "Vous avez déposé un document dans votre espace privé",
+    "redaction.document_supprime": "Vous avez supprimé un document de votre espace privé",
+    "redaction.documents_effaces": "Vos documents déposés pour Adjugo ont été effacés",
 }
 LABELS_OWNER = {
     "owner.view_contribution": "Le chef de file a consulté votre part",
@@ -180,6 +186,8 @@ LABELS_OWNER = {
     "redaction.harmonisation": "Le chef de file a harmonisé le ton du dossier (phrases de transition)",
     "redaction.transition_ajoutee": ("Le chef de file a ajouté une phrase de transition au début de votre partie : "
                                      "à revalider"),
+    # Retrait de l'invitation, ou purge automatique (6 mois après le résultat du marché…) : par Adjugo.
+    "redaction.documents_effaces": "Vos documents déposés pour Adjugo ont été effacés",
 }
 LABELS_PARTNER = {
     "invite.created": "Un partenaire a été invité",

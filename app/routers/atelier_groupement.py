@@ -31,11 +31,15 @@ rattaché ce lien (/api/shared/{project_id}/redaction…, mêmes sous-routes) :
   POST …/redaction/sections/{sid}/retablir                  rétablir sa version
   POST …/redaction/dossier/valider                          valider le dossier assemblé
   GET  …/redaction/export                                   ses brouillons et ses textes envoyés (portabilité)
+  GET  …/redaction/documents                                « Vos documents pour Adjugo » (décision 5 a, § 21)
+  POST /api/invite/{token}/redaction/documents              déposer un document privé (lien seulement)
+  GET  …/redaction/documents/{did}/fichier                  le télécharger (lui seul)
+  DELETE …/redaction/documents/{did}                        le supprimer
 """
 from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -400,6 +404,39 @@ def _valider_dossier(acces, db, body: Optional[ValiderDossierIn], ip):
     return {"validation": v, "pret": ag.pret(db, acces.project, acces.dossier)}
 
 
+def _documents(acces, db):
+    from app.services import depot_lien
+    return _faire(depot_lien.vue, db, acces)
+
+
+def _oui(v) -> bool:
+    return str(v or "").strip().lower() in ("1", "true", "oui", "on", "yes")
+
+
+def _deposer(acces, db, file: UploadFile, accepte_cgu, accepte_confidentialite, ip):
+    """Lecture BORNÉE (jamais plus que la limite + 1 octet en mémoire : 413 au-delà), puis le service."""
+    from app.services import depot_lien
+    lim = depot_lien.limites()
+    contenu = file.file.read(lim["mo_par_fichier"] * depot_lien.MB + 1)
+    d = _faire(depot_lien.deposer, db, acces, file.filename or "", contenu, accepte_cgu=_oui(accepte_cgu),
+               accepte_confidentialite=_oui(accepte_confidentialite), ip=ip)
+    return dict(_documents(acces, db), depose=depot_lien._doc_out(d))
+
+
+def _fichier(acces, db, document_id):
+    from app.core.mime import file_headers, mime_for
+    from app.services import depot_lien
+    contenu, nom, cle = _faire(depot_lien.fichier, db, acces, document_id)
+    return Response(content=contenu, media_type=mime_for(cle),
+                    headers=dict(file_headers(nom, cle), **{"Cache-Control": "no-store"}))
+
+
+def _supprimer(acces, db, document_id, ip):
+    from app.services import depot_lien
+    _faire(depot_lien.supprimer, db, acces, document_id, ip=ip)
+    return _documents(acces, db)
+
+
 def _export(acces, db):
     import json
     _faire(ag._exiger_espace, acces)
@@ -513,6 +550,35 @@ def lien_export(token: str, request: Request, db: Session = Depends(get_db)):
     return _export(_par_lien(token, db, request), db)
 
 
+# « Vos documents pour Adjugo » (décision 5 a, contrat § 21) : ses documents PRIVÉS, déposés par le lien, pour
+# l'aide de l'IA de SES parties. Clé de l'espace exigée ; la démo ne dépose ni ne supprime rien (refusée avant tout).
+
+@router.get(L + "/documents")
+@limiter.limit("60/minute")
+def lien_documents(token: str, request: Request, db: Session = Depends(get_db)):
+    return _documents(_par_lien(token, db, request), db)
+
+
+@router.post(L + "/documents", status_code=201)
+@limiter.limit("30/hour")
+def lien_deposer(token: str, request: Request, file: UploadFile = File(...), accepte_cgu: str = Form(""),
+                 accepte_confidentialite: str = Form(""), db: Session = Depends(get_db)):
+    return _deposer(_par_lien(token, db, request, ecrire=True), db, file, accepte_cgu, accepte_confidentialite,
+                    _ip(request))
+
+
+@router.get(L + "/documents/{document_id}/fichier")
+@limiter.limit("60/hour")
+def lien_document_fichier(token: str, document_id: int, request: Request, db: Session = Depends(get_db)):
+    return _fichier(_par_lien(token, db, request), db, document_id)
+
+
+@router.delete(L + "/documents/{document_id}")
+@limiter.limit("60/hour")
+def lien_supprimer_document(token: str, document_id: int, request: Request, db: Session = Depends(get_db)):
+    return _supprimer(_par_lien(token, db, request, ecrire=True), db, document_id, _ip(request))
+
+
 # ── Partenaire par le COMPTE Adjugo qui a rattaché son lien (« Partagé avec moi ») ───
 
 C = "/api/shared/{project_id}/redaction"
@@ -617,3 +683,28 @@ def compte_valider_dossier(project_id: int, request: Request, body: Optional[Val
 def compte_export(project_id: int, request: Request, current_user: User = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     return _export(_par_compte(project_id, current_user, db), db)
+
+
+# Par le compte : rien ne se dépose (il utilise son savoir-faire et ses preuves, inchangé) ; ce qu'il avait déposé par
+# le lien avant de le rattacher se télécharge ou se supprime.
+
+@router.get(C + "/documents")
+@limiter.limit("60/minute")
+def compte_documents(project_id: int, request: Request, current_user: User = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    return _documents(_par_compte(project_id, current_user, db), db)
+
+
+@router.get(C + "/documents/{document_id}/fichier")
+@limiter.limit("60/hour")
+def compte_document_fichier(project_id: int, document_id: int, request: Request,
+                            current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _fichier(_par_compte(project_id, current_user, db), db, document_id)
+
+
+@router.delete(C + "/documents/{document_id}")
+@limiter.limit("60/hour")
+def compte_supprimer_document(project_id: int, document_id: int, request: Request,
+                              current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _refuser_demo(current_user, DEMO_ACTION_PART)
+    return _supprimer(_par_compte(project_id, current_user, db), db, document_id, _ip(request))
