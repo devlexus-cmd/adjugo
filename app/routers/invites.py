@@ -2974,6 +2974,16 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
         if not getattr(current_user, "email_verified", False):
             raise HTTPException(403, "Confirmez d'abord votre adresse email (lien reçu par mail) "
                                      "pour accepter ce partage nominatif.")
+    espace_rattache = False
+    if not inv.accepted_by_user_id and getattr(inv, "espace_hash", "") and not _is_email(inv.recipient):
+        # Rédaction V4 (contre-relecture) : le lien ne vise aucune adresse et son espace privé de rédaction est déjà
+        # ouvert. Le rattacher à un compte rend ses brouillons à ce compte : il faut donc détenir la clé de cet espace
+        # (le navigateur où le partenaire rédige). Sans elle, le chef de file, qui détient le lien, rattacherait le
+        # lien à un second compte, lirait les brouillons privés et priverait le partenaire de son espace.
+        from app.services import atelier_groupement as ag
+        if not ag.cle_valide(inv, request.headers.get(ag.ENTETE_CLE)):
+            raise HTTPException(409, {"code": "espace_a_prouver", "message": ag.MSG_RATTACHER_ESPACE})
+        espace_rattache = True
     if not inv.accepted_by_user_id:
         inv.accepted_by_user_id = current_user.id
         _mark_network_accepted(inv)
@@ -2981,7 +2991,8 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
         audit.record(db, action="invite.claimed", owner_id=inv.owner_id, project_id=inv.project_id,
                      actor=(inv.company_name or "invité")[:160],
                      actor_kind="guest", target_type="invite", target_id=inv.id, invite_id=inv.id,
-                     detail="", ip=audit.client_ip(request))
+                     detail=("Espace privé de rédaction du lien rattaché au compte (clé présentée)"
+                             if espace_rattache else ""), ip=audit.client_ip(request))
     out = _shared_item(inv, db)
     # Boucle de croissance (vague 3) : simple SUGGESTION d'interface « publiez votre profil
     # partenaire » si l'organisation n'en a pas de publié — jamais d'email non sollicité.

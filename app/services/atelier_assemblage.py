@@ -798,18 +798,44 @@ _MOIS = ("janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|nov
          "journalieres?|chaque (?:jour|semaine|mois|annee)|tous les (?:jours|mois|ans)|"
          # une période relative est un engagement de calendrier (« dès la rentrée », « l'an prochain », « la nuit »)
          "rentree|an prochain|annee prochaine|mois prochain|semaine prochaine|nuits?|nocturnes?|week-ends?|weekends?|"
-         "jour meme|lendemain|matinees?|soirees?|toussaint|noel|paques")
+         "jour meme|lendemain|matinees?|soirees?|toussaint|noel|paques|"
+         # … comme une période de l'année (« pendant les vacances scolaires », « avant l'été », « la période
+         # estivale ») ou un délai compté depuis un acte du marché (« dès la signature du marché ») — contre-relecture
+         "vacances|conges|jours? feries?|feries?|(?:l'|en |cet |d'|cette )ete|estivale?s?|estivaux|"
+         "(?:fin|debut) d'annee|(?:fin|debut) de (?:mois|semaine|journee)|"
+         "des (?:la |le |l')?(?:signature|notification|ordre de service|attribution|commande|demarrage|debut|lancement)|"
+         "(?:a compter|a partir|apres|avant) (?:de la |du |de l'|la |le |l')(?:signature|notification|ordre de service|"
+         "attribution|commande)")
 _DATE = re.compile(r"(?<![a-z])(?:" + _MOIS + r")(?![a-z])")
 _QUANTITE = re.compile(r"(?<![a-z])(?:moitie|tiers|quart|double|triple|quadruple|dizaines?|douzaines?|vingtaines?|"
-                       r"trentaines?|centaines?|milliers?|millions?|milliards?|totalite|integralite)(?![a-z])")
-# Un rang (« le premier désamianteur », « leader ») est un fait sur l'entreprise, comme un nombre.
+                       r"trentaines?|centaines?|milliers?|millions?|milliards?|totalite|integralite|"
+                       # la totalité ou la constance, dites autrement (« sans aucune sous-traitance », « toujours »)
+                       r"aucune?s?|entierement|integralement|exclusivement|systematiques?|systematiquement|"
+                       r"sans exception|toujours|jamais|en permanence|en continu)(?![a-z])")
+# Un rang (« le premier désamianteur », « leader »), un superlatif ou une exclusivité (« le seul », « l'unique »,
+# « le meilleur », « la référence ») est un fait sur l'entreprise, comme un nombre.
 _RANG = re.compile(r"(?<![a-z])(?:premier|premiere|premiers|premieres|deuxieme|second|seconde|troisieme|quatrieme|"
-                   r"cinquieme|sixieme|septieme|huitieme|neuvieme|dixieme|centieme|leader|numero un|n° ?1)(?![a-z])")
-# Un engagement, même à la troisième personne (« le groupement garantit », « une garantie décennale »), ou un délai
-# (« en moins d'une heure », « sous 48 heures ») : jamais dans une transition.
+                   r"cinquieme|sixieme|septieme|huitieme|neuvieme|dixieme|centieme|leaders?|numero un|n° ?1|"
+                   r"seule?s?|uniques?|uniquement|meilleure?s?|le mieux|champions?|incontournables?|"
+                   r"inegalee?s?|sans (?:egal|equivalent|pareil)|hors pair|reconnue?s?|renommee?s?|excellence|"
+                   r"exceptionnel(?:le)?s?|specialistes?|expert(?:e|s|es)?|exclusi(?:f|ve|fs|ves|vite)|"
+                   r"(?:la|une|entreprise de|acteur de|actrice de) reference|"
+                   r"(?:le|la|les|au) (?:plus|moins) [a-z]{3,}|plus (?:grande?s?|importante?s?|ancienne?s?))(?![a-z])")
+# Locutions de transition qui ne classent rien (« dans un second temps », « en premier lieu », « le premier volet »,
+# « la première partie ») : retirées avant de chercher un rang (contre-relecture : elles étaient refusées).
+_CONNECTEURS_RANG = re.compile(
+    r"(?<![a-z])(?:en (?:premier|second|dernier) lieu|en premier|dans un (?:premier|second|deuxieme|troisieme|dernier) "
+    r"temps|(?:un|le|ce|du|au) (?:premier|second|deuxieme|troisieme|dernier) (?:volet|temps|point|axe|aspect|"
+    r"chapitre|sujet|theme|niveau de lecture)|(?:une|la|cette|de la|a la) (?:premiere|seconde|deuxieme|troisieme|"
+    r"derniere) (?:partie|section|sous-partie|question))(?![a-z])")
+# Un engagement, même à la troisième personne (« le groupement garantit », « une garantie décennale »), un délai
+# (« en moins d'une heure », « sous 48 heures ») ou une organisation du travail (« en astreinte », « en horaires
+# décalés », « sans sous-traitance ») : jamais dans une transition.
 _ENGAGE_T = re.compile(r"(?<![a-z])(?:garanti(?:t|ssent|ssons|e|es|r)|garanties?|s'engage(?:nt)?|engagements?|"
                        r"assure(?:nt)?|promet(?:tent)?|en moins d|dans l'heure|sous (?:\w+ )?(?:heures?|jours?|"
-                       r"huitaine|quinzaine)|immediatement|sans delai|au plus tard|zero (?:defaut|reserve|accident))"
+                       r"huitaine|quinzaine)|immediatement|sans delai|au plus tard|zero (?:defaut|reserve|accident)|"
+                       r"delais?|astreintes?|permanences?|horaires? (?:decales?|de nuit|de jour|adaptes?|amenages?)|"
+                       r"heures? creuses|en dehors des heures|hors (?:des )?heures|sous-trait\w*)"
                        r"(?![a-z])")
 # Mots qui ouvrent une phrase sans être un nom (la première lettre d'une phrase est toujours capitale).
 _OUVRANTS = {
@@ -862,8 +888,9 @@ def controle_transition(texte: str, sources_avant) -> dict:
                     and not any(f["fait"].startswith(m.group(1)) for f in faits):
                 faits.append({"fait": m.group(1), "type": far.NOM_PROPRE})
     low = far.fold(t)
+    sans_connecteurs = _CONNECTEURS_RANG.sub(lambda x: " " * len(x.group(0)), low)
     for rx, kind in ((_DATE, "date"), (_QUANTITE, "quantite"), (_RANG, far.EN_LETTRES), (_ENGAGE_T, fs.ENGAGEMENT)):
-        for mm in rx.finditer(low):
+        for mm in rx.finditer(sans_connecteurs if rx is _RANG else low):
             if not re.search(r"(?<![a-z])" + re.escape(mm.group(0)) + r"(?![a-z])", low_src):
                 faits.append({"fait": t[mm.start():mm.end()], "type": kind})
     # Filet : un nombre écrit en chiffres que le dossier ne contient pas est un fait ajouté, quelle que soit sa forme

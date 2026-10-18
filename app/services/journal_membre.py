@@ -143,6 +143,8 @@ LABELS_ME = {
     "redaction.espace_reinitialise": "Votre espace privé de rédaction a été réinitialisé : vos brouillons non envoyés "
                                      "ont été effacés",
     "redaction.partie_groupement_validee": "Vous avez validé « Qui fait quoi dans le groupement »",
+    "redaction.fait_relu": "Vous avez relu un fait de votre partie envoyée",
+    "redaction.fait_a_relire": "Vous avez remis à relire un fait de votre partie envoyée",
 }
 LABELS_OWNER = {
     "owner.view_contribution": "Le chef de file a consulté votre part",

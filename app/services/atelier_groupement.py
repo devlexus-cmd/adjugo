@@ -623,6 +623,10 @@ MSG_ESPACE_COMPTE = ("Ce lien est rattaché à un compte Adjugo : rédigez vos p
                      "avec moi ». Vos brouillons y sont, sans rien à ouvrir.")
 MSG_CODE_REQUIS = ("Votre invitation vise une adresse email : recevez un code à cette adresse pour ouvrir votre espace "
                    "privé sur cet appareil.")
+MSG_RATTACHER_ESPACE = ("Ce lien a déjà servi à rédiger dans un espace privé. Pour le rattacher à votre compte, ouvrez-le "
+                        "dans le navigateur où vous rédigez votre partie, puis choisissez « Ouvrir dans mon Adjugo ». "
+                        "Sur cet appareil, vous pouvez aussi réinitialiser d'abord votre espace privé : vos brouillons "
+                        "non envoyés seront alors effacés.")
 
 
 def _hash_cle(cle: str) -> str:
@@ -865,9 +869,17 @@ def _matiere_visible(acces: Acces, b: DossierPartBrouillon) -> tuple:
     """(sources, faits avec leur source) d'un brouillon, tels que CET accès peut les lire. Depuis le compte : les
     extraits et les preuves de l'organisation ACTUELLE du compte seulement — un membre retiré de l'organisation du
     partenaire ne relit plus ses extraits, ses documents ni ses preuves (comme `fiches_de_brouillon`)."""
+    if acces.mode != "compte" or acces.user is None:
+        return list(b.sources or []), fs.avec_source(b.faits or [])
+    return _matiere_du_compte(acces.db, acces.user, b)
+
+
+def _matiere_du_compte(db, user: User, b: DossierPartBrouillon) -> tuple:
+    """(sources, faits avec leur source) d'un brouillon lus par CE compte : les extraits et les preuves de son
+    organisation ACTUELLE seulement (vue, historique, export de la partie, export RGPD du compte)."""
     sources = list(b.sources or [])
     faits_src = fs.avec_source(b.faits or [])
-    if acces.mode != "compte" or not b.auteur_user_id or acces.user is None:
+    if not b.auteur_user_id or user is None:
         return sources, faits_src
     chunks, preuves = set(), set()
     for x in sources + [f.get("source") or {} for f in faits_src]:
@@ -878,13 +890,12 @@ def _matiere_visible(acces: Acces, b: DossierPartBrouillon) -> tuple:
                 preuves.add(int(x["preuve_id"]))
     if not chunks and not preuves:
         return sources, faits_src
-    db = acces.db
     from app.core.org import data_owner_id, member_ids
     from app.models import KnowledgeChunk, Preuve
     vis_c = {r[0] for r in db.query(KnowledgeChunk.id).filter(KnowledgeChunk.id.in_(list(chunks) or [-1]),
-                                                              KnowledgeChunk.user_id.in_(member_ids(acces.user, db)))}
+                                                              KnowledgeChunk.user_id.in_(member_ids(user, db)))}
     vis_p = {r[0] for r in db.query(Preuve.id).filter(Preuve.id.in_(list(preuves) or [-1]),
-                                                      Preuve.owner_id == data_owner_id(acces.user, db))}
+                                                      Preuve.owner_id == data_owner_id(user, db))}
 
     def _ok(x):
         if not isinstance(x, dict):
@@ -994,18 +1005,28 @@ def enregistrer_brouillon(db, acces: Acces, section_id: int, texte: str, base_br
     return b
 
 
-def traiter_fait(db, acces: Acces, section_id: int, fait_id: str, statut: str) -> dict:
+def traiter_fait(db, acces: Acces, section_id: int, fait_id: str, statut: str, ip: str = "") -> dict:
     """« Relu par vous » (ou retour à « à relire ») sur un fait de SON brouillon courant. Adjugo ne dit
-    jamais qu'un fait est bon : c'est le partenaire qui déclare l'avoir relu."""
+    jamais qu'un fait est bon : c'est le partenaire qui déclare l'avoir relu. Quand son brouillon EST le texte
+    commun, sa relecture vaut pour le texte commun (lu par le chef de file, qui bloque l'export) : elle engage
+    l'entreprise comme un envoi — même exigence d'identité (contre-relecture : après une réinitialisation, le chef
+    de file qui détient le lien recopiait le texte commun dans un brouillon et effaçait ses faits à relire) — et elle
+    est inscrite au journal chaîné."""
     _exiger_ecriture(acces)
     if statut not in (far.RELU, far.A_RELIRE):
         raise AtelierError(422, "statut_invalide", "Statut inconnu.")
     section, _rep = _partie(db, acces, section_id)
     b = brouillon_courant(db, section.id, acces.invite_id)
+    if _du_compte(acces, b):
+        b = None                    # écrit depuis le compte : ne se traite jamais par le lien
     faits = [dict(x) for x in ((b.faits if b else None) or []) if isinstance(x, dict)]
     hit = next((x for x in faits if x.get("id") == fait_id), None)
     if b is None or hit is None:
         raise AtelierError(404, "fait_introuvable", "Ce fait n'est plus dans le texte : rechargez la partie.")
+    cur = _commune(db, section)
+    vaut_pour_le_commun = cur is not None and bool(b.empreinte) and cur.empreinte == b.empreinte
+    if vaut_pour_le_commun:
+        _exiger_identite(acces)
     if hit.get("type") == far.RESTE:
         raise AtelierError(409, "faits_non_detailles", "Ces faits ne sont pas détaillés : découpez ou raccourcissez la "
                                                        "partie pour les relire un par un.")
@@ -1025,13 +1046,22 @@ def traiter_fait(db, acces: Acces, section_id: int, fait_id: str, statut: str) -
     # vaut pour le texte commun, que lit le chef de file (faits à relire SANS source, compteurs) et qui bloque
     # l'export tant qu'un fait reste à relire. Le texte ne change pas : son empreinte, ses validations et celle
     # du dossier assemblé non plus.
-    cur = _commune(db, section)
-    if cur is not None and b.empreinte and cur.empreinte == b.empreinte:
+    if vaut_pour_le_commun:
+        avant = far.non_traites(cur.faits or [])
         cur.faits = faits_communs(faits)
         cur.compteurs = compteurs(faits)
         flag_modified(cur, "faits")
         flag_modified(cur, "compteurs")
+        apres = far.non_traites(cur.faits or [])
     db.commit()
+    if vaut_pour_le_commun and avant != apres:
+        titre = _titre(acces.dossier, section)
+        _journal(db, action="redaction.fait_relu" if statut == far.RELU else "redaction.fait_a_relire",
+                 project_id=acces.project.id, owner_id=acces.dossier.owner_id, actor=acces.acteur, actor_kind="guest",
+                 invite_id=acces.invite_id, target_id=section.id, ip=ip,
+                 detail=(f"Fait relu par le partenaire dans le texte envoyé : {titre}" if statut == far.RELU
+                         else f"Fait remis à relire par le partenaire dans le texte envoyé : {titre}"),
+                 meta={"faits_a_relire": apres, "par_le": acces.mode})
     return hit
 
 
@@ -2574,19 +2604,21 @@ def exporter_chef(db, owner_id: int) -> list:
     return out
 
 
-def exporter_invitation(db, inv: ProjectInvite, sources_du_compte: bool = True, acces: Optional["Acces"] = None) -> dict:
+def exporter_invitation(db, inv: ProjectInvite, sources_du_compte: bool = True, acces: Optional["Acces"] = None,
+                        compte: Optional[User] = None) -> dict:
     """Portabilité pour un partenaire : SES brouillons (texte, sources, faits) et les textes qu'il a envoyés.
     Par le lien (`sources_du_compte` faux), un brouillon écrit depuis le compte (ses preuves, son savoir-faire)
-    n'est pas rendu : il ne se lit que depuis ce compte. Avec `acces` (compte), seuls les extraits et les preuves de
-    l'organisation actuelle du compte (`_matiere_visible`)."""
+    n'est pas rendu : il ne se lit que depuis ce compte. Avec `acces` (compte) ou `compte` (export RGPD du compte),
+    seuls les extraits et les preuves de l'organisation actuelle du compte (`_matiere_du_compte`)."""
     bro = []
     for b in (db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == inv.id)
               .order_by(DossierPartBrouillon.id).all()):
         if not sources_du_compte and b.auteur_user_id:
             continue
         sources, faits = list(b.sources or []), list(b.faits or [])
-        if acces is not None:
-            sources, faits_src = _matiere_visible(acces, b)
+        if acces is not None or compte is not None:
+            sources, faits_src = (_matiere_visible(acces, b) if acces is not None
+                                  else _matiere_du_compte(db, compte, b))
             faits = [x for x in faits if not (isinstance(x, dict) and x.get("statut") == fs.AVEC_SOURCE)
                      or x in faits_src]
         bro.append({"section_id": b.section_id, "numero": b.numero, "origine": b.origine, "texte": b.texte or "",
@@ -2606,10 +2638,13 @@ def exporter_partenaire(db, uid: int) -> list:
     iids = {r[0] for r in db.query(ProjectInvite.id).filter(ProjectInvite.accepted_by_user_id == uid)}
     iids |= {r[0] for r in db.query(DossierPartBrouillon.invite_id).filter(DossierPartBrouillon.auteur_user_id == uid)}
     out = []
+    compte = db.get(User, uid)
     for iid in sorted(iids):
         inv = db.get(ProjectInvite, iid)
         if inv is not None:
-            out.append(exporter_invitation(db, inv))
+            # Comme la route d'export de la partie : un membre retiré de l'organisation du partenaire n'y retrouve ni
+            # les extraits, ni les documents, ni les preuves de son ancienne organisation (contre-relecture).
+            out.append(exporter_invitation(db, inv, compte=compte))
     return out
 
 

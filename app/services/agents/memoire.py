@@ -439,7 +439,9 @@ RÈGLES ABSOLUES :
   de personne, de lieu, de produit), aucune certification ni qualification, aucun matériel, aucun délai, aucune
   quantité, aucun engagement (« nous garantissons », « nous nous engageons », « sans retard »…). Ne reprends aucun
   élément précis des extraits : la phrase doit rester vraie quel que soit le détail des parties.
-- Ne résume pas, ne juge pas, ne promets rien, aucun superlatif.
+- Ne résume pas, ne juge pas, ne promets rien, aucun superlatif ni exclusivité (« le seul », « l'unique », « le
+  meilleur », « la référence »), aucun moment de l'année (vacances, été…), aucune organisation du travail
+  (astreinte, horaires, sous-traitance).
 - Aucun renvoi entre crochets, aucun « [À compléter] », aucun titre, aucune liste, aucune mise en forme.
 - Ton sobre et professionnel, à la troisième personne (« le groupement », « cette partie ») : jamais « nous ».
 - Si aucune transition sobre n'est utile pour une partie, ne l'écris pas.

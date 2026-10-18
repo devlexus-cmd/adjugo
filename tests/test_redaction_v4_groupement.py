@@ -833,7 +833,8 @@ def test_isolation_entre_deux_groupements(client, auth, fake_llm):
                       json={"texte": "x"}).status_code == 404
     assert client.get(f"/api/jobs/{j2}", headers=h2).status_code == 404
     hp, _ = _register(client, company="Partenaire Compte")
-    assert client.post(f"/api/invite/{a1['token']}/claim", headers=hp).status_code == 200
+    # Le lien a servi à rédiger (espace ouvert) : le rattacher se fait depuis le navigateur qui en a la clé.
+    assert client.post(f"/api/invite/{a1['token']}/claim", headers={**hp, **p1.h}).status_code == 200
     assert client.get(f"/api/shared/{pid1}/redaction", headers=hp).status_code == 200
     assert client.get(f"/api/shared/{pid2}/redaction", headers=hp).status_code == 404
     assert client.get(f"/api/shared/{pid1}/redaction/taches/{j2}", headers=hp).status_code == 404

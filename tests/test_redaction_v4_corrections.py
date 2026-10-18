@@ -50,9 +50,12 @@ def _code_en_attente(iid, code="123456"):
              otp_attempts=0)
 
 
-def _partenaire_par_compte(client, token, company="Breizh Désamiantage"):
-    hp, ep = _register(client, company=company)
-    assert client.post(f"/api/invite/{token}/claim", headers=hp).status_code == 200
+def _partenaire_par_compte(client, token, company="Breizh Désamiantage", cle=None, email=None):
+    """Le partenaire rattache son lien à son compte. Quand l'espace du lien est ouvert (lien sans adresse), depuis le
+    navigateur qui en a la clé (`cle` : les en-têtes de son espace)."""
+    hp, ep = _register(client, company=company, email=email)
+    r = client.post(f"/api/invite/{token}/claim", headers={**hp, **(cle or {})})
+    assert r.status_code == 200, r.text
     return hp, ep
 
 
@@ -91,8 +94,11 @@ def test_cle_prise_avant_le_rattachement_ne_vaut_plus(client, auth, fake_llm):
     compte et y travaille : la clé du chef de file ne lit plus rien et n'agit plus."""
     pid, st, a, b, vue = _groupement(client, auth, avec_b=False)
     sid = _part_a(vue)["section_id"]
+    # Lien qui vise l'adresse du partenaire : son compte (adresse prouvée) le rattache sans la clé de l'espace.
+    ep = f"desamiantage_{a['id']}@partenaire.fr"
+    _set_inv(a["id"], recipient=ep)
     chef = P(client, a["token"])                       # première ouverture, par le chef de file
-    hp, _ep = _partenaire_par_compte(client, a["token"])
+    hp, _ep = _partenaire_par_compte(client, a["token"], email=ep)
     fake_llm(_reponse_partenaire(TEXTE_IA_A)[0])
     pc = PC(client, pid, hp)
     assert _aide(pc, sid)[0]["status"] == "done"
@@ -170,8 +176,9 @@ def test_harmoniser_ne_transmet_jamais_le_cv_ni_les_salaries_d_un_partenaire(cli
     un compte sont masqués même si sa part de co-traitance n'est pas soumise."""
     h = auth["headers"]
     pid, a, b, pa, pb, s = _groupement_trois_jonctions(client, auth)
-    # B a un compte, une équipe dans son profil, et sa part de co-traitance n'est PAS soumise.
-    hp, ep = _partenaire_par_compte(client, b["token"], company="Le Gall Électricité")
+    # B a un compte, une équipe dans son profil, et sa part de co-traitance n'est PAS soumise. Il rattache son lien
+    # depuis le navigateur où il rédigeait (la clé de son espace).
+    hp, ep = _partenaire_par_compte(client, b["token"], company="Le Gall Électricité", cle=pb.h)
     r = client.put("/api/company/", headers=hp, json={"name": "Le Gall Électricité", "team": [
         {"nom": "Gwendal Kerbrat", "fonction": "Chef d'équipe", "qualifications": "B2V", "references": ""}]})
     assert r.status_code == 200, r.text

@@ -317,6 +317,22 @@ def _word_value(tok: str) -> float:
     return total + cur
 
 
+# Unité courte (collée au nombre ou écrite avec une espace) ramenée à la clé de sa forme en toutes lettres : « 30t »
+# et « 30 t » sont « 30 tonnes », « 48h » est « 48 heures » (vague 4, contre-relecture : la clé « t » se rapprochait
+# de « 30 tuiles », « h » de « 48 habitants »).
+_UNITES_COURTES = {"t": "tonne", "h": "heure", "j": "jour", "min": "minut", "mn": "minut"}
+# Suffixe d'un ordinal (« 1er », « 1re », « 3e », « 3ème », « 2nd ») : une clé à lui, qui ne se rapproche que d'un
+# ordinal de la source (« 3e », « troisième »), jamais d'un nombre qui compte (« 3 électriciens »).
+ORDINAL = "ord"
+_SUFFIXES_ORDINAUX = {"e", "er", "re", "ere", "eme", "nde", "nd"}
+_ORDINAUX_EN_LETTRES = {"premier": 1, "premiere": 1, "premiers": 1, "premieres": 1, "second": 2, "seconde": 2,
+                        "deuxieme": 2, "troisieme": 3, "quatrieme": 4, "cinquieme": 5, "sixieme": 6, "septieme": 7,
+                        "huitieme": 8, "neuvieme": 9, "dixieme": 10, "onzieme": 11, "douzieme": 12, "treizieme": 13,
+                        "quatorzieme": 14, "quinzieme": 15, "seizieme": 16, "vingtieme": 20, "trentieme": 30,
+                        "centieme": 100}
+_ORD_MOTS = re.compile(r"(?<![a-z])(" + "|".join(sorted(_ORDINAUX_EN_LETTRES, key=len, reverse=True)) + r")(?![a-z])")
+
+
 def _unit_key(u: str) -> str:
     u = fold(u or "")
     if not u:
@@ -325,7 +341,32 @@ def _unit_key(u: str) -> str:
         return "%"
     if u in ("€", "eur", "euro", "euros", "k€", "m€"):
         return "€"
+    if u in _SUFFIXES_ORDINAUX:
+        return ORDINAL
+    if u in _UNITES_COURTES:
+        return _UNITES_COURTES[u]
     return re.sub(r"s$", "", u)[:5]
+
+
+# Familles d'unités : la clé, cherchée en début de mot dans la source (« heure » : « heures »), ET ses formes courtes,
+# cherchées en mot entier (« h » : « 48h », « 48 h », jamais « habitants »).
+_FAMILLES_UNITE = {"tonne": ("tonne", ("t",)), "heure": ("heure", ("h",)), "jour": ("jour", ("j",)),
+                   "minut": ("minut", ("min", "mn")), "an": ("annee", ("an", "ans")), "moi": ("", ("mois",))}
+
+
+def _unite_dans(unit: str, win: str) -> bool:
+    """L'unité (clé d'A0) figure-t-elle dans la fenêtre (repliée) autour d'un nombre de la source ? Une clé courte
+    (moins de 3 lettres, ou avec un chiffre : « m2 », « km », « h30 ») ne vaut qu'en MOT ENTIER ; une clé longue
+    (« compa », « nacel ») en début de mot, comme avant."""
+    fam = _FAMILLES_UNITE.get(unit)
+    if fam is not None:
+        long_, courtes = fam
+        if long_ and re.search(r"(?<![a-z])" + re.escape(long_), win):
+            return True
+        return any(re.search(r"(?<![a-z'])" + re.escape(c) + r"(?![a-z'])", win) for c in courtes)
+    if len(unit) < 3 or re.search(r"\d", unit):
+        return re.search(r"(?<![a-z'])" + re.escape(unit) + r"(?:e?s|x)?(?![a-z0-9'])", win) is not None
+    return re.search(r"(?<![a-z])" + re.escape(unit), win) is not None
 
 
 # Mots qui ouvrent une phrase sans être un nom propre (« Le », « Nous », « Pour »…).
@@ -450,31 +491,60 @@ def _facts_in(phrase: str, tableau: bool = False) -> list:
 
 # ── Rapprochement avec les sources de l'entreprise ────────────────────────────────────
 
+# Fin de proposition : un nombre et son unité se rapprochent dans la MÊME phrase d'une source, jamais d'une phrase à
+# l'autre ni d'une source à l'autre (« 30 tuiles par heure. » puis « 48 habitants » n'appuient pas « 48h »).
+_FIN_PROPOSITION = re.compile(r"\n|[.!?;](?=\s)")
+FENETRE = 60
+
+
+def _fold_phrases(raw: str) -> str:
+    """Comme fold, ligne par ligne : les retours à la ligne restent (ils séparent les propositions)."""
+    return "\n".join(fold(x) for x in str(raw or "").split("\n"))
+
+
+def _fenetre(s: str, a: int, b: int) -> str:
+    """Le texte autour du nombre s[a:b] : 60 caractères de part et d'autre, sans sortir de sa phrase."""
+    d, f = max(0, a - FENETRE), min(len(s), b + FENETRE)
+    for m in _FIN_PROPOSITION.finditer(s, d, a):
+        d = m.end()
+    m = _FIN_PROPOSITION.search(s, b, f)
+    return s[d:m.start() if m else f]
+
+
 class Sources:
     """Sources de l'ENTREPRISE (jamais le dossier de l'acheteur), repliées une fois."""
 
     def __init__(self, textes):
-        self.low = fold(" \n ".join(str(t or "") for t in (textes or []) if t))
+        textes = [str(t or "") for t in (textes or []) if t]
+        self.low = fold(" \n ".join(textes))
         self.compact = re.sub(r"[\s\-:']", "", self.low)
-        self.nums = []        # (valeur, fenêtre autour)
-        raw = " \n ".join(str(t or "") for t in (textes or []) if t)
-        for m in _NUMBER.finditer(raw):
-            v = _num_value(m.group(1), m.group(2))
-            if v == v:
-                self.nums.append((v, fold(raw[max(0, m.start() - 60):m.end() + 60])))
-        for m in _WORD_RE.finditer(self.low):
-            self.nums.append((_word_value(m.group(1)), self.low[max(0, m.start() - 60):m.end() + 60]))
-        for m in _NEUF.finditer(self.low):
-            self.nums.append((9.0, self.low[max(0, m.start() - 60):m.end() + 60]))
+        self.nums = []        # (valeur, fenêtre autour, dans sa phrase)
+        self.ordinaux = set()  # valeurs des ordinaux de la source (« 3e », « troisième », « 1er », « premier »)
+        for raw in textes:
+            for m in _NUMBER.finditer(raw):
+                v = _num_value(m.group(1), m.group(2))
+                if v == v:
+                    self.nums.append((v, fold(_fenetre(raw, m.start(), m.end()))))
+                    if _unit_key(unite_de(m)) == ORDINAL:
+                        self.ordinaux.add(v)
+            low = _fold_phrases(raw)
+            for m in _WORD_RE.finditer(low):
+                self.nums.append((_word_value(m.group(1)), _fenetre(low, m.start(), m.end())))
+            for m in _NEUF.finditer(low):
+                self.nums.append((9.0, _fenetre(low, m.start(), m.end())))
+            for m in _ORD_MOTS.finditer(low):
+                self.ordinaux.add(float(_ORDINAUX_EN_LETTRES[m.group(1)]))
 
     def has_number(self, val: float, unit: str) -> bool:
+        if unit == ORDINAL:     # un ordinal n'est appuyé que par le même ordinal (« 3e » ↔ « troisième »)
+            return any(abs(v - val) < 1e-9 for v in self.ordinaux)
         for v, win in self.nums:
             if abs(v - val) < 1e-9:
                 if not unit or unit in ("%", "€"):
                     if not unit or unit in win.replace("pour cent", "%").replace("euro", "€"):
                         return True
                     continue
-                if re.search(r"(?<![a-z])" + re.escape(unit), win):
+                if _unite_dans(unit, win):
                     return True
         return False
 

@@ -1090,10 +1090,10 @@ const __adjApp = createApp({
     renderIcons() { this.$nextTick(() => paintIcons()); },
 
     // ── API helper ──
-    async api(method, path, body, isForm) {
+    async api(method, path, body, isForm, extraHeaders) {
       this.pending++;   // → barre de progression globale (retour visuel sur TOUTE action réseau)
       try {
-      const opt = { method, headers: {} };
+      const opt = { method, headers: Object.assign({}, extraHeaders || {}) };
       if (this.token) opt.headers["Authorization"] = "Bearer " + this.token;
       if (body && !isForm) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
       if (isForm) opt.body = body;
@@ -2159,10 +2159,15 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); }
       finally { this.sharedAo.busy = false; }
     },
+    // Rattacher un lien à son compte : la clé de l'espace privé de rédaction ouvert dans CE navigateur (page du lien)
+    // prouve qu'on le détient (sinon 409 « espace_a_prouver »).
+    _cleEspace(token) {
+      try { const k = localStorage.getItem("adjugo_espace_" + token); return k ? { "X-Adjugo-Espace": k } : {}; } catch (e) { return {}; }
+    },
     async sharedClaimThenVault() {
       const v = this.sharedAo.vault;
       try {
-        const cr = await this.api("POST", "/api/invite/" + this.sharedAo.token + "/claim"); v.needClaim = false; this.loadShared();
+        const cr = await this.api("POST", "/api/invite/" + this.sharedAo.token + "/claim", null, false, this._cleEspace(this.sharedAo.token)); v.needClaim = false; this.loadShared();
         if (cr && cr.suggest_profile) this._rnSuggest(cr.suggest_profile);
         if (v.pendingDoc) { const d = v.pendingDoc; v.pendingDoc = null; await this.sharedFromVault(d); }
       } catch (e) { this.notify(e.message, "err"); }
@@ -2996,7 +3001,7 @@ const __adjApp = createApp({
       const r = this.reseau.recues; if (r.busy || (inv && inv.peut_accepter === false)) return;
       r.busy = inv.token;
       try {
-        const res = await this.api("POST", "/api/invite/" + encodeURIComponent(inv.token) + "/claim");
+        const res = await this.api("POST", "/api/invite/" + encodeURIComponent(inv.token) + "/claim", null, false, this._cleEspace(inv.token));
         if (res && res.suggest_profile) this._rnSuggest(res.suggest_profile);
         inv.statut = "acceptee"; inv.statut_label = "Acceptée";
         r.live = "Invitation acceptée : le dossier est dans « Partagé avec moi ».";

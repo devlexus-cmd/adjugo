@@ -745,7 +745,8 @@
           await load(); if (r.ok) changed();
         }
         else if (a === "relu" || a === "a-relire") {
-          const r = await call("POST", "/sections/" + sid + "/faits/" + encodeURIComponent(b.dataset.fid || ""), { statut: a === "relu" ? "relu_par_vous" : "a_relire" });
+          // Relire un fait du texte envoyé engage l'entreprise comme un envoi : même vérification d'identité.
+          const r = await avecIdentite(() => call("POST", "/sections/" + sid + "/faits/" + encodeURIComponent(b.dataset.fid || ""), { statut: a === "relu" ? "relu_par_vous" : "a_relire" }), sid, "Pour relire ce fait de votre partie envoyée");
           if (!r.ok) say(sid, r.message, true);
           await load();
         }

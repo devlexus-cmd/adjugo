@@ -358,8 +358,8 @@ def _brouillon(acces, db, sid, body: BrouillonIn):
     return _section(acces, db, sid)
 
 
-def _fait(acces, db, sid, fid, body: FaitIn):
-    fait = _faire(ag.traiter_fait, db, acces, sid, fid[:40], body.statut)
+def _fait(acces, db, sid, fid, body: FaitIn, ip=""):
+    fait = _faire(ag.traiter_fait, db, acces, sid, fid[:40], body.statut, ip=ip)
     return {"fait": fait, "section": _section(acces, db, sid)}
 
 
@@ -466,7 +466,7 @@ def lien_brouillon(token: str, section_id: int, body: BrouillonIn, request: Requ
 @limiter.limit("300/hour")
 def lien_fait(token: str, section_id: int, fait_id: str, body: FaitIn, request: Request,
               db: Session = Depends(get_db)):
-    return _fait(_par_lien(token, db, request, ecrire=True), db, section_id, fait_id, body)
+    return _fait(_par_lien(token, db, request, ecrire=True), db, section_id, fait_id, body, ip=_ip(request))
 
 
 @router.post(L + "/sections/{section_id}/aide", status_code=202)
@@ -559,7 +559,7 @@ def compte_brouillon(project_id: int, section_id: int, body: BrouillonIn, reques
 def compte_fait(project_id: int, section_id: int, fait_id: str, body: FaitIn, request: Request,
                 current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _refuser_demo(current_user, DEMO_ACTION_PART)
-    return _fait(_par_compte(project_id, current_user, db), db, section_id, fait_id, body)
+    return _fait(_par_compte(project_id, current_user, db), db, section_id, fait_id, body, ip=_ip(request))
 
 
 @router.post(C + "/sections/{section_id}/aide", status_code=202)

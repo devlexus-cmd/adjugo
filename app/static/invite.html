@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
   <script src="/static/cotraitance-crypto.js" integrity="sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le"></script>
-  <script src="/static/redaction-partenaire.js" integrity="sha384-DRt+lPC5F7RUQHI4i6uNOSxoH5PSzZULDXvOj8lGXsXfOtqHQji+nRuuYD1rEd01"></script>
+  <script src="/static/redaction-partenaire.js" integrity="sha384-/eOqK9ctR4Z6HGfJ2nErmGLmBdR3igQpMxfx57GZXrXeWG4MD7XnuHWQy4i+E6pQ"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -1894,11 +1894,18 @@
       if (!s || s.code !== "publier_profil_reseau") return;
       try { sessionStorage.setItem("adjugo_suggest_profile", JSON.stringify({ code: s.code, titre: String(s.titre || ""), message: String(s.message || "") })); } catch (e) {}
     }
+    // Rattacher le lien à un compte : quand son espace privé de rédaction est ouvert dans CE navigateur, sa clé prouve
+    // qu'on le détient (sinon 409 « espace_a_prouver » : le lien a servi à rédiger ailleurs).
+    function claimHeaders(tok) {
+      const h = { Authorization: "Bearer " + tok };
+      try { const k = localStorage.getItem("adjugo_espace_" + TOKEN); if (k) h["X-Adjugo-Espace"] = k; } catch (e) {}
+      return h;
+    }
     // « Accepter depuis mon compte » (aperçu minimal d'une invitation du réseau).
     async function claimAndOpen(btn, live) {
       btn.disabled = true; btn.setAttribute("aria-busy", "true"); live.textContent = "Acceptation en cours…";
       try {
-        const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/claim", { method: "POST", headers: { Authorization: "Bearer " + MY_TOKEN } });
+        const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/claim", { method: "POST", headers: claimHeaders(MY_TOKEN) });
         if (r.ok) { keepSuggestion(await r.json().catch(() => null)); live.textContent = "Invitation acceptée : ouverture du dossier…"; location.href = "/app?shared=" + encodeURIComponent(TOKEN); return; }
         const e = await r.json().catch(() => ({}));
         live.textContent = errText(e, "Acceptation impossible pour le moment.");
@@ -1965,9 +1972,12 @@
           CLAIM_BTN = btn;
           btn.onclick = async () => {
             btn.disabled = true; btn.textContent = "Ouverture…";
-            try { const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/claim", { method: "POST", headers: { Authorization: "Bearer " + myToken } });
+            try { const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/claim", { method: "POST", headers: claimHeaders(myToken) });
               if (r.ok) { keepSuggestion(await r.json().catch(() => null)); location.href = "/app?shared=" + encodeURIComponent(TOKEN); return; }
-              const e = await r.json().catch(() => ({})); btn.disabled = false; btn.textContent = errText(e, "Impossible");
+              const e = await r.json().catch(() => ({})); btn.disabled = false;
+              // Lien qui a servi à rédiger dans un autre navigateur : l'explication va dans le bandeau, pas sur le bouton.
+              if (e && e.detail && e.detail.code === "espace_a_prouver") { const sm = b.querySelector(".small"); if (sm) sm.textContent = e.detail.message; btn.textContent = "Ouvrir dans mon Adjugo"; return; }
+              btn.textContent = errText(e, "Impossible");
             } catch (e) { btn.disabled = false; btn.textContent = "Erreur"; }
           };
           if (!d.apercu_minimal) b.appendChild(btn);
