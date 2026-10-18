@@ -1143,8 +1143,9 @@
               <div v-for="c in ao.cotraitants" :key="c.link_id" class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:flex-start">
                 <div style="flex:1;min-width:0"><span class="strong small">{{ c.name }}</span> <span class="pill" :class="c.role==='mandataire'?'go':'neutral'" style="font-size:10px">{{ roleLabel(c.role) }}</span>
                   <div class="muted small">{{ c.specialites||c.code_ape||'' }} · {{ c.city||'' }} · SIRET {{ c.siret||'n/d' }}</div>
-                  <div v-if="c.formulaires===false" class="small" style="color:var(--warning-text);margin-top:2px">Pas encore d'accord : absent des formulaires officiels tant qu'il n'a pas accepté une invitation.</div></div>
-                <button v-if="c.formulaires===false" class="btn sm" @click="aoGrpInvite({ name: c.name })"><i data-lucide="user-plus"></i>Inviter</button>
+                  <div v-if="c.formulaires===false && c.invite_id" class="small muted" style="margin-top:2px">Invitation envoyée : il entrera dans les formulaires officiels quand il l'aura acceptée.</div>
+                  <div v-else-if="c.formulaires===false" class="small" style="color:var(--warning-text);margin-top:2px">Pas encore d'accord : absent des formulaires officiels tant qu'il n'a pas accepté une invitation.</div></div>
+                <button v-if="c.formulaires===false && !c.invite_id" class="btn sm" @click="aoGrpInvite({ name: c.name, link_id: c.link_id })"><i data-lucide="user-plus"></i>Inviter</button>
                 <button class="btn icon sm ghost" @click="aoDetachSt(c.link_id)" aria-label="Retirer"><i data-lucide="trash-2"></i></button>
               </div>
               <div v-if="ao.stOpen" style="margin-top:12px;border-top:1px solid var(--hairline);padding-top:12px">
@@ -3776,6 +3777,6 @@
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
 <script src="/static/redaction-partenaire.js" integrity="sha384-/eOqK9ctR4Z6HGfJ2nErmGLmBdR3igQpMxfx57GZXrXeWG4MD7XnuHWQy4i+E6pQ" defer></script>
-<script src="/static/app.js" integrity="sha384-VMxKxA8bCsrBQbqrgZPLe1NGulhhOhsGXHAseIih81peIQyFyycgn/1UxPQFpql8" defer></script>
+<script src="/static/app.js" integrity="sha384-grlX2ivtbl5s1mFAzsk7qNy/sZc0ISStLtonryobOKzziaK6MP2gjJl41ATqOgzr" defer></script>
 </body>
 </html>

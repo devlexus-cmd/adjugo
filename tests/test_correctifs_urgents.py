@@ -1,7 +1,16 @@
 """Correctifs urgents d'octobre 2026 (études moteur, organisation, veille, rédaction).
 
-Un test par correctif ; chacun échouait avant la correction. Aucun réseau réel, IA simulée.
+Un test (au moins) par correctif ; chacun échouait avant la correction (vérifié sur a7f48d2). Aucun
+réseau réel, IA simulée.
   1. BOAMP : les départements 01 à 09 sont demandés sous les deux formes (« 06 » et « 6 »).
+  2. Libellés justes : estimation détaillée (PDF), plus de Chorus Pro au dépôt, « essai gratuit de
+     30 jours », verdict en mots et en %, aucun « vérifié » ni « invention » non prouvés.
+  3. Plus de « Rattacher » ni d'étapes 3-4 dans la recherche : aucune entreprise tierce dans un DC1/DC2
+     sans invitation acceptée ; « Ajouter un sous-traitant (DC4) » explicite.
+  4. « Projets à venir » masqué (PROJETS_A_VENIR=0) : menu, accueil, veille automatique, démo.
+  5. Atexo : en-tête honnête, rythme borné, PLACE suspendue (PLACE_ACTIF=0), refus sans contournement.
+  6. Liste des pièces : signature exigée au dépôt seulement si le règlement l'impose.
+  7. Lien de démonstration sans clé : « incomplet », et non « plus valide ».
 """
 import pathlib
 import re
@@ -74,3 +83,395 @@ def test_boamp_departements_hors_01_09_inchanges(monkeypatch):
     assert dept_canonique("6") == "06" and dept_canonique("974") == "974" and dept_canonique("2a") == "2A"
     # « 6 » saisi seul est compris comme « 06 ».
     assert TenderCriteria(departements=["6"]).departements == ["06"]
+
+
+# ═══ 2. Libellés justes ═══════════════════════════════════════════════════════════════════════
+
+def test_libelles_justes_ecrans():
+    html, js, inv, land = _static("app.html"), _static("app.js"), _static("invite.html"), _static("landing.html")
+    # Le bouton télécharge un PDF : il s'appelle ainsi, et le fichier aussi.
+    assert "Tableau de prix (Excel)" not in html and "Estimation détaillée (PDF)" in html
+    assert 'a.download = "DPGF.pdf"' not in js and 'a.download = "Estimation-detaillee.pdf"' in js
+    # Chorus Pro sert aux factures, jamais au dépôt d'une offre.
+    for s in (html, js, inv):
+        assert "Chorus" not in s
+    # Un essai de 30 jours n'est pas un « compte gratuit ».
+    assert "compte gratuit" not in inv and "(gratuit)" not in inv and "Créez le vôtre gratuitement" not in inv
+    assert "essai gratuit de 30 jours" in inv
+    # Verdict en mots et en pourcentage, jamais « GO / NO-GO » à l'écran.
+    assert "NO-GO" not in land and ">GO</div>" not in land and "Bon potentiel" in land
+    assert not re.search(r"\bNo-Go\b|\bNO-GO\b", html + js)
+    # Aucun « vérifié » non prouvé, aucune « invention » promise.
+    assert "co-traitant vérifié" not in land and "co-traitants fiables" not in land
+    assert "partenaires vérifiés</li>" not in html and '<span class="rb-d">vérifiés</span>' not in html
+    for name in ("app.html", "landing.html", "invite.html", "acheteur-landing.html", "acheteur.html"):
+        s = _static(name)
+        assert "Aucune invention" not in s and "donnée jamais inventée" not in s, name
+        assert "zéro projet inventé" not in s and "on n'invente rien" not in s.lower(), name
+
+
+def test_libelles_justes_serveur(client, auth):
+    from app.core.demo_guard import demo_message
+    from app.services.dpgf import ESTIMATION_NOTE, generate_dpgf_pdf
+    from tests.test_redaction_socle0 import _db, _pdf_text
+    assert demo_message("inviter un partenaire") == ("La démo est en lecture guidée : commencez votre essai "
+                                                     "gratuit de 30 jours pour inviter un partenaire.")
+    for mod in ("app/routers/invites.py", "app/routers/org.py", "app/routers/reseau.py", "app/routers/auth.py",
+                "app/services/llm.py", "app/services/atelier_groupement.py", "app/core/demo_guard.py"):
+        assert "compte gratuit" not in (ROOT / mod).read_text(encoding="utf-8"), mod
+    # Le PDF « estimation détaillée » dit ce qu'il est.
+    lignes = [{"tache": "Pose", "phase": "Exécution", "jours": 2, "tarif": 400, "montant": 800}]
+    txt = " ".join(_pdf_text(generate_dpgf_pdf({"lignes": lignes, "total_ht": 800}, "Breizh", "Toiture")).split())
+    assert "Estimation détaillée du prix" in txt and " ".join(ESTIMATION_NOTE.split()[:6]) in txt
+    # Et le fichier servi s'appelle « Estimation-detaillee-… .pdf ».
+    from app.models import Project
+    h = auth["headers"]
+    pid = client.post("/api/projects/", headers=h, json={"name": "Toiture école", "client": "Ville"}).json()["id"]
+    db = _db()
+    try:
+        db.get(Project, pid).estimate = {"lignes": lignes, "total_ht": 800}
+        db.commit()
+    finally:
+        db.close()
+    r = client.get(f"/api/chiffrage/{pid}/dpgf", headers=h)
+    assert r.status_code == 200, r.text
+    assert 'filename="Estimation-detaillee-Toiture-cole.pdf"' in r.headers["content-disposition"]
+
+
+# ═══ 3. Aucune entreprise dans les formulaires officiels sans avoir accepté une invitation ═════════
+
+def _lien(pid, nom, siret, role, invite_id=None):
+    from app.models import Project
+    from app.routers.cotraitants import Cotraitant, ProjectCotraitant
+    from tests.test_redaction_socle0 import _db
+    db = _db()
+    try:
+        p = db.get(Project, pid)
+        ct = Cotraitant(user_id=p.user_id, name=nom, siret=siret, representant_legal="Anne Gérante", city="Brest")
+        db.add(ct)
+        db.flush()
+        lk = ProjectCotraitant(project_id=pid, cotraitant_id=ct.id, role=role, lot="", source="discover",
+                               invite_id=invite_id)
+        db.add(lk)
+        db.commit()
+        return lk.id
+    finally:
+        db.close()
+
+
+def test_rattacher_partenaire_refuse_sous_traitant_explicite(client, auth):
+    h = auth["headers"]
+    pid = client.post("/api/projects/", headers=h, json={"name": "Gymnase", "client": "Ville"}).json()["id"]
+    societe = {"nom": "Kerjean Menuiserie", "siret": "12345678900029", "ville": "Brest"}
+    for role in ("cotraitant", "mandataire"):
+        r = client.post(f"/api/cotraitants/project/{pid}", headers=h, json={"company": societe, "role": role})
+        assert r.status_code == 422 and "s'invite" in r.json()["detail"], (role, r.text)
+    assert client.get(f"/api/cotraitants/project/{pid}", headers=h).json() == []
+    r = client.post(f"/api/cotraitants/project/{pid}", headers=h, json={"company": societe, "role": "sous_traitant"})
+    assert r.status_code == 200, r.text
+    rows = client.get(f"/api/cotraitants/project/{pid}", headers=h).json()
+    assert [(x["name"], x["role"], x["formulaires"]) for x in rows] == [("Kerjean Menuiserie", "sous_traitant", True)]
+
+
+def test_formulaires_sans_entreprise_non_consentante(client, auth, monkeypatch):
+    """Un partenaire rattaché sans invitation acceptée, ou une entreprise cochée dans la recherche, n'entre
+    ni dans le DC1 ni dans le DC2 ; un sous-traitant déclaré entre dans le DC4 ; après acceptation de
+    l'invitation, le partenaire entre dans le DC1."""
+    import base64
+    from app.models import ProjectInvite, User
+    from app.routers import sourcing as sourcing_router
+    from tests.test_redaction_socle0 import ANALYSIS, _company, _db, _pdf_text, _set_analysis
+    h = auth["headers"]
+    _company(client, h)
+    pid = client.post("/api/projects/", headers=h, json={"name": "Gymnase de Kerlo", "client": "Ville"}).json()["id"]
+    _set_analysis(pid, ANALYSIS)
+    _lien(pid, "Kerjean Menuiserie", "12345678900029", "cotraitant")          # rattaché, jamais invité
+    _lien(pid, "Breizh Désamiantage", "12345678900037", "sous_traitant")      # sous-traitant déclaré
+
+    class _Officiel:                     # l'ancienne étape 3 re-vérifiait le SIRET puis l'imprimait
+        nom, siret, naf, naf_label, ville, departement, effectif = ("Intrus SARL", "98765432100011", "4332A",
+                                                                    "Menuiserie", "Quimper", "29", 4)
+
+    class _Svc:
+        def verify_siret(self, siret):
+            return _Officiel()
+
+    monkeypatch.setattr(sourcing_router, "_company_service", lambda: _Svc())
+    r = client.post("/api/sourcing/documents", headers=h, json={
+        "project_id": pid, "cotraitants": [{"siret": "98765432100011", "nom": "Intrus SARL"}]})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    d = out["dossier"]
+    pdfs = {c["id"]: _pdf_text(base64.b64decode(c["content_b64"])) for c in d["cerfas"]}
+    for doc in ("dc1", "dc2"):
+        assert "Kerjean" not in pdfs[doc] and "Intrus" not in pdfs[doc], doc
+    assert "dc4" in pdfs and "Breizh" in pdfs["dc4"]
+    assert out["cotraitants_verifies"] == 1 and out["cotraitants_rejetes"] == 1
+    assert any("Kerjean Menuiserie" in w and "invitation acceptée" in w for w in d["warnings"]), d["warnings"]
+    # Écran : le partenaire non consentant est signalé, avec « Inviter ».
+    rows = {x["name"]: x for x in client.get(f"/api/cotraitants/project/{pid}", headers=h).json()}
+    assert rows["Kerjean Menuiserie"]["formulaires"] is False and rows["Breizh Désamiantage"]["formulaires"] is True
+
+    # Invité mais pas encore accepté : toujours absent. Accepté (lien réclamé depuis son compte) : présent.
+    inv_id = client.post(f"/api/projects/{pid}/invites", headers=h,
+                         json={"recipient": "", "company_name": "Accord Électricité"}).json()["id"]
+    _lien(pid, "Accord Électricité", "12345678900045", "cotraitant", invite_id=inv_id)
+    from app.services.groupement_members import cotraitants_pour_formulaires
+
+    def noms():
+        db = _db()
+        try:
+            return [x["name"] for x in cotraitants_pour_formulaires(db, pid)["lignes"]]
+        finally:
+            db.close()
+
+    assert "Accord Électricité" not in noms()
+    db = _db()
+    try:
+        inv = db.get(ProjectInvite, inv_id)
+        inv.accepted_by_user_id = db.query(User).filter(User.email == auth["email"]).one().id
+        db.commit()
+    finally:
+        db.close()
+    assert "Accord Électricité" in noms() and "Kerjean Menuiserie" not in noms()
+    d = client.post("/api/sourcing/documents", headers=h, json={"project_id": pid}).json()["dossier"]
+    dc1 = _pdf_text(base64.b64decode(next(c for c in d["cerfas"] if c["id"] == "dc1")["content_b64"]))
+    assert "Accord" in dc1 and "Kerjean" not in dc1
+
+
+def test_inviter_un_candidat_rattache_lie_l_invitation(client, auth):
+    """« Inviter » sur un candidat déjà rattaché : l'invitation lui est liée ; il reste hors des
+    formulaires tant qu'elle n'est pas acceptée (jamais un sous-traitant, jamais un autre marché)."""
+    h = auth["headers"]
+    pid = client.post("/api/projects/", headers=h, json={"name": "Salle des fêtes", "client": "Ville"}).json()["id"]
+    autre = client.post("/api/projects/", headers=h, json={"name": "Autre", "client": "Ville"}).json()["id"]
+    lien = _lien(pid, "Le Gall Électricité", "12345678900052", "cotraitant")
+    lien_st = _lien(pid, "Sous Traitant SARL", "12345678900060", "sous_traitant")
+    for projet, link_id in ((autre, lien), (pid, lien_st)):
+        r = client.post(f"/api/projects/{projet}/invites", headers=h,
+                        json={"company_name": "X", "link_id": link_id})
+        assert r.status_code == 200, r.text
+    rows = {x["link_id"]: x for x in client.get(f"/api/cotraitants/project/{pid}", headers=h).json()}
+    assert rows[lien]["invite_id"] is None and rows[lien_st]["invite_id"] is None
+    inv = client.post(f"/api/projects/{pid}/invites", headers=h,
+                      json={"company_name": "Le Gall Électricité", "link_id": lien}).json()
+    rows = {x["link_id"]: x for x in client.get(f"/api/cotraitants/project/{pid}", headers=h).json()}
+    assert rows[lien]["invite_id"] == inv["id"] and rows[lien]["formulaires"] is False
+    js = _static("app.js")
+    assert "lc.nom === this.ao.share.form.company_name) ? { link_id: lc.id }" in js
+
+
+def test_recherche_sans_etapes_3_et_4_ni_rattacher():
+    html, js = _static("app.html"), _static("app.js")
+    assert ">Rattacher</button>" not in html and "aoAttachFromGroup" not in js + html
+    assert "srcGenerate" not in js + html and "src.ct." not in js + html and "Étape 3" not in html
+    assert "Ouvrir le marché" in html and "Inviter un partenaire" in html and "srcOuvrirMarche(" in js
+    assert "Ajouter un sous-traitant (DC4)" in html and 'aoGrpInvite({ name: c.nom })' in html
+    assert '{ company: c, role: "sous_traitant" }' in js
+    # Plus de choix « Chef de file / Partenaire » pour une entreprise trouvée dans SIRENE.
+    assert '<option value="mandataire">Chef de file</option><option value="cotraitant">Partenaire</option>' not in html
+
+
+# ═══ 4. « Projets à venir » masqué (PROJETS_A_VENIR=0 par défaut) ═════════════════════════════════
+
+def test_projets_a_venir_masque_par_defaut(client, monkeypatch):
+    monkeypatch.delenv("PROJETS_A_VENIR", raising=False)
+    assert client.get("/api/public-config").json()["projets_a_venir"] is False
+    monkeypatch.setenv("PROJETS_A_VENIR", "1")
+    assert client.get("/api/public-config").json()["projets_a_venir"] is True
+    html, js = _static("app.html"), _static("app.js")
+    nav = html[html.index("<!-- Sidebar -->"):html.index("<!-- Workspace -->")]
+    assert '<a v-if="features.projets_a_venir" class="nav-item" :class="{active:view===\'amont\'}"' in nav
+    assert '<div v-if="features.projets_a_venir" class="card pad dash-block"' in html
+    assert "<section v-if=\"view==='amont' && features.projets_a_venir\">" in html
+    assert '<button v-if="features.projets_a_venir" class="btn sm ghost" @click="go(\'amont\')">' in html
+    assert "features: { projets_a_venir: false }" in js
+    assert 'if (!this.features.projets_a_venir) { this.amont.signals = []; return; }' in js
+    assert 'if (v === "amont" && !this.features.projets_a_venir) v = "dashboard";' in js
+
+
+def test_projets_a_venir_aucune_veille_ni_courriel(monkeypatch):
+    import app.sourcing.sources.deliberations as deliberations
+    from app.services import alerts
+    from tests.test_redaction_socle0 import _db
+    monkeypatch.delenv("PROJETS_A_VENIR", raising=False)
+
+    def interdit(*a, **k):
+        raise AssertionError("aucune délibération ne doit être lue quand « Projets à venir » est masqué")
+
+    monkeypatch.setattr(deliberations.DeliberationSource, "fetch_recent", interdit)
+    db = _db()
+    try:
+        assert alerts.run_amont_alerts(db)["desactive"] is True
+    finally:
+        db.close()
+
+
+def test_projets_a_venir_absents_de_la_demo(client, monkeypatch):
+    from app.models import Signal, User
+    from app.services.demo_seed import DEMO_EMAIL, ensure_demo
+    from tests.test_redaction_socle0 import _db
+
+    def signaux():
+        db = _db()
+        try:
+            uid = db.query(User).filter(User.email == DEMO_EMAIL).one().id
+            return db.query(Signal).filter(Signal.user_id == uid).count()
+        finally:
+            db.close()
+
+    db = _db()
+    try:
+        monkeypatch.setenv("PROJETS_A_VENIR", "1")
+        ensure_demo(db, force=True)
+        assert signaux() == 3                       # les exemples restent prêts pour la refonte
+        monkeypatch.delenv("PROJETS_A_VENIR", raising=False)
+        ensure_demo(db, force=True)
+        assert signaux() == 0                       # par défaut, la vitrine ne les montre plus
+    finally:
+        db.close()
+
+
+# ═══ 5. Plateformes Atexo : en-tête honnête, rythme borné, PLACE suspendue, refus sans contournement ═
+
+def _atexo_propre(monkeypatch):
+    from app.sourcing import search as search_mod
+    from app.sourcing.sources import atexo
+    for d in (atexo._REFUS, atexo._CACHE, atexo._RYTHME):
+        d.clear()
+    monkeypatch.setattr(atexo, "_INTERVALLE_MIN", 0.0)
+    search_mod._CB.clear()
+    return atexo
+
+
+def test_atexo_en_tete_honnete_et_rythme_borne(monkeypatch):
+    import time
+    atexo = _atexo_propre(monkeypatch)
+    assert atexo._UA["User-Agent"] == "AdjugoBot/1.0 (+https://adjugo.pro ; contact@adjugo.pro)"
+    assert "Mozilla" not in (ROOT / "app/sourcing/sources/atexo.py").read_text(encoding="utf-8")
+    monkeypatch.setattr(atexo, "_INTERVALLE_MIN", 0.05)
+    t0 = time.monotonic()
+    for _ in range(3):
+        atexo._attendre_son_tour("https://exemple.test")
+    assert time.monotonic() - t0 >= 0.1          # 3 requêtes vers une même plateforme : 2 intervalles
+
+
+def test_place_suspendue_par_defaut(client, auth, monkeypatch):
+    from app.routers import sourcing as sourcing_router
+    from app.sourcing.sources.atexo import AtexoSource
+    from app.sourcing.sources.boamp import BoampSource
+    from app.sourcing.sources.ted import TedSource
+    monkeypatch.delenv("PLACE_ACTIF", raising=False)
+    noms = [s.name for s in sourcing_router._tender_sources([])]
+    assert "PLACE (État)" not in noms and "Mégalis Bretagne" in noms and "BOAMP" in noms
+    appels = []
+    for cls in (BoampSource, TedSource, AtexoSource):
+        monkeypatch.setattr(cls, "search", lambda self, crit: appels.append(self.name) or [])
+    r = client.post("/api/sourcing/search", headers=auth["headers"], json={"query": "voirie", "departements": ["29"]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "PLACE (État)" not in appels and "PLACE (État)" not in body["sources_queried"]
+    assert body["sources_non_consultees"][0]["source"] == "PLACE (État)"
+    assert "non consultée" in body["sources_non_consultees"][0]["message"]
+    html = _static("app.html")
+    assert "{{ n.source }} : non consultée pour le moment" in html and "(BOAMP, TED, PLACE, Mégalis)" not in html
+    monkeypatch.setenv("PLACE_ACTIF", "1")
+    assert "PLACE (État)" in [s.name for s in sourcing_router._tender_sources([])]
+    assert sourcing_router._sources_non_consultees([]) == []
+
+
+class _RepAtexo:
+    def __init__(self, status, text=""):
+        self.status_code, self.text, self.url = status, text, "https://marches.megalis.bretagne.bzh/"
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+def test_megalis_refuse_le_robot_sans_contournement(monkeypatch, caplog):
+    import logging
+    import httpx
+    from app.sourcing.base import TenderCriteria
+    from app.sourcing.schemas import NormalizedTender, Provenance
+    from app.sourcing.search import _CB, TenderSearchService
+    from app.sourcing.sources.atexo import MEGALIS
+    from app.sourcing.sources.boamp import BoampSource
+    _atexo_propre(monkeypatch)
+    requetes = []
+
+    class _Client:
+        def __init__(self, *a, headers=None, **k):
+            self.headers = headers or {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, **k):
+            requetes.append(self.headers.get("User-Agent"))
+            return _RepAtexo(403, "Forbidden")
+
+        post = get
+
+    monkeypatch.setattr(httpx, "Client", _Client)
+    avis = NormalizedTender(objet="Voirie communale", acheteur="Commune de Plouzané", departements=["29"],
+                            date_limite="2099-01-01",
+                            provenance=Provenance(source="BOAMP", official_ref="26-1",
+                                                  source_url="https://www.boamp.fr/avis/detail/26-1"))
+    avis.dedup_key = "voirie|plouzane|2099-01-01"
+    monkeypatch.setattr(BoampSource, "search", lambda self, crit: [avis])
+    service = TenderSearchService([BoampSource(), MEGALIS])
+    crit = TenderCriteria(query="voirie", departements=["29"])
+    with caplog.at_level(logging.WARNING, logger="adjugo"):
+        resultats = [service.search(crit, {}, {}) for _ in range(4)]
+    for res in resultats:                                        # la recherche continue avec BOAMP
+        assert [t.acheteur for t in res["tenders"]] == ["Commune de Plouzané"]
+        err = next(e for e in res["errors"] if e.source == "Mégalis Bretagne")
+        assert "n'accepte pas" in err.message
+    assert requetes == ["AdjugoBot/1.0 (+https://adjugo.pro ; contact@adjugo.pro)"]   # une seule requête, honnête
+    alertes = [r for r in caplog.records if "refuse l'en-tête honnête" in r.getMessage()]
+    assert len(alertes) == 1                                     # un seul avertissement dans l'heure
+    assert not _CB.get("Mégalis Bretagne") or _CB["Mégalis Bretagne"]["fails"] == 0
+    assert not [r for r in caplog.records if "Disjoncteur sourcing ouvert" in r.getMessage()]
+
+
+def test_doc_autorisations_plateformes():
+    doc = (ROOT / "docs" / "AUTORISATIONS_PLATEFORMES.md").read_text(encoding="utf-8")
+    assert "Brouillon 1 — Mégalis Bretagne" in doc and "Brouillon 2 — PLACE" in doc and "AIFE" in doc
+    assert "AdjugoBot/1.0" in doc and "PLACE_ACTIF=1" in doc and "consortium" not in doc.lower()
+
+
+# ═══ 6. Liste des pièces : la signature n'est exigée au dépôt que si le règlement l'impose ═════════
+
+def test_liste_des_pieces_signature_juste(client, auth):
+    from app.routers.checklist import PIECES_STANDARD, SIGNATURE_AIDE
+    aide = {p["id"]: p["help"] for p in PIECES_STANDARD}
+    assert SIGNATURE_AIDE == "À signer si le règlement l'exige ; sinon, signature à l'attribution."
+    for pid in ("dc1", "dc2", "honneur"):
+        assert SIGNATURE_AIDE in aide[pid] and "dater et signer" not in aide[pid] and "et signer." not in aide[pid]
+    assert "à l'attribution" in aide["attri1"] and "avant signature" not in aide["attri1"]
+    h = auth["headers"]
+    projet = client.post("/api/projects/", headers=h, json={"name": "École", "client": "Ville"}).json()["id"]
+    items = {i["id"]: i for i in client.get(f"/api/checklist/{projet}", headers=h).json()["checklist"]}
+    assert SIGNATURE_AIDE in items["dc1"]["help"]
+    js = _static("app.js")
+    assert "et <b>signez</b> (acte d'engagement + déclaration sur l'honneur)" not in js
+    assert "<b>Signez-le si le règlement l'exige</b>" in js
+
+
+# ═══ 7. Lien de démonstration sans clé : « incomplet », pas « plus valide » ═════════════════════════
+
+def test_lien_demo_incomplet(tmp_path):
+    from tests.test_demo_lien_prive import _page_demo
+    page = _static("demo.html")
+    carte = re.search(r'<section id="incomplet".*?</section>', page, re.S).group(0).replace("&nbsp;", " ")
+    assert "Ce lien est incomplet : il manque la clé après le signe #." in carte
+    assert "Copiez le lien en entier depuis le message reçu." in carte
+    r = _page_demo(tmp_path, "", None)                      # adresse sans « # »
+    assert r["visibles"] == ["incomplet"] and r["appels"] == []
+    r = _page_demo(tmp_path, "", "perime")                  # clé changée : refusée par le serveur
+    assert r["visibles"] == ["invalide"]
+    assert "Ce lien de démonstration n'est plus valide." in page

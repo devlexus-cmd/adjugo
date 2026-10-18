@@ -1771,7 +1771,7 @@ const __adjApp = createApp({
       this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.buyerLoading = true; this.ao.checklist = null; this.ao.group = null;
       this.ao.qa = []; this.ao.qaInput = ""; this.ao.grilleBusy = ""; this.ao.atl = _atlCardInit(); this.ao.grp = _grpInit(); this.ao.conv = _convInit(); this.ao.pm = _pmInit(); this.ao.depot = _depotInit(); this.rinv = null;
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
-      this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
+      this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", lienCandidat: null, auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
       this.loadPredepot(p.id);   // état du wizard pré-dépôt propre à cet AO
       this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites(); this.aoLoadConsortium(); this.aoGrpLoad(); this.atlCardLoad();
@@ -2361,13 +2361,17 @@ const __adjApp = createApp({
       return { label: "Actif", cls: "go" };
     },
     async aoCreateInvite() {
-      const f = this.ao.share.form;
+      const lc = this.ao.share.lienCandidat;
+      const f = Object.assign({}, this.ao.share.form,
+        (lc && lc.nom === this.ao.share.form.company_name) ? { link_id: lc.id } : {});
       this.ao.share.busy = true;
       try {
         const inv = await this.api("POST", "/api/projects/" + this.ao.project.id + "/invites", f);
         this.ao.share.lastUrl = this.inviteUrl(inv);
         this.ao.share.form = { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 };
+        this.ao.share.lienCandidat = null;
         await this.aoLoadInvites();
+        if (f.link_id) this.aoLoadCotraitants();
         this.copyInvite(this.ao.share.lastUrl, true);
       } catch (e) { this.notify(e.message, "err"); }
       finally { this.ao.share.busy = false; }
@@ -2657,6 +2661,9 @@ const __adjApp = createApp({
       const pid = m && m.kind === "reseau" ? this._grpProfileId(m) : "";
       if (pid) { this.rnInviteOpen({ profile_id: pid, name: m.name }); return; }
       this.ao.share.form.company_name = (m && m.name) || ""; this.ao.share.open = true;
+      // Candidat déjà rattaché au marché : l'invitation lui sera liée (il entre dans les formulaires
+      // officiels quand il l'aura acceptée). Oublié si le nom de l'entreprise est changé à la main.
+      this.ao.share.lienCandidat = (m && m.link_id) ? { id: m.link_id, nom: this.ao.share.form.company_name } : null;
       this.$nextTick(() => { const el = this.$refs.reseauCard; if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" }); });
     },
     // Identifiant de profil d'un membre « reseau » de la composition retenue (le plan ne le garde pas) :

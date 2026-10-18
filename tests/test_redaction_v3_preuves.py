@@ -651,8 +651,8 @@ def test_la_demo_ne_peut_rien_ecrire(client):
     hd = _h(r.json()["access_token"])
     assert client.get("/api/preuves", headers=hd).status_code == 200
     r = _creer(client, hd, nature="materiel", valeur={"designation": "Nacelle"})
-    assert r.status_code == 403 and r.json()["detail"] == ("La démo est en lecture guidée : créez votre compte "
-                                                           "gratuit pour renseigner vos preuves.")
+    assert r.status_code == 403 and r.json()["detail"] == ("La démo est en lecture guidée : commencez votre essai "
+                                                           "gratuit de 30 jours pour renseigner vos preuves.")
     for method, url in [("patch", "/api/preuves/1"), ("delete", "/api/preuves/1"), ("post", "/api/preuves/1/accepter"),
                         ("post", "/api/preuves/1/retirer")]:
         r = getattr(client, method)(url, headers=hd, **({"json": {}} if method != "delete" else {}))

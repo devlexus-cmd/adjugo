@@ -492,6 +492,9 @@ class InviteCreate(BaseModel):
     can_view_docs: bool = True
     can_contribute: bool = True     # autorise la co-construction (apport de sa part)
     expires_days: int = 30          # 0 = sans expiration
+    # Rattachement au marché (candidat retenu, sans invitation) que cette invitation concerne : il
+    # porte désormais l'invitation, et n'entre dans les formulaires qu'une fois celle-ci acceptée.
+    link_id: Optional[int] = None
 
 
 def _owned_project(pid: int, user: User, db: Session) -> Project:
@@ -714,6 +717,14 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
                                   recipient=body.recipient, company_name=body.company_name,
                                   role=body.role, can_view_docs=body.can_view_docs,
                                   can_contribute=body.can_contribute, expires_days=body.expires_days)
+    if body.link_id:
+        # Candidat déjà rattaché au marché (sans invitation, hors sous-traitant) : il porte l'invitation.
+        from app.routers.cotraitants import ProjectCotraitant
+        lk = db.query(ProjectCotraitant).filter(ProjectCotraitant.id == body.link_id,
+                                                ProjectCotraitant.project_id == project.id).first()
+        if lk is not None and not lk.invite_id and (lk.role or "") != "sous_traitant":
+            lk.invite_id = inv.id
+            db.commit()
     out = _serialize_invite(inv)
     out["url"] = str(request.base_url).rstrip("/") + out["path"]
     out["emailed"] = emailed

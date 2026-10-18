@@ -375,7 +375,7 @@ def guard_off(monkeypatch):
 def _demo_403(r, what="inviter un"):
     assert r.status_code == 403, r.text
     d = r.json()["detail"]
-    assert d.startswith("La démo est en lecture guidée : créez votre compte gratuit pour ") and what in d, d
+    assert d.startswith("La démo est en lecture guidée : commencez votre essai gratuit de 30 jours pour ") and what in d, d
 
 
 def test_demo_invitations_refusees_en_profondeur(client, demo, mails, guard_off):
