@@ -171,12 +171,21 @@ fait, lancer l'aide, envoyer, valider, rétablir, valider le dossier) exigent l'
   n'est rendue qu'UNE fois : l'écran la garde dans le navigateur (localStorage) ;
 - déjà ouvert → 409 `espace_deja_ouvert` (`code_possible` : un code peut être envoyé à l'adresse de
   l'invitation) ;
+- lien sans adresse dont l'espace est déjà ouvert : le RATTACHER à un compte (`POST /api/invite/{token}/claim`) exige
+  la clé de cet espace (en-tête `X-Adjugo-Espace`, envoyé par la page du lien et par l'application depuis le
+  navigateur qui la garde), sinon 409 `espace_a_prouver` (« ouvrez-le dans le navigateur où vous rédigez votre
+  partie… ») : un second compte ouvert par le chef de file ne prend ni les brouillons ni l'espace du partenaire
+  (§ 20). Un lien qui vise une adresse se rattache, comme avant, par le compte de cette adresse, prouvée ;
 - `{code}` (code reçu par `POST /api/invite/{token}/otp/request`) → nouvelle clé, brouillons GARDÉS,
   adresse prouvée (comme `otp/verify`) ;
 - `{reinitialiser: true}` → nouvelle clé, brouillons non envoyés EFFACÉS (celui qui réinitialise ne lit
   jamais rien), adresse de l'invitation à PROUVER DE NOUVEAU (`verified_at` remis à vide : quand le lien
   vise une adresse, envoyer ou valider exige alors le code reçu par le partenaire), inscrit au journal du
   membre (« Votre espace privé de rédaction a été réinitialisé… »).
+Relire un fait (« relu par vous ») d'un brouillon qui EST le texte commun vaut pour ce texte (lu par le chef de
+file, il bloque l'export) : même exigence d'identité qu'un envoi (403 `identity_unverified` quand le lien vise une
+adresse pas encore prouvée), inscrit au journal chaîné (`redaction.fait_relu`, `redaction.fait_a_relire`) ; la
+relecture d'un brouillon privé reste privée (ni identité, ni journal).
 Sans clé valide : 403 `cle_espace_requise` sur les actions ; les lectures rendent ce qui est commun
 (`brouillon: null`, `brouillons: []`, `espace.cle_valide: false`). Par le compte (`/api/shared/…`) :
 aucune clé, le compte suffit (voie recommandée).
@@ -515,11 +524,15 @@ en cours au redémarrage est close par l'ancien code mais son débit n'est pas r
   rien, ne réinitialise rien et ne lit rien. Lien qui vise une adresse : la première ouverture exige déjà le
   code envoyé à cette adresse. Le chef de file qui détient le lien peut encore RÉINITIALISER un espace déjà
   ouvert : il efface alors les brouillons non envoyés sans jamais les lire, et quand le lien vise une adresse
-  il ne peut ensuite ni lancer l'aide de l'IA, ni envoyer, ni valider à sa place (le code va au partenaire) ;
+  il ne peut ensuite ni lancer l'aide de l'IA, ni envoyer, ni valider, ni relire un fait du texte envoyé à sa place
+  (le code va au partenaire) ;
   quand le lien ne vise AUCUNE adresse (lien transmis à la main), rien ne distingue le chef de file du
   partenaire qui ouvre l'espace le premier : c'est inscrit au journal du membre (« espace ouvert », « espace
   réinitialisé »), le partenaire qui trouve son espace déjà ouvert le réinitialise (la clé de l'autre ne vaut
-  plus), et l'écran recommande le compte (« Partagé avec moi ») ou une invitation avec adresse.
+  plus), et l'écran recommande le compte (« Partagé avec moi ») ou une invitation avec adresse. Un espace ouvert ne
+  se rattache à un compte qu'avec sa clé (§ 3.1) : le chef de file ne le prend pas par un second compte. Un lien sans
+  adresse reste un lien au porteur : celui qui le rattache le PREMIER à un compte, avant toute ouverture de l'espace,
+  devient le partenaire (comme pour la part de co-traitance depuis la vague 2).
 - La clé de l'espace est gardée par le navigateur : un autre appareil la récupère par le code reçu par
   email (si le lien vise une adresse), sinon par réinitialisation.
 - Le contrôle des faits dit où un fait est écrit, pas qu'il est vrai ; une phrase générale passe.
@@ -961,3 +974,59 @@ migration.
   747 verts ; seul échec, déjà connu et propre à SQLite : `test_hotfix_v2_fuites.py::test_fourche_historique_toleree_
   alteration_detectee` (journal écrit pour un compte inexistant, refusé par la clé étrangère de Postgres).
 
+
+## 20. Contre-relecture des corrections (cloisonnement, anti-invention)
+
+Six remarques (4 majeures, 2 mineures), toutes reproduites par un test qui échouait sur `6a040d2`
+(`tests/test_redaction_v4_contre_relecture.py`, 11 tests dont 10 échouaient avant ; le onzième garde le
+rattachement libre d'un lien jamais ouvert). Aucune rejetée, aucune migration.
+
+### 20.1 Cloisonnement
+
+| constat | correction |
+|---|---|
+| Lien sans adresse : un second compte (celui du chef de file, au nom d'une autre entreprise) rattachait le lien alors que le partenaire y rédigeait déjà ; il lisait ses brouillons privés, lançait l'aide de l'IA, envoyait à sa place, et le partenaire perdait son espace sans recours (clé morte, réinitialisation refusée) | Espace du lien ouvert : `POST /api/invite/{token}/claim` exige la clé de l'espace (`X-Adjugo-Espace`), sinon 409 `espace_a_prouver` (« ouvrez-le dans le navigateur où vous rédigez votre partie… ») ; la page du lien et l'application joignent la clé gardée par le navigateur ; le journal note « clé présentée ». Le partenaire garde son espace ; il rattache son lien depuis son navigateur (ses brouillons suivent son compte) |
+| Lien qui vise une adresse : après une réinitialisation, le chef de file recopiait le texte commun dans un brouillon et marquait chaque fait « relu » ; la relecture passait au texte commun, l'export n'était plus bloqué, sans trace au journal | Relire un fait d'un brouillon qui EST le texte commun exige l'identité comme un envoi (403 `identity_unverified`, l'écran demande le code) et s'inscrit au journal chaîné (`redaction.fait_relu`, `redaction.fait_a_relire`, journal du membre) ; un brouillon privé reste privé (ni identité, ni journal) |
+| Export RGPD (`/api/rgpd/export`) d'un membre retiré de l'organisation du partenaire : extraits et noms de documents de son ancienne organisation | `exporter_partenaire` filtre comme la route d'export (`_matiere_du_compte` : extraits et preuves de l'organisation ACTUELLE du compte) ; ses brouillons et ses textes envoyés restent |
+
+### 20.2 Anti-invention
+
+| constat | correction |
+|---|---|
+| Unités courtes et ordinaux (« 3e », « 30t », « 48h ») : clé d'une lettre cherchée en début de mot ; tout mot en « e », « t », « h » près du même nombre appuyait le fait (« 3 électriciens » appuyait « la 3e intervention », y compris en mode « raccourci », présenté comme « repris du texte de départ ») | `faits_a_relire._unit_key` : t → tonne, h → heure, j → jour, min/mn → minute ; un ordinal a sa clé (`ORDINAL`) et n'est appuyé que par un ordinal (« 3e », « troisième », « 1er », « premier ») ; une clé courte ne vaut qu'en mot entier ; le nombre et son unité se rapprochent dans la MÊME phrase de la même source (la fenêtre ne traverse plus une fin de phrase ni une autre source : « 30 tuiles par heure. » puis « 48 habitants » n'appuient plus « 48h ») |
+| Transitions : superlatifs et exclusivité (« le seul », « l'unique », « le meilleur »), périodes (« vacances scolaires », « avant l'été », « période estivale », « dès la signature du marché »), « sans aucune sous-traitance », « en horaires décalés », « en astreinte » passaient | `controle_transition` : superlatifs, exclusivité et renommée (seul, unique, meilleur, la référence, le plus/la plus…, spécialiste, reconnu…), périodes de l'année et délais comptés depuis un acte du marché, totalité et constance (aucun, entièrement, toujours, jamais…), organisation du travail (astreinte, permanence, horaires décalés, sous-traitance, délais) ; consigne de l'harmonisation précisée (moins de phrases payées puis jetées) |
+| Les locutions « dans un second temps », « en premier lieu », « le premier volet » étaient refusées comme des rangs (phrases payées puis jetées) | Retirées avant la recherche d'un rang (`_CONNECTEURS_RANG` : lieu, temps, volet, point, axe, aspect, chapitre, partie, section…) ; « le premier désamianteur » reste refusé ; une liste de bonnes transitions doit passer (tests) |
+
+Suggestion non retenue : inverser la règle des transitions (refuser tout mot absent du dossier hors d'une courte liste
+de connecteurs). Le vocabulaire d'une transition est ouvert (« s'agissant », « retenue », « précise », « détaille ») :
+la plupart des bonnes phrases seraient refusées, donc payées puis jetées, contre la règle d'Eliot (économiser l'IA sans
+baisser la qualité). La liste des mots qui portent un fait est élargie à la place, et chaque partie touchée reste « à
+revalider » par son auteur.
+
+### 20.3 À dire à Eliot (choix faits par défaut)
+
+1. Un partenaire qui a commencé à rédiger par son lien (sans adresse) et veut passer à son compte le fait depuis le
+   même navigateur ; sinon il réinitialise d'abord son espace sur l'autre appareil (ses brouillons non envoyés sont
+   effacés). C'est ce qui empêche le chef de file, qui a le lien, de prendre l'espace par un second compte.
+2. Relire un fait de la partie envoyée demande le code reçu par email (lien qui vise une adresse), comme envoyer.
+3. Les transitions refusent davantage de mots (superlatifs, périodes, organisation du travail) ; les locutions qui ne
+   classent rien passent.
+
+### 20.4 Vérifications
+
+- `tests/test_redaction_v4_contre_relecture.py` : 10 tests sur 11 échouaient sur `6a040d2` (reproduction de chaque
+  remarque), tous passent. Trois tests existants suivent la nouvelle règle sans être affaiblis : le rattachement se
+  fait depuis le navigateur qui a la clé (`test_isolation_entre_deux_groupements`,
+  `test_harmoniser_ne_transmet_jamais_le_cv…`) ; « clé prise avant le rattachement » joué sur un lien qui vise
+  l'adresse du compte (`test_cle_prise_avant_le_rattachement_ne_vaut_plus`).
+- Suite complète verte (SQLite) : 1 619 tests ; empreintes SRI à jour (`scripts/sri_update.py --check`), `node --check`
+  sur `app.js`, `redaction-partenaire.js` et le script de `invite.html`.
+- Postgres 16 depuis l'état EXACT de la production — `d6504e4` puis `0767372` (même tête `w7x8analysepartagee`) —
+  script `scratchpad/pgtest/run_v4_contre_relecture_depuis_prod.py` (TZ=UTC) : données créées par le code de
+  production, une seule révision appliquée (`x8y9redactionv4`), aucune donnée perdue, seconde montée et rejeu forcé
+  sans effet, code de production redémarré sur la base montée, schéma identique à une base neuve, retour arrière et
+  remontée : tous verts. Tests rejoués sur la base montée depuis `0767372` : 974, dont 972 verts ; les deux échecs
+  existent à l'identique sur `6a040d2` (même liste, même base) et ne touchent pas ce chantier :
+  `test_hotfix_v2_fuites.py::test_fourche_historique_toleree_alteration_detectee` (déjà connu, propre à SQLite) et
+  `test_reseau_partenaires.py::test_cron_borne_et_jamais_de_depublication_sur_erreur` (dépend de l'ordre quand toute la
+  liste partage une base Postgres ; le fichier seul passe en entier, 24 tests sur 24).
