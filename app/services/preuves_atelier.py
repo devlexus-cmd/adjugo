@@ -206,6 +206,27 @@ def _cv_par_forme(texte: str) -> list:
     return out
 
 
+def retirer_cv_par_forme(texte: str) -> str:
+    """Le texte SANS les CV écrits dans la forme d'un CV inséré : la tête « **Nom**, fonction » et le bloc de lignes
+    qui la suit (« Expérience : 15 ans », « Diplômes : … »). Pour ne remettre à l'IA que le reste d'un passage
+    (harmonisation) ; un CV qui resterait reconnaissable (`cv_presents`) fait retenir tout le passage."""
+    lignes = str(texte or "").split("\n")
+    liste = re.compile(r"^\s*[-*•]")
+    jeter = set()
+    for i, ligne in enumerate(lignes):
+        if not _LIGNE_CV.match(ligne):
+            continue
+        a = b = i
+        while a - 1 >= 0 and liste.match(lignes[a - 1]) and not _TETE_CV.match(lignes[a - 1]):
+            a -= 1
+        while b + 1 < len(lignes) and liste.match(lignes[b + 1]) and not _TETE_CV.match(lignes[b + 1]):
+            b += 1
+        jeter.update(range(a, b + 1))
+        if a - 1 >= 0 and _TETE_CV.match(lignes[a - 1]):
+            jeter.add(a - 1)
+    return "\n".join(ln for k, ln in enumerate(lignes) if k not in jeter)
+
+
 def cv_presents(db, owner_id: int, texte: str) -> list:
     """Noms des personnes dont un CV figure dans le texte : une ligne de CV d'une fiche « Équipe » de
     l'organisation (« Expérience : 15 ans », « Diplômes : … »), quel que soit son statut, OU un bloc

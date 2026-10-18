@@ -167,6 +167,8 @@ def rafraichir_generees(db, project: Project, dossier: DossierPresentation) -> i
             n += 1
     if n:
         ag.apres_changement_commun(db, project, dossier, "partie tirée du groupement mise à jour")
+    if ORGA in secs:
+        synchroniser_orga(db, secs[ORGA])
     if QFQ in secs:
         synchroniser_qfq(db, project, dossier, secs[QFQ])
     return n
@@ -497,10 +499,6 @@ def _qfq_vals(db, dossier: DossierPresentation) -> dict:
         DossierValidation.dossier_id == dossier.id, DossierValidation.membre_cle.like(PREFIXE_QFQ + "%"))}
 
 
-def est_validation_qfq(v) -> bool:
-    return str(getattr(v, "membre_cle", "") or "").startswith(PREFIXE_QFQ)
-
-
 def qfq_validations(db, project: Project, dossier: DossierPresentation, section: Optional[DossierSection] = None) -> list:
     """[{membre, invite_id, nom, statut valide|a_revalider|a_faire, statut_libelle, le}] de « Qui fait quoi »."""
     section = section or qfq_de(db, dossier)
@@ -554,16 +552,39 @@ def synchroniser_qfq(db, project: Project, dossier: DossierPresentation, section
         db.commit()
 
 
+def _orga_tient(db, section: DossierSection) -> bool:
+    """« Organisation du groupement » validée par le chef de file vaut pour LA convention qu'il avait sous les yeux,
+    validée par tous : une convention régénérée (autre version), en attente d'accords ou périmée la fait repasser
+    « à revalider », même si le texte de la partie est identique (le prix, par exemple, n'y figure pas)."""
+    from app.services import groupement_convention as gc
+    conv = gc.get_convention(db, section.project_id)
+    d = db.get(DossierPresentation, section.dossier_id)
+    meta = (d.plan_meta or {}).get("orga_validation") if d is not None and isinstance(d.plan_meta, dict) else None
+    return bool(conv is not None and conv.status == "signee" and isinstance(meta, dict)
+                and meta.get("convention_id") == conv.id and meta.get("version") == (conv.version or 0))
+
+
 def statut(db, section: DossierSection) -> str:
     """Statut d'une partie tirée du groupement : validée · à revalider (validée puis changée) · à valider."""
     cur = at.version_courante(db, section)
     if cur is None:
         return ag.A_REDIGER
     if section.statut == at.VALIDE and section.validated_hash == cur.empreinte:
+        if section.source_plan == ORGA and not _orga_tient(db, section):
+            return ag.A_REVALIDER
         return ag.VALIDEE
     if section.statut == at.A_REVALIDER:
         return ag.A_REVALIDER
     return A_VALIDER
+
+
+def synchroniser_orga(db, section: DossierSection) -> None:
+    """L'état stocké de « Organisation du groupement » suit sa convention (export, dossier commun) : validée par le
+    chef de file, puis convention changée → « à revalider »."""
+    if section.statut == at.VALIDE and not _orga_tient(db, section):
+        section.statut = at.A_REVALIDER
+        section.lock_version = (section.lock_version or 0) + 1
+        db.commit()
 
 
 def valider(db, project: Project, dossier: DossierPresentation, section: DossierSection, *, membre: str,
@@ -601,6 +622,11 @@ def valider(db, project: Project, dossier: DossierPresentation, section: Dossier
         section.validated_version_id, section.validated_hash = cur.id, cur.empreinte
         section.validated_at, section.validated_by = utcnow(), user_id
         section.lock_version = (section.lock_version or 0) + 1
+        # La convention validée qu'il avait sous les yeux : une autre ensuite fera repasser la partie « à revalider ».
+        meta = dict(dossier.plan_meta) if isinstance(dossier.plan_meta, dict) else {}
+        meta["orga_validation"] = {"convention_id": conv.id, "version": conv.version or 0}
+        dossier.plan_meta = meta
+        flag_modified(dossier, "plan_meta")
         db.commit()
     else:
         cle = ag.CHEF if membre == ag.CHEF else f"invitation:{int(invite_id)}"
@@ -686,6 +712,41 @@ STATUTS_GENERES = {ag.A_REDIGER: "À rédiger", A_VALIDER: "À valider", ag.A_RE
                    ag.VALIDEE: "Validée"}
 
 
+def _et(noms: list) -> str:
+    return noms[0] if len(noms) == 1 else ", ".join(noms[:-1]) + " et " + noms[-1]
+
+
+def part_out(db, s: DossierSection) -> dict:
+    """Le statut d'une partie tirée du groupement pour l'onglet « Rédaction » du chef de file (le même que dans « Qui
+    écrit quoi ») et ce qu'elle attend de LUI : `a_valider_par_vous` (le bouton « Valider ») ; « Validée par vous ; à
+    valider par X » quand sa validation de « Qui fait quoi » est faite et qu'un partenaire doit encore la donner."""
+    st = statut(db, s)
+    out = {"statut": st, "statut_libelle": STATUTS_GENERES.get(st, ""), "mention": "", "a_valider_par_vous": False}
+    cur = at.version_courante(db, s)
+    if st == ag.VALIDEE or cur is None or me.placeholders(cur.texte or ""):
+        return out
+    if s.source_plan == ORGA:
+        from app.services import groupement_convention as gc
+        conv = gc.get_convention(db, s.project_id)
+        if conv is not None and conv.status == "signee":
+            out["a_valider_par_vous"] = True
+        elif conv is not None and conv.status == "a_signer":
+            noms = _accords_en_attente(db, conv)
+            if noms:
+                out["mention"] = "La convention attend encore l'accord de " + _et(noms)
+        return out
+    project, dossier = db.get(Project, s.project_id), db.get(DossierPresentation, s.dossier_id)
+    vals = qfq_validations(db, project, dossier, s)
+    moi = next((x for x in vals if x["invite_id"] is None), None)
+    if moi is None or moi["statut"] != "valide":
+        out["a_valider_par_vous"] = True
+        return out
+    autres = [x["nom"] for x in vals if x["invite_id"] and x["statut"] != "valide"]
+    if autres:
+        out["mention"] = "Validée par vous ; à valider par " + _et(autres)
+    return out
+
+
 def ligne_chef(db, project: Project, dossier: DossierPresentation, s: DossierSection, rang: str) -> dict:
     """La ligne de « Qui écrit quoi » d'une partie tirée du groupement (personne ne la rédige)."""
     cur = at.version_courante(db, s)
@@ -734,10 +795,22 @@ _MOIS = ("janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|nov
          "jeudi|vendredi|samedi|dimanche|trimestre|semestre|printemps|automne|hiver|quinzaine|"
          # une fréquence est un engagement de calendrier (« un suivi quotidien »)
          "quotidien(?:ne)?s?|quotidiennement|hebdomadaires?|mensuel(?:le)?s?|annuel(?:le)?s?|journaliers?|"
-         "journalieres?|chaque (?:jour|semaine|mois|annee)|tous les (?:jours|mois|ans)")
+         "journalieres?|chaque (?:jour|semaine|mois|annee)|tous les (?:jours|mois|ans)|"
+         # une période relative est un engagement de calendrier (« dès la rentrée », « l'an prochain », « la nuit »)
+         "rentree|an prochain|annee prochaine|mois prochain|semaine prochaine|nuits?|nocturnes?|week-ends?|weekends?|"
+         "jour meme|lendemain|matinees?|soirees?|toussaint|noel|paques")
 _DATE = re.compile(r"(?<![a-z])(?:" + _MOIS + r")(?![a-z])")
 _QUANTITE = re.compile(r"(?<![a-z])(?:moitie|tiers|quart|double|triple|quadruple|dizaines?|douzaines?|vingtaines?|"
-                       r"trentaines?|centaines?|milliers?|millions?|milliards?)(?![a-z])")
+                       r"trentaines?|centaines?|milliers?|millions?|milliards?|totalite|integralite)(?![a-z])")
+# Un rang (« le premier désamianteur », « leader ») est un fait sur l'entreprise, comme un nombre.
+_RANG = re.compile(r"(?<![a-z])(?:premier|premiere|premiers|premieres|deuxieme|second|seconde|troisieme|quatrieme|"
+                   r"cinquieme|sixieme|septieme|huitieme|neuvieme|dixieme|centieme|leader|numero un|n° ?1)(?![a-z])")
+# Un engagement, même à la troisième personne (« le groupement garantit », « une garantie décennale »), ou un délai
+# (« en moins d'une heure », « sous 48 heures ») : jamais dans une transition.
+_ENGAGE_T = re.compile(r"(?<![a-z])(?:garanti(?:t|ssent|ssons|e|es|r)|garanties?|s'engage(?:nt)?|engagements?|"
+                       r"assure(?:nt)?|promet(?:tent)?|en moins d|dans l'heure|sous (?:\w+ )?(?:heures?|jours?|"
+                       r"huitaine|quinzaine)|immediatement|sans delai|au plus tard|zero (?:defaut|reserve|accident))"
+                       r"(?![a-z])")
 # Mots qui ouvrent une phrase sans être un nom (la première lettre d'une phrase est toujours capitale).
 _OUVRANTS = {
     "a", "afin", "ainsi", "apres", "au", "aux", "avant", "avec", "c'est", "ce", "ces", "cet", "cette", "chacun",
@@ -747,10 +820,6 @@ _OUVRANTS = {
     "ses", "son", "sur", "tandis", "tout", "toute", "toutes", "tous", "un", "une", "voici", "pareillement",
     "complementairement", "dorenavant", "desormais", "egalement", "de meme", "en outre", "partant", "suivant",
 }
-
-
-def _fold_mots(texte: str) -> set:
-    return set(re.findall(r"[a-z0-9']+", far.fold(texte or "")))
 
 
 def controle_transition(texte: str, sources_avant) -> dict:
@@ -793,10 +862,16 @@ def controle_transition(texte: str, sources_avant) -> dict:
                     and not any(f["fait"].startswith(m.group(1)) for f in faits):
                 faits.append({"fait": m.group(1), "type": far.NOM_PROPRE})
     low = far.fold(t)
-    for rx, kind in ((_DATE, "date"), (_QUANTITE, "quantite")):
+    for rx, kind in ((_DATE, "date"), (_QUANTITE, "quantite"), (_RANG, far.EN_LETTRES), (_ENGAGE_T, fs.ENGAGEMENT)):
         for mm in rx.finditer(low):
             if not re.search(r"(?<![a-z])" + re.escape(mm.group(0)) + r"(?![a-z])", low_src):
                 faits.append({"fait": t[mm.start():mm.end()], "type": kind})
+    # Filet : un nombre écrit en chiffres que le dossier ne contient pas est un fait ajouté, quelle que soit sa forme
+    # (collé à son unité, ordinal, heure…).
+    for mm in re.finditer(r"\d+(?:[.,]\d+)?", t):
+        if not re.search(r"(?<![\d.,])" + re.escape(mm.group(0)) + r"(?![\d])", low_src) \
+                and not any(mm.group(0) in f["fait"] for f in faits):
+            faits.append({"fait": mm.group(0), "type": far.CHIFFRE})
     vus, uniq = set(), []
     for f in faits:
         k = (f["type"], far.fold(f["fait"]))
@@ -871,8 +946,8 @@ def lancer_harmonisation(db, user: User, project: Project, dossier: DossierPrese
         raise AtelierError(422, "rien_a_harmoniser", "Rien à harmoniser : il faut au moins deux parties qui se suivent, "
                                                      "écrites par des membres différents, avec du texte.")
     at._verifier_aucune_tache(db, [j["suivante"] for j in js if j["suivante"].author_kind == at.AUTEUR_ORG])
-    from app.services.budget_ia import estimer_atelier, verifier
-    estimation = estimer_atelier(1, raccourcir=True)
+    from app.services.budget_ia import estimer, verifier
+    estimation = estimer("harmoniser")         # enveloppe tirée de ses plafonds (JONCTIONS_MAX × deux extraits)
     verifier(user, db, "atelier", estimation)
     plan = [{"section_id": j["suivante"].id, "base_version_id": j["base"].id, "precedente_id": j["precedente"].id}
             for j in js]
@@ -914,17 +989,33 @@ def _extrait(texte: str, fin: bool) -> str:
     return ("… " + t[-EXTRAIT:]) if fin else (t[:EXTRAIT] + " …")
 
 
-def _sans_cv(db, owner_id: int, s: DossierSection, extrait: str) -> str:
-    """Aucun CV ne part à l'IA (doctrine § 7, règle 9) : un passage qui en contient un n'est pas transmis."""
+def _proprietaire(db, owner_id: int, s: DossierSection) -> int:
+    """Le tenant dont « Mes preuves » connaît l'équipe de l'auteur de la partie : le chef de file, ou l'organisation du
+    compte qui a rattaché le lien du partenaire (0 : partenaire sans compte, aucune fiche « Équipe » connue)."""
+    if s.author_kind != at.AUTEUR_INVITATION:
+        return owner_id
+    inv = db.get(ProjectInvite, s.author_invite_id) if s.author_invite_id else None
+    u = db.get(User, inv.accepted_by_user_id) if inv is not None and inv.accepted_by_user_id else None
+    if u is None:
+        return 0
+    from app.core.org import data_owner_id
+    return data_owner_id(u, db)
+
+
+MSG_PASSAGE_CV = "(passage non transmis : il contient un CV)"
+
+
+def _sans_cv(db, proprietaire: int, texte: str, fin: bool) -> str:
+    """Aucun CV ne part à l'IA (doctrine § 7, règle 9). Le CV est repéré sur le texte TEL QU'ÉCRIT (sa forme tient
+    aux lignes, que l'extrait aplatit) : les blocs en forme de CV sont retirés avant l'extrait ; s'il reste un CV
+    reconnaissable (une ligne d'une fiche « Équipe » de l'auteur), le passage n'est pas transmis."""
     from app.services import preuves_atelier as pa
     try:
-        if s.author_kind == at.AUTEUR_ORG:
-            cv = pa.cv_presents(db, owner_id, extrait)
-        else:
-            cv = pa._cv_par_forme(extrait)
+        t = pa.retirer_cv_par_forme(texte or "")
+        reste = pa.cv_presents(db, proprietaire or 0, t)
     except Exception:       # noqa: BLE001 — dans le doute, rien
-        cv = [""]
-    return "(passage non transmis : il contient un CV)" if cv else extrait
+        return MSG_PASSAGE_CV
+    return MSG_PASSAGE_CV if reste else _extrait(t, fin)
 
 
 def _executer(db, *, job_id: int, project_id: int, owner_id: int, member_ids: list, user_id: int, plan: list) -> dict:
@@ -955,16 +1046,30 @@ def _executer(db, *, job_id: int, project_id: int, owner_id: int, member_ids: li
         items.append({"id": str(n.id), "titre": ag.ax_titre(rangs.get(n.id, ""), n.intitule),
                       "titre_precedent": ag.ax_titre(rangs.get(prec.id, ""), prec.intitule),
                       "auteur": auteurs[_auteur(n)], "auteur_precedent": auteurs[_auteur(prec)],
-                      "fin_precedente": _sans_cv(db, owner_id, prec, _extrait(vp.texte if vp else "", True)),
-                      "debut": _sans_cv(db, owner_id, n, _extrait(corps, False))})
+                      "fin_precedente": _sans_cv(db, _proprietaire(db, owner_id, prec), vp.texte if vp else "", True),
+                      "debut": _sans_cv(db, _proprietaire(db, owner_id, n), corps, False)})
     if not items:
         j = db.get(Job, job_id)
+        debit = None
         if j is not None:
             at.rembourser(db, j)
-        return {"transitions": [], "ajoutees": 0, "refusees": 0,
+            db.refresh(j)
+            debit = (j.result or {}).get("_debit") if isinstance(j.result, dict) else None
+        # Le relevé reste dans le résultat : la tâche se relit par sa route (portée du dossier), et l'écran montre
+        # le message.
+        return {"transitions": [], "ajoutees": 0, "refusees": 0, "_debit": debit,
                 "message": "Les parties ont changé pendant la préparation : rien n'a été harmonisé, rien n'est décompté."}
     ctx = at.Contexte(db, project, owner_id, member_ids)
-    pz = ctx.pseudonymiseur([x["fin_precedente"] for x in items] + [x["debut"] for x in items])
+    # Noms des salariés de TOUS les partenaires qui ont un compte (profil, fiches « Équipe »), part de co-traitance
+    # soumise ou non : masqués seulement, rien n'est montré au chef de file.
+    from app.services.fiches_import import equipe_avec_noms_reperes
+    from app.services.groupement_members import active_invites
+    from app.services.pii import from_team, team_of_users
+    uids = [i.accepted_by_user_id for i in active_invites(db, project.id) if i.accepted_by_user_id]
+    equipes = team_of_users(db, uids) if uids else []
+    textes = [x["fin_precedente"] for x in items] + [x["debut"] for x in items]
+    pz = from_team(equipe_avec_noms_reperes(ctx.team + ctx.preuves_team + ctx.partner_team + equipes, textes,
+                                            exclure=ctx.noms_entreprise))
     with pii_scope(pz), cost_meter("atelier : harmoniser", owner_id) as cm:
         r = moteur.harmoniser_transitions(items, billing_id=owner_id)
     if r.get("erreur"):

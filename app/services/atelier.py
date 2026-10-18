@@ -2682,7 +2682,22 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
                        if cpt_section else None)
     if s.author_kind == AUTEUR_INVITATION and not prive:
         out["part"] = _part_out(db, s, out["auteur"]["libelle"])
+    elif est_generee(s):
+        out["part"] = _part_genere_out(db, s)
     return out
+
+
+def _part_genere_out(db, s: DossierSection) -> Optional[dict]:
+    """Vague 4 (assemblage) : une partie tirée du groupement porte, dans l'atelier, le statut de « Qui écrit quoi »
+    (à valider · à revalider · validée) et ce qu'elle attend du chef de file (« Validée par vous ; à valider par
+    X »). Lecture seule ; jamais bloquante."""
+    try:
+        from app.services import atelier_assemblage as asm
+        return asm.part_out(db, s)
+    except Exception as e:      # noqa: BLE001
+        logger.warning("atelier : statut de la partie tirée du groupement illisible (partie %s) : %s", s.id,
+                       type(e).__name__)
+        return None
 
 
 def _part_out(db, s: DossierSection, nom: str) -> Optional[dict]:

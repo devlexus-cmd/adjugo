@@ -2180,7 +2180,7 @@
                     </div>
                     <details v-if="atlSec().question" class="atl-det atl-mt8"><summary>Ce que demande l'acheteur</summary><blockquote class="atl-q">{{ atlSec().question }}</blockquote></details>
                     <div v-if="atlSec().validation" class="muted small atl-mt4">Validée le {{ atlWhen(atlSec().validation.le) }}<template v-if="atlSec().statut==='a_revalider'"> : le texte a changé depuis, validez de nouveau.</template></div>
-                    <div v-if="!atlSec().peut_ecrire && atlSec().genere" class="row wrap atl-g6 atl-mt8"><span class="muted small" style="flex:1;min-width:0">{{ atlSec().auteur.libelle }}, sans IA. Elle se met à jour toute seule.</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">D'où vient cette partie</span><span class="tip-b" role="tooltip">Adjugo l'écrit à partir de la convention et des parts des membres. Pour la changer, modifiez la convention ou la part du membre concerné.<template v-if="atlSec().genere === 'grp_qfq'"> Chaque membre du groupement la valide. Elle dit ce que chacun apporte, jamais ce qui manque.</template><template v-else> Vous la validez une fois la convention validée par tous les membres.</template></span></button><button v-if="atlSec().version_courante && atlSec().statut !== 'valide' && !atlSec().a_completer" type="button" class="btn sm" @click="atlValider()" :disabled="!!atl.busy"><i data-lucide="check"></i>Valider</button></div>
+                    <div v-if="!atlSec().peut_ecrire && atlSec().genere" class="row wrap atl-g6 atl-mt8"><span class="muted small" style="flex:1;min-width:0">{{ atlSec().auteur.libelle }}, sans IA. Elle se met à jour toute seule.</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">D'où vient cette partie</span><span class="tip-b" role="tooltip">Adjugo l'écrit à partir de la convention et des parts des membres. Pour la changer, modifiez la convention ou la part du membre concerné.<template v-if="atlSec().genere === 'grp_qfq'"> Chaque membre du groupement la valide. Elle dit ce que chacun apporte, jamais ce qui manque.</template><template v-else> Vous la validez une fois la convention validée par tous les membres.</template></span></button><button v-if="atlSec().part ? atlSec().part.a_valider_par_vous : (atlSec().version_courante && atlSec().statut !== 'valide' && !atlSec().a_completer)" type="button" class="btn sm" @click="atlValider()" :disabled="!!atl.busy"><i data-lucide="check"></i>Valider</button><span v-else-if="atlSec().part && atlSec().part.mention" class="muted small" style="flex-basis:100%">{{ atlSec().part.mention }}.</span></div>
                     <div v-else-if="!atlSec().peut_ecrire" class="muted small atl-mt4">Partie rédigée par : {{ atlSec().auteur.libelle }}. {{ atlSec().part && atlSec().part.mention ? atlSec().part.mention + '.' : (atlSec().version_courante ? "Vous lisez le texte qu'il a envoyé." : "Rien d'envoyé pour l'instant.") }}<template v-if="atlGrp()"> <button type="button" class="atl-lien" @click="atlRepVoir(atlSec().id)">Le modifier ou l'écrire à sa place</button></template></div>
                   </div>
 
@@ -2345,7 +2345,8 @@
                 </template>
                 <div v-else-if="atlSec()" class="atl-pad atl-mt12">
                   <div v-if="atlRepCompteurs(atlSec().version_courante)" class="small">{{ atlRepCompteurs(atlSec().version_courante) }}</div>
-                  <div class="muted small atl-mt4">Les extraits et les faits à relire de cette partie restent chez son auteur.</div>
+                  <div v-if="atlSec().genere" class="muted small atl-mt4">Écrite par Adjugo sans IA : aucune source ni extrait.</div>
+                  <div v-else class="muted small atl-mt4">Les extraits et les faits à relire de cette partie restent chez son auteur.</div>
                   <div v-if="atlRenvoisPart(atlSec())" class="muted small atl-mt4">Les renvois (F1, S2…) du texte désignent des sources du partenaire : elles restent chez lui.</div>
                 </div>
               </aside>
@@ -3254,7 +3255,7 @@
                 <!-- « À valider » : convention générée, MON accord attendu (statut seulement, jamais un montant) -->
                 <span v-if="s.groupement && s.groupement.a_valider" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="file-signature" style="width:11px;height:11px"></i>Convention à valider</span>
                 <!-- Rédaction, vague 4 : mes parties du dossier de présentation (statuts seulement) -->
-                <span v-if="s.redaction && (s.redaction.a_faire || s.redaction.a_revalider)" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="pen-line" style="width:11px;height:11px"></i>{{ sharedRedLine(s.redaction) }}</span>
+                <span v-if="s.redaction && (s.redaction.a_faire || s.redaction.a_revalider || s.redaction.a_valider)" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="pen-line" style="width:11px;height:11px"></i>{{ sharedRedLine(s.redaction) }}</span>
                 <span class="pill" :class="s.contribution_status==='submitted'?'go':s.contribution_status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ s.contribution_status==='submitted'?'Soumise':s.contribution_status==='draft'?'Brouillon':'À compléter' }}</span>
                 <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-2)"></i>
               </div>
@@ -3470,6 +3471,8 @@
             <div class="row wrap" style="gap:8px;margin-top:13px;align-items:center">
               <button class="btn" @click="sharedSave()" :disabled="sharedAo.busy"><span v-if="sharedAo.busy" class="spin"></span><i v-else data-lucide="save"></i>Enregistrer le brouillon</button>
               <button class="btn primary" @click="sharedSubmit()" :disabled="sharedAo.busy"><i data-lucide="send"></i>Soumettre au chef de file</button>
+              <!-- Rédaction, vague 4 (assemblage) : la part soumise d'un co-traitant nourrit « Qui fait quoi dans le groupement », lue par tous les membres (décision 3a). Jamais pour un sous-traitant. -->
+              <button v-if="sharedAo.role !== 'sous_traitant'" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Ce que lisent les membres</span><span class="tip-b" role="tooltip">Une fois soumis, votre lot, vos qualifications et votre effectif sont repris dans la partie « Qui fait quoi dans le groupement » du dossier de présentation, que lisent tous les membres du groupement. Vos pièces, vos prix et votre détail chiffré n'y figurent jamais.</span></button>
             </div>
           </div>
 
@@ -3811,7 +3814,7 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/redaction-partenaire.js" integrity="sha384-uR05WeOdhU5uB8VBnlKP+R55E01EsoNADjrUGyR9rtAZedSNdACoCmwDKM91NY5T" defer></script>
-<script src="/static/app.js" integrity="sha384-QdtCmNyUU3FaOmGChsbAiKLsA+5OkUCNPMISC/mG/o9E1sVeuNyIg4uwDqYQKwyL" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-DRt+lPC5F7RUQHI4i6uNOSxoH5PSzZULDXvOj8lGXsXfOtqHQji+nRuuYD1rEd01" defer></script>
+<script src="/static/app.js" integrity="sha384-i0TaHm7rav5XAu6C/UgtVUHTMZCWXwXpZ5KKyhYil92mQZBbAnd65Y+DQQF3w1A8" defer></script>
 </body>
 </html>

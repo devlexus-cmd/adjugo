@@ -301,7 +301,7 @@ class Index:
             v = far._num_value(m.group(1), m.group(2))
             if v != v:
                 continue
-            unit = m.group(3) or ""
+            unit = far.unite_de(m)
             b = m.end()
             if unit and far.fold(unit) in far._PAS_UNITE:
                 unit = ""
@@ -1233,7 +1233,7 @@ def proposition_declaration(item: dict) -> dict:
         # Le mot compté : celui qui suit le nombre (« 15 compagnons » → « compagnons »).
         if kind == far.CHIFFRE:
             m = far._NUMBER.match(fait.strip())
-            mot = (m.group(3) or "") if m else ""
+            mot = far.unite_de(m)
         else:
             m = re.search(re.escape(fait) + r"\s+([^\s\d.,;:()]{2,30})", phrase)
             mot = m.group(1) if m else ""

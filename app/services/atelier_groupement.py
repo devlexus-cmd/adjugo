@@ -619,50 +619,76 @@ MSG_CLE_REQUISE = ("Ouvrez votre espace privé sur cet appareil pour lire vos br
 MSG_ESPACE_OUVERT = ("Votre espace privé est déjà ouvert sur un autre appareil. Saisissez le code reçu par email "
                      "pour l'ouvrir ici, ou réinitialisez-le : vos brouillons non envoyés seront alors effacés (vos "
                      "textes envoyés restent).")
+MSG_ESPACE_COMPTE = ("Ce lien est rattaché à un compte Adjugo : rédigez vos parties depuis ce compte, dans « Partagé "
+                     "avec moi ». Vos brouillons y sont, sans rien à ouvrir.")
+MSG_CODE_REQUIS = ("Votre invitation vise une adresse email : recevez un code à cette adresse pour ouvrir votre espace "
+                   "privé sur cet appareil.")
 
 
 def _hash_cle(cle: str) -> str:
     return hashlib.sha256(("adjugo-espace:" + (cle or "")).encode("utf-8")).hexdigest()
 
 
+def par_le_compte(inv: ProjectInvite) -> bool:
+    """Le lien est rattaché à un compte Adjugo (« Partagé avec moi ») : sa matière privée et ses actions passent
+    par ce compte seulement. Le chef de file détient le lien d'une invitation : par le lien, plus aucun espace."""
+    return bool(getattr(inv, "accepted_by_user_id", None))
+
+
 def cle_valide(inv: ProjectInvite, cle: Optional[str]) -> bool:
+    """La clé de l'espace privé du lien. Un lien rattaché à un compte n'a plus d'espace par le lien : une clé prise
+    avant le rattachement (par qui que ce soit, le chef de file compris) ne vaut plus rien."""
     import hmac
+    if par_le_compte(inv):
+        return False
     h = getattr(inv, "espace_hash", "") or ""
     return bool(h and cle) and hmac.compare_digest(_hash_cle(str(cle).strip()), h)
+
+
+def _verifier_code(db, inv: ProjectInvite, code: str) -> None:
+    """Le code reçu à l'adresse de l'invitation (otp/request) : il prouve l'adresse, comme otp/verify."""
+    from app.routers.invites import _OTP_MAX_ATTEMPTS, _binding_required, _hash_otp, _is_expired, _mark_network_accepted
+    if not _binding_required(inv) or not inv.otp_hash or not inv.otp_expires_at or _is_expired(inv.otp_expires_at):
+        raise AtelierError(400, "code_absent", "Aucun code en attente : demandez d'abord un code.")
+    if (inv.otp_attempts or 0) >= _OTP_MAX_ATTEMPTS:
+        raise AtelierError(429, "trop_de_tentatives", "Trop de tentatives. Demandez un nouveau code.")
+    if _hash_otp(str(code).strip()) != inv.otp_hash:
+        inv.otp_attempts = (inv.otp_attempts or 0) + 1
+        db.commit()
+        raise AtelierError(400, "code_incorrect", "Code incorrect.")
+    inv.otp_hash, inv.otp_expires_at = "", None
+    inv.verified_at, inv.verified_email = utcnow(), inv.recipient
+    _mark_network_accepted(inv)
 
 
 def ouvrir_espace(db, inv: ProjectInvite, *, code: Optional[str] = None, reinitialiser: bool = False,
                   ip: str = "") -> dict:
     """Ouvre l'espace privé du lien et rend sa clé (une seule fois) :
-      • première ouverture : une nouvelle clé ;
+      • lien rattaché à un compte Adjugo : refusé (403 « espace_par_le_compte ») — le compte suffit, et le chef
+        de file qui détient le lien n'ouvre rien à sa place ;
+      • première ouverture : une nouvelle clé ; quand le lien vise une adresse, seulement avec le code reçu à
+        cette adresse (409 « code_requis » sinon) : celui qui a seulement le lien n'ouvre rien ;
       • déjà ouvert, avec le code reçu à l'adresse de l'invitation (otp/request) : une nouvelle clé,
         brouillons GARDÉS (l'adresse est prouvée) ;
       • déjà ouvert, `reinitialiser` : une nouvelle clé, brouillons non envoyés EFFACÉS ;
       • sinon 409 « espace_deja_ouvert »."""
     import secrets
-    from app.routers.invites import (_OTP_MAX_ATTEMPTS, _binding_required, _guest_actor, _hash_otp, _invite_is_demo,
-                                     _is_expired)
+    from app.routers.invites import _binding_required, _guest_actor, _invite_is_demo
     if _invite_is_demo(inv, db):
         raise AtelierError(403, "demo", "La démo est en lecture guidée : créez votre compte gratuit pour co-construire "
                                         "une réponse avec vos partenaires.")
+    if par_le_compte(inv):
+        raise AtelierError(403, "espace_par_le_compte", MSG_ESPACE_COMPTE)
     effaces = 0
     mode = "ouverture"
-    if getattr(inv, "espace_hash", ""):
+    if not getattr(inv, "espace_hash", ""):
+        if _binding_required(inv):
+            if not code:
+                raise AtelierError(409, "code_requis", MSG_CODE_REQUIS, code_possible=True)
+            _verifier_code(db, inv, code)
+    else:
         if code:
-            if not _binding_required(inv) or not inv.otp_hash or not inv.otp_expires_at \
-                    or _is_expired(inv.otp_expires_at):
-                raise AtelierError(400, "code_absent", "Aucun code en attente : demandez d'abord un code.")
-            if (inv.otp_attempts or 0) >= _OTP_MAX_ATTEMPTS:
-                raise AtelierError(429, "trop_de_tentatives", "Trop de tentatives. Demandez un nouveau code.")
-            if _hash_otp(str(code).strip()) != inv.otp_hash:
-                inv.otp_attempts = (inv.otp_attempts or 0) + 1
-                db.commit()
-                raise AtelierError(400, "code_incorrect", "Code incorrect.")
-            # Le code prouve l'adresse, comme otp/verify.
-            from app.routers.invites import _mark_network_accepted
-            inv.otp_hash, inv.otp_expires_at = "", None
-            inv.verified_at, inv.verified_email = utcnow(), inv.recipient
-            _mark_network_accepted(inv)
+            _verifier_code(db, inv, code)
             mode = "code"
         elif reinitialiser:
             effaces = db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == inv.id).delete(
@@ -753,10 +779,12 @@ def acces_partenaire(db, inv: ProjectInvite, project: Project, user: Optional[Us
 
 
 def _exiger_espace(acces: Acces) -> None:
-    """La matière privée et les actions du partenaire exigent la clé de son espace (mode « lien »)."""
+    """La matière privée et les actions du partenaire exigent la clé de son espace (mode « lien ») ; un lien
+    rattaché à un compte n'en a plus : son compte suffit."""
     if not acces.cle_ok:
-        raise AtelierError(403, "cle_espace_requise", MSG_CLE_REQUISE,
-                           espace_ouvert=bool(getattr(acces.inv, "espace_hash", "")))
+        compte = acces.mode == "lien" and par_le_compte(acces.inv)
+        raise AtelierError(403, "cle_espace_requise", MSG_ESPACE_COMPTE if compte else MSG_CLE_REQUISE,
+                           espace_ouvert=bool(getattr(acces.inv, "espace_hash", "")), par_le_compte=compte)
 
 
 def _exiger_ecriture(acces: Acces) -> None:
@@ -803,6 +831,70 @@ def _partie(db, acces: Acces, section_id: int) -> tuple:
     raise AtelierError(404, "partie_introuvable", "Partie introuvable.")
 
 
+def _toujours_sienne(db, acces: Acces, section: DossierSection, rep: DossierRepartition) -> None:
+    """Relue SOUS VERROU (la partie et sa ligne de répartition) : la partie est toujours la sienne. Le chef de file
+    a pu la reprendre ou la confier à un autre entre la lecture et le verrou : rien n'est écrit (404)."""
+    if rep.redacteur != PARTENAIRE or rep.invite_id != acces.invite_id or section.author_kind != at.AUTEUR_INVITATION \
+            or section.author_invite_id != acces.invite_id or section.retiree_at is not None:
+        db.rollback()
+        raise AtelierError(404, "partie_introuvable", "Partie introuvable.")
+
+
+def _du_compte(acces: Acces, b: Optional[DossierPartBrouillon]) -> bool:
+    """Un brouillon écrit DEPUIS le compte du partenaire (ses preuves, son savoir-faire) ne se lit ni ne s'utilise
+    par le lien : seulement depuis ce compte."""
+    return b is not None and bool(b.auteur_user_id) and acces.mode != "compte"
+
+
+MSG_COMMUN_MODIFIE = ("Le texte commun de cette partie a changé entre-temps (modifié par le chef de file, par exemple) : "
+                      "relisez-le avant d'enregistrer ou d'envoyer. Votre saisie est gardée sur votre écran.")
+
+
+def _exiger_commun_vu(section: DossierSection, commun: Optional[DossierSectionVersion], base_version_id) -> None:
+    """Verrou optimiste sur le TEXTE COMMUN : l'écran dit quelle version il a montrée (`base_version_id`, None si
+    rien n'était envoyé). Une modification du chef de file arrivée entre-temps n'est jamais remplacée en silence."""
+    if base_version_id is BASE_DEFAUT:
+        return
+    vu = int(base_version_id) if base_version_id not in (None, "", 0) else None
+    if (commun.id if commun is not None else None) != vu:
+        raise AtelierError(409, "texte_modifie_entre_temps", MSG_COMMUN_MODIFIE,
+                           version_courante_id=commun.id if commun is not None else None)
+
+
+def _matiere_visible(acces: Acces, b: DossierPartBrouillon) -> tuple:
+    """(sources, faits avec leur source) d'un brouillon, tels que CET accès peut les lire. Depuis le compte : les
+    extraits et les preuves de l'organisation ACTUELLE du compte seulement — un membre retiré de l'organisation du
+    partenaire ne relit plus ses extraits, ses documents ni ses preuves (comme `fiches_de_brouillon`)."""
+    sources = list(b.sources or [])
+    faits_src = fs.avec_source(b.faits or [])
+    if acces.mode != "compte" or not b.auteur_user_id or acces.user is None:
+        return sources, faits_src
+    chunks, preuves = set(), set()
+    for x in sources + [f.get("source") or {} for f in faits_src]:
+        if isinstance(x, dict):
+            if str(x.get("chunk_id") or "").isdigit():
+                chunks.add(int(x["chunk_id"]))
+            if str(x.get("preuve_id") or "").isdigit():
+                preuves.add(int(x["preuve_id"]))
+    if not chunks and not preuves:
+        return sources, faits_src
+    db = acces.db
+    from app.core.org import data_owner_id, member_ids
+    from app.models import KnowledgeChunk, Preuve
+    vis_c = {r[0] for r in db.query(KnowledgeChunk.id).filter(KnowledgeChunk.id.in_(list(chunks) or [-1]),
+                                                              KnowledgeChunk.user_id.in_(member_ids(acces.user, db)))}
+    vis_p = {r[0] for r in db.query(Preuve.id).filter(Preuve.id.in_(list(preuves) or [-1]),
+                                                      Preuve.owner_id == data_owner_id(acces.user, db))}
+
+    def _ok(x):
+        if not isinstance(x, dict):
+            return True
+        if str(x.get("chunk_id") or "").isdigit() and int(x["chunk_id"]) not in vis_c:
+            return False
+        return not (str(x.get("preuve_id") or "").isdigit() and int(x["preuve_id"]) not in vis_p)
+    return [x for x in sources if _ok(x)], [f for f in faits_src if _ok(f.get("source") or {})]
+
+
 # ── Brouillons privés du partenaire ──────────────────────────────────────────────────
 
 def brouillons(db, section_id: int, invite_id: int) -> list:
@@ -835,49 +927,60 @@ def _ajouter_brouillon(db, section: DossierSection, invite_id: int, *, texte: st
 
 
 def _brouillon_out(b: Optional[DossierPartBrouillon], acces: Acces, texte: bool = True) -> Optional[dict]:
-    """Le brouillon PRIVÉ, pour son seul auteur. Par le lien, les sources d'un brouillon écrit depuis le
-    compte (extraits de son savoir-faire) ne sont montrées que depuis ce compte."""
-    if b is None:
+    """Le brouillon PRIVÉ, pour son seul auteur. Un brouillon écrit depuis le compte (ses preuves, son
+    savoir-faire) ne se lit jamais par le lien, ni son texte ni ses sources (None) ; depuis le compte, seuls les
+    extraits et les preuves de l'organisation actuelle du compte sont rendus (`_matiere_visible`)."""
+    if b is None or _du_compte(acces, b):
         return None
     lib = fs.libelles_actifs()
-    sources_visibles = acces.mode == "compte" or not b.auteur_user_id
+    sources, faits_src = _matiere_visible(acces, b)
     out = {"id": b.id, "numero": b.numero, "origine": b.origine, "origine_libelle": ORIGINES.get(b.origine, ""),
            "ia": bool(b.ia), "coupe": bool(b.coupe), "empreinte": b.empreinte, "cree_le": _iso(b.created_at),
            "base_version_id": b.base_version_id, "a_completer": len(me.placeholders(b.texte or "")),
            "faits_a_relire": far.non_traites(b.faits or []), "faits": fs.a_relire(b.faits or []),
            "controle": at.controle_out(b.faits or [], lib),
            "compteurs": b.compteurs if isinstance(b.compteurs, dict) else compteurs(b.faits),
-           "sources": (b.sources or []) if sources_visibles else [],
-           "sources_depuis_le_compte": not sources_visibles}
+           "sources": sources, "sources_depuis_le_compte": False}
     if lib:
-        out["faits_sources"] = fs.avec_source(b.faits or []) if sources_visibles else []
+        out["faits_sources"] = faits_src
     if texte:
         out["texte"] = b.texte or ""
     return out
 
 
-def enregistrer_brouillon(db, acces: Acces, section_id: int, texte: str, base_brouillon_id) -> DossierPartBrouillon:
+def enregistrer_brouillon(db, acces: Acces, section_id: int, texte: str, base_brouillon_id,
+                          base_version_id=BASE_DEFAUT) -> DossierPartBrouillon:
     """« J'écris moi-même » : un NOUVEAU brouillon privé, aucune IA. Ses faits sont contrôlés sur SES faits :
-    ce qu'il écrit lui-même est sa déclaration ; un fait déjà à relire le reste."""
+    ce qu'il écrit lui-même est sa déclaration ; un fait déjà à relire le reste — y compris un fait que le chef de
+    file a mis dans le texte commun dont il part (« Partir du texte du chef de file »). `base_version_id` : le
+    texte commun que son écran lui montrait (verrou optimiste, `_exiger_commun_vu`)."""
     _exiger_ecriture(acces)
     section, rep = _partie(db, acces, section_id)
     rep = _verrouiller_rep(db, rep)
+    section = at._verrouiller(db, section)
+    _toujours_sienne(db, acces, section, rep)
     cur = brouillon_courant(db, section.id, acces.invite_id)
     base = int(base_brouillon_id) if base_brouillon_id not in (None, "", 0) else None
-    if (cur.id if cur else None) != base:
+    if (cur.id if cur else None) != base or _du_compte(acces, cur):
         raise AtelierError(409, "brouillon_modifie", "Votre texte a changé depuis que vous l'avez ouvert : rechargez-le "
                                                      "avant d'enregistrer (votre saisie n'a pas été perdue de votre écran).",
-                           brouillon_courant_id=cur.id if cur else None)
+                           brouillon_courant_id=cur.id if cur and not _du_compte(acces, cur) else None)
+    commun = _commune(db, section)
+    _exiger_commun_vu(section, commun, base_version_id)
     t = at.normaliser_texte(texte)
     if len(t) > TEXTE_MAX:
         raise AtelierError(422, "texte_trop_long", f"Une partie compte au plus {TEXTE_MAX} caractères.")
     if cur is not None and cur.empreinte == at.empreinte(t):
+        db.commit()                 # rien à écrire : les verrous sont rendus
         return cur
-    commun = _commune(db, section)
     ctx = ContextePartenaire(db, acces)
     textes_ia = [b.texte or "" for b in brouillons(db, section.id, acces.invite_id) if b.ia]
     ia = at.ia_a_servi(t, textes_ia)
-    anciens = (cur.faits if cur is not None else (commun.faits if commun is not None else [])) or []
+    anciens = list((cur.faits if cur is not None else (commun.faits if commun is not None else [])) or [])
+    if commun is not None and cur is not None and commun.ecrit_par == ECRIT_PAR_CHEF and commun.empreinte != cur.empreinte:
+        # Le texte commun écrit (ou retouché) par le chef de file : ses faits à relire le restent chez le partenaire
+        # (ses propres faits, plus bas dans la liste, gardent ce qu'il en a dit).
+        anciens = [dict(x) for x in (commun.faits or []) if isinstance(x, dict)] + anciens
     base_texte = (cur.texte if cur is not None else (commun.texte if commun is not None else "")) or ""
     faits = fs.controler(t, ctx.fiches_de_brouillon(db, cur), acheteur=None, noms_entreprise=ctx.noms_entreprise,
                          section_entreprise=at.section_sur_l_entreprise(section), mode="utilisateur",
@@ -950,11 +1053,14 @@ def _origine_commune(origine: str) -> str:
     return origine if origine in (at.IA, at.RACCOURCI) else at.UTILISATEUR
 
 
-def envoyer(db, acces: Acces, section_id: int, brouillon_id: int, avertissement_lu: bool, ip: str = "") -> DossierSection:
+def envoyer(db, acces: Acces, section_id: int, brouillon_id: int, avertissement_lu: bool, ip: str = "",
+            base_version_id=BASE_DEFAUT) -> DossierSection:
     """Le partenaire ENVOIE son brouillon courant : il devient le texte COMMUN de la partie (une version
     `partage` de l'atelier), lu par le chef de file et par les autres membres. Rien de privé ne part : ni
     source, ni extrait — ses faits à relire (sans leur source) et ses compteurs de sources par type. Il en
-    est prévenu avant (`avertissement_lu`, décision 3a)."""
+    est prévenu avant (`avertissement_lu`, décision 3a). Une modification du chef de file arrivée depuis que
+    son écran a montré le texte commun (`base_version_id`), ou depuis l'écriture de son brouillon, n'est jamais
+    remplacée en silence (409 « texte_modifie_entre_temps » : l'écran montre l'avant et l'après)."""
     _exiger_ecriture(acces)
     _exiger_identite(acces)
     if not avertissement_lu:
@@ -962,16 +1068,24 @@ def envoyer(db, acces: Acces, section_id: int, brouillon_id: int, avertissement_
     section, rep = _partie(db, acces, section_id)
     rep = _verrouiller_rep(db, rep)
     section = at._verrouiller(db, section)
+    _toujours_sienne(db, acces, section, rep)
     if _job_en_cours(db, rep.job_id) is not None:
         raise AtelierError(409, "aide_en_cours", "Adjugo rédige cette partie en ce moment : attendez la fin de la "
                                                  "rédaction avant d'envoyer.")
     b = brouillon_courant(db, section.id, acces.invite_id)
-    if b is None or b.id != int(brouillon_id or 0):
+    if b is None or b.id != int(brouillon_id or 0) or _du_compte(acces, b):
         raise AtelierError(409, "brouillon_modifie", "Votre texte a changé : rechargez-le avant de l'envoyer.",
-                           brouillon_courant_id=b.id if b else None)
+                           brouillon_courant_id=b.id if b and not _du_compte(acces, b) else None)
     if not (b.texte or "").strip():
         raise AtelierError(422, "partie_vide", "Cette partie n'a pas de texte à envoyer.")
     cur = _commune(db, section)
+    if base_version_id is not BASE_DEFAUT:
+        _exiger_commun_vu(section, cur, base_version_id)
+    elif cur is not None and cur.ecrit_par == ECRIT_PAR_CHEF and b.base_version_id != cur.id \
+            and b.empreinte != cur.empreinte:
+        # Écran qui ne dit pas ce qu'il a montré : un brouillon écrit AVANT la modification du chef de file ne la
+        # remplace pas sans qu'il l'ait vue.
+        raise AtelierError(409, "texte_modifie_entre_temps", MSG_COMMUN_MODIFIE, version_courante_id=cur.id)
     if cur is not None and cur.empreinte == b.empreinte and cur.ecrit_par == ECRIT_PAR_PARTENAIRE:
         # Même texte : seuls ses faits traités depuis et ses compteurs sont rafraîchis.
         cur.faits = faits_communs(b.faits)
@@ -1017,6 +1131,7 @@ def valider_part(db, acces: Acces, section_id: int, version_id: int, ip: str = "
     section, rep = _partie(db, acces, section_id)
     rep = _verrouiller_rep(db, rep)
     section = at._verrouiller(db, section)
+    _toujours_sienne(db, acces, section, rep)
     cur = _commune(db, section)
     if cur is None or cur.id != int(version_id or 0):
         raise AtelierError(409, "texte_modifie_entre_temps", "Le texte de cette partie a changé : rechargez-le avant de "
@@ -1027,9 +1142,12 @@ def valider_part(db, acces: Acces, section_id: int, version_id: int, ip: str = "
     if cur.ecrit_par == ECRIT_PAR_CHEF:
         ctx = ContextePartenaire(db, acces)
         der = brouillon_courant(db, section.id, acces.invite_id)
+        if _du_compte(acces, der):
+            der = None
         faits = fs.controler(cur.texte or "", ctx.fiches_de_brouillon(db, der), acheteur=None,
                              noms_entreprise=ctx.noms_entreprise, section_entreprise=at.section_sur_l_entreprise(section),
                              mode="ia", anciens=((der.faits if der else None) or []) + list(cur.faits or []))
+        faits = _garder_ses_declarations(db, acces, section, faits)
         _ajouter_brouillon(db, section, acces.invite_id, texte=cur.texte or "", origine="acceptee", ia=bool(cur.ia),
                            sources=[], faits=faits, base_id=der.id if der else None, base_version_id=cur.id,
                            auteur_user_id=getattr(acces.user, "id", None))
@@ -1055,6 +1173,24 @@ def valider_part(db, acces: Acces, section_id: int, version_id: int, ip: str = "
     return section
 
 
+def _garder_ses_declarations(db, acces: Acces, section: DossierSection, faits: list) -> list:
+    """Le partenaire valide un texte écrit ou retouché par le chef de file (ou une phrase de transition) : ses
+    propres phrases, inchangées, gardent ce qu'il en avait dit (« déclaré par vous ») — seul ce que le chef de file a
+    ajouté ou modifié est à relire. Un fait garde l'identifiant de sa phrase : même fait, même phrase."""
+    siens = {}
+    for b in brouillons(db, section.id, acces.invite_id):            # du plus récent au plus ancien
+        if _du_compte(acces, b):
+            continue
+        for x in (b.faits or []):
+            if isinstance(x, dict) and x.get("id") and x.get("statut") == fs.AVEC_SOURCE \
+                    and (x.get("source") or {}).get("type") == fs.T_VOUS:
+                siens.setdefault(x["id"], x)
+    if not siens:
+        return faits
+    return [dict(siens[x["id"]]) if isinstance(x, dict) and x.get("statut") == far.A_RELIRE and x.get("id") in siens
+            else x for x in faits]
+
+
 def retablir(db, acces: Acces, section_id: int, base_version_id, version_id=None, ip: str = "") -> DossierSection:
     """Le partenaire RÉTABLIT sa version après une modification du chef de file : son texte d'avant
     redevient le texte commun (nouvelle version, l'historique reste entier)."""
@@ -1063,6 +1199,7 @@ def retablir(db, acces: Acces, section_id: int, base_version_id, version_id=None
     section, rep = _partie(db, acces, section_id)
     rep = _verrouiller_rep(db, rep)
     section = at._verrouiller(db, section)
+    _toujours_sienne(db, acces, section, rep)
     cur = _commune(db, section)
     if cur is None or cur.id != int(base_version_id or 0):
         raise AtelierError(409, "texte_modifie_entre_temps", "Le texte de cette partie a changé : rechargez-le.",
@@ -1172,11 +1309,16 @@ def lancer_aide(db, acces: Acces, section_id: int, action: str = "rediger", cibl
     (portée « partenaire ») et ne se lit qu'avec son accès."""
     from app.services.jobs import run_in_thread
     _exiger_ecriture(acces)
+    # C'est le partenaire qui lance son aide de l'IA, jamais celui qui détient seulement le lien : même exigence
+    # d'identité qu'envoyer et valider (adresse prouvée par code quand le lien vise une adresse).
+    _exiger_identite(acces)
     if action not in ("rediger", "raccourcir"):
         raise AtelierError(422, "action_inconnue", "Action inconnue.")
     kind = JOB_REDIGER if action == "rediger" else JOB_RACCOURCIR
     section, rep = _partie(db, acces, section_id)
     rep = _verrouiller_rep(db, rep)
+    section = at._verrouiller(db, section)
+    _toujours_sienne(db, acces, section, rep)
     if _job_en_cours(db, rep.job_id) is not None:
         raise AtelierError(409, "aide_en_cours", "Adjugo rédige déjà cette partie : attendez la fin de la rédaction.")
     cap = plafond_partie()
@@ -1185,11 +1327,12 @@ def lancer_aide(db, acces: Acces, section_id: int, action: str = "rediger", cibl
     ctx = ContextePartenaire(db, acces)
     base = brouillon_courant(db, section.id, acces.invite_id)
     if kind == JOB_RACCOURCIR:
-        if base is None or not (base.texte or "").strip():
+        if base is None or not (base.texte or "").strip() or _du_compte(acces, base):
             raise AtelierError(422, "partie_vide", "Il n'y a pas encore de texte à raccourcir dans cette partie.")
-        if ctx.avec_compte:
-            from app.services.preuves_atelier import refuser_cv_pour_ia
-            refuser_cv_pour_ia(db, ctx.owner_id, base.texte)
+        # Aucun CV ne part à l'IA, par le lien comme par le compte : la forme d'un CV inséré suffit à le
+        # reconnaître, même sans compte (aucune fiche « Équipe » connue).
+        from app.services.preuves_atelier import refuser_cv_pour_ia
+        refuser_cv_pour_ia(db, ctx.owner_id or 0, base.texte)
         n = len(re.findall(r"\w+", base.texte or ""))
         cible = int(cible) if cible else (rep.longueur_mots or at.cible_mots(section, None, base.texte)
                                           or max(30, int(n * 0.7)))
@@ -1469,7 +1612,13 @@ def _sans_texte(db, section: DossierSection) -> bool:
 def _changer_auteur(db, section: DossierSection, rep: DossierRepartition, redacteur: str, invite_id) -> None:
     """La partie change de rédacteur : son texte courant et sa validation sont MIS DE CÔTÉ (l'historique
     reste entier) — jamais le brouillon privé du chef de file chez un partenaire, jamais le texte d'un
-    partenaire comme texte du chef de file sans qu'il le reprenne lui-même."""
+    partenaire comme texte du chef de file sans qu'il le reprenne lui-même. Le nouveau rédacteur part de zéro :
+    rien ne lui a encore été demandé (« Demander les parts », relances) et l'aide de l'IA de la partie lui est
+    entière (le plafond du dossier, lui, ne bouge pas)."""
+    if (rep.redacteur, rep.invite_id) != (redacteur, invite_id if redacteur == PARTENAIRE else None):
+        rep.demandee_le = None
+        rep.relance_palier = 0
+        rep.aides_ia = 0
     rep.redacteur = redacteur
     rep.invite_id = invite_id if redacteur == PARTENAIRE else None
     section.author_kind = at.AUTEUR_INVITATION if redacteur == PARTENAIRE else at.AUTEUR_ORG
@@ -1728,9 +1877,12 @@ def demander_parts(db, project: Project, dossier: DossierPresentation, user: Use
                                  f"restent privés : seul le texte que vous envoyez est lu par le groupement.\n\n— Adjugo")
         if sent:
             # L'anti-rafale ne compte qu'un email PARTI : un envoi échoué se retente aussitôt (comme le
-            # renvoi d'une invitation, qui n'horodate que l'envoi réussi).
+            # renvoi d'une invitation, qui n'horodate que l'envoi réussi). La demande vaut relance du palier en
+            # cours (J-2, jour J) : la relance planifiée ne repart pas juste après.
+            jour = datetime.now(timezone.utc).date()
             for _s, r in lignes:
                 r.demandee_le = now
+                r.relance_palier = max(int(r.relance_palier or 0), _palier(r.date_limite, jour))
         db.commit()
         if sent:
             _journal(db, action="redaction.parts_demandees", project_id=project.id, owner_id=dossier.owner_id,
@@ -1742,16 +1894,20 @@ def demander_parts(db, project: Project, dossier: DossierPresentation, user: Use
             "plafond_atteint": plafond}
 
 
-def relancer_parts(db, today: Optional[date] = None) -> dict:
-    """Relance planifiée (appelée par la relance de la co-traitance, POST /api/admin/run-cotraitance-reminders) :
-    un email par partenaire dont une partie n'est pas encore envoyée, à J-2 puis le jour de sa date limite
-    interne ; un palier par partie (relance_palier : 1 = J-2, 2 = jour J), jamais deux fois ; rien après le
-    dépôt ou la clôture du marché, rien pour la démonstration."""
-    from app.core.config import get_settings
-    from app.routers.invites import _invite_is_demo, _is_email
-    from app.services import email as _email
+def _palier(date_limite: Optional[date], today: date) -> int:
+    """Palier de relance d'une partie à ce jour : 1 = J-2, 2 = jour J (0 avant J-2 ou sans date limite)."""
+    if not isinstance(date_limite, date):
+        return 0
+    jours = (date_limite - today).days
+    return 2 if jours <= 0 else (1 if jours <= 2 else 0)
+
+
+def parts_a_relancer(db, today: Optional[date] = None) -> dict:
+    """{invite_id: [(partie, répartition, palier, marché)]} des parties à relancer ce jour : pas encore envoyées, à
+    J-2 puis le jour de leur date limite interne, un palier par partie, jamais deux fois ; jamais une partie
+    demandée le jour même (« Demander les parts » vient d'écrire) ; rien après le dépôt ou la clôture du marché.
+    Lecture seule : la relance de la co-traitance y ajoute ces parties à SON rappel (un seul email)."""
     today = today or datetime.now(timezone.utc).date()
-    base = (get_settings().APP_BASE_URL or "").rstrip("/")
     rows = (db.query(DossierRepartition).filter(DossierRepartition.redacteur == PARTENAIRE,
                                                 DossierRepartition.invite_id.isnot(None),
                                                 DossierRepartition.date_limite.isnot(None),
@@ -1759,8 +1915,10 @@ def relancer_parts(db, today: Optional[date] = None) -> dict:
     groupes = {}
     for r in rows:
         jours = (r.date_limite - today).days
-        cible = 2 if jours <= 0 else (1 if jours <= 2 else 0)
+        cible = _palier(r.date_limite, today)
         if jours < 0 or cible <= (r.relance_palier or 0):
+            continue
+        if r.demandee_le is not None and r.demandee_le.date() >= today:
             continue
         s = db.get(DossierSection, r.section_id)
         p = db.get(Project, r.project_id)
@@ -1772,17 +1930,36 @@ def relancer_parts(db, today: Optional[date] = None) -> dict:
         if statut_de(db, s, r) not in (A_REDIGER, EN_COURS):
             continue
         groupes.setdefault(r.invite_id, []).append((s, r, cible, p))
+    return groupes
+
+
+def liste_relance(lignes: list) -> str:
+    return "\n".join(f"- « {at._flat(s.intitule)[:160]} » (date limite interne : {r.date_limite.strftime('%d/%m/%Y')})"
+                     for s, r, _c, _p in lignes)
+
+
+def relancer_parts(db, today: Optional[date] = None, deja=()) -> dict:
+    """Relance planifiée (appelée par la relance de la co-traitance, POST /api/admin/run-cotraitance-reminders) :
+    un email par partenaire dont une partie n'est pas encore envoyée, à J-2 puis le jour de sa date limite
+    interne ; un palier par partie (relance_palier : 1 = J-2, 2 = jour J), jamais deux fois ; rien après le
+    dépôt ou la clôture du marché, rien pour la démonstration. `deja` : les partenaires dont le rappel de la
+    co-traitance de cette tournée portait déjà la liste de leurs parties (jamais deux emails)."""
+    from app.core.config import get_settings
+    from app.routers.invites import _invite_is_demo, _is_email
+    from app.services import email as _email
+    base = (get_settings().APP_BASE_URL or "").rstrip("/")
     relances = 0
-    for iid, lignes in groupes.items():
+    for iid, lignes in parts_a_relancer(db, today).items():
+        if iid in set(deja or ()):
+            continue
         inv = db.get(ProjectInvite, iid)
         if inv is None or not peut_rediger(db, inv)[0] or not _is_email(inv.recipient) or _invite_is_demo(inv, db):
             continue
         p = lignes[0][3]
-        liste = "\n".join(f"- « {at._flat(s.intitule)[:160]} » (date limite interne : {r.date_limite.strftime('%d/%m/%Y')})"
-                          for s, r, _c, _p in lignes)
         if _email.send_email(inv.recipient, f"Rappel — votre partie du dossier de présentation ({p.name[:50]})",
                              f"Bonjour,\n\nIl reste à envoyer votre partie du dossier de présentation du marché "
-                             f"« {p.name} » :\n{liste}\n\nVotre lien Adjugo :\n{base}/invite/{inv.token}\n\n— Adjugo"):
+                             f"« {p.name} » :\n{liste_relance(lignes)}\n\nVotre lien Adjugo :\n{base}/invite/{inv.token}"
+                             f"\n\n— Adjugo"):
             for _s, r, c, _p in lignes:
                 r.relance_palier = c
             relances += 1
@@ -1975,7 +2152,7 @@ def resume_partenaire(db, inv: ProjectInvite) -> Optional[dict]:
         reps = (db.query(DossierRepartition).filter(DossierRepartition.dossier_id == d.id,
                                                     DossierRepartition.redacteur == PARTENAIRE,
                                                     DossierRepartition.invite_id == inv.id).all())
-        n, a_faire, a_revalider = 0, 0, 0
+        n, a_faire, a_revalider, a_valider = 0, 0, 0, 0
         for r in reps:
             s = db.get(DossierSection, r.section_id)
             if s is None or s.retiree_at is not None or s.author_invite_id != inv.id:
@@ -1984,7 +2161,9 @@ def resume_partenaire(db, inv: ProjectInvite) -> Optional[dict]:
             st = statut_de(db, s, r)
             a_faire += st in (A_REDIGER, EN_COURS)
             a_revalider += st == A_REVALIDER
-        return {"parties": n, "a_faire": a_faire, "a_revalider": a_revalider} if n else None
+            a_valider += st == ENVOYEE          # envoyée : le chef de file attend encore sa validation
+        return ({"parties": n, "a_faire": a_faire, "a_revalider": a_revalider, "a_valider": a_valider}
+                if n else None)
     except Exception:       # noqa: BLE001 — la liste « Partagé avec moi » ne casse jamais pour ce résumé
         return None
 
@@ -2025,9 +2204,13 @@ def vue_partenaire(db, acces: Acces) -> dict:
                           invite_id=acces.invite_id) if qfq is not None else None
     qfq_ok = qfq_bloc is None or ((qfq_bloc.get("ma_validation") or {}).get("statut") == "valide")
     from app.routers.invites import _binding_required
+    compte = acces.mode == "lien" and par_le_compte(acces.inv)
     espace = {"cle_valide": bool(acces.cle_ok), "ouvert": bool(getattr(acces.inv, "espace_hash", "")),
-              "entete": ENTETE_CLE, "code_possible": bool(_binding_required(acces.inv)) if acces.mode == "lien" else False,
-              "message": "" if acces.cle_ok else MSG_CLE_REQUISE}
+              "entete": ENTETE_CLE,
+              "code_possible": bool(_binding_required(acces.inv)) if acces.mode == "lien" and not compte else False,
+              # Lien rattaché à un compte : aucun espace par le lien, le compte suffit (« Partagé avec moi »).
+              "par_le_compte": compte,
+              "message": "" if acces.cle_ok else (MSG_ESPACE_COMPTE if compte else MSG_CLE_REQUISE)}
     contrib = _contribution(db, acces.invite_id)
     ctx = ContextePartenaire(db, acces)
     try:
@@ -2048,7 +2231,9 @@ def vue_partenaire(db, acces: Acces) -> dict:
                             "message": MSG_MODE_SIMPLE},
             "parties": parties, "statuts": STATUTS, "origines": ORIGINES, "qui_fait_quoi": qfq_bloc,
             "dossier": {"empreinte": emp, "ma_validation": _validation_out(ma, emp),
-                        "peut_valider": bool(parties) and all(p["statut"] == VALIDEE for p in parties) and qfq_ok,
+                        # Un co-traitant à qui aucune partie n'est confiée valide aussi le dossier assemblé (après
+                        # « Qui fait quoi »), comme le serveur l'attend pour « Prêt à déposer ».
+                        "peut_valider": all(p["statut"] == VALIDEE for p in parties) and qfq_ok,
                         "pret": pret(db, acces.project, acces.dossier, act)}}
 
 
@@ -2064,8 +2249,8 @@ def detail_partenaire(db, acces: Acces, section_id: int) -> dict:
     ligne = next((x for x in vue["parties"] if x["section_id"] == int(section_id)), None)
     if ligne is None:
         raise AtelierError(404, "partie_introuvable", "Partie introuvable.")
-    ligne["brouillons"] = ([_brouillon_out(b, acces, texte=False) for b in brouillons(db, int(section_id),
-                                                                                       acces.invite_id)]
+    ligne["brouillons"] = ([x for x in (_brouillon_out(b, acces, texte=False)
+                                        for b in brouillons(db, int(section_id), acces.invite_id)) if x is not None]
                            if acces.cle_ok else [])
     return ligne
 
@@ -2084,9 +2269,10 @@ def brouillon_du_partenaire(db, acces: Acces, section_id: int, brouillon_id: int
     b = (db.query(DossierPartBrouillon).filter(DossierPartBrouillon.id == bid,
                                                DossierPartBrouillon.section_id == section.id,
                                                DossierPartBrouillon.invite_id == acces.invite_id).first())
-    if b is None:
+    out = _brouillon_out(b, acces) if b is not None else None
+    if out is None:
         raise AtelierError(404, "brouillon_introuvable", "Brouillon introuvable.")
-    return _brouillon_out(b, acces)
+    return out
 
 
 # ── Validation du dossier assemblé (même mécanisme que la convention périmée) ────────
@@ -2388,17 +2574,23 @@ def exporter_chef(db, owner_id: int) -> list:
     return out
 
 
-def exporter_invitation(db, inv: ProjectInvite, sources_du_compte: bool = True) -> dict:
+def exporter_invitation(db, inv: ProjectInvite, sources_du_compte: bool = True, acces: Optional["Acces"] = None) -> dict:
     """Portabilité pour un partenaire : SES brouillons (texte, sources, faits) et les textes qu'il a envoyés.
-    Par le lien (`sources_du_compte` faux), les sources et les faits d'un brouillon écrit depuis le compte
-    (extraits de son savoir-faire) ne sont pas rendus : ils ne se lisent que depuis ce compte."""
-    def _prives(b):
-        return sources_du_compte or not b.auteur_user_id
-    bro = [{"section_id": b.section_id, "numero": b.numero, "origine": b.origine, "texte": b.texte or "",
-            "sources": (b.sources or []) if _prives(b) else [], "faits": (b.faits or []) if _prives(b) else [],
-            "compteurs": b.compteurs, "cree_le": _iso(b.created_at)}
-           for b in db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == inv.id)
-           .order_by(DossierPartBrouillon.id).all()]
+    Par le lien (`sources_du_compte` faux), un brouillon écrit depuis le compte (ses preuves, son savoir-faire)
+    n'est pas rendu : il ne se lit que depuis ce compte. Avec `acces` (compte), seuls les extraits et les preuves de
+    l'organisation actuelle du compte (`_matiere_visible`)."""
+    bro = []
+    for b in (db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == inv.id)
+              .order_by(DossierPartBrouillon.id).all()):
+        if not sources_du_compte and b.auteur_user_id:
+            continue
+        sources, faits = list(b.sources or []), list(b.faits or [])
+        if acces is not None:
+            sources, faits_src = _matiere_visible(acces, b)
+            faits = [x for x in faits if not (isinstance(x, dict) and x.get("statut") == fs.AVEC_SOURCE)
+                     or x in faits_src]
+        bro.append({"section_id": b.section_id, "numero": b.numero, "origine": b.origine, "texte": b.texte or "",
+                    "sources": sources, "faits": faits, "compteurs": b.compteurs, "cree_le": _iso(b.created_at)})
     env = [{"section_id": v.section_id, "numero": v.numero, "texte": v.texte or "", "envoye_le": _iso(v.created_at)}
            for v in db.query(DossierSectionVersion).filter(DossierSectionVersion.project_id == inv.project_id,
                                                            DossierSectionVersion.partage.is_(True),

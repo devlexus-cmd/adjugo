@@ -313,7 +313,7 @@ def test_le_lien_seul_ne_lit_jamais_la_matiere_privee(client, auth, fake_llm, mo
     chef = P(client, a["token"], ouvrir=False)                 # le lien, sans la clé
     v = chef.get().json()
     assert v["espace"] == {"cle_valide": False, "ouvert": True, "entete": ag.ENTETE_CLE, "code_possible": False,
-                           "message": ag.MSG_CLE_REQUISE}
+                           "par_le_compte": False, "message": ag.MSG_CLE_REQUISE}
     assert v["parties"][0]["brouillon"] is None and v["parties"][0]["aide"]["en_cours"] is None
     assert chef.get(f"/sections/{sid}").json()["brouillons"] == []
     tout = _vues_du_chef(client, h, pid, sid, token=a["token"])
@@ -430,11 +430,12 @@ def test_texte_envoye_compteurs_jamais_sources_ni_extraits(client, auth, fake_ll
     assert br["origine"] == "ia" and any(SECRET_EXTRAIT in (s.get("extrait") or "") for s in br["sources"])
     assert SECRET_EXTRAIT in fake.sent() and vus and all(v == f"inv:{a['id']}" for v in vus)
     assert pc.get().json()["message_mode"] == ag.MSG_MODE_COMPTE
-    # Par le lien (même invitation), sans la clé : rien ; avec la clé, les sources écrites depuis le compte
-    # restent réservées au compte.
-    pl = P(client, a["token"])
-    brl = pl.get(f"/sections/{sid}").json()["brouillon"]
-    assert brl["sources"] == [] and brl["sources_depuis_le_compte"] is True
+    # Par le lien (même invitation) : un lien rattaché à un compte n'a plus d'espace privé — celui qui détient le
+    # lien (le chef de file) n'en ouvre aucun et ne lit ni le brouillon, ni ses sources (revue V4, cloisonnement).
+    r = client.post(f"/api/invite/{a['token']}/redaction/espace", json={})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "espace_par_le_compte"
+    pl = P(client, a["token"], ouvrir=False)
+    assert pl.get(f"/sections/{sid}").json()["brouillon"] is None
     r = pc.post(f"/sections/{sid}/envoyer", {"brouillon_id": br["id"], "avertissement_lu": True})
     assert r.status_code == 200, r.text
     tout = _vues_du_chef(client, h, pid, sid, token=a["token"])
@@ -944,9 +945,10 @@ def test_rgpd_export_et_effacement_des_comptes(client, auth, fake_llm):
     exp_c = client.get("/api/rgpd/export", headers=h).json()
     assert exp_c["dossiers_de_groupement"] and exp_c["dossiers_de_groupement"][0]["repartition"]
     assert SECRET_BROUILLON not in json.dumps(exp_c["dossiers_de_groupement"], ensure_ascii=False)
-    pa = P(client, a["token"])
-    r = pa.get("/export")
+    # Portabilité : depuis le compte (le lien rattaché à un compte n'a plus d'espace privé).
+    r = pc.get("/export")
     assert r.status_code == 200 and SECRET_BROUILLON in r.text
+    assert client.get(f"/api/invite/{a['token']}/redaction/export").status_code == 403
     # Effacement du compte du PARTENAIRE : ses brouillons partent, le texte envoyé reste au groupement.
     r = client.post("/api/rgpd/delete-account", headers=hp, json={"password": "motdepasse123", "confirm": "SUPPRIMER"})
     assert r.status_code == 200, r.text
@@ -955,8 +957,10 @@ def test_rgpd_export_et_effacement_des_comptes(client, auth, fake_llm):
     assert d["statut"] == "envoyee"
     assert SECRET_BROUILLON in client.get(f"/api/atelier/{pid}/sections/{sid}/versions/"
                                           f"{d['texte_commun']['version_id']}", headers=h).text
-    # Effacement du compte du CHEF DE FILE : tout le dossier de groupement part avec lui.
+    # Effacement du compte du CHEF DE FILE : tout le dossier de groupement part avec lui. (Le compte du partenaire
+    # effacé, son lien est libéré : son espace s'ouvre de nouveau par le lien.)
     fake_llm(_reponse_partenaire(TEXTE_IA_A)[0])
+    pa = P(client, a["token"])
     _, jid = _aide(pa, sid)
     r = client.post("/api/rgpd/delete-account", headers=h, json={"password": "motdepasse123", "confirm": "SUPPRIMER"})
     assert r.status_code == 200, r.text
@@ -1011,13 +1015,17 @@ def test_demander_les_parts_et_relance_a_la_date_limite(client, auth, monkeypatc
     assert "Démarche environnementale" in sent[0][2] and a["token"] in sent[0][2]
     assert client.post(f"/api/atelier/{pid}/repartition/demander", headers=h, json={}).json()["deja_demandees"]
     assert len(sent) == 1
+    # « Demander les parts » vaut la relance du palier en cours (J-2) : rien ne repart aussitôt ; le jour J, si.
     db = _db()
     try:
-        assert ag.relancer_parts(db, date.today())["parts_relancees"] == 1
-        assert ag.relancer_parts(db, date.today())["parts_relancees"] == 0
+        ag.relancer_parts(db, date.today())
+        assert len([1 for to, _s, _t in sent if to == "desamiantage@partenaire.fr"]) == 1
+        ag.relancer_parts(db, lim)
+        ag.relancer_parts(db, lim)
     finally:
         db.close()
-    assert len(sent) == 2 and "Rappel" in sent[1][1]
+    vers_a = [(s, t) for to, s, t in sent if to == "desamiantage@partenaire.fr"]
+    assert len(vers_a) == 2 and "Rappel" in vers_a[1][0]
 
 
 def test_demo_bloque_les_ecritures_du_dossier_de_groupement():

@@ -64,8 +64,10 @@ def run_cotraitance_reminders(db: Session) -> dict:
 
     Sans doublon (vague 4) : si le même partenaire a aussi des attestations à mettre à jour
     (coffre croisé, paliers J-7 / J-3), elles sont AJOUTÉES à cette relance (un seul email) et
-    l'alerte d'attestations du jour n'en renvoie pas un second. Plus aucune relance une fois
-    le marché marqué déposé (statut envoyé) ou clos."""
+    l'alerte d'attestations du jour n'en renvoie pas un second. De même, ses parties du dossier de
+    présentation à relancer ce jour (rédaction, vague 4) sont ajoutées à ce rappel, et la relance des
+    parties ne lui écrit pas une seconde fois. Plus aucune relance une fois le marché marqué déposé
+    (statut envoyé) ou clos."""
     from datetime import datetime, timezone
     from app.models import Project, ProjectInvite, ProjectContribution, Company
 
@@ -82,6 +84,16 @@ def run_cotraitance_reminders(db: Session) -> dict:
         piece_due = []
     pieces_by_invite = {a["inv"].id: a for a in piece_due}
     merged = set()
+    # Rédaction, vague 4 : les parties du dossier de présentation à relancer ce jour, ajoutées au rappel de la part
+    # du MÊME partenaire (un seul email) ; les autres partent ensuite par relancer_parts.
+    try:
+        from app.services.atelier_groupement import liste_relance, parts_a_relancer
+        parts_due = parts_a_relancer(db, today)
+    except Exception as e:
+        logger.warning("relances co-traitance : parties du dossier de présentation non lues : %s", e)
+        db.rollback()
+        parts_due, liste_relance = {}, None
+    parts_merged = set()
     invites = db.query(ProjectInvite).filter(
         active_invite_filter(),
         ProjectInvite.can_contribute.is_(True)).all()
@@ -127,21 +139,29 @@ def run_cotraitance_reminders(db: Session) -> dict:
         if extra:
             text += ("\n\nVos attestations sont aussi à mettre à jour avant le dépôt :\n"
                      + "\n".join(f"- {x}" for x in extra["problems"]))
+        parts = parts_due.get(inv.id) if liste_relance else None
+        if parts:
+            text += ("\n\nVotre partie du dossier de présentation est aussi attendue :\n" + liste_relance(parts))
         text += "\n\n— Adjugo, le réseau des PME"
         if send_email(inv.recipient, subj, text):
             inv.reminder_stage = target
             reminded += 1
             if extra:
                 merged.add(inv.id)
+            if parts:
+                for _s, r, c, _p in parts:
+                    r.relance_palier = c
+                parts_merged.add(inv.id)
     db.commit()
     pieces_alerted = _run_piece_expiry_alerts(db, today, due=piece_due, merged=merged)
     result = {"scanned": scanned, "reminded": reminded, "pieces_alerted": pieces_alerted,
-              "pieces_merged": len(merged)}
+              "pieces_merged": len(merged), "parts_fusionnees": len(parts_merged)}
     # Rédaction, vague 4 : parties du dossier de présentation pas encore envoyées, à J-2 puis le jour de
-    # leur date limite interne (un palier par partie, jamais deux fois).
+    # leur date limite interne (un palier par partie, jamais deux fois ; jamais un second email au partenaire
+    # dont le rappel ci-dessus les portait déjà).
     try:
         from app.services.atelier_groupement import relancer_parts
-        result.update(relancer_parts(db, today))
+        result.update(relancer_parts(db, today, deja=parts_merged))
     except Exception as e:
         db.rollback()
         logger.warning("relances co-traitance : parts du dossier de présentation non relancées : %s", e)

@@ -200,8 +200,19 @@ _UNIT_WORDS = (r"%|pour ?cent|€|k€|m€|eur\b|euros?\b|ht\b|ttc\b|m2|m²|m3|
                r"h\b|heures?\b|jours?\b|j\b|semaines?\b|mois\b|ans?\b|annees?\b|"
                # un mot (accents compris : « 3 équipes », « 2 bâtiments » ont bien une unité)
                r"[a-zà-öø-ÿœ][a-zà-öø-ÿœ'\-]{2,}")
-_NUMBER = re.compile(r"(?<![\w.,])(\d{1,3}(?:[   .]\d{3})+|\d+)(?:[.,](\d+))?(?![\w])"
-                     r"(?:\s?(" + _UNIT_WORDS + r"))?", re.IGNORECASE)
+# Unité COLLÉE au nombre (« 1200m² », « 30t », « 15km », « 48h », « 3j ») ou ordinal (« 1er », « 3e », « 2nde ») :
+# le même fait qu'écrit avec une espace (vague 4, revue : ces formes échappaient au repérage).
+_COLLES = (r"m²|m2|m³|m3|ml|km|cm|mm|kg|kwh|kw|kva|mwh|mw|tonnes?|t|h\d{2}|h|j|min|mn|ans?|mois|jours?|k€|m€|"
+           r"er|re|ère|ere|ème|eme|e|nde|nd")
+_NUMBER = re.compile(r"(?<![\w.,])(\d{1,3}(?:[   .]\d{3})+|\d+)(?:[.,](\d+))?"
+                     r"(?:(?![\w])(?:\s?(" + _UNIT_WORDS + r"))?|(" + _COLLES + r")(?![\w]))", re.IGNORECASE)
+
+
+def unite_de(m) -> str:
+    """L'unité d'un nombre repéré par _NUMBER : écrite après une espace (groupe 3) ou collée (groupe 4)."""
+    return (m.group(3) or m.group(4) or "") if m else ""
+
+
 _WORDS = {"zero": 0, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7, "huit": 8,
           "dix": 10, "onze": 11, "douze": 12, "treize": 13, "quatorze": 14, "quinze": 15, "seize": 16,
           "vingt": 20, "trente": 30, "quarante": 40, "cinquante": 50, "soixante": 60, "septante": 70,
@@ -209,8 +220,14 @@ _WORDS = {"zero": 0, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "s
           "millions": 1e6, "milliard": 1e9, "milliards": 1e9, "dizaine": 10, "dizaines": 10, "douzaine": 12,
           "quinzaine": 15, "vingtaine": 20, "trentaine": 30, "centaine": 100, "centaines": 100}
 _WORD_RE = re.compile(r"(?<![\w'])((?:" + "|".join(sorted(_WORDS, key=len, reverse=True)) + r")"
-                      r"(?:-(?:et-)?(?:un|une|deux|trois|quatre|cinq|six|sept|huit|dix|onze|douze|treize|"
+                      r"(?:-(?:et-)?(?:un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze|treize|"
                       r"quatorze|quinze|seize|vingts?|cents?))*)(?![\w'])")
+# « neuf » est un nombre devant ce qu'il compte (« neuf ans d'expérience », « neuf compagnons ») ; ailleurs, c'est
+# l'adjectif (« un bâtiment neuf ») : jamais un fait.
+_NEUF = re.compile(r"(?<![\w'-])neuf(?=\s+(?:ans?|annees?|mois|semaines?|jours?|heures?|fois|salaries?|personnes?|"
+                   r"compagnons?|collaborateurs?|employes?|ouvriers?|techniciens?|agents?|ingenieurs?|encadrants?|"
+                   r"conducteurs?|chefs?|equipes?|chantiers?|references?|projets?|sites?|lots?|batiments?|logements?|"
+                   r"engins?|vehicules?|camions?|bennes?|nacelles?|machines?|grues?)\b)")
 _CERT = re.compile(
     r"\biso\s?\d{3,5}(?:[-:]\d{1,4})?\b|\bqualibat\b(?:\s?\d{3,4})?|\brge\b|\bqualifelec\b|\bmase\b|\bohsas\b|"
     r"\bqualipv\b|\bqualit'?enr\b|\bqualipac\b|\bqualibois\b|\bqualisol\b|\bcertibat\b|\bcefri\b|\bqualiopi\b|"
@@ -226,7 +243,9 @@ _MATERIEL = re.compile(
     r"theodolites?|plateformes? elevatrices?|pemp|monte[- ]materiaux|monte[- ]charges?|treuils?|fourgons?|"
     r"vehicules? utilitaires?|engins?|extracteurs?|deshumidificateurs?|compacteurs?|rouleaux? compresseurs?|"
     r"niveleuses?|chargeuses?|dumpers?|pompes? a beton|centrales? a beton|lignes? de vie|filets? de securite|"
-    r"camera thermique|detecteurs?|lasers?)\b")
+    r"camera thermique|detecteurs?|lasers?|aspirateurs?|robots?|unites? de decontamination|marteaux?[- ]piqueurs?|"
+    r"perforateurs?|meuleuses?|disqueuses?|tronconneuses?|deprimogenes?|filtres? absolus?|"
+    r"nettoyeurs? haute pression|balayeuses?|cribleuses?|concasseurs?|broyeurs?)\b")
 _PROPRE = re.compile(r"(?<![\w'’-])([A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ][\wÀ-ÿ'’]*(?:[ -](?:de |du |des |d'|la |le )?"
                      r"[A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ][\wÀ-ÿ'’]*)*)")
 _PROPRE_IGNORES = {
@@ -280,7 +299,7 @@ def _num_value(intpart: str, dec: str = None) -> float:
 def _word_value(tok: str) -> float:
     parts = [p for p in fold(tok).split("-") if p and p != "et"]
     total, cur = 0.0, 0.0
-    small = {"un": 1, "une": 1, **{k: v for k, v in _WORDS.items() if v < 100}}
+    small = {"un": 1, "une": 1, "neuf": 9, **{k: v for k, v in _WORDS.items() if v < 100}}
     for p in parts:
         p2 = p[:-1] if p in ("vingts", "cents") else p
         if p2 in ("cent",):
@@ -367,7 +386,7 @@ def _facts_in(phrase: str, tableau: bool = False) -> list:
         val = _num_value(m.group(1), m.group(2))
         if val != val:      # NaN
             continue
-        unit = m.group(3) or ""
+        unit = unite_de(m)
         # Unité = un mot qui suit le nombre ; un mot vide (« de », « et ») n'en est pas une.
         if unit and fold(unit) in _PAS_UNITE:
             unit = ""
@@ -390,6 +409,12 @@ def _facts_in(phrase: str, tableau: bool = False) -> list:
             unit = unite_ligne
         out.append((phrase[m.start():m.end()], EN_LETTRES,
                     (_word_value(m.group(1)), _unit_key(unit))))
+    for m in _NEUF.finditer(low):
+        if not _free(m.start(), m.end()):
+            continue
+        taken.append((m.start(), m.end()))
+        after = low[m.end():m.end() + 25].split()
+        out.append((phrase[m.start():m.end()], EN_LETTRES, (9.0, _unit_key(after[0] if after else ""))))
     for m in _MATERIEL.finditer(low):
         if _free(m.start(), m.end()):
             taken.append((m.start(), m.end()))
@@ -439,6 +464,8 @@ class Sources:
                 self.nums.append((v, fold(raw[max(0, m.start() - 60):m.end() + 60])))
         for m in _WORD_RE.finditer(self.low):
             self.nums.append((_word_value(m.group(1)), self.low[max(0, m.start() - 60):m.end() + 60]))
+        for m in _NEUF.finditer(self.low):
+            self.nums.append((9.0, self.low[max(0, m.start() - 60):m.end() + 60]))
 
     def has_number(self, val: float, unit: str) -> bool:
         for v, win in self.nums:

@@ -63,8 +63,8 @@ function translateDOM(lang) {
 
 // État initial de « Partagé avec moi » (vue co-traitant avec compte) — plus de chiffrage_note : prix de vente du lot
 // en clair + détail chiffré dans le navigateur (enveloppe), capacités déclarées, signataire, pièces typées.
-function _sharedInit(token, mandataire, projectId) {
-  return { token: token || "", projectId: projectId || null, project: null, mandataire: mandataire || "", docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true, loading: false, error: "",
+function _sharedInit(token, mandataire, projectId, role) {
+  return { token: token || "", projectId: projectId || null, project: null, mandataire: mandataire || "", role: role || "cotraitant", docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true, loading: false, error: "",
            forMember: null, coffre: null, journal: null, journalLoaded: false, conv: _sconvInit(),
            // Vague 4 : vérification du journal par le membre (verdict du serveur, exports JSON / PDF).
            jv: { busy: false, v: null, err: "", live: "", exporting: "" },
@@ -1953,7 +1953,7 @@ const __adjApp = createApp({
     async loadShared() { try { this.shared = await this.api("GET", "/api/shared") || []; } catch (e) { this.shared = []; } },
     async openShared(item) {
       const t = item.token;
-      this.sharedAo = _sharedInit(t, item.mandataire, item.project_id); this.sharedAo.loading = true;
+      this.sharedAo = _sharedInit(t, item.mandataire, item.project_id, item.role); this.sharedAo.loading = true;
       this.view = "sharedao";
       try {
         const v = await this.api("GET", "/api/invite/" + t);
@@ -2306,7 +2306,9 @@ const __adjApp = createApp({
     sharedRedLine(r) {
       if (!r) return "";
       if (r.a_revalider) return r.a_revalider > 1 ? r.a_revalider + " parties à revalider" : "Partie à revalider";
-      return r.a_faire > 1 ? r.a_faire + " parties à rédiger" : "Partie à rédiger";
+      if (r.a_faire) return r.a_faire > 1 ? r.a_faire + " parties à rédiger" : "Partie à rédiger";
+      // Envoyée, pas encore validée : le chef de file attend sa validation.
+      return r.a_valider > 1 ? r.a_valider + " parties à valider" : "Partie à valider";
     },
     openSharedKey(ev, s) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); this.openShared(s); } },
     // Les critères ne s'affichent QUE dans la carte « Comment vous serez noté » (phrase du
@@ -4629,6 +4631,8 @@ const __adjApp = createApp({
     // Qui a écrit la version affichée : pour la part d'un partenaire, lui ou vous (jamais « par vous » à tort).
     atlOrigine(s) {
       const v = s && s.version_courante; if (!v) return "";
+      // Partie tirée du groupement : écrite par Adjugo sans IA (personne ne l'« envoie »).
+      if (s.genere || v.ecrit_par === "genere") return v.origine_libelle;
       if (s.prive_visible || !v.ecrit_par) return v.origine_libelle;
       return v.ecrit_par === "chef_de_file" ? "écrite par vous sur sa partie" : "envoyée par " + s.auteur.libelle;
     },

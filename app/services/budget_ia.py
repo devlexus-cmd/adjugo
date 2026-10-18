@@ -394,6 +394,9 @@ ENVELOPPES = {
     "questionnaire": (14_000, 600, 0),        # PAR question
     "partie": (40_000, 4000, 0),              # une partie de l'atelier, hors dossier commun
     "raccourcir": (45_000, 4000, 0),
+    # « Harmoniser le ton » (vague 4) : JONCTIONS_MAX (30) jonctions × deux extraits de 700 caractères + intitulés et
+    # consignes (≈ 60 000 caractères au plus), une phrase par jonction en sortie (4 000 au plus).
+    "harmoniser": (60_000, 4000, 0),
     # PAR APPEL de la lecture d'un ancien document pour proposer des fiches (une partie pleine : 60 000
     # caractères au plus + consignes ; app/services/fiches_import.py : SEGMENT_MAX, SORTIE_MAX) ; une partie
     # dense peut coûter jusqu'à APPELS_PAR_PARTIE appels (fiches_import.appels_au_plus).
@@ -411,6 +414,7 @@ TACHE_DE = {
     "questionnaire": "questionnaire",
     "partie": "redaction",
     "raccourcir": "raccourcir",
+    "harmoniser": "raccourcir",
     "fiches": "fiches_preuves",
 }
 

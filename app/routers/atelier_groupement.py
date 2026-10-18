@@ -302,6 +302,8 @@ def _faire(fn, *args, **kwargs):
 class BrouillonIn(BaseModel):
     texte: str = Field("", max_length=at.TEXTE_MAX + 2000)
     base_brouillon_id: Optional[int] = None
+    # Le texte commun que l'écran montrait (null : rien d'envoyé) — verrou optimiste ; absent : non contrôlé.
+    base_version_id: Optional[int] = None
 
 
 class FaitIn(BaseModel):
@@ -316,6 +318,12 @@ class AideIn(BaseModel):
 class EnvoyerIn(BaseModel):
     brouillon_id: int
     avertissement_lu: bool = False
+    base_version_id: Optional[int] = None
+
+
+def _vu(body) -> object:
+    """`base_version_id` tel que l'écran l'a envoyé (None compris), ou « non fourni »."""
+    return body.base_version_id if "base_version_id" in body.model_fields_set else ag.BASE_DEFAUT
 
 
 class ValiderIn(BaseModel):
@@ -346,7 +354,7 @@ def _brouillon_lu(acces, db, sid, bid):
 
 
 def _brouillon(acces, db, sid, body: BrouillonIn):
-    _faire(ag.enregistrer_brouillon, db, acces, sid, body.texte, body.base_brouillon_id)
+    _faire(ag.enregistrer_brouillon, db, acces, sid, body.texte, body.base_brouillon_id, base_version_id=_vu(body))
     return _section(acces, db, sid)
 
 
@@ -366,7 +374,7 @@ def _tache(acces, db, job_id):
 
 
 def _envoyer(acces, db, sid, body: EnvoyerIn, ip):
-    _faire(ag.envoyer, db, acces, sid, body.brouillon_id, body.avertissement_lu, ip=ip)
+    _faire(ag.envoyer, db, acces, sid, body.brouillon_id, body.avertissement_lu, ip=ip, base_version_id=_vu(body))
     return _section(acces, db, sid)
 
 
@@ -395,7 +403,8 @@ def _valider_dossier(acces, db, body: Optional[ValiderDossierIn], ip):
 def _export(acces, db):
     import json
     _faire(ag._exiger_espace, acces)
-    payload = json.dumps(ag.exporter_invitation(db, acces.inv, sources_du_compte=(acces.mode == "compte")),
+    payload = json.dumps(ag.exporter_invitation(db, acces.inv, sources_du_compte=(acces.mode == "compte"),
+                                                acces=acces if acces.mode == "compte" else None),
                          ensure_ascii=False, indent=2, default=str)
     return Response(content=payload, media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="ma_partie_adjugo.json"',

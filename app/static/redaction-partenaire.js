@@ -134,11 +134,13 @@
   }
 
   // Ce que le chef de file reçoit avec le texte : des compteurs PAR TYPE de source (jamais les sources).
-  const TYPES_LIB = { documents: "trouvés dans vos documents", declare: "déclarés par vous", public: "de source publique",
-    estimation: "tirés de votre estimation", calcul: "calculés à partir de vos faits", acheteur: "dans le dossier de l'acheteur" };
+  // [singulier, pluriel] : « 1 déclaré par vous », « 2 déclarés par vous ».
+  const TYPES_LIB = { documents: ["trouvé dans vos documents", "trouvés dans vos documents"], declare: ["déclaré par vous", "déclarés par vous"],
+    public: ["de source publique", "de source publique"], estimation: ["tiré de votre estimation", "tirés de votre estimation"],
+    calcul: ["calculé à partir de vos faits", "calculés à partir de vos faits"], acheteur: ["dans le dossier de l'acheteur", "dans le dossier de l'acheteur"] };
   function rpCompteurs(c) {
     const p = (c && c.par_type) || {};
-    return Object.keys(TYPES_LIB).filter(k => Number(p[k]) > 0).map(k => Number(p[k]) + " " + TYPES_LIB[k]);
+    return Object.keys(TYPES_LIB).filter(k => Number(p[k]) > 0).map(k => Number(p[k]) + " " + TYPES_LIB[k][Number(p[k]) > 1 ? 1 : 0]);
   }
 
   // Date « AAAA-MM-JJ » ou horodatage de l'API (UTC « naïf ») → « 2 novembre 2026 ».
@@ -201,7 +203,8 @@
       });
       ov.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); close(null); } if (e.key === "Enter" && input && e.target === input) close({ value: (input.value || "").trim() }); });
       setTimeout(() => (input || ov.querySelector(o.focusCancel ? '[data-r="0"]' : '[data-r="1"]')).focus(), 30);
-      try { root.lucide && root.lucide.createIcons(); } catch (e) {}
+      // Icônes de CETTE fenêtre seulement : jamais tout le document (dans app.html, Vue gère les siennes).
+      try { root.lucide && root.lucide.createIcons({ root: ov }); } catch (e) {}
     });
   }
 
@@ -310,7 +313,8 @@
       const parts = v.parties || [];
       const cleOk = !!(v.espace && v.espace.cle_valide);
       const ecrire = !!v.peut_ecrire && cleOk;
-      const aFaire = parts.filter(p => ["a_rediger", "en_cours", "a_revalider"].includes(p.statut)).length;
+      // Envoyée mais pas encore validée : le chef de file attend sa validation, c'est encore « à faire ».
+      const aFaire = parts.filter(p => ["a_rediger", "en_cours", "envoyee", "a_revalider"].includes(p.statut)).length;
       const pret = (v.dossier && v.dossier.pret) || null;
       let h = '<section class="card pad rp-card" aria-labelledby="rp-titre">';
       h += '<div class="rp-head"><div class="rp-head-t"><h2 class="rp-title" id="rp-titre">Mes parties du dossier de présentation</h2>' + tip(rpEsc(BULLE_CARTE)) + "</div>"
@@ -364,13 +368,21 @@
       try { n.focus({ preventScroll: true }); if (g.ta && typeof g.s === "number") n.setSelectionRange(g.s, g.e); } catch (e) {}
     }
 
-    function icons() { try { root.lucide && root.lucide.createIcons(); } catch (e) {} }
+    // Icônes de CET écran seulement : lucide remplace chaque <i data-lucide> par un <svg> ; sur tout le document, il
+    // remplacerait aussi ceux que Vue gère dans app.html (« Partagé avec moi ») et figerait son rendu.
+    function icons() { try { root.lucide && root.lucide.createIcons({ root: el }); } catch (e) {} }
 
     function renderEspace(v) {
       const e = v.espace || {};
       let h = '<div class="rp-esp"><div class="rp-esp-t">' + ico("key-round", 15) + "<b>Votre espace privé de rédaction</b>" + tip(rpEsc(BULLE_ESPACE)) + "</div>";
-      if (!e.ouvert) {
-        h += '<p class="small rp-p">Ouvrez-le sur cet appareil pour rédiger vos parties.</p><div class="rp-acts">' + btn("espace-ouvrir", ico("lock-open", 14) + "Ouvrir mon espace", "primary") + "</div>";
+      if (e.par_le_compte) {
+        // Lien rattaché à un compte Adjugo : aucun espace par le lien, le compte suffit.
+        h += '<p class="small rp-p">' + rpEsc(e.message || "Ce lien est rattaché à un compte Adjugo : rédigez vos parties depuis ce compte, dans « Partagé avec moi ».") + '</p><div class="rp-acts"><a class="btn sm primary" href="/app">' + ico("log-in", 14) + "Ouvrir mon compte</a></div>";
+      } else if (!e.ouvert) {
+        // Invitation qui vise une adresse : même la première ouverture se fait avec le code reçu à cette adresse.
+        h += e.code_possible
+          ? '<p class="small rp-p">Recevez un code à l\'adresse de votre invitation pour l\'ouvrir sur cet appareil.</p><div class="rp-acts">' + btn("espace-code", ico("mail", 14) + "Recevoir un code", "primary") + "</div>"
+          : '<p class="small rp-p">Ouvrez-le sur cet appareil pour rédiger vos parties.</p><div class="rp-acts">' + btn("espace-ouvrir", ico("lock-open", 14) + "Ouvrir mon espace", "primary") + "</div>";
       } else {
         h += '<p class="small rp-p">Votre espace est déjà ouvert sur un autre appareil ou un autre navigateur.'
           + (e.code_possible ? " Recevez un code par email pour l'ouvrir ici : vos brouillons sont gardés." : " Vous pouvez le réinitialiser ici : vos brouillons non envoyés seront effacés, vos textes envoyés restent.") + "</p><div class=\"rp-acts\">"
@@ -555,6 +567,11 @@
         h += '<div class="rp-env-t">' + ico("send", 15) + "<b>Envoyée</b>" + (cur.cree_le ? '<span class="muted small">le ' + rpEsc(rpJour(cur.cree_le)) + "</span>" : "") + tip(rpEsc(BULLE_VALIDER)) + "</div>";
         if (ecrire) h += '<div class="rp-acts">' + btn("valider", ico("check", 14) + "Valider ma partie", "primary", ' data-sid="' + sid + '"') + "</div>";
       }
+      else if (p.statut === "a_revalider" && cur.ecrit_par !== "chef_de_file") {
+        // Sa nouvelle version, envoyée après la validation (ou son texte rétabli) : à valider de nouveau, par lui.
+        h += '<div class="rp-env-t">' + ico("send", 15) + "<b>Nouvelle version envoyée</b>" + (cur.cree_le ? '<span class="muted small">le ' + rpEsc(rpJour(cur.cree_le)) + "</span>" : "") + tip(rpEsc(BULLE_VALIDER)) + "</div>";
+        if (ecrire) h += '<div class="rp-acts">' + btn("valider", ico("check", 14) + "Valider cette nouvelle version", "primary", ' data-sid="' + sid + '"') + "</div>";
+      }
       if (!(p.statut === "a_revalider" && cur.ecrit_par === "chef_de_file"))      // sinon : déjà côte à côte plus haut
         h += '<details class="gn-det"><summary>' + (p.statut === "validee" ? "Voir le texte validé" : (cur.ecrit_par === "chef_de_file" ? "Voir le texte commun actuel" : "Voir le texte envoyé")) + '</summary><div class="rp-txt rp-txt-b">' + rpTexte(cur.texte, cur.ecrit_par === "chef_de_file" ? "source du chef de file" : "votre source") + "</div></details>";
       return h + "</div>";
@@ -570,7 +587,9 @@
       h += "</div>";
       const q = v.qui_fait_quoi, qOk = !q || (q.ma_validation && q.ma_validation.statut === "valide");
       if (ecrire && !(ma && ma.statut === "valide")) {
-        if (!d.peut_valider) h += '<div class="muted small rp-p">' + (qOk ? "Validez d'abord chacune de vos parties, puis lisez le dossier assemblé." : "Validez d'abord chacune de vos parties et « " + rpEsc(q.titre || q.intitule || "Qui fait quoi dans le groupement") + " », puis lisez le dossier assemblé.") + "</div>";
+        const nq = "« " + rpEsc((q && (q.titre || q.intitule)) || "Qui fait quoi dans le groupement") + " »";
+        const sans = !(v.parties || []).length;      // aucune partie confiée : seulement « Qui fait quoi »
+        if (!d.peut_valider) h += '<div class="muted small rp-p">' + (sans ? "Validez d'abord " + nq + ", puis lisez le dossier assemblé." : (qOk ? "Validez d'abord chacune de vos parties, puis lisez le dossier assemblé." : "Validez d'abord chacune de vos parties et " + nq + ", puis lisez le dossier assemblé.")) + "</div>";
         else if (!lu) h += '<div class="muted small rp-p">Lisez le dossier assemblé avant de le valider.</div>';
       }
       if (q) h += renderQfq(q, ecrire);
@@ -635,10 +654,14 @@
       return r;
     }
 
+    // Le texte commun que l'écran montre (null : rien d'envoyé) : le serveur refuse s'il a changé entre-temps.
+    const communVu = (p) => (p && p.texte_commun ? p.texte_commun.version_id : null);
+
     async function enregistrer(sid, silencieux) {
       const p = partie(sid); if (!p) return null;
       const texte = texteEdite(p);
-      const r = await call("PUT", "/sections/" + sid + "/brouillon", { texte, base_brouillon_id: p.brouillon ? p.brouillon.id : null });
+      const r = await call("PUT", "/sections/" + sid + "/brouillon", { texte, base_brouillon_id: p.brouillon ? p.brouillon.id : null, base_version_id: communVu(p) });
+      if (!r.ok && r.code === "texte_modifie_entre_temps") { st.moi[sid] = true; await load(); say(sid, r.message, true); render(); return null; }
       if (!r.ok) { say(sid, r.code === "brouillon_modifie" ? r.message + " Votre saisie est gardée sur cet écran." : r.message, true); return null; }
       delete st.edits[sid]; delete st.hist[sid]; garderLocaux();
       if (!silencieux) say(sid, "Enregistré. Les faits de votre texte ont été relus sans IA.");
@@ -702,7 +725,7 @@
             if (!ok) return;
             if (dirty && !(await enregistrer(sid, true))) { render(); return; }
           }
-          const r = await call("POST", "/sections/" + sid + "/aide", { action: a === "aide" ? "rediger" : "raccourcir" });
+          const r = await avecIdentite(() => call("POST", "/sections/" + sid + "/aide", { action: a === "aide" ? "rediger" : "raccourcir" }), sid, "Pour lancer l'aide d'Adjugo");
           if (r.ok && r.data && r.data.tache) { st.jobs[sid] = r.data.tache.id; say(sid, ""); live("Adjugo rédige votre partie."); await load(); }
           else { say(sid, r.message, true); render(); }
         }
@@ -747,6 +770,7 @@
 
     async function envoyer(sid) {
       let p = partie(sid); if (!p) return;
+      const vu = communVu(p);
       const dirty = st.edits[sid] && (!p.brouillon || st.edits[sid].texte !== p.brouillon.texte);
       const t = texteEdite(p), todo = rpACompleter(t);
       const c = (p.brouillon && p.brouillon.controle) || {};
@@ -761,7 +785,10 @@
       if (dirty) { if (!(await enregistrer(sid, true))) { render(); return; } await load(); p = partie(sid); }
       if (!p || !p.brouillon) return;
       const bid = p.brouillon.id;
-      const r = await avecIdentite(() => call("POST", "/sections/" + sid + "/envoyer", { brouillon_id: bid, avertissement_lu: true }), sid, "Pour envoyer votre partie");
+      // Le texte commun vu AVANT l'envoi : une modification du chef de file arrivée entre-temps n'est jamais remplacée
+      // en silence (l'écran la montre, avant et après, puis on renvoie).
+      const r = await avecIdentite(() => call("POST", "/sections/" + sid + "/envoyer", { brouillon_id: bid, avertissement_lu: true, base_version_id: vu }), sid, "Pour envoyer votre partie");
+      if (!r.ok && r.code === "texte_modifie_entre_temps") { st.moi[sid] = true; await load(); say(sid, r.message, true); render(); return; }
       if (r.ok) { delete st.moi[sid]; delete st.hist[sid]; }
       say(sid, r.ok ? "Partie envoyée : le chef de file et les autres membres peuvent la lire. Validez-la quand elle est définitive." : r.message, !r.ok);
       await load(); if (r.ok) changed();
@@ -775,6 +802,7 @@
         await load(); changed(); return true;
       }
       if (r.code === "espace_deja_ouvert") { await load(); return false; }
+      if (r.code === "code_requis") { await espaceCode(); return false; }
       st.err = r.message; st.vue = null; render();
       return false;
     }

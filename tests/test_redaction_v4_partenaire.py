@@ -241,7 +241,7 @@ def test_partage_avec_moi_resume_et_ecran_par_le_compte(client, auth, fake_llm):
     assert client.post(f"/api/invite/{a['token']}/claim", headers=hp).status_code == 200
     # La liste : statuts seulement (jamais un texte).
     item = next(x for x in client.get("/api/shared", headers=hp).json() if x["project_id"] == pid)
-    assert item["redaction"] == {"parties": 1, "a_faire": 1, "a_revalider": 0}
+    assert item["redaction"] == {"parties": 1, "a_faire": 1, "a_revalider": 0, "a_valider": 0}
     # L'écran par le compte : aucune clé, sa matière privée lisible, ses preuves et son savoir-faire.
     pc = PC(client, pid, hp)
     v = pc.get().json()
@@ -255,13 +255,13 @@ def test_partage_avec_moi_resume_et_ecran_par_le_compte(client, auth, fake_llm):
     _ecrire(pc, sid, "Nous trions les déchets amiantés.")
     r = pc.get(f"/sections/{sid}/brouillons/{b1['id']}")
     assert r.status_code == 200 and r.json()["texte"] == b1["texte"] and r.json()["sources"]
-    # Par le lien (même invitation, avec la clé) : les sources écrites depuis le compte restent au compte.
-    pl = P(client, a["token"])
-    rl = pl.get(f"/sections/{sid}/brouillons/{b1['id']}").json()
-    assert rl["sources"] == [] and rl["sources_depuis_le_compte"] is True
+    # Par le lien (même invitation) : un lien rattaché à un compte n'ouvre aucun espace ; rien de ses brouillons.
+    assert client.post(f"/api/invite/{a['token']}/redaction/espace", json={}).status_code == 403
+    pl = P(client, a["token"], ouvrir=False)
+    assert pl.get(f"/sections/{sid}/brouillons/{b1['id']}").status_code == 403
     _envoyer(pc, sid)
     item = next(x for x in client.get("/api/shared", headers=hp).json() if x["project_id"] == pid)
-    assert item["redaction"] == {"parties": 1, "a_faire": 0, "a_revalider": 0}
+    assert item["redaction"] == {"parties": 1, "a_faire": 0, "a_revalider": 0, "a_valider": 1}
     tout = _vues_du_chef(client, h, pid, sid, token=a["token"])
     assert "Nous trions les déchets amiantés." in tout and SECRET_EXTRAIT not in tout and SECRET_DOC not in tout
     # Le chef de file modifie : la pastille de la liste le dit.
@@ -269,7 +269,7 @@ def test_partage_avec_moi_resume_et_ecran_par_le_compte(client, auth, fake_llm):
     client.put(f"/api/atelier/{pid}/repartition/{sid}/texte", headers=h,
                json={"texte": "Nous trions et évacuons les déchets amiantés.", "base_version_id": cur})
     item = next(x for x in client.get("/api/shared", headers=hp).json() if x["project_id"] == pid)
-    assert item["redaction"] == {"parties": 1, "a_faire": 0, "a_revalider": 1}
+    assert item["redaction"] == {"parties": 1, "a_faire": 0, "a_revalider": 1, "a_valider": 0}
     # Un sous-traitant, ou un dossier pas encore préparé : rien (l'écran reste vide).
     h2, e2 = _register(client, company="Chef sans dossier")
     _company(client, h2)
@@ -518,7 +518,7 @@ def test_fonctions_pures_de_l_ecran_sous_node():
     assert r["p"] == 'Une <mark class="rp-mark">nacelle</mark> &lt;b&gt;de&lt;/b&gt; 18 m' and r["p0"] == "rien &lt;i&gt;"
     assert r["mots"] == [5, 2] and r["todo"] == 2
     assert r["lim"] == ["20 pages au maximum", "1 page au maximum par référence", "Police : Arial 11"]
-    assert r["cpt"] == ["2 trouvés dans vos documents", "1 déclarés par vous", "1 dans le dossier de l'acheteur"]
+    assert r["cpt"] == ["2 trouvés dans vos documents", "1 déclaré par vous", "1 dans le dossier de l'acheteur"]
     d = r["d"]
     assert d["ok"] is True and '<mark class="rp-del">4</mark>' in d["avant"] and '<mark class="rp-ins">5</mark>' in d["apres"]
     assert "&lt;b&gt;" in d["avant"] and "<b>" not in d["avant"]
