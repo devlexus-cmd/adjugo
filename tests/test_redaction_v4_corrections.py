@@ -608,6 +608,12 @@ def test_atelier_origine_d_une_partie_tiree_du_groupement():
     assert m and "s.genere" in m.group(1) and "origine_libelle" in m.group(1)
     html = _read("app.html")
     assert "Écrite par Adjugo sans IA : aucune source ni extrait." in html
+    # L'en-tête « 1 validée sur 6 · 2 à valider · 3 à écrire » compte chaque partie de groupement selon sa pastille.
+    m = re.search(r"atlCompte\(d\) \{(.*?)\n    \},", js, re.S)
+    assert m and "s.part ? (grp[s.part.statut]" in m.group(1) and 'envoyee: "a_valider"' in m.group(1)
+    assert 'a_valider: ["à valider", "à valider"]' in js
+    # Le bouton « Valider » d'une partie tirée du groupement suit ce qu'elle attend du chef de file.
+    assert "atlSec().part ? atlSec().part.a_valider_par_vous" in html
 
 
 # ── L'écran du partenaire, rendu sous Node (faux DOM minimal) ─────────────────────────

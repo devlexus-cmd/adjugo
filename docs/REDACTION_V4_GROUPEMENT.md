@@ -161,8 +161,14 @@ Le chef de file reçoit le lien d'une invitation manuelle (pour le transmettre).
 privée (brouillons, sources, résultat des tâches, export) et les actions du partenaire (écrire, traiter un
 fait, lancer l'aide, envoyer, valider, rétablir, valider le dossier) exigent l'en-tête
 **`X-Adjugo-Espace: <clé>`** :
+- lien rattaché à un compte Adjugo (`accepted_by_user_id`) : AUCUN espace par le lien — `POST /espace` → 403
+  `espace_par_le_compte` (réinitialisation comprise), une clé prise avant le rattachement ne vaut plus, et aucun
+  brouillon écrit depuis le compte ne se lit ni ne s'utilise par le lien (texte, sources, export, envoi). Le compte
+  suffit (« Partagé avec moi ») ; la vue rend `espace.par_le_compte: true` (§ 19) ;
 - `POST /api/invite/{token}/redaction/espace` `{}` → `{cle, entete, brouillons_effaces}` à la première
-  ouverture. La clé n'est rendue qu'UNE fois : l'écran la garde dans le navigateur (localStorage) ;
+  ouverture ; quand le lien vise une adresse (`code_possible`), la première ouverture exige déjà le code reçu à
+  cette adresse (`{code}`, sinon 409 `code_requis`) : celui qui détient seulement le lien n'ouvre rien. La clé
+  n'est rendue qu'UNE fois : l'écran la garde dans le navigateur (localStorage) ;
 - déjà ouvert → 409 `espace_deja_ouvert` (`code_possible` : un code peut être envoyé à l'adresse de
   l'invitation) ;
 - `{code}` (code reçu par `POST /api/invite/{token}/otp/request`) → nouvelle clé, brouillons GARDÉS,
@@ -296,21 +302,22 @@ d'une partie du chef de file n'y est que VALIDÉ ; celui d'un partenaire, que EN
 ### Les autres sous-routes
 | route | corps | effet | erreurs |
 |---|---|---|---|
-| `POST /espace` (lien seul) | `{code?, reinitialiser?}` | § 3.1 | 409 `espace_deja_ouvert`, 400 `code_absent` / `code_incorrect`, 429 |
+| `POST /espace` (lien seul) | `{code?, reinitialiser?}` | § 3.1 | 409 `espace_deja_ouvert`, `code_requis` ; 403 `espace_par_le_compte` ; 400 `code_absent` / `code_incorrect`, 429 |
 | `GET /sections/{sid}` | — | SA partie + `brouillons` (historique, sans textes) | 404 `partie_introuvable` (toute partie qui n'est pas la sienne) |
 | `GET /sections/{sid}/brouillons/{bid}` | — | un de SES brouillons précédents, avec son texte (« Reprendre ce texte » ; chantier du partenaire, § 15) | 404 `brouillon_introuvable` / `partie_introuvable`, 403 `cle_espace_requise` |
-| `PUT /sections/{sid}/brouillon` | `{texte, base_brouillon_id}` | « J'écris moi-même » : nouveau brouillon, faits contrôlés sur SES faits (ce qu'il écrit est sa déclaration ; un fait déjà à relire le reste) | 409 `brouillon_modifie`, 422 `texte_trop_long`, 403 `cle_espace_requise` |
+| `PUT /sections/{sid}/brouillon` | `{texte, base_brouillon_id, base_version_id?}` | « J'écris moi-même » : nouveau brouillon, faits contrôlés sur SES faits (ce qu'il écrit est sa déclaration ; un fait déjà à relire le reste, y compris un fait du texte du chef de file dont il part) ; `base_version_id` : le texte commun que l'écran montrait (null : rien d'envoyé) | 409 `brouillon_modifie`, `texte_modifie_entre_temps` ; 422 `texte_trop_long`, 403 `cle_espace_requise` |
 | `POST /sections/{sid}/faits/{fid}` | `{statut: relu_par_vous|a_relire}` | sur son brouillon courant | 404 `fait_introuvable`, 409 `fait_avec_source` |
-| `POST /sections/{sid}/aide` | `{action: rediger|raccourcir, cible_mots?}` | 202 `{tache, section_id}` (§ 6) | 409 `aide_en_cours`, `plafond_partie`, `aide_indisponible`, `aide_occupee`, `cv_dans_la_partie` ; 422 `partie_vide`, `deja_assez_court`, `cible_invalide` |
+| `POST /sections/{sid}/aide` | `{action: rediger|raccourcir, cible_mots?}` | 202 `{tache, section_id}` (§ 6) | 409 `aide_en_cours`, `plafond_partie`, `aide_indisponible`, `aide_occupee`, `cv_dans_la_partie` (par le lien comme par le compte) ; 422 `partie_vide`, `deja_assez_court`, `cible_invalide` ; 403 `identity_unverified` |
 | `GET /taches/{job_id}` | — | SA tâche : `{id, kind, status, label, result: {sections: [{section_id, ok, brouillon_id, coupe, a_completer, faits_a_relire, extraits_fournis}], echecs, message}, error}` (aucun texte) | 404 `tache_introuvable` |
-| `POST /sections/{sid}/envoyer` | `{brouillon_id, avertissement_lu: true}` | le brouillon courant devient le texte commun (aucune source) ; le chef de file est prévenu | 422 `avertissement_requis` (message = l'avertissement à afficher), `partie_vide` ; 409 `brouillon_modifie`, `aide_en_cours` ; 403 `identity_unverified` |
+| `POST /sections/{sid}/envoyer` | `{brouillon_id, avertissement_lu: true, base_version_id?}` | le brouillon courant devient le texte commun (aucune source) ; le chef de file est prévenu. Une modification du chef de file arrivée depuis que l'écran a montré le texte commun (ou, sans `base_version_id`, depuis l'écriture du brouillon) n'est jamais remplacée en silence | 422 `avertissement_requis` (message = l'avertissement à afficher), `partie_vide` ; 409 `brouillon_modifie`, `aide_en_cours`, `texte_modifie_entre_temps` ; 403 `identity_unverified` ; 404 `partie_introuvable` (partie reprise entre-temps) |
 | `POST /sections/{sid}/valider` | `{version_id}` | valide le texte commun courant (le sien, ou celui du chef de file : contrôle de SES faits d'abord, brouillon `acceptee`) | 409 `texte_modifie_entre_temps` ; 403 `identity_unverified` |
 | `POST /sections/{sid}/retablir` | `{base_version_id, version_id?}` | son texte d'avant redevient le texte commun | 409 `rien_a_retablir`, `texte_modifie_entre_temps` ; 404 `version_introuvable` |
 | `POST /dossier/valider` | `{empreinte?}` | valide le dossier assemblé lu (après SES parties) | 409 `parties_a_valider`, `dossier_modifie` |
 | `GET /export` | — | portabilité : ses brouillons et ses textes envoyés (JSON) | 403 `cle_espace_requise` |
 
-Identité : envoyer et valider exigent l'adresse prouvée par code quand le lien vise une adresse
-(`identity_unverified`, mêmes règles que l'envoi de la part), ou le compte vérifié qui a rattaché le lien.
+Identité : envoyer, valider, rétablir et lancer l'aide de l'IA exigent l'adresse prouvée par code quand le lien
+vise une adresse (`identity_unverified`, mêmes règles que l'envoi de la part), ou le compte vérifié qui a rattaché
+le lien.
 
 ---
 
@@ -466,7 +473,11 @@ tables suivent `owner_id` comme l'atelier. Purge quotidienne : `POST /api/admin/
 `POST /api/admin/run-cotraitance-reminders` appelle aussi `relancer_parts` : un email par partenaire dont
 une partie n'est pas encore envoyée, à J-2 puis le jour de sa date limite interne (un palier par partie,
 jamais deux fois ; rien après dépôt ou clôture ; rien pour la démo). Changer la date limite remet le palier
-à zéro.
+à zéro. Jamais deux emails dans la même tournée : les parties à relancer d'un partenaire qui reçoit aussi le
+rappel de sa part (co-traitance) sont AJOUTÉES à ce rappel (`parts_a_relancer`, résultat `parts_fusionnees`).
+« Demander les parts » vaut relance du palier en cours (J-2 ou jour J), et une partie demandée le jour même
+n'est pas relancée. Une partie confiée à un autre rédacteur repart de zéro : ni « demandée le », ni palier, ni
+aide de l'IA utilisée (le plafond du dossier, lui, reste).
 
 ---
 
@@ -500,12 +511,15 @@ en cours au redémarrage est close par l'ancien code mais son débit n'est pas r
 
 ## 13. Limites connues (dites honnêtement)
 
-- Le chef de file qui détient le lien peut RÉINITIALISER l'espace du partenaire : il efface alors ses
-  brouillons non envoyés sans jamais les lire ; quand le lien vise une adresse, il ne peut ensuite ni
-  envoyer ni valider à sa place (le code va au partenaire) ; quand le lien ne vise AUCUNE adresse (lien
-  transmis à la main), rien ne distingue le chef de file du partenaire pour écrire et envoyer : c'est
-  inscrit au journal du membre (« espace réinitialisé »), et l'écran doit recommander le compte
-  (« Partagé avec moi ») ou une invitation avec adresse.
+- Lien rattaché à un compte : aucun espace par le lien (§ 3.1) — le chef de file qui détient le lien n'ouvre
+  rien, ne réinitialise rien et ne lit rien. Lien qui vise une adresse : la première ouverture exige déjà le
+  code envoyé à cette adresse. Le chef de file qui détient le lien peut encore RÉINITIALISER un espace déjà
+  ouvert : il efface alors les brouillons non envoyés sans jamais les lire, et quand le lien vise une adresse
+  il ne peut ensuite ni lancer l'aide de l'IA, ni envoyer, ni valider à sa place (le code va au partenaire) ;
+  quand le lien ne vise AUCUNE adresse (lien transmis à la main), rien ne distingue le chef de file du
+  partenaire qui ouvre l'espace le premier : c'est inscrit au journal du membre (« espace ouvert », « espace
+  réinitialisé »), le partenaire qui trouve son espace déjà ouvert le réinitialise (la clé de l'autre ne vaut
+  plus), et l'écran recommande le compte (« Partagé avec moi ») ou une invitation avec adresse.
 - La clé de l'espace est gardée par le navigateur : un autre appareil la récupère par le code reçu par
   email (si le lien vise une adresse), sinon par réinitialisation.
 - Le contrôle des faits dit où un fait est écrit, pas qu'il est vrai ; une phrase générale passe.
@@ -689,19 +703,25 @@ groupement, et leur rafraîchissement avant toute lecture du texte commun). Test
    harmonisation précédente est remplacée, jamais empilée (`dossiers_presentation.plan_meta.transitions`). Chaque
    phrase est contrôlée SANS IA (`asm.controle_transition`) : refusée si elle n'est pas une transition (plusieurs
    phrases, plus de 40 mots, titre, liste, renvoi, « [À compléter] », adresse email ou web) ou si elle apporte UN
-   fait absent du dossier avant l'harmonisation — nombre (chiffres, lettres, pourcentage, montant, durée, année),
-   date, période ou fréquence (« quotidien », « chaque semaine »),
-   quantité (« une centaine », « la moitié »), certification ou qualification, nom propre (au fil de la phrase, ou
-   en tête quand ce n'est pas un mot d'ouverture connu du dossier), matériel, engagement (repérage du contrôle A :
-   `faits_a_relire`, `faits_sources.engagement`). Une partie touchée repasse « à revalider » par son auteur (partie
+   fait absent du dossier avant l'harmonisation — nombre (chiffres, lettres, pourcentage, montant, durée, année,
+   nombre collé à son unité « 48h », « 1200m² », ordinal « 1er », « 3e », et, par filet, tout nombre écrit en
+   chiffres que le dossier ne contient pas), rang (« premier », « leader »), date, période ou fréquence
+   (« quotidien », « chaque semaine », « dès la rentrée », « l'an prochain », « la nuit », « le jour même »),
+   quantité (« une centaine », « la moitié », « la totalité »), certification ou qualification, nom propre (au fil
+   de la phrase, ou en tête quand ce n'est pas un mot d'ouverture connu du dossier), matériel, engagement ou délai,
+   même à la troisième personne (« garantit », « une garantie décennale », « en moins d'une heure ») (repérage du
+   contrôle A : `faits_a_relire`, `faits_sources.engagement`). Une partie touchée repasse « à revalider » par son auteur (partie
    d'un partenaire : texte commun « écrit par le chef de file », avant / après, valider ou rétablir ; partie du chef
    de file : nouvelle version, origine `harmonise`, ses sources et faits gardés) ; un fait de la phrase absent de
    CETTE partie y est à relire. Débit : une refonte du dossier (décision 6a ; la 1re action de l'IA du dossier
    compte pour 1 analyse), RENDUE si l'IA tombe ou si aucune phrase n'est retenue. Tâche `atelier_harmoniser`
    (même relevé, même remboursement, même reprise au redémarrage que l'atelier). Routage : tâche IA « raccourcir »
-   (même modèle, aucune route nouvelle). Ce qui part à l'IA : intitulés, fin de la partie précédente et début de la
-   partie (700 caractères), auteurs anonymisés (« membre A »), noms des salariés masqués (`pii_scope`), aucun CV
-   (passage non transmis), espace facturé du chef de file.
+   (même modèle, aucune route nouvelle ; estimation du garde-fou de l'essai : enveloppe `harmoniser` tirée de ses
+   plafonds). Ce qui part à l'IA : intitulés, fin de la partie précédente et début de la partie (700 caractères),
+   auteurs anonymisés (« membre A »), noms des salariés masqués (`pii_scope` : équipe du chef de file, des
+   partenaires dont la part est soumise ET de tout partenaire qui a un compte, part soumise ou non), aucun CV (repéré
+   sur le texte tel qu'écrit : les blocs en forme de CV sont retirés avant l'extrait ; s'il reste un CV
+   reconnaissable, passage non transmis), espace facturé du chef de file.
 
 ### 17.2 Routes (nouvelles ou étendues)
 
@@ -850,4 +870,94 @@ L'écran du partenaire garde ces faits à relire sous ses yeux quand l'éditeur 
   assemblage 13, socle 23, démo 186, atelier 105, V3 227, essai et routage 87, analyse partagée 40, journal 30) verts ;
   seuls échecs, les 6 tests propres à SQLite déjà connus (`PRAGMA foreign_keys` : `test_secu2_donnees.py`,
   `test_hotfix_v2_fuites.py`).
+
+
+## 19. Corrections après les cinq relectures (cloisonnement, anti-invention, parcours, coûts et RGPD, interface)
+
+29 remarques (2 bloquantes, 14 majeures, 13 mineures), toutes reproduites par un test qui échouait avant la correction
+(`tests/test_redaction_v4_corrections.py`, 28 tests ; deux remarques étaient en double). Aucune rejetée, aucune
+migration.
+
+### 19.1 Cloisonnement
+
+| constat | correction |
+|---|---|
+| Bloquant : le chef de file, qui détient le lien, ouvrait l'espace du lien (première ouverture libre) d'un partenaire qui travaille par son compte, et lisait ses brouillons privés (texte de l'IA, extraits et noms de documents recopiés par un réenregistrement) | Lien rattaché à un compte : aucun espace par le lien (`par_le_compte`, 403 `espace_par_le_compte`, réinitialisation comprise) ; une clé prise avant le rattachement ne vaut plus ; un brouillon écrit depuis le compte ne se lit ni ne s'utilise jamais par le lien (vue, historique, `brouillons/{bid}`, export, enregistrer, envoyer, raccourcir) |
+| Le chef de file agissait au nom du partenaire (aide de l'IA ; envoi et validation quand l'adresse était déjà prouvée) | Lien qui vise une adresse : code exigé dès la PREMIÈRE ouverture (409 `code_requis`) ; `lancer_aide` exige l'identité comme envoyer et valider |
+| CV écrit dans la part envoyée d'un partenaire envoyé à l'IA par « Harmoniser le ton » (CV repéré sur l'extrait aplati) | CV repéré sur le texte tel qu'écrit (`preuves_atelier.retirer_cv_par_forme`, puis `cv_presents` avec les fiches « Équipe » de l'auteur) |
+| « Raccourcir » par le lien envoyait un CV à l'IA | `refuser_cv_pour_ia` par le lien comme par le compte (la forme suffit) |
+| Nom d'un salarié d'un partenaire envoyé en clair par l'harmonisation (part de co-traitance non soumise) | Équipes de tous les partenaires qui ont un compte ajoutées au masquage (rien n'est montré) |
+| Un membre retiré de l'organisation du partenaire relisait les extraits et documents de son ancienne organisation | `_matiere_visible` : depuis le compte, seuls les extraits et preuves de l'organisation actuelle du compte (vue, historique, export) |
+
+### 19.2 Anti-invention
+
+| constat | correction |
+|---|---|
+| Contrôle A aveugle aux nombres collés (« 1200m² », « 30t », « 15km », « 48h », « 3j »), aux ordinaux (« 1er », « 3e ») et à « neuf » | `faits_a_relire._NUMBER` : unité collée et ordinal (`unite_de`), « neuf » devant un nom compté (« dix-neuf » compris) ; « un bâtiment neuf », « CACES R486 », « A320 » restent sans nombre ; une source écrite collée appuie le même fait écrit avec une espace |
+| 20 transitions piégées passaient (chiffres collés, rang, totalité, périodes, engagements à la troisième personne, matériel hors liste) | `controle_transition` : rangs, périodes relatives, totalité, engagements et délais, filet sur tout nombre en chiffres absent du dossier ; matériel du contrôle A complété (aspirateur, robot, marteau-piqueur…) ; les 20 pièges ajoutés aux tests |
+| « Partir du texte du chef de file » blanchissait ses faits à relire | Les faits à relire du texte commun écrit par le chef de file restent à relire chez le partenaire |
+| Revalider après une retouche faisait repasser à relire les propres déclarations du partenaire | `_garder_ses_declarations` : ses phrases inchangées gardent « déclaré par vous » |
+
+### 19.3 Parcours et états
+
+| constat | correction |
+|---|---|
+| Une nouvelle version envoyée après la validation : aucun bouton pour la revalider | « Valider cette nouvelle version » (écran) |
+| Co-traitant sans partie : jamais « peut valider » le dossier assemblé (« Prêt à déposer » inatteignable) | `peut_valider` sans `bool(parties)` ; message propre (« Validez d'abord « Qui fait quoi… » ») |
+| Un envoi du partenaire remplaçait en silence une modification du chef de file arrivée entre-temps | Verrou optimiste sur le texte commun (`base_version_id` dans `PUT …/brouillon` et `POST …/envoyer`, 409 `texte_modifie_entre_temps`) ; sans lui, un brouillon écrit avant la modification ne la remplace pas ; l'écran recharge et montre l'avant et l'après |
+| Envoi pendant la reprise de la partie par le chef de file : son texte devenait celui de la partie du chef de file | `_toujours_sienne` : partie et répartition relues sous verrou avant toute écriture (envoyer, enregistrer, valider, rétablir, aide) |
+| « Organisation du groupement » redevenait « Validée » seule après une régénération de la convention au même texte | La validation retient la convention validée (`plan_meta.orga_validation`) : autre version, accords en attente ou convention périmée → « à revalider » (`synchroniser_orga`) |
+| Partie envoyée affichée « À jour » et absente de « Partagé avec moi » | Comptée « à faire » à l'écran ; `resume_partenaire.a_valider` et « Partie à valider » dans la liste |
+| Partie confiée à un autre partenaire : « demandée le » et relance du précédent gardés, plafond d'aide hérité | `_changer_auteur` remet à zéro `demandee_le`, `relance_palier`, `aides_ia` |
+| Deux rappels au même partenaire dans une tournée ; relance juste après « Demander les parts » | § 11 |
+
+### 19.4 Coûts, interface, code
+
+| constat | correction |
+|---|---|
+| Bloquant : `lucide.createIcons()` sur tout le document figeait les écrans Vue de « Partagé avec moi » | Icônes de l'écran du partenaire et de sa fenêtre seulement (`createIcons({root})`) |
+| Harmonisation sans rien à faire : tâche illisible (404), message jamais montré | Le relevé reste dans le résultat (rien n'est décompté) |
+| Estimation de l'essai sous-estimée pour « Harmoniser le ton » | Enveloppe `harmoniser` (60 000 caractères, 4 000 en sortie) |
+| Onglet « Rédaction » : parties tirées du groupement en « Brouillon », bouton « Valider » encore là après sa validation, « envoyée par Tirée de la convention… », phrase « restent chez son auteur » | `section_out.part` (statut de « Qui écrit quoi », `a_valider_par_vous`, « Validée par vous ; à valider par X ») ; origine et panneau propres aux parties écrites par Adjugo ; trouvé en vérifiant à l'écran : l'en-tête « 1 validée sur 6 · 2 brouillons » compte désormais chaque partie de groupement selon sa pastille (« 2 à valider ») |
+| « Partagé avec moi » : pas d'avertissement avant de soumettre sa part (reprise dans « Qui fait quoi ») | La même bulle que par le lien (co-traitant seulement) |
+| Compteurs au pluriel (« 1 déclarés ») | Singulier et pluriel |
+| Code mort (`_fold_mots`, `est_validation_qfq`) | Retiré |
+
+### 19.5 À dire à Eliot (choix faits par défaut)
+
+1. Un partenaire qui a rattaché son lien à un compte rédige seulement depuis ce compte (le lien ne lui ouvre plus
+   d'espace) : c'est ce qui garantit que le chef de file, qui a le lien, ne lit rien.
+2. Une invitation avec adresse : le partenaire reçoit un code pour ouvrir son espace dès la première fois (une étape
+   de plus pour lui, aucune possibilité pour le chef de file d'ouvrir à sa place).
+3. Une partie confiée à un autre partenaire lui rend ses 3 aides de l'IA (le plafond du dossier, lui, ne bouge pas).
+4. « Organisation du groupement » se revalide après chaque nouvelle convention, même si son texte ne change pas.
+5. Le contrôle A repère désormais les nombres collés à leur unité et les ordinaux partout (atelier compris) : un peu
+   plus de faits « à relire », jamais un fait inventé qui passe.
+
+### 19.6 Vérifications
+
+- `tests/test_redaction_v4_corrections.py` (28 tests) : chacun échouait avant la correction (reproduction de la
+  remarque), passe après. Tests existants adaptés au nouveau comportement voulu (et non affaiblis) : espace par le
+  lien refusé après le rattachement (`test_texte_envoye_compteurs…`, `test_rgpd_export…`, `test_partage_avec_moi…`),
+  « Demander les parts » vaut relance du palier (`test_demander_les_parts…`), `par_le_compte` et `a_valider` dans
+  les réponses, compteurs au singulier.
+- Suite complète verte (SQLite) : 1 608 tests ; empreintes SRI à jour (`scripts/sri_update.py --check`), `node --check`
+  sur `app.js` et `redaction-partenaire.js`.
+- Écrans sous Node (faux DOM minimal) : icônes limitées à l'écran (`createIcons({root})`), « Valider cette nouvelle
+  version », partie envoyée « à faire », message d'un co-traitant sans partie, compteurs au singulier.
+- Navigateur réel, aperçu local (`adjugo-v4corr-verif`, base de travail remplie par `scratchpad/v4corr/seed_live.py`) :
+  lien rattaché à un compte (« Ouvrir mon compte », rien à ouvrir) ; « Partagé avec moi » : 44 icônes gérées par Vue
+  restées `<i>` hors de l'écran du partenaire (13 `<svg>` dedans seulement), roue d'attente qui apparaît et disparaît,
+  aucune erreur de rendu, bulle avant « Soumettre au chef de file », « Valider cette nouvelle version » → « Partie
+  validée. » ; co-traitant sans partie par le lien : « Validez d'abord « Qui fait quoi… » » ; chef de file : pastilles
+  « À valider », pied « Tiré de la convention et des parts des membres, sans IA », en-tête « 1 validée sur 6 · 2 à
+  valider · 3 à écrire » ; 375 px sans défilement horizontal.
+- Postgres 16 depuis l'état EXACT de la production — `d6504e4` puis `0767372` (démo par lien privé, même tête
+  `w7x8analysepartagee`) — script `scratchpad/pgtest/run_v4_corrections_depuis_prod.py` (TZ=UTC) : données créées
+  par le code de production, une seule révision appliquée (`x8y9redactionv4`), aucune donnée perdue, seconde montée
+  sans effet, rejeu forcé sans effet, code de production redémarré sur la base montée avec une tâche de partenaire
+  en cours, schéma identique à une base neuve (0 écart de colonnes, 0 d'index), retour arrière (tables retirées,
+  seules les tâches sans compte supprimées) et remontée. Tests rejoués sur la base montée depuis `0767372` : 748, dont
+  747 verts ; seul échec, déjà connu et propre à SQLite : `test_hotfix_v2_fuites.py::test_fourche_historique_toleree_
+  alteration_detectee` (journal écrit pour un compte inexistant, refusé par la clé étrangère de Postgres).
 

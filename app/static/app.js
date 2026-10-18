@@ -4602,7 +4602,10 @@ const __adjApp = createApp({
     },
     atlCompte(d) {
       const ss = (d && d.sections) || [], n = {};
-      ss.forEach(s => { n[s.statut] = (n[s.statut] || 0) + 1; });
+      // Une part de partenaire ou une partie tirée du groupement compte selon son statut de groupement (le même
+      // que sa pastille), jamais selon le statut brut de l'atelier.
+      const grp = { validee: "valide", a_revalider: "a_revalider", envoyee: "a_valider", a_valider: "a_valider", en_cours: "brouillon", a_rediger: "a_ecrire" };
+      ss.forEach(s => { const k = s.part ? (grp[s.part.statut] || s.statut) : s.statut; n[k] = (n[k] || 0) + 1; });
       return { total: ss.length, n, enCours: ss.filter(s => s.redaction_en_cours).length };
     },
     // « 2 validées sur 5 · 1 brouillon · 2 à écrire »
@@ -4610,7 +4613,7 @@ const __adjApp = createApp({
       const c = this.atlCompte(d); if (!c.total) return "Aucune partie dans le plan";
       const v = c.n.valide || 0;
       const parts = [v + " validée" + (v > 1 ? "s" : "") + " sur " + c.total];
-      const lab = { a_revalider: ["à revalider", "à revalider"], relu: ["relue", "relues"], brouillon: ["brouillon", "brouillons"], a_ecrire: ["à écrire", "à écrire"] };
+      const lab = { a_revalider: ["à revalider", "à revalider"], a_valider: ["à valider", "à valider"], relu: ["relue", "relues"], brouillon: ["brouillon", "brouillons"], a_ecrire: ["à écrire", "à écrire"] };
       Object.keys(lab).forEach(k => { const x = c.n[k] || 0; if (x) parts.push(x + " " + lab[k][x > 1 ? 1 : 0]); });
       return parts.join(" · ");
     },
