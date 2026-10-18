@@ -64,26 +64,12 @@ def export_dossier(
         "cotraitants": [],
     }
 
-    # Co-traitants RATTACHÉS À CE MARCHÉ uniquement (pas tout le carnet d'adresses de l'org).
+    # Entreprises RATTACHÉES À CE MARCHÉ uniquement (pas tout le carnet d'adresses de l'org), role/lot
+    # venant du LIEN (co-traitant → DC1/DC2, sous-traitant → DC4). Seulement les sous-traitants
+    # déclarés et les partenaires dont l'invitation est ACCEPTÉE (aucune entreprise sans son accord).
     try:
-        from app.routers.cotraitants import Cotraitant, ProjectCotraitant
-        link_rows = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).all()
-        link_by_ct = {l.cotraitant_id: l for l in link_rows}
-        ct_ids = [l.cotraitant_id for l in link_rows]
-        cts = db.query(Cotraitant).filter(Cotraitant.id.in_(ct_ids)).all() if ct_ids else []
-        for ct in cts:
-            ct_data = {}
-            for k in ["name", "siret", "code_ape", "forme_juridique",
-                       "representant_legal", "address", "city", "postal_code",
-                       "email", "phone", "tva_intracom", "ca_n1", "ca_n2",
-                       "ca_n3", "effectif"]:
-                ct_data[k] = getattr(ct, k, "") or ""
-            # role/lot viennent du LIEN (pas de la fiche partenaire) : indispensables pour
-            # router correctement co-traitant → DC1/DC2 et sous-traitant → DC4.
-            lk = link_by_ct.get(ct.id)
-            ct_data["role"] = (getattr(lk, "role", "") or "cotraitant") if lk else "cotraitant"
-            ct_data["lot"] = (getattr(lk, "lot", "") or "") if lk else ""
-            pd["cotraitants"].append(ct_data)
+        from app.services.groupement_members import cotraitants_pour_formulaires
+        pd["cotraitants"].extend(cotraitants_pour_formulaires(db, project_id)["lignes"])
     except Exception:
         pass
 

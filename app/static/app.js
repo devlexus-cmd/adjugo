@@ -343,6 +343,8 @@ function convMdToHtml(md) {
 // explicitement, sinon le navigateur les lirait comme une heure locale.
 // Trop de demandes (limite de fréquence côté serveur, réponse 429 sans message en français).
 const TOO_MANY_MSG = "Trop de demandes en peu de temps : réessayez dans quelques minutes.";
+// Promesse unique de GET /api/public-config (méthode loadFeatures).
+let _publicConfigP = null;
 // Journal vérifiable par chaque membre (co-traitance v2, vague 4) : libellé exact et limites de
 // repli (les limites renvoyées par la vérification les remplacent). On ne survend pas la preuve.
 const JOURNAL_LABEL = "Journal vérifiable : toute modification ou suppression d'entrée est détectable";
@@ -782,10 +784,10 @@ const __adjApp = createApp({
       cookiesOk: (function(){ try { return localStorage.getItem("adjugo_cookies_ok") === "1"; } catch(e){ return true; } })(),
       predepot: [false, false, false, false],
       predepotSteps: [
-        "Relisez chaque formulaire officiel et <b>signez</b> (acte d'engagement + déclaration sur l'honneur).",
+        "Relisez chaque formulaire officiel. <b>Signez-le si le règlement l'exige</b> ; sinon, la signature vient à l'attribution.",
         "Vérifiez le <b>taux de TVA</b> et les montants du formulaire ATTRI1.",
         "Ajoutez les pièces <b>« manquantes »</b> de la liste (attestations fiscale/sociale, assurances…).",
-        "Déposez avant la <b>date limite</b> sur le profil de votre client (Chorus Pro, PLACE, plateforme du marché)."
+        "Déposez avant la <b>date limite</b> sur la plateforme de dépôt indiquée dans l'avis du marché."
       ],
       discover: { open: false, trade: "", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [], uploading: false,
       cpvList: [
@@ -819,6 +821,9 @@ const __adjApp = createApp({
       ],
       countries2: [], adaptedCountries: [], orgCountry: "FR", lang: "fr",
       amont: { signals: [], uploading: false, scanning: false, regions: [], domaines: [], auto: false, autoPause: "", pasteOpen: false, pasteText: "", pasting: false },
+      // Fonctions activées par le serveur (GET /api/public-config). « Projets à venir » : masqué tant
+      // que PROJETS_A_VENIR=0 (refonte de l'étude veille, vague 1) — faux par défaut, même si l'appel échoue.
+      features: { projets_a_venir: false },
       amontDomaines: ["bâtiment", "voirie / VRD", "réseaux", "énergie / rénovation énergétique", "espaces verts / aménagement", "numérique / télécom", "équipement", "études / maîtrise d'œuvre"],
       pv: _pvInit(), pvAtl: _pvAtlInit(),   // « Mes preuves » (rédaction, vague 3, E1)
       kb: { docs: [], totalChunks: 0, uploading: false, kind: "memoire", text: "", textName: "", busyText: false,
@@ -842,17 +847,16 @@ const __adjApp = createApp({
         { code: "DROM", nom: "Outre-mer", deps: ["971", "972", "973", "974", "976"] },
       ],
       src: {
-        query: "", dept: "", country: "FR", advOpen: false, type_marche: "", cpv: "", searching: false, tenders: [], errors: [], sources: [], expanded: null,
+        query: "", dept: "", country: "FR", advOpen: false, type_marche: "", cpv: "", searching: false, tenders: [], errors: [], sources: [], nonConsultees: [], expanded: null,
         offset: 0, hasMore: false, loadingMore: false,
         analyzing: false, analysis: null, projectId: null, chosen: null, lectureMsg: "",
-        ct: { trade: "", dept: "", searching: false, companies: [], selected: [], errors: [] },
-        generating: false, dossier: null, alerts: [],
+        alerts: [],
         renewals: { list: [], loading: false, done: false },
         searched: false, empty: null, prefilled: false,
         marketEst: null, marketEstBusy: false,
       },
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
-            cotraitants: [], stOpen: false, st: { trade: "", dept: "", role: "sous_traitant", loading: false, results: [] },
+            cotraitants: [], stOpen: false, st: { trade: "", dept: "", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             chkHelp: null, grp: _grpInit(), conv: _convInit(), pm: _pmInit(), depot: _depotInit(),
             qa: [], qaInput: "", qaLoading: false, grilleBusy: "", atl: _atlCardInit(), lectureMsg: "", lectureBusy: false, lecturePid: null,
@@ -1235,10 +1239,20 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); }
     },
     acceptCookies() { try { localStorage.setItem("adjugo_cookies_ok", "1"); } catch (e) {} this.cookiesOk = true; },
+    // Config publique, lue UNE fois (analytics + fonctions activées) ; partagée par loadAmont.
+    loadFeatures() {
+      if (!_publicConfigP) {
+        _publicConfigP = this.api("GET", "/api/public-config").then(c => {
+          this.features.projets_a_venir = !!(c && c.projets_a_venir);
+          return c;
+        }).catch(() => null);
+      }
+      return _publicConfigP;
+    },
     async _loadAnalytics() {
       // Analytics produit cookieless (ex. Plausible), activé par variable d'env serveur.
       try {
-        const cfg = await this.api("GET", "/api/public-config");
+        const cfg = await this.loadFeatures();
         if (cfg && cfg.analytics_src && !document.getElementById("adj-analytics")) {
           const s = document.createElement("script");
           s.id = "adj-analytics"; s.defer = true; s.src = cfg.analytics_src;
@@ -1269,6 +1283,7 @@ const __adjApp = createApp({
 
     // ── Navigation + lazy loads ──
     go(v) {
+      if (v === "amont" && !this.features.projets_a_venir) v = "dashboard";   // écran masqué (PROJETS_A_VENIR=0)
       this.view = v;
       this.mobileNav = false;  // referme le menu mobile à la navigation
       this.notifsOpen = false; this.fb.open = false;  // referme les popups (notifications / retour d'avis) à la navigation
@@ -1805,9 +1820,10 @@ const __adjApp = createApp({
         if (!r.ok) throw new Error("indispo");
         const blob = await r.blob();
         const url = URL.createObjectURL(blob);
-        const a = document.createElement("a"); a.href = url; a.download = "DPGF.pdf"; document.body.appendChild(a); a.click(); a.remove();
+        // Nom juste : c'est l'estimation d'Adjugo mise en forme, pas la pièce de prix exigée par l'acheteur.
+        const a = document.createElement("a"); a.href = url; a.download = "Estimation-detaillee.pdf"; document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(url);
-      } catch (e) { this.notify("Export DPGF momentanément indisponible.", "err"); }
+      } catch (e) { this.notify("Estimation détaillée momentanément indisponible.", "err"); }
     },
     async aoLoadBuyer() {
       const name = this.ao.project && this.ao.project.client;
@@ -2459,12 +2475,14 @@ const __adjApp = createApp({
         if (!this.ao.st.results.length) this.notify("Aucune entreprise trouvée", "err");
       } catch (e) { this.notify(e.message, "err"); } finally { this.ao.st.loading = false; }
     },
-    async aoAttachSt(c, role) {
+    // « Ajouter un sous-traitant (DC4) » : SEUL ajout direct possible. Un partenaire du groupement
+    // s'invite (aoGrpInvite) et n'entre dans les formulaires qu'après avoir accepté.
+    async aoAttachSt(c) {
       try {
         await this.api("POST", "/api/cotraitants/project/" + this.ao.project.id,
-          { company: c, role: role || this.ao.st.role || "sous_traitant" });
+          { company: c, role: "sous_traitant" });
         await this.aoLoadCotraitants(); this.loadCotraitants();
-        this.notify(c.nom + " rattaché");
+        this.notify(c.nom + " déclaré comme sous-traitant (DC4)");
       } catch (e) { this.notify(e.message, "err"); }
     },
     async aoOptimizeGroup() {
@@ -2477,15 +2495,6 @@ const __adjApp = createApp({
       }
       catch (e) { this.notify(e.message, "err"); }
       finally { this.ao.group.loading = false; }
-    },
-    async aoAttachFromGroup(l) {
-      if (!l.candidate) return;
-      try {
-        await this.api("POST", "/api/cotraitants/project/" + this.ao.project.id,
-          { company: l.candidate, role: l.role || "cotraitant", lot: "Lot " + l.num });
-        await this.aoLoadCotraitants(); this.loadCotraitants();
-        this.notify(l.candidate.nom + " rattaché (Lot " + l.num + ")");
-      } catch (e) { this.notify(e.message, "err"); }
     },
     // ── « Répondre à plusieurs ? » (co-traitance v2) : score de groupement, manques, candidats, simulation ──
     // Règle : aucun chiffre n'est calculé ici ; tout vient de l'API (state / besoins / simulate).
@@ -3670,7 +3679,7 @@ const __adjApp = createApp({
       try { await navigator.clipboard.writeText(txt); this.notify(ok || "Texte copié"); }
       catch (e) { this.notify("Copie impossible : sélectionnez le texte et copiez-le à la main", "err"); }
     },
-    aoStAttached(c) { return this.ao.cotraitants.some(x => x.siret && x.siret === c.siret); },
+    aoStAttached(c) { return this.ao.cotraitants.some(x => x.siret && x.siret === c.siret && x.role === "sous_traitant"); },
     async aoDetachSt(link_id) {
       try { await this.api("DELETE", "/api/cotraitants/project/" + this.ao.project.id + "/" + link_id); this.aoLoadCotraitants(); }
       catch (e) { this.notify(e.message, "err"); }
@@ -4133,7 +4142,7 @@ const __adjApp = createApp({
         this.src.empty = null; this.src.marketEst = null;
         // Purge l'état d'analyse périmé de la recherche précédente (sinon un panneau
         // « Analyser » / partenaires restait latent sur les nouveaux résultats).
-        this.src.chosen = null; this.src.projectId = null; this.src.dossier = null;
+        this.src.chosen = null; this.src.projectId = null;
       }
       const PAGE = 15;
       try {
@@ -4153,7 +4162,7 @@ const __adjApp = createApp({
           this.src.errors = r.errors || [];
           if (added.length) this.notify(added.length + " nouveau" + (added.length > 1 ? "x" : "") + " marché" + (added.length > 1 ? "s" : ""), "ok");
           else { this.notify("Tous les marchés correspondant à ces critères sont déjà affichés", "ok"); appendedNothing = true; }
-        } else { this.src.tenders = fresh; this.src.errors = r.errors || []; this.src.sources = r.sources_queried || []; }
+        } else { this.src.tenders = fresh; this.src.errors = r.errors || []; this.src.sources = r.sources_queried || []; this.src.nonConsultees = r.sources_non_consultees || []; }
         this.src.offset = (append ? this.src.offset : 0) + PAGE;
         // Une page entièrement dupliquée = on est au bout côté affichage → on masque « charger plus »
         // (le serveur ignore ce qui est déjà à l'écran et pouvait renvoyer has_more à tort).
@@ -4236,7 +4245,6 @@ const __adjApp = createApp({
     async srcAnalyze(t) {
       if (!this.gateCriteria()) return;
       this.src.analyzing = true; this.src.chosen = t; this.src.analysis = null; this.src.marketEst = null;
-      this.src.ct.companies = []; this.src.ct.selected = []; this.src.dossier = null;
       try {
         const r = await this.api("POST", "/api/sourcing/analyze", { tender: t });
         this.src.analysis = r; this.src.projectId = r.project_id;
@@ -4283,6 +4291,9 @@ const __adjApp = createApp({
 
     // ── Veille amont (signaux d'investissement) ──
     async loadAmont() {
+      await this.loadFeatures();
+      // Masqué jusqu'à la vague 1 de l'étude veille : rien n'est chargé ni affiché (données gardées).
+      if (!this.features.projets_a_venir) { this.amont.signals = []; return; }
       try { this.amont.signals = await this.api("GET", "/api/amont/"); } catch (e) {}
       try {
         const a = await this.api("GET", "/api/amont/auto");
@@ -4554,39 +4565,19 @@ const __adjApp = createApp({
       const s = String(u == null ? "" : u).trim();
       return (s && !/[\u0000-\u001f\u007f]/.test(s) && /^(https?:\/\/[^\s\/]|\/(?![\/\\]))/i.test(s)) ? s : "#";
     },
-    async srcCotraitants() {
-      if (!this.src.projectId) { this.notify("Analysez d'abord un marché (Étape 2) avant de chercher des partenaires", "err"); return; }
-      this.src.ct.searching = true; this.src.ct.companies = []; this.src.ct.errors = [];
-      if (!this.src.ct.dept) this.src.ct.dept = (this.srcDeps()[0] || (this.company.postal_code || "").slice(0, 2));
-      try {
-        const r = await this.api("POST", "/api/sourcing/cotraitants",
-          { project_id: this.src.projectId, activity: this.src.ct.trade, departement: this.src.ct.dept });
-        this.src.ct.companies = r.companies || []; this.src.ct.errors = r.errors || [];
-        if (!this.src.ct.companies.length) this.notify("Aucune entreprise trouvée", "err");
-      } catch (e) { this.notify(e.message, "err"); } finally { this.src.ct.searching = false; }
-    },
-    srcToggle(c) {
-      const i = this.src.ct.selected.findIndex(x => x.siret === c.siret);
-      if (i >= 0) this.src.ct.selected.splice(i, 1); else this.src.ct.selected.push(c);
-    },
-    srcIsSelected(c) { return this.src.ct.selected.some(x => x.siret === c.siret); },
-    async srcGenerate() {
-      this.src.generating = true; this.src.dossier = null;
-      try {
-        const r = await this.api("POST", "/api/sourcing/documents",
-          { project_id: this.src.projectId, cotraitants: this.src.ct.selected });
-        this.src.dossier = r.dossier;
-        this.notify(`Documents préparés (${r.cotraitants_verifies} partenaire(s) SIRET vérifié)`);
-      } catch (e) {
-        if ((e.message || "").toLowerCase().includes("uota")) { this.notify("Quota atteint", "err"); this.go("billing"); }
-        else this.notify(e.message, "err");
-      } finally { this.src.generating = false; }
-    },
-    srcDownload() {
-      const d = this.src.dossier; if (!d || !d.zip_b64) return;
-      const bin = atob(d.zip_b64), arr = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-      this.saveBlob(new Blob([arr], { type: "application/zip" }), d.zip_name || "dossier.zip");
+    // Après l'analyse : on ouvre le MARCHÉ (formulaires, dossier de présentation, pièces, groupement),
+    // et non plus un dossier préparé ici avec des entreprises cochées sans leur accord (étude organisation,
+    // décision 4). « Inviter » ouvre directement le formulaire d'invitation du marché.
+    async srcOuvrirMarche(inviter) {
+      const pid = this.src.projectId; if (!pid) return;
+      await this.loadProjects();
+      const p = this.projects.find(x => x.id === pid);
+      if (!p) { this.notify("Appel d'offres introuvable", "err"); return; }
+      this.openAo(p);   // ao.share est posé tout de suite (avant le premier appel réseau)
+      if (inviter) {
+        this.ao.share.open = true;
+        this.$nextTick(() => { const el = this.$refs.reseauCard; if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" }); });
+      }
     },
     confClass(c) { return c >= 0.8 ? "go" : c >= 0.5 ? "a_etudier" : "neutral"; },
     critStatus(s) { return ({ ok: "go", partiel: "a_etudier", inconnu: "neutral" })[s] || "neutral"; },
@@ -4787,7 +4778,6 @@ const __adjApp = createApp({
       if (this.view === "atelier") this.atlBack();
       this.$nextTick(() => { const i = this.$refs.aoDce; if (i && i.click) i.click(); });
     },
-    srcOuvrirAtelier() { if (this.src.projectId) this.kbOuvrirAtelier({ id: this.src.projectId }); },
     atlVersSavoirFaire() {
       const a = this.atl;
       if (a.mode === "modifier" && a.edit.dirty) { this._atlDraftSave(); this.notify("Votre texte non enregistré est gardé sur cet appareil : vous le retrouverez dans la partie."); }

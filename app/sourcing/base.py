@@ -34,6 +34,16 @@ def sanitize_tender_links(tender):
 _DEPT_RE = re.compile(r"^(?:[0-9]{2,3}|2[AB])$", re.IGNORECASE)
 
 
+def _un_chiffre(d: str) -> str:
+    return d.zfill(2) if (len(d) == 1 and d.isdigit()) else d
+
+
+class SourceIndisponible(Exception):
+    """Source volontairement non interrogée (refus de la plateforme, pause) : affichée comme
+    indisponible avec son message, SANS compter comme une panne pour le disjoncteur (aucune
+    alerte répétée dans le journal, aucune nouvelle requête)."""
+
+
 class TenderCriteria:
     """Critères de recherche d'AO (poussés à l'API quand supportés)."""
     def __init__(self, query: str = "", cpv: Optional[list] = None,
@@ -46,8 +56,10 @@ class TenderCriteria:
         # Départements ASSAINIS au format attendu : garde-fou CENTRAL contre l'injection
         # (un département interpolé brut dans une requête ODSQL/API ssource pouvait la casser)
         # ET normalise (majuscule Corse). Couvre BOAMP, TED, ATEXO… d'un seul point.
+        # « 6 » saisi seul devient « 06 » (forme unique d'Adjugo ; le BOAMP est interrogé sous
+        # les deux formes, cf. sources/boamp.py).
         self.departements = [d for d in
-                             (str(x).strip().upper() for x in (departements or []))
+                             (_un_chiffre(str(x).strip().upper()) for x in (departements or []))
                              if _DEPT_RE.match(d)]
         self.montant_min = montant_min
         self.montant_max = montant_max

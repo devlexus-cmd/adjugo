@@ -50,6 +50,84 @@ def active_invite_ids(db: Session, project_id: int) -> list:
     return [i.id for i in active_invites(db, project_id)]
 
 
+# ── Qui entre dans les formulaires officiels (DC1, DC2, DC4, convention) ─────────────────
+# Étude organisation, décision 4 : AUCUNE entreprise tierce n'entre dans un DC1/DC2 sans avoir accepté
+# une invitation. Un rattachement au marché (ProjectCotraitant) ne suffit plus :
+#   - sous-traitant (rôle « sous_traitant », déclaré EXPLICITEMENT par le candidat) → DC4 ;
+#   - partenaire / chef de file → seulement si son invitation est active ET acceptée.
+
+def invitation_acceptee(inv, contrib=None) -> bool:
+    """Le partenaire a ACCEPTÉ l'invitation : depuis son compte (lien réclamé), par une réponse positive
+    du réseau, ou en soumettant sa part. Une invitation seulement créée, envoyée ou ouverte ne suffit pas ;
+    révoquée ou déclinée, jamais."""
+    if not is_active_invite(inv):
+        return False
+    if getattr(inv, "accepted_by_user_id", None) or getattr(inv, "network_accepted_at", None):
+        return True
+    return contrib is not None and getattr(contrib, "status", "") == "submitted"
+
+
+def _est_sous_traitant(role) -> bool:
+    return str(role or "").strip().lower().replace("-", "_") == "sous_traitant"
+
+
+_CHAMPS_FORMULAIRE = ("name", "siret", "code_ape", "forme_juridique", "representant_legal", "address",
+                      "city", "postal_code", "email", "phone", "tva_intracom", "ca_n1", "ca_n2", "ca_n3",
+                      "effectif", "specialites", "departement")
+
+
+def liens_dans_les_formulaires(db: Session, project_id: int) -> dict:
+    """{link_id: bool} : le rattachement entre-t-il dans les formulaires officiels ? Vrai pour un
+    sous-traitant déclaré (DC4) et pour un partenaire dont l'invitation est acceptée ; faux sinon."""
+    from app.routers.cotraitants import ProjectCotraitant
+    links = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).all()
+    inv_ids = [lk.invite_id for lk in links if getattr(lk, "invite_id", None)]
+    invs, contribs = {}, {}
+    if inv_ids:
+        invs = {i.id: i for i in db.query(ProjectInvite).filter(
+            ProjectInvite.id.in_(inv_ids), ProjectInvite.project_id == project_id).all()}
+        contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
+            ProjectContribution.invite_id.in_(inv_ids)).all()}
+    out = {}
+    for lk in links:
+        if _est_sous_traitant(lk.role):
+            out[lk.id] = True
+        else:
+            inv = invs.get(getattr(lk, "invite_id", None))
+            out[lk.id] = bool(inv is not None and invitation_acceptee(inv, contribs.get(inv.id)))
+    return out
+
+
+def cotraitants_pour_formulaires(db: Session, project_id: int) -> dict:
+    """Entreprises rattachées au marché qui PEUVENT figurer dans les formulaires officiels, au format
+    attendu par les générateurs (role/lot venant du rattachement). Renvoie {"lignes": [...],
+    "ecartes": [noms]} : les écartés (partenaires sans invitation acceptée) sont nommés pour un
+    avertissement, jamais imprimés."""
+    from app.routers.cotraitants import Cotraitant, ProjectCotraitant
+    links = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).order_by(
+        ProjectCotraitant.id.asc()).all()
+    cts = {c.id: c for c in db.query(Cotraitant).filter(
+        Cotraitant.id.in_([lk.cotraitant_id for lk in links] or [0])).all()}
+    ok = liens_dans_les_formulaires(db, project_id)
+    lignes, ecartes = [], []
+    for lk in links:
+        ct = cts.get(lk.cotraitant_id)
+        if ct is None:
+            continue
+        if not ok.get(lk.id):
+            ecartes.append(ct.name or "Partenaire")
+            continue
+        row = {k: (getattr(ct, k, "") or "") for k in _CHAMPS_FORMULAIRE}
+        row["role"] = lk.role or "cotraitant"
+        row["lot"] = lk.lot or ""
+        lignes.append(row)
+    return {"lignes": lignes, "ecartes": ecartes}
+
+
+AVERT_SANS_ACCORD = ("{noms} : pas encore d'invitation acceptée, absent des formulaires officiels. "
+                     "Invitez-le depuis la page du marché ; il y entrera quand il aura accepté.")
+
+
 def visible_contributions(db: Session, project_id: int, invites: list, viewer_invite_id: Optional[int] = None) -> dict:
     """{invite_id: part} des parts que le chef de file et les AUTRES membres peuvent lire. La part
     d'une invitation du RÉSEAU sans réponse (ou déclinée) en est retirée : brouillon saisi pendant

@@ -67,7 +67,7 @@ def _binding_required(inv) -> bool:
         return False
 
 
-_DEMO_INVITE_MSG = ("La démo est en lecture guidée : créez votre compte gratuit pour "
+_DEMO_INVITE_MSG = ("La démo est en lecture guidée : commencez votre essai gratuit de 30 jours pour "
                     "co-construire une réponse avec vos partenaires.")
 
 
@@ -611,7 +611,7 @@ def _refuse_demo_sender(user: User) -> None:
     """Défense en profondeur (en plus du garde central) : la démo n'envoie JAMAIS d'email."""
     from app.services.demo_search import is_demo
     if is_demo(user):
-        raise HTTPException(403, "La démo est en lecture guidée : créez votre compte gratuit "
+        raise HTTPException(403, "La démo est en lecture guidée : commencez votre essai gratuit de 30 jours "
                                  "pour inviter un partenaire.")
 
 

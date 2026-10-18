@@ -127,23 +127,12 @@ def produire_formulaire(db: Session, project: Project, company: Company, doc_typ
         "cotraitants": [],
     }
 
-    # Co-traitants RATTACHÉS À CE MARCHÉ → DC1 (groupement), DC2 multi-membres, DC4 (sous-traitance).
-    # Sans ça, le routeur unitaire produisait toujours des CERFA « candidat seul ».
+    # Entreprises RATTACHÉES À CE MARCHÉ → DC1 (groupement), DC2 multi-membres, DC4 (sous-traitance),
+    # role/lot venant du LIEN. Seulement les sous-traitants déclarés et les partenaires dont
+    # l'invitation est ACCEPTÉE : aucune entreprise n'entre dans un formulaire sans son accord.
     try:
-        from app.routers.cotraitants import Cotraitant, ProjectCotraitant
-        link_rows = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project.id).all()
-        link_by_ct = {l.cotraitant_id: l for l in link_rows}
-        ct_ids = [l.cotraitant_id for l in link_rows]
-        cts = db.query(Cotraitant).filter(Cotraitant.id.in_(ct_ids)).all() if ct_ids else []
-        for ct in cts:
-            row = {k: getattr(ct, k, "") or "" for k in
-                   ["name", "siret", "code_ape", "forme_juridique", "representant_legal", "address",
-                    "city", "postal_code", "email", "phone", "tva_intracom", "ca_n1", "ca_n2", "ca_n3", "effectif"]}
-            # role/lot viennent du LIEN (comme l'export ZIP) : sous-traitant → DC4, pas DC1/DC2.
-            lk = link_by_ct.get(ct.id)
-            row["role"] = (getattr(lk, "role", "") or "cotraitant") if lk else "cotraitant"
-            row["lot"] = (getattr(lk, "lot", "") or "") if lk else ""
-            pd["cotraitants"].append(row)
+        from app.services.groupement_members import cotraitants_pour_formulaires
+        pd["cotraitants"].extend(cotraitants_pour_formulaires(db, project.id)["lignes"])
     except Exception:
         pass
 

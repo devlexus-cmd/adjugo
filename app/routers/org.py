@@ -141,7 +141,7 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
     # Défense en profondeur (en plus du garde central) : la démo n'envoie JAMAIS d'email.
     from app.services.demo_search import is_demo
     if is_demo(current_user):
-        raise HTTPException(403, "La démo est en lecture guidée : créez votre compte gratuit "
+        raise HTTPException(403, "La démo est en lecture guidée : commencez votre essai gratuit de 30 jours "
                                  "pour inviter un collègue.")
     org = _org(current_user, db)
     if org.owner_id != current_user.id and (current_user.org_role or "") != "admin":

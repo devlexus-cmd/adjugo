@@ -92,7 +92,7 @@
       <a v-if="shared.length" class="nav-item" :class="{active:view==='shared'||view==='sharedao'}" @click="go('shared')"><i data-lucide="inbox"></i>Partagé avec moi <span class="badge">{{ shared.length }}</span></a>
       <a class="nav-item" @click="navMore=!navMore" style="opacity:.7"><i :data-lucide="navMore?'chevron-down':'chevron-right'"></i>Plus</a>
       <template v-if="navMore">
-        <a class="nav-item" :class="{active:view==='amont'}" @click="go('amont')"><i data-lucide="scan-eye"></i>Projets à venir <span v-if="amont.signals.length" class="badge">{{ amont.signals.length }}</span></a>
+        <a v-if="features.projets_a_venir" class="nav-item" :class="{active:view==='amont'}" @click="go('amont')"><i data-lucide="scan-eye"></i>Projets à venir <span v-if="amont.signals.length" class="badge">{{ amont.signals.length }}</span></a>
         <a class="nav-item" :class="{active:view==='kb'}" @click="go('kb')"><i data-lucide="library"></i>Mon savoir-faire <span v-if="kb.docs.length" class="badge">{{ kb.docs.length }}</span></a>
         <a class="nav-item" :class="{active:view==='consortiums'}" @click="go('consortiums')"><i data-lucide="users-round"></i>Mes groupements <span v-if="consortiums.active" class="badge">{{ consortiums.active }}</span></a>
         <a class="nav-item" :class="{active:view==='contacts'}" @click="go('contacts')"><i data-lucide="contact-round"></i>Contacts <span class="badge">{{ contacts.length }}</span></a>
@@ -183,7 +183,7 @@
           <div class="dash-ribbon">
             <div class="rb"><span class="rb-l">Appels d'offres</span><span class="rb-v num">{{ stats.total_projects||0 }}</span><span class="rb-d">{{ (stats.by_status&&stats.by_status.en_cours)||0 }} en cours</span></div>
             <div class="rb"><span class="rb-l">Taux de réussite</span><span class="rb-v num">{{ stats.win_rate||0 }}<small>%</small></span><span class="rb-d">{{ stats.decided||0 }} {{ pl(stats.decided||0, 'clôturé', 'clôturés') }}</span></div>
-            <div class="rb"><span class="rb-l">Mes partenaires</span><span class="rb-v num">{{ cotraitants.length }}</span><span class="rb-d">vérifiés</span></div>
+            <div class="rb"><span class="rb-l">Mes partenaires</span><span class="rb-v num">{{ cotraitants.length }}</span><span class="rb-d">enregistrés</span></div>
             <div class="rb" :class="{alert:expiring.length}"><span class="rb-l">À renouveler</span><span class="rb-v num">{{ expiring.length }}</span><span class="rb-d">documents</span></div>
           </div>
 
@@ -233,8 +233,9 @@
             <div v-if="grpDash && grpDash.tronque" class="muted small" style="margin-top:8px">Calcul limité aux 100 marchés les plus récents.</div>
           </div>
 
-          <!-- Veille AMONT — projets détectés AVANT l'appel d'offres (longueur d'avance) -->
-          <div class="card pad dash-block" style="border:1px solid var(--accent-weak)">
+          <!-- Veille AMONT — projets détectés AVANT l'appel d'offres (longueur d'avance).
+               Masquée (PROJETS_A_VENIR=0) jusqu'à la vague 1 de l'étude veille : code et données gardés. -->
+          <div v-if="features.projets_a_venir" class="card pad dash-block" style="border:1px solid var(--accent-weak)">
             <div class="dash-hero-h">
               <i data-lucide="radar" class="dh-ic"></i>
               <div class="dh-tx">
@@ -932,7 +933,7 @@
               <span v-if="ao.estimate" class="pill neutral" style="font-size:11px">{{ eur(ao.estimate.total_ht) }} HT · {{ ao.estimate.jours_total }} j</span>
               <span v-if="ao.estimate && ao.estimate.review" class="pill" :class="reviewPill(ao.estimate.review.status)" style="font-size:11px">{{ reviewLabel(ao.estimate.review.status) }}</span>
               <button v-if="!ao.estimate" class="btn primary sm" @click="aoEstimate()" :disabled="ao.estimateBusy"><span v-if="ao.estimateBusy" class="spin"></span><i v-else data-lucide="sparkles"></i>Estimer mon prix</button>
-              <button v-if="ao.estimate" class="btn sm" @click="aoDownloadDpgf()"><i data-lucide="file-down"></i>Tableau de prix (Excel)</button>
+              <button v-if="ao.estimate" class="btn sm" @click="aoDownloadDpgf()"><i data-lucide="file-down"></i>Estimation détaillée (PDF)</button>
               <button v-if="ao.estimate" class="btn sm" @click="ao.estimateOpen=!ao.estimateOpen"><i :data-lucide="ao.estimateOpen?'chevron-up':'sliders-horizontal'"></i>{{ ao.estimateOpen?'Replier':'Détailler / ajuster' }}</button></div>
             <div class="cb">
               <div v-if="!ao.estimate" class="muted small">
@@ -1111,19 +1112,21 @@
             </div>
           </div>
 
-          <!-- Sous-traitants rattachés à l'AO -->
+          <!-- Partenaires et sous-traitants sur ce marché (étude organisation, décision 4) : plus de
+               « Rattacher ». Un partenaire du groupement s'INVITE (il entre dans les formulaires officiels
+               seulement après avoir accepté) ; un sous-traitant se déclare explicitement (DC4). -->
           <div class="card" style="margin-top:14px">
-            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake"></i><h3>Partenaires sur ce marché</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>Avant de déposer en groupement</b>, vérifiez le règlement : il peut <b>imposer ou interdire</b> la co-traitance selon le lot ; un opérateur ne peut être <b>chef de file que d'un seul groupement par lot</b>, ni être à la fois <b>candidat seul et membre</b> d'un groupement ; la <b>composition ne doit plus changer</b> entre la remise des candidatures et la signature. « Ajouter » recherche des entreprises réelles (SIRENE) à rattacher comme chef de file, partenaire ou sous-traitant ; leur vérification via les registres officiels donne le statut à la date indiquée.</span></button><div class="spacer"></div>
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake"></i><h3>Partenaires sur ce marché</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>Un partenaire du groupement s'invite</b> : il n'entre dans les formulaires officiels (DC1, DC2, convention) qu'après avoir accepté votre invitation. <b>Un sous-traitant</b> se déclare avec le DC4. Avant de déposer en groupement, vérifiez le règlement : il peut <b>imposer ou interdire</b> le groupement selon le lot ; une entreprise ne peut être <b>chef de file que d'un seul groupement par lot</b>, ni être à la fois <b>candidat seul et membre</b> d'un groupement.</span></button><div class="spacer"></div>
               <button class="btn sm" @click="aoOptimizeGroup()" :disabled="ao.group&&ao.group.loading"><span v-if="ao.group&&ao.group.loading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répartir entre partenaires</button>
-              <button class="btn sm" @click="ao.stOpen=!ao.stOpen"><i data-lucide="plus"></i>Ajouter</button></div>
+              <button class="btn sm" @click="ao.stOpen=!ao.stOpen"><i data-lucide="search"></i>Chercher une entreprise</button></div>
             <div class="cb">
               <!-- Règles de conformité du groupement (avertissement, pas un blocage) -->
               <div class="muted small row" style="margin-bottom:10px;padding:9px 11px;background:var(--surface-2);border-radius:8px;line-height:1.5;gap:7px;align-items:flex-start">
-                <i data-lucide="alert-triangle" style="width:14px;height:14px;flex:none;margin-top:2px;color:var(--warning)"></i><span>Avant de déposer en groupement, <b>vérifiez les règles de co-traitance du règlement</b>.</span>
+                <i data-lucide="alert-triangle" style="width:14px;height:14px;flex:none;margin-top:2px;color:var(--warning)"></i><span>Avant de déposer en groupement, <b>vérifiez les règles du règlement</b> sur les groupements.</span>
               </div>
-              <!-- Recommandation de groupement par lot -->
+              <!-- Recommandation de groupement par lot : on INVITE, jamais on n'ajoute sans accord -->
               <div v-if="ao.group && ao.group.data" style="margin-bottom:12px;padding:11px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-weak)">
-                <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Composition recommandée</b><span class="muted small">{{ ao.group.data.n_lots }} lot(s) · {{ ao.group.data.n_propre }} pour vous · {{ ao.group.data.n_cotraitance }} avec un partenaire · {{ ao.group.data.n_non_couverts }} à couvrir</span></div>
+                <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Composition suggérée</b><span class="muted small">{{ ao.group.data.n_lots }} lot(s) · {{ ao.group.data.n_propre }} pour vous · {{ ao.group.data.n_cotraitance }} avec un partenaire · {{ ao.group.data.n_non_couverts }} à couvrir</span></div>
                 <div v-if="!ao.group.data.n_lots" class="muted small">Marché en lot unique (ou allotissement non précisé) — pas de décomposition.</div>
                 <div v-for="l in ao.group.data.lots" :key="'gl'+l.num" class="row" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:flex-start">
                   <span class="pill neutral" style="font-size:10px;min-width:42px">Lot {{ l.num }}</span>
@@ -1133,24 +1136,25 @@
                     <div v-else-if="l.candidate" class="muted small">→ {{ l.candidate.nom }} · score {{ l.candidate.score.total }}/100 · {{ l.candidate.ville||'' }}<span v-if="l.candidate.procedure_collective" style="color:var(--danger)"> <i data-lucide="alert-triangle" style="width:12px;height:12px;vertical-align:-2px"></i> procédure collective</span></div>
                     <div v-else class="small" style="color:var(--warning-text)"><i data-lucide="alert-triangle" style="width:12px;height:12px"></i> Aucun partenaire trouvé — à chercher</div>
                   </div>
-                  <button v-if="l.candidate" class="btn sm primary" @click="aoAttachFromGroup(l)"><i data-lucide="plus"></i>Rattacher</button>
+                  <button v-if="l.candidate" class="btn sm primary" @click="aoGrpInvite({ name: l.candidate.nom })"><i data-lucide="user-plus"></i>Inviter</button>
                 </div>
               </div>
-              <div v-if="!ao.cotraitants.length && !ao.stOpen" class="muted small">Aucun partenaire ajouté. Ajoutez-en un pour préparer le <b>DC4</b> (le document qui déclare un partenaire).</div>
-              <div v-for="c in ao.cotraitants" :key="c.link_id" class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline)">
+              <div v-if="!ao.cotraitants.length && !ao.stOpen" class="muted small">Aucune entreprise ajoutée. Un partenaire du groupement s'invite ; un sous-traitant se déclare avec le <b>DC4</b> (déclaration de sous-traitance).</div>
+              <div v-for="c in ao.cotraitants" :key="c.link_id" class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:flex-start">
                 <div style="flex:1;min-width:0"><span class="strong small">{{ c.name }}</span> <span class="pill" :class="c.role==='mandataire'?'go':'neutral'" style="font-size:10px">{{ roleLabel(c.role) }}</span>
-                  <div class="muted small">{{ c.specialites||c.code_ape||'' }} · {{ c.city||'' }} · SIRET {{ c.siret||'n/d' }}</div></div>
+                  <div class="muted small">{{ c.specialites||c.code_ape||'' }} · {{ c.city||'' }} · SIRET {{ c.siret||'n/d' }}</div>
+                  <div v-if="c.formulaires===false" class="small" style="color:var(--warning-text);margin-top:2px">Pas encore d'accord : absent des formulaires officiels tant qu'il n'a pas accepté une invitation.</div></div>
+                <button v-if="c.formulaires===false" class="btn sm" @click="aoGrpInvite({ name: c.name })"><i data-lucide="user-plus"></i>Inviter</button>
                 <button class="btn icon sm ghost" @click="aoDetachSt(c.link_id)" aria-label="Retirer"><i data-lucide="trash-2"></i></button>
               </div>
               <div v-if="ao.stOpen" style="margin-top:12px;border-top:1px solid var(--hairline);padding-top:12px">
                 <div class="row wrap">
                   <input class="inp" v-model="ao.st.trade" list="trades-dl" placeholder="Activité (libre)" style="width:190px">
                   <input class="inp" v-model="ao.st.dept" placeholder="Département" style="width:120px">
-                  <select class="inp" v-model="ao.st.role" style="width:140px"><option value="mandataire">Chef de file</option><option value="cotraitant">Partenaire</option><option value="sous_traitant">Sous-traitant</option></select>
                   <button class="btn primary" @click="aoSearchSt()" :disabled="ao.st.loading"><span v-if="ao.st.loading" class="spin"></span><i v-else data-lucide="search"></i>Chercher</button>
                 </div>
-                <div v-for="c in ao.st.results" :key="c.siren" class="row" style="padding:9px;margin-top:8px;border:1px solid var(--border);border-radius:8px;align-items:flex-start" :style="c.procedure_collective?'border-color:var(--danger)':''">
-                  <div style="flex:1;min-width:0">
+                <div v-for="c in ao.st.results" :key="c.siren" class="row wrap" style="padding:9px;margin-top:8px;border:1px solid var(--border);border-radius:8px;align-items:flex-start;gap:8px" :style="c.procedure_collective?'border-color:var(--danger)':''">
+                  <div style="flex:1;min-width:200px">
                     <div class="row wrap" style="gap:6px">
                       <span class="strong small">{{ c.nom }}</span>
                       <span v-if="c.siret_verified" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="badge-check" style="width:11px;height:11px"></i>SIRET vérifié</span>
@@ -1158,6 +1162,7 @@
                       <span v-if="c.est_qualiopi" class="pill go" style="font-size:10px">Qualiopi</span>
                       <span v-if="c.past_wins" class="pill" style="font-size:10px;background:var(--accent-weak);color:var(--accent-text);gap:3px" :title="'Marchés publics déjà remportés (source DECP)'+(c.last_win_date?' · dernier le '+c.last_win_date:'')"><i data-lucide="trophy" style="width:11px;height:11px"></i>{{ c.past_wins }} gagné(s)</span>
                       <span v-if="c.categorie" class="pill neutral" style="font-size:10px">{{ c.categorie }}</span>
+                      <span class="num strong small" :style="c.procedure_collective?'color:var(--danger)':(c.score.total<45?'color:var(--warning)':'')">{{ c.score.total }}/100</span>
                     </div>
                     <div class="muted small">{{ c.naf_label||c.naf }} · {{ c.ville }} · {{ c.effectif!=null?c.effectif+' sal.':'' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab.</span><span v-if="c.provenance && c.provenance.source_url"> · <a :href="safeUrl(c.provenance.source_url)" target="_blank" style="color:var(--accent-text)">fiche ↗</a></span> · <a :href="companyWeb(c)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div>
                     <div v-if="c.red_flags && c.red_flags.length" class="row wrap small" style="gap:5px;margin-top:4px;color:var(--danger);font-weight:600"><i data-lucide="triangle-alert" style="width:13px;height:13px"></i><span v-for="f in c.red_flags" :key="f">{{ f }}</span></div>
@@ -1166,9 +1171,11 @@
                       <div v-for="b in c.score.breakdown" :key="b.key" class="row small" style="padding:3px 0;gap:8px;border-bottom:1px solid var(--hairline)"><span style="min-width:120px">{{ b.label }}</span><span class="muted" style="flex:1;min-width:0">{{ b.detail }}</span><span class="pill" :class="b.status==='ok'?'go':b.status==='partiel'?'a_etudier':'neutral'" style="font-size:9px">{{ b.points }}/{{ b.max_points }}</span></div>
                     </details>
                   </div>
-                  <div class="num strong" style="margin-right:8px" :style="c.procedure_collective?'color:var(--danger)':(c.score.total<45?'color:var(--warning)':'')">{{ c.score.total }}</div>
-                  <button v-if="!aoStAttached(c)" class="btn sm primary" @click="aoAttachSt(c)"><i data-lucide="plus"></i>Rattacher</button>
-                  <span v-else class="pill go" title="Rattaché"><i data-lucide="check" style="width:12px;height:12px"></i><span class="sr-only">Rattaché</span></span>
+                  <div class="row wrap" style="gap:6px">
+                    <button class="btn sm primary" @click="aoGrpInvite({ name: c.nom })"><i data-lucide="user-plus"></i>Inviter</button>
+                    <button v-if="!aoStAttached(c)" class="btn sm" @click="aoAttachSt(c)"><i data-lucide="file-plus"></i>Ajouter un sous-traitant (DC4)</button>
+                    <span v-else class="pill go" style="font-size:10px">Sous-traitant déclaré</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1467,6 +1474,8 @@
               </div>
             </div>
             <div v-if="src.sources.length" class="row small muted" style="margin-top:10px;gap:6px">Sources officielles : <span v-for="s in src.sources" :key="s" class="pill neutral">{{ s }}</span></div>
+            <!-- Sources volontairement non consultées (PLACE tant que l'autorisation écrite n'est pas reçue) : dites, jamais tues -->
+            <div v-for="n in src.nonConsultees" :key="'nc'+n.source" class="row small muted" style="margin-top:6px;gap:6px;align-items:center">{{ n.source }} : non consultée pour le moment<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ n.message }}</span></button></div>
           </div>
 
           <!-- Radar des échéances : marchés en fin de contrat -->
@@ -1517,7 +1526,7 @@
           <!-- État initial (jamais cherché) : raccourci « marchés pour mon entreprise » (#3) -->
           <div v-if="!src.tenders.length && !src.searching && !src.empty" class="empty card pad" style="margin-top:14px">
             <div class="eic"><i data-lucide="target"></i></div>
-            <h4>Trouvez vos marchés</h4><p>Marchés réels issus des sources officielles (BOAMP, TED, PLACE, Mégalis).</p>
+            <h4>Trouvez vos marchés</h4><p>Marchés réels issus des sources officielles (BOAMP, TED, Mégalis Bretagne).</p>
             <button class="btn primary" style="margin-top:12px" @click="srcSearchMine()"><i data-lucide="sparkles"></i>Voir les marchés pour mon entreprise</button>
             <div class="muted small" style="margin-top:6px">D'après vos spécialités et votre département.</div>
           </div>
@@ -1531,7 +1540,7 @@
               <button v-if="src.empty.hasDept" class="btn sm" @click="srcWiden('dept')"><i data-lucide="map"></i>Élargir à toute la France</button>
               <button v-if="src.empty.hasAdv" class="btn sm" @click="srcWiden('adv')"><i data-lucide="filter-x"></i>Retirer les filtres détaillés</button>
               <button v-if="src.empty.multiWord" class="btn sm" @click="srcWiden('query')"><i data-lucide="scissors"></i>Simplifier les mots-clés</button>
-              <button class="btn sm ghost" @click="go('amont')"><i data-lucide="radar"></i>Voir les projets à venir (amont)</button>
+              <button v-if="features.projets_a_venir" class="btn sm ghost" @click="go('amont')"><i data-lucide="radar"></i>Voir les projets à venir (amont)</button>
             </div>
           </div>
           <div v-for="(t,ti) in src.tenders" :key="ti" class="card pad" style="margin-top:10px">
@@ -1608,69 +1617,19 @@
               <div class="small" style="margin-top:3px;color:var(--accent-text)"><i data-lucide="message-circle" style="width:12px;height:12px"></i> Levier : {{ cl.levier_negociation }}</div>
             </div>
             <div class="row wrap" style="margin-top:14px;gap:8px">
-              <button class="btn" @click="srcCotraitants()"><i data-lucide="handshake"></i>Rechercher des partenaires</button>
-              <button class="btn primary" @click="srcGenerate()" :disabled="src.generating"><span v-if="src.generating" class="spin"></span><i v-else data-lucide="file-text"></i>Préparer mes documents{{ src.ct.selected.length?' ('+src.ct.selected.length+' partenaire)':'' }}</button>
+              <!-- Décision 4 de l'étude organisation : plus de partenaires cochés ici ni de dossier préparé avec
+                   eux sans leur accord. Le marché s'ouvre là où se trouve le vrai groupement (invitation acceptée). -->
+              <button class="btn primary" @click="srcOuvrirMarche(false)"><i data-lucide="folder-open"></i>Ouvrir le marché</button>
+              <button class="btn" @click="srcOuvrirMarche(true)"><i data-lucide="user-plus"></i>Inviter un partenaire</button>
+              <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Sur la page du marché : formulaires officiels, dossier de présentation et pièces. Un partenaire invité n'entre dans le dossier qu'après avoir accepté votre invitation.</span></button>
             </div>
-          </div>
-
-          <!-- Étape 3 — Co-traitants réels -->
-          <div v-if="src.analysis && (src.ct.companies.length || src.ct.searching || src.ct.dept)" class="card pad" style="margin-top:16px">
-            <div class="row" style="gap:8px;margin-bottom:10px"><span class="pill" style="background:var(--accent-weak);color:var(--accent-text)">Étape 3</span><b style="font-size:13.5px">Partenaires — entreprises réelles (SIRENE)</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Classement par <b>complémentarité</b> avec votre entreprise — ce que chaque partenaire <b>apporte au groupement</b> (complémentarité métier + ancrage territorial + fiabilité). Signaux vérifiables (SIRENE/BODACC). La date « Vérifié le » donne le statut à cette date via les registres officiels, pas une garantie permanente.</span></button></div>
-            <div class="row wrap">
-              <input class="inp" v-model="src.ct.trade" list="trades-dl" placeholder="Activité recherchée (ex. électricité, paysagiste, traiteur, dév web…)" style="flex:1;min-width:240px">
-              <datalist id="trades-dl"><option v-for="t in trades" :key="t.key" :value="t.label"></option></datalist>
-              <input class="inp" v-model="src.ct.dept" placeholder="Département" style="width:140px">
-              <button class="btn primary" @click="srcCotraitants()" :disabled="src.ct.searching"><span v-if="src.ct.searching" class="spin"></span><i v-else data-lucide="search"></i>Chercher</button>
-            </div>
-            <div v-for="c in src.ct.companies" :key="c.siren" class="row" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:8px;align-items:flex-start" :style="srcIsSelected(c)?'border-color:var(--accent);background:var(--accent-weak)':(c.procedure_collective?'border-color:var(--danger)':'')">
-              <input type="checkbox" :checked="srcIsSelected(c)" @change="srcToggle(c)" style="width:auto;height:auto;margin-top:2px">
-              <div style="flex:1;min-width:0;margin-left:4px">
-                <div class="row wrap" style="gap:6px">
-                  <span class="strong small">{{ c.nom }}</span>
-                  <span v-if="c.synergy" class="pill" :class="c.synergy.total>=70?'go':(c.synergy.total>=45?'a_etudier':'neutral')" style="font-size:10px">{{ c.synergy.headline }}</span>
-                  <span v-if="c.siret_verified" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="badge-check" style="width:11px;height:11px"></i>SIRET vérifié</span>
-                  <span v-if="c.est_rge" class="pill go" style="font-size:10px">RGE</span>
-                  <span v-if="c.est_qualiopi" class="pill go" style="font-size:10px">Qualiopi</span>
-                  <span v-if="c.past_wins" class="pill" style="font-size:10px;background:var(--accent-weak);color:var(--accent-text);gap:3px" :title="'Marchés publics déjà remportés (source DECP)'+(c.last_win_date?' · dernier le '+c.last_win_date:'')"><i data-lucide="trophy" style="width:11px;height:11px"></i>{{ c.past_wins }} marché(s) public(s) gagné(s)</span>
-                  <span v-if="c.categorie" class="pill neutral" style="font-size:10px">{{ c.categorie }}</span>
-                </div>
-                <div class="muted small">{{ c.naf_label||c.naf||'NAF n/d' }} · {{ c.ville||'ville n/d' }} · {{ c.effectif!=null?c.effectif+' sal.':'effectif n/d' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab. ouvert(s)</span> · <a :href="safeUrl(c.provenance.source_url)" target="_blank" style="color:var(--accent-text)">fiche officielle ↗</a> · <a :href="companyWeb(c)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div>
-                <div v-if="c.red_flags && c.red_flags.length" class="row wrap small" style="gap:5px;margin-top:5px;color:var(--danger);font-weight:600"><i data-lucide="triangle-alert" style="width:13px;height:13px"></i><span v-for="f in c.red_flags" :key="f">{{ f }}</span></div>
-                <div v-if="verifWhen(c)" class="muted" style="font-size:10.5px;margin-top:3px" title="Registres officiels (SIRENE/BODACC) — statut à cette date">Vérifié le {{ verifWhen(c) }}</div>
-                <details v-if="c.synergy" class="cot-score" style="margin-top:5px"><summary class="muted small" style="cursor:pointer;user-select:none">Détail de la complémentarité ({{ c.synergy.total }}/100)</summary>
-                  <div v-for="b in c.synergy.breakdown" :key="b.key" class="row small" style="padding:3px 0;gap:8px;border-bottom:1px solid var(--hairline)"><span style="min-width:140px">{{ b.label }}</span><span class="muted" style="flex:1;min-width:0">{{ b.detail }}</span><span class="pill" :class="b.points>=b.max*0.66?'go':(b.points>=b.max*0.33?'a_etudier':'neutral')" style="font-size:9px">{{ b.points }}/{{ b.max }}</span></div>
-                  <div class="muted small" style="padding:5px 0 2px;font-style:italic">Fiabilité de l'entreprise : {{ c.score.total }}/100. {{ c.synergy.note }}</div>
-                </details>
-              </div>
-              <div class="num strong" style="text-align:right" :style="c.procedure_collective?'color:var(--danger)':''">{{ c.synergy?c.synergy.total:c.score.total }}<div class="muted" style="font-size:10px;font-weight:400">fiab. {{ c.score.total }}</div></div>
-            </div>
-          </div>
-
-          <!-- Étape 4 — Dossier -->
-          <div v-if="src.dossier" class="card pad" style="margin-top:16px">
-            <div class="row"><div class="row" style="gap:8px"><span class="pill" style="background:var(--accent-weak);color:var(--accent-text)">Étape 4</span><b style="font-size:13.5px">Dossier généré</b></div><div class="spacer"></div>
-              <button class="btn primary" @click="srcDownload()"><i data-lucide="download"></i>Télécharger ({{ src.dossier.zip_name }})</button></div>
-            <div class="row wrap" style="margin-top:12px;gap:6px">
-              <span v-for="c in src.dossier.cerfas" :key="c.name" class="pill neutral row" style="gap:5px"><i data-lucide="file-text" style="width:13px;height:13px"></i>{{ c.name }}</span>
-              <span v-if="src.dossier.memoire_fichiers && src.dossier.memoire_fichiers.length" class="pill neutral row" style="gap:5px"><i data-lucide="file-pen-line" style="width:13px;height:13px"></i>dossier de présentation</span><button v-if="src.dossier.memoire_fichiers && src.dossier.memoire_fichiers.length" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">C'est le <b>« mémoire technique »</b> demandé par l'acheteur, nommé « {{ src.dossier.memoire_nom }} » comme dans le règlement quand il y figure. Il reprend le texte de l'atelier du marché (la version validée de chaque partie), en Word et en PDF.</span></button>
-            </div>
-            <!-- Avertissements (dossier de présentation coupé, passages à compléter, pièces bloquantes) -->
-            <div v-if="src.dossier.warnings && src.dossier.warnings.length" style="margin-top:10px">
-              <div v-for="(w,i) in src.dossier.warnings" :key="'sw'+i" class="row small" style="gap:6px;align-items:flex-start;padding:7px 9px;border-radius:8px;margin-bottom:5px"
-                   :style="w.startsWith('BLOQUANT')?'background:rgba(220,38,38,.08);color:#b91c1c':'background:rgba(234,179,8,.10);color:#92400e'">
-                <i :data-lucide="w.startsWith('BLOQUANT')?'octagon-alert':'triangle-alert'" style="width:14px;height:14px;flex-shrink:0;margin-top:1px"></i>
-                <span style="flex:1">{{ w }}</span>
-              </div>
-              <button v-if="src.dossier.warnings.some(x => x.toLowerCase().indexOf('dossier de présentation') >= 0)" type="button" class="btn sm" @click="srcOuvrirAtelier()"><i data-lucide="pen-line"></i>Ouvrir l'atelier du dossier de présentation</button>
-            </div>
-            <p class="muted small" style="margin-top:10px">{{ src.dossier.memoire_preview }}</p>
           </div>
         </section>
 
         <!-- ░░ VEILLE AMONT (signaux d'investissement) ░░ -->
-        <section v-if="view==='amont'">
+        <section v-if="view==='amont' && features.projets_a_venir">
           <div class="card pad">
-            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="scan-eye" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Détecter des projets d'investissement</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo <b>va chercher lui-même</b> les délibérations récentes des collectivités (open data), puis l'IA y détecte les projets d'investissement futurs — <b>des mois avant l'appel d'offres</b> — notés selon votre profil. Sources réelles et traçables, zéro projet inventé.</span></button></div>
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="scan-eye" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Détecter des projets d'investissement</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo <b>va chercher lui-même</b> les délibérations récentes des collectivités (open data), puis l'IA y détecte les projets d'investissement futurs — <b>des mois avant l'appel d'offres</b> — notés selon votre profil. Chaque projet renvoie à sa source.</span></button></div>
             <div v-if="orgCountry==='FR'" style="margin-bottom:13px">
               <div class="sectitle" style="margin:0 0 7px"><i data-lucide="map" style="width:13px;height:13px"></i> Régions ciblées <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">(aucune = toute la France)</span></div>
               <div class="row wrap" style="gap:6px">
@@ -2810,7 +2769,7 @@
               <div class="tag">Le plus choisi</div>
               <h3>Pro</h3><div class="muted small">Pour répondre régulièrement</div>
               <div class="price">129,99€<small>/mois</small></div>
-              <ul><li>30 analyses IA / mois (puis 5 €/analyse)</li><li>Savoir-faire & aide à la rédaction</li><li>Projets à venir & partenaires vérifiés</li><li>Formulaires officiels (CERFA, DUME)</li><li>Espace documents 10 Go</li></ul>
+              <ul><li>30 analyses IA / mois (puis 5 €/analyse)</li><li>Savoir-faire & aide à la rédaction</li><li>Recherche de partenaires & fins de contrat à suivre</li><li>Formulaires officiels (CERFA, DUME)</li><li>Espace documents 10 Go</li></ul>
               <div class="cur" v-if="plan.plan==='pro'">Votre plan actuel</div>
               <button v-else class="btn primary block" @click="checkout('pro')">Passer au Pro</button>
             </div>
@@ -3759,6 +3718,8 @@
   </div>
 
   <!-- ══════════ MODAL DÉCOUVERTE CO-TRAITANTS RÉELS ══════════ -->
+  <!-- Métiers proposés à la saisie (recherche d'entreprises sur la page du marché et dans cette fenêtre) -->
+  <datalist id="trades-dl"><option v-for="t in trades" :key="t.key" :value="t.label"></option></datalist>
   <div v-if="discover.open" class="overlay" @click.self="discover.open=false">
     <div class="modal wide">
       <div class="modal-h"><h3 class="row" style="gap:7px"><i data-lucide="search"></i>Découvrir des partenaires réels<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Entreprises réelles issues du registre officiel (SIRENE / annuaire-entreprises).</span></button></h3><button class="x" @click="discover.open=false"><i data-lucide="x"></i></button></div>
@@ -3815,6 +3776,6 @@
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
 <script src="/static/redaction-partenaire.js" integrity="sha384-/eOqK9ctR4Z6HGfJ2nErmGLmBdR3igQpMxfx57GZXrXeWG4MD7XnuHWQy4i+E6pQ" defer></script>
-<script src="/static/app.js" integrity="sha384-AsNg/PVPnDxFhge5+5/lJzseJE7TGllRRuoJZM5u+Zko+rfHC4jbKZyfXS6/VhnQ" defer></script>
+<script src="/static/app.js" integrity="sha384-VMxKxA8bCsrBQbqrgZPLe1NGulhhOhsGXHAseIih81peIQyFyycgn/1UxPQFpql8" defer></script>
 </body>
 </html>

@@ -351,8 +351,8 @@
         `<div class="card pad" style="text-align:center;padding:46px 24px">
            <div style="color:var(--text-2,#6b7280)">${ico("lock", 34)}</div>
            <h2 style="margin:10px 0 4px;font-size:18px">« ${esc(label)} » est réservé aux membres</h2>
-           <p class="muted" style="max-width:460px;margin:4px auto 0">Vous êtes invité sur un dossier précis. Créez votre compte Adjugo (gratuit) pour débloquer tout l'espace : pipeline, coffre-fort, équipe, facturation…</p>
-           <a class="btn primary" href="/app" target="_blank" rel="noopener" style="margin-top:16px"><i data-lucide="sparkles"></i>Créer mon compte gratuit</a>
+           <p class="muted" style="max-width:460px;margin:4px auto 0">Vous êtes invité sur un dossier précis. Commencez votre essai gratuit de 30 jours pour débloquer tout l'espace : pipeline, coffre-fort, équipe, facturation…</p>
+           <a class="btn primary" href="/app" target="_blank" rel="noopener" style="margin-top:16px"><i data-lucide="sparkles"></i>Commencer mon essai gratuit de 30 jours</a>
          </div>`;
       icons();
     }
@@ -1878,7 +1878,7 @@
           const avisUrl = safeUrl(t.url || (t.provenance && t.provenance.source_url));
           if (avisUrl !== "#") acts.appendChild($(`<a class="btn sm" href="${esc(avisUrl)}" target="_blank" rel="noopener noreferrer nofollow">Voir l'avis<i data-lucide="external-link"></i></a>`));
           const ana = $(`<button class="btn sm primary">Analyser cet AO</button>`);
-          ana.onclick = () => { const b = document.getElementById("g-banner"); b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)"; b.innerHTML = '<i data-lucide="sparkles"></i><div class="small">L\'analyse de pertinence, le chiffrage et la génération du dossier sont réservés aux comptes Adjugo. <a href="/app" target="_blank" rel="noopener"><b>Créez le vôtre gratuitement</b>' + ico("arrow-right", 13, "margin-left:3px") + '</a></div>'; icons(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+          ana.onclick = () => { const b = document.getElementById("g-banner"); b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)"; b.innerHTML = '<i data-lucide="sparkles"></i><div class="small">L\'analyse de pertinence, le chiffrage et la génération du dossier sont réservés aux comptes Adjugo. <a href="/app" target="_blank" rel="noopener"><b>Commencez votre essai gratuit de 30 jours</b>' + ico("arrow-right", 13, "margin-left:3px") + '</a></div>'; icons(); window.scrollTo({ top: 0, behavior: "smooth" }); };
           acts.appendChild(ana); card.appendChild(acts); results.appendChild(card);
         });
         icons();

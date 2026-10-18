@@ -39,27 +39,42 @@ from app.services.profile import company_dict as _company_dict, criteria_dict as
 logger = logging.getLogger("adjugo")
 router = APIRouter(prefix="/api/sourcing", tags=["Sourcing (sources officielles)"])
 
-# Sources AO actives : BOAMP (national FR) + TED (européen) + plateformes Atexo
-# (profils acheteurs : PLACE = État national ; Mégalis = collectivités bretonnes — couvrent
-# les MAPA sous-seuil absents du BOAMP). Pagination + cache 20 min + garde-fou template.
+# Sources AO : BOAMP (national FR) + TED (européen) + plateformes Atexo (profils acheteurs :
+# Mégalis = collectivités bretonnes, MAPA sous-seuil absents du BOAMP ; PLACE = État, SUSPENDUE
+# tant que PLACE_ACTIF=0). Pagination + cache 20 min + garde-fou template. Cette liste sert à
+# retrouver une source par son nom (fetch_dce) ; les sources INTERROGÉES viennent de _tender_sources.
 # DECP = marchés attribués → réservé à l'« intelligence marché », pas au feed d'AO ouverts.
 TENDER_SOURCES = [BoampSource(), TedSource(), MEGALIS, PLACE]
 COMPANY_SOURCES = [SireneSource()]
 
 
+def _fr_inclus(countries: list) -> bool:
+    cc = [str(c).upper() for c in (countries or [])]
+    return (not cc) or ("FR" in cc)
+
+
 def _tender_sources(countries: list) -> list:
     """Sources à interroger selon les pays demandés. BOAMP (national FR) n'est
     pertinent que pour la France ; TED couvre tous les pays UE/EEE."""
-    cc = [str(c).upper() for c in (countries or [])]
-    fr_inclus = (not cc) or ("FR" in cc)
+    from app.core.interrupteurs import place_actif
     sources = []
-    if fr_inclus:
+    if _fr_inclus(countries):
         # BOAMP (bulletin national) + les plateformes Atexo : Mégalis (MAPA Bretagne) et
-        # PLACE (MAPA de l'État). Mégalis et PLACE s'auto-filtrent (Mégalis = départements
-        # bretons uniquement ; PLACE = France) → aucun surcoût quand hors périmètre.
-        sources += [BoampSource(), MEGALIS, PLACE]
+        # PLACE (MAPA de l'État), qui s'auto-filtrent (Mégalis = départements bretons
+        # uniquement). PLACE n'est interrogée que si PLACE_ACTIF=1 (autorisation écrite reçue).
+        sources += [BoampSource(), MEGALIS] + ([PLACE] if place_actif() else [])
     sources.append(TedSource())
     return sources
+
+
+def _sources_non_consultees(countries: list) -> list:
+    """Sources volontairement NON interrogées, dites telles quelles à l'écran (jamais passées
+    sous silence) : aujourd'hui PLACE tant que PLACE_ACTIF=0."""
+    from app.core.interrupteurs import place_actif
+    from app.sourcing.sources.atexo import PLACE_NON_CONSULTEE
+    if _fr_inclus(countries) and not place_actif():
+        return [{"source": PLACE.name, "message": PLACE_NON_CONSULTEE}]
+    return []
 # Red-flag financier (procédure collective) — enrichissement parallèle, jamais bloquant.
 RED_FLAG_SOURCE = BodaccSource()
 BUYER_SOURCE = BuyerProfileSource()
@@ -250,6 +265,7 @@ def search_tenders(request: Request, req: SearchRequest,
     if _is_demo(current_user):
         _t = _demo_search()   # le vrai BOAMP renverrait vide sur la requête démo → liste canned riche
         return {"count": len(_t), "sources_queried": ["BOAMP"], "sources_skipped": [], "errors": [],
+                "sources_non_consultees": _sources_non_consultees(req.countries),
                 "tenders": [x.model_dump(exclude={"raw"}) for x in _t], "has_more": False,
                 "closed_filtered": 0, "amount_filtered": 0}
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
@@ -264,6 +280,7 @@ def search_tenders(request: Request, req: SearchRequest,
         "count": result["count"],
         "sources_queried": result["sources_queried"],
         "sources_skipped": result.get("sources_skipped", []),
+        "sources_non_consultees": _sources_non_consultees(req.countries),
         "errors": [e.model_dump() for e in result["errors"]],
         "tenders": [t.model_dump(exclude={"raw"}) for t in result["tenders"]],
         "has_more": result.get("has_more", False),
@@ -1310,33 +1327,13 @@ def generate_documents(request: Request, req: DocumentsRequest,
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     company_data = _company_dict(company)
 
-    verified = []
-    if req.cotraitants:
-        # Flux Sourcing : co-traitants choisis dans la liste SIRENE → re-vérifier le SIRET
-        svc = _company_service()
-        for c in req.cotraitants:
-            siret = c.get("siret")
-            official = svc.verify_siret(siret) if siret else None
-            if official:
-                verified.append({
-                    "name": official.nom, "siret": official.siret,
-                    "code_ape": official.naf, "specialites": official.naf_label or "",
-                    "city": official.ville, "departement": official.departement,
-                    "effectif": official.effectif or 0,
-                })
-    else:
-        # Page AO : on prend les sous-traitants déjà RATTACHÉS à l'appel d'offres
-        from app.routers.cotraitants import Cotraitant, ProjectCotraitant
-        links = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project.id).all()
-        for lk in links:
-            ct = db.query(Cotraitant).filter(Cotraitant.id == lk.cotraitant_id).first()
-            if ct:
-                verified.append({
-                    "name": ct.name, "siret": ct.siret, "code_ape": ct.code_ape,
-                    "specialites": ct.specialites, "city": ct.city,
-                    "departement": ct.departement, "effectif": ct.effectif or 0,
-                    "role": lk.role or "sous_traitant",
-                })
+    # Entreprises des formulaires officiels : les sous-traitants DÉCLARÉS et les partenaires dont
+    # l'invitation est ACCEPTÉE (étude organisation, décision 4). Les entreprises éventuellement envoyées
+    # par le navigateur (`cotraitants`, ancienne étape 3 de la recherche) ne sont JAMAIS reprises : une
+    # entreprise trouvée dans SIRENE n'entre pas dans un DC1/DC2 sans avoir accepté une invitation.
+    from app.services.groupement_members import AVERT_SANS_ACCORD, cotraitants_pour_formulaires
+    _form = cotraitants_pour_formulaires(db, project.id)
+    verified = _form["lignes"]
 
     # Le dossier de présentation vient de l'atelier (rédaction, vague 2) : plus aucun appel à
     # l'IA ici. La portée reste posée, par sécurité, pour tout appel futur.
@@ -1347,6 +1344,8 @@ def generate_documents(request: Request, req: DocumentsRequest,
                                           country=_user_country(current_user, db),
                                           db=db, user_id=current_user.id, estimate=project.estimate)
     memoire_files = dossier.pop("_memoire_files", None) or {}
+    if _form["ecartes"]:
+        dossier.setdefault("warnings", []).append(AVERT_SANS_ACCORD.format(noms=", ".join(_form["ecartes"][:5])))
 
     # Archiver les CERFA + le dossier de présentation (Word ET PDF) dans le dossier de l'AO.
     try:
@@ -1362,7 +1361,8 @@ def generate_documents(request: Request, req: DocumentsRequest,
 
     return {
         "cotraitants_verifies": len(verified),
-        "cotraitants_rejetes": (len(req.cotraitants) - len(verified)) if req.cotraitants else 0,
+        # Entreprises envoyées par le navigateur : jamais reprises (aucune n'a accepté d'invitation).
+        "cotraitants_rejetes": len(req.cotraitants or []),
         "dossier": dossier,
     }
 

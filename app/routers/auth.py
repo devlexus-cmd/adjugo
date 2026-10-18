@@ -268,8 +268,8 @@ def update_me(
     # détournait l'adresse de la démo et recevait les emails qui lui sont destinés).
     from app.services.demo_search import is_demo
     if is_demo(current_user) and (email or full_name):
-        raise HTTPException(status_code=403, detail="La démo est en lecture guidée : créez votre compte "
-                                                    "gratuit pour modifier un profil.")
+        raise HTTPException(status_code=403, detail="La démo est en lecture guidée : commencez votre essai "
+                                                    "gratuit de 30 jours pour modifier un profil.")
     if full_name:
         full_name = clean_full_name(full_name)
         if full_name:

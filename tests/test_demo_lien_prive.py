@@ -415,7 +415,7 @@ global.location = {hash, pathname: "/demo", assign() {}};
 global.history = {state: null, replaceState(st) { this.state = st; }};
 global.fetch = (url, opt) => { appels.push([url, JSON.parse(opt.body).cle]); return new Promise(() => {}); };
 eval(require("fs").readFileSync(process.argv[2], "utf8"));
-const visibles = ["verif", "choix", "invalide", "terminee", "erreur"].filter(k => !el(k).hidden);
+const visibles = ["verif", "choix", "incomplet", "invalide", "terminee", "erreur"].filter(k => !el(k).hidden);
 process.stdout.write(JSON.stringify({visibles, appels, fin: store.adjugo_demo_fin || null,
   focus: visibles.filter(k => el(k).focused)}));
 """
@@ -431,13 +431,16 @@ def _page_demo(tmp_path, hash_: str, fin):
 
 def test_page_demo_session_terminee_ou_lien_perime(tmp_path):
     """/demo sans clé : « terminée » (rouvrir le lien) quand le logiciel y renvoie une session du lien
-    simplement terminée ; « plus valide » sinon. Avec une clé : nouvelle visite, la marque est effacée."""
+    simplement terminée ; « plus valide » quand la clé a été changée (« perime ») ; sinon « lien
+    incomplet » (clé manquante après le #). Avec une clé : nouvelle visite, la marque est effacée."""
     r = _page_demo(tmp_path, "", "terminee")
     assert r["visibles"] == ["terminee"] and r["focus"] == ["terminee"] and r["appels"] == []
     assert r["fin"] == "terminee"                       # rechargement : même message
-    for fin in ("perime", None, "autre"):
+    r = _page_demo(tmp_path, "", "perime")
+    assert r["visibles"] == ["invalide"] and r["appels"] == []
+    for fin in (None, "autre"):
         r = _page_demo(tmp_path, "", fin)
-        assert r["visibles"] == ["invalide"] and r["appels"] == [], fin
+        assert r["visibles"] == ["incomplet"] and r["focus"] == ["incomplet"] and r["appels"] == [], fin
     cle = "k" * 44
     r = _page_demo(tmp_path, "#" + cle, "terminee")
     assert r["visibles"] == ["verif"] and r["appels"] == [[VERIF, cle]] and r["fin"] is None

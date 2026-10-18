@@ -15,22 +15,85 @@ Robustesse (objectif : apporter de la valeur, pas casser) :
   donnée inventée ; jamais de crash de la recherche globale.
 """
 import logging
+import os
 import re
+import threading
 import time
 
-from app.sourcing.base import TenderSource, TenderCriteria
+from app.sourcing.base import SourceIndisponible, TenderSource, TenderCriteria
 from app.sourcing.schemas import NormalizedTender, Provenance
 
 logger = logging.getLogger("adjugo")
-# UA navigateur réel : les WAF des plateformes publiques (gouv/Atexo) bloquent les UA
-# « bot » identifiés. On lit de la donnée PUBLIQUE de la commande publique, destinée aux
-# entreprises — un UA navigateur est la seule façon de la servir à l'utilisateur.
+# En-tête HONNÊTE (étude moteur, décision 4 a) : Adjugo se nomme et donne un contact. On ne se fait
+# jamais passer pour un navigateur. Si une plateforme refuse ce robot, on ne contourne pas : elle
+# passe « indisponible » (voir _refus) et la recherche continue sur les autres sources.
+USER_AGENT = "AdjugoBot/1.0 (+https://adjugo.pro ; contact@adjugo.pro)"
 _UA = {
-    "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                   "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"),
+    "User-Agent": USER_AGENT,
     "Accept-Language": "fr-FR,fr;q=0.9",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml",
 }
+# Rythme BORNÉ : au moins _INTERVALLE_MIN secondes entre deux requêtes vers une même plateforme,
+# tous utilisateurs confondus (process unique), en plus du cache de 20 min et des 3 pages au plus.
+_INTERVALLE_MIN = float(os.getenv("ATEXO_INTERVALLE_MIN", "1.0"))
+_RYTHME: dict = {}
+_RYTHME_LOCK = threading.Lock()
+# Refus du robot (HTTP 401/403/406/429, ou page de blocage) : la plateforme n'est plus interrogée
+# pendant _PAUSE_REFUS secondes, et le journal le dit UNE fois par heure au plus.
+_PAUSE_REFUS = 3600.0
+_LOG_REFUS = 3600.0
+_STATUTS_REFUS = {401, 403, 406, 429}
+_PAGE_REFUS = re.compile(r"captcha|access denied|request rejected", re.I)
+_REFUS: dict = {}          # nom de la source -> {"jusqua": horloge, "logue": horloge}
+_REFUS_LOCK = threading.Lock()
+MSG_REFUS = ("la plateforme n'accepte pas pour l'instant la lecture automatique d'Adjugo ; "
+             "la recherche continue sur les autres sources")
+
+
+class PlateformeRefuse(Exception):
+    """La plateforme refuse notre robot (aucun contournement)."""
+
+
+def _attendre_son_tour(base: str) -> None:
+    """Réserve le prochain créneau d'envoi vers `base` puis attend son heure."""
+    with _RYTHME_LOCK:
+        now = time.monotonic()
+        creneau = max(now, _RYTHME.get(base, float("-inf")) + _INTERVALLE_MIN)
+        _RYTHME[base] = creneau
+    attente = creneau - time.monotonic()
+    if attente > 0:
+        time.sleep(attente)
+
+
+def _controler(resp) -> None:
+    """Lève PlateformeRefuse si la réponse est un refus du robot ; une autre erreur HTTP reste
+    une panne ordinaire (raise_for_status)."""
+    if resp.status_code in _STATUTS_REFUS:
+        raise PlateformeRefuse(f"HTTP {resp.status_code}")
+    resp.raise_for_status()
+    texte = resp.text or ""
+    if "/consultation/" not in texte and _PAGE_REFUS.search(texte[:20000]):
+        raise PlateformeRefuse("page de blocage")
+
+
+def _refusee(name: str) -> bool:
+    with _REFUS_LOCK:
+        r = _REFUS.get(name)
+        return bool(r and r["jusqua"] > time.monotonic())
+
+
+def _noter_refus(name: str, motif: str) -> None:
+    now = time.monotonic()
+    with _REFUS_LOCK:
+        r = _REFUS.setdefault(name, {"jusqua": 0.0, "logue": float("-inf")})
+        r["jusqua"] = now + _PAUSE_REFUS
+        loguer = now - r["logue"] >= _LOG_REFUS
+        if loguer:
+            r["logue"] = now
+    if loguer:
+        logger.warning("Atexo %s refuse l'en-tête honnête d'Adjugo (%s) : source marquée indisponible "
+                       "pendant 1 h, SANS contournement ; la recherche continue avec BOAMP et TED. "
+                       "Autorisation à demander : docs/AUTORISATIONS_PLATEFORMES.md.", name, motif)
 _MOIS = {"janv": 1, "févr": 2, "fevr": 2, "mars": 3, "avri": 4, "mai": 5, "juin": 6,
          "juil": 7, "août": 8, "aout": 8, "sept": 9, "octo": 10, "nove": 11, "déce": 12, "dece": 12}
 _MAX_PAGES = 3            # plafond de pages ; le budget ADAPTATIF ci-dessous décide vraiment
@@ -124,9 +187,12 @@ def _fetch_all(url, source_name, base):
     tenders, seen, total_links = [], set(), 0
     try:
         with httpx.Client(timeout=10, headers=_UA, follow_redirects=True) as c:
+            _attendre_son_tour(base)
             g0 = time.time()
-            html = c.get(url).text
+            first = c.get(url)
             fetch_dur = time.time() - g0
+            _controler(first)
+            html = first.text
             for page in range(1, _MAX_PAGES + 1):
                 part, n_links = _parse_page(html, source_name, base)
                 total_links += n_links
@@ -141,7 +207,7 @@ def _fetch_all(url, source_name, base):
                 # Budget ADAPTATIF : on n'entame la page suivante que si elle tient dans le
                 # budget, estimé sur la durée de la dernière requête. Plateforme lente (PLACE)
                 # → moins de pages mais réponse rapide ; plateforme rapide (Mégalis) → ratisse large.
-                if page == _MAX_PAGES or (time.time() - t0) + fetch_dur > _TIME_BUDGET:
+                if page == _MAX_PAGES or (time.time() - t0) + fetch_dur + _INTERVALLE_MIN > _TIME_BUDGET:
                     break
                 try:    # page suivante : postback Prado « aller à la page N+1 »
                     fields = _post_fields(BeautifulSoup(html, "html.parser"))
@@ -152,14 +218,24 @@ def _fetch_all(url, source_name, base):
                     fields[npb] = str(page + 1)
                     fields["PRADO_POSTBACK_TARGET"] = btn
                     fields["PRADO_POSTBACK_PARAMETER"] = ""
+                    _attendre_son_tour(base)
                     p0 = time.time()
                     resp = c.post(url, data=fields)
                     fetch_dur = time.time() - p0
+                    if resp.status_code in _STATUTS_REFUS:
+                        raise PlateformeRefuse(f"HTTP {resp.status_code} (page {page + 1})")
                     if resp.status_code != 200:
                         break
                     html = resp.text
+                except PlateformeRefuse:
+                    raise
                 except Exception:
                     break
+    except PlateformeRefuse:
+        # Refus du robot : jamais de contournement. Ce qui a été lu honnêtement (page 1) est gardé.
+        if not tenders:
+            raise
+        _noter_refus(source_name, "pages suivantes refusées")
     except Exception as e:
         logger.info("Atexo %s indisponible : %s", source_name, e)
         if not tenders:
@@ -220,7 +296,14 @@ class AtexoSource(TenderSource):
             url = self.base + "/?page=Entreprise.EntrepriseAdvancedSearch&searchAnnCons&keyWord=" + quote(q[:80])
         else:
             url = self.base + "/?page=Entreprise.EntrepriseAdvancedSearch&AllCons="
-        tenders = _cached_fetch(url, self.name, self.base)
+        # Plateforme qui a refusé notre robot dans l'heure : plus aucune requête (ni contournement).
+        if _refusee(self.name):
+            raise SourceIndisponible(MSG_REFUS)
+        try:
+            tenders = _cached_fetch(url, self.name, self.base)
+        except PlateformeRefuse as e:
+            _noter_refus(self.name, str(e))
+            raise SourceIndisponible(MSG_REFUS) from None
         if wanted:
             # garde les marchés du/des département(s) ciblé(s) ET ceux SANS département
             # précis (souvent nationaux / multi-sites → pertinents partout).
@@ -231,4 +314,10 @@ class AtexoSource(TenderSource):
 # ── Plateformes branchées ────────────────────────────────────────────────────────
 MEGALIS = AtexoSource("Mégalis Bretagne", "https://marches.megalis.bretagne.bzh",
                       scope={"22", "29", "35", "56"})
+# PLACE : SUSPENDUE par défaut (PLACE_ACTIF=0, app/core/interrupteurs.py). Ses conditions
+# d'utilisation interdisent la reprise des avis : elle n'est plus interrogée tant que l'AIFE n'a pas
+# donné son autorisation écrite. L'objet reste défini (le routeur sait la nommer « non consultée »).
 PLACE = AtexoSource("PLACE (État)", "https://www.marches-publics.gouv.fr", scope=None)
+PLACE_NON_CONSULTEE = ("non consultée pour le moment : Adjugo attend l'autorisation écrite de la "
+                       "plateforme pour réutiliser ses avis. Les avis de l'État publiés au BOAMP "
+                       "restent visibles.")

@@ -50,7 +50,11 @@ class BoampSource(TenderSource):
             cpv_clause = " OR ".join(f'descripteur_code like "{c[:4]}"' for c in cpv_codes[:6])
             where = f"({where}) OR ({cpv_clause})"
         if criteria.departements:
-            deps = " OR ".join(f'code_departement like "{d}"' for d in criteria.departements)
+            # Le BOAMP enregistre les départements 01 à 09 SANS zéro (« 6 » pour les
+            # Alpes-Maritimes) : on interroge les deux formes, sinon ces départements ne
+            # remontaient rien. Les avis sont ensuite ramenés à « 06 » (_normalize).
+            formes = [f for d in criteria.departements for f in formes_boamp(d)]
+            deps = " OR ".join(f'code_departement like "{f}"' for f in dict.fromkeys(formes))
             where = f"({where}) AND ({deps})"
         if getattr(criteria, "type_marche", "") in ("TRAVAUX", "SERVICES", "FOURNITURES"):
             where = f'({where}) AND type_marche like "{criteria.type_marche}"'
@@ -84,7 +88,7 @@ class BoampSource(TenderSource):
             date_publication=(r.get("dateparution") or "")[:10] or None,
             date_limite=(r.get("datelimitereponse") or "")[:10] or None,
             lieu=", ".join(desc) if isinstance(desc, list) and desc else None,
-            departements=[str(d) for d in deps if d],
+            departements=[dept_canonique(d) for d in deps if str(d or "").strip()],
             procedure=_as_str(r.get("procedure_libelle")),
             nature=_as_str(r.get("type_marche")) or _as_str(r.get("nature_libelle")),
             dce_url=None,  # rempli à l'analyse profonde si accessible
@@ -117,7 +121,7 @@ class BoampSource(TenderSource):
             return None
         try:
             with httpx.Client(follow_redirects=False, timeout=httpx.Timeout(10.0, connect=5.0),
-                              headers={"User-Agent": "AdjugoBot/1.0 (+https://adjugo.fr)"}) as c:
+                              headers={"User-Agent": "AdjugoBot/1.0 (+https://adjugo.pro ; contact@adjugo.pro)"}) as c:
                 resp = safe_get(url, DCE_HOSTS, max_bytes=5 * 1024 * 1024, client=c)
                 if resp.status_code != 200:
                     return None
@@ -154,6 +158,21 @@ class BoampSource(TenderSource):
         if _IDWEB.match(ref):
             return f"https://www.boamp.fr/avis/detail/{ref}"
         return None
+
+
+def dept_canonique(d) -> str:
+    """Forme unique d'un département dans Adjugo : deux chiffres (« 6 » → « 06 »), Corse
+    « 2A »/« 2B », outre-mer sur trois chiffres (« 974 »). Une valeur inattendue est rendue
+    telle quelle (jamais devinée)."""
+    s = str(d or "").strip().upper()
+    return s.zfill(2) if (s.isdigit() and len(s) == 1) else s
+
+
+def formes_boamp(d) -> list:
+    """Formes à demander au BOAMP pour un département : « 06 » ET « 6 » (le BOAMP écrit les
+    départements 01 à 09 sans zéro), sinon la forme demandée seule."""
+    s = dept_canonique(d)
+    return [s, s[1:]] if (len(s) == 2 and s.isdigit() and s.startswith("0")) else [s]
 
 
 def _as_str(v) -> Optional[str]:

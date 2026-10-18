@@ -35,9 +35,12 @@ logger = logging.getLogger("adjugo")
 
 AVERTISSEMENT = ("Modèle à faire relire par un conseil (avocat, juriste, CCI) : "
                  "ce n'est pas un conseil juridique.")
+# Hors empreinte (écran, courriel, section « Accords enregistrés » du PDF) : modifiable sans rendre
+# caduque une convention. Signature des formulaires : au dépôt seulement si le règlement l'exige.
 NATURE_ACCORD = ("Votre accord est enregistré par Adjugo (date, empreinte du texte, niveau "
                  "d'identité) : ce n'est pas une signature électronique qualifiée. Les "
-                 "formulaires officiels (DC1, ATTRI1) restent à signer au moment du dépôt.")
+                 "formulaires officiels (DC1, DC2) se signent au dépôt si le règlement l'exige ; "
+                 "l'acte d'engagement (ATTRI1) se signe à l'attribution.")
 
 FORMES = {
     "conjoint": {

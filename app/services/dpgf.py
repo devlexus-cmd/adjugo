@@ -19,6 +19,9 @@ _LINE = colors.HexColor("#DCE2EC")
 _HEAD = colors.HexColor("#F1F4F9")
 _MUTED = colors.HexColor("#5A6573")
 
+ESTIMATION_NOTE = ("Estimation établie par Adjugo à partir de votre chiffrage (jours × tarifs). Si le dossier "
+                   "du marché fournit son propre tableau de prix, c'est lui qu'il faut remplir et déposer.")
+
 
 def _eur(v) -> str:
     return f"{int(round(v or 0)):,}".replace(",", " ") + " €"
@@ -43,9 +46,11 @@ def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str, tva_
     story = []
 
     story.append(Paragraph(_esc(company_name or "Entreprise"), h1))
-    story.append(Paragraph("Décomposition du Prix Global et Forfaitaire (DPGF)", h2))
+    story.append(Paragraph("Estimation détaillée du prix (présentée comme une DPGF)", h2))
     story.append(Paragraph(f"Marché : {_esc(project_name or '')}", sub))
     story.append(Paragraph(f"Établi le {date.today().strftime('%d/%m/%Y')}", sub))
+    # Ce document est l'estimation d'Adjugo, pas la pièce de prix exigée par l'acheteur : on le dit.
+    story.append(Paragraph(ESTIMATION_NOTE, sub))
     story.append(Spacer(1, 7 * mm))
 
     rows = [[Paragraph("N°", cellb), Paragraph("Désignation de la prestation", cellb),

@@ -687,9 +687,12 @@ def llm_info():
 
 @app.get("/api/public-config", tags=["Sante"], include_in_schema=False)
 def public_config():
-    """Config publique (sans secret) pour le front : analytics activé par env, etc."""
+    """Config publique (sans secret) pour le front : analytics activé par env, fonctions activées
+    (« Projets à venir » masqué tant que PROJETS_A_VENIR=0)."""
+    from app.core.interrupteurs import projets_a_venir_actif
     s = settings
-    return {"analytics_src": s.ANALYTICS_SRC or "", "analytics_domain": s.ANALYTICS_DOMAIN or ""}
+    return {"analytics_src": s.ANALYTICS_SRC or "", "analytics_domain": s.ANALYTICS_DOMAIN or "",
+            "projets_a_venir": projets_a_venir_actif()}
 
 
 @app.get("/api/securite/empreintes-scripts", tags=["Sante"])

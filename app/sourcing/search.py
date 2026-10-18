@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as
 from datetime import date, datetime
 from typing import Optional
 
-from app.sourcing.base import TenderSource, TenderCriteria, CompanySource
+from app.sourcing.base import TenderSource, TenderCriteria, CompanySource, SourceIndisponible
 from app.sourcing.schemas import NormalizedTender, NormalizedCompany, SourceError
 from app.sourcing.scoring import score_tender, score_company
 
@@ -77,6 +77,8 @@ class TenderSearchService:
                 try:
                     tenders.extend(fut.result())
                     _cb_ok(src.name)
+                except SourceIndisponible as e:
+                    errors.append(SourceError(source=src.name, message=str(e)[:200]))
                 except Exception as e:
                     errors.append(SourceError(source=src.name, message=str(e)[:200]))
                     _cb_fail(src.name)
@@ -91,6 +93,8 @@ class TenderSearchService:
                 try:
                     tenders.extend(fut.result())
                     _cb_ok(src.name)
+                except SourceIndisponible as e:
+                    errors.append(SourceError(source=src.name, message=str(e)[:200]))
                 except Exception as e:
                     errors.append(SourceError(source=src.name, message=str(e)[:200]))
                     _cb_fail(src.name)
