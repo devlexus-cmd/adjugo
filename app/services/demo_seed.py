@@ -569,8 +569,10 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
         ("Attestation RGE", DocCategory.qualifications, "Pièces administratives", today + timedelta(days=240), None, "demo/rge.pdf"),
         ("RIB — Bâtiment de l'Ouest", DocCategory.administratif, "Pièces administratives", None, None, "demo/rib.pdf"),
         ("Liste de références — travaux similaires (< 3 ans)", DocCategory.administratif, "Pièces administratives", None, None, "demo/references.pdf"),
-        ("Mémoire technique — méthodologie étanchéité", DocCategory.autre, "Mémoire technique", None, toiture, "demo/memoire_methodologie.pdf"),
-        ("DPGF — bordereau de décomposition des prix", DocCategory.autre, "Chiffrage", None, toiture, "demo/dpgf.pdf"),
+        # Pièces de réponse de l'entreprise fictive (réorganisation, vague 1 : noms sans « Mémoire » ni « DPGF », la
+        # carte « Dossier du marché » de la page Toiture les montre pendant un pitch). Clés de stockage inchangées.
+        ("Dossier de présentation — méthodologie étanchéité", DocCategory.autre, "Mémoire technique", None, toiture, "demo/memoire_methodologie.pdf"),
+        ("Tableau de prix — décomposition du prix global et forfaitaire", DocCategory.autre, "Chiffrage", None, toiture, "demo/dpgf.pdf"),
         ("DCE — Réfection toiture groupe scolaire Jean Moulin", DocCategory.autre, "DCE", None, toiture, "demo/dce_toiture.pdf"),
     ]
     for name, cat, folder, exp, pid, key in DOCS:

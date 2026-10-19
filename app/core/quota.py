@@ -325,7 +325,7 @@ def consume_analysis(user, db: Session, operation: str = "analyse", estimation_e
             hint = "Abonnez-vous (Pro ou Business) pour continuer."
         raise HTTPException(
             status_code=402,
-            detail=f"Quota d'analyses IA atteint ({used}/{lim} ce mois) pour le plan "
+            detail=f"Quota d'analyses IA atteint (analyses : {used} sur {lim} ce mois) pour le plan "
                    f"« {_plan_key(locked)} ». {hint}",
         )
     locked.analyses_used_this_month = used + 1

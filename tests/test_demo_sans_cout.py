@@ -62,7 +62,8 @@ COUTS = [
     Cout("POST", "/api/sourcing/analyze", "ia", "ouvert", corps={"tender": "demo"}),   # analyse rédigée, sans IA
     Cout("POST", "/api/sourcing/analyze-upload", "ia", corps=("fichier", {"project_id": "toiture"})),
     Cout("POST", "/api/sourcing/reanalyze", "ia", corps=("form", {"project_id": "toiture"})),
-    Cout("POST", "/api/sourcing/renewals", "ia", corps={"query": "toiture", "departements": ["44"]}),
+    # « À venir » (réorganisation, vague 1) : des fins de contrat fictives, sans IA, sans réseau, sans quota.
+    Cout("POST", "/api/sourcing/renewals", "ia", "ouvert", corps={"query": "toiture", "departements": ["44"]}),
     Cout("POST", "/api/sourcing/ask", "ia", corps={"project_id": "toiture", "question": "Quel est le délai ?"}),
     Cout("POST", "/api/chiffrage/{project_id}/estimate", "ia", corps={"distance_km": 10}, params=_P),
     Cout("POST", "/api/knowledge/questionnaire", "ia", corps={"questions": ["Quelles sont vos références ?"]}),

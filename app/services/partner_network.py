@@ -1038,7 +1038,7 @@ def notify_admins_validation(p) -> bool:
     text = ("Bonjour,\n\nUne entreprise demande la publication de son profil partenaire sur le réseau Adjugo.\n\n"
             f"Nom : {nom[:255] or 'non renseigné'}\nSIREN : {p.siren or 'non renseigné'}\n\n"
             "Vérifiez que le compte représente bien cette entreprise, puis validez ou refusez la demande "
-            "dans Adjugo > Administration > Profils du réseau à valider.\n\n— Adjugo")
+            "dans Adjugo, menu Réglages › Administration › Profils du réseau à valider.\n\n— Adjugo")
     _send_async([(to, subj, text) for to in admin_recipients()])
     return True
 

@@ -666,7 +666,9 @@ def test_llm_ne_recoit_jamais_la_convention_et_zip(client, auth, mails, monkeypa
     assert any(f["name"] == "convention_groupement.pdf" for f in prev["files"])
     ck = client.get(f"/api/checklist/{pid}", headers=h).json()
     item = next(i for i in ck["checklist"] if i["id"] == "convention_groupement")
-    assert item["status"] == "manquant" and "0/2" in item["context_note"]
+    # Décision 8 (réorganisation) : « N sur M », jamais « 0/2 ».
+    assert item["status"] == "manquant" and "accords enregistrés 0 sur 2" in item["context_note"]
+    assert "0/2" not in item["context_note"]
 
 
 def red_build(analysis, company, pid, db):

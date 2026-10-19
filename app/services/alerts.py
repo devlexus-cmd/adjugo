@@ -428,7 +428,9 @@ def run_tender_alerts(db: Session) -> dict:
             lines.append(f"\n● {name} ({len(tenders)} nouveau(x)) :")
             for t in tenders[:10]:
                 ech = f" — clôture {t['date_limite']}" if t.get("date_limite") else ""
-                lines.append(f"   • [{t['score']}/100] {t['objet'][:90]} — {t.get('acheteur') or 'acheteur n/d'}{ech}\n     {t['url']}")
+                # Décision 8 (réorganisation) : pas de note sur 100 avant le dossier du marché ; l'ordre de la
+                # liste (le plus adapté d'abord) suffit. Ce que promet la vitrine : objet, acheteur, date limite, lien.
+                lines.append(f"   • {t['objet'][:90]} — {t.get('acheteur') or 'acheteur n/d'}{ech}\n     {t['url']}")
             total += len(tenders)
         lines.append("\n\nConnectez-vous à Adjugo pour les analyser.\n\n— Adjugo")
         if send_email(user.email, f"Adjugo — {sum(len(t) for _, t in blocks)} nouvel(s) appel(s) d'offres", "\n".join(lines)):
@@ -548,10 +550,10 @@ def run_amont_alerts(db: Session) -> dict:
             lines = ["Bonjour,\n\nVotre veille amont Adjugo a repéré de nouveaux projets d'investissement, "
                      "en amont de l'appel d'offres :\n"]
             for score, intitule, coll, b, url in new_pertinent[:12]:
-                lines.append(f"   • [{score}/100] {intitule[:90]} — {coll}{(' · ' + b) if b else ''}")
+                lines.append(f"   • {intitule[:90]} — {coll}{(' · ' + b) if b else ''}")
                 if url:
                     lines.append(f"     {url}")
-            lines.append("\n\nConnectez-vous à Adjugo (onglet Veille amont) pour les exploiter.\n\n— Adjugo")
+            lines.append("\n\nConnectez-vous à Adjugo (Trouver des marchés, onglet « Projets à venir ») pour les exploiter.\n\n— Adjugo")
             if send_email(user.email, f"Adjugo — {len(new_pertinent)} projet(s) détecté(s) en amont", "\n".join(lines)):
                 notified += 1
     result = {"scanned": len(records), "users_notified": notified, "new_signals": total}

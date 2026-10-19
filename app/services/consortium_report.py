@@ -1,9 +1,12 @@
 """
 Compte-rendu du groupement (PDF) — DOCUMENT INTERNE AU CHEF DE FILE.
 
-Synthèse de l'état d'un groupement : partenaires, lots couverts, complétude de chaque
-part, pièces reçues, % de réponse commune prête (calcul déterministe), et ce qu'il reste
-à compléter. Même style reportlab que les CERFA / la DPGF.
+Synthèse de l'état d'un groupement : partenaires, lots couverts, éléments fournis de chaque
+part, pièces reçues, parts reçues (calcul déterministe), et ce qu'il reste à compléter. Même
+style reportlab que les formulaires officiels et l'estimation détaillée.
+
+Réorganisation (décision 8) : « N sur M », jamais un pourcentage ni « N/M » ; « Partenaire du
+groupement », jamais « Co-traitant » (comme la page du marché).
 
 Seule l'organisation du chef de file le télécharge, et il reprend ce qu'elle voit déjà à
 l'écran (l'ancien libellé « partageable » était trompeur). Ce n'est pas une pièce remise à
@@ -46,6 +49,20 @@ def _m(markup, style):
     return Paragraph(markup, style)
 
 
+# Les éléments d'une part, ceux que compte le suivi du groupement (même liste que `_partner_flags`,
+# app/routers/invites.py) : chacun est fourni ou non, sans pondération ni pourcentage.
+ELEMENTS = {"submitted": "part envoyée", "lot": "lot précisé", "references": "références",
+            "memoire": "paragraphe du dossier de présentation", "qualifications": "qualifications"}
+
+
+def elements_fournis(p: dict) -> int:
+    """Nombre d'éléments fournis d'une part, lus dans la vue du suivi (`partners` du cockpit)."""
+    faits = {"submitted": p.get("status") == "submitted", "lot": bool(str(p.get("lot") or "").strip()),
+             "references": bool(p.get("has_references")), "memoire": bool(p.get("has_memoire")),
+             "qualifications": bool(p.get("qualifications_count"))}
+    return sum(1 for k in ELEMENTS if faits[k])
+
+
 def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dict,
                                    contributions: list) -> bytes:
     buf = io.BytesIO()
@@ -62,7 +79,7 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
     r = data.get("readiness", {}) or {}
     parts = data.get("partners", []) or []
     lots = data.get("lots", []) or []
-    pct = r.get("pct", 0)
+    recues, invitees = int(r.get("submitted", 0) or 0), int(r.get("invited", 0) or 0)
 
     el = []
     el.append(_p("Compte-rendu du groupement", h1))
@@ -72,14 +89,14 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
     el.append(_p(f"Chef de file : {mandataire or '—'} · édité le {date.today().strftime('%d/%m/%Y')}", muted))
     el.append(Spacer(1, 9))
 
-    # Synthèse / readiness
-    pct_col = _OK if pct >= 80 else (_WARN if pct >= 45 else colors.HexColor("#C0392B"))
+    # Synthèse : les parts reçues, « N sur M » (comme la page du marché).
+    col = _OK if invitees and recues >= invitees else (_WARN if recues else colors.HexColor("#C0392B"))
     synth = Table([[
-        _m(f"<font color='#{pct_col.hexval()[2:]}'><b>{_e(pct)}%</b></font>", ParagraphStyle("big", parent=st, fontSize=22)),
-        _p("réponse commune prête", st),
-        _m(f"{_e(r.get('submitted', 0))}/{_e(r.get('invited', 0))} partenaire(s) ont contribué<br/>"
-           f"{_e(r.get('lots', 0))} lot(s) couvert(s)", muted),
-    ]], colWidths=[24 * mm, 45 * mm, 110 * mm])
+        _m(f"<font color='#{col.hexval()[2:]}'><b>{_e(recues)} sur {_e(invitees)}</b></font>",
+           ParagraphStyle("big", parent=st, fontSize=20, leading=24)),
+        _p("parts reçues" if invitees > 1 else "part reçue", st),
+        _m(f"{_e(r.get('lots', 0))} lot(s) couvert(s)", muted),
+    ]], colWidths=[36 * mm, 45 * mm, 98 * mm])
     synth.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("BOX", (0, 0), (-1, -1), 0.6, _LINE),
                                ("BACKGROUND", (0, 0), (-1, -1), _HEAD), ("LEFTPADDING", (0, 0), (-1, -1), 8),
                                ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
@@ -109,14 +126,15 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
 
     # Partenaires
     el.append(_p("Partenaires", h2))
-    rows = [[_p("Entreprise", cellh), _p("Rôle", cellh), _p("Lot", cellh), _p("Statut", cellh), _p("Pièces", cellh), _p("Prêt", cellh)]]
+    rows = [[_p("Entreprise", cellh), _p("Rôle", cellh), _p("Lot", cellh), _p("Statut", cellh), _p("Pièces", cellh),
+             _p("Éléments fournis", cellh)]]
     for p in parts:
         stt = {"submitted": "Soumise", "draft": "Brouillon"}.get(p.get("status"), "En attente")
         rows.append([_p(p.get("company", ""), cell),
-                     _p("Sous-traitant" if p.get("role") == "sous_traitant" else "Co-traitant", cell),
+                     _p("Sous-traitant" if p.get("role") == "sous_traitant" else "Partenaire du groupement", cell),
                      _p(p.get("lot") or "—", cell), _p(stt, cell),
-                     _p(str(p.get("pieces_count", 0)), cell), _p(f"{p.get('completeness', 0)}%", cell)])
-    t = Table(rows, colWidths=[55 * mm, 26 * mm, 38 * mm, 24 * mm, 16 * mm, 20 * mm])
+                     _p(str(p.get("pieces_count", 0)), cell), _p(f"{elements_fournis(p)} sur {len(ELEMENTS)}", cell)])
+    t = Table(rows, colWidths=[50 * mm, 30 * mm, 36 * mm, 22 * mm, 16 * mm, 25 * mm])
     t.setStyle(_grid())
     el.append(t)
 
@@ -146,8 +164,9 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
             el.append(_p("• " + m, ParagraphStyle("miss", parent=muted, textColor=_WARN)))
 
     el.append(Spacer(1, 12))
-    el.append(_p("Document généré par Adjugo. Les % et statuts sont calculés de façon déterministe à partir des "
-                 "contributions reçues — aucune donnée inventée.", ParagraphStyle("foot", parent=muted, fontSize=7.5)))
+    el.append(_p("Document généré par Adjugo. Les comptes et statuts sont calculés de façon déterministe à partir "
+                 "des parts reçues — aucune donnée inventée. Éléments fournis : " + ", ".join(ELEMENTS.values()) + ".",
+                 ParagraphStyle("foot", parent=muted, fontSize=7.5)))
 
     doc.build(el)
     return buf.getvalue()

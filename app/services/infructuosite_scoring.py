@@ -69,7 +69,7 @@ def _risk_sante(nb_capables: int, nb_sain: int) -> tuple:
     if fragiles == 0:
         d = "Aucune procédure collective en cours détectée parmi les PME capables (BODACC)."
     else:
-        d = f"{fragiles}/{nb_capables} PME capable(s) en procédure collective (BODACC) — fragilité."
+        d = f"{fragiles} PME capable(s) sur {nb_capables} en procédure collective (BODACC) — fragilité."
     return r, d
 
 

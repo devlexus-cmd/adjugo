@@ -180,7 +180,8 @@ _BLOCKED = [
     ("POST",   "/api/knowledge/memoire-upload",               "rédiger un dossier de présentation"),
     # (c) appels IA payants (l'analyse des marchés DEMO- reste servie, sans IA)
     ("POST",   "/api/sourcing/reanalyze",                     "lancer une analyse IA"),
-    ("POST",   "/api/sourcing/renewals",                      "lancer une analyse IA"),
+    # (« /api/sourcing/renewals » reste ouvert : en démo, la route sert des fins de contrat fictives, sans IA ni
+    # réseau — l'onglet « À venir » de Trouver des marchés, réorganisation, vague 1.)
     ("POST",   "/api/sourcing/ask",                           "poser vos questions à l'IA"),
     ("POST",   "/api/sourcing/documents",                     "générer vos documents"),
     ("POST",   "/api/chiffrage/{pid}/estimate",               "obtenir une estimation de chiffrage"),

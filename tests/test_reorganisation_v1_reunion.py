@@ -48,7 +48,10 @@ def _obj(*noms):
 
 # ═══ Accueil « À plusieurs » : un seul découpage, celui de la page du marché ═════════════════════════════════
 
-_ACCUEIL = _obj("grpDashEtape", "grpDashEtapes", "grpDashItems") + "o.fmtDate = d => d; o.pl = (n, a, b) => n > 1 ? b : a;\n"
+# La règle de la barre de la page du marché (etapeDuMarche, en tête de app.js) et ses libellés, puis les méthodes.
+_ETAPE = JS[JS.index("const ETAPES_LIBELLES = {"):JS.index("\n}\n", JS.index("function etapeDuMarche(")) + 3]
+_ACCUEIL = (_ETAPE + _obj("grpDashEtape", "grpDashEtapes", "grpDashItems")
+            + "o.fmtDate = d => d; o.pl = (n, a, b) => n > 1 ? b : a;\n")
 
 
 def test_accueil_a_plusieurs_compte_sur_la_barre_du_marche():
@@ -61,21 +64,26 @@ def test_accueil_a_plusieurs_compte_sur_la_barre_du_marche():
     for ancien in ("Monter le groupement", "Repérer le marché", "sur 5", "Avec partenaires", '"/" +', "Appel d'offres"):
         assert ancien not in dash and ancien not in items, ancien
     r = _node(_ACCUEIL + """
+const lu = { statut: "nouveau", dossier_lu: true };
 o.consortiums = { consortiums: [{ project_id: 7, partners: 2, submitted: 1 }] };
-o.grpDash = { par_etape: [{ n: 1, count: 0 }, { n: 2, count: 1 }, { n: 3, count: 0 }, { n: 4, count: 2 }, { n: 5, count: 1 }],
-  en_cours: [{ project_id: 7, name: "Gymnase", etape: 3, label: "Parts attendues", deadline: "2026-12-20" },
-             { project_id: 8, name: "École", etape: 5, label: "Prêt" }],
-  accessibles: [{ project_id: 9, name: "Voirie", groupement_score: 87 }, { project_id: 10, name: "Salle" }] };
+o.grpDash = { barres: [{ etape: 2, ...lu }, { etape: 4, ...lu }, { etape: 4, statut: "en_cours", dossier_lu: true },
+                       { etape: 5, ...lu }, { etape: 1, statut: "nouveau", dossier_lu: false }],
+  en_cours: [{ project_id: 7, name: "Gymnase", etape: 3, label: "Parts attendues", deadline: "2026-12-20", ...lu },
+             { project_id: 8, name: "École", etape: 5, label: "Prêt", ...lu }],
+  accessibles: [{ project_id: 9, name: "Voirie", groupement_score: 87, etape: 1, ...lu },
+                { project_id: 10, name: "Salle", etape: 1, statut: "en_cours", dossier_lu: true }] };
 const out = { etapes: o.grpDashEtapes(), items: o.grpDashItems().map(x => [x.meta, x.badge]) };
-o.grpDash = { par_etape: [{ n: 1, count: 2 }, { n: 5, count: 0 }] }; out.decider = o.grpDashEtapes();
-o.grpDash = { par_etape: [{ n: 1, count: 0 }] }; out.vide = o.grpDashEtapes();
+o.grpDash = { barres: [{ etape: 1, ...lu }, { etape: 1, ...lu }] }; out.decider = o.grpDashEtapes();
+o.grpDash = { barres: [] }; out.vide = o.grpDashEtapes();
+o.grpDash = { par_etape: [{ n: 1, count: 2 }] }; out.sansBarres = o.grpDashEtapes();
 console.log(JSON.stringify(out));
 """)
-    assert r["etapes"] == [{"label": "Préparer", "count": 3}, {"label": "Déposer", "count": 1}]   # jamais un zéro
+    assert r["etapes"] == [{"label": "Lire", "count": 1}, {"label": "Préparer", "count": 3},
+                           {"label": "Déposer", "count": 1}]                            # jamais un zéro
     assert r["items"] == [["Parts attendues · parts reçues 1 sur 2 · limite 2026-12-20", "Préparer"], ["Prêt", "Déposer"],
-                          ["À décider", "À plusieurs 87 %"], ["À décider", "Bon potentiel en groupement"]]
-    assert r["decider"] == [{"label": "Décider", "count": 2}] and r["vide"] == []
-    assert "grid-template-columns:repeat(3,minmax(0,1fr))" in CSS[CSS.index(".dash-steps {"):][:200]
+                          ["À décider", "À plusieurs 87 %"], ["À préparer", "Bon potentiel en groupement"]]
+    assert r["decider"] == [{"label": "Décider", "count": 2}] and r["vide"] == [] and r["sansBarres"] == []
+    assert "grid-template-columns:repeat(4,minmax(0,1fr))" in CSS[CSS.index(".dash-steps {"):][:200]
 
 
 def test_accueil_a_plusieurs_sur_la_demonstration(client, vitrine):
@@ -88,11 +96,12 @@ o.grpDash = JSON.parse(process.argv[1]); o.consortiums = JSON.parse(process.argv
 console.log(JSON.stringify({ etapes: o.grpDashEtapes(), items: o.grpDashItems().map(x => [x.name, x.meta, x.badge]) }));
 """, json.dumps(dash.json()), json.dumps(cons.json()))
     assert r["etapes"] == [{"label": "Déposer", "count": 1}]
+    assert {b["etape"] for b in dash.json()["barres"]} == {5} and all("statut" in b for b in dash.json()["barres"])
     kerhel = [it for it in r["items"] if "Kerhel" in it[0]]
     assert len(kerhel) == 1 and "parts reçues 1 sur 1" in kerhel[0][1] and kerhel[0][2] == "Déposer"
     for _nom, meta, badge in r["items"]:
         assert not re.search(r"\d+\s*/\s*\d+ part", meta), meta                       # « N sur M » (décision 8)
-        assert badge in ("Décider", "Préparer", "Déposer") or "%" in badge or badge == "Bon potentiel en groupement"
+        assert badge in ("Lire", "Décider", "Préparer", "Déposer") or "%" in badge or badge == "Bon potentiel en groupement"
 
 
 @pytest.fixture(scope="module")

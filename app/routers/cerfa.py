@@ -8,7 +8,7 @@ from app.core.org import member_ids, data_owner_id
 from app.core.http import content_disposition
 from app.models import User, Project, Company, GeneratedDoc
 from typing import Optional
-from app.services.cerfa import GENERATORS, missing_company_fields
+from app.services.cerfa import GENERATORS, missing_company_fields, reference_consultation
 from app.core.http import AVERTISSEMENT_HEADER, en_tete_avertissements
 
 router = APIRouter(prefix="/api/cerfa", tags=["Generation CERFA"])
@@ -127,7 +127,7 @@ def produire_formulaire(db: Session, project: Project, company: Company, doc_typ
         "client": project.client or "",
         "budget": _est.get("total_ht"),
         "tva_rate": getattr(project, "tva_rate", 0) or 0,
-        "reference": f"AO-{project.id:04d}",
+        "reference": reference_consultation(project.ai_analysis),   # l'avis publié, jamais le n° interne
         "cotraitants": [],
     }
 

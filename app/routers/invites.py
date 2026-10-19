@@ -3034,14 +3034,15 @@ def dossier_preview(project_id: int, current_user: User = Depends(get_current_us
     (pas de LLM, pas de quota) — pour voir avant d'exporter."""
     project = _owned_project(project_id, current_user, db)
     # Même nom que dans le ZIP : celui du règlement s'il y est retrouvé, sinon « Mémoire technique ».
+    from app.services.agents.redaction import DOSSIER_FORMULAIRES, DOSSIER_PIECES_PARTENAIRES
     from app.services.memoire_export import file_stem, memoire_label
     _stem = file_stem(memoire_label(project.ai_analysis))
     files = [
         {"name": f"{_stem}.docx", "kind": "Dossier de présentation, en Word à relire"},
         {"name": f"{_stem}.pdf", "kind": "Dossier de présentation, en PDF"},
-        {"name": "cerfa/DC1.pdf", "kind": "Formulaire officiel DC1 : lettre de candidature (groupement)"},
-        {"name": "cerfa/DC2.pdf", "kind": "Formulaire officiel DC2 : déclaration du candidat"},
-        {"name": "cerfa/ATTRI1.pdf", "kind": "Formulaire officiel ATTRI1 : acte d'engagement"},
+        {"name": f"{DOSSIER_FORMULAIRES}/DC1.pdf", "kind": "Formulaire officiel DC1 : lettre de candidature (groupement)"},
+        {"name": f"{DOSSIER_FORMULAIRES}/DC2.pdf", "kind": "Formulaire officiel DC2 : déclaration du candidat"},
+        {"name": f"{DOSSIER_FORMULAIRES}/ATTRI1.pdf", "kind": "Formulaire officiel ATTRI1 : acte d'engagement"},
         {"name": "synthese_groupement.pdf", "kind": "Composition du groupement"},
         {"name": "fiche_appel_offres.pdf", "kind": "Fiche récapitulative du marché"},
     ]
@@ -3054,8 +3055,8 @@ def dossier_preview(project_id: int, current_user: User = Depends(get_current_us
         ProjectContribution.status == "submitted",
         active_invite_filter()).all()
     for pc, cb in rows:
-        co = (cb.company_name or "cotraitant")
-        files.append({"name": f"pieces_cotraitants/{co}/{pc.name}",
+        co = (cb.company_name or "partenaire")
+        files.append({"name": f"{DOSSIER_PIECES_PARTENAIRES}/{co}/{pc.name}",
                       "kind": f"Pièce — {co}", "size": pc.file_size or 0})
     n_pieces = len(rows)
     # Vague 2 : la convention de groupement générée (texte figé + accords) part dans le dossier.

@@ -308,7 +308,12 @@ def renewals(request: Request, req: RenewalRequest,
 
     PRIORITÉ DECP (Données Essentielles, open data) : durée + date réelles → échéance
     100 % DÉTERMINISTE, couverture de TOUS les profils acheteurs (pas que BOAMP),
-    et GRATUIT (aucun quota consommé). Repli sur la version BOAMP+IA si DECP est vide."""
+    et GRATUIT (aucun quota consommé). Repli sur la version BOAMP+IA si DECP est vide.
+
+    Démo (pitch) : des fins de contrat fictives, sans réseau ni IA ni quota (demo_search.renewals_results)."""
+    from app.services.demo_search import is_demo as _is_demo, renewals_results as _demo_renewals
+    if _is_demo(current_user):
+        return _demo_renewals(req.departements)
     gonogo = _criteria_dict(current_user.id, db)
     deps = [d.strip()[:2] for d in (req.departements or []) if d.strip()]
 

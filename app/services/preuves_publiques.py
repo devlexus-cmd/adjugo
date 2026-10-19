@@ -23,7 +23,7 @@ from app.models import Company, Preuve, User
 from app.services import preuves as pv
 from app.services import sources_publiques as sp
 
-MSG_SIRET = ("Indiquez le SIRET de votre entreprise dans « Profil de l'entreprise » : Adjugo s'en sert pour lire "
+MSG_SIRET = ("Indiquez le SIRET de votre entreprise dans Mon entreprise, onglet « Identité » : Adjugo s'en sert pour lire "
              "vos marchés publics et vos qualifications RGE.")
 MSG_SIRET_PART = ("Indiquez votre SIRET dans votre part (14 chiffres) et enregistrez-la : Adjugo s'en sert pour lire "
                   "vos marchés publics et vos qualifications RGE.")

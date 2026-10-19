@@ -36,7 +36,7 @@ def _esc(s) -> str:
 def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str, tva_rate: float = 0) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=16 * mm,
-                            leftMargin=15 * mm, rightMargin=15 * mm, title="DPGF")
+                            leftMargin=15 * mm, rightMargin=15 * mm, title="Estimation détaillée du prix")
     base = getSampleStyleSheet()["Normal"]
     h1 = ParagraphStyle("h1", parent=base, fontName="Helvetica-Bold", fontSize=15, textColor=_INK)
     h2 = ParagraphStyle("h2", parent=base, fontName="Helvetica-Bold", fontSize=12, textColor=_ACCENT, spaceBefore=2)

@@ -68,7 +68,9 @@ console.log(JSON.stringify(res));
 
 
 def test_tableau_de_bord_etat_vide_honnete_sous_node():
-    script = _obj("grpDashHasAny", "grpDashItems", "grpDashState") + """
+    # La règle de la barre de la page du marché (etapeDuMarche, en tête de app.js), que grpDashEtape applique.
+    etape = JS[JS.index("const ETAPES_LIBELLES = {"):JS.index("\n}\n", JS.index("function etapeDuMarche(")) + 3]
+    script = etape + _obj("grpDashHasAny", "grpDashEtape", "grpDashItems", "grpDashState") + """
 o.fmtDate = (d) => d; o.pl = (n, a, b) => (n > 1 ? b : a); o.consortiums = { consortiums: [] };
 const res = {};
 o.grpDash = { marches_accessibles_en_groupement: 0, groupements_en_cours: 0, deposes: 1, en_cours: [], accessibles: [] };

@@ -376,7 +376,7 @@ def test_sans_siret_un_message_et_aucune_lecture(client, sources):
     h, _ = _org(client, siret="")
     for route in ("/api/preuves/publiques/marches", "/api/preuves/publiques/rge"):
         d = client.get(route, headers=h).json()
-        assert d["statut"] == "siret_manquant" and "Profil de l'entreprise" in d["message"]
+        assert d["statut"] == "siret_manquant" and "Mon entreprise, onglet « Identité »" in d["message"]
     assert sources.calls == []
 
 

@@ -22,6 +22,11 @@ from typing import Optional
 FICHIER_IMPOSE_WARNING = ("Dossier de présentation : l'acheteur impose son propre cadre de réponse. Recopiez-y "
                           "ce texte ; ne déposez pas le fichier Word d'Adjugo seul.")
 
+# Dossiers du ZIP « Préparer mes documents » (réorganisation, vague 1 : noms lus par le client, sans « CERFA »
+# ni « co-traitant » ; l'aperçu du dossier commun, app/routers/invites.py, reprend les mêmes).
+DOSSIER_FORMULAIRES = "formulaires_officiels"
+DOSSIER_PIECES_PARTENAIRES = "pieces_partenaires"
+
 # Seuil (€ HT) au-delà duquel le DUME est ajouté d'office au dossier. Les procédures
 # formalisées le rendent quasi incontournable ; ajustable selon la stratégie commerciale.
 DUME_THRESHOLD = 90000
@@ -184,12 +189,13 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     _real_ht = (estimate or {}).get("total_ht") if isinstance(estimate, dict) else None
     if not _real_ht:
         warnings.append("Montant d'engagement (ATTRI1) vide : chiffrez le marché avant de déposer.")
+    from app.services.cerfa import reference_consultation as _reference_consultation
     project_data = {
         "name": details.get("intitule_marche", "Marché public"),
         "client": details.get("acheteur", ""),
         "budget": _real_ht,  # None → ATTRI1 « À COMPLÉTER » (jamais un prix inventé)
         "tva_rate": tva_rate,
-        "reference": f"AO-{(project_id or 0):04d}",
+        "reference": _reference_consultation(analysis),   # l'avis publié, jamais le n° interne d'Adjugo
         "cotraitants": cerfa_cotraitants,   # ← DC1 groupement / DC2 multi-membres (incl. contributions)
     }
 
@@ -213,16 +219,16 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
                         if _conv.status != "signee":
                             _sigs = _gc.signatures_of(db, _conv)
                             warnings.append("Convention de groupement générée mais pas encore validée par tous "
-                                            f"({sum(1 for s in _sigs if s.status in ('signed', 'hors_ligne'))}"
-                                            f"/{len(_sigs)} accords).")
+                                            f"(accords {sum(1 for s in _sigs if s.status in ('signed', 'hors_ligne'))}"
+                                            f" sur {len(_sigs)}).")
                 else:
                     _conv = _gc.get_convention(db, project_id)
                     if _conv is not None and _conv.status == "perimee":
                         warnings.append("La convention de groupement n'est plus à jour (une part, un prix ou la "
                                         "composition a changé) : régénérez-la avant de déposer.")
                     elif _conv is not None and _conv.status == "draft":
-                        warnings.append("Convention de groupement en brouillon : générez-la depuis « Monter le "
-                                        "groupement » pour que chaque membre la valide.")
+                        warnings.append("Convention de groupement en brouillon : générez-la dans « Convention et "
+                                        "accords » (page du marché, étape Préparer) pour que chaque membre la valide.")
         except Exception as e:
             warnings.append(f"convention de groupement : {e}")
 
@@ -279,7 +285,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
             except Exception as e:
                 warnings.append(f"{cid}: {e}")
     except Exception as e:
-        warnings.append(f"cerfa indisponible: {e}")
+        warnings.append(f"formulaires officiels indisponibles : {e}")
     if _grp_conv and db is not None and project_id:
         # Formulaires produits APRÈS la convention : compte pour l'état « prêt à déposer ».
         from app.services.groupement_convention import mark_cerfa_generated
@@ -394,7 +400,7 @@ def _build_zip(memoire_files, cerfa_files, company, details, cotraitants, projec
     import os
     buf = io.BytesIO()
     failed_pieces = []
-    ao = re.sub(r"[^\w\s-]", "", details.get("intitule_marche", "AO"))[:40].strip() or f"projet_{project_id}"
+    ao = re.sub(r"[^\w\s-]", "", details.get("intitule_marche") or "")[:40].strip() or f"marche_{project_id or 0}"
     zip_name = f"Adjugo_Dossier_{ao}.zip".replace(" ", "_")
 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -403,7 +409,7 @@ def _build_zip(memoire_files, cerfa_files, company, details, cotraitants, projec
         for _kind, (name, content) in sorted((memoire_files or {}).items()):
             zf.writestr(name, content)
         for c in cerfa_files:
-            zf.writestr(f"cerfa/{c['name']}", _as_bytes(c["content"]))
+            zf.writestr(f"{DOSSIER_FORMULAIRES}/{c['name']}", _as_bytes(c["content"]))
         zf.writestr("synthese_groupement.pdf",
                     text_to_pdf(_groupement_recap(company, cotraitants, details), "Composition du groupement"))
         zf.writestr("fiche_appel_offres.pdf", text_to_pdf(_ao_recap(details), "Fiche récapitulative du marché"))
@@ -428,16 +434,16 @@ def _build_zip(memoire_files, cerfa_files, company, details, cotraitants, projec
                 except Exception:
                     # Ne plus avaler silencieusement : le mandataire doit savoir qu'une
                     # pièce partenaire manque au ZIP (sinon dossier commun incomplet déposé).
-                    failed_pieces.append(f"{p.get('company') or 'co-traitant'} — {p.get('name') or 'pièce'}")
+                    failed_pieces.append(f"{p.get('company') or 'partenaire'} — {p.get('name') or 'pièce'}")
                     continue
-                co = re.sub(r"[^\w\s-]", "", p.get("company", "") or "cotraitant")[:40].strip() or "cotraitant"
+                co = re.sub(r"[^\w\s-]", "", p.get("company", "") or "partenaire")[:40].strip() or "partenaire"
                 nm = os.path.basename(p.get("name", "") or "piece") or "piece"
-                path = f"pieces_cotraitants/{co}/{nm}"
+                path = f"{DOSSIER_PIECES_PARTENAIRES}/{co}/{nm}"
                 i = 2
                 while path in seen:        # évite l'écrasement si deux pièces de même nom
                     stem, dot, ext = nm.rpartition(".")
                     nm2 = (f"{stem}_{i}{dot}{ext}" if dot else f"{nm}_{i}")
-                    path = f"pieces_cotraitants/{co}/{nm2}"
+                    path = f"{DOSSIER_PIECES_PARTENAIRES}/{co}/{nm2}"
                     i += 1
                 seen.add(path)
                 zf.writestr(path, content)

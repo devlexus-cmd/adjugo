@@ -26,6 +26,24 @@ def _esc(s) -> str:
     return _xml_escape(str(s if s is not None else ""))
 
 
+# Référence imprimée sur les pièces remises à l'acheteur (DUME, déclaration sur l'honneur, formulaires
+# nationaux) : celle de l'avis publié que l'analyse a lu (source officielle), jamais le numéro interne
+# d'Adjugo. Sans avis connu, le champ reste à compléter par l'entreprise.
+REFERENCE_A_COMPLETER = "À compléter (référence de la consultation donnée par l'acheteur)"
+
+
+def reference_consultation(analysis) -> "str | None":
+    """« avis BOAMP n° 26-123456 » d'après `ai_analysis.source`, sinon None (champ à compléter)."""
+    src = analysis.get("source") if isinstance(analysis, dict) else None
+    if not isinstance(src, dict):
+        return None
+    ref = " ".join(str(src.get("official_ref") or "").split())[:60]
+    if not ref:
+        return None
+    nom = " ".join(str(src.get("source") or "").split())[:30]
+    return f"avis {nom} n° {ref}" if nom else ref
+
+
 def _text(c, x, y, text, size=9, bold=False):
     if not text:
         return
@@ -675,7 +693,7 @@ def generate_dume(c, p, lang_name=None):
 
         Paragraph(tr("Partie I — Procédure et acheteur"), s["H"]),
         kv([(tr("Objet du marché"), p.get("name")), (tr("Acheteur public"), p.get("client")),
-            (tr("Référence"), p.get("reference"))]),
+            (tr("Référence"), p.get("reference") or REFERENCE_A_COMPLETER)]),
 
         Paragraph(tr("Partie II — Identité de l'opérateur économique"), s["H"]),
         kv([(tr("Dénomination"), c.get("name")), (tr("SIRET"), c.get("siret")),
@@ -879,7 +897,7 @@ def generate_attestation_honneur(c, p):
 
         Paragraph("Objet de la consultation", s["HH"]),
         kv([("Marché", p.get("name")), ("Acheteur public", p.get("client")),
-            ("Référence", p.get("reference"))]),
+            ("Référence", p.get("reference") or REFERENCE_A_COMPLETER)]),
 
         Spacer(1, 6),
         Paragraph("Je soussigné(e), représentant légal de l'entreprise désignée ci-dessus, "

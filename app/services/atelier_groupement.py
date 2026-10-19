@@ -687,8 +687,8 @@ MSG_CLE_REQUISE = ("Ouvrez votre espace privé sur cet appareil pour lire vos br
 MSG_ESPACE_OUVERT = ("Votre espace privé est déjà ouvert sur un autre appareil. Saisissez le code reçu par email "
                      "pour l'ouvrir ici, ou réinitialisez-le : vos brouillons non envoyés et vos documents déposés "
                      "pour Adjugo seront alors effacés (vos textes envoyés restent).")
-MSG_ESPACE_COMPTE = ("Ce lien est rattaché à un compte Adjugo : rédigez vos parties depuis ce compte, dans « Partagé "
-                     "avec moi ». Vos brouillons y sont, sans rien à ouvrir.")
+MSG_ESPACE_COMPTE = ("Ce lien est rattaché à un compte Adjugo : rédigez vos parties depuis ce compte, dans Mes marchés, "
+                     "onglet « Où je suis partenaire ». Vos brouillons y sont, sans rien à ouvrir.")
 MSG_CODE_REQUIS = ("Votre invitation vise une adresse email : recevez un code à cette adresse pour ouvrir votre espace "
                    "privé sur cet appareil.")
 MSG_RATTACHER_ESPACE = ("Ce lien a déjà servi à rédiger dans un espace privé. Pour le rattacher à votre compte, ouvrez-le "

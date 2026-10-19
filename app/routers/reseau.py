@@ -1210,8 +1210,8 @@ def _network_mailer(lot: str, chef: str):
                     f"Ouvrez l'invitation (vous pourrez l'accepter ou la décliner) :\n{url}\n\n"
                     f"Votre adresse n'est pas communiquée au chef de file tant que vous n'avez pas accepté.\n"
                     f"Vous recevez ce message parce que le profil partenaire de votre entreprise est publié sur "
-                    f"Adjugo. Vous pouvez retirer cette publication à tout moment depuis Réseau > Mon profil "
-                    f"partenaire.\n\n— Adjugo, le réseau des PME")
+                    f"Adjugo. Vous pouvez retirer cette publication à tout moment depuis Partenaires › Réseau "
+                    f"Adjugo › Mon profil partenaire.\n\n— Adjugo, le réseau des PME")
             sent = _email.send_email(inv.recipient, subj, text)
             if sent:
                 inv.emailed_at = utcnow()
@@ -1356,8 +1356,8 @@ def _invite_reseau_locked(request: Request, db: Session, current_user: User, pro
         "annuaire": attach,
         "message": ("Invitation envoyée par Adjugo. L'adresse du partenaire vous sera visible quand il aura "
                     "accepté ; il retrouve aussi l'invitation dans son espace Adjugo.") if emailed else
-                   ("Invitation créée : le partenaire la retrouve dans son espace Adjugo (Réseau > Invitations "
-                    "reçues). L'email n'a pas pu partir pour le moment."),
+                   ("Invitation créée : le partenaire la retrouve dans son espace Adjugo (Partenaires › Réseau "
+                    "Adjugo › Invitations reçues). L'email n'a pas pu partir pour le moment."),
     }
 
 

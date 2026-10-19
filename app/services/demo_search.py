@@ -184,3 +184,42 @@ def analysis_for(ref: str):
     if not t:
         return None
     return _analysis(_details_of(t), t["summary"], ref, t["pieces"])
+
+
+# ── « Trouver des marchés › À venir » (fins de contrat) pour le compte DÉMO ─────────────────────────────────────────
+# Réorganisation, vague 1 : « À venir » est un onglet de la 2e rubrique du menu, qu'un pitch montre. La vraie route
+# lit les données essentielles (DECP) sur le réseau, puis se replie sur BOAMP + IA (quota) : en démo, ni réseau ni
+# IA, des contrats FICTIFS déjà attribués (acheteurs et villes fictifs de la démo, aucun lien externe), dates calculées
+# comme le radar DECP (fin = notification + durée réelle ; republication estimée 4 mois avant la fin), toujours à
+# venir, filtrés par département comme le radar (la démo pré-remplit le 44, celui de l'entreprise fictive).
+_RENOUVELLEMENTS = [
+    dict(ref="DEMO-R1", objet="Entretien et réparation des toitures des bâtiments communaux",
+         acheteur="Ville de Kerval", dept="44", duree=48, ecart_jours=35, montant=210000.0),
+    dict(ref="DEMO-R4", objet="Réfection des couvertures de l'école élémentaire et du restaurant scolaire",
+         acheteur="Ville de Trémorvan", dept="44", duree=36, ecart_jours=75, montant=185000.0),
+    dict(ref="DEMO-R2", objet="Étanchéité des toitures-terrasses du groupe scolaire des Tilleuls",
+         acheteur="Ville de Garonnac", dept="31", duree=36, ecart_jours=110, montant=145000.0),
+    dict(ref="DEMO-R3", objet="Maintenance des couvertures et de la zinguerie des équipements sportifs",
+         acheteur="Ville de Flandremont", dept="59", duree=24, ecart_jours=210, montant=320000.0),
+]
+
+
+def renewals_results(departements=None, today=None) -> dict:
+    """Même forme que app/services/decp.detect_renewals_decp (onglet « À venir »), sans réseau ni IA."""
+    from datetime import date, timedelta
+    today = today or date.today()
+    deps = {str(d).strip()[:2] for d in (departements or []) if str(d).strip()}
+    out = []
+    for r in _RENOUVELLEMENTS:
+        if deps and r["dept"] not in deps:
+            continue
+        renouv = today + timedelta(days=r["ecart_jours"])
+        fin = renouv + timedelta(days=120)
+        notif = fin - timedelta(days=int(r["duree"] * 30.4))
+        out.append({"idweb": r["ref"], "objet": r["objet"], "acheteur": r["acheteur"], "lieu": r["dept"],
+                    "dept": r["dept"], "date_attribution": notif.isoformat(), "duree_mois": r["duree"],
+                    "duree_estimee": False, "type_contrat": "Marché de travaux", "montant": r["montant"],
+                    "source_plateforme": "", "fin_estimee": fin.isoformat(),
+                    "renouvellement_estime": renouv.isoformat(), "score": 0, "url": ""})
+    out.sort(key=lambda x: x["renouvellement_estime"])
+    return {"count": len(out), "renewals": out, "errors": [], "source": "DECP"}

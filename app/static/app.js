@@ -80,6 +80,11 @@ const RUBRIQUES = [
     { view: "compte", label: "Mon compte", ic: "circle-user", avant: "Votre mot de passe et vos données étaient dans « Équipe »." },
     { view: "admin", label: "Administration", ic: "shield", si: "admin" }] },
 ];
+// Nom affiché d'un dossier rangé (réorganisation, vague 1) : la clé stockée ne change pas (« CERFA », « DCE »,
+// « Mémoire technique », app/services/dossier.py), seul le nom lu par le client.
+const DOSSIERS_AFFICHES = { "CERFA": "Formulaires officiels", "DCE": "Dossier du marché",
+                            "Mémoire technique": "Dossier de présentation" };
+function nomDossier(f) { return DOSSIERS_AFFICHES[f] || (f || ""); }
 // Rubrique d'une vue (null : vue inconnue).
 function rubriqueDe(view) { return RUBRIQUES.find(r => r.vues.indexOf(view) >= 0) || null; }
 // Onglet affiché pour (vue, onglet interne) : celui de la vue, et pour Trouver des marchés celui de l'onglet interne.
@@ -98,10 +103,15 @@ function ancienNom(t) {
 const REORG_V1_DEPUIS = "2026-10-20";        // jour de mise en ligne du menu par rubriques
 const REORG_V1_DUREE_MS = 7 * 24 * 3600 * 1000;
 const DEMO_EMAIL_APP = "demo@adjugo.fr";     // = app/services/demo_seed.DEMO_EMAIL (vérifié par les tests)
-function noteReorgVisible(user, etat, maintenant) {
+// La transition (note et anciens noms en bulle) ne parle qu'à ceux qui ont connu l'ancienne organisation : un compte
+// créé avant REORG_V1_DEPUIS, jamais la démonstration (un prospect n'a jamais vu ces noms) ni un compte neuf.
+function transitionVisible(user) {
   if (!user || !user.created_at) return false;
   if (String(user.email || "").trim().toLowerCase() === DEMO_EMAIL_APP) return false;
-  if (String(user.created_at).slice(0, 10) >= REORG_V1_DEPUIS) return false;
+  return String(user.created_at).slice(0, 10) < REORG_V1_DEPUIS;
+}
+function noteReorgVisible(user, etat, maintenant) {
+  if (!transitionVisible(user)) return false;
   const e = etat || {};
   if (e.ferme) return false;
   return !e.vu || (maintenant - e.vu) < REORG_V1_DUREE_MS;
@@ -144,6 +154,7 @@ function translateDOM(lang) {
 // du marché, le dossier du marché lu ou non, l'étape du groupement (1 à 5, dérivée côté serveur). Une indication,
 // jamais un blocage : chaque étape s'ouvre à tout moment. Aucune étape surlignée pour un marché gagné, perdu ou
 // abandonné (son bilan est en tête de page).
+const ETAPES_LIBELLES = { lire: "Lire", decider: "Décider", preparer: "Préparer", deposer: "Déposer" };
 function etapeDuMarche(statut, dossierLu, etapeGroupement) {
   const e = Number(etapeGroupement) || 1;
   if (statut === "gagne" || statut === "perdu" || statut === "abandonne") return "";
@@ -1073,16 +1084,18 @@ const __adjApp = createApp({
       const out = [];
       const _bad = (k) => { const v = String(k || "").trim().toLowerCase(); return !v || v === "inconnu" || v === "non précisé" || v === "n/d"; };
       const best = (arr, min = 2) => (arr || []).filter(x => (x.total || 0) >= min && !_bad(x.key)).sort((a, b) => b.win_rate - a.win_rate)[0];
+      // Décision 8 : « N gagnés sur M » (le taux ne sert qu'à choisir la leçon, jamais affiché).
+      const sur = (x) => x.won + " " + (x.won > 1 ? "gagnés" : "gagné") + " sur " + x.total;
       const bz = best(s.by_zone);
-      if (bz && bz.win_rate >= 50) out.push(`Vous gagnez surtout dans le <b>département ${esc(bz.key)}</b> (${bz.win_rate}% de réussite) — ciblez-y vos recherches.`);
+      if (bz && bz.win_rate >= 50) out.push(`Vous gagnez surtout dans le <b>département ${esc(bz.key)}</b> (${sur(bz)}) — ciblez-y vos recherches.`);
       const bt = best(s.by_type);
-      if (bt && bt.win_rate >= 50) out.push(`Vos meilleurs résultats : les marchés de <b>${esc(bt.key)}</b> (${bt.win_rate}%).`);
+      if (bt && bt.win_rate >= 50) out.push(`Vos meilleurs résultats : les marchés de <b>${esc(bt.key)}</b> (${sur(bt)}).`);
       const grp = (s.by_groupement || []).reduce((m, g) => { m[g.key] = g; return m; }, {});
       if (grp.Groupement && grp.Solo && (grp.Groupement.total || 0) >= 2 && (grp.Solo.total || 0) >= 2 && grp.Groupement.win_rate > grp.Solo.win_rate + 10) {
-        out.push(`Vous gagnez plus <b>en groupement</b> (${grp.Groupement.win_rate}%) qu'en solo (${grp.Solo.win_rate}%) — associez-vous plus souvent.`);
+        out.push(`Vous gagnez plus <b>à plusieurs</b> (${sur(grp.Groupement)}) que seul (${sur(grp.Solo)}) — associez-vous plus souvent.`);
       }
       const bp = (s.by_partner || []).filter(p => (p.total || 0) >= 2).sort((a, b) => b.win_rate - a.win_rate)[0];
-      if (bp && bp.win_rate >= 60) out.push(`Votre partenaire le plus gagnant : <b>${esc(bp.key)}</b> (${bp.win_rate}% sur ${bp.total} marchés).`);
+      if (bp && bp.win_rate >= 60) out.push(`Votre partenaire le plus gagnant : <b>${esc(bp.key)}</b> (${sur(bp)}).`);
       const lr = (s.loss_reasons || [])[0];
       if (lr && lr.count >= 2) out.push(`Vous perdez surtout pour : <b>${esc(lr.reason)}</b> (${lr.count} fois) — un levier à travailler.`);
       return out.slice(0, 4);
@@ -1480,7 +1493,8 @@ const __adjApp = createApp({
       const sous = this.view === "sourcing" && this.trouverOnglet !== "publies" ? this.trouverOnglet : "";
       return this.subtitles[sous || this.view] || "";
     },
-    enteteAncien() { return ancienNom(ongletDe(this.view, this.view === "sourcing" ? this.trouverOnglet : "")); },
+    // L'ancien nom, seulement pour qui l'a connu (transitionVisible : ni la démonstration, ni un compte neuf).
+    enteteAncien() { return transitionVisible(this.user) ? ancienNom(ongletDe(this.view, this.view === "sourcing" ? this.trouverOnglet : "")) : ""; },
     enteteAide() { return [this.enteteAideVue(), this.enteteAncien()].filter(Boolean).join(" "); },
     toggleReglages() {
       this.navReglages = !this.navReglages;
@@ -2160,14 +2174,15 @@ const __adjApp = createApp({
       return "rien_a_lister";
     },
     grpDashHasAny() { const g = this.grpDash; return !!(g && (g.marches_accessibles_en_groupement || g.groupements_en_cours || g.deposes)); },
-    // Réorganisation, vague 1 (réunion des chantiers) : un seul découpage, celui de la page du marché. Les 5 étapes
-    // du groupement (serveur) se rangent sur sa barre : 1 → Décider, 2 à 4 → Préparer (ses tâches « à plusieurs »),
-    // 5 → Déposer. On ne montre que les étapes où se trouve au moins un marché (jamais un zéro).
-    grpDashEtape(n) { n = Number(n) || 1; return n >= 5 ? "Déposer" : (n <= 1 ? "Décider" : "Préparer"); },
+    // Réorganisation, vague 1 (réunion des chantiers, puis relecture) : un seul découpage, celui de la page du marché.
+    // Chaque marché est placé sur la barre de SA page avec la même règle (etapeDuMarche : statut, dossier lu, étape du
+    // groupement), lue dans la réponse du serveur (`barres`, et chaque marché listé). On ne montre que les étapes où se
+    // trouve au moins un marché (jamais un zéro).
+    grpDashEtape(x) { return ETAPES_LIBELLES[etapeDuMarche(x && x.statut, !!(x && x.dossier_lu), x && x.etape)] || ""; },
     grpDashEtapes() {
-      const g = this.grpDash; if (!g || !Array.isArray(g.par_etape)) return [];
-      const out = ["Décider", "Préparer", "Déposer"].map(label => ({ label, count: 0 }));
-      g.par_etape.forEach(e => { const i = ["Décider", "Préparer", "Déposer"].indexOf(this.grpDashEtape(e.n)); out[i].count += Number(e.count) || 0; });
+      const g = this.grpDash; if (!g || !Array.isArray(g.barres)) return [];
+      const ordre = ["Lire", "Décider", "Préparer", "Déposer"], out = ordre.map(label => ({ label, count: 0 }));
+      g.barres.forEach(b => { const i = ordre.indexOf(this.grpDashEtape(b)); if (i >= 0) out[i].count += 1; });
       return out.filter(e => e.count > 0);
     },
     grpDashItems() {
@@ -2177,13 +2192,14 @@ const __adjApp = createApp({
       const seen = new Set((g.en_cours || []).map(it => it.project_id)), out = [];   // TOUS les en cours, pas seulement les 5 listés
       (g.en_cours || []).slice(0, 5).forEach(it => {
         const cs = parts[it.project_id];
-        // Décision 8 : « N sur M ». L'étape affichée est celle de la barre de la page du marché (grpDashEtapes).
+        // Décision 8 : « N sur M ». L'étape affichée est celle de la barre de la page du marché (grpDashEtape).
         const bits = [it.label, cs && cs.partners ? "parts reçues " + cs.submitted + " sur " + cs.partners : "", lim(it.deadline)].filter(Boolean);
-        const et = Number(it.etape) || 1;
-        out.push({ project_id: it.project_id, name: it.name || "Marché", meta: bits.join(" · "), badge: et >= 5 ? "Déposer" : (et <= 1 ? "Décider" : "Préparer"), pill: "neutral" });
+        out.push({ project_id: it.project_id, name: it.name || "Marché", meta: bits.join(" · "), badge: this.grpDashEtape(it), pill: "neutral" });
       });
       (g.accessibles || []).filter(a => !seen.has(a.project_id)).slice(0, 3).forEach(a => {
-        out.push({ project_id: a.project_id, name: a.name || "Marché", meta: ["À décider", lim(a.deadline)].filter(Boolean).join(" · "),
+        // « À décider », « À lire », « À préparer » : l'étape de la barre de sa page, dite en mots.
+        const et = this.grpDashEtape(a);
+        out.push({ project_id: a.project_id, name: a.name || "Marché", meta: [et ? "À " + et.toLowerCase() : "", lim(a.deadline)].filter(Boolean).join(" · "),
                    badge: a.groupement_score != null ? "À plusieurs " + a.groupement_score + " %" : "Bon potentiel en groupement", pill: "go_groupement" });
       });
       return out;
@@ -3971,7 +3987,9 @@ const __adjApp = createApp({
     roleLabel(r) { return ({ mandataire: "Chef de file", cotraitant: "Partenaire", sous_traitant: "Sous-traitant" })[r] || r; },
     checklistLabel(s) { return ({ ok: "Disponible", manquant: "Manquant", expire: "Expiré", generable: "Généré auto", a_completer: "À terminer" })[s] || s; },
     // Dossiers du coffre : l'identifiant « Mémoire technique » reste en base, l'écran dit « Dossier de présentation ».
-    folderLabel(f) { return f === "Mémoire technique" ? "Dossier de présentation" : (f || ""); },
+    // Nom affiché d'un dossier rangé : les clés de rangement (app/services/dossier.py, FOLDERS) ne changent pas
+    // chez les clients, seul leur nom à l'écran (DOSSIERS_AFFICHES, en tête de ce fichier).
+    folderLabel(f) { return nomDossier(f); },
     // Copie le texte affiché d'un bloc (ex. note d'information aux salariés).
     async copyRefText(ref, ok) {
       const el = this.$refs[ref]; const txt = el ? (el.innerText || "").trim() : "";
@@ -4073,7 +4091,7 @@ const __adjApp = createApp({
       return (a.dce_available && a.lead_score && a.lead_score.breakdown) || [];
     },
     async aoStatus() {
-      try { await this.api("PUT", "/api/projects/" + this.ao.project.id, { status: this.ao.project.status }); this.notify("Étape mise à jour"); this.loadStats(); this.ao.cnTick = (this.ao.cnTick || 0) + 1; }
+      try { await this.api("PUT", "/api/projects/" + this.ao.project.id, { status: this.ao.project.status }); this.notify("Statut mis à jour"); this.loadStats(); this.ao.cnTick = (this.ao.cnTick || 0) + 1; }
       catch (e) { this.notify(e.message, "err"); }
     },
     outcomeReasons(status) {
@@ -4253,7 +4271,7 @@ const __adjApp = createApp({
       try {
         const r = await fetch("/api/export/" + this.ao.project.id, { method: "POST", headers: { Authorization: "Bearer " + this.token } });
         if (!r.ok) throw new Error("Export impossible");
-        this.saveBlob(await r.blob(), "Dossier_AO_" + this.ao.project.id + ".zip");
+        this.saveBlob(await r.blob(), atlNomFichier(r.headers.get("content-disposition"), "Dossier_marche_" + this.ao.project.id + ".zip"));
         const av = this.avertissementsFichier(r); if (av) this.notify("Dossier téléchargé. À vérifier : " + av, "warn");
       } catch (e) { this.notify(e.message, "err"); }
     },
@@ -4267,7 +4285,7 @@ const __adjApp = createApp({
       catch (e) { this.notify(e.message, "err"); }
     },
     async updateProjectStatus() {
-      try { await this.api("PUT", "/api/projects/" + this.drawer.id, { status: this.drawer.status }); this.notify("Étape mise à jour"); this.loadProjects(); }
+      try { await this.api("PUT", "/api/projects/" + this.drawer.id, { status: this.drawer.status }); this.notify("Statut mis à jour"); this.loadProjects(); }
       catch (e) { this.notify(e.message, "err"); }
     },
     async delProject(p) {
@@ -4281,7 +4299,7 @@ const __adjApp = createApp({
       try {
         const r = await fetch("/api/export/" + p.id, { method: "POST", headers: { Authorization: "Bearer " + this.token } });
         if (!r.ok) throw new Error("Export impossible");
-        const blob = await r.blob(); this.saveBlob(blob, "Dossier_AO_" + p.id + ".zip");
+        const blob = await r.blob(); this.saveBlob(blob, atlNomFichier(r.headers.get("content-disposition"), "Dossier_marche_" + p.id + ".zip"));
         const av = this.avertissementsFichier(r); this.notify(av ? "Dossier téléchargé. À vérifier : " + av : "Dossier téléchargé", av ? "warn" : "ok");
       } catch (e) { this.notify(e.message, "err"); }
     },
@@ -4375,6 +4393,16 @@ const __adjApp = createApp({
       if (p.groupement_score != null) bits.push("À plusieurs " + p.groupement_score + " %");
       return bits.length ? bits.join(" · ") : "Pas encore analysé";
     },
+    // Le nombre de l'anneau (accueil) et de la carte (Mes marchés), dit avec son libellé : « Seul 87 % » ou
+    // « À plusieurs 100 % » (décision 8 : le seul pourcentage est ce couple). "" tant que le marché n'est pas noté.
+    scoreCourt(p) {
+      if (p.go_decision === "go_groupement" && p.groupement_score != null) return "À plusieurs " + p.groupement_score + " %";
+      return p.match_score != null ? "Seul " + p.match_score + " %" : "";
+    },
+    // Bilan de l'accueil (décision 8) : « 2 gagnés sur 3 », jamais un taux en pourcentage.
+    gagnesSur(won, total) { const w = Number(won) || 0, t = Number(total) || 0; return w + " " + (w > 1 ? "gagnés" : "gagné") + " sur " + t; },
+    // Segment « Seul ou à plusieurs » : la clé de l'API (« Solo », « Groupement ») dite avec les mots du produit.
+    segmentSeul(k) { return ({ Solo: "Seul", Groupement: "À plusieurs" })[k] || k; },
     feedRingStyle(p) {
       if (p.go_decision === "go_groupement" && p.groupement_score != null) {
         const deg = Math.max(0, Math.min(100, p.groupement_score)) * 3.6;
@@ -4384,8 +4412,7 @@ const __adjApp = createApp({
     },
     decLabel(d) { return ({ go: "Bon potentiel", go_groupement: "Bon potentiel en groupement", no_go: "Peu adapté", a_etudier: "À étudier" })[d] || "—"; },
     decColor(d) { return ({ go: "color:var(--go)", go_groupement: "color:var(--accent-text)", no_go: "color:var(--danger)", a_etudier: "color:var(--warning-text)" })[d] || "color:var(--muted)"; },
-    // Kanban : un marché « bon potentiel en groupement » affiche son score de groupement (le score seul reste au survol).
-    kanbanScore(p) { if (p.go_decision === "go_groupement" && p.groupement_score != null) return p.groupement_score; return p.match_score != null ? p.match_score : ""; },
+    // Kanban : la carte dit « À plusieurs 100 % » ou « Seul 87 % » (scoreCourt) ; le couple complet reste au survol.
     kanbanScoreTitle(p) { return (p.match_score == null && p.groupement_score == null) ? "" : this.feedScoreTitle(p); },
     // Verdict SEUL d'un marché « bon potentiel en groupement » : celui que l'API a calculé (simulation)
     // sinon, à défaut, les seuils du profil (mêmes défauts que le serveur : 65 / 40). Jamais un chiffre inventé.
@@ -6497,12 +6524,18 @@ __adjApp.component("rn-badges", {
   props: { badges: { type: Array, default: () => [] } },
   methods: {
     ic(n) { return ({ ok: "badge-check", info: "circle-dot", alerte: "triangle-alert" })[n] || "circle-dashed"; },
-    nv(n) { return ({ ok: "vérifié", info: "information", alerte: "point d'attention" })[n] || "non vérifié"; },
+    // Décision 9 : « vérifié » seulement pour une identité contrôlée dans un registre, datée (identité validée,
+    // registre officiel). Un constat sur une autre source (BODACC, DECP) se dit « constaté à la source ».
+    nv(b) {
+      const n = b && b.niveau;
+      if (n === "ok") return (b.key === "identite" || b.key === "sirene") ? "vérifié" : "constaté à la source";
+      return ({ info: "information", alerte: "point d'attention" })[n] || "non vérifié";
+    },
     jj: _rnJjmmaaaa,
   },
   template: '<ul v-if="badges && badges.length" class="rn-badges">'
     + '<li v-for="(b,i) in badges" :key="(b.key||\'b\')+i" class="rn-badge" :class="\'n-\'+(b.niveau||\'non_verifie\')">'
-    + '<i :data-lucide="ic(b.niveau)" aria-hidden="true"></i><span class="rn-badge-l">{{ b.label }}<span class="sr-only"> ({{ nv(b.niveau) }})</span></span>'
+    + '<i :data-lucide="ic(b.niveau)" aria-hidden="true"></i><span class="rn-badge-l">{{ b.label }}<span class="sr-only"> ({{ nv(b) }})</span></span>'
     + _RN_TIP + 'Source : {{ b.source || "non précisée" }}<template v-if="b.date"><br>Date : {{ jj(b.date) }}</template></span></button>'
     + '</li></ul>',
 });

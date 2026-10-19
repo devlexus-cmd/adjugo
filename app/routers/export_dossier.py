@@ -15,7 +15,7 @@ from app.core.org import data_owner_id, member_ids
 from app.core.http import content_disposition
 from app.services.storage import get_storage
 from app.models import User, Project, Company, Document
-from app.services.cerfa import GENERATORS
+from app.services.cerfa import GENERATORS, reference_consultation
 
 router = APIRouter(prefix="/api/export", tags=["Export dossier"])
 
@@ -60,7 +60,7 @@ def export_dossier(
         # SANS ça, l'ATTRI1 du ZIP affichait toujours « 0 % — TVA non applicable » (TTC=HT),
         # même quand le client avait choisi 20 % — un acte d'engagement à la TVA fausse.
         "tva_rate": getattr(project, "tva_rate", 0) or 0,
-        "reference": "AO-{:04d}".format(project.id),
+        "reference": reference_consultation(project.ai_analysis),   # l'avis publié, jamais le n° interne
         "cotraitants": [],
     }
 
@@ -135,7 +135,7 @@ def export_dossier(
                 continue
             try:
                 pdf_bytes = generator(cd, pd)
-                filename = "01_CERFA/{}_{}_{}.pdf".format(
+                filename = "01_Formulaires_officiels/{}_{}_{}.pdf".format(
                     doc_type.upper(), project_slug, date_str
                 )
                 zf.writestr(filename, pdf_bytes)
@@ -143,7 +143,7 @@ def export_dossier(
             except Exception as e:
                 # Ajouter un fichier d'erreur
                 zf.writestr(
-                    "01_CERFA/{}_ERREUR.txt".format(doc_type.upper()),
+                    "01_Formulaires_officiels/{}_ERREUR.txt".format(doc_type.upper()),
                     "Erreur generation {}: {}".format(doc_type.upper(), str(e))
                 )
 
@@ -237,7 +237,7 @@ def export_dossier(
         sommaire.append("CONTENU DU DOSSIER")
         sommaire.append("-" * 60)
         sommaire.append("")
-        sommaire.append("01_CERFA/")
+        sommaire.append("01_Formulaires_officiels/")
         # Dérivé de GENERATORS (sinon le sommaire listait 4 CERFA alors que le ZIP en contient 6 :
         # la déclaration sur l'honneur OBLIGATOIRE et le DUME manquaient au sommaire).
         for dt in GENERATORS:

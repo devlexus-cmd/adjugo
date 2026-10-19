@@ -122,3 +122,20 @@ ne cite ces écrans ni ces libellés (les « SIRENE » des pages juridiques sont
 
 Proposition : dans le gabarit des pages juridiques (`scripts/build_legal.py`, fonction qui fabrique les tableaux),
 entourer chaque tableau d'un `<div style="overflow-x:auto">`, puis régénérer les pages (le texte ne change pas).
+
+## 9. Réorganisation de l'interface, vague 1 (relecture de fin de vague, 19/10/2026)
+
+**Pages juridiques : rien à corriger.** La relecture change des chemins d'écran dans des messages et des courriels
+(« Partenaires › Réseau Adjugo › Mon profil partenaire », « Mes marchés, onglet « Où je suis partenaire » », « Mon
+entreprise, onglet « Identité » »), le compte-rendu PDF du groupement (« Partenaire du groupement »), la référence
+imprimée sur la déclaration sur l'honneur et le DUME (celle de l'avis, plus « AO-0001 »). Recherche faite dans
+`docs/legal/*.md` et `app/static/legal/*.html` : aucune page juridique ne cite ces écrans ni ces libellés.
+
+**Le modèle de convention de groupement (texte juridique, non modifié).** `app/services/groupement_convention.py`
+écrit dans l'article « Le marché » : « Référence du dossier sur Adjugo : AO-0012 » (mot banni « AO », et un numéro
+interne présenté dans une pièce que les membres valident). Le texte d'une convention est contrôlé en le recalculant à
+partir des faits : changer cette ligne dans le modèle actuel rendrait caduques toutes les conventions déjà générées
+(chaque membre devrait revalider), démo comprise. **Proposition :** au prochain numéro de modèle (`MODELE_TEXTE`, les
+conventions existantes gardent le leur), écrire « Référence de la consultation : avis BOAMP n° … » (la référence de
+l'avis lu, comme les formulaires officiels), ou « dossier Adjugo n° 0012 » si aucun avis n'est connu, avec la
+relecture du conseil prévue pour le modèle.

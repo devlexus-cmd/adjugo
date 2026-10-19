@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs"></script>
-<script src="/static/i18n.js" integrity="sha384-gECsIpcs76chC4wmEHa9SwRfxPn99DL8Cc4SUeguUMKjMkpsBUulU0Zmzur7uVRm" defer></script>
+<script src="/static/i18n.js" integrity="sha384-LWQl3wgdTKXKyPfVif0S0YKuYX2x6COp55v2PyLEgLGzmm/DEdgNx2SfeIHOiL0e" defer></script>
 </head>
 <body>
 <div id="app">
@@ -229,7 +229,7 @@
               <button class="btn primary dh-act" @click="go('consortiums')"><i data-lucide="handshake"></i>Préparer à plusieurs</button>
             </div>
 
-            <!-- Les groupements en cours, comptés sur la barre de la page du marché (Décider · Préparer · Déposer) -->
+            <!-- Les groupements en cours, comptés sur la barre de la page du marché (Lire · Décider · Préparer · Déposer) -->
             <ol v-if="grpDashHasAny() && grpDashEtapes().length" class="dash-steps" aria-label="Vos marchés à plusieurs, par étape">
               <li v-for="e in grpDashEtapes()" :key="'dst'+e.label" class="has"><b class="num">{{ e.count }}</b><span>{{ e.label }}</span></li>
             </ol>
@@ -303,7 +303,7 @@
                   <div class="score-ring" :class="{grp:p.go_decision==='go_groupement'&&p.groupement_score!=null}" :style="feedRingStyle(p)" :title="feedScoreTitle(p)"><span class="num">{{ feedScore(p) }}</span><i v-if="p.go_decision==='go_groupement'&&p.groupement_score!=null" data-lucide="handshake" class="ring-badge"></i></div>
                   <div class="ao-mid">
                     <div class="ao-t" :title="p.name||'Sans titre'">{{ (p.name||'Sans titre').slice(0,64) }}</div>
-                    <div class="ao-c">{{ p.client||'Acheteur non précisé' }}</div>
+                    <div class="ao-c"><template v-if="scoreCourt(p)"><span class="ao-sc">{{ scoreCourt(p) }}</span> · </template>{{ p.client||'Acheteur non précisé' }}</div>
                   </div>
                   <div class="ao-tags">
                     <span class="pill" :class="p.go_decision||'neutral'">{{ decShort(p.go_decision) }}</span>
@@ -335,7 +335,8 @@
             </div>
           <div data-test="accueil-bilan" v-if="stats.segments && (stats.segments.by_zone.length||stats.segments.loss_reasons.length||(stats.segments.by_groupement&&stats.segments.by_groupement.length))" class="card pad dash-wide">
               <h3>Où vous gagnez / perdez</h3>
-              <div class="muted small" style="margin:2px 0 12px">{{ stats.decided||0 }} {{ pl(stats.decided||0, 'marché terminé', 'marchés terminés') }} · taux global {{ stats.win_rate||0 }}%</div>
+              <!-- Décision 8 : « N sur M » (le seul pourcentage est le couple « Seul X % · À plusieurs Y % » d'un marché) -->
+              <div class="muted small" style="margin:2px 0 12px">{{ stats.decided||0 }} {{ pl(stats.decided||0, 'marché terminé', 'marchés terminés') }} · {{ gagnesSur(stats.by_status && stats.by_status.gagne, stats.decided) }}</div>
               <!-- Synthèse en langage clair : la leçon apprise de vos marchés (boucle gagné/perdu) -->
               <div v-if="winInsights.length" style="margin:0 0 12px;padding:10px 12px;background:var(--accent-weak);border-radius:9px">
                 <div class="row small" style="gap:6px;font-weight:600;margin-bottom:4px;color:var(--accent-text)"><i data-lucide="lightbulb" style="width:14px;height:14px"></i>Ce que vos marchés vous apprennent</div>
@@ -349,22 +350,22 @@
                 <div v-for="z in stats.segments.by_zone.slice(0,4)" :key="'z'+z.key" class="row small" style="padding:4px 0;gap:8px">
                   <span class="seg-l">{{ z.key==='Inconnu' ? 'Lieu non précisé' : 'Dépt ' + z.key }}</span>
                   <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+z.win_rate+'%;background:var(--success)'"></div></div>
-                  <span class="num muted seg-v">{{ z.win_rate }}%</span>
+                  <span class="num muted seg-v">{{ z.won }} sur {{ z.total }}</span>
                 </div>
               </div>
               <div v-if="stats.segments.by_groupement && stats.segments.by_groupement.length">
-                <div class="sectitle">Groupement vs solo</div>
+                <div class="sectitle">Seul ou à plusieurs</div>
                 <div v-for="g in stats.segments.by_groupement" :key="'g'+g.key" class="row small" style="padding:4px 0;gap:8px">
-                  <span class="seg-l">{{ g.key }} · {{ g.total }}</span>
+                  <span class="seg-l">{{ segmentSeul(g.key) }}</span>
                   <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+g.win_rate+'%;background:var(--accent)'"></div></div>
-                  <span class="num muted seg-v">{{ g.win_rate }}%</span>
+                  <span class="num muted seg-v">{{ g.won }} sur {{ g.total }}</span>
                 </div>
               </div>
               <div v-if="stats.segments.by_partner && stats.segments.by_partner.length">
                 <div class="sectitle">Par partenaire</div>
                 <div v-for="pt in stats.segments.by_partner.slice(0,4)" :key="'pt'+pt.key" class="row small" style="padding:4px 0;gap:8px">
                   <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="pt.key">{{ pt.key }}</span>
-                  <span class="num muted seg-v">{{ pt.win_rate }}% ({{ pt.total }})</span>
+                  <span class="num muted seg-v">{{ pt.won }} sur {{ pt.total }}</span>
                 </div>
               </div>
               <div v-if="stats.segments.by_type && stats.segments.by_type.length">
@@ -372,7 +373,7 @@
                 <div v-for="ty in stats.segments.by_type.slice(0,4)" :key="'ty'+ty.key" class="row small" style="padding:4px 0;gap:8px">
                   <span class="seg-l">{{ ty.key }}</span>
                   <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+ty.win_rate+'%;background:var(--success)'"></div></div>
-                  <span class="num muted seg-v">{{ ty.win_rate }}%</span>
+                  <span class="num muted seg-v">{{ ty.won }} sur {{ ty.total }}</span>
                 </div>
               </div>
               <div v-if="stats.segments.loss_reasons.length">
@@ -409,7 +410,9 @@
                   <i data-lucide="user-round" style="width:13px;height:13px"></i><b>{{ aoContact().nom }}</b><span v-if="aoContact().fonction" class="muted">· {{ aoContact().fonction }}</span>
                   <a v-if="aoContact().email" :href="'mailto:'+aoContact().email" style="color:var(--accent-text)">{{ aoContact().email }}</a><span v-if="aoContact().telephone" class="muted">· {{ aoContact().telephone }}</span></div>
               </div>
-              <div class="field" style="margin:0;min-width:160px"><label>Étape</label>
+              <!-- « Statut » (pas « Étape ») : la barre Lire · Décider · Préparer · Déposer, juste dessous, est le seul
+                   découpage en étapes de la page (vague 2a : un seul axe). -->
+              <div class="field" style="margin:0;min-width:160px"><label>Statut</label>
                 <select v-model="ao.project.status" @change="aoStatus"><option v-for="s in statuses2" :key="s" :value="s">{{ statusLabel(s) }}</option></select></div>
             </div>
             <!-- « Inviter un partenaire » : le bouton le plus visible de chaque marché (décision 0), à toutes
@@ -2646,7 +2649,7 @@
               <div class="kcol-h"><span class="pill" :class="'st-'+s">{{ statusLabel(s) }}</span><span class="n">{{ byStatus(s).length }}</span></div>
               <div v-for="p in byStatus(s)" :key="p.id" class="kcard" @click="openProject(p)">
                 <div class="ti2">{{ (p.name||'').slice(0,60) }}</div>
-                <div class="me">{{ p.client||'—' }}<span class="sc" :style="decColor(p.go_decision)" :title="kanbanScoreTitle(p)"><i v-if="p.go_decision==='go_groupement'" data-lucide="handshake" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px" aria-label="En groupement"></i>{{ kanbanScore(p) }}</span></div>
+                <div class="me">{{ p.client||'—' }}<span v-if="scoreCourt(p)" class="sc" :style="decColor(p.go_decision)" :title="kanbanScoreTitle(p)"><i v-if="p.go_decision==='go_groupement'" data-lucide="handshake" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px" aria-hidden="true"></i>{{ scoreCourt(p) }}</span></div>
               </div>
             </div>
           </div>
@@ -3906,7 +3909,7 @@
       <div class="row" style="margin-bottom:14px"><span class="pill" :class="drawer.go_decision||'neutral'">{{ decLabel(drawer.go_decision) }}</span>
         <span class="pill" :class="drawer.go_decision||'neutral'" v-if="drawer.match_score!=null">{{ kanbanScoreTitle(drawer) }}</span><div class="spacer"></div>
         <span class="muted small">{{ drawer.client }}</span></div>
-      <div class="field"><label>Étape</label>
+      <div class="field"><label>Statut</label>
         <select v-model="drawer.status" @change="updateProjectStatus"><option v-for="s in statuses2" :key="s" :value="s">{{ statusLabel(s) }}</option></select></div>
       <p class="small" v-if="drawer.ai_summary">{{ drawer.ai_summary }}</p>
       <div v-if="drawer.ai_analysis && drawer.ai_analysis.details">
@@ -4136,8 +4139,9 @@
     </div>
   </div>
 
-  <!-- Bandeau cookies / stockage (RGPD) -->
-  <div data-test="bandeau-cookies" v-if="!cookiesOk" style="position:fixed;left:12px;right:12px;bottom:12px;z-index:70;background:var(--surface);border:1px solid var(--border);border-radius:11px;box-shadow:0 8px 28px rgba(0,0,0,.16);padding:13px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;max-width:760px;margin:0 auto">
+  <!-- Bandeau cookies / stockage (RGPD). Jamais sur le menu : le groupe « Réglages » et le compte sont en bas du
+       menu. Sur ordinateur, il se place à droite du menu ; sur téléphone, il s'efface tant que le menu est ouvert. -->
+  <div data-test="bandeau-cookies" v-if="!cookiesOk && !mobileNav" class="bandeau-cookies" :class="{'avec-menu':!!token}">
     <span class="small" style="flex:1;min-width:220px">Adjugo utilise un stockage local strictement nécessaire à votre connexion et, le cas échéant, une mesure d'audience anonyme. Aucun cookie publicitaire. <a href="/confidentialite" target="_blank" rel="noopener" style="color:var(--accent-text)">En savoir plus</a>.</span>
     <button class="btn primary sm" @click="acceptCookies()">J'ai compris</button>
   </div>
@@ -4147,6 +4151,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-6u2dcizU1R7TgbFpANxwY3jDSA7O0EQpkhqXfp1A4RwHslj7somFoJxnE+iDz027" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6" defer></script>
-<script src="/static/app.js" integrity="sha384-F9CO6Ppirkkp04skpN+EIYUOApg4FpsYfU4hSCxaRiZim6kUIPf2/znjltG7hhM5" defer></script>
+<script src="/static/app.js" integrity="sha384-0FkD4ylz4UjZ62d5wpD4unyX9Rk/zx0sdUECsMN3Dx/YgjC6ndYRkTT33yEy8Cmr" defer></script>
 </body>
 </html>

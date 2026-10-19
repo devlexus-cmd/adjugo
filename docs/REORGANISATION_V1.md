@@ -88,12 +88,14 @@ tous les messages `HTTPException`).
 |---|---|
 | Clés, noms de champs, routes (`cotraitant`, `dpgf_lot`, `consortium`, `/api/projects/{id}/consortium`…) | Non visibles ; l'étude demande de les garder |
 | Pages juridiques (CGV, confidentialité, DPA, mentions, sécurité) | Non modifiées : relevé et propositions pour Eliot dans `docs/A_CORRIGER_PAGES_JURIDIQUES_LIBELLES.md`, § 6 |
-| Modèle de convention de groupement (« co-traitant (partenaire) ») | Texte juridique figé par empreinte ; même fichier, § 6.4 |
-| Pièces du dossier FICTIF de l'acheteur dans la démo (règlement, cadre « mémoire technique », CCTP), noms des pièces exigées, documents de l'entreprise fictive | Ce sont les mots de l'acheteur et les fichiers de l'entreprise, pas le texte du produit |
+| Modèle de convention de groupement (« co-traitant (partenaire) », « Référence du dossier sur Adjugo : AO-0012 ») | Texte juridique figé par empreinte : le changer rendrait caduques toutes les conventions déjà validées (§ 4.7) ; même fichier, § 6.4 et § 9 |
+| Pièces du dossier FICTIF de l'acheteur dans la démo (règlement, cadre « mémoire technique », CCTP) et noms des pièces exigées | Ce sont les mots de l'acheteur, pas le texte du produit |
+| Document de « Mon savoir-faire » de l'entreprise fictive (« Mémoire technique — Réfection toiture école de Bréhaut (2024) ») | Le nom qu'une entreprise donne à son propre fichier, comme le ferait un vrai client. Ses pièces de réponse rangées sur la page Toiture, elles, sont renommées (§ 4.7) |
 | Nom que le règlement donne à la pièce (« Dossier de présentation (mémoire justificatif) ») et nom par défaut du fichier exporté (« Mémoire technique ») | Le fichier est remis à l'acheteur : il porte son vocabulaire |
 | En-tête « DPGF du lot - prix de vente HT » et nom `DPGF_…csv` du fichier du partenaire | Même raison (fichier remis au chef de file puis à l'acheteur) |
 | Question à l'acheteur « deux limites différentes pour le mémoire » (`grille_exigences.py`) | Texte adressé à l'acheteur ; son titre à l'écran est « Longueur du dossier de présentation » |
-| Dossier rangé « Mémoire technique » (clé interne ; `folderLabel` affiche « Dossier de présentation ») ; dossier `cerfa/` du ZIP | Clés de rangement, non renommées pour ne rien casser chez les clients |
+| Dossiers rangés « Mémoire technique », « CERFA », « DCE » (clés internes) | Clés de rangement, non renommées pour ne rien casser chez les clients ; `folderLabel` (`nomDossier`, `DOSSIERS_AFFICHES`) les affiche « Dossier de présentation », « Formulaires officiels », « Dossier du marché » (§ 4.7). Les dossiers des ZIP, eux, sont renommés (`01_Formulaires_officiels/`, `formulaires_officiels/`, `pieces_partenaires/`) |
+| « N / M » de la note de l'acheteur (carnet de notes, « 32,5 / 40 ») ; barème remis à l'IA (`analysis.py`) ; détail du score de synergie (`app/sourcing/scoring.py`, jamais affiché) | Décision 8 : la note est écrite comme dans le courrier de l'acheteur ; les deux autres ne sont pas lus par un client. Liste exacte : `NM_GARDES` (`tests/test_reorganisation_v1_relecture.py`) |
 | « agent de sécurité » (`app/sourcing/groupement.py`) | Un métier, pas un agent d'IA |
 | Pages « collectivités » (`acheteur*.html`) | Plus d'exception depuis la réunion (§ 4.3) : « SIRENE » y devient « registre Insee », et ces pages entrent dans le test des mots bannis |
 | Routeur archivé `cospace.py` | Jamais monté (`app/main.py`) |
@@ -105,7 +107,9 @@ s'y justifie et s'ajoute ici.
 ### 0.4 « Vérifié » (décision 9)
 
 « vérifié » reste seulement pour une identité contrôlée dans un registre, avec sa date (« vérifié au registre
-officiel le 08/10 », « Vérifié le … » des badges du réseau, adresse email vérifiée par un code). Retirés :
+officiel le 08/10 », « Vérifié le … » des badges du réseau, adresse email vérifiée par un code). Un badge du réseau
+de niveau « ok » sur une autre source (aucun avis BODACC, marchés publiés dans DECP) se dit « constaté à la source »
+au lecteur d'écran, plus « vérifié » (§ 4.7). Retirés :
 « partenaires vérifiés » (sous-titre du Réseau), « vérifié via VIES » (« contrôlé dans le registre européen VIES »).
 La vérification du journal par un membre (« Vérifié le … ») garde son mot : c'est un contrôle qu'il lance, daté.
 
@@ -204,10 +208,10 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
 | `accueil-grille` | Grille : flux, rail, bilan, carnet |
 | `accueil-flux` | « Vos marchés » (7 derniers marchés) |
 | `accueil-rail` | Pièces à renouveler, entonnoir « Mes marchés » (absent s'il n'y a rien à montrer) |
-
-Retiré (§ 1.6) : `accueil-ruban` (ruban des 4 chiffres).
 | `accueil-bilan` | « Où vous gagnez / perdez » |
 | `accueil-carnet` | Carnet de notes (« Où vous perdez des points ») |
+
+Retiré (§ 1.6) : `accueil-ruban` (ruban des 4 chiffres).
 
 **Page du marché (`vue-aodetail`)** — rangée en 4 étapes (§ 1.5)
 
@@ -666,7 +670,7 @@ sont remplacées).
 
 | Critère | Résultat | Vérification |
 |---|---|---|
-| Aucun mot banni dans les textes visibles | **0** | Recherche outillée (`tests/textes_visibles.py`) : `app.html` (2 295 textes), `app.js` (1 812), `redaction-partenaire.js` (797), `carnet-notes.js` (398), `sources-publiques.js` (227), `cotraitance-crypto.js` (67), `invite.html` (734), `landing.html` (106), `demo.html` (34), `demande-acces.html` (61), `acheteur.html` (485), `acheteur-landing.html` (141) ; les 285 chaînes des fonctions qui envoient un courriel et les 428 messages d'erreur montrés. Les pages collectivités entrent dans le test (`FRONT_HTML`). Exceptions : `EXCEPTIONS` et § 0.3 (le dossier fictif de l'acheteur dans la démo : vu dans le navigateur, les noms de ses fichiers « Mémoire technique — … » et « DPGF — … » dans « Dossier du marché », et une phrase de son règlement dans « Comment vous serez noté ») |
+| Aucun mot banni dans les textes visibles | **0** | Recherche outillée (`tests/textes_visibles.py`) : `app.html` (2 295 textes), `app.js` (1 812), `redaction-partenaire.js` (797), `carnet-notes.js` (398), `sources-publiques.js` (227), `cotraitance-crypto.js` (67), `invite.html` (734), `landing.html` (106), `demo.html` (34), `demande-acces.html` (61), `acheteur.html` (485), `acheteur-landing.html` (141) ; les 285 chaînes des fonctions qui envoient un courriel et les 428 messages d'erreur montrés. Les pages collectivités entrent dans le test (`FRONT_HTML`). Exceptions : `EXCEPTIONS` et § 0.3 (le dossier fictif de l'acheteur dans la démo : une phrase de son règlement dans « Comment vous serez noté » ; les pièces de réponse de l'entreprise fictive, d'abord nommées « Mémoire technique — … » et « DPGF — … », sont renommées au § 4.7). Relecture (§ 4.7) : le serveur (constantes lues par l'ast), les générateurs des PDF et du ZIP, les dossiers rangés entrent aussi dans les garde-fous |
 | Chaque ancienne vue en 2 clics au plus | **oui** | Tableau du § 4.4, parcouru dans le navigateur ; `test_chaque_vue_a_sa_rubrique_et_s_atteint_en_deux_clics_au_plus` |
 | L'affichage tient sur 375 px | **oui** | Dans le navigateur, largeur de page = 375 px : les 19 écrans de l'application (démo), les 7 pages de marché de la démo, l'espace partenaire, la vitrine, la démo, la demande d'accès, la vitrine collectivités. Deux pages juridiques débordent : relevées pour Eliot (`docs/A_CORRIGER_PAGES_JURIDIQUES_LIBELLES.md`, § 8) |
 | La suite passe, avec les nouveaux repères | **oui** | Suite complète verte : 2 055 tests ; repères `data-test` de `tests/zones.py` |
@@ -756,4 +760,111 @@ sont remplacées).
 - « confiance N % » et « adéquation N/100 » des cartes de recherche : Moteur V0 (étude, § 8).
 - « appel d'offres » sur la vitrine et les pages collectivités : le mot juste de la procédure, il n'est pas banni.
 - Au chargement de l'accueil, les premiers pas et « Aucun marché » s'affichent une fraction de seconde avant les
-  données (déjà en production) ; le bandeau des cookies couvre le bas du menu sur téléphone tant qu'il n'est pas fermé.
+  données (déjà en production). (Le bandeau des cookies qui couvrait le bas du menu est corrigé au § 4.7.)
+
+### 4.7 Relecture de la fin de vague (quatre relectures : navigation, vocabulaire et vérité, démo de pitch, tests et UX)
+
+26 remarques, chacune reproduite (lecture du code, appel des routes, navigateur réel) avant d'être corrigée. Trois
+étaient des doublons (anciens noms en bulle, provenances de « Mes preuves », « N/M » de la liste avant dépôt). Une
+seule partie est refusée : la référence imprimée dans la convention de groupement (ci-dessous). Test :
+`tests/test_reorganisation_v1_relecture.py` (chaque test échouait sur `6fddf13`).
+
+**Anciens noms d'écran encore dits par le serveur.** La recherche textuelle ne voyait pas les chaînes coupées sur deux
+lignes ; le garde-fou lit désormais les constantes Python par l'ast, qui fusionne les littéraux adjacents
+(`test_aucun_ancien_nom_d_ecran_dans_les_textes_du_serveur`).
+- Partenaire qui a un compte, arrivé par le lien (courriel « Votre partie est à valider ») : « rédigez vos parties
+  depuis ce compte, dans Mes marchés, onglet « Où je suis partenaire » » (à l'écran et dans le refus 403), le même texte
+  que le repli de `redaction-partenaire.js`.
+- Mes preuves : « Indiquez le SIRET … dans Mon entreprise, onglet « Identité » » ; provenances « Mon entreprise
+  (Identité) » et « Mon profil partenaire (Réseau Adjugo) ».
+- « Préparer mes documents » : « générez-la dans « Convention et accords » (page du marché, étape Préparer) ».
+- Chemins de l'ancien menu : « Partenaires › Réseau Adjugo › Mon profil partenaire » (courriel du réseau),
+  « … › Invitations reçues » (message au chef de file, bulle de l'espace partenaire), « menu Réglages ›
+  Administration › Profils du réseau à valider » (courriel à l'administrateur), « Trouver des marchés, onglet
+  « Projets à venir » » (courriel de la veille amont, coupée par `PROJETS_A_VENIR=0`).
+- Gardé : « Monter le groupement », étape du stepper côté partenaire (vague 2b, § 4.6) ; le dictionnaire de traduction
+  du serveur. Liste exacte : `ANCIENS_GARDES`.
+
+**Décision 8.**
+- Serveur : « Générée : accords enregistrés 1 sur 3 », « (accords 1 sur 2) », « (analyses : 30 sur 30 ce mois) »,
+  « 1 PME capable(s) sur 4 en procédure collective » (collectivités). Garde-fou par l'ast : aucune f-string de phrase en
+  « {N}/{M} » ou « {N}/100 » (`test_aucun_n_sur_m_avec_une_barre_dans_les_phrases_du_serveur`, exceptions `NM_GARDES`
+  et § 0.3).
+- Courriel des alertes : plus de « [72/100] » ; la liste reste triée du plus adapté au moins adapté. Il dit objet,
+  acheteur, date limite et lien, et la vitrine le promet ainsi (« compétences attendues » n'y était pas).
+- Accueil, « Où vous gagnez / perdez » : « 3 marchés terminés · 2 gagnés sur 3 », « Dépt 49 : 1 sur 1 », segment
+  « Seul ou à plusieurs » (« Seul » / « À plusieurs », clés de l'API inchangées), leçons en « 2 gagnés sur 3 ». Les
+  barres gardent leur longueur.
+- Accueil et Mes marchés : le nombre de l'anneau est dit avec son libellé, « Seul 97 % · Ville de … » ou
+  « À plusieurs 100 % · … » (`scoreCourt`) ; la carte de Mes marchés dit « Seul 87 % ».
+- Vitrine : « Compétences réunies 1 sur 3 » (puis 2, puis 3), au lieu de 33, 66 et 100 %.
+- Compte-rendu PDF du groupement : « 1 sur 2 parts reçues », colonne « Éléments fournis : 3 sur 5 » (part envoyée, lot
+  précisé, références, paragraphe du dossier de présentation, qualifications : les drapeaux du suivi), plus aucun %.
+
+**Mots bannis encore visibles.**
+- Dossiers rangés : `nomDossier` (`DOSSIERS_AFFICHES`) affiche « CERFA » → « Formulaires officiels », « DCE » →
+  « Dossier du marché », « Mémoire technique » → « Dossier de présentation » ; clés stockées inchangées.
+- Compte-rendu PDF : « Partenaire du groupement » (plus « Co-traitant »).
+- Pièces remises à l'acheteur (déclaration sur l'honneur, DUME, formulaires nationaux) : la référence est celle de
+  l'avis lu (« avis BOAMP n° 26-123456 », `reference_consultation`), sinon « À compléter (référence de la consultation
+  donnée par l'acheteur) » ; jamais « AO-0001 ».
+- Noms de fichiers : le ZIP téléchargé garde le nom donné par le serveur (« Dossier_[marché]_[date].zip », repli
+  « Dossier_marche_[n].zip ») ; dossiers du ZIP `01_Formulaires_officiels/`, `formulaires_officiels/`,
+  `pieces_partenaires/` (et l'aperçu du dossier commun) ; ZIP sans intitulé : « Adjugo_Dossier_marche_[n] » ;
+  titre du PDF d'estimation « Estimation détaillée du prix » ; avertissement « formulaires officiels indisponibles ».
+- Collectivités : « PME identifiées via les données publiques (registre Insee, DECP, BODACC) ».
+- Démo, page Toiture : « Dossier de présentation — méthodologie étanchéité », « Tableau de prix — décomposition du prix
+  global et forfaitaire » (pièces de réponse de l'entreprise fictive, clés de stockage inchangées) ; la raison du
+  § 0.3 est corrigée.
+- Garde-fou étendu aux générateurs des PDF et du ZIP, chaînes d'un seul mot comprises quand elles commencent par une
+  majuscule (`test_generateurs_de_pdf_et_du_zip_sans_mot_banni`).
+
+**Refusé : « Référence du dossier sur Adjugo : AO-0012 » dans la convention de groupement.** La convention est un
+texte juridique figé par son empreinte, et sa fraîcheur se contrôle en recalculant le texte à partir des faits
+(`is_stale` compare `current_hash` à l'empreinte enregistrée). Changer cette ligne rendrait caduques TOUTES les
+conventions déjà générées, en production comme dans la démo (Kerhel « validée par tous »), et chaque membre devrait
+revalider : ce n'est pas « seulement les nouvelles versions ». À décider par Eliot avec un nouveau numéro de modèle
+(`docs/A_CORRIGER_PAGES_JURIDIQUES_LIBELLES.md`, § 9).
+
+**Décision 9.** Au lecteur d'écran, un badge du réseau « ok » ne dit « vérifié » que pour l'identité (validée par
+Adjugo, registre officiel) ; BODACC et DECP disent « constaté à la source ».
+
+**Démo de pitch.**
+- Anciens noms en bulle : seulement pour un compte créé avant `REORG_V1_DEPUIS`, jamais la démo ni un compte neuf
+  (`transitionVisible`, la même règle que la note « Ce qui a changé ») ; la bulle (i) de l'Accueil, alors vide,
+  disparaît.
+- Le choix du statut s'appelle « Statut » (en-tête du marché et tiroir ; « Statut mis à jour »), plus « Étape » à
+  côté de la barre Lire · Décider · Préparer · Déposer.
+- Accueil « À plusieurs » : chaque marché est placé sur la barre de SA page avec la même règle (`etapeDuMarche` :
+  statut, dossier lu, étape du groupement). Le serveur renvoie ces trois faits (`barres`, et chaque marché listé) ;
+  « Lire » peut donc apparaître, la grille des étapes passe à 4 colonnes ; un marché accessible dit « À décider »,
+  « À lire » ou « À préparer ».
+- « Trouver des marchés › À venir » : la démo sert quatre fins de contrat fictives, filtrées par département comme le
+  radar (acheteurs fictifs de la démo, sans lien, dates toujours à venir ; deux dans le 44 pré-rempli), sans réseau,
+  sans IA, sans quota ; la route n'est plus refusée par le garde.
+
+**Tests et UX.**
+- La note « Ce qui a changé » se teste à partir de `REORG_V1_DEPUIS` lue dans `app.js` : Eliot peut régler le jour réel
+  de mise en ligne sans rendre la suite rouge.
+- Bandeau des cookies : effacé tant que le menu est ouvert sur téléphone, à droite du menu sur ordinateur ; le groupe
+  « Réglages » répond au clic avant que le bandeau soit fermé (vu dans le navigateur à 375 et 1 000 px).
+- Traductions : « Marché » → « Aanbesteding », « Vos marchés à plusieurs, par étape » → « Uw gezamenlijke
+  aanbestedingen, per stap » / « Sus licitaciones en agrupación, por etapa », et les autres libellés affichés qui
+  disaient encore « opdracht » ; nouveaux : « Statut mis à jour », « Seul ou à plusieurs », « Formulaires officiels »
+  (465 → 468 clés). Test de cohérence : tout libellé affiché qui dit « marché » ou « à plusieurs » est traduit avec le
+  même mot.
+- Le tableau des repères de l'accueil (§ 1.0.3) est de nouveau d'un seul tenant.
+- Trouvé en vérifiant dans le navigateur : deux fonctions du bilan, rangées par erreur dans `computed`, cassaient
+  l'accueil ; elles sont dans `methods`, et un test le vérifie.
+
+**Vérifié dans un vrai navigateur** (serveur local, base jetable, démo par lien privé, aucun envoi, aucune IA) :
+Accueil 1 280 px (pas de bulle à côté d'« Accueil », « 2 gagnés sur 3 », « Seul 97 % · Ville de Trémorvan »,
+Kerhel « Déposer » à l'accueil comme sur sa page), bulles de Mes marchés, Partenaires, Réglages sans ancien nom, Mes
+marchés (« Seul 87 % », « À plusieurs 100 % »), Toiture et Kerhel (« Statut », dossiers « Dossier du marché »,
+« Dossier de présentation », « Chiffrage »), « À venir » (2 fins de contrat dans le 44 pré-rempli), Mes documents ; 375 px clair et sombre
+sans défilement horizontal (accueil, Mes marchés, Trouver des marchés, Mes documents, Kerhel) ; bandeau non fermé à
+375 px (Réglages › Mon compte s'ouvre) et à 1 000 px (bandeau à droite du menu) ; vitrine 1 280 et 375 px.
+
+**Vérifications** : suite complète verte (2 080 tests ; les 24 du nouveau fichier échouent sur `6fddf13`), SRI
+(`scripts/sri_update.py --check`) et `node --check`, gabarits de `app.html` et des composants compilés par Vue sans
+erreur, `scripts/i18n_ajouter.py --check` (468 clés).

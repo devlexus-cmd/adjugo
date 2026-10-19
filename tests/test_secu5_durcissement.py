@@ -487,7 +487,8 @@ def test_pdf_compte_rendu_balisage_voulu_rendu():
     txt = _pdf_text(generate_consortium_report_pdf(
         "Marché X", "M", {"readiness": {"pct": 90, "submitted": 2, "invited": 2, "lots": 1}}, []))
     assert "<b>" not in txt and "<br/>" not in txt and "<font" not in txt
-    assert "90%" in txt and "2/2 partenaire(s) ont contribué" in txt
+    # Décision 8 (réorganisation) : « N sur M », plus de pourcentage ni de « N/M ».
+    assert "2 sur 2" in txt and "parts reçues" in txt and "%" not in txt and "2/2" not in txt
 
 
 def test_pdf_dume_via_l_api(client, auth):

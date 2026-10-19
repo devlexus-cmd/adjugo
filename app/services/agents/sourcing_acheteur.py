@@ -239,6 +239,6 @@ def sourcer_lots(lots: list, departement: str = "", tenant=None, cpv: str = "",
     return {"lots": lots_out, "global": glob, "conseils": conseils, "disclaimer": _DISCLAIMER}
 
 
-_DISCLAIMER = ("PME identifiées via les données publiques (SIRENE, DECP, BODACC) à titre "
+_DISCLAIMER = ("PME identifiées via les données publiques (registre Insee, DECP, BODACC) à titre "
                "d'information de marché (sourcing). L'outil n'attribue rien et ne recommande "
                "aucune entreprise nominativement — l'égalité de traitement reste votre responsabilité.")

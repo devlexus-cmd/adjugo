@@ -121,7 +121,7 @@ def _convention_item(project, db) -> dict:
             if conv.status == "signee":
                 status, note = "ok", f"Validée par tous les membres (version {conv.version})."
             elif conv.status == "a_signer":
-                note = f"Générée : {n_ok}/{len(sigs)} accords enregistrés. Relancez les membres qui n'ont pas validé."
+                note = f"Générée : accords enregistrés {n_ok} sur {len(sigs)}. Relancez les membres qui n'ont pas validé."
             elif conv.status == "perimee":
                 note = "Plus à jour (une part, un prix ou la composition a changé) : régénérez-la."
             else:

@@ -779,8 +779,14 @@ def tableau_de_bord(request: Request, current_user: User = Depends(get_current_u
     tronque = len(cands) > _DASH_MAX
     cands = cands[:_DASH_MAX]
 
+    def _barre(p, etape) -> dict:
+        """Ce qu'il faut à l'écran pour placer le marché sur la barre de SA page (Lire · Décider · Préparer ·
+        Déposer, etapeDuMarche dans app.js) : le statut, le dossier du marché lu ou non, l'étape du groupement."""
+        a = p.ai_analysis if isinstance(p.ai_analysis, dict) else {}
+        return {"etape": etape, "statut": _status_value(p), "dossier_lu": bool(a.get("dce_available"))}
+
     counts = {n: 0 for n in range(1, len(ETAPES) + 1)}
-    en_cours, deposes = [], 0
+    en_cours, deposes, barres = [], 0, []
     for p in cands:
         try:
             st = groupement_state(p, db)
@@ -793,21 +799,25 @@ def tableau_de_bord(request: Request, current_user: User = Depends(get_current_u
         if st["state"] == "seul" or not _open(p):
             continue
         counts[st["etape"]] += 1
+        barres.append(_barre(p, st["etape"]))
         if st["state"] == "potentiel":
             continue                      # étape 1 : listé dans « accessibles »
         en_cours.append({"project_id": p.id, "name": p.name,
                          "deadline": p.deadline.isoformat() if p.deadline else None,
                          "etape": st["etape"], "state": st["state"], "label": st["label"],
-                         "n_membres": st["n_members"], "convention_status": st["convention_status"] or ""})
+                         "n_membres": st["n_members"], "convention_status": st["convention_status"] or "",
+                         **{k: v for k, v in _barre(p, st["etape"]).items() if k != "etape"}})
     en_cours.sort(key=lambda x: (x["deadline"] is None, x["deadline"] or "", x["project_id"]))
     return {
         "marches_accessibles_en_groupement": len(accessibles),
         "accessibles": [{"project_id": p.id, "name": p.name,
                          "deadline": p.deadline.isoformat() if p.deadline else None,
-                         "groupement_score": p.groupement_score} for p in accessibles[:10]],
+                         "groupement_score": p.groupement_score, **_barre(p, 1)} for p in accessibles[:10]],
         "groupements_en_cours": len(en_cours),
         "par_etape": [{"n": n, "key": key, "label": label, "count": counts[n]}
                       for n, (key, label, _states) in enumerate(ETAPES, start=1)],
+        # Chaque marché compté dans par_etape, placé par l'écran sur la barre de sa page (sans nom ni montant).
+        "barres": barres,
         "en_cours": en_cours[:20],
         "deposes": deposes,
         "tronque": tronque,

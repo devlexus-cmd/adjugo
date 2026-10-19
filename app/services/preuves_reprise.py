@@ -28,7 +28,7 @@ from app.models import Company, Document, DocCategory, PartnerProfile, Preuve, U
 from app.services import preuves as pv
 
 ENTREPRISE, RESEAU, COFFRE = "entreprise", "reseau", "documents"
-PROVENANCES = {ENTREPRISE: "Profil de l'entreprise", RESEAU: "Profil du réseau de partenaires",
+PROVENANCES = {ENTREPRISE: "Mon entreprise (Identité)", RESEAU: "Mon profil partenaire (Réseau Adjugo)",
                COFFRE: "Mes documents"}
 
 # Le champ qui NOMME la fiche (« même intitulé » = même fiche, quoi qu'en disent les autres champs).

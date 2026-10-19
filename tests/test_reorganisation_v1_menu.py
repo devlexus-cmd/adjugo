@@ -54,7 +54,9 @@ def _app(scenario):
     return (_PUR + "\nconst o = {\n" + ",\n".join(_method(n).rstrip(",") for n in _METHODES) + "\n};\n"
             "Object.assign(o, {" + donnees + "});\n"
             "Object.assign(o, { view: 'dashboard', trouverOnglet: 'publies', features: { projets_a_venir: false },\n"
-            "  user: { is_admin: false }, shared: [], expiring: [], mobileNav: true, reorgEtat: {},\n"
+            # Un compte qui a connu l'ancienne organisation (créé avant REORG_V1_DEPUIS) : il voit la transition.
+            "  user: { is_admin: false, email: 'a@b.fr', created_at: '2026-06-24T08:00:00' }, shared: [], expiring: [],\n"
+            "  mobileNav: true, reorgEtat: {},\n"
             "  reseau: { recues: { list: [] } }, journal: [] });\n"
             "o.go = function (v) { this.view = v; this.journal.push('go:' + v); this.mobileNav = false; };\n"
             "o._ecranOuvert = function (v) { this.journal.push('mesure:' + v); };\n"
@@ -301,20 +303,29 @@ def test_sous_titres_dans_la_bulle_de_l_en_tete():
 
 # ═══ 1.8 Transition ════════════════════════════════════════════════════════════════════════════════════════
 
+def _depuis() -> str:
+    """Le jour de mise en ligne lu dans app.js (Eliot le règle au jour réel : le test suit, il ne fige rien)."""
+    m = re.search(r'const REORG_V1_DEPUIS = "(\d{4}-\d{2}-\d{2})";', JS)
+    assert m, "REORG_V1_DEPUIS introuvable dans app.js"
+    return m.group(1)
+
+
 def test_note_ce_qui_a_change_regles_sous_node():
     r = _node(_PUR + """
-const J = 24 * 3600 * 1000, now = Date.parse("2026-10-21T10:00:00Z");
-const avant = { email: "a@b.fr", created_at: "2026-06-24T08:00:00" };
+const J = 24 * 3600 * 1000, jour = REORG_V1_DEPUIS, now = Date.parse(jour + "T10:00:00Z") + J;
+const veille = new Date(Date.parse(jour + "T12:00:00Z") - J).toISOString().slice(0, 10);
+const avant = { email: "a@b.fr", created_at: veille + "T08:00:00" };
 console.log(JSON.stringify([
   noteReorgVisible(avant, {}, now),
   noteReorgVisible(avant, { vu: now - 6 * J }, now),
   noteReorgVisible(avant, { vu: now - 8 * J }, now),
   noteReorgVisible(avant, { vu: now, ferme: true }, now),
-  noteReorgVisible({ email: "x@y.fr", created_at: "2026-10-20T09:00:00" }, {}, now),
+  noteReorgVisible({ email: "x@y.fr", created_at: jour + "T09:00:00" }, {}, now),
   noteReorgVisible({ email: "Demo@Adjugo.fr", created_at: "2026-01-01T00:00:00" }, {}, now),
   noteReorgVisible({}, {}, now), noteReorgVisible(null, null, now)]));
 """)
     assert r == [True, True, False, False, False, False, False, False]
+    assert _depuis() >= "2026-10-20"                         # jamais avant la vague 1 (la note ne viserait personne)
     from app.services.demo_seed import DEMO_EMAIL
     assert f'const DEMO_EMAIL_APP = "{DEMO_EMAIL}";' in JS                   # la démo (pitch) ne la voit jamais
 
@@ -336,6 +347,42 @@ o.noteReorgFermer(); res.ferme = o.noteReorgVue(); res.garde = JSON.parse(store[
 console.log(JSON.stringify({ avant: res.avant, vu: res.vu, ferme: res.ferme, garde: res.garde.ferme === true && res.garde.vu === vu }));
 """))
     assert r == {"avant": True, "vu": True, "ferme": False, "garde": True}
+
+
+def test_anciens_noms_en_bulle_seulement_pour_qui_les_a_connus_sous_node():
+    """Ni la démonstration (un prospect n'a jamais vu ces noms), ni un compte créé à partir de la mise en ligne : la
+    bulle de l'en-tête ne dit plus l'ancien nom ; sur l'Accueil, elle n'a alors plus rien à dire et disparaît."""
+    r = _node(_app("""
+const J = 24 * 3600 * 1000, jour = REORG_V1_DEPUIS;
+const veille = new Date(Date.parse(jour + "T12:00:00Z") - J).toISOString().slice(0, 10);
+const res = {};
+const comptes = { ancien: { email: "a@b.fr", created_at: veille + "T08:00:00" },
+                  neuf: { email: "n@b.fr", created_at: jour + "T08:00:00" },
+                  demo: { email: DEMO_EMAIL_APP, created_at: "2026-01-01T00:00:00" }, vide: {} };
+for (const [k, u] of Object.entries(comptes)) {
+  o.user = u; res[k] = {};
+  for (const v of ["dashboard", "shared", "consortiums", "reseau", "team", "compte", "company"]) {
+    o.view = v; res[k][v] = { ancien: o.enteteAncien(), aide: o.enteteAide() };
+  }
+  res[k].transition = transitionVisible(u);
+}
+console.log(JSON.stringify(res));
+"""))
+    assert r["ancien"]["transition"] is True
+    assert r["ancien"]["dashboard"]["aide"] == "Anciennement « Tableau de bord »."
+    assert r["ancien"]["shared"]["ancien"] == "Anciennement « Partagé avec moi »."
+    assert r["ancien"]["compte"]["ancien"].endswith("étaient dans « Équipe ».")
+    for k in ("neuf", "demo", "vide"):
+        assert r[k]["transition"] is False, k
+        for v, x in r[k].items():
+            if v == "transition":
+                continue
+            assert x["ancien"] == "" and "Anciennement" not in x["aide"] and "« Équipe »" not in x["aide"], (k, v, x)
+        assert r[k]["dashboard"]["aide"] == "", k            # plus de bulle (i) vide à côté de « Accueil »
+        assert r[k]["shared"]["aide"] and r[k]["team"]["aide"], k   # la phrase de l'écran reste
+    from app.services.demo_seed import DEMO_EMAIL
+    assert f'const DEMO_EMAIL_APP = "{DEMO_EMAIL}";' in JS
+    assert "if (!transitionVisible(user)) return false;" in JS          # la note suit la même règle
 
 
 def test_les_anciens_noms_ne_restent_que_dans_la_note_et_les_bulles():

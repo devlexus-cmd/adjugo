@@ -380,7 +380,7 @@ img{max-width:100%}
         </div>
       </div>
       <div class="capwrap">
-        <div class="caprow"><span>Compétences réunies</span><span class="pc"><span id="cappc">33</span> %</span></div>
+        <div class="caprow"><span>Compétences réunies</span><span class="pc"><span id="cappc">1</span> sur 3</span></div>
         <div class="captrack"><div class="capseuil"></div><div class="capfill"></div></div>
       </div>
       <div class="caps">
@@ -399,7 +399,7 @@ img{max-width:100%}
   <h2 class="lead-h sr s1" style="max-width:14ch">Quatre étapes, un seul outil.</h2>
   <p class="intro sr s1">Trouver, décider, faire équipe si besoin, monter le dossier. Tout au même endroit, sans jamais tout ressaisir.</p>
   <div class="steps stagger">
-    <div class="step"><div class="no">01</div><h3>Trouver</h3><p>Les appels d'offres qui vous correspondent (BOAMP, TED), avec un mail récap : acheteur, objet, délai, compétences attendues.</p></div>
+    <div class="step"><div class="no">01</div><h3>Trouver</h3><p>Les appels d'offres qui vous correspondent (BOAMP, TED), avec un mail récap : objet, acheteur, date limite et lien vers l'annonce.</p></div>
     <div class="step"><div class="no">02</div><h3>Décider</h3><p>Adjugo analyse le dossier, donne une note d'opportunité, cite les passages exacts et vous renseigne sur l'acheteur.</p></div>
     <div class="step"><div class="no">03</div><h3>Faire équipe</h3><p>Il vous propose des partenaires, avec leurs marchés publics déjà gagnés, ou vos partenaires habituels. Chacun accepte votre invitation et apporte sa part.</p></div>
     <div class="step"><div class="no">04</div><h3>Déposer</h3><p>Adjugo pré-remplit les formulaires officiels (DC1, DC2, DUME, ATTRI1) et vous aide à rédiger le dossier de présentation. Vous relisez, vous ajustez, vous déposez.</p></div>
@@ -508,7 +508,7 @@ img{max-width:100%}
   var io=new IntersectionObserver(function(es){es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} });},{threshold:.12, rootMargin:'0px 0px -6% 0px'});
   document.querySelectorAll('.sr,.stagger,.gauge,.crit').forEach(function(el){ io.observe(el); });
   var coSec=document.getElementById('scene1'),coScene=document.getElementById('scene'),coPc=document.getElementById('cappc');
-  if(coSec&&coScene){var coFn=function(){var tot=coSec.offsetHeight-window.innerHeight;var pr=Math.min(Math.max(-coSec.getBoundingClientRect().top/tot,0),1);var st=pr>=.72?3:pr>=.48?2:pr>=.24?1:0;coScene.classList.toggle('has1',st>=1);coScene.classList.toggle('has2',st>=2);coScene.classList.toggle('has3',st>=3);if(coPc)coPc.textContent=st>=2?100:st>=1?66:33;};addEventListener('scroll',coFn,{passive:true});addEventListener('resize',coFn);coFn();}
+  if(coSec&&coScene){var coFn=function(){var tot=coSec.offsetHeight-window.innerHeight;var pr=Math.min(Math.max(-coSec.getBoundingClientRect().top/tot,0),1);var st=pr>=.72?3:pr>=.48?2:pr>=.24?1:0;coScene.classList.toggle('has1',st>=1);coScene.classList.toggle('has2',st>=2);coScene.classList.toggle('has3',st>=3);if(coPc)coPc.textContent=st>=2?3:st>=1?2:1;};addEventListener('scroll',coFn,{passive:true});addEventListener('resize',coFn);coFn();}
 })();
 </script>
 

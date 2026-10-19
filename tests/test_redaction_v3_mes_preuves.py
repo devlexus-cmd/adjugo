@@ -137,7 +137,7 @@ def test_reprise_profil_reseau_et_coffre_fort_apercu_puis_coche(client, monkeypa
     assert g["valeur"] == {"nom": "Gwendal Kerhervé", "fonction": "Chef de chantier",
                            "qualifications": "Brevet de compagnon couvreur",
                            "chantiers": "Chapelle Sainte-Barbe du Faouët"}
-    assert g["provenance_libelle"] == "Profil de l'entreprise" and g["source_libelle"] == "déclaré par vous"
+    assert g["provenance_libelle"] == "Mon entreprise (Identité)" and g["source_libelle"] == "déclaré par vous"
     s = par[("salarie", "Soizic Le Goff")]
     assert s["manque"] == "Indiquez sa fonction dans « Mon entreprise » pour la reprendre."
     # Références : la même référence du profil et du réseau n'en fait qu'UNE ; les valeurs illisibles

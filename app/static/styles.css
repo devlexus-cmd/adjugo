@@ -365,6 +365,7 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 .ao-mid { flex:1; min-width:0; }
 .ao-t { font-weight:600; font-size:13.5px; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ao-c { font-size:11.5px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ao-c .ao-sc { color:var(--text-2); font-weight:600; font-variant-numeric:tabular-nums; }   /* « Seul 87 % » (décision 8) */
 .ao-tags { display:flex; gap:6px; flex-shrink:0; }
 .ao-go { color:var(--subtle); width:16px; height:16px; flex-shrink:0; }
 
@@ -534,7 +535,7 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
   .top .btn:has(> .btn-l) { width:34px; padding:0; justify-content:center; }
 }
 .seg-grid .seg-l { width:112px; flex:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.seg-grid .seg-v { width:70px; flex:none; text-align:right; }
+.seg-grid .seg-v { width:70px; flex:none; text-align:right; white-space:nowrap; }
 @media (max-width:520px) {
   .funnel-leg { display:grid; grid-template-columns:1fr 1fr; gap:9px 12px; }
 }
@@ -545,7 +546,7 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .dash-rail > .card:last-child { flex:1; }                     /* « Mes marchés » s'étire jusqu'au bas de la liste */
 .dash-feed .ch .btn.ghost { margin-right:-12px; }             /* flèche « Tout voir » alignée sur les chevrons */
 .score-ring .ring-badge .lucide { width:12px; height:12px; }
-.seg-grid .seg-l ~ .seg-v { width:42px; }                     /* barres plus longues, valeurs alignées */
+.seg-grid .seg-l ~ .seg-v { width:58px; }                     /* barres plus longues, valeurs « N sur M » alignées */
 .dash-hero-h .dh-tx > .muted.small, .act-hero .ah-d, .seg-grid .row.small > span { text-wrap-style:pretty; }
 .alert-callout.is-link { width:100%; text-align:left; font:inherit; color:inherit; cursor:pointer; transition:border-color .12s; }
 .alert-callout.is-link:hover { border-color:color-mix(in srgb,var(--warning) 60%,transparent); }
@@ -1026,7 +1027,7 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 /* ── Tableau de bord « Répondre à plusieurs » (vague 4) : compteur, mini-stepper 1→5, lignes cliquables ── */
 .dash-hero-h .dh-count { display:flex; align-items:center; flex-wrap:wrap; gap:0 2px; margin-top:6px; font-size:13px; font-weight:600; color:var(--accent-text); }
 .dash-hero-h .dh-count b { font-family:var(--font-display); font-size:17px; margin-right:4px; }
-.dash-steps { list-style:none; margin:16px 0 0; padding:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.dash-steps { list-style:none; margin:16px 0 0; padding:0; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
 .dash-steps li { display:flex; flex-direction:column; gap:2px; min-width:0; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
 .dash-steps li b { font-family:var(--font-display); font-size:17px; line-height:1.15; color:var(--subtle); }
 .dash-steps li.has b { color:var(--accent-text); }
@@ -1683,3 +1684,8 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
   .cn-row .btn { flex:1 1 auto; justify-content:center; white-space:normal; height:auto; min-height:34px; }
 }
 .cn-ex { margin:0 0 6px; overflow-wrap:anywhere; }
+
+/* Bandeau du stockage local (app.html, bandeau-cookies) : jamais sur le menu, dont le bas porte « Réglages » et le
+   compte (réorganisation, vague 1). Sur ordinateur, à droite du menu ; sur téléphone, effacé quand le menu est ouvert. */
+.bandeau-cookies { position:fixed; left:12px; right:12px; bottom:12px; z-index:70; background:var(--surface); border:1px solid var(--border); border-radius:11px; box-shadow:0 8px 28px rgba(0,0,0,.16); padding:13px 16px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; max-width:760px; margin:0 auto; }
+@media (min-width:861px) { .bandeau-cookies.avec-menu { left:calc(248px + 12px); } }

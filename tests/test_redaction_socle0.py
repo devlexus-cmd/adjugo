@@ -536,7 +536,8 @@ def test_vocabulaire_dossier_de_presentation_a_l_ecran():
     assert "parts soumises dans le mémoire" not in html
     # Rédaction, vague 2 : le dossier se rédige dans l'atelier du marché, qui s'appelle ainsi à l'écran.
     assert "Mémoire généré" not in js and 'atelier: "Dossier de présentation"' in js
-    assert 'folderLabel(f) { return f === "Mémoire technique" ? "Dossier de présentation"' in js
+    # Réorganisation, vague 1 (relecture) : les noms affichés des dossiers rangés sont réunis dans DOSSIERS_AFFICHES.
+    assert '"Mémoire technique": "Dossier de présentation" };' in js and "folderLabel(f) { return nomDossier(f); }" in js
     assert "{{ g.folder }}" not in html
     # Bulle (i) à côté du dossier de présentation livré (page du marché) : elle le définit sans le mot banni
     # « mémoire » (réorganisation, vague 0 : docs/REORGANISATION_V1.md, § 0.2).
