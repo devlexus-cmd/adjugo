@@ -242,9 +242,9 @@ def organisation(db, project: Project, dossier: DossierPresentation) -> tuple:
                   "perimee": "la convention de groupement n'est plus à jour : une part, un prix ou la composition "
                              "a changé depuis sa génération"}.get(conv.status if conv is not None else "aucune",
                                                                   "la convention de groupement n'est pas prête")
-        info["message"] = (raison[:1].upper() + raison[1:] + ". Générez-la dans « Monter le groupement » et faites-la "
+        info["message"] = (raison[:1].upper() + raison[1:] + ". Générez-la dans « Convention et accords » (page du marché) et faites-la "
                            "valider par chaque membre : cette partie la reprendra.")
-        return (f"[À compléter : {raison}. Générez-la dans « Monter le groupement » puis faites-la valider par chaque "
+        return (f"[À compléter : {raison}. Générez-la dans « Convention et accords » (page du marché) puis faites-la valider par chaque "
                 "membre : la forme du groupement, le chef de file et la répartition seront repris ici.]"), info
     built = gc.build_context(db, project, conv, gc._company_for(db, project), version=conv.version or 0)
     ctx = built["ctx"]
@@ -441,8 +441,8 @@ def qui_fait_quoi(db, project: Project, dossier: DossierPresentation) -> tuple:
         if m["lot"]:
             L.append(f"- Part : {m['lot']}.")
         elif m["role"] == "chef_de_file":
-            L.append("- Part : [À compléter : votre part (chef de file), à indiquer dans la convention de "
-                     "« Monter le groupement »]")
+            L.append("- Part : [À compléter : votre part (chef de file), à indiquer dans « Convention et "
+                     "accords », sur la page du marché]")
         else:
             L.append(f"- Part : [À compléter : part de {nom}]")
         if m["qualifications"]:

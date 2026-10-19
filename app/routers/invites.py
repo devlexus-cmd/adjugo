@@ -2766,7 +2766,7 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
         # partenaires avant toute convention (doctrine de visibilité, relecture vague 2).
         raise HTTPException(409, {"code": "convention_a_generer",
                                   "message": "Avec une convention de groupement, l'offre se fige en générant la "
-                                             "convention (« Monter le groupement »)."})
+                                             "convention (« Convention et accords »)."})
     invites = active_invites(db, project_id)
     if not invites:
         raise HTTPException(422, "Aucun partenaire actif : invitez au moins un partenaire avant de figer l'offre.")

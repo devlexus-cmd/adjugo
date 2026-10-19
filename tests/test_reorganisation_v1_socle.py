@@ -61,14 +61,18 @@ ZONES = {
               "carte-suggestion-reseau", "bandeau-cookies"],
     "accueil": ["vue-dashboard", "accueil-ce-qui-a-change", "accueil-premiers-pas", "accueil-reseau", "accueil-amont",
                 "accueil-grille", "accueil-flux", "accueil-rail", "accueil-bilan", "accueil-carnet"],
-    "marche": ["vue-aodetail", "marche-entete", "marche-resultat", "marche-carnet", "marche-analyse",
+    # Page du marché en 4 étapes (vague 1, 1.5) : la barre, une section par étape, le pied de page ; « Prêt à
+    # déposer » a quitté la carte de la convention (convention-pret-a-deposer → marche-pret-a-deposer).
+    "marche": ["vue-aodetail", "marche-entete", "marche-resultat", "marche-carnet", "marche-etapes", "marche-lire",
+               "marche-decider", "marche-preparer", "marche-deposer", "marche-pied", "marche-analyse",
                "marche-couverture", "marche-questions", "marche-grille", "marche-plusieurs", "plusieurs-manques",
-               "plusieurs-simulation", "marche-qui-me-complete", "marche-convention", "convention-pret-a-deposer",
+               "plusieurs-simulation", "marche-qui-me-complete", "marche-convention", "marche-pret-a-deposer",
                "marche-prix", "marche-dossier-presentation", "marche-pieces", "pieces-documents-reponse",
                "pieces-a-fournir", "marche-client", "marche-partenaires", "marche-reseau", "marche-preparation",
                "marche-commande-groupement", "marche-inviter", "marche-inviter-formulaire", "marche-invitations",
                "marche-contributions", "marche-suivi-groupement", "marche-coffre-croise", "marche-offre-commune",
-               "marche-journal-acces", "marche-devis-suivi", "marche-dossier-fichiers", "marche-actions"],
+               "marche-journal-acces", "marche-devis-suivi", "marche-dossier-fichiers", "marche-actions",
+               "marche-taches-plusieurs", "marche-avant-depot", "marche-export"],
     "trouver": ["vue-sourcing", "trouver-recherche", "trouver-radar", "trouver-alertes", "trouver-carte",
                 "trouver-analyse"],
     "vues": ["vue-amont", "vue-kb", "kb-fiches-proposees", "vue-atelier", "atelier-page-preparation-case",
@@ -106,7 +110,7 @@ def test_chaque_zone_se_decoupe_et_reste_a_sa_place():
     for n in [x for x in noms(HTML) if x.startswith("vue-")]:
         assert zone(HTML, n).startswith(f'<section data-test="{n}"'), n
     page = zone(HTML, "vue-aodetail")
-    for n in ZONES["marche"][1:] + ["plusieurs-manques", "plusieurs-simulation", "convention-pret-a-deposer"]:
+    for n in ZONES["marche"][1:]:
         assert zone(HTML, n) in page, n
     sharedao = zone(HTML, "vue-sharedao")
     for n in ZONES["partage"]:

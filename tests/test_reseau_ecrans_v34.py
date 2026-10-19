@@ -101,7 +101,8 @@ def test_un_seul_pourcentage_plus_de_preparation_en_pourcent():
         assert motif not in HTML, motif
     assert "readinessColor" not in JS
     cockpit = zone(HTML, "marche-preparation")
-    assert "readiness.submitted }}/{{ ao.share.consortium.readiness.invited" in cockpit and "%" not in cockpit
+    # Décision 8 : « N sur M » (réorganisation, vague 1).
+    assert "readiness.submitted }} sur {{ ao.share.consortium.readiness.invited" in cockpit and "%" not in cockpit
 
 
 def _in_tip(html, phrase):

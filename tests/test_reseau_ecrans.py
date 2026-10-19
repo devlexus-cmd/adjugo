@@ -62,7 +62,9 @@ def test_vue_reseau_et_navigation():
     assert '{ view: "reseau", label: "Réseau Adjugo", ic: "network", ancien: "Réseau" }' in JS and "openReseau(" in HTML
     for libelle in ("Mon profil partenaire", "Annuaire", "Mon historique", "Invitations reçues"):
         assert libelle in SECTION, libelle
-    assert "Partenaires pour ce marché" in PANEL and "Qui me complète ?" in PANEL
+    # Réorganisation, vague 1 (1.5) : la carte s'appelle « Qui me complète ? » ; son bouton cherche.
+    assert '<h3 id="pm-h">Qui me complète ?</h3>' in PANEL and "Chercher des partenaires" in PANEL
+    assert "Partenaires pour ce marché" not in PANEL
     assert "Présentation en une phrase" in SECTION
     assert 'reseau: "Réseau Adjugo"' in JS
 
