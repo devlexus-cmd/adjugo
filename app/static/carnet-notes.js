@@ -106,6 +106,17 @@
     return "";
   }
 
+  // L'en-tête d'une ligne du formulaire : le champ « Critère » d'un critère ajouté, SINON le nom du critère (et son
+  // poids) ; puis, sur un marché à plusieurs lots, le choix du lot d'un critère ajouté. Un marché simple : rien de plus.
+  function cnLigneTete(l, k, lots) {
+    let h = "";
+    if (l.ajoutee && !l.cle_fixe) h += '<div class="field cn-field"><label for="' + k + 'c">Critère</label><input id="' + k + 'c" data-f="critere" value="' + cnEsc(l.critere) + '" maxlength="200"></div>';
+    else h += '<div class="cn-l-h"><span class="cn-l-c">' + cnEsc(l.critere) + (l.poids ? ' <span class="muted">· ' + cnEsc(l.poids) + "</span>" : "") + "</span>" + (l.proposee ? '<span class="pill a_etudier cn-pill">à valider</span>' : "") + "</div>";
+    // Plusieurs lots : un critère ajouté dit son lot (l'acheteur note chaque lot à part).
+    if (l.ajoutee && (lots || []).length) h += '<div class="field cn-field"><label for="' + k + 'l">Lot</label><select id="' + k + 'l" data-f="lot"><option value="">Choisissez le lot</option>' + lots.map(x => '<option value="' + cnEsc(x.numero) + '"' + (x.numero === l.lot ? " selected" : "") + ">" + cnEsc(x.libelle) + "</option>").join("") + "</select></div>";
+    return h;
+  }
+
   // ── Petits gabarits ─────────────────────────────────────────────────────────────────────────────
 
   const tip = (txt, left) => txt ? '<button type="button" class="tip' + (left ? " tip-l" : "") + '"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">' + cnEsc(txt) + "</span></button>" : "";
@@ -239,6 +250,7 @@
       if (pr.message && code === pr.code) h += '<div class="muted small">' + cnEsc(pr.message) + "</div>";
       if (!l) return h + '<div class="muted small cn-mt8">' + (st.busy === "lettre" ? "Préparation du courrier…" : "") + "</div></div>";
       h += '<div class="cn-delai small cn-mt8">' + ico("clock", 14) + "<span>" + cnEsc(l.message_delai) + "</span></div>";
+      if (l.phrase_subsequent) h += '<blockquote class="gn-q">' + cnEsc(l.phrase_subsequent) + "</blockquote>";
       if (l.message_notes) h += '<div class="muted small cn-mt4">' + cnEsc(l.message_notes) + "</div>";
       if (l.message_lots) h += '<div class="muted small cn-mt4">' + cnEsc(l.message_lots) + "</div>";
       h += '<div class="field cn-field cn-mt8"><label for="cn-obj-' + Number(d.projet.id) + '">Objet</label><input id="cn-obj-' + Number(d.projet.id) + '" data-in="objet" value="' + cnEsc(l.objet) + '"></div>';
@@ -276,6 +288,7 @@
       (n.totaux || []).forEach(t => {
         h += '<div class="small cn-mt4">Note d\'ensemble, ' + cnEsc(String(t.lot_libelle || "").charAt(0).toLowerCase() + String(t.lot_libelle || "").slice(1)) + ' : <b class="num">' + cnEsc(t.note) + " / " + cnEsc(t.note_max) + "</b> (" + Number(t.pct) + " %)</div>";
       });
+      (n.messages_total || []).forEach(m => { h += '<div class="muted small cn-mt4">' + cnEsc(m) + "</div>"; });
       if (n.constat) {
         h += '<div class="cn-constat small cn-mt8">' + ico("search", 14) + '<span style="flex:1;min-width:0">' + cnEsc(n.constat.message) + "</span>"
           + (n.constat.partenaire && o.onPartenaire ? '<button type="button" class="linkbtn small" data-act="partenaire">Chercher un partenaire qui couvre ce manque</button>' + tip("Ouvre le réseau de partenaires d'Adjugo. C'est un constat sur ce marché, pas une recommandation.", true) : "") + "</div>";
@@ -300,10 +313,7 @@
         const k = "cn-" + pid + "-" + i;
         if (tetes[i]) h += '<li class="cn-lot-h">' + cnEsc(tetes[i]) + "</li>";
         h += '<li class="cn-ligne cn-edit' + (l.parent ? " cn-sous" : "") + (l.proposee ? " cn-prop" : "") + '" data-i="' + i + '">';
-        if (l.ajoutee && !l.cle_fixe) h += '<div class="field cn-field"><label for="' + k + 'c">Critère</label><input id="' + k + 'c" data-f="critere" value="' + cnEsc(l.critere) + '" maxlength="200"></div>';
-        // Plusieurs lots : un critère ajouté dit son lot (l'acheteur note chaque lot à part).
-        if (l.ajoutee && lots.length) h += '<div class="field cn-field"><label for="' + k + 'l">Lot</label><select id="' + k + 'l" data-f="lot"><option value="">Choisissez le lot</option>' + lots.map(x => '<option value="' + cnEsc(x.numero) + '"' + (x.numero === l.lot ? " selected" : "") + ">" + cnEsc(x.libelle) + "</option>").join("") + "</select></div>";
-        else h += '<div class="cn-l-h"><span class="cn-l-c">' + cnEsc(l.critere) + (l.poids ? ' <span class="muted">· ' + cnEsc(l.poids) + "</span>" : "") + "</span>" + (l.proposee ? '<span class="pill a_etudier cn-pill">à valider</span>' : "") + "</div>";
+        h += cnLigneTete(l, k, lots);
         if (l.auteur && l.auteur.type === "invitation") h += '<div class="muted small">Partie rédigée par ' + cnEsc(l.auteur.nom || "un partenaire") + "</div>";
         h += '<div class="cn-grid">'
           + '<div class="field cn-field"><label for="' + k + 'n">Votre note</label><input id="' + k + 'n" data-f="note" inputmode="decimal" value="' + cnEsc(l.note) + '"></div>'
@@ -483,5 +493,5 @@
   }
 
   root.AdjugoCarnetNotes = { mount, partenaireHtml: cnPartenaireHtml,
-    _pur: { cnEsc, cnNombre, cnPct, cnMailto, cnFusion, cnPayload, cnControle, cnPartenaireHtml, cnTetes } };
+    _pur: { cnEsc, cnNombre, cnPct, cnMailto, cnFusion, cnPayload, cnControle, cnPartenaireHtml, cnTetes, cnLigneTete } };
 })(typeof window !== "undefined" ? window : this);

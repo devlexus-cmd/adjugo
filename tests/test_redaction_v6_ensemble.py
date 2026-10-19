@@ -442,7 +442,7 @@ def test_ecrans_un_releve_par_lot_et_page_du_fichier_de_chaque_lot():
     js = open(os.path.join(racine, "app", "static", "app.js"), encoding="utf-8").read()
     assert 'aria-label="Page du fichier de quel lot"' in html and "atlPrepLot(l.numero)" in html
     assert "atlDerniereFois(atlSec()).lot" in html
-    assert '"/preparation" + (p.lot ? "?lot=" + encodeURIComponent(p.lot) : "")' in js
+    assert '"/preparation" + (voulu ? "?lot=" + encodeURIComponent(voulu) : "")' in js
     assert "lot: l.numero, page_preparation: !!a.prepJoindre" in js
 
 

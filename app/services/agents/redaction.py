@@ -112,7 +112,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     # technique dans le livrable.
     from app.services import memoire_export
     memoire_label = memoire_export.memoire_label(analysis)
-    memoire_files, memoire_md, memoire_etat = {}, "", None
+    memoire_files, memoire_md, memoire_etat, memoire_garder = {}, "", None, []
     if db is not None and project_id:
         try:
             from app.services import atelier
@@ -125,6 +125,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
                 commun = atelier.dossier_commun(db, _proj, _owner)
                 memoire_files, memoire_md = commun["files"], commun["markdown"]
                 memoire_etat = commun["etat"]
+                memoire_garder = list(commun.get("garder") or [])
                 warnings.extend(commun["warnings"])
         except Exception as e:
             import logging
@@ -319,6 +320,8 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         # Octets des fichiers (archivage dans le dossier du marché) : retirés par la route avant la
         # réponse JSON (ils sont déjà dans le ZIP).
         "_memoire_files": memoire_files,
+        # Fichiers d'un lot NON joint (bloqué) : gardés tels quels dans le dossier du marché (rédaction, vague 6).
+        "_memoire_garder": memoire_garder,
         "cerfas": [{"id": c["id"], "name": c["name"],
                     "content_b64": base64.b64encode(_as_bytes(c["content"])).decode()}
                    for c in cerfa_files],

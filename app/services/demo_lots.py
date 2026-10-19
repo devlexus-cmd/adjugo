@@ -305,7 +305,7 @@ def seed_lots(db, user, proj_by_key: dict) -> None:
         fiches = fiches_ent + fs.fiches_extraits(chunks)
         texte = fs.inserer_cv(dr._texte(partie, preuves), fiches)
         faits = fs.controler(texte, fiches, acheteur=acheteur, noms_entreprise=ctx.noms_entreprise,
-                             section_entreprise=at.section_sur_l_entreprise(s), mode="ia", anciens=[])
+                             section_entreprise=at.section_sur_l_entreprise(s), mode="ia", anciens=[], lots=ctx.lots)
         sources = [{"ref": c["ref"], "doc_name": c["doc_name"], "chunk_id": c["chunk_id"],
                     "extrait": c["text"][:240]} for c in chunks]
         v = at.ajouter_version(db, s, texte=texte, origine=at.IA, ia=True, sources=sources, faits=faits,

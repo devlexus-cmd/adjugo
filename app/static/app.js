@@ -392,7 +392,7 @@ function _atlInit() {
            // Vague 6 (H) : case « Joindre une page "Comment ce dossier a été préparé" », DÉCOCHÉE à chaque
            // ouverture de l'atelier (jamais enregistrée) ; `prep` : la page lue avant l'export (lecture seule) ;
            // `prep.lot` : dossier à plusieurs lots, le fichier dont on lit la page (un fichier par lot).
-           prepJoindre: false, prep: { open: false, loading: false, d: null, err: "", lot: "" },
+           prepJoindre: false, prep: { open: false, loading: false, d: null, err: "", lot: "", seq: 0 },
            // Plusieurs lots (rédaction, vague 6 — J) : lots cochés et lots indiqués (plan proposé), fenêtre « Changer les
            // lots », filtre du plan (« » toutes, « c » communes, sinon un numéro de lot), lot dont on lit le blocage.
            lotsChoix: [], lotsAjoutes: [], lotAjout: { numero: "", intitule: "" }, lotsDlg: null, lotFiltre: "",
@@ -5537,10 +5537,15 @@ const __adjApp = createApp({
       const lots = this.atlLots() ? this.atlLotsListe() : [];
       if (lots.length && !lots.some(x => x.numero === p.lot)) p.lot = lots[0].numero;
       if (!lots.length) p.lot = "";
+      // Deux lots choisis vite l'un après l'autre : seule la réponse du DERNIER choix est montrée (comme le carnet).
+      const seq = (p.seq = (p.seq || 0) + 1), voulu = p.lot;
       p.loading = true; p.err = "";
-      try { p.d = await this.api("GET", this._atlUrl("/preparation" + (p.lot ? "?lot=" + encodeURIComponent(p.lot) : ""))); }
-      catch (e) { p.err = e.message || "La page n'a pas pu être préparée pour le moment."; }
-      finally { p.loading = false; }
+      try {
+        const d = await this.api("GET", this._atlUrl("/preparation" + (voulu ? "?lot=" + encodeURIComponent(voulu) : "")));
+        if (seq === p.seq && p.lot === voulu) p.d = d;
+      }
+      catch (e) { if (seq === p.seq) p.err = e.message || "La page n'a pas pu être préparée pour le moment."; }
+      finally { if (seq === p.seq) p.loading = false; }
     },
     atlPrepVoir() {
       const p = this.atl.prep; p.open = !p.open;
@@ -5994,7 +5999,7 @@ __adjApp.config.errorHandler = function (err, vm, info) {
 function _gnNum(v) { const n = Number(v); return isFinite(n) ? n.toLocaleString("fr-FR") : String(v || ""); }
 // « 20 pages au maximum », « 1 page au maximum par référence » : accord et partie visée.
 const _GN_OBJET = { cv: "par CV", reference: "par référence", question: "pour une question", question_chaque: "par question",
-  fiche: "par fiche", synthese: "pour la synthèse", lettre: "pour la lettre", annexe: "par annexe" };
+  fiche: "par fiche", synthese: "pour la synthèse", lettre: "pour la lettre", annexe: "par annexe", selon_lot: "selon le lot" };
 function _gnLim(x) {
   if (x.type === "police") { const s = [x.police, x.taille != null ? x.taille : ""].filter(v => v !== "" && v != null).join(" "); return "Police : " + (s || x.texte || ""); }
   const un = Number(x.valeur) === 1;

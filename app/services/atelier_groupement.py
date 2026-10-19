@@ -494,6 +494,10 @@ class ContextePartenaire:
         self.inv = acces.inv
         self.project_id = acces.project.id
         self.dossier_id = acces.dossier.id
+        # Rédaction, vague 6 (J) : les numéros des lots du dossier (publics : le règlement les nomme) — « lot 2 »
+        # n'est pas un fait à relire dans un dossier à plusieurs lots ; () sinon.
+        from app.services import atelier_lots as al
+        self.lots = tuple(al.numeros(al.liste(acces.dossier)))
         # Les documents déposés par le lien servent par le lien seulement, tant qu'il n'est pas rattaché à un compte.
         self.depots = depot_lien.utilises(acces)
         c = _contribution(db, acces.inv.id)
@@ -1173,7 +1177,7 @@ def enregistrer_brouillon(db, acces: Acces, section_id: int, texte: str, base_br
     base_texte = (cur.texte if cur is not None else (commun.texte if commun is not None else "")) or ""
     faits = fs.controler(t, ctx.fiches_de_brouillon(db, cur), acheteur=None, noms_entreprise=ctx.noms_entreprise,
                          section_entreprise=at.section_sur_l_entreprise(section), mode="utilisateur",
-                         anciens=anciens, base_texte=base_texte)
+                         anciens=anciens, base_texte=base_texte, lots=ctx.lots)
     _verrou_du_lien(db, acces)
     sources, faits = _sans_depots_disparus(db, acces.invite_id, (cur.sources if cur is not None and ia else []), faits)
     b = _ajouter_brouillon(db, section, acces.invite_id, texte=t, origine="utilisateur", ia=ia,
@@ -1360,7 +1364,8 @@ def valider_part(db, acces: Acces, section_id: int, version_id: int, ip: str = "
             der = None
         faits = fs.controler(cur.texte or "", ctx.fiches_de_brouillon(db, der), acheteur=None,
                              noms_entreprise=ctx.noms_entreprise, section_entreprise=at.section_sur_l_entreprise(section),
-                             mode="ia", anciens=((der.faits if der else None) or []) + list(cur.faits or []))
+                             mode="ia", anciens=((der.faits if der else None) or []) + list(cur.faits or []),
+                             lots=ctx.lots)
         faits = _garder_ses_declarations(db, acces, section, faits)
         _verrou_du_lien(db, acces)
         _srcs, faits = _sans_depots_disparus(db, acces.invite_id, [], faits)
@@ -1738,7 +1743,8 @@ def _executer(db, *, job_id: int, invite_id: int, section_id: int, kind: str, ci
         texte = ec.garder_trous(texte, base.texte if base else "")
         faits = fs.controler(texte, ctx.fiches_de_brouillon(db, base), acheteur=None,
                              noms_entreprise=ctx.noms_entreprise, section_entreprise=at.section_sur_l_entreprise(section),
-                             mode="raccourci", anciens=(base.faits if base else []), base_texte=base.texte if base else "")
+                             mode="raccourci", anciens=(base.faits if base else []), base_texte=base.texte if base else "",
+                             lots=ctx.lots)
         sources = (base.sources or []) if base else []
         from app.services import rag
         refs = {f"S{n}" for n in rag.cited_refs(texte)} | {x for x in fs.refs_de(texte) if x.startswith("S")}
@@ -1752,7 +1758,7 @@ def _executer(db, *, job_id: int, invite_id: int, section_id: int, kind: str, ci
         texte = fs.inserer_cv(texte, fiches_tout)
         faits = fs.controler(texte, fiches_tout, acheteur=acheteur, noms_entreprise=ctx.noms_entreprise,
                              section_entreprise=at.section_sur_l_entreprise(section), mode="ia",
-                             anciens=(base.faits if base else []))
+                             anciens=(base.faits if base else []), lots=ctx.lots)
         sources = ctx.sources_reelles(r.get("sources") or [], chunks)
         origine = "ia"
     # Vague 5 (D) : SES réponses à l'entretien relues sous le verrou de l'invitation — une réponse retirée, changée
@@ -2032,8 +2038,10 @@ def modifier_part(db, project: Project, dossier: DossierPresentation, section: D
     nom = nom_partenaire(inv, _contribution(db, section.author_invite_id))
     from app.services.preuves import membres as membres_org
     acheteur = at.acheteur_du_marche(db, project, membres_org(db, dossier.owner_id))
+    from app.services import atelier_lots as al
     faits = fs.controler(t, [], acheteur=acheteur, noms_entreprise=[nom], section_entreprise=at.section_sur_l_entreprise(section),
-                         mode="ia", anciens=(cur.faits if cur else []))
+                         mode="ia", anciens=(cur.faits if cur else []),
+                         lots=tuple(al.numeros(al.liste(dossier))))
     ia = at.ia_a_servi(t, [v.texte or "" for v in _versions_communes_de(db, section) if v.ia])
     redigee = _avant(db, section, cur) is not None or (cur is not None and cur.ecrit_par == ECRIT_PAR_PARTENAIRE)
     at.ajouter_version(db, section, texte=t, origine=at.UTILISATEUR, ia=ia, sources=[], faits=faits_communs(faits),

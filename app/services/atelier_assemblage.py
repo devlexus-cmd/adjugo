@@ -1194,8 +1194,9 @@ def _ajouter_transition(db, project: Project, dossier: DossierPresentation, s: D
         db.rollback()
         return None
     noms = [ag.nom_partenaire(db.get(ProjectInvite, s.author_invite_id))] if s.author_invite_id else []
+    from app.services import atelier_lots as al
     extra = far.a_relire(transition, [base.texte or ""], noms_entreprise=noms,
-                         section_entreprise=at.section_sur_l_entreprise(s))
+                         section_entreprise=at.section_sur_l_entreprise(s), lots=tuple(al.numeros(al.liste(dossier))))
     faits = [dict(x) for x in (base.faits or []) if isinstance(x, dict)] + extra
     if s.author_kind == at.AUTEUR_INVITATION:
         v = at.ajouter_version(db, s, texte=texte, origine=at.HARMONISE, ia=True, sources=[],

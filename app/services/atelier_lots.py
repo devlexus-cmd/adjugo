@@ -64,9 +64,9 @@ MSG_MODE = {
     MODE_PROPRE: "Critères et poids écrits dans le règlement pour ce lot.",
     MODE_GENERALE: "Adjugo n'a pas trouvé de critères propres à ce lot dans le règlement : la grille générale est "
                    "reprise. Vérifiez dans le règlement.",
-    MODE_ILLISIBLE: "Le règlement donne des poids différents selon les lots dans un tableau qu'Adjugo ne lit pas "
-                    "ligne à ligne : les critères sont repris sans poids. Vérifiez le poids de chaque critère pour ce "
-                    "lot dans le règlement.",
+    MODE_ILLISIBLE: "Le règlement donne des poids différents selon les lots, écrits d'une façon qu'Adjugo ne lit pas "
+                    "sans risque d'erreur (un tableau, ou « 60 % pour le lot 2, 40 % pour le lot 3 ») : les critères "
+                    "sont repris sans poids. Vérifiez le poids de chaque critère pour ce lot dans le règlement.",
 }
 MSG_ORIGINE = {ORIGINE_REGLEMENT: "repéré dans le règlement", ORIGINE_ANALYSE: "repéré dans le règlement",
                ORIGINE_UTILISATEUR: "indiqué par vous"}
@@ -366,11 +366,17 @@ def cadres_par_lot(pieces: list, numeros: list) -> dict:
 
 # ── 3. La grille de chaque lot, depuis SA phrase du règlement (sans IA) ───────────────────────────────
 
+# Une liste de lots (« lots 1 et 2 », « lots 1 à 3 ») ; un nombre suivi de ce qu'il mesure n'en fait pas partie
+# (« 6 pages pour le lot 2 et 3 pages pour le lot 3 » : le 3 est un nombre de pages, pas le lot 3).
+_PAS_UNE_MESURE = (r"(?!\s*(?:%|pour ?cent\b|points?\b|pts?\b|pages?\b|mots?\b|caracteres?\b|signes?\b|lignes?\b"
+                   r"|feuillets?\b|faces?\b|recto|jours?\b|semaines?\b|mois\b|ans?\b|heures?\b))")
 _MARQUE = re.compile(r"\blots?\s*(?:n\s?[°o]\.?\s*|no\.?\s+)?0*(\d{1,2})(?!\d|[.,]\d)"
-                     r"((?:\s*(?:,|\bet\b|\ba\b|\bau\b|-|–)\s*(?:le\s+lot\s+|lot\s+)?0*\d{1,2}(?!\d|[.,]\d))*)")
+                     r"((?:\s*(?:,|\bet\b|\ba\b|\bau\b|-|–)\s*(?:le\s+lot\s+|lot\s+)?0*\d{1,2}(?!\d|[.,]\d)"
+                     + _PAS_UNE_MESURE + r")*)")
 _GENERAL = re.compile(r"(?:tous les|l'ensemble des|chacun des|chaque|les differents|les autres) lots?\b|quel que soit le lot"
                       r"|identiques? pour (?:tous )?les lots|par lot\b")
 _ARTICLE = re.compile(r"\b(?:article|chapitre)\s+\d")
+OBJET_SELON_LOT = "selon_lot"       # une limite d'une phrase qui cite plusieurs lots, qu'on ne sait pas attribuer
 _ZONE_MAX = 6000
 
 
@@ -436,6 +442,24 @@ def _tableau(p, marks: list, crit_stems: list) -> bool:
     return False
 
 
+# Un poids écrit JUSTE AVANT la mention d'un lot, sur la même ligne (« 60 % pour le lot 2 », « 40 % (lot 3) »,
+# « 60 points au titre du lot 2 ») : le poids appartient au lot cité APRÈS lui. Les segments lus d'une mention de lot à
+# la suivante le donneraient au lot suivant : une telle zone n'est jamais lue par segments (aucun poids deviné).
+_AVANT_LOT = re.compile(r"\s*(?:pour\s+(?:le|les)\s+|\(\s*|au titre (?:du|des)\s+|en\s+|,\s*|:\s*|-\s*|–\s*)?")
+
+
+def _poids_avant(p, s0: int) -> bool:
+    """Un poids est-il écrit juste avant la mention de lot qui commence en `s0` (même ligne) ?"""
+    import bisect
+    debut = max(0, s0 - 40)
+    der = None
+    for m in gn._W_TOKEN.finditer(p.low, debut, s0):
+        der = m
+    if der is None or not _AVANT_LOT.fullmatch(p.low[der.end():s0]):
+        return False
+    return bisect.bisect_right(p.breaks, der.start()) == bisect.bisect_right(p.breaks, s0)
+
+
 def _segments(P: list, numeros: list, crit_stems: list) -> tuple:
     """(segments [(pièce, début, fin, lots, début de la mention)], tableau_illisible). Un segment va d'une mention
     « lot n » (ou « lots 1 et 2 ») au repère suivant, dans la zone des critères, et n'est gardé que s'il parle des
@@ -459,7 +483,7 @@ def _segments(P: list, numeros: list, crit_stems: list) -> tuple:
             for m in _GENERAL.finditer(p.low, z0, z1):
                 marks.append((m.start(), m.end(), None))
             marks.sort(key=lambda x: x[0])
-            if _tableau(p, marks, crit_stems):
+            if _tableau(p, marks, crit_stems) or any(nums and _poids_avant(p, s0) for s0, _e, nums in marks):
                 illisible = True
                 continue
             for i, (s0, e, nums) in enumerate(marks):
@@ -532,22 +556,67 @@ def _lots_cites(phrase: str) -> set:
     return nums
 
 
+def _lots_de_la_valeur(phrase: str, texte: str) -> set:
+    """Une phrase qui cite PLUSIEURS lots (« 6 pages au maximum pour le lot 2 et 3 pages au maximum pour le lot 3 ») :
+    les lots auxquels se rapporte la valeur `texte` (« 3 pages ») — la mention de lot écrite juste après elle, sinon
+    juste avant (« pour le lot 2, 6 pages ; pour le lot 3, 3 pages ») ; set() quand on ne sait pas."""
+    low, t = _fold(phrase or ""), _fold(texte or "").strip()
+    if not t:
+        return set()
+    occ = [m for m in re.finditer(r"(?<![\d.,])" + re.escape(t) + r"(?![\d])", low)]
+    if len(occ) != 1:
+        return set()
+    v0, v1 = occ[0].start(), occ[0].end()
+    marks = list(_MARQUE.finditer(low))
+    apres = next((m for m in marks if m.start() >= v1), None)
+    avant = next((m for m in reversed(marks) if m.end() <= v0), None)
+
+    def libre(a: int, b: int) -> bool:
+        return b - a <= 45 and not re.search(r"[;.]|\d", low[a:b])
+    if apres is not None and libre(v1, apres.start()):
+        return _nums_de_marque(apres)
+    if avant is not None and libre(avant.end(), v0):
+        return _nums_de_marque(avant)
+    return set()
+
+
 def limites_du_lot(limites: list, numero: str, numeros: list) -> list:
     """Les limites écrites dans le dossier qui valent pour CE lot : celles de sa phrase (« Pour le lot 3, le mémoire
     compte 5 pages au maximum ») et celles qui ne citent aucun lot (« 8 pages au maximum par lot ») — une limite
-    propre au lot remplace la limite générale du même type."""
-    propres, generales = [], []
-    for x in limites or []:
-        if not isinstance(x, dict):
-            continue
+    propre au lot remplace la limite générale du même type. Une phrase qui cite plusieurs lots : chaque valeur va au
+    lot cité à côté d'elle ; une valeur qu'on ne sait pas attribuer n'est imposée à aucun lot (dite « selon le lot »,
+    à vérifier, jamais contrôlée)."""
+    propres, generales, a_verifier = [], [], []
+    lims = [x for x in limites or [] if isinstance(x, dict)]
+    # Une phrase qui cite plusieurs lots : chaque valeur au lot cité à côté d'elle, seulement si TOUTES ses valeurs
+    # s'attribuent ainsi et qu'aucun lot n'en reçoit deux du même type (« respectivement », valeurs groupées : on ne
+    # sait pas — aucune n'est imposée).
+    par_phrase = {}
+    for x in lims:
+        if x.get("type") != "police" and len(_lots_cites(x.get("phrase") or "")) > 1:
+            par_phrase.setdefault(x.get("phrase") or "", []).append(x)
+    attribution = {}
+    for ph, xs in par_phrase.items():
+        lv = [_lots_de_la_valeur(ph, x.get("texte") or "") for x in xs]
+        vus = [(n, x.get("type")) for x, ns in zip(xs, lv) for n in ns]
+        sure = all(lv) and len(vus) == len(set(vus)) and "respectivement" not in _fold(ph)
+        for x, ns in zip(xs, lv):
+            attribution[id(x)] = ns if sure else set()
+    for x in lims:
         cites = _lots_cites(x.get("phrase") or "")
         if not cites:
             generales.append(x)
+        elif id(x) not in attribution:
+            if numero in cites:
+                propres.append(x)
+        elif attribution[id(x)]:
+            if numero in attribution[id(x)]:
+                propres.append(x)
         elif numero in cites:
-            propres.append(x)
+            a_verifier.append(dict(x, objet=OBJET_SELON_LOT))
     types_propres = {(x.get("type"), x.get("objet") or "") for x in propres}
     return propres + [x for x in generales if (x.get("type"), x.get("objet") or "") not in types_propres
-                      or x.get("type") == "police"]
+                      or x.get("type") == "police"] + a_verifier
 
 
 def grilles_par_lot(grille: Optional[dict], texte: str, numeros: list) -> dict:
@@ -650,7 +719,7 @@ def grille_out(g: Optional[dict]) -> Optional[dict]:
                        "dans_le_plan": bool(ln.get("dans_le_plan")),
                        "prix": ap.est_critere_prix(ln.get("critere") or ""),
                        "message": _flat(ln.get("message_lot"))[:300],
-                       "sous_criteres": [{"critere": _flat(x.get("critere"))[:160],
+                       "sous_criteres": [{"id": str(x.get("id") or "")[:20], "critere": _flat(x.get("critere"))[:160],
                                           "poids": _flat(x.get("poids"))[:40] if x.get("statut") == gn.RETROUVE else ""}
                                          for x in (ln.get("sous_criteres") or []) if isinstance(x, dict)][:gn.SOUS_MAX]})
     lot = g.get("lot") if isinstance(g.get("lot"), dict) else {}
@@ -803,8 +872,10 @@ _PH_LOT = re.compile(r"(lot\s*(?:n\s?[°o]\.?\s*|_|-|\.)?)(x{1,3}(?![a-z])|n(?![
                      r"|<[^>]{0,30}>|_{2,}|\.{2,}|…)", re.IGNORECASE)
 _PH_NOM = re.compile(r"(?:[\[(<]\s*)?(?:nom|raison sociale|d[ée]nomination)\s*(?:de l['’]\s*|du |de la |d['’]\s*)?\s*"
                      r"(?:candidat|entreprise|soumissionnaire|soci[ée]t[ée]|titulaire|mandataire|groupement)\s*[\])>]?"
+                     r"|[\[(<]\s*(?:raison sociale|d[ée]nomination(?: sociale)?)\s*[\])>]"
                      r"|\b(?:nom_?candidat|nom_?entreprise|nom_?soci[ée]t[ée]|raison_?sociale|nomducandidat"
                      r"|nomdelentreprise)\b", re.IGNORECASE)
+_EXTENSION = re.compile(r"\s*\.(pdf|docx?|odt|rtf)\s*$", re.IGNORECASE)
 _PH_INTITULE = re.compile(r"(?:[\[(<]\s*)?(?:intitul[ée]|nom|libell[ée]|d[ée]signation)\s+du\s+lot\s*[\])>]?", re.IGNORECASE)
 _PH_RESTE = re.compile(r"\[[^\]]*\]|<[^>]*>|\bx{2,}\b|_{3,}|\.{3,}|…", re.IGNORECASE)
 _MEMOIRE = re.compile(r"memoire|\bmt\b|offre technique|note (?:methodologique|technique)|\blot")
@@ -852,7 +923,10 @@ def nom_du_lot(lot: dict, label: str, entreprise: str = "", regle: Optional[dict
     defaut = _court(_sur(f"{label} - Lot {n}" + (f" - {intit}" if intit else ""))) or f"Lot {n}"
     if not regle or not regle.get("modele"):
         return {"stem": defaut, "selon_reglement": False, "message": ""}
-    modele = str(regle["modele"])
+    ecrit = str(regle["modele"])
+    # « LOTXX_MT_NomCandidat.pdf » : l'extension n'est pas dans le nom (l'export ajoute celle du format choisi).
+    ext = _EXTENSION.search(ecrit)
+    modele = _EXTENSION.sub("", ecrit) if ext else ecrit
     a_un_lot = bool(_PH_LOT.search(modele))
 
     def _lot(m):
@@ -864,14 +938,14 @@ def nom_du_lot(lot: dict, label: str, entreprise: str = "", regle: Optional[dict
     if _PH_NOM.search(t):
         if not nom:
             return {"stem": defaut, "selon_reglement": False,
-                    "message": f"Le règlement impose un nom de fichier (« {modele} ») : renseignez le nom de votre "
+                    "message": f"Le règlement impose un nom de fichier (« {ecrit} ») : renseignez le nom de votre "
                                "entreprise dans votre profil pour qu'Adjugo le suive."}
         t = _PH_NOM.sub(nom, t)
     if _PH_INTITULE.search(t):
         t = _PH_INTITULE.sub(intit or f"Lot {n}", t)
     if _PH_RESTE.search(t):
         return {"stem": defaut, "selon_reglement": False,
-                "message": f"Le règlement impose un nom de fichier (« {modele} ») qu'Adjugo ne sait pas compléter : "
+                "message": f"Le règlement impose un nom de fichier (« {ecrit} ») qu'Adjugo ne sait pas compléter : "
                            f"renommez le fichier avant de le déposer."}
     if not a_un_lot:
         t = f"{t} - Lot {n}"
@@ -879,8 +953,9 @@ def nom_du_lot(lot: dict, label: str, entreprise: str = "", regle: Optional[dict
     if not stem:
         return {"stem": defaut, "selon_reglement": False, "message": ""}
     return {"stem": stem, "selon_reglement": True,
-            "message": f"Nommé comme le règlement l'exige : « {modele} »." + (
-                "" if a_un_lot else " Le numéro du lot est ajouté : un fichier par lot.")}
+            "message": f"Nommé comme le règlement l'exige : « {ecrit} »." + (
+                "" if a_un_lot else " Le numéro du lot est ajouté : un fichier par lot.") + (
+                f" Le règlement demande un fichier « .{ext.group(1).lower()} » : exportez dans ce format." if ext else "")}
 
 
 # ── 7. Lecture d'un dossier enregistré ────────────────────────────────────────────────────────────────

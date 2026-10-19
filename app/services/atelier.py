@@ -842,6 +842,37 @@ def _hors_des_groupes(act: list, pos: int, vers_le_bas: bool = True) -> int:
     return pos
 
 
+def _coupes(dossier: DossierPresentation, ordre: list) -> set:
+    """Vague 6 (plusieurs lots) : les groupes de sous-critères COUPÉS dans le dossier d'un lot, pour un ordre des parties
+    donné — {(lot, groupe)} ; dans le dossier de chaque lot (parties communes et les siennes), les sous-critères d'un
+    critère se suivent, sous le même titre."""
+    out = set()
+    for n in al.numeros(al.liste(dossier)):
+        rangs = {}
+        for i, x in enumerate(al.du_lot(ordre, n)):
+            g = _groupe_sous_critere(x, avec_lot=False)
+            if g is not None:
+                rangs.setdefault(g, []).append(i)
+        out |= {(n, g) for g, ii in rangs.items() if ii[-1] - ii[0] + 1 != len(ii)}
+    return out
+
+
+def _place_sans_couper(dossier: DossierPresentation, act: list, section, pos: int, vers_le_bas: bool = True,
+                       bornes: Optional[tuple] = None) -> Optional[int]:
+    """Vague 6 (plusieurs lots) : le rang le plus proche de `pos` (dans le sens du déplacement, puis dans l'autre) où
+    insérer `section` dans `act` sans couper un groupe de sous-critères dans le dossier d'aucun lot (seuls les groupes
+    que l'insertion couperait comptent) ; None si aucun rang ne convient. `bornes` : (premier, dernier) rang permis."""
+    lo, hi = bornes if bornes else (0, len(act))
+    deja = _coupes(dossier, act)
+
+    def ok(p: int) -> bool:
+        return not (_coupes(dossier, act[:p] + [section] + act[p:]) - deja)
+    pos = max(lo, min(pos, hi))
+    sens = (list(range(pos, hi + 1)) + list(range(pos - 1, lo - 1, -1))) if vers_le_bas else \
+        (list(range(pos, lo - 1, -1)) + list(range(pos + 1, hi + 1)))
+    return next((p for p in sens if ok(p)), None)
+
+
 def ajouter_section(db, dossier: DossierPresentation, intitule: str, apres_id: Optional[int] = None,
                     lot: Optional[str] = None) -> DossierSection:
     """Une partie ajoutée par l'utilisateur. Dossier à plusieurs lots (vague 6) : `lot` = '' (commune à tous les
@@ -865,15 +896,21 @@ def ajouter_section(db, dossier: DossierPresentation, intitule: str, apres_id: O
     if len(act) >= SECTIONS_MAX:
         raise AtelierError(422, "trop_de_parties", f"Un dossier compte au plus {SECTIONS_MAX} parties.")
     pos = len(act)
-    if apres_id is not None:
-        idx = next((i for i, s in enumerate(act) if s.id == apres_id), None)
-        if idx is None:
-            raise AtelierError(404, "partie_introuvable", "Partie introuvable.")
-        pos = _hors_des_groupes(act, idx + 1) if dossier.plan_source != ap.CADRE else idx + 1
     s = DossierSection(dossier_id=dossier.id, project_id=dossier.project_id, owner_id=dossier.owner_id,
                        ordre=pos, numero="", intitule=intitule, niveau=1, parents=[], question="",
                        source_plan=ap.UTILISATEUR, critere="", critere_id="", poids="", partie_de_critere=False,
                        lot=lot_n, limite=[], author_kind=AUTEUR_ORG, statut=A_ECRIRE, lock_version=0)
+    if apres_id is not None:
+        idx = next((i for i, x in enumerate(act) if x.id == apres_id), None)
+        if idx is None:
+            raise AtelierError(404, "partie_introuvable", "Partie introuvable.")
+        pos = _hors_des_groupes(act, idx + 1) if dossier.plan_source != ap.CADRE else idx + 1
+        if al.actif(dossier) and dossier.plan_source != ap.CADRE:
+            # Vague 6 : la nouvelle partie passe aussi le groupe des sous-critères dans le dossier de chaque lot
+            # concerné (« 1.2 Moyens (lot 2) » puis la commune « 1.3 » : jamais entre les deux).
+            p2 = _place_sans_couper(dossier, act, s, pos, vers_le_bas=True)
+            pos = p2 if p2 is not None else len(act)
+        s.ordre = pos
     for x in act[pos:]:
         x.ordre = (x.ordre or 0) + 1
     db.add(s)
@@ -916,19 +953,25 @@ def modifier_section(db, dossier: DossierPresentation, section: DossierSection, 
         if mien is None:
             # Une autre partie passe un groupe de sous-critères en entier, jamais au milieu.
             pos = _hors_des_groupes(act, pos, vers_le_bas=pos > avant)
+            if al.actif(dossier):
+                # Vague 6 : et jamais au milieu d'un groupe dans le dossier d'un lot (où les sous-critères communs et
+                # ceux du lot se suivent, alors qu'ailleurs d'autres lots les séparent).
+                p2 = _place_sans_couper(dossier, act, section, pos, vers_le_bas=pos > avant)
+                if p2 is None:
+                    db.rollback()
+                    raise AtelierError(409, "groupe_sous_criteres",
+                                       "Cette partie ne peut pas aller là : elle séparerait les sous-critères d'un "
+                                       "critère dans le dossier d'un lot. Choisissez une autre place.")
+                pos = p2
         else:
             # La partie d'un sous-critère reste avec les autres sous-critères de son critère (entre eux, l'ordre
             # se change librement) : le titre du critère n'apparaît qu'une fois, avec un seul numéro.
             essai = act[:pos] + [section] + act[pos:]
             if al.actif(dossier):
                 # Vague 6 : les sous-critères d'un critère restent ensemble dans le dossier de CHAQUE lot (parties
-                # communes et parties du lot), quel que soit l'ordre des autres lots entre eux.
-                cle = _groupe_sous_critere(section, avec_lot=False)
-                coupe = False
-                for n in al.numeros(al.liste(dossier)):
-                    sub = al.du_lot(essai, n)
-                    rr = [i for i, x in enumerate(sub) if _groupe_sous_critere(x, avec_lot=False) == cle]
-                    coupe = coupe or (bool(rr) and rr[-1] - rr[0] + 1 != len(rr) and section in sub)
+                # communes et parties du lot), quel que soit l'ordre des autres lots entre eux — ni le sien ni un autre
+                # groupe n'est coupé par ce déplacement.
+                coupe = bool(_coupes(dossier, essai) - _coupes(dossier, tout))
             else:
                 rangs = [i for i, x in enumerate(essai) if _groupe_sous_critere(x) == mien]
                 coupe = bool(rangs) and rangs[-1] - rangs[0] + 1 != len(rangs)
@@ -969,9 +1012,21 @@ def remettre_section(db, dossier: DossierPresentation, section: DossierSection, 
     act = sections_actives(db, dossier)
     mien = _groupe_sous_critere(section)
     freres = [i for i, x in enumerate(act) if mien is not None and _groupe_sous_critere(x) == mien]
+    lots_actifs = al.actif(dossier) and dossier.plan_source != ap.CADRE
+    if lots_actifs:
+        # Vague 6 : les sœurs d'une partie de sous-critère, dans le dossier de chaque lot où elle entre (une partie
+        # commune « 1.3 » rejoint « 1.1 / 1.2 » de chaque lot ; une partie du lot 3, celles du lot 3 et les communes).
+        cle = _groupe_sous_critere(section, avec_lot=False)
+        freres = [i for i, x in enumerate(act) if cle is not None and _groupe_sous_critere(x, avec_lot=False) == cle
+                  and (not section.lot or (x.lot or "") in ("", section.lot))]
     if dossier.plan_source == ap.CADRE and section.source_plan == ap.CADRE:
         # Le cadre imposé commande : la question reprend SA place (son numéro), pas la dernière.
         act.insert(_place_dans_le_cadre(act, section), section)
+    elif lots_actifs:
+        pos = next((i for i in freres if (act[i].ordre or 0) > (section.ordre or 0)), freres[-1] + 1) if freres \
+            else len(act)
+        p2 = _place_sans_couper(dossier, act, section, pos, vers_le_bas=True)
+        act.insert(p2 if p2 is not None else pos, section)
     elif freres:
         # La partie d'un sous-critère revient avec les autres sous-critères de son critère (à sa place d'origine
         # parmi eux quand on la connaît), jamais en fin de plan.
@@ -1010,6 +1065,37 @@ def _poids_du_lot(dossier: DossierPresentation, critere_id: str, lot: str, defau
     return (ln.get("poids") or "", ln.get("poids_source") or "") if ln is not None else defaut
 
 
+def _ordre_commune(dossier: DossierPresentation, act: list, section: DossierSection, autres: list) -> list:
+    """L'ordre des parties quand `section` (propre à un lot) devient commune et ses sœurs des autres lots sont
+    retirées : dans le dossier de CHAQUE lot, la partie commune prend la place qu'y avait la partie de ce lot (l'ordre
+    du règlement, 1.1 puis 1.2, ne change dans aucun fichier), sans couper un groupe de sous-critères. Les lots ne la
+    rangent pas au même endroit : 409 (rien n'est changé)."""
+    import types
+    famille = [section] + list(autres)
+    reste = [x for x in act if x not in famille]
+    lo, hi = 0, len(reste)
+    for f in famille:
+        n = f.lot or ""
+        vue = [x for x in act if (x.lot or "") in ("", n)]
+        i = vue.index(f)
+        avant = [x for x in vue[:i] if x not in famille]
+        apres = [x for x in vue[i + 1:] if x not in famille]
+        if avant:
+            lo = max(lo, reste.index(avant[-1]) + 1)
+        if apres:
+            hi = min(hi, reste.index(apres[0]))
+    # La partie telle qu'elle sera (commune) pour lire les dossiers des lots ; rien n'est encore écrit.
+    future = types.SimpleNamespace(lot="", source_plan=section.source_plan, parents=section.parents or [],
+                                   critere_id=section.critere_id or "")
+    p = _place_sans_couper(dossier, reste, future, lo, vers_le_bas=True, bornes=(lo, hi)) if lo <= hi else None
+    if p is None:
+        raise AtelierError(409, "portee_ordre",
+                           "Cette partie n'est pas à la même place dans le dossier de chaque lot : rendue commune, "
+                           "elle changerait l'ordre des parties d'un fichier. Placez-la d'abord au même endroit dans "
+                           "chaque lot, puis rendez-la commune.")
+    return reste[:p] + [section] + reste[p:]
+
+
 def changer_portee(db, dossier: DossierPresentation, section: DossierSection, lecteur: Lecteur, commune: bool,
                    remplacer: bool = False) -> DossierSection:
     """Une partie commune à tous les lots devient propre à chaque lot (elle garde son texte pour le premier lot ;
@@ -1039,6 +1125,7 @@ def changer_portee(db, dossier: DossierPresentation, section: DossierSection, le
                                f"Cette partie a déjà du texte dans d'autres lots ({noms}). Rendue commune, elle garde "
                                "le texte de celle-ci ; les autres sont retirées du plan (leurs textes restent dans "
                                "l'historique et peuvent être remis) : confirmez pour continuer.")
+        ordre = _ordre_commune(dossier, act, section, autres)
         now = utcnow()
         for f in autres:
             f.retiree_at = now
@@ -1072,7 +1159,7 @@ def changer_portee(db, dossier: DossierPresentation, section: DossierSection, le
             act.insert(pos + k, x)
     section.lock_version = (section.lock_version or 0) + 1
     db.flush()
-    for i, x in enumerate(sections_actives(db, dossier) if commune else act):
+    for i, x in enumerate(ordre if commune else act):
         x.ordre = i
     dossier.version = (dossier.version or 0) + 1
     db.commit()
@@ -1435,7 +1522,8 @@ def enregistrer_texte(db, ctx: "Contexte", section: DossierSection, lecteur: Lec
     # garde (vague 3, app/services/faits_sources.py).
     faits = fs.controler(t, ctx.fiches_de_version(db, base), acheteur=None, noms_entreprise=ctx.noms_entreprise,
                          section_entreprise=section_sur_l_entreprise(section), mode="utilisateur",
-                         anciens=(base.faits if base else []), base_texte=(base.texte if base else ""))
+                         anciens=(base.faits if base else []), base_texte=(base.texte if base else ""),
+                         lots=ctx.lots)
     v = ajouter_version(db, section, texte=t, origine=UTILISATEUR, ia=ia, sources=(base.sources if base and ia else []),
                         faits=faits, base_version_id=base.id if base else None, auteur_user_id=lecteur.user_id)
     db.commit()
@@ -1592,7 +1680,7 @@ def recontroler(db, ctx: "Contexte", project: Project, section: DossierSection, 
     acheteur = None if ecrit_par_vous else acheteur_du_marche(db, project, ctx.member_ids)
     faits = fs.controler(v.texte or "", ctx.fiches_de_version(db, v), acheteur=acheteur,
                          noms_entreprise=ctx.noms_entreprise, section_entreprise=section_sur_l_entreprise(section),
-                         mode="utilisateur" if ecrit_par_vous else "ia", anciens=v.faits or [])
+                         mode="utilisateur" if ecrit_par_vous else "ia", anciens=v.faits or [], lots=ctx.lots)
     v.faits = faits
     flag_modified(v, "faits")
     section.lock_version = (section.lock_version or 0) + 1
@@ -1842,6 +1930,9 @@ class Contexte:
         # (« déclaré par vous » ; celles d'un partenaire : « déclaré par votre partenaire »).
         d = get_dossier(db, project.id, owner_id)
         self.dossier_id = d.id if d is not None else None
+        # Rédaction, vague 6 (J) : les numéros des lots d'un dossier à plusieurs lots (« lot 2 » n'y est pas un fait à
+        # relire) ; () pour un dossier à un seul lot : le contrôle des faits est celui d'avant.
+        self.lots = tuple(al.numeros(al.liste(d))) if d is not None else ()
         from app.services import entretien_chantier as ec
         _ent, noms_ent = ec.fiches_chef(db, self.dossier_id, owner_id)
         self.noms_entreprise = [x for x in ([comp.name if comp else ""] + [p["nom"] for p in self.partenaires]) if x]
@@ -2954,7 +3045,7 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
             texte = ec.garder_trous(texte, t["texte"])
             faits = fs.controler(texte, t["fiches"], acheteur=None, noms_entreprise=ctx.noms_entreprise,
                                  section_entreprise=section_sur_l_entreprise(s), mode="raccourci",
-                                 anciens=(base.faits if base else []), base_texte=t["texte"])
+                                 anciens=(base.faits if base else []), base_texte=t["texte"], lots=ctx.lots)
             sources = (base.sources or []) if base else []
             refs = {f"S{n}" for n in rag.cited_refs(texte)} | {x for x in fs.refs_de(texte) if x.startswith("S")}
             sources = [x for x in sources if x.get("ref") in refs]
@@ -2972,7 +3063,7 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
             texte = fs.inserer_cv(texte, t["fiches"])
             faits = fs.controler(texte, t["fiches"], acheteur=acheteur, noms_entreprise=ctx.noms_entreprise,
                                  section_entreprise=section_sur_l_entreprise(s), mode="ia",
-                                 anciens=(base.faits if base else []))
+                                 anciens=(base.faits if base else []), lots=ctx.lots)
             sources, faits = ec.sans_reponses_changees(r.get("sources") or [], faits, t["fiches"], fiche_chantier)
             v = ajouter_version(db, s, texte=texte, origine=IA, ia=True, sources=sources, faits=faits,
                                 coupe=bool(r.get("coupe")), base_version_id=base.id if base else None,
@@ -3294,6 +3385,10 @@ def _dossier_commun_lots(db, project: Project, dossier: DossierPresentation, sec
             out["warnings"].append(f"BLOQUANT — {lib} : dossier de présentation non joint : "
                                    + " ".join(r["message"] for r in gate["raisons"])
                                    + " Traitez ces points dans l'atelier, ou enregistrez-y une dérogation pour ce lot.")
+            # Le fichier de ce lot exporté plus tôt depuis l'atelier reste dans le dossier du marché (comme pour un
+            # dossier à un seul lot bloqué : rien n'est retiré).
+            ent = ctx.get("entreprise") or ""
+            out.setdefault("garder", []).extend(nom_fichier(project, f, dossier, n, ent) for f in ("docx", "pdf"))
             continue
         if gate["derogation"]:
             out["warnings"].append(f"{lib} : dossier de présentation joint avec une dérogation enregistrée : "

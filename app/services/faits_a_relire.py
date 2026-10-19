@@ -234,7 +234,38 @@ _CERT = re.compile(
     r"\becolabel\b|\bpefc\b|\bfsc\b|\bhqe\b|\bbreeam\b|\bleed\b|\bcaces\b(?:\s?r?\s?\d{3})?|"
     r"\bsous[- ]section\s?[34]\b|\bss\s?[34]\b|\bhabilitations?\s+(?:electriques?\s+)?[a-z]{0,2}\d[a-z0-9]{0,3}\b|"
     r"\bnf\s?(?:en\s?)?\d{2,5}\b|\bqualification\s+\d{3,4}\b|\bopqibi\b|\bopqcm\b|\bafnor\b|\bbureau veritas\b")
-_LOT_REF = re.compile(r"\blots?\s*(?:n\s?[°o]\.?\s*)?\d{1,2}(?:\s*(?:,|\bet\b|\ba\b|\bau\b|-)\s*\d{1,2})*(?![\d.,]\d)")
+# Rédaction, vague 6 (J) : dans un dossier à PLUSIEURS lots, « lot 2 », « lots 2 et 3 » désignent un lot du
+# dossier, jamais une quantité. Seuls les numéros des lots de CE dossier sont concernés (`lots` de _facts_in) :
+#   • après « lot » (singulier), le seul numéro qui suit (« Pour le lot 2, 8 semaines » : 8 semaines reste un fait) ;
+#   • après « lots » (pluriel), la liste « 2, 3 et 4 », « 2 à 4 » ; un numéro de la liste qui n'est pas suivi d'une
+#     ponctuation ou d'un mot de liaison (« lots 2 et 3, 2 chefs » : « 2 chefs ») arrête la liste et reste un fait.
+# Sans lots (marché simple, ou réponse à un seul lot) : rien ne change (« le lot 12 du collège » : 12 est un fait).
+_LOT_MOT = re.compile(r"\blot(s?)\s*(?:n\s?[°o]\.?\s*|no\.?\s+)?0*(\d{1,2})(?!\d|[.,]\d)")
+_LOT_SUITE = re.compile(r"\s*(?:,|\bet\b|\bou\b|\ba\b|\bau\b|-|–|/|&)\s*(?:(?:le\s+)?lot\s+)?0*(\d{1,2})(?!\d|[.,]\d)")
+_APRES_LISTE = re.compile(r"\s*(?:$|[()\[\],.;:!?»\-–]|(?:de|du|des|d|et|ou|sont|seront|ont|auront|est|sera|pour|par|nous|notre"
+                          r"|nos|en|dans|avec|sur|qui|que|le|la|les|l|ainsi|aussi|ensemble)\b)")
+
+
+def _numeros_de_lots(low: str, lots) -> list:
+    """Les positions [(début, fin)] des numéros de lots du dossier cités dans une phrase repliée (voir _LOT_MOT)."""
+    nums = {str(int(n)) for n in (lots or ()) if str(n or "").isdigit()}
+    if not nums:
+        return []
+    out = []
+    for m in _LOT_MOT.finditer(low):
+        if str(int(m.group(2))) not in nums:
+            continue
+        out.append((m.start(), m.end()))
+        if not m.group(1):
+            continue                        # « lot » au singulier : un seul numéro
+        pos = m.end()
+        while True:
+            s = _LOT_SUITE.match(low, pos)
+            if not s or str(int(s.group(1))) not in nums or not _APRES_LISTE.match(low, s.end()):
+                break
+            out.append((s.start(1), s.end()))
+            pos = s.end()
+    return out
 _CERT_GENERIQUE = re.compile(r"\bcertifi(?:e|ee|es|ees|cation|cations)\b|\blabellis(?:e|ee|es|ees)\b|"
                              r"\bagre(?:e|ee|es|ees|ment)\b")
 _MATERIEL = re.compile(
@@ -402,8 +433,9 @@ def _unite_de_ligne(phrase: str) -> str:
     return ""
 
 
-def _facts_in(phrase: str, tableau: bool = False) -> list:
-    """[(fait tel qu'écrit, type, clé de rapprochement)] d'une phrase (ou d'une ligne de tableau)."""
+def _facts_in(phrase: str, tableau: bool = False, lots=()) -> list:
+    """[(fait tel qu'écrit, type, clé de rapprochement)] d'une phrase (ou d'une ligne de tableau). `lots` : les
+    numéros des lots d'un dossier à plusieurs lots (vague 6, J) — leurs mentions ne sont pas des faits."""
     out, taken = [], []
     low = _fold_same(phrase)
     unite_ligne = _unite_de_ligne(phrase) if tableau else ""
@@ -421,11 +453,11 @@ def _facts_in(phrase: str, tableau: bool = False) -> list:
         if m:
             taken.append((m.start(), m.end()))
             out.append((m.group(0), CERTIFICATION, "certifi" if m.group(0).startswith("certif") else m.group(0)[:6]))
-    # Rédaction, vague 6 (J) : « lot 2 », « lots 2 et 3 » désignent un lot du marché (un dossier par lot), jamais une
-    # quantité : ce numéro n'est pas un fait à relire.
-    for m in _LOT_REF.finditer(low):
-        if _free(m.start(), m.end()):
-            taken.append((m.start(), m.end()))
+    # Rédaction, vague 6 (J) : dans un dossier à plusieurs lots, le numéro d'un de SES lots (« lot 2 », « lots 2 et
+    # 3 ») n'est pas un fait à relire ; tout autre nombre l'est comme avant.
+    for a, b in _numeros_de_lots(low, lots):
+        if _free(a, b):
+            taken.append((a, b))
     for m in _NUMBER.finditer(phrase):
         a, b = m.span()
         if not _free(a, b):
@@ -623,7 +655,8 @@ def _meme_fait(cle_nouveau: tuple, cles_anciennes: set, unite_nouveau: str, avec
     return not unite_nouveau or "" in olds or unite_nouveau in olds
 
 
-def a_relire(texte: str, sources_entreprise, *, noms_entreprise=(), section_entreprise: bool = False) -> list:
+def a_relire(texte: str, sources_entreprise, *, noms_entreprise=(), section_entreprise: bool = False,
+             lots=()) -> list:
     """Faits « à relire » d'un texte : [{id, fait, type, phrase, message, statut}], TOUS (au-delà
     de MAX_FAITS, un dernier élément « reste » les compte : l'export reste bloqué). Les sources
     sont celles de l'ENTREPRISE (textes). Le dossier de l'acheteur ne doit JAMAIS y figurer."""
@@ -632,7 +665,7 @@ def a_relire(texte: str, sources_entreprise, *, noms_entreprise=(), section_entr
     for ph, titre, tableau in phrases(texte):
         if titre or not parle_entreprise(ph, noms_entreprise, section_entreprise):
             continue
-        for fait, kind, key in _facts_in(ph, tableau=tableau):
+        for fait, kind, key in _facts_in(ph, tableau=tableau, lots=lots):
             if src.has(kind, key):
                 continue
             fid = _fid(kind, fait, ph)
@@ -655,7 +688,7 @@ def _plafonner(items: list) -> list:
 
 
 def controle(texte: str, sources_entreprise, *, declares=(), anciens=(), reprise: str = "phrase",
-             noms_entreprise=(), section_entreprise: bool = False) -> list:
+             noms_entreprise=(), section_entreprise: bool = False, lots=()) -> list:
     """Faits à relire d'une NOUVELLE version.
     • declares : textes qui ne viennent pas de l'IA (ce que l'utilisateur a écrit, ou le texte de
       départ de « Raccourcir ») — un fait qui y figure n'est pas signalé… sauf s'il était déjà
@@ -667,7 +700,7 @@ def controle(texte: str, sources_entreprise, *, declares=(), anciens=(), reprise
     Rapprochement d'un ancien fait : reprise='fait' (l'IA a réécrit) → même valeur quel que soit
     le mot qui suit ; sinon (l'utilisateur a écrit) → même valeur et unité compatible."""
     src_all = Sources(list(sources_entreprise or []) + list(declares or []))
-    items = a_relire(texte, src_all, noms_entreprise=noms_entreprise, section_entreprise=section_entreprise)
+    items = a_relire(texte, src_all, noms_entreprise=noms_entreprise, section_entreprise=section_entreprise, lots=lots)
     anciens = [x for x in (anciens or []) if isinstance(x, dict) and x.get("type") != RESTE]
     if anciens:
         cles = set()
@@ -678,7 +711,7 @@ def controle(texte: str, sources_entreprise, *, declares=(), anciens=(), reprise
             st = cle_stricte(x)
             unites.setdefault(c, set()).add(st[2] if len(st) == 3 else "")
         strict = a_relire(texte, Sources(sources_entreprise), noms_entreprise=noms_entreprise,
-                          section_entreprise=section_entreprise)
+                          section_entreprise=section_entreprise, lots=lots)
         ids = {x["id"] for x in items}
         for x in strict:
             if x["id"] in ids:

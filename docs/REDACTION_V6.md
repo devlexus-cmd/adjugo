@@ -6,7 +6,8 @@
 Base de production : `a29173a` (branche `feat/produit-acheteur-collectivites`, tête Alembic `z1entretienchantier`).
 
 Ce contrat est écrit par chantier : chaque chantier a sa section (F, H, J), les sections ne se recouvrent pas. La
-section « Ensemble » (à la fin) dit comment les trois chantiers se rencontrent une fois réunis.
+section « Ensemble » dit comment les trois chantiers se rencontrent une fois réunis ; la section « Contre-relecture »
+(à la fin) reprend les remarques des relectures et ce qui a changé (les sections F, J et Ensemble sont tenues à jour).
 
 La doctrine (§ 7) vaut pour tous les chantiers : un fait ne vient jamais de l'IA ; on ne dit jamais « vérifié » ; toute
 phrase du dossier affichée est retrouvée mot pour mot ; tout nombre lu par l'IA dans un document doit y être retrouvé
@@ -56,8 +57,10 @@ dernière fois, l'acheteur a écrit », l'ajout du dossier gagné au savoir-fair
 
 **L'IA PROPOSE (option, bouton « Lire avec l'IA »)** : les notes et commentaires du courrier collé, pour les critères
 connus. Contrôle de chaque proposition, sans IA (`carnet_notes.valider_ia`) :
-- l'« extrait » (ligne du courrier recopiée) doit être retrouvé dans le courrier (casse, accents, espaces et apostrophes
-  tolérés), sinon la note est écartée ;
+- l'« extrait » (ligne du courrier recopiée) doit être retrouvé dans UNE ligne du courrier (casse, accents, espaces et
+  apostrophes tolérés) sans couper un nombre à ses bords (« 2 / 20 » n'est pas dans « 12 / 20 », ni « 6,5 / 40 » dans
+  « 36,5 / 40 », ni « 8 / 10 » dans « 8 / 100 »), sinon la note est écartée ; la même règle vaut à la validation pour
+  garder « lue dans le courrier » ;
 - CHAQUE nombre (note, note maximale, note de l'offre retenue) doit être écrit dans son extrait ; il est rendu sous sa
   forme ÉCRITE dans le courrier (« 36.5 » de l'IA devient « 36,5 » s'il est écrit ainsi) ; un nombre absent : écarté ;
 - une note au-dessus de sa note maximale : écartée ; un critère inconnu : écarté ;
@@ -84,8 +87,10 @@ Toutes les versions citées sont en vigueur depuis le 01/04/2019.
 | R2181-3 (LEGIARTI000038327414) | Section 2 : procédure formalisée | La notification du rejet mentionne ses motifs ; après l'attribution, l'acheteur communique en outre le nom de l'attributaire, les motifs du choix de son offre et la date à partir de laquelle il peut signer le marché (R2182-1). | Courrier en procédure formalisée (« pour comprendre les motifs du rejet de notre offre (article R2181-3) »). |
 | R2181-4 (LEGIARTI000037730001) | Section 2 : procédure formalisée | À la demande d'un soumissionnaire dont l'offre n'a pas été rejetée comme irrégulière, inacceptable ou inappropriée, l'acheteur communique dans les meilleurs délais et au plus tard quinze jours après la réception de la demande : l'avancement des négociations ou du dialogue, ou, si le marché est attribué, les caractéristiques et avantages de l'offre retenue. | Courrier en procédure formalisée (demande fondée sur cet article) ; délai de 15 jours. |
 | R2182-1 (LEGIARTI000037729989) | Chapitre II, section 1 : signature | En procédure formalisée, un délai minimal de onze jours sépare l'envoi de la notification (R2181-1 et R2181-3) de la signature du marché ; seize jours si la notification n'a pas été transmise par voie électronique. | Message « Écrivez vite » en procédure formalisée. |
+| R2182-2 (LEGIARTI000037729987) | Chapitre II, section 1 : signature | Le délai de R2182-1 n'est pas exigé quand le marché est attribué au seul opérateur qui a participé à la consultation, ni pour les marchés subséquents d'un accord-cadre ou les marchés spécifiques d'un système d'acquisition dynamique. | Message en procédure formalisée (« ce délai ne s'applique pas, notamment, à un marché subséquent d'un accord-cadre ») ; marché subséquent repéré sans IA : message dédié et phrase citée. |
 
-Aucun autre numéro d'article n'apparaît dans le courrier ni dans les messages (test : tout « R…-… » produit est l'un de
+R2181-4 et R2182-2 relus de nouveau sur Légifrance le 19/10/2026 (contre-relecture). Aucun autre numéro d'article
+n'apparaît dans le courrier ni dans les messages (test : tout « R…-… » produit est l'un de
 ceux-ci). La jurisprudence de l'étude (§ 5.2 : TA Paris 2511568, CE 490697) n'est pas citée dans le courrier : elle
 fonde seulement le message « à temps pour pouvoir contester avant la signature » et la demande des notes par critère
 et sous-critère.
@@ -95,8 +100,17 @@ Messages (constantes `MSG_DELAI`, `MSG_ADAPTEE_NOTES`) :
   (article R2181-2), et l'information doit arriver à temps pour pouvoir contester avant la signature du marché. »
   puis « En procédure adaptée, les notes sont à demander, pas toujours obtenues : le code oblige l'acheteur à donner
   les motifs du rejet, pas le détail des notes. » ;
-- formalisée : même début (article R2181-4), puis « En procédure formalisée, le marché peut être signé 11 jours après
-  l'envoi du courrier de rejet (16 jours s'il n'a pas été envoyé par voie électronique, article R2182-1). » ;
+- formalisée : « Écrivez vite : si votre offre n'a pas été écartée comme irrégulière, inacceptable ou inappropriée,
+  l'acheteur doit vous répondre au plus tard 15 jours après la réception de votre demande (article R2181-4), et
+  l'information doit arriver à temps pour pouvoir contester avant la signature du marché. En procédure formalisée, le
+  marché ne peut en principe pas être signé moins de 11 jours après l'envoi du courrier de rejet (16 jours s'il n'a pas
+  été envoyé par voie électronique, article R2182-1) ; ce délai ne s'applique pas, notamment, à un marché subséquent
+  d'un accord-cadre (article R2182-2). » ; le courrier formalisé reprend la condition (« Si notre offre n'a pas été
+  écartée comme irrégulière, inacceptable ou inappropriée, nous vous demandons, en application de l'article
+  R2181-4… ») ;
+- formalisée, marché subséquent d'un accord-cadre (« marché subséquent » lu sans IA dans le règlement, sinon dans
+  l'analyse ; phrase citée sous le message) : `MSG_DELAI_SUBSEQUENT` — la réponse sous 15 jours (R2181-4, même
+  condition) et « le délai de 11 jours avant la signature ne s'applique pas à ce marché (article R2182-2) » ;
 - inconnue : même début, sans article, puis « Choisissez la procédure du marché pour citer le bon article. ».
 
 ### F.3 Données — `projects.carnet_notes` (JSON, NULL = rien)
@@ -154,17 +168,21 @@ pour un marché alloti, `lot_requis` — section Ensemble, E.3).
   marché lue par l'analyse (« Lu dans l'analyse du marché : vérifiez la procédure ») ; les deux procédures dans le même
   dossier, ou rien : « Je ne sais pas ». « Le présent appel d'offres » ne dit rien (mot courant pour une procédure
   adaptée). L'utilisateur peut toujours changer la procédure (liste : adaptée, formalisée, je ne sais pas).
-- Le courrier : objet, texte modifiable dans l'écran, critères de la grille nommés, référence de l'avis, signature
-  (représentant légal et entreprise du profil). En groupement : « l'offre du groupement dont nous sommes le chef de
-  file ». Actions : « Copier le courrier » (presse-papiers), « Ouvrir dans ma messagerie » (lien `mailto:` avec
+- Le courrier : objet, texte modifiable dans l'écran, critères nommés SEULEMENT s'ils viennent de « Comment vous serez
+  noté » (phrase retrouvée dans le règlement ; ceux de l'analyse, « à vérifier », ne partent pas chez l'acheteur),
+  référence de l'avis, signature (représentant légal et entreprise du profil). En groupement : « l'offre du groupement
+  dont nous sommes le chef de file » — même règle que l'atelier : des partenaires invités (invitations actives), ou un
+  groupement retenu par l'utilisateur (plan « auto » faux, au moins un partenaire) ; jamais le plan proposé
+  automatiquement après l'analyse. Actions : « Copier le courrier » (presse-papiers), « Ouvrir dans ma messagerie » (lien `mailto:` avec
   l'adresse de l'acheteur lue dans l'analyse, « vérifiez-la »), « J'ai envoyé ma demande ». Adjugo n'envoie RIEN (test :
   aucun courriel pendant la préparation).
 - Rappel dans l'application, 2 jours après le passage à « Perdu » et jusqu'à 60 jours : sur la page du marché (bandeau,
   « Ne plus me le rappeler ») et sur le tableau de bord (« Demandez vos notes : <marché> », ouvre le marché), tant que la
   demande n'est pas marquée envoyée et que les notes ne sont pas saisies.
 - Courriel de rappel (`envoyer_rappels`, appelé par le cron existant de la veille `POST /api/admin/run-tender-alerts`) :
-  une seule fois par marché, entre 2 et 14 jours après le passage à « Perdu », au compte qui l'a passé à « Perdu »,
-  seulement s'il a au moins une alerte active (recherche sauvegardée active, fréquence autre que « manuelle ») ; jamais
+  une seule fois par marché, entre 2 et 14 jours après le passage à « Perdu », au compte qui l'a passé à « Perdu »
+  s'il est ENCORE membre de l'organisation du marché (sinon au titulaire actuel du marché : ses marchés lui ont été
+  réassignés au retrait ; jamais à un ancien membre), seulement s'il a au moins une alerte active (recherche sauvegardée active, fréquence autre que « manuelle ») ; jamais
   au compte de démonstration ; jamais à l'acheteur (le courriel ne contient pas son adresse). Noté seulement s'il est
   parti (rejouable une fois l'envoi configuré).
 
@@ -189,9 +207,13 @@ pour un marché alloti, `lot_requis` — section Ensemble, E.3).
   collé). La famille de chaque ligne est CONFIRMÉE par cet enregistrement. Inscrit au journal chaîné (`carnet.notes`,
   après le commit). Les lignes vides sont ignorées ; tout vider retire les notes.
 - Après validation : chaque ligne (note / maximum, %, offre retenue et son %, commentaire, famille, origine ; en
-  groupement « partie rédigée par <partenaire> »), la note d'ensemble quand chaque critère a sa note, et le CONSTAT :
-  « C'est sur « X » que ce marché a perdu le plus de points : 6 / 10 (60 %). » (la feuille au plus faible pourcentage ;
-  un critère dont un sous-critère est noté compte par ses sous-critères).
+  groupement « partie rédigée par <partenaire> »), la note d'ensemble quand CHAQUE critère du formulaire (niveau 1 :
+  ceux de « Comment vous serez noté » ou de l'analyse, et les critères ajoutés) a sa note — un critère sans sa note dont
+  chaque sous-critère est noté compte pour leur somme ; sinon aucune somme, et « Note d'ensemble : 1 critère noté sur 2.
+  Elle s'affiche quand chaque critère a sa note (ou chacun de ses sous-critères). » (`notes.messages_total`) — et le
+  CONSTAT, dit tel qu'il est calculé : « C'est sur « X » que ce marché a obtenu sa note la plus faible, en pourcentage
+  de la note maximale : 6 / 10 (60 %). » (la feuille au plus faible pourcentage ; un critère dont un sous-critère est
+  noté compte par ses sous-critères ; ce n'est pas forcément là que le plus de points ont été perdus).
 
 ### F.7 « Où vous perdez des points » (point 3)
 
@@ -208,8 +230,8 @@ pour un marché alloti, `lot_requis` — section Ensemble, E.3).
 - Une moyenne n'est affichée qu'à partir de 3 marchés (`MOYENNE_MIN`) ; en dessous : « 2 marchés : moyenne à partir de
   3 marchés » et les valeurs une à une. Même règle pour la moyenne de l'offre retenue (marchés où elle est donnée pour
   toute la famille).
-- Constat : « Parmi les familles notées sur au moins 3 marchés, c'est en « Technique » que vous perdez le plus de points
-  (84 % de la note maximale en moyenne). »
+- Constat : « Parmi les familles notées sur au moins 3 marchés, c'est en « Technique » que vos notes sont les plus
+  faibles (84 % de la note maximale en moyenne). »
 - « Chercher un partenaire qui couvre ce manque » (hors prix et « autre ») : ouvre l'annuaire du réseau de partenaires ;
   la bulle dit « un constat, pas une recommandation ». Aucun filtre n'est déduit.
 - Données de l'organisation seulement (marchés des membres, hors corbeille) : aucune statistique entre clients.
@@ -280,6 +302,8 @@ reçoivent des notes FICTIVES.
 - Atelier : bloc « La dernière fois, l'acheteur a écrit : » sous les sous-critères de la partie.
 - Espace du partenaire : « Les notes du marché » après « Le dossier assemblé » (gabarit `partenaireHtml` de
   `carnet-notes.js`, chargé par app.html et invite.html avec son empreinte SRI).
+- Formulaire : un critère ajouté montre le champ « Critère » (jamais, en plus, son titre en lecture), puis, sur un
+  marché à plusieurs lots, le choix de son lot (`cnLigneTete`) ; un critère connu montre son titre et son poids.
 - Tout texte passe par `cnEsc` ; bulles (i) sur chaque bouton qui demande une explication ; à 375 px la grille du
   formulaire passe sur deux colonnes et les boutons s'étirent.
 
@@ -627,7 +651,7 @@ Quatre cas, dits à l'écran (`grille.mode`, `grille.message`) :
 | `commune` | aucune mention de lot dans la zone des critères | la grille du règlement, telle quelle ; la phrase « Pour chacun des lots… » si elle existe |
 | `propre` | des critères écrits pour CE lot | le poids rattaché au critère dans la partie du lot (même règle de rattachement que la grille : `_attribute`), sa phrase mot pour mot depuis la mention du lot (« Pour le lot 3 : valeur technique 40 % ; prix 60 %. ») ; un critère absent de la partie du lot : « à vérifier », hors du plan de ce lot, avec la raison ; un sous-critère n'est repris que s'il figure aussi dans la partie du lot |
 | `generale` | d'autres lots ont leurs critères, pas celui-ci | la grille générale, et « vérifiez dans le règlement » |
-| `illisible` | deux lots cités sur la même ligne sans poids entre eux (tableau « Critère \| Lot 1 \| Lot 2 ») | les critères SANS poids (jamais un poids deviné), « vérifiez le poids de chaque critère pour ce lot » |
+| `illisible` | deux lots cités sur la même ligne sans poids entre eux (tableau « Critère \| Lot 1 \| Lot 2 »), ou un poids écrit JUSTE AVANT la mention d'un lot, sur la même ligne (« 60 % pour le lot 2, 40 % pour le lot 3 », « 60 % (lot 2) ») : la lecture d'une mention à la suivante donnerait ce poids au lot suivant | les critères SANS poids (jamais un poids deviné ni celui d'un autre lot), « vérifiez le poids de chaque critère pour ce lot » |
 
 Le contrôle du total (« Les poids retrouvés font bien 100 % au total ») est refait pour chaque lot. Un choix de
 l'utilisateur dans « Comment vous serez noté » vaut pour les lots : un critère écarté l'est partout ; un critère
@@ -635,7 +659,13 @@ confirmé entre dans le plan de chaque lot, sans reprendre un poids lu ailleurs.
 
 **Limites par lot** (`limites_du_lot`) : une limite dont la phrase cite un lot (« Pour le lot 3, le mémoire compte 5
 pages au maximum ») ne vaut que pour lui et remplace la limite générale du même type ; une limite qui ne cite aucun
-lot (« 6 pages au maximum par lot ») vaut pour chacun. La police vaut pour tous.
+lot (« 6 pages au maximum par lot ») vaut pour chacun. La police vaut pour tous. Une phrase qui cite PLUSIEURS lots
+(« 6 pages au maximum pour le lot 2 et 3 pages au maximum pour le lot 3 ») : chaque valeur va au lot cité juste après
+elle, sinon juste avant (« pour le lot 2, 6 pages ; pour le lot 3, 3 pages »), seulement si toutes les valeurs de la
+phrase s'attribuent ainsi et qu'aucun lot n'en reçoit deux du même type ; sinon (« respectivement », valeurs
+groupées) aucune n'est imposée : elles sont dites « selon le lot » parmi les limites qu'Adjugo ne compte pas
+(`objet: selon_lot`). Dans une liste de lots, un nombre suivi de ce qu'il mesure (« lot 2 et 3 pages ») n'est pas un
+lot (`_PAS_UNE_MESURE`).
 
 ### J.5 Le plan : parties communes et parties propres à chaque lot
 
@@ -656,7 +686,10 @@ l'ordre de SON plan. Numérotation : celle du dossier du lot (les sous-critères
 le même titre : « 1.1 Méthodologie », « 1.2 Moyens », « 1.3 Gestion environnementale ») ; dans la liste de l'atelier,
 chaque partie porte le numéro de son lot (une partie commune : celui du premier lot), et le titre d'une partie
 propre dit son lot (« 1.1 Méthodologie d'exécution (lot 3) »). Les sous-critères d'un critère restent ensemble dans
-le dossier de chaque lot (un déplacement qui les séparerait est refusé : 409 `groupe_sous_criteres`).
+le dossier de chaque lot (`_coupes`, `_place_sans_couper`) : une partie AJOUTÉE après un sous-critère, ou DÉPLACÉE,
+passe le groupe dans le dossier de chaque lot concerné (tous pour une partie commune, le sien sinon) ; une partie
+REMISE rejoint ses sœurs de chaque lot ; le déplacement d'une partie de sous-critère qui couperait un groupe est
+refusé (409 `groupe_sous_criteres`).
 
 Un dossier à plusieurs lots n'est jamais tronqué en silence : plus de 60 parties → 422 `trop_de_parties` avec la
 raison. Les parties tirées du groupement (vague 4) sont communes à tous les lots.
@@ -665,7 +698,10 @@ raison. Les parties tirées du groupement (vague 4) sont communes à tous les lo
 - commune → propre : la partie garde son texte et ses versions pour le premier lot ; une partie vide « à écrire » est
   ajoutée pour chacun des autres (même intitulé, critère, poids de chaque lot, limite) ;
 - propre → commune : la partie choisie garde son texte et devient commune ; la même partie des autres lots est
-  RETIRÉE (jamais supprimée, remettable) — 409 `portee_a_confirmer` si l'une a du texte, puis `remplacer: true` ;
+  RETIRÉE (jamais supprimée, remettable) — 409 `portee_a_confirmer` si l'une a du texte, puis `remplacer: true` ; la
+  partie commune prend, dans le dossier de CHAQUE lot, la place qu'y avait la partie de ce lot (l'ordre du règlement,
+  « 1.1 Méthodologie » puis « 1.2 Moyens », ne change dans aucun fichier) ; si les lots ne la rangent pas au même
+  endroit : 409 `portee_ordre` (rien n'est changé, le message dit de la placer d'abord au même endroit) ;
 - refus : dossier à un seul lot (409 `un_seul_lot`), partie tirée du groupement (409 `partie_du_groupement`), partie
   d'un partenaire, ou dont une sœur est d'un partenaire (403 `partie_d_un_partenaire`), rédaction en cours (409).
 
@@ -741,7 +777,10 @@ le notent) et reprend les poids de chaque lot.
   dans un fichier nommé « Lot X - Mémoire technique - Nom du candidat » », repérée sans IA, avec sa phrase) est
   suivie quand Adjugo sait remplir chacun de ses champs — numéro du lot (« X », « XX » → « 02 », « n », « [n° du
   lot] »…), nom du candidat (« Nom du candidat », « [raison sociale] », « NomEntreprise »… → le nom de l'entreprise
-  du profil), intitulé du lot ; une règle sans numéro de lot reçoit « - Lot 2 » (un fichier par lot). Un champ
+  du profil ; « [raison sociale] » seul aussi), intitulé du lot ; une règle sans numéro de lot reçoit « - Lot 2 » (un
+  fichier par lot) ; une extension écrite dans la règle (« LOTXX_MT_NomCandidat.pdf ») n'entre pas dans le nom
+  (l'export ajoute celle du format choisi) et le message dit « Le règlement demande un fichier « .pdf » : exportez
+  dans ce format. ». Un champ
   inconnu (« [SIRET] ») ou un nom d'entreprise absent : nom par défaut et message (« … qu'Adjugo ne sait pas
   compléter : renommez le fichier avant de le déposer », « renseignez le nom de votre entreprise »). Sans règle :
   « Mémoire technique - Lot 2 - Couverture et zinguerie » (le nom du document est celui du règlement, comme avant).
@@ -756,7 +795,9 @@ le notent) et reprend les poids de chaque lot.
   journal chaîné (`atelier.export`, méta `lot`).
 - **Dossier commun** (« Préparer mes documents », ZIP) : un fichier Word et un PDF PAR LOT (clés `docx:2`,
   `pdf:2`), chacun soumis aux règles de l'export de son lot ; un lot bloqué sans dérogation n'est pas joint
-  (« BLOQUANT — Lot 2 — … : dossier de présentation non joint : … ») ; versions validées de préférence, comme avant.
+  (« BLOQUANT — Lot 2 — … : dossier de présentation non joint : … ») et le fichier de ce lot exporté plus tôt depuis
+  l'atelier RESTE dans le dossier du marché (`garder`, comme un dossier à un seul lot bloqué : rien n'est retiré) ;
+  versions validées de préférence, comme avant.
 
 ### J.9 La rédaction (IA)
 
@@ -769,8 +810,13 @@ le notent) et reprend les poids de chaque lot.
   dossier de chacun ; n'y parle d'aucun lot en particulier. » ; « Autres parties du dossier » : celles du dossier
   du lot (avec ses numéros), ou les intitulés de toutes (une fois chacun) pour une partie commune. L'intitulé d'un
   lot vient du règlement (public) ; rien de l'entreprise n'est ajouté.
-- **Contrôle des faits** : « lot 2 », « lots 2 et 3 », « lot n° 3 » désignent un lot du marché, jamais une quantité :
-  ce numéro n'est pas un fait à relire (`faits_a_relire._LOT_REF`). Tout autre nombre reste contrôlé comme avant.
+- **Contrôle des faits** : dans un dossier à PLUSIEURS lots seulement, le numéro d'un de SES lots (« lot 2 », « lot n°
+  3 », « lots 2 et 3 ») n'est pas un fait à relire (`faits_a_relire._numeros_de_lots`, `lots` passé par
+  `Contexte.lots` / `ContextePartenaire.lots` à `faits_sources.controler`) : après « lot » au singulier, le seul numéro
+  qui suit ; après « lots », la liste, arrêtée au premier numéro suivi d'autre chose qu'une ponctuation ou un mot de
+  liaison. « Pour le lot 2, 8 semaines », « Lot 3 - 2 chefs », « Le lot 3 a 5 semaines » : 8 semaines, 2 chefs et 5
+  semaines restent à relire. Marché simple (ou réponse à un seul lot) : rien ne change, « le lot 12 du collège » garde
+  son « 12 » à relire. Tout autre nombre reste contrôlé comme avant.
 
 ### J.10 L'entretien chantier
 
@@ -877,7 +923,8 @@ fichier est celle de CE fichier.
 - `GET …/preparation?lot=2` ; sans lot sur un dossier à plusieurs lots : 422 `lot_requis` ; un lot hors du dossier, ou
   un lot sur un dossier à un seul lot : 422 `lot_inconnu` (mêmes règles que l'export). `page.lot = {numero, libelle}`
   (null pour un dossier à un seul lot), `lot` à la racine.
-- Écran : dans « Voir la page », « Page du fichier : Lot 2 · Lot 3 » (le premier lot par défaut) ; la bulle de la case
+- Écran : dans « Voir la page », « Page du fichier : Lot 2 · Lot 3 » (le premier lot par défaut ; deux lots choisis vite
+  l'un après l'autre : seule la réponse du dernier choix est montrée, `atl.prep.seq`) ; la bulle de la case
   ajoute « Un fichier par lot : la case vaut pour chaque fichier exporté, et chaque page ne parle que des parties de
   son lot. » La case vaut pour l'export de chaque lot (`page_preparation` envoyé avec `lot`).
 - Journal et dernier export : `dernier_export["lots"][n].page_preparation`, `meta.lot` et `meta.page_preparation`.
@@ -887,17 +934,22 @@ fichier est celle de CE fichier.
 L'acheteur note chaque lot à part (chaque lot est un marché). Pour un marché dont le dossier de présentation de
 l'organisation répond à plusieurs lots (`atelier_lots.actif`) :
 - **Formulaire** : les critères et sous-critères sont répétés pour chaque lot, avec la grille de CE lot quand le
-  règlement en écrit une (J.4), sinon celle du marché ; clés propres au lot (`L2-c1`, `L2-c1.1`), titres « Lot 2 — … »
+  règlement en écrit une (J.4 : celle que le dossier garde, `plan_meta.lots.grilles`, lue par `_lignes_du_lot` —
+  critères du plan de ce lot et leurs poids pour lui), sinon celle du marché ; clés propres au lot (`L2-c1`, `L2-c1.1`), titres « Lot 2 — … »
   à l'écran ; message « Vous avez répondu à plusieurs lots : l'acheteur note chaque lot à part, saisissez les notes lot
-  par lot. ». Un critère ajouté choisit son lot (422 `lot_requis` sinon) ; le lot d'un critère connu est le sien,
+  par lot. ». Un critère ajouté choisit son lot (422 `lot_requis` sinon ; une ligne vide est ignorée AVANT, comme à
+  l'écran) ; le lot d'un critère connu est le sien,
   jamais celui envoyé par l'écran. Au plus 40 lignes par lot.
 - **Courrier « Demandez vos notes »** : « … au titre des lots auxquels nous avons répondu : lot 2 — … ; lot 3 — … »
   et « … pour chacun de ces lots et pour chaque critère et sous-critère … » ; message à l'écran : « Vous avez répondu à
   plusieurs lots : le courrier les cite tous. Retirez celui que vous avez remporté, le cas échéant. » Aucun autre
   article (la liste de F.2 est inchangée).
-- **Lecture sans IA** : le courrier est découpé par les lignes qui citent UN SEUL des lots du dossier (« Lot 2 -
-  Couverture », « LOT N° 03 ») ; une ligne qui en cite plusieurs (« vos notes pour les lots 2 et 3 ») ne change rien ;
-  un courrier qui ne cite qu'un de ces lots en parle d'un bout à l'autre. Une note n'est rapprochée que des critères de
+- **Lecture sans IA** : le courrier est découpé par les lignes de TITRE qui citent UN SEUL des lots du dossier : une
+  ligne qui commence par le lot (« Lot 2 - Couverture », « 2. LOT N° 03 – Étanchéité »), une annonce (« Pour le lot 3
+  — Étanchéité », « Concernant le lot 2 : ») ou une ligne qui annonce la suite (« … : ») ; l'objet du courrier, s'il
+  ne cite qu'un lot, vaut jusqu'au premier titre ; une mention dans une phrase (« Votre offre pour le lot 2 fait
+  l'objet d'un courrier séparé. ») ne change rien, ni une ligne qui cite plusieurs lots ; sans titre, le courrier parle
+  du lot de son objet, sinon du seul lot qu'il cite. Une note n'est rapprochée que des critères de
   SON lot. Aucun lot lisible : aucune proposition, message « Le courrier ne dit pas à quel lot se rapporte chaque note
   (aucune ligne ne cite un seul de vos lots) : saisissez les notes lot par lot. »
 - **Lecture avec l'IA** : la liste des critères porte le lot (« [L2-c1.1] (Lot 2 — …) — Méthodologie… ») et la
@@ -906,8 +958,8 @@ l'organisation répond à plusieurs lots (`atelier_lots.actif`) :
   la partie du courrier de CE lot, sinon écartés. Courrier sans lot lisible : aucun appel, rien de décompté.
 - **Validation** : « lue dans le courrier » n'est gardé que si la ligne citée est dans la partie de SON lot ; les
   lignes sont rangées lot par lot ; chaque ligne garde `lot` et `lot_libelle`.
-- **Notes affichées** : titres par lot, « Note d'ensemble, lot 2 — … » pour chaque lot (`notes.totaux`), jamais une
-  somme de deux lots (`notes.total` vaut null) ; le constat dit le lot (« … « Méthodologie d'exécution » (lot 2 — …)
+- **Notes affichées** : titres par lot, « Note d'ensemble, lot 2 — … » pour chaque lot (`notes.totaux`, seulement
+  quand chaque critère de CE lot a sa note, F.6), jamais une somme de deux lots (`notes.total` vaut null) ; le constat dit le lot (« … « Méthodologie d'exécution » (lot 2 — …)
   … »).
 - **« Où vous perdez des points »** : le marché alloti compte UNE fois (ses lots réunis, par famille) ; la règle des 3
   marchés est inchangée.
@@ -967,3 +1019,65 @@ nouvelle : l'inventaire de `tests/test_demo_sans_cout.py` est inchangé.
   le marché alloti écrit par le code réuni (200) ; schéma identique à une base neuve ; retour arrière et remontée.
   Tests rejoués sur la base montée : 445 verts et les mêmes 63 échecs propres à SQLite que le code de production sur la
   même liste dans le même ordre (aucun dans un fichier de la vague 6).
+
+---
+
+## Contre-relecture (19/10/2026)
+
+Quatre relectures du code réuni (`901828c`) : exactitude juridique, cloisonnement des données, lots et parcours, écrans.
+Production toujours `a29173a` (aucune fusion nécessaire). Chaque remarque a été reproduite (scripts de la revue et tests
+par les routes), corrigée, et couverte par un test qui échouait sur `901828c` : `tests/test_redaction_v6_contre_relecture.py`
+(37 tests, tous en échec sur `901828c`, tous verts ici). Aucune remarque rejetée ; les doublons sont traités ensemble.
+
+| Remarques | Gravité | Ce qui a changé | Sections |
+|---|---|---|---|
+| Le numéro d'un lot prenait aussi le nombre qui suit (« lot 2, 8 semaines », « Lot 3 - 2 chefs », « lot 3 a 5 semaines ») ; et toute mention « lot 12 » échappait au contrôle, marché simple compris (trois relectures) | bloquant, majeur | `_LOT_REF` remplacé par `_numeros_de_lots` : numéros des lots de CE dossier seulement (passés par `lots`), un seul numéro après « lot », une liste après « lots » arrêtée au premier nombre suivi d'autre chose qu'une ponctuation ou un mot de liaison ; marché simple : comportement de la production | J.9 |
+| Un morceau d'un autre nombre passait pour « retrouvé tel quel » (2 dans 12, 6,5 dans 36,5, 10 dans 100) | majeur | `_dans_ligne` : extrait dans UNE ligne du courrier, sans couper un nombre à ses bords, à la lecture avec l'IA et à la validation | F.1 |
+| Note d'ensemble partielle présentée comme celle de l'offre | majeur | somme sur les critères du formulaire, sous-critères comptés pour leur critère ; sinon rien et « k critères notés sur n » ; même règle lot par lot et chez le partenaire | F.6, E.3 |
+| « l'offre du groupement » d'après le plan proposé automatiquement ; groupement à deux non reconnu | majeur | invitations actives, ou groupement retenu (« auto » faux, un partenaire au moins) | F.5 |
+| « perdu le plus de points » pour le plus faible pourcentage (faux dans la démo) | majeur | constat dit tel qu'il est calculé, au marché et au tableau de bord | F.6, F.7 |
+| Courrier : une mention de lot dans une phrase changeait de lot | mineur | seules les lignes de titre (ou l'objet, jusqu'au premier titre) changent de lot | E.3 |
+| Procédure formalisée : condition de R2181-4 et exception de R2182-2 absentes | mineur | condition dans le message et le courrier ; « marché subséquent » repéré sans IA ; R2182-2 relu et ajouté au tableau | F.2 |
+| Courrier nommant des critères lus par l'analyse | mineur | seuls ceux de « Comment vous serez noté » sont nommés | F.5 |
+| Courriel de rappel envoyé à un membre retiré | majeur | destinataire encore membre de l'organisation, sinon le titulaire actuel du marché | F.5 |
+| Formulaire d'un marché simple : critère ajouté avec son titre en double (démo) (deux relectures) | majeur | `cnLigneTete` : le champ « Critère » OU le titre, puis le choix du lot à part | F.13 |
+| Grille par lot : poids écrit avant la mention du lot donné au lot suivant | majeur | zone lue « illisible » : critères sans poids, jamais le poids d'un autre lot | J.4 |
+| Relevé de notes par lot : la grille du marché au lieu de celle du lot | majeur | `_lignes_du_lot` lit la grille gardée par le dossier ; `grille_out` garde l'identifiant des sous-critères | E.3 |
+| Partie ajoutée, déplacée ou remise au milieu des sous-critères dans le dossier d'un lot | majeur | `_coupes` / `_place_sans_couper` dans le dossier de chaque lot | J.5 |
+| Limites : une phrase qui cite deux lots donnait les deux valeurs à chaque lot | majeur | chaque valeur au lot cité à côté d'elle, sinon « selon le lot » (non contrôlée) ; une liste de lots s'arrête à un nombre suivi de ce qu'il mesure | J.4 |
+| « Préparer mes documents » supprimait le fichier d'un lot bloqué | majeur | fichiers du lot non joint gardés (`garder`) | J.8 |
+| Partie rendue commune : ordre du règlement changé dans les autres lots | mineur | la partie commune prend la place qu'avait celle de chaque lot ; lots en désaccord : 409 `portee_ordre` | J.5 |
+| Nom du fichier : double extension ; « [raison sociale] » non rempli | mineur | extension retirée du modèle (et dite) ; « [raison sociale] » reconnu | J.8 |
+| « Page du fichier » : réponse en retard d'un autre lot | mineur | garde de séquence (`atl.prep.seq`) | E.2 |
+| `lot_requis` sur une ligne vide (écran et serveur en désaccord) | mineur | la ligne vide est ignorée avant d'exiger son lot | E.3 |
+
+### Choix à dire à Eliot
+
+1. **Poids écrit avant la mention du lot** (« 60 % pour le lot 2, 40 % pour le lot 3 ») : lu comme un tableau, sans
+   poids (« vérifiez le poids de chaque critère pour ce lot »), plutôt qu'un rattachement au critère le plus proche
+   (même choix qu'en J.14 : aucun poids deviné).
+2. **Note d'ensemble** : rien plutôt qu'une somme partielle ; un critère de l'analyse qui n'existe pas dans le courrier
+   empêche donc la note d'ensemble (le message dit combien de critères sont notés).
+3. **Rappel par courriel** : un membre retiré ne reçoit rien ; le titulaire actuel du marché (le propriétaire, qui a
+   repris ses marchés) le reçoit s'il a des alertes.
+4. **Juridique** : le message de délai cite maintenant R2182-2 (relu sur Légifrance) ; texte toujours à faire relire
+   par un conseil avec les pages juridiques (non touchées).
+
+### Vérifications
+
+- Tests : `tests/test_redaction_v6_contre_relecture.py` (37 tests : les 37 échouent sur `901828c`, extrait par `git
+  archive`) ; tests existants mis à jour (R2182-2 permis, groupement retenu, garde de séquence, numéros de lots passés
+  au contrôle) ; suite complète : 1 956 tests, tous verts (SQLite, `TZ=UTC`, IA simulée, aucun réseau).
+- SRI à jour (`scripts/sri_update.py --check`), `node --check` (app.js, carnet-notes.js, redaction-partenaire.js).
+- Navigateur (démo locale, 375 px, aucun débordement, aucune erreur de console) : Limauzac — « Modifier les notes »
+  sans titre en double, note d'ensemble 83,8 / 100 (84 %), constat « note la plus faible, en pourcentage », courrier
+  formalisé avec la condition de R2181-4 et le message R2182-2, sans liste de critères de l'analyse ; tableau de bord :
+  « vos notes sont les plus faibles » (84 %) ; Trémorvan : page du fichier du lot 3, aucun fait à relire, lots
+  inchangés.
+- Postgres 16 depuis l'état exact de la production (`a29173a` extrait par `git archive`, tête `z1entretienchantier`,
+  données créées par son code ; script `scratchpad/pgtest/run_v6_contre_relecture_depuis_prod.py`, copie de celui de
+  l'Ensemble) : 32 contrôles verts (une seule révision, aucune donnée perdue, rejeu sans effet, parcours F + H + J sur
+  la base montée, code de production relancé avant et après le retour arrière, schéma identique à une base neuve) ;
+  tests rejoués sur la base montée : 482 verts (dont les 37 de la contre-relecture) et les mêmes 63 échecs propres à
+  SQLite que le code de production, sur la même liste dans le même ordre (aucun dans un fichier de la vague 6 ni de la
+  démo).

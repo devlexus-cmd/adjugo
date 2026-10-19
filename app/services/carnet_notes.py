@@ -126,14 +126,23 @@ MSG_DELAI = {
     ADAPTEE: ("Écrivez vite : l'acheteur doit vous répondre dans les 15 jours qui suivent la réception de votre "
               "demande (article R2181-2), et l'information doit arriver à temps pour pouvoir contester avant la "
               "signature du marché."),
-    FORMALISEE: ("Écrivez vite : l'acheteur doit vous répondre dans les 15 jours qui suivent la réception de votre "
-                 "demande (article R2181-4), et l'information doit arriver à temps pour pouvoir contester avant la "
-                 "signature du marché. En procédure formalisée, le marché peut être signé 11 jours après l'envoi du "
-                 "courrier de rejet (16 jours s'il n'a pas été envoyé par voie électronique, article R2182-1)."),
+    FORMALISEE: ("Écrivez vite : si votre offre n'a pas été écartée comme irrégulière, inacceptable ou inappropriée, "
+                 "l'acheteur doit vous répondre au plus tard 15 jours après la réception de votre demande (article "
+                 "R2181-4), et l'information doit arriver à temps pour pouvoir contester avant la signature du marché. "
+                 "En procédure formalisée, le marché ne peut en principe pas être signé moins de 11 jours après l'envoi "
+                 "du courrier de rejet (16 jours s'il n'a pas été envoyé par voie électronique, article R2182-1) ; ce "
+                 "délai ne s'applique pas, notamment, à un marché subséquent d'un accord-cadre (article R2182-2)."),
     INCONNUE: ("Écrivez vite : l'acheteur doit vous répondre dans les 15 jours qui suivent la réception de votre "
                "demande, et l'information doit arriver à temps pour pouvoir contester avant la signature du marché. "
                "Choisissez la procédure du marché pour citer le bon article."),
 }
+# Marché subséquent d'un accord-cadre (repéré sans IA dans le règlement) : le délai de 11 jours ne s'applique pas
+# (article R2182-2, relu sur Légifrance le 19/10/2026).
+MSG_DELAI_SUBSEQUENT = ("Écrivez vite : si votre offre n'a pas été écartée comme irrégulière, inacceptable ou "
+                        "inappropriée, l'acheteur doit vous répondre au plus tard 15 jours après la réception de votre "
+                        "demande (article R2181-4). Le règlement parle d'un marché subséquent d'un accord-cadre : le "
+                        "délai de 11 jours avant la signature ne s'applique pas à ce marché (article R2182-2), il peut "
+                        "donc être signé sans attendre.")
 MSG_ADAPTEE_NOTES = ("En procédure adaptée, les notes sont à demander, pas toujours obtenues : le code oblige "
                      "l'acheteur à donner les motifs du rejet, pas le détail des notes.")
 MSG_RAPPEL = ("Ce marché est passé à « Perdu » il y a plus de 2 jours : demandez vos notes à l'acheteur tant qu'il "
@@ -267,6 +276,34 @@ def _dans(courrier: str, extrait: str, min_len: int = 6) -> bool:
     return len(e) >= min_len and e in _fold(courrier)
 
 
+def _bord_ok(f: str, i: int, j: int) -> bool:
+    """L'extrait f[i:j] ne coupe aucun nombre à ses bords : un chiffre au bord n'est collé ni à un autre chiffre ni à
+    « ,5 » / « .5 » (« 2 / 20 » n'est pas dans « 12 / 20 », ni « 6,5 / 40 » dans « 36,5 / 40 », ni « 8 / 10 » dans
+    « 8 / 100 »)."""
+    if f[i].isdigit() and i > 0 and (f[i - 1].isdigit() or (f[i - 1] in ",." and i > 1 and f[i - 2].isdigit())):
+        return False
+    if f[j - 1].isdigit() and j < len(f) and (f[j].isdigit() or (f[j] in ",." and j + 1 < len(f) and f[j + 1].isdigit())):
+        return False
+    return True
+
+
+def _dans_ligne(courrier: str, extrait: str, min_len: int = 6) -> bool:
+    """L'extrait est-il écrit dans UNE ligne du courrier, mot pour mot (casse, accents, espaces et apostrophes
+    tolérés), sans couper un nombre à ses bords ? (Une note n'est « lue dans le courrier » que dans ces conditions :
+    chaque nombre de l'extrait est alors un nombre entier du courrier.)"""
+    e = _fold(extrait).strip(" «»\"'")
+    if len(e) < min_len:
+        return False
+    for brut in str(courrier or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        f = _fold(brut)
+        i = f.find(e)
+        while i >= 0:
+            if _bord_ok(f, i, i + len(e)):
+                return True
+            i = f.find(e, i + 1)
+    return False
+
+
 # ── Lecture du carnet ────────────────────────────────────────────────────────────────
 
 def carnet(project) -> dict:
@@ -349,13 +386,31 @@ def _max_du_poids(poids: str) -> Optional[float]:
     return float(w["valeur"]) if w and w.get("unite") == "points" else None
 
 
+def _lignes_du_lot(grille: dict) -> list:
+    """Les critères de la grille d'un lot telle que le dossier la garde (`atelier_lots.grille_out` : {mode, lignes}) :
+    ceux du plan de CE lot, avec le poids écrit pour lui et ses sous-critères."""
+    out = []
+    for ln in grille.get("lignes") or []:
+        if not isinstance(ln, dict) or not ln.get("dans_le_plan"):
+            continue
+        out.append({"id": str(ln.get("id") or "")[:20], "critere": _flat(ln.get("critere")), "poids": _flat(ln.get("poids")),
+                    "sous_criteres": [{"id": str(x.get("id") or "")[:20], "critere": _flat(x.get("critere")),
+                                       "poids": _flat(x.get("poids"))}
+                                      for x in ln.get("sous_criteres") or [] if isinstance(x, dict)]})
+    return out
+
+
 def _lignes_de_grille(grille) -> list:
-    """Les lignes du formulaire tirées d'une grille « Comment vous serez noté » (celle du marché, ou celle d'un lot :
-    même format) : critères dans le plan, puis leurs sous-critères."""
+    """Les lignes du formulaire tirées d'une grille « Comment vous serez noté » : celle du marché (format de
+    grille_notation), ou celle d'un lot telle que le dossier la garde (vague 6, J : `atelier_lots.grille_out`) —
+    critères dans le plan, puis leurs sous-critères."""
     from app.services import atelier_plan as ap
     out = []
     try:
-        lignes = ap._grille_lines(grille)
+        if isinstance(grille, dict) and not isinstance(grille.get("criteres"), list) and isinstance(grille.get("lignes"), list):
+            lignes = _lignes_du_lot(grille)
+        else:
+            lignes = ap._grille_lines(grille)
     except Exception:       # noqa: BLE001 — grille illisible
         lignes = []
     for ln in lignes:
@@ -483,22 +538,43 @@ def _lots_cites(ligne_f: str, numeros: set) -> set:
     return out
 
 
+# Une ligne qui OUVRE la partie d'un lot : un titre (« Lot 2 : Couverture », « 2. LOT N° 03 – Étanchéité »), une
+# annonce (« Pour le lot 3 — Étanchéité », « Concernant le lot 2 : ») ou une ligne qui annonce la suite (« … :»).
+# Une mention dans une phrase (« Votre offre pour le lot 2 fait l'objet d'un courrier séparé. ») n'ouvre rien.
+_TITRE_LOT = re.compile(r"^[\s\-–—•*·#>|]*(?:\d{1,2}\s*[.)\-–]\s*)?lots?\b")
+_ANNONCE_LOT = re.compile(r"^[\s\-–—•*·#>|]*(?:pour|concernant|s'agissant d[eu]|au titre d[eu]|en ce qui concerne)\s+"
+                          r"(?:le\s+|les\s+)?lots?\s*" + _NUMLOT + r"[^,.;:]{0,40}?\s*(?::|—|–|-\s)")
+_OBJET_LIGNE = re.compile(r"^[\s\-–—•*]*(?:objet|concerne)\s*:")
+
+
+def _ouvre_un_lot(ligne_f: str) -> bool:
+    return bool(_TITRE_LOT.match(ligne_f) or _ANNONCE_LOT.match(ligne_f) or ligne_f.rstrip().endswith(":"))
+
+
 def lots_des_lignes(lignes: list, numeros) -> Optional[list]:
-    """Le lot dont parle chaque ligne du courrier, SANS IA : une ligne qui ne cite QU'UN des lots du dossier ouvre la
-    partie de ce lot, jusqu'à la ligne qui en cite un autre seul ; les lignes d'avant n'ont pas de lot. Un courrier qui
-    ne cite qu'un seul de ces lots en parle d'un bout à l'autre. Aucun lot cité seul : None (on ne sait pas)."""
+    """Le lot dont parle chaque ligne du courrier, SANS IA : une ligne de TITRE qui ne cite qu'un des lots du dossier
+    (`_ouvre_un_lot`) ouvre la partie de ce lot, jusqu'au titre d'un autre lot ; l'objet du courrier, s'il ne cite
+    qu'un lot, vaut jusqu'au premier titre ; une mention dans une phrase ne change rien. Sans titre : le lot de l'objet,
+    sinon le seul lot cité. Un courrier dont on ne sait pas à quel lot se rapporte chaque ligne : None."""
     nums = {str(n) for n in numeros or [] if n}
     if not nums:
         return None
-    out, cur = [], None
+    out, cur, titres, cites, de_l_objet = [], None, 0, set(), None
     for brut in lignes:
-        c = _lots_cites(_fold(_flat(brut)), nums)
+        f = _fold(_flat(brut))
+        c = _lots_cites(f, nums)
         if len(c) == 1:
-            cur = next(iter(c))
+            n = next(iter(c))
+            cites.add(n)
+            if _ouvre_un_lot(f):
+                cur, titres = n, titres + 1
+            elif cur is None and de_l_objet is None and _OBJET_LIGNE.match(f):
+                cur = de_l_objet = n
         out.append(cur)
+    if not titres:
+        seul = de_l_objet or (next(iter(cites)) if len(cites) == 1 else None)
+        return [seul] * len(out) if seul else None
     seuls = {x for x in out if x}
-    if not seuls:
-        return None
     if len(seuls) == 1:
         return [next(iter(seuls))] * len(out)
     return out
@@ -519,6 +595,7 @@ def segments_par_lot(texte: str, numeros) -> Optional[dict]:
 
 # ── La procédure (l'article à citer) ─────────────────────────────────────────────────
 
+_RX_SUBSEQUENT = re.compile(r"marches? subsequents?")
 _RX_ADAPTEE = re.compile(r"procedure adaptee|\bmapa\b|r\.? ?2123-1\b|r\.? ?2123-4\b|r\.? ?2123-5\b")
 _RX_FORMALISEE = re.compile(r"appel d'offres? (?:ouvert|restreint)|procedure formalisee|r\.? ?2124-[1-6]\b"
                             r"|r\.? ?2161-[2-9]\b|procedure (?:concurrentielle )?avec negociation"
@@ -564,24 +641,29 @@ def procedure_du_marche(project) -> dict:
     if nature:
         sources.append(("analyse du marché", nature))
     for src, texte in sources:
-        trouve = {}
+        trouve, subsequent = {}, ""
         for ph in _phrases(texte):
             f = _fold(ph)
             if ADAPTEE not in trouve and _RX_ADAPTEE.search(f):
                 trouve[ADAPTEE] = ph
             if FORMALISEE not in trouve and _RX_FORMALISEE.search(f):
                 trouve[FORMALISEE] = ph
+            if not subsequent and _RX_SUBSEQUENT.search(f):
+                subsequent = ph[:300]
         if len(trouve) == 2:
-            return {"code": INCONNUE, "phrase": "", "source": src,
+            return {"code": INCONNUE, "phrase": "", "source": src, "subsequent": subsequent,
                     "message": "Le dossier parle à la fois de procédure adaptée et de procédure formalisée : "
                                "choisissez celle du marché."}
         if trouve:
             code, phrase = next(iter(trouve.items()))
-            return {"code": code, "phrase": phrase[:300], "source": src,
+            return {"code": code, "phrase": phrase[:300], "source": src, "subsequent": subsequent,
                     "message": ("Lu dans le règlement de la consultation : vérifiez la procédure avant d'envoyer."
                                 if src.startswith("règlement") else
                                 "Lu dans l'analyse du marché : vérifiez la procédure avant d'envoyer.")}
-    return {"code": INCONNUE, "phrase": "", "source": "",
+        if subsequent:
+            return {"code": INCONNUE, "phrase": "", "source": src, "subsequent": subsequent,
+                    "message": "Adjugo n'a pas repéré la procédure du marché : choisissez-la pour citer le bon article."}
+    return {"code": INCONNUE, "phrase": "", "source": "", "subsequent": "",
             "message": "Adjugo n'a pas repéré la procédure du marché : choisissez-la pour citer le bon article."}
 
 
@@ -596,22 +678,37 @@ def _entreprise(db, project) -> tuple:
     return nom, rep
 
 
-def _en_groupement(project) -> bool:
+def _en_groupement(db, project) -> bool:
+    """L'offre a-t-elle été remise par un groupement ? La même règle que l'atelier : des partenaires INVITÉS (invitations
+    actives) ; sinon un groupement RETENU par l'utilisateur (« auto » faux) avec au moins un partenaire. Le plan proposé
+    automatiquement après l'analyse (partenaires suggérés, jamais invités) ne suffit jamais."""
+    try:
+        from app.services.groupement_members import active_invites
+        if active_invites(db, project.id):
+            return True
+    except Exception:       # noqa: BLE001
+        pass
     plan = getattr(project, "groupement_plan", None)
-    membres = (plan or {}).get("members") if isinstance(plan, dict) else None
-    return isinstance(membres, list) and len(membres) >= 2
+    if not isinstance(plan, dict) or plan.get("auto") is not False:
+        return False
+    membres = plan.get("members")
+    return isinstance(membres, list) and len([m for m in membres if isinstance(m, dict)]) >= 1
 
 
 def courrier(db, project, procedure: Optional[str] = None) -> dict:
     """Le courrier pré-rempli (objet, texte, destinataire lu dans l'analyse). Adjugo ne l'envoie jamais."""
     det = _details(project)
-    proc = procedure if procedure in (ADAPTEE, FORMALISEE, INCONNUE) else procedure_du_marche(project)["code"]
+    reperee = procedure_du_marche(project)
+    proc = procedure if procedure in (ADAPTEE, FORMALISEE, INCONNUE) else reperee["code"]
     intitule = _flat(det.get("intitule_marche") or project.name)[:300]
     ref = _flat((_analysis(project).get("source") or {}).get("official_ref")
                 if isinstance(_analysis(project).get("source"), dict) else "")[:60]
     nom, rep = _entreprise(db, project)
-    sujet = "l'offre du groupement dont nous sommes le chef de file" if _en_groupement(project) else "notre offre"
-    crits = [x["critere"] for x in criteres_du_marche(project)["lignes"] if x["niveau"] == 1][:8]
+    sujet = "l'offre du groupement dont nous sommes le chef de file" if _en_groupement(db, project) else "notre offre"
+    # Les critères ne sont nommés que s'ils viennent de « Comment vous serez noté » (phrase retrouvée dans le
+    # règlement) : ceux de l'analyse restent « à vérifier » et n'entrent pas dans un courrier envoyé à l'acheteur.
+    generaux = criteres_du_marche(project)
+    crits = [x["critere"] for x in generaux["lignes"] if x["niveau"] == 1][:8] if generaux["source"] == "grille" else []
     liste = (" (" + ", ".join(crits) + ")") if crits else ""
     # Vague 6 (J) : un marché alloti auquel nous avons répondu sur plusieurs lots — chaque lot est noté à part.
     lots = lots_du_marche(db, project)
@@ -627,8 +724,9 @@ def courrier(db, project, procedure: Optional[str] = None) -> dict:
                  "ainsi que le nom de l'attributaire du marché.")
         lien = "Pour comprendre ces motifs"
     elif proc == FORMALISEE:
-        p.append("En application de l'article R2181-4 du code de la commande publique, nous vous demandons de nous "
-                 "communiquer les caractéristiques et les avantages de l'offre retenue.")
+        p.append("Si notre offre n'a pas été écartée comme irrégulière, inacceptable ou inappropriée, nous vous "
+                 "demandons, en application de l'article R2181-4 du code de la commande publique, de nous communiquer "
+                 "les caractéristiques et les avantages de l'offre retenue.")
         lien = "Pour comprendre les motifs du rejet de notre offre (article R2181-3)"
     else:
         p.append("En application des articles R2181-1 à R2181-4 du code de la commande publique, nous vous demandons "
@@ -654,7 +752,10 @@ def courrier(db, project, procedure: Optional[str] = None) -> dict:
             "destinataire": dest,
             "destinataire_message": ("Adresse lue dans l'analyse du marché : vérifiez-la." if dest else
                                      "Aucune adresse de l'acheteur dans l'analyse : ajoutez-la dans votre messagerie."),
-            "message_delai": MSG_DELAI[proc], "message_notes": MSG_ADAPTEE_NOTES if proc == ADAPTEE else "",
+            "message_delai": (MSG_DELAI_SUBSEQUENT if proc == FORMALISEE and reperee.get("subsequent")
+                              else MSG_DELAI[proc]),
+            "phrase_subsequent": (reperee.get("subsequent") or "") if proc == FORMALISEE else "",
+            "message_notes": MSG_ADAPTEE_NOTES if proc == ADAPTEE else "",
             "message_envoi": MSG_PAS_ENVOYE, "message_lots": MSG_COURRIER_LOTS if lots else "",
             "lots": [{"numero": x["numero"], "libelle": x["libelle"]} for x in lots]}
 
@@ -831,8 +932,9 @@ def valider_ia(item, courrier_txt: str, masque: str, cles: set, lot_de: Optional
         masque = (seg_m or {}).get(lot, "")
 
     def trouve(ex: str) -> str:
+        # Une ligne du courrier (ou un morceau d'UNE ligne qui ne coupe aucun nombre), jamais un morceau de nombre.
         ex = _flat(ex).strip(" «»\"")[:EXTRAIT_MAX]
-        return ex if ex and (_dans(courrier_txt, ex) or _dans(masque, ex)) else ""
+        return ex if ex and (_dans_ligne(courrier_txt, ex) or _dans_ligne(masque, ex)) else ""
 
     out = {"cle": cle, "origine": IA}
     ex = trouve(item.get("extrait"))
@@ -965,6 +1067,13 @@ def _ligne_in(x: dict, i: int, connus: dict, courrier_txt: str, lots: Optional[d
     critere = _flat(x.get("critere"))[:CRITERE_MAX] or (base or {}).get("critere", "")
     if not critere:
         raise CarnetError(422, "critere_vide", "Chaque ligne nomme son critère.")
+    try:
+        note, nmax, gagn = nombre(x.get("note")), nombre(x.get("note_max")), nombre(x.get("note_gagnant"))
+    except ValueError:
+        raise CarnetError(422, "nombre_illisible", f"« {critere[:60]} » : une note n'est pas un nombre (exemple : 12,5).")
+    commentaire = _flat(x.get("commentaire"))[:COMMENTAIRE_MAX]
+    if note is None and gagn is None and not commentaire:
+        return None             # une ligne vide est ignorée (avant même son lot : comme l'écran)
     lots = lots or {}
     if base is not None and not base.get("_ajoutee"):
         lot = str(base.get("lot") or "")
@@ -977,13 +1086,6 @@ def _ligne_in(x: dict, i: int, connus: dict, courrier_txt: str, lots: Optional[d
     if lot:
         courrier_txt = (segments or {}).get(lot, "")
     parent = (base or {}).get("parent", "") if base else re.sub(r"[^A-Za-z0-9._/\-]", "", str(x.get("parent") or ""))[:20]
-    try:
-        note, nmax, gagn = nombre(x.get("note")), nombre(x.get("note_max")), nombre(x.get("note_gagnant"))
-    except ValueError:
-        raise CarnetError(422, "nombre_illisible", f"« {critere[:60]} » : une note n'est pas un nombre (exemple : 12,5).")
-    commentaire = _flat(x.get("commentaire"))[:COMMENTAIRE_MAX]
-    if note is None and gagn is None and not commentaire:
-        return None
     if (note is not None or gagn is not None) and not nmax:
         raise CarnetError(422, "note_max_manquante", f"« {critere[:60]} » : indiquez la note maximale.")
     if note is not None and note > nmax:
@@ -1007,9 +1109,9 @@ def _ligne_in(x: dict, i: int, connus: dict, courrier_txt: str, lots: Optional[d
     if origine in (COURRIER, IA) and courrier_txt:
         ex = _flat(x.get("extrait_note"))[:EXTRAIT_MAX]
         exg = _flat(x.get("extrait_gagnant"))[:EXTRAIT_MAX]
-        ok_n = note is None or (ex and _dans(courrier_txt, ex) and _retrouve_nombre(note, ex) is not None
+        ok_n = note is None or (ex and _dans_ligne(courrier_txt, ex) and _retrouve_nombre(note, ex) is not None
                                 and _retrouve_nombre(nmax, ex) is not None)
-        ok_g = gagn is None or (bool(exg or ex) and _dans(courrier_txt, exg or ex)
+        ok_g = gagn is None or (bool(exg or ex) and _dans_ligne(courrier_txt, exg or ex)
                                 and _retrouve_nombre(gagn, exg or ex) is not None)
         if ok_n and ok_g and (note is not None or gagn is not None):
             out["origine"] = origine
@@ -1219,8 +1321,9 @@ def _ligne_out(x: dict, auteur: Optional[dict] = None) -> dict:
 
 
 def constat(lignes: list) -> Optional[dict]:
-    """Le critère où ce marché a perdu le plus de points (en pourcentage de sa note maximale) : un constat. Le lien
-    vers le réseau n'est proposé que hors prix (un partenaire ne couvre pas un prix)."""
+    """Le critère où ce marché a obtenu son plus faible pourcentage de la note maximale (pas forcément celui qui a
+    perdu le plus de points : les notes maximales diffèrent) : un constat, dit tel qu'il est calculé. Le lien vers le
+    réseau n'est proposé que hors prix (un partenaire ne couvre pas un prix)."""
     feuilles = [x for x in _feuilles(lignes)]
     if not feuilles:
         return None
@@ -1232,8 +1335,8 @@ def constat(lignes: list) -> Optional[dict]:
     lib = str(x.get("lot_libelle") or "")
     du_lot = f" ({lib[:1].lower()}{lib[1:]})" if lib else ""
     return {"cle": x["cle"], "critere": x["critere"], "pct": p, "lot": x.get("lot") or "",
-            "message": f"C'est sur « {x['critere']} »{du_lot} que ce marché a perdu le plus de points : "
-                       f"{ecrit(x['note'])} / {ecrit(x['note_max'])} ({p} %).",
+            "message": f"C'est sur « {x['critere']} »{du_lot} que ce marché a obtenu sa note la plus faible, en "
+                       f"pourcentage de la note maximale : {ecrit(x['note'])} / {ecrit(x['note_max'])} ({p} %).",
             "partenaire": fam not in ("prix", "autre")}
 
 
@@ -1280,7 +1383,9 @@ def etat(db, project, user: User, member_ids: list) -> dict:
         lignes = rep["lignes"]
         notes = {"lignes": [_ligne_out(x, auteurs.get(x.get("cle"))) for x in lignes],
                  "valide_le": rep.get("valide_le"), "valide_le_jj": _jj(rep.get("valide_le")),
-                 "constat": constat(lignes), "total": _total(lignes), "totaux": _totaux(lignes)}
+                 "constat": constat(lignes), "total": _total(lignes, crits["lignes"]),
+                 "totaux": _totaux(lignes, crits["lignes"]),
+                 "messages_total": _messages_total(lignes, crits["lignes"])}
     # La procédure ne sert qu'au courrier d'un marché perdu (lecture du règlement rangé : rien à lire sinon).
     proc = procedure_du_marche(project) if st == PERDU else {"code": INCONNUE, "phrase": "", "source": "", "message": ""}
     perdu_le = c.get("perdu_le")
@@ -1310,34 +1415,90 @@ def _auteur_out(a: Optional[dict]) -> Optional[dict]:
     return {"type": a.get("type") or "organisation", "nom": a.get("nom") or "", "titre": a.get("titre") or ""}
 
 
-def _somme(lignes: list) -> Optional[dict]:
-    hauts = [x for x in lignes if not x.get("parent")]
-    if not hauts or any(x.get("note") is None or not x.get("note_max") for x in hauts):
-        return None
-    n, m = sum(x["note"] for x in hauts), sum(x["note_max"] for x in hauts)
+def _note_de(x) -> bool:
+    return bool(x) and x.get("note") is not None and bool(x.get("note_max"))
+
+
+def _somme(lignes: list, criteres: Optional[list] = None) -> dict:
+    """La note d'ensemble d'un relevé : la somme des notes des critères de niveau 1 du FORMULAIRE (`criteres`, ceux de
+    « Comment vous serez noté » ou de l'analyse) et des critères ajoutés. Un critère sans sa note, mais dont chaque
+    sous-critère est noté, compte pour la somme de ses sous-critères. S'il manque la note d'un critère, aucune somme
+    (une note partielle n'est jamais présentée comme celle de l'offre) : {manque: k, criteres: n}."""
+    par_cle = {x.get("cle"): x for x in lignes if x.get("cle")}
+    hauts, enfants = [], {}
+    for c in list(criteres or []) + list(lignes):
+        k, par = c.get("cle"), c.get("parent") or ""
+        if not k:
+            continue
+        if par:
+            if k not in enfants.setdefault(par, []):
+                enfants[par].append(k)
+        elif k not in hauts:
+            hauts.append(k)
+    hauts += [par for par in enfants if par not in hauts]      # un sous-critère dont le critère n'est plus au formulaire
+    n = m = 0.0
+    notes = 0
+    for k in hauts:
+        x = par_cle.get(k)
+        if _note_de(x):
+            n, m, notes = n + x["note"], m + x["note_max"], notes + 1
+            continue
+        sous = [par_cle.get(e) for e in enfants.get(k) or []]
+        if sous and all(_note_de(y) for y in sous):
+            n += sum(y["note"] for y in sous)
+            m += sum(y["note_max"] for y in sous)
+            notes += 1
+    if not hauts:
+        return {"manque": 0, "criteres": 0}
+    if notes < len(hauts):
+        return {"manque": len(hauts) - notes, "criteres": len(hauts)}
     return {"note": ecrit(round(n, 3)), "note_max": ecrit(round(m, 3)), "pct": pct(n, m)}
 
 
-def _total(lignes: list) -> Optional[dict]:
+def _message_partiel(t: dict, du_lot: str = "") -> str:
+    k, n = t["criteres"] - t["manque"], t["criteres"]
+    return (f"Note d'ensemble{du_lot} : {k} critère{'s' if k > 1 else ''} noté{'s' if k > 1 else ''} sur {n}. Elle "
+            "s'affiche quand chaque critère a sa note (ou chacun de ses sous-critères).")
+
+
+def _total(lignes: list, criteres: Optional[list] = None) -> Optional[dict]:
     """La note d'ensemble, quand chaque critère (niveau 1) a sa note : la somme, telle quelle. Plusieurs lots (vague
     6, J) : aucune somme de lots différents (chaque lot est noté à part, voir `_totaux`)."""
     if any(x.get("lot") for x in lignes):
         return None
-    return _somme(lignes)
+    t = _somme(lignes, [c for c in criteres or [] if not c.get("lot")])
+    return t if "note" in t else None
 
 
-def _totaux(lignes: list) -> list:
-    """Plusieurs lots (vague 6, J) : la note d'ensemble de chaque lot, dans l'ordre des lignes."""
+def _totaux(lignes: list, criteres: Optional[list] = None) -> list:
+    """Plusieurs lots (vague 6, J) : la note d'ensemble de chaque lot noté, dans l'ordre des lignes (seulement quand
+    chaque critère DE CE LOT a sa note)."""
+    out = []
+    for n, lib, t in _sommes_des_lots(lignes, criteres):
+        if "note" in t:
+            out.append(dict(t, lot=n, lot_libelle=lib))
+    return out
+
+
+def _sommes_des_lots(lignes: list, criteres: Optional[list] = None) -> list:
     ordre = []
     for x in lignes:
         if x.get("lot") and x["lot"] not in [n for n, _l in ordre]:
             ordre.append((x["lot"], x.get("lot_libelle") or f"Lot {x['lot']}"))
-    out = []
-    for n, lib in ordre:
-        t = _somme([x for x in lignes if x.get("lot") == n])
-        if t:
-            out.append(dict(t, lot=n, lot_libelle=lib))
-    return out
+    return [(n, lib, _somme([x for x in lignes if x.get("lot") == n],
+                            [c for c in criteres or [] if str(c.get("lot") or "") == n])) for n, lib in ordre]
+
+
+def _messages_total(lignes: list, criteres: Optional[list] = None) -> list:
+    """Pourquoi la note d'ensemble ne s'affiche pas (un critère sans sa note) : un message par relevé incomplet."""
+    if any(x.get("lot") for x in lignes):
+        out = []
+        for _n, lib, t in _sommes_des_lots(lignes, criteres):
+            if "note" not in t and t["criteres"]:
+                out.append(_message_partiel(t, f", {lib[:1].lower()}{lib[1:]}"))
+        return out
+    t = _somme(lignes, [c for c in criteres or [] if not c.get("lot")])
+    return [_message_partiel(t)] if "note" not in t and t["criteres"] else []
 
 
 # ── « Où vous perdez des points » (tableau de bord) ──────────────────────────────────
@@ -1402,8 +1563,8 @@ def tableau(db, user: User, member_ids: list) -> dict:
     return {"marches": marches, "familles": familles, "rappels": rappels[:10], "bulle": BULLE_TABLEAU,
             "constat": ({"code": pire["code"], "partenaire": pire["partenaire"],
                          "message": f"Parmi les familles notées sur au moins {MOYENNE_MIN} marchés, c'est en "
-                                    f"« {pire['libelle']} » que vous perdez le plus de points ({pire['moyenne']} % de la "
-                                    "note maximale en moyenne)."} if pire and pire["moyenne"] < 100 else None),
+                                    f"« {pire['libelle']} » que vos notes sont les plus faibles ({pire['moyenne']} % de "
+                                    "la note maximale en moyenne)."} if pire and pire["moyenne"] < 100 else None),
             "message": "" if marches else "Saisissez les notes de vos marchés gagnés ou perdus pour voir où vous perdez "
                                           "des points."}
 
@@ -1580,6 +1741,9 @@ def vue_partenaire(db, acces) -> Optional[dict]:
         auteurs = _auteurs(db, project, acces.dossier.owner_id, rep["lignes"])
     except Exception:       # noqa: BLE001
         auteurs = {}
+    # Le formulaire du chef de file (critères de la grille, lot par lot) : la note d'ensemble n'est donnée que si
+    # chaque critère a sa note, comme chez lui.
+    crits = criteres_du_marche(project, lots_du_marche(db, project, acces.dossier.owner_id))["lignes"]
     lignes, vos = [], []
     for x in rep["lignes"]:
         a = auteurs.get(x.get("cle")) or {}
@@ -1592,8 +1756,8 @@ def vue_partenaire(db, acces) -> Optional[dict]:
         lignes.append(ln)
         if vous:
             vos.append(ln)
-    return {"statut": _statut(project), "lignes": lignes, "vos_parties": vos, "total": _total(rep["lignes"]),
-            "totaux": _totaux(rep["lignes"]),
+    return {"statut": _statut(project), "lignes": lignes, "vos_parties": vos, "total": _total(rep["lignes"], crits),
+            "totaux": _totaux(rep["lignes"], crits),
             "message": ("Les notes données par l'acheteur pour l'offre du groupement, saisies par le chef de file. Vos "
                         "parties sont signalées.")}
 
@@ -1604,6 +1768,18 @@ def _a_des_alertes(db, uid: int) -> bool:
     from app.models import SavedSearch
     return db.query(SavedSearch.id).filter(SavedSearch.user_id == uid, SavedSearch.active.is_(True),
                                            SavedSearch.frequency != "manuelle").first() is not None
+
+
+def _destinataire_du_rappel(db, p, c: dict) -> Optional[User]:
+    """Le compte qui a passé le marché à « Perdu », s'il est ENCORE membre de l'organisation qui porte le marché ;
+    sinon (membre retiré : ses marchés ont été réassignés) le titulaire actuel du marché. Jamais un ancien membre."""
+    titulaire = db.get(User, p.user_id) if p.user_id else None
+    oid = getattr(titulaire, "org_id", None)
+
+    def membre(u) -> bool:
+        return u is not None and (u.id == p.user_id or (oid is not None and getattr(u, "org_id", None) == oid))
+    u = db.get(User, c.get("perdu_par")) if c.get("perdu_par") else None
+    return u if membre(u) else titulaire
 
 
 def envoyer_rappels(db, now: Optional[datetime] = None) -> dict:
@@ -1628,8 +1804,7 @@ def envoyer_rappels(db, now: Optional[datetime] = None) -> dict:
         if d is None or now > d + timedelta(days=COURRIEL_FIN_JOURS):
             continue
         examines += 1
-        uid = c.get("perdu_par") or p.user_id
-        u = db.get(User, uid) if uid else None
+        u = _destinataire_du_rappel(db, p, c)
         if u is None or not u.email or u.id in demo or p.user_id in demo or not getattr(u, "is_active", True):
             continue
         if not _a_des_alertes(db, u.id):

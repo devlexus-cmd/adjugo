@@ -1413,10 +1413,12 @@ MEMOIRE_FOLDER = "Mémoire technique"
 _LEGACY_MEMOIRE_ARCHIVE = "memoire_technique.md"
 
 
-def _archive_memoire(db: Session, user: User, project: Project, dossier: dict, files: dict) -> None:
+def _archive_memoire(db: Session, user: User, project: Project, dossier: dict, files: dict,
+                     garder=()) -> None:
     """Range le dossier de présentation (Word + PDF) dans le dossier du marché, sous le nom du
     règlement, et mémorise son état (passages à compléter, texte coupé) pour la liste des pièces.
-    Remplace la génération précédente (y compris l'ancienne archive .md) ; jamais bloquant."""
+    Remplace la génération précédente (y compris l'ancienne archive .md) ; jamais bloquant.
+    `garder` (vague 6, plusieurs lots) : les fichiers d'un lot bloqué, non joint cette fois — jamais retirés."""
     from datetime import datetime, timezone
     from sqlalchemy.orm.attributes import flag_modified
     from app.services.dossier import remove_from_dossier, replace_in_dossier
@@ -1426,15 +1428,16 @@ def _archive_memoire(db: Session, user: User, project: Project, dossier: dict, f
         wf = dict(project.workflow) if isinstance(project.workflow, dict) else {}
         before = (wf.get("dossier_presentation") or {}).get("fichiers") or []
         names = [name for name, _b in files.values()]
+        garder = [n for n in (garder or []) if n and n not in names]
         remove_from_dossier(db, user.id, project.id, MEMOIRE_FOLDER,
-                            [n for n in before if n not in names] + [_LEGACY_MEMOIRE_ARCHIVE])
+                            [n for n in before if n not in names and n not in garder] + [_LEGACY_MEMOIRE_ARCHIVE])
         for kind, (name, content) in files.items():
             # « docx:2 » / « pdf:2 » : le fichier d'un lot (rédaction, vague 6 — un fichier par lot).
             replace_in_dossier(db, user.id, project.id, MEMOIRE_FOLDER, name, content,
                                mimes.get(str(kind).split(":", 1)[0], ""))
         etat = dossier.get("memoire_etat") or {}
         wf["dossier_presentation"] = {
-            "nom": dossier.get("memoire_nom") or "", "fichiers": names,
+            "nom": dossier.get("memoire_nom") or "", "fichiers": [n for n in before if n in garder] + names,
             "a_completer": int(etat.get("a_completer") or 0), "coupe": bool(etat.get("coupe")),
             "genere_le": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
@@ -1480,6 +1483,7 @@ def generate_documents(request: Request, req: DocumentsRequest,
                                           country=_user_country(current_user, db),
                                           db=db, user_id=current_user.id, estimate=project.estimate)
     memoire_files = dossier.pop("_memoire_files", None) or {}
+    memoire_garder = dossier.pop("_memoire_garder", None) or []
     dossier.setdefault("warnings", []).extend(avertissements_formulaires(_form))
 
     # Archiver les CERFA + le dossier de présentation (Word ET PDF) dans le dossier de l'AO.
@@ -1492,7 +1496,7 @@ def generate_documents(request: Request, req: DocumentsRequest,
     except Exception:
         pass
     if memoire_files:
-        _archive_memoire(db, current_user, project, dossier, memoire_files)
+        _archive_memoire(db, current_user, project, dossier, memoire_files, garder=memoire_garder)
 
     return {
         "cotraitants_verifies": len(verified),

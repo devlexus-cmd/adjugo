@@ -670,13 +670,13 @@ def test_isolation_les_routes_des_lots_d_un_autre_compte_repondent_404(client, a
         assert r.status_code == 404, (url, r.status_code, r.text)
 
 
-def test_le_numero_d_un_lot_n_est_jamais_un_fait_a_relire():
+def test_le_numero_d_un_lot_du_dossier_n_est_pas_un_fait_a_relire():
     from app.services import faits_a_relire as far
     for ph in ("Le CCTP du lot 2 prévoit une couverture en ardoise naturelle.",
                "Nous répondons aux lots 2 et 3 avec la même équipe.", "Pour le lot n° 3, nous posons la membrane."):
-        assert far.a_relire(ph, [], section_entreprise=True) == [], ph
+        assert far.a_relire(ph, [], section_entreprise=True, lots=("2", "3")) == [], ph
     # Une quantité reste un fait, même à côté d'un lot.
-    faits = far.a_relire("Pour le lot 2, nous mobilisons 2 nacelles.", [], section_entreprise=True)
+    faits = far.a_relire("Pour le lot 2, nous mobilisons 2 nacelles.", [], section_entreprise=True, lots=("2", "3"))
     assert [f["fait"] for f in faits if f["type"] == "chiffre"] == ["2 nacelles"]
 
 

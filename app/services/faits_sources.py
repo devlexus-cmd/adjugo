@@ -899,7 +899,8 @@ _SOURCES_FICHES = (T_DOCUMENTS, T_JUSTIFICATIF, T_DECLARE, T_PUBLIC, T_ESTIMATIO
 
 
 def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, noms_entreprise=(),
-              section_entreprise: bool = False, mode: str = "ia", anciens=(), base_texte: str = "") -> list:
+              section_entreprise: bool = False, mode: str = "ia", anciens=(), base_texte: str = "",
+              lots=()) -> list:
     """Tous les faits relevés d'un texte, chacun relié à sa source ou à relire (voir le module).
 
     mode :
@@ -913,7 +914,10 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
                           déclarations ; un engagement que vous écrivez vous-même est le vôtre.
     « Relu par vous » est repris pour le même fait dans la même phrase (« raccourci » : le même fait
     avec la même unité, où qu'il soit). Le dossier de l'acheteur (`acheteur`) n'appuie JAMAIS une
-    phrase sur l'entreprise ; sans lui (None), une phrase sur le marché n'est rapprochée de rien."""
+    phrase sur l'entreprise ; sans lui (None), une phrase sur le marché n'est rapprochée de rien.
+
+    `lots` (vague 6, J) : les numéros des lots d'un dossier à plusieurs lots — « lot 2 », « lots 2 et 3 » n'y sont
+    pas des faits ; vide (marché simple, réponse à un seul lot) : tout numéro est un fait, comme avant."""
     fiches = [f for f in (fiches or []) if isinstance(f, Fiche)]
     par_ref = {f.ref: f for f in fiches}
     noms = [far.fold(n) for n in (noms_entreprise or []) if n and len(far.fold(n)) >= 3]
@@ -1008,7 +1012,7 @@ def controler(texte: str, fiches: list, *, acheteur: Optional[Acheteur] = None, 
         # (valeur, unité) — l'unité d'un nombre écrit seul (« 3 + 15 ») est celle de sa source.
         pool = []
         releves = []
-        for fait, kind, key in far._facts_in(ph, tableau=p["tableau"]):
+        for fait, kind, key in far._facts_in(ph, tableau=p["tableau"], lots=lots):
             if kind == far.NOM_PROPRE and _nom_connu(key, noms):
                 continue
             src, detail, unite_src = None, "", ""

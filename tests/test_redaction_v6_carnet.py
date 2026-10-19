@@ -41,7 +41,9 @@ from tests.test_redaction_socle0 import TEAM, _company, _db, _user_id, fake_llm 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC = os.path.join(ROOT, "app", "static")
 EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿⭐✅❌]")
-ARTICLES_PERMIS = {"R2181-1", "R2181-2", "R2181-3", "R2181-4", "R2182-1"}
+# Relus sur Légifrance le 19/10/2026 (contrat F.2) ; R2182-2 : le délai de 11 jours ne s'applique pas à un marché
+# subséquent d'un accord-cadre (contre-relecture de la vague 6).
+ARTICLES_PERMIS = {"R2181-1", "R2181-2", "R2181-3", "R2181-4", "R2182-1", "R2182-2"}
 
 GRILLE = {"criteres": [
     {"id": "c1", "critere": "Valeur technique", "dans_le_plan": True, "poids_retenu": "60 points",
@@ -261,7 +263,8 @@ def test_courrier_article_exact_selon_la_procedure(client, auth, monkeypatch):
 def test_courrier_d_un_groupement_dit_chef_de_file(client, auth):
     h = _h(auth)
     pid = _marche(client, h)
-    _set(pid, groupement_plan={"members": [{"kind": "self"}, {"kind": "invite"}]})
+    # Un groupement RETENU par l'utilisateur (« auto » faux), un seul partenaire hors chef de file.
+    _set(pid, groupement_plan={"members": [{"kind": "annuaire", "id": 1, "name": "Zinc d'Armor"}], "auto": False})
     c = client.get(f"/api/carnet/{pid}/courrier", headers=h).json()
     assert "l'offre du groupement dont nous sommes le chef de file" in c["corps"] and "mandataire" not in c["corps"]
 
