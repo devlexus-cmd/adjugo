@@ -1392,6 +1392,19 @@ class Preuve(Base):
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+# === MESURE D'USAGE (réorganisation de l'interface, vague 1, décision 17) ===
+# Un compteur par écran et par jour (heure de Paris) : combien de fois chaque écran de l'application a été
+# ouvert. AUCUNE donnée personnelle : ni compte, ni organisation, ni adresse IP, ni appareil ; jamais montré
+# aux clients, lu par l'administrateur de la plateforme (GET /api/admin/mesures/ecrans). Aucun outil tiers.
+# Seul point d'écriture : app.services.mesure_usage. Contrat : docs/REORGANISATION_V1.md, § 1.1.
+class MesureEcran(Base):
+    __tablename__ = "mesure_ecrans"
+
+    jour = Column(Date, primary_key=True)
+    ecran = Column(String(40), primary_key=True)
+    ouvertures = Column(Integer, nullable=False, default=0, server_default="0")
+
+
 # === FEEDBACK (beta) ===
 # Retours des utilisateurs (bouton « Signaler / Idée ») — précieux en phase de test PME.
 class Feedback(Base):

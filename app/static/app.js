@@ -1319,6 +1319,7 @@ const __adjApp = createApp({
     go(v) {
       if (v === "amont" && !this.features.projets_a_venir) v = "dashboard";   // écran masqué (PROJETS_A_VENIR=0)
       this.view = v;
+      this._ecranOuvert(v);
       this.mobileNav = false;  // referme le menu mobile à la navigation
       this.notifsOpen = false; this.fb.open = false;  // referme les popups (notifications / retour d'avis) à la navigation
       if (v === "dashboard") { this.loadStats(); this.loadExpiring(); this.loadConsortiums(); this.loadNotifs(); this.loadGrpDash(); }
@@ -1338,6 +1339,17 @@ const __adjApp = createApp({
       if (v === "admin") this.loadAdmin();
       if (v === "reseau") { this.rnGo(this.reseau.tab || "profil"); this.rnLoadRecues(true); }
       this.$nextTick(() => { const w = document.querySelector(".work"); if (w) w.scrollTop = 0; });   // remonte en haut du contenu à chaque changement de vue
+    },
+    // Mesure d'usage (réorganisation, vague 1, 1.1 ; décision 17) : un événement par ouverture d'écran, vers le
+    // compteur INTERNE d'Adjugo (jour, écran) — aucune donnée personnelle, aucun outil tiers, jamais montré aux
+    // clients. Sans attente ni barre de progression ni message : une mesure perdue ne gêne jamais l'écran.
+    _ecranOuvert(v) {
+      if (!this.token || !v) return;
+      try {
+        fetch("/api/mesure/ecran", { method: "POST", keepalive: true,
+          headers: { "Authorization": "Bearer " + this.token, "Content-Type": "application/json" },
+          body: JSON.stringify({ ecran: String(v) }) }).catch(() => {});
+      } catch (e) {}
     },
     async loadAdmin() {
       this.adminRvLoad();
@@ -1806,7 +1818,7 @@ const __adjApp = createApp({
     async openAo(p) {
       this.ao.back = this.view; this.ao.dossier = null; this.ao.project = p;
       this.ao.cotraitants = []; this.ao.stOpen = false; this.ao.st.results = [];
-      this.view = "aodetail"; this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.buyerLoading = true; this.ao.checklist = null; this.ao.group = null;
+      this.view = "aodetail"; this._ecranOuvert("aodetail"); this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.buyerLoading = true; this.ao.checklist = null; this.ao.group = null;
       this.ao.qa = []; this.ao.qaInput = ""; this.ao.grilleBusy = ""; this.ao.atl = _atlCardInit(); this.ao.grp = _grpInit(); this.ao.conv = _convInit(); this.ao.pm = _pmInit(); this.ao.depot = _depotInit(); this.rinv = null;
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
       this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", lienCandidat: null, auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
@@ -2008,7 +2020,7 @@ const __adjApp = createApp({
     async openShared(item) {
       const t = item.token;
       this.sharedAo = _sharedInit(t, item.mandataire, item.project_id, item.role); this.sharedAo.loading = true;
-      this.view = "sharedao";
+      this.view = "sharedao"; this._ecranOuvert("sharedao");
       try {
         const v = await this.api("GET", "/api/invite/" + t);
         this.sharedAo.project = v.project; this.sharedAo.mandataire = v.mandataire; this.sharedAo.docs = v.documents || []; this.sharedAo.canContribute = v.can_contribute;
@@ -3752,7 +3764,7 @@ const __adjApp = createApp({
       try { await this.api("DELETE", "/api/cotraitants/project/" + this.ao.project.id + "/" + link_id); this.aoLoadCotraitants(); }
       catch (e) { this.notify(e.message, "err"); }
     },
-    aoBack() { this.view = this.ao.back || "pipeline"; this.loadProjects(); },
+    aoBack() { this.view = this.ao.back || "pipeline"; this._ecranOuvert(this.view); this.loadProjects(); },
     aoDetails() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.details) || {}; },
     aoSource() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.source) || null; },
     aoContact() { const c = this.aoDetails().contact; return (c && (c.nom || c.email)) ? c : null; },
@@ -4814,7 +4826,7 @@ const __adjApp = createApp({
     atlOpen() {
       const p = this.ao.project; if (!p) return;
       if (this.atl.pid !== p.id) { this.atl = _atlInit(); this.atl.pid = p.id; }
-      this.view = "atelier";
+      this.view = "atelier"; this._ecranOuvert("atelier");
       this.$nextTick(() => { const w = document.querySelector(".work"); if (w) w.scrollTop = 0; });
       this.atlLoad();
       if (this.atl.onglet === "repartition") this.atlRepLoad();      // « Qui écrit quoi » relu au retour
@@ -4822,7 +4834,7 @@ const __adjApp = createApp({
     atlBack() {
       const a = this.atl;
       if (a.mode === "modifier" && a.edit.dirty) { this._atlDraftSave(); this.notify("Votre texte non enregistré est gardé sur cet appareil : vous le retrouverez dans la partie."); }
-      this.view = "aodetail"; this.atlCardLoad();
+      this.view = "aodetail"; this._ecranOuvert("aodetail"); this.atlCardLoad();
       this.$nextTick(() => { const el = document.getElementById("atl-card"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" }); });
     },
     async atlLoad(silent) {

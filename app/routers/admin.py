@@ -220,6 +220,20 @@ def mesures_redaction(current_user: User = Depends(get_current_user), db: Sessio
     return mesure_fichier_impose(db)
 
 
+@router.get("/mesures/ecrans")
+@limiter.limit("120/hour")
+def mesures_ecrans(request: Request, jours: int = 30, current_user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    """Mesure d'usage de l'interface (réorganisation, vague 1, décision 17) : ouvertures de chaque écran, par jour
+    (heure de Paris), sur les `jours` derniers jours (1 à 400, 30 par défaut). Agrégats seulement, aucune donnée
+    personnelle ; interne, jamais montré aux clients ; réservé à l'administrateur de la plateforme."""
+    _require_platform_admin(current_user)
+    from app.services.mesure_usage import JOURS_MAX, releve
+    if not 1 <= int(jours) <= JOURS_MAX:
+        raise HTTPException(422, f"Nombre de jours attendu : de 1 à {JOURS_MAX}.")
+    return releve(db, jours=jours)
+
+
 @router.get("/reseau/validations")
 @limiter.limit("120/hour")
 def reseau_validations(request: Request, current_user: User = Depends(get_current_user),

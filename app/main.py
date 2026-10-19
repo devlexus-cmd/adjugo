@@ -341,6 +341,10 @@ from app.routers.rgpd import router as rgpd_router
 app.include_router(rgpd_router)
 from app.routers.feedback import router as feedback_router
 app.include_router(feedback_router)
+# Réorganisation de l'interface, vague 1 (1.1) : mesure d'usage, un compteur par écran et par jour, sans donnée
+# personnelle (docs/REORGANISATION_V1.md).
+from app.routers.mesure import router as mesure_router
+app.include_router(mesure_router)
 # « Merged Brain » (CoSpace) ARCHIVÉ : doublon du Réseau Adjugo (lien d'invitation +
 # contribution cloisonnée). Routeur non monté ; modèles conservés (pas de migration).
 # from app.routers.cospace import router as cospace_router

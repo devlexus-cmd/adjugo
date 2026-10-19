@@ -202,6 +202,8 @@ SANS_COUT = {
     ("PUT", "/api/chiffrage/{project_id}"): "recalcul déterministe",
     ("PUT", "/api/chiffrage/{project_id}/review"): _I,
     ("POST", "/api/registre/import"): "lecture du registre public SIRENE puis base de données",
+    ("POST", "/api/mesure/ecran"): ("mesure d'usage (réorganisation, vague 1) : compteur agrégé par écran et par jour, "
+                                    "sans donnée personnelle ; la session démo n'est pas comptée"),
     ("POST", "/api/admin/run-backup"): "administrateur de la plateforme seulement (la démo est refusée)",
     ("POST", "/api/admin/run-alerts"): "administrateur seulement", ("POST", "/api/admin/run-tender-alerts"): "administrateur seulement",
     ("POST", "/api/admin/run-amont-alerts"): "administrateur seulement",
