@@ -33,14 +33,14 @@
 
   // Nombre de mots (approché, comme le serveur et l'atelier) d'un texte, sans renvois ni syntaxe.
   function rpMots(md) {
-    const t = String(md || "").replace(/\[\s*[FSPECG]\s*\d{1,4}(?:\s*[,;]\s*[FSPECG]?\s*\d{1,4})*\s*\]/g, " ")
+    const t = String(md || "").replace(/\[\s*[FSPECGR]\s*\d{1,4}(?:\s*[,;]\s*[FSPECGR]?\s*\d{1,4})*\s*\]/g, " ")
       .replace(/\[\s*CV\s+F\s*\d{1,4}\s*\]/gi, " ").replace(/^\s*(#{1,6}|[-*+•]|\d{1,2}[.)])\s+/gm, " ").replace(/[|*_`]/g, " ");
     const m = t.match(/[0-9A-Za-zÀ-ÖØ-öø-ÿŒœ]+(?:['’-][0-9A-Za-zÀ-ÖØ-öø-ÿŒœ]+)*/g);
     return m ? m.length : 0;
   }
 
   const RE_TODO = /\[\s*[ÀàAa]\s+[Cc][Oo][Mm][Pp][Ll][ÉéEe][Tt][Ee][Rr][^\]]*\]/g;
-  const RE_REF = /\[\s*([FSPECG]\s*\d{1,4}(?:\s*[,;]\s*[FSPECG]?\s*\d{1,4})*)\s*\]/g;
+  const RE_REF = /\[\s*([FSPECGR]\s*\d{1,4}(?:\s*[,;]\s*[FSPECGR]?\s*\d{1,4})*)\s*\]/g;
 
   // Nombre de « [À compléter …] » d'un texte (même repérage que le serveur, quelle que soit la casse).
   function rpACompleter(t) { return (String(t || "").match(RE_TODO) || []).length; }
@@ -172,6 +172,7 @@
   const BULLE_QFQ = "Adjugo l'écrit sans IA, à partir de la convention et de la part envoyée par chaque membre : ce que chacun apporte (part, qualifications, moyens), jamais ce qui manque. Tous les membres la lisent et chacun la valide. Pour la changer, modifiez votre part dans « Ma contribution » et renvoyez-la.";
   const BULLE_MENTIONS = "« justifiée » : un justificatif ou une source appuie la qualification ; « déclarée » : le membre l'a écrite. Ces mentions restent à l'écran : elles ne partent pas chez l'acheteur.";
   const BULLE_EXTRAITS = "Les passages de vos documents qu'Adjugo a cités en rédigeant (S1, S2…). Ils restent privés : ni le chef de file ni l'acheteur ne les voient, et les renvois sont retirés à l'export. Un extrait cité ne prouve pas que la phrase est exacte.";
+  const BULLE_ENTRETIEN = "Le chef de file vous pose ces questions parce qu'elles relèvent de votre lot ou de votre partie. Chacune montre la phrase du dossier de l'acheteur qui la motive. Votre réponse est lue par le chef de file et sert à rédiger le dossier commun, comme un fait déclaré par votre entreprise : il ne peut pas la modifier. « Passer » laisse « [À compléter] » dans la partie concernée.";
 
   function errMessage(data, status) {
     const d = data && data.detail;
@@ -224,7 +225,8 @@
   function mount(el, opts) {
     const o = Object.assign({ mode: "lien", headers: () => ({}) }, opts || {});
     const st = { vue: null, open: null, edits: {}, moi: {}, msgs: {}, busy: "", jobs: {}, timer: null, dossier: null,
-      dossierOpen: false, msgDossier: null, msgQfq: null, hist: {}, err: "", gone: false, destroyed: false };
+      dossierOpen: false, msgDossier: null, msgQfq: null, hist: {}, err: "", gone: false, destroyed: false,
+      entEdits: {}, entMsgs: {} };
     const ENTETE = "X-Adjugo-Espace";
     const KEY_ED = "rp_ed_" + (o.cleStockage || o.base);
 
@@ -313,8 +315,10 @@
       const parts = v.parties || [];
       const cleOk = !!(v.espace && v.espace.cle_valide);
       const ecrire = !!v.peut_ecrire && cleOk;
-      // Envoyée mais pas encore validée : le chef de file attend sa validation, c'est encore « à faire ».
-      const aFaire = parts.filter(p => ["a_rediger", "en_cours", "envoyee", "a_revalider"].includes(p.statut)).length;
+      // Envoyée mais pas encore validée : le chef de file attend sa validation, c'est encore « à faire » ; une question
+      // de l'entretien chantier sans réponse aussi.
+      const aFaire = parts.filter(p => ["a_rediger", "en_cours", "envoyee", "a_revalider"].includes(p.statut)).length
+        + Number((v.entretien && v.entretien.a_repondre) || 0);
       const pret = (v.dossier && v.dossier.pret) || null;
       let h = '<section class="card pad rp-card" aria-labelledby="rp-titre">';
       h += '<div class="rp-head"><div class="rp-head-t"><h2 class="rp-title" id="rp-titre">Mes parties du dossier de présentation</h2>' + tip(rpEsc(BULLE_CARTE)) + "</div>"
@@ -323,6 +327,7 @@
         + (pret && pret.sections_total ? " · " + rpEsc(pret.message) : "") + "</div>";
       if (o.mode === "lien" && !cleOk) h += renderEspace(v);
       else if (!v.peut_ecrire) h += '<div class="rp-info small">' + ico("lock", 14) + "<span>La co-construction n'est pas ouverte sur ce lien : vous lisez vos parties sans pouvoir les modifier.</span></div>";
+      h += renderEntretien(v, ecrire);
       if (parts.length) {
         h += '<ul class="rp-parts">';
         parts.forEach(p => { h += renderPartie(v, p, ecrire); });
@@ -390,6 +395,44 @@
           + btn("espace-reinit", "Réinitialiser mon espace", e.code_possible ? "ghost" : "") + "</div>";
       }
       return h + "</div>";
+    }
+
+    // Entretien chantier (rédaction, vague 5) : les questions que le chef de file LUI pose, avec la phrase du dossier qui
+    // les motive. Sa réponse est une déclaration de son entreprise, lue par le chef de file (avertissement avant l'envoi,
+    // même vérification d'identité qu'un envoi) ; « Passer » laisse « [À compléter] » dans la partie concernée.
+    function renderEntretien(v, ecrire) {
+      const e = v.entretien || {}, qs = e.questions || [];
+      if (!qs.length) return "";
+      let h = '<section class="rp-ent" aria-labelledby="rp-ent-t"><div class="rp-lbl"><h3 class="rp-ent-t" id="rp-ent-t">'
+        + (qs.length > 1 ? qs.length + " questions du chef de file sur ce chantier" : "Une question du chef de file sur ce chantier")
+        + "</h3>" + tip(rpEsc(BULLE_ENTRETIEN)) + "</div>";
+      if (e.message) h += '<p class="muted small rp-p">' + rpEsc(e.message) + "</p>";
+      h += '<ul class="rp-ent-l">';
+      qs.forEach(q => {
+        const ed = st.entEdits[q.id], edition = !!(ed && ed.open), qa = ' data-qid="' + rpEsc(q.id) + '"';
+        const cls = q.statut === "repondue" ? "go" : q.statut === "a_repondre" ? "a_etudier" : "neutral";
+        h += '<li class="rp-ent-q"><div class="rp-ent-qh"><b class="rp-ent-qt">' + rpEsc(q.question) + '</b><span class="pill ' + cls + ' rp-pill">' + rpEsc(q.statut_libelle) + "</span></div>";
+        h += q.motif ? '<blockquote class="gn-q">' + rpEsc(q.motif.phrase) + (q.motif.piece ? ' <span class="muted">(' + rpEsc(q.motif.piece) + ")</span>" : "") + "</blockquote>"
+          : '<div class="muted small rp-q">' + rpEsc(q.motif_message) + "</div>";
+        if (q.partie) h += '<div class="muted small rp-q">Partie concernée : ' + rpEsc(q.partie.titre) + "</div>";
+        if (q.statut === "repondue" && q.reponse && !edition) {
+          h += '<div class="rp-ent-rep small">' + rpEsc(q.reponse.texte) + "</div>"
+            + (ecrire ? '<div class="rp-acts">' + btn("ent-modifier", "Modifier ma réponse", "ghost", qa) + "</div>" : "");
+        } else if (q.statut !== "a_repondre" && !edition) {
+          h += '<div class="muted small rp-q">' + rpEsc(q.statut === "sautee" ? "Passée : la partie concernée gardera « " + q.a_completer + " »." : "Sans objet sur ce chantier : rien ne sera écrit à ce sujet.") + "</div>"
+            + (ecrire ? '<div class="rp-acts">' + btn("ent-modifier", "Répondre", "ghost", qa) + "</div>" : "");
+        } else if (ecrire) {
+          h += '<textarea class="inp rp-ent-ta" rows="3" maxlength="1500"' + qa + ' aria-label="' + rpEsc("Votre réponse : " + q.question) + '" placeholder="Votre réponse, en quelques mots ou quelques lignes.">' + rpEsc(ed ? ed.texte : "") + "</textarea>"
+            + '<div class="rp-acts">' + btn("ent-envoyer", ico("send", 14) + "Envoyer ma réponse", "primary", qa) + btn("ent-passer", "Passer", "ghost", qa)
+            + btn("ent-sans-objet", "Sans objet", "ghost", qa) + (edition ? btn("ent-annuler", "Annuler", "ghost", qa) : "") + "</div>";
+        } else {
+          h += '<div class="muted small rp-q">Ouvrez votre espace privé pour répondre.</div>';
+        }
+        const m = st.entMsgs[q.id];
+        if (m) h += m.err ? '<div class="conv-err rp-msg" role="alert">' + ico("circle-alert", 15) + "<div>" + rpEsc(m.txt) + "</div></div>" : '<div class="rp-ok-msg small" role="status">' + ico("check", 14) + "<span>" + rpEsc(m.txt) + "</span></div>";
+        h += "</li>";
+      });
+      return h + "</ul></section>";
     }
 
     function renderNote(p) {
@@ -703,6 +746,14 @@
         st.dossier = r.data; st.dossierOpen = true; render(); return;
       }
       if (a === "export") { await exporter(); return; }
+      if (a === "ent-modifier" || a === "ent-annuler") {
+        const qid = Number(b.dataset.qid), q = question(qid);
+        if (a === "ent-annuler") delete st.entEdits[qid];
+        else st.entEdits[qid] = { texte: (q && q.reponse && q.reponse.texte) || "", open: true };
+        st.entMsgs[qid] = null; render();
+        if (a === "ent-modifier") { const t = el.querySelector('textarea.rp-ent-ta[data-qid="' + qid + '"]'); if (t) t.focus(); }
+        return;
+      }
       if (a === "espace-ouvrir") { await espace({}); return; }
       if (a === "espace-code") { await espaceCode(); return; }
       if (a === "espace-reinit") {
@@ -730,6 +781,7 @@
           else { say(sid, r.message, true); render(); }
         }
         else if (a === "envoyer") await envoyer(sid);
+        else if (a === "ent-envoyer" || a === "ent-passer" || a === "ent-sans-objet") await repondreQuestion(a, Number(b.dataset.qid));
         else if (a === "valider") {
           const p = partie(sid); const cur = p && p.texte_commun;
           const r = await avecIdentite(() => call("POST", "/sections/" + sid + "/valider", { version_id: cur ? cur.version_id : 0 }), sid, "Pour valider votre partie");
@@ -795,6 +847,35 @@
       await load(); if (r.ok) changed();
     }
 
+    const question = (qid) => (((st.vue && st.vue.entretien) || {}).questions || []).find(q => q.id === qid) || null;
+
+    // Entretien chantier : répondre (avertissement d'abord : la réponse est lue par le chef de file), passer, sans objet.
+    async function repondreQuestion(a, qid) {
+      const q = question(qid); if (!q) return;
+      const statut = a === "ent-envoyer" ? "repondue" : a === "ent-passer" ? "sautee" : "sans_objet";
+      const body = { statut, lock_version: q.lock_version };
+      if (statut === "repondue") {
+        const texte = String((st.entEdits[qid] && st.entEdits[qid].texte) || "").trim();
+        if (!texte) { st.entMsgs[qid] = { txt: "Écrivez votre réponse, ou passez la question.", err: true }; render(); return; }
+        const av = (st.vue.entretien && st.vue.entretien.avertissement) || "Votre réponse sera lue par le chef de file.";
+        const ok = await modal({ title: "Envoyer votre réponse ?", confirmLabel: "J'ai lu, envoyer", cancelLabel: "Revenir", focusCancel: true,
+          bodyHtml: "<b>" + rpEsc(av) + "</b>" + (st.vue.identite && st.vue.identite.a_prouver ? "<br><br>" + rpEsc(st.vue.identite.message) : "") });
+        if (!ok) return;
+        body.reponse = texte; body.avertissement_lu = true;
+      }
+      const r = await avecIdentite(() => call("PUT", "/entretien/" + qid, body), null, "Pour répondre au chef de file");
+      if (r.ok) {
+        delete st.entEdits[qid];
+        st.entMsgs[qid] = { txt: statut === "repondue" ? "Réponse envoyée : le chef de file la lit comme un fait déclaré par votre entreprise."
+          : statut === "sautee" ? "Question passée : la partie concernée gardera « [À compléter] »." : "Question sans objet sur ce chantier." };
+        live(st.entMsgs[qid].txt);
+        await load(); changed();
+      } else {
+        st.entMsgs[qid] = { txt: r.message, err: true };
+        if (r.code === "question_modifiee" || r.code === "question_introuvable") await load(); else render();
+      }
+    }
+
     async function espace(body) {
       const r = await call("POST", "/espace", body);
       if (r.ok && r.data && r.data.cle) {
@@ -846,6 +927,11 @@
     };
     const onInput = (e) => {
       const t = e.target;
+      if (t && t.matches && t.matches("textarea.rp-ent-ta")) {
+        const qid = Number(t.dataset.qid), cur = st.entEdits[qid];
+        st.entEdits[qid] = { texte: t.value, open: !!(cur && cur.open) };
+        return;
+      }
       if (!t || !t.matches || !t.matches("textarea.rp-ta")) return;
       const sid = Number(t.dataset.sid), p = partie(sid);
       st.edits[sid] = { texte: t.value, base: p && p.brouillon ? p.brouillon.id : null };

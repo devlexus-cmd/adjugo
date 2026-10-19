@@ -24,10 +24,11 @@ TRUNCATED_NOTE = "[À compléter : la rédaction a été interrompue ici, la sui
 
 # Renvois internes aux sources (même forme que rag.cited_refs : « [S1] », « [S1, S2] », « [S1;S3] »,
 # et les plages « [S1-S3] », « [S1–S3] ») et, depuis la vague 3, aux faits numérotés remis à l'IA
-# (« [F3] », « [P1] », « [E2] », « [C4] », « [G1] », « [F3, S2] » : app/services/faits_sources.py).
-_CITE = re.compile(r"[ \t]*\[[FSPECG]\s*\d[\dFSPECG,;\s\-–—]*\]")
+# (« [F3] », « [P1] », « [E2] », « [C4] », « [G1] », « [F3, S2] » : app/services/faits_sources.py) et, depuis
+# la vague 5, aux réponses de l'entretien chantier (« [R3] », fiche chantier).
+_CITE = re.compile(r"[ \t]*\[[FSPECGR]\s*\d[\dFSPECGR,;\s\-–—]*\]")
 # Dernier filet : tout reste de renvoi « [S2 … ] », « [F3 … ] » (forme imprévue) est retiré aussi.
-_CITE_RESTE = re.compile(r"[ \t]*\[\s*[FSPECG]\s*\d[^\]\n]{0,40}\]")
+_CITE_RESTE = re.compile(r"[ \t]*\[\s*[FSPECGR]\s*\d[^\]\n]{0,40}\]")
 # Place d'un CV que l'IA n'a pas pu faire insérer (« [CV F7] ») : jamais chez l'acheteur.
 _CV = re.compile(r"[ \t]*\[\s*CV\s+F\s*\d{1,4}\s*\]", re.IGNORECASE)
 _TODO = re.compile(r"\[\s*[ÀAà]\s+compl[ée]ter[^\]]*\]", re.IGNORECASE)

@@ -323,6 +323,10 @@ app.include_router(fiches_import_router)
 # validation du dossier assemblé). Avant l'atelier : ses chemins sont plus précis.
 from app.routers.atelier_groupement import router as atelier_groupement_router
 app.include_router(atelier_groupement_router)
+# Rédaction, vague 5 (D) : l'entretien chantier (questions motivées par le dossier, fiche chantier, questions
+# posées à un partenaire dans son espace). Avant l'atelier : ses chemins sont plus précis.
+from app.routers.entretien import router as entretien_router
+app.include_router(entretien_router)
 from app.routers.atelier import router as atelier_router
 app.include_router(atelier_router)
 from app.routers.rgpd import router as rgpd_router

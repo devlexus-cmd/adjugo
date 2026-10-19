@@ -370,8 +370,11 @@ function _atlInit() {
            busy: "", hist: { open: false, loading: false, list: [], sid: null }, vue: null, derog: null, debit: null,
            plan: null, planOpen: false, add: "", ren: { on: false, v: "" }, factFocus: "", srcFocus: "", note: "",
            exportOpen: false, lastDerog: "", live: "", src: null, passage: null,
-           onglet: "redaction", rep: _atlRepInit() };
+           onglet: "redaction", rep: _atlRepInit(), ent: _atlEntInit() };
 }
+// Entretien chantier (rédaction, vague 5 — D) : les questions lues (GET/POST …/entretien), la saisie de chaque
+// réponse (par question), l'action en cours. `v` : clé de rendu des menus « Posée à » (remis à la valeur enregistrée).
+function _atlEntInit() { return { open: false, loading: false, d: null, err: "", busy: "", edits: {}, v: 0, auto: false }; }
 function _atlCardInit() { return { loading: false, loaded: false, d: null, error: "" }; }
 // « Qui écrit quoi » (rédaction, vague 4, chef de file) : la répartition lue (GET …/repartition), la partie
 // ouverte et son détail (texte envoyé, avant / après), la saisie du chef de file sur la part d'un partenaire,
@@ -411,7 +414,7 @@ function atlRepCompteurs(tc) {
   return out.join(" · ");
 }
 // Le texte contient-il des renvois (F1, S2…) ? Ils désignent alors des sources du partenaire.
-function atlRepARenvois(md) { return /\[\s*[FSPECG]\s*\d{1,4}(?:\s*[,;]\s*[FSPECG]?\s*\d{1,4})*\s*\]/.test(String(md || "")); }
+function atlRepARenvois(md) { return /\[\s*[FSPECGR]\s*\d{1,4}(?:\s*[,;]\s*[FSPECGR]?\s*\d{1,4})*\s*\]/.test(String(md || "")); }
 // Partenaires qui recevront « Demander les parts » : une partie à rédiger, en cours ou à revalider.
 function atlRepADemander(d) {
   const par = {};
@@ -557,7 +560,7 @@ function _atlMarks(s, re, ids, refs) {
 // Renvois d'un bloc « F3, S2 » (le préfixe se reporte : « F3, 4 » = F3 et F4) → étiquettes sûres.
 function atlRefs(inner) {
   const out = []; let pref = "";
-  String(inner || "").replace(/([FSPECG])?\s*(\d{1,4})/g, (m0, p, n) => { pref = p || pref; if (pref) out.push(pref + Number(n)); return m0; });
+  String(inner || "").replace(/([FSPECGR])?\s*(\d{1,4})/g, (m0, p, n) => { pref = p || pref; if (pref) out.push(pref + Number(n)); return m0; });
   return out;
 }
 function atlRefsHtml(inner) {
@@ -612,7 +615,7 @@ function atlMdToHtml(md, faits, opts) {
   });
   // « [À compléter …] » quelle que soit la casse (« [A COMPLETER …] », « [à Compléter …] ») comme le serveur
   // (far._TODO, re.IGNORECASE), sans rouvrir les renvois aux minuscules (« [f3] » n'est pas un renvoi).
-  const re = new RegExp("(\\[\\s*[ÀàAa]\\s+[Cc][Oo][Mm][Pp][Ll][ÉéEe][Tt][Ee][Rr][^\\]]*\\])|(\\[\\s*([FSPECG]\\s*\\d{1,4}(?:\\s*[,;]\\s*[FSPECG]?\\s*\\d{1,4})*)\\s*\\])|\\uE000(\\d+)\\uE001([^\\uE002]*)\\uE002", "g");
+  const re = new RegExp("(\\[\\s*[ÀàAa]\\s+[Cc][Oo][Mm][Pp][Ll][ÉéEe][Tt][Ee][Rr][^\\]]*\\])|(\\[\\s*([FSPECGR]\\s*\\d{1,4}(?:\\s*[,;]\\s*[FSPECGR]?\\s*\\d{1,4})*)\\s*\\])|\\uE000(\\d+)\\uE001([^\\uE002]*)\\uE002", "g");
   const inl = (t) => _atlInline(t, re, ids, refs);
   const out = [];
   let ul = null, ol = null, table = null, para = [];
@@ -669,7 +672,7 @@ function atlLimNiveau(l) {
 }
 // Nombre de mots (approché, comme le serveur) d'un texte Markdown, sans renvois ni syntaxe.
 function atlMots(md) {
-  const t = String(md || "").replace(/\[\s*[FSPECG]\s*\d{1,4}(?:\s*[,;]\s*[FSPECG]?\s*\d{1,4})*\s*\]/g, " ").replace(/\[\s*CV\s+F\s*\d{1,4}\s*\]/gi, " ").replace(/^\s*(#{1,6}|[-*+•]|\d{1,2}[.)])\s+/gm, " ").replace(/[|*_`]/g, " ");
+  const t = String(md || "").replace(/\[\s*[FSPECGR]\s*\d{1,4}(?:\s*[,;]\s*[FSPECGR]?\s*\d{1,4})*\s*\]/g, " ").replace(/\[\s*CV\s+F\s*\d{1,4}\s*\]/gi, " ").replace(/^\s*(#{1,6}|[-*+•]|\d{1,2}[.)])\s+/gm, " ").replace(/[|*_`]/g, " ");
   const m = t.match(/[0-9A-Za-zÀ-ÖØ-öø-ÿŒœ]+(?:['’-][0-9A-Za-zÀ-ÖØ-öø-ÿŒœ]+)*/g);
   return m ? m.length : 0;
 }
@@ -2329,7 +2332,9 @@ const __adjApp = createApp({
       if (r.a_revalider) return r.a_revalider > 1 ? r.a_revalider + " parties à revalider" : "Partie à revalider";
       if (r.a_faire) return r.a_faire > 1 ? r.a_faire + " parties à rédiger" : "Partie à rédiger";
       // Envoyée, pas encore validée : le chef de file attend sa validation.
-      return r.a_valider > 1 ? r.a_valider + " parties à valider" : "Partie à valider";
+      if (r.a_valider) return r.a_valider > 1 ? r.a_valider + " parties à valider" : "Partie à valider";
+      // Entretien chantier (vague 5) : des questions du chef de file attendent sa réponse.
+      return r.questions > 1 ? r.questions + " questions sur le chantier" : "Question sur le chantier";
     },
     openSharedKey(ev, s) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); this.openShared(s); } },
     // Les critères ne s'affichent QUE dans la carte « Comment vous serez noté » (phrase du
@@ -4731,6 +4736,7 @@ const __adjApp = createApp({
         if (this.atl.pid !== pid) return;
         if (d.dossier) { a.st = d; a.prop = null; } else { a.st = null; a.prop = d; }
         this._atlResume(d, pid);
+        this._atlEntAuto();
         if (a.st) {
           const ids = a.st.sections.map(s => s.id);
           if (!ids.includes(a.sel)) this.atlSelect(ids[0] || null);
@@ -4994,7 +5000,8 @@ const __adjApp = createApp({
       const nouvelle = !!s.version_courante;
       this._atlAvantLancer(nouvelle ? "Rédiger une nouvelle version ?" : "Rédiger avec Adjugo ?",
         nouvelle ? "Rédiger une nouvelle version" : "Rédiger quand même",
-        nouvelle ? ["Adjugo va rédiger une nouvelle version de « " + s.titre + " ». Le texte actuel reste dans l'historique : vous pourrez y revenir."] : [],
+        (nouvelle ? ["Adjugo va rédiger une nouvelle version de « " + s.titre + " ». Le texte actuel reste dans l'historique : vous pourrez y revenir."] : [])
+          .concat(this._atlLignesEntretien()),
         () => this._atlLancer("/sections/" + s.id + "/rediger", { accepte_debit: false }, "rediger"));
     },
     atlRaccourcir(s) {
@@ -5003,8 +5010,117 @@ const __adjApp = createApp({
     },
     atlRedigerTout() {
       const n = this.atlAEcrire(); if (!n) return;
-      this._atlAvantLancer("Rédiger avec Adjugo ?", "Rédiger quand même", [],
+      this._atlAvantLancer("Rédiger avec Adjugo ?", "Rédiger quand même", this._atlLignesEntretien(),
         () => this._atlLancer("/rediger", { accepte_debit: false }, "rediger"));
+    },
+
+    // ── Entretien chantier (rédaction, vague 5 — D : « Adjugo demande au lieu de deviner ») ──
+    // Contrat : docs/REDACTION_V5.md (section D). Les questions viennent de la banque, sans IA ; chacune porte la phrase
+    // du dossier qui la motive. Les réponses forment la fiche chantier (faits « déclaré par vous ») ; une question posée
+    // à un partenaire se répond dans SON espace. Sur téléphone : répondre et passer restent possibles.
+    atlEntCpt() { const st = this.atl.st; return (st && st.entretien) || {}; },
+    atlEntTitre() {
+      const e = this.atlEntCpt(), n = e.prepare ? (e.total || 0) : (e.proposees || 0);
+      return n + " question" + (n > 1 ? "s" : "") + " sur ce chantier";
+    },
+    atlEntPill() {
+      const e = this.atlEntCpt();
+      if (!e.prepare) return { cls: "neutral", label: "À ouvrir" };
+      if (e.a_repondre) return { cls: "a_etudier", label: e.a_repondre + " à répondre" };
+      return { cls: "go", label: "Toutes traitées" };
+    },
+    atlEntSous() {
+      const e = this.atlEntCpt(), out = [];
+      if (e.repondues) out.push(e.repondues + (e.repondues > 1 ? " réponses" : " réponse"));
+      if (e.passees) out.push(e.passees + (e.passees > 1 ? " passées" : " passée"));
+      if (e.chez_partenaires) out.push(e.chez_partenaires + (e.chez_partenaires > 1 ? " posées à vos partenaires" : " posée à un partenaire"));
+      return out.length ? out.join(" · ") + "." : "Répondez avant de rédiger : Adjugo s'appuiera sur vos réponses au lieu de deviner.";
+    },
+    atlEntStCls(q) { return ({ repondue: "go", sautee: "a_etudier", sans_objet: "neutral", a_repondre: "neutral" })[q.statut] || "neutral"; },
+    _atlEntSet(d) {
+      const ent = this.atl.ent, pid = this.atl.pid;
+      ent.d = d; ent.err = "";
+      (d.questions || []).forEach(q => {
+        if (q.id && q.adresse.type !== "invitation" && !ent.edits[q.id]) ent.edits[q.id] = { texte: "", preuve_id: null, open: false };
+      });
+      if (this.atl.st && d.compteurs) this.atl.st.entretien = Object.assign({}, this.atl.st.entretien || {}, d.compteurs);
+      const ec = d.ia && d.ia.en_cours;           // recherche avec l'IA lancée avant (page rechargée) : suivie jusqu'au bout
+      if (ec && ec.job_id && !this.atlJobs[ec.job_id]) this._atlTrack({ id: ec.job_id, status: ec.statut }, pid, [], "entretien");
+    },
+    async atlEntLoad(preparer) {
+      const ent = this.atl.ent, pid = this.atl.pid; if (!pid) return;
+      ent.loading = true; ent.err = "";
+      try {
+        let d = await this.api("GET", this._atlUrl("/entretien"));
+        if (preparer && !d.prepare) {
+          // Dossier d'avant l'entretien : le préparer (sans IA, idempotent) ; la démo, en lecture, garde la proposition.
+          try { d = await this.api("POST", this._atlUrl("/entretien")); }
+          catch (e) { if (e.status !== 403) throw e; }
+        }
+        if (this.atl.pid !== pid) return;
+        this._atlEntSet(d);
+      } catch (e) { ent.err = e.message || "Les questions sont indisponibles pour le moment."; }
+      finally { ent.loading = false; }
+    },
+    atlEntOuvrir() {
+      const ent = this.atl.ent; ent.open = !ent.open;
+      if (ent.open) this.atlEntLoad(true);
+    },
+    // Avant la rédaction des parties notées : à la première ouverture d'un atelier encore sans texte, les questions
+    // sont dépliées d'elles-mêmes (une fois par visite ; les parties tirées du groupement ne comptent pas).
+    _atlEntAuto() {
+      const a = this.atl, st = a.st, ent = a.ent, e = (st && st.entretien) || {};
+      if (!st || ent.auto) return;
+      ent.auto = true;
+      if ((e.prepare ? e.a_repondre : e.proposees) && st.sections.every(s => s.genere || !s.version_courante)) { ent.open = true; this.atlEntLoad(true); }
+    },
+    atlEntModifier(q) {
+      const ent = this.atl.ent;
+      ent.edits[q.id] = { texte: (q.reponse && q.reponse.texte) || "", preuve_id: (q.reponse && q.reponse.preuve_id) || null, open: true };
+    },
+    async atlEntRepondre(q, statut) {
+      const ent = this.atl.ent; if (ent.busy) return;
+      const ed = ent.edits[q.id] || {}, body = { statut, lock_version: q.lock_version };
+      if (statut === "repondue") {
+        body.reponse = String(ed.texte || "").trim();
+        if (ed.preuve_id) body.preuve_id = ed.preuve_id;
+        if (!body.reponse && !body.preuve_id) { this.notify("Écrivez votre réponse, ou passez la question.", "err"); return; }
+      }
+      ent.busy = "q" + q.id;
+      try {
+        const d = await this.api("PUT", this._atlUrl("/entretien/" + q.id), body);
+        ent.edits[q.id] = { texte: "", preuve_id: null, open: false };
+        this._atlEntSet(d);
+        this.notify(statut === "repondue" ? "Réponse ajoutée à la fiche chantier"
+          : statut === "sautee" ? "Question passée : la partie concernée gardera « [À compléter] »" : "Question sans objet sur ce chantier");
+      } catch (e) {
+        this.notify(e.message, "err");
+        if (e.code === "question_modifiee" || e.code === "question_introuvable" || e.code === "question_d_un_partenaire") this.atlEntLoad(false);
+      } finally { ent.busy = ""; }
+    },
+    async atlEntAdresser(q, val, confirmer) {
+      const ent = this.atl.ent; if (ent.busy) return;
+      const invite_id = val ? Number(val) : null;
+      ent.busy = "ad" + q.id;
+      try {
+        const d = await this.api("PUT", this._atlUrl("/entretien/" + q.id + "/adresse"), { invite_id, confirmer: !!confirmer });
+        this._atlEntSet(d);
+        this.notify(invite_id ? "Question posée à votre partenaire : il la trouve dans son espace de rédaction" : "Question reprise pour votre entreprise");
+      } catch (e) {
+        ent.v++;                                    // le menu « Posée à » revient à la valeur enregistrée
+        if (e.code === "reponse_a_confirmer") {
+          this._convAsk({ title: "Poser la question à un autre ?", ok: "Confirmer", lines: [e.message], run: () => this.atlEntAdresser(q, val, true) });
+        } else this.notify(e.message, "err");
+      } finally { ent.busy = ""; }
+    },
+    atlEntIA() { this._atlLancer("/entretien/ia", { accepte_debit: false }, "entretien"); },
+    // Avant de rédiger : les questions encore sans réponse et celles passées (dans la même fenêtre de confirmation).
+    _atlLignesEntretien() {
+      const e = this.atlEntCpt(), out = [];
+      const n = e.prepare ? (e.a_repondre || 0) : (e.proposees || 0);
+      if (n) out.push({ t: (n > 1 ? n + " questions sur ce chantier attendent" : "Une question sur ce chantier attend") + " une réponse : sans elle, Adjugo n'écrit rien à ce sujet et laisse « [À compléter] » si la partie en a besoin. Vous pouvez d'abord y répondre (« " + this.atlEntTitre() + " », en haut de l'atelier).", warn: true });
+      if (e.passees) out.push(e.passees > 1 ? e.passees + " questions passées : leur partie gardera « [À compléter] »." : "Une question passée : sa partie gardera « [À compléter] ».");
+      return out;
     },
     // Échec d'une rédaction : le message reste affiché DANS la partie jusqu'à la prochaine action sur elle.
     _atlEchecCle(pid, sid) { return pid + ":" + sid; },
@@ -5021,6 +5137,7 @@ const __adjApp = createApp({
         this._atlTrack(r.tache, pid, r.section_ids, action);
         (r.section_ids || []).forEach(id => { const x = a.st && a.st.sections.find(y => y.id === id); if (x) x.redaction_en_cours = { job_id: r.tache.id, action, statut: r.tache.status }; });
         const n = (r.section_ids || []).length;
+        if (action === "entretien") { this.notify("Adjugo cherche d'autres questions sur ce chantier. Vous pouvez continuer ailleurs."); this.atlEntLoad(false); return; }
         this.notify(action === "harmoniser" ? "Adjugo relie les parts des membres. Vous pouvez continuer ailleurs."
           : action === "raccourcir" ? "Adjugo raccourcit la partie. Vous pouvez continuer ailleurs." : (n > 1 ? "Adjugo rédige " + n + " parties. Vous pouvez continuer ailleurs." : "Adjugo rédige la partie. Vous pouvez continuer ailleurs."));
       } catch (e) {
@@ -5051,6 +5168,16 @@ const __adjApp = createApp({
       } finally { this._atlPolling = false; }
     },
     _atlJobFini(j, r) {
+      if (j.action === "entretien" || r.kind === "atelier_entretien") {
+        // Entretien chantier (vague 5) : des questions de plus, chacune avec sa phrase du dossier ; rien de retenu ou
+        // IA en panne : rien n'est décompté (le serveur le dit).
+        const res = r.result || {}, ok = r.status !== "error";
+        const msg = ok ? (res.message || "Recherche terminée.") : (r.error || "La recherche de questions n'a pas abouti. Rien n'a été décompté.");
+        this.notify(msg, ok && Number(res.ajoutees) > 0 ? "ok" : "err");
+        if (this.atl.pid === j.pid) { this.atl.live = msg; this.atlEntLoad(false); }
+        if (this.view === "atelier" && this.atl.pid === j.pid) this.atlLoad(true);
+        return;
+      }
       if (j.action === "harmoniser" || r.kind === "atelier_harmoniser") {
         const res = r.result || {}, ok = r.status !== "error";
         const msg = ok ? (res.message || "Harmonisation terminée : relisez les parties touchées.")

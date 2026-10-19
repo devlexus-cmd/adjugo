@@ -1232,6 +1232,55 @@ class DossierValidation(Base):
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+# === L'ENTRETIEN CHANTIER (rédaction, vague 5 — D de l'étude, § 6.9) ===
+# « Adjugo demande au lieu de deviner » : avant la rédaction des parties notées, quelques questions sur le
+# chantier, chacune avec la PHRASE du dossier de l'acheteur qui la motive (retrouvée mot pour mot). Contrat :
+# docs/REDACTION_V5.md (section D) ; règles : app/services/entretien_chantier.py (seul point d'écriture).
+#   • une ligne par question du dossier de présentation d'un marché ; `numero` STABLE dans le dossier, jamais
+#     réutilisé (renvoi « [R3] » du contrôle des faits de l'atelier) : une question retirée garde sa ligne ;
+#   • la RÉPONSE est un fait « déclaré par vous » (fiche chantier) ; une question sautée laisse
+#     « [À compléter : …] » dans la partie concernée, jamais un texte de remplissage ;
+#   • groupement (vague 4) : une question adressée à un partenaire (`adresse_invite_id`) est posée dans SON
+#     espace ; sa réponse est SA donnée (`reponse_invite_id`), lue par le chef de file comme « déclaré par
+#     votre partenaire » ; effacée au retrait ou au déclin de son invitation ;
+#   • une question proposée par l'IA (option, `origine` 'ia') n'entre que si sa phrase du dossier est
+#     retrouvée mot pour mot (citation_guard). Le CV d'une personne n'est jamais remis à l'IA.
+class EntretienQuestion(Base):
+    __tablename__ = "entretien_questions"
+    __table_args__ = (UniqueConstraint("dossier_id", "numero", name="uq_entretien_questions_numero"),
+                      UniqueConstraint("dossier_id", "code", name="uq_entretien_questions_code"))
+
+    id = Column(Integer, primary_key=True, index=True)
+    dossier_id = Column(Integer, ForeignKey("dossiers_presentation.id"), nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)        # tenant du chef de file (data_owner_id)
+    numero = Column(Integer, nullable=False)                      # « R3 » : stable, jamais réutilisé
+    code = Column(String(80), nullable=False)                     # code de la banque, ou « ia-<empreinte> »
+    origine = Column(String(10), nullable=False, default="banque", server_default="banque")   # banque | ia
+    theme = Column(String(160), nullable=False, default="", server_default="")
+    question = Column(Text, nullable=True)
+    type_reponse = Column(String(10), nullable=False, default="texte", server_default="texte")   # texte | equipe
+    motif = Column(Text, nullable=True)                           # la phrase du dossier, telle qu'écrite
+    motif_piece = Column(String(200), nullable=False, default="", server_default="")
+    ordre = Column(Integer, nullable=False, default=0, server_default="0")
+    retiree_le = Column(DateTime, nullable=True)                  # plus proposée (dossier réimporté) : gardée
+    # À qui la question est posée : l'organisation du chef de file, ou un partenaire (son invitation).
+    adresse_kind = Column(String(12), nullable=False, default="organisation", server_default="organisation")
+    adresse_invite_id = Column(Integer, nullable=True, index=True)
+    adresse_choix = Column(String(10), nullable=False, default="propose", server_default="propose")
+    # a_repondre | repondue | sautee | sans_objet
+    statut = Column(String(12), nullable=False, default="a_repondre", server_default="a_repondre")
+    reponse = Column(Text, nullable=True)
+    reponse_preuve_id = Column(Integer, nullable=True)            # « Équipe » de « Mes preuves » (jamais le CV)
+    reponse_kind = Column(String(12), nullable=False, default="", server_default="")   # organisation | invitation
+    reponse_invite_id = Column(Integer, nullable=True, index=True)
+    reponse_user_id = Column(Integer, nullable=True)
+    repondu_le = Column(DateTime, nullable=True)
+    lock_version = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 # === MES PREUVES (rédaction, vague 3 — socle commun de A, I et E1) ===
 # Les faits de l'entreprise, chacun avec SA source typée (doctrine § 7, règles 1 à 3 : un fait ne
 # vient jamais de l'IA ; on dit où on l'a trouvé, jamais « vérifié »). Contrat :

@@ -314,10 +314,10 @@ def transfer_ownership(data: TransferIn, request: Request,
     #     (invisibles pour l'org, et effacées avec son compte).
     # Dossiers de présentation de l'atelier (rédaction, vague 2) : portés par le tenant aussi.
     from app.models import (DossierPartBrouillon, DossierPresentation, DossierRepartition, DossierSection,
-                            DossierSectionVersion, DossierValidation)
+                            DossierSectionVersion, DossierValidation, EntretienQuestion)
     for M in (CoSpace, ProjectInvite, ProjectContribution, ContributionPiece, GroupementSimulation,
               GroupementConvention, GroupementSignature, DossierPresentation, DossierSection,
-              DossierSectionVersion, DossierRepartition, DossierPartBrouillon, DossierValidation):
+              DossierSectionVersion, DossierRepartition, DossierPartBrouillon, DossierValidation, EntretienQuestion):
         db.query(M).filter(M.owner_id == old_id).update({M.owner_id: new_id}, synchronize_session=False)
     # « Mes preuves » (rédaction, vague 3, owner_id = tenant) : elles suivent le nouveau propriétaire.
     from app.services.preuves import transferer as _transferer_preuves

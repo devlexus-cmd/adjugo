@@ -69,8 +69,10 @@ from app.services.dce_pieces import fold as _fold_same     # repli de MÊME long
 
 # ── Vocabulaire ───────────────────────────────────────────────────────────────────────
 
-PREFIXES = "FSPECG"
+PREFIXES = "FSPECGR"
 PREUVE, EXTRAIT, PROFIL, EQUIPE, CHIFFRAGE, PARTENAIRE = "F", "S", "P", "E", "C", "G"
+# Rédaction, vague 5 (D) : une réponse de l'entretien chantier (fiche chantier), numéro STABLE dans le dossier.
+ENTRETIEN = "R"
 
 # Types de source affichés (jamais « vérifié »).
 T_DOCUMENTS = "documents"          # passage d'un document de l'entreprise
@@ -126,8 +128,8 @@ def libelles_actifs() -> bool:
 
 # ── Renvois [F3], [S2], [P1]… ─────────────────────────────────────────────────────────
 
-_REF = re.compile(r"\[\s*([FSPECG]\s*\d{1,4}(?:\s*[,;]\s*(?:[FSPECG]\s*)?\d{1,4})*)\s*\]")
-_REF_ITEM = re.compile(r"([FSPECG])?\s*(\d{1,4})")
+_REF = re.compile(r"\[\s*([FSPECGR]\s*\d{1,4}(?:\s*[,;]\s*(?:[FSPECGR]\s*)?\d{1,4})*)\s*\]")
+_REF_ITEM = re.compile(r"([FSPECGR])?\s*(\d{1,4})")
 _CV = re.compile(r"^[ \t]*[-*•]?[ \t]*\[\s*CV\s+F\s*(\d{1,4})\s*\][ \t]*\.?[ \t]*$", re.MULTILINE | re.IGNORECASE)
 _CV_INLINE = re.compile(r"\[\s*CV\s+F\s*(\d{1,4})\s*\]", re.IGNORECASE)
 

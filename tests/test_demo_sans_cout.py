@@ -87,6 +87,8 @@ COUTS = [
          corps={"action": "rediger"}, params=_TS),
     Cout("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/aide", "ia", corps={"action": "rediger"},
          params=_LS),
+    # Rédaction, vague 5 (D) : « Chercher d'autres questions avec Adjugo » (entretien chantier, option IA).
+    Cout("POST", "/api/atelier/{project_id}/entretien/ia", "ia", corps={}, params=_P),
     # ── Emails ──────────────────────────────────────────────────────────────────────────────────────
     Cout("POST", "/api/projects/{project_id}/invites", "email",
          corps={"recipient": "partenaire@exemple.invalid", "company_name": "Partenaire"}, params=_L),
@@ -246,6 +248,13 @@ SANS_COUT = {
     ("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/valider"): _V + " (« Partagé avec moi »)",
     ("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/retablir"): _V + " (« Partagé avec moi »)",
     ("POST", "/api/shared/{project_id}/redaction/dossier/valider"): _V + " (« Partagé avec moi »)",
+    # Rédaction, vague 5 (D) : l'entretien chantier — refusé par le garde ET dans la route (0 IA, 0 email) ; la
+    # vitrine montre un entretien déjà rempli (app/services/demo_entretien.py).
+    ("POST", "/api/atelier/{project_id}/entretien"): _V + " (0 IA : questions tirées de la banque)",
+    ("PUT", "/api/atelier/{project_id}/entretien/{question_id}"): _V,
+    ("PUT", "/api/atelier/{project_id}/entretien/{question_id}/adresse"): _V + " (aucun email)",
+    ("PUT", "/api/invite/{token}/redaction/entretien/{question_id}"): _LD,
+    ("PUT", "/api/shared/{project_id}/redaction/entretien/{question_id}"): _V + " (« Partagé avec moi »)",
     ("PUT", "/api/invite/{token}/contribution"): "lien partenaire de la démo : refusé dans la route (part figée par la convention)",
     ("PUT", "/api/invite/{token}/contribution/detail"): "lien partenaire de la démo : refusé dans la route",
     ("POST", "/api/invite/{token}/otp/verify"): "lien partenaire : vérification d'un code (aucun envoi)",

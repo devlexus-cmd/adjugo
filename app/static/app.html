@@ -1945,6 +1945,98 @@
               <div class="sr-only" aria-live="polite">{{ atl.live }}</div>
             </div>
 
+            <!-- ░░ ENTRETIEN CHANTIER (rédaction, vague 5 — D : « Adjugo demande au lieu de deviner ») ░░
+                 Contrat : docs/REDACTION_V5.md (section D). Avant la rédaction des parties notées, « n questions sur ce
+                 chantier » (8 au plus), chacune avec la phrase du dossier qui la motive, retrouvée mot pour mot. Les
+                 réponses forment la fiche chantier (faits « déclaré par vous », renvois R1, R2…) ; une question passée
+                 laisse « [À compléter] » dans la partie concernée. Utilisable sur téléphone (répondre, passer). En
+                 groupement, une question peut être posée à un partenaire : il y répond dans SON espace, sa réponse
+                 arrive comme un fait déclaré par lui. Tous les textes sont rendus échappés (interpolation Vue). -->
+            <section v-if="atl.st.entretien && (atl.st.entretien.total || atl.st.entretien.proposees)" class="card atl-ent" aria-labelledby="atl-ent-t">
+              <div class="row wrap atl-g6 atl-ent-h">
+                <i data-lucide="messages-square" class="atl-ent-ico"></i>
+                <h3 id="atl-ent-t" class="atl-ent-t">{{ atlEntTitre() }}</h3>
+                <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo cherche dans le dossier de l'acheteur, sans IA, les contraintes du chantier qui méritent une réponse précise : site occupé, école, travaux de nuit, amiante, voirie, phasage, déchets… Chaque question montre la phrase du dossier qui la motive. Vos réponses forment la fiche chantier : Adjugo s'en sert pour rédiger, comme des faits « déclaré par vous ». Une question passée laisse « [À compléter] » dans la partie concernée.</span></button>
+                <span class="pill" :class="atlEntPill().cls" style="font-size:11px">{{ atlEntPill().label }}</span>
+                <div class="spacer"></div>
+                <button type="button" class="btn sm" @click="atlEntOuvrir()" :aria-expanded="atl.ent.open ? 'true' : 'false'" aria-controls="atl-ent-b" :disabled="atl.ent.loading && !atl.ent.d"><span v-if="atl.ent.loading && !atl.ent.d" class="spin"></span><i v-else :data-lucide="atl.ent.open ? 'chevron-up' : 'message-square-text'"></i>{{ atl.ent.open ? 'Replier' : 'Répondre aux questions' }}</button>
+              </div>
+              <p v-if="!atl.ent.open" class="muted small atl-ent-sous">{{ atlEntSous() }}</p>
+              <div v-if="atl.ent.open" id="atl-ent-b" class="atl-ent-b">
+                <div v-if="atl.ent.err" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ atl.ent.err }} <a href="#" @click.prevent="atlEntLoad(false)" style="color:var(--accent-text)">Réessayer</a></div></div>
+                <div v-else-if="atl.ent.loading && !atl.ent.d" class="muted small" role="status"><span class="spin"></span> Chargement des questions…</div>
+                <template v-if="atl.ent.d">
+                  <p class="small atl-m0">Vos réponses deviennent des faits « déclaré par vous » ; une question passée laisse « [À compléter] » dans la partie concernée, jamais un texte de remplissage.</p>
+                  <div v-if="atl.ent.d.dossier_present === false" class="atl-info"><i data-lucide="file-x"></i><span style="flex:1;min-width:0">Aucun dossier du marché importé : Adjugo ne peut pas repérer les contraintes du chantier. Importez-le pour recevoir les questions qui le concernent.</span></div>
+                  <ol class="atl-ent-list">
+                    <li v-for="q in atl.ent.d.questions" :key="'eq'+(q.id || q.code)" class="atl-ent-q">
+                      <div class="atl-ent-qh">
+                        <span v-if="q.ref" class="atl-ent-ref" title="Renvoi de la fiche chantier">{{ q.ref }}</span>
+                        <b class="atl-ent-qt">{{ q.question }}</b>
+                        <span class="pill" :class="atlEntStCls(q)" style="font-size:10.5px">{{ q.statut_libelle }}</span>
+                      </div>
+                      <blockquote v-if="q.motif" class="atl-q atl-ent-motif">{{ q.motif.phrase }}<span v-if="q.motif.piece" class="muted"> ({{ q.motif.piece }})</span></blockquote>
+                      <div v-else class="muted small atl-mt4">{{ q.motif_message }}</div>
+                      <div class="muted small atl-mt4 atl-ent-meta"><span v-if="q.partie">Partie concernée : {{ q.partie.titre }}</span><template v-if="q.critere"><span v-if="!q.partie || q.critere.critere !== q.partie.titre"> · critère : {{ q.critere.critere }}</span><span v-if="q.critere.poids"> ({{ q.critere.poids }})</span></template><span v-if="q.origine === 'ia'"> · {{ q.origine_libelle }}</span></div>
+                      <!-- Groupement : à qui la question est posée (un partenaire y répond dans son espace) -->
+                      <div v-if="atl.ent.d.groupement.actif && q.id" class="row wrap atl-g6 atl-mt8 small atl-ent-ad">
+                        <label :for="'atl-ead-'+q.id" class="muted">Posée à</label>
+                        <select :id="'atl-ead-'+q.id" :key="'eads'+q.id+'-'+atl.ent.v" class="inp atl-ent-sel" :value="q.adresse.type === 'invitation' ? String(q.adresse.invite_id) : ''" @change="atlEntAdresser(q, $event.target.value)" :disabled="!!atl.ent.busy">
+                          <option value="">Votre entreprise</option>
+                          <option v-for="m in atl.ent.d.groupement.membres" :key="'eam'+m.invite_id" :value="String(m.invite_id)">{{ m.nom }}</option>
+                        </select>
+                        <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Une question posée à un partenaire apparaît dans son espace de rédaction : il y répond chez lui, et sa réponse vous arrive comme un fait déclaré par son entreprise. Vous ne pouvez pas la modifier ; si vous la reprenez, sa réponse sort de la fiche chantier. Adjugo propose le partenaire dont le lot, ou la partie confiée, correspond à la question.</span></button>
+                      </div>
+                      <!-- Posée à un partenaire : sa réponse, en lecture -->
+                      <div v-if="q.adresse.type === 'invitation'" class="small atl-mt8">
+                        <template v-if="q.reponse"><div class="atl-ent-rep">{{ q.reponse.texte }}</div><div class="muted atl-mt4">{{ q.reponse.libelle }}<template v-if="q.reponse.le">, le {{ atlWhen(q.reponse.le) }}</template></div></template>
+                        <span v-else-if="q.statut === 'a_repondre'" class="muted">{{ q.adresse.nom }} y répond depuis son espace.</span>
+                        <span v-else class="muted">{{ q.statut_libelle }} par {{ q.par }}.</span>
+                      </div>
+                      <!-- Posée à votre entreprise : répondre, passer, sans objet -->
+                      <template v-else-if="q.id && atl.ent.edits[q.id]">
+                        <div v-if="q.reponse && !atl.ent.edits[q.id].open" class="small atl-mt8">
+                          <div class="atl-ent-rep"><template v-if="q.reponse.personne">{{ q.reponse.personne.nom }}, {{ q.reponse.personne.fonction }}<template v-if="q.reponse.texte"> ; </template></template>{{ q.reponse.texte }}</div>
+                          <div v-if="q.reponse.personne_retiree" class="atl-ko atl-mt4">La fiche « Équipe » choisie n'est plus utilisable dans « Mes preuves » : choisissez de nouveau.</div>
+                          <div class="muted atl-mt4">{{ q.reponse.libelle }}</div>
+                          <button type="button" class="atl-lien atl-mt4" @click="atlEntModifier(q)">Modifier la réponse</button>
+                        </div>
+                        <div v-else-if="q.statut !== 'a_repondre' && !atl.ent.edits[q.id].open" class="small atl-mt8"><span class="muted">{{ q.statut === 'sautee' ? 'Passée : la partie concernée gardera « ' + q.a_completer + ' ».' : 'Sans objet sur ce chantier : rien ne sera écrit à ce sujet.' }}</span> <button type="button" class="atl-lien" @click="atlEntModifier(q)">Répondre</button></div>
+                        <div v-else class="atl-ent-form atl-mt8">
+                          <div v-if="q.type_reponse === 'equipe' && atl.ent.d.equipe.length" class="row wrap atl-g6 small atl-mt4">
+                            <label :for="'atl-eqp-'+q.id" class="muted">Une personne de votre équipe</label>
+                            <select :id="'atl-eqp-'+q.id" class="inp atl-ent-sel" v-model="atl.ent.edits[q.id].preuve_id">
+                              <option :value="null">Aucune : je l'écris</option>
+                              <option v-for="p in atl.ent.d.equipe" :key="'eqp'+p.preuve_id" :value="p.preuve_id">{{ p.nom }}, {{ p.fonction }}</option>
+                            </select>
+                            <button v-if="q.aide" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ q.aide }}</span></button>
+                          </div>
+                          <textarea class="atl-ta atl-ent-ta" rows="3" v-model="atl.ent.edits[q.id].texte" :aria-label="'Votre réponse : ' + q.question" maxlength="1500" :placeholder="q.type_reponse === 'equipe' && atl.ent.d.equipe.length ? 'Précision facultative (rôle sur ce chantier, présence).' : 'Votre réponse, en quelques mots ou quelques lignes.'"></textarea>
+                          <div class="row wrap atl-g6 atl-mt4">
+                            <button type="button" class="btn sm primary" @click="atlEntRepondre(q, 'repondue')" :disabled="!!atl.ent.busy"><span v-if="atl.ent.busy === 'q'+q.id" class="spin"></span><i v-else data-lucide="check"></i>Enregistrer la réponse</button>
+                            <button type="button" class="btn sm ghost" @click="atlEntRepondre(q, 'sautee')" :disabled="!!atl.ent.busy">Passer</button>
+                            <button type="button" class="btn sm ghost" @click="atlEntRepondre(q, 'sans_objet')" :disabled="!!atl.ent.busy">Sans objet</button>
+                            <button v-if="atl.ent.edits[q.id].open" type="button" class="btn sm ghost" @click="atl.ent.edits[q.id].open = false">Annuler</button>
+                          </div>
+                        </div>
+                      </template>
+                    </li>
+                  </ol>
+                  <div class="row wrap atl-g6 atl-ent-f">
+                    <template v-if="!atlMobile && atl.ent.d.prepare">
+                      <button type="button" class="btn sm" @click="atlEntIA()" :disabled="!!atl.busy || !!atl.ent.d.ia.en_cours || !atl.ent.d.ia.restantes || atl.ent.d.dossier_present === false"><span v-if="atl.ent.d.ia.en_cours" class="spin"></span><i v-else data-lucide="sparkles"></i>Chercher d'autres questions avec Adjugo</button>
+                      <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.ent.d.ia.bulle }} {{ atl.ent.d.ia.quota }}<template v-if="!atl.ent.d.ia.restantes"> Adjugo a déjà proposé {{ atl.ent.d.ia.plafond }} questions avec l'IA pour ce dossier.</template></span></button>
+                    </template>
+                    <div class="spacer"></div>
+                    <span v-if="atlMobile" class="muted small">Sur téléphone, vous pouvez répondre et passer des questions.</span>
+                  </div>
+                  <details v-if="atl.ent.d.fiche.length" class="atl-det atl-mt8"><summary>Fiche chantier ({{ atl.ent.d.fiche.length }})</summary>
+                    <ul class="atl-ent-fiche"><li v-for="f in atl.ent.d.fiche" :key="'ef'+f.ref"><span class="atl-ent-ref">{{ f.ref }}</span> <b>{{ f.theme }}</b> : {{ f.texte }} <span class="muted">({{ f.libelle }})</span></li></ul>
+                  </details>
+                </template>
+              </div>
+            </section>
+
             <!-- ░░ « QUI ÉCRIT QUOI » (rédaction, vague 4, chef de file) ░░
                  Contrat : docs/REDACTION_V4_GROUPEMENT.md § 4. Seulement pour un marché en groupement
                  (atlGrp) : sans groupement, ni onglets ni panneau, l'atelier ne change pas. Le chef de file
@@ -3219,7 +3311,7 @@
                 <!-- « À valider » : convention générée, MON accord attendu (statut seulement, jamais un montant) -->
                 <span v-if="s.groupement && s.groupement.a_valider" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="file-signature" style="width:11px;height:11px"></i>Convention à valider</span>
                 <!-- Rédaction, vague 4 : mes parties du dossier de présentation (statuts seulement) -->
-                <span v-if="s.redaction && (s.redaction.a_faire || s.redaction.a_revalider || s.redaction.a_valider)" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="pen-line" style="width:11px;height:11px"></i>{{ sharedRedLine(s.redaction) }}</span>
+                <span v-if="s.redaction && (s.redaction.a_faire || s.redaction.a_revalider || s.redaction.a_valider || s.redaction.questions)" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="pen-line" style="width:11px;height:11px"></i>{{ sharedRedLine(s.redaction) }}</span>
                 <span class="pill" :class="s.contribution_status==='submitted'?'go':s.contribution_status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ s.contribution_status==='submitted'?'Soumise':s.contribution_status==='draft'?'Brouillon':'À compléter' }}</span>
                 <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-2)"></i>
               </div>
@@ -3780,7 +3872,7 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/redaction-partenaire.js" integrity="sha384-Ud5XH/gZAylyBEqTBNMYYwNvbtfb5gWuP1kRjjsJtLCvk0k+tigNGoZ4NWoqNsjc" defer></script>
-<script src="/static/app.js" integrity="sha384-AqbZVVon8p9uo7Tx+fHAWLbWMNWPnk/H1DJytfykwbgf1LqFDSYDZu3AkJ2ruloK" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-8FE+HOGK6URNvD8hVHp/RUNJVbWRCu1ebAJnx6koblinYTbdC67JqFncgsjmzwOc" defer></script>
+<script src="/static/app.js" integrity="sha384-q8wT7rwWOG7wr8v1KCR+JcytsKaoK0F5KBkKmzeuliZdSvehJXx9pPjZCdlu5VgI" defer></script>
 </body>
 </html>

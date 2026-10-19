@@ -145,6 +145,8 @@ LABELS_ME = {
     "redaction.partie_groupement_validee": "Vous avez validé « Qui fait quoi dans le groupement »",
     "redaction.fait_relu": "Vous avez relu un fait de votre partie envoyée",
     "redaction.fait_a_relire": "Vous avez remis à relire un fait de votre partie envoyée",
+    # Rédaction, vague 5 (entretien chantier) : actions NOUVELLES, propres au membre concerné.
+    "entretien.reponse": "Vous avez répondu à une question du chef de file sur le chantier",
 }
 LABELS_OWNER = {
     "owner.view_contribution": "Le chef de file a consulté votre part",
@@ -180,6 +182,9 @@ LABELS_OWNER = {
     "redaction.harmonisation": "Le chef de file a harmonisé le ton du dossier (phrases de transition)",
     "redaction.transition_ajoutee": ("Le chef de file a ajouté une phrase de transition au début de votre partie : "
                                      "à revalider"),
+    # Rédaction, vague 5 (entretien chantier)
+    "entretien.question_adressee": "Le chef de file vous a posé une question sur le chantier",
+    "entretien.question_reprise": "Le chef de file a repris une question qu'il vous avait posée",
 }
 LABELS_PARTNER = {
     "invite.created": "Un partenaire a été invité",

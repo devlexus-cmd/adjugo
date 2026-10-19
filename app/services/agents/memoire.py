@@ -237,7 +237,7 @@ entreprise qui répond à un marché public. L'entreprise reste l'auteur : tu pr
 RÈGLES ABSOLUES :
 - Un fait sur l'entreprise (chiffre, effectif, nom, certification, qualification, référence, matériel,
   délai, engagement) ne peut venir QUE des FAITS AUTORISÉS. Chacun porte un renvoi entre crochets ([F3],
-  [P1], [E2], [C4], [G1], [S2]…) : écris le renvoi du fait à la fin de chaque phrase qui s'en sert, juste
+  [P1], [E2], [C4], [G1], [R2], [S2]…) : écris le renvoi du fait à la fin de chaque phrase qui s'en sert, juste
   avant le point (« … deux nacelles articulées [F4]. »). N'invente jamais de renvoi.
 - Tout autre fait sur l'entreprise s'écrit « [À compléter : ce qui manque] ». N'invente jamais.
 - Recopie les nombres comme ils sont écrits dans les faits (même unité, pas d'arrondi, pas de conversion).
@@ -264,7 +264,7 @@ _RACCOURCIR_SYS = """Tu raccourcis une partie du dossier de présentation d'une 
 RÈGLES ABSOLUES :
 - Garde le sens et l'ordre. N'ajoute AUCUN fait, chiffre, nom, certification, matériel ni engagement.
 - Garde tels quels les passages « [À compléter …] » et les renvois entre crochets ([S1], [F3], [P1], [E2],
-  [C4], [G1]…), à la fin des phrases qui s'en servent. Ne change aucun nombre ni aucune unité.
+  [C4], [G1], [R2]…), à la fin des phrases qui s'en servent. Ne change aucun nombre ni aucune unité.
 - Respecte la longueur demandée. Markdown simple (paragraphes, listes, tableaux simples).
 Réponds avec le texte raccourci seul (pas de JSON, pas de commentaire)."""
 
@@ -313,6 +313,22 @@ def _consigne_partie(p: dict) -> str:
     if autres:
         out.append("AUTRES PARTIES DU DOSSIER (traitées ailleurs, ne les développe pas ici) : "
                    + " ; ".join(autres[:40]))
+    # Rédaction, vague 5 (D) : l'entretien chantier. Les réponses qui concernent cette partie sont des faits
+    # autorisés [R#] ; une question sans réponse laisse SON « [À compléter : …] », jamais un texte général.
+    ent = p.get("entretien") if isinstance(p.get("entretien"), dict) else {}
+    refs = [str(r) for r in (ent.get("refs") or []) if r]
+    if refs:
+        out.append("ENTRETIEN CHANTIER : les réponses " + ", ".join(f"[{r}]" for r in refs[:20])
+                   + " concernent cette partie : sers-t'en ici (avec leur renvoi), sans rien y ajouter.")
+    manques = [str(m) for m in (ent.get("manques") or []) if m]
+    if manques:
+        out.append("ENTRETIEN CHANTIER, POINTS SANS RÉPONSE POUR CETTE PARTIE : n'écris AUCUN texte général à leur place ; "
+                   "écris seulement, à l'endroit où il faudrait en parler, le passage indiqué tel quel : "
+                   + " ; ".join(manques[:20]))
+    attente = [str(m) for m in (ent.get("en_attente") or []) if m]
+    if attente:
+        out.append("ENTRETIEN CHANTIER, QUESTIONS ENCORE SANS RÉPONSE POUR CETTE PARTIE : n'écris aucun fait à leur sujet ; "
+                   "si la partie doit en parler, écris le passage indiqué tel quel : " + " ; ".join(attente[:20]))
     return "\n".join(out)
 
 

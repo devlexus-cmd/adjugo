@@ -467,6 +467,7 @@ class ContextePartenaire:
         self._db = db
         self.inv = acces.inv
         self.project_id = acces.project.id
+        self.dossier_id = acces.dossier.id
         c = _contribution(db, acces.inv.id)
         self.contribution = c
         self.nom = nom_partenaire(acces.inv, c)
@@ -553,6 +554,10 @@ class ContextePartenaire:
                                    self.inv.id, type(e).__name__)
             out += fs.fiches_contexte(self.profil(), self.equipe(), "", [])
             out += fiches_depot_par_lien(db, self.inv)
+            # Rédaction, vague 5 (D) : SES réponses à l'entretien chantier (« déclaré par vous ») ; jamais celles du
+            # chef de file ni d'un autre membre.
+            from app.services import entretien_chantier as ec
+            out += ec.fiches_partenaire(db, self.dossier_id, self.inv.id)
             self._fiches = out
         return list(self._fiches)
 
@@ -1488,6 +1493,11 @@ def _executer(db, *, job_id: int, invite_id: int, section_id: int, kind: str, ci
                                cible_ia, passages_acheteur=at._passages_pour_ia(project, payload, section, entiers),
                                fiches=fiches_ent)
         partie["membre_groupement"] = {"nom": ctx.nom, "lot": ctx.lot}
+        # Vague 5 (D) : SES réponses à l'entretien qui concernent sa partie, et ses questions sans réponse.
+        from app.services import entretien_chantier as ec
+        ent = ec.pour_parties(db, project, dossier, [section], invite_id=invite_id).get(section.id)
+        if ent:
+            partie["entretien"] = ent
     with pii_scope(pz), cost_meter("groupement : aide du partenaire", tenant) as cm:
         if kind == JOB_RACCOURCIR:
             r = moteur.raccourcir_partie(base.texte if base else "", int(cible or 0), titre=section.intitule,
@@ -1522,6 +1532,10 @@ def _executer(db, *, job_id: int, invite_id: int, section_id: int, kind: str, ci
         sources = [x for x in sources if x.get("ref") in refs]
         origine = "raccourci"
     else:
+        manques = ((partie or {}).get("entretien") or {}).get("manques") or []
+        if manques:
+            from app.services import entretien_chantier as ec
+            texte = ec.garantir_manques(texte, manques)
         texte = fs.inserer_cv(texte, fiches_tout)
         faits = fs.controler(texte, fiches_tout, acheteur=acheteur, noms_entreprise=ctx.noms_entreprise,
                              section_entreprise=at.section_sur_l_entreprise(section), mode="ia",
@@ -1612,6 +1626,12 @@ def activer(db, project: Project, dossier: DossierPresentation, lecteur: at.Lect
     # Assemblage (chantier 3) : « Organisation du groupement » et « Qui fait quoi », tirées du groupement.
     from app.services import atelier_assemblage as asm
     gen = asm.assurer_generees(db, project, dossier)
+    # Rédaction, vague 5 (D) : les questions de l'entretien chantier sans réponse, jamais adressées à la main, sont
+    # proposées de nouveau (la question du lot d'un partenaire part dans SON espace). Sans IA ; jamais bloquant.
+    from app.core.org import member_ids as _mids
+    from app.models import User as _User
+    u = db.get(_User, lecteur.user_id) if lecteur.user_id else None
+    at._preparer_entretien(db, project, dossier, lecteur, _mids(u, db) if u is not None else [dossier.owner_id])
     return {"crees": crees, "reproposees": reproposees, "parties_du_groupement": gen["crees"]}
 
 
@@ -2192,8 +2212,12 @@ def resume_partenaire(db, inv: ProjectInvite) -> Optional[dict]:
             a_faire += st in (A_REDIGER, EN_COURS)
             a_revalider += st == A_REVALIDER
             a_valider += st == ENVOYEE          # envoyée : le chef de file attend encore sa validation
-        return ({"parties": n, "a_faire": a_faire, "a_revalider": a_revalider, "a_valider": a_valider}
-                if n else None)
+        # Rédaction, vague 5 (D) : les questions de l'entretien chantier qui lui sont posées et attendent sa réponse.
+        from app.models import EntretienQuestion as Q
+        questions = (db.query(Q.id).filter(Q.dossier_id == d.id, Q.retiree_le.is_(None), Q.adresse_kind == "invitation",
+                                           Q.adresse_invite_id == inv.id, Q.statut == "a_repondre").count())
+        return ({"parties": n, "a_faire": a_faire, "a_revalider": a_revalider, "a_valider": a_valider,
+                 "questions": questions} if (n or questions) else None)
     except Exception:       # noqa: BLE001 — la liste « Partagé avec moi » ne casse jamais pour ce résumé
         return None
 
@@ -2260,11 +2284,24 @@ def vue_partenaire(db, acces: Acces) -> dict:
             "mode_simple": {"petit_texte": ((contrib.memoire_paragraph if contrib is not None else "") or "")[:TEXTE_MAX],
                             "message": MSG_MODE_SIMPLE},
             "parties": parties, "statuts": STATUTS, "origines": ORIGINES, "qui_fait_quoi": qfq_bloc,
+            # Rédaction, vague 5 (D) : les questions du chef de file sur le chantier, posées à LUI seul.
+            "entretien": _entretien_partenaire(db, acces),
             "dossier": {"empreinte": emp, "ma_validation": _validation_out(ma, emp),
                         # Un co-traitant à qui aucune partie n'est confiée valide aussi le dossier assemblé (après
                         # « Qui fait quoi »), comme le serveur l'attend pour « Prêt à déposer ».
                         "peut_valider": all(p["statut"] == VALIDEE for p in parties) and qfq_ok,
                         "pret": pret(db, acces.project, acces.dossier, act)}}
+
+
+def _entretien_partenaire(db, acces: Acces) -> dict:
+    """Les questions de l'entretien chantier posées à ce partenaire (vague 5) ; jamais celles d'un autre."""
+    try:
+        from app.services import entretien_chantier as ec
+        return ec.vue_partenaire(db, acces)
+    except Exception as e:      # noqa: BLE001 — sa partie se lit toujours, même sans l'entretien
+        logger.warning("groupement : entretien du partenaire illisible (invitation %s) : %s", acces.invite_id,
+                       type(e).__name__)
+        return {"questions": [], "total": 0, "a_repondre": 0, "message": "", "avertissement": "", "statuts": {}}
 
 
 def detail_partenaire(db, acces: Acces, section_id: int) -> dict:
@@ -2513,6 +2550,9 @@ def effacer_dossiers(db, dossier_ids: list) -> None:
     # Rattachées par dossier_id OU par partie (section_id), quelles que soient leurs autres colonnes.
     sids = [r[0] for r in db.query(DossierSection.id).filter(DossierSection.dossier_id.in_(dossier_ids))]
     db.query(DossierValidation).filter(DossierValidation.dossier_id.in_(dossier_ids)).delete(synchronize_session=False)
+    # Rédaction, vague 5 : l'entretien chantier (questions et réponses, celles des partenaires comprises).
+    from app.services import entretien_chantier as ec
+    ec.effacer_dossiers(db, dossier_ids)
     db.query(DossierPartBrouillon).filter(or_(DossierPartBrouillon.dossier_id.in_(dossier_ids),
                                               DossierPartBrouillon.section_id.in_(sids or [-1]))).delete(
         synchronize_session=False)
@@ -2549,6 +2589,10 @@ def retirer_invitation(db, inv: ProjectInvite, raison: str, *, actor: str = "", 
         db.query(DossierValidation).filter(DossierValidation.invite_id == inv.id).delete(synchronize_session=False)
         db.query(Job).filter(Job.portee == PORTEE_PARTENAIRE, Job.invite_id == inv.id,
                              Job.status.in_(["done", "error"])).delete(synchronize_session=False)
+        # Rédaction, vague 5 : ses réponses à l'entretien chantier sont effacées, ses questions reviennent au chef
+        # de file (à répondre).
+        from app.services import entretien_chantier as ec
+        ec.retirer_invitation(db, inv)
         db.commit()
         project = db.get(Project, inv.project_id)
         for did in dossiers:
@@ -2575,6 +2619,8 @@ def effacer_compte(db, uid: int) -> int:
     file (c'est la part commune de l'offre, reçue par le groupement). Renvoie le nombre de brouillons effacés."""
     if not uid:
         return 0
+    from app.services import entretien_chantier as ec
+    ec.oublier_compte(db, uid)
     return db.query(DossierPartBrouillon).filter(DossierPartBrouillon.auteur_user_id == uid).delete(
         synchronize_session=False)
 
@@ -2629,7 +2675,9 @@ def exporter_invitation(db, inv: ProjectInvite, sources_du_compte: bool = True, 
                                                            DossierSectionVersion.ecrit_par == ECRIT_PAR_PARTENAIRE,
                                                            DossierSectionVersion.author_invite_id == inv.id)
            .order_by(DossierSectionVersion.id).all()]
-    return {"project_id": inv.project_id, "brouillons": bro, "textes_envoyes": env}
+    from app.services import entretien_chantier as ec
+    return {"project_id": inv.project_id, "brouillons": bro, "textes_envoyes": env,
+            "reponses_entretien_chantier": ec.exporter_invitation(db, inv)}
 
 
 def exporter_partenaire(db, uid: int) -> list:

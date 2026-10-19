@@ -401,6 +401,9 @@ ENVELOPPES = {
     # caractères au plus + consignes ; app/services/fiches_import.py : SEGMENT_MAX, SORTIE_MAX) ; une partie
     # dense peut coûter jusqu'à APPELS_PAR_PARTIE appels (fiches_import.appels_au_plus).
     "fiches": (64_000, 8000, 0),
+    # Entretien chantier (vague 5, option IA) : le dossier de l'acheteur remis (IA_DOSSIER_MAX = 60 000 caractères)
+    # + les questions déjà posées et la consigne ; au plus 4 questions en JSON en sortie (1 600 tokens demandés).
+    "entretien": (64_000, 1600, 0),
 }
 # opération → tâche du routage (app/services/llm.py, _TABLE) : le modèle, le point d'accès, la
 # réflexion et la durée du cache comptés sont ceux de CETTE tâche, secours compris.
@@ -416,6 +419,7 @@ TACHE_DE = {
     "raccourcir": "raccourcir",
     "harmoniser": "raccourcir",
     "fiches": "fiches_preuves",
+    "entretien": "exigences",
 }
 
 

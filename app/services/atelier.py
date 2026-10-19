@@ -104,7 +104,10 @@ JOB_RACCOURCIR = "atelier_raccourcir"
 # Vague 4 (assemblage) : « Harmoniser le ton » du dossier de groupement (app/services/atelier_assemblage.py) —
 # même relevé de débit, même remboursement et même reprise au redémarrage que les rédactions de l'atelier.
 JOB_HARMONISER = "atelier_harmoniser"
-JOB_KINDS = (JOB_REDIGER, JOB_RACCOURCIR, JOB_HARMONISER)
+# Rédaction, vague 5 (D) : « Chercher d'autres questions avec Adjugo » de l'entretien chantier (option IA, débitée
+# comme une refonte, rendue si l'IA tombe ou si rien n'est retenu) : app/services/entretien_chantier.py.
+JOB_ENTRETIEN = "atelier_entretien"
+JOB_KINDS = (JOB_REDIGER, JOB_RACCOURCIR, JOB_HARMONISER, JOB_ENTRETIEN)
 
 MSG_IA_PANNE = ("La rédaction n'a pas abouti : le service d'IA est indisponible pour le moment. Rien n'a été "
                 "débité, réessayez dans quelques minutes.")
@@ -592,7 +595,19 @@ def creer_dossier(db, project: Project, owner_id: int, user: User, member_ids: l
         db.add(_section_from_plan(d, s, i))
     db.commit()
     db.refresh(d)
+    _preparer_entretien(db, project, d, Lecteur.organisation(owner_id, user), member_ids)
     return d
+
+
+def _preparer_entretien(db, project: Project, dossier: DossierPresentation, lecteur: "Lecteur", member_ids: list) -> None:
+    """Vague 5 (D) : l'entretien chantier est préparé avec le dossier (questions de la banque, sans IA, sans débit).
+    Jamais bloquant : l'écran le prépare de nouveau à l'ouverture des questions."""
+    try:
+        from app.services import entretien_chantier as ec
+        ec.preparer(db, project, dossier, lecteur, member_ids)
+    except Exception as e:      # noqa: BLE001
+        db.rollback()
+        logger.warning("atelier : entretien chantier non préparé (dossier %s) : %s", dossier.id, type(e).__name__)
 
 
 def sections_actives(db, dossier: DossierPresentation) -> list:
@@ -647,6 +662,9 @@ def reconstruire_plan(db, project: Project, dossier: DossierPresentation, user: 
     db.commit()
     if any(est_generee(s) for s in gardees):
         _placer_generees(db, dossier)       # les parties tirées du groupement gardent leur place
+    db.refresh(dossier)
+    # Vague 5 (D) : l'entretien suit le dossier du marché relu (questions sans réponse remises à jour).
+    _preparer_entretien(db, project, dossier, lecteur, member_ids)
     db.refresh(dossier)
     return dossier
 
@@ -1380,7 +1398,14 @@ class Contexte:
         # Noms des fiches « Équipe » de « Mes preuves » (vague 3) : masqués eux aussi avant l'IA.
         from app.services.preuves import personnes
         self.preuves_team = personnes(db, [owner_id])
+        # Rédaction, vague 5 (D) : la fiche chantier — les réponses de l'entretien, faits numérotés [R#]
+        # (« déclaré par vous » ; celles d'un partenaire : « déclaré par votre partenaire »).
+        d = get_dossier(db, project.id, owner_id)
+        self.dossier_id = d.id if d is not None else None
+        from app.services import entretien_chantier as ec
+        _ent, noms_ent = ec.fiches_chef(db, self.dossier_id, owner_id)
         self.noms_entreprise = [x for x in ([comp.name if comp else ""] + [p["nom"] for p in self.partenaires]) if x]
+        self.noms_entreprise += [n for n in noms_ent if n and n not in self.noms_entreprise]
         self.sources_entreprise = [self.profil, self.equipe, self.chiffrage] + [p["texte"] for p in self.partenaires]
 
     def faits_autorises(self) -> dict:
@@ -1401,8 +1426,9 @@ class Contexte:
     def fiches(self, db, pseudonymiseur=None) -> list:
         """Les faits autorisés de l'entreprise pour ce marché, numérotés et typés : preuves
         utilisables de « Mes preuves » [F#] (numéros stables), profil [P#], équipe du profil [E#],
-        chiffrage [C#] (votre estimation), apports envoyés par les partenaires [G#]. Les extraits de
-        « Mon savoir-faire » [S#] s'y ajoutent partie par partie. Jamais le dossier de l'acheteur.
+        chiffrage [C#] (votre estimation), apports envoyés par les partenaires [G#], réponses de l'entretien
+        chantier [R#] (vague 5). Les extraits de « Mon savoir-faire » [S#] s'y ajoutent partie par partie.
+        Jamais le dossier de l'acheteur.
 
         Un élément du profil qui a sa fiche dans « Mes preuves » (reprise E1, ou fiche du même intitulé
         acceptée ou retirée) n'est remis que par sa fiche : jamais deux fois (économie sans perte), et
@@ -1420,7 +1446,10 @@ class Contexte:
                 preuves, gerees = [], set()
             profil = _profil_texte(self.company, exclure=gerees, jour=aujourd_hui())
             equipe = _equipe_texte(self.team, exclure=gerees)
-            self._fiches = preuves + fs.fiches_contexte(profil, equipe, self.chiffrage, self.partenaires)
+            from app.services import entretien_chantier as ec
+            entretien, _noms = ec.fiches_chef(db, getattr(self, "dossier_id", None), self.owner_id,
+                                              pseudonymiseur=pseudonymiseur)
+            self._fiches = preuves + fs.fiches_contexte(profil, equipe, self.chiffrage, self.partenaires) + entretien
         return list(self._fiches)
 
     def fiches_de_version(self, db, v) -> list:
@@ -2296,6 +2325,12 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
     pz = ctx.pseudonymiseur(textes)
     fiches_ent = ctx.fiches(db, pseudonymiseur=pz)
     acheteur = _acheteur(project, lu, payload) if action == JOB_REDIGER else None
+    # Vague 5 (D) : pour chaque partie, les réponses de l'entretien chantier qui la concernent (à citer) et les
+    # questions sans réponse ou passées (« [À compléter : …] », jamais un texte de remplissage).
+    entretien = {}
+    if action == JOB_REDIGER:
+        from app.services import entretien_chantier as ec
+        entretien = ec.pour_parties(db, project, dossier, sections)
     taches = []
     for s in sections:
         base = bases.get(s.id)
@@ -2308,10 +2343,12 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
         autres = [ax.titre_section({"numero": rangs.get(x.id, ""), "intitule": x.intitule}) for x in act if x.id != s.id]
         cible = cible_mots(s, None)
         fiches = fiches_ent + fs.fiches_extraits(chunks)
-        taches.append({"sid": s.id, "base": base, "chunks": chunks, "fiches": fiches,
-                       "partie": _partie_ia(dossier, s, rangs.get(s.id, ""), autres, ctx, chunks, dossier_acheteur,
-                                            cible, passages_acheteur=_passages_pour_ia(project, payload, s, entiers),
-                                            fiches=fiches_ent)})
+        partie = _partie_ia(dossier, s, rangs.get(s.id, ""), autres, ctx, chunks, dossier_acheteur, cible,
+                            passages_acheteur=_passages_pour_ia(project, payload, s, entiers), fiches=fiches_ent)
+        if entretien.get(s.id):
+            partie["entretien"] = entretien[s.id]
+        taches.append({"sid": s.id, "base": base, "chunks": chunks, "fiches": fiches, "partie": partie,
+                       "manques": (entretien.get(s.id) or {}).get("manques") or []})
 
     def _un(t):
         if action == JOB_RACCOURCIR:
@@ -2362,7 +2399,12 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
                                 coupe=bool(r.get("coupe")), base_version_id=base.id if base else None,
                                 auteur_user_id=user_id, job_id=job_id)
         else:
-            # Le CV d'une personne est inséré tel quel, sans IA (décision 8a), puis tout est contrôlé.
+            # Entretien chantier (vague 5) : une question sans réponse laisse SON « [À compléter : …] » (ajouté
+            # sans IA s'il manque) ; le CV d'une personne est inséré tel quel, sans IA (décision 8a) ; tout est
+            # ensuite contrôlé.
+            if t.get("manques"):
+                from app.services import entretien_chantier as ec
+                texte = ec.garantir_manques(texte, t["manques"])
             texte = fs.inserer_cv(texte, t["fiches"])
             faits = fs.controler(texte, t["fiches"], acheteur=acheteur, noms_entreprise=ctx.noms_entreprise,
                                  section_entreprise=section_sur_l_entreprise(s), mode="ia",
@@ -2821,7 +2863,27 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
         "derogations_possibles": derogations_possibles(gate),
         "sources_faits": sources_faits_out(db, dossier.owner_id),
         "groupement": _groupement_out(db, project, dossier),
+        "entretien": _entretien_out(db, dossier),
     }
+
+
+def _entretien_out(db, dossier: DossierPresentation) -> dict:
+    """Vague 5 (D) : l'entretien chantier en bref (compteurs, sans IA) ; le détail est lu par GET …/entretien."""
+    try:
+        from app.services import entretien_chantier as ec
+        out = ec.resume(db, dossier)
+        if not out["prepare"]:
+            # Dossier d'avant la vague 5 : combien de questions l'entretien poserait (sans IA ; lecture en cache).
+            project = db.get(Project, dossier.project_id)
+            from app.core.org import member_ids as _mids
+            owner = db.get(User, dossier.owner_id)
+            out["proposees"] = len(ec.proposition(db, project, dossier, _mids(owner, db) if owner is not None
+                                                  else [dossier.owner_id])) if project is not None else 0
+        return out
+    except Exception as e:      # noqa: BLE001 — l'atelier ne dépend jamais de l'entretien
+        logger.warning("atelier : entretien chantier illisible (dossier %s) : %s", dossier.id, type(e).__name__)
+        return {"prepare": False, "total": 0, "repondues": 0, "a_repondre": 0, "passees": 0, "sans_objet": 0,
+                "chez_partenaires": 0}
 
 
 def _groupement_out(db, project: Project, dossier: DossierPresentation) -> dict:

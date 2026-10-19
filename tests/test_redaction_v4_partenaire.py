@@ -241,7 +241,9 @@ def test_partage_avec_moi_resume_et_ecran_par_le_compte(client, auth, fake_llm):
     assert client.post(f"/api/invite/{a['token']}/claim", headers=hp).status_code == 200
     # La liste : statuts seulement (jamais un texte).
     item = next(x for x in client.get("/api/shared", headers=hp).json() if x["project_id"] == pid)
-    assert item["redaction"] == {"parties": 1, "a_faire": 1, "a_revalider": 0, "a_valider": 0}
+    # Vague 5 : + les questions de l'entretien chantier qui lui sont posées (comptées à part, ci-dessous).
+    assert {k: v for k, v in item["redaction"].items() if k != "questions"} == {"parties": 1, "a_faire": 1,
+                                                                               "a_revalider": 0, "a_valider": 0}
     # L'écran par le compte : aucune clé, sa matière privée lisible, ses preuves et son savoir-faire.
     pc = PC(client, pid, hp)
     v = pc.get().json()
@@ -261,7 +263,8 @@ def test_partage_avec_moi_resume_et_ecran_par_le_compte(client, auth, fake_llm):
     assert pl.get(f"/sections/{sid}/brouillons/{b1['id']}").status_code == 403
     _envoyer(pc, sid)
     item = next(x for x in client.get("/api/shared", headers=hp).json() if x["project_id"] == pid)
-    assert item["redaction"] == {"parties": 1, "a_faire": 0, "a_revalider": 0, "a_valider": 1}
+    assert {k: v for k, v in item["redaction"].items() if k != "questions"} == {"parties": 1, "a_faire": 0,
+                                                                               "a_revalider": 0, "a_valider": 1}
     tout = _vues_du_chef(client, h, pid, sid, token=a["token"])
     assert "Nous trions les déchets amiantés." in tout and SECRET_EXTRAIT not in tout and SECRET_DOC not in tout
     # Le chef de file modifie : la pastille de la liste le dit.
@@ -269,7 +272,9 @@ def test_partage_avec_moi_resume_et_ecran_par_le_compte(client, auth, fake_llm):
     client.put(f"/api/atelier/{pid}/repartition/{sid}/texte", headers=h,
                json={"texte": "Nous trions et évacuons les déchets amiantés.", "base_version_id": cur})
     item = next(x for x in client.get("/api/shared", headers=hp).json() if x["project_id"] == pid)
-    assert item["redaction"] == {"parties": 1, "a_faire": 0, "a_revalider": 1, "a_valider": 0}
+    assert {k: v for k, v in item["redaction"].items() if k != "questions"} == {"parties": 1, "a_faire": 0,
+                                                                               "a_revalider": 1, "a_valider": 0}
+    assert item["redaction"]["questions"] == PC(client, pid, hp).get().json()["entretien"]["a_repondre"]
     # Un sous-traitant, ou un dossier pas encore préparé : rien (l'écran reste vide).
     h2, e2 = _register(client, company="Chef sans dossier")
     _company(client, h2)

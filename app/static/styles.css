@@ -1290,6 +1290,45 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
   .rn-tabs.atl-onglets { grid-template-columns:repeat(2, minmax(0,1fr)); }
 }
 
+/* ── Entretien chantier (rédaction, vague 5 — D, chef de file) ──
+   Une carte sous l'en-tête de l'atelier : « n questions sur ce chantier », repliée sauf avant la première rédaction ;
+   une question par bloc (phrase du dossier, partie concernée, réponse) ; utilisable à 375 px, rien collé aux bords. */
+.atl-ent { margin-top:16px; padding:16px; }
+.atl-ent-h { align-items:center; }
+.atl-ent-ico { width:16px; height:16px; flex:none; color:var(--accent-text); }
+.atl-ent-t { margin:0; font-size:15px; font-weight:750; letter-spacing:-.01em; }
+.atl-ent-sous { margin:8px 0 0; }
+.atl-ent-b { margin-top:12px; }
+.atl-ent-list { list-style:none; margin:12px 0 0; padding:0; display:flex; flex-direction:column; gap:12px; }
+.atl-ent-q { padding:12px; border:1px solid var(--hairline); border-radius:12px; background:var(--surface); min-width:0; }
+.atl-ent-qh { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; }
+.atl-ent-qt { flex:1 1 220px; min-width:0; font-size:13.5px; line-height:1.45; overflow-wrap:anywhere; }
+.atl-ent-ref { display:inline-block; font-size:10.5px; font-weight:700; line-height:1.5; padding:0 6px; border-radius:6px; background:var(--surface-3); color:var(--text-2); font-variant-numeric:tabular-nums; }
+.atl-ent-motif { margin-top:8px; }
+.atl-ent-meta { overflow-wrap:anywhere; }
+.atl-ent-sel { width:auto; max-width:100%; min-width:0; height:32px; }
+.atl-ent-ad label { white-space:nowrap; }
+.atl-ent-ta { min-height:72px; margin-top:6px; }
+.atl-ent-rep { padding:8px 10px; border-radius:8px; background:var(--surface-2); line-height:1.5; white-space:pre-line; overflow-wrap:anywhere; }
+.atl-ent-f { margin-top:12px; align-items:center; }
+.atl-ent-fiche { list-style:none; margin:6px 0 0; padding:0; }
+.atl-ent-fiche li { padding:6px 0; border-bottom:1px solid var(--hairline); font-size:12.5px; line-height:1.5; overflow-wrap:anywhere; }
+.atl-ent-fiche li:last-child { border-bottom:0; }
+@media (max-width:640px) {
+  .atl-ent, .atl-ent-q { padding:12px; }
+  .atl-ent-sel { flex:1 1 160px; width:auto; }
+}
+/* Partenaire : les questions du chef de file, dans SON espace (redaction-partenaire.js) */
+.rp-ent { margin-top:16px; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:var(--surface-2); }
+.rp-ent-t { display:inline; margin:0; font-size:13.5px; font-weight:750; }
+.rp-ent-l { list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:12px; }
+.rp-ent-q { padding:10px 12px; border-radius:10px; background:var(--surface); border:1px solid var(--hairline); min-width:0; }
+.rp-ent-qh { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; }
+.rp-ent-qt { flex:1 1 200px; min-width:0; font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
+.rp-ent-q .gn-q { margin-top:8px; }
+.rp-ent-ta { width:100%; height:auto; min-height:72px; margin-top:8px; resize:vertical; line-height:1.5; padding:8px 10px; }
+.rp-ent-rep { margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); line-height:1.5; white-space:pre-line; overflow-wrap:anywhere; }
+
 /* ── Fiches proposées à partir d'un document (rédaction, vague 3, chantier I) ── */
 .fx-panel { margin:8px 0 12px 26px; padding:12px 14px; background:var(--surface-2); border-radius:10px; }
 .fx-ligne { gap:8px; align-items:center; margin-bottom:8px; }

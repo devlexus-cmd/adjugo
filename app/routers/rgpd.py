@@ -131,6 +131,14 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
         data["parts_redigees_pour_des_groupements"] = _ag.exporter_partenaire(db, uid)
     except Exception:
         data["dossiers_de_groupement"], data["parts_redigees_pour_des_groupements"] = [], []
+    # Entretien chantier (rédaction, vague 5) : les questions de SES dossiers, la phrase du dossier qui les motive
+    # et les réponses (celles que ses partenaires lui ont adressées comprises). Les réponses qu'il a données comme
+    # PARTENAIRE sont dans « parts_redigees_pour_des_groupements ».
+    try:
+        from app.services import entretien_chantier as _ec
+        data["entretiens_chantier"] = _ec.exporter_chef(db, uid)
+    except Exception:
+        data["entretiens_chantier"] = []
     # « Mes preuves » (rédaction, vague 3) : faits de l'entreprise avec leur source, CV compris.
     try:
         from app.services.preuves import exporter as _exporter_preuves
@@ -303,7 +311,7 @@ def _erase_member(db, uid: int, owner_id: int) -> None:
     for model in (M.ProjectInvite, M.ProjectContribution, M.ContributionPiece,
                   M.GroupementSimulation, M.GroupementConvention, M.GroupementSignature,
                   M.DossierPresentation, M.DossierSection, M.DossierSectionVersion,
-                  M.DossierRepartition, M.DossierPartBrouillon, M.DossierValidation):
+                  M.DossierRepartition, M.DossierPartBrouillon, M.DossierValidation, M.EntretienQuestion):
         db.query(model).filter(model.owner_id == uid).update(
             {model.owner_id: owner_id}, synchronize_session=False)
     # « Mes preuves » : registre de l'entreprise, suit le propriétaire (numéros jamais heurtés).
@@ -500,7 +508,7 @@ def _hand_over_foreign_rows(db, uid: int, pids: list) -> None:
                 M.DossierPresentation.owner_id == new_owner).first() is not None:
             continue
         for model in (M.DossierSectionVersion, M.DossierSection, M.DossierRepartition, M.DossierPartBrouillon,
-                      M.DossierValidation):
+                      M.DossierValidation, M.EntretienQuestion):
             db.query(model).filter(model.dossier_id == d.id).update({model.owner_id: new_owner},
                                                                     synchronize_session=False)
         d.owner_id = new_owner

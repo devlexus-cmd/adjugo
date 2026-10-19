@@ -219,6 +219,13 @@ _BLOCKED = [
     ("POST",   "/api/atelier/{pid}/repartition/valider-dossier", "préparer votre dossier de présentation"),
     # Assemblage (vague 4, chantier 3) : « Harmoniser le ton » appelle l'IA (phrases de transition).
     ("POST",   "/api/atelier/{pid}/repartition/harmoniser",   "rédiger avec Adjugo"),
+    # Rédaction, vague 5 (D) : l'entretien chantier — préparer, répondre, adresser à un partenaire (la vitrine
+    # partagée ne change pas) et « Chercher d'autres questions avec Adjugo » (IA).
+    ("POST",   "/api/atelier/{pid}/entretien",                "préparer votre dossier de présentation"),
+    ("PUT",    "/api/atelier/{pid}/entretien/{qid}",          "préparer votre dossier de présentation"),
+    ("PUT",    "/api/atelier/{pid}/entretien/{qid}/adresse",  "préparer votre dossier de présentation"),
+    ("POST",   "/api/atelier/{pid}/entretien/ia",             "rédiger avec Adjugo"),
+    ("PUT",    "/api/shared/{pid}/redaction/entretien/{qid}", "co-construire une réponse"),
     ("PUT",    "/api/shared/{pid}/redaction/sections/{sid}/brouillon", "co-construire une réponse"),
     ("POST",   "/api/shared/{pid}/redaction/sections/{sid}/faits/{fid}", "co-construire une réponse"),
     ("POST",   "/api/shared/{pid}/redaction/sections/{sid}/aide", "rédiger avec Adjugo"),

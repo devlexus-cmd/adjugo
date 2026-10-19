@@ -66,7 +66,7 @@ def fold(s) -> str:
 _TODO = re.compile(r"\[\s*[ÀAà]\s+compl[ée]ter[^\]]*\]", re.IGNORECASE)
 # Renvois internes : extraits [S1] et, depuis la vague 3, faits numérotés [F3], [P1], [E1], [C1], [G1]
 # (app/services/faits_sources.py) — jamais des faits, retirés avant le repérage.
-_CITE = re.compile(r"\[\s*[FSPECG]\s*\d[^\]]{0,40}\]")
+_CITE = re.compile(r"\[\s*[FSPECGR]\s*\d[^\]]{0,40}\]")
 _MD = re.compile(r"\*\*|__|`|(?<!\w)\*(?!\s)|(?<!\s)\*(?!\w)")
 
 

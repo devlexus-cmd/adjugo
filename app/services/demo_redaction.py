@@ -658,5 +658,8 @@ def seed_redaction(db, user, proj_by_key: dict) -> None:
     ranger_dossier(db, user, project, contenu, lecture)
     _oublier_lectures(cle_dossier_acheteur(db, project, member_ids(user, db)))
     preuves = seed_preuves(db, user, project.id)
-    seed_atelier(db, user, project, {k: p for k, p in preuves.items() if k != "proposee"})
+    dossier = seed_atelier(db, user, project, {k: p for k, p in preuves.items() if k != "proposee"})
+    # Rédaction, vague 5 (D) : l'entretien chantier du marché, quelques réponses fictives (sans IA).
+    from app.services.demo_entretien import seed_entretien
+    seed_entretien(db, user, project, dossier, preuves)
     db.commit()
