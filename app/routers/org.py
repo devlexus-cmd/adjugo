@@ -196,7 +196,7 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
                    f"Bonjour,\n\n{current_user.full_name} vous invite à rejoindre l'espace "
                    f"« {org.name} » sur Adjugo.\n\nIdentifiant : {member.email}\n"
                    f"Mot de passe provisoire : {temp_password}\n\nConnectez-vous puis "
-                   f"changez votre mot de passe.\n\n— Adjugo")
+                   f"changez votre mot de passe (menu Réglages, puis Mon compte).\n\n— Adjugo")
     except Exception as e:
         import logging
         logging.getLogger("adjugo").warning("Email d'invitation non envoyé à %s : %s", member.email, e)

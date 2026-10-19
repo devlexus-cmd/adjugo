@@ -96,3 +96,10 @@ est seul (`confidentialite.html`, sources ; `securite.html`, l. 104 « registre 
 `app/services/groupement_convention.py`, l. 636 et 641 : chaque membre y est « **co-traitant (partenaire)** » ou
 « mandataire (chef de file) ». C'est le terme juridique, déjà accompagné du mot courant. Le texte d'une convention
 générée est figé par son empreinte : le changer demande un nouveau numéro de modèle. **Proposition : garder.**
+
+## 7. Réorganisation de l'interface, vague 1 (menu par rubriques, 19/10/2026) : rien à corriger
+
+Le menu change de noms (« Tableau de bord » devient « Accueil », « Partagé avec moi » devient « Où je suis
+partenaire », « Mes groupements » devient « À plusieurs », « Équipe » devient « Collègues », « Plus » devient
+« Réglages », le radar devient « À venir »). Recherche faite dans `docs/legal/*.md` et `app/static/legal/*.html` :
+aucune page juridique ne cite un de ces écrans. Rien à modifier.

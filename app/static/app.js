@@ -42,6 +42,71 @@ function inscriptionDemandee(loc) {
   } catch (e) { return { inscrire: false, adresse: null }; }
 }
 
+// ══════════ Menu par rubriques (réorganisation, vague 1, 1.3) ══════════
+// Architecture C corrigée (étude « organisation du logiciel », § 5.3) : le menu range des OBJETS. Chaque ancienne
+// vue est un onglet de sa rubrique, ouverte par go() sans changement ; la rubrique de l'écran ouvert reste surlignée.
+// `vues` : toutes les vues de la rubrique (les pages de détail comprises, sans onglet). `sous` : onglet interne
+// d'une vue (Trouver des marchés). `si` : fonction activée par le serveur, ou "admin". `pastille` : ce qui attend une
+// action (jamais un total, jamais zéro). `ancien` / `avant` : l'ancien nom, dit en bulle pendant la transition (1.8).
+// « Réglages » est un groupe du menu (replié, état gardé) : ses entrées ne sont pas des onglets.
+const RUBRIQUES = [
+  { k: "accueil", label: "Accueil", ic: "house", vues: ["dashboard"], onglets: [
+    { view: "dashboard", label: "Accueil", ic: "house", ancien: "Tableau de bord" }] },
+  { k: "trouver", label: "Trouver des marchés", ic: "search", vues: ["sourcing", "amont", "veille"], onglets: [
+    { view: "sourcing", sous: "publies", label: "Publiés", ic: "search" },
+    { view: "sourcing", sous: "avenir", label: "À venir", ic: "calendar-clock", ancien: "Radar des échéances" },
+    { view: "sourcing", sous: "alertes", label: "Mes alertes", ic: "bell", ancien: "Alertes automatiques" },
+    { view: "amont", label: "Projets à venir", ic: "calendar-clock", si: "projets_a_venir" }] },
+  { k: "marches", label: "Mes marchés", ic: "folder-kanban",
+    vues: ["pipeline", "shared", "consortiums", "invoices", "aodetail", "atelier", "sharedao"], onglets: [
+    { view: "pipeline", label: "Marchés", ic: "folder-kanban" },
+    { view: "shared", label: "Où je suis partenaire", ic: "inbox", ancien: "Partagé avec moi", pastille: "partenaire" },
+    { view: "consortiums", label: "À plusieurs", ic: "handshake", ancien: "Mes groupements" },
+    { view: "invoices", label: "Devis et factures", ic: "receipt", ancien: "Devis & factures" }] },
+  { k: "partenaires", label: "Partenaires", ic: "handshake", vues: ["cotraitants", "reseau", "contacts"], onglets: [
+    { view: "cotraitants", label: "Mes partenaires", ic: "handshake" },
+    { view: "reseau", label: "Réseau Adjugo", ic: "network", ancien: "Réseau" },
+    { view: "contacts", label: "Contacts", ic: "contact-round" }] },
+  { k: "documents", label: "Mes documents", ic: "folder-lock", vues: ["documents", "kb"], onglets: [
+    { view: "documents", label: "Mes pièces", ic: "folder-lock", pastille: "pieces" },
+    { view: "kb", label: "Mon savoir-faire", ic: "library" }] },
+  { k: "entreprise", label: "Mon entreprise", ic: "building-2", vues: ["company", "criteria", "preuves"], onglets: [
+    { view: "company", label: "Identité", ic: "building-2", ancien: "Profil de l'entreprise" },
+    { view: "criteria", label: "Mes critères", ic: "sliders-horizontal" },
+    { view: "preuves", label: "Mes preuves", ic: "award" }] },
+  { k: "reglages", label: "Réglages", ic: "settings", groupe: true, vues: ["team", "billing", "compte", "admin"], onglets: [
+    { view: "team", label: "Collègues", ic: "users-round", ancien: "Équipe" },
+    { view: "billing", label: "Abonnement", ic: "credit-card" },
+    { view: "compte", label: "Mon compte", ic: "circle-user", avant: "Votre mot de passe et vos données étaient dans « Équipe »." },
+    { view: "admin", label: "Administration", ic: "shield", si: "admin" }] },
+];
+// Rubrique d'une vue (null : vue inconnue).
+function rubriqueDe(view) { return RUBRIQUES.find(r => r.vues.indexOf(view) >= 0) || null; }
+// Onglet affiché pour (vue, onglet interne) : celui de la vue, et pour Trouver des marchés celui de l'onglet interne.
+function ongletDe(view, sous) {
+  const r = rubriqueDe(view); if (!r) return null;
+  return r.onglets.find(t => t.view === view && (!t.sous || t.sous === sous)) || null;
+}
+// Phrase « ancien nom » d'un onglet (transition, 1.8) : "" s'il n'a pas changé de nom.
+function ancienNom(t) {
+  if (!t) return "";
+  if (t.avant) return t.avant;
+  return t.ancien ? "Anciennement « " + t.ancien + " »." : "";
+}
+// Note « Ce qui a changé » (1.8) : comptes créés avant la nouvelle organisation, hors démonstration, pas encore
+// fermée, une semaine au plus après son premier affichage. `etat` : { vu: horodatage, ferme: bool } (localStorage).
+const REORG_V1_DEPUIS = "2026-10-20";        // jour de mise en ligne du menu par rubriques
+const REORG_V1_DUREE_MS = 7 * 24 * 3600 * 1000;
+const DEMO_EMAIL_APP = "demo@adjugo.fr";     // = app/services/demo_seed.DEMO_EMAIL (vérifié par les tests)
+function noteReorgVisible(user, etat, maintenant) {
+  if (!user || !user.created_at) return false;
+  if (String(user.email || "").trim().toLowerCase() === DEMO_EMAIL_APP) return false;
+  if (String(user.created_at).slice(0, 10) >= REORG_V1_DEPUIS) return false;
+  const e = etat || {};
+  if (e.ferme) return false;
+  return !e.vu || (maintenant - e.vu) < REORG_V1_DUREE_MS;
+}
+
 // Traduction runtime de l'UI : remplace les libellés FR statiques par leur
 // traduction (dictionnaire window.ADJUGO_I18N) selon la langue du pays choisi.
 // Idempotent : un texte déjà traduit ne correspond plus à une clé FR.
@@ -790,7 +855,12 @@ const __adjApp = createApp({
       mobileNav: false,
       user: {}, company: {}, criteria: {}, googleEnabled: false,
       idleLimitMs: 60 * 60 * 1000,   // déconnexion auto après 1 h SANS activité (sécurité appareil partagé/perdu)
-      view: "dashboard", navMore: false, busy: false, toast: null, pending: 0, llmInfo: null,
+      view: "dashboard", busy: false, toast: null, pending: 0, llmInfo: null,
+      // Menu par rubriques (réorganisation, vague 1, 1.3) : groupe « Réglages » replié par défaut, état gardé ;
+      // onglet interne de Trouver des marchés ; note « Ce qui a changé » (1.8), état gardé dans ce navigateur.
+      navReglages: (function(){ try { return localStorage.getItem("adjugo_nav_reglages") === "1"; } catch(e){ return false; } })(),
+      trouverOnglet: "publies",
+      reorgEtat: (function(){ try { return JSON.parse(localStorage.getItem("adjugo_reorg_v1") || "{}") || {}; } catch(e){ return {}; } })(),
       auth: { mode: "login", email: "", password: "", full_name: "", company_name: "", resetToken: "", sent: false },
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], docQuery: "", docSort: "recent", expiring: [],
       notifs: [], notifsOpen: false, notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
@@ -906,8 +976,13 @@ const __adjApp = createApp({
             qa: [], qaInput: "", qaLoading: false, grilleBusy: "", atl: _atlCardInit(), lectureMsg: "", lectureBusy: false, lecturePid: null,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
-      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
-      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", pipeline: "Suivez vos marchés étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Clients, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires et faites-vous trouver" },
+      // Nom de chaque vue (en-tête des vues hors onglets, relevé de la mesure). Réorganisation, vague 1 (1.3) : les noms
+      // de l'architecture C corrigée ; une vue rangée en onglet affiche en tête le nom de sa rubrique (enteteTitre).
+      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Accueil", sourcing: "Trouver des marchés", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes pièces", invoices: "Devis et factures", company: "Identité", criteria: "Mes critères", team: "Collègues", billing: "Abonnement", compte: "Mon compte", aodetail: "Le marché", consortiums: "À plusieurs", shared: "Où je suis partenaire", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau Adjugo" },
+      // Ce que fait chaque vue, en une phrase, dans la bulle (i) de l'en-tête (1.7) : plus de sous-titre affiché, plus de
+      // promesse (« Débloquez toute la puissance… »). Une vue sans phrase utile n'a pas de bulle. Clés : la vue, ou
+      // l'onglet interne de Trouver des marchés (avenir, alertes).
+      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", sourcing: "Les marchés publiés sur les sources officielles : chaque résultat renvoie à son annonce.", avenir: "Contrats déjà attribués dont la fin estimée approche : un nouveau marché peut suivre.", alertes: "Recevez par email les nouveaux marchés d'une recherche enregistrée.", pipeline: "Suivez vos marchés étape par étape", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Clients, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous", team: "Invitez vos collègues à collaborer sur vos dossiers", compte: "Votre mot de passe, l'export de vos données et la suppression de votre compte", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires et faites-vous trouver" },
     };
   },
   computed: {
@@ -1331,15 +1406,83 @@ const __adjApp = createApp({
       } catch (e) {}
     },
 
+    // ══════════ Menu par rubriques (réorganisation, vague 1, 1.3 ; RUBRIQUES en tête du fichier) ══════════
+    // Rubrique de l'écran ouvert : toujours surlignée dans le menu, pages de détail comprises (le marché, l'atelier,
+    // un dossier partagé sont dans « Mes marchés »).
+    rubrique() { const r = rubriqueDe(this.view); return r ? r.k : ""; },
+    _ongletPermis(t) { return !t.si || (t.si === "admin" ? !!(this.user && this.user.is_admin) : !!this.features[t.si]); },
+    // Onglets de la rubrique, affichés seulement sur une vue qui est l'un d'eux (jamais sur une page de détail), et
+    // seulement s'il y en a au moins deux. « Réglages » est un groupe du menu, sans onglets.
+    ongletsVisibles() {
+      const r = rubriqueDe(this.view); if (!r || r.groupe) return [];
+      const tabs = r.onglets.filter(t => this._ongletPermis(t));
+      return tabs.length > 1 && tabs.some(t => t.view === this.view) ? tabs : [];
+    },
+    ongletActif(t) { return this.view === t.view && (!t.sous || this.trouverOnglet === t.sous); },
+    // Ouvre un onglet : la vue par go(), sans changement ; un onglet interne (Trouver des marchés) est compté à part
+    // par la mesure d'usage (« avenir », « alertes »), la vue « sourcing » restant comptée à chaque ouverture.
+    ongletGo(t) {
+      if (!t) return;
+      if (t.sous) {
+        const deja = this.view === t.view;
+        if (!deja) this.go(t.view);              // go() rouvre Trouver des marchés sur « Publiés »
+        this.trouverOnglet = t.sous;
+        if (t.sous !== "publies") this._ecranOuvert(t.sous);
+        this.mobileNav = false;
+        return;
+      }
+      this.go(t.view);
+    },
+    // Entrée du menu : le premier onglet de la rubrique.
+    rubriqueGo(k) { const r = RUBRIQUES.find(x => x.k === k); if (r) this.ongletGo(r.onglets[0]); },
+    // En-tête : le nom de la rubrique quand la vue en est un onglet (les onglets disent où l'on est dedans), sinon le
+    // nom de la vue (Le marché, Collègues…). La bulle (i) dit ce que fait l'écran, puis son ancien nom (1.7, 1.8).
+    enteteTitre() {
+      const r = rubriqueDe(this.view);
+      if (r && (r.k === "accueil" || this.ongletsVisibles().length)) return r.label;
+      return this.titles[this.view] || "";
+    },
+    // Deux morceaux affichés séparément : chacun est une clé du dictionnaire de traduction (i18n.js).
+    enteteAideVue() {
+      const sous = this.view === "sourcing" && this.trouverOnglet !== "publies" ? this.trouverOnglet : "";
+      return this.subtitles[sous || this.view] || "";
+    },
+    enteteAncien() { return ancienNom(ongletDe(this.view, this.view === "sourcing" ? this.trouverOnglet : "")); },
+    enteteAide() { return [this.enteteAideVue(), this.enteteAncien()].filter(Boolean).join(" "); },
+    toggleReglages() {
+      this.navReglages = !this.navReglages;
+      try { localStorage.setItem("adjugo_nav_reglages", this.navReglages ? "1" : "0"); } catch (e) {}
+    },
+    // Pastilles : seulement ce qui attend une action de votre part, jamais un total ni zéro (étude, § 8, règle 8).
+    // « Où je suis partenaire » : marchés d'autres entreprises où votre accord est demandé (convention) ou une partie
+    // du dossier de présentation vous attend ; s'y ajoutent les invitations reçues par le réseau à traiter.
+    partenaireActions() {
+      return (this.shared || []).filter(s => (s.groupement && s.groupement.a_valider)
+        || (s.redaction && (s.redaction.a_faire || s.redaction.a_revalider || s.redaction.a_valider || s.redaction.questions))).length;
+    },
+    mmActions() { return this.partenaireActions() + this.rnRecuesCount(); },
+    ongletPastille(t) {
+      if (t.pastille === "partenaire") return this.mmActions();
+      if (t.pastille === "pieces") return (this.expiring || []).length;
+      return 0;
+    },
+    // Note « Ce qui a changé » (1.8), sur l'accueil : une semaine au plus après son premier affichage, fermable.
+    noteReorgVue() { return noteReorgVisible(this.user, this.reorgEtat, Date.now()); },
+    _noteReorgSauver() { try { localStorage.setItem("adjugo_reorg_v1", JSON.stringify(this.reorgEtat)); } catch (e) {} },
+    noteReorgMarquer() { if (this.noteReorgVue() && !this.reorgEtat.vu) { this.reorgEtat = { ...this.reorgEtat, vu: Date.now() }; this._noteReorgSauver(); } },
+    noteReorgFermer() { this.reorgEtat = { ...this.reorgEtat, ferme: true }; this._noteReorgSauver(); },
+
     // ── Navigation + lazy loads ──
     go(v) {
       if (v === "amont" && !this.features.projets_a_venir) v = "dashboard";   // écran masqué (PROJETS_A_VENIR=0)
+      if (v === "sourcing" && this.view !== "sourcing") this.trouverOnglet = "publies";   // s'ouvre sur « Publiés » (1.3)
       this.view = v;
       this._ecranOuvert(v);
       this.mobileNav = false;  // referme le menu mobile à la navigation
       this.notifsOpen = false; this.fb.open = false;  // referme les popups (notifications / retour d'avis) à la navigation
-      if (v === "dashboard") { this.loadStats(); this.loadExpiring(); this.loadConsortiums(); this.loadNotifs(); this.loadGrpDash(); }
+      if (v === "dashboard") { this.loadStats(); this.loadExpiring(); this.loadConsortiums(); this.loadNotifs(); this.loadGrpDash(); this.noteReorgMarquer(); }
       if (v === "consortiums") this.loadConsortiums();
+      if (v === "shared") { this.loadShared(); this.rnLoadRecues(true); }   // onglet « Où je suis partenaire » : pastilles à jour
       if (v === "pipeline") this.loadProjects();
       if (v === "contacts") this.loadContacts();
       if (v === "invoices") this.loadInvoices();
@@ -1399,8 +1542,14 @@ const __adjApp = createApp({
       catch (e) { m.error = (e && e.message) || "Relevé momentanément indisponible."; }
       finally { m.loading = false; }
     },
-    // Nom lisible d'un écran mesuré : le titre de la vue, sinon sa clé.
-    adminEcranNom(k) { return this.titles[k] || k; },
+    // Nom lisible d'un écran mesuré : « Rubrique › Onglet » (menu par rubriques, 1.3), sinon le titre de la vue, sinon
+    // sa clé. « avenir » et « alertes » sont les onglets internes de Trouver des marchés.
+    adminEcranNom(k) {
+      const sous = (k === "avenir" || k === "alertes") ? k : "";
+      const v = sous ? "sourcing" : k, r = rubriqueDe(v), t = ongletDe(v, sous);
+      if (r && t && !r.groupe && r.k !== "accueil") return r.label + " › " + t.label;
+      return this.titles[k] || (t && t.label) || k;
+    },
     fmtEur(v) { const n = Number(v); return isFinite(n) ? n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €" : "—"; },
     adminRvPublished(it) { return ((it && it.conflits) || []).filter(c => c.statut === "publie"); },
     // Lien vers l'annuaire officiel des entreprises : seulement l'adresse attendue (SIREN à 9 chiffres).
@@ -3118,7 +3267,7 @@ const __adjApp = createApp({
         const res = await this.api("POST", "/api/invite/" + encodeURIComponent(inv.token) + "/claim", null, false, this._cleEspace(inv.token));
         if (res && res.suggest_profile) this._rnSuggest(res.suggest_profile);
         inv.statut = "acceptee"; inv.statut_label = "Acceptée";
-        r.live = "Invitation acceptée : le dossier est dans « Partagé avec moi ».";
+        r.live = "Invitation acceptée : le dossier est dans Mes marchés, onglet « Où je suis partenaire ».";
         this.notify(r.live);
         await this.loadShared();
         const it = (this.shared || []).find(s => s.token === inv.token);
@@ -4265,6 +4414,7 @@ const __adjApp = createApp({
     srcCpv() { return (this.src.cpv || "").split(/[,\s]+/).map(s => s.trim()).filter(Boolean); },
     srcResetAdv() { this.src.type_marche = ""; this.src.cpv = ""; },
     async srcRenewals() {
+      if (this.src.renewals.loading) return;   // Entrée maintenue dans les champs de l'onglet « À venir » : une seule recherche
       this.src.renewals.loading = true; this.src.renewals.done = false;
       this.src.renewals.list = [];   // vide le scan précédent (sinon résultats périmés affichés)
       try {

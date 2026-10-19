@@ -8,9 +8,11 @@ Décisions appliquées (recommandations de l'étude, validées par Eliot) : D0 (
 « Partenaires », D6 4 étapes, D8 (a), D9 (a), D16 (a), D17 (mesure). D4 (a) et D5 (a) étaient déjà en production.
 
 Ce socle fait : la vague 0 restante (§ 0), les repères de test (§ 1.0), la mesure d'usage (§ 1.1) et l'inscription
-directe depuis l'essai (§ 1.2). Il ne range encore ni le menu ni la page du marché (§ 3).
+directe depuis l'essai (§ 1.2). Le chantier « menu et accueil » range ensuite le menu, l'accueil, les sous-titres et
+la transition (§ 1.3, 1.6, 1.7, 1.8). La page du marché et les cartes de recherche sont un autre chantier (§ 3).
 
 Tests : `tests/test_reorganisation_v1_socle.py` (repères, mesure, inscription, vague 0, traductions),
+`tests/test_reorganisation_v1_menu.py` (menu, onglets, pastilles, accueil, bulles, transition),
 `tests/zones.py` (découpage par repère), `tests/textes_visibles.py` (textes lus par une personne).
 
 ---
@@ -156,7 +158,8 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
 4. **Un préfixe par endroit** : `accueil-`, `marche-` (page du marché), `plusieurs-` (dans « Répondre à
    plusieurs ? »), `convention-`, `pieces-`, `trouver-`, `atelier-`, `kb-`, `reseau-`, `partage-` (le dossier
    partagé, côté partenaire), `billing-`, `admin-`, `carte-` (au-dessus de toutes les vues), `fenetre-` (une
-   fenêtre), `fenetres-` (famille de fenêtres sœurs), `ecran-`, `bandeau-`.
+   fenêtre), `fenetres-` (famille de fenêtres sœurs), `ecran-`, `bandeau-`, `menu-` (une partie de la barre
+   latérale), `onglets-` (une barre d'onglets au-dessus des vues).
 5. **Un repère est unique**, sauf une famille déclarée (`fenetres-atelier` ×5, `fenetres-preuves` ×2).
 6. **Sur l'élément racine réel** de la zone ; sur un `<template>` seulement quand rien ne l'enveloppe (onglets du
    Réseau). Sur un `<template>`, l'attribut sert aux tests et n'arrive pas dans la page.
@@ -175,9 +178,11 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
 | Repère | Zone |
 |---|---|
 | `auth` | Connexion, inscription, mot de passe oublié |
-| `menu` | Barre latérale (marque, entrées, « Plus », Mon avis, thème, compte) |
-| `entete` | Barre du haut (titre et sous-titre de la vue, notifications, boutons de la vue) |
+| `menu` | Barre latérale (marque, 6 rubriques, groupe « Réglages », compte) |
+| `menu-reglages` | Groupe « Réglages » : Collègues, Abonnement, Mon compte, Administration, Mon avis, thème (§ 1.3) |
+| `entete` | Barre du haut (titre de la rubrique ou de la vue et sa bulle (i), notifications, boutons de la vue) |
 | `contenu` | Toutes les vues |
+| `onglets-rubrique` | Onglets de la rubrique ouverte, au-dessus des vues (§ 1.3) |
 | `carte-essai` | Carte de l'essai (forfait, limite d'usage) |
 | `carte-suggestion-reseau` | Suggestion « publiez votre profil partenaire » |
 | `bandeau-cookies` | Bandeau du stockage local |
@@ -187,13 +192,15 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
 
 | Repère | Zone |
 |---|---|
+| `accueil-ce-qui-a-change` | Note « Ce qui a changé » (transition, § 1.8) |
 | `accueil-premiers-pas` | Premiers pas (3 étapes) |
-| `accueil-ruban` | Ruban des 4 chiffres |
-| `accueil-reseau` | Bloc « Réseau Adjugo — gagnez les gros marchés à plusieurs » (groupements par étape) |
+| `accueil-reseau` | Bloc « À plusieurs » (groupements par étape, « Préparer à plusieurs ») |
 | `accueil-amont` | « Une longueur d'avance » (masqué, `PROJETS_A_VENIR=0`) |
 | `accueil-grille` | Grille : flux, rail, bilan, carnet |
-| `accueil-flux` | « Vos appels d'offres » (7 derniers marchés) |
-| `accueil-rail` | Raccourcis, pièces à renouveler, entonnoir « Mes marchés » |
+| `accueil-flux` | « Vos marchés » (7 derniers marchés) |
+| `accueil-rail` | Pièces à renouveler, entonnoir « Mes marchés » (absent s'il n'y a rien à montrer) |
+
+Retiré (§ 1.6) : `accueil-ruban` (ruban des 4 chiffres).
 | `accueil-bilan` | « Où vous gagnez / perdez » |
 | `accueil-carnet` | Carnet de notes (« Où vous perdez des points ») |
 
@@ -221,9 +228,9 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
 
 | Repère | Zone |
 |---|---|
-| `trouver-recherche` | Étape 1 : la recherche |
-| `trouver-radar` | Radar des échéances (fins de contrat) |
-| `trouver-alertes` | Alertes automatiques |
+| `trouver-recherche` | Étape 1 : la recherche (onglet « Publiés ») |
+| `trouver-radar` | Onglet « À venir » : contrats qui arrivent à échéance (anciennement le radar des échéances) |
+| `trouver-alertes` | Onglet « Mes alertes » (anciennement « Alertes automatiques ») |
 | `trouver-carte` | Une carte de résultat (élément répété par `v-for`) |
 | `trouver-analyse` | Étape 2 : l'analyse d'un marché trouvé |
 
@@ -234,12 +241,13 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
 | `vue-amont` | Projets à venir (masqué) |
 | `vue-kb` | Mon savoir-faire ; contient `kb-fiches-proposees` |
 | `vue-atelier` | Atelier du dossier de présentation ; contient `atelier-page-preparation-case`, `atelier-page-preparation`, `atelier-entretien`, `atelier-onglets`, `atelier-repartition` (« Qui écrit quoi ») |
-| `vue-pipeline`, `vue-cotraitants`, `vue-contacts`, `vue-documents`, `vue-invoices`, `vue-company`, `vue-preuves`, `vue-criteria`, `vue-team` | Une vue chacune (Mes marchés, Mes partenaires, Contacts, Mes documents, Devis et factures, Mon entreprise, Mes preuves, Mes critères, Équipe) |
+| `vue-pipeline`, `vue-cotraitants`, `vue-contacts`, `vue-documents`, `vue-invoices`, `vue-company`, `vue-preuves`, `vue-criteria`, `vue-team` | Une vue chacune (Mes marchés › Marchés, Partenaires › Mes partenaires, Partenaires › Contacts, Mes documents › Mes pièces, Mes marchés › Devis et factures, Mon entreprise › Identité, › Mes preuves, › Mes critères, Réglages › Collègues) |
+| `vue-compte` | Réglages › Mon compte : mot de passe, mes données (cartes venues de `vue-team`, § 1.3) |
 | `vue-billing` | Abonnement ; contient `billing-offres` (les cartes d'offre) |
 | `vue-admin` | Administration ; contient `admin-mesure` (écrans ouverts, § 1.1) |
-| `vue-consortiums` | Mes groupements |
-| `vue-reseau` | Réseau ; contient `reseau-onglets`, `reseau-profil`, `reseau-annuaire`, `reseau-historique`, `reseau-recues` |
-| `vue-shared` | Partagé avec moi (liste) |
+| `vue-consortiums` | Mes marchés › À plusieurs (anciennement « Mes groupements ») |
+| `vue-reseau` | Partenaires › Réseau Adjugo ; contient `reseau-onglets`, `reseau-profil`, `reseau-annuaire`, `reseau-historique`, `reseau-recues` |
+| `vue-shared` | Mes marchés › Où je suis partenaire (anciennement « Partagé avec moi », liste) |
 | `vue-sharedao-attente` | Dossier partagé en chargement ou en erreur |
 | `vue-sharedao` | Un dossier partagé, côté partenaire ; contient `partage-entete`, `partage-grille`, `partage-pourquoi`, `partage-convention`, `partage-redaction`, `partage-pieces`, `partage-ma-part` (avec `partage-tableau-prix` et `partage-coffre-croise`), `partage-journal` |
 
@@ -284,6 +292,12 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
 - **Toute nouvelle vue** (un onglet de rubrique devenu vue, par exemple) s'ajoute à `ECRANS` :
   `test_chaque_vue_de_l_application_est_mesuree` le vérifie contre `app.html` et `app.js`. Les onglets internes d'une
   vue (onglets du Réseau) ne sont pas comptés à part.
+- **Menu par rubriques (§ 1.3)** : ajoutés à `ECRANS` : `compte` (Réglages › Mon compte, une vue) ; `avenir` et
+  `alertes`, les onglets « À venir » et « Mes alertes » de Trouver des marchés, comptés à chaque affichage (savoir
+  si l'onglet « À venir » est ouvert sert à la veille). `sourcing` compte chaque ouverture de Trouver des marchés,
+  quel que soit l'onglet ; revenir à « Publiés » depuis un autre onglet n'est pas compté. Dans Administration, un
+  écran se lit « Rubrique › Onglet » (« Trouver des marchés › À venir », « Mes documents › Mon savoir-faire »).
+  Aucune migration : la table garde les mêmes colonnes.
 
 La vague 1 se voulait sans migration (« aucune donnée modifiée ») : celle-ci ajoute une table de compteurs, sans
 toucher aux données des clients. C'est le seul moyen de garder un compte par jour d'un redémarrage à l'autre sans
@@ -303,6 +317,184 @@ outil tiers.
 - Test : `inscriptionDemandee` exécutée sous Node sur 5 adresses, et l'ordre du branchement dans `mounted()`
   (`test_inscription_lue_par_l_application_sous_node`).
 
+## 1.3 Le menu regroupé (décisions 1, 2 a, 3)
+
+### 1.3.1 Ce qu'on voit
+
+| # | Entrée du menu | Icône | Ouvre | Onglets (zone `onglets-rubrique`) | Pastille |
+|---|---|---|---|---|---|
+| 1 | Accueil | `house` | `dashboard` | aucun | aucune |
+| 2 | Trouver des marchés | `search` | `sourcing`, onglet « Publiés » | Publiés · À venir · Mes alertes (· Projets à venir si `PROJETS_A_VENIR=1`) | aucune |
+| 3 | Mes marchés | `folder-kanban` | `pipeline` | Marchés · Où je suis partenaire · À plusieurs · Devis et factures | ce qui attend votre action |
+| 4 | Partenaires | `handshake` | `cotraitants` | Mes partenaires · Réseau Adjugo (avec ses onglets actuels) · Contacts | aucune |
+| 5 | Mes documents | `folder-lock` | `documents` | Mes pièces · Mon savoir-faire | pièces à renouveler |
+| 6 | Mon entreprise | `building-2` | `company` | Identité · Mes critères · Mes preuves | aucune |
+| — | Réglages (groupe replié, en bas) | `settings` | — | Collègues, Abonnement, Mon compte, Administration (administrateur de la plateforme), Mon avis, thème | aucune |
+
+- **Une seule source** : `RUBRIQUES`, en tête de `app.js` (avec les fonctions pures `rubriqueDe`, `ongletDe`,
+  `ancienNom`). Le menu (`app.html`, zone `menu`) en reprend l'ordre, les libellés et les icônes, ce que
+  `test_menu_six_rubriques_dans_l_ordre_puis_reglages` vérifie.
+- **Chaque ancienne vue est un onglet de sa rubrique, ouverte par `go()` sans changement** : les vues, leurs
+  repères `vue-*` et les chargements de `go()` ne bougent pas. Un seul composant d'onglets pour toutes les rubriques
+  (`onglets-rubrique`, au style des onglets existants `rn-tab`), affiché seulement sur une vue qui en est un onglet,
+  jamais sur une page de détail (le marché, l'atelier, un dossier partagé ont leur bouton de retour).
+- **La rubrique reste surlignée**, pages de détail comprises : le marché, l'atelier et un dossier partagé sont dans
+  « Mes marchés ». Replié sur un de ses écrans, le titre « Réglages » est surligné.
+- **« Plus » n'existe plus.** Le groupe « Réglages » est un vrai bouton (`aria-expanded`), replié par défaut ; son
+  état est gardé dans ce navigateur (`adjugo_nav_reglages`, lecture et écriture protégées).
+- **Plus d'entrée qui apparaît selon les données** : « Partagé avec moi » (affichée seulement s'il y avait un dossier)
+  devient l'onglet « Où je suis partenaire », toujours présent.
+- **Pastilles d'action seulement, jamais un total ni zéro** : plus de nombre de marchés, de partenaires, de contacts,
+  de documents du savoir-faire ni de groupements. « Mes marchés » (et l'onglet « Où je suis partenaire ») : les
+  invitations reçues par le réseau à traiter, plus les marchés d'autres entreprises où votre accord est demandé
+  (convention à valider) ou où une partie du dossier de présentation vous attend (`mmActions`). « Mes documents »
+  (et « Mes pièces ») : les pièces à renouveler.
+- **Invitations reçues par le réseau** : elles se traitent toujours dans Partenaires › Réseau Adjugo › Invitations
+  reçues (onglets internes gardés jusqu'à la vague 2a). L'onglet « Où je suis partenaire » les annonce et y mène
+  (« Voir les invitations »).
+- **Mon compte** : nouvelle vue `compte`. Les cartes « Mon mot de passe » et « Mes données (RGPD) » y sont déplacées
+  telles quelles depuis « Équipe » (devenue « Collègues »). Le courriel d'invitation d'un collègue dit où changer
+  son mot de passe (« menu Réglages, puis Mon compte »).
+- **Trouver des marchés** en trois onglets. Le radar quitte le haut des résultats pour l'onglet « À venir », sous
+  son nom de l'étude, « Contrats qui arrivent à échéance » (`calendar-clock`). Il a ses propres champs (métier,
+  départements : les mêmes valeurs que la recherche « Publiés ») et le bouton « Chercher les fins de contrat » (plus
+  de « mots-clés ci-dessus »). La note « pertinence N/100 » disparaît (décision 8 : pas de note avant le dossier ;
+  l'ordre est dit dans la bulle) ; la flèche « ↗ » tapée aussi (règle 6 des icônes). « Mes alertes » dit quelle
+  recherche sera enregistrée. « Publiés » : le reste de la vue ne change pas (une seule balise `<template v-if>`
+  l'entoure, sans réindentation ; `trouver-recherche`, `trouver-carte` et `trouver-analyse` ne sont pas touchés).
+  L'onglet est l'état `trouverOnglet`, hors de `src`.
+- **Icônes du § 8** : celles du tableau ci-dessus ; dans les onglets `calendar-clock` (À venir), `bell`, `inbox`,
+  `receipt`, `network`, `contact-round`, `library`, `sliders-horizontal`, `award`, `users-round` (Collègues
+  seulement), `credit-card`, `circle-user`, `shield`. Aussi : « Mon profil partenaire » passe à `id-card` (il
+  portait `building-2`, l'icône de Mon entreprise) et « Annuaire » à `network` ; « à plusieurs » (accueil, Mes
+  marchés, notifications) passe de `users-round` à `handshake`.
+- **Réseau Adjugo** garde ses onglets internes (exception temporaire de l'étude) : un cran plus petits que ceux de la
+  rubrique, pour lire deux niveaux.
+- **375 px** : les onglets passent en grille (2 colonnes pour 2 ou 4 onglets, 3 pour 3). Vérifié dans un vrai
+  navigateur : aucun défilement horizontal sur les 18 écrans rangés.
+- **Traductions (décision 16)** : 62 clés ajoutées (357 → 419) : menu, onglets, titres, bulles de l'en-tête,
+  anciens noms, note de transition, nouveaux boutons. « Mes pièces » devient « Mis justificantes » en espagnol
+  (« Mis documentos » est déjà la rubrique). Test : `test_traductions_du_menu_des_onglets_des_bulles_et_de_la_note`.
+
+### 1.3.2 Chaque ancienne vue en 2 clics au plus
+
+| Ancienne entrée | Aujourd'hui | Clics |
+|---|---|---|
+| Tableau de bord | Accueil | 1 |
+| Trouver des marchés ; radar ; alertes | Trouver des marchés › Publiés ; › À venir ; › Mes alertes | 1 ; 2 ; 2 |
+| Mes marchés ; Partagé avec moi ; Mes groupements ; Devis & factures | Mes marchés › Marchés ; › Où je suis partenaire ; › À plusieurs ; › Devis et factures | 1 ; 2 ; 2 ; 2 |
+| Mes partenaires ; Réseau ; Contacts | Partenaires › Mes partenaires ; › Réseau Adjugo ; › Contacts | 1 ; 2 ; 2 |
+| Mes documents ; Mon savoir-faire | Mes documents › Mes pièces ; › Mon savoir-faire | 1 ; 2 |
+| Mon entreprise ; Mes critères ; Mes preuves | Mon entreprise › Identité ; › Mes critères ; › Mes preuves | 1 ; 2 ; 2 |
+| Équipe ; Abonnement ; Administration ; Mon avis | Réglages › Collègues (et Mon compte) ; › Abonnement ; › Administration ; › Mon avis | 2 (1 si le groupe est déjà ouvert) |
+
+`test_chaque_vue_a_sa_rubrique_et_s_atteint_en_deux_clics_au_plus` le vérifie pour chaque écran de `ECRANS` (hors
+pages de détail, qui s'ouvrent depuis la liste de leur rubrique).
+
+### 1.3.3 Ce qui n'est pas fait ici, et pourquoi
+
+- **« Courriels » (fréquence du résumé) et « Nos sources et nos chiffres »** ne sont pas dans Réglages : aucun réglage
+  de fréquence ni cette page n'existent encore (un seul résumé arrive en vague 2a). Une entrée vide annoncerait une
+  fonction qui n'est pas en ligne (§ 6 de l'étude).
+- **« Tarifs »** reste dans Identité : en faire un onglet couperait la vue Mon entreprise (un seul formulaire, un seul
+  « Enregistrer »). C'est « Mon entreprise en onglets », vague 2a.
+- **Contacts** sans filtre par type (vague 2a, avec les listes filtrables).
+- **Pastille « parts à relire » côté chef de file** : ces parts ne sont connues que sur la page du marché ; elles
+  viendront avec la liste « À faire » (vague 2a).
+- **Onglets internes du Réseau** : gardés jusqu'à la vague 2a (Mes partenaires · Réseau Adjugo · Mon profil sur le
+  réseau · Contacts).
+- **Barre basse sur téléphone** (décision 18) : vague 2a. Sur téléphone, le menu reste derrière le bouton « Menu ».
+
+## 1.6 Accueil allégé
+
+- **Retirés** : le ruban des 4 chiffres (« Taux de réussite 0 % » sur un compte neuf), les 3 liens qui doublent le
+  menu (Mes partenaires, Mon entreprise, Mes documents) et le 4e raccourci « Trouver des marchés » (le bouton de
+  l'en-tête reste). Le rail ne garde que les pièces à renouveler et l'entonnoir « Mes marchés » ; il disparaît
+  quand il n'a rien à montrer, et « Vos marchés » prend toute la largeur.
+- **Bloc « À plusieurs »** (anciennement « Réseau Adjugo — gagnez les gros marchés à plusieurs », un slogan) : son
+  bouton « Monter un groupement » devient **« Préparer à plusieurs »** et mène à **Mes marchés › À plusieurs** (la
+  vue des groupements : c'est « Mes marchés filtré sur les marchés à plusieurs », sans réécrire de vue). Icône
+  `handshake` : `user-plus` reste réservé à « Inviter un partenaire ». Le bouton « Mes groupements » (état « tous
+  déposés ») devient « Voir mes marchés à plusieurs ».
+- **Mes marchés › À plusieurs** : « Nouveau groupement » devient « Préparer à plusieurs » (vers Marchés), avec une
+  bulle : ouvrir le marché, puis « Inviter un partenaire ».
+- « Vos appels d'offres » devient **« Vos marchés »**.
+- Déjà masqués (décision 5) : « Une longueur d'avance » et l'écran Projets à venir. Gardés : premiers pas, bilan
+  « Où vous gagnez / perdez » et carnet de notes (le bilan rejoint Mes marchés › Bilan en vague 2a).
+
+## 1.7 Sous-titres de vue en bulle
+
+- Plus de ligne de sous-titre sous le titre. Le titre est la rubrique (quand la vue en est un onglet : les onglets
+  disent où l'on est dedans) ou le nom de la vue (Le marché, Collègues…). À côté, une bulle (i) : ce que fait
+  l'écran, puis son ancien nom (§ 1.8).
+- **Retirés** : « Débloquez toute la puissance d'Adjugo » (Abonnement : une promesse), « Vue d'ensemble de votre
+  activité » (Accueil : n'apprend rien), « Dossier complet de l'appel d'offres » (Le marché : faux tant que seule
+  l'annonce est lue). **Réécrit** : « Sources officielles, traçables — vous validez chaque étape » devient « Les
+  marchés publiés sur les sources officielles : chaque résultat renvoie à son annonce. » **Nouveaux** : À venir, Mes
+  alertes, Mon compte.
+- Sur téléphone, la bulle de l'en-tête s'ouvre sous la barre du haut, sur toute la largeur (le flou de la barre
+  piégerait une bulle « fixe » dans la barre).
+
+## 1.8 Transition
+
+- **Note « Ce qui a changé »** sur l'accueil (`accueil-ce-qui-a-change`) : une ligne, puis la liste repliée « Où
+  retrouver vos écrans » ; un bouton « Fermer ». Visible une semaine au plus après son premier affichage, état gardé
+  dans ce navigateur (`adjugo_reorg_v1`). Seulement pour les comptes créés avant `REORG_V1_DEPUIS` (`app.js`), et
+  jamais dans la démonstration (`DEMO_EMAIL_APP`, égal à `demo_seed.DEMO_EMAIL`, vérifié par un test).
+  **À régler par Eliot : `REORG_V1_DEPUIS` = le jour de la mise en ligne** (réglé au 20/10/2026 : un compte créé
+  avant ce jour voit la note).
+- **Anciens noms en bulle** : la bulle de l'en-tête finit par « Anciennement « … ». » pour chaque écran renommé
+  (Accueil, À venir, Mes alertes, Où je suis partenaire, À plusieurs, Devis et factures, Réseau Adjugo, Identité,
+  Collègues ; Mon compte : « Votre mot de passe et vos données étaient dans « Équipe ». »). **À retirer un mois
+  après la mise en ligne** : supprimer les champs `ancien` et `avant` de `RUBRIQUES` (la bulle ne garde que la phrase
+  de l'écran), puis la note.
+- **Plus d'ancien nom ailleurs** : l'écran de rédaction du partenaire (`redaction-partenaire.js`, 3 messages),
+  « Invitation acceptée : le dossier est dans Mes marchés, onglet « Où je suis partenaire ». », le retour d'un
+  dossier partagé (« Où je suis partenaire »), le titre de Mes marchés › À plusieurs. Garde-fou :
+  `test_les_anciens_noms_ne_restent_que_dans_la_note_et_les_bulles`.
+- Pages juridiques : aucune ne cite un écran renommé (`docs/A_CORRIGER_PAGES_JURIDIQUES_LIBELLES.md`, § 7).
+
+### 1.8.1 Courriel aux 7 PME de test (à envoyer par Eliot)
+
+> **Objet : Adjugo : le menu a été rangé**
+>
+> Bonjour,
+>
+> Merci de tester Adjugo avec nous. Nous venons de ranger le menu : vos marchés, vos documents et vos partenaires
+> n'ont pas bougé, seule la place des écrans a changé.
+>
+> Le menu compte maintenant six rubriques :
+>
+> - **Accueil** (anciennement « Tableau de bord ») ;
+> - **Trouver des marchés** : les marchés publiés, les contrats qui arrivent à échéance (onglet « À venir »,
+>   anciennement « Radar des échéances ») et vos alertes ;
+> - **Mes marchés** : vos marchés, ceux où une autre entreprise vous a invité (onglet « Où je suis partenaire »,
+>   anciennement « Partagé avec moi »), vos marchés à plusieurs (onglet « À plusieurs », anciennement « Mes
+>   groupements ») et vos devis et factures ;
+> - **Partenaires** : vos partenaires, le Réseau Adjugo et vos contacts ;
+> - **Mes documents** : vos pièces et votre savoir-faire ;
+> - **Mon entreprise** : son identité, vos critères et vos preuves.
+>
+> En bas du menu, « Plus » devient **Réglages** : vos collègues (anciennement « Équipe »), l'abonnement, votre
+> compte (mot de passe et données) et « Mon avis ».
+>
+> Pendant un mois, l'ancien nom de chaque écran reste écrit dans la bulle (i) à côté de son titre. Sur l'accueil,
+> une note « Ce qui a changé » reprend tout cela.
+>
+> Un écran introuvable, un mot qui ne vous parle pas ? Répondez simplement à ce courriel, ou passez par « Mon avis »
+> dans Réglages.
+>
+> Bonne journée,
+> Eliot, pour Adjugo
+
+### 1.8.2 Tests mis à jour par ce chantier
+
+`test_reorganisation_v1_socle.py` (zones `menu-reglages`, `onglets-rubrique`, `accueil-ce-qui-a-change`,
+`vue-compte` ; `accueil-ruban` retiré ; libellés du menu), `test_redaction_v3_mes_preuves_ecrans.py` (« Mes preuves »
+reste dans Mon entreprise, en onglet), `test_redaction_v2_ecrans.py` (Mon savoir-faire, onglet de Mes documents),
+`test_correctifs_urgents.py` (Projets à venir : un onglet conditionnel, plus une entrée du menu),
+`test_reseau_ecrans.py` (Réseau Adjugo, onglet de Partenaires). Nouveau : `test_reorganisation_v1_menu.py`.
+
 ---
 
 ## 2. Démonstration (lien privé, pitchs)
@@ -311,6 +503,10 @@ outil tiers.
   § 0 (analyse « soigner le dossier de présentation », « Groupement avec un désamianteur certifié SS3 », statut
   « Déposé »).
 - La mesure ne compte pas la démo ; sa route est classée sans coût.
+- Menu par rubriques (§ 1.3) : la démo s'ouvre sur l'accueil allégé, sans la note « Ce qui a changé » (jamais pour
+  le compte démo). Vérifié dans un vrai navigateur (démo locale, thèmes clair et sombre, 375 px) : chaque rubrique,
+  chaque onglet, le groupe « Réglages », la bulle de l'en-tête, les pastilles (« Mes documents » : les 2 pièces à
+  renouveler de la démo).
 - Le dossier fictif de l'acheteur garde ses mots (« mémoire technique » dans son règlement) : c'est un dossier
   d'acheteur crédible.
 
@@ -320,14 +516,8 @@ outil tiers.
 
 **Vague 1, à faire sur ce socle**
 
-- **1.3 Le menu regroupé** (Accueil, Trouver des marchés, Mes marchés, Partenaires, Mes documents, Mon entreprise,
-  groupe « Réglages » replié, état gardé ; plus de « Plus »). Les vues restent, ouvertes par `go()` sans changement :
-  les repères `vue-*` ne bougent pas. À mettre à jour : `test_menu_non_reorganise_mes_preuves_sous_mon_entreprise`
-  (ordre exact du menu, `MENU_AVANT`), `test_carte_du_marche_compacte_un_seul_bouton_et_menu_inchange` (entrées
-  attendues dans `menu`), `test_projets_a_venir_masque_par_defaut` (entrée « Projets à venir » du menu), et le test
-  des traductions qui exigera chaque nouveau libellé (déjà traduits d'avance, § 0.5). Icônes Lucide du § 8 de
-  l'étude (`house`, `folder-kanban`, `handshake`, `building-2`, `settings`…). Le radar quitte le haut des résultats
-  pour l'onglet À venir.
+- **1.3 Le menu regroupé** : fait (§ 1.3). Reste pour la vague 2a : Courriels, Tarifs en onglet, filtre des
+  Contacts, pastille « parts à relire » du chef de file, onglets internes du Réseau, barre basse (§ 1.3.3).
 - **1.4 De la recherche au marché** (« Ouvrir le marché » après l'analyse) : zone `trouver-analyse`.
 - **1.5 La page du marché en 4 étapes** (Lire, Décider, Préparer, Déposer ; « Inviter un partenaire » en tête, le
   bouton le plus visible, D0). Les cartes gardent leurs repères en changeant de place. À mettre à jour :
@@ -339,9 +529,7 @@ outil tiers.
   plusieurs Y % » après le dossier, des mots avant, « N sur M » ailleurs (règle 10 de l'étude : pas de note sur
   les partenaires). Ailleurs, même règle : « Pièces à fournir 16/25 » → « 16 sur 25 » ; sur la vitrine, le cadran
   « 87 % » de la section « Décider » montre un pourcentage avant tout dossier.
-- **1.6 Accueil allégé** (`accueil-ruban`, les liens doublons de `accueil-rail`, « Monter un groupement » →
-  « Préparer à plusieurs »). **1.7 Sous-titres en bulle** (`titles` / `subtitles` de `app.js`, déjà sans mot banni).
-  **1.8 Transition** (« Ce qui a changé », anciens noms en bulle, courriel aux 7 PME).
+- **1.6 Accueil allégé**, **1.7 Sous-titres en bulle**, **1.8 Transition** : faits (§ 1.6 à 1.8).
 - **Test d'arborescence** de Mathys (avant et après la vague 1) : hors code.
 
 **Vagues 2a et 2b** (après) : une adresse par écran, un seul axe d'étapes (la clé `envoye` migre alors vers
@@ -351,6 +539,8 @@ espace partenaire réduit à « Votre part dans [marché] » (dans `invite.html`
 
 **Pour Eliot**
 
+- Menu par rubriques : régler `REORG_V1_DEPUIS` (`app.js`) au jour de la mise en ligne ; envoyer le courriel aux
+  7 PME (§ 1.8.1) ; un mois après, retirer les anciens noms des bulles et la note (§ 1.8).
 - Pages juridiques : `docs/A_CORRIGER_PAGES_JURIDIQUES_LIBELLES.md`, § 6 (AO, CERFA, mémoire, co-traitant, SIRENE ;
   le modèle de convention).
 - Mise en ligne : la migration `b3mesureecrans` (une table de compteurs) part avec ce socle ; contrôle Postgres

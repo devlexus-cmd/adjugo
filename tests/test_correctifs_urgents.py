@@ -282,7 +282,11 @@ def test_projets_a_venir_masque_par_defaut(client, monkeypatch):
     from tests.zones import sans_reperes, zone
     brut, js = _static("app.html"), _static("app.js")
     html, nav = sans_reperes(brut), sans_reperes(zone(brut, "menu"))
-    assert '<a v-if="features.projets_a_venir" class="nav-item" :class="{active:view===\'amont\'}"' in nav
+    # Menu par rubriques (réorganisation, vague 1, 1.3) : « Projets à venir » est un onglet de Trouver des marchés,
+    # affiché seulement quand la fonction est activée par le serveur ; aucune entrée du menu.
+    assert "amont" not in nav
+    assert '{ view: "amont", label: "Projets à venir", ic: "calendar-clock", si: "projets_a_venir" }' in js
+    assert '_ongletPermis(t) { return !t.si || (t.si === "admin" ? !!(this.user && this.user.is_admin) : !!this.features[t.si]); },' in js
     assert '<div v-if="features.projets_a_venir" class="card pad dash-block"' in html
     assert "<section v-if=\"view==='amont' && features.projets_a_venir\">" in html
     assert '<button v-if="features.projets_a_venir" class="btn sm ghost" @click="go(\'amont\')">' in html

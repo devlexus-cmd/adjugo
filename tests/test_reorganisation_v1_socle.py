@@ -57,8 +57,9 @@ def _set(email, **vals):
 
 # Le contrat (docs/REORGANISATION_V1.md, § 1.0) : chaque nom, une seule fois, sauf les familles.
 ZONES = {
-    "cadre": ["auth", "menu", "entete", "contenu", "carte-essai", "carte-suggestion-reseau", "bandeau-cookies"],
-    "accueil": ["vue-dashboard", "accueil-premiers-pas", "accueil-ruban", "accueil-reseau", "accueil-amont",
+    "cadre": ["auth", "menu", "menu-reglages", "entete", "contenu", "onglets-rubrique", "carte-essai",
+              "carte-suggestion-reseau", "bandeau-cookies"],
+    "accueil": ["vue-dashboard", "accueil-ce-qui-a-change", "accueil-premiers-pas", "accueil-reseau", "accueil-amont",
                 "accueil-grille", "accueil-flux", "accueil-rail", "accueil-bilan", "accueil-carnet"],
     "marche": ["vue-aodetail", "marche-entete", "marche-resultat", "marche-carnet", "marche-analyse",
                "marche-couverture", "marche-questions", "marche-grille", "marche-plusieurs", "plusieurs-manques",
@@ -73,7 +74,7 @@ ZONES = {
     "vues": ["vue-amont", "vue-kb", "kb-fiches-proposees", "vue-atelier", "atelier-page-preparation-case",
              "atelier-page-preparation", "atelier-entretien", "atelier-onglets", "atelier-repartition",
              "vue-pipeline", "vue-cotraitants", "vue-contacts", "vue-documents", "vue-invoices", "vue-company",
-             "vue-preuves", "vue-criteria", "vue-team", "vue-billing", "billing-offres", "vue-admin", "admin-mesure",
+             "vue-preuves", "vue-criteria", "vue-team", "vue-compte", "vue-billing", "billing-offres", "vue-admin", "admin-mesure",
              "vue-consortiums", "vue-reseau", "reseau-onglets", "reseau-profil", "reseau-annuaire",
              "reseau-historique", "reseau-recues", "vue-shared", "vue-sharedao-attente", "vue-sharedao"],
     "partage": ["partage-entete", "partage-grille", "partage-pourquoi", "partage-convention", "partage-redaction",
@@ -116,10 +117,19 @@ def test_chaque_zone_se_decoupe_et_reste_a_sa_place():
         assert zone(HTML, n) in zone(HTML, "vue-reseau"), n
     # Le menu est bien la barre latérale, le contenu contient toutes les vues.
     assert "go('dashboard')" in zone(HTML, "menu") and "<section" not in zone(HTML, "menu")
+    assert zone(HTML, "menu-reglages") in zone(HTML, "menu")
+    # Les onglets de rubrique (menu par rubriques, vague 1, 1.3) sont au-dessus des vues, hors de toute vue.
+    assert zone(HTML, "onglets-rubrique") in contenu_avant_vues(HTML)
     contenu = zone(HTML, "contenu")
     assert all(zone(HTML, n) in contenu for n in noms(HTML) if n.startswith("vue-"))
     # Un repère ne change rien à ce qu'affiche la page : sans eux, le gabarit est celui d'avant.
     assert "data-test" not in sans_reperes(HTML)
+
+
+def contenu_avant_vues(html):
+    """Le début de la zone « contenu », avant la première vue."""
+    c = zone(html, "contenu")
+    return c[:c.index('<section data-test="vue-')]
 
 
 def test_aucun_test_ne_decoupe_plus_app_html_entre_deux_commentaires():
@@ -518,8 +528,10 @@ def test_traductions_des_libelles_renommes_et_du_menu():
         assert k in HTML or k in JS, f"« {k} » n'est plus affiché : retirez-le de RENOMMES"
     # Chaque libellé du menu (texte d'une entrée) est traduit.
     menu = re.sub(r"<span[^>]*>.*?</span>", "", zone(HTML, "menu"), flags=re.S)
-    libelles = [x.strip() for x in re.findall(r'<a [^>]*class="nav-item[^"]*"[^>]*>(?:<i [^>]*></i>)?([^<{]+)', menu)]
-    assert len(libelles) >= 15, libelles
+    # Menu par rubriques (vague 1, 1.3) : 6 rubriques, le titre du groupe « Réglages » et ses 5 entrées. Les onglets
+    # de chaque rubrique (RUBRIQUES, app.js) sont vérifiés par tests/test_reorganisation_v1_menu.py.
+    libelles = [x.strip() for x in re.findall(r'<(?:a|button) [^>]*class="nav-item[^"]*"[^>]*>(?:<i [^>]*></i>)?([^<{]+)', menu)]
+    assert len(libelles) >= 12, libelles
     for k in libelles:
         k = k.replace("&amp;", "&")
         assert d["nl"].get(k) and d["es"].get(k), f"menu : « {k} » sans traduction (scripts/i18n_ajouter.py)"

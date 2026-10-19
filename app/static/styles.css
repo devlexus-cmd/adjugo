@@ -585,6 +585,46 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 /* Bouton à long libellé : peut passer sur 2 lignes au lieu de déborder sur téléphone */
 .btn.btn-wrap { white-space:normal; height:auto; min-height:35px; padding-top:7px; padding-bottom:7px; text-align:left; max-width:100%; }
 
+/* ══════════ Menu par rubriques (réorganisation, vague 1, 1.3, 1.6 à 1.8) ══════════
+   Architecture C corrigée : 6 rubriques et le groupe « Réglages » (replié, état gardé) ; une barre d'onglets par
+   rubrique, au style des onglets existants (rn-tab) ; le sous-titre de la vue passe dans une bulle (i). Mêmes
+   couleurs, même police : seule l'organisation change. 375 px sans défilement horizontal. */
+.top-title { display:flex; align-items:center; min-width:0; }
+.top-title h1 { min-width:0; }
+.tip-b .tip-ancien { display:block; margin-top:4px; }
+.tip-b .tip-ancien:first-child { margin-top:0; }
+@media (max-width:640px) {
+  /* La bulle de l'en-tête s'ouvre sous la barre du haut, sur toute la largeur (la barre, avec son flou d'arrière-plan,
+     contiendrait une bulle « fixe » : elle s'afficherait dans la barre au lieu du bas de l'écran). */
+  .top .tip { position:static; }
+  .top .tip .tip-b, .top .tip.tip-l .tip-b { position:absolute; top:calc(100% + 6px); bottom:auto; left:12px; right:12px; }
+}
+.nav-groupe { width:100%; text-align:left; }
+.nav-groupe .nav-chev { margin-left:auto; color:var(--subtle); }
+.nav-groupe .nav-chev .lucide { width:15px; height:15px; }
+.nav-reglages { margin-bottom:6px; }
+.nav-reglages-liste { padding:2px 0 4px; }
+.nav-reglages-liste .theme-toggle { margin:6px 0 4px; }
+.rub-onglets { margin-bottom:16px; }
+@media (max-width:560px) {
+  .rub-onglets.rub-n2, .rub-onglets.rub-n4 { grid-template-columns:repeat(2, minmax(0,1fr)); }
+}
+/* Réseau Adjugo garde ses onglets internes jusqu'à la vague 2a : un cran plus petits que ceux de la rubrique. */
+@media (min-width:561px) {
+  section.rn > .rn-tabs .rn-tab { min-height:32px; padding:0 12px; font-size:12.5px; }
+}
+.dash-grid.solo { grid-template-columns:minmax(0,1fr); }
+.reorg-note { border:1px solid var(--accent-weak); }
+.reorg-h { display:flex; align-items:flex-start; gap:10px; }
+.reorg-ic { color:var(--accent-text); flex:none; margin-top:1px; }
+.reorg-tx { flex:1; min-width:0; }
+.reorg-tx > .muted { margin-top:2px; }
+.reorg-det { margin-top:6px; }
+.reorg-liste { margin:0; padding-left:18px; line-height:1.55; }
+.reorg-liste li + li { margin-top:3px; }
+.reorg-h > .btn.icon { flex:none; margin:-4px -6px 0 0; }
+.shared-recues { margin-top:12px; gap:8px 10px; padding:10px 12px; border:1px solid var(--accent); border-radius:10px; background:var(--accent-weak); }
+
 /* ══════════ Bulle d'information « ⓘ » : les phrases d'explication sortent des cartes ══════════
    <button type="button" class="tip"><i data-lucide="info"></i><span class="tip-b" role="tooltip">…</span></button>
    S'ouvre au survol (souris) et au toucher/clavier (focus). .tip-l : la bulle s'ouvre vers la gauche. */
@@ -1027,7 +1067,6 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 .nav-item.nav-sub { padding-left:28px; font-size:12.5px; }
 .nav-item.nav-sub .lucide { width:15px; height:15px; }
 .pv { max-width:820px; }
-.pv-onglets { margin-bottom:16px; }
 .pv-g8 { gap:8px; }
 .pv-grow { flex:1; min-width:0; }
 .pv-block { display:block; }
@@ -1105,7 +1144,6 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
   .pv-natures { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:6px; }
   .pv-natures .rn-tab { justify-content:center; padding:6px 6px; font-size:12px; min-height:44px; border-radius:14px; }
   .pv-natures .rn-tab .lucide { display:none; }
-  .pv-onglets { grid-template-columns:repeat(2, minmax(0,1fr)); }
   .pv-actions { gap:4px; }
   .pv-actions .btn.sm { padding:0 8px; }
   .pv-form { padding:12px; }

@@ -2,8 +2,8 @@
 Rédaction, vague 3 — les ÉCRANS « Mes preuves » (E1, étude § 6.7 ; doctrine § 7 ; décision 8a).
 
 Ce qui est vérifié, sans navigateur ni réseau :
- • menu NON réorganisé : « Mes preuves » est une entrée de plus, SOUS « Mon entreprise », toutes
-   les autres gardent leur ordre ; « Mon entreprise » porte deux onglets (profil / preuves) ;
+ • « Mes preuves » reste dans « Mon entreprise » : depuis le menu par rubriques (réorganisation, vague 1, 1.3),
+   c'est un onglet de cette rubrique (Identité · Mes critères · Mes preuves), ouvert par go('preuves') ;
  • l'écran : cinq listes courtes (Références, Qualifications, Équipe, Matériel, Chiffres clés),
    libellé de source avec le lien vers le passage ou le justificatif, date de fin de validité et
    alerte sobre, « à reconfirmer », raison quand une fiche n'est pas utilisée, CV minimal (ni photo,
@@ -62,24 +62,21 @@ JS_PUR = _between(JS, "// ══════════ « Mes preuves » (réd
 JS_METH = _between(JS, "    // ══════════ « Mes preuves » (rédaction, vague 3, E1) ══════════", "    // ── Company / Criteria ──")
 CSS_PV = _between(CSS, "/* ══════════ « Mes preuves » (rédaction, vague 3, E1)", "/* ══════════ Atelier du dossier")
 EMOJI = re.compile("[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F2FF⭐⬆✅❌✔✖★☆]")
-MENU_AVANT = ["dashboard", "sourcing", "pipeline", "cotraitants", "reseau", "documents", "company", "shared", "amont",
-              "kb", "consortiums", "contacts", "invoices", "criteria", "team", "billing", "admin"]
 
 
-# ═══ 1. Où l'écran s'affiche : sous « Mon entreprise », menu non réorganisé ════════════════
+# ═══ 1. Où l'écran s'affiche : un onglet de « Mon entreprise » ═════════════════════════════
 
-def test_menu_non_reorganise_mes_preuves_sous_mon_entreprise():
+def test_mes_preuves_reste_dans_mon_entreprise():
+    """Menu par rubriques (réorganisation, vague 1, 1.3) : « Mes preuves » n'est plus une entrée du menu, c'est un
+    onglet de la rubrique « Mon entreprise » (RUBRIQUES, app.js), après Identité et Mes critères ; l'entrée du
+    menu ouvre l'identité. Les onglets sont communs à toutes les rubriques (onglets-rubrique)."""
     nav = zone(HTML, "menu")
-    ordre = re.findall(r"go\('([a-z]+)'\)", nav)
-    assert [x for x in ordre if x != "preuves"] == MENU_AVANT        # aucune entrée déplacée
-    assert ordre.index("preuves") == ordre.index("company") + 1      # juste sous « Mon entreprise »
-    entree = re.search(r'<a class="nav-item nav-sub"[^>]*go\(\'preuves\'\)[^>]*>.*?</a>', nav).group(0)
-    assert "Mes preuves" in entree
-    # « Mon entreprise » : deux onglets, le profil et « Mes preuves ».
-    for bloc in (ENTREPRISE, VUE):
-        onglets = _between(bloc, '<nav class="rn-tabs pv-onglets" aria-label="Mon entreprise">', "</nav>")
-        assert "Profil de l'entreprise" in onglets and "Mes preuves" in onglets
-    assert "go('preuves')" in ENTREPRISE and "go('company')" in VUE
+    assert "go('company')" in nav and "go('preuves')" not in nav and "pv-onglets" not in HTML
+    i = JS.index('  { k: "entreprise", label: "Mon entreprise", ic: "building-2", vues: ["company", "criteria", "preuves"]')
+    rub = JS[i:JS.index("] },", i)]
+    assert rub.index('view: "company"') < rub.index('view: "criteria"') < rub.index('view: "preuves", label: "Mes preuves"')
+    assert "ongletGo(t)" in zone(HTML, "onglets-rubrique")
+    assert "go('preuves')" in ENTREPRISE       # renvoi depuis les collaborateurs du profil
     assert 'titles: { preuves: "Mes preuves",' in JS
     assert 'if (v === "preuves") { this.pvLoad(); this._pvSourcesCharger(); }' in JS
     # Renvoi depuis les collaborateurs du profil : le CV se renseigne dans « Mes preuves ».

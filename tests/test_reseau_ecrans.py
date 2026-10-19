@@ -57,12 +57,14 @@ EMOJI = re.compile("[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001
 
 
 def test_vue_reseau_et_navigation():
-    assert "go('reseau')" in HTML and "Réseau" in HTML
+    # Menu par rubriques (réorganisation, vague 1, 1.3) : « Réseau Adjugo » est un onglet de la rubrique Partenaires
+    # (RUBRIQUES, app.js), ouvert par go('reseau') ; ses onglets internes restent jusqu'à la vague 2a.
+    assert '{ view: "reseau", label: "Réseau Adjugo", ic: "network", ancien: "Réseau" }' in JS and "openReseau(" in HTML
     for libelle in ("Mon profil partenaire", "Annuaire", "Mon historique", "Invitations reçues"):
         assert libelle in SECTION, libelle
     assert "Partenaires pour ce marché" in PANEL and "Qui me complète ?" in PANEL
     assert "Présentation en une phrase" in SECTION
-    assert 'reseau: "Réseau de partenaires"' in JS
+    assert 'reseau: "Réseau Adjugo"' in JS
 
 
 @pytest.mark.parametrize("name", list(SCREENS))

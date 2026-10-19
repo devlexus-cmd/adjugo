@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs"></script>
-<script src="/static/i18n.js" integrity="sha384-4xbhOUzTJpefOpLglKh9OPuMetp4+TjbPt40+ePSrHOfjxcyasMKtKajJ9usl+75" defer></script>
+<script src="/static/i18n.js" integrity="sha384-lpIZG4oee55klylFgbErAdSllOetL/sGn4AxAe5erMZYCaSaXm3phyRGvkyMMRVF" defer></script>
 </head>
 <body>
 <div id="app">
@@ -81,33 +81,32 @@
     <div v-if="mobileNav" class="nav-backdrop" @click="mobileNav=false"></div>
     <aside data-test="menu" class="side" :class="{open:mobileNav}">
       <div class="brand"><span class="wordmark"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></span><span class="org-sub">{{ company.name || 'Votre entreprise' }}</span></div>
-      <a class="nav-item" :class="{active:view==='dashboard'}" @click="go('dashboard')"><i data-lucide="layout-dashboard"></i>Tableau de bord</a>
-      <a class="nav-item" :class="{active:view==='sourcing'}" @click="go('sourcing')"><i data-lucide="target"></i>Trouver des marchés</a>
-      <a class="nav-item" :class="{active:view==='pipeline'}" @click="go('pipeline')"><i data-lucide="square-kanban"></i>Mes marchés <span class="badge">{{ projects.length }}</span></a>
-      <a class="nav-item" :class="{active:view==='cotraitants'}" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires <span class="badge">{{ cotraitants.length }}</span></a>
-      <a class="nav-item" :class="{active:view==='reseau'}" @click="go('reseau')"><i data-lucide="network"></i>Réseau <span v-if="rnRecuesCount()" class="badge" :title="rnRecuesCount()+' invitation(s) reçue(s) à traiter'">{{ rnRecuesCount() }}<span class="sr-only"> invitation(s) reçue(s) à traiter</span></span></a>
-      <a class="nav-item" :class="{active:view==='documents'}" @click="go('documents')"><i data-lucide="folder-lock"></i>Mes documents</a>
-      <a class="nav-item" :class="{active:view==='company'}" @click="go('company')"><i data-lucide="briefcase"></i>Mon entreprise</a>
-      <a class="nav-item nav-sub" :class="{active:view==='preuves'}" @click="go('preuves')"><i data-lucide="paperclip"></i>Mes preuves</a>
-      <a v-if="shared.length" class="nav-item" :class="{active:view==='shared'||view==='sharedao'}" @click="go('shared')"><i data-lucide="inbox"></i>Partagé avec moi <span class="badge">{{ shared.length }}</span></a>
-      <a class="nav-item" @click="navMore=!navMore" style="opacity:.7"><i :data-lucide="navMore?'chevron-down':'chevron-right'"></i>Plus</a>
-      <template v-if="navMore">
-        <a v-if="features.projets_a_venir" class="nav-item" :class="{active:view==='amont'}" @click="go('amont')"><i data-lucide="scan-eye"></i>Projets à venir <span v-if="amont.signals.length" class="badge">{{ amont.signals.length }}</span></a>
-        <a class="nav-item" :class="{active:view==='kb'}" @click="go('kb')"><i data-lucide="library"></i>Mon savoir-faire <span v-if="kb.docs.length" class="badge">{{ kb.docs.length }}</span></a>
-        <a class="nav-item" :class="{active:view==='consortiums'}" @click="go('consortiums')"><i data-lucide="users-round"></i>Mes groupements <span v-if="consortiums.active" class="badge">{{ consortiums.active }}</span></a>
-        <a class="nav-item" :class="{active:view==='contacts'}" @click="go('contacts')"><i data-lucide="contact-round"></i>Contacts <span class="badge">{{ contacts.length }}</span></a>
-        <a class="nav-item" :class="{active:view==='invoices'}" @click="go('invoices')"><i data-lucide="file-text"></i>Devis &amp; factures</a>
-        <a class="nav-item" :class="{active:view==='criteria'}" @click="go('criteria')"><i data-lucide="list-filter"></i>Mes critères</a>
-        <a class="nav-item" :class="{active:view==='team'}" @click="go('team')"><i data-lucide="users-round"></i>Équipe</a>
-        <a class="nav-item" :class="{active:view==='billing'}" @click="go('billing')"><i data-lucide="credit-card"></i>Abonnement</a>
-        <a v-if="user.is_admin" class="nav-item" :class="{active:view==='admin'}" @click="go('admin')"><i data-lucide="shield"></i>Administration</a>
-      </template>
+      <!-- Réorganisation, vague 1 (1.3) : le menu range des OBJETS (architecture C corrigée, RUBRIQUES dans app.js).
+           Chaque ancienne vue est un onglet de sa rubrique (onglets-rubrique) ; la rubrique de l'écran ouvert reste
+           surlignée, pages de détail comprises. Pastilles : ce qui attend une action, jamais un total ni zéro. -->
+      <a class="nav-item" :class="{active:rubrique()==='accueil'}" @click="go('dashboard')"><i data-lucide="house"></i>Accueil</a>
+      <a class="nav-item" :class="{active:rubrique()==='trouver'}" @click="rubriqueGo('trouver')"><i data-lucide="search"></i>Trouver des marchés</a>
+      <a class="nav-item" :class="{active:rubrique()==='marches'}" @click="go('pipeline')"><i data-lucide="folder-kanban"></i>Mes marchés<span v-if="mmActions()" class="badge" :title="mmActions()+' en attente de votre action'">{{ mmActions() }}<span class="sr-only"> en attente de votre action</span></span></a>
+      <a class="nav-item" :class="{active:rubrique()==='partenaires'}" @click="go('cotraitants')"><i data-lucide="handshake"></i>Partenaires</a>
+      <a class="nav-item" :class="{active:rubrique()==='documents'}" @click="go('documents')"><i data-lucide="folder-lock"></i>Mes documents<span v-if="expiring.length" class="badge" :title="expiring.length+' pièce(s) à renouveler'">{{ expiring.length }}<span class="sr-only"> pièce(s) à renouveler</span></span></a>
+      <a class="nav-item" :class="{active:rubrique()==='entreprise'}" @click="go('company')"><i data-lucide="building-2"></i>Mon entreprise</a>
       <div class="side-foot">
-        <a class="nav-item nav-fb" @click="openFeedback(); mobileNav=false"><i data-lucide="message-circle"></i>Mon avis<span class="nav-fb-hint">idée, problème</span></a>
-        <div class="theme-toggle">
-          <button :class="{on:theme==='light'}" @click="setTheme('light')" aria-label="Thème clair"><i data-lucide="sun"></i></button>
-          <button :class="{on:theme==='system'}" @click="setTheme('system')" aria-label="Thème système"><i data-lucide="monitor"></i></button>
-          <button :class="{on:theme==='dark'}" @click="setTheme('dark')" aria-label="Thème sombre"><i data-lucide="moon"></i></button>
+        <!-- Groupe « Réglages » (remplace « Plus ») : replié par défaut, son état est gardé d'une visite à l'autre.
+             Replié sur un de ses écrans, son titre reste surligné. -->
+        <div data-test="menu-reglages" class="nav-reglages">
+          <button type="button" class="nav-item nav-groupe" :class="{active:!navReglages && rubrique()==='reglages'}" :aria-expanded="navReglages?'true':'false'" aria-controls="nav-reglages-liste" @click="toggleReglages()"><i data-lucide="settings"></i>Réglages<i :data-lucide="navReglages?'chevron-down':'chevron-right'" class="nav-chev"></i></button>
+          <div v-show="navReglages" id="nav-reglages-liste" class="nav-reglages-liste">
+            <a class="nav-item" :class="{active:view==='team'}" @click="go('team')"><i data-lucide="users-round"></i>Collègues</a>
+            <a class="nav-item" :class="{active:view==='billing'}" @click="go('billing')"><i data-lucide="credit-card"></i>Abonnement</a>
+            <a class="nav-item" :class="{active:view==='compte'}" @click="go('compte')"><i data-lucide="circle-user"></i>Mon compte</a>
+            <a v-if="user.is_admin" class="nav-item" :class="{active:view==='admin'}" @click="go('admin')"><i data-lucide="shield"></i>Administration</a>
+            <a class="nav-item nav-fb" @click="openFeedback(); mobileNav=false"><i data-lucide="message-circle"></i>Mon avis<span class="nav-fb-hint">idée, problème</span></a>
+            <div class="theme-toggle">
+              <button :class="{on:theme==='light'}" @click="setTheme('light')" aria-label="Thème clair"><i data-lucide="sun"></i></button>
+              <button :class="{on:theme==='system'}" @click="setTheme('system')" aria-label="Thème système"><i data-lucide="monitor"></i></button>
+              <button :class="{on:theme==='dark'}" @click="setTheme('dark')" aria-label="Thème sombre"><i data-lucide="moon"></i></button>
+            </div>
+          </div>
         </div>
         <div class="user"><div class="av">{{ initials }}</div><div style="min-width:0"><b>{{ user.full_name }}</b><small style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block">{{ user.email }}</small></div>
           <button class="btn icon sm ghost" @click="logout" aria-label="Déconnexion" style="margin-left:auto"><i data-lucide="log-out"></i></button></div>
@@ -118,7 +117,9 @@
     <main class="work">
       <header data-test="entete" class="top">
         <button class="btn icon ghost menu-btn" @click="mobileNav=!mobileNav" aria-label="Menu" :aria-expanded="mobileNav?'true':'false'"><i data-lucide="menu"></i></button>
-        <div class="top-title"><h1>{{ titles[view] }}</h1><div class="sub">{{ subtitles[view] }}</div></div>
+        <!-- Titre : la rubrique (ses onglets disent où l'on est dedans) ou la vue. Le sous-titre est passé dans la
+             bulle (i) (1.7), avec l'ancien nom de l'écran pendant la transition (1.8). -->
+        <div class="top-title"><h1>{{ enteteTitre() }}</h1><button v-if="enteteAide()" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><span v-if="enteteAideVue()">{{ enteteAideVue() }}</span><span v-if="enteteAncien()" class="tip-ancien">{{ enteteAncien() }}</span></span></button></div>
         <div class="spacer"></div>
         <div style="position:relative">
           <button class="btn icon ghost" @click="toggleNotifs()" aria-label="Notifications" style="position:relative">
@@ -127,7 +128,7 @@
           </button>
           <div v-if="notifsOpen" @click="notifsOpen=false" style="position:fixed;inset:0;z-index:40"></div>
           <div v-if="notifsOpen" style="position:absolute;right:0;top:40px;z-index:41;width:340px;max-height:440px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:11px;box-shadow:0 10px 34px rgba(0,0,0,.13)">
-            <div class="row" style="padding:11px 14px;border-bottom:1px solid var(--hairline);gap:6px"><i data-lucide="users-round" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Activité des partenaires</b></div>
+            <div class="row" style="padding:11px 14px;border-bottom:1px solid var(--hairline);gap:6px"><i data-lucide="handshake" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Activité des partenaires</b></div>
             <div v-if="!notifs.length" class="muted small" style="padding:16px 14px">Aucune activité récente de vos partenaires.</div>
             <div v-for="n in notifs" :key="n.id" @click="openNotif(n)" style="padding:10px 14px;border-bottom:1px solid var(--hairline);cursor:pointer" @mouseover="$event.currentTarget.style.background='var(--surface-2)'" @mouseleave="$event.currentTarget.style.background=''">
               <div class="small"><b>{{ n.actor }}</b> {{ n.label }}<span v-if="n.detail" class="muted"> · {{ n.detail }}</span></div>
@@ -135,7 +136,7 @@
             </div>
           </div>
         </div>
-        <button v-if="view==='pipeline'||view==='dashboard'" class="btn primary" @click="go('sourcing')" aria-label="Trouver des marchés"><i data-lucide="target"></i><span class="btn-l">Trouver des marchés</span></button>
+        <button v-if="view==='pipeline'||view==='dashboard'" class="btn primary" @click="rubriqueGo('trouver')" aria-label="Trouver des marchés"><i data-lucide="search"></i><span class="btn-l">Trouver des marchés</span></button>
         <button v-if="view==='cotraitants'" class="btn" @click="openDiscover()" aria-label="Découvrir"><i data-lucide="search"></i><span class="btn-l">Découvrir</span></button>
         <button v-if="view==='cotraitants'" class="btn primary" @click="openCotraitant()" aria-label="Ajouter un partenaire"><i data-lucide="plus"></i><span class="btn-l">Partenaire</span></button>
         <button v-if="view==='contacts'" class="btn primary" @click="openContact()" aria-label="Ajouter un contact"><i data-lucide="plus"></i><span class="btn-l">Contact</span></button>
@@ -144,6 +145,13 @@
         <input ref="upl" type="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.odt,.ods,.zip,.txt" multiple class="hidden" @change="uploadDoc">
       </header>
       <div data-test="contenu" class="content">
+
+        <!-- Onglets de la rubrique (réorganisation, vague 1, 1.3) : un seul composant pour toutes les rubriques
+             (RUBRIQUES, app.js). Chaque onglet ouvre une ancienne vue par go(), sans changement ; jamais sur une page
+             de détail (le marché, l'atelier, un dossier partagé). Pastille : ce qui attend une action, jamais zéro. -->
+        <nav data-test="onglets-rubrique" v-if="ongletsVisibles().length" class="rn-tabs rub-onglets" :class="'rub-n'+ongletsVisibles().length" :aria-label="enteteTitre()">
+          <button v-for="t in ongletsVisibles()" :key="'og'+t.view+(t.sous||'')" type="button" class="rn-tab" :class="{on:ongletActif(t)}" :aria-current="ongletActif(t)?'page':null" @click="ongletGo(t)"><i :data-lucide="t.ic"></i><span>{{ t.label }}</span><span v-if="ongletPastille(t)" class="rn-count">{{ ongletPastille(t) }}<span class="sr-only"> en attente de votre action</span></span></button>
+        </nav>
 
         <!-- Essai gratuit : choisir un forfait (refus 402), limite d'usage atteinte ou proche, dernières
              analyses. Sobre, fermable (sauf limite atteinte), jamais de montant. -->
@@ -164,6 +172,31 @@
 
         <!-- ░░ DASHBOARD ░░ -->
         <section data-test="vue-dashboard" v-if="view==='dashboard'">
+          <!-- Transition (réorganisation, vague 1, 1.8) : ce qui a changé dans le menu, pour les comptes créés avant la
+               nouvelle organisation, hors démonstration (noteReorgVisible, app.js). Fermable ; une semaine au plus
+               après son premier affichage ; état gardé dans ce navigateur. Les anciens noms restent en bulle (i). -->
+          <div data-test="accueil-ce-qui-a-change" v-if="noteReorgVue()" class="card pad dash-block reorg-note" role="region" aria-labelledby="reorg-t">
+            <div class="reorg-h">
+              <i data-lucide="info" class="reorg-ic"></i>
+              <div class="reorg-tx">
+                <b id="reorg-t">Ce qui a changé</b>
+                <div class="muted small">Le menu range vos écrans en six rubriques ; chaque écran est un onglet de sa rubrique.</div>
+                <details class="rn-det reorg-det">
+                  <summary>Où retrouver vos écrans</summary>
+                  <ul class="small reorg-liste">
+                    <li>« Tableau de bord » s'appelle « Accueil ».</li>
+                    <li>Mes marchés : « Partagé avec moi » devient « Où je suis partenaire », « Mes groupements » devient « À plusieurs », avec Devis et factures.</li>
+                    <li>Partenaires : Mes partenaires, Réseau Adjugo (anciennement « Réseau ») et Contacts.</li>
+                    <li>Mes documents : Mes pièces et Mon savoir-faire. Mon entreprise : Identité, Mes critères et Mes preuves.</li>
+                    <li>Trouver des marchés : les fins de contrat (anciennement « Radar des échéances ») sont dans l'onglet « À venir », vos alertes dans « Mes alertes ».</li>
+                    <li>« Plus » devient « Réglages », en bas du menu : Collègues (anciennement « Équipe »), Abonnement, Mon compte et Mon avis.</li>
+                    <li>L'ancien nom de chaque écran reste écrit dans la bulle (i) à côté de son titre.</li>
+                  </ul>
+                </details>
+              </div>
+              <button type="button" class="btn icon sm ghost" aria-label="Fermer" @click="noteReorgFermer()"><i data-lucide="x"></i></button>
+            </div>
+          </div>
           <!-- Premiers pas : onboarding guidé (disparaît une fois les 3 jalons faits) -->
           <div data-test="accueil-premiers-pas" v-if="showOnboarding" class="card pad dash-block" style="border:1px solid var(--accent-weak)">
             <div class="row" style="align-items:center;gap:8px">
@@ -179,26 +212,21 @@
               <button v-if="!s.done" class="btn sm primary" @click="go(s.view)">{{ s.cta }}</button>
             </div>
           </div>
-          <!-- Ruban de synthèse (inline, réglé — pas une grille de cartes) -->
-          <div data-test="accueil-ruban" class="dash-ribbon">
-            <div class="rb"><span class="rb-l">Appels d'offres</span><span class="rb-v num">{{ stats.total_projects||0 }}</span><span class="rb-d">{{ (stats.by_status&&stats.by_status.en_cours)||0 }} en cours</span></div>
-            <div class="rb"><span class="rb-l">Taux de réussite</span><span class="rb-v num">{{ stats.win_rate||0 }}<small>%</small></span><span class="rb-d">{{ stats.decided||0 }} {{ pl(stats.decided||0, 'clôturé', 'clôturés') }}</span></div>
-            <div class="rb"><span class="rb-l">Mes partenaires</span><span class="rb-v num">{{ cotraitants.length }}</span><span class="rb-d">enregistrés</span></div>
-            <div class="rb" :class="{alert:expiring.length}"><span class="rb-l">À renouveler</span><span class="rb-v num">{{ expiring.length }}</span><span class="rb-d">documents</span></div>
-          </div>
+          <!-- Accueil allégé (réorganisation, vague 1, 1.6) : plus de ruban de 4 chiffres (« Taux de réussite 0 % »
+               sur un compte neuf), plus de liens qui doublent le menu ni de 4e raccourci « Trouver des marchés ». -->
 
-          <!-- ESPACE RÉSEAU ADJUGO — notre plus grosse force, en évidence sur l'accueil.
+          <!-- Bloc « À plusieurs » — l'ADN, en évidence sur l'accueil.
                Vague 4 : chiffres du serveur (GET /api/groupement/tableau-de-bord), groupements en cours par
                étape 1→5. Aucun montant ; le seul pourcentage affiché est le score de groupement. -->
           <div data-test="accueil-reseau" class="card pad dash-block" style="border:1.5px solid var(--accent);background:var(--accent-weak)">
             <div class="dash-hero-h">
-              <i data-lucide="users-round" class="dh-ic"></i>
+              <i data-lucide="handshake" class="dh-ic"></i>
               <div class="dh-tx">
-                <b class="dh-t">Réseau Adjugo — gagnez les gros marchés à plusieurs<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Associez d'autres entreprises : chacune apporte sa part, l'IA assemble une réponse commune.</span></button></b>
+                <b class="dh-t">À plusieurs<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Associez d'autres entreprises : chacune apporte sa part, l'IA assemble une réponse commune.</span></button></b>
                 <div v-if="grpDash" class="dh-count"><b class="num">{{ grpDash.marches_accessibles_en_groupement }}</b> {{ pl(grpDash.marches_accessibles_en_groupement, 'marché accessible', 'marchés accessibles') }} en groupement<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Marchés que vous ne pourriez pas viser seul, mais oui avec des partenaires : verdict « Bon potentiel en groupement », marché encore ouvert.</span></button></div>
                 <div v-if="grpDash && (grpDash.groupements_en_cours || grpDash.deposes)" class="muted small dh-stats"><span class="nw"><b>{{ grpDash.groupements_en_cours }}</b> {{ pl(grpDash.groupements_en_cours, 'groupement en cours', 'groupements en cours') }}</span><template v-if="grpDash.deposes"> · <span class="nw"><b>{{ grpDash.deposes }}</b> {{ pl(grpDash.deposes, 'déposé', 'déposés') }}</span></template></div>
               </div>
-              <button class="btn primary dh-act" @click="go('pipeline')"><i data-lucide="user-plus"></i>Monter un groupement</button>
+              <button class="btn primary dh-act" @click="go('consortiums')"><i data-lucide="handshake"></i>Préparer à plusieurs</button>
             </div>
 
             <ol v-if="grpDashHasAny()" class="dash-steps" aria-label="Vos marchés en groupement, par étape">
@@ -223,7 +251,7 @@
             <div v-else-if="grpDashState()==='deposes'" class="row wrap" style="margin-top:16px;gap:10px;align-items:center;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--surface)">
               <i data-lucide="send" style="color:var(--accent-text);flex:none"></i>
               <div class="small" style="flex:1;min-width:170px"><b>{{ grpDash.deposes }}</b> {{ pl(grpDash.deposes, 'groupement déposé', 'groupements déposés') }}, aucun autre en cours.</div>
-              <button type="button" class="btn sm" @click="go('consortiums')"><i data-lucide="users-round"></i>Mes groupements</button>
+              <button type="button" class="btn sm" @click="go('consortiums')"><i data-lucide="handshake"></i>Voir mes marchés à plusieurs</button>
             </div>
             <div v-else-if="grpDashState()==='erreur'" class="row wrap" role="status" style="margin-top:16px;gap:10px;align-items:center;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--surface)">
               <i data-lucide="cloud-off" style="color:var(--text-2);flex:none"></i>
@@ -260,18 +288,18 @@
             </div>
           </div>
 
-          <div data-test="accueil-grille" class="dash-grid">
+          <div data-test="accueil-grille" class="dash-grid" :class="{solo:!(expiring.length || dashTotal())}">
             <!-- Feed priorisé -->
             <div data-test="accueil-flux" class="card dash-feed">
-              <div class="ch"><h3>Vos appels d'offres</h3><div class="spacer"></div><button class="btn ghost sm" @click="go('pipeline')">Tout voir<i data-lucide="arrow-right"></i></button></div>
+              <div class="ch"><h3>Vos marchés</h3><div class="spacer"></div><button class="btn ghost sm" @click="go('pipeline')">Tout voir<i data-lucide="arrow-right"></i></button></div>
               <div v-if="!projects.length" class="empty">
                 <div class="eic"><i data-lucide="inbox"></i></div>
                 <h4>Aucun marché pour l'instant</h4><p>Lancez une recherche pour trouver des marchés qui vous correspondent.</p>
-                <button class="btn primary" @click="go('sourcing')"><i data-lucide="target"></i>Trouver des marchés</button>
+                <button class="btn primary" @click="rubriqueGo('trouver')"><i data-lucide="search"></i>Trouver des marchés</button>
               </div>
               <div v-else class="feed-list">
                 <div v-for="p in projects.slice(0,7)" :key="p.id" class="ao-row" @click="openProject(p)">
-                  <div class="score-ring" :class="{grp:p.go_decision==='go_groupement'&&p.groupement_score!=null}" :style="feedRingStyle(p)" :title="feedScoreTitle(p)"><span class="num">{{ feedScore(p) }}</span><i v-if="p.go_decision==='go_groupement'&&p.groupement_score!=null" data-lucide="users-round" class="ring-badge"></i></div>
+                  <div class="score-ring" :class="{grp:p.go_decision==='go_groupement'&&p.groupement_score!=null}" :style="feedRingStyle(p)" :title="feedScoreTitle(p)"><span class="num">{{ feedScore(p) }}</span><i v-if="p.go_decision==='go_groupement'&&p.groupement_score!=null" data-lucide="handshake" class="ring-badge"></i></div>
                   <div class="ao-mid">
                     <div class="ao-t" :title="p.name||'Sans titre'">{{ (p.name||'Sans titre').slice(0,64) }}</div>
                     <div class="ao-c">{{ p.client||'Acheteur non précisé' }}</div>
@@ -285,19 +313,8 @@
               </div>
             </div>
 
-            <!-- Rail -->
-            <div data-test="accueil-rail" class="dash-rail">
-              <div class="act-hero" @click="go('sourcing')">
-                <div class="ah-ic"><i data-lucide="target"></i></div>
-                <div class="ah-tx"><div class="ah-t">Trouver des marchés</div><div class="ah-d">Chercher de nouveaux marchés à votre mesure</div></div>
-                <i data-lucide="arrow-right"></i>
-              </div>
-              <div class="act-links">
-                <button class="act-link" @click="go('cotraitants')"><i data-lucide="handshake"></i><span>Mes partenaires</span><i data-lucide="chevron-right" class="cr"></i></button>
-                <button class="act-link" @click="go('company')"><i data-lucide="briefcase"></i><span>Mon entreprise</span><i data-lucide="chevron-right" class="cr"></i></button>
-                <button class="act-link" @click="go('documents')"><i data-lucide="folder"></i><span>Mes documents</span><i data-lucide="chevron-right" class="cr"></i></button>
-              </div>
-
+            <!-- Rail : pièces à renouveler et marchés par étape (1.6 : plus de raccourcis qui doublent le menu) -->
+            <div data-test="accueil-rail" v-if="expiring.length || dashTotal()" class="dash-rail">
               <button v-if="expiring.length" type="button" class="alert-callout is-link" @click="go('documents')">
                 <i data-lucide="alert-triangle"></i>
                 <div><b>{{ expiring.length }} {{ pl(expiring.length, 'pièce à renouveler', 'pièces à renouveler') }}</b><div class="small">Vérifiez la validité avant vos prochains dépôts.</div></div>
@@ -1458,6 +1475,56 @@
 
         <!-- ░░ SOURCING IA (sources officielles, à la demande) ░░ -->
         <section data-test="vue-sourcing" v-if="view==='sourcing'">
+          <!-- Onglets de Trouver des marchés (réorganisation, vague 1, 1.3) : « Publiés » (la recherche, plus bas),
+               « À venir » (les contrats qui arrivent à échéance, anciennement le radar en haut des résultats) et
+               « Mes alertes ». L'onglet est choisi par onglets-rubrique (trouverOnglet). -->
+          <!-- À venir : contrats déjà attribués dont la fin estimée approche -->
+          <div data-test="trouver-radar" v-if="trouverOnglet==='avenir'" class="card pad">
+            <div class="row wrap" style="gap:8px"><i data-lucide="calendar-clock" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Contrats qui arrivent à échéance</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Marchés <b>déjà attribués</b> dont le contrat arrive à terme : positionnez-vous auprès du client <b>avant la republication</b>. Dates de fin <b>estimées</b> (durée citée si disponible), sources réelles BOAMP. Classés selon votre métier, votre zone et la date de fin estimée.</span></button></div>
+            <div class="row wrap" style="margin-top:10px">
+              <input class="inp" v-model="src.query" placeholder="Mots-clés métier (rénovation, gros œuvre…)" @keyup.enter="srcRenewals()" style="flex:1;min-width:200px" aria-label="Mots-clés métier">
+              <input class="inp" v-model="src.dept" placeholder="Départements (29, 56…)" @keyup.enter="srcRenewals()" style="width:165px" aria-label="Départements">
+              <button class="btn primary" @click="srcRenewals()" :disabled="src.renewals.loading"><span v-if="src.renewals.loading" class="spin"></span><i v-else data-lucide="search"></i>Chercher les fins de contrat</button>
+            </div>
+            <div v-if="src.renewals.done && !src.renewals.list.length" class="muted small" style="margin-top:8px">Aucune échéance proche sur ce périmètre.</div>
+            <div v-for="r in src.renewals.list" :key="r.idweb" class="row" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:10px;align-items:flex-start;gap:10px">
+              <div style="flex:1;min-width:0">
+                <div class="row wrap" style="gap:6px">
+                  <span class="pill go">Renouvellement ~ {{ fmtDate(r.renouvellement_estime) }}</span>
+                  <span v-if="r.type_contrat" class="pill st-envoye">{{ r.type_contrat }}</span>
+                  <span class="pill" :class="r.duree_estimee?'a_etudier':'neutral'" style="font-size:10px">durée {{ r.duree_mois }} mois{{ r.duree_estimee?' (estimée)':' (réelle)' }}</span>
+                  <span v-if="r.montant" class="pill neutral" style="font-size:10px">{{ Math.round(r.montant).toLocaleString('fr-FR') }} €</span>
+                  <span v-if="r.source_plateforme" class="pill neutral" style="font-size:10px">{{ r.source_plateforme }}</span>
+                </div>
+                <div class="strong" style="margin-top:7px;line-height:1.35">{{ r.objet }}</div>
+                <div class="muted small" style="margin-top:3px">{{ r.acheteur||'Acheteur' }}<span v-if="r.lieu"> · dépt {{ r.lieu }}</span> · notifié le {{ fmtDate(r.date_attribution) }} · fin estimée {{ fmtDate(r.fin_estimee) }}</div>
+                <a v-if="r.url" :href="safeUrl(r.url)" target="_blank" rel="noopener" class="small" style="margin-top:5px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ r.source_plateforme!==undefined ? 'Voir la fiche acheteur' : 'Voir l\'avis d\'attribution' }}</a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mes alertes : recherches enregistrées, nouveaux marchés reçus par email -->
+          <div data-test="trouver-alertes" v-if="trouverOnglet==='alertes'" class="card pad">
+            <div class="row" style="gap:8px"><i data-lucide="bell"></i><b style="font-size:13.5px">Mes alertes</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Recevez par email les nouveaux marchés qui vous correspondent (au-dessus de votre seuil de compatibilité). La recherche de l'onglet « Publiés » est enregistrée telle quelle.</span></button></div>
+            <div class="row wrap" style="margin-top:10px;gap:8px;align-items:center">
+              <span class="muted small" style="flex:1;min-width:200px">Recherche de l'onglet « Publiés » : <b>{{ src.query || 'tous métiers' }}</b> · {{ srcDeps().length ? 'dépts ' + srcDeps().join(', ') : 'tous départements' }}</span>
+              <button class="btn sm" @click="srcSaveAlert()"><i data-lucide="plus"></i>Créer depuis la recherche</button>
+            </div>
+            <div v-if="!src.alerts.length" class="muted small" style="margin-top:8px">Aucune alerte. Lancez une recherche dans « Publiés », puis « Créer depuis la recherche ».</div>
+            <div v-for="a in src.alerts" :key="a.id" class="row" style="padding:8px 0;border-bottom:1px solid var(--hairline);gap:8px">
+              <div style="flex:1;min-width:0">
+                <span class="strong small">{{ a.name }}</span>
+                <span class="pill" :class="a.active?'go':'neutral'" style="font-size:10px;margin-left:6px">{{ a.active?a.frequency:'en pause' }}</span>
+                <div class="muted small">{{ a.query||'tous métiers' }} · dépts {{ (a.departements||[]).join(', ')||'tous' }} · {{ a.matches_seen }} marché(s) déjà vu(s)</div>
+              </div>
+              <button class="btn icon sm ghost" @click="srcRunAlert(a)" aria-label="Tester maintenant"><i data-lucide="refresh-cw"></i></button>
+              <button class="btn icon sm ghost" @click="srcToggleAlert(a)" :aria-label="a.active?'Mettre en pause':'Activer'"><i :data-lucide="a.active?'pause':'play'"></i></button>
+              <button class="btn icon sm ghost" @click="srcDelAlert(a)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button>
+            </div>
+          </div>
+
+          <!-- Publiés : la recherche, ses résultats et l'analyse d'un marché (inchangés) -->
+          <template v-if="trouverOnglet==='publies'">
           <!-- Étape 1 — Recherche -->
           <div data-test="trouver-recherche" class="card pad">
             <div class="row" style="gap:8px;margin-bottom:10px"><span class="pill" style="background:var(--accent-weak);color:var(--accent-text)">Étape 1</span><b style="font-size:13.5px">Rechercher des appels d'offres</b></div>
@@ -1489,45 +1556,6 @@
             <div v-if="src.sources.length" class="row small muted" style="margin-top:10px;gap:6px">Sources officielles : <span v-for="s in src.sources" :key="s" class="pill neutral">{{ s }}</span></div>
             <!-- Sources volontairement non consultées (PLACE tant que l'autorisation écrite n'est pas reçue) : dites, jamais tues -->
             <div v-for="n in src.nonConsultees" :key="'nc'+n.source" class="row small muted" style="margin-top:6px;gap:6px;align-items:center">{{ n.source }} : non consultée pour le moment<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ n.message }}</span></button></div>
-          </div>
-
-          <!-- Radar des échéances : marchés en fin de contrat -->
-          <div data-test="trouver-radar" class="card pad" style="margin-top:10px">
-            <div class="row wrap" style="gap:8px"><i data-lucide="timer-reset" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Radar des échéances</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Marchés <b>déjà attribués</b> dont le contrat arrive à terme → positionnez-vous auprès du client <b>avant la republication</b>. Dates de fin <b>estimées</b> (durée citée si disponible), sources réelles BOAMP.</span></button><div class="spacer"></div>
-              <button class="btn sm" @click="srcRenewals()" :disabled="src.renewals.loading"><span v-if="src.renewals.loading" class="spin"></span><i v-else data-lucide="search"></i>Scanner (mots-clés ci-dessus)</button></div>
-            <div v-if="src.renewals.done && !src.renewals.list.length" class="muted small" style="margin-top:8px">Aucune échéance proche sur ce périmètre.</div>
-            <div v-for="r in src.renewals.list" :key="r.idweb" class="row" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:10px;align-items:flex-start;gap:10px">
-              <div style="flex:1;min-width:0">
-                <div class="row wrap" style="gap:6px">
-                  <span class="pill go">Renouvellement ~ {{ fmtDate(r.renouvellement_estime) }}</span>
-                  <span class="pill neutral">pertinence {{ r.score }}/100</span>
-                  <span v-if="r.type_contrat" class="pill st-envoye">{{ r.type_contrat }}</span>
-                  <span class="pill" :class="r.duree_estimee?'a_etudier':'neutral'" style="font-size:10px">durée {{ r.duree_mois }} mois{{ r.duree_estimee?' (estimée)':' (réelle)' }}</span>
-                  <span v-if="r.montant" class="pill neutral" style="font-size:10px">{{ Math.round(r.montant).toLocaleString('fr-FR') }} €</span>
-                  <span v-if="r.source_plateforme" class="pill neutral" style="font-size:10px">{{ r.source_plateforme }}</span>
-                </div>
-                <div class="strong" style="margin-top:7px;line-height:1.35">{{ r.objet }}</div>
-                <div class="muted small" style="margin-top:3px">{{ r.acheteur||'Acheteur' }}<span v-if="r.lieu"> · dépt {{ r.lieu }}</span> · notifié le {{ fmtDate(r.date_attribution) }} · fin estimée {{ fmtDate(r.fin_estimee) }}</div>
-                <a v-if="r.url" :href="safeUrl(r.url)" target="_blank" class="small" style="margin-top:5px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ r.source_plateforme!==undefined ? 'Voir la fiche acheteur' : 'Voir l\'avis d\'attribution' }} ↗</a>
-              </div>
-            </div>
-          </div>
-
-          <!-- Veille : alertes AO programmées -->
-          <div data-test="trouver-alertes" class="card pad" style="margin-top:10px">
-            <div class="row" style="gap:8px"><i data-lucide="bell"></i><b style="font-size:13.5px">Alertes automatiques</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Recevez par email les nouveaux marchés qui vous correspondent (au-dessus de votre seuil de compatibilité). Les critères de recherche ci-dessus sont enregistrés.</span></button><div class="spacer"></div>
-              <button class="btn sm" @click="srcSaveAlert()"><i data-lucide="plus"></i>Créer depuis la recherche</button></div>
-            <div v-if="!src.alerts.length" class="muted small" style="margin-top:8px">Aucune alerte. Lancez une recherche puis « Créer depuis la recherche ».</div>
-            <div v-for="a in src.alerts" :key="a.id" class="row" style="padding:8px 0;border-bottom:1px solid var(--hairline);gap:8px">
-              <div style="flex:1;min-width:0">
-                <span class="strong small">{{ a.name }}</span>
-                <span class="pill" :class="a.active?'go':'neutral'" style="font-size:10px;margin-left:6px">{{ a.active?a.frequency:'en pause' }}</span>
-                <div class="muted small">{{ a.query||'tous métiers' }} · dépts {{ (a.departements||[]).join(', ')||'tous' }} · {{ a.matches_seen }} marché(s) déjà vu(s)</div>
-              </div>
-              <button class="btn icon sm ghost" @click="srcRunAlert(a)" aria-label="Tester maintenant"><i data-lucide="refresh-cw"></i></button>
-              <button class="btn icon sm ghost" @click="srcToggleAlert(a)" :aria-label="a.active?'Mettre en pause':'Activer'"><i :data-lucide="a.active?'pause':'play'"></i></button>
-              <button class="btn icon sm ghost" @click="srcDelAlert(a)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button>
-            </div>
           </div>
 
           <!-- Erreurs de source (affichées, jamais masquées) -->
@@ -1637,6 +1665,7 @@
               <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Sur la page du marché : formulaires officiels, dossier de présentation et pièces. Un partenaire invité n'entre dans le dossier qu'après avoir accepté votre invitation.</span></button>
             </div>
           </div>
+          </template>
         </section>
 
         <!-- ░░ VEILLE AMONT (signaux d'investissement) ░░ -->
@@ -2556,14 +2585,14 @@
           <div v-if="!projects.length" class="empty card pad">
             <div class="eic"><i data-lucide="inbox"></i></div>
             <h4>Aucun marché pour l'instant</h4><p>Lancez une recherche pour trouver des marchés qui vous correspondent.</p>
-            <button class="btn primary" @click="go('sourcing')"><i data-lucide="target"></i>Trouver des marchés</button>
+            <button class="btn primary" @click="rubriqueGo('trouver')"><i data-lucide="search"></i>Trouver des marchés</button>
           </div>
           <div v-else class="kanban">
             <div v-for="s in statuses2" :key="s" class="kcol">
               <div class="kcol-h"><span class="pill" :class="'st-'+s">{{ statusLabel(s) }}</span><span class="n">{{ byStatus(s).length }}</span></div>
               <div v-for="p in byStatus(s)" :key="p.id" class="kcard" @click="openProject(p)">
                 <div class="ti2">{{ (p.name||'').slice(0,60) }}</div>
-                <div class="me">{{ p.client||'—' }}<span class="sc" :style="decColor(p.go_decision)" :title="kanbanScoreTitle(p)"><i v-if="p.go_decision==='go_groupement'" data-lucide="users-round" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px" aria-label="En groupement"></i>{{ kanbanScore(p) }}</span></div>
+                <div class="me">{{ p.client||'—' }}<span class="sc" :style="decColor(p.go_decision)" :title="kanbanScoreTitle(p)"><i v-if="p.go_decision==='go_groupement'" data-lucide="handshake" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px" aria-label="En groupement"></i>{{ kanbanScore(p) }}</span></div>
               </div>
             </div>
           </div>
@@ -2636,7 +2665,7 @@
         <!-- ░░ INVOICES ░░ -->
         <section data-test="vue-invoices" v-if="view==='invoices'">
           <div v-if="!invoices.length" class="empty card pad">
-            <div class="eic"><i data-lucide="file-text"></i></div>
+            <div class="eic"><i data-lucide="receipt"></i></div>
             <h4>Aucun devis ni facture</h4><p>Créez des devis et factures liés à vos marchés, avec calcul automatique du TTC.</p>
             <button class="btn primary" @click="openInvoice()"><i data-lucide="plus"></i>Créer</button>
           </div>
@@ -2652,10 +2681,6 @@
 
         <!-- ░░ COMPANY ░░ -->
         <section data-test="vue-company" v-if="view==='company'">
-          <nav class="rn-tabs pv-onglets" aria-label="Mon entreprise">
-            <button type="button" class="rn-tab on" aria-current="page"><i data-lucide="briefcase"></i>Profil de l'entreprise</button>
-            <button type="button" class="rn-tab" @click="go('preuves')"><i data-lucide="paperclip"></i>Mes preuves</button>
-          </nav>
           <div class="card pad" style="max-width:820px;margin-bottom:16px">
             <div class="row" style="gap:11px;align-items:flex-start"><i data-lucide="globe" style="color:var(--accent-text);margin-top:2px"></i>
               <div style="flex:1">
@@ -2737,11 +2762,6 @@
              chiffres clés. Chaque fiche dit OÙ le fait a été trouvé (jamais qu'il est juste) ; un CV
              n'est jamais envoyé à l'IA. Texte toujours rendu en {{ }}, jamais v-html. -->
         <section data-test="vue-preuves" v-if="view==='preuves'" class="pv">
-          <nav class="rn-tabs pv-onglets" aria-label="Mon entreprise">
-            <button type="button" class="rn-tab" @click="go('company')"><i data-lucide="briefcase"></i>Profil de l'entreprise</button>
-            <button type="button" class="rn-tab on" aria-current="page"><i data-lucide="paperclip"></i>Mes preuves</button>
-          </nav>
-
           <div class="card pad pv-intro">
             <h2 class="pv-h2">Mes preuves<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo relie chaque fait à l'endroit où il l'a trouvé : un passage de vos documents, un justificatif, une source publique, ou votre déclaration. Il ne sait pas si ce document est à jour : relisez vos preuves.</span></button></h2>
             <p class="muted small pv-m0">Adjugo ne se sert que des fiches acceptées et encore valables pour rédiger vos dossiers : relisez chaque fait cité.</p>
@@ -2972,9 +2992,13 @@
                 <code style="background:var(--bg);padding:2px 6px;border-radius:4px">{{ org.lastTemp.temp_password }}</code></div>
             </div>
           </div>
+        </section>
 
+        <!-- ░░ MON COMPTE (Réglages ; réorganisation, vague 1, 1.3) ░░ : le mot de passe et les données personnelles,
+             auparavant en bas de « Équipe » (devenu « Collègues »). Cartes déplacées telles quelles. -->
+        <section data-test="vue-compte" v-if="view==='compte'">
           <!-- Changer mon mot de passe (indispensable pour un membre invité) -->
-          <div class="card pad" style="margin-top:14px">
+          <div class="card pad">
             <h3>Mon mot de passe</h3>
             <div class="row wrap" style="gap:8px;margin-top:8px">
               <input class="inp" type="password" v-model="pwd.current" placeholder="Mot de passe actuel" style="width:220px">
@@ -3136,14 +3160,14 @@
           </div>
         </section>
 
-        <!-- Mes groupements — hub central : tous mes groupements, compte-rendu + export -->
+        <!-- Mes marchés › À plusieurs (anciennement « Mes groupements ») — tous mes groupements, compte-rendu + export -->
         <section data-test="vue-consortiums" v-if="view==='consortiums'">
           <div class="card pad" style="margin-bottom:14px;border:1.5px solid var(--accent);background:var(--accent-weak)">
             <div class="row wrap" style="gap:12px;align-items:center">
-              <i data-lucide="users-round" style="color:var(--accent-text);width:22px;height:22px;flex:none"></i>
-              <div style="flex:1;min-width:200px"><b style="font-size:15px">Mes groupements</b>
+              <i data-lucide="handshake" style="color:var(--accent-text);width:22px;height:22px;flex:none"></i>
+              <div style="flex:1;min-width:200px"><b style="font-size:15px">Vos marchés à plusieurs</b>
                 <div v-if="consortiums.active" class="muted small">{{ consortiums.active }} en cours · {{ consortiums.partners_total }} partenaire(s) · {{ consortiums.submitted_total }} part(s) reçue(s)</div></div>
-              <button class="btn primary" @click="go('pipeline')"><i data-lucide="user-plus"></i>Nouveau groupement</button>
+              <button class="btn primary" @click="go('pipeline')"><i data-lucide="handshake"></i>Préparer à plusieurs</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ouvrez le marché concerné, puis « Inviter un partenaire » : un partenaire n'entre dans le dossier qu'après avoir accepté votre invitation.</span></button>
             </div>
           </div>
 
@@ -3209,8 +3233,8 @@
              par une entreprise est rendu en {{ }} (jamais v-html). -->
         <section data-test="vue-reseau" v-if="view==='reseau'" class="rn">
           <nav data-test="reseau-onglets" class="rn-tabs" aria-label="Vues du réseau de partenaires">
-            <button type="button" class="rn-tab" :class="{on:reseau.tab==='profil'}" :aria-current="reseau.tab==='profil'?'page':null" @click="rnGo('profil')"><i data-lucide="building-2"></i>Mon profil partenaire</button>
-            <button type="button" class="rn-tab" :class="{on:reseau.tab==='annuaire'}" :aria-current="reseau.tab==='annuaire'?'page':null" @click="rnGo('annuaire')"><i data-lucide="users-round"></i>Annuaire</button>
+            <button type="button" class="rn-tab" :class="{on:reseau.tab==='profil'}" :aria-current="reseau.tab==='profil'?'page':null" @click="rnGo('profil')"><i data-lucide="id-card"></i>Mon profil partenaire</button>
+            <button type="button" class="rn-tab" :class="{on:reseau.tab==='annuaire'}" :aria-current="reseau.tab==='annuaire'?'page':null" @click="rnGo('annuaire')"><i data-lucide="network"></i>Annuaire</button>
             <button type="button" class="rn-tab" :class="{on:reseau.tab==='historique'}" :aria-current="reseau.tab==='historique'?'page':null" @click="rnGo('historique')"><i data-lucide="history"></i>Mon historique</button>
             <button v-if="reseau.recues.list.length" type="button" class="rn-tab" :class="{on:reseau.tab==='recues'}" :aria-current="reseau.tab==='recues'?'page':null" @click="rnGo('recues')"><i data-lucide="inbox"></i>Invitations reçues<span v-if="rnRecuesCount()" class="rn-count">{{ rnRecuesCount() }}<span class="sr-only"> à traiter</span></span></button>
           </nav>
@@ -3456,8 +3480,15 @@
         <section data-test="vue-shared" v-if="view==='shared'">
           <div class="card pad">
             <div class="row" style="gap:11px;align-items:flex-start"><i data-lucide="inbox" style="color:var(--accent-text);margin-top:2px"></i>
-              <div style="flex:1"><b style="font-size:14px">Dossiers partagés avec vous</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">D'autres entreprises vous ont invité à répondre avec elles sur leurs marchés. Apportez votre part — depuis <b>votre propre espace</b>.</span></button></div></div>
-            <div v-if="!shared.length" class="muted small" style="margin-top:12px">Aucun dossier partagé avec vous pour l'instant.</div>
+              <div style="flex:1"><b style="font-size:14px">Les marchés où vous êtes partenaire</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">D'autres entreprises vous ont invité à répondre avec elles sur leurs marchés. Apportez votre part — depuis <b>votre propre espace</b>.</span></button></div></div>
+            <!-- Invitations reçues par le réseau Adjugo, à traiter : elles se traitent dans Partenaires › Réseau Adjugo
+                 (onglets internes gardés en vague 1) ; la pastille de Mes marchés les compte. -->
+            <div v-if="rnRecuesCount()" class="row wrap shared-recues">
+              <i data-lucide="inbox" style="color:var(--accent-text);flex:none"></i>
+              <span class="small" style="flex:1;min-width:180px"><b>{{ rnRecuesCount() }}</b> {{ pl(rnRecuesCount(), 'invitation reçue par le réseau Adjugo, à traiter', 'invitations reçues par le réseau Adjugo, à traiter') }}</span>
+              <button type="button" class="btn sm primary" @click="openReseau('recues')"><i data-lucide="arrow-right"></i>Voir les invitations</button>
+            </div>
+            <div v-if="!shared.length" class="muted small" style="margin-top:12px">Quand une entreprise vous invite dans un groupement et que vous acceptez depuis votre compte, son marché apparaît ici.</div>
             <div v-for="s in shared" :key="s.token" @click="openShared(s)" @keydown="openSharedKey($event,s)" role="button" tabindex="0" class="row shared-item" style="margin-top:10px;padding:11px 13px;border:1px solid var(--border);border-radius:10px;gap:8px 12px;align-items:center;cursor:pointer;flex-wrap:wrap" @mouseover="$event.currentTarget.style.borderColor='var(--accent)'" @mouseleave="$event.currentTarget.style.borderColor='var(--border)'">
               <div style="flex:1 1 220px;min-width:0">
                 <div class="strong small">{{ s.project }}</div>
@@ -3478,7 +3509,7 @@
 
         <!-- Partagé avec moi — état chargement / erreur (sinon écran blanc pendant l'appel ou si le lien a expiré) -->
         <section data-test="vue-sharedao-attente" v-if="view==='sharedao' && !sharedAo.project">
-          <button class="btn ghost sm" @click="go('shared')" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Partagé avec moi</button>
+          <button class="btn ghost sm" @click="go('shared')" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Où je suis partenaire</button>
           <div v-if="sharedAo.error" class="empty card pad">
             <div class="eic"><i data-lucide="lock"></i></div>
             <h4>Dossier inaccessible</h4><p>{{ sharedAo.error }}</p>
@@ -3488,7 +3519,7 @@
 
         <!-- Partagé avec moi — un AO : je contribue en tant que MON entreprise -->
         <section data-test="vue-sharedao" v-if="view==='sharedao' && sharedAo.project">
-          <button class="btn ghost sm" @click="go('shared')" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Partagé avec moi</button>
+          <button class="btn ghost sm" @click="go('shared')" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Où je suis partenaire</button>
           <div data-test="partage-entete" class="card pad" style="margin-bottom:14px">
             <div class="muted small">Partagé par <b>{{ sharedAo.mandataire }}</b></div>
             <div style="font-size:19px;font-weight:800;margin:2px 0 4px;letter-spacing:-.02em">{{ sharedAo.project.name }}</div>
@@ -4059,9 +4090,9 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/redaction-partenaire.js" integrity="sha384-VynZY8Sl4tp0v7TpVb5bZxT5vxYfTsAlB1wqX+sctbosY1xGb3uP/PuqTelqrw3q" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-6u2dcizU1R7TgbFpANxwY3jDSA7O0EQpkhqXfp1A4RwHslj7somFoJxnE+iDz027" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6" defer></script>
-<script src="/static/app.js" integrity="sha384-R3Un1MiwsQXHierw8YPmZNPvdptGTLKP3nPkIx9YCzf6OE2bCWO99BvWdi/SVebK" defer></script>
+<script src="/static/app.js" integrity="sha384-PowbpflFv+EF6LlXoGhRe51bySoC7fnn5mHmprujhfzwi4eJeBGETUcPslM1YPVq" defer></script>
 </body>
 </html>

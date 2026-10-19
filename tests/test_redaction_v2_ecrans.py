@@ -76,11 +76,13 @@ def test_carte_du_marche_compacte_un_seul_bouton_et_menu_inchange():
     assert "Dossier de présentation" in c and "la partie technique de votre offre que demande le règlement de la consultation" in c and "mémoire" not in c   # vague 0
     assert len(re.findall(r"<button\b(?![^>]*class=\"tip)", c)) == 1 and "@click=\"atlOpen()\"" in c
     assert "Préparer le dossier de présentation" in c and "Ouvrir l'atelier" in c
-    # Le menu n'est pas réorganisé : aucune entrée « atelier » dans la barre latérale.
+    # Aucune entrée « atelier » dans la barre latérale : l'atelier est une page du marché (rubrique Mes marchés,
+    # sans onglet). Menu par rubriques (réorganisation, vague 1, 1.3) : Mon savoir-faire est un onglet de Mes documents.
     nav = zone(HTML, "menu")
     assert "atelier" not in nav and "go('atelier')" not in HTML
-    for entree in ("go('dashboard')", "go('sourcing')", "go('pipeline')", "go('kb')", "go('documents')"):
+    for entree in ("go('dashboard')", "rubriqueGo('trouver')", "go('pipeline')", "go('documents')"):
         assert entree in nav
+    assert '{ view: "kb", label: "Mon savoir-faire", ic: "library" }' in JS and '{ view: "atelier"' not in JS
 
 
 def test_atelier_plan_texte_faits_sources_et_actions():
