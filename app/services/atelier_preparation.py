@@ -306,8 +306,17 @@ def page(db, project, dossier, sections: list, courantes: dict, ctx: dict, faits
         auteurs.setdefault(cle, [nom_a, 0])[1] += 1
     avec_texte = [x for x in lignes if x["ia"] is not None]
     n_ia = sum(1 for x in avec_texte if x["ia"])
-    resume = [(f"Parties préparées avec l'aide de l'IA : {n_ia} sur {len(lignes)}." if n_ia else
-               "Aucune partie n'a été préparée avec l'aide de l'IA.")]
+    resume = []
+    lot = ctx.get("lot") if isinstance(ctx.get("lot"), dict) else None
+    if lot and lot.get("libelle"):
+        # Vague 6 (J) : un fichier par lot — la page dit le lot de CE fichier (ses parties : les communes et les
+        # siennes, numérotées pour lui, comme le fichier).
+        lib = str(lot["libelle"])
+        communes = sum(1 for s in sections if not (getattr(s, "lot", "") or ""))
+        resume.append(f"Ce fichier répond au {lib[:1].lower() + lib[1:]}."
+                      + (" Les parties communes à plusieurs lots y sont reprises telles quelles." if communes else ""))
+    resume.append(f"Parties préparées avec l'aide de l'IA : {n_ia} sur {len(lignes)}." if n_ia else
+                  "Aucune partie n'a été préparée avec l'aide de l'IA.")
     if ctx.get("ia"):
         resume.append(f"Le fichier porte dans ses propriétés la mention « {ax.IA_MENTION} ».")
     sia = at.mode_sans_ia(dossier)
@@ -326,11 +335,13 @@ def page(db, project, dossier, sections: list, courantes: dict, ctx: dict, faits
     resume.append(f"Parties validées : {n_val} sur {len(lignes)}.")
     return {"titre": TITRE, "introduction": INTRODUCTION, "resume": resume, "colonnes": list(COLONNES),
             "lignes": lignes, "legende": LEGENDE, "parties": len(lignes), "parties_ia": n_ia,
-            "parties_validees": n_val, "mention_ia": ax.IA_MENTION if ctx.get("ia") else ""}
+            "parties_validees": n_val, "mention_ia": ax.IA_MENTION if ctx.get("ia") else "",
+            "lot": ({"numero": lot.get("numero") or "", "libelle": lot.get("libelle") or ""} if lot else None)}
 
 
-def avertissements(dossier, p: dict) -> list:
-    """Ce que l'écran dit AVANT de joindre la page (rien de tout cela n'entre dans le fichier)."""
+def avertissements(dossier, p: dict, lot: Optional[str] = None) -> list:
+    """Ce que l'écran dit AVANT de joindre la page (rien de tout cela n'entre dans le fichier). `lot` (vague 6, J) :
+    les limites qui valent pour le fichier de CE lot."""
     out = []
     nv = p["parties"] - p["parties_validees"]
     if nv:
@@ -341,7 +352,7 @@ def avertissements(dossier, p: dict) -> list:
     if sans:
         out.append({"code": "sans_source",
                     "message": (f"{sans} fait{'s' if sans > 1 else ''} sans source retrouvée : la page le dira.")})
-    lims = at._limites_doc(dossier)
+    lims = at._limites_doc(dossier, lot)
     pages = [x for x in (lims.get("document") or []) if isinstance(x, dict) and x.get("type") == "pages"
              and isinstance(x.get("valeur"), (int, float))]
     if pages:
@@ -369,12 +380,16 @@ def page_ou_erreur(db, project, dossier, sections: list, courantes: dict, ctx: d
         raise at.AtelierError(503, "page_preparation_indisponible", MSG_INDISPONIBLE)
 
 
-def apercu(db, project, dossier, lecteur) -> dict:
+def apercu(db, project, dossier, lecteur, lot=None) -> dict:
     """GET …/preparation : la page telle que l'export l'écrirait maintenant (même texte commun, mêmes faits lus,
-    sans IA), ce que l'écran en dit, et la case."""
+    sans IA), ce que l'écran en dit, et la case. Dossier à plusieurs lots (vague 6, J) : la page du fichier d'UN lot
+    (`lot` obligatoire, comme à l'export : 422 « lot_requis » sinon) ; un dossier à un seul lot refuse `lot`."""
+    from app.services import atelier_lots as al
+    n = at.lot_a_exporter(dossier, lot)
     at._rafraichir_groupement(db, project, dossier)
-    sections = at.sections_actives(db, dossier)
-    cour = at.versions_communes(db, sections, lecteur)          # jamais le brouillon d'un autre auteur
-    ctx = at.contexte_rendu(db, project, dossier, sections, cour, avec_logo=False)
+    tout = at.sections_actives(db, dossier)
+    cour = at.versions_communes(db, tout, lecteur)          # jamais le brouillon d'un autre auteur
+    sections = al.du_lot(tout, n) if n else tout
+    ctx = at.contexte_rendu(db, project, dossier, sections, cour, avec_logo=False, lot=n)
     p = page_ou_erreur(db, project, dossier, sections, cour, ctx, faits_de=at.faits_lus(db, dossier, project, cour))
-    return {"page": p, "avertissements": avertissements(dossier, p), "case": case()}
+    return {"page": p, "avertissements": avertissements(dossier, p, n), "case": case(), "lot": n or ""}

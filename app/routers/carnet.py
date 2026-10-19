@@ -85,9 +85,9 @@ def lire_courrier(request: Request, project_id: int, body: CourrierIn, current_u
         texte = cn._texte_courrier(body.courrier)
     except cn.CarnetError as e:
         raise _err(e)
-    lignes = cn.criteres_du_marche(p)["lignes"] + [
-        {"cle": x.get("cle"), "critere": x.get("critere", ""), "parent": x.get("parent") or ""}
-        for x in ((cn.reponse(p) or {}).get("lignes") or []) if str(x.get("cle") or "").startswith("u")]
+    from app.core.org import data_owner_id
+    # Vague 6 (J) : plusieurs lots — les critères de chaque lot, le courrier découpé par lot (sans IA).
+    lignes = cn.criteres_pour_lecture(p, cn.lots_du_marche(db, p, data_owner_id(current_user, db)))
     return cn.lire_courrier(texte, lignes)
 
 
@@ -121,6 +121,7 @@ class LigneIn(BaseModel):
     extrait_note: str = Field("", max_length=2000)
     extrait_gagnant: str = Field("", max_length=2000)
     commentaire_du_courrier: bool = False
+    lot: str = Field("", max_length=4)        # vague 6 (J) : critère ajouté d'un marché à plusieurs lots
 
 
 class NotesIn(BaseModel):

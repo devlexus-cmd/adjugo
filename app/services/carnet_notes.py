@@ -142,6 +142,12 @@ MSG_GRILLE = "Critères et sous-critères de « Comment vous serez noté », tel
 MSG_ANALYSE = ("Critères lus par l'analyse du marché : vérifiez-les avec le courrier de l'acheteur, et ajoutez ceux "
                "qui manquent.")
 MSG_SANS_CRITERE = "Aucun critère retrouvé pour ce marché : ajoutez ceux du courrier de l'acheteur."
+# Vague 6 (J) : plusieurs lots, un relevé de notes par lot.
+MSG_LOTS = "Vous avez répondu à plusieurs lots : l'acheteur note chaque lot à part, saisissez les notes lot par lot."
+MSG_LOT_INCONNU = ("Le courrier ne dit pas à quel lot se rapporte chaque note (aucune ligne ne cite un seul de vos "
+                   "lots) : saisissez les notes lot par lot.")
+MSG_COURRIER_LOTS = ("Vous avez répondu à plusieurs lots : le courrier les cite tous. Retirez celui que vous avez "
+                     "remporté, le cas échéant.")
 MSG_IA_PANNE = ("La lecture n'a pas abouti : le service d'IA est indisponible pour le moment. Rien n'a été décompté.")
 
 
@@ -343,14 +349,14 @@ def _max_du_poids(poids: str) -> Optional[float]:
     return float(w["valeur"]) if w and w.get("unite") == "points" else None
 
 
-def criteres_du_marche(project) -> dict:
-    """Les critères (et sous-critères) qui forment le formulaire : ceux de « Comment vous serez noté » (phrase
-    retrouvée dans le règlement), sinon ceux de l'analyse (à vérifier), sinon aucun."""
+def _lignes_de_grille(grille) -> list:
+    """Les lignes du formulaire tirées d'une grille « Comment vous serez noté » (celle du marché, ou celle d'un lot :
+    même format) : critères dans le plan, puis leurs sous-critères."""
     from app.services import atelier_plan as ap
     out = []
     try:
-        lignes = ap._grille_lines(ap._grille(_analysis(project)))
-    except Exception:       # noqa: BLE001 — grille illisible : repli sur l'analyse
+        lignes = ap._grille_lines(grille)
+    except Exception:       # noqa: BLE001 — grille illisible
         lignes = []
     for ln in lignes:
         cle = str(ln.get("id") or "")[:20]
@@ -366,6 +372,36 @@ def criteres_du_marche(project) -> dict:
             scle = (str(sc.get("id") or "") or f"{cle}.{k}")[:20]
             out.append({"cle": scle, "critere": snom, "parent": cle, "poids": _flat(sc.get("poids"))[:40], "niveau": 2,
                         "famille_proposee": famille_proposee(snom, nom)})
+    return out
+
+
+def criteres_du_marche(project, lots: Optional[list] = None) -> dict:
+    """Les critères (et sous-critères) qui forment le formulaire : ceux de « Comment vous serez noté » (phrase
+    retrouvée dans le règlement), sinon ceux de l'analyse (à vérifier), sinon aucun.
+
+    `lots` (vague 6, J — `lots_du_marche`) : l'entreprise a répondu à plusieurs lots, et l'acheteur note chaque lot à
+    part. Le formulaire répète alors les critères POUR CHAQUE LOT (la grille de ce lot si le règlement en écrit une,
+    sinon celle du marché), avec des clés propres au lot (« L2-c1 »)."""
+    base = _criteres_generaux(project)
+    if not lots:
+        return base
+    out = []
+    for x in lots:
+        n = str(x.get("numero") or "")
+        if not n:
+            continue
+        lignes = _lignes_de_grille(x.get("grille")) if isinstance(x.get("grille"), dict) else []
+        for ln in lignes or base["lignes"]:
+            out.append(dict(ln, cle=cle_lot(n, ln["cle"]), parent=cle_lot(n, ln["parent"]) if ln.get("parent") else "",
+                            lot=n, lot_libelle=_flat(x.get("libelle"))[:160]))
+    return {"source": base["source"], "message": (MSG_LOTS + " " + base["message"]).strip(), "lignes": out,
+            "lots": [{"numero": str(x.get("numero") or ""), "libelle": _flat(x.get("libelle"))[:160]} for x in lots]}
+
+
+def _criteres_generaux(project) -> dict:
+    """Les critères du marché (un seul relevé) : la grille, sinon l'analyse, sinon aucun."""
+    from app.services import atelier_plan as ap
+    out = _lignes_de_grille(ap._grille(_analysis(project)))      # grille illisible : [] puis repli sur l'analyse
     if out:
         return {"source": "grille", "message": MSG_GRILLE, "lignes": out}
     for i, c in enumerate(_details(project).get("criteres_attribution") or []):
@@ -378,6 +414,107 @@ def criteres_du_marche(project) -> dict:
     if out:
         return {"source": "analyse", "message": MSG_ANALYSE, "lignes": out}
     return {"source": "", "message": MSG_SANS_CRITERE, "lignes": []}
+
+
+# ── Plusieurs lots (vague 6, J) : un relevé de notes par lot ─────────────────────────
+#
+# Un marché alloti auquel l'entreprise répond sur deux lots ou plus (dossier de présentation à plusieurs lots) :
+# l'acheteur note chaque lot à part. Le formulaire répète les critères pour chaque lot, le courrier collé est
+# découpé SANS IA par les lignes qui citent un seul lot, et une note n'est proposée (sans IA ou avec l'IA) que si
+# sa ligne est dans la partie du courrier qui parle de SON lot. « Où vous perdez des points » compte le marché une
+# fois (ses lots réunis) ; la note d'ensemble se lit lot par lot.
+
+_NUMLOT = r"(?:n\s?[°o]\.?\s*|no\.?\s+|numero\s+)?0*\d{1,2}(?!\d|[.,]\d)"
+_LOTS_CITES = re.compile(r"\blots?\s*(" + _NUMLOT + r"(?:\s*(?:,|\bet\b|\bou\b|\ba\b|\bau\b|/|&)\s*" + _NUMLOT + r")*)")
+
+
+def cle_lot(numero: str, cle: str) -> str:
+    """La clé d'un critère pour un lot (« L2-c1 ») ; sans lot, la clé telle quelle."""
+    return (f"L{numero}-{cle}" if numero and cle else cle)[:20]
+
+
+def sans_lot(cle) -> str:
+    """« L2-c1 » → « c1 » (l'identifiant du critère dans la grille) ; une clé sans lot, telle quelle."""
+    k = str(cle or "")
+    return k.split("-", 1)[1] if re.match(r"L\d{1,2}-", k) else k
+
+
+def lots_du_marche(db, project, owner_id: Optional[int] = None) -> list:
+    """Les lots auxquels l'organisation répond, d'après son dossier de présentation à plusieurs lots (vague 6, J) :
+    [{numero, intitule, libelle, grille}] ; [] pour un marché à un seul lot (un seul relevé, comme avant). Sans IA ;
+    jamais d'erreur (le carnet se lit sans le dossier de présentation)."""
+    try:
+        from app.services import atelier as at
+        from app.services import atelier_lots as al
+        if owner_id is None:
+            from app.routers.invites import tenant_owner_id
+            owner_id = tenant_owner_id(project, db) or project.user_id
+        d = at.get_dossier(db, project.id, owner_id)
+        if d is None or not al.actif(d):
+            return []
+        grilles = al.meta(d).get("grilles") if isinstance(al.meta(d).get("grilles"), dict) else {}
+        return [{"numero": x["numero"], "intitule": _flat(x.get("intitule"))[:120],
+                 "libelle": _flat(al.libelle(d, x["numero"]))[:160],
+                 "grille": grilles.get(x["numero"]) if isinstance(grilles.get(x["numero"]), dict) else None}
+                for x in al.liste(d)]
+    except Exception as e:      # noqa: BLE001
+        logger.warning("carnet : lots du dossier illisibles (marché %s) : %s", getattr(project, "id", "?"),
+                       type(e).__name__)
+        return []
+
+
+def criteres_pour_lecture(project, lots: Optional[list] = None) -> list:
+    """Les critères auxquels rattacher les notes d'un courrier collé : ceux du formulaire, plus les critères ajoutés
+    par l'utilisateur (lignes « u… » déjà validées, avec leur lot)."""
+    return criteres_du_marche(project, lots)["lignes"] + [
+        {"cle": x["cle"], "critere": x.get("critere", ""), "parent": x.get("parent") or "",
+         "poids": x.get("poids") or "", "lot": x.get("lot") or "", "lot_libelle": x.get("lot_libelle") or ""}
+        for x in ((reponse(project) or {}).get("lignes") or []) if str(x.get("cle") or "").startswith("u")]
+
+
+def _lots_cites(ligne_f: str, numeros: set) -> set:
+    """Les lots du dossier cités par une ligne (texte replié) : « lot 2 », « lot n° 3 », « lots 2 et 3 »."""
+    out = set()
+    for m in _LOTS_CITES.finditer(ligne_f):
+        for d in re.findall(r"\d{1,2}", re.sub(r"n\s?[°o]|numero|\bno\b", " ", m.group(1))):
+            k = str(int(d))
+            if k in numeros:
+                out.add(k)
+    return out
+
+
+def lots_des_lignes(lignes: list, numeros) -> Optional[list]:
+    """Le lot dont parle chaque ligne du courrier, SANS IA : une ligne qui ne cite QU'UN des lots du dossier ouvre la
+    partie de ce lot, jusqu'à la ligne qui en cite un autre seul ; les lignes d'avant n'ont pas de lot. Un courrier qui
+    ne cite qu'un seul de ces lots en parle d'un bout à l'autre. Aucun lot cité seul : None (on ne sait pas)."""
+    nums = {str(n) for n in numeros or [] if n}
+    if not nums:
+        return None
+    out, cur = [], None
+    for brut in lignes:
+        c = _lots_cites(_fold(_flat(brut)), nums)
+        if len(c) == 1:
+            cur = next(iter(c))
+        out.append(cur)
+    seuls = {x for x in out if x}
+    if not seuls:
+        return None
+    if len(seuls) == 1:
+        return [next(iter(seuls))] * len(out)
+    return out
+
+
+def segments_par_lot(texte: str, numeros) -> Optional[dict]:
+    """{numéro: les lignes du courrier qui parlent de ce lot} (voir `lots_des_lignes`), ou None."""
+    lignes = str(texte or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    par = lots_des_lignes(lignes, numeros)
+    if par is None:
+        return None
+    out = {}
+    for ln, n in zip(lignes, par):
+        if n:
+            out.setdefault(n, []).append(ln)
+    return {n: "\n".join(v) for n, v in out.items()}
 
 
 # ── La procédure (l'article à citer) ─────────────────────────────────────────────────
@@ -411,6 +548,18 @@ def procedure_du_marche(project) -> dict:
             sources.append(("règlement de la consultation", rc[:200000]))
     except Exception:       # noqa: BLE001 — lecture rangée absente : l'analyse suffit
         pass
+    if not sources:
+        # Marché lu avant la lecture intégrale : le règlement dans le texte de l'ancienne lecture du dossier (comme
+        # le repérage des lots, vague 6 J), jamais une relecture du fichier.
+        try:
+            from app.services import atelier_lots as al
+            from app.services import dce_pieces as dp
+            ex = str(_analysis(project).get("dce_excerpt") or "")
+            regs = [p["texte"] for p in al.pieces_du_texte(ex) if p.get("type") == dp.REGLEMENT] if ex.strip() else []
+            if regs:
+                sources.append(("règlement de la consultation", "\n".join(regs)[:200000]))
+        except Exception:       # noqa: BLE001
+            pass
     nature = _flat(_details(project).get("nature_marche"))
     if nature:
         sources.append(("analyse du marché", nature))
@@ -464,9 +613,13 @@ def courrier(db, project, procedure: Optional[str] = None) -> dict:
     sujet = "l'offre du groupement dont nous sommes le chef de file" if _en_groupement(project) else "notre offre"
     crits = [x["critere"] for x in criteres_du_marche(project)["lignes"] if x["niveau"] == 1][:8]
     liste = (" (" + ", ".join(crits) + ")") if crits else ""
+    # Vague 6 (J) : un marché alloti auquel nous avons répondu sur plusieurs lots — chaque lot est noté à part.
+    lots = lots_du_marche(db, project)
+    des_lots = " ; ".join(f"{x['libelle'][:1].lower()}{x['libelle'][1:]}" for x in lots)
     p = ["Madame, Monsieur,",
          f"Vous nous avez informés du rejet de {sujet} pour le marché « {intitule} »"
-         + (f" (référence {ref})" if ref else "") + "."]
+         + (f" (référence {ref})" if ref else "")
+         + (f", au titre des lots auxquels nous avons répondu : {des_lots}" if lots else "") + "."]
     if proc == ADAPTEE:
         p.append("En application de l'article R2181-2 du code de la commande publique, nous vous demandons de nous "
                  "communiquer les motifs de ce rejet. Si notre offre n'était ni inappropriée, ni irrégulière, ni "
@@ -482,9 +635,10 @@ def courrier(db, project, procedure: Optional[str] = None) -> dict:
                  "de nous communiquer les motifs du rejet de notre offre, ainsi que les caractéristiques et avantages "
                  "de l'offre retenue.")
         lien = "Pour comprendre ces motifs"
-    p.append(f"{lien}, nous vous serions reconnaissants de nous indiquer, pour chaque critère et sous-critère de "
-             f"jugement des offres{liste}, la note obtenue par notre offre, la note maximale, la note de l'offre "
-             "retenue et l'appréciation qui la justifie, ainsi que notre classement.")
+    p.append(f"{lien}, nous vous serions reconnaissants de nous indiquer, "
+             + ("pour chacun de ces lots et " if lots else "")
+             + f"pour chaque critère et sous-critère de jugement des offres{liste}, la note obtenue par notre offre, la "
+             "note maximale, la note de l'offre retenue et l'appréciation qui la justifie, ainsi que notre classement.")
     p.append("Nous vous remercions par avance de votre réponse.")
     p.append("Veuillez agréer, Madame, Monsieur, l'expression de nos salutations distinguées.")
     signe = "\n".join(x for x in (rep, nom) if x)
@@ -501,7 +655,8 @@ def courrier(db, project, procedure: Optional[str] = None) -> dict:
             "destinataire_message": ("Adresse lue dans l'analyse du marché : vérifiez-la." if dest else
                                      "Aucune adresse de l'acheteur dans l'analyse : ajoutez-la dans votre messagerie."),
             "message_delai": MSG_DELAI[proc], "message_notes": MSG_ADAPTEE_NOTES if proc == ADAPTEE else "",
-            "message_envoi": MSG_PAS_ENVOYE}
+            "message_envoi": MSG_PAS_ENVOYE, "message_lots": MSG_COURRIER_LOTS if lots else "",
+            "lots": [{"numero": x["numero"], "libelle": x["libelle"]} for x in lots]}
 
 
 # ── Lecture du courrier, SANS IA ─────────────────────────────────────────────────────
@@ -553,16 +708,32 @@ def lire_courrier(texte: str, criteres: list) -> dict:
     """Propose, SANS IA, les notes écrites dans le courrier collé : pour chaque critère nommé sur une ligne, la
     première note « x / y » (ou « x sur y ») qui suit = votre note ; une note sur une ligne qui parle de l'offre
     retenue (attributaire, lauréat…) = la note de l'offre retenue ; une ligne « Appréciation : … » = le
-    commentaire. Chaque valeur garde la ligne du courrier où elle est écrite."""
+    commentaire. Chaque valeur garde la ligne du courrier où elle est écrite.
+
+    Plusieurs lots (vague 6, J : critères portant `lot`) : le courrier est découpé par les lignes qui citent un seul
+    lot (`lots_des_lignes`) ; une ligne n'est rapprochée que des critères de SON lot. Courrier sans lot lisible :
+    aucune proposition (on ne devine pas le lot)."""
     lignes = [ln for ln in str(texte or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")]
     crit = [dict(c, _stems=_stems(c.get("critere"))) for c in criteres or [] if c.get("cle")]
-    props, courant, depuis = {}, None, 0
+    nums = sorted({str(c.get("lot")) for c in crit if c.get("lot")})
+    par_ligne = lots_des_lignes(lignes, nums) if nums else None
+    if nums and par_ligne is None:
+        return {"propositions": {}, "trouvees": 0, "message": MSG_LOT_INCONNU, "bulle": BULLE_LECTURE}
+    crit_du_lot = {}
+    for c in crit:
+        crit_du_lot.setdefault(str(c.get("lot") or ""), []).append(c)
+    props, courant, depuis, lot_prec = {}, None, 0, None
     for i, brut in enumerate(lignes):
         ln = _flat(brut)
         if not ln:
             continue
         f = _fold(ln)
-        m = _mentions(f, crit)
+        if par_ligne is not None:
+            if par_ligne[i] != lot_prec:            # une autre partie du courrier : le critère en cours s'arrête
+                courant, depuis, lot_prec = None, 0, par_ligne[i]
+            m = _mentions(f, crit_du_lot.get(par_ligne[i], [])) if par_ligne[i] else None
+        else:
+            m = _mentions(f, crit)
         if m is not None:
             courant, depuis = m, 0
         elif courant is not None:
@@ -640,14 +811,24 @@ def masquer_coordonnees(texte: str) -> str:
     return _TEL.sub("[téléphone]", _EMAIL.sub("[courriel]", str(texte or "")))
 
 
-def valider_ia(item, courrier_txt: str, masque: str, cles: set) -> Optional[dict]:
+def valider_ia(item, courrier_txt: str, masque: str, cles: set, lot_de: Optional[dict] = None,
+               segments: Optional[tuple] = None) -> Optional[dict]:
     """Une ligne proposée par l'IA, contrôlée SANS IA : l'extrait retrouvé dans le courrier, chaque nombre écrit
-    dans son extrait (forme du courrier gardée), le commentaire mot pour mot ; sinon la valeur est écartée."""
+    dans son extrait (forme du courrier gardée), le commentaire mot pour mot ; sinon la valeur est écartée.
+
+    Plusieurs lots (vague 6, J) : `lot_de` {clé: lot} et `segments` (parties du courrier par lot, sans IA, pour le
+    courrier et pour sa version masquée) — l'extrait et le commentaire d'un critère de lot doivent être dans la
+    partie du courrier qui parle de CE lot ; courrier sans lot lisible : écarté."""
     if not isinstance(item, dict):
         return None
     cle = str(item.get("id") or "").strip()[:20]
     if cle not in cles:
         return None
+    lot = (lot_de or {}).get(cle) or ""
+    if lot:
+        seg_c, seg_m = segments if isinstance(segments, tuple) else (None, None)
+        courrier_txt = (seg_c or {}).get(lot, "")
+        masque = (seg_m or {}).get(lot, "")
 
     def trouve(ex: str) -> str:
         ex = _flat(ex).strip(" «»\"")[:EXTRAIT_MAX]
@@ -680,13 +861,22 @@ def valider_ia(item, courrier_txt: str, masque: str, cles: set) -> Optional[dict
     return out if any(k in out for k in ("note", "note_gagnant", "commentaire")) else None
 
 
+_SYS_IA_LOTS = _SYS_IA.replace(
+    "Réponds UNIQUEMENT en JSON",
+    "Le marché a plusieurs lots, notés chacun à part : l'identifiant de chaque critère dit son lot. Ne prends la note "
+    "d'un critère que dans la partie du courrier qui parle de CE lot.\nRéponds UNIQUEMENT en JSON", 1)
+
+
 def _appel_ia(criteres: list, masque: str, billing_id) -> dict:
     from app.services.llm import complete_ex, parse_json, tenant_scope
-    liste = "\n".join(f"[{c['cle']}] " + ("— " if c.get("parent") else "") + c["critere"]
+    liste = "\n".join(f"[{c['cle']}] " + (f"({c['lot_libelle']}) " if c.get("lot_libelle") else "")
+                      + ("— " if c.get("parent") else "") + c["critere"]
                       + (f" ({c['poids']})" if c.get("poids") else "") for c in criteres)
     user = f"CRITÈRES :\n{liste or '(aucun critère connu)'}\n\nCOURRIER DE L'ACHETEUR :\n{masque}"
+    # La consigne d'un marché à un seul lot est inchangée ; celle d'un marché à plusieurs lots dit la règle du lot.
+    systeme = _SYS_IA_LOTS if any(c.get("lot") for c in criteres) else _SYS_IA
     with tenant_scope(billing_id):
-        content, _stop = complete_ex(_SYS_IA, user, max_tokens=1800, temperature=0.0, tache="questions",
+        content, _stop = complete_ex(systeme, user, max_tokens=1800, temperature=0.0, tache="questions",
                                      json_attendu=True)
     data = parse_json(content)
     items = data.get("lignes") if isinstance(data, dict) else None
@@ -701,11 +891,15 @@ def lire_courrier_ia(db, user: User, project, texte: str, member_ids: list) -> d
     from app.services import pii
     from app.services.llm import LLMUnavailable, pii_scope
     texte = _texte_courrier(texte)
-    crits = criteres_du_marche(project)["lignes"] + [
-        {"cle": x["cle"], "critere": x["critere"], "parent": x.get("parent") or "", "poids": x.get("poids") or ""}
-        for x in ((reponse(project) or {}).get("lignes") or []) if str(x.get("cle") or "").startswith("u")]
+    lots = lots_du_marche(db, project, data_owner_id(user, db))
+    crits = criteres_pour_lecture(project, lots)
     if not crits:
         raise CarnetError(422, "aucun_critere", MSG_SANS_CRITERE)
+    nums = [x["numero"] for x in lots]
+    if nums and segments_par_lot(texte, nums) is None:
+        # Plusieurs lots et aucune ligne qui en cite un seul : rien ne pourrait être rattaché à un lot. Aucun appel,
+        # rien de décompté.
+        return {"propositions": {}, "trouvees": 0, "refusees": 0, "message": MSG_LOT_INCONNU, "bulle": BULLE_IA}
     slot = reserve_question(user, db)          # 402 / 403 (démo) / 429 avant tout appel
     masque = masquer_coordonnees(texte)
     try:
@@ -720,9 +914,11 @@ def lire_courrier_ia(db, user: User, project, texte: str, member_ids: list) -> d
         logger.warning("carnet : lecture du courrier par l'IA en échec (marché %s) : %s", project.id, type(e).__name__)
         raise CarnetError(503, "ia_indisponible", MSG_IA_PANNE)
     cles = {c["cle"] for c in crits}
+    lot_de = {c["cle"]: str(c["lot"]) for c in crits if c.get("lot")}
+    segs = (segments_par_lot(texte, nums), segments_par_lot(masque, nums)) if nums else None
     props, refusees = {}, 0
     for item in res.get("lignes") or []:
-        v = valider_ia(item, texte, masque, cles)
+        v = valider_ia(item, texte, masque, cles, lot_de=lot_de, segments=segs)
         if v is None:
             refusees += 1
             continue
@@ -756,7 +952,12 @@ def _texte_courrier(texte) -> str:
 
 # ── Enregistrer les notes (validation par l'utilisateur) ─────────────────────────────
 
-def _ligne_in(x: dict, i: int, connus: dict, courrier_txt: str) -> Optional[dict]:
+def _ligne_in(x: dict, i: int, connus: dict, courrier_txt: str, lots: Optional[dict] = None,
+              segments: Optional[dict] = None) -> Optional[dict]:
+    """Une ligne validée. `lots` (vague 6, J) : {numéro: libellé} des lots du dossier — le lot d'un critère connu est
+    le sien (jamais celui envoyé par l'écran) ; un critère ajouté choisit un de ces lots. `segments` : les parties du
+    courrier par lot ; une valeur d'un critère de lot n'est « lue dans le courrier » que si sa ligne est dans la
+    partie de CE lot."""
     if not isinstance(x, dict):
         raise CarnetError(422, "ligne_invalide", "Ligne de notes illisible.")
     cle = re.sub(r"[^A-Za-z0-9._/\-]", "", str(x.get("cle") or ""))[:20] or f"u{i + 1}"
@@ -764,6 +965,17 @@ def _ligne_in(x: dict, i: int, connus: dict, courrier_txt: str) -> Optional[dict
     critere = _flat(x.get("critere"))[:CRITERE_MAX] or (base or {}).get("critere", "")
     if not critere:
         raise CarnetError(422, "critere_vide", "Chaque ligne nomme son critère.")
+    lots = lots or {}
+    if base is not None and not base.get("_ajoutee"):
+        lot = str(base.get("lot") or "")
+    else:
+        lot = str(x.get("lot") or "").strip()
+        if lots and lot not in lots:
+            raise CarnetError(422, "lot_requis", f"« {critere[:60]} » : choisissez le lot de ce critère.")
+        if not lots:
+            lot = ""
+    if lot:
+        courrier_txt = (segments or {}).get(lot, "")
     parent = (base or {}).get("parent", "") if base else re.sub(r"[^A-Za-z0-9._/\-]", "", str(x.get("parent") or ""))[:20]
     try:
         note, nmax, gagn = nombre(x.get("note")), nombre(x.get("note_max")), nombre(x.get("note_gagnant"))
@@ -787,6 +999,9 @@ def _ligne_in(x: dict, i: int, connus: dict, courrier_txt: str) -> Optional[dict
     out = {"cle": cle, "critere": critere, "parent": parent, "poids": _flat(x.get("poids"))[:40]
            or (base or {}).get("poids", ""), "note": note, "note_max": nmax, "note_gagnant": gagn,
            "commentaire": commentaire, "famille": fam, "famille_proposee": prop, "origine": SAISIE}
+    if lot:
+        out["lot"] = lot
+        out["lot_libelle"] = _flat(lots.get(lot) or (base or {}).get("lot_libelle") or f"Lot {lot}")[:160]
     # « Lu dans le courrier » : seulement si la ligne citée est encore dans le courrier et y porte CHAQUE nombre
     # validé (forme écrite) ; sinon la valeur compte comme saisie par vous.
     if origine in (COURRIER, IA) and courrier_txt:
@@ -812,8 +1027,11 @@ def enregistrer(db, project, user: User, lignes_in: list, rev=None, courrier_txt
     par cet enregistrement."""
     if _statut(project) not in (PERDU, GAGNE):
         raise CarnetError(409, "marche_pas_termine", "Les notes se saisissent quand le marché est gagné ou perdu.")
-    if not isinstance(lignes_in, list) or len(lignes_in) > LIGNES_MAX:
-        raise CarnetError(422, "lignes_invalides", f"Au plus {LIGNES_MAX} lignes de notes.")
+    from app.core.org import data_owner_id
+    lots = lots_du_marche(db, project, data_owner_id(user, db))      # vague 6 (J) : un relevé par lot
+    maxi = LIGNES_MAX * max(1, len(lots))
+    if not isinstance(lignes_in, list) or len(lignes_in) > maxi:
+        raise CarnetError(422, "lignes_invalides", f"Au plus {maxi} lignes de notes.")
     project = _verrouiller(db, project)
     c = carnet(project)
     if rev is not None and int(rev) != int(c.get("rev") or 0):
@@ -826,19 +1044,28 @@ def enregistrer(db, project, user: User, lignes_in: list, rev=None, courrier_txt
                          "empreinte": hashlib.sha256(txt.encode("utf-8")).hexdigest()}
     elif isinstance(c.get("courrier"), dict):
         txt = c["courrier"].get("texte") or None
-    connus = {x["cle"]: x for x in criteres_du_marche(project)["lignes"]}
+    connus = {x["cle"]: x for x in criteres_du_marche(project, lots)["lignes"]}
     for x in (reponse(project) or {}).get("lignes") or []:
+        # Une ligne déjà validée hors du formulaire (critère ajouté, ou d'avant un changement des lots) : son lot se
+        # choisit comme pour un critère ajouté.
         connus.setdefault(x.get("cle"), {"cle": x.get("cle"), "critere": x.get("critere", ""),
-                                         "parent": x.get("parent", ""), "poids": x.get("poids", "")})
+                                         "parent": x.get("parent", ""), "poids": x.get("poids", ""),
+                                         "lot_libelle": x.get("lot_libelle", ""), "_ajoutee": True})
+    lib_lots = {x["numero"]: x["libelle"] for x in lots}
+    segs = segments_par_lot(txt, list(lib_lots)) if (lots and txt) else None
     out, vus = [], set()
     for i, x in enumerate(lignes_in):
-        ln = _ligne_in(x, i, connus, txt or "")
+        ln = _ligne_in(x, i, connus, txt or "", lots=lib_lots, segments=segs)
         if ln is None:
             continue
         if ln["cle"] in vus:
             raise CarnetError(422, "ligne_en_double", f"« {ln['critere'][:60]} » apparaît deux fois.")
         vus.add(ln["cle"])
         out.append(ln)
+    if lib_lots:
+        # Plusieurs lots : les lignes rangées lot par lot (ordre du dossier ; à l'intérieur d'un lot, celui de l'écran).
+        rang = {n: i for i, n in enumerate(lib_lots)}
+        out.sort(key=lambda x: rang.get(x.get("lot") or "", len(rang)))
     if not out:
         c.pop("reponse", None)
     else:
@@ -890,24 +1117,39 @@ def _journal(db, project, user, action: str, detail: str) -> None:
 
 def _auteurs(db, project, owner_id: int, lignes=None) -> dict:
     """{cle de critère: {type, invite_id, nom, titre}} d'après le dossier de présentation : qui a rédigé la partie
-    qui traite ce critère (ou sous-critère). `lignes` : les lignes de notes (critères ajoutés compris)."""
+    qui traite ce critère (ou sous-critère). `lignes` : les lignes de notes (critères ajoutés compris).
+
+    Plusieurs lots (vague 6, J) : le critère d'un lot est cherché parmi les parties du dossier de CE lot (les
+    communes et les siennes, numérotées pour lui) — jamais la partie sœur d'un autre lot, qui peut avoir un autre
+    auteur."""
     from app.services import atelier as at
+    from app.services import atelier_lots as al
     from app.services import atelier_plan as ap
     d = at.get_dossier(db, project.id, owner_id)
     if d is None:
         return {}
     secs = [s for s in at.sections_actives(db, d) if not at.est_generee(s)]
-    rangs = at._rangs(d, secs)
+    lots = lots_du_marche(db, project, owner_id)
     noms = at._noms_auteurs(db, secs)
-    crits = list(criteres_du_marche(project)["lignes"])
+    crits = list(criteres_du_marche(project, lots)["lignes"])
     vus = {c["cle"] for c in crits}
     for x in lignes or []:
         if x.get("cle") and x["cle"] not in vus:
-            crits.append({"cle": x["cle"], "critere": x.get("critere", ""), "parent": x.get("parent") or ""})
+            crits.append({"cle": x["cle"], "critere": x.get("critere", ""), "parent": x.get("parent") or "",
+                          "lot": x.get("lot") or ""})
             vus.add(x["cle"])
+    nums = {x["numero"] for x in lots}
+    vues = {"": (secs, at._rangs(d, secs))}
     par_cle = {}
     for c in crits:
-        s = _section_du_critere(c, secs, ap)
+        n = str(c.get("lot") or "")
+        if n and n not in nums:
+            continue                       # un lot qui n'est plus dans le dossier : aucune partie sûre
+        if n not in vues:
+            du = al.du_lot(secs, n)
+            vues[n] = (du, at._rangs(d, du, lot=n))
+        lot_secs, rangs = vues[n]
+        s = _section_du_critere(dict(c, cle=sans_lot(c.get("cle")), parent=sans_lot(c.get("parent"))), lot_secs, ap)
         if s is None:
             continue
         titre = ((rangs.get(s.id, "") + " ") if rangs.get(s.id) else "") + (s.intitule or "")
@@ -969,7 +1211,8 @@ def _ligne_out(x: dict, auteur: Optional[dict] = None) -> dict:
            "famille_libelle": FAMILLE_LIB.get(x.get("famille") or "autre", "Autre"),
            "origine": x.get("origine") or SAISIE, "origine_libelle": lib,
            "extrait_note": x.get("extrait_note") or "", "extrait_gagnant": x.get("extrait_gagnant") or "",
-           "commentaire_du_courrier": bool(x.get("commentaire_du_courrier"))}
+           "commentaire_du_courrier": bool(x.get("commentaire_du_courrier")),
+           "lot": x.get("lot") or "", "lot_libelle": x.get("lot_libelle") or ""}
     if auteur:
         out["auteur"] = {"type": auteur.get("type"), "nom": auteur.get("nom") or "", "titre": auteur.get("titre") or ""}
     return out
@@ -986,8 +1229,10 @@ def constat(lignes: list) -> Optional[dict]:
     if p is None or p >= 100:
         return None
     fam = x.get("famille") or "autre"
-    return {"cle": x["cle"], "critere": x["critere"], "pct": p,
-            "message": f"C'est sur « {x['critere']} » que ce marché a perdu le plus de points : "
+    lib = str(x.get("lot_libelle") or "")
+    du_lot = f" ({lib[:1].lower()}{lib[1:]})" if lib else ""
+    return {"cle": x["cle"], "critere": x["critere"], "pct": p, "lot": x.get("lot") or "",
+            "message": f"C'est sur « {x['critere']} »{du_lot} que ce marché a perdu le plus de points : "
                        f"{ecrit(x['note'])} / {ecrit(x['note_max'])} ({p} %).",
             "partenaire": fam not in ("prix", "autre")}
 
@@ -996,10 +1241,12 @@ def etat(db, project, user: User, member_ids: list) -> dict:
     from app.core.org import data_owner_id
     st = _statut(project)
     c = carnet(project)
-    crits = criteres_du_marche(project)
+    owner = data_owner_id(user, db)
+    lots = lots_du_marche(db, project, owner)          # vague 6 (J) : un relevé par lot ([] : un seul relevé)
+    crits = criteres_du_marche(project, lots)
     rep = reponse(project)
     try:
-        auteurs = _auteurs(db, project, data_owner_id(user, db), (rep or {}).get("lignes"))
+        auteurs = _auteurs(db, project, owner, (rep or {}).get("lignes"))
     except Exception as e:      # noqa: BLE001 — le carnet se lit sans le dossier de présentation
         logger.warning("carnet : auteurs des parties illisibles (marché %s) : %s", project.id, type(e).__name__)
         auteurs = {}
@@ -1026,13 +1273,14 @@ def etat(db, project, user: User, member_ids: list) -> dict:
                          "commentaire": s.get("commentaire") or "", "origine": s.get("origine") or SAISIE,
                          "extrait_note": s.get("extrait_note") or "", "extrait_gagnant": s.get("extrait_gagnant") or "",
                          "commentaire_du_courrier": bool(s.get("commentaire_du_courrier")), "ajoutee": True,
-                         "auteur": _auteur_out(auteurs.get(cle))})
+                         "auteur": _auteur_out(auteurs.get(cle)), "lot": s.get("lot") or "",
+                         "lot_libelle": s.get("lot_libelle") or ""})
     notes = None
     if rep:
         lignes = rep["lignes"]
         notes = {"lignes": [_ligne_out(x, auteurs.get(x.get("cle"))) for x in lignes],
                  "valide_le": rep.get("valide_le"), "valide_le_jj": _jj(rep.get("valide_le")),
-                 "constat": constat(lignes), "total": _total(lignes)}
+                 "constat": constat(lignes), "total": _total(lignes), "totaux": _totaux(lignes)}
     # La procédure ne sert qu'au courrier d'un marché perdu (lecture du règlement rangé : rien à lire sinon).
     proc = procedure_du_marche(project) if st == PERDU else {"code": INCONNUE, "phrase": "", "source": "", "message": ""}
     perdu_le = c.get("perdu_le")
@@ -1051,6 +1299,8 @@ def etat(db, project, user: User, member_ids: list) -> dict:
         "ia": {"bulle": BULLE_IA}, "bulle_lecture": BULLE_LECTURE,
         "savoir_faire": _savoir_faire_out(db, project, c, user) if st == GAGNE else None,
         "groupement": {"actif": grp},
+        # Vague 6 (J) : les lots auxquels l'entreprise a répondu (un relevé de notes par lot) ; [] : un seul relevé.
+        "lots": [{"numero": x["numero"], "libelle": x["libelle"]} for x in lots],
     }
 
 
@@ -1060,13 +1310,34 @@ def _auteur_out(a: Optional[dict]) -> Optional[dict]:
     return {"type": a.get("type") or "organisation", "nom": a.get("nom") or "", "titre": a.get("titre") or ""}
 
 
-def _total(lignes: list) -> Optional[dict]:
-    """La note d'ensemble, quand chaque critère (niveau 1) a sa note : la somme, telle quelle."""
+def _somme(lignes: list) -> Optional[dict]:
     hauts = [x for x in lignes if not x.get("parent")]
     if not hauts or any(x.get("note") is None or not x.get("note_max") for x in hauts):
         return None
     n, m = sum(x["note"] for x in hauts), sum(x["note_max"] for x in hauts)
     return {"note": ecrit(round(n, 3)), "note_max": ecrit(round(m, 3)), "pct": pct(n, m)}
+
+
+def _total(lignes: list) -> Optional[dict]:
+    """La note d'ensemble, quand chaque critère (niveau 1) a sa note : la somme, telle quelle. Plusieurs lots (vague
+    6, J) : aucune somme de lots différents (chaque lot est noté à part, voir `_totaux`)."""
+    if any(x.get("lot") for x in lignes):
+        return None
+    return _somme(lignes)
+
+
+def _totaux(lignes: list) -> list:
+    """Plusieurs lots (vague 6, J) : la note d'ensemble de chaque lot, dans l'ordre des lignes."""
+    ordre = []
+    for x in lignes:
+        if x.get("lot") and x["lot"] not in [n for n, _l in ordre]:
+            ordre.append((x["lot"], x.get("lot_libelle") or f"Lot {x['lot']}"))
+    out = []
+    for n, lib in ordre:
+        t = _somme([x for x in lignes if x.get("lot") == n])
+        if t:
+            out.append(dict(t, lot=n, lot_libelle=lib))
+    return out
 
 
 # ── « Où vous perdez des points » (tableau de bord) ──────────────────────────────────
@@ -1187,6 +1458,7 @@ def derniere_fois(db, project, sections: list, member_ids: list) -> dict:
                           "note": (f"{ecrit(x.get('note'))} / {ecrit(x.get('note_max'))}" if x.get("note") is not None
                                    and x.get("note_max") else ""),
                           "famille_libelle": FAMILLE_LIB.get(fam, ""), "project_id": p.id,
+                          "lot": _flat(x.get("lot_libelle"))[:160] if x.get("lot") else "",
                           "bulle": BULLE_DERNIERE_FOIS}
     return out
 
@@ -1211,6 +1483,8 @@ def _textes_de_l_organisation(db, project, owner_id: int) -> list:
         if v is None or v.section_id != s.id or not (v.texte or "").strip():
             continue
         titre = ((rangs.get(s.id, "") + " ") if rangs.get(s.id) else "") + (s.intitule or "")
+        if getattr(s, "lot", ""):
+            titre += f" (lot {s.lot})"          # vague 6 (J) : la partie propre à un lot le dit
         out.append((titre.strip(), v.texte))
     return out
 
@@ -1319,6 +1593,7 @@ def vue_partenaire(db, acces) -> Optional[dict]:
         if vous:
             vos.append(ln)
     return {"statut": _statut(project), "lignes": lignes, "vos_parties": vos, "total": _total(rep["lignes"]),
+            "totaux": _totaux(rep["lignes"]),
             "message": ("Les notes données par l'acheteur pour l'offre du groupement, saisies par le chef de file. Vos "
                         "parties sont signalées.")}
 

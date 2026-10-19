@@ -1227,6 +1227,7 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 .atl-prep-l > li { padding:8px 0; border-top:1px solid var(--hairline); }
 .atl-prep-t { font-weight:600; font-size:12.5px; line-height:1.35; }
 .atl-prep-leg { margin-top:8px !important; }
+.atl-prep .atl-lot-f { padding:0 0 8px; align-items:center; }   /* vague 6 (H × J) : la page du fichier de quel lot */
 .atl-encours { display:flex; gap:8px; align-items:center; color:var(--text-2); }
 
 /* Les trois colonnes */
@@ -1571,6 +1572,8 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
 .cn-lignes { list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:8px; }
 .cn-ligne { padding:8px 10px; border-radius:10px; border:1px solid var(--hairline); background:var(--surface); min-width:0; }
 .cn-sous { margin-left:14px; }
+/* Vague 6 (F × J) : un relevé de notes par lot — titre du lot entre les lignes. */
+.cn-lot-h { font-weight:600; font-size:12.5px; margin-top:4px; padding:0 2px; overflow-wrap:anywhere; }
 .cn-prop { border-color:var(--warning); }
 .cn-vous { border-color:var(--accent); }
 .cn-l-h { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; }

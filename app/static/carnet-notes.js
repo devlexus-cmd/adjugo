@@ -61,7 +61,8 @@
     });
   }
 
-  // Le corps de PUT …/notes : ce que l'utilisateur valide, ligne par ligne.
+  // Le corps de PUT …/notes : ce que l'utilisateur valide, ligne par ligne (`lot` : le lot d'un critère ajouté,
+  // marché à plusieurs lots ; le serveur garde le lot de chaque critère connu).
   function cnPayload(lignes) {
     return (lignes || []).map(l => ({
       cle: l.cle || "", critere: String(l.critere || "").trim(), parent: l.parent || "", poids: l.poids || "",
@@ -69,11 +70,29 @@
       note_gagnant: String(l.note_gagnant || "").trim() || null, commentaire: String(l.commentaire || "").trim(),
       famille: l.famille || "", origine: l.origine || "saisie", extrait_note: l.extrait_note || "",
       extrait_gagnant: l.extrait_gagnant || "", commentaire_du_courrier: !!l.commentaire_du_courrier,
+      lot: String(l.lot || ""),
     }));
   }
 
+  // Plusieurs lots (vague 6, J) : le titre à poser AVANT chaque ligne (« Lot 2 — Couverture » quand le lot change,
+  // « Critères ajoutés » avant le premier critère ajouté), "" sinon. Un marché à un seul lot : aucun titre.
+  function cnTetes(lignes, avecAjoutees) {
+    let prec = null, ajout = false;
+    return (lignes || []).map(l => {
+      if (avecAjoutees && l.ajoutee) {
+        if (ajout) return "";
+        ajout = true;
+        return (lignes || []).some(x => x.lot && !x.ajoutee) ? "Critères ajoutés" : "";
+      }
+      const lot = l.lot || "";
+      if (!lot || lot === prec) { prec = lot; return ""; }
+      prec = lot;
+      return String(l.lot_libelle || ("Lot " + lot));
+    });
+  }
+
   // Contrôle avant l'envoi (le serveur refait le même) : un message, ou "".
-  function cnControle(lignes) {
+  function cnControle(lignes, lots) {
     for (const l of lignes || []) {
       const n = cnNombre(l.note), m = cnNombre(l.note_max), g = cnNombre(l.note_gagnant);
       const nom = "« " + String(l.critere || "ce critère").slice(0, 60) + " »";
@@ -82,6 +101,7 @@
       if (n !== null && m && n > m) return nom + " : la note dépasse la note maximale.";
       if (g !== null && m && g > m) return nom + " : la note de l'offre retenue dépasse la note maximale.";
       if (!String(l.critere || "").trim() && (n !== null || g !== null || String(l.commentaire || "").trim())) return "Chaque ligne nomme son critère.";
+      if (lots && lots.length && l.ajoutee && !l.lot && (n !== null || g !== null || String(l.commentaire || "").trim())) return nom + " : choisissez le lot de ce critère.";
     }
     return "";
   }
@@ -220,6 +240,7 @@
       if (!l) return h + '<div class="muted small cn-mt8">' + (st.busy === "lettre" ? "Préparation du courrier…" : "") + "</div></div>";
       h += '<div class="cn-delai small cn-mt8">' + ico("clock", 14) + "<span>" + cnEsc(l.message_delai) + "</span></div>";
       if (l.message_notes) h += '<div class="muted small cn-mt4">' + cnEsc(l.message_notes) + "</div>";
+      if (l.message_lots) h += '<div class="muted small cn-mt4">' + cnEsc(l.message_lots) + "</div>";
       h += '<div class="field cn-field cn-mt8"><label for="cn-obj-' + Number(d.projet.id) + '">Objet</label><input id="cn-obj-' + Number(d.projet.id) + '" data-in="objet" value="' + cnEsc(l.objet) + '"></div>';
       h += '<div class="field cn-field"><label for="cn-corps-' + Number(d.projet.id) + '">Courrier (modifiable avant de l\'envoyer)</label><textarea id="cn-corps-' + Number(d.projet.id) + '" data-in="corps" rows="12" class="cn-ta">' + cnEsc(l.corps) + "</textarea></div>";
       h += '<div class="cn-row">' + btn("copier", ico("copy", 14) + "Copier le courrier")
@@ -238,7 +259,9 @@
         return h + "</div>";
       }
       h += '<ul class="cn-lignes">';
-      n.lignes.forEach(x => {
+      const tetes = cnTetes(n.lignes, false);
+      n.lignes.forEach((x, i) => {
+        if (tetes[i]) h += '<li class="cn-lot-h">' + cnEsc(tetes[i]) + "</li>";
         h += '<li class="cn-ligne' + (x.parent ? " cn-sous" : "") + '"><div class="cn-l-h"><span class="cn-l-c">' + cnEsc(x.critere) + (x.poids ? ' <span class="muted">· ' + cnEsc(x.poids) + "</span>" : "") + "</span>"
           + (x.note ? '<span class="num cn-l-n">' + cnEsc(x.note) + " / " + cnEsc(x.note_max) + "</span>" + barre(x.pct) + '<span class="num muted cn-l-p">' + Number(x.pct) + " %</span>" : "")
           + '<span class="pill neutral cn-pill">' + cnEsc(x.famille_libelle) + "</span></div>";
@@ -250,6 +273,9 @@
       });
       h += "</ul>";
       if (n.total) h += '<div class="small cn-mt4">Note d\'ensemble : <b class="num">' + cnEsc(n.total.note) + " / " + cnEsc(n.total.note_max) + "</b> (" + Number(n.total.pct) + " %)</div>";
+      (n.totaux || []).forEach(t => {
+        h += '<div class="small cn-mt4">Note d\'ensemble, ' + cnEsc(String(t.lot_libelle || "").charAt(0).toLowerCase() + String(t.lot_libelle || "").slice(1)) + ' : <b class="num">' + cnEsc(t.note) + " / " + cnEsc(t.note_max) + "</b> (" + Number(t.pct) + " %)</div>";
+      });
       if (n.constat) {
         h += '<div class="cn-constat small cn-mt8">' + ico("search", 14) + '<span style="flex:1;min-width:0">' + cnEsc(n.constat.message) + "</span>"
           + (n.constat.partenaire && o.onPartenaire ? '<button type="button" class="linkbtn small" data-act="partenaire">Chercher un partenaire qui couvre ce manque</button>' + tip("Ouvre le réseau de partenaires d'Adjugo. C'est un constat sur ce marché, pas une recommandation.", true) : "") + "</div>";
@@ -269,10 +295,14 @@
       h += "</details>";
       h += '<div class="muted small cn-mt8">' + cnEsc((d.criteres || {}).message) + "</div>";
       h += '<ul class="cn-lignes">';
+      const lots = d.lots || [], tetes = cnTetes(f, true);
       f.forEach((l, i) => {
         const k = "cn-" + pid + "-" + i;
+        if (tetes[i]) h += '<li class="cn-lot-h">' + cnEsc(tetes[i]) + "</li>";
         h += '<li class="cn-ligne cn-edit' + (l.parent ? " cn-sous" : "") + (l.proposee ? " cn-prop" : "") + '" data-i="' + i + '">';
         if (l.ajoutee && !l.cle_fixe) h += '<div class="field cn-field"><label for="' + k + 'c">Critère</label><input id="' + k + 'c" data-f="critere" value="' + cnEsc(l.critere) + '" maxlength="200"></div>';
+        // Plusieurs lots : un critère ajouté dit son lot (l'acheteur note chaque lot à part).
+        if (l.ajoutee && lots.length) h += '<div class="field cn-field"><label for="' + k + 'l">Lot</label><select id="' + k + 'l" data-f="lot"><option value="">Choisissez le lot</option>' + lots.map(x => '<option value="' + cnEsc(x.numero) + '"' + (x.numero === l.lot ? " selected" : "") + ">" + cnEsc(x.libelle) + "</option>").join("") + "</select></div>";
         else h += '<div class="cn-l-h"><span class="cn-l-c">' + cnEsc(l.critere) + (l.poids ? ' <span class="muted">· ' + cnEsc(l.poids) + "</span>" : "") + "</span>" + (l.proposee ? '<span class="pill a_etudier cn-pill">à valider</span>' : "") + "</div>";
         if (l.auteur && l.auteur.type === "invitation") h += '<div class="muted small">Partie rédigée par ' + cnEsc(l.auteur.nom || "un partenaire") + "</div>";
         h += '<div class="cn-grid">'
@@ -375,7 +405,7 @@
       }
       if (a === "valider") {
         lireForm();
-        const err = cnControle(st.form);
+        const err = cnControle(st.form, st.d.lots);
         if (err) { dire(err, true); render(); return; }
         const body = { lignes: cnPayload(st.form), rev: st.d.rev };
         if (String(st.courrier || "").trim().length >= 40) body.courrier = st.courrier;
@@ -432,9 +462,11 @@
   function cnPartenaireHtml(c) {
     if (!c || !(c.lignes || []).length) return "";
     let h = '<div class="cn-part"><div class="rp-lbl">Les notes du marché' + tip(c.message) + "</div>";
-    if ((c.vos_parties || []).length) h += '<div class="small">Vos parties : ' + c.vos_parties.map(x => cnEsc(x.critere) + (x.note ? " " + cnEsc(x.note) + " / " + cnEsc(x.note_max) + " (" + Number(x.pct) + " %)" : "")).join(" · ") + "</div>";
+    if ((c.vos_parties || []).length) h += '<div class="small">Vos parties : ' + c.vos_parties.map(x => cnEsc(x.critere) + (x.lot_libelle ? " (" + cnEsc(String(x.lot_libelle).charAt(0).toLowerCase() + String(x.lot_libelle).slice(1)) + ")" : "") + (x.note ? " " + cnEsc(x.note) + " / " + cnEsc(x.note_max) + " (" + Number(x.pct) + " %)" : "")).join(" · ") + "</div>";
     h += '<details class="gn-det"><summary>Voir toutes les notes</summary><ul class="cn-lignes">';
-    c.lignes.forEach(x => {
+    const tetes = cnTetes(c.lignes, false);
+    c.lignes.forEach((x, i) => {
+      if (tetes[i]) h += '<li class="cn-lot-h">' + cnEsc(tetes[i]) + "</li>";
       h += '<li class="cn-ligne' + (x.parent ? " cn-sous" : "") + (x.vous ? " cn-vous" : "") + '"><div class="cn-l-h"><span class="cn-l-c">' + cnEsc(x.critere) + "</span>"
         + (x.note ? '<span class="num cn-l-n">' + cnEsc(x.note) + " / " + cnEsc(x.note_max) + "</span>" + barre(x.pct) + '<span class="num muted cn-l-p">' + Number(x.pct) + " %</span>" : "")
         + (x.vous ? '<span class="pill go cn-pill">votre partie</span>' : "") + "</div>";
@@ -444,9 +476,12 @@
     });
     h += "</ul></details>";
     if (c.total) h += '<div class="small cn-mt4">Note d\'ensemble du groupement : <b class="num">' + cnEsc(c.total.note) + " / " + cnEsc(c.total.note_max) + "</b> (" + Number(c.total.pct) + " %)</div>";
+    (c.totaux || []).forEach(t => {
+      h += '<div class="small cn-mt4">Note d\'ensemble du groupement, ' + cnEsc(String(t.lot_libelle || "").charAt(0).toLowerCase() + String(t.lot_libelle || "").slice(1)) + ' : <b class="num">' + cnEsc(t.note) + " / " + cnEsc(t.note_max) + "</b> (" + Number(t.pct) + " %)</div>";
+    });
     return h + "</div>";
   }
 
   root.AdjugoCarnetNotes = { mount, partenaireHtml: cnPartenaireHtml,
-    _pur: { cnEsc, cnNombre, cnPct, cnMailto, cnFusion, cnPayload, cnControle, cnPartenaireHtml } };
+    _pur: { cnEsc, cnNombre, cnPct, cnMailto, cnFusion, cnPayload, cnControle, cnPartenaireHtml, cnTetes } };
 })(typeof window !== "undefined" ? window : this);

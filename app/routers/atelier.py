@@ -649,13 +649,15 @@ def exporter(request: Request, project_id: int, body: ExportIn, current_user: Us
 
 
 @router.get("/{project_id}/preparation")
-def preparation(project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def preparation(project_id: int, lot: Optional[str] = None, current_user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
     """Vague 6 (H) : la page « Comment ce dossier a été préparé » telle que l'export la joindrait maintenant
     (lecture seule, sans IA ; contrat docs/REDACTION_V6.md, section H). Ouverte à la démo comme la lecture de
-    l'atelier : aucun fichier n'est produit ni rangé, aucun export n'est inscrit."""
+    l'atelier : aucun fichier n'est produit ni rangé, aucun export n'est inscrit. Dossier à plusieurs lots (J) :
+    `?lot=2`, la page du fichier de CE lot (422 « lot_requis » sans lot, comme l'export)."""
     from app.services import atelier_preparation as prep
     acc = _Acces(db, current_user, project_id)
     try:
-        return prep.apercu(db, acc.project, acc.exiger_dossier(), acc.lecteur)
+        return prep.apercu(db, acc.project, acc.exiger_dossier(), acc.lecteur, lot=(lot or "")[:4] or None)
     except at.AtelierError as e:
         raise _err(e)

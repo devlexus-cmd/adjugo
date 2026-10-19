@@ -7,9 +7,9 @@
    "sha256": "0a8005e13083852e6f282666266800421d1130e3e045caf46bf46ffa6b78a51b"
   },
   "/static/carnet-notes.js": {
-   "integrity": "sha384-LWPlkHY92zfic/nK0amdaX4xxaTIZex1wQY2+K0BIYgoYJw6UJd0FCHWhyp+nfOX",
-   "octets": 33155,
-   "sha256": "1625474e0b3428636f9a14f5ae05016bbf477262fb52da7433c595fe17c1b446"
+   "integrity": "sha384-/jdrICg+xGy+8oJ+6wwq2G6bVgPaS+M8sujDxHaxTwAy4s9OWS0n2NtJR4/a8RZf",
+   "octets": 35950,
+   "sha256": "1176fb14dc34688b5a4f68105a0ac6f3d37836fbd7642fde5e87e81e1c549aff"
   },
   "/static/cotraitance-crypto.js": {
    "integrity": "sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le",
