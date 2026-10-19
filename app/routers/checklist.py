@@ -50,19 +50,22 @@ PIECES_STANDARD = [
      "help": ("Préparez la liste de vos travaux similaires (objet, client, année, montant) et déposez-la dans "
               "« Mes documents » : Adjugo ne la remplit pas à votre place.")},
     {"id": "moyens_humains", "name": "Déclaration des moyens humains", "category": "administratif", "required": False,
-     "help": "Effectif, organigramme, CV des intervenants clés — souvent demandé au mémoire technique."},
+     "help": "Effectif, organigramme, CV des intervenants clés : souvent demandés dans le dossier de présentation."},
     {"id": "moyens_techniques", "name": "Déclaration des moyens techniques", "category": "administratif", "required": False,
-     "help": "Matériel, équipements, moyens logistiques — à détailler dans le mémoire technique."},
+     "help": "Matériel, équipements, moyens logistiques : à détailler dans le dossier de présentation."},
     {"id": "rib", "name": "Relevé d'identité bancaire (RIB)", "category": "administratif", "required": True,
      "help": "RIB au nom de l'entreprise, à télécharger depuis votre banque en ligne."},
     {"id": "pouvoir", "name": "Pouvoir du signataire", "category": "administratif", "required": False,
      "help": "Délégation de pouvoir si le signataire n'est pas le représentant légal. OBLIGATOIRE pour le chef de file d'un groupement."},
     {"id": "dc4", "name": "DC4 - Déclaration de sous-traitance", "category": "cerfa", "required": False,
      "help": "Généré par Adjugo si vous déclarez un sous-traitant. À compléter avec sa part du marché."},
-    {"id": "memoire_technique", "name": "Dossier de présentation (mémoire technique)", "category": "technique", "required": True,
+    {"id": "memoire_technique", "name": "Dossier de présentation", "category": "technique", "required": True,
+     # alias (jamais affiché) : les noms que le règlement donne à cette pièce, pour ne pas la proposer en double.
+     "alias": "memoire technique offre technique note methodologique",
      "help": ("Préparé par Adjugo (Word et PDF, dans le dossier du marché) quand vous générez le dossier. "
               "À relire et compléter : c'est lui qui fait la note technique, et vous restez responsable de son contenu.")},
-    {"id": "dpgf", "name": "DPGF / Bordereau des prix", "category": "technique", "required": True,
+    {"id": "dpgf", "name": "Tableau de prix (bordereau ou décomposition des prix)", "category": "technique", "required": True,
+     "alias": "dpgf bpu dqe dpu decomposition du prix global et forfaitaire bordereau des prix unitaires",
      "help": ("Adjugo fournit une estimation détaillée (PDF) depuis le chiffrage. Si le dossier du marché "
               "contient son propre tableau de prix, c'est lui qu'il faut remplir et déposer.")},
     {"id": "planning", "name": "Planning prévisionnel", "category": "technique", "required": False,
@@ -107,7 +110,7 @@ def _is_groupement(project, db) -> bool:
 def _convention_item(project, db) -> dict:
     """Item « Convention de groupement validée » : ok seulement si TOUS les membres ont
     enregistré leur accord sur le texte à jour ; sinon « manquant » + ce qu'il reste à faire."""
-    note, status = "À préparer : « Monter le groupement » dans la fiche du marché.", "manquant"
+    note, status = "À préparer : la convention de groupement, sur la page du marché.", "manquant"
     try:
         from app.services import groupement_convention as gc
         conv = gc.get_convention(db, project.id)
@@ -261,8 +264,8 @@ def get_checklist(
     # il faut la compléter telle quelle — le modèle Adjugo ne sert alors que de chiffrage.
     _pieces_txt = " ".join(_piece_name(ap) for ap in ai_pieces).lower()
     if any(k in _pieces_txt for k in ("dpgf", "bordereau", "bpu", "décomposition", "decomposition")):
-        contextual["dpgf"] = ("Trame DPGF/BPU imposée par l'acheteur (détectée dans le DCE) : "
-                              "téléchargez-la et complétez-la — n'envoyez pas le modèle Adjugo seul.")
+        contextual["dpgf"] = ("Tableau de prix imposé par l'acheteur (trouvé dans le dossier du marché) : "
+                              "téléchargez-le et complétez-le, n'envoyez pas l'estimation d'Adjugo seule.")
     # Cadre de réponse imposé par le règlement (grille « Comment vous serez noté ») : le fichier
     # Word d'Adjugo ne se dépose pas seul.
     _det = (project.ai_analysis or {}).get("details") if isinstance(project.ai_analysis, dict) else None
@@ -295,7 +298,7 @@ def get_checklist(
             continue
         # _norm (sans accents) : « Références » de l'IA dédoublonne bien « references »
         # standard — sinon la pièce apparaissait en double et faussait le % de complétion.
-        if name and not any(_norm(name) in _norm(p["name"]) for p in all_pieces):
+        if name and not any(_norm(name) in _norm(p["name"] + " " + p.get("alias", "")) for p in all_pieces):
             all_pieces.append({
                 "id": "ia_" + str(len(all_pieces)),
                 "name": name,

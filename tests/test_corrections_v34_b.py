@@ -690,5 +690,8 @@ def test_dpgf_explications_dans_des_bulles():
     assert "<b>Partagé avec le chef de file, au dépôt :</b>" in titre and "<b>Jamais partagé :</b>" in titre
     assert inv.count("Jamais partagé :") == 1 and "dp-share" not in inv
     app = open(os.path.join(STATIC, "app.html"), encoding="utf-8").read()
-    i = app.index("DPGF du lot reçue")
-    assert 'class="tip"' in app[i:i + 400] and "ligne par ligne" in app[i:i + 400]
+    from tests.zones import zone
+    suivi = zone(app, "marche-suivi-groupement")     # vague 0 : « DPGF du lot reçue » → « Tableau de prix reçu »
+    i = suivi.index('v-if="p.has_dpgf_lot"')
+    assert "Tableau de prix reçu" in suivi[i:i + 600] and "DPGF" not in suivi[i:i + 600]
+    assert 'class="tip"' in suivi[i:i + 700] and "ligne par ligne" in suivi[i:i + 700]

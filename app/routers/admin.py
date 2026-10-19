@@ -244,7 +244,7 @@ def reseau_validations(request: Request, current_user: User = Depends(get_curren
     from app.services import partner_network as pn
     return {"en_attente": pn.validation_queue(db),
             "explication": ("Vérifiez que le compte représente bien l'entreprise : nom et adresse email du compte "
-                            "rapprochés de l'identité SIRENE (domaine de l'email, nom du dirigeant, au besoin un "
+                            "rapprochés de l'identité au registre officiel des entreprises (domaine de l'email, nom du dirigeant, au besoin un "
                             "appel au numéro public de l'entreprise). Valider rend la fiche visible ; refuser "
                             "affiche votre motif à l'entreprise.")}
 
@@ -260,7 +260,7 @@ def reseau_valider(request: Request, profile_id: str, body: _Optional[ReseauVali
     vs = p.verified_sirene if isinstance(p.verified_sirene, dict) else {}
     if not p.siren or vs.get("etat") != "actif":
         raise HTTPException(409, {"code": "verification_requise",
-                                  "message": "L'entreprise n'est pas (ou plus) vérifiée active dans SIRENE : "
+                                  "message": "L'entreprise n'est pas (ou plus) vérifiée active dans le registre officiel : "
                                              "refusez la demande avec un motif, ou attendez une nouvelle vérification."})
     conflits = [o for o in pn.siren_conflicts(db, p) if o.visible]
     if conflits and not (body and body.remplacer):

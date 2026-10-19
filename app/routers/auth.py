@@ -121,8 +121,10 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    # Email de confirmation (n'empêche pas l'accès : on n'enferme personne si l'email tarde ;
-    # le front affiche une bannière « vérifiez votre adresse » jusqu'à confirmation).
+    # Email de confirmation. Choix du 24/06 (gardé, décision 12 de l'étude « organisation du logiciel ») : tant que
+    # l'adresse n'est pas confirmée, l'application affiche un écran plein « Confirmez votre adresse email »
+    # (app.html, BLOCAGE plein écran) et le serveur refuse toute action coûteuse (exiger_ia / consume_analysis dans
+    # app/core/quota.py : 403). Le jeton est rendu quand même : il sert à renvoyer l'email et à se déconnecter.
     _send_verification(user)
 
     token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})

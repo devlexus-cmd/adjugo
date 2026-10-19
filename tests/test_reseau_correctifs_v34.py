@@ -211,7 +211,7 @@ def test_qui_me_complete_non_publie_repli_sirene_non_ampute(client, reg):
     lot = next(l for l in v["lots"] if l["metier"] == "electricite")
     assert {s["name"] for s in lot["sirene"]} == {"ELEC RESEAU DISCRET", "ELEC HORS RESEAU"}
     assert lot["n_correspondants"] is None and v["n_correspondants"] is None
-    assert all(s["statut_reseau"] == "Trouvée dans le registre SIRENE — à inviter par lien" for s in lot["sirene"])
+    assert all(s["statut_reseau"] == "Trouvée dans le registre officiel : à inviter par lien" for s in lot["sirene"])
     assert "Hors réseau" not in json.dumps(v, ensure_ascii=False)
 
 
@@ -225,7 +225,7 @@ def test_publie_profil_qui_me_masque_jamais_dit_hors_reseau(client, reg):
                                      "departement": "29", "as_of": date.today().isoformat()}]
     v = client.get(f"/api/projects/{pid}/partner-matches", headers=chef["headers"]).json()
     lot = next(l for l in v["lots"] if l["metier"] == "plomberie")
-    assert [s["statut_reseau"] for s in lot["sirene"]] == ["Trouvée dans le registre SIRENE — à inviter par lien"]
+    assert [s["statut_reseau"] for s in lot["sirene"]] == ["Trouvée dans le registre officiel : à inviter par lien"]
 
 
 # ── 3. PUT /profil : bornes et année ─────────────────────────────────────────────────
@@ -354,7 +354,7 @@ def test_repli_sirene_lots_en_parallele_et_budget_global(client, reg, monkeypatc
     t0 = time.monotonic()
     v = client.get(f"/api/projects/{pid}/partner-matches", headers=a["headers"]).json()
     assert time.monotonic() - t0 < 1.0
-    slow_lots = [l for l in v["lots"] if (l.get("sirene_message") or "").startswith("Le registre SIRENE est lent")]
+    slow_lots = [l for l in v["lots"] if (l.get("sirene_message") or "").startswith("Le registre officiel est lent")]
     assert len(slow_lots) == 3
 
 
@@ -436,7 +436,7 @@ def test_recherche_sirene_en_erreur_cache_court_avertissement_repete(monkeypatch
     for x in w:
         gv._discover_sirene("etancheite", "98", x)
     assert n["calls"] == 1
-    assert all(x == ["Recherche SIRENE (Étanchéité) partielle : SIRENE indisponible"] for x in w), w
+    assert all(x == ["Recherche dans le registre officiel (Étanchéité) partielle : SIRENE indisponible"] for x in w), w
     horloge["t"] += gv._SIRENE_ERR_TTL + 1          # au-delà de 90 s : nouvelle tentative
     w4 = []
     gv._discover_sirene("etancheite", "98", w4)
@@ -482,8 +482,8 @@ def test_besoins_sirene_en_panne_n_interroge_pas_le_registre_a_chaque_requete(cl
     assert 1 <= first <= 3
     r2 = client.get(f"/api/projects/{pid}/groupement/besoins?sirene=1", headers=a["headers"])
     assert r2.status_code == 200 and n["calls"] == first
-    w1 = [w for w in r1.json()["warnings"] if w.startswith("Recherche SIRENE")]
-    w2 = [w for w in r2.json()["warnings"] if w.startswith("Recherche SIRENE")]
+    w1 = [w for w in r1.json()["warnings"] if w.startswith("Recherche dans le registre officiel")]
+    w2 = [w for w in r2.json()["warnings"] if w.startswith("Recherche dans le registre officiel")]
     assert w1 and w1 == w2
 
 
@@ -748,7 +748,7 @@ def test_critere_zone_dit_d_ou_vient_la_donnee():
     assert z["detail"] == "Adresse dans le 29 (code postal déclaré)" and z["source"] == "déclaré par l'entreprise"
     _t, crits = pm.score_lot({"metier": "electricite", "departement": "75"}, _prof(), today)
     z = next(c for c in crits if c["key"] == "zone")
-    assert z["detail"] == "Siège dans le 75 (siège SIRENE)" and z["source"].startswith("SIRENE")
+    assert z["detail"] == "Siège dans le 75 (registre officiel)" and z["source"].startswith("registre officiel des entreprises")
     _t, crits = pm.score_lot({"metier": "electricite", "departement": "", "contexte": "annuaire"}, _prof(), today)
     z = next(c for c in crits if c["key"] == "zone")
     assert z["detail"] == "Aucun département choisi dans votre recherche" and z["source"] == "votre recherche"

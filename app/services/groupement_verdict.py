@@ -231,7 +231,7 @@ def proof_label(member: dict) -> str:
         except ValueError:
             d = ""
     if src in ("rne", "sirene"):
-        return f"vérifié SIRENE{d}"
+        return f"vérifié au registre officiel{d}"
     if src == "contribution":
         return f"déclaré par le partenaire{d}"
     if src == "reseau":
@@ -308,13 +308,13 @@ def _discover_sirene(trade: str, dept: str, warnings: list, timeout: Optional[fl
         warns = []
         for e in list(res.get("errors") or []):
             msg = getattr(e, "message", None) or str(e)
-            warns.append(f"Recherche SIRENE ({label}) partielle : {msg[:120]}")
+            warns.append(f"Recherche dans le registre officiel ({label}) partielle : {msg[:120]}")
         warnings.extend(warns)
         _SIRENE_CACHE[key] = (now, out, warns)
         return list(out)
     except Exception as e:
         logger.warning("découverte SIRENE %s/%s en échec : %s", trade, dept, e)
-        warns = [f"Recherche SIRENE indisponible pour « {trade} » — réessayez plus tard."]
+        warns = [f"Recherche dans le registre officiel indisponible pour « {trade} » : réessayez plus tard."]
         warnings.extend(warns)
         _SIRENE_CACHE[key] = (now, [], warns)
         return []
@@ -444,7 +444,7 @@ def pool_for_project(db, project, owner_ids: list, include_sirene: bool = False,
                 m["trade"] = trade
                 sirene.append(m)
         if include_sirene and len(trades) > max_sirene_calls:
-            warnings.append(f"Recherche SIRENE limitée à {max_sirene_calls} métiers par requête "
+            warnings.append(f"Recherche dans le registre officiel limitée à {max_sirene_calls} métiers par requête "
                             f"({len(trades) - max_sirene_calls} non cherché(s)).")
 
     return {"rattaches": rattaches, "annuaire": annuaire, "sirene": sirene, "reseau": reseau, "warnings": warnings}

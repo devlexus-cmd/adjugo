@@ -40,12 +40,12 @@ CRITERIA_LABELS = {
 }
 EXPLICATION_CLASSEMENT = (
     "Classement par métier du lot, zone d'intervention, fiabilité vérifiée dans les registres "
-    "publics (SIRENE, BODACC), expérience des marchés publics (DECP, groupements marqués déposés sur Adjugo), puis "
+    "publics (registre officiel des entreprises, BODACC), expérience des marchés publics (DECP, groupements marqués déposés sur Adjugo), puis "
     "capacité et disponibilité. Ce n'est pas une note : le seul pourcentage affiché reste le "
     "score de groupement, calculé quand vous simulez le groupement.")
 
 ROLE_LABELS = {
-    "cotraitant": "Partenaire du groupement (co-traitant)",
+    "cotraitant": "Partenaire du groupement",
     "sous_traitant": "Sous-traitant",
     "mandataire": "Chef de file",
 }
@@ -57,15 +57,15 @@ DISPO_LABELS = {
 SIRENE_FRESH_DAYS = 90      # au-delà, la vérification SIRENE ne compte plus dans la fiabilité
 
 _SOURCE_DECLARE = "déclaré par l'entreprise"
-_SOURCE_SIRENE = "SIRENE (recherche-entreprises.api.gouv.fr)"
+_SOURCE_SIRENE = "registre officiel des entreprises, Insee (recherche-entreprises.api.gouv.fr)"
 _SOURCE_BODACC = "BODACC (annonces commerciales officielles)"
 _SOURCE_DECP = "DECP (données essentielles de la commande publique)"
 _SOURCE_ADJUGO = "statut de dépôt renseigné par le chef de file sur Adjugo (déclaratif)"
 _SOURCE_DCE = "dossier du marché (DCE)"
-_SOURCE_VALIDATION = "équipe Adjugo (compte rapproché de l'entreprise inscrite au registre SIRENE)"
+_SOURCE_VALIDATION = "équipe Adjugo (compte rapproché de l'entreprise inscrite au registre officiel des entreprises)"
 _SOURCE_RECHERCHE = "votre recherche"
-_SOURCE_RGE = "registre RGE (ADEME), via SIRENE"
-_SOURCE_QUALIOPI = "registre Qualiopi, via SIRENE"
+_SOURCE_RGE = "registre RGE (ADEME), via le registre officiel des entreprises"
+_SOURCE_QUALIOPI = "registre Qualiopi, via le registre officiel des entreprises"
 
 
 # ── Utilitaires ──────────────────────────────────────────────────────────────────────
@@ -142,13 +142,13 @@ def _deps(p: dict) -> list:
 
 def sirene_label(v: Optional[dict]) -> str:
     if not isinstance(v, dict) or not v.get("etat"):
-        return "SIRENE : non vérifié"
+        return "Registre officiel : non vérifié"
     d = jjmm(v.get("checked_at"))
     if v.get("etat") == "actif":
-        return f"Entreprise active (SIRENE au {d})" if d else "Entreprise active (SIRENE)"
+        return f"Entreprise active (registre officiel au {d})" if d else "Entreprise active (registre officiel)"
     if v.get("etat") == "cesse":
-        return f"Entreprise cessée selon SIRENE au {d}" if d else "Entreprise cessée selon SIRENE"
-    return "SIRENE : non vérifié"
+        return f"Entreprise cessée selon le registre officiel au {d}" if d else "Entreprise cessée selon le registre officiel"
+    return "Registre officiel : non vérifié"
 
 
 def bodacc_label(v: Optional[dict]) -> str:
@@ -410,7 +410,7 @@ def score_lot(lot: dict, p: dict, today: date) -> tuple:
     elif dep in zones:
         add("zone", 25, "ok", f"Intervient dans le {dep} ({decl_txt}){note}", _SOURCE_DECLARE, decl)
     elif siege_sirene and siege_sirene == dep:
-        add("zone", 25, "ok", f"Siège dans le {dep} (siège SIRENE){note}", _SOURCE_SIRENE, vs.get("checked_at"))
+        add("zone", 25, "ok", f"Siège dans le {dep} (registre officiel){note}", _SOURCE_SIRENE, vs.get("checked_at"))
     elif adresse_declaree and adresse_declaree == dep:
         add("zone", 25, "ok", f"Adresse dans le {dep} (code postal déclaré){note}", _SOURCE_DECLARE, decl)
     else:
@@ -423,7 +423,7 @@ def score_lot(lot: dict, p: dict, today: date) -> tuple:
         pts += 8
         parts.append(sirene_label(vs))
     else:
-        parts.append(sirene_label(vs) if vs.get("etat") else "SIRENE : non vérifié récemment")
+        parts.append(sirene_label(vs) if vs.get("etat") else "Registre officiel : non vérifié récemment")
         if vs.get("etat") == "cesse":
             alerte = True
     vb = p.get("verified_bodacc") if isinstance(p.get("verified_bodacc"), dict) else {}

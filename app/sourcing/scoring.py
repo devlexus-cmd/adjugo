@@ -202,7 +202,7 @@ def score_company(c: NormalizedCompany, need_trade_label: str = "",
                          "État administratif non disponible"))
     elif c.etat_administratif == "A" and not c.date_fermeture:
         out.append(_crit("etat", "Entreprise active", W["etat"], W["etat"], "ok",
-                         "Active au registre SIRENE"))
+                         "Active au registre officiel des entreprises"))
     else:
         out.append(_crit("etat", "Entreprise active", 0, W["etat"], "partiel",
                          "Cessée / radiée" + (f" le {c.date_fermeture}" if c.date_fermeture else "")))

@@ -50,3 +50,49 @@ L'étude rédaction le montre : une phrase inventée peut ressortir avec le badg
 
 Dans les pages juridiques, on ne trouve ni « Chorus Pro » pour le dépôt d'une offre, ni « compte
 gratuit », ni « Tableau de prix (Excel) ».
+
+## 6. Réorganisation de l'interface, vague 0 (19/10/2026) : les autres mots bannis
+
+**Statut : à valider par Eliot. Rien n'a été modifié dans ces pages ni dans le modèle de convention.** L'application,
+la vitrine, l'espace partenaire et les courriels ne disent plus « co-traitant », « AO », « mémoire », « CERFA »,
+« DPGF », « SIRENE », « cockpit » (contrat : `docs/REORGANISATION_V1.md`, § 0). Les pages juridiques les emploient
+encore. Une page juridique peut garder le terme juridique exact : à vous de trancher, ligne par ligne.
+
+### 6.1 « AO », « CERFA », « mémoire technique »
+
+- `docs/legal/cgv.md`, l. 26 (et `cgv.html`) : « production des formulaires **CERFA** (DC1, DC2, DC4, ATTRI1), du DUME
+  et d'un **mémoire technique** ». Proposition : « production des formulaires officiels pré-remplis (DC1, DC2, DC4,
+  ATTRI1), du DUME et d'une aide à la rédaction du dossier de présentation (mémoire technique) ».
+- `docs/legal/cgv.md`, l. 50 (et `cgv.html`) : « chaque **analyse AO** supplémentaire ». Proposition : « chaque analyse
+  de marché supplémentaire ».
+- `docs/legal/politique-confidentialite.md`, l. 52 (et `confidentialite.html`) : « génération de documents (**CERFA**,
+  DUME, **mémoire**) ». Proposition : « génération de documents (formulaires officiels, DUME, dossier de
+  présentation) ».
+- `app/static/legal/dpa.html`, l. 119 (finalité) et le paragraphe des traitements : « formulaires **CERFA**, DUME,
+  **mémoire technique** ». Même proposition. Sans source Markdown : à modifier à la main.
+- `docs/legal/mentions-legales.md`, l. 51 (et `mentions-legales.html`) : « modèles de formulaires administratifs
+  officiels (**CERFA** DC1, DC2, DC4, ATTRI1, DUME) ». Proposition : « (DC1, DC2, DC4, ATTRI1, DUME) ».
+- `app/static/legal/securite.html`, l. 93 : « (paragraphe de **mémoire**) ». Proposition : « (paragraphe du dossier de
+  présentation) ».
+
+### 6.2 « co-traitant »
+
+- `docs/legal/politique-confidentialite.md`, l. 38 et 53 (et `confidentialite.html`) : « contacts de **co-traitants** »,
+  « Vérification des **co-traitants** ». Proposition : « partenaires (co-traitants) » à la première occurrence, puis
+  « partenaires ». Terme juridique exact, à garder entre parenthèses si vous le souhaitez.
+- `app/static/legal/dpa.html` : « contacts de **co-traitants** », « vérification de **co-traitants** », « dirigeants et
+  contacts des **co-traitants** ». Même proposition.
+- La ligne « **Co-traitants vérifiés** » des CGV est déjà au § 2.
+
+### 6.3 « SIRENE »
+
+Nom propre d'une source publique (le répertoire de l'Insee). Dans une page juridique, nommer la source est une
+information due aux personnes (art. 14 RGPD) : je propose de **garder** « SIRENE » dans la politique de
+confidentialité, le DPA et les mentions légales, et d'écrire seulement « répertoire SIRENE de l'Insee » là où le nom
+est seul (`confidentialite.html`, sources ; `securite.html`, l. 104 « registre SIRENE »).
+
+### 6.4 Le modèle de convention de groupement (pas une page, un texte juridique)
+
+`app/services/groupement_convention.py`, l. 636 et 641 : chaque membre y est « **co-traitant (partenaire)** » ou
+« mandataire (chef de file) ». C'est le terme juridique, déjà accompagné du mot courant. Le texte d'une convention
+générée est figé par son empreinte : le changer demande un nouveau numéro de modèle. **Proposition : garder.**

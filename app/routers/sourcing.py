@@ -355,7 +355,7 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
     try:
         tender = NormalizedTender(**req.tender)
     except Exception:
-        raise HTTPException(400, "Objet AO invalide")
+        raise HTTPException(400, "Avis de marché invalide")
 
     from app.services.demo_search import is_demo as _is_demo, analysis_for as _demo_analysis
     if _is_demo(current_user) and (tender.provenance.official_ref or "").startswith("DEMO-"):

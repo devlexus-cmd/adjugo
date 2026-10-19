@@ -634,7 +634,7 @@ def _generate_merged_memoire(db, members: list, dce_text: str, max_sections: int
     errs = sum(1 for s in sections if s.get("error"))
     if sections and errs == len(sections):
         from app.services.llm import LLMUnavailable
-        raise LLMUnavailable("Service IA indisponible — mémoire de groupement non généré.")
+        raise LLMUnavailable("Service IA indisponible : dossier de présentation du groupement non rédigé.")
 
     conformity = conformity_check(requirements, sections)
     return {

@@ -139,7 +139,7 @@ def _send_invite_email(inv, project, base_url: str) -> bool:
         from app.services import email as _email
         url = base_url.rstrip("/") + f"/invite/{inv.token}"
         who = inv.company_name or "votre entreprise"
-        subj = f"Invitation à co-traiter sur un marché — {project.name[:60]}"
+        subj = f"Invitation à répondre ensemble à un marché — {project.name[:60]}"
         text = (f"Bonjour,\n\nVous êtes invité(e) à rejoindre le groupement pour répondre au "
                 f"marché « {project.name} » sur Adjugo, en tant que {who}.\n\n"
                 f"Accédez à votre espace dédié (cloisonné à ce seul dossier) :\n{url}\n\n"
@@ -205,8 +205,8 @@ def _notify_part_submitted(inv, contribution, db: Session) -> None:
         base = (_settings.APP_BASE_URL or "").rstrip("/")
         subj = f"{who} a soumis sa part — {pname[:60]}"
         text = (f"Bonjour,\n\n{who} vient de soumettre sa part sur le marché « {pname} ».\n"
-                f"Partenaires prêts : {done}/{total}.\n\n"
-                f"Ouvrez le cockpit du groupement pour assembler la réponse commune :\n{base}/app\n\n"
+                f"Partenaires prêts : {done} sur {total}.\n\n"
+                f"Ouvrez ce marché dans Adjugo pour assembler la réponse commune :\n{base}/app\n\n"
                 f"— Adjugo")
         _email.send_email(to, subj, text)
     except Exception:
@@ -1698,7 +1698,7 @@ def guest_decline(token: str, request: Request, db: Session = Depends(get_db)):
                 to, f"{who} a décliné l'invitation — {pname[:60]}",
                 f"Bonjour,\n\n{who} a décliné l'invitation à rejoindre le groupement sur le marché "
                 f"« {pname} ». Sa part ne figurera pas dans la réponse commune.\n\n"
-                f"Vous pouvez inviter un autre partenaire depuis le cockpit du groupement.\n\n— Adjugo")])
+                f"Vous pouvez inviter un autre partenaire depuis la page de ce marché, dans Adjugo.\n\n— Adjugo")])
     except Exception:
         pass
     return {"ok": True}
@@ -1765,7 +1765,7 @@ _PIECE_TYPE_VALUES = ("kbis", "fiscale", "sociale", "assurance", "rib", "qualifi
 # part en brouillon et ne rend pas la convention caduque : le prix de vente du lot, seul
 # imprimé dans la convention, ne change pas.
 _DPGF_EXT = {".pdf", ".xlsx", ".xls", ".ods", ".csv"}
-_DPGF_EXT_MSG = "Une DPGF de lot se dépose en PDF, en tableur (xlsx, xls, ods) ou en CSV."
+_DPGF_EXT_MSG = "Un tableau de prix se dépose en PDF, en tableur (xlsx, xls, ods) ou en CSV."
 _DPGF_MAX_ROWS = 20000
 _DPGF_MAX_CELLS = 1_000_000      # par lecture : borne le travail fait en Python (fichier de 20 Mo compris)
 # Taille d'un CSV de DPGF : 20 000 lignes de 200 caractères. Au-delà, le contrôle (en Python, sous
@@ -1888,10 +1888,10 @@ def _dpgf_formula_msg(delim: str, main: str, sign: str, line_no: int) -> str:
     """Message EXACT : formule dans une cellule du fichier, ou signe placé juste après un séparateur
     que le fichier n'utilise pas (le tableur du chef de file pourrait, lui, couper là)."""
     if delim == main:
-        return (f"La DPGF contient une formule ligne {line_no} (cellule commençant par « {sign} ») : "
+        return (f"Le tableau de prix contient une formule ligne {line_no} (cellule commençant par « {sign} ») : "
                 "déposez des valeurs, pas des formules.")
     after = _DPGF_SEP_NAMES.get(delim, f"le signe « {delim} »")
-    return (f"La DPGF contient, ligne {line_no}, un « {sign} » juste après {after} : le tableur du chef de "
+    return (f"Le tableau de prix contient, ligne {line_no}, un « {sign} » juste après {after} : le tableur du chef de "
             "file pourrait y lire le début d'une formule. Retirez ce signe ou placez un mot devant.")
 
 
@@ -1924,11 +1924,11 @@ def _check_dpgf_csv(content: bytes) -> None:
     le contenu des PDF et des tableurs n'est pas inspecté."""
     import csv
     if len(content) > _DPGF_CSV_MAX_BYTES:
-        raise HTTPException(422, "DPGF trop volumineuse pour un CSV (plus de 4 Mo) : déposez-la en tableur ou en PDF.")
+        raise HTTPException(422, "Tableau de prix trop volumineux pour un CSV (plus de 4 Mo) : déposez-le en tableur ou en PDF.")
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
-        raise HTTPException(422, "La DPGF (CSV) doit être encodée en UTF-8.")
+        raise HTTPException(422, "Le tableau de prix (CSV) doit être encodé en UTF-8.")
     seps = _dpgf_separators(text)
     try:
         # En-tête : lignes non vides avant la première ligne de valeurs (sous l'un des séparateurs).
@@ -1942,13 +1942,13 @@ def _check_dpgf_csv(content: bytes) -> None:
                 continue
             n_lines += 1
             if n_lines > _DPGF_MAX_ROWS:
-                raise HTTPException(422, f"DPGF trop longue (plus de {_DPGF_MAX_ROWS} lignes).")
+                raise HTTPException(422, f"Tableau de prix trop long (plus de {_DPGF_MAX_ROWS} lignes).")
             rows = {d: [r for r in csv.reader([line], delimiter=d)] for d in seps}
             line_counts = {d: sum(len(r) for r in rows[d]) for d in seps}
             for d in seps:
                 seen[d] += line_counts[d]
                 if seen[d] > _DPGF_MAX_CELLS:
-                    raise HTTPException(422, "DPGF trop volumineuse pour un CSV : déposez-la en tableur ou en PDF.")
+                    raise HTTPException(422, "Tableau de prix trop volumineux pour un CSV : déposez-le en tableur ou en PDF.")
             if any(_dpgf_is_data_row(r) for d in seps for r in rows[d]):
                 data_counts = line_counts
                 break
@@ -1964,10 +1964,10 @@ def _check_dpgf_csv(content: bytes) -> None:
             rd = csv.reader(io.StringIO(text, newline=""), delimiter=delim)
             for i, row in enumerate(rd):
                 if i >= _DPGF_MAX_ROWS:
-                    raise HTTPException(422, f"DPGF trop longue (plus de {_DPGF_MAX_ROWS} lignes).")
+                    raise HTTPException(422, f"Tableau de prix trop long (plus de {_DPGF_MAX_ROWS} lignes).")
                 n_cells += len(row)
                 if n_cells > _DPGF_MAX_CELLS:
-                    raise HTTPException(422, "DPGF trop volumineuse pour un CSV : déposez-la en tableur ou en PDF.")
+                    raise HTTPException(422, "Tableau de prix trop volumineux pour un CSV : déposez-le en tableur ou en PDF.")
                 for cell in row:
                     v = cell.strip()
                     if not v:
@@ -1978,11 +1978,11 @@ def _check_dpgf_csv(content: bytes) -> None:
         for line in header:
             m = _DPGF_FORBIDDEN.search(_dpgf_norm(line))
             if m:
-                raise HTTPException(422, f"Une DPGF de lot ne contient que des prix de vente : retirez la "
+                raise HTTPException(422, f"Un tableau de prix ne contient que des prix de vente : retirez la "
                                          f"colonne « {_DPGF_WORD_LABEL.get(m.group(1), m.group(1))} » "
                                          "(elle serait visible du chef de file).")
     except csv.Error:
-        raise HTTPException(422, "DPGF (CSV) illisible.")
+        raise HTTPException(422, "Tableau de prix (CSV) illisible.")
 
 
 def _check_dpgf_signature(content: bytes, ext: str) -> None:
@@ -1998,15 +1998,15 @@ def _check_dpgf_signature(content: bytes, ext: str) -> None:
     elif any(content.startswith(m) for m in magic):
         return
     if ext == ".pdf":
-        raise HTTPException(422, "Ce fichier n'est pas un vrai PDF : enregistrez la DPGF en PDF depuis votre "
-                                 "logiciel, ou déposez-la en tableur (.xlsx, .ods) ou en CSV.")
+        raise HTTPException(422, "Ce fichier n'est pas un vrai PDF : enregistrez le tableau de prix en PDF depuis votre "
+                                 "logiciel, ou déposez-le en tableur (.xlsx, .ods) ou en CSV.")
     head = content[:512].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
     if head.startswith((b"<", b"\xff\xfe<", b"\xfe\xff\x00<")):
         quoi = "une page web ou un fichier XML renommé"
     else:
         quoi = "un fichier texte renommé"
     raise HTTPException(422, f"Ce fichier n'est pas un vrai {ext[1:].upper()} (c'est {quoi}) : ouvrez-le dans "
-                             "votre tableur et enregistrez-le au format .xlsx ou .ods, ou déposez la DPGF en PDF.")
+                             "votre tableur et enregistrez-le au format .xlsx ou .ods, ou déposez le tableau de prix en PDF.")
 
 
 def _check_dpgf_content(content: bytes, ext: str) -> None:
@@ -2347,7 +2347,7 @@ _PARTNER_PIECE_TYPES = [
 # Types reconnus par NOM (classification à l'upload) : les 5 attendus + la qualification
 # (exigée seulement si le DCE demande des qualifications — cf. coffre_croise).
 _PIECE_TYPE_KEYWORDS = [
-    ("dpgf_lot", "DPGF du lot (prix de vente)",
+    ("dpgf_lot", "Tableau de prix du lot (prix de vente)",
      ("dpgf", "decomposition du prix global", "décomposition du prix global")),
 ] + _PARTNER_PIECE_TYPES + [
     ("qualification", "Qualification / certificat",
@@ -3037,13 +3037,13 @@ def dossier_preview(project_id: int, current_user: User = Depends(get_current_us
     from app.services.memoire_export import file_stem, memoire_label
     _stem = file_stem(memoire_label(project.ai_analysis))
     files = [
-        {"name": f"{_stem}.docx", "kind": "Dossier de présentation (mémoire technique), en Word à relire"},
-        {"name": f"{_stem}.pdf", "kind": "Dossier de présentation (mémoire technique), en PDF"},
-        {"name": "cerfa/DC1.pdf", "kind": "CERFA — lettre de candidature (groupement)"},
-        {"name": "cerfa/DC2.pdf", "kind": "CERFA — déclaration du candidat"},
-        {"name": "cerfa/ATTRI1.pdf", "kind": "CERFA — acte d'engagement"},
+        {"name": f"{_stem}.docx", "kind": "Dossier de présentation, en Word à relire"},
+        {"name": f"{_stem}.pdf", "kind": "Dossier de présentation, en PDF"},
+        {"name": "cerfa/DC1.pdf", "kind": "Formulaire officiel DC1 : lettre de candidature (groupement)"},
+        {"name": "cerfa/DC2.pdf", "kind": "Formulaire officiel DC2 : déclaration du candidat"},
+        {"name": "cerfa/ATTRI1.pdf", "kind": "Formulaire officiel ATTRI1 : acte d'engagement"},
         {"name": "synthese_groupement.pdf", "kind": "Composition du groupement"},
-        {"name": "fiche_appel_offres.pdf", "kind": "Fiche récapitulative de l'AO"},
+        {"name": "fiche_appel_offres.pdf", "kind": "Fiche récapitulative du marché"},
     ]
     # Exclut les partenaires RÉVOQUÉS ou qui ont DÉCLINÉ (comme build_dossier) : l'aperçu
     # doit refléter exactement le ZIP réellement assemblé, jamais les pièces d'un partenaire sorti.

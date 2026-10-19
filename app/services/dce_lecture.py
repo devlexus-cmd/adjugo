@@ -458,7 +458,7 @@ def _pdf_magic(zf, info) -> bool:
 def _read_zip(etat: _Etat, content: bytes, depth: int, prefix: str, reprise: dict) -> None:
     if not an._zip_entry_count_ok(content):
         raise ValueError("Archive ZIP trop complexe (trop de fichiers). "
-                         "Importez directement les pièces utiles (RC, CCAP, CCTP, DPGF).")
+                         "Importez directement les pièces utiles (règlement, CCAP, CCTP, tableau de prix).")
     try:
         zf = zipfile.ZipFile(io.BytesIO(content))
     except Exception:
@@ -627,7 +627,7 @@ def _message_rien_lu(pieces: list) -> str:
     codes = {p.get("raison") for p in pieces}
     if codes == {"trop_gros"} or ("trop_gros" in codes and len(codes) == 1):
         return (f"Un fichier de l'archive est trop volumineux une fois décompressé ({MAX_OCTETS_FICHIER // MB} Mo "
-                "au plus par fichier). Importez directement les pièces utiles (RC, CCAP, CCTP, DPGF).")
+                "au plus par fichier). Importez directement les pièces utiles (règlement, CCAP, CCTP, tableau de prix).")
     if codes == {"imbrique"}:
         return "Archive trop imbriquée (un ZIP dans un ZIP dans un ZIP). Décompressez-la puis importez les pièces."
     if "protege" in codes and codes <= {"protege", "format", "compression", "vide"}:

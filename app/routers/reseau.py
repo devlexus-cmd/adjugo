@@ -59,7 +59,7 @@ _INVITE_PUBLIER = ("Publiez votre profil partenaire pour voir les entreprises du
                    "qui correspondent, et pour être trouvé par elles.")
 _EN_ATTENTE_MSG = ("Votre profil est en attente de validation par Adjugo : vous verrez les entreprises "
                    "du réseau dès qu'il sera publié.")
-_SIRENE_LABEL = "Trouvée dans le registre SIRENE — à inviter par lien"
+_SIRENE_LABEL = "Trouvée dans le registre officiel : à inviter par lien"
 _NOT_FOUND = "Partenaire introuvable dans le réseau."
 NETWORK_INVITES_PER_PROFILE_DAY = 10     # sollicitations (invitations + relances) d'un même profil / 24 h
 _TOO_MANY_FOR_PROFILE = "Ce partenaire a reçu beaucoup d'invitations aujourd'hui : réessayez demain."
@@ -198,7 +198,7 @@ def _prefill(db: Session, user: User, owner_id: int, with_registry: bool = True)
     if with_registry and siret:
         fiche = _lookup_cached(siret)
         if fiche:
-            out["sources"].append("registre SIRENE")
+            out["sources"].append("registre officiel des entreprises")
             out["name"] = out["name"] or (fiche.get("name") or "")
             out["postal_code"] = out["postal_code"] or (fiche.get("postal_code") or "")
             out["city"] = out["city"] or (fiche.get("city") or "")
@@ -254,7 +254,7 @@ def _conditions(db: Session, p: Optional[PartnerProfile], siret: str, user: User
     age = pn.verification_age_days(p) if p else None
     return [
         {"key": "siret", "label": "SIRET à 14 chiffres renseigné dans le profil entreprise", "ok": bool(siret)},
-        {"key": "verification", "label": f"Entreprise vérifiée active dans SIRENE il y a moins de {pn.PUBLISH_MAX_AGE_DAYS} jours",
+        {"key": "verification", "label": f"Entreprise vérifiée active dans le registre officiel il y a moins de {pn.PUBLISH_MAX_AGE_DAYS} jours",
          "ok": bool(vs.get("etat") == "actif" and age is not None and age < pn.PUBLISH_MAX_AGE_DAYS)},
         {"key": "metiers", "label": "Au moins un métier", "ok": bool(p and p.metiers)},
         {"key": "zones", "label": "Au moins un département d'intervention", "ok": bool(p and p.departements)},
@@ -274,7 +274,7 @@ def _status(p: Optional[PartnerProfile]) -> tuple:
         return "refuse", "Publication refusée par Adjugo"
     vs = p.verified_sirene if isinstance(p.verified_sirene, dict) else {}
     if p.published_at and vs.get("etat") == "cesse":
-        return "retire", "Retiré du réseau : SIRENE indique que l'entreprise a cessé son activité"
+        return "retire", "Retiré du réseau : le registre officiel indique que l'entreprise a cessé son activité"
     if p.published_at:
         return "retire", "Publication retirée (non visible)"
     return "brouillon", "Brouillon (non visible dans le réseau)"
@@ -292,7 +292,7 @@ def _verifs(p: Optional[PartnerProfile]) -> dict:
 
 
 _VALIDATION_EXPLICATION = ("Adjugo vérifie que chaque entreprise du réseau est bien celle qu'elle dit être : "
-                           "le registre SIRENE prouve que l'entreprise existe, pas que votre compte la représente. "
+                           "le registre officiel des entreprises prouve que l'entreprise existe, pas que votre compte la représente. "
                            "Un membre de l'équipe Adjugo rapproche votre compte de l'entreprise avant de rendre "
                            "la fiche visible. Si vous changez de SIRET, une nouvelle validation est nécessaire.")
 
@@ -606,7 +606,7 @@ def verifier(request: Request, current_user: User = Depends(get_current_user), d
     pn.recompute_groupements(db, p)
     if (res.get("sirene") or {}).get("statut") == "ok" and (res["sirene"].get("etat") == "cesse") and p.visible:
         p.visible = False
-        msg = "SIRENE indique que l'entreprise a cessé son activité : publication retirée."
+        msg = "Le registre officiel indique que l'entreprise a cessé son activité : publication retirée."
     db.commit()
     db.refresh(p)
     audit.record(db, action="network.profile_verified", owner_id=owner, actor=f"user:{current_user.id}",
@@ -652,7 +652,7 @@ def publier(request: Request, body: PublierIn = None, current_user: User = Depen
     vs = p.verified_sirene if isinstance(p.verified_sirene, dict) else {}
     if vs.get("etat") == "cesse":
         raise HTTPException(409, {"code": "entreprise_inactive",
-                                  "message": "SIRENE indique que l'entreprise a cessé son activité : publication impossible."})
+                                  "message": "Le registre officiel indique que l'entreprise a cessé son activité : publication impossible."})
     age = pn.verification_age_days(p)
     if vs.get("etat") != "actif" or age is None or age >= pn.PUBLISH_MAX_AGE_DAYS:
         raise HTTPException(409, {"code": "verification_requise",
@@ -1000,7 +1000,7 @@ def _sirene_batch(jobs: list, budget_s: float = None) -> dict:
                 try:
                     out[key] = (list(fut.result() or []), list(w), False)
                 except Exception:
-                    out[key] = ([], list(w) + ["Recherche SIRENE indisponible pour ce lot — réessayez plus tard."], False)
+                    out[key] = ([], list(w) + ["Recherche dans le registre officiel indisponible pour ce lot : réessayez plus tard."], False)
             else:
                 out[key] = ([], [], True)
     finally:
@@ -1115,7 +1115,7 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
                 jobs.append((idx, l["metier"], l["departement"] or ""))
                 entry["sirene_cherche"] = True
             else:
-                entry["sirene_message"] = (f"Recherche dans le registre SIRENE limitée à {MAX_SIRENE_LOTS} lots par "
+                entry["sirene_message"] = (f"Recherche dans le registre officiel limitée à {MAX_SIRENE_LOTS} lots par "
                                            f"requête : affichez ce lot seul pour la lancer.")
         entry["_shown_sirens"] = shown_sirens
         out_lots.append(entry)
@@ -1129,7 +1129,7 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
                 warnings.append(w)
         if slow:
             entry["sirene_cherche"] = False
-            entry["sirene_message"] = "Le registre SIRENE est lent à répondre : relancez la recherche pour ce lot."
+            entry["sirene_message"] = "Le registre officiel est lent à répondre : relancez la recherche pour ce lot."
             continue
         for m in found:
             sn = pn.clean_siren(m.get("siret"))
@@ -1137,7 +1137,7 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
             # rien ne dépend de l'appartenance au réseau d'une entreprise non affichée.
             if not sn or sn in entry["_shown_sirens"] or sn == ctx["siren"]:
                 continue
-            badges = [{"key": "sirene", "label": f"Entreprise active (SIRENE au {pm.jjmm(m.get('as_of'))})",
+            badges = [{"key": "sirene", "label": f"Entreprise active (registre officiel au {pm.jjmm(m.get('as_of'))})",
                        "source": pm._SOURCE_SIRENE, "date": m.get("as_of"), "niveau": "ok"}]
             if any("RGE" in str(q) for q in (m.get("qualifications") or [])):
                 badges.append({"key": "rge", "label": f"Inscrite au registre RGE (ADEME) au {pm.jjmm(m.get('as_of'))} — domaine à vérifier",
@@ -1160,7 +1160,7 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
     audit.record(db, action="network.match_query", owner_id=ctx["owner_id"], project_id=project.id,
                  actor=f"user:{current_user.id}", actor_kind="owner", target_type="project", target_id=project.id,
                  detail=f"{len(out_lots)} lot(s), {len(shown)} profil(s) du réseau affiché(s), "
-                        f"{sum(len(e['sirene']) for e in out_lots)} entreprise(s) SIRENE"[:255],
+                        f"{sum(len(e['sirene']) for e in out_lots)} entreprise(s) du registre officiel"[:255],
                  ip=audit.client_ip(request))
     return {
         "project_id": project.id,
@@ -1403,11 +1403,11 @@ def _invite_sirene_locked(request: Request, db: Session, current_user: User, pro
                           role: str, body: "SireneInviteIn", s: dict) -> dict:
     from app.routers.invites import _check_daily_invite_cap, _create_invite
     if s.get("statut") == "erreur":
-        raise HTTPException(503, "Le registre SIRENE est momentanément indisponible : réessayez dans un instant.")
+        raise HTTPException(503, "Le registre officiel est momentanément indisponible : réessayez dans un instant.")
     if s.get("statut") != "ok":
-        raise HTTPException(404, "Entreprise introuvable dans SIRENE pour ce SIRET.")
+        raise HTTPException(404, "Entreprise introuvable dans le registre officiel pour ce SIRET.")
     if s.get("etat") != "actif":
-        raise HTTPException(422, "Cette entreprise n'est pas active selon SIRENE : invitation impossible.")
+        raise HTTPException(422, "Cette entreprise n'est pas active selon le registre officiel : invitation impossible.")
     _check_daily_invite_cap(current_user, db)
     lot = (body.lot or "").strip()[:255]
     inv, _emailed = _create_invite(db, project, current_user, request, recipient="",

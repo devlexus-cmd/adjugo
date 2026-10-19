@@ -41,11 +41,11 @@ _TENDERS = [
             "ca_minimum_requis": "CA > 800 000 EUR sur 3 ans", "qualifications_requises": ["Qualibat 3212", "RGE"],
             "assurances_requises": ["RC Professionnelle", "Garantie décennale"],
             "visite_obligatoire": "Recommandée, sur rendez-vous",
-            "points_attention": ["Critère technique prépondérant (60%) — soigner le mémoire", "Travaux à réaliser hors présence des élèves (vacances)", "Clause d'insertion de 120 h à sécuriser"],
+            "points_attention": ["Critère technique prépondérant (60%) — soigner le dossier de présentation", "Travaux à réaliser hors présence des élèves (vacances)", "Clause d'insertion de 120 h à sécuriser"],
             "recommandation": _P(
                 "Réfection de la toiture d'un groupe scolaire à Garonnac, en lot unique pour 380 000 € HT, portée par la Ville de Garonnac. C'est une cible prioritaire : l'objet est au cœur de votre métier (couverture), le chantier est dans votre zone d'intervention et les qualifications exigées (Qualibat 3212, RGE) sont détenues. Le chiffre d'affaires minimum demandé (800 k€ sur 3 ans) est largement dans vos cordes : la recevabilité ne pose aucun problème.",
-                "L'attribution se joue sur la valeur technique, qui pèse 60 % contre 40 % pour le prix. Ce marché ne se gagne donc pas au moins-disant, mais sur la qualité du mémoire technique : méthodologie de dépose et de pose, traitement des points singuliers, et surtout gestion d'un chantier en site scolaire occupé. C'est ce dernier point qui fait souvent la différence — un rétroplanning calé sur les vacances scolaires, une commande de matériaux anticipée et une équipe dédiée rassurent l'acheteur sur le respect du calendrier.",
-                "Deux clauses méritent une action : la retenue de garantie de 5 % (à remplacer par une caution bancaire de substitution pour préserver la trésorerie) et la clause d'insertion de 120 heures (à sécuriser en conventionnant en amont une structure locale). En synthèse : foncez, en investissant prioritairement le mémoire technique et la maîtrise du planning."),
+                "L'attribution se joue sur la valeur technique, qui pèse 60 % contre 40 % pour le prix. Ce marché ne se gagne donc pas au moins-disant, mais sur la qualité du dossier de présentation : méthodologie de dépose et de pose, traitement des points singuliers, et surtout gestion d'un chantier en site scolaire occupé. C'est ce dernier point qui fait souvent la différence — un rétroplanning calé sur les vacances scolaires, une commande de matériaux anticipée et une équipe dédiée rassurent l'acheteur sur le respect du calendrier.",
+                "Deux clauses méritent une action : la retenue de garantie de 5 % (à remplacer par une caution bancaire de substitution pour préserver la trésorerie) et la clause d'insertion de 120 heures (à sécuriser en conventionnant en amont une structure locale). En synthèse : foncez, en investissant prioritairement le dossier de présentation et la maîtrise du planning."),
         }),
     dict(ref="DEMO-02", montant=520000.0, dept="44", pieces=[
             "Attestation Qualibat 3212", "Attestation RGE", "Mémoire technique — étanchéité de toiture-terrasse",
@@ -69,13 +69,13 @@ _TENDERS = [
             "points_attention": ["Étanchéité de toiture-terrasse — soigner les relevés et points singuliers", "Équipement recevant du public — sécurité et phasage", "Valeur technique majoritaire (55%)"],
             "recommandation": _P(
                 "Réfection de l'étanchéité de la toiture-terrasse d'un gymnase à Kerval, en lot unique pour 520 000 € HT, portée par la Ville de Kerval. Marché en plein cœur de votre métier (étanchéité), dans votre zone la plus proche, avec des qualifications détenues (Qualibat 3212, RGE). Le chiffre d'affaires minimum (1 M€) est atteignable au regard de votre CA : la candidature est parfaitement recevable.",
-                "La valeur technique pèse 55 % : c'est le mémoire qui décide. Il faut y détailler le complexe d'étanchéité retenu, le traitement des relevés, des évacuations d'eaux pluviales et des points singuliers, ainsi que la gestion d'un équipement recevant du public (sécurité, phasage si le gymnase reste partiellement ouvert). La possibilité de variantes sur le complexe est une opportunité : proposer une solution mieux-disante techniquement peut faire l'écart.",
-                "Sur le plan administratif, la retenue de garantie de 5 % se neutralise par une caution de substitution. Le critère RSE porte sur la valorisation des déchets de chantier — un point facile à traiter et à valoriser dans l'offre. En synthèse : très bonne cible, à travailler sérieusement côté mémoire technique ; la visite de site, bien que seulement recommandée, est conseillée pour fiabiliser le diagnostic de l'existant."),
+                "La valeur technique pèse 55 % : c'est le dossier de présentation qui décide. Il faut y détailler le complexe d'étanchéité retenu, le traitement des relevés, des évacuations d'eaux pluviales et des points singuliers, ainsi que la gestion d'un équipement recevant du public (sécurité, phasage si le gymnase reste partiellement ouvert). La possibilité de variantes sur le complexe est une opportunité : proposer une solution mieux-disante techniquement peut faire l'écart.",
+                "Sur le plan administratif, la retenue de garantie de 5 % se neutralise par une caution de substitution. Le critère RSE porte sur la valorisation des déchets de chantier — un point facile à traiter et à valoriser dans l'offre. En synthèse : très bonne cible, à travailler sérieusement côté dossier de présentation ; la visite de site, bien que seulement recommandée, est conseillée pour fiabiliser le diagnostic de l'existant."),
         }),
     dict(ref="DEMO-03", montant=880000.0, dept="69", pieces=[
             "Qualification RGE", "Mémoire technique — rénovation énergétique et couverture",
             "Bilan carbone de l'entreprise", "Attestation d'assurance décennale",
-            "Références de rénovations énergétiques", "DC1, DC2, DC4 (co-traitance)"],
+            "Références de rénovations énergétiques", "DC1, DC2, DC4 (groupement)"],
         summary="Rénovation énergétique et couverture d'une école à Montrhône — 880 k€, 2 lots. En zone et sur votre métier, mais CA exigé élevé : candidature en groupement à étudier.",
         details={
             "intitule_marche": "Rénovation énergétique et réfection de couverture de l'école Ampère",
@@ -120,13 +120,13 @@ _TENDERS = [
             "points_attention": ["Bâtiment recevant du public maintenu en activité", "Zinguerie et raccords soignés", "Prix et technique à parité (50/50)"],
             "recommandation": _P(
                 "Réfection de la couverture et de la zinguerie de la médiathèque, à Flandremont, en lot unique pour 265 000 € HT, portée par la Ville de Flandremont. Couverture/zinguerie en plein cœur de votre métier, dans votre zone, avec la qualification Qualibat 3212 détenue et un chiffre d'affaires minimum (600 k€) aisément couvert : la recevabilité est acquise.",
-                "Les critères prix et valeur technique sont à parité (50/50). Sur ce type de marché, l'offre gagnante est celle qui présente le meilleur rapport qualité/prix : un mémoire technique soigné (traitement de la zinguerie, des raccords et des évacuations d'un bâtiment probablement ancien) doublé d'un prix maîtrisé. La médiathèque restant ouverte au public, la gestion du chantier — phasage, sécurité, propreté, limitation du bruit — doit être explicitement traitée.",
+                "Les critères prix et valeur technique sont à parité (50/50). Sur ce type de marché, l'offre gagnante est celle qui présente le meilleur rapport qualité/prix : un dossier de présentation soigné (traitement de la zinguerie, des raccords et des évacuations d'un bâtiment probablement ancien) doublé d'un prix maîtrisé. La médiathèque restant ouverte au public, la gestion du chantier — phasage, sécurité, propreté, limitation du bruit — doit être explicitement traitée.",
                 "Deux points administratifs : la retenue de garantie de 5 % (caution de substitution) et la clause d'insertion de 80 heures (à conventionner en amont avec une structure locale). En synthèse : bonne cible, à jouer sur l'équilibre technique/prix ; ne pas surinvestir la marge, mais ne pas non plus brader — c'est le rapport qualité/prix qui décide ici."),
         }),
     dict(ref="DEMO-05", montant=1150000.0, dept="67", pieces=[
-            "Qualification désamiantage SS3 (ou co-traitant)", "Plan de retrait amiante",
+            "Qualification désamiantage SS3 (ou partenaire du groupement)", "Plan de retrait amiante",
             "Mémoire technique", "Bilan carbone", "Attestation de visite obligatoire",
-            "DC1, DC2, DC4 (co-traitance)"],
+            "DC1, DC2, DC4 (groupement)"],
         summary="Désamiantage et réfection de couverture d'un bâtiment communal à Illwiller — 1,15 M€. En zone et sur votre métier, mais qualification SS3 non détenue : réponse en groupement à étudier.",
         details={
             "intitule_marche": "Désamiantage et réfection de couverture d'un bâtiment communal",

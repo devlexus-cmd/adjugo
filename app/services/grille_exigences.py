@@ -1347,7 +1347,7 @@ def questions_acheteur(g: dict, P: list, text: str, details: Optional[dict] = No
         if len(vals) >= 2:
             a, b = sorted(vals)[:2]
             unite = {"pages": "pages", "mots": "mots", "caracteres": "caractères", "lignes": "lignes"}[kind]
-            out.append(_q("limites", "Longueur du mémoire",
+            out.append(_q("limites", "Longueur du dossier de présentation",
                           f"Le dossier indique deux limites différentes pour le mémoire : {_num(a)} {unite} et "
                           f"{_num(b)} {unite}. Laquelle s'applique ?", [vals[a], vals[b]]))
             break

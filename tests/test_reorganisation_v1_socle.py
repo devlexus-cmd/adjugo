@@ -73,14 +73,15 @@ ZONES = {
     "vues": ["vue-amont", "vue-kb", "kb-fiches-proposees", "vue-atelier", "atelier-page-preparation-case",
              "atelier-page-preparation", "atelier-entretien", "atelier-onglets", "atelier-repartition",
              "vue-pipeline", "vue-cotraitants", "vue-contacts", "vue-documents", "vue-invoices", "vue-company",
-             "vue-preuves", "vue-criteria", "vue-team", "vue-billing", "billing-offres", "vue-admin",
+             "vue-preuves", "vue-criteria", "vue-team", "vue-billing", "billing-offres", "vue-admin", "admin-mesure",
              "vue-consortiums", "vue-reseau", "reseau-onglets", "reseau-profil", "reseau-annuaire",
              "reseau-historique", "reseau-recues", "vue-shared", "vue-sharedao-attente", "vue-sharedao"],
     "partage": ["partage-entete", "partage-grille", "partage-pourquoi", "partage-convention", "partage-redaction",
                 "partage-pieces", "partage-ma-part", "partage-tableau-prix", "partage-coffre-croise",
                 "partage-journal"],
     "fenetres": ["tiroir-projet", "fenetre-siret", "fenetre-confirmation", "fenetre-fiche-partenaire",
-                 "fenetre-invitation", "fenetre-formulaire", "fenetre-decouverte"],
+                 "fenetre-invitation", "fenetre-formulaire", "fenetre-decouverte", "ecran-confirmation-email",
+                 "fenetre-avis"],
 }
 FAMILLES = {"fenetres-atelier": 5, "fenetres-preuves": 2}     # même nom sur plusieurs fenêtres sœurs
 
@@ -221,6 +222,14 @@ def test_releve_reserve_a_l_administrateur_et_borne(client, auth):
     assert (date.fromisoformat(rel["jusqu_au"]) - date.fromisoformat(rel["depuis"])).days == 6
 
 
+def test_releve_lisible_dans_l_administration():
+    """Lisible par l'administrateur sans outil : une carte de la vue Administration (réservée à is_admin)."""
+    carte = zone(HTML, "admin-mesure")
+    assert carte in zone(HTML, "vue-admin") and "admin.mesure.data.par_ecran" in carte and 'class="tip"' in carte
+    assert '"/api/admin/mesures/ecrans?jours=30"' in JS and "this.adminMesureLoad();" in JS
+    assert "user.is_admin" in zone(HTML, "menu") and "go('admin')" in zone(HTML, "menu")
+
+
 def test_releve_par_jour_heure_de_paris():
     from app.models import MesureEcran
     from app.services import mesure_usage as mu
@@ -257,7 +266,7 @@ def test_chaque_vue_de_l_application_est_mesuree():
     mesure = JS[JS.index("    _ecranOuvert(v) {"):JS.index("    async loadAdmin() {")]
     # Interne, sans attente ni barre de progression ni message ; aucun outil tiers.
     assert '"/api/mesure/ecran"' in mesure and "this.api(" not in mesure and "notify" not in mesure
-    assert "keepalive: true" in mesure and ".catch(() => {})" in mesure
+    assert ".catch(() => {})" in mesure and "await" not in mesure
     assert "http" not in mesure
 
 
@@ -307,32 +316,214 @@ def test_boutons_d_essai_vers_l_inscription():
 
 
 def test_inscription_lue_par_l_application_sous_node():
-    """Le bloc de app.js qui lit ?inscription, exécuté sous Node : non connecté → « Créons votre compte » ;
-    connecté ou lien de réinitialisation → rien ne change ; le paramètre est retiré, les autres restent."""
+    """inscriptionDemandee() (app.js), exécutée sous Node : le choix et l'adresse sans le paramètre ; puis le
+    branchement dans mounted() : paramètre retiré tout de suite, formulaire choisi APRÈS la relecture de la session
+    stockée (une session périmée est effacée, et l'on s'inscrit quand même — trouvé dans un vrai navigateur)."""
     node = shutil.which("node")
     if not node:
         pytest.skip("node indisponible")
-    i = JS.index("    try {\n      const _q = new URLSearchParams(location.search);")
-    bloc = JS[i:JS.index("    } catch (e) {}\n", i) + len("    } catch (e) {}\n")]
-    script = """
-const cas = JSON.parse(process.argv[1]); const out = [];
-for (const c of cas) {
-  const u = new URL("https://adjugo.pro" + c.url); let remplace = null;
-  const location = { search: u.search, pathname: u.pathname, hash: u.hash };
-  const history = { replaceState: (a, b, x) => { remplace = x; } };
-  const ctx = { token: c.token, auth: { mode: "login" } }; const _rst = c.rst || null;
-  (function () { BLOC }).call(ctx);
-  out.push([ctx.auth.mode, remplace]);
-}
-console.log(JSON.stringify(out));
-""".replace("BLOC", bloc)
-    cas = [{"url": "/app?inscription", "token": ""},
-           {"url": "/app?inscription", "token": "jeton"},
-           {"url": "/app?inscription&shared=abc#gcode=x", "token": ""},
-           {"url": "/app?inscription&reset=r1", "token": "", "rst": "r1"},
-           {"url": "/app", "token": ""}]
+    i = JS.index("function inscriptionDemandee(loc) {")
+    fn = JS[i:JS.index("\n}\n", i) + 3]
+    script = fn + """
+const cas = JSON.parse(process.argv[1]);
+console.log(JSON.stringify(cas.map(u => { const x = new URL("https://adjugo.pro" + u);
+  return inscriptionDemandee({ search: x.search, pathname: x.pathname, hash: x.hash }); })));
+"""
+    cas = ["/app?inscription", "/app?inscription&shared=abc#gcode=x", "/app?reset=r1&inscription", "/app", "/app?shared=a"]
     r = subprocess.run([node, "-e", script, json.dumps(cas)], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
-    assert json.loads(r.stdout) == [["register", "/app"], ["login", "/app"],
-                                    ["register", "/app?shared=abc#gcode=x"], ["login", "/app?reset=r1"],
-                                    ["login", None]]
+    assert json.loads(r.stdout) == [{"inscrire": True, "adresse": "/app"},
+                                    {"inscrire": True, "adresse": "/app?shared=abc#gcode=x"},
+                                    {"inscrire": True, "adresse": "/app?reset=r1"},
+                                    {"inscrire": False, "adresse": None}, {"inscrire": False, "adresse": None}]
+    a = JS.index("    const _ins = inscriptionDemandee(location);")
+    b = JS.index("    if (_this_ins_) this.auth.mode = \"register\";".replace("_this_ins_", "_ins.inscrire && !this.token && !_rst"))
+    c = JS.index("    else atlPurgeDrafts(false);")
+    assert a < c < b, "le formulaire se choisit après la relecture de la session stockée"
+    assert 'if (_ins.adresse !== null) { try { history.replaceState({}, "", _ins.adresse); } catch (e) {} }' in JS
+
+
+# ═══ Vague 0 « dire juste » ═════════════════════════════════════════════════════════════════════
+
+from tests.textes_visibles import messages_erreur, mots_bannis, textes_courriels, textes_html, textes_js  # noqa: E402
+
+# Pages et scripts lus par un client (application, vitrine, espace partenaire, démonstration). Les pages de la
+# face « collectivités » (acheteur*.html) parlent aux acheteurs publics : hors de cette règle (contrat, § 0).
+FRONT_HTML = ("app.html", "invite.html", "landing.html", "demo.html", "demande-acces.html")
+FRONT_JS = ("app.js", "redaction-partenaire.js", "carnet-notes.js", "sources-publiques.js", "cotraitance-crypto.js")
+
+# Exceptions assumées (texte exact → raison). Toute nouvelle exception se justifie ici ET au contrat.
+EXCEPTIONS = {
+    "Mémoire technique": "clé interne du dossier rangé (folderLabel l'affiche « Dossier de présentation »)",
+    "DPGF du lot - prix de vente HT": "en-tête du fichier remis au chef de file puis à l'acheteur : son vocabulaire",
+    "Indiquez le partenaire (cotraitant_id) ou le nom de l'entreprise (company).": "nom de champ de l'API",
+    "Type de pièce inconnu (kbis, fiscale, sociale, assurance, rib, qualification, dpgf_lot, autre).": "clés de l'API",
+    "Rôle invalide : cotraitant ou sous_traitant.": "valeurs de l'API",
+    ".json, procédure dans docs/GO_LIVE.md).": "nom d'un fichier de procédure, courriel interne à l'administrateur",
+}
+# Fichiers hors règle : routeur archivé jamais monté (« Merged Brain », app/main.py).
+PY_HORS = {"app/routers/cospace.py"}
+
+
+def _fautes(items, nom):
+    return [f"{nom}:{ln} {mots_bannis(t)} {t.strip()[:110]!r}" for ln, t in items
+            if mots_bannis(t) and t.strip() not in EXCEPTIONS]
+
+
+def test_aucun_mot_banni_dans_les_textes_visibles_du_front():
+    fautes = []
+    for f in FRONT_HTML:
+        fautes += _fautes(textes_html(_lire(f)), f)
+    for f in FRONT_JS:
+        fautes += _fautes(textes_js(_lire(f)), f)
+    assert not fautes, "\n".join(fautes)
+
+
+def test_aucun_mot_banni_dans_les_courriels_ni_les_messages_d_erreur():
+    fautes = []
+    for p in sorted((ROOT / "app").rglob("*.py")):
+        rel = str(p.relative_to(ROOT))
+        if rel in PY_HORS:
+            continue
+        src = p.read_text(encoding="utf-8")
+        fautes += _fautes(textes_courriels(src), rel + " (courriel)")
+        fautes += _fautes(messages_erreur(src), rel + " (message)")
+    assert not fautes, "\n".join(fautes)
+
+
+def test_les_courriels_cites_par_l_etude_disent_juste():
+    inv = (ROOT / "app" / "routers" / "invites.py").read_text(encoding="utf-8")
+    conv = (ROOT / "app" / "routers" / "convention.py").read_text(encoding="utf-8")
+    al = (ROOT / "app" / "services" / "alerts.py").read_text(encoding="utf-8")
+    assert 'subj = f"Invitation à répondre ensemble à un marché — {project.name[:60]}"' in inv
+    assert "Invitation à co-traiter" not in inv
+    assert "Partenaires prêts : {done} sur {total}." in inv                     # « N sur M » (décision 8)
+    for src in (inv, conv, al):
+        assert "cockpit du groupement" not in src and "fiche du marché" not in src.lower()
+    assert "disponible sur la page du marché, dans Adjugo" in conv
+
+
+def test_le_serveur_dit_juste_dans_les_messages_montres(client, auth):
+    """De bout en bout : un message d'erreur rendu à l'écran ne dit plus « co-traitant »."""
+    r = client.delete("/api/cotraitants/999999", headers=auth["headers"])
+    assert r.status_code == 404 and r.json()["detail"] == "Partenaire introuvable"
+
+
+def test_bandeau_cookies_vers_la_page_de_confidentialite(client):
+    b = zone(HTML, "bandeau-cookies")
+    assert 'href="/confidentialite"' in b and 'rel="noopener"' in b and "/legal/" not in b
+    r = client.get("/confidentialite")
+    assert r.status_code == 200 and "onfidentialit" in r.text
+
+
+def test_statut_envoye_s_affiche_depose_sans_toucher_a_la_cle():
+    i = JS.index("    statusLabel(s) {")
+    status = JS[i:JS.index("\n", i)]
+    assert 'envoye: "Déposé"' in status and "Envoyé" not in status
+    assert 'envoye: "Envoyé"' in JS                    # devis et factures : un devis s'envoie, il ne se dépose pas
+    assert '"nouveau", "en_cours", "envoye", "gagne", "perdu"' in JS                        # clé inchangée
+    from app.models import ProjectStatus
+    assert ProjectStatus("envoye")                                                        # base inchangée
+
+
+def test_cartes_d_offre_et_vitrine_disent_juste():
+    offres = zone(HTML, "billing-offres")
+    assert "Formulaires officiels pré-remplis, à relire (DC1, DC2, DUME)" in offres
+    for faux in ("CERFA", "rédaction IA sourcée", "partenaires vérifiés"):
+        assert faux not in offres, faux
+    landing = _lire("landing.html")
+    assert "À plusieurs — votre différence" in landing and "Co-traitance" not in landing
+    for faux in ("GO ou NO-GO", "co-traitant vérifié", "en un clic", "0 donnée jamais inventée", "(CERFA"):
+        assert faux not in landing, faux
+
+
+def test_espace_partenaire_dit_juste():
+    inv = _lire("invite.html")
+    assert "<title>Espace partenaire — Adjugo</title>" in inv
+    assert '<div class="nav-group">Partenaires</div>' in inv and '<div class="nav-group">CRM</div>' not in inv
+    assert '<b id="g-name">Partenaire</b><small id="g-role" style="display:block">Partenaire invité</small>' in inv
+    assert '"Partenaire invité"' in inv and '"Invité · "' not in inv
+    visibles = " ".join(t for _l, t in textes_html(inv))
+    assert "Mon tableau de prix" in visibles and "Ma DPGF de lot" not in visibles and "DPGF" not in visibles.replace("DPGF du lot - prix de vente HT", "")
+    assert "essai gratuit de 30 jours" in inv and "compte gratuit" not in inv
+    assert "Mon tableau de prix" in zone(HTML, "partage-tableau-prix")
+
+
+def test_liste_des_pieces_sans_jargon_et_sans_doublon(client, auth):
+    """« DPGF » ne s'affiche plus ; une pièce « DPGF » ou « Mémoire technique » lue dans le dossier du marché ne
+    s'ajoute pas en double de « Tableau de prix » ou de « Dossier de présentation »."""
+    from app.routers import checklist as ck
+    noms_ = {p["id"]: p["name"] for p in ck.PIECES_STANDARD}
+    assert noms_["dpgf"] == "Tableau de prix (bordereau ou décomposition des prix)"
+    assert noms_["memoire_technique"] == "Dossier de présentation"
+    for p in ck.PIECES_STANDARD:
+        assert not mots_bannis(p["name"]) and not mots_bannis(p.get("help") or ""), p["id"]
+    h = auth["headers"]
+    r = client.post("/api/projects/", headers=h, json={"name": "Réfection de la toiture de la mairie"})
+    assert r.status_code in (200, 201), r.text
+    pid = r.json()["id"]
+    from app.models import Project
+    db = _db()
+    try:
+        p = db.query(Project).filter(Project.id == pid).one()
+        p.ai_analysis = {"details": {"pieces_requises": [{"nom": "DPGF"}, {"nom": "BPU"}, {"nom": "Mémoire technique"},
+                                                         {"nom": "Planning de chantier détaillé"}]}}
+        db.commit()
+    finally:
+        db.close()
+    r = client.get(f"/api/checklist/{pid}", headers=h)
+    assert r.status_code == 200, r.text
+    corps = r.json()
+    items = corps["checklist"]
+    noms_vus = [i["name"] for i in items]
+    assert "DPGF" not in noms_vus and "BPU" not in noms_vus and "Mémoire technique" not in noms_vus
+    assert "Planning de chantier détaillé" in noms_vus
+    assert all("alias" not in i for i in items)
+
+
+def test_commentaire_de_l_inscription_a_jour():
+    src = (ROOT / "app" / "routers" / "auth.py").read_text(encoding="utf-8")
+    assert "n'empêche pas l'accès" not in src and "bannière « vérifiez votre adresse »" not in src
+    assert "écran plein « Confirmez votre adresse email »" in src
+    assert "Confirmez votre adresse email" in zone(HTML, "ecran-confirmation-email")
+
+
+# Décision 16 : chaque libellé renommé (vague 0) et chaque libellé du menu ont leur néerlandais et leur espagnol.
+RENOMMES = ["Déposé", "Pas encore déposé", "Supprimer ce marché", "Suivi du groupement", "Tableau de prix reçu",
+            "Mon tableau de prix", "Préparer mon tableau de prix", "Marché lié (facultatif)", "Registre officiel",
+            "Registre officiel des entreprises", "Entreprises du registre officiel", "Chercher dans le registre officiel",
+            "Chercher aussi dans le registre officiel", "Aucune activité récente de vos partenaires.",
+            "Trouver des partenaires (avant la publication)", "Identité (pour vos formulaires officiels DC1, DC2)",
+            "Formulaires officiels pré-remplis, à relire (DC1, DC2, DUME)", "Suivez vos marchés étape par étape",
+            "Clients, partenaires, fournisseurs", "Trouvez des partenaires et faites-vous trouver",
+            "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous"]
+
+
+def _dico():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node indisponible")
+    r = subprocess.run([node, "-e", "global.window={}; require(process.argv[1]); "
+                        "console.log(JSON.stringify(window.ADJUGO_I18N))", str(STATIC / "i18n.js")],
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    return json.loads(r.stdout)
+
+
+def test_traductions_des_libelles_renommes_et_du_menu():
+    d = _dico()
+    assert set(d) == {"nl", "es"} and set(d["nl"]) == set(d["es"])
+    for k in RENOMMES:
+        assert d["nl"].get(k) and d["es"].get(k), k
+        assert k in HTML or k in JS, f"« {k} » n'est plus affiché : retirez-le de RENOMMES"
+    # Chaque libellé du menu (texte d'une entrée) est traduit.
+    menu = re.sub(r"<span[^>]*>.*?</span>", "", zone(HTML, "menu"), flags=re.S)
+    libelles = [x.strip() for x in re.findall(r'<a [^>]*class="nav-item[^"]*"[^>]*>(?:<i [^>]*></i>)?([^<{]+)', menu)]
+    assert len(libelles) >= 15, libelles
+    for k in libelles:
+        k = k.replace("&amp;", "&")
+        assert d["nl"].get(k) and d["es"].get(k), f"menu : « {k} » sans traduction (scripts/i18n_ajouter.py)"
+    # Les libellés prévus par l'architecture C corrigée sont déjà traduits pour la suite de la vague 1.
+    for k in ("Accueil", "Partenaires", "Réglages", "Réseau Adjugo", "Collègues", "Mon compte", "Où je suis partenaire",
+              "Lire", "Décider", "Préparer", "Déposer", "Inviter un partenaire", "Qui me complète ?"):
+        assert d["nl"].get(k) and d["es"].get(k), k

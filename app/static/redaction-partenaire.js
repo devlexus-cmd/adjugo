@@ -180,7 +180,7 @@
   const ico = (name, px) => '<i data-lucide="' + rpEsc(name) + '" style="width:' + (px || 14) + "px;height:" + (px || 14) + 'px;flex:none"></i>';
   const btn = (act, label, cls, extra) => '<button type="button" class="btn sm' + (cls ? " " + cls : "") + '" data-act="' + act + '"' + (extra || "") + ">" + label + "</button>";
 
-  const BULLE_CARTE = "Le chef de file vous a confié ces parties du dossier de présentation commun (le mémoire technique du groupement). Vous les rédigez ici, chez vous : vos brouillons, vos sources et vos extraits restent privés. Le chef de file et les autres membres lisent le texte que vous envoyez.";
+  const BULLE_CARTE = "Le chef de file vous a confié ces parties du dossier de présentation commun (la partie technique de l'offre du groupement). Vous les rédigez ici, chez vous : vos brouillons, vos sources et vos extraits restent privés. Le chef de file et les autres membres lisent le texte que vous envoyez.";
   const BULLE_NOTE = "Le critère et son poids sont repris du règlement de la consultation, avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel, ou s'il a été lu par le chef de file (c'est alors indiqué). Le règlement fait foi.";
   const BULLE_FAITS = "Adjugo signale les chiffres, certifications, noms et matériels qu'il ne retrouve pas dans ce que vous avez déclaré, dans les passages de vos documents qu'il a cités (et, avec un compte Adjugo, dans vos preuves, votre profil et votre savoir-faire), et les engagements à confirmer. Le dossier de l'acheteur ne compte jamais comme source pour une phrase sur votre entreprise. Il ne juge pas les phrases générales : relisez-les.";
   const BULLE_ENVOI = "Le chef de file reçoit le texte envoyé, le nombre de faits encore à relire et des compteurs de sources par type. Jamais vos sources, vos extraits ni vos brouillons.";
@@ -512,7 +512,7 @@
       }
       if (dv.peut_deposer) {
         h += '<div class="rp-dep">';
-        if (!docs.length) h += '<p class="muted small rp-p">Par exemple un ancien mémoire technique, votre plaquette, vos références ou une attestation.</p>';
+        if (!docs.length) h += '<p class="muted small rp-p">Par exemple un ancien dossier de présentation, votre plaquette, vos références ou une attestation.</p>';
         if (c.a_accepter) {
           h += '<div class="small rp-p">' + rpEsc(c.message || "") + "</div>" + (c.textes || []).map(t => '<label class="rp-chk small"><input type="checkbox" data-cond="' + rpEsc(t.cle) + '"><span>'
             + (t.cle === "cgu" ? "J'accepte les " : "J'accepte la ") + '<a href="' + rpEsc(t.adresse) + '" target="_blank" rel="noopener">'
@@ -547,7 +547,7 @@
       if (n.question) h += '<div class="small rp-q"><span class="muted">Question du cadre de réponse :</span> ' + rpEsc(n.question) + "</div>";
       const g = !n.critere ? (n.grille || []) : [];
       if (g.length) {
-        h += '<div class="small muted rp-q">Le mémoire technique est jugé sur ' + (g.length > 1 ? "ces critères" : "ce critère") + " du règlement :</div>"
+        h += '<div class="small muted rp-q">Le dossier de présentation est jugé sur ' + (g.length > 1 ? "ces critères" : "ce critère") + " du règlement :</div>"
           + '<ul class="gn-list">' + g.map(x => '<li class="gn-row"><span class="gn-crit">' + rpEsc(x.critere) + "</span>" + (x.poids ? '<span class="gn-poids num">' + rpEsc(x.poids) + "</span>" : "")
           + (x.poids && x.poids_libelle ? '<span class="muted small">' + rpEsc(x.poids_libelle) + "</span>" : "") + "</li>").join("") + "</ul>";
         const ph = g.filter(x => x.phrase);

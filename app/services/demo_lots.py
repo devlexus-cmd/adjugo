@@ -122,16 +122,16 @@ DETAILS = {
     "visite_obligatoire": "Non",
     "pieces_requises": [{"nom": "Mémoire technique", "disponible": False},
                         {"nom": "Décomposition du prix global et forfaitaire", "disponible": False}],
-    "points_attention": ["Un mémoire technique par lot, 6 pages au plus chacun",
+    "points_attention": ["Un dossier de présentation par lot, 6 pages au plus chacun",
                          "Nom des fichiers imposé par le règlement", "Travaux en toiture pendant les vacances scolaires"],
     "recommandation": ("Restructuration d'une école maternelle répartie en trois lots, pour 640 000 € HT. Les lots 2 "
                        "(couverture et zinguerie) et 3 (étanchéité des toitures-terrasses) sont au cœur de votre "
                        "métier ; le lot 1 (désamiantage) demande une qualification que vous n'avez pas.\n\nLe "
-                       "règlement demande un mémoire technique propre à chaque lot, de 6 pages au plus, et impose le "
+                       "règlement demande un dossier de présentation propre à chaque lot, de 6 pages au plus, et impose le "
                        "nom de chaque fichier. La grille est la même pour chacun des lots : valeur technique 60 % "
                        "(méthodologie, moyens, gestion environnementale), prix 40 %.\n\nEn synthèse : répondez aux lots "
                        "2 et 3 ensemble. La partie sur la gestion environnementale du chantier vaut pour les deux lots : "
-                       "rédigée une fois, elle figure dans les deux mémoires."),
+                       "rédigée une fois, elle figure dans les deux dossiers."),
     "clauses_risque": [],
 }
 

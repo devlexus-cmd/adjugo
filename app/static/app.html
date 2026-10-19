@@ -22,8 +22,8 @@
 <script src="/static/vendor/vue-3.5.38.prod.js" integrity="sha384-KYk+4lWOhWTo/BrM+zKkwLtFsD6cs2ClFbaGiX5ozDVHPqF4nOqxVGiHvcyWsw8B"></script>
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
-<script src="/static/cotraitance-crypto.js" integrity="sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le"></script>
-<script src="/static/i18n.js" integrity="sha384-oDik9h0VMLSezjzvjE5icFK+aIpVHzN4CCrDdXTColU7Xknf8tmAL3inncvd+DSq" defer></script>
+<script src="/static/cotraitance-crypto.js" integrity="sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs"></script>
+<script src="/static/i18n.js" integrity="sha384-4xbhOUzTJpefOpLglKh9OPuMetp4+TjbPt40+ePSrHOfjxcyasMKtKajJ9usl+75" defer></script>
 </head>
 <body>
 <div id="app">
@@ -128,7 +128,7 @@
           <div v-if="notifsOpen" @click="notifsOpen=false" style="position:fixed;inset:0;z-index:40"></div>
           <div v-if="notifsOpen" style="position:absolute;right:0;top:40px;z-index:41;width:340px;max-height:440px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:11px;box-shadow:0 10px 34px rgba(0,0,0,.13)">
             <div class="row" style="padding:11px 14px;border-bottom:1px solid var(--hairline);gap:6px"><i data-lucide="users-round" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Activité des partenaires</b></div>
-            <div v-if="!notifs.length" class="muted small" style="padding:16px 14px">Aucune activité récente de vos co-traitants.</div>
+            <div v-if="!notifs.length" class="muted small" style="padding:16px 14px">Aucune activité récente de vos partenaires.</div>
             <div v-for="n in notifs" :key="n.id" @click="openNotif(n)" style="padding:10px 14px;border-bottom:1px solid var(--hairline);cursor:pointer" @mouseover="$event.currentTarget.style.background='var(--surface-2)'" @mouseleave="$event.currentTarget.style.background=''">
               <div class="small"><b>{{ n.actor }}</b> {{ n.label }}<span v-if="n.detail" class="muted"> · {{ n.detail }}</span></div>
               <div class="muted small">{{ n.project }} · {{ auditAt(n.at) }}</div>
@@ -247,7 +247,7 @@
               <div v-for="s in topAmont" :key="s.id" @click="go('amont')" class="dash-item">
                 <div class="di-main">
                   <div class="strong small di-title" :title="s.intitule">{{ s.intitule }}</div>
-                  <div class="muted small di-meta">{{ s.collectivite||'Collectivité' }}<span v-if="s.echeance_ao"> ·&nbsp;AO estimé {{ s.echeance_ao }}</span><span v-if="s.domaine"> ·&nbsp;{{ s.domaine }}</span></div>
+                  <div class="muted small di-meta">{{ s.collectivite||'Collectivité' }}<span v-if="s.echeance_ao"> ·&nbsp;marché attendu {{ s.echeance_ao }}</span><span v-if="s.domaine"> ·&nbsp;{{ s.domaine }}</span></div>
                 </div>
                 <span v-if="s.maturite!=null" class="pill di-pill" :class="s.maturite>=70?'go':(s.maturite>=40?'a_etudier':'neutral')" title="Probabilité qu'un appel d'offres en découle">Maturité {{ s.maturite }}%</span>
                 <i data-lucide="chevron-right" class="di-go"></i>
@@ -476,7 +476,7 @@
 
           <!-- Comment vous serez noté — la grille de l'acheteur retrouvée dans le règlement (rédaction, vague 1) -->
           <div data-test="marche-grille" v-if="aoGrille()" class="card gn-card" style="margin-top:14px">
-            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Comment vous serez noté</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase, ou si vous l'avez saisi en confirmant la ligne. Une ligne dont la phrase n'a pas été retrouvée est marquée « à vérifier » : elle n'entre dans le plan de votre dossier de présentation (le « mémoire technique ») qu'après votre confirmation. Adjugo peut se tromper ou manquer un critère : le règlement fait foi.</span></button><div class="spacer"></div>
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Comment vous serez noté</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase, ou si vous l'avez saisi en confirmant la ligne. Une ligne dont la phrase n'a pas été retrouvée est marquée « à vérifier » : elle n'entre dans le plan de votre dossier de présentation qu'après votre confirmation. Adjugo peut se tromper ou manquer un critère : le règlement fait foi.</span></button><div class="spacer"></div>
               <span class="pill neutral" style="font-size:11px">{{ grilleResume(aoGrille()) }}</span></div>
             <div class="cb"><grille-carte :key="'gn'+ao.project.id" :g="aoGrille()" :edit="true" :busy="ao.grilleBusy" :mobile="atlMobile" :sans-ia="!!(ao.atl.d && ao.atl.d.sans_ia && ao.atl.d.sans_ia.actif)" @choix="aoGrilleChoix" @element="aoGrilleElement" @ajout="aoGrilleAjout" @relire="aoGrilleRelire" @sansia="aoSansIa"></grille-carte></div>
           </div>
@@ -532,7 +532,7 @@
                   </div>
                   <div style="margin-top:12px">
                     <div class="row wrap" style="gap:8px;align-items:center"><b class="small">Qui l'a ?</b><span class="muted small">Cochez jusqu'à 4 partenaires.</span><div class="spacer"></div>
-                      <button class="btn sm" @click="aoGrpLoadBesoins(true)" :disabled="ao.grp.sireneLoading"><span v-if="ao.grp.sireneLoading" class="spin"></span><i v-else data-lucide="search"></i>Chercher aussi dans SIRENE</button></div>
+                      <button class="btn sm" @click="aoGrpLoadBesoins(true)" :disabled="ao.grp.sireneLoading"><span v-if="ao.grp.sireneLoading" class="spin"></span><i v-else data-lucide="search"></i>Chercher aussi dans le registre officiel</button></div>
                     <template v-for="grp in candGroups()" :key="grp.key">
                       <div v-if="grp.list.length" class="muted small" style="font-weight:600;margin-top:10px">{{ grp.label }}</div>
                       <label v-for="c in grp.list" :key="candId(c)" class="cand" :class="{sel:isCandSelected(c)}" style="cursor:pointer">
@@ -545,7 +545,7 @@
                         <span class="cand-score" title="Score en groupement avec ce seul partenaire">{{ c.score_avec!=null ? c.score_avec+' %' : '—' }}</span>
                       </label>
                     </template>
-                    <div v-if="!candTotal()" class="muted small" style="margin-top:8px">Aucun candidat connu pour l'instant : ajoutez des entreprises dans « Mes partenaires », cherchez dans SIRENE, ou ajoutez une entreprise à la main ci-dessous.</div>
+                    <div v-if="!candTotal()" class="muted small" style="margin-top:8px">Aucun candidat connu pour l'instant : ajoutez des entreprises dans « Mes partenaires », cherchez dans le registre officiel des entreprises, ou ajoutez une entreprise à la main ci-dessous.</div>
                   </div>
                 </div>
                 <!-- 5. Simulation : membres cochés → « Calculer » → « Retenir » → « Inviter » -->
@@ -604,7 +604,7 @@
                profils du réseau Adjugo classés (un RANG + des critères sourcés et datés, jamais une note), puis le
                repli SIRENE. Le seul pourcentage reste celui de la simulation (« Simuler le groupement »). -->
           <div data-test="marche-qui-me-complete" v-if="ao.project.ai_analysis" class="card rn-pm" ref="pmCard" role="region" aria-labelledby="pm-h">
-            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="puzzle" style="color:var(--accent-text)"></i><h3 id="pm-h">Partenaires pour ce marché</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Lot par lot, les entreprises du réseau Adjugo qui font ce que vous ne faites pas, puis celles du registre officiel des entreprises (SIRENE).<template v-if="ao.pm.d && ao.pm.d.explication"> {{ ao.pm.d.explication }}</template></span></button><div class="spacer"></div>
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="puzzle" style="color:var(--accent-text)"></i><h3 id="pm-h">Partenaires pour ce marché</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Lot par lot, les entreprises du réseau Adjugo qui font ce que vous ne faites pas, puis celles du registre officiel des entreprises (Insee).<template v-if="ao.pm.d && ao.pm.d.explication"> {{ ao.pm.d.explication }}</template></span></button><div class="spacer"></div>
               <button type="button" class="btn sm primary" @click="aoPmLoad()" :disabled="ao.pm.loading" :aria-busy="ao.pm.loading?'true':'false'"><span v-if="ao.pm.loading" class="spin"></span><i v-else :data-lucide="ao.pm.loaded?'refresh-cw':'search'"></i>{{ ao.pm.loaded ? 'Relancer la recherche' : 'Qui me complète ?' }}</button></div>
             <div class="cb rn-pm-b">
               <div class="sr-only" role="status" aria-live="polite">{{ ao.pm.live }}</div>
@@ -615,7 +615,7 @@
                 <div v-for="(w,wi) in (pd.warnings||[])" :key="'pmw'+wi" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ w }}</span></div>
                 <div v-if="!pd.reseau_visible && pd.message" class="rn-callout">
                   <i data-lucide="lock"></i>
-                  <div class="rn-callout-t"><b>{{ pd.message }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau fonctionne dans les deux sens : publiez votre profil partenaire pour voir les entreprises du réseau et les inviter. Les entreprises du registre SIRENE restent proposées ci-dessous.</span></button></div>
+                  <div class="rn-callout-t"><b>{{ pd.message }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau fonctionne dans les deux sens : publiez votre profil partenaire pour voir les entreprises du réseau et les inviter. Les entreprises du registre officiel restent proposées ci-dessous.</span></button></div>
                   <button type="button" class="btn sm primary" @click="rnGoPublish()"><i data-lucide="send"></i>{{ rnPubCta() }}</button>
                 </div>
                 <p v-if="!(pd.lots||[]).length" class="muted small">Aucun lot à compléter : d'après le dossier, vous couvrez seul les métiers repérés. <button type="button" class="linkbtn" @click="go('cotraitants')">Voir mes partenaires</button></p>
@@ -642,7 +642,7 @@
                     </div>
                   </article>
                   <!-- Repli : entreprises du registre SIRENE (hors réseau) -->
-                  <div v-if="(l.sirene||[]).length" class="rn-sub">Entreprises du registre SIRENE<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">SIRENE : le répertoire officiel des entreprises. Adjugo ne vous communique pas leur adresse : vous les invitez avec un lien à leur transmettre.</span></button></div>
+                  <div v-if="(l.sirene||[]).length" class="rn-sub">Entreprises du registre officiel<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le répertoire officiel des entreprises, tenu par l'Insee. Adjugo ne vous communique pas leur adresse : vous les invitez avec un lien à leur transmettre.</span></button></div>
                   <article v-for="s in (l.sirene||[])" :key="'pms'+s.siret" class="rn-card rn-card-pm rn-card-sirene">
                     <div class="rn-card-h">
                       <div class="rn-card-t"><h5 class="rn-name">{{ s.name }}</h5><div class="muted small">{{ rnLieu(s) }}<span v-if="s.activite"> · {{ s.activite }}</span></div></div>
@@ -660,14 +660,14 @@
                     </div>
                   </article>
                   <div v-if="l.sirene_message" class="row wrap rn-g8 rn-mt"><span class="muted small" style="flex:1;min-width:200px">{{ l.sirene_message }}</span><button v-if="l.num" type="button" class="btn sm" @click="aoPmLot(l)" :disabled="!!ao.pm.lotBusy" :aria-busy="ao.pm.lotBusy===String(l.num)?'true':'false'"><span v-if="ao.pm.lotBusy===String(l.num)" class="spin"></span><i v-else data-lucide="search"></i>Chercher pour ce lot</button></div>
-                  <p v-if="l.sirene_cherche && !(l.sirene||[]).length && (l.reseau||[]).length" class="muted small">Aucune autre entreprise trouvée dans le registre SIRENE pour ce lot.</p>
+                  <p v-if="l.sirene_cherche && !(l.sirene||[]).length && (l.reseau||[]).length" class="muted small">Aucune autre entreprise trouvée dans le registre officiel pour ce lot.</p>
                   <div v-if="!(l.reseau||[]).length && !(l.sirene||[]).length && l.sirene_cherche" class="rn-lot-empty">
                     <span class="muted small">Aucune entreprise trouvée pour ce lot pour l'instant.</span>
-                    <div class="row wrap rn-g8"><button type="button" class="btn sm" @click="rnDiscover(l.metier, l.departement, l.metier_label)"><i data-lucide="search"></i>Chercher dans le registre SIRENE</button><button type="button" class="btn sm ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
+                    <div class="row wrap rn-g8"><button type="button" class="btn sm" @click="rnDiscover(l.metier, l.departement, l.metier_label)"><i data-lucide="search"></i>Chercher dans le registre officiel</button><button type="button" class="btn sm ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
                   </div>
                 </section>
                 <div v-if="(pd.lots_couverts||[]).length" class="row wrap rn-g6 rn-mt"><span class="muted small">Couverts par vous :</span><span v-for="c in pd.lots_couverts" :key="'pmc'+(c.num||c.metier)" class="pill neutral rn-pill-sm">{{ pmLotTitle(c) }}</span></div>
-                <div v-if="(pd.lots_non_reconnus||[]).length" class="row wrap rn-g6 rn-mt"><span class="muted small">Lots dont le métier n'a pas été reconnu :<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo n'a pas reconnu le métier de ces lots d'après leur intitulé : cherchez un partenaire à la main dans « Mes partenaires » ou dans le registre SIRENE.</span></button></span><span v-for="c in pd.lots_non_reconnus" :key="'pmu'+(c.num||c.label)" class="pill neutral rn-pill-sm">{{ pmLotTitle(c) }}</span></div>
+                <div v-if="(pd.lots_non_reconnus||[]).length" class="row wrap rn-g6 rn-mt"><span class="muted small">Lots dont le métier n'a pas été reconnu :<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo n'a pas reconnu le métier de ces lots d'après leur intitulé : cherchez un partenaire à la main dans « Mes partenaires » ou dans le registre officiel des entreprises.</span></button></span><span v-for="c in pd.lots_non_reconnus" :key="'pmu'+(c.num||c.label)" class="pill neutral rn-pill-sm">{{ pmLotTitle(c) }}</span></div>
               </template>
             </div>
           </div>
@@ -981,7 +981,7 @@
 
           <!-- Dossier de présentation (rédaction, vague 2) : l'état en bref et UN bouton qui ouvre l'atelier -->
           <div data-test="marche-dossier-presentation" id="atl-card" class="card atl-card" style="margin-top:14px">
-            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="file-pen-line"></i><h3>Dossier de présentation</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">C'est le « mémoire technique » demandé par l'acheteur. Vous le préparez partie par partie dans l'atelier : Adjugo propose le plan d'après le dossier du marché et peut rédiger chaque partie à partir de vos documents. Vous relisez, corrigez et validez, puis vous exportez en Word ou en PDF.</span></button><div class="spacer"></div>
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="file-pen-line"></i><h3>Dossier de présentation</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">C'est la partie technique de votre offre que demande le règlement de la consultation : vos moyens, votre méthode, votre organisation. Vous le préparez partie par partie dans l'atelier : Adjugo propose le plan d'après le dossier du marché et peut rédiger chaque partie à partir de vos documents. Vous relisez, corrigez et validez, puis vous exportez en Word ou en PDF.</span></button><div class="spacer"></div>
               <span v-if="ao.atl.d && ao.atl.d.dossier" class="pill" :class="atlEtatExport(ao.atl.d).cls" style="font-size:11px">{{ atlEtatExport(ao.atl.d).label }}</span></div>
             <div class="cb">
               <div v-if="ao.atl.loading && !ao.atl.d" class="muted small" role="status"><span class="spin"></span> Chargement…</div>
@@ -1043,7 +1043,7 @@
                   <button class="btn primary block" @click="aoDownload()" style="margin-bottom:12px"><i data-lucide="download"></i>Télécharger ({{ ao.dossier.zip_name }})</button>
                   <div class="row wrap" style="gap:6px">
                     <span v-for="c in ao.dossier.cerfas" :key="c.name" class="pill neutral row" style="gap:5px"><i data-lucide="file-text" style="width:13px;height:13px"></i>{{ c.name }}</span>
-                    <span v-if="ao.dossier.memoire_fichiers && ao.dossier.memoire_fichiers.length" class="pill neutral row" style="gap:5px"><i data-lucide="file-pen-line" style="width:13px;height:13px"></i>dossier de présentation</span><button v-if="ao.dossier.memoire_fichiers && ao.dossier.memoire_fichiers.length" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">C'est le <b>« mémoire technique »</b> demandé par l'acheteur, nommé « {{ ao.dossier.memoire_nom }} » comme dans le règlement quand il y figure. Il reprend le texte de l'atelier (la version validée de chaque partie), en Word et en PDF ; rangé dans le dossier du marché.</span></button>
+                    <span v-if="ao.dossier.memoire_fichiers && ao.dossier.memoire_fichiers.length" class="pill neutral row" style="gap:5px"><i data-lucide="file-pen-line" style="width:13px;height:13px"></i>dossier de présentation</span><button v-if="ao.dossier.memoire_fichiers && ao.dossier.memoire_fichiers.length" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">C'est la partie technique de votre offre que demande le règlement de la consultation : vos moyens, votre méthode, votre organisation, nommé « {{ ao.dossier.memoire_nom }} » comme dans le règlement quand il y figure. Il reprend le texte de l'atelier (la version validée de chaque partie), en Word et en PDF ; rangé dans le dossier du marché.</span></button>
                   </div>
                   <p class="muted small" style="margin-top:10px">{{ ao.dossier.memoire_preview }}</p>
                   <!-- Wizard pré-dépôt INTERACTIF : on coche chaque étape, progression suivie -->
@@ -1204,7 +1204,7 @@
               <!-- Cockpit : état de préparation de la réponse commune (calcul déterministe) -->
               <div data-test="marche-preparation" v-if="ao.share.consortium && ao.share.consortium.readiness && ao.share.consortium.readiness.invited" class="row" style="margin-top:12px;gap:13px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)">
                 <div style="flex:1;min-width:0">
-                  <div class="row" style="gap:7px;align-items:baseline"><b style="font-size:17px" class="num">{{ ao.share.consortium.readiness.submitted }}/{{ ao.share.consortium.readiness.invited }}</b><span class="small">{{ pl(ao.share.consortium.readiness.invited, 'part reçue', 'parts reçues') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Nombre de partenaires qui ont envoyé leur part. Les contrôles avant dépôt (attestations, convention, formulaires) sont listés dans « Dépôt du dossier ».</span></button></div>
+                  <div class="row" style="gap:7px;align-items:baseline"><b style="font-size:17px" class="num">{{ ao.share.consortium.readiness.submitted }}/{{ ao.share.consortium.readiness.invited }}</b><span class="small">{{ pl(ao.share.consortium.readiness.invited, 'part reçue', 'parts reçues') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Nombre de partenaires qui ont envoyé leur part.</span></button></div>
                   <div class="muted small">{{ ao.share.consortium.readiness.lots }} lot(s) couvert(s)</div>
                 </div>
                 <button class="btn sm" @click="aoToggleCockpit()"><i data-lucide="layout-dashboard"></i>{{ ao.share.cockpitOpen?'Replier':'Suivi' }}</button>
@@ -1307,7 +1307,7 @@
 
               <!-- Cockpit du consortium : lots × partenaires, complétude, manques, assemblage -->
               <div data-test="marche-suivi-groupement" v-if="ao.share.cockpitOpen && ao.share.consortium && ao.share.consortium.readiness" style="margin-top:14px;border-top:1px solid var(--hairline);padding-top:12px">
-                <div class="row" style="gap:6px;margin-bottom:10px;align-items:center"><i data-lucide="layout-dashboard" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Cockpit du groupement</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Qui couvre quoi · ce qu'il manque · assemblage.</span></button></div>
+                <div class="row" style="gap:6px;margin-bottom:10px;align-items:center"><i data-lucide="layout-dashboard" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Suivi du groupement</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Qui couvre quoi · ce qu'il manque · assemblage.</span></button></div>
 
                 <div v-if="(ao.share.consortium.lots||[]).length" style="margin-bottom:12px">
                   <div class="muted small" style="font-weight:600;margin-bottom:5px">Lots couverts</div>
@@ -1327,7 +1327,7 @@
                     <span v-if="p.lot" class="muted small"> · {{ p.lot }}</span>
                     <span v-if="p.prix_lot_ht!=null" class="pill neutral" style="font-size:10px" title="Prix de vente du lot (visible du chef de file)">{{ eur(p.prix_lot_ht) }} HT</span>
                     <span v-else-if="p.status==='submitted'" class="pill a_etudier" style="font-size:10px">prix de lot manquant</span>
-                    <span v-if="p.has_dpgf_lot" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="file-check-2" style="width:10px;height:10px"></i>DPGF du lot reçue</span><button v-if="p.has_dpgf_lot" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">DPGF : le détail des prix de vente du partenaire pour son lot, ligne par ligne. Jamais ses coûts ni ses marges.</span></button>
+                    <span v-if="p.has_dpgf_lot" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="file-check-2" style="width:10px;height:10px"></i>Tableau de prix reçu</span><button v-if="p.has_dpgf_lot" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le tableau de prix du partenaire : le détail de ses prix de vente pour son lot, ligne par ligne. Jamais ses coûts ni ses marges.</span></button>
                     <i v-if="p.has_detail_chiffre" data-lucide="lock" style="width:11px;height:11px;color:var(--text-2);vertical-align:-1px" title="Détail du chiffrage chiffré par le partenaire — vous ne le voyez pas, c'est voulu" aria-label="Détail du chiffrage chiffré"></i>
                     <!-- Pièces administratives attendues du membre : présentes (vert) / manquantes (rouge) -->
                     <div v-if="(p.pieces_have && p.pieces_have.length) || (p.pieces_missing && p.pieces_missing.length)" class="row wrap" style="gap:4px;margin-top:3px">
@@ -1381,7 +1381,7 @@
                 </div>
 
                 <div class="row wrap" style="margin-top:13px;gap:9px;align-items:center">
-                  <button class="btn primary" @click="aoAssemble()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="combine"></i>Assembler &amp; télécharger</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Fusionne les parts soumises dans le dossier de présentation (le « mémoire technique ») <b>et joint les pièces des partenaires</b> dans un ZIP, téléchargé directement.</span></button>
+                  <button class="btn primary" @click="aoAssemble()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="combine"></i>Assembler &amp; télécharger</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Fusionne les parts soumises dans le dossier de présentation <b>et joint les pièces des partenaires</b> dans un ZIP, téléchargé directement.</span></button>
                   <button v-if="ao.dossier" class="btn" @click="aoDownload()"><i data-lucide="download"></i>Re-télécharger ({{ ao.dossier.zip_name }})</button>
                 </div>
                 <!-- Points à traiter avant le dépôt, à côté du bouton : BLOQUANT en rouge, le reste en orange -->
@@ -1451,7 +1451,7 @@
             <div class="row wrap" style="gap:8px">
               <button class="btn" @click="aoExport()"><i data-lucide="package"></i>Exporter le dossier complet (ZIP)</button>
               <div class="spacer"></div>
-              <button class="btn danger" @click="aoDelete()"><i data-lucide="trash-2"></i>Supprimer cet AO</button>
+              <button class="btn danger" @click="aoDelete()"><i data-lucide="trash-2"></i>Supprimer ce marché</button>
             </div>
           </div>
         </section>
@@ -1694,14 +1694,14 @@
                   <span v-if="s.budget_texte||s.budget" class="pill st-envoye">{{ s.budget_texte || eur(s.budget) }}</span>
                 </div>
                 <div class="strong" style="margin-top:8px;font-size:14px;line-height:1.35">{{ s.intitule }}</div>
-                <div class="muted small" style="margin-top:3px">{{ s.collectivite||'Collectivité' }}<span v-if="s.localisation"> · {{ s.localisation }}</span><span v-if="s.echeance_ao"> · AO estimé : {{ s.echeance_ao }}</span><span v-if="s.financement"> · financement : {{ s.financement }}</span><span v-if="s.calendrier && !s.echeance_ao"> · {{ s.calendrier }}</span></div>
+                <div class="muted small" style="margin-top:3px">{{ s.collectivite||'Collectivité' }}<span v-if="s.localisation"> · {{ s.localisation }}</span><span v-if="s.echeance_ao"> · marché attendu : {{ s.echeance_ao }}</span><span v-if="s.financement"> · financement : {{ s.financement }}</span><span v-if="s.calendrier && !s.echeance_ao"> · {{ s.calendrier }}</span></div>
                 <div v-if="s.metiers && s.metiers.length" class="row wrap" style="gap:5px;margin-top:7px">
                   <span v-for="m in s.metiers.slice(0,8)" :key="m" class="pill neutral" style="font-size:10px">{{ m }}</span>
                 </div>
                 <div v-if="s.extrait" class="small muted" style="margin-top:8px;padding:8px 11px;background:var(--surface-2);border-radius:8px;font-style:italic">« {{ s.extrait }} »</div>
                 <a v-if="s.source_url" :href="safeUrl(s.source_url)" target="_blank" class="small" style="margin-top:6px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ s.source_name }} — voir la délibération ↗</a>
                 <div v-else class="muted small" style="margin-top:6px;display:flex;align-items:center;gap:5px"><i data-lucide="file-text" style="width:12px;height:12px"></i>{{ s.source_name }}</div>
-                <div style="margin-top:9px"><button class="btn sm" @click="amontFindPartners(s)"><i data-lucide="handshake"></i>Trouver des partenaires (avant l'AO)</button></div>
+                <div style="margin-top:9px"><button class="btn sm" @click="amontFindPartners(s)"><i data-lucide="handshake"></i>Trouver des partenaires (avant la publication)</button></div>
               </div>
               <button class="btn icon sm ghost" @click="amontDelete(s)" aria-label="Archiver"><i data-lucide="trash-2"></i></button>
             </div>
@@ -1818,7 +1818,7 @@
           <!-- Dossier de présentation : il se prépare sur la page du marché (rédaction, vague 2) ; cette
                page reste la bibliothèque de documents dont Adjugo se sert pour rédiger. -->
           <div class="card pad" style="margin-top:14px">
-            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="file-pen-line" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Dossier de présentation</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est le « mémoire technique » demandé par l'acheteur. Il se prépare désormais sur la page de chaque marché, partie par partie, à partir des documents de cette bibliothèque.</span></button></div>
+            <div class="row" style="gap:8px;margin-bottom:8px"><i data-lucide="file-pen-line" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Dossier de présentation</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est la partie technique de votre offre que demande le règlement de la consultation : vos moyens, votre méthode, votre organisation. Il se prépare désormais sur la page de chaque marché, partie par partie, à partir des documents de cette bibliothèque.</span></button></div>
             <div class="muted small" style="margin-bottom:10px">Il se prépare sur la page du marché : ouvrez l'atelier du marché concerné.</div>
             <div v-for="p in kbMarches()" :key="'kbm'+p.id" class="row" style="gap:8px;padding:7px 0;border-top:1px solid var(--hairline)">
               <span class="small" style="flex:1;min-width:0;overflow-wrap:anywhere">{{ p.name }}</span>
@@ -1860,7 +1860,7 @@
 
           <!-- Aucun dossier : le plan PROPOSÉ (rien n'est enregistré avant « Commencer ») -->
           <div v-else-if="atl.prop" class="card">
-            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="file-pen-line"></i><h3>Préparer le dossier de présentation</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est le « mémoire technique » demandé par l'acheteur. Adjugo construit le plan sans IA : le cadre de réponse imposé s'il existe, sinon les critères retrouvés dans le règlement, sinon un plan simple. Jamais de critère ni de poids inventés.</span></button></div>
+            <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="file-pen-line"></i><h3>Préparer le dossier de présentation</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est la partie technique de votre offre que demande le règlement de la consultation : vos moyens, votre méthode, votre organisation. Adjugo construit le plan sans IA : le cadre de réponse imposé s'il existe, sinon les critères retrouvés dans le règlement, sinon un plan simple. Jamais de critère ni de poids inventés.</span></button></div>
             <div class="cb">
               <div class="muted small">{{ atl.prop.projet && atl.prop.projet.nom }}</div>
               <p class="small atl-mt8">{{ atl.prop.proposition.message }}</p>
@@ -2671,7 +2671,7 @@
             </div>
           </div>
           <div class="card pad" style="max-width:820px;margin-bottom:16px;background:var(--accent-weak);border-color:transparent">
-            <div class="row" style="gap:11px"><i data-lucide="search" style="color:var(--accent-text)"></i><div><b style="font-size:13.5px">Pré-remplir depuis le registre officiel</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ orgCountry==='FR' ? 'Saisissez votre SIRET ou nom — données réelles SIRENE.' : 'Saisissez votre numéro de TVA intracommunautaire — vérifié via VIES (UE).' }}</span></button></div></div>
+            <div class="row" style="gap:11px"><i data-lucide="search" style="color:var(--accent-text)"></i><div><b style="font-size:13.5px">Pré-remplir depuis le registre officiel</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ orgCountry==='FR' ? 'Saisissez votre SIRET ou votre nom : les données viennent du registre officiel des entreprises (Insee).' : 'Saisissez votre numéro de TVA intracommunautaire : il est contrôlé dans le registre européen VIES.' }}</span></button></div></div>
             <div class="row" style="margin-top:12px"><input class="inp" v-model="company.siret" :placeholder="orgCountry==='FR' ? 'SIRET ou nom de l\'entreprise' : 'N° TVA intracommunautaire (ex. '+orgCountry+'12345678)'" style="flex:1"><button class="btn primary" @click="lookupCompany" :disabled="busy"><span v-if="busy" class="spin"></span>Récupérer</button></div>
           </div>
           <div class="card pad" style="max-width:820px">
@@ -3013,7 +3013,7 @@
               <div class="tag">Le plus choisi</div>
               <h3>Pro</h3><div class="muted small">Pour répondre régulièrement</div>
               <div class="price">129,99€<small>/mois</small></div>
-              <ul><li>30 analyses IA / mois (puis 5 €/analyse)</li><li>Savoir-faire & aide à la rédaction</li><li>Recherche de partenaires & fins de contrat à suivre</li><li>Formulaires officiels (CERFA, DUME)</li><li>Espace documents 10 Go</li></ul>
+              <ul><li>30 analyses IA / mois (puis 5 €/analyse)</li><li>Savoir-faire & aide à la rédaction</li><li>Recherche de partenaires & fins de contrat à suivre</li><li>Formulaires officiels pré-remplis, à relire (DC1, DC2, DUME)</li><li>Espace documents 10 Go</li></ul>
               <div class="cur" v-if="plan.plan==='pro'">Votre plan actuel</div>
               <button v-else class="btn primary block" @click="checkout('pro')">Passer au Pro</button>
             </div>
@@ -3048,7 +3048,7 @@
             <article v-for="it in admin.rv.list" :key="'rv'+it.profile_id" class="adm-rv-item" :aria-labelledby="'rv-'+it.profile_id">
               <div class="row wrap" style="gap:8px;align-items:baseline"><b :id="'rv-'+it.profile_id">{{ it.name || 'Entreprise sans nom' }}</b><span class="muted small">SIREN {{ it.siren || 'non renseigné' }}</span><span v-if="it.demande_le" class="muted small">demandé le {{ fmtDate(it.demande_le) }}</span></div>
               <dl class="adm-rv-dl">
-                <dt>Registre SIRENE</dt>
+                <dt>Registre officiel</dt>
                 <dd>{{ it.sirene.nom || 'nom non trouvé' }} · {{ it.sirene.etat==='actif' ? 'active' : (it.sirene.etat==='cesse' ? 'cessée' : 'non vérifiée') }}<span v-if="it.sirene.code_postal || it.sirene.ville"> · siège {{ [it.sirene.code_postal, it.sirene.ville].filter(Boolean).join(' ') }}</span><span v-if="it.sirene.naf"> · NAF {{ it.sirene.naf }}</span><span v-if="it.sirene.date_creation"> · créée le {{ fmtDate(it.sirene.date_creation) }}</span><span v-if="it.sirene.checked_at" class="muted"> (consulté le {{ fmtDate(it.sirene.checked_at) }})</span>
                   <a v-if="adminRvLink(it)" :href="safeUrl(adminRvLink(it))" target="_blank" rel="noopener noreferrer" class="rn-link small"><i data-lucide="external-link"></i>Annuaire des entreprises</a></dd>
                 <dt>Profil entreprise</dt>
@@ -3101,6 +3101,16 @@
               </div>
             </template>
             <div v-else-if="admin.ia.loading" class="muted small"><span class="spin"></span> Chargement…</div>
+          </div>
+          <div data-test="admin-mesure" class="card pad adm-rv" style="margin-bottom:14px" role="region" aria-labelledby="adm-me-h">
+            <div class="row wrap adm-rv-h"><b id="adm-me-h"><i data-lucide="chart-column" style="color:var(--accent-text);flex:none;margin-right:8px"></i>Écrans ouverts, 30 derniers jours<button v-if="admin.mesure.data" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ admin.mesure.data.explication }}</span></button></b>
+              <span v-if="admin.mesure.data" class="pill rn-pill-sm neutral">{{ admin.mesure.data.total }} {{ pl(admin.mesure.data.total, 'ouverture', 'ouvertures') }}</span>
+              <button type="button" class="btn sm" @click="adminMesureLoad()" :disabled="admin.mesure.loading"><span v-if="admin.mesure.loading" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Actualiser</button></div>
+            <div v-if="admin.mesure.error" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ admin.mesure.error }}</div></div>
+            <div v-else-if="admin.mesure.data" class="row wrap small" style="gap:6px 8px;margin-top:10px">
+              <span v-for="e in admin.mesure.data.par_ecran" :key="'me'+e.ecran" class="pill rn-pill-sm neutral" :style="e.ouvertures ? '' : 'opacity:.55'">{{ adminEcranNom(e.ecran) }} · {{ e.ouvertures }}</span>
+            </div>
+            <div v-else-if="admin.mesure.loading" class="muted small"><span class="spin"></span> Chargement…</div>
           </div>
           <div class="card pad">
             <div class="row" style="gap:8px;align-items:center"><i data-lucide="hard-drive" style="color:var(--accent-text)"></i><b style="flex:1">Stockage</b>
@@ -3232,9 +3242,9 @@
 
                 <!-- Identité (lecture seule : vient du profil entreprise et du registre) -->
                 <div class="card pad rn-block" role="region" aria-labelledby="rn-id-h">
-                  <h3 id="rn-id-h" class="rn-h3">Identité<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Reprise de votre profil entreprise. Après la vérification, le nom devient celui du registre officiel des entreprises (SIRENE). Pour la modifier, passez par « Mon entreprise ».</span></button></h3>
+                  <h3 id="rn-id-h" class="rn-h3">Identité<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Reprise de votre profil entreprise. Après la vérification, le nom devient celui du registre officiel des entreprises (Insee). Pour la modifier, passez par « Mon entreprise ».</span></button></h3>
                   <dl class="rn-dl">
-                    <dt>Nom</dt><dd>{{ d.identite.name || 'non renseigné' }} <span v-if="d.identite.nom_officiel" class="pill neutral rn-pill-sm">nom du registre SIRENE</span>
+                    <dt>Nom</dt><dd>{{ d.identite.name || 'non renseigné' }} <span v-if="d.identite.nom_officiel" class="pill neutral rn-pill-sm">nom du registre officiel</span>
                       <span v-if="d.validation && d.validation.identite_validee" class="pill go rn-pill-sm"><i data-lucide="badge-check"></i>identité validée par Adjugo</span>
                       <span v-else-if="d.statut==='en_attente'" class="pill a_etudier rn-pill-sm">identité en cours de validation</span></dd>
                     <dt>SIRET<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">SIRET : le numéro à 14 chiffres de votre établissement. Ses 9 premiers chiffres (le SIREN) identifient l'entreprise.</span></button></dt><dd>{{ d.identite.siret || 'non renseigné' }}</dd>
@@ -3258,7 +3268,7 @@
                     <div class="field"><label for="rn-lot">Taille de lot maximale (€ HT)<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le montant hors taxes (HT) du plus gros lot que vous acceptez. Laissez vide si vous ne souhaitez pas l'indiquer.</span></button></label><input id="rn-lot" class="inp" type="number" min="0" step="1000" inputmode="numeric" v-model="f.lot_max_eur" :disabled="!d.peut_modifier || !!reseau.p.busy" placeholder="ex. 250000"></div>
                   </div>
                   <fieldset class="rn-fs" :disabled="!d.peut_modifier || !!reseau.p.busy">
-                    <legend class="rn-lg">Rôles acceptés<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Co-traitant : membre du groupement, il signe l'offre avec les autres. Sous-traitant : il travaille pour un membre du groupement sans signer l'offre. Chef de file : il représente le groupement auprès de l'acheteur.</span></button></legend>
+                    <legend class="rn-lg">Rôles acceptés<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Partenaire du groupement : il en est membre et signe l'offre avec les autres. Sous-traitant : il travaille pour un membre du groupement sans signer l'offre. Chef de file : il représente le groupement auprès de l'acheteur.</span></button></legend>
                     <div class="rn-checks">
                       <label v-for="r in rnOptions().roles" :key="'rr'+r.value" class="rn-check"><input type="checkbox" :value="r.value" v-model="f.roles_acceptes"><span>{{ r.label }}</span></label>
                     </div>
@@ -3292,7 +3302,7 @@
 
                 <!-- Vérification dans les registres publics -->
                 <div class="card pad rn-block" role="region" aria-labelledby="rn-v-h">
-                  <h3 id="rn-v-h" class="rn-h3">Vérification dans les registres publics<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo interroge trois registres officiels : SIRENE (le répertoire des entreprises), BODACC (le journal officiel où sont publiées les procédures collectives) et DECP (les données publiques des marchés attribués). Chaque résultat est daté ; rien n'est noté.</span></button></h3>
+                  <h3 id="rn-v-h" class="rn-h3">Vérification dans les registres publics<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo interroge trois registres officiels : le répertoire des entreprises (Insee), le BODACC (le journal officiel où sont publiées les procédures collectives) et les DECP (les données publiques des marchés attribués). Chaque résultat est daté ; rien n'est noté.</span></button></h3>
                   <ul class="rn-verifs">
                     <li v-for="k in ['sirene','bodacc','decp']" :key="'rv'+k" :class="'v-'+rnVerif(d.verifications[k], k).cls"><i :data-lucide="rnVerif(d.verifications[k], k).ic" aria-hidden="true"></i><span>{{ d.verifications[k].label }}</span></li>
                   </ul>
@@ -3363,12 +3373,12 @@
               <div v-if="!ad.visible" class="card pad rn-block rn-empty">
                 <i data-lucide="lock" class="rn-empty-ic"></i>
                 <div class="rn-empty-t"><b>{{ ad.message }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau fonctionne dans les deux sens : seules les entreprises qui ont publié leur profil voient celui des autres. Au lancement, le réseau est encore petit : c'est normal.</span></button></div>
-                <div class="row wrap rn-g8 rn-empty-a"><button type="button" class="btn primary" @click="rnGoPublish()"><i data-lucide="send"></i>{{ rnPubCta() }}</button><button type="button" class="btn" @click="rnDiscover()"><i data-lucide="search"></i>Chercher dans le registre SIRENE</button><button type="button" class="btn ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
+                <div class="row wrap rn-g8 rn-empty-a"><button type="button" class="btn primary" @click="rnGoPublish()"><i data-lucide="send"></i>{{ rnPubCta() }}</button><button type="button" class="btn" @click="rnDiscover()"><i data-lucide="search"></i>Chercher dans le registre officiel</button><button type="button" class="btn ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
               </div>
               <div v-else-if="!(ad.profils||[]).length" class="card pad rn-block rn-empty">
                 <i data-lucide="users-round" class="rn-empty-ic"></i>
-                <div class="rn-empty-t"><b>Aucun partenaire du réseau Adjugo ne correspond encore à cette recherche.</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau démarre : c'est normal au lancement. Les entreprises du registre officiel (SIRENE) restent accessibles, et vos partenaires habituels sont dans « Mes partenaires ».</span></button></div>
-                <div class="row wrap rn-g8 rn-empty-a"><button type="button" class="btn" @click="rnDiscover()"><i data-lucide="search"></i>Chercher dans le registre SIRENE</button><button type="button" class="btn ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
+                <div class="rn-empty-t"><b>Aucun partenaire du réseau Adjugo ne correspond encore à cette recherche.</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau démarre : c'est normal au lancement. Les entreprises du registre officiel restent accessibles, et vos partenaires habituels sont dans « Mes partenaires ».</span></button></div>
+                <div class="row wrap rn-g8 rn-empty-a"><button type="button" class="btn" @click="rnDiscover()"><i data-lucide="search"></i>Chercher dans le registre officiel</button><button type="button" class="btn ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
               </div>
               <template v-else>
                 <div v-if="ad.avertissement" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ ad.avertissement }}</span></div>
@@ -3607,7 +3617,7 @@
               <span class="pill" :class="sharedAo.status==='submitted'?'go':'neutral'" style="font-size:11px;gap:3px"><i v-if="sharedAo.status==='submitted'" data-lucide="check" style="width:11px;height:11px"></i>{{ sharedAo.status==='submitted'?'Soumise':'Brouillon' }}</span></div>
             <div class="muted small" style="margin-top:4px">Vous contribuez en tant que <b>{{ company.name||'votre entreprise' }}</b>.</div>
             <div class="field" style="margin-top:10px"><label>Entreprise</label><input class="inp" v-model="sharedAo.contrib.company_name"></div>
-            <div class="field"><label>Identité (pour vos CERFA DC1/DC2)</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.siret" placeholder="SIRET" style="flex:1;min-width:130px"><input class="inp" v-model="sharedAo.contrib.forme_juridique" placeholder="Forme juridique (SARL, SAS…)" style="flex:1;min-width:130px"></div></div>
+            <div class="field"><label>Identité (pour vos formulaires officiels DC1, DC2)</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.siret" placeholder="SIRET" style="flex:1;min-width:130px"><input class="inp" v-model="sharedAo.contrib.forme_juridique" placeholder="Forme juridique (SARL, SAS…)" style="flex:1;min-width:130px"></div></div>
             <div class="field"><label>Adresse</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.address" placeholder="Adresse" style="flex:2;min-width:160px"><input class="inp" v-model="sharedAo.contrib.postal_code" placeholder="CP" style="width:80px"><input class="inp" v-model="sharedAo.contrib.city" placeholder="Ville" style="flex:1;min-width:110px"></div></div>
             <div class="field"><label>Lot / périmètre</label><input class="inp" v-model="sharedAo.contrib.lot" placeholder="ex. Lot 2 — Démolition"></div>
             <div class="field"><label>Qualifications (séparées par des virgules)</label><input class="inp" v-model="sharedAo.contrib.quals" placeholder="ex. Qualibat 1112, RGE"></div>
@@ -3627,7 +3637,7 @@
             </div>
             <div class="field"><label>Vos capacités (déclarées par vous, visibles du chef de file)</label><div class="row wrap" style="gap:8px"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.ca_n1" placeholder="Votre CA du dernier exercice (€)" style="flex:1;min-width:200px" aria-label="Votre CA du dernier exercice"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.effectif" placeholder="Effectif" style="width:120px" aria-label="Effectif"></div></div>
             <div class="field"><label>Signataire de votre part</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.representant_legal" placeholder="Représentant légal (nom)" style="flex:1;min-width:160px" aria-label="Représentant légal"><input class="inp" v-model="sharedAo.contrib.signataire_qualite" placeholder="Qualité (gérant, président…)" style="flex:1;min-width:140px" aria-label="Qualité du signataire"></div></div>
-            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Paragraphe pour le dossier de présentation</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est le « mémoire technique » commun du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun. Évitez d'y écrire le nom de vos salariés : un nom n'est remplacé par la fonction de la personne, avant l'envoi à l'IA, que s'il figure dans l'équipe de votre profil entreprise Adjugo.</span></button></div><textarea class="inp" v-model="sharedAo.contrib.memoire_paragraph" rows="4" placeholder="Votre savoir-faire sur ce lot"></textarea></div>
+            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Paragraphe pour le dossier de présentation</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est la partie technique de l'offre commune du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun. Évitez d'y écrire le nom de vos salariés : un nom n'est remplacé par la fonction de la personne, avant l'envoi à l'IA, que s'il figure dans l'équipe de votre profil entreprise Adjugo.</span></button></div><textarea class="inp" v-model="sharedAo.contrib.memoire_paragraph" rows="4" placeholder="Votre savoir-faire sur ce lot"></textarea></div>
             <div class="field"><label>Contact</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.contact.nom" placeholder="Nom" style="flex:1;min-width:130px"><input type="email" class="inp" v-model="sharedAo.contrib.contact.email" placeholder="Email" style="flex:1;min-width:130px"><input type="tel" class="inp" v-model="sharedAo.contrib.contact.telephone" placeholder="Téléphone" style="flex:1;min-width:130px"></div></div>
 
             <div class="field"><label>Mes pièces administratives (attestations, Kbis, formulaire DC2…)</label>
@@ -3657,11 +3667,11 @@
               </div>
             </div>
             <!-- Ma DPGF de lot (vague 4) : produite dans la page partenaire de ce dossier, à partir du détail chiffré -->
-            <div data-test="partage-tableau-prix" class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Ma DPGF de lot</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>DPGF</b> : le détail de vos prix de vente, ligne par ligne. Elle se prépare dans la page partenaire de ce dossier (nouvel onglet) : vos lignes y sont enregistrées chiffrées avec le détail de votre chiffrage, puis le fichier est déposé après votre relecture. Seul le chef de file le reçoit ; vos coûts et vos marges n'y figurent pas.</span></button></div>
+            <div data-test="partage-tableau-prix" class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Mon tableau de prix</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le détail de vos prix de vente pour votre lot, ligne par ligne. Il se prépare dans la page partenaire de ce dossier (nouvel onglet) : vos lignes y sont enregistrées chiffrées avec le détail de votre chiffrage, puis le fichier est déposé après votre relecture. Seul le chef de file le reçoit ; vos coûts et vos marges n'y figurent pas.</span></button></div>
               <div class="row wrap" style="gap:8px;align-items:center">
-                <span class="pill" :class="sharedDpgfPieces().length?'go':'neutral'" style="font-size:11px;gap:3px"><i v-if="sharedDpgfPieces().length" data-lucide="check" style="width:11px;height:11px"></i>{{ sharedDpgfPieces().length ? 'Déposée' : 'Pas encore déposée' }}</span>
+                <span class="pill" :class="sharedDpgfPieces().length?'go':'neutral'" style="font-size:11px;gap:3px"><i v-if="sharedDpgfPieces().length" data-lucide="check" style="width:11px;height:11px"></i>{{ sharedDpgfPieces().length ? 'Déposé' : 'Pas encore déposé' }}</span>
                 <span v-if="sharedAo.detailDpgf && sharedAo.detailDpgf.lignes" class="muted small">{{ sharedAo.detailDpgf.lignes.length }} {{ pl(sharedAo.detailDpgf.lignes.length, 'ligne enregistrée', 'lignes enregistrées') }}, chiffrées</span>
-                <button type="button" class="btn sm" @click="sharedDpgfOpen()"><i data-lucide="external-link"></i>Préparer ma DPGF de lot</button>
+                <button type="button" class="btn sm" @click="sharedDpgfOpen()"><i data-lucide="external-link"></i>Préparer mon tableau de prix</button>
               </div>
             </div>
             <div data-test="partage-coffre-croise" v-if="sharedAo.coffre && sharedAo.coffre.members && sharedAo.coffre.members.length" class="field"><label>Coffre-fort croisé — qui a fourni quoi (statut seulement)</label>
@@ -3829,7 +3839,7 @@
   <div data-test="fenetre-siret" v-if="token && showWelcome" class="overlay" style="align-items:center;z-index:60">
     <div class="modal" style="max-width:480px;text-align:center;padding:38px 36px">
       <div class="logo" aria-hidden="true" style="margin:4px auto 10px"><svg class="mark" viewBox="0 0 48 48" fill="none" style="width:44px;height:44px"><circle cx="24" cy="24" r="21" stroke="var(--accent)" stroke-opacity=".42" stroke-width="3.5"/><circle cx="24" cy="24" r="13" stroke="var(--accent)" stroke-opacity=".72" stroke-width="3.5"/><circle cx="24" cy="24" r="6" fill="var(--accent)"/></svg></div>
-      <div style="display:flex;align-items:center;justify-content:center;margin:0 0 4px"><h2 style="font-size:20px;font-weight:800;margin:0">Bienvenue sur Adjugo</h2><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Un seul champ suffit : on règle aussi vos critères automatiquement. Données issues du registre officiel des entreprises (SIRENE). Rien n'est publié.</span></button></div>
+      <div style="display:flex;align-items:center;justify-content:center;margin:0 0 4px"><h2 style="font-size:20px;font-weight:800;margin:0">Bienvenue sur Adjugo</h2><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Un seul champ suffit : on règle aussi vos critères automatiquement. Données issues du registre officiel des entreprises (Insee). Rien n'est publié.</span></button></div>
       <p class="muted small" style="margin:0 0 16px">Entrez votre <b>SIRET</b> : on remplit votre profil et on vous montre <b>vos premiers marchés</b>.</p>
       <input class="inp" v-model="welcome.siret" placeholder="SIRET (14 chiffres)" inputmode="numeric" style="width:100%;text-align:center;font-size:16px;letter-spacing:1px" @keyup.enter="welcomeStart()" aria-label="Votre SIRET">
       <button class="btn primary block" style="margin-top:12px" @click="welcomeStart()" :disabled="welcome.busy"><span v-if="welcome.busy" class="spin"></span><i v-else data-lucide="sparkles"></i>Démarrer avec mon SIRET</button>
@@ -3882,7 +3892,7 @@
             <div v-if="!rinvProjects().length" class="muted small rn-hint">Aucun marché pour l'instant : <button type="button" class="linkbtn" @click="rinvClose(); go('sourcing')">trouvez un marché</button>, puis invitez depuis sa fiche.</div></div>
           <p v-if="rinv.noRole" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><span>Ce partenaire n'accepte que le rôle de chef de file : il ne peut pas être invité comme partenaire ou sous-traitant.</span></p>
           <fieldset v-else class="rn-fs" :disabled="rinv.busy">
-            <legend class="rn-lg">Rôle proposé<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Co-traitant : membre du groupement, il signe l'offre avec vous. Sous-traitant : il travaille pour vous sans signer l'offre ; vous restez responsable de sa part.</span></button></legend>
+            <legend class="rn-lg">Rôle proposé<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Partenaire du groupement : il en est membre et signe l'offre avec vous. Sous-traitant : il travaille pour vous sans signer l'offre ; vous restez responsable de sa part.</span></button></legend>
             <label v-for="r in rinv.roles" :key="'rr'+r" class="rn-check"><input type="radio" name="rinv-role" :value="r" v-model="rinv.role"><span>{{ rnRoleLabel(r) }}</span></label>
           </fieldset>
           <div class="field"><label for="rinv-l">Part proposée</label><input id="rinv-l" class="inp" v-model="rinv.lot" maxlength="255" :disabled="rinv.busy" placeholder="ex. Lot 2 — Électricité"></div>
@@ -3933,7 +3943,7 @@
           <div class="frow"><div class="field"><label>Type</label><select v-model="modal.d.type"><option value="devis">Devis</option><option value="facture">Facture</option></select></div>
             <div class="field"><label>Client</label><input v-model="modal.d.client_name"></div></div>
           <div class="field"><label>Adresse client</label><input v-model="modal.d.client_address"></div>
-          <div class="field"><label>AO lié (optionnel)</label><select v-model.number="modal.d.project_id"><option :value="null">— aucun —</option><option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option></select></div>
+          <div class="field"><label>Marché lié (facultatif)</label><select v-model.number="modal.d.project_id"><option :value="null">— aucun —</option><option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option></select></div>
           <div class="sectitle">Lignes</div>
           <div v-for="(it,idx) in modal.d.items" :key="idx" class="frow t3" style="align-items:end">
             <div class="field"><label>Description</label><input v-model="it.description"></div>
@@ -3996,7 +4006,7 @@
   <datalist id="trades-dl"><option v-for="t in trades" :key="t.key" :value="t.label"></option></datalist>
   <div data-test="fenetre-decouverte" v-if="discover.open" class="overlay" @click.self="discover.open=false">
     <div class="modal wide">
-      <div class="modal-h"><h3 class="row" style="gap:7px"><i data-lucide="search"></i>Découvrir des partenaires réels<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Entreprises réelles issues du registre officiel (SIRENE / annuaire-entreprises).</span></button></h3><button class="x" @click="discover.open=false"><i data-lucide="x"></i></button></div>
+      <div class="modal-h"><h3 class="row" style="gap:7px"><i data-lucide="search"></i>Découvrir des partenaires réels<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Entreprises réelles issues du registre officiel des entreprises (Insee, annuaire-entreprises.data.gouv.fr).</span></button></h3><button class="x" @click="discover.open=false"><i data-lucide="x"></i></button></div>
       <div class="modal-b">
         <div class="frow t3">
           <div class="field"><label>Activité</label><input class="inp" v-model="discover.trade" list="trades-dl" placeholder="ex. électricité, paysagiste, nettoyage…"></div>
@@ -4016,7 +4026,7 @@
   </div>
 
   <!-- BLOCAGE plein écran tant que l'adresse email n'est pas confirmée (tous modes de connexion) -->
-  <div v-if="token && user && user.id && user.email_verified===false" style="position:fixed;inset:0;z-index:300;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px">
+  <div data-test="ecran-confirmation-email" v-if="token && user && user.id && user.email_verified===false" style="position:fixed;inset:0;z-index:300;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px">
     <div class="card pad" style="max-width:440px;text-align:center">
       <div style="width:56px;height:56px;border-radius:50%;background:var(--accent-weak);display:flex;align-items:center;justify-content:center;margin:2px auto 16px"><i data-lucide="mail-check" style="color:var(--accent-text);width:27px;height:27px"></i></div>
       <h2 style="margin:0 0 9px;font-size:19px">Confirmez votre adresse email</h2>
@@ -4027,7 +4037,7 @@
   </div>
 
   <!-- Bouton feedback flottant (utilisateur connecté) -->
-  <div v-if="fb.open" class="modal-back" @click.self="fb.open=false" style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:16px">
+  <div data-test="fenetre-avis" v-if="fb.open" class="modal-back" @click.self="fb.open=false" style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:16px">
     <div class="card pad" style="max-width:440px;width:100%">
       <div class="row" style="align-items:center;gap:8px;margin-bottom:8px"><i data-lucide="message-circle" style="color:var(--accent-text)"></i><b style="flex:1">Votre retour</b><button class="icon-btn xs" @click="fb.open=false"><i data-lucide="x" style="width:15px;height:15px"></i></button></div>
       <div class="row" style="gap:6px;margin-bottom:8px">
@@ -4049,9 +4059,9 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/redaction-partenaire.js" integrity="sha384-1oI0tUnT7mAgd9q7+iS7TJ3vIjOmCXzhhti3sjZyIk9WhjfB9OVsIA2m9WjR5q3z" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-VynZY8Sl4tp0v7TpVb5bZxT5vxYfTsAlB1wqX+sctbosY1xGb3uP/PuqTelqrw3q" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6" defer></script>
-<script src="/static/app.js" integrity="sha384-63kYvMIzM+nSC8ODfMt1v7CIjIHQiXnnvlyXhOe6d8uUlDjbwrVqWoS8CnXbSjQw" defer></script>
+<script src="/static/app.js" integrity="sha384-R3Un1MiwsQXHierw8YPmZNPvdptGTLKP3nPkIx9YCzf6OE2bCWO99BvWdi/SVebK" defer></script>
 </body>
 </html>

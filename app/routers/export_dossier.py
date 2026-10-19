@@ -200,7 +200,7 @@ def export_dossier(
                             + "{:,.2f} EUR".format(grp["total_ht"]).replace(",", " "))
         else:
             sommaire.append("Montant de l'offre (HT) : " + ("{:,.0f} EUR".format(est.get("total_ht")).replace(",", " ") if est.get("total_ht") else "à chiffrer (aucun chiffrage enregistré)"))
-        sommaire.append("Reference : AO-{:04d}".format(project.id))
+        sommaire.append("Reference : marche n° {:04d}".format(project.id))
         sommaire.append("Date : " + date_str)
         sommaire.append("")
         sommaire.append("-" * 60)
@@ -219,7 +219,7 @@ def export_dossier(
 
         if pd["cotraitants"]:
             sommaire.append("-" * 60)
-            sommaire.append("CO-TRAITANTS ({})".format(len(pd["cotraitants"])))
+            sommaire.append("PARTENAIRES DU GROUPEMENT ({})".format(len(pd["cotraitants"])))
             sommaire.append("-" * 60)
             for i, ct in enumerate(pd["cotraitants"]):
                 sommaire.append("{}. {} - SIRET: {}".format(i + 1, ct.get("name", ""), ct.get("siret", "")))

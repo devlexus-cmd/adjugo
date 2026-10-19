@@ -177,7 +177,7 @@ _BLOCKED = [
     ("POST",   "/api/sourcing/analyze-upload",                "analyser vos propres fichiers"),
     ("POST",   "/api/amont/analyze-upload",                   "analyser vos propres fichiers"),
     ("POST",   "/api/knowledge/upload",                       "enrichir votre savoir-faire"),
-    ("POST",   "/api/knowledge/memoire-upload",               "générer un mémoire technique"),
+    ("POST",   "/api/knowledge/memoire-upload",               "rédiger un dossier de présentation"),
     # (c) appels IA payants (l'analyse des marchés DEMO- reste servie, sans IA)
     ("POST",   "/api/sourcing/reanalyze",                     "lancer une analyse IA"),
     ("POST",   "/api/sourcing/renewals",                      "lancer une analyse IA"),
@@ -185,7 +185,7 @@ _BLOCKED = [
     ("POST",   "/api/sourcing/documents",                     "générer vos documents"),
     ("POST",   "/api/chiffrage/{pid}/estimate",               "obtenir une estimation de chiffrage"),
     ("POST",   "/api/knowledge/text",                         "enrichir votre savoir-faire"),
-    ("POST",   "/api/knowledge/memoire",                      "générer un mémoire technique"),
+    ("POST",   "/api/knowledge/memoire",                      "rédiger un dossier de présentation"),
     ("POST",   "/api/knowledge/questionnaire",                "remplir un questionnaire avec l'IA"),
     # Atelier du dossier de présentation (rédaction, vague 2) : les actions de l'IA, et toute
     # écriture (la vitrine est partagée entre visiteurs : elle ne doit pas changer). La démo

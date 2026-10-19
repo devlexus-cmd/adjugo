@@ -61,7 +61,8 @@ def test_carte_de_la_grille_sans_promesse_et_bon_vocabulaire():
     # Les bulles disent ce qui est contrôlé, et que le règlement fait foi.
     for zone in (_tips(chef), _tips(part), page):
         assert "écrit tel quel dans cette phrase" in zone and "le règlement fait foi" in zone.lower()
-    assert "dossier de présentation (le « mémoire technique »)" in _tips(chef)
+    assert "le plan de votre dossier de présentation qu'après votre confirmation" in _tips(chef)
+    assert "mémoire" not in _tips(chef)                     # vague 0 : plus de « mémoire technique » visible
     assert "Un repérage peut en manquer" in comp and "Un repérage peut en manquer" in page
 
 

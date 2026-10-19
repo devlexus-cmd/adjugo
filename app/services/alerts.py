@@ -307,8 +307,8 @@ def _run_piece_expiry_alerts(db: Session, today, due=None, merged=None) -> int:
             f"{n} partenaire{'s' if n > 1 else ''} : attestation(s) à surveiller — {project.name[:50]}",
             f"Bonjour,\n\nSur le marché « {project.name} » (date limite : {_fr(a0['deadline_date'])}), "
             f"des pièces ne sont pas prêtes pour le dépôt :\n\n{blocks}\n\n"
-            f"Les partenaires concernés ont été prévenus. Suivez le coffre-fort croisé dans le cockpit "
-            f"du groupement.\n\n— Adjugo")
+            f"Les partenaires concernés ont été prévenus. Suivez leurs pièces sur la page de ce marché, "
+            f"dans Adjugo.\n\n— Adjugo")
     return alerted
 
 

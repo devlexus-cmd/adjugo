@@ -46,7 +46,7 @@ def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str, tva_
     story = []
 
     story.append(Paragraph(_esc(company_name or "Entreprise"), h1))
-    story.append(Paragraph("Estimation détaillée du prix (présentée comme une DPGF)", h2))
+    story.append(Paragraph("Estimation détaillée du prix (présentée comme une décomposition du prix)", h2))
     story.append(Paragraph(f"Marché : {_esc(project_name or '')}", sub))
     story.append(Paragraph(f"Établi le {date.today().strftime('%d/%m/%Y')}", sub))
     # Ce document est l'estimation d'Adjugo, pas la pièce de prix exigée par l'acheteur : on le dit.

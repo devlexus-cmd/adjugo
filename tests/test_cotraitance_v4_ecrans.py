@@ -2,7 +2,7 @@
 Co-traitance v2 — vague 4, écrans « Preuves, dépôt, finitions ».
 
 Invariants vérifiés (ce que les écrans exigent du serveur, et les écrans eux-mêmes) :
-- « Ma DPGF de lot » : les lignes de la DPGF sont rangées dans le DÉTAIL CHIFFRÉ du partenaire
+- « Mon tableau de prix » (ex-« Ma DPGF de lot ») : les lignes de la DPGF sont rangées dans le DÉTAIL CHIFFRÉ du partenaire
   (route « détail seul ») ; l'enregistrer ne repasse pas une part soumise en brouillon, ne défige
   pas l'offre et ne rend pas la convention caduque ; verrou optimiste ; enveloppe validée ;
   lien révoqué / lecture seule refusés ; démo bloquée ; le chef de file ne reçoit jamais
@@ -207,9 +207,10 @@ _EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿]")
 
 def test_ecrans_vague4_branches_et_regles_d_interface():
     inv, js, html, css = _read("invite.html"), _read("app.js"), _read("app.html"), _read("styles.css")
-    # Partenaire (lien magique) : vérification, exports, DPGF produite dans le navigateur.
+    # Partenaire (lien magique) : vérification, exports, tableau de prix produit dans le navigateur (libellé de la
+    # réorganisation, vague 0 : « Ma DPGF de lot » → « Mon tableau de prix »).
     for needle in ("Vérifier mon journal", "/journal/integrity", "/journal/export?format=",
-                   "Ma DPGF de lot", 'url + "/detail"', '"dpgf_lot"', "packDetail", "unpackDetail"):
+                   ">Mon tableau de prix</h2>", 'url + "/detail"', '"dpgf_lot"', "packDetail", "unpackDetail"):
         assert needle in inv, needle
     # « Partagé avec moi », chef de file, tableau de bord.
     for needle in ("/api/shared/", "/integrity", "/groupement/depot", "/groupement/deposer",

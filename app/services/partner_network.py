@@ -56,7 +56,7 @@ VALIDATION_OK = "validee"
 VALIDATION_REFUSED = "refusee"
 
 SIRENE_API = "https://recherche-entreprises.api.gouv.fr/search"
-SOURCE_SIRENE = "SIRENE (recherche-entreprises.api.gouv.fr)"
+SOURCE_SIRENE = "registre officiel des entreprises, Insee (recherche-entreprises.api.gouv.fr)"
 ROLES = ("cotraitant", "sous_traitant", "mandataire")
 DISPONIBILITES = ("disponible", "limitee", "complet")
 NETWORK_SOURCE = "reseau_adjugo"
@@ -273,9 +273,9 @@ def apply_checks(profile, res: dict, now: Optional[datetime] = None) -> dict:
         summary["sirene"] = {"statut": "ok", "label": sirene_label(profile.verified_sirene)}
     else:
         prev = profile.verified_sirene if isinstance(profile.verified_sirene, dict) else None
-        msg = {"introuvable": "SIREN introuvable dans SIRENE : vérifiez le SIRET du profil entreprise.",
+        msg = {"introuvable": "SIREN introuvable dans le registre officiel des entreprises : vérifiez le SIRET du profil entreprise.",
                "siren_invalide": "SIRET à 14 chiffres manquant dans le profil entreprise."}.get(
-            s.get("statut"), "SIRENE momentanément indisponible : réessayez plus tard.")
+            s.get("statut"), "Registre officiel des entreprises momentanément indisponible : réessayez plus tard.")
         if prev and prev.get("checked_at"):
             msg += f" La vérification du {jjmm(prev.get('checked_at'))} est conservée."
         summary["sirene"] = {"statut": s.get("statut") or "erreur", "label": sirene_label(prev), "message": msg}
@@ -1113,7 +1113,7 @@ def run_partner_network(db, limit: int = CRON_BATCH, budget_s: float = CRON_BUDG
             if s.get("statut") == "ok" and s.get("etat") == "cesse":
                 audit.record(db, action="network.profile_unpublished", owner_id=p.user_id,
                              actor="system", actor_kind="system", target_type="partner_profile",
-                             target_id=p.id, detail="SIRENE indique que l'entreprise a cessé son activité")
+                             target_id=p.id, detail="Le registre officiel indique que l'entreprise a cessé son activité")
         except Exception as e:
             db.rollback()
             stats["errors"] += 1

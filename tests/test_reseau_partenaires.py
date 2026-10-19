@@ -277,8 +277,8 @@ def test_formulations_honnetes_et_datees():
         "Au moins 3 marchés publics publiés dans DECP (au 08/10)"
     assert pm.decp_label({"count": 0, "checked_at": "2026-10-08"}) == "Aucun marché trouvé dans DECP au 08/10"
     assert pm.decp_label({"count": None}) == "DECP : non vérifié"
-    assert pm.sirene_label({"etat": "actif", "checked_at": "2026-10-08"}) == "Entreprise active (SIRENE au 08/10)"
-    assert pm.sirene_label(None) == "SIRENE : non vérifié"
+    assert pm.sirene_label({"etat": "actif", "checked_at": "2026-10-08"}) == "Entreprise active (registre officiel au 08/10)"
+    assert pm.sirene_label(None) == "Registre officiel : non vérifié"
     b = pm.badges(_p("a" * 32, "X", verified_sirene={"etat": "actif", "est_rge": True, "checked_at": "2026-10-08"}))
     rge = next(x for x in b if x["key"] == "rge")
     assert rge["label"] == "Inscrite au registre RGE (ADEME) au 08/10 — domaine à vérifier"
@@ -325,7 +325,7 @@ def test_profil_prerempli_opt_in_et_validation(client, reg, monkeypatch):
     assert "electricite" in v["declare"]["metiers"]                 # nom « … Électricité » → métier
     assert v["declare"]["departements"] == ["29"]
     assert calls and calls[0][1] <= 5                               # délai court (process unique)
-    assert "registre SIRENE" in v["prefill_sources"]
+    assert "registre officiel des entreprises" in v["prefill_sources"]
     assert v["suggestion"]["code"] == "publier_profil_reseau"
     # Création : opt-in, jamais publié par défaut.
     r = client.put("/api/reseau/profil", headers=org["headers"], json={"presentation": "Électricité générale."})
@@ -352,7 +352,7 @@ def test_verification_formulations_et_erreur_reseau(client, reg):
     r = client.post("/api/reseau/profil/verifier", headers=org["headers"])
     assert r.status_code == 200, r.text
     v = r.json()
-    assert v["verifications"]["sirene"]["label"] == "SIRENE : non vérifié"
+    assert v["verifications"]["sirene"]["label"] == "Registre officiel : non vérifié"
     assert v["verifications"]["bodacc"]["label"] == "BODACC : non vérifié"
     assert v["verifications"]["decp"]["label"] == "DECP : non vérifié"
     assert v["verification"]["sirene"]["statut"] == "erreur"
@@ -365,7 +365,7 @@ def test_verification_formulations_et_erreur_reseau(client, reg):
     R._VERIFY_LAST.clear()
     v = client.post("/api/reseau/profil/verifier", headers=org["headers"]).json()
     d = datetime.utcnow().strftime("%d/%m")
-    assert v["verifications"]["sirene"]["label"] == f"Entreprise active (SIRENE au {d})"
+    assert v["verifications"]["sirene"]["label"] == f"Entreprise active (registre officiel au {d})"
     assert v["verifications"]["bodacc"]["label"] == f"Aucun avis de procédure collective trouvé au {d} (recherche BODACC)"
     assert v["verifications"]["decp"]["label"] == f"Au moins 4 marchés publics publiés dans DECP (au {d})"
     assert v["identite"]["name"] == "MORVAN PLOMBERIE" and v["identite"]["nom_officiel"] is True
@@ -559,7 +559,7 @@ def test_partner_matches_par_lot_sans_second_pourcentage(client, reg):
     assert all(l["reseau"] == [] for l in v["lots"])
     assert len(reg.fallback_calls) == 3                              # ≤ 3 lots SIRENE par appel
     assert "sirene_message" in lots["5"] and lots["5"]["sirene_cherche"] is False
-    assert lots["3"]["sirene"][0]["statut_reseau"] == "Trouvée dans le registre SIRENE — à inviter par lien"
+    assert lots["3"]["sirene"][0]["statut_reseau"] == "Trouvée dans le registre officiel : à inviter par lien"
     assert _profile_row(b["id"]).appearances_count == 0
     # Publié : profils classés par lot.
     _publish(client, reg, a, metiers=("couverture",))

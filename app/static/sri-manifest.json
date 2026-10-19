@@ -2,9 +2,9 @@
  "algorithme": "sha384",
  "fichiers": {
   "/static/app.js": {
-   "integrity": "sha384-63kYvMIzM+nSC8ODfMt1v7CIjIHQiXnnvlyXhOe6d8uUlDjbwrVqWoS8CnXbSjQw",
-   "octets": 453658,
-   "sha256": "86736143971836109922f403cb210ae7d48e51f5a19b25b137097f1fd8a138e0"
+   "integrity": "sha384-R3Un1MiwsQXHierw8YPmZNPvdptGTLKP3nPkIx9YCzf6OE2bCWO99BvWdi/SVebK",
+   "octets": 454444,
+   "sha256": "5e2fbe0a986cae196e8ab0fe7a4e5f0f4b87046d3a1914e8ffaa0a51c22afc9b"
   },
   "/static/carnet-notes.js": {
    "integrity": "sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6",
@@ -12,19 +12,19 @@
    "sha256": "7477e33aa61cdd8044a86d89103f935a9bdf126b2076819ac5a7eeb358a1d145"
   },
   "/static/cotraitance-crypto.js": {
-   "integrity": "sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le",
-   "octets": 20958,
-   "sha256": "ced40bb888fac6f9f84a5878fc0023eaf17552ded87f8decc61b5ac0e980de07"
+   "integrity": "sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs",
+   "octets": 20961,
+   "sha256": "c7ec3846e80d42f09b317a839e97f916ce5f03e577b477140aaeb880ea7fb73a"
   },
   "/static/i18n.js": {
-   "integrity": "sha384-oDik9h0VMLSezjzvjE5icFK+aIpVHzN4CCrDdXTColU7Xknf8tmAL3inncvd+DSq",
-   "octets": 27074,
-   "sha256": "c021a8b200b5abda3abb370f13a0569ad038512a57391609b0af420537307354"
+   "integrity": "sha384-4xbhOUzTJpefOpLglKh9OPuMetp4+TjbPt40+ePSrHOfjxcyasMKtKajJ9usl+75",
+   "octets": 32489,
+   "sha256": "c20c138624fd9a50598d4e020cb8f473d634766d1af5af8a5da1a8f79f409ea7"
   },
   "/static/redaction-partenaire.js": {
-   "integrity": "sha384-1oI0tUnT7mAgd9q7+iS7TJ3vIjOmCXzhhti3sjZyIk9WhjfB9OVsIA2m9WjR5q3z",
-   "octets": 89119,
-   "sha256": "1b8e83636ea760a3d129ccc1e1e3753be21555ea60fb07bee827c14fb1aec91d"
+   "integrity": "sha384-VynZY8Sl4tp0v7TpVb5bZxT5vxYfTsAlB1wqX+sctbosY1xGb3uP/PuqTelqrw3q",
+   "octets": 89140,
+   "sha256": "4ae9ea00568ec4e9d0fee151afffefbdb6afa47588ce175a2a63f11e54e2bdf7"
   },
   "/static/sources-publiques.js": {
    "integrity": "sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+",

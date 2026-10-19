@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
-  <title>Espace co-traitant — Adjugo</title>
+  <title>Espace partenaire — Adjugo</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
-  <script src="/static/cotraitance-crypto.js" integrity="sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le"></script>
-  <script src="/static/redaction-partenaire.js" integrity="sha384-1oI0tUnT7mAgd9q7+iS7TJ3vIjOmCXzhhti3sjZyIk9WhjfB9OVsIA2m9WjR5q3z"></script>
+  <script src="/static/cotraitance-crypto.js" integrity="sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs"></script>
+  <script src="/static/redaction-partenaire.js" integrity="sha384-VynZY8Sl4tp0v7TpVb5bZxT5vxYfTsAlB1wqX+sctbosY1xGb3uP/PuqTelqrw3q"></script>
   <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+"></script>
   <script src="/static/carnet-notes.js" integrity="sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6"></script>
   <style>
@@ -181,7 +181,7 @@
 
   <div class="app" id="shell" style="display:none">
     <aside class="side">
-      <div class="brand"><span class="wordmark"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></span><span class="org-sub" id="brand-sub">Espace co-traitant</span></div>
+      <div class="brand"><span class="wordmark"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></span><span class="org-sub" id="brand-sub">Espace partenaire</span></div>
       <div class="nav-group">Votre invitation</div>
       <a class="nav-item" data-view="monao" data-allowed="1"><i data-lucide="folder-open"></i>Mon appel d'offres</a>
       <div class="nav-group">Pilotage</div>
@@ -190,7 +190,7 @@
       <a class="nav-item" data-view="amont" data-allowed="1" id="nav-amont" style="display:none"><i data-lucide="scan-eye"></i>Projets à venir</a>
       <a class="nav-item" data-view="kb"><i data-lucide="brain-circuit"></i>Mon savoir-faire</a>
       <a class="nav-item" data-view="pipeline"><i data-lucide="square-kanban"></i>Mes marchés</a>
-      <div class="nav-group">CRM</div>
+      <div class="nav-group">Partenaires</div>
       <a class="nav-item" data-view="cotraitants"><i data-lucide="handshake"></i>Mes partenaires</a>
       <a class="nav-item" data-view="contacts"><i data-lucide="users"></i>Contacts</a>
       <div class="nav-group">Gestion</div>
@@ -203,7 +203,7 @@
       <a class="nav-item" data-view="team"><i data-lucide="users-round"></i>Équipe</a>
       <a class="nav-item" data-view="billing"><i data-lucide="credit-card"></i>Abonnement</a>
       <div class="side-foot">
-        <div class="user"><div class="av" id="g-av">CO</div><div style="min-width:0"><b id="g-name">Co-traitant</b><small id="g-role" style="display:block">Invité</small></div></div>
+        <div class="user"><div class="av" id="g-av">PA</div><div style="min-width:0"><b id="g-name">Partenaire</b><small id="g-role" style="display:block">Partenaire invité</small></div></div>
       </div>
     </aside>
 
@@ -234,7 +234,7 @@
     let MY_TOKEN = null, MY_COMPANY = "", RELOAD_JOURNAL = null;
     // Rédaction, vague 4 : l'écran « Mes parties du dossier de présentation » (redaction-partenaire.js).
     let RP = null;
-    const PIECE_TYPES = [["kbis", "Kbis"], ["fiscale", "Attestation fiscale"], ["sociale", "Attestation sociale (URSSAF)"], ["assurance", "Assurance (RC / décennale)"], ["rib", "RIB"], ["qualification", "Qualification / certificat"], ["dpgf_lot", "DPGF du lot (prix de vente)"], ["autre", "Autre pièce"]];
+    const PIECE_TYPES = [["kbis", "Kbis"], ["fiscale", "Attestation fiscale"], ["sociale", "Attestation sociale (URSSAF)"], ["assurance", "Assurance (RC / décennale)"], ["rib", "RIB"], ["qualification", "Qualification / certificat"], ["dpgf_lot", "Tableau de prix du lot (prix de vente)"], ["autre", "Autre pièce"]];
     const PIECE_LABEL = Object.fromEntries(PIECE_TYPES);
     const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
     const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -531,7 +531,7 @@
       // Vague 5 : ce que le dossier DEMANDE (exigences repérées sans IA, phrase mot pour mot), en lecture.
       if (Array.isArray(g.exigences)) {
         const ex = g.exigences, n = ex.filter(x => !x.retiree).length;
-        card.appendChild($(`<div class="gn-sub">Ce que le dossier demande${tip("Les phrases du règlement et du cadre de réponse qui demandent quelque chose au candidat (« le mémoire comprendra… », « le candidat devra… », « Décrivez… »), repérées sans IA, avec leur phrase. Le chef de file voit dans son atelier lesquelles sont traitées. Le règlement fait foi.")}</div>`));
+        card.appendChild($(`<div class="gn-sub">Ce que le dossier demande${tip("Les phrases du règlement et du cadre de réponse qui demandent quelque chose au candidat (« le candidat présentera… », « le candidat devra… », « Décrivez… »), repérées sans IA, avec leur phrase. Le chef de file voit dans son atelier lesquelles sont traitées. Le règlement fait foi.")}</div>`));
         card.appendChild($(`<p class="small gn-note">${n ? n + " exigence" + (n > 1 ? "s" : "") + " repérée" + (n > 1 ? "s" : "") + "." : "Aucune exigence repérée dans le règlement ni dans le cadre de réponse."}</p>`));
         if (n) {
           const dx = $(`<details class="gn-det"><summary>Voir les exigences</summary></details>`);
@@ -690,7 +690,7 @@
       // Identité juridique → alimente votre DC1/DC2 dans le dossier commun.
       const idr = document.createElement("div"); idr.className = "row wrap"; idr.style.gap = "8px";
       [siret, forme].forEach(el => { el.style.flex = "1"; el.style.minWidth = "140px"; idr.appendChild(el); });
-      card.appendChild(field("Identité (pour vos CERFA DC1/DC2)", idr));
+      card.appendChild(field("Identité (pour vos formulaires officiels DC1, DC2)", idr));
       const adr = document.createElement("div"); adr.className = "row wrap"; adr.style.gap = "8px";
       adresse.style.flex = "2"; adresse.style.minWidth = "180px"; cp.style.width = "110px"; ville.style.flex = "1"; ville.style.minWidth = "120px";
       [adresse, cp, ville].forEach(el => adr.appendChild(el));
@@ -754,7 +754,7 @@
       detBox.appendChild($(`<div class="lock-note">${ico("lock", 13, "margin-top:1px")}<span>${esc(LOCK_SHORT)}</span></div>`));
       const lockTip = esc(CR ? CR.LABELS.lock : "Chiffré dans votre navigateur avec une clé qu'Adjugo ne stocke pas.") + " " + esc(CR ? CR.LABELS.lost : "Si vous perdez votre code, ce détail est définitivement perdu.");
       card.appendChild(field("Détail de votre chiffrage (coûts, marges, méthode)", detBox, lockTip));
-      card.appendChild(field("Paragraphe pour le dossier de présentation", memoire, "Le dossier de présentation est le « mémoire technique » commun du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun. Évitez d'y écrire le nom de vos salariés : un nom n'est remplacé par la fonction de la personne, avant l'envoi à l'IA, que s'il figure dans l'équipe de votre profil entreprise Adjugo."));
+      card.appendChild(field("Paragraphe pour le dossier de présentation", memoire, "Le dossier de présentation est la partie technique de l'offre commune du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun. Évitez d'y écrire le nom de vos salariés : un nom n'est remplacé par la fonction de la personne, avant l'envoi à l'IA, que s'il figure dans l'équipe de votre profil entreprise Adjugo."));
       card.appendChild(field("Message au chef de file (optionnel)", note));
       const cr = document.createElement("div"); cr.className = "row wrap"; cr.style.gap = "8px";
       [cNom, cMail, cTel].forEach(el => { el.style.flex = "1"; el.style.minWidth = "140px"; cr.appendChild(el); });
@@ -1281,8 +1281,8 @@
     function renderDpgf(api) {
       const CRY = window.AdjugoCrypto || null, D = CRY && CRY.dpgf;
       const el = $(`<section class="card pad dp-card" id="dpgf" tabindex="-1" style="margin-bottom:16px;outline:none" aria-labelledby="dp-title"></section>`);
-      const head = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 170px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="dp-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Ma DPGF de lot</h2>${tip("<b>DPGF</b> : le détail de vos prix de vente, ligne par ligne (décomposition du prix global et forfaitaire). Souvent demandée avec l'offre.<br><br><b>Partagé avec le chef de file, au dépôt :</b> vos prix de vente, ligne par ligne, et leur total.<br><b>Jamais partagé :</b> vos coûts, vos marges, votre méthode. Les autres partenaires ne voient pas votre DPGF.<br><br>Vos lignes sont enregistrées <b>chiffrées dans votre navigateur</b>, avec le détail de votre chiffrage et le même code de récupération. Elles ne partent en clair qu'au dépôt, après votre relecture, dans un fichier au niveau du prix de vente.<br><br>Déposer ou retirer la DPGF ne modifie ni votre part soumise ni la convention.")}</span></div>`);
-      const pill = $(`<span class="pill neutral" style="font-size:11px">Pas encore déposée</span>`); head.appendChild(pill);
+      const head = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 170px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="dp-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Mon tableau de prix</h2>${tip("Le détail de vos prix de vente pour votre lot, ligne par ligne : le règlement l'appelle souvent « décomposition du prix global et forfaitaire » et le demande avec l'offre.<br><br><b>Partagé avec le chef de file, au dépôt :</b> vos prix de vente, ligne par ligne, et leur total.<br><b>Jamais partagé :</b> vos coûts, vos marges, votre méthode. Les autres partenaires ne voient pas votre tableau de prix.<br><br>Vos lignes sont enregistrées <b>chiffrées dans votre navigateur</b>, avec le détail de votre chiffrage et le même code de récupération. Elles ne partent en clair qu'au dépôt, après votre relecture, dans un fichier au niveau du prix de vente.<br><br>Déposer ou retirer le tableau de prix ne modifie ni votre part soumise ni la convention.")}</span></div>`);
+      const pill = $(`<span class="pill neutral" style="font-size:11px">Pas encore déposé</span>`); head.appendChild(pill);
       el.appendChild(head);
       // Ce qui est partagé ou non : dans la bulle (i) du titre (règle : explications en bulle).
       const body = document.createElement("div"); body.style.marginTop = "16px"; el.appendChild(body);
@@ -1337,7 +1337,7 @@
       function draw() {
         body.innerHTML = "";
         totEl = cmpEl = dirtyEl = rowsEl = null;
-        if (!D) { body.appendChild($(`<div class="muted small" style="margin-top:10px">La DPGF ne peut pas être produite dans ce navigateur (chiffrement indisponible).</div>`)); return; }
+        if (!D) { body.appendChild($(`<div class="muted small" style="margin-top:10px">Le tableau de prix ne peut pas être produit dans ce navigateur (chiffrement indisponible).</div>`)); return; }
         if (locked) {
           const b = $(`<div class="g-banner" style="margin:12px 0 0"><i data-lucide="lock"></i><div class="small" style="flex:1">${esc(lockHint || "Vos lignes sont chiffrées : déverrouillez-les avec votre code de récupération.")}</div></div>`);
           if (!lockHint && api.canUnlock()) { const u = $(`<button class="btn sm" type="button" style="flex:none"><i data-lucide="key-round"></i>Déverrouiller avec mon code</button>`); u.onclick = () => api.unlock(); b.appendChild(u); }
@@ -1350,16 +1350,16 @@
         body.appendChild(rowsEl);
         const add = $(`<button class="btn sm ghost" type="button" style="margin-top:8px"><i data-lucide="plus"></i>Ajouter une ligne</button>`);
         add.onclick = () => {
-          if (lignes.length >= D.MAX_LIGNES) { say("Une DPGF de lot compte au plus " + D.MAX_LIGNES + " lignes ici.", true); return; }
+          if (lignes.length >= D.MAX_LIGNES) { say("Un tableau de prix compte au plus " + D.MAX_LIGNES + " lignes ici.", true); return; }
           lignes.push(blank()); draw(); const rs = el.querySelectorAll(".dp-row"); const last = rs[rs.length - 1]; if (last) last.querySelector("input").focus();
         };
         body.appendChild(add);
-        const tot = $(`<div class="dp-tot"><b>Total de la DPGF</b><b class="dp-tot-v" style="font-variant-numeric:tabular-nums"></b></div>`);
+        const tot = $(`<div class="dp-tot"><b>Total du tableau de prix</b><b class="dp-tot-v" style="font-variant-numeric:tabular-nums"></b></div>`);
         totEl = tot.querySelector(".dp-tot-v"); body.appendChild(tot);
         cmpEl = $(`<div class="dp-cmp"></div>`); body.appendChild(cmpEl);
         const acts = $(`<div class="dp-acts"></div>`);
         const bSave = $(`<button class="btn sm" type="button"><i data-lucide="save"></i>Enregistrer mes lignes</button>`);
-        const bDepo = $(`<button class="btn sm primary" type="button"><i data-lucide="file-check-2"></i>Relire et déposer la DPGF</button>`);
+        const bDepo = $(`<button class="btn sm primary" type="button"><i data-lucide="file-check-2"></i>Relire et déposer le tableau de prix</button>`);
         const bCsv = $(`<button class="btn sm ghost" type="button"><i data-lucide="download"></i>Télécharger le fichier (CSV)</button>`);
         bSave.onclick = () => saveLines(bSave);
         bDepo.onclick = () => deposit(bDepo);
@@ -1406,24 +1406,24 @@
           + `<tfoot><tr><td></td><td class="des" data-label=""><b>${esc(tot[1])}</b></td><td></td><td></td><td></td><td class="num" data-label=""><b>${esc(tot[5])}</b></td></tr></tfoot></table></div>`;
         const ecart = (prix != null && Math.abs(t - Number(prix)) >= 0.005) ? `<p style="margin:10px 0 0;color:var(--warning-text,#b8730a)">Le total (${esc(eurHT(t))}) diffère du prix de vente de votre lot (${esc(eurHT(prix))}) : le chef de file verra les deux montants.</p>` : "";
         const ok = await openModal({
-          title: "Relire et déposer votre DPGF",
+          title: "Relire et déposer votre tableau de prix",
           bodyHtml: `<p style="margin:0">Voici <b>exactement</b> le fichier que recevra le chef de file, et lui seul : ${esc(D.fileName(opts))}.</p>${tbl}${ecart}`
-            + (old.length ? `<p style="margin:10px 0 0">Il remplacera la DPGF déjà déposée (${esc(old.map(p => p.name).join(", "))}).</p>` : "")
+            + (old.length ? `<p style="margin:10px 0 0">Il remplacera le tableau de prix déjà déposé (${esc(old.map(p => p.name).join(", "))}).</p>` : "")
             + `<p style="margin:10px 0 0" class="muted">Vos coûts, vos marges et votre méthode n'y figurent pas et restent chiffrés.</p>`,
-          confirmLabel: "Déposer la DPGF", cancelLabel: "Revenir", maxWidth: 640, focusCancel: true,
+          confirmLabel: "Déposer le tableau de prix", cancelLabel: "Revenir", maxWidth: 640, focusCancel: true,
         });
         if (!ok) { say("Dépôt annulé : rien n'a été envoyé."); return; }
-        btn.disabled = true; say("Dépôt de la DPGF…");
+        btn.disabled = true; say("Dépôt du tableau de prix…");
         try {
           const res = await api.upload(D.csv(opts), D.fileName(opts), old.map(p => p.id));
-          if (res && res.ok) okMsg(live, "DPGF déposée : le chef de file peut la télécharger.");
+          if (res && res.ok) okMsg(live, "Tableau de prix déposé : le chef de file peut le télécharger.");
           else say((res && res.err) || "Dépôt impossible.", true);
         } finally { if (btn.isConnected) btn.disabled = false; }
       }
       function syncPill() {
         const dps = pieces.filter(p => p.piece_type === "dpgf_lot");
-        if (dps.length) { const last = dps[dps.length - 1]; pill.className = "pill go"; pill.innerHTML = ICO_OK(12) + " Déposée" + (last.created_at ? " le " + esc(fmtShort(last.created_at)) : ""); pill.title = last.name || ""; }
-        else { pill.className = "pill neutral"; pill.textContent = "Pas encore déposée"; pill.title = ""; }
+        if (dps.length) { const last = dps[dps.length - 1]; pill.className = "pill go"; pill.innerHTML = ICO_OK(12) + " Déposé" + (last.created_at ? " le " + esc(fmtShort(last.created_at)) : ""); pill.title = last.name || ""; }
+        else { pill.className = "pill neutral"; pill.textContent = "Pas encore déposé"; pill.title = ""; }
         icons();
       }
       draw();
@@ -1934,7 +1934,7 @@
           const acts = $(`<div class="row" style="gap:8px;margin-top:9px"></div>`);
           const avisUrl = safeUrl(t.url || (t.provenance && t.provenance.source_url));
           if (avisUrl !== "#") acts.appendChild($(`<a class="btn sm" href="${esc(avisUrl)}" target="_blank" rel="noopener noreferrer nofollow">Voir l'avis<i data-lucide="external-link"></i></a>`));
-          const ana = $(`<button class="btn sm primary">Analyser cet AO</button>`);
+          const ana = $(`<button class="btn sm primary">Analyser ce marché</button>`);
           ana.onclick = () => { const b = document.getElementById("g-banner"); b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)"; b.innerHTML = '<i data-lucide="sparkles"></i><div class="small">L\'analyse de pertinence, le chiffrage et la génération du dossier sont réservés aux comptes Adjugo. <a href="/app?inscription" target="_blank" rel="noopener"><b>Commencez votre essai gratuit de 30 jours</b>' + ico("arrow-right", 13, "margin-left:3px") + '</a></div>'; icons(); window.scrollTo({ top: 0, behavior: "smooth" }); };
           acts.appendChild(ana); card.appendChild(acts); results.appendChild(card);
         });
@@ -2007,14 +2007,14 @@
         if (!r.ok) throw { icon: "link-2-off", t: "Lien invalide", m: "Ce lien n'est plus valable ou a été révoqué." }; return r.json(); })
       .then(d => {
         DATA = d;
-        const co = (d.invited && d.invited.company) || "Co-traitant";
+        const co = (d.invited && d.invited.company) || "Partenaire";
         document.getElementById("g-name").textContent = co;
         document.getElementById("g-av").textContent = initials(co);
         // Rôle exact : le partenaire PEUT contribuer par défaut → ne plus afficher « lecture seule »
-        // à tort (il a un formulaire d'écriture juste à côté). On distingue aussi co-traitant/sous-traitant.
-        const _role = (d.invited && d.invited.role === "sous_traitant") ? "sous-traitant" : "partenaire";
-        document.getElementById("g-role").textContent = "Invité · " + (d.can_contribute ? _role : "lecture seule");
-        document.getElementById("brand-sub").textContent = d.mandataire || "Espace co-traitant";
+        // à tort (il a un formulaire d'écriture juste à côté). On distingue aussi partenaire et sous-traitant.
+        const _role = (d.invited && d.invited.role === "sous_traitant") ? "Sous-traitant invité" : "Partenaire invité";
+        document.getElementById("g-role").textContent = d.can_contribute ? _role : _role + " · lecture seule";
+        document.getElementById("brand-sub").textContent = d.mandataire || "Espace partenaire";
         document.getElementById("loading").style.display = "none";
         document.getElementById("shell").style.display = "";
         setBanner();

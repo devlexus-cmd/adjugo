@@ -73,7 +73,7 @@ def test_carte_du_marche_compacte_un_seul_bouton_et_menu_inchange():
     # La carte est sur la page du marché, juste avant les documents de réponse (étape « préparer »).
     assert page.index("Estimation du prix") < page.index("id=\"atl-card\"") < page.index("Mes documents de réponse")
     c = _sans_commentaires_html(CARTE)
-    assert "Dossier de présentation" in c and "« mémoire technique »" in c
+    assert "Dossier de présentation" in c and "la partie technique de votre offre que demande le règlement de la consultation" in c and "mémoire" not in c   # vague 0
     assert len(re.findall(r"<button\b(?![^>]*class=\"tip)", c)) == 1 and "@click=\"atlOpen()\"" in c
     assert "Préparer le dossier de présentation" in c and "Ouvrir l'atelier" in c
     # Le menu n'est pas réorganisé : aucune entrée « atelier » dans la barre latérale.
@@ -149,7 +149,7 @@ def test_savoir_faire_renvoie_a_l_atelier_du_marche():
     k = _sans_commentaires_html(KB)
     assert "Importer le dossier & rédiger" not in k and "kbMemoire" not in k and "kb.memoire" not in k
     assert "Ouvrir l'atelier" in k and "kbOuvrirAtelier(p)" in k and "Voir tous mes marchés" in k
-    assert "« mémoire technique »" in k
+    assert "la partie technique de votre offre que demande le règlement de la consultation" in k and "mémoire technique" not in k                          # vague 0
     assert "/api/knowledge/memoire-upload" not in JS and "kbMemoire" not in JS and "memoireLoading" not in JS
     assert "Votre savoir-faire" in k and "Répondre à un questionnaire" in k       # la bibliothèque reste
 

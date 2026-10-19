@@ -152,7 +152,7 @@ def update_cotraitant(ct_id: int, data: CotraitantCreate, current_user: User = D
     _refuser_demo(current_user)
     ct = db.query(Cotraitant).filter(Cotraitant.id == ct_id, Cotraitant.user_id.in_(member_ids(current_user, db))).first()
     if not ct:
-        raise HTTPException(404, "Co-traitant introuvable")
+        raise HTTPException(404, "Partenaire introuvable")
     # exclude_unset : un PUT partiel ne réécrit plus les champs non transmis avec leur défaut.
     changes = data.model_dump(exclude_unset=True)
     explicit_source = changes.pop("capacites_source", None)
@@ -179,7 +179,7 @@ def delete_cotraitant(ct_id: int, current_user: User = Depends(get_current_user)
     _refuser_demo(current_user)
     ct = db.query(Cotraitant).filter(Cotraitant.id == ct_id, Cotraitant.user_id.in_(member_ids(current_user, db))).first()
     if not ct:
-        raise HTTPException(404, "Co-traitant introuvable")
+        raise HTTPException(404, "Partenaire introuvable")
     # On purge les liaisons aux AO (sinon ProjectCotraitant pointe vers un partenaire supprimé).
     link_ids = [lk.id for lk in db.query(ProjectCotraitant).filter(ProjectCotraitant.cotraitant_id == ct.id).all()]
     _release_convention_links(db, link_ids, current_user)
@@ -287,7 +287,7 @@ def attach_cotraitant(project_id: int, req: AttachRequest,
         ct = db.query(Cotraitant).filter(Cotraitant.id == req.cotraitant_id,
                                          Cotraitant.user_id.in_(ids)).first()
         if not ct:
-            raise HTTPException(404, "Co-traitant introuvable")
+            raise HTTPException(404, "Partenaire introuvable")
     elif req.company:
         c = req.company
         # Même validation/normalisation que le chemin Pydantic : le SIRET arrive ici en dict
@@ -313,7 +313,7 @@ def attach_cotraitant(project_id: int, req: AttachRequest,
                             references=[], capacites_source="rne", capacites_updated_at=_utcnow())
             db.add(ct); db.commit(); db.refresh(ct)
     else:
-        raise HTTPException(400, "Fournir cotraitant_id ou company")
+        raise HTTPException(400, "Indiquez le partenaire (cotraitant_id) ou le nom de l'entreprise (company).")
 
     # 2) Éviter un doublon de liaison
     exists = db.query(ProjectCotraitant).filter(

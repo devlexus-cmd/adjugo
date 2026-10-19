@@ -2006,7 +2006,7 @@ def _extract_zip(content: bytes, max_chars: int, budget: "_Budget", depth: int, 
     from app.services import dce_pieces as _dp
     if not _zip_entry_count_ok(content):
         raise ValueError("Archive ZIP trop complexe (trop de fichiers). "
-                         "Importez directement les pièces utiles (RC, CCAP, CCTP, DPGF).")
+                         "Importez directement les pièces utiles (règlement, CCAP, CCTP, tableau de prix).")
     try:
         zf = zipfile.ZipFile(io.BytesIO(content))
     except Exception:
@@ -2145,7 +2145,7 @@ def extract_dce_pieces(filename: str, content: bytes, max_chars: int = 40000) ->
             if budget.skipped_big:
                 raise ValueError("Un fichier de l'archive est trop volumineux une fois décompressé "
                                  f"({ZIP_MEMBER_MAX_BYTES // _MB} Mo max par fichier). "
-                                 "Importez directement les pièces utiles (RC, CCAP, CCTP, DPGF).")
+                                 "Importez directement les pièces utiles (règlement, CCAP, CCTP, tableau de prix).")
             if budget.skipped_nested:
                 raise ValueError("Archive trop imbriquée (un ZIP dans un ZIP dans un ZIP). "
                                  "Décompressez-la puis importez les pièces ou un seul ZIP.")

@@ -253,7 +253,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     # est manquant : leur DC2 serait non signable → on avertit (bloquant) plutôt que de
     # produire un DC2 vide en silence.
     from app.services.cerfa import _groupement_members
-    _missing_rep = [ct.get("name") or ct.get("siret") or "un co-traitant"
+    _missing_rep = [ct.get("name") or ct.get("siret") or "un partenaire du groupement"
                     for ct in _groupement_members(cerfa_cotraitants)
                     if not str(ct.get("representant_legal") or "").strip()]
     if _missing_rep:
@@ -406,7 +406,7 @@ def _build_zip(memoire_files, cerfa_files, company, details, cotraitants, projec
             zf.writestr(f"cerfa/{c['name']}", _as_bytes(c["content"]))
         zf.writestr("synthese_groupement.pdf",
                     text_to_pdf(_groupement_recap(company, cotraitants, details), "Composition du groupement"))
-        zf.writestr("fiche_appel_offres.pdf", text_to_pdf(_ao_recap(details), "Fiche récapitulative de l'AO"))
+        zf.writestr("fiche_appel_offres.pdf", text_to_pdf(_ao_recap(details), "Fiche récapitulative du marché"))
         if convention_pdf:
             # Convention GÉNÉRÉE (texte figé + accords enregistrés) : remplace le modèle.
             zf.writestr("convention_groupement.pdf", convention_pdf)
@@ -450,7 +450,7 @@ def _groupement_recap(company, cotraitants, details):
     lines.append(f"Chef de file : {company.get('name','')} ({company.get('siret','')})")
     lines.append("")
     if cotraitants:
-        lines.append("Co-traitants :")
+        lines.append("Partenaires du groupement :")
         for c in cotraitants:
             lines.append(f"  - {c.get('name','')} | {c.get('specialites','')} | SIRET {c.get('siret','')}")
     else:
@@ -459,7 +459,7 @@ def _groupement_recap(company, cotraitants, details):
 
 
 def _ao_recap(details):
-    lines = ["FICHE RÉCAPITULATIVE AO", "=" * 45, ""]
+    lines = ["FICHE RÉCAPITULATIVE DU MARCHÉ", "=" * 45, ""]
     for k, v in (details or {}).items():
         if isinstance(v, (str, int, float)) and str(v).strip():
             lines.append(f"{k.replace('_',' ').title()} : {v}")

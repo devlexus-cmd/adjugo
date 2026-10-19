@@ -29,6 +29,19 @@ function paintIcons(root) {
   });
 }
 
+// Réorganisation, vague 1 (1.2) : l'adresse demande-t-elle l'inscription (/app?inscription) ? Rend le choix et
+// l'adresse sans ce paramètre (null : rien à changer). Les autres paramètres (?shared=, ?verify=…) et le
+// fragment (#gcode=…) restent tels quels.
+function inscriptionDemandee(loc) {
+  try {
+    const q = new URLSearchParams(loc.search || "");
+    if (!q.has("inscription")) return { inscrire: false, adresse: null };
+    q.delete("inscription");
+    const reste = q.toString();
+    return { inscrire: true, adresse: (loc.pathname || "/app") + (reste ? "?" + reste : "") + (loc.hash || "") };
+  } catch (e) { return { inscrire: false, adresse: null }; }
+}
+
 // Traduction runtime de l'UI : remplace les libellés FR statiques par leur
 // traduction (dictionnaire window.ADJUGO_I18N) selon la langue du pays choisi.
 // Idempotent : un texte déjà traduit ne correspond plus à une clé FR.
@@ -791,7 +804,7 @@ const __adjApp = createApp({
       atlJobs: {},            // rédactions en cours (tâches de fond), suivies toutes les 2 s, toutes pages confondues
       atlEchecs: {},          // « marché:partie » → message d'échec de la dernière rédaction, gardé jusqu'à la prochaine action
       atlMobile: false,       // écran étroit : lire et valider seulement
-      pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "dpgf_lot", l: "DPGF du lot (prix de vente)" }, { k: "autre", l: "Autre" }],
+      pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "dpgf_lot", l: "Tableau de prix du lot (prix de vente)" }, { k: "autre", l: "Autre" }],
       veille: { q: "", loc: "", results: [], loading: false },
       drawer: null, modal: null, cdlg: null,   // cdlg : confirmation d'une action de la convention
       reseau: _reseauInit(),                  // vue « Réseau » (vague 3)
@@ -801,11 +814,6 @@ const __adjApp = createApp({
       welcome: { siret: "", busy: false, dismissed: false },   // activation par SIRET (1er lancement)
       ag: { query: "réhabilitation groupe scolaire", running: false, log: [], gonogo: null, coverage: null, lots: [], dossier: null },
       agState: {}, agStep: {},
-      agentDefs: [
-        { id: "sourceur", ic: "radar", name: "Agent Sourceur", role: "Recherche BOAMP · score selon vos critères · recommandation" },
-        { id: "groupement", ic: "handshake", name: "Agent Stratège", role: "Parties non couvertes · partenaires complémentaires" },
-        { id: "redacteur", ic: "file-text", name: "Agent Rédacteur", role: "Dossier de présentation · formulaires officiels · dossier ZIP" },
-      ],
       statuses: ["nouveau", "en_cours", "envoye", "gagne", "perdu"],
       statuses2: ["nouveau", "en_cours", "envoye", "gagne", "perdu", "abandonne"],
       plan: { plan: "starter" }, org: { data: null, name: "", invite: { email: "", full_name: "" }, lastTemp: null },
@@ -814,7 +822,9 @@ const __adjApp = createApp({
       admin: { diag: null, backups: [], busy: false,
                // Profils du réseau à valider (identité) : liste, motif de refus et « remplacer » par demande.
                rv: { list: [], loaded: false, loading: false, error: "", busy: "", explication: "", motif: {}, remplacer: {}, refuser: {} },
-               ia: { data: null, loading: false, error: "" } },
+               ia: { data: null, loading: false, error: "" },
+               // Mesure d'usage (réorganisation, vague 1, 1.1) : ouvertures par écran, 30 derniers jours.
+               mesure: { data: null, loading: false, error: "" } },
       cookiesOk: (function(){ try { return localStorage.getItem("adjugo_cookies_ok") === "1"; } catch(e){ return true; } })(),
       predepot: [false, false, false, false],
       predepotSteps: [
@@ -896,8 +906,8 @@ const __adjApp = createApp({
             qa: [], qaInput: "", qaLoading: false, grilleBusy: "", atl: _atlCardInit(), lectureMsg: "", lectureBusy: false, lecturePid: null,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
-      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", agent: "Agent IA", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
-      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", agent: "3 agents IA orchestrés de la veille au dossier complet", pipeline: "Suivez vos AO étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Maîtres d'ouvrage, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Pilotez les décisions automatiques de l'agent", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires vérifiés et faites-vous trouver" },
+      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Tableau de bord", sourcing: "Trouver des marchés", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes documents", invoices: "Devis & factures", company: "Mon entreprise", criteria: "Mes critères", team: "Équipe", billing: "Abonnement", aodetail: "Le marché", consortiums: "Mes groupements", shared: "Partagé avec moi", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau de partenaires" },
+      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", dashboard: "Vue d'ensemble de votre activité", sourcing: "Sources officielles, traçables — vous validez chaque étape", pipeline: "Suivez vos marchés étape par étape", veille: "Appels d'offres réels en direct du BOAMP", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Clients, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous", team: "Invitez vos collègues à collaborer sur vos dossiers", billing: "Débloquez toute la puissance d'Adjugo", aodetail: "Dossier complet de l'appel d'offres", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires et faites-vous trouver" },
     };
   },
   computed: {
@@ -1043,18 +1053,11 @@ const __adjApp = createApp({
     // déjà ouverte. Sinon, un utilisateur connecté qui clique le lic reçu par email atterrissait
     // dans l'app sans jamais voir le formulaire « Nouveau mot de passe » (le clic semblait inerte).
     if (_rst) { this.auth.mode = "reset"; this.auth.resetToken = _rst; this.token = ""; }
-    // Réorganisation, vague 1 (1.2) : les boutons d'essai de la vitrine et de l'espace partenaire mènent à
-    // /app?inscription → « Créons votre compte » directement (pas l'écran de connexion). Déjà connecté : rien ne
-    // change. Le paramètre est retiré de l'adresse, les autres (?shared=, ?verify=…) restent tels quels.
-    try {
-      const _q = new URLSearchParams(location.search);
-      if (_q.has("inscription")) {
-        if (!this.token && !_rst) this.auth.mode = "register";
-        _q.delete("inscription");
-        const _reste = _q.toString();
-        history.replaceState({}, "", location.pathname + (_reste ? "?" + _reste : "") + location.hash);
-      }
-    } catch (e) {}
+    // Réorganisation, vague 1 (1.2) : /app?inscription (boutons d'essai de la vitrine et de l'espace partenaire)
+    // ouvre « Créons votre compte ». Le paramètre est retiré tout de suite ; le formulaire est choisi plus bas,
+    // une fois la session stockée relue (une session périmée est effacée : on s'inscrit alors aussi).
+    const _ins = inscriptionDemandee(location);
+    if (_ins.adresse !== null) { try { history.replaceState({}, "", _ins.adresse); } catch (e) {} }
     // Confirmation d'email : le lien reçu par mail ouvre /app?verify=… → on confirme et on retire le param.
     const _vrf = new URLSearchParams(location.search).get("verify");
     if (_vrf) {
@@ -1085,6 +1088,7 @@ const __adjApp = createApp({
     if (this.token && !_freshLogin && _idleStale() && jetonDemoLien(this.token)) { this.sessionPerdue(); return; }
     if (this.token && !_freshLogin && _idleStale()) { localStorage.removeItem("adjugo_token"); this.token = ""; atlPurgeDrafts(true); }
     else atlPurgeDrafts(false);      // brouillons locaux de plus de 7 jours : effacés
+    if (_ins.inscrire && !this.token && !_rst) this.auth.mode = "register";   // déjà connecté : rien ne change
 
     const _oauthCfg = () => this.api("GET", "/api/auth/oauth-config").then(c => this.googleEnabled = !!(c && c.google)).catch(() => {});
     if (!this.token && !_gc) _oauthCfg();
@@ -1341,7 +1345,6 @@ const __adjApp = createApp({
       if (v === "invoices") this.loadInvoices();
       if (v === "documents") this.loadDocuments();
       if (v === "cotraitants") { this.loadCotraitants(); this.loadTrades(); }
-      if (v === "agent") this.loadStats();
       if (v === "sourcing") { this.loadTrades(); this.loadAlerts(); this.loadCountries(); this.loadStats(); this.srcPrefillFromProfile(); }
       if (v === "amont") this.loadAmont();
       if (v === "kb") this.kbLoad();
@@ -1358,7 +1361,7 @@ const __adjApp = createApp({
     _ecranOuvert(v) {
       if (!this.token || !v) return;
       try {
-        fetch("/api/mesure/ecran", { method: "POST", keepalive: true,
+        fetch("/api/mesure/ecran", { method: "POST",
           headers: { "Authorization": "Bearer " + this.token, "Content-Type": "application/json" },
           body: JSON.stringify({ ecran: String(v) }) }).catch(() => {});
       } catch (e) {}
@@ -1366,6 +1369,7 @@ const __adjApp = createApp({
     async loadAdmin() {
       this.adminRvLoad();
       this.adminIaLoad();
+      this.adminMesureLoad();
       try { this.admin.diag = await this.api("GET", "/api/admin/storage-diag"); } catch (e) { this.admin.diag = null; }
       try { this.admin.backups = (await this.api("GET", "/api/admin/backups")).backups || []; } catch (e) { this.admin.backups = []; }
     },
@@ -1388,6 +1392,15 @@ const __adjApp = createApp({
       catch (e) { ia.error = (e && e.message) || "Relevé momentanément indisponible."; }
       finally { ia.loading = false; }
     },
+    async adminMesureLoad() {
+      const m = this.admin.mesure; if (m.loading) return;
+      m.loading = true; m.error = "";
+      try { m.data = await this.api("GET", "/api/admin/mesures/ecrans?jours=30"); }
+      catch (e) { m.error = (e && e.message) || "Relevé momentanément indisponible."; }
+      finally { m.loading = false; }
+    },
+    // Nom lisible d'un écran mesuré : le titre de la vue, sinon sa clé.
+    adminEcranNom(k) { return this.titles[k] || k; },
     fmtEur(v) { const n = Number(v); return isFinite(n) ? n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €" : "—"; },
     adminRvPublished(it) { return ((it && it.conflits) || []).filter(c => c.statut === "publie"); },
     // Lien vers l'annuaire officiel des entreprises : seulement l'adresse attendue (SIREN à 9 chiffres).
@@ -1536,7 +1549,7 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); }
     },
     async orgRemove(m) {
-      if (!confirm("Retirer " + (m.full_name || m.email) + " de l'équipe ?\nSes dossiers (AO, contacts…) seront réattribués au propriétaire et son accès coupé immédiatement.")) return;
+      if (!confirm("Retirer " + (m.full_name || m.email) + " de l'équipe ?\nSes dossiers (marchés, contacts…) seront réattribués au propriétaire et son accès coupé immédiatement.")) return;
       try { const r = await this.api("DELETE", "/api/org/members/" + m.id); this.loadOrg(); this.notify(m.full_name + " retiré" + (r && r.reassigned ? " — " + r.reassigned + " élément(s) réattribué(s)" : "")); }
       catch (e) { this.notify(e.message, "err"); }
     },
@@ -2506,7 +2519,7 @@ const __adjApp = createApp({
     // de file mais connue d'Adjugo, qui renvoie le même texte réseau). Jamais une invitation SIRENE.
     inviteRelancable(inv) { return !!inv && (inv.source === "reseau_adjugo" || (inv.recipient || "").includes("@")); },
     inviteIsNetwork(inv) { return !!inv && inv.source === "reseau_adjugo"; },
-    inviteSourceLabel(inv) { return ({ reseau_adjugo: "Réseau Adjugo", sirene: "Registre SIRENE" })[inv && inv.source] || ""; },
+    inviteSourceLabel(inv) { return ({ reseau_adjugo: "Réseau Adjugo", sirene: "Registre officiel" })[inv && inv.source] || ""; },
     async aoRelanceRetardataires() {
       if (this.ao.share._relancing) return;   // garde anti double-clic (évite les relances en double)
       const list = this.aoPendingRelancables();
@@ -2604,7 +2617,7 @@ const __adjApp = createApp({
       if (sirene) this.ao.grp.sireneLoading = true;
       try {
         this.ao.grp.besoins = await this.api("GET", "/api/projects/" + pid + "/groupement/besoins" + (sirene ? "?sirene=1" : ""));
-        if (sirene && !((this.ao.grp.besoins.candidats || {}).sirene || []).length) this.notify("Aucune entreprise SIRENE trouvée pour ces manques", "err");
+        if (sirene && !((this.ao.grp.besoins.candidats || {}).sirene || []).length) this.notify("Aucune entreprise du registre officiel trouvée pour ces manques", "err");
       } catch (e) { this.notify(e.message, "err"); }
       finally { this.ao.grp.sireneLoading = false; }
     },
@@ -2668,7 +2681,7 @@ const __adjApp = createApp({
       return [{ key: "rattaches", label: "Déjà rattachés à ce marché", list: c.rattaches || [] },
               { key: "annuaire", label: "Mes partenaires", list: c.annuaire || [] },
               { key: "reseau", label: "Réseau Adjugo", list: c.reseau || [] },
-              { key: "sirene", label: "Entreprises SIRENE", list: c.sirene || [] }];
+              { key: "sirene", label: "Registre officiel des entreprises", list: c.sirene || [] }];
     },
     candTotal() { return this.candGroups().reduce((n, g) => n + g.list.length, 0); },
     candId(c) { return (c.kind || "?") + ":" + ((c.kind === "reseau" && c.profile_id) || c.id || c.siret || (c.name || "").toLowerCase()); },
@@ -2808,7 +2821,7 @@ const __adjApp = createApp({
     rnPubCta() { return this.rnPending() ? "Voir ma demande de publication" : "Publier mon profil"; },
     // Bouton de publication du profil : demande de validation à Adjugo, sauf identité déjà validée.
     rnPubLabel(d) { return d && d.validation && d.validation.identite_validee ? "Publier mon profil" : "Demander la publication"; },
-    rnRoleLabel(r) { return ({ cotraitant: "Partenaire du groupement (co-traitant)", sous_traitant: "Sous-traitant", mandataire: "Chef de file" })[r] || r; },
+    rnRoleLabel(r) { return ({ cotraitant: "Partenaire du groupement", sous_traitant: "Sous-traitant", mandataire: "Chef de file" })[r] || r; },
     rnMetiers(c) { return ((c && c.metiers) || []).map(m => (m && m.label) || m).filter(Boolean).join(", "); },
     rnLieu(c) { return c ? [c.city, c.departement ? "(" + c.departement + ")" : ""].filter(Boolean).join(" ") : ""; },
     // Icône d'une vérification (SIRENE / BODACC / DECP) : vérifié, à regarder, ou « non vérifié ».
@@ -4178,7 +4191,7 @@ const __adjApp = createApp({
       const go = Number(this.criteria.go_threshold) || 65, ng = Math.min(Number(this.criteria.nogo_threshold) || 40, go - 1);
       return p.match_score >= go ? "go" : (p.match_score < ng ? "no_go" : "a_etudier");
     },
-    statusLabel(s) { return ({ nouveau: "Nouveau", en_cours: "En cours", envoye: "Envoyé", gagne: "Gagné", perdu: "Perdu", abandonne: "Abandonné" })[s] || s; },
+    statusLabel(s) { return ({ nouveau: "Nouveau", en_cours: "En cours", envoye: "Déposé", gagne: "Gagné", perdu: "Perdu", abandonne: "Abandonné" })[s] || s; },
     covLabel(c) { return ({ entreprise: "Entreprise seule", cotraitant: "Avec un partenaire", non_couvert: "Non couvert" })[c] || c; },
     covClass(c) { return ({ entreprise: "go", cotraitant: "st-nouveau", non_couvert: "no_go" })[c] || "st-nouveau"; },
     eurExact(v) {
@@ -4230,7 +4243,7 @@ const __adjApp = createApp({
     },
     async srcRunAlert(a) {
       this.notify("Test de l'alerte…");
-      try { const r = await this.api("POST", "/api/saved-searches/" + a.id + "/run"); this.loadAlerts(); this.notify(r.new_matches + " nouvel(s) AO trouvé(s)"); }
+      try { const r = await this.api("POST", "/api/saved-searches/" + a.id + "/run"); this.loadAlerts(); this.notify(r.new_matches + " " + (r.new_matches > 1 ? "nouveaux marchés trouvés" : "nouveau marché trouvé")); }
       catch (e) { this.notify(e.message, "err"); }
     },
     async srcToggleAlert(a) {
@@ -6223,7 +6236,7 @@ __adjApp.component("grille-carte", {
     // Vague 5 : ce que le dossier DEMANDE (exigences repérées sans IA, phrase mot pour mot).
     + '<template v-if="vm.v2">'
     + '<div class="gn-sub">Ce que le dossier demande'
-    + '<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les phrases du règlement et du cadre de réponse qui demandent quelque chose au candidat (« le mémoire comprendra… », « le candidat devra… », « Décrivez… »), repérées sans IA. L\'IA de l\'analyse peut en proposer d\'autres : elles ne sont gardées que si leur phrase est retrouvée mot pour mot. Les pièces administratives, les prix et le dépôt n\'y sont pas. L\'atelier du dossier de présentation dit lesquelles sont traitées. Le règlement fait foi.</span></button></div>'
+    + '<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les phrases du règlement et du cadre de réponse qui demandent quelque chose au candidat (« le candidat présentera… », « le candidat devra… », « Décrivez… »), repérées sans IA. L\'IA de l\'analyse peut en proposer d\'autres : elles ne sont gardées que si leur phrase est retrouvée mot pour mot. Les pièces administratives, les prix et le dépôt n\'y sont pas. L\'atelier du dossier de présentation dit lesquelles sont traitées. Le règlement fait foi.</span></button></div>'
     + '<p class="small gn-note">{{ exResume || "Aucune exigence repérée dans le règlement ni dans le cadre de réponse." }}</p>'
     + '<details v-if="vm.exigences.length || edit" class="gn-det"><summary>{{ vm.exigences.length ? "Voir les exigences" : "Ajouter une exigence" }}</summary>'
     + '<div v-for="x in vm.exigences" :key="\'ex\'+x.id" class="gn-src" :class="{\'gn-off\': x.retiree}">'
@@ -6324,7 +6337,7 @@ __adjApp.component("rn-fiche", {
     + '<span class="rn-cap-l">{{ x.label }}</span><span class="rn-cap-v">{{ x.valeur }}</span>'
     + '<span class="rn-cap-s">{{ x.source }}<template v-if="x.date"> · {{ jj(x.date) }}</template></span></li></ul>'
     + '<p v-else class="muted small">Aucune capacité déclarée pour l\'instant.</p>'
-    + '<div class="rn-sub">Vérifications dans les registres publics<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">SIRENE : le répertoire officiel des entreprises. BODACC : le journal officiel où sont publiées les procédures collectives. DECP : les données publiques des marchés attribués. Chaque résultat est daté ; rien n\'est noté.</span></button></div>'
+    + '<div class="rn-sub">Vérifications dans les registres publics<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Registre officiel : le répertoire des entreprises, tenu par l\'Insee. BODACC : le journal officiel où sont publiées les procédures collectives. DECP : les données publiques des marchés attribués. Chaque résultat est daté ; rien n\'est noté.</span></button></div>'
     + '<rn-badges :badges="c.badges"></rn-badges>'
     + '<template v-if="c.references && c.references.length"><div class="rn-sub">Références choisies par l\'entreprise</div>'
     + '<ul class="rn-refs"><li v-for="(r,i) in c.references" :key="\'rf\'+i">{{ r.intitule }}<span v-if="r.client" class="muted"> — {{ r.client }}</span><span v-if="r.annee" class="muted"> ({{ r.annee }})</span></li></ul></template>'

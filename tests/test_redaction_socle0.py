@@ -538,9 +538,9 @@ def test_vocabulaire_dossier_de_presentation_a_l_ecran():
     assert "Mémoire généré" not in js and 'atelier: "Dossier de présentation"' in js
     assert 'folderLabel(f) { return f === "Mémoire technique" ? "Dossier de présentation"' in js
     assert "{{ g.folder }}" not in html
-    # Bulle (i) « mémoire technique » à côté du dossier de présentation livré (page du marché ; l'étape 4
-    # de la recherche, qui en portait une seconde, a disparu : décision 4 de l'étude organisation).
-    assert html.count("« mémoire technique »</b> demandé par l'acheteur") >= 1
+    # Bulle (i) à côté du dossier de présentation livré (page du marché) : elle le définit sans le mot banni
+    # « mémoire » (réorganisation, vague 0 : docs/REORGANISATION_V1.md, § 0.2).
+    assert "C'est la partie technique de votre offre que demande le règlement de la consultation" in html and "« mémoire technique »" not in html
 
 
 # ═══ 10. Limite d'appels IA simultanés + coût d'un dossier ════════════════════════════════════════

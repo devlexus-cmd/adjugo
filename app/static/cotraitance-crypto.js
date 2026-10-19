@@ -313,7 +313,7 @@
     const o = opts || {};
     for (const [lab, v] of [["Le nom de l'entreprise", o.entreprise], ["Le nom du lot", o.lot]]) {
       const w = forbiddenWord(csvText(v));
-      if (w) return lab + " (« " + csvText(v).slice(0, 80) + " ») contient le mot « " + w + " » : une DPGF de lot ne doit faire apparaître ni coût ni marge, ce mot est donc refusé en en-tête. Modifiez ce nom dans votre part.";
+      if (w) return lab + " (« " + csvText(v).slice(0, 80) + " ») contient le mot « " + w + " » : un tableau de prix ne doit faire apparaître ni coût ni marge, ce mot est donc refusé en en-tête. Modifiez ce nom dans votre part.";
     }
     return "";
   }

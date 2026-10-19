@@ -194,7 +194,7 @@ def besoins(request: Request, project_id: int, sirene: int = 0,
         # simple des besoins s'exécute à chaque ouverture de fiche (bruit inutile au journal).
         audit.record(db, action="groupement.besoins", owner_id=owner, project_id=project.id,
                      actor=f"user:{current_user.id}", actor_kind="owner", target_type="project",
-                     target_id=project.id, detail=f"{len(gaps)} manque(s), recherche SIRENE",
+                     target_id=project.id, detail=f"{len(gaps)} manque(s), recherche dans le registre officiel",
                      ip=audit.client_ip(request))
     return {
         "project_id": project.id,
@@ -259,7 +259,7 @@ def _resolve_member(m: SimMember, db: Session, project: Project, ids: list, user
     if kind == "sirene":
         siret = _clean_siret(m.siret)
         if len(siret) != 14:
-            raise HTTPException(422, "Un SIRET à 14 chiffres est requis pour un membre SIRENE")
+            raise HTTPException(422, "Un SIRET à 14 chiffres est requis pour une entreprise du registre officiel")
         from app.services import registre
         try:
             fiche = registre.lookup_company(siret)
@@ -267,7 +267,7 @@ def _resolve_member(m: SimMember, db: Session, project: Project, ids: list, user
             logger.warning("lookup_company %s : %s", siret, e)
             fiche = None
         if not fiche:
-            raise HTTPException(404, "Entreprise introuvable dans SIRENE pour ce SIRET")
+            raise HTTPException(404, "Entreprise introuvable dans le registre officiel pour ce SIRET")
         return member_from_sirene(fiche, siret)
     # 'saisi'
     name = (m.name or "").strip()
@@ -294,7 +294,7 @@ def _run_simulation(gs, project: Project, lead: dict, criteria: dict, members: l
     warnings = list(res.get("warnings") or [])
     for m in members:
         if m.get("kind") == "sirene" and ca_label(m):
-            warnings.append(f"CA de {m.get('name')} non connu (non publié dans SIRENE) — à demander au partenaire")
+            warnings.append(f"CA de {m.get('name')} non connu (non publié dans le registre officiel) : à demander au partenaire")
         elif m.get("kind") == "reseau" and ca_label(m):
             warnings.append(f"CA de {m.get('name')} non affiché sur le réseau Adjugo — à demander au partenaire")
     res["warnings"] = with_declare_warning(members, warnings)

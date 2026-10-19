@@ -339,7 +339,7 @@ def relire_dce(request: Request, project_id: int, current_user: User = Depends(g
     text = gc.dce_text(db, project, owner_ids)
     if not text:
         raise HTTPException(404, "Aucun dossier du marché lisible n'est archivé pour ce marché : importez-le "
-                                 "depuis la fiche du marché.")
+                                 "depuis la page du marché.")
     fi = gc.forme_imposee(project, text_integral=text)
     conv = _get_or_create_draft(db, project, current_user)
     conv.forme_imposee = fi["forme_imposee"]
@@ -587,7 +587,7 @@ def _after_agreement(db: Session, project: Project, conv, by_owner: bool) -> Non
                         to, f"Convention validée par tous les membres — {project.name[:60]}",
                         f"Bonjour,\n\nTous les membres du groupement ont donné leur accord sur la convention "
                         f"(version {conv.version}) du marché « {project.name} ».\n\nLe PDF, avec la liste des "
-                        f"accords enregistrés, est disponible dans la fiche du marché :\n{base}/app\n\n"
+                        f"accords enregistrés, est disponible sur la page du marché, dans Adjugo :\n{base}/app\n\n"
                         f"{gc.AVERTISSEMENT}\n\n— Adjugo")])
             except Exception:
                 pass
