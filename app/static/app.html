@@ -1969,6 +1969,33 @@
                   <span v-if="atl.st.dossier.dernier_export" class="muted">Dernier export : {{ atlWhen(atl.st.dossier.dernier_export.le) }} ({{ (atl.st.dossier.dernier_export.format || '').toUpperCase() }})</span>
                 </div>
                 <div v-else class="muted small atl-mt8">Sur téléphone, vous pouvez lire et valider. L'écriture et l'export se font depuis un ordinateur.</div>
+                <!-- Rédaction, vague 6 (H) : page facultative « Comment ce dossier a été préparé » (contrat
+                     docs/REDACTION_V6.md, section H). Case DÉCOCHÉE par défaut, choisie à chaque export (jamais
+                     enregistrée) ; « Voir la page » la montre avant (lecture seule, sans IA, ouverte à la démo). -->
+                <div v-if="atl.st.export.page_preparation" class="row wrap atl-g6 atl-mt8 small atl-prep-case">
+                  <label v-if="!atlMobile" class="atl-chk"><input type="checkbox" v-model="atl.prepJoindre" :disabled="!!atl.busy">{{ atl.st.export.page_preparation.libelle }}</label>
+                  <span v-else>Page « Comment ce dossier a été préparé »</span>
+                  <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.st.export.page_preparation.bulle }}</span></button>
+                  <button type="button" class="atl-lien" @click="atlPrepVoir()" :aria-expanded="atl.prep.open ? 'true' : 'false'" aria-controls="atl-prep-b">{{ atl.prep.open ? 'Replier la page' : 'Voir la page' }}</button>
+                </div>
+                <div v-if="atl.prep.open" id="atl-prep-b" class="atl-prep" role="region" aria-label="Comment ce dossier a été préparé">
+                  <div v-if="atl.prep.err" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ atl.prep.err }} <button type="button" class="linkbtn" @click="atlPrepLoad()">Réessayer</button></div></div>
+                  <div v-else-if="atl.prep.loading && !atl.prep.d" class="muted small" role="status"><span class="spin"></span> Préparation de la page…</div>
+                  <template v-if="atl.prep.d && !atl.prep.err">
+                    <b class="small">{{ atl.prep.d.page.titre }}</b>
+                    <p class="small">{{ atl.prep.d.page.introduction }}</p>
+                    <ul class="atl-prep-r small"><li v-for="(l,i) in atl.prep.d.page.resume" :key="'pr'+i">{{ l }}</li></ul>
+                    <div v-for="w in atl.prep.d.avertissements" :key="'pw'+w.code" class="muted small atl-mt4">{{ w.message }}</div>
+                    <ol class="atl-prep-l">
+                      <li v-for="l in atl.prep.d.page.lignes" :key="'pl'+l.section_id">
+                        <div class="atl-prep-t">{{ l.partie }}</div>
+                        <div class="small atl-mt4">{{ atlPrepLigne(l) }}</div>
+                        <div class="small muted">{{ l.faits_libelle }}</div>
+                      </li>
+                    </ol>
+                    <p class="muted small atl-prep-leg">{{ atl.prep.d.page.legende }}</p>
+                  </template>
+                </div>
               </div>
               <div v-if="atlEnCours().reduce((n, j) => n + j.ids.length, 0)" class="small atl-mt8 atl-encours" role="status"><span class="spin"></span> Adjugo travaille sur {{ atlEnCours().reduce((n, j) => n + j.ids.length, 0) }} partie{{ atlEnCours().reduce((n, j) => n + j.ids.length, 0) > 1 ? 's' : '' }}. Vous pouvez quitter cette page : la rédaction continue.</div>
               <div v-else-if="atlRepHarmEnCours()" class="small atl-mt8 atl-encours" role="status"><span class="spin"></span> Adjugo relie les parts des membres du groupement. Vous pouvez quitter cette page : l'harmonisation continue.</div>
@@ -3917,6 +3944,6 @@
 </div>
 <script src="/static/redaction-partenaire.js" integrity="sha384-5YkHm+HTCo5oo0QuCxWuxMoPBmy0pArVRZPNLHSxYwM95KBvfQnOG0XNQRlRtTFb" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
-<script src="/static/app.js" integrity="sha384-JQ1s3VOvx5SWQYclYl1WzUX9UNsjuBWd5VwjFn9PGjz5Vd5ZgjeTyt/RM4+7W/fl" defer></script>
+<script src="/static/app.js" integrity="sha384-YQ2FpqdWacxujOOu0HER9cZ8E7hmeRVS/D4Le4bAUtLqDMlqOQObvOGaioV4wpfG" defer></script>
 </body>
 </html>
