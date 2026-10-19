@@ -34,7 +34,7 @@ BANDEAU = ("Dossier fictif de démonstration : l'acheteur, le marché et les chi
            "consultation réelle.")
 DCE_NOM = "DCE — Réfection toiture groupe scolaire Jean Moulin.zip"
 _DOSSIER_ZIP = "DCE groupe scolaire Jean Moulin"
-_VERSION = "2"            # à incrémenter si le texte du dossier change (nouvelles clés de stockage)
+_VERSION = "3"            # à incrémenter si le texte du dossier change (nouvelles clés de stockage)
 
 # ── 1. Le dossier du marché (fictif) ──────────────────────────────────────────────────────────────
 # « ## » = intertitre. Une ligne par critère : la grille lit chaque ligne comme une ligne de tableau.
@@ -49,6 +49,13 @@ JUSTIFICATION_CA = ("Ce niveau, supérieur au double du montant estimé, est jus
 EXIGENCE_QUALIFICATIONS = ("Le candidat justifie d'une qualification Qualibat 3212 ou équivalente et de la mention "
                            "RGE.")
 EXIGENCE_VARIANTES = "Les variantes sont autorisées sur les matériaux d'étanchéité."
+# Rédaction, vague 5 (C2 complet) : ce que « Comment vous serez noté » repère sans IA dans ce règlement — la
+# règle des candidatures multiples (R2142-21), une phrase sur l'intelligence artificielle (une exigence que le
+# dossier déjà rédigé ne traite pas encore) et la date limite des questions.
+PHRASE_CANDIDATURES = ("Un même opérateur économique ne peut pas présenter plusieurs offres en agissant à la fois en "
+                       "qualité de candidat individuel et de membre d'un groupement.")
+PHRASE_IA = "Le mémoire technique indique si le candidat a eu recours à un outil d'intelligence artificielle pour le rédiger."
+PHRASE_QUESTIONS = "Les questions des candidats sont posées sur la plateforme au plus tard le 18 décembre 2026 à 12h00."
 
 _RC = ("01 - Règlement de la consultation.pdf", "RÈGLEMENT DE LA CONSULTATION", [
     "Réfection de la toiture et de l'étanchéité du groupe scolaire Jean Moulin",
@@ -60,6 +67,7 @@ _RC = ("01 - Règlement de la consultation.pdf", "RÈGLEMENT DE LA CONSULTATION"
     "## Article 2 — Conditions de participation",
     EXIGENCE_CA + " " + JUSTIFICATION_CA,
     EXIGENCE_QUALIFICATIONS,
+    PHRASE_CANDIDATURES,
     "## Article 3 — Délai d'exécution",
     "Le délai d'exécution est de 5 mois à compter de l'ordre de service. Les travaux en toiture au droit des "
     "salles de classe sont réalisés pendant les vacances scolaires.",
@@ -70,6 +78,7 @@ _RC = ("01 - Règlement de la consultation.pdf", "RÈGLEMENT DE LA CONSULTATION"
     "un mémoire technique.",
     "Le mémoire technique compte 12 pages au maximum, page de garde comprise, en police Arial de taille 11. "
     "Un cadre de mémoire technique est joint au dossier à titre indicatif.",
+    PHRASE_IA,
     "## Article 6 — Variantes",
     EXIGENCE_VARIANTES,
     "## Article 7 — Jugement des offres",
@@ -86,6 +95,7 @@ _RC = ("01 - Règlement de la consultation.pdf", "RÈGLEMENT DE LA CONSULTATION"
     "Le titulaire réalise au moins 200 heures d'insertion sociale pendant l'exécution du marché.",
     "## Article 9 — Remise des offres",
     "Les offres sont remises par voie dématérialisée avant le 30 décembre 2026 à 12h00.",
+    PHRASE_QUESTIONS,
 ])
 
 _CADRE = ("02 - Cadre de mémoire technique.pdf", "CADRE DE MÉMOIRE TECHNIQUE", [
@@ -168,6 +178,14 @@ CRITERES = [
     {"critere": "Gestion environnementale du chantier", "ponderation": "5 %",
      "extrait": "1.5 Gestion environnementale du chantier : 5 %."},
     {"critere": "Prix des prestations", "ponderation": "40 %", "extrait": "2. Prix des prestations : 40 %."},
+]
+
+# Question « proposée par l'IA » (recopiée du règlement, comme les critères) : la grille la contrôle SANS IA —
+# phrase retrouvée mot pour mot, aucun nombre absent de cette phrase.
+QUESTIONS_ACHETEUR = [
+    {"question": "Le règlement demande d'indiquer le recours à un outil d'intelligence artificielle : faut-il le "
+                 "préciser dans le mémoire technique lui-même, ou suffit-il d'une mention jointe à l'offre ?",
+     "extraits": [PHRASE_IA]},
 ]
 
 
@@ -261,6 +279,7 @@ def analyse_toiture(base: dict, lecture: dict, company: dict, criteria: dict) ->
     ext = copy.deepcopy(base)
     det = dict(ext.get("details") or {})
     det["criteres_attribution"] = copy.deepcopy(CRITERES)     # sous-critères tels qu'écrits au règlement
+    det["questions_acheteur"] = copy.deepcopy(QUESTIONS_ACHETEUR)
     # Phrases exactes du règlement (comme l'extraction les rend) : vérifiées plus bas par la garde des
     # citations sur le texte intégral, elles s'affichent sous « Le dossier dit ».
     det["exigences_sources"] = {"ca_minimum_requis": EXIGENCE_CA,

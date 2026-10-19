@@ -180,6 +180,32 @@ class AtelierError(Exception):
         return dict(self.extra, code=self.code, message=self.message)
 
 
+# ── Mode « sans IA » (rédaction, vague 5 — C2 complet, point 5 ; docs/REDACTION_V5.md) ────
+# Choisi par le chef de file pour CE dossier (proposé quand le règlement parle d'intelligence artificielle) :
+# aucun appel d'IA de rédaction — ni « Rédiger », ni « Raccourcir », ni « Harmoniser le ton », ni l'aide de
+# l'IA des partenaires. L'utilisateur écrit ; le contrôle des faits et la liste des exigences continuent
+# (ils n'utilisent pas l'IA). Rangé dans les options du dossier (options_export["sans_ia"]) : aucune migration.
+MSG_SANS_IA_REFUS = ("Ce dossier se rédige sans IA (choix enregistré pour ce marché) : écrivez le texte vous-même. "
+                     "Le contrôle des faits et la liste des exigences continuent.")
+MSG_SANS_IA_ACTIF = ("Ce dossier se rédige sans IA : ni rédaction, ni raccourci, ni harmonisation par l'IA, pour vous "
+                     "comme pour vos partenaires. Le contrôle des faits et la liste des exigences continuent, sans IA.")
+MSG_SANS_IA_PARTENAIRE = ("Le chef de file a choisi de rédiger ce dossier sans IA : écrivez votre partie vous-même. Le "
+                          "contrôle des faits continue, sans IA.")
+
+
+def mode_sans_ia(dossier) -> Optional[dict]:
+    """{actif, le, par} si le dossier se rédige sans IA, sinon None."""
+    o = getattr(dossier, "options_export", None)
+    x = o.get("sans_ia") if isinstance(o, dict) else None
+    return x if isinstance(x, dict) and x.get("actif") else None
+
+
+def exiger_ia_permise(dossier) -> None:
+    """Refus (409 « mode_sans_ia ») de toute action de l'IA de rédaction sur un dossier « sans IA »."""
+    if dossier is not None and mode_sans_ia(dossier):
+        raise AtelierError(409, "mode_sans_ia", MSG_SANS_IA_REFUS)
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -827,7 +853,9 @@ def appliquer_grille(db, project: Project, dossier: DossierPresentation, lecteur
     ch = changements_grille(project, dossier, act, sections_retirees(db, dossier))
     if not ch or not ch["peut_appliquer"]:
         raise AtelierError(409, "rien_a_appliquer", "Le plan suit déjà « Comment vous serez noté ».")
-    if len(act) + len(ch["nouveaux"]) > SECTIONS_MAX:
+    n_new = sum(len(ap.parties_du_critere(x, "")) for x in ap.lignes_techniques(_analysis(project))
+                if x["id"] in {y["id"] for y in ch["nouveaux"]})
+    if len(act) + n_new > SECTIONS_MAX:
         raise AtelierError(422, "trop_de_parties", f"Un dossier compte au plus {SECTIONS_MAX} parties.")
     par_id = {ln["id"]: ln for ln in ap.lignes_techniques(_analysis(project))}
     for x in ch["poids"]:
@@ -837,8 +865,9 @@ def appliquer_grille(db, project: Project, dossier: DossierPresentation, lecteur
             s.lock_version = (s.lock_version or 0) + 1
     rang = len(act)
     for x in ch["nouveaux"]:
-        db.add(_section_from_plan(dossier, ap.section_de_critere(par_id[x["id"]]), rang))
-        rang += 1
+        for sp in ap.parties_du_critere(par_id[x["id"]], ""):
+            db.add(_section_from_plan(dossier, sp, rang))
+            rang += 1
     meta = dict(dossier.plan_meta) if isinstance(dossier.plan_meta, dict) else {}
     meta["grille"] = ap.empreinte_grille(_analysis(project))
     if ch["nouveaux"]:
@@ -1499,10 +1528,37 @@ def numero_affiche(dossier: DossierPresentation, section: DossierSection, rang: 
 
 def _rangs(dossier: DossierPresentation, sections: list) -> dict:
     out, r = {}, 0
+    if dossier.plan_source != ap.CADRE and any(ap.est_partie_de_sous_critere(s) for s in sections):
+        # Vague 5 : les parties d'un même critère découpé par ses sous-critères partagent son numéro
+        # (« 2.1 », « 2.2 ») ; les autres parties suivent (« 3 »).
+        g, k, groupe = 0, 0, None
+        for s in sections:
+            if ap.est_partie_de_sous_critere(s):
+                cle = (s.critere_id or "", ((s.parents or [{}])[0] or {}).get("intitule", ""))
+                if cle != groupe:
+                    g, k, groupe = g + 1, 0, cle
+                k += 1
+                out[s.id] = f"{g}.{k}"
+            else:
+                g, k, groupe = g + 1, 0, None
+                out[s.id] = str(g)
+        return out
     for s in sections:
         r += 1
         out[s.id] = numero_affiche(dossier, s, r)
     return out
+
+
+def parents_affiches(dossier: DossierPresentation, s: DossierSection, rang: str) -> list:
+    """Titres au-dessus d'une partie : ceux du cadre imposé ; pour la partie d'un sous-critère, le critère,
+    avec le numéro de son groupe (« 2 Valeur technique »)."""
+    if dossier.plan_source == ap.CADRE and s.source_plan == ap.CADRE:
+        return s.parents or []
+    if ap.est_partie_de_sous_critere(s):
+        par = (s.parents or [{}])[0] or {}
+        return [{"numero": rang.rsplit(".", 1)[0] if "." in (rang or "") else "",
+                 "intitule": par.get("intitule") or s.critere or ""}]
+    return []
 
 
 def options_export(dossier: DossierPresentation) -> dict:
@@ -1529,8 +1585,8 @@ def contexte_rendu(db, project: Project, dossier: DossierPresentation, sections:
         if v is not None and v.ia:
             ia = True
         secs.append({"id": s.id, "numero": rangs.get(s.id, ""), "intitule": s.intitule,
-                     "parents": (s.parents or []) if dossier.plan_source == ap.CADRE and s.source_plan == ap.CADRE
-                     else [], "texte": (v.texte if v is not None else "") or ""})
+                     "parents": parents_affiches(dossier, s, rangs.get(s.id, "")),
+                     "texte": (v.texte if v is not None else "") or ""})
     opts = options_export(dossier)
     return {"titre": me.memoire_label(a), "marche": _flat(det.get("intitule_marche") or project.name)[:300],
             "acheteur": _flat(det.get("acheteur") or project.client)[:300],
@@ -2080,7 +2136,7 @@ def _requete(section: DossierSection) -> str:
 
 def _partie_ia(dossier: DossierPresentation, section: DossierSection, numero: str, autres: list, ctx: Contexte,
                chunks: list, dossier_acheteur: str, cible: Optional[int], passages_acheteur: str = "",
-               fiches: Optional[list] = None) -> dict:
+               fiches: Optional[list] = None, analysis: Optional[dict] = None) -> dict:
     """Ce que le moteur remet à l'IA pour une partie. `fiches` : les faits autorisés NUMÉROTÉS et
     typés (vague 3) — l'IA cite leur renvoi [F3], [P1]… ; l'ancien bloc `faits` reste pour mémoire."""
     out = {"titre": section.intitule, "numero": numero, "question": section.question or "",
@@ -2091,6 +2147,8 @@ def _partie_ia(dossier: DossierPresentation, section: DossierSection, numero: st
            "dossier_acheteur": dossier_acheteur, "passages_acheteur": passages_acheteur, "autres_parties": autres}
     if fiches is not None:
         out["fiches"] = fs.lignes_ia(fiches, _requete(section))
+    if analysis is not None:
+        out.update(sous_criteres_out(analysis, section))      # vague 5 : sous-critère(s) tels qu'écrits
     return out
 
 
@@ -2146,6 +2204,7 @@ def lancer(db, user: User, project: Project, dossier: DossierPresentation, secti
     from app.services.jobs import run_in_thread
     if action not in (JOB_REDIGER, JOB_RACCOURCIR):
         raise AtelierError(422, "action_inconnue", "Action inconnue.")
+    exiger_ia_permise(dossier)
     if not sections:
         raise AtelierError(422, "aucune_partie", "Aucune partie à rédiger.")
     sections = [_verrouiller(db, s) for s in sections]
@@ -2311,7 +2370,7 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
         taches.append({"sid": s.id, "base": base, "chunks": chunks, "fiches": fiches,
                        "partie": _partie_ia(dossier, s, rangs.get(s.id, ""), autres, ctx, chunks, dossier_acheteur,
                                             cible, passages_acheteur=_passages_pour_ia(project, payload, s, entiers),
-                                            fiches=fiches_ent)})
+                                            fiches=fiches_ent, analysis=_analysis(project))})
 
     def _un(t):
         if action == JOB_RACCOURCIR:
@@ -2638,6 +2697,21 @@ def _version_out(v: DossierSectionVersion, prive: bool, texte: bool = True, vali
     return out
 
 
+def sous_criteres_out(analysis: Optional[dict], s: DossierSection) -> dict:
+    """Vague 5 : ce que la grille dit des sous-critères d'une partie — {sous_critere} pour la partie d'un
+    sous-critère (son poids tel qu'écrit), {sous_criteres} pour la partie d'un critère qui en a, sans
+    découpage (cadre, critère qui n'en a qu'un…). Rien d'inventé : seulement les sous-critères retrouvés."""
+    if not s.critere_id:
+        return {}
+    if ap.est_partie_de_sous_critere(s):
+        sc = ap.sous_critere_de(analysis, s.critere_id, s.intitule)
+        return {"sous_critere": ({"critere": sc["critere"], "poids": sc["poids"], "phrase": sc["phrase"]} if sc
+                                 else {"critere": s.intitule, "poids": "", "phrase": s.question or ""})}
+    subs = ap.sous_criteres_de(analysis, s.critere_id)
+    return {"sous_criteres": [{"critere": x["critere"], "poids": x["poids"], "phrase": x["phrase"]} for x in subs]} \
+        if subs else {}
+
+
 def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affiche: str, lecteur: Lecteur,
                 courante: Optional[DossierSectionVersion], cpt_section: Optional[dict],
                 valides: Optional[dict] = None, noms: Optional[dict] = None) -> dict:
@@ -2646,7 +2720,8 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
         valides = _valides_de(db, s.owner_id, s.project_id, [courante.faits])
     out = {"id": s.id, "ordre": s.ordre, "numero": s.numero, "numero_affiche": rang_affiche,
            "intitule": s.intitule, "titre": ax.titre_section({"numero": rang_affiche, "intitule": s.intitule}),
-           "niveau": s.niveau, "parents": s.parents or [], "question": s.question or "",
+           "niveau": s.niveau, "parents": parents_affiches(dossier, s, rang_affiche) or (s.parents or []),
+           "question": s.question or "",
            "source_plan": s.source_plan, "critere": s.critere or "", "critere_id": s.critere_id or "",
            "poids": s.poids or "", "poids_source": (s.poids_source or "") if s.poids else "",
            "partie_de_critere": bool(s.partie_de_critere), "lot": s.lot or "",
@@ -2661,6 +2736,10 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
            "validation": ({"version_id": s.validated_version_id, "empreinte": s.validated_hash,
                            "le": _iso(s.validated_at), "par": s.validated_by} if s.validated_version_id else None),
            "lock_version": s.lock_version, "retiree": s.retiree_at is not None}
+    if s.critere_id:
+        # Vague 5 : sous-critères du règlement (le projet est déjà en mémoire de la session : une requête au plus).
+        proj = db.get(Project, dossier.project_id)
+        out.update(sous_criteres_out(_analysis(proj) if proj is not None else {}, s))
     if prive:
         out["version_courante"] = _version_out(courante, True, valides=valides) if courante is not None else None
         out["nb_versions"] = db.query(DossierSectionVersion.id).filter(
@@ -2821,6 +2900,9 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
         "derogations_possibles": derogations_possibles(gate),
         "sources_faits": sources_faits_out(db, dossier.owner_id),
         "groupement": _groupement_out(db, project, dossier),
+        # Vague 5 (C2 complet) : la liste des exigences traitée sans IA, et le mode « sans IA ».
+        "exigences": exigences_out(db, project, dossier, sections, cour),
+        "sans_ia": sans_ia_out(db, project, dossier),
     }
 
 
@@ -2835,16 +2917,88 @@ def _groupement_out(db, project: Project, dossier: DossierPresentation) -> dict:
         return {"onglet": False, "actif": False, "membres": 0}
 
 
-def definir_options(db, dossier: DossierPresentation, page_garde=None, sommaire=None) -> dict:
-    o = options_export(dossier)
+def definir_options(db, dossier: DossierPresentation, page_garde=None, sommaire=None, sans_ia=None,
+                    project: Optional[Project] = None, lecteur: Optional[Lecteur] = None, ip: str = "") -> dict:
+    """Options du dossier : page de garde et sommaire de l'export ; mode « sans IA » (vague 5), inscrit au
+    journal chaîné quand il change."""
+    brut = dict(dossier.options_export) if isinstance(dossier.options_export, dict) else {}
+    o = dict(brut, **options_export(dossier))
     if page_garde is not None:
         o["page_garde"] = bool(page_garde)
     if sommaire is not None:
         o["sommaire"] = bool(sommaire)
+    change = False
+    if sans_ia is not None:
+        avant = bool(mode_sans_ia(dossier))
+        if bool(sans_ia):
+            if not avant:
+                o["sans_ia"] = {"actif": True, "le": _now_iso(), "par": getattr(lecteur, "user_id", None)}
+        else:
+            o.pop("sans_ia", None)
+        change = avant != bool(sans_ia)
     dossier.options_export = o
     flag_modified(dossier, "options_export")
     db.commit()
-    return o
+    if change:
+        try:
+            from app.services import audit
+            audit.record(db, action="atelier.sans_ia", owner_id=dossier.owner_id, project_id=dossier.project_id,
+                         actor=f"user:{getattr(lecteur, 'user_id', '')}", actor_kind="owner", target_type="dossier",
+                         target_id=dossier.id, detail=("mode sans IA activé" if sans_ia else "mode sans IA retiré"),
+                         ip=ip or "", meta={"sans_ia": bool(sans_ia)})
+        except Exception:       # noqa: BLE001 — le journal ne bloque jamais le choix
+            pass
+    return options_export(dossier)
+
+
+def parties_preparees_avec_ia(db, dossier: DossierPresentation) -> int:
+    """Parties actives dont le texte COURANT a été préparé avec l'aide de l'IA."""
+    secs = sections_actives(db, dossier)
+    ids = [s.current_version_id for s in secs if s.current_version_id]
+    if not ids:
+        return 0
+    return db.query(DossierSectionVersion.id).filter(DossierSectionVersion.id.in_(ids),
+                                                     DossierSectionVersion.ia.is_(True)).count()
+
+
+def sans_ia_out(db, project: Project, dossier: Optional[DossierPresentation]) -> dict:
+    """Pour l'écran : le mode « sans IA » de ce dossier et ce que le règlement dit de l'IA (phrases)."""
+    g = (_analysis(project).get("details") or {}).get("grille_notation") if isinstance(
+        _analysis(project).get("details"), dict) else None
+    ia = (g or {}).get("ia") if isinstance(g, dict) else None
+    ia = ia if isinstance(ia, dict) else {}
+    sia = mode_sans_ia(dossier) if dossier is not None else None
+    return {"actif": bool(sia), "le": (sia or {}).get("le"), "message": MSG_SANS_IA_ACTIF if sia else "",
+            "parties_ia": parties_preparees_avec_ia(db, dossier) if (sia and dossier is not None) else 0,
+            "reglement": {"mentionne": bool(ia.get("mentionne")), "nature": ia.get("nature") or "",
+                          "message": ia.get("message") or "",
+                          "phrases": [{"phrase": x.get("phrase", ""), "source": x.get("source", "")}
+                                      for x in ia.get("phrases") or [] if isinstance(x, dict)][:4]}}
+
+
+# ── Vague 5 : « 11 exigences traitées sur 12 » (contrôle sans IA, à la place de toute note) ──
+
+MSG_EXIGENCES_ANCIENNES = ("Ce marché a été analysé avant la liste des exigences : relisez le dossier sur la page du "
+                           "marché (« Comment vous serez noté », sans IA, rien n'est débité).")
+
+
+def exigences_out(db, project: Project, dossier: DossierPresentation, sections: list, communes: dict) -> dict:
+    """Les exigences du dossier et, pour chacune, la partie qui la traite (règle explicite :
+    grille_exigences.traitement). `communes` : le texte que le lecteur voit (jamais le brouillon d'un autre)."""
+    from app.services import grille_exigences as ge
+    det = _analysis(project).get("details") if isinstance(_analysis(project).get("details"), dict) else {}
+    g = det.get("grille_notation") if isinstance(det.get("grille_notation"), dict) else None
+    if g is None or not isinstance(g.get("exigences"), dict):
+        return {"disponible": False, "message_ancien": MSG_EXIGENCES_ANCIENNES if g is not None else "",
+                "liste": [], "total": 0, "traitees": 0, "manquantes": [], "message": "", "message_manque": "",
+                "regle": ge.REGLE_TRAITEE}
+    rangs = _rangs(dossier, sections)
+    parties = [{"id": s.id, "titre": ax.titre_section({"numero": rangs.get(s.id, ""), "intitule": s.intitule}),
+                "texte": (communes.get(s.id).texte if communes.get(s.id) is not None else "") or ""}
+               for s in sections]
+    out = ge.traitement(g, parties)
+    out["disponible"] = True
+    return out
 
 
 # ── Mesure de la décision 11 : combien de dossiers importés imposent leur fichier ──────
@@ -2865,10 +3019,22 @@ def mesurer_import(project: Project, analysis: dict) -> None:
         pass
 
 
+SEUIL_DECISION_11 = 0.2        # « on passe à (b) dès qu'un dossier sur cinq le fait » (étude § 10, décision 11)
+
+
 def mesure_fichier_impose(db) -> dict:
     from sqlalchemy import func
     total = db.query(func.count(Project.id)).filter(Project.dce_importe_le.isnot(None)).scalar() or 0
     imp = db.query(func.count(Project.id)).filter(Project.dce_importe_le.isnot(None),
                                                   Project.dce_fichier_impose.is_(True)).scalar() or 0
-    return {"dossiers_importes": int(total), "fichier_impose": int(imp),
-            "part": round(imp / total, 4) if total else None, "seuil_decision": 0.2}
+    part = round(imp / total, 4) if total else None
+    atteint = part is not None and part >= SEUIL_DECISION_11
+    # Vague 5 : la mesure dit d'elle-même si le seuil de la décision 11 est atteint (agrégat, aucun contenu).
+    msg = ("Aucun dossier importé pour l'instant." if not total else
+           f"{imp} dossier{'s' if imp > 1 else ''} sur {total} impose{'nt' if imp > 1 else ''} son propre fichier "
+           f"de réponse ({round(part * 100)} %). " + (
+               "Le seuil d'un dossier sur cinq est atteint : remplir le fichier de l'acheteur lui-même devient la "
+               "priorité (décision 11 b)." if atteint else
+               "Sous le seuil d'un dossier sur cinq : on garde l'avertissement et le fichier Word dans l'ordre du cadre."))
+    return {"dossiers_importes": int(total), "fichier_impose": int(imp), "part": part,
+            "seuil_decision": SEUIL_DECISION_11, "atteint": atteint, "message": msg}

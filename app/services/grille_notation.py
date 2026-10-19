@@ -28,7 +28,7 @@ from typing import Optional
 from app.services import dce_pieces as dp
 from app.services.analysis import citation_guard
 
-VERSION = 1
+VERSION = 2              # 2 : sous-critères et ce que le dossier demande (vague 5, C2 complet)
 MAX_CRITERES = 15
 PHRASE_MAX = 300
 
@@ -450,7 +450,7 @@ def _raw_criteres(raw) -> list:
             continue
         name = _flat(name)[:160]
         if name:
-            out.append((name, _flat(pond)[:40], str(ex or "")))
+            out.append((name, _flat(pond)[:40], str(ex or ""), x if isinstance(x, dict) else None))
     return out
 
 
@@ -517,7 +517,379 @@ def _line(i, j, name, pond, ex, text, scope_crit, scope_rc, crit_stems) -> dict:
         "source": _source_label(piece) if phrase else "",
         "statut": statut,
         "_pos": (piece.idx, pos) if piece is not None and pos is not None else None,
+        "_j": j,
     }
+
+
+# ── C2 complet (vague 5) : les sous-critères, tels qu'écrits ─────────────────────────
+# Repérés SANS IA dans la partie du règlement qui suit chaque critère (jusqu'au critère suivant, à un
+# nouvel article ou à _SC_REGION caractères) : « Sous-critère 1 : … », « 2.1 … », « dont … », une liste
+# (« - … ») pondérée ou annoncée par « selon les sous-critères suivants : », des lignes pondérées dont la
+# somme fait le poids du critère. L'IA de l'analyse peut en PROPOSER (criteres_attribution[].sous_criteres) :
+# gardés si leur phrase est retrouvée mot pour mot et parle d'eux ; un poids n'est retenu que s'il y est
+# écrit et rattaché. Jamais de poids inventé ; un sous-critère sans poids écrit reste sans poids.
+
+SOUS_MAX = 12
+_SC_REGION = 2000
+_SC_EXPLICITE = re.compile(r"\bsous[- ]?crit[e]re(?P<pl>s)?\s*(?:n\s?[°o]\s*|no\.?\s*)?(?P<n>\d{1,2}(?:\.\d{1,2}){0,2}"
+                           r"|[a-h](?![a-z0-9']))?\s*(?P<sep>[:\-–—.)])?\s*")
+_SC_LIGNE = re.compile(r"(?P<dont>dont\s+)|(?P<num>(?P<nv>\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\.?\s*[-–—:)]?\s+)"
+                       r"|(?P<puce>(?:[-–—•▪◦*·>]|o(?=\s)|[a-h][).]|[ivx]{1,4}[).]|\d{1,2}\))\s+)")
+_SC_INTRO = re.compile(r"sous[- ]?crit|appreci|evalue|note(?:e|s|es)? (?:selon|au regard|sur la base)|selon les"
+                       r"|au regard (?:des|de la|du)|au vu des|decompos|repartis?|ventile|comme suit"
+                       r"|elements? (?:suivants|ci-apres)|criteres? suivants|points? suivants")
+_SC_ARTICLE = re.compile(r"\barticle\s+\d|\bchapitre\s+\d")
+_SC_LISTE_EXIGENCES = re.compile(r"\b(?:comprendra|comporte(?:ra)?|contiendra|contient|comprend|devra|devront|doit|doivent"
+                                 r"|presentera|precisera|detaillera|decrira|indiquera|fournira|joindra)\b")
+_SC_QUEUE = re.compile(r"[\s,;:]*(?:\b(?:note(?:e|s|es)?|evalue(?:e|s|es)?|pondere(?:e|s|es)?|apprecie(?:e|s|es)?"
+                       r"|valorise(?:e|s|es)?|compte(?:nt)?|soit)\b)?[\s,;:]*(?:\b(?:sur|a|de|pour|pour un total de)\b)?"
+                       r"[\s,;:(\-–—]*$")
+
+
+def _parent_num(phrase: str) -> str:
+    m = re.match(r"\s*(?:crit[e]re\s*(?:n\s?[°o]\s*)?)?(\d{1,2})(?:[.)]|\s*[-–—:])", _fold(phrase))
+    return m.group(1) if m else ""
+
+
+def _sc_nom(p: "_Piece", a: int, e: int):
+    """(nom, poids) d'un élément : le texte jusqu'au poids, aux deux-points ou à la parenthèse ; poids =
+    (valeur, unité, texte tel qu'écrit, début, fin) ou None."""
+    seg, low = p.flat[a:e], p.low[a:e]
+    w, cut = None, len(seg)
+    m = _W_TOKEN.search(low)
+    if m:
+        w = (_num(m.group(1)), _unit(m.group(2)), seg[m.start():m.end()], a + m.start(), a + m.end())
+        cut = m.start()
+    for ch in (":", "(", " – ", " — ", " - ", ";", " | ", "|"):
+        i = seg.find(ch)
+        if 0 < i < cut:
+            cut = i
+    name = seg[:cut]
+    qm = _SC_QUEUE.search(_fold(name))
+    if qm and qm.start() > 0:
+        name = name[:qm.start()]
+    name = name.strip(" :-–—;,.()|")
+    if len(name) < 3 or len(name) > 160 or not re.search(r"[A-Za-zÀ-ÿ]{3,}", name):
+        return "", w
+    return name, w
+
+
+def _sc_fin(p: "_Piece", a: int, r1: int, marques: list) -> int:
+    """Fin d'un élément commencé en `a` : le prochain élément, la fin de phrase ou la fin de la zone."""
+    e = r1
+    for x in marques:
+        if x > a:
+            e = min(e, x)
+            break
+    i = bisect.bisect_left(p.cuts, a)
+    if i < len(p.cuts):
+        e = min(e, p.cuts[i])
+    while e > a and p.flat[e - 1] == " ":
+        e -= 1                                  # l'élément s'arrête avant le retour à la ligne du suivant
+    return max(a, e)
+
+
+def _sous_reperes(p: "_Piece", r0: int, r1: int, parent_num: str, autres: list) -> list:
+    """Sous-critères repérés dans [r0, r1) : [{a, b, nom, poids, kind}] — `autres` : racines des noms des
+    AUTRES critères (une ligne qui en nomme un n'est jamais un sous-critère)."""
+    explicites, lignes = [], []
+    for m in _SC_EXPLICITE.finditer(p.low, r0, r1):
+        nxt = p.low[m.end():m.end() + 12]
+        if m.group("pl") and not m.group("n"):
+            continue                                        # « les sous-critères suivants » : une annonce
+        if re.match(r"(?:a|et|au)\s+\d", nxt):
+            continue                                        # « sous-critères 1.1 à 1.5 » : un renvoi
+        if not m.group("n") and not m.group("sep"):
+            continue
+        explicites.append(m)
+    for n in p.breaks:
+        if n + 1 <= r0 or n + 1 >= r1:
+            continue
+        m = _SC_LIGNE.match(p.low, n + 1)
+        if m:
+            lignes.append(m)
+    marques = sorted({m.start() for m in explicites} | {m.start() for m in lignes})
+    items = []
+    for m in explicites:
+        a = m.end()
+        e = _sc_fin(p, a, r1, marques)
+        nom, w = _sc_nom(p, a, e)
+        if nom:
+            items.append({"a": m.start(), "b": e, "nom": nom, "poids": w, "kind": "sc"})
+    fin_prec, intro = None, ""
+    for m in lignes:
+        a = m.end()
+        e = _sc_fin(p, a, r1, marques)
+        kind = "dont" if m.group("dont") else ("num" if m.group("num") else "puce")
+        if kind in ("puce", "dont") and fin_prec != m.start():
+            # Nouvelle liste : son annonce est la phrase qui la précède (« La valeur technique est appréciée
+            # selon les éléments suivants : »), jamais un passage plus haut dans la zone.
+            s0, _e0 = p.sentence(max(r0, m.start() - 2), max(r0, m.start() - 1))
+            intro = p.low[max(r0, s0):m.start()]
+        fin_prec = e if kind in ("puce", "dont") else None
+        nom, w = _sc_nom(p, a, e)
+        if not nom:
+            continue
+        if kind == "num" and not (w or (parent_num and m.group("nv").split(".")[0] == parent_num)):
+            continue
+        if kind in ("puce", "dont") and not w:
+            # Une liste non pondérée n'est faite de sous-critères que si son annonce parle de notation ;
+            # « le mémoire comprendra : » ouvre une liste d'EXIGENCES (app/services/grille_exigences.py).
+            if not _SC_INTRO.search(intro) or _SC_LISTE_EXIGENCES.search(intro):
+                continue
+        items.append({"a": m.start(), "b": e, "nom": nom, "poids": w, "kind": kind})
+    # Lignes pondérées sans marque (un tableau « Méthodologie | 30 points ») : seulement si leur somme fait
+    # le poids du critère (vérifié par l'appelant, qui connaît ce poids) — marquées « ligne ».
+    if not items:
+        bornes = [b for b in p.breaks if r0 < b < r1] + [r1]
+        debut = None
+        for b in bornes:
+            if debut is None:
+                debut = b
+                continue
+            a, e = debut + 1, b
+            debut = b
+            seg = p.low[a:e]
+            if len(seg) > 140 or len(_W_TOKEN.findall(seg)) != 1:
+                continue
+            nom, w = _sc_nom(p, a, e)
+            if nom and w:
+                items.append({"a": a, "b": e, "nom": nom, "poids": w, "kind": "ligne"})
+    # Énumération en ligne : « appréciée selon : méthodologie (30 %), moyens (20 %), environnement (10 %) ».
+    if not items:
+        s, e = p.sentence(r0, r0 + 1)
+        e = min(e, r1)
+        m = _SC_INTRO.search(p.low, r0, e)
+        if m:
+            c = p.low.find(":", m.end(), e)
+            if c > 0:
+                parts, pos = [], c + 1
+                for sep in re.finditer(r",|;| et ", p.low[c + 1:e]):
+                    parts.append((pos, c + 1 + sep.start()))
+                    pos = c + 1 + sep.end()
+                parts.append((pos, e))
+                cand = []
+                for a, b in parts:
+                    nom, w = _sc_nom(p, a, b)
+                    if nom and w and len(_W_TOKEN.findall(p.low[a:b])) == 1:
+                        cand.append({"a": a, "b": b, "nom": nom, "poids": w, "kind": "enum"})
+                    else:
+                        cand = []
+                        break
+                if len(cand) >= 2:
+                    items = cand
+    out, vus = [], set()
+    for it in sorted(items, key=lambda x: x["a"]):
+        st = _stems(it["nom"])
+        key = " ".join(st)
+        if not st or key in vus:
+            continue
+        lowname = _fold(it["nom"])
+        if any(o and o[0] and _names_ok(lowname, o) and len(o) <= len(st) + 1 and _stem_at(lowname, o[0]) == 0
+               for o in autres):
+            continue                                        # c'est le nom d'un autre critère
+        vus.add(key)
+        out.append(it)
+    return out[:SOUS_MAX]
+
+
+def _raw_sous(raw_item) -> list:
+    """Sous-critères PROPOSÉS par l'IA pour un critère : [(nom, poids, extrait)]."""
+    out = []
+    if not isinstance(raw_item, dict):
+        return out
+    subs = raw_item.get("sous_criteres") or raw_item.get("sous-criteres") or []
+    if isinstance(subs, dict):
+        subs = [subs]
+    if not isinstance(subs, (list, tuple)):
+        return out
+    for x in subs[:SOUS_MAX * 2]:
+        if isinstance(x, dict):
+            name = x.get("critere") or x.get("intitule") or x.get("nom") or x.get("libelle") or ""
+            pond = x.get("ponderation") or x.get("poids") or ""
+            ex = x.get("extrait") or x.get("phrase") or ""
+        elif isinstance(x, str):
+            name, pond, ex = x, "", ""
+        else:
+            continue
+        name = _flat(name)[:160]
+        if name:
+            out.append((name, _flat(pond)[:40], str(ex or "")))
+    return out
+
+
+def _sc_out(pid: str, k: int, nom: str, w, phrase: str, piece: "_Piece", origine: str, statut: str = RETROUVE) -> dict:
+    return {"id": f"{pid}.{k}", "critere": _flat(nom)[:160], "poids": w[2] if w and statut == RETROUVE else "",
+            "poids_valeur": w[0] if w and statut == RETROUVE else None,
+            "poids_unite": w[1] if w and statut == RETROUVE else None,
+            "phrase": phrase, "source": _source_label(piece), "statut": statut, "origine": origine}
+
+
+_NOMBRE_NU = re.compile(r"(?<![\d.,])(\d{1,3}(?:[.,]\d{1,2})?)(?![\d.,])(?!\s*(?:%|pour ?cent|points?\b|pts?\b|/))")
+
+
+def _sous_ia(j: int, raw_item, text: str, scope_crit: list, parent_stems: list) -> list:
+    """Sous-critères proposés par l'IA pour le critère n° j, contrôlés : [{pos, nom, poids, phrase, piece,
+    statut, origine, nu}] — `nu` : un nombre SANS unité écrit dans la phrase (« Méthodologie (20) »), égal au
+    poids annoncé ; il ne devient un poids que si ceux de tous les sous-critères font le poids du critère."""
+    subs = _raw_sous(raw_item)
+    if not subs:
+        return []
+    stems_all = [_stems(n) for n, _p, _e in subs]
+    out, ok, ko = [], 0, 0
+    for k, (nom, pond, ex) in enumerate(subs):
+        if not ex:
+            continue
+        verified = citation_guard(text, ex)
+        if not verified:
+            ko += 1
+            continue
+        vp, vpos, vorig = _locate(verified, scope_crit)
+        if vp is None or not _names_ok(_fold(vorig), stems_all[k]):
+            ko += 1
+            continue
+        ok += 1
+        claimed = parse_weight(pond) if pond else None
+        if claimed is not None and claimed.get("valeur", 0) <= 0:
+            claimed = None
+        w, statut, nu = None, RETROUVE, None
+        if claimed is not None:
+            w0, w1 = _window(vp, vpos, vpos + len(vorig))
+            got = _attribute(vp, w0, w1, [parent_stems] + stems_all).get(k + 1)
+            if _same_weight(got, claimed):
+                w = got
+            else:
+                statut = A_VERIFIER                     # poids annoncé, pas retrouvé rattaché : à vérifier
+                if claimed.get("unite") is None:
+                    for m in _NOMBRE_NU.finditer(vp.low, vpos, vpos + len(vorig)):
+                        if abs(_num(m.group(1)) - claimed["valeur"]) < 0.001:
+                            nu = (_num(m.group(1)), None, vp.flat[m.start():m.end()], m.start(), m.end())
+                            break
+        s, phrase = vp.line_phrase(vpos, vpos + len(vorig))
+        if phrase and citation_guard(text, phrase, min_len=4):
+            out.append({"pos": (vp.idx, vpos), "nom": nom, "poids": w, "phrase": phrase, "piece": vp,
+                        "statut": statut, "origine": "ia", "nu": nu})
+    try:
+        from app.services import llm_qualite as _q
+        if ok or ko:
+            _q.noter_citations(ok, ko)
+    except Exception:       # noqa: BLE001
+        pass
+    return out
+
+
+def _controle_sous(ln: dict) -> dict:
+    """Les poids des sous-critères font-ils le poids du critère ? (100 % quand ils sont donnés en part du
+    critère.) Sans IA ; « non_verifiable » quand les unités ne se comparent pas."""
+    subs = [x for x in ln.get("sous_criteres") or [] if isinstance(x, dict) and x.get("statut") == RETROUVE]
+    if len(subs) < 2 or any(x.get("poids_valeur") is None for x in subs):
+        return {"statut": "sans_objet", "message": ""}
+    units = {x.get("poids_unite") for x in subs}
+    total = sum(float(x["poids_valeur"]) for x in subs)
+    w = parse_weight(ln.get("poids_retenu") or ln.get("poids") or "") if (ln.get("poids_retenu") or ln.get("poids")) \
+        else None
+    if len(units) > 1:
+        return {"statut": "non_verifiable", "message": "Les poids des sous-critères ne sont pas exprimés dans la même "
+                                                      "unité : lisez les phrases du règlement."}
+    u = next(iter(units))
+    lib = "%" if u == "%" else "points"
+    if w and abs(total - w["valeur"]) < 0.01:
+        return {"statut": "ok", "message": f"Les sous-critères font bien {_fmt_total(total)} au total, le poids du "
+                                           f"critère.", "total": total, "unite": u, "attendu": w["valeur"]}
+    if u == "%" and abs(total - 100) < 0.01:
+        return {"statut": "ok", "message": "Les sous-critères font bien 100 % du critère.", "total": total, "unite": u,
+                "attendu": 100.0}
+    if not w:
+        return {"statut": "non_verifiable", "message": f"Les sous-critères font {_fmt_total(total)} {lib} au total ; "
+                                                      "le critère n'a pas de poids retrouvé.", "total": total, "unite": u}
+    if w.get("unite") in (None, u):
+        return {"statut": "ecart", "message": f"Les sous-critères font {_fmt_total(total)} {lib} au total, le critère "
+                                              f"{_fmt_total(w['valeur'])} {lib} : lisez le règlement.",
+                "total": total, "unite": u, "attendu": w["valeur"]}
+    return {"statut": "non_verifiable", "message": f"Les sous-critères font {_fmt_total(total)} {lib} au total : "
+                                                  "comparez avec le poids du critère dans le règlement.",
+            "total": total, "unite": u}
+
+
+def _attacher_sous(lines: list, raws: list, crit_stems: list, P: list, scope_crit: list, text: str) -> None:
+    """Pose `sous_criteres` sur chaque ligne (avant que les positions `_pos` ne soient retirées)."""
+    by_piece = {}
+    for j, ln in enumerate(lines):
+        if ln.get("_pos"):
+            by_piece.setdefault(ln["_pos"][0], []).append((ln["_pos"][1], j))
+    found = {j: [] for j in range(len(lines))}
+    for idx, lst in by_piece.items():
+        p = next((x for x in P if x.idx == idx), None)
+        if p is None:
+            continue
+        lst.sort()
+        for k, (pos, j) in enumerate(lst):
+            r1 = lst[k + 1][0] if k + 1 < len(lst) else min(len(p.flat), pos + _SC_REGION)
+            r1 = min(r1, pos + _SC_REGION)
+            art = _SC_ARTICLE.search(p.low, pos + 8, r1)
+            if art:
+                r1 = art.start()
+            jj = lines[j]["_j"]
+            autres = [crit_stems[x] for x in range(len(crit_stems)) if x != jj]
+            items = _sous_reperes(p, pos, r1, _parent_num(lines[j]["phrase"]), autres)
+            if not items:
+                continue
+            cible = j
+            weighted = all(it["poids"] for it in items) and len({it["poids"][1] for it in items}) == 1
+            total = sum(it["poids"][0] for it in items) if weighted else None
+            pw = lines[j].get("poids_valeur")
+            relatif = weighted and items[0]["poids"][1] == "%" and abs(total - 100) < 0.01
+            if weighted and not relatif and (pw is None or abs(total - pw) > 0.01):
+                # Leur somme fait le poids d'un AUTRE critère (« Valeur technique 60 % ; Prix 40 %. » puis les
+                # sous-critères de la valeur technique) : ils sont à lui.
+                autres_j = [y for _q2, y in lst if y != j and lines[y].get("poids_valeur") is not None
+                            and abs(lines[y]["poids_valeur"] - total) < 0.01]
+                if len(autres_j) == 1:
+                    cible = autres_j[0]
+            else:
+                # Annonce qui nomme un autre critère (« La valeur technique sera appréciée selon : - … »).
+                s0, _e0 = p.sentence(max(pos, items[0]["a"] - 2), max(pos, items[0]["a"] - 1))
+                intro = _fold(p.flat[max(pos, s0):items[0]["a"]])
+                nommes = [y for _q2, y in lst if y != j and _names_ok(intro, crit_stems[lines[y]["_j"]])]
+                if nommes and not _names_ok(intro, crit_stems[jj]):
+                    cible = nommes[0]
+            if any(it["kind"] == "ligne" for it in items):
+                cw = lines[cible].get("poids_valeur")
+                if not weighted or cw is None or abs(total - cw) > 0.01:
+                    continue                                # lignes pondérées sans marque : la somme doit tomber juste
+            for it in items:
+                s, phrase = p.line_phrase(it["a"], max(it["a"] + 1, it["b"]))
+                if phrase and citation_guard(text, phrase, min_len=4):
+                    found[cible].append({"pos": (p.idx, it["a"]), "nom": it["nom"], "poids": it["poids"],
+                                         "phrase": phrase, "piece": p, "statut": RETROUVE, "origine": "reperage",
+                                         "nu": None})
+    for j, ln in enumerate(lines):
+        jj = ln["_j"]
+        ia = _sous_ia(jj, raws[jj][4] if len(raws[jj]) > 4 else None, text, scope_crit, crit_stems[jj])
+        allx = list(found[j])
+        keys = {" ".join(_stems(x["nom"])) for x in allx}
+        for x in ia:
+            k = " ".join(_stems(x["nom"]))
+            # Même sous-critère : même nom (plusieurs sous-critères peuvent partager une même ligne du règlement).
+            same = next((y for y in allx if " ".join(_stems(y["nom"])) == k), None)
+            if same is not None:
+                if same["poids"] is None and x["poids"] is not None:   # l'IA a lu un poids rattaché, le repérage non
+                    same.update(poids=x["poids"], statut=RETROUVE)
+                continue
+            if k in keys:
+                continue
+            keys.add(k)
+            allx.append(x)
+        # Nombres sans unité (« Méthodologie (20) ; moyens (15) ; environnement (10) ») : des poids TELS
+        # QU'ÉCRITS seulement si chaque sous-critère en a un et que leur somme fait le poids du critère.
+        pw = ln.get("poids_valeur")
+        if (len(allx) >= 2 and pw is not None and all(y["nu"] is not None and y["statut"] == A_VERIFIER for y in allx)
+                and abs(sum(y["nu"][0] for y in allx) - pw) < 0.01):
+            for y in allx:
+                y.update(poids=y["nu"], statut=RETROUVE)
+        allx.sort(key=lambda x: x["pos"])
+        ln["sous_criteres"] = [_sc_out(ln["id"], n, y["nom"], y["poids"], y["phrase"], y["piece"], y["origine"],
+                                       y["statut"]) for n, y in enumerate(allx[:SOUS_MAX], 1)]
 
 
 # ── Ordre, total annoncé, poids présents dans le texte ───────────────────────────────
@@ -972,6 +1344,10 @@ def refresh(g: dict) -> dict:
     for ln in lines:
         ln.pop("_v", None)
         ln.pop("_u", None)
+        if ln.get("sous_criteres"):
+            ln["controle_sous"] = _controle_sous(ln)       # dépend du poids retenu (confirmé ou lu)
+        else:
+            ln.pop("controle_sous", None)
     return g
 
 
@@ -995,20 +1371,29 @@ def build_grille(details: dict, text: str, pieces: Optional[list] = None) -> dic
     # grille) quand il est reconnu ; sinon dans tout le texte.
     scope_crit = [p for p in P if p.type in (dp.REGLEMENT, dp.CADRE)] if rc else P
     raws, seen = [], set()
-    for i, (name, pond, ex) in enumerate(_raw_criteres(details.get("criteres_attribution"))[:MAX_CRITERES]):
+    for i, (name, pond, ex, item) in enumerate(_raw_criteres(details.get("criteres_attribution"))[:MAX_CRITERES]):
         key = _fold(name)
         if key in seen:
             continue
         seen.add(key)
-        raws.append((i, name, pond, ex))
-    crit_stems = [_stems(name) for _i, name, _p, _e in raws]
+        raws.append((i, name, pond, ex, item))
+    crit_stems = [_stems(name) for _i, name, _p, _e, _it in raws]
     lines = [_line(i, j, name, pond, ex, text, scope_crit, scope_rc, crit_stems)
-             for j, (i, name, pond, ex) in enumerate(raws)]
+             for j, (i, name, pond, ex, _it) in enumerate(raws)]
     # Ordre du règlement (position de la phrase) ; lignes non retrouvées à la suite.
     lines.sort(key=lambda ln: (ln["_pos"] is None, ln["_pos"] or (0, 0)))
     poids_texte = _poids_dans_le_texte(scope_rc, lines)
+    # Vague 5 : les sous-critères de chaque ligne (repérés sans IA, ou proposés par l'IA et contrôlés).
+    try:
+        _attacher_sous(lines, raws, crit_stems, P, scope_crit, text)
+    except Exception as e:      # noqa: BLE001 — repérage facultatif : la grille reste sans sous-critères
+        import logging
+        logging.getLogger("adjugo").warning("sous-critères non repérés : %s", type(e).__name__)
+        for ln in lines:
+            ln.setdefault("sous_criteres", [])
     for ln in lines:
         ln.pop("_pos", None)
+        ln.pop("_j", None)
 
     if pieces:
         # Lecture intégrale : chaque pièce garde son statut (lue en entier, en partie, non lue) et
@@ -1050,7 +1435,43 @@ def build_grille(details: dict, text: str, pieces: Optional[list] = None) -> dic
             "visite": _visite(scope_visite),
         },
     }
-    return refresh(g)
+    refresh(g)
+    # Vague 5 (C2 complet) : ce que le dossier DEMANDE — exigences, environnement, candidatures multiples,
+    # intelligence artificielle, questions à poser à l'acheteur (app/services/grille_exigences.py, sans IA).
+    from app.services import grille_exigences as ge
+    ge.construire(g, P, text, details)
+    return g
+
+
+def relire(grille: Optional[dict], details: dict, text: str, when: str = "") -> dict:
+    """Vague 5 : relit le dossier SANS IA et refait la grille avec ce que la vague 5 y ajoute (sous-critères,
+    exigences, environnement, candidatures multiples, intelligence artificielle, questions à l'acheteur).
+    Les propositions déjà faites par l'IA de l'analyse (critères, sous-critères, exigences) sont contrôlées de
+    nouveau contre le texte ; rien n'est demandé à l'IA. Les choix de l'utilisateur (critères confirmés ou
+    retirés, exigences retirées ou dites traitées, exigences ajoutées dont la phrase est encore dans le
+    dossier, questions retirées) sont repris. La liste des pièces lues reste celle de l'analyse."""
+    old = grille if isinstance(grille, dict) else {}
+    pieces = []
+    for m in ((old.get("lecture") or {}).get("pieces") or []):
+        if isinstance(m, dict):
+            pieces.append({"nom": m.get("nom"), "type": m.get("type"), "libelle": m.get("libelle"),
+                           "lu_en_entier": m.get("lu_en_entier"), "statut": m.get("statut"),
+                           "detail": m.get("raison"), "pages": m.get("pages")})
+    fresh = build_grille(details if isinstance(details, dict) else {}, text or "", pieces=pieces or None)
+    if old:
+        from app.services import grille_exigences as ge
+        ge.carry_over(old, fresh, text=text or "")
+        # Les choix sur les critères (même nom) : confirmés ou retirés, comme à une ré-analyse.
+        ch = {_fold(x.get("critere")): x.get("choix_utilisateur") for x in (old.get("criteres") or [])
+              if isinstance(x, dict) and x.get("choix_utilisateur")}
+        for ln in fresh.get("criteres") or []:
+            c = ch.get(_fold(ln.get("critere")))
+            if c:
+                ln["choix_utilisateur"] = dict(c)
+        refresh(fresh)
+    if when:
+        fresh["relue_le"] = when
+    return fresh
 
 
 # ── Choix de l'utilisateur (confirmer / écarter une ligne) ───────────────────────────
@@ -1088,12 +1509,15 @@ def apply_choice(grille: dict, critere_id: str, choix: str, poids: str = "", whe
     return refresh(g)
 
 
-def carry_over(previous: Optional[dict], fresh: Optional[dict]) -> Optional[dict]:
+def carry_over(previous: Optional[dict], fresh: Optional[dict], text: Optional[str] = None) -> Optional[dict]:
     """Ré-analyse : les choix de l'utilisateur sur une ligne du même nom sont repris (une
     confirmation seulement si la ligne est encore à vérifier, ou si elle porte le poids que
     l'utilisateur a lu et que la ligne retrouvée n'a pas)."""
     if not isinstance(fresh, dict) or not isinstance(previous, dict):
         return fresh
+    # Vague 5 : choix sur les exigences et les questions (et exigences ajoutées par l'utilisateur).
+    from app.services import grille_exigences as ge
+    ge.carry_over(previous, fresh, text=text)
     old = {_fold(x.get("critere")): x.get("choix_utilisateur") for x in (previous.get("criteres") or [])
            if isinstance(x, dict) and x.get("choix_utilisateur")}
     if not old:
@@ -1175,7 +1599,16 @@ def public_grille(grille: Optional[dict]) -> Optional[dict]:
                    # le partenaire le voit dit comme tel.
                    "poids_saisi": bool(ln.get("dans_le_plan")) and ln.get("poids_source") == "utilisateur",
                    "confirme": (ln.get("choix_utilisateur") or {}).get("choix") == "confirme",
-                   "ecarte": (ln.get("choix_utilisateur") or {}).get("choix") == "ecarte"})
+                   "ecarte": (ln.get("choix_utilisateur") or {}).get("choix") == "ecarte",
+                   # Vague 5 : les sous-critères tels qu'écrits (phrase publique du dossier de l'acheteur).
+                   "sous_criteres": [{"critere": str(x.get("critere") or "")[:160],
+                                      "poids": str(x.get("poids") or "")[:40] if x.get("statut") == RETROUVE else "",
+                                      "phrase": str(x.get("phrase") or "")[:PHRASE_MAX + 100],
+                                      "statut": x.get("statut") if x.get("statut") in (RETROUVE, A_VERIFIER)
+                                      else A_VERIFIER}
+                                     for x in (ln.get("sous_criteres") or []) if isinstance(x, dict)][:SOUS_MAX],
+                   "controle_sous": {"statut": (ln.get("controle_sous") or {}).get("statut", ""),
+                                     "message": (ln.get("controle_sous") or {}).get("message", "")}})
     c = grille.get("contraintes") if isinstance(grille.get("contraintes"), dict) else {}
     cadre = c.get("cadre") if isinstance(c.get("cadre"), dict) else {}
     ob = cadre.get("obligatoire") if isinstance(cadre.get("obligatoire"), dict) else None
@@ -1183,8 +1616,10 @@ def public_grille(grille: Optional[dict]) -> Optional[dict]:
     ordre = grille.get("ordre") if isinstance(grille.get("ordre"), dict) else {}
     ct = grille.get("controle_total") if isinstance(grille.get("controle_total"), dict) else {}
     pond = grille.get("ponderation") if isinstance(grille.get("ponderation"), dict) else {}
+    from app.services import grille_exigences as ge
     return {
         "criteres": cr,
+        **ge.public(grille),
         "ponderation": {"statut": pond.get("statut", ""),
                         "message": _pond_message(grille, pond.get("statut", ""), partenaire=True)},
         "ordre": {"indique": ordre.get("indique"), "phrase": ordre.get("phrase", "")},

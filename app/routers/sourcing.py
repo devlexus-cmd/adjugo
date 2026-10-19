@@ -551,7 +551,7 @@ def _finish_analysis(db, project, analysis, company_data, gonogo, user, lecture=
         analysis["lecture"]["taille_stockee"] = (lecture.get("taille_stockee")
                                                  or ((prev.get("lecture") or {}).get("taille_stockee")
                                                      if isinstance(prev, dict) else None))
-    _keep_grille_choices(prev, analysis)
+    _keep_grille_choices(prev, analysis, lecture)
     analysis["source"] = _safe_source(prev.get("source"))
     analysis["lead_score"] = prev.get("lead_score")
     score = analysis.get("match_score", 0)
@@ -921,14 +921,23 @@ def lecture_status(project_id: int, current_user: User = Depends(get_current_use
 
 # ── « Comment vous serez noté » : choix de l'utilisateur sur une ligne (0 IA) ─────
 
-def _keep_grille_choices(prev: dict, analysis: dict) -> None:
-    """Ré-analyse : les lignes que l'utilisateur avait confirmées ou écartées le restent."""
+def _keep_grille_choices(prev: dict, analysis: dict, lecture=None) -> None:
+    """Ré-analyse : les lignes que l'utilisateur avait confirmées ou écartées le restent, et (vague 5) ses
+    choix sur les exigences et les questions ; une exigence qu'il avait ajoutée revient si sa phrase est
+    encore dans le nouveau dossier (texte de la lecture intégrale)."""
     try:
         from app.services.grille_notation import carry_over
         old = ((prev or {}).get("details") or {}).get("grille_notation")
         det = analysis.get("details") if isinstance(analysis.get("details"), dict) else None
         if det is not None and isinstance(det.get("grille_notation"), dict) and isinstance(old, dict):
-            det["grille_notation"] = carry_over(old, det["grille_notation"])
+            texte = None
+            try:
+                if isinstance(lecture, dict) and lecture.get("pieces"):
+                    from app.services import dce_lecture as _lec
+                    texte, _m = _lec.texte_integral(lecture)
+            except Exception:       # noqa: BLE001 — sans texte, les exigences ajoutées ne reviennent pas
+                texte = None
+            det["grille_notation"] = carry_over(old, det["grille_notation"], text=texte)
     except Exception as e:      # noqa: BLE001 — jamais bloquant pour une analyse déjà payée
         logger.warning("reprise des choix de la grille impossible : %s", type(e).__name__)
 
@@ -976,6 +985,131 @@ def grille_choix(request: Request, req: GrilleChoixRequest,
                      ip=audit.client_ip(request), meta={"critere_id": req.critere_id, "choix": req.choix})
     except Exception:
         pass
+    return {"grille_notation": g}
+
+
+# ── Vague 5 (C2 complet) : ce que le dossier demande — exigences, questions, relecture (0 IA) ──
+
+def _projet_grille(db, current_user: User, project_id: int):
+    project = db.query(Project).filter(Project.id == project_id,
+                                       Project.user_id.in_(member_ids(current_user, db)),
+                                       Project.deleted_at.is_(None)).first()
+    if not project:
+        raise HTTPException(404, "Projet introuvable.")
+    return project
+
+
+def _enregistrer_grille(db, project, g: dict) -> None:
+    import copy
+    a = copy.deepcopy(project.ai_analysis) if isinstance(project.ai_analysis, dict) else {}
+    det = a.get("details") if isinstance(a.get("details"), dict) else {}
+    det["grille_notation"] = g
+    a["details"] = det
+    project.ai_analysis = a                  # NOUVEAU dict : colonne JSON bien marquée modifiée
+    db.commit()
+
+
+def _journal_grille(db, request, current_user: User, project, action: str, detail: str, meta: dict) -> None:
+    try:
+        from app.services import audit
+        from app.routers.invites import tenant_owner_id
+        audit.record(db, action=action, owner_id=tenant_owner_id(project, db), project_id=project.id,
+                     actor=f"user:{current_user.id}", actor_kind="owner", target_type="project",
+                     target_id=project.id, detail=detail[:200], ip=audit.client_ip(request), meta=meta)
+    except Exception:
+        pass
+
+
+def _texte_du_dossier(db, current_user: User, project) -> Optional[str]:
+    """Texte intégral du dossier du marché (lecture intégrale rangée, sinon relecture bornée du fichier
+    archivé), lu SANS IA. None si aucun dossier lisible."""
+    from app.services.groupement_convention import dce_text
+    return dce_text(db, project, member_ids(current_user, db))
+
+
+class GrilleElementRequest(BaseModel):
+    project_id: int
+    type: str = PydField(..., pattern="^(exigence|question)$")
+    element_id: str = PydField(..., min_length=1, max_length=12)
+    choix: str = PydField(..., pattern="^(ecarte|traitee|annule)$")
+
+
+@router.post("/grille/element")
+@limiter.limit("240/hour")
+def grille_element(request: Request, req: GrilleElementRequest,
+                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Une exigence retirée (« ce n'est pas une exigence »), dite traitée par vous, ou rétablie ; une question
+    à l'acheteur retirée ou rétablie. Aucun appel à l'IA, aucun quota."""
+    from app.models import utcnow
+    from app.services import grille_exigences as ge
+    project = _projet_grille(db, current_user, req.project_id)
+    det = (project.ai_analysis or {}).get("details") if isinstance(project.ai_analysis, dict) else None
+    try:
+        g = ge.appliquer_choix((det or {}).get("grille_notation"), req.type, req.element_id, req.choix,
+                               when=utcnow().isoformat())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    _enregistrer_grille(db, project, g)
+    bloc = g.get("exigences" if req.type == "exigence" else "questions_acheteur") or {}
+    x = next((y for y in bloc.get("liste") or [] if y.get("id") == req.element_id), {})
+    _journal_grille(db, request, current_user, project, f"grille.{req.type}",
+                    f"{req.choix} : {str(x.get('texte') or x.get('question') or '')[:120]}",
+                    {"element_id": req.element_id, "choix": req.choix})
+    return {"grille_notation": g}
+
+
+class GrilleExigenceRequest(BaseModel):
+    project_id: int
+    phrase: str = PydField(..., min_length=1, max_length=600)
+
+
+@router.post("/grille/exigence")
+@limiter.limit("120/hour")
+def grille_exigence(request: Request, req: GrilleExigenceRequest,
+                    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Ajoute une exigence que l'utilisateur a lue : sa phrase doit être retrouvée MOT POUR MOT dans le dossier
+    du marché (citation_guard), sinon 422. Aucun appel à l'IA."""
+    from app.models import utcnow
+    from app.services import grille_exigences as ge
+    project = _projet_grille(db, current_user, req.project_id)
+    det = (project.ai_analysis or {}).get("details") if isinstance(project.ai_analysis, dict) else None
+    texte = _texte_du_dossier(db, current_user, project)
+    try:
+        g = ge.ajouter_exigence((det or {}).get("grille_notation"), texte or "", req.phrase,
+                                when=utcnow().isoformat())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    _enregistrer_grille(db, project, g)
+    _journal_grille(db, request, current_user, project, "grille.exigence", "exigence ajoutée", {})
+    return {"grille_notation": g}
+
+
+class GrilleRelireRequest(BaseModel):
+    project_id: int
+
+
+@router.post("/grille/relire")
+@limiter.limit("30/hour")
+def grille_relire(request: Request, req: GrilleRelireRequest,
+                  current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Relit le dossier du marché SANS IA (rien n'est débité) pour une analyse faite avant la vague 5 :
+    sous-critères, exigences, environnement, candidatures multiples, intelligence artificielle, questions à
+    l'acheteur. Les choix de l'utilisateur sont repris."""
+    from app.models import utcnow
+    from app.services.grille_notation import relire
+    project = _projet_grille(db, current_user, req.project_id)
+    a = project.ai_analysis if isinstance(project.ai_analysis, dict) else {}
+    det = a.get("details") if isinstance(a.get("details"), dict) else None
+    if not det or not a.get("dce_available", True):
+        raise HTTPException(409, {"code": "pas_de_dossier",
+                                  "message": "Importez d'abord le dossier du marché : il n'y a rien à relire."})
+    texte = _texte_du_dossier(db, current_user, project)
+    if not texte:
+        raise HTTPException(409, {"code": "dossier_illisible",
+                                  "message": "Le dossier du marché n'est plus lisible : importez-le de nouveau."})
+    g = relire(det.get("grille_notation"), det, texte, when=utcnow().isoformat())
+    _enregistrer_grille(db, project, g)
+    _journal_grille(db, request, current_user, project, "grille.relire", "dossier relu sans IA", {})
     return {"grille_notation": g}
 
 

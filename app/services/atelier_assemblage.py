@@ -963,6 +963,7 @@ def lancer_harmonisation(db, user: User, project: Project, dossier: DossierPrese
     dossier (décision 6a ; la 1re action de l'IA du dossier compte pour 1 analyse), rendue si l'IA tombe ou si
     aucune phrase n'est retenue."""
     from app.services.jobs import run_in_thread
+    at.exiger_ia_permise(dossier)               # vague 5 : dossier « sans IA », aucune harmonisation par l'IA
     if not ag.repartition_active(db, dossier):
         raise AtelierError(409, "groupement_non_prepare", "Préparez d'abord « Qui écrit quoi » : l'harmonisation relie "
                                                           "les parts des membres du groupement.")

@@ -205,6 +205,11 @@ SANS_COUT = {
     ("POST", "/api/sourcing/groupement"): "composition déterministe (registre public SIRENE)",
     ("POST", "/api/sourcing/search"): "démo : marchés fictifs déjà notés, sans appel au BOAMP",
     ("POST", "/api/sourcing/grille/choix"): _I + " (0 IA)",
+    # Rédaction, vague 5 (C2 complet) : exigences et questions de la grille, relecture du dossier — sans IA,
+    # refusées par le garde (la grille de la vitrine ne change pas).
+    ("POST", "/api/sourcing/grille/element"): _V + " (0 IA)",
+    ("POST", "/api/sourcing/grille/exigence"): _V + " (0 IA)",
+    ("POST", "/api/sourcing/grille/relire"): _V + " (0 IA, aucun débit)",
     ("POST", "/api/sourcing/cotraitants"): "recherche déterministe (registre public SIRENE)",
     ("POST", "/api/saved-searches/"): _I, ("PUT", "/api/saved-searches/{search_id}"): _I,
     ("DELETE", "/api/saved-searches/{search_id}"): _I,

@@ -1339,6 +1339,8 @@ def lancer_aide(db, acces: Acces, section_id: int, action: str = "rediger", cibl
     (portée « partenaire ») et ne se lit qu'avec son accès."""
     from app.services.jobs import run_in_thread
     _exiger_ecriture(acces)
+    # Vague 5 : un dossier « sans IA » (choix du chef de file) n'appelle l'IA pour personne.
+    at.exiger_ia_permise(acces.dossier)
     # C'est le partenaire qui lance son aide de l'IA, jamais celui qui détient seulement le lien : même exigence
     # d'identité qu'envoyer et valider (adresse prouvée par code quand le lien vise une adresse).
     _exiger_identite(acces)
@@ -1486,7 +1488,7 @@ def _executer(db, *, job_id: int, invite_id: int, section_id: int, kind: str, ci
         cible_ia = (rep.longueur_mots if rep is not None and rep.longueur_mots else None) or at.cible_mots(section, None)
         partie = at._partie_ia(dossier, section, rangs.get(section.id, ""), autres, ctx, chunks, dossier_acheteur,
                                cible_ia, passages_acheteur=at._passages_pour_ia(project, payload, section, entiers),
-                               fiches=fiches_ent)
+                               fiches=fiches_ent, analysis=at._analysis(project))
         partie["membre_groupement"] = {"nom": ctx.nom, "lot": ctx.lot}
     with pii_scope(pz), cost_meter("groupement : aide du partenaire", tenant) as cm:
         if kind == JOB_RACCOURCIR:
@@ -2053,8 +2055,9 @@ def vue_chef(db, project: Project, dossier: DossierPresentation) -> dict:
                         "pret": pret(db, project, dossier, act)},
             "statuts": STATUTS, "avertissement_envoi": AVERTISSEMENT_ENVOI, "plafond_aide_par_partie": plafond_partie(),
             # « Harmoniser le ton » (assemblage) : proposé seulement s'il y a des parts de membres différents à relier.
+            # Vague 5 : jamais proposé dans un dossier « sans IA ».
             "harmoniser": {"message": asm.MSG_HARMONISER,
-                           "jonctions": len(asm.jonctions(db, dossier)) if reps else 0}}
+                           "jonctions": len(asm.jonctions(db, dossier)) if reps and not at.mode_sans_ia(dossier) else 0}}
 
 
 def detail_chef(db, project: Project, dossier: DossierPresentation, section: DossierSection) -> dict:
@@ -2156,10 +2159,18 @@ def note_acheteur(project: Project, section: DossierSection) -> dict:
             grille.append({"critere": at._flat(ln.get("critere"))[:200], "poids": p[:40], "poids_source": s,
                            "poids_libelle": POIDS_LIBELLES.get(s, ""),
                            "phrase": at._flat(ln.get("phrase"))[:ap.QUESTION_MAX]})
-    return {"critere": section.critere or "", "poids": poids, "poids_source": src,
-            "poids_libelle": POIDS_LIBELLES.get(src, ""), "phrase": phrase[:ap.QUESTION_MAX],
-            "question": question[:ap.QUESTION_MAX], "source_plan": section.source_plan or "",
-            "grille": [g for g in grille if g["critere"]]}
+    out = {"critere": section.critere or "", "poids": poids, "poids_source": src,
+           "poids_libelle": POIDS_LIBELLES.get(src, ""), "phrase": phrase[:ap.QUESTION_MAX],
+           "question": question[:ap.QUESTION_MAX], "source_plan": section.source_plan or "",
+           "grille": [g for g in grille if g["critere"]]}
+    # Vague 5 : le sous-critère de la partie (ou ceux de son critère), tels qu'écrits dans le règlement.
+    try:
+        out.update(at.sous_criteres_out(at._analysis(project), section))
+    except Exception:       # noqa: BLE001 — la note garde le critère et sa phrase
+        pass
+    if out.get("sous_critere") and out["sous_critere"].get("phrase") == out["question"]:
+        out["question"] = ""                       # la phrase du sous-critère n'est dite qu'une fois
+    return out
 
 
 MSG_MODE_SIMPLE = ("Mode simple : le paragraphe de votre part (« Paragraphe pour le dossier de présentation ») reste "
@@ -2260,11 +2271,30 @@ def vue_partenaire(db, acces: Acces) -> dict:
             "mode_simple": {"petit_texte": ((contrib.memoire_paragraph if contrib is not None else "") or "")[:TEXTE_MAX],
                             "message": MSG_MODE_SIMPLE},
             "parties": parties, "statuts": STATUTS, "origines": ORIGINES, "qui_fait_quoi": qfq_bloc,
+            # Vague 5 : le chef de file a choisi « sans IA » pour ce dossier (aucune aide de l'IA, pour personne) ;
+            # les exigences du dossier et la partie qui les traite, lues dans le texte COMMUN (jamais un brouillon).
+            "sans_ia": {"actif": bool(at.mode_sans_ia(acces.dossier)),
+                        "message": at.MSG_SANS_IA_PARTENAIRE if at.mode_sans_ia(acces.dossier) else ""},
+            "exigences": _exigences_partenaire(db, acces, act),
             "dossier": {"empreinte": emp, "ma_validation": _validation_out(ma, emp),
                         # Un co-traitant à qui aucune partie n'est confiée valide aussi le dossier assemblé (après
                         # « Qui fait quoi »), comme le serveur l'attend pour « Prêt à déposer ».
                         "peut_valider": all(p["statut"] == VALIDEE for p in parties) and qfq_ok,
                         "pret": pret(db, acces.project, acces.dossier, act)}}
+
+
+def _exigences_partenaire(db, acces: Acces, act: list) -> dict:
+    """Les exigences du dossier (phrases de l'acheteur) et la partie qui les traite, d'après les textes
+    COMMUNS du dossier assemblé (décision 3a) : rien de privé, ni d'un membre ni du chef de file."""
+    try:
+        t = at.exigences_out(db, acces.project, acces.dossier, act, textes_communs(db, act))
+    except Exception:       # noqa: BLE001 — l'espace du partenaire ne casse jamais pour cette liste
+        return {"disponible": False, "liste": [], "total": 0, "traitees": 0, "message": "", "message_manque": ""}
+    t.pop("message_ancien", None)
+    for x in t.get("liste") or []:
+        x.pop("choix", None)
+        x.pop("source", None)                       # le libellé de la pièce suffit à la phrase : pas de nom de fichier
+    return t
 
 
 def detail_partenaire(db, acces: Acces, section_id: int) -> dict:

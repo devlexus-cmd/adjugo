@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
   <script src="/static/cotraitance-crypto.js" integrity="sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le"></script>
-  <script src="/static/redaction-partenaire.js" integrity="sha384-Ud5XH/gZAylyBEqTBNMYYwNvbtfb5gWuP1kRjjsJtLCvk0k+tigNGoZ4NWoqNsjc"></script>
+  <script src="/static/redaction-partenaire.js" integrity="sha384-Mgp8ymrqDDGsHynPX8csTOrBNlLp7+73ZSBOMTngO8Xqf3S925naTT+Xq7rRwWLD"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -471,7 +471,10 @@
           const pill = l.ecarte ? `<span class="pill neutral gn-pill">retiré</span>`
             : (l.confirme && l.statut === "a_verifier") ? `<span class="pill neutral gn-pill">confirmé par le chef de file</span>`
             : l.statut === "a_verifier" ? `<span class="pill a_etudier gn-pill">à vérifier dans le règlement</span>` : "";
-          ul.appendChild($(`<li class="gn-row${l.ecarte ? " off" : ""}"><span class="gn-crit">${esc(l.critere)}</span>${l.poids ? `<span class="gn-poids num">${esc(l.poids)}</span>` : ""}${pill}</li>`));
+          // Vague 5 : les sous-critères tels qu'écrits dans le règlement.
+          const sous = (l.sous_criteres || []).length ? `<ul class="gn-sous">${l.sous_criteres.map(x => `<li><span class="gn-sous-n">${esc(x.critere)}</span>${x.poids ? `<span class="gn-poids num">${esc(x.poids)}</span>` : (x.statut === "a_verifier" ? `<span class="muted small">poids à vérifier</span>` : "")}</li>`).join("")}</ul>` : "";
+          const cs = l.controle_sous && (l.controle_sous.statut === "ecart" || l.controle_sous.statut === "non_verifiable") ? `<span class="muted small gn-sous-ctl">${esc(l.controle_sous.message)}</span>` : "";
+          ul.appendChild($(`<li class="gn-row${l.ecarte ? " off" : ""}"><span class="gn-crit">${esc(l.critere)}</span>${l.poids ? `<span class="gn-poids num">${esc(l.poids)}</span>` : ""}${pill}${sous}${cs}</li>`));
         });
         card.appendChild(ul);
       }
@@ -483,12 +486,24 @@
       const ordre = (g.ordre && g.ordre.phrase) || "";
       if (withPhrase.length || ordre) {
         const det = $(`<details class="gn-det"><summary>Voir les phrases du règlement</summary></details>`);
-        crit.forEach(l => det.appendChild($(`<div class="gn-src"><div class="gn-src-t">${esc(l.critere)}${l.poids ? ` <span class="muted">· ${esc(l.poids)}${l.poids_saisi ? " (lu par le chef de file)" : ""}</span>` : ""}</div>${l.phrase ? `<blockquote class="gn-q">${esc(l.phrase)}</blockquote>` : `<div class="muted small">Phrase non retrouvée dans le dossier importé.</div>`}</div>`)));
+        crit.forEach(l => det.appendChild($(`<div class="gn-src"><div class="gn-src-t">${esc(l.critere)}${l.poids ? ` <span class="muted">· ${esc(l.poids)}${l.poids_saisi ? " (lu par le chef de file)" : ""}</span>` : ""}</div>${l.phrase ? `<blockquote class="gn-q">${esc(l.phrase)}</blockquote>` : `<div class="muted small">Phrase non retrouvée dans le dossier importé.</div>`}${(l.sous_criteres || []).map(x => `<div class="gn-src-sous"><div class="small"><b>Sous-critère : ${esc(x.critere)}</b>${x.poids ? ` <span class="muted">· ${esc(x.poids)}</span>` : ""}</div><blockquote class="gn-q">${esc(x.phrase)}</blockquote></div>`).join("")}</div>`)));
         if (ordre) det.appendChild($(`<div class="gn-src"><div class="gn-src-t">Ordre des critères</div><blockquote class="gn-q">${esc(ordre)}</blockquote></div>`));
         card.appendChild(det);
       }
+      // Vague 5 : l'environnement, en information neutre (où il apparaît dans la notation).
+      const env = g.environnement && g.environnement.dans_la_note ? g.environnement : null;
+      if (env) {
+        card.appendChild($(`<div class="gn-env small">${ico("leaf", 14)}<span>${esc(env.message)}</span></div>`));
+        const de = $(`<details class="gn-det"><summary>Voir où il apparaît</summary></details>`);
+        (env.lieux || []).forEach(x => de.appendChild($(`<div class="gn-src">${x.libelle ? `<div class="gn-src-t">${esc(x.libelle)}${x.poids ? ` <span class="muted">· ${esc(x.poids)}</span>` : ""}</div>` : ""}<blockquote class="gn-q">${esc(x.phrase)}</blockquote></div>`)));
+        card.appendChild(de);
+      }
       const c = g.contraintes || {}, lim = (c.limites || []).filter(x => x && x.type), vis = c.visite && c.visite.phrase ? c.visite : null;
-      card.appendChild($(`<div class="gn-sub">Ce que le dossier impose${tip("Repéré dans le texte, sans IA : un cadre de réponse fourni ou imposé, des limites de pages, de mots, de caractères ou de police, une visite obligatoire. Chaque repérage garde sa phrase. Un repérage peut en manquer : le règlement fait foi.")}</div>`));
+      const cm = Array.isArray(g.candidatures_multiples) ? g.candidatures_multiples.filter(x => x && x.message) : [];
+      const ia = g.ia && g.ia.mentionne ? g.ia : null;
+      card.appendChild($(`<div class="gn-sub">Ce que le dossier impose${tip("Repéré dans le texte, sans IA : un cadre de réponse fourni ou imposé, des limites de pages, de mots, de caractères ou de police, une visite obligatoire, l'interdiction de répondre à la fois seul et en groupement, une phrase sur l'intelligence artificielle. Chaque repérage garde sa phrase. Un repérage peut en manquer : le règlement fait foi.")}</div>`));
+      cm.forEach(x => card.appendChild($(`<div class="warn-box">${ico("triangle-alert", 15, "margin-top:1px")}<span>${esc(x.message)}</span></div>`)));
+      if (ia) card.appendChild($(`<div class="warn-box">${ico("pen-off", 15, "margin-top:1px")}<span>${esc(ia.message || "")}${(ia.phrases || []).length ? `<q class="gn-ia-q">${esc(ia.phrases[0].phrase)}</q>` : ""}</span></div>`));
       if (c.fichier_impose) {
         card.appendChild($(`<div class="warn-box">${ico("triangle-alert", 15, "margin-top:1px")}<span>${esc(c.message_fichier || "")}</span></div>`));
         if (!c.cadre_fourni) card.appendChild($(`<p class="small gn-note">Ce fichier ne figure pas dans les pièces importées : le chef de file doit le récupérer sur la plateforme de l'acheteur.</p>`));
@@ -500,14 +515,27 @@
       const chips = lim.filter(x => !x.objet), partielles = lim.length - chips.length;
       if (chips.length || vis) card.appendChild($(`<ul class="gn-chips">${chips.map(x => `<li>${esc(gnLim(x))}</li>`).join("")}${vis ? "<li>Visite obligatoire</li>" : ""}</ul>`));
       if (partielles) card.appendChild($(`<p class="muted small gn-note">${partielles > 1 ? "D'autres limites portent" : "Une autre limite porte"} sur une partie du dossier (un CV, une question…) : voir les phrases.</p>`));
-      const rien = !c.fichier_impose && !c.cadre_fourni && !c.cadre_mentionne && !lim.length && !vis;
+      const rien = !c.fichier_impose && !c.cadre_fourni && !c.cadre_mentionne && !lim.length && !vis && !cm.length && !ia;
       if (rien) card.appendChild($(`<p class="muted small gn-note">Ni cadre de réponse, ni limite de pages ou de police, ni visite obligatoire repérés dans le règlement.</p>`));
       else {
         const det = $(`<details class="gn-det"><summary>Voir les phrases</summary></details>`);
         if (c.phrase_obligation) det.appendChild($(`<div class="gn-src"><div class="gn-src-t">Cadre de réponse</div><blockquote class="gn-q">${esc(c.phrase_obligation)}</blockquote></div>`));
         lim.forEach(x => det.appendChild($(`<div class="gn-src"><div class="gn-src-t">${esc(gnLim(x))}</div>${x.phrase ? `<blockquote class="gn-q">${esc(x.phrase)}</blockquote>` : ""}</div>`)));
         if (vis) det.appendChild($(`<div class="gn-src"><div class="gn-src-t">Visite obligatoire</div><blockquote class="gn-q">${esc(vis.phrase)}</blockquote></div>`));
+        cm.forEach(x => det.appendChild($(`<div class="gn-src"><div class="gn-src-t">Répondre seul ou en groupement</div><blockquote class="gn-q">${esc(x.phrase)}</blockquote></div>`)));
+        if (ia) (ia.phrases || []).forEach(x => det.appendChild($(`<div class="gn-src"><div class="gn-src-t">Intelligence artificielle</div><blockquote class="gn-q">${esc(x.phrase)}</blockquote></div>`)));
         if (det.children.length > 1) card.appendChild(det);
+      }
+      // Vague 5 : ce que le dossier DEMANDE (exigences repérées sans IA, phrase mot pour mot), en lecture.
+      if (Array.isArray(g.exigences)) {
+        const ex = g.exigences, n = ex.filter(x => !x.retiree).length;
+        card.appendChild($(`<div class="gn-sub">Ce que le dossier demande${tip("Les phrases du règlement et du cadre de réponse qui demandent quelque chose au candidat (« le mémoire comprendra… », « le candidat devra… », « Décrivez… »), repérées sans IA, avec leur phrase. Le chef de file voit dans son atelier lesquelles sont traitées. Le règlement fait foi.")}</div>`));
+        card.appendChild($(`<p class="small gn-note">${n ? n + " exigence" + (n > 1 ? "s" : "") + " repérée" + (n > 1 ? "s" : "") + "." : "Aucune exigence repérée dans le règlement ni dans le cadre de réponse."}</p>`));
+        if (n) {
+          const dx = $(`<details class="gn-det"><summary>Voir les exigences</summary></details>`);
+          ex.filter(x => !x.retiree).forEach(x => dx.appendChild($(`<div class="gn-src"><div class="gn-src-t">« ${esc(x.texte)} »</div><blockquote class="gn-q">${esc(x.phrase)}</blockquote></div>`)));
+          card.appendChild(dx);
+        }
       }
       return card;
     }
