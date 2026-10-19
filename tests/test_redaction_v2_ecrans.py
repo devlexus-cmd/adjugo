@@ -25,6 +25,7 @@ import pytest
 
 from tests.test_redaction_socle0 import _company, fake_llm  # noqa: F401
 from tests.test_redaction_v2_atelier import _attendre, _creer, _ecrire, _etat, _projet, _redige
+from tests.zones import zone, zones
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC = os.path.join(ROOT, "app", "static")
@@ -51,10 +52,12 @@ def _sans_commentaires_js(s):
     return re.sub(r"(^|\s)//[^\n]*", r"\1", s)
 
 
-CARTE = _between(HTML, "<!-- Dossier de présentation (rédaction, vague 2)", "<!-- Documents + Checklist (2 colonnes) -->")
-ATELIER = _between(HTML, "<!-- ░░ ATELIER DU DOSSIER DE PRÉSENTATION", "<!-- ░░ PIPELINE (kanban) ░░ -->")
-FENETRES = _between(HTML, "<!-- ══════════ ATELIER : FENÊTRES", "<!-- ══════════ DRAWER PROJET")
-KB = _between(HTML, "<section v-if=\"view==='kb'\">", "<!-- ░░ PIPELINE (kanban) ░░ -->")
+# Zones repérées par leur attribut data-test (tests/zones.py, docs/REORGANISATION_V1.md) : elles
+# restent justes quand la page est réordonnée.
+CARTE = zone(HTML, "marche-dossier-presentation")
+ATELIER = zone(HTML, "vue-atelier")
+FENETRES = "\n".join(zones(HTML, "fenetres-atelier"))
+KB = zone(HTML, "vue-kb")
 JS_PUR = _between(JS, "// ══════════ Atelier du dossier de présentation (rédaction, vague 2) — fonctions pures",
                   "const __adjApp = createApp({")
 JS_METH = _between(JS, "    // ══════════ Atelier du dossier de présentation (rédaction, vague 2) ══════════",
@@ -66,7 +69,7 @@ EMOJI = re.compile("[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001
 # ═══ 1. Gabarits : où l'atelier s'affiche, ce qu'il montre ═══════════════════════════════
 
 def test_carte_du_marche_compacte_un_seul_bouton_et_menu_inchange():
-    page = _between(HTML, "<section v-if=\"view==='aodetail' && ao.project\">", "<!-- ░░ ATELIER DU DOSSIER")
+    page = zone(HTML, "vue-aodetail")
     # La carte est sur la page du marché, juste avant les documents de réponse (étape « préparer »).
     assert page.index("Estimation du prix") < page.index("id=\"atl-card\"") < page.index("Mes documents de réponse")
     c = _sans_commentaires_html(CARTE)
@@ -74,7 +77,7 @@ def test_carte_du_marche_compacte_un_seul_bouton_et_menu_inchange():
     assert len(re.findall(r"<button\b(?![^>]*class=\"tip)", c)) == 1 and "@click=\"atlOpen()\"" in c
     assert "Préparer le dossier de présentation" in c and "Ouvrir l'atelier" in c
     # Le menu n'est pas réorganisé : aucune entrée « atelier » dans la barre latérale.
-    nav = _between(HTML, "<!-- Sidebar -->", "<!-- Workspace -->")
+    nav = zone(HTML, "menu")
     assert "atelier" not in nav and "go('atelier')" not in HTML
     for entree in ("go('dashboard')", "go('sourcing')", "go('pipeline')", "go('kb')", "go('documents')"):
         assert entree in nav

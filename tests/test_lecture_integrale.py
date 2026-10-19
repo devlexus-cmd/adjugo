@@ -695,7 +695,8 @@ def test_ecrans_couverture_sources_et_progression():
     # Gros dossier : progression de la lecture affichée pendant la tâche de fond.
     assert "/api/sourcing/lecture/" in js and "ao.lectureMsg" in html and "Lecture du dossier : " in js
     # Sobre : aucun émoji dans ce qui a été ajouté.
-    zone = html[html.index("Couverture de la lecture"):html.index("Couverture de la lecture") + 2500]
+    from tests.zones import zone as _zone
+    zone = _zone(html, "marche-couverture") + _zone(html, "marche-questions")
     assert not re.search(r"[\U0001F300-\U0001FAFF☀-➿]", zone)
 
 

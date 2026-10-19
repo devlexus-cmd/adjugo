@@ -29,6 +29,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from tests.zones import sans_reperes
+
 from app.services import atelier_groupement as ag
 from tests.test_convention_groupement import _invite, _put, _register
 from tests.test_redaction_socle0 import _company, _db, _user_id, fake_llm  # noqa: F401
@@ -449,7 +451,7 @@ def test_ecran_regles_d_interface_et_branchements():
     assert 'cleStockage: "adjugo_espace_" + TOKEN' in inv and "verifyIdentity(el, op)" in inv
     assert '__adjApp.component("redaction-partenaire"' in app_js and 'mode: "compte"' in app_js
     assert '"/api/shared/" + encodeURIComponent(this.pid) + "/redaction"' in app_js
-    assert '<redaction-partenaire v-if="sharedAo.projectId"' in app_html and "sharedRedLine(s.redaction)" in app_html
+    assert '<redaction-partenaire v-if="sharedAo.projectId"' in sans_reperes(app_html) and "sharedRedLine(s.redaction)" in app_html
     # Routes branchées (toutes relatives à la base de l'accès).
     for route in ('"/espace"', '"/dossier"', '"/dossier/valider"', '"/export"', '"/taches/"', '"/aide"', '"/envoyer"',
                   '"/valider"', '"/retablir"', '"/brouillon"', '"/faits/"', '"/brouillons/"', '"/otp/request"'):

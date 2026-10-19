@@ -50,8 +50,9 @@ PROMESSES = ("Aucune invention", "Rien n'est deviné", "sourcé", "vérifié", "
 
 def test_carte_de_la_grille_sans_promesse_et_bon_vocabulaire():
     html, js, inv = _static("app.html"), _static("app.js"), _static("invite.html")
-    chef = _between(html, "<!-- Comment vous serez noté — la grille", "<!-- Répondre à plusieurs ?")
-    part = _between(html, "<!-- Comment vous serez noté : la même grille", "<!-- Pourquoi vous dans ce groupement")
+    from tests.zones import zone as _zone
+    chef = _zone(html, "marche-grille")
+    part = _zone(html, "partage-grille")
     comp = _between(js, '__adjApp.component("grille-carte"', "// ── Réseau de partenaires (vague 3)")
     page = _between(inv, "function renderGrille", "function renderMonAO")
     for zone in (chef, part, comp, page):

@@ -24,6 +24,7 @@ import uuid
 import pytest
 
 from tests.test_redaction_v2_atelier import _creer, _projet
+from tests.zones import zone, zones
 from tests.test_redaction_v3_mes_preuves import _coffre, _company, _h, _ok, _preuve, _register, _reseau
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -51,10 +52,11 @@ def _sans_commentaires_js(s):
     return re.sub(r"(^|\s)//[^\n]*", r"\1", s)
 
 
-VUE = _between(HTML, "<!-- ░░ MES PREUVES (rédaction, vague 3, E1) ░░", "<!-- ░░ CRITERIA ░░ -->")
-FENETRES = _between(HTML, "<!-- ══════════ MES PREUVES : FENÊTRES", "<!-- ══════════ MODAL DÉCOUVERTE")
-ENTREPRISE = _between(HTML, "<section v-if=\"view==='company'\">", "<!-- ░░ MES PREUVES")
-ATELIER = _between(HTML, "<!-- ░░ ATELIER DU DOSSIER DE PRÉSENTATION", "<!-- ░░ PIPELINE (kanban) ░░ -->")
+# Zones repérées par leur attribut data-test (tests/zones.py, docs/REORGANISATION_V1.md).
+VUE = zone(HTML, "vue-preuves")
+FENETRES = "\n".join(zones(HTML, "fenetres-preuves"))
+ENTREPRISE = zone(HTML, "vue-company")
+ATELIER = zone(HTML, "vue-atelier")
 JS_PUR = _between(JS, "// ══════════ « Mes preuves » (rédaction, vague 3, E1) — état et listes fermées",
                   "// ══════════ fin « Mes preuves » — fonctions pures")
 JS_METH = _between(JS, "    // ══════════ « Mes preuves » (rédaction, vague 3, E1) ══════════", "    // ── Company / Criteria ──")
@@ -67,7 +69,7 @@ MENU_AVANT = ["dashboard", "sourcing", "pipeline", "cotraitants", "reseau", "doc
 # ═══ 1. Où l'écran s'affiche : sous « Mon entreprise », menu non réorganisé ════════════════
 
 def test_menu_non_reorganise_mes_preuves_sous_mon_entreprise():
-    nav = _between(HTML, "<!-- Sidebar -->", "<!-- Workspace -->")
+    nav = zone(HTML, "menu")
     ordre = re.findall(r"go\('([a-z]+)'\)", nav)
     assert [x for x in ordre if x != "preuves"] == MENU_AVANT        # aucune entrée déplacée
     assert ordre.index("preuves") == ordre.index("company") + 1      # juste sous « Mon entreprise »

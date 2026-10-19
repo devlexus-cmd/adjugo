@@ -22,6 +22,8 @@ import subprocess
 
 import pytest
 
+from tests.zones import zone
+
 STATIC = pathlib.Path(__file__).resolve().parent.parent / "app" / "static"
 HTML = (STATIC / "app.html").read_text(encoding="utf-8")
 JS = (STATIC / "app.js").read_text(encoding="utf-8")
@@ -41,10 +43,12 @@ def _no_js_comments(s):
     return re.sub(r"(^|\s)//[^\n]*", r"\1", s)
 
 
-SECTION = _between(HTML, "<!-- ░░ RÉSEAU DE PARTENAIRES", "<!-- Partagé avec moi — liste des AO")
-PANEL = _between(HTML, "<!-- Partenaires pour ce marché — « Qui me complète ? »", "<!-- Monter le groupement (co-traitance v2, vague 2)")
-MODALS = _between(HTML, "<!-- ══════════ FICHE D'UN PARTENAIRE DU RÉSEAU", "<!-- ══════════ MODAL GÉNÉRIQUE")
-SUGGEST = _between(HTML, "<!-- Suggestion d'interface « publiez votre profil partenaire »", "<!-- ░░ DASHBOARD ░░ -->")
+# Zones repérées par leur attribut data-test (tests/zones.py, docs/REORGANISATION_V1.md) : elles
+# restent justes quand la page est réordonnée ou qu'un libellé change.
+SECTION = zone(HTML, "vue-reseau")
+PANEL = zone(HTML, "marche-qui-me-complete")
+MODALS = zone(HTML, "fenetre-fiche-partenaire") + "\n" + zone(HTML, "fenetre-invitation")
+SUGGEST = zone(HTML, "carte-suggestion-reseau")
 JS_METHODS = _between(JS, "// ══════════ Réseau de partenaires (co-traitance v2, vague 3) ══════════", "// ── Coffre-fort croisé")
 JS_COMPONENTS = _between(JS, "// ── Réseau de partenaires (vague 3) : petits composants", "// window.__adjugo")
 SCREENS = {k: _no_html_comments(v) for k, v in
@@ -87,7 +91,7 @@ def test_js_reseau_sans_html_brut_ni_pourcentage():
 
 
 def test_invitation_reseau_adresse_jamais_affichee():
-    rinv = _between(MODALS, "<!-- ══════════ INVITATION EN 1 CLIC", "</div>\n  </div>\n\n")
+    rinv = zone(HTML, "fenetre-invitation")
     assert "recipient" not in rinv and "email" not in rinv.lower().replace("aucun email", "")
     assert "vous verrez l'adresse du partenaire quand il aura accepté" in MODALS
     assert "deja_invite" in MODALS and "sur_le_reseau" in MODALS
@@ -101,7 +105,7 @@ def test_invitation_reseau_adresse_jamais_affichee():
 def test_statut_a_decline_partout():
     assert "inviteDeclinedFor(c.name)" in PANEL                      # cartes réseau et SIRENE
     assert "inviteDeclinedFor(m.name)" in HTML                       # composition retenue
-    assert "inviteDeclinedFor(c.name)" in _between(HTML, "Qui l'a ?", "5. Simulation")   # candidats
+    assert "inviteDeclinedFor(c.name)" in zone(HTML, "plusieurs-manques")   # candidats (« Qui l'a ? »)
     assert "Vous avez décliné" in SECTION                            # invitations reçues
 
 

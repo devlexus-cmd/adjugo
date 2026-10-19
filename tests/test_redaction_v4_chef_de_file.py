@@ -30,13 +30,14 @@ from tests.test_redaction_socle0 import _company, _db, fake_llm  # noqa: F401
 from tests.test_redaction_v2_atelier import _creer, _etat, _projet
 from tests.test_redaction_v2_ecrans import (CSS, EMOJI, HTML, JS, _between, _node, _sans_commentaires_html,
                                            _sans_commentaires_js)
+from tests.zones import sans_reperes, zone
 from tests.test_redaction_v4_groupement import (LOT_A, SECRET_DOC, SECRET_EXTRAIT, TEXTE_IA_A, P, PC, _aide, _audit,
                                                 _ecrire, _envoyer, _groupement, _part_a, _reponse_partenaire,
                                                 _section_par, _vues_du_chef)
 
-ATELIER = _between(HTML, "<!-- ░░ ATELIER DU DOSSIER DE PRÉSENTATION", "<!-- ░░ PIPELINE (kanban) ░░ -->")
-REP = _between(HTML, "<!-- ░░ « QUI ÉCRIT QUOI » (rédaction, vague 4, chef de file) ░░",
-               '<div v-show="!atlRepVue()" class="atl-grid">')
+# Zones repérées par leur attribut data-test (tests/zones.py, docs/REORGANISATION_V1.md).
+ATELIER = zone(HTML, "vue-atelier")
+REP = zone(HTML, "atelier-onglets") + "\n" + zone(HTML, "atelier-repartition")
 JS_REP = _between(JS, "    // ── « Qui écrit quoi » (rédaction, vague 4, chef de file) ──",
                   "    // « Mon savoir-faire » : le dossier de présentation se prépare sur la page du marché.")
 CSS_REP = CSS[CSS.index("/* ── « Qui écrit quoi » (rédaction, vague 4, chef de file) ──"):
@@ -483,13 +484,13 @@ def test_demo_ecritures_du_dossier_de_groupement_refusees_dans_la_route(client, 
 # ═══ 8. L'écran « Qui écrit quoi » ═══════════════════════════════════════════════════════════
 
 def test_ecran_onglet_seulement_en_groupement_et_menu_inchange():
-    a = _sans_commentaires_html(ATELIER)
+    a = sans_reperes(_sans_commentaires_html(ATELIER))
     assert '<nav v-if="atlGrp()" class="rn-tabs atl-onglets" aria-label="Vues de l\'atelier">' in a
     assert '<div v-if="atlRepVue()" class="atl-rep">' in a and '<div v-show="!atlRepVue()" class="atl-grid">' in a
     assert "atlGrp() { const st = this.atl.st; return !!(st && st.groupement && st.groupement.onglet); }" in JS_REP
     assert 'onglet: "redaction", rep: _atlRepInit()' in JS
     # Le menu n'est pas réorganisé : rien de neuf dans la barre latérale.
-    nav = _between(HTML, "<!-- Sidebar -->", "<!-- Workspace -->")
+    nav = zone(HTML, "menu")
     assert "repartition" not in nav and "Qui écrit quoi" not in nav
 
 

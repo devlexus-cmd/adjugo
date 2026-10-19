@@ -483,7 +483,8 @@ def test_ecran_case_bulle_et_page_lue_avant_l_export():
     assert "prepJoindre: false" in js and "page_preparation: !!a.prepJoindre" in js
     assert '"/preparation"' in js
     # Interface : français, sans émoji.
-    bloc = html[html.index("Rédaction, vague 6 (H)"):html.index("atl-prep-leg")]
+    from tests.zones import zone
+    bloc = zone(html, "atelier-page-preparation-case") + zone(html, "atelier-page-preparation")
     assert not re.search("[\U0001F300-\U0001FAFF☀-➿]", bloc)
 
 

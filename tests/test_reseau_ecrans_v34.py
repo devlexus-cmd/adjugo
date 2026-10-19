@@ -17,6 +17,7 @@ import re
 import json
 
 from tests.test_reseau_ecrans import HTML, JS, PANEL, SECTION, STATIC, _between, _method, _node
+from tests.zones import zone
 
 
 def _obj(*names, extra=""):
@@ -88,7 +89,7 @@ console.log(JSON.stringify(res));
     assert r["vide"] == "vide" and r["liste"] == "liste"
     ids = [i for i, _m in r["items"]]
     assert ids == [1, 2, 3, 4, 5, 9]                  # le 6e est en cours : jamais « Repérer le marché »
-    dash = _between(HTML, "<!-- ESPACE RÉSEAU ADJUGO", "Calcul limité aux 100 marchés")
+    dash = zone(HTML, "accueil-reseau")
     assert "grpDashState()==='vide'" in dash and "grpDashState()==='erreur'" in dash
     assert "grpDashState()==='deposes'" in dash and "Données momentanément indisponibles." in dash
     assert re.search(r'<div v-else class="row wrap"[^>]*>\s*<i data-lucide="sparkles"', dash) is None
@@ -99,7 +100,7 @@ def test_un_seul_pourcentage_plus_de_preparation_en_pourcent():
     for motif in ("readiness.pct", "readiness_pct", "p.completeness", "réponse commune prête", "readinessColor"):
         assert motif not in HTML, motif
     assert "readinessColor" not in JS
-    cockpit = _between(HTML, "<!-- Cockpit : état de préparation", "aoToggleCockpit()")
+    cockpit = zone(HTML, "marche-preparation")
     assert "readiness.submitted }}/{{ ao.share.consortium.readiness.invited" in cockpit and "%" not in cockpit
 
 
@@ -122,7 +123,7 @@ def test_explications_dans_des_bulles():
 
 
 def test_invitations_recues_reservees_a_qui_peut_accepter():
-    recues = _between(SECTION, "<!-- ── Invitations reçues par le réseau", "</template>\n        </section>")
+    recues = zone(HTML, "reseau-recues")
     assert "inv.statut!=='acceptee' && inv.peut_accepter!==false\" type=\"button\" class=\"btn sm primary\" @click=\"rnAccept(inv)\"" in recues
     assert "inv.peut_accepter!==false\" type=\"button\" class=\"btn sm ghost\" @click=\"rnDecline(inv)\"" in recues
     assert "{{ inv.aide }}" in recues
@@ -168,7 +169,7 @@ def test_invitations_recues_rendu_par_le_vrai_compilateur_vue():
     dépôt. « Ouvrir le dossier » ne s'affiche que pour une invitation acceptée : un v-else
     l'attachait au bouton « Accepter », donc un membre non propriétaire le voyait sur une
     invitation encore à accepter (et rnOpenRecue répondait « plus accessible »)."""
-    recues = _between(SECTION, "<!-- ── Invitations reçues par le réseau", "</template>\n        </section>")
+    recues = zone(HTML, "reseau-recues")
     i = recues.index('<div v-if="!inv._declined" class="row wrap rn-g8 rn-acts">')
     j = recues.index("</div>", recues.index("rnDecline(inv)", i)) + len("</div>")
     vue = sorted((STATIC / "vendor").glob("vue-*.prod.js"))[-1]
@@ -185,7 +186,7 @@ def test_invitations_recues_rendu_par_le_vrai_compilateur_vue():
 
 
 def test_profil_en_attente_de_validation_explique_sous_node():
-    prof = _between(SECTION, "<!-- ── Mon profil partenaire ── -->", "<!-- ── Annuaire ── -->")
+    prof = zone(HTML, "reseau-profil")
     assert "En attente de validation par Adjugo" in prof
     assert _in_tip(prof, "{{ d.validation.explication }}")
     assert "rnCancelDemande()" in prof and "rnPubLabel(d)" in prof
@@ -220,7 +221,7 @@ def test_feuille_de_style_equilibree():
 
 
 def test_administration_valider_ou_refuser_sous_node():
-    adm = _between(HTML, "<section v-if=\"view==='admin'\">", "<!-- Mes groupements — hub central")
+    adm = zone(HTML, "vue-admin")
     for s in ("Profils du réseau à valider", "adminRvValider(it)", "adminRvRefuser(it)", "{{ it.compte.email }}",
               "{{ it.sirene.nom || 'nom non trouvé' }}", "Motif du refus", "admin.rv.remplacer[it.profile_id]"):
         assert s in adm, s

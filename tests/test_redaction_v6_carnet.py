@@ -34,6 +34,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.zones import sans_reperes
+
 from app.services import carnet_notes as cn
 from app.services import llm
 from tests.test_redaction_socle0 import TEAM, _company, _db, _user_id, fake_llm  # noqa: F401
@@ -793,7 +795,7 @@ def test_ecrans_regles_d_interface_et_branchements():
     app_html, inv_html = _lire("app.html"), _lire("invite.html")
     for page in (app_html, inv_html):
         assert re.search(r'<script src="/static/carnet-notes\.js" integrity="sha384-[A-Za-z0-9+/=]{64}"', page)
-    assert '<carnet-notes mode="tableau"' in app_html and 'mode="marche"' in app_html
+    assert '<carnet-notes mode="tableau"' in sans_reperes(app_html) and 'mode="marche"' in app_html
     assert "atlDerniereFois(atlSec())" in app_html and "La dernière fois, l'acheteur a écrit" in app_html
     assert "AdjugoCarnetNotes" in _lire("redaction-partenaire.js")
     assert '__adjApp.component("carnet-notes"' in _lire("app.js")

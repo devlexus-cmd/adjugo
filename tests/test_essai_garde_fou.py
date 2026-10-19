@@ -533,8 +533,8 @@ def test_ecrans_compteur_d_essai_et_invitation_aux_forfaits():
     assert "Votre essai a atteint sa limite d'usage" in js and "Votre essai approche de sa limite d'usage" in js
     assert "if (r.status === 402) this.offre402" in js and 'this.go("billing")' in js
     assert "30 analyses IA pendant l'essai" in html and "30 analyses IA / mois</li><li>Aucune carte" not in html
-    i = html.index('v-if="essaiCarte"')
-    carte = html[i:html.index("</div>\n\n", i)]
+    from tests.zones import zone
+    carte = zone(html, "carte-essai")
     assert 'class="tip"' in carte and "Voir les forfaits" in carte          # bulle (i), forfaits proposés
     for m in ("€", "budget", "coût"):
         assert m not in carte

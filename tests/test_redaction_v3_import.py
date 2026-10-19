@@ -654,7 +654,8 @@ def test_ecran_mon_savoir_faire():
     html = open(os.path.join(root, "app", "static", "app.html"), encoding="utf-8").read()
     js = open(os.path.join(root, "app", "static", "app.js"), encoding="utf-8").read()
     assert "Proposer des fiches à partir de ce document" in html
-    bloc = html[html.index('<!-- ░░ FICHES PROPOSÉES'):html.index('<!-- ░░ FIN FICHES PROPOSÉES')]
+    from tests.zones import zone
+    bloc = zone(html, "kb-fiches-proposees")
     assert 'class="tip' in bloc and 'type="checkbox"' in bloc
     assert "f.source.passage" in bloc and "f.source_libelle" in bloc                    # libellé du serveur
     assert "vérifi" not in bloc.lower()

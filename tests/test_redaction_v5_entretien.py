@@ -771,8 +771,8 @@ def _lire(nom):
 
 
 def _bloc_entretien(html):
-    a = html.index("<!-- ░░ ENTRETIEN CHANTIER")
-    return html[a:html.index("<!-- ░░ « QUI ÉCRIT QUOI »", a)]
+    from tests.zones import zone
+    return zone(html, "atelier-entretien")
 
 
 def test_ecran_du_chef_de_file_regles_d_interface_et_branchements():

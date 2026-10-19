@@ -279,8 +279,9 @@ def test_projets_a_venir_masque_par_defaut(client, monkeypatch):
     assert client.get("/api/public-config").json()["projets_a_venir"] is False
     monkeypatch.setenv("PROJETS_A_VENIR", "1")
     assert client.get("/api/public-config").json()["projets_a_venir"] is True
-    html, js = _static("app.html"), _static("app.js")
-    nav = html[html.index("<!-- Sidebar -->"):html.index("<!-- Workspace -->")]
+    from tests.zones import sans_reperes, zone
+    brut, js = _static("app.html"), _static("app.js")
+    html, nav = sans_reperes(brut), sans_reperes(zone(brut, "menu"))
     assert '<a v-if="features.projets_a_venir" class="nav-item" :class="{active:view===\'amont\'}"' in nav
     assert '<div v-if="features.projets_a_venir" class="card pad dash-block"' in html
     assert "<section v-if=\"view==='amont' && features.projets_a_venir\">" in html

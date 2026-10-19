@@ -192,8 +192,8 @@ def test_ecrans_libelles_et_sans_doublon():
     assert 'manquant: "à fournir"' in app_js and 'manquant: "manquante"' not in app_js
     assert 'manquant: "À fournir"' in invite and 'manquant: "Manquante"' not in invite
     # Partagé avec moi : plus de liste complète des alertes sous le tableau.
-    i = app_html.index("Coffre-fort croisé — qui a fourni quoi")
-    bloc = app_html[i:app_html.index("Enregistrer le brouillon", i)]
+    from tests.zones import zone
+    bloc = zone(app_html, "partage-coffre-croise")
     assert "sharedAo.coffre.alerts" not in bloc
     assert "cxResume(sharedAo.coffre)" in bloc and "cxExpirations(sharedAo.coffre)" in bloc
     assert 'a.kind !== "a_fournir"' in app_js
