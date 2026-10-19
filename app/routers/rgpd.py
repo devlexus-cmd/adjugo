@@ -139,6 +139,12 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
         data["entretiens_chantier"] = _ec.exporter_chef(db, uid)
     except Exception:
         data["entretiens_chantier"] = []
+    # Carnet de notes (rédaction, vague 6) : les notes de SES marchés, le courrier de l'acheteur collé, la demande.
+    try:
+        from app.services.carnet_notes import exporter as _exporter_carnets
+        data["carnets_de_notes"] = _exporter_carnets(db, [uid])
+    except Exception:
+        data["carnets_de_notes"] = []
     # « Mes preuves » (rédaction, vague 3) : faits de l'entreprise avec leur source, CV compris.
     try:
         from app.services.preuves import exporter as _exporter_preuves
@@ -653,6 +659,7 @@ def _tombstone_projects(db, pids: list) -> None:
         Project.source_url: None, Project.dce_file_key: None, Project.groupement_plan: None,
         Project.groupement_score: None, Project.match_score: None, Project.go_decision: None,
         Project.outcome_reason: None, Project.competitor_winner: None, Project.budget: 0,
+        Project.carnet_notes: None,       # rédaction, vague 6 (F) : notes, courrier collé, demande
     }, synchronize_session=False)
     db.query(Project).filter(Project.id.in_(pids), Project.deleted_at.is_(None)).update(
         {Project.deleted_at: utcnow()}, synchronize_session=False)

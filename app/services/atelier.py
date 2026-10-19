@@ -3011,7 +3011,19 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
         # Vague 5 (C2 complet) : la liste des exigences traitée sans IA, et le mode « sans IA ».
         "exigences": exigences_out(db, project, dossier, sections, cour),
         "sans_ia": sans_ia_out(db, project, dossier),
+        # Vague 6 (F) : « La dernière fois, l'acheteur a écrit : … » — commentaires des anciens marchés de
+        # l'organisation (carnet de notes), même famille de critère, même acheteur d'abord. Jamais à l'IA.
+        "derniere_fois": _derniere_fois(db, project, sections, member_ids),
     }
+
+
+def _derniere_fois(db, project: Project, sections: list, member_ids: list) -> dict:
+    try:
+        from app.services import carnet_notes as cn
+        return cn.derniere_fois(db, project, sections, member_ids)
+    except Exception as e:      # noqa: BLE001 — l'atelier ne dépend jamais du carnet de notes
+        logger.warning("atelier : carnet de notes illisible (projet %s) : %s", project.id, type(e).__name__)
+        return {}
 
 
 def _entretien_out(db, dossier: DossierPresentation) -> dict:

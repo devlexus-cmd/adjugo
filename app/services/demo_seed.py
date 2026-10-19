@@ -372,6 +372,15 @@ def ensure_demo(db, force: bool = False) -> User:
         db.rollback()
         logger.warning("seed démo (extras) ignoré : %s", e)
 
+    # Rédaction, vague 6 (F) : le carnet de notes des trois marchés décidés (notes FICTIVES, un marché perdu avec son
+    # courrier lu sans IA) → « Où vous perdez des points » et « La dernière fois, l'acheteur a écrit ». Transaction propre.
+    try:
+        from app.services.demo_carnet import seed_carnet
+        seed_carnet(db, user)
+    except Exception as e:
+        db.rollback()
+        logger.warning("seed démo (carnet de notes) ignoré : %s", e)
+
     # Rédaction (vagues 1 à 3) : dossier du marché « toiture » lu en entier (grille « Comment vous serez
     # noté », couverture), « Mes preuves », dossier de présentation déjà rédigé. Sans IA ni réseau, dans sa
     # propre transaction (app/services/demo_redaction.py) : un échec laisse le reste de la vitrine intact.

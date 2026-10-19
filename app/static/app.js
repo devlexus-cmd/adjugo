@@ -3822,7 +3822,7 @@ const __adjApp = createApp({
       return (a.dce_available && a.lead_score && a.lead_score.breakdown) || [];
     },
     async aoStatus() {
-      try { await this.api("PUT", "/api/projects/" + this.ao.project.id, { status: this.ao.project.status }); this.notify("Étape mise à jour"); this.loadStats(); }
+      try { await this.api("PUT", "/api/projects/" + this.ao.project.id, { status: this.ao.project.status }); this.notify("Étape mise à jour"); this.loadStats(); this.ao.cnTick = (this.ao.cnTick || 0) + 1; }
       catch (e) { this.notify(e.message, "err"); }
     },
     outcomeReasons(status) {
@@ -4759,6 +4759,9 @@ const __adjApp = createApp({
     },
     atlNonControlees(lims) { return ((lims && lims.non_controlees) || []).map(x => _gnLim(x)).filter(Boolean); },
     atlSec() { const a = this.atl; return (a.st && a.st.sections.find(s => s.id === a.sel)) || null; },
+    // Vague 6 (F) : « La dernière fois, l'acheteur a écrit : … » (carnet de notes d'un ancien marché, même famille de
+    // critère, même acheteur d'abord) ; affiché seulement, jamais envoyé à l'IA.
+    atlDerniereFois(s) { const st = this.atl.st; return (st && s && st.derniere_fois && st.derniere_fois[String(s.id)]) || null; },
     atlSecLims(s) { const st = this.atl.st; return (st && s) ? (st.limites || []).filter(l => l.portee === "section" && l.section_id === s.id) : []; },
     atlDocLims(st) { return ((st && st.limites) || []).filter(l => l.portee === "document"); },
     atlPieceLecture(p) { return atlLecturePiece(p); },
@@ -5859,6 +5862,27 @@ __adjApp.component("sources-publiques", {
       headers: () => (session() ? { Authorization: "Bearer " + session() } : {}),
       avantEcrire: this.avant ? () => this.avant() : null, apresEcrire: (d) => { if (this.apres) this.apres(d); } });
   },
+  unmounted() { if (this._h) this._h.destroy(); },
+});
+// Rédaction, vague 6 (F) : le carnet de notes (app/static/carnet-notes.js) — page du marché gagné ou perdu (mode
+// « marche ») et tableau de bord (mode « tableau », « Où vous perdez des points »). Gabarit statique : Vue ne redessine
+// jamais son contenu ; un autre marché remonte le composant (clé), un changement d'étape le relit.
+__adjApp.component("carnet-notes", {
+  props: { mode: { type: String, default: "marche" }, pid: { type: [Number, String], default: 0 },
+           statut: { type: String, default: "" }, tick: { type: Number, default: 0 } },
+  template: '<div class="cn-host"></div>',
+  mounted() {
+    const CN = window.AdjugoCarnetNotes;
+    if (!CN) return;
+    const session = () => (this.$root && this.$root.token) || "";
+    this._h = CN.mount(this.$el, { mode: this.mode, pid: this.pid,
+      headers: () => (session() ? { Authorization: "Bearer " + session() } : {}),
+      onPartenaire: () => { const r = this.$root; if (r && r.openReseau) r.openReseau("annuaire"); },
+      onOuvrir: (id) => { const r = this.$root; if (r && r.openProjectById) r.openProjectById(id); },
+      onChange: () => { const r = this.$root; if (r && r.loadStats) r.loadStats(); } });
+  },
+  // `tick` : l'étape vient d'être enregistrée (PUT terminé) — le carnet se relit après le serveur, jamais avant.
+  watch: { statut() { if (this._h) this._h.reload(); }, tick() { if (this._h) this._h.reload(); } },
   unmounted() { if (this._h) this._h.destroy(); },
 });
 __adjApp.component("grille-carte", {

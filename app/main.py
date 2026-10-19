@@ -333,6 +333,10 @@ from app.routers.entretien import router as entretien_router
 app.include_router(entretien_router)
 from app.routers.atelier import router as atelier_router
 app.include_router(atelier_router)
+# Rédaction, vague 6 (F) : le carnet de notes (« Demandez vos notes », notes validées critère par critère,
+# « Où vous perdez des points », dossier gagné ajouté au savoir-faire).
+from app.routers.carnet import router as carnet_router
+app.include_router(carnet_router)
 from app.routers.rgpd import router as rgpd_router
 app.include_router(rgpd_router)
 from app.routers.feedback import router as feedback_router

@@ -89,6 +89,10 @@ COUTS = [
          params=_LS),
     # Rédaction, vague 5 (D) : « Chercher d'autres questions avec Adjugo » (entretien chantier, option IA).
     Cout("POST", "/api/atelier/{project_id}/entretien/ia", "ia", corps={}, params=_P),
+    # Rédaction, vague 6 (F) : « Lire avec l'IA » le courrier de l'acheteur collé dans le carnet de notes.
+    Cout("POST", "/api/carnet/{project_id}/lire-ia", "ia",
+         corps={"courrier": "Critère 1 : Prix des prestations. Votre note : 32,5 / 40. Note de l'attributaire : 40 / 40."},
+         params=_P),
     # ── Emails ──────────────────────────────────────────────────────────────────────────────────────
     Cout("POST", "/api/projects/{project_id}/invites", "email",
          corps={"recipient": "partenaire@exemple.invalid", "company_name": "Partenaire"}, params=_L),
@@ -275,6 +279,13 @@ SANS_COUT = {
     ("PUT", "/api/atelier/{project_id}/entretien/{question_id}/adresse"): _V + " (aucun email)",
     ("PUT", "/api/invite/{token}/redaction/entretien/{question_id}"): _LD,
     ("PUT", "/api/shared/{project_id}/redaction/entretien/{question_id}"): _V + " (« Partagé avec moi »)",
+    # Rédaction, vague 6 (F) : le carnet de notes — la vitrine montre des notes déjà saisies (app/services/demo_carnet.py) ;
+    # toute écriture est refusée par le garde ET dans la route ; la lecture d'un courrier collé SANS IA reste ouverte.
+    ("POST", "/api/carnet/{project_id}/lire"): "lecture du courrier collé, sans IA ; rien n'est écrit",
+    ("PUT", "/api/carnet/{project_id}/notes"): _V + " (0 IA)",
+    ("POST", "/api/carnet/{project_id}/demande"): _V + " (Adjugo n'envoie aucun courrier)",
+    ("POST", "/api/carnet/{project_id}/rappel/masquer"): _V,
+    ("POST", "/api/carnet/{project_id}/savoir-faire"): _V + " (0 IA, aucun fichier rangé)",
     ("PUT", "/api/invite/{token}/contribution"): "lien partenaire de la démo : refusé dans la route (part figée par la convention)",
     ("PUT", "/api/invite/{token}/contribution/detail"): "lien partenaire de la démo : refusé dans la route",
     ("POST", "/api/invite/{token}/otp/verify"): "lien partenaire : vérification d'un code (aucun envoi)",

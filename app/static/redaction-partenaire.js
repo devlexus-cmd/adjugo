@@ -375,6 +375,10 @@
         h += "</ul>";
       }
       h += renderDossier(v, ecrire);
+      // Vague 6 (F) : les notes du marché, communes aux membres (saisies par le chef de file), ses parties signalées
+      // (gabarit de app/static/carnet-notes.js, chargé par la page ; lecture seule).
+      const CN = root.AdjugoCarnetNotes;
+      if (v.carnet && CN && CN.partenaireHtml) h += CN.partenaireHtml(v.carnet);
       const simple = v.mode_simple && v.mode_simple.petit_texte;
       if (simple) {
         h += '<details class="gn-det rp-simple"><summary>Mode simple : votre paragraphe</summary><p class="muted small rp-p">' + rpEsc(v.mode_simple.message) + '</p><div class="rp-txt rp-txt-s">' + rpTexte(simple, "votre source") + "</div></details>";

@@ -257,6 +257,15 @@ _BLOCKED = [
     ("POST",   "/api/sourcing/grille/element",                "préparer votre dossier de présentation"),
     ("POST",   "/api/sourcing/grille/exigence",               "préparer votre dossier de présentation"),
     ("POST",   "/api/sourcing/grille/relire",                 "préparer votre dossier de présentation"),
+    # Rédaction, vague 6 (F) : le carnet de notes — toute écriture (la vitrine montre des notes déjà saisies, qui ne
+    # changent pas), la lecture du courrier avec l'IA et l'ajout du dossier gagné à « Mon savoir-faire ». Restent
+    # ouverts : le carnet, le courrier pré-rempli, « Où vous perdez des points » et la lecture SANS IA d'un courrier
+    # collé (rien n'est écrit).
+    ("POST",   "/api/carnet/{pid}/lire-ia",                   "lancer une analyse IA"),
+    ("PUT",    "/api/carnet/{pid}/notes",                     "saisir vos notes"),
+    ("POST",   "/api/carnet/{pid}/demande",                   "saisir vos notes"),
+    ("POST",   "/api/carnet/{pid}/rappel/masquer",            "saisir vos notes"),
+    ("POST",   "/api/carnet/{pid}/savoir-faire",              "enrichir votre savoir-faire"),
     # (d) compte, abonnement, équipe, organisation
     ("POST",   "/api/rgpd/delete-account",                    "gérer votre compte"),
     ("POST",   "/api/stripe/create-checkout",                 "vous abonner"),

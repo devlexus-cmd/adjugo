@@ -223,6 +223,11 @@ class Project(Base):
     awarded_amount = Column(Float, nullable=True)        # montant attribué au lauréat
     competitor_winner = Column(String(255), nullable=True)
 
+    # Rédaction, vague 6 (F, « le carnet de notes ») : passage à « Perdu », demande des notes, notes VALIDÉES
+    # par l'utilisateur (critère par critère), courrier collé, ajout au savoir-faire. Seul point d'écriture :
+    # app/services/carnet_notes.py ; contrat docs/REDACTION_V6.md (section F). NULL = rien de saisi.
+    carnet_notes = Column(JSON, nullable=True)
+
     deleted_at = Column(DateTime, nullable=True, index=True)  # soft-delete (corbeille)
 
     created_at = Column(DateTime, default=utcnow)

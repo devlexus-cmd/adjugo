@@ -1520,3 +1520,50 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
 .rp-chk input { margin-top:2px; flex:none; }
 .rp-file { flex:1 1 220px; min-width:0; max-width:100%; font-size:12.5px; }
 @media (max-width:640px) { .rp-docs { padding:12px; } .rp-doc-n { flex-basis:100%; } }
+/* Rédaction, vague 6 (F) : le carnet de notes (app/static/carnet-notes.js) — page du marché, tableau de bord, espace du
+   partenaire et « La dernière fois, l'acheteur a écrit » dans l'atelier. Compact, lisible à 375 px. */
+.cn-host:empty { display:none; }
+.cn-card { margin-top:12px; padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+.cn-head { display:flex; align-items:center; flex-wrap:wrap; gap:2px 6px; }
+.cn-title { margin:0; font-size:14px; font-weight:620; }
+.cn-sub { margin-top:2px; }
+.cn-bloc { margin-top:12px; padding-top:12px; border-top:1px solid var(--hairline); }
+.cn-bloc:first-of-type { border-top:0; padding-top:0; }
+.cn-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.cn-mt4 { margin-top:4px; } .cn-mt8 { margin-top:8px; }
+.cn-rappel { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 12px; margin-bottom:10px; border-radius:10px; background:var(--warning-weak); color:var(--warning-text); font-size:12.5px; }
+.cn-lettre-box { margin-top:10px; padding:12px; border-radius:10px; background:var(--surface-2); border:1px solid var(--border); }
+.cn-field { margin-bottom:8px; }
+.cn-field label { font-size:11.5px; }
+.cn-ta { width:100%; font:inherit; font-size:13px; line-height:1.5; }
+.cn-delai { display:flex; gap:8px; align-items:flex-start; font-weight:600; color:var(--text); }
+.cn-ok { display:flex; gap:6px; align-items:center; color:var(--success-text); }
+.cn-lignes { list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.cn-ligne { padding:8px 10px; border-radius:10px; border:1px solid var(--hairline); background:var(--surface); min-width:0; }
+.cn-sous { margin-left:14px; }
+.cn-prop { border-color:var(--warning); }
+.cn-vous { border-color:var(--accent); }
+.cn-l-h { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; }
+.cn-l-c { flex:1 1 180px; min-width:0; font-size:13px; font-weight:600; overflow-wrap:anywhere; }
+.cn-l-n { font-size:13px; font-weight:650; }
+.cn-l-p { font-size:12px; min-width:38px; text-align:right; }
+.cn-pill { font-size:10.5px; }
+.cn-bar { display:inline-block; width:72px; height:6px; border-radius:4px; background:var(--hairline); overflow:hidden; vertical-align:middle; }
+.cn-bar > span { display:block; height:6px; border-radius:4px; background:var(--accent); }
+.cn-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:0 8px; margin-top:6px; }
+.cn-constat { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; padding:9px 12px; border-radius:10px; background:var(--surface-2); }
+.cn-tab .cn-fams { list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.cn-fam-h { display:flex; align-items:center; gap:8px; }
+.cn-fam-l { min-width:110px; font-size:13px; font-weight:600; }
+.cn-fam-h .cn-bar { flex:1; width:auto; }
+.cn-fam-v { min-width:44px; text-align:right; font-size:12.5px; }
+.cn-part { margin-top:16px; padding-top:12px; border-top:1px solid var(--hairline); }
+.cn-derniere { padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--surface-2); }
+@media (max-width:640px) {
+  .cn-card { padding:12px; }
+  .cn-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .cn-sous { margin-left:8px; }
+  .cn-fam-l { min-width:90px; }
+  .cn-row .btn { flex:1 1 auto; justify-content:center; white-space:normal; height:auto; min-height:34px; }
+}
+.cn-ex { margin:0 0 6px; overflow-wrap:anywhere; }

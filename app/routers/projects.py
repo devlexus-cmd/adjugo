@@ -107,8 +107,13 @@ def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Projet introuvable")
 
+    ancien = project.status.value if hasattr(project.status, "value") else str(project.status or "")
     for key, value in changes.items():
         setattr(project, key, value)
+    if "status" in changes:
+        # Rédaction, vague 6 (F) : passage à « Perdu » noté (rappel « Demandez vos notes » 2 jours après).
+        from app.services.carnet_notes import apres_changement_d_etape
+        apres_changement_d_etape(project, ancien, str(changes.get("status") or ""), current_user.id)
 
     db.commit()
     db.refresh(project)

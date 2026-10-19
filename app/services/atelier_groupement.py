@@ -2514,11 +2514,25 @@ def vue_partenaire(db, acces: Acces) -> dict:
             "exigences": _exigences_partenaire(db, acces, act),
             # « Vos documents pour Adjugo » (décision 5 a) : combien, et s'ils servent (None sans la matière privée).
             "documents": _documents_resume(db, acces),
+            # Vague 6 (F) : les notes COMMUNES du marché (saisies par le chef de file), ses parties signalées.
+            "carnet": _carnet_partenaire(db, acces),
             "dossier": {"empreinte": emp, "ma_validation": _validation_out(ma, emp),
                         # Un co-traitant à qui aucune partie n'est confiée valide aussi le dossier assemblé (après
                         # « Qui fait quoi »), comme le serveur l'attend pour « Prêt à déposer ».
                         "peut_valider": all(p["statut"] == VALIDEE for p in parties) and qfq_ok,
                         "pret": pret(db, acces.project, acces.dossier, act)}}
+
+
+def _carnet_partenaire(db, acces: Acces) -> Optional[dict]:
+    """Les notes du marché, communes aux membres (vague 6, carnet de notes) ; jamais le courrier collé ni ses
+    extraits ; None tant que rien n'est saisi."""
+    try:
+        from app.services import carnet_notes as cn
+        return cn.vue_partenaire(db, acces)
+    except Exception as e:      # noqa: BLE001 — sa partie se lit toujours, même sans les notes
+        logger.warning("groupement : notes du marché illisibles (invitation %s) : %s", acces.invite_id,
+                       type(e).__name__)
+        return None
 
 
 def _entretien_partenaire(db, acces: Acces) -> dict:

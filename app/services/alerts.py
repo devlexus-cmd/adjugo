@@ -435,6 +435,14 @@ def run_tender_alerts(db: Session) -> dict:
             notified += 1
     db.commit()
     result = {"searches_run": len(searches), "users_notified": notified, "new_matches": total}
+    # Rédaction, vague 6 (F) : rappel « Demandez vos notes » 2 jours après le passage à « Perdu », par courriel
+    # seulement aux utilisateurs qui ont des alertes actives (une fois par marché, jamais à l'acheteur).
+    try:
+        from app.services.carnet_notes import envoyer_rappels
+        result.update(envoyer_rappels(db))
+    except Exception as e:      # noqa: BLE001 — la veille ne casse jamais pour ce rappel
+        db.rollback()
+        logger.warning("rappels « Demandez vos notes » en échec : %s", type(e).__name__)
     logger.info("alertes veille AO : %s", result)
     return result
 
