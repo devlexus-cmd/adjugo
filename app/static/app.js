@@ -72,6 +72,9 @@ function _sharedInit(token, mandataire, projectId, role) {
            // cet écran ne les modifie pas mais les conserve à chaque enregistrement.
            envelope: null, detailClair: "", detailDpgf: null, detailLocked: false, cryptoCtx: null, pendingCode: null, detailLoaded: false,
            upl: { piece_type: "", expiration_date: "" }, vault: { open: false, loading: false, docs: [], needClaim: false, pendingDoc: null },
+           // Vague 5 (E2) : les références telles qu'enregistrées (acheteur, montant, provenance « source publique DECP ») :
+           // la zone « une par ligne » n'en montre que l'intitulé, l'enregistrement les garde.
+           refsRiches: [],
            contrib: { company_name: "", lot: "", siret: "", forme_juridique: "", address: "", postal_code: "", city: "", quals: "", refs: "", memoire_paragraph: "",
                       prix_lot_ht: "", representant_legal: "", signataire_qualite: "", ca_n1: "", effectif: "", contact: { nom: "", email: "", telephone: "" } } };
 }
@@ -264,6 +267,16 @@ function pvInsererTexte(t, pos, bloc) {
   const avant = t.slice(0, at).replace(/\s+$/, ""), apres = t.slice(at).replace(/^\s+/, "");
   const ins = (avant ? "\n\n" : "") + bloc + (apres ? "\n\n" : "");
   return { texte: avant + ins + apres, pos: (avant + ins).length };
+}
+// Vague 5 (E2) : références d'une part, une par ligne, rattachées à leur version complète (sources-publiques.js).
+function _spFusionRefs(texte, riches) {
+  const SP = (typeof window !== "undefined") && window.AdjugoSourcesPubliques;
+  if (SP && SP._pur && SP._pur.spFusionRefs) return SP._pur.spFusionRefs(texte, riches);
+  return String(texte || "").split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s }));
+}
+function _spLibRefs(refs) {
+  const SP = (typeof window !== "undefined") && window.AdjugoSourcesPubliques;
+  return (SP && SP._pur && SP._pur.spLibRefs) ? SP._pur.spLibRefs(refs) : "";
 }
 // ══════════ fin « Mes preuves » — fonctions pures ══════════
 
@@ -1575,6 +1588,10 @@ const __adjApp = createApp({
     pvRepriseNombre() { const d = this.pv.rep.d; return (d && d.a_reprendre) || 0; },
     pvUrlSure(u) { return /^https:\/\/[^\s"'<>]+$/.test(String(u || "")); },
     pvKbDocs() { return (this.kb.docs || []).filter(d => d && d.id); },
+    // Vague 5 (E2) : une fiche tirée d'une source publique (DECP, liste RGE) garde les champs de la source tant
+    // qu'elle garde cette source (le serveur le refuse aussi) ; « Déclaré par vous » les rend modifiables.
+    pvVerrous() { const f = this.pv.form; return (f && f.type_source === "public" && Array.isArray(f.verrous)) ? f.verrous : []; },
+    pvVerrou(k) { return this.pvVerrous().includes(k); },
     pvJustificatifs() { return (this.documents || []).filter(d => d && d.id); },
     // ── Ajouter / modifier une fiche ──
     pvNouveau(n) {
@@ -1594,7 +1611,7 @@ const __adjApp = createApp({
                        date_source: (doc && s.doc_id && p.date_source) || "", document_id: (doc && s.document_id) || "",
                        pub: { nom: s.nom || "", url: s.url || "", consulte_le: s.consulte_le || "", identifiant: s.identifiant || "" },
                        est: { project_id: s.project_id || "", detail: s.detail || "" }, date_fin_validite: p.date_fin_validite || "",
-                       version: p.version, err: "" };
+                       version: p.version, err: "", verrous: p.type_source === "public" ? (p.champs_source_publique || []) : [] };
       this.$nextTick(() => { const el = document.getElementById("pvf-" + this.pvChamps(p.nature)[0].k); if (el) { el.focus(); el.scrollIntoView({ block: "center" }); } });
     },
     async pvEnregistrer() {
@@ -1989,6 +2006,7 @@ const __adjApp = createApp({
         const c = await this.api("GET", "/api/invite/" + (t || this.sharedAo.token) + "/contribution");
         this.sharedAo.status = c.status; this.sharedAo.pieces = c.pieces || []; this.sharedAo.version = c.version || 0;
         this.sharedAo.envelope = (c.detail_chiffre && c.detail_chiffre.ciphertext) ? c.detail_chiffre : null;
+        this.sharedAo.refsRiches = Array.isArray(c.references) ? c.references : [];
         const k = this.sharedAo.contrib;
         if (!k.company_name && !k.lot) {   // pré-remplir au 1er chargement, sans écraser une saisie
           k.company_name = c.company_name || this.company.name || ""; k.lot = c.lot || "";
@@ -2074,7 +2092,7 @@ const __adjApp = createApp({
       const body = { company_name: k.company_name, lot: k.lot,
                siret: k.siret, forme_juridique: k.forme_juridique, address: k.address, postal_code: k.postal_code, city: k.city,
                qualifications: (k.quals || "").split(",").map(s => s.trim()).filter(Boolean),
-               references: (k.refs || "").split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })),
+               references: _spFusionRefs(k.refs, this.sharedAo.refsRiches),
                memoire_paragraph: k.memoire_paragraph, contact: k.contact,
                prix_lot_ht: num(k.prix_lot_ht), representant_legal: k.representant_legal || "", signataire_qualite: k.signataire_qualite || "",
                capacites: { ca_n1: num(k.ca_n1), effectif: num(k.effectif) == null ? null : Math.round(num(k.effectif)) },
@@ -2099,6 +2117,21 @@ const __adjApp = createApp({
       this.notify((typeof d === "string" ? d : ((d && d.message) || (Array.isArray(d) && d[0] && this.validationMsg(d[0])))) || "Erreur d'enregistrement", "err"); return false;
     },
     async sharedSave() { this.sharedAo.busy = true; try { if (await this._sharedPut()) this.notify("Brouillon enregistré"); } finally { this.sharedAo.busy = false; } },
+    // Vague 5 (E2) : reprendre ses preuves et ses marchés publics dans sa part. La saisie en cours est d'abord
+    // enregistrée (rien n'est perdu), puis le serveur ajoute ce qui a été coché à la version obtenue.
+    async sharedAvantReprise() {
+      const ok = await this._sharedPut();
+      return ok ? { ok: true, version: this.sharedAo.version } : { ok: false, message: "Votre part n'a pas pu être enregistrée : rien n'a été ajouté." };
+    },
+    sharedApresReprise(d) {
+      const c = d && d.contribution; if (!c) return;
+      const k = this.sharedAo.contrib;
+      k.quals = (c.qualifications || []).map(q => (q && typeof q === "object") ? (q.name || q.nom || "") : q).filter(Boolean).join(", ");
+      k.refs = (c.references || []).map(r => (r && r.intitule) || "").filter(Boolean).join("\n");
+      this.sharedAo.refsRiches = Array.isArray(c.references) ? c.references : [];
+      this.sharedAo.version = c.version || 0; this.sharedAo.status = c.status;
+    },
+    sharedRefsNote() { return _spLibRefs(_spFusionRefs(this.sharedAo.contrib.refs, this.sharedAo.refsRiches)); },
     // Binding d'identité OTP côté « Partagé avec moi » : si le lien l'exige (email
     // configuré), on vérifie l'adresse avant de soumettre — sinon le 403 bloquait sans
     // recours (aucun moyen de saisir le code).
@@ -2447,7 +2480,8 @@ const __adjApp = createApp({
       const m = {
         "invite.created": "Lien créé", "invite.revoked": "Lien révoqué", "invite.resent": "Invitation renvoyée", "invite.declined": "Le partenaire a décliné l'invitation", "invite.claimed": "Lien rattaché à un compte Adjugo",
         "guest.view_project": "Consultation du dossier", "guest.download_doc": "Téléchargement de pièce", "guest.submit_contribution": "Part soumise", "guest.upload_piece": "Pièce déposée par le partenaire",
-        "guest.capacites_updated": "Capacités mises à jour par le partenaire", "guest.otp_request": "Code de vérification demandé", "guest.otp_verified": "Adresse email vérifiée",
+        "guest.capacites_updated": "Capacités mises à jour par le partenaire",
+        "guest.contribution_reprise": "Références ou qualifications ajoutées par le partenaire à sa part", "guest.otp_request": "Code de vérification demandé", "guest.otp_verified": "Adresse email vérifiée",
         "owner.view_contribution": "Vous avez consulté la part de ce partenaire", "owner.download_piece": "Vous avez téléchargé une pièce du partenaire", "owner.view_piece": "Vous avez consulté une pièce du partenaire",
         "offer.frozen": "Offre commune figée", "offer.unfrozen": "Offre commune défigée", "piece.expiring": "Alerte : une attestation manque ou expire",
         "groupement.besoins": "Lecture de ce que le marché exige", "groupement.simulate": "Score en groupement calculé", "groupement.retenue": "Composition du groupement retenue", "groupement.plan_retire": "Composition du groupement annulée",
@@ -5592,6 +5626,30 @@ __adjApp.component("redaction-partenaire", {
     if (!RP) return;
     this._h = RP.mount(this.$el, { base: "/api/shared/" + encodeURIComponent(this.pid) + "/redaction", mode: "compte",
       headers: () => (this.token ? { Authorization: "Bearer " + this.token } : {}) });
+  },
+  unmounted() { if (this._h) this._h.destroy(); },
+});
+// Rédaction, vague 5 (E2) : « Retrouver mes marchés publics » et « mes qualifications RGE » (app/static/sources-publiques.js),
+// dans « Mes preuves » (mode « preuves ») et dans la part d'un partenaire par son compte (mode « part »). Gabarit
+// statique : Vue ne redessine jamais son contenu.
+__adjApp.component("sources-publiques", {
+  // La session est celle de l'application (this.$root) : elle n'est jamais passée dans le gabarit.
+  props: { mode: { type: String, default: "preuves" }, kinds: { type: Array, default: () => ["decp"] },
+           invite: { type: String, default: "" },
+           avant: { type: Function, default: null }, apres: { type: Function, default: null } },
+  template: '<div class="sp-host"></div>',
+  mounted() {
+    const SP = window.AdjugoSourcesPubliques;
+    if (!SP) return;
+    const enc = encodeURIComponent;
+    const urls = this.mode === "part"
+      ? { decp: "/api/invite/" + enc(this.invite) + "/contribution/publiques/marches", rge: "/api/invite/" + enc(this.invite) + "/contribution/publiques/rge",
+          preuves: "/api/invite/" + enc(this.invite) + "/contribution/preuves", ecrire: "/api/invite/" + enc(this.invite) + "/contribution/reprendre-preuves" }
+      : { decp: "/api/preuves/publiques/marches", rge: "/api/preuves/publiques/rge", ecrire: "/api/preuves/publiques" };
+    const session = () => (this.$root && this.$root.token) || "";
+    this._h = SP.mount(this.$el, { mode: this.mode, kinds: this.kinds, urls,
+      headers: () => (session() ? { Authorization: "Bearer " + session() } : {}),
+      avantEcrire: this.avant ? () => this.avant() : null, apresEcrire: (d) => { if (this.apres) this.apres(d); } });
   },
   unmounted() { if (this._h) this._h.destroy(); },
 });

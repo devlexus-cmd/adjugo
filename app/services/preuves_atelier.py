@@ -21,6 +21,11 @@ from app.services import preuves as pv
 
 _ROLES = {"seul": "Réalisé seul", "groupement_conjoint": "Réalisé en groupement conjoint",
           "groupement_solidaire": "Réalisé en groupement solidaire", "sous_traitant": "Réalisé en sous-traitance"}
+# Référence tirée des DECP (vague 5, E2) : marché ATTRIBUÉ, jamais « réalisé ».
+_ROLES_ATTRIBUE = {"seul": "Marché attribué à l'entreprise seule",
+                   "groupement_conjoint": "Marché attribué en groupement conjoint",
+                   "groupement_solidaire": "Marché attribué en groupement solidaire",
+                   "sous_traitant": "En sous-traitance"}
 _POSSESSION = {"propriete": "En propre", "location": "En location"}
 
 MSG_CV = ("Cette partie contient le CV de {noms}, inséré depuis « Mes preuves » : Adjugo n'envoie jamais un "
@@ -65,8 +70,9 @@ def lignes_cv(valeur: dict) -> list:
     return out
 
 
-def bloc(nature: str, valeur: dict, date_fin_validite=None) -> str:
-    """Le texte inséré dans la partie (Markdown de l'atelier), sans rien d'interne."""
+def bloc(nature: str, valeur: dict, date_fin_validite=None, attribue: bool = False) -> str:
+    """Le texte inséré dans la partie (Markdown de l'atelier), sans rien d'interne. `attribue` : référence
+    tirée des DECP (« marché attribué », jamais « réalisé »)."""
     v = valeur or {}
     fin = _date_fr(date_fin_validite.isoformat() if hasattr(date_fin_validite, "isoformat") else date_fin_validite)
     tete, items, suite = "", [], []
@@ -79,8 +85,11 @@ def bloc(nature: str, valeur: dict, date_fin_validite=None) -> str:
         if v.get("annee"):
             items.append(f"Année : {v['annee']}")
         if v.get("montant_ht") is not None:
-            items.append(f"Montant : {pv._nombre(v['montant_ht'])} € HT")
-        if v.get("role") in _ROLES:
+            lib = "Montant d'attribution" if attribue else "Montant"
+            items.append(f"{lib} : {pv._nombre(v['montant_ht'])} € HT")
+        if attribue:
+            items.append(_ROLES_ATTRIBUE.get(v.get("role") or "", "Marché attribué"))
+        elif v.get("role") in _ROLES:
             items.append(_ROLES[v["role"]])
         suite = _paragraphes(v.get("description"))
     elif nature == pv.QUALIFICATION:
@@ -126,6 +135,10 @@ def titre(nature: str, valeur: dict) -> str:
     return str(v.get(PRINCIPAL.get(nature, ""), ""))
 
 
+def _attribue(fait: dict) -> bool:
+    return fait.get("nature") == pv.REFERENCE and fait.get("source_libelle") == pv.LIB_DECP
+
+
 def fiches(db, owner_id: int, project_id: int) -> dict:
     """Ce que l'atelier d'UN marché peut insérer : les preuves utilisables pour ce marché (une
     estimation rattachée à un autre marché est écartée), avec le texte qui sera inséré ; et les
@@ -135,7 +148,7 @@ def fiches(db, owner_id: int, project_id: int) -> dict:
         out.append({"id": f["id"], "nature": f["nature"], "nature_libelle": f["nature_libelle"],
                     "titre": titre(f["nature"], f["valeur"]), "source_libelle": f["source_libelle"],
                     "a_reconfirmer": f["a_reconfirmer"], "date_fin_validite": f["date_fin_validite"],
-                    "bloc": bloc(f["nature"], f["valeur"], f["date_fin_validite"])})
+                    "bloc": bloc(f["nature"], f["valeur"], f["date_fin_validite"], attribue=_attribue(f))})
     ecartees = [{"id": x["id"], "nature": x["nature"], "texte": x["texte"], "message": x["message"]}
                 for x in pv.faits_ecartes(db, owner_id)]
     return {"fiches": out, "ecartees": ecartees}
@@ -164,7 +177,7 @@ def inserer(db, ctx, section, lecteur, owner_id: int, project_id: int, preuve_id
     fait = _fiche_utilisable(db, owner_id, project_id, preuve_id)
     cur = at.version_courante(db, section)
     texte = ((cur.texte or "") if cur is not None else "").rstrip()
-    ajout = bloc(fait["nature"], fait["valeur"], fait["date_fin_validite"])
+    ajout = bloc(fait["nature"], fait["valeur"], fait["date_fin_validite"], attribue=_attribue(fait))
     return at.enregistrer_texte(db, ctx, section, lecteur, (texte + "\n\n" if texte else "") + ajout,
                                 base_version_id)
 

@@ -123,7 +123,7 @@ class NormalizedCompany(BaseModel):
     ca: Optional[float] = None                 # dernier CA publié (RNE/INPI), souvent absent
     resultat_net: Optional[float] = None
 
-    # Historique des marchés publics RÉELLEMENT remportés (DECP, titulaire_id_1) —
+    # Historique des marchés publics attribués (DECP, titulaire 1, 2 ou 3) —
     # signal de capacité déterministe : « cette entreprise a déjà gagné ce type de marché »
     past_wins: int = 0
     last_win_date: Optional[str] = None

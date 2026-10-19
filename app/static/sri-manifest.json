@@ -2,9 +2,9 @@
  "algorithme": "sha384",
  "fichiers": {
   "/static/app.js": {
-   "integrity": "sha384-AqbZVVon8p9uo7Tx+fHAWLbWMNWPnk/H1DJytfykwbgf1LqFDSYDZu3AkJ2ruloK",
-   "octets": 406245,
-   "sha256": "56c4a065c00b7daadf4707ff872f37606369f471a768bb8aeddd951da4c0a9e5"
+   "integrity": "sha384-KzQpwCZ6dYknhelA7OaavYbJ7VxSoW5Ll2wgzTZMIPD1vtJ5j7eCHAED79PufB+H",
+   "octets": 410611,
+   "sha256": "b7336157f54c9932f1a97f45fd5785ce1b1a8afd09d8e175c75fa999a46b74be"
   },
   "/static/cotraitance-crypto.js": {
    "integrity": "sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le",
@@ -20,6 +20,11 @@
    "integrity": "sha384-Ud5XH/gZAylyBEqTBNMYYwNvbtfb5gWuP1kRjjsJtLCvk0k+tigNGoZ4NWoqNsjc",
    "octets": 67630,
    "sha256": "ca885b3ef3c58058fec1f30e13cfcadde7c592ad2d51668a739e27768e73cca2"
+  },
+  "/static/sources-publiques.js": {
+   "integrity": "sha384-oAi+xMZdv4UYYvnUFp1xy8e+d1nSgjyhQFVMbw5l0+5TMPPW3UmuLVVs/pvMU2U/",
+   "octets": 23227,
+   "sha256": "d0303080fb421827f229d3ff8b5dec54c7b2a03bcb23eb0aebb18986c84506d5"
   },
   "/static/vendor/lucide-1.20.0.min.js": {
    "integrity": "sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt",

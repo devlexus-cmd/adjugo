@@ -2561,22 +2561,28 @@
             <div class="row pv-g8 pv-liste-h"><h3 class="pv-h3 pv-grow">{{ pvNature(pv.tab).l }}<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ pvNature(pv.tab).tip }}</span></button></h3>
               <button v-if="!(pv.form && !pv.form.id && pv.form.nature===pv.tab)" type="button" class="btn sm" @click="pvNouveau(pv.tab)"><i data-lucide="plus"></i>{{ pvNature(pv.tab).ajout }}</button></div>
 
+            <!-- Rédaction, vague 5 (E2) : « Retrouver mes marchés publics » (DECP) et « mes qualifications RGE » (ADEME) :
+                 proposés, l'utilisateur coche ; sources-publiques.js, gabarit statique (Vue ne redessine pas son contenu). -->
+            <sources-publiques v-if="pv.tab==='reference'" key="sp-decp" mode="preuves" :kinds="['decp']" :apres="pvLoad"></sources-publiques>
+            <sources-publiques v-else-if="pv.tab==='qualification'" key="sp-rge" mode="preuves" :kinds="['rge']" :apres="pvLoad"></sources-publiques>
+
             <!-- Formulaire compact : champs de la nature, puis « Où se trouve ce fait ? » -->
             <div v-if="pv.form && pv.form.nature===pv.tab" class="pv-form" role="group" :aria-label="pv.form.id ? 'Modifier la fiche' : 'Nouvelle fiche'">
               <div class="pv-sub">{{ pv.form.id ? "Modifier la fiche" : "Nouvelle fiche" }}</div>
               <div class="pv-grid">
                 <div v-for="c in pvChamps(pv.form.nature)" :key="'pf'+c.k" class="field" :class="{'pv-wide': c.w}">
                   <label :for="'pvf-'+c.k">{{ c.l }}<span v-if="c.req" aria-hidden="true"> *</span></label>
-                  <textarea v-if="c.t==='area'" :id="'pvf-'+c.k" class="inp" v-model="pv.form.v[c.k]" :maxlength="c.n" rows="2" :placeholder="c.ph"></textarea>
-                  <select v-else-if="c.t==='select'" :id="'pvf-'+c.k" class="inp" v-model="pv.form.v[c.k]"><option v-for="o in c.opts" :key="'po'+o[0]" :value="o[0]">{{ o[1] }}</option></select>
-                  <input v-else-if="c.t==='num'" :id="'pvf-'+c.k" class="inp" type="text" inputmode="decimal" v-model="pv.form.v[c.k]" :placeholder="c.ph">
-                  <input v-else :id="'pvf-'+c.k" class="inp" type="text" v-model="pv.form.v[c.k]" :maxlength="c.n" :placeholder="c.ph" :required="c.req">
+                  <textarea v-if="c.t==='area'" :id="'pvf-'+c.k" class="inp" v-model="pv.form.v[c.k]" :maxlength="c.n" rows="2" :placeholder="c.ph" :disabled="pvVerrou(c.k)"></textarea>
+                  <select v-else-if="c.t==='select'" :id="'pvf-'+c.k" class="inp" v-model="pv.form.v[c.k]" :disabled="pvVerrou(c.k)"><option v-for="o in c.opts" :key="'po'+o[0]" :value="o[0]">{{ o[1] }}</option></select>
+                  <input v-else-if="c.t==='num'" :id="'pvf-'+c.k" class="inp" type="text" inputmode="decimal" v-model="pv.form.v[c.k]" :placeholder="c.ph" :disabled="pvVerrou(c.k)">
+                  <input v-else :id="'pvf-'+c.k" class="inp" type="text" v-model="pv.form.v[c.k]" :maxlength="c.n" :placeholder="c.ph" :required="c.req" :disabled="pvVerrou(c.k)">
                 </div>
                 <div v-if="pvAvecValidite(pv.form.nature)" class="field">
                   <label for="pvf-fin">{{ pvLibValidite(pv.form.nature) }}</label>
-                  <input id="pvf-fin" class="inp" type="date" v-model="pv.form.date_fin_validite">
+                  <input id="pvf-fin" class="inp" type="date" v-model="pv.form.date_fin_validite" :disabled="pvVerrou('date_fin_validite')">
                 </div>
               </div>
+              <div v-if="pvVerrous().length" class="pv-note small"><i data-lucide="landmark"></i><span>Les champs grisés viennent de la source publique ({{ pv.form.pub.nom || 'source publique' }}, consultée le {{ pvJj(pv.form.pub.consulte_le) }}) : ils ne changent pas tant que la fiche garde cette source. Pour les corriger, choisissez « Déclaré par vous ».</span></div>
               <div v-if="pv.form.nature==='salarie'" class="pv-note small"><i data-lucide="shield"></i><span>Le CV ne contient ni photo, ni adresse, ni date de naissance. Il n'est jamais envoyé à l'IA : pendant la rédaction, le nom est remplacé par la fonction.</span></div>
               <fieldset class="pv-fs">
                 <legend class="small strong">Où se trouve ce fait ?<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">« Dans vos documents » : un passage d'un document de « Mon savoir-faire », recopié tel qu'il est écrit, qui contient chaque chiffre, nom et année de la fiche ; ou un justificatif de « Mes documents ». Sinon, choisissez « Déclaré par vous ».</span></button></legend>
@@ -2596,10 +2602,10 @@
                   </div>
                 </template>
                 <div v-else-if="pv.form.type_source==='public'" class="pv-grid">
-                  <div class="field"><label for="pvf-pnom">Nom de la source</label><input id="pvf-pnom" class="inp" v-model="pv.form.pub.nom" maxlength="120" placeholder="DECP, liste RGE de l'ADEME…"></div>
-                  <div class="field"><label for="pvf-pdate">Consultée le</label><input id="pvf-pdate" class="inp" type="date" v-model="pv.form.pub.consulte_le"></div>
-                  <div class="field pv-wide"><label for="pvf-purl">Adresse de la page</label><input id="pvf-purl" class="inp" type="url" v-model="pv.form.pub.url" maxlength="500" placeholder="https://"></div>
-                  <div class="field"><label for="pvf-pid">Identifiant (facultatif)</label><input id="pvf-pid" class="inp" v-model="pv.form.pub.identifiant" maxlength="120"></div>
+                  <div class="field"><label for="pvf-pnom">Nom de la source</label><input id="pvf-pnom" class="inp" v-model="pv.form.pub.nom" maxlength="120" placeholder="DECP, liste RGE de l'ADEME…" :disabled="pvVerrous().length > 0"></div>
+                  <div class="field"><label for="pvf-pdate">Consultée le</label><input id="pvf-pdate" class="inp" type="date" v-model="pv.form.pub.consulte_le" :disabled="pvVerrous().length > 0"></div>
+                  <div class="field pv-wide"><label for="pvf-purl">Adresse de la page</label><input id="pvf-purl" class="inp" type="url" v-model="pv.form.pub.url" maxlength="500" placeholder="https://" :disabled="pvVerrous().length > 0"></div>
+                  <div class="field"><label for="pvf-pid">Identifiant (facultatif)</label><input id="pvf-pid" class="inp" v-model="pv.form.pub.identifiant" maxlength="120" :disabled="pvVerrous().length > 0"></div>
                 </div>
                 <div v-else-if="pv.form.type_source==='estimation'" class="pv-grid">
                   <div class="field pv-wide"><label for="pvf-emar">Pour un marché précis (facultatif)</label>
@@ -3372,7 +3378,10 @@
             <div class="field"><label>Adresse</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.address" placeholder="Adresse" style="flex:2;min-width:160px"><input class="inp" v-model="sharedAo.contrib.postal_code" placeholder="CP" style="width:80px"><input class="inp" v-model="sharedAo.contrib.city" placeholder="Ville" style="flex:1;min-width:110px"></div></div>
             <div class="field"><label>Lot / périmètre</label><input class="inp" v-model="sharedAo.contrib.lot" placeholder="ex. Lot 2 — Démolition"></div>
             <div class="field"><label>Qualifications (séparées par des virgules)</label><input class="inp" v-model="sharedAo.contrib.quals" placeholder="ex. Qualibat 1112, RGE"></div>
-            <div class="field"><label>Références (une par ligne)</label><textarea class="inp" v-model="sharedAo.contrib.refs" rows="3"></textarea></div>
+            <div class="field"><label>Références (une par ligne)</label><textarea class="inp" v-model="sharedAo.contrib.refs" rows="3"></textarea>
+              <div v-if="sharedRefsNote()" class="muted small sp-refs-note">{{ sharedRefsNote() }}</div></div>
+            <!-- Rédaction, vague 5 (E2) : SES preuves et SES marchés publics (SIRET de sa part), ajoutés à sa part s'il coche -->
+            <sources-publiques :key="'sp'+sharedAo.token" mode="part" :kinds="['decp','rge']" :invite="sharedAo.token" :avant="sharedAvantReprise" :apres="sharedApresReprise"></sources-publiques>
             <!-- Doctrine de visibilité : le prix de VENTE du lot est lisible par le chef de file ; le détail est chiffré dans le navigateur -->
             <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Prix de vente de votre lot (€ HT)</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le prix de vente de votre lot reste lisible par le chef de file : c'est voulu, il en a besoin pour consolider l'offre.</span></button></div><input class="inp" type="number" min="0" step="1" v-model="sharedAo.contrib.prix_lot_ht" placeholder="ex. 280000"><div class="muted small" style="margin-top:3px">{{ cryptoLabels().not_zero_knowledge }}</div></div>
             <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Détail de votre chiffrage (coûts, marges, méthode)</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ cryptoLabels().lock }} {{ cryptoLabels().lost }}</span></button></div>
@@ -3781,6 +3790,7 @@
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
 <script src="/static/redaction-partenaire.js" integrity="sha384-Ud5XH/gZAylyBEqTBNMYYwNvbtfb5gWuP1kRjjsJtLCvk0k+tigNGoZ4NWoqNsjc" defer></script>
-<script src="/static/app.js" integrity="sha384-AqbZVVon8p9uo7Tx+fHAWLbWMNWPnk/H1DJytfykwbgf1LqFDSYDZu3AkJ2ruloK" defer></script>
+<script src="/static/sources-publiques.js" integrity="sha384-oAi+xMZdv4UYYvnUFp1xy8e+d1nSgjyhQFVMbw5l0+5TMPPW3UmuLVVs/pvMU2U/" defer></script>
+<script src="/static/app.js" integrity="sha384-KzQpwCZ6dYknhelA7OaavYbJ7VxSoW5Ll2wgzTZMIPD1vtJ5j7eCHAED79PufB+H" defer></script>
 </body>
 </html>

@@ -234,6 +234,9 @@ _BLOCKED = [
     ("POST",   "/api/preuves/{id}/retirer",                   "renseigner vos preuves"),
     ("POST",   "/api/knowledge/{doc_id}/fiches",              "proposer des fiches à partir de vos documents"),
     ("POST",   "/api/preuves/reprise",                        "renseigner vos preuves"),
+    # Rédaction, vague 5 (E2) : les fiches cochées depuis les marchés publics et la liste RGE (la démo
+    # montre un exemple fictif, sans réseau ; rien ne s'écrit dans la vitrine).
+    ("POST",   "/api/preuves/publiques",                      "renseigner vos preuves"),
     ("POST",   "/api/atelier/{pid}/sections/{sid}/inserer-preuve", "préparer votre dossier de présentation"),
     ("POST",   "/api/amont/analyze-text",                     "lancer une analyse IA"),
     ("POST",   "/api/amont/scan",                             "lancer une analyse IA"),

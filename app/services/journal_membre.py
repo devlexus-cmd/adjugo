@@ -121,6 +121,8 @@ LABELS_ME = {
     "guest.upload_piece": "Vous avez déposé une pièce",
     "guest.update_piece": "Vous avez mis à jour une pièce (type ou date de validité)",
     "guest.capacites_updated": "Vous avez mis à jour vos capacités",
+    # Rédaction, vague 5 (E2) : références et qualifications reprises de vos preuves ou des sources publiques.
+    "guest.contribution_reprise": "Vous avez ajouté des références ou des qualifications à votre part",
     "guest.otp_request": "Vous avez demandé un code de vérification",
     "guest.otp_verified": "Vous avez vérifié votre adresse email",
     "invite.claimed": "Vous avez rattaché ce dossier à votre compte",

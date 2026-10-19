@@ -216,10 +216,16 @@ def _date_fr(d) -> str:
     return d.strftime("%d/%m/%Y") if isinstance(d, date) else ""
 
 
-def texte_de(nature: str, valeur: dict, date_fin_validite=None) -> str:
+# Une référence tirée des DECP (vague 5, E2) : le marché a été ATTRIBUÉ ; l'attribution ne prouve ni
+# l'exécution ni sa qualité. Son texte ne dit donc jamais « réalisé ».
+_ROLES_ATTRIBUE = {"": "", "seul": "attribué seul", "groupement_conjoint": "attribué en groupement conjoint",
+                   "groupement_solidaire": "attribué en groupement solidaire", "sous_traitant": "en sous-traitance"}
+
+
+def texte_de(nature: str, valeur: dict, date_fin_validite=None, attribue: bool = False) -> str:
     """Le fait, en une phrase. C'est CE texte que A rapproche des phrases (chiffres, noms,
     certifications) ; il contient donc tout, y compris le nom d'un salarié (jamais remis à l'IA :
-    voir texte_ia)."""
+    voir texte_ia). `attribue` : référence tirée des DECP (« marché attribué », jamais « réalisé »)."""
     v = valeur or {}
     p = []
     if nature == REFERENCE:
@@ -231,8 +237,11 @@ def texte_de(nature: str, valeur: dict, date_fin_validite=None) -> str:
         if v.get("annee"):
             p.append(f"année {v['annee']}")
         if v.get("montant_ht") is not None:
-            p.append(f"montant {_nombre(v['montant_ht'])} € HT")
-        if v.get("role"):
+            lib = "montant d'attribution" if attribue else "montant"
+            p.append(f"{lib} {_nombre(v['montant_ht'])} € HT")
+        if attribue:
+            p.append(_ROLES_ATTRIBUE.get(v.get("role") or "", "") or "marché attribué")
+        elif v.get("role"):
             p.append(_ROLES.get(v["role"], ""))
         if v.get("description"):
             p.append(v["description"])
@@ -282,15 +291,17 @@ def texte_pour_ia(fait, pseudonymiseur=None) -> str:
     le texte complet (passé de toute façon dans pii_scope par l'appelant)."""
     if isinstance(fait, Preuve):
         nature, valeur, fin = fait.nature, fait.valeur or {}, fait.date_fin_validite
+        attribue = est_marche_attribue(fait)
     else:
         nature, valeur, fin = fait.get("nature"), fait.get("valeur") or {}, None
+        attribue = fait.get("nature") == REFERENCE and fait.get("source_libelle") == LIB_DECP
         if fait.get("date_fin_validite"):
             try:
                 fin = date.fromisoformat(fait["date_fin_validite"])
             except (TypeError, ValueError):
                 fin = None
     if nature != SALARIE:
-        return texte_de(nature, valeur, fin)
+        return texte_de(nature, valeur, fin, attribue=attribue)
     fonction = valeur.get("fonction") or "membre de l'équipe"
     label = ""
     if pseudonymiseur is not None and getattr(pseudonymiseur, "active", False):
@@ -603,7 +614,61 @@ def _source_documents(db, owner_id: int, nature: str, valeur: dict, source: dict
 _URL = re.compile(r"^https://[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?::\d{1,5})?(?:[/?#][^\s<>\"']*)?$")
 
 
-def _source_publique(source: dict) -> tuple:
+# Le RELEVÉ d'une source publique (vague 5, E2) : les champs de la fiche tels que la source les donne
+# (DECP, liste RGE). Tant que la fiche garde cette source, ils ne changent pas : sinon le libellé
+# « source publique » couvrirait une valeur qui n'est plus celle de la source. Pour les corriger,
+# l'utilisateur choisit « déclaré par vous ».
+CHAMP_FIN = "date_fin_validite"
+MSG_RELEVE = ("Ces champs viennent de la source publique ({nom}) : ils ne changent pas tant que la fiche garde "
+              "cette source. Pour les corriger, choisissez « Déclaré par vous ».")
+
+
+def _releve_propre(nature: str, releve) -> Optional[dict]:
+    """Le relevé nettoyé (champs de la nature et fin de validité, valeurs simples), ou None."""
+    if releve in (None, {}, ""):
+        return None
+    if not isinstance(releve, dict) or len(releve) > 20:
+        raise PreuveError(422, "releve_invalide", "Relevé de la source publique illisible.")
+    out = {}
+    for k, v in releve.items():
+        if k not in CHAMPS.get(nature, {}) and k != CHAMP_FIN:
+            raise PreuveError(422, "releve_invalide", "Relevé de la source publique illisible.")
+        if isinstance(v, bool) or (v is not None and not isinstance(v, (str, int, float))):
+            raise PreuveError(422, "releve_invalide", "Relevé de la source publique illisible.")
+        out[k] = v
+    return out or None
+
+
+def _valeur_comparable(v):
+    if isinstance(v, float) and v == int(v):
+        return int(v)
+    return v
+
+
+def _controler_releve(p: Preuve) -> None:
+    """Les champs relevés de la source publique sont ceux de la fiche (création et modification)."""
+    rel = (p.source or {}).get("releve") if p.type_source == PUBLIC else None
+    if not rel:
+        return
+    v = p.valeur or {}
+    fin = p.date_fin_validite.isoformat() if isinstance(p.date_fin_validite, date) else None
+    ecarts = []
+    for k, attendu in rel.items():
+        actuel = fin if k == CHAMP_FIN else v.get(k)
+        if _valeur_comparable(actuel) != _valeur_comparable(attendu):
+            ecarts.append(k)
+    if ecarts:
+        raise PreuveError(422, "valeur_source_publique",
+                          MSG_RELEVE.format(nom=(p.source or {}).get("nom") or "source publique"), champs=sorted(ecarts))
+
+
+def champs_source_publique(p: Preuve) -> list:
+    """Les champs d'une fiche tirés de sa source publique (verrouillés tant qu'elle la garde)."""
+    rel = (p.source or {}).get("releve") if p.type_source == PUBLIC else None
+    return sorted(rel) if isinstance(rel, dict) else []
+
+
+def _source_publique(source: dict, nature: str = "") -> tuple:
     nom = _txt(source.get("nom"), 120)
     url = str(source.get("url") or "").strip()
     if not nom:
@@ -619,6 +684,9 @@ def _source_publique(source: dict) -> tuple:
     ident = _txt(source.get("identifiant"), 120)
     if ident:
         out["identifiant"] = ident
+    rel = _releve_propre(nature, source.get("releve"))
+    if rel:
+        out["releve"] = rel
     return out, consulte
 
 
@@ -658,7 +726,7 @@ def _appliquer_source(db, owner_id: int, p: Preuve, nature: str, valeur: dict, t
     if type_source == DOCUMENTS:
         src, doc_id, document_id = _source_documents(db, owner_id, nature, valeur, source)
     elif type_source == PUBLIC:
-        src, ds = _source_publique(source)
+        src, ds = _source_publique(source, nature)
     elif type_source == ESTIMATION:
         src = _source_estimation(db, owner_id, source)
     else:
@@ -699,6 +767,7 @@ def creer(db, owner_id: int, *, nature: str, valeur, type_source: str = DECLARE,
                valeur=propre, statut=statut, origine=origine, cree_par=getattr(user, "id", None), version=0)
     _appliquer_source(db, owner_id, p, nature, propre, type_source, source, date_source)
     p.date_fin_validite = _date(date_fin_validite, "date_fin_validite")
+    _controler_releve(p)
     p.empreinte = empreinte_de(nature, propre)
     if statut == ACCEPTEE:
         p.accepte_par, p.accepte_le = getattr(user, "id", None), _now()
@@ -749,18 +818,24 @@ def modifier(db, p: Preuve, *, user=None, valeur=_ABSENT, type_source=_ABSENT, s
     _verifier_version(p, version)
     propre = valider_valeur(p.nature, valeur) if valeur is not _ABSENT else dict(p.valeur or {})
     ts = type_source if type_source is not _ABSENT else p.type_source
-    if source is not _ABSENT:
+    garde_releve = ts == PUBLIC and p.type_source == PUBLIC and bool((p.source or {}).get("releve"))
+    if garde_releve:
+        # Fiche tirée d'une source publique (DECP, liste RGE) qui la garde : sa source ne change pas
+        # (l'écran renvoie nom, adresse et date tels quels) ; ses champs relevés non plus (contrôle plus bas).
+        src = _source_brute(p)
+    elif source is not _ABSENT:
         src = source
     elif ts == p.type_source:
         src = _source_brute(p)
     else:
         src = None
-    ds = date_source if date_source is not _ABSENT else p.date_source
+    ds = p.date_source if garde_releve else (date_source if date_source is not _ABSENT else p.date_source)
     fin = _date(date_fin_validite, "date_fin_validite") if date_fin_validite is not _ABSENT else p.date_fin_validite
     if valeur is not _ABSENT or type_source is not _ABSENT or source is not _ABSENT or date_source is not _ABSENT:
         _appliquer_source(db, p.owner_id, p, p.nature, propre, ts, src, ds)
     p.valeur = propre
     p.date_fin_validite = fin
+    _controler_releve(p)
     p.empreinte = empreinte_de(p.nature, propre)
     if p.statut == ACCEPTEE:
         p.accepte_par, p.accepte_le = getattr(user, "id", None) or p.accepte_par, _now()
@@ -884,6 +959,12 @@ def source_libelle(p: Preuve) -> str:
     return LIB_DECLARE
 
 
+def est_marche_attribue(p: Preuve) -> bool:
+    """Référence tirée des DECP : un marché ATTRIBUÉ (jamais « réalisé » : l'attribution ne prouve ni
+    l'exécution ni sa qualité)."""
+    return p.nature == REFERENCE and p.type_source == PUBLIC and source_libelle(p) == LIB_DECP
+
+
 def _source_out(p: Preuve) -> dict:
     s = dict(p.source or {})
     out = {}
@@ -940,7 +1021,7 @@ def preuve_out(db, p: Preuve, etat: Optional[_Etat] = None, jour: Optional[date]
     return {
         "id": p.id, "ref": ref_de(p), "numero": p.numero,
         "nature": p.nature, "nature_libelle": NATURE_LIBELLES.get(p.nature, ""),
-        "valeur": dict(p.valeur or {}), "texte": texte_de(p.nature, p.valeur or {}, fin),
+        "valeur": dict(p.valeur or {}), "texte": texte_de(p.nature, p.valeur or {}, fin, attribue=est_marche_attribue(p)),
         "type_source": p.type_source, "source_libelle": source_libelle(p), "source": _source_out(p),
         "date_source": _iso(p.date_source), "a_reconfirmer": _a_reconfirmer(p, jour),
         "date_fin_validite": _iso(fin), "expiree": bool(isinstance(fin, date) and fin < jour),
@@ -950,6 +1031,8 @@ def preuve_out(db, p: Preuve, etat: Optional[_Etat] = None, jour: Optional[date]
         "utilisable": raison is None, "raison": raison, "raison_message": RAISONS.get(raison) if raison else None,
         "cree_le": _iso(p.created_at), "modifie_le": _iso(p.updated_at), "accepte_le": _iso(p.accepte_le),
         "version": int(p.version or 0),
+        # Vague 5 (E2) : champs tirés de la source publique, qui ne changent pas tant qu'elle la garde.
+        "champs_source_publique": champs_source_publique(p),
     }
 
 
@@ -959,7 +1042,7 @@ def _fait(p: Preuve, jour: date) -> dict:
         "ref": ref_de(p), "id": p.id, "numero": p.numero,
         "nature": p.nature, "nature_libelle": NATURE_LIBELLES.get(p.nature, ""),
         "type_source": p.type_source, "source_libelle": source_libelle(p), "appuie": APPUIE[p.type_source],
-        "texte": texte_de(p.nature, p.valeur or {}, fin), "texte_ia": texte_pour_ia(p),
+        "texte": texte_de(p.nature, p.valeur or {}, fin, attribue=est_marche_attribue(p)), "texte_ia": texte_pour_ia(p),
         "valeur": dict(p.valeur or {}), "source": _source_out(p),
         "date_source": _iso(p.date_source), "a_reconfirmer": _a_reconfirmer(p, jour),
         "date_fin_validite": _iso(fin),
@@ -1009,7 +1092,7 @@ def faits_ecartes(db, owner_id: int, *, jour: Optional[date] = None) -> list:
         r = raison_non_utilisable(p, etat, jour)
         if r:
             out.append({"ref": ref_de(p), "id": p.id, "nature": p.nature,
-                        "texte": texte_de(p.nature, p.valeur or {}, p.date_fin_validite),
+                        "texte": texte_de(p.nature, p.valeur or {}, p.date_fin_validite, attribue=est_marche_attribue(p)),
                         "titre": titre_court(p.nature, p.valeur or {}),
                         "raison": r, "message": RAISONS[r], "raison_courte": RAISONS_COURTES.get(r, "")})
     return out
@@ -1105,7 +1188,7 @@ def exporter(db, owner_id: int) -> list:
     for p in lister(db, owner_id):
         out.append({
             "ref": ref_de(p), "nature": p.nature, "valeur": dict(p.valeur or {}),
-            "texte": texte_de(p.nature, p.valeur or {}, p.date_fin_validite),
+            "texte": texte_de(p.nature, p.valeur or {}, p.date_fin_validite, attribue=est_marche_attribue(p)),
             "type_source": p.type_source, "source_libelle": source_libelle(p), "source": dict(p.source or {}),
             "date_source": _iso(p.date_source), "date_fin_validite": _iso(p.date_fin_validite),
             "statut": p.statut, "origine": p.origine, "cree_le": _iso(p.created_at),

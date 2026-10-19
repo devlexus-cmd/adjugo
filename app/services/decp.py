@@ -140,17 +140,23 @@ def detect_renewals_decp(query: str, departements, criteria: dict, domaines=None
     return {"count": len(out), "renewals": out, "errors": [], "source": "DECP"}
 
 
+def where_titulaire(siren: str) -> str:
+    """Clause ODSQL : le SIREN figure comme titulaire 1, 2 OU 3 (rédaction, vague 5, E2 : un marché
+    remporté en groupement porte souvent l'entreprise en titulaire 2 ou 3). `siren` : 9 chiffres."""
+    return " or ".join(f'startswith(titulaire_id_{i}, "{siren}")' for i in (1, 2, 3))
+
+
 def wins_by_siren(siren: str) -> dict:
-    """Marchés publics RÉELLEMENT remportés par une entreprise (via DECP, champ
-    titulaire_id_1). Signal de capacité déterministe et sourcé — « cette entreprise a
-    déjà gagné ce type de marché ». Retourne {count, last_date, domains} (familles CPV
+    """Marchés publics attribués à une entreprise (via DECP, titulaire 1, 2 ou 3). Signal de capacité
+    déterministe et sourcé — « cette entreprise a déjà remporté ce type de marché » (l'attribution ne
+    prouve ni l'exécution ni sa qualité). Retourne {count, last_date, domains} (familles CPV
     2 chiffres). Échec = compte 0 (jamais inventé)."""
     siren = "".join(ch for ch in str(siren or "") if ch.isdigit())[:9]
     if len(siren) != 9:
         return {"count": 0, "last_date": "", "domains": []}
     try:
         params = {"limit": 20, "select": "codecpv,datenotification",
-                  "where": f'startswith(titulaire_id_1, "{siren}")',
+                  "where": where_titulaire(siren),
                   "order_by": "-datenotification"}
         data = get_with_retry(API, params=params, timeout=8).json()
     except Exception as e:

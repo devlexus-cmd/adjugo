@@ -13,6 +13,7 @@
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
   <script src="/static/cotraitance-crypto.js" integrity="sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le"></script>
   <script src="/static/redaction-partenaire.js" integrity="sha384-Ud5XH/gZAylyBEqTBNMYYwNvbtfb5gWuP1kRjjsJtLCvk0k+tigNGoZ4NWoqNsjc"></script>
+  <script src="/static/sources-publiques.js" integrity="sha384-oAi+xMZdv4UYYvnUFp1xy8e+d1nSgjyhQFVMbw5l0+5TMPPW3UmuLVVs/pvMU2U/"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -682,6 +683,31 @@
       capBox.appendChild(capNote);
       card.appendChild(field("Vos capacités", capBox, "Ces capacités comptent dans le score du groupement. Elles sont déclarées par vous."));
       card.appendChild(field("Références", refs));
+      // Rédaction, vague 5 (E2) : vos marchés publics (DECP) et vos qualifications RGE (ADEME), lus avec le SIRET de
+      // votre part ; ce que vous cochez s'ajoute à votre part (sources-publiques.js). La zone « une par ligne »
+      // ne montre que l'intitulé : l'enregistrement garde l'acheteur, le montant et la provenance (curRefs).
+      let curRefs = [];
+      const refsNote = $(`<div class="muted small sp-refs-note"></div>`);
+      const SPX = window.AdjugoSourcesPubliques || null;
+      const syncRefsNote = () => { refsNote.textContent = SPX ? SPX._pur.spLibRefs(SPX._pur.spFusionRefs(refs.value, curRefs)) : ""; };
+      refs.addEventListener("input", syncRefsNote);
+      card.appendChild(refsNote);
+      if (SPX) {
+        const spHost = document.createElement("div"); spHost.className = "sp-host"; spHost.style.marginTop = "8px";
+        card.appendChild(spHost);
+        const base = "/api/invite/" + encodeURIComponent(TOKEN) + "/contribution";
+        SPX.mount(spHost, { mode: "part", kinds: ["decp", "rge"],
+          urls: { decp: base + "/publiques/marches", rge: base + "/publiques/rge", ecrire: base + "/reprendre" },
+          // La saisie en cours est d'abord enregistrée (rien n'est perdu), puis le serveur ajoute ce qui est coché.
+          avantEcrire: async () => { const ok = await save(); return ok ? { ok: true, version: curVer } : { ok: false, message: "Votre part n'a pas pu être enregistrée : rien n'a été ajouté." }; },
+          apresEcrire: (data) => {
+            const c = data && data.contribution; if (!c) return;
+            quals.value = (c.qualifications || []).map(q => (q && typeof q === "object") ? (q.name || q.nom || "") : q).filter(Boolean).join(", ");
+            curRefs = Array.isArray(c.references) ? c.references : [];
+            refs.value = curRefs.map(r => (r && r.intitule) || "").filter(Boolean).join("\n");
+            curVer = c.version || 0; setStatus(c.status); setSavedMeta(c); syncRefsNote();
+          } });
+      }
       const prixBox = document.createElement("div"); prixBox.appendChild(prix);
       prixBox.appendChild($(`<div class="muted small" style="margin-top:4px">Seul montant visible par le chef de file.</div>`));
       card.appendChild(field("Prix de vente de votre lot (€ HT)", prixBox, "C'est le seul montant que voit le chef de file : il en a besoin pour assembler l'offre commune."));
@@ -1044,7 +1070,7 @@
         collectWarn = "";
         const body = { company_name: company.value, lot: lot.value, siret: siret.value, forme_juridique: forme.value, address: adresse.value, postal_code: cp.value, city: ville.value,
           qualifications: quals.value.split(",").map(s => s.trim()).filter(Boolean),
-          references: refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })),
+          references: SPX ? SPX._pur.spFusionRefs(refs.value, curRefs) : refs.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => ({ intitule: s })),
           memoire_paragraph: memoire.value, note_au_mandataire: note.value,
           contact: { nom: cNom.value, email: cMail.value, telephone: cTel.value },
           prix_lot_ht: numOrNull(prix.value), representant_legal: repr.value, signataire_qualite: qualite.value,
@@ -1069,6 +1095,7 @@
         company.value = c.company_name || ""; lot.value = c.lot || ""; quals.value = (c.qualifications || []).join(", ");
         siret.value = c.siret || ""; forme.value = c.forme_juridique || ""; adresse.value = c.address || ""; cp.value = c.postal_code || ""; ville.value = c.city || "";
         refs.value = (c.references || []).map(r => r.intitule || "").filter(Boolean).join("\n");
+        curRefs = Array.isArray(c.references) ? c.references : []; syncRefsNote();
         memoire.value = c.memoire_paragraph || ""; note.value = c.note_au_mandataire || "";
         prix.value = (c.prix_lot_ht == null) ? "" : String(c.prix_lot_ht);
         repr.value = c.representant_legal || ""; qualite.value = c.signataire_qualite || "";
@@ -1099,6 +1126,7 @@
         const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         if (r.ok) {
           const c = await r.json(); curVer = c.version || 0; setStatus(c.status);
+          if (Array.isArray(c.references)) { curRefs = c.references; syncRefsNote(); }
           if (!locked) { curEnv = (c.detail_chiffre && c.detail_chiffre.ciphertext) ? c.detail_chiffre : null; serverHasDetail = !!curEnv; }
           if (lastCollect) { savedTexte = lastCollect.texte; if (dp) dp.markSaved(); }
           setSavedMeta(c);
