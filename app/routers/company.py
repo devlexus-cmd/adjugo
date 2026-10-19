@@ -30,7 +30,7 @@ def get_company(
 ):
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     if not company:
-        raise HTTPException(status_code=404, detail="Profil entreprise non créé")
+        raise HTTPException(status_code=404, detail="Entreprise non renseignée (Mon entreprise, onglet « Identité »)")
     return company
 
 

@@ -522,7 +522,7 @@ def collect_members(db, project, conv, company, include_incomplete: bool = False
     comp = company
     lead_name = (comp.name if comp is not None and comp.name else "") or "Le mandataire"
     if comp is None or not (comp.name or "").strip():
-        manques.append("Profil entreprise à compléter : nom de votre entreprise (chef de file)")
+        manques.append("Nom de votre entreprise (chef de file) à indiquer dans Mon entreprise, onglet « Identité »")
     part = params.get("part_mandataire_ht")
     if part is None:
         manques.append("Votre part (chef de file) : montant € HT à indiquer")

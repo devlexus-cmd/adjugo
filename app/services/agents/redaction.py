@@ -238,7 +238,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         from app.services.cerfa import missing_company_fields
         miss = missing_company_fields(company)
         if miss:
-            warnings.append("BLOQUANT — profil entreprise incomplet (rejet probable du pli) : "
+            warnings.append("BLOQUANT — à renseigner dans Mon entreprise, onglet « Identité » (rejet probable du pli) : "
                             + ", ".join(miss))
     except Exception:
         pass

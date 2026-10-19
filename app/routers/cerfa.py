@@ -46,7 +46,7 @@ def generate(
 
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     if not company:
-        raise HTTPException(status_code=400, detail="Complétez votre profil entreprise")
+        raise HTTPException(status_code=400, detail="Renseignez votre entreprise dans Mon entreprise, onglet « Identité ».")
 
     avert = []
     pdf_bytes = produire_formulaire(db, project, company, doc_type, avertissements=avert)
@@ -114,7 +114,7 @@ def produire_formulaire(db: Session, project: Project, company: Company, doc_typ
         if missing:
             raise HTTPException(
                 status_code=422,
-                detail={"message": "Champs obligatoires manquants dans votre profil entreprise "
+                detail={"message": "Champs obligatoires manquants dans Mon entreprise, onglet « Identité », "
                                    "avant génération de ce document.",
                         "missing_fields": missing},
             )

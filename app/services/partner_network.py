@@ -273,8 +273,8 @@ def apply_checks(profile, res: dict, now: Optional[datetime] = None) -> dict:
         summary["sirene"] = {"statut": "ok", "label": sirene_label(profile.verified_sirene)}
     else:
         prev = profile.verified_sirene if isinstance(profile.verified_sirene, dict) else None
-        msg = {"introuvable": "SIREN introuvable dans le registre officiel des entreprises : vérifiez le SIRET du profil entreprise.",
-               "siren_invalide": "SIRET à 14 chiffres manquant dans le profil entreprise."}.get(
+        msg = {"introuvable": "SIREN introuvable dans le registre officiel des entreprises : vérifiez le SIRET dans Mon entreprise, onglet « Identité ».",
+               "siren_invalide": "SIRET à 14 chiffres manquant dans Mon entreprise, onglet « Identité »."}.get(
             s.get("statut"), "Registre officiel des entreprises momentanément indisponible : réessayez plus tard.")
         if prev and prev.get("checked_at"):
             msg += f" La vérification du {jjmm(prev.get('checked_at'))} est conservée."
@@ -836,13 +836,13 @@ def sync_siret(p, siret: str) -> Optional[str]:
     p.siret = siret
     p.siren = siret[:9] if siret else ""
     if was_visible:
-        return ("Le SIRET de votre profil entreprise a changé : publication retirée. Vérifiez à nouveau "
+        return ("Le SIRET de votre entreprise a changé : publication retirée. Vérifiez à nouveau "
                 "votre entreprise, puis demandez une nouvelle validation à Adjugo.")
     if was_pending:
-        return ("Le SIRET de votre profil entreprise a changé : la demande de validation est annulée. "
+        return ("Le SIRET de votre entreprise a changé : la demande de validation est annulée. "
                 "Vérifiez à nouveau votre entreprise, puis renvoyez la demande.")
     if had:
-        return "Le SIRET de votre profil entreprise a changé : vérifiez à nouveau votre entreprise."
+        return "Le SIRET de votre entreprise a changé : vérifiez à nouveau votre entreprise."
     return None
 
 
@@ -866,7 +866,7 @@ def on_company_saved(db, owner_id: int) -> Optional[str]:
         if was_visible:
             audit.record(db, action="network.profile_unpublished", owner_id=owner_id, actor="system",
                          actor_kind="system", target_type="partner_profile", target_id=p.id,
-                         detail="SIRET du profil entreprise modifié : nouvelle validation Adjugo requise")
+                         detail="SIRET de l'entreprise modifié (Mon entreprise) : nouvelle validation Adjugo requise")
         return msg
     except Exception as e:
         db.rollback()

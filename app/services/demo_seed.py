@@ -550,13 +550,21 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
         existing = set()
 
     def _put(key, title, subtitle=""):
-        if key not in existing:
+        """Range le PDF de démonstration et renvoie SA clé, liée à son titre (demo/kbis_<empreinte>.pdf). Une clé
+        déjà stockée n'est jamais réécrite (stockage persistant en production) : sans l'empreinte, un nom de pièce
+        changé dans ce fichier laissait le PDF déjà rangé avec l'ancien titre (« Mémoire technique — … » lu
+        pendant un pitch). Relancer le seed ne crée aucun fichier tant que les titres ne changent pas."""
+        import hashlib
+        empreinte = hashlib.sha256((title + "\0" + subtitle).encode("utf-8")).hexdigest()[:12]
+        base, ext = key.rsplit(".", 1)
+        k = f"{base}_{empreinte}.{ext}"
+        if k not in existing:
             try:
-                storage.save(key, _demo_pdf(title, subtitle), "application/pdf")
-                existing.add(key)
+                storage.save(k, _demo_pdf(title, subtitle), "application/pdf")
+                existing.add(k)
             except Exception as e:
-                logger.warning("fichier démo %s non stocké : %s", key, e)
-        return key
+                logger.warning("fichier démo %s non stocké : %s", k, e)
+        return k
 
     # (nom, catégorie, dossier, expiration, project_id, clé)
     DOCS = [
@@ -570,13 +578,14 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
         ("RIB — Bâtiment de l'Ouest", DocCategory.administratif, "Pièces administratives", None, None, "demo/rib.pdf"),
         ("Liste de références — travaux similaires (< 3 ans)", DocCategory.administratif, "Pièces administratives", None, None, "demo/references.pdf"),
         # Pièces de réponse de l'entreprise fictive (réorganisation, vague 1 : noms sans « Mémoire » ni « DPGF », la
-        # carte « Dossier du marché » de la page Toiture les montre pendant un pitch). Clés de stockage inchangées.
-        ("Dossier de présentation — méthodologie étanchéité", DocCategory.autre, "Mémoire technique", None, toiture, "demo/memoire_methodologie.pdf"),
-        ("Tableau de prix — décomposition du prix global et forfaitaire", DocCategory.autre, "Chiffrage", None, toiture, "demo/dpgf.pdf"),
+        # carte « Dossier du marché » de la page Toiture les montre pendant un pitch). Le PDF suit le nom : _put
+        # range chaque pièce sous une clé liée à son titre.
+        ("Dossier de présentation — méthodologie étanchéité", DocCategory.autre, "Mémoire technique", None, toiture, "demo/dossier_presentation_methodologie.pdf"),
+        ("Tableau de prix — décomposition du prix global et forfaitaire", DocCategory.autre, "Chiffrage", None, toiture, "demo/tableau_de_prix.pdf"),
         ("DCE — Réfection toiture groupe scolaire Jean Moulin", DocCategory.autre, "DCE", None, toiture, "demo/dce_toiture.pdf"),
     ]
     for name, cat, folder, exp, pid, key in DOCS:
-        _put(key, name)
+        key = _put(key, name)
         db.add(Document(user_id=uid, name=name, category=cat, file_key=key, file_size=12000,
                         mime_type="application/pdf", folder=folder, expiration_date=exp,
                         project_id=pid, alert_30_sent=True, alert_7_sent=True, alert_day_sent=True))
@@ -738,7 +747,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
                 ("Attestation d'assurance RC et décennale — Breizh Désamiantage", "demo/breizh_assurance.pdf",
                  "assurance", today + timedelta(days=320)),
                 ("RIB — Breizh Désamiantage", "demo/breizh_rib.pdf", "rib", None)]:
-            _put(pkey, pname)
+            pkey = _put(pkey, pname)
             db.add(ContributionPiece(contribution_id=contrib.id, project_id=lorient, owner_id=uid,
                                      name=pname, file_key=pkey, file_size=11000, mime_type="application/pdf",
                                      piece_type=ptype, expiration_date=pexp))

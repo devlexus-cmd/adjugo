@@ -39,7 +39,7 @@ def export_dossier(
 
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     if not company:
-        raise HTTPException(400, "Complétez votre profil entreprise")
+        raise HTTPException(400, "Renseignez votre entreprise dans Mon entreprise, onglet « Identité ».")
 
     # Preparer les donnees entreprise
     cd = {}

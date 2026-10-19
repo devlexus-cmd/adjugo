@@ -188,7 +188,7 @@ def _prefill(db: Session, user: User, owner_id: int, with_registry: bool = True)
            "postal_code": (comp.postal_code if comp else "") or "", "city": (comp.city if comp else "") or "",
            "metiers": [], "departements": _split_deps(crit.get("departements") or ""),
            "codes_cpv": [c for c in re.split(r"[,;\s]+", str(crit.get("codes_cpv") or "")) if re.fullmatch(r"\d{8}", c)][:pn.MAX_CPV],
-           "roles_acceptes": ["cotraitant"], "sources": ["profil entreprise"]}
+           "roles_acceptes": ["cotraitant"], "sources": ["Mon entreprise"]}
     keys = _trade_keys()
     try:
         trades = own_trades({**(pn_company_dict(comp)), "specialites": crit.get("specialites") or ""})
@@ -253,7 +253,7 @@ def _conditions(db: Session, p: Optional[PartnerProfile], siret: str, user: User
     vs = (p.verified_sirene if p and isinstance(p.verified_sirene, dict) else {}) or {}
     age = pn.verification_age_days(p) if p else None
     return [
-        {"key": "siret", "label": "SIRET à 14 chiffres renseigné dans le profil entreprise", "ok": bool(siret)},
+        {"key": "siret", "label": "SIRET à 14 chiffres renseigné dans Mon entreprise, onglet « Identité »", "ok": bool(siret)},
         {"key": "verification", "label": f"Entreprise vérifiée active dans le registre officiel il y a moins de {pn.PUBLISH_MAX_AGE_DAYS} jours",
          "ok": bool(vs.get("etat") == "actif" and age is not None and age < pn.PUBLISH_MAX_AGE_DAYS)},
         {"key": "metiers", "label": "Au moins un métier", "ok": bool(p and p.metiers)},
@@ -589,7 +589,7 @@ def verifier(request: Request, current_user: User = Depends(get_current_user), d
     db.commit()
     if not p.siret:
         raise HTTPException(422, {"code": "siret_invalide",
-                                  "message": "Renseignez un SIRET à 14 chiffres dans votre profil entreprise avant la vérification."})
+                                  "message": "Renseignez un SIRET à 14 chiffres dans Mon entreprise, onglet « Identité », avant la vérification."})
     now_ts = time.time()
     with _VERIFY_LOCK:
         last = _VERIFY_LAST.get(p.id)
@@ -644,7 +644,7 @@ def publier(request: Request, body: PublierIn = None, current_user: User = Depen
     db.commit()
     if not re.fullmatch(r"\d{14}", p.siret or ""):
         raise HTTPException(422, {"code": "siret_invalide",
-                                  "message": "Un SIRET à 14 chiffres est requis (profil entreprise)."})
+                                  "message": "Un SIRET à 14 chiffres est requis (Mon entreprise, onglet « Identité »)."})
     if not getattr(current_user, "email_verified", False):
         raise HTTPException(403, {"code": "email_non_verifie",
                                   "message": "Confirmez d'abord l'adresse email de votre compte (lien reçu à "

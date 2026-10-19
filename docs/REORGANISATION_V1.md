@@ -814,8 +814,8 @@ lignes ; le garde-fou lit désormais les constantes Python par l'ast, qui fusion
   titre du PDF d'estimation « Estimation détaillée du prix » ; avertissement « formulaires officiels indisponibles ».
 - Collectivités : « PME identifiées via les données publiques (registre Insee, DECP, BODACC) ».
 - Démo, page Toiture : « Dossier de présentation — méthodologie étanchéité », « Tableau de prix — décomposition du prix
-  global et forfaitaire » (pièces de réponse de l'entreprise fictive, clés de stockage inchangées) ; la raison du
-  § 0.3 est corrigée.
+  global et forfaitaire » (pièces de réponse de l'entreprise fictive ; le PDF rangé suit le nom depuis le § 4.8) ; la
+  raison du § 0.3 est corrigée.
 - Garde-fou étendu aux générateurs des PDF et du ZIP, chaînes d'un seul mot comprises quand elles commencent par une
   majuscule (`test_generateurs_de_pdf_et_du_zip_sans_mot_banni`).
 
@@ -868,3 +868,51 @@ sans défilement horizontal (accueil, Mes marchés, Trouver des marchés, Mes do
 **Vérifications** : suite complète verte (2 080 tests ; les 24 du nouveau fichier échouent sur `6fddf13`), SRI
 (`scripts/sri_update.py --check`) et `node --check`, gabarits de `app.html` et des composants compilés par Vue sans
 erreur, `scripts/i18n_ajouter.py --check` (468 clés).
+
+### 4.8 Contre-relecture de la fin de vague
+
+Trois remarques, chacune reproduite avant d'être corrigée, aucune rejetée. Test :
+`tests/test_reorganisation_v1_contre_relecture.py` (ses 8 tests échouent sur `8adfae0`, chacun pour la raison de la
+remarque).
+
+**Carte de Mes marchés : la note se coupait.** Mesuré dans un navigateur sur la démo à 1 280 px : « Seul 34 / % »,
+« Seul 97 / % », « À / plusieurs / 100 % » (3 cartes sur 7 ; encore 2 à 1 440 px). La note (`.kcard .sc`) ne se coupe
+plus (`white-space: nowrap`) ; la ligne de la carte passe à la ligne (`flex-wrap: wrap`) : si la note ne tient pas à
+côté de l'acheteur, elle passe entière en dessous, alignée à droite. Vérifié à 1 000, 1 280, 1 440 et 375 px (et 1 280 px
+en clair) : chaque note sur une ligne, rien ne déborde de la carte, pas de défilement horizontal.
+
+**Démo : le PDF d'une pièce renommée gardait son ancien titre.** `_put` ne réécrit jamais une clé déjà stockée ; en
+production (stockage S3 persistant), le PDF rangé sous `demo/memoire_methodologie.pdf` et `demo/dpgf.pdf` disait
+encore « Mémoire technique — … » et « DPGF — … » (reproduit : anciens PDF posés sous ces clés, puis
+`ensure_demo(force=True)`). Chaque PDF de la démo est maintenant rangé sous une clé liée à son titre
+(`demo/kbis_<empreinte>.pdf`, comme le dossier du marché et sa lecture) : un nom changé range un nouveau PDF, relancer la
+démo sans rien changer n'en range aucun. Les anciens fichiers restent dans le stockage, sans plus servir (une
+vingtaine de petits PDF). Vérifié dans le navigateur : les deux pièces de Toiture se téléchargent, titre du PDF égal au
+nom affiché.
+
+**« Profil entreprise » : l'écran s'appelle Mon entreprise, onglet « Identité ».** La consigne du SIRET disait encore
+« profil entreprise » (Partenaires › Réseau Adjugo › Mon profil partenaire › Publication, visible dans la démo), comme
+d'autres textes que le garde-fou du § 4.7 ne voyait pas (il cherchait « Profil de l'entreprise »). Corrigé partout où
+une personne le lit :
+- serveur : condition « SIRET à 14 chiffres renseigné dans Mon entreprise, onglet « Identité » », refus de la
+  vérification et de la publication, formulaires officiels et export (« Renseignez votre entreprise dans Mon
+  entreprise, onglet « Identité ». »), champs manquants avant un formulaire, avertissement « BLOQUANT — à renseigner dans
+  Mon entreprise, onglet « Identité » », manque de la convention (nom du chef de file), registre introuvable ou SIRET
+  manquant, « Le SIRET de votre entreprise a changé », adéquation métier sans activité (« vos spécialités dans Mon
+  entreprise, onglet « Mes critères » »), journal (« SIRET de l'entreprise modifié (Mon entreprise) ») ;
+- écrans : « Reprendre ce que vous avez déjà saisi » de Mes preuves (« Repris de Mon entreprise (onglet « Identité »),
+  de votre profil partenaire (Réseau Adjugo) … »), bulle de l'identité du profil partenaire, « Aucune référence dans
+  Mon entreprise », publication refusée, paragraphe du dossier de présentation du partenaire (application et espace
+  partenaire), administration (« Déclaré dans Mon entreprise ») ; premier pas de l'accueil « Renseignez le nom et le
+  SIRET de votre entreprise » (ce que le jalon vérifie ; traduit, 468 → 469 clés).
+- Garde-fous : constantes du serveur lues par l'ast et textes visibles des pages et scripts servis, insensibles à la
+  casse (« profil entreprise », « profil d'entreprise », « profil de l'entreprise »). Gardés : le dictionnaire de
+  traduction du serveur, la consigne envoyée à l'IA (`PROFIL_GARDES`), l'ancien nom de l'onglet « Identité » dans la
+  bulle de transition.
+
+**Vérifications** : suite complète verte, SRI (`scripts/sri_update.py --check`) et `node --check`, gabarit de
+`app.html` compilé par Vue sans erreur, `scripts/i18n_ajouter.py --check` (469 clés) ; navigateur réel (serveur local,
+base jetable, démo par lien privé, réseau sortant coupé, aucune IA) : Mes marchés à 1 000, 1 280, 1 440 et 375 px en
+sombre et à 1 280 px en clair, pièces de Toiture, Publication du profil partenaire. Les tests de ce fichier coupent le réseau
+(registre simulé absent, connexions sortantes refusées) : sans cela, `GET /api/reseau/profil` de la démo interrogeait
+le registre officiel.

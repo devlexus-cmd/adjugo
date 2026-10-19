@@ -1114,7 +1114,7 @@ const __adjApp = createApp({
       const criteres = !!((cr.specialites && String(cr.specialites).trim()) || (cr.departements && String(cr.departements).trim()));
       const premier = (this.projects || []).length > 0;
       const steps = [
-        { k: "profil", done: profil, label: "Complétez votre profil entreprise", view: "company", cta: "Compléter" },
+        { k: "profil", done: profil, label: "Renseignez le nom et le SIRET de votre entreprise", view: "company", cta: "Compléter" },
         { k: "criteres", done: criteres, label: "Définissez vos critères", view: "criteria", cta: "Définir" },
         { k: "premier", done: premier, label: "Lancez votre première recherche de marchés", view: "sourcing", cta: "Rechercher" },
       ];

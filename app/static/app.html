@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs"></script>
-<script src="/static/i18n.js" integrity="sha384-LWQl3wgdTKXKyPfVif0S0YKuYX2x6COp55v2PyLEgLGzmm/DEdgNx2SfeIHOiL0e" defer></script>
+<script src="/static/i18n.js" integrity="sha384-PBAmdqpanieD+uOBUwLaipTce9nKFT075y7UuXV9Lu8PctHYgtJAKjs4z8w8kWBZ" defer></script>
 </head>
 <body>
 <div id="app">
@@ -2837,7 +2837,7 @@
 
           <!-- Reprise de l'existant : rien n'est repris sans être coché ; les données d'origine ne changent pas. -->
           <div v-if="pv.rep.open" class="card pad pv-rep" role="region" aria-labelledby="pv-rep-h">
-            <div class="row pv-g8"><h3 id="pv-rep-h" class="pv-h3 pv-grow">Reprendre ce que vous avez déjà saisi<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Repris de votre profil d'entreprise, de votre profil du réseau de partenaires et des justificatifs rangés en « Qualifications » dans « Mes documents ». Rien n'y est modifié ni supprimé, et un élément déjà présent dans « Mes preuves » n'est jamais repris deux fois.</span></button></h3>
+            <div class="row pv-g8"><h3 id="pv-rep-h" class="pv-h3 pv-grow">Reprendre ce que vous avez déjà saisi<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Repris de Mon entreprise (onglet « Identité »), de votre profil partenaire (Réseau Adjugo) et des justificatifs rangés en « Qualifications » dans « Mes documents ». Rien n'y est modifié ni supprimé, et un élément déjà présent dans « Mes preuves » n'est jamais repris deux fois.</span></button></h3>
               <button type="button" class="btn ghost sm" @click="pv.rep.open=false" aria-label="Fermer la reprise"><i data-lucide="x"></i></button></div>
             <div v-if="pv.rep.loading" class="muted small" role="status"><span class="spin"></span> Chargement…</div>
             <template v-else-if="pv.rep.d">
@@ -3132,7 +3132,7 @@
                 <dt>Registre officiel</dt>
                 <dd>{{ it.sirene.nom || 'nom non trouvé' }} · {{ it.sirene.etat==='actif' ? 'active' : (it.sirene.etat==='cesse' ? 'cessée' : 'non vérifiée') }}<span v-if="it.sirene.code_postal || it.sirene.ville"> · siège {{ [it.sirene.code_postal, it.sirene.ville].filter(Boolean).join(' ') }}</span><span v-if="it.sirene.naf"> · NAF {{ it.sirene.naf }}</span><span v-if="it.sirene.date_creation"> · créée le {{ fmtDate(it.sirene.date_creation) }}</span><span v-if="it.sirene.checked_at" class="muted"> (consulté le {{ fmtDate(it.sirene.checked_at) }})</span>
                   <a v-if="adminRvLink(it)" :href="safeUrl(adminRvLink(it))" target="_blank" rel="noopener noreferrer" class="rn-link small"><i data-lucide="external-link"></i>Annuaire des entreprises</a></dd>
-                <dt>Profil entreprise</dt>
+                <dt>Déclaré dans Mon entreprise</dt>
                 <dd>{{ it.entreprise_declaree.nom || 'non renseigné' }} · SIRET {{ it.entreprise_declaree.siret || 'non renseigné' }}<span v-if="it.entreprise_declaree.code_postal || it.entreprise_declaree.ville"> · {{ [it.entreprise_declaree.code_postal, it.entreprise_declaree.ville].filter(Boolean).join(' ') }}</span></dd>
                 <dt>Compte</dt>
                 <dd><template v-if="it.compte">{{ it.compte.nom || 'nom non renseigné' }} · {{ it.compte.email }} · {{ it.compte.email_confirme ? 'adresse confirmée' : 'adresse non confirmée' }}<span v-if="it.compte.inscrit_le"> · inscrit le {{ fmtDate(it.compte.inscrit_le) }}</span></template><template v-else>compte introuvable</template></dd>
@@ -3321,9 +3321,9 @@
                   </div>
                 </div>
 
-                <!-- Identité (lecture seule : vient du profil entreprise et du registre) -->
+                <!-- Identité (lecture seule : vient de Mon entreprise, onglet Identité, et du registre) -->
                 <div class="card pad rn-block" role="region" aria-labelledby="rn-id-h">
-                  <h3 id="rn-id-h" class="rn-h3">Identité<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Reprise de votre profil entreprise. Après la vérification, le nom devient celui du registre officiel des entreprises (Insee). Pour la modifier, passez par « Mon entreprise ».</span></button></h3>
+                  <h3 id="rn-id-h" class="rn-h3">Identité<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Reprise de Mon entreprise, onglet « Identité ». Après la vérification, le nom devient celui du registre officiel des entreprises (Insee). Pour la modifier, passez par cet onglet.</span></button></h3>
                   <dl class="rn-dl">
                     <dt>Nom</dt><dd>{{ d.identite.name || 'non renseigné' }} <span v-if="d.identite.nom_officiel" class="pill neutral rn-pill-sm">nom du registre officiel</span>
                       <span v-if="d.validation && d.validation.identite_validee" class="pill go rn-pill-sm"><i data-lucide="badge-check"></i>identité validée par Adjugo</span>
@@ -3366,7 +3366,7 @@
                     <input id="rn-cpv" class="inp" v-model="f.codes_cpv" :disabled="!d.peut_modifier || !!reseau.p.busy" placeholder="ex. 45310000, 45315000"></div>
                   <fieldset class="rn-fs" :disabled="!d.peut_modifier || !!reseau.p.busy">
                     <legend class="rn-lg">Références à rendre publiques<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Seules les références cochées apparaissent sur votre fiche, sans montant. {{ rnOptions().references_max }} au plus.</span></button></legend>
-                    <div v-if="!rnRefOptions().length" class="muted small">Aucune référence dans votre profil entreprise. <button type="button" class="linkbtn" @click="go('company')">Ajouter des références dans Mon entreprise</button></div>
+                    <div v-if="!rnRefOptions().length" class="muted small">Aucune référence dans Mon entreprise. <button type="button" class="linkbtn" @click="go('company')">Ajouter des références dans Mon entreprise</button></div>
                     <div v-else class="rn-refs-pick">
                       <label v-for="r in rnRefOptions()" :key="'rp'+r._k" class="rn-check" :class="{off:rnRefDisabled(r)}"><input type="checkbox" :value="r._k" v-model="f.refs" :disabled="rnRefDisabled(r)"><span>{{ r.intitule }}<span v-if="r.client" class="muted"> — {{ r.client }}</span><span v-if="r.annee" class="muted"> ({{ r.annee }})</span></span></label>
                       <div class="muted small rn-hint">{{ f.refs.length }} sur {{ rnOptions().references_max }} cochée(s)</div>
@@ -3411,7 +3411,7 @@
                     <li v-for="c in d.publication.conditions" :key="'rc'+c.key" :class="{ok:c.ok}"><i :data-lucide="c.ok?'check':'x'" aria-hidden="true"></i><span>{{ c.label }}<span class="sr-only">{{ c.ok?' : fait':' : à faire' }}</span></span></li>
                   </ul>
                   <div v-if="d.statut==='en_attente'" class="rn-note" role="status"><i data-lucide="hourglass"></i><div><b>En attente de validation par Adjugo</b><span v-if="d.validation && d.validation.demande_le"> depuis le {{ fmtDate(d.validation.demande_le) }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.validation && d.validation.explication }}</span></button><div>Votre fiche sera visible dès la validation.</div></div></div>
-                  <div v-else-if="d.statut==='refuse'" class="conv-err" role="status"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0"><b>Publication refusée par Adjugo</b><span v-if="d.validation && d.validation.decide_le"> le {{ fmtDate(d.validation.decide_le) }}</span><span v-if="d.validation && d.validation.motif"> : {{ d.validation.motif }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.validation && d.validation.explication }} Vous pouvez corriger votre profil entreprise, puis renvoyer une demande.</span></button></div></div>
+                  <div v-else-if="d.statut==='refuse'" class="conv-err" role="status"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0"><b>Publication refusée par Adjugo</b><span v-if="d.validation && d.validation.decide_le"> le {{ fmtDate(d.validation.decide_le) }}</span><span v-if="d.validation && d.validation.motif"> : {{ d.validation.motif }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ d.validation && d.validation.explication }} Vous pouvez corriger votre entreprise (Mon entreprise, onglet « Identité ») ou votre profil partenaire, puis renvoyer une demande.</span></button></div></div>
                   <template v-if="!d.visible && d.statut!=='en_attente'">
                     <div class="rn-consent" :class="{err:rnErrAt('pub') && reseau.p.errCode==='consentement_requis'}">
                       <input id="rn-consent" type="checkbox" v-model="reseau.p.consent" :disabled="!d.peut_modifier || !!reseau.p.busy">
@@ -3725,7 +3725,7 @@
             </div>
             <div class="field"><label>Vos capacités (déclarées par vous, visibles du chef de file)</label><div class="row wrap" style="gap:8px"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.ca_n1" placeholder="Votre CA du dernier exercice (€)" style="flex:1;min-width:200px" aria-label="Votre CA du dernier exercice"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.effectif" placeholder="Effectif" style="width:120px" aria-label="Effectif"></div></div>
             <div class="field"><label>Signataire de votre part</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.representant_legal" placeholder="Représentant légal (nom)" style="flex:1;min-width:160px" aria-label="Représentant légal"><input class="inp" v-model="sharedAo.contrib.signataire_qualite" placeholder="Qualité (gérant, président…)" style="flex:1;min-width:140px" aria-label="Qualité du signataire"></div></div>
-            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Paragraphe pour le dossier de présentation</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est la partie technique de l'offre commune du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun. Évitez d'y écrire le nom de vos salariés : un nom n'est remplacé par la fonction de la personne, avant l'envoi à l'IA, que s'il figure dans l'équipe de votre profil entreprise Adjugo.</span></button></div><textarea class="inp" v-model="sharedAo.contrib.memoire_paragraph" rows="4" placeholder="Votre savoir-faire sur ce lot"></textarea></div>
+            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Paragraphe pour le dossier de présentation</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est la partie technique de l'offre commune du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun. Évitez d'y écrire le nom de vos salariés : un nom n'est remplacé par la fonction de la personne, avant l'envoi à l'IA, que s'il figure dans l'équipe enregistrée sur votre compte Adjugo (Mon entreprise, onglet « Identité »).</span></button></div><textarea class="inp" v-model="sharedAo.contrib.memoire_paragraph" rows="4" placeholder="Votre savoir-faire sur ce lot"></textarea></div>
             <div class="field"><label>Contact</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.contact.nom" placeholder="Nom" style="flex:1;min-width:130px"><input type="email" class="inp" v-model="sharedAo.contrib.contact.email" placeholder="Email" style="flex:1;min-width:130px"><input type="tel" class="inp" v-model="sharedAo.contrib.contact.telephone" placeholder="Téléphone" style="flex:1;min-width:130px"></div></div>
 
             <div class="field"><label>Mes pièces administratives (attestations, Kbis, formulaire DC2…)</label>
@@ -4151,6 +4151,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-6u2dcizU1R7TgbFpANxwY3jDSA7O0EQpkhqXfp1A4RwHslj7somFoJxnE+iDz027" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6" defer></script>
-<script src="/static/app.js" integrity="sha384-0FkD4ylz4UjZ62d5wpD4unyX9Rk/zx0sdUECsMN3Dx/YgjC6ndYRkTT33yEy8Cmr" defer></script>
+<script src="/static/app.js" integrity="sha384-1QX1oQI0IsMBGQHqBh/i0dC33cti6FJeqp+01Kdib3zjSM5cSNrgYNerisWLX0dh" defer></script>
 </body>
 </html>
