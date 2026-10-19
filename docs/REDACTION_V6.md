@@ -172,5 +172,12 @@ moment : réessayez, ou exportez sans elle. ») — jamais un fichier sans la pa
   brouillon privé jamais lu, partie modifiée par le chef de file, rien dans ce que lit le partenaire ni dans sa
   portabilité, 404 pour un autre compte) ; page impossible : 503, aucun fichier rangé, export sans la case possible ;
   démo (page lue, export refusé, rien d'écrit) ; écran (case, bulle, « Voir la page », sans émoji). Aucun appel d'IA.
-- Suite complète verte, SRI à jour (`scripts/sri_update.py --check`), `node --check app/static/app.js`.
-- Navigateur : vitrine de la démo à 1 280 px et 375 px (aucun débordement horizontal, page lisible, case et bulle).
+- Suite complète verte : 1 846 tests (1 838 de la production + 8), SQLite, `TZ=UTC`, IA simulée, aucun réseau. SRI à
+  jour (`scripts/sri_update.py --check`), `node --check app/static/app.js`.
+- Postgres 16 (aucune migration dans H) : code de production `a29173a` et code nouveau extraits par `git archive`,
+  chacun sur une base neuve montée par son propre `alembic upgrade head` (tête `z1entretienchantier` des deux côtés),
+  puis atelier V2 (export, écrans), assemblage et chef de file V4, C2 V5, démo sans coût et remise à neuf : production
+  289 verts, nouveau 297 verts (les mêmes + les 8 de H), aucun échec de part et d'autre (script
+  `scratchpad/h6/run_h6_pg.py`).
+- Navigateur : vitrine de la démo à 1 280 px et 375 px (aucun débordement horizontal, page lisible, case et bulle) ;
+  dernière page du PDF rendue et relue (tableau à 5 colonnes, légende, numéro de page).
