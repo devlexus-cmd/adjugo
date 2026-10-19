@@ -227,6 +227,161 @@ def _fin_de_section(t: str) -> bool:
     return bool(_TITRE_MEMOIRE.search(low))
 
 
+# Une rubrique de CV écrite SEULE sur sa ligne, en titre (« EXPÉRIENCE », « Formation », « Compétences : »,
+# « Parcours », « Atouts ») : sa sorte (le parcours et l'expérience comptent pour une).
+_RUBRIQUES_SEULES = {
+    "experience": "experience", "experiences": "experience", "experience professionnelle": "experience",
+    "experiences professionnelles": "experience", "parcours": "experience", "parcours professionnel": "experience",
+    "formation": "formation", "formations": "formation", "diplome": "formation", "diplomes": "formation",
+    "formation et diplomes": "formation", "formations et diplomes": "formation", "diplomes et formations": "formation",
+    "competences": "competences", "competences techniques": "competences", "competences cles": "competences",
+    "langue": "langues", "langues": "langues", "loisirs": "loisirs", "centre d interet": "loisirs",
+    "centres d interet": "loisirs", "centres d interets": "loisirs", "atouts": "atouts", "qualites": "atouts",
+    "savoir etre": "atouts", "etat civil": "etat_civil", "coordonnees": "coordonnees"}
+_FONCTION_EN_TETE = None
+_CV_TETE_MAX = 8                  # lignes non vides entre le nom et la première rubrique
+_CV_FIN_MAX = 15                  # lignes gardées au plus après la dernière rubrique
+_VOIX_PLAQUETTE_PERSONNE = 2      # lignes en « nous / notre / nos » qui font une plaquette sous un nom de personne
+
+
+def _rubrique_seule(ligne: str) -> str:
+    t = (ligne or "").strip()
+    if not t or len(t) > 60:
+        return ""
+    k = re.sub(r"[^a-z ]+", " ", _fold(re.sub(r"^[#*\-•\s\d.)]+", "", t)))
+    return _RUBRIQUES_SEULES.get(re.sub(r"\s+", " ", k).strip(), "")
+
+
+# Ce qu'un intitulé de fonction sous un nom (« Cheffe de chantier », « Couvreur zingueur ») ne contient jamais : un
+# chiffre, un lieu ou une durée (« Couvreur zingueur à Quimper depuis 1990 » présente une entreprise).
+_PAS_UN_INTITULE = re.compile(r"\d|\b(?:a|au|aux|depuis|dans|sur|pour|chez)\b")
+_INTITULE_MAX_MOTS = 6
+
+
+def _intitule_de_fonction(ligne: str) -> bool:
+    """Une ligne qui n'est qu'un intitulé de fonction : courte, commence par une fonction, sans chiffre, lieu ni
+    durée (« Conducteur de travaux », « Cheffe de chantier désamiantage »)."""
+    global _FONCTION_EN_TETE
+    if _FONCTION_EN_TETE is None:
+        _FONCTION_EN_TETE = re.compile(r"^(?i:" + _FONCTION + r")")
+    t = (ligne or "").strip().rstrip(" .:")
+    if not t or len(t.split()) > _INTITULE_MAX_MOTS or _PAS_UN_INTITULE.search(_fold(t)):
+        return False
+    return bool(_FONCTION_EN_TETE.match(t))
+
+
+def _personne_en_tete(lignes: list, i: int) -> bool:
+    """La ligne `i` n'est qu'un nom de PERSONNE (pas d'une entreprise) : prénom courant (« Yann TANGUY »,
+    « TANGUY Yann »), ou nom suivi de l'intitulé de sa fonction sur la ligne d'après (« Anne Le Floch » / « Cheffe
+    de chantier » ; jamais « Couvreur zingueur à Quimper depuis 1990 », qui présente une entreprise)."""
+    if not _nom_seul(lignes[i]):
+        return False
+    toks = re.sub(r"^[#*\-•\s]+", "", (lignes[i] or "").strip()).strip(" :").split()
+    if _prenom(toks[0]) or (toks[0].isupper() and _prenom(toks[-1])):
+        return True
+    suite = next((x.strip() for x in lignes[i + 1:i + 3] if x.strip()), "")
+    return _intitule_de_fonction(suite)
+
+
+def _nom_seul(ligne: str) -> bool:
+    """Une ligne qui n'est qu'un nom propre (« Gwenhaël KERJEAN »), jamais celui d'un organisme (« Breizh
+    Couverture ») : peut-être une personne, peut-être une entreprise au nom sans mot d'organisme."""
+    t = re.sub(r"^[#*\-•\s]+", "", (ligne or "").strip()).strip(" :")
+    if not t or not _ligne_nom(t) or len(t) > 60:
+        return False
+    mots = [w for w in re.split(r"[\s\-’']+", _fold(t)) if w]
+    return not any(w in _MOTS_ORGANISME for w in mots)
+
+
+# Un titre numéroté ou une annexe (« 2. Moyens matériels », « Annexe 3 ») : une autre partie du document commence.
+# Jamais une année (« 2015 - 2024 : conducteur de travaux »).
+_TITRE_NUMEROTE = re.compile(r"^(?:[#*\-•]+\s*)?(?:\d{1,2}(?:\.\d{1,2})*[.)]\s*[A-Za-zÀ-ÿ]|\d{1,2}(?:\.\d{1,2})+\s+"
+                             r"[A-Za-zÀ-ÿ]|(?:annexe|chapitre|partie|article)\b)", re.IGNORECASE)
+
+
+def _autre_partie(ligne: str) -> bool:
+    """« 2. Moyens matériels », « 3.1 Organisation », « Annexe 3 » : jamais une année, un téléphone ni « 15 ans »."""
+    t = (ligne or "").strip()
+    return _titre(t) and bool(_TITRE_NUMEROTE.match(t))
+
+
+# Une ligne de parcours : une période (« 2015 - 2024 », « 2018-2024 », « 06/2015 – 09/2020 », « 2019 à ce jour »).
+_PERIODE = re.compile(r"^\s*(?:[#*\-•]+\s*)?(?:de\s+|du\s+)?(?:\d{1,2}/)?(?:19|20)\d\d\s*(?:-|–|—|à|a|au)\s*"
+                      r"(?:(?:\d{1,2}/)?(?:19|20)\d\d|aujourd|ce jour|present|actuel|maintenant)", re.IGNORECASE)
+_COORDONNEES = re.compile(r"(?<!\d)0[1-9](?:[ .]?\d{2}){4}(?!\d)|[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", re.IGNORECASE)
+
+
+def _cv_sans_titre(lignes: list) -> set:
+    """Les lignes d'un CV écrit SANS le mot « CV » : un nom seul sur sa ligne, suivi (à moins de _CV_TETE_MAX
+    lignes) de rubriques de CV écrites seules sur leur ligne (expérience ou parcours, formation, compétences,
+    langues, loisirs, atouts…), chacune à moins de _CV_FIN_MAX lignes de la précédente, jamais au-delà d'un titre
+    numéroté ou d'une annexe :
+      • nom d'une PERSONNE (prénom courant, ou nom suivi de sa fonction) : deux sortes de rubriques suffisent ;
+      • autre nom propre (prénom rare : « Gwenhaël KERJEAN ») : trois sortes, ou deux avec des coordonnées sous le
+        nom (téléphone, adresse email) et une ligne de parcours (« 2015 - 2024 … »).
+    Du nom jusqu'au bloc qui suit la dernière rubrique (premier saut de ligne, titre d'une autre partie ou autre
+    nom ; au plus _CV_FIN_MAX lignes). Une plaquette n'est jamais un CV : « nous », « notre », « nos » dans ce passage
+    (une ligne sous un autre nom propre, deux sous un nom de personne : « Breizh Désamiantage », « Simon Frères »,
+    « Thomas Toiture » suivis de « Compétences » et « Formations »)."""
+    out = set()
+    n, i = len(lignes), 0
+    while i < n:
+        if not (lignes[i] or "").strip() or not _nom_seul(lignes[i]):
+            i += 1
+            continue
+        personne = _personne_en_tete(lignes, i)
+        rubs, sortes, non_vides, depuis = [], set(), 0, 0
+        coord, periode = False, False
+        for j in range(i + 1, min(n, i + 1 + _SECTION_CV_MAX)):
+            tj = (lignes[j] or "").strip()
+            if not tj:
+                continue
+            non_vides += 1
+            depuis += 1
+            k = _rubrique_seule(tj)
+            if k:
+                if not rubs and non_vides > _CV_TETE_MAX:
+                    break
+                rubs.append(j)
+                sortes.add(k)
+                depuis = 0
+                continue
+            if (not rubs and non_vides > _CV_TETE_MAX) or depuis > _CV_FIN_MAX or _autre_partie(tj):
+                break
+            if rubs and _personne_en_tete(lignes, j):
+                break                               # le CV d'une autre personne commence
+            if not rubs and _COORDONNEES.search(tj):
+                coord = True
+            if rubs and _PERIODE.match(tj):
+                periode = True
+        if not rubs or not (len(sortes) >= (2 if personne else 3) or (len(sortes) >= 2 and coord and periode)):
+            i += 1
+            continue
+        j, contenu = rubs[-1] + 1, False
+        while j < n and j <= rubs[-1] + _CV_FIN_MAX:
+            tj = (lignes[j] or "").strip()
+            if not tj:
+                if contenu:
+                    break
+            elif _personne_en_tete(lignes, j) or (_titre(tj) and not re.match(r"^\d", tj) and _fin_de_section(tj)
+                                                   and not _rubrique_seule(tj)) or _autre_partie(tj):
+                break
+            else:
+                contenu = True
+            j += 1
+        # La voix d'une entreprise (« nous », « notre », « nos ») dans ce passage même, du nom à la fin de la dernière
+        # rubrique : une plaquette, pas un CV — y compris sous un nom qui commence par un prénom (« Simon Frères »,
+        # « Thomas Toiture »). Sous un nom de personne sûr, il en faut deux lignes : la présentation d'un salarié écrite
+        # par son entreprise (« chez nous depuis 2012 ») reste un CV.
+        voix = sum(1 for x in range(i, j) if _VOIX_ENTREPRISE.search(_fold(lignes[x] or "")))
+        if voix >= (_VOIX_PLAQUETTE_PERSONNE if personne else 1):
+            i += 1
+            continue
+        out.update(range(i, j))
+        i = j
+    return out
+
+
 def lignes_privees(texte: str) -> dict:
     """Lignes du document qui ne partent JAMAIS à l'IA (décision 8, doctrine § 7 règle 9), sans IA :
       • « cv » : une SECTION de CV — un titre court qui contient « CV » ou « curriculum », n'importe où
@@ -289,6 +444,8 @@ def lignes_privees(texte: str) -> dict:
                 cv.update(suite)
             else:
                 break
+    # Un CV écrit sans le mot « CV » (un nom, puis « EXPÉRIENCE », « FORMATION », « COMPÉTENCES »…).
+    cv |= _cv_sans_titre(lignes)
     return {"cv": cv, "rh": rh - cv}
 
 
@@ -560,17 +717,31 @@ _PRENOM_NOM = (r"[A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ][a-zà-öø-ÿ]+(?:-[A-ZÀÂ
 _CIVILITE = re.compile(r"(?<![\w])(?:M\.|Mme|Mlle|Monsieur|Madame|Mademoiselle)\s+((?:[A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ]"
                        r"[A-Za-zà-öø-ÿÀ-Ý'’\-]+)(?:\s+(?:[Ll]e |[Ll]a |[Dd]e |[Dd]u |[Dd]')?[A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ]"
                        r"[A-Za-zà-öø-ÿÀ-Ý'’\-]+){0,2})")
-_FONCTION = (r"(?:chef(?:fe)? de (?:chantier|projet|travaux|chantiers)|chef(?:fe)? d['’]équipe|"
-             r"conduct(?:eur|rice) de travaux|compagnon|ouvri(?:er|ère)|charpentier|couvreur|maçon|plombier|"
-             r"électricien|menuisier|peintre|technicien(?:ne)?|ingénieur(?:e)?|gérant(?:e)?|dirigeant(?:e)?|"
-             r"président(?:e)?|directeur|directrice|responsable [a-zéèêà ]{3,30}|apprenti(?:e)?|"
-             r"assistant(?:e)?|comptable|secrétaire|encadrant(?:e)?|référent(?:e)?)")
-_NOM_PUIS_FONCTION = re.compile(r"(?<![\w’'])(" + _PRENOM_NOM + r")\s*(?:,|\(|–|—|-|:)\s*(?i:" + _FONCTION + ")")
+# Les fonctions (mots fixes) : sans « responsable … », qui se lit à part.
+_FONCTION_MOTS = (r"chef(?:fe)? de (?:chantier|projet|travaux|chantiers|site|atelier)|chef(?:fe)? d['’](?:équipe|atelier)|"
+                  r"conduct(?:eur|rice) de travaux|compagnon|ouvri(?:er|ère)|charpentier|couvreur|maçon|plombier|"
+                  r"électricien|menuisier|peintre|technicien(?:ne)?|ingénieur(?:e)?|co-?gérant(?:e)?|gérant(?:e)?|"
+                  r"dirigeant(?:e)?|président(?:e)?|directeur|directrice|apprenti(?:e)?|assistant(?:e)?|comptable|"
+                  r"secrétaire|encadrant(?:e)?|référent(?:e)?|associé(?:e)?|fondat(?:eur|rice)|"
+                  r"interlocut(?:eur|rice)(?: unique)?|chargée? d['’]affaires|opérat(?:eur|rice)")
+_FONCTION = r"(?:" + _FONCTION_MOTS + r"|responsable [a-zéèêà ]{3,30})"
+# « X, notre gérant », « X (notre conductrice de travaux) » : un déterminant peut séparer le nom de sa fonction.
+_DET = r"(?:(?:notre|nos|son|sa|leur|le|la|l['’]|un|une)\s+)?"
+_NOM_PUIS_FONCTION = re.compile(r"(?<![\w’'])(" + _PRENOM_NOM + r")\s*(?:,|\(|–|—|-|:)\s*" + _DET + r"(?i:" + _FONCTION
+                                + ")")
 _FONCTION_PUIS_NOM = re.compile(r"(?i:" + _FONCTION + r")\s*(?::|–|—|-|,)\s*(?:M\.\s|Mme\s)?(" + _PRENOM_NOM
                                 + r")(?![\w])")
-_PAR_NOM = re.compile(r"(?i:sous la (?:conduite|direction|responsabilit[ée]) d[e']|encadr[ée]e?s? par|dirig[ée]e?s? par|"
-                      r"suivie?s? par|pilot[ée]e?s? par|men[ée]e?s? par|coordonn[ée]e?s? par)\s*(" + _PRENOM_NOM
-                      + r")(?![\w])")
+# « Notre gérant Pierre Martin », « le conducteur de travaux Yann Tanguy » : la fonction suivie du nom, sans
+# ponctuation (« responsable » seulement suivi de mots en minuscules : « responsable environnement Anne Le Floch »).
+_FONCTION_ESPACE_NOM = re.compile(r"(?:(?i:" + _FONCTION_MOTS + r")|(?i:responsable)(?: [a-zéèêàç]+){1,3})\s+"
+                                  r"(?:M\.\s|Mme\s)?(" + _PRENOM_NOM + r")(?![\w])")
+_PAR = (r"(?i:sous la (?:conduite|direction|responsabilit[ée]) d[e']|encadr[ée]e?s? par|dirig[ée]e?s? par|"
+        r"suivie?s? par|pilot[ée]e?s? par|men[ée]e?s? par|coordonn[ée]e?s? par|assur[ée]e?s? par|"
+        r"r[ée]alis[ée]e?s? par|anim[ée]e?s? par|g[ée]r[ée]e?s? par|tenue?s? par|reprise? par|"
+        r"(?:fond|cr[ée])[ée]e?s?(?: en \d{4})? par)")
+_PAR_NOM = re.compile(_PAR + r"\s*(" + _PRENOM_NOM + r")(?![\w])")
+# « assuré par Gwenola Riou et Loïc Cadiou », « créée par X, Y et Z » : chaque nom de la suite.
+_PAR_NOMS = re.compile(_PAR + r"\s*((?:" + _PRENOM_NOM + r")(?:\s*(?:,|\bet\b|&)\s*(?:" + _PRENOM_NOM + r"))+)(?![\w])")
 _PRENOM_NOM_LIGNE = re.compile(_PRENOM_NOM)
 # « Jean-Yves Le Goff, 15 ans d'expérience » : un nom suivi d'une ancienneté.
 _NOM_PUIS_ANS = re.compile(r"(?<![\w’'])(" + _PRENOM_NOM + r")\s*(?:,|\(|–|—|-|:)\s*\d{1,2}\s*ans\b")
@@ -586,23 +757,118 @@ _MOTS_ORGANISME = {"couverture", "construction", "constructions", "batiment", "b
                    "morbihan", "agence", "bureau", "cabinet", "architectes", "architecture", "etudes", "technique",
                    "techniques", "lycee", "college", "ecole", "mairie", "hopital", "clinique", "gymnase",
                    "mediatheque", "piscine", "residence", "eglise", "chapelle", "salle", "centre", "parc", "zone",
-                   "rue", "avenue", "boulevard", "place", "quai", "chemin", "route", "allee", "impasse"}
+                   "rue", "avenue", "boulevard", "place", "quai", "chemin", "route", "allee", "impasse",
+                   "freres", "fils", "atelier", "ateliers", "toit", "toits", "toiture", "toitures", "isolation",
+                   "facade", "facades", "ravalement", "carrelage", "chauffage", "climatisation", "terrassement",
+                   "terrassements", "paysage", "paysages", "elagage", "nettoyage", "etancheite", "demolition",
+                   "desamiantage", "depollution", "metallerie", "serrurerie", "assainissement", "voirie"}
 _PAS_UN_NOM = {"mairie", "ville", "commune", "departement", "region", "conseil", "societe", "sarl", "sas", "eurl",
                "ecole", "college", "lycee", "centre", "office", "habitat", "agence", "groupe", "entreprise",
                "communaute", "metropole", "syndicat", "chantier", "projet", "travaux", "service", "direction",
                "batiment", "residence", "salle", "rue", "avenue", "place", "le", "la", "les", "nous", "notre"}
 
 
-def noms_probables(texte: str) -> list:
+# Prénoms courants (sans accents, en minuscules), français et bretons : par le lien d'un partenaire sans compte,
+# aucune équipe n'est connue ; un « Prénom Nom » dont le prénom est l'un d'eux est alors pris pour une personne
+# (`noms_probables(etendu=True)`), où qu'il soit écrit (« Jean-Marc Riou pilote nos chantiers »).
+_PRENOMS = set("""
+adele adrien agathe agnes aime alain alan alexandra alexandre alexis alice alain aline amandine amelie anais andre
+andree angelique anne annick annie anthony antoine antonin armel armelle arnaud arthur aude audrey aurelie aurelien
+axel aziliz baptiste barbara bastien beatrice benedicte benjamin benoit bernadette bernard bertrand blandine bleuenn
+brieuc brigitte bruno camille capucine carole caroline catherine cecile celine chantal charles charlotte chloe
+christian christelle christine christophe claire claude clement clemence colette coralie corentin cyril cyrille
+damien daniel danielle david delphine denis denise didier dominique dylan edith edouard elisa elisabeth elise
+elodie eloise emeline emile emilie emma emmanuel emmanuelle enora eric erwan erwann estelle etienne eugene eva
+evelyne fabien fabienne fabrice fanny florence florent florian francis franck francois francoise frederic
+frederique gael gaelle gaetan gaud gaid gabriel gabrielle genevieve georges gerard gilbert gilles gisele glenn
+goulven gregoire gregory guenael guenole guillaume gurvan guy gwen gwenael gwenaelle gwendal gwendoline gwenn
+gwenola gwenole helene henri herve hugo hugues ines irene isabelle jacqueline jacques jakez jean jeanne jeannine
+jeremie jeremy jerome joel joelle johan jonathan jordan joseph josette josiane julie julien juliette justine katell
+kevin klervi laetitia laura laurence laurent lea leo leon leonie lionel lise loic loig louis louise luc lucas
+lucie lucien ludovic madeleine mael maela maelle maeva maiwenn malo manon marc marcel marguerite maria marie
+marine marion martine mathieu mathilde mathis matthieu maud maurice maxime melanie melissa michel michele micheline
+mickael mikael monique morgan morgane muriel myriam nadine nathalie nathan nicolas nicole noel noemie nolwenn
+nolwen oceane odile olivier pascal pascale patrice patricia patrick paul paule pauline per perrine philippe pierre
+pierrick quentin rachel raphael raymond regis remi renan rene riwal robert roger romain ronan rozenn sabine
+sabrina samuel sandra sandrine sarah sebastien serge severine simon simone solene solenn sophie soizic stephane
+stephanie suzanne sylvain sylvie tanguy thibault thibaut thierry thomas tifenn tristan tudal tugdual valentin
+valerie vanessa veronique victor vincent virginie vivien xavier yann yannick yoann youenn yvan yves yvette yvon
+yvonne zoe
+""".split())
+# Un mot juste avant un « Prénom Nom » qui en fait le nom d'un LIEU ou d'un établissement (« école Jules Ferry »,
+# « rue Victor Hugo », « collège Jean Moulin ») : ce n'est pas une personne de l'entreprise.
+# (Liste propre : pas les mots d'organisme comme « est » ou « sa », qui précèdent aussi un nom de personne.)
+_AVANT_UN_LIEU = {"ecole", "college", "lycee", "groupe", "scolaire", "universite", "faculte", "iut", "campus", "creche",
+                  "ehpad", "foyer", "residence", "hopital", "clinique", "mairie", "eglise", "chapelle", "salle",
+                  "gymnase", "mediatheque", "bibliotheque", "piscine", "stade", "complexe", "centre", "espace",
+                  "maison", "pole", "halle", "halles", "musee", "theatre", "institut", "fondation", "caserne", "gare",
+                  "port", "parc", "jardin", "square", "zone", "quartier", "cite", "ilot", "lotissement", "pont", "rue",
+                  "avenue", "boulevard", "place", "quai", "chemin", "route", "allee", "impasse", "cours", "esplanade",
+                  "promenade", "saint", "sainte", "st", "ste"}
+_PRENOM_NOM_DEBUT = re.compile(_PRENOM_NOM + r"(?![\w])")
+_NOM_PUIS_PRENOM = re.compile(r"(?<![\w’'])([A-ZÀ-Ý]{2,}(?:[\s\-][A-ZÀ-Ý]{2,})?)\s+"
+                              r"([A-ZÀ-Ý][a-zà-öø-ÿ]+(?:-[A-ZÀ-Ý][a-zà-öø-ÿ]+)?)(?![\w])")
+
+
+_OUVERTURE_NOM: set = set()
+
+
+def _ouverture_nom() -> set:
+    """Mots d'ouverture d'une phrase (« Avec », « Pour », « Contact »…), jamais le début d'un nom de personne."""
+    if not _OUVERTURE_NOM:
+        from app.services.faits_a_relire import _OUVERTURE
+        _OUVERTURE_NOM.update(set(_OUVERTURE) | {"contact", "interlocuteur", "interlocutrice", "fondee", "fonde",
+                                                 "creee", "cree", "merci", "bonjour", "madame", "monsieur"})
+    return _OUVERTURE_NOM
+
+
+def _prenom(mot: str) -> bool:
+    return _fold(re.split(r"[\-’']", mot or "")[0]) in _PRENOMS
+
+
+def _noms_par_prenom(t: str) -> list:
+    """« Prénom Nom » (« Pierre Martin », « Jean-Marc Riou », « Yann TANGUY ») et « NOM Prénom » (« TANGUY Yann »),
+    quand le prénom est un prénom courant ; jamais derrière un mot de lieu ou d'établissement."""
+    out = []
+    # Chaque mot à majuscule qui est un prénom courant ouvre un « Prénom Nom » possible (même au milieu d'une suite de
+    # mots à majuscule : « Contact Sophie Bernard »).
+    # Un article ou une préposition élidés peuvent le précéder (« l'aide d'Anne Le Floch »).
+    for w in re.finditer(r"(?<![\w’'\-])(?:[dDlL]['’])?([A-ZÀ-Ý][a-zà-öø-ÿ]+(?:-[A-ZÀ-Ý][a-zà-öø-ÿ]+)?)", t):
+        if not _prenom(w.group(1)):
+            continue
+        m = _PRENOM_NOM_DEBUT.match(t, w.start(1))
+        if m is None:
+            continue
+        # Le mot juste avant, sans son article élidé (« l'école Jules Ferry », « l'espace Pierre Loti »).
+        avant = re.findall(r"[\w\-]+", t[max(0, w.start() - 40):w.start()])
+        if avant and _fold(avant[-1]) in _AVANT_UN_LIEU:
+            continue
+        out.append(m.group(0))
+    for m in _NOM_PUIS_PRENOM.finditer(t):
+        if _prenom(m.group(2)) and len(m.group(1)) >= 3:
+            out.append(m.group(1) + " " + m.group(2))
+    return out
+
+
+def noms_probables(texte: str, etendu: bool = False) -> list:
     """Noms de personnes écrits dans le document, sans IA : après une civilité (« M. Kerjean »,
-    « Mme Anne Le Floch »), accolés à une fonction (« Yann Tanguy, conducteur de travaux »,
-    « Chef de chantier : Paul Durand »), ou après « sous la conduite de », « dirigé par »… Ils sont
-    masqués comme ceux de l'équipe (pii_scope)."""
+    « Mme Anne Le Floch »), accolés à une fonction (« Yann Tanguy, conducteur de travaux », « Pierre Martin,
+    notre gérant », « Chef de chantier : Paul Durand », « Notre gérant Pierre Martin »), ou après « sous la
+    conduite de », « dirigé par », « assuré par », « fondée en 2009 par »… (une suite « X et Y » comprise).
+    `etendu` (aucune équipe connue : le lien d'un partenaire sans compte) : en plus, tout « Prénom Nom » dont le
+    prénom est courant (`_PRENOMS`). Ils sont masqués comme ceux de l'équipe (pii_scope). Un repérage sans IA ne
+    trouve pas tout : un nom écrit autrement peut lui échapper."""
     t = str(texte or "")
     vus, out = set(), []
 
     def _ajoute(n):
         n = re.sub(r"\s+", " ", n).strip(" ,;:-–—'’")
+        # Un mot d'ouverture pris avec le nom en début de phrase (« Avec Thomas Le Bihan, responsable… ») n'en fait
+        # pas partie : sinon « Avec » serait masqué partout.
+        ws = n.split(" ")
+        while len(ws) > 2 and _fold(ws[0]) in _ouverture_nom():
+            ws = ws[1:]
+        n = " ".join(ws)
         mots = [w for w in re.split(r"[\s\-’']+", _fold(n)) if w]
         if not mots or any(w in _PAS_UN_NOM for w in mots[:1]) or len(n) < 3 or len(n) > 80:
             return
@@ -615,9 +881,16 @@ def noms_probables(texte: str) -> list:
 
     for m in _CIVILITE.finditer(t):
         _ajoute(m.group(1))
-    for rx in (_NOM_PUIS_FONCTION, _FONCTION_PUIS_NOM, _PAR_NOM, _NOM_PUIS_ANS):
+    for rx in (_NOM_PUIS_FONCTION, _FONCTION_PUIS_NOM, _FONCTION_ESPACE_NOM, _PAR_NOM, _NOM_PUIS_ANS):
         for m in rx.finditer(t):
             _ajoute(m.group(1))
+    for m in _PAR_NOMS.finditer(t):
+        for n in re.split(r"\s*(?:,|\bet\b|&)\s*", m.group(1)):
+            if n.strip():
+                _ajoute(n)
+    if etendu:
+        for n in _noms_par_prenom(t):
+            _ajoute(n)
     # Une case de tableau qui n'est qu'un nom (« | Jean-Yves Le Goff | Chef de chantier | 15 ans | »).
     for ligne in t.split("\n"):
         if ligne.strip().startswith("|"):
@@ -633,15 +906,16 @@ def noms_probables(texte: str) -> list:
     return out[:300]
 
 
-def equipe_avec_noms_reperes(equipe: list, textes, exclure=()) -> list:
+def equipe_avec_noms_reperes(equipe: list, textes, exclure=(), etendu: bool = False) -> list:
     """L'équipe connue + les noms de personnes repérés dans ces textes (sans IA), pour le pseudonymiseur
     d'un appel : un nom écrit dans un ancien mémoire, une fiche ou un extrait part masqué, comme ceux
     de l'équipe (doctrine § 7, règle 9). `exclure` : les noms qui ne sont jamais des personnes (le nom
-    de l'entreprise et de ses partenaires : c'est le sujet du texte)."""
+    de l'entreprise et de ses partenaires : c'est le sujet du texte). `etendu` : repérage élargi aux prénoms
+    courants (aucune équipe connue, voir `noms_probables`)."""
     out = [m for m in (equipe or []) if isinstance(m, dict)]
     connus = {_fold(m.get("nom")) for m in out}
     jamais = [_fold(x) for x in (exclure or ()) if x and len(_fold(x)) >= 3]
-    for n in noms_probables("\n\n".join(str(x or "") for x in (textes or []) if x)):
+    for n in noms_probables("\n\n".join(str(x or "") for x in (textes or []) if x), etendu=etendu):
         fn = _fold(n)
         if any(fn == j or fn in j or j in fn for j in jamais):
             continue

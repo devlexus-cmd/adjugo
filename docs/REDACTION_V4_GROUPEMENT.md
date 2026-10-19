@@ -28,7 +28,7 @@ Vocabulaire à l'écran : « groupement », « partenaire », « chef de file »
 | D2 | Blocage, dérogation explicite journalisée | Étendu aux parts envoyées : leurs « [À compléter] », leurs faits à relire et les limites bloquent l'export du chef de file comme les siens (§ 8). |
 | D3 (a) | Le partenaire lit le dossier assemblé complet, en lecture | `GET …/redaction/dossier`. Avant d'envoyer : « Ce texte sera lu par le chef de file et par les autres membres du groupement. » (exigé par l'API : `avertissement_lu`). La matière reste privée. |
 | D4 (a) | Quota du chef de file, plafond par partie, facturation technique séparée | `facturer_aide_partenaire` (§ 6). Portée `inv:<id>`. Message neutre. Le chef de file n'accède jamais au résultat ni aux sources. |
-| D5 | Pas de dépôt de documents par lien magique | Sans compte : « J'écris moi-même », ou aide de l'IA à partir du dossier de l'acheteur et de sa part déclarée. Avec un compte : ses preuves et son savoir-faire, avec SES droits. Emplacement prévu : `fiches_depot_par_lien` (vide). |
+| D5 | **Option (a), validée par Eliot (19/10) : dépôt de documents PRIVÉS par lien magique** (§ 21) | Sans compte : « J'écris moi-même », ou aide de l'IA à partir du dossier de l'acheteur, de sa part déclarée et des documents qu'il dépose dans « Vos documents pour Adjugo » (rattachés à SON invitation, jamais vus du chef de file). Avec un compte : ses preuves et son savoir-faire, avec SES droits (inchangé). `fiches_depot_par_lien` est rempli (§ 21.6). |
 | D6 (a) | 1 analyse par dossier, refontes gratuites jusqu'à `ATELIER_REGEN_GRATUITES` | Les parties des partenaires y comptent ; plus un plafond par partie (`ATELIER_PARTENAIRE_AIDES_PAR_PARTIE`, défaut 3). |
 | — | « Questions chantier » (D) | V5, non construites. |
 
@@ -125,6 +125,7 @@ est `empreinte_dossier(db, dossier)` : ordre, intitulé, auteur et empreinte du 
 | | Chef de file (son organisation) | Le partenaire auteur | Les autres membres |
 |---|---|---|---|
 | Brouillons du partenaire (texte, sources, extraits, faits avec source) | jamais | oui (lien + clé, ou compte) | jamais |
+| Documents déposés par son lien (§ 21) : fichiers, noms, passages | jamais (403 par le lien sans clé, 404 par un compte) | oui (lien + clé ; par le compte qui a rattaché le lien : télécharger, supprimer) | jamais (404) |
 | Texte envoyé (version commune) | oui | oui | oui (dossier assemblé) |
 | Compteurs de sources par type, nombre de faits à relire | oui | oui | oui |
 | Brouillons du chef de file | oui | jamais | jamais |
@@ -136,13 +137,15 @@ est `empreinte_dossier(db, dossier)` : ordre, intitulé, auteur et empreinte du 
 Règles fermes appliquées :
 - **Un fait ne vient jamais de l'IA.** L'aide de l'IA du partenaire reçoit SES faits seulement
   (`ContextePartenaire`) : sans compte, sa part déclarée (« déclaré par vous » : lot, qualifications,
-  références, capacités, présentation) ; avec le compte qui a rattaché le lien, en plus ses preuves `[F#]`,
+  références, capacités, présentation) et des passages des documents PRIVÉS qu'il a déposés par son lien `[S#]`
+  (« trouvé dans vos documents », § 21) ; avec le compte qui a rattaché le lien, en plus ses preuves `[F#]`,
   son profil, son équipe (noms masqués) et des extraits de SON savoir-faire `[S#]`, lus avec les comptes
   de SON organisation. Le dossier de l'acheteur est « exigé par l'acheteur » (jamais une preuve sur
   l'entreprise), seulement si son lien autorise les pièces (`can_view_docs`).
 - **Aucune lecture croisée** : `rag.retrieve_multi` n'est appelé qu'avec les comptes de l'organisation du
   partenaire ; un compte qui appartient (ou appartiendrait plus tard) à l'organisation du chef de file
-  n'apporte rien et n'est jamais « le partenaire » (404).
+  n'apporte rien et n'est jamais « le partenaire » (404). Par le lien, ses documents déposés sont cherchés par
+  `depot_lien.rechercher` dans SES passages seulement (jamais `retrieve_multi`).
 - **Le contrôle des faits (A) tourne chez le partenaire**, sur SES faits (`fs.controler` avec ses
   fiches) ; ce qui part au chef de file : les faits à relire sans leur source (`faits_communs`) et
   `compteurs` = `{par_type: {documents, declare, public, estimation, calcul, acheteur}, avec_source,
@@ -322,7 +325,8 @@ d'une partie du chef de file n'y est que VALIDÉ ; celui d'un partenaire, que EN
 | `POST /sections/{sid}/valider` | `{version_id}` | valide le texte commun courant (le sien, ou celui du chef de file : contrôle de SES faits d'abord, brouillon `acceptee`) | 409 `texte_modifie_entre_temps` ; 403 `identity_unverified` |
 | `POST /sections/{sid}/retablir` | `{base_version_id, version_id?}` | son texte d'avant redevient le texte commun | 409 `rien_a_retablir`, `texte_modifie_entre_temps` ; 404 `version_introuvable` |
 | `POST /dossier/valider` | `{empreinte?}` | valide le dossier assemblé lu (après SES parties) | 409 `parties_a_valider`, `dossier_modifie` |
-| `GET /export` | — | portabilité : ses brouillons et ses textes envoyés (JSON) | 403 `cle_espace_requise` |
+| `GET /export` | — | portabilité : ses brouillons, ses textes envoyés et `documents_deposes` (liste et accord) (JSON) | 403 `cle_espace_requise` |
+| `GET /documents`, `POST /documents` (lien), `GET /documents/{did}/fichier`, `DELETE /documents/{did}` | — | « Vos documents pour Adjugo » : § 21.3 | § 21.3 |
 
 Identité : envoyer, valider, rétablir et lancer l'aide de l'IA exigent l'adresse prouvée par code quand le lien
 vise une adresse (`identity_unverified`, mêmes règles que l'envoi de la part), ou le compte vérifié qui a rattaché
@@ -432,7 +436,9 @@ son texte validé. Conséquences, sans autre changement :
 | `statut_de`, `mention`, `textes_communs`, `empreinte_dossier`, `faits_communs`, `compteurs` | lecture pure |
 | `valider_dossier`, `perimer_validations`, `apres_changement_commun`, `rafraichir_validations`, `pret` | validation |
 | `retirer_invitation`, `effacer_dossiers`, `effacer_compte`, `exporter_chef`, `exporter_partenaire`, `exporter_invitation`, `purger` | RGPD |
-| `fiches_depot_par_lien(db, inv)` | EMPLACEMENT de l'option (a) de D5 (aujourd'hui : rien) |
+| `fiches_depot_par_lien(db, inv, chunks)` | option (a) de D5 (§ 21.6) : fiches [S#] « trouvé dans vos documents » des passages de SES documents déposés |
+| `oublier_document(db, invite_id, depot_id)` | un document déposé supprimé : ses brouillons oublient les passages cités (§ 21.8) |
+| `depot_lien.*` (`vue`, `deposer`, `fichier`, `supprimer`, `rechercher`, `extraits_cites`, `fiches`, `sources_reelles`, `effacer_invitation`, `effacer_projets`, `cles_projets`, `exporter`, `purger`, `conditions`, `textes_juridiques`, `limites`) | documents privés déposés par le lien (§ 21) |
 | `note_acheteur(project, section)`, `resume_partenaire(db, inv)`, `brouillon_du_partenaire(db, acces, sid, bid)` | chantier du partenaire (§ 15) |
 
 À respecter par les chantiers :
@@ -470,6 +476,12 @@ son texte validé. Conséquences, sans autre changement :
 | Export RGPD du chef de file | jamais | dans `dossiers_de_presentation` | `dossiers_de_groupement` (répartition, validations) |
 | Export RGPD d'un partenaire (compte) | `parts_redigees_pour_des_groupements` (liens rattachés) | idem | — |
 | Portabilité par le lien | `GET …/redaction/export` (clé requise) | idem | — |
+
+Documents déposés par le lien (§ 21) : effacés au retrait ou au déclin de l'invitation, à la réinitialisation de son
+espace (sans être lus), avec le marché (compte du chef de file effacé, corbeille), par la purge quotidienne (6 mois
+après le résultat du marché, à défaut sa date limite, à défaut le dernier dépôt ; lien expiré depuis 30 jours), ou par
+lui ; jamais dans l'export RGPD du chef de file ; dans `documents_deposes` de sa portabilité (liste et accord) et de
+l'export RGPD de son compte (liens rattachés). Tableau complet : § 21.8.
 
 Transfert de propriété de l'organisation, effacement d'un membre, réaffectation d'un dossier : les trois
 tables suivent `owner_id` comme l'atelier. Purge quotidienne : `POST /api/admin/run-trash-purge`
@@ -537,6 +549,7 @@ en cours au redémarrage est close par l'ancien code mais son débit n'est pas r
   email (si le lien vise une adresse), sinon par réinitialisation.
 - Le contrôle des faits dit où un fait est écrit, pas qu'il est vrai ; une phrase générale passe.
 - Pré-remplissage : simple rapprochement de mots du lot et de la partie ; le chef de file reste maître.
+- Documents déposés par le lien : limites propres à cette fonction au § 21.11.
 
 ## 14. Tests
 
@@ -549,6 +562,7 @@ raccourcir et reprise au redémarrage ; message neutre (essai terminé) ; modifi
 revalidation, rétablissement ; partenaire absent ; validation du dossier assemblé et péremption ;
 **isolation entre deux groupements** ; **invitation retirée, déclinée, expirée** ; export bloqué par la part
 envoyée ; RGPD (exports, effacement des comptes) ; purge ; demande des parts et relance ; démo ; migration.
+Documents déposés par le lien (§ 21) : `tests/test_redaction_v4_depot_lien.py`.
 
 ---
 
@@ -1030,3 +1044,441 @@ revalider » par son auteur.
   `test_hotfix_v2_fuites.py::test_fourche_historique_toleree_alteration_detectee` (déjà connu, propre à SQLite) et
   `test_reseau_partenaires.py::test_cron_borne_et_jamais_de_depublication_sur_erreur` (dépend de l'ordre quand toute la
   liste partage une base Postgres ; le fichier seul passe en entier, 24 tests sur 24).
+
+
+## 21. Documents privés déposés par le lien (décision 5, option a — validée par Eliot)
+
+Un partenaire venu par **lien magique, sans compte**, dépose ses propres documents (anciens mémoires, plaquette,
+références, attestations…) pour que l'aide d'Adjugo rédige SES parties à partir d'eux. Code : `app/services/depot_lien.py`
+(seul point d'écriture de ces tables), branché dans `atelier_groupement` (`ContextePartenaire`, `fiches_depot_par_lien`,
+`oublier_document`, retrait, réinitialisation, effacement, export) ; routes : `app/routers/atelier_groupement.py` ; écran :
+`app/static/redaction-partenaire.js` (« Vos documents pour Adjugo », styles `.rp-docs`) ; migration
+`alembic/versions/y9z0depotlien_documents_par_lien.py` ; tests : `tests/test_redaction_v4_depot_lien.py` ; mention
+juridique à faire valider : `docs/A_VALIDER_depot_documents_par_lien.md` (les pages juridiques ne sont pas modifiées).
+
+### 21.1 Modèle (migration `y9z0depotlien`, aucune clé étrangère : effacement explicite et ordonné)
+
+| table | une ligne par | colonnes |
+|---|---|---|
+| `depots_lien_espaces` (`DepotLienEspace`) | invitation (`invite_id` UNIQUE) | `consentement` `{cgu: {version, mise_a_jour, empreinte, adresse}, confidentialite: {…}, accepte_le}`, `accepte_le`, `resultat_le` (résultat du marché constaté par la purge), `project_id`, `owner_id` |
+| `depots_lien_documents` (`DepotLienDocument`) | document déposé | `invite_id`, `project_id`, `owner_id`, `nom`, `file_key`, `taille`, `type_mime`, `empreinte` (sha256 du fichier), `caracteres`, `lecture` (`texte` · `scan`), `complet`, `morceaux`, `lignes_cv_retirees` |
+| `depots_lien_morceaux` (`DepotLienMorceau`) | passage cherchable | `document_id`, `invite_id`, `ordinal`, `texte` |
+
+- Rattachés à **l'invitation**, jamais à l'organisation du chef de file. `owner_id` (tenant du marché) ne sert qu'à faire
+  partir les lignes avec le marché (et suit l'organisation : membre effacé, transfert de propriété) ; il ne donne aucun
+  droit de lecture.
+- Fichier : `invitations/<invite_id>/depots/<uuid><ext>` (jamais sous le préfixe du chef de file), type servi tiré de
+  l'extension (`app.core.mime`), téléchargé en pièce jointe, `nosniff`, `no-store`, par l'API (jamais une adresse signée :
+  la clé de l'espace ne voyage que dans l'en-tête).
+- Le texte lu n'est pas gardé en entier : seulement ses passages, CV retirés (minimisation).
+
+### 21.2 Qui voit quoi
+
+| | Le partenaire (lien + clé) | Le compte qui a rattaché le lien | Le chef de file et son organisation | Les autres membres | Démo |
+|---|---|---|---|---|---|
+| Liste, fichiers, noms, passages | oui | télécharger, supprimer (plus utilisés) | jamais : 403 `cle_espace_requise` par le lien sans clé, 404 par un compte | jamais : 404 `document_introuvable` | rien à déposer (403 `demo`) |
+| Faits « trouvés dans vos documents » avec le passage exact | oui (son brouillon) | oui (ses brouillons écrits par le lien) | compteurs par type seulement (`par_type.documents`) | compteurs, dans le dossier assemblé | — |
+| Journal | ses actions, sans nom de document | idem | les mêmes entrées : qu'un document a été déposé ou supprimé, que les conditions ont été acceptées (heure, adresse IP) — jamais le nom, le rang, la taille ni le contenu d'un document (§ 21.14) | — | — |
+
+Jamais dans : l'atelier, « Qui écrit quoi », le dossier assemblé, l'export Word/PDF, « Mes documents », le coffre croisé,
+l'aperçu et l'export ZIP du dossier, l'export RGPD du chef de file, le journal (le journal du lien se lit avec le lien
+seul : aucune entrée ne porte un nom de document).
+
+### 21.3 Routes
+
+Lien : `/api/invite/{token}/redaction/documents…` (clé `X-Adjugo-Espace` exigée) ; compte : `/api/shared/{pid}/redaction/
+documents…` (lecture, téléchargement, suppression ; aucun dépôt : 405). Erreurs : `detail = {code, message, …}`.
+
+| route | effet | erreurs |
+|---|---|---|
+| `GET /documents` | `{documents: [{id, nom, taille, depose_le, lecture, lecture_libelle, complet, caracteres, passages, passages_cv_retires}], utilises, peut_deposer, qui_voit, usage, conservation, message, conditions: {a_accepter, acceptees_le, textes: [{cle, titre, adresse, version, mise_a_jour, empreinte}], message} \| null, limites}` | 403 `cle_espace_requise` |
+| `POST /documents` (lien) multipart `file`, `accepte_cgu`, `accepte_confidentialite` | 201 : la même vue + `depose` | 409 `conditions_a_accepter` (`conditions`), 403 `identity_unverified`, `depot_par_le_compte`, `co_construction_fermee`, `demo` ; 422 `type_refuse`, `fichier_vide`, `fichier_invalide` (signature), `document_illisible`, `document_cv`, `piece_acheteur` ; 413 `fichier_trop_lourd` ; 409 `trop_de_documents`, `espace_plein`, `document_deja_depose` ; 429 `trop_de_depots` ; 503 `stockage_indisponible` |
+| `GET /documents/{did}/fichier` | le fichier tel qu'il a été déposé | 404 `document_introuvable`, 410 `fichier_absent` |
+| `DELETE /documents/{did}` | supprimé (toujours possible, même co-construction fermée) ; vue rendue | 404, 403 `demo` |
+
+`GET …/redaction` porte `documents: {nombre, utilises, possible}` (null sans la clé). `message_mode` (lien) dit que
+l'aide s'appuie aussi sur « Vos documents pour Adjugo ».
+
+### 21.4 Accord au premier dépôt
+
+- Les deux textes EXISTANTS : `/cgv` (« Conditions générales de vente et d'utilisation ») et `/confidentialite`. Leur
+  version et leur date sont lues dans la page publiée (« Version : 1.2 — Dernière mise à jour : … »), avec l'empreinte
+  du fichier (16 caractères du sha256) : `depot_lien.textes_juridiques`.
+- Premier dépôt sans les deux cases : 409 `conditions_a_accepter`, rien n'est gardé. Avec : `consentement` horodaté
+  (versions, dates, empreintes, adresses) et entrée chaînée `redaction.documents_conditions` (« … version 1.2 … version
+  1.3 … »). Une nouvelle version de l'un des textes redemande l'accord avant le dépôt suivant
+  (`MSG_CONDITIONS_NOUVELLES`).
+- Accepter et déposer engagent la personne : même exigence d'identité qu'envoyer (`identity_unverified` quand le lien
+  vise une adresse pas encore prouvée). Celui qui a seulement réinitialisé l'espace ne dépose rien au nom du partenaire.
+- Réinitialiser l'espace efface l'accord avec les documents : le nouvel espace redonne son accord.
+
+### 21.5 Lecture sans IA ; jamais un CV ; jamais une pièce de l'acheteur
+
+- Couche texte des PDF, Word (.docx), OpenDocument (.odt), texte (.txt), avec les plafonds d'Adjugo (temps, pages,
+  archives bornées : `app.services.analysis`). Un PDF scanné est lu par la reconnaissance de caractères **locale**
+  (tesseract, comme les dossiers d'acheteurs), sur ses `DEPOT_LIEN_PAGES_SCAN` premières pages. **Aucune lecture n'appelle
+  l'IA** : rien à décompter (si une lecture par l'IA était un jour ajoutée, elle passerait par `facturer_aide_partenaire`,
+  la seule fonction de facturation, avec le remboursement en cas d'échec).
+- Un document qui ressemble à un CV (nom, titre, contenu : `fiches_import.est_cv`) **n'est pas gardé** (422
+  `document_cv`) : Adjugo ne l'enverrait jamais à l'IA. Dans un autre document, les lignes de CV (`lignes_privees`) sont
+  vidées AVANT le découpage, et tout passage qui ressemble encore à un CV est écarté (au découpage puis à la recherche).
+  Un CV écrit sans le mot « CV » est reconnu à sa forme (`_cv_sans_titre`, § 21.14) : un nom seul sur sa ligne, puis des
+  rubriques de CV écrites seules sur leur ligne (« EXPÉRIENCE », « FORMATION », « COMPÉTENCES », « Parcours »,
+  « Atouts »…), proches les unes des autres. Une plaquette écrite avec « nous », « notre », « nos » n'en est jamais un,
+  même sous un nom qui commence par un prénom ou suivi de son métier (§ 21.15).
+- Une pièce du dossier d'un acheteur (règlement, CCAP, CCTP : `est_piece_acheteur`) n'est pas gardée (422
+  `piece_acheteur`) : elle ne dit rien de l'entreprise.
+
+### 21.6 L'aide de l'IA de SES parties
+
+- `ContextePartenaire.depots` (`depot_lien.utilises`) : vrai par le lien tant qu'il n'est pas rattaché à un compte. Alors
+  `extraits()` = `depot_lien.rechercher` : BM25 sans IA sur SES passages seulement, avec le filtre de pertinence du
+  savoir-faire ; jamais `rag.retrieve_multi`, jamais un passage d'un autre membre ni du chef de file.
+- Ce que l'IA lit d'un document : le passage, sous un libellé neutre (« Votre document 2 ») — le nom réel, qui peut nommer
+  une personne, ne part jamais ; les noms des personnes repérés dans les passages sont masqués (`pii_scope`, déjà posé par
+  `_executer`). Par le lien, aucune équipe n'est connue : le repérage est ÉLARGI (`noms_probables(etendu=True)`) à tout
+  « Prénom Nom » dont le prénom est courant (`fiches_import._PRENOMS`, français et bretons), jamais derrière un mot de
+  lieu ou d'établissement (« école Jules Ferry », « rue Victor Hugo ») ; pour tous les parcours, une fonction suivie du
+  nom sans ponctuation (« Notre gérant Pierre Martin »), « X, notre gérant », « assuré / réalisé / fondée (en 2009) /
+  créée par X et Y ». Un repérage sans IA ne trouve pas tout : l'écran le dit (« il masque les noms de personnes qu'il
+  repère … retirez de vos documents les noms que vous ne voulez pas transmettre »).
+- `fiches_depot_par_lien(db, inv, chunks)` → `FicheDepot` `[S#]` : `documents` / « trouvé dans vos documents », passage
+  exact autour du fait ; la source garde `doc_nom`, `extrait`, `depot_id`, `depot_chunk_id` (privés). `sources_reelles`
+  remet le nom réel et le passage dans les extraits cités du brouillon ; `fiches_de_brouillon` relit les passages cités
+  (sources et faits) pour contrôler de nouveau un brouillon (« J'écris moi-même », valider un texte du chef de file).
+- Le chef de file reçoit, avec le texte envoyé, les compteurs par type (`documents`), jamais une source.
+- Coût : la rédaction reste facturée par `facturer_aide_partenaire` (quota du chef de file, portée `inv:<id>`, plafond par
+  partie, remboursée si l'IA tombe) ; le dépôt et la lecture ne coûtent rien.
+- Lien rattaché à un compte : son compte utilise ses propres documents et preuves (inchangé) ; ce qu'il avait déposé par
+  le lien n'est plus utilisé (`utilises: false`, `MSG_COMPTE`), il peut le télécharger ou le supprimer depuis son compte.
+
+### 21.7 Limites réglables (variables d'environnement, défauts)
+
+| variable | défaut | sens |
+|---|---|---|
+| `DEPOT_LIEN_FICHIERS` | 10 | documents gardés par invitation |
+| `DEPOT_LIEN_MO` | 10 | taille d'un fichier (lecture bornée : jamais plus que la limite + 1 octet en mémoire) |
+| `DEPOT_LIEN_MO_TOTAL` | 50 | total des fichiers gardés par invitation |
+| `DEPOT_LIEN_PAR_JOUR` | 30 | dépôts sur 24 h glissantes, supprimés compris (anti-abus ; plus 30/heure par adresse IP sur la route) |
+| `DEPOT_LIEN_TYPES` | `.pdf,.docx,.odt,.txt` | types acceptés : on peut en retirer, jamais en ajouter un qu'Adjugo ne lit pas sans IA |
+| `DEPOT_LIEN_PAGES_SCAN` | 10 | pages d'un scan lues (reconnaissance locale) |
+| `DEPOT_LIEN_CARACTERES` | 200 000 | texte lu par document |
+| `DEPOT_LIEN_CONSERVATION_MOIS` | 6 | conservation après le résultat du marché (ou les replis, § 21.8) |
+
+Contrôles du fichier : extension en liste blanche, signature (`%PDF-`, archive `PK` pour .docx/.odt, aucun octet nul
+pour .txt), archives bornées avant lecture, doublon refusé (empreinte), limites relues sous verrou de l'invitation avant
+l'écriture. Il n'y a pas d'antivirus dans Adjugo aujourd'hui (aucun contrôle de ce type à réutiliser) : le fichier n'est
+jamais exécuté, jamais servi en ligne, seulement rendu à son déposant en pièce jointe.
+
+### 21.8 Suppression et conservation
+
+| événement | effet |
+|---|---|
+| Le partenaire supprime un document | fichier, passages et ligne ; dans ses brouillons, les extraits cités de ce document sont retirés et leurs faits redeviennent « à relire » (`oublier_document`) ; le texte envoyé ne change pas ; journal `redaction.document_supprime` |
+| Invitation retirée par le chef de file, ou déclinée | tout est effacé (`retirer_invitation`), journal `redaction.documents_effaces` |
+| Réinitialisation de son espace | tout est effacé SANS être lu, accord compris ; `documents_effaces` dans la réponse, compté dans le journal ; l'écran et les messages le disent avant (« vos brouillons non envoyés et vos documents déposés pour Adjugo seront effacés ») |
+| Dans TOUS ces cas et à la purge | `effacer_invitation` retire aussi des brouillons ce qu'ils ont recopié de ces documents (`oublier_documents` : nom du document et passage des sources ; faits reliés « à relire ») : rien ne survit au document |
+| Purge quotidienne (`POST /api/admin/run-trash-purge`, `depot_lien.purger`) | **6 mois après le RÉSULTAT du marché** (gagné, perdu, abandonné : date constatée par la purge, celle de la dernière modification du marché, `resultat_le`) ; un résultat retiré remet le compteur à zéro ; à défaut, 6 mois après la date limite ; à défaut, 6 mois après le dernier dépôt ; lien expiré depuis 30 jours ; invitation retirée ou déclinée (filet) ; marché disparu. Journal `redaction.documents_effaces` (« … automatiquement : 6 mois après le résultat du marché ») |
+| Compte du chef de file effacé, corbeille des marchés purgée | lignes et fichiers partent avec le marché (`effacer_dossiers` → `effacer_projets`, clés relevées par `cles_projets` avant) |
+| Compte du partenaire effacé | ce qu'il a déposé par le lien reste à l'invitation (comme ses brouillons écrits par le lien), purgé par les règles ci-dessus |
+| Export RGPD du chef de file | jamais |
+| Portabilité (lien ou compte) et export RGPD de son compte | `documents_deposes` : la liste (nom, taille, date, lecture) et l'accord ; chaque fichier se télécharge par `GET /documents/{did}/fichier` |
+
+Journal du membre (`journal_membre`, entrées propres à l'invitation, hors `GROUP_EVENTS` : la version
+« adjugo-journal-membre-v1 » ne change pas) : « Vous avez accepté les conditions d'utilisation et la politique de
+confidentialité pour déposer vos documents », « Vous avez déposé un document dans votre espace privé », « Vous avez
+supprimé un document de votre espace privé », « Vos documents déposés pour Adjugo ont été effacés » (avec la raison).
+
+### 21.9 Démo
+
+Le lien partenaire de la démo est refusé dans la route AVANT tout (`_par_lien(…, ecrire=True)`, 403 `demo`) pour déposer
+et supprimer ; le service le refuse aussi (`_invite_is_demo`). Garde central : `POST /api/invite/{token}/redaction/documents`,
+`DELETE /api/invite/{token}/redaction/documents/{did}` et `DELETE /api/shared/{pid}/redaction/documents/{did}` (une session
+démo), plus `refuser_demo` dans la route du compte. `tests/test_demo_sans_cout.py` : le dépôt dans `COUTS` (fichier, lien
+de la démo, refusé, aucun fichier rangé), les deux suppressions dans `SANS_COUT`.
+
+### 21.10 Écran « Vos documents pour Adjugo »
+
+Dans la carte « Mes parties du dossier de présentation », sous l'espace privé, seulement avec la clé valide (par le compte :
+seulement s'il reste des documents déposés par le lien). Titre et bulle (i) : « Seuls vous et Adjugo les lisez ; le chef de
+file ne les voit jamais. », ce que reçoit le chef de file (le nombre de faits « trouvés dans vos documents »), lecture sans
+IA, passage exact, noms de personnes repérés masqués et ce qui ressemble à un CV écarté (avec le conseil de retirer les noms
+à ne pas transmettre), durée de conservation (texte du serveur, date d'expiration du lien comprise). Liste : nom (échappé), taille,
+date, « Lu sans IA (texte du document) » ou « (document scanné, reconnaissance de caractères) », « Lu en partie »,
+« passages en forme de CV retirés » ; « Télécharger » (fichier reçu avec la clé en en-tête, jamais une adresse) et
+« Supprimer » (confirmation : passages cités retirés des brouillons, faits « à relire », textes envoyés inchangés). Dépôt :
+au premier, deux cases « J'accepte les conditions d'utilisation (version 1.2) » et « J'accepte la politique de
+confidentialité (version 1.3) », liens vers `/cgv` et `/confidentialite` (nouvel onglet) ; sélecteur de fichier limité aux
+types du serveur ; limites dites en clair ; code par email si l'invitation vise une adresse (même parcours que l'envoi).
+« Télécharger mes textes » dit que l'export contient aussi la liste des documents et l'accord. 375 px : une colonne, boutons
+pleine largeur (règles `.rp-acts` existantes).
+
+### 21.11 Limites connues (dites honnêtement)
+
+- Lien sans adresse : celui qui ouvre l'espace le premier est « le partenaire » (§ 13) ; il peut déposer et accepter les
+  conditions. Le vrai partenaire qui réinitialise l'espace efface tout sans le lire ; c'est inscrit au journal.
+- La date du résultat n'est pas enregistrée par Adjugo au moment où le statut change : la purge la constate (première
+  fois qu'elle voit le marché gagné, perdu ou abandonné) en prenant la date de la dernière modification du marché, au plus
+  tard le jour où elle passe. Une modification du marché faite entre le résultat et ce passage décale un peu le départ des
+  6 mois (vers plus tard, jamais plus tôt).
+- Les liens d'invitation expirent par défaut après 30 jours : les documents partent alors 30 jours après l'expiration,
+  souvent avant les 6 mois après le résultat (le partenaire n'y a plus accès de toute façon). L'écran le dit, avec la
+  date d'expiration du lien (`depot_lien.conservation`).
+- Le repérage des noms et des CV est sans IA : un nom écrit d'une façon inhabituelle (prénom rare, initiale) ou un CV
+  sans nom en tête ni rubriques écrites seules sur leur ligne peut lui échapper (un prénom rare sous lequel ne viennent
+  que deux rubriques, sans coordonnées ni ligne de parcours, aussi). L'écran ne promet pas plus (§ 21.6).
+- Reconnaissance de caractères locale : un scan de mauvaise qualité peut être mal lu, ou refusé (« aucun texte lisible ») ;
+  seules les premières pages d'un long scan sont lues (« Lu en partie »).
+- Le repérage d'un CV ou d'une pièce de l'acheteur est celui de la vague 3 (sans IA) : un mémoire fait surtout de CV peut
+  être refusé ; il se redépose sans ses CV.
+- Supprimer un document ne change pas les textes déjà envoyés : leurs compteurs disent ce qui était vrai à l'envoi.
+- Après un retour arrière de la migration, les fichiers restent dans le stockage sans plus aucun accès (à supprimer à la
+  main sous `invitations/*/depots/` si le retour arrière est définitif).
+- Les noms des fichiers sont gardés (le partenaire les voit) ; ils ne sont jamais montrés au chef de file ni à l'IA.
+
+### 21.12 À dire à Eliot (choix faits par défaut)
+
+1. **Un CV n'est pas gardé** (refusé au dépôt) plutôt que gardé sans être envoyé : il ne servirait à rien ici, et c'est
+   une donnée d'un salarié (minimisation). Une pièce du dossier de l'acheteur n'est pas gardée non plus.
+2. **Limites** : 10 documents, 10 Mo chacun, 50 Mo au total, 30 dépôts par jour, PDF / Word / OpenDocument / texte, scans
+   lus sur 10 pages — toutes réglables sans code.
+3. **Troisième repli de conservation** : ni résultat ni date limite → 6 mois après le dernier dépôt (sinon la durée
+   n'aurait aucune borne).
+4. **Lien rattaché à un compte** : les documents déposés par le lien ne servent plus (le compte utilise son savoir-faire,
+   inchangé) ; il peut les télécharger et les supprimer depuis son compte ; ils partent avec les règles ci-dessus.
+5. **Accord redemandé** dès qu'une version de l'un des deux textes change ; **code par email** avant le premier dépôt quand
+   l'invitation vise une adresse (comme pour envoyer).
+6. La phrase de la bulle est écrite « Seuls vous et Adjugo les lisez » (accord du pluriel).
+7. **Pages juridiques** : elles ne couvrent pas ce cas (le partenaire n'est pas un « Client » ; rôle d'Adjugo, durée de
+   conservation) : brouillon des mentions à ajouter dans `docs/A_VALIDER_depot_documents_par_lien.md`, à faire valider.
+8. **Aucune IA à la lecture** : la reconnaissance de caractères est locale ; rien n'est décompté au partenaire ni au chef de
+   file pour un dépôt.
+
+### 21.13 Vérifications
+
+- `tests/test_redaction_v4_depot_lien.py` (15 tests) : accord exigé au premier dépôt (versions 1.2 et 1.3, empreintes,
+  horodatage, journal chaîné), puis lecture sans IA d'un texte, d'un Word et d'un PDF (aucun appel à l'IA, rien de
+  décompté) ; aide de l'IA sur SES passages seulement (`rag.retrieve_multi` jamais appelé), nom réel du document et noms
+  des personnes jamais envoyés, fait « trouvé dans vos documents » avec le passage exact, gardé quand il réécrit son
+  texte ; chef de file : compteurs seulement ; cloisonnement (chef de file avec le lien sans clé : 403 ; chef de file et
+  membre de son organisation par leur compte, même rattaché : 404 ; autre partenaire : 404 ; rien dans l'atelier, « Qui
+  écrit quoi », le dossier assemblé, « Mes documents », le coffre croisé, l'aperçu et le ZIP du dossier, l'export RGPD, le
+  journal) ; démo (lien et session, avec et sans le garde central) ; CV refusé (par le nom, par le contenu), passages de
+  CV retirés d'un mémoire et jamais envoyés, pièce de l'acheteur refusée ; IA en panne : aide rendue, rien débité ;
+  limites (types, vide, signature, illisible, doublon, taille, total, nombre, par jour supprimés compris, types réglables
+  sans jamais en ajouter) ; accord redemandé à une nouvelle version, code exigé quand le lien vise une adresse ;
+  télécharger (octets identiques, pièce jointe, `nosniff`, `no-store`), portabilité, supprimer (brouillons nettoyés, fait
+  « à relire ») ; effacés au retrait, au déclin, à la réinitialisation (sans être lus, accord compris) ; purge : 6 mois
+  après le résultat (horloge simulée : rien la veille, tout le lendemain ; résultat retiré : compteur remis à zéro), date
+  limite (par la route du cron, secret exigé), dernier dépôt, lien expiré depuis 30 jours (pas avant), corbeille des
+  marchés, compte du chef de file effacé ; lien rattaché à un compte (plus utilisés, téléchargeables, supprimables, aucun
+  dépôt) ; migration SQLite (base neuve, valeurs par défaut, retour arrière, remontée, rejeu) ; écran (règles, fonctions
+  pures sous Node).
+- Suite complète verte (SQLite) : 1 635 tests (1 619 + 16) ; `tests/test_demo_sans_cout.py` classe les trois routes
+  d'écriture ; empreintes SRI à jour (`scripts/sri_update.py --check`), `node --check` sur `redaction-partenaire.js`,
+  `app.js` et le script de `invite.html`.
+- Navigateur réel (aperçu local, base de travail remplie par `scratchpad/depot/seed_live.py`), 375 px : la carte « Vos
+  documents pour Adjugo » dans l'espace privé, aucun défilement horizontal ; bulle (i) complète ; cases et liens vers `/cgv`
+  et `/confidentialite` ; « Déposer » sans fichier : message sur place ; dépôt depuis le navigateur (clé en en-tête,
+  formulaire) : « Document déposé et lu sans IA… », cases disparues ; « Supprimer » : fenêtre de confirmation, « Document
+  supprimé. » ; aucune erreur dans la console.
+- Postgres 16 depuis l'état EXACT de la production (`a7f48d2`, tête `x8y9redactionv4`), script
+  `scratchpad/pgtest/run_depot_lien_depuis_prod.py` (TZ=UTC) : données créées par le code de production (atelier, « Qui
+  écrit quoi », espace du lien ouvert, brouillon privé du partenaire, tâche), une seule révision appliquée
+  (`y9z0depotlien`), aucune donnée perdue, seconde montée et rejeu forcé sans effet, dépôt par le lien avec le code nouveau
+  sur la base montée, code de production redémarré sur la base montée (lectures et écriture : 200), schéma identique à une
+  base neuve (0 écart de colonnes, 0 d'index), retour arrière (trois tables retirées, rien d'autre ne bouge, code de
+  production toujours vert) et remontée. Tests rejoués sur la base montée : les 15 tests des documents déposés verts ;
+  les seuls échecs sont dans des fichiers propres à SQLite (`PRAGMA foreign_keys` : `test_secu_rgpd.py`,
+  `test_secu2_donnees.py`, et leurs suites dans le même processus) et les deux déjà connus (§ 20.4). Contre-épreuve,
+  `scratchpad/pgtest/compare_prod_depot_lien.py` (base neuve par code) : ces fichiers donnent exactement les mêmes échecs
+  avec le code de production ; et 20 fichiers (vague 4, démo, atelier, preuves, co-traitance, convention, fichiers,
+  durcissement, réseau) : 574 verts sur 575 avec le code nouveau, 573 sur 574 avec la production, le même seul échec
+  (`test_hotfix_v2_fuites.py::test_fourche_historique_toleree_alteration_detectee`, déjà connu).
+
+### 21.14 Contre-relecture du dépôt par lien
+
+Douze remarques des relectures (cloisonnement et RGPD, IA et coûts, exactitude de l'écran), chacune reproduite sur
+`1a9f2f4` puis corrigée avec un test qui échouait avant (`tests/test_redaction_v4_depot_lien_relecture.py`). Le premier
+correcteur a été coupé par une limite d'utilisation (son travail en cours : `7459fed`) ; la reprise a relu ce travail,
+l'a gardé, l'a rejoué (15 tests sur 17 en échec sur `1a9f2f4`, tous verts ensuite ; les deux autres verrouillent ce qui
+était déjà juste : réinitialisation et retrait sans reste, espace rouvert avec le code pendant l'aide) et l'a complété
+(3 tests de plus et 2 tests renforcés, en échec sur `7459fed` : CV au prénom rare, plaquette et mémoire jamais pris pour
+un CV, lieu derrière un article élidé, phrase de conservation, message des nouvelles conditions). 20 tests en tout.
+
+**Constats et corrections**
+
+1. *La purge laissait dans les brouillons le nom réel et le passage exact* (deux remarques, cloisonnement et IA : lien
+   sans expiration ou valable longtemps, aucune autre règle n'efface les brouillons d'une invitation active ; le fait
+   restait « trouvé dans vos documents » sans document). `effacer_invitation` — appelé par la purge, le retrait, le
+   déclin et la réinitialisation — appelle désormais `oublier_documents` (tous les documents de l'invitation) : nom et
+   passage retirés des sources, faits reliés « à relire ». Test : purge à 6 mois du résultat, aucun reste dans aucune
+   table ni dans le stockage, le fait repassé « à relire » à l'écran.
+2. *Réinitialisation pendant l'aide de l'IA* : la tâche rangeait son brouillon (nom et passages des documents que la
+   réinitialisation venait d'effacer « sans être lus ») dans le nouvel espace. La réinitialisation marque, sous le
+   verrou de l'invitation, les tâches en cours de l'invitation (`ESPACE_REINITIALISE` dans leur résultat interne,
+   jamais montré : les clés « _… » ne sortent pas) ; la tâche relit la sienne sous le même verrou avant de ranger :
+   marquée, elle ne range rien (« Votre espace privé a été réinitialisé pendant la rédaction : le texte n'a pas été
+   gardé. », partie libérée). Marquée avant de démarrer, elle n'appelle pas l'IA : aide rendue, rien débité. Rouvrir
+   l'espace avec le code reçu par email (brouillons gardés, même partenaire) ne marque rien : le brouillon est rangé et
+   se lit avec la nouvelle clé. (Garder l'empreinte de l'espace dans la tâche, autre voie proposée, aurait aussi arrêté
+   ce cas légitime.)
+3. *Réinitialisation pendant la lecture d'un dépôt* : le document était rangé et lisible avec la nouvelle clé, sans
+   accord. Après la lecture, sous le verrou de l'invitation relue, la clé présentée (gardée dans `Acces.cle`) doit encore
+   ouvrir l'espace, le dépôt être permis et l'accord être enregistré et à jour ; sinon 409 `espace_reinitialise`, ni
+   fichier ni ligne.
+4. *Document supprimé pendant l'aide* : le brouillon gardait son nom et son passage. Après l'IA, `encore_presents` ne
+   garde que les passages encore présents (un passage disparu devient « retiré » à sa place : les renvois [S#] des
+   autres ne bougent pas, `fiches_depot_par_lien` numérote par la place) ; `sources_reelles` n'en fait aucune source.
+5. *Ordre des écritures* : déposer, supprimer, réinitialiser, retirer, effacer et ranger le brouillon d'une aide prennent
+   d'abord le verrou de l'invitation (`depot_lien.verrouiller_invitation`, une ligne) : sur Postgres, l'un passe après
+   l'autre et voit son effet (pas d'interblocage : chacun le prend en premier, aucun ne le demande en tenant déjà le
+   verrou d'une partie ou d'une répartition).
+6. *Journal du marché* : le rang (« 2 sur 10 ») et la taille ne sont plus écrits ; reste « Document déposé dans l'espace
+   privé du partenaire, lu sans IA ». Le reste de la remarque est un choix laissé à Eliot (ci-dessous).
+7. *Noms des personnes envoyés à l'IA par le lien* (« Notre gérant Pierre Martin », « assuré par Gwenola Riou et Loïc
+   Cadiou », « Fondée en 2009 par… », « Jean-Marc Riou pilote… ») : repérage élargi (§ 21.6), un mot d'ouverture pris
+   avec le nom (« Avec Thomas Le Bihan ») n'est plus masqué avec lui, et (reprise) un article élidé devant un lieu
+   (« l'espace Pierre Loti », « l'école Anne Frank ») le laisse lu comme un lieu, devant une personne (« l'aide d'Anne
+   Le Floch ») la laisse masquée. Le texte qui n'est pas un nom part toujours (vérifié dans le test).
+8. *L'écran promettait un masquage complet* (bulle, `MSG_USAGE`, brouillon juridique) : il dit maintenant « Avant l'IA,
+   il masque les noms de personnes qu'il repère et écarte ce qui ressemble à un CV : retirez de vos documents les noms
+   que vous ne voulez pas transmettre. » ; le brouillon juridique est nuancé de même (et signale que la phrase publiée du
+   § 6 de la politique est aussi trop absolue pour les Clients).
+9. *Un CV classique sans le mot « CV » était gardé et envoyé* : `fiches_import._cv_sans_titre` (dans `lignes_privees`,
+   donc aussi pour le savoir-faire d'un compte) reconnaît un nom seul sur sa ligne suivi, à moins de 8 lignes, de
+   rubriques de CV écrites seules sur leur ligne, chacune à moins de 15 lignes de la précédente, jamais au-delà d'un
+   titre numéroté (« 2. Moyens matériels ») : nom d'une PERSONNE (prénom courant, ou nom suivi de sa fonction) avec deux
+   sortes de rubriques ; autre nom propre (prénom rare : « Gwenhaël KERJEAN », reprise) avec trois sortes, ou deux plus
+   des coordonnées sous le nom et une ligne de parcours (« 2015 - 2024 … »), et jamais à la première personne du pluriel.
+   Un document fait surtout de cela est refusé (422 `document_cv`, PDF, Word ou texte, nom de fichier neutre) ; inséré
+   dans un mémoire, il en est retiré. Ni une plaquette (« Breizh Désamiantage », « Compétences », « Formations » ; ou
+   trois rubriques écrites avec « nous », « nos »), ni le corps d'un mémoire entre deux rubriques éloignées ne sont
+   retirés (reprise : la première version allait jusqu'à 80 lignes plus loin chercher la seconde rubrique).
+10. *Réinitialiser ne disait pas que les documents partent* : la fenêtre de confirmation, le paragraphe de l'espace,
+    `MSG_ESPACE_OUVERT` et `MSG_RATTACHER_ESPACE` le disent (et la fenêtre dit que l'accord part aussi).
+11. *Durée de conservation incomplète* : `conservation(inv, mois)` dit les règles de la purge, l'expiration du lien
+    comprise, avec sa date : « Ils sont effacés dès que vous les supprimez, si votre espace privé est réinitialisé, si
+    vous quittez le groupement ou en êtes retiré ; sinon automatiquement à la première de ces deux dates : 30 jours après
+    l'expiration de ce lien (il expire le 18 novembre 2026), ou 6 mois après le résultat du marché (à défaut, après sa
+    date limite ou, sans date limite, après votre dernier dépôt). » ; sans expiration, seulement la seconde règle.
+12. *Nouvelles conditions publiées page ouverte* : le 409 `conditions_a_accepter` porte déjà `conditions` ; l'écran les
+    recopie et redessine la carte : les deux cases apparaissent, avec « Cochez les deux cases, choisissez de nouveau
+    votre document, puis déposez-le. » (la carte redessinée a perdu le fichier choisi).
+
+**Rien de rejeté** : les douze remarques étaient fondées (deux décrivent le même reste de la purge). Ce qu'une relecture
+donnait déjà pour juste l'est toujours : la suppression d'un document par le partenaire ne laisse rien.
+
+**À dire à Eliot (choix faits)**
+
+- *Journal* : le chef de file lit toujours, dans le journal du marché, qu'un document a été déposé ou supprimé et que les
+  conditions ont été acceptées (heure, adresse IP, comme pour toute action du partenaire), sans nom, rang, taille ni
+  contenu. Réserver ces entrées au seul partenaire, ou les regrouper sans heure, est un choix produit (le journal chaîné
+  est la trace commune du groupement) : à trancher.
+- *Aide perdue par une réinitialisation* : non remboursée et non rendue (l'IA a travaillé), comme une partie retirée
+  pendant l'aide ; la rendre permettrait de faire travailler l'IA sans limite en réinitialisant à chaque aide.
+- *Repérage des noms élargi au seul lien* (aucune équipe connue) ; les tournures contextuelles (fonction, « par … »)
+  valent pour tous les parcours. Un lieu au prénom courant non précédé d'un mot de lieu (« Projet Victor Hugo ») peut
+  être masqué par erreur : il est remis en clair dans le texte rédigé, l'IA lit seulement une étiquette à sa place.
+
+**Vérifications**
+
+- `tests/test_redaction_v4_depot_lien_relecture.py` : 20 tests, 15 en échec sur `1a9f2f4` et 5 sur `7459fed` (le
+  travail coupé), tous verts. Les fichiers rangés y sont comparés avant / après (le dossier `uploads/` est partagé entre
+  les suites lancées depuis le même dossier, et une base neuve reprend les mêmes numéros d'invitation : un fichier
+  laissé par une autre suite faisait échouer à tort le contrôle « aucun fichier »).
+- Suite complète verte (SQLite, TZ=UTC) : 1 655 tests (1 635 + 20), sur une copie propre des fichiers suivis.
+- Empreintes SRI à jour (`scripts/sri_update.py --check`), `node --check` sur `redaction-partenaire.js`, `app.js` et le
+  script de `invite.html` ; aucune migration nouvelle (tête `y9z0depotlien`, celle du dépôt par lien).
+- Navigateur réel, 375 px (aperçu local, base remplie par une copie de `scratchpad/depot/seed_live.py`) : bulle (i) de
+  « Vos documents pour Adjugo » lisible en entier dans l'écran (durée de conservation avec la date d'expiration du lien) ;
+  paragraphe et fenêtre « Réinitialiser votre espace privé ? » qui disent que les documents déposés et l'accord partent ;
+  réponse 409 `conditions_a_accepter` simulée au dépôt : les deux cases apparaissent (« version 9.9 »), message
+  « Cochez les deux cases, choisissez de nouveau votre document, puis déposez-le. » ; aucun défilement horizontal, aucune
+  erreur dans la console.
+- Postgres 16 depuis l'état EXACT de la production (`a7f48d2`, tête `x8y9redactionv4`), script
+  `scratchpad/pgtest/run_depot_relecture2_depuis_prod.py` (copie de `run_depot_lien_depuis_prod.py`, TZ=UTC) : tous les
+  contrôles de migration verts (données créées par le code de production, une seule révision `y9z0depotlien`, aucune
+  donnée perdue, seconde montée et rejeu sans effet, dépôt par le lien sur la base montée, code de production redémarré :
+  200 partout, schéma identique à une base neuve, retour arrière puis remontée) ; 38 fichiers de tests rejoués sur la base
+  montée : 1 043 verts, et exactement les mêmes 37 échecs que sur `1a9f2f4` (fichiers propres à SQLite et les deux déjà
+  connus, § 21.13). Base neuve, verrous `FOR UPDATE` réels (`scratchpad/pgtest/run_depot_relecture2_pg.py`) : 445 tests
+  verts sur 445 avec le code nouveau (les 20 de la contre-relecture compris), 425 sur 425 avec `1a9f2f4`, aucun échec
+  propre au code nouveau.
+
+### 21.15 Contre-relecture de la reprise
+
+Deux remarques, reproduites sur `31d384b` puis corrigées, avec 7 tests qui échouaient avant
+(`tests/test_redaction_v4_depot_lien_contre_relecture.py`, en échec sur `31d384b` sous SQLite comme sous Postgres).
+
+**Constats et corrections**
+
+1. *Une plaquette prise pour un CV* (régression du § 21.14, point 9, qui touchait aussi les comptes : un document de
+   « Mon savoir-faire » marqué « cv » est écarté en entier de l'aide de l'IA et montré comme un CV). « Simon Frères »
+   (le nom commence par un prénom courant) ou « Breizh Toit » suivi de « Couvreur zingueur à Quimper depuis 1990 » (pris
+   pour une fonction) passaient pour des noms de personne ; deux rubriques suffisaient alors, et la règle « une plaquette
+   en nous / nos n'est jamais un CV » ne jouait pas. Corrections dans `fiches_import._cv_sans_titre` :
+   - la voix de l'entreprise (« nous », « notre », « nos ») est cherchée dans le passage lui-même, du nom à la fin de la
+     dernière rubrique (avant : jusqu'à trois lignes après la dernière rubrique, qui pouvaient être la suite d'un
+     mémoire et faire manquer un CV), **quel que soit le nom** : une ligne suffit sous un nom propre quelconque, deux sous
+     un nom de personne sûr (prénom courant ou intitulé de fonction) ;
+   - sous un nom, une fonction n'est plus qu'un intitulé (`_intitule_de_fonction`) : au plus 6 mots, sans chiffre, lieu
+     ni durée (« à », « au », « depuis », « dans », « sur », « pour », « chez ») ;
+   - mots d'organisme ajoutés (un nom qui en contient un n'est ni une personne en tête d'un CV, ni un nom à masquer) :
+     « Frères », « Fils », « Atelier(s) » et des métiers qui ne sont pas des noms de famille (toiture, isolation,
+     façade, ravalement, carrelage, chauffage, climatisation, terrassement, paysage, élagage, nettoyage, étanchéité,
+     démolition, désamiantage, dépollution, métallerie, serrurerie, assainissement, voirie, toit).
+   Tests : trois plaquettes (« Simon Frères », « Breizh Toit », « Tanguy Kervella » en « nous ») déposées par le lien
+   (201, aucun passage retiré) et lues pour un compte (`statut_document` sans « cv », aucune ligne retirée) ; deux vrais
+   CV toujours refusés (un salarié présenté par son entreprise avec une seule ligne « chez nous », un intitulé de
+   fonction sous un prénom rare).
+2. *Une écriture du partenaire pendant une réinitialisation ou une suppression* (cloisonnement). « J'écris moi-même »
+   (`enregistrer_brouillon`) et « Valider » le texte du chef de file (`valider_part`, brouillon « Texte du chef de file
+   accepté par vous ») recopiaient les sources et les faits reliés lus avant une réinitialisation de l'espace ou la
+   suppression d'un document survenue pendant la requête : avec la nouvelle clé, qui détient le lien lisait le nom et
+   le passage d'un document privé ; un document supprimé restait cité. Trouvé en plus : « Relu par vous » sur un fait
+   (`traiter_fait`) réécrivait ses faits lus avant la suppression, et remettait la source effacée. Corrections :
+   - ces trois écritures prennent d'abord le verrou de l'invitation (`_verrou_du_lien`), avant ceux de la répartition et
+     de la partie (même ordre que le § 21.14, point 5 : aucun interblocage) ; l'invitation relue doit être active et la
+     clé présentée ouvrir encore l'espace ; sous Postgres, la réinitialisation ou la suppression attend la fin de
+     l'écriture, puis efface ce qu'elle a rangé ;
+   - juste avant d'écrire, le même contrôle est refait (une base sans verrou de ligne, comme SQLite, passe aussi par là)
+     : clé qui n'ouvre plus l'espace → 409 `espace_reinitialise`, « Votre espace privé a été réinitialisé entre-temps
+     (sur un autre appareil, par exemple) : rien n'a été enregistré. Ouvrez de nouveau votre espace privé sur cet
+     appareil. » (l'écran garde la saisie et affiche le message, comme les autres refus) ; puis les sources et les faits
+     à ranger ne gardent que les passages encore présents (`_sans_depots_disparus` : un fait relié à un passage disparu
+     redevient « à relire », comme `oublier_documents`, dont la transformation est partagée).
+   Tests (les courses lancent l'autre requête dans un autre fil, au milieu du contrôle des faits ou de la relecture, et
+   l'attendent au plus 2 s : sous SQLite elle passe tout de suite et l'écriture la voit ; sous Postgres elle attend le
+   verrou, environ 2,3 s par test) : réinitialisation pendant « Enregistrer » et pendant « Valider » (rien du document,
+   ni pour la nouvelle clé, ni dans aucune table) ; suppression pendant « Enregistrer », « Valider » et « Relu par vous »
+   (ni nom ni passage dans le brouillon, aucun reste dans aucune table).
+
+**Rien de rejeté** : les deux remarques étaient fondées. La seconde existait déjà sur `1a9f2f4` (elle n'a pas été
+introduite par la reprise, qui ne l'avait fermée que pour l'aide de l'IA et le dépôt).
+
+**À dire à Eliot (choix faits)**
+
+- *Plaquette sous un nom de personne* : il faut deux lignes en « nous / notre / nos » pour qu'un passage sous un nom de
+  personne sûr (« Thomas Kervella », « Yann Tanguy » / « Conducteur de travaux ») soit lu comme une plaquette. Une
+  plaquette d'entreprise individuelle qui ne dit « nous » qu'une fois reste prise pour un CV (écartée : perte de qualité,
+  jamais de fuite) ; la règle inverse (une seule ligne) laisserait partir à l'IA la présentation d'un salarié écrite
+  par son entreprise (« chez nous depuis 2012 »). Un CV n'est jamais envoyé à l'IA : le doute va au CV.
+
+**Vérifications**
+
+- `tests/test_redaction_v4_depot_lien_contre_relecture.py` : 7 tests, tous en échec sur `31d384b` (SQLite et Postgres),
+  tous verts ; les tests de la relecture (dans le bac à sable, hors du dépôt) passent aussi.
+- Suite complète verte (SQLite, TZ=UTC) : 1 662 tests (1 655 + 7).
+- Empreintes SRI à jour (`scripts/sri_update.py --check`) et `node --check` : aucun fichier servi modifié ; aucune
+  migration nouvelle (tête `y9z0depotlien`).
+- Postgres 16, base neuve, verrous `FOR UPDATE` réels (`scratchpad/pgtest/run_depot_contre3_pg.py`) : 452 tests verts
+  sur 452 avec le code nouveau, 445 sur 445 avec `31d384b`, aucun échec propre au code nouveau ; le nouveau fichier avec
+  le code d'avant : 7 échecs. Durées des courses avec le code nouveau (`run_contre3_durees.py`) : 2,3 s chacune, l'autre
+  requête attend le verrou de l'invitation (aucun blocage).
+- Postgres 16 depuis l'état EXACT de la production (`a7f48d2`, tête `x8y9redactionv4`), script
+  `scratchpad/pgtest/run_depot_contre3_depuis_prod.py` (copie de `run_depot_relecture2_depuis_prod.py` avec le nouveau
+  fichier, TZ=UTC) : tous les contrôles de migration verts (une seule révision `y9z0depotlien`, aucune donnée perdue,
+  seconde montée et rejeu sans effet, dépôt par le lien sur la base montée, code de production redémarré : 200 partout,
+  schéma identique à une base neuve, retour arrière puis remontée) ; 39 fichiers de tests rejoués sur la base montée :
+  1 050 verts (1 043 + 7) et exactement les mêmes 37 échecs qu'au § 21.14 (fichiers propres à SQLite, déjà connus).

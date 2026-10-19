@@ -1,7 +1,8 @@
 # Rédaction, vague 5 — coller au chantier et à l'acheteur
 
 Étude : `etudes/redaction.md` § 6.3 (C2 complet), § 6.7 (E2), § 6.9 (D), § 7 (doctrine), § 8 (V5),
-§ 10 (décisions 7 à 11). Base de production au départ : `da9ef0f` (branche `feat/produit-acheteur-collectivites`).
+§ 10 (décisions 7 à 11). Base de production au départ : `da9ef0f` (branche `feat/produit-acheteur-collectivites`) ;
+le chantier C2 a ensuite fusionné la production `b010c59` (documents déposés par le lien, migration `y9z0depotlien`).
 
 Ce contrat est écrit par chantier. Chaque chantier a sa section ; les sections ne se recouvrent pas.
 
@@ -228,7 +229,9 @@ toujours possible par la case « Rédiger sans IA ») :
   du partenaire (`ag.lancer_aide`) et « Harmoniser le ton » (`asm.lancer_harmonisation`) → 409
   `mode_sans_ia` ; les boutons disparaissent (atelier, espace du partenaire) et « J'écris moi-même » devient
   le bouton principal ; « Harmoniser » n'est plus proposé (`harmoniser.jonctions = 0`) ;
-- le contrôle des faits (`fs.controler`, sans IA) et la liste des exigences continuent ;
+- le contrôle des faits (`fs.controler`, sans IA) et la liste des exigences continuent ; les documents déposés par
+  le lien d'un partenaire (décision 5 a) ne servent qu'à l'aide de l'IA : ils restent chez lui, sans effet tant que
+  le dossier est « sans IA » ;
 - une tâche lancée avant le choix va au bout (elle était déjà engagée) ; la mention IA des propriétés du fichier
   suit l'usage réel (D9) et l'écran compte les parties dont le texte courant a été préparé avec l'IA ;
 - `etat.sans_ia = {actif, le, message, parties_ia, reglement: {mentionne, nature, message, phrases}}` ;
@@ -322,6 +325,12 @@ guidée), une question à poser avant le 18/12/2026. Le plan et les textes de l'
 5. La démo ajoute trois phrases réalistes à son règlement fictif (aucune contradiction inventée chez l'acheteur).
 
 ### C2.14 Tests
+
+Vérifications faites : suite complète verte (1 689 tests sur `da9ef0f` + C2 ; 1 732 après la fusion de `b010c59`),
+SRI, `node --check`, gabarits compilés ; aucune migration : un vrai Postgres 16 monté à la tête de production
+(`x8y9redactionv4`, puis `y9z0depotlien` après la fusion) fait passer les tests de C2, de l'atelier, de la grille, de la
+démo et du groupement (292 puis 321 tests) ; écrans vus à 375 px et sur ordinateur (carte du marché, atelier, espace
+du partenaire).
 
 `tests/test_redaction_v5_c2.py` : sous-critères (explicites rattachés par leur somme, numérotés, liste annoncée,
 tableau, nombres sans unité, aucun faux positif, propositions de l'IA contrôlées, contrôle du total, vue des

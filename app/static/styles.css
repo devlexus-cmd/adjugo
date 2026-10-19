@@ -1438,3 +1438,15 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
 .rp-del { background:var(--danger-weak); color:var(--danger-text); text-decoration:line-through; border-radius:3px; }
 .rp-ins { background:var(--success-weak); color:var(--success-text); border-radius:3px; }
 @media (max-width:640px) { .rp-cmp .rp-txt { max-height:none; } }
+/* « Vos documents pour Adjugo » (décision 5 a) : documents privés déposés par le lien, dans l'espace du partenaire. */
+.rp-docs { margin-top:16px; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:var(--surface-2); }
+.rp-docs-t { display:flex; align-items:center; flex-wrap:wrap; gap:4px 6px; font-size:13.5px; }
+.rp-doclist { margin-top:8px; }
+.rp-doc { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px 12px; }
+.rp-doc-n { flex:1 1 220px; min-width:0; display:flex; flex-direction:column; gap:2px; overflow-wrap:anywhere; }
+.rp-acts.rp-doc-a { margin-top:0; }
+.rp-dep { margin-top:12px; padding-top:12px; border-top:1px solid var(--hairline); }
+.rp-chk { display:flex; align-items:flex-start; gap:8px; margin-top:8px; line-height:1.45; cursor:pointer; }
+.rp-chk input { margin-top:2px; flex:none; }
+.rp-file { flex:1 1 220px; min-width:0; max-width:100%; font-size:12.5px; }
+@media (max-width:640px) { .rp-docs { padding:12px; } .rp-doc-n { flex-basis:100%; } }

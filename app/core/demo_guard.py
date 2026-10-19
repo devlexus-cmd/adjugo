@@ -226,6 +226,11 @@ _BLOCKED = [
     ("POST",   "/api/shared/{pid}/redaction/sections/{sid}/valider", "co-construire une réponse"),
     ("POST",   "/api/shared/{pid}/redaction/sections/{sid}/retablir", "co-construire une réponse"),
     ("POST",   "/api/shared/{pid}/redaction/dossier/valider", "co-construire une réponse"),
+    # Documents privés d'un partenaire (décision 5 a) : la démo ne dépose ni ne supprime rien. Le lien de la démo est
+    # refusé dans la route avant tout (il n'a pas de session) ; une session démo qui l'appellerait l'est aussi ici.
+    ("POST",   "/api/invite/{token}/redaction/documents",      "déposer des documents"),
+    ("DELETE", "/api/invite/{token}/redaction/documents/{did}", "déposer des documents"),
+    ("DELETE", "/api/shared/{pid}/redaction/documents/{did}",  "déposer des documents"),
     # « Mes preuves » (rédaction, vague 3) : toute écriture (la vitrine partagée ne change pas).
     ("POST",   "/api/preuves",                                "renseigner vos preuves"),
     ("PATCH",  "/api/preuves/{id}",                           "renseigner vos preuves"),
