@@ -211,6 +211,10 @@ _BLOCKED = [
     ("POST",   "/api/atelier/{pid}/sections/{sid}/controle",  "préparer votre dossier de présentation"),
     ("POST",   "/api/atelier/{pid}/derogation",               "préparer votre dossier de présentation"),
     ("POST",   "/api/atelier/{pid}/export",                   "préparer votre dossier de présentation"),
+    # Rédaction, vague 6 (J) : les lots du dossier et la portée d'une partie (commune ou propre à chaque lot) —
+    # écritures dans la vitrine partagée, sans IA.
+    ("PUT",    "/api/atelier/{pid}/lots",                     "préparer votre dossier de présentation"),
+    ("PUT",    "/api/atelier/{pid}/sections/{sid}/portee",    "préparer votre dossier de présentation"),
     # Rédaction, vague 4 : le dossier de groupement (« Qui écrit quoi », parts des partenaires).
     ("POST",   "/api/atelier/{pid}/repartition",              "préparer votre dossier de présentation"),
     ("PUT",    "/api/atelier/{pid}/repartition/{sid}",        "préparer votre dossier de présentation"),

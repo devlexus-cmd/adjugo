@@ -986,10 +986,12 @@
                 <p class="small atl-m0">{{ ao.atl.d.proposition.message }}</p>
                 <p v-if="ao.atl.d.proposition.dossier_present === false" class="small atl-mt8"><a href="#" @click.prevent="atlImporterDce()" style="color:var(--accent-text)">Importer le dossier du marché</a></p>
                 <p class="muted small atl-mt8">{{ (ao.atl.d.proposition.sections || []).length }} partie{{ (ao.atl.d.proposition.sections || []).length > 1 ? 's' : '' }} proposée{{ (ao.atl.d.proposition.sections || []).length > 1 ? 's' : '' }}, sans IA. Rien n'est enregistré tant que vous n'avez pas choisi le plan dans l'atelier.</p>
+                <p v-if="ao.atl.d.proposition.lots_du_marche && ao.atl.d.proposition.lots_du_marche.alloti" class="small atl-mt8">Ce marché est réparti en {{ ao.atl.d.proposition.lots_du_marche.lots.length }} lots : dans l'atelier, choisissez ceux auxquels vous répondez (un fichier par lot).</p>
                 <div v-if="ao.atl.d.proposition.avertissement_fichier" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ ao.atl.d.proposition.avertissement_fichier }}</span></div>
               </template>
               <template v-else-if="ao.atl.d && ao.atl.d.dossier">
                 <div class="small">{{ atlCompteTexte(ao.atl.d) }}</div>
+                <div v-if="ao.atl.d.lots && ao.atl.d.lots.actif" class="row wrap atl-g6 small atl-mt8"><span class="muted">Un fichier par lot :</span><span v-for="l in ao.atl.d.lots.liste" :key="'cl'+l.numero" class="atl-lot-etat">{{ 'Lot ' + l.numero }} <span class="pill" :class="atlEtatLot(l).cls" style="font-size:10.5px">{{ atlEtatLot(l).label }}</span></span></div>
                 <div v-if="atlCompte(ao.atl.d).enCours" class="small muted atl-mt8" role="status"><span class="spin"></span> Adjugo rédige {{ atlCompte(ao.atl.d).enCours }} partie{{ atlCompte(ao.atl.d).enCours > 1 ? 's' : '' }}…</div>
                 <div v-if="atlDocLims(ao.atl.d).length" class="row wrap atl-g6 atl-mt8">
                   <span v-for="(l,i) in atlDocLims(ao.atl.d)" :key="'cl'+i" class="atl-lim" :class="atlLimCls(l)">{{ l.message }}</span></div>
@@ -1863,6 +1865,22 @@
               <!-- Rédaction, vague 5 : le règlement parle d'intelligence artificielle → sa phrase, et « sans IA » proposé -->
               <div v-if="atl.prop.sans_ia && atl.prop.sans_ia.reglement && atl.prop.sans_ia.reglement.mentionne" class="warn-box"><i data-lucide="pen-off" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span style="flex:1;min-width:0">{{ atl.prop.sans_ia.reglement.message }}<q v-if="atl.prop.sans_ia.reglement.phrases.length" class="gn-ia-q">{{ atl.prop.sans_ia.reglement.phrases[0].phrase }}</q></span></div>
               <label v-if="!atlMobile" class="atl-chk small atl-mt8"><input type="checkbox" v-model="atl.sansIaPropose">Rédiger ce dossier sans IA<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Vous écrivez chaque partie vous-même : aucune rédaction, aucun raccourci, aucune harmonisation ni aucune question proposée par l'IA, pour vous comme pour vos partenaires. Le contrôle des faits, la liste des exigences et les questions sur ce chantier continuent, sans IA. Ce choix se change ensuite dans l'atelier.</span></button></label>
+              <!-- Rédaction, vague 6 (J) : un marché réparti en lots — à quels lots répondez-vous ? Deux ou plus : parties
+                   communes (rédigées une fois) et parties propres à chaque lot, un fichier par lot. Un seul : comme avant. -->
+              <div v-if="atl.prop.proposition.lots_du_marche && atl.prop.proposition.lots_du_marche.alloti" class="atl-lots atl-mt12">
+                <div class="row wrap atl-g6"><i data-lucide="layers" class="atl-lots-ico"></i><b class="small">Ce marché est réparti en {{ atl.prop.proposition.lots_du_marche.lots.length }} lots</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.prop.proposition.lots_du_marche.message }} {{ atl.prop.proposition.lots_du_marche.regle_commune }}</span></button></div>
+                <div class="small atl-mt4">À quels lots répondez-vous ?</div>
+                <div class="atl-lots-l">
+                  <label v-for="x in atl.prop.proposition.lots_du_marche.lots" :key="'lc'+x.numero" class="atl-chk small"><input type="checkbox" :checked="atlLotCoche(x.numero)" @change="atlLotBascule(x.numero)" :disabled="atl.loading || !!atl.busy"><span>Lot {{ x.numero }} — {{ x.intitule }}</span><button v-if="x.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ x.phrase }} »<template v-if="x.source"> ({{ x.source }})</template></span></button></label>
+                  <span v-for="x in atl.lotsAjoutes" :key="'la'+x.numero" class="atl-chk small"><span>Lot {{ x.numero }} — {{ x.intitule }} <span class="muted">(indiqué par vous)</span></span><button type="button" class="atl-lien" @click="atlLotRetirerAjout(x.numero)">Retirer</button></span>
+                </div>
+                <div v-if="!atlMobile" class="row wrap atl-g6 atl-mt8 atl-lot-aj">
+                  <label class="sr-only" for="atl-lotn">Numéro du lot</label><input id="atl-lotn" class="inp atl-lot-n" v-model="atl.lotAjout.numero" maxlength="2" inputmode="numeric" placeholder="N°">
+                  <label class="sr-only" for="atl-loti">Intitulé du lot</label><input id="atl-loti" class="inp" v-model="atl.lotAjout.intitule" maxlength="200" placeholder="Un lot absent de la liste : son intitulé" @keydown.enter.prevent="atlLotAjouter()">
+                  <button type="button" class="btn sm ghost" @click="atlLotAjouter()" :disabled="atl.loading"><i data-lucide="plus"></i>Ajouter</button>
+                </div>
+                <div class="muted small atl-mt8">{{ atlLotPlus() ? "Un fichier par lot à l'export : les parties communes y figurent telles quelles, avec les parties propres au lot." : "Cochez deux lots ou plus pour les préparer ensemble. Un seul lot coché, ou aucun : un seul dossier." }}</div>
+              </div>
               <div class="atl-bases" role="radiogroup" aria-label="Plan à utiliser">
                 <button v-for="b in atlBases(atl.prop.proposition.bases)" :key="'pb'+b.k" type="button" class="atl-base" :class="{on: atl.base===b.k}" role="radio" :aria-checked="atl.base===b.k ? 'true' : 'false'" @click="atlBase(b)" :disabled="atl.loading || b.off" :title="b.off ? b.non : null">{{ b.l }}</button>
               </div>
@@ -1872,7 +1890,7 @@
               <div v-if="atlNonControlees(atl.prop.proposition.limites).length" class="muted small atl-mt4">Adjugo ne compte pas : {{ atlNonControlees(atl.prop.proposition.limites).join(' ; ') }}. Vérifiez-les vous-même.</div>
               <ol class="atl-prop">
                 <li v-for="(s,i) in atl.prop.proposition.sections" :key="'ps'+i">
-                  <div class="atl-prop-t"><span v-if="s.numero" class="atl-num">{{ s.numero + ' ' }}</span>{{ s.intitule }}</div>
+                  <div class="atl-prop-t"><span v-if="s.numero" class="atl-num">{{ s.numero + ' ' }}</span>{{ s.intitule }}<span v-if="s.lot !== undefined" class="atl-lot-tag" :class="{c: !s.lot}">{{ s.lot ? 'Lot ' + s.lot : 'Commune' }}</span></div>
                   <div v-if="s.parents && s.parents.length" class="muted small">{{ s.parents.map(x => (x.numero ? x.numero + ' ' : '') + x.intitule).join(' › ') }}</div>
                   <div class="row wrap atl-g6 small">
                     <span v-if="s.critere" class="muted">Critère : {{ s.critere }}<template v-if="s.poids"> · {{ atlPoidsTexte(s) }}</template></span>
@@ -1896,18 +1914,23 @@
                 <div style="flex:1;min-width:0">
                   <div class="row wrap atl-g6"><h2 class="atl-titre">{{ atl.st.projet.nom }}</h2><span class="pill neutral" style="font-size:11px">{{ atlPlanLabel(atl.st.dossier.plan_source) }}</span><button v-if="atl.st.dossier.plan.message" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.st.dossier.plan.message }}</span></button></div>
                   <div class="small atl-mt4">{{ atlCompteTexte(atl.st) }}</div>
+                  <!-- Rédaction, vague 6 (J) : les lots du dossier (un fichier chacun), ou un marché en lots préparé en un seul dossier -->
+                  <div v-if="atlLots()" class="row wrap atl-g6 small atl-mt4"><i data-lucide="layers" class="atl-lots-ico"></i><span style="flex:1;min-width:0">Vous répondez à {{ atlLotsListe().length }} lots : {{ atlLotsListe().map(l => l.libelle).join(' · ') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Parties communes et parties d'un lot</span><span class="tip-b" role="tooltip">Une partie commune est rédigée une fois : son texte figure tel quel dans le fichier de chaque lot, et une modification vaut pour tous. Une partie propre à un lot n'entre que dans le fichier de ce lot. {{ atl.st.lots.regle_commune }}</span></button><button v-if="!atlMobile" type="button" class="atl-lien" @click="atlLotsOuvrir()">Changer les lots</button></div>
+                  <div v-else-if="atl.st.lots && atl.st.lots.du_marche && atl.st.lots.du_marche.alloti" class="row wrap atl-g6 small atl-mt4"><i data-lucide="layers" class="atl-lots-ico"></i><span class="muted" style="flex:1;min-width:0">Ce marché est réparti en {{ atl.st.lots.du_marche.lots.length }} lots : ce dossier en prépare un seul.</span><button v-if="!atlMobile" type="button" class="atl-lien" @click="atlLotsOuvrir()">Répondre à plusieurs lots</button></div>
                 </div>
                 <div v-if="!atlMobile" class="row wrap atl-g6">
                   <button v-if="atlAEcrire() && !atlSansIa()" type="button" class="btn sm" @click="atlRedigerTout()" :disabled="!!atl.busy"><i data-lucide="sparkles"></i>{{ atlAEcrire() > 1 ? "Rédiger les " + atlAEcrire() + " parties à écrire" : "Rédiger la partie à écrire" }}</button>
+                  <template v-if="!atlLots()">
                   <button type="button" class="btn sm" @click="atlExport('docx')" :disabled="!!atl.busy"><span v-if="atl.busy==='export:docx'" class="spin"></span><i v-else data-lucide="file-down"></i>Exporter en Word</button>
                   <button type="button" class="btn sm" @click="atlExport('pdf')" :disabled="!!atl.busy"><span v-if="atl.busy==='export:pdf'" class="spin"></span><i v-else data-lucide="file-down"></i>PDF</button>
+                  </template>
                 </div>
               </div>
               <!-- Compteur : toujours « environ » (une page Word n'est pas calculable exactement) -->
               <div class="row wrap atl-g6 atl-mt12">
                 <!-- La bulle (i) du compteur est collée à son dernier mot : jamais seule sur sa ligne à 375 px -->
                 <span v-if="atl.st.compteur.total" class="atl-cpt">Environ {{ atlNum(atl.st.compteur.total.mots) }} {{ atlMotsLib(atl.st.compteur.total.mots) }} · {{ atlNum(atl.st.compteur.total.caracteres) }} caractères · <span class="atl-nowrap">{{ atlNum(atl.st.compteur.total.pages) }} page{{ atl.st.compteur.total.pages > 1 ? 's' : '' }}<button v-if="atl.st.compteur.message" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Comment c'est compté</span><span class="tip-b" role="tooltip">{{ atl.st.compteur.message }}</span></button></span></span>
-                <span v-for="(l,i) in atlDocLims(atl.st)" :key="'dl'+i" class="atl-lim" :class="atlLimCls(l)">{{ l.message }}<button v-if="l.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ l.phrase }} »<template v-if="l.source"> ({{ l.source }})</template></span></button></span>
+                <span v-for="(l,i) in (atlLots() ? [] : atlDocLims(atl.st))" :key="'dl'+i" class="atl-lim" :class="atlLimCls(l)">{{ l.message }}<button v-if="l.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ l.phrase }} »<template v-if="l.source"> ({{ l.source }})</template></span></button></span>
               </div>
               <div v-if="atlNonControlees(atl.st.dossier.plan.limites).length" class="muted small atl-mt4">Adjugo ne compte pas : {{ atlNonControlees(atl.st.dossier.plan.limites).join(' ; ') }}. Vérifiez-les vous-même.</div>
               <div v-if="atlAvert(atl.st, 'fichier_impose')" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ atlAvert(atl.st, 'fichier_impose').message }}</span></div>
@@ -1947,6 +1970,7 @@
               <div v-else-if="atl.st.exigences && atl.st.exigences.message_ancien" class="muted small atl-mt8">{{ atl.st.exigences.message_ancien }}</div>
               <!-- État de l'export : ce qui bloque, la dérogation, la mention IA (avant l'export, décision 9a) -->
               <div class="atl-export">
+                <template v-if="!atlLots()">
                 <div class="row wrap atl-g6">
                   <i :data-lucide="atl.st.blocage.peut_exporter ? 'circle-check' : 'octagon-alert'" :class="atl.st.blocage.peut_exporter ? 'atl-ok' : 'atl-ko'" style="width:15px;height:15px"></i>
                   <b class="small">{{ atl.st.blocage.peut_exporter ? (atl.st.blocage.derogation ? "Export possible avec votre dérogation" : (atlEtatExport(atl.st).cls === 'go' ? "Prêt à exporter" : "Export possible, " + atlEtatExport(atl.st).label)) : "L'export est bloqué" }}</b>
@@ -1960,13 +1984,52 @@
                     <span v-if="(r.limites || []).length" class="row wrap atl-g6 atl-mt4"><template v-for="(l,i) in r.limites" :key="r.code+'l'+i"><button v-if="l.section_id" type="button" class="atl-lien" @click="atlGoSection(l.section_id)">{{ l.message }}</button><span v-else class="small">{{ l.message }}</span></template></span></li>
                   <li v-if="!atlMobile && !atl.st.blocage.derogation && atl.st.blocage.raisons.every(r => r.code !== 'dossier_vide')"><button type="button" class="btn sm" @click="atlDerogDepuisEtat()"><i data-lucide="file-warning"></i>Exporter malgré tout…</button></li>
                 </ul>
-                <div v-for="w in atl.st.blocage.avertissements.filter(x => x.code === 'non_valide')" :key="'nv'" class="muted small atl-mt4">{{ w.message }}</div>
+                </template>
+                <!-- Rédaction, vague 6 (J) : un fichier par lot — son état, ses limites, son nom, sa dérogation -->
+                <template v-else>
+                  <div class="row wrap atl-g6"><i data-lucide="files" style="width:15px;height:15px"></i><b class="small">Un fichier par lot</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Un fichier par lot</span><span class="tip-b" role="tooltip">Chaque fichier reprend les parties communes, telles quelles, et les parties du lot, numérotées pour lui. Ses limites de pages sont contrôlées pour lui seul ; une dérogation ne vaut que pour un lot.</span></button></div>
+                  <ul class="atl-lots-x">
+                    <li v-for="l in atlLotsListe()" :key="'lx'+l.numero">
+                      <div class="row wrap atl-g6" style="align-items:center"><b class="small atl-lot-nom">{{ l.libelle }}</b><span class="pill" :class="atlEtatLot(l).cls" style="font-size:11px">{{ atlEtatLot(l).label }}</span></div>
+                      <div class="row wrap atl-g6 small atl-mt4">
+                        <span class="muted">{{ l.parties.length }} partie{{ l.parties.length > 1 ? 's' : '' }}<template v-if="l.parties_communes">, dont {{ l.parties_communes }} commune{{ l.parties_communes > 1 ? 's' : '' }}</template><template v-if="atlLotCompte(l)"> · {{ atlLotCompte(l) }}</template></span>
+                        <span v-for="(x,i) in atlLotLims(l)" :key="'ll'+l.numero+i" class="atl-lim" :class="atlLimCls(x)">{{ atlLimCourt(x) }}<button v-if="x.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ x.phrase }} »<template v-if="x.source"> ({{ x.source }})</template></span></button></span>
+                      </div>
+                      <div class="small muted atl-mt4 atl-lot-fichier">Fichier : « {{ l.export.nom_fichier_docx }} »<button v-if="l.export.nommage && l.export.nommage.message" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Nom du fichier</span><span class="tip-b" role="tooltip">{{ l.export.nommage.message }}<template v-if="l.export.nommage.phrase"> Le règlement dit : « {{ l.export.nommage.phrase }} »</template></span></button></div>
+                      <div v-for="w in l.blocage.avertissements.filter(x => x.code === 'non_valide')" :key="'lnv'+l.numero" class="muted small atl-mt4">{{ w.message }}</div>
+                      <div v-if="l.blocage.derogation" class="muted small atl-mt4">Dérogation inscrite au journal le {{ atlWhen(l.blocage.derogation.le) }} : {{ l.blocage.derogation.raison_libelle }} « {{ l.blocage.derogation.texte }} »<template v-if="l.blocage.derogation.avertissement"> {{ l.blocage.derogation.avertissement }}</template></div>
+                      <ul v-if="atl.lotOuvert === l.numero && l.blocage.raisons.length" class="atl-raisons">
+                        <li v-for="r in l.blocage.raisons" :key="'lr'+l.numero+r.code"><div>{{ r.message }}</div><div v-if="r.avertissement" class="atl-ko">{{ r.avertissement }}</div>
+                          <span v-if="(r.sections || []).length" class="row wrap atl-g6 atl-mt4"><button v-for="x in r.sections" :key="'lrs'+l.numero+r.code+x.section_id" type="button" class="atl-lien" @click="atlGoSection(x.section_id)">{{ x.titre }}<template v-if="x.nombre"> ({{ x.nombre }})</template></button></span></li>
+                      </ul>
+                      <div class="row wrap atl-g6 atl-mt8">
+                        <button v-if="l.blocage.raisons.length" type="button" class="btn ghost sm" @click="atl.lotOuvert = atl.lotOuvert === l.numero ? '' : l.numero" :aria-expanded="atl.lotOuvert === l.numero ? 'true' : 'false'"><i :data-lucide="atl.lotOuvert === l.numero ? 'chevron-up' : 'chevron-down'"></i>{{ atl.lotOuvert === l.numero ? 'Replier' : 'Voir pourquoi' }}</button>
+                        <template v-if="!atlMobile">
+                          <button v-if="!l.blocage.derogation && l.blocage.bloque && l.blocage.raisons.every(r => r.code !== 'dossier_vide')" type="button" class="btn ghost sm" @click="atlDerogLot(l)"><i data-lucide="file-warning"></i>Exporter malgré tout…</button>
+                          <div class="spacer"></div>
+                          <button type="button" class="btn sm" @click="atlExportLot(l, 'docx')" :disabled="!!atl.busy" :aria-label="'Exporter le ' + l.libelle + ' en Word'"><span v-if="atl.busy==='export:'+l.numero+':docx'" class="spin"></span><i v-else data-lucide="file-down"></i>Word</button>
+                          <button type="button" class="btn sm" @click="atlExportLot(l, 'pdf')" :disabled="!!atl.busy" :aria-label="'Exporter le ' + l.libelle + ' en PDF'"><span v-if="atl.busy==='export:'+l.numero+':pdf'" class="spin"></span><i v-else data-lucide="file-down"></i>PDF</button>
+                        </template>
+                      </div>
+                      <details v-if="atlLotGrilleLignes(l).length" class="atl-det atl-mt4"><summary>Comment vous serez noté pour ce lot</summary>
+                        <div class="muted small">{{ l.grille.message }}</div>
+                        <blockquote v-if="l.grille.phrase" class="atl-q">{{ l.grille.phrase }}</blockquote>
+                        <div v-for="x in atlLotGrilleLignes(l)" :key="'lg'+l.numero+x.id" class="small atl-mt4"><b>{{ x.critere }}</b><span class="muted"> · {{ x.poids ? (x.poids_source === 'utilisateur' ? 'poids lu par vous : ' : 'poids écrit dans le règlement : ') + x.poids : 'aucun poids écrit pour ce lot' }}</span>
+                          <div v-if="x.message" class="muted">{{ x.message }}</div>
+                          <blockquote v-if="x.phrase && l.grille.mode === 'propre'" class="atl-q">{{ x.phrase }}<template v-if="x.source"> ({{ x.source }})</template></blockquote></div>
+                        <div v-if="l.grille.controle_total && l.grille.controle_total.message" class="muted small atl-mt4">{{ l.grille.controle_total.message }}</div>
+                      </details>
+                      <div v-if="l.dernier_export" class="muted small atl-mt4">Dernier export : {{ atlWhen(l.dernier_export.le) }} ({{ (l.dernier_export.format || '').toUpperCase() }})</div>
+                    </li>
+                  </ul>
+                </template>
+                <div v-for="w in (atlLots() ? [] : atl.st.blocage.avertissements.filter(x => x.code === 'non_valide'))" :key="'nv'" class="muted small atl-mt4">{{ w.message }}</div>
                 <div class="small atl-mt8 atl-ia"><i :data-lucide="atl.st.export.ia_utilisee ? 'sparkles' : 'pen-line'" style="width:14px;height:14px"></i><span>{{ atl.st.export.ia_utilisee ? 'Le fichier portera dans ses propriétés la mention « ' + atl.st.export.mention_ia + ' ».' : "Aucun texte n'a été préparé avec l'IA : le fichier n'en portera aucune mention." }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.st.export.message_ia }} Fichier : « {{ atl.st.export.nom_fichier_docx }} », police {{ atl.st.export.police.famille }} {{ atl.st.export.police.taille }}. Aucune marque interne, aucun renvoi aux extraits, aucun nom d'outil dans le fichier.</span></button></div>
                 <div v-if="!atlMobile" class="row wrap atl-g12 atl-mt8 small">
                   <label class="atl-chk"><input type="checkbox" :checked="atl.st.export.options.page_garde" @change="atlOption('page_garde', $event.target.checked, $event.target)">Page de garde</label>
                   <label class="atl-chk"><input type="checkbox" :checked="atl.st.export.options.sommaire" @change="atlOption('sommaire', $event.target.checked, $event.target)">Sommaire</label>
                   <label class="atl-chk"><input type="checkbox" :checked="atlSansIa()" @change="atlSansIaChoisir($event.target.checked, $event.target)" :disabled="!!atl.busy">Rédiger sans IA</label>
-                  <span v-if="atl.st.dossier.dernier_export" class="muted">Dernier export : {{ atlWhen(atl.st.dossier.dernier_export.le) }} ({{ (atl.st.dossier.dernier_export.format || '').toUpperCase() }})</span>
+                  <span v-if="atl.st.dossier.dernier_export && !atlLots()" class="muted">Dernier export : {{ atlWhen(atl.st.dossier.dernier_export.le) }} ({{ (atl.st.dossier.dernier_export.format || '').toUpperCase() }})</span>
                 </div>
                 <div v-else class="muted small atl-mt8">Sur téléphone, vous pouvez lire et valider. L'écriture et l'export se font depuis un ordinateur.</div>
               </div>
@@ -2127,7 +2190,7 @@
                 <ol class="atl-rep-liste">
                   <li v-for="l in atl.rep.d.sections" :key="'rl'+l.section_id" :id="'atl-rep-'+l.section_id" class="card atl-rep-l">
                     <div class="row atl-g6" style="align-items:flex-start">
-                      <div class="atl-rep-t" style="flex:1;min-width:0"><span v-if="l.numero_affiche" class="atl-num">{{ l.numero_affiche + ' ' }}</span>{{ l.intitule }}</div>
+                      <div class="atl-rep-t" style="flex:1;min-width:0"><span v-if="l.numero_affiche" class="atl-num">{{ l.numero_affiche + ' ' }}</span>{{ l.intitule }}<span v-if="l.lot_libelle || l.commune" class="atl-lot-tag" :class="{c: l.commune}">{{ l.commune ? 'Commune' : l.lot_libelle }}</span></div>
                       <span class="pill" :class="atlRepStatutCls(l.statut)" style="font-size:11px">{{ l.statut_libelle }}</span>
                     </div>
                     <div v-if="l.critere" class="muted small atl-mt4">Critère : {{ l.critere }}<template v-if="l.poids"> · {{ atlPoidsTexte(l) }}</template><template v-else> · aucun poids écrit dans le règlement</template></div>
@@ -2220,10 +2283,15 @@
                 <div class="atl-col-h"><b class="small">Plan</b><span class="muted small">{{ atl.st.sections.length }} partie{{ atl.st.sections.length > 1 ? 's' : '' }}</span><div class="spacer"></div>
                   <button v-if="!atlMobile" type="button" class="btn ghost sm" @click="atlPlanOpen()" title="Reconstruire le plan"><i data-lucide="list-restart"></i><span class="sr-only">Reconstruire le plan</span></button>
                   <button v-if="atlMobile" type="button" class="btn ghost sm" @click="atl.planOpen=!atl.planOpen" :aria-expanded="atl.planOpen ? 'true' : 'false'"><i :data-lucide="atl.planOpen ? 'chevron-up' : 'chevron-down'"></i>{{ atl.planOpen ? 'Replier' : 'Changer de partie' }}</button></div>
+                <div v-if="atlLots()" v-show="!atlMobile || atl.planOpen" class="atl-lot-f" role="group" aria-label="Parties affichées">
+                  <button type="button" class="atl-base" :class="{on: !atl.lotFiltre}" :aria-pressed="!atl.lotFiltre ? 'true' : 'false'" @click="atl.lotFiltre=''">Toutes</button>
+                  <button type="button" class="atl-base" :class="{on: atl.lotFiltre==='c'}" :aria-pressed="atl.lotFiltre==='c' ? 'true' : 'false'" @click="atl.lotFiltre='c'">Communes</button>
+                  <button v-for="l in atlLotsListe()" :key="'lf'+l.numero" type="button" class="atl-base" :class="{on: atl.lotFiltre===l.numero}" :aria-pressed="atl.lotFiltre===l.numero ? 'true' : 'false'" :title="l.libelle" @click="atl.lotFiltre=l.numero">Lot {{ l.numero }}</button>
+                </div>
                 <ol v-show="!atlMobile || atl.planOpen" class="atl-parts">
-                  <li v-for="s in atl.st.sections" :key="'p'+s.id">
+                  <li v-for="s in atlSectionsVues()" :key="'p'+s.id">
                     <button type="button" class="atl-part" :class="{on: s.id===atl.sel}" @click="atlSelect(s.id)" :aria-current="s.id===atl.sel ? 'true' : null" :aria-label="atlPartLabel(s)">
-                      <span class="atl-part-t"><span v-if="s.numero_affiche" class="atl-num">{{ s.numero_affiche + ' ' }}</span>{{ s.intitule }}</span>
+                      <span class="atl-part-t"><span v-if="atlNumPart(s)" class="atl-num">{{ atlNumPart(s) + ' ' }}</span>{{ s.intitule }}<span v-if="atlLots() && atlLotTag(s)" class="atl-lot-tag" :class="{c: s.commune}">{{ atlLotTag(s) }}</span></span>
                       <span v-if="!s.peut_ecrire" class="atl-part-m">Rédigée par {{ s.auteur.libelle }}</span>
                       <span v-if="s.critere && s.source_plan !== 'cadre'" class="atl-part-m">{{ s.critere }}<template v-if="s.poids"> · {{ s.poids }}<template v-if="s.poids_source==='utilisateur'"> (lu par vous)</template></template><template v-else-if="s.source_plan==='grille'"> · sans poids écrit</template></span>
                       <span class="atl-part-m row wrap atl-g6">
@@ -2237,11 +2305,12 @@
                 </ol>
                 <div v-show="!atlMobile" class="atl-plan-f">
                   <div v-if="atl.st.dossier.plan_source !== 'cadre'" class="row wrap atl-g6 atl-add">
+                    <select v-if="atlLots()" class="inp atl-ent-sel" v-model="atl.addLot" aria-label="Pour quels lots"><option value="">Commune à tous les lots</option><option v-for="l in atlLotsListe()" :key="'al'+l.numero" :value="l.numero">Lot {{ l.numero }}</option></select>
                     <input class="inp" v-model="atl.add" maxlength="200" placeholder="Nouvelle partie" aria-label="Intitulé de la nouvelle partie" @keydown.enter.prevent="atlAjouter()">
                     <button type="button" class="btn sm" @click="atlAjouter()" :disabled="!!atl.busy || (atl.add||'').trim().length < 2"><i data-lucide="plus"></i>Ajouter</button>
                   </div>
                   <details v-if="atl.st.sections_retirees.length" class="atl-det"><summary>Parties retirées ({{ atl.st.sections_retirees.length }})</summary>
-                    <div v-for="r in atl.st.sections_retirees" :key="'r'+r.id" class="row atl-g6 small atl-mt4"><span style="flex:1;min-width:0">{{ r.intitule }}</span><button type="button" class="btn ghost sm" @click="atlRemettre(r)" :disabled="!!atl.busy">Remettre</button></div>
+                    <div v-for="r in atl.st.sections_retirees" :key="'r'+r.id" class="row atl-g6 small atl-mt4"><span style="flex:1;min-width:0">{{ r.intitule }}<span v-if="r.lot_libelle" class="muted"> · {{ r.lot_libelle }}</span></span><button type="button" class="btn ghost sm" @click="atlRemettre(r)" :disabled="!!atl.busy">Remettre</button></div>
                   </details>
                   <div v-if="(atl.st.dossier.plan.criteres_hors_dossier || []).length" class="muted small atl-mt8">
                     <div v-for="(c,i) in atl.st.dossier.plan.criteres_hors_dossier" :key="'hc'+i">{{ c.critere }}<template v-if="c.poids"> ({{ c.poids }})</template> : {{ c.raison }}</div></div>
@@ -2266,6 +2335,7 @@
                       <span v-if="atlSec().compteur" class="muted">Environ {{ atlNum(atlSec().compteur.mots) }} {{ atlMotsLib(atlSec().compteur.mots) }}<template v-if="atlSec().compteur.pages_estimees"> · {{ atlNum(atlSec().compteur.pages_estimees) }} page{{ atlSec().compteur.pages_estimees > 1 ? 's' : '' }}</template></span>
                       <span v-if="atlLib() && atlControle(atlSec())" class="muted">{{ atlControle(atlSec()).message }}</span>
                     </div>
+                    <div v-if="atlLots() && !atlSec().genere" class="row wrap atl-g6 small atl-mt4"><span class="atl-lot-tag" :class="{c: atlSec().commune}">{{ atlSec().commune ? "Partie commune à vos lots" : atlSec().lot_libelle }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Commune ou propre à un lot</span><span class="tip-b" role="tooltip">{{ atlSec().commune ? "Rédigée une fois : son texte figure tel quel dans le fichier de chaque lot. Une modification vaut pour tous les lots." : "Elle n'entre que dans le fichier de ce lot." }} {{ atl.st.lots.regle_commune }}</span></button><button v-if="!atlMobile && atlSec().portee_modifiable" type="button" class="atl-lien" @click="atlPortee(atlSec(), !atlSec().commune)" :disabled="!!atl.busy">{{ atlSec().commune ? "La rédiger pour chaque lot" : "La rendre commune à tous les lots" }}</button></div>
                     <details v-if="atlSec().question" class="atl-det atl-mt8"><summary>Ce que demande l'acheteur</summary><blockquote class="atl-q">{{ atlSec().question }}</blockquote></details>
                     <details v-if="(atlSec().sous_criteres || []).length" class="atl-det atl-mt8"><summary>Sous-critères notés dans cette partie ({{ atlSec().sous_criteres.length }})</summary>
                       <div v-for="(sc,i) in atlSec().sous_criteres" :key="'sc'+i" class="atl-mt4"><div class="small"><b>{{ sc.critere }}</b><span v-if="sc.poids" class="muted"> · {{ sc.poids }}</span></div><blockquote class="atl-q">{{ sc.phrase }}</blockquote></div></details>
@@ -3614,7 +3684,7 @@
        refontes gratuites (décision 6a) : accord exprès. Version ancienne : lecture seule. -->
   <div v-if="atl.derog" class="overlay" @click.self="atl.derog=null" @keydown.esc="atl.derog=null">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="atl-dg-t">
-      <div class="modal-h"><h3 id="atl-dg-t">L'export est bloqué</h3><button type="button" class="x" @click="atl.derog=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+      <div class="modal-h"><h3 id="atl-dg-t">L'export est bloqué<template v-if="atl.derog.libelle"> : {{ atl.derog.libelle }}</template></h3><button type="button" class="x" @click="atl.derog=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
       <div class="modal-b">
         <p class="small atl-m0">Le dossier contient encore :</p>
         <ul class="atl-raisons">
@@ -3623,7 +3693,7 @@
             <span v-if="(r.limites || []).length" class="row wrap atl-g6 atl-mt4"><span v-for="(l,i) in r.limites" :key="'drl'+i" class="atl-lim atl-lim-rouge">{{ l.message }}</span></span></li>
         </ul>
         <template v-if="atl.derog.possibles.length">
-          <p class="small atl-mt12">Vous pouvez corriger ces points, ou exporter en l'état. Votre choix est inscrit au journal du dossier ; il ne vaut que pour le texte actuel.</p>
+          <p class="small atl-mt12">Vous pouvez corriger ces points, ou exporter en l'état. Votre choix est inscrit au journal du dossier ; il ne vaut que pour le texte actuel<template v-if="atl.derog.lot"> et pour le fichier de ce lot seulement</template>.</p>
           <div v-if="atl.derog.avert" class="atl-irreg" role="alert"><i data-lucide="octagon-alert"></i><b>{{ atl.derog.avert }}</b></div>
           <fieldset class="atl-fs"><legend class="small strong">Pourquoi exporter en l'état ?</legend>
             <label v-for="p in atl.derog.possibles" :key="'dp'+p.code" class="atl-radio"><input type="radio" name="atl-raison" :value="p.code" v-model="atl.derog.raison"><span>{{ p.libelle }}</span></label>
@@ -3653,6 +3723,33 @@
         <div class="atl-texte atl-mt8" v-html="atlVueHtml()"></div>
       </div>
       <div class="modal-f"><button type="button" class="btn" @click="atl.vue=null">Fermer</button><button v-if="!atl.vue.courante && !atlMobile && atlSec() && atlSec().peut_ecrire" type="button" class="btn primary" @click="atlRestaurer(atl.vue.v)" :disabled="!!atl.busy">Revenir à cette version</button></div>
+    </div>
+  </div>
+
+  <!-- Rédaction, vague 6 (J) : les lots du dossier. Le plan est reconstruit sans IA ; les parties actuelles sont retirées,
+       jamais supprimées (même confirmation que « Reconstruire le plan »). -->
+  <div v-if="atl.lotsDlg" class="overlay" @click.self="atl.lotsDlg=null" @keydown.esc="atl.lotsDlg=null">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="atl-lo-t">
+      <div class="modal-h"><h3 id="atl-lo-t">Lots auxquels vous répondez</h3><button type="button" class="x" @click="atl.lotsDlg=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+      <div class="modal-b">
+        <div v-if="atl.lotsDlg.loading" class="muted small" role="status"><span class="spin"></span> Lecture des lots du règlement…</div>
+        <template v-else>
+          <p class="small atl-m0">Deux lots ou plus : des parties communes, rédigées une fois pour tous vos lots, et des parties propres à chaque lot, avec un fichier par lot. Un seul lot, ou aucun : un seul dossier.</p>
+          <div class="atl-lots-l atl-mt8">
+            <label v-for="x in ((atl.lotsDlg.d && atl.lotsDlg.d.lots) || [])" :key="'dl'+x.numero" class="atl-chk small"><input type="checkbox" :checked="atl.lotsDlg.choix.includes(x.numero)" @change="atlLotsDlgBascule(x.numero)" :disabled="atl.lotsDlg.busy"><span>Lot {{ x.numero }} — {{ x.intitule }}</span><button v-if="x.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ x.phrase }} »<template v-if="x.source"> ({{ x.source }})</template></span></button></label>
+            <span v-for="x in atl.lotsDlg.ajoutes" :key="'da'+x.numero" class="atl-chk small"><span>Lot {{ x.numero }} — {{ x.intitule }} <span class="muted">(indiqué par vous)</span></span><button type="button" class="atl-lien" @click="atl.lotsDlg.ajoutes = atl.lotsDlg.ajoutes.filter(y => y.numero !== x.numero); atl.lotsDlg.confirm = ''">Retirer</button></span>
+          </div>
+          <div class="row wrap atl-g6 atl-mt8 atl-lot-aj">
+            <label class="sr-only" for="atl-dlotn">Numéro du lot</label><input id="atl-dlotn" class="inp atl-lot-n" v-model="atl.lotsDlg.ajout.numero" maxlength="2" inputmode="numeric" placeholder="N°">
+            <label class="sr-only" for="atl-dloti">Intitulé du lot</label><input id="atl-dloti" class="inp" v-model="atl.lotsDlg.ajout.intitule" maxlength="200" placeholder="Un lot absent de la liste : son intitulé" @keydown.enter.prevent="atlLotsDlgAjouter()">
+            <button type="button" class="btn sm ghost" @click="atlLotsDlgAjouter()"><i data-lucide="plus"></i>Ajouter</button>
+          </div>
+          <p class="muted small atl-mt8">Le plan est reconstruit, sans IA : les parties actuelles sont retirées du plan, jamais supprimées, et leurs textes restent dans l'historique.</p>
+          <div v-if="atl.lotsDlg.err" class="conv-err atl-mt8" role="alert"><i data-lucide="circle-alert"></i><div>{{ atl.lotsDlg.err }}</div></div>
+          <div v-if="atl.lotsDlg.confirm" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ atl.lotsDlg.confirm }}</span></div>
+        </template>
+      </div>
+      <div class="modal-f"><button type="button" class="btn" @click="atl.lotsDlg=null">Annuler</button><button type="button" class="btn primary" @click="atlLotsAppliquer(!!atl.lotsDlg.confirm)" :disabled="atl.lotsDlg.busy || atl.lotsDlg.loading"><span v-if="atl.lotsDlg.busy" class="spin"></span>{{ atl.lotsDlg.confirm ? 'Reconstruire quand même' : 'Reconstruire le plan' }}</button></div>
     </div>
   </div>
 
@@ -3915,8 +4012,8 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/redaction-partenaire.js" integrity="sha384-5YkHm+HTCo5oo0QuCxWuxMoPBmy0pArVRZPNLHSxYwM95KBvfQnOG0XNQRlRtTFb" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-zG0GJj516a3Rn+AUkajsVzluKwhdbMQgHkgeT7GGJwAyJPrsmYTVbwhTX2D8hD1Q" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
-<script src="/static/app.js" integrity="sha384-JQ1s3VOvx5SWQYclYl1WzUX9UNsjuBWd5VwjFn9PGjz5Vd5ZgjeTyt/RM4+7W/fl" defer></script>
+<script src="/static/app.js" integrity="sha384-bwowmjD8pry6UsYKgqQ26GAnTzCUf04MT402W8WMfDF4NxIMpiD5ddO81pv/X1Gh" defer></script>
 </body>
 </html>

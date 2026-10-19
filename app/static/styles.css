@@ -1180,6 +1180,26 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 .atl-prop > li:last-child { border-bottom:0; }
 .atl-prop-t { font-weight:600; font-size:13px; overflow-wrap:anywhere; }
 
+/* Rédaction, vague 6 (J) : plusieurs lots — choix des lots, étiquette « Commune » / « Lot 2 », un fichier par lot.
+   Même grammaire que le reste de l'atelier : filets fins, pastilles sobres, tout passe à la ligne à 375 px. */
+.atl-lots { padding:10px 12px; border-radius:10px; background:var(--surface-2); border:1px solid var(--border); }
+.atl-lots-ico { width:15px; height:15px; flex:none; color:var(--accent-text); }
+.atl-lots-l { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+.atl-lots-l .atl-chk { align-items:flex-start; overflow-wrap:anywhere; }
+.atl-lots-l .atl-chk input { margin-top:3px; }
+.atl-lot-aj .inp { height:32px; min-width:0; flex:1 1 160px; }
+.atl-lot-aj .inp.atl-lot-n { flex:0 0 56px; width:56px; }
+.atl-lot-tag { display:inline-block; margin-left:6px; font-size:10.5px; font-weight:600; line-height:1.5; padding:0 7px; border-radius:999px; background:var(--surface-3); color:var(--text-2); vertical-align:1px; white-space:nowrap; }
+.atl-lot-tag.c { background:var(--accent-weak); color:var(--accent-text); }
+.atl-lot-f { display:flex; flex-wrap:wrap; gap:6px; padding:0 16px 8px; }
+.atl-lot-f .atl-base { font-size:11.5px; padding:3px 10px; }
+.atl-lots-x { list-style:none; margin:8px 0 0; padding:0; }
+.atl-lots-x > li { padding:10px 0; border-bottom:1px solid var(--hairline); }
+.atl-lots-x > li:last-child { border-bottom:0; }
+.atl-lot-nom { flex:1; min-width:0; overflow-wrap:anywhere; }
+.atl-lot-fichier { overflow-wrap:anywhere; }
+.atl-lot-etat { display:inline-flex; align-items:center; gap:4px; }
+
 /* En-tête */
 .atl-head { padding:16px; }
 .atl-titre { margin:0; font-family:var(--font-display); font-size:16px; font-weight:700; line-height:1.3; overflow-wrap:anywhere; }

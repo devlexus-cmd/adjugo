@@ -262,14 +262,20 @@ def _correspondances(lot: str, section: DossierSection) -> list:
     return list(dict.fromkeys(out))
 
 
-def proposition(section: DossierSection, candidats: list) -> dict:
+def proposition(section: DossierSection, candidats: list, lots: Optional[dict] = None) -> dict:
     """Le rédacteur proposé pour une partie, avec sa raison (affichée telle quelle). `candidats` : les
     membres qui peuvent rédiger (`membres`, peut_rediger). Le chef de file par défaut ; un partenaire
-    seulement si son lot, et lui seul, se retrouve dans la partie."""
+    seulement si son lot, et lui seul, se retrouve dans la partie. Dossier à plusieurs lots (vague 6, `lots` :
+    {numéro: intitulé}) : la partie PROPRE à un lot est proposée au membre qui a déclaré ce lot, lui seul."""
     titre = far.fold(section.intitule or "")
     if "groupement" in titre:
         return {"redacteur": CHEF, "invite_id": None, "nom": "", "lot": "", "mots": [],
                 "message": "Partie sur le groupement : le chef de file la rédige."}
+    if lots:
+        from app.services import atelier_lots as al
+        p = al.proposition_du_lot(section, candidats, lots, _mots, _proches)
+        if p is not None:
+            return p
     scores = []
     for m in candidats:
         if not m.get("peut_rediger") or not m.get("lot"):
@@ -289,6 +295,15 @@ def proposition(section: DossierSection, candidats: list) -> dict:
     cite = ", ".join(f"« {w} »" for w in mots[:3])
     return {"redacteur": PARTENAIRE, "invite_id": m["invite_id"], "nom": m["nom"], "lot": m["lot"], "mots": mots[:5],
             "message": f"Proposé d'après le lot de {m['nom']} (« {m['lot'][:80]} ») : {cite} dans la partie."}
+
+
+def _lots_du_dossier(dossier) -> dict:
+    """{numéro: intitulé} des lots d'un dossier à plusieurs lots (vague 6) ; {} sinon."""
+    try:
+        from app.services import atelier_lots as al
+        return al.carte(dossier)
+    except Exception:       # noqa: BLE001
+        return {}
 
 
 # ── Lecture : répartition, statut, textes communs ────────────────────────────────────
@@ -1801,7 +1816,7 @@ def activer(db, project: Project, dossier: DossierPresentation, lecteur: at.Lect
         if at.est_generee(s):
             continue                # tirée du groupement : personne ne la rédige
         r = reps.get(s.id)
-        prop = proposition(s, cands)
+        prop = proposition(s, cands, lots=_lots_du_dossier(dossier))
         if r is None:
             r = DossierRepartition(dossier_id=dossier.id, section_id=s.id, project_id=project.id,
                                    owner_id=dossier.owner_id, redacteur=CHEF, choix="propose", proposition=prop,
@@ -1903,7 +1918,7 @@ def repartir(db, project: Project, dossier: DossierPresentation, section: Dossie
                                  owner_id=dossier.owner_id, redacteur=(PARTENAIRE if section.author_kind ==
                                                                         at.AUTEUR_INVITATION else CHEF),
                                  invite_id=section.author_invite_id, choix="manuel",
-                                 proposition=proposition(section, membres(db, project)),
+                                 proposition=proposition(section, membres(db, project), lots=_lots_du_dossier(dossier)),
                                  longueur_mots=at.cible_mots(section, None), relance_palier=0, aides_ia=0,
                                  lock_version=0)
         db.add(rep)
@@ -2222,11 +2237,16 @@ def relancer_parts(db, today: Optional[date] = None, deja=()) -> dict:
 # ── Vues ─────────────────────────────────────────────────────────────────────────────
 
 def _section_base_out(dossier: DossierPresentation, s: DossierSection, rang: str) -> dict:
-    """Ce que tout membre peut lire d'une partie : ce que l'acheteur note, avec la phrase du règlement."""
+    """Ce que tout membre peut lire d'une partie : ce que l'acheteur note, avec la phrase du règlement ; son lot
+    (vague 6 : dossier à plusieurs lots — le règlement le nomme, rien de privé)."""
+    lots = _lots_du_dossier(dossier)
+    lot = (s.lot or "") if lots else ""
     return {"section_id": s.id, "numero_affiche": rang, "titre": ax_titre(rang, s.intitule), "intitule": s.intitule,
             "critere": s.critere or "", "poids": s.poids or "", "poids_source": (s.poids_source or "") if s.poids else "",
             "question": s.question or "", "source_plan": s.source_plan, "limite": s.limite or [],
-            "partie_de_critere": bool(s.partie_de_critere)}
+            "partie_de_critere": bool(s.partie_de_critere),
+            "lot": lot, "lot_libelle": (f"Lot {lot}" + (f" — {lots.get(lot)}" if lots.get(lot) else "")) if lot else "",
+            "commune": bool(lots and not lot)}
 
 
 def vue_chef(db, project: Project, dossier: DossierPresentation) -> dict:
@@ -2248,7 +2268,8 @@ def vue_chef(db, project: Project, dossier: DossierPresentation) -> dict:
             sections.append(asm.ligne_chef(db, project, dossier, s, rangs.get(s.id, "")))
             continue
         r = reps.get(s.id)
-        prop = (r.proposition if r is not None and isinstance(r.proposition, dict) else None) or proposition(s, cands)
+        prop = (r.proposition if r is not None and isinstance(r.proposition, dict) else None) or \
+            proposition(s, cands, lots=_lots_du_dossier(dossier))
         red = (r.redacteur if r is not None else (PARTENAIRE if s.author_kind == at.AUTEUR_INVITATION else CHEF))
         iid = (r.invite_id if r is not None else s.author_invite_id) if red == PARTENAIRE else None
         nom = noms.get(iid) or (nom_partenaire(db.get(ProjectInvite, iid), _contribution(db, iid)) if iid else "")
@@ -2348,7 +2369,7 @@ def dossier_assemble(db, project: Project, dossier: DossierPresentation, pour_in
 POIDS_LIBELLES = {"reglement": "écrit dans le règlement", "utilisateur": "lu dans le règlement par le chef de file"}
 
 
-def note_acheteur(project: Project, section: DossierSection) -> dict:
+def note_acheteur(project: Project, section: DossierSection, dossier: Optional[DossierPresentation] = None) -> dict:
     """Ce que l'acheteur note pour une partie, comme la carte « Comment vous serez noté » (chantier du
     partenaire) : le critère, son poids TEL QU'ÉCRIT et d'où il vient, la phrase du règlement RETROUVÉE dans le
     dossier (celle de la grille, jamais reformulée) et la question du cadre de réponse. Sans IA ; rien de plus
@@ -2362,6 +2383,13 @@ def note_acheteur(project: Project, section: DossierSection) -> dict:
     if section.critere_id:
         ln = next((x for x in lignes if x.get("id") == section.critere_id), None)
         phrase = at._flat((ln or {}).get("phrase"))
+        if dossier is not None and (section.lot or ""):
+            # Vague 6 (J) : la partie d'un lot — la phrase du règlement pour CE lot (sa grille), jamais celle d'un autre.
+            from app.services import atelier_lots as al
+            g = (al.meta(dossier).get("grilles") or {}).get(section.lot) or {}
+            lx = next((x for x in g.get("lignes") or [] if x.get("id") == section.critere_id), None)
+            if lx is not None and lx.get("phrase"):
+                phrase = at._flat(lx.get("phrase"))
     question = at._flat(section.question)
     if not phrase and section.source_plan == ap.GRILLE:
         phrase = question                         # partie tirée d'un critère : sa question EST la phrase
@@ -2459,7 +2487,7 @@ def vue_partenaire(db, acces: Acces) -> dict:
         st = statut_de(db, s, r)
         nom = nom_partenaire(acces.inv, _contribution(db, acces.invite_id))
         parties.append(dict(_section_base_out(acces.dossier, s, rangs.get(s.id, "")),
-                            note=note_acheteur(acces.project, s),
+                            note=note_acheteur(acces.project, s, acces.dossier),
                             longueur_mots=r.longueur_mots, date_limite=_jour(r.date_limite),
                             statut=st, statut_libelle=STATUTS[st], mention=mention(db, s, nom),
                             brouillon=_brouillon_out(b, acces) if acces.cle_ok else None,

@@ -1429,7 +1429,9 @@ def _archive_memoire(db: Session, user: User, project: Project, dossier: dict, f
         remove_from_dossier(db, user.id, project.id, MEMOIRE_FOLDER,
                             [n for n in before if n not in names] + [_LEGACY_MEMOIRE_ARCHIVE])
         for kind, (name, content) in files.items():
-            replace_in_dossier(db, user.id, project.id, MEMOIRE_FOLDER, name, content, mimes.get(kind, ""))
+            # « docx:2 » / « pdf:2 » : le fichier d'un lot (rédaction, vague 6 — un fichier par lot).
+            replace_in_dossier(db, user.id, project.id, MEMOIRE_FOLDER, name, content,
+                               mimes.get(str(kind).split(":", 1)[0], ""))
         etat = dossier.get("memoire_etat") or {}
         wf["dossier_presentation"] = {
             "nom": dossier.get("memoire_nom") or "", "fichiers": names,
