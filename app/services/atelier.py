@@ -1393,6 +1393,8 @@ def _apports_partenaires(db, project_id: int) -> tuple:
             uids.append(uid)
         refs = "; ".join(_flat(r.get("intitule")) + (f", client {_flat(r.get('client'))}" if r.get("client") else "")
                          + (f", année {_flat(r.get('annee'))}" if r.get("annee") else "")
+                         # Vague 5 (E2) : tirée des DECP, un marché attribué (jamais « réalisé »).
+                         + (", marché attribué" if r.get("provenance") == "decp" else "")
                          for r in (c.references or []) if isinstance(r, dict) and r.get("intitule"))
         quals = ", ".join(_flat(q) for q in (c.qualifications or []) if q)
         s = f"- {c.company_name or 'Partenaire'} (lot : {c.lot or 'non précisé'})"

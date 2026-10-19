@@ -529,6 +529,9 @@ class ContextePartenaire:
                     parts.append("montant " + at._fmt_nombre(r.get("montant")) + " €")
                 if r.get("annee"):
                     parts.append("année " + at._flat(r.get("annee")))
+                if r.get("provenance") == "decp":
+                    # Vague 5 (E2) : tirée des DECP, un marché ATTRIBUÉ (jamais « réalisé »).
+                    parts.append("marché attribué (source publique DECP)")
                 lines.append("Référence : " + ", ".join(parts) + ".")
             cap = c.capacites if isinstance(c.capacites, dict) else {}
             if at._fmt_nombre(cap.get("effectif")):

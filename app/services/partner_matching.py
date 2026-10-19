@@ -174,7 +174,22 @@ def decp_label(v: Optional[dict]) -> str:
     au = f" (au {d})" if d else ""
     if n <= 0:
         return f"Aucun marché trouvé dans DECP au {d}" if d else "Aucun marché trouvé dans DECP"
-    return f"Au moins {n} marché{'s' if n > 1 else ''} public{'s' if n > 1 else ''} publié{'s' if n > 1 else ''} dans DECP{au}"
+    base = f"Au moins {n} marché{'s' if n > 1 else ''} public{'s' if n > 1 else ''} publié{'s' if n > 1 else ''} dans DECP{au}"
+    g = decp_groupements(v)
+    if g:
+        # Vague 5 (E2) : l'historique réel de co-traitance (titulaires 2 et 3, type de groupement déclaré).
+        base += f", dont {g} en groupement"
+    return base
+
+
+def decp_groupements(v: Optional[dict]) -> int:
+    """Marchés attribués EN GROUPEMENT selon DECP (0 si la lecture ne le dit pas, ou si elle date d'avant)."""
+    if not isinstance(v, dict):
+        return 0
+    try:
+        return max(0, int(v.get("groupements") or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def adjugo_label(n, when=None) -> str:
@@ -290,6 +305,11 @@ def capacites(p: dict) -> list:
         val = "aucun trouvé"
     out.append({"key": "marches_publics", "label": "Marchés publics publiés (DECP)", "valeur": val,
                 "source": _SOURCE_DECP, "date": _iso(vd.get("checked_at"))})
+    if vd.get("count") is not None and vd.get("groupements") is not None:
+        g = decp_groupements(vd)
+        out.append({"key": "marches_groupement", "label": "Marchés publics attribués en groupement (DECP)",
+                    "valeur": f"au moins {g}" if g > 0 else "aucun trouvé",
+                    "source": _SOURCE_DECP, "date": _iso(vd.get("checked_at"))})
     n = int(p.get("groupements_deposes") or 0)
     if n > 0:
         out.append({"key": "groupements_adjugo", "label": "Groupements marqués déposés sur Adjugo (déclaratif)",
@@ -425,8 +445,11 @@ def score_lot(lot: dict, p: dict, today: date) -> tuple:
         n = int(cnt or 0)
         pts += 12 if n >= 5 else (8 if n >= 1 else 0)
     ng = int(p.get("groupements_deposes") or 0)
-    if ng > 0:
+    # Vague 5 (E2) : l'historique RÉEL de co-traitance dans DECP compte comme les dépôts sur Adjugo (3 points
+    # au plus) ; il est déjà dit dans le libellé DECP (« dont N en groupement »).
+    if ng > 0 or decp_groupements(vd) > 0:
         pts += 3
+    if ng > 0:
         parts.append(adjugo_label(ng, p.get("groupements_checked_at")))
     statut = "ok" if pts >= 12 else ("partiel" if pts > 0 else "non")
     add("experience", pts, statut, " · ".join(parts), f"{_SOURCE_DECP} ; {_SOURCE_ADJUGO}", vd.get("checked_at"))

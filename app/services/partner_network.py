@@ -179,18 +179,33 @@ def fetch_bodacc(siren: str, now: Optional[datetime] = None) -> dict:
     return out
 
 
+def _en_groupement(row: dict) -> bool:
+    """La ligne DECP dit-elle un marché attribué EN GROUPEMENT (vague 5, E2) ? Seulement quand DECP le
+    déclare (groupement conjoint ou solidaire) : plusieurs titulaires sur une ligne « pas de groupement »
+    (accord-cadre à plusieurs attributaires, saisie contradictoire) ne comptent pas."""
+    from app.services.sources_publiques import _fold
+    tg = _fold(row.get("typegroupementoperateurs") or "")
+    return "solidaire" in tg or "conjoint" in tg
+
+
 def fetch_decp(siren: str, now: Optional[datetime] = None) -> dict:
-    """Marchés publics publiés dans DECP avec ce SIREN comme titulaire. count = nombre de
-    marchés DISTINCTS lus (≤ 100 lignes) → « au moins N » ; None = non vérifié."""
+    """Marchés publics publiés dans DECP avec ce SIREN comme titulaire 1, 2 OU 3 (vague 5, E2 : les
+    titulaires 2 et 3 donnent l'historique réel de co-traitance). count = nombre de marchés DISTINCTS
+    lus (≤ 100 lignes) → « au moins N » ; groupements = ceux où l'entreprise figure en groupement ;
+    None = non vérifié."""
     from app.services.decp import API
     now = now or utcnow_naive()
-    out = {"count": None, "last_date": None, "checked_at": now.isoformat(timespec="seconds"), "statut": "erreur"}
+    out = {"count": None, "groupements": None, "last_date": None, "checked_at": now.isoformat(timespec="seconds"),
+           "statut": "erreur"}
     siren = clean_siren(siren)
     if not siren:
         out["statut"] = "siren_invalide"
         return out
-    params = {"limit": 100, "select": "objet,datenotification,acheteur_id",
-              "where": f'startswith(titulaire_id_1, "{siren}")', "order_by": "-datenotification"}
+    from app.services.decp import where_titulaire
+    where = where_titulaire(siren)
+    params = {"limit": 100, "select": ("objet,datenotification,acheteur_id,titulaire_id_1,titulaire_id_2,"
+                                       "titulaire_id_3,typegroupementoperateurs"),
+              "where": where, "order_by": "-datenotification"}
     try:
         data = _http_get(API, params)
     except Exception as e:
@@ -198,9 +213,13 @@ def fetch_decp(siren: str, now: Optional[datetime] = None) -> dict:
         return out
     rows = [r for r in (data.get("results") or []) if isinstance(r, dict)]
     # Un marché multi-lots apparaît plusieurs fois : on dédoublonne → borne INFÉRIEURE honnête.
-    keys = {((r.get("objet") or "").strip().lower()[:80], str(r.get("acheteur_id") or ""),
-             str(r.get("datenotification") or "")[:10]) for r in rows}
-    out.update({"statut": "ok", "count": len(keys),
+
+    def _k(r):
+        return ((r.get("objet") or "").strip().lower()[:80], str(r.get("acheteur_id") or ""),
+                str(r.get("datenotification") or "")[:10])
+    keys = {_k(r) for r in rows}
+    grp = {_k(r) for r in rows if _en_groupement(r)}
+    out.update({"statut": "ok", "count": len(keys), "groupements": len(grp),
                 "last_date": (str(rows[0].get("datenotification") or "")[:10] or None) if rows else None})
     return out
 

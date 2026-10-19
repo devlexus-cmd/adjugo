@@ -1109,6 +1109,35 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
   .pv-form { padding:12px; }
 }
 
+/* ══════════ Sources publiques (rédaction, vague 5, E2) : marchés publics (DECP) et qualifications RGE ══════════
+   Un bouton, puis une liste à cocher ; une alerte se lit sous sa ligne. Lisible à 375 px, rythme de 16 px. */
+.sp-host { margin:0 0 12px; }
+.sp-lanceur { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; }
+.sp-ok { color:var(--success-text, var(--text-2)); }
+.sp-panel { padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--surface-2); }
+.sp-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.sp-sec { margin-top:12px; }
+.sp-sec:first-of-type { margin-top:4px; }
+.sp-list { list-style:none; margin:0; padding:0; }
+.sp-i { padding:8px 0; border-bottom:1px solid var(--hairline); }
+.sp-i:last-child { border-bottom:0; }
+.sp-l { display:flex; gap:9px; align-items:flex-start; cursor:pointer; }
+.sp-l input { margin-top:3px; flex:none; width:16px; height:16px; }
+.sp-o { font-size:13px; overflow-wrap:anywhere; }
+.sp-p { margin:8px 0 0; }
+.sp-mt { margin-top:10px; }
+.sp-fictif, .sp-ancien { display:flex; gap:8px; align-items:flex-start; padding:8px 10px; margin:0 0 8px; border-radius:10px; background:var(--warning-weak); color:var(--text); }
+.sp-fictif .lucide, .sp-ancien .lucide { color:var(--warning-text); margin-top:2px; }
+.sp-exp { margin-top:10px; padding:8px 10px; border-radius:10px; background:var(--surface); border:1px solid var(--hairline); }
+.sp-exp-l { margin:4px 0 0; padding-left:18px; }
+.sp-exp-l li { margin:4px 0; overflow-wrap:anywhere; }
+.sp-acts { gap:8px; margin-top:12px; }
+.sp-refs-note { margin-top:4px; }
+@media (max-width:600px) {
+  .sp-panel { padding:12px; }
+  .sp-acts .btn.sm { flex:1 1 auto; justify-content:center; }
+}
+
 /* ══════════ Atelier du dossier de présentation (rédaction, vague 2) ══════════
    Plan à gauche, texte au centre, faits « à relire » et extraits à droite. Sobre : filets fins,
    rythme 16 px, rien collé aux bords ; lisible à 375 px (une colonne, aucune barre horizontale). */

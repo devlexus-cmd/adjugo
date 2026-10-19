@@ -312,6 +312,10 @@ app.include_router(knowledge_router)
 # « /api/preuves/reprise » ne doit pas être lu comme la preuve n° « reprise ».
 from app.routers.preuves_ecrans import router as preuves_ecrans_router
 app.include_router(preuves_ecrans_router)
+# Rédaction, vague 5 (E2) : « Retrouver mes marchés publics » (DECP) et mes qualifications RGE (ADEME), dans
+# « Mes preuves » et dans la part d'un partenaire du groupement. Avant le socle, comme les écrans.
+from app.routers.preuves_publiques import router as preuves_publiques_router
+app.include_router(preuves_publiques_router)
 from app.routers.preuves import router as preuves_router
 app.include_router(preuves_router)
 # Rédaction, vague 3 (chantier I) : fiches PROPOSÉES à partir des anciens documents de « Mon savoir-faire ».

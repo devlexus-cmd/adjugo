@@ -108,6 +108,12 @@ Contrôle du passage (sans IA, `pv.localiser` puis `pv.elements_hors_passage`) :
   `elements: [...]` (« Ces éléments de la fiche ne figurent pas dans le passage : … Corrigez-les,
   choisissez un passage qui les contient, ou choisissez « déclaré par vous ». »).
 
+Vague 5 (E2, `docs/REDACTION_V5.md`) : une source publique peut porter un **relevé** (`source.releve` : les
+champs de la fiche tels que la source les donne, DECP ou liste RGE). Tant que la fiche garde cette source, ces
+champs et la source elle-même ne changent pas (422 `valeur_source_publique` + `champs`) ; « déclaré par vous »
+les rend modifiables. `preuve_out` expose `champs_source_publique`. Une référence tirée des DECP se dit
+« marché attribué » (`texte_de(…, attribue=True)`), jamais « réalisé ».
+
 Un document d'origine de plus de 3 ans (`date_source`) : `a_reconfirmer: true` (I l'affiche « à
 reconfirmer »). La preuve reste utilisable si l'utilisateur l'accepte.
 

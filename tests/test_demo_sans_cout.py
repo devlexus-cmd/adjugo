@@ -224,6 +224,13 @@ SANS_COUT = {
     ("DELETE", "/api/amont/{signal_id}"): _I, ("DELETE", "/api/knowledge/{doc_id}"): _I,
     ("POST", "/api/knowledge/search"): "recherche dans « Mon savoir-faire », sans IA",
     ("POST", "/api/preuves/reprise"): _V, ("POST", "/api/preuves"): _V, ("PATCH", "/api/preuves/{preuve_id}"): _V,
+    # Rédaction, vague 5 (E2) : fiches cochées depuis les marchés publics (DECP) et la liste RGE — lectures
+    # publiques en GET seulement, 0 IA ; la démo lit un exemple fictif (aucun réseau) et n'écrit rien.
+    ("POST", "/api/preuves/publiques"): _V + " (0 IA, lectures publiques en GET)",
+    ("POST", "/api/invite/{token}/contribution/reprendre"): ("lien partenaire de la démo : refusé dans la route "
+                                                            "(part figée par la convention ; 0 IA, aucun email)"),
+    ("POST", "/api/invite/{token}/contribution/reprendre-preuves"): ("lien partenaire de la démo : refusé dans la "
+                                                                    "route ; compte qui a rattaché le lien seulement"),
     ("POST", "/api/preuves/{preuve_id}/accepter"): _V, ("POST", "/api/preuves/{preuve_id}/retirer"): _V,
     ("DELETE", "/api/preuves/{preuve_id}"): _V,
     ("POST", "/api/atelier/{project_id}/sections/{section_id}/inserer-preuve"): _V,
