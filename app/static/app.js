@@ -370,7 +370,7 @@ function _atlInit() {
            busy: "", hist: { open: false, loading: false, list: [], sid: null }, vue: null, derog: null, debit: null,
            plan: null, planOpen: false, add: "", ren: { on: false, v: "" }, factFocus: "", srcFocus: "", note: "",
            exportOpen: false, lastDerog: "", live: "", src: null, passage: null,
-           onglet: "redaction", rep: _atlRepInit(), ent: _atlEntInit() };
+           onglet: "redaction", rep: _atlRepInit(), ent: _atlEntInit(), sansIaPropose: false, exOpen: false };
 }
 // Entretien chantier (rédaction, vague 5 — D) : les questions lues (GET/POST …/entretien), la saisie de chaque
 // réponse (par question), l'action en cours. `v` : clé de rendu des menus « Posée à » (remis à la valeur enregistrée).
@@ -3712,7 +3712,10 @@ const __adjApp = createApp({
       const n = (g.criteres || []).filter(x => x.dans_le_plan).length, av = (g.compteurs && g.compteurs.a_verifier) || 0;
       const s = (g.ponderation || {}).statut;
       const base = n ? n + " critère" + (n > 1 ? "s" : "") : "aucun critère retenu";
-      return base + (s === "non_ponderes" ? (n === 1 ? " · sans poids" : " · non pondérés") : "") + (av ? " · " + av + " à vérifier" : "");
+      // Vague 5 : le nombre d'exigences repérées (hors celles retirées par l'utilisateur).
+      const ex = ((g.exigences && g.exigences.compteurs) || {}).total || 0;
+      return base + (s === "non_ponderes" ? (n === 1 ? " · sans poids" : " · non pondérés") : "") + (av ? " · " + av + " à vérifier" : "")
+        + (ex ? " · " + ex + " exigence" + (ex > 1 ? "s" : "") : "");
     },
     async aoGrilleChoix(id, choix, poids) {
       const p = this.ao.project; if (!p || this.ao.grilleBusy) return;
@@ -3728,6 +3731,44 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); }
       finally { this.ao.grilleBusy = ""; }
     },
+    // Rédaction, vague 5 (C2 complet) : exigences et questions de la grille, relecture du dossier — sans IA.
+    _aoGrilleMaj(p, r) {
+      if (!p || !r || !r.grille_notation) return;
+      const a = Object.assign({}, p.ai_analysis || {}); a.details = Object.assign({}, a.details || {}, { grille_notation: r.grille_notation });
+      p.ai_analysis = a;
+    },
+    async aoGrilleElement(type, id, choix) {
+      const p = this.ao.project; if (!p || this.ao.grilleBusy) return;
+      this.ao.grilleBusy = (type === "question" ? "q:" : "ex:") + id;
+      try {
+        const r = await this.api("POST", "/api/sourcing/grille/element", { project_id: p.id, type, element_id: id, choix });
+        this._aoGrilleMaj(p, r);
+        this.notify(type === "question" ? (choix === "ecarte" ? "Question retirée" : "Question remise dans la liste")
+          : (choix === "ecarte" ? "Exigence retirée de la liste" : choix === "traitee" ? "Exigence dite traitée par vous" : "Exigence remise dans la liste"));
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.ao.grilleBusy = ""; }
+    },
+    async aoGrilleAjout(phrase, fini) {
+      const p = this.ao.project; if (!p || this.ao.grilleBusy) return;
+      this.ao.grilleBusy = "ajout";
+      try {
+        const r = await this.api("POST", "/api/sourcing/grille/exigence", { project_id: p.id, phrase });
+        this._aoGrilleMaj(p, r); this.notify("Exigence ajoutée : sa phrase est bien dans le dossier");
+        if (typeof fini === "function") fini(true);
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.ao.grilleBusy = ""; }
+    },
+    async aoGrilleRelire() {
+      const p = this.ao.project; if (!p || this.ao.grilleBusy) return;
+      this.ao.grilleBusy = "relire";
+      try {
+        const r = await this.api("POST", "/api/sourcing/grille/relire", { project_id: p.id });
+        this._aoGrilleMaj(p, r); this.notify("Dossier relu sans IA : rien n'a été débité");
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { this.ao.grilleBusy = ""; }
+    },
+    // « Rédiger sans IA » depuis la carte : l'atelier s'ouvre sur le choix (il s'enregistre là, pour CE dossier).
+    aoSansIa() { this.atlOpen(); this.atl.sansIaPropose = true; },
     // Détail du score : on affiche le VRAI score déterministe du DCE (score_breakdown,
     // 6 critères pondérés) ; repli sur le pré-score de l'avis (lead_score) si absent.
     aoBreakdown() {
@@ -4819,9 +4860,9 @@ const __adjApp = createApp({
     async atlCreer() {
       const a = this.atl; if (a.busy) return; a.busy = "creer";
       try {
-        const d = await this.api("POST", this._atlUrl(""), { base: a.base || "auto" });
+        const d = await this.api("POST", this._atlUrl(""), { base: a.base || "auto", sans_ia: !!a.sansIaPropose });
         a.st = d; a.prop = null; this.atlSelect(((d.sections || [])[0] || {}).id || null);
-        this.notify("Dossier de présentation créé : " + (d.sections || []).length + " parties");
+        this.notify("Dossier de présentation créé : " + (d.sections || []).length + " parties" + (d.sans_ia && d.sans_ia.actif ? ", à rédiger sans IA" : ""));
       } catch (e) { if (e.code === "dossier_existe") this.atlLoad(); else this.notify(e.message, "err"); }
       finally { a.busy = ""; }
     },
@@ -5359,6 +5400,31 @@ const __adjApp = createApp({
     atlVueHtml() { const x = this.atl.vue; return x ? atlMdToHtml(x.v.texte, []) : ""; },
 
     // ── Export (Word, PDF), blocage et dérogation inscrite au journal (décision 2b) ──
+    // Rédaction, vague 5 : le mode « sans IA » de CE dossier (aucune IA de rédaction, pour personne).
+    atlSansIa() { const st = this.atl.st; return !!(st && st.sans_ia && st.sans_ia.actif); },
+    async atlSansIaChoisir(val) {
+      const a = this.atl; if (!a.st || a.busy) return; a.busy = "sansia";
+      try {
+        const r = await this.api("PUT", this._atlUrl("/options"), { sans_ia: !!val });
+        a.st.export.options = r.options; if (r.sans_ia) a.st.sans_ia = r.sans_ia; a.sansIaPropose = false;
+        this.notify(val ? "Ce dossier se rédige maintenant sans IA" : "L'aide de l'IA est de nouveau proposée pour ce dossier");
+        this.atlLoad(true);
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { a.busy = ""; }
+    },
+    // « 11 exigences traitées sur 12 » : pastille, libellé, et les choix (dite traitée par vous, retirée).
+    atlExCls(x) { return ({ traitee: "go", traitee_selon_vous: "neutral", a_traiter: "a_etudier", retiree: "neutral" })[x.statut] || "neutral"; },
+    atlExLib(x) { return ({ traitee: "traitée", traitee_selon_vous: "traitée, selon vous", a_traiter: "à traiter", retiree: "retirée" })[x.statut] || ""; },
+    async atlExChoix(x, choix) {
+      const a = this.atl; if (!a.st || a.busy) return; a.busy = "ex:" + x.id;
+      try {
+        const r = await this.api("POST", "/api/sourcing/grille/element", { project_id: a.pid, type: "exigence", element_id: x.id, choix });
+        this.notify(choix === "traitee" ? "Exigence dite traitée par vous" : choix === "ecarte" ? "Exigence retirée de la liste" : "Choix annulé");
+        if (this.ao.project && this.ao.project.id === a.pid) this._aoGrilleMaj(this.ao.project, r);   // la carte du marché suit
+        await this.atlLoad(true);
+      } catch (e) { this.notify(e.message, "err"); }
+      finally { a.busy = ""; }
+    },
     async atlOption(k, val) {
       const a = this.atl; if (!a.st) return;
       try { const r = await this.api("PUT", this._atlUrl("/options"), { [k]: !!val }); a.st.export.options = r.options; this.atlLoad(true); }
@@ -5724,8 +5790,8 @@ __adjApp.component("redaction-partenaire", {
 });
 __adjApp.component("grille-carte", {
   props: { g: { type: Object, default: null }, edit: { type: Boolean, default: false }, busy: { type: String, default: "" } },
-  emits: ["choix"],
-  data() { return { poids: {} }; },
+  emits: ["choix", "element", "ajout", "relire", "sansia"],
+  data() { return { poids: {}, ajout: "" }; },
   computed: {
     vm() {
       const g = this.g || {}, c = g.contraintes || {}, cad = c.cadre || {};
@@ -5733,10 +5799,24 @@ __adjApp.component("grille-carte", {
         const ch = (x.choix_utilisateur && x.choix_utilisateur.choix) || (x.confirme ? "confirme" : x.ecarte ? "ecarte" : "");
         return { id: x.id || "", critere: x.critere || "", phrase: x.phrase || "", source: x.source || "", statut: x.statut,
           plan: !!x.dans_le_plan, choix: ch, poids: x.dans_le_plan ? (x.poids_retenu != null ? x.poids_retenu : (x.poids || "")) : "",
-          poidsVous: x.poids_source === "utilisateur" || x.poids_saisi === true };
+          poidsVous: x.poids_source === "utilisateur" || x.poids_saisi === true,
+          // Vague 5 : sous-critères tels qu'écrits, et le contrôle de leur total (sans IA).
+          sous: (x.sous_criteres || []).map(s => ({ critere: s.critere || "", poids: s.poids || "", phrase: s.phrase || "", statut: s.statut || "" })),
+          ctlSous: x.controle_sous || {} };
       });
       const lim = (c.limites || []).filter(x => x && x.type);
       const vis = c.visite && (c.visite.phrase || c.visite.obligatoire) ? c.visite : null;
+      // Vague 5 : ce que le dossier DEMANDE. Grille du chef de file : {liste, compteurs} ; vue des partenaires :
+      // une liste. Une grille d'avant la vague 5 n'a pas ces rubriques (« Relire le dossier, sans IA »).
+      const v2 = Object.prototype.hasOwnProperty.call(g, "exigences");
+      const exRaw = Array.isArray(g.exigences) ? g.exigences : ((g.exigences && g.exigences.liste) || []);
+      const exigences = exRaw.map(x => ({ id: x.id || "", texte: x.texte || "", phrase: x.phrase || "", intro: x.intro || "", source: x.source || "",
+        origine: x.origine || "", retiree: x.retiree === true || ((x.choix_utilisateur || {}).choix === "ecarte") }));
+      const cmRaw = Array.isArray(g.candidatures_multiples) ? g.candidatures_multiples : ((g.candidatures_multiples && g.candidatures_multiples.messages) || []);
+      const qs = (g.questions_acheteur && typeof g.questions_acheteur === "object") ? g.questions_acheteur : null;
+      const questions = ((qs && qs.liste) || []).map(q => ({ id: q.id || "", question: q.question || "", motif: q.motif || "", origine: q.origine || "",
+        phrases: (q.phrases || []).filter(p => p && p.phrase), retiree: ((q.choix_utilisateur || {}).choix === "ecarte") }));
+      const ia = (g.ia && g.ia.mentionne) ? g.ia : null;
       // Pastilles : les limites du mémoire, du cadre ou de l'offre (et la police) ; celles d'une
       // partie (un CV, une fiche référence, une question) restent dans « Voir les phrases ».
       return { lignes, pond: g.ponderation || {}, ordre: g.ordre || {}, total: g.controle_total || {},
@@ -5747,7 +5827,9 @@ __adjApp.component("grille-carte", {
         cadreFourni: cad.fourni != null ? !!cad.fourni : !!c.cadre_fourni,
         cadreMentionne: cad.mentionne != null ? !!cad.mentionne : !!c.cadre_mentionne,
         cadrePhrase: cad.phrase || "", limites: lim, visite: vis,
-        lecture: (g.lecture && Array.isArray(g.lecture.pieces)) ? g.lecture : null };
+        lecture: (g.lecture && Array.isArray(g.lecture.pieces)) ? g.lecture : null,
+        v2, exigences, env: (g.environnement && g.environnement.dans_la_note) ? g.environnement : null,
+        cm: cmRaw.filter(x => x && x.message), ia, qs, questions };
     },
     alerteTotal() { const s = this.vm.total.statut; return s === "ecart" || s === "incomplet"; },
     piecesResume() {
@@ -5755,12 +5837,26 @@ __adjApp.component("grille-carte", {
       const manque = ps.filter(p => p.statut === "non_lu" || p.statut === "lu_en_partie" || p.ia || (!p.statut && p.lu_en_entier === false)).length;
       return manque ? ps.length + ", dont " + manque + " non lue" + (manque > 1 ? "s" : "") + " ou lue" + (manque > 1 ? "s" : "") + " en partie" : String(ps.length);
     },
-    rienImpose() { const v = this.vm; return !v.impose && !v.cadreFourni && !v.cadreMentionne && !v.limites.length && !v.visite; },
+    rienImpose() { const v = this.vm; return !v.impose && !v.cadreFourni && !v.cadreMentionne && !v.limites.length && !v.visite && !v.cm.length && !v.ia; },
     cadreManquant() { const v = this.vm; return v.impose && !v.cadreFourni; },
+    exResume() {
+      const ex = this.vm.exigences, n = ex.filter(x => !x.retiree).length, r = ex.length - n;
+      if (!ex.length) return "";
+      return n + " exigence" + (n > 1 ? "s" : "") + " repérée" + (n > 1 ? "s" : "") + (r ? " (" + r + " retirée" + (r > 1 ? "s" : "") + (this.edit ? " par vous" : " par le chef de file") + ")" : "") + ".";
+    },
+    qActives() { return this.vm.questions.filter(q => !q.retiree).length; },
   },
   methods: {
     lim(x) { return _gnLim(x); },
     send(l, choix) { this.$emit("choix", l.id, choix, choix === "confirme" ? String(this.poids[l.id] || "").trim() : ""); },
+    // La phrase collée reste dans le champ tant que le serveur ne l'a pas retrouvée dans le dossier.
+    ajouter() { const t = String(this.ajout || "").trim(); if (t.length < 12) return; this.$emit("ajout", t, ok => { if (ok) this.ajout = ""; }); },
+    async copier(q) {
+      const t = q.question + (q.phrases.length ? "\n\n" + q.phrases.map(p => "« " + p.phrase + " »").join("\n") : "");
+      const r = this.$root;
+      try { await navigator.clipboard.writeText(t); if (r && r.notify) r.notify("Question copiée : collez-la sur la plateforme de l'acheteur"); }
+      catch (e) { if (r && r.notify) r.notify("Copie impossible : sélectionnez la question et copiez-la à la main", "err"); }
+    },
   },
   template: '<div class="gn">'
     + '<ul v-if="vm.lignes.length" class="gn-list">'
@@ -5770,6 +5866,8 @@ __adjApp.component("grille-carte", {
     + '<span v-if="l.choix===\'ecarte\'" class="pill neutral gn-pill">retiré</span>'
     + '<span v-else-if="l.choix===\'confirme\' && l.statut===\'a_verifier\'" class="pill neutral gn-pill">{{ edit ? "confirmé par vous" : "confirmé par le chef de file" }}</span>'
     + '<span v-else-if="l.statut===\'a_verifier\'" class="pill a_etudier gn-pill">à vérifier dans le règlement</span>'
+    + '<ul v-if="l.sous.length" class="gn-sous" :aria-label="\'Sous-critères de \' + l.critere"><li v-for="(s,i) in l.sous" :key="\'sc\'+i"><span class="gn-sous-n">{{ s.critere }}</span><span v-if="s.poids" class="gn-poids num">{{ s.poids }}</span><span v-else-if="s.statut===\'a_verifier\'" class="muted small">poids à vérifier</span></li></ul>'
+    + '<span v-if="l.ctlSous.statut===\'ecart\' || l.ctlSous.statut===\'non_verifiable\'" class="muted small gn-sous-ctl">{{ l.ctlSous.message }}</span>'
     + '</li></ul>'
     + '<p v-if="vm.pond.message" class="muted small gn-note">{{ vm.pond.message }}</p>'
     + '<div v-if="alerteTotal" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ vm.total.message }}</span></div>'
@@ -5781,6 +5879,7 @@ __adjApp.component("grille-carte", {
     + '<blockquote v-if="l.phrase" class="gn-q">{{ l.phrase }}</blockquote>'
     + '<div v-else class="muted small">Phrase non retrouvée dans le dossier importé.</div>'
     + '<div v-if="l.source" class="muted small">Trouvée dans : {{ l.source }}</div>'
+    + '<div v-for="(s,i) in l.sous" :key="\'sp\'+i" class="gn-src-sous"><div class="small"><b>Sous-critère : {{ s.critere }}</b><span v-if="s.poids" class="muted"> · {{ s.poids }}</span></div><blockquote class="gn-q">{{ s.phrase }}</blockquote></div>'
     + '<div v-if="edit" class="gn-act">'
     + '<template v-if="!l.choix && (l.statut===\'a_verifier\' || (!l.poids && vm.pond.statut!==\'non_ponderes\'))">'
     + '<input class="inp gn-inp" v-model="poids[l.id]" maxlength="40" placeholder="Poids lu, ex. 60 %" :aria-label="\'Poids lu dans le règlement pour \' + l.critere">'
@@ -5792,12 +5891,18 @@ __adjApp.component("grille-carte", {
     + '</div></div>'
     + '<div v-if="vm.ordre.phrase" class="gn-src"><div class="gn-src-t">Ordre des critères</div><blockquote class="gn-q">{{ vm.ordre.phrase }}</blockquote></div>'
     + '</details>'
+    // Vague 5 : l'environnement, en information neutre.
+    + '<template v-if="vm.env"><div class="gn-env small"><i data-lucide="leaf" aria-hidden="true"></i><span>{{ vm.env.message }}</span></div>'
+    + '<details class="gn-det"><summary>Voir où il apparaît</summary><div v-for="(x,i) in vm.env.lieux" :key="\'en\'+i" class="gn-src"><div v-if="x.libelle" class="gn-src-t">{{ x.libelle }}<span v-if="x.poids" class="muted"> · {{ x.poids }}</span></div><blockquote class="gn-q">{{ x.phrase }}</blockquote></div></details></template>'
     + '<div class="gn-sub">Ce que le dossier impose'
-    + '<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Repéré dans le texte, sans IA : un cadre de réponse fourni ou imposé, des limites de pages, de mots, de caractères ou de police, une visite obligatoire. Chaque repérage garde sa phrase : relisez-la avant de rédiger. Un repérage peut en manquer : le règlement fait foi.</span></button></div>'
+    + '<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Repéré dans le texte, sans IA : un cadre de réponse fourni ou imposé, des limites de pages, de mots, de caractères ou de police, une visite obligatoire, l\'interdiction de répondre à la fois seul et en groupement, une phrase sur l\'intelligence artificielle. Chaque repérage garde sa phrase : relisez-la avant de rédiger. Un repérage peut en manquer : le règlement fait foi.</span></button></div>'
     + '<div v-if="vm.impose" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ vm.msgImpose }}</span></div>'
     + '<p v-if="cadreManquant" class="small gn-note">{{ edit ? "Ce fichier ne figure pas dans les pièces importées : récupérez-le sur la plateforme de l\'acheteur." : "Ce fichier ne figure pas dans les pièces importées : le chef de file doit le récupérer sur la plateforme de l\'acheteur." }}</p>'
     + '<p v-else-if="!vm.impose && vm.cadreFourni" class="small gn-note">Un cadre de réponse est fourni avec le dossier.</p>'
     + '<p v-else-if="!vm.impose && vm.cadreMentionne" class="small gn-note">Le règlement parle d\'un cadre de réponse, mais il ne figure pas dans les fichiers lus.</p>'
+    + '<div v-for="x in vm.cm" :key="\'cm\'+x.code" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ x.message }}</span></div>'
+    + '<div v-if="vm.ia" class="warn-box gn-ia"><i data-lucide="pen-off" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span class="gn-ia-t">{{ vm.ia.message }}<template v-if="vm.ia.phrases && vm.ia.phrases.length"> <q class="gn-ia-q">{{ vm.ia.phrases[0].phrase }}</q></template></span>'
+    + '<button v-if="edit" type="button" class="btn sm" @click="$emit(\'sansia\')">Rédiger sans IA</button></div>'
     + '<ul v-if="vm.chips.length || vm.visite" class="gn-chips">'
     + '<li v-for="(x,i) in vm.chips" :key="\'l\'+i">{{ lim(x) }}</li>'
     + '<li v-if="vm.visite">Visite obligatoire</li></ul>'
@@ -5807,7 +5912,47 @@ __adjApp.component("grille-carte", {
     + '<div v-if="vm.phraseOblig || vm.cadrePhrase" class="gn-src"><div class="gn-src-t">Cadre de réponse</div><blockquote class="gn-q">{{ vm.phraseOblig || vm.cadrePhrase }}</blockquote><div v-if="vm.cadreSource" class="muted small">Trouvée dans : {{ vm.cadreSource }}</div></div>'
     + '<div v-for="(x,i) in vm.limites" :key="\'lp\'+i" class="gn-src"><div class="gn-src-t">{{ lim(x) }}</div><blockquote v-if="x.phrase" class="gn-q">{{ x.phrase }}</blockquote><div v-if="x.source" class="muted small">Trouvée dans : {{ x.source }}</div></div>'
     + '<div v-if="vm.visite" class="gn-src"><div class="gn-src-t">Visite obligatoire</div><blockquote class="gn-q">{{ vm.visite.phrase }}</blockquote><div v-if="vm.visite.source" class="muted small">Trouvée dans : {{ vm.visite.source }}</div></div>'
+    + '<div v-for="x in vm.cm" :key="\'cmp\'+x.code" class="gn-src"><div class="gn-src-t">Répondre seul ou en groupement</div><blockquote class="gn-q">{{ x.phrase }}</blockquote></div>'
+    + '<div v-for="(x,i) in (vm.ia ? vm.ia.phrases : [])" :key="\'iap\'+i" class="gn-src"><div class="gn-src-t">Intelligence artificielle</div><blockquote class="gn-q">{{ x.phrase }}</blockquote><div v-if="x.source" class="muted small">Trouvée dans : {{ x.source }}</div></div>'
     + '</details>'
+    // Vague 5 : ce que le dossier DEMANDE (exigences repérées sans IA, phrase mot pour mot).
+    + '<template v-if="vm.v2">'
+    + '<div class="gn-sub">Ce que le dossier demande'
+    + '<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les phrases du règlement et du cadre de réponse qui demandent quelque chose au candidat (« le mémoire comprendra… », « le candidat devra… », « Décrivez… »), repérées sans IA. L\'IA de l\'analyse peut en proposer d\'autres : elles ne sont gardées que si leur phrase est retrouvée mot pour mot. Les pièces administratives, les prix et le dépôt n\'y sont pas. L\'atelier du dossier de présentation dit lesquelles sont traitées. Le règlement fait foi.</span></button></div>'
+    + '<p class="small gn-note">{{ exResume || "Aucune exigence repérée dans le règlement ni dans le cadre de réponse." }}</p>'
+    + '<details v-if="vm.exigences.length || edit" class="gn-det"><summary>{{ vm.exigences.length ? "Voir les exigences" : "Ajouter une exigence" }}</summary>'
+    + '<div v-for="x in vm.exigences" :key="\'ex\'+x.id" class="gn-src" :class="{\'gn-off\': x.retiree}">'
+    + '<div class="gn-src-t">« {{ x.texte }} »<span v-if="x.origine===\'ia\'" class="pill neutral gn-pill gn-ml">proposée par l\'IA, phrase retrouvée</span><span v-else-if="x.origine===\'utilisateur\'" class="pill neutral gn-pill gn-ml">ajoutée{{ edit ? " par vous" : "" }}</span><span v-if="x.retiree" class="pill neutral gn-pill gn-ml">retirée</span></div>'
+    + '<div v-if="x.intro" class="muted small">{{ x.intro }}</div>'
+    + '<blockquote class="gn-q">{{ x.phrase }}</blockquote>'
+    + '<div v-if="x.source" class="muted small">Trouvée dans : {{ x.source }}</div>'
+    + '<div v-if="edit" class="gn-act"><button type="button" class="btn ghost sm" :disabled="busy===\'ex:\'+x.id" @click="$emit(\'element\',\'exigence\',x.id,x.retiree?\'annule\':\'ecarte\')">{{ x.retiree ? "La remettre dans la liste" : "Retirer : ce n\'est pas une exigence" }}</button></div>'
+    + '</div>'
+    + '<div v-if="edit" class="gn-add"><label class="small muted" for="gn-ajout">Une exigence manque ? Collez sa phrase, telle qu\'elle est écrite dans le dossier.</label>'
+    + '<div class="gn-add-r"><textarea id="gn-ajout" class="inp gn-add-t" v-model="ajout" rows="2" maxlength="600" placeholder="Ex. Le candidat précisera les mesures prises pour…"></textarea>'
+    + '<button type="button" class="btn sm" :disabled="busy===\'ajout\' || String(ajout||\'\').trim().length < 12" @click="ajouter()"><i data-lucide="plus"></i>Ajouter</button></div></div>'
+    + '</details>'
+    // Vague 5 : questions à poser à l'acheteur (chef de file seulement : c'est lui qui les pose).
+    + '<template v-if="edit && vm.qs">'
+    + '<div class="gn-sub">Questions à poser à l\'acheteur'
+    + '<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Repérées sans IA quand le dossier se contredit ou reste flou (pondération, sous-critères, limites, visite, cadre de réponse, date limite, intelligence artificielle). L\'IA de l\'analyse peut en proposer : elles ne sont gardées que si leur phrase est retrouvée mot pour mot. Adjugo n\'envoie rien : vous posez les questions vous-même sur la plateforme de l\'acheteur, avant la date limite des questions.</span></button></div>'
+    + '<p v-if="vm.qs.date_limite && vm.qs.date_limite.message" class="small gn-note"><i data-lucide="clock" style="width:13px;height:13px;vertical-align:-2px"></i> {{ vm.qs.date_limite.message }}</p>'
+    + '<template v-if="vm.questions.length">'
+    + '<p class="small gn-note">{{ qActives ? (qActives + (qActives > 1 ? " questions à poser. " : " question à poser. ") + vm.qs.message) : "Toutes les questions sont retirées." }}</p>'
+    + '<details class="gn-det"><summary>Voir les questions</summary>'
+    + '<div v-for="q in vm.questions" :key="\'q\'+q.id" class="gn-src" :class="{\'gn-off\': q.retiree}">'
+    + '<div class="gn-src-t">{{ q.question }}<span v-if="q.origine===\'ia\'" class="pill neutral gn-pill gn-ml">proposée par l\'IA</span><span v-if="q.retiree" class="pill neutral gn-pill gn-ml">retirée</span></div>'
+    + '<div v-if="q.motif" class="muted small">{{ q.motif }}</div>'
+    + '<blockquote v-for="(p,i) in q.phrases" :key="\'qp\'+i" class="gn-q">{{ p.phrase }}</blockquote>'
+    + '<div class="gn-act"><button v-if="!q.retiree" type="button" class="btn sm" @click="copier(q)"><i data-lucide="copy"></i>Copier la question</button>'
+    + '<button type="button" class="btn ghost sm" :disabled="busy===\'q:\'+q.id" @click="$emit(\'element\',\'question\',q.id,q.retiree?\'annule\':\'ecarte\')">{{ q.retiree ? "La remettre" : "Retirer" }}</button></div>'
+    + '</div>'
+    + '<div v-if="vm.qs.date_limite && vm.qs.date_limite.phrase" class="gn-src"><div class="gn-src-t">Date limite des questions</div><blockquote class="gn-q">{{ vm.qs.date_limite.phrase }}</blockquote></div>'
+    + '</details></template>'
+    + '<p v-else class="muted small gn-note">{{ vm.qs.message_vide }}</p>'
+    + '</template>'
+    + '</template>'
+    + '<div v-else-if="edit" class="gn-relire small"><span style="flex:1;min-width:0">Cette analyse est antérieure aux sous-critères, à la liste des exigences et aux questions à poser à l\'acheteur.</span><button type="button" class="btn sm" :disabled="busy===\'relire\'" @click="$emit(\'relire\')"><span v-if="busy===\'relire\'" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Relire le dossier, sans IA</button></div>'
     + '<details v-if="vm.lecture && vm.lecture.pieces.length" class="gn-det"><summary>Pièces lues ({{ piecesResume }})</summary>'
     + '<ul class="gn-pieces"><li v-for="(p,i) in vm.lecture.pieces" :key="\'pc\'+i" :class="{\'gn-nonlue\':p.statut===\'non_lu\'}"><span>{{ p.libelle }}</span><span v-if="p.nom" class="muted"> · {{ p.nom }}</span>'
     + '<template v-if="p.statut===\'non_lu\'"><span class="gn-manque"> · non lue</span><span v-if="p.raison" class="muted"> : {{ p.raison }}</span></template>'

@@ -993,6 +993,24 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 .gn-pieces { list-style:none; margin:6px 0 0; padding:0; font-size:12.5px; }
 .gn-pieces li { padding:4px 0; overflow-wrap:anywhere; }
 .gn-pieces .gn-manque { color:var(--warning-text); font-weight:600; }
+/* Rédaction, vague 5 (C2 complet) : sous-critères, environnement, IA, exigences, questions à l'acheteur */
+.gn-sous { flex-basis:100%; list-style:none; margin:2px 0 0; padding:0 0 0 14px; border-left:2px solid var(--hairline); }
+.gn-sous li { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; padding:3px 0; font-size:12.5px; color:var(--text-2); }
+.gn-sous-n { flex:1 1 140px; min-width:0; overflow-wrap:anywhere; }
+.gn-sous-ctl { flex-basis:100%; padding-left:14px; }
+.gn-src-sous { margin:6px 0 0 12px; }
+.gn-env { display:flex; gap:7px; align-items:flex-start; margin-top:12px; line-height:1.45; color:var(--text-2); }
+.gn-env i { width:14px; height:14px; flex:none; margin-top:2px; }
+.gn-ia { flex-wrap:wrap; }
+.gn-ia-t { flex:1 1 220px; min-width:0; }
+.gn-ia .btn { margin-left:auto; }
+.gn-ia-q { display:block; margin-top:4px; font-style:italic; overflow-wrap:anywhere; }
+.gn-off .gn-src-t, .gn-off .gn-q { opacity:.6; }
+.gn-ml { margin-left:6px; vertical-align:1px; }
+.gn-add { margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+.gn-add-r { display:flex; flex-wrap:wrap; gap:8px; align-items:flex-start; }
+.gn-add-t { flex:1 1 220px; min-width:0; resize:vertical; }
+.gn-relire { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; margin-top:14px; padding:10px 12px; border-radius:10px; background:var(--surface-2); border:1px solid var(--border); }
 /* Couverture de la lecture du dossier (lu en entier / pièces non lues et pourquoi) */
 .lect-cov { margin:10px 0 2px; padding:10px 12px; border-radius:10px; background:var(--surface-2); border:1px solid var(--hairline); }
 .lect-cov.partiel { background:var(--warning-weak); border-color:color-mix(in srgb,var(--warning) 35%,transparent); color:var(--warning-text); }
@@ -1135,6 +1153,12 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 .atl-head { padding:16px; }
 .atl-titre { margin:0; font-family:var(--font-display); font-size:16px; font-weight:700; line-height:1.3; overflow-wrap:anywhere; }
 .atl-export { margin-top:12px; padding-top:12px; border-top:1px solid var(--hairline); }
+/* Rédaction, vague 5 : « n exigences traitées sur m », la liste et ses choix */
+.atl-exig { margin-top:12px; padding-top:12px; border-top:1px solid var(--hairline); }
+.atl-exig-l { list-style:none; margin:8px 0 0; padding:0; }
+.atl-exig-l > li { padding:8px 0; border-bottom:1px solid var(--hairline); }
+.atl-exig-l > li:last-child { border-bottom:0; }
+.atl-exig-l > li.off .small { opacity:.6; }
 .atl-raisons { list-style:none; margin:8px 0 0; padding:0; font-size:12.5px; }
 .atl-raisons > li { padding:6px 0; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere; }
 .atl-raisons > li:last-child { border-bottom:0; }
@@ -1414,6 +1438,11 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
 .rp-dos { margin-top:16px; padding-top:16px; border-top:1px solid var(--hairline); }
 .rp-qfq { margin-top:16px; padding:12px 14px; border-radius:12px; background:var(--surface-2); border:1px solid var(--border); }
 .rp-qfq .gn-det { margin-top:8px; }
+/* Rédaction, vague 5 : les exigences du dossier, vues par le partenaire (texte commun seulement) */
+.rp-exig { margin-top:12px; }
+.rp-exig-l { list-style:none; margin:6px 0 0; padding:0; }
+.rp-exig-l li { padding:6px 0; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere; }
+.rp-exig-l li:last-child { border-bottom:0; }
 .rp-qfq .rp-mt8 { margin-top:8px; }
 .rp-qfq-m { list-style:none; margin:8px 0 0; padding:0; }
 .rp-qfq-m > li { padding:6px 0; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere; }

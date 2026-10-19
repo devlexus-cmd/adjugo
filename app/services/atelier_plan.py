@@ -6,6 +6,8 @@ Doctrine (étude §7, règle 4) : le cadre de l'acheteur commande.
     cadre, dans SON ordre, avec SES numéros et SES intitulés (repérés dans le texte, sans IA) ;
   • sinon, la grille « Comment vous serez noté » confirmée : une section par critère du plan
     (lignes retrouvées dans le règlement ou confirmées par l'utilisateur), poids TEL QU'ÉCRIT ;
+    un critère qui a au moins deux sous-critères retrouvés (vague 5) donne une partie par
+    sous-critère, sous le titre du critère, dans l'ordre et avec les intitulés du règlement ;
     le critère du prix n'appelle pas de texte (il est jugé sur le bordereau de prix) ;
   • sinon, un plan simple en parties libres, proposé par Adjugo et dit comme tel.
 Jamais de critère, de poids ni d'ordre d'importance inventés. Les limites (pages, mots…)
@@ -45,6 +47,10 @@ MSG_CADRE_NON_DECOUPE = ("Ce marché impose son propre fichier de réponse, mais
                          "questions une à une : suivez l'ordre du fichier de l'acheteur.")
 MSG_GRILLE = ("Plan construit sur les critères de « Comment vous serez noté », avec leur poids tel qu'il est écrit "
               "ou tel que vous l'avez lu.")
+MSG_GRILLE_SOUS = ("Plan construit sur les critères de « Comment vous serez noté » et leurs sous-critères, avec leurs "
+                   "intitulés et leurs poids tels qu'ils sont écrits dans le règlement.")
+MSG_GRILLE_UN_CRITERE_SOUS = ("Le règlement donne un critère à traiter dans ce dossier (« {c} ») et ses sous-critères : "
+                              "une partie par sous-critère, dans l'ordre du règlement.")
 MSG_GRILLE_UN_CRITERE = ("Le règlement ne donne qu'un critère à traiter dans ce dossier (« {c} »). Adjugo propose "
                          "de le découper en parties : ce découpage n'est pas imposé par l'acheteur.")
 MSG_GRILLE_UN_CONFIRME = ("Un seul critère est retenu pour l'instant (« {c} ») : Adjugo propose de le découper en "
@@ -296,6 +302,19 @@ def limites_section(question: str, chaque_question: list) -> list:
 
 # ── Le plan ───────────────────────────────────────────────────────────────────────────
 
+def _sous_lines(ln: dict) -> list:
+    """Sous-critères d'une ligne de la grille (vague 5) — leur phrase est toujours retrouvée dans le règlement ;
+    un poids « à vérifier » n'est pas repris : [{id, critere, poids, phrase}]."""
+    out = []
+    for x in ln.get("sous_criteres") or []:
+        if isinstance(x, dict) and x.get("statut") in (gn.RETROUVE, gn.A_VERIFIER) and _flat(x.get("critere")) \
+                and _flat(x.get("phrase")):
+            out.append({"id": str(x.get("id") or "")[:20], "critere": _flat(x.get("critere"))[:200],
+                        "poids": _flat(x.get("poids"))[:40] if x.get("statut") == gn.RETROUVE else "",
+                        "phrase": _flat(x.get("phrase"))[:QUESTION_MAX]})
+    return out
+
+
 def _grille_lines(grille: Optional[dict]) -> list:
     if not isinstance(grille, dict):
         return []
@@ -306,8 +325,28 @@ def _grille_lines(grille: Optional[dict]) -> list:
             src = str(ln.get("poids_source") or "")
             out.append({"id": str(ln.get("id") or "")[:20], "critere": _flat(ln.get("critere"))[:300],
                         "poids": poids, "phrase": _flat(ln.get("phrase"))[:QUESTION_MAX],
-                        "poids_source": (src if src in ("reglement", "utilisateur") else "") if poids else ""})
+                        "poids_source": (src if src in ("reglement", "utilisateur") else "") if poids else "",
+                        "sous_criteres": _sous_lines(ln)})
     return out
+
+
+def sous_criteres_de(analysis: Optional[dict], critere_id: str) -> list:
+    """Les sous-critères retrouvés d'un critère de la grille, par son id (vague 5) ; [] sinon."""
+    if not critere_id:
+        return []
+    ln = next((x for x in _grille_lines(_grille(analysis)) if x["id"] == str(critere_id)), None)
+    return list((ln or {}).get("sous_criteres") or [])
+
+
+def sous_critere_de(analysis: Optional[dict], critere_id: str, intitule: str) -> Optional[dict]:
+    """Le sous-critère qu'une partie du plan traite (même critère, même intitulé), ou None."""
+    k = _flat(intitule)[:INTITULE_MAX]
+    return next((x for x in sous_criteres_de(analysis, critere_id) if x["critere"][:INTITULE_MAX] == k), None)
+
+
+def est_partie_de_sous_critere(section) -> bool:
+    """Une partie tirée d'un sous-critère : du plan de la grille, rangée sous le titre de son critère."""
+    return getattr(section, "source_plan", "") == GRILLE and bool(getattr(section, "parents", None))
 
 
 def _grille(analysis: Optional[dict]) -> Optional[dict]:
@@ -371,6 +410,27 @@ def section_de_critere(ln: dict, numero: str = "") -> dict:
             "question": ln["phrase"], "source_plan": GRILLE, "critere": ln["critere"], "critere_id": ln["id"],
             "poids": ln["poids"], "poids_source": ln.get("poids_source") or "", "partie_de_critere": False,
             "limite": []}
+
+
+def sections_de_sous_criteres(ln: dict, numero: str = "") -> list:
+    """Vague 5 : une partie par sous-critère d'un critère (intitulé = le sous-critère tel qu'écrit,
+    question = sa phrase du règlement), rangées sous le titre du critère. La partie garde le critère, son
+    id et son poids (ceux de la grille) : « Comment vous serez noté » reste la seule source du plan."""
+    out = []
+    for k, sc in enumerate(ln.get("sous_criteres") or [], 1):
+        out.append({"numero": f"{numero}.{k}" if numero else str(k), "intitule": sc["critere"][:INTITULE_MAX],
+                    "niveau": 2, "parents": [{"numero": numero, "intitule": ln["critere"][:INTITULE_MAX]}],
+                    "question": sc["phrase"], "source_plan": GRILLE, "critere": ln["critere"], "critere_id": ln["id"],
+                    "poids": ln["poids"], "poids_source": ln.get("poids_source") or "", "partie_de_critere": False,
+                    "limite": []})
+    return out
+
+
+def parties_du_critere(ln: dict, numero: str) -> list:
+    """Les parties d'un critère : une par sous-critère s'il en a au moins deux, sinon une pour le critère."""
+    if len(ln.get("sous_criteres") or []) >= 2:
+        return sections_de_sous_criteres(ln, numero)
+    return [section_de_critere(ln, numero)]
 
 
 def build_plan(analysis: Optional[dict], cadre_text: str = "", base: str = "auto",
@@ -446,9 +506,17 @@ def _build_plan(analysis: Optional[dict], cadre_text: str, base: str, en_groupem
     en_attente = criteres_a_verifier(analysis) > 0
     if len(tech) >= 2:
         out["source"] = GRILLE
-        out["message"] = MSG_GRILLE
-        for i, ln in enumerate(tech[:MAX_SECTIONS], 1):
-            out["sections"].append(section_de_critere(ln, str(i)))
+        out["message"] = MSG_GRILLE_SOUS if any(len(ln["sous_criteres"]) >= 2 for ln in tech) else MSG_GRILLE
+        for i, ln in enumerate(tech, 1):
+            out["sections"].extend(parties_du_critere(ln, str(i)))
+        out["sections"] = out["sections"][:MAX_SECTIONS]
+    elif len(tech) == 1 and len(tech[0]["sous_criteres"]) >= 2:
+        # Un seul critère, mais le règlement le découpe lui-même : ses sous-critères font le plan.
+        out["source"] = GRILLE
+        out["message"] = MSG_GRILLE_UN_CRITERE_SOUS.format(c=tech[0]["critere"])
+        if en_attente:
+            out["message"] = MSG_GRILLE_SOUS
+        out["sections"] = sections_de_sous_criteres(tech[0], "1")[:MAX_SECTIONS]
     elif len(tech) == 1:
         out["source"] = GRILLE
         # « ne donne qu'un critère » : jamais tant que d'autres lignes sont à vérifier.

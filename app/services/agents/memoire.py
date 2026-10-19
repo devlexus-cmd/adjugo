@@ -301,8 +301,18 @@ def _consigne_partie(p: dict) -> str:
             out.append(f"CRITÈRE DE L'ACHETEUR : {p['critere']} (poids écrit dans le règlement : {p['poids']})")
         else:
             out.append(f"CRITÈRE DE L'ACHETEUR : {p['critere']} (aucun poids écrit : ne suppose aucune importance)")
-        if p.get("partie_de_critere"):
+        sc = p.get("sous_critere") if isinstance(p.get("sous_critere"), dict) else None
+        if sc and sc.get("critere"):
+            # Rédaction, vague 5 : la partie d'un SOUS-CRITÈRE écrit dans le règlement (jamais un découpage d'Adjugo).
+            out.append(f"SOUS-CRITÈRE DE L'ACHETEUR : {sc['critere']} ("
+                       + (f"poids écrit dans le règlement : {sc['poids']}" if sc.get("poids")
+                          else "aucun poids écrit : ne suppose aucune importance") + ")")
+        elif p.get("partie_de_critere"):
             out.append("Cette partie est un découpage proposé par Adjugo, pas une rubrique imposée par l'acheteur.")
+        subs = [x for x in (p.get("sous_criteres") or []) if isinstance(x, dict) and x.get("critere")]
+        if subs:
+            out.append("SOUS-CRITÈRES NOTÉS : " + " ; ".join(
+                f"{x['critere']} ({x['poids'] if x.get('poids') else 'aucun poids écrit'})" for x in subs[:12]))
         if p.get("question") and p.get("source_plan") != "cadre":
             out.append(f"Phrase du règlement : {p['question']}")
     if p.get("cible_mots"):

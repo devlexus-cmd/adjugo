@@ -372,9 +372,11 @@ Tu dois TOUJOURS repondre en JSON valide, sans texte avant ou apres. Voici le fo
     "lieu_execution": "Quimper (29)",
     "allotissement": "Lot unique / Lot 1 : Gros oeuvre, Lot 2 : Electricite...",
     "criteres_attribution": [
-      {"critere": "Prix", "ponderation": "60 %", "extrait": "ligne ou phrase litterale du reglement qui cite ce critere et son poids"},
-      {"critere": "Valeur technique", "ponderation": "40 %", "extrait": "ligne ou phrase litterale du reglement"}
+      {"critere": "Prix", "ponderation": "60 %", "extrait": "ligne ou phrase litterale du reglement qui cite ce critere et son poids", "sous_criteres": []},
+      {"critere": "Valeur technique", "ponderation": "40 %", "extrait": "ligne ou phrase litterale du reglement", "sous_criteres": [{"critere": "Methodologie", "ponderation": "25 %", "extrait": "ligne ou phrase litterale du reglement qui cite ce sous-critere"}]}
     ],
+    "exigences_memoire": ["phrase litterale du DCE qui demande au candidat un element precis a traiter dans son memoire technique"],
+    "questions_acheteur": [{"question": "question courte a poser a l'acheteur", "extraits": ["phrase litterale du DCE ambigue ou contradictoire"]}],
     "garanties_exigees": "Garantie a premiere demande 5% / Retenue de garantie 5%",
     "penalites": "1/1000 du montant HT par jour de retard, plafonnees a 10%",
     "avance": "Avance de 10% si marche > 50 000 EUR",
@@ -431,7 +433,10 @@ Regles importantes :
 - Pour "contact" : n'extrais le nom/email/telephone QUE s'ils figurent dans le DCE (souvent dans le reglement de consultation, rubrique "renseignements"). Si rien n'est indique, laisse les champs vides "" — n'invente JAMAIS de contact.
 - Exigences de candidature et de GROUPEMENT ("ca_minimum_requis", "qualifications_requises", "references_requises", "effectif_minimum_requis", "capacites_groupement", "forme_groupement") : n'extrais QUE si c'est ecrit dans le DCE, sinon "Non specifie dans le DCE". "capacites_groupement" dit comment les capacites sont appreciees quand plusieurs entreprises repondent ensemble : "cumul admis" (les capacites des membres s'additionnent), "chaque membre doit satisfaire individuellement", "mandataire seul", ou "Non specifie dans le DCE". "forme_groupement.imposee" vaut "conjoint" ou "solidaire" UNIQUEMENT si le reglement impose cette forme, "libre" s'il laisse le choix, "non_specifie" sinon.
 - Pour CHAQUE extrait ("exigences_sources".*, "forme_groupement.extrait") : recopie LITTERALEMENT la phrase du DCE (300 caracteres maximum), sans reformuler, sans resumer, sans corriger. Laisse "" si l'information n'est pas dans le DCE. Un extrait qui n'est pas une copie exacte du DCE sera rejete.
-- "criteres_attribution" : les criteres de jugement des OFFRES ecrits dans le reglement de la consultation (criteres principaux seulement, pas les sous-criteres), dans l'ORDRE ou le reglement les cite. "ponderation" : le poids TEL QU'ECRIT dans le reglement ("60 %", "40 points"...), ou "" si le reglement ne donne pas de poids. N'invente JAMAIS de poids ni d'ordre d'importance. "extrait" : recopie LITTERALEMENT la ligne ou la phrase du reglement qui cite ce critere (avec son poids s'il existe), 300 caracteres maximum, sans reformuler ; "" si tu ne la trouves pas. Un extrait qui n'est pas une copie exacte du DCE sera rejete.
+- "criteres_attribution" : les criteres de jugement des OFFRES ecrits dans le reglement de la consultation (criteres principaux ; leurs sous-criteres vont dans "sous_criteres"), dans l'ORDRE ou le reglement les cite. "ponderation" : le poids TEL QU'ECRIT dans le reglement ("60 %", "40 points"...), ou "" si le reglement ne donne pas de poids. N'invente JAMAIS de poids ni d'ordre d'importance. "extrait" : recopie LITTERALEMENT la ligne ou la phrase du reglement qui cite ce critere (avec son poids s'il existe), 300 caracteres maximum, sans reformuler ; "" si tu ne la trouves pas. Un extrait qui n'est pas une copie exacte du DCE sera rejete.
+- "sous_criteres" : les sous-criteres de CE critere, tels qu'ecrits dans le reglement et dans son ordre, avec leur "ponderation" TELLE QU'ECRITE ("" si aucune) et leur "extrait" recopie LITTERALEMENT (300 caracteres maximum) ; [] s'il n'y en a pas. N'invente JAMAIS de sous-critere ni de poids.
+- "exigences_memoire" : 0 a 10 phrases recopiees LITTERALEMENT du DCE (250 caracteres maximum chacune) qui demandent au candidat un element precis a traiter dans son memoire technique ou son cadre de reponse ; jamais les pieces administratives (DC1, attestations, Kbis...), les prix ni les modalites de depot ; [] si aucune.
+- "questions_acheteur" : 0 a 3 questions courtes que le candidat pourrait poser a l'acheteur parce que le DCE est ambigu ou se contredit (par exemple deux delais differents pour la meme chose) ; "extraits" : 1 ou 2 phrases recopiees LITTERALEMENT du DCE qui posent le probleme ; chaque nombre de la question doit figurer dans ces phrases ; [] si le DCE est clair.
 - Si une information n'est pas dans le DCE, indique "Non specifie dans le DCE"
 - Extrais TOUTES les pieces demandees dans le reglement de consultation"""
 
@@ -454,7 +459,7 @@ Regles importantes :
 # Version des consignes de l'EXTRACTION (clé de l'analyse partagée ; le texte de SYSTEM_EXTRACTION y entre
 # aussi : le modifier sans changer ce numéro invalide quand même). La consigne de la partie propre à
 # l'entreprise n'y entre pas : cette partie n'est jamais gardée, elle est refaite à chaque analyse.
-VERSION_CONSIGNES = "1"
+VERSION_CONSIGNES = "2"   # 2 : sous-critères, exigences et questions proposés (rédaction, vague 5)
 
 # (texte d'origine, texte de l'extraction) : TOUT le reste de SYSTEM_PROMPT est repris mot pour mot.
 _EXTRACTION_REMPLACEMENTS = (
@@ -2548,7 +2553,9 @@ ENTREPRISE_POINTS_MAX = 4
 ENTREPRISE_CLAUSES_AJOUTEES_MAX = 3
 _NIVEAUX = {"faible": 0, "moyen": 1, "eleve": 2}
 _COMPATIBILITE = {"go": "bon potentiel", "a_etudier": "a etudier", "no_go": "peu adapte"}
-_HORS_FAITS = ("grille_notation", "clauses_risque")   # grille : dérivée des critères ; clauses : numérotées à part
+# grille : dérivée des critères ; clauses : numérotées à part ; exigences et questions proposées : lues par la
+# grille seulement (vague 5), elles ne disent rien de l'entreprise.
+_HORS_FAITS = ("grille_notation", "clauses_risque", "exigences_memoire", "questions_acheteur")
 # Seuils de l'entreprise auxquels les clauses sont comparées (comme dans l'analyse d'origine).
 SEUILS_CLAUSES = ("penalty_max", "garantie_max", "retenue_garantie_max", "avance_min", "delai_reponse_min")
 

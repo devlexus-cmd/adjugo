@@ -249,6 +249,11 @@ _BLOCKED = [
     ("POST",   "/api/atelier/{pid}/sections/{sid}/inserer-preuve", "préparer votre dossier de présentation"),
     ("POST",   "/api/amont/analyze-text",                     "lancer une analyse IA"),
     ("POST",   "/api/amont/scan",                             "lancer une analyse IA"),
+    # Rédaction, vague 5 (C2 complet) : exigences retirées, ajoutées ou dites traitées, questions à l'acheteur
+    # retirées, relecture du dossier (0 IA) : écritures dans la grille de la vitrine partagée.
+    ("POST",   "/api/sourcing/grille/element",                "préparer votre dossier de présentation"),
+    ("POST",   "/api/sourcing/grille/exigence",               "préparer votre dossier de présentation"),
+    ("POST",   "/api/sourcing/grille/relire",                 "préparer votre dossier de présentation"),
     # (d) compte, abonnement, équipe, organisation
     ("POST",   "/api/rgpd/delete-account",                    "gérer votre compte"),
     ("POST",   "/api/stripe/create-checkout",                 "vous abonner"),

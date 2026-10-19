@@ -86,12 +86,15 @@ def lire(project_id: int, base: str = "auto", current_user: User = Depends(get_c
         return {"dossier": None, "projet": {"id": acc.project.id, "nom": acc.project.name},
                 "proposition": prop, "quota": at.quota_out(at.DossierPresentation(analyse_debitee=False,
                                                                                     regenerations=0,
-                                                                                    regenerations_payantes=0))}
+                                                                                    regenerations_payantes=0)),
+                # Vague 5 : ce que le règlement dit de l'IA, pour proposer « sans IA » dès la création.
+                "sans_ia": at.sans_ia_out(db, acc.project, None)}
     return acc.etat()
 
 
 class CreerIn(BaseModel):
     base: str = "auto"
+    sans_ia: bool = False          # vague 5 : rédiger ce dossier sans IA dès sa création
 
 
 @router.post("/{project_id}", status_code=201)
@@ -106,6 +109,10 @@ def creer(request: Request, project_id: int, body: Optional[CreerIn] = None,
         acc.dossier = at.creer_dossier(db, acc.project, acc.owner_id, current_user, acc.mids, base=base)
     except at.AtelierError as e:
         raise _err(e)
+    if body is not None and body.sans_ia:
+        from app.services.audit import client_ip
+        at.definir_options(db, acc.dossier, sans_ia=True, project=acc.project, lecteur=acc.lecteur,
+                           ip=client_ip(request))
     return acc.etat()
 
 
@@ -146,13 +153,17 @@ def appliquer_grille(request: Request, project_id: int, current_user: User = Dep
 class OptionsIn(BaseModel):
     page_garde: Optional[bool] = None
     sommaire: Optional[bool] = None
+    sans_ia: Optional[bool] = None     # vague 5 : rédiger ce dossier sans IA (inscrit au journal)
 
 
 @router.put("/{project_id}/options")
-def options(project_id: int, body: OptionsIn, current_user: User = Depends(get_current_user),
+def options(request: Request, project_id: int, body: OptionsIn, current_user: User = Depends(get_current_user),
             db: Session = Depends(get_db)):
+    from app.services.audit import client_ip
     acc = _Acces(db, current_user, project_id)
-    return {"options": at.definir_options(db, acc.exiger_dossier(), body.page_garde, body.sommaire)}
+    out = at.definir_options(db, acc.exiger_dossier(), body.page_garde, body.sommaire, sans_ia=body.sans_ia,
+                             project=acc.project, lecteur=acc.lecteur, ip=client_ip(request))
+    return {"options": out, "sans_ia": at.sans_ia_out(db, acc.project, acc.dossier)}
 
 
 @router.get("/{project_id}/compteur")

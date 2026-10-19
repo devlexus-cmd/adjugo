@@ -186,6 +186,7 @@
   const BULLE_DOCS = QUI_VOIT + " Avec votre texte envoyé, il reçoit seulement le nombre de faits « trouvés dans vos documents ». Adjugo les lit sans IA, puis s'en sert uniquement pour rédiger vos parties, en citant le passage exact. Avant l'IA, il masque les noms de personnes qu'il repère et écarte ce qui ressemble à un CV : retirez de vos documents les noms que vous ne voulez pas transmettre.";
   const BULLE_QFQ = "Adjugo l'écrit sans IA, à partir de la convention et de la part envoyée par chaque membre : ce que chacun apporte (part, qualifications, moyens), jamais ce qui manque. Tous les membres la lisent et chacun la valide. Pour la changer, modifiez votre part dans « Ma contribution » et renvoyez-la.";
   const BULLE_MENTIONS = "« justifiée » : un justificatif ou une source appuie la qualification ; « déclarée » : le membre l'a écrite. Ces mentions restent à l'écran : elles ne partent pas chez l'acheteur.";
+  const BULLE_EXIGENCES = "Les phrases du règlement et du cadre de réponse qui demandent quelque chose au candidat, repérées par Adjugo sans IA. Une exigence est comptée comme traitée quand le texte commun d'une partie reprend ses mots principaux : c'est un repérage de mots, pas une relecture. Le chef de file tient la liste.";
   const BULLE_EXTRAITS = "Les passages de vos documents qu'Adjugo a cités en rédigeant (S1, S2…). Ils restent privés : ni le chef de file ni l'acheteur ne les voient, et les renvois sont retirés à l'export. Un extrait cité ne prouve pas que la phrase est exacte.";
   const BULLE_ENTRETIEN = "Le chef de file vous pose ces questions parce qu'elles relèvent de votre lot ou de votre partie. Chacune montre la phrase du dossier de l'acheteur qui la motive. Votre réponse est lue par le chef de file et sert à rédiger le dossier commun, comme un fait déclaré par votre entreprise : il ne peut pas la modifier. « Passer » laisse « [À compléter] » dans la partie concernée.";
 
@@ -526,6 +527,12 @@
       if (n.critere) h += '<div class="rp-crit"><span class="rp-crit-n">' + rpEsc(n.critere) + "</span>" + (n.poids ? '<span class="gn-poids num">' + rpEsc(n.poids) + "</span>" : "")
         + (n.poids && n.poids_libelle ? '<span class="muted small">' + rpEsc(n.poids_libelle) + "</span>" : "") + "</div>";
       if (n.phrase) h += '<blockquote class="gn-q">' + rpEsc(n.phrase) + "</blockquote>";
+      // Vague 5 : le sous-critère que traite cette partie, ou ceux de son critère (tels qu'écrits).
+      const sc = n.sous_critere;
+      if (sc && sc.critere) h += '<div class="rp-crit"><span class="rp-crit-n">Sous-critère : ' + rpEsc(sc.critere) + "</span>" + (sc.poids ? '<span class="gn-poids num">' + rpEsc(sc.poids) + "</span>" : "") + "</div>"
+        + (sc.phrase ? '<blockquote class="gn-q">' + rpEsc(sc.phrase) + "</blockquote>" : "");
+      const scs = n.sous_criteres || [];
+      if (scs.length) h += '<div class="small muted rp-q">Sous-critères notés :</div><ul class="gn-sous">' + scs.map(x => '<li><span class="gn-sous-n">' + rpEsc(x.critere) + "</span>" + (x.poids ? '<span class="gn-poids num">' + rpEsc(x.poids) + "</span>" : "") + "</li>").join("") + "</ul>";
       if (n.question) h += '<div class="small rp-q"><span class="muted">Question du cadre de réponse :</span> ' + rpEsc(n.question) + "</div>";
       const g = !n.critere ? (n.grille || []) : [];
       if (g.length) {
@@ -535,7 +542,7 @@
         const ph = g.filter(x => x.phrase);
         if (ph.length) h += '<details class="gn-det"><summary>Voir les phrases du règlement</summary>' + ph.map(x => '<div class="gn-src"><div class="gn-src-t">' + rpEsc(x.critere) + '</div><blockquote class="gn-q">' + rpEsc(x.phrase) + "</blockquote></div>").join("") + "</details>";
       }
-      if (!n.critere && !n.phrase && !n.question && !g.length) h += '<div class="muted small">Le dossier de l\'acheteur ne rattache aucun critère à cette partie.</div>';
+      if (!n.critere && !n.phrase && !n.question && !g.length && !(sc && sc.critere)) h += '<div class="muted small">Le dossier de l\'acheteur ne rattache aucun critère à cette partie.</div>';
       const lim = (p.limite || []).filter(x => x && x.type);
       if (lim.length) h += '<ul class="gn-chips">' + lim.map(x => "<li>" + rpEsc(rpLim(x)) + "</li>").join("") + "</ul>";
       return h + "</div>";
@@ -611,12 +618,14 @@
     function renderEditeur(v, p) {
       const sid = p.section_id, b = p.brouillon, cur = p.texte_commun, aide = p.aide || {}, cap = Number(aide.plafond || 0);
       const loc = st.edits[sid];
-      const reste = Number(aide.restantes || 0);
-      const bulleAide = rpEsc(v.message_mode || "") + " Ce qu'Adjugo ne trouve pas dans vos documents devient « [À compléter] » : relisez chaque fait avant d'envoyer." + (cap ? " Aide d'Adjugo pour cette partie : " + reste + " sur " + cap + " restante" + (reste > 1 ? "s" : "") + "." : "");
-      const plafond = !reste && cap ? '<div class="muted small rp-p">L\'aide d\'Adjugo a déjà servi ' + cap + " fois pour cette partie : écrivez la suite vous-même, votre texte sera contrôlé de la même façon.</div>" : "";
+      const sansIa = !!(v.sans_ia && v.sans_ia.actif);
+      const reste = sansIa ? 0 : Number(aide.restantes || 0);
+      const bulleAide = sansIa ? rpEsc(v.sans_ia.message || "") + " Ce qui n'est pas dans ce que vous avez déclaré reste à relire : relisez chaque fait avant d'envoyer." : rpEsc(v.message_mode || "") + " Ce qu'Adjugo ne trouve pas dans vos documents devient « [À compléter] » : relisez chaque fait avant d'envoyer." + (cap ? " Aide d'Adjugo pour cette partie : " + reste + " sur " + cap + " restante" + (reste > 1 ? "s" : "") + "." : "");
+      const plafond = sansIa ? '<div class="muted small rp-p">' + rpEsc(v.sans_ia.message || "") + "</div>"
+        : (!reste && cap ? '<div class="muted small rp-p">L\'aide d\'Adjugo a déjà servi ' + cap + " fois pour cette partie : écrivez la suite vous-même, votre texte sera contrôlé de la même façon.</div>" : "");
       if (!b && !loc && !st.moi[sid]) {
         let h = '<div class="rp-choix"><div class="rp-lbl">Rédiger cette partie' + tip(bulleAide) + '</div><div class="rp-acts">'
-          + btn("aide", ico("sparkles", 14) + "Rédiger avec Adjugo", "primary", ' data-sid="' + sid + '"' + (reste ? "" : " disabled")) + btn("moi", ico("pencil", 14) + "J'écris moi-même", "", ' data-sid="' + sid + '"') + "</div>" + plafond;
+          + (sansIa ? "" : btn("aide", ico("sparkles", 14) + "Rédiger avec Adjugo", "primary", ' data-sid="' + sid + '"' + (reste ? "" : " disabled"))) + btn("moi", ico("pencil", 14) + "J'écris moi-même", sansIa ? "primary" : "", ' data-sid="' + sid + '"') + "</div>" + plafond;
         if (v.mode_simple && v.mode_simple.petit_texte) h += '<button type="button" class="linkbtn small rp-p" data-act="simple" data-sid="' + sid + '">Partir de mon paragraphe</button>';
         return h + "</div>";
       }
@@ -721,9 +730,22 @@
         else if (!lu) h += '<div class="muted small rp-p">Lisez le dossier assemblé avant de le valider.</div>';
       }
       if (q) h += renderQfq(q, ecrire);
+      h += renderExigences(v.exigences);
       const m = st.msgDossier;
       if (m) h += m.err ? '<div class="conv-err rp-msg" role="alert">' + ico("circle-alert", 15) + "<div>" + rpEsc(m.txt) + "</div></div>" : '<div class="rp-ok-msg small" role="status">' + ico("check", 14) + "<span>" + rpEsc(m.txt) + "</span></div>";
       if (st.dossierOpen && st.dossier) h += renderAssemble(st.dossier);
+      return h + "</div>";
+    }
+
+    // Vague 5 : les exigences du dossier et la partie (texte COMMUN) qui les traite — repérage sans IA.
+    function renderExigences(e) {
+      if (!e || !e.disponible || !e.total) return "";
+      const lib = { traitee: "traitée", traitee_selon_vous: "traitée, selon le chef de file", a_traiter: "à traiter" };
+      let h = '<div class="rp-exig"><div class="rp-lbl">' + rpEsc(e.message) + tip(rpEsc(BULLE_EXIGENCES)) + "</div>";
+      if (e.message_manque) h += '<div class="small rp-p">' + rpEsc(e.message_manque) + "</div>";
+      h += '<details class="gn-det"><summary>Voir les exigences</summary><ul class="rp-exig-l">'
+        + (e.liste || []).filter(x => x.statut !== "retiree").map(x => '<li class="small"><span class="pill ' + (x.statut === "traitee" ? "go" : x.statut === "a_traiter" ? "a_etudier" : "neutral") + ' rp-pill">' + rpEsc(lib[x.statut] || "") + "</span> « " + rpEsc(x.texte) + " »"
+          + (x.partie && x.partie.titre ? ' <span class="muted">· ' + rpEsc(x.partie.titre) + "</span>" : "") + '<blockquote class="gn-q">' + rpEsc(x.phrase) + "</blockquote></li>").join("") + "</ul></details>";
       return h + "</div>";
     }
 
