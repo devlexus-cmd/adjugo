@@ -131,7 +131,7 @@ def _convention_item(project, db) -> dict:
     return {
         "id": "convention_groupement", "name": "Convention de groupement validée par tous les membres",
         "category": "groupement", "required": True, "from_ia": False,
-        "help": ("Générée par Adjugo (assistant « Monter le groupement ») ; chaque membre la valide depuis "
+        "help": ("Générée par Adjugo (carte « Convention et accords », page du marché) ; chaque membre la valide depuis "
                  "son espace. Modèle à faire relire par un conseil : ce n'est pas un conseil juridique."),
         "help_url": None, "context_note": note, "status": status,
         "document_name": None, "document_id": None, "expired": False,

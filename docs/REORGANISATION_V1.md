@@ -8,9 +8,11 @@ Décisions appliquées (recommandations de l'étude, validées par Eliot) : D0 (
 « Partenaires », D6 4 étapes, D8 (a), D9 (a), D16 (a), D17 (mesure). D4 (a) et D5 (a) étaient déjà en production.
 
 Ce socle fait : la vague 0 restante (§ 0), les repères de test (§ 1.0), la mesure d'usage (§ 1.1) et l'inscription
-directe depuis l'essai (§ 1.2). Il ne range encore ni le menu ni la page du marché (§ 3).
+directe depuis l'essai (§ 1.2). Le chantier « page du marché et recherche » fait 1.4 et 1.5 (§ 1.4, § 1.5) ; le menu
+et l'accueil sont rangés par un autre chantier (§ 3).
 
 Tests : `tests/test_reorganisation_v1_socle.py` (repères, mesure, inscription, vague 0, traductions),
+`tests/test_reorganisation_v1_marche.py` (page du marché en 4 étapes, recherche, décision 8, démonstration),
 `tests/zones.py` (découpage par repère), `tests/textes_visibles.py` (textes lus par une personne).
 
 ---
@@ -154,7 +156,8 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
 3. **Une vue = `vue-<clé>`**, la clé de `view` dans `app.js` (`vue-dashboard`, `vue-aodetail`…), même si la vue est
    renommée à l'écran.
 4. **Un préfixe par endroit** : `accueil-`, `marche-` (page du marché), `plusieurs-` (dans « Répondre à
-   plusieurs ? »), `convention-`, `pieces-`, `trouver-`, `atelier-`, `kb-`, `reseau-`, `partage-` (le dossier
+   plusieurs ? »), `convention-` (dans « Convention et accords » ; aucun depuis que « Prêt à déposer » en est
+   sorti), `pieces-`, `trouver-`, `atelier-`, `kb-`, `reseau-`, `partage-` (le dossier
    partagé, côté partenaire), `billing-`, `admin-`, `carte-` (au-dessus de toutes les vues), `fenetre-` (une
    fenêtre), `fenetres-` (famille de fenêtres sœurs), `ecran-`, `bandeau-`.
 5. **Un repère est unique**, sauf une famille déclarée (`fenetres-atelier` ×5, `fenetres-preuves` ×2).
@@ -197,35 +200,41 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
 | `accueil-bilan` | « Où vous gagnez / perdez » |
 | `accueil-carnet` | Carnet de notes (« Où vous perdez des points ») |
 
-**Page du marché (`vue-aodetail`)**
+**Page du marché (`vue-aodetail`)** — rangée en 4 étapes (§ 1.5)
 
 | Repère | Zone |
 |---|---|
-| `marche-entete` | Titre, client, étape, 4 chiffres ; contient `marche-resultat` (bilan gagné / perdu) et `marche-carnet` |
-| `marche-analyse` | « Analyse du dossier du marché » ; contient `marche-couverture` (dossier lu en entier) et `marche-questions` (questions à Adjugo) |
-| `marche-grille` | « Comment vous serez noté » |
-| `marche-plusieurs` | « Répondre à plusieurs ? » ; contient `plusieurs-manques` (ce que le marché exige, « Qui l'a ? ») et `plusieurs-simulation` |
-| `marche-qui-me-complete` | « Partenaires pour ce marché » (« Qui me complète ? », réseau puis registre) |
-| `marche-convention` | « Monter le groupement » (convention et accords) ; contient `convention-pret-a-deposer` |
+| `marche-entete` | Titre, client (il mène à `marche-client`), étape, le couple « Seul X % · À plusieurs Y % » ; contient `marche-inviter` (le bouton « Inviter un partenaire », avant les 4 chiffres), `marche-inviter-formulaire` (et le lien à copier), les 4 chiffres, `marche-resultat` (bilan gagné / perdu) et `marche-carnet` |
+| `marche-etapes` | La barre d'ancres Lire · Décider · Préparer · Déposer (`<nav>`, 4 boutons) |
+| `marche-lire` | Étape Lire : `marche-analyse` (contient `marche-couverture` et `marche-questions`), `marche-grille`, `marche-dossier-fichiers`, `marche-client` |
+| `marche-decider` | Étape Décider : `marche-plusieurs` (« Répondre à plusieurs ? », le seul « Répartir entre partenaires » et sa composition suggérée ; contient `plusieurs-manques` et `plusieurs-simulation`), `marche-qui-me-complete` (« Qui me complète ? ») |
+| `marche-preparer` | Étape Préparer : `marche-prix`, `marche-dossier-presentation`, `marche-pieces` (`pieces-documents-reponse`, `pieces-a-fournir`) ; puis « À plusieurs » : `marche-taches-plusieurs`, `marche-reseau`, `marche-partenaires`, `marche-convention` |
+| `marche-taches-plusieurs` | Les tâches à plusieurs (partenaires invités, parts reçues, convention et accords, offre commune), chacune avec « Voir » |
+| `marche-reseau` | « Partenaires invités » ; contient `marche-preparation` (parts reçues, « N sur M »), `marche-commande-groupement` (relancer, assembler), `marche-invitations` (liste), `marche-contributions` (« Parts reçues »), `marche-suivi-groupement` (ex-« Cockpit ») avec `marche-coffre-croise` et `marche-offre-commune` |
+| `marche-partenaires` | « Membres et sous-traitants » : les entreprises de vos formulaires officiels, sous-traitant DC4, « Chercher une entreprise » |
+| `marche-convention` | « Convention et accords » (forme, pouvoirs, règles, génération, accords) |
+| `marche-deposer` | Étape Déposer : `marche-pret-a-deposer` (groupement seulement), `marche-avant-depot`, `marche-export` |
+| `marche-pret-a-deposer` | « Prêt à déposer » / « Avant de déposer » (4 contrôles, « Marquer déposé ») ; ex-`convention-pret-a-deposer`, sorti de la convention |
+| `marche-avant-depot` | « Avant de déposer sur la plateforme du client » (4 cases, gardées sur l'appareil), ex-liste de « Mes documents de réponse » |
+| `marche-export` | « Exporter le dossier complet (ZIP) » (masqué quand « Prêt à déposer » le porte déjà) |
+| `marche-pied` | Pied de page replié (`<details>`) : `marche-devis-suivi`, le journal d'accès (`marche-journal-acces`, avec son bouton), `marche-actions` (« Supprimer ce marché ») |
 | `marche-prix` | « Estimation du prix » |
 | `marche-dossier-presentation` | Carte « Dossier de présentation » (ouvre l'atelier) |
-| `marche-pieces` | Deux colonnes : `pieces-documents-reponse` (formulaires officiels, documents générés) et `pieces-a-fournir` |
-| `marche-client` | « Votre client (l'acheteur) » |
-| `marche-partenaires` | « Partenaires sur ce marché » (recommandation par lot, sous-traitant DC4) |
-| `marche-reseau` | « Réseau Adjugo — montez le groupement » ; contient `marche-preparation` (parts reçues), `marche-commande-groupement` (relancer, assembler), `marche-inviter` (le bouton « Inviter un partenaire »), `marche-inviter-formulaire`, `marche-invitations` (liste), `marche-contributions`, `marche-suivi-groupement` (ex-« Cockpit ») avec `marche-coffre-croise` et `marche-offre-commune`, `marche-journal-acces` |
+| `marche-pieces` | Deux colonnes : `pieces-documents-reponse` (formulaires officiels, documents générés) et `pieces-a-fournir` (« N sur M ») |
+| `marche-client` | « Votre client » (historique de publication) |
 | `marche-devis-suivi` | Devis et factures liés, suivi du dossier |
 | `marche-dossier-fichiers` | « Dossier du marché » (pièces classées) |
-| `marche-actions` | Exporter le dossier complet, supprimer |
+| `marche-actions` | « Supprimer ce marché » (l'export est passé dans `marche-export`) |
 
 **Trouver des marchés (`vue-sourcing`)**
 
 | Repère | Zone |
 |---|---|
-| `trouver-recherche` | Étape 1 : la recherche |
+| `trouver-recherche` | La recherche (« Rechercher des marchés ») |
 | `trouver-radar` | Radar des échéances (fins de contrat) |
 | `trouver-alertes` | Alertes automatiques |
 | `trouver-carte` | Une carte de résultat (élément répété par `v-for`) |
-| `trouver-analyse` | Étape 2 : l'analyse d'un marché trouvé |
+| `trouver-analyse` | L'analyse d'un marché trouvé : « Ouvrir le marché » juste après son résumé (§ 1.4) |
 
 **Autres vues**
 
@@ -303,6 +312,95 @@ outil tiers.
 - Test : `inscriptionDemandee` exécutée sous Node sur 5 adresses, et l'ordre du branchement dans `mounted()`
   (`test_inscription_lue_par_l_application_sous_node`).
 
+## 1.4 De la recherche au marché
+
+- **Déjà fait** (correctifs urgents `da9ef0f`, vérifié) : plus d'étapes 3 et 4 dans la recherche, plus de « Rattacher » ;
+  « Ouvrir le marché » et « Inviter un partenaire » terminent l'analyse ; « Ajouter un sous-traitant (DC4) » pour ce seul
+  cas.
+- **Fait ici** :
+  - « Ouvrir le marché » (et « Inviter un partenaire ») vient juste après le résumé et la lecture du dossier, avant le
+    détail du score et des clauses : il suivait toute l'analyse, une page plus bas ;
+  - l'analyse s'affiche sous les résultats : après « Analyser ce marché », l'écran y mène (`rnScrollTo("srcAnalyse")`) ;
+    avant, rien ne semblait se passer ;
+  - un marché s'ouvre en haut de sa page (`openAo` remet le défilement à zéro, comme `go()`) : depuis une recherche
+    défilée, il s'ouvrait au milieu ;
+  - plus d'« Étape 1 / Étape 2 » dans la recherche (les étapes de la réponse vivent sur la page du marché) :
+    « Rechercher des marchés », « Analyse du marché » ;
+  - décision 8 sur l'analyse : « Seul » à côté du cadran (« 87 % »), « À plusieurs Y % », « Pourquoi ce score ? » en
+    « N sur M » ; « Client non précisé » sur une carte de résultat.
+- **Laissé, avec sa raison** : « confiance X% » et « adéquation N/100 » des cartes de résultat → des mots (étude, § 8 :
+  Moteur V0) ; « pertinence N/100 » du radar (chantier 1.3 puis Veille V1).
+
+## 1.5 La page du marché en 4 étapes
+
+On **déplace** les cartes, la logique ne change pas (mêmes appels, mêmes données). Ordre de la page :
+
+1. **En tête** : titre, client (cliquable, il mène à « Votre client »), étape, le couple « Seul X % · À plusieurs Y % » ;
+   **« Inviter un partenaire »** (`user-plus`), le seul bouton pleine largeur de la page, avant les 4 chiffres (sur
+   téléphone, ils s'empilent et repoussaient le bouton sous la ligne de flottaison), à toutes les étapes
+   (décision 0) ; son formulaire s'ouvre juste dessous. « Inviter {nom} », la recherche, la carte « Partenaires
+   invités » vide y mènent (`aoInviter`, `rnScrollTo("inviteForm")`). Le bilan d'un marché gagné ou perdu et son carnet
+   de notes restent en tête : c'est l'étape du moment.
+2. **La barre** Lire · Décider · Préparer · Déposer (décision 6) : 4 ancres, sans blocage ; l'étape en cours est
+   surlignée (`etapeDuMarche`, fonction pure : statut, dossier lu, étape du groupement ; aucune pour un marché gagné,
+   perdu ou abandonné). Elle **remplace sur cette page les étapes 1 à 5 du groupement** (les deux steppers sont
+   retirés) ; côté partenaire, le stepper reste jusqu'à la vague 2b.
+3. **Lire** : l'analyse du dossier (questions à l'IA comprises), « Comment vous serez noté », le dossier du marché,
+   votre client.
+4. **Décider** : « Répondre à plusieurs ? » (le couple, les manques cités du règlement, « Qui l'a ? », la simulation),
+   puis « Qui me complète ? ». **Un seul « Répartir entre partenaires »**, dans cette carte, avec sa composition
+   suggérée (il était aussi dans « Partenaires sur ce marché »). Sans analyse : une phrase dit quoi faire.
+5. **Préparer** : le prix d'abord (**le prix est une tâche de Préparer**), le dossier de présentation, les formulaires
+   officiels et les pièces ; puis **« À plusieurs »** : les tâches (`tachesPlusieurs`, fonction pure : des faits lus
+   dans l'état du serveur — partenaires invités, parts reçues avec leur prix, convention et accords, offre figée ;
+   trois statuts : Pas commencé · En cours · Terminé ; visibles dès l'étape 2 du groupement), « Partenaires invités »,
+   « Membres et sous-traitants », « Convention et accords ».
+6. **Déposer** : **« Prêt à déposer » sort de la carte de la convention** mais **reste réservé au groupement**
+   (`depotShown()` exige un groupement : `depot_readiness` ne vérifie que des points de groupement et signalerait de
+   faux manques à une entreprise seule) ; la liste « Avant de déposer sur la plateforme du client », pour tous (elle
+   n'apparaissait qu'après « Préparer mes documents », dans la même visite) ; « Exporter le dossier complet (ZIP) ».
+7. **Pied de page, replié** : devis et factures liés, suivi du dossier, journal d'accès (son bouton a quitté la carte
+   des partenaires), « Supprimer ce marché ».
+
+**Cartes renommées** (étude, § 8)
+
+| Avant | Après | Icône |
+|---|---|---|
+| Partenaires pour ce marché (bouton « Qui me complète ? ») | Qui me complète ? (bouton « Chercher des partenaires ») | `puzzle` |
+| Réseau Adjugo — montez le dossier à plusieurs | Partenaires invités | `handshake` |
+| Partenaires sur ce marché | Membres et sous-traitants (les entreprises de vos formulaires officiels) | `handshake` |
+| Monter le groupement | Convention et accords | `scroll-text` (au lieu de `file-signature`) |
+| Répondre à plusieurs ? | inchangé | `scale` (au lieu de `users-round`) |
+| Votre client (l'acheteur) | Votre client (« acheteur » en bulle) | inchangée |
+| Contributions, Contribution reçue | Parts reçues, Part reçue | inchangées |
+| Inviter un partenaire sur ce marché | Inviter un partenaire | `user-plus` |
+| « les accords enregistrés sont caducs » | « Convention à revalider : les accords déjà enregistrés ne comptent plus », avec la raison | — |
+| Partenaires rattachés, Déjà rattachés à ce marché | Entreprises ajoutées, Déjà ajoutés à ce marché | — |
+
+La carte « Partenaires sur ce marché » ne devient pas « Partenaires invités » (étude, § 8) : les invitations sont dans la
+carte du réseau, qui prend ce nom ; celle-ci liste les entreprises de vos formulaires officiels, sous-traitants
+compris. Les textes qui citaient la carte citent son nouveau nom : l'aide de la pièce « Convention de groupement »
+(`checklist.py`), le refus « l'offre se fige en générant la convention » (`invites.py`), les « [À compléter] » du dossier
+assemblé (`atelier_assemblage.py`), le message « Répartir » (`app.js`). L'étiquette de l'étape serveur « Monter le
+groupement » (`groupement_members.py`, testée) reste : elle ne s'affiche plus sur cette page.
+
+**Décision 8 sur la page** : plus aucun « /100 » ni « N/M ». Le seul pourcentage est le couple « Seul X % · À
+plusieurs Y % » (en-tête, « Répondre à plusieurs ? », simulation, historique, chaque candidat de « Qui l'a ? » : « À
+plusieurs Y % »), et seulement après le dossier (`match_score` n'est posé qu'à partir d'un vrai dossier) ; avant :
+« Analyse préliminaire » ou « À analyser ». « N sur M » : pièces à fournir, parts reçues, accords des membres, liste
+avant dépôt, détail du score, journal du dossier (« seul X % »). Plus de note sur une entreprise (règle 10 de l'étude
+moteur) : le « score /100 » et le « Détail du score » des entreprises trouvées, le « score /100 » de la composition
+suggérée sont retirés. Restent des taux qui ne sont pas des notes : TVA, frais de déplacement.
+
+**Traductions** (décision 16) : 41 libellés de la page et de la recherche (357 → 398 clés), vérifiés par
+`test_traductions_des_libelles_de_la_page_du_marche`.
+
+**Vérifié dans un vrai navigateur** (démonstration par lien privé, serveur local, 1 280 et 375 px, thème clair et
+sombre) : toiture (Préparer surligné, « Seul 87 % »), Kerhel (Déposer surligné, « Seul 43 % · À plusieurs 100 % »,
+4 tâches « Terminé », « Avant de déposer : 3 contrôles sur 4 » avec l'attestation URSSAF), Limauzac perdu (aucune
+étape surlignée, bilan et carnet de notes en tête) ; aucun débordement horizontal à 375 px ; la barre tient sur une
+ligne ; recherche → « Analyser ce marché » → l'analyse à l'écran → « Ouvrir le marché » → la page en haut.
+
 ---
 
 ## 2. Démonstration (lien privé, pitchs)
@@ -311,6 +409,9 @@ outil tiers.
   § 0 (analyse « soigner le dossier de présentation », « Groupement avec un désamianteur certifié SS3 », statut
   « Déposé »).
 - La mesure ne compte pas la démo ; sa route est classée sans coût.
+- La page du marché de la démo, rangée en 4 étapes, est vérifiée sur ses vrais états
+  (`test_la_page_du_marche_de_la_demo` : toiture en Préparer, Kerhel en Déposer avec ses 4 tâches faites, Limauzac
+  sans étape) et dans un navigateur (§ 1.5).
 - Le dossier fictif de l'acheteur garde ses mots (« mémoire technique » dans son règlement) : c'est un dossier
   d'acheteur crédible.
 
@@ -328,17 +429,19 @@ outil tiers.
   des traductions qui exigera chaque nouveau libellé (déjà traduits d'avance, § 0.5). Icônes Lucide du § 8 de
   l'étude (`house`, `folder-kanban`, `handshake`, `building-2`, `settings`…). Le radar quitte le haut des résultats
   pour l'onglet À venir.
-- **1.4 De la recherche au marché** (« Ouvrir le marché » après l'analyse) : zone `trouver-analyse`.
-- **1.5 La page du marché en 4 étapes** (Lire, Décider, Préparer, Déposer ; « Inviter un partenaire » en tête, le
-  bouton le plus visible, D0). Les cartes gardent leurs repères en changeant de place. À mettre à jour :
-  l'ordre attendu par `test_carte_du_marche_compacte…` (« Estimation du prix » avant le dossier de présentation,
-  avant « Mes documents de réponse » : c'est déjà l'ordre de Préparer). Textes qui citent une carte par son nom :
-  « Monter le groupement » (étapes du groupement, `test_demo_groupement_kerhel.py`), « Répondre à plusieurs ? ».
-  Les courriels ne citent plus aucune carte (« la page de ce marché »). Décision 8 sur cette page : le « /100 » des
-  candidats de « Partenaires sur ce marché » et les « % » des simulations restent à ramener à « Seul X % · À
-  plusieurs Y % » après le dossier, des mots avant, « N sur M » ailleurs (règle 10 de l'étude : pas de note sur
-  les partenaires). Ailleurs, même règle : « Pièces à fournir 16/25 » → « 16 sur 25 » ; sur la vitrine, le cadran
-  « 87 % » de la section « Décider » montre un pourcentage avant tout dossier.
+- **1.4 et 1.5** : faits (§ 1.4, § 1.5). Restent, pour la vague 2a ou un chantier suivant : les actions de
+  Décider (« Préparer seul », « Préparer à plusieurs », « Écarter » : elles changent le statut, donc l'axe d'étapes) ;
+  la liste de tâches de Préparer pour une entreprise seule (« la prochaine tâche non faite ») ; une seule liste
+  « Prêt à déposer » avec un calcul pour l'entreprise seule ; un seul « Figer l'offre » ; les cartes repliées sauf
+  l'action principale ; une barre d'étapes collée sous l'en-tête (sa hauteur varie). Les étiquettes du serveur
+  « Plus à jour — à régénérer » et « Caduc : la convention doit être régénérée » (`groupement_convention.py`,
+  affichées des deux côtés) sont à passer à « à revalider » avec leurs tests.
+- **Décision 8 ailleurs** : « Compatibilité N/100 » et « Seul : N/100 · En groupement : N/100 » des bulles de
+  l'accueil et de Mes marchés (`feedScoreTitle`, `kanbanScoreTitle` : chantiers 1.6 et 2a) ; les pourcentages du
+  carnet de notes (notes reçues de l'acheteur, Réd. V6) ; sur la vitrine, le cadran « 87 % » de la section
+  « Décider » montre un pourcentage avant tout dossier.
+- **Sous-titres** (1.7) : celui de la page du marché dit encore « Dossier complet de l'appel d'offres » (`subtitles`
+  de `app.js`).
 - **1.6 Accueil allégé** (`accueil-ruban`, les liens doublons de `accueil-rail`, « Monter un groupement » →
   « Préparer à plusieurs »). **1.7 Sous-titres en bulle** (`titles` / `subtitles` de `app.js`, déjà sans mot banni).
   **1.8 Transition** (« Ce qui a changé », anciens noms en bulle, courriel aux 7 PME).

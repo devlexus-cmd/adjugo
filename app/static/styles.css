@@ -733,6 +733,48 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .cdlg-lines li + li { margin-top:7px; }
 .cdlg-lines li.warn { color:var(--warning-text); font-weight:600; }
 
+/* ══════════ Page du marché en 4 étapes (réorganisation, vague 1, 1.5) ══════════
+   La barre Lire · Décider · Préparer · Déposer (des ancres, sans blocage), une section par étape, les tâches « à
+   plusieurs » de Préparer, le pied de page replié. Mêmes couleurs, même police : seuls l'ordre et les titres changent.
+   À 375 px : la barre tient sur une ligne (numéro au-dessus du mot), rien ne déborde. */
+.mk-etapes { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; margin-top:14px; }
+.mk-et { display:flex; align-items:center; justify-content:center; gap:7px; min-width:0; min-height:40px; padding:6px 10px; border-radius:999px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-weight:600; font-size:13px; line-height:1.25; }
+.mk-et:hover { background:var(--surface-2); color:var(--text); }
+.mk-et.cur { background:var(--accent-weak); border-color:var(--accent); color:var(--accent-text); }
+.mk-et:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); }
+.mk-n { display:inline-grid; place-items:center; flex:none; width:20px; height:20px; border-radius:50%; background:var(--surface-3); color:var(--text-2); font-size:11px; font-weight:700; font-variant-numeric:tabular-nums; }
+.mk-et.cur .mk-n { background:var(--accent); color:#fff; }
+.mk-etape { margin-top:26px; position:relative; }
+.mk-etape:focus { outline:none; }
+.mk-etape-h { display:flex; align-items:center; gap:6px; padding:0 2px; }
+.mk-etape-h h3 { margin:0; font-size:16px; font-weight:600; line-height:1.3; }
+.mk-etape > .conv-pret { margin-top:14px; }
+.mk-sous { display:flex; align-items:center; gap:6px; margin:22px 2px 0; }
+.mk-sous h4 { margin:0; font-size:14px; font-weight:600; color:var(--text-2); }
+.mk-vide { margin:14px 0 0; }
+.mk-tl { list-style:none; margin:0; padding:0; }
+.mk-tl li { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; align-items:center; gap:6px 10px; padding:7px 0; border-bottom:1px solid var(--hairline); font-size:13px; }
+.mk-tl li:last-child { border-bottom:0; }
+.mk-tl li > i[data-lucide], .mk-tl li > .lucide { width:16px; height:16px; flex:none; color:var(--text-2); }
+.mk-tl li.fait > i[data-lucide], .mk-tl li.fait > .lucide { color:var(--success-text); }
+.mk-tl li.en_cours > i[data-lucide], .mk-tl li.en_cours > .lucide { color:var(--warning-text); }
+.mk-tl-l { min-width:0; }
+.mk-client { display:inline; text-align:left; }
+.mk-pied { margin-top:26px; }
+.mk-pied > summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:var(--surface-2); color:var(--text-2); font-weight:600; font-size:13px; user-select:none; }
+.mk-pied > summary::-webkit-details-marker { display:none; }
+.mk-pied > summary:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); }
+.mk-pied > summary > i[data-lucide], .mk-pied > summary > .lucide { width:16px; height:16px; flex:none; }
+.mk-pied > summary .cr-chev { margin-left:auto; transition:transform .15s; }
+.mk-pied[open] > summary .cr-chev { transform:rotate(180deg); }
+.mk-inv-form:focus { outline:none; }
+.score-ring .ring-pct { font-size:.55em; font-weight:600; }
+@media (max-width:520px) {
+  .mk-etapes { gap:6px; }
+  .mk-et { flex-direction:column; gap:3px; padding:6px 4px; min-height:54px; border-radius:14px; font-size:12px; }
+  .mk-etape, .mk-pied { margin-top:22px; }
+}
+
 /* ══════════ Réseau de partenaires (co-traitance v2, vague 3) ══════════
    Vue « Réseau » (profil · annuaire · historique · invitations reçues), panneau « Partenaires pour ce
    marché », modales fiche et invitation. Rythme : 16 px entre les blocs ; rien collé aux bords ; à 375 px

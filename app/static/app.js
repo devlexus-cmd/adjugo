@@ -74,6 +74,39 @@ function translateDOM(lang) {
   });
 }
 
+// ══════════ Page du marché en 4 étapes (réorganisation, vague 1, 1.5 ; décision 6) — fonctions pures ══════════
+// L'étape en cours de la barre Lire · Décider · Préparer · Déposer, déduite de ce que l'écran sait déjà : le statut
+// du marché, le dossier du marché lu ou non, l'étape du groupement (1 à 5, dérivée côté serveur). Une indication,
+// jamais un blocage : chaque étape s'ouvre à tout moment. Aucune étape surlignée pour un marché gagné, perdu ou
+// abandonné (son bilan est en tête de page).
+function etapeDuMarche(statut, dossierLu, etapeGroupement) {
+  const e = Number(etapeGroupement) || 1;
+  if (statut === "gagne" || statut === "perdu" || statut === "abandonne") return "";
+  if (statut === "envoye" || e >= 5) return "deposer";
+  if (!dossierLu) return "lire";
+  return (statut === "en_cours" || e >= 2) ? "preparer" : "decider";
+}
+
+// Préparer › À plusieurs : les étapes 2 à 4 du groupement deviennent des tâches. Des FAITS lus dans l'état dérivé
+// du serveur (GET /groupement/state, jamais stocké) : partenaires invités, parts reçues avec leur prix, convention et
+// accords, offre figée ; rien d'autre n'est calculé. La 5e étape (« Déposer ») est l'étape Déposer de la page. Vide
+// tant que le groupement n'a pas commencé (étape 1 : « Repérer le marché »). Trois statuts seulement.
+function tachesPlusieurs(st) {
+  if (!st || (Number(st.etape) || 1) < 2) return [];
+  const n = Number(st.n_members) || 0, ns = Number(st.n_submitted) || 0, np = Number(st.n_with_price) || 0;
+  const cv = st.convention_status && st.convention_status !== "aucune" ? st.convention_status : "";
+  const c = st.convention || {}, statut = { fait: "Terminé", en_cours: "En cours", a_faire: "Pas commencé" };
+  const t = (key, label, etat, detail, voir) => ({ key, label, etat, statut: statut[etat], detail, voir });
+  return [
+    t("inviter", "Partenaires invités", n ? "fait" : "a_faire", n ? n + " " + (n > 1 ? "partenaires" : "partenaire") : "", "invitations"),
+    t("parts", "Parts reçues", !n ? "a_faire" : (ns === n && np === n ? "fait" : (ns ? "en_cours" : "a_faire")), n ? ns + " sur " + n : "", "parts"),
+    t("convention", "Convention et accords", cv === "signee" ? "fait" : (cv ? "en_cours" : "a_faire"),
+      cv === "a_signer" && c.n_signataires ? "accords " + (Number(c.n_accords) || 0) + " sur " + c.n_signataires
+        : ({ signee: "validée par tous", perimee: "à revalider", draft: "brouillon" })[cv] || "", "convention"),
+    t("offre", "Offre commune", st.offer_frozen ? "fait" : "a_faire", st.offer_frozen ? "figée" : "", "convention"),
+  ];
+}
+
 // État initial de « Partagé avec moi » (vue co-traitant avec compte) — plus de chiffrage_note : prix de vente du lot
 // en clair + détail chiffré dans le navigateur (enveloppe), capacités déclarées, signataire, pièces typées.
 function _sharedInit(token, mandataire, projectId, role) {
@@ -1847,6 +1880,7 @@ const __adjApp = createApp({
       this.ao.qa = []; this.ao.qaInput = ""; this.ao.grilleBusy = ""; this.ao.atl = _atlCardInit(); this.ao.grp = _grpInit(); this.ao.conv = _convInit(); this.ao.pm = _pmInit(); this.ao.depot = _depotInit(); this.rinv = null;
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
       this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", lienCandidat: null, auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
+      this.$nextTick(() => { const w = document.querySelector(".work"); if (w) w.scrollTop = 0; });   // le marché s'ouvre en haut (depuis une recherche défilée, par exemple)
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
       this.loadPredepot(p.id);   // état du wizard pré-dépôt propre à cet AO
       this.aoLoadCotraitants(); this.aoLoadDocs(); this.aoLoadChecklist(); this.loadInvoices(); this.aoLoadEstimate(); this.aoLoadInvites(); this.aoLoadConsortium(); this.aoGrpLoad(); this.atlCardLoad();
@@ -1931,11 +1965,11 @@ const __adjApp = createApp({
       const p = this.ao.project || {}; const ev = [];
       if (p.created_at) ev.push({ icon: "plus", t: "Marché ajouté", d: this.fmtDate(p.created_at) });
       const a = p.ai_analysis;
-      if (a) ev.push({ icon: "scan-search", t: a.dce_available ? "Dossier analysé (complet)" : "Annonce analysée", d: a.match_score != null ? "compatibilité " + a.match_score + "/100" : "" });
+      if (a) ev.push({ icon: "scan-search", t: a.dce_available ? "Dossier analysé (complet)" : "Annonce analysée", d: a.match_score != null ? "seul " + a.match_score + " %" : "" });   // décision 8 : le couple « Seul X % », jamais une note sur 100
       const e = this.ao.estimate;
       if (e && e.total_ht) ev.push({ icon: "calculator", t: "Estimation du prix", d: this.eur(e.total_ht) + " HT" });
       if (e && e.review && e.review.status === "valide") ev.push({ icon: "circle-check-big", t: "Estimation validée" + (e.review.by ? " · " + e.review.by : ""), d: "" });
-      if (this.ao.cotraitants.length) ev.push({ icon: "handshake", t: this.ao.cotraitants.length + " partenaire(s) rattaché(s)", d: "" });
+      if (this.ao.cotraitants.length) ev.push({ icon: "handshake", t: this.ao.cotraitants.length + " membre(s) ou sous-traitant(s)", d: "" });
       if (this.ao.dossier) ev.push({ icon: "package", t: "Documents préparés (formulaires + présentation)", d: "" });
       const nd = (this.ao.documents || []).reduce((s, g) => s + ((g && g.documents || []).length), 0);
       if (nd) ev.push({ icon: "folder", t: nd + " pièce(s) dans mes documents", d: "" });
@@ -2588,8 +2622,8 @@ const __adjApp = createApp({
       this.ao.group.loading = true;
       try {
         this.ao.group.data = await this.api("POST", "/api/sourcing/groupement", { project_id: this.ao.project.id });
-        if (this.ao.group.data && !this.ao.group.data.n_lots) this.notify("Marché en lot unique : pas de répartition possible. Utilisez « Ajouter » pour un partenaire.");
-        else if (this.ao.group.data) this.notify("Groupement optimisé : " + this.ao.group.data.n_lots + " lot(s) analysé(s)");
+        if (this.ao.group.data && !this.ao.group.data.n_lots) this.notify("Marché en lot unique : pas de répartition par lot. Invitez un partenaire avec « Inviter un partenaire », en haut de la page.");
+        else if (this.ao.group.data) this.notify("Répartition proposée : " + this.ao.group.data.n_lots + " lot(s) analysé(s)");
       }
       catch (e) { this.notify(e.message, "err"); }
       finally { this.ao.group.loading = false; }
@@ -2678,7 +2712,7 @@ const __adjApp = createApp({
       const c = (this.ao.grp.besoins && this.ao.grp.besoins.candidats) || {};
       // « reseau » (vague 3) : profils publiés du réseau Adjugo, dans l'ORDRE du classement serveur
       // (un rang, jamais une note) ; le seul pourcentage reste score_avec (score de groupement).
-      return [{ key: "rattaches", label: "Déjà rattachés à ce marché", list: c.rattaches || [] },
+      return [{ key: "rattaches", label: "Déjà ajoutés à ce marché", list: c.rattaches || [] },
               { key: "annuaire", label: "Mes partenaires", list: c.annuaire || [] },
               { key: "reseau", label: "Réseau Adjugo", list: c.reseau || [] },
               { key: "sirene", label: "Registre officiel des entreprises", list: c.sirene || [] }];
@@ -2762,7 +2796,7 @@ const __adjApp = createApp({
       const pm = (!(m && m.link_id) && n && plan) ? (plan.members || []).find(x => x && x.link_id && String(x.name || "").trim().toLowerCase() === n) : null;
       const lid = (m && m.link_id) || (pm && pm.link_id) || null;
       this.ao.share.lienCandidat = lid ? { id: lid, nom: this.ao.share.form.company_name } : null;
-      this.$nextTick(() => { const el = this.$refs.reseauCard; if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" }); });
+      this.rnScrollTo("inviteForm");   // le formulaire d'invitation est en tête de page (décision 0)
     },
     // Identifiant de profil d'un membre « reseau » de la composition retenue (le plan ne le garde pas) :
     // retrouvé dans la simulation, les candidats ou le panneau « Partenaires pour ce marché » (SIRET, sinon nom).
@@ -2786,7 +2820,7 @@ const __adjApp = createApp({
     },
     grpCanCancel() { const st = this.ao.grp.state, p = this.grpPlan(); return !!(st && typeof st.index === "number" && st.index >= 2 && p && !p.auto); },
     async aoGrpCancelPlan() {
-      if (!confirm("Annuler la composition retenue ?\nVous revenez au verdict seul. Les partenaires déjà rattachés au marché restent en place.")) return;
+      if (!confirm("Annuler la composition retenue ?\nVous revenez au verdict seul. Les entreprises déjà ajoutées au marché restent dans « Membres et sous-traitants ».")) return;
       try {
         const r = await this.api("DELETE", "/api/projects/" + this.ao.project.id + "/groupement/plan");
         this.ao.grp.sim = null; if (r && r.state) this.ao.grp.state = r.state;
@@ -3549,7 +3583,7 @@ const __adjApp = createApp({
       const lines = [];
       if (apiMsg) lines.push({ t: apiMsg });
       lines.push({ t: "Une nouvelle version est créée, avec une nouvelle empreinte." });
-      lines.push(d.status === "perimee" ? { t: "Les accords donnés sur l'ancienne version sont caducs : chaque membre devra donner son accord sur la nouvelle." }
+      lines.push(d.status === "perimee" ? { t: "Les accords donnés sur l'ancienne version ne comptent plus : chaque membre devra donner son accord sur la nouvelle." }
                                         : { t: "Les accords déjà enregistrés sont annulés : chaque membre devra redonner son accord.", warn: true });
       lines.push({ t: "Le total de l'offre est recalculé, figé et révélé à tous les partenaires, avec l'annexe de répartition." });
       if ((d.membres || []).length === 2) lines.push({ t: "À 2 membres, le total révèle à chacun la part de l'autre.", warn: true });
@@ -3683,7 +3717,7 @@ const __adjApp = createApp({
       const cv = this.ao.conv.d && this.ao.conv.d.status, generated = cv === "a_signer" || cv === "signee";
       const relance = this.aoPendingRelancables().length > 0;
       const conv = !cv || cv === "aucune" || cv === "draft"
-        ? { cta: "Préparer la convention", icon: "file-signature", action: () => this.aoConvScroll("convFoot") }
+        ? { cta: "Préparer la convention", icon: "scroll-text", action: () => this.aoConvScroll("convFoot") }
         : cv === "perimee" ? { cta: "Régénérer la convention", icon: "refresh-cw", action: () => this.aoConvAskRegenerate() }
         : { cta: "Voir les accords", icon: "users-round", action: () => this.aoConvScroll("convAccords") };
       return [
@@ -3790,6 +3824,17 @@ const __adjApp = createApp({
       catch (e) { this.notify(e.message, "err"); }
     },
     aoBack() { this.view = this.ao.back || "pipeline"; this._ecranOuvert(this.view); this.loadProjects(); },
+    // ── Page du marché en 4 étapes (réorganisation, vague 1, 1.5) : la barre, les tâches à plusieurs, l'invitation ──
+    aoEtape() { const st = this.ao.grp.state; return etapeDuMarche(this.ao.project && this.ao.project.status, this.aoDceAvailable(), st && st.etape); },
+    aoTachesPlusieurs() { return tachesPlusieurs(this.ao.grp.state); },
+    aoTacheVoir(t) {
+      if (t.voir === "parts") { this.aoConvShowCoffre(); return; }
+      this.rnScrollTo(t.voir === "convention" && this.convVisible() ? "convCard" : "reseauCard");
+    },
+    // « Inviter un partenaire » (décision 0) : un seul formulaire, en tête de page ; on l'ouvre et on y va.
+    aoInviter() { this.ao.share.open = true; this.rnScrollTo("inviteForm"); },
+    // Déposer : « Prêt à déposer » porte déjà « Exporter le dossier complet » quand tout est prêt (pas de doublon).
+    aoExportDansPret() { return this.depotShown() && !this.depotIsDeposed() && !!(this.depotPret() && this.depotPret().pret); },
     aoDetails() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.details) || {}; },
     aoSource() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.source) || null; },
     aoContact() { const c = this.aoDetails().contact; return (c && (c.nom || c.email)) ? c : null; },
@@ -4404,6 +4449,7 @@ const __adjApp = createApp({
         const r = await this.api("POST", "/api/sourcing/analyze", { tender: t });
         this.src.analysis = r; this.src.projectId = r.project_id;
         this.loadProjects(); this.loadStats();
+        this.rnScrollTo("srcAnalyse");   // l'analyse s'affiche sous les résultats : on y mène, « Ouvrir le marché » compris
         if (!r.dce_available) this.notify("Dossier complet non accessible — analyse fondée sur l'annonce publiée", "ok");
       } catch (e) {
         if ((e.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
@@ -4729,10 +4775,7 @@ const __adjApp = createApp({
       const p = this.projects.find(x => x.id === pid);
       if (!p) { this.notify("Appel d'offres introuvable", "err"); return; }
       this.openAo(p);   // ao.share est posé tout de suite (avant le premier appel réseau)
-      if (inviter) {
-        this.ao.share.open = true;
-        this.$nextTick(() => { const el = this.$refs.reseauCard; if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" }); });
-      }
+      if (inviter) this.aoInviter();   // le formulaire d'invitation, en tête de la page du marché
     },
     confClass(c) { return c >= 0.8 ? "go" : c >= 0.5 ? "a_etudier" : "neutral"; },
     critStatus(s) { return ({ ok: "go", partiel: "a_etudier", inconnu: "neutral" })[s] || "neutral"; },
