@@ -1740,6 +1740,12 @@ def _executer(db, *, job_id: int, invite_id: int, section_id: int, kind: str, ci
                              anciens=(base.faits if base else []))
         sources = ctx.sources_reelles(r.get("sources") or [], chunks)
         origine = "ia"
+    # Vague 5 (D) : SES réponses à l'entretien relues sous le verrou de l'invitation — une réponse retirée, changée
+    # ou reprise par le chef de file pendant l'aide ne laisse ni son passage ni sa source (le fait redevient « à
+    # relire »).
+    from app.services import entretien_chantier as ec
+    sources, faits = ec.sans_reponses_changees(sources, faits, fiches_ent,
+                                               ec.fiches_partenaire(db, section.dossier_id, invite_id))
     commun = _commune(db, section)
     b = _ajouter_brouillon(db, section, invite_id, texte=texte, origine=origine, ia=True, sources=sources, faits=faits,
                            coupe=bool(r.get("coupe")), base_id=base.id if base else None,

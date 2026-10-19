@@ -96,10 +96,12 @@ Contrôle de chaque proposition, sans IA :
   somme fait le poids du critère ;
 - exigence : phrase retrouvée mot pour mot ; son libellé est TIRÉ DE LA PHRASE (objet après le verbe
   d'exigence, sinon la phrase), jamais écrit par l'IA ; les mêmes exclusions que le repérage s'appliquent,
-  la phrase relue dans son unité du dossier (`_ecartee_comme_au_reperage`) : niée (« n'est pas tenu de »),
-  facultative (« le candidat peut… », « à titre facultatif »), sujet suivi d'un mot qui l'exclut (« le candidat
-  retenu… »), sous un article sur la candidature, ou tirée du CCTP / CCAP sans parler du candidat, du mémoire ni
-  de l'offre → écartée et comptée comme un écart (`llm_qualite`) ;
+  la phrase relue dans son unité du dossier (`_ecartee_comme_au_reperage`) — et, pour un élément de liste, avec la
+  phrase qui annonce la liste (« Le candidat joindra à son mémoire technique : ») : niée (« n'est pas tenu de »),
+  facultative (« le candidat peut… », une demande « à titre facultatif », § C2.5), sujet suivi d'un mot qui l'exclut
+  (« le candidat retenu… »), sous un article sur la candidature (§ C2.5 : « … des candidatures et des offres » n'en
+  est pas un), ou tirée du CCTP / CCAP sans parler du candidat, du mémoire ni de l'offre → écartée et comptée comme
+  un écart (`llm_qualite`) ;
 - question : au moins une phrase retrouvée mot pour mot, question de 15 à 300 caractères finie par « ? »,
   aucun nombre absent des phrases retrouvées (nombres comparés un à un : « 1 » n'est pas dans « 10 ») ; sinon
   écartée.
@@ -201,12 +203,20 @@ Repérage sans IA (`grille_exigences._reperer`), dans le règlement, le cadre de
   « 2.1 » ou une puce) par un impératif ou un infinitif suivi de ce qui est demandé (« Décrivez la méthode… »,
   « Présentez l'encadrement… », « Préciser les moyens… » ; jamais « Décrire ne suffit pas ») ;
 - une phrase qui finit par « : » ouvre une liste : une exigence par élément (puces, numéros, ou liste en
-  ligne séparée par « ; »), avec la phrase d'annonce (`intro`).
+  ligne séparée par « ; »), avec la phrase d'annonce (`intro`) ; « … comprendra les éléments ci-dessous. » n'est
+  qu'une annonce (jamais une exigence) : la liste qui suit est lue de même, sinon chaque phrase suivante seule.
 Jamais : une pièce administrative ou un prix (DC1, DC2, DUME, Kbis, attestations, assurances, RIB, acte
 d'engagement, bordereau, DPGF, DQE, chiffre d'affaires…), le dépôt (plateforme, date limite, format, pli,
 signature), la visite, les variantes, ce que fait le candidat retenu ou le titulaire, ce qui est permis
-(« peut », « pourra », « à titre facultatif ») ou nié (« n'est pas tenu »), une phrase d'un article sur la candidature
-(« Conditions de participation »…), « justifier d'une capacité », « une offre conforme », l'obligation d'utiliser
+(« peut », « pourra ») ou nié (« n'est pas tenu »), une DEMANDE facultative (« à titre facultatif », « de manière
+facultative » qui qualifie le sujet ou le verbe — « présentera, à titre facultatif, ses certificats » —, ou tout
+l'objet — « … un planning, à titre facultatif. » ; un élément facultatif coordonné à d'autres — « la méthodologie
+et, de manière facultative, des photographies » — sort seul du libellé, la phrase citée reste entière ; le mot seul,
+« (annexes facultatives) », « la visite est facultative », ne compte pas), une phrase d'un article sur la
+candidature (« Conditions de participation »… ; le titre le plus proche décide, lu sur SA ligne : un sous-titre
+numéroté « 5.1 Pièces de la candidature » / « 5.2 Contenu de l'offre » avant l'article qui l'englobe, et un titre
+qui nomme aussi l'offre ou le mémoire — « Présentation des candidatures et des offres » — n'est pas un article sur la
+candidature ; même règle pour l'entretien chantier), « justifier d'une capacité », « une offre conforme », l'obligation d'utiliser
 le cadre (déjà dans « Ce que le dossier impose »), une simple limite de longueur (« au maximum 10 pages » ; mais
 « l'encadrement du chantier (2 pages maximum) » est bien une exigence). Une exigence sans mot principal (« un
 mémoire technique ») n'est pas gardée. Au plus 40, dans l'ordre du dossier.
@@ -216,10 +226,13 @@ courte sans ponctuation finale, « Article 5 - … ») ; un retour à la ligne d
 
 **La règle « traitée », explicite et testée** (`grille_exigences.traitement`, texte `REGLE_TRAITEE`) :
 1. les mots principaux d'une exigence sont les mots de son libellé (sinon de sa phrase), sans mots vides ni
-   mots qu'on trouve dans toute exigence (« candidat », « mémoire », « présenter », « préciser », « pages »…) ou
-   dans tout mémoire du BTP (« travaux », « chantier », « entreprise » : « la gestion des déchets du chantier »
-   n'est pas traitée par une partie qui parle du chantier sans nommer les déchets),
-   réduits à leurs 5 premières lettres (« déchets » ↔ « déchet »), au plus 8 ;
+   mots qu'on trouve dans toute exigence (« candidat », « mémoire », « présenter », « préciser », « pages »,
+   « travaux »…), réduits à leurs 5 premières lettres (« déchets » ↔ « déchet »), au plus 8 ; « chantier » et
+   « entreprise », présents dans tout mémoire du BTP, restent des mots de l'exigence (« une présentation de
+   l'entreprise », « l'organisation du chantier » sont gardées et gardent leurs deux mots), mais la règle
+   « traitée » ne les cherche pas quand il reste au moins deux autres mots principaux (`cles_traitement` : « la
+   gestion des déchets du chantier » n'est pas traitée par une partie qui parle du chantier sans nommer les
+   déchets ; une exigence n'est jamais ramenée à un seul mot) ;
 2. elle est **traitée** quand le texte d'UNE partie, sans ses « [À compléter : …] », en reprend : tous s'il y
    en a un ou deux ; sinon au moins la moitié, et au moins deux (`requis(k)`) ;
 3. la partie qui en reprend le plus l'emporte (puis la première du plan) : « traitée dans 3. Démarche
@@ -305,10 +318,14 @@ Repérées sans IA, chacune avec ses phrases (au plus 8) :
 Date limite des questions (`date_limite_questions`) : une phrase sur les questions des candidats qui dit QUAND
 les poser (« au plus tard le 05/06/2026 » : date écrite ; « 6 jours avant la date limite de remise » : le délai,
 et une date calculée seulement en jours simples quand une seule date de remise est écrite, dite « calculée par
-Adjugo … : vérifiez-la » ; jamais pour des jours francs ou ouvrés). Une date écrite APRÈS le délai (« … 6 jours
-avant la date limite de remise des offres, fixée au 15/12/2026 ») est celle de la REMISE, jamais celle des
-questions : le délai est dit, la date est calculée (09/12/2026, « calculée par Adjugo ») ; la date de remise de
-la même phrase sert quand aucune autre n'est repérée. « Les réponses seront envoyées… » n'est pas cette date.
+Adjugo … : vérifiez-la » ; jamais pour des jours francs ou ouvrés). Une date écrite APRÈS le délai est classée
+par ce qui l'introduit : « fixée au », « prévue le », « des offres du » (« … 6 jours avant la date limite de remise
+des offres, fixée au 15/12/2026 ») donnent la date de la REMISE : le délai est dit, la date est calculée
+(09/12/2026, « calculée par Adjugo ») ; la date de remise de la même phrase sert quand aucune autre n'est repérée.
+« soit le », « soit jusqu'au », « c'est-à-dire le », « à savoir le » (« … 10 jours avant la date limite de remise
+des offres, soit le 05/12/2026 ») donnent la date des QUESTIONS, écrite dans le règlement : rien n'est calculé, et
+elle n'est jamais comptée comme une date de remise (pas de fausse question `date_remise`). Sans l'une ni l'autre
+introduction : rien n'est calculé, la phrase est montrée. « Les réponses seront envoyées… » n'est pas cette date.
 
 À l'écran (chef de file seulement) : la date limite, « Adjugo n'envoie rien : c'est vous qui posez les questions sur
 la plateforme de l'acheteur, avant le … », chaque question avec ses phrases, « Copier la question » (la question
@@ -560,7 +577,13 @@ quand il n'a rien d'autre à faire.
   question reprise avec confirmation, réponse retirée, passée ou modifiée par lui) est aussi OUBLIÉE DES FAITS qui
   la citaient (`oublier_reponses`) : dans les versions du dossier du chef de file et dans les brouillons de ce
   partenaire, la copie du passage part et le fait redevient « à relire » (l'export le dit : `faits_a_relire`),
-  comme pour un document déposé par le lien. Invitation coupée autrement (marché mis à la corbeille puis restauré,
+  comme pour un document déposé par le lien. Pendant une rédaction par l'IA (chef de file : « Rédiger »,
+  « Raccourcir » ; partenaire : son aide), le texte est rangé sous le verrou des invitations qui ont répondu (pris
+  d'abord ; `verrouiller_repondants`, ou celui de SON invitation), avec la fiche chantier RELUE à ce moment
+  (`sans_reponses_changees`) : une réponse retirée, changée ou reprise, ou un partenaire retiré pendant l'appel, ne
+  laisse ni son passage ni sa source dans la nouvelle version (le fait redevient « à relire ») ; arrivé après, il
+  la nettoie (`oublier_reponses`). La reprise d'une question répondue par un partenaire (`adresser`) prend aussi le
+  verrou de son invitation d'abord. Invitation coupée autrement (marché mis à la corbeille puis restauré,
   lien expiré) : sa réponse n'est plus montrée ni remise (fiche chantier, carte de la question avec
   `adresse.active = false`, export RGPD du chef de file), le chef de file qui veut répondre lit 403
   `question_partenaire_sans_acces` (« … qui ne peut plus y répondre (raison) : reprenez-la… ») et « Posée à »
@@ -1152,3 +1175,44 @@ La production n'a pas bougé (`feat/produit-acheteur-collectivites` = `b010c59`,
   1 162 verts et 37 échecs, **les mêmes 37** que le code de production sur la même liste, dans le même ordre (tests
   propres à SQLite) ; à conditions égales, 21 échecs de part et d'autre, identiques.
 
+
+## R2 — Seconde contre-relecture de la vague 5 (19/10/2026, après `d342cd5`)
+
+11 remarques (2 lectures : sources et cloisonnement, exactitude), toutes reproduites (scripts de la relecture
+rejoués sur `0277857`, `d342cd5` et le correctif) puis corrigées ; aucune rejetée. Plusieurs remarques décrivaient
+le même défaut vu par les deux lectures. Tests : `tests/test_redaction_v5_contre_relecture2.py` (29 tests ; 26
+échouaient sur `d342cd5`, les 3 autres sont des garde-fous nommés comme tels). Aucune migration, aucun écran changé
+(empreintes SRI inchangées).
+
+| remarque | défaut | correction |
+|---|---|---|
+| R11 (majeur) | une réponse de partenaire retirée, reprise, ou un partenaire retiré PENDANT « Rédiger » restait dans la nouvelle version (« déclaré par votre partenaire », passage copié), jamais nettoyée | au rangement, verrou des invitations qui ont répondu pris d'abord (`ec.verrouiller_repondants`), fiche chantier RELUE et `ec.sans_reponses_changees` : réponse disparue ou changée → fait « à relire », ni passage ni source. Aussi « Raccourcir », l'aide du partenaire (sous le verrou de SON invitation) et `adresser` (verrou de l'invitation du répondant d'abord) (§ D.4) |
+| R3 (majeur, ×2) | « Article 5 - Présentation des candidatures et des offres » pris pour un article sur la candidature : exigences de l'IA (et du repérage) écartées | `sous_titre_candidature` : titre lu sur SA ligne, le plus proche décide (sous-titre « 5.2 Contenu de l'offre » avant l'article), un titre qui nomme l'offre ou le mémoire n'est pas « candidature » ; même règle pour l'entretien ; « … comprendra les éléments ci-dessous. » n'est qu'une annonce (§ C2.5) |
+| R3 (majeur et mineur) | « facultatif » n'importe où écartait toute la phrase ou toute la liste (« (annexes facultatives) », « … et, de manière facultative, … ») | `_demande_facultative` : seulement une DEMANDE facultative (sujet, verbe, ou tout l'objet) ; l'élément facultatif coordonné sort seul du libellé (`_sans_le_facultatif`), la phrase citée reste entière ; un élément de liste « - à titre facultatif, … » écarté (§ C2.5) |
+| R3 (mineur) | élément de liste du CCTP proposé par l'IA relu sans sa phrase d'annonce (« Le candidat joindra à son mémoire technique : ») | `_annonce` : l'élément est relu avec la phrase qui annonce la liste (mention du candidat, négation, faculté) (§ C2.2) |
+| R2 (majeur, ×2) | « … 10 jours avant la date limite de remise des offres, soit le 05/12/2026 » : date des questions prise pour la date de remise (date fausse calculée, ou date perdue et fausse question `date_remise`) | `_dates_apres_le_delai` : « soit le / soit jusqu'au / c'est-à-dire le / à savoir le » → date des questions écrite ; « fixée au / prévue le / des offres du » → date de remise ; sinon rien de calculé ; `dates_remise` n'y prend plus la date des questions (§ C2.9) |
+| R5 (mineur et majeur) | « entreprise » et « chantier » dans les mots génériques : « une présentation de l'entreprise » disparaissait, « l'organisation du chantier » traitée sur le seul mot « organisation » | retirés des mots génériques ; `cles_traitement` ne les ignore que pour la règle « traitée » et s'il reste au moins deux autres mots (§ C2.5) |
+| R25 (mineur) | parties tirées du groupement placées au milieu d'un groupe de sous-critères (1.1, 1.2, 2, 3, 1.3) | `_ancre` passe tout le groupe (`at._hors_des_groupes`) |
+
+### R2.1 Choix faits par défaut (à valider par Eliot)
+
+1. Une réponse de l'entretien CHANGÉE pendant la rédaction (même ref, autre texte) rend le fait « à relire » plutôt
+   que de le rapprocher de la nouvelle réponse : prudence (l'IA a écrit d'après l'ancienne).
+2. « (facultatif) » ou « facultative » seul, sans « à titre » ni « de manière », ne rend pas une demande facultative
+   (comme avant la contre-relecture précédente) : le mot qualifie souvent une pièce annexe, pas la demande.
+3. Un titre qui nomme à la fois les candidatures et l'offre (ou les plis) n'est pas un article sur la candidature :
+   ce qu'il demande peut entrer dans la liste ; les pièces administratives restent écartées par leur propre règle.
+
+### R2.2 Vérifications
+
+- Suite complète SQLite (`TZ=UTC`, IA, emails et sources publiques simulés, aucun réseau) : **1 838 tests, tous
+  verts** (1 809 + les 29 de cette contre-relecture), dont `tests/test_demo_*.py` ; la grille de la vitrine
+  (7 exigences, date des questions, aucune question à l'acheteur) est identique à celle de `d342cd5`.
+- Les 29 tests rejoués sur le code de `d342cd5` (extrait par `git archive`) : 26 échecs, 3 garde-fous verts.
+- Empreintes SRI à jour (`scripts/sri_update.py --check`) ; `node --check` des 5 scripts servis.
+- Postgres 16 depuis l'état exact de la production (`b010c59`, tête `y9z0depotlien`) : les 23 contrôles de migration
+  verts (27 contrôles en tout, aucun échec) ; course réelle : le retrait d'une réponse par le partenaire ATTEND le rangement d'un texte rédigé par l'IA
+  (verrou de son invitation) puis le nettoie ; témoin sans le verrou : le retrait passe et la copie reste (le défaut
+  corrigé) ; vrais tests sur la base montée (43 fichiers, dont les deux contre-relectures, tout vert) : 1 191 verts
+  et 37 échecs, **les mêmes 37** que le code de production sur la même liste, dans le même ordre (tests propres à
+  SQLite) ; à conditions égales, 21 échecs de part et d'autre, identiques.

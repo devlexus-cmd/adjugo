@@ -293,14 +293,16 @@ def _trouver(q: dict, pieces: list, deja=()) -> Optional[dict]:
     return repli or repli_deja or repli_candidature
 
 
+_FIN_DE_LIGNE = re.compile(r"\n")
+
+
 def _sous_article_candidature(f: str, pos: int) -> bool:
     """La position est-elle sous un article sur la CANDIDATURE (même règle que la liste des exigences,
     grille_exigences._rubrique_candidature) ?"""
     from app.services import grille_exigences as ge
-    last = None
-    for m in ge._RUBRIQUE.finditer(f, max(0, pos - 4000), pos):
-        last = m
-    return bool(last and ge._RUBRIQUE_CANDIDATURE.search(last.group("t")))
+    lo = max(0, pos - 4000)
+    debuts = ([0] if lo == 0 else []) + [m.end() for m in _FIN_DE_LIGNE.finditer(f, lo, min(len(f), pos + 400))]
+    return ge.sous_titre_candidature(f, pos, debuts)
 
 
 def lignes_grille(project: Project) -> list:
@@ -740,6 +742,12 @@ def adresser(db, project: Project, dossier: DossierPresentation, lecteur: at.Lec
     (confirmation exigée : 409 « reponse_a_confirmer ») — la réponse d'un partenaire reste SA donnée, elle ne
     devient jamais celle d'un autre. Inscrit au journal (le partenaire concerné le lit dans le sien)."""
     from app.services import atelier_groupement as ag
+    r = _question(db, dossier, qid)
+    if r.reponse_kind == INV and r.reponse_invite_id:
+        # Sa réponse va sortir de la fiche chantier : le verrou de SON invitation d'abord (même ordre que sa propre
+        # réponse et que le rangement d'un texte rédigé par l'IA, qui relit la fiche sous ce verrou).
+        from app.services import depot_lien
+        depot_lien.verrouiller_invitation(db, r.reponse_invite_id)
     r = _question(db, dossier, qid, verrou=True)
     if invite_id is not None:
         try:
@@ -1518,6 +1526,53 @@ def oublier_reponses(db, dossier_id: int, numeros, invite_id: Optional[int]) -> 
                 flag_modified(v, "compteurs")
             n += 1
     return n
+
+
+_REF_ENTRETIEN = re.compile(rf"^{fs.ENTRETIEN}\d+$")
+
+
+def verrouiller_repondants(db, dossier_id: Optional[int]) -> list:
+    """Avant de ranger un texte que l'IA a rédigé pour le chef de file : le verrou des invitations dont une réponse
+    est dans la fiche chantier (dans l'ordre de leur numéro, et avant tout autre verrou de la transaction — même
+    ordre que la réponse du partenaire, le retrait et la reprise d'une question). Un partenaire qui retire ou change
+    sa réponse au même moment, ou qui est retiré du groupement, passe AVANT (et la fiche relue ensuite ne l'a plus)
+    ou APRÈS (et il nettoie le texte rangé, comme les autres). Renvoie les invitations verrouillées."""
+    if not dossier_id:
+        return []
+    from app.services import depot_lien
+    ids = sorted({r[0] for r in db.query(EntretienQuestion.reponse_invite_id).filter(
+        EntretienQuestion.dossier_id == dossier_id, EntretienQuestion.retiree_le.is_(None),
+        EntretienQuestion.statut == REPONDUE, EntretienQuestion.reponse_kind == INV,
+        EntretienQuestion.reponse_invite_id.isnot(None))})
+    for iid in ids:
+        depot_lien.verrouiller_invitation(db, iid, frais=True)
+    return ids
+
+
+def sans_reponses_changees(sources, faits, avant, maintenant) -> tuple:
+    """(sources, faits) d'un texte que l'IA vient de rédiger, relus au moment de le ranger : la fiche chantier
+    `avant` est celle que l'IA et le contrôle ont reçue, `maintenant` celle relue juste avant d'écrire. Une réponse
+    [R#] retirée, passée, changée ou reprise pendant la rédaction — ou dont le partenaire n'est plus membre du
+    groupement — ne laisse ni son passage ni sa source : le fait relié redevient « à relire » (même règle que
+    `oublier_reponses`, qui ne voit que les textes déjà rangés). Une réponse d'un partenaire absente de la fiche
+    actuelle sort toujours. Sans IA, sans base."""
+    a = {f.ref: f for f in (avant or []) if _REF_ENTRETIEN.match(str(getattr(f, "ref", "") or ""))}
+    m = {f.ref: f for f in (maintenant or []) if _REF_ENTRETIEN.match(str(getattr(f, "ref", "") or ""))}
+
+    def perdu(src) -> bool:
+        if not isinstance(src, dict):
+            return False
+        ref = str(src.get("ref") or "")
+        if not _REF_ENTRETIEN.match(ref):
+            return False
+        cur = m.get(ref)
+        if cur is None or cur.type != src.get("type"):
+            return src.get("type") == fs.T_PARTENAIRE or ref in a
+        dep = a.get(ref)
+        return dep is not None and (dep.texte != cur.texte or (dep.proprietaire or "") != (cur.proprietaire or ""))
+    from app.services import atelier_groupement as ag
+    srcs, out, _touche = ag._sans_ces_passages(sources, faits, perdu)
+    return srcs, out
 
 
 def retirer_invitation(db, inv: ProjectInvite) -> int:

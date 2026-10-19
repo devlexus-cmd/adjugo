@@ -152,10 +152,12 @@ _GENERIQUES = {
     "donner", "donnez", "identifier", "identifiez", "notice", "note", "fiche", "titre", "objet", "cours",
     "page", "pages", "maximum", "minimum", "caracteres", "mots", "lignes", "espaces", "compris", "comprises",
     "inclus", "incluses", "police", "taille", "format",
-    # Mots présents dans tout mémoire du BTP (comme « travaux ») : « la gestion des déchets du chantier » n'est pas
-    # traitée par une partie qui parle du chantier sans jamais nommer les déchets.
-    "chantier", "chantiers", "entreprise", "entreprises",
 }
+# Mots présents dans presque tout mémoire du BTP : ils restent des mots principaux de l'exigence (« une présentation
+# de l'entreprise », « l'organisation du chantier » gardent leur sens), mais la règle « traitée » ne les compte pas
+# quand l'exigence a au moins deux autres mots principaux : « la gestion des déchets du chantier » n'est pas traitée
+# par une partie qui parle du chantier sans jamais nommer les déchets (`cles_traitement`).
+_COURANTS_BTP = re.compile(r"\b(?:chantiers?|entreprises?)\b")
 
 
 def cles(texte: str) -> list:
@@ -173,6 +175,13 @@ def cles(texte: str) -> list:
         if len(out) >= CLES_MAX:
             break
     return out
+
+
+def cles_traitement(texte: str) -> list:
+    """Les mots principaux que la règle « traitée » cherche dans une partie : ceux de `cles`, sans « chantier » ni
+    « entreprise » quand il en reste au moins deux autres (jamais une exigence ramenée à un seul mot)."""
+    autres = cles(_COURANTS_BTP.sub(" ", _fold(texte)))
+    return autres if len(autres) >= 2 else cles(texte)
 
 
 def requis(k: int) -> int:
@@ -281,13 +290,69 @@ _RUBRIQUE_CANDIDATURE = re.compile(r"conditions? de participation|candidature|ca
                                    r"|recevabilite|situation juridique|habilitations?")
 
 
+# Un titre qui nomme AUSSI l'offre ou le mémoire (« Présentation des candidatures et des offres », « 5.2 Contenu de
+# l'offre ») n'est pas un article sur la candidature : le contenu du mémoire y est souvent décrit.
+_RUBRIQUE_OFFRE = re.compile(r"\boffres?\b|\bmemoires?\b|\bplis?\b|projet technique|proposition technique")
+# Un sous-titre numéroté en tête de ligne (« 5.1 Pièces de la candidature », « 5.2 Contenu de l'offre »).
+_SOUS_RUBRIQUE = re.compile(r"[ \t]*\d{1,2}(?:\.\d{1,2}){1,3}\.?\s*[-–—:.)]?\s*(?P<t>[a-z][a-z' ,]{2,70})")
+_TITRE_COUPE = re.compile(r"\b(?:de|des|du|la|le|les|et|ou|a|au|aux|en|pour|sur|d'|l')\s*$")
+
+
+def _titre_candidature(t: str) -> Optional[bool]:
+    """True : titre sur la candidature ; False : sur l'offre ou le mémoire (même s'il nomme aussi les candidatures) ;
+    None : ni l'un ni l'autre."""
+    if _RUBRIQUE_OFFRE.search(t):
+        return False
+    if _RUBRIQUE_CANDIDATURE.search(t):
+        return True
+    return None
+
+
+def sous_titre_candidature(low: str, pos: int, debuts: list) -> bool:
+    """La position `pos` du texte replié `low` est-elle sous un titre sur la CANDIDATURE ? `debuts` : débuts de ligne
+    triés. Le titre le plus proche décide : un sous-titre numéroté (« 5.2 Contenu de l'offre ») avant l'article qui
+    l'englobe ; un sous-titre ni sur l'une ni sur l'autre laisse décider l'article. Le titre est lu sur SA ligne
+    (prolongée d'une ligne s'il est coupé après « de », « des »…), jamais dans la phrase qui le suit. Partagé avec
+    l'entretien chantier (entretien_chantier._sous_article_candidature)."""
+    import bisect
+    lo = max(0, pos - 4000)
+
+    def fin(x: int) -> int:
+        i = bisect.bisect_right(debuts, x)
+        return debuts[i] - 1 if i < len(debuts) else len(low)
+
+    def titre(a: int, b: int) -> str:
+        t = low[a:min(b, fin(a))]
+        if _TITRE_COUPE.search(t) and fin(a) < len(low):
+            t = (t + " " + low[fin(a) + 1:fin(fin(a) + 1)])[:90]
+        return t
+    titres = [(m.start(), titre(m.start("t"), m.end("t")), True) for m in _RUBRIQUE.finditer(low, lo, pos)]
+    for d in debuts[bisect.bisect_left(debuts, lo):]:
+        if d >= pos:
+            break
+        m = _SOUS_RUBRIQUE.match(low, d)
+        if not m:
+            continue
+        ligne = low[d:fin(d)].strip()
+        if len(ligne) > 90 or re.search(r"[.;:,]$", ligne):
+            continue                        # une phrase numérotée (« 9.1 Le candidat devra… ») n'est pas un titre
+        titres.append((d, titre(m.start("t"), m.end("t")), False))
+    titres.sort(key=lambda x: x[0])
+    for _d, t, article in reversed(titres):
+        v = _titre_candidature(t)
+        if v is not None:
+            return v
+        if article:
+            return False
+    return False
+
+
 def _rubrique_candidature(p, pos: int) -> bool:
     """La phrase est-elle dans un article sur la CANDIDATURE (conditions de participation, capacités, pièces
-    administratives) ? Ce qu'il demande se prouve par des pièces, pas dans le dossier de présentation."""
-    last = None
-    for m in _RUBRIQUE.finditer(p.low, max(0, pos - 4000), pos):
-        last = m
-    return bool(last and _RUBRIQUE_CANDIDATURE.search(last.group("t")))
+    administratives) ? Ce qu'il demande se prouve par des pièces, pas dans le dossier de présentation. Un article
+    « Présentation des candidatures et des offres » n'en est pas un ; sous lui, « 5.1 Pièces de la candidature »
+    l'est, « 5.2 Contenu de l'offre » non (sous_titre_candidature)."""
+    return sous_titre_candidature(p.low, pos, _unites(p).debuts)
 
 
 def _exclue(low: str) -> bool:
@@ -352,6 +417,7 @@ class _Unites:
         self.starts = sorted(x for x in coupes if 0 < x < len(p.flat))
         self.breakset = set(p.breaks)
         self.cutset = set(p.cuts)
+        self.debuts = [0] + [n + 1 for n in p.breaks]       # débuts de ligne (titres, sous-titres)
 
     def phrase(self, a: int, b: int) -> tuple:
         """(début, phrase) de l'unité qui contient [a, b), bornée à PHRASE_MAX autour de [a, b)."""
@@ -433,6 +499,9 @@ def _items_liste(U: "_Unites", e: int, intro: str, out: list, vues: set, text: s
             break
         a2, obj = _objet(p, a, e2)
         st, phrase = _clip_phrase(p, a2, e2)
+        if _demande_facultative(p.low[s:e2], 0):
+            phrase = ""                  # « - à titre facultatif, des photographies » : pas une exigence
+        obj = _sans_le_facultatif(obj)
         if phrase and len(phrase) >= 4 and not _exclue(_fold(phrase)) and _guard(text, phrase, min_len=4):
             _ajouter(out, vues, p, st, phrase, obj, REPERAGE, intro=intro)
             n += 1
@@ -449,25 +518,92 @@ _NIEE = re.compile(r"\b(?:n'est pas|ne sont pas|n'a pas|ne sera pas|n'y a pas)\b
 # que le repérage n'aurait pas retenue : son sujet n'est suivi d'aucun verbe d'exigence).
 _FACULTE = re.compile(r"\b(?:" + _SUJ_CAND + "|" + _SUJ_MEM + r")\b[^.;:!?]{0,70}?\b(?:peut|peuvent|pourra|pourront"
                       r"|pourrait|est libre|sont libres|a la possibilite|ont la possibilite|a la faculte|ont la faculte)\b")
-_FACULTATIF = re.compile(r"\bfacultati(?:f|ve|fs|ves)\b|\bfacultativement\b")
+# « à titre facultatif », « de manière (façon) facultative », « facultativement » : ce qui est facultatif n'est pas
+# exigé. Le mot seul (« (annexes facultatives) », « la visite est facultative ») ne rend pas la demande facultative.
+_FACULTATIF = re.compile(r"\b(?:a titre facultatif|de (?:maniere|facon) facultative|facultativement)\b")
+_MOT = re.compile(r"[a-z]{2,}")
+_FIN_COORDINATION = re.compile(r"[\s,;]*(?:\b(?:et|ou|ainsi que)\b)?[\s,;]*$")
+
+
+def _demande_facultative(low: str, fin: int) -> bool:
+    """La DEMANDE elle-même est-elle facultative ? `fin` : fin du verbe d'exigence dans `low` (0 : élément de liste).
+    Oui quand l'expression qualifie le sujet ou le verbe (« à titre facultatif, le candidat présentera… »,
+    « présentera, à titre facultatif, ses certificats ») ou TOUT l'objet (« … un planning, à titre facultatif. »).
+    Non quand un élément facultatif est coordonné à d'autres (« la méthodologie et, de manière facultative, des
+    photographies ») : seul cet élément sort du libellé (`_sans_le_facultatif`)."""
+    if _FACULTATIF.search(low, 0, fin):
+        return True
+    m = _FACULTATIF.search(low, fin)
+    if m is None:
+        return False
+    gap = low[fin:m.start()]
+    mm = _MARQUE_LISTE.match(gap) if fin == 0 else None
+    gap = gap[mm.end():] if mm else gap
+    t = _TETE_OBJET.match(gap)
+    if not _MOT.search(gap[t.end():] if t else gap):
+        return True                         # juste après le verbe, ou en tête de l'élément de liste
+    return not _MOT.search(low[m.end():])   # en fin de phrase : tout l'objet est facultatif
+
+
+def _sans_le_facultatif(obj: str) -> str:
+    """Le libellé sans l'élément facultatif coordonné (« la méthodologie de dépose, les moyens humains affectés et,
+    de façon facultative, un reportage photographique » → « la méthodologie de dépose, les moyens humains
+    affectés »). Le texte du dossier, coupé, jamais réécrit ; la phrase citée reste entière."""
+    m = _FACULTATIF.search(_fold(obj or ""))
+    if m is None:
+        return obj
+    head = _FIN_COORDINATION.sub("", obj[:m.start()]).strip()
+    return head if cles(head) else obj
+
+
+def _fin_du_verbe(low: str) -> int:
+    """Fin du premier verbe d'exigence de `low` (0 s'il n'y en a pas : un élément de liste)."""
+    fins = [m.end() for m in (rx.search(low) for rx in (_P_SUJET, _P_IMPERSONNEL, _P_APPARTIENT, _P_ATTENTION,
+                                                         _P_FIGURER)) if m]
+    return min(fins) if fins else 0
+
+
+def _annonce(p, s: int) -> Optional[tuple]:
+    """L'unité qui annonce la liste dont l'unité commençant à `s` est un élément (« Le candidat joindra à son mémoire
+    technique : » puis « - les fiches techniques… »), ou None."""
+    U = _unites(p)
+    cur = s
+    for _i in range(LISTE_MAX + 1):
+        if cur <= 0:
+            return None
+        ps, pe = U.bornes(cur - 1)
+        prec = p.flat[ps:pe].rstrip()
+        if prec.endswith(":"):
+            return ps, pe
+        if _MARQUE_LISTE.match(p.low, ps) or prec.endswith(";"):
+            cur = ps
+            continue
+        return None
+    return None
 
 
 def _ecartee_comme_au_reperage(p, pos: int) -> bool:
     """Une phrase PROPOSÉE par l'IA passe les mêmes exclusions que le repérage (contrat C2.2) : relue dans son
-    unité du dossier, elle est écartée si elle est niée, facultative (le sujet « peut »), sous un article sur la
-    candidature, ou si elle vient du CCTP ou du CCAP sans parler du candidat ni du mémoire."""
+    unité du dossier — et, pour un élément de liste, avec la phrase qui annonce la liste (comme le repérage) —, elle
+    est écartée si elle est niée, facultative (le sujet « peut », la demande « à titre facultatif »), sous un article
+    sur la candidature, ou si elle vient du CCTP ou du CCAP sans parler du candidat ni du mémoire."""
     s, e = _unites(p).bornes(pos)
     low = p.low[s:e]
-    if _NIEE.search(low) or _FACULTATIF.search(low):
+    an = _annonce(p, s)
+    intro = p.low[an[0]:an[1]] if an else ""
+    ctx = f"{intro} {low}" if intro else low
+    if _NIEE.search(ctx):
         return True
-    sujets = list(_P_SUJET.finditer(low))
+    if _demande_facultative(low, _fin_du_verbe(low)) or (intro and _demande_facultative(intro, _fin_du_verbe(intro))):
+        return True
+    sujets = list(_P_SUJET.finditer(ctx))
     if any(_GAP_NON.search(m.group("gap") or "") for m in sujets):
         return True                         # « le candidat retenu devra… », « le candidat peut… présenter » : écartée
-    if not sujets and _FACULTE.search(low):
+    if not sujets and _FACULTE.search(ctx):
         return True                         # « le candidat peut présenter… » : aucun verbe d'exigence après le sujet
     if _rubrique_candidature(p, pos):
         return True
-    return p.type in (dp.CCTP, dp.CCAP) and not _MENTION_CANDIDAT.search(low)
+    return p.type in (dp.CCTP, dp.CCAP) and not _MENTION_CANDIDAT.search(ctx)
 
 
 def _reperer(P: list, text: str) -> list:
@@ -500,7 +636,7 @@ def _reperer(P: list, text: str) -> list:
             if _rubrique_candidature(p, a):
                 continue
             low = p.low[s:e]
-            if _NIEE.search(low) or _FACULTATIF.search(low):
+            if _NIEE.search(low) or _demande_facultative(low, max(0, b - s)):
                 continue                         # niée, ou facultative (« à titre facultatif ») : pas une exigence
             if _exclue(low):
                 continue
@@ -508,8 +644,10 @@ def _reperer(P: list, text: str) -> list:
             if not phrase or not _guard(text, phrase):
                 continue
             o_s, obj = _objet(p, b, e)
-            if re.fullmatch(r"(?:les |des )?(?:elements?|points?|informations?|pieces?|documents?|rubriques?|themes?"
-                            r"|sujets?) (?:suivante?s?|ci-apres)", _fold(obj or "")):
+            obj = _sans_le_facultatif(obj)
+            annonce = bool(re.fullmatch(r"(?:les |des )?(?:elements?|points?|informations?|pieces?|documents?|rubriques?"
+                                        r"|themes?|sujets?) (?:suivante?s?|ci-apres|ci-dessous)", _fold(obj or "")))
+            if annonce:
                 obj = ""                         # « les éléments suivants : » n'est qu'une annonce
             if p.flat[s:e].rstrip().endswith(":"):
                 n = _items_liste(U, e, phrase, out, vues, text)
@@ -518,6 +656,12 @@ def _reperer(P: list, text: str) -> list:
                     continue
                 if not obj:
                     continue
+            elif annonce:
+                # « … comprendra les éléments ci-dessous. » : une annonce, jamais une exigence ; la liste qui suit
+                # (s'il y en a une) est lue comme après « : », sinon chaque phrase suivante est repérée seule.
+                _items_liste(U, e, phrase, out, vues, text)
+                faits.add((s, e))
+                continue
             if _limite_seule(obj):
                 faits.add((s, e))
                 continue
@@ -535,6 +679,7 @@ def _libelle_de_phrase(p, s: int, e: int) -> str:
         m = rx.search(low, s, e)
         if m:
             _o, obj = _objet(p, m.end(), e)
+            obj = _sans_le_facultatif(obj)
             if obj and cles(obj):
                 return obj
     return p.flat[s:e].strip().rstrip(" .;:")
@@ -740,7 +885,7 @@ def traitement(grille: Optional[dict], parties: list) -> dict:
             out.append(row)
             continue
         total += 1
-        ks = cles(x.get("texte") or "") or cles(x.get("phrase") or "")
+        ks = cles_traitement(x.get("texte") or "") or cles_traitement(x.get("phrase") or "")
         need = requis(len(ks))
         best = None
         for pid, titre, c in corpus:
@@ -959,23 +1104,49 @@ _DATE_LET = re.compile(r"\b(1er|\d{1,2})\s+(janvier|fevrier|mars|avril|mai|juin|
                        r"|novembre|decembre)\s+(\d{4})\b")
 
 
-def _dates(low: str) -> list:
+def _dates_pos(low: str) -> list:
+    """[(début, fin, date)] des dates écrites dans `low`, dans l'ordre du texte."""
     out = []
     for m in _DATE_NUM.finditer(low):
         try:
             y = int(m.group(3))
             y = y + 2000 if y < 100 else y
-            out.append((m.start(), date(y, int(m.group(2)), int(m.group(1)))))
+            out.append((m.start(), m.end(), date(y, int(m.group(2)), int(m.group(1)))))
         except ValueError:
             continue
     for m in _DATE_LET.finditer(low):
         try:
             j = 1 if m.group(1) == "1er" else int(m.group(1))
-            out.append((m.start(), date(int(m.group(3)), _MOIS[m.group(2)], j)))
+            out.append((m.start(), m.end(), date(int(m.group(3)), _MOIS[m.group(2)], j)))
         except (ValueError, KeyError):
             continue
-    out.sort()
-    return [d for _a, d in out]
+    out.sort(key=lambda x: x[0])
+    return out
+
+
+def _dates(low: str) -> list:
+    return [d for _a, _b, d in _dates_pos(low)]
+
+
+# Après « N jours avant la date limite de remise des offres » : « , soit le 05/12/2026 » (« c'est-à-dire le »,
+# « à savoir le », « soit jusqu'au ») donne la date des QUESTIONS, écrite ; « , fixée au 15/12/2026 » (« prévue le »,
+# « des offres du ») donne celle de la REMISE. Sans l'une ou l'autre introduction, la date n'est classée nulle part.
+_INTRO_DATE_QUESTIONS = re.compile(r"\b(?:soit|c'est-a-dire|c-a-d|a savoir|autrement dit)\b")
+_INTRO_DATE_REMISE = re.compile(r"\b(?:fixee?s?|prevue?s?|arretee?s?|programmee?s?|indiquee?s?|mentionnee?s?)\b"
+                                r"|^\W*(?:(?:des|de l'|de vos) (?:offres?|plis)\W*)?(?:du|le)\W*$")
+
+
+def _dates_apres_le_delai(apres: str) -> tuple:
+    """(dates des questions, dates de remise) écrites après le délai « N jours avant la date limite de remise »."""
+    q, r, last = [], [], 0
+    for a, b, d in _dates_pos(apres):
+        gap = apres[last:a]
+        if _INTRO_DATE_QUESTIONS.search(gap):
+            q.append(d)
+        elif _INTRO_DATE_REMISE.search(gap):
+            r.append(d)
+        last = b
+    return q, r
 
 
 def _fr(d: date) -> str:
@@ -1004,6 +1175,11 @@ def dates_remise(P: list) -> list:
             if not ds:
                 continue
             d = ds[0]
+            lu = p.low[s:e]
+            rel = _Q_RELATIF.search(lu) if _Q_SUJET.search(lu) else None
+            if rel and rel.start() <= m.start() - s <= rel.end() and d in _dates_apres_le_delai(lu[rel.end():])[0]:
+                continue                        # « … avant la date limite de remise des offres, soit le 07/12/2026 »
+                                                # : la date des QUESTIONS, pas celle de la remise
             if d in vues:
                 continue
             vues.add(d)
@@ -1044,9 +1220,13 @@ def date_limite_questions(P: list, remises: Optional[list] = None) -> Optional[d
                 continue
             rel = _Q_RELATIF.search(low)
             # « … au plus tard 6 jours avant la date limite de remise des offres, fixée au 15/12/2026 » : la date
-            # écrite APRÈS le délai est celle de la REMISE des offres, jamais celle des questions. Seule une date
-            # écrite avant le délai (« au plus tard le 05/12/2026, soit 10 jours avant… ») est celle des questions.
-            ds = _dates(low[:rel.start()]) if rel else _dates(low)
+            # écrite APRÈS le délai est celle de la REMISE des offres. La date des questions est écrite avant le délai
+            # (« au plus tard le 05/12/2026, soit 10 jours avant… ») ou après lui introduite par « soit le »,
+            # « c'est-à-dire le » (« … 10 jours avant la date limite de remise, soit le 05/12/2026 ») : écrite dans le
+            # règlement, rien n'est calculé. Une date après le délai sans l'une ni l'autre introduction : rien n'est
+            # calculé, la phrase est montrée.
+            q_apres, r_apres = _dates_apres_le_delai(low[rel.end():]) if rel else ([], [])
+            ds = (_dates(low[:rel.start()]) or q_apres) if rel else _dates(low)
             out = {"phrase": ph, "source": _source(p), "date": ds[0].isoformat() if ds else None,
                    "jours_avant": None, "type_jours": "", "date_calculee": None, "message": ""}
             if ds:
@@ -1060,7 +1240,7 @@ def date_limite_questions(P: list, remises: Optional[list] = None) -> Optional[d
                                   + " (phrase du règlement ci-dessous).")
                 rem = [x[0] for x in (remises if remises is not None else dates_remise(P))]
                 if not rem:
-                    apres = sorted(set(_dates(low[rel.end():])))
+                    apres = sorted(set(r_apres))
                     rem = apres if len(apres) == 1 else []   # la date de remise écrite dans la même phrase
                 if len(rem) == 1 and (not kind or kind.startswith("calendaire")):
                     d = rem[0] - timedelta(days=n)

@@ -179,7 +179,9 @@ def test_question_de_l_ia_avec_un_nombre_absent_de_sa_phrase_est_ecartee():
 def test_traitee_le_mot_chantier_ne_suffit_pas():
     g = {"exigences": {"liste": [{"id": "e1", "texte": "la gestion des déchets du chantier",
                                   "phrase": "la gestion des déchets du chantier", "origine": "reperage"}]}}
-    assert "chant" not in ge.cles("la gestion des déchets du chantier")
+    # « chantier » reste un mot de l'exigence, mais la règle « traitée » ne le compte pas (deux autres mots restent).
+    assert "chant" in ge.cles("la gestion des déchets du chantier")
+    assert "chant" not in ge.cles_traitement("la gestion des déchets du chantier")
     t = ge.traitement(g, [{"id": 1, "titre": "Organisation",
                            "texte": "Notre conducteur de travaux assure la gestion du chantier au quotidien."}])
     assert t["liste"][0]["statut"] == ge.A_TRAITER

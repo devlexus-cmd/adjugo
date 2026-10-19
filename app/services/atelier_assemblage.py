@@ -100,10 +100,12 @@ def qfq_de(db, dossier: Optional[DossierPresentation]) -> Optional[DossierSectio
 
 def _ancre(autres: list) -> int:
     """Rang où placer les parties tirées du groupement : juste après la partie du plan qui parle du
-    groupement (« Présentation du groupement »…), sinon en tête du dossier."""
+    groupement (« Présentation du groupement »…), sinon en tête du dossier. Jamais AU MILIEU des parties des
+    sous-critères d'un même critère : quand la partie qui parle du groupement est l'un d'eux (« 1.2 Organisation du
+    groupement »), elles passent après tout le groupe (1.1, 1.2, 1.3, puis les parties tirées du groupement)."""
     for i, s in enumerate(autres):
         if "groupement" in far.fold(s.intitule or ""):
-            return i + 1
+            return at._hors_des_groupes(autres, i + 1)
     return 0
 
 

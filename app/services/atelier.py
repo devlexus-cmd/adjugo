@@ -2483,6 +2483,16 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
     # Enregistrement (nouvelle session de lecture : la tâche a pu durer plusieurs minutes).
     dossier = get_dossier(db, project_id, owner_id)
     _cumuler_cout(dossier, cm.summary())
+    db.commit()
+    # Vague 5 (D) : la fiche chantier RELUE sous le verrou des partenaires qui y ont répondu (pris d'abord) : une
+    # réponse retirée, changée ou reprise pendant la rédaction, ou un partenaire retiré du groupement, ne laisse ni
+    # son passage ni sa source dans la nouvelle version (le fait redevient « à relire ») ; arrivé après, il la
+    # nettoie (oublier_reponses).
+    from app.services import entretien_chantier as ec
+    fiche_chantier = []
+    if dossier is not None:
+        ec.verrouiller_repondants(db, dossier.id)
+        fiche_chantier = ec.fiches_chef(db, dossier.id, owner_id)[0]
     sortie, echecs = [], []
     for t, r in zip(taches, resultats):
         s = db.get(DossierSection, t["sid"])
@@ -2507,6 +2517,7 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
             sources = (base.sources or []) if base else []
             refs = {f"S{n}" for n in rag.cited_refs(texte)} | {x for x in fs.refs_de(texte) if x.startswith("S")}
             sources = [x for x in sources if x.get("ref") in refs]
+            sources, faits = ec.sans_reponses_changees(sources, faits, t["fiches"], fiche_chantier)
             v = ajouter_version(db, s, texte=texte, origine=RACCOURCI, ia=True, sources=sources, faits=faits,
                                 coupe=bool(r.get("coupe")), base_version_id=base.id if base else None,
                                 auteur_user_id=user_id, job_id=job_id)
@@ -2521,7 +2532,8 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
             faits = fs.controler(texte, t["fiches"], acheteur=acheteur, noms_entreprise=ctx.noms_entreprise,
                                  section_entreprise=section_sur_l_entreprise(s), mode="ia",
                                  anciens=(base.faits if base else []))
-            v = ajouter_version(db, s, texte=texte, origine=IA, ia=True, sources=r.get("sources") or [], faits=faits,
+            sources, faits = ec.sans_reponses_changees(r.get("sources") or [], faits, t["fiches"], fiche_chantier)
+            v = ajouter_version(db, s, texte=texte, origine=IA, ia=True, sources=sources, faits=faits,
                                 coupe=bool(r.get("coupe")), base_version_id=base.id if base else None,
                                 auteur_user_id=user_id, job_id=job_id)
         if s.job_id == job_id:
