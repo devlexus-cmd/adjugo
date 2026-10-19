@@ -31,6 +31,13 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  // Où le fait a été trouvé ; une source publique (DECP, liste RGE) est datée (« consultée le 19/10/2026 »).
+  function rpSrcLib(src) {
+    const lib = String((src && src.libelle) || "");
+    const m = src && src.type === "public" ? String(src.date || "").match(/^(\d{4})-(\d{2})-(\d{2})/) : null;
+    return lib && m ? lib + ", consultée le " + m[3] + "/" + m[2] + "/" + m[1] : lib;
+  }
+
   // Nombre de mots (approché, comme le serveur et l'atelier) d'un texte, sans renvois ni syntaxe.
   function rpMots(md) {
     const t = String(md || "").replace(/\[\s*[FSPECGR]\s*\d{1,4}(?:\s*[,;]\s*[FSPECGR]?\s*\d{1,4})*\s*\]/g, " ")
@@ -682,7 +689,7 @@
       const fsrc = b.faits_sources || [];
       if (c.libelles && fsrc.length) {
         h += '<details class="gn-det"><summary>Faits avec une source (' + fsrc.length + ")</summary><ul class=\"rp-fl\">" + fsrc.map(f => '<li class="small"><b>' + rpEsc(f.fait) + "</b>"
-          + (f.source && f.source.ref ? ' <span class="rp-ref">' + rpEsc(f.source.ref) + "</span>" : "") + ' <span class="muted">· ' + rpEsc((f.source && f.source.libelle) || "") + (f.source && f.source.doc_nom ? " · " + rpEsc(f.source.doc_nom) : "") + "</span></li>").join("") + "</ul></details>";
+          + (f.source && f.source.ref ? ' <span class="rp-ref">' + rpEsc(f.source.ref) + "</span>" : "") + ' <span class="muted">· ' + rpEsc(rpSrcLib(f.source)) + (f.source && f.source.doc_nom && f.source.type !== "public" ? " · " + rpEsc(f.source.doc_nom) : "") + "</span></li>").join("") + "</ul></details>";
       }
       return h + "</div>";
     }
@@ -1127,5 +1134,5 @@
     };
   }
 
-  root.AdjugoRedactionPartenaire = { mount, _pur: { rpEsc, rpMots, rpTexte, rpPhrase, rpLim, rpCompteurs, rpJour, rpACompleter, rpDiff, rpTaille, rpAccept } };
+  root.AdjugoRedactionPartenaire = { mount, _pur: { rpEsc, rpSrcLib, rpMots, rpTexte, rpPhrase, rpLim, rpCompteurs, rpJour, rpACompleter, rpDiff, rpTaille, rpAccept } };
 })(typeof window !== "undefined" ? window : this);

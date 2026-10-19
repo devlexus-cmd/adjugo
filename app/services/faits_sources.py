@@ -471,7 +471,8 @@ class Fiche:
 
     def __init__(self, ref: str, type_source: str, libelle: str, texte: str, texte_ia: str = None, *,
                  extra=(), lien: str = "", doc_nom: str = "", extrait: str = "", preuve_id=None, chunk_id=None,
-                 nature: str = "", valeur: Optional[dict] = None, proprietaire: str = "", document_id=None):
+                 nature: str = "", valeur: Optional[dict] = None, proprietaire: str = "", document_id=None,
+                 date: str = ""):
         self.ref, self.type, self.libelle = ref, type_source, libelle
         self.texte = str(texte or "")
         self.texte_ia = self.texte if texte_ia is None else str(texte_ia or "")
@@ -481,6 +482,8 @@ class Fiche:
         self.nature, self.valeur = nature or "", dict(valeur or {})
         self.proprietaire = proprietaire or ""
         self.document_id = document_id
+        # Vague 5 (E2) : une source publique est DATÉE (jour de la lecture de DECP ou de la liste RGE).
+        self.date = str(date or "")[:10]
         self._idx = None
 
     @property
@@ -523,6 +526,8 @@ class Fiche:
             out["document_id"] = self.document_id
         if self.proprietaire:
             out["partenaire"] = self.proprietaire[:120]
+        if self.date and self.type == T_PUBLIC:
+            out["date"] = self.date
         return out
 
     def ligne_ia(self) -> str:
@@ -573,7 +578,8 @@ def fiches_preuves(db, owner_id: int, project_id: Optional[int] = None, pseudony
         out.append(Fiche(f["ref"], t, f["source_libelle"], f["texte"], pv.texte_pour_ia(f, pseudonymiseur),
                          extra=_adjacents(f["nature"], f.get("valeur") or {}), lien=lien, doc_nom=doc,
                          extrait=extrait, preuve_id=f["id"], nature=f["nature"], valeur=f.get("valeur") or {},
-                         document_id=src.get("document_id") if t == T_JUSTIFICATIF else None))
+                         document_id=src.get("document_id") if t == T_JUSTIFICATIF else None,
+                         date=(src.get("consulte_le") or f.get("date_source") or "") if t == T_PUBLIC else ""))
     return out
 
 

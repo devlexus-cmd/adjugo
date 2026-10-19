@@ -788,7 +788,9 @@ def test_ecran_du_chef_de_file_regles_d_interface_et_branchements():
     assert "atlEntRepondre(q, 'sans_objet')" in bloc and "atlEntAdresser(q, $event.target.value)" in bloc
     # La phrase du dossier, la partie concernée, la liste « Équipe » ; jamais une commande d'IA sur téléphone.
     assert "q.motif.phrase" in bloc and "Partie concernée" in bloc and "atl.ent.d.equipe" in bloc
-    assert '<template v-if="!atlMobile && atl.ent.d.prepare">' in bloc
+    # (ni dans un dossier « sans IA », vague 5 C2 : intégration des chantiers.)
+    assert ('<template v-if="!atlMobile && atl.ent.d.prepare && !atlSansIa() && atl.ent.d.ia.permise !== false">'
+            in bloc)
     # Textes de l'API rendus par interpolation (échappés), jamais en v-html.
     assert "v-html" not in bloc
     # Règles d'interface : boutons typés, bulles (i), zéro émoji, aucun mot interdit.

@@ -589,7 +589,12 @@ function atlRefsPartHtml(inner) {
 const ATL_SRC_TYPES = { documents: "trouvé dans vos documents", justificatif: "justificatif déposé", declare: "déclaré par vous",
   public: "source publique", estimation: "votre estimation", partenaire: "déclaré par votre partenaire",
   acheteur: "dans le dossier de l'acheteur", calcul: "calculé à partir de vos faits", vous: "déclaré par vous" };
-function atlSrcLib(src) { return (src && (src.libelle || ATL_SRC_TYPES[src.type])) || ""; }
+// Une source publique (DECP, liste RGE) est datée : « marché attribué, source publique DECP, consultée le 19/10/2026 ».
+function atlSrcLib(src) {
+  const lib = (src && (src.libelle || ATL_SRC_TYPES[src.type])) || "";
+  const d = src && src.type === "public" ? _pvJj(src.date) : "";
+  return lib && d ? lib + ", consultée le " + d : lib;
+}
 // Champs proposés pour déclarer un fait (les autres restent dans « Mes preuves »).
 const ATL_DECL_CHAMPS = { reference: ["objet", "acheteur", "annee", "montant_ht"], qualification: ["nom", "organisme", "numero"],
   salarie: ["nom", "fonction"], materiel: ["designation", "quantite"], chiffre_cle: ["libelle", "valeur", "unite", "annee"] };

@@ -1862,7 +1862,7 @@
               <div v-if="atl.prop.proposition.avertissement_fichier" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ atl.prop.proposition.avertissement_fichier }}</span></div>
               <!-- Rédaction, vague 5 : le règlement parle d'intelligence artificielle → sa phrase, et « sans IA » proposé -->
               <div v-if="atl.prop.sans_ia && atl.prop.sans_ia.reglement && atl.prop.sans_ia.reglement.mentionne" class="warn-box"><i data-lucide="pen-off" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span style="flex:1;min-width:0">{{ atl.prop.sans_ia.reglement.message }}<q v-if="atl.prop.sans_ia.reglement.phrases.length" class="gn-ia-q">{{ atl.prop.sans_ia.reglement.phrases[0].phrase }}</q></span></div>
-              <label v-if="!atlMobile" class="atl-chk small atl-mt8"><input type="checkbox" v-model="atl.sansIaPropose">Rédiger ce dossier sans IA<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Vous écrivez chaque partie vous-même : aucune rédaction, aucun raccourci ni aucune harmonisation par l'IA, pour vous comme pour vos partenaires. Le contrôle des faits et la liste des exigences continuent, sans IA. Ce choix se change ensuite dans l'atelier.</span></button></label>
+              <label v-if="!atlMobile" class="atl-chk small atl-mt8"><input type="checkbox" v-model="atl.sansIaPropose">Rédiger ce dossier sans IA<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Vous écrivez chaque partie vous-même : aucune rédaction, aucun raccourci, aucune harmonisation ni aucune question proposée par l'IA, pour vous comme pour vos partenaires. Le contrôle des faits, la liste des exigences et les questions sur ce chantier continuent, sans IA. Ce choix se change ensuite dans l'atelier.</span></button></label>
               <div class="atl-bases" role="radiogroup" aria-label="Plan à utiliser">
                 <button v-for="b in atlBases(atl.prop.proposition.bases)" :key="'pb'+b.k" type="button" class="atl-base" :class="{on: atl.base===b.k}" role="radio" :aria-checked="atl.base===b.k ? 'true' : 'false'" @click="atlBase(b)" :disabled="atl.loading || b.off" :title="b.off ? b.non : null">{{ b.l }}</button>
               </div>
@@ -2053,7 +2053,7 @@
                     </li>
                   </ol>
                   <div class="row wrap atl-g6 atl-ent-f">
-                    <template v-if="!atlMobile && atl.ent.d.prepare">
+                    <template v-if="!atlMobile && atl.ent.d.prepare && !atlSansIa() && atl.ent.d.ia.permise !== false">
                       <button type="button" class="btn sm" @click="atlEntIA()" :disabled="!!atl.busy || !!atl.ent.d.ia.en_cours || !atl.ent.d.ia.restantes || atl.ent.d.dossier_present === false"><span v-if="atl.ent.d.ia.en_cours" class="spin"></span><i v-else data-lucide="sparkles"></i>Chercher d'autres questions avec Adjugo</button>
                       <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.ent.d.ia.bulle }} {{ atl.ent.d.ia.quota }}<template v-if="!atl.ent.d.ia.restantes"> Adjugo a déjà proposé {{ atl.ent.d.ia.plafond }} questions avec l'IA pour ce dossier.</template></span></button>
                     </template>
@@ -2411,7 +2411,7 @@
                   <details v-if="atlLib() && atlFaitsSources(atlSec()).length" class="atl-det atl-pad"><summary>Faits avec une source ({{ atlFaitsSources(atlSec()).length }})</summary>
                     <ul class="atl-fsrc">
                       <li v-for="f in atlFaitsSources(atlSec())" :key="'fs'+f.id" :id="'atl-fs-'+f.id" tabindex="-1" :class="{on: atl.factFocus===f.id}">
-                        <div class="small"><b>{{ f.fait }}</b><span v-if="f.source && f.source.ref" class="atl-ref">{{ f.source.ref }}</span> <span class="muted">· {{ atlSrcLib(f.source) }}<template v-if="f.source && f.source.doc_nom"> · {{ f.source.doc_nom }}</template></span></div>
+                        <div class="small"><b>{{ f.fait }}</b><span v-if="f.source && f.source.ref" class="atl-ref">{{ f.source.ref }}</span> <span class="muted">· {{ atlSrcLib(f.source) }}<template v-if="f.source && f.source.doc_nom && f.source.type !== 'public'"> · {{ f.source.doc_nom }}</template></span></div>
                         <div v-if="f.source && f.source.detail" class="muted small atl-mt4">{{ f.source.detail }}</div>
                         <button v-if="f.source && f.source.extrait && ['documents','acheteur'].includes(f.source.type)" type="button" class="atl-lien small atl-mt4" @click="atlPassage(f)" :aria-expanded="atl.passage && atl.passage.id===f.id ? 'true' : 'false'">{{ atl.passage && atl.passage.id===f.id ? 'Masquer le passage' : 'Voir le passage' }}</button>
                         <button v-else-if="f.source && f.source.type==='justificatif' && f.source.document_id" type="button" class="atl-lien small atl-mt4" @click="downloadDoc({id: f.source.document_id, name: f.source.doc_nom})">Ouvrir le justificatif</button>
@@ -3914,8 +3914,8 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/redaction-partenaire.js" integrity="sha384-Ud5XH/gZAylyBEqTBNMYYwNvbtfb5gWuP1kRjjsJtLCvk0k+tigNGoZ4NWoqNsjc" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-5YkHm+HTCo5oo0QuCxWuxMoPBmy0pArVRZPNLHSxYwM95KBvfQnOG0XNQRlRtTFb" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-oAi+xMZdv4UYYvnUFp1xy8e+d1nSgjyhQFVMbw5l0+5TMPPW3UmuLVVs/pvMU2U/" defer></script>
-<script src="/static/app.js" integrity="sha384-KzQpwCZ6dYknhelA7OaavYbJ7VxSoW5Ll2wgzTZMIPD1vtJ5j7eCHAED79PufB+H" defer></script>
+<script src="/static/app.js" integrity="sha384-TSjPk60C4qSSVfq/qK6B9AAoP8ppb9+csjjVhavDIrkyuD/UBlw4+pXnOAGh/EY1" defer></script>
 </body>
 </html>

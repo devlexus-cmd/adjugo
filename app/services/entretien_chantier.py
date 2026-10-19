@@ -1116,7 +1116,9 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: at.Lecteur
                                        for m in membres]},
             "ia": {"en_cours": ({"job_id": job.id, "statut": job.status} if job is not None else None),
                    "proposees": n_ia, "restantes": max(0, MAX_IA - n_ia), "plafond": MAX_IA, "bulle": BULLE_IA,
-                   "quota": at.quota_out(dossier)["message"]},
+                   "quota": at.quota_out(dossier)["message"],
+                   # Dossier « sans IA » (vague 5, C2) : l'écran ne propose pas la recherche avec l'IA.
+                   "permise": not at.mode_sans_ia(dossier)},
             "statuts": STATUTS}
 
 
@@ -1159,6 +1161,9 @@ def lancer_ia(db, user: User, project: Project, dossier: DossierPresentation, le
     question n'est retenue."""
     from app.services.budget_ia import estimer, verifier
     from app.services.jobs import run_in_thread
+    # Vague 5 (C2 × D) : un dossier « sans IA » (choix du chef de file, souvent parce que le règlement l'exige) ne
+    # demande aucune question à l'IA (409 « mode_sans_ia ») ; les questions de la banque, elles, restent (sans IA).
+    at.exiger_ia_permise(dossier)
     if not prepare(db, dossier):
         preparer(db, project, dossier, lecteur, member_ids)
     if _en_cours_ia(db, dossier, member_ids) is not None:

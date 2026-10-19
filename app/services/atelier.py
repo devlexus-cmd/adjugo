@@ -190,8 +190,9 @@ class AtelierError(Exception):
 # (ils n'utilisent pas l'IA). Rangé dans les options du dossier (options_export["sans_ia"]) : aucune migration.
 MSG_SANS_IA_REFUS = ("Ce dossier se rédige sans IA (choix enregistré pour ce marché) : écrivez le texte vous-même. "
                      "Le contrôle des faits et la liste des exigences continuent.")
-MSG_SANS_IA_ACTIF = ("Ce dossier se rédige sans IA : ni rédaction, ni raccourci, ni harmonisation par l'IA, pour vous "
-                     "comme pour vos partenaires. Le contrôle des faits et la liste des exigences continuent, sans IA.")
+MSG_SANS_IA_ACTIF = ("Ce dossier se rédige sans IA : ni rédaction, ni raccourci, ni harmonisation, ni question proposée "
+                     "par l'IA, pour vous comme pour vos partenaires. Le contrôle des faits, la liste des exigences et "
+                     "les questions sur ce chantier continuent, sans IA.")
 MSG_SANS_IA_PARTENAIRE = ("Le chef de file a choisi de rédiger ce dossier sans IA : écrivez votre partie vous-même. Le "
                           "contrôle des faits continue, sans IA.")
 
