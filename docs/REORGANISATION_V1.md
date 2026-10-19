@@ -275,8 +275,11 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
   écran de la liste apparaît, même à 0. Carte « Écrans ouverts, 30 derniers jours » dans Administration
   (`admin-mesure`). Jamais montré aux clients.
 - **Migration** `b3mesureecrans` (après `a2carnetnotes`) : crée la table si elle manque, idempotente, retour arrière
-  réel. Testée sur SQLite (`test_migration_mesure_ecrans_aller_retour_idempotente`) ; **à vérifier sur Postgres
-  depuis l'état de production avant la mise en ligne** (une table neuve, aucune donnée existante touchée).
+  réel. Testée sur SQLite (`test_migration_mesure_ecrans_aller_retour_idempotente`) et sur Postgres 16 (15 contrôles
+  verts, script `scratchpad/socle/run_pg_mesure.py` de la session) : base neuve ; base montée par le code de
+  production `88a4109` puis code nouveau (une seule table ajoutée, données intactes, rejeu sans effet) ; compteur et
+  relevé sur Postgres ; table identique au modèle ; retour arrière et remontée. Reste à refaire au moment de la mise
+  en ligne depuis l'état réel de la production, comme pour chaque migration.
 - **Route classée** dans `tests/test_demo_sans_cout.py` (sans coût, la démo n'est pas comptée).
 - **Toute nouvelle vue** (un onglet de rubrique devenu vue, par exemple) s'ajoute à `ECRANS` :
   `test_chaque_vue_de_l_application_est_mesuree` le vérifie contre `app.html` et `app.js`. Les onglets internes d'une
@@ -350,4 +353,5 @@ espace partenaire réduit à « Votre part dans [marché] » (dans `invite.html`
 
 - Pages juridiques : `docs/A_CORRIGER_PAGES_JURIDIQUES_LIBELLES.md`, § 6 (AO, CERFA, mémoire, co-traitant, SIRENE ;
   le modèle de convention).
-- Mise en ligne : vérifier la migration `b3mesureecrans` sur Postgres depuis l'état de production.
+- Mise en ligne : la migration `b3mesureecrans` (une table de compteurs) part avec ce socle ; contrôle Postgres
+  depuis l'état réel de la production à refaire au moment de la mise en ligne.
