@@ -69,9 +69,13 @@ LECTURES = {LECTURE_TEXTE: "Lu sans IA (texte du document)",
 # ── Phrases à l'écran (françaises, sans jargon) ───────────────────────────────────────
 MSG_QUI_VOIT = "Seuls vous et Adjugo les lisez ; le chef de file ne les voit jamais."
 MSG_USAGE = ("Adjugo les lit sans IA, puis ne s'en sert que pour rédiger vos parties, en citant le passage exact. "
-             "Les noms des personnes sont masqués avant l'IA, et un CV n'est jamais envoyé.")
-MSG_CONSERVATION = ("Ils sont effacés dès que vous les supprimez, si vous quittez le groupement, et automatiquement "
-                    "{mois} mois après le résultat du marché (à défaut, {mois} mois après sa date limite).")
+             "Avant l'IA, il masque les noms de personnes qu'il repère et écarte ce qui ressemble à un CV : retirez "
+             "de vos documents les noms que vous ne voulez pas transmettre.")
+# La durée de conservation dite au partenaire : la règle de `purger`, mot pour mot (lien expiré compris).
+MSG_CONSERVATION = ("Ils sont effacés dès que vous les supprimez, si vous quittez le groupement ou en êtes retiré ; sinon "
+                    "automatiquement, à la première de ces dates : {expiration}{mois} mois après le résultat du "
+                    "marché (à défaut, après sa date limite ou, sans date limite, après votre dernier dépôt).")
+MSG_CONSERVATION_LIEN = "{jours} jours après l'expiration de ce lien (il expire le {date}), "
 MSG_COMPTE = ("Ces documents ont été déposés par votre lien, avant que vous le rattachiez à votre compte Adjugo. "
               "Adjugo ne s'en sert plus : il s'appuie maintenant sur votre savoir-faire et vos preuves. Vous pouvez "
               "les télécharger ou les supprimer.")
@@ -96,6 +100,8 @@ MSG_CV = ("Ce document ressemble à un CV : Adjugo n'envoie jamais un CV à l'IA
 MSG_ACHETEUR = ("Ce document ressemble à une pièce du dossier de l'acheteur (règlement, CCAP, CCTP) : Adjugo la lit "
                 "déjà dans le dossier du marché, et elle ne dit rien de votre entreprise. Elle n'est pas gardée.")
 MSG_INTROUVABLE = "Document introuvable."
+MSG_ESPACE_REINITIALISE = ("Votre espace privé a été réinitialisé pendant le dépôt : le document n'a pas été gardé. "
+                           "Ouvrez de nouveau votre espace privé sur cet appareil pour le déposer.")
 MSG_STOCKAGE = "Le dépôt n'a pas abouti : réessayez dans quelques minutes."
 
 
@@ -176,6 +182,17 @@ def textes_juridiques() -> list:
             _TEXTES_CACHE[cle] = c
         out.append(dict(c[1]))
     return out
+
+
+def verrouiller_invitation(db, invite_id: int, frais: bool = False) -> Optional[ProjectInvite]:
+    """Le verrou de l'invitation (une ligne, jusqu'à la validation) : déposer, supprimer, réinitialiser l'espace,
+    effacer ce qu'elle a déposé et ranger le brouillon d'une aide de l'IA passent l'un après l'autre. `frais` :
+    l'invitation relue après le verrou (clé de l'espace, rattachement à jour) — jamais quand l'appelant a modifié
+    l'invitation sans valider (la session ne valide pas d'elle-même : ces changements seraient perdus)."""
+    q = db.query(ProjectInvite).filter(ProjectInvite.id == int(invite_id)).with_for_update()
+    if frais:
+        q = q.populate_existing()
+    return q.first()
 
 
 def _espace(db, invite_id: int) -> Optional[DepotLienEspace]:
@@ -294,6 +311,20 @@ def resume(db, acces) -> Optional[dict]:
     return {"nombre": int(n), "utilises": utilises(acces), "possible": utilises(acces)}
 
 
+def _jour_fr(dt) -> str:
+    mois = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre",
+            "novembre", "décembre")
+    return f"{dt.day}{'er' if dt.day == 1 else ''} {mois[dt.month - 1]} {dt.year}"
+
+
+def conservation(inv: ProjectInvite, mois: int) -> str:
+    """Combien de temps ses documents sont gardés, tel que `purger` l'applique : le lien qui expire (par défaut
+    30 jours après sa création) les fait effacer PURGE_EXPIRE_JOURS jours après son expiration."""
+    exp = _naif(getattr(inv, "expires_at", None))
+    lien = MSG_CONSERVATION_LIEN.format(jours=PURGE_EXPIRE_JOURS, date=_jour_fr(exp)) if exp is not None else ""
+    return MSG_CONSERVATION.format(expiration=lien, mois=mois)
+
+
 def vue(db, acces) -> dict:
     """« Vos documents pour Adjugo » : la liste, l'accord, les limites et qui voit quoi."""
     _exiger_lecture(acces)
@@ -302,7 +333,7 @@ def vue(db, acces) -> dict:
     return {"documents": [_doc_out(d) for d in documents(db, acces.inv.id)],
             "utilises": util, "peut_deposer": util and bool(getattr(acces.inv, "can_contribute", True)),
             "qui_voit": MSG_QUI_VOIT, "usage": MSG_USAGE,
-            "conservation": MSG_CONSERVATION.format(mois=lim["conservation_mois"]),
+            "conservation": conservation(acces.inv, lim["conservation_mois"]),
             "message": "" if util else MSG_COMPTE,
             "conditions": conditions(db, acces.inv) if util else None,
             "limites": {k: lim[k] for k in ("fichiers", "mo_par_fichier", "mo_total", "par_jour", "pages_scan",
@@ -416,6 +447,23 @@ def _limites_du_depot(db, invite_id: int, taille: int, empreinte: str, lim: dict
         raise AtelierError(409, "document_deja_depose", MSG_DOUBLON)
 
 
+def _encore_le_meme_espace(db, acces) -> None:
+    """Sous le verrou de l'invitation, relue : la clé présentée ouvre encore l'espace (ni réinitialisé, ni lien
+    rattaché à un compte entre-temps), le dépôt est encore permis, et l'accord est encore enregistré et à jour."""
+    from app.services.atelier_groupement import cle_valide
+    inv = verrouiller_invitation(db, acces.inv.id, frais=True)
+    if inv is None:
+        raise AtelierError(404, "document_introuvable", MSG_INTROUVABLE)
+    acces.inv = inv
+    acces.cle_ok = acces.mode == "compte" or cle_valide(inv, getattr(acces, "cle", None))
+    if not acces.cle_ok:
+        raise AtelierError(409, "espace_reinitialise", MSG_ESPACE_REINITIALISE)
+    _exiger_depot(acces)
+    cond = conditions(db, inv)
+    if cond["a_accepter"]:
+        raise AtelierError(409, "conditions_a_accepter", cond["message"], conditions=cond)
+
+
 def deposer(db, acces, nom_fichier: str, contenu: bytes, *, accepte_cgu: bool = False,
             accepte_confidentialite: bool = False, ip: str = "") -> DepotLienDocument:
     """Un document déposé par le partenaire dans SON espace privé (par le lien) : accord au premier dépôt, contrôles
@@ -452,10 +500,11 @@ def deposer(db, acces, nom_fichier: str, contenu: bytes, *, accepte_cgu: bool = 
     morceaux, n_cv = decouper(texte)
     if not morceaux:
         raise AtelierError(422, "document_illisible", MSG_ILLISIBLE)
-    # Relu SOUS VERROU (la lecture a pu durer) : deux dépôts simultanés ne dépassent pas les limites.
-    db.query(ProjectInvite).filter(ProjectInvite.id == inv.id).with_for_update().first()
+    # Relu SOUS VERROU (la lecture a pu durer) : deux dépôts simultanés ne dépassent pas les limites, et un espace
+    # réinitialisé pendant la lecture (par qui détient le lien) ne reçoit rien — ni fichier ni ligne : la clé
+    # présentée doit être encore celle de l'espace, l'accord encore enregistré et à jour.
+    _encore_le_meme_espace(db, acces)
     _limites_du_depot(db, inv.id, len(contenu), empreinte, lim)
-    deja = documents(db, inv.id)
     from app.core.mime import mime_for
     from app.services.storage import get_storage
     cle = f"invitations/{int(inv.id)}/depots/{uuid.uuid4().hex}{ext}"
@@ -482,10 +531,11 @@ def deposer(db, acces, nom_fichier: str, contenu: bytes, *, accepte_cgu: bool = 
             pass
         raise
     db.refresh(doc)
-    n = len(deja) + 1
+    # Le journal du marché (lu aussi par le chef de file) dit qu'un document a été déposé, jamais lequel, ni son rang,
+    # ni sa taille.
     _journal(db, acces, "redaction.document_depose", ip=ip,
-             detail=f"Document déposé dans l'espace privé du partenaire ({n} sur {lim['fichiers']}), lu sans IA",
-             meta={"lecture": lecture, "taille": len(contenu), "passages": len(morceaux)})
+             detail="Document déposé dans l'espace privé du partenaire, lu sans IA",
+             meta={"lecture": lecture})
     return doc
 
 
@@ -507,6 +557,9 @@ def supprimer(db, acces, doc_id, ip: str = "") -> int:
     fichier, et, dans ses brouillons, les extraits cités de ce document (leurs faits redeviennent « à relire »)."""
     _refuser_demo(acces)
     _exiger_lecture(acces)
+    # Sous le verrou de l'invitation : une aide de l'IA en cours range son brouillon avant (ses extraits de ce
+    # document sont alors retirés ici) ou après (elle ne garde que les passages encore présents).
+    verrouiller_invitation(db, acces.inv.id)
     d = _document(db, acces, doc_id)
     cle = d.file_key
     from app.services.atelier_groupement import oublier_document
@@ -533,10 +586,16 @@ def _supprimer_fichiers(cles) -> int:
 
 
 def effacer_invitation(db, invite_id: int, *, commit: bool = True) -> tuple:
-    """Tout ce qu'une invitation a déposé (documents, passages, accord) : (nombre de documents, clés des fichiers).
-    Sans `commit`, l'appelant valide puis supprime les fichiers (`supprimer_fichiers`)."""
+    """Tout ce qu'une invitation a déposé (documents, passages, accord), et ce que ses brouillons en ont recopié
+    (nom du document et passage des sources ; les faits reliés redeviennent « à relire ») : (nombre de documents,
+    clés des fichiers). Sous le verrou de l'invitation (une aide de l'IA en cours range son brouillon avant ou
+    après, jamais entre les deux). Sans `commit`, l'appelant valide puis supprime les fichiers
+    (`supprimer_fichiers`)."""
+    from app.services.atelier_groupement import oublier_documents
+    verrouiller_invitation(db, invite_id)
     docs = documents(db, invite_id)
     cles = [d.file_key for d in docs]
+    oublier_documents(db, invite_id)
     db.query(DepotLienMorceau).filter(DepotLienMorceau.invite_id == invite_id).delete(synchronize_session=False)
     db.query(DepotLienDocument).filter(DepotLienDocument.invite_id == invite_id).delete(synchronize_session=False)
     db.query(DepotLienEspace).filter(DepotLienEspace.invite_id == invite_id).delete(synchronize_session=False)
@@ -675,13 +734,45 @@ def extraits_cites(db, invite_id: int, b) -> list:
     return out
 
 
+def encore_presents(db, invite_id: int, chunks: list) -> list:
+    """Les passages remis à l'IA, relus après l'appel : un passage dont le document a été supprimé (ou effacé)
+    entre-temps devient {"retire": True} À SA PLACE (les renvois [S#] des autres ne bougent pas) ; il ne donne
+    alors ni fiche, ni source, ni nom de document."""
+    ids = []
+    for c in chunks or []:
+        try:
+            if isinstance(c, dict) and c.get("depot_chunk_id"):
+                ids.append(int(c["depot_chunk_id"]))
+        except (TypeError, ValueError):
+            pass
+    ok = set()
+    if ids:
+        ok = {r[0] for r in db.query(DepotLienMorceau.id).filter(DepotLienMorceau.id.in_(ids),
+                                                                DepotLienMorceau.invite_id == invite_id)}
+    out = []
+    for c in chunks or []:
+        if not (isinstance(c, dict) and c.get("depot_chunk_id")):
+            out.append(c)
+            continue
+        try:
+            garde = int(c["depot_chunk_id"]) in ok
+        except (TypeError, ValueError):
+            garde = False
+        out.append(c if garde else {"retire": True})
+    return out
+
+
 def sources_reelles(sources: list, chunks: list) -> list:
     """Les extraits cités par l'IA ([S#]), avec le nom réel du document et le passage déposé (privés : chez le
-    partenaire seulement). L'IA n'a lu qu'un libellé neutre (« Votre document 2 »)."""
-    par_ref = {f"{fs.EXTRAIT}{i}": c for i, c in enumerate(chunks or [], start=1)}
+    partenaire seulement). L'IA n'a lu qu'un libellé neutre (« Votre document 2 »). Un passage retiré
+    (`encore_presents` : document supprimé pendant l'appel) ne laisse aucune source."""
+    par_ref = {str(c.get("ref") or f"{fs.EXTRAIT}{i}") if isinstance(c, dict) else f"{fs.EXTRAIT}{i}": c
+               for i, c in enumerate(chunks or [], start=1)}
     out = []
     for s in sources or []:
         c = par_ref.get(str((s or {}).get("ref") or "")) if isinstance(s, dict) else None
+        if isinstance(c, dict) and c.get("retire"):
+            continue
         if c is None or not c.get("depot_chunk_id"):
             out.append(s)
             continue

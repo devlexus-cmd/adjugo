@@ -183,7 +183,7 @@
   // « Vos documents pour Adjugo » (lien sans compte) : qui voit quoi, à quoi ils servent ; la durée de conservation
   // vient du serveur (réglable).
   const QUI_VOIT = "Seuls vous et Adjugo les lisez ; le chef de file ne les voit jamais.";
-  const BULLE_DOCS = QUI_VOIT + " Avec votre texte envoyé, il reçoit seulement le nombre de faits « trouvés dans vos documents ». Adjugo les lit sans IA, puis s'en sert uniquement pour rédiger vos parties, en citant le passage exact. Les noms des personnes sont masqués avant l'IA, et un CV n'est jamais envoyé.";
+  const BULLE_DOCS = QUI_VOIT + " Avec votre texte envoyé, il reçoit seulement le nombre de faits « trouvés dans vos documents ». Adjugo les lit sans IA, puis s'en sert uniquement pour rédiger vos parties, en citant le passage exact. Avant l'IA, il masque les noms de personnes qu'il repère et écarte ce qui ressemble à un CV : retirez de vos documents les noms que vous ne voulez pas transmettre.";
   const BULLE_QFQ = "Adjugo l'écrit sans IA, à partir de la convention et de la part envoyée par chaque membre : ce que chacun apporte (part, qualifications, moyens), jamais ce qui manque. Tous les membres la lisent et chacun la valide. Pour la changer, modifiez votre part dans « Ma contribution » et renvoyez-la.";
   const BULLE_MENTIONS = "« justifiée » : un justificatif ou une source appuie la qualification ; « déclarée » : le membre l'a écrite. Ces mentions restent à l'écran : elles ne partent pas chez l'acheteur.";
   const BULLE_EXTRAITS = "Les passages de vos documents qu'Adjugo a cités en rédigeant (S1, S2…). Ils restent privés : ni le chef de file ni l'acheteur ne les voient, et les renvois sont retirés à l'export. Un extrait cité ne prouve pas que la phrase est exacte.";
@@ -419,7 +419,7 @@
           : '<p class="small rp-p">Ouvrez-le sur cet appareil pour rédiger vos parties.</p><div class="rp-acts">' + btn("espace-ouvrir", ico("lock-open", 14) + "Ouvrir mon espace", "primary") + "</div>";
       } else {
         h += '<p class="small rp-p">Votre espace est déjà ouvert sur un autre appareil ou un autre navigateur.'
-          + (e.code_possible ? " Recevez un code par email pour l'ouvrir ici : vos brouillons sont gardés." : " Vous pouvez le réinitialiser ici : vos brouillons non envoyés seront effacés, vos textes envoyés restent.") + "</p><div class=\"rp-acts\">"
+          + (e.code_possible ? " Recevez un code par email pour l'ouvrir ici : vos brouillons sont gardés." : " Vous pouvez le réinitialiser ici : vos brouillons non envoyés et vos documents déposés pour Adjugo seront effacés, vos textes envoyés restent.") + "</p><div class=\"rp-acts\">"
           + (e.code_possible ? btn("espace-code", ico("mail", 14) + "Recevoir un code", "primary") : "")
           + btn("espace-reinit", "Réinitialiser mon espace", e.code_possible ? "ghost" : "") + "</div>";
       }
@@ -793,7 +793,7 @@
       if (a === "espace-code") { await espaceCode(); return; }
       if (a === "espace-reinit") {
         const ok = await modal({ title: "Réinitialiser votre espace privé ?", danger: true, confirmLabel: "Réinitialiser", focusCancel: true,
-          bodyHtml: "Vos brouillons non envoyés seront <b>effacés</b>. Les textes que vous avez envoyés restent. Si votre invitation vise une adresse email, un code vous sera demandé avant d'envoyer ou de valider." });
+          bodyHtml: "Vos brouillons non envoyés et vos documents déposés pour Adjugo seront <b>effacés</b>, ainsi que votre accord aux conditions. Les textes que vous avez envoyés restent. Si votre invitation vise une adresse email, un code vous sera demandé avant d'envoyer, de valider, de lancer l'aide d'Adjugo ou de déposer un document." });
         if (ok) await espace({ reinitialiser: true });
         return;
       }
@@ -873,7 +873,12 @@
       if (coches.includes("confidentialite")) fd.append("accepte_confidentialite", "1");
       direDocs("Adjugo lit votre document, sans IA. Un document scanné peut demander une minute.", false);
       const r = await avecIdentite(() => call("POST", "/documents", null, false, fd), null, "Pour déposer un document");
-      if (!r.ok) { direDocs(r.message, true); return; }
+      if (!r.ok) {
+        // Les conditions ont changé pendant que la page était ouverte : les deux cases apparaissent, à cocher.
+        const dc = r.code === "conditions_a_accepter" && r.data && r.data.detail && r.data.detail.conditions;
+        if (dc && st.docs) { st.docs = Object.assign({}, st.docs, { conditions: dc }); st.msgDocs = { txt: r.message, err: true }; render(); return; }
+        direDocs(r.message, true); return;
+      }
       const dep = (r.data && r.data.depose) || {};
       st.docs = r.data; st.docsNombre = ((r.data && r.data.documents) || []).length;
       st.msgDocs = { txt: "Document déposé et lu sans IA" + (dep.complet === false ? " (en partie : document long, ou scan lu sur ses premières pages)" : "") + ". Adjugo s'en servira quand vous lancerez « Rédiger avec Adjugo ».", err: false };

@@ -23,7 +23,7 @@ Une nouvelle version d'un des deux textes redemande l'accord avant le dépôt su
 | Rôle d'Adjugo | Politique, § 1 : pour les documents téléversés **par le Client**, Adjugo est « pour l'essentiel » **sous-traitant du Client** | Les documents sont déposés par le partenaire, rattachés à SON invitation, **jamais visibles du Client** (le chef de file) ; ils ne servent qu'au partenaire. Adjugo n'agit donc pas sur instruction du Client pour ces documents : le rôle (responsable de traitement pour le partenaire, ou autre qualification) est à arbitrer par le conseil. |
 | Catégories de données | Politique, § 3 : « Documents téléversés … téléversées par l'utilisateur » | Couvre le contenu en général ; ne dit pas qu'un partenaire sans compte peut déposer, ni que le nom du fichier est gardé. |
 | Durée de conservation | Politique, § 5 : documents « pendant la durée d'utilisation du Service, puis suppression 90 jours après la clôture du compte » | Aucun compte ici. Règle appliquée : supprimé aussitôt que le partenaire le supprime, s'il décline, si le chef de file le retire, ou s'il réinitialise son espace ; sinon automatiquement **6 mois après le résultat du marché** (gagné, perdu, abandonné), à défaut 6 mois après sa date limite, à défaut 6 mois après le dernier dépôt ; 30 jours après l'expiration du lien ; avec le marché quand il est effacé. |
-| Destinataires (IA) | Politique, § 6 : le fournisseur d'IA reçoit « données d'entreprise utiles à la rédaction (noms des salariés remplacés par des étiquettes avant tout envoi) » | Juste dans l'esprit ; à préciser : seuls des **passages** des documents déposés partent, noms des personnes masqués, jamais un CV, jamais le nom du fichier. |
+| Destinataires (IA) | Politique, § 6 : le fournisseur d'IA reçoit « données d'entreprise utiles à la rédaction (noms des salariés remplacés par des étiquettes avant tout envoi) » | Juste dans l'esprit, mais trop absolu : seuls des **passages** des documents déposés partent, jamais le nom du fichier ; Adjugo remplace par des étiquettes les noms de personnes **qu'il repère** sans IA (aucune équipe n'est connue pour un partenaire sans compte : un nom écrit d'une façon inhabituelle peut lui échapper) et écarte ce qui ressemble à un CV. La phrase actuelle du § 6 promet aussi, pour les Clients, un remplacement de tous les noms des salariés : Adjugo remplace ceux qu'il connaît (fiches « Équipe ») et ceux qu'il repère — à nuancer de la même façon. |
 | Droits | Politique, § 8 : « Cas des documents téléversés … transmise au Client responsable de traitement » | Ici, ce n'est PAS au Client : le partenaire supprime et télécharge lui-même ses documents, et le chef de file n'y a jamais accès. |
 
 ## 2. Texte proposé — Conditions générales (nouvel article, par exemple 2.4)
@@ -65,15 +65,19 @@ Variante courte, si Eliot préfère un renvoi :
 **§ 5, tableau, ligne ajoutée :**
 
 > | Documents d'un partenaire invité | supprimés dès que le partenaire les supprime, s'il quitte le groupement
-> (invitation déclinée ou retirée) ou réinitialise son espace privé ; à défaut, automatiquement **six (6) mois
-> après le résultat du marché** (gagné, perdu ou abandonné), ou six mois après sa date limite si aucun résultat
-> n'est enregistré ; trente (30) jours après l'expiration du lien ; avec le marché lorsqu'il est supprimé |
+> (invitation déclinée ou retirée) ou réinitialise son espace privé ; à défaut, automatiquement à la première de
+> ces dates : trente (30) jours après l'expiration de son lien (par défaut, un lien expire trente jours après
+> l'invitation) ; **six (6) mois après le résultat du marché** (gagné, perdu ou abandonné), ou six mois après sa
+> date limite si aucun résultat n'est enregistré, ou six mois après son dernier dépôt si le marché n'a ni l'un ni
+> l'autre ; avec le marché lorsqu'il est supprimé. Les passages de ces documents recopiés dans ses brouillons
+> sont supprimés en même temps |
 
 **§ 6, ligne du fournisseur d'IA, colonne « Données concernées » :**
 
 > …, données d'entreprise utiles à la rédaction, **passages des documents déposés par un partenaire pour ses
-> propres parties** (noms des personnes remplacés par des étiquettes avant tout envoi ; jamais un curriculum
-> vitae ni le nom d'un fichier)
+> propres parties** (les noms de personnes qu'Adjugo repère y sont remplacés par des étiquettes avant tout envoi ;
+> ce qui ressemble à un curriculum vitae est écarté ; jamais le nom d'un fichier). Le partenaire est invité à
+> retirer de ses documents les noms qu'il ne souhaite pas transmettre.
 
 **§ 8, après « Cas des documents téléversés » :**
 
@@ -91,11 +95,18 @@ Variante courte, si Eliot préfère un renvoi :
    politique de confidentialité » : elle vaut acceptation des conditions, pas un consentement au sens de
    l'article 7 (retrait = suppression des documents, déjà possible à tout moment).
 3. **Durée de 6 mois** après le résultat (réglable : `DEPOT_LIEN_CONSERVATION_MOIS`) et les deux replis (date
-   limite, dernier dépôt) : à confirmer, puis à recopier tels quels.
+   limite, dernier dépôt), et l'effacement 30 jours après l'expiration du lien (souvent le premier atteint : un lien
+   expire par défaut 30 jours après l'invitation) : à confirmer, puis à recopier tels quels. L'écran le dit déjà au
+   partenaire, avec la date d'expiration de son lien.
 4. **Faut-il une version propre** au partenaire invité (conditions d'utilisation distinctes des CGV) ? La fonction
    enregistre déjà la version et l'empreinte de chaque page acceptée : une nouvelle page, ou une nouvelle version,
    redemande l'accord sans autre changement (les pages sont lues par `app/services/depot_lien.textes_juridiques`,
    qui y lit « Version : … — Dernière mise à jour : … »).
 5. **Mentions d'information** sur la page du lien : la bulle (i) de « Vos documents pour Adjugo » dit déjà qui voit
-   quoi (« Seuls vous et Adjugo les lisez ; le chef de file ne les voit jamais »), à quoi ils servent, et combien de
-   temps ils sont gardés. À relire avec le conseil.
+   quoi (« Seuls vous et Adjugo les lisez ; le chef de file ne les voit jamais »), à quoi ils servent (« Avant l'IA,
+   il masque les noms de personnes qu'il repère et écarte ce qui ressemble à un CV : retirez de vos documents les
+   noms que vous ne voulez pas transmettre. »), et combien de temps ils sont gardés. À relire avec le conseil.
+6. **Journal du marché** : le chef de file y lit qu'un document a été déposé, supprimé, et que les conditions ont
+   été acceptées (date, heure, adresse IP, comme pour les autres actions du partenaire), jamais le nom, la taille,
+   le rang ni le contenu d'un document. À dire dans la politique (§ 3 ou § 8), ou à réserver au seul partenaire :
+   c'est un choix d'Eliot (contrat § 21.14).
