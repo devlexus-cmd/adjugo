@@ -7,7 +7,9 @@ from app.core.security import get_current_user
 from app.core.org import member_ids, data_owner_id
 from app.core.http import content_disposition
 from app.models import User, Project, Company, GeneratedDoc
+from typing import Optional
 from app.services.cerfa import GENERATORS, missing_company_fields
+from app.core.http import AVERTISSEMENT_HEADER, en_tete_avertissements
 
 router = APIRouter(prefix="/api/cerfa", tags=["Generation CERFA"])
 
@@ -46,15 +48,15 @@ def generate(
     if not company:
         raise HTTPException(status_code=400, detail="Complétez votre profil entreprise")
 
-    pdf_bytes = produire_formulaire(db, project, company, doc_type)
+    avert = []
+    pdf_bytes = produire_formulaire(db, project, company, doc_type, avertissements=avert)
     db.commit()
 
     filename = f"{doc_type.upper()}_{project.name[:30].replace(' ', '_')}.pdf"
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": content_disposition(filename)},
-    )
+    headers = {"Content-Disposition": content_disposition(filename)}
+    if avert:
+        headers[AVERTISSEMENT_HEADER] = en_tete_avertissements(avert)
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
 
 
 @router.get("/{project_id}/status")
@@ -90,11 +92,13 @@ def get_status(
     ]
 
 
-def produire_formulaire(db: Session, project: Project, company: Company, doc_type: str) -> bytes:
+def produire_formulaire(db: Session, project: Project, company: Company, doc_type: str,
+                        avertissements: Optional[list] = None) -> bytes:
     """Remplit le formulaire officiel `doc_type` (sans IA) et horodate sa génération (GeneratedDoc,
     SANS commit) : l'état « prêt à déposer » vérifie qu'il date d'après la convention de groupement.
     Partagé par la route et le seed de la démo (app/services/demo_groupement.py). 422 si le profil
-    entreprise n'a pas les champs de signature (acte d'engagement, déclarations)."""
+    entreprise n'a pas les champs de signature (acte d'engagement, déclarations). `avertissements`
+    (liste) reçoit les entreprises absentes du formulaire faute d'accord, et pourquoi."""
     cd = {}
     for k in ["name", "siret", "code_ape", "forme_juridique", "capital",
               "representant_legal", "address", "city", "postal_code",
@@ -131,8 +135,11 @@ def produire_formulaire(db: Session, project: Project, company: Company, doc_typ
     # role/lot venant du LIEN. Seulement les sous-traitants déclarés et les partenaires dont
     # l'invitation est ACCEPTÉE : aucune entreprise n'entre dans un formulaire sans son accord.
     try:
-        from app.services.groupement_members import cotraitants_pour_formulaires
-        pd["cotraitants"].extend(cotraitants_pour_formulaires(db, project.id)["lignes"])
+        from app.services.groupement_members import avertissements_formulaires, cotraitants_pour_formulaires
+        _form = cotraitants_pour_formulaires(db, project.id)
+        pd["cotraitants"].extend(_form["lignes"])
+        if avertissements is not None:
+            avertissements.extend(avertissements_formulaires(_form))
     except Exception:
         pass
 

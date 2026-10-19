@@ -868,10 +868,11 @@
 
                     <!-- 6. Partenaires rattachés sans invitation (accord recueilli hors ligne) -->
                     <section v-if="(d.candidats_hors_ligne||[]).length" class="conv-sec" aria-labelledby="conv-hl-h">
-                      <div class="conv-st"><span id="conv-hl-h">Partenaires sans invitation</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ces entreprises sont rattachées au marché mais n'ont pas été invitées sur Adjugo. Si vous les incluez, indiquez le prix de vente de leur part : vous recueillerez leur accord hors ligne (sur papier, par exemple), puis vous le cocherez ici.</span></button></div>
+                      <div class="conv-st"><span id="conv-hl-h">Partenaires sans invitation</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ces entreprises sont rattachées au marché mais n'ont pas été invitées sur Adjugo. Le plus simple est de les inviter : elles entrent dans les formulaires officiels quand elles acceptent. Si vous les incluez hors ligne, indiquez le prix de vente de leur part, recueillez leur accord (sur papier, par exemple) puis cochez-le ici : elles n'entrent dans les formulaires officiels (DC1, DC2) qu'après.</span></button></div>
                       <div v-for="c in d.candidats_hors_ligne" :key="'hl'+c.link_id" class="conv-hl">
                         <template v-for="h in (f.hl[c.link_id] ? [f.hl[c.link_id]] : [])" :key="'hlf'+c.link_id">
-                          <div class="conv-check"><label><input type="checkbox" v-model="h.on"><span><b>{{ c.company }}</b><span class="cf-s">Inclure dans la convention<template v-if="c.siret"> · SIRET {{ c.siret }}</template></span></span></label></div>
+                          <div class="row wrap" style="gap:8px;align-items:center"><div class="conv-check" style="flex:1;min-width:0"><label><input type="checkbox" v-model="h.on"><span><b>{{ c.company }}</b><span class="cf-s">Inclure hors ligne dans la convention<template v-if="c.siret"> · SIRET {{ c.siret }}</template></span></span></label></div>
+                            <button type="button" class="btn sm" @click="aoGrpInvite({ name: c.company, link_id: c.link_id })"><i data-lucide="user-plus"></i>Inviter</button></div>
                           <div v-if="h.on" class="conv-grid">
                             <div class="field"><label :for="'cvh-p'+c.link_id">Prix de vente de sa part (€ HT)</label><input :id="'cvh-p'+c.link_id" class="inp" type="number" min="0" step="0.01" inputmode="decimal" v-model.number="h.prix_lot_ht"></div>
                             <div class="field"><label :for="'cvh-l'+c.link_id">Lot ou prestations</label><input :id="'cvh-l'+c.link_id" class="inp" v-model="h.lot" maxlength="255"></div>
@@ -1143,9 +1144,12 @@
               <div v-for="c in ao.cotraitants" :key="c.link_id" class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:flex-start">
                 <div style="flex:1;min-width:0"><span class="strong small">{{ c.name }}</span> <span class="pill" :class="c.role==='mandataire'?'go':'neutral'" style="font-size:10px">{{ roleLabel(c.role) }}</span>
                   <div class="muted small">{{ c.specialites||c.code_ape||'' }} · {{ c.city||'' }} · SIRET {{ c.siret||'n/d' }}</div>
-                  <div v-if="c.formulaires===false && c.invite_id" class="small muted" style="margin-top:2px">Invitation envoyée : il entrera dans les formulaires officiels quand il l'aura acceptée.</div>
+                  <div v-if="c.accord_hors_ligne" class="small muted" style="margin-top:2px">Accord recueilli hors ligne, déclaré par vous dans la convention : il figure dans les formulaires officiels.</div>
+                  <div v-else-if="c.formulaires===false && c.hors_ligne_en_attente" class="small" style="color:var(--warning-text);margin-top:2px">Inscrit hors ligne à la convention : absent des formulaires officiels tant que vous n'avez pas coché son accord.</div>
+                  <div v-else-if="c.formulaires===false && c.invitation==='envoyee'" class="small muted" style="margin-top:2px">Invitation envoyée : il entrera dans les formulaires officiels quand il l'aura acceptée.</div>
+                  <div v-else-if="c.formulaires===false && (c.invitation==='declinee' || c.invitation==='retiree')" class="small" style="color:var(--warning-text);margin-top:2px">{{ c.invitation==='declinee' ? "A décliné l'invitation" : 'Invitation retirée' }} : absent des formulaires officiels.</div>
                   <div v-else-if="c.formulaires===false" class="small" style="color:var(--warning-text);margin-top:2px">Pas encore d'accord : absent des formulaires officiels tant qu'il n'a pas accepté une invitation.</div></div>
-                <button v-if="c.formulaires===false && !c.invite_id" class="btn sm" @click="aoGrpInvite({ name: c.name, link_id: c.link_id })"><i data-lucide="user-plus"></i>Inviter</button>
+                <button v-if="c.formulaires===false && c.role!=='sous_traitant' && !c.hors_ligne_en_attente && (!c.invitation || c.invitation==='declinee' || c.invitation==='retiree')" class="btn sm" @click="aoGrpInvite({ name: c.name, link_id: c.link_id })"><i data-lucide="user-plus"></i>{{ c.invitation ? 'Inviter à nouveau' : 'Inviter' }}</button>
                 <button class="btn icon sm ghost" @click="aoDetachSt(c.link_id)" aria-label="Retirer"><i data-lucide="trash-2"></i></button>
               </div>
               <div v-if="ao.stOpen" style="margin-top:12px;border-top:1px solid var(--hairline);padding-top:12px">
@@ -2507,7 +2511,7 @@
 
           <div class="card pad pv-intro">
             <h2 class="pv-h2">Mes preuves<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo relie chaque fait à l'endroit où il l'a trouvé : un passage de vos documents, un justificatif, une source publique, ou votre déclaration. Il ne sait pas si ce document est à jour : relisez vos preuves.</span></button></h2>
-            <p class="muted small pv-m0">Adjugo se sert des fiches acceptées et encore valables pour rédiger vos dossiers. Il n'en invente aucune.</p>
+            <p class="muted small pv-m0">Adjugo ne se sert que des fiches acceptées et encore valables pour rédiger vos dossiers : relisez chaque fait cité.</p>
             <div v-if="pvRepriseNombre() && !pv.rep.open" class="pv-info">
               <i data-lucide="import"></i><span class="pv-grow">{{ pvRepriseNombre() > 1 ? pvRepriseNombre() + " éléments déjà saisis ailleurs dans Adjugo peuvent être repris ici." : "Un élément déjà saisi ailleurs dans Adjugo peut être repris ici." }}</span>
               <button type="button" class="btn sm" @click="pvRepriseOuvrir()">Voir et reprendre</button>
@@ -3776,7 +3780,7 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/redaction-partenaire.js" integrity="sha384-/eOqK9ctR4Z6HGfJ2nErmGLmBdR3igQpMxfx57GZXrXeWG4MD7XnuHWQy4i+E6pQ" defer></script>
-<script src="/static/app.js" integrity="sha384-grlX2ivtbl5s1mFAzsk7qNy/sZc0ISStLtonryobOKzziaK6MP2gjJl41ATqOgzr" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-Ud5XH/gZAylyBEqTBNMYYwNvbtfb5gWuP1kRjjsJtLCvk0k+tigNGoZ4NWoqNsjc" defer></script>
+<script src="/static/app.js" integrity="sha384-AqbZVVon8p9uo7Tx+fHAWLbWMNWPnk/H1DJytfykwbgf1LqFDSYDZu3AkJ2ruloK" defer></script>
 </body>
 </html>

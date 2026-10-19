@@ -67,9 +67,13 @@ def export_dossier(
     # Entreprises RATTACHÉES À CE MARCHÉ uniquement (pas tout le carnet d'adresses de l'org), role/lot
     # venant du LIEN (co-traitant → DC1/DC2, sous-traitant → DC4). Seulement les sous-traitants
     # déclarés et les partenaires dont l'invitation est ACCEPTÉE (aucune entreprise sans son accord).
+    # Celles qui en sont écartées faute d'accord sont dites dans le sommaire et à l'écran.
+    avertissements = []
     try:
-        from app.services.groupement_members import cotraitants_pour_formulaires
-        pd["cotraitants"].extend(cotraitants_pour_formulaires(db, project_id)["lignes"])
+        from app.services.groupement_members import avertissements_formulaires, cotraitants_pour_formulaires
+        _form = cotraitants_pour_formulaires(db, project_id)
+        pd["cotraitants"].extend(_form["lignes"])
+        avertissements = avertissements_formulaires(_form)
     except Exception:
         pass
 
@@ -221,6 +225,14 @@ def export_dossier(
                 sommaire.append("{}. {} - SIRET: {}".format(i + 1, ct.get("name", ""), ct.get("siret", "")))
             sommaire.append("")
 
+        if avertissements:
+            sommaire.append("-" * 60)
+            sommaire.append("A VERIFIER AVANT DEPOT")
+            sommaire.append("-" * 60)
+            for a in avertissements:
+                sommaire.append("- " + a)
+            sommaire.append("")
+
         sommaire.append("-" * 60)
         sommaire.append("CONTENU DU DOSSIER")
         sommaire.append("-" * 60)
@@ -259,8 +271,8 @@ def export_dossier(
         mark_cerfa_generated(db, project.id, [d for d in ("dc1", "dc2", "attri1") if d in cerfa_ok],
                              grp.get("convention_version"))
 
-    return Response(
-        content=zip_bytes,
-        media_type="application/zip",
-        headers={"Content-Disposition": content_disposition(filename)},
-    )
+    headers = {"Content-Disposition": content_disposition(filename)}
+    if avertissements:
+        from app.core.http import AVERTISSEMENT_HEADER, en_tete_avertissements
+        headers[AVERTISSEMENT_HEADER] = en_tete_avertissements(avertissements)
+    return Response(content=zip_bytes, media_type="application/zip", headers=headers)

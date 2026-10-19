@@ -526,4 +526,5 @@ def test_ecrans_messages_et_promesses():
     # Promesses ramenées au réel, partout.
     assert "Votre savoir-faire, indexé et traçable" not in html
     assert "IA sourcée" not in landing and "donnée jamais inventée" not in landing
-    assert "Aide à la rédaction &amp; veille amont" in landing
+    # « Veille amont » retirée tant que « Projets à venir » est masqué (correctifs urgents, oct. 2026).
+    assert "Aide à la rédaction &amp; fins de contrat à suivre" in landing and "veille amont" not in landing

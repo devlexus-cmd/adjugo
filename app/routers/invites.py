@@ -492,8 +492,9 @@ class InviteCreate(BaseModel):
     can_view_docs: bool = True
     can_contribute: bool = True     # autorise la co-construction (apport de sa part)
     expires_days: int = 30          # 0 = sans expiration
-    # Rattachement au marché (candidat retenu, sans invitation) que cette invitation concerne : il
-    # porte désormais l'invitation, et n'entre dans les formulaires qu'une fois celle-ci acceptée.
+    # Rattachement au marché (candidat retenu, sans invitation active) que cette invitation concerne :
+    # il porte désormais l'invitation, et n'entre dans les formulaires qu'une fois celle-ci acceptée.
+    # Absent : le rattachement de même nom d'entreprise, s'il est seul.
     link_id: Optional[int] = None
 
 
@@ -717,12 +718,14 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
                                   recipient=body.recipient, company_name=body.company_name,
                                   role=body.role, can_view_docs=body.can_view_docs,
                                   can_contribute=body.can_contribute, expires_days=body.expires_days)
-    if body.link_id:
-        # Candidat déjà rattaché au marché (sans invitation, hors sous-traitant) : il porte l'invitation.
-        from app.routers.cotraitants import ProjectCotraitant
-        lk = db.query(ProjectCotraitant).filter(ProjectCotraitant.id == body.link_id,
-                                                ProjectCotraitant.project_id == project.id).first()
-        if lk is not None and not lk.invite_id and (lk.role or "") != "sous_traitant":
+    # Candidat déjà rattaché au marché (hors sous-traitant, sans invitation encore active) : il porte
+    # l'invitation et entrera dans les formulaires officiels quand elle sera acceptée. Désigné par
+    # `link_id` (carte du marché), sinon retrouvé par le nom d'entreprise (composition retenue, liste
+    # des candidats) ; après un refus ou un retrait, la nouvelle invitation remplace l'ancienne.
+    if (inv.role or "") != "sous_traitant":
+        from app.services.groupement_members import lien_a_inviter
+        lk = lien_a_inviter(db, project.id, inv.company_name, link_id=body.link_id)
+        if lk is not None:
             lk.invite_id = inv.id
             db.commit()
     out = _serialize_invite(inv)

@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
   <script src="/static/cotraitance-crypto.js" integrity="sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le"></script>
-  <script src="/static/redaction-partenaire.js" integrity="sha384-/eOqK9ctR4Z6HGfJ2nErmGLmBdR3igQpMxfx57GZXrXeWG4MD7XnuHWQy4i+E6pQ"></script>
+  <script src="/static/redaction-partenaire.js" integrity="sha384-Ud5XH/gZAylyBEqTBNMYYwNvbtfb5gWuP1kRjjsJtLCvk0k+tigNGoZ4NWoqNsjc"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -185,7 +185,7 @@
       <div class="nav-group">Pilotage</div>
       <a class="nav-item" data-view="dashboard"><i data-lucide="layout-dashboard"></i>Tableau de bord</a>
       <a class="nav-item" data-view="sourcing" data-allowed="1"><i data-lucide="target"></i>Trouver des marchés</a>
-      <a class="nav-item" data-view="amont" data-allowed="1"><i data-lucide="scan-eye"></i>Projets à venir</a>
+      <a class="nav-item" data-view="amont" data-allowed="1" id="nav-amont" style="display:none"><i data-lucide="scan-eye"></i>Projets à venir</a>
       <a class="nav-item" data-view="kb"><i data-lucide="brain-circuit"></i>Mon savoir-faire</a>
       <a class="nav-item" data-view="pipeline"><i data-lucide="square-kanban"></i>Mes marchés</a>
       <div class="nav-group">CRM</div>
@@ -1934,6 +1934,11 @@
       if (!a.dataset.allowed) a.classList.add("g-locked");
       a.addEventListener("click", () => nav(a.dataset.view, a.textContent.trim()));
     });
+    // « Projets à venir » : masqué tant que le serveur ne l'active pas (PROJETS_A_VENIR=1).
+    fetch("/api/public-config").then(r => r.ok ? r.json() : null).then(c => {
+      const el = document.getElementById("nav-amont");
+      if (el && c && c.projets_a_venir === true) el.style.display = "";
+    }).catch(() => {});
 
     fetch("/api/invite/" + encodeURIComponent(TOKEN))
       .then(async r => {

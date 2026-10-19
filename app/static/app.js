@@ -2371,7 +2371,7 @@ const __adjApp = createApp({
         this.ao.share.form = { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 };
         this.ao.share.lienCandidat = null;
         await this.aoLoadInvites();
-        if (f.link_id) this.aoLoadCotraitants();
+        this.aoLoadCotraitants();      // le serveur relie aussi le candidat de même nom (sans link_id)
         this.copyInvite(this.ao.share.lastUrl, true);
       } catch (e) { this.notify(e.message, "err"); }
       finally { this.ao.share.busy = false; }
@@ -2663,7 +2663,11 @@ const __adjApp = createApp({
       this.ao.share.form.company_name = (m && m.name) || ""; this.ao.share.open = true;
       // Candidat déjà rattaché au marché : l'invitation lui sera liée (il entre dans les formulaires
       // officiels quand il l'aura acceptée). Oublié si le nom de l'entreprise est changé à la main.
-      this.ao.share.lienCandidat = (m && m.link_id) ? { id: m.link_id, nom: this.ao.share.form.company_name } : null;
+      // Membre de la simulation retenue (sans link_id) : son rattachement est celui du plan, de même nom.
+      const n = String((m && m.name) || "").trim().toLowerCase(), plan = this.grpPlan();
+      const pm = (!(m && m.link_id) && n && plan) ? (plan.members || []).find(x => x && x.link_id && String(x.name || "").trim().toLowerCase() === n) : null;
+      const lid = (m && m.link_id) || (pm && pm.link_id) || null;
+      this.ao.share.lienCandidat = lid ? { id: lid, nom: this.ao.share.form.company_name } : null;
       this.$nextTick(() => { const el = this.$refs.reseauCard; if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" }); });
     },
     // Identifiant de profil d'un membre « reseau » de la composition retenue (le plan ne le garde pas) :
@@ -3897,11 +3901,19 @@ const __adjApp = createApp({
     // Ce qui manque : pièces non lues ou lues en partie, ET parties que l'IA n'a pas pu exploiter
     // (lecture en deux temps), chacune avec sa raison.
     couvManques(c) { return c ? [].concat(c.non_lues || [], c.partielles || [], (c.analyse && c.analyse.manques) || []) : []; },
+    // Avertissements joints par le serveur à un fichier (en-tête X-Adjugo-Avertissements) : par exemple
+    // un partenaire absent des formulaires officiels faute d'accord. Aussi écrits dans le sommaire du ZIP.
+    avertissementsFichier(r) {
+      const v = r && r.headers && r.headers.get("X-Adjugo-Avertissements");
+      if (!v) return "";
+      try { return decodeURIComponent(v).split(" | ").filter(Boolean).join(" "); } catch (e) { return ""; }
+    },
     async aoExport() {
       try {
         const r = await fetch("/api/export/" + this.ao.project.id, { method: "POST", headers: { Authorization: "Bearer " + this.token } });
         if (!r.ok) throw new Error("Export impossible");
         this.saveBlob(await r.blob(), "Dossier_AO_" + this.ao.project.id + ".zip");
+        const av = this.avertissementsFichier(r); if (av) this.notify("Dossier téléchargé. À vérifier : " + av, "warn");
       } catch (e) { this.notify(e.message, "err"); }
     },
     async aoDelete() {
@@ -3928,7 +3940,8 @@ const __adjApp = createApp({
       try {
         const r = await fetch("/api/export/" + p.id, { method: "POST", headers: { Authorization: "Bearer " + this.token } });
         if (!r.ok) throw new Error("Export impossible");
-        const blob = await r.blob(); this.saveBlob(blob, "Dossier_AO_" + p.id + ".zip"); this.notify("Dossier téléchargé");
+        const blob = await r.blob(); this.saveBlob(blob, "Dossier_AO_" + p.id + ".zip");
+        const av = this.avertissementsFichier(r); this.notify(av ? "Dossier téléchargé. À vérifier : " + av : "Dossier téléchargé", av ? "warn" : "ok");
       } catch (e) { this.notify(e.message, "err"); }
     },
     // ── Modals (cotraitant / contact / invoice) ──

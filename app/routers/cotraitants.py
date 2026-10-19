@@ -246,15 +246,20 @@ def list_project_cotraitants(project_id: int, current_user: User = Depends(get_c
         Cotraitant.user_id.in_(ids)).all()}
     # « formulaires » : l'entreprise figure-t-elle dans les formulaires officiels (sous-traitant déclaré,
     # ou partenaire dont l'invitation est acceptée) ? Faux = pas encore d'accord, l'écran propose d'inviter.
-    from app.services.groupement_members import liens_dans_les_formulaires
-    dans_formulaires = liens_dans_les_formulaires(db, project_id)
+    # « invitation » : acceptee | envoyee | declinee | retiree | None (l'écran propose d'inviter à nouveau
+    # après un refus ou un retrait) ; « accord_hors_ligne » : accord déclaré par le chef de file.
+    from app.services.groupement_members import etat_des_liens
+    etats = etat_des_liens(db, project_id)
     out = []
     for lk in links:
         ct = cts.get(lk.cotraitant_id)
         if not ct:
             continue
+        e = etats.get(lk.id) or {}
         out.append({"link_id": lk.id, "role": lk.role, "lot": lk.lot,
-                    "formulaires": bool(dans_formulaires.get(lk.id)),
+                    "formulaires": bool(e.get("formulaires")), "invitation": e.get("invitation"),
+                    "accord_hors_ligne": bool(e.get("accord_hors_ligne")),
+                    "hors_ligne_en_attente": bool(e.get("hors_ligne_en_attente")),
                     "invite_id": getattr(lk, "invite_id", None), "source": lk.source or "reseau",
                     "id": ct.id, "name": ct.name, "siret": ct.siret, "code_ape": ct.code_ape,
                     "city": ct.city, "departement": ct.departement, "specialites": ct.specialites,

@@ -898,7 +898,8 @@ def generate_attestation_honneur(c, p):
             ("Nom et qualité du signataire", c.get("representant_legal")), ("Signature", "")]),
         Spacer(1, 6),
         Paragraph("<font size=7 color='#888888'>Document pré-rempli par Adjugo à partir de votre "
-                  "profil. Vérifiez chaque mention, datez et signez avant dépôt.</font>", body),
+                  "profil. Vérifiez chaque mention. À signer si le règlement de la consultation l'exige ; "
+                  "sinon, signature à l'attribution.</font>", body),
     ]
     doc.build(e)
     return buf.getvalue()

@@ -1331,7 +1331,7 @@ def generate_documents(request: Request, req: DocumentsRequest,
     # l'invitation est ACCEPTÉE (étude organisation, décision 4). Les entreprises éventuellement envoyées
     # par le navigateur (`cotraitants`, ancienne étape 3 de la recherche) ne sont JAMAIS reprises : une
     # entreprise trouvée dans SIRENE n'entre pas dans un DC1/DC2 sans avoir accepté une invitation.
-    from app.services.groupement_members import AVERT_SANS_ACCORD, cotraitants_pour_formulaires
+    from app.services.groupement_members import avertissements_formulaires, cotraitants_pour_formulaires
     _form = cotraitants_pour_formulaires(db, project.id)
     verified = _form["lignes"]
 
@@ -1344,8 +1344,7 @@ def generate_documents(request: Request, req: DocumentsRequest,
                                           country=_user_country(current_user, db),
                                           db=db, user_id=current_user.id, estimate=project.estimate)
     memoire_files = dossier.pop("_memoire_files", None) or {}
-    if _form["ecartes"]:
-        dossier.setdefault("warnings", []).append(AVERT_SANS_ACCORD.format(noms=", ".join(_form["ecartes"][:5])))
+    dossier.setdefault("warnings", []).extend(avertissements_formulaires(_form))
 
     # Archiver les CERFA + le dossier de présentation (Word ET PDF) dans le dossier de l'AO.
     try:

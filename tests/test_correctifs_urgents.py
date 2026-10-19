@@ -475,3 +475,331 @@ def test_lien_demo_incomplet(tmp_path):
     r = _page_demo(tmp_path, "", "perime")                  # clé changée : refusée par le serveur
     assert r["visibles"] == ["invalide"]
     assert "Ce lien de démonstration n'est plus valide." in page
+
+
+# ═══ Relecture des correctifs (remarques reproduites, chacune échouait avant la correction) ═══════════
+
+def _accepter(inv_id, email, part=None):
+    """L'invité accepte depuis son compte ; `part` (dict) : il soumet aussi sa part."""
+    from app.models import ProjectContribution, ProjectInvite, User
+    from tests.test_redaction_socle0 import _db
+    db = _db()
+    try:
+        inv = db.get(ProjectInvite, inv_id)
+        inv.accepted_by_user_id = db.query(User).filter(User.email == email).one().id
+        if part is not None:
+            db.add(ProjectContribution(invite_id=inv_id, project_id=inv.project_id, owner_id=inv.owner_id,
+                                       role="cotraitant", status="submitted", **part))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _carte(client, h, pid):
+    return {x["name"]: x for x in client.get(f"/api/cotraitants/project/{pid}", headers=h).json()}
+
+
+def _formulaires(pid):
+    from app.services.groupement_members import cotraitants_pour_formulaires
+    from tests.test_redaction_socle0 import _db
+    db = _db()
+    try:
+        r = cotraitants_pour_formulaires(db, pid)
+        return [x["name"] for x in r["lignes"]], r["ecartes"], r["hors_ligne_en_attente"]
+    finally:
+        db.close()
+
+
+def test_composition_retenue_puis_inviter_relie_le_candidat(client, auth):
+    """« Retenir cette composition » crée le rattachement ; « Inviter X » sur la carte de simulation part
+    sans link_id : le serveur relie l'invitation au candidat de même nom. Accepté avec sa part : X est
+    dans le DC1 du formulaire seul ET du dossier, sans avertissement faux."""
+    import base64
+    from tests.test_redaction_socle0 import ANALYSIS, _company, _pdf_text, _set_analysis
+    h = auth["headers"]
+    _company(client, h)
+    pid = client.post("/api/projects/", headers=h, json={"name": "Mairie", "client": "Ville"}).json()["id"]
+    _set_analysis(pid, ANALYSIS)
+    r = client.post(f"/api/projects/{pid}/groupement/simulate", headers=h, json={"members": [
+        {"kind": "saisi", "name": "Kervern Charpente", "siret": "12345678900094", "ca_n1": 400000, "effectif": 5}]})
+    assert r.status_code == 200, r.text
+    r = client.post(f"/api/projects/{pid}/groupement/retenir", headers=h,
+                    json={"simulation_id": r.json()["simulation_id"]})
+    assert r.status_code == 200, r.text
+    lien = next(m["link_id"] for m in r.json()["plan"]["members"] if m["name"] == "Kervern Charpente")
+    carte = _carte(client, h, pid)["Kervern Charpente"]
+    assert (carte["link_id"], carte["invite_id"], carte["formulaires"]) == (lien, None, False)
+    # « Inviter Kervern Charpente » sur la carte de simulation : membre de simulation, sans link_id.
+    inv = client.post(f"/api/projects/{pid}/invites", headers=h,
+                      json={"recipient": "", "company_name": "KERVERN  charpente"}).json()
+    carte = _carte(client, h, pid)["Kervern Charpente"]
+    assert carte["link_id"] == lien and carte["invite_id"] == inv["id"]
+    assert carte["invitation"] == "envoyee" and carte["formulaires"] is False
+    _accepter(inv["id"], auth["email"], {"company_name": "Kervern Charpente", "siret": "12345678900094"})
+    assert _carte(client, h, pid)["Kervern Charpente"]["formulaires"] is True
+    assert _formulaires(pid) == (["Kervern Charpente"], [], [])
+    r = client.post(f"/api/cerfa/{pid}/dc1", headers=h)
+    assert r.status_code == 200 and "Kervern" in _pdf_text(r.content)
+    assert "X-Adjugo-Avertissements" not in r.headers
+    d = client.post("/api/sourcing/documents", headers=h, json={"project_id": pid}).json()["dossier"]
+    dc1 = _pdf_text(base64.b64decode(next(c for c in d["cerfas"] if c["id"] == "dc1")["content_b64"]))
+    assert "Kervern" in dc1 and not [w for w in d["warnings"] if "invitation acceptée" in w]
+    # L'écran passe aussi le rattachement du plan aux boutons « Inviter » de la composition retenue.
+    assert "(plan.members || []).find(x => x && x.link_id" in _static("app.js")
+
+
+def test_invitation_d_avant_la_correction_reconnue_par_nom_ou_siret(client, auth):
+    """Production : invitation créée sans lien (avant cette correction), puis acceptée. Le rattachement de
+    la même entreprise (même nom donné par le chef de file, ou même SIRET dans la part) entre dans les
+    formulaires ; un homonyme partiel, non, ni une entreprise qui n'a accepté qu'en sous-traitant."""
+    h = auth["headers"]
+    pid = client.post("/api/projects/", headers=h, json={"name": "Halle", "client": "Ville"}).json()["id"]
+    i1 = client.post(f"/api/projects/{pid}/invites", headers=h, json={"company_name": "Le Bihan Maçonnerie"}).json()
+    i2 = client.post(f"/api/projects/{pid}/invites", headers=h, json={"company_name": "Nom libre"}).json()
+    i3 = client.post(f"/api/projects/{pid}/invites", headers=h,                # accepté en SOUS-TRAITANT
+                     json={"company_name": "Le Bihan", "role": "sous_traitant"}).json()
+    _lien(pid, "Le Bihan Maçonnerie", "12345678900102", "cotraitant")
+    _lien(pid, "Tanguy Couverture SAS", "12345678900110", "cotraitant")
+    _lien(pid, "Le Bihan", "12345678900128", "cotraitant")
+    _accepter(i1["id"], auth["email"])
+    _accepter(i2["id"], auth["email"], {"company_name": "Tanguy", "siret": "12345678900110"})
+    _accepter(i3["id"], auth["email"])
+    lignes, ecartes, _ = _formulaires(pid)
+    assert lignes == ["Le Bihan Maçonnerie", "Tanguy Couverture SAS"] and ecartes == ["Le Bihan"]
+
+
+def test_refus_ou_retrait_puis_nouvelle_invitation(client, auth):
+    """Après un refus ou un retrait, la carte le dit et propose « Inviter à nouveau » ; la nouvelle
+    invitation est reliée au candidat, qui entre dans les formulaires quand il l'accepte."""
+    from app.models import ProjectInvite, utcnow
+    from tests.test_redaction_socle0 import _db
+    h = auth["headers"]
+    pid = client.post("/api/projects/", headers=h, json={"name": "Stade", "client": "Ville"}).json()["id"]
+    lien = _lien(pid, "Le Goff Plomberie", "12345678900086", "cotraitant")
+    inv1 = client.post(f"/api/projects/{pid}/invites", headers=h,
+                       json={"company_name": "Le Goff Plomberie", "link_id": lien}).json()["id"]
+    db = _db()
+    try:
+        db.get(ProjectInvite, inv1).declined_at = utcnow()
+        db.commit()
+    finally:
+        db.close()
+    c = _carte(client, h, pid)["Le Goff Plomberie"]
+    assert (c["invitation"], c["formulaires"]) == ("declinee", False)
+    inv2 = client.post(f"/api/projects/{pid}/invites", headers=h,
+                       json={"company_name": "Le Goff Plomberie", "link_id": lien}).json()["id"]
+    c = _carte(client, h, pid)["Le Goff Plomberie"]
+    assert (c["invite_id"], c["invitation"]) == (inv2, "envoyee")
+    # Une invitation encore active n'est jamais remplacée par une autre.
+    inv_bis = client.post(f"/api/projects/{pid}/invites", headers=h,
+                          json={"company_name": "Le Goff Plomberie", "link_id": lien}).json()["id"]
+    assert _carte(client, h, pid)["Le Goff Plomberie"]["invite_id"] == inv2
+    assert client.delete(f"/api/projects/{pid}/invites/{inv_bis}", headers=h).status_code == 200
+    assert client.delete(f"/api/projects/{pid}/invites/{inv2}", headers=h).status_code == 200
+    c = _carte(client, h, pid)["Le Goff Plomberie"]
+    assert (c["invitation"], c["formulaires"]) == ("retiree", False)
+    inv3 = client.post(f"/api/projects/{pid}/invites", headers=h,          # sans link_id : par le nom
+                       json={"company_name": "Le Goff Plomberie"}).json()["id"]
+    assert _carte(client, h, pid)["Le Goff Plomberie"]["invite_id"] == inv3
+    _accepter(inv3, auth["email"])
+    assert _formulaires(pid)[0] == ["Le Goff Plomberie"]
+    html = _static("app.html")
+    assert "c.invitation==='envoyee'" in html and "\"A décliné l'invitation\" : 'Invitation retirée'" in html
+    assert "{{ c.invitation ? 'Inviter à nouveau' : 'Inviter' }}" in html
+
+
+def test_sous_traitant_qui_decline_sort_du_dc4(client, auth):
+    from app.models import ProjectInvite, utcnow
+    from tests.test_redaction_socle0 import _db
+    h = auth["headers"]
+    pid = client.post("/api/projects/", headers=h, json={"name": "Piscine", "client": "Ville"}).json()["id"]
+    inv_id = client.post(f"/api/projects/{pid}/invites", headers=h,
+                         json={"company_name": "Refus SARL", "role": "sous_traitant"}).json()["id"]
+    _lien(pid, "Refus SARL", "12345678900078", "sous_traitant", invite_id=inv_id)
+    _lien(pid, "Déclaré SARL", "12345678900136", "sous_traitant")            # ajouté directement (DC4)
+    assert _formulaires(pid)[0] == ["Refus SARL", "Déclaré SARL"]            # invitation encore active
+    db = _db()
+    try:
+        db.get(ProjectInvite, inv_id).declined_at = utcnow()
+        db.commit()
+    finally:
+        db.close()
+    lignes, ecartes, _ = _formulaires(pid)
+    assert lignes == ["Déclaré SARL"] and ecartes == ["Refus SARL"]
+
+
+def test_partenaire_hors_ligne_dans_les_formulaires_apres_son_accord_seulement(client, auth):
+    """Membre « hors ligne » (sans invitation) inscrit à la convention : absent du DC1 tant que le chef de
+    file n'a pas coché son accord, et l'écran le dit ; présent une fois l'accord déclaré."""
+    from app.routers.cotraitants import Cotraitant, ProjectCotraitant
+    from app.models import User
+    from tests.test_convention_groupement import _db, _gen, _groupement, _pdf_text
+    h = auth["headers"]
+    pid, _invs = _groupement(client, auth, n=1)
+    db = _db()
+    try:
+        owner = db.query(User).filter(User.email == auth["email"]).first()
+        ct = Cotraitant(user_id=owner.id, name="Kerjean Menuiserie", siret="55566677700088",
+                        representant_legal="Anne Kerjean", city="Brest")
+        db.add(ct); db.flush()
+        lk = ProjectCotraitant(project_id=pid, cotraitant_id=ct.id, role="cotraitant", lot="Lot 5", source="reseau")
+        db.add(lk); db.commit()
+        link_id = lk.id
+    finally:
+        db.close()
+    assert client.put(f"/api/projects/{pid}/groupement/convention", headers=h, json={
+        "membres_hors_ligne": [{"link_id": link_id, "prix_lot_ht": 15000}]}).status_code == 200
+    c = _gen(client, h, pid).json()
+    assert "Kerjean Menuiserie" in c["content_md"]
+    r = client.post(f"/api/cerfa/{pid}/dc1", headers=h)
+    assert r.status_code == 200, r.text
+    assert "Kerjean" not in _pdf_text(r.content) and "Le Gall" in _pdf_text(r.content)
+    from urllib.parse import unquote
+    assert "Kerjean Menuiserie : accord hors ligne pas encore déclaré" in unquote(r.headers["X-Adjugo-Avertissements"])
+    carte = _carte(client, h, pid)["Kerjean Menuiserie"]
+    assert carte["hors_ligne_en_attente"] is True and carte["formulaires"] is False
+    r = client.post(f"/api/projects/{pid}/groupement/convention/hors-ligne/{link_id}", headers=h,
+                    json={"accord_recueilli": True, "signataire_nom": "Anne Kerjean"})
+    assert r.status_code == 200, r.text
+    r = client.post(f"/api/cerfa/{pid}/dc1", headers=h)
+    assert "Kerjean" in _pdf_text(r.content) and "X-Adjugo-Avertissements" not in r.headers
+    carte = _carte(client, h, pid)["Kerjean Menuiserie"]
+    assert carte["accord_hors_ligne"] is True and carte["formulaires"] is True
+    html = _static("app.html")
+    assert "Le plus simple est de les inviter" in html
+    assert 'aoGrpInvite({ name: c.company, link_id: c.link_id })' in html
+
+
+def test_inviter_un_membre_hors_ligne_le_fait_compter_comme_invite(client, auth):
+    """Un partenaire choisi hors ligne puis invité compte comme invité : plus de « n'est plus rattaché »."""
+    from app.routers.cotraitants import Cotraitant, ProjectCotraitant
+    from app.models import User
+    from tests.test_convention_groupement import _db, _groupement
+    h = auth["headers"]
+    pid, _invs = _groupement(client, auth, n=1)
+    db = _db()
+    try:
+        owner = db.query(User).filter(User.email == auth["email"]).first()
+        ct = Cotraitant(user_id=owner.id, name="Kerjean Menuiserie", siret="55566677700088", city="Brest")
+        db.add(ct); db.flush()
+        lk = ProjectCotraitant(project_id=pid, cotraitant_id=ct.id, role="cotraitant", lot="Lot 5", source="reseau")
+        db.add(lk); db.commit()
+        link_id = lk.id
+    finally:
+        db.close()
+    client.put(f"/api/projects/{pid}/groupement/convention", headers=h,
+               json={"membres_hors_ligne": [{"link_id": link_id, "prix_lot_ht": 15000}]})
+    client.post(f"/api/projects/{pid}/invites", headers=h, json={"company_name": "Kerjean Menuiserie", "link_id": link_id})
+    g = client.get(f"/api/projects/{pid}/groupement/convention", headers=h).json()
+    assert not [m for m in g["manques"] if "n'est plus rattaché" in m]
+    assert [m for m in g["manques"] if m.startswith("Kerjean Menuiserie n'a pas encore soumis sa part")]
+
+
+def test_export_zip_et_formulaire_seul_disent_qui_manque(client, auth):
+    import io
+    import zipfile
+    from urllib.parse import unquote
+    from tests.test_redaction_socle0 import _company
+    h = auth["headers"]
+    _company(client, h)
+    pid = client.post("/api/projects/", headers=h, json={"name": "Gymnase", "client": "Ville"}).json()["id"]
+    _lien(pid, "Kerjean Menuiserie", "12345678900029", "cotraitant")         # ancien « Rattacher »
+    r = client.post(f"/api/export/{pid}", headers=h)
+    assert r.status_code == 200, r.text
+    av = unquote(r.headers["X-Adjugo-Avertissements"])
+    assert av.startswith("Kerjean Menuiserie : pas encore d'invitation acceptée")
+    sommaire = zipfile.ZipFile(io.BytesIO(r.content)).read("00_SOMMAIRE.txt").decode("utf-8")
+    assert "A VERIFIER AVANT DEPOT" in sommaire and "Kerjean Menuiserie : pas encore d'invitation" in sommaire
+    r = client.post(f"/api/cerfa/{pid}/dc2", headers=h)
+    assert r.status_code == 200 and "Kerjean" in unquote(r.headers["X-Adjugo-Avertissements"])
+    js = _static("app.js")
+    assert js.count("this.avertissementsFichier(r)") == 2 and 'r.headers.get("X-Adjugo-Avertissements")' in js
+
+
+def test_signature_dans_les_documents_produits(client, auth):
+    """Déclaration sur l'honneur et convention : signature au dépôt seulement si le règlement l'exige. Une
+    convention déjà figée garde son texte (modèle 1) : pas rendue caduque par la correction."""
+    from app.services import groupement_convention as gc
+    from app.services.cerfa import GENERATORS
+    from tests.test_convention_groupement import _db, _gen, _groupement, _pdf_text
+    txt = " ".join(_pdf_text(GENERATORS["honneur"]({"name": "Breizh", "city": "Lorient",
+                                                     "representant_legal": "Eliot"}, {"name": "École"})).split())
+    assert "signez avant dépôt" not in txt and "À signer si le règlement de la consultation l'exige" in txt
+    assert "sauf si le règlement demande de le signer dès le dépôt" in gc.NATURE_ACCORD
+    h = auth["headers"]
+    pid, _invs = _groupement(client, auth, n=1)
+    c = _gen(client, h, pid).json()
+    assert "restent à signer au moment du dépôt" not in c["content_md"]
+    assert "se signent au dépôt si le règlement de la consultation l'exige" in c["content_md"]
+    from app.models import GroupementConvention, Project
+    db = _db()
+    try:
+        conv = db.query(GroupementConvention).filter(GroupementConvention.project_id == pid).one()
+        project = db.get(Project, pid)
+        assert conv.params["modele_texte"] == 2 and not gc.is_stale(db, project, conv)
+        # Convention figée AVANT la correction : modèle 1, même empreinte qu'à sa génération.
+        ancien = gc.build_context(db, project, conv, gc._company_for(db, project), version=conv.version)["ctx"]
+        ancien["modele"] = 1
+        texte = gc.render(ancien)
+        assert "restent à signer au moment du dépôt" in texte
+        params = dict(conv.params)
+        params.pop("modele_texte")
+        conv.params, conv.content_md, conv.content_hash = params, texte, gc.sha256(texte)
+        db.commit()
+        assert gc.modele_de(conv) == 1 and not gc.is_stale(db, project, conv)
+    finally:
+        db.close()
+
+
+def test_projets_a_venir_ni_espace_partenaire_ni_vitrine():
+    inv, land = _static("invite.html"), _static("landing.html")
+    assert ('<a class="nav-item" data-view="amont" data-allowed="1" id="nav-amont" style="display:none">'
+            in inv)
+    assert 'c.projets_a_venir === true) el.style.display = "";' in inv
+    assert "veille amont" not in land.lower() and "fins de contrat à suivre" in land
+
+
+def test_aucune_promesse_d_invention_restante():
+    for name in ("app.html", "app.js", "redaction-partenaire.js", "invite.html", "landing.html",
+                 "demo/avis-boamp.html", "demo/deliberation.html"):
+        s = _static(name)
+        for f in ("n'invente aucun", "Il n'en invente aucune", "rien n'est inventé", "Aucune donnée n'est inventée",
+                  "jamais de contenu inventé"):
+            assert f not in s, (name, f)
+    assert "relisez chaque fait avant d'envoyer" in _static("redaction-partenaire.js")
+
+
+def test_radar_fins_de_contrat_departements_01_a_09(monkeypatch):
+    from app.services import renewal
+    vues = _boamp_capture(monkeypatch, [{"idweb": "21-1", "objet": "Nettoyage", "nomacheteur": "Vence",
+                                         "code_departement": ["6"], "dateparution": "2024-01-10"}])
+    rows = renewal._fetch_attributions("nettoyage", ["06", "29"])
+    where = vues[0]["where"]
+    for f in ("06", "6", "29"):
+        assert f'code_departement like "{f}"' in where
+    assert 'like "9"' not in where and rows[0]["dept"] == "06"
+
+
+def test_demo_aucun_partenaire_rattache_sans_accord(client):
+    from app.models import Project, User
+    from app.services.demo_seed import DEMO_EMAIL, ensure_demo
+    from app.services.groupement_members import etat_des_liens
+    from tests.test_redaction_socle0 import _db
+    db = _db()
+    try:
+        ensure_demo(db, force=True)
+        uid = db.query(User).filter(User.email == DEMO_EMAIL).one().id
+        etats = {}
+        for p in db.query(Project).filter(Project.user_id == uid).all():
+            etats.update({(p.name, k): v["formulaires"] for k, v in etat_des_liens(db, p.id).items()})
+    finally:
+        db.close()
+    assert etats and all(etats.values()), etats
+
+
+def test_note_pages_juridiques_pour_eliot():
+    doc = (ROOT / "docs" / "A_CORRIGER_PAGES_JURIDIQUES_LIBELLES.md").read_text(encoding="utf-8")
+    for lieu in ("cgv.md`, l. 23", "politique-confidentialite.md`, l. 152", "securite.html`, l. 103",
+                 "Co-traitants vérifiés", "Veille amont", "aucune donnée inventée"):
+        assert lieu in doc, lieu
+    assert "consortium" not in doc.lower()
