@@ -1124,7 +1124,8 @@ l'aide s'appuie aussi sur « Vos documents pour Adjugo ».
   vidées AVANT le découpage, et tout passage qui ressemble encore à un CV est écarté (au découpage puis à la recherche).
   Un CV écrit sans le mot « CV » est reconnu à sa forme (`_cv_sans_titre`, § 21.14) : un nom seul sur sa ligne, puis des
   rubriques de CV écrites seules sur leur ligne (« EXPÉRIENCE », « FORMATION », « COMPÉTENCES », « Parcours »,
-  « Atouts »…), proches les unes des autres.
+  « Atouts »…), proches les unes des autres. Une plaquette écrite avec « nous », « notre », « nos » n'en est jamais un,
+  même sous un nom qui commence par un prénom ou suivi de son métier (§ 21.15).
 - Une pièce du dossier d'un acheteur (règlement, CCAP, CCTP : `est_piece_acheteur`) n'est pas gardée (422
   `piece_acheteur`) : elle ne dit rien de l'entreprise.
 
@@ -1404,3 +1405,80 @@ donnait déjà pour juste l'est toujours : la suppression d'un document par le p
   connus, § 21.13). Base neuve, verrous `FOR UPDATE` réels (`scratchpad/pgtest/run_depot_relecture2_pg.py`) : 445 tests
   verts sur 445 avec le code nouveau (les 20 de la contre-relecture compris), 425 sur 425 avec `1a9f2f4`, aucun échec
   propre au code nouveau.
+
+### 21.15 Contre-relecture de la reprise
+
+Deux remarques, reproduites sur `31d384b` puis corrigées, avec 7 tests qui échouaient avant
+(`tests/test_redaction_v4_depot_lien_contre_relecture.py`, en échec sur `31d384b` sous SQLite comme sous Postgres).
+
+**Constats et corrections**
+
+1. *Une plaquette prise pour un CV* (régression du § 21.14, point 9, qui touchait aussi les comptes : un document de
+   « Mon savoir-faire » marqué « cv » est écarté en entier de l'aide de l'IA et montré comme un CV). « Simon Frères »
+   (le nom commence par un prénom courant) ou « Breizh Toit » suivi de « Couvreur zingueur à Quimper depuis 1990 » (pris
+   pour une fonction) passaient pour des noms de personne ; deux rubriques suffisaient alors, et la règle « une plaquette
+   en nous / nos n'est jamais un CV » ne jouait pas. Corrections dans `fiches_import._cv_sans_titre` :
+   - la voix de l'entreprise (« nous », « notre », « nos ») est cherchée dans le passage lui-même, du nom à la fin de la
+     dernière rubrique (avant : jusqu'à trois lignes après la dernière rubrique, qui pouvaient être la suite d'un
+     mémoire et faire manquer un CV), **quel que soit le nom** : une ligne suffit sous un nom propre quelconque, deux sous
+     un nom de personne sûr (prénom courant ou intitulé de fonction) ;
+   - sous un nom, une fonction n'est plus qu'un intitulé (`_intitule_de_fonction`) : au plus 6 mots, sans chiffre, lieu
+     ni durée (« à », « au », « depuis », « dans », « sur », « pour », « chez ») ;
+   - mots d'organisme ajoutés (un nom qui en contient un n'est ni une personne en tête d'un CV, ni un nom à masquer) :
+     « Frères », « Fils », « Atelier(s) » et des métiers qui ne sont pas des noms de famille (toiture, isolation,
+     façade, ravalement, carrelage, chauffage, climatisation, terrassement, paysage, élagage, nettoyage, étanchéité,
+     démolition, désamiantage, dépollution, métallerie, serrurerie, assainissement, voirie, toit).
+   Tests : trois plaquettes (« Simon Frères », « Breizh Toit », « Tanguy Kervella » en « nous ») déposées par le lien
+   (201, aucun passage retiré) et lues pour un compte (`statut_document` sans « cv », aucune ligne retirée) ; deux vrais
+   CV toujours refusés (un salarié présenté par son entreprise avec une seule ligne « chez nous », un intitulé de
+   fonction sous un prénom rare).
+2. *Une écriture du partenaire pendant une réinitialisation ou une suppression* (cloisonnement). « J'écris moi-même »
+   (`enregistrer_brouillon`) et « Valider » le texte du chef de file (`valider_part`, brouillon « Texte du chef de file
+   accepté par vous ») recopiaient les sources et les faits reliés lus avant une réinitialisation de l'espace ou la
+   suppression d'un document survenue pendant la requête : avec la nouvelle clé, qui détient le lien lisait le nom et
+   le passage d'un document privé ; un document supprimé restait cité. Trouvé en plus : « Relu par vous » sur un fait
+   (`traiter_fait`) réécrivait ses faits lus avant la suppression, et remettait la source effacée. Corrections :
+   - ces trois écritures prennent d'abord le verrou de l'invitation (`_verrou_du_lien`), avant ceux de la répartition et
+     de la partie (même ordre que le § 21.14, point 5 : aucun interblocage) ; l'invitation relue doit être active et la
+     clé présentée ouvrir encore l'espace ; sous Postgres, la réinitialisation ou la suppression attend la fin de
+     l'écriture, puis efface ce qu'elle a rangé ;
+   - juste avant d'écrire, le même contrôle est refait (une base sans verrou de ligne, comme SQLite, passe aussi par là)
+     : clé qui n'ouvre plus l'espace → 409 `espace_reinitialise`, « Votre espace privé a été réinitialisé entre-temps
+     (sur un autre appareil, par exemple) : rien n'a été enregistré. Ouvrez de nouveau votre espace privé sur cet
+     appareil. » (l'écran garde la saisie et affiche le message, comme les autres refus) ; puis les sources et les faits
+     à ranger ne gardent que les passages encore présents (`_sans_depots_disparus` : un fait relié à un passage disparu
+     redevient « à relire », comme `oublier_documents`, dont la transformation est partagée).
+   Tests (les courses lancent l'autre requête dans un autre fil, au milieu du contrôle des faits ou de la relecture, et
+   l'attendent au plus 2 s : sous SQLite elle passe tout de suite et l'écriture la voit ; sous Postgres elle attend le
+   verrou, environ 2,3 s par test) : réinitialisation pendant « Enregistrer » et pendant « Valider » (rien du document,
+   ni pour la nouvelle clé, ni dans aucune table) ; suppression pendant « Enregistrer », « Valider » et « Relu par vous »
+   (ni nom ni passage dans le brouillon, aucun reste dans aucune table).
+
+**Rien de rejeté** : les deux remarques étaient fondées. La seconde existait déjà sur `1a9f2f4` (elle n'a pas été
+introduite par la reprise, qui ne l'avait fermée que pour l'aide de l'IA et le dépôt).
+
+**À dire à Eliot (choix faits)**
+
+- *Plaquette sous un nom de personne* : il faut deux lignes en « nous / notre / nos » pour qu'un passage sous un nom de
+  personne sûr (« Thomas Kervella », « Yann Tanguy » / « Conducteur de travaux ») soit lu comme une plaquette. Une
+  plaquette d'entreprise individuelle qui ne dit « nous » qu'une fois reste prise pour un CV (écartée : perte de qualité,
+  jamais de fuite) ; la règle inverse (une seule ligne) laisserait partir à l'IA la présentation d'un salarié écrite
+  par son entreprise (« chez nous depuis 2012 »). Un CV n'est jamais envoyé à l'IA : le doute va au CV.
+
+**Vérifications**
+
+- `tests/test_redaction_v4_depot_lien_contre_relecture.py` : 7 tests, tous en échec sur `31d384b` (SQLite et Postgres),
+  tous verts ; les tests de la relecture (dans le bac à sable, hors du dépôt) passent aussi.
+- Suite complète verte (SQLite, TZ=UTC) : 1 662 tests (1 655 + 7).
+- Empreintes SRI à jour (`scripts/sri_update.py --check`) et `node --check` : aucun fichier servi modifié ; aucune
+  migration nouvelle (tête `y9z0depotlien`).
+- Postgres 16, base neuve, verrous `FOR UPDATE` réels (`scratchpad/pgtest/run_depot_contre3_pg.py`) : 452 tests verts
+  sur 452 avec le code nouveau, 445 sur 445 avec `31d384b`, aucun échec propre au code nouveau ; le nouveau fichier avec
+  le code d'avant : 7 échecs. Durées des courses avec le code nouveau (`run_contre3_durees.py`) : 2,3 s chacune, l'autre
+  requête attend le verrou de l'invitation (aucun blocage).
+- Postgres 16 depuis l'état EXACT de la production (`a7f48d2`, tête `x8y9redactionv4`), script
+  `scratchpad/pgtest/run_depot_contre3_depuis_prod.py` (copie de `run_depot_relecture2_depuis_prod.py` avec le nouveau
+  fichier, TZ=UTC) : tous les contrôles de migration verts (une seule révision `y9z0depotlien`, aucune donnée perdue,
+  seconde montée et rejeu sans effet, dépôt par le lien sur la base montée, code de production redémarré : 200 partout,
+  schéma identique à une base neuve, retour arrière puis remontée) ; 39 fichiers de tests rejoués sur la base montée :
+  1 050 verts (1 043 + 7) et exactement les mêmes 37 échecs qu'au § 21.14 (fichiers propres à SQLite, déjà connus).

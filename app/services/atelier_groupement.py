@@ -94,6 +94,9 @@ MSG_IA_PANNE = ("La rédaction n'a pas abouti : le service d'IA est indisponible
 MSG_PAS_DE_DOSSIER = "Le chef de file n'a pas encore préparé le dossier de présentation commun."
 MSG_AIDE_ESPACE_REINITIALISE = ("Votre espace privé a été réinitialisé pendant la rédaction : le texte n'a pas été "
                                 "gardé.")
+MSG_ECRITURE_ESPACE_REINITIALISE = ("Votre espace privé a été réinitialisé entre-temps (sur un autre appareil, par "
+                                    "exemple) : rien n'a été enregistré. Ouvrez de nouveau votre espace privé sur cet "
+                                    "appareil.")
 MSG_MODE_LIEN = ("Sans compte Adjugo, l'aide d'Adjugo s'appuie sur ce que vous avez déclaré dans votre part, sur les "
                  "documents que vous déposez dans « Vos documents pour Adjugo » et sur le dossier de l'acheteur.")
 MSG_MODE_COMPTE = ("Avec votre compte Adjugo, l'aide d'Adjugo s'appuie aussi sur vos preuves, votre profil et votre "
@@ -988,6 +991,20 @@ def _du_depot(src, depot_ids) -> bool:
     return depot_ids is None or src.get("depot_id") in depot_ids
 
 
+def _sans_ces_passages(sources, faits, perdu) -> tuple:
+    """(sources, faits, changé) sans ce qui vient d'un passage déposé `perdu(source)` : la source part (nom du
+    document et passage) ; un fait relié redevient « à relire », sa source n'existe plus."""
+    srcs = [x for x in (sources or []) if not perdu(x)]
+    out, touche = [], False
+    for x in (faits or []):
+        if isinstance(x, dict) and perdu(x.get("source")):
+            out.append(fs.source_perdue(x) if x.get("statut") == fs.AVEC_SOURCE else dict(x, source=None))
+            touche = True
+        else:
+            out.append(x)
+    return srcs, out, touche or len(srcs) != len(sources or [])
+
+
 def oublier_documents(db, invite_id: int, depot_ids=None) -> int:
     """Des documents déposés par le lien disparaissent (supprimés par leur partenaire, effacés à la purge, au
     retrait, à la réinitialisation) : ses brouillons privés oublient les passages cités de ces documents — ou de
@@ -997,15 +1014,8 @@ def oublier_documents(db, invite_id: int, depot_ids=None) -> int:
     ids = None if depot_ids is None else set(depot_ids)
     n = 0
     for b in db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == invite_id).all():
-        sources = [x for x in (b.sources or []) if not _du_depot(x, ids)]
-        faits, touche = [], False
-        for x in (b.faits or []):
-            if isinstance(x, dict) and _du_depot(x.get("source"), ids):
-                faits.append(fs.source_perdue(x) if x.get("statut") == fs.AVEC_SOURCE else dict(x, source=None))
-                touche = True
-            else:
-                faits.append(x)
-        if touche or len(sources) != len(b.sources or []):
+        sources, faits, touche = _sans_ces_passages(b.sources, b.faits, lambda src: _du_depot(src, ids))
+        if touche:
             b.sources, b.faits, b.compteurs = sources, faits, compteurs(faits)
             flag_modified(b, "sources")
             flag_modified(b, "faits")
@@ -1017,6 +1027,49 @@ def oublier_documents(db, invite_id: int, depot_ids=None) -> int:
 def oublier_document(db, invite_id: int, depot_id: int) -> int:
     """Un document déposé par le lien est supprimé par son partenaire (voir `oublier_documents`)."""
     return oublier_documents(db, invite_id, [depot_id])
+
+
+def _sans_depots_disparus(db, invite_id: int, sources, faits) -> tuple:
+    """(sources, faits) qu'une écriture du partenaire va ranger, relus juste avant : un passage de ses documents
+    déposés qui n'existe plus (document supprimé, purgé ou effacé entre-temps) n'y laisse ni le nom du document ni
+    son passage, et le fait relié redevient « à relire » (comme `oublier_documents`)."""
+    def _id(src):
+        try:
+            return int(src.get("depot_chunk_id"))
+        except (TypeError, ValueError, AttributeError):
+            return None
+    depots = [x for x in list(sources or []) + [f.get("source") for f in (faits or []) if isinstance(f, dict)]
+              if _du_depot(x, None)]
+    if not depots:
+        return list(sources or []), list(faits or [])
+    ids = {i for i in map(_id, depots) if i is not None}
+    presents = set()
+    if ids:
+        from app.models import DepotLienMorceau
+        presents = {r[0] for r in db.query(DepotLienMorceau.id).filter(DepotLienMorceau.id.in_(list(ids)),
+                                                                       DepotLienMorceau.invite_id == invite_id)}
+    srcs, out, _touche = _sans_ces_passages(sources, faits, lambda src: _du_depot(src, None) and _id(src) not in presents)
+    return srcs, out
+
+
+def _verrou_du_lien(db, acces: "Acces") -> None:
+    """Une écriture du partenaire dans ses brouillons (« J'écris moi-même », relire un fait, valider le texte du chef
+    de file) prend le verrou de l'invitation D'ABORD — avant ceux de la répartition et de la partie : même ordre
+    que l'aide de l'IA, le dépôt, la suppression d'un document, la réinitialisation de l'espace et le retrait.
+    Une réinitialisation ou une suppression arrivée pendant l'écriture passe alors après elle et efface ce
+    qu'elle a rangé. Appelé de nouveau juste avant d'écrire : l'invitation relue, la clé présentée doit encore
+    ouvrir l'espace (409 « espace_reinitialise » sinon : rien n'est écrit pour le nouvel espace) et l'invitation
+    être active."""
+    from app.services import depot_lien
+    inv = depot_lien.verrouiller_invitation(db, acces.inv.id, frais=True)
+    if inv is None or not peut_rediger(db, inv)[0]:
+        db.rollback()
+        raise AtelierError(404, "partie_introuvable", "Partie introuvable.")
+    acces.inv = inv
+    if acces.mode != "compte" and not cle_valide(inv, acces.cle):
+        acces.cle_ok = False
+        db.rollback()
+        raise AtelierError(409, "espace_reinitialise", MSG_ECRITURE_ESPACE_REINITIALISE)
 
 
 def _ajouter_brouillon(db, section: DossierSection, invite_id: int, *, texte: str, origine: str, ia: bool,
@@ -1063,8 +1116,11 @@ def enregistrer_brouillon(db, acces: Acces, section_id: int, texte: str, base_br
     """« J'écris moi-même » : un NOUVEAU brouillon privé, aucune IA. Ses faits sont contrôlés sur SES faits :
     ce qu'il écrit lui-même est sa déclaration ; un fait déjà à relire le reste — y compris un fait que le chef de
     file a mis dans le texte commun dont il part (« Partir du texte du chef de file »). `base_version_id` : le
-    texte commun que son écran lui montrait (verrou optimiste, `_exiger_commun_vu`)."""
+    texte commun que son écran lui montrait (verrou optimiste, `_exiger_commun_vu`). Sous le verrou de l'invitation
+    (`_verrou_du_lien`) : une réinitialisation de l'espace ou la suppression d'un document pendant l'enregistrement
+    ne laisse ni le nom ni le passage d'un document dans ce qu'il range."""
     _exiger_ecriture(acces)
+    _verrou_du_lien(db, acces)
     section, rep = _partie(db, acces, section_id)
     rep = _verrouiller_rep(db, rep)
     section = at._verrouiller(db, section)
@@ -1095,8 +1151,10 @@ def enregistrer_brouillon(db, acces: Acces, section_id: int, texte: str, base_br
     faits = fs.controler(t, ctx.fiches_de_brouillon(db, cur), acheteur=None, noms_entreprise=ctx.noms_entreprise,
                          section_entreprise=at.section_sur_l_entreprise(section), mode="utilisateur",
                          anciens=anciens, base_texte=base_texte)
+    _verrou_du_lien(db, acces)
+    sources, faits = _sans_depots_disparus(db, acces.invite_id, (cur.sources if cur is not None and ia else []), faits)
     b = _ajouter_brouillon(db, section, acces.invite_id, texte=t, origine="utilisateur", ia=ia,
-                           sources=(cur.sources if cur is not None and ia else []), faits=faits,
+                           sources=sources, faits=faits,
                            base_id=cur.id if cur else None, base_version_id=commun.id if commun else None,
                            auteur_user_id=getattr(acces.user, "id", None))
     db.commit()
@@ -1114,6 +1172,7 @@ def traiter_fait(db, acces: Acces, section_id: int, fait_id: str, statut: str, i
     _exiger_ecriture(acces)
     if statut not in (far.RELU, far.A_RELIRE):
         raise AtelierError(422, "statut_invalide", "Statut inconnu.")
+    _verrou_du_lien(db, acces)
     section, _rep = _partie(db, acces, section_id)
     b = brouillon_courant(db, section.id, acces.invite_id)
     if _du_compte(acces, b):
@@ -1137,6 +1196,8 @@ def traiter_fait(db, acces: Acces, section_id: int, fait_id: str, statut: str, i
         hit["statut"] = far.A_RELIRE
         hit.pop("relu_par", None)
         hit.pop("relu_le", None)
+    _verrou_du_lien(db, acces)
+    _srcs, faits = _sans_depots_disparus(db, acces.invite_id, [], faits)
     b.faits = faits
     b.compteurs = compteurs(faits)
     flag_modified(b, "faits")
@@ -1257,6 +1318,7 @@ def valider_part(db, acces: Acces, section_id: int, version_id: int, ip: str = "
         return asm.valider(db, acces.project, acces.dossier, qfq, membre=PARTENAIRE, invite_id=acces.invite_id,
                            user_id=getattr(acces.user, "id", None), version_id=version_id, actor=acces.acteur,
                            actor_kind="guest", ip=ip)
+    _verrou_du_lien(db, acces)
     section, rep = _partie(db, acces, section_id)
     rep = _verrouiller_rep(db, rep)
     section = at._verrouiller(db, section)
@@ -1277,6 +1339,8 @@ def valider_part(db, acces: Acces, section_id: int, version_id: int, ip: str = "
                              noms_entreprise=ctx.noms_entreprise, section_entreprise=at.section_sur_l_entreprise(section),
                              mode="ia", anciens=((der.faits if der else None) or []) + list(cur.faits or []))
         faits = _garder_ses_declarations(db, acces, section, faits)
+        _verrou_du_lien(db, acces)
+        _srcs, faits = _sans_depots_disparus(db, acces.invite_id, [], faits)
         _ajouter_brouillon(db, section, acces.invite_id, texte=cur.texte or "", origine="acceptee", ia=bool(cur.ia),
                            sources=[], faits=faits, base_id=der.id if der else None, base_version_id=cur.id,
                            auteur_user_id=getattr(acces.user, "id", None))

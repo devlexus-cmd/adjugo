@@ -241,6 +241,7 @@ _RUBRIQUES_SEULES = {
 _FONCTION_EN_TETE = None
 _CV_TETE_MAX = 8                  # lignes non vides entre le nom et la première rubrique
 _CV_FIN_MAX = 15                  # lignes gardées au plus après la dernière rubrique
+_VOIX_PLAQUETTE_PERSONNE = 2      # lignes en « nous / notre / nos » qui font une plaquette sous un nom de personne
 
 
 def _rubrique_seule(ligne: str) -> str:
@@ -251,19 +252,35 @@ def _rubrique_seule(ligne: str) -> str:
     return _RUBRIQUES_SEULES.get(re.sub(r"\s+", " ", k).strip(), "")
 
 
+# Ce qu'un intitulé de fonction sous un nom (« Cheffe de chantier », « Couvreur zingueur ») ne contient jamais : un
+# chiffre, un lieu ou une durée (« Couvreur zingueur à Quimper depuis 1990 » présente une entreprise).
+_PAS_UN_INTITULE = re.compile(r"\d|\b(?:a|au|aux|depuis|dans|sur|pour|chez)\b")
+_INTITULE_MAX_MOTS = 6
+
+
+def _intitule_de_fonction(ligne: str) -> bool:
+    """Une ligne qui n'est qu'un intitulé de fonction : courte, commence par une fonction, sans chiffre, lieu ni
+    durée (« Conducteur de travaux », « Cheffe de chantier désamiantage »)."""
+    global _FONCTION_EN_TETE
+    if _FONCTION_EN_TETE is None:
+        _FONCTION_EN_TETE = re.compile(r"^(?i:" + _FONCTION + r")")
+    t = (ligne or "").strip().rstrip(" .:")
+    if not t or len(t.split()) > _INTITULE_MAX_MOTS or _PAS_UN_INTITULE.search(_fold(t)):
+        return False
+    return bool(_FONCTION_EN_TETE.match(t))
+
+
 def _personne_en_tete(lignes: list, i: int) -> bool:
     """La ligne `i` n'est qu'un nom de PERSONNE (pas d'une entreprise) : prénom courant (« Yann TANGUY »,
-    « TANGUY Yann »), ou nom suivi de sa fonction sur la ligne d'après (« Anne Le Floch » / « Cheffe de chantier »)."""
-    global _FONCTION_EN_TETE
+    « TANGUY Yann »), ou nom suivi de l'intitulé de sa fonction sur la ligne d'après (« Anne Le Floch » / « Cheffe
+    de chantier » ; jamais « Couvreur zingueur à Quimper depuis 1990 », qui présente une entreprise)."""
     if not _nom_seul(lignes[i]):
         return False
     toks = re.sub(r"^[#*\-•\s]+", "", (lignes[i] or "").strip()).strip(" :").split()
     if _prenom(toks[0]) or (toks[0].isupper() and _prenom(toks[-1])):
         return True
-    if _FONCTION_EN_TETE is None:
-        _FONCTION_EN_TETE = re.compile(r"^(?i:" + _FONCTION + r")")
     suite = next((x.strip() for x in lignes[i + 1:i + 3] if x.strip()), "")
-    return bool(_FONCTION_EN_TETE.match(suite))
+    return _intitule_de_fonction(suite)
 
 
 def _nom_seul(ligne: str) -> bool:
@@ -301,10 +318,11 @@ def _cv_sans_titre(lignes: list) -> set:
     numéroté ou d'une annexe :
       • nom d'une PERSONNE (prénom courant, ou nom suivi de sa fonction) : deux sortes de rubriques suffisent ;
       • autre nom propre (prénom rare : « Gwenhaël KERJEAN ») : trois sortes, ou deux avec des coordonnées sous le
-        nom (téléphone, adresse email) et une ligne de parcours (« 2015 - 2024 … »), et jamais « nous », « notre »,
-        « nos » — une plaquette (« Breizh Désamiantage », « Compétences », « Formations ») n'est pas un CV.
+        nom (téléphone, adresse email) et une ligne de parcours (« 2015 - 2024 … »).
     Du nom jusqu'au bloc qui suit la dernière rubrique (premier saut de ligne, titre d'une autre partie ou autre
-    nom ; au plus _CV_FIN_MAX lignes)."""
+    nom ; au plus _CV_FIN_MAX lignes). Une plaquette n'est jamais un CV : « nous », « notre », « nos » dans ce passage
+    (une ligne sous un autre nom propre, deux sous un nom de personne : « Breizh Désamiantage », « Simon Frères »,
+    « Thomas Toiture » suivis de « Compétences » et « Formations »)."""
     out = set()
     n, i = len(lignes), 0
     while i < n:
@@ -339,12 +357,6 @@ def _cv_sans_titre(lignes: list) -> set:
         if not rubs or not (len(sortes) >= (2 if personne else 3) or (len(sortes) >= 2 and coord and periode)):
             i += 1
             continue
-        # Un nom propre qui n'est pas sûrement une personne, et des rubriques écrites à la première personne du
-        # pluriel (« Nos équipes sont formées… ») : la plaquette d'une entreprise, pas un CV.
-        if not personne and any(_VOIX_ENTREPRISE.search(_fold(lignes[x] or "")) for x in range(i, rubs[-1] + 4)
-                                if x < n):
-            i += 1
-            continue
         j, contenu = rubs[-1] + 1, False
         while j < n and j <= rubs[-1] + _CV_FIN_MAX:
             tj = (lignes[j] or "").strip()
@@ -357,6 +369,14 @@ def _cv_sans_titre(lignes: list) -> set:
             else:
                 contenu = True
             j += 1
+        # La voix d'une entreprise (« nous », « notre », « nos ») dans ce passage même, du nom à la fin de la dernière
+        # rubrique : une plaquette, pas un CV — y compris sous un nom qui commence par un prénom (« Simon Frères »,
+        # « Thomas Toiture »). Sous un nom de personne sûr, il en faut deux lignes : la présentation d'un salarié écrite
+        # par son entreprise (« chez nous depuis 2012 ») reste un CV.
+        voix = sum(1 for x in range(i, j) if _VOIX_ENTREPRISE.search(_fold(lignes[x] or "")))
+        if voix >= (_VOIX_PLAQUETTE_PERSONNE if personne else 1):
+            i += 1
+            continue
         out.update(range(i, j))
         i = j
     return out
@@ -737,7 +757,11 @@ _MOTS_ORGANISME = {"couverture", "construction", "constructions", "batiment", "b
                    "morbihan", "agence", "bureau", "cabinet", "architectes", "architecture", "etudes", "technique",
                    "techniques", "lycee", "college", "ecole", "mairie", "hopital", "clinique", "gymnase",
                    "mediatheque", "piscine", "residence", "eglise", "chapelle", "salle", "centre", "parc", "zone",
-                   "rue", "avenue", "boulevard", "place", "quai", "chemin", "route", "allee", "impasse"}
+                   "rue", "avenue", "boulevard", "place", "quai", "chemin", "route", "allee", "impasse",
+                   "freres", "fils", "atelier", "ateliers", "toit", "toits", "toiture", "toitures", "isolation",
+                   "facade", "facades", "ravalement", "carrelage", "chauffage", "climatisation", "terrassement",
+                   "terrassements", "paysage", "paysages", "elagage", "nettoyage", "etancheite", "demolition",
+                   "desamiantage", "depollution", "metallerie", "serrurerie", "assainissement", "voirie"}
 _PAS_UN_NOM = {"mairie", "ville", "commune", "departement", "region", "conseil", "societe", "sarl", "sas", "eurl",
                "ecole", "college", "lycee", "centre", "office", "habitat", "agence", "groupe", "entreprise",
                "communaute", "metropole", "syndicat", "chantier", "projet", "travaux", "service", "direction",
