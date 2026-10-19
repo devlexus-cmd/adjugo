@@ -474,7 +474,7 @@
           <div v-if="aoGrille()" class="card gn-card" style="margin-top:14px">
             <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Comment vous serez noté</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase, ou si vous l'avez saisi en confirmant la ligne. Une ligne dont la phrase n'a pas été retrouvée est marquée « à vérifier » : elle n'entre dans le plan de votre dossier de présentation (le « mémoire technique ») qu'après votre confirmation. Adjugo peut se tromper ou manquer un critère : le règlement fait foi.</span></button><div class="spacer"></div>
               <span class="pill neutral" style="font-size:11px">{{ grilleResume(aoGrille()) }}</span></div>
-            <div class="cb"><grille-carte :key="'gn'+ao.project.id" :g="aoGrille()" :edit="true" :busy="ao.grilleBusy" @choix="aoGrilleChoix" @element="aoGrilleElement" @ajout="aoGrilleAjout" @relire="aoGrilleRelire" @sansia="aoSansIa"></grille-carte></div>
+            <div class="cb"><grille-carte :key="'gn'+ao.project.id" :g="aoGrille()" :edit="true" :busy="ao.grilleBusy" :mobile="atlMobile" :sans-ia="!!(ao.atl.d && ao.atl.d.sans_ia && ao.atl.d.sans_ia.actif)" @choix="aoGrilleChoix" @element="aoGrilleElement" @ajout="aoGrilleAjout" @relire="aoGrilleRelire" @sansia="aoSansIa"></grille-carte></div>
           </div>
           <div v-else-if="aoDceAvailable() && ao.project.ai_analysis.dce_excerpt" class="card pad muted small" style="margin-top:14px"><i data-lucide="list-checks" style="width:14px;height:14px;vertical-align:-2px"></i> Comment vous serez noté : cette analyse est antérieure à la lecture des critères dans le règlement. Ré-analysez le dossier pour les retrouver, avec leur phrase.</div>
 
@@ -930,7 +930,7 @@
           <!-- Chiffrage estimatif (compact, détail repliable) -->
           <div class="card" style="margin-top:14px;position:relative">
             <div v-if="ao.estimating" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Estimation en cours…</div></div></div>
-            <div class="ch"><i data-lucide="calculator"></i><h3>Estimation du prix</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">L'IA découpe le travail en tâches et estime le nombre de jours ; le prix est calculé sur <b>vos tarifs de journée</b> (profils et tarifs réglables dans Mon entreprise — sinon des tarifs par défaut, à personnaliser). Le montant lui-même n'est jamais inventé : il est calculé jours × tarif. Ensuite, ajustez jours et profils puis « Recalculer » (calcul instantané, sans IA).</span></button><div class="spacer"></div>
+            <div class="ch ch-wrap"><i data-lucide="calculator"></i><h3>Estimation du prix</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">L'IA découpe le travail en tâches et estime le nombre de jours ; le prix est calculé sur <b>vos tarifs de journée</b> (profils et tarifs réglables dans Mon entreprise — sinon des tarifs par défaut, à personnaliser). Le montant lui-même n'est jamais inventé : il est calculé jours × tarif. Ensuite, ajustez jours et profils puis « Recalculer » (calcul instantané, sans IA).</span></button><div class="spacer"></div>
               <span v-if="ao.estimate" class="pill neutral" style="font-size:11px">{{ eur(ao.estimate.total_ht) }} HT · {{ ao.estimate.jours_total }} j</span>
               <span v-if="ao.estimate && ao.estimate.review" class="pill" :class="reviewPill(ao.estimate.review.status)" style="font-size:11px">{{ reviewLabel(ao.estimate.review.status) }}</span>
               <button v-if="!ao.estimate" class="btn primary sm" @click="aoEstimate()" :disabled="ao.estimateBusy"><span v-if="ao.estimateBusy" class="spin"></span><i v-else data-lucide="sparkles"></i>Estimer mon prix</button>
@@ -1963,9 +1963,9 @@
                 <div v-for="w in atl.st.blocage.avertissements.filter(x => x.code === 'non_valide')" :key="'nv'" class="muted small atl-mt4">{{ w.message }}</div>
                 <div class="small atl-mt8 atl-ia"><i :data-lucide="atl.st.export.ia_utilisee ? 'sparkles' : 'pen-line'" style="width:14px;height:14px"></i><span>{{ atl.st.export.ia_utilisee ? 'Le fichier portera dans ses propriétés la mention « ' + atl.st.export.mention_ia + ' ».' : "Aucun texte n'a été préparé avec l'IA : le fichier n'en portera aucune mention." }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.st.export.message_ia }} Fichier : « {{ atl.st.export.nom_fichier_docx }} », police {{ atl.st.export.police.famille }} {{ atl.st.export.police.taille }}. Aucune marque interne, aucun renvoi aux extraits, aucun nom d'outil dans le fichier.</span></button></div>
                 <div v-if="!atlMobile" class="row wrap atl-g12 atl-mt8 small">
-                  <label class="atl-chk"><input type="checkbox" :checked="atl.st.export.options.page_garde" @change="atlOption('page_garde', $event.target.checked)">Page de garde</label>
-                  <label class="atl-chk"><input type="checkbox" :checked="atl.st.export.options.sommaire" @change="atlOption('sommaire', $event.target.checked)">Sommaire</label>
-                  <label class="atl-chk"><input type="checkbox" :checked="atlSansIa()" @change="atlSansIaChoisir($event.target.checked)" :disabled="!!atl.busy">Rédiger sans IA</label>
+                  <label class="atl-chk"><input type="checkbox" :checked="atl.st.export.options.page_garde" @change="atlOption('page_garde', $event.target.checked, $event.target)">Page de garde</label>
+                  <label class="atl-chk"><input type="checkbox" :checked="atl.st.export.options.sommaire" @change="atlOption('sommaire', $event.target.checked, $event.target)">Sommaire</label>
+                  <label class="atl-chk"><input type="checkbox" :checked="atlSansIa()" @change="atlSansIaChoisir($event.target.checked, $event.target)" :disabled="!!atl.busy">Rédiger sans IA</label>
                   <span v-if="atl.st.dossier.dernier_export" class="muted">Dernier export : {{ atlWhen(atl.st.dossier.dernier_export.le) }} ({{ (atl.st.dossier.dernier_export.format || '').toUpperCase() }})</span>
                 </div>
                 <div v-else class="muted small atl-mt8">Sur téléphone, vous pouvez lire et valider. L'écriture et l'export se font depuis un ordinateur.</div>
@@ -2007,9 +2007,9 @@
                       </div>
                       <blockquote v-if="q.motif" class="atl-q atl-ent-motif">{{ q.motif.phrase }}<span v-if="q.motif.piece" class="muted"> ({{ q.motif.piece }})</span></blockquote>
                       <div v-else class="muted small atl-mt4">{{ q.motif_message }}</div>
-                      <div class="muted small atl-mt4 atl-ent-meta"><span v-if="q.partie">Partie concernée : {{ q.partie.titre }}</span><template v-if="q.critere"><span v-if="!q.partie || q.critere.critere !== q.partie.titre"> · {{ q.critere.sous ? 'sous-critère' : 'critère' }} : {{ q.critere.critere }}</span><span v-if="q.critere.poids"> ({{ q.critere.poids }})</span></template><span v-if="q.origine === 'ia'"> · {{ q.origine_libelle }}</span></div>
+                      <div class="muted small atl-mt4 atl-ent-meta"><span v-if="q.partie">Partie concernée : {{ q.partie.titre }}</span><template v-if="q.critere"><span v-if="!q.partie || q.critere.critere !== q.partie.titre"> · {{ q.critere.sous ? 'sous-critère' : 'critère' }} : {{ q.critere.critere }}</span><span v-if="q.critere.poids"> ({{ q.critere.poids }})</span><span v-else-if="q.critere.sous && q.critere.parent"> · critère : {{ q.critere.parent }}<template v-if="q.critere.parent_poids"> ({{ q.critere.parent_poids }})</template></span></template><span v-if="q.origine === 'ia'"> · {{ q.origine_libelle }}</span></div>
                       <!-- Groupement : à qui la question est posée (un partenaire y répond dans son espace) -->
-                      <div v-if="atl.ent.d.groupement.actif && q.id" class="row wrap atl-g6 atl-mt8 small atl-ent-ad">
+                      <div v-if="(atl.ent.d.groupement.actif || q.adresse.type === 'invitation') && q.id" class="row wrap atl-g6 atl-mt8 small atl-ent-ad">
                         <label :for="'atl-ead-'+q.id" class="muted">Posée à</label>
                         <select :id="'atl-ead-'+q.id" :key="'eads'+q.id+'-'+atl.ent.v" class="inp atl-ent-sel" :value="q.adresse.type === 'invitation' ? String(q.adresse.invite_id) : ''" @change="atlEntAdresser(q, $event.target.value)" :disabled="!!atl.ent.busy">
                           <option value="">Votre entreprise</option>
@@ -2019,7 +2019,8 @@
                       </div>
                       <!-- Posée à un partenaire : sa réponse, en lecture -->
                       <div v-if="q.adresse.type === 'invitation'" class="small atl-mt8">
-                        <template v-if="q.reponse"><div class="atl-ent-rep">{{ q.reponse.texte }}</div><div class="muted atl-mt4">{{ q.reponse.libelle }}<template v-if="q.reponse.le">, le {{ atlWhen(q.reponse.le) }}</template></div></template>
+                        <span v-if="q.adresse.active === false" class="muted">{{ q.adresse.nom }} ne peut plus répondre depuis son espace : sa réponse ne sert plus à la rédaction. Reprenez la question (« Posée à » : votre entreprise) pour y répondre vous-même.</span>
+                        <template v-else-if="q.reponse"><div class="atl-ent-rep">{{ q.reponse.texte }}</div><div class="muted atl-mt4">{{ q.reponse.libelle }}<template v-if="q.reponse.le">, le {{ atlWhen(q.reponse.le) }}</template></div></template>
                         <span v-else-if="q.statut === 'a_repondre'" class="muted">{{ q.adresse.nom }} y répond depuis son espace.</span>
                         <span v-else class="muted">{{ q.statut_libelle }} par {{ q.par }}.</span>
                       </div>
@@ -3915,7 +3916,7 @@
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
 <script src="/static/redaction-partenaire.js" integrity="sha384-5YkHm+HTCo5oo0QuCxWuxMoPBmy0pArVRZPNLHSxYwM95KBvfQnOG0XNQRlRtTFb" defer></script>
-<script src="/static/sources-publiques.js" integrity="sha384-oAi+xMZdv4UYYvnUFp1xy8e+d1nSgjyhQFVMbw5l0+5TMPPW3UmuLVVs/pvMU2U/" defer></script>
-<script src="/static/app.js" integrity="sha384-TSjPk60C4qSSVfq/qK6B9AAoP8ppb9+csjjVhavDIrkyuD/UBlw4+pXnOAGh/EY1" defer></script>
+<script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
+<script src="/static/app.js" integrity="sha384-JQ1s3VOvx5SWQYclYl1WzUX9UNsjuBWd5VwjFn9PGjz5Vd5ZgjeTyt/RM4+7W/fl" defer></script>
 </body>
 </html>

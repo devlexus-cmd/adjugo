@@ -537,9 +537,10 @@ def test_ecrans_sans_ia_entretien_et_source_publique_datee():
 
 def test_entretien_rattache_une_question_a_son_sous_critere_sans_poids_deduit(monkeypatch):
     """C2 × D, sans IA ni base : un critère découpé en sous-critères (deux au moins, comme le plan) donne une ligne
-    par sous-critère avec SON poids tel qu'écrit ; un sous-critère sans poids écrit pèse 0 (rien n'est déduit) ; un
-    sous-critère retrouvé l'emporte sur son critère ; la partie concernée est celle du sous-critère ; un critère à
-    un seul sous-critère reste une seule ligne."""
+    par sous-critère avec SON poids tel qu'écrit ; un sous-critère sans poids écrit n'a aucun poids (rien n'est
+    déduit) et se classe sur le poids ÉCRIT de son critère (contre-relecture de la vague 5 : il passait après un
+    critère de 10 %) ; un sous-critère retrouvé l'emporte sur son critère ; la partie concernée est celle du
+    sous-critère ; un critère à un seul sous-critère reste une seule ligne."""
     from types import SimpleNamespace as NS
     from app.services import entretien_chantier as ec
     from app.services import grille_notation as gn
@@ -559,7 +560,8 @@ def test_entretien_rattache_une_question_a_son_sous_critere_sans_poids_deduit(mo
     lg = ec.lignes_grille(projet)
     assert [(x["critere"], x["poids"], x["sous"], x["_w"]) for x in lg] == [
         ("Valeur technique", "60 %", "", 60.0), ("Organisation du chantier", "40 %", "Organisation du chantier", 40.0),
-        ("Démarche environnementale", "", "Démarche environnementale", 0.0), ("Délai d'exécution", "10 %", "", 10.0)]
+        ("Démarche environnementale", "", "Démarche environnementale", 60.0), ("Délai d'exécution", "10 %", "", 10.0)]
+    assert lg[2]["parent_poids"] == "60 %" and lg[1]["parent_poids"] == ""      # dit, jamais attribué au sous-critère
     assert ec._critere_de(["organis"], lg)["critere"] == "Organisation du chantier"
     assert ec._critere_de(["environ"], lg)["critere"] == "Démarche environnementale"
     assert ec._critere_de(["technique"], lg)["critere"] == "Valeur technique"     # le critère, faute de mieux

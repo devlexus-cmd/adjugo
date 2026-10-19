@@ -67,6 +67,8 @@ MSG_IA_DECLARER = ("Le règlement demande de signaler l'usage de l'intelligence 
                    "sans IA.")
 MSG_IA_MENTION = ("Le règlement parle d'intelligence artificielle : lisez la phrase. Vous pouvez rédiger ce dossier "
                   "sans IA.")
+MSG_IA_PERMIS = ("Le règlement admet l'intelligence artificielle : lisez la phrase. Vous restez libre de rédiger ce "
+                 "dossier sans IA.")
 MSG_IA_PARTENAIRE = ("Le règlement parle d'intelligence artificielle : lisez la phrase. Le chef de file choisit si le "
                      "dossier se rédige sans IA ; Adjugo vous le dira dans vos parties.")
 MSG_SEUL_ET_GROUPEMENT = ("Le règlement interdit de répondre à la fois seul et en groupement : une même entreprise ne "
@@ -150,6 +152,9 @@ _GENERIQUES = {
     "donner", "donnez", "identifier", "identifiez", "notice", "note", "fiche", "titre", "objet", "cours",
     "page", "pages", "maximum", "minimum", "caracteres", "mots", "lignes", "espaces", "compris", "comprises",
     "inclus", "incluses", "police", "taille", "format",
+    # Mots présents dans tout mémoire du BTP (comme « travaux ») : « la gestion des déchets du chantier » n'est pas
+    # traitée par une partie qui parle du chantier sans jamais nommer les déchets.
+    "chantier", "chantiers", "entreprise", "entreprises",
 }
 
 
@@ -390,7 +395,7 @@ def _scope_exigences(P: list) -> list:
     return [p for p in P if p.type not in (dp.BORDEREAU, dp.ACTE_ENGAGEMENT)] or P
 
 
-_MENTION_CANDIDAT = re.compile(r"\bcandidats?\b|\bsoumissionnaires?\b|\bmemoire\b|dans (?:son|leur) offre")
+_MENTION_CANDIDAT = re.compile(r"\bcandidats?\b|\bsoumissionnaires?\b|\bmemoire\b|dans (?:son |leur |l')offre")
 
 
 def _ajouter(out: list, vues: set, p, s: int, phrase: str, texte: str, origine: str, intro: str = "") -> None:
@@ -437,6 +442,34 @@ def _items_liste(U: "_Unites", e: int, intro: str, out: list, vues: set, text: s
     return n
 
 
+# « Le candidat n'est pas tenu de… », « il n'est pas demandé… » : une phrase niée n'est pas une exigence.
+_NIEE = re.compile(r"\b(?:n'est pas|ne sont pas|n'a pas|ne sera pas|n'y a pas)\b[^.;]{0,25}"
+                   r"(?:demande|exige|tenu|attendu|oblig)")
+# « Le candidat peut présenter… », « est libre de… » : une faculté n'est pas une exigence (phrase proposée par l'IA,
+# que le repérage n'aurait pas retenue : son sujet n'est suivi d'aucun verbe d'exigence).
+_FACULTE = re.compile(r"\b(?:" + _SUJ_CAND + "|" + _SUJ_MEM + r")\b[^.;:!?]{0,70}?\b(?:peut|peuvent|pourra|pourront"
+                      r"|pourrait|est libre|sont libres|a la possibilite|ont la possibilite|a la faculte|ont la faculte)\b")
+_FACULTATIF = re.compile(r"\bfacultati(?:f|ve|fs|ves)\b|\bfacultativement\b")
+
+
+def _ecartee_comme_au_reperage(p, pos: int) -> bool:
+    """Une phrase PROPOSÉE par l'IA passe les mêmes exclusions que le repérage (contrat C2.2) : relue dans son
+    unité du dossier, elle est écartée si elle est niée, facultative (le sujet « peut »), sous un article sur la
+    candidature, ou si elle vient du CCTP ou du CCAP sans parler du candidat ni du mémoire."""
+    s, e = _unites(p).bornes(pos)
+    low = p.low[s:e]
+    if _NIEE.search(low) or _FACULTATIF.search(low):
+        return True
+    sujets = list(_P_SUJET.finditer(low))
+    if any(_GAP_NON.search(m.group("gap") or "") for m in sujets):
+        return True                         # « le candidat retenu devra… », « le candidat peut… présenter » : écartée
+    if not sujets and _FACULTE.search(low):
+        return True                         # « le candidat peut présenter… » : aucun verbe d'exigence après le sujet
+    if _rubrique_candidature(p, pos):
+        return True
+    return p.type in (dp.CCTP, dp.CCAP) and not _MENTION_CANDIDAT.search(low)
+
+
 def _reperer(P: list, text: str) -> list:
     out, vues = [], set()
     for p in _scope_exigences(P):
@@ -467,9 +500,8 @@ def _reperer(P: list, text: str) -> list:
             if _rubrique_candidature(p, a):
                 continue
             low = p.low[s:e]
-            if re.search(r"\b(?:n'est pas|ne sont pas|n'a pas|ne sera pas|n'y a pas)\b[^.;]{0,25}"
-                         r"(?:demande|exige|tenu|attendu|oblig)", low):
-                continue
+            if _NIEE.search(low) or _FACULTATIF.search(low):
+                continue                         # niée, ou facultative (« à titre facultatif ») : pas une exigence
             if _exclue(low):
                 continue
             phrase_s, phrase = _clip_phrase(p, s, e, a, b)
@@ -529,6 +561,9 @@ def _proposees_ia(details: dict, P: list, text: str, out: list) -> None:
         vp, vpos, orig = gn._locate(verifie, scope)
         if vp is None:
             ko += 1
+            continue
+        if _ecartee_comme_au_reperage(vp, vpos):
+            ko += 1                          # retrouvée, mais ce n'est pas une exigence : comptée comme un écart
             continue
         ok += 1
         low = _fold(orig)
@@ -852,16 +887,32 @@ _IA_INTERDIT = re.compile(r"sans (?:recours|recourir|utilis|l'aide|l'usage|faire
                           r"(?: etre)? (?:recourir|utilis|faire appel|genere|redige|produit|elabore|issu|realise)"
                           r"|n'est pas (?:autorise|admis|accepte)|pas (?:autorise|admis)|ne sera pas (?:accepte|admis)"
                           r"|\brefus|\brejet|irreguli|s'interdit|s'abstien")
+# Une phrase qui PERMET l'IA (« n'est pas interdit », « est autorisé, sans restriction ») n'est jamais lue comme une
+# interdiction : l'expression est retirée avant de chercher une interdiction dans la phrase.
+_IA_PERMIS = re.compile(r"n'(?:est|sont) pas (?:interdite?s?|proscrite?s?|exclue?s?|prohibee?s?)|n'interdit pas"
+                        r"|ne (?:proscrit|exclut|prohibe) pas|ne s'oppose pas|(?<!n')(?:est|sont) (?:autorisee?s?|admise?s?|"
+                        r"permise?s?|acceptee?s?)\b(?! (?:a condition|sous reserve|que si|uniquement|seulement))"
+                        r"|sans restriction|(?<!ne )peu(?:t|vent) (?:recourir|utiliser|faire appel|s'aider)")
+_IA_SIGNALER = re.compile(r"\b(?:signal|indiqu|declar|mentionn|precis)\w*")
 _IA_OFFRE = re.compile(r"memoire|offre|redig|redaction|reponse|candidat|soumissionnaire|dossier|document")
 _IA_DECLARER = re.compile(r"(?:indique|indiquer|indiquera|precise|preciser|precisera|declare|declarer|declarera|"
                           r"signale|signaler|signalera|mentionne|mentionner|mentionnera|fait apparaitre|faire "
                           r"apparaitre)\b[^.;]{0,80}(?:recours|utilis|usage|aide|emploi)")
 
 
+def _suite_signale(p, e: int) -> bool:
+    """La phrase qui suit un « ; » demande-t-elle de le signaler (« … n'est pas interdit ; le candidat le signale ») ?"""
+    if not p.flat[:e].rstrip().endswith(";"):
+        return False
+    nxt = _unites(p).suivante(e)
+    return bool(nxt and re.search(r"\b(?:le|l')\s*(?:signal|indiqu|declar|mentionn|precis)\w*", p.low[nxt[0]:nxt[1]]))
+
+
 def mention_ia(P: list) -> dict:
     """Le règlement (ou le cadre, l'avis) parle-t-il d'intelligence artificielle ? Les phrases, et leur
-    nature : « interdit » (sans recours à…), « declarer » (indiquer l'usage), « mention » sinon. Le mode
-    « sans IA » est alors proposé pour ce dossier."""
+    nature : « interdit » (sans recours à…), « declarer » (indiquer l'usage), « permis » (« n'est pas interdit »,
+    « est autorisé » : jamais lue comme une interdiction, et aucune question à l'acheteur), « mention » sinon. Le
+    mode « sans IA » est alors proposé pour ce dossier (au choix de l'entreprise quand le règlement l'admet)."""
     scope = [p for p in P if p.type in (dp.REGLEMENT, dp.CADRE, dp.AUTRE)] or P
     phrases, nature, vues = [], "", set()
     for p in scope:
@@ -873,7 +924,18 @@ def mention_ia(P: list) -> dict:
             if not ph or k in vues or not _IA_OFFRE.search(low):
                 continue
             vues.add(k)
-            n = "interdit" if _IA_INTERDIT.search(low) else ("declarer" if _IA_DECLARER.search(low) else "mention")
+            permis = bool(_IA_PERMIS.search(low))
+            reste = _IA_PERMIS.sub(" ", low) if permis else low
+            if _IA_INTERDIT.search(reste):
+                n = "interdit"
+            elif _IA_DECLARER.search(reste) or (permis and _IA_SIGNALER.search(reste)):
+                n = "declarer"
+            elif permis and _suite_signale(p, e):
+                n = "declarer"               # « n'est pas interdit ; le candidat le signale dans son offre »
+                _st, ph2 = _unites(p).phrase(m.start(), _unites(p).suivante(e)[1])
+                ph = ph2 or ph               # la phrase montrée va jusqu'à la demande de le signaler
+            else:
+                n = "permis" if permis else "mention"
             phrases.append({"phrase": ph, "source": _source(p), "nature": n})
             if len(phrases) >= 4:
                 break
@@ -881,8 +943,9 @@ def mention_ia(P: list) -> dict:
             break
     if phrases:
         natures = {x["nature"] for x in phrases}
-        nature = "interdit" if "interdit" in natures else ("declarer" if "declarer" in natures else "mention")
-    msg = {"interdit": MSG_IA_INTERDIT, "declarer": MSG_IA_DECLARER, "mention": MSG_IA_MENTION}.get(nature, "")
+        nature = next(x for x in ("interdit", "declarer", "mention", "permis") if x in natures)
+    msg = {"interdit": MSG_IA_INTERDIT, "declarer": MSG_IA_DECLARER, "mention": MSG_IA_MENTION,
+           "permis": MSG_IA_PERMIS}.get(nature, "")
     return {"mentionne": bool(phrases), "nature": nature, "phrases": phrases, "message": msg,
             "propose_sans_ia": bool(phrases)}
 
@@ -979,8 +1042,11 @@ def date_limite_questions(P: list, remises: Optional[list] = None) -> Optional[d
             _st, ph = _unites(p).phrase(m.start(), m.end())
             if not ph:
                 continue
-            ds = _dates(low)
             rel = _Q_RELATIF.search(low)
+            # « … au plus tard 6 jours avant la date limite de remise des offres, fixée au 15/12/2026 » : la date
+            # écrite APRÈS le délai est celle de la REMISE des offres, jamais celle des questions. Seule une date
+            # écrite avant le délai (« au plus tard le 05/12/2026, soit 10 jours avant… ») est celle des questions.
+            ds = _dates(low[:rel.start()]) if rel else _dates(low)
             out = {"phrase": ph, "source": _source(p), "date": ds[0].isoformat() if ds else None,
                    "jours_avant": None, "type_jours": "", "date_calculee": None, "message": ""}
             if ds:
@@ -992,12 +1058,15 @@ def date_limite_questions(P: list, remises: Optional[list] = None) -> Optional[d
                 out["jours_avant"], out["type_jours"] = n, kind
                 out["message"] = ("Date limite pour poser vos questions : " + rel.group(0).strip()
                                   + " (phrase du règlement ci-dessous).")
-                rem = remises if remises is not None else dates_remise(P)
+                rem = [x[0] for x in (remises if remises is not None else dates_remise(P))]
+                if not rem:
+                    apres = sorted(set(_dates(low[rel.end():])))
+                    rem = apres if len(apres) == 1 else []   # la date de remise écrite dans la même phrase
                 if len(rem) == 1 and (not kind or kind.startswith("calendaire")):
-                    d = rem[0][0] - timedelta(days=n)
+                    d = rem[0] - timedelta(days=n)
                     out["date_calculee"] = d.isoformat()
                     out["message"] = (f"Date limite pour poser vos questions : le {_fr(d)}, calculée par Adjugo "
-                                      f"({n} jours avant la date limite de remise du {_fr(rem[0][0])}) : vérifiez-la.")
+                                      f"({n} jours avant la date limite de remise du {_fr(rem[0])}) : vérifiez-la.")
                 return out
     return None
 
@@ -1181,9 +1250,10 @@ def _questions_ia(details: dict, P: list, text: str, out: list) -> None:
                 phrases.append({"phrase": orig, "source": _source(vp)})
         if not phrases or any(_fold(_flat(y["phrase"])) in deja for y in phrases):
             continue
-        dispo = " ".join(_fold(y["phrase"]) for y in phrases)
-        if any(c not in dispo for c in _CHIFFRES.findall(_fold(q))):
+        dispo = set(_CHIFFRES.findall(" ".join(_fold(y["phrase"]) for y in phrases)))
+        if set(_CHIFFRES.findall(_fold(q))) - dispo:
             continue                     # un nombre de la question n'est écrit dans aucune phrase : écartée
+                                         # (des nombres entiers, comparés un à un : « 1 » n'est pas dans « 10 »)
         out.append(_q("ia_proposee", "Point à éclaircir", q, phrases, origine=IA))
         n += 1
 

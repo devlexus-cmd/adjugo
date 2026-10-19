@@ -104,7 +104,8 @@
     return parts.join(" ; ") + ".";
   }
 
-  const BULLE_DECP = "Adjugo lit les données essentielles de la commande publique (DECP, data.economie.gouv.fr) avec le SIRET de votre profil : les marchés où votre entreprise figure comme titulaire, seule ou en groupement. Un marché attribué ne prouve ni que les travaux ont été faits ni leur qualité : la fiche le dit (« marché attribué, source publique DECP »). Les valeurs sont montrées telles que la source les donne : rien n'est ajouté sans vous.";
+  const NOTE_COUVERTURE = "Les données publiques lues couvrent surtout les marchés notifiés depuis 2024 : un marché plus ancien peut manquer, ajoutez-le vous-même.";
+  const BULLE_DECP = "Adjugo lit les données essentielles de la commande publique (DECP, data.economie.gouv.fr) avec le SIRET de votre profil : les marchés où votre entreprise figure comme titulaire, seule ou en groupement. Un marché attribué ne prouve ni que les travaux ont été faits ni leur qualité : la fiche le dit (« marché attribué, source publique DECP »). Les valeurs sont montrées telles que la source les donne : rien n'est ajouté sans vous. " + NOTE_COUVERTURE;
   const BULLE_RGE = "Adjugo lit la liste publique des entreprises RGE de l'ADEME (data.ademe.fr) avec le SIRET de votre profil. Une qualification dont la date de fin est dépassée n'est pas proposée. Une qualification Qualibat hors RGE n'est dans aucune liste publique ouverte : ajoutez-la avec son certificat.";
   const BULLE_PART = "Ce que vous cochez s'ajoute aux références et aux qualifications de votre part, que lit le chef de file. Les marchés publics et les qualifications RGE sont lus avec le SIRET de votre part ; vos preuves restent dans votre compte, seule la ligne cochée part dans votre part.";
   const NOTE_ALERTE = "Une valeur inhabituelle est montrée telle quelle : cochez seulement si elle est juste.";
@@ -232,7 +233,8 @@
       let h = '<div class="sp-sec"><div class="pv-sub">Marchés publics (DECP)</div>' + etat(d, "decp");
       if (!d || !["ok", "exemple"].includes(d.statut)) return h + "</div>";
       const ms = d.marches || [];
-      if (!ms.length) h += '<p class="muted small pv-m0">Aucun marché trouvé dans DECP avec ce SIRET (lecture du ' + spEsc(spJj(d.consulte_le)) + ").</p>";
+      if (!ms.length) h += '<p class="muted small pv-m0">Aucun marché trouvé dans DECP avec ce SIRET (lecture du ' + spEsc(spJj(d.consulte_le)) + ").</p>"
+        + (d.exemple_fictif ? "" : '<p class="muted small sp-p">' + spEsc(NOTE_COUVERTURE) + "</p>");
       else {
         if (ms.some(m => (m.alertes || []).length)) h += '<p class="muted small sp-p">' + spEsc(NOTE_ALERTE) + "</p>";
         h += '<ul class="sp-list">' + ms.map(itemDecp).join("") + "</ul>";
@@ -319,11 +321,17 @@
         } else body = { cles };
         const r = await call("POST", o.urls.ecrire, body);
         if (!r.ok) { st.err = r.message; return; }
-        const ign = (r.data && r.data.ignorees) || [];
-        st.msg = spResume(r.data, o.mode) + (ign.length ? " " + ign.map(i => (i.texte ? i.texte + " : " : "") + i.message).join(" ") : "");
+        const ign = (r.data && r.data.ignorees) || [], pannes = ((r.data && r.data.pannes) || []).filter(Boolean);
+        // Une ligne cochée qui n'a pas pu être relue ne disparaît jamais en silence : la panne de sa source est dite
+        // (une fois), les autres lignes écartées avec leur raison.
+        const morceaux = [];
+        ign.forEach(i => { if (pannes.includes(i.message)) return; const t = (i.texte ? i.texte + " : " : "") + i.message; if (!morceaux.includes(t)) morceaux.push(t); });
+        st.msg = spResume(r.data, o.mode) + (morceaux.length ? " " + morceaux.join(" ") : "");
+        const errPanne = pannes.length ? Array.from(new Set(pannes)).join(" ") + " Les lignes cochées de cette source n'ont pas été ajoutées : réessayez plus tard." : "";
         try { o.apresEcrire && o.apresEcrire(r.data); } catch (e) {}
         st.sel = {};
         await load();
+        if (errPanne) st.err = errPanne;
       } finally { st.busy = false; render(); }
     }
 

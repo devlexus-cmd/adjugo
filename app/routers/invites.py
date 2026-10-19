@@ -1419,7 +1419,9 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
     if body.city is not None:
         c.city = body.city.strip()[:120]
     if body.references is not None:
-        c.references = body.references[:50]
+        # Vague 5 (E2) : la provenance « marché attribué, source publique DECP » n'est jamais prise du navigateur.
+        from app.services.preuves_publiques import references_relues
+        c.references = references_relues(c.references, body.references[:50])
     if body.qualifications is not None:
         c.qualifications = body.qualifications[:50]
     if body.memoire_paragraph is not None:

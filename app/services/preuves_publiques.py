@@ -63,16 +63,19 @@ def _est_demo(user) -> bool:
 
 def _existant(db, owner_id: int) -> tuple:
     """(identifiants publics, empreintes, clés « même intitulé ») des fiches de l'organisation (hors
-    supprimées)."""
+    supprimées). La clé « même intitulé » ne vient que des fiches qui ne sont PAS tirées d'une source publique
+    (saisies, documents…) : deux marchés DECP distincts peuvent avoir le même objet (« Rénovation du terrain de
+    football »), ils se distinguent par leur identifiant public (marché, acheteur)."""
     from app.services.preuves_reprise import cle_souple
     idents, emp, souples = set(), set(), set()
     for p in pv._q_org(db, owner_id).all():
         if p.empreinte:
             emp.add(p.empreinte)
-        souples.add(cle_souple(p.nature, p.valeur or {}))
         s = p.source or {}
         if p.type_source == pv.PUBLIC and s.get("identifiant"):
             idents.add((_fold(s.get("nom")), _fold(s.get("identifiant"))))
+        else:
+            souples.add(cle_souple(p.nature, p.valeur or {}))
     return idents, emp, souples
 
 
@@ -91,15 +94,18 @@ def _marquer(props: list, nature: str, nom_source: str, source_fn, consulte_le: 
         q = dict(p)
         valeur, msg = _valeur_propre(nature, p.get("valeur") or {})
         if valeur is not None:
-            # Le relevé ne garde que ce qui est enregistré (un champ refusé n'est pas « de la source »).
+            # Le relevé ne garde que ce qui est enregistré (un champ refusé n'est pas « de la source »), et les
+            # champs que la source laisse VIDES à dessein (montant d'un accord-cadre) : ils restent vides tant que
+            # la fiche garde la source.
             q["releve"] = {k: v for k, v in (p.get("releve") or {}).items()
-                           if k in valeur or k == pv.CHAMP_FIN}
+                           if k in valeur or k == pv.CHAMP_FIN or v is None}
         q["valeur"] = valeur if valeur is not None else dict(p.get("valeur") or {})
         if not q.get("manque") and valeur is None:
             q["manque"] = msg
         src = source_fn(q, consulte_le)
         if cle_de_part is not None:
-            deja = _fold(_intitule(nature, q["valeur"])) in cle_de_part
+            deja = deja_dans_part(cle_de_part, nature, _intitule(nature, q["valeur"]),
+                                  src.get("identifiant") if nature == pv.REFERENCE else None)
             q["deja"] = bool(deja)
             q["deja_message"] = MSG_DEJA_PART if deja else ""
         else:
@@ -130,7 +136,7 @@ def _public(r: dict) -> dict:
 
 
 def apercu_marches(db, owner_id: int, user=None, siret: Optional[str] = None, existant=None,
-                   cle_de_part: Optional[set] = None) -> dict:
+                   cle_de_part: Optional[set] = None, noms_du_cache: bool = False) -> dict:
     """Les marchés DECP de l'entreprise, proposés. Démo : l'exemple fictif, jamais le réseau."""
     if _est_demo(user):
         r = sp.exemple_fictif_marches()
@@ -139,7 +145,7 @@ def apercu_marches(db, owner_id: int, user=None, siret: Optional[str] = None, ex
         if not sp.clean_siren(siret):
             return {"statut": "siret_manquant", "message": MSG_SIRET if cle_de_part is None else MSG_SIRET_PART,
                     "marches": []}
-        r = sp.marches(siret)
+        r = sp.marches(siret, noms_du_cache=noms_du_cache)
         r["siren"] = sp.clean_siren(siret)
     if r.get("statut") not in ("ok", "exemple"):
         return r
@@ -176,19 +182,20 @@ def apercu_rge(db, owner_id: int, user=None, siret: Optional[str] = None, exista
 
 
 def _a_relire(db, owner_id: int, user, cles: Iterable, siret: Optional[str] = None,
-              cle_de_part: Optional[set] = None) -> tuple:
-    """(propositions retrouvées {cle: (nature, prop, consulte_le, nom_source)}, panne) pour les clés
-    demandées : relues dans la lecture mise en cache (ou relues à la source), jamais prises du client."""
+              cle_de_part: Optional[set] = None, noms_du_cache: bool = False) -> tuple:
+    """(clés voulues, propositions retrouvées {cle: (nature, prop, consulte_le, nom_source)}, pannes {decp|rge:
+    message}) pour les clés demandées : relues dans la lecture mise en cache (ou relues à la source), jamais prises
+    du client."""
     voulues = {str(c) for c in (cles or []) if c}
-    trouve, panne = {}, []
+    trouve, panne = {}, {}
     if any(c.startswith("decp:") for c in voulues):
-        r = apercu_marches(db, owner_id, user, siret=siret, cle_de_part=cle_de_part)
+        r = apercu_marches(db, owner_id, user, siret=siret, cle_de_part=cle_de_part, noms_du_cache=noms_du_cache)
         if r.get("statut") in ("ok", "exemple"):
             for m in r["marches"]:
                 if m["cle"] in voulues:
                     trouve[m["cle"]] = (pv.REFERENCE, m, r.get("consulte_le"), sp.NOM_DECP)
         else:
-            panne.append(r.get("message") or sp.MSG_PANNE["decp"])
+            panne["decp"] = r.get("message") or sp.MSG_PANNE["decp"]
     if any(c.startswith("rge:") for c in voulues):
         r = apercu_rge(db, owner_id, user, siret=siret, cle_de_part=cle_de_part)
         if r.get("statut") in ("ok", "exemple"):
@@ -196,21 +203,27 @@ def _a_relire(db, owner_id: int, user, cles: Iterable, siret: Optional[str] = No
                 if m["cle"] in voulues:
                     trouve[m["cle"]] = (pv.QUALIFICATION, m, r.get("consulte_le"), sp.NOM_RGE)
         else:
-            panne.append(r.get("message") or sp.MSG_PANNE["rge"])
+            panne["rge"] = r.get("message") or sp.MSG_PANNE["rge"]
     return voulues, trouve, panne
+
+
+def _introuvable(cle: str, pannes: dict) -> dict:
+    """Une ligne cochée qui n'est pas relue : sa source est en panne (dit), ou elle n'est plus dans la lecture."""
+    kind = cle.split(":", 1)[0]
+    return {"cle": cle, "texte": "", "message": pannes.get(kind) or MSG_PERIMEE}
 
 
 def importer(db, owner_id: int, cles, user=None) -> dict:
     """Crée, dans « Mes preuves », les fiches COCHÉES (acceptées, source publique datée). Une ligne déjà
     présente n'est pas recréée ; une ligne qui ne peut pas devenir une fiche est dite. Une seule
     transaction ; la ligne du compte qui porte les données est verrouillée (Postgres)."""
-    voulues, trouve, panne = _a_relire(db, owner_id, user, cles)
+    voulues, trouve, pannes = _a_relire(db, owner_id, user, cles)
+    panne = list(pannes.values())
     db.query(User.id).filter(User.id == owner_id).with_for_update().first()
     creees, deja, ignorees = [], 0, []
     for cle in sorted(voulues):
         if cle not in trouve:
-            if not panne:
-                ignorees.append({"cle": cle, "texte": "", "message": MSG_PERIMEE})
+            ignorees.append(_introuvable(cle, pannes))     # jamais en silence : la panne, ou « rechargez »
             continue
         nature, m, consulte_le, _nom = trouve[cle]
         if m.get("deja"):
@@ -239,21 +252,41 @@ def importer(db, owner_id: int, cles, user=None) -> dict:
 
 # ── Le partenaire d'un groupement : SES sources, SES preuves, SA part ────────────────
 
+def _cles_ref(r) -> set:
+    """Clés d'une référence de la part : « d: » + identifiant public et « td: » + intitulé pour une référence tirée
+    de DECP (deux marchés distincts peuvent avoir le même objet) ; « t: » + intitulé sinon (saisie)."""
+    if isinstance(r, dict):
+        titre = _fold(r.get("intitule") or r.get("objet") or "")
+        ident = _fold(r.get("identifiant") or "") if r.get("provenance") == "decp" else ""
+        if ident:
+            return {"d:" + ident} | ({"td:" + titre} if titre else set())
+        return {"t:" + titre} if titre else set()
+    return {"t:" + _fold(r)} if r else set()
+
+
 def cles_de_part(c) -> set:
-    """Intitulés (repliés) des références et qualifications déjà dans la part."""
+    """Clés des références et qualifications déjà dans la part (voir `_cles_ref` ; « q: » + nom pour une
+    qualification)."""
     out = set()
     for r in (getattr(c, "references", None) or []):
-        if isinstance(r, dict):
-            out.add(_fold(r.get("intitule") or r.get("objet") or ""))
-        elif r:
-            out.add(_fold(r))
+        out |= _cles_ref(r)
     for q in (getattr(c, "qualifications", None) or []):
-        if isinstance(q, dict):
-            out.add(_fold(q.get("name") or q.get("nom") or ""))
-        elif q:
-            out.add(_fold(q))
-    out.discard("")
+        nom = _fold((q.get("name") or q.get("nom") or "") if isinstance(q, dict) else (q or ""))
+        if nom:
+            out.add("q:" + nom)
     return out
+
+
+def deja_dans_part(cles: set, nature: str, intitule: str, identifiant: Optional[str] = None) -> bool:
+    """Déjà dans la part ? Une qualification : même nom. Une référence tirée de DECP : même identifiant public,
+    ou même intitulé qu'une référence SAISIE (sans identifiant). Une référence saisie ou de « Mes preuves » hors
+    source publique : même intitulé que n'importe quelle référence de la part."""
+    t = _fold(intitule or "")
+    if nature == pv.QUALIFICATION:
+        return bool(t) and "q:" + t in cles
+    if identifiant:
+        return "d:" + _fold(identifiant) in cles or (bool(t) and "t:" + t in cles)
+    return bool(t) and ("t:" + t in cles or "td:" + t in cles)
 
 
 def apercu_part(db, inv, c, kind: str, demo: bool = False) -> dict:
@@ -301,6 +334,29 @@ def _ref_de_decp(m: dict, consulte_le: str) -> dict:
     return r
 
 
+_CHAMPS_REF = ("intitule", "client", "montant", "annee", "role")
+_META_REF = ("provenance", "consulte_le", "identifiant")
+
+
+def references_relues(anciennes, nouvelles) -> list:
+    """Les références d'une part enregistrée par le navigateur (PUT) : la provenance (« decp », « mes_preuves »), la
+    date de lecture et l'identifiant public ne sont JAMAIS pris du navigateur — ils ne restent que sur une
+    référence identique (mêmes intitulé, acheteur, montant, année, rôle et provenance) à une référence déjà
+    enregistrée par « Reprendre » ; une référence modifiée ou nouvelle devient une simple saisie."""
+    import json
+
+    def _cle(r: dict) -> str:
+        return json.dumps([r.get(k) for k in _CHAMPS_REF + _META_REF], sort_keys=True, ensure_ascii=False, default=str)
+
+    gardees = {_cle(r) for r in (anciennes or []) if isinstance(r, dict) and r.get("provenance")}
+    out = []
+    for r in nouvelles or []:
+        if isinstance(r, dict) and any(k in r for k in _META_REF) and _cle(r) not in gardees:
+            r = {k: v for k, v in r.items() if k not in _META_REF}
+        out.append(r)
+    return out
+
+
 def preuves_du_partenaire(db, owner_id: int, c) -> list:
     """SES références et qualifications UTILISABLES (acceptées, valables, source présente), pour sa part.
     Jamais une fiche d'une autre organisation, jamais un CV, jamais le chef de file."""
@@ -308,7 +364,9 @@ def preuves_du_partenaire(db, owner_id: int, c) -> list:
     out = []
     for f in pv.faits_autorises(db, owner_id, natures=[pv.REFERENCE, pv.QUALIFICATION]):
         v = f.get("valeur") or {}
-        deja = _fold(_intitule(f["nature"], v)) in cles
+        ident = ((f.get("source") or {}).get("identifiant") or "") if (
+            f["nature"] == pv.REFERENCE and f.get("source_libelle") == pv.LIB_DECP) else ""
+        deja = deja_dans_part(cles, f["nature"], _intitule(f["nature"], v), ident or None)
         out.append({"id": f["id"], "nature": f["nature"], "nature_libelle": f["nature_libelle"],
                     "titre": pv.titre_court(f["nature"], v), "texte": f["texte"], "source_libelle": f["source_libelle"],
                     "date_fin_validite": f.get("date_fin_validite"),
@@ -347,17 +405,17 @@ def reprendre_dans_part(db, c, *, publiques: Iterable = (), preuves: Iterable = 
 
     def _ajoute_ref(r: dict, texte: str):
         nonlocal deja
-        k = _fold(r.get("intitule"))
-        if not k:
+        if not _fold(r.get("intitule")):
             ignorees.append({"texte": texte, "message": "Référence sans intitulé."})
             return
-        if k in cles:
+        ident = r.get("identifiant") if r.get("provenance") == "decp" else None
+        if deja_dans_part(cles, pv.REFERENCE, r.get("intitule"), ident or None):
             deja += 1
             return
         if len(refs) + len(ajout_refs) >= MAX_PART:
             ignorees.append({"texte": texte, "message": f"Une part compte au plus {MAX_PART} références."})
             return
-        cles.add(k)
+        cles.update(_cles_ref(r))
         ajout_refs.append(r)
 
     def _ajoute_qual(nom: str, texte: str):
@@ -366,13 +424,13 @@ def reprendre_dans_part(db, c, *, publiques: Iterable = (), preuves: Iterable = 
         k = _fold(nom)
         if not k:
             return
-        if k in cles:
+        if deja_dans_part(cles, pv.QUALIFICATION, nom):
             deja += 1
             return
         if len(quals) + len(ajout_quals) >= MAX_PART:
             ignorees.append({"texte": texte, "message": f"Une part compte au plus {MAX_PART} qualifications."})
             return
-        cles.add(k)
+        cles.add("q:" + k)
         ajout_quals.append(nom)
 
     # 1) Ses preuves (compte seulement) : relues dans SON organisation, utilisables seulement.
@@ -404,11 +462,14 @@ def reprendre_dans_part(db, c, *, publiques: Iterable = (), preuves: Iterable = 
     pannes = []
     if pubs:
         user = _DemoMarque() if demo else None
-        voulues, trouve, pannes = _a_relire(db, 0, user, pubs, siret=siret, cle_de_part=set())
+        # Relu SANS réseau pour les noms d'acheteurs (la route a préchauffé la lecture ; la ligne de la part est
+        # verrouillée pendant cette relecture) : seuls les noms déjà en cache sont repris.
+        voulues, trouve, par_source = _a_relire(db, 0, user, pubs, siret=siret, cle_de_part=set(), noms_du_cache=True)
+        pannes = list(par_source.values())
         for cle in sorted(voulues):
             if cle not in trouve:
-                if not pannes:
-                    ignorees.append({"texte": "", "message": MSG_PERIMEE})
+                x = _introuvable(cle, par_source)
+                ignorees.append({"texte": "", "message": x["message"]})     # jamais en silence
                 continue
             nature, m, consulte_le, _nom = trouve[cle]
             if m.get("manque"):

@@ -1718,6 +1718,9 @@ def _executer(db, *, job_id: int, invite_id: int, section_id: int, kind: str, ci
     # documents », passage exact, document gardé dans la source privée).
     fiches_tout = fiches_ent + ctx.fiches_extraits(db, chunks)
     if kind == JOB_RACCOURCIR:
+        # Chaque « [À compléter : …] » du texte de départ reste (remis sans IA s'il a disparu).
+        from app.services import entretien_chantier as ec
+        texte = ec.garder_trous(texte, base.texte if base else "")
         faits = fs.controler(texte, ctx.fiches_de_brouillon(db, base), acheteur=None,
                              noms_entreprise=ctx.noms_entreprise, section_entreprise=at.section_sur_l_entreprise(section),
                              mode="raccourci", anciens=(base.faits if base else []), base_texte=base.texte if base else "")
@@ -2950,22 +2953,35 @@ def exporter_partenaire(db, uid: int) -> list:
 
 
 def purger(db, jours: int = PURGE_JOURS) -> dict:
-    """Purge quotidienne (POST /api/admin/run-trash-purge) : brouillons des invitations retirées ou déclinées
-    (filet), ou expirées depuis plus de `jours` jours ; tâches terminées des partenaires de plus de `jours`
-    jours."""
+    """Purge quotidienne (POST /api/admin/run-trash-purge) : brouillons et réponses à l'entretien chantier des
+    invitations retirées ou déclinées (filet), ou expirées depuis plus de `jours` jours ; tâches terminées des
+    partenaires de plus de `jours` jours."""
     from sqlalchemy import or_
     limite = utcnow() - timedelta(days=int(jours))
     morts = [r[0] for r in db.query(ProjectInvite.id).filter(or_(
         ProjectInvite.revoked.is_(True), ProjectInvite.declined_at.isnot(None),
         (ProjectInvite.expires_at.isnot(None)) & (ProjectInvite.expires_at < limite)))]
-    n = 0
+    n, rep = 0, 0
     if morts:
         n = db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id.in_(morts)).delete(
             synchronize_session=False)
+        # Rédaction, vague 5 : leurs réponses à l'entretien chantier aussi (une invitation coupée sans « Retirer »,
+        # par exemple avec le marché mis à la corbeille) — effacées, oubliées des faits, questions rendues au chef
+        # de file, comme au retrait.
+        from app.models import EntretienQuestion
+        from app.services import entretien_chantier as ec
+        avec = {r[0] for r in db.query(EntretienQuestion.reponse_invite_id).filter(
+            EntretienQuestion.reponse_invite_id.in_(morts))} | {r[0] for r in db.query(
+                EntretienQuestion.adresse_invite_id).filter(EntretienQuestion.adresse_invite_id.in_(morts))}
+        for iid in sorted(x for x in avec if x):
+            inv = db.get(ProjectInvite, iid)
+            if inv is not None:
+                rep += ec.retirer_invitation(db, inv)
     t = db.query(Job).filter(Job.portee == PORTEE_PARTENAIRE, Job.status.in_(["done", "error"]),
                              Job.created_at < limite).delete(synchronize_session=False)
     db.commit()
-    return {"brouillons_partenaires_effaces": int(n or 0), "taches_partenaires_effacees": int(t or 0)}
+    return {"brouillons_partenaires_effaces": int(n or 0), "taches_partenaires_effacees": int(t or 0),
+            "questions_entretien_reprises": int(rep or 0)}
 
 
 # ── Assemblage (chantier 3 : app/services/atelier_assemblage.py, derrière ce module) ──

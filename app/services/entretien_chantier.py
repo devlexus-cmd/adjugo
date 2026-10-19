@@ -88,6 +88,8 @@ AVERTISSEMENT_REPONSE = ("Votre réponse sera lue par le chef de file, qui s'en 
 MSG_PARTENAIRE = ("Le chef de file vous pose ces questions sur le chantier. Vos réponses servent à rédiger le dossier "
                   "commun ; elles comptent comme déclarées par votre entreprise.")
 MSG_QUESTION_PARTENAIRE = "Cette question est posée à {nom} : il y répond depuis son espace. Reprenez-la pour y répondre vous-même."
+MSG_QUESTION_SANS_ACCES = ("Cette question est posée à {nom}, qui ne peut plus y répondre ({raison}) : reprenez-la "
+                           "pour y répondre vous-même.")
 MSG_IA_PANNE = ("La recherche de questions n'a pas abouti : le service d'IA est indisponible pour le moment. Rien n'a "
                 "été décompté.")
 
@@ -258,7 +260,7 @@ def _trouver(q: dict, pieces: list, deja=()) -> Optional[dict]:
     en a une autre ; None si aucune."""
     from app.services.analysis import citation_guard
     rx = _rx(q)
-    repli = repli_deja = None
+    repli = repli_deja = repli_candidature = None
     for p in pieces:
         t = p["texte"]
         f = p.get("_fold")
@@ -277,13 +279,28 @@ def _trouver(q: dict, pieces: list, deja=()) -> Optional[dict]:
             if n < _MOTS_LIGNE:
                 continue                    # un intitulé d'un mot (« Article 2 - Amiante ») ne motive rien
             x = {"phrase": phrase[:MOTIF_MAX], "piece": (p.get("libelle") or dp.label(p["type"]))[:200]}
+            if _sous_article_candidature(f, m.start()):
+                # « Conditions de participation », « Présentation des candidatures » : ce que l'article dit se prouve
+                # par des pièces, il ne décrit pas le chantier (comme la liste des exigences) — seulement en dernier.
+                repli_candidature = repli_candidature or x
+                continue
             if x["phrase"] in deja:
                 repli_deja = repli_deja or x
                 continue
             if not titre and n >= _MOTS_PHRASE:
                 return x
             repli = repli or x
-    return repli or repli_deja
+    return repli or repli_deja or repli_candidature
+
+
+def _sous_article_candidature(f: str, pos: int) -> bool:
+    """La position est-elle sous un article sur la CANDIDATURE (même règle que la liste des exigences,
+    grille_exigences._rubrique_candidature) ?"""
+    from app.services import grille_exigences as ge
+    last = None
+    for m in ge._RUBRIQUE.finditer(f, max(0, pos - 4000), pos):
+        last = m
+    return bool(last and ge._RUBRIQUE_CANDIDATURE.search(last.group("t")))
 
 
 def lignes_grille(project: Project) -> list:
@@ -308,17 +325,23 @@ def lignes_grille(project: Project) -> list:
 
     out = []
     for ln in lignes:
-        out.append(dict(ln, _fold=_fold(ln.get("critere")), _w=_poids(ln.get("poids")), critere_id=ln.get("id"),
-                        sous=""))
+        w_critere = _poids(ln.get("poids"))
+        out.append(dict(ln, _fold=_fold(ln.get("critere")), _w=w_critere, critere_id=ln.get("id"),
+                        sous="", _groupe=ln.get("id")))
         sous = [x for x in (ln.get("sous_criteres") or []) if isinstance(x, dict) and _flat(x.get("critere"))]
         if len(sous) < 2:           # comme le plan (atelier_plan.parties_du_critere) : une partie pour le critère
             continue
         for k, sc in enumerate(sous, 1):
+            ecrit = bool(sc.get("poids"))
+            # Sous-critère SANS poids écrit : il se classe sur le poids ÉCRIT de son critère (aucun poids n'est
+            # déduit pour lui ; l'écran dit « sous-critère de … (60 %) »), et ses questions forment un seul groupe
+            # avec celles du critère, comme avant le découpage.
             out.append({"id": f"{ln.get('id')}/{sc.get('id') or k}", "critere": sc["critere"],
-                        "poids": sc.get("poids") or "", "poids_source": "reglement" if sc.get("poids") else "",
+                        "poids": sc.get("poids") or "", "poids_source": "reglement" if ecrit else "",
                         "phrase": sc.get("phrase") or "", "critere_id": ln.get("id"), "sous": sc["critere"],
-                        "parent": ln.get("critere") or "", "_fold": _fold(sc["critere"]),
-                        "_w": _poids(sc.get("poids"))})
+                        "parent": ln.get("critere") or "", "parent_poids": "" if ecrit else (ln.get("poids") or ""),
+                        "_fold": _fold(sc["critere"]), "_w": _poids(sc.get("poids")) if ecrit else w_critere,
+                        "_groupe": f"{ln.get('id')}/{sc.get('id') or k}" if ecrit else ln.get("id")})
     return out
 
 
@@ -425,7 +448,7 @@ def selection(cands: list, lignes: list, n: int = MAX_QUESTIONS) -> list:
     déclenchée, sinon la question générale (sans phrase du dossier, et l'écran le dit)."""
     vus = defaultdict(int)
     for c in sorted(cands, key=lambda c: c["prio"]):
-        g = (c["ligne"] or {}).get("id") or ""
+        g = (c["ligne"] or {}).get("_groupe") or (c["ligne"] or {}).get("id") or ""
         # Une question qu'aucun critère ne concerne passe après toutes celles qu'un critère concerne.
         c["passe"] = vus[g] if g else 100 + vus[g]
         vus[g] += 1
@@ -689,8 +712,14 @@ def repondre(db, project: Project, dossier: DossierPresentation, lecteur: at.Lec
     remettre « à répondre »). Une question posée à un partenaire : 403 (il y répond chez lui). Aucune IA."""
     r = _question(db, dossier, qid, verrou=True)
     if r.adresse_kind == INV:
+        from app.services import atelier_groupement as ag
         nom = _noms_invitations(db, [r.adresse_invite_id]).get(r.adresse_invite_id, "un partenaire")
+        inv = db.get(ProjectInvite, r.adresse_invite_id) if r.adresse_invite_id else None
+        active, raison = ag.peut_rediger(db, inv) if inv is not None else (False, "il n'est plus membre du groupement")
         db.rollback()
+        if not active:
+            raise AtelierError(403, "question_partenaire_sans_acces",
+                               MSG_QUESTION_SANS_ACCES.format(nom=nom, raison=raison))
         raise AtelierError(403, "question_d_un_partenaire", MSG_QUESTION_PARTENAIRE.format(nom=nom))
     _verifier_lock(r, lock_version)
     if statut == REPONDUE and preuve_id:
@@ -742,7 +771,10 @@ def adresser(db, project: Project, dossier: DossierPresentation, lecteur: at.Lec
             raise AtelierError(409, "reponse_a_confirmer",
                                f"La question a déjà une réponse de {qui} : en la posant à un autre, cette réponse sort de "
                                "la fiche chantier.")
+        etait = (r.statut, r.reponse_kind, r.reponse_invite_id)
         _appliquer(r, A_REPONDRE, None, None, kind="", invite_id=None, user_id=None)
+        if etait[0] == REPONDUE and etait[1] == INV and etait[2]:
+            oublier_reponses(db, dossier.id, [r.numero], etait[2])     # la réponse du partenaire sort des faits
     r.adresse_kind, r.adresse_invite_id, r.adresse_choix = cible[0], cible[1], MANUEL
     r.lock_version = int(r.lock_version or 0) + 1
     db.commit()
@@ -831,7 +863,12 @@ def repondre_partenaire(db, acces, qid, *, statut: str, reponse: Optional[str] =
         db.rollback()
         raise AtelierError(404, "question_introuvable", "Question introuvable.")
     _verifier_lock(r, lock_version)
+    avant = (r.statut, r.reponse, r.reponse_kind, r.reponse_invite_id)
     _appliquer(r, statut, reponse, None, kind=INV, invite_id=acces.invite_id, user_id=getattr(acces.user, "id", None))
+    if avant[0] == REPONDUE and avant[2] == INV and avant[3] == acces.invite_id \
+            and (r.statut != REPONDUE or _flat(r.reponse) != _flat(avant[1])):
+        # Sa réponse est retirée, passée ou changée : les faits qui citaient l'ancienne redeviennent « à relire ».
+        oublier_reponses(db, acces.dossier.id, [r.numero], acces.invite_id)
     db.commit()
     detail = {REPONDUE: "Réponse", SAUTEE: "Question passée", SANS_OBJET: "Sans objet",
               A_REPONDRE: "Réponse retirée"}[statut] + f" : {r.theme}"
@@ -873,10 +910,14 @@ def _fiche(r: EntretienQuestion, personnes: dict, pseudonymiseur, nom_partenaire
             except Exception:       # noqa: BLE001
                 label = ""
         qui_ia = f"{label}, {p['fonction']}" if label else f"une personne de l'équipe, {p['fonction']}"
-        texte = f"{tete}, {theme} : {p['nom']}, {p['fonction']}" + (f" ; {rep}" if rep else "")
+        texte = (f"{tete}, {theme} : " if r.origine != IA else f"{tete} : ") + f"{p['nom']}, {p['fonction']}" \
+            + (f" ; {rep}" if rep else "")
         texte_ia = (f"{tete}, réponse à « {q} » : {qui_ia} (sa fiche : [{p['ref']}])" + (f" ; {rep}" if rep else ""))
     else:
-        texte = f"{tete}, {theme} : {rep}"
+        # Le thème d'une question proposée par l'IA est écrit par l'IA : il n'entre jamais dans le texte que le
+        # contrôle des faits rapproche (un nombre ou un nom de l'IA deviendrait « déclaré par vous »). Seule la
+        # réponse de l'utilisateur (et le thème fixe de la banque) y figurent.
+        texte = f"{tete}, {theme} : {rep}" if (theme and r.origine != IA) else f"{tete} : {rep}"
         texte_ia = f"{tete}, réponse à « {q} » : {rep}"
     ref = f"{fs.ENTRETIEN}{int(r.numero)}"
     if nom_partenaire:
@@ -1016,16 +1057,38 @@ def garantir_manques(texte: str, manques: list) -> str:
     return texte.rstrip() + "\n\n" + "\n".join(ajout)
 
 
+def garder_trous(texte: str, base_texte: str) -> str:
+    """Après « Raccourcir », sans IA : chaque « [À compléter : …] » du texte de départ reste dans le texte raccourci
+    (ajouté en fin de partie s'il a disparu). Un trou ne disparaît jamais en raccourcissant : la question passée
+    reste visible, et l'export reste bloqué tant qu'il n'est pas rempli."""
+    return garantir_manques(texte, list(dict.fromkeys(_TODO.findall(base_texte or ""))))
+
+
 # ── L'état de l'entretien (chef de file) ──────────────────────────────────────────────
 
-def _question_out(r: EntretienQuestion, *, partie, ligne, personnes: dict, noms: dict) -> dict:
+def _critere_out(ligne: Optional[dict]) -> Optional[dict]:
+    """Le critère (ou sous-critère) que la question concerne, tel qu'écrit ; un sous-critère sans poids écrit dit
+    son critère et le poids ÉCRIT de celui-ci (« sous-critère : … · critère : Valeur technique (60 %) »)."""
+    if not ligne:
+        return None
+    return {"critere": ligne.get("critere"), "poids": ligne.get("poids") or "",
+            "poids_source": ligne.get("poids_source") or "", "sous": bool(ligne.get("sous")),
+            "parent": (ligne.get("parent") or "") if ligne.get("sous") else "",
+            "parent_poids": (ligne.get("parent_poids") or "") if ligne.get("sous") else ""}
+
+
+def _question_out(r: EntretienQuestion, *, partie, ligne, personnes: dict, noms: dict,
+                  actives: Optional[dict] = None) -> dict:
     d = _def(r)
     a_part = r.adresse_kind == INV
+    # Le partenaire à qui la question est posée a-t-il encore accès à son espace ? Sinon, sa réponse ne sert plus
+    # (ni à la fiche chantier, ni à la rédaction) et n'est plus montrée ; la purge quotidienne l'efface.
+    active = (actives or {}).get(r.adresse_invite_id, True) if a_part else True
     par = ""
     if r.statut != A_REPONDRE:
         par = "vous" if r.reponse_kind == ORG else (noms.get(r.reponse_invite_id) or "un partenaire")
     rep = None
-    if r.statut == REPONDUE:
+    if r.statut == REPONDUE and active:
         p = personnes.get(r.reponse_preuve_id) if r.reponse_preuve_id else None
         rep = {"texte": r.reponse or "", "preuve_id": r.reponse_preuve_id,
                "personne": ({"nom": p["nom"], "fonction": p["fonction"], "ref": p["ref"]} if p else None),
@@ -1038,15 +1101,13 @@ def _question_out(r: EntretienQuestion, *, partie, ligne, personnes: dict, noms:
             "aide": d.get("aide") or ("" if r.type_reponse != eb.EQUIPE else BULLE_EQUIPE),
             "motif": ({"phrase": r.motif, "piece": r.motif_piece} if r.motif else None),
             "motif_message": "" if r.motif else MSG_SANS_MOTIF,
-            "critere": ({"critere": ligne.get("critere"), "poids": ligne.get("poids") or "",
-                         "poids_source": ligne.get("poids_source") or "", "sous": bool(ligne.get("sous"))}
-                        if ligne else None),
+            "critere": _critere_out(ligne),
             "partie": ({"section_id": partie.id, "titre": _flat(partie.intitule)[:160],
                         "redacteur": (noms.get(partie.author_invite_id) or "un partenaire")
                         if partie.author_kind == INV else ""} if partie else None),
             "adresse": {"type": r.adresse_kind, "invite_id": r.adresse_invite_id,
                         "nom": (noms.get(r.adresse_invite_id) or "un partenaire") if a_part else "",
-                        "choix": r.adresse_choix},
+                        "choix": r.adresse_choix, "active": bool(active)},
             "statut": r.statut, "statut_libelle": STATUTS.get(r.statut, ""),
             "reponse": rep, "par": par, "a_completer": a_completer(r),
             "peut_repondre": not a_part, "lock_version": int(r.lock_version or 0)}
@@ -1097,11 +1158,13 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: at.Lecteur
         personnes = _personnes_par_id(db, dossier.owner_id, rows)
         noms = _noms_invitations(db, [r.adresse_invite_id for r in rows] + [r.reponse_invite_id for r in rows]
                                  + [s.author_invite_id for s in secs if s.author_kind == INV])
+        actives = {iid: _invitation_active(db, iid) for iid in {r.adresse_invite_id for r in rows
+                                                                 if r.adresse_kind == INV and r.adresse_invite_id}}
         for r in rows:
             d = _def(r)
             ln = _critere_de(d.get("criteres") or [], lg)
             questions.append(_question_out(r, partie=partie_concernee(d.get("parties") or [], secs, ln), ligne=ln,
-                                           personnes=personnes, noms=noms))
+                                           personnes=personnes, noms=noms, actives=actives))
     else:
         pieces, _cle = pieces_du_marche(db, project, member_ids)
         pieces_ok = bool(pieces)
@@ -1111,9 +1174,7 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: at.Lecteur
                               "origine_libelle": LIB_ORIGINE[BANQUE], "theme": p["theme"], "question": p["question"],
                               "type_reponse": p["type_reponse"], "aide": "",
                               "motif": mo, "motif_message": "" if mo else MSG_SANS_MOTIF,
-                              "critere": ({"critere": ln.get("critere"), "poids": ln.get("poids") or "",
-                                           "poids_source": ln.get("poids_source") or "",
-                                           "sous": bool(ln.get("sous"))} if ln else None),
+                              "critere": _critere_out(ln),
                               "partie": ({"section_id": partie.id, "titre": _flat(partie.intitule)[:160],
                                           "redacteur": ""} if partie else None),
                               "adresse": {"type": ad["type"], "invite_id": ad["invite_id"], "nom": ad["nom"],
@@ -1129,8 +1190,20 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: at.Lecteur
     if pret:
         personnes = _personnes_par_id(db, dossier.owner_id, rows)
         noms = _noms_invitations(db, [r.reponse_invite_id for r in rows if r.reponse_kind == INV])
+        actives = {}
         for r in rows:
             if r.statut != REPONDUE or not _utilisable(r, personnes):
+                continue
+            if r.reponse_kind == INV:
+                # Comme fiches_chef : la réponse d'un partenaire n'est dans la fiche chantier que s'il est encore
+                # membre du groupement (invitation active) et qu'elle répond à la question qui lui est posée.
+                if not (r.adresse_kind == INV and r.reponse_invite_id == r.adresse_invite_id):
+                    continue
+                if r.reponse_invite_id not in actives:
+                    actives[r.reponse_invite_id] = _invitation_active(db, r.reponse_invite_id)
+                if not actives[r.reponse_invite_id]:
+                    continue
+            elif r.adresse_kind != ORG:
                 continue
             p = personnes.get(r.reponse_preuve_id) if r.reponse_preuve_id else None
             txt = (f"{p['nom']}, {p['fonction']}" + (f" ; {r.reponse}" if r.reponse else "")) if p else (r.reponse or "")
@@ -1263,6 +1336,9 @@ def _valider_ia(item, texte_dossier: str, pieces: list, deja: set) -> Optional[d
         return None
     if set(_NOMBRE.findall(q)) - set(_NOMBRE.findall(phrase)):
         return None                          # un nombre de la question qui n'est pas dans la phrase : refusé
+    if theme and (set(_NOMBRE.findall(theme)) - set(_NOMBRE.findall(phrase))
+                  or re.search(r"[\[\]{}<>]|https?://|www\.|@", theme)):
+        theme = ""                           # thème contrôlé comme la question ; sinon, le début de la question
     cle_q, cle_p = _norm_citation(q), _norm_citation(phrase)
     if cle_q in deja or cle_p in deja:
         return None
@@ -1272,7 +1348,27 @@ def _valider_ia(item, texte_dossier: str, pieces: list, deja: set) -> Optional[d
             piece = (p.get("libelle") or dp.label(p["type"]))[:200]
             break
     return {"question": q, "phrase": phrase[:MOTIF_MAX], "piece": piece,
-            "theme": theme or " ".join(q.rstrip(" ?").split()[:6])[:120], "cles": (cle_q, cle_p)}
+            "theme": theme or _theme_de_question(q), "cles": (cle_q, cle_p)}
+
+
+_MOTS_FIN_THEME = {"de", "du", "des", "la", "le", "les", "l", "d", "et", "a", "au", "aux", "en", "sur", "pour", "par",
+                   "avec", "un", "une", "vos", "votre", "dans", "sous"}
+
+
+def _theme_de_question(q: str) -> str:
+    """Le thème d'une question de l'IA qui n'en donne pas (ou dont le thème est refusé) : les mots de la question
+    elle-même, sans sa tournure interrogative (« Comment organisez-vous la dépose… ? » → « dépose de la couverture
+    par zones »)."""
+    t = _flat(q).rstrip(" ?")
+    t = re.sub(r"^(?:comment|quels?|quelles?|que|qu'|où|qui|combien|pourquoi|quand|est-ce que)\s+", "", t, flags=re.I)
+    mots = [w for w in t.split() if not re.search(r"-(?:t-)?(?:vous|il|elle|ils|elles|on)$", w, flags=re.I)][:8]
+    while mots and _fold(mots[-1]).strip("'") in _MOTS_FIN_THEME:
+        mots.pop()
+    while mots and _fold(mots[0]) in {"le", "la", "les", "un", "une", "des", "vos", "votre", "vous"}:
+        mots.pop(0)
+    if mots and re.match(r"^[ldLD]'", mots[0]):
+        mots[0] = mots[0][2:]
+    return " ".join(mots)[:120] or "réponse à une question sur le chantier"
 
 
 def _appel_ia(existantes: list, texte: str, n: int, billing_id) -> dict:
@@ -1384,19 +1480,65 @@ def effacer_dossiers(db, dossier_ids: list) -> None:
             synchronize_session=False)
 
 
-def retirer_invitation(db, inv: ProjectInvite) -> int:
-    """Invitation RETIRÉE ou DÉCLINÉE : ses réponses sont EFFACÉES (elles sont à lui, plus rien ne les
-    justifie), ses questions reviennent au chef de file, à répondre. Renvoie le nombre de questions reprises.
-    L'appelant valide la transaction."""
+def oublier_reponses(db, dossier_id: int, numeros, invite_id: Optional[int]) -> int:
+    """Des réponses d'un PARTENAIRE (questions `numeros` du dossier) sont effacées ou changées : les faits qui les
+    citaient redeviennent « à relire » (leur source n'existe plus) et la copie du passage de la réponse part — dans
+    les versions du dossier du chef de file (« déclaré par votre partenaire ») et dans les brouillons de ce
+    partenaire. Le texte des parties ne change pas. Même règle que les documents déposés par le lien
+    (atelier_groupement.oublier_documents). Sans valider (l'appelant valide). Renvoie le nombre de textes touchés."""
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.models import DossierPartBrouillon, DossierSectionVersion
+    from app.services import atelier_groupement as ag
+    refs = {f"{fs.ENTRETIEN}{int(x)}" for x in (numeros or ()) if x}
+    if not dossier_id or not refs:
+        return 0
+
+    def _du_chef(src):
+        return isinstance(src, dict) and src.get("ref") in refs and src.get("type") == fs.T_PARTENAIRE
+
+    def _du_partenaire(src):
+        return isinstance(src, dict) and src.get("ref") in refs
+
     n = 0
+    lots = [(db.query(DossierSectionVersion).filter(DossierSectionVersion.dossier_id == dossier_id).all(), _du_chef)]
+    if invite_id:
+        lots.append((db.query(DossierPartBrouillon).filter(DossierPartBrouillon.dossier_id == dossier_id,
+                                                           DossierPartBrouillon.invite_id == invite_id).all(),
+                     _du_partenaire))
+    for rows, perdu in lots:
+        for v in rows:
+            sources, faits, touche = ag._sans_ces_passages(v.sources, v.faits, perdu)
+            if not touche:
+                continue
+            v.sources, v.faits = sources, faits
+            flag_modified(v, "sources")
+            flag_modified(v, "faits")
+            if v.compteurs is not None or isinstance(v, DossierPartBrouillon):
+                v.compteurs = ag.compteurs(faits)
+                flag_modified(v, "compteurs")
+            n += 1
+    return n
+
+
+def retirer_invitation(db, inv: ProjectInvite) -> int:
+    """Invitation RETIRÉE ou DÉCLINÉE (ou coupée autrement : la purge quotidienne rattrape) : ses réponses sont
+    EFFACÉES (elles sont à lui, plus rien ne les justifie) et oubliées des faits qui les citaient (« à relire »), ses
+    questions reviennent au chef de file, à répondre. Renvoie le nombre de questions reprises. L'appelant valide la
+    transaction."""
+    n = 0
+    effacees = defaultdict(set)
     for r in db.query(EntretienQuestion).filter((EntretienQuestion.adresse_invite_id == inv.id)
                                                 | (EntretienQuestion.reponse_invite_id == inv.id)).all():
         if r.reponse_invite_id == inv.id:
+            if r.statut == REPONDUE:
+                effacees[r.dossier_id].add(r.numero)
             _appliquer(r, A_REPONDRE, None, None, kind="", invite_id=None, user_id=None)
         if r.adresse_invite_id == inv.id:
             r.adresse_kind, r.adresse_invite_id, r.adresse_choix = ORG, None, MANUEL
             r.lock_version = int(r.lock_version or 0) + 1
             n += 1
+    for did, nums in effacees.items():
+        oublier_reponses(db, did, nums, inv.id)
     return n
 
 
@@ -1420,10 +1562,20 @@ def exporter_chef(db, owner_id: int) -> list:
     """Export RGPD du chef de file : l'entretien de ses dossiers (questions, phrases du dossier, réponses — celles
     de ses partenaires comprises, qu'ils lui ont adressées)."""
     out = []
+    actives = {}
     for d in db.query(DossierPresentation).filter(DossierPresentation.owner_id == owner_id).all():
         rows = lignes(db, d, actives=False)
         if rows:
-            out.append({"dossier_id": d.id, "project_id": d.project_id, "questions": [_export_ligne(r) for r in rows]})
+            qs = []
+            for r in rows:
+                x = _export_ligne(r)
+                if r.reponse_kind == INV and r.reponse_invite_id:
+                    if r.reponse_invite_id not in actives:
+                        actives[r.reponse_invite_id] = _invitation_active(db, r.reponse_invite_id)
+                    if not actives[r.reponse_invite_id]:
+                        x["reponse"] = ""          # la réponse d'un partenaire qui n'a plus accès (purge à venir)
+                qs.append(x)
+            out.append({"dossier_id": d.id, "project_id": d.project_id, "questions": qs})
     return out
 
 

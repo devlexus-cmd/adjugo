@@ -73,7 +73,7 @@ def _rows_decp():
         dict(base, id="M-2022-03", objet="CDL", montant=12000.0, datenotification="2022-03-01", acheteur_id=ACH1,
              titulaire_id_1=SIRET, typegroupementoperateurs="Pas de groupement"),
         dict(base, id="M-2021-09", objet="Entretien des toitures communales", montant=1.0,
-             datenotification=_jour(30), acheteur_id=ACH1, nature="Accord-cadre", titulaire_id_1=SIRET,
+             datenotification=_jour(30), acheteur_id=ACH1, titulaire_id_1=SIRET,
              typegroupementoperateurs="Pas de groupement"),
         dict(base, id="M-2021-02", objet="Zinguerie de la mairie", montant=0, datenotification="2021-02-01",
              acheteur_id="MQ NC", titulaire_id_1=AUTRE, titulaire_id_2="11122233300014", titulaire_id_3=SIRET,
@@ -84,13 +84,14 @@ def _rows_decp():
         dict(base, id="M-2020-11", objet="Travaux de couverture " + "et de zinguerie des bâtiments communaux " * 12,
              montant=50000.0, datenotification="2020-11-05", acheteur_id=ACH1, titulaire_id_1=SIRET,
              typegroupementoperateurs="Conjoint"),
-        # L'accord-cadre lui-même (son identifiant d'accord-cadre est le sien), puis un marché subséquent.
+        # Format réel de DECP (2022) : `nature` vaut « Marché », `techniques` dit « Accord-cadre ». L'accord-cadre
+        # lui-même (identifiant d'accord-cadre « CDL »), puis un marché subséquent (qui désigne l'accord-cadre).
         dict(base, id="AC-2019-04", objet="Accord-cadre d'entretien des couvertures", montant=1000000.0,
-             datenotification="2019-04-01", acheteur_id=ACH1, titulaire_id_1=SIRET, idaccordcadre="AC-2019-04",
-             typegroupementoperateurs="Pas de groupement"),
+             datenotification="2019-04-01", acheteur_id=ACH1, titulaire_id_1=SIRET, techniques="Accord-cadre",
+             idaccordcadre="CDL", typegroupementoperateurs="Pas de groupement"),
         dict(base, id="MS-2019-09", objet="Marché subséquent n° 1 : école des Tilleuls", montant=38000.0,
-             datenotification="2019-09-01", acheteur_id=ACH1, titulaire_id_1=SIRET, idaccordcadre="AC-2019-04",
-             typegroupementoperateurs="Pas de groupement"),
+             datenotification="2019-09-01", acheteur_id=ACH1, titulaire_id_1=SIRET, techniques="Accord-cadre",
+             idaccordcadre="AC-2019-04", typegroupementoperateurs="Pas de groupement"),
     ]
 
 
@@ -216,7 +217,7 @@ def test_decp_lit_les_titulaires_1_2_3_et_montre_les_valeurs_telles_quelles(sour
     m4 = _par_id(ms, "M-2021-09")
     assert m4["valeur"]["montant_ht"] == 1 and "annee" not in m4["valeur"]
     assert any("inhabituel" in a for a in m4["alertes"]) and any("futur" in a for a in m4["alertes"])
-    assert any("Accord-cadre" in a for a in m4["alertes"])
+    assert not any("Accord-cadre" in a for a in m4["alertes"])
     # Titulaire 3, « pas de groupement » avec d'autres titulaires : rôle non deviné ; « MQ NC » ; montant 0.
     m5 = _par_id(ms, "M-2021-02")
     assert m5["affiche"]["position"] == 3 and "role" not in m5["valeur"]
@@ -229,9 +230,13 @@ def test_decp_lit_les_titulaires_1_2_3_et_montre_les_valeurs_telles_quelles(sour
     assert len(m7["valeur"]["objet"]) <= 300 and m7["valeur"]["objet"].endswith("…")
     assert m7["valeur"]["description"].startswith("Travaux de couverture et de zinguerie")
     assert m7["valeur"]["role"] == "groupement_conjoint" and m7["affiche"]["role_libelle"] == "En groupement conjoint"
-    # L'accord-cadre lui-même : son montant est un maximum (alerte) ; le marché subséquent porte ce qui est commandé.
-    assert any("Accord-cadre" in a for a in _par_id(ms, "AC-2019-04")["alertes"])
-    assert _par_id(ms, "MS-2019-09")["alertes"] == []
+    # L'accord-cadre lui-même : son montant est un maximum (alerte), il n'est pas repris dans la fiche ; le marché
+    # subséquent porte ce qui est commandé.
+    ac = _par_id(ms, "AC-2019-04")
+    assert any("Accord-cadre" in a and "n'est pas repris" in a for a in ac["alertes"])
+    assert "montant_ht" not in ac["valeur"] and ac["releve"]["montant_ht"] is None     # vide, et verrouillé
+    assert ac["affiche"]["montant"] == 1000000.0             # montré tel quel
+    assert _par_id(ms, "MS-2019-09")["alertes"] == [] and _par_id(ms, "MS-2019-09")["valeur"]["montant_ht"] == 38000
 
 
 def test_panne_message_honnete_cache_et_lecture_precedente_datee(sources, monkeypatch):

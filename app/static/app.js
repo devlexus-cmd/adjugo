@@ -127,7 +127,7 @@ function _pvAtlInit() { return { open: false, loading: false, d: null, q: "", er
 function _pvJj(s) { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "/" + m[2] + "/" + m[1] : ""; }
 const PV_NATURES = [
   { code: "reference", l: "Références", ic: "briefcase-business", ajout: "Ajouter une référence",
-    tip: "Les marchés que vous avez réalisés. Adjugo ne complète jamais une fiche : l'acheteur, l'année ou le montant viennent de vous ou de vos documents." },
+    tip: "Vos marchés réalisés ou attribués. Un marché repris des données publiques (DECP) est dit « marché attribué » : l'attribution ne prouve ni l'exécution ni sa qualité. Adjugo ne complète jamais une fiche : l'acheteur, l'année ou le montant viennent de vous, de vos documents ou de la source publique." },
   { code: "qualification", l: "Qualifications", ic: "scroll-text", ajout: "Ajouter une qualification",
     tip: "Certifications et qualifications professionnelles (Qualibat, RGE…), avec leur date de fin de validité : une fiche dont la date est dépassée n'est plus utilisée." },
   { code: "salarie", l: "Équipe", ic: "hard-hat", ajout: "Ajouter une personne",
@@ -145,7 +145,7 @@ const PV_CHAMPS = {
     { k: "lieu", l: "Lieu", n: 120, ph: "Quimper" },
     { k: "annee", l: "Année", t: "num", min: 1900, max: 2100, ph: "2024" },
     { k: "montant_ht", l: "Montant HT (€)", t: "num", min: 0, ph: "85000" },
-    { k: "role", l: "Réalisé", t: "select", opts: [["", "Non précisé"], ["seul", "Seul"], ["groupement_conjoint", "En groupement conjoint"],
+    { k: "role", l: "Rôle", t: "select", opts: [["", "Non précisé"], ["seul", "Seul"], ["groupement_conjoint", "En groupement conjoint"],
                                                   ["groupement_solidaire", "En groupement solidaire"], ["sous_traitant", "En sous-traitance"]] },
     { k: "description", l: "Description", t: "area", n: 1000, w: true, ph: "Ce qui a été fait, en quelques lignes" },
   ],
@@ -193,9 +193,14 @@ function pvTitre(p) {
   if (p.nature === "chiffre_cle") return (v.libelle || "") + " : " + pvNombre(v.valeur) + (v.unite ? " " + v.unite : "");
   return v.objet || v.nom || v.designation || "";
 }
+// Une référence tirée des DECP : un marché ATTRIBUÉ, jamais « réalisé » (l'attribution ne prouve ni l'exécution ni
+// sa qualité) — mêmes mots que le texte du serveur (preuves.texte_de).
+function pvAttribue(p) { return !!p && p.nature === "reference" && String(p.source_libelle || "").startsWith("marché attribué"); }
 function pvDetail(p) {
   const v = (p && p.valeur) || {}, out = [];
-  const role = { seul: "réalisé seul", groupement_conjoint: "en groupement conjoint", groupement_solidaire: "en groupement solidaire", sous_traitant: "en sous-traitance" };
+  const role = pvAttribue(p)
+    ? { seul: "attribué seul", groupement_conjoint: "attribué en groupement conjoint", groupement_solidaire: "attribué en groupement solidaire", sous_traitant: "en sous-traitance" }
+    : { seul: "réalisé seul", groupement_conjoint: "en groupement conjoint", groupement_solidaire: "en groupement solidaire", sous_traitant: "en sous-traitance" };
   const a = (x) => { if (x != null && x !== "") out.push(String(x)); };
   if (p.nature === "reference") {
     a(v.acheteur); a(v.lieu); a(v.annee);
@@ -5441,14 +5446,19 @@ const __adjApp = createApp({
     // ── Export (Word, PDF), blocage et dérogation inscrite au journal (décision 2b) ──
     // Rédaction, vague 5 : le mode « sans IA » de CE dossier (aucune IA de rédaction, pour personne).
     atlSansIa() { const st = this.atl.st; return !!(st && st.sans_ia && st.sans_ia.actif); },
-    async atlSansIaChoisir(val) {
-      const a = this.atl; if (!a.st || a.busy) return; a.busy = "sansia";
+    async atlSansIaChoisir(val, el) {
+      // `el` : la case cochée (options de l'export). Refus (démo, réseau, 409) : elle revient à l'état enregistré
+      // (Vue ne la repeint pas, la valeur liée n'ayant pas changé).
+      const a = this.atl;
+      const remettre = () => { if (el) el.checked = this.atlSansIa(); };
+      if (!a.st || a.busy) { remettre(); return; }
+      a.busy = "sansia";
       try {
         const r = await this.api("PUT", this._atlUrl("/options"), { sans_ia: !!val });
         a.st.export.options = r.options; if (r.sans_ia) a.st.sans_ia = r.sans_ia; a.sansIaPropose = false;
         this.notify(val ? "Ce dossier se rédige maintenant sans IA" : "L'aide de l'IA est de nouveau proposée pour ce dossier");
         this.atlLoad(true);
-      } catch (e) { this.notify(e.message, "err"); }
+      } catch (e) { this.notify(e.message, "err"); remettre(); }
       finally { a.busy = ""; }
     },
     // « 11 exigences traitées sur 12 » : pastille, libellé, et les choix (dite traitée par vous, retirée).
@@ -5464,10 +5474,10 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); }
       finally { a.busy = ""; }
     },
-    async atlOption(k, val) {
+    async atlOption(k, val, el) {
       const a = this.atl; if (!a.st) return;
       try { const r = await this.api("PUT", this._atlUrl("/options"), { [k]: !!val }); a.st.export.options = r.options; this.atlLoad(true); }
-      catch (e) { this.notify(e.message, "err"); this.atlLoad(true); }
+      catch (e) { this.notify(e.message, "err"); if (el) el.checked = !!(a.st.export.options || {})[k]; this.atlLoad(true); }
     },
     async atlExport(fmt) {
       const a = this.atl, st = a.st; if (!st || a.busy) return;
@@ -5852,7 +5862,10 @@ __adjApp.component("sources-publiques", {
   unmounted() { if (this._h) this._h.destroy(); },
 });
 __adjApp.component("grille-carte", {
-  props: { g: { type: Object, default: null }, edit: { type: Boolean, default: false }, busy: { type: String, default: "" } },
+  props: { g: { type: Object, default: null }, edit: { type: Boolean, default: false }, busy: { type: String, default: "" },
+           // Vague 5 : écran étroit (le mode « sans IA » se choisit depuis un ordinateur, dans l'atelier) et dossier déjà
+           // en mode « sans IA » (le bouton n'est plus proposé).
+           mobile: { type: Boolean, default: false }, sansIa: { type: Boolean, default: false } },
   emits: ["choix", "element", "ajout", "relire", "sansia"],
   data() { return { poids: {}, ajout: "" }; },
   computed: {
@@ -5965,7 +5978,7 @@ __adjApp.component("grille-carte", {
     + '<p v-else-if="!vm.impose && vm.cadreMentionne" class="small gn-note">Le règlement parle d\'un cadre de réponse, mais il ne figure pas dans les fichiers lus.</p>'
     + '<div v-for="x in vm.cm" :key="\'cm\'+x.code" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ x.message }}</span></div>'
     + '<div v-if="vm.ia" class="warn-box gn-ia"><i data-lucide="pen-off" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span class="gn-ia-t">{{ vm.ia.message }}<template v-if="vm.ia.phrases && vm.ia.phrases.length"> <q class="gn-ia-q">{{ vm.ia.phrases[0].phrase }}</q></template></span>'
-    + '<button v-if="edit" type="button" class="btn sm" @click="$emit(\'sansia\')">Rédiger sans IA</button></div>'
+    + '<template v-if="edit"><span v-if="sansIa" class="small gn-ia-etat">Ce dossier se rédige sans IA.</span><span v-else-if="mobile" class="small muted gn-ia-etat">Rédiger sans IA se choisit depuis un ordinateur, dans l\'atelier.</span><button v-else type="button" class="btn sm" @click="$emit(\'sansia\')">Rédiger sans IA</button></template></div>'
     + '<ul v-if="vm.chips.length || vm.visite" class="gn-chips">'
     + '<li v-for="(x,i) in vm.chips" :key="\'l\'+i">{{ lim(x) }}</li>'
     + '<li v-if="vm.visite">Visite obligatoire</li></ul>'

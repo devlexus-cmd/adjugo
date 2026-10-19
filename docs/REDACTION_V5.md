@@ -95,9 +95,14 @@ Contrôle de chaque proposition, sans IA :
   (« Méthodologie (20) ») : retenu tel quel seulement si CHAQUE sous-critère du critère en a un et que leur
   somme fait le poids du critère ;
 - exigence : phrase retrouvée mot pour mot ; son libellé est TIRÉ DE LA PHRASE (objet après le verbe
-  d'exigence, sinon la phrase), jamais écrit par l'IA ; les mêmes exclusions que le repérage s'appliquent ;
+  d'exigence, sinon la phrase), jamais écrit par l'IA ; les mêmes exclusions que le repérage s'appliquent,
+  la phrase relue dans son unité du dossier (`_ecartee_comme_au_reperage`) : niée (« n'est pas tenu de »),
+  facultative (« le candidat peut… », « à titre facultatif »), sujet suivi d'un mot qui l'exclut (« le candidat
+  retenu… »), sous un article sur la candidature, ou tirée du CCTP / CCAP sans parler du candidat, du mémoire ni
+  de l'offre → écartée et comptée comme un écart (`llm_qualite`) ;
 - question : au moins une phrase retrouvée mot pour mot, question de 15 à 300 caractères finie par « ? »,
-  aucun nombre absent des phrases retrouvées ; sinon écartée.
+  aucun nombre absent des phrases retrouvées (nombres comparés un à un : « 1 » n'est pas dans « 10 ») ; sinon
+  écartée.
 Chaque citation acceptée ou rejetée est comptée par `llm_qualite.noter_citations` (surveillance par fournisseur).
 
 Coût : la sortie de l'analyse grandit d'environ 300 à 1 700 tokens au plus (plafonds 10 exigences, 3
@@ -146,13 +151,17 @@ Repérage sans IA dans la zone qui suit chaque critère retrouvé (jusqu'au crit
   suivants » est une annonce, « sous-critères 1.1 à 1.5 » un renvoi) ;
 - « 2.1 … » sous le critère « 2. … » (ou pondéré) ;
 - « dont … », puces (« - », « a) », « i) », « 1) »…) pondérées, ou non pondérées quand la phrase qui ouvre la
-  liste parle de notation (« apprécié selon les éléments suivants : ») ; une liste ouverte par « le mémoire
+  liste parle de notation (« apprécié selon les éléments suivants : ») ; des puces qui se suivent (séparées
+  seulement par des blancs ou leur ponctuation de fin, « ; » « , » « . ») forment UNE liste, avec l'annonce de la
+  première : une liste « a ; b ; c. » donne ses trois sous-critères ; une liste ouverte par « le mémoire
   comprendra : » est une liste d'EXIGENCES, jamais de sous-critères ;
 - lignes pondérées sans marque (un tableau) : seulement si leur somme fait le poids du critère ;
 - énumération en ligne après « selon : » dont chaque élément a un poids.
 Rattachement : la liste est au critère de sa zone, sauf si ses poids font exactement le poids d'un AUTRE
 critère (« Valeur technique 60 % ; Prix 40 %. » puis des sous-critères de 60 points au total), ou si la phrase
-qui l'annonce nomme un autre critère.
+qui l'annonce nomme un autre critère. Jamais déplacée quand ses éléments portent la numérotation du critère de
+la zone (« 1.1 », « 1.2 » sous « 1. Valeur technique ») : leur somme qui tombe sur le poids d'un autre critère
+est alors un écart (`controle_sous` « ecart »), et la question `total_sous` est proposée.
 
 Un sous-critère proposé par l'IA dont le poids n'est pas retrouvé reste dans la grille et dans le plan, sans
 poids (« poids à vérifier » à l'écran).
@@ -168,7 +177,12 @@ donne une partie par sous-critère (intitulé et phrase du règlement), rangées
 (`parents`), numérotées « 1.1, 1.2 » (`_rangs`) ; le fichier Word et le PDF écrivent le titre du critère une
 fois au-dessus (`parents_affiches`). Un seul critère technique découpé par le règlement : ses sous-critères
 font le plan (message `MSG_GRILLE_UN_CRITERE_SOUS`), ce n'est pas un découpage d'Adjugo (`partie_de_critere`
-faux). La partie garde le critère, son id et son poids de la grille : « Comment vous serez noté » reste la
+faux). Les parties des sous-critères d'un critère restent ENSEMBLE, sous un seul titre et un seul numéro :
+« Monter / Descendre » une autre partie lui fait passer le groupe entier (`_hors_des_groupes`), une partie
+ajoutée « après » l'une d'elles va après le groupe, une partie de sous-critère remise revient dans son groupe ; une
+partie de sous-critère change d'ordre parmi les siennes mais n'en sort pas (409 `groupe_sous_criteres`, message
+à afficher) ; un ordre ancien interrompu garde un numéro par critère (`_rangs`). La partie garde le critère, son
+id et son poids de la grille : « Comment vous serez noté » reste la
 seule source du plan, et `changements_grille` continue de comparer les critères. Chaque partie expose
 `sous_critere` ({critere, poids, phrase}) ; la partie d'un critère non découpé expose `sous_criteres`.
 La consigne de rédaction dit « SOUS-CRITÈRE DE L'ACHETEUR : … (poids écrit dans le règlement : …) » ou
@@ -191,7 +205,7 @@ Repérage sans IA (`grille_exigences._reperer`), dans le règlement, le cadre de
 Jamais : une pièce administrative ou un prix (DC1, DC2, DUME, Kbis, attestations, assurances, RIB, acte
 d'engagement, bordereau, DPGF, DQE, chiffre d'affaires…), le dépôt (plateforme, date limite, format, pli,
 signature), la visite, les variantes, ce que fait le candidat retenu ou le titulaire, ce qui est permis
-(« peut », « pourra ») ou nié (« n'est pas tenu »), une phrase d'un article sur la candidature
+(« peut », « pourra », « à titre facultatif ») ou nié (« n'est pas tenu »), une phrase d'un article sur la candidature
 (« Conditions de participation »…), « justifier d'une capacité », « une offre conforme », l'obligation d'utiliser
 le cadre (déjà dans « Ce que le dossier impose »), une simple limite de longueur (« au maximum 10 pages » ; mais
 « l'encadrement du chantier (2 pages maximum) » est bien une exigence). Une exigence sans mot principal (« un
@@ -202,7 +216,9 @@ courte sans ponctuation finale, « Article 5 - … ») ; un retour à la ligne d
 
 **La règle « traitée », explicite et testée** (`grille_exigences.traitement`, texte `REGLE_TRAITEE`) :
 1. les mots principaux d'une exigence sont les mots de son libellé (sinon de sa phrase), sans mots vides ni
-   mots qu'on trouve dans toute exigence (« candidat », « mémoire », « présenter », « préciser », « pages »…),
+   mots qu'on trouve dans toute exigence (« candidat », « mémoire », « présenter », « préciser », « pages »…) ou
+   dans tout mémoire du BTP (« travaux », « chantier », « entreprise » : « la gestion des déchets du chantier »
+   n'est pas traitée par une partie qui parle du chantier sans nommer les déchets),
    réduits à leurs 5 premières lettres (« déchets » ↔ « déchet »), au plus 8 ;
 2. elle est **traitée** quand le texte d'UNE partie, sans ses « [À compléter : …] », en reprend : tous s'il y
    en a un ou deux ; sinon au moins la moitié, et au moins deux (`requis(k)`) ;
@@ -242,12 +258,19 @@ dans « Ce que le dossier impose » (chef de file et partenaires), phrase dans �
 Repérage : « intelligence artificielle », « IA », « ChatGPT », « outil de génération de texte »… dans le
 règlement, le cadre ou l'avis, dans une phrase qui parle de l'offre (mémoire, offre, rédaction, réponse, candidat,
 dossier, document) : un marché qui ACHÈTE un outil d'IA ne déclenche rien. Nature : `interdit` (« sans recours à… », « ne doit pas être rédigé par… »),
-`declarer` (« indique s'il a eu recours à… »), sinon `mention` (et alors une question à l'acheteur est
-proposée). La phrase est affichée sur la carte, dans l'atelier (avant la création du plan aussi) et chez les
+`declarer` (« indique s'il a eu recours à… », ou « n'est pas interdit ; le candidat le signale »), `permis`
+(« n'est pas interdit », « est autorisé, sans restriction » : une phrase qui PERMET l'IA n'est jamais lue comme
+une interdiction — l'expression qui permet est retirée avant de chercher une interdiction dans la phrase ;
+message `MSG_IA_PERMIS` « Le règlement admet l'intelligence artificielle : lisez la phrase. Vous restez libre de
+rédiger ce dossier sans IA. », aucune question à l'acheteur), sinon `mention` (et alors une question à l'acheteur
+est proposée). La phrase est affichée sur la carte, dans l'atelier (avant la création du plan aussi) et chez les
 partenaires (message propre : « Le chef de file choisit si le dossier se rédige sans IA »).
 
 **Le mode « sans IA »** (pour CE dossier, choisi par le chef de file, proposé quand le règlement parle d'IA,
-toujours possible par la case « Rédiger sans IA ») :
+toujours possible par la case « Rédiger sans IA ») — sur la carte du marché, le bouton « Rédiger sans IA » n'est
+proposé que sur un ordinateur (écran étroit : « Rédiger sans IA se choisit depuis un ordinateur, dans
+l'atelier. ») et tant que le dossier n'est pas déjà « sans IA » (« Ce dossier se rédige sans IA. ») ; une case
+des options de l'export refusée (démo, réseau, 409) revient à l'état enregistré :
 - rangé dans `options_export["sans_ia"] = {actif, le, par}` ; `PUT /api/atelier/{pid}/options {sans_ia}`
   (ou `POST /api/atelier/{pid} {base, sans_ia: true}` à la création) ; inscrit au journal chaîné
   (`atelier.sans_ia`, « mode sans IA activé / retiré ») ; la réponse de `/options` garde `options =
@@ -282,8 +305,10 @@ Repérées sans IA, chacune avec ses phrases (au plus 8) :
 Date limite des questions (`date_limite_questions`) : une phrase sur les questions des candidats qui dit QUAND
 les poser (« au plus tard le 05/06/2026 » : date écrite ; « 6 jours avant la date limite de remise » : le délai,
 et une date calculée seulement en jours simples quand une seule date de remise est écrite, dite « calculée par
-Adjugo … : vérifiez-la » ; jamais pour des jours francs ou ouvrés). « Les réponses seront envoyées… » n'est pas
-cette date.
+Adjugo … : vérifiez-la » ; jamais pour des jours francs ou ouvrés). Une date écrite APRÈS le délai (« … 6 jours
+avant la date limite de remise des offres, fixée au 15/12/2026 ») est celle de la REMISE, jamais celle des
+questions : le délai est dit, la date est calculée (09/12/2026, « calculée par Adjugo ») ; la date de remise de
+la même phrase sert quand aucune autre n'est repérée. « Les réponses seront envoyées… » n'est pas cette date.
 
 À l'écran (chef de file seulement) : la date limite, « Adjugo n'envoie rien : c'est vous qui posez les questions sur
 la plateforme de l'acheteur, avant le … », chaque question avec ses phrases, « Copier la question » (la question
@@ -452,10 +477,14 @@ quand il n'a rien d'autre à faire.
   (un critère : « Moyens humains et encadrement : 10 % »). Elle repasse par `citation_guard` (suite exacte du
   texte de sa pièce) ; une phrase déjà montrée par une question plus prioritaire n'est reprise que si le dossier
   n'en a pas d'autre. **Une phrase qui nie** (« aucune présence d'amiante », « les travaux de nuit ne sont pas
-  prévus ») ne déclenche rien ; un intitulé d'un mot (« Article 2 - Amiante ») non plus.
+  prévus ») ne déclenche rien ; un intitulé d'un mot (« Article 2 - Amiante ») non plus. Une phrase sous un
+  article sur la candidature (« Conditions de participation »…, même règle que la liste des exigences) ne motive
+  une question qu'à défaut de toute autre.
 - **Le classement** : le critère concerné est le premier début de mot de la question retrouvé dans un critère
   technique de « Comment vous serez noté » (le plus lourd s'il y en a plusieurs ; sinon le critère unique, ou le
-  seul critère « technique ») ; son poids TEL QU'ÉCRIT classe la question. D'abord la meilleure question de chaque
+  seul critère « technique ») ; son poids TEL QU'ÉCRIT classe la question (un sous-critère sans poids écrit se
+  classe sur le poids ÉCRIT de son critère, sans qu'aucun poids lui soit attribué, et ses questions forment un
+  groupe avec celles du critère ; l'écran dit « sous-critère : … · critère : Valeur technique (60 %) »). D'abord la meilleure question de chaque
   critère (du plus lourd au plus léger), puis la suivante de chacun, etc. ; une question qu'aucun critère ne
   concerne passe après ; à poids égal, l'ordre de la banque. **8 questions au plus.** L'écran les montre du critère
   le plus lourd au plus léger.
@@ -477,8 +506,10 @@ quand il n'a rien d'autre à faire.
 - Chaque réponse est un fait numéroté **`[R3]`** (numéro STABLE dans le dossier, jamais réutilisé), remis à l'IA
   et au contrôle des faits (A) avec les autres faits autorisés :
   `[R3] (déclaré par vous) Entretien chantier, réponse à « Le site reste occupé… ? » : Accès des compagnons par le
-  portail nord…`. Pour le contrôle, la fiche porte le thème et la réponse (le nom de la personne choisie compris) ;
-  pour l'IA, la question et la réponse (l'étiquette de la personne, jamais son nom).
+  portail nord…`. Pour le contrôle, la fiche porte le thème FIXE de la banque et la réponse (le nom de la personne
+  choisie compris) — jamais le thème d'une question proposée par l'IA, écrit par l'IA : un nombre ou un nom qu'il
+  porterait deviendrait « déclaré par vous » ; pour l'IA, la question et la réponse (l'étiquette de la personne,
+  jamais son nom).
 - **Chef de chantier (D8 a)** : la personne choisie dans « Mes preuves » (fiche « Équipe » acceptée et utilisable)
   est remise sous son étiquette (`[Cheffe de chantier 1], Cheffe de chantier (sa fiche : [F7])`) : son nom est
   masqué avant l'appel (`pii_scope`), remis en clair sans IA dans le texte rendu ; son CV s'insère tel quel par
@@ -494,7 +525,9 @@ quand il n'a rien d'autre à faire.
 - **Une question PASSÉE laisse son « [À compléter : … ] » dans la partie concernée** : consigne de l'IA, puis,
   sans IA, le passage est ajouté en fin de partie s'il manque (`garantir_manques` ; pas de doublon si l'IA l'a
   écrit, même avec un autre libellé du même objet). Il bloque l'export comme tout « [À compléter] » (décision 2b,
-  dérogation possible). **Une question encore sans réponse** : l'IA n'écrit aucun fait à son sujet et laisse le
+  dérogation possible). « Raccourcir » le garde aussi : chaque « [À compléter] » du texte de départ reste dans le
+  texte raccourci, remis sans IA en fin de partie s'il a disparu (`garder_trous`, chef de file et partenaire).
+  **Une question encore sans réponse** : l'IA n'écrit aucun fait à son sujet et laisse le
   passage si la partie doit en parler (consigne), l'écran prévient avant de rédiger. **« Sans objet »** : rien.
 - **Contrôle des faits (A)** : un fait de la phrase relié à `[R3]` porte la source `{ref: "R3", type: "declare",
   libelle: "déclaré par vous"}` ; une réponse modifiée après la rédaction est relue au prochain « Recontrôler »
@@ -523,7 +556,15 @@ quand il n'a rien d'autre à faire.
   `T_PARTENAIRE` (« déclaré par votre partenaire ») qui n'appuie qu'une phrase qui nomme ce partenaire (règle
   « qui affirme quoi » de A). Adresser la question à un autre la sort de la fiche chantier (409
   `reponse_a_confirmer`, puis effacée) ; retrait ou déclin de l'invitation : ses réponses sont effacées, ses
-  questions reviennent au chef de file, à répondre.
+  questions reviennent au chef de file, à répondre. Une réponse de partenaire effacée ou changée (retrait, déclin,
+  question reprise avec confirmation, réponse retirée, passée ou modifiée par lui) est aussi OUBLIÉE DES FAITS qui
+  la citaient (`oublier_reponses`) : dans les versions du dossier du chef de file et dans les brouillons de ce
+  partenaire, la copie du passage part et le fait redevient « à relire » (l'export le dit : `faits_a_relire`),
+  comme pour un document déposé par le lien. Invitation coupée autrement (marché mis à la corbeille puis restauré,
+  lien expiré) : sa réponse n'est plus montrée ni remise (fiche chantier, carte de la question avec
+  `adresse.active = false`, export RGPD du chef de file), le chef de file qui veut répondre lit 403
+  `question_partenaire_sans_acces` (« … qui ne peut plus y répondre (raison) : reprenez-la… ») et « Posée à »
+  reste proposé ; la purge quotidienne (`ag.purger`) efface ses réponses et rend ses questions comme un retrait.
 - **L'IA du partenaire** ne reçoit que SES réponses (« déclaré par vous » pour lui) et ses propres questions
   passées ou sans réponse de SA partie ; jamais les réponses du chef de file ni d'un autre membre. Celle du chef de
   file reçoit les réponses de ses partenaires encore membres.
@@ -550,7 +591,9 @@ quand il n'a rien d'autre à faire.
   de file) et `pii_scope` posés sur l'appel. Tâche du routage : `exigences` (lecture du dossier de l'acheteur,
   Mistral puis Claude en secours — aucune ligne du routage ni des pages juridiques ne change).
 - **Contrôle sans IA de chaque question proposée** : sa phrase retrouvée MOT POUR MOT dans le dossier
-  (`citation_guard`, 20 caractères au moins) ; aucun nombre de la question absent de la phrase ; une vraie question
+  (`citation_guard`, 20 caractères au moins) ; aucun nombre de la question absent de la phrase ; son thème
+  contrôlé de même (aucun nombre absent de la phrase, ni crochet ni lien ; sinon les mots de la question, sans sa
+  tournure interrogative) ; une vraie question
   (12 à 300 caractères, sans renvoi, lien ni adresse) ; ni la même question ni la même phrase qu'une question déjà
   posée. Au plus **4 questions de l'IA** par dossier (`MAX_IA`), ajoutées après celles de la banque, avec
   « Proposée par Adjugo avec l'IA, d'après une phrase du dossier ».
@@ -636,7 +679,8 @@ dossier d'avant la vague 5, `prepare: false` et `proposees` (combien l'entretien
 |---|---|
 | Effacement du compte du chef de file, corbeille purgée | l'entretien part avec le dossier (`ag.effacer_dossiers` → `ec.effacer_dossiers`) |
 | Effacement d'un compte (partenaire ou membre) | ses réponses restent à l'organisation ou à l'invitation qui les a données, sans le compte (`reponse_user_id` vidé) |
-| Retrait ou déclin d'une invitation | ses réponses effacées, ses questions rendues au chef de file, à répondre |
+| Retrait ou déclin d'une invitation | ses réponses effacées et oubliées des faits qui les citaient (« à relire »), ses questions rendues au chef de file, à répondre |
+| Invitation coupée sans retrait (corbeille, lien expiré depuis plus de 30 jours) | réponses cachées tout de suite ; la purge quotidienne les efface comme un retrait |
 | Transfert de propriété, membre effacé, dossier réaffecté | les lignes suivent `owner_id` comme l'atelier |
 | Export RGPD du chef de file | `entretiens_chantier` (questions, phrases, réponses — celles de ses partenaires comprises) |
 | Export RGPD et portabilité du partenaire | `reponses_entretien_chantier` dans sa part : les questions qui lui sont posées et SES réponses |
@@ -720,7 +764,7 @@ Tests : `tests/test_redaction_v5_e2.py`. **Aucune migration** : les preuves gard
 
 | source | requête | ce qui est lu |
 |---|---|---|
-| DECP (`data.economie.gouv.fr`, jeu `decp-2022-marches-valides`) | `startswith(titulaire_id_1, "<SIREN>") or …_2 or …_3`, du plus récent au plus ancien, 100 lignes par page, 3 pages au plus | `id`, `objet`, `montant` (attribution, HT), `datenotification`, `acheteur_id`, `nature`, `titulaire_id_1..3`, `typegroupementoperateurs`, `idaccordcadre`, `lieuexecution_code` |
+| DECP (`data.economie.gouv.fr`, jeu `decp-2022-marches-valides`) | `startswith(titulaire_id_1, "<SIREN>") or …_2 or …_3`, du plus récent au plus ancien, 100 lignes par page, 3 pages au plus | `id`, `objet`, `montant` (attribution, HT), `datenotification`, `acheteur_id`, `nature`, `techniques`, `titulaire_id_1..3`, `typegroupementoperateurs`, `idaccordcadre`, `lieuexecution_code` |
 | Liste RGE de l'ADEME (`data.ademe.fr`, jeu `liste-des-entreprises-rge-2`) | `qs=siret:<SIREN>*` (tous les établissements), 300 lignes | `siret`, `code_qualification`, `nom_qualification`, `nom_certificat`, `organisme`, `domaine`, `lien_date_debut`, `lien_date_fin` |
 | Annuaire des entreprises (`recherche-entreprises.api.gouv.fr`) | le SIREN de l'acheteur donné par DECP | `nom_complet` de l'acheteur (40 noms au plus par lecture, 4 en parallèle, 6 s au total) |
 
@@ -738,7 +782,13 @@ Robustesse (un seul process, sans Redis) :
 - panne sans lecture précédente : `statut: "panne"` et « Les données des marchés publics (DECP) ne répondent
   pas pour le moment : rien n'a été lu, réessayez plus tard. » — jamais « aucun marché » ;
 - noms d'acheteurs : un nom non retrouvé n'est jamais deviné (le SIRET reste affiché) ; annuaire en panne :
-  relu au plus tôt 10 minutes après ;
+  relu au plus tôt 10 minutes après ; un seul exécuteur pour le process (4 lectures en même temps) : une lecture
+  finie après le budget de 6 s range quand même son nom, une lecture pas commencée est annulée, une lecture en
+  cours n'est jamais relancée ; la relecture faite pendant qu'une part est verrouillée ne lit que les noms déjà en
+  cache (`noms_en_cache`, aucun appel réseau) ;
+- couverture : le jeu lu contient surtout des marchés notifiés depuis 2024 (environ 86 % des lignes au 19/10/2026) ;
+  l'écran le dit dans la bulle (i) et sous « Aucun marché trouvé » : « Les données publiques lues couvrent surtout
+  les marchés notifiés depuis 2024 : un marché plus ancien peut manquer, ajoutez-le vous-même. » ;
 - la date de lecture (`consulte_le`) est le jour de Paris ; elle est enregistrée avec chaque fiche.
 
 ### E2.2 Une ligne DECP → une référence PROPOSÉE (rien d'inventé)
@@ -756,19 +806,23 @@ source_libelle: "marché attribué, source publique DECP", source}`.
 |---|---|
 | `objet` | tel qu'écrit ; vide ou valeur de remplissage (« CDL », « MQ NC », « NC »…) → `manque` (la ligne ne peut pas devenir une référence) ; plus de 300 caractères → coupé à un espace avec « … », le texte complet en `description` (alerte) |
 | `acheteur` | nom retrouvé dans l'annuaire par le SIRET de DECP ; sinon absent (le SIRET est montré) ; « MQ NC » → alerte « Acheteur non renseigné dans DECP. » |
-| `montant_ht` | gardé tel quel ; < 1 000 € ou > 50 M€ → alerte « Montant inhabituel… Cochez seulement s'il est juste. » ; 0, négatif ou illisible → non repris (alerte) ; accord-cadre (la nature le dit, ou `idaccordcadre` est l'identifiant de la ligne elle-même) → alerte « le montant de DECP est un maximum ou une estimation, pas ce qui a été commandé » ; un marché subséquent n'en porte pas |
+| `montant_ht` | gardé tel quel ; < 1 000 € ou > 50 M€ → alerte « Montant inhabituel… Cochez seulement s'il est juste. » ; 0, négatif ou illisible → non repris (alerte) ; **accord-cadre** — dans le format réel de DECP, `nature` vaut « Marché » et c'est `techniques` qui dit « Accord-cadre » (environ 37 % des lignes) : la ligne est l'accord-cadre lui-même quand `idaccordcadre` est vide (« CDL ») ou son propre identifiant (ou, ancien format, quand `nature` le dit) → montant **non repris** (ni dans la fiche ni dans le relevé), alerte « Accord-cadre : le montant de DECP (… € HT) est un maximum ou une estimation, pas ce qui a été commandé : il n'est pas repris dans la fiche. » ; un marché subséquent (`idaccordcadre` désigne une autre ligne) garde son montant, sans alerte |
 | `annee` | année de notification ; date absente, illisible, future ou avant 1990 → non reprise (alerte) |
 | `role` | « Solidaire » → `groupement_solidaire` ; « Conjoint » → `groupement_conjoint` ; « Pas de groupement » sans autre titulaire → `seul` ; « Pas de groupement » avec d'autres titulaires → aucun rôle, alerte « précisez votre rôle après l'ajout » |
 
 Le texte d'une référence DECP dit **« attribué »**, jamais « réalisé » : `texte_de(…, attribue=True)` →
 « …; montant d'attribution 85 000 € HT ; attribué seul » ; dans l'atelier, la fiche insérée porte « Marché
 attribué à l'entreprise seule » et « Montant d'attribution » (`preuves_atelier.bloc(…, attribue=True)`) ;
-`texte_ia` aussi. Le lieu d'exécution (un code) est montré, pas enregistré.
+`texte_ia` aussi ; dans « Mes preuves » (`pvDetail`, liste et « Insérer une fiche » de l'atelier) : « attribué
+seul », « attribué en groupement conjoint / solidaire » ; le champ du formulaire s'appelle « Rôle » et la bulle
+des Références dit « Vos marchés réalisés ou attribués ». Le lieu d'exécution (un code) est montré, pas enregistré.
 
 ### E2.3 Liste RGE → une qualification PROPOSÉE ; une expirée exclue et signalée
 
-Les lignes de la liste (une par domaine et par établissement) sont regroupées par code, organisme,
-certificat et fin de validité. Une qualification proposée :
+Les lignes de la liste (une par domaine et par établissement) sont regroupées par qualification, organisme,
+certificat et fin de validité. La liste met le domaine dans le code et dans le nom (« 2111D111 », « Maçonnerie et
+ouvrage en béton armé (2111D111) ») : la qualification est le code sans son suffixe de domaine (« 2111 », motif
+`NNNNDnnn`), son nom sans « (code) ». Une qualification proposée :
 `valeur = {nom: "<certificat> : <qualification>" (200 car.), organisme (Qualibat, Qualit'EnR…), numero
 (code), detail: "RGE depuis le JJ/MM/AAAA, domaines : …"}`, `date_fin_validite` = fin de la liste
 (« 2099-01-01 » = sans date de fin : aucune date, alerte « Inscrite sans date de fin dans la liste RGE. ») ;
@@ -791,8 +845,11 @@ Authentification `Bearer`. Portée : l'organisation (`data_owner_id`).
 
 - **Le client n'envoie que des clés** : le contenu est relu côté serveur dans la lecture en cache (ou relu à
   la source). Une clé inconnue → `ignorees` « Cette ligne n'est plus dans la dernière lecture : rechargez
-  la liste, puis cochez de nouveau. » ; une ligne `manque` → `ignorees` avec sa raison ; une ligne déjà dans
-  « Mes preuves » (même identifiant DECP, même fiche ou même intitulé) → `deja`.
+  la liste, puis cochez de nouveau. » ; une clé d'une source en panne → `ignorees` avec le message de la panne
+  (jamais en silence ; l'écran le dit en alerte, une fois) ; une ligne `manque` → `ignorees` avec sa raison ; une
+  ligne déjà dans « Mes preuves » (même identifiant public — marché et acheteur —, même fiche, ou même intitulé
+  qu'une fiche qui N'EST PAS tirée d'une source publique) → `deja`. Deux marchés DECP distincts au même objet
+  (« Rénovation du terrain de football ») sont deux références.
 - Cocher, c'est accepter : la fiche est créée **acceptée**, `origine: "import_public"`, `type_source:
   "public"`, `source = {nom: "DECP" | "liste RGE de l'ADEME", url (page publique), consulte_le, identifiant
   ("marché <id>, acheteur <SIRET>" ou "SIRET <siret>, qualification <code>"), releve}`, `date_source =
@@ -829,8 +886,14 @@ Réponse : `{contribution, ajoutees: {references, qualifications}, deja, ignoree
 - Même verrou que l'enregistrement de la part : `version` exigée (428), version périmée → 409. Les
   sources publiques sont lues **avant** de réserver la version (aucun appel réseau pendant que la ligne est
   verrouillée). Rien à ajouter → rien n'est écrit, la version ne bouge pas.
-- Rien n'est retiré ni réécrit ; un élément déjà dans la part (même intitulé) n'est pas doublé ; 50
-  références et 50 qualifications au plus.
+- Rien n'est retiré ni réécrit ; un élément déjà dans la part n'est pas doublé (une qualification : même nom ;
+  une référence de DECP : même identifiant public, ou même intitulé qu'une référence saisie ; une référence saisie
+  ou de « Mes preuves » : même intitulé) ; 50 références et 50 qualifications au plus. Une clé d'une source en
+  panne est dans `ignorees` avec le message de la panne.
+- **La provenance n'est jamais prise du navigateur** : à l'enregistrement de la part (PUT), `provenance`,
+  `consulte_le` et `identifiant` ne restent que sur une référence identique (intitulé, acheteur, montant, année,
+  rôle, provenance) à une référence déjà enregistrée par « Reprendre » (`references_relues`) ; une référence
+  modifiée ou nouvelle devient une simple saisie (jamais « marché attribué »).
 - Référence ajoutée : `{intitule, client?, montant?, annee?, role?, provenance: "decp" | "mes_preuves",
   consulte_le?, identifiant?}` (les lecteurs existants lisent `intitule`, `client`, `montant`, `annee`) ;
   qualification ajoutée : son **nom**, comme une saisie (la liste reste une liste de textes, lue telle
@@ -863,8 +926,8 @@ Réponse : `{contribution, ajoutees: {references, qualifications}, deja, ignoree
 
 `sources_publiques.exemple_fictif_marches()` / `exemple_fictif_rge()` : trois marchés **clairement
 fictifs** (objets « Exemple fictif - … », acheteurs « Commune fictive de Marvejac », « Communauté fictive
-de Kerhel ») dont un en groupement solidaire et un montant inhabituel (1 €, accord-cadre) montré avec son
-alerte ; une qualification RGE valable et une expirée signalée. Bandeau : « Exemple fictif de la
+de Kerhel ») dont un en groupement solidaire et un accord-cadre au format réel de DECP (`nature` « Marché »,
+`techniques` « Accord-cadre », montant de 1 € montré et non repris, avec son alerte) ; une qualification RGE valable et une expirée signalée. Bandeau : « Exemple fictif de la
 démonstration : ces marchés et ces qualifications n'existent pas. Avec votre compte, Adjugo les lit dans les
 données publiques à partir de votre SIRET. » Servi au compte démo et au lien partenaire de la vitrine,
 **sans aucun appel réseau** ; la vitrine ne change pas (aucune ligne écrite, seed inchangé). Écritures :
@@ -990,7 +1053,8 @@ technique, partie du sous-critère, critère à un seul sous-critère gardé en 
    espace du partenaire), jamais dans le fichier exporté.
 3. L'entretien se classe par le poids du **sous-critère** quand la question en concerne un (I.1, point 3) ; une
    question qui ne concerne que le critère garde le poids du critère (il est écrit), même s'il dépasse celui de
-   ses sous-critères.
+   ses sous-critères. Contre-relecture : un sous-critère SANS poids écrit se classe sur le poids écrit de son
+   critère (il passait à 0, après un critère de 10 %), et ses questions font un groupe avec celles du critère.
 
 ### I.4 Vérifications
 
@@ -1018,3 +1082,73 @@ technique, partie du sous-critère, critère à un seul sous-critère gardé en 
   que le code de production sur la même liste, dans le même ordre (tests propres à SQLite : PRAGMA, `sqlite3`, base
   partagée) ; à conditions égales sur une base neuve (fichiers en échec seulement), 21 échecs de part et d'autre,
   identiques ; aucun dans la rédaction.
+
+---
+
+## R — Contre-relecture de la vague 5 (19/10/2026)
+
+27 remarques des relectures (anti-invention, cloisonnement et coûts, données externes, exactitude et écran),
+chacune reproduite avant d'être corrigée. Tests : `tests/test_redaction_v5_contre_relecture.py` (38 tests ; 37
+échouaient sur la tête d'intégration `0277857`, le dernier garde le rattachement par la somme, qui doit rester).
+La production n'a pas bougé (`feat/produit-acheteur-collectivites` = `b010c59`, déjà fusionnée) ; aucune migration.
+
+| # | remarque | correction |
+|---|---|---|
+| 1 | le thème d'une question de l'IA entrait dans la fiche [R#] « déclaré par vous » | thème contrôlé comme la question (sinon les mots de la question) et JAMAIS dans le texte que le contrôle rapproche (§ D.3, D.5) |
+| 2 | date limite des questions = date de remise quand la phrase donne un délai | la date écrite après le délai est celle de la remise : délai dit, date calculée (§ C2.9) |
+| 3 | exigence de l'IA niée ou facultative gardée | mêmes exclusions que le repérage, relue dans son unité ; « à titre facultatif » écarté aussi au repérage ; « dans l'offre » vaut mention de l'offre au CCTP (§ C2.2, C2.5) |
+| 4 | « 1 » trouvé dans « 10 » (question de l'IA à l'acheteur) | nombres comparés un à un (§ C2.2) |
+| 5 | « chantier » mot principal d'une exigence | « chantier(s) », « entreprise(s) » ajoutés aux mots génériques (§ C2.5) |
+| 6 | liste de sous-critères « a ; b ; c. » : seuls les deux premiers | des puces qui se suivent gardent l'annonce de la première (§ C2.4) |
+| 7 | « Raccourcir » perdait le « [À compléter] » d'une question passée | `garder_trous`, chef de file et partenaire (§ D.3) |
+| 8 | sous-critères « 1.1 / 1.2 » déplacés vers « Prix » | jamais déplacés quand ils portent la numérotation de leur critère ; écart et question `total_sous` (§ C2.4) |
+| 9 | « n'est pas interdit » lu comme une interdiction | nature `permis` (ou `declarer`), jamais `interdit`, aucune question `ia` (§ C2.8) |
+| 10, 21 | sous-critère sans poids écrit classé à 0 | classé sur le poids écrit de son critère, groupe commun, écran « critère : … (60 %) » (§ D.2, I.3) |
+| 11 | réponse d'un partenaire effacée mais copiée dans les faits du chef de file | `oublier_reponses` : passage retiré, fait « à relire » (retrait, déclin, reprise, réponse retirée ou changée) (§ D.4) |
+| 12 | invitation coupée par la corbeille : réponse jamais effacée, montrée | cachée tout de suite (fiche, carte, export RGPD), refus qui le dit, purge quotidienne qui l'efface (§ D.4, D.9) |
+| 13 | accords-cadres réels (`techniques`) jamais reconnus | `techniques` lu ; montant d'un accord-cadre non repris et verrouillé vide ; données de test et de démo au format réel (§ E2.2, E2.8) |
+| 14 | deux marchés au même objet traités comme un seul | « déjà » par l'identifiant public ; l'intitulé seulement face à une saisie (§ E2.4, E2.6) |
+| 15 | domaines RGE jamais regroupés (« 2111D111 ») | code sans suffixe de domaine, nom sans « (code) » (§ E2.3) |
+| 16 | lectures de noms continuées en arrière-plan, perdues, relancées | un exécuteur de 4 pour le process, nom rangé même après le budget, lecture pas commencée annulée (§ E2.1) |
+| 17 | annuaire rappelé pendant que la part est verrouillée | relecture sous verrou avec les noms du cache seulement (§ E2.1) |
+| 18 | ligne cochée perdue en silence quand une source tombe | dans `ignorees` avec la panne ; l'écran le dit en alerte (§ E2.4, E2.6) |
+| 19 | provenance « decp » prise du navigateur | `references_relues` (§ E2.6) |
+| 20 | DECP lu couvre surtout 2024 et après, sans le dire | phrase dans la bulle et sous « Aucun marché trouvé » (§ E2.1) |
+| 22 | DECP dit « réalisé seul » dans « Mes preuves » | « attribué seul », champ « Rôle », bulle des Références (§ E2.2) |
+| 23 | « Rédiger sans IA » sans effet au téléphone, montré en mode déjà « sans IA » | la carte le dit au lieu du bouton (§ C2.8) |
+| 24 | case « Rédiger sans IA » restée cochée après un refus | la case revient à l'état enregistré (aussi « Page de garde », « Sommaire ») (§ C2.8) |
+| 25 | « 1.1 / 1.2 » cassé par « Monter / Descendre » | groupes des sous-critères gardés ensemble ; 409 `groupe_sous_criteres` ; remise dans le groupe (§ C2.4) |
+| 26 | démo : la question des périodes motivée par une phrase des conditions de participation | une phrase sous un article de candidature n'est prise qu'à défaut (§ D.2) ; la vitrine montre l'article du délai |
+| 27 | (antérieure à la vague 5) page du marché à 375 px : défilement horizontal | en-tête de l'estimation du prix qui passe à la ligne |
+
+### R.1 Choix faits par défaut (à valider par Eliot)
+
+1. « équipe » n'est PAS ajouté aux mots génériques de la règle « traitée » (remarque 5) : une exigence peut ne
+   porter que sur l'équipe (« Le candidat présentera son équipe »), elle n'aurait plus de mot principal.
+2. Accord-cadre : son montant n'est pas repris, et il reste vide tant que la fiche garde la source DECP (un montant
+   écrit à la main serait dit « montant d'attribution, source publique DECP ») ; l'alerte dit de choisir
+   « Déclaré par vous » pour indiquer le montant commandé. Un marché subséquent garde son montant, sans alerte.
+3. Une phrase qui permet l'IA (« est autorisé ») donne un message neutre et laisse le choix « sans IA » ; aucune
+   question à l'acheteur.
+4. Invitation coupée sans retrait : la réponse est cachée tout de suite et effacée par la purge quotidienne
+   (comme les brouillons), pas au moment de la corbeille (un marché restauré garde ses invitations coupées).
+
+### R.2 Vérifications
+
+- Suite complète SQLite (`TZ=UTC`, IA, emails et sources publiques simulés, aucun réseau) : **1 809 tests, tous
+  verts** (1 771 + les 38 de la contre-relecture), dont `tests/test_demo_*.py`.
+- Les 38 tests de `tests/test_redaction_v5_contre_relecture.py` rejoués sur le code de `0277857` (extrait par
+  `git archive`) : 37 échecs, 1 vert (le rattachement par la somme, gardé).
+- Empreintes SRI à jour (`scripts/sri_update.py --check`) ; `node --check` de tous les scripts servis.
+- Navigateur réel (serveur local, IA coupée, base neuve), vitrine de la démo : page du marché « toiture » à 375 px
+  sans défilement horizontal (704 px avant ; en-tête de l'estimation sur deux lignes), carte « Comment vous serez
+  noté » qui dit « Rédiger sans IA se choisit depuis un ordinateur, dans l'atelier. » au lieu du bouton ; atelier à
+  375 px sans défilement ; question des périodes (R8) motivée par l'article du délai ; à 1 280 px, la case « Rédiger
+  sans IA » revient décochée après le refus de la démo, le bouton de la carte est proposé.
+- Postgres 16 depuis l'état exact de la production (`b010c59`, tête `y9z0depotlien`, code extrait par
+  `git archive`, données créées par le code de production) : les 24 contrôles de migration verts (une seule
+  révision, aucune donnée perdue, rejeu, code de production redémarré, schéma identique, retour arrière,
+  remontée) ; vrais tests rejoués sur la base montée (42 fichiers, dont celui de la contre-relecture, tout vert) :
+  1 162 verts et 37 échecs, **les mêmes 37** que le code de production sur la même liste, dans le même ordre (tests
+  propres à SQLite) ; à conditions égales, 21 échecs de part et d'autre, identiques.
+

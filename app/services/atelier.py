@@ -711,6 +711,25 @@ def _place_dans_le_cadre(act: list, section: DossierSection) -> int:
     return len(act)
 
 
+def _groupe_sous_critere(s: DossierSection):
+    """Clé du groupe d'une partie de sous-critère (son critère), None pour une autre partie."""
+    if not ap.est_partie_de_sous_critere(s):
+        return None
+    return (s.critere_id or "", ((s.parents or [{}])[0] or {}).get("intitule", ""))
+
+
+def _hors_des_groupes(act: list, pos: int, vers_le_bas: bool = True) -> int:
+    """Rang d'insertion d'une partie qui n'est pas d'un sous-critère : jamais AU MILIEU des parties des sous-critères
+    d'un même critère (elles restent ensemble, sous le titre du critère) — la partie passe le groupe dans le sens
+    du déplacement."""
+    while 0 < pos < len(act):
+        g = _groupe_sous_critere(act[pos - 1])
+        if g is None or g != _groupe_sous_critere(act[pos]):
+            break
+        pos = pos + 1 if vers_le_bas else pos - 1
+    return pos
+
+
 def ajouter_section(db, dossier: DossierPresentation, intitule: str, apres_id: Optional[int] = None) -> DossierSection:
     intitule = _flat(intitule)[:INTITULE_MAX]
     if len(intitule) < 2:
@@ -723,7 +742,7 @@ def ajouter_section(db, dossier: DossierPresentation, intitule: str, apres_id: O
         idx = next((i for i, s in enumerate(act) if s.id == apres_id), None)
         if idx is None:
             raise AtelierError(404, "partie_introuvable", "Partie introuvable.")
-        pos = idx + 1
+        pos = _hors_des_groupes(act, idx + 1) if dossier.plan_source != ap.CADRE else idx + 1
     s = DossierSection(dossier_id=dossier.id, project_id=dossier.project_id, owner_id=dossier.owner_id,
                        ordre=pos, numero="", intitule=intitule, niveau=1, parents=[], question="",
                        source_plan=ap.UTILISATEUR, critere="", critere_id="", poids="", partie_de_critere=False,
@@ -762,8 +781,25 @@ def modifier_section(db, dossier: DossierPresentation, section: DossierSection, 
         if dossier.plan_source == ap.CADRE:
             raise AtelierError(409, "ordre_impose",
                                "L'ordre des parties suit le cadre de réponse de l'acheteur : il ne se modifie pas.")
-        act = [s for s in sections_actives(db, dossier) if s.id != section.id]
+        tout = sections_actives(db, dossier)
+        avant = next((i for i, x in enumerate(tout) if x.id == section.id), len(tout))
+        act = [s for s in tout if s.id != section.id]
         pos = max(0, min(int(position), len(act)))
+        mien = _groupe_sous_critere(section)
+        if mien is None:
+            # Une autre partie passe un groupe de sous-critères en entier, jamais au milieu.
+            pos = _hors_des_groupes(act, pos, vers_le_bas=pos > avant)
+        else:
+            # La partie d'un sous-critère reste avec les autres sous-critères de son critère (entre eux, l'ordre
+            # se change librement) : le titre du critère n'apparaît qu'une fois, avec un seul numéro.
+            essai = act[:pos] + [section] + act[pos:]
+            rangs = [i for i, x in enumerate(essai) if _groupe_sous_critere(x) == mien]
+            if rangs and rangs[-1] - rangs[0] + 1 != len(rangs):
+                db.rollback()
+                titre = mien[1] or section.critere or "son critère"
+                raise AtelierError(409, "groupe_sous_criteres",
+                                   f"Cette partie reste avec les autres sous-critères de « {titre} » : changez leur "
+                                   "ordre entre eux, ou déplacez les autres parties autour d'eux.")
         act.insert(pos, section)
         for i, x in enumerate(act):
             x.ordre = i
@@ -791,9 +827,16 @@ def remettre_section(db, dossier: DossierPresentation, section: DossierSection, 
     if len(sections_actives(db, dossier)) >= SECTIONS_MAX:
         raise AtelierError(422, "trop_de_parties", f"Un dossier compte au plus {SECTIONS_MAX} parties.")
     act = sections_actives(db, dossier)
+    mien = _groupe_sous_critere(section)
+    freres = [i for i, x in enumerate(act) if mien is not None and _groupe_sous_critere(x) == mien]
     if dossier.plan_source == ap.CADRE and section.source_plan == ap.CADRE:
         # Le cadre imposé commande : la question reprend SA place (son numéro), pas la dernière.
         act.insert(_place_dans_le_cadre(act, section), section)
+    elif freres:
+        # La partie d'un sous-critère revient avec les autres sous-critères de son critère (à sa place d'origine
+        # parmi eux quand on la connaît), jamais en fin de plan.
+        pos = next((i for i in freres if (act[i].ordre or 0) > (section.ordre or 0)), freres[-1] + 1)
+        act.insert(pos, section)
     else:
         act.append(section)
     section.retiree_at = None
@@ -1563,16 +1606,19 @@ def _rangs(dossier: DossierPresentation, sections: list) -> dict:
     if dossier.plan_source != ap.CADRE and any(ap.est_partie_de_sous_critere(s) for s in sections):
         # Vague 5 : les parties d'un même critère découpé par ses sous-critères partagent son numéro
         # (« 2.1 », « 2.2 ») ; les autres parties suivent (« 3 »).
-        g, k, groupe = 0, 0, None
+        # Un groupe interrompu (ordre ancien) garde son numéro et continue sa numérotation : jamais deux numéros
+        # pour le même critère.
+        g, vus = 0, {}
         for s in sections:
-            if ap.est_partie_de_sous_critere(s):
-                cle = (s.critere_id or "", ((s.parents or [{}])[0] or {}).get("intitule", ""))
-                if cle != groupe:
-                    g, k, groupe = g + 1, 0, cle
-                k += 1
-                out[s.id] = f"{g}.{k}"
+            cle = _groupe_sous_critere(s)
+            if cle is not None:
+                if cle not in vus:
+                    g += 1
+                    vus[cle] = [g, 0]
+                vus[cle][1] += 1
+                out[s.id] = f"{vus[cle][0]}.{vus[cle][1]}"
             else:
-                g, k, groupe = g + 1, 0, None
+                g += 1
                 out[s.id] = str(g)
         return out
     for s in sections:
@@ -2451,7 +2497,10 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
         base = t["base"]
         texte = r["texte"]
         if action == JOB_RACCOURCIR:
-            # « Raccourcir » n'ajoute rien et ne blanchit rien : un fait garde ce qu'il était.
+            # « Raccourcir » n'ajoute rien et ne blanchit rien : un fait garde ce qu'il était, et chaque
+            # « [À compléter : …] » du texte de départ reste (remis sans IA s'il a disparu).
+            from app.services import entretien_chantier as ec
+            texte = ec.garder_trous(texte, t["texte"])
             faits = fs.controler(texte, t["fiches"], acheteur=None, noms_entreprise=ctx.noms_entreprise,
                                  section_entreprise=section_sur_l_entreprise(s), mode="raccourci",
                                  anciens=(base.faits if base else []), base_texte=t["texte"])

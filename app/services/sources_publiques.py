@@ -62,7 +62,7 @@ NOMS_BUDGET_S = 6.0
 NOMS_TTL_S = 30 * 24 * 3600
 FIN_SANS_DATE = 2090        # la liste RGE met « 2099-01-01 » pour une inscription sans date de fin
 
-SELECT_DECP = ("id,objet,montant,datenotification,acheteur_id,nature,codecpv,lieuexecution_code,"
+SELECT_DECP = ("id,objet,montant,datenotification,acheteur_id,nature,techniques,codecpv,lieuexecution_code,"
                "titulaire_id_1,titulaire_id_2,titulaire_id_3,typegroupementoperateurs,dureemois,idaccordcadre")
 SELECT_RGE = ("siret,nom_entreprise,code_qualification,nom_qualification,nom_certificat,domaine,meta_domaine,"
               "organisme,lien_date_debut,lien_date_fin")
@@ -213,6 +213,7 @@ def vider_cache() -> None:
     with _LOCK:
         _CACHE.clear()
         _NOMS.clear()
+        _EN_COURS.clear()
 
 
 def consulter(kind: str, siren: str) -> dict:
@@ -266,11 +267,41 @@ def _nom_sirene(siren: str) -> str:
     return str(top.get("nom_complet") or top.get("nom_raison_sociale") or "").strip()[:200]
 
 
-def noms_acheteurs(sirets) -> dict:
-    """{siret: nom} pour les acheteurs dont le nom est retrouvé dans l'annuaire des entreprises (par
-    leur SIREN), dans un budget borné : au plus NOMS_MAX lectures, 4 en parallèle, NOMS_BUDGET_S au
-    total. Un nom non retrouvé n'est jamais deviné : le SIRET reste affiché."""
-    out, a_lire = {}, []
+_EXEC = None
+_EN_COURS: dict = {}            # SIREN → lecture en cours (partagée : jamais deux lectures du même acheteur)
+
+
+def _executeur() -> ThreadPoolExecutor:
+    """Un seul exécuteur pour tout le process, borné à 4 lectures en même temps (jamais un par requête)."""
+    global _EXEC
+    with _LOCK:
+        if _EXEC is None:
+            _EXEC = ThreadPoolExecutor(max_workers=4, thread_name_prefix="adjugo-noms")
+        return _EXEC
+
+
+def _ranger_nom(siren: str, fut) -> None:
+    """Fin d'une lecture (dans le budget ou après) : le nom est mis en cache, même s'il arrive trop tard pour
+    la réponse en cours ; une lecture annulée ne range rien."""
+    with _LOCK:
+        if _EN_COURS.get(siren) is fut:
+            _EN_COURS.pop(siren, None)
+    if fut.cancelled():
+        return
+    try:
+        nom, t = fut.result(), time.monotonic()
+    except Exception:   # noqa: BLE001 — annuaire en panne : SIRET affiché, relu dans 10 minutes
+        nom, t = "", time.monotonic() - NOMS_TTL_S + NOMS_PANNE_S
+    with _LOCK:
+        if len(_NOMS) >= NOMS_MAX_CACHE:
+            _NOMS.clear()
+        _NOMS[siren] = (nom, t)
+
+
+def noms_en_cache(sirets) -> dict:
+    """{siret: nom} pour les acheteurs dont le nom est DÉJÀ en cache, sans aucun appel réseau (lecture faite pendant
+    qu'une ligne est verrouillée)."""
+    out = {}
     now = time.monotonic()
     for siret in dict.fromkeys(str(x or "").strip() for x in (sirets or [])):
         siren = clean_siren(siret)
@@ -278,36 +309,49 @@ def noms_acheteurs(sirets) -> dict:
             continue
         with _LOCK:
             e = _NOMS.get(siren)
-        if e is not None and now - e[1] < NOMS_TTL_S:
-            if e[0]:
-                out[siret] = e[0]
-            continue
-        a_lire.append((siret, siren))
-    sirens = list(dict.fromkeys(s for _x, s in a_lire))[:NOMS_MAX]
-    if sirens:
-        ex = ThreadPoolExecutor(max_workers=min(4, len(sirens)))
-        try:
-            futs = {ex.submit(_nom_sirene, s): s for s in sirens}
-            done, _ = wait(futs, timeout=NOMS_BUDGET_S)
-            for fut, s in futs.items():
-                if fut not in done:
-                    continue
-                try:
-                    nom, t = fut.result(), now
-                except Exception:   # noqa: BLE001 — annuaire en panne : SIRET affiché, relu dans 10 minutes
-                    nom, t = "", now - NOMS_TTL_S + NOMS_PANNE_S
-                with _LOCK:
-                    if len(_NOMS) >= NOMS_MAX_CACHE:
-                        _NOMS.clear()
-                    _NOMS[s] = (nom, t)
-        finally:
-            ex.shutdown(wait=False)
-    for siret, siren in a_lire:
-        with _LOCK:
-            e = _NOMS.get(siren)
-        if e is not None and e[0]:
+        if e is not None and e[0] and now - e[1] < NOMS_TTL_S:
             out[siret] = e[0]
     return out
+
+
+def noms_acheteurs(sirets) -> dict:
+    """{siret: nom} pour les acheteurs dont le nom est retrouvé dans l'annuaire des entreprises (par
+    leur SIREN), dans un budget borné : au plus NOMS_MAX lectures, 4 en parallèle (un exécuteur pour tout le
+    process), NOMS_BUDGET_S au total. Une lecture qui finit après le budget range quand même son nom en cache ;
+    une lecture pas encore commencée à la fin du budget est annulée ; une lecture déjà en cours (autre requête)
+    est attendue, jamais relancée. Un nom non retrouvé n'est jamais deviné : le SIRET reste affiché."""
+    now = time.monotonic()
+    a_lire = []
+    for siret in dict.fromkeys(str(x or "").strip() for x in (sirets or [])):
+        siren = clean_siren(siret)
+        if not siren:
+            continue
+        with _LOCK:
+            e = _NOMS.get(siren)
+        if e is not None and now - e[1] < NOMS_TTL_S:
+            continue
+        a_lire.append(siren)
+    sirens = list(dict.fromkeys(a_lire))[:NOMS_MAX]
+    if sirens:
+        ex = _executeur()
+        futs = {}
+        for s in sirens:
+            with _LOCK:
+                fut = _EN_COURS.get(s)
+                if fut is None:
+                    fut = _EN_COURS[s] = ex.submit(_nom_sirene, s)
+                    neuve = True
+                else:
+                    neuve = False
+            if neuve:
+                fut.add_done_callback(lambda f, s=s: _ranger_nom(s, f))
+            futs[fut] = s
+        finies, pas_finies = wait(list(futs), timeout=NOMS_BUDGET_S)
+        for fut in finies:
+            _ranger_nom(futs[fut], fut)  # rangée ici aussi : le rappel peut passer juste après ce retour
+        for fut in pas_finies:
+            fut.cancel()                 # pas encore commencée : annulée (une lecture en cours finit et range)
+    return noms_en_cache(sirets)
 
 
 # ── DECP : une ligne → une proposition de référence (sans rien inventer) ──────────────
@@ -386,14 +430,24 @@ def normaliser_marche(row: dict, siren: str, jour: date, noms: Optional[dict] = 
         if m < 1000 or m > 50_000_000:
             alertes.append(f"Montant inhabituel dans DECP : {_euros(m)} HT. Cochez seulement s'il est juste.")
     nature_marche = str(row.get("nature") or "").strip()
-    # Accord-cadre : la nature le dit, ou la ligne est l'accord-cadre lui-même (son identifiant d'accord-cadre est
-    # le sien) ; un marché subséquent (autre identifiant) porte, lui, le montant commandé.
+    # Accord-cadre. Dans DECP (format 2022), `nature` vaut « Marché » ; c'est `techniques` qui dit « Accord-cadre ».
+    # La ligne est l'accord-cadre LUI-MÊME quand son identifiant d'accord-cadre est vide (« CDL ») ou le sien : son
+    # montant est un maximum ou une estimation, il n'est pas repris dans la fiche. Quand `idaccordcadre` désigne
+    # une AUTRE ligne, c'est un marché subséquent : son montant est celui qu'il porte.
     id_ac = str(row.get("idaccordcadre") or "").strip()
-    accord = ("accord" in _fold(nature_marche) and "cadre" in _fold(nature_marche)) or \
-        (bool(id_ac) and not vide(id_ac) and id_ac == decp_id)
+    technique = _fold(row.get("techniques") or "")
+    accord = ("accord" in _fold(nature_marche) and "cadre" in _fold(nature_marche)) \
+        or ("accord" in technique and "cadre" in technique and (vide(id_ac) or id_ac == decp_id)) \
+        or (bool(id_ac) and not vide(id_ac) and id_ac == decp_id)
     if accord:
-        alertes.append("Accord-cadre : le montant de DECP est un maximum ou une estimation, pas ce qui a été "
-                       "commandé.")
+        if valeur.pop("montant_ht", None) is not None:
+            alertes.append(f"Accord-cadre : le montant de DECP ({_euros(m)} HT) est un maximum ou une estimation, pas "
+                           "ce qui a été commandé : il n'est pas repris dans la fiche. Pour indiquer le montant "
+                           "commandé, choisissez « Déclaré par vous » après l'ajout.")
+        else:
+            alertes.append("Accord-cadre : le montant de DECP est un maximum ou une estimation, pas ce qui a été "
+                           "commandé.")
+        alertes[:] = [a for a in alertes if not a.startswith("Montant inhabituel")]
 
     # Date de notification → année de la référence (si elle est plausible).
     dn = str(row.get("datenotification") or "").strip()[:10]
@@ -432,6 +486,10 @@ def normaliser_marche(row: dict, siren: str, jour: date, noms: Optional[dict] = 
         lib += f", avec {autres} autre{'s' if autres > 1 else ''} entreprise{'s' if autres > 1 else ''}"
 
     releve = dict(valeur)
+    if accord:
+        # Montant relevé VIDE : tant que la fiche garde la source DECP, aucun montant n'y est écrit à la main (il
+        # serait dit « montant d'attribution, source publique DECP ») ; « Déclaré par vous » le permet.
+        releve["montant_ht"] = None
     return {
         "cle": "decp:" + _cle(decp_id, row.get("acheteur_id"), pos, dn),
         "nature": "reference", "decp_id": decp_id,
@@ -455,7 +513,7 @@ def source_decp(prop: dict, consulte_le: str) -> dict:
             "consulte_le": consulte_le, "identifiant": ident[:120], "releve": dict(prop.get("releve") or {})}
 
 
-def marches(siren: str, *, avec_noms: bool = True) -> dict:
+def marches(siren: str, *, avec_noms: bool = True, noms_du_cache: bool = False) -> dict:
     """Les marchés DECP de l'entreprise, proposés (rien n'est enregistré ici).
     {statut ok|panne|siren_invalide, message, consulte_le, ancien, total, lus, tronque, marches: [...]}."""
     s = clean_siren(siren)
@@ -466,7 +524,9 @@ def marches(siren: str, *, avec_noms: bool = True) -> dict:
         return {"statut": "panne", "message": MSG_PANNE["decp"], "marches": []}
     rows = (r.get("donnees") or {}).get("rows") or []
     total = int((r.get("donnees") or {}).get("total") or len(rows))
-    noms = noms_acheteurs([x.get("acheteur_id") for x in rows if _id_reel(x.get("acheteur_id"))]) if avec_noms else {}
+    sirets = [x.get("acheteur_id") for x in rows if _id_reel(x.get("acheteur_id"))]
+    # `noms_du_cache` : relecture faite pendant qu'une ligne est verrouillée — les noms déjà lus, sans réseau.
+    noms = (noms_en_cache(sirets) if noms_du_cache else noms_acheteurs(sirets)) if avec_noms else {}
     jour = aujourd_hui()
     out, vus = [], set()
     for row in rows:
@@ -498,14 +558,36 @@ def _date_iso(v) -> Optional[date]:
         return None
 
 
+# La liste RGE de l'ADEME met le DOMAINE dans le code (« 2111D111 » : qualification Qualibat 2111, domaine D111) et
+# dans le nom (« Maçonnerie et ouvrage en béton armé (2111D111) ») : une ligne par domaine.
+_CODE_DOMAINE = re.compile(r"^(\d{4})D\d{3}$", re.I)
+
+
+def _code_qualification(code) -> str:
+    """Le numéro de la qualification, sans le suffixe de domaine (« 2111D111 » → « 2111 ») ; tel quel sinon."""
+    c = str(code or "").strip()
+    m = _CODE_DOMAINE.match(c)
+    return m.group(1) if m else c
+
+
+def _nom_sans_code(nom, code) -> str:
+    """Le nom de la qualification sans « (code de la ligne) » à la fin (« … béton armé (2111D111) » → « … béton
+    armé »)."""
+    n = re.sub(r"\s+", " ", str(nom or "")).strip()
+    c = str(code or "").strip()
+    if c and _CODE_DOMAINE.match(c):
+        n = re.sub(r"\s*\(\s*" + re.escape(c) + r"\s*\)\s*$", "", n, flags=re.I).strip()
+    return n
+
+
 def normaliser_rge(rows: list, jour: date) -> tuple:
     """(valables, expirees). Une qualification = un code, un organisme, un certificat et une fin de
     validité ; ses domaines (une ligne chacun dans la liste) sont regroupés. Une qualification dont la
     fin est dépassée n'est PAS proposée : elle est signalée."""
     groupes = OrderedDict()
     for r in rows or []:
-        code = str(r.get("code_qualification") or "").strip()
-        nomq = re.sub(r"\s+", " ", str(r.get("nom_qualification") or "")).strip()
+        code = _code_qualification(r.get("code_qualification"))
+        nomq = _nom_sans_code(r.get("nom_qualification"), r.get("code_qualification"))
         if not nomq and not code:
             continue
         cle = (code, _fold(r.get("organisme")), _fold(r.get("nom_certificat")), str(r.get("lien_date_fin") or "")[:10],
@@ -521,7 +603,7 @@ def normaliser_rge(rows: list, jour: date) -> tuple:
     valables, expirees = [], []
     for (code, _org, _cert, fin_s, _n), g in groupes.items():
         r = g["rows"][0]
-        nomq = re.sub(r"\s+", " ", str(r.get("nom_qualification") or "")).strip()
+        nomq = _nom_sans_code(r.get("nom_qualification"), r.get("code_qualification"))
         cert = re.sub(r"\s+", " ", str(r.get("nom_certificat") or "")).strip()
         nom = nomq or code
         if cert and _fold(cert) not in _fold(nom):
@@ -617,7 +699,8 @@ _DECP_FICTIF = [
      "titulaire_id_1": "11111111100018", "titulaire_id_2": SIREN_FICTIF + "00011", "titulaire_id_3": "CDL",
      "typegroupementoperateurs": "Solidaire", "lieuexecution_code": "56"},
     {"id": "FICTIF-2023-077", "objet": "Exemple fictif - Entretien des toitures des bâtiments communaux",
-     "montant": 1.0, "datenotification": "2023-02-20", "acheteur_id": "FICTIF-ACHETEUR-1", "nature": "Accord-cadre",
+     "montant": 1.0, "datenotification": "2023-02-20", "acheteur_id": "FICTIF-ACHETEUR-1", "nature": "Marché",
+     "techniques": "Accord-cadre", "idaccordcadre": "CDL",
      "titulaire_id_1": SIREN_FICTIF + "00011", "titulaire_id_2": "CDL", "titulaire_id_3": "CDL",
      "typegroupementoperateurs": "Pas de groupement", "lieuexecution_code": "29"},
 ]

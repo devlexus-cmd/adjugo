@@ -615,13 +615,16 @@ def _sous_reperes(p: "_Piece", r0: int, r1: int, parent_num: str, autres: list) 
         e = _sc_fin(p, a, r1, marques)
         nom, w = _sc_nom(p, a, e)
         if nom:
-            items.append({"a": m.start(), "b": e, "nom": nom, "poids": w, "kind": "sc"})
+            items.append({"a": m.start(), "b": e, "nom": nom, "poids": w, "kind": "sc", "nv": m.group("n") or ""})
     fin_prec, intro = None, ""
     for m in lignes:
         a = m.end()
         e = _sc_fin(p, a, r1, marques)
         kind = "dont" if m.group("dont") else ("num" if m.group("num") else "puce")
-        if kind in ("puce", "dont") and fin_prec != m.start():
+        # La puce suit-elle directement la précédente (seulement des blancs ou la ponctuation de fin d'élément,
+        # « ; » « , » « . », entre les deux) ? Alors c'est la même liste, avec la même annonce.
+        suite = fin_prec is not None and fin_prec <= m.start() and not p.flat[fin_prec:m.start()].strip(" \t\r\n;,.")
+        if kind in ("puce", "dont") and not suite:
             # Nouvelle liste : son annonce est la phrase qui la précède (« La valeur technique est appréciée
             # selon les éléments suivants : »), jamais un passage plus haut dans la zone.
             s0, _e0 = p.sentence(max(r0, m.start() - 2), max(r0, m.start() - 1))
@@ -637,7 +640,8 @@ def _sous_reperes(p: "_Piece", r0: int, r1: int, parent_num: str, autres: list) 
             # « le mémoire comprendra : » ouvre une liste d'EXIGENCES (app/services/grille_exigences.py).
             if not _SC_INTRO.search(intro) or _SC_LISTE_EXIGENCES.search(intro):
                 continue
-        items.append({"a": m.start(), "b": e, "nom": nom, "poids": w, "kind": kind})
+        items.append({"a": m.start(), "b": e, "nom": nom, "poids": w, "kind": kind,
+                      "nv": m.group("nv") if kind == "num" else ""})
     # Lignes pondérées sans marque (un tableau « Méthodologie | 30 points ») : seulement si leur somme fait
     # le poids du critère (vérifié par l'appelant, qui connaît ce poids) — marquées « ligne ».
     if not items:
@@ -839,7 +843,12 @@ def _attacher_sous(lines: list, raws: list, crit_stems: list, P: list, scope_cri
             total = sum(it["poids"][0] for it in items) if weighted else None
             pw = lines[j].get("poids_valeur")
             relatif = weighted and items[0]["poids"][1] == "%" and abs(total - 100) < 0.01
-            if weighted and not relatif and (pw is None or abs(total - pw) > 0.01):
+            # Des sous-critères qui portent la numérotation du critère de la zone (« 1.1 », « 1.2 » sous « 1. Valeur
+            # technique ») sont les siens, même si leur somme tombe sur le poids d'un autre critère : jamais déplacés
+            # (le contrôle dit alors l'écart, et la question est posée à l'acheteur).
+            pn = _parent_num(lines[j]["phrase"])
+            numerotes = bool(pn) and all("." in (it.get("nv") or "") and it["nv"].split(".")[0] == pn for it in items)
+            if weighted and not relatif and not numerotes and (pw is None or abs(total - pw) > 0.01):
                 # Leur somme fait le poids d'un AUTRE critère (« Valeur technique 60 % ; Prix 40 %. » puis les
                 # sous-critères de la valeur technique) : ils sont à lui.
                 autres_j = [y for _q2, y in lst if y != j and lines[y].get("poids_valeur") is not None

@@ -122,6 +122,7 @@ i[data-lucide] { display:inline-flex; align-items:center; justify-content:center
 .card.pad { padding:18px; }
 .card h3 { margin:0; font-family:var(--font-display); font-size:14px; font-weight:700; letter-spacing:-.01em; }
 .card .ch { display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--hairline); }
+.card .ch.ch-wrap { flex-wrap:wrap; row-gap:8px; }   /* en-tête à plusieurs boutons : jamais de défilement horizontal à 375 px */
 .card .cb { padding:16px 18px; }
 
 /* KPI */
@@ -1003,7 +1004,8 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 .gn-env i { width:14px; height:14px; flex:none; margin-top:2px; }
 .gn-ia { flex-wrap:wrap; }
 .gn-ia-t { flex:1 1 220px; min-width:0; }
-.gn-ia .btn { margin-left:auto; }
+.gn-ia .btn, .gn-ia .gn-ia-etat { margin-left:auto; }
+.gn-ia-etat { align-self:center; }
 .gn-ia-q { display:block; margin-top:4px; font-style:italic; overflow-wrap:anywhere; }
 .gn-off .gn-src-t, .gn-off .gn-q { opacity:.6; }
 .gn-ml { margin-left:6px; vertical-align:1px; }
