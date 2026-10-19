@@ -27,7 +27,7 @@ Code :
   `app/static/styles.css` (`.atl-ent…`, `.rp-ent…`) ;
 - démo : `app/services/demo_entretien.py` (appelé par `demo_redaction.seed_redaction`) ;
 - migration : `alembic/versions/z1entretien_entretien_chantier.py` (`z1entretienchantier`, après
-  `x8y9redactionv4`) ;
+  `y9z0depotlien`, la migration du dépôt de documents par le lien) ;
 - tests : `tests/test_redaction_v5_entretien.py`.
 
 Vocabulaire à l'écran : « questions sur ce chantier », « fiche chantier », « Passer », « Sans objet », « Posée
@@ -146,8 +146,12 @@ quand il n'a rien d'autre à faire.
   sont posées) ; `PUT …/redaction/entretien/{qid}`. Mêmes garde-fous qu'un envoi : clé de l'espace par le lien
   (403 `cle_espace_requise`), avertissement lu (422 `avertissement_requis`, message à afficher), identité prouvée
   quand le lien vise une adresse (403 `identity_unverified`), co-construction ouverte, démo refusée avant tout.
+  Comme ses autres écritures (contrat V4 § 21), le verrou de l'invitation est pris D'ABORD, avant celui de la
+  question : l'invitation est relue, la clé présentée doit encore ouvrir l'espace (409 `espace_reinitialise`,
+  rien d'écrit, l'écran se recharge) et le lien être actif (retiré entre-temps : 404 `question_introuvable`).
   Inscrit au journal chaîné (`entretien.reponse`, son journal : « Vous avez répondu à une question du chef de file
-  sur le chantier »).
+  sur le chantier »). Une réponse envoyée reste quand l'espace privé est réinitialisé (comme un texte envoyé) ;
+  ses documents déposés par le lien (« Vos documents pour Adjugo ») ne sont jamais lus par l'entretien.
 - **Sa réponse est SA donnée** : le chef de file la lit (« déclaré par Breizh Couverture ») sans pouvoir la
   modifier (403 `question_d_un_partenaire` sur sa propre route) ; dans son atelier elle est un fait
   `T_PARTENAIRE` (« déclaré par votre partenaire ») qui n'appuie qu'une phrase qui nomme ce partenaire (règle
@@ -203,11 +207,11 @@ Table **`entretien_questions`** (`EntretienQuestion`) : une ligne par question d
 | `reponse_kind`, `reponse_invite_id`, `reponse_user_id`, `repondu_le` | qui a répondu (organisation ou invitation), le compte, quand |
 | `lock_version` | verrou optimiste (409 `question_modifiee`) |
 
-Migration `z1entretienchantier` (après `x8y9redactionv4`) : idempotente (table créée si elle manque, colonnes et
-index ajoutés s'ils manquent), SQLite et Postgres, valeurs par défaut côté base identiques au modèle ; downgrade
-réel (table supprimée). Déploiement sans casse : le code de production précédent ne lit ni n'écrit la table.
-**À l'intégration** : si la migration du dépôt de documents par lien (`y9z0depotlien`) arrive sur la branche avec
-`down_revision = "x8y9redactionv4"`, chaîner `z1entretienchantier` après elle (une seule tête Alembic).
+Migration `z1entretienchantier` (après `y9z0depotlien`, une seule tête Alembic) : idempotente (table créée si elle
+manque, colonnes et index ajoutés s'ils manquent), SQLite et Postgres, valeurs par défaut côté base identiques au
+modèle ; downgrade réel (table supprimée, rien d'autre). Déploiement sans casse : le code de production précédent
+ne lit ni n'écrit la table. (Écrite d'abord après `x8y9redactionv4` ; chaînée après le dépôt par le lien quand la
+production l'a reçu, à la fusion de la production dans cette branche.)
 
 ### D.7 Routes
 
@@ -305,20 +309,27 @@ dossier d'avant la vague 5, `prepare: false` et `proposees` (combien l'entretien
 
 ### D.12 Vérifications
 
-- Suite complète SQLite (`TZ=UTC`, IA et emails simulés, aucun réseau) : verte, dont les 16 tests de
+- Fusion de la production (dépôt de documents par le lien, b010c59) dans cette branche : conflits résolus à la main
+  (listes du transfert, de l'effacement et du journal : les deux ajouts gardés ; espace du partenaire : ses
+  questions puis ses documents ; export de sa part : ses documents ET ses réponses ; empreintes SRI recalculées) ;
+  migration chaînée après `y9z0depotlien` (une seule tête) ; la réponse du partenaire suit la règle du verrou de
+  l'invitation d'abord (test `test_reponse_du_partenaire_espace_reinitialise_ou_lien_retire_entre_temps`).
+- Suite complète SQLite (`TZ=UTC`, IA et emails simulés, aucun réseau) : 1 711 tests, tous verts, dont les 17 de
   `tests/test_redaction_v5_entretien.py` (déclenchement sans IA, ordre, phrase du dossier, question passée →
   « [À compléter] », réponses → faits « déclaré par vous » [R#], choix dans « Équipe » sans nom ni CV à l'IA, question
-  posée dans l'espace du partenaire, option IA (phrase retrouvée mot pour mot, débit, remboursement), isolation,
-  RGPD, démo, migration, écrans compilés sous Node).
+  posée dans l'espace du partenaire, espace réinitialisé ou lien retiré pendant sa réponse, option IA (phrase
+  retrouvée mot pour mot, débit, remboursement), isolation, RGPD, démo, migration, écrans compilés sous Node).
 - Empreintes SRI à jour (`scripts/sri_update.py --check`), `node --check` de `app.js` et `redaction-partenaire.js`,
   gabarit de l'application compilé par Vue sous Node (aucune erreur).
 - Navigateur réel (serveur local, IA coupée) : chef de file à 1 280 px et 375 px (aucun défilement horizontal),
-  lien du partenaire (espace ouvert, réponse avec l'avertissement), vitrine de la démo (8 questions, 3 réponses,
-  1 passée, chef de chantier choisi dans « Équipe »).
-- Postgres 16 depuis l'état exact de la production (da9ef0f, tête `x8y9redactionv4`, données créées par le code de
-  production) : une seule révision appliquée, aucune donnée perdue, seconde montée et rejeu forcé sans effet,
-  entretien préparé et répondu sur la base montée (chef de file et partenaire), code de production redémarré sur la
-  base montée (lectures et écritures 200), schéma identique à une base neuve, retour arrière (table retirée, rien
-  d'autre ne bouge) puis remontée ; vrais tests rejoués sur la base montée : 1 025 verts, et les 37 mêmes échecs
-  que les relectures précédentes sur le code de production (tests propres à SQLite : PRAGMA, `sqlite3`, base
+  lien du partenaire (espace ouvert, réponse avec l'avertissement ; après la fusion, ses questions et « Vos
+  documents pour Adjugo » l'un sous l'autre à 375 px, sans défilement horizontal), vitrine de la démo
+  (8 questions, 3 réponses, 1 passée, chef de chantier choisi dans « Équipe »).
+- Postgres 16 depuis l'état exact de la production, deux fois : da9ef0f (tête `x8y9redactionv4`, avant la fusion)
+  puis b010c59 (tête `y9z0depotlien`, après) ; données créées par le code de production ; une seule révision
+  appliquée, aucune donnée perdue, seconde montée et rejeu forcé sans effet, entretien préparé et répondu sur la
+  base montée (chef de file et partenaire), code de production redémarré sur la base montée (lectures et
+  écritures 200), schéma identique à une base neuve, retour arrière (table retirée, rien d'autre ne bouge) puis
+  remontée : 19 contrôles sur 19 ; vrais tests rejoués sur la base montée : 1 027 verts, et exactement les 37
+  échecs de la vérification de la production elle-même (b010c59 : tests propres à SQLite, PRAGMA, `sqlite3`, base
   partagée), aucun dans la rédaction.

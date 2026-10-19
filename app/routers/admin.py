@@ -122,7 +122,8 @@ def run_cotraitance_reminders_endpoint(request: Request, db: Session = Depends(g
 @router.post("/run-trash-purge")
 def run_trash_purge_endpoint(request: Request, db: Session = Depends(get_db)):
     """Vide la corbeille du coffre-fort : documents supprimés depuis plus de 30 jours
-    (ligne + fichier du stockage + anciennes versions). À cron-er quotidiennement."""
+    (ligne + fichier du stockage + anciennes versions). À cron-er quotidiennement. Purge aussi les brouillons
+    et les documents privés des partenaires du dossier de groupement (vague 4)."""
     _check_cron(request)
     from app.routers.rgpd import purge_trash
     from app.services.analyse_partagee import purger
@@ -131,6 +132,10 @@ def run_trash_purge_endpoint(request: Request, db: Session = Depends(get_db)):
     # tâches terminées des partenaires, au-delà de 30 jours.
     from app.services.atelier_groupement import purger as purger_parts
     res.update(purger_parts(db))
+    # Documents privés déposés par les liens des partenaires (décision 5 a) : 6 mois après le résultat du marché
+    # (à défaut sa date limite, à défaut le dernier dépôt), lien expiré depuis 30 jours, invitation retirée.
+    from app.services.depot_lien import purger as purger_depots
+    res.update(purger_depots(db))
     # Analyse partagée : extractions plus resservies depuis ANALYSE_PARTAGEE_JOURS jours, mesures anciennes.
     res.update(purger(db))
     return res

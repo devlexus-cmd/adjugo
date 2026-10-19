@@ -501,6 +501,72 @@ def test_ia_du_partenaire_recoit_ses_seules_reponses_et_ses_manques(client, auth
     assert "Échafaudage de pied côté cour [" not in client.get(f"/api/atelier/{pid}/repartition/{met}", headers=h).text
 
 
+def test_reponse_du_partenaire_espace_reinitialise_ou_lien_retire_entre_temps(client, auth, fake_llm, monkeypatch):
+    """Comme ses autres écritures (dépôt par le lien), la réponse prend d'abord le verrou de l'invitation et relit la
+    clé juste avant d'écrire : un espace réinitialisé entre-temps (autre appareil) ne reçoit rien (409), un lien
+    retiré entre-temps non plus (404)."""
+    from app.models import EntretienQuestion, ProjectInvite
+    from app.services import atelier_groupement as ag
+    from tests.test_redaction_v4_groupement import P
+    fake_llm(lambda kw: ("x", "end_turn"))
+    h = auth["headers"]
+    _company(client, h)
+    pid, st, a, b = _avec_partenaires(client, h)
+    q = _q(_entretien(client, h, pid), "acces_toiture")
+    assert q["adresse"]["invite_id"] == a["id"]
+    pa = P(client, a["token"])
+    corps = {"statut": "repondue", "reponse": "Échafaudage de pied côté cour.", "avertissement_lu": True}
+    vrai = ag._exiger_identite
+    fait = {}
+
+    def pendant(geste):
+        def identite(acces):
+            if not fait:
+                db = _db()
+                try:
+                    fait["r"] = geste(db)
+                finally:
+                    db.close()
+            return vrai(acces)
+        return identite
+
+    def lue():
+        db = _db()
+        try:
+            r = db.get(EntretienQuestion, q["id"])
+            return r.statut, r.reponse, r.reponse_invite_id
+        finally:
+            db.close()
+
+    monkeypatch.setattr(ag, "_exiger_identite", pendant(
+        lambda db: ag.ouvrir_espace(db, db.get(ProjectInvite, a["id"]), reinitialiser=True)["cle"]))
+    r = pa.put(f"/entretien/{q['id']}", corps)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "espace_reinitialise", r.text
+    assert r.json()["detail"]["message"] == ag.MSG_ECRITURE_ESPACE_REINITIALISE
+    assert lue() == ("a_repondre", None, None)
+    # Avec la nouvelle clé, la réponse passe.
+    monkeypatch.setattr(ag, "_exiger_identite", vrai)
+    pa.h = {ag.ENTETE_CLE: fait["r"]}
+    assert pa.put(f"/entretien/{q['id']}", corps).status_code == 200
+    assert lue()[0] == "repondue"
+    # Lien retiré pendant la réponse : rien n'est écrit en son nom (le retrait passe avant).
+    fait.clear()
+    pb = P(client, b["token"])
+    assert client.put(f"/api/atelier/{pid}/entretien/{q['id']}/adresse", headers=h,
+                      json={"invite_id": b["id"], "confirmer": True}).status_code == 200
+
+    def retirer(db):
+        inv = db.get(ProjectInvite, b["id"])
+        inv.revoked = True                   # comme la route du retrait : l'accès coupé, puis ce qui suit
+        db.commit()
+        ag.retirer_invitation(db, inv, "retiré du groupement")
+        return True
+    monkeypatch.setattr(ag, "_exiger_identite", pendant(retirer))
+    r = pb.put(f"/entretien/{q['id']}", corps)
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "question_introuvable", r.text
+    assert lue() == ("a_repondre", None, None)
+
+
 # ═══ 4. Option IA : des questions de plus, chacune motivée par une phrase retrouvée ═══════════════
 
 SYNDIC = ("Les travaux sur le pignon nord exigent l'accord préalable du syndic de la copropriété voisine, sous "
@@ -679,16 +745,17 @@ def test_migration_entretien_sqlite_neuve_retour_arriere_rejeu(tmp_path):
     neuf = schema()
     assert {"numero", "code", "motif", "adresse_invite_id", "reponse_invite_id", "statut"} <= set(neuf[0])
     assert ("dossier_id", "numero") in neuf[2] and ("dossier_id", "code") in neuf[2]
-    run("downgrade", "x8y9redactionv4")
+    run("downgrade", "y9z0depotlien")
     eng = sa.create_engine(f"sqlite:///{dbfile}")
     try:
         assert "entretien_questions" not in sa.inspect(eng).get_table_names()
         assert "dossier_repartitions" in sa.inspect(eng).get_table_names()       # la vague 4 n'est pas touchée
+        assert "depots_lien_documents" in sa.inspect(eng).get_table_names()      # ni le dépôt par le lien
     finally:
         eng.dispose()
     run("upgrade", "head")
     assert schema() == neuf
-    run("stamp", "x8y9redactionv4")
+    run("stamp", "y9z0depotlien")
     run("upgrade", "head")                               # rejeu : idempotent
     assert schema() == neuf
 

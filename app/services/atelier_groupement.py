@@ -92,8 +92,13 @@ MSG_PLAFOND = ("Vous avez utilisé l'aide d'Adjugo {n} fois pour cette partie : 
 MSG_IA_PANNE = ("La rédaction n'a pas abouti : le service d'IA est indisponible pour le moment. Réessayez dans "
                 "quelques minutes.")
 MSG_PAS_DE_DOSSIER = "Le chef de file n'a pas encore préparé le dossier de présentation commun."
-MSG_MODE_LIEN = ("Sans compte Adjugo, l'aide d'Adjugo s'appuie sur ce que vous avez déclaré dans votre part et sur le "
-                 "dossier de l'acheteur.")
+MSG_AIDE_ESPACE_REINITIALISE = ("Votre espace privé a été réinitialisé pendant la rédaction : le texte n'a pas été "
+                                "gardé.")
+MSG_ECRITURE_ESPACE_REINITIALISE = ("Votre espace privé a été réinitialisé entre-temps (sur un autre appareil, par "
+                                    "exemple) : rien n'a été enregistré. Ouvrez de nouveau votre espace privé sur cet "
+                                    "appareil.")
+MSG_MODE_LIEN = ("Sans compte Adjugo, l'aide d'Adjugo s'appuie sur ce que vous avez déclaré dans votre part, sur les "
+                 "documents que vous déposez dans « Vos documents pour Adjugo » et sur le dossier de l'acheteur.")
 MSG_MODE_COMPTE = ("Avec votre compte Adjugo, l'aide d'Adjugo s'appuie aussi sur vos preuves, votre profil et votre "
                    "savoir-faire, consultés avec vos seuls droits.")
 TEXTE_MAX = at.TEXTE_MAX
@@ -442,32 +447,40 @@ def compteurs(faits) -> dict:
 
 # ── Ce que l'IA du partenaire peut utiliser : SES faits, jamais ceux d'un autre ───────
 
-def fiches_depot_par_lien(db, inv: ProjectInvite) -> list:
-    """EMPLACEMENT de l'option (a) de la décision 5 (documents privés déposés par lien magique), PAS
-    CONSTRUITE : l'avis du conseil sur qui est responsable du traitement n'est pas encore donné. Le jour
-    venu, elle rendra les fiches des preuves rangées sous le tenant du marché avec proprietaire_kind
-    'invitation' et proprietaire_invite_id = inv.id (le schéma de « Mes preuves » les prévoit déjà ; ni le
-    chef de file ni preuves.faits_autorises ne les lisent). Aujourd'hui : rien."""
-    return []
+def fiches_depot_par_lien(db, inv: ProjectInvite, chunks: Optional[list] = None) -> list:
+    """Option (a) de la décision 5 (validée par Eliot) : les documents PRIVÉS déposés par le lien du partenaire
+    (app/services/depot_lien.py, contrat § 21). Rend les fiches [S#] « trouvé dans vos documents » des passages de
+    SES documents remis pour sa partie (`chunks` : `depot_lien.rechercher`, `depot_lien.encore_presents` ou
+    `depot_lien.extraits_cites`), avec le passage exact ; le fait reste relié à son document et à son passage
+    (privés, chez lui seulement). Chaque passage garde le renvoi de sa PLACE ([S2] reste [S2] quand [S1] a été
+    supprimé). Sans passages : rien. Jamais un passage d'un autre membre ni du chef de file."""
+    from app.services import depot_lien
+    return depot_lien.fiches([dict(c, ref=str(c.get("ref") or f"{fs.EXTRAIT}{i}"))
+                              for i, c in enumerate(chunks or [], start=1)
+                              if isinstance(c, dict) and c.get("depot_chunk_id")])
 
 
 class ContextePartenaire:
     """Les faits autorisés d'UN partenaire pour SA partie (vague 4, décision 5) :
       • sans compte (lien magique) : ce qu'il a déclaré dans sa part (lot, qualifications, références,
-        capacités, présentation), « déclaré par vous » ;
+        capacités, présentation), « déclaré par vous », et des passages des documents PRIVÉS qu'il a déposés
+        par son lien [S#] (« trouvé dans vos documents », option (a) de la décision 5 : depot_lien) ;
       • avec le compte Adjugo qui a rattaché son lien : en plus, SES preuves [F#], son profil [P#], son
         équipe [E#] (noms masqués avant l'IA) et des extraits de SON savoir-faire [S#], interrogés avec les
-        seuls droits de son organisation.
+        seuls droits de son organisation (ce qu'il avait déposé par le lien n'est plus utilisé : inchangé).
     Jamais le profil, les preuves, le savoir-faire, le chiffrage ni les apports du chef de file ou d'un autre
     membre ; jamais le dossier de l'acheteur comme source d'une phrase sur l'entreprise."""
 
     def __init__(self, db, acces: "Acces"):
         from app.core.org import data_owner_id, member_ids
+        from app.services import depot_lien
         from app.services.preuves import membres as membres_org, personnes
         self._db = db
         self.inv = acces.inv
         self.project_id = acces.project.id
         self.dossier_id = acces.dossier.id
+        # Les documents déposés par le lien servent par le lien seulement, tant qu'il n'est pas rattaché à un compte.
+        self.depots = depot_lien.utilises(acces)
         c = _contribution(db, acces.inv.id)
         self.contribution = c
         self.nom = nom_partenaire(acces.inv, c)
@@ -553,7 +566,6 @@ class ContextePartenaire:
                     logger.warning("groupement : preuves du partenaire illisibles (invitation %s) : %s",
                                    self.inv.id, type(e).__name__)
             out += fs.fiches_contexte(self.profil(), self.equipe(), "", [])
-            out += fiches_depot_par_lien(db, self.inv)
             # Rédaction, vague 5 (D) : SES réponses à l'entretien chantier (« déclaré par vous ») ; jamais celles du
             # chef de file ni d'un autre membre.
             from app.services import entretien_chantier as ec
@@ -562,7 +574,17 @@ class ContextePartenaire:
         return list(self._fiches)
 
     def extraits(self, db, requete: str, k: int = 6) -> list:
-        """Extraits de SON savoir-faire (compte seulement), jamais un CV, jamais d'une autre organisation."""
+        """Extraits de SON savoir-faire (compte), ou de SES documents déposés par le lien (sans compte : recherche
+        sans IA dans ses seuls passages, jamais rag.retrieve_multi) ; jamais un CV, jamais d'une autre
+        organisation ni d'un autre membre."""
+        if self.depots:
+            from app.services import depot_lien
+            try:
+                return depot_lien.rechercher(db, self.inv.id, requete, k=k)
+            except Exception as e:      # noqa: BLE001 — sa part déclarée suffit
+                logger.warning("groupement : documents déposés illisibles (invitation %s) : %s", self.inv.id,
+                               type(e).__name__)
+                return []
         if not self.avec_compte or not self.member_ids:
             return []
         from app.services import rag
@@ -573,10 +595,27 @@ class ContextePartenaire:
                            self.inv.id, type(e).__name__)
             return []
 
+    def fiches_extraits(self, db, chunks: list) -> list:
+        """Les fiches [S#] des extraits remis à l'IA pour sa partie : ses documents déposés par le lien
+        (« trouvé dans vos documents », document et passage gardés), ou son savoir-faire (compte)."""
+        if self.depots:
+            return fiches_depot_par_lien(db, self.inv, chunks)
+        return fs.fiches_extraits(chunks)
+
+    def sources_reelles(self, sources: list, chunks: list) -> list:
+        """Les extraits cités par l'IA, avec le nom réel du document déposé (l'IA n'a lu qu'un libellé neutre)."""
+        if not self.depots:
+            return list(sources or [])
+        from app.services import depot_lien
+        return depot_lien.sources_reelles(sources, chunks)
+
     def fiches_de_brouillon(self, db, b: Optional[DossierPartBrouillon]) -> list:
         """Fiches pour relire un brouillon déjà écrit : les siennes + les extraits qu'il cite (relus dans
-        son organisation seulement)."""
+        son organisation seulement ; par le lien, dans SES documents déposés encore présents)."""
         out = self.fiches(db)
+        if b is not None and self.depots:
+            from app.services import depot_lien
+            return out + fiches_depot_par_lien(db, self.inv, depot_lien.extraits_cites(db, self.inv.id, b))
         if b is None or not self.avec_compte:
             return out
         ids = []
@@ -603,10 +642,12 @@ class ContextePartenaire:
 
     def pseudonymiseur(self, textes=()):
         """Noms de SON équipe (profil, fiches « Équipe ») et noms de personnes repérés sans IA dans ce qui
-        part à l'IA : masqués avant l'appel (doctrine § 7, règle 9)."""
+        part à l'IA : masqués avant l'appel (doctrine § 7, règle 9). Par le lien, avec ses documents déposés, aucune
+        équipe n'est connue : le repérage est élargi aux « Prénom Nom » de prénoms courants."""
         from app.services.fiches_import import equipe_avec_noms_reperes
         from app.services.pii import from_team
-        return from_team(equipe_avec_noms_reperes(self.team + self.preuves_team, textes, exclure=self.noms_entreprise))
+        return from_team(equipe_avec_noms_reperes(self.team + self.preuves_team, textes, exclure=self.noms_entreprise,
+                                                  etendu=bool(self.depots)))
 
 
 # ── L'espace PRIVÉ du lien : une clé que seul le navigateur du partenaire détient ─────
@@ -622,8 +663,8 @@ class ContextePartenaire:
 ENTETE_CLE = "X-Adjugo-Espace"
 MSG_CLE_REQUISE = ("Ouvrez votre espace privé sur cet appareil pour lire vos brouillons et rédiger votre partie.")
 MSG_ESPACE_OUVERT = ("Votre espace privé est déjà ouvert sur un autre appareil. Saisissez le code reçu par email "
-                     "pour l'ouvrir ici, ou réinitialisez-le : vos brouillons non envoyés seront alors effacés (vos "
-                     "textes envoyés restent).")
+                     "pour l'ouvrir ici, ou réinitialisez-le : vos brouillons non envoyés et vos documents déposés "
+                     "pour Adjugo seront alors effacés (vos textes envoyés restent).")
 MSG_ESPACE_COMPTE = ("Ce lien est rattaché à un compte Adjugo : rédigez vos parties depuis ce compte, dans « Partagé "
                      "avec moi ». Vos brouillons y sont, sans rien à ouvrir.")
 MSG_CODE_REQUIS = ("Votre invitation vise une adresse email : recevez un code à cette adresse pour ouvrir votre espace "
@@ -631,7 +672,7 @@ MSG_CODE_REQUIS = ("Votre invitation vise une adresse email : recevez un code à
 MSG_RATTACHER_ESPACE = ("Ce lien a déjà servi à rédiger dans un espace privé. Pour le rattacher à votre compte, ouvrez-le "
                         "dans le navigateur où vous rédigez votre partie, puis choisissez « Ouvrir dans mon Adjugo ». "
                         "Sur cet appareil, vous pouvez aussi réinitialiser d'abord votre espace privé : vos brouillons "
-                        "non envoyés seront alors effacés.")
+                        "non envoyés et vos documents déposés pour Adjugo seront alors effacés.")
 
 
 def _hash_cle(cle: str) -> str:
@@ -686,9 +727,14 @@ def ouvrir_espace(db, inv: ProjectInvite, *, code: Optional[str] = None, reiniti
     if _invite_is_demo(inv, db):
         raise AtelierError(403, "demo", "La démo est en lecture guidée : commencez votre essai gratuit de 30 jours pour co-construire "
                                         "une réponse avec vos partenaires.")
+    # Sous le verrou de l'invitation, relue : une aide de l'IA en cours ou un dépôt range ce qu'il a fait avant la
+    # réinitialisation (qui l'efface alors) ou après (et voit que l'espace a changé : il ne range rien).
+    from app.services import depot_lien
+    inv = depot_lien.verrouiller_invitation(db, inv.id, frais=True) or inv
     if par_le_compte(inv):
         raise AtelierError(403, "espace_par_le_compte", MSG_ESPACE_COMPTE)
     effaces = 0
+    docs_effaces, cles_docs = 0, []
     mode = "ouverture"
     if not getattr(inv, "espace_hash", ""):
         if _binding_required(inv):
@@ -702,6 +748,14 @@ def ouvrir_espace(db, inv: ProjectInvite, *, code: Optional[str] = None, reiniti
         elif reinitialiser:
             effaces = db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == inv.id).delete(
                 synchronize_session=False)
+            # Ses documents déposés partent aussi, sans être lus, avec son accord (la personne qui ouvre le nouvel
+            # espace n'est peut-être pas lui : elle redonnera son accord avant tout dépôt).
+            docs_effaces, cles_docs = depot_lien.effacer_invitation(db, inv.id, commit=False)
+            # Une aide de l'IA en cours pour l'ancien espace ne rangera rien : elle relit sa tâche sous le même verrou.
+            for j in db.query(Job).filter(Job.portee == PORTEE_PARTENAIRE, Job.invite_id == inv.id,
+                                          Job.status.in_(["pending", "running"])).all():
+                j.result = dict(j.result if isinstance(j.result, dict) else {}, **{ESPACE_REINITIALISE: True})
+                flag_modified(j, "result")
             # Celui qui réinitialise n'a rien prouvé : l'adresse de l'invitation est à prouver de nouveau
             # (par le code envoyé au partenaire) avant d'envoyer ou de valider quoi que ce soit en son nom.
             inv.verified_at, inv.verified_email = None, ""
@@ -712,17 +766,23 @@ def ouvrir_espace(db, inv: ProjectInvite, *, code: Optional[str] = None, reiniti
     cle = secrets.token_urlsafe(24)
     inv.espace_hash = _hash_cle(cle)
     db.commit()
+    if cles_docs:
+        depot_lien.supprimer_fichiers(cles_docs)
     action = {"ouverture": "redaction.espace_ouvert", "code": "redaction.espace_rouvert",
               "reinitialisation": "redaction.espace_reinitialise"}[mode]
     detail = {"ouverture": "Espace privé ouvert", "code": "Espace privé rouvert sur un autre appareil (code reçu "
                                                          "par email)",
               "reinitialisation": f"Espace privé réinitialisé : {effaces} brouillon{'s' if effaces > 1 else ''} "
-                                  f"effacé{'s' if effaces > 1 else ''}"}[mode]
+                                  f"effacé{'s' if effaces > 1 else ''}"
+                                  + (f", {docs_effaces} document{'s' if docs_effaces > 1 else ''} déposé"
+                                     f"{'s' if docs_effaces > 1 else ''} effacé{'s' if docs_effaces > 1 else ''}"
+                                     if docs_effaces else "")}[mode]
     d = dossier_du_marche(db, db.get(Project, inv.project_id), inv.owner_id) if inv.project_id else None
     _journal(db, action=action, project_id=inv.project_id, owner_id=(d.owner_id if d else inv.owner_id),
              actor=_guest_actor(inv), actor_kind="guest", invite_id=inv.id, target_type="invite", target_id=inv.id,
              ip=ip, detail=detail)
-    return {"cle": cle, "entete": ENTETE_CLE, "brouillons_effaces": int(effaces or 0)}
+    return {"cle": cle, "entete": ENTETE_CLE, "brouillons_effaces": int(effaces or 0),
+            "documents_effaces": int(docs_effaces or 0)}
 
 
 # ── Accès d'un partenaire ────────────────────────────────────────────────────────────
@@ -738,6 +798,9 @@ class Acces:
         self.db, self.inv, self.project, self.dossier = db, inv, project, dossier
         self.user = user if mode == "compte" else None
         self.mode = mode
+        # La clé présentée (jamais gardée au-delà de la requête) : relue sous verrou par les écritures longues
+        # (dépôt d'un document), pour qu'un espace réinitialisé pendant ce temps ne reçoive rien.
+        self.cle = cle if mode != "compte" else None
         self.cle_ok = mode == "compte" or cle_valide(inv, cle)
         self.lecteur = at.Lecteur(at.AUTEUR_INVITATION, dossier.owner_id,
                                   user_id=getattr(self.user, "id", None), invite_id=inv.id)
@@ -925,6 +988,95 @@ def brouillon_courant(db, section_id: int, invite_id: int) -> Optional[DossierPa
             .order_by(DossierPartBrouillon.numero.desc(), DossierPartBrouillon.id.desc()).first())
 
 
+def _du_depot(src, depot_ids) -> bool:
+    """Une source (ou la source d'un fait) tirée d'un document déposé par le lien : de l'un de `depot_ids`, ou de
+    n'importe lequel (`depot_ids` None)."""
+    if not isinstance(src, dict) or not (src.get("depot_id") or src.get("depot_chunk_id")):
+        return False
+    return depot_ids is None or src.get("depot_id") in depot_ids
+
+
+def _sans_ces_passages(sources, faits, perdu) -> tuple:
+    """(sources, faits, changé) sans ce qui vient d'un passage déposé `perdu(source)` : la source part (nom du
+    document et passage) ; un fait relié redevient « à relire », sa source n'existe plus."""
+    srcs = [x for x in (sources or []) if not perdu(x)]
+    out, touche = [], False
+    for x in (faits or []):
+        if isinstance(x, dict) and perdu(x.get("source")):
+            out.append(fs.source_perdue(x) if x.get("statut") == fs.AVEC_SOURCE else dict(x, source=None))
+            touche = True
+        else:
+            out.append(x)
+    return srcs, out, touche or len(srcs) != len(sources or [])
+
+
+def oublier_documents(db, invite_id: int, depot_ids=None) -> int:
+    """Des documents déposés par le lien disparaissent (supprimés par leur partenaire, effacés à la purge, au
+    retrait, à la réinitialisation) : ses brouillons privés oublient les passages cités de ces documents — ou de
+    tous ses documents déposés (`depot_ids` None) : nom du document et passage retirés des sources ; un fait
+    relié à l'un d'eux redevient « à relire », sa source n'existe plus. Le texte des brouillons et le texte envoyé
+    ne changent pas. Sans valider (l'appelant valide)."""
+    ids = None if depot_ids is None else set(depot_ids)
+    n = 0
+    for b in db.query(DossierPartBrouillon).filter(DossierPartBrouillon.invite_id == invite_id).all():
+        sources, faits, touche = _sans_ces_passages(b.sources, b.faits, lambda src: _du_depot(src, ids))
+        if touche:
+            b.sources, b.faits, b.compteurs = sources, faits, compteurs(faits)
+            flag_modified(b, "sources")
+            flag_modified(b, "faits")
+            flag_modified(b, "compteurs")
+            n += 1
+    return n
+
+
+def oublier_document(db, invite_id: int, depot_id: int) -> int:
+    """Un document déposé par le lien est supprimé par son partenaire (voir `oublier_documents`)."""
+    return oublier_documents(db, invite_id, [depot_id])
+
+
+def _sans_depots_disparus(db, invite_id: int, sources, faits) -> tuple:
+    """(sources, faits) qu'une écriture du partenaire va ranger, relus juste avant : un passage de ses documents
+    déposés qui n'existe plus (document supprimé, purgé ou effacé entre-temps) n'y laisse ni le nom du document ni
+    son passage, et le fait relié redevient « à relire » (comme `oublier_documents`)."""
+    def _id(src):
+        try:
+            return int(src.get("depot_chunk_id"))
+        except (TypeError, ValueError, AttributeError):
+            return None
+    depots = [x for x in list(sources or []) + [f.get("source") for f in (faits or []) if isinstance(f, dict)]
+              if _du_depot(x, None)]
+    if not depots:
+        return list(sources or []), list(faits or [])
+    ids = {i for i in map(_id, depots) if i is not None}
+    presents = set()
+    if ids:
+        from app.models import DepotLienMorceau
+        presents = {r[0] for r in db.query(DepotLienMorceau.id).filter(DepotLienMorceau.id.in_(list(ids)),
+                                                                       DepotLienMorceau.invite_id == invite_id)}
+    srcs, out, _touche = _sans_ces_passages(sources, faits, lambda src: _du_depot(src, None) and _id(src) not in presents)
+    return srcs, out
+
+
+def _verrou_du_lien(db, acces: "Acces") -> None:
+    """Une écriture du partenaire dans ses brouillons (« J'écris moi-même », relire un fait, valider le texte du chef
+    de file) prend le verrou de l'invitation D'ABORD — avant ceux de la répartition et de la partie : même ordre
+    que l'aide de l'IA, le dépôt, la suppression d'un document, la réinitialisation de l'espace et le retrait.
+    Une réinitialisation ou une suppression arrivée pendant l'écriture passe alors après elle et efface ce
+    qu'elle a rangé. Appelé de nouveau juste avant d'écrire : l'invitation relue, la clé présentée doit encore
+    ouvrir l'espace (409 « espace_reinitialise » sinon : rien n'est écrit pour le nouvel espace) et l'invitation
+    être active."""
+    from app.services import depot_lien
+    inv = depot_lien.verrouiller_invitation(db, acces.inv.id, frais=True)
+    if inv is None or not peut_rediger(db, inv)[0]:
+        db.rollback()
+        raise AtelierError(404, "partie_introuvable", "Partie introuvable.")
+    acces.inv = inv
+    if acces.mode != "compte" and not cle_valide(inv, acces.cle):
+        acces.cle_ok = False
+        db.rollback()
+        raise AtelierError(409, "espace_reinitialise", MSG_ECRITURE_ESPACE_REINITIALISE)
+
+
 def _ajouter_brouillon(db, section: DossierSection, invite_id: int, *, texte: str, origine: str, ia: bool,
                        sources=None, faits=None, coupe: bool = False, base_id=None, base_version_id=None,
                        auteur_user_id=None, job_id=None) -> DossierPartBrouillon:
@@ -969,8 +1121,11 @@ def enregistrer_brouillon(db, acces: Acces, section_id: int, texte: str, base_br
     """« J'écris moi-même » : un NOUVEAU brouillon privé, aucune IA. Ses faits sont contrôlés sur SES faits :
     ce qu'il écrit lui-même est sa déclaration ; un fait déjà à relire le reste — y compris un fait que le chef de
     file a mis dans le texte commun dont il part (« Partir du texte du chef de file »). `base_version_id` : le
-    texte commun que son écran lui montrait (verrou optimiste, `_exiger_commun_vu`)."""
+    texte commun que son écran lui montrait (verrou optimiste, `_exiger_commun_vu`). Sous le verrou de l'invitation
+    (`_verrou_du_lien`) : une réinitialisation de l'espace ou la suppression d'un document pendant l'enregistrement
+    ne laisse ni le nom ni le passage d'un document dans ce qu'il range."""
     _exiger_ecriture(acces)
+    _verrou_du_lien(db, acces)
     section, rep = _partie(db, acces, section_id)
     rep = _verrouiller_rep(db, rep)
     section = at._verrouiller(db, section)
@@ -1001,8 +1156,10 @@ def enregistrer_brouillon(db, acces: Acces, section_id: int, texte: str, base_br
     faits = fs.controler(t, ctx.fiches_de_brouillon(db, cur), acheteur=None, noms_entreprise=ctx.noms_entreprise,
                          section_entreprise=at.section_sur_l_entreprise(section), mode="utilisateur",
                          anciens=anciens, base_texte=base_texte)
+    _verrou_du_lien(db, acces)
+    sources, faits = _sans_depots_disparus(db, acces.invite_id, (cur.sources if cur is not None and ia else []), faits)
     b = _ajouter_brouillon(db, section, acces.invite_id, texte=t, origine="utilisateur", ia=ia,
-                           sources=(cur.sources if cur is not None and ia else []), faits=faits,
+                           sources=sources, faits=faits,
                            base_id=cur.id if cur else None, base_version_id=commun.id if commun else None,
                            auteur_user_id=getattr(acces.user, "id", None))
     db.commit()
@@ -1020,6 +1177,7 @@ def traiter_fait(db, acces: Acces, section_id: int, fait_id: str, statut: str, i
     _exiger_ecriture(acces)
     if statut not in (far.RELU, far.A_RELIRE):
         raise AtelierError(422, "statut_invalide", "Statut inconnu.")
+    _verrou_du_lien(db, acces)
     section, _rep = _partie(db, acces, section_id)
     b = brouillon_courant(db, section.id, acces.invite_id)
     if _du_compte(acces, b):
@@ -1043,6 +1201,8 @@ def traiter_fait(db, acces: Acces, section_id: int, fait_id: str, statut: str, i
         hit["statut"] = far.A_RELIRE
         hit.pop("relu_par", None)
         hit.pop("relu_le", None)
+    _verrou_du_lien(db, acces)
+    _srcs, faits = _sans_depots_disparus(db, acces.invite_id, [], faits)
     b.faits = faits
     b.compteurs = compteurs(faits)
     flag_modified(b, "faits")
@@ -1163,6 +1323,7 @@ def valider_part(db, acces: Acces, section_id: int, version_id: int, ip: str = "
         return asm.valider(db, acces.project, acces.dossier, qfq, membre=PARTENAIRE, invite_id=acces.invite_id,
                            user_id=getattr(acces.user, "id", None), version_id=version_id, actor=acces.acteur,
                            actor_kind="guest", ip=ip)
+    _verrou_du_lien(db, acces)
     section, rep = _partie(db, acces, section_id)
     rep = _verrouiller_rep(db, rep)
     section = at._verrouiller(db, section)
@@ -1183,6 +1344,8 @@ def valider_part(db, acces: Acces, section_id: int, version_id: int, ip: str = "
                              noms_entreprise=ctx.noms_entreprise, section_entreprise=at.section_sur_l_entreprise(section),
                              mode="ia", anciens=((der.faits if der else None) or []) + list(cur.faits or []))
         faits = _garder_ses_declarations(db, acces, section, faits)
+        _verrou_du_lien(db, acces)
+        _srcs, faits = _sans_depots_disparus(db, acces.invite_id, [], faits)
         _ajouter_brouillon(db, section, acces.invite_id, texte=cur.texte or "", origine="acceptee", ia=bool(cur.ia),
                            sources=[], faits=faits, base_id=der.id if der else None, base_version_id=cur.id,
                            auteur_user_id=getattr(acces.user, "id", None))
@@ -1443,13 +1606,28 @@ class _Indisponible(RuntimeError):
     pass
 
 
+ESPACE_REINITIALISE = "_espace_reinitialise"
+
+
+def _espace_reinitialise(j: Optional[Job]) -> bool:
+    """La tâche a vu son espace privé réinitialisé (le nouvel espace n'a pas à lire ce qui a été rédigé à partir
+    des brouillons et des documents effacés sans être lus)."""
+    return j is not None and isinstance(j.result, dict) and bool(j.result.get(ESPACE_REINITIALISE))
+
+
 def _executer(db, *, job_id: int, invite_id: int, section_id: int, kind: str, cible: Optional[int], user_id,
               mode: str) -> dict:
     """Dans le fil de la tâche de fond (portée de facturation de l'invitation posée par run_in_thread) :
     prépare tout avec la base, appelle l'IA SANS base (noms masqués, coût mesuré), puis range le texte dans
-    un NOUVEAU brouillon privé du partenaire, avec ses faits contrôlés sur SES sources."""
+    un NOUVEAU brouillon privé du partenaire, avec ses faits contrôlés sur SES sources — sous le verrou de
+    l'invitation : rien si son espace privé a été RÉINITIALISÉ pendant la tâche (`ESPACE_REINITIALISE`, posé
+    par `ouvrir_espace` ; rouvrir l'espace avec le code reçu par email, brouillons gardés, ne l'arrête pas), et
+    seulement les passages de ses documents encore présents (un document supprimé pendant l'appel n'y laisse ni
+    son nom ni son passage)."""
     from app.services.agents import memoire as moteur
     from app.services.llm import LLMUnavailable, cost_meter, pii_scope
+    if _espace_reinitialise(db.get(Job, job_id)):
+        raise _Indisponible("espace réinitialisé")          # avant l'IA : rien n'est décompté (remboursé)
     inv = db.get(ProjectInvite, invite_id)
     project = db.get(Project, inv.project_id) if inv is not None else None
     if inv is None or project is None or project.deleted_at is not None or not peut_rediger(db, inv)[0]:
@@ -1508,20 +1686,32 @@ def _executer(db, *, job_id: int, invite_id: int, section_id: int, kind: str, ci
         raise LLMUnavailable("Service IA indisponible : partie non rédigée.")
     # Enregistrement (relu : la tâche a pu durer plusieurs minutes ; l'invitation a pu être retirée).
     db.expire_all()
-    inv = db.get(ProjectInvite, invite_id)
-    section = db.get(DossierSection, section_id)
     dossier = db.get(DossierPresentation, dossier.id)
     at._cumuler_cout(dossier, cm.summary())
     db.commit()
+    # Rangé SOUS LE VERROU de l'invitation, relue : une réinitialisation de l'espace, un retrait, un dépôt ou une
+    # suppression de document passent avant (et se voient ici) ou après (et nettoient ce qui est rangé).
+    from app.services import depot_lien
+    inv = depot_lien.verrouiller_invitation(db, invite_id, frais=True)
+    section = db.get(DossierSection, section_id)
+    j = db.get(Job, job_id)
+    debit = (j.result or {}).get("_debit") if j is not None and isinstance(j.result, dict) else None
     if inv is None or not peut_rediger(db, inv)[0] or section is None or section.author_invite_id != invite_id \
             or section.retiree_at is not None:
         liberer_job(db, job_id)
-        j = db.get(Job, job_id)
         return {"sections": [{"section_id": section_id, "ok": False}], "echecs": 1,
-                "message": "Cette partie ne vous est plus confiée : le texte n'a pas été gardé.",
-                "_debit": (j.result or {}).get("_debit") if j is not None and isinstance(j.result, dict) else None}
+                "message": "Cette partie ne vous est plus confiée : le texte n'a pas été gardé.", "_debit": debit}
+    if _espace_reinitialise(j):
+        liberer_job(db, job_id)
+        return {"sections": [{"section_id": section_id, "ok": False}], "echecs": 1,
+                "message": MSG_AIDE_ESPACE_REINITIALISE, "_debit": debit}
+    if ctx.depots:
+        # Seulement les passages de ses documents encore présents (même place, même renvoi [S#]).
+        chunks = depot_lien.encore_presents(db, invite_id, chunks)
     texte = r["texte"]
-    fiches_tout = fiches_ent + fs.fiches_extraits(chunks)
+    # Les extraits remis : son savoir-faire (compte) ou SES documents déposés par le lien (« trouvé dans vos
+    # documents », passage exact, document gardé dans la source privée).
+    fiches_tout = fiches_ent + ctx.fiches_extraits(db, chunks)
     if kind == JOB_RACCOURCIR:
         faits = fs.controler(texte, ctx.fiches_de_brouillon(db, base), acheteur=None,
                              noms_entreprise=ctx.noms_entreprise, section_entreprise=at.section_sur_l_entreprise(section),
@@ -1540,7 +1730,7 @@ def _executer(db, *, job_id: int, invite_id: int, section_id: int, kind: str, ci
         faits = fs.controler(texte, fiches_tout, acheteur=acheteur, noms_entreprise=ctx.noms_entreprise,
                              section_entreprise=at.section_sur_l_entreprise(section), mode="ia",
                              anciens=(base.faits if base else []))
-        sources = r.get("sources") or []
+        sources = ctx.sources_reelles(r.get("sources") or [], chunks)
         origine = "ia"
     commun = _commune(db, section)
     b = _ajouter_brouillon(db, section, invite_id, texte=texte, origine=origine, ia=True, sources=sources, faits=faits,
@@ -1551,11 +1741,9 @@ def _executer(db, *, job_id: int, invite_id: int, section_id: int, kind: str, ci
     if rep is not None and rep.job_id == job_id:
         rep.job_id = None
     db.commit()
-    j = db.get(Job, job_id)
-    debit = (j.result or {}).get("_debit") if j is not None and isinstance(j.result, dict) else None
     return {"sections": [{"section_id": section.id, "ok": True, "brouillon_id": b.id, "coupe": bool(r.get("coupe")),
                           "a_completer": len(me.placeholders(texte)), "faits_a_relire": far.non_traites(faits),
-                          "extraits_fournis": len(chunks)}],
+                          "extraits_fournis": len([c for c in chunks if not (isinstance(c, dict) and c.get("retire"))])}],
             "echecs": 0, "message": "", "_debit": debit}
 
 
@@ -2222,6 +2410,16 @@ def resume_partenaire(db, inv: ProjectInvite) -> Optional[dict]:
         return None
 
 
+def _documents_resume(db, acces: Acces) -> Optional[dict]:
+    from app.services import depot_lien
+    try:
+        return depot_lien.resume(db, acces)
+    except Exception as e:      # noqa: BLE001 — la vue du partenaire ne casse jamais pour ce résumé
+        logger.warning("groupement : résumé des documents déposés illisible (invitation %s) : %s", acces.invite_id,
+                       type(e).__name__)
+        return None
+
+
 def vue_partenaire(db, acces: Acces) -> dict:
     """Ce que voit un partenaire : SES parties (ce que l'acheteur note, la longueur conseillée, la date limite
     interne, son brouillon PRIVÉ avec ses sources, le texte commun, l'avant et l'après d'une modification du
@@ -2286,6 +2484,8 @@ def vue_partenaire(db, acces: Acces) -> dict:
             "parties": parties, "statuts": STATUTS, "origines": ORIGINES, "qui_fait_quoi": qfq_bloc,
             # Rédaction, vague 5 (D) : les questions du chef de file sur le chantier, posées à LUI seul.
             "entretien": _entretien_partenaire(db, acces),
+            # « Vos documents pour Adjugo » (décision 5 a) : combien, et s'ils servent (None sans la matière privée).
+            "documents": _documents_resume(db, acces),
             "dossier": {"empreinte": emp, "ma_validation": _validation_out(ma, emp),
                         # Un co-traitant à qui aucune partie n'est confiée valide aussi le dossier assemblé (après
                         # « Qui fait quoi »), comme le serveur l'attend pour « Prêt à déposer ».
@@ -2564,6 +2764,10 @@ def effacer_dossiers(db, dossier_ids: list) -> None:
         if iids:
             db.query(Job).filter(Job.portee == PORTEE_PARTENAIRE, Job.invite_id.in_(iids)).delete(
                 synchronize_session=False)
+        # Documents déposés par les liens des partenaires de ces marchés : les lignes partent ici ; les fichiers,
+        # après validation, par l'appelant (rgpd : clés relevées avant, depot_lien.cles_projets).
+        from app.services import depot_lien
+        depot_lien.effacer_projets(db, pids)
 
 
 def retirer_invitation(db, inv: ProjectInvite, raison: str, *, actor: str = "", actor_kind: str = "owner",
@@ -2574,6 +2778,9 @@ def retirer_invitation(db, inv: ProjectInvite, raison: str, *, actor: str = "", 
     avait envoyé n'y reste pas, il demeure seulement dans l'historique de la partie ; sa validation du
     dossier assemblé et ses tâches terminées sont effacées. Renvoie le nombre de parties reprises."""
     try:
+        from app.services import depot_lien
+        # Le verrou de l'invitation d'abord (même ordre que l'aide de l'IA, le dépôt et la réinitialisation).
+        depot_lien.verrouiller_invitation(db, inv.id)
         reps = db.query(DossierRepartition).filter(DossierRepartition.invite_id == inv.id).all()
         n = 0
         dossiers = set()
@@ -2593,8 +2800,18 @@ def retirer_invitation(db, inv: ProjectInvite, raison: str, *, actor: str = "", 
         # de file (à répondre).
         from app.services import entretien_chantier as ec
         ec.retirer_invitation(db, inv)
+        # Ses documents déposés par le lien partent aussi (personne d'autre ne les lit, ils n'ont plus d'usage).
+        n_docs, cles_docs = depot_lien.effacer_invitation(db, inv.id, commit=False)
         db.commit()
+        depot_lien.supprimer_fichiers(cles_docs)
         project = db.get(Project, inv.project_id)
+        if n_docs and project is not None:
+            d0 = dossier_du_marche(db, project, inv.owner_id)
+            _journal(db, action="redaction.documents_effaces", project_id=project.id,
+                     owner_id=d0.owner_id if d0 is not None else inv.owner_id, actor=actor or "system",
+                     actor_kind=actor_kind, invite_id=inv.id, target_type="invite", target_id=inv.id, ip=ip,
+                     detail=(f"{n_docs} document{'s' if n_docs > 1 else ''} déposé{'s' if n_docs > 1 else ''} "
+                             f"effacé{'s' if n_docs > 1 else ''} ({raison})"), meta={"documents": n_docs})
         for did in dossiers:
             d = db.get(DossierPresentation, did)
             if d is None or project is None:
@@ -2676,7 +2893,10 @@ def exporter_invitation(db, inv: ProjectInvite, sources_du_compte: bool = True, 
                                                            DossierSectionVersion.author_invite_id == inv.id)
            .order_by(DossierSectionVersion.id).all()]
     from app.services import entretien_chantier as ec
+    # Ce qu'il a déposé par son lien (documents privés, décision 5 a) et son accord : à lui seul.
+    from app.services import depot_lien
     return {"project_id": inv.project_id, "brouillons": bro, "textes_envoyes": env,
+            "documents_deposes": depot_lien.exporter(db, inv.id),
             "reponses_entretien_chantier": ec.exporter_invitation(db, inv)}
 
 

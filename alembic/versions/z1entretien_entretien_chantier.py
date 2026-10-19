@@ -16,7 +16,7 @@ que `dossiers_presentation` (clé étrangère, comme les tables de la vague 4).
 Aucune donnée existante n'est touchée. Downgrade RÉEL : supprime la table.
 
 Revision ID: z1entretienchantier
-Revises: x8y9redactionv4
+Revises: y9z0depotlien
 Create Date: 2026-10-19
 """
 from alembic import op
@@ -24,7 +24,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "z1entretienchantier"
-down_revision = "x8y9redactionv4"
+down_revision = "y9z0depotlien"
 branch_labels = None
 depends_on = None
 

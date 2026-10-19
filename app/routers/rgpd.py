@@ -311,7 +311,8 @@ def _erase_member(db, uid: int, owner_id: int) -> None:
     for model in (M.ProjectInvite, M.ProjectContribution, M.ContributionPiece,
                   M.GroupementSimulation, M.GroupementConvention, M.GroupementSignature,
                   M.DossierPresentation, M.DossierSection, M.DossierSectionVersion,
-                  M.DossierRepartition, M.DossierPartBrouillon, M.DossierValidation, M.EntretienQuestion):
+                  M.DossierRepartition, M.DossierPartBrouillon, M.DossierValidation,
+                  M.DepotLienEspace, M.DepotLienDocument, M.EntretienQuestion):
         db.query(model).filter(model.owner_id == uid).update(
             {model.owner_id: owner_id}, synchronize_session=False)
     # « Mes preuves » : registre de l'entreprise, suit le propriétaire (numéros jamais heurtés).
@@ -396,6 +397,9 @@ def _erase_solo(db, uid: int, org_id) -> list:
                  in_p(M.ContributionPiece.project_id))
     keys += _ids(db, M.GeneratedDoc.file_key, in_p(M.GeneratedDoc.project_id))
     keys += _ids(db, M.Project.dce_file_key, M.Project.user_id == uid)
+    # Documents privés déposés par les liens des partenaires de ses marchés (décision 5 a) : ils partent avec eux.
+    from app.services import depot_lien as _depot_lien
+    keys += _depot_lien.cles_projets(db, pids)
 
     _release_claims(db, uid)
     # 0) Registres portés par uid sur des marchés qui NE SONT PLUS les siens (ex-fondateur
@@ -409,8 +413,9 @@ def _erase_solo(db, uid: int, org_id) -> list:
     _del(db, M.GroupementSignature, in_p(M.GroupementSignature.project_id),
          M.GroupementSignature.cotraitant_link_id.in_(_link_ids0) if _link_ids0 else None)
     _del(db, M.GroupementConvention, in_p(M.GroupementConvention.project_id))
-    # 0 ter) atelier du dossier de présentation (versions → parties → dossiers).
+    # 0 ter) atelier du dossier de présentation (versions → parties → dossiers), documents déposés par les liens.
     _erase_dossiers_presentation(db, M, uid, pids)
+    _depot_lien.effacer_projets(db, pids)
     # 1) co-traitance (pièces → contributions → liaisons → journal → invitations)
     _del(db, M.ContributionPiece, in_p(M.ContributionPiece.project_id))
     _del(db, M.ProjectContribution, in_p(M.ProjectContribution.project_id))
@@ -514,7 +519,7 @@ def _hand_over_foreign_rows(db, uid: int, pids: list) -> None:
         d.owner_id = new_owner
     db.flush()
     for model in (M.ContributionPiece, M.ProjectContribution, M.ProjectInvite, M.GroupementSimulation,
-                  M.GroupementConvention, M.GroupementSignature):
+                  M.GroupementConvention, M.GroupementSignature, M.DepotLienEspace, M.DepotLienDocument):
         q = db.query(model.project_id).filter(model.owner_id == uid)
         if pids:
             q = q.filter(~model.project_id.in_(pids))
@@ -672,9 +677,12 @@ def _purge_trashed_projects(db, cutoff) -> dict:
         keys += _ids(db, M.ContributionPiece.file_key, M.ContributionPiece.project_id.in_(pids))
         keys += _ids(db, M.GeneratedDoc.file_key, M.GeneratedDoc.project_id.in_(pids))
         keys += _ids(db, M.Project.dce_file_key, M.Project.id.in_(pids))
+        from app.services import depot_lien as _depot_lien
+        keys += _depot_lien.cles_projets(db, pids)
         _del(db, M.GroupementSignature, M.GroupementSignature.project_id.in_(pids))
         _del(db, M.GroupementConvention, M.GroupementConvention.project_id.in_(pids))
         _erase_dossier_rows(db, M, M.DossierPresentation.project_id.in_(pids))
+        _depot_lien.effacer_projets(db, pids)
         _del(db, M.ContributionPiece, M.ContributionPiece.project_id.in_(pids))
         _del(db, M.ProjectContribution, M.ProjectContribution.project_id.in_(pids))
         _del(db, ProjectCotraitant, ProjectCotraitant.project_id.in_(pids))

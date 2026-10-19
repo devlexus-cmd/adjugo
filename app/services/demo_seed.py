@@ -297,6 +297,8 @@ def ensure_demo(db, force: bool = False) -> User:
         # dossier de présentation de l'atelier, convention de groupement et ses accords ;
         # rédaction, vague 4 : brouillons des partenaires, « Qui écrit quoi » et validations du
         # dossier assemblé, qui pointent vers les parties et le dossier).
+        from app.services.depot_lien import effacer_projets as _effacer_depots
+        _effacer_depots(db, old_ids)      # la démo ne dépose rien : filet (aucune clé étrangère à ces tables)
         # Rédaction, vague 5 : l'entretien chantier (questions et réponses) pointe vers le dossier.
         for M in (EntretienQuestion, DossierPartBrouillon, DossierRepartition, DossierValidation,
                   DossierSectionVersion, DossierSection, DossierPresentation, GroupementSignature,

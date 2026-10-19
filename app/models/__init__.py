@@ -5,6 +5,7 @@ from datetime import datetime, date, timezone
 from sqlalchemy import (
     Column, Integer, BigInteger, String, Float, Boolean, Text, DateTime,
     Date, ForeignKey, JSON, Enum as SAEnum, UniqueConstraint, Index, text as sa_text, false as sa_false,
+    true as sa_true,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -1230,6 +1231,63 @@ class DossierValidation(Base):
     perime_le = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# === DOCUMENTS PRIVÉS DÉPOSÉS PAR LE LIEN D'UN PARTENAIRE (rédaction, vague 4, décision 5, option a) ===
+# Contrat : docs/REDACTION_V4_GROUPEMENT.md § 21 ; règles : app/services/depot_lien.py (seul point d'écriture).
+# Rattachés à l'INVITATION du partenaire (invite_id), jamais à l'organisation du chef de file : aucun chemin du chef
+# de file ni d'un membre de son organisation ne lit ces tables. owner_id = tenant du marché, pour que tout parte
+# avec le marché (effacement du compte, corbeille) ; il ne donne AUCUN droit de lecture. Pas de clé étrangère :
+# l'effacement est explicite et ordonné (comme dossier_parts_brouillons.invite_id). Migration y9z0depotlien.
+
+class DepotLienEspace(Base):
+    """L'accord du partenaire (conditions d'utilisation et politique de confidentialité, versions et empreintes
+    des textes acceptés, horodaté) et la date du résultat du marché constatée par la purge quotidienne."""
+    __tablename__ = "depots_lien_espaces"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invite_id = Column(Integer, nullable=False, unique=True, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+    consentement = Column(JSON, nullable=True)         # {cgu: {version, mise_a_jour, empreinte, adresse}, confidentialite: {…}, accepte_le}
+    accepte_le = Column(DateTime, nullable=True)
+    resultat_le = Column(DateTime, nullable=True)      # résultat (gagné, perdu, abandonné) constaté : départ des 6 mois
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class DepotLienDocument(Base):
+    """Un document déposé par le partenaire (le fichier est rangé sous invitations/<id>/depots/…). Son texte n'est
+    pas gardé en entier : seulement ses passages (DepotLienMorceau), CV retirés."""
+    __tablename__ = "depots_lien_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invite_id = Column(Integer, nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+    nom = Column(String(300), nullable=False, default="", server_default="")
+    file_key = Column(String(500), nullable=False, default="", server_default="")
+    taille = Column(Integer, nullable=False, default=0, server_default="0")
+    type_mime = Column(String(100), nullable=False, default="", server_default="")
+    empreinte = Column(String(64), nullable=False, default="", server_default="")     # sha256 du fichier
+    caracteres = Column(Integer, nullable=False, default=0, server_default="0")
+    lecture = Column(String(12), nullable=False, default="texte", server_default="texte")   # texte | scan (sans IA)
+    complet = Column(Boolean, nullable=False, default=True, server_default=sa_true())
+    morceaux = Column(Integer, nullable=False, default=0, server_default="0")
+    lignes_cv_retirees = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, default=utcnow)
+
+
+class DepotLienMorceau(Base):
+    """Un passage d'un document déposé (CV retirés), cherché sans IA pour l'aide de l'IA de SES parties."""
+    __tablename__ = "depots_lien_morceaux"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, nullable=False, index=True)
+    invite_id = Column(Integer, nullable=False, index=True)
+    ordinal = Column(Integer, nullable=False, default=0, server_default="0")
+    texte = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
 
 
 # === L'ENTRETIEN CHANTIER (rédaction, vague 5 — D de l'étude, § 6.9) ===

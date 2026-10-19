@@ -134,6 +134,10 @@ COUTS = [
          params=_T),
     Cout("POST", "/api/invite/{token}/contribution/piece/from-vault", "fichier",       # compte + lien de la démo
          corps={"document_id": "doc"}, params=_T),
+    # Documents privés du partenaire (décision 5 a) : le lien partenaire de la démo ne dépose rien (refusé dans la
+    # route avant tout autre contrôle, et par le garde central si une session démo l'appelait).
+    Cout("POST", "/api/invite/{token}/redaction/documents", "fichier", session="lien",
+         corps=("fichier", {"accepte_cgu": "1", "accepte_confidentialite": "1"}), params=_T),
     # ── Écritures chez un tiers ─────────────────────────────────────────────────────────────────────
     Cout("POST", "/api/stripe/create-checkout", "tiers", query="plan=pro"),
     Cout("POST", "/api/stripe/overage", "tiers", query="enabled=true"),
@@ -248,6 +252,10 @@ SANS_COUT = {
     ("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/valider"): _V + " (« Partagé avec moi »)",
     ("POST", "/api/shared/{project_id}/redaction/sections/{section_id}/retablir"): _V + " (« Partagé avec moi »)",
     ("POST", "/api/shared/{project_id}/redaction/dossier/valider"): _V + " (« Partagé avec moi »)",
+    # Documents privés du partenaire (décision 5 a) : supprimer n'appelle ni IA ni email et ne range aucun fichier ;
+    # le lien de la démo est refusé dans la route, la session démo par le garde central ET la route.
+    ("DELETE", "/api/invite/{token}/redaction/documents/{document_id}"): _LD,
+    ("DELETE", "/api/shared/{project_id}/redaction/documents/{document_id}"): _V + " (« Partagé avec moi »)",
     # Rédaction, vague 5 (D) : l'entretien chantier — refusé par le garde ET dans la route (0 IA, 0 email) ; la
     # vitrine montre un entretien déjà rempli (app/services/demo_entretien.py).
     ("POST", "/api/atelier/{project_id}/entretien"): _V + " (0 IA : questions tirées de la banque)",

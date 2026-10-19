@@ -770,12 +770,25 @@ def repondre_partenaire(db, acces, qid, *, statut: str, reponse: Optional[str] =
     """Le partenaire répond, chez lui, à une question qui LUI est posée. Sa réponse est une déclaration de son
     entreprise, lue par le chef de file : avertissement exigé, même exigence d'identité qu'un envoi (adresse
     prouvée par code quand le lien vise une adresse, ou compte vérifié), clé de l'espace par le lien. Inscrit
-    au journal chaîné (son journal le montre)."""
+    au journal chaîné (son journal le montre). Comme ses autres écritures, le verrou de l'invitation D'ABORD
+    (avant celui de la question) : l'invitation relue, la clé présentée doit encore ouvrir l'espace (409
+    « espace_reinitialise » sinon, rien n'est écrit) ; un retrait arrivé entre-temps passe avant (404)."""
     from app.services import atelier_groupement as ag
     ag._exiger_ecriture(acces)
     if statut == REPONDUE and not avertissement_lu:
         raise AtelierError(422, "avertissement_requis", AVERTISSEMENT_REPONSE)
     ag._exiger_identite(acces)
+    try:
+        ag._verrou_du_lien(db, acces)
+    except AtelierError as e:
+        if e.code == "partie_introuvable":
+            raise AtelierError(404, "question_introuvable", "Question introuvable.") from None
+        raise
+    try:
+        ag._exiger_identite(acces)      # relue sous le verrou (une réinitialisation remet l'adresse à prouver)
+    except AtelierError:
+        db.rollback()
+        raise
     try:
         i = int(qid)
     except (TypeError, ValueError):
