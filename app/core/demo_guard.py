@@ -131,7 +131,7 @@ def _p(path: str) -> "re.Pattern":
     return re.compile(rf"^{rx}/?$")
 
 
-# (méthode, motif, action affichée : « créez votre compte gratuit pour <action> »)
+# (méthode, motif, action affichée : « commencez votre essai gratuit de 30 jours pour <action> »)
 _BLOCKED = [
     # (a) envois d'emails
     ("POST",   "/api/projects/{pid}/invites",                 "inviter un partenaire"),
@@ -270,7 +270,7 @@ _RULES = [(m, _p(path), action) for m, path, action in _BLOCKED]
 
 
 def demo_message(action: str) -> str:
-    return f"La démo est en lecture guidée : créez votre compte gratuit pour {action}."
+    return f"La démo est en lecture guidée : commencez votre essai gratuit de 30 jours pour {action}."
 
 
 def blocked_action(method: str, path: str) -> Optional[str]:

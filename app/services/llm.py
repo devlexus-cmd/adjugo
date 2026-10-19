@@ -862,7 +862,7 @@ def tenant_usage(tenant_id) -> int:
 # passe par tenant_scope (invariant) : l'espace du compte démo est inscrit ici par son seed
 # (demo_seed.ensure_demo) et messages_create le refuse avant tout envoi. Aucun effet sur les autres comptes.
 _TENANTS_DEMO = set()
-_MSG_DEMO = "La démo est en lecture guidée : créez votre compte gratuit pour lancer une analyse IA."
+_MSG_DEMO = "La démo est en lecture guidée : commencez votre essai gratuit de 30 jours pour lancer une analyse IA."
 
 
 def marquer_tenant_demo(tenant_id) -> None:

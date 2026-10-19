@@ -50,6 +50,212 @@ def active_invite_ids(db: Session, project_id: int) -> list:
     return [i.id for i in active_invites(db, project_id)]
 
 
+# ── Qui entre dans les formulaires officiels (DC1, DC2, DC4, convention) ─────────────────
+# Étude organisation, décision 4 : AUCUNE entreprise tierce n'entre dans un DC1/DC2 sans avoir accepté
+# une invitation. Un rattachement au marché (ProjectCotraitant) ne suffit plus :
+#   - sous-traitant (rôle « sous_traitant », déclaré EXPLICITEMENT par le candidat) → DC4 ;
+#   - partenaire / chef de file → seulement si son invitation est active ET acceptée.
+
+def invitation_acceptee(inv, contrib=None) -> bool:
+    """Le partenaire a ACCEPTÉ l'invitation : depuis son compte (lien réclamé), par une réponse positive
+    du réseau, ou en soumettant sa part. Une invitation seulement créée, envoyée ou ouverte ne suffit pas ;
+    révoquée ou déclinée, jamais."""
+    if not is_active_invite(inv):
+        return False
+    if getattr(inv, "accepted_by_user_id", None) or getattr(inv, "network_accepted_at", None):
+        return True
+    return contrib is not None and getattr(contrib, "status", "") == "submitted"
+
+
+def _est_sous_traitant(role) -> bool:
+    return str(role or "").strip().lower().replace("-", "_") == "sous_traitant"
+
+
+_CHAMPS_FORMULAIRE = ("name", "siret", "code_ape", "forme_juridique", "representant_legal", "address",
+                      "city", "postal_code", "email", "phone", "tva_intracom", "ca_n1", "ca_n2", "ca_n3",
+                      "effectif", "specialites", "departement")
+
+
+def nom_cle(s) -> str:
+    """Nom d'entreprise comparable : sans accents, minuscules, espaces simples (même rapprochement
+    que l'écran, qui compare les noms sans tenir compte de la casse)."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(s or ""))
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    return " ".join(t.lower().split())
+
+
+def etat_invitation(inv, contrib=None) -> Optional[str]:
+    """« acceptee », « envoyee », « declinee », « retiree », ou None sans invitation."""
+    if inv is None:
+        return None
+    if getattr(inv, "revoked", False):
+        return "retiree"
+    if getattr(inv, "declined_at", None) is not None:
+        return "declinee"
+    return "acceptee" if invitation_acceptee(inv, contrib) else "envoyee"
+
+
+def _accords_hors_ligne(db: Session, project_id: int) -> dict:
+    """{link_id: statut de son accord} des partenaires SANS invitation inscrits « hors ligne » sur une
+    convention générée et à jour (« hors_ligne » = accord DÉCLARÉ recueilli par le chef de file, sinon
+    « pending »). Seule exception à l'invitation acceptée : l'accord est déclaré par le chef de file
+    (imprimé tel quel dans la convention), jamais présumé."""
+    try:
+        from app.services import groupement_convention as gc
+        conv = gc.get_convention(db, project_id)
+        if conv is None or conv.status not in gc.ACTIVE:
+            return {}
+        project = db.get(Project, project_id)
+        if project is not None:
+            gc.refresh(db, project, conv)          # texte périmé : les accords deviennent caducs
+        if conv.status not in gc.ACTIVE:
+            return {}
+        return {s.cotraitant_link_id: s.status for s in gc.signatures_of(db, conv) if s.cotraitant_link_id}
+    except Exception:
+        return {}
+
+
+def etat_des_liens(db: Session, project_id: int) -> dict:
+    """{link_id: {"formulaires": bool, "invitation": état|None, "accord_hors_ligne": bool,
+    "hors_ligne_en_attente": bool}} : le rattachement entre-t-il dans les formulaires officiels, et
+    pourquoi ?
+      - sous-traitant déclaré (DC4) : oui, sauf si l'invitation qu'il porte est déclinée ou retirée ;
+      - partenaire : oui si son invitation est acceptée, ou si une AUTRE invitation acceptée de ce marché
+        vise la même entreprise (même nom donné par le chef de file, ou même SIRET dans la part soumise :
+        invitation créée sans lien, avant cette correction) ; ou si son accord hors ligne est déclaré
+        sur la convention à jour ; non dans tous les autres cas."""
+    from app.routers.cotraitants import Cotraitant, ProjectCotraitant
+    links = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).all()
+    if not links:
+        return {}
+    cts = {c.id: c for c in db.query(Cotraitant).filter(
+        Cotraitant.id.in_([lk.cotraitant_id for lk in links] or [0])).all()}
+    invs = {i.id: i for i in db.query(ProjectInvite).filter(ProjectInvite.project_id == project_id).all()}
+    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
+        ProjectContribution.project_id == project_id).all()}
+    # Invitations acceptées EN PARTENAIRE (un sous-traitant qui accepte n'entre pas au DC1 par ce biais).
+    acceptees = [i for i in invs.values() if not _est_sous_traitant(i.role)
+                 and invitation_acceptee(i, contribs.get(i.id))]
+    noms_acceptes = {nom_cle(i.company_name) for i in acceptees if nom_cle(i.company_name)}
+    sirets_acceptes = {str(getattr(contribs.get(i.id), "siret", "") or "").strip() for i in acceptees} - {""}
+    hors_ligne = None
+    out = {}
+    for lk in links:
+        inv = invs.get(getattr(lk, "invite_id", None))
+        etat = etat_invitation(inv, contribs.get(inv.id) if inv is not None else None)
+        hl = attente = False
+        if _est_sous_traitant(lk.role):
+            ok = etat not in ("declinee", "retiree")
+        elif etat == "acceptee":
+            ok = True
+        else:
+            ct = cts.get(lk.cotraitant_id)
+            siret = str(getattr(ct, "siret", "") or "").strip()
+            ok = bool(ct is not None and ((nom_cle(ct.name) and nom_cle(ct.name) in noms_acceptes)
+                                          or (siret and siret in sirets_acceptes)))
+            if ok:
+                etat = "acceptee"
+            elif inv is None:
+                if hors_ligne is None:
+                    hors_ligne = _accords_hors_ligne(db, project_id)
+                hl = ok = hors_ligne.get(lk.id) == "hors_ligne"
+                attente = lk.id in hors_ligne and not hl
+        out[lk.id] = {"formulaires": bool(ok), "invitation": etat, "accord_hors_ligne": hl,
+                      "hors_ligne_en_attente": attente}
+    return out
+
+
+def liens_dans_les_formulaires(db: Session, project_id: int) -> dict:
+    """{link_id: bool} : le rattachement entre-t-il dans les formulaires officiels ? (cf. etat_des_liens)."""
+    return {k: v["formulaires"] for k, v in etat_des_liens(db, project_id).items()}
+
+
+def lien_a_inviter(db: Session, project_id: int, company_name: str, link_id: Optional[int] = None):
+    """Rattachement du marché que concerne une NOUVELLE invitation : celui désigné par `link_id`, à
+    défaut le seul rattachement de même nom d'entreprise. Jamais un sous-traitant, jamais un
+    rattachement dont l'invitation est encore active (envoyée ou acceptée). None sinon."""
+    from app.routers.cotraitants import Cotraitant, ProjectCotraitant
+    q = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id)
+    if link_id:
+        cands = q.filter(ProjectCotraitant.id == link_id).all()
+    else:
+        cle = nom_cle(company_name)
+        if not cle:
+            return None
+        links = q.all()
+        cts = {c.id: c for c in db.query(Cotraitant).filter(
+            Cotraitant.id.in_([lk.cotraitant_id for lk in links] or [0])).all()}
+        cands = [lk for lk in links if cts.get(lk.cotraitant_id) is not None
+                 and nom_cle(cts[lk.cotraitant_id].name) == cle]
+    libres = []
+    for lk in cands:
+        if _est_sous_traitant(lk.role):
+            continue
+        if lk.invite_id:
+            cur = db.query(ProjectInvite).filter(ProjectInvite.id == lk.invite_id,
+                                                 ProjectInvite.project_id == project_id).first()
+            if cur is not None and is_active_invite(cur):
+                continue
+        libres.append(lk)
+    return libres[0] if len(libres) == 1 else None
+
+
+def cotraitants_pour_formulaires(db: Session, project_id: int) -> dict:
+    """Entreprises rattachées au marché qui PEUVENT figurer dans les formulaires officiels, au format
+    attendu par les générateurs (role/lot venant du rattachement). Renvoie {"lignes": [...],
+    "ecartes": [noms], "hors_ligne_en_attente": [noms]} : les écartés (partenaires sans invitation
+    acceptée) et les partenaires hors ligne dont l'accord n'est pas encore déclaré sont nommés pour
+    un avertissement, jamais imprimés."""
+    from app.routers.cotraitants import Cotraitant, ProjectCotraitant
+    links = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).order_by(
+        ProjectCotraitant.id.asc()).all()
+    cts = {c.id: c for c in db.query(Cotraitant).filter(
+        Cotraitant.id.in_([lk.cotraitant_id for lk in links] or [0])).all()}
+    etats = etat_des_liens(db, project_id)
+    lignes, ecartes, attente = [], [], []
+    for lk in links:
+        ct = cts.get(lk.cotraitant_id)
+        if ct is None:
+            continue
+        e = etats.get(lk.id) or {}
+        if not e.get("formulaires"):
+            (attente if e.get("hors_ligne_en_attente") else ecartes).append(ct.name or "Partenaire")
+            continue
+        row = {k: (getattr(ct, k, "") or "") for k in _CHAMPS_FORMULAIRE}
+        row["role"] = lk.role or "cotraitant"
+        row["lot"] = lk.lot or ""
+        lignes.append(row)
+    return {"lignes": lignes, "ecartes": ecartes, "hors_ligne_en_attente": attente}
+
+
+AVERT_SANS_ACCORD = ("{noms} : pas encore d'invitation acceptée, absent des formulaires officiels. "
+                     "Invitez-le depuis la page du marché ; il y entrera quand il aura accepté.")
+AVERT_HORS_LIGNE_EN_ATTENTE = ("{noms} : accord hors ligne pas encore déclaré, absent des formulaires officiels "
+                               "(DC1, DC2). Cochez son accord dans la convention quand vous l'aurez recueilli.")
+
+
+def avertissement_sans_accord(ecartes: list) -> str:
+    """Phrase d'avertissement pour les entreprises écartées des formulaires (vide si aucune)."""
+    noms = [n for n in (ecartes or []) if n]
+    if not noms:
+        return ""
+    return AVERT_SANS_ACCORD.format(noms=", ".join(noms[:5]) + (" et d'autres" if len(noms) > 5 else ""))
+
+
+def avertissements_formulaires(form: dict) -> list:
+    """Avertissements à joindre à tout formulaire officiel produit (dossier, ZIP, formulaire seul) :
+    qui n'y figure pas, et pourquoi. `form` = résultat de cotraitants_pour_formulaires."""
+    out = []
+    a = avertissement_sans_accord((form or {}).get("ecartes"))
+    if a:
+        out.append(a)
+    attente = [n for n in ((form or {}).get("hors_ligne_en_attente") or []) if n]
+    if attente:
+        out.append(AVERT_HORS_LIGNE_EN_ATTENTE.format(noms=", ".join(attente[:5])))
+    return out
+
+
 def visible_contributions(db: Session, project_id: int, invites: list, viewer_invite_id: Optional[int] = None) -> dict:
     """{invite_id: part} des parts que le chef de file et les AUTRES membres peuvent lire. La part
     d'une invitation du RÉSEAU sans réponse (ou déclinée) en est retirée : brouillon saisi pendant

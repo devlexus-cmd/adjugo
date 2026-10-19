@@ -183,18 +183,20 @@ def _projects():
     return P
 
 
-# Réseau de co-traitants de démonstration (rattachés à certains AO) — fiches complètes.
+# Réseau de co-traitants de démonstration — fiches complètes. Seul Breizh Désamiantage est rattaché à un
+# marché (Kerhel), et il y porte une invitation acceptée (part soumise) : aucune entreprise n'est rattachée
+# sans accord, comme dans le produit. Les deux autres restent dans « Mes partenaires », prêtes à inviter.
 _COTRAITANTS = [
     dict(name="Charpentes Arbrevieux", siret="51234567800018", code_ape="4391A", city="Tours",
          departement="37", specialites="Charpente bois, ossature, couverture", ca_n1=820000, effectif=9,
          forme_juridique="SARL", representant_legal="Hervé Quéméner", email="contact@charpentes-arbrevieux.exemple",
          phone="", codes_cpv="45261000, 45422000",
-         qualifications="Qualibat 2392 (charpente bois), RGE", attach=[("toiture", "cotraitant", "")]),
+         qualifications="Qualibat 2392 (charpente bois), RGE", attach=[]),
     dict(name="Zinguerie Bigoudène", siret="48765432100027", code_ape="4391B", city="Lille",
          departement="59", specialites="Couverture, zinguerie, étanchéité", ca_n1=540000, effectif=6,
          forme_juridique="SARL", representant_legal="Loïc Le Berre", email="contact@zinguerie-bigoudene.exemple",
          phone="", codes_cpv="45261000, 45261210",
-         qualifications="Qualibat 3411 (zinguerie)", attach=[("toiture", "cotraitant", "")]),
+         qualifications="Qualibat 3411 (zinguerie)", attach=[]),
     dict(name="Breizh Désamiantage", siret="53219876500011", code_ape="4399A", city="Lorient",
          departement="56", specialites="Désamiantage SS3, dépose amiante, retrait", ca_n1=2100000, effectif=18,
          forme_juridique="SAS", representant_legal="Soizic Morvan", email="contact@breizh-desamiantage.exemple",
@@ -587,7 +589,7 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
          None, today - timedelta(days=40))
 
     # ── Veille amont : signaux d'investissement détectés en amont des AO ───────
-    for sig in [
+    signaux_demo = [
         dict(intitule="Construction d'un pôle enfance (crèche + ALSH)", type_projet="construction",
              budget=3200000, budget_texte="3,2 M€ HT", localisation="Villebrune (28)",
              collectivite="Ville de Villebrune", calendrier="AO probable T4 2026",
@@ -615,7 +617,11 @@ def _seed_extras(db, user, proj_by_key, ct_by_name):
              source_url="/static/demo/deliberation.html", source_date="2026-03-19",
              domaine="bâtiment", phase="étude", echeance_ao="",
              financement="à définir", maturite=40),
-    ]:
+    ]
+    # « Projets à venir » masqué (PROJETS_A_VENIR=0) jusqu'à la vague 1 de l'étude veille : la vitrine
+    # ne les montre plus (la purge ci-dessus a retiré ceux d'avant). Exemples gardés pour la refonte.
+    from app.core.interrupteurs import projets_a_venir_actif
+    for sig in (signaux_demo if projets_a_venir_actif() else []):
         db.add(Signal(user_id=uid, **sig))
 
     # ── Alertes sauvegardées (veille AO) ──────────────────────────────────────

@@ -12,6 +12,8 @@ from app.models import User, Project, Document
 
 router = APIRouter(prefix="/api/checklist", tags=["Checklist intelligente"])
 
+SIGNATURE_AIDE = "À signer si le règlement l'exige ; sinon, signature à l'attribution."
+
 # Pieces standards des marches publics.
 # `help` = comment l'obtenir (passe d'« assistant » à « accompagnement »).
 # `help_url` = source officielle. `required` peut être réévalué selon le marché
@@ -20,14 +22,17 @@ PIECES_STANDARD = [
     {"id": "kbis", "name": "Extrait Kbis ou équivalent", "category": "administratif", "required": True,
      "help": "Extrait de moins de 3 mois : à commander en ligne sur MonIdenum ou Infogreffe.",
      "help_url": "https://www.infogreffe.fr/"},
+    # Signature : exigée au dépôt SEULEMENT si le règlement de la consultation l'impose ; sinon
+    # seul l'attributaire signe, à l'attribution (fiche DAJ « signature électronique », FT51).
     {"id": "dc1", "name": "DC1 - Lettre de candidature", "category": "cerfa", "required": True,
-     "help": "Généré automatiquement par Adjugo, pré-rempli avec votre profil. À dater et signer."},
+     "help": "Généré automatiquement par Adjugo, pré-rempli avec votre profil. " + SIGNATURE_AIDE},
     {"id": "dc2", "name": "DC2 - Déclaration du candidat", "category": "cerfa", "required": True,
-     "help": "Généré automatiquement par Adjugo (CA, références, qualifications). À vérifier et signer."},
+     "help": "Généré automatiquement par Adjugo (CA, références, qualifications). À vérifier. " + SIGNATURE_AIDE},
     {"id": "honneur", "name": "Déclaration sur l'honneur (R2143-3)", "category": "cerfa", "required": True,
-     "help": "Généré automatiquement par Adjugo. Pièce OBLIGATOIRE : son absence invalide le pli. À dater et signer."},
+     "help": "Généré automatiquement par Adjugo. Pièce OBLIGATOIRE : son absence invalide le pli. " + SIGNATURE_AIDE},
     {"id": "attri1", "name": "ATTRI1 - Acte d'engagement", "category": "cerfa", "required": True,
-     "help": "Généré automatiquement par Adjugo à partir du chiffrage. Vérifiez le taux de TVA et le montant avant signature."},
+     "help": ("Généré automatiquement par Adjugo à partir du chiffrage. Vérifiez le taux de TVA et le montant. "
+              "Il se signe à l'attribution du marché, sauf si le règlement demande de le signer dès le dépôt.")},
     {"id": "attestation_fiscale", "name": "Attestation de régularité fiscale", "category": "fiscal", "required": True,
      "help": "À télécharger sur votre espace professionnel impots.gouv.fr (rubrique « Attestation fiscale »).",
      "help_url": "https://www.impots.gouv.fr/"},
@@ -58,7 +63,8 @@ PIECES_STANDARD = [
      "help": ("Préparé par Adjugo (Word et PDF, dans le dossier du marché) quand vous générez le dossier. "
               "À relire et compléter : c'est lui qui fait la note technique, et vous restez responsable de son contenu.")},
     {"id": "dpgf", "name": "DPGF / Bordereau des prix", "category": "technique", "required": True,
-     "help": "Générée par Adjugo depuis le chiffrage. Reprenez la trame de l'acheteur si elle est imposée dans le DCE."},
+     "help": ("Adjugo fournit une estimation détaillée (PDF) depuis le chiffrage. Si le dossier du marché "
+              "contient son propre tableau de prix, c'est lui qu'il faut remplir et déposer.")},
     {"id": "planning", "name": "Planning prévisionnel", "category": "technique", "required": False,
      "help": "Calendrier d'exécution (Gantt). Demandé sur les marchés de travaux et certaines prestations."},
 ]

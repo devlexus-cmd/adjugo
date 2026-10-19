@@ -67,7 +67,7 @@ def _binding_required(inv) -> bool:
         return False
 
 
-_DEMO_INVITE_MSG = ("La démo est en lecture guidée : créez votre compte gratuit pour "
+_DEMO_INVITE_MSG = ("La démo est en lecture guidée : commencez votre essai gratuit de 30 jours pour "
                     "co-construire une réponse avec vos partenaires.")
 
 
@@ -492,6 +492,10 @@ class InviteCreate(BaseModel):
     can_view_docs: bool = True
     can_contribute: bool = True     # autorise la co-construction (apport de sa part)
     expires_days: int = 30          # 0 = sans expiration
+    # Rattachement au marché (candidat retenu, sans invitation active) que cette invitation concerne :
+    # il porte désormais l'invitation, et n'entre dans les formulaires qu'une fois celle-ci acceptée.
+    # Absent : le rattachement de même nom d'entreprise, s'il est seul.
+    link_id: Optional[int] = None
 
 
 def _owned_project(pid: int, user: User, db: Session) -> Project:
@@ -611,7 +615,7 @@ def _refuse_demo_sender(user: User) -> None:
     """Défense en profondeur (en plus du garde central) : la démo n'envoie JAMAIS d'email."""
     from app.services.demo_search import is_demo
     if is_demo(user):
-        raise HTTPException(403, "La démo est en lecture guidée : créez votre compte gratuit "
+        raise HTTPException(403, "La démo est en lecture guidée : commencez votre essai gratuit de 30 jours "
                                  "pour inviter un partenaire.")
 
 
@@ -714,6 +718,16 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
                                   recipient=body.recipient, company_name=body.company_name,
                                   role=body.role, can_view_docs=body.can_view_docs,
                                   can_contribute=body.can_contribute, expires_days=body.expires_days)
+    # Candidat déjà rattaché au marché (hors sous-traitant, sans invitation encore active) : il porte
+    # l'invitation et entrera dans les formulaires officiels quand elle sera acceptée. Désigné par
+    # `link_id` (carte du marché), sinon retrouvé par le nom d'entreprise (composition retenue, liste
+    # des candidats) ; après un refus ou un retrait, la nouvelle invitation remplace l'ancienne.
+    if (inv.role or "") != "sous_traitant":
+        from app.services.groupement_members import lien_a_inviter
+        lk = lien_a_inviter(db, project.id, inv.company_name, link_id=body.link_id)
+        if lk is not None:
+            lk.invite_id = inv.id
+            db.commit()
     out = _serialize_invite(inv)
     out["url"] = str(request.base_url).rstrip("/") + out["path"]
     out["emailed"] = emailed

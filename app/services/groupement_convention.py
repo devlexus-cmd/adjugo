@@ -35,9 +35,36 @@ logger = logging.getLogger("adjugo")
 
 AVERTISSEMENT = ("Modèle à faire relire par un conseil (avocat, juriste, CCI) : "
                  "ce n'est pas un conseil juridique.")
+# Hors empreinte (écran, courriel, section « Accords enregistrés » du PDF) : modifiable sans rendre
+# caduque une convention. Signature des formulaires : au dépôt seulement si le règlement l'exige.
 NATURE_ACCORD = ("Votre accord est enregistré par Adjugo (date, empreinte du texte, niveau "
                  "d'identité) : ce n'est pas une signature électronique qualifiée. Les "
-                 "formulaires officiels (DC1, ATTRI1) restent à signer au moment du dépôt.")
+                 "formulaires officiels (DC1, DC2) se signent au dépôt si le règlement l'exige ; "
+                 "l'acte d'engagement (ATTRI1) se signe à l'attribution, sauf si le règlement "
+                 "demande de le signer dès le dépôt.")
+
+# Modèle du TEXTE de la convention (dans l'empreinte). Le modèle 1 disait que les formulaires officiels
+# « restent à signer au moment du dépôt », ce qui est faux (signature au dépôt seulement si le règlement
+# l'exige) ; le modèle 2 le corrige. Une convention déjà générée garde le modèle avec lequel elle a été
+# figée (son empreinte, donc les accords déjà donnés, restent valables) ; toute génération nouvelle
+# prend le modèle courant.
+MODELE_TEXTE = 2
+_SIGNATURE_FORMULAIRES = {
+    1: "Les formulaires officiels (DC1, ATTRI1) restent à signer au moment du dépôt.",
+    2: ("Les formulaires officiels (DC1, DC2) se signent au dépôt si le règlement de la consultation "
+        "l'exige ; l'acte d'engagement (ATTRI1) se signe à l'attribution, sauf si le règlement demande "
+        "de le signer dès le dépôt."),
+}
+
+
+def modele_de(conv) -> int:
+    """Modèle de texte avec lequel `conv` a été figée (1 pour une convention antérieure au modèle 2)."""
+    p = conv.params if conv is not None and isinstance(conv.params, dict) else {}
+    try:
+        m = int(p.get("modele_texte") or 1)
+    except (TypeError, ValueError):
+        m = 1
+    return m if m in _SIGNATURE_FORMULAIRES else 1
 
 FORMES = {
     "conjoint": {
@@ -551,11 +578,21 @@ def collect_members(db, project, conv, company, include_incomplete: bool = False
         })
 
     cands = {o["link_id"]: o for o in offline_candidates(db, project)}
+    invites_lies = None
     for entry in (params.get("membres_hors_ligne") or []):
         if not isinstance(entry, dict):
             continue
-        n_partners += 1
         o = cands.get(entry.get("link_id"))
+        if not o:
+            # Invité depuis (il porte maintenant une invitation) : il compte comme partenaire invité,
+            # plus comme membre hors ligne.
+            if invites_lies is None:
+                from app.routers.cotraitants import ProjectCotraitant
+                invites_lies = {lk.id for lk in db.query(ProjectCotraitant).filter(
+                    ProjectCotraitant.project_id == project.id, ProjectCotraitant.invite_id.isnot(None)).all()}
+            if entry.get("link_id") in invites_lies:
+                continue
+        n_partners += 1
         if not o:
             manques.append("Un partenaire hors ligne choisi n'est plus rattaché à ce marché : retirez-le")
             continue
@@ -791,10 +828,11 @@ def render(ctx: dict, mask: str = "none", viewer_invite_id: Optional[int] = None
     L += ["Les prix sont les prix de vente de chaque part. Ils ne comprennent ni le détail des coûts ni les "
           "marges, qui restent confidentiels.", ""]
 
+    modele = ctx.get("modele") if ctx.get("modele") in _SIGNATURE_FORMULAIRES else 1
     L += ["## Accord des membres",
           "Chaque membre donne son accord sur ce texte depuis son espace Adjugo. Cet accord est enregistré "
-          "avec la date et l'empreinte du texte : ce n'est pas une signature électronique qualifiée. Les "
-          "formulaires officiels (DC1, ATTRI1) restent à signer au moment du dépôt."]
+          "avec la date et l'empreinte du texte : ce n'est pas une signature électronique qualifiée. "
+          + _SIGNATURE_FORMULAIRES[modele]]
     return "\n".join(L) + "\n"
 
 
@@ -817,6 +855,8 @@ def build_context(db, project, conv, company, version: Optional[int] = None, bro
         "members": members,
         "total_ht": total_of(members) if complete else None,
         "brouillon": brouillon,
+        # Texte d'une version DÉJÀ figée (version donnée) : son propre modèle ; sinon le modèle courant.
+        "modele": modele_de(conv) if version is not None else MODELE_TEXTE,
     }
     return {"ctx": ctx, "manques": col["manques"], "sous_traitants": col["sous_traitants"]}
 
@@ -1123,9 +1163,21 @@ def cerfa_groupement(db, project) -> Optional[dict]:
         parts = (plan.get("offre") or {}).get("parts") or []
         members = [p for p in parts if isinstance(p, dict)]
         lead = next((m for m in members if m.get("role") == "mandataire"), None)
-        others = [m for m in members if m.get("role") != "mandataire"]
         sigs = signatures_of(db, conv)
+        # Un partenaire HORS LIGNE (sans invitation) n'entre dans les formulaires officiels qu'une fois
+        # son accord DÉCLARÉ recueilli par le chef de file (« Marquer l'accord comme recueilli ») :
+        # aucune entreprise n'y figure sans accord, même inscrite à la convention.
+        declares = {s.cotraitant_link_id for s in sigs if s.cotraitant_link_id and s.status == "hors_ligne"}
+        others, attente = [], []
+        for m in members:
+            if m.get("role") == "mandataire":
+                continue
+            if m.get("kind") == "hors_ligne" and m.get("link_id") not in declares:
+                attente.append(m.get("company") or "Partenaire")
+                continue
+            others.append(m)
         return {
+            "hors_ligne_en_attente": attente,
             "forme": conv.forme, "mandataire_solidaire": bool(conv.mandataire_solidaire),
             "habilitation": merged_habilitation(conv), "total_ht": conv.total_offre_ht,
             "convention_status": conv.status, "convention_version": conv.version,

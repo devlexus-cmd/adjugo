@@ -33,11 +33,18 @@ def _fetch_attributions(query: str, departements, per: int = 50) -> list:
     end = (today - timedelta(days=int(1.5 * 365))).isoformat()   # … et ≥ 1,5 an (zone de renouvellement)
     where = f'nature="ATTRIBUTION" AND (objet like "{q}" OR descripteur_libelle like "{q}")'
     if departements:
-        deps = " OR ".join(f'code_departement like "{d}"' for d in departements)
-        where = f"({where}) AND ({deps})"
+        # Le BOAMP écrit les départements 01 à 09 sans zéro (« 6 ») : on demande les deux formes,
+        # comme la recherche d'avis (app.sourcing.sources.boamp).
+        from app.sourcing.http import safe_terms as _safe
+        from app.sourcing.sources.boamp import formes_boamp
+        formes = [f for d in departements for f in formes_boamp(_safe(str(d)) or "") if f]
+        if formes:
+            deps = " OR ".join(f'code_departement like "{f}"' for f in dict.fromkeys(formes))
+            where = f"({where}) AND ({deps})"
     where += f" AND dateparution >= date'{start}' AND dateparution <= date'{end}'"
     params = {"limit": min(per, 60), "order_by": "-dateparution", "where": where, "select": SELECT}
     from app.sourcing.http import get_with_retry
+    from app.sourcing.sources.boamp import dept_canonique
     r = get_with_retry(API, params=params, timeout=14)   # retry + backoff
     out = []
     for row in r.json().get("results", []):
@@ -50,7 +57,7 @@ def _fetch_attributions(query: str, departements, per: int = 50) -> list:
             "idweb": idweb,
             "objet": (row.get("objet") or "").strip()[:400],
             "acheteur": _as_str(row.get("nomacheteur")),
-            "dept": (deps[0] if deps else ""),
+            "dept": (dept_canonique(deps[0]) if deps else ""),
             "lieu": ", ".join(desc) if isinstance(desc, list) and desc else "",
             "date_attribution": (row.get("dateparution") or "")[:10],
             "url": row.get("url_avis") or (f"https://www.boamp.fr/avis/detail/{idweb}" if idweb else ""),

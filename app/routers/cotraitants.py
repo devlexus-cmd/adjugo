@@ -212,6 +212,11 @@ def _release_convention_links(db: Session, link_ids: list, user) -> None:
 
 # ── Sous-traitants rattachés à un appel d'offres ─────────────────────────────────
 
+ATTACH_PARTENAIRE_REFUS = ("Un partenaire du groupement s'invite depuis la page du marché : il n'entre dans "
+                           "les formulaires officiels qu'après avoir accepté. Ici, seul un sous-traitant "
+                           "(DC4) peut être ajouté.")
+
+
 class AttachRequest(BaseModel):
     cotraitant_id: Optional[int] = None      # depuis le réseau existant
     company: Optional[dict] = None           # ou une entreprise réelle (SIRENE) à créer + lier
@@ -239,12 +244,22 @@ def list_project_cotraitants(project_id: int, current_user: User = Depends(get_c
     cts = {c.id: c for c in db.query(Cotraitant).filter(
         Cotraitant.id.in_([lk.cotraitant_id for lk in links] or [0]),
         Cotraitant.user_id.in_(ids)).all()}
+    # « formulaires » : l'entreprise figure-t-elle dans les formulaires officiels (sous-traitant déclaré,
+    # ou partenaire dont l'invitation est acceptée) ? Faux = pas encore d'accord, l'écran propose d'inviter.
+    # « invitation » : acceptee | envoyee | declinee | retiree | None (l'écran propose d'inviter à nouveau
+    # après un refus ou un retrait) ; « accord_hors_ligne » : accord déclaré par le chef de file.
+    from app.services.groupement_members import etat_des_liens
+    etats = etat_des_liens(db, project_id)
     out = []
     for lk in links:
         ct = cts.get(lk.cotraitant_id)
         if not ct:
             continue
+        e = etats.get(lk.id) or {}
         out.append({"link_id": lk.id, "role": lk.role, "lot": lk.lot,
+                    "formulaires": bool(e.get("formulaires")), "invitation": e.get("invitation"),
+                    "accord_hors_ligne": bool(e.get("accord_hors_ligne")),
+                    "hors_ligne_en_attente": bool(e.get("hors_ligne_en_attente")),
                     "invite_id": getattr(lk, "invite_id", None), "source": lk.source or "reseau",
                     "id": ct.id, "name": ct.name, "siret": ct.siret, "code_ape": ct.code_ape,
                     "city": ct.city, "departement": ct.departement, "specialites": ct.specialites,
@@ -259,6 +274,11 @@ def attach_cotraitant(project_id: int, req: AttachRequest,
                       current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _refuser_demo(current_user)
     _own_project(project_id, current_user, db)
+    # Étude organisation, décision 4 : ajouter directement une entreprise au marché, c'est DÉCLARER UN
+    # SOUS-TRAITANT (DC4). Un partenaire du groupement (ou un chef de file) s'invite : il n'entre dans
+    # les formulaires officiels qu'après avoir accepté. Plus aucun rattachement sans accord.
+    if (req.role or "sous_traitant") != "sous_traitant":
+        raise HTTPException(422, ATTACH_PARTENAIRE_REFUS)
 
     # 1) Résoudre / créer le co-traitant (réseau)
     ids = member_ids(current_user, db)
@@ -300,7 +320,11 @@ def attach_cotraitant(project_id: int, req: AttachRequest,
         ProjectCotraitant.project_id == project_id,
         ProjectCotraitant.cotraitant_id == ct.id).first()
     if exists:
-        exists.role = req.role or exists.role
+        # Un partenaire INVITÉ ne devient pas sous-traitant en silence (son invitation porte son rôle).
+        if getattr(exists, "invite_id", None) and (exists.role or "") != "sous_traitant":
+            raise HTTPException(409, "Cette entreprise est invitée comme partenaire de ce marché : "
+                                     "son rôle se règle depuis son invitation.")
+        exists.role = "sous_traitant"
         exists.lot = req.lot or exists.lot
         db.commit()
         return {"link_id": exists.id, "cotraitant_id": ct.id, "name": ct.name}

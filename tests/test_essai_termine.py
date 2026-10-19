@@ -404,6 +404,8 @@ def test_veille_automatique_ne_sert_plus_un_essai_termine(client, auth, monkeypa
     import app.sourcing.sources.deliberations as deliberations
     from app.services import alerts
     actif_email, _h = _inscrire(client)
+    # La veille planifiée ne tourne que si « Projets à venir » est rallumé (PROJETS_A_VENIR=1).
+    monkeypatch.setenv("PROJETS_A_VENIR", "1")
     _set(auth["email"], amont_alerts_enabled=True)
     _set(actif_email, amont_alerts_enabled=True)
     _expirer(auth["email"])

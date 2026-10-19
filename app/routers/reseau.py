@@ -50,7 +50,7 @@ logger = logging.getLogger("adjugo")
 router = APIRouter(tags=["Réseau de partenaires"])
 _settings = get_settings()
 
-_DEMO_MSG = "La démo est en lecture guidée : créez votre compte gratuit pour rejoindre le réseau de partenaires."
+_DEMO_MSG = "La démo est en lecture guidée : commencez votre essai gratuit de 30 jours pour rejoindre le réseau de partenaires."
 _NOT_PUBLISHED = {"code": "profil_non_publie",
                   "message": "Publiez votre profil partenaire pour voir les fiches et inviter les entreprises du réseau."}
 # Message UNIQUE servi à un compte non publié (annuaire, « Qui me complète ? ») : aucun nombre,

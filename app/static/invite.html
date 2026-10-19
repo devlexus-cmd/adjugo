@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
   <script src="/static/cotraitance-crypto.js" integrity="sha384-06cUyvilawQgw5Gass0antU+ZL14XTWH1m0Qi4q6GoCDut+CIvrQNufOAGj/v2Le"></script>
-  <script src="/static/redaction-partenaire.js" integrity="sha384-sSI0yklCtBo50iNN+PKBbX57U+8ZD1RpQNAMp0A+pxZ1Rerbboe5LbYU5gOl2Wbv"></script>
+  <script src="/static/redaction-partenaire.js" integrity="sha384-gNA7nkGbbk6PFx8exAYT+ag4brqdLfGobCSA0qIzv5nvI2WV9op4/OTLOEFEdlAL"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -185,7 +185,7 @@
       <div class="nav-group">Pilotage</div>
       <a class="nav-item" data-view="dashboard"><i data-lucide="layout-dashboard"></i>Tableau de bord</a>
       <a class="nav-item" data-view="sourcing" data-allowed="1"><i data-lucide="target"></i>Trouver des marchés</a>
-      <a class="nav-item" data-view="amont" data-allowed="1"><i data-lucide="scan-eye"></i>Projets à venir</a>
+      <a class="nav-item" data-view="amont" data-allowed="1" id="nav-amont" style="display:none"><i data-lucide="scan-eye"></i>Projets à venir</a>
       <a class="nav-item" data-view="kb"><i data-lucide="brain-circuit"></i>Mon savoir-faire</a>
       <a class="nav-item" data-view="pipeline"><i data-lucide="square-kanban"></i>Mes marchés</a>
       <div class="nav-group">CRM</div>
@@ -351,8 +351,8 @@
         `<div class="card pad" style="text-align:center;padding:46px 24px">
            <div style="color:var(--text-2,#6b7280)">${ico("lock", 34)}</div>
            <h2 style="margin:10px 0 4px;font-size:18px">« ${esc(label)} » est réservé aux membres</h2>
-           <p class="muted" style="max-width:460px;margin:4px auto 0">Vous êtes invité sur un dossier précis. Créez votre compte Adjugo (gratuit) pour débloquer tout l'espace : pipeline, coffre-fort, équipe, facturation…</p>
-           <a class="btn primary" href="/app" target="_blank" rel="noopener" style="margin-top:16px"><i data-lucide="sparkles"></i>Créer mon compte gratuit</a>
+           <p class="muted" style="max-width:460px;margin:4px auto 0">Vous êtes invité sur un dossier précis. Commencez votre essai gratuit de 30 jours pour débloquer tout l'espace : pipeline, coffre-fort, équipe, facturation…</p>
+           <a class="btn primary" href="/app" target="_blank" rel="noopener" style="margin-top:16px"><i data-lucide="sparkles"></i>Commencer mon essai gratuit de 30 jours</a>
          </div>`;
       icons();
     }
@@ -1878,7 +1878,7 @@
           const avisUrl = safeUrl(t.url || (t.provenance && t.provenance.source_url));
           if (avisUrl !== "#") acts.appendChild($(`<a class="btn sm" href="${esc(avisUrl)}" target="_blank" rel="noopener noreferrer nofollow">Voir l'avis<i data-lucide="external-link"></i></a>`));
           const ana = $(`<button class="btn sm primary">Analyser cet AO</button>`);
-          ana.onclick = () => { const b = document.getElementById("g-banner"); b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)"; b.innerHTML = '<i data-lucide="sparkles"></i><div class="small">L\'analyse de pertinence, le chiffrage et la génération du dossier sont réservés aux comptes Adjugo. <a href="/app" target="_blank" rel="noopener"><b>Créez le vôtre gratuitement</b>' + ico("arrow-right", 13, "margin-left:3px") + '</a></div>'; icons(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+          ana.onclick = () => { const b = document.getElementById("g-banner"); b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)"; b.innerHTML = '<i data-lucide="sparkles"></i><div class="small">L\'analyse de pertinence, le chiffrage et la génération du dossier sont réservés aux comptes Adjugo. <a href="/app" target="_blank" rel="noopener"><b>Commencez votre essai gratuit de 30 jours</b>' + ico("arrow-right", 13, "margin-left:3px") + '</a></div>'; icons(); window.scrollTo({ top: 0, behavior: "smooth" }); };
           acts.appendChild(ana); card.appendChild(acts); results.appendChild(card);
         });
         icons();
@@ -1934,6 +1934,11 @@
       if (!a.dataset.allowed) a.classList.add("g-locked");
       a.addEventListener("click", () => nav(a.dataset.view, a.textContent.trim()));
     });
+    // « Projets à venir » : masqué tant que le serveur ne l'active pas (PROJETS_A_VENIR=1).
+    fetch("/api/public-config").then(r => r.ok ? r.json() : null).then(c => {
+      const el = document.getElementById("nav-amont");
+      if (el && c && c.projets_a_venir === true) el.style.display = "";
+    }).catch(() => {});
 
     fetch("/api/invite/" + encodeURIComponent(TOKEN))
       .then(async r => {

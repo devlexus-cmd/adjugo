@@ -397,6 +397,7 @@ def appliquer_generation(db: Session, project: Project, conv, built: dict, owner
     for k in gc.PARAM_KEYS + ["part_mandataire_ht", "lot_mandataire", "mandataire_qualite"]:
         params[k] = effective.get(k)
     params["masquer_repartition"] = False             # n'existe qu'en brouillon
+    params["modele_texte"] = ctx.get("modele") or 1   # modèle du texte figé (empreinte vérifiable plus tard)
     conv.params = params
     db.flush()                                        # conv.id (offre figée, accords)
     lead = next((m for m in members if m["kind"] == "mandataire"), {})

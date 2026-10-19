@@ -118,7 +118,7 @@ h1{font-family:var(--display);font-weight:600;letter-spacing:-.028em;line-height
 </div></header>
 
 <main class="page">
-  <!-- Vérification du lien (jamais affichée sans clé : la page passe directement à « plus valide » ou « terminée ») -->
+  <!-- Vérification du lien (jamais affichée sans clé : la page passe directement à « incomplet », « plus valide » ou « terminée ») -->
   <section id="verif" class="etat" aria-live="polite"><span class="spin" aria-hidden="true"></span> Vérification du lien…</section>
 
   <!-- Clé valide : deux espaces -->
@@ -141,7 +141,14 @@ h1{font-family:var(--display);font-weight:600;letter-spacing:-.028em;line-height
     </div>
   </section>
 
-  <!-- Clé absente, fausse ou retirée -->
+  <!-- Clé ABSENTE de l'adresse (pas de « # ») : lien copié en partie, rien n'est demandé au serveur -->
+  <section id="incomplet" class="carte" hidden aria-labelledby="t-inc" tabindex="-1">
+    <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/></svg></div>
+    <h1 id="t-inc">Ce lien est incomplet&nbsp;: il manque la clé après le signe&nbsp;#.</h1>
+    <p class="ligne">Copiez le lien en entier depuis le message reçu.</p>
+  </section>
+
+  <!-- Clé refusée par le serveur (fausse, changée ou retirée) -->
   <section id="invalide" class="carte" hidden aria-labelledby="t-inv" tabindex="-1">
     <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
     <h1 id="t-inv">Ce lien de démonstration n'est plus valide.</h1>
@@ -211,8 +218,8 @@ h1{font-family:var(--display);font-weight:600;letter-spacing:-.028em;line-height
   });
 
   function montrer(id){
-    ["verif", "choix", "invalide", "terminee", "erreur"].forEach(function(k){ $(k).hidden = (k !== id); });
-    if (id === "invalide" || id === "terminee") $(id).focus();
+    ["verif", "choix", "incomplet", "invalide", "terminee", "erreur"].forEach(function(k){ $(k).hidden = (k !== id); });
+    if (id === "incomplet" || id === "invalide" || id === "terminee") $(id).focus();
   }
   function erreur(msg, relance){ $("erreurTxt").textContent = msg; actif = relance; montrer("erreur"); }
 
@@ -285,12 +292,15 @@ h1{font-family:var(--display);font-weight:600;letter-spacing:-.028em;line-height
   });
 
   // Clé absente (ou manifestement pas une clé) : aucune requête, la page le dit tout de suite. Retour
-  // d'une session du lien simplement terminée : « rouvrez le lien », jamais « plus valide ».
+  // d'une session du lien simplement terminée : « rouvrez le lien », jamais « plus valide ». Clé
+  // changée (« perime », posé par le logiciel) : « plus valide ». Sinon, sans clé, le lien a été copié
+  // en partie : « incomplet » (« plus valide » est réservé à une clé refusée par le serveur).
   function demarrer(){
     if (!cle || cle.length > 256) {
       var fin = "";
       try { fin = sessionStorage.getItem(FIN) || ""; } catch (e) {}
-      montrer(!cle && fin === "terminee" ? "terminee" : "invalide");
+      if (cle) montrer("invalide");
+      else montrer(fin === "terminee" ? "terminee" : (fin === "perime" ? "invalide" : "incomplet"));
       return;
     }
     verifier();

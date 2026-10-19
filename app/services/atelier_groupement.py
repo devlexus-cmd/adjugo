@@ -720,7 +720,7 @@ def ouvrir_espace(db, inv: ProjectInvite, *, code: Optional[str] = None, reiniti
     import secrets
     from app.routers.invites import _binding_required, _guest_actor, _invite_is_demo
     if _invite_is_demo(inv, db):
-        raise AtelierError(403, "demo", "La démo est en lecture guidée : créez votre compte gratuit pour co-construire "
+        raise AtelierError(403, "demo", "La démo est en lecture guidée : commencez votre essai gratuit de 30 jours pour co-construire "
                                         "une réponse avec vos partenaires.")
     # Sous le verrou de l'invitation, relue : une aide de l'IA en cours ou un dépôt range ce qu'il a fait avant la
     # réinitialisation (qui l'efface alors) ou après (et voit que l'espace a changé : il ne range rien).
@@ -860,7 +860,7 @@ def _exiger_ecriture(acces: Acces) -> None:
     if not getattr(acces.inv, "can_contribute", True):
         raise AtelierError(403, "co_construction_fermee", "La co-construction n'est pas activée pour ce lien.")
     if _invite_is_demo(acces.inv, acces.db):
-        raise AtelierError(403, "demo", "La démo est en lecture guidée : créez votre compte gratuit pour "
+        raise AtelierError(403, "demo", "La démo est en lecture guidée : commencez votre essai gratuit de 30 jours pour "
                                         "co-construire une réponse avec vos partenaires.")
 
 

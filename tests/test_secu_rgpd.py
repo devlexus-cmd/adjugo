@@ -480,7 +480,7 @@ def mails(monkeypatch):
 def _demo_msg(r):
     assert r.status_code == 403, r.text
     d = r.json()["detail"]
-    assert d.startswith("La démo est en lecture guidée : créez votre compte gratuit pour "), d
+    assert d.startswith("La démo est en lecture guidée : commencez votre essai gratuit de 30 jours pour "), d
     return d
 
 

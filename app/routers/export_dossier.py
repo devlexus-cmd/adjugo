@@ -64,26 +64,16 @@ def export_dossier(
         "cotraitants": [],
     }
 
-    # Co-traitants RATTACHÉS À CE MARCHÉ uniquement (pas tout le carnet d'adresses de l'org).
+    # Entreprises RATTACHÉES À CE MARCHÉ uniquement (pas tout le carnet d'adresses de l'org), role/lot
+    # venant du LIEN (co-traitant → DC1/DC2, sous-traitant → DC4). Seulement les sous-traitants
+    # déclarés et les partenaires dont l'invitation est ACCEPTÉE (aucune entreprise sans son accord).
+    # Celles qui en sont écartées faute d'accord sont dites dans le sommaire et à l'écran.
+    avertissements = []
     try:
-        from app.routers.cotraitants import Cotraitant, ProjectCotraitant
-        link_rows = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).all()
-        link_by_ct = {l.cotraitant_id: l for l in link_rows}
-        ct_ids = [l.cotraitant_id for l in link_rows]
-        cts = db.query(Cotraitant).filter(Cotraitant.id.in_(ct_ids)).all() if ct_ids else []
-        for ct in cts:
-            ct_data = {}
-            for k in ["name", "siret", "code_ape", "forme_juridique",
-                       "representant_legal", "address", "city", "postal_code",
-                       "email", "phone", "tva_intracom", "ca_n1", "ca_n2",
-                       "ca_n3", "effectif"]:
-                ct_data[k] = getattr(ct, k, "") or ""
-            # role/lot viennent du LIEN (pas de la fiche partenaire) : indispensables pour
-            # router correctement co-traitant → DC1/DC2 et sous-traitant → DC4.
-            lk = link_by_ct.get(ct.id)
-            ct_data["role"] = (getattr(lk, "role", "") or "cotraitant") if lk else "cotraitant"
-            ct_data["lot"] = (getattr(lk, "lot", "") or "") if lk else ""
-            pd["cotraitants"].append(ct_data)
+        from app.services.groupement_members import avertissements_formulaires, cotraitants_pour_formulaires
+        _form = cotraitants_pour_formulaires(db, project_id)
+        pd["cotraitants"].extend(_form["lignes"])
+        avertissements = avertissements_formulaires(_form)
     except Exception:
         pass
 
@@ -235,6 +225,14 @@ def export_dossier(
                 sommaire.append("{}. {} - SIRET: {}".format(i + 1, ct.get("name", ""), ct.get("siret", "")))
             sommaire.append("")
 
+        if avertissements:
+            sommaire.append("-" * 60)
+            sommaire.append("A VERIFIER AVANT DEPOT")
+            sommaire.append("-" * 60)
+            for a in avertissements:
+                sommaire.append("- " + a)
+            sommaire.append("")
+
         sommaire.append("-" * 60)
         sommaire.append("CONTENU DU DOSSIER")
         sommaire.append("-" * 60)
@@ -273,8 +271,8 @@ def export_dossier(
         mark_cerfa_generated(db, project.id, [d for d in ("dc1", "dc2", "attri1") if d in cerfa_ok],
                              grp.get("convention_version"))
 
-    return Response(
-        content=zip_bytes,
-        media_type="application/zip",
-        headers={"Content-Disposition": content_disposition(filename)},
-    )
+    headers = {"Content-Disposition": content_disposition(filename)}
+    if avertissements:
+        from app.core.http import AVERTISSEMENT_HEADER, en_tete_avertissements
+        headers[AVERTISSEMENT_HEADER] = en_tete_avertissements(avertissements)
+    return Response(content=zip_bytes, media_type="application/zip", headers=headers)

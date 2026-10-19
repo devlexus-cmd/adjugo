@@ -450,6 +450,11 @@ def run_amont_alerts(db: Session) -> dict:
     """Cron VEILLE AMONT : Adjugo va chercher les délibérations récentes, l'IA détecte
     les projets d'investissement (une fois), puis chaque utilisateur reçoit ses nouveaux
     projets PERTINENTS par email (scoring selon son profil)."""
+    # « Projets à venir » masqué (PROJETS_A_VENIR=0) jusqu'à la vague 1 de l'étude veille : aucun scan,
+    # aucun appel à l'IA, aucun courriel. Les abonnements (amont_alerts_enabled) et signaux sont gardés.
+    from app.core.interrupteurs import projets_a_venir_actif
+    if not projets_a_venir_actif():
+        return {"scanned": 0, "users_notified": 0, "new_signals": 0, "desactive": True}
     from app.sourcing.sources.deliberations import DeliberationSource
     from app.services.agents.amont import detect_from_deliberations, score_pertinence
     from app.services.profile import criteria_dict
