@@ -252,6 +252,10 @@ SANS_COUT = {
     ("POST", "/api/atelier/{project_id}/sections/{section_id}/controle"): _V + " (0 IA)",
     ("POST", "/api/atelier/{project_id}/sections/{section_id}/faits/{fait_id}/source"): _V + " (0 IA)",
     ("POST", "/api/atelier/{project_id}/derogation"): _V,
+    # Rédaction, vague 6 (J) : les lots du dossier (plan reconstruit) et la portée d'une partie (commune ou propre à
+    # chaque lot) — sans IA, refusées par le garde (la vitrine partagée ne change pas).
+    ("PUT", "/api/atelier/{project_id}/lots"): _V + " (0 IA : plan reconstruit sans IA)",
+    ("PUT", "/api/atelier/{project_id}/sections/{section_id}/portee"): _V + " (0 IA)",
     # Rédaction, vague 4 : « Qui écrit quoi » (chef de file) et parts des partenaires — refusées par le garde
     # ET dans la route (tests/test_redaction_v4_chef_de_file.py) ; le lien partenaire de la vitrine n'écrit rien.
     ("POST", "/api/atelier/{project_id}/repartition"): _V + " (0 IA : pré-remplissage d'après les lots)",
@@ -807,7 +811,9 @@ def test_seed_idempotent_rejouable_deux_fois_sans_ia_ni_fichier_nouveau(demo, es
         db.close()
     assert espions["ia"] == [] and espions["email"] == [] and espions["reseau"] == []
     assert espions["fichier"] == []        # clés liées au contenu : rien de neuf à ranger au redémarrage
-    assert avant["dossiers"] == 1 and len(avant["parties"]) == 5 and len(avant["preuves"]) == 14
+    # Deux dossiers de présentation : le marché « toiture » (5 parties) et, vague 6, le marché à plusieurs lots (5
+    # parties : une commune, deux par lot).
+    assert avant["dossiers"] == 2 and len(avant["parties"]) == 10 and len(avant["preuves"]) == 14
     assert [n for n, *_ in avant["preuves"]] == list(range(1, 15))       # numéros stables F1 à F14
 
 
@@ -824,7 +830,7 @@ def test_seed_redaction_isole_dans_sa_transaction(demo, monkeypatch):
     try:
         u = ensure_demo(db, force=True)
         projets = db.query(Project).filter(Project.user_id == u.id).all()
-        assert len(projets) == 6
+        assert len(projets) == 7          # vague 6 : le marché à plusieurs lots (son propre seed, sa transaction)
         toiture = next(p for p in projets if p.name.startswith("Réfection toiture"))
         assert "grille_notation" not in (toiture.ai_analysis or {}).get("details", {})
         assert toiture.match_score == 87
@@ -927,7 +933,7 @@ def test_lien_prive_de_bout_en_bout(client, lien_prive, espions, monkeypatch):
     pme, ach = _sessions(client, {"cle": cle})
     d = {"pme": pme, "acheteur": ach, "ctx": _contexte()}
     assert client.get("/api/auth/me", headers=pme).json()["email"] == "demo@adjugo.fr"
-    assert len(client.get("/api/projects/", headers=pme).json()) == 6
+    assert len(client.get("/api/projects/", headers=pme).json()) == 7
     r = client.post("/api/sourcing/search", headers=pme, json={"query": "toiture"}).json()
     assert r["count"] >= 1 and all(t["provenance"]["official_ref"].startswith("DEMO-") for t in r["tenders"])
     for ecran in _ECRANS_PME:

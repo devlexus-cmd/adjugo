@@ -291,6 +291,17 @@ def _consigne_partie(p: dict) -> str:
                    + (f" (lot : {mg['lot']})" if mg.get("lot") else "")
                    + " : « nous » désigne cette entreprise seulement ; ne parle ni du chef de file ni des autres "
                      "membres.")
+    # Rédaction, vague 6 (J) : plusieurs lots, un dossier par lot. Une partie d'un lot ne parle que de lui ; une partie
+    # commune figure telle quelle dans le dossier de chaque lot.
+    lot = p.get("lot") if isinstance(p.get("lot"), dict) else None
+    if lot and lot.get("numero"):
+        out.append(f"CETTE PARTIE CONCERNE SEULEMENT LE LOT {lot['numero']}"
+                   + (f" ({lot['intitule']})" if lot.get("intitule") else "")
+                   + " : elle figure dans le dossier de ce lot ; ne parle que des travaux de ce lot.")
+    elif p.get("lots_du_dossier"):
+        out.append("CETTE PARTIE EST COMMUNE À TOUS LES LOTS DU DOSSIER ("
+                   + " ; ".join(str(x) for x in p["lots_du_dossier"][:8])
+                   + ") : elle figure telle quelle dans le dossier de chacun ; n'y parle d'aucun lot en particulier.")
     if p.get("source_plan") == "cadre" and p.get("question"):
         out.append(f"QUESTION DU CADRE DE RÉPONSE (n° {p.get('numero') or '?'}) : {p['question']}")
     if p.get("critere"):

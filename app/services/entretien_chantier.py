@@ -1004,14 +1004,20 @@ def pour_parties(db, project: Project, dossier: DossierPresentation, sections: l
         lg = lignes_grille(project)
         personnes = _personnes_par_id(db, dossier.owner_id, rows) if invite_id is None else {}
         ids = {s.id for s in sections}
+        from app.services import atelier_lots as al
+        plusieurs = al.actif(dossier)
         for r in rows:
             if r.statut == SANS_OBJET:
                 continue
             d = _def(r)
             partie = partie_concernee(d.get("parties") or [], secs, _critere_de(d.get("criteres") or [], lg))
-            if partie is None or partie.id not in ids:
+            if partie is None:
                 continue
-            x = out.setdefault(partie.id, {"refs": [], "manques": [], "en_attente": []})
+            # Vague 6 (J) : la même partie dans les autres lots du dossier (même case) reçoit la même réponse — le
+            # chantier est le même ; sa question passée y laisse aussi son « [À compléter] ».
+            cibles = [y for y in [partie] + (al.freres(secs, partie) if plusieurs else []) if y.id in ids]
+            if not cibles:
+                continue
             if invite_id is not None:
                 sienne = r.reponse_kind == INV and r.reponse_invite_id == invite_id
                 ok = r.statut == REPONDUE and sienne and bool(_flat(r.reponse))
@@ -1020,12 +1026,14 @@ def pour_parties(db, project: Project, dossier: DossierPresentation, sections: l
                       and bool(_flat(r.reponse)) and _invitation_active(db, r.reponse_invite_id))
             else:
                 ok = r.adresse_kind == ORG and _utilisable(r, personnes)
-            if ok:
-                x["refs"].append(f"{fs.ENTRETIEN}{int(r.numero)}")
-            elif r.statut == A_REPONDRE:
-                x["en_attente"].append(a_completer(r))
-            elif r.statut in (SAUTEE, REPONDUE):
-                x["manques"].append(a_completer(r))
+            for cible in cibles:
+                x = out.setdefault(cible.id, {"refs": [], "manques": [], "en_attente": []})
+                if ok:
+                    x["refs"].append(f"{fs.ENTRETIEN}{int(r.numero)}")
+                elif r.statut == A_REPONDRE:
+                    x["en_attente"].append(a_completer(r))
+                elif r.statut in (SAUTEE, REPONDUE):
+                    x["manques"].append(a_completer(r))
     except Exception as e:      # noqa: BLE001
         logger.warning("entretien : parties concernées illisibles (dossier %s) : %s", getattr(dossier, "id", "?"),
                        type(e).__name__)

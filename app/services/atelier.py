@@ -45,6 +45,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.models import (Company, DossierPresentation, DossierSection, DossierSectionVersion, Job, Project,
                         User, utcnow)
 from app.services import atelier_export as ax
+from app.services import atelier_lots as al
 from app.services import atelier_plan as ap
 from app.services import faits_a_relire as far
 from app.services import faits_sources as fs
@@ -559,18 +560,103 @@ def _en_groupement(db, project: Project) -> bool:
 
 # ── Le plan ───────────────────────────────────────────────────────────────────────────
 
-def _plan(db, project: Project, member_ids: list, lu: dict, base: str) -> dict:
+def _plan(db, project: Project, member_ids: list, lu: dict, base: str, lots: Optional[list] = None) -> dict:
+    """Le plan proposé, SANS IA. `lots` (rédaction, vague 6 — J) : deux lots ou plus auxquels l'entreprise répond →
+    parties communes et parties propres à chaque lot (atelier_lots) ; sinon le plan d'un seul dossier, inchangé."""
+    present = (lu.get("cle") or "aucun") != "aucun"
+    if lots and len(lots) >= 2:
+        pieces = pieces_du_marche(project, lu)
+        return al.construire_plan(_analysis(project), lots, texte_pour_lots(pieces), pieces,
+                                  cadre_global=lu.get("cadre") or "", base=base,
+                                  en_groupement=_en_groupement(db, project), dossier_present=present)
     return ap.build_plan(_analysis(project), lu.get("cadre") or "", base=base,
-                         en_groupement=_en_groupement(db, project),
-                         dossier_present=(lu.get("cle") or "aucun") != "aucun")
+                         en_groupement=_en_groupement(db, project), dossier_present=present)
 
 
-def proposition(db, project: Project, member_ids: list, base: str = "auto") -> dict:
-    """Plan proposé (sans IA, sans rien enregistrer)."""
-    return _plan(db, project, member_ids, lire_dossier_acheteur(db, project, member_ids), base)
+# ── Plusieurs lots (rédaction, vague 6 — J ; docs/REDACTION_V6.md) ────────────────────────────────────
+
+def pieces_du_marche(project: Project, lu: dict) -> list:
+    """Les pièces du dossier du marché, avec leur texte, lues SANS IA et sans relire le fichier : la lecture
+    intégrale rangée (en mémoire du process), sinon le texte de l'ancienne lecture (règlement et cadre en entier),
+    sinon l'extrait de l'analyse. [] sans dossier."""
+    if lu.get("integral"):
+        from app.services import dce_texte
+        try:
+            pcs = dce_texte.dce_pieces_text(project) or []
+        except Exception:       # noqa: BLE001
+            pcs = []
+        if pcs:
+            from app.services import dce_pieces as dp
+            return [{"nom": str(x.get("nom") or ""), "type": x.get("type") or dp.AUTRE,
+                     "libelle": x.get("libelle") or dp.label(x.get("type")), "texte": x.get("texte") or ""}
+                    for x in pcs]
+    texte = lu.get("texte") or ""
+    if not texte.strip():
+        texte = str(_analysis(project).get("dce_excerpt") or "")
+    return al.pieces_du_texte(texte) if texte.strip() else []
+
+
+def texte_pour_lots(pieces: list) -> str:
+    """Le texte des pièces où se lisent les lots, leurs critères et la règle de nommage (règlements, cadres de
+    réponse, pièces au nom inconnu), assemblé comme le reste de l'application (« === nom === »)."""
+    from app.services import dce_pieces as dp
+    keep = [p for p in pieces if p.get("type") in (dp.REGLEMENT, dp.CADRE, dp.AUTRE, dp.ACTE_ENGAGEMENT)] or pieces
+    return "\n\n".join(dp.header(p.get("nom") or "pièce") + "\n" + (p.get("texte") or "") for p in keep)
+
+
+def lots_reperes(db, project: Project, member_ids: list, lu: Optional[dict] = None) -> dict:
+    """Les lots du marché repérés dans le dossier, SANS IA (atelier_lots.reperer), gardés en mémoire du process
+    pour un même dossier lu et une même analyse."""
+    lu = lu if lu is not None else lire_dossier_acheteur(db, project, member_ids)
+    det = _analysis(project).get("details") if isinstance(_analysis(project).get("details"), dict) else {}
+    cle = al.cle_cache("reperes", lu.get("cle"), lu.get("lecture_cle"), lu.get("integral"),
+                       str(det.get("allotissement") or "")[:2000])
+    hit = al.cache_get(cle)
+    if hit is not None:
+        return hit
+    r = al.reperer("", det, pieces=pieces_du_marche(project, lu))
+    al.cache_put(cle, r)
+    return r
+
+
+def lots_demandes(db, project: Project, member_ids: list, choisis, ajoutes=None, lu: Optional[dict] = None) -> list:
+    """Les lots choisis (numéros repérés cochés, lots indiqués par l'utilisateur), contrôlés ; [] = un seul dossier."""
+    if not choisis and not ajoutes:
+        return []
+    r = lots_reperes(db, project, member_ids, lu=lu)
+    try:
+        lots = al.choisir(r.get("lots") or [], choisis or [], ajoutes or [])
+    except al.LotsInvalides as e:
+        raise AtelierError(422, "lots_invalides", str(e))
+    return lots if len(lots) >= 2 else []
+
+
+def lots_du_marche_out(r: dict, lots: Optional[list] = None) -> dict:
+    """Les lots repérés dans le règlement, tels que l'écran les propose (à cocher)."""
+    return {"alloti": bool(r.get("alloti")), "lots": al.liste_out(r.get("lots") or []),
+            "annonce": r.get("annonce"), "message": r.get("message") or "", "unique": r.get("unique") or "",
+            "choisis": [x["numero"] for x in lots or []] if lots and len(lots) >= 2 else [],
+            "regle_commune": al.REGLE_COMMUNE}
+
+
+def proposition(db, project: Project, member_ids: list, base: str = "auto", lots: Optional[list] = None) -> dict:
+    """Plan proposé (sans IA, sans rien enregistrer) ; `lots_du_marche` : les lots repérés dans le règlement."""
+    lu = lire_dossier_acheteur(db, project, member_ids)
+    out = _plan(db, project, member_ids, lu, base, lots=lots)
+    out["lots_du_marche"] = lots_du_marche_out(lots_reperes(db, project, member_ids, lu=lu), lots)
+    if isinstance(out.get("lots"), dict):
+        out["lots"] = dict(out["lots"], liste=al.liste_out(out["lots"].get("liste") or []))
+    return out
 
 
 def _plan_meta(plan: dict, base: str, cle_dce: str = "") -> dict:
+    out = _plan_meta_simple(plan, base, cle_dce)
+    if isinstance(plan.get("lots"), dict) and plan["lots"].get("actif"):
+        out["lots"] = plan["lots"]       # vague 6 (J) : lots choisis, grille, limites et source de chaque lot
+    return out
+
+
+def _plan_meta_simple(plan: dict, base: str, cle_dce: str = "") -> dict:
     return {"source": plan.get("source"), "message": plan.get("message") or "",
             "fichier_impose": bool(plan.get("fichier_impose")), "message_fichier": plan.get("message_fichier") or "",
             "avertissement_fichier": plan.get("avertissement_fichier") or "",
@@ -591,8 +677,8 @@ def _section_from_plan(dossier: DossierPresentation, s: dict, ordre: int) -> Dos
         source_plan=str(s.get("source_plan") or ap.LIBRE)[:12], critere=str(s.get("critere") or "")[:300],
         critere_id=str(s.get("critere_id") or "")[:20], poids=str(s.get("poids") or "")[:40],
         poids_source=str(s.get("poids_source") or "")[:20] if s.get("poids") else "",
-        partie_de_critere=bool(s.get("partie_de_critere")), lot="", limite=s.get("limite") or [],
-        author_kind=AUTEUR_ORG, author_invite_id=None, statut=A_ECRIRE, lock_version=0)
+        partie_de_critere=bool(s.get("partie_de_critere")), lot=str(s.get("lot") or "")[:120],
+        limite=s.get("limite") or [], author_kind=AUTEUR_ORG, author_invite_id=None, statut=A_ECRIRE, lock_version=0)
 
 
 def get_dossier(db, project_id: int, owner_id: int) -> Optional[DossierPresentation]:
@@ -600,14 +686,25 @@ def get_dossier(db, project_id: int, owner_id: int) -> Optional[DossierPresentat
                                                 DossierPresentation.owner_id == owner_id).first()
 
 
+def _verifier_taille(plan: dict, gardees: int = 0) -> None:
+    """Un dossier à plusieurs lots n'est jamais tronqué en silence : trop de parties → refus, avec la raison."""
+    n = len(plan.get("sections") or []) + gardees
+    if isinstance(plan.get("lots"), dict) and plan["lots"].get("actif") and n > SECTIONS_MAX:
+        raise AtelierError(422, "trop_de_parties",
+                           f"Avec ces lots, le dossier compterait {n} parties ({SECTIONS_MAX} au plus) : choisissez moins "
+                           "de lots, ou le plan simple.")
+
+
 def creer_dossier(db, project: Project, owner_id: int, user: User, member_ids: list,
-                  base: str = "auto") -> DossierPresentation:
-    """Crée le dossier de présentation du marché et ses parties, à partir du plan proposé."""
+                  base: str = "auto", lots: Optional[list] = None) -> DossierPresentation:
+    """Crée le dossier de présentation du marché et ses parties, à partir du plan proposé. `lots` (vague 6) : les
+    lots auxquels l'entreprise répond (deux ou plus : parties communes et parties propres à chaque lot)."""
     from sqlalchemy.exc import IntegrityError
     if get_dossier(db, project.id, owner_id) is not None:
         raise AtelierError(409, "dossier_existe", "Le dossier de présentation de ce marché existe déjà.")
     lu = lire_dossier_acheteur(db, project, member_ids)
-    plan = _plan(db, project, member_ids, lu, base)
+    plan = _plan(db, project, member_ids, lu, base, lots=lots)
+    _verifier_taille(plan)
     d = DossierPresentation(project_id=project.id, owner_id=owner_id, created_by_user_id=user.id,
                             plan_source=plan["source"], plan_meta=_plan_meta(plan, base, lu.get("cle") or ""),
                             dce_lu=dce_lu_en_base(lu), analyse_debitee=False, regenerations=0, regenerations_payantes=0,
@@ -656,12 +753,17 @@ def _a_du_texte(db, section_ids) -> bool:
         is not None
 
 
+_GARDER = object()
+
+
 def reconstruire_plan(db, project: Project, dossier: DossierPresentation, user: User, member_ids: list,
-                      base: str = "auto", remplacer: bool = False, lecteur: Optional[Lecteur] = None) -> DossierPresentation:
+                      base: str = "auto", remplacer: bool = False, lecteur: Optional[Lecteur] = None,
+                      lots=_GARDER) -> DossierPresentation:
     """Reconstruit le plan. Les parties actuelles QUE LE LECTEUR PEUT ÉCRIRE sont RETIRÉES (jamais
     supprimées : leurs versions restent consultables et peuvent être remises) ; si l'une a déjà du
     texte, l'utilisateur doit le confirmer (remplacer=True). La partie d'un partenaire (vague 4)
-    reste dans le plan : on ne retire jamais la part d'un autre."""
+    reste dans le plan : on ne retire jamais la part d'un autre. `lots` (vague 6) : les lots du dossier
+    (par défaut, ceux qu'il a déjà ; [] = un seul dossier)."""
     lecteur = lecteur or Lecteur.organisation(dossier.owner_id, user)
     act = sections_actives(db, dossier)
     miennes = [s for s in act if peut_ecrire(s, lecteur)]
@@ -672,7 +774,14 @@ def reconstruire_plan(db, project: Project, dossier: DossierPresentation, user: 
                            "dans l'historique et peuvent être remis) : confirmez pour continuer.")
     _oublier_lectures(cle_dossier_acheteur(db, project, member_ids))
     lu = lire_dossier_acheteur(db, project, member_ids)
-    plan = _plan(db, project, member_ids, lu, base)
+    if lots is _GARDER:
+        lots = al.liste(dossier)
+    plan = _plan(db, project, member_ids, lu, base, lots=lots)
+    _verifier_taille(plan, len([s for s in act if s not in miennes]))
+    nums = set(al.numeros((plan.get("lots") or {}).get("liste") or [])) if isinstance(plan.get("lots"), dict) else set()
+    for s in act:
+        if s not in miennes and (s.lot or "") and (s.lot or "") not in nums:
+            s.lot = ""      # la partie d'un partenaire, d'un lot qui n'est plus dans le dossier : commune à tous
     now = utcnow()
     for s in miennes:
         s.retiree_at = now
@@ -711,11 +820,14 @@ def _place_dans_le_cadre(act: list, section: DossierSection) -> int:
     return len(act)
 
 
-def _groupe_sous_critere(s: DossierSection):
-    """Clé du groupe d'une partie de sous-critère (son critère), None pour une autre partie."""
+def _groupe_sous_critere(s: DossierSection, avec_lot: bool = True):
+    """Clé du groupe d'une partie de sous-critère (son critère ; et son lot, vague 6 : les sous-critères d'un lot
+    restent ensemble), None pour une autre partie. Sans le lot pour numéroter le dossier d'UN lot (ses parties
+    communes et les siennes forment le même groupe, sous le même titre)."""
     if not ap.est_partie_de_sous_critere(s):
         return None
-    return (s.critere_id or "", ((s.parents or [{}])[0] or {}).get("intitule", ""))
+    g = (s.critere_id or "", ((s.parents or [{}])[0] or {}).get("intitule", ""))
+    return g + ((getattr(s, "lot", "") or "",) if avec_lot else ())
 
 
 def _hors_des_groupes(act: list, pos: int, vers_le_bas: bool = True) -> int:
@@ -730,11 +842,26 @@ def _hors_des_groupes(act: list, pos: int, vers_le_bas: bool = True) -> int:
     return pos
 
 
-def ajouter_section(db, dossier: DossierPresentation, intitule: str, apres_id: Optional[int] = None) -> DossierSection:
+def ajouter_section(db, dossier: DossierPresentation, intitule: str, apres_id: Optional[int] = None,
+                    lot: Optional[str] = None) -> DossierSection:
+    """Une partie ajoutée par l'utilisateur. Dossier à plusieurs lots (vague 6) : `lot` = '' (commune à tous les
+    lots) ou le numéro d'un lot du dossier ; par défaut, le lot de la partie après laquelle on l'ajoute."""
     intitule = _flat(intitule)[:INTITULE_MAX]
     if len(intitule) < 2:
         raise AtelierError(422, "intitule_invalide", "Donnez un intitulé à cette partie.")
     act = sections_actives(db, dossier)
+    lot_n = ""
+    if al.actif(dossier):
+        if lot is None:
+            ref = next((x for x in act if apres_id is not None and x.id == apres_id), None)
+            lot_n = (ref.lot or "") if ref is not None else ""
+        elif str(lot).strip():
+            x = al.lot_de(dossier, lot)
+            if x is None:
+                raise AtelierError(422, "lot_inconnu", "Ce lot ne fait pas partie de ce dossier de présentation.")
+            lot_n = x["numero"]
+    elif lot not in (None, ""):
+        raise AtelierError(422, "lot_inconnu", "Ce dossier de présentation ne répond qu'à un seul lot.")
     if len(act) >= SECTIONS_MAX:
         raise AtelierError(422, "trop_de_parties", f"Un dossier compte au plus {SECTIONS_MAX} parties.")
     pos = len(act)
@@ -746,7 +873,7 @@ def ajouter_section(db, dossier: DossierPresentation, intitule: str, apres_id: O
     s = DossierSection(dossier_id=dossier.id, project_id=dossier.project_id, owner_id=dossier.owner_id,
                        ordre=pos, numero="", intitule=intitule, niveau=1, parents=[], question="",
                        source_plan=ap.UTILISATEUR, critere="", critere_id="", poids="", partie_de_critere=False,
-                       lot="", limite=[], author_kind=AUTEUR_ORG, statut=A_ECRIRE, lock_version=0)
+                       lot=lot_n, limite=[], author_kind=AUTEUR_ORG, statut=A_ECRIRE, lock_version=0)
     for x in act[pos:]:
         x.ordre = (x.ordre or 0) + 1
     db.add(s)
@@ -793,8 +920,19 @@ def modifier_section(db, dossier: DossierPresentation, section: DossierSection, 
             # La partie d'un sous-critère reste avec les autres sous-critères de son critère (entre eux, l'ordre
             # se change librement) : le titre du critère n'apparaît qu'une fois, avec un seul numéro.
             essai = act[:pos] + [section] + act[pos:]
-            rangs = [i for i, x in enumerate(essai) if _groupe_sous_critere(x) == mien]
-            if rangs and rangs[-1] - rangs[0] + 1 != len(rangs):
+            if al.actif(dossier):
+                # Vague 6 : les sous-critères d'un critère restent ensemble dans le dossier de CHAQUE lot (parties
+                # communes et parties du lot), quel que soit l'ordre des autres lots entre eux.
+                cle = _groupe_sous_critere(section, avec_lot=False)
+                coupe = False
+                for n in al.numeros(al.liste(dossier)):
+                    sub = al.du_lot(essai, n)
+                    rr = [i for i, x in enumerate(sub) if _groupe_sous_critere(x, avec_lot=False) == cle]
+                    coupe = coupe or (bool(rr) and rr[-1] - rr[0] + 1 != len(rr) and section in sub)
+            else:
+                rangs = [i for i, x in enumerate(essai) if _groupe_sous_critere(x) == mien]
+                coupe = bool(rangs) and rangs[-1] - rangs[0] + 1 != len(rangs)
+            if coupe:
                 db.rollback()
                 titre = mien[1] or section.critere or "son critère"
                 raise AtelierError(409, "groupe_sous_criteres",
@@ -826,6 +964,8 @@ def remettre_section(db, dossier: DossierPresentation, section: DossierSection, 
         return section
     if len(sections_actives(db, dossier)) >= SECTIONS_MAX:
         raise AtelierError(422, "trop_de_parties", f"Un dossier compte au plus {SECTIONS_MAX} parties.")
+    if (section.lot or "") and al.lot_de(dossier, section.lot) is None:
+        section.lot = ""        # vague 6 : son lot n'est plus dans le dossier (ou un seul dossier) : commune à tous
     act = sections_actives(db, dossier)
     mien = _groupe_sous_critere(section)
     freres = [i for i, x in enumerate(act) if mien is not None and _groupe_sous_critere(x) == mien]
@@ -849,6 +989,97 @@ def remettre_section(db, dossier: DossierPresentation, section: DossierSection, 
     return section
 
 
+# ── Plusieurs lots (vague 6 — J) : les lots du dossier, commune ou propre à chaque lot ─────────────────
+
+def changer_lots(db, project: Project, dossier: DossierPresentation, user: User, member_ids: list, choisis, ajoutes=None,
+                 remplacer: bool = False, lecteur: Optional[Lecteur] = None) -> DossierPresentation:
+    """Change les lots auxquels le dossier répond : le plan est reconstruit (parties communes et parties propres à
+    chaque lot, ou un seul dossier sous deux lots), les parties actuelles RETIRÉES (jamais supprimées, remettables),
+    avec la même confirmation que « Reconstruire le plan »."""
+    lots = lots_demandes(db, project, member_ids, choisis, ajoutes)
+    if al.numeros(lots) == al.numeros(al.liste(dossier)) and lots == al.liste(dossier):
+        raise AtelierError(409, "rien_a_changer", "Le dossier répond déjà à ces lots.")
+    base = str((dossier.plan_meta or {}).get("base_demandee") or "auto") if isinstance(dossier.plan_meta, dict) else "auto"
+    return reconstruire_plan(db, project, dossier, user, member_ids, base=base if base in ap.BASES else "auto",
+                             remplacer=remplacer, lecteur=lecteur, lots=lots)
+
+
+def _poids_du_lot(dossier: DossierPresentation, critere_id: str, lot: str, defaut: tuple) -> tuple:
+    g = (al.meta(dossier).get("grilles") or {}).get(lot) or {}
+    ln = next((x for x in g.get("lignes") or [] if x.get("id") == critere_id and x.get("dans_le_plan")), None)
+    return (ln.get("poids") or "", ln.get("poids_source") or "") if ln is not None else defaut
+
+
+def changer_portee(db, dossier: DossierPresentation, section: DossierSection, lecteur: Lecteur, commune: bool,
+                   remplacer: bool = False) -> DossierSection:
+    """Une partie commune à tous les lots devient propre à chaque lot (elle garde son texte pour le premier lot ;
+    une partie vide est ajoutée pour chacun des autres), ou l'inverse : la partie choisie devient commune et garde son
+    texte, celles des autres lots sont RETIRÉES (jamais supprimées : remettables), après confirmation si l'une a du
+    texte. Sans IA. La partie d'un partenaire ne change jamais de portée par un autre que lui."""
+    if not al.actif(dossier):
+        raise AtelierError(409, "un_seul_lot", "Ce dossier de présentation ne répond qu'à un seul lot.")
+    if est_generee(section):
+        raise AtelierError(409, "partie_du_groupement", "Cette partie est tirée du groupement : elle vaut pour tous "
+                                                         "les lots.")
+    if not peut_organiser(section, lecteur):
+        raise refus_ecriture(section)
+    act = sections_actives(db, dossier)
+    nums = al.numeros(al.liste(dossier))
+    if commune:
+        if not section.lot:
+            return section
+        autres = al.freres(act, section)
+        for f in autres:
+            if not peut_organiser(f, lecteur):
+                raise refus_ecriture(f)
+        _verifier_aucune_tache(db, [section] + autres)
+        if autres and _a_du_texte(db, [f.id for f in autres]) and not remplacer:
+            noms = ", ".join(f"lot {f.lot}" for f in autres)
+            raise AtelierError(409, "portee_a_confirmer",
+                               f"Cette partie a déjà du texte dans d'autres lots ({noms}). Rendue commune, elle garde "
+                               "le texte de celle-ci ; les autres sont retirées du plan (leurs textes restent dans "
+                               "l'historique et peuvent être remis) : confirmez pour continuer.")
+        now = utcnow()
+        for f in autres:
+            f.retiree_at = now
+        if section.critere_id:
+            vals = {_poids_du_lot(dossier, section.critere_id, n, (section.poids or "", section.poids_source or ""))
+                    for n in nums}
+            section.poids, section.poids_source = next(iter(vals)) if len(vals) == 1 else ("", "")
+        section.lot = ""
+    else:
+        if section.lot:
+            return section
+        if len(act) + len(nums) - 1 > SECTIONS_MAX:
+            raise AtelierError(422, "trop_de_parties", f"Un dossier compte au plus {SECTIONS_MAX} parties.")
+        _verifier_aucune_tache(db, [section])
+        defaut = (section.poids or "", section.poids_source or "")
+        section.lot = nums[0]
+        if section.critere_id:
+            section.poids, section.poids_source = _poids_du_lot(dossier, section.critere_id, nums[0], defaut)
+        pos = next((i for i, x in enumerate(act) if x.id == section.id), len(act))
+        for k, n in enumerate(nums[1:], 1):
+            p, ps = _poids_du_lot(dossier, section.critere_id, n, defaut) if section.critere_id else defaut
+            x = DossierSection(dossier_id=dossier.id, project_id=dossier.project_id, owner_id=dossier.owner_id,
+                               ordre=0, numero=section.numero or "", intitule=section.intitule, niveau=section.niveau,
+                               parents=section.parents or [], question=section.question or "",
+                               source_plan=section.source_plan, critere=section.critere or "",
+                               critere_id=section.critere_id or "", poids=p, poids_source=ps if p else "",
+                               partie_de_critere=bool(section.partie_de_critere), lot=n,
+                               limite=section.limite or [], author_kind=AUTEUR_ORG, statut=A_ECRIRE, lock_version=0)
+            db.add(x)
+            db.flush()
+            act.insert(pos + k, x)
+    section.lock_version = (section.lock_version or 0) + 1
+    db.flush()
+    for i, x in enumerate(sections_actives(db, dossier) if commune else act):
+        x.ordre = i
+    dossier.version = (dossier.version or 0) + 1
+    db.commit()
+    db.refresh(section)
+    return section
+
+
 # ── La grille a changé depuis le plan (« Comment vous serez noté ») ───────────────────
 
 def changements_grille(project: Project, dossier: DossierPresentation, actives: list, retirees: list) -> Optional[dict]:
@@ -858,6 +1089,8 @@ def changements_grille(project: Project, dossier: DossierPresentation, actives: 
     commande, la grille n'y crée pas de partie)."""
     if dossier.plan_source == ap.CADRE:
         return None
+    if al.actif(dossier):
+        return _changements_grille_lots(project, dossier, actives, retirees)
     lignes = ap.lignes_techniques(_analysis(project))
     par_id = {ln["id"]: ln for ln in lignes}
     meta = dossier.plan_meta if isinstance(dossier.plan_meta, dict) else {}
@@ -904,6 +1137,136 @@ def changements_grille(project: Project, dossier: DossierPresentation, actives: 
             "peut_appliquer": bool(nouveaux or poids)}
 
 
+def _grilles_actuelles(project: Project, dossier: DossierPresentation) -> dict:
+    """Vague 6 (J) : {lot: lignes techniques de SA grille, telle qu'elle se lit MAINTENANT} (grille de « Comment
+    vous serez noté » relue pour chaque lot, sans IA ; en mémoire du process pour une même grille)."""
+    det = _analysis(project).get("details") if isinstance(_analysis(project).get("details"), dict) else {}
+    g = det.get("grille_notation") if isinstance(det.get("grille_notation"), dict) else None
+    lu = dossier.dce_lu if isinstance(dossier.dce_lu, dict) else {}
+    nums = al.numeros(al.liste(dossier))
+    cle = al.cle_cache("grilles", project.id, lu.get("cle"), lu.get("lecture_cle"), nums,
+                       json.dumps(g, ensure_ascii=False, sort_keys=True, default=str) if g else "")
+    hit = al.cache_get(cle)
+    if hit is None:
+        pieces = pieces_du_marche(project, lu)
+        grilles = al.grilles_par_lot(g, texte_pour_lots(pieces), nums) if g is not None else {}
+        hit = {"lignes": {n: ap.lignes_techniques(al._analyse_du_lot(_analysis(project), grilles.get(n)))
+                          for n in nums},
+               "grilles": {n: al.grille_out(grilles.get(n)) for n in nums if grilles.get(n) is not None}}
+        al.cache_put(cle, hit)
+    return hit
+
+
+def _poids_commun(lignes: dict, critere_id: str) -> tuple:
+    """(poids, provenance) d'un critère pour une partie COMMUNE : le même dans tous les lots, sinon aucun."""
+    vals = {(x["poids"], x["poids_source"]) for ls in lignes.values() for x in ls if x["id"] == critere_id}
+    return next(iter(vals)) if len(vals) == 1 else ("", "")
+
+
+def _changements_grille_lots(project: Project, dossier: DossierPresentation, actives: list, retirees: list):
+    """changements_grille pour un dossier à plusieurs lots : la grille de chaque lot, relue sans IA."""
+    meta = dossier.plan_meta if isinstance(dossier.plan_meta, dict) else {}
+    if ap.empreinte_grille(_analysis(project)) == (meta.get("grille") or []):
+        return None                     # « Comment vous serez noté » n'a pas bougé depuis le plan
+    lignes = _grilles_actuelles(project, dossier)["lignes"]
+    connus = {str(s.critere_id) for s in list(actives) + list(retirees) if s.critere_id}
+    connus |= {str(x[0]) for x in (meta.get("grille") or []) if isinstance(x, (list, tuple)) and x}
+    nouveaux = {}
+    for n, ls in lignes.items():
+        for ln in ls:
+            if ln["id"] not in connus:
+                x = nouveaux.setdefault(ln["id"], {"id": ln["id"], "critere": ln["critere"], "poids": ln["poids"],
+                                                   "poids_source": ln["poids_source"], "lots": []})
+                x["lots"].append(n)
+    poids, plus_retenus = [], []
+    for s in actives:
+        if not s.critere_id or s.author_kind != AUTEUR_ORG:
+            continue
+        if s.lot:
+            ln = next((x for x in lignes.get(s.lot) or [] if x["id"] == str(s.critere_id)), None)
+            nouveau = (ln["poids"], ln["poids_source"]) if ln is not None else None
+        else:
+            present = all(any(x["id"] == str(s.critere_id) for x in ls) for ls in lignes.values())
+            nouveau = _poids_commun(lignes, str(s.critere_id)) if present else None
+        if nouveau is None:
+            if s.source_plan == ap.GRILLE or s.partie_de_critere:
+                plus_retenus.append({"section_id": s.id, "critere": s.critere})
+            continue
+        if nouveau[0] != (s.poids or "") or (bool(s.poids_source) and nouveau[1] != s.poids_source):
+            poids.append({"section_id": s.id, "critere": s.critere, "ancien": s.poids or "", "nouveau": nouveau[0],
+                          "poids_source": nouveau[1]})
+    nouveaux = list(nouveaux.values())
+    if not (nouveaux or poids or plus_retenus):
+        return None
+    parts = []
+    if nouveaux:
+        k = len(nouveaux)
+        parts.append(("Un critère a été confirmé" if k == 1 else f"{k} critères ont été confirmés")
+                     + " dans « Comment vous serez noté » depuis la création du plan : "
+                     + ", ".join(f"« {x['critere']} »" for x in nouveaux[:6]) + ".")
+    noms_poids = list(dict.fromkeys(x["critere"] for x in poids))
+    if noms_poids:
+        parts.append(("Le poids retenu pour " if len(noms_poids) == 1 else "Les poids retenus pour ")
+                     + ", ".join(f"« {c} »" for c in noms_poids[:6])
+                     + (" a changé dans « Comment vous serez noté »." if len(noms_poids) == 1
+                        else " ont changé dans « Comment vous serez noté »."))
+    noms_retires = list(dict.fromkeys(x["critere"] for x in plus_retenus))
+    if noms_retires:
+        parts.append(", ".join(f"« {c} »" for c in noms_retires[:6])
+                     + (" n'est plus retenu" if len(noms_retires) == 1 else " ne sont plus retenus")
+                     + (" : vous pouvez retirer la partie." if len(plus_retenus) == 1 else
+                        " : vous pouvez retirer les parties qui s'y rattachent."))
+    return {"nouveaux": nouveaux, "poids": poids, "plus_retenus": plus_retenus, "message": " ".join(parts),
+            "peut_appliquer": bool(nouveaux or poids)}
+
+
+def _appliquer_grille_lots(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, act: list,
+                           ch: dict) -> dict:
+    """appliquer_grille pour un dossier à plusieurs lots : une partie par critère confirmé depuis, dans chaque lot
+    qui le note (commune si la règle le dit et que tous les lots le notent), les poids de chaque lot repris."""
+    hit = _grilles_actuelles(project, dossier)
+    lignes = hit["lignes"]
+    nums = al.numeros(al.liste(dossier))
+    ajout = []
+    for x in ch["nouveaux"]:
+        par_lot = {n: next((y for y in lignes.get(n) or [] if y["id"] == x["id"]), None) for n in nums}
+        presents = [n for n in nums if par_lot[n] is not None]
+        if not presents:
+            continue
+        ln0 = par_lot[presents[0]]
+        if len(presents) == len(nums) and al.est_commune(ln0["critere"]):
+            p, src = _poids_commun(lignes, x["id"])
+            for sp in ap.parties_du_critere(dict(ln0, poids=p, poids_source=src), ""):
+                ajout.append(dict(sp, lot=""))
+            continue
+        for n in presents:
+            for sp in ap.parties_du_critere(par_lot[n], ""):
+                ajout.append(dict(sp, lot=n))
+    if len(act) + len(ajout) > SECTIONS_MAX:
+        raise AtelierError(422, "trop_de_parties", f"Un dossier compte au plus {SECTIONS_MAX} parties.")
+    for y in ch["poids"]:
+        s = next((z for z in act if z.id == y["section_id"]), None)
+        if s is not None and peut_ecrire(s, lecteur):
+            s.poids, s.poids_source = y["nouveau"][:40], (y["poids_source"] or "")[:20] if y["nouveau"] else ""
+            s.lock_version = (s.lock_version or 0) + 1
+    rang = len(act)
+    for sp in ajout:
+        db.add(_section_from_plan(dossier, sp, rang))
+        rang += 1
+    meta = dict(dossier.plan_meta) if isinstance(dossier.plan_meta, dict) else {}
+    meta["grille"] = ap.empreinte_grille(_analysis(project))
+    if isinstance(meta.get("lots"), dict):
+        meta["lots"] = dict(meta["lots"], grilles=dict(meta["lots"].get("grilles") or {}, **hit["grilles"]))
+    if ch["nouveaux"]:
+        meta["message"] = ("Plan construit d'après le dossier du marché, complété par les critères que vous avez "
+                           "confirmés dans « Comment vous serez noté ».")
+    dossier.plan_meta = meta
+    flag_modified(dossier, "plan_meta")
+    dossier.version = (dossier.version or 0) + 1
+    db.commit()
+    return {"ajoutees": len(ch["nouveaux"]), "poids_mis_a_jour": len(ch["poids"])}
+
+
 def appliquer_grille(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur) -> dict:
     """Met le plan à jour d'après « Comment vous serez noté » SANS rien retirer : une partie de plus
     par critère confirmé depuis (à la fin du plan, déplaçable), le poids et sa provenance repris
@@ -915,6 +1278,8 @@ def appliquer_grille(db, project: Project, dossier: DossierPresentation, lecteur
     ch = changements_grille(project, dossier, act, sections_retirees(db, dossier))
     if not ch or not ch["peut_appliquer"]:
         raise AtelierError(409, "rien_a_appliquer", "Le plan suit déjà « Comment vous serez noté ».")
+    if al.actif(dossier):
+        return _appliquer_grille_lots(db, project, dossier, lecteur, act, ch)
     n_new = sum(len(ap.parties_du_critere(x, "")) for x in ap.lignes_techniques(_analysis(project))
                 if x["id"] in {y["id"] for y in ch["nouveaux"]})
     if len(act) + n_new > SECTIONS_MAX:
@@ -1593,24 +1958,40 @@ def acheteur_du_marche(db, project: Project, member_ids: list) -> "fs.Acheteur":
 
 # ── Compteur, limites et blocage de l'export ──────────────────────────────────────────
 
-def numero_affiche(dossier: DossierPresentation, section: DossierSection, rang: int) -> str:
+def numero_affiche(dossier: DossierPresentation, section: DossierSection, rang: int, source: Optional[str] = None) -> str:
     """Numéros du cadre imposé tels quels ; sinon le rang dans le plan (1, 2, 3…). Une partie
     ajoutée par l'utilisateur dans un plan du cadre n'a pas de numéro (le cadre commande)."""
-    if dossier.plan_source == ap.CADRE:
+    if (source or dossier.plan_source) == ap.CADRE:
         return section.numero if section.source_plan == ap.CADRE else ""
     return str(rang)
 
 
-def _rangs(dossier: DossierPresentation, sections: list) -> dict:
+def _rangs(dossier: DossierPresentation, sections: list, lot: Optional[str] = None) -> dict:
+    """Numéro affiché de chaque partie. Dossier à plusieurs lots (vague 6) : `lot` donné → la numérotation du
+    dossier de CE lot (ses parties communes et les siennes, `sections` déjà réduites ou non) ; sinon chaque partie
+    porte son numéro dans le dossier de son lot (une partie commune : celui du premier lot)."""
+    if al.actif(dossier):
+        if lot:
+            return _rangs_de(dossier, al.du_lot(sections, lot), al.source_du_lot(dossier, lot), sans_lot=True)
+        out = {}
+        for n in reversed(al.numeros(al.liste(dossier))):    # le premier lot en dernier : il l'emporte
+            sub = al.du_lot(sections, n)
+            r = _rangs_de(dossier, sub, al.source_du_lot(dossier, n), sans_lot=True)
+            out.update({x.id: r.get(x.id, "") for x in sub})
+        return {x.id: out.get(x.id, "") for x in sections}
+    return _rangs_de(dossier, sections, dossier.plan_source)
+
+
+def _rangs_de(dossier: DossierPresentation, sections: list, source: Optional[str], sans_lot: bool = False) -> dict:
     out, r = {}, 0
-    if dossier.plan_source != ap.CADRE and any(ap.est_partie_de_sous_critere(s) for s in sections):
+    if source != ap.CADRE and any(ap.est_partie_de_sous_critere(s) for s in sections):
         # Vague 5 : les parties d'un même critère découpé par ses sous-critères partagent son numéro
         # (« 2.1 », « 2.2 ») ; les autres parties suivent (« 3 »).
         # Un groupe interrompu (ordre ancien) garde son numéro et continue sa numérotation : jamais deux numéros
         # pour le même critère.
         g, vus = 0, {}
         for s in sections:
-            cle = _groupe_sous_critere(s)
+            cle = _groupe_sous_critere(s, avec_lot=not sans_lot)
             if cle is not None:
                 if cle not in vus:
                     g += 1
@@ -1623,7 +2004,7 @@ def _rangs(dossier: DossierPresentation, sections: list) -> dict:
         return out
     for s in sections:
         r += 1
-        out[s.id] = numero_affiche(dossier, s, r)
+        out[s.id] = numero_affiche(dossier, s, r, source=source)
     return out
 
 
@@ -1644,19 +2025,28 @@ def options_export(dossier: DossierPresentation) -> dict:
     return {"page_garde": o.get("page_garde", True) is not False, "sommaire": o.get("sommaire", True) is not False}
 
 
-def _limites_doc(dossier: DossierPresentation) -> dict:
+def _limites_doc(dossier: DossierPresentation, lot: Optional[str] = None) -> dict:
+    """Ce que le règlement impose au document ; pour le dossier d'un lot (vague 6), les limites qui valent pour CE lot
+    (sa phrase, ou une limite qui ne cite aucun lot)."""
+    if lot and al.actif(dossier):
+        lim = al.limites_doc(dossier, lot)
+        if lim:
+            return lim
     lim = (dossier.plan_meta or {}).get("limites") if isinstance(dossier.plan_meta, dict) else None
     return lim if isinstance(lim, dict) else {}
 
 
 def contexte_rendu(db, project: Project, dossier: DossierPresentation, sections: list, courantes: dict,
-                   avec_logo: bool = True) -> dict:
+                   avec_logo: bool = True, lot: Optional[str] = None) -> dict:
     """Ce que l'export et le compteur rendent : titre du règlement, marché, acheteur, candidat,
-    parties (numéro et intitulé du cadre, texte courant), police du règlement, mention IA."""
+    parties (numéro et intitulé du cadre, texte courant), police du règlement, mention IA. `lot` (vague 6) : le
+    dossier de CE lot — ses parties communes et les siennes, numérotées pour lui, le lot sur la page de garde."""
     a = _analysis(project)
     det = a.get("details") if isinstance(a.get("details"), dict) else {}
     comp = db.query(Company).filter(Company.user_id == dossier.owner_id).first()
-    rangs = _rangs(dossier, sections)
+    if lot:
+        sections = al.du_lot(sections, lot)
+    rangs = _rangs(dossier, sections, lot=lot)
     secs, ia = [], False
     for s in sections:
         v = courantes.get(s.id)
@@ -1666,12 +2056,15 @@ def contexte_rendu(db, project: Project, dossier: DossierPresentation, sections:
                      "parents": parents_affiches(dossier, s, rangs.get(s.id, "")),
                      "texte": (v.texte if v is not None else "") or ""})
     opts = options_export(dossier)
+    x = al.lot_de(dossier, lot) if lot else None
     return {"titre": me.memoire_label(a), "marche": _flat(det.get("intitule_marche") or project.name)[:300],
             "acheteur": _flat(det.get("acheteur") or project.client)[:300],
             "entreprise": _flat(comp.name if comp else "")[:300], "date": ax.mois_annee(),
             "logo": _logo(db, dossier) if avec_logo else None, "sections": secs,
-            "police_rendu": ax.police(_limites_doc(dossier)), "ia": ia,
-            "page_garde": opts["page_garde"], "sommaire": opts["sommaire"]}
+            "police_rendu": ax.police(_limites_doc(dossier, lot)), "ia": ia,
+            "page_garde": opts["page_garde"], "sommaire": opts["sommaire"],
+            "lot": ({"numero": x["numero"], "intitule": x.get("intitule") or "",
+                     "libelle": al.libelle(dossier, x["numero"])} if x else None)}
 
 
 def _logo(db, dossier: DossierPresentation) -> Optional[bytes]:
@@ -1711,19 +2104,21 @@ def _cle_compteur(ctx: dict) -> str:
                      for x in ctx.get("sections") or []],
                "p": [pol.get("famille"), pol.get("taille")], "g": ctx.get("page_garde"), "t": ctx.get("sommaire"),
                "m": [ctx.get("titre"), ctx.get("marche"), ctx.get("acheteur"), ctx.get("entreprise")],
-               "l": bool(ctx.get("logo")), "v": 1}
+               "l": bool(ctx.get("logo")), "v": 1, "lot": (ctx.get("lot") or {}).get("libelle") or ""}
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
                           .encode("utf-8")).hexdigest()
 
 
 def compteur(db, project: Project, dossier: DossierPresentation, sections: list, courantes: dict,
-             ctx: Optional[dict] = None) -> dict:
+             ctx: Optional[dict] = None, lot: Optional[str] = None) -> dict:
     """Mots, caractères, pages et lignes estimées par partie et au total (mis en cache pour un
     même état du texte). Les pages sont celles du PDF produit avec la police du règlement : une
-    page Word n'est pas calculable exactement, on dit « environ »."""
-    ctx = ctx or contexte_rendu(db, project, dossier, sections, courantes)
+    page Word n'est pas calculable exactement, on dit « environ ». `lot` (vague 6) : le dossier de CE lot,
+    mis en cache à sa propre place (dossiers_presentation.compteur["lots"])."""
+    ctx = ctx or contexte_rendu(db, project, dossier, sections, courantes, lot=lot)
     cle = _cle_compteur(ctx)
-    cache = dossier.compteur if isinstance(dossier.compteur, dict) else {}
+    tout = dossier.compteur if isinstance(dossier.compteur, dict) else {}
+    cache = ((tout.get("lots") or {}).get(lot) if lot else tout) or {}
     if cache.get("cle") == cle and isinstance(cache.get("resultat"), dict):
         return cache["resultat"]
     try:
@@ -1740,7 +2135,12 @@ def compteur(db, project: Project, dossier: DossierPresentation, sections: list,
                          f" (aucune police n'est imposée : {pol.get('famille', ax.POLICE_DEFAUT)} "
                          f"{pol.get('taille', ax.TAILLE_DEFAUT)})")
                       + " : une page Word n'est pas calculable exactement, le nombre de pages est approximatif.")
-    dossier.compteur = {"cle": cle, "resultat": res}
+    if lot:
+        tout = dict(tout)
+        tout["lots"] = dict(tout.get("lots") or {}, **{lot: {"cle": cle, "resultat": res}})
+        dossier.compteur = tout
+    else:
+        dossier.compteur = dict({k: v for k, v in tout.items() if k == "lots"}, cle=cle, resultat=res)
     flag_modified(dossier, "compteur")
     db.commit()
     return res
@@ -1778,29 +2178,33 @@ def _mesure(kind: str, c: dict, total: bool):
     return None
 
 
-def evaluer_limites(dossier: DossierPresentation, sections: list, rangs: dict, cpt: dict) -> list:
+def evaluer_limites(dossier: DossierPresentation, sections: list, rangs: dict, cpt: dict, lot: Optional[str] = None,
+                    etiquettes: Optional[dict] = None) -> list:
     """Chaque limite repérée dans le dossier (vague 1), comparée au texte : [{portee, section_id,
-    titre, type, valeur, mesure, depassee, phrase, source, message, avertissement}]. Seules les
-    limites sur le dossier de présentation lui-même ou sur une question du cadre sont contrôlées."""
+    titre, type, valeur, mesure, depassee, phrase, source, message, avertissement, lot}]. Seules les
+    limites sur le dossier de présentation lui-même ou sur une question du cadre sont contrôlées. `lot`
+    (vague 6) : les limites du dossier de CE lot, mesurées sur lui seul."""
     out = []
     by_sec = {x.get("id"): x for x in (cpt.get("sections") or [])}
     total = cpt.get("total") or {}
-    lims = _limites_doc(dossier)
+    lims = _limites_doc(dossier, lot)
+    et = etiquettes or {}
     o = options_export(dossier)
     inclus = [x for x, on in (("page de garde", o["page_garde"]), ("sommaire", o["sommaire"])) if on]
     suffixe = f" ({' et '.join(inclus)} compris)." if inclus else "."
+    doc = f"Dossier du lot {lot}" if lot else "Dossier de présentation"
     for x in lims.get("document") or []:
         k = x.get("type")
         m = _mesure(k, total, True)
-        out.append(_limite_out(x, "document", None, "Dossier de présentation", k, m, suffixe))
+        out.append(dict(_limite_out(x, "document", None, doc, k, m, suffixe), lot=lot or ""))
     for s in sections:
         for x in (s.limite or []):
             if not isinstance(x, dict):
                 continue
             k = x.get("type")
             m = _mesure(k, by_sec.get(s.id) or {}, False)
-            titre = ax.titre_section({"numero": rangs.get(s.id, ""), "intitule": s.intitule})
-            out.append(_limite_out(x, "section", s.id, titre, k, m))
+            titre = ax.titre_section({"numero": rangs.get(s.id, ""), "intitule": s.intitule}) + et.get(s.id, "")
+            out.append(dict(_limite_out(x, "section", s.id, titre, k, m), lot=lot or ""))
     return out
 
 
@@ -1825,7 +2229,8 @@ def _faits_tels_quels(v) -> list:
     return (v.faits or []) if v is not None else []
 
 
-def etat_hash(dossier: DossierPresentation, sections: list, courantes: dict, limites: list, faits_de=None) -> str:
+def etat_hash(dossier: DossierPresentation, sections: list, courantes: dict, limites: list, faits_de=None,
+              lot: Optional[str] = None) -> str:
     """Empreinte de l'état exporté (textes, faits traités, options, limites) : une dérogation ne
     vaut que pour CET état ; au moindre changement, l'export se contrôle de nouveau. `faits_de` :
     les faits d'une version tels qu'ils sont lus (une source perdue rend un fait à relire)."""
@@ -1837,21 +2242,35 @@ def etat_hash(dossier: DossierPresentation, sections: list, courantes: dict, lim
                                                                        if courantes.get(s.id) else [])
                              if isinstance(f, dict)))
                      for s in sections]}
+    if lot:
+        payload["lot"] = lot          # vague 6 : l'état du dossier d'UN lot (jamais pour un dossier à un seul lot)
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
                           .encode("utf-8")).hexdigest()
 
 
+def derogation_du_lot(dossier: DossierPresentation, lot: Optional[str]) -> Optional[dict]:
+    """La dérogation enregistrée pour le dossier d'un lot (vague 6), ou celle du dossier à un seul lot."""
+    der = dossier.derogation if isinstance(dossier.derogation, dict) else None
+    if not lot:
+        return der
+    x = ((der or {}).get("lots") or {}).get(lot)
+    return x if isinstance(x, dict) else None
+
+
 def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs: dict, limites: list,
-            attente: Optional[list] = None, faits_de=None) -> dict:
+            attente: Optional[list] = None, faits_de=None, lot: Optional[str] = None,
+            etiquettes: Optional[dict] = None) -> dict:
     """Ce qui empêche l'export (décision 2b) et ce qui reste à signaler. {bloque, raisons, etat_hash,
     derogation (valable pour cet état) | None, avertissements}. `courantes` est le texte COMMUN
-    (versions_communes) ; `attente` : parties d'un partenaire dont le texte n'est pas encore envoyé."""
+    (versions_communes) ; `attente` : parties d'un partenaire dont le texte n'est pas encore envoyé. `lot`
+    (vague 6) : le dossier de CE lot, avec SA dérogation ; `etiquettes` : « (lot 2) » après le titre d'une partie."""
     raisons = []
     trous, faits, vides, non_valides, partenaires = [], [], [], [], []
     attente_ids = {s.id for s in (attente or [])}
+    et = etiquettes or {}
     for s in sections:
         v = courantes.get(s.id)
-        titre = ax.titre_section({"numero": rangs.get(s.id, ""), "intitule": s.intitule})
+        titre = ax.titre_section({"numero": rangs.get(s.id, ""), "intitule": s.intitule}) + et.get(s.id, "")
         texte = (v.texte if v is not None else "") or ""
         if s.id in attente_ids:
             partenaires.append({"section_id": s.id, "titre": titre})
@@ -1893,8 +2312,8 @@ def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs
                         "message": ("Une limite fixée par le règlement est dépassée." if len(dep) == 1 else
                                     f"{len(dep)} limites fixées par le règlement sont dépassées."),
                         "avertissement": MSG_IRREGULIERE})
-    eh = etat_hash(dossier, sections, courantes, limites, faits_de=faits_de)
-    der = dossier.derogation if isinstance(dossier.derogation, dict) else None
+    eh = etat_hash(dossier, sections, courantes, limites, faits_de=faits_de, lot=lot)
+    der = derogation_du_lot(dossier, lot)
     codes = {r["code"] for r in raisons}
     valide = bool(der and der.get("etat_hash") == eh and codes <= set(der.get("raisons") or []) and raisons
                   and "dossier_vide" not in codes)
@@ -1906,11 +2325,11 @@ def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs
                       "message": ap.avertissement_fichier(True, dossier.plan_source)})
     if non_valides:
         avert.append({"code": "non_valide", "nombre": len(non_valides), "sections": non_valides,
-                      "message": (f"{MSG_NON_VALIDE} : {len(non_valides)} partie"
-                                  f"{'s' if len(non_valides) > 1 else ''} à valider.")})
+                      "message": (f"{f'Dossier du lot {lot} non validé' if lot else MSG_NON_VALIDE} : "
+                                  f"{len(non_valides)} partie{'s' if len(non_valides) > 1 else ''} à valider.")})
     return {"bloque": bool(raisons), "raisons": raisons, "etat_hash": eh,
             "derogation": _derogation_out(der) if valide else None,
-            "peut_exporter": (not raisons) or valide, "avertissements": avert}
+            "peut_exporter": (not raisons) or valide, "avertissements": avert, "lot": lot or ""}
 
 
 def faits_lus(db, dossier: DossierPresentation, project: Project, courantes: dict):
@@ -1943,9 +2362,10 @@ def _derogation_out(der: dict) -> dict:
 
 
 def enregistrer_derogation(db, project: Project, dossier: DossierPresentation, gate: dict, lecteur: Lecteur,
-                           raison: str, texte: str, etat: str, ip: str = "") -> dict:
+                           raison: str, texte: str, etat: str, ip: str = "", lot: Optional[str] = None) -> dict:
     """Dérogation explicite (décision 2b) pour l'état exact présenté à l'utilisateur ; inscrite au
-    journal chaîné AVANT d'être retenue (sans inscription, pas de dérogation)."""
+    journal chaîné AVANT d'être retenue (sans inscription, pas de dérogation). `lot` (vague 6) : la dérogation
+    vaut pour le dossier de CE lot seulement."""
     from app.models import AuditLog
     from app.services import audit
     if raison not in {x["code"] for x in derogations_possibles(gate)}:
@@ -1966,9 +2386,9 @@ def enregistrer_derogation(db, project: Project, dossier: DossierPresentation, g
     resume = {r["code"]: r.get("nombre", 0) for r in gate["raisons"]}
     audit.record(db, action="atelier.derogation_export", owner_id=dossier.owner_id, project_id=project.id,
                  actor=lecteur.email, actor_kind="user", target_type="dossier_presentation", target_id=dossier.id,
-                 detail=f"Dérogation à l'export : {RAISONS_DEROGATION[raison]}"[:255], ip=ip,
-                 meta={"raisons": codes, "detail": resume, "raison": raison, "texte": t, "etat_hash": etat,
-                       "avertissement": avert})
+                 detail=(f"Dérogation à l'export{f' (lot {lot})' if lot else ''} : {RAISONS_DEROGATION[raison]}")[:255],
+                 ip=ip, meta={"raisons": codes, "detail": resume, "raison": raison, "texte": t, "etat_hash": etat,
+                              "avertissement": avert, "lot": lot or ""})
     entry = (db.query(AuditLog).filter(AuditLog.owner_id == dossier.owner_id,
                                        AuditLog.action == "atelier.derogation_export",
                                        AuditLog.target_id == dossier.id)
@@ -1976,11 +2396,17 @@ def enregistrer_derogation(db, project: Project, dossier: DossierPresentation, g
     if entry is None or (entry.meta or {}).get("etat_hash") != etat:
         raise AtelierError(503, "journal_indisponible",
                            "La dérogation n'a pas pu être inscrite au journal : réessayez dans un instant.")
-    dossier.derogation = {"etat_hash": etat, "raisons": codes, "raison": raison, "texte": t,
-                          "par": lecteur.user_id, "le": _now_iso(), "avertissement": avert, "journal_id": entry.id}
+    der = {"etat_hash": etat, "raisons": codes, "raison": raison, "texte": t,
+           "par": lecteur.user_id, "le": _now_iso(), "avertissement": avert, "journal_id": entry.id}
+    if lot:
+        tout = dict(dossier.derogation) if isinstance(dossier.derogation, dict) else {}
+        tout["lots"] = dict(tout.get("lots") or {}, **{lot: der})
+        dossier.derogation = tout
+    else:
+        dossier.derogation = der
     flag_modified(dossier, "derogation")
     db.commit()
-    return _derogation_out(dossier.derogation)
+    return _derogation_out(der)
 
 
 # ── Quota (décision 6a) ───────────────────────────────────────────────────────────────
@@ -2400,6 +2826,7 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
         raise RuntimeError("dossier introuvable")
     act = sections_actives(db, dossier)
     rangs = _rangs(dossier, act)
+    plusieurs = al.actif(dossier)
     sections = [s for s in act if s.id in section_ids]
     ctx = Contexte(db, project, owner_id, member_ids)
     dossier_acheteur, payload, entiers = "", None, set()
@@ -2448,7 +2875,18 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
                            "fiches": ctx.fiches_de_version(db, base)})
             continue
         chunks = extraits.get(s.id) or []
-        autres = [ax.titre_section({"numero": rangs.get(x.id, ""), "intitule": x.intitule}) for x in act if x.id != s.id]
+        if plusieurs:
+            # Vague 6 (J) : une partie d'un lot ne voit que les parties de SON dossier ; une partie commune, les
+            # intitulés de toutes (une fois chacun).
+            if s.lot:
+                r_lot = _rangs(dossier, act, lot=s.lot)
+                autres = [ax.titre_section({"numero": r_lot.get(x.id, ""), "intitule": x.intitule})
+                          for x in al.du_lot(act, s.lot) if x.id != s.id]
+            else:
+                autres = list(dict.fromkeys(_flat(x.intitule) for x in act if x.id != s.id))
+        else:
+            autres = [ax.titre_section({"numero": rangs.get(x.id, ""), "intitule": x.intitule})
+                      for x in act if x.id != s.id]
         cible = cible_mots(s, None)
         fiches = fiches_ent + fs.fiches_extraits(chunks)
         partie = _partie_ia(dossier, s, rangs.get(s.id, ""), autres, ctx, chunks, dossier_acheteur, cible,
@@ -2456,6 +2894,9 @@ def _executer(db, job_id: int, project_id: int, owner_id: int, member_ids: list,
                             analysis=_analysis(project))
         if entretien.get(s.id):
             partie["entretien"] = entretien[s.id]
+        if plusieurs:
+            partie["lot"] = ({"numero": s.lot, "intitule": al.carte(dossier).get(s.lot, "")} if s.lot else None)
+            partie["lots_du_dossier"] = [al.libelle(dossier, n) for n in al.numeros(al.liste(dossier))]
         taches.append({"sid": s.id, "base": base, "chunks": chunks, "fiches": fiches, "partie": partie,
                        "manques": (entretien.get(s.id) or {}).get("manques") or []})
 
@@ -2605,17 +3046,35 @@ MIMES = {"docx": "application/vnd.openxmlformats-officedocument.wordprocessingml
          "pdf": "application/pdf"}
 
 
-def nom_fichier(project: Project, fmt: str) -> str:
+def nom_fichier(project: Project, fmt: str, dossier: Optional[DossierPresentation] = None, lot: Optional[str] = None,
+                entreprise: str = "") -> str:
+    """Le nom du fichier exporté : celui que le règlement donne au document. Dossier d'un lot (vague 6) : le nom que
+    le règlement exige s'il le dit (numéro du lot, nom du candidat), sinon « <document> - Lot 2 - <intitulé> »."""
+    if lot and dossier is not None and al.actif(dossier):
+        x = al.lot_de(dossier, lot)
+        if x is not None:
+            n = al.nom_du_lot(x, me.memoire_label(_analysis(project)), entreprise, al.meta(dossier).get("nommage"))
+            return f"{n['stem']}.{fmt}"
     return f"{me.file_stem(me.memoire_label(_analysis(project)))}.{fmt}"
 
 
-def apercu_export(project: Project, dossier: DossierPresentation, ctx: dict) -> dict:
+def apercu_export(project: Project, dossier: DossierPresentation, ctx: dict, lot: Optional[str] = None) -> dict:
     """Ce que l'utilisateur voit AVANT l'export : nom du fichier, propriétés (dont la mention IA),
-    police, options."""
+    police, options. `lot` (vague 6) : le fichier de CE lot, et d'où vient son nom."""
     pol = ctx.get("police_rendu") or {}
     ia = bool(ctx.get("ia"))
     meta = dossier.plan_meta if isinstance(dossier.plan_meta, dict) else {}
-    return {"nom_fichier_docx": nom_fichier(project, "docx"), "nom_fichier_pdf": nom_fichier(project, "pdf"),
+    ent = ctx.get("entreprise") or ""
+    nommage = {}
+    if lot and al.actif(dossier) and al.lot_de(dossier, lot) is not None:
+        n = al.nom_du_lot(al.lot_de(dossier, lot), me.memoire_label(_analysis(project)), ent,
+                          al.meta(dossier).get("nommage"))
+        regle = al.meta(dossier).get("nommage") or {}
+        nommage = {"selon_reglement": n["selon_reglement"], "message": n["message"],
+                   "phrase": regle.get("phrase") or "", "source": regle.get("source") or ""}
+    return {"nom_fichier_docx": nom_fichier(project, "docx", dossier, lot, ent),
+            "nom_fichier_pdf": nom_fichier(project, "pdf", dossier, lot, ent),
+            "lot": lot or "", "nommage": nommage or None,
             "titre": ctx.get("titre"), "ia_utilisee": ia, "mention_ia": ax.IA_MENTION if ia else "",
             "proprietes": {"titre": ctx.get("titre"), "auteur": "", "sujet": ax.IA_MENTION if ia else "",
                            "mots_cles": "assistance IA" if ia else ""},
@@ -2635,23 +3094,46 @@ def _case_preparation() -> dict:
     return prep.case()
 
 
+def lot_a_exporter(dossier: DossierPresentation, lot) -> Optional[str]:
+    """Le lot demandé à l'export ou à la dérogation (vague 6) : obligatoire pour un dossier à plusieurs lots,
+    refusé pour un dossier à un seul lot. Renvoie son numéro, ou None (un seul dossier)."""
+    demande = str(lot).strip() if lot not in (None, "") else ""
+    if al.actif(dossier):
+        if not demande:
+            raise AtelierError(422, "lot_requis", "Ce dossier répond à plusieurs lots : choisissez le lot à exporter "
+                                                  "(un fichier par lot).",
+                               lots=[{"numero": x["numero"], "libelle": al.libelle(dossier, x["numero"])}
+                                     for x in al.liste(dossier)])
+        x = al.lot_de(dossier, demande)
+        if x is None:
+            raise AtelierError(422, "lot_inconnu", "Ce lot ne fait pas partie de ce dossier de présentation.")
+        return x["numero"]
+    if demande:
+        raise AtelierError(422, "lot_inconnu", "Ce dossier de présentation ne répond qu'à un seul lot.")
+    return None
+
+
 def exporter(db, user: User, project: Project, dossier: DossierPresentation, fmt: str, lecteur: Lecteur,
-             etat: Optional[str] = None, ip: str = "", page_preparation: bool = False) -> tuple:
-    """(octets, nom du fichier, type) — ou AtelierError 409 « export_bloque » avec les raisons.
+             etat: Optional[str] = None, ip: str = "", lot=None, page_preparation: bool = False) -> tuple:
+    """(octets, nom du fichier, type) — ou AtelierError 409 « export_bloque » avec les raisons. Dossier à plusieurs
+    lots (vague 6, J) : le fichier d'UN lot (`lot`), ses parties communes et les siennes, ses limites, SA dérogation.
     `page_preparation` (vague 6, H) : joindre à la fin la page « Comment ce dossier a été préparé » (case
-    décochée par défaut) ; calculée sans IA sur le MÊME texte que l'export."""
+    décochée par défaut) ; calculée sans IA sur le MÊME texte que l'export (pour un lot : les parties de SON
+    fichier, numérotées comme lui)."""
     if fmt not in MIMES:
         raise AtelierError(422, "format_invalide", "Format inconnu : docx ou pdf.")
+    n = lot_a_exporter(dossier, lot)
     _rafraichir_groupement(db, project, dossier)
-    sections = sections_actives(db, dossier)
-    cour = versions_communes(db, sections, lecteur)          # jamais le brouillon d'un autre auteur
-    ctx = contexte_rendu(db, project, dossier, sections, cour)
-    cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
-    rangs = _rangs(dossier, sections)
-    lims = evaluer_limites(dossier, sections, rangs, cpt)
+    tout = sections_actives(db, dossier)
+    cour = versions_communes(db, tout, lecteur)          # jamais le brouillon d'un autre auteur
+    sections = al.du_lot(tout, n) if n else tout
+    ctx = contexte_rendu(db, project, dossier, sections, cour, lot=n)
+    cpt = compteur(db, project, dossier, sections, cour, ctx=ctx, lot=n)
+    rangs = _rangs(dossier, sections, lot=n)
+    lims = evaluer_limites(dossier, sections, rangs, cpt, lot=n)
     fd = faits_lus(db, dossier, project, cour)
     gate = blocage(dossier, sections, cour, rangs, lims, attente=en_attente_d_un_partenaire(sections, lecteur, cour),
-                   faits_de=fd)
+                   faits_de=fd, lot=n)
     if not gate["peut_exporter"]:
         raise AtelierError(409, "export_bloque",
                            "L'export est bloqué : " + " ".join(r["message"] for r in gate["raisons"]),
@@ -2664,20 +3146,26 @@ def exporter(db, user: User, project: Project, dossier: DossierPresentation, fmt
         from app.services import atelier_preparation as prep
         ctx = dict(ctx, page_preparation=prep.page_ou_erreur(db, project, dossier, sections, cour, ctx, faits_de=fd))
     data = ax.to_docx(ctx) if fmt == "docx" else ax.to_pdf(ctx)[0]
-    nom = nom_fichier(project, fmt)
-    dossier.dernier_export = {"le": _now_iso(), "par": user.id, "format": fmt, "nom": nom,
-                              "empreinte": hashlib.sha256(data).hexdigest(), "ia": bool(ctx.get("ia")),
-                              "derogation": bool(gate["derogation"]), "etat_hash": gate["etat_hash"],
-                              "page_preparation": bool(page_preparation)}
+    nom = nom_fichier(project, fmt, dossier, n, ctx.get("entreprise") or "")
+    der = {"le": _now_iso(), "par": user.id, "format": fmt, "nom": nom,
+           "empreinte": hashlib.sha256(data).hexdigest(), "ia": bool(ctx.get("ia")),
+           "derogation": bool(gate["derogation"]), "etat_hash": gate["etat_hash"],
+           "page_preparation": bool(page_preparation)}
+    if n:
+        prev = dossier.dernier_export if isinstance(dossier.dernier_export, dict) else {}
+        dossier.dernier_export = dict(der, lot=n, lots=dict(prev.get("lots") or {}, **{n: der}))
+    else:
+        dossier.dernier_export = der
     flag_modified(dossier, "dernier_export")
     db.commit()
-    _archiver(db, user, project, dossier, nom, data, fmt, cour)
+    _archiver(db, user, project, dossier, nom, data, fmt, {s.id: cour.get(s.id) for s in sections})
     from app.services import audit
     audit.record(db, action="atelier.export", owner_id=dossier.owner_id, project_id=project.id, actor=lecteur.email,
                  actor_kind="user", target_type="dossier_presentation", target_id=dossier.id,
-                 detail=f"Dossier de présentation exporté ({fmt})", ip=ip,
-                 meta={"format": fmt, "empreinte": dossier.dernier_export["empreinte"], "ia": bool(ctx.get("ia")),
-                       "derogation": bool(gate["derogation"]), "page_preparation": bool(page_preparation)})
+                 detail=f"Dossier de présentation exporté ({fmt}" + (f", lot {n})" if n else ")"), ip=ip,
+                 meta={"format": fmt, "empreinte": der["empreinte"], "ia": bool(ctx.get("ia")),
+                       "derogation": bool(gate["derogation"]), "lot": n or "",
+                       "page_preparation": bool(page_preparation)})
     return data, nom, MIMES[fmt]
 
 
@@ -2692,7 +3180,8 @@ def _archiver(db, user: User, project: Project, dossier: DossierPresentation, no
         prev = wf.get("dossier_presentation") if isinstance(wf.get("dossier_presentation"), dict) else {}
         fichiers = [x for x in (prev.get("fichiers") or []) if x != nom] + [nom]
         n = sum(len(me.placeholders(v.texte if v else "")) for v in cour.values())
-        wf["dossier_presentation"] = {"nom": me.memoire_label(_analysis(project)), "fichiers": fichiers[-4:],
+        garder = max(4, 2 * len(al.liste(dossier)) + 2)      # vague 6 : un fichier Word et un PDF par lot
+        wf["dossier_presentation"] = {"nom": me.memoire_label(_analysis(project)), "fichiers": fichiers[-garder:],
                                       "a_completer": n, "coupe": False, "genere_le": _now_iso(), "source": "atelier"}
         project.workflow = wf
         flag_modified(project, "workflow")
@@ -2742,6 +3231,8 @@ def dossier_commun(db, project: Project, owner_id: int) -> dict:
     sections = sections_actives(db, dossier)
     communes = versions_communes(db, sections, lecteur)
     cour, modifiees = _validees_de_preference(db, sections, communes, lecteur)
+    if al.actif(dossier):
+        return _dossier_commun_lots(db, project, dossier, sections, cour, modifiees, lecteur, out)
     ctx = contexte_rendu(db, project, dossier, sections, cour)
     cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
     rangs = _rangs(dossier, sections)
@@ -2776,6 +3267,57 @@ def dossier_commun(db, project: Project, owner_id: int) -> dict:
                                + (f" {MSG_IRREGULIERE}" if gate["derogation"].get("avertissement") else ""))
     out["files"] = {"docx": (nom_fichier(project, "docx"), ax.to_docx(ctx)),
                     "pdf": (nom_fichier(project, "pdf"), ax.to_pdf(ctx)[0])}
+    return out
+
+
+def _dossier_commun_lots(db, project: Project, dossier: DossierPresentation, sections: list, cour: dict,
+                         modifiees: list, lecteur: Lecteur, out: dict) -> dict:
+    """Vague 6 : le dossier commun d'un dossier à plusieurs lots — un fichier Word et un PDF PAR LOT (parties
+    communes et parties du lot, validées de préférence), chacun soumis aux mêmes règles que l'export de ce lot."""
+    mds, files, a_compl = [], {}, 0
+    etiq = al.etiquettes(dossier, sections)
+    tout_rangs = _rangs(dossier, sections)
+    for x in al.liste(dossier):
+        n = x["numero"]
+        secs = al.du_lot(sections, n)
+        ctx = contexte_rendu(db, project, dossier, secs, cour, lot=n)
+        cpt = compteur(db, project, dossier, secs, cour, ctx=ctx, lot=n)
+        rangs = _rangs(dossier, secs, lot=n)
+        gate = blocage(dossier, secs, cour, rangs, evaluer_limites(dossier, secs, rangs, cpt, lot=n),
+                       attente=en_attente_d_un_partenaire(secs, lecteur, cour),
+                       faits_de=faits_lus(db, dossier, project, cour), lot=n)
+        lib = al.libelle(dossier, n)
+        mds.append(f"# {lib}\n\n" + "\n\n".join(f"## {ax.titre_section(y)}\n\n{ax.texte_export(y['texte'])}".strip()
+                                                  for y in ctx["sections"]))
+        a_compl += sum(len(me.placeholders(y["texte"])) for y in ctx["sections"])
+        if not gate["peut_exporter"]:
+            out["warnings"].append(f"BLOQUANT — {lib} : dossier de présentation non joint : "
+                                   + " ".join(r["message"] for r in gate["raisons"])
+                                   + " Traitez ces points dans l'atelier, ou enregistrez-y une dérogation pour ce lot.")
+            continue
+        if gate["derogation"]:
+            out["warnings"].append(f"{lib} : dossier de présentation joint avec une dérogation enregistrée : "
+                                   + " ".join(r["message"] for r in gate["raisons"])
+                                   + (f" {MSG_IRREGULIERE}" if gate["derogation"].get("avertissement") else ""))
+        ent = ctx.get("entreprise") or ""
+        files[f"docx:{n}"] = (nom_fichier(project, "docx", dossier, n, ent), ax.to_docx(ctx))
+        files[f"pdf:{n}"] = (nom_fichier(project, "pdf", dossier, n, ent), ax.to_pdf(ctx)[0])
+    out["markdown"] = "\n\n".join(mds)
+    out["etat"] = {"a_completer": a_compl, "coupe": any(bool(v.coupe) for v in cour.values() if v is not None)}
+    sans_validation = [s for s in sections if not s.validated_version_id and (
+        s.author_kind == AUTEUR_ORG or (cour.get(s.id) is not None and bool(cour.get(s.id).partage)))]
+    if sans_validation:
+        k = len(sans_validation)
+        out["warnings"].append(f"BLOQUANT — {MSG_NON_VALIDE} : {k} partie{'s' if k > 1 else ''} à valider. "
+                               "Validez chaque partie dans l'atelier avant de déposer.")
+    if modifiees:
+        out["warnings"].append("Dossier de présentation : " + ", ".join(
+            f"« {ax.titre_section({'numero': tout_rangs.get(s.id, ''), 'intitule': s.intitule})}{etiq.get(s.id, '')} »"
+            for s in modifiees[:6])
+            + (" a été modifiée" if len(modifiees) == 1 else " ont été modifiées")
+            + " depuis la validation : le dossier joint le texte VALIDÉ. Revalidez dans l'atelier pour joindre le "
+              "nouveau texte.")
+    out["files"] = files
     return out
 
 
@@ -2840,13 +3382,19 @@ def section_out(db, dossier: DossierPresentation, s: DossierSection, rang_affich
     prive = peut_voir_prive(s, lecteur)
     if prive and valides is None and courante is not None and fs.avec_source(courante.faits):
         valides = _valides_de(db, s.owner_id, s.project_id, [courante.faits])
+    plusieurs = al.actif(dossier)
     out = {"id": s.id, "ordre": s.ordre, "numero": s.numero, "numero_affiche": rang_affiche,
-           "intitule": s.intitule, "titre": ax.titre_section({"numero": rang_affiche, "intitule": s.intitule}),
+           "intitule": s.intitule, "titre": ax.titre_section({"numero": rang_affiche, "intitule": s.intitule})
+           + ((f" (lot {s.lot})" if s.lot else "") if plusieurs else ""),
            "niveau": s.niveau, "parents": parents_affiches(dossier, s, rang_affiche) or (s.parents or []),
            "question": s.question or "",
            "source_plan": s.source_plan, "critere": s.critere or "", "critere_id": s.critere_id or "",
            "poids": s.poids or "", "poids_source": (s.poids_source or "") if s.poids else "",
            "partie_de_critere": bool(s.partie_de_critere), "lot": s.lot or "",
+           # Vague 6 (J) : partie commune à tous les lots du dossier, ou propre à un lot (son libellé).
+           "lot_libelle": al.libelle(dossier, s.lot) if (plusieurs and s.lot) else "",
+           "commune": bool(plusieurs and not s.lot),
+           "portee_modifiable": bool(plusieurs and not est_generee(s) and peut_organiser(s, lecteur)),
            "limite": s.limite or [],
            "auteur": {"type": s.author_kind, "invite_id": s.author_invite_id, "libelle": _libelle_auteur(s, noms)},
            # Vague 4 (assemblage) : partie tirée du groupement (grp_orga | grp_qfq), sinon None.
@@ -2960,19 +3508,86 @@ def dossier_acheteur_out(lu: dict, cle_now: str, a_change: bool) -> dict:
             "message_absent": MSG_DCE_ABSENT if absent else ""}
 
 
+def _etat_des_lots(db, project: Project, dossier: DossierPresentation, sections: list, cour: dict, lecteur: Lecteur,
+                   faits_de) -> tuple:
+    """Vague 6 (J) : pour chaque lot du dossier, SON dossier (parties communes et les siennes) — compteur, limites,
+    blocage et dérogation, nom du fichier, dernier export, grille. Renvoie (lots, compteurs par partie, limites
+    d'ensemble, blocages, contexte du premier lot)."""
+    m = al.meta(dossier)
+    exports = ((dossier.dernier_export or {}).get("lots") or {}) if isinstance(dossier.dernier_export, dict) else {}
+    lots, by_sec, lims, gates, ctx0, vues = [], {}, [], [], None, set()
+    for x in al.liste(dossier):
+        n = x["numero"]
+        secs = al.du_lot(sections, n)
+        ctx = contexte_rendu(db, project, dossier, secs, cour, lot=n)
+        ctx0 = ctx0 or ctx
+        cpt = compteur(db, project, dossier, secs, cour, ctx=ctx, lot=n)
+        for c in cpt.get("sections") or []:
+            by_sec.setdefault(c.get("id"), c)
+        rangs = _rangs(dossier, secs, lot=n)
+        lim = evaluer_limites(dossier, secs, rangs, cpt, lot=n)
+        g = blocage(dossier, secs, cour, rangs, lim, attente=en_attente_d_un_partenaire(secs, lecteur, cour),
+                    faits_de=faits_de, lot=n)
+        gates.append(g)
+        for y in lim:
+            k = (y["portee"], y["section_id"], y["type"], y["valeur"], y.get("lot") if y["portee"] == "document" else "")
+            if k not in vues:
+                vues.add(k)
+                lims.append(y)
+        lots.append({"numero": n, "intitule": x.get("intitule") or "", "libelle": al.libelle(dossier, n),
+                     "phrase": x.get("phrase") or "", "source": x.get("source") or "",
+                     "origine": x.get("origine") or "", "origine_libelle": al.MSG_ORIGINE.get(x.get("origine") or "", ""),
+                     "parties": [y.id for y in secs], "parties_propres": sum(1 for y in secs if y.lot == n),
+                     "parties_communes": sum(1 for y in secs if not y.lot),
+                     "numeros": {str(y.id): rangs.get(y.id, "") for y in secs},
+                     "compteur": {"total": cpt.get("total"), "police": cpt.get("police"), "environ": True,
+                                  "message": cpt.get("message")},
+                     "limites": lim, "blocage": g, "derogations_possibles": derogations_possibles(g),
+                     "export": apercu_export(project, dossier, ctx, lot=n), "dernier_export": exports.get(n),
+                     "grille": (m.get("grilles") or {}).get(n), "source_plan": al.source_du_lot(dossier, n),
+                     "criteres_hors_dossier": (m.get("criteres_hors_dossier") or {}).get(n) or []})
+    return lots, by_sec, lims, gates, ctx0
+
+
+def _blocage_ensemble(dossier: DossierPresentation, sections: list, cour: dict, rangs: dict, lims: list, attente,
+                      faits_de, gates: list) -> dict:
+    """Ce qui reste à faire sur l'ensemble des lots (la carte du marché) : chaque raison dit de quel lot est la
+    partie ; l'export n'est possible que lot par lot, avec la dérogation de chacun."""
+    g = blocage(dossier, sections, cour, rangs, lims, attente=attente, faits_de=faits_de,
+                etiquettes=al.etiquettes(dossier, sections))
+    g["peut_exporter"] = bool(gates) and all(x["peut_exporter"] for x in gates)
+    ders = [x["derogation"] for x in gates if x.get("derogation")]
+    g["derogation"] = ders[0] if (ders and g["peut_exporter"]) else None
+    g["etat_hash"] = hashlib.sha256("|".join(x["etat_hash"] for x in gates).encode("utf-8")).hexdigest()
+    g["par_lot"] = True
+    return g
+
+
 def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, member_ids: list) -> dict:
     _rafraichir_groupement(db, project, dossier)
     sections = sections_actives(db, dossier)
     cour = versions_communes(db, sections, lecteur)          # jamais le brouillon d'un autre auteur
-    ctx = contexte_rendu(db, project, dossier, sections, cour)
-    cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
-    rangs = _rangs(dossier, sections)
-    lims = evaluer_limites(dossier, sections, rangs, cpt)
     val = _valides_de(db, dossier.owner_id, project.id,
                       [v.faits for v in cour.values() if v is not None and fs.avec_source(v.faits)])
-    gate = blocage(dossier, sections, cour, rangs, lims, attente=en_attente_d_un_partenaire(sections, lecteur, cour),
-                   faits_de=(lambda v: fs.ajuster(v.faits or [], val)) if val else None)
-    by_sec = {x.get("id"): x for x in (cpt.get("sections") or [])}
+    faits_de = (lambda v: fs.ajuster(v.faits or [], val)) if val else None
+    plusieurs = al.actif(dossier)
+    lots_out = []
+    if plusieurs:
+        # Vague 6 (J) : un dossier par lot ; ici, l'ensemble (carte du marché) et chaque lot.
+        rangs = _rangs(dossier, sections)
+        lots_out, by_sec, lims, gates, ctx = _etat_des_lots(db, project, dossier, sections, cour, lecteur, faits_de)
+        gate = _blocage_ensemble(dossier, sections, cour, rangs, lims, en_attente_d_un_partenaire(sections, lecteur, cour),
+                                 faits_de, gates)
+        c0 = (lots_out[0]["compteur"] if lots_out else {}) or {}
+        cpt = {"total": None, "police": c0.get("police"), "message": c0.get("message")}
+    else:
+        ctx = contexte_rendu(db, project, dossier, sections, cour)
+        cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
+        rangs = _rangs(dossier, sections)
+        lims = evaluer_limites(dossier, sections, rangs, cpt)
+        gate = blocage(dossier, sections, cour, rangs, lims, attente=en_attente_d_un_partenaire(sections, lecteur, cour),
+                       faits_de=faits_de)
+        by_sec = {x.get("id"): x for x in (cpt.get("sections") or [])}
     meta = dossier.plan_meta if isinstance(dossier.plan_meta, dict) else {}
     lu = dossier.dce_lu if isinstance(dossier.dce_lu, dict) else {}
     # Le dossier du marché lu POUR LE PLAN (pas la lecture que le moteur rafraîchit à chaque rédaction).
@@ -2987,6 +3602,7 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
         lu_aff = lire_dossier_acheteur(db, project, member_ids)
     retirees_rows = sections_retirees(db, dossier)
     retirees = [{"id": s.id, "intitule": s.intitule, "retiree_le": _iso(s.retiree_at),
+                 "lot_libelle": al.libelle(dossier, s.lot) if (s.lot and al.lot_de(dossier, s.lot)) else "",
                  "nb_versions": db.query(DossierSectionVersion.id).filter(
                      DossierSectionVersion.section_id == s.id).count()}
                 for s in retirees_rows if peut_organiser(s, lecteur)]
@@ -3029,6 +3645,8 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: Lecteur, m
         # Vague 6 (F) : « La dernière fois, l'acheteur a écrit : … » — commentaires des anciens marchés de
         # l'organisation (carnet de notes), même famille de critère, même acheteur d'abord. Jamais à l'IA.
         "derniere_fois": _derniere_fois(db, project, sections, member_ids),
+        # Vague 6 (J) : plusieurs lots, un seul effort — les lots du dossier (un fichier chacun) et ceux du marché.
+        "lots": _lots_out(db, project, dossier, member_ids, lu_aff, lots_out),
     }
 
 
@@ -3039,6 +3657,17 @@ def _derniere_fois(db, project: Project, sections: list, member_ids: list) -> di
     except Exception as e:      # noqa: BLE001 — l'atelier ne dépend jamais du carnet de notes
         logger.warning("atelier : carnet de notes illisible (projet %s) : %s", project.id, type(e).__name__)
         return {}
+
+
+def _lots_out(db, project: Project, dossier: DossierPresentation, member_ids: list, lu: dict, lots_out: list) -> dict:
+    try:
+        reperes = lots_du_marche_out(lots_reperes(db, project, member_ids, lu=lu), al.liste(dossier))
+    except Exception as e:      # noqa: BLE001 — l'atelier ne dépend jamais du repérage des lots
+        logger.warning("atelier : lots du marché illisibles (projet %s) : %s", project.id, type(e).__name__)
+        reperes = None
+    m = al.meta(dossier)
+    return {"actif": al.actif(dossier), "liste": lots_out, "du_marche": reperes,
+            "regle_commune": al.REGLE_COMMUNE, "nommage": m.get("nommage") if al.actif(dossier) else None}
 
 
 def _entretien_out(db, dossier: DossierPresentation) -> dict:
@@ -3147,7 +3776,9 @@ def exigences_out(db, project: Project, dossier: DossierPresentation, sections: 
                 "liste": [], "total": 0, "traitees": 0, "manquantes": [], "message": "", "message_manque": "",
                 "regle": ge.REGLE_TRAITEE}
     rangs = _rangs(dossier, sections)
-    parties = [{"id": s.id, "titre": ax.titre_section({"numero": rangs.get(s.id, ""), "intitule": s.intitule}),
+    et = al.etiquettes(dossier, sections)
+    parties = [{"id": s.id, "titre": ax.titre_section({"numero": rangs.get(s.id, ""), "intitule": s.intitule})
+                + et.get(s.id, ""),
                 "texte": (communes.get(s.id).texte if communes.get(s.id) is not None else "") or ""}
                for s in sections]
     out = ge.traitement(g, parties)

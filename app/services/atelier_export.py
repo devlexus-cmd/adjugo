@@ -224,6 +224,21 @@ def _logo_flowable(logo: Optional[bytes], max_w: float, max_h: float):
         return None
 
 
+def _lignes_garde(ctx: dict) -> list:
+    """[(libellé, valeur)] de la page de garde : marché, lot (dossier d'un lot, vague 6), acheteur, candidat."""
+    out = []
+    lot = ctx.get("lot") if isinstance(ctx.get("lot"), dict) else None
+    for label, key in (("Marché", "marche"), ("Lot", "lot"), ("Acheteur", "acheteur"), ("Candidat", "entreprise")):
+        if key == "lot":
+            v = _s((f"{lot.get('numero')}" + (f" — {lot.get('intitule')}" if lot.get("intitule") else ""))
+                   if lot and lot.get("numero") else "")
+        else:
+            v = _s(ctx.get(key))
+        if v:
+            out.append((label, v))
+    return out
+
+
 def _cover(ctx: dict, st: dict, pol: dict, width: float) -> list:
     from reportlab.platypus import Paragraph, Spacer
     from reportlab.lib.units import cm
@@ -232,10 +247,8 @@ def _cover(ctx: dict, st: dict, pol: dict, width: float) -> list:
     if img is not None:
         out += [img, Spacer(1, 1.2 * cm)]
     out.append(Paragraph(_inline(ctx.get("titre") or me.DEFAULT_LABEL, pol), st["cover_title"]))
-    for label, key in (("Marché", "marche"), ("Acheteur", "acheteur"), ("Candidat", "entreprise")):
-        v = _s(ctx.get(key))
-        if v:
-            out.append(Paragraph(f"{label} : " + _inline(v, pol), st["cover"]))
+    for label, v in _lignes_garde(ctx):
+        out.append(Paragraph(f"{label} : " + _inline(v, pol), st["cover"]))
     if _s(ctx.get("date")):
         out.append(Paragraph(_inline(ctx["date"], pol), st["cover"]))
     return out
@@ -522,12 +535,10 @@ def to_docx(ctx: dict) -> bytes:
         r = p.add_run(_s(ctx.get("titre") or me.DEFAULT_LABEL))
         r.bold = True
         r.font.size = Pt(size + 12)
-        for label, key in (("Marché", "marche"), ("Acheteur", "acheteur"), ("Candidat", "entreprise")):
-            v = _s(ctx.get(key))
-            if v:
-                q = doc.add_paragraph()
-                q.add_run(f"{label} : ").bold = True
-                q.add_run(v)
+        for label, v in _lignes_garde(ctx):
+            q = doc.add_paragraph()
+            q.add_run(f"{label} : ").bold = True
+            q.add_run(v)
         if _s(ctx.get("date")):
             doc.add_paragraph(_s(ctx["date"]))
         doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)

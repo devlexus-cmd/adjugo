@@ -390,8 +390,13 @@ function _atlInit() {
            exportOpen: false, lastDerog: "", live: "", src: null, passage: null,
            onglet: "redaction", rep: _atlRepInit(), ent: _atlEntInit(), sansIaPropose: false, exOpen: false,
            // Vague 6 (H) : case « Joindre une page "Comment ce dossier a été préparé" », DÉCOCHÉE à chaque
-           // ouverture de l'atelier (jamais enregistrée) ; `prep` : la page lue avant l'export (lecture seule).
-           prepJoindre: false, prep: { open: false, loading: false, d: null, err: "" } };
+           // ouverture de l'atelier (jamais enregistrée) ; `prep` : la page lue avant l'export (lecture seule) ;
+           // `prep.lot` : dossier à plusieurs lots, le fichier dont on lit la page (un fichier par lot).
+           prepJoindre: false, prep: { open: false, loading: false, d: null, err: "", lot: "" },
+           // Plusieurs lots (rédaction, vague 6 — J) : lots cochés et lots indiqués (plan proposé), fenêtre « Changer les
+           // lots », filtre du plan (« » toutes, « c » communes, sinon un numéro de lot), lot dont on lit le blocage.
+           lotsChoix: [], lotsAjoutes: [], lotAjout: { numero: "", intitule: "" }, lotsDlg: null, lotFiltre: "",
+           lotOuvert: "", addLot: "" };
 }
 // Entretien chantier (rédaction, vague 5 — D) : les questions lues (GET/POST …/entretien), la saisie de chaque
 // réponse (par question), l'action en cours. `v` : clé de rendu des menus « Posée à » (remis à la valeur enregistrée).
@@ -4755,7 +4760,9 @@ const __adjApp = createApp({
     atlMotsLib(n) { return Number(n) > 1 ? "mots" : "mot"; },
     atlPropLims(p) {   // limites repérées dans le règlement, montrées avec le plan proposé
       const l = (p && p.limites) || {}, out = [];
-      (l.document || []).forEach(x => out.push({ t: _gnLim(x) + " pour tout le dossier", phrase: x.phrase, source: x.source }));
+      // Plusieurs lots (vague 6) : la limite vaut pour le dossier de CHAQUE lot (celle propre à un lot est dite dans l'atelier).
+      const plus = !!(p && p.lots && p.lots.actif);
+      (l.document || []).forEach(x => out.push({ t: _gnLim(x) + (plus ? " pour le dossier de chaque lot" : " pour tout le dossier"), phrase: x.phrase, source: x.source }));
       (l.chaque_question || []).forEach(x => out.push({ t: _gnLim(x) + " par question", phrase: x.phrase, source: x.source }));
       if (l.police && (l.police.police || l.police.taille)) out.push({ t: _gnLim(Object.assign({ type: "police" }, l.police)), phrase: l.police.phrase, source: l.police.source });
       return out;
@@ -4822,7 +4829,13 @@ const __adjApp = createApp({
       const a = this.atl, pid = a.pid; if (!pid) return;
       if (!silent) { a.loading = true; a.error = ""; }
       try {
-        const q = (!a.st && a.base && a.base !== "auto") ? "?base=" + encodeURIComponent(a.base) : "";
+        const qs = [];
+        if (!a.st && a.base && a.base !== "auto") qs.push("base=" + encodeURIComponent(a.base));
+        if (!a.st && (a.lotsChoix.length + a.lotsAjoutes.length) >= 2) {
+          if (a.lotsChoix.length) qs.push("lots=" + encodeURIComponent(a.lotsChoix.join(",")));
+          if (a.lotsAjoutes.length) qs.push("ajoutes=" + encodeURIComponent(JSON.stringify(a.lotsAjoutes)));
+        }
+        const q = qs.length ? "?" + qs.join("&") : "";
         const d = await this.api("GET", "/api/atelier/" + pid + q);
         if (this.atl.pid !== pid) return;
         if (d.dossier) { a.st = d; a.prop = null; } else { a.st = null; a.prop = d; }
@@ -4911,9 +4924,11 @@ const __adjApp = createApp({
     async atlCreer() {
       const a = this.atl; if (a.busy) return; a.busy = "creer";
       try {
-        const d = await this.api("POST", this._atlUrl(""), { base: a.base || "auto", sans_ia: !!a.sansIaPropose });
+        const plus = (a.lotsChoix.length + a.lotsAjoutes.length) >= 2;
+        const d = await this.api("POST", this._atlUrl(""), { base: a.base || "auto", sans_ia: !!a.sansIaPropose,
+          lots: plus ? a.lotsChoix : [], lots_ajoutes: plus ? a.lotsAjoutes : [] });
         a.st = d; a.prop = null; this.atlSelect(((d.sections || [])[0] || {}).id || null);
-        this.notify("Dossier de présentation créé : " + (d.sections || []).length + " parties" + (d.sans_ia && d.sans_ia.actif ? ", à rédiger sans IA" : ""));
+        this.notify("Dossier de présentation créé : " + (d.sections || []).length + " parties" + (d.lots && d.lots.actif ? ", " + d.lots.liste.length + " lots" : "") + (d.sans_ia && d.sans_ia.actif ? ", à rédiger sans IA" : ""));
       } catch (e) { if (e.code === "dossier_existe") this.atlLoad(); else this.notify(e.message, "err"); }
       finally { a.busy = ""; }
     },
@@ -4930,7 +4945,7 @@ const __adjApp = createApp({
       const a = this.atl, t = (a.add || "").trim(); if (a.busy) return;
       if (t.length < 2) { this.notify("Donnez un intitulé à cette partie.", "err"); return; }
       a.busy = "ajout";
-      try { const r = await this.api("POST", this._atlUrl("/sections"), { intitule: t }); a.add = ""; await this.atlLoad(true); this.atlSelect(r.id); this.notify("Partie ajoutée au plan"); }
+      try { const r = await this.api("POST", this._atlUrl("/sections"), this.atlLots() ? { intitule: t, lot: a.addLot || "" } : { intitule: t }); a.add = ""; await this.atlLoad(true); this.atlSelect(r.id); this.notify("Partie ajoutée au plan"); }
       catch (e) { this.notify(e.message, "err"); }
       finally { a.busy = ""; }
     },
@@ -5486,33 +5501,44 @@ const __adjApp = createApp({
       try { const r = await this.api("PUT", this._atlUrl("/options"), { [k]: !!val }); a.st.export.options = r.options; this.atlLoad(true); }
       catch (e) { this.notify(e.message, "err"); if (el) el.checked = !!(a.st.export.options || {})[k]; this.atlLoad(true); }
     },
-    async atlExport(fmt) {
+    // `l` (rédaction, vague 6) : le lot à exporter (un fichier par lot), avec SON état et SA dérogation.
+    async atlExport(fmt, l) {
       const a = this.atl, st = a.st; if (!st || a.busy) return;
       if (a.mode === "modifier" && a.edit.dirty) { this.notify("Enregistrez d'abord votre texte : l'export reprend les textes enregistrés.", "err"); return; }
-      a.busy = "export:" + fmt; this.pending++;
+      const b = l ? l.blocage : st.blocage, ex = l ? l.export : st.export;
+      a.busy = "export:" + (l ? l.numero + ":" : "") + fmt; this.pending++;
       try {
+        // Vague 6 (H) : la case « Joindre une page "Comment ce dossier a été préparé" » vaut pour CET export
+        // (chaque fichier de lot a sa propre page, avec ses parties).
+        const corps = l ? { format: fmt, etat_hash: b && b.etat_hash, lot: l.numero, page_preparation: !!a.prepJoindre }
+          : { format: fmt, etat_hash: st.blocage && st.blocage.etat_hash, page_preparation: !!a.prepJoindre };
         const r = await fetch(this._atlUrl("/export"), { method: "POST", headers: { Authorization: "Bearer " + this.token, "Content-Type": "application/json" },
-          body: JSON.stringify({ format: fmt, etat_hash: st.blocage && st.blocage.etat_hash, page_preparation: !!a.prepJoindre }) });
+          body: JSON.stringify(corps) });
         if (r.status === 401) { this.sessionPerdue(await r.json().then(j => j && j.detail, () => "")); return; }
         if (!r.ok) {
           const j = await r.json().catch(() => ({})), d = j && j.detail;
           const msg = (d && typeof d === "object" && d.message) || (typeof d === "string" && d) || (r.status === 429 ? TOO_MANY_MSG : "Export impossible pour le moment.");
+          if (d && d.code === "export_bloque" && l) { this._atlDerogOpen(d, fmt, l.numero); return; }   // le lot exporté
           if (d && d.code === "export_bloque") { this._atlDerogOpen(d, fmt); return; }
           if (d && d.code === "etat_modifie") { await this.atlLoad(true); this.notify(msg, "err"); return; }
           throw new Error(msg);
         }
-        const nom = atlNomFichier(r.headers.get("content-disposition"), fmt === "pdf" ? st.export.nom_fichier_pdf : st.export.nom_fichier_docx);
+        const nom = atlNomFichier(r.headers.get("content-disposition"), fmt === "pdf" ? ex.nom_fichier_pdf : ex.nom_fichier_docx);
         this.saveBlob(await r.blob(), nom);
-        this.notify("Fichier téléchargé et rangé dans le dossier du marché : " + nom);
+        this.notify((l ? "Fichier du lot " + l.numero + " téléchargé" : "Fichier téléchargé") + " et rangé dans le dossier du marché : " + nom);
         this.atlLoad(true);
       } catch (e) { this.notify(e.message || "Export impossible pour le moment.", "err"); }
       finally { a.busy = ""; this.pending = Math.max(0, this.pending - 1); }
     },
     // Vague 6 (H) : la page « Comment ce dossier a été préparé », telle que l'export la joindrait (GET, sans IA).
+    // Dossier à plusieurs lots (J) : la page du fichier d'UN lot (ses parties communes et les siennes).
     async atlPrepLoad() {
       const p = this.atl.prep; if (!this.atl.pid) return;
+      const lots = this.atlLots() ? this.atlLotsListe() : [];
+      if (lots.length && !lots.some(x => x.numero === p.lot)) p.lot = lots[0].numero;
+      if (!lots.length) p.lot = "";
       p.loading = true; p.err = "";
-      try { p.d = await this.api("GET", this._atlUrl("/preparation")); }
+      try { p.d = await this.api("GET", this._atlUrl("/preparation" + (p.lot ? "?lot=" + encodeURIComponent(p.lot) : ""))); }
       catch (e) { p.err = e.message || "La page n'a pas pu être préparée pour le moment."; }
       finally { p.loading = false; }
     },
@@ -5520,6 +5546,7 @@ const __adjApp = createApp({
       const p = this.atl.prep; p.open = !p.open;
       if (p.open) this.atlPrepLoad();
     },
+    atlPrepLot(numero) { const p = this.atl.prep; if (p.lot === numero) return; p.lot = numero; p.d = null; this.atlPrepLoad(); },
     // « Rédigée par X · aide de l'IA : oui · validée par X, le 19 octobre 2026 » (une ligne de la page, à l'écran).
     atlPrepLigne(l) {
       const min = s => String(s || "").charAt(0).toLowerCase() + String(s || "").slice(1);
@@ -5527,11 +5554,12 @@ const __adjApp = createApp({
       const ia = l.ia_libelle && l.ia_libelle !== "—" ? " · aide de l'IA : " + min(l.ia_libelle) : "";
       return "Rédigée par " + auteur + ia + " · " + (l.validee ? "validée " + min(l.validee_libelle) : "non validée");
     },
-    _atlDerogOpen(d, fmt) {
+    _atlDerogOpen(d, fmt, lot) {
       const st = this.atl.st, raisons = (d && d.raisons) || [];
-      this.atl.derog = { raisons, hash: (d && d.etat_hash) || (st && st.blocage.etat_hash) || "",
-        possibles: (d && d.derogations_possibles && d.derogations_possibles.length ? d.derogations_possibles : (st && st.derogations_possibles)) || [],
-        fmt: fmt || "", raison: "", texte: "", err: "", busy: false,
+      const l = lot ? this.atlLotsListe().find(x => x.numero === lot) : null;
+      this.atl.derog = { raisons, hash: (d && d.etat_hash) || (l ? l.blocage.etat_hash : (st && st.blocage.etat_hash)) || "",
+        possibles: (d && d.derogations_possibles && d.derogations_possibles.length ? d.derogations_possibles : (l ? l.derogations_possibles : (st && st.derogations_possibles))) || [],
+        fmt: fmt || "", raison: "", texte: "", err: "", busy: false, lot: lot || "", libelle: l ? l.libelle : "",
         avert: (raisons.find(x => x.avertissement) || {}).avertissement || "" };
     },
     atlDerogDepuisEtat() {
@@ -5545,16 +5573,141 @@ const __adjApp = createApp({
       if (t.length < 3 || t.length > 300) { g.err = "Expliquez en quelques mots (3 à 300 caractères)."; return; }
       g.busy = true; g.err = "";
       try {
-        const r = await this.api("POST", this._atlUrl("/derogation"), { raison: g.raison, texte: t, etat_hash: g.hash });
-        a.lastDerog = g.hash; if (a.st && r.blocage) a.st.blocage = r.blocage;
-        const fmt = g.fmt; a.derog = null;
-        this.notify("Dérogation inscrite au journal");
-        if (fmt) this.atlExport(fmt); else this.atlLoad(true);
+        // Vague 6 : la dérogation du fichier d'UN lot porte son numéro.
+        const r = g.lot ? await this.api("POST", this._atlUrl("/derogation"), { raison: g.raison, texte: t, etat_hash: g.hash, lot: g.lot })
+          : await this.api("POST", this._atlUrl("/derogation"), { raison: g.raison, texte: t, etat_hash: g.hash });
+        a.lastDerog = g.hash; if (a.st && r.blocage && !g.lot) a.st.blocage = r.blocage;
+        const fmt = g.fmt, lot = g.lot; a.derog = null;
+        this.notify("Dérogation inscrite au journal" + (lot ? " pour le lot " + lot : ""));
+        if (fmt && lot) this.atlExportLot(this.atlLotsListe().find(x => x.numero === lot), fmt);
+        else if (fmt) this.atlExport(fmt); else this.atlLoad(true);
       } catch (e) {
-        if (e.code === "rien_a_deroger") { const fmt = g.fmt; a.derog = null; if (fmt) this.atlExport(fmt); else this.atlLoad(true); return; }
+        if (e.code === "rien_a_deroger") { const fmt = g.fmt, lot = g.lot; a.derog = null; if (fmt && lot) this.atlExportLot(this.atlLotsListe().find(x => x.numero === lot), fmt); else if (fmt) this.atlExport(fmt); else this.atlLoad(true); return; }
         if (e.code === "etat_modifie") { a.derog = null; await this.atlLoad(true); this.notify(e.message, "err"); return; }
         g.err = e.message;
       } finally { if (a.derog) a.derog.busy = false; }
+    },
+
+    // ── Plusieurs lots, un seul effort (rédaction, vague 6 — J ; docs/REDACTION_V6.md) ──
+    // Deux lots ou plus : des parties communes (une seule partie, un seul texte : modifiée, elle change dans le
+    // fichier de chaque lot) et des parties propres à chaque lot ; un fichier par lot à l'export, avec ses limites,
+    // son nom et sa dérogation. Tout est sans IA. Un dossier à un seul lot : rien ne change à l'écran.
+    atlLots() { const st = this.atl.st; return !!(st && st.lots && st.lots.actif); },
+    atlLotsListe() { const st = this.atl.st; return (st && st.lots && st.lots.liste) || []; },
+    atlLotsMarche() { const a = this.atl; return (a.prop && a.prop.proposition && a.prop.proposition.lots_du_marche) || (a.st && a.st.lots && a.st.lots.du_marche) || null; },
+    atlLotPlus() { const a = this.atl; return (a.lotsChoix.length + a.lotsAjoutes.length) >= 2; },
+    atlLotCoche(n) { return this.atl.lotsChoix.includes(n); },
+    atlLotBascule(n) {
+      const a = this.atl; if (a.busy) return;
+      a.lotsChoix = a.lotsChoix.includes(n) ? a.lotsChoix.filter(x => x !== n) : a.lotsChoix.concat([n]).sort((x, y) => Number(x) - Number(y));
+      if (!a.st) this.atlLoad();
+    },
+    _atlLotAjoutValide(g, deja) {
+      const n = String(g.numero || "").trim().replace(/^0+/, ""), t = String(g.intitule || "").trim();
+      if (!/^\d{1,2}$/.test(n) || Number(n) < 1) return { err: "Le numéro d'un lot est un nombre de 1 à 99." };
+      if (t.length < 2) return { err: "Donnez l'intitulé du lot " + n + ", tel qu'il est écrit dans le règlement." };
+      if (deja.includes(n)) return { err: "Le lot " + n + " est déjà dans la liste." };
+      return { numero: n, intitule: t };
+    },
+    atlLotAjouter() {
+      const a = this.atl, m = this.atlLotsMarche();
+      const deja = ((m && m.lots) || []).map(x => x.numero).concat(a.lotsAjoutes.map(x => x.numero));
+      const x = this._atlLotAjoutValide(a.lotAjout, deja);
+      if (x.err) { this.notify(x.err, "err"); return; }
+      a.lotsAjoutes = a.lotsAjoutes.concat([{ numero: x.numero, intitule: x.intitule }]);
+      a.lotAjout = { numero: "", intitule: "" };
+      if (!a.st) this.atlLoad();
+    },
+    atlLotRetirerAjout(n) { const a = this.atl; a.lotsAjoutes = a.lotsAjoutes.filter(x => x.numero !== n); if (!a.st) this.atlLoad(); },
+    // Parties affichées dans le plan : toutes, les communes, ou celles du dossier d'un lot (communes comprises).
+    atlSectionsVues() {
+      const a = this.atl, ss = (a.st && a.st.sections) || [];
+      if (!this.atlLots() || !a.lotFiltre) return ss;
+      if (a.lotFiltre === "c") return ss.filter(s => s.commune);
+      return ss.filter(s => s.commune || s.lot === a.lotFiltre);
+    },
+    // Numéro d'une partie dans le dossier du lot affiché (sinon celui de son lot).
+    atlNumPart(s) {
+      const a = this.atl;
+      if (this.atlLots() && a.lotFiltre && a.lotFiltre !== "c") {
+        const l = this.atlLotsListe().find(x => x.numero === a.lotFiltre);
+        if (l && l.numeros && l.numeros[String(s.id)] !== undefined) return l.numeros[String(s.id)];
+      }
+      return s.numero_affiche;
+    },
+    atlLotTag(s) { return s.commune ? "Commune" : (s.lot ? "Lot " + s.lot : ""); },
+    atlEtatLot(l) {
+      const b = l && l.blocage; if (!b) return { cls: "neutral", label: "" };
+      if (!b.peut_exporter) return { cls: "neutral", label: "Bloqué" };
+      return this.atlEtatExport(l);
+    },
+    atlLotLims(l) { return ((l && l.limites) || []).filter(x => x.portee === "document"); },
+    atlLotCompte(l) {
+      const c = l && l.compteur && l.compteur.total; if (!c) return "";
+      return "Environ " + this.atlNum(c.pages) + " page" + (c.pages > 1 ? "s" : "") + " · " + this.atlNum(c.mots) + " " + this.atlMotsLib(c.mots);
+    },
+    atlLotGrilleLignes(l) { return ((l && l.grille && l.grille.lignes) || []).filter(x => !x.prix); },
+    atlExportLot(l, fmt) { if (l) this.atlExport(fmt, l); },
+    atlDerogLot(l) {
+      const b = l && l.blocage; if (!b || !b.bloque) return;
+      this._atlDerogOpen({ raisons: b.raisons, etat_hash: b.etat_hash, derogations_possibles: l.derogations_possibles }, "", l.numero);
+    },
+    // Une partie commune devient propre à chaque lot, ou l'inverse (sans IA ; rien n'est supprimé).
+    atlPortee(s, commune) {
+      const a = this.atl; if (!s || a.busy) return;
+      const lignes = commune
+        ? ["« " + s.intitule + " » sera rédigée une fois et figurera telle quelle dans le fichier de chaque lot. Elle garde ce texte ; la même partie des autres lots sort du plan (ses versions restent gardées)."]
+        : ["« " + s.intitule + " » sera rédigée pour chaque lot. Elle garde son texte pour le premier lot ; une partie à écrire est ajoutée pour chacun des autres."];
+      this._convAsk({ title: commune ? "Rendre cette partie commune à tous vos lots ?" : "Rédiger cette partie pour chaque lot ?",
+        ok: commune ? "Rendre commune" : "Une partie par lot", lines: lignes, run: () => this._atlPortee(s, commune, false) });
+    },
+    async _atlPortee(s, commune, remplacer) {
+      const a = this.atl; if (a.busy) return; a.busy = "portee";
+      try {
+        const d = await this.api("PUT", this._atlUrl("/sections/" + s.id + "/portee"), { commune, remplacer: !!remplacer });
+        a.st = d; this.notify(commune ? "Partie commune à tous vos lots" : "Une partie par lot");
+        if (!a.st.sections.some(x => x.id === a.sel)) this.atlSelect((a.st.sections[0] || {}).id || null);
+      } catch (e) {
+        if (e.code === "portee_a_confirmer") { a.busy = ""; this._convAsk({ title: "Retirer les textes des autres lots ?", ok: "Confirmer", lines: [e.message], run: () => this._atlPortee(s, commune, true) }); return; }
+        this.notify(e.message, "err");
+      } finally { if (a.busy === "portee") a.busy = ""; }
+    },
+    // « Changer les lots » d'un dossier existant : le plan est reconstruit (les parties actuelles sont retirées,
+    // jamais supprimées), avec la même confirmation que « Reconstruire le plan ».
+    async atlLotsOuvrir() {
+      const a = this.atl; if (a.busy) return;
+      a.lotsDlg = { loading: true, d: null, choix: this.atlLotsListe().map(x => x.numero), ajoutes: [], ajout: { numero: "", intitule: "" }, err: "", busy: false, confirm: "" };
+      try {
+        const d = await this.api("GET", this._atlUrl("/lots"));
+        if (!a.lotsDlg) return;
+        a.lotsDlg.d = d.du_marche;
+        const connus = ((d.du_marche && d.du_marche.lots) || []).map(x => x.numero);
+        // Un lot indiqué par vous lors de la création reste dans la liste, comme lot ajouté.
+        a.lotsDlg.ajoutes = this.atlLotsListe().filter(x => !connus.includes(x.numero)).map(x => ({ numero: x.numero, intitule: x.intitule }));
+        a.lotsDlg.choix = a.lotsDlg.choix.filter(n => connus.includes(n));
+      } catch (e) { if (a.lotsDlg) a.lotsDlg.err = e.message; }
+      finally { if (a.lotsDlg) a.lotsDlg.loading = false; }
+    },
+    atlLotsDlgBascule(n) { const g = this.atl.lotsDlg; if (!g) return; g.choix = g.choix.includes(n) ? g.choix.filter(x => x !== n) : g.choix.concat([n]).sort((x, y) => Number(x) - Number(y)); g.confirm = ""; },
+    atlLotsDlgAjouter() {
+      const g = this.atl.lotsDlg; if (!g) return;
+      const deja = (((g.d && g.d.lots) || []).map(x => x.numero)).concat(g.ajoutes.map(x => x.numero));
+      const x = this._atlLotAjoutValide(g.ajout, deja);
+      if (x.err) { g.err = x.err; return; }
+      g.ajoutes = g.ajoutes.concat([x]); g.ajout = { numero: "", intitule: "" }; g.err = ""; g.confirm = "";
+    },
+    async atlLotsAppliquer(remplacer) {
+      const a = this.atl, g = a.lotsDlg; if (!g || g.busy) return;
+      g.busy = true; g.err = "";
+      try {
+        const d = await this.api("PUT", this._atlUrl("/lots"), { lots: g.choix, lots_ajoutes: g.ajoutes, remplacer: !!remplacer });
+        a.st = d; a.lotsDlg = null; a.lotFiltre = "";
+        this.atlSelect(((d.sections || [])[0] || {}).id || null);
+        this.notify(d.lots && d.lots.actif ? "Plan reconstruit pour " + d.lots.liste.length + " lots" : "Plan reconstruit : un seul dossier");
+      } catch (e) {
+        if (e.code === "plan_remplacement_a_confirmer") { g.confirm = e.message; return; }
+        g.err = e.message;
+      } finally { if (a.lotsDlg) a.lotsDlg.busy = false; }
     },
 
     // ── « Qui écrit quoi » (rédaction, vague 4, chef de file) ──

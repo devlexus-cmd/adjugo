@@ -391,6 +391,16 @@ def ensure_demo(db, force: bool = False) -> User:
         db.rollback()
         logger.warning("seed démo (rédaction) ignoré : %s", e)
 
+    # Rédaction, vague 6 (J) : un marché FICTIF réparti en trois lots, auquel Bâtiment de l'Ouest répond sur deux lots
+    # (parties communes, parties propres à chaque lot, un fichier par lot). Sans IA ni réseau, dans sa propre
+    # transaction (app/services/demo_lots.py) : un échec laisse le reste de la vitrine intact.
+    try:
+        from app.services.demo_lots import seed_lots
+        seed_lots(db, user, proj_by_key)
+    except Exception as e:
+        db.rollback()
+        logger.warning("seed démo (plusieurs lots) ignoré : %s", e)
+
     # Groupement de Kerhel jusqu'au dépôt : convention générée (offre figée) et validée par le chef de
     # file et par Breizh Désamiantage, formulaires officiels remplis après elle, journal chaîné — avec
     # le code des routes (app/services/demo_groupement.py). Transaction propre.

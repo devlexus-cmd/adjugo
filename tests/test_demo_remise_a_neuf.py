@@ -92,9 +92,10 @@ def _est_abimee(client, h) -> bool:
 
 
 def _vitrine_intacte(client, h) -> None:
-    """La vitrine d'origine : 6 marchés, Kerhel « Validée par tous les membres », toiture intacte."""
+    """La vitrine d'origine : 7 marchés (dont celui à plusieurs lots, rédaction vague 6), Kerhel « Validée par tous les
+    membres », toiture intacte."""
     ps = _projets(client, h)
-    assert len(ps) == 6 and "Marché ajouté pendant une présentation" not in ps
+    assert len(ps) == 7 and "Marché ajouté pendant une présentation" not in ps
     k = _kerhel(client, h)
     assert k["status"] == "en_cours"
     cv = client.get(f"/api/projects/{k['id']}/groupement/convention", headers=h).json()

@@ -234,6 +234,7 @@ _CERT = re.compile(
     r"\becolabel\b|\bpefc\b|\bfsc\b|\bhqe\b|\bbreeam\b|\bleed\b|\bcaces\b(?:\s?r?\s?\d{3})?|"
     r"\bsous[- ]section\s?[34]\b|\bss\s?[34]\b|\bhabilitations?\s+(?:electriques?\s+)?[a-z]{0,2}\d[a-z0-9]{0,3}\b|"
     r"\bnf\s?(?:en\s?)?\d{2,5}\b|\bqualification\s+\d{3,4}\b|\bopqibi\b|\bopqcm\b|\bafnor\b|\bbureau veritas\b")
+_LOT_REF = re.compile(r"\blots?\s*(?:n\s?[°o]\.?\s*)?\d{1,2}(?:\s*(?:,|\bet\b|\ba\b|\bau\b|-)\s*\d{1,2})*(?![\d.,]\d)")
 _CERT_GENERIQUE = re.compile(r"\bcertifi(?:e|ee|es|ees|cation|cations)\b|\blabellis(?:e|ee|es|ees)\b|"
                              r"\bagre(?:e|ee|es|ees|ment)\b")
 _MATERIEL = re.compile(
@@ -420,6 +421,11 @@ def _facts_in(phrase: str, tableau: bool = False) -> list:
         if m:
             taken.append((m.start(), m.end()))
             out.append((m.group(0), CERTIFICATION, "certifi" if m.group(0).startswith("certif") else m.group(0)[:6]))
+    # Rédaction, vague 6 (J) : « lot 2 », « lots 2 et 3 » désignent un lot du marché (un dossier par lot), jamais une
+    # quantité : ce numéro n'est pas un fait à relire.
+    for m in _LOT_REF.finditer(low):
+        if _free(m.start(), m.end()):
+            taken.append((m.start(), m.end()))
     for m in _NUMBER.finditer(phrase):
         a, b = m.span()
         if not _free(a, b):

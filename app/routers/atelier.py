@@ -76,13 +76,42 @@ def _section(acc: _Acces, s: DossierSection) -> dict:
 
 # ── Le dossier ────────────────────────────────────────────────────────────────────────
 
+def _numeros(lots: Optional[str]) -> list:
+    return [x.strip() for x in str(lots or "").split(",") if x.strip()][:20]
+
+
+def _ajoutes(ajoutes: Optional[str]) -> list:
+    """Lots indiqués par l'utilisateur, en JSON dans l'adresse (prévisualisation) : [{numero, intitule}]."""
+    if not ajoutes:
+        return []
+    import json
+    try:
+        x = json.loads(ajoutes)
+    except ValueError:
+        raise HTTPException(422, {"code": "lots_invalides", "message": "Indiquez le numéro et l'intitulé du lot."})
+    if not isinstance(x, list):
+        raise HTTPException(422, {"code": "lots_invalides", "message": "Indiquez le numéro et l'intitulé du lot."})
+    return [{"numero": str(y.get("numero") or "")[:4], "intitule": str(y.get("intitule") or "")[:200]}
+            for y in x[:8] if isinstance(y, dict)]
+
+
 @router.get("/{project_id}")
-def lire(project_id: int, base: str = "auto", current_user: User = Depends(get_current_user),
-         db: Session = Depends(get_db)):
-    """État complet de l'atelier ; sans dossier : le plan PROPOSÉ (rien n'est enregistré)."""
+def lire(project_id: int, base: str = "auto", lots: Optional[str] = None, ajoutes: Optional[str] = None,
+         current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """État complet de l'atelier ; sans dossier : le plan PROPOSÉ (rien n'est enregistré). `lots` (vague 6) :
+    « 2,3 » prévisualise le plan d'un dossier qui répond à ces lots (parties communes, parties de chaque lot) ;
+    `ajoutes` : les lots indiqués par l'utilisateur, en JSON."""
     acc = _Acces(db, current_user, project_id)
     if acc.dossier is None:
-        prop = at.proposition(db, acc.project, acc.mids, base=base if base in ap.BASES else "auto")
+        try:
+            choisis = at.lots_demandes(db, acc.project, acc.mids, _numeros(lots), _ajoutes(ajoutes)) \
+                if (lots or ajoutes) else []
+        except at.AtelierError as e:
+            raise _err(e)
+        try:
+            prop = at.proposition(db, acc.project, acc.mids, base=base if base in ap.BASES else "auto", lots=choisis)
+        except at.AtelierError as e:
+            raise _err(e)
         return {"dossier": None, "projet": {"id": acc.project.id, "nom": acc.project.name},
                 "proposition": prop, "quota": at.quota_out(at.DossierPresentation(analyse_debitee=False,
                                                                                     regenerations=0,
@@ -92,9 +121,18 @@ def lire(project_id: int, base: str = "auto", current_user: User = Depends(get_c
     return acc.etat()
 
 
+class LotAjoute(BaseModel):
+    numero: str = Field(..., max_length=4)
+    intitule: str = Field(..., max_length=200)
+
+
 class CreerIn(BaseModel):
     base: str = "auto"
     sans_ia: bool = False          # vague 5 : rédiger ce dossier sans IA dès sa création
+    # Vague 6 (J) : les lots auxquels l'entreprise répond (numéros repérés dans le règlement) et ceux qu'elle
+    # indique elle-même ; deux ou plus → parties communes et parties propres à chaque lot, un fichier par lot.
+    lots: List[str] = Field(default_factory=list, max_length=20)
+    lots_ajoutes: List[LotAjoute] = Field(default_factory=list, max_length=8)
 
 
 @router.post("/{project_id}", status_code=201)
@@ -106,7 +144,9 @@ def creer(request: Request, project_id: int, body: Optional[CreerIn] = None,
     if base not in ap.BASES:
         raise HTTPException(422, {"code": "base_invalide", "message": "Plan inconnu : auto, grille, cadre ou libre."})
     try:
-        acc.dossier = at.creer_dossier(db, acc.project, acc.owner_id, current_user, acc.mids, base=base)
+        lots = at.lots_demandes(db, acc.project, acc.mids, body.lots if body else [],
+                                [x.model_dump() for x in body.lots_ajoutes] if body else [])
+        acc.dossier = at.creer_dossier(db, acc.project, acc.owner_id, current_user, acc.mids, base=base, lots=lots)
     except at.AtelierError as e:
         raise _err(e)
     if body is not None and body.sans_ia:
@@ -131,6 +171,58 @@ def reconstruire(request: Request, project_id: int, body: PlanIn, current_user: 
     try:
         at.reconstruire_plan(db, acc.project, acc.exiger_dossier(), current_user, acc.mids, base=body.base,
                              remplacer=body.remplacer, lecteur=acc.lecteur)
+    except at.AtelierError as e:
+        raise _err(e)
+    return acc.etat()
+
+
+# ── Plusieurs lots (vague 6 — J ; docs/REDACTION_V6.md) ─────────────────────────────────────────────
+
+@router.get("/{project_id}/lots")
+def lots_du_marche(project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Les lots du marché repérés dans le règlement (sans IA), et ceux du dossier de présentation."""
+    acc = _Acces(db, current_user, project_id)
+    r = at.lots_reperes(db, acc.project, acc.mids)
+    return {"du_marche": at.lots_du_marche_out(r, at.al.liste(acc.dossier) if acc.dossier is not None else None),
+            "dossier": ([{"numero": x["numero"], "libelle": at.al.libelle(acc.dossier, x["numero"])}
+                         for x in at.al.liste(acc.dossier)] if acc.dossier is not None else [])}
+
+
+class LotsIn(BaseModel):
+    lots: List[str] = Field(default_factory=list, max_length=20)
+    lots_ajoutes: List[LotAjoute] = Field(default_factory=list, max_length=8)
+    remplacer: bool = False
+
+
+@router.put("/{project_id}/lots")
+@limiter.limit("60/hour")
+def changer_lots(request: Request, project_id: int, body: LotsIn, current_user: User = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """Change les lots auxquels le dossier répond : le plan est reconstruit (aucune IA, aucun débit) ; les parties
+    actuelles sont retirées (remettables), avec confirmation si l'une a du texte (409 plan_remplacement_a_confirmer)."""
+    acc = _Acces(db, current_user, project_id)
+    try:
+        at.changer_lots(db, acc.project, acc.exiger_dossier(), current_user, acc.mids, body.lots,
+                        [x.model_dump() for x in body.lots_ajoutes], remplacer=body.remplacer, lecteur=acc.lecteur)
+    except at.AtelierError as e:
+        raise _err(e)
+    return acc.etat()
+
+
+class PorteeIn(BaseModel):
+    commune: bool
+    remplacer: bool = False
+
+
+@router.put("/{project_id}/sections/{section_id}/portee")
+@limiter.limit("600/hour")
+def portee(request: Request, project_id: int, section_id: int, body: PorteeIn,
+           current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Une partie commune à tous les lots, ou propre à chaque lot (sans IA ; rien n'est supprimé)."""
+    acc = _Acces(db, current_user, project_id)
+    s = acc.section(section_id)
+    try:
+        at.changer_portee(db, acc.exiger_dossier(), s, acc.lecteur, commune=body.commune, remplacer=body.remplacer)
     except at.AtelierError as e:
         raise _err(e)
     return acc.etat()
@@ -180,6 +272,7 @@ def compteur(project_id: int, current_user: User = Depends(get_current_user), db
 class AjoutIn(BaseModel):
     intitule: str = Field(..., max_length=400)
     apres_section_id: Optional[int] = None
+    lot: Optional[str] = Field(None, max_length=4)     # vague 6 : '' commune à tous les lots, sinon un lot du dossier
 
 
 @router.post("/{project_id}/sections", status_code=201)
@@ -188,7 +281,7 @@ def ajouter(request: Request, project_id: int, body: AjoutIn, current_user: User
             db: Session = Depends(get_db)):
     acc = _Acces(db, current_user, project_id)
     try:
-        s = at.ajouter_section(db, acc.exiger_dossier(), body.intitule, body.apres_section_id)
+        s = at.ajouter_section(db, acc.exiger_dossier(), body.intitule, body.apres_section_id, lot=body.lot)
     except at.AtelierError as e:
         raise _err(e)
     return _section(acc, s)
@@ -506,6 +599,7 @@ class DerogationIn(BaseModel):
     raison: str
     texte: str = Field("", max_length=600)
     etat_hash: str = Field(..., max_length=64)
+    lot: Optional[str] = Field(None, max_length=4)     # vague 6 : la dérogation vaut pour le dossier de CE lot
 
 
 @router.post("/{project_id}/derogation")
@@ -516,16 +610,21 @@ def deroger(request: Request, project_id: int, body: DerogationIn, current_user:
     acc = _Acces(db, current_user, project_id)
     st = acc.etat()
     try:
-        der = at.enregistrer_derogation(db, acc.project, acc.dossier, st["blocage"], acc.lecteur, body.raison,
-                                        body.texte, body.etat_hash, ip=client_ip(request))
+        n = at.lot_a_exporter(acc.dossier, body.lot)
+        gate = st["blocage"] if not n else next(x["blocage"] for x in st["lots"]["liste"] if x["numero"] == n)
+        der = at.enregistrer_derogation(db, acc.project, acc.dossier, gate, acc.lecteur, body.raison,
+                                        body.texte, body.etat_hash, ip=client_ip(request), lot=n)
     except at.AtelierError as e:
         raise _err(e)
-    return {"derogation": der, "blocage": acc.etat()["blocage"]}
+    st = acc.etat()
+    gate = st["blocage"] if not n else next(x["blocage"] for x in st["lots"]["liste"] if x["numero"] == n)
+    return {"derogation": der, "blocage": gate, "lot": n or ""}
 
 
 class ExportIn(BaseModel):
     format: str = "docx"
     etat_hash: Optional[str] = Field(None, max_length=64)
+    lot: Optional[str] = Field(None, max_length=4)     # vague 6 : le fichier de CE lot (obligatoire si plusieurs lots)
     # Vague 6 (H) : joindre la page « Comment ce dossier a été préparé » (case décochée par défaut).
     page_preparation: bool = False
 
@@ -542,7 +641,7 @@ def exporter(request: Request, project_id: int, body: ExportIn, current_user: Us
     acc = _Acces(db, current_user, project_id)
     try:
         data, nom, mime = at.exporter(db, current_user, acc.project, acc.exiger_dossier(), body.format, acc.lecteur,
-                                      etat=body.etat_hash, ip=client_ip(request),
+                                      etat=body.etat_hash, ip=client_ip(request), lot=body.lot,
                                       page_preparation=bool(body.page_preparation))
     except at.AtelierError as e:
         raise _err(e)

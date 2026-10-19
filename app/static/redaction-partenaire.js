@@ -561,7 +561,8 @@
 
     function renderPartie(v, p, ecrire) {
       const sid = p.section_id, open = st.open === sid;
-      const meta = [p.longueur_mots ? "environ " + Number(p.longueur_mots).toLocaleString("fr-FR") + " mots" : "", p.date_limite ? "avant le " + rpJour(p.date_limite) : ""].filter(Boolean).join(" · ");
+      // Rédaction, vague 6 (J) : un dossier à plusieurs lots — le lot de la partie (le règlement le nomme).
+      const meta = [p.lot_libelle || "", p.longueur_mots ? "environ " + Number(p.longueur_mots).toLocaleString("fr-FR") + " mots" : "", p.date_limite ? "avant le " + rpJour(p.date_limite) : ""].filter(Boolean).join(" · ");
       let h = '<li class="rp-part' + (open ? " open" : "") + '" data-sid="' + sid + '">';
       h += '<button type="button" class="rp-ph" data-act="ouvrir" data-sid="' + sid + '" aria-expanded="' + (open ? "true" : "false") + '"><span class="rp-chev">' + ico("chevron-right", 15) + '</span><span class="rp-pt"><span class="rp-pn">' + rpEsc(p.titre || p.intitule) + "</span>"
         + (meta ? '<span class="rp-pm muted small">' + rpEsc(meta) + "</span>" : "") + '</span><span class="pill ' + (PILL[p.statut] || "neutral") + ' rp-pill">' + rpEsc(p.statut_libelle) + "</span></button>";
@@ -791,7 +792,7 @@
         const r = p.redacteur || {};
         const lib = r.vous ? "votre source" : r.type === "partenaire" ? "source du partenaire" : "source du chef de file";
         h += '<article class="rp-dp"><div class="rp-dp-h"><b>' + rpEsc(p.titre || p.intitule) + '</b><span class="pill ' + (PILL[p.statut] || "neutral") + ' rp-pill">' + rpEsc(p.statut_libelle) + "</span></div>"
-          + '<div class="muted small">' + (p.genere ? "Écrite par Adjugo à partir de la convention et des parts des membres" : "Rédigée par " + rpEsc(r.vous ? "vous" : (r.nom || "")) + (p.ecrit_par === "chef_de_file" && r.type === "partenaire" ? ", modifiée par le chef de file" : "")) + "</div>"
+          + '<div class="muted small">' + (p.lot_libelle ? rpEsc(p.lot_libelle) + " · " : (p.commune ? "Commune à tous les lots · " : "")) + (p.genere ? "Écrite par Adjugo à partir de la convention et des parts des membres" : "Rédigée par " + rpEsc(r.vous ? "vous" : (r.nom || "")) + (p.ecrit_par === "chef_de_file" && r.type === "partenaire" ? ", modifiée par le chef de file" : "")) + "</div>"
           + (p.texte ? '<div class="rp-txt">' + rpTexte(p.texte, lib) + "</div>" : '<div class="muted small rp-p">Pas encore de texte commun pour cette partie.</div>') + "</article>";
       });
       return h + "</div>";
