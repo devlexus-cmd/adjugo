@@ -526,6 +526,8 @@ def deroger(request: Request, project_id: int, body: DerogationIn, current_user:
 class ExportIn(BaseModel):
     format: str = "docx"
     etat_hash: Optional[str] = Field(None, max_length=64)
+    # Vague 6 (H) : joindre la page « Comment ce dossier a été préparé » (case décochée par défaut).
+    page_preparation: bool = False
 
 
 @router.post("/{project_id}/export")
@@ -540,7 +542,21 @@ def exporter(request: Request, project_id: int, body: ExportIn, current_user: Us
     acc = _Acces(db, current_user, project_id)
     try:
         data, nom, mime = at.exporter(db, current_user, acc.project, acc.exiger_dossier(), body.format, acc.lecteur,
-                                      etat=body.etat_hash, ip=client_ip(request))
+                                      etat=body.etat_hash, ip=client_ip(request),
+                                      page_preparation=bool(body.page_preparation))
     except at.AtelierError as e:
         raise _err(e)
     return Response(content=data, media_type=mime, headers={"Content-Disposition": content_disposition(nom)})
+
+
+@router.get("/{project_id}/preparation")
+def preparation(project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Vague 6 (H) : la page « Comment ce dossier a été préparé » telle que l'export la joindrait maintenant
+    (lecture seule, sans IA ; contrat docs/REDACTION_V6.md, section H). Ouverte à la démo comme la lecture de
+    l'atelier : aucun fichier n'est produit ni rangé, aucun export n'est inscrit."""
+    from app.services import atelier_preparation as prep
+    acc = _Acces(db, current_user, project_id)
+    try:
+        return prep.apercu(db, acc.project, acc.exiger_dossier(), acc.lecteur)
+    except at.AtelierError as e:
+        raise _err(e)

@@ -2624,12 +2624,22 @@ def apercu_export(project: Project, dossier: DossierPresentation, ctx: dict) -> 
                            "Aucun texte n'a été préparé avec l'IA : le fichier n'en porte aucune mention."),
             "police": {k: pol.get(k) for k in ("famille", "taille", "connue", "phrase")},
             "options": options_export(dossier), "fichier_impose": bool(meta.get("fichier_impose")),
-            "plan_du_cadre": dossier.plan_source == ap.CADRE, "logo": bool(ctx.get("logo"))}
+            "plan_du_cadre": dossier.plan_source == ap.CADRE, "logo": bool(ctx.get("logo")),
+            # Vague 6 (H) : la case « Joindre une page "Comment ce dossier a été préparé" », décochée par défaut,
+            # choisie à chaque export (jamais enregistrée dans les options).
+            "page_preparation": _case_preparation()}
+
+
+def _case_preparation() -> dict:
+    from app.services import atelier_preparation as prep
+    return prep.case()
 
 
 def exporter(db, user: User, project: Project, dossier: DossierPresentation, fmt: str, lecteur: Lecteur,
-             etat: Optional[str] = None, ip: str = "") -> tuple:
-    """(octets, nom du fichier, type) — ou AtelierError 409 « export_bloque » avec les raisons."""
+             etat: Optional[str] = None, ip: str = "", page_preparation: bool = False) -> tuple:
+    """(octets, nom du fichier, type) — ou AtelierError 409 « export_bloque » avec les raisons.
+    `page_preparation` (vague 6, H) : joindre à la fin la page « Comment ce dossier a été préparé » (case
+    décochée par défaut) ; calculée sans IA sur le MÊME texte que l'export."""
     if fmt not in MIMES:
         raise AtelierError(422, "format_invalide", "Format inconnu : docx ou pdf.")
     _rafraichir_groupement(db, project, dossier)
@@ -2639,8 +2649,9 @@ def exporter(db, user: User, project: Project, dossier: DossierPresentation, fmt
     cpt = compteur(db, project, dossier, sections, cour, ctx=ctx)
     rangs = _rangs(dossier, sections)
     lims = evaluer_limites(dossier, sections, rangs, cpt)
+    fd = faits_lus(db, dossier, project, cour)
     gate = blocage(dossier, sections, cour, rangs, lims, attente=en_attente_d_un_partenaire(sections, lecteur, cour),
-                   faits_de=faits_lus(db, dossier, project, cour))
+                   faits_de=fd)
     if not gate["peut_exporter"]:
         raise AtelierError(409, "export_bloque",
                            "L'export est bloqué : " + " ".join(r["message"] for r in gate["raisons"]),
@@ -2649,11 +2660,15 @@ def exporter(db, user: User, project: Project, dossier: DossierPresentation, fmt
     if etat and etat != gate["etat_hash"]:
         raise AtelierError(409, "etat_modifie", "Le dossier a changé depuis l'affichage : relisez-le avant d'exporter.",
                            etat_hash=gate["etat_hash"])
+    if page_preparation:
+        from app.services import atelier_preparation as prep
+        ctx = dict(ctx, page_preparation=prep.page_ou_erreur(db, project, dossier, sections, cour, ctx, faits_de=fd))
     data = ax.to_docx(ctx) if fmt == "docx" else ax.to_pdf(ctx)[0]
     nom = nom_fichier(project, fmt)
     dossier.dernier_export = {"le": _now_iso(), "par": user.id, "format": fmt, "nom": nom,
                               "empreinte": hashlib.sha256(data).hexdigest(), "ia": bool(ctx.get("ia")),
-                              "derogation": bool(gate["derogation"]), "etat_hash": gate["etat_hash"]}
+                              "derogation": bool(gate["derogation"]), "etat_hash": gate["etat_hash"],
+                              "page_preparation": bool(page_preparation)}
     flag_modified(dossier, "dernier_export")
     db.commit()
     _archiver(db, user, project, dossier, nom, data, fmt, cour)
@@ -2662,7 +2677,7 @@ def exporter(db, user: User, project: Project, dossier: DossierPresentation, fmt
                  actor_kind="user", target_type="dossier_presentation", target_id=dossier.id,
                  detail=f"Dossier de présentation exporté ({fmt})", ip=ip,
                  meta={"format": fmt, "empreinte": dossier.dernier_export["empreinte"], "ia": bool(ctx.get("ia")),
-                       "derogation": bool(gate["derogation"])})
+                       "derogation": bool(gate["derogation"]), "page_preparation": bool(page_preparation)})
     return data, nom, MIMES[fmt]
 
 

@@ -8,7 +8,9 @@ Doctrine (étude §7, règle 7) : rien d'interne ne part chez l'acheteur.
     le nomme, marché, acheteur, candidat, mois), sommaire, titres, listes, tableaux simples ;
   • quand le cadre de réponse est imposé : ses numéros et ses intitulés, dans son ordre ;
   • propriétés du fichier : « Préparé avec assistance IA » SEULEMENT si l'IA a réellement servi
-    (décision 9a), sinon rien.
+    (décision 9a), sinon rien ;
+  • vague 6 (H) : la page facultative « Comment ce dossier a été préparé » à la fin du fichier, quand le
+    client coche la case (décochée par défaut) — `ctx["page_preparation"]`, app/services/atelier_preparation.py.
 
 Honnêteté du compteur : une page Word n'est pas calculable exactement (le rendu dépend du
 logiciel et des polices installées). On compte les pages du PDF produit ICI, avec la police
@@ -266,6 +268,60 @@ def _body(ctx: dict, st: dict, pol: dict, width: float, per_section: Optional[di
     return out
 
 
+# Rédaction, vague 6 (H) : « Comment ce dossier a été préparé », page facultative à la fin du fichier
+# (app/services/atelier_preparation.py ; contrat docs/REDACTION_V6.md, section H). Texte brut, échappé : aucun
+# Markdown n'est interprété, aucun renvoi ni nom d'outil n'y figure.
+_PREP_LARGEURS = (0.24, 0.19, 0.11, 0.27, 0.19)
+
+
+def _prep_cellules(page: dict) -> list:
+    return [[_s(x.get("partie")), _s(x.get("redigee_par")), _s(x.get("ia_libelle")), _s(x.get("faits_libelle")),
+             _s(x.get("validee_libelle"))] for x in page.get("lignes") or []]
+
+
+def _prep_flowables(page: dict, st: dict, pol: dict, width: float) -> list:
+    from xml.sax.saxutils import escape
+    from reportlab.lib import colors
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    out = [Paragraph(escape(_s(page.get("titre"))), st[1]), Paragraph(escape(_s(page.get("introduction"))), st["body"])]
+    for line in page.get("resume") or []:
+        out.append(Paragraph(escape(_s(line)), st["bullet"], bulletText="•"))
+    out.append(Spacer(1, float(pol["taille"]) * 0.5))
+    head = [Paragraph(escape(_s(h)), st["cellh"]) for h in page.get("colonnes") or []]
+    rows = [[Paragraph(escape(c), st["cell"]) for c in r] for r in _prep_cellules(page)]
+    if head:
+        t = Table([head] + rows, colWidths=[width * k for k in _PREP_LARGEURS][:len(head)], repeatRows=1)
+        t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#9CA3AF")),
+                               ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4)]))
+        out += [t, Spacer(1, float(pol["taille"]) * 0.5)]
+    if _s(page.get("legende")):
+        out.append(Paragraph(escape(_s(page["legende"])), st["cell"]))
+    return out
+
+
+def _prep_docx(doc, page: dict) -> None:
+    from docx.enum.text import WD_BREAK
+    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+    doc.add_heading(_s(page.get("titre")), level=1)
+    doc.add_paragraph(_s(page.get("introduction")))
+    for line in page.get("resume") or []:
+        doc.add_paragraph(_s(line), style="List Bullet")
+    cols = page.get("colonnes") or []
+    if cols:
+        t = doc.add_table(rows=1, cols=len(cols))
+        t.style = "Table Grid"
+        for j, h in enumerate(cols):
+            t.rows[0].cells[j].paragraphs[0].add_run(_s(h)).bold = True
+        for r in _prep_cellules(page):
+            cells = t.add_row().cells
+            for j, c in enumerate(r[:len(cols)]):
+                cells[j].paragraphs[0].add_run(c)
+        doc.add_paragraph()
+    if _s(page.get("legende")):
+        doc.add_paragraph(_s(page["legende"]))
+
+
 def _doc(buf, ctx: dict):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import cm
@@ -300,6 +356,8 @@ def to_pdf(ctx: dict) -> tuple:
     if ctx.get("sommaire", True):
         flow += _toc(ctx, st, pol) + [PageBreak()]
     flow += _body(ctx, st, pol, doc.width)
+    if ctx.get("page_preparation"):
+        flow += ([PageBreak()] if flow else []) + _prep_flowables(ctx["page_preparation"], st, pol, doc.width)
     if not flow:
         from reportlab.platypus import Paragraph
         flow = [Paragraph(" ", st["body"])]
@@ -487,6 +545,8 @@ def to_docx(ctx: dict) -> bytes:
             continue
         doc.add_heading(_s(titre_section(val)), level=min(lvl, 4))
         _docx_text(doc, val.get("texte") or "", lvl)
+    if ctx.get("page_preparation"):
+        _prep_docx(doc, ctx["page_preparation"])
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()

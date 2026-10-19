@@ -1197,6 +1197,16 @@ button.dash-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring, 
 .atl-ia > i[data-lucide] { flex:none; color:var(--accent-text); }
 .atl-chk { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
 .atl-chk input { width:auto; height:auto; margin:0; }
+/* Rédaction, vague 6 (H) : « Comment ce dossier a été préparé », vue avant l'export */
+.atl-prep-case .atl-chk { min-width:0; overflow-wrap:anywhere; }
+.atl-prep { margin-top:8px; padding:12px; border-radius:10px; background:var(--surface-2); border:1px solid var(--border); overflow-wrap:anywhere; }
+.atl-prep p { margin:4px 0 0; }
+.atl-prep-r { margin:8px 0 0; padding-left:18px; }
+.atl-prep-r > li { margin:2px 0; }
+.atl-prep-l { list-style:none; margin:8px 0 0; padding:0; }
+.atl-prep-l > li { padding:8px 0; border-top:1px solid var(--hairline); }
+.atl-prep-t { font-weight:600; font-size:12.5px; line-height:1.35; }
+.atl-prep-leg { margin-top:8px !important; }
 .atl-encours { display:flex; gap:8px; align-items:center; color:var(--text-2); }
 
 /* Les trois colonnes */

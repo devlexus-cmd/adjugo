@@ -388,7 +388,10 @@ function _atlInit() {
            busy: "", hist: { open: false, loading: false, list: [], sid: null }, vue: null, derog: null, debit: null,
            plan: null, planOpen: false, add: "", ren: { on: false, v: "" }, factFocus: "", srcFocus: "", note: "",
            exportOpen: false, lastDerog: "", live: "", src: null, passage: null,
-           onglet: "redaction", rep: _atlRepInit(), ent: _atlEntInit(), sansIaPropose: false, exOpen: false };
+           onglet: "redaction", rep: _atlRepInit(), ent: _atlEntInit(), sansIaPropose: false, exOpen: false,
+           // Vague 6 (H) : case « Joindre une page "Comment ce dossier a été préparé" », DÉCOCHÉE à chaque
+           // ouverture de l'atelier (jamais enregistrée) ; `prep` : la page lue avant l'export (lecture seule).
+           prepJoindre: false, prep: { open: false, loading: false, d: null, err: "" } };
 }
 // Entretien chantier (rédaction, vague 5 — D) : les questions lues (GET/POST …/entretien), la saisie de chaque
 // réponse (par question), l'action en cours. `v` : clé de rendu des menus « Posée à » (remis à la valeur enregistrée).
@@ -4829,6 +4832,7 @@ const __adjApp = createApp({
           const ids = a.st.sections.map(s => s.id);
           if (!ids.includes(a.sel)) this.atlSelect(ids[0] || null);
           else if (a.mode !== "modifier") this._atlDraftCheck();
+          if (a.prep.open) this.atlPrepLoad();       // vague 6 (H) : la page lue suit le dossier
         }
       } catch (e) { if (silent) this.notify(e.message, "err"); else a.error = e.message || "Atelier indisponible pour le moment."; }
       finally { a.loading = false; }
@@ -5488,7 +5492,7 @@ const __adjApp = createApp({
       a.busy = "export:" + fmt; this.pending++;
       try {
         const r = await fetch(this._atlUrl("/export"), { method: "POST", headers: { Authorization: "Bearer " + this.token, "Content-Type": "application/json" },
-          body: JSON.stringify({ format: fmt, etat_hash: st.blocage && st.blocage.etat_hash }) });
+          body: JSON.stringify({ format: fmt, etat_hash: st.blocage && st.blocage.etat_hash, page_preparation: !!a.prepJoindre }) });
         if (r.status === 401) { this.sessionPerdue(await r.json().then(j => j && j.detail, () => "")); return; }
         if (!r.ok) {
           const j = await r.json().catch(() => ({})), d = j && j.detail;
@@ -5503,6 +5507,25 @@ const __adjApp = createApp({
         this.atlLoad(true);
       } catch (e) { this.notify(e.message || "Export impossible pour le moment.", "err"); }
       finally { a.busy = ""; this.pending = Math.max(0, this.pending - 1); }
+    },
+    // Vague 6 (H) : la page « Comment ce dossier a été préparé », telle que l'export la joindrait (GET, sans IA).
+    async atlPrepLoad() {
+      const p = this.atl.prep; if (!this.atl.pid) return;
+      p.loading = true; p.err = "";
+      try { p.d = await this.api("GET", this._atlUrl("/preparation")); }
+      catch (e) { p.err = e.message || "La page n'a pas pu être préparée pour le moment."; }
+      finally { p.loading = false; }
+    },
+    atlPrepVoir() {
+      const p = this.atl.prep; p.open = !p.open;
+      if (p.open) this.atlPrepLoad();
+    },
+    // « Rédigée par X · aide de l'IA : oui · validée par X, le 19 octobre 2026 » (une ligne de la page, à l'écran).
+    atlPrepLigne(l) {
+      const min = s => String(s || "").charAt(0).toLowerCase() + String(s || "").slice(1);
+      const auteur = /^Le groupement/.test(l.redigee_par || "") ? min(l.redigee_par) : (l.redigee_par || "");
+      const ia = l.ia_libelle && l.ia_libelle !== "—" ? " · aide de l'IA : " + min(l.ia_libelle) : "";
+      return "Rédigée par " + auteur + ia + " · " + (l.validee ? "validée " + min(l.validee_libelle) : "non validée");
     },
     _atlDerogOpen(d, fmt) {
       const st = this.atl.st, raisons = (d && d.raisons) || [];
