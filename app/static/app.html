@@ -2007,7 +2007,7 @@
                       </div>
                       <blockquote v-if="q.motif" class="atl-q atl-ent-motif">{{ q.motif.phrase }}<span v-if="q.motif.piece" class="muted"> ({{ q.motif.piece }})</span></blockquote>
                       <div v-else class="muted small atl-mt4">{{ q.motif_message }}</div>
-                      <div class="muted small atl-mt4 atl-ent-meta"><span v-if="q.partie">Partie concernée : {{ q.partie.titre }}</span><template v-if="q.critere"><span v-if="!q.partie || q.critere.critere !== q.partie.titre"> · critère : {{ q.critere.critere }}</span><span v-if="q.critere.poids"> ({{ q.critere.poids }})</span></template><span v-if="q.origine === 'ia'"> · {{ q.origine_libelle }}</span></div>
+                      <div class="muted small atl-mt4 atl-ent-meta"><span v-if="q.partie">Partie concernée : {{ q.partie.titre }}</span><template v-if="q.critere"><span v-if="!q.partie || q.critere.critere !== q.partie.titre"> · {{ q.critere.sous ? 'sous-critère' : 'critère' }} : {{ q.critere.critere }}</span><span v-if="q.critere.poids"> ({{ q.critere.poids }})</span></template><span v-if="q.origine === 'ia'"> · {{ q.origine_libelle }}</span></div>
                       <!-- Groupement : à qui la question est posée (un partenaire y répond dans son espace) -->
                       <div v-if="atl.ent.d.groupement.actif && q.id" class="row wrap atl-g6 atl-mt8 small atl-ent-ad">
                         <label :for="'atl-ead-'+q.id" class="muted">Posée à</label>

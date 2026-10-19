@@ -288,30 +288,55 @@ def _trouver(q: dict, pieces: list, deja=()) -> Optional[dict]:
 
 def lignes_grille(project: Project) -> list:
     """Les critères techniques de « Comment vous serez noté » (le prix à part), avec leur poids TEL QU'ÉCRIT
-    et sa valeur pour classer (0 sans poids écrit)."""
+    et sa valeur pour classer (0 sans poids écrit).
+
+    Vague 5 (C2 × D) : un critère découpé en sous-critères dans le plan (deux au moins, une partie chacun) donne
+    aussi une ligne par sous-critère, avec SON poids tel qu'écrit (aucun poids écrit : rien n'est déduit, la
+    ligne pèse 0) : la question qui concerne « Démarche environnementale (10 %) » se classe sur ces 10 %, et non
+    sur les 70 % du critère « Valeur technique ». Une ligne de sous-critère porte `critere_id` (son critère) et
+    `sous` (son intitulé) pour retrouver SA partie ; son `id` (« c1/s2 ») ne sert qu'à grouper le classement."""
     from app.services import atelier_plan as ap
     from app.services import grille_notation as gn
     try:
         lignes = ap.lignes_techniques(at._analysis(project))
     except Exception:       # noqa: BLE001
         return []
+
+    def _poids(p):
+        w = gn.parse_weight(p) if p else None
+        return float(w["valeur"]) if w else 0.0
+
     out = []
     for ln in lignes:
-        w = gn.parse_weight(ln.get("poids")) if ln.get("poids") else None
-        out.append(dict(ln, _fold=_fold(ln.get("critere")), _w=float(w["valeur"]) if w else 0.0))
+        out.append(dict(ln, _fold=_fold(ln.get("critere")), _w=_poids(ln.get("poids")), critere_id=ln.get("id"),
+                        sous=""))
+        sous = [x for x in (ln.get("sous_criteres") or []) if isinstance(x, dict) and _flat(x.get("critere"))]
+        if len(sous) < 2:           # comme le plan (atelier_plan.parties_du_critere) : une partie pour le critère
+            continue
+        for k, sc in enumerate(sous, 1):
+            out.append({"id": f"{ln.get('id')}/{sc.get('id') or k}", "critere": sc["critere"],
+                        "poids": sc.get("poids") or "", "poids_source": "reglement" if sc.get("poids") else "",
+                        "phrase": sc.get("phrase") or "", "critere_id": ln.get("id"), "sous": sc["critere"],
+                        "parent": ln.get("critere") or "", "_fold": _fold(sc["critere"]),
+                        "_w": _poids(sc.get("poids"))})
     return out
 
 
 def _critere_de(stems: list, lignes: list) -> Optional[dict]:
     """Le critère que la question concerne : le PREMIER début de mot de la question qui se retrouve dans un
-    critère (le plus lourd s'il y en a plusieurs) ; sinon le critère unique, ou le seul critère « technique »."""
+    critère (le plus lourd s'il y en a plusieurs) ; sinon le critère unique, ou le seul critère « technique ».
+    Un sous-critère retrouvé l'emporte sur son propre critère (il est plus précis) ; le repli ne regarde que les
+    critères."""
+    criteres = [ln for ln in lignes if not ln.get("sous")]
     for stem in stems or []:
         hits = [ln for ln in lignes if _debut(ln["_fold"], stem)]
         if hits:
+            precis = {ln.get("critere_id") for ln in hits if ln.get("sous")}
+            hits = [ln for ln in hits if ln.get("sous") or ln.get("critere_id") not in precis]
             return max(hits, key=lambda x: x["_w"])
-    if len(lignes) == 1:
-        return lignes[0]
-    gen = [ln for ln in lignes if re.search(r"(?<![a-z])(?:valeur technique|technique|memoire)", ln["_fold"])]
+    if len(criteres) == 1:
+        return criteres[0]
+    gen = [ln for ln in criteres if re.search(r"(?<![a-z])(?:valeur technique|technique|memoire)", ln["_fold"])]
     return gen[0] if len(gen) == 1 else None
 
 
@@ -350,7 +375,12 @@ def partie_concernee(stems: list, sections: list, ligne: Optional[dict]) -> Opti
     if best is not None:
         return best
     if ligne:
-        s = next((s for s in cands if s.critere_id and s.critere_id == ligne.get("id")), None)
+        cid = ligne.get("critere_id") or ligne.get("id")
+        du_critere = [s for s in cands if s.critere_id and s.critere_id == cid]
+        # Un sous-critère : SA partie (même critère, même intitulé), sinon la première partie de son critère.
+        sc = _flat(ligne.get("sous"))
+        s = next((s for s in du_critere if sc and _flat(s.intitule) == sc[:200]), None) or \
+            (du_critere[0] if du_critere else None)
         if s is not None:
             return s
     gen = next((s for s in cands if re.search(r"(?<![a-z])(?:methodolog|technique|organis|memoire)", _texte_partie(s))),
@@ -1009,7 +1039,8 @@ def _question_out(r: EntretienQuestion, *, partie, ligne, personnes: dict, noms:
             "motif": ({"phrase": r.motif, "piece": r.motif_piece} if r.motif else None),
             "motif_message": "" if r.motif else MSG_SANS_MOTIF,
             "critere": ({"critere": ligne.get("critere"), "poids": ligne.get("poids") or "",
-                         "poids_source": ligne.get("poids_source") or ""} if ligne else None),
+                         "poids_source": ligne.get("poids_source") or "", "sous": bool(ligne.get("sous"))}
+                        if ligne else None),
             "partie": ({"section_id": partie.id, "titre": _flat(partie.intitule)[:160],
                         "redacteur": (noms.get(partie.author_invite_id) or "un partenaire")
                         if partie.author_kind == INV else ""} if partie else None),
@@ -1081,7 +1112,8 @@ def etat(db, project: Project, dossier: DossierPresentation, lecteur: at.Lecteur
                               "type_reponse": p["type_reponse"], "aide": "",
                               "motif": mo, "motif_message": "" if mo else MSG_SANS_MOTIF,
                               "critere": ({"critere": ln.get("critere"), "poids": ln.get("poids") or "",
-                                           "poids_source": ln.get("poids_source") or ""} if ln else None),
+                                           "poids_source": ln.get("poids_source") or "",
+                                           "sous": bool(ln.get("sous"))} if ln else None),
                               "partie": ({"section_id": partie.id, "titre": _flat(partie.intitule)[:160],
                                           "redacteur": ""} if partie else None),
                               "adresse": {"type": ad["type"], "invite_id": ad["invite_id"], "nom": ad["nom"],

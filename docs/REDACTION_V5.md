@@ -1,14 +1,41 @@
-# Rédaction, vague 5 — coller au chantier et à l'acheteur
+# Rédaction, vague 5 — « Coller au chantier et à l'acheteur » : contrat
 
-Étude : `etudes/redaction.md` § 6.3 (C2 complet), § 6.7 (E2), § 6.9 (D), § 7 (doctrine), § 8 (V5),
-§ 10 (décisions 7 à 11). Base de production au départ : `da9ef0f` (branche `feat/produit-acheteur-collectivites`) ;
-le chantier C2 a ensuite fusionné la production `b010c59` (documents déposés par le lien, migration `y9z0depotlien`).
+Étude « rédaction » (`etudes/redaction.md`) § 8 (V5) : l'entretien chantier (D, § 6.9), la liste complète des
+exigences et les sous-critères (C2 complet, § 6.3), les références tirées des DECP et les qualifications RGE (E2,
+§ 6.7) ; doctrine § 7 ; décisions § 10 (7 à 11).
 
-Ce contrat est écrit par chantier. Chaque chantier a sa section ; les sections ne se recouvrent pas.
+Base de production : `da9ef0f` (branche `feat/produit-acheteur-collectivites`) au départ des trois chantiers, puis
+`b010c59` (documents déposés par le lien, migration `y9z0depotlien`), fusionnée par C2 et D pendant leur travail.
+Les trois chantiers sont réunis dans une seule branche (section **I**), au-dessus de `b010c59`.
+
+Décisions appliquées (recommandations de l'étude, validées par Eliot) :
+- **D7 (b)** l'import DECP est PROPOSÉ, l'utilisateur coche (E2) ;
+- **D8 (a)** CV et noms jamais à l'IA (D : liste « Équipe » ; E2 n'appelle aucune IA) ;
+- **D9 (a)** mention « préparé avec assistance IA » dans les propriétés du fichier (déjà en place, inchangée) ;
+- **D10 (c)** pas de contrôle de ressemblance entre clients ;
+- **D11 (c)** on MESURE combien de dossiers importés imposent leur propre fichier de réponse (agrégat interne
+  pour l'administrateur, aucun contenu) ; l'avertissement et le Word dans l'ordre du cadre sont gardés (C2.9).
+
+La doctrine (§ 7) vaut pour tous les chantiers : un fait ne vient jamais de l'IA (« déclaré par vous » pour une
+réponse de l'entretien, « source publique » datée pour DECP et RGE, « marché attribué » et jamais « réalisé ») ; on
+ne dit jamais « vérifié » ; toute phrase du dossier affichée est retrouvée mot pour mot (`citation_guard`) ; le
+cadre de l'acheteur commande ; la matière reste chez son propriétaire (une question posée à un partenaire part
+dans SON espace, sa réponse est SA donnée) ; `tenant_scope` et `pii_scope` sur chaque appel d'IA, remboursement si
+l'IA tombe ; un seul process ; le maximum se fait sans IA.
+
+Ce contrat est écrit par chantier : chaque chantier a sa section (C2, D, E2), les sections ne se recouvrent pas ;
+la section I dit ce que la réunion a ajouté aux jointures et comment le parcours complet est vérifié.
 
 Vocabulaire à l'écran : « groupement », « partenaire », « chef de file », « partie » (le code dit « section »),
 « valider » (jamais « signer »), jamais « consortium », jamais « vérifié ». Zéro émoji, explications dans une
-bulle (i), compact, rien collé aux bords, lisible à 375 px.
+bulle (i), compact, rien collé aux bords, lisible à 375 px. Le menu n'est pas réorganisé.
+
+| Section | Chantier | Migration | IA |
+|---|---|---|---|
+| C2 | « Comment vous serez noté » complet : sous-critères, exigences, environnement, R2142-21, mode « sans IA », questions à l'acheteur, mesure D11 | aucune | propositions de l'analyse existante, contrôlées |
+| D | L'entretien chantier : « n questions sur ce chantier », fiche chantier [R#] | `z1entretienchantier` (après `y9z0depotlien`) | bouton facultatif, 4 questions au plus, remboursé |
+| E2 | « Mes preuves » depuis DECP et la liste RGE de l'ADEME ; historique de groupement du réseau | aucune | aucune |
+| I | Réunion des trois chantiers, jointures, parcours complet, vérifications | — | — |
 
 ---
 
@@ -639,8 +666,9 @@ dossier d'avant la vague 5, `prepare: false` et `proposees` (combien l'entretien
   question des travaux de nuit) : la phrase est montrée, « Sans objet » la referme.
 - La négation n'est repérée que dans une fenêtre courte autour du mot (« aucune », « sans », « ne … pas ») ; une
   négation lointaine passe.
-- Le classement suit le poids du critère dont le nom contient un début de mot de la question ; une grille aux
-  intitulés inhabituels rattache tout au seul critère « technique », ou à aucun.
+- Le classement suit le poids du critère (ou, depuis la réunion avec C2, du sous-critère : section I.1, point 3)
+  dont le nom contient un début de mot de la question ; une grille aux intitulés inhabituels rattache tout au
+  seul critère « technique », ou à aucun.
 - Une réponse modifiée après la rédaction n'est relue qu'au prochain « Recontrôler » de la partie (comme le
   profil) ; le texte déjà rédigé n'est jamais réécrit sans geste de l'utilisateur.
 - Un nom de personne écrit dans une réponse n'est masqué avant l'IA que s'il est repéré (équipe connue ou forme
@@ -854,3 +882,139 @@ données publiques à partir de votre SIRET. » Servi au compte démo et au lien
 - Le nom de l'acheteur vient de l'annuaire des entreprises (par le SIRET de DECP) ; non retrouvé, il reste à
   compléter.
 - Le cache est en mémoire : un redémarrage relit les sources (c'est voulu : un seul process).
+
+---
+
+## I — Réunion des trois chantiers et parcours complet
+
+Branche d'intégration au-dessus de la production `b010c59` (`feat/produit-acheteur-collectivites` n'a pas
+bougé depuis : aucune autre fusion de la production n'a été nécessaire). Ordre des fusions : D (`d158262`, qui
+contient déjà `b010c59`) comme base, puis C2 complet (`8146889`), puis E2 (`5bf6ae8`). Chaque conflit a été résolu
+bloc par bloc, en gardant les deux intentions ; un contrôle ligne à ligne (toute ligne ajoutée par un côté
+présente dans la fusion) ne laisse de côté que des lignes remplacées à dessein : empreintes SRI recalculées,
+appel de la partie à l'IA qui reçoit à la fois l'entretien (`fiches=…`) et les sous-critères (`analysis=…`), état
+de l'atelier initialisé avec l'entretien ET le mode « sans IA » (`ent`, `sansIaPropose`, `exOpen`), en-têtes de
+ce contrat réunis en un seul. Une seule tête Alembic : `z1entretienchantier` (D), après `y9z0depotlien`.
+
+### I.1 Les jointures ajoutées par la réunion
+
+1. **Mode « sans IA » (C2) × entretien chantier (D).** Un dossier « sans IA » ne demande aucune question à l'IA :
+   `POST /api/atelier/{pid}/entretien/ia` répond 409 `mode_sans_ia` (contrôle `atelier.exiger_ia_permise` en tête de
+   `entretien_chantier.lancer_ia`, avant toute préparation et tout débit). L'état de l'entretien porte
+   `ia.permise` (faux en mode « sans IA ») et l'écran ne montre plus « Chercher d'autres questions avec
+   Adjugo ». Les questions de la banque, elles, continuent (elles sont sans IA) : on peut encore répondre,
+   passer, dire « sans objet » et poser une question à un partenaire. Le message du mode et sa bulle le disent
+   (« ni question proposée par l'IA » ; « les questions sur ce chantier continuent, sans IA »).
+2. **Source publique datée (E2) × contrôle des faits de l'atelier.** Une fiche de « Mes preuves » de type
+   `public` (marché DECP, qualification RGE) garde sa date de lecture (`source.consulte_le`, sinon
+   `date_source`) ; la source d'un fait relié la porte (`source.date`). La liste « Faits avec une source » de
+   l'atelier et celle de l'espace du partenaire disent « marché attribué, source publique DECP, consultée le
+   JJ/MM/AAAA » (`atlSrcLib`, `rpSrcLib`) ; le nom de document n'y est pas répété. Rien de cela ne part dans le
+   Word (doctrine § 7.7).
+3. **Sous-critères (C2) × entretien (D).** Un critère découpé en sous-critères dans le plan (deux au moins, une
+   partie chacun, comme `atelier_plan.parties_du_critere`) donne à l'entretien une ligne par sous-critère, avec
+   SON poids tel qu'écrit (`entretien_chantier.lignes_grille`) : un sous-critère sans poids écrit pèse 0, rien
+   n'est déduit. Une question dont un début de mot se retrouve dans un sous-critère s'y rattache (il l'emporte sur
+   son propre critère, plus général) ; sinon elle reste au critère, ou au seul critère « technique » (repli
+   inchangé, qui ne regarde que les critères). Les questions se classent par ce poids : « Méthodologie d'exécution
+   en site occupé (40 %) » avant « Moyens humains et encadrement (20 %) » avant « Démarche environnementale
+   (10 %) », au lieu des 70 % de « Valeur technique » pour toutes. La partie concernée est celle du sous-critère
+   (même critère, même intitulé) quand aucun début de mot ne désigne mieux une partie. L'écran dit « Partie
+   concernée : Démarche environnementale (10 %) », ou « · sous-critère : … » quand la partie est une autre
+   (champ `critere.sous`). La consigne de rédaction d'une partie reçoit à la fois son sous-critère et les réponses
+   de l'entretien qui la concernent. Une question qui ne concerne que le critère (« Valeur technique ») garde son
+   poids (70 %) et passe donc avant celles de ses sous-critères : c'est le poids tel qu'écrit, aucun n'est déduit.
+   Un entretien déjà préparé garde son ordre (enregistré) ; seul l'affichage du critère suit la grille.
+4. **Espace du partenaire (V4) × C2 × D × E2.** Il montre, chez lui : ses questions sur le chantier, le mode
+   « sans IA » choisi par le chef de file (son aide de l'IA est alors refusée), les exigences de ses parties, et
+   « Retrouver mes marchés publics » pour SA part (SIRET de sa part). Les questions à poser à l'acheteur restent
+   au chef de file seul.
+
+### I.2 Le parcours complet, vérifié par un test
+
+`tests/test_redaction_v5_parcours.py::test_parcours_complet_vague_5`, un seul dossier, IA et sources publiques
+simulées, **aucun appel réseau** (le transport HTTP réel est coupé ; un appel ferait échouer le test) :
+
+1. dossier de l'acheteur **importé** par la route réelle (`/api/sourcing/analyze-upload`, règlement + CCTP) ; la
+   mesure D11 compte l'import (agrégat, aucun contenu) ;
+2. « Comment vous serez noté » : critères et **sous-critères** tels qu'écrits (40 %, 20 %, 10 % sous 70 %, total
+   contrôlé), **liste des exigences** (4 repérées sans IA + 1 proposée par l'IA et retrouvée ; une exigence
+   inventée par l'IA, « 95 % », écartée), environnement dans la note, R2142-21 (« seul et en groupement »),
+   phrase du règlement qui interdit l'IA, **questions à l'acheteur** (deux limites de pages contradictoires ; la
+   question de l'IA avec un nombre absent de la phrase, rejetée) et date limite écrite (05/12/2026) ; chaque
+   phrase affichée passe `citation_guard` ;
+3. atelier : une partie par sous-critère (1.1, 1.2, 1.3) sous le titre « 1 Valeur technique » ; « 0 exigence
+   traitée sur 5 » ;
+4. un partenaire (lien, sans compte), « Qui écrit quoi » préparé ;
+5. « Mes preuves » : un marché DECP **proposé** (rien de coché d'office ; la ligne « CDL » montrée, non
+   cochable), coché, enregistré « marché attribué, source publique DECP », daté du jour ; le partenaire reprend
+   SES marchés publics (SIRET de sa part) dans SA part ;
+6. **entretien chantier** : chaque question rattachée à son sous-critère (40 %, 20 %, 10 %) et à sa partie, et
+   classée par ce poids ; une réponse « déclaré par vous », une question **passée** (chef de chantier), une
+   question **adressée au partenaire** (accès à la toiture, proposée d'après son lot) : le chef de file ne peut pas
+   y répondre (403), le partenaire ne voit que SA question et aucune réponse du chef de file, il répond **dans son
+   espace** (lien + clé, avertissement lu) ; la fiche chantier dit « déclaré par vous » et « déclaré par Kerbrat
+   Zinguerie » ;
+7. **atelier (IA simulée)** : l'IA reçoit les faits [R#] « déclaré par vous », [R#] « déclaré par votre
+   partenaire » et [F#] « marché attribué, source publique DECP », le sous-critère, aucun nom en clair ; le
+   contrôle des faits relie « 11 h » à la réponse de l'entretien, « échafaudage » au partenaire, « 85 000 € » à la
+   fiche DECP (datée) ; aucun fait sans source ; la question passée laisse **un** « [À compléter : chef de
+   chantier] » dans « 1.2 » ; « **2 exigences traitées sur 5** » avec le nom des trois qui manquent ;
+8. **mode « sans IA »**, que le règlement demande : rédaction d'une partie, de tout le dossier, recherche de
+   questions par l'IA et raccourci refusés (409 `mode_sans_ia`), « deux parties à réécrire soi-même », le
+   partenaire le lit chez lui ; le chef de chantier est donné, les parties réécrites à la main : « Les 5 exigences
+   repérées sont traitées », le contrôle des faits continue, **aucun appel d'IA** ;
+9. **questions à l'acheteur** : toujours lisibles avec leur phrase et leur date limite, retirées puis remises
+   sans IA ; jamais dans la vue du partenaire ;
+10. **export Word** : titres « 1. Valeur technique » / « 1.1 … », aucune mention IA (aucun texte de l'IA
+    restant, D9), et aucune marque interne : ni renvoi [R#] / [F#], ni « [À compléter] », ni « déclaré par »,
+    ni « source publique », ni « DECP », ni « Entretien chantier », ni « Adjugo », ni « python-docx ».
+
+`test_vitrine_de_la_demo_montre_les_trois_nouveautes_sans_ia_ni_reseau` : la vitrine (marché toiture) montre
+« 5 exigences traitées sur 7 », la phrase du règlement sur l'IA, l'entretien (3 réponses au moins, 1 passée,
+fiche chantier), des marchés publics proposés à partir d'un exemple **clairement fictif** ; toute écriture et tout
+appel d'IA sont refusés (« lecture guidée ») ; aucune ligne écrite, aucun appel d'IA, aucun appel réseau.
+
+`test_ecrans_sans_ia_entretien_et_source_publique_datee` : les jointures côté écran (bouton de l'IA masqué en
+mode « sans IA », « sous-critère : … » dans la question, source publique datée, `rpSrcLib` exécuté sous Node).
+
+`test_entretien_rattache_une_question_a_son_sous_critere_sans_poids_deduit` : la règle de rattachement, sans IA ni
+base (sous-critère sans poids écrit à 0, sous-critère plus précis que son critère, repli sur le critère
+technique, partie du sous-critère, critère à un seul sous-critère gardé en une ligne).
+
+### I.3 Choix faits par défaut à la réunion (à valider par Eliot)
+
+1. En mode « sans IA », **les questions de l'entretien restent** (banque sans IA) ; seule la recherche de
+   questions par l'IA est refusée. Raison : l'entretien est du « maximum sans IA ».
+2. La date d'une source publique se lit **« consultée le JJ/MM/AAAA »** dans les listes de faits (atelier et
+   espace du partenaire), jamais dans le fichier exporté.
+3. L'entretien se classe par le poids du **sous-critère** quand la question en concerne un (I.1, point 3) ; une
+   question qui ne concerne que le critère garde le poids du critère (il est écrit), même s'il dépasse celui de
+   ses sous-critères.
+
+### I.4 Vérifications
+
+- Suite complète SQLite (`TZ=UTC`, IA, emails et sources publiques simulés, aucun réseau) : **1 771 tests, tous
+  verts**, dont `tests/test_demo_*.py` et les quatre tests de `tests/test_redaction_v5_parcours.py`.
+- Contrôle des fusions ligne à ligne (`d158262`, `aaa6909`, `431ba32`) : aucune ligne d'un côté perdue en dehors
+  des remplacements voulus listés en tête de cette section.
+- Empreintes SRI à jour (`scripts/sri_update.py --check`) ; `node --check` de tous les scripts servis.
+- Navigateur réel (serveur local, IA coupée, base neuve), vitrine de la démo à 375 px : carte « Comment vous serez
+  noté » (« 6 critères · 7 exigences », questions à l'acheteur avec la date limite du 18/12/2026, phrase sur l'IA,
+  R2142-21), atelier (« 5 exigences traitées sur 7 », « 8 questions sur ce chantier », 3 réponses et 1 passée,
+  chaque question avec sa phrase du dossier et sa partie concernée) ; aucun défilement horizontal.
+- Postgres 16 depuis l'état exact de la production (`b010c59`, tête `y9z0depotlien`, code extrait par
+  `git archive`, données créées par le code de production : compte, marché analysé, atelier, partie écrite,
+  invitation, part du partenaire, « Qui écrit quoi », espace du lien, brouillon privé, tâche) : 24 contrôles sur 24
+  — une seule révision appliquée (`y9z0depotlien → z1entretienchantier`), aucune donnée perdue, seconde montée
+  et rejeu forcé (stamp puis upgrade) sans effet ; sur la base montée, le code nouveau relit sans IA la grille d'un
+  marché analysé en production (version 2, « 0 exigence traitée sur 4 »), prépare l'entretien (6 questions),
+  le chef de file et le partenaire (chez lui) répondent, un marché DECP est proposé puis coché, le mode « sans
+  IA » refuse la rédaction et la recherche de questions (409) ; code de production redémarré sur la base montée
+  (lectures et écritures 200, options comprises) ; schéma identique à une base neuve (0 écart de colonne ou
+  d'index) ; retour arrière (table de l'entretien retirée, rien d'autre ne bouge, code de production relancé) puis
+  remontée (schéma identique). Vrais tests rejoués sur la base montée (41 fichiers, dont les quatre tests du
+  parcours, C2, D, E2, la démo, l'atelier, le groupement, la sécurité) : 1 124 verts et 37 échecs, **les mêmes 37**
+  que le code de production sur la même liste, dans le même ordre (tests propres à SQLite : PRAGMA, `sqlite3`, base
+  partagée) ; à conditions égales sur une base neuve (fichiers en échec seulement), 21 échecs de part et d'autre,
+  identiques ; aucun dans la rédaction.

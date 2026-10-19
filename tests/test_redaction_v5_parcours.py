@@ -289,6 +289,19 @@ def test_parcours_complet_vague_5(client, auth, fake_llm, sources, monkeypatch):
     e = r.json()
     q = {x["code"]: x for x in e["questions"]}
     assert e["message"] == f"{len(q)} questions sur ce chantier" and len(q) <= 8
+    # C2 × D : une question se rattache au SOUS-CRITÈRE qu'elle concerne (son poids tel qu'écrit, sa partie) ;
+    # les questions se classent par ce poids (du plus lourd au plus léger), jamais par un poids déduit.
+    def crit(code):
+        c = q[code]["critere"]
+        return (c["critere"], c["poids"], q[code]["partie"]["titre"])
+    assert crit("site_occupe") == ("Méthodologie d'exécution en site occupé", "40 %",
+                                   "Méthodologie d'exécution en site occupé")
+    assert crit("chef_chantier") == ("Moyens humains et encadrement", "20 %", "Moyens humains et encadrement")
+    env = next(c for c in ("dechets", "environnement") if c in q)        # l'environnement est toujours posé
+    assert crit(env) == ("Démarche environnementale", "10 %", "Démarche environnementale")
+    poids = [float(x["critere"]["poids"].rstrip(" %")) for x in e["questions"] if x["critere"]]
+    assert poids == sorted(poids, reverse=True)
+    assert q["site_occupe"]["critere"]["sous"] is True and q["chef_chantier"]["critere"]["sous"] is True
     for x in e["questions"]:                 # chaque question porte sa phrase du dossier, retrouvée mot pour mot
         if x["motif"]:
             assert citation_guard(texte_dce, x["motif"]["phrase"], min_len=4), x["motif"]
@@ -391,6 +404,18 @@ def test_parcours_complet_vague_5(client, auth, fake_llm, sources, monkeypatch):
     assert fake.calls == []
 
     # ── 9. Questions à l'acheteur : au chef de file seul (Adjugo n'envoie rien) ─────────────────────────────
+    # Elles restent lisibles en mode « sans IA » (repérées sans IA), avec leur phrase et leur date limite ; les
+    # retirer ou les remettre n'appelle pas l'IA.
+    gp = client.get(f"/api/projects/{pid}", headers=h).json()["ai_analysis"]["details"]["grille_notation"]
+    qa2 = gp["questions_acheteur"]
+    assert [q["code"] for q in qa2["liste"]] == ["limites"] and qa2["date_limite"]["date"] == "2026-12-05"
+    assert all(citation_guard(texte_dce, x["phrase"], min_len=4) for q in qa2["liste"] for x in q["phrases"])
+    qid = qa2["liste"][0]["id"]
+    for choix in ("ecarte", "annule"):
+        r = client.post("/api/sourcing/grille/element", headers=h,
+                        json={"project_id": pid, "type": "question", "element_id": qid, "choix": choix})
+        assert r.status_code == 200, r.text
+    assert fake.calls == []
     pub = client.get(f"/api/invite/{a['token']}").json()
     assert "Laquelle s'applique" not in json.dumps(pub, ensure_ascii=False)
     assert "questions_acheteur" not in json.dumps(pub, ensure_ascii=False)
@@ -491,6 +516,10 @@ def test_ecrans_sans_ia_entretien_et_source_publique_datee():
     i = html.index("Chercher d'autres questions avec Adjugo")
     assert "atl.ent.d.prepare && !atlSansIa()" in html[html.rfind("<template", 0, i):i]
     assert "ni question proposée par l'IA" in at.MSG_SANS_IA_ACTIF and "questions sur ce chantier" in at.MSG_SANS_IA_ACTIF
+    # Une question rattachée à un sous-critère le dit (« sous-critère : … (10 %) »), sans v-html.
+    i = html.index("Partie concernée : {{ q.partie.titre }}")
+    meta = html[i:html.index("</div>", i)]
+    assert "q.critere.sous ? 'sous-critère' : 'critère'" in meta and "v-html" not in meta
     # Une source publique est datée dans la liste des faits (atelier et espace du partenaire).
     assert '", consultée le "' in app_js[app_js.index("function atlSrcLib"):][:400]
     node = shutil.which("node")
@@ -504,3 +533,42 @@ def test_ecrans_sans_ia_entretien_et_source_publique_datee():
     assert out.returncode == 0, out.stderr
     assert json.loads(out.stdout) == ["marché attribué, source publique DECP, consultée le 19/10/2026",
                                       "déclaré par vous", ""]
+
+
+def test_entretien_rattache_une_question_a_son_sous_critere_sans_poids_deduit(monkeypatch):
+    """C2 × D, sans IA ni base : un critère découpé en sous-critères (deux au moins, comme le plan) donne une ligne
+    par sous-critère avec SON poids tel qu'écrit ; un sous-critère sans poids écrit pèse 0 (rien n'est déduit) ; un
+    sous-critère retrouvé l'emporte sur son critère ; la partie concernée est celle du sous-critère ; un critère à
+    un seul sous-critère reste une seule ligne."""
+    from types import SimpleNamespace as NS
+    from app.services import entretien_chantier as ec
+    from app.services import grille_notation as gn
+
+    def sc(i, nom, poids, statut=gn.RETROUVE):
+        return {"id": f"s{i}", "critere": nom, "poids": poids, "statut": statut, "phrase": f"{nom} : {poids}"}
+    grille = {"criteres": [
+        {"id": "c1", "critere": "Valeur technique", "poids_retenu": "60 %", "poids_source": "reglement",
+         "dans_le_plan": True, "phrase": "Valeur technique : 60 %",
+         "sous_criteres": [sc(1, "Organisation du chantier", "40 %"),
+                           sc(2, "Démarche environnementale", "20 %", gn.A_VERIFIER)]},
+        {"id": "c2", "critere": "Délai d'exécution", "poids_retenu": "10 %", "poids_source": "reglement",
+         "dans_le_plan": True, "phrase": "Délai : 10 %", "sous_criteres": [sc(3, "Planning détaillé", "10 %")]},
+        {"id": "c3", "critere": "Prix", "poids_retenu": "30 %", "poids_source": "reglement", "dans_le_plan": True,
+         "phrase": "Prix : 30 %", "sous_criteres": []}]}
+    projet = NS(ai_analysis={"details": {"grille_notation": grille}})
+    lg = ec.lignes_grille(projet)
+    assert [(x["critere"], x["poids"], x["sous"], x["_w"]) for x in lg] == [
+        ("Valeur technique", "60 %", "", 60.0), ("Organisation du chantier", "40 %", "Organisation du chantier", 40.0),
+        ("Démarche environnementale", "", "Démarche environnementale", 0.0), ("Délai d'exécution", "10 %", "", 10.0)]
+    assert ec._critere_de(["organis"], lg)["critere"] == "Organisation du chantier"
+    assert ec._critere_de(["environ"], lg)["critere"] == "Démarche environnementale"
+    assert ec._critere_de(["technique"], lg)["critere"] == "Valeur technique"     # le critère, faute de mieux
+    assert ec._critere_de(["inconnu"], lg)["critere"] == "Valeur technique"      # repli : le seul critère technique
+    # La partie concernée : celle du sous-critère, même quand aucun début de mot ne la désigne.
+    parts = [NS(id=1, intitule="Organisation du chantier", critere="Valeur technique", critere_id="c1", question="",
+                parents=[], generee=False),
+             NS(id=2, intitule="Démarche environnementale", critere="Valeur technique", critere_id="c1", question="",
+                parents=[], generee=False)]
+    monkeypatch.setattr(ec.at, "est_generee", lambda s: False)
+    assert ec.partie_concernee(["zzz"], parts, ec._critere_de(["environ"], lg)).id == 2
+    assert ec.partie_concernee(["zzz"], parts, ec._critere_de(["inconnu"], lg)).id == 1
