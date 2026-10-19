@@ -111,7 +111,8 @@ Messages (constantes `MSG_DELAI`, `MSG_ADAPTEE_NOTES`) :
  reponse: {valide_le, valide_par,
            lignes: [{cle, critere, parent, poids, note, note_max, note_gagnant, commentaire,
                      famille, famille_proposee, origine: saisie|courrier|ia,
-                     extrait_note?, extrait_gagnant?, commentaire_du_courrier?}]} | absent,
+                     extrait_note?, extrait_gagnant?, commentaire_du_courrier?,
+                     lot?, lot_libelle?}]} | absent,   # lot : marché alloti, un relevé par lot (section Ensemble)
  savoir_faire: {doc_id, le, par} | absent}             # dossier gagné ajouté à « Mon savoir-faire »
 ```
 
@@ -140,7 +141,8 @@ arrière réel : `DROP COLUMN`). Le code de production précédent ne lit ni n'�
 Accès : le marché doit appartenir à l'organisation (membres), hors corbeille, sinon 404 `marche_introuvable`. Erreurs :
 `detail = {code, message}` (codes : `marche_pas_termine`, `marche_pas_perdu`, `marche_pas_gagne`, `carnet_modifie`,
 `nombre_illisible`, `note_max_manquante`, `note_trop_haute`, `critere_vide`, `ligne_en_double`, `lignes_invalides`,
-`courrier_trop_court`, `courrier_trop_long`, `aucun_critere`, `ia_indisponible`, `deja_ajoute`, `aucun_texte`).
+`courrier_trop_court`, `courrier_trop_long`, `aucun_critere`, `ia_indisponible`, `deja_ajoute`, `aucun_texte` ; et,
+pour un marché alloti, `lot_requis` — section Ensemble, E.3).
 
 ### F.5 « Demandez vos notes » (point 1)
 
@@ -435,6 +437,9 @@ moment : réessayez, ou exportez sans elle. ») — jamais un fichier sans la pa
 | POST | `/api/atelier/{pid}/export` | `{format, etat_hash?, page_preparation?: false}` | le fichier ; avec `page_preparation: true`, la page à la fin. 503 `page_preparation_indisponible`. Le reste inchangé (409 `export_bloque`, `etat_modifie`). |
 
 `dernier_export.page_preparation` (booléen) et `meta.page_preparation` de l'entrée `atelier.export` du journal chaîné.
+
+Dossier à plusieurs lots (J) : `GET …/preparation?lot=2` (la page du fichier de CE lot) et `lot` dans le corps de
+l'export ; voir la section Ensemble, E.2.
 
 ### H.7 Démo
 
@@ -833,3 +838,132 @@ valable), réponse à UN lot d'un marché alloti = un seul dossier. Les champs n
   `z1entretienchantier`) : données créées par le code de production, puis le code nouveau (plan à plusieurs lots,
   portée, export par lot, dérogation par lot, dossier commun), puis le code de production relancé sur les mêmes
   données ; les tests rejoués sur Postgres, échecs comparés à ceux du code de production à conditions égales.
+
+---
+
+## Ensemble — F, H et J réunis
+
+Les trois chantiers ont été construits séparément sur `a29173a` (F : `5bd4f7e`, H : `3b79c56`, J : `21e40cb`), puis
+réunis : avance rapide sur la production, F (avance rapide), H puis J fusionnés bloc par bloc (aucun fichier pris d'un
+seul côté ; chaque ligne ajoutée par un côté retrouvée, sauf les lignes réécrites pour réunir les deux). Une seule tête
+Alembic : `a2carnetnotes` (F, après `z1entretienchantier`) ; H et J n'ont pas de migration.
+
+Source de vérité : `app/services/atelier_preparation.py` (`apercu(…, lot)`, `page`, `avertissements(…, lot)`),
+`app/routers/atelier.py` (`GET …/preparation?lot=`, `ExportIn` : `lot` ET `page_preparation`), `app/services/atelier.py`
+(`exporter(…, lot, page_preparation)`), `app/services/carnet_notes.py` (section « Plusieurs lots »), `app/routers/carnet.py`
+(`lire`, `LigneIn.lot`), `app/static/carnet-notes.js` (`cnTetes`, `cnPayload`, `cnControle`), `app/static/app.js`
+(`atlPrepLoad`, `atlPrepLot`, `atlExport`), `app/static/app.html`, `app/static/styles.css` (`.cn-lot-h`,
+`.atl-prep .atl-lot-f`) ; tests : `tests/test_redaction_v6_ensemble.py`.
+
+### E.1 Le parcours vérifié de bout en bout (sans IA ni réseau)
+
+Marché réparti en 3 lots, réponse aux lots 2 et 3 → une partie commune, deux parties propres à chaque lot → export du
+lot 2 en Word AVEC la page, du lot 3 en PDF avec la page, du lot 2 sans la page → marché passé à « Perdu » →
+« Demandez vos notes » (procédure adaptée lue dans le règlement, article R2181-2, les deux lots cités, rien d'envoyé) →
+courrier de l'acheteur collé, lu sans IA lot par lot → notes validées (un relevé par lot) → « Où vous perdez des
+points » (3 marchés, moyenne) → nouveau dossier chez le même acheteur : « La dernière fois, l'acheteur a écrit », avec
+le lot. Plus : la lecture avec l'IA d'un courrier à plusieurs lots, un groupement (partenaire du lot 3), un marché
+simple inchangé, la démo (`tests/test_redaction_v6_ensemble.py`).
+
+### E.2 H × J : la page du fichier de CHAQUE lot
+
+Un dossier à plusieurs lots produit un fichier par lot : la page « Comment ce dossier a été préparé » jointe à un
+fichier est celle de CE fichier.
+- Elle ne parle que des parties du lot (les communes et les siennes), numérotées comme dans le fichier ; sa mention IA
+  est celle du fichier du lot (le même drapeau `ia`, calculé sur ses seules parties).
+- Son résumé commence par « Ce fichier répond au lot 2 — Couverture et zinguerie. », suivi de « Les parties communes
+  à plusieurs lots y sont reprises telles quelles. » s'il en contient.
+- Les avertissements de l'écran lisent les limites de CE lot (« Le règlement limite le dossier à 3 pages… »).
+- `GET …/preparation?lot=2` ; sans lot sur un dossier à plusieurs lots : 422 `lot_requis` ; un lot hors du dossier, ou
+  un lot sur un dossier à un seul lot : 422 `lot_inconnu` (mêmes règles que l'export). `page.lot = {numero, libelle}`
+  (null pour un dossier à un seul lot), `lot` à la racine.
+- Écran : dans « Voir la page », « Page du fichier : Lot 2 · Lot 3 » (le premier lot par défaut) ; la bulle de la case
+  ajoute « Un fichier par lot : la case vaut pour chaque fichier exporté, et chaque page ne parle que des parties de
+  son lot. » La case vaut pour l'export de chaque lot (`page_preparation` envoyé avec `lot`).
+- Journal et dernier export : `dernier_export["lots"][n].page_preparation`, `meta.lot` et `meta.page_preparation`.
+
+### E.3 F × J : un relevé de notes par lot
+
+L'acheteur note chaque lot à part (chaque lot est un marché). Pour un marché dont le dossier de présentation de
+l'organisation répond à plusieurs lots (`atelier_lots.actif`) :
+- **Formulaire** : les critères et sous-critères sont répétés pour chaque lot, avec la grille de CE lot quand le
+  règlement en écrit une (J.4), sinon celle du marché ; clés propres au lot (`L2-c1`, `L2-c1.1`), titres « Lot 2 — … »
+  à l'écran ; message « Vous avez répondu à plusieurs lots : l'acheteur note chaque lot à part, saisissez les notes lot
+  par lot. ». Un critère ajouté choisit son lot (422 `lot_requis` sinon) ; le lot d'un critère connu est le sien,
+  jamais celui envoyé par l'écran. Au plus 40 lignes par lot.
+- **Courrier « Demandez vos notes »** : « … au titre des lots auxquels nous avons répondu : lot 2 — … ; lot 3 — … »
+  et « … pour chacun de ces lots et pour chaque critère et sous-critère … » ; message à l'écran : « Vous avez répondu à
+  plusieurs lots : le courrier les cite tous. Retirez celui que vous avez remporté, le cas échéant. » Aucun autre
+  article (la liste de F.2 est inchangée).
+- **Lecture sans IA** : le courrier est découpé par les lignes qui citent UN SEUL des lots du dossier (« Lot 2 -
+  Couverture », « LOT N° 03 ») ; une ligne qui en cite plusieurs (« vos notes pour les lots 2 et 3 ») ne change rien ;
+  un courrier qui ne cite qu'un de ces lots en parle d'un bout à l'autre. Une note n'est rapprochée que des critères de
+  SON lot. Aucun lot lisible : aucune proposition, message « Le courrier ne dit pas à quel lot se rapporte chaque note
+  (aucune ligne ne cite un seul de vos lots) : saisissez les notes lot par lot. »
+- **Lecture avec l'IA** : la liste des critères porte le lot (« [L2-c1.1] (Lot 2 — …) — Méthodologie… ») et la
+  consigne ajoute « Ne prends la note d'un critère que dans la partie du courrier qui parle de CE lot » (consigne d'un
+  marché à un seul lot inchangée). Contrôle sans IA : l'extrait et le commentaire d'un critère de lot doivent être dans
+  la partie du courrier de CE lot, sinon écartés. Courrier sans lot lisible : aucun appel, rien de décompté.
+- **Validation** : « lue dans le courrier » n'est gardé que si la ligne citée est dans la partie de SON lot ; les
+  lignes sont rangées lot par lot ; chaque ligne garde `lot` et `lot_libelle`.
+- **Notes affichées** : titres par lot, « Note d'ensemble, lot 2 — … » pour chaque lot (`notes.totaux`), jamais une
+  somme de deux lots (`notes.total` vaut null) ; le constat dit le lot (« … « Méthodologie d'exécution » (lot 2 — …)
+  … »).
+- **« Où vous perdez des points »** : le marché alloti compte UNE fois (ses lots réunis, par famille) ; la règle des 3
+  marchés est inchangée.
+- **« La dernière fois, l'acheteur a écrit »** : le lot du commentaire est dit (« Marché … (Lot 2 — …) »).
+- **Groupement** : l'auteur d'un critère de lot est cherché dans le dossier de CE lot (ses parties communes et les
+  siennes), jamais dans la partie sœur d'un autre lot ; le partenaire du lot 3 voit toutes les notes communes, SES
+  parties du lot 3 signalées, la note d'ensemble de chaque lot ; jamais le courrier ni ses extraits (cloisonnement V4
+  inchangé).
+- **« Ajouter ce dossier à mon savoir-faire »** : le titre d'une partie propre à un lot le dit (« (lot 3) »).
+- **Marché simple** (un seul lot, ou une réponse à un seul lot) : rien ne change (mêmes clés `c1`, même message, même
+  courrier, même consigne de l'IA, `notes.total` comme avant, `notes.totaux` vide).
+
+### E.4 F : la procédure, aussi dans l'ancienne lecture du dossier
+
+Un marché lu avant la lecture intégrale n'a pas de règlement rangé : la procédure est alors cherchée dans le règlement
+du texte de l'ancienne lecture (`dce_excerpt`, découpé en pièces comme pour le repérage des lots), phrase citée telle
+qu'écrite, sinon dans l'analyse (inchangé). Jamais une relecture du fichier, jamais d'IA.
+
+### E.5 Démo
+
+Contenu inchangé (aucune donnée ajoutée : les chiffres du pitch, 84 % et 88 %, restent ceux de F.11 ; la vitrine garde
+ses 7 marchés). Ce que la réunion apporte : sur le marché à plusieurs lots de Trémorvan, « Voir la page » montre la page
+du fichier de chaque lot (lecture seule, sans IA) ; l'export reste refusé, rien n'est écrit (test). Aucune route
+nouvelle : l'inventaire de `tests/test_demo_sans_cout.py` est inchangé.
+
+### E.6 Choix à dire à Eliot
+
+1. **Un relevé de notes par lot** (et non un seul par marché) : l'acheteur note chaque lot à part ; le marché alloti
+   compte une fois dans « Où vous perdez des points ». Autre choix possible : compter chaque lot comme un marché (la
+   moyenne arriverait plus vite, mais un marché à 3 lots pèserait 3 fois).
+2. **Le courrier cite tous les lots auxquels l'entreprise a répondu**, même si elle en a gagné un : l'étape du marché
+   est une seule (« Perdu ») ; le texte le dit et reste modifiable.
+3. **Un courrier sans lot lisible** ne propose rien (ni sans IA ni avec l'IA) plutôt que de deviner le lot.
+4. **La page « Comment ce dossier a été préparé » est par fichier** : un lot sans IA a une page qui le dit, même si un
+   autre lot a été préparé avec l'IA (la mention du fichier suit la même règle).
+
+### E.7 Vérifications
+
+- Lignes perdues à la fusion : pour chaque branche, chaque ligne ajoutée depuis `a29173a` est retrouvée dans le code
+  réuni, sauf les lignes réécrites pour réunir les deux côtés (signature et corps de `exporter`, `ExportIn`, appel de
+  l'export, `_atlInit`, corps de l'export à l'écran, en-tête de ce contrat).
+- Tests : `tests/test_redaction_v6_ensemble.py` (7 tests : parcours complet, IA lot par lot, groupement du lot 3, marché
+  simple inchangé, fonctions pures du découpage, écrans sous Node, démo) ; suite complète : 1 919 tests, tous verts
+  (SQLite, `TZ=UTC`, IA simulée, aucun réseau).
+- SRI à jour (`scripts/sri_update.py --check`), `node --check` (app.js, carnet-notes.js, redaction-partenaire.js).
+- Navigateur (base locale de prévisualisation, compte de test, marché alloti perdu) : relevé par lot, titres « Lot 2 —
+  … », « Critères ajoutés » avec le choix du lot, notes d'ensemble par lot, constat avec le lot, courrier qui cite les
+  lots ; atelier : « Page du fichier : Lot 2 · Lot 3 » ; à 1 024 px et à 375 px, aucun débordement horizontal ; démo :
+  « Où vous perdez des points » inchangé (84 %, 88 %, environnement sans moyenne), page de chaque lot du marché de
+  Trémorvan, aucune erreur de console.
+- Postgres 16 depuis l'état exact de la production (`a29173a` extrait par `git archive`, base montée par son propre
+  code jusqu'à `z1entretienchantier`, données créées par lui ; script `scratchpad/pgtest/run_v6_ensemble_depuis_prod.py`,
+  fabriqué depuis celui de F) : 32 contrôles verts — une seule révision appliquée (`a2carnetnotes`), aucune donnée
+  perdue, seconde montée et rejeu sans effet ; le code réuni sur la base montée (carnet de F, puis un marché alloti :
+  lots 2 et 3, page du lot 3, export du lot 2 avec la page, 422 sans lot, marché perdu, courrier qui cite les lots,
+  10 notes lues sans IA lot par lot et validées, notes d'ensemble par lot, tableau) ; le code de production relancé lit
+  le marché alloti écrit par le code réuni (200) ; schéma identique à une base neuve ; retour arrière et remontée.
+  Tests rejoués sur la base montée : 445 verts et les mêmes 63 échecs propres à SQLite que le code de production sur la
+  même liste dans le même ordre (aucun dans un fichier de la vague 6).
