@@ -183,24 +183,19 @@
     <aside class="side">
       <div class="brand"><span class="wordmark"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></span><span class="org-sub" id="brand-sub">Espace partenaire</span></div>
       <div class="nav-group">Votre invitation</div>
-      <a class="nav-item" data-view="monao" data-allowed="1"><i data-lucide="folder-open"></i>Mon appel d'offres</a>
-      <div class="nav-group">Pilotage</div>
-      <a class="nav-item" data-view="dashboard"><i data-lucide="layout-dashboard"></i>Tableau de bord</a>
-      <a class="nav-item" data-view="sourcing" data-allowed="1"><i data-lucide="target"></i>Trouver des marchés</a>
-      <a class="nav-item" data-view="amont" data-allowed="1" id="nav-amont" style="display:none"><i data-lucide="scan-eye"></i>Projets à venir</a>
-      <a class="nav-item" data-view="kb"><i data-lucide="brain-circuit"></i>Mon savoir-faire</a>
-      <a class="nav-item" data-view="pipeline"><i data-lucide="square-kanban"></i>Mes marchés</a>
-      <div class="nav-group">Partenaires</div>
-      <a class="nav-item" data-view="cotraitants"><i data-lucide="handshake"></i>Mes partenaires</a>
-      <a class="nav-item" data-view="contacts"><i data-lucide="users"></i>Contacts</a>
-      <div class="nav-group">Gestion</div>
+      <a class="nav-item" data-view="monao" data-allowed="1"><i data-lucide="folder-open"></i>Le marché</a>
+      <!-- Le menu de l'application tel qu'il est depuis la réorganisation (vague 1, RUBRIQUES de app.js) : les
+           rubriques, puis le groupe « Réglages ». Verrouillé tant que le partenaire n'a pas de compte. -->
+      <div class="nav-group">Avec un compte Adjugo</div>
+      <a class="nav-item" data-view="dashboard"><i data-lucide="house"></i>Accueil</a>
+      <a class="nav-item" data-view="sourcing" data-allowed="1"><i data-lucide="search"></i>Trouver des marchés</a>
+      <a class="nav-item" data-view="amont" data-allowed="1" id="nav-amont" style="display:none"><i data-lucide="calendar-clock"></i>Projets à venir</a>
+      <a class="nav-item" data-view="pipeline"><i data-lucide="folder-kanban"></i>Mes marchés</a>
+      <a class="nav-item" data-view="cotraitants"><i data-lucide="handshake"></i>Partenaires</a>
       <a class="nav-item" data-view="documents"><i data-lucide="folder-lock"></i>Mes documents</a>
-      <a class="nav-item" data-view="invoices"><i data-lucide="file-spreadsheet"></i>Devis &amp; factures</a>
-      <div class="nav-group">Configuration</div>
-      <a class="nav-item" data-view="company"><i data-lucide="briefcase"></i>Entreprise</a>
-      <a class="nav-item" data-view="criteria"><i data-lucide="sliders-horizontal"></i>Mes critères</a>
-      <div class="nav-group">Compte</div>
-      <a class="nav-item" data-view="team"><i data-lucide="users-round"></i>Équipe</a>
+      <a class="nav-item" data-view="company"><i data-lucide="building-2"></i>Mon entreprise</a>
+      <div class="nav-group">Réglages</div>
+      <a class="nav-item" data-view="team"><i data-lucide="users-round"></i>Collègues</a>
       <a class="nav-item" data-view="billing"><i data-lucide="credit-card"></i>Abonnement</a>
       <div class="side-foot">
         <div class="user"><div class="av" id="g-av">PA</div><div style="min-width:0"><b id="g-name">Partenaire</b><small id="g-role" style="display:block">Partenaire invité</small></div></div>
@@ -209,7 +204,7 @@
 
     <main class="work">
       <header class="top">
-        <div class="top-title"><div style="display:flex;align-items:center;min-width:0"><h1 id="g-title" style="min-width:0">Mon appel d'offres</h1><span id="g-tip" style="flex:none;display:inline-flex"></span></div><div class="sub" id="g-sub"></div></div>
+        <div class="top-title"><div style="display:flex;align-items:center;min-width:0"><h1 id="g-title" style="min-width:0">Le marché</h1><span id="g-tip" style="flex:none;display:inline-flex"></span></div><div class="sub" id="g-sub"></div></div>
         <div class="spacer"></div>
         <a class="btn primary" href="/app?inscription" target="_blank" rel="noopener"><i data-lucide="sparkles"></i>Créer mon compte<span class="g-hide-sm">&nbsp;Adjugo</span></a>
       </header>
@@ -224,8 +219,8 @@
     const TOKEN = decodeURIComponent(location.pathname.split("/invite/")[1] || "").replace(/\/.*$/, "");
     const ALLOWED = { monao: 1, sourcing: 1, amont: 1 };
     const VIEW_TITLE = {
-      monao: ["Mon appel d'offres", "Le dossier partagé avec vous — apportez votre part."],
-      sourcing: ["Trouver des marchés", "Découvrez des appels d'offres publics en direct."],
+      monao: ["Le marché", "Le dossier partagé avec vous — apportez votre part."],
+      sourcing: ["Trouver des marchés", "Les marchés publiés sur les sources officielles."],
       amont: ["Projets à venir", "Surveillez les marchés publics qui vous correspondent."],
     };
     let DATA = null, ICONS, CLAIM_BTN = null;
@@ -353,7 +348,7 @@
         `<div class="card pad" style="text-align:center;padding:46px 24px">
            <div style="color:var(--text-2,#6b7280)">${ico("lock", 34)}</div>
            <h2 style="margin:10px 0 4px;font-size:18px">« ${esc(label)} » est réservé aux membres</h2>
-           <p class="muted" style="max-width:460px;margin:4px auto 0">Vous êtes invité sur un dossier précis. Commencez votre essai gratuit de 30 jours pour débloquer tout l'espace : pipeline, coffre-fort, équipe, facturation…</p>
+           <p class="muted" style="max-width:460px;margin:4px auto 0">Vous êtes invité sur un dossier précis. Commencez votre essai gratuit de 30 jours pour débloquer tout l'espace : vos marchés, vos documents, vos collègues, la facturation…</p>
            <a class="btn primary" href="/app?inscription" target="_blank" rel="noopener" style="margin-top:16px"><i data-lucide="sparkles"></i>Commencer mon essai gratuit de 30 jours</a>
          </div>`;
       icons();
@@ -406,7 +401,7 @@
       const cols = $(`<div class="sg-cols"></div>`);
       const grp = $(`<div class="sg-col grp"></div>`);
       if (fm.score_groupement == null) grp.innerHTML = `<div class="sg-big" style="font-size:22px">—</div><div class="sg-lab">Score du groupement : calculé par le chef de file après analyse</div>`;
-      else grp.innerHTML = `<div class="sg-big">${esc(fm.score_groupement)}<span style="font-size:15px;font-weight:600;opacity:.75">/100</span></div><div class="sg-lab">score du groupement</div>`;
+      else grp.innerHTML = `<div class="sg-big">${esc(fm.score_groupement)}<span style="font-size:15px;font-weight:600;opacity:.75"> %</span></div><div class="sg-lab">à plusieurs</div>`;
       cols.appendChild(grp);
       const col2 = $(`<div class="sg-col"></div>`);
       const ap = $(`<div class="row wrap" style="gap:5px;align-items:center;font-size:12.5px"></div>`);
@@ -430,7 +425,7 @@
       const members = Array.isArray(st.members) ? st.members : [];
       const nM = st.n_members != null ? st.n_members : members.length;
       const nS = st.n_submitted != null ? st.n_submitted : members.filter(m => m.status === "submitted").length;
-      box.appendChild($(`<div class="row" style="gap:8px;align-items:center;margin-top:12px"><b style="font-size:13px;flex:1">Les membres du groupement</b><span class="pill neutral" style="font-size:11px">${esc(nS)}/${esc(nM)} parts reçues</span></div>`));
+      box.appendChild($(`<div class="row" style="gap:8px;align-items:center;margin-top:12px"><b style="font-size:13px;flex:1">Les membres du groupement</b><span class="pill neutral" style="font-size:11px">parts reçues ${esc(nS)} sur ${esc(nM)}</span></div>`));
       const ul = $(`<ul class="g-members"></ul>`);
       if (d.mandataire) ul.appendChild($(`<li><span style="font-weight:600">${esc(d.mandataire)}</span><span class="muted">· chef de file</span></li>`));
       members.forEach(m => {
@@ -542,7 +537,7 @@
       return card;
     }
 
-    // ── Vue : Mon appel d'offres (vue bridée + contribution + pièces) ──
+    // ── Vue : Le marché (vue bridée + contribution + pièces) ──
     function renderMonAO() {
       const d = DATA, p = d.project || {}, a = p.analysis || {};
       const grille = (!d.apercu_minimal && a.grille_notation && Array.isArray(a.grille_notation.criteres)) ? a.grille_notation : null;
@@ -554,7 +549,7 @@
 
       const head = $(`<div class="card pad" style="margin-bottom:16px"></div>`);
       head.appendChild($(`<div class="muted small">${d.mandataire ? "Partagé par <b>" + esc(d.mandataire) + "</b>" : "Dossier partagé"}${d.invited && d.invited.company ? " · pour " + esc(d.invited.company) : ""}</div>`));
-      head.appendChild($(`<div style="font-size:21px;font-weight:800;margin:2px 0 3px;letter-spacing:-.02em">${esc(p.name || "Appel d'offres")}${tip("Vous ne voyez que ce dossier et <b>votre</b> contribution, jamais les données des autres entreprises. Conformément au RGPD, vos actions sont journalisées et visibles par le chef de file.")}</div>`));
+      head.appendChild($(`<div style="font-size:21px;font-weight:800;margin:2px 0 3px;letter-spacing:-.02em">${esc(p.name || "Marché")}${tip("Vous ne voyez que ce dossier et <b>votre</b> contribution, jamais les données des autres entreprises. Conformément au RGPD, vos actions sont journalisées et visibles par le chef de file.")}</div>`));
       if (p.client) head.appendChild($(`<div class="muted small">${esc(p.client)}</div>`));
       // Invitation du RÉSEAU Adjugo pas encore acceptée (vague 3) : aperçu minimal — ni acheteur, ni
       // lien de l'avis, ni pièces, ni composition du groupement. On l'explique dans une bulle (i) et on
@@ -1659,7 +1654,7 @@
       const sec = $(`<div class="cv-sec"></div>`);
       const nA = d.n_accords != null ? d.n_accords : sigs.filter(s => s.status === "signed" || s.status === "hors_ligne").length;
       const nS = d.n_signataires != null ? d.n_signataires : sigs.length;
-      sec.appendChild($(`<h3 class="cv-sec-t">Accords des membres <span class="pill neutral" style="font-size:11px;margin-left:4px">${esc(nA)}/${esc(nS)}</span>${tip("Chaque accord est enregistré avec la date, l'empreinte du texte et le niveau d'identité de la personne. Ni adresse email ni adresse IP n'apparaissent ici.")}</h3>`));
+      sec.appendChild($(`<h3 class="cv-sec-t">Accords des membres <span class="pill neutral" style="font-size:11px;margin-left:4px">${esc(nA)} sur ${esc(nS)}</span>${tip("Chaque accord est enregistré avec la date, l'empreinte du texte et le niveau d'identité de la personne. Ni adresse email ni adresse IP n'apparaissent ici.")}</h3>`));
       const ul = $(`<ul class="cv-sigs"></ul>`);
       sigs.forEach(s => {
         const lead = s.membre === "mandataire";
@@ -1913,7 +1908,7 @@
       const btn = $(`<button class="btn primary"><i data-lucide="search"></i>Rechercher</button>`);
       const row = document.createElement("div"); row.className = "row wrap"; row.style.gap = "8px";
       row.appendChild(q); row.appendChild(dep); row.appendChild(btn);
-      bar.appendChild($(`<div style="margin-bottom:10px"><b style="font-size:13.5px">Trouvez des appels d'offres publics</b>${tip("Sources officielles en direct (BOAMP, TED…). En tant qu'invité, la recherche est ouverte ; pour <b>analyser</b> ou <b>répondre</b>, créez votre compte.")}</div>`));
+      bar.appendChild($(`<div style="margin-bottom:10px"><b style="font-size:13.5px">Trouvez des marchés publics</b>${tip("Sources officielles en direct (BOAMP, TED…). En tant qu'invité, la recherche est ouverte ; pour <b>analyser</b> ou <b>répondre</b>, créez votre compte.")}</div>`));
       bar.appendChild(row);
       root.appendChild(bar);
       const results = document.createElement("div"); root.appendChild(results);
@@ -1924,11 +1919,11 @@
         try {
           d = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q.value, departements: dep.value ? [dep.value.trim()] : [], countries: ["FR"], limit: 20 }) }).then(r => r.ok ? r.json() : Promise.reject());
         } catch (e) { results.innerHTML = `<div class="muted small" style="padding:14px">Recherche indisponible. Réessayez.</div>`; return; }
-        if (!d.tenders.length) { results.innerHTML = `<div class="muted small" style="padding:14px">Aucun appel d'offres trouvé. Élargissez les mots-clés.</div>`; return; }
+        if (!d.tenders.length) { results.innerHTML = `<div class="muted small" style="padding:14px">Aucun marché trouvé. Élargissez les mots-clés.</div>`; return; }
         results.innerHTML = `<div class="muted small" style="margin:2px 0 6px">${esc(d.count)} résultat(s)</div>`;
         d.tenders.forEach(t => {
           const card = $(`<div class="g-res"></div>`);
-          card.appendChild($(`<div style="font-weight:700;font-size:14px">${esc(t.objet || "Appel d'offres")}</div>`));
+          card.appendChild($(`<div style="font-weight:700;font-size:14px">${esc(t.objet || "Marché")}</div>`));
           const meta = [t.acheteur, t.lieu, t.montant_estime ? eur(t.montant_estime) : "", t.date_limite ? "limite " + fmtDate(t.date_limite) : ""].filter(Boolean).map(esc).join(" · ");
           card.appendChild($(`<div class="muted small" style="margin-top:3px">${meta}</div>`));
           const acts = $(`<div class="row" style="gap:8px;margin-top:9px"></div>`);
@@ -2044,7 +2039,7 @@
           };
           if (!d.apercu_minimal) b.appendChild(btn);
         }
-        nav("monao", "Mon appel d'offres");
+        nav("monao", "Le marché");
         icons();
       })
       .catch(e => fail(e.t || "Accès impossible", e.m || "Réessayez plus tard.", e.icon));

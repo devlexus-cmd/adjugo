@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs"></script>
-<script src="/static/i18n.js" integrity="sha384-f+6C660t5kNl/hBOVzGkL7qbO/epcMnsXuYlr18PQbHyXaN5iNNda6cGLMMVdGNY" defer></script>
+<script src="/static/i18n.js" integrity="sha384-gECsIpcs76chC4wmEHa9SwRfxPn99DL8Cc4SUeguUMKjMkpsBUulU0Zmzur7uVRm" defer></script>
 </head>
 <body>
 <div id="app">
@@ -202,7 +202,7 @@
             <div class="row" style="align-items:center;gap:8px">
               <i data-lucide="rocket" style="color:var(--accent-text)"></i>
               <b style="flex:1">Premiers pas sur Adjugo</b>
-              <span class="pill" :class="onboarding.done===onboarding.total?'go':'neutral'" style="font-size:11px">{{ onboarding.done }}/{{ onboarding.total }}</span>
+              <span class="pill" :class="onboarding.done===onboarding.total?'go':'neutral'" style="font-size:11px">{{ onboarding.done }} sur {{ onboarding.total }}</span>
               <button class="icon-btn xs" title="Masquer" aria-label="Masquer" @click="dismissOnboarding()"><i data-lucide="x" style="width:15px;height:15px"></i></button>
             </div>
             <div class="muted small" style="margin:4px 0 10px">3 étapes pour configurer votre espace et trouver vos premiers marchés.</div>
@@ -223,14 +223,15 @@
               <i data-lucide="handshake" class="dh-ic"></i>
               <div class="dh-tx">
                 <b class="dh-t">À plusieurs<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Associez d'autres entreprises : chacune apporte sa part, l'IA assemble une réponse commune.</span></button></b>
-                <div v-if="grpDash" class="dh-count"><b class="num">{{ grpDash.marches_accessibles_en_groupement }}</b> {{ pl(grpDash.marches_accessibles_en_groupement, 'marché accessible', 'marchés accessibles') }} en groupement<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Marchés que vous ne pourriez pas viser seul, mais oui avec des partenaires : verdict « Bon potentiel en groupement », marché encore ouvert.</span></button></div>
+                <div v-if="grpDash && grpDash.marches_accessibles_en_groupement" class="dh-count"><b class="num">{{ grpDash.marches_accessibles_en_groupement }}</b> {{ pl(grpDash.marches_accessibles_en_groupement, 'marché accessible', 'marchés accessibles') }} en groupement<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Marchés que vous ne pourriez pas viser seul, mais oui avec des partenaires : verdict « Bon potentiel en groupement », marché encore ouvert.</span></button></div>
                 <div v-if="grpDash && (grpDash.groupements_en_cours || grpDash.deposes)" class="muted small dh-stats"><span class="nw"><b>{{ grpDash.groupements_en_cours }}</b> {{ pl(grpDash.groupements_en_cours, 'groupement en cours', 'groupements en cours') }}</span><template v-if="grpDash.deposes"> · <span class="nw"><b>{{ grpDash.deposes }}</b> {{ pl(grpDash.deposes, 'déposé', 'déposés') }}</span></template></div>
               </div>
               <button class="btn primary dh-act" @click="go('consortiums')"><i data-lucide="handshake"></i>Préparer à plusieurs</button>
             </div>
 
-            <ol v-if="grpDashHasAny()" class="dash-steps" aria-label="Vos marchés en groupement, par étape">
-              <li v-for="e in grpDash.par_etape" :key="'dst'+e.n" :class="{has:e.count}"><b class="num">{{ e.count }}</b><span>{{ e.label }}</span></li>
+            <!-- Les groupements en cours, comptés sur la barre de la page du marché (Décider · Préparer · Déposer) -->
+            <ol v-if="grpDashHasAny() && grpDashEtapes().length" class="dash-steps" aria-label="Vos marchés à plusieurs, par étape">
+              <li v-for="e in grpDashEtapes()" :key="'dst'+e.label" class="has"><b class="num">{{ e.count }}</b><span>{{ e.label }}</span></li>
             </ol>
 
             <div v-if="grpDashItems().length" class="dash-items">
@@ -390,7 +391,7 @@
           <button class="btn ghost sm" @click="aoBack()" style="margin-bottom:14px"><i data-lucide="arrow-left"></i>Retour</button>
           <!-- En-tête : titre, client, date limite, étape ; « Inviter un partenaire » ; bilan d'un marché gagné ou perdu -->
           <div data-test="marche-entete" class="card pad">
-            <div class="row" style="align-items:flex-start;gap:14px">
+            <div class="row mk-entete" style="align-items:flex-start;gap:14px">
               <div style="flex:1;min-width:0">
                 <div class="row" style="gap:8px;flex-wrap:wrap">
                   <!-- Décision 8 : après le dossier, le seul couple « Seul X % · À plusieurs Y % » ; avant, des mots -->
@@ -1481,7 +1482,7 @@
             <!-- Devis et factures liés, suivi du dossier -->
             <div data-test="marche-devis-suivi" class="cards cols-2" style="margin-top:14px;align-items:start">
               <div class="card">
-                <div class="ch"><i data-lucide="file-text"></i><h3>Devis &amp; factures liés</h3><div class="spacer"></div>
+                <div class="ch"><i data-lucide="receipt"></i><h3>Devis et factures liés</h3><div class="spacer"></div>
                   <button class="btn ghost sm" @click="openInvoice(ao.project.id)"><i data-lucide="plus"></i>Devis</button>
                   <button class="btn ghost sm" @click="go('invoices')"><i data-lucide="external-link"></i>Facturation</button></div>
                 <div class="cb">
@@ -1915,7 +1916,7 @@
             <div class="muted small" style="margin-bottom:9px">Collez vos questions, une par ligne.</div>
             <textarea class="inp" v-model="kb.qText" placeholder="Quelle est votre démarche qualité ?&#10;Disposez-vous de certifications environnementales ?&#10;Citez 3 références similaires." style="width:100%;height:90px;padding:9px 12px"></textarea>
             <div class="row" style="margin-top:8px"><button class="btn primary" @click="kbQuestionnaire" :disabled="kb.qLoading"><span v-if="kb.qLoading" class="spin"></span><i v-else data-lucide="wand-2"></i>Répondre</button>
-              <span v-if="kb.qResults" class="muted small" style="margin-left:10px">{{ kb.qResults.covered }}/{{ kb.qResults.count - (kb.qResults.errors||0) }} réponse(s) proposée(s), à relire<span v-if="kb.qResults.errors" style="color:var(--warning-text)"> · {{ kb.qResults.errors }} non générée(s)</span></span>
+              <span v-if="kb.qResults" class="muted small" style="margin-left:10px">{{ kb.qResults.covered }} sur {{ kb.qResults.count - (kb.qResults.errors||0) }} réponse(s) proposée(s), à relire<span v-if="kb.qResults.errors" style="color:var(--warning-text)"> · {{ kb.qResults.errors }} non générée(s)</span></span>
               <span v-if="kb.qLoading" class="muted small" style="margin-left:10px"><span class="spin"></span> Rédaction des réponses en cours — quelques minutes, ne fermez pas la page.</span></div>
             <div v-if="kb.qResults" style="margin-top:11px">
               <div v-for="(a,i) in kb.qResults.answers" :key="'q'+i" style="padding:10px 0;border-top:1px solid var(--hairline)">
@@ -2701,7 +2702,7 @@
                 <option value="size">Taille (décroissant)</option>
                 <option value="expiry">Expiration (la plus proche)</option>
               </select>
-              <span class="muted small" style="flex:none" aria-live="polite">{{ filteredDocuments.length }} / {{ documents.length }}</span>
+              <span class="muted small" style="flex:none" aria-live="polite">{{ filteredDocuments.length }} sur {{ documents.length }}</span>
             </div>
             <div v-if="filteredDocuments.length" class="t-wrap"><table><thead><tr><th>Document</th><th>Catégorie</th><th>Taille</th><th>Expiration</th><th></th></tr></thead><tbody>
               <tr v-for="d in filteredDocuments" :key="d.id"><td><b>{{ d.name }}</b><div v-if="d.project_name" class="muted small">{{ folderLabel(d.folder) }} · {{ (d.project_name||'').slice(0,40) }}</div></td><td><span class="pill st-nouveau">{{ folderLabel(d.folder) || d.category }}</span></td>
@@ -3013,7 +3014,7 @@
 
           <div class="card pad" style="margin-top:14px">
             <div class="row" style="align-items:center"><h3 style="flex:1">Membres</h3>
-              <span v-if="org.data && org.data.member_limit" class="pill neutral" style="font-size:10px">{{ ((org.data.members||[]).length) }}/{{ org.data.member_limit }} place(s)</span></div>
+              <span v-if="org.data && org.data.member_limit" class="pill neutral" style="font-size:10px">{{ ((org.data.members||[]).length) }} sur {{ org.data.member_limit }} place(s)</span></div>
             <div v-for="m in (org.data&&org.data.members)||[]" :key="m.id" class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline);gap:8px">
               <div style="width:34px;height:34px;border-radius:50%;background:var(--accent-weak);color:var(--accent-text);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px">{{ (m.full_name||m.email||'?').slice(0,1).toUpperCase() }}</div>
               <div style="flex:1;min-width:0"><span class="strong small">{{ m.full_name }}</span> <span v-if="m.is_me" class="muted small">(vous)</span>
@@ -3163,7 +3164,7 @@
               <p v-if="!admin.ia.data.essais.length" class="muted small">Aucun essai en cours.</p>
               <div v-for="e in admin.ia.data.essais" :key="'ia-e'+e.compte" class="row wrap small" style="padding:6px 0;border-bottom:1px solid var(--hairline);gap:8px">
                 <span style="flex:1;min-width:180px">{{ e.organisation || e.email }} <span class="muted">· {{ e.email }}</span></span>
-                <span>{{ e.analyses_utilisees }} / {{ e.analyses_comprises }} analyses</span>
+                <span>{{ e.analyses_utilisees }} sur {{ e.analyses_comprises }} analyses</span>
                 <span>{{ fmtEur(e.cout_ia_eur) }} sur {{ fmtEur(e.budget_eur) }}</span>
                 <span class="pill rn-pill-sm" :class="e.etat==='atteint'?'a_etudier':(e.etat==='proche'?'neutral':'go')">{{ e.etat==='atteint' ? 'limite atteinte' : (e.etat==='proche' ? 'limite proche' : 'normal') }}</span>
                 <span class="muted">{{ e.jours_restants }} j</span>
@@ -3230,9 +3231,9 @@
             <div class="row" style="gap:12px;align-items:center;cursor:pointer" @click="toggleConsortium(cs.project_id)">
               <div style="flex:1;min-width:0">
                 <div class="strong">{{ cs.project }}</div>
-                <div class="muted small">{{ cs.submitted }}/{{ cs.partners }} part(s) reçue(s)<span v-if="cs.pieces"> · {{ cs.pieces }} pièce(s)</span><span v-if="cs.deadline"> · limite {{ fmtDate(cs.deadline) }}</span></div>
+                <div class="muted small">{{ cs.submitted }} sur {{ cs.partners }} part(s) reçue(s)<span v-if="cs.pieces"> · {{ cs.pieces }} pièce(s)</span><span v-if="cs.deadline"> · limite {{ fmtDate(cs.deadline) }}</span></div>
               </div>
-              <span class="pill rn-pill-sm" :class="cs.partners && cs.submitted>=cs.partners?'go':'neutral'" style="flex:none">{{ cs.submitted }}/{{ cs.partners }} {{ pl(cs.partners, 'part', 'parts') }}</span>
+              <span class="pill rn-pill-sm" :class="cs.partners && cs.submitted>=cs.partners?'go':'neutral'" style="flex:none">{{ cs.submitted }} sur {{ cs.partners }} {{ pl(cs.partners, 'part', 'parts') }}</span>
               <i :data-lucide="copen[cs.project_id]?'chevron-up':'chevron-down'" style="width:16px;height:16px;color:var(--text-2);flex:none"></i>
             </div>
 
@@ -3357,7 +3358,7 @@
                   </div>
                   <div class="field"><label for="rn-pres">Présentation en une phrase</label>
                     <textarea id="rn-pres" class="inp" rows="2" v-model="f.presentation" :maxlength="rnOptions().presentation_max" :disabled="!d.peut_modifier || !!reseau.p.busy" placeholder="ex. Électricité générale et courants faibles pour les bâtiments publics." aria-describedby="rn-pres-n"></textarea>
-                    <div id="rn-pres-n" class="muted small rn-hint">{{ (f.presentation||'').length }} / {{ rnOptions().presentation_max }} caractères</div></div>
+                    <div id="rn-pres-n" class="muted small rn-hint">{{ (f.presentation||'').length }} sur {{ rnOptions().presentation_max }} caractères</div></div>
                   <div class="field"><label for="rn-cpv">Codes CPV (facultatif)<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">CPV : la nomenclature européenne des achats publics, un code à 8 chiffres par type de travaux ou de service (ex. 45310000 pour l'installation électrique). Ils affinent le classement.</span></button></label>
                     <input id="rn-cpv" class="inp" v-model="f.codes_cpv" :disabled="!d.peut_modifier || !!reseau.p.busy" placeholder="ex. 45310000, 45315000"></div>
                   <fieldset class="rn-fs" :disabled="!d.peut_modifier || !!reseau.p.busy">
@@ -3365,7 +3366,7 @@
                     <div v-if="!rnRefOptions().length" class="muted small">Aucune référence dans votre profil entreprise. <button type="button" class="linkbtn" @click="go('company')">Ajouter des références dans Mon entreprise</button></div>
                     <div v-else class="rn-refs-pick">
                       <label v-for="r in rnRefOptions()" :key="'rp'+r._k" class="rn-check" :class="{off:rnRefDisabled(r)}"><input type="checkbox" :value="r._k" v-model="f.refs" :disabled="rnRefDisabled(r)"><span>{{ r.intitule }}<span v-if="r.client" class="muted"> — {{ r.client }}</span><span v-if="r.annee" class="muted"> ({{ r.annee }})</span></span></label>
-                      <div class="muted small rn-hint">{{ f.refs.length }} / {{ rnOptions().references_max }} cochée(s)</div>
+                      <div class="muted small rn-hint">{{ f.refs.length }} sur {{ rnOptions().references_max }} cochée(s)</div>
                     </div>
                   </fieldset>
                   <div class="field"><label for="rn-hide">Masquer mon profil à ces entreprises (facultatif)<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Utile pour un concurrent : il ne vous verra pas dans le réseau, et vous ne le verrez pas non plus. Indiquez son SIREN (9 chiffres) ou son SIRET.</span></button></label>
@@ -3593,7 +3594,7 @@
           <div data-test="partage-pourquoi" v-if="sharedAo.forMember" class="card pad" style="margin-bottom:14px;border:1.5px solid var(--accent)">
             <div v-if="grpSteps(sfmState()).length"><ol class="gstep" aria-label="Étapes du groupement"><li v-for="s in grpSteps(sfmState())" :key="s.key" class="gs" :class="{done:s.done,cur:s.cur}" :aria-current="s.cur?'step':null"><span class="sr-only">{{ s.n }}. </span>{{ s.label }}<span v-if="s.done" class="sr-only"> (fait)</span></li></ol><div v-if="grpEtapeNow(sfmState())" class="gstep-now">{{ grpEtapeNow(sfmState()) }}</div></div>
             <div class="row wrap" style="gap:14px;align-items:center;margin-top:8px">
-              <div style="text-align:center;min-width:96px"><div class="sg-big" style="color:var(--accent-text)">{{ sfm().score_groupement!=null ? sfm().score_groupement+' %' : '—' }}</div><div class="sg-lab">score du groupement</div></div>
+              <div style="text-align:center;min-width:96px"><div class="sg-big" style="color:var(--accent-text)">{{ sfm().score_groupement!=null ? sfm().score_groupement+' %' : '—' }}</div><div class="sg-lab">à plusieurs</div></div>
               <div style="flex:1;min-width:200px">
                 <b style="font-size:13.5px">Pourquoi vous dans ce groupement</b>
                 <div v-if="(sfm().my_apport||[]).length" class="row wrap" style="gap:4px;margin-top:4px;align-items:center"><span class="muted small">Vous apportez :</span><span v-for="a in sfm().my_apport" :key="a.key" class="sg-chip by">{{ a.label }}</span></div>
@@ -3652,7 +3653,7 @@
                   </div>
                   <div v-if="sharedAo.conv.textOpen" id="sconv-texte" class="conv-text" tabindex="0" role="document" aria-label="Texte de la convention" v-html="convHtml(sd.content_md || sd.apercu_md)"></div>
                   <section v-if="(sd.signatures||[]).length" class="conv-sec" aria-labelledby="sconv-acc-h">
-                    <div class="conv-st"><span id="sconv-acc-h">Accords des membres</span><span v-if="sd.status!=='perimee'" class="pill" :class="sd.n_signataires && sd.n_accords===sd.n_signataires?'go':'neutral'" style="font-size:11px">{{ sd.n_accords }}/{{ sd.n_signataires }}</span></div>
+                    <div class="conv-st"><span id="sconv-acc-h">Accords des membres</span><span v-if="sd.status!=='perimee'" class="pill" :class="sd.n_signataires && sd.n_accords===sd.n_signataires?'go':'neutral'" style="font-size:11px">{{ sd.n_accords }} sur {{ sd.n_signataires }}</span></div>
                     <ul class="conv-sigs">
                       <li v-for="(s,si) in sd.signatures" :key="'ssig'+si">
                         <div class="cs-main"><div><b>{{ s.company }}</b> <span class="muted small">· {{ convMemberLabel(s.membre) }}</span></div>
@@ -3903,7 +3904,7 @@
     <div class="modal-h"><h3>{{ (drawer.name||'').slice(0,50) }}</h3><button class="x" @click="drawer=null"><i data-lucide="x"></i></button></div>
     <div class="modal-b">
       <div class="row" style="margin-bottom:14px"><span class="pill" :class="drawer.go_decision||'neutral'">{{ decLabel(drawer.go_decision) }}</span>
-        <span class="pill" :class="drawer.go_decision||'neutral'" v-if="drawer.match_score!=null">Compatibilité {{ drawer.match_score }}/100</span><div class="spacer"></div>
+        <span class="pill" :class="drawer.go_decision||'neutral'" v-if="drawer.match_score!=null">{{ kanbanScoreTitle(drawer) }}</span><div class="spacer"></div>
         <span class="muted small">{{ drawer.client }}</span></div>
       <div class="field"><label>Étape</label>
         <select v-model="drawer.status" @change="updateProjectStatus"><option v-for="s in statuses2" :key="s" :value="s">{{ statusLabel(s) }}</option></select></div>
@@ -4146,6 +4147,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-6u2dcizU1R7TgbFpANxwY3jDSA7O0EQpkhqXfp1A4RwHslj7somFoJxnE+iDz027" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6" defer></script>
-<script src="/static/app.js" integrity="sha384-6F7kq/5AuNi8kbHHqDk4jSCeylAiiAAqoU56JKrhVotP02LvByH6KedyvGunfo2R" defer></script>
+<script src="/static/app.js" integrity="sha384-F9CO6Ppirkkp04skpN+EIYUOApg4FpsYfU4hSCxaRiZim6kUIPf2/znjltG7hhM5" defer></script>
 </body>
 </html>

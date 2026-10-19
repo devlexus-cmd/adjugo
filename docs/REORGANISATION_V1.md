@@ -10,11 +10,13 @@ Décisions appliquées (recommandations de l'étude, validées par Eliot) : D0 (
 Ce socle fait : la vague 0 restante (§ 0), les repères de test (§ 1.0), la mesure d'usage (§ 1.1) et l'inscription
 directe depuis l'essai (§ 1.2). Le chantier « menu et accueil » range ensuite le menu, l'accueil, les sous-titres et
 la transition (§ 1.3, 1.6, 1.7, 1.8) ; le chantier « page du marché et recherche » fait 1.4 et 1.5 (§ 1.4, § 1.5).
-Les deux chantiers sont réunis sur ce socle.
+Les deux chantiers sont réunis sur ce socle ; la réunion et la vérification de fin de la vague 1 sont au § 4.
 
 Tests : `tests/test_reorganisation_v1_socle.py` (repères, mesure, inscription, vague 0, traductions),
 `tests/test_reorganisation_v1_menu.py` (menu, onglets, pastilles, accueil, bulles, transition),
 `tests/test_reorganisation_v1_marche.py` (page du marché en 4 étapes, recherche, décision 8, démonstration),
+`tests/test_reorganisation_v1_reunion.py` (réunion des chantiers : accueil sur la barre du marché, décision 8
+partout, menu de l'espace partenaire, pages collectivités, en-tête sur téléphone),
 `tests/zones.py` (découpage par repère), `tests/textes_visibles.py` (textes lus par une personne).
 
 ---
@@ -93,7 +95,7 @@ tous les messages `HTTPException`).
 | Question à l'acheteur « deux limites différentes pour le mémoire » (`grille_exigences.py`) | Texte adressé à l'acheteur ; son titre à l'écran est « Longueur du dossier de présentation » |
 | Dossier rangé « Mémoire technique » (clé interne ; `folderLabel` affiche « Dossier de présentation ») ; dossier `cerfa/` du ZIP | Clés de rangement, non renommées pour ne rien casser chez les clients |
 | « agent de sécurité » (`app/sourcing/groupement.py`) | Un métier, pas un agent d'IA |
-| Pages « collectivités » (`acheteur*.html`, « SIRENE », « agents ») | Face acheteur : leur public dit « SIRENE » et « agents » (de la collectivité) ; hors du critère PME |
+| Pages « collectivités » (`acheteur*.html`) | Plus d'exception depuis la réunion (§ 4.3) : « SIRENE » y devient « registre Insee », et ces pages entrent dans le test des mots bannis |
 | Routeur archivé `cospace.py` | Jamais monté (`app/main.py`) |
 | Commentaires, docstrings, journaux, consignes de l'IA | Jamais lus par un client |
 
@@ -627,10 +629,8 @@ reste dans Mon entreprise, en onglet), `test_redaction_v2_ecrans.py` (Mon savoir
   l'action principale ; une barre d'étapes collée sous l'en-tête (sa hauteur varie). Les étiquettes du serveur
   « Plus à jour — à régénérer » et « Caduc : la convention doit être régénérée » (`groupement_convention.py`,
   affichées des deux côtés) sont à passer à « à revalider » avec leurs tests.
-- **Décision 8 ailleurs** : « Compatibilité N/100 » et « Seul : N/100 · En groupement : N/100 » des bulles de
-  l'accueil et de Mes marchés (`feedScoreTitle`, `kanbanScoreTitle`) ; les pourcentages du carnet de notes (notes
-  reçues de l'acheteur, Réd. V6) ; sur la vitrine, le cadran « 87 % » de la section « Décider » montre un
-  pourcentage avant tout dossier.
+- **Décision 8 ailleurs** : faite à la réunion (§ 4.3). Restent les pourcentages du carnet de notes (notes reçues de
+  l'acheteur, Réd. V6).
 - **1.6 Accueil allégé**, **1.7 Sous-titres en bulle**, **1.8 Transition** : faits (§ 1.6 à 1.8).
 - **Test d'arborescence** de Mathys (avant et après la vague 1) : hors code.
 
@@ -647,3 +647,113 @@ espace partenaire réduit à « Votre part dans [marché] » (dans `invite.html`
   le modèle de convention).
 - Mise en ligne : la migration `b3mesureecrans` (une table de compteurs) part avec ce socle ; contrôle Postgres
   depuis l'état réel de la production à refaire au moment de la mise en ligne.
+
+---
+
+## 4. Réunion des chantiers et fin de la vague 1
+
+### 4.1 La réunion
+
+Production `88a4109` (avance rapide), socle `2380489` (avance rapide), menu `ad73cf1` (avance rapide), page du marché
+`dffbb1d` (fusion `0f5a9df`). Conflits résolus bloc par bloc, sans prendre un côté entier : `app.html` (Trouver des
+marchés garde les onglets du menu et prend le commentaire de la page ; empreintes SRI régénérées), `i18n.js` (fusion
+à trois voies des dictionnaires : 419 + 41 → 459 clés ; « Dossier de présentation », traduit des deux côtés, garde la
+traduction du menu, cohérente avec les autres clés), `sri-manifest.json` (régénéré), ce contrat. Contrôle ligne à
+ligne contre la base commune : aucune ligne ajoutée par un côté n'est perdue (seules les anciennes empreintes SRI
+sont remplacées).
+
+### 4.2 Le critère de fin de l'étude (§ 9), ligne par ligne
+
+| Critère | Résultat | Vérification |
+|---|---|---|
+| Aucun mot banni dans les textes visibles | **0** | Recherche outillée (`tests/textes_visibles.py`) : `app.html` (2 295 textes), `app.js` (1 812), `redaction-partenaire.js` (797), `carnet-notes.js` (398), `sources-publiques.js` (227), `cotraitance-crypto.js` (67), `invite.html` (734), `landing.html` (106), `demo.html` (34), `demande-acces.html` (61), `acheteur.html` (485), `acheteur-landing.html` (141) ; les 285 chaînes des fonctions qui envoient un courriel et les 428 messages d'erreur montrés. Les pages collectivités entrent dans le test (`FRONT_HTML`). Exceptions : `EXCEPTIONS` et § 0.3 (le dossier fictif de l'acheteur dans la démo : vu dans le navigateur, les noms de ses fichiers « Mémoire technique — … » et « DPGF — … » dans « Dossier du marché », et une phrase de son règlement dans « Comment vous serez noté ») |
+| Chaque ancienne vue en 2 clics au plus | **oui** | Tableau du § 4.4, parcouru dans le navigateur ; `test_chaque_vue_a_sa_rubrique_et_s_atteint_en_deux_clics_au_plus` |
+| L'affichage tient sur 375 px | **oui** | Dans le navigateur, largeur de page = 375 px : les 19 écrans de l'application (démo), les 7 pages de marché de la démo, l'espace partenaire, la vitrine, la démo, la demande d'accès, la vitrine collectivités. Deux pages juridiques débordent : relevées pour Eliot (`docs/A_CORRIGER_PAGES_JURIDIQUES_LIBELLES.md`, § 8) |
+| La suite passe, avec les nouveaux repères | **oui** | Suite complète verte : 2 055 tests ; repères `data-test` de `tests/zones.py` |
+| Chaque libellé du menu a son néerlandais et son espagnol | **oui** | 465 clés, `scripts/i18n_ajouter.py --check` ; tests de traduction du socle, du menu, de la page et de la réunion |
+| Test d'arborescence de Mathys (aucune tâche avec un nouvel échec chez 2 PME sur 7) | **à faire** | Hors code : avant et après la vague 1, auprès des 7 PME |
+
+### 4.3 Corrigé à la réunion (trouvé en parcourant l'application réunie)
+
+- **Accueil « À plusieurs » : un seul découpage.** Il comptait les groupements sur les 5 étapes de juin (« Repérer le
+  marché », « Monter le groupement »…, avec des zéros) et marquait chaque marché « Étape 5 sur 5 », alors que la page du
+  marché n'a plus que Lire · Décider · Préparer · Déposer. Désormais : étape 1 → Décider, 2 à 4 → Préparer (ses tâches
+  « à plusieurs »), 5 → Déposer, seulement les étapes où il y a un marché (`grpDashEtapes`) ; le marché porte le nom de
+  son étape. Le compteur « marchés accessibles en groupement » ne s'affiche que s'il y en a (étude, § 5.3 : jamais
+  « 0 marchés »). L'étiquette serveur « Monter le groupement » reste côté partenaire (son stepper, vague 2b).
+- **Décision 8 hors de la page du marché** : bulles de l'accueil et de Mes marchés, pastille du tiroir d'un marché
+  (« Compatibilité 72/100 », « Seul : 43/100 · En groupement : 100/100 ») → « Seul 72 % », « Seul 43 % · À plusieurs
+  100 % » ; « 1/1 part reçue » → « parts reçues 1 sur 1 » ; « Avec partenaires : 87 % » → « À plusieurs 87 % » ; tous
+  les « N/M » des gabarits (premiers pas, questionnaire, documents, collègues, analyses, Mes marchés › À plusieurs,
+  compteurs du profil réseau, accords des membres) et des messages → « N sur M » ; espace partenaire et dossier partagé :
+  « 100/100 score du groupement » → « 100 % à plusieurs », « 1/1 parts reçues » → « parts reçues 1 sur 1 », accords
+  « 1 sur 2 » ; vitrine : « 22/22 », « 14/14 », « 18/26 » → « 22 sur 22 »… (le cadran « 87 % » suit la phrase « Une
+  fois le dossier analysé » : conforme).
+- **Espace partenaire** : le menu verrouillé montrait l'ancien menu (Pilotage, Tableau de bord, Gestion, Devis &
+  factures, Configuration, Entreprise, Équipe) ; il montre celui de l'application (les six rubriques, puis Réglages ›
+  Collègues, Abonnement ; icônes du § 8). « Mon appel d'offres » → « Le marché » ; « Trouvez des appels d'offres
+  publics » → « Trouvez des marchés publics » ; l'écran verrouillé promet « vos marchés, vos documents, vos collègues »
+  (plus « pipeline, coffre-fort »).
+- **Pages collectivités** : « SIRENE » → « registre Insee » (« Annuaire des entreprises » pour le lien vers
+  annuaire-entreprises.data.gouv.fr), comme la règle du § 0.2 ; l'exception du § 0.3 est levée.
+- **En-tête du marché sur téléphone** : le choix de l'étape passait à côté du titre, écrasé sur un tiers de la
+  largeur ; il passe dessous (`.mk-entete`, 520 px et moins).
+- **Derniers anciens noms** : « Devis & factures liés » → « Devis et factures liés » (icône `receipt`) ; messages
+  « Appel d'offres introuvable / mis à la corbeille », « Cet appel d'offres n'est plus accessible », « Lancez votre
+  première recherche d'appel d'offres » → « Marché … », « … de marchés ».
+- **375 px hors de l'application** (vu dans le navigateur, déjà en production) : la vitrine s'élargissait à 407 px
+  (halo du cadran « Décider ») et sa barre du haut dépassait ; la vitrine collectivités s'élargissait à 495 px (halo du
+  haut). Halos coupés au bord de l'écran, barre du haut resserrée sur téléphone.
+- Traductions : 6 libellés (459 → 465 clés). Test : `tests/test_reorganisation_v1_reunion.py`.
+
+### 4.4 Chaque ancienne vue en 2 clics au plus (parcouru dans le navigateur)
+
+| Ancienne vue | Chemin aujourd'hui | Clics |
+|---|---|---|
+| Tableau de bord | Accueil | 1 |
+| Trouver des marchés (Sourcing) | Trouver des marchés › Publiés | 1 |
+| Radar des échéances | Trouver des marchés › À venir | 2 |
+| Alertes automatiques | Trouver des marchés › Mes alertes | 2 |
+| Projets à venir (si `PROJETS_A_VENIR=1`) | Trouver des marchés › Projets à venir | 2 |
+| Mes marchés (Pipeline) | Mes marchés › Marchés | 1 |
+| Partagé avec moi | Mes marchés › Où je suis partenaire | 2 |
+| Mes groupements | Mes marchés › À plusieurs | 2 |
+| Devis & factures | Mes marchés › Devis et factures | 2 |
+| Mes partenaires | Partenaires › Mes partenaires | 1 |
+| Réseau | Partenaires › Réseau Adjugo | 2 |
+| Contacts | Partenaires › Contacts | 2 |
+| Mes documents (coffre-fort) | Mes documents › Mes pièces | 1 |
+| Mon savoir-faire | Mes documents › Mon savoir-faire | 2 |
+| Mon entreprise (Profil de l'entreprise) | Mon entreprise › Identité | 1 |
+| Mes critères | Mon entreprise › Mes critères | 2 |
+| Mes preuves | Mon entreprise › Mes preuves | 2 |
+| Équipe | Réglages › Collègues | 2 (1 si le groupe est ouvert) |
+| Mot de passe, données (dans « Équipe ») | Réglages › Mon compte | 2 (1 si le groupe est ouvert) |
+| Abonnement | Réglages › Abonnement | 2 (1 si le groupe est ouvert) |
+| Administration | Réglages › Administration (administrateur) | 2 (1 si le groupe est ouvert) |
+| Mon avis | Réglages › Mon avis | 2 (1 si le groupe est ouvert) |
+| Un marché, son atelier, un dossier partagé | depuis la liste de Mes marchés (pages de détail) | — |
+
+### 4.5 Parcours de bout en bout dans un vrai navigateur (serveur local, base jetable, aucun envoi, aucune IA)
+
+- **Démo par lien privé** (clé jetable de 48 caractères, `DEMO_PUBLIC=0`, comme en production) : choix de l'espace →
+  Accueil (sans la note « Ce qui a changé ») → Mes marchés et ses onglets → Kerhel (Déposer surligné, « Seul 43 % · À
+  plusieurs 100 % », 4 tâches « Terminé », « Avant de déposer : 3 contrôles sur 4 ») → Réfection toiture (seul,
+  Préparer surligné, « Seul 87 % ») → Trouver des marchés › Publiés → « Voir les marchés pour mon entreprise » →
+  « Analyser ce marché » (l'écran mène à l'analyse) → « Ouvrir le marché » (la page en haut, Décider surligné).
+  1 280 px et 375 px, thème sombre ; aucun mot banni sur les pages de marché (lecture du texte affiché).
+- **Espace partenaire** (lien d'invitation de Breizh Désamiantage sur Kerhel) : menu verrouillé réorganisé, « Le
+  marché », « 100 % à plusieurs », « parts reçues 1 sur 1 » ; 375 px.
+- **Connexion** : déconnexion → vitrine ; `/app?inscription` ouvre « Créons votre compte » ; compte administrateur de
+  test créé dans la base jetable (avant la mise en ligne du menu) : note « Ce qui a changé », Réglages ouvert (état
+  gardé), Administration › « Écrans ouverts » (la démo n'est pas comptée).
+
+### 4.6 Laissé, avec sa raison
+
+- Le stepper des 5 étapes côté partenaire (`invite.html`, `vue-sharedao`) : vague 2b (« Votre part dans [marché] »).
+- Le choix du statut dans l'en-tête du marché : vague 2a (un seul axe d'étapes).
+- Le contact nommé de l'acheteur dans l'en-tête : Moteur V0 (règle 7 du moteur).
+- « confiance N % » et « adéquation N/100 » des cartes de recherche : Moteur V0 (étude, § 8).
+- « appel d'offres » sur la vitrine et les pages collectivités : le mot juste de la procédure, il n'est pas banni.
+- Au chargement de l'accueil, les premiers pas et « Aucun marché » s'affichent une fraction de seconde avant les
+  données (déjà en production) ; le bandeau des cookies couvre le bas du menu sur téléphone tant qu'il n'est pas fermé.

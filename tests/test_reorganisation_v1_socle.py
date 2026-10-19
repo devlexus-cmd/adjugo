@@ -361,9 +361,11 @@ console.log(JSON.stringify(cas.map(u => { const x = new URL("https://adjugo.pro"
 
 from tests.textes_visibles import messages_erreur, mots_bannis, textes_courriels, textes_html, textes_js  # noqa: E402
 
-# Pages et scripts lus par un client (application, vitrine, espace partenaire, démonstration). Les pages de la
-# face « collectivités » (acheteur*.html) parlent aux acheteurs publics : hors de cette règle (contrat, § 0).
-FRONT_HTML = ("app.html", "invite.html", "landing.html", "demo.html", "demande-acces.html")
+# Pages et scripts lus par un client (application, vitrine, espace partenaire, démonstration), et les pages de la face
+# « collectivités » (acheteur*.html) depuis la réunion des chantiers de la vague 1 (contrat, § 4.3 : « SIRENE » y
+# devient « registre Insee »).
+FRONT_HTML = ("app.html", "invite.html", "landing.html", "demo.html", "demande-acces.html",
+              "acheteur.html", "acheteur-landing.html")
 FRONT_JS = ("app.js", "redaction-partenaire.js", "carnet-notes.js", "sources-publiques.js", "cotraitance-crypto.js")
 
 # Exceptions assumées (texte exact → raison). Toute nouvelle exception se justifie ici ET au contrat.
@@ -454,7 +456,9 @@ def test_cartes_d_offre_et_vitrine_disent_juste():
 def test_espace_partenaire_dit_juste():
     inv = _lire("invite.html")
     assert "<title>Espace partenaire — Adjugo</title>" in inv
-    assert '<div class="nav-group">Partenaires</div>' in inv and '<div class="nav-group">CRM</div>' not in inv
+    # Menu verrouillé : celui de l'application depuis la vague 1 (rubriques, dont « Partenaires », puis « Réglages »),
+    # vérifié en détail par test_reorganisation_v1_reunion.py.
+    assert '<i data-lucide="handshake"></i>Partenaires</a>' in inv and '<div class="nav-group">CRM</div>' not in inv
     assert '<b id="g-name">Partenaire</b><small id="g-role" style="display:block">Partenaire invité</small>' in inv
     assert '"Partenaire invité"' in inv and '"Invité · "' not in inv
     visibles = " ".join(t for _l, t in textes_html(inv))

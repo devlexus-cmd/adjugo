@@ -813,6 +813,9 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
   .mk-etapes { gap:6px; }
   .mk-et { flex-direction:column; gap:3px; padding:6px 4px; min-height:54px; border-radius:14px; font-size:12px; }
   .mk-etape, .mk-pied { margin-top:22px; }
+  /* En-tête du marché : sur téléphone, le titre prend toute la largeur ; le choix de l'étape passe dessous. */
+  .mk-entete { flex-wrap:wrap; row-gap:12px; }
+  .mk-entete > .field { flex:1 1 100%; min-width:0 !important; }
 }
 
 /* ══════════ Réseau de partenaires (co-traitance v2, vague 3) ══════════
@@ -1023,7 +1026,7 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 /* ── Tableau de bord « Répondre à plusieurs » (vague 4) : compteur, mini-stepper 1→5, lignes cliquables ── */
 .dash-hero-h .dh-count { display:flex; align-items:center; flex-wrap:wrap; gap:0 2px; margin-top:6px; font-size:13px; font-weight:600; color:var(--accent-text); }
 .dash-hero-h .dh-count b { font-family:var(--font-display); font-size:17px; margin-right:4px; }
-.dash-steps { list-style:none; margin:16px 0 0; padding:0; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
+.dash-steps { list-style:none; margin:16px 0 0; padding:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
 .dash-steps li { display:flex; flex-direction:column; gap:2px; min-width:0; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
 .dash-steps li b { font-family:var(--font-display); font-size:17px; line-height:1.15; color:var(--subtle); }
 .dash-steps li.has b { color:var(--accent-text); }

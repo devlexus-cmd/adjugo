@@ -303,6 +303,18 @@ img{max-width:100%}
   .cim-photo{transform:none!important;transition:filter .3s}
   .cim-open,.cim-vlabel{transition:opacity .2s}
 }
+/* Téléphone (375 px) : la barre du haut (logo, « Se connecter », « Demander un accès ») tient sans défilement
+   horizontal, au repos comme une fois la page défilée. */
+@media(max-width:420px){
+  .nav{padding:0 8px}
+  .nav-in,.nav.scrolled .nav-in{gap:8px;padding:0 12px}
+  .nav-right{gap:10px}
+  .nav-right .lk{font-size:13px}
+  .nav-right .btn{padding-left:11px;padding-right:11px;font-size:13px}
+}
+/* Le halo du cadran « Décider » (ring-wrap::before, 440 px) dépassait l'écran d'un téléphone : la page s'élargissait
+   à 407 px. Coupé au bord de la section, il ne change rien à ce qu'on voit. */
+@media(max-width:600px){ #decider{overflow-x:clip} }
 </style>
 </head>
 <body>
@@ -332,9 +344,9 @@ img{max-width:100%}
     <h2 class="lead-h sr s1">Ne perdez plus de temps sur les marchés que vous ne pouvez pas gagner.</h2>
     <p class="intro sr s1">Une fois le dossier analysé, chaque marché reçoit un pourcentage d'adéquation à votre entreprise. Chaque point repose sur un critère simple — votre métier, la zone, le budget, les délais. C'est vous qui fixez le curseur.</p>
     <ul class="crit sr s2">
-      <li>Adéquation métier <span class="track"><span class="fill" style="--w:100%"></span></span> <b class="tnum">22/22</b></li>
-      <li>Zone géographique <span class="track"><span class="fill" style="--w:100%"></span></span> <b class="tnum">14/14</b></li>
-      <li>Budget &amp; délai <span class="track"><span class="fill" style="--w:69%"></span></span> <b class="tnum">18/26</b></li>
+      <li>Adéquation métier <span class="track"><span class="fill" style="--w:100%"></span></span> <b class="tnum">22 sur 22</b></li>
+      <li>Zone géographique <span class="track"><span class="fill" style="--w:100%"></span></span> <b class="tnum">14 sur 14</b></li>
+      <li>Budget &amp; délai <span class="track"><span class="fill" style="--w:69%"></span></span> <b class="tnum">18 sur 26</b></li>
     </ul>
   </div>
   <div class="ring-wrap sr s2">

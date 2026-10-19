@@ -103,3 +103,22 @@ Le menu change de noms (« Tableau de bord » devient « Accueil », « Partagé
 partenaire », « Mes groupements » devient « À plusieurs », « Équipe » devient « Collègues », « Plus » devient
 « Réglages », le radar devient « À venir »). Recherche faite dans `docs/legal/*.md` et `app/static/legal/*.html` :
 aucune page juridique ne cite un de ces écrans. Rien à modifier.
+
+## 8. Réorganisation de l'interface, vague 1 (réunion des chantiers, 19/10/2026)
+
+**Libellés : rien à corriger.** La réunion renomme « Mon appel d'offres » (espace partenaire) en « Le marché », le menu
+verrouillé de l'espace partenaire en celui de l'application (Accueil, Mes marchés, Partenaires, Mes documents, Mon
+entreprise, Réglages › Collègues), « score du groupement » en « à plusieurs », et « SIRENE » en « registre Insee » sur
+les pages collectivités. Recherche faite dans `docs/legal/*.md` et `app/static/legal/*.html` : aucune page juridique
+ne cite ces écrans ni ces libellés (les « SIRENE » des pages juridiques sont déjà au § 6.3).
+
+**Affichage sur téléphone (375 px), à corriger par Eliot (non modifié, page juridique) :** deux pages juridiques
+élargissent l'écran d'un téléphone, ce qui crée un défilement horizontal :
+
+| Page | Largeur à 375 px | Cause |
+|---|---|---|
+| `/confidentialite` | 533 px | 2 tableaux (catégories de données, finalités et bases légales) |
+| `/securite` | 480 px | 1 tableau |
+
+Proposition : dans le gabarit des pages juridiques (`scripts/build_legal.py`, fonction qui fabrique les tableaux),
+entourer chaque tableau d'un `<div style="overflow-x:auto">`, puis régénérer les pages (le texte ne change pas).

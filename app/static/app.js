@@ -1103,7 +1103,7 @@ const __adjApp = createApp({
       const steps = [
         { k: "profil", done: profil, label: "Complétez votre profil entreprise", view: "company", cta: "Compléter" },
         { k: "criteres", done: criteres, label: "Définissez vos critères", view: "criteria", cta: "Définir" },
-        { k: "premier", done: premier, label: "Lancez votre première recherche d'appel d'offres", view: "sourcing", cta: "Rechercher" },
+        { k: "premier", done: premier, label: "Lancez votre première recherche de marchés", view: "sourcing", cta: "Rechercher" },
       ];
       return { steps, done: steps.filter(s => s.done).length, total: steps.length };
     },
@@ -2160,6 +2160,16 @@ const __adjApp = createApp({
       return "rien_a_lister";
     },
     grpDashHasAny() { const g = this.grpDash; return !!(g && (g.marches_accessibles_en_groupement || g.groupements_en_cours || g.deposes)); },
+    // Réorganisation, vague 1 (réunion des chantiers) : un seul découpage, celui de la page du marché. Les 5 étapes
+    // du groupement (serveur) se rangent sur sa barre : 1 → Décider, 2 à 4 → Préparer (ses tâches « à plusieurs »),
+    // 5 → Déposer. On ne montre que les étapes où se trouve au moins un marché (jamais un zéro).
+    grpDashEtape(n) { n = Number(n) || 1; return n >= 5 ? "Déposer" : (n <= 1 ? "Décider" : "Préparer"); },
+    grpDashEtapes() {
+      const g = this.grpDash; if (!g || !Array.isArray(g.par_etape)) return [];
+      const out = ["Décider", "Préparer", "Déposer"].map(label => ({ label, count: 0 }));
+      g.par_etape.forEach(e => { const i = ["Décider", "Préparer", "Déposer"].indexOf(this.grpDashEtape(e.n)); out[i].count += Number(e.count) || 0; });
+      return out.filter(e => e.count > 0);
+    },
     grpDashItems() {
       const g = this.grpDash; if (!g) return [];
       const parts = {}; ((this.consortiums && this.consortiums.consortiums) || []).forEach(c => { parts[c.project_id] = c; });
@@ -2167,12 +2177,14 @@ const __adjApp = createApp({
       const seen = new Set((g.en_cours || []).map(it => it.project_id)), out = [];   // TOUS les en cours, pas seulement les 5 listés
       (g.en_cours || []).slice(0, 5).forEach(it => {
         const cs = parts[it.project_id];
-        const bits = [it.label, cs && cs.partners ? cs.submitted + "/" + cs.partners + " " + this.pl(cs.partners, "part reçue", "parts reçues") : "", lim(it.deadline)].filter(Boolean);
-        out.push({ project_id: it.project_id, name: it.name || "Appel d'offres", meta: bits.join(" · "), badge: "Étape " + it.etape + " sur 5", pill: "neutral" });
+        // Décision 8 : « N sur M ». L'étape affichée est celle de la barre de la page du marché (grpDashEtapes).
+        const bits = [it.label, cs && cs.partners ? "parts reçues " + cs.submitted + " sur " + cs.partners : "", lim(it.deadline)].filter(Boolean);
+        const et = Number(it.etape) || 1;
+        out.push({ project_id: it.project_id, name: it.name || "Marché", meta: bits.join(" · "), badge: et >= 5 ? "Déposer" : (et <= 1 ? "Décider" : "Préparer"), pill: "neutral" });
       });
       (g.accessibles || []).filter(a => !seen.has(a.project_id)).slice(0, 3).forEach(a => {
-        out.push({ project_id: a.project_id, name: a.name || "Appel d'offres", meta: ["Repérer le marché", lim(a.deadline)].filter(Boolean).join(" · "),
-                   badge: a.groupement_score != null ? "Avec partenaires : " + a.groupement_score + " %" : "Bon potentiel en groupement", pill: "go_groupement" });
+        out.push({ project_id: a.project_id, name: a.name || "Marché", meta: ["À décider", lim(a.deadline)].filter(Boolean).join(" · "),
+                   badge: a.groupement_score != null ? "À plusieurs " + a.groupement_score + " %" : "Bon potentiel en groupement", pill: "go_groupement" });
       });
       return out;
     },
@@ -2626,9 +2638,9 @@ const __adjApp = createApp({
     openNotif(n) {
       this.notifsOpen = false;
       const p = this.projects.find(x => x.id === n.project_id);
-      if (p) this.openProject(p); else this.notify("Cet appel d'offres n'est plus accessible", "err");
+      if (p) this.openProject(p); else this.notify("Ce marché n'est plus accessible", "err");
     },
-    openProjectById(id) { const p = this.projects.find(x => x.id === id); if (p) this.openProject(p); else this.notify("Appel d'offres introuvable", "err"); },
+    openProjectById(id) { const p = this.projects.find(x => x.id === id); if (p) this.openProject(p); else this.notify("Marché introuvable", "err"); },
     inviteUrl(inv) { return window.location.origin + (inv.path || ("/invite/" + inv.token)); },
     inviteState(inv) {
       if (inv.revoked) return { label: "Révoqué", cls: "neutral" };
@@ -4247,7 +4259,7 @@ const __adjApp = createApp({
     },
     async aoDelete() {
       const id = this.ao.project.id;
-      try { await this.api("DELETE", "/api/projects/" + id); this.aoBack(); this.loadProjects(); this.notifyUndo("Appel d'offres mis à la corbeille", () => this.restoreProject(id)); }
+      try { await this.api("DELETE", "/api/projects/" + id); this.aoBack(); this.loadProjects(); this.notifyUndo("Marché mis à la corbeille", () => this.restoreProject(id)); }
       catch (e) { this.notify(e.message, "err"); }
     },
     async restoreProject(id) {
@@ -4261,7 +4273,7 @@ const __adjApp = createApp({
     async delProject(p) {
       const id = p.id;
       if (!confirm("Supprimer ce marché et toutes ses données (analyse, partenaires, documents) ?\nIl part à la corbeille — récupérable.")) return;
-      try { await this.api("DELETE", "/api/projects/" + id); this.drawer = null; this.loadProjects(); this.notifyUndo("Appel d'offres mis à la corbeille", () => this.restoreProject(id)); }
+      try { await this.api("DELETE", "/api/projects/" + id); this.drawer = null; this.loadProjects(); this.notifyUndo("Marché mis à la corbeille", () => this.restoreProject(id)); }
       catch (e) { this.notify(e.message, "err"); }
     },
     async exportDossier(p) {
@@ -4309,7 +4321,7 @@ const __adjApp = createApp({
           catch (err) { this.notify(file.name + " : " + err.message, "err"); }
         }
       } finally { this.uploading = false; }
-      if (ok) { this.loadDocuments(); this.notify(ok === files.length ? ok + " document(s) ajouté(s)" : ok + "/" + files.length + " ajouté(s)"); }
+      if (ok) { this.loadDocuments(); this.notify(ok === files.length ? ok + " document(s) ajouté(s)" : ok + " sur " + files.length + " ajouté(s)"); }
       else this.notify("Aucun document ajouté", "err");
     },
     async delDoc(d) { const id = d.id; try { await this.api("DELETE", "/api/documents/" + id); this.loadDocuments(); this.notifyUndo("Document mis à la corbeille", () => this.restoreDoc(id)); } catch (e) { this.notify(e.message, "err"); } },
@@ -4355,10 +4367,13 @@ const __adjApp = createApp({
       if (p.go_decision === "go_groupement" && p.groupement_score != null) return p.groupement_score;
       return p.match_score != null ? p.match_score : "—";
     },
+    // Décision 8 : le seul pourcentage est le couple « Seul X % · À plusieurs Y % » (comme l'en-tête du marché), posé
+    // après le dossier du marché (match_score n'existe qu'à partir d'un vrai dossier) ; avant, des mots.
     feedScoreTitle(p) {
-      if (p.go_decision === "go_groupement" && p.groupement_score != null)
-        return "Seul : " + (p.match_score != null ? p.match_score : "—") + "/100 · En groupement : " + p.groupement_score + "/100";
-      return p.match_score != null ? "Compatibilité " + p.match_score + "/100" : "Pas encore analysé";
+      const bits = [];
+      if (p.match_score != null) bits.push("Seul " + p.match_score + " %");
+      if (p.groupement_score != null) bits.push("À plusieurs " + p.groupement_score + " %");
+      return bits.length ? bits.join(" · ") : "Pas encore analysé";
     },
     feedRingStyle(p) {
       if (p.go_decision === "go_groupement" && p.groupement_score != null) {
@@ -4371,10 +4386,7 @@ const __adjApp = createApp({
     decColor(d) { return ({ go: "color:var(--go)", go_groupement: "color:var(--accent-text)", no_go: "color:var(--danger)", a_etudier: "color:var(--warning-text)" })[d] || "color:var(--muted)"; },
     // Kanban : un marché « bon potentiel en groupement » affiche son score de groupement (le score seul reste au survol).
     kanbanScore(p) { if (p.go_decision === "go_groupement" && p.groupement_score != null) return p.groupement_score; return p.match_score != null ? p.match_score : ""; },
-    kanbanScoreTitle(p) {
-      if (p.go_decision === "go_groupement" && p.groupement_score != null) return "Seul : " + (p.match_score != null ? p.match_score + "/100" : "—") + " · En groupement : " + p.groupement_score + "/100";
-      return p.match_score != null ? "Compatibilité " + p.match_score + "/100" : "";
-    },
+    kanbanScoreTitle(p) { return (p.match_score == null && p.groupement_score == null) ? "" : this.feedScoreTitle(p); },
     // Verdict SEUL d'un marché « bon potentiel en groupement » : celui que l'API a calculé (simulation)
     // sinon, à défaut, les seuils du profil (mêmes défauts que le serveur : 65 / 40). Jamais un chiffre inventé.
     aoSeulDecision() {
@@ -4898,7 +4910,7 @@ const __adjApp = createApp({
         const job = await this.api("POST", "/api/knowledge/questionnaire", { questions: qs });
         const r = await this.pollJob(job.id); this.kb.qResults = r;
         const errs = r.errors || 0;
-        let msg = r.covered + "/" + (r.count - errs) + " réponse(s) proposée(s), à relire";
+        let msg = r.covered + " sur " + (r.count - errs) + " réponse(s) proposée(s), à relire";
         if (errs) msg += " · " + errs + " non générée(s), réessayez";
         this.notify(msg);
       } catch (err) {
@@ -4923,7 +4935,7 @@ const __adjApp = createApp({
       const pid = this.src.projectId; if (!pid) return;
       await this.loadProjects();
       const p = this.projects.find(x => x.id === pid);
-      if (!p) { this.notify("Appel d'offres introuvable", "err"); return; }
+      if (!p) { this.notify("Marché introuvable", "err"); return; }
       this.openAo(p);   // ao.share est posé tout de suite (avant le premier appel réseau)
       if (inviter) this.aoInviter();   // le formulaire d'invitation, en tête de la page du marché
     },

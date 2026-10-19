@@ -259,6 +259,10 @@
     .brand-sub { display:none; }                            /* la pastille « Collectivités » céderait sa place aux CTA */
   }
   @media (prefers-reduced-motion:reduce) { .reveal,.pv,.pv-2,.float-chip,.eyebrow .dot { animation:none; opacity:1; transform:none; } }
+  /* Le halo du haut (.hero::after, 680 px, décalé à droite) élargissait la page d'un téléphone à 495 px. Sur
+     téléphone, il se place par rapport au bandeau (même hauteur : -160 px depuis le haut de la page, le bandeau
+     commence 71 px plus bas) et il est coupé au bord de l'écran. */
+  @media (max-width:760px) { .hero { position:relative; overflow-x:clip; } .hero::after { top:-231px; } }
 </style>
 </head>
 <body>
@@ -297,7 +301,7 @@
       </div>
       <div class="stats reveal d5">
         <div class="stat"><div class="n">Vous</div><div class="l">relisez et validez chaque pièce</div></div>
-        <div class="stat"><div class="n">100<span class="u">%</span></div><div class="l">sources officielles (SIRENE, DECP…)</div></div>
+        <div class="stat"><div class="n">100<span class="u">%</span></div><div class="l">sources officielles (registre Insee, DECP…)</div></div>
         <div class="stat"><div class="n">Gratuit</div><div class="l">pour commencer, sans carte bancaire</div></div>
       </div>
     </div>
@@ -339,7 +343,7 @@
 <div class="sources">
   <div class="wrap sources-in">
     <span class="sources-lbl">Adossé aux sources officielles :</span>
-    <span class="src"><i data-lucide="shield-check"></i>SIRENE</span>
+    <span class="src"><i data-lucide="shield-check"></i>Registre Insee</span>
     <span class="src"><i data-lucide="shield-check"></i>DECP</span>
     <span class="src"><i data-lucide="shield-check"></i>BODACC</span>
     <span class="src"><i data-lucide="shield-check"></i>Code de la commande publique</span>
@@ -407,7 +411,7 @@
       <div class="tcard">
         <div class="tc-row"><i data-lucide="link"></i><span>La source et le lien officiel sur chaque donnée</span><span class="meta">officiel</span></div>
         <div class="tc-row"><i data-lucide="calendar-check"></i><span>La date à laquelle l'info a été récupérée</span><span class="meta">horodaté</span></div>
-        <div class="tc-row"><i data-lucide="badge-check"></i><span>L'entreprise vérifiée au registre officiel</span><span class="meta">SIRENE</span></div>
+        <div class="tc-row"><i data-lucide="badge-check"></i><span>L'entreprise vérifiée au registre officiel</span><span class="meta">Insee</span></div>
         <div class="tc-row"><i data-lucide="alert-triangle"></i><span>Une alerte si une entreprise est en difficulté</span><span class="meta">BODACC</span></div>
         <div class="tc-row"><i data-lucide="scale"></i><span>Aucune entreprise n'est mise en avant : c'est vous qui décidez</span><span class="meta">neutralité</span></div>
       </div>
@@ -461,7 +465,7 @@
     <div class="faq">
       <details open>
         <summary>D'où viennent les informations, et sont-elles fiables ?<i data-lucide="chevron-down" class="chev"></i></summary>
-        <div class="ans">Adjugo ne s'appuie que sur des sources officielles : le registre des entreprises (SIRENE), les marchés déjà attribués (DECP), les annonces légales (BODACC). Chaque donnée porte sa source, sa date et un lien vers l'original. Quand une information manque, on écrit « inconnu ». On ne la remplace jamais par une estimation.</div>
+        <div class="ans">Adjugo ne s'appuie que sur des sources officielles : le registre des entreprises de l'Insee, les marchés déjà attribués (DECP), les annonces légales (BODACC). Chaque donnée porte sa source, sa date et un lien vers l'original. Quand une information manque, on écrit « inconnu ». On ne la remplace jamais par une estimation.</div>
       </details>
       <details>
         <summary>Est-ce que ça respecte le code de la commande publique ?<i data-lucide="chevron-down" class="chev"></i></summary>
@@ -508,7 +512,7 @@
         </div>
         <div class="foot-col">
           <h4>Sources</h4>
-          <a href="https://annuaire-entreprises.data.gouv.fr" target="_blank" rel="noopener">SIRENE</a>
+          <a href="https://annuaire-entreprises.data.gouv.fr" target="_blank" rel="noopener">Annuaire des entreprises</a>
           <a href="https://www.data.gouv.fr/fr/datasets/donnees-essentielles-de-la-commande-publique-fichiers-consolides/" target="_blank" rel="noopener">DECP</a>
           <a href="https://www.bodacc.fr" target="_blank" rel="noopener">BODACC</a>
           <a href="https://www.legifrance.gouv.fr/codes/texte_lc/LEGITEXT000037701019/" target="_blank" rel="noopener">Code de la commande publique</a>
