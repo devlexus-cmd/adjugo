@@ -1043,6 +1043,18 @@ const __adjApp = createApp({
     // déjà ouverte. Sinon, un utilisateur connecté qui clique le lic reçu par email atterrissait
     // dans l'app sans jamais voir le formulaire « Nouveau mot de passe » (le clic semblait inerte).
     if (_rst) { this.auth.mode = "reset"; this.auth.resetToken = _rst; this.token = ""; }
+    // Réorganisation, vague 1 (1.2) : les boutons d'essai de la vitrine et de l'espace partenaire mènent à
+    // /app?inscription → « Créons votre compte » directement (pas l'écran de connexion). Déjà connecté : rien ne
+    // change. Le paramètre est retiré de l'adresse, les autres (?shared=, ?verify=…) restent tels quels.
+    try {
+      const _q = new URLSearchParams(location.search);
+      if (_q.has("inscription")) {
+        if (!this.token && !_rst) this.auth.mode = "register";
+        _q.delete("inscription");
+        const _reste = _q.toString();
+        history.replaceState({}, "", location.pathname + (_reste ? "?" + _reste : "") + location.hash);
+      }
+    } catch (e) {}
     // Confirmation d'email : le lien reçu par mail ouvre /app?verify=… → on confirme et on retire le param.
     const _vrf = new URLSearchParams(location.search).get("verify");
     if (_vrf) {
