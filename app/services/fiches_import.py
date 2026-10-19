@@ -255,13 +255,9 @@ def _personne_en_tete(lignes: list, i: int) -> bool:
     """La ligne `i` n'est qu'un nom de PERSONNE (pas d'une entreprise) : prénom courant (« Yann TANGUY »,
     « TANGUY Yann »), ou nom suivi de sa fonction sur la ligne d'après (« Anne Le Floch » / « Cheffe de chantier »)."""
     global _FONCTION_EN_TETE
-    t = re.sub(r"^[#*\-•\s]+", "", (lignes[i] or "").strip()).strip(" :")
-    if not t or not _ligne_nom(t) or len(t) > 60:
+    if not _nom_seul(lignes[i]):
         return False
-    mots = [w for w in re.split(r"[\s\-’']+", _fold(t)) if w]
-    if any(w in _MOTS_ORGANISME for w in mots):
-        return False
-    toks = t.split()
+    toks = re.sub(r"^[#*\-•\s]+", "", (lignes[i] or "").strip()).strip(" :").split()
     if _prenom(toks[0]) or (toks[0].isupper() and _prenom(toks[-1])):
         return True
     if _FONCTION_EN_TETE is None:
@@ -270,31 +266,83 @@ def _personne_en_tete(lignes: list, i: int) -> bool:
     return bool(_FONCTION_EN_TETE.match(suite))
 
 
+def _nom_seul(ligne: str) -> bool:
+    """Une ligne qui n'est qu'un nom propre (« Gwenhaël KERJEAN »), jamais celui d'un organisme (« Breizh
+    Couverture ») : peut-être une personne, peut-être une entreprise au nom sans mot d'organisme."""
+    t = re.sub(r"^[#*\-•\s]+", "", (ligne or "").strip()).strip(" :")
+    if not t or not _ligne_nom(t) or len(t) > 60:
+        return False
+    mots = [w for w in re.split(r"[\s\-’']+", _fold(t)) if w]
+    return not any(w in _MOTS_ORGANISME for w in mots)
+
+
+# Un titre numéroté ou une annexe (« 2. Moyens matériels », « Annexe 3 ») : une autre partie du document commence.
+# Jamais une année (« 2015 - 2024 : conducteur de travaux »).
+_TITRE_NUMEROTE = re.compile(r"^(?:[#*\-•]+\s*)?(?:\d{1,2}(?:\.\d{1,2})*[.)]\s*[A-Za-zÀ-ÿ]|\d{1,2}(?:\.\d{1,2})+\s+"
+                             r"[A-Za-zÀ-ÿ]|(?:annexe|chapitre|partie|article)\b)", re.IGNORECASE)
+
+
+def _autre_partie(ligne: str) -> bool:
+    """« 2. Moyens matériels », « 3.1 Organisation », « Annexe 3 » : jamais une année, un téléphone ni « 15 ans »."""
+    t = (ligne or "").strip()
+    return _titre(t) and bool(_TITRE_NUMEROTE.match(t))
+
+
+# Une ligne de parcours : une période (« 2015 - 2024 », « 2018-2024 », « 06/2015 – 09/2020 », « 2019 à ce jour »).
+_PERIODE = re.compile(r"^\s*(?:[#*\-•]+\s*)?(?:de\s+|du\s+)?(?:\d{1,2}/)?(?:19|20)\d\d\s*(?:-|–|—|à|a|au)\s*"
+                      r"(?:(?:\d{1,2}/)?(?:19|20)\d\d|aujourd|ce jour|present|actuel|maintenant)", re.IGNORECASE)
+_COORDONNEES = re.compile(r"(?<!\d)0[1-9](?:[ .]?\d{2}){4}(?!\d)|[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", re.IGNORECASE)
+
+
 def _cv_sans_titre(lignes: list) -> set:
-    """Les lignes d'un CV écrit SANS le mot « CV » : un nom de personne seul sur sa ligne, suivi (à moins de
-    _CV_TETE_MAX lignes) de rubriques de CV écrites seules sur leur ligne, d'au moins deux sortes (expérience ou
-    parcours, formation, compétences, langues, loisirs, atouts…). Du nom jusqu'au bloc qui suit la dernière rubrique
-    (premier saut de ligne, titre d'une autre partie ou autre nom ; au plus _CV_FIN_MAX lignes)."""
+    """Les lignes d'un CV écrit SANS le mot « CV » : un nom seul sur sa ligne, suivi (à moins de _CV_TETE_MAX
+    lignes) de rubriques de CV écrites seules sur leur ligne (expérience ou parcours, formation, compétences,
+    langues, loisirs, atouts…), chacune à moins de _CV_FIN_MAX lignes de la précédente, jamais au-delà d'un titre
+    numéroté ou d'une annexe :
+      • nom d'une PERSONNE (prénom courant, ou nom suivi de sa fonction) : deux sortes de rubriques suffisent ;
+      • autre nom propre (prénom rare : « Gwenhaël KERJEAN ») : trois sortes, ou deux avec des coordonnées sous le
+        nom (téléphone, adresse email) et une ligne de parcours (« 2015 - 2024 … »), et jamais « nous », « notre »,
+        « nos » — une plaquette (« Breizh Désamiantage », « Compétences », « Formations ») n'est pas un CV.
+    Du nom jusqu'au bloc qui suit la dernière rubrique (premier saut de ligne, titre d'une autre partie ou autre
+    nom ; au plus _CV_FIN_MAX lignes)."""
     out = set()
     n, i = len(lignes), 0
     while i < n:
-        if not (lignes[i] or "").strip() or not _personne_en_tete(lignes, i):
+        if not (lignes[i] or "").strip() or not _nom_seul(lignes[i]):
             i += 1
             continue
-        rubs, sortes, non_vides, premiere = [], set(), 0, False
+        personne = _personne_en_tete(lignes, i)
+        rubs, sortes, non_vides, depuis = [], set(), 0, 0
+        coord, periode = False, False
         for j in range(i + 1, min(n, i + 1 + _SECTION_CV_MAX)):
             tj = (lignes[j] or "").strip()
             if not tj:
                 continue
             non_vides += 1
+            depuis += 1
             k = _rubrique_seule(tj)
             if k:
-                premiere = premiere or (not rubs and non_vides <= _CV_TETE_MAX)
+                if not rubs and non_vides > _CV_TETE_MAX:
+                    break
                 rubs.append(j)
                 sortes.add(k)
-            elif rubs and _personne_en_tete(lignes, j):
+                depuis = 0
+                continue
+            if (not rubs and non_vides > _CV_TETE_MAX) or depuis > _CV_FIN_MAX or _autre_partie(tj):
+                break
+            if rubs and _personne_en_tete(lignes, j):
                 break                               # le CV d'une autre personne commence
-        if not (premiere and len(sortes) >= 2):
+            if not rubs and _COORDONNEES.search(tj):
+                coord = True
+            if rubs and _PERIODE.match(tj):
+                periode = True
+        if not rubs or not (len(sortes) >= (2 if personne else 3) or (len(sortes) >= 2 and coord and periode)):
+            i += 1
+            continue
+        # Un nom propre qui n'est pas sûrement une personne, et des rubriques écrites à la première personne du
+        # pluriel (« Nos équipes sont formées… ») : la plaquette d'une entreprise, pas un CV.
+        if not personne and any(_VOIX_ENTREPRISE.search(_fold(lignes[x] or "")) for x in range(i, rubs[-1] + 4)
+                                if x < n):
             i += 1
             continue
         j, contenu = rubs[-1] + 1, False
@@ -304,7 +352,7 @@ def _cv_sans_titre(lignes: list) -> set:
                 if contenu:
                     break
             elif _personne_en_tete(lignes, j) or (_titre(tj) and not re.match(r"^\d", tj) and _fin_de_section(tj)
-                                                   and not _rubrique_seule(tj)):
+                                                   and not _rubrique_seule(tj)) or _autre_partie(tj):
                 break
             else:
                 contenu = True
@@ -760,13 +808,15 @@ def _noms_par_prenom(t: str) -> list:
     out = []
     # Chaque mot à majuscule qui est un prénom courant ouvre un « Prénom Nom » possible (même au milieu d'une suite de
     # mots à majuscule : « Contact Sophie Bernard »).
-    for w in re.finditer(r"(?<![\w’'\-])[A-ZÀ-Ý][a-zà-öø-ÿ]+(?:-[A-ZÀ-Ý][a-zà-öø-ÿ]+)?", t):
-        if not _prenom(w.group(0)):
+    # Un article ou une préposition élidés peuvent le précéder (« l'aide d'Anne Le Floch »).
+    for w in re.finditer(r"(?<![\w’'\-])(?:[dDlL]['’])?([A-ZÀ-Ý][a-zà-öø-ÿ]+(?:-[A-ZÀ-Ý][a-zà-öø-ÿ]+)?)", t):
+        if not _prenom(w.group(1)):
             continue
-        m = _PRENOM_NOM_DEBUT.match(t, w.start())
+        m = _PRENOM_NOM_DEBUT.match(t, w.start(1))
         if m is None:
             continue
-        avant = re.findall(r"[\w’'\-]+", t[max(0, w.start() - 40):w.start()])
+        # Le mot juste avant, sans son article élidé (« l'école Jules Ferry », « l'espace Pierre Loti »).
+        avant = re.findall(r"[\w\-]+", t[max(0, w.start() - 40):w.start()])
         if avant and _fold(avant[-1]) in _AVANT_UN_LIEU:
             continue
         out.append(m.group(0))

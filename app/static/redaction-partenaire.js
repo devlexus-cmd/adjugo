@@ -874,9 +874,10 @@
       direDocs("Adjugo lit votre document, sans IA. Un document scanné peut demander une minute.", false);
       const r = await avecIdentite(() => call("POST", "/documents", null, false, fd), null, "Pour déposer un document");
       if (!r.ok) {
-        // Les conditions ont changé pendant que la page était ouverte : les deux cases apparaissent, à cocher.
+        // Les conditions ont changé pendant que la page était ouverte : les deux cases apparaissent, à cocher (la
+        // carte est redessinée : le document est à choisir de nouveau).
         const dc = r.code === "conditions_a_accepter" && r.data && r.data.detail && r.data.detail.conditions;
-        if (dc && st.docs) { st.docs = Object.assign({}, st.docs, { conditions: dc }); st.msgDocs = { txt: r.message, err: true }; render(); return; }
+        if (dc && st.docs) { st.docs = Object.assign({}, st.docs, { conditions: dc }); st.msgDocs = { txt: "Cochez les deux cases, choisissez de nouveau votre document, puis déposez-le.", err: true }; render(); return; }
         direDocs(r.message, true); return;
       }
       const dep = (r.data && r.data.depose) || {};

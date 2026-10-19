@@ -64,10 +64,12 @@ def _partout(*secrets) -> list:
     return sorted(out)
 
 
-def _fichiers(invite_id) -> list:
+def _fichiers(invite_id) -> set:
+    """Les fichiers rangés pour cette invitation. Le dossier `uploads/` est partagé entre les suites lancées depuis le
+    même dossier (une base neuve reprend les mêmes numéros d'invitation) : on compare avant / après, jamais à vide."""
     from app.services.storage import UPLOAD_DIR
     d = os.path.join(UPLOAD_DIR, "invitations", str(invite_id), "depots")
-    return sorted(os.listdir(d)) if os.path.isdir(d) else []
+    return set(os.listdir(d)) if os.path.isdir(d) else set()
 
 
 def _attendre_tache(jid):
@@ -111,7 +113,9 @@ def test_purge_6_mois_efface_aussi_ce_que_les_brouillons_ont_recopie(client, aut
     sid = _part_a(vue)["section_id"]
     _sans_expiration(a["id"])                      # lien sans expiration : seule la règle des 6 mois joue
     pa = P(client, a["token"])
+    deja = _fichiers(a["id"])
     _deposer_ok(pa, nom, _memoire(secret))
+    assert _fichiers(a["id"]) - deja               # contrôle : le fichier est rangé
     assert _aide(pa, sid)[0]["status"] == "done"
     avant = json.dumps(_brouillons(a["id"]), ensure_ascii=False)
     assert nom in avant and secret in avant        # contrôle : le brouillon cite bien le document et son passage
@@ -125,7 +129,7 @@ def test_purge_6_mois_efface_aussi_ce_que_les_brouillons_ont_recopie(client, aut
     finally:
         db.close()
     assert res["documents_partenaires_effaces"] >= 1
-    assert _partout(secret) == [] and _fichiers(a["id"]) == []
+    assert _partout(secret) == [] and _fichiers(a["id"]) == deja
     bro = _brouillons(a["id"])
     assert bro and nom not in json.dumps(bro, ensure_ascii=False)
     faits = [f for x in bro for f in (x["faits"] or []) if str(f.get("fait", "")).startswith("6")]
@@ -143,13 +147,14 @@ def test_reinitialisation_et_retrait_ne_laissent_rien_non_plus(client, auth, fak
         fake_llm(_reponse_partenaire(TEXTE_IA)[0])
         sid = _part_a(vue)["section_id"]
         pa = P(client, a["token"])
+        deja = _fichiers(a["id"])
         _deposer_ok(pa, f"Memoire-{secret}.txt", _memoire(secret))
-        assert _aide(pa, sid)[0]["status"] == "done" and _partout(secret)
+        assert _aide(pa, sid)[0]["status"] == "done" and _partout(secret) and _fichiers(a["id"]) - deja
         if mode == "reinit":
             assert client.post(f"/api/invite/{a['token']}/redaction/espace", json={"reinitialiser": True}).status_code == 200
         else:
             assert client.delete(f"/api/projects/{pid}/invites/{a['id']}", headers=auth["headers"]).status_code == 200
-        assert _partout(secret) == [] and _fichiers(a["id"]) == [], mode
+        assert _partout(secret) == [] and _fichiers(a["id"]) == deja, mode
 
 
 # ═══ 2. Courses ═══════════════════════════════════════════════════════════════════════
@@ -275,6 +280,7 @@ def test_reinitialisation_pendant_un_depot_ne_garde_rien(client, auth, monkeypat
                 db.close()
         return out
     monkeypatch.setattr(dl, "lire", lente)
+    deja = _fichiers(a["id"])
     r = _deposer(pa, nom, _memoire(secret))
     assert chef.get("cle")
     assert r.status_code == 409 and r.json()["detail"]["code"] == "espace_reinitialise", r.text
@@ -286,7 +292,7 @@ def test_reinitialisation_pendant_un_depot_ne_garde_rien(client, auth, monkeypat
         assert db.query(DepotLienMorceau).filter(DepotLienMorceau.invite_id == a["id"]).count() == 0
     finally:
         db.close()
-    assert _fichiers(a["id"]) == [] and _partout(secret) == []
+    assert _fichiers(a["id"]) == deja and _partout(secret) == []
     hc = {ag.ENTETE_CLE: chef["cle"]}
     lst = client.get(f"/api/invite/{a['token']}/redaction/documents", headers=hc).json()
     assert lst["documents"] == [] and lst["conditions"]["a_accepter"] is True
@@ -487,6 +493,51 @@ def test_reperage_du_cv_sans_titre_fonctions_pures():
     assert not fi.est_cv(dl._Doc("x.txt", "Armor Dépollution\n\nCompétences\nDésamiantage.\n\nFormations\nSS3.\n"))
 
 
+# Reprise de la contre-relecture : un prénom rare en tête (sans fonction dessous), une plaquette à trois rubriques
+# écrite à la première personne, et un mémoire dont les rubriques sont loin les unes des autres.
+CV_PRENOM_RARE = ["Gwenhaël KERJEAN", "06.12.34.56.78 - g.kerjean@mail.fr", "EXPÉRIENCE",
+                  "2015 - 2024 : Conducteur de travaux, Armor Dépollution", "Gestion des déchets du chantier amiantés.",
+                  "FORMATION", "2012 : BTS Travaux publics"]
+
+
+def test_cv_au_prenom_rare_refuse_en_pdf_et_word(client, auth, fake_llm):
+    pid, st, a, b, vue = _groupement(client, auth, avec_b=False)
+    fake = fake_llm(_reponse_partenaire(TEXTE_IA)[0])
+    pa = P(client, a["token"])
+    for nom, contenu in (("document_2.pdf", _pdf(CV_PRENOM_RARE)), ("document_2.docx", _docx(CV_PRENOM_RARE))):
+        r = _deposer(pa, nom, contenu)
+        assert r.status_code == 422 and r.json()["detail"]["code"] == "document_cv", (nom, r.text)
+    assert fake.calls == []
+
+
+def test_cv_sans_titre_jamais_une_plaquette_ni_tout_un_memoire():
+    # Un prénom rare en tête : trois rubriques, ou deux avec coordonnées et une ligne de parcours.
+    assert fi.est_cv(dl._Doc("x.txt", "\n".join(CV_PRENOM_RARE)))
+    assert fi.est_cv(dl._Doc("x.txt", "Gwenhaël KERJEAN\n\nExpérience\nConducteur chez Armor Dépollution\n\n"
+                                      "Formation\nBTS\n\nCompétences\nSS3\n"))
+    # Une plaquette au nom sans mot d'organisme, trois rubriques, à la première personne : pas un CV.
+    plaquette = ("Breizh Désamiantage\n\nExpérience\nDepuis 2009, nous désamiantons des bâtiments publics.\n\n"
+                 "Formation\nNos opérateurs sont formés chaque année.\n\nCompétences\nSS3 et SS4.\n")
+    assert not fi.est_cv(dl._Doc("x.txt", plaquette)) and not fi.lignes_privees(plaquette)["cv"]
+    # Un mémoire : la présentation d'une personne (une seule rubrique) puis, bien plus loin, une rubrique
+    # « Formation » : rien du mémoire n'est retiré entre les deux.
+    corps = "\n".join(f"Ligne {k} : nous protégeons le chantier et trions les déchets." for k in range(30))
+    memoire = (f"Pierre Martin\nGérant\n\nExpérience\n20 ans de couverture.\n\n{corps}\n\nFormation\n"
+               "Nos compagnons suivent une formation SS3.\n")
+    lignes = memoire.split("\n")
+    assert not [lignes[i] for i in fi.lignes_privees(memoire)["cv"] if lignes[i].startswith("Ligne")]
+    # Un titre numéroté met fin à la recherche des rubriques (« 2. Moyens matériels »).
+    memoire2 = ("Yann Tanguy\nConducteur de travaux\n\nExpérience\n15 ans.\n\n2. Moyens matériels\nNacelle "
+                "articulée.\n\nFormation\nSS3.\n")
+    assert "Nacelle articulée." not in [memoire2.split("\n")[i] for i in fi.lignes_privees(memoire2)["cv"]]
+
+
+def test_reperage_des_noms_derriere_un_lieu_elide():
+    # « l'espace Pierre Loti », « l'école Anne Frank » : des lieux, pas des personnes (article élidé compris).
+    assert fi.noms_probables("Rénovation de l'espace Pierre Loti et de l'école Anne Frank.", etendu=True) == []
+    assert fi.noms_probables("Avec l'aide d'Anne Le Floch, nous trions.", etendu=True) == ["Anne Le Floch"]
+
+
 # ═══ 6. Écran : réinitialiser, durée de conservation, nouvelles conditions ═══════════════
 
 def test_reinitialiser_dit_que_les_documents_deposes_partent():
@@ -524,11 +575,13 @@ def test_duree_de_conservation_dit_l_expiration_du_lien(client, auth):
         assert db.query(DepotLienDocument).filter(DepotLienDocument.invite_id == a["id"]).count() == 0
     finally:
         db.close()
-    # Lien sans expiration : la phrase n'en parle pas.
+    assert "à la première de ces deux dates" in txt and "réinitialisé" in txt
+    # Lien sans expiration : la phrase n'en parle pas (une seule règle, pas « la première de ces dates »).
     pid2, st2, c, d, vue2 = _groupement(client, auth, avec_b=False)
     _sans_expiration(c["id"])
     pc = P(client, c["token"])
-    assert "expiration" not in pc.get("/documents").json()["conservation"]
+    txt2 = pc.get("/documents").json()["conservation"]
+    assert "expiration" not in txt2 and "première" not in txt2 and "6 mois après le résultat du marché" in txt2
 
 
 def test_nouvelles_conditions_page_ouverte_font_apparaitre_les_cases(client, auth, monkeypatch):
@@ -550,3 +603,4 @@ def test_nouvelles_conditions_page_ouverte_font_apparaitre_les_cases(client, aut
     corps = js[i:js.index("async function telechargerDoc")]
     assert 'r.code === "conditions_a_accepter"' in corps and "r.data.detail.conditions" in corps
     assert "conditions: dc" in corps and "render();" in corps
+    assert "choisissez de nouveau votre document" in corps    # la carte est redessinée : le fichier est à rechoisir

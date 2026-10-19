@@ -1122,6 +1122,9 @@ l'aide s'appuie aussi sur « Vos documents pour Adjugo ».
 - Un document qui ressemble à un CV (nom, titre, contenu : `fiches_import.est_cv`) **n'est pas gardé** (422
   `document_cv`) : Adjugo ne l'enverrait jamais à l'IA. Dans un autre document, les lignes de CV (`lignes_privees`) sont
   vidées AVANT le découpage, et tout passage qui ressemble encore à un CV est écarté (au découpage puis à la recherche).
+  Un CV écrit sans le mot « CV » est reconnu à sa forme (`_cv_sans_titre`, § 21.14) : un nom seul sur sa ligne, puis des
+  rubriques de CV écrites seules sur leur ligne (« EXPÉRIENCE », « FORMATION », « COMPÉTENCES », « Parcours »,
+  « Atouts »…), proches les unes des autres.
 - Une pièce du dossier d'un acheteur (règlement, CCAP, CCTP : `est_piece_acheteur`) n'est pas gardée (422
   `piece_acheteur`) : elle ne dit rien de l'entreprise.
 
@@ -1221,7 +1224,8 @@ pleine largeur (règles `.rp-acts` existantes).
   souvent avant les 6 mois après le résultat (le partenaire n'y a plus accès de toute façon). L'écran le dit, avec la
   date d'expiration du lien (`depot_lien.conservation`).
 - Le repérage des noms et des CV est sans IA : un nom écrit d'une façon inhabituelle (prénom rare, initiale) ou un CV
-  sans nom en tête ni rubriques peut lui échapper. L'écran ne promet pas plus (§ 21.6).
+  sans nom en tête ni rubriques écrites seules sur leur ligne peut lui échapper (un prénom rare sous lequel ne viennent
+  que deux rubriques, sans coordonnées ni ligne de parcours, aussi). L'écran ne promet pas plus (§ 21.6).
 - Reconnaissance de caractères locale : un scan de mauvaise qualité peut être mal lu, ou refusé (« aucun texte lisible ») ;
   seules les premières pages d'un long scan sont lues (« Lu en partie »).
 - Le repérage d'un CV ou d'une pièce de l'acheteur est celui de la vague 3 (sans IA) : un mémoire fait surtout de CV peut
@@ -1294,25 +1298,30 @@ pleine largeur (règles `.rp-acts` existantes).
 ### 21.14 Contre-relecture du dépôt par lien
 
 Douze remarques des relectures (cloisonnement et RGPD, IA et coûts, exactitude de l'écran), chacune reproduite sur
-`1a9f2f4` puis corrigée avec un test qui échouait avant (`tests/test_redaction_v4_depot_lien_relecture.py`, 17 tests,
-15 en échec sur `1a9f2f4` ; les deux autres verrouillent ce qui était déjà juste : réinitialisation et retrait sans
-reste, espace rouvert avec le code pendant l'aide).
+`1a9f2f4` puis corrigée avec un test qui échouait avant (`tests/test_redaction_v4_depot_lien_relecture.py`). Le premier
+correcteur a été coupé par une limite d'utilisation (son travail en cours : `7459fed`) ; la reprise a relu ce travail,
+l'a gardé, l'a rejoué (15 tests sur 17 en échec sur `1a9f2f4`, tous verts ensuite ; les deux autres verrouillent ce qui
+était déjà juste : réinitialisation et retrait sans reste, espace rouvert avec le code pendant l'aide) et l'a complété
+(3 tests de plus et 2 tests renforcés, en échec sur `7459fed` : CV au prénom rare, plaquette et mémoire jamais pris pour
+un CV, lieu derrière un article élidé, phrase de conservation, message des nouvelles conditions). 20 tests en tout.
 
 **Constats et corrections**
 
-1. *La purge laissait dans les brouillons le nom réel et le passage exact* (lien sans expiration ou valable longtemps :
-   aucune autre règle n'efface les brouillons d'une invitation active). `effacer_invitation` — appelé par la purge, le
-   retrait, le déclin et la réinitialisation — appelle désormais `oublier_documents` (tous les documents de
-   l'invitation) : sources retirées, faits reliés « à relire ». Test : purge à 6 mois du résultat, aucun reste dans
-   aucune table ni dans le stockage.
+1. *La purge laissait dans les brouillons le nom réel et le passage exact* (deux remarques, cloisonnement et IA : lien
+   sans expiration ou valable longtemps, aucune autre règle n'efface les brouillons d'une invitation active ; le fait
+   restait « trouvé dans vos documents » sans document). `effacer_invitation` — appelé par la purge, le retrait, le
+   déclin et la réinitialisation — appelle désormais `oublier_documents` (tous les documents de l'invitation) : nom et
+   passage retirés des sources, faits reliés « à relire ». Test : purge à 6 mois du résultat, aucun reste dans aucune
+   table ni dans le stockage, le fait repassé « à relire » à l'écran.
 2. *Réinitialisation pendant l'aide de l'IA* : la tâche rangeait son brouillon (nom et passages des documents que la
    réinitialisation venait d'effacer « sans être lus ») dans le nouvel espace. La réinitialisation marque, sous le
    verrou de l'invitation, les tâches en cours de l'invitation (`ESPACE_REINITIALISE` dans leur résultat interne,
-   jamais montré) ; la tâche relit la sienne sous le même verrou avant de ranger : marquée, elle ne range rien (« Votre
-   espace privé a été réinitialisé pendant la rédaction : le texte n'a pas été gardé. », partie libérée). Comme une
-   partie retirée pendant l'aide, l'appel à l'IA a eu lieu : il reste décompté. Marquée avant de démarrer, elle
-   n'appelle pas l'IA : aide rendue, rien débité. Rouvrir l'espace avec le code reçu par email (brouillons gardés, même
-   partenaire) ne marque rien : le brouillon est rangé et se lit avec la nouvelle clé.
+   jamais montré : les clés « _… » ne sortent pas) ; la tâche relit la sienne sous le même verrou avant de ranger :
+   marquée, elle ne range rien (« Votre espace privé a été réinitialisé pendant la rédaction : le texte n'a pas été
+   gardé. », partie libérée). Marquée avant de démarrer, elle n'appelle pas l'IA : aide rendue, rien débité. Rouvrir
+   l'espace avec le code reçu par email (brouillons gardés, même partenaire) ne marque rien : le brouillon est rangé et
+   se lit avec la nouvelle clé. (Garder l'empreinte de l'espace dans la tâche, autre voie proposée, aurait aussi arrêté
+   ce cas légitime.)
 3. *Réinitialisation pendant la lecture d'un dépôt* : le document était rangé et lisible avec la nouvelle clé, sans
    accord. Après la lecture, sous le verrou de l'invitation relue, la clé présentée (gardée dans `Acces.cle`) doit encore
    ouvrir l'espace, le dépôt être permis et l'accord être enregistré et à jour ; sinon 409 `espace_reinitialise`, ni
@@ -1322,34 +1331,42 @@ reste, espace rouvert avec le code pendant l'aide).
    autres ne bougent pas, `fiches_depot_par_lien` numérote par la place) ; `sources_reelles` n'en fait aucune source.
 5. *Ordre des écritures* : déposer, supprimer, réinitialiser, retirer, effacer et ranger le brouillon d'une aide prennent
    d'abord le verrou de l'invitation (`depot_lien.verrouiller_invitation`, une ligne) : sur Postgres, l'un passe après
-   l'autre et voit son effet (pas d'interblocage : chacun le prend en premier).
+   l'autre et voit son effet (pas d'interblocage : chacun le prend en premier, aucun ne le demande en tenant déjà le
+   verrou d'une partie ou d'une répartition).
 6. *Journal du marché* : le rang (« 2 sur 10 ») et la taille ne sont plus écrits ; reste « Document déposé dans l'espace
-   privé du partenaire, lu sans IA ».
+   privé du partenaire, lu sans IA ». Le reste de la remarque est un choix laissé à Eliot (ci-dessous).
 7. *Noms des personnes envoyés à l'IA par le lien* (« Notre gérant Pierre Martin », « assuré par Gwenola Riou et Loïc
-   Cadiou », « Jean-Marc Riou pilote… ») : repérage élargi (§ 21.6), et un mot d'ouverture pris avec le nom (« Avec Thomas
-   Le Bihan ») n'est plus masqué avec lui. Le texte qui n'est pas un nom part toujours (vérifié dans le test).
+   Cadiou », « Fondée en 2009 par… », « Jean-Marc Riou pilote… ») : repérage élargi (§ 21.6), un mot d'ouverture pris
+   avec le nom (« Avec Thomas Le Bihan ») n'est plus masqué avec lui, et (reprise) un article élidé devant un lieu
+   (« l'espace Pierre Loti », « l'école Anne Frank ») le laisse lu comme un lieu, devant une personne (« l'aide d'Anne
+   Le Floch ») la laisse masquée. Le texte qui n'est pas un nom part toujours (vérifié dans le test).
 8. *L'écran promettait un masquage complet* (bulle, `MSG_USAGE`, brouillon juridique) : il dit maintenant « Avant l'IA,
    il masque les noms de personnes qu'il repère et écarte ce qui ressemble à un CV : retirez de vos documents les noms
    que vous ne voulez pas transmettre. » ; le brouillon juridique est nuancé de même (et signale que la phrase publiée du
    § 6 de la politique est aussi trop absolue pour les Clients).
 9. *Un CV classique sans le mot « CV » était gardé et envoyé* : `fiches_import._cv_sans_titre` (dans `lignes_privees`,
-   donc aussi pour le savoir-faire d'un compte) reconnaît un nom de PERSONNE seul sur sa ligne (prénom courant, ou nom
-   suivi de sa fonction) suivi, à moins de 8 lignes, de rubriques de CV écrites seules sur leur ligne d'au moins deux
-   sortes (expérience ou parcours, formation, compétences, langues, loisirs, atouts…). Un document fait surtout de cela
-   est refusé (422 `document_cv`, PDF, Word ou texte, nom de fichier neutre) ; inséré dans un mémoire, il en est retiré.
-   Une plaquette (« Breizh Désamiantage », puis « Compétences », « Formations ») n'est pas prise pour un CV.
+   donc aussi pour le savoir-faire d'un compte) reconnaît un nom seul sur sa ligne suivi, à moins de 8 lignes, de
+   rubriques de CV écrites seules sur leur ligne, chacune à moins de 15 lignes de la précédente, jamais au-delà d'un
+   titre numéroté (« 2. Moyens matériels ») : nom d'une PERSONNE (prénom courant, ou nom suivi de sa fonction) avec deux
+   sortes de rubriques ; autre nom propre (prénom rare : « Gwenhaël KERJEAN », reprise) avec trois sortes, ou deux plus
+   des coordonnées sous le nom et une ligne de parcours (« 2015 - 2024 … »), et jamais à la première personne du pluriel.
+   Un document fait surtout de cela est refusé (422 `document_cv`, PDF, Word ou texte, nom de fichier neutre) ; inséré
+   dans un mémoire, il en est retiré. Ni une plaquette (« Breizh Désamiantage », « Compétences », « Formations » ; ou
+   trois rubriques écrites avec « nous », « nos »), ni le corps d'un mémoire entre deux rubriques éloignées ne sont
+   retirés (reprise : la première version allait jusqu'à 80 lignes plus loin chercher la seconde rubrique).
 10. *Réinitialiser ne disait pas que les documents partent* : la fenêtre de confirmation, le paragraphe de l'espace,
     `MSG_ESPACE_OUVERT` et `MSG_RATTACHER_ESPACE` le disent (et la fenêtre dit que l'accord part aussi).
 11. *Durée de conservation incomplète* : `conservation(inv, mois)` dit les règles de la purge, l'expiration du lien
-    comprise, avec sa date (« … à la première de ces dates : 30 jours après l'expiration de ce lien (il expire le 18
-    novembre 2026), 6 mois après le résultat du marché (à défaut, après sa date limite ou, sans date limite, après
-    votre dernier dépôt). »).
+    comprise, avec sa date : « Ils sont effacés dès que vous les supprimez, si votre espace privé est réinitialisé, si
+    vous quittez le groupement ou en êtes retiré ; sinon automatiquement à la première de ces deux dates : 30 jours après
+    l'expiration de ce lien (il expire le 18 novembre 2026), ou 6 mois après le résultat du marché (à défaut, après sa
+    date limite ou, sans date limite, après votre dernier dépôt). » ; sans expiration, seulement la seconde règle.
 12. *Nouvelles conditions publiées page ouverte* : le 409 `conditions_a_accepter` porte déjà `conditions` ; l'écran les
-    recopie et redessine la carte : les deux cases apparaissent.
+    recopie et redessine la carte : les deux cases apparaissent, avec « Cochez les deux cases, choisissez de nouveau
+    votre document, puis déposez-le. » (la carte redessinée a perdu le fichier choisi).
 
-**Rien de rejeté** : les douze remarques étaient fondées. La reproduction « suppression par le partenaire : rien ne
-reste » d'une relecture était déjà juste (vérifié de nouveau ; son échec apparent venait de fichiers d'une autre suite de
-tests restés dans le dossier `uploads/` partagé).
+**Rien de rejeté** : les douze remarques étaient fondées (deux décrivent le même reste de la purge). Ce qu'une relecture
+donnait déjà pour juste l'est toujours : la suppression d'un document par le partenaire ne laisse rien.
 
 **À dire à Eliot (choix faits)**
 
@@ -1357,9 +1374,33 @@ tests restés dans le dossier `uploads/` partagé).
   conditions ont été acceptées (heure, adresse IP, comme pour toute action du partenaire), sans nom, rang, taille ni
   contenu. Réserver ces entrées au seul partenaire, ou les regrouper sans heure, est un choix produit (le journal chaîné
   est la trace commune du groupement) : à trancher.
-- *Aide perdue par une réinitialisation* : non remboursée (l'IA a travaillé), comme une partie retirée pendant l'aide.
+- *Aide perdue par une réinitialisation* : non remboursée et non rendue (l'IA a travaillé), comme une partie retirée
+  pendant l'aide ; la rendre permettrait de faire travailler l'IA sans limite en réinitialisant à chaque aide.
 - *Repérage des noms élargi au seul lien* (aucune équipe connue) ; les tournures contextuelles (fonction, « par … »)
-  valent pour tous les parcours.
+  valent pour tous les parcours. Un lieu au prénom courant non précédé d'un mot de lieu (« Projet Victor Hugo ») peut
+  être masqué par erreur : il est remis en clair dans le texte rédigé, l'IA lit seulement une étiquette à sa place.
 
-**Vérifications** : suite complète verte (SQLite) ; SRI à jour et `node --check` ; aucune migration (aucune table ni
-colonne nouvelle) ; tests des documents déposés et de la vague 4 rejoués sur Postgres 16 (verrous `FOR UPDATE`).
+**Vérifications**
+
+- `tests/test_redaction_v4_depot_lien_relecture.py` : 20 tests, 15 en échec sur `1a9f2f4` et 5 sur `7459fed` (le
+  travail coupé), tous verts. Les fichiers rangés y sont comparés avant / après (le dossier `uploads/` est partagé entre
+  les suites lancées depuis le même dossier, et une base neuve reprend les mêmes numéros d'invitation : un fichier
+  laissé par une autre suite faisait échouer à tort le contrôle « aucun fichier »).
+- Suite complète verte (SQLite, TZ=UTC) : 1 655 tests (1 635 + 20), sur une copie propre des fichiers suivis.
+- Empreintes SRI à jour (`scripts/sri_update.py --check`), `node --check` sur `redaction-partenaire.js`, `app.js` et le
+  script de `invite.html` ; aucune migration nouvelle (tête `y9z0depotlien`, celle du dépôt par lien).
+- Navigateur réel, 375 px (aperçu local, base remplie par une copie de `scratchpad/depot/seed_live.py`) : bulle (i) de
+  « Vos documents pour Adjugo » lisible en entier dans l'écran (durée de conservation avec la date d'expiration du lien) ;
+  paragraphe et fenêtre « Réinitialiser votre espace privé ? » qui disent que les documents déposés et l'accord partent ;
+  réponse 409 `conditions_a_accepter` simulée au dépôt : les deux cases apparaissent (« version 9.9 »), message
+  « Cochez les deux cases, choisissez de nouveau votre document, puis déposez-le. » ; aucun défilement horizontal, aucune
+  erreur dans la console.
+- Postgres 16 depuis l'état EXACT de la production (`a7f48d2`, tête `x8y9redactionv4`), script
+  `scratchpad/pgtest/run_depot_relecture2_depuis_prod.py` (copie de `run_depot_lien_depuis_prod.py`, TZ=UTC) : tous les
+  contrôles de migration verts (données créées par le code de production, une seule révision `y9z0depotlien`, aucune
+  donnée perdue, seconde montée et rejeu sans effet, dépôt par le lien sur la base montée, code de production redémarré :
+  200 partout, schéma identique à une base neuve, retour arrière puis remontée) ; 38 fichiers de tests rejoués sur la base
+  montée : 1 043 verts, et exactement les mêmes 37 échecs que sur `1a9f2f4` (fichiers propres à SQLite et les deux déjà
+  connus, § 21.13). Base neuve, verrous `FOR UPDATE` réels (`scratchpad/pgtest/run_depot_relecture2_pg.py`) : 445 tests
+  verts sur 445 avec le code nouveau (les 20 de la contre-relecture compris), 425 sur 425 avec `1a9f2f4`, aucun échec
+  propre au code nouveau.

@@ -72,10 +72,12 @@ MSG_USAGE = ("Adjugo les lit sans IA, puis ne s'en sert que pour rédiger vos pa
              "Avant l'IA, il masque les noms de personnes qu'il repère et écarte ce qui ressemble à un CV : retirez "
              "de vos documents les noms que vous ne voulez pas transmettre.")
 # La durée de conservation dite au partenaire : la règle de `purger`, mot pour mot (lien expiré compris).
-MSG_CONSERVATION = ("Ils sont effacés dès que vous les supprimez, si vous quittez le groupement ou en êtes retiré ; sinon "
-                    "automatiquement, à la première de ces dates : {expiration}{mois} mois après le résultat du "
-                    "marché (à défaut, après sa date limite ou, sans date limite, après votre dernier dépôt).")
-MSG_CONSERVATION_LIEN = "{jours} jours après l'expiration de ce lien (il expire le {date}), "
+MSG_CONSERVATION = ("Ils sont effacés dès que vous les supprimez, si votre espace privé est réinitialisé, si vous quittez "
+                    "le groupement ou en êtes retiré ; sinon automatiquement {quand}.")
+MSG_CONSERVATION_MARCHE = ("{mois} mois après le résultat du marché (à défaut, après sa date limite ou, sans date "
+                           "limite, après votre dernier dépôt)")
+MSG_CONSERVATION_LIEN = ("à la première de ces deux dates : {jours} jours après l'expiration de ce lien (il expire le "
+                         "{date}), ou {marche}")
 MSG_COMPTE = ("Ces documents ont été déposés par votre lien, avant que vous le rattachiez à votre compte Adjugo. "
               "Adjugo ne s'en sert plus : il s'appuie maintenant sur votre savoir-faire et vos preuves. Vous pouvez "
               "les télécharger ou les supprimer.")
@@ -321,8 +323,10 @@ def conservation(inv: ProjectInvite, mois: int) -> str:
     """Combien de temps ses documents sont gardés, tel que `purger` l'applique : le lien qui expire (par défaut
     30 jours après sa création) les fait effacer PURGE_EXPIRE_JOURS jours après son expiration."""
     exp = _naif(getattr(inv, "expires_at", None))
-    lien = MSG_CONSERVATION_LIEN.format(jours=PURGE_EXPIRE_JOURS, date=_jour_fr(exp)) if exp is not None else ""
-    return MSG_CONSERVATION.format(expiration=lien, mois=mois)
+    marche = MSG_CONSERVATION_MARCHE.format(mois=mois)
+    quand = (MSG_CONSERVATION_LIEN.format(jours=PURGE_EXPIRE_JOURS, date=_jour_fr(exp), marche=marche)
+             if exp is not None else marche)
+    return MSG_CONSERVATION.format(quand=quand)
 
 
 def vue(db, acces) -> dict:
