@@ -136,13 +136,25 @@ MSG_DELAI = {
                "demande, et l'information doit arriver à temps pour pouvoir contester avant la signature du marché. "
                "Choisissez la procédure du marché pour citer le bon article."),
 }
-# Marché subséquent d'un accord-cadre (repéré sans IA dans le règlement) : le délai de 11 jours ne s'applique pas
-# (article R2182-2, relu sur Légifrance le 19/10/2026).
-MSG_DELAI_SUBSEQUENT = ("Écrivez vite : si votre offre n'a pas été écartée comme irrégulière, inacceptable ou "
-                        "inappropriée, l'acheteur doit vous répondre au plus tard 15 jours après la réception de votre "
-                        "demande (article R2181-4). Le règlement parle d'un marché subséquent d'un accord-cadre : le "
-                        "délai de 11 jours avant la signature ne s'applique pas à ce marché (article R2182-2), il peut "
-                        "donc être signé sans attendre.")
+# Marché subséquent d'un accord-cadre : le délai de 11 jours n'est pas exigé « pour l'attribution des marchés
+# subséquents, fondés sur un accord-cadre » (article R2182-2, 2°, relu sur Légifrance le 19/10/2026 : version en
+# vigueur depuis le 1er avril 2019). L'exception ne vaut PAS pour l'accord-cadre lui-même : elle n'est dite que si une
+# phrase présente CE marché comme un marché subséquent (`_ce_marche_subsequent`), et sous condition (« si c'est bien
+# le cas »), avec la vraie source (le règlement, ou l'analyse du marché).
+_SOURCE_SUBSEQUENT = {"règlement de la consultation": "Le règlement de la consultation",
+                      "analyse du marché": "L'analyse du marché"}
+
+
+def message_delai_subsequent(source: str) -> str:
+    """Le message du délai pour un marché présenté comme un marché subséquent par `source` (« règlement de la
+    consultation » ou « analyse du marché »)."""
+    qui = _SOURCE_SUBSEQUENT.get(source, "Le dossier")
+    return ("Écrivez vite : si votre offre n'a pas été écartée comme irrégulière, inacceptable ou inappropriée, "
+            "l'acheteur doit vous répondre au plus tard 15 jours après la réception de votre demande (article "
+            f"R2181-4). {qui} présente ce marché comme un marché subséquent d'un accord-cadre (phrase ci-dessous) : "
+            "vérifiez-le. Si c'est bien le cas, l'acheteur n'est pas tenu d'attendre 11 jours avant de le signer "
+            "(article R2182-2). Sinon, le marché ne peut en principe pas être signé moins de 11 jours après l'envoi du "
+            "courrier de rejet (16 jours s'il n'a pas été envoyé par voie électronique, article R2182-1).")
 MSG_ADAPTEE_NOTES = ("En procédure adaptée, les notes sont à demander, pas toujours obtenues : le code oblige "
                      "l'acheteur à donner les motifs du rejet, pas le détail des notes.")
 MSG_RAPPEL = ("Ce marché est passé à « Perdu » il y a plus de 2 jours : demandez vos notes à l'acheteur tant qu'il "
@@ -153,8 +165,9 @@ MSG_ANALYSE = ("Critères lus par l'analyse du marché : vérifiez-les avec le c
 MSG_SANS_CRITERE = "Aucun critère retrouvé pour ce marché : ajoutez ceux du courrier de l'acheteur."
 # Vague 6 (J) : plusieurs lots, un relevé de notes par lot.
 MSG_LOTS = "Vous avez répondu à plusieurs lots : l'acheteur note chaque lot à part, saisissez les notes lot par lot."
-MSG_LOT_INCONNU = ("Le courrier ne dit pas à quel lot se rapporte chaque note (aucune ligne ne cite un seul de vos "
-                   "lots) : saisissez les notes lot par lot.")
+MSG_LOT_INCONNU = ("Adjugo ne sait pas à quel lot se rapporte chaque note du courrier (il n'y trouve ni un titre comme "
+                   "« Lot 2 : … » ou « Pour le lot 2, … », ni un objet qui cite un seul de vos lots) : saisissez les "
+                   "notes lot par lot.")
 MSG_COURRIER_LOTS = ("Vous avez répondu à plusieurs lots : le courrier les cite tous. Retirez celui que vous avez "
                      "remporté, le cas échéant.")
 MSG_IA_PANNE = ("La lecture n'a pas abouti : le service d'IA est indisponible pour le moment. Rien n'a été décompté.")
@@ -539,12 +552,18 @@ def _lots_cites(ligne_f: str, numeros: set) -> set:
 
 
 # Une ligne qui OUVRE la partie d'un lot : un titre (« Lot 2 : Couverture », « 2. LOT N° 03 – Étanchéité »), une
-# annonce (« Pour le lot 3 — Étanchéité », « Concernant le lot 2 : ») ou une ligne qui annonce la suite (« … :»).
-# Une mention dans une phrase (« Votre offre pour le lot 2 fait l'objet d'un courrier séparé. ») n'ouvre rien.
+# ligne qui COMMENCE par une annonce (« Pour le lot 3 — Étanchéité », « Concernant le lot 2 : », « S'agissant du lot 2,
+# votre offre a obtenu les notes suivantes. », quelle que soit la ponctuation) ou une ligne qui annonce la suite
+# (« … : »). Une mention au milieu d'une phrase (« Votre offre pour le lot 2 fait l'objet d'un courrier séparé. »)
+# n'ouvre rien.
 _TITRE_LOT = re.compile(r"^[\s\-–—•*·#>|]*(?:\d{1,2}\s*[.)\-–]\s*)?lots?\b")
 _ANNONCE_LOT = re.compile(r"^[\s\-–—•*·#>|]*(?:pour|concernant|s'agissant d[eu]|au titre d[eu]|en ce qui concerne)\s+"
-                          r"(?:le\s+|les\s+)?lots?\s*" + _NUMLOT + r"[^,.;:]{0,40}?\s*(?::|—|–|-\s)")
+                          r"(?:le\s+|les\s+)?lots?\s*" + _NUMLOT)
 _OBJET_LIGNE = re.compile(r"^[\s\-–—•*]*(?:objet|concerne)\s*:")
+# Une phrase qui renvoie un autre lot à un autre courrier (« Votre offre pour le lot 2 fait l'objet d'un courrier
+# séparé. ») : la suite parle toujours du lot en cours.
+_AILLEURS = re.compile(r"courriers? (?:separes?|distincts?|specifiques?|a part)\b|\bautres? courriers?\b"
+                       r"|\benvoi (?:separe|distinct)\b|\bseparement\b")
 
 
 def _ouvre_un_lot(ligne_f: str) -> bool:
@@ -552,14 +571,19 @@ def _ouvre_un_lot(ligne_f: str) -> bool:
 
 
 def lots_des_lignes(lignes: list, numeros) -> Optional[list]:
-    """Le lot dont parle chaque ligne du courrier, SANS IA : une ligne de TITRE qui ne cite qu'un des lots du dossier
-    (`_ouvre_un_lot`) ouvre la partie de ce lot, jusqu'au titre d'un autre lot ; l'objet du courrier, s'il ne cite
-    qu'un lot, vaut jusqu'au premier titre ; une mention dans une phrase ne change rien. Sans titre : le lot de l'objet,
-    sinon le seul lot cité. Un courrier dont on ne sait pas à quel lot se rapporte chaque ligne : None."""
+    """Le lot dont parle chaque ligne du courrier, SANS IA :
+    • une ligne qui OUVRE un lot (`_ouvre_un_lot` : titre, annonce en début de ligne, ligne finie par « : ») et ne cite
+      qu'un des lots du dossier ouvre la partie de ce lot, jusqu'à la ligne qui en ouvre un autre ;
+    • l'objet du courrier, s'il ne cite qu'un lot, vaut jusqu'au premier titre ;
+    • une phrase qui cite seule un AUTRE lot que le lot en cours (« Votre offre pour le lot 3 a été classée 2e. ») :
+      on ne sait plus de quel lot parlent les lignes suivantes (None jusqu'à la prochaine ouverture), sauf si elle
+      renvoie cet autre lot à un autre courrier (`_AILLEURS`) ; une phrase qui cite le lot en cours ne change rien.
+    Sans aucune ligne rattachée : le seul lot cité, sinon None (on ne sait pas). Un seul lot dans tout le courrier,
+    sans phrase sur un autre lot : tout le courrier en parle."""
     nums = {str(n) for n in numeros or [] if n}
     if not nums:
         return None
-    out, cur, titres, cites, de_l_objet = [], None, 0, set(), None
+    out, cur, cites, de_l_objet, perdu, ouverts = [], None, set(), None, False, 0
     for brut in lignes:
         f = _fold(_flat(brut))
         c = _lots_cites(f, nums)
@@ -567,15 +591,16 @@ def lots_des_lignes(lignes: list, numeros) -> Optional[list]:
             n = next(iter(c))
             cites.add(n)
             if _ouvre_un_lot(f):
-                cur, titres = n, titres + 1
-            elif cur is None and de_l_objet is None and _OBJET_LIGNE.match(f):
+                cur, ouverts = n, ouverts + 1
+            elif cur is None and not ouverts and de_l_objet is None and _OBJET_LIGNE.match(f):
                 cur = de_l_objet = n
+            elif cur is not None and n != cur and not _AILLEURS.search(f):
+                cur, perdu = None, True
         out.append(cur)
-    if not titres:
-        seul = de_l_objet or (next(iter(cites)) if len(cites) == 1 else None)
-        return [seul] * len(out) if seul else None
     seuls = {x for x in out if x}
-    if len(seuls) == 1:
+    if not seuls:
+        return [next(iter(cites))] * len(out) if len(cites) == 1 and not perdu else None
+    if len(seuls) == 1 and not perdu:
         return [next(iter(seuls))] * len(out)
     return out
 
@@ -595,7 +620,32 @@ def segments_par_lot(texte: str, numeros) -> Optional[dict]:
 
 # ── La procédure (l'article à citer) ─────────────────────────────────────────────────
 
-_RX_SUBSEQUENT = re.compile(r"marches? subsequents?")
+# CE marché est un marché subséquent : une phrase qui le dit de lui-même (« le présent marché subséquent », « marché
+# subséquent n° 3 », « le présent marché est un marché subséquent », « la présente consultation porte sur un marché
+# subséquent », « … remise en concurrence des titulaires de l'accord-cadre » dite de la présente consultation). Une
+# simple mention ne suffit jamais : le règlement d'un accord-cadre cite presque toujours ses futurs marchés
+# subséquents (« il donnera lieu à des marchés subséquents », « exécuté au moyen de marchés subséquents »), et le
+# délai de 11 jours s'applique bien à l'accord-cadre (R2182-1). Dans le doute, rien (le message général cite déjà
+# l'exception, « notamment »).
+_RX_CE_SUBSEQUENT = re.compile(
+    r"\bpresent marche subsequent\b"
+    r"|\bmarche subsequent\s*(?:n\s?[°o]\.?|no\.?|numero)\s*\d"
+    r"|\b(?:present|ce) marche (?:est|constitue) un marche subsequent\b"
+    r"|\b(?:la presente|cette) consultation (?:porte sur|a pour objet|concerne|vise) (?:la passation d'|l'attribution "
+    r"d')?un marche subsequent\b"
+    r"|\b(?:la presente consultation|le present marche)\b[^.;]{0,60}\b(?:re)?mise en concurrence des titulaires\b")
+# … sauf dans une phrase niée ou qui parle des marchés subséquents à venir (ceux d'un accord-cadre).
+_RX_PAS_CE_MARCHE = re.compile(
+    r"\bne\b|\bn'|\bpas\b|\bnon\b|\baucun|\bjamais\b|\bsans\b|\bsera\b|\bseront\b|\bdonner\w*\s+lieu\b"
+    r"|\bexecute\w*\s+(?:au moyen|par)\b|\bs'executer\w*|\bfuturs?\b|\ba venir\b|\bulterieur\w*"
+    r"|\b(?:les|des|chaque|ces|aux) marches? subsequents?\b")
+
+
+def _ce_marche_subsequent(phrase_f: str) -> bool:
+    """Une phrase (repliée) qui présente CE marché comme un marché subséquent d'un accord-cadre (voir plus haut)."""
+    return bool(_RX_CE_SUBSEQUENT.search(phrase_f)) and not _RX_PAS_CE_MARCHE.search(phrase_f)
+
+
 _RX_ADAPTEE = re.compile(r"procedure adaptee|\bmapa\b|r\.? ?2123-1\b|r\.? ?2123-4\b|r\.? ?2123-5\b")
 _RX_FORMALISEE = re.compile(r"appel d'offres? (?:ouvert|restreint)|procedure formalisee|r\.? ?2124-[1-6]\b"
                             r"|r\.? ?2161-[2-9]\b|procedure (?:concurrentielle )?avec negociation"
@@ -640,31 +690,35 @@ def procedure_du_marche(project) -> dict:
     nature = _flat(_details(project).get("nature_marche"))
     if nature:
         sources.append(("analyse du marché", nature))
+    # La procédure : la première source qui en nomme une (le règlement d'abord). Le marché subséquent : la première
+    # phrase, dans n'importe quelle source, qui présente CE marché comme tel — jamais une raison de s'arrêter avant
+    # la source suivante (le règlement d'un accord-cadre qui parle de marchés subséquents sans nommer sa procédure
+    # laisse lire la procédure dans l'analyse).
+    res, sub, sub_src = None, "", ""
     for src, texte in sources:
-        trouve, subsequent = {}, ""
+        trouve = {}
         for ph in _phrases(texte):
             f = _fold(ph)
-            if ADAPTEE not in trouve and _RX_ADAPTEE.search(f):
+            if res is None and ADAPTEE not in trouve and _RX_ADAPTEE.search(f):
                 trouve[ADAPTEE] = ph
-            if FORMALISEE not in trouve and _RX_FORMALISEE.search(f):
+            if res is None and FORMALISEE not in trouve and _RX_FORMALISEE.search(f):
                 trouve[FORMALISEE] = ph
-            if not subsequent and _RX_SUBSEQUENT.search(f):
-                subsequent = ph[:300]
-        if len(trouve) == 2:
-            return {"code": INCONNUE, "phrase": "", "source": src, "subsequent": subsequent,
-                    "message": "Le dossier parle à la fois de procédure adaptée et de procédure formalisée : "
-                               "choisissez celle du marché."}
-        if trouve:
+            if not sub and _ce_marche_subsequent(f):
+                sub, sub_src = ph[:300], src
+        if res is None and len(trouve) == 2:
+            res = {"code": INCONNUE, "phrase": "", "source": src,
+                   "message": "Le dossier parle à la fois de procédure adaptée et de procédure formalisée : "
+                              "choisissez celle du marché."}
+        elif res is None and trouve:
             code, phrase = next(iter(trouve.items()))
-            return {"code": code, "phrase": phrase[:300], "source": src, "subsequent": subsequent,
-                    "message": ("Lu dans le règlement de la consultation : vérifiez la procédure avant d'envoyer."
-                                if src.startswith("règlement") else
-                                "Lu dans l'analyse du marché : vérifiez la procédure avant d'envoyer.")}
-        if subsequent:
-            return {"code": INCONNUE, "phrase": "", "source": src, "subsequent": subsequent,
-                    "message": "Adjugo n'a pas repéré la procédure du marché : choisissez-la pour citer le bon article."}
-    return {"code": INCONNUE, "phrase": "", "source": "", "subsequent": "",
-            "message": "Adjugo n'a pas repéré la procédure du marché : choisissez-la pour citer le bon article."}
+            res = {"code": code, "phrase": phrase[:300], "source": src,
+                   "message": ("Lu dans le règlement de la consultation : vérifiez la procédure avant d'envoyer."
+                               if src.startswith("règlement") else
+                               "Lu dans l'analyse du marché : vérifiez la procédure avant d'envoyer.")}
+    if res is None:
+        res = {"code": INCONNUE, "phrase": "", "source": "",
+               "message": "Adjugo n'a pas repéré la procédure du marché : choisissez-la pour citer le bon article."}
+    return dict(res, subsequent=sub, subsequent_source=sub_src)
 
 
 # ── Le courrier « Demandez vos notes » ───────────────────────────────────────────────
@@ -752,8 +806,8 @@ def courrier(db, project, procedure: Optional[str] = None) -> dict:
             "destinataire": dest,
             "destinataire_message": ("Adresse lue dans l'analyse du marché : vérifiez-la." if dest else
                                      "Aucune adresse de l'acheteur dans l'analyse : ajoutez-la dans votre messagerie."),
-            "message_delai": (MSG_DELAI_SUBSEQUENT if proc == FORMALISEE and reperee.get("subsequent")
-                              else MSG_DELAI[proc]),
+            "message_delai": (message_delai_subsequent(reperee.get("subsequent_source") or "")
+                              if proc == FORMALISEE and reperee.get("subsequent") else MSG_DELAI[proc]),
             "phrase_subsequent": (reperee.get("subsequent") or "") if proc == FORMALISEE else "",
             "message_notes": MSG_ADAPTEE_NOTES if proc == ADAPTEE else "",
             "message_envoi": MSG_PAS_ENVOYE, "message_lots": MSG_COURRIER_LOTS if lots else "",

@@ -448,8 +448,11 @@ def _tableau(p, marks: list, crit_stems: list) -> bool:
 _AVANT_LOT = re.compile(r"\s*(?:pour\s+(?:le|les)\s+|\(\s*|au titre (?:du|des)\s+|en\s+|,\s*|:\s*|-\s*|–\s*)?")
 
 
-def _poids_avant(p, s0: int) -> bool:
-    """Un poids est-il écrit juste avant la mention de lot qui commence en `s0` (même ligne) ?"""
+def _poids_avant(p, s0: int, e: Optional[int] = None, crit_stems: Optional[list] = None) -> bool:
+    """Un poids est-il écrit juste avant la mention de lot qui commence en `s0` (même ligne) ? Pas quand cette mention
+    (finie en `e`) ouvre elle-même la liste des critères de son lot, comme un titre en ligne : un nom de critère la suit
+    sur la ligne avant tout poids (« Lot 2 : Valeur technique 60 %, Prix 40 % - Lot 3 : Valeur technique 40 %, … » : le
+    40 % est celui du lot 2, la mention « Lot 3 » ouvre le lot 3)."""
     import bisect
     debut = max(0, s0 - 40)
     der = None
@@ -457,7 +460,14 @@ def _poids_avant(p, s0: int) -> bool:
         der = m
     if der is None or not _AVANT_LOT.fullmatch(p.low[der.end():s0]):
         return False
-    return bisect.bisect_right(p.breaks, der.start()) == bisect.bisect_right(p.breaks, s0)
+    if bisect.bisect_right(p.breaks, der.start()) != bisect.bisect_right(p.breaks, s0):
+        return False
+    if e is not None and crit_stems:
+        _ls, le = _ligne_de(p, s0)
+        w = gn._W_TOKEN.search(p.low, e, le)
+        if gn._name_spans(p, e, w.start() if w else le, crit_stems):
+            return False
+    return True
 
 
 def _segments(P: list, numeros: list, crit_stems: list) -> tuple:
@@ -483,7 +493,7 @@ def _segments(P: list, numeros: list, crit_stems: list) -> tuple:
             for m in _GENERAL.finditer(p.low, z0, z1):
                 marks.append((m.start(), m.end(), None))
             marks.sort(key=lambda x: x[0])
-            if _tableau(p, marks, crit_stems) or any(nums and _poids_avant(p, s0) for s0, _e, nums in marks):
+            if _tableau(p, marks, crit_stems) or any(nums and _poids_avant(p, s0, e, crit_stems) for s0, e, nums in marks):
                 illisible = True
                 continue
             for i, (s0, e, nums) in enumerate(marks):
@@ -556,28 +566,70 @@ def _lots_cites(phrase: str) -> set:
     return nums
 
 
-def _lots_de_la_valeur(phrase: str, texte: str) -> set:
-    """Une phrase qui cite PLUSIEURS lots (« 6 pages au maximum pour le lot 2 et 3 pages au maximum pour le lot 3 ») :
-    les lots auxquels se rapporte la valeur `texte` (« 3 pages ») — la mention de lot écrite juste après elle, sinon
-    juste avant (« pour le lot 2, 6 pages ; pour le lot 3, 3 pages ») ; set() quand on ne sait pas."""
-    low, t = _fold(phrase or ""), _fold(texte or "").strip()
-    if not t:
-        return set()
-    occ = [m for m in re.finditer(r"(?<![\d.,])" + re.escape(t) + r"(?![\d])", low)]
-    if len(occ) != 1:
-        return set()
-    v0, v1 = occ[0].start(), occ[0].end()
-    marks = list(_MARQUE.finditer(low))
-    apres = next((m for m in marks if m.start() >= v1), None)
-    avant = next((m for m in reversed(marks) if m.end() <= v0), None)
+_UNITE_LIMITE = {"pages": r"pages?|feuillets?", "mots": r"mots?", "caracteres": r"caracteres?|signes?",
+                 "lignes": r"lignes?"}
 
-    def libre(a: int, b: int) -> bool:
-        return b - a <= 45 and not re.search(r"[;.]|\d", low[a:b])
-    if apres is not None and libre(v1, apres.start()):
-        return _nums_de_marque(apres)
-    if avant is not None and libre(avant.end(), v0):
-        return _nums_de_marque(avant)
-    return set()
+
+def _lots_des_valeurs(phrase: str, xs: list) -> Optional[list]:
+    """Une phrase qui cite PLUSIEURS lots : les lots de chacune de ses valeurs `xs` (limites, dans l'ordre), ou None
+    quand on ne sait pas. Les valeurs et les mentions de lot sont lues dans l'ordre de la phrase, qui doit suivre UNE
+    seule construction, du début à la fin :
+      • « lot, valeur(s), lot, valeur(s) » (« Lot 2 : 10 pages, lot 3 : 25 000 caractères », « Pour le lot 2, … 10 pages
+        …, et pour le lot 3 au plus 30 000 caractères ») — chaque valeur au lot cité AVANT elle ;
+      • « valeur(s), lot, valeur(s), lot » (« 6 pages au maximum pour le lot 2 et 3 pages au maximum pour le lot 3 ») —
+        chaque valeur au lot cité APRÈS elle.
+    Chaque mention de lot reçoit donc au moins une valeur ; toute autre suite (« le lot 2 et le lot 3 … 6 pages et 3
+    pages », un lot cité sans valeur, une valeur introuvable) : None. Une valeur écrite plusieurs fois et relevée une
+    seule fois (« 6 pages … pour le lot 2 et 6 pages … pour le lot 3 ») vaut pour chacune de ses mentions ; un nombre de
+    la même unité que le repérage n'a pas relevé (« 6 pages et 3 pages au maximum ») : None."""
+    low = _fold(phrase or "")
+    textes = [_fold(x.get("texte") or "").strip() for x in xs]
+    if not all(textes):
+        return None
+    occ_de = {}                                   # index de la valeur → ses positions dans la phrase
+    for t in set(textes):
+        occ = [m.span() for m in re.finditer(r"(?<![\d.,])" + re.escape(t) + r"(?![\d])", low)]
+        idx = [i for i, x in enumerate(textes) if x == t]
+        if not occ:
+            return None
+        if len(idx) == len(occ):
+            for i, o in zip(idx, occ):
+                occ_de[i] = [o]
+        elif len(idx) == 1:
+            occ_de[idx[0]] = occ
+        else:
+            return None
+    for typ in {x.get("type") for x in xs}:
+        u = _UNITE_LIMITE.get(typ or "")
+        if u and len(re.findall(r"(?<![\d.,])(?:\d{1,3}(?:[ .]\d{3})+|\d+)\s*(?:" + u + r")\b", low)) > sum(
+                len(occ_de[i]) for i, x in enumerate(xs) if x.get("type") == typ):
+            return None
+    pos = [(a, b, i) for i, os_ in occ_de.items() for a, b in os_]
+    marks = [(m.start(), m.end(), _nums_de_marque(m)) for m in _MARQUE.finditer(low)]
+    if any(a < me and ms < b for a, b, _i in pos for ms, me, _n in marks):
+        return None                      # une valeur prise dans une mention de lot : illisible
+    jetons = sorted([(a, "V", i) for a, _b, i in pos] + [(ms, "L", n) for ms, _me, n in marks], key=lambda j: j[0])
+    suite = "".join(j[1] for j in jetons)
+    out = [set() for _ in xs]
+    if re.fullmatch(r"(?:LV+)+", suite):
+        cur = set()
+        for _a, k, v in jetons:
+            if k == "L":
+                cur = v
+            else:
+                out[v] |= cur
+    elif re.fullmatch(r"(?:V+L)+", suite):
+        attente = []
+        for _a, k, v in jetons:
+            if k == "V":
+                attente.append(v)
+            else:
+                for i in attente:
+                    out[i] |= v
+                attente = []
+    else:
+        return None
+    return out if all(out) else None
 
 
 def limites_du_lot(limites: list, numero: str, numeros: list) -> list:
@@ -588,20 +640,21 @@ def limites_du_lot(limites: list, numero: str, numeros: list) -> list:
     à vérifier, jamais contrôlée)."""
     propres, generales, a_verifier = [], [], []
     lims = [x for x in limites or [] if isinstance(x, dict)]
-    # Une phrase qui cite plusieurs lots : chaque valeur au lot cité à côté d'elle, seulement si TOUTES ses valeurs
-    # s'attribuent ainsi et qu'aucun lot n'en reçoit deux du même type (« respectivement », valeurs groupées : on ne
-    # sait pas — aucune n'est imposée).
+    # Une phrase qui cite plusieurs lots : chaque valeur au lot cité à côté d'elle, seulement si la phrase suit une
+    # seule construction où chaque lot cité reçoit une valeur (`_lots_des_valeurs`) et qu'aucun lot n'en reçoit deux
+    # du même type (« respectivement », valeurs groupées, lot sans valeur : on ne sait pas — aucune n'est imposée,
+    # toutes passent « selon le lot »).
     par_phrase = {}
     for x in lims:
         if x.get("type") != "police" and len(_lots_cites(x.get("phrase") or "")) > 1:
             par_phrase.setdefault(x.get("phrase") or "", []).append(x)
     attribution = {}
     for ph, xs in par_phrase.items():
-        lv = [_lots_de_la_valeur(ph, x.get("texte") or "") for x in xs]
-        vus = [(n, x.get("type")) for x, ns in zip(xs, lv) for n in ns]
-        sure = all(lv) and len(vus) == len(set(vus)) and "respectivement" not in _fold(ph)
-        for x, ns in zip(xs, lv):
-            attribution[id(x)] = ns if sure else set()
+        lv = _lots_des_valeurs(ph, xs)
+        vus = [(n, x.get("type")) for x, ns in zip(xs, lv or []) for n in ns]
+        sure = lv is not None and len(vus) == len(set(vus)) and "respectivement" not in _fold(ph)
+        for i, x in enumerate(xs):
+            attribution[id(x)] = lv[i] if sure else set()
     for x in lims:
         cites = _lots_cites(x.get("phrase") or "")
         if not cites:

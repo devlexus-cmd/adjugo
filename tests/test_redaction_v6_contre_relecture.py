@@ -251,10 +251,12 @@ def test_courrier_un_lot_cite_dans_une_phrase_ne_change_pas_de_lot():
              for n in ("2", "3") for k, c in (("c1", "Valeur technique"), ("c2", "Prix"))]
     p = cn.lire_courrier("\n".join(lignes), crits)["propositions"]
     assert set(p) == {"L3-c1", "L3-c2"} and p["L3-c1"]["note"] == "31"
-    # Des titres : chacun ouvre la partie de SON lot ; « Pour le lot 3, … » dans une phrase ne change rien.
+    # Des titres : chacun ouvre la partie de SON lot. Seconde contre-relecture : une ligne qui COMMENCE par « Pour le
+    # lot 3, … » ouvre le lot 3, quelle que soit la ponctuation (« S'agissant du lot 2, votre offre a obtenu les notes
+    # suivantes. ») ; seule une mention au milieu d'une phrase n'ouvre rien.
     t = ["Pour le lot 2 — Couverture", "Prix : 3/4", "Pour le lot 3, votre offre est irrégulière.", "Prix : 1/4",
          "Lot 3 : Étanchéité", "Prix : 2/4"]
-    assert cn.lots_des_lignes(t, ["2", "3"]) == ["2", "2", "2", "2", "3", "3"]
+    assert cn.lots_des_lignes(t, ["2", "3"]) == ["2", "2", "3", "3", "3", "3"]
 
 
 # ═══ 7. Procédure formalisée : R2181-4 sous condition, R2182-2 ═══════════════════════════════════
@@ -275,8 +277,9 @@ def test_procedure_formalisee_condition_et_marche_subsequent(client, auth):
                                      "à l'issue d'un appel d'offres ouvert.")
     _set(pid, ai_analysis=a)
     c = client.get(f"/api/carnet/{pid}/courrier", headers=h).json()
-    assert c["procedure"] == "formalisee" and c["message_delai"] == cn.MSG_DELAI_SUBSEQUENT
-    assert "11 jours" in c["message_delai"] and "ne s'applique pas" in c["message_delai"]
+    # (Seconde contre-relecture : la vraie source est dite, et l'exception sous condition.)
+    assert c["procedure"] == "formalisee" and c["message_delai"] == cn.message_delai_subsequent("analyse du marché")
+    assert "11 jours" in c["message_delai"] and "Si c'est bien le cas" in c["message_delai"]
     assert c["phrase_subsequent"].startswith("Le présent marché subséquent")
     # En procédure adaptée, rien ne change.
     c = client.get(f"/api/carnet/{pid}/courrier?procedure=adaptee", headers=h).json()

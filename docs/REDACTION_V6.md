@@ -6,8 +6,9 @@
 Base de production : `a29173a` (branche `feat/produit-acheteur-collectivites`, tête Alembic `z1entretienchantier`).
 
 Ce contrat est écrit par chantier : chaque chantier a sa section (F, H, J), les sections ne se recouvrent pas. La
-section « Ensemble » dit comment les trois chantiers se rencontrent une fois réunis ; la section « Contre-relecture »
-(à la fin) reprend les remarques des relectures et ce qui a changé (les sections F, J et Ensemble sont tenues à jour).
+section « Ensemble » dit comment les trois chantiers se rencontrent une fois réunis ; les sections « Contre-relecture »
+et « Seconde contre-relecture » (à la fin) reprennent les remarques des relectures et ce qui a changé (les sections F,
+J et Ensemble sont tenues à jour).
 
 La doctrine (§ 7) vaut pour tous les chantiers : un fait ne vient jamais de l'IA ; on ne dit jamais « vérifié » ; toute
 phrase du dossier affichée est retrouvée mot pour mot ; tout nombre lu par l'IA dans un document doit y être retrouvé
@@ -87,7 +88,7 @@ Toutes les versions citées sont en vigueur depuis le 01/04/2019.
 | R2181-3 (LEGIARTI000038327414) | Section 2 : procédure formalisée | La notification du rejet mentionne ses motifs ; après l'attribution, l'acheteur communique en outre le nom de l'attributaire, les motifs du choix de son offre et la date à partir de laquelle il peut signer le marché (R2182-1). | Courrier en procédure formalisée (« pour comprendre les motifs du rejet de notre offre (article R2181-3) »). |
 | R2181-4 (LEGIARTI000037730001) | Section 2 : procédure formalisée | À la demande d'un soumissionnaire dont l'offre n'a pas été rejetée comme irrégulière, inacceptable ou inappropriée, l'acheteur communique dans les meilleurs délais et au plus tard quinze jours après la réception de la demande : l'avancement des négociations ou du dialogue, ou, si le marché est attribué, les caractéristiques et avantages de l'offre retenue. | Courrier en procédure formalisée (demande fondée sur cet article) ; délai de 15 jours. |
 | R2182-1 (LEGIARTI000037729989) | Chapitre II, section 1 : signature | En procédure formalisée, un délai minimal de onze jours sépare l'envoi de la notification (R2181-1 et R2181-3) de la signature du marché ; seize jours si la notification n'a pas été transmise par voie électronique. | Message « Écrivez vite » en procédure formalisée. |
-| R2182-2 (LEGIARTI000037729987) | Chapitre II, section 1 : signature | Le délai de R2182-1 n'est pas exigé quand le marché est attribué au seul opérateur qui a participé à la consultation, ni pour les marchés subséquents d'un accord-cadre ou les marchés spécifiques d'un système d'acquisition dynamique. | Message en procédure formalisée (« ce délai ne s'applique pas, notamment, à un marché subséquent d'un accord-cadre ») ; marché subséquent repéré sans IA : message dédié et phrase citée. |
+| R2182-2 (LEGIARTI000037729987) | Chapitre II, section 1 : signature | Le délai de R2182-1 n'est pas exigé quand le marché est attribué au seul opérateur qui a participé à la consultation, ni pour les marchés subséquents d'un accord-cadre ou les marchés spécifiques d'un système d'acquisition dynamique. | Message en procédure formalisée (« ce délai ne s'applique pas, notamment, à un marché subséquent d'un accord-cadre ») ; marché présenté comme un marché subséquent par une phrase sur CE marché (repérée sans IA) : message sous condition, source dite, phrase citée. L'exception ne vaut pas pour l'accord-cadre lui-même (2° : « Pour l'attribution des marchés subséquents, fondés sur un accord-cadre »), relu le 19/10/2026, version en vigueur depuis le 1er avril 2019. |
 
 R2181-4 et R2182-2 relus de nouveau sur Légifrance le 19/10/2026 (contre-relecture). Aucun autre numéro d'article
 n'apparaît dans le courrier ni dans les messages (test : tout « R…-… » produit est l'un de
@@ -108,9 +109,18 @@ Messages (constantes `MSG_DELAI`, `MSG_ADAPTEE_NOTES`) :
   d'un accord-cadre (article R2182-2). » ; le courrier formalisé reprend la condition (« Si notre offre n'a pas été
   écartée comme irrégulière, inacceptable ou inappropriée, nous vous demandons, en application de l'article
   R2181-4… ») ;
-- formalisée, marché subséquent d'un accord-cadre (« marché subséquent » lu sans IA dans le règlement, sinon dans
-  l'analyse ; phrase citée sous le message) : `MSG_DELAI_SUBSEQUENT` — la réponse sous 15 jours (R2181-4, même
-  condition) et « le délai de 11 jours avant la signature ne s'applique pas à ce marché (article R2182-2) » ;
+- formalisée, CE marché présenté comme un marché subséquent d'un accord-cadre (`_ce_marche_subsequent`, sans IA :
+  « le présent marché subséquent », « marché subséquent n° 3 », « le présent marché est un marché subséquent », « la
+  présente consultation porte sur un marché subséquent », remise en concurrence des titulaires dite de la présente
+  consultation ; jamais une simple mention, une phrase niée ni les marchés subséquents à venir d'un accord-cadre — « il
+  donnera lieu à », « exécuté au moyen de », « chaque marché subséquent », « sera » —, car le délai de 11 jours
+  s'applique à l'accord-cadre ; cherché dans le règlement puis dans l'analyse, sans arrêter la lecture de la procédure ;
+  phrase citée sous le message) : `message_delai_subsequent(source)` — la réponse sous 15 jours (R2181-4, même
+  condition), puis « Le règlement de la consultation (ou : L'analyse du marché) présente ce marché comme un marché
+  subséquent d'un accord-cadre (phrase ci-dessous) : vérifiez-le. Si c'est bien le cas, l'acheteur n'est pas tenu
+  d'attendre 11 jours avant de le signer (article R2182-2). Sinon, le marché ne peut en principe pas être signé moins
+  de 11 jours après l'envoi du courrier de rejet (16 jours s'il n'a pas été envoyé par voie électronique, article
+  R2182-1). » ; dans le doute, le message formalisé ci-dessus (qui cite déjà l'exception, « notamment ») ;
 - inconnue : même début, sans article, puis « Choisissez la procédure du marché pour citer le bon article. ».
 
 ### F.3 Données — `projects.carnet_notes` (JSON, NULL = rien)
@@ -651,7 +661,7 @@ Quatre cas, dits à l'écran (`grille.mode`, `grille.message`) :
 | `commune` | aucune mention de lot dans la zone des critères | la grille du règlement, telle quelle ; la phrase « Pour chacun des lots… » si elle existe |
 | `propre` | des critères écrits pour CE lot | le poids rattaché au critère dans la partie du lot (même règle de rattachement que la grille : `_attribute`), sa phrase mot pour mot depuis la mention du lot (« Pour le lot 3 : valeur technique 40 % ; prix 60 %. ») ; un critère absent de la partie du lot : « à vérifier », hors du plan de ce lot, avec la raison ; un sous-critère n'est repris que s'il figure aussi dans la partie du lot |
 | `generale` | d'autres lots ont leurs critères, pas celui-ci | la grille générale, et « vérifiez dans le règlement » |
-| `illisible` | deux lots cités sur la même ligne sans poids entre eux (tableau « Critère \| Lot 1 \| Lot 2 »), ou un poids écrit JUSTE AVANT la mention d'un lot, sur la même ligne (« 60 % pour le lot 2, 40 % pour le lot 3 », « 60 % (lot 2) ») : la lecture d'une mention à la suivante donnerait ce poids au lot suivant | les critères SANS poids (jamais un poids deviné ni celui d'un autre lot), « vérifiez le poids de chaque critère pour ce lot » |
+| `illisible` | deux lots cités sur la même ligne sans poids entre eux (tableau « Critère \| Lot 1 \| Lot 2 »), ou un poids écrit JUSTE AVANT la mention d'un lot, sur la même ligne (« 60 % pour le lot 2, 40 % pour le lot 3 », « 60 % (lot 2) », « 60 % - lot 2 ») : la lecture d'une mention à la suivante donnerait ce poids au lot suivant. Pas quand la mention ouvre elle-même la liste des critères de son lot, comme un titre en ligne (un nom de critère la suit sur la ligne avant tout poids : « Lot 2 : Valeur technique 60 %, Prix 40 % - Lot 3 : Valeur technique 40 %, … », lu `propre`) | les critères SANS poids (jamais un poids deviné ni celui d'un autre lot), « vérifiez le poids de chaque critère pour ce lot » |
 
 Le contrôle du total (« Les poids retrouvés font bien 100 % au total ») est refait pour chaque lot. Un choix de
 l'utilisateur dans « Comment vous serez noté » vaut pour les lots : un critère écarté l'est partout ; un critère
@@ -660,10 +670,14 @@ confirmé entre dans le plan de chaque lot, sans reprendre un poids lu ailleurs.
 **Limites par lot** (`limites_du_lot`) : une limite dont la phrase cite un lot (« Pour le lot 3, le mémoire compte 5
 pages au maximum ») ne vaut que pour lui et remplace la limite générale du même type ; une limite qui ne cite aucun
 lot (« 6 pages au maximum par lot ») vaut pour chacun. La police vaut pour tous. Une phrase qui cite PLUSIEURS lots
-(« 6 pages au maximum pour le lot 2 et 3 pages au maximum pour le lot 3 ») : chaque valeur va au lot cité juste après
-elle, sinon juste avant (« pour le lot 2, 6 pages ; pour le lot 3, 3 pages »), seulement si toutes les valeurs de la
-phrase s'attribuent ainsi et qu'aucun lot n'en reçoit deux du même type ; sinon (« respectivement », valeurs
-groupées) aucune n'est imposée : elles sont dites « selon le lot » parmi les limites qu'Adjugo ne compte pas
+(`_lots_des_valeurs`) : les valeurs et les mentions de lot sont lues dans l'ordre de la phrase, qui doit suivre UNE
+seule construction du début à la fin — « lot, valeur(s), lot, valeur(s) » (« Lot 2 : 10 pages au maximum, lot 3 :
+25 000 caractères au maximum », « pour le lot 2, 6 pages ; pour le lot 3, 3 pages ») : chaque valeur au lot cité avant
+elle ; « valeur(s), lot, valeur(s), lot » (« 6 pages au maximum pour le lot 2 et 3 pages au maximum pour le lot 3 ») :
+chaque valeur au lot cité après elle —, chaque lot cité reçoit ainsi au moins une valeur, et aucun lot n'en reçoit deux
+du même type ; une valeur relevée une fois mais écrite deux fois vaut pour chacune de ses mentions. Sinon (« le lot 2
+et le lot 3 … respectivement », valeurs groupées, un lot cité sans valeur, un nombre de la même unité que le repérage
+n'a pas relevé) aucune n'est imposée : elles sont dites « selon le lot » parmi les limites qu'Adjugo ne compte pas
 (`objet: selon_lot`). Dans une liste de lots, un nombre suivi de ce qu'il mesure (« lot 2 et 3 pages ») n'est pas un
 lot (`_PAS_UNE_MESURE`).
 
@@ -814,7 +828,10 @@ le notent) et reprend les poids de chaque lot.
   3 », « lots 2 et 3 ») n'est pas un fait à relire (`faits_a_relire._numeros_de_lots`, `lots` passé par
   `Contexte.lots` / `ContextePartenaire.lots` à `faits_sources.controler`) : après « lot » au singulier, le seul numéro
   qui suit ; après « lots », la liste, arrêtée au premier numéro suivi d'autre chose qu'une ponctuation ou un mot de
-  liaison. « Pour le lot 2, 8 semaines », « Lot 3 - 2 chefs », « Le lot 3 a 5 semaines » : 8 semaines, 2 chefs et 5
+  liaison. Le premier numéro reste un fait s'il compte ce qui le suit (`_compte_ce_qui_suit` : une unité, une
+  ressource ou une durée, ou un nom au pluriel qui n'est pas un mot outil — « à ce lot 3 compagnons », « dédiée à ce
+  lot 2 chefs », « au lot 3 couvreurs ») ; un verbe (« le lot 2 prévoit »), un mot de liaison ou l'intitulé écrit avec
+  sa majuscule (« le lot 2 Couverture ») ne comptent rien. « Pour le lot 2, 8 semaines », « Lot 3 - 2 chefs », « Le lot 3 a 5 semaines » : 8 semaines, 2 chefs et 5
   semaines restent à relire. Marché simple (ou réponse à un seul lot) : rien ne change, « le lot 12 du collège » garde
   son « 12 » à relire. Tout autre nombre reste contrôlé comme avant.
 
@@ -944,14 +961,18 @@ l'organisation répond à plusieurs lots (`atelier_lots.actif`) :
   et « … pour chacun de ces lots et pour chaque critère et sous-critère … » ; message à l'écran : « Vous avez répondu à
   plusieurs lots : le courrier les cite tous. Retirez celui que vous avez remporté, le cas échéant. » Aucun autre
   article (la liste de F.2 est inchangée).
-- **Lecture sans IA** : le courrier est découpé par les lignes de TITRE qui citent UN SEUL des lots du dossier : une
-  ligne qui commence par le lot (« Lot 2 - Couverture », « 2. LOT N° 03 – Étanchéité »), une annonce (« Pour le lot 3
-  — Étanchéité », « Concernant le lot 2 : ») ou une ligne qui annonce la suite (« … : ») ; l'objet du courrier, s'il
-  ne cite qu'un lot, vaut jusqu'au premier titre ; une mention dans une phrase (« Votre offre pour le lot 2 fait
-  l'objet d'un courrier séparé. ») ne change rien, ni une ligne qui cite plusieurs lots ; sans titre, le courrier parle
-  du lot de son objet, sinon du seul lot qu'il cite. Une note n'est rapprochée que des critères de
-  SON lot. Aucun lot lisible : aucune proposition, message « Le courrier ne dit pas à quel lot se rapporte chaque note
-  (aucune ligne ne cite un seul de vos lots) : saisissez les notes lot par lot. »
+- **Lecture sans IA** : le courrier est découpé par les lignes qui OUVRENT un lot et citent UN SEUL des lots du
+  dossier : une ligne qui commence par le lot (« Lot 2 - Couverture », « 2. LOT N° 03 – Étanchéité »), une ligne qui
+  COMMENCE par une annonce, quelle que soit la ponctuation (« Pour le lot 3 — Étanchéité », « Concernant le lot 2 : »,
+  « S'agissant du lot 2, votre offre a obtenu les notes suivantes. ») ou une ligne qui annonce la suite (« … : ») ;
+  l'objet du courrier, s'il ne cite qu'un lot, vaut jusqu'au premier titre. Une phrase qui cite seule un AUTRE lot que
+  le lot en cours (« Votre offre pour le lot 3 a été classée en deuxième position. ») : les lignes suivantes n'ont plus
+  de lot jusqu'à la prochaine ouverture (rien n'est proposé pour elles), sauf si elle renvoie cet autre lot à un autre
+  courrier (« … fait l'objet d'un courrier séparé. ») ; une phrase qui cite le lot en cours, ou une ligne qui cite
+  plusieurs lots, ne change rien ; sans ouverture, le courrier parle du lot de son objet, sinon du seul lot qu'il cite.
+  Une note n'est rapprochée que des critères de SON lot. Aucun lot lisible : aucune proposition, message « Adjugo ne
+  sait pas à quel lot se rapporte chaque note du courrier (il n'y trouve ni un titre comme « Lot 2 : … » ou « Pour le
+  lot 2, … », ni un objet qui cite un seul de vos lots) : saisissez les notes lot par lot. »
 - **Lecture avec l'IA** : la liste des critères porte le lot (« [L2-c1.1] (Lot 2 — …) — Méthodologie… ») et la
   consigne ajoute « Ne prends la note d'un critère que dans la partie du courrier qui parle de CE lot » (consigne d'un
   marché à un seul lot inchangée). Contrôle sans IA : l'extrait et le commentaire d'un critère de lot doivent être dans
@@ -1081,3 +1102,49 @@ par les routes), corrigée, et couverte par un test qui échouait sur `901828c` 
   tests rejoués sur la base montée : 482 verts (dont les 37 de la contre-relecture) et les mêmes 63 échecs propres à
   SQLite que le code de production, sur la même liste dans le même ordre (aucun dans un fichier de la vague 6 ni de la
   démo).
+
+## Seconde contre-relecture (19/10/2026)
+
+Neuf remarques sur `ec01cb3` (exactitude juridique et cloisonnement, lots et parcours). Production toujours `a29173a`.
+Chaque remarque a été reproduite (sondes de la revue rejouées sur `901828c` et `ec01cb3` extraits par `git archive`),
+corrigée et couverte par `tests/test_redaction_v6_contre_relecture2.py` ; aucune rejetée (deux paires de doublons
+traitées ensemble). R2182-2 relu sur Légifrance (LEGIARTI000037729987, version en vigueur depuis le 1er avril 2019) :
+le délai de R2182-1 n'est pas exigé « pour l'attribution des marchés subséquents, fondés sur un accord-cadre » — pas
+pour l'accord-cadre lui-même.
+
+| Remarques | Gravité | Ce qui a changé | Sections |
+|---|---|---|---|
+| « Marché subséquent » repéré sur une simple mention : l'accord-cadre (dont le règlement cite ses futurs marchés subséquents) recevait « peut donc être signé sans attendre » ; source dite « le règlement » même pour l'analyse (deux relectures) | majeur | `_ce_marche_subsequent` : seulement une phrase qui présente CE marché comme un marché subséquent, jamais niée ni sur des marchés subséquents à venir ; `message_delai_subsequent(source)` sous condition (« Si c'est bien le cas… Sinon… R2182-1 »), vraie source ; sinon le message formalisé | F.2 |
+| Règlement qui parle de marchés subséquents sans nommer la procédure : lecture arrêtée, analyse ignorée, R2181-4 perdu | majeur | plus de retour anticipé : la procédure est cherchée source par source, le marché subséquent dans toutes | F.2 |
+| « à ce lot 3 compagnons » : le nombre retiré du contrôle des faits dans un dossier à plusieurs lots | majeur | `_compte_ce_qui_suit` : le premier numéro après « lot » ou « lots » reste un fait s'il compte ce qui le suit | J.9 |
+| Limites : une valeur suivie de « , et pour le lot N » donnée au lot suivant ; « Lot 2 : 10 pages, lot 3 : … » (deux relectures) | majeur | `_lots_des_valeurs` : une seule construction de bout en bout (« lot, valeur » ou « valeur, lot »), chaque lot cité reçoit une valeur, sinon tout « selon le lot » | J.4 |
+| Courrier : « Pour le lot 3, vous trouverez ci-dessous vos notes. » ne changeait pas de lot (notes du lot 3 proposées pour le lot 2) ; « S'agissant du lot 2, … » ne découpait plus rien ; message « aucune ligne ne cite… » faux (deux relectures) | majeur | une ligne qui COMMENCE par une annonce ouvre le lot, quelle que soit la ponctuation ; une phrase qui cite seule un autre lot laisse la suite sans lot (sauf renvoi à un autre courrier) ; `MSG_LOT_INCONNU` réécrit | E.3 |
+| Grille par lot : « …, Prix 40 % - Lot 3 : Valeur technique 40 % » lue « illisible » | mineur | une mention qui ouvre elle-même la liste des critères (un nom de critère avant tout poids) n'est pas un « poids avant le lot » | J.4 |
+
+### Choix à dire à Eliot
+
+1. **Marché subséquent** : Adjugo ne le dit que si une phrase parle de CE marché (« le présent marché subséquent »,
+   « marché subséquent n° 3 »…), et toujours sous condition ; dans le doute, le message général (qui cite déjà
+   l'exception). Un vrai marché subséquent mal repéré garde donc le message général : c'est le sens sans risque.
+2. **Contrôle des faits** : après « lot N », un nom au pluriel est pris pour une quantité (« le lot 2 menuiseries
+   extérieures » donne « 2 menuiseries » à relire) : on préfère trop signaler qu'oublier « 3 compagnons ».
+3. **Courrier à plusieurs lots** : « Pour le lot 3, votre offre est irrégulière. » ouvre le lot 3 (annonce en début
+   de ligne) ; une phrase au milieu d'un paragraphe qui parle seule d'un autre lot rend les lignes suivantes « sans
+   lot » : rien n'y est proposé, l'utilisateur saisit.
+4. **Limites** : une phrase mêlée (un lot cité sans valeur, « respectivement », nombre non relevé) n'est plus imposée à
+   aucun lot ; elle reste dite « selon le lot », à vérifier.
+
+### Vérifications
+
+- Tests : `tests/test_redaction_v6_contre_relecture2.py` (33 tests : 26 échouent sur `ec01cb3`, extrait par `git
+  archive` ; les 7 autres gardent ce qui marchait — « le lot 2 prévoit », « valeur, lot », grille « poids avant le
+  lot » illisible…) ; deux tests de la première contre-relecture mis à jour (« Pour le lot 3, … » en début de ligne
+  ouvre le lot 3 ; message du marché subséquent sous condition, vraie source) ; suite complète : 1 989 tests, tous
+  verts (SQLite, `TZ=UTC`, IA simulée, aucun réseau).
+- Aucun fichier servi modifié : SRI à jour (`scripts/sri_update.py --check`), `node --check` (app.js,
+  carnet-notes.js, redaction-partenaire.js).
+- Postgres 16 depuis l'état exact de la production (`a29173a` extrait par `git archive`, tête `z1entretienchantier`,
+  données créées par son code ; script `scratchpad/pgtest/run_v6_contre_relecture2_depuis_prod.py`, copie de celui de
+  la contre-relecture) : 32 contrôles verts ; tests rejoués sur la base montée : 515 verts (dont les 33 de la seconde
+  contre-relecture) et les mêmes 63 échecs propres à SQLite que le code de production, sur la même liste dans le même
+  ordre (aucun dans un fichier de la vague 6 ni de la démo).

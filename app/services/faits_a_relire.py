@@ -236,9 +236,11 @@ _CERT = re.compile(
     r"\bnf\s?(?:en\s?)?\d{2,5}\b|\bqualification\s+\d{3,4}\b|\bopqibi\b|\bopqcm\b|\bafnor\b|\bbureau veritas\b")
 # Rédaction, vague 6 (J) : dans un dossier à PLUSIEURS lots, « lot 2 », « lots 2 et 3 » désignent un lot du
 # dossier, jamais une quantité. Seuls les numéros des lots de CE dossier sont concernés (`lots` de _facts_in) :
-#   • après « lot » (singulier), le seul numéro qui suit (« Pour le lot 2, 8 semaines » : 8 semaines reste un fait) ;
+#   • après « lot » (singulier) ou « lots », le PREMIER numéro, sauf s'il compte ce qui le suit (`_compte_ce_qui_suit` :
+#     « à ce lot 3 compagnons », « dédiée à ce lot 2 chefs » : le nombre reste un fait, mieux vaut trop signaler) ;
 #   • après « lots » (pluriel), la liste « 2, 3 et 4 », « 2 à 4 » ; un numéro de la liste qui n'est pas suivi d'une
 #     ponctuation ou d'un mot de liaison (« lots 2 et 3, 2 chefs » : « 2 chefs ») arrête la liste et reste un fait.
+#   (« Pour le lot 2, 8 semaines » : 8 semaines reste un fait.)
 # Sans lots (marché simple, ou réponse à un seul lot) : rien ne change (« le lot 12 du collège » : 12 est un fait).
 _LOT_MOT = re.compile(r"\blot(s?)\s*(?:n\s?[°o]\.?\s*|no\.?\s+)?0*(\d{1,2})(?!\d|[.,]\d)")
 _LOT_SUITE = re.compile(r"\s*(?:,|\bet\b|\bou\b|\ba\b|\bau\b|-|–|/|&)\s*(?:(?:le\s+)?lot\s+)?0*(\d{1,2})(?!\d|[.,]\d)")
@@ -246,14 +248,49 @@ _APRES_LISTE = re.compile(r"\s*(?:$|[()\[\],.;:!?»\-–]|(?:de|du|des|d|et|ou|s
                           r"|nos|en|dans|avec|sur|qui|que|le|la|les|l|ainsi|aussi|ensemble)\b)")
 
 
-def _numeros_de_lots(low: str, lots) -> list:
+# Ce que compte un nombre écrit juste après « lot N » : une unité (« 3 h », « 3 % »), une ressource ou une durée
+# (singulier ou pluriel : « 1 conducteur », « 3 compagnons »), ou un nom au pluriel (« 3 couvreurs ») qui n'est pas un
+# mot outil. Un verbe (« le lot 2 prévoit »), un mot de liaison ou l'intitulé du lot écrit avec sa majuscule (« le lot
+# 2 Couverture ») ne comptent rien : le nombre est alors le numéro du lot.
+_COMPTE = re.compile(
+    r"(?:%|€|k€|m€|pour ?cent|eur|euros?|ht|ttc|m2|m²|m3|m³|ml|km|kg|t|h|j|tonnes?|heures?|jours?|semaines?|mois|ans?"
+    r"|annees?|fois|salaries?|personnes?|compagnons?|collaborateurs?|employes?|ouvriers?|techniciens?|agents?"
+    r"|ingenieurs?|encadrants?|conducteurs?|chefs?|equipes?|interimaires?|apprentis?|sous-traitants?|operateurs?"
+    r"|couvreurs?|macons?|charpentiers?|menuisiers?|plombiers?|electriciens?|peintres?|etancheurs?|grutiers?"
+    r"|manoeuvres?|chantiers?|references?|projets?|sites?|batiments?|logements?|engins?|vehicules?|camions?|bennes?"
+    r"|nacelles?|machines?|grues?|echafaudages?)$")
+_MOTS_OUTILS_S = {"dans", "sous", "vers", "puis", "plus", "mais", "alors", "apres", "depuis", "lors", "sans", "tres",
+                  "pas", "jamais", "toujours", "ainsi", "nous", "vous", "ils", "elles", "leurs", "ses", "nos", "vos",
+                  "des", "les", "ces", "mes", "tes", "aux", "chez", "selon", "parmi", "moins", "tous", "toutes",
+                  "certains", "certaines", "plusieurs", "divers", "diverses", "autres", "memes", "quels", "quelles",
+                  "lesquels", "lesquelles", "desquels", "auxquels", "dont", "comme", "bis", "ter", "hors", "tels", "telles",
+                  "seuls", "seules", "compris", "inclus", "exclus", "precis", "requis", "mis", "pris", "remis",
+                  "repris", "soumis", "admis", "permis", "acquis", "transmis", "clos"}
+
+
+def _compte_ce_qui_suit(phrase: str, low: str, pos: int) -> bool:
+    """Le nombre qui finit en `pos` compte-t-il le mot qui le suit (« lot 3 compagnons ») ? (voir _COMPTE)"""
+    m = re.match(r"\s*([%€]|[a-zà-öø-ÿœ][a-zà-öø-ÿœ'²³\-]*)", low[pos:])
+    if not m:
+        return False
+    w = m.group(1)
+    if w in "%€" or _COMPTE.match(w.replace("œ", "oe")):
+        return True
+    brut = phrase[pos + m.start(1):pos + m.end(1)]
+    if brut[:1].isupper() and brut[1:2].islower():
+        return False                     # « le lot 2 Couverture » : l'intitulé du lot
+    return len(w) >= 3 and w[-1] in "sx" and w not in _MOTS_OUTILS_S and w not in _PAS_UNITE
+
+
+def _numeros_de_lots(low: str, lots, phrase: str = "") -> list:
     """Les positions [(début, fin)] des numéros de lots du dossier cités dans une phrase repliée (voir _LOT_MOT)."""
     nums = {str(int(n)) for n in (lots or ()) if str(n or "").isdigit()}
     if not nums:
         return []
+    phrase = phrase if len(phrase) == len(low) else low
     out = []
     for m in _LOT_MOT.finditer(low):
-        if str(int(m.group(2))) not in nums:
+        if str(int(m.group(2))) not in nums or _compte_ce_qui_suit(phrase, low, m.end()):
             continue
         out.append((m.start(), m.end()))
         if not m.group(1):
@@ -455,7 +492,7 @@ def _facts_in(phrase: str, tableau: bool = False, lots=()) -> list:
             out.append((m.group(0), CERTIFICATION, "certifi" if m.group(0).startswith("certif") else m.group(0)[:6]))
     # Rédaction, vague 6 (J) : dans un dossier à plusieurs lots, le numéro d'un de SES lots (« lot 2 », « lots 2 et
     # 3 ») n'est pas un fait à relire ; tout autre nombre l'est comme avant.
-    for a, b in _numeros_de_lots(low, lots):
+    for a, b in _numeros_de_lots(low, lots, phrase):
         if _free(a, b):
             taken.append((a, b))
     for m in _NUMBER.finditer(phrase):
