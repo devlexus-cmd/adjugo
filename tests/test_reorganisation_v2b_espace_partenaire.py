@@ -346,7 +346,7 @@ def test_les_entrees_vers_l_apercu_avant_et_apres_l_invitation():
     assert "<span>Voir ce que verra</span>" in f and "<span>Voir ce que voit</span>" in f
     for z in ("apercu-choix", "apercu-sans-acces", "apercu-ecran", "apercu-attendu", "apercu-offre"):
         assert zone(HTML, z) in APERCU, z
-    assert APERCU.startswith('<section data-test="vue-apercu-partenaire" v-if="view===\'apercu\'"')
+    assert APERCU.startswith('<section data-test="vue-apercu-partenaire" class="pa-vue" v-if="view===\'apercu\'"')
     assert '@click="apercuRetour()"' in APERCU and "Retour au marché" in APERCU
     assert '@click="apercuReprendre()"' in APERCU and "Revenir à l'invitation" in APERCU
 
@@ -482,6 +482,14 @@ def test_l_espace_sans_compte_se_reduit_a_sa_part_avec_un_seul_encart():
     assert "BARRE.el = $(`<nav class=\"mk-etapes pa-barre\" aria-label=\"Étapes de votre part\"></nav>`);" in INV
     # La barre suit la part et la convention.
     assert "BARRE.partStatut = s || \"\"; renderBarre();" in INV and "renderBarre();     // « Donner mon accord »" in INV
+    # Même ordre que le dossier partagé de l'application : en-tête et faits, barre, grille, « Pourquoi vous » (sa carte).
+    mon = _fonction(INV, "renderMonAO")
+    assert (mon.index("if (dl.children.length) head.appendChild(dl);") < mon.index("root.appendChild(head);")
+            < mon.index("root.appendChild(BARRE.el)") < mon.index("renderGrille(grille)")
+            < mon.index("renderForMember(pq, d.for_member, d)") < mon.index("const cvCard"))
+    assert "renderForMember(head" not in INV and ".g-pourquoi > .g-sec:first-child" in INV
+    app = PARTAGE
+    assert app.index('data-test="partage-barre"') < app.index('data-test="partage-grille"') < app.index('data-test="partage-pourquoi"')
     # Un seul encart « Créer mon compte », au texte juste ; la durée de l'essai vient du serveur.
     compte = _fonction(INV, "renderCompte")
     assert INV.count('href="/app?inscription"') == 1 and 'href="/app?inscription"' in compte
@@ -560,6 +568,11 @@ def test_a_375_px_et_accessibilite_de_base():
     assert '<label for="ap-pour">Aperçu pour</label>' in APERCU and 'id="ap-pour"' in APERCU
     assert '<ol class="mk-etapes pa-barre"' in APERCU and "<button" not in APERCU[APERCU.index('<ol class="mk-etapes pa-barre"'):APERCU.index("</ol>")]
     assert 'aria-label="Étapes de sa part"' in APERCU
+    # Les deux écrans contiennent leurs éléments positionnés (textes pour lecteur d'écran de la barre) : rien n'allonge
+    # la page entière sous la zone qui défile (vérifié dans un navigateur réel, docs/REORGANISATION_V2B.md, B3).
+    assert PARTAGE.startswith('<section data-test="vue-sharedao" class="pa-vue"') and ".pa-vue { position:relative; }" in CSS
+    # Les libellés du partenaire, plus longs : chaque étape en colonne, à toutes les largeurs.
+    assert ".pa-barre .mk-et { position:relative; flex-direction:column;" in CSS
 
 
 def test_les_reperes_du_chantier():

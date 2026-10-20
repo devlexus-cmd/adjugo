@@ -3650,7 +3650,7 @@
 
         <!-- « Votre part dans [marché] » (réorganisation, vague 2b, B3) : le marché d'une autre entreprise où je suis partenaire.
              Je contribue en tant que MON entreprise ; la barre est celle de la page du marché, avec mes tâches à moi. -->
-        <section data-test="vue-sharedao" v-if="view==='sharedao' && sharedAo.project">
+        <section data-test="vue-sharedao" class="pa-vue" v-if="view==='sharedao' && sharedAo.project">
           <button class="btn ghost sm" @click="partageRetour()" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Où je suis partenaire</button>
           <div data-test="partage-entete" ref="sharedEntete" tabindex="-1" class="card pad pa-entete" style="margin-bottom:14px">
             <div class="muted small"><span>Chef de file :</span> <b>{{ sharedAo.mandataire }}</b></div>
@@ -3894,7 +3894,7 @@
              reçoit : GET /api/projects/{id}/apercu-partenaire le tire de sa vue (le marché, le chef de file, la date limite,
              ce qui est attendu de lui, le total de l'offre commune quand il le voit). Jamais la décomposition de votre prix,
              jamais la part d'un autre membre, jamais une donnée du partenaire que vous ne voyez pas déjà. -->
-        <section data-test="vue-apercu-partenaire" v-if="view==='apercu'">
+        <section data-test="vue-apercu-partenaire" class="pa-vue" v-if="view==='apercu'">
           <button class="btn ghost sm" @click="apercuRetour()" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Retour au marché</button>
           <div data-test="apercu-choix" class="card pad" style="margin-bottom:14px">
             <div class="row wrap" style="gap:6px 8px;align-items:center"><i data-lucide="eye" style="color:var(--accent-text)"></i><h2 class="pa-ap-t">Ce que verra votre partenaire</h2><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Son écran tel qu'il le verra, en lecture. Adjugo n'y met que ce qu'il lui montre : le marché, votre nom de chef de file, la date limite, ce qui est attendu de lui et, quand il le voit, le total de l'offre commune. Jamais le détail de votre prix, ni la part des autres partenaires.</span></button>

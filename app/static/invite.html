@@ -45,6 +45,7 @@
     ul.g-list { margin:4px 0 0; padding-left:18px; } ul.g-list li { margin:2px 0; }
     /* Co-traitance v2 : compléments locaux (les composants partagés sont dans styles.css) */
     .g-sec { margin-top:14px; padding-top:12px; border-top:1px solid var(--hairline,#eef0f3); }
+    .g-pourquoi > .g-sec:first-child { margin-top:0; padding-top:0; border-top:0; }
     .g-members { list-style:none; margin:6px 0 0; padding:0; }
     .g-members li { display:flex; gap:7px; align-items:center; flex-wrap:wrap; padding:5px 0; border-bottom:1px solid var(--hairline,#eef0f3); font-size:12.5px; }
     .g-lockwrap textarea[readonly] { background:var(--surface-2,#f6f7f9); color:var(--text-2,#6b7280); cursor:not-allowed; }
@@ -389,7 +390,7 @@
     const fmtShort = (s) => { if (!s) return ""; try { return apiDate(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch (e) { return s; } };
     const fmtDT = (s) => { if (!s) return ""; try { const d = apiDate(s); return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } };
     // Vague 2b (B3) : le stepper des 5 étapes du groupement a laissé la place à la barre de « Votre part » (renderBarre).
-    function renderForMember(head, fm, d) {
+    function renderForMember(carte, fm, d) {
       const st = fm.state || {};
       const box = $(`<div class="g-sec"></div>`);
       box.appendChild($(`<b style="font-size:13.5px">Pourquoi vous dans ce groupement</b>`));
@@ -437,7 +438,7 @@
       if (st.offer_frozen && (!cvSt || CV_ACTIVE[cvSt])) {
         box.appendChild($(`<div class="offre-box"><i data-lucide="lock"></i><div style="flex:1"><div style="font-weight:700">Offre commune figée${st.frozen_at ? " le " + esc(fmtShort(st.frozen_at)) : ""}</div>${fm.warning_two_members ? '<div class="small muted">À deux, le total révèle mécaniquement la part de l\'autre.</div>' : ""}</div>${st.total_offre_ht != null ? `<div class="offre-total">${esc(eurHT(st.total_offre_ht))}</div>` : ""}</div>`));
       }
-      head.appendChild(box);
+      carte.appendChild(box);
     }
 
     // ── « Comment vous serez noté » : la grille de l'acheteur, en LECTURE (même grille que le chef
@@ -581,7 +582,6 @@
         }
       }
       CV.alertEl = document.createElement("div"); head.appendChild(CV.alertEl);   // « Convention à valider »
-      if (d.for_member) { try { renderForMember(head, d.for_member, d); } catch (e) { console.warn("for_member", e); } }
       const dl = $(`<dl class="g-fact"></dl>`);
       const addFact = (t, h) => { dl.appendChild($(`<dt>${t}</dt>`)); const dd = document.createElement("dd"); dd.innerHTML = h; dl.appendChild(dd); };
       if (p.deadline && !a.date_limite) addFact("Date limite", `<b>${esc(fmtDate(p.deadline))}</b>`);   // la date du dossier (avec l'heure) prime
@@ -593,6 +593,12 @@
       BARRE.el = $(`<nav class="mk-etapes pa-barre" aria-label="Étapes de votre part"></nav>`); BARRE.partStatut = "";
       root.appendChild(BARRE.el); renderBarre();
       if (grille) { try { root.appendChild(renderGrille(grille)); } catch (e) { console.warn("grille", e); } }
+      // « Pourquoi vous dans ce groupement » et ses membres : leur propre carte, sous la barre, dans le même ordre que le
+      // dossier partagé de l'application (en-tête et faits · barre · grille · pourquoi vous). Contenu inchangé.
+      if (d.for_member) {
+        const pq = $(`<div class="card pad g-pourquoi" style="margin-bottom:16px"></div>`);
+        try { renderForMember(pq, d.for_member, d); root.appendChild(pq); } catch (e) { console.warn("for_member", e); }
+      }
 
       // Convention de groupement (vague 2) : état d'attente, brouillon, texte figé + accords.
       // Aperçu minimal (invitation du réseau pas encore acceptée) : pas de convention (elle cite

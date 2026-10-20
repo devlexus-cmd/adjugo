@@ -1855,9 +1855,15 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
    cadre. Mêmes couleurs, même police ; 375 px sans défilement horizontal. */
 .pa-titre { margin:2px 0 4px; font-size:19px; font-weight:800; line-height:1.3; letter-spacing:-.02em; overflow-wrap:anywhere; }
 .pa-entete:focus { outline:none; }
+/* Les deux écrans (« Votre part », l'aperçu) contiennent leurs éléments positionnés (textes pour lecteur d'écran, région
+   annoncée) : rien ne déborde de la zone qui défile ni n'allonge la page entière. */
+.pa-vue { position:relative; }
 .pa-barre { list-style:none; padding:0; margin:0 0 14px; }
 .pa-barre.pa-n3 { grid-template-columns:repeat(3, minmax(0,1fr)); }
 .pa-barre.pa-n2 { grid-template-columns:repeat(2, minmax(0,1fr)); }
+/* Les libellés du partenaire sont plus longs (« Donner mon accord », « Déposé par le chef de file ») : chaque étape en
+   colonne (numéro, mot, statut), à toutes les largeurs, comme la barre du chef de file sur téléphone. */
+.pa-barre .mk-et { position:relative; flex-direction:column; gap:3px; padding:8px; min-height:58px; border-radius:14px; }
 .pa-barre li.mk-et { cursor:default; }
 .pa-barre li.mk-et:hover { background:var(--surface); color:var(--text-2); }
 .pa-barre li.mk-et.cur:hover { background:var(--accent-weak); color:var(--accent-text); }
@@ -1882,6 +1888,7 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
 .mk-apercu .lucide, .rinv-apercu .lucide { width:14px; height:14px; }
 .rinv-apercu { margin-top:10px; margin-right:14px; }
 @media (max-width:520px) {
+  .pa-barre .mk-et { padding:6px 4px; min-height:54px; }
   .pa-ecran { padding:10px; }
   .pa-titre { font-size:17px; }
 }
