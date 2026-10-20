@@ -713,6 +713,39 @@ def test_vitrine_de_lorient_intacte(client, demo):
     assert client.get(f"/api/invite/{demo['ctx']['token']}").status_code == 200
 
 
+def _exemple_dans_la_demo(client, demo):
+    """Réorganisation, vague 2b (B2 ; docs/REORGANISATION_V2B.md) : le marché d'exemple (/app/exemple, page à part, en
+    lecture seule) s'ouvre dans la démo — la page et son fichier statique (sans session : ni base, ni IA, ni réseau) ;
+    son ouverture n'est pas comptée (la démo ne compte jamais dans la mesure d'usage) ; la vitrine ne bouge pas (Mes
+    marchés identique). Le fichier est fictif de bout en bout, comme la démo : aucun organisme réel, aucun contact."""
+    from app.models import MesureEcran
+    pme = demo["pme"]
+    projets = client.get("/api/projects/", headers=pme).json()
+    assert client.get("/app/exemple", headers=pme).status_code == 200
+    f = client.get("/static/exemple-marche.json")
+    assert f.status_code == 200 and (f.json()["decider"]["seul"], f.json()["decider"]["a_plusieurs"]) == (43, 100)
+    db = _db()
+    try:
+        n0 = sum(m.ouvertures for m in db.query(MesureEcran).filter(MesureEcran.ecran == "exemple").all())
+    finally:
+        db.close()
+    assert client.post("/api/mesure/ecran", headers=pme, json={"ecran": "exemple"}).status_code == 204
+    db = _db()
+    try:
+        assert sum(m.ouvertures for m in db.query(MesureEcran).filter(MesureEcran.ecran == "exemple").all()) == n0
+    finally:
+        db.close()
+    assert client.get("/api/projects/", headers=pme).json() == projets           # jamais dans Mes marchés
+    for nom in _REELS:
+        assert nom not in f.text, nom
+    assert not _COURRIEL.search(f.text) and not _TEL.search(f.text)
+
+
+def test_marche_d_exemple_ouvert_a_la_demo_sans_cout(client, demo, espions):
+    _exemple_dans_la_demo(client, demo)
+    assert espions["ia"] == [] and espions["email"] == [] and espions["fichier"] == [] and espions["reseau"] == []
+
+
 # ── 3. Aucun coût, avec puis sans le garde central ────────────────────────────────────────────────
 
 @pytest.mark.parametrize("c", COUTS, ids=[c.id for c in COUTS])
@@ -916,8 +949,10 @@ def lien_prive(client, monkeypatch):
 
 
 # Écrans de la démo à jour (section 2), rejoués avec les sessions ouvertes par le lien privé.
+# Vague 2b (B2) : le marché d'exemple, ouvert par une session du lien privé, comme par la démo.
 _ECRANS_PME = (test_analyse_du_marche_grille_et_couverture, test_dossier_du_marche_fictif_et_lu_en_entier,
-               test_atelier_deja_redige, test_mes_preuves_remplies, test_vitrine_de_lorient_intacte)
+               test_atelier_deja_redige, test_mes_preuves_remplies, test_vitrine_de_lorient_intacte,
+               _exemple_dans_la_demo)
 
 
 def test_lien_prive_de_bout_en_bout(client, lien_prive, espions, monkeypatch):

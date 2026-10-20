@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-q8DL80RVudBWgsaCfc4AJZ3iCrB4O6OoIs5lA81bOty2NmjC5qh+tkxKPVJDzShC"></script>
-<script src="/static/i18n.js" integrity="sha384-KpXowPcwcNEmHnlAs08IgZwUFCrYOh4fpKxbdlauvZYi6XOlVMLIQLKQ/opchP5S" defer></script>
+<script src="/static/i18n.js" integrity="sha384-x3NXZMjU2qn8yoZwBBRcBmOYAV8cm7kU3vKC7nRjkPDaMUDrvkxjXVyM1zGql9nJ" defer></script>
 </head>
 <body>
 <div id="app">
@@ -709,6 +709,8 @@
                   </details>
                   <div v-if="grpCanCancel()" style="margin-top:8px"><a href="#" @click.prevent="aoGrpCancelPlan()" class="muted small" style="text-decoration:underline">Annuler la composition</a> <span class="muted small">— vous revenez au verdict seul ; les entreprises ajoutées restent dans « Membres et sous-traitants ».</span></div>
                 </template>
+                <!-- Vague 2b (B2) : le marché d'exemple, page à part en lecture seule (/app/exemple), jamais dans Mes marchés -->
+                <p class="muted small" style="margin:12px 0 0">Le parcours en entier sur un marché fictif : <a href="/app/exemple" style="color:var(--accent-text)" @click.prevent="go('exemple')">voir un exemple</a>.</p>
               </div>
             </div>
 
@@ -3311,6 +3313,199 @@
             <div><b class="small">API &amp; développeurs</b><div class="muted small">Documentation : <a href="/docs" target="_blank" style="color:var(--accent-text);font-weight:500">/docs</a> · Schéma OpenAPI : <a href="/openapi.json" target="_blank" style="color:var(--accent-text);font-weight:500">/openapi.json</a></div></div></div></div>
         </section>
 
+        <!-- ░░ MARCHÉ D'EXEMPLE (réorganisation, vague 2b, chantier B2 ; contrat docs/REORGANISATION_V2B.md, B2) ░░
+             Page à part, à l'adresse /app/exemple, EN LECTURE SEULE : un marché ENTIÈREMENT FICTIF (client, marché et
+             entreprises inventés, noms repris de la démonstration), lu dans le fichier statique /static/exemple-marche.json
+             (ni base, ni IA, ni réseau). Aucun champ ni aucun geste qui écrit : « Retour », les ancres, « Réessayer » et
+             « Trouver des marchés » seulement. Chaque bloc porte la mention « Exemple · entreprises et client fictifs ».
+             Il n'entre jamais dans Mes marchés et ne passe pas par openAo. Textes rendus en {{ }}, jamais v-html. -->
+        <section data-test="vue-exemple" v-if="view==='exemple'" class="ex" aria-label="Marché d'exemple">
+          <button class="btn ghost sm" @click="exempleRetour()" style="margin-bottom:14px"><i data-lucide="arrow-left"></i>Retour</button>
+          <div v-if="!exemple.d" class="card pad" role="status">
+            <template v-if="exemple.err"><p class="small" style="margin:0 0 10px">{{ exemple.err }}</p><button type="button" class="btn sm" @click="exempleCharger(true)"><i data-lucide="refresh-cw"></i>Réessayer</button></template>
+            <span v-else class="muted small"><span class="spin"></span> Chargement de l'exemple…</span>
+          </div>
+          <template v-for="ex in (exemple.d ? [exemple.d] : [])" :key="'ex'">
+            <!-- En-tête : le marché, les deux entreprises -->
+            <div data-test="exemple-entete" class="card pad">
+              <div class="row wrap" style="gap:6px;align-items:center">
+                <span class="pill neutral ex-mention">Exemple · entreprises et client fictifs</span>
+                <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le client, le marché et les deux entreprises sont inventés. Les pourcentages et les points sont ceux que le calcul d'Adjugo donne avec les capacités de l'exemple. Rien de cette page n'est enregistré dans votre compte ni compté dans vos marchés.</span></button>
+              </div>
+              <h2 class="ex-titre">{{ ex.marche.nom }}</h2>
+              <div class="muted small">{{ ex.marche.client }} · {{ ex.marche.procedure }}</div>
+              <p class="small ex-texte">{{ ex.intro }}</p>
+              <div class="cards cols-4" style="margin-top:14px">
+                <div class="kpi"><div class="kh"><span>Montant estimé</span><i data-lucide="banknote"></i></div><div class="v" style="font-size:15px">{{ ex.marche.montant }}</div></div>
+                <div class="kpi"><div class="kh"><span>Lieu</span><i data-lucide="map-pin"></i></div><div class="v" style="font-size:15px">{{ ex.marche.lieu }}</div></div>
+                <div class="kpi"><div class="kh"><span>Délai</span><i data-lucide="timer"></i></div><div class="v" style="font-size:15px">{{ ex.marche.delai }}</div></div>
+                <div class="kpi"><div class="kh"><span>Parties</span><i data-lucide="layers"></i></div><div class="v" style="font-size:15px">{{ ex.marche.parties.length }} {{ pl(ex.marche.parties.length, 'partie (lot)', 'parties (lots)') }}</div></div>
+              </div>
+              <ul class="ex-acteurs">
+                <li><i data-lucide="building-2" aria-hidden="true"></i><div><b class="small">{{ ex.entreprise.nom }}</b><span class="muted small"> · l'entreprise qui répond</span><div class="muted small">{{ ex.entreprise.presentation }}</div></div></li>
+                <li><i data-lucide="handshake" aria-hidden="true"></i><div><b class="small">{{ ex.partenaire.nom }}</b><span class="muted small"> · son partenaire</span><div class="muted small">{{ ex.partenaire.presentation }}</div></div></li>
+              </ul>
+              <p class="muted small" style="margin:12px 0 0">Lecture seule : rien de cet exemple n'est enregistré dans votre compte.</p>
+            </div>
+
+            <!-- Les 4 étapes de la page d'un marché, en ancres ; puis l'écran du partenaire -->
+            <nav data-test="exemple-etapes" class="mk-etapes" aria-label="Étapes de l'exemple">
+              <button type="button" class="mk-et" @click="rnScrollTo('exLire')"><span class="mk-n" aria-hidden="true">1</span><span>Lire</span></button>
+              <button type="button" class="mk-et" @click="rnScrollTo('exDecider')"><span class="mk-n" aria-hidden="true">2</span><span>Décider</span></button>
+              <button type="button" class="mk-et" @click="rnScrollTo('exPreparer')"><span class="mk-n" aria-hidden="true">3</span><span>Préparer</span></button>
+              <button type="button" class="mk-et" @click="rnScrollTo('exDeposer')"><span class="mk-n" aria-hidden="true">4</span><span>Déposer</span></button>
+            </nav>
+            <button type="button" class="linkbtn small ex-vers" @click="rnScrollTo('exPartenaire')">Aller à l'écran du partenaire</button>
+
+            <!-- ── 1. Lire ── -->
+            <section data-test="exemple-lire" ref="exLire" tabindex="-1" class="mk-etape" aria-labelledby="ex-lire-h">
+              <div class="mk-etape-h"><h3 id="ex-lire-h">Lire</h3></div>
+              <div class="card" style="margin-top:14px">
+                <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="scan-search"></i><h3>Analyse du dossier du marché</h3><div class="spacer"></div><span class="pill neutral ex-mention">Exemple · entreprises et client fictifs</span></div>
+                <div class="cb">
+                  <p class="small ex-texte" style="margin-top:0">{{ ex.lire.resume }}</p>
+                  <div class="lect-cov">
+                    <div class="row small" style="gap:6px;align-items:flex-start"><i data-lucide="file-check" style="width:14px;height:14px;flex:none;margin-top:2px"></i><span>{{ ex.lire.couverture }}</span></div>
+                    <ul class="gn-pieces" style="margin-top:4px"><li v-for="(p,i) in ex.lire.pieces" :key="'exp'+i">{{ p }}</li></ul>
+                  </div>
+                  <div class="sectitle"><i data-lucide="quote" style="width:14px;height:14px"></i> Ce que dit le règlement</div>
+                  <div v-for="(x,i) in ex.lire.exigences" :key="'exx'+i" class="ex-cite">
+                    <b class="small">{{ x.sujet }}</b>
+                    <blockquote class="gn-q">{{ x.phrase }}</blockquote>
+                    <div class="muted small">{{ x.source }}</div>
+                  </div>
+                  <div class="sectitle"><i data-lucide="list-checks" style="width:14px;height:14px"></i> Comment l'offre sera notée</div>
+                  <div class="row wrap" style="gap:6px"><span v-for="c in ex.lire.notation.criteres" :key="'exn'+c.critere" class="pill neutral">{{ c.critere }} : {{ c.poids }}</span></div>
+                  <div class="muted small" style="margin-top:4px">{{ ex.lire.notation.source }}</div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ── 2. Décider : seul ou à plusieurs (le seul pourcentage, après le dossier) ── -->
+            <section data-test="exemple-decider" ref="exDecider" tabindex="-1" class="mk-etape" aria-labelledby="ex-decider-h">
+              <div class="mk-etape-h"><h3 id="ex-decider-h">Décider</h3></div>
+              <div class="card" style="margin-top:14px;border:1.5px solid var(--accent)">
+                <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="scale" style="color:var(--accent-text)"></i><h3>Répondre à plusieurs ?</h3><div class="spacer"></div><span class="pill neutral ex-mention">Exemple · entreprises et client fictifs</span></div>
+                <div class="cb">
+                  <div class="warn-box" style="margin-top:0"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ ex.decider.avertissement }}</span></div>
+                  <div class="sg-cols">
+                    <div class="sg-col">
+                      <div class="sg-big">{{ ex.decider.seul }} %</div>
+                      <div class="sg-lab">Seul <span class="pill" :class="ex.decider.seul_decision" style="font-size:10px;margin-left:4px">{{ decLabel(ex.decider.seul_decision) }}</span></div>
+                    </div>
+                    <div class="sg-col grp">
+                      <div class="sg-big" style="color:var(--accent-text)">{{ ex.decider.a_plusieurs }} %</div>
+                      <div class="sg-lab"><i data-lucide="handshake" style="width:12px;height:12px;vertical-align:-2px"></i> À plusieurs, avec {{ ex.partenaire.nom }} <span class="pill" :class="ex.decider.a_plusieurs_decision" style="font-size:10px;margin-left:4px">{{ decLabel(ex.decider.a_plusieurs_decision) }}</span></div>
+                    </div>
+                  </div>
+                  <ul class="ex-points" aria-label="Points, seul puis à plusieurs">
+                    <li v-for="c in ex.decider.criteres" :key="'exc'+c.key" class="sg-row" style="flex-wrap:wrap">
+                      <span class="sg-k">{{ c.label }}</span>
+                      <span class="sg-pts">{{ c.seul }} → {{ c.a_plusieurs }}<span class="muted"> sur {{ c.max }}</span></span>
+                      <span class="sg-delta">{{ c.a_plusieurs > c.seul ? '+' + (c.a_plusieurs - c.seul) : '' }}</span>
+                      <span v-for="n in c.apporte_par" :key="c.key+'·'+n" class="sg-chip by">apporté par {{ n }}</span>
+                    </li>
+                  </ul>
+                  <div class="sectitle"><i data-lucide="search-check" style="width:14px;height:14px"></i> Ce que le marché exige et que {{ ex.entreprise.nom }} n'a pas</div>
+                  <div v-for="g in ex.decider.manques" :key="'exg'+g.key" class="gap" :class="g.gravite">
+                    <div class="gap-h"><span>{{ g.titre }}</span><span class="pill" :class="gapSevClass(g.gravite)" style="font-size:10px">{{ gapSevLabel(g.gravite) }}</span></div>
+                    <div class="gap-req"><b>Exigé :</b> {{ g.exige }} &nbsp;·&nbsp; <b>{{ ex.entreprise.nom }} :</b> {{ g.a }}</div>
+                    <div v-if="g.phrase" class="gap-cite">Le dossier dit : « {{ g.phrase }} »</div>
+                  </div>
+                  <div class="sectitle"><i data-lucide="puzzle" style="width:14px;height:14px"></i> Qui me complète ?</div>
+                  <div class="cand sel ex-cand">
+                    <div style="flex:1;min-width:0">
+                      <div class="row wrap" style="gap:6px;align-items:center"><span class="cand-name">{{ ex.decider.complete.nom }}</span><span class="muted small">· {{ ex.decider.complete.lieu }}</span><span class="pill neutral" style="font-size:9px">{{ ex.decider.complete.reservoir }}</span></div>
+                      <div class="cand-proof">{{ ex.decider.complete.preuve }}</div>
+                      <div class="row wrap" style="gap:4px;margin-top:3px"><span v-for="a in ex.decider.complete.apporte" :key="'exa'+a" class="sg-chip by">{{ a }}</span></div>
+                    </div>
+                    <span class="cand-score">À plusieurs {{ ex.decider.complete.a_plusieurs }} %</span>
+                  </div>
+                  <p class="small ex-texte">{{ ex.decider.cumul }}</p>
+                  <div class="ex-resultat">
+                    <b class="small">Seul {{ ex.decider.seul }} % · À plusieurs {{ ex.decider.a_plusieurs }} %</b>
+                    <div class="small">{{ ex.decider.decision }}</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ── 3. Préparer : l'invitation, les parts, ce que chacun voit ── -->
+            <section data-test="exemple-preparer" ref="exPreparer" tabindex="-1" class="mk-etape" aria-labelledby="ex-preparer-h">
+              <div class="mk-etape-h"><h3 id="ex-preparer-h">Préparer</h3></div>
+              <div class="card" style="margin-top:14px">
+                <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="user-plus"></i><h3>Inviter et réunir les parts</h3><div class="spacer"></div><span class="pill neutral ex-mention">Exemple · entreprises et client fictifs</span></div>
+                <div class="cb">
+                  <p class="small ex-texte" style="margin-top:0">{{ ex.preparer.invitation }}</p>
+                  <div class="row wrap" style="gap:6px;margin-top:8px">
+                    <span class="pill go">Parts reçues {{ ex.preparer.parts_recues }} sur {{ ex.preparer.parts_attendues }}</span>
+                    <span class="pill go">Accords des membres {{ ex.preparer.accords }} sur {{ ex.preparer.membres }}</span>
+                  </div>
+                  <div class="sectitle">Répartition</div>
+                  <div class="cv-tw"><table class="cv-table cv-rep">
+                    <thead><tr><th scope="col">Membre</th><th scope="col">Rôle</th><th scope="col">Part</th><th scope="col" class="num">Prix de vente HT</th></tr></thead>
+                    <tbody><tr v-for="(m,i) in ex.preparer.repartition" :key="'exr'+i"><th scope="row">{{ m.membre }}</th><td>{{ m.role }}</td><td>{{ m.parties }}</td><td class="num">{{ exEur(m.prix_ht) }}</td></tr></tbody>
+                    <tfoot><tr><th scope="row" colspan="3">Total de l'offre commune</th><td class="num"><b>{{ exEur(ex.preparer.total_ht) }}</b></td></tr></tfoot>
+                  </table></div>
+                  <div class="sectitle"><i data-lucide="lock-keyhole" style="width:14px;height:14px"></i> Ce que chacun voit</div>
+                  <ul class="small ex-liste"><li v-for="(t,i) in ex.preparer.cloisonnement" :key="'exk'+i">{{ t }}</li></ul>
+                </div>
+              </div>
+            </section>
+
+            <!-- ── 4. Déposer : « Avant de déposer », les manques nommés ── -->
+            <section data-test="exemple-deposer" ref="exDeposer" tabindex="-1" class="mk-etape" aria-labelledby="ex-deposer-h">
+              <div class="mk-etape-h"><h3 id="ex-deposer-h">Déposer</h3></div>
+              <div class="card" style="margin-top:14px">
+                <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Avant de déposer : {{ exOk(ex.deposer.controles) }} contrôles sur {{ ex.deposer.controles.length }}</h3><div class="spacer"></div><span class="pill neutral ex-mention">Exemple · entreprises et client fictifs</span></div>
+                <div class="cb">
+                  <ul class="mk-tl">
+                    <li v-for="(c,i) in ex.deposer.controles" :key="'exd'+i" :class="c.ok ? 'fait' : 'en_cours'">
+                      <i :data-lucide="c.ok ? 'circle-check' : 'circle-alert'" aria-hidden="true"></i>
+                      <span class="mk-tl-l">{{ c.libelle }}<span class="sr-only"> : {{ c.ok ? 'fait' : 'à faire' }}</span><span v-if="c.manque" class="muted small ex-manque">{{ c.manque }}</span></span>
+                    </li>
+                  </ul>
+                  <p class="small ex-texte">{{ ex.deposer.suite }}</p>
+                </div>
+              </div>
+            </section>
+
+            <!-- ── L'écran du partenaire : sa part, et rien du détail du chef de file ── -->
+            <section data-test="exemple-partenaire" ref="exPartenaire" tabindex="-1" class="mk-etape" aria-labelledby="ex-part-h">
+              <div class="mk-etape-h"><h3 id="ex-part-h">L'écran du partenaire</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ce que {{ ex.partenaire.nom }} voit dans son espace, avec son compte ou par le lien de son invitation : sa part, le total commun et la convention, jamais le détail du chef de file.</span></button></div>
+              <div class="card pad" style="margin-top:14px">
+                <div class="row wrap" style="gap:6px;align-items:center"><b class="small">Ce que voit {{ ex.partenaire.nom }}</b><div class="spacer"></div><span class="pill neutral ex-mention">Exemple · entreprises et client fictifs</span></div>
+                <div class="ex-ecran">
+                  <div class="muted small"><span>Chef de file :</span> <b>{{ ex.ecran_partenaire.chef_de_file }}</b></div>
+                  <div class="ex-ecran-t">{{ ex.ecran_partenaire.titre }}</div>
+                  <div class="muted small">{{ ex.ecran_partenaire.role }} · {{ ex.ecran_partenaire.partie }}</div>
+                  <div class="row wrap" style="gap:14px;align-items:center;margin-top:10px">
+                    <div style="text-align:center;min-width:96px"><div class="sg-big" style="color:var(--accent-text)">{{ ex.ecran_partenaire.a_plusieurs }} %</div><div class="sg-lab">à plusieurs</div></div>
+                    <div style="flex:1;min-width:180px">
+                      <b class="small">Pourquoi vous dans ce groupement</b>
+                      <div class="row wrap" style="gap:4px;margin-top:4px;align-items:center"><span class="muted small">Vous apportez :</span><span v-for="a in ex.ecran_partenaire.apporte" :key="'exe'+a" class="sg-chip by">{{ a }}</span></div>
+                    </div>
+                  </div>
+                  <div class="offre-box" style="flex-wrap:wrap"><div style="flex:1;min-width:140px"><div class="small"><b>Votre prix</b></div><div class="muted small">Le détail de vos postes, vous seul le voyez.</div></div><div class="offre-total">{{ exEur(ex.ecran_partenaire.prix_ht) }}</div></div>
+                  <div class="offre-box" style="flex-wrap:wrap"><div style="flex:1;min-width:140px"><div class="small"><b>Total de l'offre commune</b></div><div class="muted small">{{ ex.ecran_partenaire.deux_membres }}</div></div><div class="offre-total">{{ exEur(ex.ecran_partenaire.total_ht) }}</div></div>
+                </div>
+                <div class="ex-voit">
+                  <div><div class="sectitle"><i data-lucide="eye" style="width:14px;height:14px"></i> Il voit</div><ul class="small ex-liste"><li v-for="(t,i) in ex.ecran_partenaire.voit" :key="'exv'+i">{{ t }}</li></ul></div>
+                  <div><div class="sectitle"><i data-lucide="eye-off" style="width:14px;height:14px"></i> Il ne voit pas</div><ul class="small ex-liste"><li v-for="(t,i) in ex.ecran_partenaire.ne_voit_pas" :key="'exn'+i">{{ t }}</li></ul></div>
+                </div>
+              </div>
+            </section>
+
+            <div class="ex-fin">
+              <p class="small" style="margin:0">{{ ex.fin }}</p>
+              <div class="row wrap" style="gap:8px;margin-top:10px">
+                <button type="button" class="btn primary sm" @click="rubriqueGo('trouver')"><i data-lucide="search"></i>Trouver des marchés</button>
+                <button type="button" class="btn sm" @click="exempleRetour()"><i data-lucide="arrow-left"></i>Retour</button>
+              </div>
+            </div>
+          </template>
+        </section>
+
         <!-- Administration (visible aux seuls administrateurs) -->
         <section data-test="vue-admin" v-if="view==='admin'">
           <div class="card pad adm-rv" style="margin-bottom:14px" role="region" aria-labelledby="adm-rv-h">
@@ -4271,6 +4466,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-A+387th1PTAcERz3qexzFazsOqliPRzOAsCghg4FCkZJnaSZMvSmYFUv7nrPzCh7" defer></script>
+<script src="/static/app.js" integrity="sha384-cdIvxp5AgXZ+FeyDY9Fv9mifXWMsVHwvq865NQoNPnp2ILYKw71WjFOpT+w6wrbV" defer></script>
 </body>
 </html>

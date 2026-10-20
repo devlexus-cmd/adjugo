@@ -103,6 +103,10 @@ ZONES = {
     # Relecture de la vague 2a (docs/REORGANISATION_V2A.md, § L) : la page d'une carte « À venir » (marché pas encore
     # publié), à la place du bandeau « Le dossier complet du marché est indispensable ».
     "vague2a_relecture": ["marche-pas-publie"],
+    # Vague 2b, B2 (docs/REORGANISATION_V2B.md, section B2) : le marché d'exemple, page à part en lecture seule
+    # (/app/exemple) : l'en-tête, la barre d'ancres, les 4 étapes et l'écran du partenaire.
+    "vague2b_exemple": ["vue-exemple", "exemple-entete", "exemple-etapes", "exemple-lire", "exemple-decider",
+                        "exemple-preparer", "exemple-deposer", "exemple-partenaire"],
 }
 FAMILLES = {"fenetres-atelier": 5, "fenetres-preuves": 2}     # même nom sur plusieurs fenêtres sœurs
 

@@ -50,7 +50,8 @@ function inscriptionDemandee(loc) {
 // action (jamais un total, jamais zéro). `ancien` / `avant` : l'ancien nom, dit en bulle pendant la transition (1.8).
 // « Réglages » est un groupe du menu (replié, état gardé) : ses entrées ne sont pas des onglets.
 const RUBRIQUES = [
-  { k: "accueil", label: "Accueil", ic: "house", vues: ["dashboard"], onglets: [
+  // Vague 2b (B2) : le marché d'exemple (/app/exemple) est une page à part de l'accueil, sans onglet ni entrée de menu.
+  { k: "accueil", label: "Accueil", ic: "house", vues: ["dashboard", "exemple"], onglets: [
     { view: "dashboard", label: "Accueil", ic: "house", ancien: "Tableau de bord" }] },
   { k: "trouver", label: "Trouver des marchés", ic: "search", vues: ["sourcing", "amont", "veille"], onglets: [
     { view: "sourcing", sous: "publies", label: "Publiés", ic: "search" },
@@ -171,6 +172,7 @@ const ADRESSES = {
   documents: "documents", kb: "documents/savoir-faire",
   company: "entreprise", criteria: "entreprise/ce-que-je-cherche", preuves: "entreprise/preuves", tarifs: "entreprise/tarifs",
   team: "reglages/collegues", billing: "reglages/abonnement", compte: "reglages/compte", admin: "reglages/administration",
+  exemple: "exemple",            // vague 2b (B2) : le marché d'exemple, page à part en lecture seule
 };
 const ADRESSES_TROUVER = { avenir: "a-venir", alertes: "alertes" };                 // onglets de Trouver des marchés
 const ADRESSES_RESEAU = { annuaire: "annuaire", historique: "historique" };   // « profil » : la vue
@@ -262,6 +264,31 @@ function partieLot(x, intitule, minuscule) {
   if (!m || (!/^lot/i.test(s) && !/^\d+$/.test(s))) return s;
   const reste = String(intitule || m[2] || "").trim();
   return (minuscule ? "partie" : "Partie") + " (lot " + m[1] + ")" + (reste ? " — " + reste : "");
+}
+
+// ══════════ Marché d'exemple (réorganisation, vague 2b, chantier B2 ; contrat docs/REORGANISATION_V2B.md, B2) ══════════
+// Un marché ENTIÈREMENT FICTIF (client, marché et entreprises inventés, noms repris de la démonstration), lu dans un
+// fichier statique versionné, servi tel quel : ni base, ni IA, ni réseau, rien n'est jamais écrit. Fonctions pures,
+// testées sous Node (tests/test_reorganisation_v2b_exemple.py). `exempleValide` : le fichier a-t-il tout ce que la page
+// lit ? (sinon la page dit « L'exemple n'a pas pu être chargé », elle ne montre jamais un exemple à moitié).
+const EXEMPLE_FICHIER = "/static/exemple-marche.json";
+function exempleValide(d) {
+  const o = x => !!x && typeof x === "object" && !Array.isArray(x), l = x => Array.isArray(x);
+  const n = x => typeof x === "number" && isFinite(x), t = x => typeof x === "string" && x.trim() !== "";
+  if (!o(d) || !["marche", "entreprise", "partenaire", "lire", "decider", "preparer", "deposer", "ecran_partenaire"].every(k => o(d[k]))) return false;
+  const m = d.marche, li = d.lire, de = d.decider, pr = d.preparer, dp = d.deposer, ep = d.ecran_partenaire;
+  return t(m.nom) && t(m.client) && t(d.entreprise.nom) && t(d.partenaire.nom) && l(m.parties) && l(li.pieces)
+    && l(li.exigences) && o(li.notation) && l(li.notation.criteres) && n(de.seul) && n(de.a_plusieurs)
+    && l(de.criteres) && de.criteres.every(c => o(c) && t(c.label) && n(c.seul) && n(c.a_plusieurs) && n(c.max) && l(c.apporte_par))
+    && l(de.manques) && o(de.complete) && l(de.complete.apporte) && l(pr.repartition) && pr.repartition.every(r => o(r) && n(r.prix_ht))
+    && n(pr.total_ht) && l(pr.cloisonnement) && l(dp.controles) && dp.controles.length > 0
+    && n(ep.prix_ht) && n(ep.total_ht) && l(ep.apporte) && l(ep.voit) && l(ep.ne_voit_pas);
+}
+// Montant de l'exemple, en euros hors taxes, sans décimale (« 280 000 € HT »).
+function eurExemple(v) {
+  const x = Number(v);
+  // Espace insécable ordinaire entre les milliers (l'espace fine du français se lit mal en petite taille).
+  return isFinite(x) ? x.toLocaleString("fr-FR", { maximumFractionDigits: 0 }).replace(/[\u202f\u00a0]/g, "\u00a0") + "\u00a0€ HT" : "";
 }
 
 // Traduction runtime de l'UI : remplace les libellés FR statiques par leur
@@ -1275,11 +1302,13 @@ const __adjApp = createApp({
             share: { busy: false, invites: [], auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, freezing: false } },
       // Nom de chaque vue (en-tête des vues hors onglets, relevé de la mesure). Réorganisation, vague 1 (1.3) : les noms
       // de l'architecture C corrigée ; une vue rangée en onglet affiche en tête le nom de sa rubrique (enteteTitre).
-      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Accueil", sourcing: "Trouver des marchés", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes pièces", invoices: "Devis et factures", bilan: "Bilan", company: "Identité", criteria: "Ce que je cherche", tarifs: "Tarifs", team: "Collègues", billing: "Abonnement", compte: "Mon compte", aodetail: "Le marché", consortiums: "À plusieurs", shared: "Où je suis partenaire", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau Adjugo" },
+      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Accueil", sourcing: "Trouver des marchés", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes pièces", invoices: "Devis et factures", bilan: "Bilan", company: "Identité", criteria: "Ce que je cherche", tarifs: "Tarifs", team: "Collègues", billing: "Abonnement", compte: "Mon compte", aodetail: "Le marché", consortiums: "À plusieurs", shared: "Où je suis partenaire", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau Adjugo", exemple: "Marché d'exemple" },
       // Ce que fait chaque vue, en une phrase, dans la bulle (i) de l'en-tête (1.7) : plus de sous-titre affiché, plus de
       // promesse (« Débloquez toute la puissance… »). Une vue sans phrase utile n'a pas de bulle. Clés : la vue, ou
       // l'onglet interne de Trouver des marchés (avenir, alertes).
-      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", sourcing: "Les marchés publiés sur les sources officielles : chaque résultat renvoie à son annonce.", avenir: "Contrats déjà attribués dont la fin estimée approche : un nouveau marché peut suivre.", alertes: "Recevez par email les nouveaux marchés d'une recherche enregistrée.", pipeline: "Suivez vos marchés étape par étape", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Clients, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", bilan: "Où vous gagnez et où vous perdez, d'après les marchés terminés, et ce que vos notes vous apprennent", company: "Informations utilisées dans vos candidatures", criteria: "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous", tarifs: "Vos prix de journée et vos frais de déplacement, pour estimer vos prix", team: "Invitez vos collègues à collaborer sur vos dossiers", compte: "Votre mot de passe, l'export de vos données et la suppression de votre compte", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires et faites-vous trouver" },
+      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", sourcing: "Les marchés publiés sur les sources officielles : chaque résultat renvoie à son annonce.", avenir: "Contrats déjà attribués dont la fin estimée approche : un nouveau marché peut suivre.", alertes: "Recevez par email les nouveaux marchés d'une recherche enregistrée.", pipeline: "Suivez vos marchés étape par étape", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Clients, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", bilan: "Où vous gagnez et où vous perdez, d'après les marchés terminés, et ce que vos notes vous apprennent", company: "Informations utilisées dans vos candidatures", criteria: "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous", tarifs: "Vos prix de journée et vos frais de déplacement, pour estimer vos prix", team: "Invitez vos collègues à collaborer sur vos dossiers", compte: "Votre mot de passe, l'export de vos données et la suppression de votre compte", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires et faites-vous trouver", exemple: "Un marché inventé, en lecture seule : le parcours d'une réponse à plusieurs, de la lecture du dossier à l'écran du partenaire. Rien n'est enregistré dans votre compte." },
+      // Marché d'exemple (vague 2b, B2) : le contenu du fichier statique, une fois lu (jamais la base).
+      exemple: { d: null, err: "", chargement: false },
     };
   },
   computed: {
@@ -1770,7 +1799,8 @@ const __adjApp = createApp({
     // nom de la vue (Le marché, Collègues…). La bulle (i) dit ce que fait l'écran, puis son ancien nom (1.7, 1.8).
     enteteTitre() {
       const r = rubriqueDe(this.view);
-      if (r && (r.k === "accueil" || this.ongletsVisibles().length)) return r.label;
+      // Vague 2b (B2) : le marché d'exemple, page à part de l'accueil, dit son propre nom (« Marché d'exemple »).
+      if (r && ((r.k === "accueil" && this.view === "dashboard") || this.ongletsVisibles().length)) return r.label;
       return this.titles[this.view] || "";
     },
     // Deux morceaux affichés séparément : chacun est une clé du dictionnaire de traduction (i18n.js).
@@ -1863,6 +1893,7 @@ const __adjApp = createApp({
       if (v === "billing") { this.loadPlan(); this.loadStats(); }
       if (v === "admin") this.loadAdmin();
       if (v === "reseau") this.rnGo(this.reseau.tab || "profil");
+      if (v === "exemple") this.exempleCharger();          // vague 2b (B2) : un fichier statique, aucun appel à l'API
       this.$nextTick(() => { const w = document.querySelector(".work"); if (w) w.scrollTop = 0; });   // remonte en haut du contenu à chaque changement de vue
     },
     // ══════════ Une adresse par écran (réorganisation, vague 2a, A1 ; ADRESSES en tête du fichier) ══════════
@@ -2066,6 +2097,27 @@ const __adjApp = createApp({
       if (r && t && !r.groupe && r.k !== "accueil") return r.label + " › " + t.label;
       return this.titles[k] || (t && t.label) || k;
     },
+    // ══════════ Marché d'exemple (réorganisation, vague 2b, B2 ; EXEMPLE_FICHIER et exempleValide en tête du fichier) ══════════
+    // Une page à part (/app/exemple), en lecture seule. Le contenu vient du fichier statique, lu une fois par session
+    // d'écran : jamais this.api(), jamais openAo() — rien n'est écrit, rien n'entre dans Mes marchés, ni dans un
+    // compteur, une alerte, le quota, les statistiques ou l'historique du réseau. Seule trace, comme pour tout écran :
+    // l'ouverture comptée par la mesure d'usage anonyme (jour, écran ; go() → _ecranOuvert ; jamais pour la démo).
+    async exempleCharger(encore) {
+      const ex = this.exemple;
+      if (ex.chargement || (ex.d && !encore)) return;
+      ex.chargement = true; ex.err = "";
+      try {
+        const r = await fetch(EXEMPLE_FICHIER, { cache: "no-store" });
+        const d = r.ok ? await r.json() : null;
+        if (!exempleValide(d)) throw new Error("exemple illisible");
+        ex.d = d;
+      } catch (e) { ex.err = "L'exemple n'a pas pu être chargé. Réessayez dans un instant."; }
+      finally { ex.chargement = false; }
+    },
+    // « Retour » : l'écran d'avant, comme le bouton du navigateur ; ouvert par un lien, l'accueil.
+    exempleRetour() { if (!this._retourHistorique()) this.go("dashboard"); },
+    exEur(v) { return eurExemple(v); },
+    exOk(controles) { return (controles || []).filter(c => c && c.ok).length; },
     fmtEur(v) { const n = Number(v); return isFinite(n) ? n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €" : "—"; },
     adminRvPublished(it) { return ((it && it.conflits) || []).filter(c => c.statut === "publie"); },
     // Lien vers l'annuaire officiel des entreprises : seulement l'adresse attendue (SIREN à 9 chiffres).
