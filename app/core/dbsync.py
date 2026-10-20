@@ -70,3 +70,20 @@ def ensure_sqlite_columns(engine, base) -> None:
                     logger.warning("dbsync : échec ADD COLUMN %s.%s : %s", table.name, col.name, e)
     if added:
         logger.info("dbsync : %d colonne(s) ajoutée(s) à la base SQLite", added)
+
+
+def ensure_sqlite_statuts(engine) -> None:
+    """Un seul axe d'étapes (réorganisation, vague 2a, décision 7) : sur une base SQLite déjà créée (dev, démo locale),
+    l'ancienne clé « envoye » d'un marché devient « depose », comme le fait la migration c4axeetapes en production.
+    Idempotent ; les devis et factures (« envoye » y reste juste) ne sont pas touchés."""
+    if not engine.url.get_backend_name().startswith("sqlite"):
+        return
+    try:
+        if "projects" not in set(inspect(engine).get_table_names()):
+            return
+        with engine.begin() as conn:
+            n = conn.execute(text("UPDATE projects SET status = 'depose' WHERE status = 'envoye'")).rowcount
+        if n:
+            logger.info("dbsync : %d marché(s) « envoye » → « depose »", n)
+    except Exception as e:
+        logger.warning("dbsync : statuts non normalisés (%s)", e)

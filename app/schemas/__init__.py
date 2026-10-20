@@ -30,6 +30,23 @@ def safe_link_url(value, max_len: int = 500) -> Optional[str]:
     return s
 
 
+# === STATUT D'UN MARCHÉ (réorganisation, vague 2a, décision 7) ===
+# Un seul axe : la valeur reçue est ramenée à sa clé (« envoye », l'ancienne clé de « Déposé », devient « depose ») ;
+# une valeur hors de l'axe est refusée (422) au lieu d'échouer à l'enregistrement.
+STATUT_INVALIDE_MSG = ("Statut inconnu : choisissez À venir, Repéré, Décidé, En préparation, Déposé, Gagné, "
+                       "Perdu ou Abandonné.")
+
+
+def _validate_statut(v):
+    if v is None:
+        return None
+    from app.models import statut_normalise
+    k = statut_normalise(v)
+    if k is None:
+        raise ValueError(STATUT_INVALIDE_MSG)
+    return k
+
+
 def _validate_link(v):
     """Validateur Pydantic commun : vide → None ; lien dangereux → message clair (422)."""
     if v is None or not str(v).strip():
@@ -164,11 +181,18 @@ class ProjectCreate(BaseModel):
     tva_rate: Optional[float] = Field(0, ge=0, le=100)
     deadline: Optional[date] = None
     source_url: Optional[str] = None
+    # Décision 11 : une carte peut exister avant la publication (« suivi », À venir). Absent : « Repéré ».
+    status: Optional[str] = None
 
     @field_validator("source_url")
     @classmethod
     def _check_source_url(cls, v):
         return _validate_link(v)
+
+    @field_validator("status")
+    @classmethod
+    def _check_status(cls, v):
+        return _validate_statut(v)
 
 
 class ProjectUpdate(BaseModel):
@@ -191,6 +215,11 @@ class ProjectUpdate(BaseModel):
     @classmethod
     def _check_source_url(cls, v):
         return _validate_link(v)
+
+    @field_validator("status")
+    @classmethod
+    def _check_status(cls, v):
+        return _validate_statut(v)
 
 
 class ProjectOut(BaseModel):

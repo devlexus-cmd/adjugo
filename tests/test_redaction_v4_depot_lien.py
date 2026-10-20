@@ -632,7 +632,7 @@ def test_purge_six_mois_apres_le_resultat_ou_la_date_limite(client, auth, monkey
     finally:
         db.close()
     # Un résultat retiré (le marché repasse « envoyé ») remet le compteur à zéro ; il repart au résultat suivant.
-    assert client.put(f"/api/projects/{pid}", headers=h, json={"status": "envoye"}).status_code == 200
+    assert client.put(f"/api/projects/{pid}", headers=h, json={"status": "depose"}).status_code == 200
     db = _db()
     try:
         dl.purger(db, maintenant)

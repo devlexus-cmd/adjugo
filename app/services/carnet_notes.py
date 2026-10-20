@@ -1869,7 +1869,7 @@ def envoyer_rappels(db, now: Optional[datetime] = None) -> dict:
                  + f" est passé à « Perdu » le {_jj(c.get('perdu_le'))}. Vous pouvez demander à l'acheteur les motifs "
                  "du rejet et vos notes, critère par critère : Adjugo vous prépare le courrier, c'est vous qui "
                  "l'envoyez.\n\n" + MSG_DELAI[INCONNUE].split(" Choisissez")[0] + "\n\n"
-                 f"Ouvrir Adjugo : {base}/app\n\n"
+                 f"Ouvrir ce marché dans Adjugo : {base}/app/marches/{p.id}\n\n"
                  "Vous recevez ce message parce que vous avez des alertes actives dans Adjugo.\n\n— Adjugo")
         try:
             ok = send_email(u.email, f"Adjugo — demandez vos notes : {_flat(p.name)[:70]}", texte)

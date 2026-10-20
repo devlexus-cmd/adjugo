@@ -789,7 +789,7 @@ def test_historique_comptes_reels_dans_les_deux_sens(client, reg, mails):
     v = client.get(f"/api/invite/{token}/contribution").json()["version"]
     assert client.put(f"/api/invite/{token}/contribution", json={"version": v, "lot": "Lot 2", "prix_lot_ht": 40000}).status_code == 200
     assert client.post(f"/api/invite/{token}/contribution/submit").status_code == 200
-    assert client.put(f"/api/projects/{pid}", headers=a["headers"], json={"status": "envoye"}).status_code == 200
+    assert client.put(f"/api/projects/{pid}", headers=a["headers"], json={"status": "depose"}).status_code == 200
     ha = client.get("/api/reseau/historique", headers=a["headers"]).json()
     assert ha["comme_chef_de_file"] == {"invitations_actives": 1, "parts_recues": 1, "marches_deposes": 1,
                                         "gagnes": 0, "perdus": 0}

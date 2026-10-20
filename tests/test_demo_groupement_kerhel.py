@@ -186,7 +186,7 @@ def ecran_formulaires_et_avant_de_deposer(client, d):
     assert cerfa["dc1"] == cerfa["dc2"] == cerfa["attri1"] == "pret"
     assert cerfa["dc4"] == "vide"                        # Breizh Désamiantage est co-traitant, pas sous-traitant
     dp = client.get(f"/api/projects/{pid}/groupement/depot", headers=d["h"]).json()
-    assert dp["depose"] is False and dp["status"] != "envoye"
+    assert dp["depose"] is False and dp["status"] != "depose"
     pret = dp["pret"]
     assert (pret["n_ok"], pret["n_total"], pret["pret"]) == (3, 4, False)
     assert pret["checks"] == {"parts_soumises": True, "attestations_ok": False, "convention_signee": True,

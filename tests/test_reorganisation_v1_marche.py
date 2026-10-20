@@ -261,7 +261,7 @@ console.log(JSON.stringify({
 """
     cas = {
         "etapes": [["nouveau", False, 1], ["en_cours", False, 1], ["nouveau", True, 1], ["nouveau", True, 2],
-                   ["en_cours", True, 1], ["en_cours", True, 5], ["envoye", True, 1], ["perdu", True, 5],
+                   ["en_cours", True, 1], ["en_cours", True, 5], ["depose", True, 1], ["perdu", True, 5],
                    ["gagne", True, 1], ["abandonne", False, 1], [None, False, None]],
         "taches": [None, {"etape": 1}, {"etape": 2, "n_members": 0},
                    {"etape": 2, "n_members": 2, "n_submitted": 1, "n_with_price": 1, "convention_status": "draft"},
@@ -271,7 +271,9 @@ console.log(JSON.stringify({
                    {"etape": 3, "n_members": 1, "n_submitted": 1, "n_with_price": 1, "convention_status": "perimee"}],
     }
     r = _node(script, json.dumps(cas))
-    assert r["etapes"] == ["lire", "lire", "decider", "preparer", "preparer", "deposer", "deposer", "", "", "", "lire"]
+    # Vague 2a (un seul axe d'étapes, docs/REORGANISATION_V2A.md, A1) : un marché « En préparation » est à l'étape
+    # Préparer même sans le dossier (l'étape Lire dit alors « À faire ») ; « depose » remplace l'ancienne clé.
+    assert r["etapes"] == ["lire", "preparer", "decider", "preparer", "preparer", "deposer", "deposer", "", "", "", "lire"]
     t = r["taches"]
     assert t[0] == [] and t[1] == []
     assert t[2] == [["inviter", "a_faire", "Pas commencé", "", "invitations"], ["parts", "a_faire", "Pas commencé", "", "parts"],

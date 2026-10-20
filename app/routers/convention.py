@@ -587,7 +587,8 @@ def _after_agreement(db: Session, project: Project, conv, by_owner: bool) -> Non
                         to, f"Convention validée par tous les membres — {project.name[:60]}",
                         f"Bonjour,\n\nTous les membres du groupement ont donné leur accord sur la convention "
                         f"(version {conv.version}) du marché « {project.name} ».\n\nLe PDF, avec la liste des "
-                        f"accords enregistrés, est disponible sur la page du marché, dans Adjugo :\n{base}/app\n\n"
+                        f"accords enregistrés, est disponible sur la page du marché, dans Adjugo :\n"
+                        f"{base}/app/marches/{project.id}\n\n"
                         f"{gc.AVERTISSEMENT}\n\n— Adjugo")])
             except Exception:
                 pass

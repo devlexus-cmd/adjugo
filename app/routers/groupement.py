@@ -10,7 +10,7 @@
   DELETE /api/projects/{id}/groupement/plan              — revenir au verdict seul
   Vague 4 (étape 5 et tableau de bord) :
   GET    /api/projects/{id}/groupement/depot             — contrôles « prêt à déposer »
-  POST   /api/projects/{id}/groupement/deposer           — « Marquer déposé » (status envoye + journal)
+  POST   /api/projects/{id}/groupement/deposer           — « Marquer déposé » (statut « depose » + journal)
   DELETE /api/projects/{id}/groupement/deposer           — annuler un marquage fait par erreur
   GET    /api/groupement/tableau-de-bord                 — N marchés accessibles en groupement,
                                                            groupements en cours par étape
@@ -620,7 +620,7 @@ def _recompute_network_counters(db: Session, project) -> None:
 @limiter.limit("30/hour")
 def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody] = None,
                    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """« Marquer déposé » : le marché passe au statut « envoyé » (état 8 « Déposé »), avec une
+    """« Marquer déposé » : le marché passe au statut « depose » (Déposé, état 8), avec une
     trace dans le journal visible de tous les membres. Si des contrôles ne sont pas réglés :
     409 `pas_pret` avec la liste, puis `{"confirmer": true}` pour marquer quand même (le chef
     de file peut avoir déposé hors d'Adjugo). Idempotent, y compris sous concurrence (deux
@@ -654,7 +654,7 @@ def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody
     for _essai in range(3):
         cond = (Project.status.is_(None) if project.status is None else Project.status == project.status)
         n = db.query(Project).filter(Project.id == project.id, cond).update(
-            {Project.status: ProjectStatus.envoye}, synchronize_session=False)
+            {Project.status: ProjectStatus.depose}, synchronize_session=False)
         db.commit()
         db.refresh(project)
         if n == 1:
@@ -677,7 +677,7 @@ def marquer_depose(request: Request, project_id: int, body: Optional[DeposerBody
                          else f"marqué déposé malgré {reste} contrôle(s) non réglé(s)"))
     _recompute_network_counters(db, project)
     db.refresh(project)
-    return {"ok": True, "deja_depose": False, "status": "envoye", "complet": ready["pret"],
+    return {"ok": True, "deja_depose": False, "status": "depose", "complet": ready["pret"],
             "pret": ready, "state": _state_payload(project, db)}
 
 
@@ -691,14 +691,14 @@ def annuler_depose(request: Request, project_id: int, current_user: User = Depen
     relances restent coupées). « En cours » si ce statut est illisible. Un marché déjà « gagné »
     ou « perdu » se change depuis sa fiche. Transition atomique (deux clics : une seule
     annulation, une seule entrée au journal)."""
-    from app.models import ProjectStatus
+    from app.models import STATUTS_DEPOSES, ProjectStatus
     project = _project(project_id, current_user, db)
     status_v = _status_value(project)
     if status_v in ("gagne", "perdu"):
         raise HTTPException(409, {"code": "marche_clos",
                                   "message": "Le marché est déjà marqué gagné ou perdu : changez son "
                                              "statut depuis sa fiche."})
-    if status_v != "envoye":
+    if status_v != "depose":
         return {"ok": True, "etait_depose": False, "status": status_v, "state": _state_payload(project, db)}
     # Statut d'avant le marquage (tracé dans le journal), « en cours » par défaut.
     from app.models import AuditLog
@@ -709,9 +709,9 @@ def annuler_depose(request: Request, project_id: int, current_user: User = Depen
         restored = ProjectStatus(prev)
     except (ValueError, TypeError):
         restored = ProjectStatus.en_cours
-    if restored.value in ("envoye", "gagne", "perdu"):
+    if restored.value in STATUTS_DEPOSES:
         restored = ProjectStatus.en_cours
-    n = db.query(Project).filter(Project.id == project.id, Project.status == ProjectStatus.envoye).update(
+    n = db.query(Project).filter(Project.id == project.id, Project.status == ProjectStatus.depose).update(
         {Project.status: restored}, synchronize_session=False)
     db.commit()
     db.refresh(project)
@@ -806,6 +806,8 @@ def tableau_de_bord(request: Request, current_user: User = Depends(get_current_u
                          "deadline": p.deadline.isoformat() if p.deadline else None,
                          "etape": st["etape"], "state": st["state"], "label": st["label"],
                          "n_membres": st["n_members"], "convention_status": st["convention_status"] or "",
+                         # « À faire » de l'accueil et de la cloche (vague 2a) : parts reçues sur parts attendues.
+                         "n_parts": st.get("n_submitted") or 0,
                          **{k: v for k, v in _barre(p, st["etape"]).items() if k != "etape"}})
     en_cours.sort(key=lambda x: (x["deadline"] is None, x["deadline"] or "", x["project_id"]))
     return {

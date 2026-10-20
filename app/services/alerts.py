@@ -41,7 +41,7 @@ def _due_alert(doc, days: int):
     return None
 
 
-_CLOSED = ("envoye", "gagne", "perdu", "abandonne")   # marché déposé ou clos : plus de relance
+from app.models import STATUTS_CLOS as _CLOSED      # marché déposé ou clos : plus de relance (vague 2a : « depose »)
 
 
 def _status_value(project) -> str:

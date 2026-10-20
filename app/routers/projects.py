@@ -53,7 +53,13 @@ def list_projects(
     query = db.query(Project).filter(Project.user_id.in_(member_ids(current_user, db)),
                                      Project.deleted_at.is_(None))
     if status:
-        query = query.filter(Project.status == status)
+        # Un seul axe d'étapes (vague 2a) : « envoye » est lu « depose » ; un statut inconnu ne trouve rien (sur
+        # Postgres, le comparer au type énuméré échouerait).
+        from app.models import statut_normalise
+        cle = statut_normalise(status)
+        if cle is None:
+            return []
+        query = query.filter(Project.status == cle)
     return query.order_by(Project.created_at.desc()).all()
 
 
@@ -63,8 +69,12 @@ def create_project(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Créer un nouveau projet / appel d'offres."""
-    project = Project(user_id=current_user.id, **data.model_dump())
+    """Créer un nouveau projet / appel d'offres. Statut absent : « Repéré » ; « suivi » (À venir) pour une carte
+    créée avant la publication du marché (réorganisation, vague 2a, décision 11)."""
+    champs = data.model_dump()
+    if not champs.get("status"):
+        champs.pop("status", None)
+    project = Project(user_id=current_user.id, **champs)
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -97,6 +107,8 @@ def update_project(
     """Mettre à jour un projet. Compte démo (vitrine partagée) : seul le changement d'étape
     (« status ») est permis, pour que le tableau des marchés reste interactif."""
     changes = data.model_dump(exclude_unset=True)
+    if "status" in changes and changes["status"] is None:
+        changes.pop("status")             # un marché a toujours une étape de l'axe (vague 2a)
     if set(changes) - {"status"}:
         from app.core.demo_guard import refuser_demo
         refuser_demo(current_user, "modifier un marché")

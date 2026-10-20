@@ -519,12 +519,12 @@ def owner_quota_ok(owner_id: int, kind: str, cap: int) -> bool:
 
 # ── Historique RÉEL (COUNT) et groupements déposés ────────────────────────────────────
 
-_DEPOSE_STATUSES = ("envoye", "gagne", "perdu")
+from app.models import STATUTS_DEPOSES as _DEPOSE_STATUSES   # vague 2a : « depose » (ancienne clé « envoye »)
 
 
 def _status_values():
     from app.models import ProjectStatus
-    return [ProjectStatus.envoye, ProjectStatus.gagne, ProjectStatus.perdu]
+    return [ProjectStatus(s) for s in _DEPOSE_STATUSES]
 
 
 def _counts_for(db, invite_filter, project_filter) -> dict:

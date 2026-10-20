@@ -509,8 +509,8 @@ def test_marquer_depose_confirmation_journal_idempotent_annulation(client, auth,
     r = client.post(f"/api/projects/{pid}/groupement/deposer", headers=h, json={"confirmer": True})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["status"] == "envoye" and body["complet"] is False and body["state"]["state"] == "depose"
-    assert client.get(f"/api/projects/{pid}", headers=h).json()["status"] == "envoye"
+    assert body["status"] == "depose" and body["complet"] is False and body["state"]["state"] == "depose"
+    assert client.get(f"/api/projects/{pid}", headers=h).json()["status"] == "depose"
     labels = [e["label"] for e in client.get(f"/api/invite/{t}/journal").json()["entries"]]
     assert "Le chef de file a marqué le dossier comme déposé" in labels
     rows = _audit_rows(project_id=pid, action="groupement.depose")

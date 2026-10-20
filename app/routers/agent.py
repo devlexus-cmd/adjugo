@@ -67,12 +67,17 @@ def agent_stats(current_user: User = Depends(get_current_user),
     projects = db.query(Project).filter(Project.user_id.in_(member_ids(current_user, db)),
                                         Project.deleted_at.is_(None)).all()
     total = len(projects)
-    by_status = {}
+    # Un seul axe d'étapes (vague 2a, décision 7) : les comptes viennent dans l'ordre de l'axe (À venir → … →
+    # Abandonné), seulement les étapes où il y a un marché ; l'entonnoir de l'accueil les lit dans cet ordre.
+    from app.models import AXE_ETAPES
+    comptes = {}
     for p in projects:
         key = _status(p)
-        by_status[key] = by_status.get(key, 0) + 1
+        comptes[key] = comptes.get(key, 0) + 1
+    by_status = {k: comptes[k] for k in AXE_ETAPES if comptes.get(k)}
+    by_status.update({k: n for k, n in comptes.items() if k not in by_status})
     won = by_status.get("gagne", 0)
-    sent = by_status.get("envoye", 0) + won + by_status.get("perdu", 0)
+    sent = by_status.get("depose", 0) + won + by_status.get("perdu", 0)
     win_rate = round(won / sent * 100) if sent > 0 else 0
     total_budget = sum(p.budget or 0 for p in projects if _status(p) == "gagne")
 

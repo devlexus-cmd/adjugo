@@ -153,9 +153,12 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 .pill.go,.pill.gagne { background:var(--success-weak); color:var(--success-text); }
 .pill.no_go,.pill.perdu { background:var(--danger-weak); color:var(--danger-text); }
 .pill.a_etudier { background:var(--warning-weak); color:var(--warning-text); }
-.pill.neutral,.pill.st-nouveau,.pill.st-abandonne { background:var(--surface-3); color:var(--text-2); }
+.pill.neutral,.pill.st-nouveau,.pill.st-abandonne,.pill.st-suivi { background:var(--surface-3); color:var(--text-2); }
+.pill.st-decide { background:var(--accent-weak); color:var(--accent-text); }
 .pill.st-en_cours { background:var(--warning-weak); color:var(--warning-text); }
-.pill.st-envoye { background:var(--info-weak); color:var(--info-text); }
+/* « st-envoye » reste le style « information » de plusieurs pastilles (devis envoyé, parties, conventions) ; le statut
+   d'un marché déposé s'appelle « depose » depuis la vague 2a (un seul axe d'étapes). */
+.pill.st-envoye,.pill.st-depose { background:var(--info-weak); color:var(--info-text); }
 .pill.st-gagne { background:var(--success-weak); color:var(--success-text); }
 .pill.st-perdu { background:var(--danger-weak); color:var(--danger-text); }
 /* Statuts de FACTURE (sinon « en_attente »/« brouillon » s'affichaient sans fond, texte brut). */
@@ -618,6 +621,67 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 }
 .dash-grid.solo { grid-template-columns:minmax(0,1fr); }
 .reorg-note { border:1px solid var(--accent-weak); }
+
+/* ══════════ Adresses, axe d'étapes, barre basse et « À faire » (réorganisation, vague 2a, A1) ══════════
+   Mêmes couleurs, même police : seule l'organisation change. 375 px sans défilement horizontal. */
+/* Barre de la page du marché : le statut dérivé de chaque étape (Terminé · En cours · À faire), sous le mot quand la
+   place manque. */
+.mk-et { flex-wrap:wrap; row-gap:0; }
+.mk-et .mk-st { font-size:11px; font-weight:500; color:var(--muted); white-space:nowrap; }
+.mk-et.cur .mk-st { color:var(--accent-text); }
+.mk-et.mk-fait .mk-n { background:var(--success-weak); color:var(--success-text); }
+.mk-et.cur.mk-fait .mk-n { background:var(--accent); color:#fff; }
+/* Étape Décider : la décision (Préparer seul · Préparer à plusieurs · Écarter). */
+.mk-decision { margin-top:14px; }
+.mk-decision-a { gap:8px; align-items:center; }
+.mk-decision-st { margin:8px 0 0; }
+/* La cloche : « À faire » et « Activité ». Sa pastille ne compte que ce qui est à faire. */
+.notif-zone { position:relative; }
+.notif-pastille { position:absolute; top:-3px; right:-3px; min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--danger-text); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+.notif-pop { position:absolute; right:0; top:40px; z-index:41; width:min(340px, calc(100vw - 24px)); max-height:440px; overflow:auto; background:var(--surface); border:1px solid var(--border); border-radius:11px; box-shadow:0 10px 34px rgba(0,0,0,.13); }
+.notif-onglets { position:sticky; top:0; z-index:1; display:flex; gap:6px; padding:10px 12px; border-bottom:1px solid var(--hairline); background:var(--surface); }
+.notif-og { display:inline-flex; align-items:center; gap:6px; min-height:32px; padding:0 12px; border-radius:999px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font:inherit; font-weight:600; font-size:12.5px; cursor:pointer; }
+.notif-og.on { background:var(--accent-weak); border-color:var(--accent); color:var(--accent-text); }
+.notif-og:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); }
+.notif-point { width:7px; height:7px; border-radius:50%; background:var(--accent); }
+.notif-vide { padding:16px 14px; }
+.notif-l { display:flex; align-items:flex-start; gap:10px; width:100%; text-align:left; padding:10px 14px; border:0; border-bottom:1px solid var(--hairline); background:none; color:inherit; font:inherit; cursor:pointer; }
+.notif-l:hover { background:var(--surface-2); }
+.notif-l:focus-visible { outline:none; box-shadow:inset 0 0 0 2px var(--ring); }
+.notif-l > .lucide, .notif-l > i[data-lucide] { width:16px; height:16px; flex:none; margin-top:2px; color:var(--accent-text); }
+.notif-tx { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.notif-cta { flex:none; color:var(--accent-text); font-weight:600; }
+@media (max-width:640px) {
+  /* Sous la barre du haut, sur toute la largeur (comme la bulle de l'en-tête). */
+  .notif-zone { position:static; }
+  .notif-pop { left:12px; right:12px; top:calc(100% + 6px); width:auto; max-height:70vh; }
+}
+/* Accueil : le bloc « À faire » (la même liste que la cloche). */
+.afaire-liste { list-style:none; margin:10px 0 0; padding:0; }
+.afaire-l { display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--hairline); }
+.afaire-l > .lucide, .afaire-l > i[data-lucide] { width:16px; height:16px; flex:none; color:var(--accent-text); }
+.afaire-tx { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.afaire-l > .btn { flex:none; }
+@media (max-width:520px) {
+  .afaire-l { flex-wrap:wrap; }
+  .afaire-l > .btn { margin-left:26px; }
+}
+/* Barre basse sur téléphone (décision 18) : Accueil, Trouver, Mes marchés, Partenaires, Menu. Partout où le menu
+   latéral se replie ; « Menu » ouvre le menu complet (le bouton de l'en-tête n'est plus utile). */
+.barre-basse { display:none; }
+@media (max-width:860px) {
+  .barre-basse { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:0; position:fixed; left:0; right:0; bottom:0; z-index:50; padding:4px 4px calc(4px + env(safe-area-inset-bottom, 0px)); background:color-mix(in srgb,var(--surface) 92%,transparent); backdrop-filter:blur(18px) saturate(1.6); -webkit-backdrop-filter:blur(18px) saturate(1.6); border-top:1px solid var(--border); }
+  .bb-i { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-width:0; min-height:52px; padding:4px 0; border:0; border-radius:12px; background:none; color:var(--text-2); font:inherit; font-size:10.5px; font-weight:600; letter-spacing:-.01em; line-height:1.2; cursor:pointer; }
+  .bb-i > span:not(.bb-badge) { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bb-i .lucide { width:20px; height:20px; }
+  .bb-i.on { color:var(--accent-text); background:var(--accent-weak); }
+  .bb-i:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); }
+  .bb-badge { position:absolute; top:3px; left:calc(50% + 5px); min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--accent); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums; }
+  .top .menu-btn { display:none; }
+  .content { padding-bottom:calc(84px + env(safe-area-inset-bottom, 0px)); }
+  .app ~ .toast { bottom:calc(74px + env(safe-area-inset-bottom, 0px)); }
+  .bandeau-cookies.avec-menu { bottom:calc(72px + env(safe-area-inset-bottom, 0px)); }
+}
 .reorg-h { display:flex; align-items:flex-start; gap:10px; }
 .reorg-ic { color:var(--accent-text); flex:none; margin-top:1px; }
 .reorg-tx { flex:1; min-width:0; }

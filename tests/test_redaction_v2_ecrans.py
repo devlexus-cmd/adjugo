@@ -82,7 +82,9 @@ def test_carte_du_marche_compacte_un_seul_bouton_et_menu_inchange():
     assert "atelier" not in nav and "go('atelier')" not in HTML
     for entree in ("go('dashboard')", "rubriqueGo('trouver')", "go('pipeline')", "go('documents')"):
         assert entree in nav
-    assert '{ view: "kb", label: "Mon savoir-faire", ic: "library" }' in JS and '{ view: "atelier"' not in JS
+    # Vague 2a : l'atelier a une adresse (etatDeAdresse), jamais une entrée du menu ni un onglet (RUBRIQUES).
+    rubriques = JS[JS.index("const RUBRIQUES = ["):JS.index("\n];\n", JS.index("const RUBRIQUES = ["))]
+    assert '{ view: "kb", label: "Mon savoir-faire", ic: "library" }' in rubriques and '{ view: "atelier"' not in rubriques
 
 
 def test_atelier_plan_texte_faits_sources_et_actions():

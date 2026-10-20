@@ -206,7 +206,7 @@ def _notify_part_submitted(inv, contribution, db: Session) -> None:
         subj = f"{who} a soumis sa part — {pname[:60]}"
         text = (f"Bonjour,\n\n{who} vient de soumettre sa part sur le marché « {pname} ».\n"
                 f"Partenaires prêts : {done} sur {total}.\n\n"
-                f"Ouvrez ce marché dans Adjugo pour assembler la réponse commune :\n{base}/app\n\n"
+                f"Ouvrez ce marché dans Adjugo pour assembler la réponse commune :\n{base}/app/marches/{inv.project_id}\n\n"
                 f"— Adjugo")
         _email.send_email(to, subj, text)
     except Exception:

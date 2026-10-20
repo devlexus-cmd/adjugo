@@ -64,8 +64,9 @@ if _mem_rl and _workers > 1:
 if _is_sqlite:
     Base.metadata.create_all(bind=engine)
     # Ajoute les colonnes de modèle manquantes sur une base déjà créée (idempotent).
-    from app.core.dbsync import ensure_sqlite_columns
+    from app.core.dbsync import ensure_sqlite_columns, ensure_sqlite_statuts
     ensure_sqlite_columns(engine, Base)
+    ensure_sqlite_statuts(engine)          # vague 2a : « envoye » → « depose » (comme la migration c4axeetapes)
 
 # Documentation interactive (Swagger /docs, ReDoc /redoc, schéma /openapi.json) : utile en
 # dev, mais en PRODUCTION c'est une carte complète de l'API (routes admin/cron, schémas
@@ -266,11 +267,12 @@ async def security_headers(request, call_next):
     # Cache des assets :
     #  • /static/vendor/* : libs épinglées par VERSION dans le nom → immuables, cache long
     #    (un bump = nouveau nom de fichier = nouvelle URL, donc jamais de version périmée).
-    #  • le reste (/app, /, app.js, styles.css) : no-store, pour ne jamais exécuter un build périmé.
+    #  • le reste (/app et ses adresses /app/…, /, app.js, styles.css) : no-store, pour ne jamais exécuter un
+    #    build périmé (réorganisation, vague 2a : une adresse par écran, docs/REORGANISATION_V2A.md, A1).
     p = request.url.path
     if p.startswith("/static/vendor/"):
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif p == "/app" or p == "/" or p.startswith("/static"):
+    elif p == "/app" or p.startswith("/app/") or p == "/" or p.startswith("/static"):
         resp.headers["Cache-Control"] = "no-store, must-revalidate"
         resp.headers["Pragma"] = "no-cache"
     return resp
@@ -641,6 +643,16 @@ def software():
     from fastapi.responses import HTMLResponse
     from app.core.sri import page_html      # empreintes SRI garanties à jour (vague 4)
     return HTMLResponse(page_html("app.html"))
+
+
+# Réorganisation, vague 2a (A1) : une adresse par écran (/app/marches, /app/marches/12, /app/reglages/compte…).
+# Le serveur sert la MÊME page à chacune (en-tête no-store, middleware ci-dessus) ; c'est l'application qui lit le
+# chemin et rouvre l'écran (app.js, ADRESSES). Le chemin n'est jamais lu ici : rien ne s'ouvre sans session, et
+# chaque donnée reste protégée par sa route /api (un marché d'une autre organisation répond 404). Les liens déjà
+# envoyés (/app, /app?verify=…, /app?reset=…, /app?shared=…, /app#gcode=…) ne changent pas.
+@app.get("/app/{chemin:path}", tags=["Logiciel"], include_in_schema=False)
+def software_ecran(chemin: str):
+    return software()
 
 
 @app.get("/invite/{token}", tags=["Co-traitance"], include_in_schema=False)

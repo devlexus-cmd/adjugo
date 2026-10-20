@@ -45,7 +45,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.models import (Company, DossierPartBrouillon, DossierPresentation, DossierRepartition, DossierSection,
                         DossierSectionVersion, DossierValidation, Job, Project, ProjectContribution, ProjectInvite,
-                        User, utcnow)
+                        STATUTS_CLOS, User, utcnow)
 from app.services import atelier as at
 from app.services import faits_a_relire as far
 from app.services import faits_sources as fs
@@ -1465,7 +1465,8 @@ def _notifier_chef(db, acces: Acces, section: DossierSection) -> None:
         _send_mails_async([(to, f"{nom} a envoyé sa partie — {acces.project.name[:60]}",
                             f"Bonjour,\n\n{nom} vient d'envoyer sa partie « {_titre(acces.dossier, section)} » du "
                             f"dossier de présentation du marché « {acces.project.name} ».\n\nRelisez-la dans "
-                            f"l'atelier, onglet « Qui écrit quoi » :\n{base}/app\n\n— Adjugo")])
+                            f"l'atelier, onglet « Qui écrit quoi » :\n"
+                            f"{base}/app/marches/{acces.project.id}/dossier-de-presentation\n\n— Adjugo")])
     except Exception:       # noqa: BLE001
         pass
 
@@ -2200,7 +2201,7 @@ def parts_a_relancer(db, today: Optional[date] = None) -> dict:
         st = getattr(p, "status", None)
         st = st.value if hasattr(st, "value") else str(st or "")
         if s is None or s.retiree_at is not None or p is None or p.deleted_at is not None \
-                or st in ("envoye", "gagne", "perdu", "abandonne"):
+                or st in STATUTS_CLOS:
             continue
         if statut_de(db, s, r) not in (A_REDIGER, EN_COURS):
             continue

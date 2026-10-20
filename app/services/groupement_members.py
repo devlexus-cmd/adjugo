@@ -446,7 +446,7 @@ def _etapes(state: str) -> list:
     return out
 
 
-CLOSED_STATUSES = ("envoye", "gagne", "perdu")      # « déposé » (état 8) et au-delà
+from app.models import STATUTS_DEPOSES as CLOSED_STATUSES   # « depose » (état 8) et au-delà (vague 2a)
 
 # Contrôles de l'étape 5, dans l'ordre d'affichage (libellés pour le front et les emails).
 DEPOT_CHECKS = [

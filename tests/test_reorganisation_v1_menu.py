@@ -277,7 +277,9 @@ def test_accueil_allege():
     assert ">À plusieurs<" in plusieurs and "user-plus" not in plusieurs and "users-round" not in plusieurs
     assert "Mes groupements" not in plusieurs
     assert "<h3>Vos marchés</h3>" in zone(HTML, "accueil-flux")
-    assert zone(HTML, "accueil-rail").startswith('<div data-test="accueil-rail" v-if="expiring.length || dashTotal()"')
+    # Vague 2a (A1) : les pièces à renouveler sont dans le bloc « À faire » (accueil-a-faire), plus dans le rail.
+    assert zone(HTML, "accueil-rail").startswith('<div data-test="accueil-rail" v-if="dashTotal()"')
+    assert "pièces à renouveler" not in zone(HTML, "accueil-rail")
     assert ".dash-grid.solo { grid-template-columns:minmax(0,1fr); }" in CSS
     # Mes marchés › À plusieurs : « Préparer à plusieurs » remplace « Nouveau groupement ».
     cs = zone(HTML, "vue-consortiums")

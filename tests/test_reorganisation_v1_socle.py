@@ -87,6 +87,10 @@ ZONES = {
     "fenetres": ["tiroir-projet", "fenetre-siret", "fenetre-confirmation", "fenetre-fiche-partenaire",
                  "fenetre-invitation", "fenetre-formulaire", "fenetre-decouverte", "ecran-confirmation-email",
                  "fenetre-avis"],
+    # Vague 2a, A1 (docs/REORGANISATION_V2A.md) : barre basse sur téléphone, cloche « À faire / Activité », bloc
+    # « À faire » de l'accueil, décision de l'étape Décider, carte « À venir » créée depuis une fin de contrat.
+    "vague2a_a1": ["menu-bas", "fenetre-notifications", "accueil-a-faire", "marche-decision",
+                   "trouver-preparer-a-venir"],
 }
 FAMILLES = {"fenetres-atelier": 5, "fenetres-preuves": 2}     # même nom sur plusieurs fenêtres sœurs
 
@@ -433,13 +437,16 @@ def test_bandeau_cookies_vers_la_page_de_confidentialite(client):
 
 
 def test_statut_envoye_s_affiche_depose_sans_toucher_a_la_cle():
+    """Vague 0 : le libellé « Déposé ». Vague 2a (décision 7, docs/REORGANISATION_V2A.md, A1) : la clé « envoye » a
+    migré vers « depose » ; le libellé vient de l'axe unique (AXE_ETAPES) ; un devis reste « Envoyé »."""
     i = JS.index("    statusLabel(s) {")
     status = JS[i:JS.index("\n", i)]
-    assert 'envoye: "Déposé"' in status and "Envoyé" not in status
+    assert "libelleStatut(s)" in status and "Envoyé" not in status
+    assert '{ k: "depose", label: "Déposé" }' in JS and '"envoye"' not in JS[JS.index("const AXE_ETAPES"):JS.index("function libelleStatut(")]
     assert 'envoye: "Envoyé"' in JS                    # devis et factures : un devis s'envoie, il ne se dépose pas
-    assert '"nouveau", "en_cours", "envoye", "gagne", "perdu"' in JS                        # clé inchangée
-    from app.models import ProjectStatus
-    assert ProjectStatus("envoye")                                                        # base inchangée
+    from app.models import InvoiceStatus, ProjectStatus
+    assert ProjectStatus("envoye") is ProjectStatus.depose and "envoye" not in ProjectStatus.__members__
+    assert InvoiceStatus("envoye").value == "envoye"                                    # devis : clé inchangée
 
 
 def test_cartes_d_offre_et_vitrine_disent_juste():

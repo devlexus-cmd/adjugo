@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs"></script>
-<script src="/static/i18n.js" integrity="sha384-PBAmdqpanieD+uOBUwLaipTce9nKFT075y7UuXV9Lu8PctHYgtJAKjs4z8w8kWBZ" defer></script>
+<script src="/static/i18n.js" integrity="sha384-7M8idUDq7GhtCa7GqGMmez2UOAx2CXfC0Vke0qm2pudI5qJxbc9t/XlSn6C96C7t" defer></script>
 </head>
 <body>
 <div id="app">
@@ -121,18 +121,33 @@
              bulle (i) (1.7), avec l'ancien nom de l'écran pendant la transition (1.8). -->
         <div class="top-title"><h1>{{ enteteTitre() }}</h1><button v-if="enteteAide()" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><span v-if="enteteAideVue()">{{ enteteAideVue() }}</span><span v-if="enteteAncien()" class="tip-ancien">{{ enteteAncien() }}</span></span></button></div>
         <div class="spacer"></div>
-        <div style="position:relative">
-          <button class="btn icon ghost" @click="toggleNotifs()" aria-label="Notifications" style="position:relative">
+        <!-- La cloche (réorganisation, vague 2a, A1) : « À faire » (ce qui attend votre action, la même liste que le bloc
+             de l'accueil) et « Activité » (ce que font vos partenaires). Sa pastille ne compte que ce qui est à faire. -->
+        <div class="notif-zone">
+          <button class="btn icon ghost" @click="toggleNotifs()" :aria-label="aFaire().length ? 'À faire et activité, ' + aFaire().length + ' en attente de votre action' : 'À faire et activité'" :aria-expanded="notifsOpen?'true':'false'" style="position:relative">
             <i data-lucide="bell"></i>
-            <span v-if="notifUnseen>0" style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--danger-text);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ notifUnseen>99?'99+':notifUnseen }}</span>
+            <span v-if="aFaire().length" class="notif-pastille" aria-hidden="true">{{ aFaire().length>99?'99+':aFaire().length }}</span>
           </button>
           <div v-if="notifsOpen" @click="notifsOpen=false" style="position:fixed;inset:0;z-index:40"></div>
-          <div v-if="notifsOpen" style="position:absolute;right:0;top:40px;z-index:41;width:340px;max-height:440px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:11px;box-shadow:0 10px 34px rgba(0,0,0,.13)">
-            <div class="row" style="padding:11px 14px;border-bottom:1px solid var(--hairline);gap:6px"><i data-lucide="handshake" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Activité des partenaires</b></div>
-            <div v-if="!notifs.length" class="muted small" style="padding:16px 14px">Aucune activité récente de vos partenaires.</div>
-            <div v-for="n in notifs" :key="n.id" @click="openNotif(n)" style="padding:10px 14px;border-bottom:1px solid var(--hairline);cursor:pointer" @mouseover="$event.currentTarget.style.background='var(--surface-2)'" @mouseleave="$event.currentTarget.style.background=''">
-              <div class="small"><b>{{ n.actor }}</b> {{ n.label }}<span v-if="n.detail" class="muted"> · {{ n.detail }}</span></div>
-              <div class="muted small">{{ n.project }} · {{ auditAt(n.at) }}</div>
+          <div data-test="fenetre-notifications" v-if="notifsOpen" class="notif-pop" role="dialog" aria-label="À faire et activité">
+            <div class="notif-onglets" role="tablist">
+              <button type="button" role="tab" class="notif-og" :class="{on:notifsOnglet==='a_faire'}" :aria-selected="notifsOnglet==='a_faire'?'true':'false'" @click="notifsVoir('a_faire')"><span>À faire</span><span v-if="aFaire().length" class="rn-count">{{ aFaire().length }}<span class="sr-only"> en attente de votre action</span></span></button>
+              <button type="button" role="tab" class="notif-og" :class="{on:notifsOnglet==='activite'}" :aria-selected="notifsOnglet==='activite'?'true':'false'" @click="notifsVoir('activite')"><span>Activité</span><span v-if="notifUnseen>0" class="notif-point" aria-hidden="true"></span><span v-if="notifUnseen>0" class="sr-only"> (nouvelle activité)</span></button>
+            </div>
+            <div v-if="notifsOnglet==='a_faire'" role="tabpanel">
+              <div v-if="!aFaire().length" class="muted small notif-vide">Rien n'attend votre action pour l'instant.</div>
+              <button v-for="t in aFaire()" :key="'nf'+t.k" type="button" class="notif-l" @click="aFaireOuvrir(t)">
+                <i :data-lucide="t.ic" aria-hidden="true"></i>
+                <span class="notif-tx"><b class="small">{{ t.titre }}</b><span class="muted small">{{ t.detail }}</span></span>
+                <span class="notif-cta small">{{ t.cta }}</span>
+              </button>
+            </div>
+            <div v-else role="tabpanel">
+              <div v-if="!notifs.length" class="muted small notif-vide">Aucune activité récente de vos partenaires.</div>
+              <div v-for="n in notifs" :key="n.id" @click="openNotif(n)" style="padding:10px 14px;border-bottom:1px solid var(--hairline);cursor:pointer" @mouseover="$event.currentTarget.style.background='var(--surface-2)'" @mouseleave="$event.currentTarget.style.background=''">
+                <div class="small"><b>{{ n.actor }}</b> {{ n.label }}<span v-if="n.detail" class="muted"> · {{ n.detail }}</span></div>
+                <div class="muted small">{{ n.project }} · {{ auditAt(n.at) }}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -212,6 +227,23 @@
               <button v-if="!s.done" class="btn sm primary" @click="go(s.view)">{{ s.cta }}</button>
             </div>
           </div>
+          <!-- « À faire » (réorganisation, vague 2a, A1) : ce qui attend votre action, la même liste que la cloche
+               (listeAFaire, app.js). Absent quand il n'y a rien (jamais « 0 »). -->
+          <div data-test="accueil-a-faire" v-if="aFaire().length" class="card pad dash-block" role="region" aria-labelledby="afaire-t">
+            <div class="row" style="align-items:center;gap:8px">
+              <i data-lucide="bell" style="color:var(--accent-text)"></i>
+              <b id="afaire-t" style="flex:1">À faire</b>
+              <button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ce qui attend votre action : un accord ou une partie du dossier de présentation qu'un chef de file vous demande, une invitation reçue, une date limite dans les 7 jours, une part de partenaire encore attendue, une pièce à renouveler. La même liste est dans la cloche, en haut de chaque écran.</span></button>
+            </div>
+            <ul class="afaire-liste">
+              <li v-for="t in aFaire().slice(0, 6)" :key="'af'+t.k" class="afaire-l">
+                <i :data-lucide="t.ic" aria-hidden="true"></i>
+                <span class="afaire-tx"><b class="small">{{ t.titre }}</b><span class="muted small">{{ t.detail }}</span></span>
+                <button type="button" class="btn sm" @click="aFaireOuvrir(t)">{{ t.cta }}</button>
+              </li>
+            </ul>
+            <button v-if="aFaire().length > 6" type="button" class="linkbtn small" style="margin-top:6px" @click="toggleNotifs()">Tout voir dans la cloche</button>
+          </div>
           <!-- Accueil allégé (réorganisation, vague 1, 1.6) : plus de ruban de 4 chiffres (« Taux de réussite 0 % »
                sur un compte neuf), plus de liens qui doublent le menu ni de 4e raccourci « Trouver des marchés ». -->
 
@@ -289,7 +321,7 @@
             </div>
           </div>
 
-          <div data-test="accueil-grille" class="dash-grid" :class="{solo:!(expiring.length || dashTotal())}">
+          <div data-test="accueil-grille" class="dash-grid" :class="{solo:!dashTotal()}">
             <!-- Feed priorisé -->
             <div data-test="accueil-flux" class="card dash-feed">
               <div class="ch"><h3>Vos marchés</h3><div class="spacer"></div><button class="btn ghost sm" @click="go('pipeline')">Tout voir<i data-lucide="arrow-right"></i></button></div>
@@ -315,12 +347,8 @@
             </div>
 
             <!-- Rail : pièces à renouveler et marchés par étape (1.6 : plus de raccourcis qui doublent le menu) -->
-            <div data-test="accueil-rail" v-if="expiring.length || dashTotal()" class="dash-rail">
-              <button v-if="expiring.length" type="button" class="alert-callout is-link" @click="go('documents')">
-                <i data-lucide="alert-triangle"></i>
-                <div><b>{{ expiring.length }} {{ pl(expiring.length, 'pièce à renouveler', 'pièces à renouveler') }}</b><div class="small">Vérifiez la validité avant vos prochains dépôts.</div></div>
-                <i data-lucide="chevron-right" class="cr"></i>
-              </button>
+            <!-- Vague 2a (A1) : les pièces à renouveler sont dans le bloc « À faire », plus haut (une seule fois). -->
+            <div data-test="accueil-rail" v-if="dashTotal()" class="dash-rail">
 
               <div class="card pad" v-if="dashTotal()">
                 <h3>Mes marchés</h3>
@@ -466,12 +494,13 @@
           </div>
 
           <!-- Les 4 étapes de la réponse (décision 6) : des ancres, sans blocage ; elles remplacent ici les
-               étapes 1 à 5 du groupement. L'étape en cours est déduite de l'état du marché (aoEtape). -->
+               étapes 1 à 5 du groupement. L'étape en cours est déduite de l'état du marché (aoEtape) ; chaque étape dit
+               son statut dérivé de l'axe (vague 2a, décision 7 : Terminé · En cours · À faire, aoBarre). -->
           <nav data-test="marche-etapes" class="mk-etapes" aria-label="Étapes de la réponse">
-            <button type="button" class="mk-et" :class="{cur:aoEtape()==='lire'}" :aria-current="aoEtape()==='lire'?'step':null" @click="rnScrollTo('etLire')"><span class="mk-n" aria-hidden="true">1</span><span>Lire</span></button>
-            <button type="button" class="mk-et" :class="{cur:aoEtape()==='decider'}" :aria-current="aoEtape()==='decider'?'step':null" @click="rnScrollTo('etDecider')"><span class="mk-n" aria-hidden="true">2</span><span>Décider</span></button>
-            <button type="button" class="mk-et" :class="{cur:aoEtape()==='preparer'}" :aria-current="aoEtape()==='preparer'?'step':null" @click="rnScrollTo('etPreparer')"><span class="mk-n" aria-hidden="true">3</span><span>Préparer</span></button>
-            <button type="button" class="mk-et" :class="{cur:aoEtape()==='deposer'}" :aria-current="aoEtape()==='deposer'?'step':null" @click="rnScrollTo('etDeposer')"><span class="mk-n" aria-hidden="true">4</span><span>Déposer</span></button>
+            <button type="button" class="mk-et" :class="['mk-'+(aoBarreEtat('lire').etat||'aucun'), {cur:aoEtape()==='lire'}]" :aria-current="aoEtape()==='lire'?'step':null" @click="rnScrollTo('etLire')"><span class="mk-n" aria-hidden="true">1</span><span>Lire</span><span v-if="aoBarreEtat('lire').statut" class="mk-st"><span class="sr-only"> : </span>{{ aoBarreEtat('lire').statut }}</span></button>
+            <button type="button" class="mk-et" :class="['mk-'+(aoBarreEtat('decider').etat||'aucun'), {cur:aoEtape()==='decider'}]" :aria-current="aoEtape()==='decider'?'step':null" @click="rnScrollTo('etDecider')"><span class="mk-n" aria-hidden="true">2</span><span>Décider</span><span v-if="aoBarreEtat('decider').statut" class="mk-st"><span class="sr-only"> : </span>{{ aoBarreEtat('decider').statut }}</span></button>
+            <button type="button" class="mk-et" :class="['mk-'+(aoBarreEtat('preparer').etat||'aucun'), {cur:aoEtape()==='preparer'}]" :aria-current="aoEtape()==='preparer'?'step':null" @click="rnScrollTo('etPreparer')"><span class="mk-n" aria-hidden="true">3</span><span>Préparer</span><span v-if="aoBarreEtat('preparer').statut" class="mk-st"><span class="sr-only"> : </span>{{ aoBarreEtat('preparer').statut }}</span></button>
+            <button type="button" class="mk-et" :class="['mk-'+(aoBarreEtat('deposer').etat||'aucun'), {cur:aoEtape()==='deposer'}]" :aria-current="aoEtape()==='deposer'?'step':null" @click="rnScrollTo('etDeposer')"><span class="mk-n" aria-hidden="true">4</span><span>Déposer</span><span v-if="aoBarreEtat('deposer').statut" class="mk-st"><span class="sr-only"> : </span>{{ aoBarreEtat('deposer').statut }}</span></button>
           </nav>
 
           <!-- ── 1. Lire ── -->
@@ -595,6 +624,23 @@
           <!-- ── 2. Décider ── -->
           <section data-test="marche-decider" ref="etDecider" tabindex="-1" class="mk-etape" aria-labelledby="mk-decider-h">
             <div class="mk-etape-h"><h3 id="mk-decider-h">Décider</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Seul ou à plusieurs : ce que vous couvrez d'après le dossier, ce qui manque, et les entreprises qui peuvent vous compléter. Vous décidez ; Adjugo ne décide pas à votre place.</span></button></div>
+            <!-- La décision (réorganisation, vague 2a, A1) : elle fait avancer le statut sur l'axe, jamais en arrière.
+                 « Écarter » se confirme et se défait (« Remettre »). Adjugo ne décide pas à votre place. -->
+            <div data-test="marche-decision" v-if="aoDecisionVisible()" class="card pad mk-decision">
+              <div v-if="ao.project.status==='abandonne'" class="row wrap" style="gap:8px;align-items:center">
+                <i data-lucide="archive" style="width:16px;height:16px;color:var(--text-2)"></i><b class="small" style="flex:1;min-width:160px">Marché écarté</b>
+                <button type="button" class="btn sm" @click="aoDecider('remettre')"><i data-lucide="archive-restore"></i>Remettre</button>
+              </div>
+              <template v-else>
+                <div class="row wrap mk-decision-a">
+                  <button type="button" class="btn sm" @click="aoDecider('seul')"><i data-lucide="user"></i>Préparer seul</button>
+                  <button type="button" class="btn sm" @click="aoDecider('plusieurs')"><i data-lucide="handshake"></i>Préparer à plusieurs</button>
+                  <button type="button" class="btn sm ghost" @click="aoDecider('ecarter')"><i data-lucide="archive"></i>Écarter</button>
+                  <button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Préparer seul ou à plusieurs : le marché passe « Décidé », puis « En préparation » dès que vous estimez votre prix, ouvrez le dossier de présentation, préparez les formulaires ou invitez un partenaire. Un marché « À venir » le reste jusqu'à sa publication. Écarter le range en « Abandonné », sans rien supprimer.</span></button>
+                </div>
+                <p v-if="ao.project.status!=='nouveau'" class="muted small mk-decision-st"><span>Statut</span> <span class="pill" :class="'st-'+ao.project.status" style="font-size:11px">{{ statusLabel(ao.project.status) }}</span></p>
+              </template>
+            </div>
             <p v-if="!ao.project.ai_analysis" class="card pad muted small mk-vide">Analysez d'abord le marché (étape Lire) : Adjugo montre alors ce que vous couvrez seul, ce qui manque et qui peut vous compléter.</p>
             <!-- Répondre à plusieurs ? — seul ou à plusieurs (décision 8), manques du dossier, candidats, simulation (co-traitance v2) -->
             <div data-test="marche-plusieurs" v-if="ao.project.ai_analysis" class="card" style="margin-top:14px;border:1.5px solid var(--accent)">
@@ -1437,8 +1483,8 @@
                  des membres, convention) et signalerait de faux manques à une entreprise seule. -->
             <section data-test="marche-pret-a-deposer" v-if="depotShown() && (depotIsDeposed() || depotPret() || ao.depot.loading || ao.depot.err)" class="conv-pret" :class="{ok: depotIsDeposed() || (depotPret() && depotPret().pret)}" ref="depotCard" tabindex="-1" aria-labelledby="conv-pret-h">
               <template v-if="depotIsDeposed()">
-                <div class="conv-st"><i data-lucide="send"></i><span id="conv-pret-h">Dossier marqué déposé</span><span class="pill" :class="'st-'+(depotStatus()||'envoye')" style="font-size:11px">{{ statusLabel(depotStatus()||'envoye') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Chaque partenaire voit le marquage dans son journal et l'étape « Déposé » dans son espace. Les relances automatiques sont arrêtées pour ce marché. Adjugo ne dépose pas le dossier à votre place : ce marquage le note.</span></button></div>
-                <div v-if="depotStatus()==='envoye'" class="row wrap conv-actions"><button type="button" class="btn sm ghost btn-wrap" @click="aoDepotAskCancel()" :disabled="!!ao.depot.busy"><span v-if="ao.depot.busy==='annuler'" class="spin"></span><i v-else data-lucide="undo-2"></i>Retirer le marquage « déposé »</button></div>
+                <div class="conv-st"><i data-lucide="send"></i><span id="conv-pret-h">Dossier marqué déposé</span><span class="pill" :class="'st-'+(depotStatus()||'depose')" style="font-size:11px">{{ statusLabel(depotStatus()||'depose') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Chaque partenaire voit le marquage dans son journal et l'étape « Déposé » dans son espace. Les relances automatiques sont arrêtées pour ce marché. Adjugo ne dépose pas le dossier à votre place : ce marquage le note.</span></button></div>
+                <div v-if="depotStatus()==='depose'" class="row wrap conv-actions"><button type="button" class="btn sm ghost btn-wrap" @click="aoDepotAskCancel()" :disabled="!!ao.depot.busy"><span v-if="ao.depot.busy==='annuler'" class="spin"></span><i v-else data-lucide="undo-2"></i>Retirer le marquage « déposé »</button></div>
               </template>
               <template v-else-if="depotPret()">
                 <div class="conv-st"><i :data-lucide="depotPret().pret?'badge-check':'list-checks'"></i><span id="conv-pret-h">{{ depotPret().pret ? 'Prêt à déposer' : 'Avant de déposer' }}</span><span class="pill" :class="depotPret().pret?'go':'a_etudier'" style="font-size:11px">{{ depotCount(depotPret()) }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les 4 contrôles qu'Adjugo vérifie avant le dépôt : les parts, les attestations à la date limite, la convention validée par tous et les formulaires officiels préparés après elle. Ce qui manque est listé sous chaque contrôle, avec l'action qui le règle.</span></button><div class="spacer"></div><button type="button" class="btn icon sm ghost" @click="aoDepotLoad()" :disabled="ao.depot.loading" aria-label="Actualiser les contrôles avant dépôt"><span v-if="ao.depot.loading" class="spin"></span><i v-else data-lucide="refresh-cw"></i></button></div>
@@ -1555,6 +1601,9 @@
                 <div class="muted small" style="margin-top:3px">{{ r.acheteur||'Acheteur' }}<span v-if="r.lieu"> · dépt {{ r.lieu }}</span> · notifié le {{ fmtDate(r.date_attribution) }} · fin estimée {{ fmtDate(r.fin_estimee) }}</div>
                 <a v-if="r.url" :href="safeUrl(r.url)" target="_blank" rel="noopener" class="small" style="margin-top:5px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ r.source_plateforme!==undefined ? 'Voir la fiche acheteur' : 'Voir l\'avis d\'attribution' }}</a>
               </div>
+              <!-- Décision 11 : le premier geste de travail crée la carte dans Mes marchés, à l'étape « À venir », avant la
+                   publication ; on y invite ses partenaires. -->
+              <button data-test="trouver-preparer-a-venir" type="button" class="btn sm" style="flex:none" @click="srcAVenirPreparer(r)" :disabled="!!src.renewals.prep"><span v-if="src.renewals.prep===r.idweb" class="spin"></span><i v-else data-lucide="handshake"></i>Préparer à plusieurs</button>
             </div>
           </div>
 
@@ -2645,7 +2694,7 @@
             <button class="btn primary" @click="rubriqueGo('trouver')"><i data-lucide="search"></i>Trouver des marchés</button>
           </div>
           <div v-else class="kanban">
-            <div v-for="s in statuses2" :key="s" class="kcol">
+            <div v-for="s in kanbanColonnes()" :key="s" class="kcol">
               <div class="kcol-h"><span class="pill" :class="'st-'+s">{{ statusLabel(s) }}</span><span class="n">{{ byStatus(s).length }}</span></div>
               <div v-for="p in byStatus(s)" :key="p.id" class="kcard" @click="openProject(p)">
                 <div class="ti2">{{ (p.name||'').slice(0,60) }}</div>
@@ -3566,7 +3615,7 @@
 
         <!-- Partagé avec moi — état chargement / erreur (sinon écran blanc pendant l'appel ou si le lien a expiré) -->
         <section data-test="vue-sharedao-attente" v-if="view==='sharedao' && !sharedAo.project">
-          <button class="btn ghost sm" @click="go('shared')" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Où je suis partenaire</button>
+          <button class="btn ghost sm" @click="partageRetour()" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Où je suis partenaire</button>
           <div v-if="sharedAo.error" class="empty card pad">
             <div class="eic"><i data-lucide="lock"></i></div>
             <h4>Dossier inaccessible</h4><p>{{ sharedAo.error }}</p>
@@ -3576,7 +3625,7 @@
 
         <!-- Partagé avec moi — un AO : je contribue en tant que MON entreprise -->
         <section data-test="vue-sharedao" v-if="view==='sharedao' && sharedAo.project">
-          <button class="btn ghost sm" @click="go('shared')" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Où je suis partenaire</button>
+          <button class="btn ghost sm" @click="partageRetour()" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Où je suis partenaire</button>
           <div data-test="partage-entete" class="card pad" style="margin-bottom:14px">
             <div class="muted small">Partagé par <b>{{ sharedAo.mandataire }}</b></div>
             <div style="font-size:19px;font-weight:800;margin:2px 0 4px;letter-spacing:-.02em">{{ sharedAo.project.name }}</div>
@@ -3812,6 +3861,16 @@
 
       </div>
     </main>
+    <!-- Barre basse sur téléphone (réorganisation, vague 2a, décision 18) : Accueil, Trouver, Mes marchés, Partenaires,
+         Menu. Le reste (Mes documents, Mon entreprise, Réglages) est sous « Menu », qui ouvre le menu complet. Mêmes
+         pastilles que le menu : ce qui attend votre action, jamais un total ni zéro. Masquée sur ordinateur. -->
+    <nav data-test="menu-bas" class="barre-basse" aria-label="Menu principal">
+      <button type="button" class="bb-i" :class="{on:rubrique()==='accueil'}" :aria-current="rubrique()==='accueil'?'page':null" @click="go('dashboard')"><i data-lucide="house"></i><span>Accueil</span></button>
+      <button type="button" class="bb-i" :class="{on:rubrique()==='trouver'}" :aria-current="rubrique()==='trouver'?'page':null" @click="rubriqueGo('trouver')"><i data-lucide="search"></i><span>Trouver</span></button>
+      <button type="button" class="bb-i" :class="{on:rubrique()==='marches'}" :aria-current="rubrique()==='marches'?'page':null" @click="go('pipeline')"><i data-lucide="folder-kanban"></i><span>Mes marchés</span><span v-if="mmActions()" class="bb-badge">{{ mmActions() }}<span class="sr-only"> en attente de votre action</span></span></button>
+      <button type="button" class="bb-i" :class="{on:rubrique()==='partenaires'}" :aria-current="rubrique()==='partenaires'?'page':null" @click="go('cotraitants')"><i data-lucide="handshake"></i><span>Partenaires</span></button>
+      <button type="button" class="bb-i" :class="{on:menuBasMenu()}" :aria-expanded="mobileNav?'true':'false'" @click="mobileNav=!mobileNav"><i data-lucide="menu"></i><span>Menu</span><span v-if="expiring.length" class="bb-badge">{{ expiring.length }}<span class="sr-only"> {{ pl(expiring.length, 'pièce à renouveler', 'pièces à renouveler') }}</span></span></button>
+    </nav>
   </div>
 
   <!-- ══════════ ATELIER : FENÊTRES (rédaction, vague 2) ══════════
@@ -4151,6 +4210,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-6u2dcizU1R7TgbFpANxwY3jDSA7O0EQpkhqXfp1A4RwHslj7somFoJxnE+iDz027" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6" defer></script>
-<script src="/static/app.js" integrity="sha384-1QX1oQI0IsMBGQHqBh/i0dC33cti6FJeqp+01Kdib3zjSM5cSNrgYNerisWLX0dh" defer></script>
+<script src="/static/app.js" integrity="sha384-ycFdvgZhedlm3Fn4nOsTWvzbvjL7WMt025pfR6X8oIUyVaHFGQ/OqByQHPgNCK2Z" defer></script>
 </body>
 </html>

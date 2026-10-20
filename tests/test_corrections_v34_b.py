@@ -573,7 +573,7 @@ def _depose_entry(pid, statut_precedent):
     db = _db()
     try:
         p = db.get(Project, pid)
-        p.status = ProjectStatus.envoye
+        p.status = ProjectStatus.depose
         db.commit()
         audit.record(db, action="groupement.depose", owner_id=p.user_id, project_id=pid, actor="user:0",
                      actor_kind="owner", target_type="project", target_id=pid,
@@ -598,7 +598,7 @@ def test_marche_abandonne_refuse_et_annulation_restaure_le_statut_precedent(clie
     for avant in ("nouveau", "en_cours"):
         _set_status(pid, avant)
         r = client.post(f"/api/projects/{pid}/groupement/deposer", headers=h, json={"confirmer": True})
-        assert r.status_code == 200 and r.json()["status"] == "envoye", r.text
+        assert r.status_code == 200 and r.json()["status"] == "depose", r.text
         r = client.delete(f"/api/projects/{pid}/groupement/deposer", headers=h)
         assert r.status_code == 200 and r.json()["etait_depose"] is True and r.json()["status"] == avant, r.json()
     # Marquage ancien d'un marché abandonné : l'annulation le rend « abandonné » (relances coupées).
@@ -632,7 +632,7 @@ def test_annulations_simultanees_une_seule_entree(client, auth, mails):
     _invite(client, h, pid, "Le Gall Électricité")
     for _k in range(3):
         assert client.post(f"/api/projects/{pid}/groupement/deposer", headers=h,
-                           json={"confirmer": True}).json()["status"] == "envoye"
+                           json={"confirmer": True}).json()["status"] == "depose"
         barrier, codes = threading.Barrier(2), []
 
         def click():

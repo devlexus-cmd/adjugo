@@ -21,12 +21,42 @@ class PlanType(str, enum.Enum):
 
 
 class ProjectStatus(str, enum.Enum):
-    nouveau = "nouveau"
-    en_cours = "en_cours"
-    envoye = "envoye"
+    """Un seul axe d'étapes (réorganisation, vague 2a, décision 7 ; docs/REORGANISATION_V2A.md, A1), dans l'ordre :
+    À venir → Repéré → Décidé → En préparation → Déposé → Gagné / Perdu, plus Abandonné. Les libellés sont dans
+    STATUTS_LIBELLES (et AXE_ETAPES, app.js). La clé « envoye » (jusqu'au 20/10/2026) est devenue « depose » : la
+    migration c4axeetapes a renommé les valeurs stockées ; une ancienne clé reçue (page ouverte avant la mise en
+    ligne, journal) est lue comme « depose » (`_missing_`). Ne pas confondre avec InvoiceStatus.envoye (un devis
+    s'envoie, il ne se dépose pas)."""
+    suivi = "suivi"            # À venir : une carte de Mes marchés avant la publication du marché (décision 11)
+    nouveau = "nouveau"        # Repéré
+    decide = "decide"          # Décidé : seul ou à plusieurs, rien n'est encore préparé
+    en_cours = "en_cours"      # En préparation
+    depose = "depose"          # Déposé (ancienne clé « envoye »)
     gagne = "gagne"
     perdu = "perdu"
-    abandonne = "abandonne"
+    abandonne = "abandonne"    # Abandonné (« Écarter » à l'étape Décider)
+
+    @classmethod
+    def _missing_(cls, value):
+        return cls.depose if value == "envoye" else None
+
+
+# L'axe, ses libellés (ceux de l'écran) et les familles de statuts lues par le serveur.
+AXE_ETAPES = tuple(s.value for s in ProjectStatus)
+STATUTS_LIBELLES = {"suivi": "À venir", "nouveau": "Repéré", "decide": "Décidé", "en_cours": "En préparation",
+                    "depose": "Déposé", "gagne": "Gagné", "perdu": "Perdu", "abandonne": "Abandonné"}
+STATUTS_DEPOSES = ("depose", "gagne", "perdu")             # déposé et au-delà
+STATUTS_CLOS = STATUTS_DEPOSES + ("abandonne",)            # plus de relance ni de rappel de date limite
+
+
+def statut_normalise(valeur):
+    """La clé de l'axe pour une valeur reçue (« envoye » → « depose »), None si elle n'en est pas une."""
+    if isinstance(valeur, ProjectStatus):
+        return valeur.value
+    try:
+        return ProjectStatus(str(valeur or "").strip()).value
+    except ValueError:
+        return None
 
 
 class InvoiceType(str, enum.Enum):

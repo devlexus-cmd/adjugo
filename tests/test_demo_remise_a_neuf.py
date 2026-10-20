@@ -81,7 +81,7 @@ def _toiture(client, h) -> dict:
 def _abimer(client, h) -> None:
     """Ce qu'un visiteur laisse derrière lui avec les écritures qui restent ouvertes."""
     k = _kerhel(client, h)
-    assert client.put(f"/api/projects/{k['id']}", headers=h, json={"status": "envoye"}).status_code == 200
+    assert client.put(f"/api/projects/{k['id']}", headers=h, json={"status": "depose"}).status_code == 200
     r = client.post("/api/projects/", headers=h, json={"name": "Marché ajouté pendant une présentation"})
     assert r.status_code == 201, r.text
     assert client.post("/api/contacts/", headers=h, json={"name": "Contact d'un visiteur"}).status_code == 201
@@ -179,8 +179,8 @@ def test_changement_d_etape_toujours_permis(client):
     """Le tableau des marchés reste interactif : la démo déplace un marché d'étape (et le remet)."""
     h = _session(client)
     t = _toiture(client, h)
-    r = client.put(f"/api/projects/{t['id']}", headers=h, json={"status": "envoye"})
-    assert r.status_code == 200 and r.json()["status"] == "envoye"
+    r = client.put(f"/api/projects/{t['id']}", headers=h, json={"status": "depose"})
+    assert r.status_code == 200 and r.json()["status"] == "depose"
     r = client.put(f"/api/projects/{t['id']}", headers=h, json={"status": "en_cours"})
     assert r.status_code == 200 and r.json()["status"] == "en_cours"
 

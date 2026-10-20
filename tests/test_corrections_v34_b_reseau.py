@@ -228,7 +228,7 @@ def test_marquer_depose_recalcule_le_compteur_du_reseau(client, reg, mails):
     assert (_profile_row(part["id"]).groupements_deposes or 0) == 0
     assert (_profile_row(chef["id"]).groupements_deposes or 0) == 0
     r = client.post(f"/api/projects/{pid}/groupement/deposer", headers=chef["headers"], json={"confirmer": True})
-    assert r.status_code == 200 and r.json()["status"] == "envoye", r.text
+    assert r.status_code == 200 and r.json()["status"] == "depose", r.text
     assert _profile_row(part["id"]).groupements_deposes == 1
     assert _profile_row(chef["id"]).groupements_deposes == 1
     assert _profile_row(part["id"]).last_groupement_at is not None
