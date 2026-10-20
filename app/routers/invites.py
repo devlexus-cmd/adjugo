@@ -1281,7 +1281,7 @@ class ContributionSave(BaseModel):
             return None
         v = float(v)
         if v != v or v < 0 or v > 1e10:   # NaN, négatif, absurde
-            raise ValueError("Le prix du lot doit être compris entre 0 et 10 milliards d'euros HT.")
+            raise ValueError("Le prix de votre partie doit être compris entre 0 et 10 milliards d'euros HT.")
         return v
 
     @field_validator("detail_chiffre")
@@ -2347,7 +2347,7 @@ _PARTNER_PIECE_TYPES = [
 # Types reconnus par NOM (classification à l'upload) : les 5 attendus + la qualification
 # (exigée seulement si le DCE demande des qualifications — cf. coffre_croise).
 _PIECE_TYPE_KEYWORDS = [
-    ("dpgf_lot", "Tableau de prix du lot (prix de vente)",
+    ("dpgf_lot", "Tableau de prix de la partie (prix de vente)",
      ("dpgf", "decomposition du prix global", "décomposition du prix global")),
 ] + _PARTNER_PIECE_TYPES + [
     ("qualification", "Qualification / certificat",
@@ -2665,11 +2665,11 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
         if not flags["submitted"]:
             missing.append(f"{name} n'a pas encore soumis sa part")
         elif not has_price:
-            missing.append(f"{name} : prix de lot manquant")
+            missing.append(f"{name} : prix de sa partie manquant")
         elif not flags["memoire"]:
             missing.append(f"{name} : paragraphe du dossier de présentation manquant")
         elif not flags["lot"]:
-            missing.append(f"{name} : lot/périmètre non précisé")
+            missing.append(f"{name} : partie du marché (lot) non précisée")
         elif not flags["references"]:
             missing.append(f"{name} : aucune référence renseignée")
         elif pclass["missing"]:
@@ -2701,8 +2701,8 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
     # de file ; placé APRÈS le coffre pour que les positions de `piece_line` restent justes).
     for k, names in lots.items():
         if len(names) > 1:
-            missing.insert(0, f"Lot « {k} » revendiqué par {len(names)} partenaires "
-                              f"({', '.join(names[:3])}) — un lot ne peut avoir qu'un seul attributaire")
+            missing.insert(0, f"Partie « {k} » revendiquée par {len(names)} partenaires "
+                              f"({', '.join(names[:3])}) : une partie (lot) n'a qu'un seul attributaire")
 
     # Journal membre : « le mandataire a consulté votre part » (1 entrée / part / heure).
     _record_owner_views(db, project_id, data_owner_id(current_user, db), f"user:{current_user.id}", "",
@@ -2778,7 +2778,7 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
         if not c or c.status != "submitted":
             manques.append(f"{name} n'a pas encore soumis sa part")
         elif c.prix_lot_ht is None:
-            manques.append(f"{name} : prix de lot manquant")
+            manques.append(f"{name} : prix de sa partie manquant")
     if manques:
         raise HTTPException(422, {"message": "Impossible de figer l'offre : il manque des éléments.",
                                   "missing": manques})
@@ -2787,7 +2787,7 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
         raise HTTPException(422, "Part du chef de file invalide.")
     total = total_offre_ht(project, db, lead_total=lead)
     if total is None:
-        raise HTTPException(422, "Impossible de calculer le total : vérifiez les prix de lot.")
+        raise HTTPException(422, "Impossible de calculer le total : vérifiez le prix de la partie de chaque partenaire.")
     est = project.estimate if isinstance(project.estimate, dict) else {}
     lead_total = lead if lead is not None else (
         float(est["total_ht"]) if est.get("total_ht") is not None else None)

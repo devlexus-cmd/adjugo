@@ -88,9 +88,9 @@ def _ajoutes(ajoutes: Optional[str]) -> list:
     try:
         x = json.loads(ajoutes)
     except ValueError:
-        raise HTTPException(422, {"code": "lots_invalides", "message": "Indiquez le numéro et l'intitulé du lot."})
+        raise HTTPException(422, {"code": "lots_invalides", "message": "Indiquez le numéro et l'intitulé de la partie (lot)."})
     if not isinstance(x, list):
-        raise HTTPException(422, {"code": "lots_invalides", "message": "Indiquez le numéro et l'intitulé du lot."})
+        raise HTTPException(422, {"code": "lots_invalides", "message": "Indiquez le numéro et l'intitulé de la partie (lot)."})
     return [{"numero": str(y.get("numero") or "")[:4], "intitule": str(y.get("intitule") or "")[:200]}
             for y in x[:8] if isinstance(y, dict)]
 

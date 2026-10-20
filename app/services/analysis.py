@@ -2189,7 +2189,7 @@ def _detect_groupement(details: dict, company: dict = None) -> dict:
     if "lot unique" in allot and allot.count("lot ") < 2:
         multi = False
     if multi:
-        raisons.append("Marché alloti : vous pouvez répondre à plusieurs, un partenaire par lot.")
+        raisons.append("Marché découpé en parties (lots) : vous pouvez répondre à plusieurs, un partenaire par partie.")
     reqs = details.get("qualifications_requises") or []
     own_q = str(company.get("qualifications") or "").lower()
     if isinstance(reqs, list) and own_q:

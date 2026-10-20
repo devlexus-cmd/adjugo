@@ -430,17 +430,18 @@ def test_ecrans_un_releve_par_lot_et_page_du_fichier_de_chaque_lot():
               " un: R.cnTetes([{cle: 'c1'}, {cle: 'c2'}], true), pl: R.cnPayload(L).map(x => x.lot),"
               " c: R.cnControle(L, [{numero: '2'}, {numero: '3'}]), c1: R.cnControle(L, []),"
               " h: R.cnPartenaireHtml(P) }));")
-    assert r["t"] == ["Lot 2 — Couverture <b>", "", "Lot 3 — Étanchéité", "Critères ajoutés"]
-    assert r["t0"] == ["Lot 2 — Couverture <b>", "", "Lot 3 — Étanchéité"] and r["un"] == ["", ""]
+    # Vague 2a (D10) : le titre dit « Partie (lot 2) — … » ; le libellé du serveur garde « Lot 2 — … ».
+    assert r["t"] == ["Partie (lot 2) — Couverture <b>", "", "Partie (lot 3) — Étanchéité", "Critères ajoutés"]
+    assert r["t0"] == ["Partie (lot 2) — Couverture <b>", "", "Partie (lot 3) — Étanchéité"] and r["un"] == ["", ""]
     assert r["pl"] == ["2", "2", "3", ""]
-    assert "choisissez le lot" in r["c"] and r["c1"] == ""
+    assert "choisissez la partie du marché" in r["c"] and r["c1"] == ""
     assert "<b>" not in r["h"] and "&lt;b&gt;" in r["h"] and "cn-lot-h" in r["h"]
     assert "Valeur technique (lot 3 — Étanchéité)" in r["h"]
-    assert "Note d'ensemble du groupement, lot 2 — Couverture" in r["h"]
+    assert "Note d'ensemble du groupement, partie (lot 2) — Couverture" in r["h"]
     racine = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     html = open(os.path.join(racine, "app", "static", "app.html"), encoding="utf-8").read()
     js = open(os.path.join(racine, "app", "static", "app.js"), encoding="utf-8").read()
-    assert 'aria-label="Page du fichier de quel lot"' in html and "atlPrepLot(l.numero)" in html
+    assert 'aria-label="Page du fichier de quelle partie du marché"' in html and "atlPrepLot(l.numero)" in html
     assert "atlDerniereFois(atlSec()).lot" in html
     assert '"/preparation" + (voulu ? "?lot=" + encodeURIComponent(voulu) : "")' in js
     assert "lot: l.numero, page_preparation: !!a.prepJoindre" in js

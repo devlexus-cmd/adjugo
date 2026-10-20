@@ -129,7 +129,7 @@ def test_repartition_preremplie_sans_ia_champs_lus_par_l_ecran(client, auth, fak
         assert l["choix"] == "propose" and l["statut"] == "a_rediger"
     env = _part_a(vue)
     assert env["redacteur"] == {"type": "partenaire", "invite_id": a["id"], "nom": "Breizh Désamiantage"}
-    assert "lot de Breizh Désamiantage" in env["proposition"]["message"]
+    assert "partie déclarée par Breizh Désamiantage" in env["proposition"]["message"]   # vague 2a (D10)
     for k in ("message", "membres", "sections_validees", "sections_total"):
         assert k in vue["dossier"]["pret"]
     assert vue["dossier"]["pret"]["message"] == "Sections validées 0 sur 6"

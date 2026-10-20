@@ -470,7 +470,7 @@ def put_profil(request: Request, body: ProfilIn, current_user: User = Depends(ge
     if "lot_max_eur" in fields:
         v = body.lot_max_eur
         if v is not None and not (0 < float(v) <= 1e9):
-            raise HTTPException(422, "Taille de lot maximale invalide (montant HT positif).")
+            raise HTTPException(422, "Plus grosse partie acceptée : un montant HT positif.")
         upd["lot_max_eur"] = float(v) if v is not None else None
     if "presentation" in fields:
         v = _clean_text(body.presentation, 1000)
@@ -1000,7 +1000,7 @@ def _sirene_batch(jobs: list, budget_s: float = None) -> dict:
                 try:
                     out[key] = (list(fut.result() or []), list(w), False)
                 except Exception:
-                    out[key] = ([], list(w) + ["Recherche dans le registre officiel indisponible pour ce lot : réessayez plus tard."], False)
+                    out[key] = ([], list(w) + ["Recherche dans le registre officiel indisponible pour cette partie : réessayez plus tard."], False)
             else:
                 out[key] = ([], [], True)
     finally:
@@ -1054,14 +1054,14 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
     todo, covered, unknown, dept = lots_to_complete(details, company_data, criteria, lead)
     warnings = []
     if not details:
-        warnings.append("Ce marché n'a pas encore été analysé à partir de son dossier : importez le DCE pour "
-                        "connaître ses lots.")
+        warnings.append("Ce marché n'a pas encore été analysé à partir de son dossier : ajoutez le dossier du marché "
+                        "pour connaître ses parties (lots).")
     if lot:
         todo = [l for l in todo if str(l.get("num") or "") == str(lot)]
         if not todo:
-            raise HTTPException(404, "Lot introuvable parmi les lots à compléter.")
+            raise HTTPException(404, "Partie introuvable parmi les parties à compléter.")
     if len(todo) > MAX_LOTS:
-        warnings.append(f"Seuls les {MAX_LOTS} premiers lots à compléter sont affichés.")
+        warnings.append(f"Seules les {MAX_LOTS} premières parties à compléter sont affichées.")
         todo = todo[:MAX_LOTS]
 
     today = _today()
@@ -1115,8 +1115,8 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
                 jobs.append((idx, l["metier"], l["departement"] or ""))
                 entry["sirene_cherche"] = True
             else:
-                entry["sirene_message"] = (f"Recherche dans le registre officiel limitée à {MAX_SIRENE_LOTS} lots par "
-                                           f"requête : affichez ce lot seul pour la lancer.")
+                entry["sirene_message"] = (f"Recherche dans le registre officiel limitée à {MAX_SIRENE_LOTS} parties par "
+                                           f"requête : affichez cette partie seule pour la lancer.")
         entry["_shown_sirens"] = shown_sirens
         out_lots.append(entry)
 
@@ -1129,7 +1129,7 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
                 warnings.append(w)
         if slow:
             entry["sirene_cherche"] = False
-            entry["sirene_message"] = "Le registre officiel est lent à répondre : relancez la recherche pour ce lot."
+            entry["sirene_message"] = "Le registre officiel est lent à répondre : relancez la recherche pour cette partie."
             continue
         for m in found:
             sn = pn.clean_siren(m.get("siret"))
@@ -1159,7 +1159,7 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
         pn.count_appearances(db, ctx["owner_id"], shown)
     audit.record(db, action="network.match_query", owner_id=ctx["owner_id"], project_id=project.id,
                  actor=f"user:{current_user.id}", actor_kind="owner", target_type="project", target_id=project.id,
-                 detail=f"{len(out_lots)} lot(s), {len(shown)} profil(s) du réseau affiché(s), "
+                 detail=f"{len(out_lots)} partie(s), {len(shown)} profil(s) du réseau affiché(s), "
                         f"{sum(len(e['sirene']) for e in out_lots)} entreprise(s) du registre officiel"[:255],
                  ip=audit.client_ip(request))
     return {

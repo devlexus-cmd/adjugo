@@ -69,7 +69,7 @@ def _options(project) -> dict:
                    for p in gc.PARAMS],
         "mandataire": [
             {"key": "part_mandataire_ht", "type": "montant", "libelle": "Votre part : prix de vente HT de ce que vous réalisez"},
-            {"key": "lot_mandataire", "type": "texte", "libelle": "Votre part : lot ou prestations que vous réalisez"},
+            {"key": "lot_mandataire", "type": "texte", "libelle": "Votre part : la partie (lot) ou les prestations que vous réalisez"},
             {"key": "mandataire_qualite", "type": "texte", "libelle": "Qualité du signataire (ex. gérant, président)"},
         ],
     }
@@ -293,7 +293,7 @@ def save_draft(request: Request, project_id: int, data: BrouillonIn,
                 raise HTTPException(422, "Ce partenaire hors ligne est déjà dans la liste.")
             seen.add(e.link_id)
             if e.prix_lot_ht is not None and (e.prix_lot_ht != e.prix_lot_ht or e.prix_lot_ht < 0 or e.prix_lot_ht > 1e10):
-                raise HTTPException(422, "Le prix du lot doit être compris entre 0 et 10 milliards d'euros HT.")
+                raise HTTPException(422, "Le prix de la partie doit être compris entre 0 et 10 milliards d'euros HT.")
             hl.append({"link_id": e.link_id,
                        "prix_lot_ht": round(float(e.prix_lot_ht), 2) if e.prix_lot_ht is not None else None,
                        "lot": gc._clean(e.lot, 255) if e.lot is not None else "",

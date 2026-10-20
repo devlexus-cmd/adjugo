@@ -164,12 +164,14 @@ MSG_ANALYSE = ("Critères lus par l'analyse du marché : vérifiez-les avec le c
                "qui manquent.")
 MSG_SANS_CRITERE = "Aucun critère retrouvé pour ce marché : ajoutez ceux du courrier de l'acheteur."
 # Vague 6 (J) : plusieurs lots, un relevé de notes par lot.
-MSG_LOTS = "Vous avez répondu à plusieurs lots : l'acheteur note chaque lot à part, saisissez les notes lot par lot."
-MSG_LOT_INCONNU = ("Adjugo ne sait pas à quel lot se rapporte chaque note du courrier (il n'y trouve ni un titre comme "
-                   "« Lot 2 : … » ou « Pour le lot 2, … », ni un objet qui cite un seul de vos lots) : saisissez les "
-                   "notes lot par lot.")
-MSG_COURRIER_LOTS = ("Vous avez répondu à plusieurs lots : le courrier les cite tous. Retirez celui que vous avez "
-                     "remporté, le cas échéant.")
+# « partie (lot) » à l'écran (réorganisation, vague 2a, décision 10) ; le courrier à l'acheteur garde « lot ».
+MSG_LOTS = ("Vous avez répondu à plusieurs parties du marché (lots) : l'acheteur note chacune à part, saisissez les "
+            "notes partie par partie.")
+MSG_LOT_INCONNU = ("Adjugo ne sait pas à quelle partie du marché se rapporte chaque note du courrier (il n'y trouve ni "
+                   "un titre comme « Lot 2 : … » ou « Pour le lot 2, … », ni un objet qui cite une seule de vos "
+                   "parties) : saisissez les notes partie par partie.")
+MSG_COURRIER_LOTS = ("Vous avez répondu à plusieurs parties du marché : le courrier les cite toutes. Retirez celle que "
+                     "vous avez remportée, le cas échéant.")
 MSG_IA_PANNE = ("La lecture n'a pas abouti : le service d'IA est indisponible pour le moment. Rien n'a été décompté.")
 
 
@@ -1134,7 +1136,7 @@ def _ligne_in(x: dict, i: int, connus: dict, courrier_txt: str, lots: Optional[d
     else:
         lot = str(x.get("lot") or "").strip()
         if lots and lot not in lots:
-            raise CarnetError(422, "lot_requis", f"« {critere[:60]} » : choisissez le lot de ce critère.")
+            raise CarnetError(422, "lot_requis", f"« {critere[:60]} » : choisissez la partie du marché de ce critère.")
         if not lots:
             lot = ""
     if lot:

@@ -70,10 +70,12 @@ const RUBRIQUES = [
   { k: "documents", label: "Mes documents", ic: "folder-lock", vues: ["documents", "kb"], onglets: [
     { view: "documents", label: "Mes pièces", ic: "folder-lock", pastille: "pieces" },
     { view: "kb", label: "Mon savoir-faire", ic: "library" }] },
-  { k: "entreprise", label: "Mon entreprise", ic: "building-2", vues: ["company", "criteria", "preuves"], onglets: [
+  // Vague 2a (A3) : Mon entreprise en 4 onglets, Identité · Ce que je cherche · Mes preuves · Tarifs (étude, § 5.3).
+  { k: "entreprise", label: "Mon entreprise", ic: "building-2", vues: ["company", "criteria", "preuves", "tarifs"], onglets: [
     { view: "company", label: "Identité", ic: "building-2", ancien: "Profil de l'entreprise" },
-    { view: "criteria", label: "Mes critères", ic: "sliders-horizontal" },
-    { view: "preuves", label: "Mes preuves", ic: "award" }] },
+    { view: "criteria", label: "Ce que je cherche", ic: "sliders-horizontal", ancien: "Mes critères" },
+    { view: "preuves", label: "Mes preuves", ic: "award" },
+    { view: "tarifs", label: "Tarifs", ic: "calculator", avant: "Vos tarifs étaient dans l'onglet « Identité »." }] },
   { k: "reglages", label: "Réglages", ic: "settings", groupe: true, vues: ["team", "billing", "compte", "admin"], onglets: [
     { view: "team", label: "Collègues", ic: "users-round", ancien: "Équipe" },
     { view: "billing", label: "Abonnement", ic: "credit-card" },
@@ -115,6 +117,40 @@ function noteReorgVisible(user, etat, maintenant) {
   const e = etat || {};
   if (e.ferme) return false;
   return !e.vu || (maintenant - e.vu) < REORG_V1_DUREE_MS;
+}
+
+// ══════════ Réorganisation, vague 2a (chantier A3) ══════════
+// Fenêtre de confirmation de l'application (elle remplace les confirm() et prompt() du navigateur) : les champs
+// sont-ils valables ? Un champ `requis` doit être rempli ; un champ `attendu` (« SUPPRIMER ») doit valoir ce mot, sans
+// tenir compte de la casse ni des espaces autour ; un champ `motif` (expression régulière) doit le suivre quand il
+// est rempli. Fonction pure, testée sous Node (tests/test_reorganisation_v2a_entreprise.py).
+function champsValides(fields) {
+  return (fields || []).every(f => {
+    const v = String(f && f.value != null ? f.value : "").trim();
+    if (f.attendu) return v.toUpperCase() === String(f.attendu).trim().toUpperCase();
+    if (f.requis && !v) return false;
+    if (f.motif && v && !new RegExp(f.motif).test(v)) return false;
+    return true;
+  });
+}
+// Mes documents : la catégorie d'une pièce (clé stockée → libellé lu ; app/models DocCategory), modifiable dans la
+// liste. Une clé inconnue s'affiche « Autre ».
+const CATEGORIES_DOC = [
+  { k: "administratif", label: "Administratif" }, { k: "fiscal", label: "Fiscal et social" },
+  { k: "assurances", label: "Assurances" }, { k: "qualifications", label: "Qualifications" }, { k: "autre", label: "Autre" }];
+function categorieDoc(k) { const c = CATEGORIES_DOC.find(x => x.k === k); return c ? c.label : "Autre"; }
+// « lot » devient « partie (lot n) » à l'écran (décision 10) : l'entreprise lit « partie », et retrouve le numéro du
+// règlement entre parenthèses. `x` : un numéro (« 2 »), ou un libellé du serveur (« Lot 2 — Couverture », gardé tel
+// quel dans les fichiers exportés et les données) ; `minuscule` : au milieu d'une phrase. Un texte libre (le
+// périmètre saisi par un partenaire) reste tel quel. Même fonction dans redaction-partenaire.js et carnet-notes.js
+// (chargés aussi par invite.html, sans app.js) : tests/test_reorganisation_v2a_entreprise.py vérifie que ce sont les mêmes.
+function partieLot(x, intitule, minuscule) {
+  if (typeof intitule === "boolean") { minuscule = intitule; intitule = ""; }
+  const s = String(x == null ? "" : x).trim();
+  const m = /^(?:lot\s*(?:n\s*[°o.]?\s*)?)?0*(\d{1,3})(?:\s*[—–:-]\s*(.*))?$/i.exec(s);
+  if (!m || (!/^lot/i.test(s) && !/^\d+$/.test(s))) return s;
+  const reste = String(intitule || m[2] || "").trim();
+  return (minuscule ? "partie" : "Partie") + " (lot " + m[1] + ")" + (reste ? " — " + reste : "");
 }
 
 // Traduction runtime de l'UI : remplace les libellés FR statiques par leur
@@ -907,6 +943,7 @@ const __adjApp = createApp({
       reorgEtat: (function(){ try { return JSON.parse(localStorage.getItem("adjugo_reorg_v1") || "{}") || {}; } catch(e){ return {}; } })(),
       auth: { mode: "login", email: "", password: "", full_name: "", company_name: "", resetToken: "", sent: false },
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], docQuery: "", docSort: "recent", expiring: [],
+      categoriesDoc: CATEGORIES_DOC, docBusy: null,   // Mes documents : catégorie et date de fin modifiables (vague 2a, A3)
       notifs: [], notifsOpen: false, notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
       grpDash: null,   // tableau de bord « Répondre à plusieurs » (vague 4) : GET /api/groupement/tableau-de-bord
@@ -918,7 +955,7 @@ const __adjApp = createApp({
       atlJobs: {},            // rédactions en cours (tâches de fond), suivies toutes les 2 s, toutes pages confondues
       atlEchecs: {},          // « marché:partie » → message d'échec de la dernière rédaction, gardé jusqu'à la prochaine action
       atlMobile: false,       // écran étroit : lire et valider seulement
-      pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "dpgf_lot", l: "Tableau de prix du lot (prix de vente)" }, { k: "autre", l: "Autre" }],
+      pieceTypes: [{ k: "kbis", l: "Kbis" }, { k: "fiscale", l: "Attestation fiscale" }, { k: "sociale", l: "Attestation sociale (URSSAF)" }, { k: "assurance", l: "Assurance" }, { k: "rib", l: "RIB" }, { k: "qualification", l: "Qualification" }, { k: "dpgf_lot", l: "Tableau de prix de votre partie (prix de vente)" }, { k: "autre", l: "Autre" }],
       veille: { q: "", loc: "", results: [], loading: false },
       drawer: null, modal: null, cdlg: null,   // cdlg : confirmation d'une action de la convention
       reseau: _reseauInit(),                  // vue « Réseau » (vague 3)
@@ -1022,11 +1059,11 @@ const __adjApp = createApp({
             share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
       // Nom de chaque vue (en-tête des vues hors onglets, relevé de la mesure). Réorganisation, vague 1 (1.3) : les noms
       // de l'architecture C corrigée ; une vue rangée en onglet affiche en tête le nom de sa rubrique (enteteTitre).
-      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Accueil", sourcing: "Trouver des marchés", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes pièces", invoices: "Devis et factures", company: "Identité", criteria: "Mes critères", team: "Collègues", billing: "Abonnement", compte: "Mon compte", aodetail: "Le marché", consortiums: "À plusieurs", shared: "Où je suis partenaire", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau Adjugo" },
+      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Accueil", sourcing: "Trouver des marchés", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes pièces", invoices: "Devis et factures", company: "Identité", criteria: "Ce que je cherche", tarifs: "Tarifs", team: "Collègues", billing: "Abonnement", compte: "Mon compte", aodetail: "Le marché", consortiums: "À plusieurs", shared: "Où je suis partenaire", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau Adjugo" },
       // Ce que fait chaque vue, en une phrase, dans la bulle (i) de l'en-tête (1.7) : plus de sous-titre affiché, plus de
       // promesse (« Débloquez toute la puissance… »). Une vue sans phrase utile n'a pas de bulle. Clés : la vue, ou
       // l'onglet interne de Trouver des marchés (avenir, alertes).
-      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", sourcing: "Les marchés publiés sur les sources officielles : chaque résultat renvoie à son annonce.", avenir: "Contrats déjà attribués dont la fin estimée approche : un nouveau marché peut suivre.", alertes: "Recevez par email les nouveaux marchés d'une recherche enregistrée.", pipeline: "Suivez vos marchés étape par étape", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Clients, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous", team: "Invitez vos collègues à collaborer sur vos dossiers", compte: "Votre mot de passe, l'export de vos données et la suppression de votre compte", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires et faites-vous trouver" },
+      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", sourcing: "Les marchés publiés sur les sources officielles : chaque résultat renvoie à son annonce.", avenir: "Contrats déjà attribués dont la fin estimée approche : un nouveau marché peut suivre.", alertes: "Recevez par email les nouveaux marchés d'une recherche enregistrée.", pipeline: "Suivez vos marchés étape par étape", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Clients, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous", tarifs: "Vos prix de journée et vos frais de déplacement, pour estimer vos prix", team: "Invitez vos collègues à collaborer sur vos dossiers", compte: "Votre mot de passe, l'export de vos données et la suppression de votre compte", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires et faites-vous trouver" },
     };
   },
   computed: {
@@ -1036,11 +1073,11 @@ const __adjApp = createApp({
       // (tous les documents sont déjà chargés), donc instantané et sans appel réseau.
       let list = (this.documents || []).slice();
       const q = (this.docQuery || "").trim().toLowerCase();
-      if (q) list = list.filter(d => ((d.name || "") + " " + (d.folder || "") + " " + this.folderLabel(d.folder) + " " + (d.category || "") + " " + (d.project_name || "")).toLowerCase().includes(q));
+      if (q) list = list.filter(d => ((d.name || "") + " " + (d.folder || "") + " " + this.folderLabel(d.folder) + " " + categorieDoc(d.category) + " " + (d.project_name || "")).toLowerCase().includes(q));
       const by = {
         recent: (a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")),
         name: (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }),
-        category: (a, b) => String(a.folder || a.category || "").localeCompare(String(b.folder || b.category || ""), "fr", { sensitivity: "base" }),
+        category: (a, b) => categorieDoc(a.category).localeCompare(categorieDoc(b.category), "fr", { sensitivity: "base" }),
         size: (a, b) => (Number(b.file_size) || 0) - (Number(a.file_size) || 0),
         expiry: (a, b) => {            // la plus proche d'abord ; les pièces sans date d'expiration en dernier
           if (!a.expiration_date && !b.expiration_date) return 0;
@@ -1115,7 +1152,7 @@ const __adjApp = createApp({
       const premier = (this.projects || []).length > 0;
       const steps = [
         { k: "profil", done: profil, label: "Renseignez le nom et le SIRET de votre entreprise", view: "company", cta: "Compléter" },
-        { k: "criteres", done: criteres, label: "Définissez vos critères", view: "criteria", cta: "Définir" },
+        { k: "criteres", done: criteres, label: "Dites ce que vous cherchez : vos métiers ou votre zone", view: "criteria", cta: "Renseigner" },
         { k: "premier", done: premier, label: "Lancez votre première recherche de marchés", view: "sourcing", cta: "Rechercher" },
       ];
       return { steps, done: steps.filter(s => s.done).length, total: steps.length };
@@ -1239,7 +1276,8 @@ const __adjApp = createApp({
           if (!name) name = FALLBACK[el.getAttribute("type")] || (el.tagName === "SELECT" ? "Sélection" : "Champ");
           el.setAttribute("aria-label", clean(name));
         });
-        document.querySelectorAll(".modal,.drawer").forEach((m) => { m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); });
+        // Une fenêtre de confirmation sans champ est un « alertdialog » (fenetre-confirmation) : on ne l'écrase pas.
+        document.querySelectorAll(".modal,.drawer").forEach((m) => { if (m.getAttribute("role") !== "alertdialog") m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); });
         document.querySelectorAll(".nav-item").forEach((n) => { if (!n.getAttribute("tabindex")) { n.setAttribute("tabindex", "0"); n.setAttribute("role", "button"); } });
         // Boutons/liens à ICÔNE SEULE (pas de texte) : leur donner un nom accessible.
         const ICON = { x: "Fermer", "trash-2": "Supprimer", trash: "Supprimer", plus: "Ajouter",
@@ -1400,10 +1438,13 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); }
     },
     async rgpdDelete() {
-      const pw = window.prompt("Suppression DÉFINITIVE de votre compte et de toutes vos données.\nEntrez votre mot de passe pour confirmer :");
-      if (!pw) return;
-      const cf = window.prompt("Tapez SUPPRIMER en majuscules pour confirmer définitivement :");
-      if ((cf || "").trim().toUpperCase() !== "SUPPRIMER") { this.notify("Suppression annulée", "err"); return; }
+      const v = await this.demander({ title: "Supprimer définitivement votre compte ?", danger: true, ok: "Supprimer définitivement",
+        lines: ["Votre compte et toutes vos données sont effacés : marchés, documents, partenaires, devis et factures.",
+                { t: "Cette suppression ne s'annule pas.", warn: true }],
+        fields: [{ key: "pw", label: "Votre mot de passe", type: "password", autocomplete: "current-password", requis: true },
+                 { key: "cf", label: "Tapez SUPPRIMER pour confirmer", attendu: "SUPPRIMER", autocomplete: "off", max: 20 }] });
+      if (!v) return;
+      const pw = v.pw;
       try {
         await this.api("POST", "/api/rgpd/delete-account", { password: pw, confirm: "SUPPRIMER" });
         localStorage.removeItem("adjugo_token"); atlPurgeDrafts(true); this.notify("Compte supprimé"); setTimeout(() => window.location.href = "/", 1200);
@@ -1745,7 +1786,8 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); }
     },
     async orgRemove(m) {
-      if (!confirm("Retirer " + (m.full_name || m.email) + " de l'équipe ?\nSes dossiers (marchés, contacts…) seront réattribués au propriétaire et son accès coupé immédiatement.")) return;
+      if (!(await this.confirmer({ title: "Retirer " + (m.full_name || m.email) + " de vos collègues ?", ok: "Retirer", danger: true,
+        lines: ["Ses dossiers (marchés, contacts…) sont réattribués au propriétaire de l'organisation.", "Son accès est coupé immédiatement."] }))) return;
       try { const r = await this.api("DELETE", "/api/org/members/" + m.id); this.loadOrg(); this.notify(m.full_name + " retiré" + (r && r.reassigned ? " — " + r.reassigned + " élément(s) réattribué(s)" : "")); }
       catch (e) { this.notify(e.message, "err"); }
     },
@@ -1754,7 +1796,8 @@ const __adjApp = createApp({
       catch (e) { this.notify(e.message, "err"); this.loadOrg(); }
     },
     async orgTransfer(m) {
-      if (!confirm("Transférer la PROPRIÉTÉ de l'organisation à " + (m.full_name || m.email) + " ?\nVous deviendrez simple administrateur.")) return;
+      if (!(await this.confirmer({ title: "Transférer la propriété de l'organisation ?", ok: "Transférer la propriété",
+        lines: [(m.full_name || m.email) + " devient propriétaire de l'organisation.", { t: "Vous deviendrez simple administrateur.", warn: true }] }))) return;
       try {
         const r = await this.api("POST", "/api/org/transfer-ownership", { new_owner_id: m.id });
         // L'API renvoie un jeton frais (nos sessions ont été révoquées) : on l'adopte AVANT
@@ -1797,7 +1840,8 @@ const __adjApp = createApp({
     async loadContacts() { try { this.contacts = await this.api("GET", "/api/contacts/") || []; } catch (e) {} },
     async loadInvoices() { try { this.invoices = await this.api("GET", "/api/invoices/") || []; } catch (e) {} },
     async convertInvoice(i) {
-      if (!confirm("Créer une facture à partir du devis " + i.reference + " ?")) return;
+      if (!(await this.confirmer({ title: "Créer la facture ?", ok: "Créer la facture",
+        lines: ["Une facture est créée à partir du devis " + i.reference + "."] }))) return;
       try { const f = await this.api("POST", "/api/invoices/" + i.id + "/convert"); await this.loadInvoices(); this.notify("Facture " + (f && f.reference || "") + " créée"); }
       catch (e) { this.notify(e.message, "err"); }
     },
@@ -1992,17 +2036,23 @@ const __adjApp = createApp({
     },
 
     // ── Company / Criteria ──
-    async saveCompany() {
-      if (!(this.company.name || "").trim()) { this.notify("Indiquez le nom de votre entreprise (Dénomination)", "err"); return; }
+    // Identité et Tarifs enregistrent la même fiche de l'entreprise (une seule route) : chaque onglet a son bouton.
+    async saveCompany(onglet) {
+      const tarifs = onglet === "tarifs";
+      if (!(this.company.name || "").trim()) {
+        this.notify(tarifs ? "Renseignez d'abord le nom de votre entreprise, dans l'onglet « Identité »" : "Indiquez le nom de votre entreprise (Dénomination)", "err"); return;
+      }
       this.busy = true;
-      try { await this.api("PUT", "/api/company/", this.company); this.notify("Profil enregistré"); }
+      try { await this.api("PUT", "/api/company/", this.company); this.notify(tarifs ? "Tarifs enregistrés" : "Profil enregistré"); }
       catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
     async saveCriteria() {
       const go = Number(this.criteria.go_threshold), ng = Number(this.criteria.nogo_threshold);
       if (go && ng && go <= ng) { this.notify("Le seuil « bon potentiel » doit être supérieur au seuil « peu adapté »", "err"); return; }
       const bmin = Number(this.criteria.budget_min), bmax = Number(this.criteria.budget_max);
-      if (bmin && bmax && bmin > bmax) { this.notify("Le budget minimum doit être inférieur au budget maximum", "err"); return; }
+      if (bmin && bmax && bmin > bmax) { this.notify("Le montant minimum doit être inférieur au montant maximum", "err"); return; }
+      const seul = this.criteria.montant_porte_seul;
+      if (seul !== "" && seul != null && !(Number(seul) >= 0)) { this.notify("Le montant que vous portez seul est un montant positif, en euros HT", "err"); return; }
       this.busy = true;
       // Un champ numérique vidé arrive en "" → on l'envoie en null (le backend garde le défaut au lieu de refuser).
       const payload = {};
@@ -2016,12 +2066,15 @@ const __adjApp = createApp({
       const has = k => cr[k] && String(cr[k]).trim();
       return !(has('specialites') || has('codes_cpv') || has('qualifications') || has('departements'));
     },
-    gateCriteria() {
-      // true = on continue ; false = on a renvoyé l'utilisateur vers ses critères.
+    async gateCriteria() {
+      // true = on continue ; false = on s'arrête (renvoyé vers « Ce que je cherche », ou fenêtre fermée : une analyse
+      // coûte un crédit, elle ne part jamais sur un simple Échap).
       if (!this.criteriaEmpty()) return true;
-      const ok = confirm("Vous n'avez pas encore renseigné vos critères (vos spécialités, votre zone géographique…).\n\nPour une analyse vraiment adaptée à votre entreprise, mieux vaut les définir d'abord.\n\nAller à « Mes critères » maintenant ?");
-      if (ok) { this.go('criteria'); return false; }
-      return true;
+      const r = await this.demander({ title: "Dire d'abord ce que vous cherchez ?", ok: "Renseigner ce que je cherche", autre: "Analyser quand même",
+        lines: ["Vos spécialités et votre zone ne sont pas encore renseignées.", "Pour une analyse adaptée à votre entreprise, mieux vaut les indiquer d'abord, dans Mon entreprise, onglet « Ce que je cherche »."] });
+      if (!r) return false;
+      if (r.autre) return true;
+      this.go("criteria"); return false;
     },
     cpvLabels(str) {
       const codes = (str || "").split(/[ ,;]+/).map(s => s.trim().replace(/\D/g, "")).filter(Boolean);
@@ -2316,7 +2369,9 @@ const __adjApp = createApp({
     },
     async sharedLostCode() {
       const C = window.AdjugoCrypto; if (!C) return;
-      if (!confirm("Vous avez perdu votre code de récupération ?\n\nL'ancien détail de votre chiffrage sera définitivement perdu : personne (ni Adjugo, ni le chef de file) ne peut le récupérer. Vous pourrez en saisir un nouveau.")) return;
+      if (!(await this.confirmer({ title: "Vous avez perdu votre code de récupération ?", ok: "Effacer l'ancien détail", danger: true,
+        lines: [{ t: "L'ancien détail de votre chiffrage sera définitivement perdu : personne, ni Adjugo ni le chef de file, ne peut le récupérer.", warn: true },
+                "Vous pourrez en saisir un nouveau."] }))) return;
       try {
         const rr = await C.resetKey(this.sharedAo.token);
         this.sharedAo.envelope = null; this.sharedAo.detailClair = ""; this.sharedAo.detailDpgf = null; this.sharedAo.detailLocked = false;
@@ -2422,7 +2477,12 @@ const __adjApp = createApp({
       if (window.AdjugoCrypto && window.AdjugoCrypto.modal) {
         const r = await window.AdjugoCrypto.modal({ title: "Vérifiez votre identité", bodyHtml: "<p style='margin:0'>Saisissez le code à 6 chiffres envoyé à <b>" + esc(masked) + "</b> pour confirmer que c'est bien vous.</p>", withInput: true, placeholder: "123456", confirmLabel: "Valider", cancelLabel: "Annuler" });
         code = r && r.value;
-      } else code = window.prompt("Saisissez le code à 6 chiffres envoyé à " + masked + " pour valider votre identité :");
+      } else {
+        const v = await this.demander({ title: "Vérifiez votre identité", ok: "Valider",
+          lines: ["Saisissez le code à 6 chiffres envoyé à " + masked + " pour confirmer que c'est bien vous."],
+          fields: [{ key: "code", label: "Code reçu par courriel", inputmode: "numeric", autocomplete: "one-time-code", placeholder: "123456", max: 6, requis: true, motif: "^\\d{6}$" }] });
+        code = v && v.code;
+      }
       if (!code) { this.notify("Vérification annulée — brouillon conservé", "err"); return false; }
       try { await this.api("POST", "/api/invite/" + t + "/otp/verify", { code: String(code).trim() }); return true; }
       catch (e) { this.notify(e.message || "Code incorrect", "err"); return false; }
@@ -2569,7 +2629,8 @@ const __adjApp = createApp({
       if (el && el.open) await this.sharedJournalLoad();
     },
     async sharedDecline() {
-      if (!confirm("Décliner l'invitation ?\n\nVous sortez du groupement : votre part ne figurera pas dans la réponse commune et ce lien ne sera plus utilisable.")) return;
+      if (!(await this.confirmer({ title: "Décliner l'invitation ?", ok: "Décliner l'invitation", danger: true,
+        lines: ["Vous sortez du groupement : votre part ne figurera pas dans la réponse commune.", "Ce lien ne sera plus utilisable."] }))) return;
       try {
         const r = await fetch("/api/invite/" + this.sharedAo.token + "/decline", { method: "POST" });
         if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error((typeof e.detail === "string" && e.detail) || "Impossible de décliner"); }
@@ -2639,7 +2700,7 @@ const __adjApp = createApp({
     // Les critères ne s'affichent QUE dans la carte « Comment vous serez noté » (phrase du
     // règlement, poids tel qu'écrit) : le serveur n'envoie plus la liste brute, aux poids non contrôlés.
     sharedGrille(a) { const g = a && a.grille_notation; return (g && Array.isArray(g.criteres)) ? g : null; },
-    sharedFact(a) { const L = { acheteur: "Acheteur", allotissement: "Allotissement", lieu: "Lieu", type_marche: "Type", date_limite: "Date limite", duree: "Durée" }; return Object.entries(L).filter(([k]) => a && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length)).map(([k, lab]) => ({ k: lab, v: Array.isArray(a[k]) ? a[k].map(x => (x && typeof x === "object") ? (x.critere || x.nom || x.label || "") + (x.ponderation ? " — " + x.ponderation : "") : x).join(" · ") : a[k] })); },
+    sharedFact(a) { const L = { acheteur: "Acheteur", allotissement: "Parties (lots)", lieu: "Lieu", type_marche: "Type", date_limite: "Date limite", duree: "Durée" }; return Object.entries(L).filter(([k]) => a && a[k] != null && a[k] !== "" && (!Array.isArray(a[k]) || a[k].length)).map(([k, lab]) => ({ k: lab, v: Array.isArray(a[k]) ? a[k].map(x => (x && typeof x === "object") ? (x.critere || x.nom || x.label || "") + (x.ponderation ? " — " + x.ponderation : "") : x).join(" · ") : a[k] })); },
     // ── Notifications (activité des partenaires) ──
     async loadNotifs() { try { this.notifs = await this.api("GET", "/api/notifications") || []; } catch (e) {} },
     toggleNotifs() {
@@ -2681,7 +2742,8 @@ const __adjApp = createApp({
       finally { this.ao.share.busy = false; }
     },
     async aoRevokeInvite(inv) {
-      if (!confirm("Révoquer ce lien ? Le partenaire perdra l'accès immédiatement.")) return;
+      if (!(await this.confirmer({ title: "Révoquer ce lien ?", ok: "Révoquer le lien", danger: true,
+        lines: ["Le partenaire perd l'accès à ce marché immédiatement."] }))) return;
       try { await this.api("DELETE", "/api/projects/" + this.ao.project.id + "/invites/" + inv.id); this.notify("Lien révoqué"); this.aoLoadInvites(); }
       catch (e) { this.notify(e.message, "err"); }
     },
@@ -2799,8 +2861,8 @@ const __adjApp = createApp({
       this.ao.group.loading = true;
       try {
         this.ao.group.data = await this.api("POST", "/api/sourcing/groupement", { project_id: this.ao.project.id });
-        if (this.ao.group.data && !this.ao.group.data.n_lots) this.notify("Marché en lot unique : pas de répartition par lot. Invitez un partenaire avec « Inviter un partenaire », en haut de la page.");
-        else if (this.ao.group.data) this.notify("Répartition proposée : " + this.ao.group.data.n_lots + " lot(s) analysé(s)");
+        if (this.ao.group.data && !this.ao.group.data.n_lots) this.notify("Marché en une seule partie (lot unique) : pas de répartition. Invitez un partenaire avec « Inviter un partenaire », en haut de la page.");
+        else if (this.ao.group.data) this.notify("Répartition proposée : " + this.ao.group.data.n_lots + " " + this.plFr(this.ao.group.data.n_lots, "partie analysée", "parties analysées"));
       }
       catch (e) { this.notify(e.message, "err"); }
       finally { this.ao.group.loading = false; }
@@ -2997,7 +3059,8 @@ const __adjApp = createApp({
     },
     grpCanCancel() { const st = this.ao.grp.state, p = this.grpPlan(); return !!(st && typeof st.index === "number" && st.index >= 2 && p && !p.auto); },
     async aoGrpCancelPlan() {
-      if (!confirm("Annuler la composition retenue ?\nVous revenez au verdict seul. Les entreprises déjà ajoutées au marché restent dans « Membres et sous-traitants ».")) return;
+      if (!(await this.confirmer({ title: "Annuler la composition retenue ?", ok: "Annuler la composition", annuler: "Garder la composition",
+        lines: ["Vous revenez au verdict seul.", "Les entreprises déjà ajoutées au marché restent dans « Membres et sous-traitants »."] }))) return;
       try {
         const r = await this.api("DELETE", "/api/projects/" + this.ao.project.id + "/groupement/plan");
         this.ao.grp.sim = null; if (r && r.state) this.ao.grp.state = r.state;
@@ -3131,7 +3194,7 @@ const __adjApp = createApp({
     async rnSave(silentOk) {
       const p = this.reseau.p; if (!p.f || !p.d || p.busy) return false;
       const lot = p.f.lot_max_eur;
-      if (lot !== "" && lot != null && !(Number(lot) > 0)) { this._rnErr("Taille de lot maximale invalide (montant HT positif).", "form"); return false; }
+      if (lot !== "" && lot != null && !(Number(lot) > 0)) { this._rnErr("Plus grosse partie acceptée : un montant HT positif.", "form"); return false; }
       if (String(p.f.presentation || "").trim().length > this.rnOptions().presentation_max) { this._rnErr("Présentation en une phrase : " + this.rnOptions().presentation_max + " caractères au plus.", "form"); return false; }
       const created = !p.d.exists, body = this._rnBody();
       if (!created && !Object.keys(body).length) { if (!silentOk) this._rnSay("Aucune modification à enregistrer."); return true; }
@@ -3359,7 +3422,7 @@ const __adjApp = createApp({
     // ── « Qui me complète ? » : partenaires lot par lot sur un marché ──
     async aoPmLoad() {
       const pid = this.ao.project && this.ao.project.id, pm = this.ao.pm; if (!pid || pm.loading) return;
-      pm.loading = true; pm.error = ""; pm.live = "Recherche des partenaires, lot par lot…";
+      pm.loading = true; pm.error = ""; pm.live = "Recherche des partenaires, partie par partie…";
       try {
         const d = await this.api("GET", "/api/projects/" + pid + "/partner-matches");
         if (!this.ao.project || this.ao.project.id !== pid) return;
@@ -3369,9 +3432,9 @@ const __adjApp = createApp({
     },
     _pmSummary(d) {
       const lots = (d && d.lots) || [];
-      if (!lots.length) return "Aucun lot à compléter d'après le dossier.";
+      if (!lots.length) return "Aucune partie à compléter d'après le dossier.";
       const n = lots.reduce((s, l) => s + (l.reseau || []).length + (l.sirene || []).length, 0);
-      return lots.length + " " + this.plFr(lots.length, "lot à compléter", "lots à compléter") + " · " + n + " " + this.plFr(n, "entreprise proposée", "entreprises proposées") + ".";
+      return lots.length + " " + this.plFr(lots.length, "partie à compléter", "parties à compléter") + " · " + n + " " + this.plFr(n, "entreprise proposée", "entreprises proposées") + ".";
     },
     async aoPmLot(l) {
       const pid = this.ao.project && this.ao.project.id, pm = this.ao.pm; if (!pid || pm.lotBusy || !l || !l.num) return;
@@ -3384,12 +3447,16 @@ const __adjApp = createApp({
           if (i >= 0) pm.d.lots.splice(i, 1, nl);
           ((d && d.warnings) || []).forEach(w => { if (!(pm.d.warnings || []).includes(w)) (pm.d.warnings = pm.d.warnings || []).push(w); });
           const n = (nl.reseau || []).length + (nl.sirene || []).length;
-          pm.live = "Lot " + l.num + " : " + n + " " + this.plFr(n, "entreprise proposée", "entreprises proposées") + ".";
+          pm.live = partieLot(l.num) + " : " + n + " " + this.plFr(n, "entreprise proposée", "entreprises proposées") + ".";
         }
       } catch (e) { this.notify(e.message, "err"); }
       finally { pm.lotBusy = ""; }
     },
-    pmLotTitle(l) { return l && l.num ? "Lot " + l.num + " — " + l.label : (l && l.label) || ""; },
+    // « Partie (lot n) » à l'écran (décision 10) : la fonction en tête de ce fichier, pour les gabarits.
+    partieLot(x, intitule, minuscule) { return partieLot(x, intitule, minuscule); },
+    pmLotTitle(l) { return l && l.num ? partieLot(l.num, l.label) : (l && l.label) || ""; },
+    // Valeur proposée pour la « Part » d'un invité : une DONNÉE reprise dans la convention et les formulaires officiels
+    // remis au client, qui gardent le mot du règlement (« Lot 2 — Électricité ») ; l'écran, lui, dit « partie ».
     pmLotPart(l) { return l && l.num ? "Lot " + l.num + " — " + l.label : (l && (l.metier_label || l.label)) || ""; },
     pmLotId(l) { return "pml-" + String((l && (l.num || l.metier)) || "x").replace(/[^A-Za-z0-9_-]/g, ""); },
     // « Simuler le groupement » depuis une carte : ajoute l'entreprise à la simulation de la carte
@@ -3505,7 +3572,7 @@ const __adjApp = createApp({
     freezeMissing() {
       const cs = this.ao.share.consortium || {}; const miss = (cs.readiness && cs.readiness.missing) || [];
       if (!(cs.readiness && cs.readiness.invited)) return ["Invitez au moins un partenaire et attendez sa part"];
-      return miss.length ? miss : ["Aucune part soumise avec un prix de lot pour l'instant"];
+      return miss.length ? miss : ["Aucune part soumise avec le prix de sa partie pour l'instant"];
     },
     async aoFreezeOffer() {
       // Vague 2 : « Figer l'offre » = « Figer l'offre et générer la convention » (même geste,
@@ -3513,11 +3580,11 @@ const __adjApp = createApp({
       if (this.convVisible() && this.ao.conv.d) { await this.aoConvAskGenerate(true); return; }
       const cs = this.ao.share.consortium, o = cs && cs.offre; if (!o || !this.canFreeze()) return;
       const lead = (o.lead_total_ht == null && Number(this.ao.share.leadTotal) > 0) ? Number(this.ao.share.leadTotal) : null;
-      let msg = "Figer l'offre commune ?\n\nTotal prévisionnel : " + this.eur(this.freezeTotal()) + " HT"
-        + (lead != null ? " (dont votre part " + this.eur(lead) + " HT)" : (o.lead_total_ht == null ? " — sans votre part (aucune estimation enregistrée)" : ""))
-        + ".\nChaque partenaire verra ce total.";
-      if (o.warning_two_members) msg += "\n\nÀ deux, le total révèle mécaniquement la part de l'autre.";
-      if (!confirm(msg)) return;
+      const lignes = ["Total prévisionnel : " + this.eur(this.freezeTotal()) + " HT"
+        + (lead != null ? " (dont votre part " + this.eur(lead) + " HT)" : (o.lead_total_ht == null ? ", sans votre part (aucune estimation enregistrée)" : "")) + ".",
+        "Chaque partenaire verra ce total."];
+      if (o.warning_two_members) lignes.push({ t: "À deux, le total révèle mécaniquement la part de l'autre.", warn: true });
+      if (!(await this.confirmer({ title: "Figer l'offre commune ?", ok: "Figer l'offre", lines: lignes }))) return;
       this.ao.share.freezing = true;
       try {
         const r = await this.api("POST", "/api/projects/" + this.ao.project.id + "/offre/figer", lead != null ? { lead_total_ht: lead } : {});
@@ -3532,9 +3599,9 @@ const __adjApp = createApp({
     },
     async aoUnfreezeOffer() {
       const cv = this.ao.conv.d, generated = !!(cv && (cv.status === "a_signer" || cv.status === "signee"));
-      const msg = "Défiger l'offre commune ? Les partenaires ne verront plus le total tant qu'elle n'est pas refigée."
-        + (generated ? "\n\nLa convention de groupement deviendra caduque : les accords déjà enregistrés tombent et il faudra la régénérer." : "");
-      if (!confirm(msg)) return;
+      const lignes = ["Les partenaires ne verront plus le total tant qu'elle n'est pas figée de nouveau."];
+      if (generated) lignes.push({ t: "La convention de groupement sera à revalider : les accords déjà enregistrés ne comptent plus et il faudra la régénérer.", warn: true });
+      if (!(await this.confirmer({ title: "Défiger l'offre commune ?", ok: "Défiger l'offre", lines: lignes }))) return;
       this.ao.share.freezing = true;
       try { await this.api("DELETE", "/api/projects/" + this.ao.project.id + "/offre/figer"); this.notify("Offre commune défigée"); await this.aoLoadConsortium(); if (this.convVisible()) await this.aoConvLoad(true); }
       catch (e) { this.notify(e.message, "err"); }
@@ -3966,23 +4033,52 @@ const __adjApp = createApp({
       } catch (e) { dp.err = e.message || "Impossible de retirer le marquage pour le moment."; }
       finally { dp.busy = ""; }
     },
-    // Boîte de confirmation : dit ce que l'action fait AVANT de la faire (focus sur « Annuler », Échap ferme).
-    _convAsk(cfg) {
-      this._cdlgFocus = document.activeElement;
+    // Fenêtre de confirmation de l'application (fenetre-confirmation) : dit ce que l'action fait AVANT de la faire.
+    // Elle remplace les confirm() et prompt() du navigateur (vague 2a, A3). Dialogue modal nommé et décrit, focus
+    // gardé dedans (Tab), Échap ferme, le focus revient où il était ; focus sur « Annuler », ou sur le premier champ.
+    // cfg : title ; lines (texte, ou { t, warn }) ; ok, annuler (libellés) ; autre (un second choix) ; danger (action
+    // destructrice) ; fields [{ key, label, value, type, requis, attendu, motif, max, inputmode, autocomplete,
+    // placeholder, aide }] ; run (rappel, appelé avec les valeurs). `demander` rend une promesse : les valeurs (un
+    // objet, vide sans champ) si l'on confirme, { autre: true } pour le second choix, null si l'on annule.
+    _convAsk(cfg) { this._cdlgOuvrir(cfg || {}); },
+    demander(cfg) { return new Promise(resolve => this._cdlgOuvrir(Object.assign({}, cfg || {}, { resolve }))); },
+    async confirmer(cfg) { const r = await this.demander(cfg); return !!r && !r.autre; },
+    _cdlgOuvrir(cfg) {
+      const avant = this.cdlg;
+      if (avant) { this.cdlg = null; if (avant.resolve) avant.resolve(null); }   // une seule fenêtre à la fois
+      else this._cdlgFocus = document.activeElement;
       const lines = (cfg.lines || []).filter(Boolean).map(l => typeof l === "string" ? { t: l } : l);
-      this.cdlg = Object.assign({ ok: "Confirmer", fields: [] }, cfg, { lines, fields: (cfg.fields || []).map(x => Object.assign({}, x)) });
-      this.$nextTick(() => { const b = this.$refs.cdlgCancel; if (b && b.focus) b.focus(); });
+      const fields = (cfg.fields || []).map(x => Object.assign({ value: "" }, x));
+      this.cdlg = Object.assign({ ok: "Confirmer", annuler: "Annuler" }, cfg, { lines, fields });
+      this.$nextTick(() => {
+        const champ = fields.length ? document.getElementById("cdlg-" + fields[0].key) : null;
+        const b = champ || this.$refs.cdlgCancel; if (b && b.focus) b.focus();
+      });
     },
-    cdlgClose() {
+    _cdlgFermer() {
       this.cdlg = null;
       const el = this._cdlgFocus; this._cdlgFocus = null;
       if (el && el.focus && document.body.contains(el)) this.$nextTick(() => el.focus());
     },
+    cdlgClose() { const d = this.cdlg; this._cdlgFermer(); if (d && d.resolve) d.resolve(null); },
+    cdlgValide() { return !!this.cdlg && champsValides(this.cdlg.fields); },
     async cdlgRun() {
-      const d = this.cdlg; if (!d) return;
-      const vals = {}; (d.fields || []).forEach(x => { vals[x.key] = String(x.value || "").trim(); });
-      const run = d.run; this.cdlgClose();
-      if (run) await run(vals);
+      const d = this.cdlg; if (!d || !champsValides(d.fields)) return;
+      const vals = {};    // un mot de passe est rendu tel quel (ses espaces comptent), le reste sans espaces autour
+      (d.fields || []).forEach(x => { const s = String(x.value == null ? "" : x.value); vals[x.key] = x.type === "password" ? s : s.trim(); });
+      this._cdlgFermer();
+      if (d.resolve) d.resolve(vals);
+      if (d.run) await d.run(vals);
+    },
+    cdlgAutre() { const d = this.cdlg; if (!d) return; this._cdlgFermer(); if (d.resolve) d.resolve({ autre: true }); },
+    // Le focus reste dans la fenêtre : Tab sur le dernier élément revient au premier, Maj+Tab sur le premier au dernier.
+    cdlgTab(e) {
+      const box = this.$refs.cdlgBox; if (!box) return;
+      const els = Array.from(box.querySelectorAll("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])"));
+      if (!els.length) return;
+      const first = els[0], last = els[els.length - 1], cur = document.activeElement;
+      if (e.shiftKey && (cur === first || !box.contains(cur))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (cur === last || !box.contains(cur))) { e.preventDefault(); first.focus(); }
     },
     roleLabel(r) { return ({ mandataire: "Chef de file", cotraitant: "Partenaire", sous_traitant: "Sous-traitant" })[r] || r; },
     checklistLabel(s) { return ({ ok: "Disponible", manquant: "Manquant", expire: "Expiré", generable: "Généré auto", a_completer: "À terminer" })[s] || s; },
@@ -4179,7 +4275,7 @@ const __adjApp = createApp({
     async aoUploadDce(e) {
       const file = e.target.files[0]; if (!file) return;
       e.target.value = "";
-      if (!this.gateCriteria()) return;
+      if (!(await this.gateCriteria())) return;
       const pid = this.ao.project.id;
       this.aoLectureDebut(pid);
       try {
@@ -4290,7 +4386,8 @@ const __adjApp = createApp({
     },
     async delProject(p) {
       const id = p.id;
-      if (!confirm("Supprimer ce marché et toutes ses données (analyse, partenaires, documents) ?\nIl part à la corbeille — récupérable.")) return;
+      if (!(await this.confirmer({ title: "Supprimer ce marché ?", ok: "Mettre à la corbeille", danger: true,
+        lines: ["Le marché et toutes ses données (analyse, partenaires, documents) partent à la corbeille.", "Vous pouvez le récupérer juste après, avec « Annuler »."] }))) return;
       try { await this.api("DELETE", "/api/projects/" + id); this.drawer = null; this.loadProjects(); this.notifyUndo("Marché mis à la corbeille", () => this.restoreProject(id)); }
       catch (e) { this.notify(e.message, "err"); }
     },
@@ -4323,8 +4420,16 @@ const __adjApp = createApp({
         this.modal = null; this.notify("Enregistré");
       } catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
-    async delCotraitant(c) { if (!confirm("Supprimer " + c.name + " ?")) return; try { await this.api("DELETE", "/api/cotraitants/" + c.id); this.loadCotraitants(); } catch (e) { this.notify(e.message, "err"); } },
-    async delContact(c) { if (!confirm("Supprimer " + c.name + " ?")) return; try { await this.api("DELETE", "/api/contacts/" + c.id); this.loadContacts(); } catch (e) { this.notify(e.message, "err"); } },
+    async delCotraitant(c) {
+      if (!(await this.confirmer({ title: "Retirer " + c.name + " de vos partenaires ?", ok: "Retirer", danger: true,
+        lines: ["Elle est aussi retirée des marchés où vous l'avez ajoutée (« Membres et sous-traitants »).",
+                { t: "Une convention de groupement qui la cite sera à revalider.", warn: true }] }))) return;
+      try { await this.api("DELETE", "/api/cotraitants/" + c.id); this.loadCotraitants(); } catch (e) { this.notify(e.message, "err"); }
+    },
+    async delContact(c) {
+      if (!(await this.confirmer({ title: "Supprimer le contact " + c.name + " ?", ok: "Supprimer", danger: true }))) return;
+      try { await this.api("DELETE", "/api/contacts/" + c.id); this.loadContacts(); } catch (e) { this.notify(e.message, "err"); }
+    },
 
     // ── Documents ──
     async uploadDoc(e) {
@@ -4342,14 +4447,31 @@ const __adjApp = createApp({
       if (ok) { this.loadDocuments(); this.notify(ok === files.length ? ok + " document(s) ajouté(s)" : ok + " sur " + files.length + " ajouté(s)"); }
       else this.notify("Aucun document ajouté", "err");
     },
-    async delDoc(d) { const id = d.id; try { await this.api("DELETE", "/api/documents/" + id); this.loadDocuments(); this.notifyUndo("Document mis à la corbeille", () => this.restoreDoc(id)); } catch (e) { this.notify(e.message, "err"); } },
+    async delDoc(d) { const id = d.id; try { await this.api("DELETE", "/api/documents/" + id); this.loadDocuments(); this.loadExpiring(); this.notifyUndo("Document mis à la corbeille", () => this.restoreDoc(id)); } catch (e) { this.notify(e.message, "err"); } },
     async renameDoc(d) {
-      const name = (prompt("Nouveau nom du document :", d.name || "") || "").trim();
+      const v = await this.demander({ title: "Renommer le document", ok: "Renommer",
+        fields: [{ key: "name", label: "Nom du document", value: d.name || "", requis: true, max: 500 }] });
+      const name = ((v && v.name) || "").trim();
       if (!name || name === d.name) return;
       try { await this.api("PATCH", "/api/documents/" + d.id, { name }); this.loadDocuments(); this.notify("Renommé"); }
       catch (e) { this.notify(e.message, "err"); }
     },
-    async restoreDoc(id) { try { await this.api("POST", "/api/documents/" + id + "/restore"); this.loadDocuments(); this.notify("Restauré"); } catch (e) { this.notify(e.message, "err"); } },
+    // Catégorie ou date de fin changée dans la liste : enregistrée tout de suite (PATCH), la ligne reprend ce que dit
+    // le serveur (dont l'état « Expire dans 12 jours »), puis la pastille « pièces à renouveler » est relue. Refus
+    // (démonstration, date illisible) : la liste est relue, l'ancienne valeur revient.
+    async docModifier(d, patch) {
+      if (!d || this.docBusy) return;
+      this.docBusy = d.id;
+      try {
+        const r = await this.api("PATCH", "/api/documents/" + d.id, patch);
+        const i = this.documents.findIndex(x => x.id === d.id);
+        if (i >= 0 && r && r.id === d.id) this.documents.splice(i, 1, Object.assign({}, this.documents[i], r));
+        this.notify("expiration_date" in patch ? (patch.expiration_date ? "Date de fin enregistrée" : "Date de fin retirée") : "Catégorie enregistrée");
+        this.loadExpiring();
+      } catch (e) { this.notify(e.message, "err"); await this.loadDocuments(); }
+      finally { this.docBusy = null; }
+    },
+    async restoreDoc(id) { try { await this.api("POST", "/api/documents/" + id + "/restore"); this.loadDocuments(); this.loadExpiring(); this.notify("Restauré"); } catch (e) { this.notify(e.message, "err"); } },
     async downloadDoc(d) {
       try {
         const r = await fetch("/api/documents/" + d.id + "/download", { headers: { Authorization: "Bearer " + this.token } });
@@ -4448,7 +4570,7 @@ const __adjApp = createApp({
     koSize(b) { const k = (Number(b) || 0) / 1024; return k >= 1024 ? (k / 1024).toFixed(1) + " Mo" : Math.round(k) + " Ko"; },   // bascule en Mo au-delà de ~1 Mo (sinon « 18432 Ko » illisible). Attention : ne PAS nommer kb() : collision avec la donnée `kb`
     avg(...a) { const n = a.map(Number).filter(x => x > 0); return n.length ? n.reduce((s, x) => s + x, 0) / n.length : 0; },
     detailRows(d) {
-      const out = {}; const labels = { intitule_marche: "Intitulé", acheteur: "Acheteur", budget_estime: "Budget", date_limite: "Date limite", delai_execution: "Délai", lieu_execution: "Lieu", allotissement: "Allotissement", penalites: "Pénalités", sous_traitance: "Sous-traitance", ca_minimum_requis: "CA minimum", visite_obligatoire: "Visite" };
+      const out = {}; const labels = { intitule_marche: "Intitulé", acheteur: "Acheteur", budget_estime: "Budget", date_limite: "Date limite", delai_execution: "Délai", lieu_execution: "Lieu", allotissement: "Parties (lots)", penalites: "Pénalités", sous_traitance: "Sous-traitance", ca_minimum_requis: "CA minimum", visite_obligatoire: "Visite" };
       for (const k in labels) { if (d[k] && typeof d[k] !== "object") out[labels[k]] = String(d[k]).slice(0, 120); }
       return out;
     },
@@ -4488,7 +4610,8 @@ const __adjApp = createApp({
     },
     async srcDelAlert(a) {
       const id = a.id;
-      if (!confirm("Supprimer cette alerte ? Vous ne recevrez plus les nouveaux marchés correspondants par email.")) return;
+      if (!(await this.confirmer({ title: "Supprimer cette alerte ?", ok: "Supprimer l'alerte", danger: true,
+        lines: ["Vous ne recevrez plus par courriel les nouveaux marchés de cette recherche."] }))) return;
       try { await this.api("DELETE", "/api/saved-searches/" + id); this.loadAlerts(); this.notify("Alerte supprimée"); }
       catch (e) { this.notify(e.message, "err"); }
     },
@@ -4632,7 +4755,7 @@ const __adjApp = createApp({
       finally { this.src.marketEstBusy = false; }
     },
     async srcAnalyze(t) {
-      if (!this.gateCriteria()) return;
+      if (!(await this.gateCriteria())) return;
       this.src.analyzing = true; this.src.chosen = t; this.src.analysis = null; this.src.marketEst = null;
       try {
         const r = await this.api("POST", "/api/sourcing/analyze", { tender: t });
@@ -4648,7 +4771,7 @@ const __adjApp = createApp({
     async srcUploadDce(e) {
       const file = e.target.files[0]; if (!file) return;
       e.target.value = "";
-      if (!this.gateCriteria()) return;
+      if (!(await this.gateCriteria())) return;
       if (!this.src.projectId) { this.notify("Analysez d'abord l'annonce", "err"); return; }
       this.src.analyzing = true;
       try {
@@ -4902,7 +5025,8 @@ const __adjApp = createApp({
       } catch (e) { this.notify(e.message, "err"); } finally { this.kb.busyText = false; }
     },
     async kbDelete(d) {
-      if (!confirm("Retirer ce document de votre savoir-faire ?")) return;
+      if (!(await this.confirmer({ title: "Retirer ce document de votre savoir-faire ?", ok: "Retirer", danger: true,
+        lines: ["Adjugo ne s'en sert plus pour rédiger. Les fiches de « Mes preuves » tirées de ce document n'auront plus de source."] }))) return;
       // kbLoad() rafraîchit aussi le compteur d'extraits indexés (sinon il restait périmé).
       try {
         const r = await this.api("DELETE", "/api/knowledge/" + d.id); await this.kbLoad();
@@ -5031,7 +5155,7 @@ const __adjApp = createApp({
       const l = (p && p.limites) || {}, out = [];
       // Plusieurs lots (vague 6) : la limite vaut pour le dossier de CHAQUE lot (celle propre à un lot est dite dans l'atelier).
       const plus = !!(p && p.lots && p.lots.actif);
-      (l.document || []).forEach(x => out.push({ t: _gnLim(x) + (plus ? " pour le dossier de chaque lot" : " pour tout le dossier"), phrase: x.phrase, source: x.source }));
+      (l.document || []).forEach(x => out.push({ t: _gnLim(x) + (plus ? " pour le dossier de chaque partie du marché" : " pour tout le dossier"), phrase: x.phrase, source: x.source }));
       (l.chaque_question || []).forEach(x => out.push({ t: _gnLim(x) + " par question", phrase: x.phrase, source: x.source }));
       if (l.police && (l.police.police || l.police.taille)) out.push({ t: _gnLim(Object.assign({ type: "police" }, l.police)), phrase: l.police.phrase, source: l.police.source });
       return out;
@@ -5197,7 +5321,7 @@ const __adjApp = createApp({
         const d = await this.api("POST", this._atlUrl(""), { base: a.base || "auto", sans_ia: !!a.sansIaPropose,
           lots: plus ? a.lotsChoix : [], lots_ajoutes: plus ? a.lotsAjoutes : [] });
         a.st = d; a.prop = null; this.atlSelect(((d.sections || [])[0] || {}).id || null);
-        this.notify("Dossier de présentation créé : " + (d.sections || []).length + " parties" + (d.lots && d.lots.actif ? ", " + d.lots.liste.length + " lots" : "") + (d.sans_ia && d.sans_ia.actif ? ", à rédiger sans IA" : ""));
+        this.notify("Dossier de présentation créé : " + (d.sections || []).length + " parties" + (d.lots && d.lots.actif ? ", " + d.lots.liste.length + " parties du marché" : "") + (d.sans_ia && d.sans_ia.actif ? ", à rédiger sans IA" : ""));
       } catch (e) { if (e.code === "dossier_existe") this.atlLoad(); else this.notify(e.message, "err"); }
       finally { a.busy = ""; }
     },
@@ -5794,7 +5918,7 @@ const __adjApp = createApp({
         }
         const nom = atlNomFichier(r.headers.get("content-disposition"), fmt === "pdf" ? ex.nom_fichier_pdf : ex.nom_fichier_docx);
         this.saveBlob(await r.blob(), nom);
-        this.notify((l ? "Fichier du lot " + l.numero + " téléchargé" : "Fichier téléchargé") + " et rangé dans le dossier du marché : " + nom);
+        this.notify((l ? "Fichier de la " + partieLot(l.numero, true) + " téléchargé" : "Fichier téléchargé") + " et rangé dans le dossier du marché : " + nom);
         this.atlLoad(true);
       } catch (e) { this.notify(e.message || "Export impossible pour le moment.", "err"); }
       finally { a.busy = ""; this.pending = Math.max(0, this.pending - 1); }
@@ -5852,7 +5976,7 @@ const __adjApp = createApp({
           : await this.api("POST", this._atlUrl("/derogation"), { raison: g.raison, texte: t, etat_hash: g.hash });
         a.lastDerog = g.hash; if (a.st && r.blocage && !g.lot) a.st.blocage = r.blocage;
         const fmt = g.fmt, lot = g.lot; a.derog = null;
-        this.notify("Dérogation inscrite au journal" + (lot ? " pour le lot " + lot : ""));
+        this.notify("Dérogation inscrite au journal" + (lot ? " pour la " + partieLot(lot, true) : ""));
         if (fmt && lot) this.atlExportLot(this.atlLotsListe().find(x => x.numero === lot), fmt);
         else if (fmt) this.atlExport(fmt); else this.atlLoad(true);
       } catch (e) {
@@ -5878,9 +6002,9 @@ const __adjApp = createApp({
     },
     _atlLotAjoutValide(g, deja) {
       const n = String(g.numero || "").trim().replace(/^0+/, ""), t = String(g.intitule || "").trim();
-      if (!/^\d{1,2}$/.test(n) || Number(n) < 1) return { err: "Le numéro d'un lot est un nombre de 1 à 99." };
-      if (t.length < 2) return { err: "Donnez l'intitulé du lot " + n + ", tel qu'il est écrit dans le règlement." };
-      if (deja.includes(n)) return { err: "Le lot " + n + " est déjà dans la liste." };
+      if (!/^\d{1,2}$/.test(n) || Number(n) < 1) return { err: "Le numéro d'une partie (lot) est un nombre de 1 à 99." };
+      if (t.length < 2) return { err: "Donnez l'intitulé de la partie (lot " + n + "), tel qu'il est écrit dans le règlement." };
+      if (deja.includes(n)) return { err: "La partie (lot " + n + ") est déjà dans la liste." };
       return { numero: n, intitule: t };
     },
     atlLotAjouter() {
@@ -5909,7 +6033,7 @@ const __adjApp = createApp({
       }
       return s.numero_affiche;
     },
-    atlLotTag(s) { return s.commune ? "Commune" : (s.lot ? "Lot " + s.lot : ""); },
+    atlLotTag(s) { return s.commune ? "Commune" : (s.lot ? partieLot(s.lot) : ""); },
     atlEtatLot(l) {
       const b = l && l.blocage; if (!b) return { cls: "neutral", label: "" };
       if (!b.peut_exporter) return { cls: "neutral", label: "Bloqué" };
@@ -5930,19 +6054,19 @@ const __adjApp = createApp({
     atlPortee(s, commune) {
       const a = this.atl; if (!s || a.busy) return;
       const lignes = commune
-        ? ["« " + s.intitule + " » sera rédigée une fois et figurera telle quelle dans le fichier de chaque lot. Elle garde ce texte ; la même partie des autres lots sort du plan (ses versions restent gardées)."]
-        : ["« " + s.intitule + " » sera rédigée pour chaque lot. Elle garde son texte pour le premier lot ; une partie à écrire est ajoutée pour chacun des autres."];
-      this._convAsk({ title: commune ? "Rendre cette partie commune à tous vos lots ?" : "Rédiger cette partie pour chaque lot ?",
-        ok: commune ? "Rendre commune" : "Une partie par lot", lines: lignes, run: () => this._atlPortee(s, commune, false) });
+        ? ["« " + s.intitule + " » sera rédigée une fois et figurera telle quelle dans le fichier de chaque partie du marché. Elle garde ce texte ; la même partie des autres fichiers sort du plan (ses versions restent gardées)."]
+        : ["« " + s.intitule + " » sera rédigée pour chaque partie du marché. Elle garde son texte pour la première ; une partie à écrire est ajoutée pour chacune des autres."];
+      this._convAsk({ title: commune ? "Rendre cette partie commune à toutes vos parties du marché ?" : "Rédiger cette partie pour chaque partie du marché ?",
+        ok: commune ? "Rendre commune" : "La rédiger pour chacune", lines: lignes, run: () => this._atlPortee(s, commune, false) });
     },
     async _atlPortee(s, commune, remplacer) {
       const a = this.atl; if (a.busy) return; a.busy = "portee";
       try {
         const d = await this.api("PUT", this._atlUrl("/sections/" + s.id + "/portee"), { commune, remplacer: !!remplacer });
-        a.st = d; this.notify(commune ? "Partie commune à tous vos lots" : "Une partie par lot");
+        a.st = d; this.notify(commune ? "Partie commune à toutes vos parties du marché" : "Partie rédigée pour chaque partie du marché");
         if (!a.st.sections.some(x => x.id === a.sel)) this.atlSelect((a.st.sections[0] || {}).id || null);
       } catch (e) {
-        if (e.code === "portee_a_confirmer") { a.busy = ""; this._convAsk({ title: "Retirer les textes des autres lots ?", ok: "Confirmer", lines: [e.message], run: () => this._atlPortee(s, commune, true) }); return; }
+        if (e.code === "portee_a_confirmer") { a.busy = ""; this._convAsk({ title: "Retirer les textes des autres parties du marché ?", ok: "Confirmer", lines: [e.message], run: () => this._atlPortee(s, commune, true) }); return; }
         this.notify(e.message, "err");
       } finally { if (a.busy === "portee") a.busy = ""; }
     },
@@ -5977,7 +6101,7 @@ const __adjApp = createApp({
         const d = await this.api("PUT", this._atlUrl("/lots"), { lots: g.choix, lots_ajoutes: g.ajoutes, remplacer: !!remplacer });
         a.st = d; a.lotsDlg = null; a.lotFiltre = "";
         this.atlSelect(((d.sections || [])[0] || {}).id || null);
-        this.notify(d.lots && d.lots.actif ? "Plan reconstruit pour " + d.lots.liste.length + " lots" : "Plan reconstruit : un seul dossier");
+        this.notify(d.lots && d.lots.actif ? "Plan reconstruit pour " + d.lots.liste.length + " parties du marché" : "Plan reconstruit : un seul dossier");
       } catch (e) {
         if (e.code === "plan_remplacement_a_confirmer") { g.confirm = e.message; return; }
         g.err = e.message;
@@ -6268,7 +6392,7 @@ __adjApp.config.errorHandler = function (err, vm, info) {
 function _gnNum(v) { const n = Number(v); return isFinite(n) ? n.toLocaleString("fr-FR") : String(v || ""); }
 // « 20 pages au maximum », « 1 page au maximum par référence » : accord et partie visée.
 const _GN_OBJET = { cv: "par CV", reference: "par référence", question: "pour une question", question_chaque: "par question",
-  fiche: "par fiche", synthese: "pour la synthèse", lettre: "pour la lettre", annexe: "par annexe", selon_lot: "selon le lot" };
+  fiche: "par fiche", synthese: "pour la synthèse", lettre: "pour la lettre", annexe: "par annexe", selon_lot: "selon la partie du marché" };
 function _gnLim(x) {
   if (x.type === "police") { const s = [x.police, x.taille != null ? x.taille : ""].filter(v => v !== "" && v != null).join(" "); return "Police : " + (s || x.texte || ""); }
   const un = Number(x.valeur) === 1;

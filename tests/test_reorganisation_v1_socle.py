@@ -78,7 +78,9 @@ ZONES = {
     "vues": ["vue-amont", "vue-kb", "kb-fiches-proposees", "vue-atelier", "atelier-page-preparation-case",
              "atelier-page-preparation", "atelier-entretien", "atelier-onglets", "atelier-repartition",
              "vue-pipeline", "vue-cotraitants", "vue-contacts", "vue-documents", "vue-invoices", "vue-company",
-             "vue-preuves", "vue-criteria", "vue-team", "vue-compte", "vue-billing", "billing-offres", "vue-admin", "admin-mesure",
+             # vue-tarifs : l'onglet « Tarifs » de Mon entreprise (vague 2a, A3 ; docs/REORGANISATION_V2A.md).
+             "vue-preuves", "vue-criteria", "vue-tarifs", "vue-team", "vue-compte", "vue-billing", "billing-offres",
+             "vue-admin", "admin-mesure",
              "vue-consortiums", "vue-reseau", "reseau-onglets", "reseau-profil", "reseau-annuaire",
              "reseau-historique", "reseau-recues", "vue-shared", "vue-sharedao-attente", "vue-sharedao"],
     "partage": ["partage-entete", "partage-grille", "partage-pourquoi", "partage-convention", "partage-redaction",

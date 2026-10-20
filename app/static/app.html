@@ -22,8 +22,8 @@
 <script src="/static/vendor/vue-3.5.38.prod.js" integrity="sha384-KYk+4lWOhWTo/BrM+zKkwLtFsD6cs2ClFbaGiX5ozDVHPqF4nOqxVGiHvcyWsw8B"></script>
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
-<script src="/static/cotraitance-crypto.js" integrity="sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs"></script>
-<script src="/static/i18n.js" integrity="sha384-PBAmdqpanieD+uOBUwLaipTce9nKFT075y7UuXV9Lu8PctHYgtJAKjs4z8w8kWBZ" defer></script>
+<script src="/static/cotraitance-crypto.js" integrity="sha384-3O8bcX0ASkja6mPpOZJxLaCqNzh+tCAktUpx/whY6eZ7p6/qFrNtjqhBLIzoink/"></script>
+<script src="/static/i18n.js" integrity="sha384-ad2R48KFOznz7NZSKsB9jJWGn3ujoj9JKOPOnpuTRylgdNptJ+6iWCtUtNEmcA8x" defer></script>
 </head>
 <body>
 <div id="app">
@@ -187,7 +187,7 @@
                     <li>« Tableau de bord » s'appelle « Accueil ».</li>
                     <li>Mes marchés : « Partagé avec moi » devient « Où je suis partenaire », « Mes groupements » devient « À plusieurs », avec Devis et factures.</li>
                     <li>Partenaires : Mes partenaires, Réseau Adjugo (anciennement « Réseau ») et Contacts.</li>
-                    <li>Mes documents : Mes pièces et Mon savoir-faire. Mon entreprise : Identité, Mes critères et Mes preuves.</li>
+                    <li>Mes documents : Mes pièces et Mon savoir-faire. Mon entreprise : Identité, Ce que je cherche (anciennement « Mes critères »), Mes preuves et Tarifs.</li>
                     <li>Trouver des marchés : les fins de contrat (anciennement « Radar des échéances ») sont dans l'onglet « À venir », vos alertes dans « Mes alertes ».</li>
                     <li>« Plus » devient « Réglages », en bas du menu : Collègues (anciennement « Équipe »), Abonnement, Mon compte et Mon avis.</li>
                     <li>L'ancien nom de chaque écran reste écrit dans la bulle (i) à côté de son titre.</li>
@@ -434,7 +434,7 @@
                   <option :value="0">Sans expiration</option>
                 </select>
               </div>
-              <label class="row small" style="gap:7px;margin-top:10px;align-items:center;cursor:pointer"><input type="checkbox" v-model="ao.share.form.can_contribute"> Laisser le partenaire <b>apporter sa part</b> (ses références, son lot, sa partie du dossier)</label>
+              <label class="row small" style="gap:7px;margin-top:10px;align-items:center;cursor:pointer"><input type="checkbox" v-model="ao.share.form.can_contribute"> Laisser le partenaire <b>apporter sa part</b> (ses références, sa partie du marché, son texte pour le dossier)</label>
               <label class="row small" style="gap:7px;margin-top:8px;align-items:center;cursor:pointer"><input type="checkbox" v-model="ao.share.form.can_view_docs"> Autoriser le téléchargement des pièces du dossier</label>
               <div class="row" style="margin-top:11px"><button class="btn primary" @click="aoCreateInvite()" :disabled="ao.share.busy"><span v-if="ao.share.busy" class="spin"></span><i v-else data-lucide="link"></i>Générer le lien d'invitation</button></div>
             </div>
@@ -600,15 +600,15 @@
             <div data-test="marche-plusieurs" v-if="ao.project.ai_analysis" class="card" style="margin-top:14px;border:1.5px solid var(--accent)">
               <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="scale" style="color:var(--accent-text)"></i><h3>Répondre à plusieurs ?</h3><div class="spacer"></div>
                 <span v-if="ao.grp.state && ao.grp.state.label" class="pill go_groupement" style="font-size:11px">{{ ao.grp.state.label }}</span>
-                <button class="btn sm" @click="aoOptimizeGroup()" :disabled="ao.group&&ao.group.loading" title="Répartition des lots entre vos partenaires"><span v-if="ao.group&&ao.group.loading" class="spin"></span><i v-else data-lucide="scale"></i>Répartir entre partenaires</button></div>
+                <button class="btn sm" @click="aoOptimizeGroup()" :disabled="ao.group&&ao.group.loading" title="Répartition des parties (lots) entre vos partenaires"><span v-if="ao.group&&ao.group.loading" class="spin"></span><i v-else data-lucide="scale"></i>Répartir entre partenaires</button></div>
               <div class="cb">
                 <!-- « Répartir entre partenaires » (un seul bouton, dans l'en-tête de cette carte) : une proposition par lot
                      parmi vos partenaires ; on INVITE, jamais on n'ajoute sans accord. Pas de note sur un partenaire. -->
                 <div v-if="ao.group && ao.group.data" style="margin-bottom:14px;padding:11px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-weak)">
-                  <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Composition suggérée</b><span class="muted small">{{ ao.group.data.n_lots }} lot(s) · {{ ao.group.data.n_propre }} pour vous · {{ ao.group.data.n_cotraitance }} avec un partenaire · {{ ao.group.data.n_non_couverts }} à couvrir</span></div>
-                  <div v-if="!ao.group.data.n_lots" class="muted small">Marché en lot unique (ou allotissement non précisé) — pas de décomposition.</div>
+                  <div class="row" style="gap:6px;margin-bottom:8px"><b class="small">Composition suggérée</b><span class="muted small">{{ ao.group.data.n_lots }} {{ pl(ao.group.data.n_lots, 'partie (lot)', 'parties (lots)') }} · {{ ao.group.data.n_propre }} pour vous · {{ ao.group.data.n_cotraitance }} avec un partenaire · {{ ao.group.data.n_non_couverts }} à couvrir</span></div>
+                  <div v-if="!ao.group.data.n_lots" class="muted small">Marché en une seule partie (lot unique), ou découpage non précisé : pas de répartition.</div>
                   <div v-for="l in ao.group.data.lots" :key="'gl'+l.num" class="row" style="padding:7px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:flex-start">
-                    <span class="pill neutral" style="font-size:10px;min-width:42px">Lot {{ l.num }}</span>
+                    <span class="pill neutral" style="font-size:10px;min-width:42px">{{ partieLot(l.num) }}</span>
                     <div style="flex:1;min-width:0">
                       <span class="strong small">{{ l.label }}</span> <span v-if="l.trade" class="muted small">· {{ l.trade }}</span>
                       <div v-if="l.couverture==='propre'" class="small" style="color:var(--success)"><i data-lucide="check" style="width:12px;height:12px"></i> Couvert par vous (chef de file)</div>
@@ -733,12 +733,12 @@
                  profils du réseau Adjugo classés (un RANG + des critères sourcés et datés, jamais une note), puis le
                  repli SIRENE. Le seul pourcentage reste celui de la simulation (« Simuler le groupement »). -->
             <div data-test="marche-qui-me-complete" v-if="ao.project.ai_analysis" class="card rn-pm" ref="pmCard" role="region" aria-labelledby="pm-h">
-              <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="puzzle" style="color:var(--accent-text)"></i><h3 id="pm-h">Qui me complète ?</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Lot par lot, les entreprises du réseau Adjugo qui font ce que vous ne faites pas, puis celles du registre officiel des entreprises (Insee).<template v-if="ao.pm.d && ao.pm.d.explication"> {{ ao.pm.d.explication }}</template></span></button><div class="spacer"></div>
+              <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="puzzle" style="color:var(--accent-text)"></i><h3 id="pm-h">Qui me complète ?</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Partie par partie, les entreprises du réseau Adjugo qui font ce que vous ne faites pas, puis celles du registre officiel des entreprises (Insee).<template v-if="ao.pm.d && ao.pm.d.explication"> {{ ao.pm.d.explication }}</template></span></button><div class="spacer"></div>
                 <button type="button" class="btn sm primary" @click="aoPmLoad()" :disabled="ao.pm.loading" :aria-busy="ao.pm.loading?'true':'false'"><span v-if="ao.pm.loading" class="spin"></span><i v-else :data-lucide="ao.pm.loaded?'refresh-cw':'search'"></i>{{ ao.pm.loaded ? 'Relancer la recherche' : 'Chercher des partenaires' }}</button></div>
               <div class="cb rn-pm-b">
                 <div class="sr-only" role="status" aria-live="polite">{{ ao.pm.live }}</div>
                 <p v-if="!ao.pm.loaded && !ao.pm.loading && !ao.pm.error" class="muted small">Aucune recherche lancée pour ce marché.</p>
-                <div v-if="ao.pm.loading && !ao.pm.d" class="muted small"><span class="spin"></span> Recherche des partenaires, lot par lot…</div>
+                <div v-if="ao.pm.loading && !ao.pm.d" class="muted small"><span class="spin"></span> Recherche des partenaires, partie par partie…</div>
                 <div v-if="ao.pm.error" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ ao.pm.error }} <button type="button" class="linkbtn" @click="aoPmLoad()">Réessayer</button></div></div>
                 <template v-for="pd in (ao.pm.d ? [ao.pm.d] : [])" :key="'pmd'">
                   <div v-for="(w,wi) in (pd.warnings||[])" :key="'pmw'+wi" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ w }}</span></div>
@@ -747,7 +747,7 @@
                     <div class="rn-callout-t"><b>{{ pd.message }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau fonctionne dans les deux sens : publiez votre profil partenaire pour voir les entreprises du réseau et les inviter. Les entreprises du registre officiel restent proposées ci-dessous.</span></button></div>
                     <button type="button" class="btn sm primary" @click="rnGoPublish()"><i data-lucide="send"></i>{{ rnPubCta() }}</button>
                   </div>
-                  <p v-if="!(pd.lots||[]).length" class="muted small">Aucun lot à compléter : d'après le dossier, vous couvrez seul les métiers repérés. <button type="button" class="linkbtn" @click="go('cotraitants')">Voir mes partenaires</button></p>
+                  <p v-if="!(pd.lots||[]).length" class="muted small">Aucune partie à compléter : d'après le dossier, vous couvrez seul les métiers repérés. <button type="button" class="linkbtn" @click="go('cotraitants')">Voir mes partenaires</button></p>
                   <section v-for="l in (pd.lots||[])" :key="pmLotId(l)" class="rn-lot" :aria-labelledby="pmLotId(l)">
                     <h4 :id="pmLotId(l)" class="rn-lot-h">{{ pmLotTitle(l) }}<span class="muted small rn-lot-m"><template v-if="l.metier_label && l.metier_label!==l.label">{{ l.metier_label }}</template><template v-if="l.departement"> · {{ l.departement_source==='suppose' ? 'département supposé : ' + l.departement : 'exécution dans le ' + l.departement }}</template></span></h4>
                     <p v-if="l.message && l.message!==pd.message" class="muted small">{{ l.message }}</p>
@@ -788,15 +788,15 @@
                         <button type="button" class="btn sm" @click="rnInviteOpen(s, { lot: pmLotPart(l) })" :disabled="s.deja_invite"><i data-lucide="link"></i>{{ s.deja_invite ? 'Déjà invité' : 'Inviter par lien' }}</button>
                       </div>
                     </article>
-                    <div v-if="l.sirene_message" class="row wrap rn-g8 rn-mt"><span class="muted small" style="flex:1;min-width:200px">{{ l.sirene_message }}</span><button v-if="l.num" type="button" class="btn sm" @click="aoPmLot(l)" :disabled="!!ao.pm.lotBusy" :aria-busy="ao.pm.lotBusy===String(l.num)?'true':'false'"><span v-if="ao.pm.lotBusy===String(l.num)" class="spin"></span><i v-else data-lucide="search"></i>Chercher pour ce lot</button></div>
-                    <p v-if="l.sirene_cherche && !(l.sirene||[]).length && (l.reseau||[]).length" class="muted small">Aucune autre entreprise trouvée dans le registre officiel pour ce lot.</p>
+                    <div v-if="l.sirene_message" class="row wrap rn-g8 rn-mt"><span class="muted small" style="flex:1;min-width:200px">{{ l.sirene_message }}</span><button v-if="l.num" type="button" class="btn sm" @click="aoPmLot(l)" :disabled="!!ao.pm.lotBusy" :aria-busy="ao.pm.lotBusy===String(l.num)?'true':'false'"><span v-if="ao.pm.lotBusy===String(l.num)" class="spin"></span><i v-else data-lucide="search"></i>Chercher pour cette partie</button></div>
+                    <p v-if="l.sirene_cherche && !(l.sirene||[]).length && (l.reseau||[]).length" class="muted small">Aucune autre entreprise trouvée dans le registre officiel pour cette partie.</p>
                     <div v-if="!(l.reseau||[]).length && !(l.sirene||[]).length && l.sirene_cherche" class="rn-lot-empty">
-                      <span class="muted small">Aucune entreprise trouvée pour ce lot pour l'instant.</span>
+                      <span class="muted small">Aucune entreprise trouvée pour cette partie pour l'instant.</span>
                       <div class="row wrap rn-g8"><button type="button" class="btn sm" @click="rnDiscover(l.metier, l.departement, l.metier_label)"><i data-lucide="search"></i>Chercher dans le registre officiel</button><button type="button" class="btn sm ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
                     </div>
                   </section>
                   <div v-if="(pd.lots_couverts||[]).length" class="row wrap rn-g6 rn-mt"><span class="muted small">Couverts par vous :</span><span v-for="c in pd.lots_couverts" :key="'pmc'+(c.num||c.metier)" class="pill neutral rn-pill-sm">{{ pmLotTitle(c) }}</span></div>
-                  <div v-if="(pd.lots_non_reconnus||[]).length" class="row wrap rn-g6 rn-mt"><span class="muted small">Lots dont le métier n'a pas été reconnu :<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo n'a pas reconnu le métier de ces lots d'après leur intitulé : cherchez un partenaire à la main dans « Mes partenaires » ou dans le registre officiel des entreprises.</span></button></span><span v-for="c in pd.lots_non_reconnus" :key="'pmu'+(c.num||c.label)" class="pill neutral rn-pill-sm">{{ pmLotTitle(c) }}</span></div>
+                  <div v-if="(pd.lots_non_reconnus||[]).length" class="row wrap rn-g6 rn-mt"><span class="muted small">Parties (lots) dont le métier n'a pas été reconnu :<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo n'a pas reconnu le métier de ces parties d'après leur intitulé : cherchez un partenaire à la main dans « Mes partenaires » ou dans le registre officiel des entreprises.</span></button></span><span v-for="c in pd.lots_non_reconnus" :key="'pmu'+(c.num||c.label)" class="pill neutral rn-pill-sm">{{ pmLotTitle(c) }}</span></div>
                 </template>
               </div>
             </div>
@@ -864,12 +864,12 @@
                   <p class="small atl-m0">{{ ao.atl.d.proposition.message }}</p>
                   <p v-if="ao.atl.d.proposition.dossier_present === false" class="small atl-mt8"><a href="#" @click.prevent="atlImporterDce()" style="color:var(--accent-text)">Importer le dossier du marché</a></p>
                   <p class="muted small atl-mt8">{{ (ao.atl.d.proposition.sections || []).length }} partie{{ (ao.atl.d.proposition.sections || []).length > 1 ? 's' : '' }} proposée{{ (ao.atl.d.proposition.sections || []).length > 1 ? 's' : '' }}, sans IA. Rien n'est enregistré tant que vous n'avez pas choisi le plan dans l'atelier.</p>
-                  <p v-if="ao.atl.d.proposition.lots_du_marche && ao.atl.d.proposition.lots_du_marche.alloti" class="small atl-mt8">Ce marché est réparti en {{ ao.atl.d.proposition.lots_du_marche.lots.length }} lots : dans l'atelier, choisissez ceux auxquels vous répondez (un fichier par lot).</p>
+                  <p v-if="ao.atl.d.proposition.lots_du_marche && ao.atl.d.proposition.lots_du_marche.alloti" class="small atl-mt8">Ce marché est découpé en {{ ao.atl.d.proposition.lots_du_marche.lots.length }} parties (lots) : dans l'atelier, choisissez celles auxquelles vous répondez (un fichier par partie).</p>
                   <div v-if="ao.atl.d.proposition.avertissement_fichier" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ ao.atl.d.proposition.avertissement_fichier }}</span></div>
                 </template>
                 <template v-else-if="ao.atl.d && ao.atl.d.dossier">
                   <div class="small">{{ atlCompteTexte(ao.atl.d) }}</div>
-                  <div v-if="ao.atl.d.lots && ao.atl.d.lots.actif" class="row wrap atl-g6 small atl-mt8"><span class="muted">Un fichier par lot :</span><span v-for="l in ao.atl.d.lots.liste" :key="'cl'+l.numero" class="atl-lot-etat">{{ 'Lot ' + l.numero }} <span class="pill" :class="atlEtatLot(l).cls" style="font-size:10.5px">{{ atlEtatLot(l).label }}</span></span></div>
+                  <div v-if="ao.atl.d.lots && ao.atl.d.lots.actif" class="row wrap atl-g6 small atl-mt8"><span class="muted">Un fichier par partie :</span><span v-for="l in ao.atl.d.lots.liste" :key="'cl'+l.numero" class="atl-lot-etat">{{ partieLot(l.numero) }} <span class="pill" :class="atlEtatLot(l).cls" style="font-size:10.5px">{{ atlEtatLot(l).label }}</span></span></div>
                   <div v-if="atlCompte(ao.atl.d).enCours" class="small muted atl-mt8" role="status"><span class="spin"></span> Adjugo rédige {{ atlCompte(ao.atl.d).enCours }} partie{{ atlCompte(ao.atl.d).enCours > 1 ? 's' : '' }}…</div>
                   <div v-if="atlDocLims(ao.atl.d).length" class="row wrap atl-g6 atl-mt8">
                     <span v-for="(l,i) in atlDocLims(ao.atl.d)" :key="'cl'+i" class="atl-lim" :class="atlLimCls(l)">{{ l.message }}</span></div>
@@ -973,7 +973,7 @@
             <!-- Partenaires invités — co-construction cloisonnée : invitations, parts reçues, suivi du groupement.
                  Le bouton « Inviter un partenaire » et son formulaire sont en tête de page ; le journal d'accès, en pied de page. -->
             <div data-test="marche-reseau" class="card" style="margin-top:14px;border:1.5px solid var(--accent)" ref="reseauCard">
-              <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake" style="color:var(--accent-text)"></i><h3>Partenaires invités</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Associez d'autres entreprises pour gagner ce marché ensemble. Chaque partenaire reçoit un <b>lien sécurisé</b> limité à ce seul dossier : il apporte <b>sa part</b> (références, lot, présentation) sans jamais voir les données des autres. L'IA fusionne le tout en une réponse commune.</span></button><div class="spacer"></div>
+              <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake" style="color:var(--accent-text)"></i><h3>Partenaires invités</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Associez d'autres entreprises pour gagner ce marché ensemble. Chaque partenaire reçoit un <b>lien sécurisé</b> limité à ce seul dossier : il apporte <b>sa part</b> (références, partie réalisée, présentation) sans jamais voir les données des autres. L'IA fusionne le tout en une réponse commune.</span></button><div class="spacer"></div>
                 <button type="button" class="btn sm" @click="aoToggleContrib()" :aria-expanded="ao.share.contribOpen?'true':'false'"><i data-lucide="layers"></i>Parts reçues<span v-if="contribCount()" class="pill go" style="font-size:9px;margin-left:5px">{{ contribCount() }}</span></button>
               </div>
               <div class="cb">
@@ -982,7 +982,7 @@
                 <div data-test="marche-preparation" v-if="ao.share.consortium && ao.share.consortium.readiness && ao.share.consortium.readiness.invited" class="row" style="margin-top:12px;gap:13px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)">
                   <div style="flex:1;min-width:0">
                     <div class="row" style="gap:7px;align-items:baseline"><b style="font-size:17px" class="num">{{ ao.share.consortium.readiness.submitted }} sur {{ ao.share.consortium.readiness.invited }}</b><span class="small">{{ pl(ao.share.consortium.readiness.invited, 'part reçue', 'parts reçues') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Nombre de partenaires qui ont envoyé leur part.</span></button></div>
-                    <div class="muted small">{{ ao.share.consortium.readiness.lots }} lot(s) couvert(s)</div>
+                    <div class="muted small">{{ ao.share.consortium.readiness.lots }} {{ pl(ao.share.consortium.readiness.lots, 'partie couverte', 'parties couvertes') }}</div>
                   </div>
                   <button class="btn sm" @click="aoToggleCockpit()"><i data-lucide="layout-dashboard"></i>{{ ao.share.cockpitOpen?'Replier':'Suivi' }}</button>
                 </div>
@@ -1039,7 +1039,7 @@
                     <div v-if="c.qualifications && c.qualifications.length" class="muted small" style="margin-top:4px">Qualifications : {{ c.qualifications.join(', ') }}</div>
                     <div v-if="c.references && c.references.length" class="muted small">Références : {{ c.references.map(r => r.intitule).filter(Boolean).join(' · ') }}</div>
                     <!-- Doctrine de visibilité : le prix de VENTE du lot est visible ; le détail du chiffrage est chiffré par le partenaire (jamais lisible ici) -->
-                    <div class="small" style="margin-top:4px"><b>Prix de vente du lot :</b> <span v-if="c.prix_lot_ht!=null">{{ eur(c.prix_lot_ht) }} HT</span><span v-else class="muted">prix non renseigné</span></div>
+                    <div class="small" style="margin-top:4px"><b>Prix de vente de sa partie :</b> <span v-if="c.prix_lot_ht!=null">{{ eur(c.prix_lot_ht) }} HT</span><span v-else class="muted">prix non renseigné</span></div>
                     <div v-if="c.has_detail_chiffre" class="lock-note"><i data-lucide="lock" style="width:13px;height:13px;flex:none;margin-top:1px"></i><span>Détail du chiffrage chiffré par le partenaire — vous ne le voyez pas, c'est voulu.</span></div>
                     <div v-if="c.representant_legal || c.signataire_qualite" class="muted small">Signataire : {{ c.representant_legal||'—' }}<span v-if="c.signataire_qualite"> · {{ c.signataire_qualite }}</span></div>
                     <div v-if="c.capacites && (c.capacites.ca_n1!=null || c.capacites.effectif!=null)" class="muted small">Capacités : <span v-if="c.capacites.ca_n1!=null">CA {{ eur(c.capacites.ca_n1) }}</span><span v-if="c.capacites.ca_n1!=null && c.capacites.effectif!=null"> · </span><span v-if="c.capacites.effectif!=null">{{ c.capacites.effectif }} salarié(s)</span> — déclaré par le partenaire<span v-if="c.capacites.declared_at"> le {{ ddmm(c.capacites.declared_at) }}</span></div>
@@ -1057,7 +1057,7 @@
                   <div class="row" style="gap:6px;margin-bottom:10px;align-items:center"><i data-lucide="layout-dashboard" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Suivi du groupement</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Qui couvre quoi · ce qu'il manque · assemblage.</span></button></div>
 
                   <div v-if="(ao.share.consortium.lots||[]).length" style="margin-bottom:12px">
-                    <div class="muted small" style="font-weight:600;margin-bottom:5px">Lots couverts</div>
+                    <div class="muted small" style="font-weight:600;margin-bottom:5px">Parties couvertes</div>
                     <div v-for="l in ao.share.consortium.lots" :key="l.lot" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
                       <span class="pill go" style="font-size:10px"><i data-lucide="check" style="width:11px;height:11px"></i>{{ l.lot }}</span>
                       <span class="muted">{{ l.partners.join(', ') }}</span>
@@ -1072,9 +1072,9 @@
                       <span class="pill" :class="p.status==='submitted'?'go':p.status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ p.status==='submitted'?'Soumise':p.status==='draft'?'Brouillon':'En attente' }}</span>
                       <span v-if="p.pieces_count" class="pill neutral" style="font-size:10px"><i data-lucide="paperclip" style="width:10px;height:10px"></i>{{ p.pieces_count }} pièce(s)</span>
                       <span v-if="p.lot" class="muted small"> · {{ p.lot }}</span>
-                      <span v-if="p.prix_lot_ht!=null" class="pill neutral" style="font-size:10px" title="Prix de vente du lot (visible du chef de file)">{{ eur(p.prix_lot_ht) }} HT</span>
-                      <span v-else-if="p.status==='submitted'" class="pill a_etudier" style="font-size:10px">prix de lot manquant</span>
-                      <span v-if="p.has_dpgf_lot" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="file-check-2" style="width:10px;height:10px"></i>Tableau de prix reçu</span><button v-if="p.has_dpgf_lot" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le tableau de prix du partenaire : le détail de ses prix de vente pour son lot, ligne par ligne. Jamais ses coûts ni ses marges.</span></button>
+                      <span v-if="p.prix_lot_ht!=null" class="pill neutral" style="font-size:10px" title="Prix de vente de sa partie (visible du chef de file)">{{ eur(p.prix_lot_ht) }} HT</span>
+                      <span v-else-if="p.status==='submitted'" class="pill a_etudier" style="font-size:10px">prix de sa partie manquant</span>
+                      <span v-if="p.has_dpgf_lot" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="file-check-2" style="width:10px;height:10px"></i>Tableau de prix reçu</span><button v-if="p.has_dpgf_lot" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le tableau de prix du partenaire : le détail de ses prix de vente pour sa partie, ligne par ligne. Jamais ses coûts ni ses marges.</span></button>
                       <i v-if="p.has_detail_chiffre" data-lucide="lock" style="width:11px;height:11px;color:var(--text-2);vertical-align:-1px" title="Détail du chiffrage chiffré par le partenaire — vous ne le voyez pas, c'est voulu" aria-label="Détail du chiffrage chiffré"></i>
                       <!-- Pièces administratives attendues du membre : présentes (vert) / manquantes (rouge) -->
                       <div v-if="(p.pieces_have && p.pieces_have.length) || (p.pieces_missing && p.pieces_missing.length)" class="row wrap" style="gap:4px;margin-top:3px">
@@ -1111,7 +1111,7 @@
 
                   <!-- Offre commune : total = prix de vente de chaque lot + part du mandataire ; une fois figée, visible des partenaires -->
                   <div data-test="marche-offre-commune" v-if="ao.share.consortium.offre" style="margin-top:13px;padding-top:12px;border-top:1px solid var(--hairline)">
-                    <div class="row" style="gap:6px;align-items:center"><i data-lucide="badge-euro" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Offre commune</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Total = prix de vente du lot de chaque partenaire + votre part.</span></button></div>
+                    <div class="row" style="gap:6px;align-items:center"><i data-lucide="badge-euro" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Offre commune</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Total = prix de vente de la partie de chaque partenaire + votre part.</span></button></div>
                     <div v-if="ao.share.consortium.offre.frozen" class="offre-box" style="flex-wrap:wrap">
                       <i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i>
                       <div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b> le {{ fmtDate(ao.share.consortium.offre.frozen_at) }}</div><div class="muted small">Chaque partenaire voit maintenant le total.</div></div>
@@ -1147,7 +1147,7 @@
                  « Rattacher ». Un partenaire du groupement s'INVITE (il entre dans les formulaires officiels
                  seulement après avoir accepté) ; un sous-traitant se déclare explicitement (DC4). -->
             <div data-test="marche-partenaires" class="card" style="margin-top:14px">
-              <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake"></i><h3>Membres et sous-traitants</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les entreprises qui figurent dans vos formulaires officiels. <b>Un partenaire du groupement s'invite</b> : il n'y entre (DC1, DC2, convention) qu'après avoir accepté votre invitation. <b>Un sous-traitant</b> se déclare avec le DC4. Avant de déposer en groupement, vérifiez le règlement : il peut <b>imposer ou interdire</b> le groupement selon le lot ; une entreprise ne peut être <b>chef de file que d'un seul groupement par lot</b>, ni être à la fois <b>candidat seul et membre</b> d'un groupement.</span></button><div class="spacer"></div>
+              <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake"></i><h3>Membres et sous-traitants</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les entreprises qui figurent dans vos formulaires officiels. <b>Un partenaire du groupement s'invite</b> : il n'y entre (DC1, DC2, convention) qu'après avoir accepté votre invitation. <b>Un sous-traitant</b> se déclare avec le DC4. Avant de déposer en groupement, vérifiez le règlement : il peut <b>imposer ou interdire</b> le groupement selon la partie (lot) ; une entreprise ne peut être <b>chef de file que d'un seul groupement par partie (lot)</b>, ni être à la fois <b>candidat seul et membre</b> d'un groupement.</span></button><div class="spacer"></div>
                 <button class="btn sm" @click="ao.stOpen=!ao.stOpen"><i data-lucide="search"></i>Chercher une entreprise</button></div>
               <div class="cb">
                 <!-- Règles de conformité du groupement (avertissement, pas un blocage) -->
@@ -1374,7 +1374,7 @@
                               <button type="button" class="btn sm" @click="aoGrpInvite({ name: c.company, link_id: c.link_id })"><i data-lucide="user-plus"></i>Inviter</button></div>
                             <div v-if="h.on" class="conv-grid">
                               <div class="field"><label :for="'cvh-p'+c.link_id">Prix de vente de sa part (€ HT)</label><input :id="'cvh-p'+c.link_id" class="inp" type="number" min="0" step="0.01" inputmode="decimal" v-model.number="h.prix_lot_ht"></div>
-                              <div class="field"><label :for="'cvh-l'+c.link_id">Lot ou prestations</label><input :id="'cvh-l'+c.link_id" class="inp" v-model="h.lot" maxlength="255"></div>
+                              <div class="field"><label :for="'cvh-l'+c.link_id">Partie (lot) ou prestations</label><input :id="'cvh-l'+c.link_id" class="inp" v-model="h.lot" maxlength="255"></div>
                               <div class="field"><label :for="'cvh-r'+c.link_id">Représentant légal</label><input :id="'cvh-r'+c.link_id" class="inp" v-model="h.representant_legal" maxlength="255"></div>
                               <div class="field"><label :for="'cvh-q'+c.link_id">Qualité du signataire</label><input :id="'cvh-q'+c.link_id" class="inp" v-model="h.signataire_qualite" maxlength="120"></div>
                             </div>
@@ -1647,7 +1647,7 @@
                   <span class="pill" :class="confClass(t.confidence)">confiance {{ Math.round(t.confidence*100) }}%</span>
                   <!-- Pré-tri = adéquation À VOS CRITÈRES (hors DCE). Sans critères renseignés,
                        le score ne mesure pas l'adéquation au client → on invite à les définir. -->
-                  <span v-if="t.score && t.score.fit_assessable===false" class="pill" style="font-size:10px;background:rgba(234,179,8,.12);color:#92400e;cursor:pointer" @click="go('criteria')" title="Renseignez vos spécialités et votre zone pour un score adapté à votre entreprise"><i data-lucide="settings" style="width:11px;height:11px;vertical-align:-1px"></i> Définissez vos critères pour un score adapté</span>
+                  <span v-if="t.score && t.score.fit_assessable===false" class="pill" style="font-size:10px;background:rgba(234,179,8,.12);color:#92400e;cursor:pointer" @click="go('criteria')" title="Renseignez vos spécialités et votre zone pour un score adapté à votre entreprise"><i data-lucide="settings" style="width:11px;height:11px;vertical-align:-1px"></i> Dites ce que vous cherchez pour un score adapté</span>
                   <span v-else-if="t.score && typeof t.score.total==='number'" class="pill" :class="t.score.total>=66?'go':t.score.total>=40?'a_etudier':'neutral'" :title="'Adéquation à VOS critères (pré-tri avant analyse du DCE)'">adéquation {{ t.score.total }}/100</span>
                   <a :href="safeUrl(t.provenance.source_url)" target="_blank" class="small row" style="gap:3px;color:var(--accent-text);font-weight:500">Voir l'annonce officielle<i data-lucide="external-link" style="width:13px;height:13px"></i></a>
                 </div>
@@ -1958,18 +1958,18 @@
               <!-- Rédaction, vague 6 (J) : un marché réparti en lots — à quels lots répondez-vous ? Deux ou plus : parties
                    communes (rédigées une fois) et parties propres à chaque lot, un fichier par lot. Un seul : comme avant. -->
               <div v-if="atl.prop.proposition.lots_du_marche && atl.prop.proposition.lots_du_marche.alloti" class="atl-lots atl-mt12">
-                <div class="row wrap atl-g6"><i data-lucide="layers" class="atl-lots-ico"></i><b class="small">Ce marché est réparti en {{ atl.prop.proposition.lots_du_marche.lots.length }} lots</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.prop.proposition.lots_du_marche.message }} {{ atl.prop.proposition.lots_du_marche.regle_commune }}</span></button></div>
-                <div class="small atl-mt4">À quels lots répondez-vous ?</div>
+                <div class="row wrap atl-g6"><i data-lucide="layers" class="atl-lots-ico"></i><b class="small">Ce marché est découpé en {{ atl.prop.proposition.lots_du_marche.lots.length }} parties (lots)</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.prop.proposition.lots_du_marche.message }} {{ atl.prop.proposition.lots_du_marche.regle_commune }}</span></button></div>
+                <div class="small atl-mt4">À quelles parties du marché répondez-vous ?</div>
                 <div class="atl-lots-l">
-                  <label v-for="x in atl.prop.proposition.lots_du_marche.lots" :key="'lc'+x.numero" class="atl-chk small"><input type="checkbox" :checked="atlLotCoche(x.numero)" @change="atlLotBascule(x.numero)" :disabled="atl.loading || !!atl.busy"><span>Lot {{ x.numero }} — {{ x.intitule }}</span><button v-if="x.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ x.phrase }} »<template v-if="x.source"> ({{ x.source }})</template></span></button></label>
-                  <span v-for="x in atl.lotsAjoutes" :key="'la'+x.numero" class="atl-chk small"><span>Lot {{ x.numero }} — {{ x.intitule }} <span class="muted">(indiqué par vous)</span></span><button type="button" class="atl-lien" @click="atlLotRetirerAjout(x.numero)">Retirer</button></span>
+                  <label v-for="x in atl.prop.proposition.lots_du_marche.lots" :key="'lc'+x.numero" class="atl-chk small"><input type="checkbox" :checked="atlLotCoche(x.numero)" @change="atlLotBascule(x.numero)" :disabled="atl.loading || !!atl.busy"><span>{{ partieLot(x.numero, x.intitule) }}</span><button v-if="x.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ x.phrase }} »<template v-if="x.source"> ({{ x.source }})</template></span></button></label>
+                  <span v-for="x in atl.lotsAjoutes" :key="'la'+x.numero" class="atl-chk small"><span>{{ partieLot(x.numero, x.intitule) }} <span class="muted">(indiquée par vous)</span></span><button type="button" class="atl-lien" @click="atlLotRetirerAjout(x.numero)">Retirer</button></span>
                 </div>
                 <div v-if="!atlMobile" class="row wrap atl-g6 atl-mt8 atl-lot-aj">
-                  <label class="sr-only" for="atl-lotn">Numéro du lot</label><input id="atl-lotn" class="inp atl-lot-n" v-model="atl.lotAjout.numero" maxlength="2" inputmode="numeric" placeholder="N°">
-                  <label class="sr-only" for="atl-loti">Intitulé du lot</label><input id="atl-loti" class="inp" v-model="atl.lotAjout.intitule" maxlength="200" placeholder="Un lot absent de la liste : son intitulé" @keydown.enter.prevent="atlLotAjouter()">
+                  <label class="sr-only" for="atl-lotn">Numéro de la partie (lot)</label><input id="atl-lotn" class="inp atl-lot-n" v-model="atl.lotAjout.numero" maxlength="2" inputmode="numeric" placeholder="N°">
+                  <label class="sr-only" for="atl-loti">Intitulé de la partie</label><input id="atl-loti" class="inp" v-model="atl.lotAjout.intitule" maxlength="200" placeholder="Une partie absente de la liste : son intitulé" @keydown.enter.prevent="atlLotAjouter()">
                   <button type="button" class="btn sm ghost" @click="atlLotAjouter()" :disabled="atl.loading"><i data-lucide="plus"></i>Ajouter</button>
                 </div>
-                <div class="muted small atl-mt8">{{ atlLotPlus() ? "Un fichier par lot à l'export : les parties communes y figurent telles quelles, avec les parties propres au lot." : "Cochez deux lots ou plus pour les préparer ensemble. Un seul lot coché, ou aucun : un seul dossier." }}</div>
+                <div class="muted small atl-mt8">{{ atlLotPlus() ? "Un fichier par partie du marché à l'export : il reprend les parties communes telles quelles, et les parties propres à cette partie du marché." : "Cochez deux parties du marché ou plus pour les préparer ensemble. Une seule cochée, ou aucune : un seul dossier." }}</div>
               </div>
               <div class="atl-bases" role="radiogroup" aria-label="Plan à utiliser">
                 <button v-for="b in atlBases(atl.prop.proposition.bases)" :key="'pb'+b.k" type="button" class="atl-base" :class="{on: atl.base===b.k}" role="radio" :aria-checked="atl.base===b.k ? 'true' : 'false'" @click="atlBase(b)" :disabled="atl.loading || b.off" :title="b.off ? b.non : null">{{ b.l }}</button>
@@ -1980,7 +1980,7 @@
               <div v-if="atlNonControlees(atl.prop.proposition.limites).length" class="muted small atl-mt4">Adjugo ne compte pas : {{ atlNonControlees(atl.prop.proposition.limites).join(' ; ') }}. Vérifiez-les vous-même.</div>
               <ol class="atl-prop">
                 <li v-for="(s,i) in atl.prop.proposition.sections" :key="'ps'+i">
-                  <div class="atl-prop-t"><span v-if="s.numero" class="atl-num">{{ s.numero + ' ' }}</span>{{ s.intitule }}<span v-if="s.lot !== undefined" class="atl-lot-tag" :class="{c: !s.lot}">{{ s.lot ? 'Lot ' + s.lot : 'Commune' }}</span></div>
+                  <div class="atl-prop-t"><span v-if="s.numero" class="atl-num">{{ s.numero + ' ' }}</span>{{ s.intitule }}<span v-if="s.lot !== undefined" class="atl-lot-tag" :class="{c: !s.lot}">{{ s.lot ? partieLot(s.lot) : 'Commune' }}</span></div>
                   <div v-if="s.parents && s.parents.length" class="muted small">{{ s.parents.map(x => (x.numero ? x.numero + ' ' : '') + x.intitule).join(' › ') }}</div>
                   <div class="row wrap atl-g6 small">
                     <span v-if="s.critere" class="muted">Critère : {{ s.critere }}<template v-if="s.poids"> · {{ atlPoidsTexte(s) }}</template></span>
@@ -2005,8 +2005,8 @@
                   <div class="row wrap atl-g6"><h2 class="atl-titre">{{ atl.st.projet.nom }}</h2><span class="pill neutral" style="font-size:11px">{{ atlPlanLabel(atl.st.dossier.plan_source) }}</span><button v-if="atl.st.dossier.plan.message" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.st.dossier.plan.message }}</span></button></div>
                   <div class="small atl-mt4">{{ atlCompteTexte(atl.st) }}</div>
                   <!-- Rédaction, vague 6 (J) : les lots du dossier (un fichier chacun), ou un marché en lots préparé en un seul dossier -->
-                  <div v-if="atlLots()" class="row wrap atl-g6 small atl-mt4"><i data-lucide="layers" class="atl-lots-ico"></i><span style="flex:1;min-width:0">Vous répondez à {{ atlLotsListe().length }} lots : {{ atlLotsListe().map(l => l.libelle).join(' · ') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Parties communes et parties d'un lot</span><span class="tip-b" role="tooltip">Une partie commune est rédigée une fois : son texte figure tel quel dans le fichier de chaque lot, et une modification vaut pour tous. Une partie propre à un lot n'entre que dans le fichier de ce lot. {{ atl.st.lots.regle_commune }}</span></button><button v-if="!atlMobile" type="button" class="atl-lien" @click="atlLotsOuvrir()">Changer les lots</button></div>
-                  <div v-else-if="atl.st.lots && atl.st.lots.du_marche && atl.st.lots.du_marche.alloti" class="row wrap atl-g6 small atl-mt4"><i data-lucide="layers" class="atl-lots-ico"></i><span class="muted" style="flex:1;min-width:0">Ce marché est réparti en {{ atl.st.lots.du_marche.lots.length }} lots : ce dossier en prépare un seul.</span><button v-if="!atlMobile" type="button" class="atl-lien" @click="atlLotsOuvrir()">Répondre à plusieurs lots</button></div>
+                  <div v-if="atlLots()" class="row wrap atl-g6 small atl-mt4"><i data-lucide="layers" class="atl-lots-ico"></i><span style="flex:1;min-width:0">Vous répondez à {{ atlLotsListe().length }} parties du marché : {{ atlLotsListe().map(l => partieLot(l.libelle)).join(' · ') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Parties communes et parties propres à une partie du marché</span><span class="tip-b" role="tooltip">Une partie commune est rédigée une fois : son texte figure tel quel dans le fichier de chaque partie du marché (lot), et une modification vaut pour tous. Une partie propre à une partie du marché n'entre que dans le fichier de celle-ci. {{ atl.st.lots.regle_commune }}</span></button><button v-if="!atlMobile" type="button" class="atl-lien" @click="atlLotsOuvrir()">Changer les parties du marché</button></div>
+                  <div v-else-if="atl.st.lots && atl.st.lots.du_marche && atl.st.lots.du_marche.alloti" class="row wrap atl-g6 small atl-mt4"><i data-lucide="layers" class="atl-lots-ico"></i><span class="muted" style="flex:1;min-width:0">Ce marché est découpé en {{ atl.st.lots.du_marche.lots.length }} parties (lots) : ce dossier en prépare une seule.</span><button v-if="!atlMobile" type="button" class="atl-lien" @click="atlLotsOuvrir()">Répondre à plusieurs parties du marché</button></div>
                 </div>
                 <div v-if="!atlMobile" class="row wrap atl-g6">
                   <button v-if="atlAEcrire() && !atlSansIa()" type="button" class="btn sm" @click="atlRedigerTout()" :disabled="!!atl.busy"><i data-lucide="sparkles"></i>{{ atlAEcrire() > 1 ? "Rédiger les " + atlAEcrire() + " parties à écrire" : "Rédiger la partie à écrire" }}</button>
@@ -2077,10 +2077,10 @@
                 </template>
                 <!-- Rédaction, vague 6 (J) : un fichier par lot — son état, ses limites, son nom, sa dérogation -->
                 <template v-else>
-                  <div class="row wrap atl-g6"><i data-lucide="files" style="width:15px;height:15px"></i><b class="small">Un fichier par lot</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Un fichier par lot</span><span class="tip-b" role="tooltip">Chaque fichier reprend les parties communes, telles quelles, et les parties du lot, numérotées pour lui. Ses limites de pages sont contrôlées pour lui seul ; une dérogation ne vaut que pour un lot.</span></button></div>
+                  <div class="row wrap atl-g6"><i data-lucide="files" style="width:15px;height:15px"></i><b class="small">Un fichier par partie du marché</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Un fichier par partie du marché</span><span class="tip-b" role="tooltip">Chaque fichier reprend les parties communes, telles quelles, et les parties propres à sa partie du marché (lot), numérotées pour lui. Ses limites de pages sont contrôlées pour lui seul ; une dérogation ne vaut que pour un fichier.</span></button></div>
                   <ul class="atl-lots-x">
                     <li v-for="l in atlLotsListe()" :key="'lx'+l.numero">
-                      <div class="row wrap atl-g6" style="align-items:center"><b class="small atl-lot-nom">{{ l.libelle }}</b><span class="pill" :class="atlEtatLot(l).cls" style="font-size:11px">{{ atlEtatLot(l).label }}</span></div>
+                      <div class="row wrap atl-g6" style="align-items:center"><b class="small atl-lot-nom">{{ partieLot(l.libelle) }}</b><span class="pill" :class="atlEtatLot(l).cls" style="font-size:11px">{{ atlEtatLot(l).label }}</span></div>
                       <div class="row wrap atl-g6 small atl-mt4">
                         <span class="muted">{{ l.parties.length }} partie{{ l.parties.length > 1 ? 's' : '' }}<template v-if="l.parties_communes">, dont {{ l.parties_communes }} commune{{ l.parties_communes > 1 ? 's' : '' }}</template><template v-if="atlLotCompte(l)"> · {{ atlLotCompte(l) }}</template></span>
                         <span v-for="(x,i) in atlLotLims(l)" :key="'ll'+l.numero+i" class="atl-lim" :class="atlLimCls(x)">{{ atlLimCourt(x) }}<button v-if="x.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ x.phrase }} »<template v-if="x.source"> ({{ x.source }})</template></span></button></span>
@@ -2097,14 +2097,14 @@
                         <template v-if="!atlMobile">
                           <button v-if="!l.blocage.derogation && l.blocage.bloque && l.blocage.raisons.every(r => r.code !== 'dossier_vide')" type="button" class="btn ghost sm" @click="atlDerogLot(l)"><i data-lucide="file-warning"></i>Exporter malgré tout…</button>
                           <div class="spacer"></div>
-                          <button type="button" class="btn sm" @click="atlExportLot(l, 'docx')" :disabled="!!atl.busy" :aria-label="'Exporter le ' + l.libelle + ' en Word'"><span v-if="atl.busy==='export:'+l.numero+':docx'" class="spin"></span><i v-else data-lucide="file-down"></i>Word</button>
-                          <button type="button" class="btn sm" @click="atlExportLot(l, 'pdf')" :disabled="!!atl.busy" :aria-label="'Exporter le ' + l.libelle + ' en PDF'"><span v-if="atl.busy==='export:'+l.numero+':pdf'" class="spin"></span><i v-else data-lucide="file-down"></i>PDF</button>
+                          <button type="button" class="btn sm" @click="atlExportLot(l, 'docx')" :disabled="!!atl.busy" :aria-label="'Exporter le fichier de la ' + partieLot(l.libelle, true) + ' en Word'"><span v-if="atl.busy==='export:'+l.numero+':docx'" class="spin"></span><i v-else data-lucide="file-down"></i>Word</button>
+                          <button type="button" class="btn sm" @click="atlExportLot(l, 'pdf')" :disabled="!!atl.busy" :aria-label="'Exporter le fichier de la ' + partieLot(l.libelle, true) + ' en PDF'"><span v-if="atl.busy==='export:'+l.numero+':pdf'" class="spin"></span><i v-else data-lucide="file-down"></i>PDF</button>
                         </template>
                       </div>
-                      <details v-if="atlLotGrilleLignes(l).length" class="atl-det atl-mt4"><summary>Comment vous serez noté pour ce lot</summary>
+                      <details v-if="atlLotGrilleLignes(l).length" class="atl-det atl-mt4"><summary>Comment vous serez noté pour cette partie du marché</summary>
                         <div class="muted small">{{ l.grille.message }}</div>
                         <blockquote v-if="l.grille.phrase" class="atl-q">{{ l.grille.phrase }}</blockquote>
-                        <div v-for="x in atlLotGrilleLignes(l)" :key="'lg'+l.numero+x.id" class="small atl-mt4"><b>{{ x.critere }}</b><span class="muted"> · {{ x.poids ? (x.poids_source === 'utilisateur' ? 'poids lu par vous : ' : 'poids écrit dans le règlement : ') + x.poids : 'aucun poids écrit pour ce lot' }}</span>
+                        <div v-for="x in atlLotGrilleLignes(l)" :key="'lg'+l.numero+x.id" class="small atl-mt4"><b>{{ x.critere }}</b><span class="muted"> · {{ x.poids ? (x.poids_source === 'utilisateur' ? 'poids lu par vous : ' : 'poids écrit dans le règlement : ') + x.poids : 'aucun poids écrit pour cette partie du marché' }}</span>
                           <div v-if="x.message" class="muted">{{ x.message }}</div>
                           <blockquote v-if="x.phrase && l.grille.mode === 'propre'" class="atl-q">{{ x.phrase }}<template v-if="x.source"> ({{ x.source }})</template></blockquote></div>
                         <div v-if="l.grille.controle_total && l.grille.controle_total.message" class="muted small atl-mt4">{{ l.grille.controle_total.message }}</div>
@@ -2128,14 +2128,14 @@
                 <div data-test="atelier-page-preparation-case" v-if="atl.st.export.page_preparation" class="row wrap atl-g6 atl-mt8 small atl-prep-case">
                   <label v-if="!atlMobile" class="atl-chk"><input type="checkbox" v-model="atl.prepJoindre" :disabled="!!atl.busy">{{ atl.st.export.page_preparation.libelle }}</label>
                   <span v-else>Page « Comment ce dossier a été préparé »</span>
-                  <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.st.export.page_preparation.bulle }}<template v-if="atlLots()"> Un fichier par lot : la case vaut pour chaque fichier exporté, et chaque page ne parle que des parties de son lot.</template></span></button>
+                  <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atl.st.export.page_preparation.bulle }}<template v-if="atlLots()"> Un fichier par partie du marché : la case vaut pour chaque fichier exporté, et chaque page ne parle que des parties de son fichier.</template></span></button>
                   <button type="button" class="atl-lien" @click="atlPrepVoir()" :aria-expanded="atl.prep.open ? 'true' : 'false'" aria-controls="atl-prep-b">{{ atl.prep.open ? 'Replier la page' : 'Voir la page' }}</button>
                 </div>
                 <div data-test="atelier-page-preparation" v-if="atl.prep.open" id="atl-prep-b" class="atl-prep" role="region" aria-label="Comment ce dossier a été préparé">
                   <!-- Plusieurs lots (J) : un fichier par lot, donc une page par lot (ses parties communes et les siennes). -->
-                  <div v-if="atlLots()" class="atl-lot-f" role="group" aria-label="Page du fichier de quel lot">
+                  <div v-if="atlLots()" class="atl-lot-f" role="group" aria-label="Page du fichier de quelle partie du marché">
                     <span class="muted small">Page du fichier :</span>
-                    <button v-for="l in atlLotsListe()" :key="'pp'+l.numero" type="button" class="atl-base" :class="{on: atl.prep.lot===l.numero}" :aria-pressed="atl.prep.lot===l.numero ? 'true' : 'false'" :title="l.libelle" @click="atlPrepLot(l.numero)">Lot {{ l.numero }}</button>
+                    <button v-for="l in atlLotsListe()" :key="'pp'+l.numero" type="button" class="atl-base" :class="{on: atl.prep.lot===l.numero}" :aria-pressed="atl.prep.lot===l.numero ? 'true' : 'false'" :title="partieLot(l.libelle)" @click="atlPrepLot(l.numero)">{{ partieLot(l.numero) }}</button>
                   </div>
                   <div v-if="atl.prep.err" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ atl.prep.err }} <button type="button" class="linkbtn" @click="atlPrepLoad()">Réessayer</button></div></div>
                   <div v-else-if="atl.prep.loading && !atl.prep.d" class="muted small" role="status"><span class="spin"></span> Préparation de la page…</div>
@@ -2200,7 +2200,7 @@
                           <option value="">Votre entreprise</option>
                           <option v-for="m in atl.ent.d.groupement.membres" :key="'eam'+m.invite_id" :value="String(m.invite_id)">{{ m.nom }}</option>
                         </select>
-                        <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Une question posée à un partenaire apparaît dans son espace de rédaction : il y répond chez lui, et sa réponse vous arrive comme un fait déclaré par son entreprise. Vous ne pouvez pas la modifier ; si vous la reprenez, sa réponse sort de la fiche chantier. Adjugo propose le partenaire dont le lot, ou la partie confiée, correspond à la question.</span></button>
+                        <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Une question posée à un partenaire apparaît dans son espace de rédaction : il y répond chez lui, et sa réponse vous arrive comme un fait déclaré par son entreprise. Vous ne pouvez pas la modifier ; si vous la reprenez, sa réponse sort de la fiche chantier. Adjugo propose le partenaire dont la partie du marché (lot), ou la partie du dossier confiée, correspond à la question.</span></button>
                       </div>
                       <!-- Posée à un partenaire : sa réponse, en lecture -->
                       <div v-if="q.adresse.type === 'invitation'" class="small atl-mt8">
@@ -2272,7 +2272,7 @@
               <div v-else-if="atl.rep.d && !atl.rep.d.actif" class="card">
                 <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="users-round"></i><h3>Qui écrit quoi</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Chaque partenaire du groupement peut écrire sa partie chez lui, avec ses propres documents. Vous recevez le texte qu'il envoie et le nombre de faits appuyés sur une source, jamais ses documents, ses extraits ni ses brouillons.</span></button></div>
                 <div class="cb">
-                  <p class="small atl-m0">Adjugo propose qui rédige chaque partie d'après le lot de chaque partenaire. Vous pourrez tout changer ensuite.</p>
+                  <p class="small atl-m0">Adjugo propose qui rédige chaque partie d'après la partie du marché (lot) de chaque partenaire. Vous pourrez tout changer ensuite.</p>
                   <ul class="atl-rep-mbs atl-mt8">
                     <li v-for="m in atl.rep.d.membres" :key="'rm'+m.invite_id" class="small"><b>{{ m.nom }}</b><span v-if="m.lot" class="muted"> · {{ m.lot }}</span><span v-if="!m.peut_rediger" class="muted"> · {{ m.raison }}</span></li>
                   </ul>
@@ -2312,7 +2312,7 @@
                 <ol class="atl-rep-liste">
                   <li v-for="l in atl.rep.d.sections" :key="'rl'+l.section_id" :id="'atl-rep-'+l.section_id" class="card atl-rep-l">
                     <div class="row atl-g6" style="align-items:flex-start">
-                      <div class="atl-rep-t" style="flex:1;min-width:0"><span v-if="l.numero_affiche" class="atl-num">{{ l.numero_affiche + ' ' }}</span>{{ l.intitule }}<span v-if="l.lot_libelle || l.commune" class="atl-lot-tag" :class="{c: l.commune}">{{ l.commune ? 'Commune' : l.lot_libelle }}</span></div>
+                      <div class="atl-rep-t" style="flex:1;min-width:0"><span v-if="l.numero_affiche" class="atl-num">{{ l.numero_affiche + ' ' }}</span>{{ l.intitule }}<span v-if="l.lot_libelle || l.commune" class="atl-lot-tag" :class="{c: l.commune}">{{ l.commune ? 'Commune' : partieLot(l.lot_libelle) }}</span></div>
                       <span class="pill" :class="atlRepStatutCls(l.statut)" style="font-size:11px">{{ l.statut_libelle }}</span>
                     </div>
                     <div v-if="l.critere" class="muted small atl-mt4">Critère : {{ l.critere }}<template v-if="l.poids"> · {{ atlPoidsTexte(l) }}</template><template v-else> · aucun poids écrit dans le règlement</template></div>
@@ -2408,7 +2408,7 @@
                 <div v-if="atlLots()" v-show="!atlMobile || atl.planOpen" class="atl-lot-f" role="group" aria-label="Parties affichées">
                   <button type="button" class="atl-base" :class="{on: !atl.lotFiltre}" :aria-pressed="!atl.lotFiltre ? 'true' : 'false'" @click="atl.lotFiltre=''">Toutes</button>
                   <button type="button" class="atl-base" :class="{on: atl.lotFiltre==='c'}" :aria-pressed="atl.lotFiltre==='c' ? 'true' : 'false'" @click="atl.lotFiltre='c'">Communes</button>
-                  <button v-for="l in atlLotsListe()" :key="'lf'+l.numero" type="button" class="atl-base" :class="{on: atl.lotFiltre===l.numero}" :aria-pressed="atl.lotFiltre===l.numero ? 'true' : 'false'" :title="l.libelle" @click="atl.lotFiltre=l.numero">Lot {{ l.numero }}</button>
+                  <button v-for="l in atlLotsListe()" :key="'lf'+l.numero" type="button" class="atl-base" :class="{on: atl.lotFiltre===l.numero}" :aria-pressed="atl.lotFiltre===l.numero ? 'true' : 'false'" :title="partieLot(l.libelle)" @click="atl.lotFiltre=l.numero">{{ partieLot(l.numero) }}</button>
                 </div>
                 <ol v-show="!atlMobile || atl.planOpen" class="atl-parts">
                   <li v-for="s in atlSectionsVues()" :key="'p'+s.id">
@@ -2427,7 +2427,7 @@
                 </ol>
                 <div v-show="!atlMobile" class="atl-plan-f">
                   <div v-if="atl.st.dossier.plan_source !== 'cadre'" class="row wrap atl-g6 atl-add">
-                    <select v-if="atlLots()" class="inp atl-ent-sel" v-model="atl.addLot" aria-label="Pour quels lots"><option value="">Commune à tous les lots</option><option v-for="l in atlLotsListe()" :key="'al'+l.numero" :value="l.numero">Lot {{ l.numero }}</option></select>
+                    <select v-if="atlLots()" class="inp atl-ent-sel" v-model="atl.addLot" aria-label="Pour quelles parties du marché"><option value="">Commune à toutes les parties du marché</option><option v-for="l in atlLotsListe()" :key="'al'+l.numero" :value="l.numero">{{ partieLot(l.numero) }}</option></select>
                     <input class="inp" v-model="atl.add" maxlength="200" placeholder="Nouvelle partie" aria-label="Intitulé de la nouvelle partie" @keydown.enter.prevent="atlAjouter()">
                     <button type="button" class="btn sm" @click="atlAjouter()" :disabled="!!atl.busy || (atl.add||'').trim().length < 2"><i data-lucide="plus"></i>Ajouter</button>
                   </div>
@@ -2457,11 +2457,11 @@
                       <span v-if="atlSec().compteur" class="muted">Environ {{ atlNum(atlSec().compteur.mots) }} {{ atlMotsLib(atlSec().compteur.mots) }}<template v-if="atlSec().compteur.pages_estimees"> · {{ atlNum(atlSec().compteur.pages_estimees) }} page{{ atlSec().compteur.pages_estimees > 1 ? 's' : '' }}</template></span>
                       <span v-if="atlLib() && atlControle(atlSec())" class="muted">{{ atlControle(atlSec()).message }}</span>
                     </div>
-                    <div v-if="atlLots() && !atlSec().genere" class="row wrap atl-g6 small atl-mt4"><span class="atl-lot-tag" :class="{c: atlSec().commune}">{{ atlSec().commune ? "Partie commune à vos lots" : atlSec().lot_libelle }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Commune ou propre à un lot</span><span class="tip-b" role="tooltip">{{ atlSec().commune ? "Rédigée une fois : son texte figure tel quel dans le fichier de chaque lot. Une modification vaut pour tous les lots." : "Elle n'entre que dans le fichier de ce lot." }} {{ atl.st.lots.regle_commune }}</span></button><button v-if="!atlMobile && atlSec().portee_modifiable" type="button" class="atl-lien" @click="atlPortee(atlSec(), !atlSec().commune)" :disabled="!!atl.busy">{{ atlSec().commune ? "La rédiger pour chaque lot" : "La rendre commune à tous les lots" }}</button></div>
+                    <div v-if="atlLots() && !atlSec().genere" class="row wrap atl-g6 small atl-mt4"><span class="atl-lot-tag" :class="{c: atlSec().commune}">{{ atlSec().commune ? "Commune à vos parties du marché" : partieLot(atlSec().lot_libelle) }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Commune ou propre à une partie du marché</span><span class="tip-b" role="tooltip">{{ atlSec().commune ? "Rédigée une fois : son texte figure tel quel dans le fichier de chaque partie du marché. Une modification vaut pour tous les fichiers." : "Elle n'entre que dans le fichier de cette partie du marché." }} {{ atl.st.lots.regle_commune }}</span></button><button v-if="!atlMobile && atlSec().portee_modifiable" type="button" class="atl-lien" @click="atlPortee(atlSec(), !atlSec().commune)" :disabled="!!atl.busy">{{ atlSec().commune ? "La rédiger pour chaque partie du marché" : "La rendre commune à toutes les parties du marché" }}</button></div>
                     <details v-if="atlSec().question" class="atl-det atl-mt8"><summary>Ce que demande l'acheteur</summary><blockquote class="atl-q">{{ atlSec().question }}</blockquote></details>
                     <details v-if="(atlSec().sous_criteres || []).length" class="atl-det atl-mt8"><summary>Sous-critères notés dans cette partie ({{ atlSec().sous_criteres.length }})</summary>
                       <div v-for="(sc,i) in atlSec().sous_criteres" :key="'sc'+i" class="atl-mt4"><div class="small"><b>{{ sc.critere }}</b><span v-if="sc.poids" class="muted"> · {{ sc.poids }}</span></div><blockquote class="atl-q">{{ sc.phrase }}</blockquote></div></details>
-                    <div v-if="atlDerniereFois(atlSec())" class="cn-derniere atl-mt8"><div class="small"><b>La dernière fois, l'acheteur a écrit :</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atlDerniereFois(atlSec()).bulle }}</span></button></div><blockquote class="atl-q">{{ atlDerniereFois(atlSec()).commentaire }}</blockquote><div class="muted small">{{ atlDerniereFois(atlSec()).critere }}<template v-if="atlDerniereFois(atlSec()).note"> · {{ atlDerniereFois(atlSec()).note }}</template> · {{ atlDerniereFois(atlSec()).marche }}<template v-if="atlDerniereFois(atlSec()).lot"> ({{ atlDerniereFois(atlSec()).lot }})</template><template v-if="atlDerniereFois(atlSec()).meme_acheteur"> · même acheteur</template><template v-else-if="atlDerniereFois(atlSec()).acheteur"> · {{ atlDerniereFois(atlSec()).acheteur }}</template></div></div>
+                    <div v-if="atlDerniereFois(atlSec())" class="cn-derniere atl-mt8"><div class="small"><b>La dernière fois, l'acheteur a écrit :</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atlDerniereFois(atlSec()).bulle }}</span></button></div><blockquote class="atl-q">{{ atlDerniereFois(atlSec()).commentaire }}</blockquote><div class="muted small">{{ atlDerniereFois(atlSec()).critere }}<template v-if="atlDerniereFois(atlSec()).note"> · {{ atlDerniereFois(atlSec()).note }}</template> · {{ atlDerniereFois(atlSec()).marche }}<template v-if="atlDerniereFois(atlSec()).lot"> ({{ partieLot(atlDerniereFois(atlSec()).lot, true) }})</template><template v-if="atlDerniereFois(atlSec()).meme_acheteur"> · même acheteur</template><template v-else-if="atlDerniereFois(atlSec()).acheteur"> · {{ atlDerniereFois(atlSec()).acheteur }}</template></div></div>
                     <div v-if="atlSec().validation" class="muted small atl-mt4">Validée le {{ atlWhen(atlSec().validation.le) }}<template v-if="atlSec().statut==='a_revalider'"> : le texte a changé depuis, validez de nouveau.</template></div>
                     <div v-if="!atlSec().peut_ecrire && atlSec().genere" class="row wrap atl-g6 atl-mt8"><span class="muted small" style="flex:1;min-width:0">{{ atlSec().auteur.libelle }}, sans IA. Elle se met à jour toute seule.</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">D'où vient cette partie</span><span class="tip-b" role="tooltip">Adjugo l'écrit à partir de la convention et des parts des membres. Pour la changer, modifiez la convention ou la part du membre concerné.<template v-if="atlSec().genere === 'grp_qfq'"> Chaque membre du groupement la valide. Elle dit ce que chacun apporte, jamais ce qui manque.</template><template v-else> Vous la validez une fois la convention validée par tous les membres.</template></span></button><button v-if="atlSec().part ? atlSec().part.a_valider_par_vous : (atlSec().version_courante && atlSec().statut !== 'valide' && !atlSec().a_completer)" type="button" class="btn sm" @click="atlValider()" :disabled="!!atl.busy"><i data-lucide="check"></i>Valider</button><span v-else-if="atlSec().part && atlSec().part.mention" class="muted small" style="flex-basis:100%">{{ atlSec().part.mention }}.</span></div>
                     <div v-else-if="!atlSec().peut_ecrire" class="muted small atl-mt4">Partie rédigée par : {{ atlSec().auteur.libelle }}. {{ atlSec().part && atlSec().part.mention ? atlSec().part.mention + '.' : (atlSec().version_courante ? "Vous lisez le texte qu'il a envoyé." : "Rien d'envoyé pour l'instant.") }}<template v-if="atlGrp()"> <button type="button" class="atl-lien" @click="atlRepVoir(atlSec().id)">Le modifier ou l'écrire à sa place</button></template></div>
@@ -2689,10 +2689,11 @@
         <section data-test="vue-documents" v-if="view==='documents'">
           <div v-if="!documents.length" class="empty card pad">
             <div class="eic"><i data-lucide="folder-lock"></i></div>
-            <h4>Aucun document pour l'instant</h4><p>Centralisez vos pièces administratives (Kbis, attestations, qualifications) avec alertes d'expiration.</p>
+            <h4>Aucun document pour l'instant</h4><p>Ajoutez vos attestations avec leur date de fin : Adjugo vous prévient avant qu'elles expirent.</p>
             <button class="btn primary" @click="$refs.upl.click()" :disabled="uploading"><span v-if="uploading" class="spin"></span><i v-else data-lucide="upload"></i>Ajouter un document</button>
           </div>
           <template v-else>
+            <p class="muted small doc-aide">Indiquez la catégorie et la date de fin de chaque pièce : 30 jours avant sa fin, elle est signalée ici et comptée parmi les pièces à renouveler du menu.</p>
             <div class="row wrap" style="gap:10px;margin-bottom:13px;align-items:center">
               <div style="position:relative;flex:1;min-width:220px">
                 <i data-lucide="search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--muted);pointer-events:none"></i>
@@ -2703,14 +2704,18 @@
                 <option value="name">Nom (A–Z)</option>
                 <option value="category">Catégorie</option>
                 <option value="size">Taille (décroissant)</option>
-                <option value="expiry">Expiration (la plus proche)</option>
+                <option value="expiry">Date de fin (la plus proche)</option>
               </select>
               <span class="muted small" style="flex:none" aria-live="polite">{{ filteredDocuments.length }} sur {{ documents.length }}</span>
             </div>
-            <div v-if="filteredDocuments.length" class="t-wrap"><table><thead><tr><th>Document</th><th>Catégorie</th><th>Taille</th><th>Expiration</th><th></th></tr></thead><tbody>
-              <tr v-for="d in filteredDocuments" :key="d.id"><td><b>{{ d.name }}</b><div v-if="d.project_name" class="muted small">{{ folderLabel(d.folder) }} · {{ (d.project_name||'').slice(0,40) }}</div></td><td><span class="pill st-nouveau">{{ folderLabel(d.folder) || d.category }}</span></td>
-                <td class="small">{{ koSize(d.file_size) }}</td><td class="small">{{ fmtDate(d.expiration_date) }}</td>
-                <td class="row"><button class="btn icon sm ghost" @click="renameDoc(d)" aria-label="Renommer"><i data-lucide="pencil"></i></button><button class="btn icon sm ghost" @click="downloadDoc(d)" aria-label="Télécharger"><i data-lucide="download"></i></button><button class="btn icon sm ghost" @click="delDoc(d)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button></td></tr>
+            <!-- Catégorie et date de fin modifiables dans la liste (vague 2a, A3) ; « Expire dans 12 jours » : le même
+                 calcul que la pastille « pièces à renouveler » et le courriel d'alerte (fin, app/services/pieces_fin.py). -->
+            <div v-if="filteredDocuments.length" class="t-wrap"><table class="doc-table"><thead><tr><th>Document</th><th>Catégorie</th><th>Taille</th><th>Date de fin</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
+              <tr v-for="d in filteredDocuments" :key="d.id"><td data-label="Document"><b>{{ d.name }}</b><div v-if="d.project_name" class="muted small">{{ folderLabel(d.folder) }} · {{ (d.project_name||'').slice(0,40) }}</div></td>
+                <td data-label="Catégorie"><select class="inp doc-cat" :value="d.category || 'autre'" @change="docModifier(d, { category: $event.target.value })" :disabled="docBusy===d.id" :aria-label="'Catégorie de ' + d.name"><option v-for="c in categoriesDoc" :key="c.k" :value="c.k">{{ c.label }}</option></select></td>
+                <td data-label="Taille" class="small">{{ koSize(d.file_size) }}</td>
+                <td data-label="Date de fin" class="small"><input class="inp doc-fin" type="date" :value="d.expiration_date || ''" @change="docModifier(d, { expiration_date: $event.target.value })" :disabled="docBusy===d.id" :aria-label="'Date de fin de ' + d.name" :aria-describedby="d.fin && d.fin.libelle ? 'doc-fin-' + d.id : null" title="Date de fin (vide : sans date)"><span v-if="d.fin && d.fin.libelle" :id="'doc-fin-' + d.id" class="doc-etat" :class="d.fin.code">{{ d.fin.libelle }}</span></td>
+                <td class="row doc-actions"><button class="btn icon sm ghost" @click="renameDoc(d)" :aria-label="'Renommer ' + d.name"><i data-lucide="pencil"></i></button><button class="btn icon sm ghost" @click="downloadDoc(d)" :aria-label="'Télécharger ' + d.name"><i data-lucide="download"></i></button><button class="btn icon sm ghost" @click="delDoc(d)" :aria-label="'Supprimer ' + d.name"><i data-lucide="trash-2"></i></button></td></tr>
             </tbody></table></div>
             <div v-else class="empty card pad" style="text-align:center">
               <p class="muted">Aucun document ne correspond à « <b>{{ docQuery }}</b> ».</p>
@@ -2801,16 +2806,27 @@
               <button class="btn sm ghost" style="margin-top:8px" @click="company.team.splice(i,1)"><i data-lucide="trash-2"></i>Retirer</button>
             </div>
             <button class="btn sm" style="margin-bottom:14px" @click="company.team=(company.team||[]).concat([{nom:'',fonction:'',qualifications:'',references:''}])"><i data-lucide="user-plus"></i>Ajouter un collaborateur</button>
-            <div class="sectitle">Mes tarifs<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Prix de journée par type de prestation, utilisés pour estimer vos devis.</span></button></div>
-            <div v-for="(r,i) in (company.day_rates||[])" :key="'dr'+i" class="row" style="gap:8px;margin-bottom:6px;align-items:center">
-              <input class="inp" v-model="r.label" placeholder="Ex. Étude / conception" style="flex:1">
-              <input class="inp" type="number" min="0" v-model.number="r.rate" placeholder="€ / jour" style="width:130px">
+            <div class="pv-renvoi small"><i data-lucide="calculator"></i><span>Vos prix de journée et vos frais de déplacement se renseignent dans l'onglet <button type="button" class="linkbtn" @click="go('tarifs')">« Tarifs »</button>.</span></div>
+            <button class="btn primary" @click="saveCompany()" :disabled="busy"><span v-if="busy" class="spin"></span><i v-else data-lucide="check"></i>Enregistrer</button>
+          </div>
+        </section>
+
+        <!-- ░░ TARIFS (Mon entreprise, vague 2a, A3) ░░ Sortis de l'onglet « Identité » : la même fiche de l'entreprise
+             (PUT /api/company/), son propre bouton. Servent à l'estimation du prix (Estimer mon prix). -->
+        <section data-test="vue-tarifs" v-if="view==='tarifs'">
+          <div class="card pad ent-carte">
+            <div class="sectitle ent-sectitle0">Mes prix de journée<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Un prix de journée par type de prestation (hors taxes), repris par « Estimer mon prix » sur la page d'un marché.</span></button></div>
+            <p v-if="!(company.day_rates||[]).length" class="muted small ent-vide">Aucun prix de journée pour l'instant.</p>
+            <div v-for="(r,i) in (company.day_rates||[])" :key="'dr'+i" class="row ent-tarif">
+              <input class="inp ent-tarif-l" v-model="r.label" placeholder="Ex. Étude / conception" :aria-label="'Prestation '+(i+1)">
+              <input class="inp ent-tarif-p" type="number" min="0" v-model.number="r.rate" placeholder="€ HT / jour" :aria-label="'Prix de journée de la prestation '+(i+1)+', en euros HT'">
               <button class="btn icon sm ghost" @click="company.day_rates.splice(i,1)" aria-label="Retirer ce tarif"><i data-lucide="trash-2"></i></button>
             </div>
-            <button class="btn sm" style="margin-bottom:10px" @click="company.day_rates=(company.day_rates||[]).concat([{label:'',rate:0}])"><i data-lucide="plus"></i>Ajouter un tarif</button>
-            <div class="frow"><div class="field"><label>Frais de déplacement au-delà de (km)</label><input type="number" min="0" v-model.number="company.distance_threshold_km" placeholder="50"></div>
-              <div class="field"><label>Frais de déplacement (%)</label><input type="number" min="0" v-model.number="company.distance_surcharge_pct" placeholder="0"></div></div>
-            <button class="btn primary" @click="saveCompany" :disabled="busy"><span v-if="busy" class="spin"></span><i v-else data-lucide="check"></i>Enregistrer</button>
+            <button class="btn sm ent-mb" @click="company.day_rates=(company.day_rates||[]).concat([{label:'',rate:0}])"><i data-lucide="plus"></i>Ajouter un tarif</button>
+            <div class="sectitle">Frais de déplacement<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Au-delà de cette distance du chantier, l'estimation ajoute ce pourcentage à vos prix.</span></button></div>
+            <div class="frow"><div class="field"><label for="ent-km">Au-delà de (km)</label><input id="ent-km" type="number" min="0" v-model.number="company.distance_threshold_km" placeholder="50"></div>
+              <div class="field"><label for="ent-pct">Majoration (%)</label><input id="ent-pct" type="number" min="0" v-model.number="company.distance_surcharge_pct" placeholder="0"></div></div>
+            <button class="btn primary" @click="saveCompany('tarifs')" :disabled="busy"><span v-if="busy" class="spin"></span><i v-else data-lucide="check"></i>Enregistrer</button>
           </div>
         </section>
 
@@ -2978,22 +2994,24 @@
         <!-- ░░ CRITERIA ░░ -->
         <section data-test="vue-criteria" v-if="view==='criteria'">
           <div class="card pad" style="max-width:820px">
-            <div class="sectitle">Budget & finances</div>
-            <div class="frow"><div class="field"><label>Budget min (€)</label><input type="number" v-model.number="criteria.budget_min"></div>
-              <div class="field"><label>Budget max (€)</label><input type="number" v-model.number="criteria.budget_max"></div></div>
-            <div class="sectitle">Géographie</div>
-            <div class="frow"><div class="field"><label>Distance max (km)</label><input type="number" v-model.number="criteria.max_distance_km"></div>
-              <div class="field"><label>Départements <span class="hint">séparés par des virgules</span></label><input v-model="criteria.departements" placeholder="29, 56, 22"></div></div>
-            <div class="sectitle">Technique</div>
-            <div class="frow"><div class="field"><label>Spécialités</label><input v-model="criteria.specialites" placeholder="Gros œuvre, Maçonnerie"></div>
-              <div class="field"><label>Codes CPV <span class="hint">tapez un code, le libellé s'affiche</span></label><input v-model="criteria.codes_cpv" list="cpv-dl" placeholder="45223220, 45262500">
+            <div class="sectitle ent-sectitle0">Mes métiers</div>
+            <div class="frow"><div class="field"><label for="crit-spec">Spécialités</label><input id="crit-spec" v-model="criteria.specialites" placeholder="Gros œuvre, Maçonnerie"></div>
+              <div class="field"><label for="crit-cpv">Codes CPV <span class="hint">tapez un code, le libellé s'affiche</span></label><input id="crit-cpv" v-model="criteria.codes_cpv" list="cpv-dl" placeholder="45223220, 45262500">
                 <datalist id="cpv-dl"><option v-for="c in cpvList" :key="c.code" :value="c.code">{{ c.label }}</option></datalist>
                 <div v-if="cpvLabels(criteria.codes_cpv).length" class="muted small" style="margin-top:4px">{{ cpvLabels(criteria.codes_cpv).join(' · ') }}</div></div></div>
-            <div class="frow"><div class="field"><label>Qualifications</label><input v-model="criteria.qualifications" placeholder="Qualibat 2111"></div>
-              <div class="field"><label>Mots-clés exclus</label><input v-model="criteria.excluded_keywords" placeholder="désamiantage, voirie"></div></div>
+            <div class="frow"><div class="field"><label for="crit-qual">Qualifications</label><input id="crit-qual" v-model="criteria.qualifications" placeholder="Qualibat 2111"></div>
+              <div class="field"><label for="crit-excl">Mots-clés exclus</label><input id="crit-excl" v-model="criteria.excluded_keywords" placeholder="désamiantage, voirie"></div></div>
+            <div class="sectitle">Ma zone</div>
+            <div class="frow"><div class="field"><label for="crit-km">Distance max (km)</label><input id="crit-km" type="number" min="0" v-model.number="criteria.max_distance_km"></div>
+              <div class="field"><label for="crit-dep">Départements <span class="hint">séparés par des virgules</span></label><input id="crit-dep" v-model="criteria.departements" placeholder="29, 56, 22"></div></div>
+            <div class="sectitle">Montants<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Cette fourchette entre dans le classement des marchés trouvés et dans l'analyse d'un marché : un montant publié hors de la fourchette compte moins. Elle ne masque aucun marché.</span></button></div>
+            <div class="frow"><div class="field"><label for="crit-bmin">Marchés à partir de (€ HT)</label><input id="crit-bmin" type="number" min="0" v-model.number="criteria.budget_min"></div>
+              <div class="field"><label for="crit-bmax">Jusqu'à (€ HT)</label><input id="crit-bmax" type="number" min="0" v-model.number="criteria.budget_max"></div></div>
+            <div class="field ent-seul"><label for="crit-seul">Montant que je porte seul (€ HT) <span class="hint">facultatif</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le montant du plus gros marché, ou de la plus grosse partie (lot) d'un marché, que votre entreprise réalise seule. Laissez vide si vous ne savez pas : Adjugo ne le déduit d'aucun autre champ. Il ne masque aucun marché et ne change aucune note.</span></button></label>
+              <input id="crit-seul" type="number" min="0" step="1000" v-model.number="criteria.montant_porte_seul" placeholder="Non renseigné"></div>
             <div class="sectitle">Seuils de recommandation</div>
-            <div class="frow"><div class="field"><label>Seuil « bon potentiel » <span class="hint">score ≥</span></label><input type="number" min="0" max="100" placeholder="65 (défaut)" v-model.number="criteria.go_threshold"></div>
-              <div class="field"><label>Seuil « peu adapté » <span class="hint">score &lt;</span></label><input type="number" min="0" max="100" placeholder="40 (défaut)" v-model.number="criteria.nogo_threshold"></div></div>
+            <div class="frow"><div class="field"><label for="crit-go">Seuil « bon potentiel » <span class="hint">score ≥</span></label><input id="crit-go" type="number" min="0" max="100" placeholder="65 (défaut)" v-model.number="criteria.go_threshold"></div>
+              <div class="field"><label for="crit-nogo">Seuil « peu adapté » <span class="hint">score &lt;</span></label><input id="crit-nogo" type="number" min="0" max="100" placeholder="40 (défaut)" v-model.number="criteria.nogo_threshold"></div></div>
             <button class="btn primary" @click="saveCriteria" :disabled="busy"><span v-if="busy" class="spin"></span><i v-else data-lucide="check"></i>Enregistrer</button>
           </div>
         </section>
@@ -3245,7 +3263,7 @@
               <div v-else-if="!cdetail[cs.project_id]" class="muted small"><span class="spin"></span> Chargement du compte-rendu…</div>
               <template v-else>
                 <div v-if="cdetail[cs.project_id].lots.length">
-                  <div class="muted small" style="font-weight:600;margin-bottom:4px">Lots couverts</div>
+                  <div class="muted small" style="font-weight:600;margin-bottom:4px">Parties couvertes</div>
                   <div v-for="l in cdetail[cs.project_id].lots" :key="l.lot" class="row small" style="padding:3px 0;gap:8px;align-items:center"><span class="pill go" style="font-size:10px">{{ l.lot }}</span><span class="muted">{{ l.partners.join(', ') }}</span></div>
                 </div>
                 <div class="muted small" style="font-weight:600;margin:9px 0 4px">Partenaires &amp; pièces</div>
@@ -3346,7 +3364,7 @@
                   </fieldset>
                   <div class="rn-grid">
                     <div class="field"><label for="rn-deps">Départements d'intervention</label><input id="rn-deps" class="inp" v-model="f.departements" :disabled="!d.peut_modifier || !!reseau.p.busy" placeholder="ex. 29, 56, 35" aria-describedby="rn-deps-h"><div id="rn-deps-h" class="muted small rn-hint">Numéros séparés par des virgules (2A, 2B, 974…).</div></div>
-                    <div class="field"><label for="rn-lot">Taille de lot maximale (€ HT)<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le montant hors taxes (HT) du plus gros lot que vous acceptez. Laissez vide si vous ne souhaitez pas l'indiquer.</span></button></label><input id="rn-lot" class="inp" type="number" min="0" step="1000" inputmode="numeric" v-model="f.lot_max_eur" :disabled="!d.peut_modifier || !!reseau.p.busy" placeholder="ex. 250000"></div>
+                    <div class="field"><label for="rn-lot">Plus grosse partie (lot) acceptée (€ HT)<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le montant hors taxes (HT) de la plus grosse partie (lot) d'un marché que vous acceptez. Laissez vide si vous ne souhaitez pas l'indiquer.</span></button></label><input id="rn-lot" class="inp" type="number" min="0" step="1000" inputmode="numeric" v-model="f.lot_max_eur" :disabled="!d.peut_modifier || !!reseau.p.busy" placeholder="ex. 250000"></div>
                   </div>
                   <fieldset class="rn-fs" :disabled="!d.peut_modifier || !!reseau.p.busy">
                     <legend class="rn-lg">Rôles acceptés<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Partenaire du groupement : il en est membre et signe l'offre avec les autres. Sous-traitant : il travaille pour un membre du groupement sans signer l'offre. Chef de file : il représente le groupement auprès de l'acheteur.</span></button></legend>
@@ -3707,14 +3725,14 @@
             <div class="field" style="margin-top:10px"><label>Entreprise</label><input class="inp" v-model="sharedAo.contrib.company_name"></div>
             <div class="field"><label>Identité (pour vos formulaires officiels DC1, DC2)</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.siret" placeholder="SIRET" style="flex:1;min-width:130px"><input class="inp" v-model="sharedAo.contrib.forme_juridique" placeholder="Forme juridique (SARL, SAS…)" style="flex:1;min-width:130px"></div></div>
             <div class="field"><label>Adresse</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.address" placeholder="Adresse" style="flex:2;min-width:160px"><input class="inp" v-model="sharedAo.contrib.postal_code" placeholder="CP" style="width:80px"><input class="inp" v-model="sharedAo.contrib.city" placeholder="Ville" style="flex:1;min-width:110px"></div></div>
-            <div class="field"><label>Lot / périmètre</label><input class="inp" v-model="sharedAo.contrib.lot" placeholder="ex. Lot 2 — Démolition"></div>
+            <div class="field"><label>Partie (lot) / périmètre</label><input class="inp" v-model="sharedAo.contrib.lot" placeholder="ex. Démolition (lot 2)"></div>
             <div class="field"><label>Qualifications (séparées par des virgules)</label><input class="inp" v-model="sharedAo.contrib.quals" placeholder="ex. Qualibat 1112, RGE"></div>
             <div class="field"><label>Références (une par ligne)</label><textarea class="inp" v-model="sharedAo.contrib.refs" rows="3"></textarea>
               <div v-if="sharedRefsNote()" class="muted small sp-refs-note">{{ sharedRefsNote() }}</div></div>
             <!-- Rédaction, vague 5 (E2) : SES preuves et SES marchés publics (SIRET de sa part), ajoutés à sa part s'il coche -->
             <sources-publiques :key="'sp'+sharedAo.token" mode="part" :kinds="['decp','rge']" :invite="sharedAo.token" :avant="sharedAvantReprise" :apres="sharedApresReprise"></sources-publiques>
             <!-- Doctrine de visibilité : le prix de VENTE du lot est lisible par le chef de file ; le détail est chiffré dans le navigateur -->
-            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Prix de vente de votre lot (€ HT)</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le prix de vente de votre lot reste lisible par le chef de file : c'est voulu, il en a besoin pour consolider l'offre.</span></button></div><input class="inp" type="number" min="0" step="1" v-model="sharedAo.contrib.prix_lot_ht" placeholder="ex. 280000"><div class="muted small" style="margin-top:3px">{{ cryptoLabels().not_zero_knowledge }}</div></div>
+            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Prix de vente de votre partie (€ HT)</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le prix de vente de votre partie reste lisible par le chef de file : c'est voulu, il en a besoin pour consolider l'offre.</span></button></div><input class="inp" type="number" min="0" step="1" v-model="sharedAo.contrib.prix_lot_ht" placeholder="ex. 280000"><div class="muted small" style="margin-top:3px">{{ cryptoLabels().not_zero_knowledge }}</div></div>
             <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Détail de votre chiffrage (coûts, marges, méthode)</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ cryptoLabels().lock }} {{ cryptoLabels().lost }}</span></button></div>
               <div v-if="sharedAo.detailLocked" style="padding:12px;border:1px dashed var(--border);border-radius:9px;background:var(--surface-2)">
                 <div class="row small" style="gap:6px;align-items:center"><i data-lucide="lock" style="width:14px;height:14px"></i><b>Détail verrouillé</b><span class="muted">— chiffré sur un autre navigateur ou avec un autre code.</span></div>
@@ -3725,7 +3743,7 @@
             </div>
             <div class="field"><label>Vos capacités (déclarées par vous, visibles du chef de file)</label><div class="row wrap" style="gap:8px"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.ca_n1" placeholder="Votre CA du dernier exercice (€)" style="flex:1;min-width:200px" aria-label="Votre CA du dernier exercice"><input class="inp" type="number" min="0" v-model="sharedAo.contrib.effectif" placeholder="Effectif" style="width:120px" aria-label="Effectif"></div></div>
             <div class="field"><label>Signataire de votre part</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.representant_legal" placeholder="Représentant légal (nom)" style="flex:1;min-width:160px" aria-label="Représentant légal"><input class="inp" v-model="sharedAo.contrib.signataire_qualite" placeholder="Qualité (gérant, président…)" style="flex:1;min-width:140px" aria-label="Qualité du signataire"></div></div>
-            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Paragraphe pour le dossier de présentation</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est la partie technique de l'offre commune du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun. Évitez d'y écrire le nom de vos salariés : un nom n'est remplacé par la fonction de la personne, avant l'envoi à l'IA, que s'il figure dans l'équipe enregistrée sur votre compte Adjugo (Mon entreprise, onglet « Identité »).</span></button></div><textarea class="inp" v-model="sharedAo.contrib.memoire_paragraph" rows="4" placeholder="Votre savoir-faire sur ce lot"></textarea></div>
+            <div class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Paragraphe pour le dossier de présentation</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier de présentation est la partie technique de l'offre commune du groupement. Le chef de file voit ce paragraphe tel que vous l'écrivez ; l'IA s'en sert pour rédiger le texte commun. Évitez d'y écrire le nom de vos salariés : un nom n'est remplacé par la fonction de la personne, avant l'envoi à l'IA, que s'il figure dans l'équipe enregistrée sur votre compte Adjugo (Mon entreprise, onglet « Identité »).</span></button></div><textarea class="inp" v-model="sharedAo.contrib.memoire_paragraph" rows="4" placeholder="Votre savoir-faire sur cette partie du marché"></textarea></div>
             <div class="field"><label>Contact</label><div class="row wrap" style="gap:8px"><input class="inp" v-model="sharedAo.contrib.contact.nom" placeholder="Nom" style="flex:1;min-width:130px"><input type="email" class="inp" v-model="sharedAo.contrib.contact.email" placeholder="Email" style="flex:1;min-width:130px"><input type="tel" class="inp" v-model="sharedAo.contrib.contact.telephone" placeholder="Téléphone" style="flex:1;min-width:130px"></div></div>
 
             <div class="field"><label>Mes pièces administratives (attestations, Kbis, formulaire DC2…)</label>
@@ -3755,7 +3773,7 @@
               </div>
             </div>
             <!-- Ma DPGF de lot (vague 4) : produite dans la page partenaire de ce dossier, à partir du détail chiffré -->
-            <div data-test="partage-tableau-prix" class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Mon tableau de prix</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le détail de vos prix de vente pour votre lot, ligne par ligne. Il se prépare dans la page partenaire de ce dossier (nouvel onglet) : vos lignes y sont enregistrées chiffrées avec le détail de votre chiffrage, puis le fichier est déposé après votre relecture. Seul le chef de file le reçoit ; vos coûts et vos marges n'y figurent pas.</span></button></div>
+            <div data-test="partage-tableau-prix" class="field"><div style="display:flex;align-items:center;margin-bottom:5px"><label style="margin-bottom:0">Mon tableau de prix</label><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le détail de vos prix de vente pour votre partie, ligne par ligne. Il se prépare dans la page partenaire de ce dossier (nouvel onglet) : vos lignes y sont enregistrées chiffrées avec le détail de votre chiffrage, puis le fichier est déposé après votre relecture. Seul le chef de file le reçoit ; vos coûts et vos marges n'y figurent pas.</span></button></div>
               <div class="row wrap" style="gap:8px;align-items:center">
                 <span class="pill" :class="sharedDpgfPieces().length?'go':'neutral'" style="font-size:11px;gap:3px"><i v-if="sharedDpgfPieces().length" data-lucide="check" style="width:11px;height:11px"></i>{{ sharedDpgfPieces().length ? 'Déposé' : 'Pas encore déposé' }}</span>
                 <span v-if="sharedAo.detailDpgf && sharedAo.detailDpgf.lignes" class="muted small">{{ sharedAo.detailDpgf.lignes.length }} {{ pl(sharedAo.detailDpgf.lignes.length, 'ligne enregistrée', 'lignes enregistrées') }}, chiffrées</span>
@@ -3776,7 +3794,7 @@
               <button class="btn" @click="sharedSave()" :disabled="sharedAo.busy"><span v-if="sharedAo.busy" class="spin"></span><i v-else data-lucide="save"></i>Enregistrer le brouillon</button>
               <button class="btn primary" @click="sharedSubmit()" :disabled="sharedAo.busy"><i data-lucide="send"></i>Soumettre au chef de file</button>
               <!-- Rédaction, vague 4 (assemblage) : la part soumise d'un co-traitant nourrit « Qui fait quoi dans le groupement », lue par tous les membres (décision 3a). Jamais pour un sous-traitant. -->
-              <button v-if="sharedAo.role !== 'sous_traitant'" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Ce que lisent les membres</span><span class="tip-b" role="tooltip">Une fois soumis, votre lot, vos qualifications et votre effectif sont repris dans la partie « Qui fait quoi dans le groupement » du dossier de présentation, que lisent tous les membres du groupement. Vos pièces, vos prix et votre détail chiffré n'y figurent jamais.</span></button>
+              <button v-if="sharedAo.role !== 'sous_traitant'" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Ce que lisent les membres</span><span class="tip-b" role="tooltip">Une fois soumis, votre partie du marché, vos qualifications et votre effectif sont repris dans la partie « Qui fait quoi dans le groupement » du dossier de présentation, que lisent tous les membres du groupement. Vos pièces, vos prix et votre détail chiffré n'y figurent jamais.</span></button>
             </div>
           </div>
 
@@ -3828,7 +3846,7 @@
             <span v-if="(r.limites || []).length" class="row wrap atl-g6 atl-mt4"><span v-for="(l,i) in r.limites" :key="'drl'+i" class="atl-lim atl-lim-rouge">{{ l.message }}</span></span></li>
         </ul>
         <template v-if="atl.derog.possibles.length">
-          <p class="small atl-mt12">Vous pouvez corriger ces points, ou exporter en l'état. Votre choix est inscrit au journal du dossier ; il ne vaut que pour le texte actuel<template v-if="atl.derog.lot"> et pour le fichier de ce lot seulement</template>.</p>
+          <p class="small atl-mt12">Vous pouvez corriger ces points, ou exporter en l'état. Votre choix est inscrit au journal du dossier ; il ne vaut que pour le texte actuel<template v-if="atl.derog.lot"> et pour le fichier de cette partie du marché seulement</template>.</p>
           <div v-if="atl.derog.avert" class="atl-irreg" role="alert"><i data-lucide="octagon-alert"></i><b>{{ atl.derog.avert }}</b></div>
           <fieldset class="atl-fs"><legend class="small strong">Pourquoi exporter en l'état ?</legend>
             <label v-for="p in atl.derog.possibles" :key="'dp'+p.code" class="atl-radio"><input type="radio" name="atl-raison" :value="p.code" v-model="atl.derog.raison"><span>{{ p.libelle }}</span></label>
@@ -3865,18 +3883,18 @@
        jamais supprimées (même confirmation que « Reconstruire le plan »). -->
   <div data-test="fenetres-atelier" v-if="atl.lotsDlg" class="overlay" @click.self="atl.lotsDlg=null" @keydown.esc="atl.lotsDlg=null">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="atl-lo-t">
-      <div class="modal-h"><h3 id="atl-lo-t">Lots auxquels vous répondez</h3><button type="button" class="x" @click="atl.lotsDlg=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+      <div class="modal-h"><h3 id="atl-lo-t">Parties du marché auxquelles vous répondez</h3><button type="button" class="x" @click="atl.lotsDlg=null" aria-label="Fermer"><i data-lucide="x"></i></button></div>
       <div class="modal-b">
-        <div v-if="atl.lotsDlg.loading" class="muted small" role="status"><span class="spin"></span> Lecture des lots du règlement…</div>
+        <div v-if="atl.lotsDlg.loading" class="muted small" role="status"><span class="spin"></span> Lecture des parties (lots) dans le règlement…</div>
         <template v-else>
-          <p class="small atl-m0">Deux lots ou plus : des parties communes, rédigées une fois pour tous vos lots, et des parties propres à chaque lot, avec un fichier par lot. Un seul lot, ou aucun : un seul dossier.</p>
+          <p class="small atl-m0">Deux parties du marché ou plus : des parties communes, rédigées une fois pour toutes, et des parties propres à chacune, avec un fichier par partie du marché. Une seule, ou aucune : un seul dossier.</p>
           <div class="atl-lots-l atl-mt8">
-            <label v-for="x in ((atl.lotsDlg.d && atl.lotsDlg.d.lots) || [])" :key="'dl'+x.numero" class="atl-chk small"><input type="checkbox" :checked="atl.lotsDlg.choix.includes(x.numero)" @change="atlLotsDlgBascule(x.numero)" :disabled="atl.lotsDlg.busy"><span>Lot {{ x.numero }} — {{ x.intitule }}</span><button v-if="x.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ x.phrase }} »<template v-if="x.source"> ({{ x.source }})</template></span></button></label>
-            <span v-for="x in atl.lotsDlg.ajoutes" :key="'da'+x.numero" class="atl-chk small"><span>Lot {{ x.numero }} — {{ x.intitule }} <span class="muted">(indiqué par vous)</span></span><button type="button" class="atl-lien" @click="atl.lotsDlg.ajoutes = atl.lotsDlg.ajoutes.filter(y => y.numero !== x.numero); atl.lotsDlg.confirm = ''">Retirer</button></span>
+            <label v-for="x in ((atl.lotsDlg.d && atl.lotsDlg.d.lots) || [])" :key="'dl'+x.numero" class="atl-chk small"><input type="checkbox" :checked="atl.lotsDlg.choix.includes(x.numero)" @change="atlLotsDlgBascule(x.numero)" :disabled="atl.lotsDlg.busy"><span>{{ partieLot(x.numero, x.intitule) }}</span><button v-if="x.phrase" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Phrase du règlement</span><span class="tip-b" role="tooltip">Le règlement dit : « {{ x.phrase }} »<template v-if="x.source"> ({{ x.source }})</template></span></button></label>
+            <span v-for="x in atl.lotsDlg.ajoutes" :key="'da'+x.numero" class="atl-chk small"><span>{{ partieLot(x.numero, x.intitule) }} <span class="muted">(indiquée par vous)</span></span><button type="button" class="atl-lien" @click="atl.lotsDlg.ajoutes = atl.lotsDlg.ajoutes.filter(y => y.numero !== x.numero); atl.lotsDlg.confirm = ''">Retirer</button></span>
           </div>
           <div class="row wrap atl-g6 atl-mt8 atl-lot-aj">
-            <label class="sr-only" for="atl-dlotn">Numéro du lot</label><input id="atl-dlotn" class="inp atl-lot-n" v-model="atl.lotsDlg.ajout.numero" maxlength="2" inputmode="numeric" placeholder="N°">
-            <label class="sr-only" for="atl-dloti">Intitulé du lot</label><input id="atl-dloti" class="inp" v-model="atl.lotsDlg.ajout.intitule" maxlength="200" placeholder="Un lot absent de la liste : son intitulé" @keydown.enter.prevent="atlLotsDlgAjouter()">
+            <label class="sr-only" for="atl-dlotn">Numéro de la partie (lot)</label><input id="atl-dlotn" class="inp atl-lot-n" v-model="atl.lotsDlg.ajout.numero" maxlength="2" inputmode="numeric" placeholder="N°">
+            <label class="sr-only" for="atl-dloti">Intitulé de la partie</label><input id="atl-dloti" class="inp" v-model="atl.lotsDlg.ajout.intitule" maxlength="200" placeholder="Une partie absente de la liste : son intitulé" @keydown.enter.prevent="atlLotsDlgAjouter()">
             <button type="button" class="btn sm ghost" @click="atlLotsDlgAjouter()"><i data-lucide="plus"></i>Ajouter</button>
           </div>
           <p class="muted small atl-mt8">Le plan est reconstruit, sans IA : les parties actuelles sont retirées du plan, jamais supprimées, et leurs textes restent dans l'historique.</p>
@@ -3936,14 +3954,16 @@
   </div>
 
   <!-- ══════════ CONFIRMATION (convention de groupement) : dit ce que l'action fait AVANT de la faire ══════════ -->
-  <div data-test="fenetre-confirmation" v-if="cdlg" class="overlay cdlg" @click.self="cdlgClose()" @keydown.esc="cdlgClose()">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cdlg-t" aria-describedby="cdlg-d">
+  <!-- Fenêtre de confirmation de l'application (vague 2a, A3) : toutes les confirmations et les saisies courtes,
+       à la place des confirm() et prompt() du navigateur. Focus gardé dedans (cdlgTab), Échap ferme. -->
+  <div data-test="fenetre-confirmation" v-if="cdlg" class="overlay cdlg" @click.self="cdlgClose()" @keydown.esc="cdlgClose()" @keydown.tab="cdlgTab($event)">
+    <div class="modal" ref="cdlgBox" :role="cdlg.fields.length ? 'dialog' : 'alertdialog'" aria-modal="true" aria-labelledby="cdlg-t" :aria-describedby="cdlg.lines.length ? 'cdlg-d' : null">
       <div class="modal-h"><h3 id="cdlg-t">{{ cdlg.title }}</h3><button type="button" class="x" @click="cdlgClose()" aria-label="Fermer"><i data-lucide="x"></i></button></div>
       <div class="modal-b">
-        <ul id="cdlg-d" class="cdlg-lines"><li v-for="(l,i) in cdlg.lines" :key="'cdl'+i" :class="{warn:l.warn}">{{ l.t }}</li></ul>
-        <div v-for="fl in cdlg.fields" :key="'cdf'+fl.key" class="field" style="margin-top:12px;margin-bottom:0"><label :for="'cdlg-'+fl.key">{{ fl.label }}</label><input :id="'cdlg-'+fl.key" class="inp" v-model="fl.value" :maxlength="fl.max || 255" @keydown.enter.prevent="cdlgRun()"></div>
+        <ul v-if="cdlg.lines.length" id="cdlg-d" class="cdlg-lines"><li v-for="(l,i) in cdlg.lines" :key="'cdl'+i" :class="{warn:l.warn}">{{ l.t }}</li></ul>
+        <div v-for="fl in cdlg.fields" :key="'cdf'+fl.key" class="field cdlg-champ"><label :for="'cdlg-'+fl.key">{{ fl.label }}</label><input :id="'cdlg-'+fl.key" class="inp" :type="fl.type || 'text'" v-model="fl.value" :maxlength="fl.max || 255" :inputmode="fl.inputmode || null" :autocomplete="fl.autocomplete || 'off'" :placeholder="fl.placeholder || null" :aria-describedby="fl.aide ? 'cdlg-a-'+fl.key : null" :aria-required="fl.requis || fl.attendu ? 'true' : null" @keydown.enter.prevent="cdlgRun()"><div v-if="fl.aide" :id="'cdlg-a-'+fl.key" class="muted small cdlg-aide">{{ fl.aide }}</div></div>
       </div>
-      <div class="modal-f"><button type="button" class="btn" ref="cdlgCancel" @click="cdlgClose()">Annuler</button><button type="button" class="btn primary btn-wrap" @click="cdlgRun()">{{ cdlg.ok }}</button></div>
+      <div class="modal-f"><button type="button" class="btn" ref="cdlgCancel" @click="cdlgClose()">{{ cdlg.annuler }}</button><button v-if="cdlg.autre" type="button" class="btn btn-wrap" @click="cdlgAutre()">{{ cdlg.autre }}</button><button type="button" class="btn btn-wrap" :class="cdlg.danger ? 'danger' : 'primary'" :disabled="!cdlgValide()" @click="cdlgRun()">{{ cdlg.ok }}</button></div>
     </div>
   </div>
 
@@ -3983,7 +4003,7 @@
             <legend class="rn-lg">Rôle proposé<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Partenaire du groupement : il en est membre et signe l'offre avec vous. Sous-traitant : il travaille pour vous sans signer l'offre ; vous restez responsable de sa part.</span></button></legend>
             <label v-for="r in rinv.roles" :key="'rr'+r" class="rn-check"><input type="radio" name="rinv-role" :value="r" v-model="rinv.role"><span>{{ rnRoleLabel(r) }}</span></label>
           </fieldset>
-          <div class="field"><label for="rinv-l">Part proposée</label><input id="rinv-l" class="inp" v-model="rinv.lot" maxlength="255" :disabled="rinv.busy" placeholder="ex. Lot 2 — Électricité"></div>
+          <div class="field"><label for="rinv-l">Part proposée</label><input id="rinv-l" class="inp" v-model="rinv.lot" maxlength="255" :disabled="rinv.busy" placeholder="ex. Électricité (lot 2)"></div>
           <div class="rn-check-line"><input id="rinv-docs" type="checkbox" v-model="rinv.can_view_docs" :disabled="rinv.busy"><label for="rinv-docs">Autoriser le téléchargement des pièces du marché</label><button v-if="rinv.kind==='reseau'" type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le partenaire ne voit les pièces, l'acheteur et la composition du groupement qu'après avoir accepté l'invitation depuis son compte.</span></button></div>
         </template>
         <div v-if="rinv.err" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ rinv.err }}
@@ -4148,9 +4168,9 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/redaction-partenaire.js" integrity="sha384-6u2dcizU1R7TgbFpANxwY3jDSA7O0EQpkhqXfp1A4RwHslj7somFoJxnE+iDz027" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-10CjK3g6NuvRgDeAWY4vJvO6PXpXwTMYR2gpsBB1W7F6EV2SfFFIUeMchW3Wqoq8" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
-<script src="/static/carnet-notes.js" integrity="sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6" defer></script>
-<script src="/static/app.js" integrity="sha384-1QX1oQI0IsMBGQHqBh/i0dC33cti6FJeqp+01Kdib3zjSM5cSNrgYNerisWLX0dh" defer></script>
+<script src="/static/carnet-notes.js" integrity="sha384-adkFeCXhNHUBnTW8619+mz0CBvNzBOe2pRCfJw+b1GHDAfn1VhnHxYIoqjLDmTCK" defer></script>
+<script src="/static/app.js" integrity="sha384-LzMFrVmYvYLebS3PCpeHknzgQ7r1mKdPAWeex4N6iLfyuX4dwiSUEMw6DJUyn1K9" defer></script>
 </body>
 </html>

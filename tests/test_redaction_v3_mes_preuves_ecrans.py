@@ -68,13 +68,14 @@ EMOJI = re.compile("[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001
 
 def test_mes_preuves_reste_dans_mon_entreprise():
     """Menu par rubriques (réorganisation, vague 1, 1.3) : « Mes preuves » n'est plus une entrée du menu, c'est un
-    onglet de la rubrique « Mon entreprise » (RUBRIQUES, app.js), après Identité et Mes critères ; l'entrée du
-    menu ouvre l'identité. Les onglets sont communs à toutes les rubriques (onglets-rubrique)."""
+    onglet de la rubrique « Mon entreprise » (RUBRIQUES, app.js), après Identité et Ce que je cherche, avant Tarifs
+    (vague 2a) ; l'entrée du menu ouvre l'identité. Les onglets sont communs à toutes les rubriques (onglets-rubrique)."""
     nav = zone(HTML, "menu")
     assert "go('company')" in nav and "go('preuves')" not in nav and "pv-onglets" not in HTML
-    i = JS.index('  { k: "entreprise", label: "Mon entreprise", ic: "building-2", vues: ["company", "criteria", "preuves"]')
+    i = JS.index('  { k: "entreprise", label: "Mon entreprise", ic: "building-2", vues: ["company", "criteria", "preuves", "tarifs"]')
     rub = JS[i:JS.index("] },", i)]
-    assert rub.index('view: "company"') < rub.index('view: "criteria"') < rub.index('view: "preuves", label: "Mes preuves"')
+    assert rub.index('view: "company"') < rub.index('view: "criteria"') < rub.index('view: "preuves", label: "Mes preuves"') \
+        < rub.index('view: "tarifs"')
     assert "ongletGo(t)" in zone(HTML, "onglets-rubrique")
     assert "go('preuves')" in ENTREPRISE       # renvoi depuis les collaborateurs du profil
     assert 'titles: { preuves: "Mes preuves",' in JS

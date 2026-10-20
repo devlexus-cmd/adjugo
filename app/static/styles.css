@@ -770,11 +770,20 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .linkbtn { border:0; background:none; padding:0; color:var(--accent-text); text-decoration:underline; cursor:pointer; font:inherit; }
 .linkbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
 .shared-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); border-color:var(--accent) !important; }
-/* Boîte de confirmation */
+/* Fenêtre de confirmation de l'application (toutes les confirmations, vague 2a) */
 .cdlg .modal-f { flex-wrap:wrap; }
 .cdlg-lines { margin:0; padding-left:18px; font-size:13px; line-height:1.55; }
 .cdlg-lines li + li { margin-top:7px; }
 .cdlg-lines li.warn { color:var(--warning-text); font-weight:600; }
+.cdlg .cdlg-champ { margin:0; }
+.cdlg .cdlg-lines + .cdlg-champ, .cdlg .cdlg-champ + .cdlg-champ { margin-top:12px; }
+.cdlg .cdlg-aide { margin-top:4px; }
+.cdlg .btn[disabled] { opacity:.55; cursor:not-allowed; }
+/* Sur téléphone : les boutons s'empilent sur toute la largeur, l'action principale en premier. */
+@media (max-width:480px) {
+  .cdlg .modal-f { flex-direction:column-reverse; align-items:stretch; }
+  .cdlg .modal-f .btn { justify-content:center; text-align:center; width:100%; }
+}
 
 /* ══════════ Page du marché en 4 étapes (réorganisation, vague 1, 1.5) ══════════
    La barre Lire · Décider · Préparer · Déposer (des ancres, sans blocage), une section par étape, les tâches « à
@@ -1691,3 +1700,37 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
    compte (réorganisation, vague 1). Sur ordinateur, à droite du menu ; sur téléphone, effacé quand le menu est ouvert. */
 .bandeau-cookies { position:fixed; left:12px; right:12px; bottom:12px; z-index:70; background:var(--surface); border:1px solid var(--border); border-radius:11px; box-shadow:0 8px 28px rgba(0,0,0,.16); padding:13px 16px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; max-width:760px; margin:0 auto; }
 @media (min-width:861px) { .bandeau-cookies.avec-menu { left:calc(248px + 12px); } }
+
+/* ══════════ Mon entreprise et Mes documents (réorganisation, vague 2a, A3) ══════════
+   Onglet « Tarifs » (sorti d'« Identité »), « Ce que je cherche », catégorie et date de fin des pièces. */
+.ent-carte { max-width:820px; }
+.ent-sectitle0 { margin-top:0; }
+.ent-vide { margin:0 0 10px; }
+.ent-tarif { gap:8px; margin-bottom:6px; align-items:center; }
+.ent-tarif-l { flex:1 1 auto; min-width:0; }
+.ent-tarif-p { width:130px; flex:none; }
+.ent-mb { margin-bottom:14px; }
+.ent-seul { max-width:calc(50% - 6px); }
+.doc-aide { margin:0 0 12px; }
+.doc-cat { width:auto; min-width:0; max-width:100%; font-size:12px; padding:4px 8px; }
+.doc-fin { width:auto; max-width:100%; font-size:12px; padding:4px 8px; }
+.doc-etat { display:block; margin-top:3px; font-size:11.5px; font-weight:600; }
+.doc-etat.bientot { color:var(--warning-text); }
+.doc-etat.expiree { color:var(--danger); }
+@media (max-width:680px) {
+  .ent-seul { max-width:none; }
+  .ent-tarif-p { width:104px; }
+}
+/* Mes documents sur téléphone : une pièce par bloc, chaque valeur sous son nom (pas de défilement de côté). */
+@media (max-width:640px) {
+  .t-wrap table.doc-table { min-width:0; }
+  .doc-table thead { display:none; }
+  .doc-table tr { display:block; padding:10px 14px; border-bottom:1px solid var(--hairline); }
+  .doc-table tbody tr:last-child { border-bottom:0; }
+  .doc-table td { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; padding:4px 0; border:0; }
+  .doc-table td[data-label]::before { content:attr(data-label); flex:0 0 88px; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+  .doc-table td:first-child { display:block; }
+  .doc-table td:first-child::before { content:none; }
+  .doc-table td.doc-actions { justify-content:flex-end; }
+  .doc-table .doc-etat { margin-top:0; flex-basis:100%; padding-left:96px; }
+}
