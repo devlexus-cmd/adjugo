@@ -92,13 +92,16 @@ def run_cotraitance_reminders(db: Session) -> dict:
     # Rédaction, vague 4 : les parties du dossier de présentation à relancer ce jour, ajoutées au rappel de la part
     # du MÊME partenaire (un seul email) ; les autres partent ensuite par relancer_parts.
     try:
-        from app.services.atelier_groupement import liste_relance, parts_a_relancer
+        from app.services.atelier_groupement import lignes_relance, parts_a_relancer
         parts_due = parts_a_relancer(db, today)
     except Exception as e:
         logger.warning("relances co-traitance : parties du dossier de présentation non lues : %s", e)
         db.rollback()
-        parts_due, liste_relance = {}, None
+        parts_due, lignes_relance = {}, None
     parts_merged = set()
+    from app.core.config import get_settings
+    from app.services.email_invitation import rappel_part
+    base_url = (get_settings().APP_BASE_URL or "").rstrip("/")
     invites = db.query(ProjectInvite).filter(
         active_invite_filter(),
         ProjectInvite.can_contribute.is_(True)).all()
@@ -132,23 +135,16 @@ def run_cotraitance_reminders(db: Session) -> dict:
         if not target:
             continue
         company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
+        # Vague 2b (B4) : rappel en HTML avec sa version texte (app/services/email_invitation.py), qui mène à
+        # « Votre part dans [marché] » par le lien de l'invitation (avant : « via votre lien Adjugo », sans lien).
         # « au groupement de Breizh Couverture » / « du chef de file » (jamais « de le chef de file »).
-        du_chef = f"de {company.name}" if company and company.name else "du chef de file"
-        base = "il vous reste 1 jour" if days_left <= 1 else f"il vous reste {days_left} jours"
-        subj = f"Rappel — {base} pour votre part ({project.name[:50]})"
-        text = (f"Bonjour,\n\n{base} pour ajouter votre part au groupement {du_chef} sur le "
-                f"marché « {project.name} » (date limite : {_fr(deadline_date)}).\n\n"
-                f"Complétez et soumettez votre part via votre lien Adjugo. Sans elle, votre "
-                f"entreprise ne figurera pas dans la réponse commune.")
         extra = pieces_by_invite.get(inv.id)
-        if extra:
-            text += ("\n\nVos attestations sont aussi à mettre à jour avant le dépôt :\n"
-                     + "\n".join(f"- {x}" for x in extra["problems"]))
-        parts = parts_due.get(inv.id) if liste_relance else None
-        if parts:
-            text += ("\n\nVotre partie du dossier de présentation est aussi attendue :\n" + liste_relance(parts))
-        text += "\n\n— Adjugo, le réseau des PME"
-        if send_email(inv.recipient, subj, text):
+        parts = parts_due.get(inv.id) if lignes_relance else None
+        mail = rappel_part(chef=(company.name if company else "") or "", marche=project.name,
+                           url=(f"{base_url}/invite/{inv.token}" if base_url else ""), date_limite=deadline_date,
+                           jours_restants=days_left, attestations=(extra["problems"] if extra else ()),
+                           parties=(lignes_relance(parts) if parts else ()))
+        if send_email(inv.recipient, mail["objet"], mail["texte"], html=mail["html"]):
             inv.reminder_stage = target
             reminded += 1
             if extra:
@@ -283,16 +279,21 @@ def _run_piece_expiry_alerts(db: Session, today, due=None, merged=None) -> int:
     merged = set(merged or ())
     alerted = 0
     by_project = {}
+    from app.core.config import get_settings
+    base_url = (get_settings().APP_BASE_URL or "").rstrip("/")
     for a in due:
         inv, project = a["inv"], a["project"]
         lines = "\n".join(f"- {p}" for p in a["problems"])
         if _is_email(inv.recipient) and inv.id not in merged:
+            # Vague 2b (B4) : l'espace du partenaire est « Votre part dans [marché] » ; le lien de l'invitation y mène.
+            ou = (f"depuis votre part dans ce marché :\n{base_url}/invite/{inv.token}" if base_url
+                  else "depuis votre part dans ce marché (votre lien d'invitation).")
             send_email(
                 inv.recipient,
                 f"Attestations à mettre à jour avant le {_fr(a['deadline_date'])} — {project.name[:50]}",
                 f"Bonjour,\n\nPour le marché « {project.name} » (date limite : {_fr(a['deadline_date'])}), "
                 f"le groupement {a['du_chef']} a besoin de vos attestations à jour :\n{lines}\n\n"
-                f"Déposez-les depuis votre espace Adjugo (votre lien d'invitation).\n\n— Adjugo")
+                f"Déposez-les {ou}\n\n— Adjugo")
         # Chaîné sous le propriétaire du tenant (sinon l'entrée sortait de la chaîne
         # d'intégrité de l'entreprise quand un membre a créé le marché).
         audit.record(db, action="piece.expiring", owner_id=a["tenant_oid"], project_id=project.id,

@@ -10,8 +10,15 @@ _BG = "#f4f5f7"
 _BORDER = "#e6e8ec"
 
 
-def _shell(inner: str, preheader: str = "") -> str:
-    """Enveloppe commune : fond gris, carte blanche centrée, en-tête wordmark, pied de page."""
+_PIED = ("Adjugo — la plateforme qui simplifie la réponse aux marchés publics.<br>\n"
+         "          Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet email.")
+
+
+def _shell(inner: str, preheader: str = "", pied: str | None = None) -> str:
+    """Enveloppe commune : fond gris, carte blanche centrée, en-tête wordmark, pied de page.
+    `pied` (HTML déjà échappé) remplace la phrase du pied de page : un courriel d'invitation dit pourquoi
+    on le reçoit (vague 2b, B4, app/services/email_invitation.py) ; sans lui, le pied d'avant, inchangé."""
+    pied = _PIED if pied is None else pied
     return f"""\
 <!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -27,8 +34,7 @@ def _shell(inner: str, preheader: str = "") -> str:
       <tr><td style="padding:8px 36px 30px;">
         <hr style="border:none;border-top:1px solid {_BORDER};margin:18px 0;">
         <p style="margin:0;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:{_MUTED};text-align:center;">
-          Adjugo — la plateforme qui simplifie la réponse aux marchés publics.<br>
-          Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet email.
+          {pied}
         </p>
       </td></tr>
     </table>

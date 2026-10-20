@@ -251,7 +251,8 @@ def test_emails_sans_nom_du_chef_de_file_bien_construits(client, auth, mails, mo
     from tests.test_cotraitance_v4 import _alert_project
     _set_company(auth["email"], name="")
     sent = []
-    monkeypatch.setattr(al, "send_email", lambda to, subj, body: sent.append((to, subj, body)) or True)
+    # Vague 2b (B4, docs/REORGANISATION_V2B.md) : le rappel de part part en HTML avec sa version texte (`html=`).
+    monkeypatch.setattr(al, "send_email", lambda to, subj, body, **k: sent.append((to, subj, body)) or True)
     monkeypatch.setattr(email_mod, "send_email", lambda to, subj, body, *a, **k: sent.append((to, subj, body)) or True)
     _p1, (relance,) = _alert_project(client, auth, days=3, n_partners=1, submit=False)
     _p2, (attest,) = _alert_project(client, auth, days=3, n_partners=1, submit=True)

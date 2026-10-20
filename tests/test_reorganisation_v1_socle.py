@@ -434,7 +434,11 @@ def test_les_courriels_cites_par_l_etude_disent_juste():
     inv = (ROOT / "app" / "routers" / "invites.py").read_text(encoding="utf-8")
     conv = (ROOT / "app" / "routers" / "convention.py").read_text(encoding="utf-8")
     al = (ROOT / "app" / "services" / "alerts.py").read_text(encoding="utf-8")
-    assert 'subj = f"Invitation à répondre ensemble à un marché — {project.name[:60]}"' in inv
+    # Vague 2b (B4, docs/REORGANISATION_V2B.md) : le courriel d'invitation est composé par
+    # app/services/email_invitation.py (HTML et texte) ; l'objet reste « Invitation à répondre ensemble à un marché — … ».
+    from app.services.email_invitation import invitation
+    assert invitation(chef="A", marche="Toiture", url="u")["objet"] == "Invitation à répondre ensemble à un marché — Toiture"
+    assert "from app.services.email_invitation import invitation" in inv
     assert "Invitation à co-traiter" not in inv
     assert "Partenaires prêts : {done} sur {total}." in inv                     # « N sur M » (décision 8)
     for src in (inv, conv, al):

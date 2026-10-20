@@ -472,7 +472,7 @@ def _mail_a_valider(db: Session, project: Project, conv, user: User, request: Re
             continue
         mails.append((inv.recipient, f"Convention de groupement à valider — {project.name[:60]}",
                       f"Bonjour,\n\n{chef} a généré la convention de groupement pour le marché « {project.name} » "
-                      f"(version {conv.version}). Relisez-la et donnez votre accord depuis votre espace :\n"
+                      f"(version {conv.version}). Relisez-la et donnez votre accord depuis votre part dans ce marché :\n"
                       f"{base}/invite/{inv.token}\n\n"
                       f"L'annexe de répartition indique la part et le prix de vente de chaque membre, ainsi que "
                       f"le total de l'offre commune.\n\n{gc.NATURE_ACCORD}\n\n{gc.AVERTISSEMENT}\n\n— Adjugo"))

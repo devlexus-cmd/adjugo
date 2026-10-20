@@ -145,7 +145,10 @@ def test_les_messages_corriges_disent_le_chemin_d_aujourd_hui():
     red = _py("app/services/agents/redaction.py")
     assert "générez-la dans « Convention et \"\n                                        \"accords » (page du marché, étape Préparer)" in red
     res = _py("app/routers/reseau.py")
-    assert "depuis Partenaires › Réseau \"\n                    f\"Adjugo › Mon profil partenaire." in res
+    # Vague 2b (B4, docs/REORGANISATION_V2B.md) : le courriel du réseau est composé par app/services/email_invitation.py.
+    from app.services import email_invitation as ei
+    assert ei.CHEMIN_PROFIL_RESEAU == "Partenaires › Réseau Adjugo › Mon profil partenaire"
+    assert f"depuis {ei.CHEMIN_PROFIL_RESEAU}." in ei.invitation(chef="A", marche="M", url="u", reseau=True)["texte"]
     # Vague 2a (A2) : les invitations reçues se traitent dans Mes marchés, filtre « Où je suis partenaire ».
     assert "(Mes marchés, filtre \"\n                    \"« Où je suis partenaire »)" in res
     assert "<b>Mes marchés</b>, filtre « Où je suis partenaire »" in INV and "Invitations reçues" not in INV

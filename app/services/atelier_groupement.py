@@ -2211,9 +2211,14 @@ def parts_a_relancer(db, today: Optional[date] = None) -> dict:
     return groupes
 
 
+def lignes_relance(lignes: list) -> list:
+    """Une ligne par partie à relancer (sans tiret) : son titre et sa date limite interne."""
+    return [f"« {at._flat(s.intitule)[:160]} » (date limite interne : {r.date_limite.strftime('%d/%m/%Y')})"
+            for s, r, _c, _p in lignes]
+
+
 def liste_relance(lignes: list) -> str:
-    return "\n".join(f"- « {at._flat(s.intitule)[:160]} » (date limite interne : {r.date_limite.strftime('%d/%m/%Y')})"
-                     for s, r, _c, _p in lignes)
+    return "\n".join(f"- {x}" for x in lignes_relance(lignes))
 
 
 def relancer_parts(db, today: Optional[date] = None, deja=()) -> dict:

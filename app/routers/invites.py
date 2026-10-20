@@ -130,22 +130,48 @@ def _hash_otp(code: str) -> str:
     return hashlib.sha256(("adjugo-otp:" + (code or "")).encode("utf-8")).hexdigest()
 
 
-def _send_invite_email(inv, project, base_url: str) -> bool:
-    """Envoie le lien d'invitation au co-traitant. No-op gracieux si email désactivé.
-    Horodate l'envoi réussi (emailed_at) → le mandataire voit si le mail est parti."""
+def chef_de_file_nom(inv, db: Optional[Session] = None) -> str:
+    """Nom de l'entreprise du chef de file d'une invitation (profil entreprise du propriétaire de
+    l'organisation, comme la vue du partenaire) ; "" s'il n'est pas renseigné."""
+    try:
+        if db is None:
+            from sqlalchemy.orm import object_session
+            db = object_session(inv)
+        c = db.query(Company).filter(Company.user_id == inv.owner_id).first() if db is not None else None
+        return ((c.name if c else "") or "").strip()
+    except Exception:
+        return ""
+
+
+def _partie_invitee(inv, db: Optional[Session] = None) -> str:
+    """Partie du marché que porte l'invitation (rattachement au marché), "" sinon."""
+    try:
+        if db is None:
+            from sqlalchemy.orm import object_session
+            db = object_session(inv)
+        from app.routers.cotraitants import ProjectCotraitant
+        lk = (db.query(ProjectCotraitant).filter(ProjectCotraitant.invite_id == inv.id).first()
+              if db is not None else None)
+        return ((lk.lot if lk else "") or "").strip()
+    except Exception:
+        return ""
+
+
+def _send_invite_email(inv, project, base_url: str, relance: bool = False) -> bool:
+    """Envoie le lien d'invitation au partenaire (ou le renvoie, `relance`). No-op gracieux si email désactivé.
+    Horodate l'envoi réussi (emailed_at) → le chef de file voit si le mail est parti. Courriel en HTML avec sa
+    version texte (vague 2b, B4 : app/services/email_invitation.py) ; le lien `/invite/<jeton>` ne change pas."""
     if not _is_email(inv.recipient):
         return False
     try:
         from app.services import email as _email
+        from app.services.email_invitation import invitation
         url = base_url.rstrip("/") + f"/invite/{inv.token}"
-        who = inv.company_name or "votre entreprise"
-        subj = f"Invitation à répondre ensemble à un marché — {project.name[:60]}"
-        text = (f"Bonjour,\n\nVous êtes invité(e) à rejoindre le groupement pour répondre au "
-                f"marché « {project.name} » sur Adjugo, en tant que {who}.\n\n"
-                f"Accédez à votre espace dédié (cloisonné à ce seul dossier) :\n{url}\n\n"
-                f"Vous n'y voyez que ce dossier et votre propre contribution — jamais les "
-                f"données des autres partenaires.\n\n— Adjugo, le réseau des PME")
-        sent = _email.send_email(inv.recipient, subj, text)
+        c = invitation(chef=chef_de_file_nom(inv), marche=project.name, url=url, date_limite=project.deadline,
+                       role=inv.role or "cotraitant", peut_contribuer=bool(getattr(inv, "can_contribute", True)),
+                       voit_pieces=bool(inv.can_view_docs), partie=_partie_invitee(inv),
+                       entreprise=inv.company_name or "", relance=relance, expire_le=inv.expires_at)
+        sent = _email.send_email(inv.recipient, c["objet"], c["texte"], html=c["html"])
         if sent:
             inv.emailed_at = utcnow()
         return sent
@@ -820,15 +846,17 @@ def resend_invite(project_id: int, invite_id: int, request: Request,
     if _is_network_invite(inv):
         _check_network_resend(inv, current_user, db)
     _check_daily_invite_cap(current_user, db)
-    sender = _send_invite_email
+    # Vague 2b (B4) : le renvoi se dit « Rappel » (objet) et « … vous renvoie son invitation » ; même lien.
+    from functools import partial
+    sender = partial(_send_invite_email, relance=True)
     if _is_network_invite(inv):
-        # Relance d'une invitation RÉSEAU : même texte que l'envoi initial (adresse jamais
+        # Relance d'une invitation RÉSEAU : même courriel que l'envoi initial (adresse jamais
         # montrée au chef de file, rappel « comment ne plus être sollicité »).
         from app.routers.cotraitants import ProjectCotraitant
         from app.routers.reseau import _network_mailer
         lk = db.query(ProjectCotraitant).filter(ProjectCotraitant.invite_id == inv.id).first()
         chef = db.query(Company).filter(Company.user_id == inv.owner_id).first()
-        sender = _network_mailer((lk.lot if lk else "") or "", (chef.name if chef else "") or "")
+        sender = _network_mailer((lk.lot if lk else "") or "", (chef.name if chef else "") or "", relance=True)
     sent = sender(inv, project, _settings.APP_BASE_URL or str(request.base_url))
     db.commit()
     if sent:
@@ -2816,7 +2844,7 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
         mails = [(inv.recipient, f"L'offre commune est figée — {project.name[:60]}",
                   f"Bonjour,\n\nLe chef de file a figé l'offre commune du groupement sur le marché "
                   f"« {project.name} » : total {total_txt} € HT.\n\n"
-                  f"Retrouvez le détail dans votre espace : {base}/invite/{inv.token}\n\n— Adjugo")
+                  f"Votre part dans ce marché : {base}/invite/{inv.token}\n\n— Adjugo")
                  for inv in invites if _is_email(inv.recipient)]
         from app.services.demo_search import is_demo
         if not is_demo(current_user):          # la démo n'envoie jamais d'email

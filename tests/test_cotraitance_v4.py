@@ -639,7 +639,8 @@ def test_alertes_attestations_une_seule_par_palier(client, auth, mails, monkeypa
 def test_relance_part_et_attestations_en_un_seul_email(client, auth, mails, monkeypatch):
     import app.services.alerts as al
     sent = []
-    monkeypatch.setattr(al, "send_email", lambda to, subj, body: sent.append((to, subj, body)) or True)
+    # Vague 2b (B4, docs/REORGANISATION_V2B.md) : le rappel part en HTML avec sa version texte (`html=`).
+    monkeypatch.setattr(al, "send_email", lambda to, subj, body, **k: sent.append((to, subj, body)) or True)
     pid, invs = _alert_project(client, auth, days=3, n_partners=1, submit=False)
     to = invs[0]["recipient"]
     db = _db()
@@ -664,7 +665,8 @@ def test_relance_part_et_attestations_en_un_seul_email(client, auth, mails, monk
 def test_plus_de_relance_apres_depot(client, auth, mails, monkeypatch):
     import app.services.alerts as al
     sent = []
-    monkeypatch.setattr(al, "send_email", lambda to, subj, body: sent.append((to, subj, body)) or True)
+    # Vague 2b (B4) : le rappel part en HTML avec sa version texte (`html=`).
+    monkeypatch.setattr(al, "send_email", lambda to, subj, body, **k: sent.append((to, subj, body)) or True)
     h = auth["headers"]
     pid, invs = _alert_project(client, auth, days=2, n_partners=1, submit=False)
     assert client.post(f"/api/projects/{pid}/groupement/deposer", headers=h, json={"confirmer": True}).status_code == 200

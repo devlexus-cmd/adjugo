@@ -1241,26 +1241,24 @@ class SireneInviteIn(BaseModel):
     expires_days: int = 30
 
 
-def _network_mailer(lot: str, chef: str):
-    """Email d'invitation RÉSEAU (envoyé par Adjugo : le chef de file ne voit jamais l'adresse).
-    Contenu minimal (objet, lot, chef de file, lien) + comment ne plus être sollicité."""
+def _network_mailer(lot: str, chef: str, relance: bool = False):
+    """Email d'invitation RÉSEAU (envoyé par Adjugo : le chef de file ne voit jamais l'adresse), ou son
+    renvoi (`relance`). Chef de file, marché, date limite, partie proposée, ce qui est attendu et ce que verra
+    le partenaire (l'aperçu tant qu'il n'a pas accepté : ni acheteur ni pièces), le lien, et comment ne plus
+    être sollicité. HTML avec sa version texte (vague 2b, B4 : app/services/email_invitation.py)."""
     def _send(inv, project, base_url: str) -> bool:
         from app.routers.invites import _is_email
         if not _is_email(inv.recipient):
             return False
         try:
             from app.services import email as _email
+            from app.services.email_invitation import invitation
             url = base_url.rstrip("/") + f"/invite/{inv.token}"
-            lot_txt = f", pour la part « {lot} »" if lot else ""
-            subj = f"Une entreprise vous propose un groupement — {project.name[:60]}"
-            text = (f"Bonjour,\n\n{chef or 'Une entreprise'} a trouvé votre profil sur le réseau Adjugo et vous "
-                    f"propose de rejoindre son groupement pour répondre au marché « {project.name} »{lot_txt}.\n\n"
-                    f"Ouvrez l'invitation (vous pourrez l'accepter ou la décliner) :\n{url}\n\n"
-                    f"Votre adresse n'est pas communiquée au chef de file tant que vous n'avez pas accepté.\n"
-                    f"Vous recevez ce message parce que le profil partenaire de votre entreprise est publié sur "
-                    f"Adjugo. Vous pouvez retirer cette publication à tout moment depuis Partenaires › Réseau "
-                    f"Adjugo › Mon profil partenaire.\n\n— Adjugo, le réseau des PME")
-            sent = _email.send_email(inv.recipient, subj, text)
+            c = invitation(chef=chef, marche=project.name, url=url, date_limite=project.deadline,
+                           role=inv.role or "cotraitant", peut_contribuer=bool(getattr(inv, "can_contribute", True)),
+                           voit_pieces=bool(inv.can_view_docs), partie=lot, entreprise=inv.company_name or "",
+                           reseau=True, relance=relance, expire_le=inv.expires_at)
+            sent = _email.send_email(inv.recipient, c["objet"], c["texte"], html=c["html"])
             if sent:
                 inv.emailed_at = utcnow()
             return sent
