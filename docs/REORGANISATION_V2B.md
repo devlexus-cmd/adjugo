@@ -142,17 +142,24 @@ de la page du marché.
 
 ### B2.7 Vérifications
 
-- Suite complète verte (SQLite, TZ=UTC) ; `scripts/sri_update.py --check` ; `node --check` de `app.js` et `i18n.js` ;
-  gabarit de `app.html` compilé par le Vue du dépôt ; `scripts/i18n_ajouter.py --check` (671 clés) ; garde des mots
-  bannis verte.
-- Aucune migration, aucune route nouvelle : rien à passer sur Postgres (la seule écriture est le compteur anonyme
-  existant, déjà testé sur Postgres en vague 1).
+- Suite complète verte : **2 221 tests sur 2 221** (SQLite, TZ=UTC ; production : 2 205) ;
+  `scripts/sri_update.py --check` ; `node --check` de `app.js` et `i18n.js` ; gabarit de `app.html` compilé par le Vue
+  du dépôt ; `scripts/i18n_ajouter.py --check` (671 clés) ; garde des mots bannis verte. Toutes ces vérifications ont
+  été refaites en entier à la reprise du chantier (la première tentative avait vu ses suites de référence interrompues).
+- Aucune migration, aucune route nouvelle (la seule écriture est le compteur anonyme existant, testé sur Postgres en
+  vague 1). Par prudence, les tests touchés (démo sans coût, lien privé, Kerhel, menu, socle, marché d'exemple) ont été
+  rejoués sur **Postgres 16.2** : base neuve montée par `alembic upgrade head` de chaque code (tête `c4montantseul`
+  des deux côtés), code de production `0afc1ed` (225 sur 225) puis ce chantier (241 sur 241) : aucun échec.
+- Démo de pitch comparée de nouveau à la reprise (`demo_avant_apres.py`, code de production `0afc1ed` puis ce
+  chantier, tous deux extraits par `git archive`) : 189 réponses sur 190 identiques, seule différence le manifeste des
+  empreintes des scripts (B2.5).
 - **Navigateur réel** (serveur local sur le code de ce chantier, base jetable, démo par **lien privé** avec une clé
   jetable écrite dans un fichier de la session et jamais affichée, `DEMO_PUBLIC=0`, réseau sortant coupé, courriels et
   IA coupés) : démo → Kerhel → « voir un exemple » → la page (1 280 px, clair) : en-tête, Lire, Décider (43 % / 100 %,
   critères, manques, « Qui me complète ? », cumul), Préparer (répartition, total), Déposer (3 sur 4), écran du
-  partenaire ; « Retour » rend Kerhel (`/app/marches/2`), suivant rouvre `/app/exemple` ; une seule requête, le
-  fichier statique ; Mes marchés garde ses 7 marchés. Rechargement de `/app/exemple` à 375 px en sombre : aucun
+  partenaire ; « Retour » rend Kerhel (`/app/marches/2`), suivant rouvre `/app/exemple` ; deux requêtes seulement :
+  le fichier statique et le relevé anonyme de l'écran (`POST /api/mesure/ecran`, ignoré pour la démo), aucune autre
+  lecture de l'API ; Mes marchés garde ses 7 marchés. Rechargement de `/app/exemple` à 375 px en sombre : aucun
   défilement horizontal, barre basse sur « Accueil », bloc par bloc lisible (tableau de répartition en lignes, écran du
   partenaire). Compte de test local (créé par la route d'inscription, adresse confirmée en base) : `/app/exemple`
   s'ouvre, ancres et « Aller à l'écran du partenaire » mènent à leur bloc, néerlandais (libellés traduits). Console
