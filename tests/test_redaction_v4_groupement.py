@@ -204,10 +204,10 @@ def test_preremplissage_sans_ia_lot_et_critere(client, auth, fake_llm):
     env = _section_par(vue, "environnement")
     assert env["redacteur"]["type"] == "partenaire" and env["redacteur"]["invite_id"] == a["id"]
     assert env["redacteur"]["nom"] == "Breizh Désamiantage"
-    assert "lot de Breizh Désamiantage" in env["proposition"]["message"] and "déchets" in env["proposition"]["message"]
+    assert "partie déclarée par Breizh Désamiantage" in env["proposition"]["message"] and "déchets" in env["proposition"]["message"]
     for mot in ("encadrement", "équipe", "méthodologie"):
         s = _section_par(vue, mot)
-        assert s["redacteur"]["type"] == "chef_de_file" and "aucun lot" in s["proposition"]["message"]
+        assert s["redacteur"]["type"] == "chef_de_file" and "d'aucun partenaire ne correspond" in s["proposition"]["message"]
     assert env["statut"] == "a_rediger" and env["statut_libelle"] == "À rédiger"
     # La partie suit le rédacteur : l'atelier du chef de file la montre comme celle d'un partenaire.
     st = _etat(client, auth["headers"], pid)

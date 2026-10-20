@@ -531,9 +531,9 @@ def _proposition_adresse(d: dict, partie: Optional[DossierSection], membres: lis
     if len(hits) == 1:
         m = hits[0]
         return {"type": INV, "invite_id": m["invite_id"], "nom": m["nom"],
-                "message": f"Proposée à {m['nom']} d'après son lot (« {_flat(m.get('lot'))[:80]} »)."}
-    return {"type": ORG, "invite_id": None, "nom": "", "message": ("Posée à votre entreprise : plusieurs lots de "
-                                                                  "partenaires correspondent." if len(hits) > 1
+                "message": f"Proposée à {m['nom']} d'après sa partie du marché (« {_flat(m.get('lot'))[:80]} »)."}
+    return {"type": ORG, "invite_id": None, "nom": "", "message": ("Posée à votre entreprise : les parties du marché "
+                                                                  "de plusieurs partenaires correspondent." if len(hits) > 1
                                                                   else "Posée à votre entreprise.")}
 
 

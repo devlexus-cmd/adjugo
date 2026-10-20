@@ -28,6 +28,17 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  // « lot » devient « partie (lot n) » à l'écran (décision 10) : la MÊME fonction que app.js (vérifié par
+  // tests/test_reorganisation_v2a_entreprise.py) ; les données et les fichiers exportés gardent « Lot 2 — … ».
+  function partieLot(x, intitule, minuscule) {
+    if (typeof intitule === "boolean") { minuscule = intitule; intitule = ""; }
+    const s = String(x == null ? "" : x).trim();
+    const m = /^(?:lot\s*(?:n\s*[°o.]?\s*)?)?0*(\d{1,3})(?:\s*[—–:-]\s*(.*))?$/i.exec(s);
+    if (!m || (!/^lot/i.test(s) && !/^\d+$/.test(s))) return s;
+    const reste = String(intitule || m[2] || "").trim();
+    return (minuscule ? "partie" : "Partie") + " (lot " + m[1] + ")" + (reste ? " — " + reste : "");
+  }
+
   // « 32,5 » → 32.5 ; vide → null ; illisible → NaN.
   function cnNombre(s) {
     if (s === null || s === undefined) return null;
@@ -89,7 +100,7 @@
       const lot = l.lot || "";
       if (!lot || lot === prec) { prec = lot; return ""; }
       prec = lot;
-      return String(l.lot_libelle || ("Lot " + lot));
+      return partieLot(l.lot_libelle || lot);
     });
   }
 
@@ -103,7 +114,7 @@
       if (n !== null && m && n > m) return nom + " : la note dépasse la note maximale.";
       if (g !== null && m && g > m) return nom + " : la note de l'offre retenue dépasse la note maximale.";
       if (!String(l.critere || "").trim() && (n !== null || g !== null || String(l.commentaire || "").trim())) return "Chaque ligne nomme son critère.";
-      if (lots && lots.length && l.ajoutee && !l.lot && (n !== null || g !== null || String(l.commentaire || "").trim())) return nom + " : choisissez le lot de ce critère.";
+      if (lots && lots.length && l.ajoutee && !l.lot && (n !== null || g !== null || String(l.commentaire || "").trim())) return nom + " : choisissez la partie du marché de ce critère.";
     }
     return "";
   }
@@ -115,7 +126,7 @@
     if (l.ajoutee && !l.cle_fixe) h += '<div class="field cn-field"><label for="' + k + 'c">Critère</label><input id="' + k + 'c" data-f="critere" value="' + cnEsc(l.critere) + '" maxlength="200"></div>';
     else h += '<div class="cn-l-h"><span class="cn-l-c">' + cnEsc(l.critere) + (l.poids ? ' <span class="muted">· ' + cnEsc(l.poids) + "</span>" : "") + "</span>" + (l.proposee ? '<span class="pill a_etudier cn-pill">à valider</span>' : "") + "</div>";
     // Plusieurs lots : un critère ajouté dit son lot (l'acheteur note chaque lot à part).
-    if (l.ajoutee && (lots || []).length) h += '<div class="field cn-field"><label for="' + k + 'l">Lot</label><select id="' + k + 'l" data-f="lot"><option value="">Choisissez le lot</option>' + lots.map(x => '<option value="' + cnEsc(x.numero) + '"' + (x.numero === l.lot ? " selected" : "") + ">" + cnEsc(x.libelle) + "</option>").join("") + "</select></div>";
+    if (l.ajoutee && (lots || []).length) h += '<div class="field cn-field"><label for="' + k + 'l">Partie du marché (lot)</label><select id="' + k + 'l" data-f="lot"><option value="">Choisissez la partie</option>' + lots.map(x => '<option value="' + cnEsc(x.numero) + '"' + (x.numero === l.lot ? " selected" : "") + ">" + cnEsc(partieLot(x.libelle)) + "</option>").join("") + "</select></div>";
     return h;
   }
 
@@ -498,11 +509,11 @@
     h += "</ul></details>";
     if (c.total) h += '<div class="small cn-mt4">Note d\'ensemble du groupement : <b class="num">' + cnEsc(c.total.note) + " / " + cnEsc(c.total.note_max) + "</b> (" + Number(c.total.pct) + " %)</div>";
     (c.totaux || []).forEach(t => {
-      h += '<div class="small cn-mt4">Note d\'ensemble du groupement, ' + cnEsc(String(t.lot_libelle || "").charAt(0).toLowerCase() + String(t.lot_libelle || "").slice(1)) + ' : <b class="num">' + cnEsc(t.note) + " / " + cnEsc(t.note_max) + "</b> (" + Number(t.pct) + " %)</div>";
+      h += '<div class="small cn-mt4">Note d\'ensemble du groupement, ' + cnEsc(partieLot(t.lot_libelle || "", true)) + ' : <b class="num">' + cnEsc(t.note) + " / " + cnEsc(t.note_max) + "</b> (" + Number(t.pct) + " %)</div>";
     });
     return h + "</div>";
   }
 
   root.AdjugoCarnetNotes = { mount, partenaireHtml: cnPartenaireHtml,
-    _pur: { cnEsc, cnNombre, cnPct, cnMailto, cnFusion, cnPayload, cnControle, cnPartenaireHtml, cnTetes, cnLigneTete } };
+    _pur: { partieLot, cnEsc, cnNombre, cnPct, cnMailto, cnFusion, cnPayload, cnControle, cnPartenaireHtml, cnTetes, cnLigneTete } };
 })(typeof window !== "undefined" ? window : this);

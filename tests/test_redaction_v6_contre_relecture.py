@@ -531,7 +531,7 @@ def test_limites_d_une_phrase_qui_cite_deux_lots():
     from app.services import atelier_plan as ap
     d = ap.limites_du_dossier({"contraintes": {"limites": out}})
     assert d["document"] == [] and len(d["non_controlees"]) == 2
-    assert 'selon_lot: "selon le lot"' in _lire("app.js")
+    assert 'selon_lot: "selon la partie du marché"' in _lire("app.js")   # vague 2a (D10)
 
 
 def test_limite_d_un_autre_lot_ne_bloque_pas_l_export(client, auth):

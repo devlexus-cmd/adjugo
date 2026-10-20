@@ -285,16 +285,18 @@ def proposition(section: DossierSection, candidats: list, lots: Optional[dict] =
             scores.append((len(mots), m, mots))
     if not scores:
         return {"redacteur": CHEF, "invite_id": None, "nom": "", "lot": "", "mots": [],
-                "message": "Proposé au chef de file : aucun lot de partenaire ne correspond à cette partie."}
+                "message": "Proposé au chef de file : la partie du marché (lot) d'aucun partenaire ne correspond à cette "
+                           "partie du dossier."}
     scores.sort(key=lambda x: -x[0])
     if len(scores) > 1 and scores[0][0] == scores[1][0]:
         return {"redacteur": CHEF, "invite_id": None, "nom": "", "lot": "", "mots": [],
-                "message": "Proposé au chef de file : plusieurs lots correspondent à cette partie, choisissez qui la "
-                           "rédige."}
+                "message": "Proposé au chef de file : les parties du marché (lots) de plusieurs partenaires "
+                           "correspondent à cette partie du dossier, choisissez qui la rédige."}
     _n, m, mots = scores[0]
     cite = ", ".join(f"« {w} »" for w in mots[:3])
     return {"redacteur": PARTENAIRE, "invite_id": m["invite_id"], "nom": m["nom"], "lot": m["lot"], "mots": mots[:5],
-            "message": f"Proposé d'après le lot de {m['nom']} (« {m['lot'][:80]} ») : {cite} dans la partie."}
+            "message": f"Proposé d'après la partie déclarée par {m['nom']} (« {m['lot'][:80]} ») : {cite} dans "
+                       f"la partie du dossier."}
 
 
 def _lots_du_dossier(dossier) -> dict:

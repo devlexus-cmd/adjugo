@@ -225,7 +225,7 @@ def test_les_autres_renvois_disent_le_chemin_d_aujourd_hui():
     # Adéquation métier sans activité renseignée : où l'indiquer.
     bd = score_dce({"intitule_marche": "Travaux"}, {}, {})["breakdown"]
     metier = next(c for c in bd if c["key"] == "metier")
-    assert metier["detail"] == "Activité non renseignée (vos spécialités dans Mon entreprise, onglet « Mes critères »)"
+    assert metier["detail"] == "Activité non renseignée (vos spécialités dans Mon entreprise, onglet « Ce que je cherche »)"
     # Onboarding de l'accueil : le jalon dit ce qu'il attend (nom et SIRET), et il est traduit (décision 16).
     assert 'label: "Renseignez le nom et le SIRET de votre entreprise", view: "company"' in JS
     import json

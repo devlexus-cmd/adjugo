@@ -691,8 +691,8 @@ def _verifier_taille(plan: dict, gardees: int = 0) -> None:
     n = len(plan.get("sections") or []) + gardees
     if isinstance(plan.get("lots"), dict) and plan["lots"].get("actif") and n > SECTIONS_MAX:
         raise AtelierError(422, "trop_de_parties",
-                           f"Avec ces lots, le dossier compterait {n} parties ({SECTIONS_MAX} au plus) : choisissez moins "
-                           "de lots, ou le plan simple.")
+                           f"Avec ces parties du marché, le dossier compterait {n} parties ({SECTIONS_MAX} au plus) : "
+                           "choisissez-en moins, ou le plan simple.")
 
 
 def creer_dossier(db, project: Project, owner_id: int, user: User, member_ids: list,
@@ -889,10 +889,10 @@ def ajouter_section(db, dossier: DossierPresentation, intitule: str, apres_id: O
         elif str(lot).strip():
             x = al.lot_de(dossier, lot)
             if x is None:
-                raise AtelierError(422, "lot_inconnu", "Ce lot ne fait pas partie de ce dossier de présentation.")
+                raise AtelierError(422, "lot_inconnu", "Cette partie du marché (lot) n'est pas dans ce dossier de présentation.")
             lot_n = x["numero"]
     elif lot not in (None, ""):
-        raise AtelierError(422, "lot_inconnu", "Ce dossier de présentation ne répond qu'à un seul lot.")
+        raise AtelierError(422, "lot_inconnu", "Ce dossier de présentation ne répond qu'à une seule partie du marché.")
     if len(act) >= SECTIONS_MAX:
         raise AtelierError(422, "trop_de_parties", f"Un dossier compte au plus {SECTIONS_MAX} parties.")
     pos = len(act)
@@ -961,7 +961,7 @@ def modifier_section(db, dossier: DossierPresentation, section: DossierSection, 
                     db.rollback()
                     raise AtelierError(409, "groupe_sous_criteres",
                                        "Cette partie ne peut pas aller là : elle séparerait les sous-critères d'un "
-                                       "critère dans le dossier d'un lot. Choisissez une autre place.")
+                                       "critère dans le fichier d'une partie du marché. Choisissez une autre place.")
                 pos = p2
         else:
             # La partie d'un sous-critère reste avec les autres sous-critères de son critère (entre eux, l'ordre
@@ -1053,7 +1053,7 @@ def changer_lots(db, project: Project, dossier: DossierPresentation, user: User,
     avec la même confirmation que « Reconstruire le plan »."""
     lots = lots_demandes(db, project, member_ids, choisis, ajoutes)
     if al.numeros(lots) == al.numeros(al.liste(dossier)) and lots == al.liste(dossier):
-        raise AtelierError(409, "rien_a_changer", "Le dossier répond déjà à ces lots.")
+        raise AtelierError(409, "rien_a_changer", "Le dossier répond déjà à ces parties du marché.")
     base = str((dossier.plan_meta or {}).get("base_demandee") or "auto") if isinstance(dossier.plan_meta, dict) else "auto"
     return reconstruire_plan(db, project, dossier, user, member_ids, base=base if base in ap.BASES else "auto",
                              remplacer=remplacer, lecteur=lecteur, lots=lots)
@@ -1090,9 +1090,9 @@ def _ordre_commune(dossier: DossierPresentation, act: list, section: DossierSect
     p = _place_sans_couper(dossier, reste, future, lo, vers_le_bas=True, bornes=(lo, hi)) if lo <= hi else None
     if p is None:
         raise AtelierError(409, "portee_ordre",
-                           "Cette partie n'est pas à la même place dans le dossier de chaque lot : rendue commune, "
-                           "elle changerait l'ordre des parties d'un fichier. Placez-la d'abord au même endroit dans "
-                           "chaque lot, puis rendez-la commune.")
+                           "Cette partie n'est pas à la même place dans le fichier de chaque partie du marché : rendue "
+                           "commune, elle changerait l'ordre des parties d'un fichier. Placez-la d'abord au même endroit "
+                           "dans chaque fichier, puis rendez-la commune.")
     return reste[:p] + [section] + reste[p:]
 
 
@@ -1103,10 +1103,10 @@ def changer_portee(db, dossier: DossierPresentation, section: DossierSection, le
     texte, celles des autres lots sont RETIRÉES (jamais supprimées : remettables), après confirmation si l'une a du
     texte. Sans IA. La partie d'un partenaire ne change jamais de portée par un autre que lui."""
     if not al.actif(dossier):
-        raise AtelierError(409, "un_seul_lot", "Ce dossier de présentation ne répond qu'à un seul lot.")
+        raise AtelierError(409, "un_seul_lot", "Ce dossier de présentation ne répond qu'à une seule partie du marché.")
     if est_generee(section):
-        raise AtelierError(409, "partie_du_groupement", "Cette partie est tirée du groupement : elle vaut pour tous "
-                                                         "les lots.")
+        raise AtelierError(409, "partie_du_groupement", "Cette partie est tirée du groupement : elle vaut pour "
+                                                         "toutes les parties du marché.")
     if not peut_organiser(section, lecteur):
         raise refus_ecriture(section)
     act = sections_actives(db, dossier)
@@ -1122,7 +1122,7 @@ def changer_portee(db, dossier: DossierPresentation, section: DossierSection, le
         if autres and _a_du_texte(db, [f.id for f in autres]) and not remplacer:
             noms = ", ".join(f"lot {f.lot}" for f in autres)
             raise AtelierError(409, "portee_a_confirmer",
-                               f"Cette partie a déjà du texte dans d'autres lots ({noms}). Rendue commune, elle garde "
+                               f"Cette partie a déjà du texte dans d'autres parties du marché ({noms}). Rendue commune, elle garde "
                                "le texte de celle-ci ; les autres sont retirées du plan (leurs textes restent dans "
                                "l'historique et peuvent être remis) : confirmez pour continuer.")
         ordre = _ordre_commune(dossier, act, section, autres)
@@ -2283,7 +2283,7 @@ def evaluer_limites(dossier: DossierPresentation, sections: list, rangs: dict, c
     o = options_export(dossier)
     inclus = [x for x, on in (("page de garde", o["page_garde"]), ("sommaire", o["sommaire"])) if on]
     suffixe = f" ({' et '.join(inclus)} compris)." if inclus else "."
-    doc = f"Dossier du lot {lot}" if lot else "Dossier de présentation"
+    doc = f"Dossier de la partie (lot {lot})" if lot else "Dossier de présentation"
     for x in lims.get("document") or []:
         k = x.get("type")
         m = _mesure(k, total, True)
@@ -2416,7 +2416,7 @@ def blocage(dossier: DossierPresentation, sections: list, courantes: dict, rangs
                       "message": ap.avertissement_fichier(True, dossier.plan_source)})
     if non_valides:
         avert.append({"code": "non_valide", "nombre": len(non_valides), "sections": non_valides,
-                      "message": (f"{f'Dossier du lot {lot} non validé' if lot else MSG_NON_VALIDE} : "
+                      "message": (f"{f'Dossier de la partie (lot {lot}) non validé' if lot else MSG_NON_VALIDE} : "
                                   f"{len(non_valides)} partie{'s' if len(non_valides) > 1 else ''} à valider.")})
     return {"bloque": bool(raisons), "raisons": raisons, "etat_hash": eh,
             "derogation": _derogation_out(der) if valide else None,
@@ -3191,16 +3191,16 @@ def lot_a_exporter(dossier: DossierPresentation, lot) -> Optional[str]:
     demande = str(lot).strip() if lot not in (None, "") else ""
     if al.actif(dossier):
         if not demande:
-            raise AtelierError(422, "lot_requis", "Ce dossier répond à plusieurs lots : choisissez le lot à exporter "
-                                                  "(un fichier par lot).",
+            raise AtelierError(422, "lot_requis", "Ce dossier répond à plusieurs parties du marché : choisissez celle "
+                                                  "à exporter (un fichier par partie).",
                                lots=[{"numero": x["numero"], "libelle": al.libelle(dossier, x["numero"])}
                                      for x in al.liste(dossier)])
         x = al.lot_de(dossier, demande)
         if x is None:
-            raise AtelierError(422, "lot_inconnu", "Ce lot ne fait pas partie de ce dossier de présentation.")
+            raise AtelierError(422, "lot_inconnu", "Cette partie du marché (lot) n'est pas dans ce dossier de présentation.")
         return x["numero"]
     if demande:
-        raise AtelierError(422, "lot_inconnu", "Ce dossier de présentation ne répond qu'à un seul lot.")
+        raise AtelierError(422, "lot_inconnu", "Ce dossier de présentation ne répond qu'à une seule partie du marché.")
     return None
 
 
@@ -3384,7 +3384,7 @@ def _dossier_commun_lots(db, project: Project, dossier: DossierPresentation, sec
         if not gate["peut_exporter"]:
             out["warnings"].append(f"BLOQUANT — {lib} : dossier de présentation non joint : "
                                    + " ".join(r["message"] for r in gate["raisons"])
-                                   + " Traitez ces points dans l'atelier, ou enregistrez-y une dérogation pour ce lot.")
+                                   + " Traitez ces points dans l'atelier, ou enregistrez-y une dérogation pour cette partie du marché.")
             # Le fichier de ce lot exporté plus tôt depuis l'atelier reste dans le dossier du marché (comme pour un
             # dossier à un seul lot bloqué : rien n'est retiré).
             ent = ctx.get("entreprise") or ""

@@ -191,7 +191,7 @@ def test_grille_commune_a_tous_les_lots_dit_comme_tel():
     gs = al.grilles_par_lot(_grille(T, CRITERES), T, ["2", "3"])
     for n in ("2", "3"):
         o = al.grille_out(gs[n])
-        assert o["mode"] == "commune" and "vaut pour ce lot" in o["message"]
+        assert o["mode"] == "commune" and "vaut pour cette partie du marché" in o["message"]   # vague 2a (D10)
         assert o["phrase"] == "Pour chacun des lots, les offres sont jugées sur les critères suivants :"
         assert [(x["critere"], x["poids"]) for x in o["lignes"]] == [("Valeur technique", "60 %"), ("Prix", "40 %")]
         assert o["controle_total"]["statut"] == "ok"
@@ -242,7 +242,7 @@ def test_critere_absent_de_la_partie_du_lot_n_entre_pas_dans_son_plan():
     gs = al.grilles_par_lot(_grille(T, crit), T, ["2", "3"])
     o3 = al.grille_out(gs["3"])
     d = next(x for x in o3["lignes"] if x["critere"] == "Délai d'exécution")
-    assert d["statut"] == "a_verifier" and not d["dans_le_plan"] and "propre à ce lot" in d["message"]
+    assert d["statut"] == "a_verifier" and not d["dans_le_plan"] and "propre à cette partie du marché (lot)" in d["message"]
     assert next(x for x in al.grille_out(gs["2"])["lignes"] if x["critere"] == "Délai d'exécution")["poids"] == "10 %"
 
 
@@ -311,7 +311,7 @@ def test_deux_lots_parties_communes_et_propres(client, auth):
     prop = client.get(f"/api/atelier/{pid}", headers=h).json()["proposition"]
     lm = prop["lots_du_marche"]
     assert lm["alloti"] is True and [x["numero"] for x in lm["lots"]] == ["1", "2", "3"]
-    assert "un fichier par lot" in lm["message"] and lm["choisis"] == []
+    assert "un fichier par partie" in lm["message"] and lm["choisis"] == []   # vague 2a (D10)
     assert all("lot" not in s or not s.get("lot") for s in prop["sections"])          # un seul dossier par défaut
     # Prévisualisation, rien n'est enregistré.
     pr = client.get(f"/api/atelier/{pid}?lots=2,3", headers=h).json()["proposition"]
@@ -418,7 +418,7 @@ def test_limites_de_pages_controlees_par_lot_et_derogation_par_lot(client, auth)
     st = _etat(client, h, pid)
     b2, b3 = _lot(st, "2")["blocage"], _lot(st, "3")["blocage"]
     assert [r["code"] for r in b2["raisons"]] == ["limite_depassee"] and b2["peut_exporter"] is False
-    assert b2["raisons"][0]["limites"][0]["titre"] == "Dossier du lot 2"
+    assert b2["raisons"][0]["limites"][0]["titre"] == "Dossier de la partie (lot 2)"   # vague 2a (D10)
     assert b3["raisons"] == [] and b3["peut_exporter"] is True
     assert st["blocage"]["peut_exporter"] is False and st["blocage"]["par_lot"] is True
     r = client.post(f"/api/atelier/{pid}/export", headers=h, json={"format": "docx", "lot": "2"})
@@ -588,9 +588,9 @@ def test_groupement_repartition_proposee_d_apres_le_lot_de_chaque_membre(client,
     lignes = {(x["intitule"], x.get("lot")): x for x in rep["sections"] if not x.get("genere")}
     m3 = lignes[("Méthodologie d'exécution", "3")]
     assert m3["proposition"]["redacteur"] == "partenaire" and m3["proposition"]["nom"] == "Étanche Ouest"
-    assert "celle du lot 3" in m3["proposition"]["message"] and m3["redacteur"]["nom"] == "Étanche Ouest"
+    assert "celle de la partie (lot 3)" in m3["proposition"]["message"] and m3["redacteur"]["nom"] == "Étanche Ouest"
     m2 = lignes[("Méthodologie d'exécution", "2")]
-    assert m2["proposition"]["redacteur"] == "chef_de_file" and "aucun partenaire n'a déclaré le lot 2" in \
+    assert m2["proposition"]["redacteur"] == "chef_de_file" and "aucun partenaire n'a déclaré la partie (lot 2)" in \
         m2["proposition"]["message"]
     assert lignes[("Gestion environnementale du chantier", "")]["redacteur"]["type"] == "chef_de_file"
     assert m3["lot_libelle"] == "Lot 3 — Étanchéité des toitures-terrasses" and m3["commune"] is False

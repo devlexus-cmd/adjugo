@@ -29,15 +29,20 @@ def _demo_user_ids(db: Session) -> set:
         return set()
 
 
-def _due_alert(doc, days: int):
-    """Retourne (label, flags_à_marquer) pour l'alerte due, ou None."""
+def _due_alert(doc, days: int, today=None):
+    """Retourne (label, flags_à_marquer) pour l'alerte due, ou None. Paliers : 30 jours, 7 jours, le jour même (et
+    après). Le libellé est celui de la liste de Mes documents (app.services.pieces_fin.etat_fin), en minuscule."""
+    from app.services.pieces_fin import ALERTE_JOURS, etat_fin
+    fin = etat_fin(doc.expiration_date, today) if getattr(doc, "expiration_date", None) else None
+    libelle = (fin["libelle"] if fin else "")
+    libelle = (libelle[:1].lower() + libelle[1:]) if libelle else ""
     if days <= 0 and not doc.alert_day_sent:
-        return ("expire aujourd'hui" if days == 0 else "a expiré",
+        return (libelle or ("expire aujourd'hui" if days == 0 else "expirée"),
                 ["alert_day_sent", "alert_7_sent", "alert_30_sent"])
     if days <= 7 and not doc.alert_7_sent:
-        return (f"expire dans {days} j", ["alert_7_sent", "alert_30_sent"])
-    if days <= 30 and not doc.alert_30_sent:
-        return (f"expire dans {days} j", ["alert_30_sent"])
+        return (libelle or f"expire dans {days} jours", ["alert_7_sent", "alert_30_sent"])
+    if days <= ALERTE_JOURS and not doc.alert_30_sent:
+        return (libelle or f"expire dans {days} jours", ["alert_30_sent"])
     return None
 
 
@@ -313,7 +318,9 @@ def _run_piece_expiry_alerts(db: Session, today, due=None, merged=None) -> int:
 
 
 def run_document_expiry_alerts(db: Session) -> dict:
-    today = date.today()
+    # Jour de Paris et libellés de la liste : le courriel dit la même chose que Mes documents (app.services.pieces_fin).
+    from app.services.pieces_fin import jour_paris, jj_mm_aaaa
+    today = jour_paris()
     docs = db.query(Document).filter(
         Document.expiration_date.isnot(None),
         Document.parent_id.is_(None),
@@ -325,7 +332,7 @@ def run_document_expiry_alerts(db: Session) -> dict:
     for doc in docs:
         scanned += 1
         days = (doc.expiration_date - today).days
-        due = _due_alert(doc, days)
+        due = _due_alert(doc, days, today)
         if due:
             label, flags = due
             by_user[doc.user].append((doc, days, label, flags))
@@ -335,11 +342,15 @@ def run_document_expiry_alerts(db: Session) -> dict:
     for user, items in by_user.items():
         if not user or not user.email or user.id in demo_ids:
             continue
-        lines = [f"• {d.name} — {label} (échéance {d.expiration_date})" for d, _, label, _ in items]
-        text = ("Bonjour,\n\nCertaines pièces de votre coffre-fort Adjugo arrivent à "
-                "échéance :\n\n" + "\n".join(lines) +
-                "\n\nPensez à les renouveler pour rester éligible aux appels d'offres.\n\n— Adjugo")
-        sent = send_email(user.email, f"Adjugo — {len(items)} document(s) à renouveler", text)
+        lines = [f"• {d.name} : {label} (date de fin : {jj_mm_aaaa(d.expiration_date)})" for d, _, label, _ in items]
+        n = len(items)
+        un = n == 1
+        text = ("Bonjour,\n\n" + ("Une pièce de Mes documents arrive à sa date de fin :" if un
+                                  else "Des pièces de Mes documents arrivent à leur date de fin :")
+                + "\n\n" + "\n".join(lines) + "\n\n" + ("Remplacez-la" if un else "Remplacez-les")
+                + " dans Adjugo (Mes documents) avant vos prochains dépôts : une attestation périmée "
+                "peut faire écarter une candidature.\n\n— Adjugo")
+        sent = send_email(user.email, f"Adjugo — {n} {'pièce à renouveler' if n == 1 else 'pièces à renouveler'}", text)
         # On ne marque les flags que si l'email est parti, pour pouvoir rejouer
         # une fois le SMTP configuré.
         if sent:

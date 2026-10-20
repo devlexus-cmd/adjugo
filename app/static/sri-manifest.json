@@ -2,29 +2,29 @@
  "algorithme": "sha384",
  "fichiers": {
   "/static/app.js": {
-   "integrity": "sha384-UMKtXnZQoCMd9NsSBBCNhgBDPFSWeMVmKwJUTIhBNagbsHjvJAgZ/GBzMuiGJh1j",
-   "octets": 513828,
-   "sha256": "96aef46a89bc179f29e7aeff2673e262e54446bd80d32f76345bcdf0c319d945"
+   "integrity": "sha384-cdhj+yGDh4s4gYrKucNMXZBALQS6eyIznhmBrsPTSp5N+9STmsWH5NuPYjLqoJQO",
+   "octets": 524722,
+   "sha256": "4215387b6976730dc80a4227c357319049b5676fe669cb4bc8f6784cf2c796db"
   },
   "/static/carnet-notes.js": {
-   "integrity": "sha384-rNhlyqrjhKIiqL/xGL3y8DNWtllOzsqPT/r0od3igtWeT9N+xqDolMztixTiIng6",
-   "octets": 37133,
-   "sha256": "ada05f91b8d6b03bd8b415d83896c39dda3d4ea7215d744faef695f6fe30b0d9"
+   "integrity": "sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV",
+   "octets": 37867,
+   "sha256": "f7e3426676788718bc607f9d18803928424a5e6a23cd2cbc3961c3903451cb3d"
   },
   "/static/cotraitance-crypto.js": {
-   "integrity": "sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs",
-   "octets": 20961,
-   "sha256": "c7ec3846e80d42f09b317a839e97f916ce5f03e577b477140aaeb880ea7fb73a"
+   "integrity": "sha384-3O8bcX0ASkja6mPpOZJxLaCqNzh+tCAktUpx/whY6eZ7p6/qFrNtjqhBLIzoink/",
+   "octets": 20976,
+   "sha256": "03b1ccd7fb73b0a1dd3153aff64506049c8ff6e23c58631aec74abfb28349552"
   },
   "/static/i18n.js": {
-   "integrity": "sha384-g/m/j1KbXd6M1WxNqszrxMP/Pv8etk/aMTHLJbVExTlUzK+W4WKEgDNVdIw7RnAY",
-   "octets": 75242,
-   "sha256": "d65dfe9844e15fc69a0f93a20a0a8d16b54e63f53683937ee616f55b46443031"
+   "integrity": "sha384-KQU2O1EIBfcuHHncnLyVrxCxgWXjpBLaSAlw+2QdH9ahCC5+OUZmsFC9uTiLWvkK",
+   "octets": 84529,
+   "sha256": "2eb2e27bd51dee41b809ce86ffede98d9c2f6850aa073071072145b56589dd40"
   },
   "/static/redaction-partenaire.js": {
-   "integrity": "sha384-a3BQ5CRAqvM5N/hPEMkni8dSIvc/2YxRRPkFUoPmocI3uCl+FckaoEW302Jwsjlb",
-   "octets": 89218,
-   "sha256": "a6a3493f3db168ddf36d7e092deda9933ea1ada2da815672dee7d1ea58ff9ab3"
+   "integrity": "sha384-6qNfSXtvQ5zr/U1F2cqYfiESONkcLJdN0wuZrP5kDtPoUtoFLFZ/7vj80NlqrKpX",
+   "octets": 90035,
+   "sha256": "5150d6e7e97416a37468e978f05279803b648db9ef1f89249ced67b0389dab98"
   },
   "/static/sources-publiques.js": {
    "integrity": "sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+",

@@ -558,7 +558,7 @@ def collect_members(db, project, conv, company, include_incomplete: bool = False
             manques.append(f"{name} n'a pas encore soumis sa part")
             complete = False
         elif c.prix_lot_ht is None:
-            manques.append(f"{name} : prix de lot manquant")
+            manques.append(f"{name} : prix de sa partie manquant")
             complete = False
         if not complete and not include_incomplete:
             continue
@@ -598,7 +598,7 @@ def collect_members(db, project, conv, company, include_incomplete: bool = False
             continue
         prix = entry.get("prix_lot_ht")
         if prix is None:
-            manques.append(f"{o['company']} (hors ligne) : prix de lot manquant")
+            manques.append(f"{o['company']} (hors ligne) : prix de sa partie manquant")
             if not include_incomplete:
                 continue
         members.append({
@@ -879,7 +879,7 @@ def warnings_for(conv, project, ctx: dict, fi: dict, sous_traitants: list, db=No
     lots = {}
     for m in members:
         if not str(m.get("lot") or "").strip():
-            out.append(f"Part de {m.get('company')} non précisée : indiquez le lot ou les prestations.")
+            out.append(f"Part de {m.get('company')} non précisée : indiquez la partie (lot) ou les prestations.")
         else:
             lots.setdefault(_clean(m["lot"]).lower(), []).append(m.get("company"))
         if not str(m.get("representant_legal") or "").strip():

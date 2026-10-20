@@ -57,8 +57,15 @@ def export_my_data(request: Request, current_user: User = Depends(get_current_us
     data["profil_entreprise"] = _ser(comp, ["name", "siret", "code_ape", "forme_juridique",
         "representant_legal", "address", "city", "postal_code", "tva_intracom", "email",
         "phone", "ca_n1", "ca_n2", "ca_n3", "effectif", "qualifications", "references"]) if comp else None
-    crit = db.query(MatchingCriteria).filter(MatchingCriteria.user_id == uid).first()
-    data["criteres"] = _ser(crit, ["specialites", "departements", "budget_min", "budget_max"]) if crit else None
+    # « Ce que je cherche » (Mon entreprise) est rangé dans les critères étendus (criteria_v2) : c'est ce que la page
+    # enregistre, montant que je porte seul compris (vague 2a). L'ancienne table ne sert plus qu'en repli.
+    from app.routers.criteria_v2 import CriteriaUpdate, MatchingCriteriaExt
+    ext = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == uid).first()
+    if ext:
+        data["criteres"] = _ser(ext, list(CriteriaUpdate.model_fields.keys()))
+    else:
+        crit = db.query(MatchingCriteria).filter(MatchingCriteria.user_id == uid).first()
+        data["criteres"] = _ser(crit, ["specialites", "departements", "budget_min", "budget_max"]) if crit else None
     dump(Project, ["id", "name", "client", "budget", "status", "deadline", "match_score",
                    "go_decision", "created_at"], "appels_offres")
     dump(Contact, ["id", "name", "email", "phone", "organization", "created_at"], "contacts")

@@ -262,7 +262,7 @@ def test_generation_refusee_sans_forme_ni_parts(client, auth):
     _put(client, inv["token"], lot="Lot A")
     _submit(client, inv["token"])
     r = _gen(client, h, pid)
-    assert any("prix de lot manquant" in m for m in r.json()["detail"]["missing"])
+    assert any("prix de sa partie manquant" in m for m in r.json()["detail"]["missing"])   # vague 2a : « partie (lot) »
     # Valeurs de paramètres contrôlées.
     bad = client.put(f"/api/projects/{pid}/groupement/convention", headers=h,
                      json={"params": {"confidentialite_annees": 99}})

@@ -81,13 +81,15 @@ ZONES = {
     "vues": ["vue-amont", "vue-kb", "kb-fiches-proposees", "vue-atelier", "atelier-page-preparation-case",
              "atelier-page-preparation", "atelier-entretien", "atelier-onglets", "atelier-repartition",
              "vue-pipeline", "vue-cotraitants", "vue-contacts", "vue-documents", "vue-invoices", "vue-company",
-             "vue-preuves", "vue-criteria", "vue-team", "vue-compte", "vue-billing", "billing-offres", "vue-admin", "admin-mesure",
-             "vue-reseau", "reseau-onglets", "reseau-profil", "reseau-annuaire", "reseau-historique",
-             "vue-sharedao-attente", "vue-sharedao",
-             # Mes marchés en liste filtrable et Bilan en onglet (vague 2a, A2) : vue-shared, vue-consortiums et
-             # reseau-recues y fondent.
-             "mes-marches-filtres", "mes-marches-invitations", "mes-marches-liste", "mes-marches-plusieurs",
-             "mes-marches-partenaire", "vue-bilan", "bilan-gagne-perdu", "bilan-carnet"],
+              # vue-tarifs : l'onglet « Tarifs » de Mon entreprise (vague 2a, A3 ; docs/REORGANISATION_V2A.md).
+              "vue-preuves", "vue-criteria", "vue-tarifs", "vue-team", "vue-compte", "vue-billing", "billing-offres",
+              "vue-admin", "admin-mesure",
+              "vue-reseau", "reseau-onglets", "reseau-profil", "reseau-annuaire", "reseau-historique",
+              "vue-sharedao-attente", "vue-sharedao",
+              # Mes marchés en liste filtrable et Bilan en onglet (vague 2a, A2) : vue-shared, vue-consortiums et
+              # reseau-recues y fondent.
+              "mes-marches-filtres", "mes-marches-invitations", "mes-marches-liste", "mes-marches-plusieurs",
+              "mes-marches-partenaire", "vue-bilan", "bilan-gagne-perdu", "bilan-carnet"],
     "partage": ["partage-entete", "partage-grille", "partage-pourquoi", "partage-convention", "partage-redaction",
                 "partage-pieces", "partage-ma-part", "partage-tableau-prix", "partage-coffre-croise",
                 "partage-journal"],

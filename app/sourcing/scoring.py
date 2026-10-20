@@ -63,7 +63,7 @@ def score_tender(t: NormalizedTender, company: Optional[dict], criteria: Optiona
     if not targets:
         b.append(ScoreCriterion(key="cpv", label="Adéquation métier", points=0,
                                 max_points=TENDER_WEIGHTS["cpv"], status="inconnu",
-                                detail="Aucune spécialité/CPV défini dans vos critères"))
+                                detail="Aucune spécialité ni code CPV dans Mon entreprise, onglet « Ce que je cherche »"))
     else:
         hits = []
         # CPV : match par préfixe DÉLIMITÉ sur les codes CPV réels de l'avis (≥4 chiffres
@@ -251,8 +251,8 @@ def score_company(c: NormalizedCompany, need_trade_label: str = "",
         surface = max(float(c.ca or 0.0), (c.effectif or 0) * _EUR_PAR_SALARIE)
         if lot_montant and surface and lot_montant > surface * _RATIO_LOT:
             pts = min(pts, round(W5 * 0.25))
-            note += (" — lot de " + f"{int(round(lot_montant)):,}".replace(",", " ")
-                     + " € élevé au regard de la taille, capacité à confirmer")
+            note += (" — partie de " + f"{int(round(lot_montant)):,}".replace(",", " ")
+                     + " € élevée au regard de la taille, capacité à confirmer")
         out.append(_crit("capacite", "Capacité (effectif)", pts, W5,
                          "ok" if pts == W5 else "partiel", note))
 

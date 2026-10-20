@@ -32,14 +32,14 @@ from app.services.groupement_scoring import _norm_dep
 WEIGHTS = {"metier": 35, "zone": 25, "fiabilite": 15, "experience": 15, "capacite": 10}
 CRITERIA_ORDER = ("metier", "zone", "fiabilite", "experience", "capacite")
 CRITERIA_LABELS = {
-    "metier": "Métier du lot",
+    "metier": "Métier de la partie",
     "zone": "Zone d'intervention",
     "fiabilite": "Fiabilité vérifiée (registres publics)",
     "experience": "Expérience des marchés publics",
-    "capacite": "Capacité et disponibilité pour ce lot",
+    "capacite": "Capacité et disponibilité pour cette partie",
 }
 EXPLICATION_CLASSEMENT = (
-    "Classement par métier du lot, zone d'intervention, fiabilité vérifiée dans les registres "
+    "Classement par métier de la partie (lot), zone d'intervention, fiabilité vérifiée dans les registres "
     "publics (registre officiel des entreprises, BODACC), expérience des marchés publics (DECP, groupements marqués déposés sur Adjugo), puis "
     "capacité et disponibilité. Ce n'est pas une note : le seul pourcentage affiché reste le "
     "score de groupement, calculé quand vous simulez le groupement.")
@@ -277,7 +277,7 @@ def capacites(p: dict) -> list:
                     "valeur": ", ".join(ROLE_LABELS[r] for r in roles),
                     "source": _SOURCE_DECLARE, "date": decl})
     if p.get("lot_max_eur"):
-        out.append({"key": "lot_max", "label": "Taille de lot maximale acceptée",
+        out.append({"key": "lot_max", "label": "Plus grosse partie (lot) acceptée",
                     "valeur": _money(p.get("lot_max_eur")), "source": _SOURCE_DECLARE, "date": decl})
     dispo = p.get("disponibilite") or ""
     if dispo in DISPO_LABELS:
@@ -390,7 +390,7 @@ def score_lot(lot: dict, p: dict, today: date) -> tuple:
         cible = "de votre recherche" if (lot.get("contexte") or "") == "annuaire" else "du marché"
         add("metier", 20, "partiel", f"Code CPV {cpv} proche {cible}, {decl_txt}", _SOURCE_DECLARE, decl)
     else:
-        lab = trade_label(metier) if metier else "du lot"
+        lab = trade_label(metier) if metier else "de la partie"
         add("metier", 0, "non", f"Métier « {lab} » non déclaré par l'entreprise", _SOURCE_DECLARE, decl)
 
     # 2) Zone (25). Chaque phrase dit d'où vient la donnée : zones déclarées, siège SIRENE
@@ -484,14 +484,14 @@ def score_lot(lot: dict, p: dict, today: date) -> tuple:
     if lot_max and montant:
         if float(lot_max) >= float(montant):
             pts += 3
-            parts.append(f"Lots jusqu'à {_money(lot_max)}")
+            parts.append(f"Parties jusqu'à {_money(lot_max)}")
         else:
-            parts.append(f"Lot plus gros que sa taille maximale déclarée ({_money(lot_max)})")
+            parts.append(f"Partie plus grosse que son maximum déclaré ({_money(lot_max)})")
     elif lot_max:
         pts += 1
-        parts.append(f"Lots jusqu'à {_money(lot_max)} (montant du lot non connu)")
+        parts.append(f"Parties jusqu'à {_money(lot_max)} (montant de la partie non connu)")
     else:
-        parts.append("Taille de lot maximale non précisée")
+        parts.append("Plus grosse partie acceptée non précisée")
     statut = "ok" if pts >= 8 else ("partiel" if pts > 0 else "non")
     add("capacite", pts, statut, " · ".join(parts), _SOURCE_DECLARE, decl)
 

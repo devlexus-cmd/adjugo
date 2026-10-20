@@ -27,6 +27,17 @@
 
   // ── Fonctions pures (testées sous Node : tests/test_redaction_v4_partenaire.py) ─────────────────────
 
+  // « lot » devient « partie (lot n) » à l'écran (décision 10) : la MÊME fonction que app.js (vérifié par
+  // tests/test_reorganisation_v2a_entreprise.py) ; les données et les fichiers exportés gardent « Lot 2 — … ».
+  function partieLot(x, intitule, minuscule) {
+    if (typeof intitule === "boolean") { minuscule = intitule; intitule = ""; }
+    const s = String(x == null ? "" : x).trim();
+    const m = /^(?:lot\s*(?:n\s*[°o.]?\s*)?)?0*(\d{1,3})(?:\s*[—–:-]\s*(.*))?$/i.exec(s);
+    if (!m || (!/^lot/i.test(s) && !/^\d+$/.test(s))) return s;
+    const reste = String(intitule || m[2] || "").trim();
+    return (minuscule ? "partie" : "Partie") + " (lot " + m[1] + ")" + (reste ? " — " + reste : "");
+  }
+
   function rpEsc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
@@ -195,7 +206,7 @@
   const BULLE_MENTIONS = "« justifiée » : un justificatif ou une source appuie la qualification ; « déclarée » : le membre l'a écrite. Ces mentions restent à l'écran : elles ne partent pas chez l'acheteur.";
   const BULLE_EXIGENCES = "Les phrases du règlement et du cadre de réponse qui demandent quelque chose au candidat, repérées par Adjugo sans IA. Une exigence est comptée comme traitée quand le texte commun d'une partie reprend ses mots principaux : c'est un repérage de mots, pas une relecture. Le chef de file tient la liste.";
   const BULLE_EXTRAITS = "Les passages de vos documents qu'Adjugo a cités en rédigeant (S1, S2…). Ils restent privés : ni le chef de file ni l'acheteur ne les voient, et les renvois sont retirés à l'export. Un extrait cité ne prouve pas que la phrase est exacte.";
-  const BULLE_ENTRETIEN = "Le chef de file vous pose ces questions parce qu'elles relèvent de votre lot ou de votre partie. Chacune montre la phrase du dossier de l'acheteur qui la motive. Votre réponse est lue par le chef de file et sert à rédiger le dossier commun, comme un fait déclaré par votre entreprise : il ne peut pas la modifier. « Passer » laisse « [À compléter] » dans la partie concernée.";
+  const BULLE_ENTRETIEN = "Le chef de file vous pose ces questions parce qu'elles relèvent de votre partie du marché (lot) ou de votre partie du dossier. Chacune montre la phrase du dossier de l'acheteur qui la motive. Votre réponse est lue par le chef de file et sert à rédiger le dossier commun, comme un fait déclaré par votre entreprise : il ne peut pas la modifier. « Passer » laisse « [À compléter] » dans la partie concernée.";
 
   function errMessage(data, status) {
     const d = data && data.detail;
@@ -562,7 +573,7 @@
     function renderPartie(v, p, ecrire) {
       const sid = p.section_id, open = st.open === sid;
       // Rédaction, vague 6 (J) : un dossier à plusieurs lots — le lot de la partie (le règlement le nomme).
-      const meta = [p.lot_libelle || "", p.longueur_mots ? "environ " + Number(p.longueur_mots).toLocaleString("fr-FR") + " mots" : "", p.date_limite ? "avant le " + rpJour(p.date_limite) : ""].filter(Boolean).join(" · ");
+      const meta = [partieLot(p.lot_libelle || ""), p.longueur_mots ? "environ " + Number(p.longueur_mots).toLocaleString("fr-FR") + " mots" : "", p.date_limite ? "avant le " + rpJour(p.date_limite) : ""].filter(Boolean).join(" · ");
       let h = '<li class="rp-part' + (open ? " open" : "") + '" data-sid="' + sid + '">';
       h += '<button type="button" class="rp-ph" data-act="ouvrir" data-sid="' + sid + '" aria-expanded="' + (open ? "true" : "false") + '"><span class="rp-chev">' + ico("chevron-right", 15) + '</span><span class="rp-pt"><span class="rp-pn">' + rpEsc(p.titre || p.intitule) + "</span>"
         + (meta ? '<span class="rp-pm muted small">' + rpEsc(meta) + "</span>" : "") + '</span><span class="pill ' + (PILL[p.statut] || "neutral") + ' rp-pill">' + rpEsc(p.statut_libelle) + "</span></button>";
@@ -792,7 +803,7 @@
         const r = p.redacteur || {};
         const lib = r.vous ? "votre source" : r.type === "partenaire" ? "source du partenaire" : "source du chef de file";
         h += '<article class="rp-dp"><div class="rp-dp-h"><b>' + rpEsc(p.titre || p.intitule) + '</b><span class="pill ' + (PILL[p.statut] || "neutral") + ' rp-pill">' + rpEsc(p.statut_libelle) + "</span></div>"
-          + '<div class="muted small">' + (p.lot_libelle ? rpEsc(p.lot_libelle) + " · " : (p.commune ? "Commune à tous les lots · " : "")) + (p.genere ? "Écrite par Adjugo à partir de la convention et des parts des membres" : "Rédigée par " + rpEsc(r.vous ? "vous" : (r.nom || "")) + (p.ecrit_par === "chef_de_file" && r.type === "partenaire" ? ", modifiée par le chef de file" : "")) + "</div>"
+          + '<div class="muted small">' + (p.lot_libelle ? rpEsc(partieLot(p.lot_libelle)) + " · " : (p.commune ? "Commune à toutes les parties du marché · " : "")) + (p.genere ? "Écrite par Adjugo à partir de la convention et des parts des membres" : "Rédigée par " + rpEsc(r.vous ? "vous" : (r.nom || "")) + (p.ecrit_par === "chef_de_file" && r.type === "partenaire" ? ", modifiée par le chef de file" : "")) + "</div>"
           + (p.texte ? '<div class="rp-txt">' + rpTexte(p.texte, lib) + "</div>" : '<div class="muted small rp-p">Pas encore de texte commun pour cette partie.</div>') + "</article>";
       });
       return h + "</div>";
@@ -1139,5 +1150,5 @@
     };
   }
 
-  root.AdjugoRedactionPartenaire = { mount, _pur: { rpEsc, rpSrcLib, rpMots, rpTexte, rpPhrase, rpLim, rpCompteurs, rpJour, rpACompleter, rpDiff, rpTaille, rpAccept } };
+  root.AdjugoRedactionPartenaire = { mount, _pur: { partieLot, rpEsc, rpSrcLib, rpMots, rpTexte, rpPhrase, rpLim, rpCompteurs, rpJour, rpACompleter, rpDiff, rpTaille, rpAccept } };
 })(typeof window !== "undefined" ? window : this);

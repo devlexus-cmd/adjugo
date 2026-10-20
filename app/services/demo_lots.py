@@ -122,16 +122,16 @@ DETAILS = {
     "visite_obligatoire": "Non",
     "pieces_requises": [{"nom": "Mémoire technique", "disponible": False},
                         {"nom": "Décomposition du prix global et forfaitaire", "disponible": False}],
-    "points_attention": ["Un dossier de présentation par lot, 6 pages au plus chacun",
+    "points_attention": ["Un dossier de présentation par partie (lot), 6 pages au plus chacun",
                          "Nom des fichiers imposé par le règlement", "Travaux en toiture pendant les vacances scolaires"],
-    "recommandation": ("Restructuration d'une école maternelle répartie en trois lots, pour 640 000 € HT. Les lots 2 "
-                       "(couverture et zinguerie) et 3 (étanchéité des toitures-terrasses) sont au cœur de votre "
-                       "métier ; le lot 1 (désamiantage) demande une qualification que vous n'avez pas.\n\nLe "
-                       "règlement demande un dossier de présentation propre à chaque lot, de 6 pages au plus, et impose le "
-                       "nom de chaque fichier. La grille est la même pour chacun des lots : valeur technique 60 % "
-                       "(méthodologie, moyens, gestion environnementale), prix 40 %.\n\nEn synthèse : répondez aux lots "
-                       "2 et 3 ensemble. La partie sur la gestion environnementale du chantier vaut pour les deux lots : "
-                       "rédigée une fois, elle figure dans les deux dossiers."),
+    "recommandation": ("Restructuration d'une école maternelle découpée en trois parties (lots), pour 640 000 € HT. "
+                       "Les parties 2 (couverture et zinguerie) et 3 (étanchéité des toitures-terrasses) sont au cœur "
+                       "de votre métier ; la partie 1 (désamiantage) demande une qualification que vous n'avez pas.\n\n"
+                       "Le règlement demande un dossier de présentation propre à chaque partie, de 6 pages au plus, et "
+                       "impose le nom de chaque fichier. La grille est la même pour chacune des parties : valeur "
+                       "technique 60 % (méthodologie, moyens, gestion environnementale), prix 40 %.\n\nEn synthèse : "
+                       "répondez aux parties 2 et 3 ensemble. La partie commune sur la gestion environnementale du "
+                       "chantier vaut pour les deux : rédigée une fois, elle figure dans les deux dossiers."),
     "clauses_risque": [],
 }
 
@@ -257,8 +257,9 @@ def seed_lots(db, user, proj_by_key: dict) -> None:
     from app.services import demo_redaction as dr
     from app.services import faits_sources as fs
     from app.services.demo_seed import _COMPANY, _CRITERIA, _analysis, _date_limite
-    base = _analysis(copy.deepcopy(DETAILS), "Restructuration d'une école maternelle en trois lots — couverture et "
-                                              "étanchéité au cœur de votre métier : répondre aux lots 2 et 3 ensemble.",
+    base = _analysis(copy.deepcopy(DETAILS), "Restructuration d'une école maternelle en trois parties (lots) — couverture "
+                                              "et étanchéité au cœur de votre métier : répondre aux parties 2 et 3 "
+                                              "ensemble.",
                      "DEMO-26100517", ["Mémoire technique par lot (6 pages au plus)", "Décomposition du prix par lot",
                                        "Certificat Qualibat 3212"])
     contenu = dossier_zip()

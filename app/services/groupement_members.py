@@ -544,7 +544,7 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
         if not c or c.status != "submitted":
             missing = f"Part de {name} pas encore soumise"
         elif c.prix_lot_ht is None:
-            missing = f"Part de {name} : prix de vente du lot manquant"
+            missing = f"Part de {name} : prix de vente de sa partie manquant"
         if not missing:
             continue
         if (inv.role or "cotraitant") == "sous_traitant":

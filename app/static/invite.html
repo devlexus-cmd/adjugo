@@ -11,10 +11,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
-  <script src="/static/cotraitance-crypto.js" integrity="sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs"></script>
-  <script src="/static/redaction-partenaire.js" integrity="sha384-a3BQ5CRAqvM5N/hPEMkni8dSIvc/2YxRRPkFUoPmocI3uCl+FckaoEW302Jwsjlb"></script>
+  <script src="/static/cotraitance-crypto.js" integrity="sha384-3O8bcX0ASkja6mPpOZJxLaCqNzh+tCAktUpx/whY6eZ7p6/qFrNtjqhBLIzoink/"></script>
+  <script src="/static/redaction-partenaire.js" integrity="sha384-6qNfSXtvQ5zr/U1F2cqYfiESONkcLJdN0wuZrP5kDtPoUtoFLFZ/7vj80NlqrKpX"></script>
   <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+"></script>
-  <script src="/static/carnet-notes.js" integrity="sha384-rNhlyqrjhKIiqL/xGL3y8DNWtllOzsqPT/r0od3igtWeT9N+xqDolMztixTiIng6"></script>
+  <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -229,7 +229,7 @@
     let MY_TOKEN = null, MY_COMPANY = "", RELOAD_JOURNAL = null;
     // Rédaction, vague 4 : l'écran « Mes parties du dossier de présentation » (redaction-partenaire.js).
     let RP = null;
-    const PIECE_TYPES = [["kbis", "Kbis"], ["fiscale", "Attestation fiscale"], ["sociale", "Attestation sociale (URSSAF)"], ["assurance", "Assurance (RC / décennale)"], ["rib", "RIB"], ["qualification", "Qualification / certificat"], ["dpgf_lot", "Tableau de prix du lot (prix de vente)"], ["autre", "Autre pièce"]];
+    const PIECE_TYPES = [["kbis", "Kbis"], ["fiscale", "Attestation fiscale"], ["sociale", "Attestation sociale (URSSAF)"], ["assurance", "Assurance (RC / décennale)"], ["rib", "RIB"], ["qualification", "Qualification / certificat"], ["dpgf_lot", "Tableau de prix de votre partie (prix de vente)"], ["autre", "Autre pièce"]];
     const PIECE_LABEL = Object.fromEntries(PIECE_TYPES);
     const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
     const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -273,7 +273,7 @@
       return fallback;
     }
 
-    const LABELS = { objet: "Objet", acheteur: "Acheteur", lieu: "Lieu d'exécution", duree: "Durée", delais: "Délais", lots: "Lots / allotissement", allotissement: "Allotissement", pieces_requises: "Pièces attendues", montant_estime: "Montant estimé", type_marche: "Type de marché", procedure: "Procédure", date_limite: "Date limite" };
+    const LABELS = { objet: "Objet", acheteur: "Acheteur", lieu: "Lieu d'exécution", duree: "Durée", delais: "Délais", lots: "Parties (lots)", allotissement: "Parties (lots)", pieces_requises: "Pièces attendues", montant_estime: "Montant estimé", type_marche: "Type de marché", procedure: "Procédure", date_limite: "Date limite" };
     function objLabel(x) {
       const name = x.nom || x.name || x.label || x.intitule || x.critere || x.libelle || x.titre || x.designation || x.lot || "";
       const weight = x.ponderation || x.poids || x.pourcentage || x.coefficient || x.pct || "";
@@ -659,7 +659,7 @@
       card.appendChild($(`<div class="muted small" style="margin-top:4px">En tant que <b>${role}</b>, renseignez votre part.</div>`));
       card.appendChild($(`<div id="cv-contrib-warn"></div>`));   // rempli si la convention est générée (syncContribWarn)
 
-      const company = inp("Votre entreprise"), lot = inp("Votre lot / périmètre (ex. Lot 2 — Démolition)");
+      const company = inp("Votre entreprise"), lot = inp("Votre partie (lot) / périmètre, par ex. « Démolition (lot 2) »");
       const siret = inp("SIRET (14 chiffres)"), forme = inp("Forme juridique (ex. SARL, SAS)");
       const adresse = inp("Adresse"), cp = inp("Code postal"), ville = inp("Ville");
       const quals = inp("Qualifications, séparées par des virgules (ex. Qualibat 1112, RGE)");
@@ -677,11 +677,11 @@
       const ca = inp("ex. 1850000"); ca.type = "number"; ca.min = "0"; ca.step = "1"; ca.inputMode = "decimal";
       const effectif = inp("ex. 14"); effectif.type = "number"; effectif.min = "0"; effectif.step = "1"; effectif.inputMode = "numeric";
       const repr = inp("Nom et prénom du représentant légal"), qualite = inp("Qualité (ex. Président, Gérante)");
-      const memoire = ta("Votre savoir-faire sur ce lot, pour le dossier de présentation commun", 4);
-      const note = ta("Un mot au chef de file (optionnel) — une question, une précision sur votre lot…", 2);
+      const memoire = ta("Votre savoir-faire sur cette partie du marché, pour le dossier de présentation commun", 4);
+      const note = ta("Un mot au chef de file (optionnel) — une question, une précision sur votre partie…", 2);
       const cNom = inp("Contact — nom"), cMail = inp("Email"), cTel = inp("Téléphone");
       card.appendChild(field("Entreprise", company));
-      card.appendChild(field("Lot / périmètre", lot));
+      card.appendChild(field("Partie (lot) / périmètre", lot));
       // Identité juridique → alimente votre DC1/DC2 dans le dossier commun.
       const idr = document.createElement("div"); idr.className = "row wrap"; idr.style.gap = "8px";
       [siret, forme].forEach(el => { el.style.flex = "1"; el.style.minWidth = "140px"; idr.appendChild(el); });
@@ -734,7 +734,7 @@
       }
       const prixBox = document.createElement("div"); prixBox.appendChild(prix);
       prixBox.appendChild($(`<div class="muted small" style="margin-top:4px">Seul montant visible par le chef de file.</div>`));
-      card.appendChild(field("Prix de vente de votre lot (€ HT)", prixBox, "C'est le seul montant que voit le chef de file : il en a besoin pour assembler l'offre commune."));
+      card.appendChild(field("Prix de vente de votre partie (€ HT)", prixBox, "C'est le seul montant que voit le chef de file : il en a besoin pour assembler l'offre commune."));
       const detBox = document.createElement("div"); detBox.className = "g-lockwrap"; detBox.style.position = "relative";
       const lockIcon = $(`<span style="display:none;position:absolute;right:10px;top:8px;line-height:0;color:var(--text-2,#6b7280)" aria-hidden="true">${ico("lock", 14)}</span>`);
       detBox.appendChild(detail); detBox.appendChild(lockIcon);
@@ -881,7 +881,7 @@
       bar.appendChild(btnSave); bar.appendChild(btnSubmit);
       // Rédaction, vague 4 (assemblage) : la part soumise d'un co-traitant nourrit « Qui fait quoi dans le
       // groupement », que lisent tous les membres (décision 3a) — à dire avant qu'il soumette.
-      if (!(d.invited && d.invited.role === "sous_traitant")) bar.appendChild($(tip("Une fois soumis, votre lot, vos qualifications et votre effectif sont repris dans la partie « Qui fait quoi dans le groupement » du dossier de présentation, que lisent tous les membres du groupement. Vos pièces, vos prix et votre détail chiffré n'y figurent jamais.")));
+      if (!(d.invited && d.invited.role === "sous_traitant")) bar.appendChild($(tip("Une fois soumis, votre partie du marché, vos qualifications et votre effectif sont repris dans la partie « Qui fait quoi dans le groupement » du dossier de présentation, que lisent tous les membres du groupement. Vos pièces, vos prix et votre détail chiffré n'y figurent jamais.")));
       bar.appendChild(msg);
       card.appendChild(bar);
       // Décliner : lien discret → confirmation → POST /decline → écran final (le lien renvoie ensuite 410).
@@ -1188,9 +1188,9 @@
           bodyHtml: "Voici ce que le chef de file va recevoir pour votre part :"
             + `<ul style="list-style:none;padding:0;margin:10px 0">`
             + li(!!company.value, "Entreprise : <b>" + (esc(company.value) || "—") + "</b>")
-            + li(!!lot.value, "Lot / périmètre : " + (esc(lot.value) || "—"))
+            + li(!!lot.value, "Partie (lot) / périmètre : " + (esc(lot.value) || "—"))
             + li(!!siret.value, "SIRET : " + (esc(siret.value) || "à compléter"))
-            + li(numOrNull(prix.value) != null, "Prix de vente du lot : " + (numOrNull(prix.value) != null ? "<b>" + esc(eur(numOrNull(prix.value))) + " HT</b>" : "à compléter"))
+            + li(numOrNull(prix.value) != null, "Prix de vente de votre partie : " + (numOrNull(prix.value) != null ? "<b>" + esc(eur(numOrNull(prix.value))) + " HT</b>" : "à compléter"))
             + li(serverHasDetail, "Détail du chiffrage : " + (serverHasDetail ? "chiffré (le chef de file ne le voit pas)" : "non renseigné"))
             + li(nRefs > 0, nRefs + " référence(s)")
             + li(!!memoire.value, "Paragraphe pour le dossier de présentation")
@@ -1276,7 +1276,7 @@
     function renderDpgf(api) {
       const CRY = window.AdjugoCrypto || null, D = CRY && CRY.dpgf;
       const el = $(`<section class="card pad dp-card" id="dpgf" tabindex="-1" style="margin-bottom:16px;outline:none" aria-labelledby="dp-title"></section>`);
-      const head = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 170px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="dp-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Mon tableau de prix</h2>${tip("Le détail de vos prix de vente pour votre lot, ligne par ligne : le règlement l'appelle souvent « décomposition du prix global et forfaitaire » et le demande avec l'offre.<br><br><b>Partagé avec le chef de file, au dépôt :</b> vos prix de vente, ligne par ligne, et leur total.<br><b>Jamais partagé :</b> vos coûts, vos marges, votre méthode. Les autres partenaires ne voient pas votre tableau de prix.<br><br>Vos lignes sont enregistrées <b>chiffrées dans votre navigateur</b>, avec le détail de votre chiffrage et le même code de récupération. Elles ne partent en clair qu'au dépôt, après votre relecture, dans un fichier au niveau du prix de vente.<br><br>Déposer ou retirer le tableau de prix ne modifie ni votre part soumise ni la convention.")}</span></div>`);
+      const head = $(`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 170px;min-width:0;display:flex;align-items:center;flex-wrap:wrap"><h2 class="cv-title" id="dp-title" style="margin:0;font-size:13.5px;font-weight:700;font-family:inherit;letter-spacing:0">Mon tableau de prix</h2>${tip("Le détail de vos prix de vente pour votre partie, ligne par ligne : le règlement l'appelle souvent « décomposition du prix global et forfaitaire » et le demande avec l'offre.<br><br><b>Partagé avec le chef de file, au dépôt :</b> vos prix de vente, ligne par ligne, et leur total.<br><b>Jamais partagé :</b> vos coûts, vos marges, votre méthode. Les autres partenaires ne voient pas votre tableau de prix.<br><br>Vos lignes sont enregistrées <b>chiffrées dans votre navigateur</b>, avec le détail de votre chiffrage et le même code de récupération. Elles ne partent en clair qu'au dépôt, après votre relecture, dans un fichier au niveau du prix de vente.<br><br>Déposer ou retirer le tableau de prix ne modifie ni votre part soumise ni la convention.")}</span></div>`);
       const pill = $(`<span class="pill neutral" style="font-size:11px">Pas encore déposé</span>`); head.appendChild(pill);
       el.appendChild(head);
       // Ce qui est partagé ou non : dans la bulle (i) du titre (règle : explications en bulle).
@@ -1297,9 +1297,9 @@
         cmpEl.innerHTML = "";
         const anyAmount = lignes.some(l => D.montant({ quantite: D.parseNum(l.quantite), pu: D.parseNum(l.pu) }) != null);
         if (!anyAmount) { /* rien à comparer tant qu'aucune ligne n'a de montant */ }
-        else if (prix == null) cmpEl.innerHTML = ico("circle-alert", 14, "margin-top:1px;color:var(--warning-text,#b8730a)") + "<span>Le prix de vente de votre lot n'est pas encore renseigné dans votre part.</span>";
-        else if (Math.abs(t - Number(prix)) < 0.005) cmpEl.innerHTML = ICO_OK(14) + "<span>Égal au prix de vente de votre lot (" + esc(eurHT(prix)) + ").</span>";
-        else cmpEl.innerHTML = ico("triangle-alert", 14, "margin-top:1px;color:var(--warning-text,#b8730a)") + "<span>Différent du prix de vente de votre lot (" + esc(eurHT(prix)) + ") : écart de " + esc(eurHT(Math.abs(t - Number(prix)))) + ".</span>";
+        else if (prix == null) cmpEl.innerHTML = ico("circle-alert", 14, "margin-top:1px;color:var(--warning-text,#b8730a)") + "<span>Le prix de vente de votre partie n'est pas encore renseigné dans votre part.</span>";
+        else if (Math.abs(t - Number(prix)) < 0.005) cmpEl.innerHTML = ICO_OK(14) + "<span>Égal au prix de vente de votre partie (" + esc(eurHT(prix)) + ").</span>";
+        else cmpEl.innerHTML = ico("triangle-alert", 14, "margin-top:1px;color:var(--warning-text,#b8730a)") + "<span>Différent du prix de vente de votre partie (" + esc(eurHT(prix)) + ") : écart de " + esc(eurHT(Math.abs(t - Number(prix)))) + ".</span>";
         if (dirtyEl) dirtyEl.style.display = dirty() ? "" : "none";
         icons();
       }
@@ -1399,7 +1399,7 @@
           + `<div class="dp-prev" tabindex="0" role="region" aria-label="Aperçu du fichier"><table><thead><tr>${cols.map((c, j) => `<th scope="col" class="${NUMC[j] ? "num" : ""}">${esc(c)}</th>`).join("")}</tr></thead>`
           + `<tbody>${data.map(r => `<tr>${r.map(td).join("")}</tr>`).join("")}</tbody>`
           + `<tfoot><tr><td></td><td class="des" data-label=""><b>${esc(tot[1])}</b></td><td></td><td></td><td></td><td class="num" data-label=""><b>${esc(tot[5])}</b></td></tr></tfoot></table></div>`;
-        const ecart = (prix != null && Math.abs(t - Number(prix)) >= 0.005) ? `<p style="margin:10px 0 0;color:var(--warning-text,#b8730a)">Le total (${esc(eurHT(t))}) diffère du prix de vente de votre lot (${esc(eurHT(prix))}) : le chef de file verra les deux montants.</p>` : "";
+        const ecart = (prix != null && Math.abs(t - Number(prix)) >= 0.005) ? `<p style="margin:10px 0 0;color:var(--warning-text,#b8730a)">Le total (${esc(eurHT(t))}) diffère du prix de vente de votre partie (${esc(eurHT(prix))}) : le chef de file verra les deux montants.</p>` : "";
         const ok = await openModal({
           title: "Relire et déposer votre tableau de prix",
           bodyHtml: `<p style="margin:0">Voici <b>exactement</b> le fichier que recevra le chef de file, et lui seul : ${esc(D.fileName(opts))}.</p>${tbl}${ecart}`

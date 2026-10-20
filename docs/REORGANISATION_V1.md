@@ -259,7 +259,7 @@ Retiré (§ 1.6) : `accueil-ruban` (ruban des 4 chiffres).
 | `vue-amont` | Projets à venir (masqué) |
 | `vue-kb` | Mon savoir-faire ; contient `kb-fiches-proposees` |
 | `vue-atelier` | Atelier du dossier de présentation ; contient `atelier-page-preparation-case`, `atelier-page-preparation`, `atelier-entretien`, `atelier-onglets`, `atelier-repartition` (« Qui écrit quoi ») |
-| `vue-pipeline`, `vue-cotraitants`, `vue-contacts`, `vue-documents`, `vue-invoices`, `vue-company`, `vue-preuves`, `vue-criteria`, `vue-team` | Une vue chacune (Mes marchés › Marchés, Partenaires › Mes partenaires, Partenaires › Contacts, Mes documents › Mes pièces, Mes marchés › Devis et factures, Mon entreprise › Identité, › Mes preuves, › Mes critères, Réglages › Collègues) |
+| `vue-pipeline`, `vue-cotraitants`, `vue-contacts`, `vue-documents`, `vue-invoices`, `vue-company`, `vue-preuves`, `vue-criteria`, `vue-tarifs`, `vue-team` | Une vue chacune (Mes marchés › Marchés, Partenaires › Mes partenaires, Partenaires › Contacts, Mes documents › Mes pièces, Mes marchés › Devis et factures, Mon entreprise › Identité, › Mes preuves, › Ce que je cherche (ex-Mes critères), › Tarifs (vague 2a, A3), Réglages › Collègues) |
 | `vue-compte` | Réglages › Mon compte : mot de passe, mes données (cartes venues de `vue-team`, § 1.3) |
 | `vue-billing` | Abonnement ; contient `billing-offres` (les cartes d'offre) |
 | `vue-admin` | Administration ; contient `admin-mesure` (écrans ouverts, § 1.1) |
@@ -276,7 +276,7 @@ Retiré (§ 1.6) : `accueil-ruban` (ruban des 4 chiffres).
 | `fenetres-atelier` (×5) | Fenêtres de l'atelier (dérogation, débit, vue, lots, plan) |
 | `tiroir-projet` | Tiroir d'un marché |
 | `fenetre-siret` | Activation par SIRET (1er lancement) |
-| `fenetre-confirmation` | Confirmation d'une action de la convention |
+| `fenetre-confirmation` | Fenêtre de confirmation de l'application : toutes les confirmations et saisies courtes, à la place des `confirm()` et `prompt()` du navigateur (vague 2a, A3 ; `docs/REORGANISATION_V2A.md`) |
 | `fenetre-fiche-partenaire` | Fiche d'un partenaire du réseau |
 | `fenetre-invitation` | Vague 2a : la fenêtre d'invitation unique (réseau, partenaire connu, registre) |
 | `fenetre-formulaire` | Fenêtre générique (formulaires) |

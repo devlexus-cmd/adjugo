@@ -318,7 +318,7 @@ _TABLE = {
         fournisseur=ANTHROPIC, json=True, anthropic=Reglages("adaptive", "medium", reserve_reflexion=4000),
         secours_sur=_SUR_ANTHROPIC, ancien=MODEL),
     "repartition": dict(
-        libelle="Répartition des lots dans un groupement",
+        libelle="Répartition des parties (lots) dans un groupement",
         fournisseur=ANTHROPIC, json=True, anthropic=Reglages("adaptive", "medium", reserve_reflexion=4000),
         secours_sur=_SUR_ANTHROPIC, ancien=MODEL),
     "acheteur_dce": dict(

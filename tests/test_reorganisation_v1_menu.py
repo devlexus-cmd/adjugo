@@ -197,7 +197,8 @@ console.log(JSON.stringify(res));
     assert r["reseau"]["onglets"] == ["Mes partenaires", "Réseau Adjugo", "Contacts"] and r["reseau"]["titre"] == "Partenaires"
     assert r["reseau"]["aide"] == "Trouvez des partenaires et faites-vous trouver Anciennement « Réseau »."
     assert r["kb"]["onglets"] == ["Mes pièces", "Mon savoir-faire"] and r["kb"]["titre"] == "Mes documents"
-    assert r["company"]["onglets"] == ["Identité", "Mes critères", "Mes preuves"] and r["preuves"]["titre"] == "Mon entreprise"
+    # Vague 2a (A3) : Mon entreprise en 4 onglets.
+    assert r["company"]["onglets"] == ["Identité", "Ce que je cherche", "Mes preuves", "Tarifs"] and r["preuves"]["titre"] == "Mon entreprise"
     # Réglages : pas d'onglets, le nom de l'écran ; Mon compte dit où étaient ses cartes.
     assert r["team"] == {"rub": "reglages", "onglets": [], "titre": "Collègues",
                          "aide": "Invitez vos collègues à collaborer sur vos dossiers Anciennement « Équipe »."}

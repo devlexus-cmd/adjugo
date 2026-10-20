@@ -126,7 +126,7 @@ def score_dce(details: dict, company: dict = None, criteria: dict = None) -> dic
     meaningful = (hay_w - _GENERIC) & (ent_w - _GENERIC)
     if not ent_w:
         bd.append(_crit("metier", "Adéquation métier", 18, 30, "inconnu",
-                        "Activité non renseignée (vos spécialités dans Mon entreprise, onglet « Mes critères »)"))
+                        "Activité non renseignée (vos spécialités dans Mon entreprise, onglet « Ce que je cherche »)"))
     elif meaningful:
         bd.append(_crit("metier", "Adéquation métier", 30, 30, "ok",
                         "Le marché recoupe votre activité (" + ", ".join(sorted(meaningful)[:3]) + ")"))

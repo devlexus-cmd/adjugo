@@ -345,7 +345,7 @@ def test_figer_offre(client, auth):
     _put(client, token, lot="Lot A")
     _submit(client, token)
     r = client.post(f"/api/projects/{pid}/offre/figer", headers=h, json={})
-    assert r.status_code == 422 and "prix de lot manquant" in r.text
+    assert r.status_code == 422 and "prix de sa partie manquant" in r.text   # vague 2a : « partie (lot) »
 
     # Avant figement : le membre ne voit PAS de total.
     fm = client.get(f"/api/invite/{token}").json()["for_member"]

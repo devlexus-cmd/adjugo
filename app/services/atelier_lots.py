@@ -59,20 +59,24 @@ MODE_GENERALE = "generale"     # d'autres lots ont leurs critères ; celui-ci su
 MODE_ILLISIBLE = "illisible"   # poids par lot dans un tableau non lu ligne à ligne : critères sans poids
 
 MSG_MODE = {
-    MODE_COMMUNE: "Le règlement ne distingue pas les critères par lot : la grille de « Comment vous serez noté » "
-                  "vaut pour ce lot.",
-    MODE_PROPRE: "Critères et poids écrits dans le règlement pour ce lot.",
-    MODE_GENERALE: "Adjugo n'a pas trouvé de critères propres à ce lot dans le règlement : la grille générale est "
-                   "reprise. Vérifiez dans le règlement.",
-    MODE_ILLISIBLE: "Le règlement donne des poids différents selon les lots, écrits d'une façon qu'Adjugo ne lit pas "
-                    "sans risque d'erreur (un tableau, ou « 60 % pour le lot 2, 40 % pour le lot 3 ») : les critères "
-                    "sont repris sans poids. Vérifiez le poids de chaque critère pour ce lot dans le règlement.",
+    # « partie (lot) » à l'écran (réorganisation, vague 2a, décision 10) ; une phrase citée du règlement garde « lot ».
+    MODE_COMMUNE: "Le règlement ne distingue pas les critères par partie (lot) : la grille de « Comment vous serez "
+                  "noté » vaut pour cette partie du marché.",
+    MODE_PROPRE: "Critères et poids écrits dans le règlement pour cette partie du marché (lot).",
+    MODE_GENERALE: "Adjugo n'a pas trouvé de critères propres à cette partie du marché (lot) dans le règlement : la "
+                   "grille générale est reprise. Vérifiez dans le règlement.",
+    MODE_ILLISIBLE: "Le règlement donne des poids différents selon les parties (lots), écrits d'une façon qu'Adjugo ne "
+                    "lit pas sans risque d'erreur (un tableau, ou « 60 % pour le lot 2, 40 % pour le lot 3 ») : les "
+                    "critères sont repris sans poids. Vérifiez le poids de chaque critère pour cette partie du marché "
+                    "dans le règlement.",
 }
 MSG_ORIGINE = {ORIGINE_REGLEMENT: "repéré dans le règlement", ORIGINE_ANALYSE: "repéré dans le règlement",
                ORIGINE_UTILISATEUR: "indiqué par vous"}
-MSG_CRITERE_ABSENT = ("« {c} » n'a pas été retrouvé dans la partie du règlement propre à ce lot : il n'entre pas dans "
-                      "le plan de ce lot. Vérifiez dans le règlement ; vous pouvez ajouter la partie vous-même.")
-MSG_POIDS_ABSENT = "Aucun poids n'est écrit pour ce critère dans la partie du règlement propre à ce lot : vérifiez-le."
+MSG_CRITERE_ABSENT = ("« {c} » n'a pas été retrouvé dans le passage du règlement propre à cette partie du marché (lot) : "
+                      "il n'entre pas dans le plan de son fichier. Vérifiez dans le règlement ; vous pouvez ajouter la "
+                      "partie vous-même.")
+MSG_POIDS_ABSENT = ("Aucun poids n'est écrit pour ce critère dans le passage du règlement propre à cette partie du "
+                    "marché (lot) : vérifiez-le.")
 
 
 def _flat(s) -> str:
@@ -314,13 +318,13 @@ def reperer(texte: str, details: Optional[dict] = None, pieces: Optional[list] =
 def message_lots(r: dict) -> str:
     n = len(r.get("lots") or [])
     if n >= 2:
-        msg = (f"Le règlement répartit ce marché en {n} lots. Si vous répondez à deux lots ou plus, Adjugo prépare des "
-               "parties communes, rédigées une fois pour tous vos lots, et des parties propres à chaque lot, avec un "
-               "fichier par lot à l'export.")
+        msg = (f"Le règlement découpe ce marché en {n} parties (lots). Si vous répondez à deux ou plus, Adjugo "
+               "prépare des parties communes, rédigées une fois pour toutes, et des parties propres à chaque partie du "
+               "marché, avec un fichier par partie à l'export.")
         a = r.get("annonce")
         if a and a != n:
-            msg += (f" Le règlement annonce {a} lots et Adjugo en a repéré {n} : vérifiez dans le règlement, vous pouvez "
-                    "ajouter un lot.")
+            msg += (f" Le règlement annonce {a} parties (lots) et Adjugo en a repéré {n} : vérifiez dans le "
+                    "règlement, vous pouvez ajouter une partie.")
         return msg
     return ""
 
@@ -912,9 +916,9 @@ def construire_plan(analysis: Optional[dict], lots: list, texte: str, pieces: li
 
 def message_plan(n_lots: int, n_communes: int, n_propres: int) -> str:
     c = f"{n_communes} partie{'s' if n_communes > 1 else ''} commune{'s' if n_communes > 1 else ''}"
-    p = f"{n_propres} partie{'s' if n_propres > 1 else ''} propre{'s' if n_propres > 1 else ''} à un lot"
-    return (f"Vous répondez à {n_lots} lots : {c}, rédigée{'s' if n_communes > 1 else ''} une fois pour tous vos "
-            f"lots, et {p} ; un fichier par lot à l'export.")
+    p = f"{n_propres} partie{'s' if n_propres > 1 else ''} propre{'s' if n_propres > 1 else ''} à l'une d'elles"
+    return (f"Vous répondez à {n_lots} parties du marché : {c}, rédigée{'s' if n_communes > 1 else ''} une fois "
+            f"pour toutes, et {p} ; un fichier par partie du marché à l'export.")
 
 
 # ── 6. Le nom de chaque fichier : celui du règlement, sinon le numéro et l'intitulé du lot ──────────────
@@ -992,7 +996,7 @@ def nom_du_lot(lot: dict, label: str, entreprise: str = "", regle: Optional[dict
         if not nom:
             return {"stem": defaut, "selon_reglement": False,
                     "message": f"Le règlement impose un nom de fichier (« {ecrit} ») : renseignez le nom de votre "
-                               "entreprise dans votre profil pour qu'Adjugo le suive."}
+                               "entreprise dans Mon entreprise, onglet « Identité », pour qu'Adjugo le suive."}
         t = _PH_NOM.sub(nom, t)
     if _PH_INTITULE.search(t):
         t = _PH_INTITULE.sub(intit or f"Lot {n}", t)
@@ -1007,7 +1011,7 @@ def nom_du_lot(lot: dict, label: str, entreprise: str = "", regle: Optional[dict
         return {"stem": defaut, "selon_reglement": False, "message": ""}
     return {"stem": stem, "selon_reglement": True,
             "message": f"Nommé comme le règlement l'exige : « {ecrit} »." + (
-                "" if a_un_lot else " Le numéro du lot est ajouté : un fichier par lot.") + (
+                "" if a_un_lot else " Le numéro de la partie (lot) est ajouté au nom : un fichier par partie du marché.") + (
                 f" Le règlement demande un fichier « .{ext.group(1).lower()} » : exportez dans ce format." if ext else "")}
 
 
@@ -1113,22 +1117,23 @@ def choisir(reperes: list, choisis: list, ajoutes: Optional[list] = None) -> lis
     for c in choisis or []:
         n = _num(c)
         if not n or n not in par_num:
-            raise LotsInvalides("Ce lot n'a pas été repéré dans le règlement : ajoutez-le avec son numéro et son intitulé.")
+            raise LotsInvalides("Cette partie (lot) n'a pas été repérée dans le règlement : ajoutez-la avec son numéro "
+                                "et son intitulé.")
         out[n] = dict(par_num[n])
     for a in ajoutes or []:
         if not isinstance(a, dict):
-            raise LotsInvalides("Indiquez le numéro et l'intitulé du lot.")
+            raise LotsInvalides("Indiquez le numéro et l'intitulé de la partie (lot).")
         n = _num(a.get("numero"))
         intit = _nettoyer(str(a.get("intitule") or ""))
         if not n:
-            raise LotsInvalides("Le numéro d'un lot est un nombre de 1 à 99.")
+            raise LotsInvalides("Le numéro d'une partie (lot) est un nombre de 1 à 99.")
         if len(intit) < 2:
-            raise LotsInvalides(f"Donnez l'intitulé du lot {n}, tel qu'il est écrit dans le règlement.")
+            raise LotsInvalides(f"Donnez l'intitulé de la partie (lot {n}), tel qu'il est écrit dans le règlement.")
         if n in out:
-            raise LotsInvalides(f"Le lot {n} est déjà dans la liste.")
+            raise LotsInvalides(f"La partie (lot {n}) est déjà dans la liste.")
         out[n] = {"numero": n, "intitule": _majuscule(intit), "phrase": "", "source": "", "origine": ORIGINE_UTILISATEUR}
     if len(out) > LOTS_CHOISIS_MAX:
-        raise LotsInvalides(f"Un dossier de présentation couvre au plus {LOTS_CHOISIS_MAX} lots.")
+        raise LotsInvalides(f"Un dossier de présentation couvre au plus {LOTS_CHOISIS_MAX} parties du marché.")
     return sorted(out.values(), key=lambda x: _cle_num(x["numero"]))
 
 
@@ -1166,14 +1171,15 @@ def proposition_du_lot(section, candidats: list, lots: dict, mots_de, proches) -
             continue
         if mots_lot and any(proches(w, c) for w in mots_de(m["lot"]) for c in mots_lot):
             hits.append((1, m))
-    lib = f"lot {n}" + (f" (« {intit[:80]} »)" if intit else "")
+    lib = f"partie (lot {n})" + (f" « {intit[:80]} »" if intit else "")
     if not hits:
         return {"redacteur": "chef_de_file", "invite_id": None, "nom": "", "lot": "", "mots": [],
-                "message": f"Proposé au chef de file : aucun partenaire n'a déclaré le {lib}."}
+                "message": f"Proposé au chef de file : aucun partenaire n'a déclaré la {lib}."}
     hits.sort(key=lambda x: -x[0])
     if len(hits) > 1 and hits[0][0] == hits[1][0]:
         return {"redacteur": "chef_de_file", "invite_id": None, "nom": "", "lot": "", "mots": [],
-                "message": f"Proposé au chef de file : plusieurs partenaires ont déclaré le {lib}, choisissez qui rédige."}
+                "message": f"Proposé au chef de file : plusieurs partenaires ont déclaré la {lib}, choisissez qui rédige."}
     m = hits[0][1]
     return {"redacteur": "partenaire", "invite_id": m["invite_id"], "nom": m["nom"], "lot": m["lot"], "mots": [],
-            "message": f"Proposé d'après le lot de {m['nom']} (« {m['lot'][:80]} ») : cette partie est celle du {lib}."}
+            "message": f"Proposé d'après la partie déclarée par {m['nom']} (« {m['lot'][:80]} ») : cette partie du dossier "
+                       f"est celle de la {lib}."}

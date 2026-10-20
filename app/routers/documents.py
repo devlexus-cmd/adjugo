@@ -18,6 +18,7 @@ from app.core.mime import file_headers, mime_for
 from app.core.uploads import read_upload_limited
 from app.models import User, Document, DocCategory
 from app.services.storage import get_storage
+from app.services.pieces_fin import ALERTE_JOURS, etat_fin, jour_paris
 
 settings = get_settings()
 router = APIRouter(prefix="/api/documents", tags=["Coffre-fort"])
@@ -68,28 +69,29 @@ def list_documents(
         for p in db.query(Project).filter(Project.id.in_(pids)).all():
             pnames[p.id] = p.name
 
-    result = []
-    for doc in docs:
-        days_until_exp = None
-        if doc.expiration_date:
-            days_until_exp = (doc.expiration_date - date.today()).days
+    today = jour_paris()
+    return [_doc_item(doc, pnames.get(doc.project_id), today) for doc in docs]
 
-        result.append({
-            "id": doc.id,
-            "name": doc.name,
-            "category": doc.category.value if doc.category else "autre",
-            "file_size": doc.file_size,
-            "mime_type": doc.mime_type,
-            "expiration_date": str(doc.expiration_date) if doc.expiration_date else None,
-            "days_until_expiration": days_until_exp,
-            "version": doc.version,
-            "created_at": doc.created_at.isoformat(),
-            "project_id": doc.project_id,
-            "folder": doc.folder or "",
-            "project_name": pnames.get(doc.project_id),
-        })
 
-    return result
+def _doc_item(doc: Document, project_name, today) -> dict:
+    """Une ligne de Mes documents. `fin` : l'état de la date de fin, le MÊME calcul que la pastille « pièces à
+    renouveler » et le courriel d'alerte (app.services.pieces_fin) ; None sans date."""
+    fin = etat_fin(doc.expiration_date, today)
+    return {
+        "id": doc.id,
+        "name": doc.name,
+        "category": doc.category.value if doc.category else "autre",
+        "file_size": doc.file_size,
+        "mime_type": doc.mime_type,
+        "expiration_date": str(doc.expiration_date) if doc.expiration_date else None,
+        "days_until_expiration": fin["jours"] if fin else None,
+        "fin": fin,
+        "version": doc.version,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "project_id": doc.project_id,
+        "folder": doc.folder or "",
+        "project_name": project_name,
+    }
 
 
 @router.post("/", status_code=201)
@@ -225,7 +227,9 @@ def rename_document(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Renommer un document (titre affiché dans le coffre-fort)."""
+    """Modifier une pièce de Mes documents : son nom, sa catégorie, sa date de fin (vague 2a, A3). Seuls les champs
+    présents changent. Une date de fin vide l'efface ; une date changée remet à zéro les alertes déjà envoyées, pour
+    que la nouvelle date ait les siennes (30 jours, 7 jours, le jour même)."""
     from app.core.demo_guard import refuser_demo
     refuser_demo(current_user, "gérer vos documents")     # défense en profondeur (middleware démo)
     doc = db.query(Document).filter(
@@ -234,12 +238,39 @@ def rename_document(
     ).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
-    name = (payload.get("name") or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Le nom ne peut pas être vide")
-    doc.name = name[:500]
+    if not isinstance(payload, dict) or not ({"name", "category", "expiration_date"} & set(payload)):
+        raise HTTPException(status_code=400, detail="Rien à modifier : indiquez un nom, une catégorie ou une date de fin.")
+    if "name" in payload:
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Le nom ne peut pas être vide")
+        doc.name = name[:500]
+    if "category" in payload:
+        cat = str(payload.get("category") or "")
+        if cat not in _VALID_CATS:
+            raise HTTPException(status_code=400, detail="Catégorie inconnue : choisissez-en une dans la liste.")
+        doc.category = DocCategory(cat)
+    if "expiration_date" in payload:
+        brut = payload.get("expiration_date")
+        fin = None
+        if brut not in (None, ""):
+            try:
+                fin = date.fromisoformat(str(brut)[:10])
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Date de fin illisible : choisissez-la dans le calendrier.")
+            if not (2000 <= fin.year <= 2100):
+                raise HTTPException(status_code=400, detail="Date de fin improbable : vérifiez l'année.")
+        if fin != doc.expiration_date:
+            doc.expiration_date = fin
+            doc.alert_30_sent = doc.alert_7_sent = doc.alert_day_sent = False
     db.commit()
-    return {"id": doc.id, "name": doc.name}
+    db.refresh(doc)
+    pname = None
+    if doc.project_id:
+        from app.models import Project
+        p = db.query(Project).filter(Project.id == doc.project_id).first()
+        pname = p.name if p else None
+    return _doc_item(doc, pname, jour_paris())
 
 
 @router.delete("/{doc_id}", status_code=204)
@@ -352,15 +383,17 @@ def download_document(
 
 @router.get("/expiring")
 def get_expiring_documents(
-    days: int = 30,
+    days: int = ALERTE_JOURS,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Récupérer les documents qui expirent dans les X prochains jours."""
+    """Les pièces à renouveler : date de fin passée, ou dans les X prochains jours (30 par défaut, comme la liste et
+    le courriel d'alerte : app.services.pieces_fin). Jour de Paris."""
     from datetime import timedelta
     # Bornage : days=99999999 provoquait un OverflowError (500) dans timedelta.
     days = max(0, min(int(days or 0), 3650))
-    threshold = date.today() + timedelta(days=days)
+    today = jour_paris()
+    threshold = today + timedelta(days=days)
 
     docs = db.query(Document).filter(
         Document.user_id.in_(member_ids(current_user, db)),
@@ -374,5 +407,6 @@ def get_expiring_documents(
         "id": d.id,
         "name": d.name,
         "expiration_date": str(d.expiration_date),
-        "days_remaining": (d.expiration_date - date.today()).days,
+        "days_remaining": (d.expiration_date - today).days,
+        "fin": etat_fin(d.expiration_date, today),
     } for d in docs]

@@ -32,11 +32,12 @@ PARIS = ZoneInfo("Europe/Paris")
 # les onglets « À venir » et « Mes alertes » de Trouver des marchés, comptés à chaque affichage (« sourcing » compte
 # chaque ouverture de Trouver des marchés, quel que soit l'onglet). Mes marchés en liste filtrable (vague 2a, A2) :
 # « bilan » (Mes marchés › Bilan) est une vue ; « shared » et « consortiums » comptent les filtres « Où je suis
-# partenaire » et « À plusieurs » de la liste (leurs anciens écrans, pour comparer avant et après).
+# partenaire » et « À plusieurs » de la liste (leurs anciens écrans, pour comparer avant et après). Vague 2a (A3) :
+# « tarifs », l'onglet « Tarifs » de Mon entreprise, sorti d'« Identité » (une vue).
 ECRANS = frozenset({
     "dashboard", "sourcing", "amont", "pipeline", "aodetail", "atelier", "cotraitants", "reseau", "contacts",
     "documents", "kb", "company", "preuves", "criteria", "invoices", "consortiums", "shared", "sharedao",
-    "team", "billing", "admin", "compte", "avenir", "alertes", "bilan",
+    "team", "billing", "admin", "compte", "avenir", "alertes", "bilan", "tarifs",
 })
 
 JOURS_MAX = 400          # relevé : au plus ~13 mois d'un coup
