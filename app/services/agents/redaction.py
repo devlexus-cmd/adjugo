@@ -286,11 +286,13 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
                 warnings.append(f"{cid}: {e}")
     except Exception as e:
         warnings.append(f"formulaires officiels indisponibles : {e}")
-    if _grp_conv and db is not None and project_id:
-        # Formulaires produits APRÈS la convention : compte pour l'état « prêt à déposer ».
+    if db is not None and project_id:
+        # Formulaires produits : ils comptent pour « Prêt à déposer ». Pour un groupement, seulement s'ils datent
+        # d'APRÈS la convention (depot_readiness compare l'horodatage à sa génération) ; pour une entreprise seule,
+        # tels quels (réorganisation, vague 2a, A2 : depot_readiness_seul, DC1, DC2, ATTRI1 ou DUME).
         from app.services.groupement_convention import mark_cerfa_generated
-        mark_cerfa_generated(db, project_id, [c["id"] for c in cerfa_files if c["id"] in ("dc1", "dc2", "attri1")],
-                             _grp_conv.get("convention_version"))
+        mark_cerfa_generated(db, project_id, [c["id"] for c in cerfa_files if c["id"] in ("dc1", "dc2", "attri1", "dume")],
+                             (_grp_conv or {}).get("convention_version"))
 
     # ── Formulaire national supplémentaire (PL, PT, IT, NL, RO) ──
     if (country or "FR").upper() != "FR":

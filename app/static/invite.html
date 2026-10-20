@@ -12,9 +12,9 @@
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
   <script src="/static/cotraitance-crypto.js" integrity="sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs"></script>
-  <script src="/static/redaction-partenaire.js" integrity="sha384-6u2dcizU1R7TgbFpANxwY3jDSA7O0EQpkhqXfp1A4RwHslj7somFoJxnE+iDz027"></script>
+  <script src="/static/redaction-partenaire.js" integrity="sha384-a3BQ5CRAqvM5N/hPEMkni8dSIvc/2YxRRPkFUoPmocI3uCl+FckaoEW302Jwsjlb"></script>
   <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+"></script>
-  <script src="/static/carnet-notes.js" integrity="sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6"></script>
+  <script src="/static/carnet-notes.js" integrity="sha384-rNhlyqrjhKIiqL/xGL3y8DNWtllOzsqPT/r0od3igtWeT9N+xqDolMztixTiIng6"></script>
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
@@ -565,7 +565,7 @@
           act.appendChild(b);
         } else {
           act.appendChild($(`<a class="btn sm primary" href="/app" target="_blank" rel="noopener">${ico("log-in", 14)}Me connecter pour accepter</a>`));
-          act.insertAdjacentHTML("beforeend", tip("Connectez-vous avec le compte Adjugo qui a reçu l'invitation, puis ouvrez <b>Partenaires › Réseau Adjugo › Invitations reçues</b> pour l'accepter."));
+          act.insertAdjacentHTML("beforeend", tip("Connectez-vous avec le compte Adjugo qui a reçu l'invitation, puis ouvrez <b>Mes marchés</b>, filtre « Où je suis partenaire », pour l'accepter."));
         }
         box.appendChild(act); box.appendChild(live);
         head.appendChild(box);

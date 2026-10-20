@@ -2,8 +2,8 @@
 Co-traitance v2 — vague 3 : écrans du réseau de partenaires (garde-fous du front).
 
 Vérifie, dans app.html / app.js / invite.html :
-- la vue « Réseau » (Mon profil partenaire · Annuaire · Mon historique · Invitations reçues), le
-  panneau « Partenaires pour ce marché » (« Qui me complète ? ») et les modales existent ;
+- la vue « Réseau » (Mon profil partenaire · Annuaire · Mon historique ; les invitations reçues sont dans Mes
+  marchés depuis la vague 2a), le panneau « Qui me complète ? » et les modales existent ;
 - aucun v-html / innerHTML sur ces écrans (noms, présentations, références = texte de tiers) ;
 - aucun pourcentage, note ou étoile dans ces écrans (le seul % reste le score de groupement) ;
 - zéro émoji, zéro jargon (« consortium », « pitch », « matching », « réciprocité ») ;
@@ -60,8 +60,11 @@ def test_vue_reseau_et_navigation():
     # Menu par rubriques (réorganisation, vague 1, 1.3) : « Réseau Adjugo » est un onglet de la rubrique Partenaires
     # (RUBRIQUES, app.js), ouvert par go('reseau') ; ses onglets internes restent jusqu'à la vague 2a.
     assert '{ view: "reseau", label: "Réseau Adjugo", ic: "network", ancien: "Réseau" }' in JS and "openReseau(" in HTML
-    for libelle in ("Mon profil partenaire", "Annuaire", "Mon historique", "Invitations reçues"):
+    for libelle in ("Mon profil partenaire", "Annuaire", "Mon historique"):
         assert libelle in SECTION, libelle
+    # Réorganisation, vague 2a (A2) : les invitations reçues se traitent dans Mes marchés (en tête de la liste).
+    assert "Invitations reçues" not in _no_html_comments(SECTION)
+    assert "Invitations à traiter" in zone(HTML, "mes-marches-invitations")
     # Réorganisation, vague 1 (1.5) : la carte s'appelle « Qui me complète ? » ; son bouton cherche.
     assert '<h3 id="pm-h">Qui me complète ?</h3>' in PANEL and "Chercher des partenaires" in PANEL
     assert "Partenaires pour ce marché" not in PANEL
@@ -96,7 +99,13 @@ def test_js_reseau_sans_html_brut_ni_pourcentage():
 
 def test_invitation_reseau_adresse_jamais_affichee():
     rinv = zone(HTML, "fenetre-invitation")
-    assert "recipient" not in rinv and "email" not in rinv.lower().replace("aucun email", "")
+    assert "recipient" not in rinv
+    # Réorganisation, vague 2a (A2) : la fenêtre unique a aussi le cas « partenaire connu », dont l'email est celui que
+    # la PME saisit elle-même ; ce champ n'existe que dans ce cas, jamais pour une entreprise du réseau.
+    connu = rinv[rinv.index('<template v-if="rinv.kind===\'connu\'">'):]
+    connu = connu[:connu.index("</template>")]
+    sans_connu = rinv.replace(connu, "")
+    assert 'v-model="rinv.email"' in connu and "rinv.email" not in sans_connu and 'type="email"' not in sans_connu
     assert "vous verrez l'adresse du partenaire quand il aura accepté" in MODALS
     assert "deja_invite" in MODALS and "sur_le_reseau" in MODALS
     # Liste des invitations du marché : pas de lien à copier pour une invitation réseau, adresse masquée.
@@ -110,7 +119,7 @@ def test_statut_a_decline_partout():
     assert "inviteDeclinedFor(c.name)" in PANEL                      # cartes réseau et SIRENE
     assert "inviteDeclinedFor(m.name)" in HTML                       # composition retenue
     assert "inviteDeclinedFor(c.name)" in zone(HTML, "plusieurs-manques")   # candidats (« Qui l'a ? »)
-    assert "Vous avez décliné" in SECTION                            # invitations reçues
+    assert "Vous avez décliné" in zone(HTML, "mes-marches-invitations")   # invitations reçues (Mes marchés, vague 2a)
 
 
 def test_simulation_reseau_envoie_seulement_l_identifiant():

@@ -62,25 +62,32 @@ ZONES = {
     "accueil": ["vue-dashboard", "accueil-ce-qui-a-change", "accueil-premiers-pas", "accueil-reseau", "accueil-amont",
                 "accueil-grille", "accueil-flux", "accueil-rail", "accueil-bilan", "accueil-carnet"],
     # Page du marché en 4 étapes (vague 1, 1.5) : la barre, une section par étape, le pied de page ; « Prêt à
-    # déposer » a quitté la carte de la convention (convention-pret-a-deposer → marche-pret-a-deposer).
+    # déposer » a quitté la carte de la convention (convention-pret-a-deposer → marche-pret-a-deposer). Vague 2a (A2) :
+    # plus de formulaire d'invitation dans la page (la fenêtre unique), la liste à cocher entre dans « Prêt à déposer »
+    # (marche-avant-depot retiré), « Qui me complète ? » en trois réservoirs puis la recherche dans la zone.
     "marche": ["vue-aodetail", "marche-entete", "marche-resultat", "marche-carnet", "marche-etapes", "marche-lire",
                "marche-decider", "marche-preparer", "marche-deposer", "marche-pied", "marche-analyse",
                "marche-couverture", "marche-questions", "marche-grille", "marche-plusieurs", "plusieurs-manques",
                "plusieurs-simulation", "marche-qui-me-complete", "marche-convention", "marche-pret-a-deposer",
                "marche-prix", "marche-dossier-presentation", "marche-pieces", "pieces-documents-reponse",
                "pieces-a-fournir", "marche-client", "marche-partenaires", "marche-reseau", "marche-preparation",
-               "marche-commande-groupement", "marche-inviter", "marche-inviter-formulaire", "marche-invitations",
+               "marche-commande-groupement", "marche-inviter", "marche-invitations",
                "marche-contributions", "marche-suivi-groupement", "marche-coffre-croise", "marche-offre-commune",
                "marche-journal-acces", "marche-devis-suivi", "marche-dossier-fichiers", "marche-actions",
-               "marche-taches-plusieurs", "marche-avant-depot", "marche-export"],
+               "marche-taches-plusieurs", "marche-export", "complete-reseau", "complete-mes-partenaires",
+               "complete-zone", "complete-recherche"],
     "trouver": ["vue-sourcing", "trouver-recherche", "trouver-radar", "trouver-alertes", "trouver-carte",
                 "trouver-analyse"],
     "vues": ["vue-amont", "vue-kb", "kb-fiches-proposees", "vue-atelier", "atelier-page-preparation-case",
              "atelier-page-preparation", "atelier-entretien", "atelier-onglets", "atelier-repartition",
              "vue-pipeline", "vue-cotraitants", "vue-contacts", "vue-documents", "vue-invoices", "vue-company",
              "vue-preuves", "vue-criteria", "vue-team", "vue-compte", "vue-billing", "billing-offres", "vue-admin", "admin-mesure",
-             "vue-consortiums", "vue-reseau", "reseau-onglets", "reseau-profil", "reseau-annuaire",
-             "reseau-historique", "reseau-recues", "vue-shared", "vue-sharedao-attente", "vue-sharedao"],
+             "vue-reseau", "reseau-onglets", "reseau-profil", "reseau-annuaire", "reseau-historique",
+             "vue-sharedao-attente", "vue-sharedao",
+             # Mes marchés en liste filtrable et Bilan en onglet (vague 2a, A2) : vue-shared, vue-consortiums et
+             # reseau-recues y fondent.
+             "mes-marches-filtres", "mes-marches-invitations", "mes-marches-liste", "mes-marches-plusieurs",
+             "mes-marches-partenaire", "vue-bilan", "bilan-gagne-perdu", "bilan-carnet"],
     "partage": ["partage-entete", "partage-grille", "partage-pourquoi", "partage-convention", "partage-redaction",
                 "partage-pieces", "partage-ma-part", "partage-tableau-prix", "partage-coffre-croise",
                 "partage-journal"],
@@ -121,8 +128,15 @@ def test_chaque_zone_se_decoupe_et_reste_a_sa_place():
         assert zone(HTML, n) in sharedao, n
     for n in ("trouver-recherche", "trouver-radar", "trouver-alertes", "trouver-carte", "trouver-analyse"):
         assert zone(HTML, n) in zone(HTML, "vue-sourcing"), n
-    for n in ("reseau-onglets", "reseau-profil", "reseau-annuaire", "reseau-historique", "reseau-recues"):
+    for n in ("reseau-onglets", "reseau-profil", "reseau-annuaire", "reseau-historique"):
         assert zone(HTML, n) in zone(HTML, "vue-reseau"), n
+    for n in ("mes-marches-filtres", "mes-marches-invitations", "mes-marches-liste", "mes-marches-plusieurs",
+              "mes-marches-partenaire"):
+        assert zone(HTML, n) in zone(HTML, "vue-pipeline"), n
+    for n in ("bilan-gagne-perdu", "bilan-carnet"):
+        assert zone(HTML, n) in zone(HTML, "vue-bilan"), n
+    for n in ("complete-reseau", "complete-mes-partenaires", "complete-zone", "complete-recherche"):
+        assert zone(HTML, n) in zone(HTML, "marche-qui-me-complete"), n
     # Le menu est bien la barre latérale, le contenu contient toutes les vues.
     assert "go('dashboard')" in zone(HTML, "menu") and "<section" not in zone(HTML, "menu")
     assert zone(HTML, "menu-reglages") in zone(HTML, "menu")
@@ -516,7 +530,9 @@ def test_commentaire_de_l_inscription_a_jour():
 # Décision 16 : chaque libellé renommé (vague 0) et chaque libellé du menu ont leur néerlandais et leur espagnol.
 RENOMMES = ["Déposé", "Pas encore déposé", "Supprimer ce marché", "Suivi du groupement", "Tableau de prix reçu",
             "Mon tableau de prix", "Préparer mon tableau de prix", "Marché lié (facultatif)", "Registre officiel",
-            "Registre officiel des entreprises", "Entreprises du registre officiel", "Chercher dans le registre officiel",
+            # « Entreprises du registre officiel » est devenu « Entreprises de la zone » (vague 2a, A2 : les réservoirs
+            # de « Qui me complète ? », tests/test_reorganisation_v2a_marches_invitations.py).
+            "Registre officiel des entreprises", "Chercher dans le registre officiel",
             "Chercher aussi dans le registre officiel", "Aucune activité récente de vos partenaires.",
             "Trouver des partenaires (avant la publication)", "Identité (pour vos formulaires officiels DC1, DC2)",
             "Formulaires officiels pré-remplis, à relire (DC1, DC2, DUME)", "Suivez vos marchés étape par étape",

@@ -518,7 +518,7 @@ def test_ecrans_messages_et_promesses():
     assert 'this.notify("Dossier commun assemblé et téléchargé")' not in js
     assert 'this.notify("Documents générés et archivés dans le dossier")' not in js
     assert "dossierToast(" in js and "cexportWarn[pid] = (r.dossier.warnings || []).slice();" in js
-    assert "cexportWarn[cs.project_id]" in html and "'aw'+i" in html
+    assert "cexportWarn[p.id]" in html and "'aw'+i" in html   # Mes marchés, filtre « À plusieurs » (vague 2a, A2)
     # Le message suit l'état d'avant (une ligne déjà dans le plan n'y est pas « ajoutée »).
     assert '"Poids enregistré"' in js and '"Critère confirmé"' in js
     # Aucune couleur indéfinie.

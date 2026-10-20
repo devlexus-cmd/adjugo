@@ -57,12 +57,14 @@ const RUBRIQUES = [
     { view: "sourcing", sous: "avenir", label: "À venir", ic: "calendar-clock", ancien: "Radar des échéances" },
     { view: "sourcing", sous: "alertes", label: "Mes alertes", ic: "bell", ancien: "Alertes automatiques" },
     { view: "amont", label: "Projets à venir", ic: "calendar-clock", si: "projets_a_venir" }] },
+  // Vague 2a (A2) : « Où je suis partenaire » et « À plusieurs » sont des FILTRES de la liste (plus des onglets) ; les
+  // vues « shared » et « consortiums » n'existent plus que comme raccourcis de go() vers ces filtres.
   { k: "marches", label: "Mes marchés", ic: "folder-kanban",
-    vues: ["pipeline", "shared", "consortiums", "invoices", "aodetail", "atelier", "sharedao"], onglets: [
-    { view: "pipeline", label: "Marchés", ic: "folder-kanban" },
-    { view: "shared", label: "Où je suis partenaire", ic: "inbox", ancien: "Partagé avec moi", pastille: "partenaire" },
-    { view: "consortiums", label: "À plusieurs", ic: "handshake", ancien: "Mes groupements" },
-    { view: "invoices", label: "Devis et factures", ic: "receipt", ancien: "Devis & factures" }] },
+    vues: ["pipeline", "shared", "consortiums", "invoices", "bilan", "aodetail", "atelier", "sharedao"], onglets: [
+    { view: "pipeline", label: "Marchés", ic: "folder-kanban", pastille: "partenaire",
+      avant: "« Où je suis partenaire » (anciennement « Partagé avec moi ») et « À plusieurs » (anciennement « Mes groupements ») sont des filtres de cette liste." },
+    { view: "invoices", label: "Devis et factures", ic: "receipt", ancien: "Devis & factures" },
+    { view: "bilan", label: "Bilan", ic: "chart-column", avant: "« Où vous gagnez / perdez » était sur l'accueil." }] },
   { k: "partenaires", label: "Partenaires", ic: "handshake", vues: ["cotraitants", "reseau", "contacts"], onglets: [
     { view: "cotraitants", label: "Mes partenaires", ic: "handshake" },
     { view: "reseau", label: "Réseau Adjugo", ic: "network", ancien: "Réseau" },
@@ -80,6 +82,37 @@ const RUBRIQUES = [
     { view: "compte", label: "Mon compte", ic: "circle-user", avant: "Votre mot de passe et vos données étaient dans « Équipe »." },
     { view: "admin", label: "Administration", ic: "shield", si: "admin" }] },
 ];
+// ══════════ Mes marchés en liste filtrable (réorganisation, vague 2a, A2 ; contrat docs/REORGANISATION_V2A.md) ══════════
+// Une seule liste réunit ce que montraient « Mes marchés », « Où je suis partenaire » et « À plusieurs » : mes marchés
+// (/api/projects/), ceux d'autres entreprises où je suis partenaire (/api/shared) et mes groupements (/api/consortiums),
+// TELS QUE le serveur les renvoie — rien de plus n'est demandé ni montré. Filtres : Tous, Je pilote, Où je suis
+// partenaire, À plusieurs (mes marchés avec au moins un partenaire invité, et ceux où je suis partenaire). Groupés par
+// statut, dans l'ordre `ordre` (statuses2). Un marché où je suis partenaire n'a pas de statut à lui : « Déposé » quand
+// le chef de file l'a marqué déposé (étape du groupement que son espace lui montre), « En cours » sinon.
+const MM_FILTRES = ["tous", "pilote", "partenaire", "plusieurs"];
+// Nom d'entreprise comparable (sans accents, minuscules, espaces simples) : la règle du serveur (groupement_members.nom_cle).
+function nomCle(s) { return String(s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/\s+/).filter(Boolean).join(" "); }
+function statutPartenaire(s) { return s && s.groupement && s.groupement.state === "depose" ? "depose" : "en_cours"; }
+function listeMesMarches(projets, partages, groupements, filtre, ordre) {
+  const f = MM_FILTRES.indexOf(filtre) >= 0 ? filtre : "tous";
+  const plus = {};
+  (groupements || []).forEach(c => { if (c && c.partners) plus[c.project_id] = true; });
+  const statut = p => p.status || "nouveau";
+  const pilotes = f === "partenaire" ? [] : (projets || []).filter(p => p && (f !== "plusieurs" || plus[p.id]));
+  const partenaires = f === "pilote" ? [] : (partages || []).filter(Boolean);
+  const cles = (ordre || []).slice();
+  pilotes.map(statut).concat(partenaires.map(statutPartenaire)).forEach(k => { if (cles.indexOf(k) < 0) cles.push(k); });
+  return cles.map(k => ({ k, pilotes: pilotes.filter(p => statut(p) === k), partenaires: partenaires.filter(x => statutPartenaire(x) === k) }))
+    .filter(g => g.pilotes.length || g.partenaires.length);
+}
+// Invitations reçues par le réseau (anciennement l'onglet « Invitations reçues » du Réseau) montrées en tête de la liste :
+// celles à accepter ou décliner, celles déclinées pendant cette visite, et une invitation acceptée seulement si son marché
+// n'est pas déjà dans la liste (acceptée par un collègue : « Voir l'invitation »). Rien n'y disparaît par rapport à avant.
+function invitationsATraiter(recues, partages) {
+  const dans = new Set((partages || []).map(x => x && x.token).filter(Boolean));
+  return (recues || []).filter(i => i && (i._declined || i.statut !== "acceptee" || !dans.has(i.token)));
+}
+
 // Nom affiché d'un dossier rangé (réorganisation, vague 1) : la clé stockée ne change pas (« CERFA », « DCE »,
 // « Mémoire technique », app/services/dossier.py), seul le nom lu par le client.
 const DOSSIERS_AFFICHES = { "CERFA": "Formulaires officiels", "DCE": "Dossier du marché",
@@ -124,20 +157,24 @@ function noteReorgVisible(user, etat, maintenant) {
 // paramètres des liens envoyés (?shared=, ?verify=, ?reset=, ?inscription) sont lus au démarrage, comme avant.
 // `ADRESSES` : vue → chemin. Les pages de détail portent un identifiant : /app/marches/12 (le marché),
 // /app/marches/12/dossier-de-presentation (l'atelier), /app/marches/partenaire/34 (un marché où vous êtes partenaire :
-// l'identifiant du marché, jamais le jeton d'invitation). Contrat : docs/REORGANISATION_V2A.md, A1.
+// l'identifiant du marché, jamais le jeton d'invitation). Contrat : docs/REORGANISATION_V2A.md, A1 et réunion.
+// Réunion des chantiers A1 et A2 : « Où je suis partenaire » et « À plusieurs » sont des FILTRES de la liste de Mes
+// marchés (plus des vues) ; chaque filtre garde son adresse (`ADRESSES_MES_MARCHES`), et l'ancienne adresse des
+// invitations reçues du Réseau (/app/partenaires/reseau/invitations) mène au filtre où elles se traitent maintenant.
 const ADRESSES = {
   dashboard: "", sourcing: "trouver", amont: "trouver/projets-a-venir",
-  pipeline: "marches", shared: "marches/partenaire", consortiums: "marches/a-plusieurs", invoices: "marches/devis-et-factures",
+  pipeline: "marches", invoices: "marches/devis-et-factures", bilan: "marches/bilan",
   cotraitants: "partenaires", reseau: "partenaires/reseau", contacts: "partenaires/contacts",
   documents: "documents", kb: "documents/savoir-faire",
   company: "entreprise", criteria: "entreprise/criteres", preuves: "entreprise/preuves",
   team: "reglages/collegues", billing: "reglages/abonnement", compte: "reglages/compte", admin: "reglages/administration",
 };
 const ADRESSES_TROUVER = { avenir: "a-venir", alertes: "alertes" };                 // onglets de Trouver des marchés
-const ADRESSES_RESEAU = { annuaire: "annuaire", historique: "historique", recues: "invitations" };   // « profil » : la vue
+const ADRESSES_RESEAU = { annuaire: "annuaire", historique: "historique" };   // « profil » : la vue
+const ADRESSES_MES_MARCHES = { pilote: "je-pilote", partenaire: "partenaire", plusieurs: "a-plusieurs" };   // « tous » : la vue
 const ADRESSE_ATELIER = "dossier-de-presentation";
 function _adrId(n) { const t = String(n == null ? "" : n); return /^[1-9][0-9]{0,11}$/.test(t) ? t : ""; }
-// Chemin de l'écran décrit par `e` ({ view, sous, projet, partage, reseau }) ; null si l'écran n'a pas d'adresse (une
+// Chemin de l'écran décrit par `e` ({ view, sous, projet, partage, reseau, filtre }) ; null si l'écran n'a pas d'adresse (une
 // page de détail sans son identifiant) : l'adresse ne change pas.
 function adresseDe(e) {
   e = e || {};
@@ -148,6 +185,7 @@ function adresseDe(e) {
   let c = "/app" + (ADRESSES[e.view] ? "/" + ADRESSES[e.view] : "");
   if (e.view === "sourcing" && ADRESSES_TROUVER[e.sous]) c += "/" + ADRESSES_TROUVER[e.sous];
   if (e.view === "reseau" && ADRESSES_RESEAU[e.reseau]) c += "/" + ADRESSES_RESEAU[e.reseau];
+  if (e.view === "pipeline" && ADRESSES_MES_MARCHES[e.filtre]) c += "/" + ADRESSES_MES_MARCHES[e.filtre];
   return c;
 }
 // L'écran que demande un chemin : null hors de /app ; { view: "dashboard", inconnue: true } pour un chemin inconnu.
@@ -165,6 +203,8 @@ function etatDeAdresse(chemin) {
   for (const v of Object.keys(ADRESSES)) if (ADRESSES[v] && ADRESSES[v] === r) return v === "sourcing" ? { view: v, sous: "publies" } : { view: v };
   for (const k of Object.keys(ADRESSES_TROUVER)) if (r === ADRESSES.sourcing + "/" + ADRESSES_TROUVER[k]) return { view: "sourcing", sous: k };
   for (const k of Object.keys(ADRESSES_RESEAU)) if (r === ADRESSES.reseau + "/" + ADRESSES_RESEAU[k]) return { view: "reseau", reseau: k };
+  for (const k of Object.keys(ADRESSES_MES_MARCHES)) if (r === ADRESSES.pipeline + "/" + ADRESSES_MES_MARCHES[k]) return { view: "pipeline", filtre: k };
+  if (r === ADRESSES.reseau + "/invitations") return { view: "pipeline", filtre: "partenaire" };   // invitations reçues (A2)
   return { view: "dashboard", inconnue: true };
 }
 
@@ -284,7 +324,7 @@ function listeAFaire(d, aujourdhui) {
   (d.recues || []).filter(i => i && !i._declined && i.statut !== "acceptee").forEach(i => out.push({
     k: "invitation-" + i.token, ic: "inbox", rang: 2, titre: "Invitation à répondre ensemble",
     detail: (i.project || "Marché") + (i.mandataire ? " · chef de file : " + i.mandataire : ""), cta: "Voir l'invitation",
-    cible: { view: "reseau", reseau: "recues" } }));
+    cible: { view: "shared" } }));      // Mes marchés, filtre « Où je suis partenaire » (A2)
   (d.projects || []).forEach(p => {
     if (!p || p.deleted_at || ["suivi", "nouveau", "decide", "en_cours"].indexOf(p.status || "nouveau") < 0 || auj === null) return;
     const t = jour(p.deadline); if (t === null) return;
@@ -1051,6 +1091,7 @@ const __adjApp = createApp({
       // onglet interne de Trouver des marchés ; note « Ce qui a changé » (1.8), état gardé dans ce navigateur.
       navReglages: (function(){ try { return localStorage.getItem("adjugo_nav_reglages") === "1"; } catch(e){ return false; } })(),
       trouverOnglet: "publies",
+      mmFiltre: "tous",        // Mes marchés (vague 2a, A2) : tous | pilote | partenaire | plusieurs
       reorgEtat: (function(){ try { return JSON.parse(localStorage.getItem("adjugo_reorg_v1") || "{}") || {}; } catch(e){ return {}; } })(),
       auth: { mode: "login", email: "", password: "", full_name: "", company_name: "", resetToken: "", sent: false },
       stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], docQuery: "", docSort: "recent", expiring: [],
@@ -1087,12 +1128,12 @@ const __adjApp = createApp({
                // Mesure d'usage (réorganisation, vague 1, 1.1) : ouvertures par écran, 30 derniers jours.
                mesure: { data: null, loading: false, error: "" } },
       cookiesOk: (function(){ try { return localStorage.getItem("adjugo_cookies_ok") === "1"; } catch(e){ return true; } })(),
-      predepot: [false, false, false, false],
+      // « À vérifier vous-même » (vague 2a, A2) : ce qu'Adjugo ne peut pas vérifier. Les pièces manquantes et le dépôt
+      // sont dans la liste « Prêt à déposer » elle-même (contrôles du serveur, « Marquer déposé »).
+      predepot: [false, false],
       predepotSteps: [
         "Relisez chaque formulaire officiel. <b>Signez-le si le règlement l'exige</b> ; sinon, la signature vient à l'attribution.",
-        "Vérifiez le <b>taux de TVA</b> et les montants du formulaire ATTRI1.",
-        "Ajoutez les pièces <b>« manquantes »</b> de la liste (attestations fiscale/sociale, assurances…).",
-        "Déposez avant la <b>date limite</b> sur la plateforme de dépôt indiquée dans l'avis du marché."
+        "Vérifiez le <b>taux de TVA</b> et les montants de l'acte d'engagement (ATTRI1)."
       ],
       discover: { open: false, trade: "", dept: "", q: "", results: [], loading: false, total: 0 }, trades: [], uploading: false,
       cpvList: [
@@ -1161,19 +1202,19 @@ const __adjApp = createApp({
         marketEst: null, marketEstBusy: false,
       },
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
-            cotraitants: [], stOpen: false, st: { trade: "", dept: "", loading: false, results: [] },
+            cotraitants: [], st: { trade: "", dept: "", loading: false, results: [] },
             documents: [], checklist: null, buyer: null, buyerLoading: false, group: null,
             chkHelp: null, grp: _grpInit(), conv: _convInit(), pm: _pmInit(), depot: _depotInit(),
             qa: [], qaInput: "", qaLoading: false, grilleBusy: "", atl: _atlCardInit(), lectureMsg: "", lectureBusy: false, lecturePid: null,
             estimate: null, estimateOpen: false, estimateBusy: false, estimating: false, estimateDistance: 0, reviewNote: "",
-            share: { open: false, busy: false, invites: [], lastUrl: "", auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } } },
+            share: { busy: false, invites: [], auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, freezing: false } },
       // Nom de chaque vue (en-tête des vues hors onglets, relevé de la mesure). Réorganisation, vague 1 (1.3) : les noms
       // de l'architecture C corrigée ; une vue rangée en onglet affiche en tête le nom de sa rubrique (enteteTitre).
-      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Accueil", sourcing: "Trouver des marchés", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes pièces", invoices: "Devis et factures", company: "Identité", criteria: "Mes critères", team: "Collègues", billing: "Abonnement", compte: "Mon compte", aodetail: "Le marché", consortiums: "À plusieurs", shared: "Où je suis partenaire", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau Adjugo" },
+      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Accueil", sourcing: "Trouver des marchés", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes pièces", invoices: "Devis et factures", bilan: "Bilan", company: "Identité", criteria: "Mes critères", team: "Collègues", billing: "Abonnement", compte: "Mon compte", aodetail: "Le marché", consortiums: "À plusieurs", shared: "Où je suis partenaire", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau Adjugo" },
       // Ce que fait chaque vue, en une phrase, dans la bulle (i) de l'en-tête (1.7) : plus de sous-titre affiché, plus de
       // promesse (« Débloquez toute la puissance… »). Une vue sans phrase utile n'a pas de bulle. Clés : la vue, ou
       // l'onglet interne de Trouver des marchés (avenir, alertes).
-      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", sourcing: "Les marchés publiés sur les sources officielles : chaque résultat renvoie à son annonce.", avenir: "Contrats déjà attribués dont la fin estimée approche : un nouveau marché peut suivre.", alertes: "Recevez par email les nouveaux marchés d'une recherche enregistrée.", pipeline: "Suivez vos marchés étape par étape", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Clients, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", company: "Informations utilisées dans vos candidatures", criteria: "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous", team: "Invitez vos collègues à collaborer sur vos dossiers", compte: "Votre mot de passe, l'export de vos données et la suppression de votre compte", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires et faites-vous trouver" },
+      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", sourcing: "Les marchés publiés sur les sources officielles : chaque résultat renvoie à son annonce.", avenir: "Contrats déjà attribués dont la fin estimée approche : un nouveau marché peut suivre.", alertes: "Recevez par email les nouveaux marchés d'une recherche enregistrée.", pipeline: "Suivez vos marchés étape par étape", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Clients, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", bilan: "Où vous gagnez et où vous perdez, d'après les marchés terminés, et ce que vos notes vous apprennent", company: "Informations utilisées dans vos candidatures", criteria: "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous", team: "Invitez vos collègues à collaborer sur vos dossiers", compte: "Votre mot de passe, l'export de vos données et la suppression de votre compte", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires et faites-vous trouver" },
     };
   },
   computed: {
@@ -1280,7 +1321,7 @@ const __adjApp = createApp({
     // Une adresse par écran (vague 2a, A1) : le chemin de l'écran ouvert (null : pas d'adresse, rien ne change).
     adresseCourante() {
       return adresseDe({ view: this.view, sous: this.trouverOnglet, projet: this.ao.project && this.ao.project.id,
-                         partage: this.sharedAo.projectId, reseau: this.reseau.tab });
+                         partage: this.sharedAo.projectId, reseau: this.reseau.tab, filtre: this.mmFiltre });
     },
   },
   watch: {
@@ -1616,7 +1657,7 @@ const __adjApp = createApp({
         if (st) {
           history.replaceState(history.state, "", "/app");
           const it = this.shared.find(s => s.token === st);
-          _demande = it ? { view: "sharedao", partage: it.project_id } : { view: "shared" };
+          _demande = it ? { view: "sharedao", partage: it.project_id } : { view: "pipeline", filtre: "partenaire" };
         }
       } catch (e) {}
       this._adresseActive = true;
@@ -1688,6 +1729,32 @@ const __adjApp = createApp({
     // Barre basse (vague 2a, décision 18) : « Menu » est surligné quand il est ouvert, ou sur un écran qu'il range
     // (Mes documents, Mon entreprise, Réglages).
     menuBasMenu() { return this.mobileNav || ["documents", "entreprise", "reglages"].indexOf(this.rubrique()) >= 0; },
+    // ── Mes marchés en liste filtrable (vague 2a, A2 ; listeMesMarches et invitationsATraiter en tête du fichier) ──
+    // Les filtres ne comptent rien, sauf « Où je suis partenaire » : ce qui attend votre action (jamais un total).
+    mmFiltres() {
+      return [{ k: "tous", label: "Tous", ic: "list" }, { k: "pilote", label: "Je pilote", ic: "flag" },
+              { k: "partenaire", label: "Où je suis partenaire", ic: "inbox", n: this.mmActions() },
+              { k: "plusieurs", label: "À plusieurs", ic: "handshake" }];
+    },
+    // Changer de filtre : « Où je suis partenaire » et « À plusieurs » sont comptés comme leurs anciens écrans (mesure).
+    mmFiltrer(k) {
+      if (MM_FILTRES.indexOf(k) < 0 || this.mmFiltre === k) return;
+      this.mmFiltre = k;
+      if (k === "partenaire") { this._ecranOuvert("shared"); this.loadShared(); this.rnLoadRecues(true); }
+      if (k === "plusieurs") { this._ecranOuvert("consortiums"); this.loadConsortiums(); }
+    },
+    mmGroupes() { return listeMesMarches(this.projects, this.shared, (this.consortiums || {}).consortiums, this.mmFiltre, this.statuses2); },
+    mmPlusieurs(p) {
+      const cs = ((this.consortiums || {}).consortiums || []).find(c => c && p && c.project_id === p.id);
+      return cs && cs.partners ? cs : null;
+    },
+    mmInvitations() { return this.mmFiltre === "tous" || this.mmFiltre === "partenaire" ? invitationsATraiter(this.reseau.recues.list, this.shared) : []; },
+    mmVide() { return !this.mmGroupes().length && !this.mmInvitations().length; },
+    // Mes marchés › Bilan : « Où vous gagnez / perdez » s'il y a au moins un segment à montrer (comme sur l'accueil avant).
+    bilanVisible() {
+      const sg = this.stats && this.stats.segments;
+      return !!(sg && ((sg.by_zone || []).length || (sg.loss_reasons || []).length || (sg.by_groupement || []).length));
+    },
     ongletPastille(t) {
       if (t.pastille === "partenaire") return this.mmActions();
       if (t.pastille === "pieces") return (this.expiring || []).length;
@@ -1702,15 +1769,21 @@ const __adjApp = createApp({
     // ── Navigation + lazy loads ──
     go(v) {
       if (v === "amont" && !this.features.projets_a_venir) v = "dashboard";   // écran masqué (PROJETS_A_VENIR=0)
+      // Mes marchés en liste filtrable (vague 2a, A2) : « Où je suis partenaire » et « À plusieurs » sont des filtres ;
+      // les anciens appels (accueil, retour d'un dossier partagé…) y mènent. Entrer dans la liste par le menu la remet
+      // sur « Tous » ; un retour depuis un marché garde le filtre (aoBack ne passe pas par go()).
+      let filtre = "";
+      if (v === "shared" || v === "consortiums") { filtre = v === "shared" ? "partenaire" : "plusieurs"; v = "pipeline"; }
+      if (v === "pipeline") { if (filtre) this.mmFiltre = filtre; else if (this.view !== "pipeline") this.mmFiltre = "tous"; }
       if (v === "sourcing" && this.view !== "sourcing") this.trouverOnglet = "publies";   // s'ouvre sur « Publiés » (1.3)
       this.view = v;
       this._ecranOuvert(v);
+      if (filtre) this._ecranOuvert(filtre === "partenaire" ? "shared" : "consortiums");   // mesure : l'ancien écran
       this.mobileNav = false;  // referme le menu mobile à la navigation
       this.notifsOpen = false; this.fb.open = false;  // referme les popups (notifications / retour d'avis) à la navigation
       if (v === "dashboard") { this.loadStats(); this.loadExpiring(); this.loadConsortiums(); this.loadNotifs(); this.loadGrpDash(); this.noteReorgMarquer(); }
-      if (v === "consortiums") this.loadConsortiums();
-      if (v === "shared") { this.loadShared(); this.rnLoadRecues(true); }   // onglet « Où je suis partenaire » : pastilles à jour
-      if (v === "pipeline") this.loadProjects();
+      if (v === "pipeline") { this.loadProjects(); this.loadShared(); this.rnLoadRecues(true); this.loadConsortiums(); }   // la liste et ses pastilles à jour
+      if (v === "bilan") this.loadStats();
       if (v === "contacts") this.loadContacts();
       if (v === "invoices") this.loadInvoices();
       if (v === "documents") this.loadDocuments();
@@ -1722,7 +1795,7 @@ const __adjApp = createApp({
       if (v === "team") this.loadOrg();
       if (v === "billing") { this.loadPlan(); this.loadStats(); }
       if (v === "admin") this.loadAdmin();
-      if (v === "reseau") { this.rnGo(this.reseau.tab || "profil"); this.rnLoadRecues(true); }
+      if (v === "reseau") this.rnGo(this.reseau.tab || "profil");
       this.$nextTick(() => { const w = document.querySelector(".work"); if (w) w.scrollTop = 0; });   // remonte en haut du contenu à chaque changement de vue
     },
     // ══════════ Une adresse par écran (réorganisation, vague 2a, A1 ; ADRESSES en tête du fichier) ══════════
@@ -1809,6 +1882,13 @@ const __adjApp = createApp({
         return;
       }
       if (v === "reseau" && this.view === "reseau") { this.rnGo(this.reseau.tab); return; }
+      if (v === "pipeline") {
+        // Mes marchés et son filtre (« Tous » sans filtre dans l'adresse) : la liste s'ouvre, puis le filtre se pose
+        // comme un clic sur lui (chargements et mesure de l'ancien écran compris).
+        if (this.view !== "pipeline") this.go("pipeline");
+        this.mmFiltrer(e.filtre || "tous");
+        return;
+      }
       if (this.view !== v || v === "dashboard") this.go(v);
     },
     // « Retour » d'une page de détail : l'écran d'avant, comme le bouton du navigateur, quand on y est venu depuis
@@ -2308,16 +2388,14 @@ const __adjApp = createApp({
 
     // ── Projects (kanban + page détaillée AO) ──
     byStatus(s) { return this.projects.filter(p => (p.status || "nouveau") === s); },
-    // Mes marchés (vague 2a) : une colonne par étape de l'axe ; « À venir » et « Abandonné » seulement s'il y en a.
-    kanbanColonnes() { return this.statuses2.filter(s => (s !== "suivi" && s !== "abandonne") || this.byStatus(s).length); },
     openProject(p) { this.openAo(p); },
     async openAo(p) {
       this.ao.back = this.view; this.ao.dossier = null; this.ao.project = p;
-      this.ao.cotraitants = []; this.ao.stOpen = false; this.ao.st.results = [];
+      this.ao.cotraitants = []; this.ao.st.results = []; this.ao.st.trade = ""; this.ao.st.dept = "";
       this.view = "aodetail"; this._ecranOuvert("aodetail"); this.loadTrades(); this.ao.documents = []; this.ao.buyer = null; this.ao.buyerLoading = true; this.ao.checklist = null; this.ao.group = null;
       this.ao.qa = []; this.ao.qaInput = ""; this.ao.grilleBusy = ""; this.ao.atl = _atlCardInit(); this.ao.grp = _grpInit(); this.ao.conv = _convInit(); this.ao.pm = _pmInit(); this.ao.depot = _depotInit(); this.rinv = null;
       this.ao.estimate = null; this.ao.estimateOpen = false; this.ao.estimateDistance = 0;
-      this.ao.share = { open: false, busy: false, invites: [], lastUrl: "", lienCandidat: null, auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, leadTotal: null, freezing: false, form: { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 } };
+      this.ao.share = { busy: false, invites: [], auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, freezing: false };
       this.$nextTick(() => { const w = document.querySelector(".work"); if (w) w.scrollTop = 0; });   // le marché s'ouvre en haut (depuis une recherche défilée, par exemple)
       try { this.ao.project = await this.api("GET", "/api/projects/" + p.id); } catch (e) {}
       this.loadPredepot(p.id);   // état du wizard pré-dépôt propre à cet AO
@@ -2326,8 +2404,9 @@ const __adjApp = createApp({
       setTimeout(() => this.aoLoadBuyer(), 700);   // profil acheteur (BOAMP, lent) en différé, après le cœur de l'AO
     },
     loadPredepot(pid) {
-      try { const v = JSON.parse(localStorage.getItem("adjugo_predepot_" + pid) || "null"); this.predepot = Array.isArray(v) && v.length === 4 ? v : [false, false, false, false]; }
-      catch (e) { this.predepot = [false, false, false, false]; }
+      // Ancien format (4 cases, avant la vague 2a) : les 2 premières sont les mêmes points.
+      try { const v = JSON.parse(localStorage.getItem("adjugo_predepot_" + pid) || "null"); this.predepot = Array.isArray(v) && (v.length === 2 || v.length === 4) ? v.slice(0, 2).map(Boolean) : [false, false]; }
+      catch (e) { this.predepot = [false, false]; }
     },
     savePredepot() {
       try { if (this.ao.project) localStorage.setItem("adjugo_predepot_" + this.ao.project.id, JSON.stringify(this.predepot)); } catch (e) {}
@@ -2340,6 +2419,7 @@ const __adjApp = createApp({
       try {
         this.ao.estimate = await this.api("POST", "/api/chiffrage/" + this.ao.project.id + "/estimate", { distance_km: Number(this.ao.estimateDistance) || 0 });
         this.ao.estimateOpen = true; this.aoAvancer();
+        this.aoDepotLoadSoon();
       } catch (e) { this.notify(e.message, "err"); } finally { this.ao.estimateBusy = false; this.ao.estimating = false; }
     },
     async aoSaveEstimate() {
@@ -2382,6 +2462,7 @@ const __adjApp = createApp({
     },
     async aoLoadChecklist() {
       try { this.ao.checklist = await this.api("GET", "/api/checklist/" + this.ao.project.id); } catch (e) { this.ao.checklist = null; }
+      this.aoDepotLoadSoon();   // « Prêt à déposer » lit la même liste de pièces
     },
     async aoAsk() {
       const q = (this.ao.qaInput || "").trim();
@@ -2895,11 +2976,6 @@ const __adjApp = createApp({
       try { await this._pdfFetch("/api/invite/" + this.sharedAo.token + "/convention/pdf", "Convention_groupement.pdf"); }
       catch (e) { this.notify(e.message, "err"); }
     },
-    sharedGrpLine(s) {
-      const g = s && s.groupement; if (!g || !g.etape) return "";
-      const all = g.etapes || [], e = all.find(x => x.n === g.etape);
-      return "Étape " + g.etape + (all.length ? " sur " + all.length : "") + (e ? " · " + e.label : "");
-    },
     // Rédaction, vague 4 : ce qui attend le partenaire dans le dossier de présentation commun (statuts seulement).
     sharedRedLine(r) {
       if (!r) return "";
@@ -2945,7 +3021,6 @@ const __adjApp = createApp({
       const c = (t && t.cible) || {};
       if (c.view === "sharedao") { const it = (this.shared || []).find(x => x.project_id === c.partage); if (it) this.openShared(it); else this.go("shared"); return; }
       if (c.view === "aodetail") { this.openProjectById(c.projet); return; }
-      if (c.view === "reseau") { this.openReseau(c.reseau); return; }
       if (c.view) this.go(c.view);
     },
     openNotif(n) {
@@ -2960,22 +3035,6 @@ const __adjApp = createApp({
       if (this.inviteDeclined(inv)) return { label: "A décliné", cls: "declined" };
       if (inv.expires_at && new Date(inv.expires_at) < new Date()) return { label: "Expiré", cls: "a_etudier" };
       return { label: "Actif", cls: "go" };
-    },
-    async aoCreateInvite() {
-      const lc = this.ao.share.lienCandidat;
-      const f = Object.assign({}, this.ao.share.form,
-        (lc && lc.nom === this.ao.share.form.company_name) ? { link_id: lc.id } : {});
-      this.ao.share.busy = true;
-      try {
-        const inv = await this.api("POST", "/api/projects/" + this.ao.project.id + "/invites", f);
-        this.ao.share.lastUrl = this.inviteUrl(inv); this.aoAvancer();
-        this.ao.share.form = { recipient: "", company_name: "", role: "cotraitant", can_view_docs: true, can_contribute: true, expires_days: 30 };
-        this.ao.share.lienCandidat = null;
-        await this.aoLoadInvites();
-        this.aoLoadCotraitants();      // le serveur relie aussi le candidat de même nom (sans link_id)
-        this.copyInvite(this.ao.share.lastUrl, true);
-      } catch (e) { this.notify(e.message, "err"); }
-      finally { this.ao.share.busy = false; }
     },
     async aoRevokeInvite(inv) {
       if (!confirm("Révoquer ce lien ? Le partenaire perdra l'accès immédiatement.")) return;
@@ -3256,21 +3315,31 @@ const __adjApp = createApp({
       return dec[0] || null;
     },
     declinedLabel(inv) { const d = inv && this.ddmm(inv.declined_at); return "A décliné" + (d ? " le " + d : ""); },
-    // « Inviter {nom} » : pré-remplit le formulaire d'invitation existant et y amène l'utilisateur.
+    // « Inviter {nom} » (composition, simulation, membres, accords) : la fenêtre d'invitation unique, dans le bon cas.
+    //   - membre du réseau Adjugo (profil connu) : Adjugo envoie, l'adresse reste masquée ;
+    //   - entreprise du registre officiel (SIRET, hors de « Mes partenaires ») : un lien à copier ;
+    //   - sinon, partenaire connu : l'email de votre fiche « Mes partenaires » s'il y en a une, sinon à saisir.
+    // Un candidat déjà ajouté au marché (link_id, ou membre de même nom de la composition retenue) porte l'invitation.
     aoGrpInvite(m) {
-      // Partenaire du réseau Adjugo : invitation en 1 clic (Adjugo l'envoie, l'adresse reste masquée)
-      // au lieu du formulaire manuel, qui demanderait une adresse que le chef de file n'a pas.
-      const pid = m && m.kind === "reseau" ? this._grpProfileId(m) : "";
+      m = m || {};
+      const pid = m.kind === "reseau" ? this._grpProfileId(m) : "";
       if (pid) { this.rnInviteOpen({ profile_id: pid, name: m.name }); return; }
-      this.ao.share.form.company_name = (m && m.name) || ""; this.ao.share.open = true;
-      // Candidat déjà rattaché au marché : l'invitation lui sera liée (il entre dans les formulaires
-      // officiels quand il l'aura acceptée). Oublié si le nom de l'entreprise est changé à la main.
-      // Membre de la simulation retenue (sans link_id) : son rattachement est celui du plan, de même nom.
-      const n = String((m && m.name) || "").trim().toLowerCase(), plan = this.grpPlan();
-      const pm = (!(m && m.link_id) && n && plan) ? (plan.members || []).find(x => x && x.link_id && String(x.name || "").trim().toLowerCase() === n) : null;
-      const lid = (m && m.link_id) || (pm && pm.link_id) || null;
-      this.ao.share.lienCandidat = lid ? { id: lid, nom: this.ao.share.form.company_name } : null;
-      this.rnScrollTo("inviteForm");   // le formulaire d'invitation est en tête de page (décision 0)
+      const n = nomCle(m.name), plan = this.grpPlan();
+      const pm = (!m.link_id && n && plan) ? (plan.members || []).find(x => x && x.link_id && nomCle(x.name) === n) : null;
+      const lid = m.link_id || (pm && pm.link_id) || null;
+      const fiche = this._ficheAnnuaire(m);
+      if (!fiche && m.kind === "sirene" && String(m.siret || "").replace(/\D/g, "").length === 14) {
+        this.rnInviteOpen({ siret: m.siret, name: m.name, city: m.city || "" }); return;
+      }
+      this.inviterOuvrir({ kind: "connu", name: (fiche && fiche.name) || m.name || "", email: (fiche && fiche.email) || "",
+                           cotraitantId: fiche ? fiche.id : "", link_id: lid });
+    },
+    // La fiche « Mes partenaires » d'une entreprise proposée : par identifiant, puis SIRET, puis nom.
+    _ficheAnnuaire(m) {
+      if (!m) return null;
+      const list = this.cotraitants || [], s = String(m.siret || "").replace(/\D/g, ""), n = nomCle(m.name);
+      return (m.kind === "attached" || m.kind === "annuaire") && m.id ? (list.find(c => c.id === m.id) || null)
+        : (s && list.find(c => String(c.siret || "").replace(/\D/g, "") === s)) || (n && list.find(c => nomCle(c.name) === n)) || null;
     },
     // Identifiant de profil d'un membre « reseau » de la composition retenue (le plan ne le garde pas) :
     // retrouvé dans la simulation, les candidats ou le panneau « Partenaires pour ce marché » (SIRET, sinon nom).
@@ -3310,13 +3379,16 @@ const __adjApp = createApp({
     //  - badges et capacités affichés tels quels (libellé, source, date) — jamais de note ni d'étoile ;
     //  - l'adresse d'un partenaire du réseau n'est jamais affichée (le serveur la masque) ;
     //  - tout texte saisi par une entreprise est rendu en {{ }} (jamais v-html / innerHTML).
-    openReseau(tab) { this.reseau.tab = tab || "profil"; this.go("reseau"); },
+    openReseau(tab) {
+      if (tab === "recues") { this.go("shared"); return; }   // vague 2a (A2) : Mes marchés, filtre « Où je suis partenaire »
+      this.reseau.tab = tab || "profil"; this.go("reseau");
+    },
     rnGo(tab) {
+      if (tab === "recues") { this.go("shared"); return; }
       const r = this.reseau; r.tab = tab;
       if (tab === "profil" && !r.p.loaded) this.rnLoadProfil();
       if (tab === "annuaire") { if (!r.p.loaded) this.rnLoadProfil(true); if (!r.an.loaded) this.rnLoadAnnuaire(1); }
       if (tab === "historique") this.rnLoadHistorique();
-      if (tab === "recues") this.rnLoadRecues();
     },
     rnOptions() {
       const d = this.reseau.p.d, o = (d && d.options) || {};
@@ -3626,7 +3698,7 @@ const __adjApp = createApp({
         const res = await this.api("POST", "/api/invite/" + encodeURIComponent(inv.token) + "/claim", null, false, this._cleEspace(inv.token));
         if (res && res.suggest_profile) this._rnSuggest(res.suggest_profile);
         inv.statut = "acceptee"; inv.statut_label = "Acceptée";
-        r.live = "Invitation acceptée : le dossier est dans Mes marchés, onglet « Où je suis partenaire ».";
+        r.live = "Invitation acceptée : le dossier est dans Mes marchés, filtre « Où je suis partenaire ».";
         this.notify(r.live);
         await this.loadShared();
         const it = (this.shared || []).find(s => s.token === inv.token);
@@ -3656,7 +3728,7 @@ const __adjApp = createApp({
     // ── « Qui me complète ? » : partenaires lot par lot sur un marché ──
     async aoPmLoad() {
       const pid = this.ao.project && this.ao.project.id, pm = this.ao.pm; if (!pid || pm.loading) return;
-      pm.loading = true; pm.error = ""; pm.live = "Recherche des partenaires, lot par lot…";
+      pm.loading = true; pm.error = ""; pm.live = "Recherche des partenaires, partie par partie…";
       try {
         const d = await this.api("GET", "/api/projects/" + pid + "/partner-matches");
         if (!this.ao.project || this.ao.project.id !== pid) return;
@@ -3666,9 +3738,9 @@ const __adjApp = createApp({
     },
     _pmSummary(d) {
       const lots = (d && d.lots) || [];
-      if (!lots.length) return "Aucun lot à compléter d'après le dossier.";
-      const n = lots.reduce((s, l) => s + (l.reseau || []).length + (l.sirene || []).length, 0);
-      return lots.length + " " + this.plFr(lots.length, "lot à compléter", "lots à compléter") + " · " + n + " " + this.plFr(n, "entreprise proposée", "entreprises proposées") + ".";
+      if (!lots.length) return "Aucune partie à compléter d'après le dossier.";
+      const n = lots.reduce((s, l) => s + (l.reseau || []).length + (l.mes_partenaires || []).length + (l.sirene || []).length, 0);
+      return lots.length + " " + this.plFr(lots.length, "partie à compléter", "parties à compléter") + " · " + n + " " + this.plFr(n, "entreprise proposée", "entreprises proposées") + ".";
     },
     async aoPmLot(l) {
       const pid = this.ao.project && this.ao.project.id, pm = this.ao.pm; if (!pid || pm.lotBusy || !l || !l.num) return;
@@ -3693,7 +3765,8 @@ const __adjApp = createApp({
     // « Répondre à plusieurs ? » et lance le calcul (le SEUL pourcentage affiché).
     async aoPmSimulate(c) {
       const m = c.profile_id ? { kind: "reseau", profile_id: c.profile_id, name: c.name, city: c.city || "" }
-                             : { kind: "sirene", siret: c.siret, name: c.name, city: c.city || "" };
+        : c.cotraitant_id ? { kind: "annuaire", id: c.cotraitant_id, name: c.name, city: c.city || "" }
+        : { kind: "sirene", siret: c.siret, name: c.name, city: c.city || "" };
       if (!this.isCandSelected(m)) {
         if (this.ao.grp.selected.length >= 4) { this.notify("4 partenaires au maximum par simulation : retirez-en un dans « Simuler avec ».", "err"); this.rnScrollTo("grpSim", true); return; }
         this.ao.grp.selected.push(m);
@@ -3702,9 +3775,24 @@ const __adjApp = createApp({
       this.rnScrollTo("grpSim", true);
     },
 
-    // ── Modale d'invitation en 1 clic (vague 3) ──
+    // ── La fenêtre d'invitation unique (vague 3 ; réorganisation, vague 2a, A2) ──
     // Réseau : Adjugo envoie l'invitation, l'adresse du partenaire n'est JAMAIS affichée au chef de file.
-    // SIRENE (hors réseau) : identité relue côté serveur, aucun email, un lien à transmettre.
+    // Registre (hors réseau) : identité relue côté serveur, aucun email, un lien à transmettre.
+    // Connu : Adjugo envoie l'invitation à l'email que VOUS donnez (votre fiche « Mes partenaires ») ; sans email, un lien.
+    // Ouverte sans entreprise : « choix » (qui invitez-vous ?).
+    _rinvBase(projectId, pickProject) {
+      return { kind: "choix", card: null, name: "", profile_id: "", siret: "", siretSaisi: false, email: "", cotraitantId: "",
+               link_id: null, depuisChoix: false, projectId, pickProject, roles: ["cotraitant", "sous_traitant"], role: "cotraitant",
+               noRole: false, lot: "", can_view_docs: true, can_contribute: true, expires_days: 30,
+               busy: false, err: "", errCode: "", errProfile: "", errStatus: 0, url: "", done: "" };
+    },
+    // Message d'erreur ou lien créé : en bas de la fenêtre, qui peut défiler ; on l'amène à l'écran.
+    _rinvMontrer() {
+      this.$nextTick(() => { const el = document.querySelector(".rinv-modal .modal-b .conv-err, .rinv-modal .modal-b .rn-done"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" }); });
+    },
+    _rinvFocusPremier() {
+      this.$nextTick(() => { const el = document.querySelector(".rinv-modal .modal-b select, .rinv-modal .modal-b input, .rinv-modal .modal-b .rinv-c") || document.querySelector(".rinv-modal .x"); if (el && el.focus) el.focus(); });
+    },
     rnInviteOpen(card, opts) {
       opts = opts || {}; if (!card) return;
       const kind = card.profile_id ? "reseau" : "sirene";
@@ -3713,18 +3801,65 @@ const __adjApp = createApp({
       const roles = kind === "sirene" || !declared ? ["cotraitant", "sous_traitant"] : ok;
       const inAo = this.view === "aodetail" && this.ao.project;
       this._rinvFocus = opts.focusBack || document.activeElement;
-      this.rinv = {
+      this.rinv = Object.assign(this._rinvBase(opts.projectId || (inAo ? this.ao.project.id : ""), !opts.projectId && !inAo), {
         kind, card, name: card.name || "", profile_id: card.profile_id || "", siret: card.siret || "",
-        projectId: opts.projectId || (inAo ? this.ao.project.id : ""), pickProject: !opts.projectId && !inAo,
-        roles, role: roles[0] || "cotraitant", noRole: kind === "reseau" && declared && !ok.length,
-        lot: opts.lot || "", can_view_docs: true, busy: false, err: "", errCode: "", errProfile: "", url: "", done: "",
-      };
-      this.$nextTick(() => { const el = document.querySelector(".rinv-modal .modal-b select, .rinv-modal .modal-b input") || document.querySelector(".rinv-modal .x"); if (el && el.focus) el.focus(); });
+        roles, role: roles[0] || "cotraitant", noRole: kind === "reseau" && declared && !ok.length, lot: opts.lot || "",
+      });
+      this._rinvFocusPremier();
     },
-    rinvClose() {
+    // Sans carte (bouton « Inviter un partenaire », « Inviter sur un marché » d'une fiche de Mes partenaires) : le cas
+    // « choix » ou « connu », pré-rempli.
+    inviterOuvrir(opts) {
+      opts = opts || {};
+      const inAo = this.view === "aodetail" && this.ao.project;
+      this._rinvFocus = opts.focusBack || document.activeElement;
+      const v = this._rinvBase(opts.projectId || (inAo ? this.ao.project.id : ""), !opts.projectId && !inAo);
+      this.rinv = Object.assign(v, { kind: opts.kind === "connu" ? "connu" : "choix", name: opts.name || "", email: opts.email || "",
+                                     cotraitantId: opts.cotraitantId || "", link_id: opts.link_id || null });
+      this._rinvFocusPremier();
+    },
+    rinvChoisir(kind) {
+      const v = this.rinv; if (!v) return;
+      Object.assign(v, { kind, depuisChoix: kind !== "choix", siretSaisi: kind === "sirene", profile_id: "", siret: "", card: null,
+                         roles: ["cotraitant", "sous_traitant"], role: "cotraitant", noRole: false, err: "", errCode: "", errProfile: "", errStatus: 0 });
+      this._rinvFocusPremier();
+    },
+    rinvTitre() {
+      const v = this.rinv; if (!v) return "";
+      if (v.kind === "choix") return "Inviter un partenaire";
+      if (v.name) return "Inviter " + v.name;
+      return ({ reseau: "Inviter une entreprise du réseau Adjugo", sirene: "Inviter une entreprise du registre officiel" })[v.kind] || "Inviter un partenaire que je connais";
+    },
+    rinvBouton() {
+      const v = this.rinv || {};
+      if (v.kind === "reseau") return "Envoyer l'invitation";
+      if (v.kind === "connu" && String(v.email || "").trim()) return "Envoyer l'invitation";
+      return "Créer le lien";
+    },
+    rinvMesPartenaires() { return (this.cotraitants || []).filter(c => c && c.name).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "fr")); },
+    rinvDepuisAnnuaire() {
+      const v = this.rinv; if (!v) return;
+      const c = (this.cotraitants || []).find(x => String(x.id) === String(v.cotraitantId));
+      if (c) { v.name = c.name || ""; v.email = (c.email || "").trim(); }
+    },
+    // « Chercher dans Qui me complète ? » : la fenêtre se ferme, la page va au composant (et lance la recherche).
+    rinvVersQuiMeComplete(zone) {
+      this.rinvClose(true);
+      if (this.view !== "aodetail") return;
+      if (zone) { this.aoChercherEntreprise(); return; }
+      this.rnScrollTo("pmCard");
+      if (this.ao.project && this.ao.project.ai_analysis && !this.ao.pm.loaded) this.aoPmLoad();
+    },
+    // Registre indisponible : inviter la même entreprise par son nom, comme un partenaire connu (lien à copier).
+    rinvSansRegistre() {
+      const v = this.rinv; if (!v) return;
+      Object.assign(v, { kind: "connu", siretSaisi: false, siret: "", err: "", errCode: "", errStatus: 0, depuisChoix: true });
+      this._rinvFocusPremier();
+    },
+    rinvClose(sansFocus) {
       this.rinv = null;
       const el = this._rinvFocus; this._rinvFocus = null;
-      if (el && el.focus && document.body.contains(el)) this.$nextTick(() => el.focus());
+      if (!sansFocus && el && el.focus && document.body.contains(el)) this.$nextTick(() => el.focus());
     },
     rinvProjects() { return (this.projects || []).filter(p => p && !p.deleted_at && p.status !== "abandonne"); },
     // « Déjà invité » : la carte d'origine et, sur la fiche du marché, toutes les cartes de la même entreprise.
@@ -3735,39 +3870,59 @@ const __adjApp = createApp({
       (d.lots || []).forEach(l => {
         (l.reseau || []).forEach(c => { if (v.profile_id && c.profile_id === v.profile_id) c.deja_invite = true; });
         (l.sirene || []).forEach(c => { if (v.siret && c.siret === v.siret) c.deja_invite = true; });
+        (l.mes_partenaires || []).forEach(c => { if (v.kind === "connu" && v.name && nomCle(c.name) === nomCle(v.name)) c.deja_invite = true; });
       });
     },
     async rinvSend() {
-      const v = this.rinv; if (!v || v.busy || v.done) return;
-      if (!v.projectId) { v.err = "Choisissez le marché sur lequel inviter ce partenaire."; v.errCode = ""; return; }
+      const v = this.rinv; if (!v || v.busy || v.done || v.kind === "choix") return;
+      const refus = (m) => { v.err = m; v.errCode = ""; this._rinvMontrer(); };
+      if (!v.projectId) { refus("Choisissez le marché sur lequel inviter ce partenaire."); return; }
       if (v.noRole) return;
+      if (v.kind === "connu" && !String(v.name || "").trim()) { refus("Indiquez le nom de l'entreprise à inviter."); return; }
+      const email = String(v.email || "").trim();
+      if (v.kind === "connu" && email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { refus("Cette adresse email n'est pas valide."); return; }
+      if (v.kind === "sirene" && String(v.siret || "").replace(/\D/g, "").length !== 14) { refus("Un SIRET à 14 chiffres est requis."); return; }
       const pid = v.projectId, body = { role: v.role, lot: String(v.lot || "").trim().slice(0, 255), can_view_docs: !!v.can_view_docs, expires_days: 30 };
-      v.busy = true; v.err = ""; v.errCode = ""; v.errProfile = "";
+      v.busy = true; v.err = ""; v.errCode = ""; v.errProfile = ""; v.errStatus = 0;
       try {
         if (v.kind === "reseau") {
           const r = await this.api("POST", "/api/projects/" + pid + "/reseau/invitations", Object.assign({ profile_id: v.profile_id }, body));
           this._rnMarkInvited(v);
           this.notify((r && r.message) || "Invitation envoyée par Adjugo.");
           this.rinvClose();
+        } else if (v.kind === "connu") {
+          const inv = await this.api("POST", "/api/projects/" + pid + "/invites", Object.assign({
+            company_name: String(v.name).trim().slice(0, 255), recipient: email, role: v.role, can_view_docs: !!v.can_view_docs,
+            can_contribute: !!v.can_contribute, expires_days: Number(v.expires_days) || 0 }, v.link_id ? { link_id: v.link_id } : {}));
+          v.url = (inv && inv.path) ? this.inviteUrl(inv) : ((inv && inv.url) || "");
+          v.done = inv && inv.emailed ? "Invitation envoyée par Adjugo à " + email + ". Le lien reste ici, si l'email n'arrive pas."
+            : (email ? "Lien créé. L'email n'a pas pu partir pour le moment : copiez le lien et envoyez-le."
+                     : "Lien créé : copiez-le et envoyez-le à l'entreprise.");
+          if (v.url) this.copyInvite(v.url, true);
+          this._rinvMontrer();
         } else {
-          const r = await this.api("POST", "/api/projects/" + pid + "/reseau/invitations-sirene", Object.assign({ siret: v.siret }, body));
+          const r = await this.api("POST", "/api/projects/" + pid + "/reseau/invitations-sirene", Object.assign({ siret: String(v.siret).replace(/\D/g, "") }, body));
           const inv = (r && r.invitation) || {};
           v.url = inv.path ? this.inviteUrl(inv) : ((r && r.url) || "");
+          if (!v.name && inv.company_name) v.name = inv.company_name;
           v.done = (r && r.message) || "Lien créé : transmettez-le à l'entreprise.";
           this._rnMarkInvited(v);
           if (v.url) this.copyInvite(v.url, true);
+          this._rinvMontrer();
         }
-        if (this.view === "aodetail" && this.ao.project && this.ao.project.id === pid) { this.aoLoadInvites(); this.aoLoadCotraitants(); this.aoLoadConsortium(); }
-        this.loadCotraitants();
+        if (this.view === "aodetail" && this.ao.project && this.ao.project.id === pid) { this.aoLoadInvites(); this.aoLoadCotraitants(); this.aoLoadConsortium(); this.aoGrpReloadState(); }
+        this._marcheEnPreparation(pid);    // inviter est un geste de Préparer (vague 2a, décision 7)
+        this.loadCotraitants(); this.loadConsortiums();
       } catch (e) {
-        v.err = (e && e.message) || "Invitation impossible pour l'instant."; v.errCode = (e && e.code) || ""; v.errProfile = (e && e.profile_id) || "";
+        v.err = (e && e.message) || "Invitation impossible pour l'instant."; v.errCode = (e && e.code) || ""; v.errProfile = (e && e.profile_id) || ""; v.errStatus = (e && e.status) || 0;
         if (v.errCode === "deja_invite") this._rnMarkInvited(v);
+        this._rinvMontrer();
       } finally { if (this.rinv === v) v.busy = false; }
     },
     // 409 « sur_le_reseau » : l'entreprise SIRENE est sur le réseau → on l'invite via sa fiche (Adjugo transmet).
     rinvViaReseau() {
       const v = this.rinv; if (!v || !v.errProfile) return;
-      Object.assign(v, { kind: "reseau", profile_id: v.errProfile, roles: ["cotraitant", "sous_traitant"], noRole: false, err: "", errCode: "", errProfile: "", url: "", done: "" });
+      Object.assign(v, { kind: "reseau", profile_id: v.errProfile, siretSaisi: false, roles: ["cotraitant", "sous_traitant"], noRole: false, err: "", errCode: "", errProfile: "", errStatus: 0, url: "", done: "" });
     },
     rinvShowInvites() { this.rinvClose(); if (this.view === "aodetail") this.rnScrollTo("reseauCard"); },
     // ── Coffre-fort croisé (statuts) + offre commune (mandataire) ──
@@ -3793,39 +3948,10 @@ const __adjApp = createApp({
         this.saveBlob(await r.blob(), p.name || "piece");
       } catch (e) { this.notify(e.message, "err"); }
     },
+    // Total prévisionnel de l'offre commune (avant qu'elle soit figée en générant la convention).
     freezeTotal() {
-      const o = this.ao.share.consortium && this.ao.share.consortium.offre; if (!o || o.total_ht_estime == null) return null;
-      const lead = (o.lead_total_ht == null && Number(this.ao.share.leadTotal) > 0) ? Number(this.ao.share.leadTotal) : 0;
-      return o.total_ht_estime + lead;
-    },
-    canFreeze() { const o = this.ao.share.consortium && this.ao.share.consortium.offre; return !!(o && !o.frozen && o.total_ht_estime != null); },
-    freezeMissing() {
-      const cs = this.ao.share.consortium || {}; const miss = (cs.readiness && cs.readiness.missing) || [];
-      if (!(cs.readiness && cs.readiness.invited)) return ["Invitez au moins un partenaire et attendez sa part"];
-      return miss.length ? miss : ["Aucune part soumise avec un prix de lot pour l'instant"];
-    },
-    async aoFreezeOffer() {
-      // Vague 2 : « Figer l'offre » = « Figer l'offre et générer la convention » (même geste,
-      // même confirmation). L'ancienne route ne sert plus que de repli si la convention n'a pas pu se charger.
-      if (this.convVisible() && this.ao.conv.d) { await this.aoConvAskGenerate(true); return; }
-      const cs = this.ao.share.consortium, o = cs && cs.offre; if (!o || !this.canFreeze()) return;
-      const lead = (o.lead_total_ht == null && Number(this.ao.share.leadTotal) > 0) ? Number(this.ao.share.leadTotal) : null;
-      let msg = "Figer l'offre commune ?\n\nTotal prévisionnel : " + this.eur(this.freezeTotal()) + " HT"
-        + (lead != null ? " (dont votre part " + this.eur(lead) + " HT)" : (o.lead_total_ht == null ? " — sans votre part (aucune estimation enregistrée)" : ""))
-        + ".\nChaque partenaire verra ce total.";
-      if (o.warning_two_members) msg += "\n\nÀ deux, le total révèle mécaniquement la part de l'autre.";
-      if (!confirm(msg)) return;
-      this.ao.share.freezing = true;
-      try {
-        const r = await this.api("POST", "/api/projects/" + this.ao.project.id + "/offre/figer", lead != null ? { lead_total_ht: lead } : {});
-        this.notify("Offre commune figée — total " + this.eur(r.total_ht) + " HT");
-        await this.aoLoadConsortium();
-      } catch (e) {
-        // 409 « convention_generee » : l'offre est déjà figée par la convention → on y renvoie.
-        if (e.status === 409 && (e.code === "convention_generee" || e.code === "convention_a_generer")) { this.notify(e.message, "err"); await this.aoConvLoad(true); this.aoConvScroll("convCard"); }
-        else this.notify(e.message, "err");
-      }
-      finally { this.ao.share.freezing = false; }
+      const o = this.ao.share.consortium && this.ao.share.consortium.offre;
+      return o && o.total_ht_estime != null ? o.total_ht_estime : null;
     },
     async aoUnfreezeOffer() {
       const cv = this.ao.conv.d, generated = !!(cv && (cv.status === "a_signer" || cv.status === "signee"));
@@ -4160,12 +4286,11 @@ const __adjApp = createApp({
     // Les 4 contrôles viennent de GET /groupement/depot, calculables à tout moment ; affichés
     // « 3 contrôles sur 4 » (un seul pourcentage dans le produit : le score de groupement).
     // Chaque manque (texte tel quel de l'API) est rangé sous son contrôle, avec l'action qui le règle.
-    depotShown() {
-      const st = this.ao.grp.state; if (!st || !this.convVisible()) return false;
-      const cv = this.ao.conv.d && this.ao.conv.d.status;
-      // Dès qu'un partenaire est invité (état « invitation » et au-delà) ou qu'une convention existe.
-      return (Number(st.index) || 0) >= 3 || (Number(st.etape) || 1) >= 3 || (!!cv && cv !== "aucune") || st.state === "depose" || !!(this.ao.depot.d && this.ao.depot.d.depose);
-    },
+    // Vague 2a (A2) : « Prêt à déposer » pour TOUS les marchés. Le serveur choisit le calcul : à plusieurs (parts,
+    // attestations des membres, convention, formulaires après elle) ou seul (prix, dossier de présentation, formulaires,
+    // pièces, attestations) — jamais un faux manque de groupement.
+    depotShown() { return !!(this.ao.project && this.ao.project.id); },
+    depotPourGroupement() { const p = this.depotPret(); return !!(p && p.pour !== "seul"); },
     aoDepotLoadSoon() {
       clearTimeout(this._depotT);
       this._depotT = setTimeout(() => { if (this.depotShown()) this.aoDepotLoad(); }, 200);
@@ -4183,11 +4308,23 @@ const __adjApp = createApp({
     depotPret() { const d = this.ao.depot.d; return (d && d.pret) || this.convPret() || null; },
     depotIsDeposed() { const d = this.ao.depot.d; return !!(d && d.depose) || !!(this.ao.grp.state && this.ao.grp.state.state === "depose"); },
     depotStatus() { const d = this.ao.depot.d; return (d && d.status) || (this.ao.project && this.ao.project.status) || ""; },
-    depotCount(p) { const n = Number(p && p.n_ok) || 0; return n + " " + (n > 1 ? "contrôles" : "contrôle") + " sur " + (Number(p && p.n_total) || 4); },
+    depotCount(p) { const n = Number(p && p.n_ok) || 0; return n + " " + (n > 1 ? "contrôles" : "contrôle") + " sur " + (Number(p && p.n_total) || 0); },
     _convPretGroup(m) { return /^part de/i.test(m) ? "parts_soumises" : /^formulaire/i.test(m) ? "cerfa_generes" : /^convention/i.test(m) ? "convention_signee" : "attestations_ok"; },
     convPretChecks() {
       const p = this.depotPret(); if (!p) return [];
       const ch = p.checks || {}, lib = p.libelles || {}, man = (p.manques || []).map(m => String(m || "")).filter(Boolean);
+      const par = p.manques_par_controle && typeof p.manques_par_controle === "object" ? p.manques_par_controle : null;
+      const sous = k => par ? (par[k] || []).map(m => String(m || "")).filter(Boolean) : man.filter(m => this._convPretGroup(m) === k);
+      if (p.pour === "seul") {
+        // Entreprise seule (vague 2a, A2) : l'action qui règle chaque contrôle, sur cette page.
+        return [
+          { key: "prix", label: "Votre prix estimé", cta: "Estimer mon prix", icon: "calculator", action: () => this.rnScrollTo("prixCard") },
+          { key: "dossier", label: "Dossier de présentation prêt, sans passage à compléter", cta: "Ouvrir l'atelier", icon: "file-pen-line", action: () => this.atlOpen() },
+          { key: "formulaires", label: "Formulaires officiels préparés", cta: "Préparer mes documents", icon: "stamp", action: () => this.aoGenerate() },
+          { key: "pieces", label: "Pièces demandées réunies", cta: "Voir les pièces", icon: "list-checks", action: () => this.rnScrollTo("piecesCard") },
+          { key: "attestations", label: "Vos attestations valides à la date limite", cta: "Mes pièces", icon: "folder-lock", action: () => this.go("documents") },
+        ].filter(k => k.key in ch).map(k => Object.assign(k, { label: lib[k.key] || k.label, ok: !!ch[k.key], manques: sous(k.key) }));
+      }
       const cv = this.ao.conv.d && this.ao.conv.d.status, generated = cv === "a_signer" || cv === "signee";
       const relance = this.aoPendingRelancables().length > 0;
       const conv = !cv || cv === "aucune" || cv === "draft"
@@ -4200,11 +4337,15 @@ const __adjApp = createApp({
         Object.assign({ key: "convention_signee", label: "Convention validée par tous les membres" }, conv),
         generated ? { key: "cerfa_generes", label: "Formulaires officiels (DC1, DC2, ATTRI1) préparés après la convention", cta: "Préparer mes documents", icon: "file-text", action: () => this.aoConvPrepareDocs() }
                   : { key: "cerfa_generes", label: "Formulaires officiels (DC1, DC2, ATTRI1) préparés après la convention", wait: "Après la convention" },
-      ].filter(k => k.key in ch).map(k => Object.assign(k, { label: lib[k.key] || k.label, ok: !!ch[k.key], manques: man.filter(m => this._convPretGroup(m) === k.key) }));
+      ].filter(k => k.key in ch).map(k => Object.assign(k, { label: lib[k.key] || k.label, ok: !!ch[k.key], manques: sous(k.key) }));
     },
     convPretRest() {   // manques qui ne se rangent sous aucun contrôle encore à faire (jamais masqués)
       const p = this.depotPret(); if (!p) return [];
       const open = this.convPretChecks().filter(k => !k.ok).map(k => k.key);
+      if (p.manques_par_controle && typeof p.manques_par_controle === "object") {
+        const ranges = new Set(open.reduce((a, k) => a.concat(p.manques_par_controle[k] || []), []).map(String));
+        return (p.manques || []).map(m => String(m || "")).filter(m => m && !ranges.has(m));
+      }
       return (p.manques || []).map(m => String(m || "")).filter(m => m && !open.includes(this._convPretGroup(m)));
     },
     // « Marquer déposé » : avertir, pas bloquer. Dossier complet → confirmation simple ; sinon la
@@ -4213,8 +4354,10 @@ const __adjApp = createApp({
       const p = this.depotPret() || {};
       if (p.pret) {
         this._convAsk({ title: "Marquer le dossier comme déposé ?", ok: "Marquer déposé", run: () => this.aoDepotMark(false),
-          lines: ["Le marché passe à l'étape « Déposé ».", "Chaque partenaire le verra dans son journal.",
-                  "Les relances automatiques s'arrêtent pour ce marché.", "En cas d'erreur, vous pourrez retirer ce marquage."] });
+          lines: this.depotPourGroupement()
+            ? ["Le marché passe au statut « Déposé ».", "Chaque partenaire le verra dans son journal.",
+               "Les relances automatiques s'arrêtent pour ce marché.", "En cas d'erreur, vous pourrez retirer ce marquage."]
+            : ["Le marché passe au statut « Déposé ».", "En cas d'erreur, vous pourrez retirer ce marquage."] });
         return;
       }
       this._depotAskIncomplete(p.manques || [], (Number(p.n_total) || 4) - (Number(p.n_ok) || 0));
@@ -4224,7 +4367,7 @@ const __adjApp = createApp({
       const lines = [{ t: (n > 0 ? n + (n > 1 ? " contrôles avant dépôt ne sont pas réglés." : " contrôle avant dépôt n'est pas réglé.") : "Le dossier n'est pas complet.") + " Le marquer déposé quand même ? Vous avez peut-être déposé hors d'Adjugo.", warn: true }];
       list.slice(0, 5).forEach(m => lines.push({ t: m }));
       if (list.length > 5) lines.push({ t: "et " + (list.length - 5) + " autre" + (list.length - 5 > 1 ? "s" : "") });
-      lines.push({ t: "Chaque partenaire verra le marquage dans son journal ; les relances automatiques s'arrêtent." });
+      if (this.depotPourGroupement()) lines.push({ t: "Chaque partenaire verra le marquage dans son journal ; les relances automatiques s'arrêtent." });
       this._convAsk({ title: "Le dossier n'est pas complet", lines, ok: "Marquer déposé quand même", run: () => this.aoDepotMark(true) });
     },
     async aoDepotMark(confirmer) {
@@ -4246,8 +4389,10 @@ const __adjApp = createApp({
     },
     aoDepotAskCancel() {
       this._convAsk({ title: "Retirer le marquage « déposé » ?", ok: "Retirer le marquage", run: () => this.aoDepotUnmark(),
-        lines: ["À faire seulement si le dossier n'a pas été déposé : le marché retrouve son statut d'avant.",
-                "Le retrait est inscrit dans le journal de chaque partenaire."] });
+        lines: this.depotPourGroupement()
+          ? ["À faire seulement si le dossier n'a pas été déposé : le marché retrouve son statut d'avant.",
+             "Le retrait est inscrit dans le journal de chaque partenaire."]
+          : ["À faire seulement si le dossier n'a pas été déposé : le marché retrouve son statut d'avant."] });
     },
     async aoDepotUnmark() {
       const pid = this.ao.project && this.ao.project.id, dp = this.ao.depot; if (!pid || dp.busy) return;
@@ -4339,12 +4484,36 @@ const __adjApp = createApp({
     },
     // Un geste de Préparer fait passer le marché « En préparation » (sans message : le statut change sous vos yeux).
     aoAvancer() { const p = this.ao.project, c = p && statutEnPreparation(p.status); if (c) this._aoChangerStatut(c, ""); },
+    // Réunion de la vague 2a : la fenêtre d'invitation unique (A2) sert aussi hors de la page du marché (« Inviter sur un
+    // marché » de Mes partenaires) ; l'invitation y fait avancer le marché choisi comme sur sa page (A1).
+    async _marcheEnPreparation(pid) {
+      if (this.view === "aodetail" && this.ao.project && this.ao.project.id === pid) { this.aoAvancer(); return; }
+      const p = (this.projects || []).find(x => x && x.id === pid), c = p && statutEnPreparation(p.status);
+      if (!c) return;
+      try { await this.api("PUT", "/api/projects/" + p.id, { status: c }); p.status = c; this.loadStats(); } catch (e) {}
+    },
     aoTacheVoir(t) {
       if (t.voir === "parts") { this.aoConvShowCoffre(); return; }
       this.rnScrollTo(t.voir === "convention" && this.convVisible() ? "convCard" : "reseauCard");
     },
-    // « Inviter un partenaire » (décision 0) : un seul formulaire, en tête de page ; on l'ouvre et on y va.
-    aoInviter() { this.ao.share.open = true; this.rnScrollTo("inviteForm"); },
+    // « Inviter un partenaire » (décision 0) : la fenêtre d'invitation unique (vague 2a, A2), ouverte sur « qui invitez-vous ? ».
+    aoInviter() { if (this.ao.project) this.inviterOuvrir({ projectId: this.ao.project.id }); },
+    // « Chercher une entreprise » (Membres et sous-traitants) : la recherche de « Qui me complète ? », dans la zone.
+    aoChercherEntreprise() {
+      if (!this.ao.st.dept) this.ao.st.dept = (this.aoDetails().lieu_execution || "").replace(/\D/g, "").slice(0, 2);
+      this.rnScrollTo("pmZone");
+      this.$nextTick(() => { const el = this.$refs.pmZoneMetier; const x = Array.isArray(el) ? el[0] : el; if (x && x.focus) x.focus({ preventScroll: true }); });
+    },
+    // « Chercher autrement » sur une partie : la recherche dans la zone, pré-remplie avec son métier et son département.
+    aoPmZone(l) {
+      if (l) { this.ao.st.trade = l.metier_label || l.label || this.ao.st.trade; if (l.departement) this.ao.st.dept = String(l.departement); }
+      this.aoChercherEntreprise();
+    },
+    // Une entreprise de « Mes partenaires » proposée par « Qui me complète ? » : la fenêtre, cas « partenaire connu ».
+    aoPmInviterConnu(m) {
+      if (!m) return;
+      this.inviterOuvrir({ kind: "connu", name: m.name || "", email: m.email || "", cotraitantId: m.cotraitant_id || "" });
+    },
     // Déposer : « Prêt à déposer » porte déjà « Exporter le dossier complet » quand tout est prêt (pas de doublon).
     aoExportDansPret() { return this.depotShown() && !this.depotIsDeposed() && !!(this.depotPret() && this.depotPret().pret); },
     aoDetails() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.details) || {}; },
@@ -4459,8 +4628,9 @@ const __adjApp = createApp({
       this.ao.generating = true; this.ao.dossier = null;
       try {
         const r = await this.api("POST", "/api/sourcing/documents", { project_id: this.ao.project.id, cotraitants: [] });
-        this.ao.dossier = r.dossier; this.aoLoadDocs(); this.aoAvancer();
+        this.ao.dossier = r.dossier; this.aoLoadDocs(); this.aoLoadChecklist(); this.aoAvancer();
         if (this.convVisible()) this.aoGrpReloadState();   // « Prêt à déposer » : formulaires préparés après la convention
+        else this.aoDepotLoadSoon();                       // seul : formulaires préparés
         const range = r.dossier && r.dossier.memoire_fichiers && r.dossier.memoire_fichiers.length;
         if (!silent) this.notify(this.dossierToast(r.dossier, range ? "Documents préparés et rangés dans le dossier du marché" : "Documents préparés"), this.dossierWarnKind(r.dossier));
       } catch (e) {
@@ -6673,7 +6843,8 @@ __adjApp.component("sources-publiques", {
   unmounted() { if (this._h) this._h.destroy(); },
 });
 // Rédaction, vague 6 (F) : le carnet de notes (app/static/carnet-notes.js) — page du marché gagné ou perdu (mode
-// « marche ») et tableau de bord (mode « tableau », « Où vous perdez des points »). Gabarit statique : Vue ne redessine
+// « marche »), Mes marchés › Bilan (mode « tableau », « Où vous perdez des points ») et l'accueil (mode « rappels », les
+// seuls « Demandez vos notes » ; réorganisation, vague 2a). Gabarit statique : Vue ne redessine
 // jamais son contenu ; un autre marché remonte le composant (clé), un changement d'étape le relit.
 __adjApp.component("carnet-notes", {
   props: { mode: { type: String, default: "marche" }, pid: { type: [Number, String], default: 0 },

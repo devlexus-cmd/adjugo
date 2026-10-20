@@ -186,7 +186,7 @@
   const BULLE_ENVOI = "Le chef de file reçoit le texte envoyé, le nombre de faits encore à relire et des compteurs de sources par type. Jamais vos sources, vos extraits ni vos brouillons.";
   const BULLE_VALIDER = "Valider dit que ce texte est votre version définitive. S'il change ensuite, par vous ou par le chef de file, la partie repasse « à revalider ».";
   const BULLE_DOSSIER = "Le dossier assemblé réunit, dans l'ordre du cadre de l'acheteur, le texte envoyé par chaque membre et le texte validé du chef de file. Il est en lecture seule. Le valider dit que vous l'avez lu : toute modification ensuite le fait repasser « à revalider ».";
-  const BULLE_ESPACE = "Vos brouillons, vos sources, vos documents déposés et l'aide d'Adjugo restent dans un espace privé, lié à ce navigateur : même la personne qui vous a transmis ce lien ne peut pas les lire. Avec un compte Adjugo, rien à ouvrir : retrouvez ce dossier dans Mes marchés, onglet « Où je suis partenaire ».";
+  const BULLE_ESPACE = "Vos brouillons, vos sources, vos documents déposés et l'aide d'Adjugo restent dans un espace privé, lié à ce navigateur : même la personne qui vous a transmis ce lien ne peut pas les lire. Avec un compte Adjugo, rien à ouvrir : retrouvez ce dossier dans Mes marchés, filtre « Où je suis partenaire ».";
   // « Vos documents pour Adjugo » (lien sans compte) : qui voit quoi, à quoi ils servent ; la durée de conservation
   // vient du serveur (réglable).
   const QUI_VOIT = "Seuls vous et Adjugo les lisez ; le chef de file ne les voit jamais.";
@@ -427,7 +427,7 @@
       let h = '<div class="rp-esp"><div class="rp-esp-t">' + ico("key-round", 15) + "<b>Votre espace privé de rédaction</b>" + tip(rpEsc(BULLE_ESPACE)) + "</div>";
       if (e.par_le_compte) {
         // Lien rattaché à un compte Adjugo : aucun espace par le lien, le compte suffit.
-        h += '<p class="small rp-p">' + rpEsc(e.message || "Ce lien est rattaché à un compte Adjugo : rédigez vos parties depuis ce compte, dans Mes marchés, onglet « Où je suis partenaire ».") + '</p><div class="rp-acts"><a class="btn sm primary" href="/app">' + ico("log-in", 14) + "Ouvrir mon compte</a></div>";
+        h += '<p class="small rp-p">' + rpEsc(e.message || "Ce lien est rattaché à un compte Adjugo : rédigez vos parties depuis ce compte, dans Mes marchés, filtre « Où je suis partenaire ».") + '</p><div class="rp-acts"><a class="btn sm primary" href="/app">' + ico("log-in", 14) + "Ouvrir mon compte</a></div>";
       } else if (!e.ouvert) {
         // Invitation qui vise une adresse : même la première ouverture se fait avec le code reçu à cette adresse.
         h += e.code_possible
@@ -701,7 +701,7 @@
 
     function renderExtraits(b) {
       const src = b.sources || [];
-      if (b.sources_depuis_le_compte) return '<div class="muted small rp-p">Les extraits cités depuis votre compte Adjugo ne s\'affichent que dans votre compte (Mes marchés, onglet « Où je suis partenaire »).</div>';
+      if (b.sources_depuis_le_compte) return '<div class="muted small rp-p">Les extraits cités depuis votre compte Adjugo ne s\'affichent que dans votre compte (Mes marchés, filtre « Où je suis partenaire »).</div>';
       if (!src.length) return "";
       return '<details class="gn-det"><summary>Vos extraits cités, privés (' + src.length + ")</summary>" + tip(rpEsc(BULLE_EXTRAITS)) + '<ul class="rp-fl">' + src.map(x => '<li class="small"><span class="rp-ref">' + rpEsc(x.ref) + "</span> <b>" + rpEsc(x.doc_name || "") + '</b><div class="muted">« ' + rpEsc(x.extrait || "") + " »</div></li>").join("") + "</ul></details>";
     }

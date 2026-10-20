@@ -182,6 +182,9 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
 
 ### 1.0.3 Les zones de `app.html`
 
+Vague 2a : les repères ajoutés, retirés ou déplacés par le chantier A2 (Mes marchés et invitations) sont dans
+`docs/REORGANISATION_V2A.md`, § A2.7 ; les lignes ci-dessous qu'ils touchent le disent.
+
 **Cadre**
 
 | Repère | Zone |
@@ -208,8 +211,8 @@ Réécrits : `test_reseau_ecrans.py`, `test_reseau_ecrans_v34.py`, `test_redacti
 | `accueil-grille` | Grille : flux, rail, bilan, carnet |
 | `accueil-flux` | « Vos marchés » (7 derniers marchés) |
 | `accueil-rail` | Pièces à renouveler, entonnoir « Mes marchés » (absent s'il n'y a rien à montrer) |
-| `accueil-bilan` | « Où vous gagnez / perdez » |
-| `accueil-carnet` | Carnet de notes (« Où vous perdez des points ») |
+| `accueil-bilan` | Vague 2a : une ligne qui mène à Mes marchés › Bilan (« Où vous gagnez / perdez » y est, `bilan-gagne-perdu`) |
+| `accueil-carnet` | Carnet de notes : vague 2a, les seuls rappels « Demandez vos notes » (« Où vous perdez des points » est dans le Bilan) |
 
 Retiré (§ 1.6) : `accueil-ruban` (ruban des 4 chiffres).
 
@@ -217,7 +220,7 @@ Retiré (§ 1.6) : `accueil-ruban` (ruban des 4 chiffres).
 
 | Repère | Zone |
 |---|---|
-| `marche-entete` | Titre, client (il mène à `marche-client`), étape, le couple « Seul X % · À plusieurs Y % » ; contient `marche-inviter` (le bouton « Inviter un partenaire », avant les 4 chiffres), `marche-inviter-formulaire` (et le lien à copier), les 4 chiffres, `marche-resultat` (bilan gagné / perdu) et `marche-carnet` |
+| `marche-entete` | Titre, client (il mène à `marche-client`), étape, le couple « Seul X % · À plusieurs Y % » ; contient `marche-inviter` (le bouton « Inviter un partenaire », avant les 4 chiffres ; vague 2a : il ouvre la fenêtre d'invitation unique, `marche-inviter-formulaire` est retiré), les 4 chiffres, `marche-resultat` (bilan gagné / perdu) et `marche-carnet` |
 | `marche-etapes` | La barre d'ancres Lire · Décider · Préparer · Déposer (`<nav>`, 4 boutons) |
 | `marche-lire` | Étape Lire : `marche-analyse` (contient `marche-couverture` et `marche-questions`), `marche-grille`, `marche-dossier-fichiers`, `marche-client` |
 | `marche-decider` | Étape Décider : `marche-plusieurs` (« Répondre à plusieurs ? », le seul « Répartir entre partenaires » et sa composition suggérée ; contient `plusieurs-manques` et `plusieurs-simulation`), `marche-qui-me-complete` (« Qui me complète ? ») |
@@ -226,9 +229,9 @@ Retiré (§ 1.6) : `accueil-ruban` (ruban des 4 chiffres).
 | `marche-reseau` | « Partenaires invités » ; contient `marche-preparation` (parts reçues, « N sur M »), `marche-commande-groupement` (relancer, assembler), `marche-invitations` (liste), `marche-contributions` (« Parts reçues »), `marche-suivi-groupement` (ex-« Cockpit ») avec `marche-coffre-croise` et `marche-offre-commune` |
 | `marche-partenaires` | « Membres et sous-traitants » : les entreprises de vos formulaires officiels, sous-traitant DC4, « Chercher une entreprise » |
 | `marche-convention` | « Convention et accords » (forme, pouvoirs, règles, génération, accords) |
-| `marche-deposer` | Étape Déposer : `marche-pret-a-deposer` (groupement seulement), `marche-avant-depot`, `marche-export` |
-| `marche-pret-a-deposer` | « Prêt à déposer » / « Avant de déposer » (4 contrôles, « Marquer déposé ») ; ex-`convention-pret-a-deposer`, sorti de la convention |
-| `marche-avant-depot` | « Avant de déposer sur la plateforme du client » (4 cases, gardées sur l'appareil), ex-liste de « Mes documents de réponse » |
+| `marche-deposer` | Étape Déposer : `marche-pret-a-deposer` (vague 2a : pour tous), `marche-export` |
+| `marche-pret-a-deposer` | « Prêt à déposer » / « Avant de déposer » (contrôles du serveur, « À vérifier vous-même », « Marquer déposé ») ; ex-`convention-pret-a-deposer`, sorti de la convention ; vague 2a : une seule liste, seul ou à plusieurs |
+| `marche-avant-depot` | Retiré en vague 2a : entré dans `marche-pret-a-deposer` |
 | `marche-export` | « Exporter le dossier complet (ZIP) » (masqué quand « Prêt à déposer » le porte déjà) |
 | `marche-pied` | Pied de page replié (`<details>`) : `marche-devis-suivi`, le journal d'accès (`marche-journal-acces`, avec son bouton), `marche-actions` (« Supprimer ce marché ») |
 | `marche-prix` | « Estimation du prix » |
@@ -260,9 +263,9 @@ Retiré (§ 1.6) : `accueil-ruban` (ruban des 4 chiffres).
 | `vue-compte` | Réglages › Mon compte : mot de passe, mes données (cartes venues de `vue-team`, § 1.3) |
 | `vue-billing` | Abonnement ; contient `billing-offres` (les cartes d'offre) |
 | `vue-admin` | Administration ; contient `admin-mesure` (écrans ouverts, § 1.1) |
-| `vue-consortiums` | Mes marchés › À plusieurs (anciennement « Mes groupements ») |
-| `vue-reseau` | Partenaires › Réseau Adjugo ; contient `reseau-onglets`, `reseau-profil`, `reseau-annuaire`, `reseau-historique`, `reseau-recues` |
-| `vue-shared` | Mes marchés › Où je suis partenaire (anciennement « Partagé avec moi », liste) |
+| `vue-consortiums` | Retiré en vague 2a : le filtre « À plusieurs » de Mes marchés |
+| `vue-reseau` | Partenaires › Réseau Adjugo ; contient `reseau-onglets`, `reseau-profil`, `reseau-annuaire`, `reseau-historique` (`reseau-recues` retiré en vague 2a : les invitations sont dans Mes marchés) |
+| `vue-shared` | Retiré en vague 2a : le filtre « Où je suis partenaire » de Mes marchés |
 | `vue-sharedao-attente` | Dossier partagé en chargement ou en erreur |
 | `vue-sharedao` | Un dossier partagé, côté partenaire ; contient `partage-entete`, `partage-grille`, `partage-pourquoi`, `partage-convention`, `partage-redaction`, `partage-pieces`, `partage-ma-part` (avec `partage-tableau-prix` et `partage-coffre-croise`), `partage-journal` |
 
@@ -275,7 +278,7 @@ Retiré (§ 1.6) : `accueil-ruban` (ruban des 4 chiffres).
 | `fenetre-siret` | Activation par SIRET (1er lancement) |
 | `fenetre-confirmation` | Confirmation d'une action de la convention |
 | `fenetre-fiche-partenaire` | Fiche d'un partenaire du réseau |
-| `fenetre-invitation` | Invitation en un clic (réseau ou registre) |
+| `fenetre-invitation` | Vague 2a : la fenêtre d'invitation unique (réseau, partenaire connu, registre) |
 | `fenetre-formulaire` | Fenêtre générique (formulaires) |
 | `fenetres-preuves` (×2) | Fenêtres de Mes preuves |
 | `fenetre-decouverte` | Découvrir des partenaires réels |

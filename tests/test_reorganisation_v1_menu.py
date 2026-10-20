@@ -118,10 +118,14 @@ def test_chaque_vue_a_sa_rubrique_et_s_atteint_en_deux_clics_au_plus():
     deux_clics = {t["view"] for r in rub if not r.get("groupe") for t in r["onglets"]}
     deux_clics |= set(re.findall(r"go\('(\w+)'\)", reglages))          # ouvrir « Réglages », puis l'entrée
     sous = {t["sous"] for r in rub for t in r["onglets"] if t.get("sous")}
+    # Vague 2a (A2) : « Où je suis partenaire » et « À plusieurs » sont des filtres de Mes marchés (2 clics : la rubrique,
+    # puis le filtre) ; la mesure garde leurs anciens noms d'écran (shared, consortiums).
+    filtres = {"shared", "consortiums"}
+    assert '{ k: "partenaire", label: "Où je suis partenaire"' in JS and '{ k: "plusieurs", label: "À plusieurs"' in JS
     # Pages de détail (un marché, son atelier, un dossier partagé) : depuis la liste de leur rubrique.
     detail = {"aodetail", "atelier", "sharedao"}
     for e in ECRANS - detail:
-        assert e in un_clic or e in deux_clics or e in sous, f"« {e} » à plus de 2 clics"
+        assert e in un_clic or e in deux_clics or e in sous or e in filtres, f"« {e} » à plus de 2 clics"
     assert sous == {"publies", "avenir", "alertes"}
     assert un_clic == {"dashboard", "sourcing", "pipeline", "cotraitants", "documents", "company"}
 
@@ -146,8 +150,8 @@ o.reseau.recues.list = [{ statut: "en_attente" }, { statut: "acceptee" }, { stat
 o.expiring = [1, 2];
 const r = RUBRIQUES;
 console.log(JSON.stringify({ mm: o.mmActions(), part: o.partenaireActions(),
-  tab: o.ongletPastille(r[2].onglets[1]), pieces: o.ongletPastille(r[4].onglets[0]),
-  autre: o.ongletPastille(r[2].onglets[0]) }));
+  tab: o.ongletPastille(r[2].onglets[0]), pieces: o.ongletPastille(r[4].onglets[0]),
+  autre: o.ongletPastille(r[2].onglets[1]) }));
 """))
     assert r == {"mm": 3, "part": 2, "tab": 3, "pieces": 2, "autre": 0}
 
@@ -168,7 +172,7 @@ def test_onglets_titre_et_bulle_de_l_en_tete_sous_node():
     r = _node(_app("""
 const res = {};
 const lib = () => o.ongletsVisibles().map(t => t.label);
-for (const v of ["dashboard", "pipeline", "shared", "aodetail", "atelier", "sharedao", "reseau", "kb", "company",
+for (const v of ["dashboard", "pipeline", "bilan", "aodetail", "atelier", "sharedao", "reseau", "kb", "company",
                  "preuves", "team", "compte", "billing"]) {
   o.view = v; res[v] = { rub: o.rubrique(), onglets: lib(), titre: o.enteteTitre(), aide: o.enteteAide() };
 }
@@ -181,9 +185,11 @@ res.permis = [o._ongletPermis({ si: "admin" }), o._ongletPermis({ si: "projets_a
 console.log(JSON.stringify(res));
 """))
     assert r["dashboard"] == {"rub": "accueil", "onglets": [], "titre": "Accueil", "aide": "Anciennement « Tableau de bord »."}
-    assert r["pipeline"]["onglets"] == ["Marchés", "Où je suis partenaire", "À plusieurs", "Devis et factures"]
-    assert r["pipeline"]["titre"] == "Mes marchés" and r["pipeline"]["aide"] == "Suivez vos marchés étape par étape"
-    assert r["shared"]["aide"].endswith("Anciennement « Partagé avec moi ».")
+    # Vague 2a (A2) : « Où je suis partenaire » et « À plusieurs » sont des filtres de la liste ; le Bilan, un onglet.
+    assert r["pipeline"]["onglets"] == ["Marchés", "Devis et factures", "Bilan"]
+    assert r["pipeline"]["titre"] == "Mes marchés" and r["pipeline"]["aide"].startswith("Suivez vos marchés étape par étape ")
+    assert r["pipeline"]["aide"].endswith("sont des filtres de cette liste.") and "« Partagé avec moi »" in r["pipeline"]["aide"]
+    assert r["bilan"]["titre"] == "Mes marchés" and r["bilan"]["aide"].endswith("« Où vous gagnez / perdez » était sur l'accueil.")
     # Pages de détail : rubrique surlignée (Mes marchés), aucun onglet, leur propre titre.
     for v, titre in (("aodetail", "Le marché"), ("atelier", "Dossier de présentation"), ("sharedao", "Dossier partagé")):
         assert r[v]["rub"] == "marches" and r[v]["onglets"] == [] and r[v]["titre"] == titre, v
@@ -216,7 +222,7 @@ res.alertes = { onglet: o.trouverOnglet, journal: o.journal.slice(), menu: o.mob
 o.journal = []; o.ongletGo(T[0]); res.publies = { onglet: o.trouverOnglet, journal: o.journal.slice() };
 o.journal = []; o.trouverOnglet = "avenir"; o.view = "pipeline"; o.rubriqueGo("trouver");
 res.menu = { view: o.view, onglet: o.trouverOnglet, journal: o.journal.slice() };
-o.journal = []; o.ongletGo(RUBRIQUES[2].onglets[2]); res.plusieurs = { view: o.view, journal: o.journal.slice() };
+o.journal = []; o.ongletGo(RUBRIQUES[2].onglets[2]); res.bilan = { view: o.view, journal: o.journal.slice() };
 res.noms = ["avenir", "alertes", "kb", "dashboard", "team", "aodetail", "compte"].map(k => o.adminEcranNom(k));
 console.log(JSON.stringify(res));
 """))
@@ -225,7 +231,7 @@ console.log(JSON.stringify(res));
     assert r["alertes"] == {"onglet": "alertes", "journal": ["mesure:alertes"], "menu": False}   # déjà sur la vue
     assert r["publies"] == {"onglet": "publies", "journal": []}
     assert r["menu"] == {"view": "sourcing", "onglet": "publies", "journal": ["go:sourcing"]}
-    assert r["plusieurs"] == {"view": "consortiums", "journal": ["go:consortiums"]}              # go() sans changement
+    assert r["bilan"] == {"view": "bilan", "journal": ["go:bilan"]}                             # go() sans changement
     assert r["noms"] == ["Trouver des marchés › À venir", "Trouver des marchés › Mes alertes",
                          "Mes documents › Mon savoir-faire", "Accueil", "Collègues", "Le marché", "Mon compte"]
 
@@ -234,7 +240,7 @@ def test_mesure_des_nouveaux_ecrans():
     from app.services.mesure_usage import ECRANS
     assert {"compte", "avenir", "alertes"} <= ECRANS
     go = JS[JS.index("    go(v) {"):JS.index("    _ecranOuvert(v) {")]
-    assert 'if (v === "shared") { this.loadShared(); this.rnLoadRecues(true); }' in go
+    assert 'if (v === "pipeline") { this.loadProjects(); this.loadShared(); this.rnLoadRecues(true); this.loadConsortiums(); }' in go
     # Trouver des marchés s'ouvre sur « Publiés » ; un onglet choisi l'est après go().
     assert 'if (v === "sourcing" && this.view !== "sourcing") this.trouverOnglet = "publies";' in go
     og = _method("ongletGo")
@@ -281,9 +287,8 @@ def test_accueil_allege():
     assert zone(HTML, "accueil-rail").startswith('<div data-test="accueil-rail" v-if="dashTotal()"')
     assert "pièces à renouveler" not in zone(HTML, "accueil-rail")
     assert ".dash-grid.solo { grid-template-columns:minmax(0,1fr); }" in CSS
-    # Mes marchés › À plusieurs : « Préparer à plusieurs » remplace « Nouveau groupement ».
-    cs = zone(HTML, "vue-consortiums")
-    assert "Nouveau groupement" not in cs and "Préparer à plusieurs" in cs and "Mes groupements</b>" not in cs
+    # Vague 2a (A2) : « À plusieurs » est un filtre de Mes marchés ; go('consortiums') y mène (plus de vue à part).
+    assert 'if (v === "shared" || v === "consortiums") { filtre = v === "shared" ? "partenaire" : "plusieurs"; v = "pipeline"; }' in JS
     assert "Monter un groupement" not in HTML and "Nouveau groupement" not in HTML
 
 
@@ -363,7 +368,7 @@ const comptes = { ancien: { email: "a@b.fr", created_at: veille + "T08:00:00" },
                   demo: { email: DEMO_EMAIL_APP, created_at: "2026-01-01T00:00:00" }, vide: {} };
 for (const [k, u] of Object.entries(comptes)) {
   o.user = u; res[k] = {};
-  for (const v of ["dashboard", "shared", "consortiums", "reseau", "team", "compte", "company"]) {
+  for (const v of ["dashboard", "pipeline", "bilan", "reseau", "team", "compte", "company"]) {
     o.view = v; res[k][v] = { ancien: o.enteteAncien(), aide: o.enteteAide() };
   }
   res[k].transition = transitionVisible(u);
@@ -372,7 +377,7 @@ console.log(JSON.stringify(res));
 """))
     assert r["ancien"]["transition"] is True
     assert r["ancien"]["dashboard"]["aide"] == "Anciennement « Tableau de bord »."
-    assert r["ancien"]["shared"]["ancien"] == "Anciennement « Partagé avec moi »."
+    assert r["ancien"]["pipeline"]["ancien"].startswith("« Où je suis partenaire » (anciennement « Partagé avec moi »)")
     assert r["ancien"]["compte"]["ancien"].endswith("étaient dans « Équipe ».")
     for k in ("neuf", "demo", "vide"):
         assert r[k]["transition"] is False, k
@@ -381,7 +386,7 @@ console.log(JSON.stringify(res));
                 continue
             assert x["ancien"] == "" and "Anciennement" not in x["aide"] and "« Équipe »" not in x["aide"], (k, v, x)
         assert r[k]["dashboard"]["aide"] == "", k            # plus de bulle (i) vide à côté de « Accueil »
-        assert r[k]["shared"]["aide"] and r[k]["team"]["aide"], k   # la phrase de l'écran reste
+        assert r[k]["pipeline"]["aide"] and r[k]["team"]["aide"], k   # la phrase de l'écran reste
     from app.services.demo_seed import DEMO_EMAIL
     assert f'const DEMO_EMAIL_APP = "{DEMO_EMAIL}";' in JS
     assert "if (!transitionVisible(user)) return false;" in JS          # la note suit la même règle
@@ -402,8 +407,8 @@ def test_les_anciens_noms_ne_restent_que_dans_la_note_et_les_bulles():
     for f in ("redaction-partenaire.js",):
         src = (STATIC / f).read_text(encoding="utf-8")
         assert not [t for _l, t in textes_js(src) if "Partagé avec moi" in t], f
-        assert "Mes marchés, onglet « Où je suis partenaire »" in src
-    assert "Invitation acceptée : le dossier est dans Mes marchés, onglet « Où je suis partenaire »." in JS
+        assert "Mes marchés, filtre « Où je suis partenaire »" in src           # vague 2a (A2) : un filtre de la liste
+    assert "Invitation acceptée : le dossier est dans Mes marchés, filtre « Où je suis partenaire »." in JS
 
 
 # ═══ Les vues rangées ══════════════════════════════════════════════════════════════════════════════════════
@@ -419,9 +424,12 @@ def test_mon_compte_rassemble_mot_de_passe_et_donnees():
 
 
 def test_ou_je_suis_partenaire_toujours_present_et_invitations_du_reseau():
-    shared = zone(HTML, "vue-shared")
-    assert '<div v-if="rnRecuesCount()" class="row wrap shared-recues">' in shared and "openReseau('recues')" in shared
-    assert "Les marchés où vous êtes partenaire" in shared and "Dossiers partagés avec vous" not in shared
+    # Vague 2a (A2) : « Où je suis partenaire » est un filtre de Mes marchés, toujours proposé (mmFiltres ne dépend pas des
+    # données) ; les invitations reçues par le réseau se traitent en tête de la liste (plus dans le Réseau Adjugo).
+    filtres = _method("mmFiltres")
+    assert '{ k: "partenaire", label: "Où je suis partenaire", ic: "inbox", n: this.mmActions() }' in filtres and " if " not in filtres
+    assert "rnAccept(inv)" in zone(HTML, "mes-marches-invitations") and "Dossiers partagés avec vous" not in HTML
+    assert 'if (tab === "recues") { this.go("shared"); return; }' in JS
     for z in ("vue-sharedao", "vue-sharedao-attente"):
         assert '<i data-lucide="arrow-left"></i>Où je suis partenaire</button>' in zone(HTML, z)
     assert "v-if=\"shared.length\" class=\"nav-item\"" not in HTML        # plus d'entrée qui apparaît et disparaît

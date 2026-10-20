@@ -38,7 +38,8 @@ ETAPES = {
     "marche-decider": ["marche-plusieurs", "marche-qui-me-complete"],
     "marche-preparer": ["marche-prix", "marche-dossier-presentation", "marche-pieces", "marche-taches-plusieurs",
                         "marche-reseau", "marche-partenaires", "marche-convention"],
-    "marche-deposer": ["marche-pret-a-deposer", "marche-avant-depot", "marche-export"],
+    # Vague 2a (A2) : la liste à cocher (marche-avant-depot) est entrée dans « Prêt à déposer », une seule liste.
+    "marche-deposer": ["marche-pret-a-deposer", "marche-export"],
     "marche-pied": ["marche-devis-suivi", "marche-journal-acces", "marche-actions"],
 }
 TITRES = {"marche-lire": "Lire", "marche-decider": "Décider", "marche-preparer": "Préparer",
@@ -120,15 +121,15 @@ def test_inviter_un_partenaire_en_tete_le_bouton_le_plus_visible():
     assert 'type="button" class="btn primary"' in bouton and "width:100%" in bouton
     # Avant les 4 chiffres : sur téléphone ils s'empilent et repoussaient le bouton sous la ligne de flottaison.
     assert entete.index(bouton) < entete.index('<div class="cards cols-4"')
-    # Le seul bouton pleine largeur de la page ; le formulaire s'ouvre juste dessous.
+    # Le seul bouton pleine largeur de la page. Vague 2a (A2) : il ouvre la fenêtre d'invitation unique (plus de
+    # formulaire dans la page) ; le lien à copier y est, après l'envoi.
     assert PAGE.count("width:100%;justify-content:center") == 1
-    form = zone(HTML, "marche-inviter-formulaire")
-    assert form in entete and 'ref="inviteForm" tabindex="-1"' in form
-    assert "ao.share.lastUrl" in entete and "ao.share.lastUrl" not in zone(HTML, "marche-reseau")
+    assert '@click="aoInviter()"' in bouton and "ao.share.lastUrl" not in HTML + JS and "inviteForm" not in HTML + JS
+    assert 'v-model="rinv.email"' in zone(HTML, "fenetre-invitation") and "rinv.url" in zone(HTML, "fenetre-invitation")
     # Toutes les entrées d'invitation y mènent : « Inviter {nom} », la carte vide, la recherche.
     grp = JS[JS.index("    aoGrpInvite(m) {"):JS.index("    _grpProfileId(m) {")]
-    assert 'this.rnScrollTo("inviteForm")' in grp and "reseauCard" not in grp
-    assert 'aoInviter() { this.ao.share.open = true; this.rnScrollTo("inviteForm"); },' in JS
+    assert "this.inviterOuvrir(" in grp and "this.rnInviteOpen(" in grp and "reseauCard" not in grp
+    assert "aoInviter() { if (this.ao.project) this.inviterOuvrir({ projectId: this.ao.project.id }); }," in JS
     assert "if (inviter) this.aoInviter();" in JS
     assert '@click="aoInviter()"' in zone(HTML, "marche-reseau")
     assert "Inviter un partenaire sur ce marché" not in HTML
@@ -163,16 +164,16 @@ def test_cartes_des_partenaires_renommees_sans_jargon():
         assert "« Monter le groupement »" not in src and "« Convention et accords »" in src, f
 
 
-def test_pret_a_deposer_hors_de_la_convention_reserve_au_groupement():
+def test_pret_a_deposer_hors_de_la_convention_pour_tous():
     pret, deposer = zone(HTML, "marche-pret-a-deposer"), zone(HTML, "marche-deposer")
     assert pret in deposer and pret not in zone(HTML, "marche-convention")
-    assert pret.startswith('<section data-test="marche-pret-a-deposer" v-if="depotShown() && ')
-    # Réservé au groupement : depot_readiness ne vérifie que des points de groupement.
-    assert "if (!st || !this.convVisible()) return false;" in JS
+    # Vague 2a (A2) : une seule liste, pour tous ; le serveur a un calcul pour l'entreprise seule (jamais un faux manque
+    # de groupement : tests/test_reorganisation_v2a_marches_invitations.py).
+    assert pret.startswith('<section data-test="marche-pret-a-deposer" class="conv-pret"')
+    assert "if (!st || !this.convVisible()) return false;" not in JS
     assert "Marquer déposé" in pret and 'ref="depotCard"' in pret
-    # La liste à cocher avant le dépôt : dans Déposer, pour tous ; plus dans les documents de réponse.
-    avant = zone(HTML, "marche-avant-depot")
-    assert "Avant de déposer sur la plateforme du client" in avant and "predepotDone }} sur {{ predepotSteps.length }}" in avant
+    # La liste à cocher avant le dépôt : dans « Prêt à déposer », pour tous ; plus dans les documents de réponse.
+    assert "predepotDone }} sur {{ predepotSteps.length }}" in pret and "À vérifier vous-même" in pret
     assert "predepot" not in zone(HTML, "pieces-documents-reponse")
     # Un seul « Exporter le dossier complet » visible à la fois.
     assert 'v-if="!aoExportDansPret()"' in zone(HTML, "marche-export")
@@ -340,7 +341,7 @@ console.log(JSON.stringify(out));
 
 NOUVEAUX = ["Convention et accords", "Chercher des partenaires", "Membres et sous-traitants", "Partenaires invités",
             "Votre client", "Client non précisé", "Analyse préliminaire", "Journal, devis et factures, supprimer",
-            "Avant de déposer sur la plateforme du client", "Poser une question à l'IA sur ce marché", "Parts reçues",
+            "Poser une question à l'IA sur ce marché", "Parts reçues",
             "Part reçue", "Aucune part reçue pour l'instant.", "Calculer le score à plusieurs", "Rechercher des marchés",
             "Analyse du marché", "Terminé", "Pas commencé", "Voir", "Offre commune", "Seul",
             "Aucun partenaire invité sur ce marché.", "Ancienne version : à revalider",

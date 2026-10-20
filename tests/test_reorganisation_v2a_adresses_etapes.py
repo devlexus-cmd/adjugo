@@ -105,7 +105,10 @@ for (const v of vues) {
 }
 console.log(JSON.stringify(out));
 """, json.dumps(VUES_HTML))
-    assert set(r) == set(VUES_HTML) and len(VUES_HTML) == 22
+    # Réunion A1 × A2 : les vues « shared » et « consortiums » sont devenues des filtres de Mes marchés (leur adresse
+    # est celle du filtre, test suivant) ; « bilan » est un onglet de Mes marchés.
+    assert set(r) == set(VUES_HTML) and len(VUES_HTML) >= 21 and not {"shared", "consortiums"} & set(VUES_HTML)
+    assert r["bilan"]["a"] == "/app/marches/bilan"
     for v, x in r.items():
         assert x["a"] and x["a"].startswith("/app") and x["retour"] == v, (v, x)
         assert re.fullmatch(r"/app(/[a-z0-9-]+)*", x["a"]), x["a"]                 # des mots, sans accent ni « # »
@@ -122,10 +125,12 @@ def test_onglets_internes_chemins_inconnus_et_identifiants():
 const cas = JSON.parse(process.argv[1]);
 console.log(JSON.stringify({
   adresses: [adresseDe({ view: "sourcing", sous: "avenir" }), adresseDe({ view: "sourcing", sous: "alertes" }),
-             adresseDe({ view: "sourcing", sous: "publies" }), adresseDe({ view: "reseau", reseau: "recues" }),
+             adresseDe({ view: "sourcing", sous: "publies" }), adresseDe({ view: "reseau", reseau: "historique" }),
              adresseDe({ view: "reseau", reseau: "profil" }), adresseDe({ view: "reseau", reseau: "annuaire" }),
              adresseDe({ view: "aodetail" }), adresseDe({ view: "aodetail", projet: "12abc" }), adresseDe({ view: "inconnue" }),
              adresseDe({ view: "sharedao", partage: "jeton-secret" })],
+  filtres: ["tous", "pilote", "partenaire", "plusieurs", "inconnu"].map(f => adresseDe({ view: "pipeline", filtre: f })),
+  etatsFiltres: ["/app/marches", "/app/marches/je-pilote", "/app/marches/partenaire", "/app/marches/a-plusieurs"].map(c => etatDeAdresse(c)),
   etats: cas.map(c => etatDeAdresse(c)),
 }));
 """, json.dumps(["/app/trouver/a-venir", "/app/trouver/alertes", "/app/partenaires/reseau/invitations",
@@ -133,11 +138,17 @@ console.log(JSON.stringify({
                  "/app/marches/1234567890123", "/app/marches/abc", "/app/xyz", "/", "/apps", "/invite/abc",
                  "https://ailleurs.example/app/marches/1", "/app/marches/partenaire/jeton"]))
     assert r["adresses"] == ["/app/trouver/a-venir", "/app/trouver/alertes", "/app/trouver",
-                             "/app/partenaires/reseau/invitations", "/app/partenaires/reseau",
+                             "/app/partenaires/reseau/historique", "/app/partenaires/reseau",
                              "/app/partenaires/reseau/annuaire", None, None, None, None]
+    # Réunion A1 × A2 : chaque filtre de Mes marchés a son adresse (« Tous » : la liste) et la rouvre.
+    assert r["filtres"] == ["/app/marches", "/app/marches/je-pilote", "/app/marches/partenaire", "/app/marches/a-plusieurs",
+                            "/app/marches"]
+    assert r["etatsFiltres"] == [{"view": "pipeline"}, {"view": "pipeline", "filtre": "pilote"},
+                                 {"view": "pipeline", "filtre": "partenaire"}, {"view": "pipeline", "filtre": "plusieurs"}]
     e = r["etats"]
     assert e[0] == {"view": "sourcing", "sous": "avenir"} and e[1] == {"view": "sourcing", "sous": "alertes"}
-    assert e[2] == {"view": "reseau", "reseau": "recues"}
+    # L'ancienne adresse des invitations reçues du Réseau mène là où elles se traitent : Mes marchés, « Où je suis partenaire ».
+    assert e[2] == {"view": "pipeline", "filtre": "partenaire"}
     assert e[3] == {"view": "aodetail", "projet": 12} and e[4] == {"view": "aodetail", "projet": 12}
     for x in e[5:10]:
         assert x == {"view": "dashboard", "inconnue": True}                        # jamais un identifiant douteux
@@ -173,9 +184,13 @@ function vider() {        // comme Vue : l'observateur d'adresseCourante, puis l
 }
 Object.assign(o, { token: "t", user: { is_admin: false }, view: "dashboard", trouverOnglet: "publies", projects: [{ id: 7, name: "Sept" }, { id: 9, name: "Neuf" }],
   shared: [{ project_id: 5, token: "jeton-5" }], ao: { project: null, back: "" }, sharedAo: { projectId: null }, reseau: { tab: "profil" },
-  journal: [], drawer: null,
+  journal: [], drawer: null, mmFiltre: "tous",
   enteteTitre() { return this.view; }, notify(m) { this.journal.push("message:" + m); },
-  go(v) { if (v === "admin" && !this.user.is_admin) v = "dashboard"; this.view = v; if (v === "sourcing") this.trouverOnglet = "publies"; this.journal.push("go:" + v); },
+  go(v) { if (v === "admin" && !this.user.is_admin) v = "dashboard";
+    let f = ""; if (v === "shared" || v === "consortiums") { f = v === "shared" ? "partenaire" : "plusieurs"; v = "pipeline"; }   // comme go() (A2)
+    if (v === "pipeline") { if (f) this.mmFiltre = f; else if (this.view !== "pipeline") this.mmFiltre = "tous"; }
+    this.view = v; if (v === "sourcing") this.trouverOnglet = "publies"; this.journal.push("go:" + v); },
+  mmFiltrer(k) { if (this.mmFiltre !== k) { this.mmFiltre = k; this.journal.push("filtre:" + k); } },
   openAo(p) { this.ao.back = this.view; this.ao.project = p; this.view = "aodetail"; this.journal.push("ao:" + p.id); },
   atlOpen() { this.view = "atelier"; this.journal.push("atelier"); }, atlCardLoad() {}, _atlQuitter() { this.journal.push("quitte-atelier"); },
   openShared(it) { this.sharedAo = { projectId: it.project_id }; this.view = "sharedao"; this.journal.push("partage:" + it.project_id); },
@@ -264,7 +279,7 @@ def test_le_demarrage_lit_l_adresse_et_preserve_les_liens_envoyes():
     # ?shared=<jeton> (lien d'invitation « ouvert dans mon Adjugo ») ouvre le dossier, et le jeton quitte l'adresse.
     assert 'const st = new URLSearchParams(location.search).get("shared");' in boot
     assert 'history.replaceState(history.state, "", "/app");' in boot
-    assert '_demande = it ? { view: "sharedao", partage: it.project_id } : { view: "shared" };' in boot
+    assert '_demande = it ? { view: "sharedao", partage: it.project_id } : { view: "pipeline", filtre: "partenaire" };' in boot
     # ?verify=, ?reset=, #gcode=, ?gerror= et ?inscription sont lus au montage, avant le démarrage, comme avant.
     mounted = JS[JS.index("  mounted() {\n    this.applyTheme();"):JS.index("  updated() {")]
     for m in ('get("reset")', 'get("verify")', 'get("gcode")', 'get("gerror")', "inscriptionDemandee(location)"):
@@ -517,14 +532,27 @@ console.log(JSON.stringify({ d: st.map(s => ch.map(c => statutApresDecision(s, c
     assert "this.aoInviter();" in dec and 'this.rnScrollTo("etPreparer");' in dec
     # Les gestes de Préparer : estimer, préparer les formulaires, inviter, ouvrir l'atelier.
     for debut, fin in (("    async aoEstimate() {", "    async aoSaveEstimate() {"), ("    async aoGenerate(opts) {", "    _downloadB64("),
-                       ("    async aoCreateInvite() {", "    async aoRevokeInvite(inv) {"), ("    atlOpen() {", "    _atlQuitter() {")):
+                       ("    atlOpen() {", "    _atlQuitter() {")):
         assert "this.aoAvancer();" in JS[JS.index(debut):JS.index(fin)], debut
+    # Réunion A1 × A2 : inviter passe par la fenêtre unique (rinvSend), sur la page du marché comme ailleurs.
+    envoi = JS[JS.index("    async rinvSend() {"):JS.index("    rinvViaReseau() {")]
+    assert "this._marcheEnPreparation(pid);" in envoi and envoi.index("this._marcheEnPreparation(pid);") < envoi.index("} catch (e) {")
+    m = JS[JS.index("    async _marcheEnPreparation(pid) {"):JS.index("    aoTacheVoir(t) {")]
+    assert "this.aoAvancer();" in m and "statutEnPreparation(p.status)" in m
 
 
-def test_mes_marches_une_colonne_par_etape_et_a_venir():
-    assert 'v-for="s in kanbanColonnes()"' in zone(HTML, "vue-pipeline")
-    k = _method("kanbanColonnes")
-    assert 's !== "suivi" && s !== "abandonne"' in k and "this.byStatus(s).length" in k
+def test_mes_marches_un_groupe_par_etape_et_a_venir():
+    # Réunion A1 × A2 : Mes marchés est la liste filtrable de A2, groupée par étape dans l'ordre de l'axe ; un groupe
+    # n'existe que s'il a des marchés (« À venir » et « Abandonné » n'apparaissent que s'il y en a, comme les colonnes).
+    assert 'v-for="g in mmGroupes()"' in zone(HTML, "vue-pipeline") and "kanbanColonnes" not in JS + HTML
+    assert ("listeMesMarches(this.projects, this.shared, (this.consortiums || {}).consortiums, this.mmFiltre, this.statuses2)"
+            in _method("mmGroupes"))
+    g = _node(tranche(JS, "const MM_FILTRES = [", "function listeMesMarches(") + _AXE + """
+const ordre = AXE_ETAPES.map(e => e.k);
+console.log(JSON.stringify(listeMesMarches([{ id: 1, status: "en_cours" }, { id: 2, status: "suivi" }, { id: 3, status: "decide" }],
+  [{ token: "a", groupement: { state: "depose" } }], [], "tous", ordre).map(x => [x.k, x.pilotes.map(p => p.id), x.partenaires.length])));
+""")
+    assert g == [["suivi", [2], 0], ["decide", [3], 0], ["en_cours", [1], 0], ["depose", [], 1]]
     radar = zone(HTML, "trouver-radar")
     b = zone(HTML, "trouver-preparer-a-venir")
     assert b in radar and '@click="srcAVenirPreparer(r)"' in b and "Préparer à plusieurs" in b
@@ -610,7 +638,7 @@ console.log(JSON.stringify({ l: listeAFaire(a.d, a.auj).map(t => [t.k, t.titre, 
     l = {x[0]: x[1:] for x in r["l"]}
     assert l["accord-5"] == ["Votre accord est demandé", "Salle de sports · chef de file : BTP Ouest",
                              "Lire et donner mon accord", {"view": "sharedao", "partage": 5}]
-    assert l["invitation-t1"][3] == {"view": "reseau", "reseau": "recues"}
+    assert l["invitation-t1"][3] == {"view": "shared"}             # Mes marchés, filtre « Où je suis partenaire » (A2)
     assert [l["date-8"][0], l["date-9"][0], l["date-1"][0]] == ["Date limite aujourd'hui", "Date limite demain",
                                                                 "Date limite dans 5 jours"]
     assert l["parts-1"][:2] == ["Parts reçues 1 sur 3", "Toiture"]                  # « N sur M » (décision 8)

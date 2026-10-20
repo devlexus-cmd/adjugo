@@ -140,7 +140,8 @@ console.log(JSON.stringify(cas.map(p => [o.feedScoreTitle(p), o.kanbanScoreTitle
 def test_n_sur_m_dans_l_application_et_l_espace_partenaire():
     assert not re.search(r"\}\}\s*/\s*\{\{", HTML), "« N sur M », jamais « N/M »"
     assert 'ok + " sur " + files.length + " ajouté(s)"' in JS and 'r.covered + " sur " + (r.count - errs)' in JS
-    assert "{{ cs.submitted }} sur {{ cs.partners }}" in zone(HTML, "vue-consortiums")
+    # Vague 2a (A2) : la carte « À plusieurs » de la liste de Mes marchés (anciennement la vue des groupements).
+    assert "{{ cs.submitted }} sur {{ cs.partners }}" in zone(HTML, "mes-marches-plusieurs")
     # Espace partenaire (lien) et dossier partagé (compte) : le score du groupement se dit « à plusieurs », en %.
     assert "/100" not in INV and not re.search(r"\$\{esc\(n\w\)\}/\$\{esc\(n\w\)\}", INV)
     assert "parts reçues ${esc(nS)} sur ${esc(nM)}" in INV and "${esc(nA)} sur ${esc(nS)}</span>" in INV
