@@ -508,6 +508,24 @@ def _lead_attestations(db: Session, project, deadline) -> tuple:
     return problems, missing
 
 
+def a_un_groupement(invites: list, conv) -> bool:
+    """Le marché se prépare-t-il en GROUPEMENT, pour « Prêt à déposer » ? Oui s'il a un membre : une invitation active
+    d'un partenaire (un sous-traitant n'est pas membre du groupement : il relève du DC4), ou une convention qui compte
+    des membres — générée (à valider, validée, à revalider), ou en brouillon avec des partenaires hors ligne. Une
+    convention restée en brouillon sans partenaire (seul invité qui a décliné, sous-traitant seul) n'en fait pas un :
+    sa génération serait refusée (« Aucun partenaire »), ses contrôles ne pourraient jamais être réglés. Relecture de
+    la vague 2a ; même idée que `has_members` de groupement_state."""
+    from app.services.groupement_convention import _is_sous_traitant
+    if any(not _is_sous_traitant(getattr(inv, "role", None)) for inv in (invites or [])):
+        return True
+    if conv is None:
+        return False
+    if (getattr(conv, "status", None) or "draft") in ("a_signer", "signee", "perimee"):
+        return True
+    params = conv.params if isinstance(getattr(conv, "params", None), dict) else {}
+    return any(isinstance(e, dict) for e in (params.get("membres_hors_ligne") or []))
+
+
 def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = None) -> dict:
     """« Prêt à déposer » (étape 5), FIABLE et calculable à tout moment (pas seulement quand la
     convention est validée) : parts soumises + attestations valides à la date limite + convention
@@ -526,10 +544,11 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
             conv = db.query(GroupementConvention).filter(GroupementConvention.project_id == project.id).first()
         except Exception:
             conv = None
-    # Réorganisation, vague 2a (A2) : une seule liste « Prêt à déposer », pour tous. Une entreprise SEULE (aucune
-    # invitation active, aucune convention) a son propre calcul : jamais un faux manque de groupement.
-    if not invites and conv is None:
-        return depot_readiness_seul(project, db)
+    # Réorganisation, vague 2a (A2) : une seule liste « Prêt à déposer », pour tous. Une entreprise SEULE a son propre
+    # calcul : jamais un faux manque de groupement (relecture : ni un sous-traitant seul, ni une convention restée en
+    # brouillon sans partenaire ne font un groupement, voir a_un_groupement).
+    if not a_un_groupement(invites, conv):
+        return depot_readiness_seul(project, db, invites=invites)
     checks, manques, avert = {}, [], []
     par = {k: [] for k, _label in DEPOT_CHECKS}    # chaque manque sous son contrôle (l'écran les range ainsi)
 
@@ -686,7 +705,23 @@ def _pays_du_marche(db: Session, project) -> str:
     return "FR"
 
 
-def depot_readiness_seul(project, db: Session) -> dict:
+def _formulaires_ranges(db: Session, project, ids) -> set:
+    """Formulaires officiels rangés dans le dossier du marché (dossier « CERFA », affiché « Formulaires officiels ») :
+    DC1.pdf, DC2.pdf, ATTRI1.pdf, DUME.pdf → {"dc1", …}. « Préparer mes documents » de la production les y rangeait
+    sans les horodater pour une entreprise seule (seulement pour un groupement à convention) : relecture de la vague
+    2a, ils comptent pour « Formulaires officiels préparés » d'une entreprise seule."""
+    try:
+        from app.models import Document
+        noms = {f"{dt.upper()}.pdf": dt for dt in FORMULAIRES_FR + FORMULAIRES_HORS_FR}
+        rows = db.query(Document.name).filter(
+            Document.project_id == project.id, Document.user_id.in_(ids), Document.folder == "CERFA",
+            Document.deleted_at.is_(None), Document.name.in_(list(noms))).all()
+        return {noms[n] for (n,) in rows if n in noms}
+    except Exception:
+        return set()
+
+
+def depot_readiness_seul(project, db: Session, invites: Optional[list] = None) -> dict:
     """« Prêt à déposer » d'une entreprise seule : prix estimé, dossier de présentation prêt, formulaires officiels
     préparés, pièces demandées réunies (la carte « Pièces à fournir », une seule vérité), attestations valides à la
     date limite. Même forme que depot_readiness (checks, libelles, pret, n_ok, n_total, pct, manques,
@@ -751,9 +786,10 @@ def depot_readiness_seul(project, db: Session) -> dict:
                                                                       GeneratedDoc.doc_type.in_(attendus)).all()}
     except Exception:
         gens = {}
+    ranges = _formulaires_ranges(db, project, member_ids(owner, db)) if owner is not None else set()
     for dt in attendus:
         g = gens.get(dt)
-        if not (g and g.status in ("pret", "signe")):
+        if not (g and g.status in ("pret", "signe")) and dt not in ranges:
             formulaires_ok = False
             par["formulaires"].append(f"Formulaire {dt.upper()} à préparer : « Préparer mes documents »")
     checks["formulaires"] = formulaires_ok
@@ -775,6 +811,21 @@ def depot_readiness_seul(project, db: Session) -> dict:
                      "aujourd'hui seulement")
     elif deadline < date.today():
         avert.append(f"La date limite du marché ({_fr_date(deadline)}) est dépassée")
+    # Un sous-traitant invité (hors groupement) : sa part reste utile pour le DC4, un avertissement comme pour un
+    # groupement, jamais un manque (relecture de la vague 2a).
+    if invites:
+        try:
+            contribs = visible_contributions(db, project.id, invites)
+            for inv in invites:
+                c = contribs.get(inv.id)
+                name = (c.company_name if c and c.company_name else inv.company_name) or "Un partenaire"
+                if not c or c.status != "submitted":
+                    avert.append(f"Part de {name} pas encore soumise (sous-traitant : hors convention, utile pour le DC4)")
+                elif c.prix_lot_ht is None:
+                    avert.append(f"Part de {name} : prix de vente de sa partie manquant (sous-traitant : hors "
+                                 "convention, utile pour le DC4)")
+        except Exception:
+            pass
 
     cles = [k for k, _label in DEPOT_CHECKS_SEUL if k != "dossier" or controle_dossier]
     ordered = {k: bool(checks.get(k)) for k in cles}

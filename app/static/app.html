@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-3O8bcX0ASkja6mPpOZJxLaCqNzh+tCAktUpx/whY6eZ7p6/qFrNtjqhBLIzoink/"></script>
-<script src="/static/i18n.js" integrity="sha384-KQU2O1EIBfcuHHncnLyVrxCxgWXjpBLaSAlw+2QdH9ahCC5+OUZmsFC9uTiLWvkK" defer></script>
+<script src="/static/i18n.js" integrity="sha384-KpXowPcwcNEmHnlAs08IgZwUFCrYOh4fpKxbdlauvZYi6XOlVMLIQLKQ/opchP5S" defer></script>
 </head>
 <body>
 <div id="app">
@@ -441,9 +441,15 @@
             <div data-test="marche-analyse" class="card" style="margin-top:14px;position:relative">
               <div v-if="aoBusy()" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg" aria-live="polite">{{ ao.lectureMsg || "Analyse du dossier en cours…" }}</div></div></div>
               <div class="ch"><i data-lucide="scan-search"></i><h3>Analyse du dossier du marché</h3><div class="spacer"></div>
-                <span class="pill" :class="aoDceAvailable()?'go':'neutral'" style="gap:4px"><i :data-lucide="aoDceAvailable()?'file-check':'file-x'" style="width:13px;height:13px"></i>{{ aoDceAvailable()?'Dossier complet':'Annonce seule' }}</span></div>
+                <span class="pill" :class="aoDceAvailable()?'go':'neutral'" style="gap:4px"><i :data-lucide="aoDceAvailable()?'file-check':(aoPasPublie()?'calendar-clock':'file-x')" style="width:13px;height:13px"></i>{{ aoDceAvailable()?'Dossier complet':(aoPasPublie()?'Pas encore publié':'Annonce seule') }}</span></div>
               <div class="cb">
-                <div v-if="!aoDceAvailable()" class="row wrap" style="margin-bottom:12px;gap:10px;padding:12px;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:8px">
+                <!-- Une carte « À venir » (décision 11) : pas d'annonce ni de dossier avant la publication (relecture de la vague 2a). -->
+                <div data-test="marche-pas-publie" v-if="aoPasPublie()" class="row wrap" style="margin-bottom:12px;gap:10px;padding:12px;background:var(--surface-2);border-radius:8px">
+                  <i data-lucide="calendar-clock" style="width:18px;height:18px;flex-shrink:0;margin-top:2px"></i>
+                  <div style="flex:1;min-width:180px"><b class="small">Marché pas encore publié</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ce marché vient d'un contrat qui arrive à échéance : le client n'a pas encore publié le suivant. À sa publication, téléchargez le dossier complet sur la plateforme du client et importez-le ici : Adjugo l'analysera.</span></button><div class="muted small" style="margin-top:2px">Le dossier sera à importer à sa publication. Vous pouvez déjà inviter vos partenaires.</div></div>
+                  <button class="btn ghost sm" @click="$refs.aoDce.click()" :disabled="aoBusy()"><span v-if="aoBusy()" class="spin"></span><i v-else data-lucide="upload"></i>Importer le dossier du marché</button>
+                </div>
+                <div v-else-if="!aoDceAvailable()" class="row wrap" style="margin-bottom:12px;gap:10px;padding:12px;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:8px">
                   <i data-lucide="alert-triangle" style="width:18px;height:18px;color:#b45309;flex-shrink:0;margin-top:2px"></i>
                   <div style="flex:1;min-width:180px"><b class="small" style="color:#92400e">Le dossier complet du marché est indispensable</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le <b>dossier complet</b> (le règlement, le cahier des charges, le tableau de prix) donne une <b>compatibilité fiable</b>, la liste exacte des pièces et les formulaires corrects. Téléchargez-le sur la plateforme de l'acheteur et déposez-le ici.</span></button><div class="muted small" style="margin-top:2px">Analyse <b>préliminaire</b> (annonce seule) : importez le dossier complet du marché pour un résultat fiable.</div></div>
                   <button class="btn primary sm" @click="$refs.aoDce.click()" :disabled="aoBusy()"><span v-if="aoBusy()" class="spin"></span><i v-else data-lucide="upload"></i>Importer le dossier du marché</button>
@@ -451,7 +457,7 @@
                 <div v-else class="row" style="margin-bottom:10px;gap:8px"><button class="btn ghost sm" @click="$refs.aoDce.click()" :disabled="aoBusy()"><i data-lucide="upload"></i>Ré-importer le dossier</button><button class="btn ghost sm" @click="aoReanalyze()" :disabled="aoBusy()"><span v-if="aoBusy()" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Ré-analyser</button></div>
                 <input ref="aoDce" type="file" accept=".pdf,.zip,.docx,.docm,.xlsx,.xlsm,.ods,.odt,.txt,.csv" class="hidden" @change="aoUploadDce">
                 <p class="small" v-if="ao.project.ai_summary">{{ ao.project.ai_summary }}</p>
-                <p class="muted small" v-else>Aucune analyse encore. Importez le dossier du marché pour la lancer.</p>
+                <p class="muted small" v-else-if="!aoPasPublie()">Aucune analyse encore. Importez le dossier du marché pour la lancer.</p>
                 <!-- Couverture de la lecture : « Dossier lu en entier : N pièces, P pages », ou les pièces non lues et pourquoi -->
                 <div data-test="marche-couverture" v-if="aoCouverture()" class="lect-cov" :class="{partiel: !aoCouverture().complet}">
                   <div class="row small" style="gap:6px;align-items:flex-start"><i :data-lucide="aoCouverture().complet ? 'file-check' : 'file-warning'" style="width:14px;height:14px;flex:none;margin-top:2px"></i><span>{{ aoCouverture().message }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo lit chaque pièce du dossier en entier : PDF, Word, tableurs, textes, et les pages scannées. Une pièce qui n'a pas pu être lue est nommée avec la raison (format non pris en charge, fichier protégé, scan illisible). Un gros dossier est lu pièce par pièce : cela peut prendre quelques minutes.</span></button></div>
@@ -4265,6 +4271,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-6qNfSXtvQ5zr/U1F2cqYfiESONkcLJdN0wuZrP5kDtPoUtoFLFZ/7vj80NlqrKpX" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-cdhj+yGDh4s4gYrKucNMXZBALQS6eyIznhmBrsPTSp5N+9STmsWH5NuPYjLqoJQO" defer></script>
+<script src="/static/app.js" integrity="sha384-muPMDDGn7vDegGWeiI6b2AJ6PE90lttKNyPqWtFzY9cBrwqpgYykxbGSeq67Ig2p" defer></script>
 </body>
 </html>

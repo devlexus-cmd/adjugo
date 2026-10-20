@@ -109,6 +109,7 @@ def update_project(
     changes = data.model_dump(exclude_unset=True)
     if "status" in changes and changes["status"] is None:
         changes.pop("status")             # un marché a toujours une étape de l'axe (vague 2a)
+    si_statut = changes.pop("si_statut", None)    # un geste : seulement depuis ces étapes (relecture de la vague 2a)
     if set(changes) - {"status"}:
         from app.core.demo_guard import refuser_demo
         refuser_demo(current_user, "modifier un marché")
@@ -120,6 +121,18 @@ def update_project(
         raise HTTPException(status_code=404, detail="Projet introuvable")
 
     ancien = project.status.value if hasattr(project.status, "value") else str(project.status or "")
+    if si_statut is not None and "status" in changes:
+        # Un geste : l'étape change dans la même instruction que la vérification de l'étape de départ (UPDATE … WHERE
+        # status IN …), jamais quand le marché en est parti entre-temps (déposé depuis la page d'un collègue, une liste
+        # plus ancienne). Sinon l'étape réelle est renvoyée, sans erreur : l'écran la reprend.
+        from app.models import ProjectStatus
+        nouveau = changes.pop("status")
+        n = db.query(Project).filter(
+            Project.id == project.id, Project.status.in_([ProjectStatus(s) for s in si_statut]),
+        ).update({Project.status: ProjectStatus(nouveau)}, synchronize_session=False)
+        if n:
+            from app.services.carnet_notes import apres_changement_d_etape
+            apres_changement_d_etape(project, ancien, str(nouveau), current_user.id)
     for key, value in changes.items():
         setattr(project, key, value)
     if "status" in changes:

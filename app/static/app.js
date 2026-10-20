@@ -177,13 +177,32 @@ const ADRESSES_RESEAU = { annuaire: "annuaire", historique: "historique" };   //
 const ADRESSES_MES_MARCHES = { pilote: "je-pilote", partenaire: "partenaire", plusieurs: "a-plusieurs" };   // « tous » : la vue
 const ADRESSE_ATELIER = "dossier-de-presentation";
 function _adrId(n) { const t = String(n == null ? "" : n); return /^[1-9][0-9]{0,11}$/.test(t) ? t : ""; }
+// Relecture de la vague 2a : un même compte peut être partenaire deux fois du même marché (partenaire du groupement
+// sur une partie, sous-traitant sur une autre). L'adresse d'un dossier partagé porte donc, après l'identifiant du
+// marché, un REPÈRE de l'invitation : une empreinte courte de son jeton (7 caractères, FNV-1a 32 bits), dont on ne
+// retrouve pas le jeton — le jeton, lui, ne va jamais dans l'adresse. /app/marches/partenaire/34/k3j9x2a.
+function clePartage(jeton) {
+  const t = String(jeton || ""); if (!t) return "";
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return ("000000" + h.toString(36)).slice(-7);
+}
+function _adrCle(c) { const t = String(c == null ? "" : c); return /^[0-9a-z]{7}$/.test(t) ? t : ""; }
+// Le dossier partagé que désigne une adresse, dans `partages` (GET /api/shared, du plus récent au plus ancien) : celui
+// du marché dont le repère est `cle` ; sans repère (adresse tapée, ou d'avant ce repère), le plus ancien de ce marché.
+// null : aucun (invitation révoquée, déclinée, d'un autre compte).
+function trouverPartage(partages, projet, cle) {
+  const l = (partages || []).filter(x => x && x.project_id === projet);
+  if (cle) return l.find(x => clePartage(x.token) === cle) || null;
+  return l.length ? l[l.length - 1] : null;
+}
 // Chemin de l'écran décrit par `e` ({ view, sous, projet, partage, reseau, filtre }) ; null si l'écran n'a pas d'adresse (une
 // page de détail sans son identifiant) : l'adresse ne change pas.
 function adresseDe(e) {
   e = e || {};
   if (e.view === "aodetail") return _adrId(e.projet) ? "/app/marches/" + _adrId(e.projet) : null;
   if (e.view === "atelier") return _adrId(e.projet) ? "/app/marches/" + _adrId(e.projet) + "/" + ADRESSE_ATELIER : null;
-  if (e.view === "sharedao") return _adrId(e.partage) ? "/app/marches/partenaire/" + _adrId(e.partage) : null;
+  if (e.view === "sharedao") return _adrId(e.partage) ? "/app/marches/partenaire/" + _adrId(e.partage) + (_adrCle(e.cle) ? "/" + _adrCle(e.cle) : "") : null;
   if (!Object.prototype.hasOwnProperty.call(ADRESSES, e.view)) return null;
   let c = "/app" + (ADRESSES[e.view] ? "/" + ADRESSES[e.view] : "");
   if (e.view === "sourcing" && ADRESSES_TROUVER[e.sous]) c += "/" + ADRESSES_TROUVER[e.sous];
@@ -201,8 +220,8 @@ function etatDeAdresse(chemin) {
   if (m) return { view: "aodetail", projet: Number(m[1]) };
   m = /^marches\/([1-9][0-9]{0,11})\/dossier-de-presentation$/.exec(r);
   if (m) return { view: "atelier", projet: Number(m[1]) };
-  m = /^marches\/partenaire\/([1-9][0-9]{0,11})$/.exec(r);
-  if (m) return { view: "sharedao", partage: Number(m[1]) };
+  m = /^marches\/partenaire\/([1-9][0-9]{0,11})(?:\/([0-9a-z]{7}))?$/.exec(r);
+  if (m) return m[2] ? { view: "sharedao", partage: Number(m[1]), cle: m[2] } : { view: "sharedao", partage: Number(m[1]) };
   for (const v of Object.keys(ADRESSES)) if (ADRESSES[v] && ADRESSES[v] === r) return v === "sourcing" ? { view: v, sous: "publies" } : { view: v };
   for (const k of Object.keys(ADRESSES_TROUVER)) if (r === ADRESSES.sourcing + "/" + ADRESSES_TROUVER[k]) return { view: "sourcing", sous: k };
   for (const k of Object.keys(ADRESSES_RESEAU)) if (r === ADRESSES.reseau + "/" + ADRESSES_RESEAU[k]) return { view: "reseau", reseau: k };
@@ -300,6 +319,14 @@ function statutApresDecision(statut, choix) {
   if (choix === "remettre") return s === "abandonne" ? "nouveau" : null;
   return null;
 }
+// Relecture de la vague 2a : les étapes d'où part chaque geste, celles où statutApresDecision et statutEnPreparation
+// font avancer le marché. L'écran les envoie au serveur avec le changement (PUT /api/projects/{id}, `si_statut`) : le
+// serveur ne change l'étape que si le marché y est encore. Une page ou une liste ouverte avant un « Marquer déposé »
+// (le vôtre, celui d'un collègue) ne fait donc jamais reculer un marché ; le choix « Statut », lui, reste libre.
+const DEPARTS_GESTE = {
+  seul: ["nouveau", "abandonne"], plusieurs: ["nouveau", "abandonne"], remettre: ["abandonne"],
+  ecarter: ["suivi", "nouveau", "decide", "en_cours"], preparer: ["nouveau", "decide"],
+};
 // Un geste de l'étape Préparer (estimer le prix, ouvrir le dossier de présentation, préparer les formulaires, inviter
 // un partenaire) : un marché Repéré ou Décidé passe En préparation. null : il y est déjà, ou plus loin, ou il est
 // « À venir » (pas encore publié : il le reste).
@@ -350,12 +377,12 @@ function listeAFaire(d, aujourdhui) {
   d = d || {};
   const out = [], jour = s => { const t = Date.parse(String(s || "").slice(0, 10) + "T00:00:00Z"); return isNaN(t) ? null : t; };
   const auj = jour(aujourdhui), dd = s => { const t = String(s || "").slice(0, 10).split("-"); return t.length === 3 ? t[2] + "/" + t[1] : ""; };
-  (d.shared || []).forEach(s => {
-    const g = s.groupement || {}, r = s.redaction || {}, cible = { view: "sharedao", partage: s.project_id };
+  (d.shared || []).forEach((s, i) => {
+    const g = s.groupement || {}, r = s.redaction || {}, cible = { view: "sharedao", partage: s.project_id, jeton: s.token };
     const marche = s.project || "Marché";
-    if (g.a_valider) out.push({ k: "accord-" + s.project_id, ic: "signature", rang: 0, titre: "Votre accord est demandé",
+    if (g.a_valider) out.push({ k: "accord-" + s.project_id + (i ? "-" + i : ""), ic: "signature", rang: 0, titre: "Votre accord est demandé",
       detail: marche + (s.mandataire ? " · chef de file : " + s.mandataire : ""), cta: "Lire et donner mon accord", cible });
-    if (r.a_faire || r.a_revalider || r.a_valider || r.questions) out.push({ k: "redaction-" + s.project_id, ic: "file-pen-line", rang: 1,
+    if (r.a_faire || r.a_revalider || r.a_valider || r.questions) out.push({ k: "redaction-" + s.project_id + (i ? "-" + i : ""), ic: "file-pen-line", rang: 1,
       titre: "Une partie du dossier de présentation vous attend", detail: marche, cta: "Ouvrir", cible });
   });
   (d.recues || []).filter(i => i && !i._declined && i.statut !== "acceptee").forEach(i => out.push({
@@ -410,7 +437,7 @@ function tachesPlusieurs(st) {
 // État initial de « Partagé avec moi » (vue co-traitant avec compte) — plus de chiffrage_note : prix de vente du lot
 // en clair + détail chiffré dans le navigateur (enveloppe), capacités déclarées, signataire, pièces typées.
 function _sharedInit(token, mandataire, projectId, role) {
-  return { token: token || "", projectId: projectId || null, project: null, mandataire: mandataire || "", role: role || "cotraitant", docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true, loading: false, error: "",
+  return { token: token || "", cle: clePartage(token), projectId: projectId || null, project: null, mandataire: mandataire || "", role: role || "cotraitant", docs: [], status: "", version: 0, busy: false, msg: "", pieces: [], canContribute: true, loading: false, error: "",
            forMember: null, coffre: null, journal: null, journalLoaded: false, conv: _sconvInit(),
            // Vague 4 : vérification du journal par le membre (verdict du serveur, exports JSON / PDF).
            jv: { busy: false, v: null, err: "", live: "", exporting: "" },
@@ -1359,7 +1386,7 @@ const __adjApp = createApp({
     // Une adresse par écran (vague 2a, A1) : le chemin de l'écran ouvert (null : pas d'adresse, rien ne change).
     adresseCourante() {
       return adresseDe({ view: this.view, sous: this.trouverOnglet, projet: this.ao.project && this.ao.project.id,
-                         partage: this.sharedAo.projectId, reseau: this.reseau.tab, filtre: this.mmFiltre });
+                         partage: this.sharedAo.projectId, cle: this.sharedAo.cle, reseau: this.reseau.tab, filtre: this.mmFiltre });
     },
   },
   watch: {
@@ -1405,11 +1432,9 @@ const __adjApp = createApp({
       if ((e.key === "Enter" || e.key === " ") && a && a.classList && a.classList.contains("nav-item") && !document.querySelector(".overlay, .drawer, .modal-back")) { e.preventDefault(); a.click(); }
     });
     this.$nextTick(() => this._a11y());
-    // Une adresse par écran (vague 2a, A1) : précédent / suivant du navigateur rouvrent l'écran de l'adresse.
-    window.addEventListener("popstate", (ev) => {
-      if (!this.token || !this._adresseActive) return;
-      this._ouvrirAdresse(etatDeAdresse(location.pathname), ev.state && ev.state.defil);
-    });
+    // Une adresse par écran (vague 2a, A1) : précédent / suivant du navigateur rouvrent l'écran de l'adresse ; une
+    // fenêtre ouverte est fermée d'abord (relecture : _surRetourNavigateur).
+    window.addEventListener("popstate", (ev) => this._surRetourNavigateur(ev));
     const _rst = new URLSearchParams(location.search).get("reset");
     // Cliquer le lien de réinitialisation est une action EXPLICITE : il prime sur une session
     // déjà ouverte. Sinon, un utilisateur connecté qui clique le lic reçu par email atterrissait
@@ -1699,7 +1724,7 @@ const __adjApp = createApp({
         if (st) {
           history.replaceState(history.state, "", "/app");
           const it = this.shared.find(s => s.token === st);
-          _demande = it ? { view: "sharedao", partage: it.project_id } : { view: "pipeline", filtre: "partenaire" };
+          _demande = it ? { view: "sharedao", partage: it.project_id, cle: clePartage(it.token) } : { view: "pipeline", filtre: "partenaire" };
         }
       } catch (e) {}
       this._adresseActive = true;
@@ -1845,20 +1870,62 @@ const __adjApp = createApp({
     // (la position de défilement de l'écran quitté y est gardée) ; quand l'écran suit déjà l'adresse (démarrage,
     // précédent / suivant), l'adresse est seulement corrigée (marché introuvable → Mes marchés, par exemple). Le titre
     // de l'onglet du navigateur suit l'écran. Rien avant la connexion : l'écran de connexion garde son adresse.
-    _adresseSynchro(adr) {
+    // `garderDefil` : l'entrée quittée garde sa position de défilement (retour arrière qui ne fait que fermer une
+    // fenêtre : l'écran affiché n'est pas celui de cette entrée). `_nIci` : la profondeur de l'entrée affichée.
+    _adresseSynchro(adr, garderDefil) {
       if (!adr || !this.token || !this._adresseActive) return;
       try {
         const st = history.state || {}, titre = this.enteteTitre();
         document.title = (titre ? titre + " · " : "") + "Adjugo";
+        this._nIci = st.n || 0;
         if (adr === location.pathname && !location.search) return;
         if (this._adresseSuit || adr === location.pathname) {
           history.replaceState(Object.assign({}, st, { adjugo: 1, n: st.n || 0 }), "", adr);
           return;
         }
-        const w = document.querySelector(".work");
-        history.replaceState(Object.assign({}, st, { adjugo: 1, n: st.n || 0, defil: w ? w.scrollTop : 0 }), "");
+        if (!garderDefil) {
+          const w = document.querySelector(".work");
+          history.replaceState(Object.assign({}, st, { adjugo: 1, n: st.n || 0, defil: w ? w.scrollTop : 0 }), "");
+        }
         history.pushState({ adjugo: 1, n: (st.n || 0) + 1 }, "", adr);
+        this._nIci = (st.n || 0) + 1;
       } catch (e) {}
+    },
+    // Précédent / suivant du navigateur (relecture de la vague 2a). Une fenêtre de l'application ouverte (confirmation,
+    // invitation, fiche d'un partenaire, tiroir, cloche, fenêtres de l'atelier ou de Mes preuves) est toujours fermée
+    // avant tout changement d'écran : une confirmation restée ouverte agissait sinon sur le marché de l'écran suivant.
+    // Précédent avec une fenêtre ouverte ne fait QUE la fermer (le geste retour d'Android) : l'écran reste, son
+    // adresse revient dans l'historique. Suivant : la fenêtre se ferme et l'écran suit l'adresse.
+    _surRetourNavigateur(ev) {
+      if (!this.token || !this._adresseActive) return;
+      const n = ev && ev.state && typeof ev.state.n === "number" ? ev.state.n : null;
+      const suivant = n !== null && typeof this._nIci === "number" && n > this._nIci;
+      if (this._fermerFenetres(!suivant) && !suivant) {
+        const ici = this.adresseCourante;
+        if (ici && ici !== location.pathname) { this._adresseSynchro(ici, true); return; }
+      }
+      this._nIci = n || 0;
+      this._ouvrirAdresse(etatDeAdresse(location.pathname), ev && ev.state && ev.state.defil);
+    },
+    // Ferme toute fenêtre de l'application ouverte ; vrai si l'une l'était. La confirmation répond « Annuler » (sa
+    // promesse rend null). `rendreFocus` : l'écran reste, le focus revient où il était.
+    _fermerFenetres(rendreFocus) {
+      const a = this.atl || {}, pv = this.pv || {};
+      const atelier = !!(a.derog || a.debit || a.vue || a.lotsDlg || a.plan);
+      const ouverte = !!(this.cdlg || this.rinv || (this.reseau && this.reseau.fiche) || this.modal || this.drawer
+        || this.notifsOpen || (this.discover && this.discover.open) || (this.fb && this.fb.open) || pv.passage
+        || (this.pvAtl && this.pvAtl.open) || atelier);
+      if (!ouverte) return false;
+      if (this.cdlg) this.cdlgClose();
+      if (this.rinv) this.rinvClose(!rendreFocus);
+      if (this.reseau && this.reseau.fiche) this.rnCloseFiche(!rendreFocus);
+      if (this.pvAtl && this.pvAtl.open) this.pvAtlFermer();
+      if (pv.passage) pv.passage = null;
+      if (atelier) { a.derog = null; a.debit = null; a.vue = null; a.lotsDlg = null; a.plan = null; }
+      if (this.discover && this.discover.open) this.discover.open = false;
+      if (this.fb && this.fb.open) this.fb.open = false;
+      this.modal = null; this.drawer = null; this.notifsOpen = false;
+      return true;
     },
     // L'écran suit l'adresse, sans nouvelle entrée d'historique. Le changement d'écran est observé à la fin du tour
     // en cours ; juste après, l'adresse est remise d'aplomb (chemin inconnu → /app, même quand l'écran n'a pas changé)
@@ -1911,8 +1978,8 @@ const __adjApp = createApp({
         return;
       }
       if (v === "sharedao") {
-        const it = (this.shared || []).find(x => x.project_id === e.partage);
-        if (it) { if (!(this.view === "sharedao" && this.sharedAo.projectId === it.project_id)) this.openShared(it); return; }
+        const it = trouverPartage(this.shared, e.partage, e.cle);
+        if (it) { if (!(this.view === "sharedao" && this.sharedAo.token === it.token)) this.openShared(it); return; }
         this.notify("Ce dossier n'est plus accessible", "err"); this.go("shared"); return;
       }
       if (v === "admin" && !(this.user && this.user.is_admin)) { this.go("dashboard"); return; }
@@ -3081,7 +3148,7 @@ const __adjApp = createApp({
     aFaireOuvrir(t) {
       this.notifsOpen = false;
       const c = (t && t.cible) || {};
-      if (c.view === "sharedao") { const it = (this.shared || []).find(x => x.project_id === c.partage); if (it) this.openShared(it); else this.go("shared"); return; }
+      if (c.view === "sharedao") { const it = (this.shared || []).find(x => c.jeton ? x.token === c.jeton : x.project_id === c.partage); if (it) this.openShared(it); else this.go("shared"); return; }
       if (c.view === "aodetail") { this.openProjectById(c.projet); return; }
       if (c.view) this.go(c.view);
     },
@@ -4443,6 +4510,7 @@ const __adjApp = createApp({
       dp.busy = "deposer"; dp.err = "";
       try {
         const r = await this.api("POST", "/api/projects/" + pid + "/groupement/deposer", { confirmer: !!confirmer });
+        this._listeSuitStatut(pid, r.status);    // Mes marchés suit (relecture de la vague 2a)
         if (!this.ao.project || this.ao.project.id !== pid) return;
         if (r.status) this.ao.project.status = r.status;
         if (r.state) this._convMergeState(r.state);
@@ -4467,6 +4535,7 @@ const __adjApp = createApp({
       dp.busy = "annuler"; dp.err = "";
       try {
         const r = await this.api("DELETE", "/api/projects/" + pid + "/groupement/deposer");
+        this._listeSuitStatut(pid, r.status);
         if (!this.ao.project || this.ao.project.id !== pid) return;
         if (r.status) this.ao.project.status = r.status;
         if (r.state) this.ao.grp.state = r.state;
@@ -4492,7 +4561,7 @@ const __adjApp = createApp({
       else this._cdlgFocus = document.activeElement;
       const lines = (cfg.lines || []).filter(Boolean).map(l => typeof l === "string" ? { t: l } : l);
       const fields = (cfg.fields || []).map(x => Object.assign({ value: "" }, x));
-      this.cdlg = Object.assign({ ok: "Confirmer", annuler: "Annuler" }, cfg, { lines, fields });
+      this.cdlg = Object.assign({ ok: "Confirmer", annuler: "Annuler" }, cfg, { lines, fields, ecran: this._cdlgEcran() });
       this.$nextTick(() => {
         const champ = fields.length ? document.getElementById("cdlg-" + fields[0].key) : null;
         const b = champ || this.$refs.cdlgCancel; if (b && b.focus) b.focus();
@@ -4504,16 +4573,20 @@ const __adjApp = createApp({
       if (el && el.focus && document.body.contains(el)) this.$nextTick(() => el.focus());
     },
     cdlgClose() { const d = this.cdlg; this._cdlgFermer(); if (d && d.resolve) d.resolve(null); },
+    // L'écran d'une confirmation (vue, marché ouvert, dossier partagé ouvert) : elle n'agit que sur l'écran où elle a
+    // été ouverte. Si l'écran a changé sous elle, confirmer vaut « Annuler » (relecture de la vague 2a).
+    _cdlgEcran() { return [this.view, (this.ao && this.ao.project && this.ao.project.id) || "", (this.sharedAo && this.sharedAo.token) || ""].join("|"); },
     cdlgValide() { return !!this.cdlg && champsValides(this.cdlg.fields); },
     async cdlgRun() {
       const d = this.cdlg; if (!d || !champsValides(d.fields)) return;
+      if (d.ecran && d.ecran !== this._cdlgEcran()) { this.cdlgClose(); return; }
       const vals = {};    // un mot de passe est rendu tel quel (ses espaces comptent), le reste sans espaces autour
       (d.fields || []).forEach(x => { const s = String(x.value == null ? "" : x.value); vals[x.key] = x.type === "password" ? s : s.trim(); });
       this._cdlgFermer();
       if (d.resolve) d.resolve(vals);
       if (d.run) await d.run(vals);
     },
-    cdlgAutre() { const d = this.cdlg; if (!d) return; this._cdlgFermer(); if (d.resolve) d.resolve({ autre: true }); },
+    cdlgAutre() { const d = this.cdlg; if (!d) return; if (d.ecran && d.ecran !== this._cdlgEcran()) { this.cdlgClose(); return; } this._cdlgFermer(); if (d.resolve) d.resolve({ autre: true }); },
     // Le focus reste dans la fenêtre : Tab sur le dernier élément revient au premier, Maj+Tab sur le premier au dernier.
     cdlgTab(e) {
       const box = this.$refs.cdlgBox; if (!box) return;
@@ -4560,34 +4633,44 @@ const __adjApp = createApp({
         this._convAsk({ title: "Écarter ce marché ?", ok: "Écarter",
           lines: ["Il passe à l'étape « Abandonné » : plus de rappel de date limite ni de relance.",
                   "Vous pouvez le remettre à tout moment depuis cette page."],
-          run: () => this._aoChangerStatut("abandonne", "Marché écarté") });
+          run: () => this._aoChangerStatut("abandonne", "Marché écarté", DEPARTS_GESTE.ecarter) });
         return;
       }
       const cible = statutApresDecision(p.status, choix);
-      if (cible) await this._aoChangerStatut(cible, choix === "remettre" ? "Marché remis : Repéré" : "Statut : Décidé");
+      if (cible) await this._aoChangerStatut(cible, choix === "remettre" ? "Marché remis : Repéré" : "Statut : Décidé", DEPARTS_GESTE[choix]);
       if (choix === "plusieurs") this.aoInviter();
       else if (choix === "seul") this.rnScrollTo("etPreparer");
     },
-    async _aoChangerStatut(cible, message) {
+    // `depuis` (relecture de la vague 2a) : les étapes d'où part le geste (DEPARTS_GESTE) ; le serveur ne change
+    // l'étape que si le marché y est encore et renvoie l'étape réelle, que l'écran reprend (page et liste).
+    async _aoChangerStatut(cible, message, depuis) {
       const p = this.ao.project; if (!p || !cible || p.status === cible) return;
-      const avant = p.status;
+      const avant = p.status, pid = p.id;
       p.status = cible;
       try {
-        await this.api("PUT", "/api/projects/" + p.id, { status: cible });
-        const l = (this.projects || []).find(x => x.id === p.id); if (l) l.status = cible;
-        if (message) this.notify(message);
+        const r = await this.api("PUT", "/api/projects/" + pid, depuis ? { status: cible, si_statut: depuis } : { status: cible });
+        const reel = (r && r.status) || cible;
+        p.status = reel;
+        const l = (this.projects || []).find(x => x.id === pid); if (l) l.status = reel;
+        if (reel !== cible) { if (message) this.notify("Ce marché a changé d'étape entre-temps : il est à l'étape « " + libelleStatut(reel) + " ».", "err"); }
+        else if (message) this.notify(message);
         this.loadStats(); this.ao.cnTick = (this.ao.cnTick || 0) + 1;
       } catch (e) { p.status = avant; this.notify(e.message, "err"); }
     },
     // Un geste de Préparer fait passer le marché « En préparation » (sans message : le statut change sous vos yeux).
-    aoAvancer() { const p = this.ao.project, c = p && statutEnPreparation(p.status); if (c) this._aoChangerStatut(c, ""); },
+    aoAvancer() { const p = this.ao.project, c = p && statutEnPreparation(p.status); if (c) this._aoChangerStatut(c, "", DEPARTS_GESTE.preparer); },
     // Réunion de la vague 2a : la fenêtre d'invitation unique (A2) sert aussi hors de la page du marché (« Inviter sur un
-    // marché » de Mes partenaires) ; l'invitation y fait avancer le marché choisi comme sur sa page (A1).
+    // marché » de Mes partenaires) ; l'invitation y fait avancer le marché choisi comme sur sa page (A1). La liste peut
+    // être plus ancienne que le marché (déposé depuis) : le serveur ne le fait avancer que s'il est encore Repéré ou
+    // Décidé, et la liste reprend l'étape qu'il renvoie (relecture de la vague 2a).
     async _marcheEnPreparation(pid) {
       if (this.view === "aodetail" && this.ao.project && this.ao.project.id === pid) { this.aoAvancer(); return; }
       const p = (this.projects || []).find(x => x && x.id === pid), c = p && statutEnPreparation(p.status);
       if (!c) return;
-      try { await this.api("PUT", "/api/projects/" + p.id, { status: c }); p.status = c; this.loadStats(); } catch (e) {}
+      try {
+        const r = await this.api("PUT", "/api/projects/" + p.id, { status: c, si_statut: DEPARTS_GESTE.preparer });
+        p.status = (r && r.status) || c; this.loadStats();
+      } catch (e) {}
     },
     aoTacheVoir(t) {
       if (t.voir === "parts") { this.aoConvShowCoffre(); return; }
@@ -4617,6 +4700,9 @@ const __adjApp = createApp({
     aoSource() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.source) || null; },
     aoContact() { const c = this.aoDetails().contact; return (c && (c.nom || c.email)) ? c : null; },
     aoDceAvailable() { return !!(this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.dce_available); },
+    // Une carte « À venir » (décision 11) : le marché n'est pas encore publié, il n'a ni annonce ni dossier. La page ne
+    // parle donc ni d'« annonce seule » ni d'un dossier « indispensable » à télécharger (relecture de la vague 2a).
+    aoPasPublie() { return !!(this.ao.project && this.ao.project.status === "suivi") && !this.aoDceAvailable(); },
     // « Comment vous serez noté » : la grille retrouvée dans le règlement (analyse ≥ vague 1 rédaction).
     aoGrille() { const g = this.aoDetails().grille_notation; return (g && Array.isArray(g.criteres)) ? g : null; },
     grilleResume(g) {
@@ -4690,9 +4776,13 @@ const __adjApp = createApp({
       return (a.dce_available && a.lead_score && a.lead_score.breakdown) || [];
     },
     async aoStatus() {
-      try { await this.api("PUT", "/api/projects/" + this.ao.project.id, { status: this.ao.project.status }); this.notify("Statut mis à jour"); this.loadStats(); this.ao.cnTick = (this.ao.cnTick || 0) + 1; }
+      const pid = this.ao.project.id;
+      try { const r = await this.api("PUT", "/api/projects/" + pid, { status: this.ao.project.status }); this._listeSuitStatut(pid, r && r.status); this.notify("Statut mis à jour"); this.loadStats(); this.ao.cnTick = (this.ao.cnTick || 0) + 1; }
       catch (e) { this.notify(e.message, "err"); }
     },
+    // L'étape d'un marché change (marqué déposé, retrait, choix « Statut ») : sa carte de Mes marchés la reprend,
+    // sans attendre de recharger la liste (relecture de la vague 2a).
+    _listeSuitStatut(pid, statut) { const l = statut && (this.projects || []).find(x => x && x.id === pid); if (l) l.status = statut; },
     outcomeReasons(status) {
       return status === "gagne"
         ? ["Prix compétitif", "Valeur technique / présentation", "Références & expérience", "Délai proposé", "Critère RSE / insertion", "Groupement / partenaires", "Relation client"]
@@ -5744,7 +5834,11 @@ const __adjApp = createApp({
     atlBack() {
       this._atlQuitter();
       if (this._retourHistorique()) return;           // vague 2a : comme le bouton précédent du navigateur
-      this.view = "aodetail"; this._ecranOuvert("aodetail"); this.atlCardLoad();
+      // Atelier ouvert directement (courriel « … a envoyé sa partie », favori) : la page du marché prend sa place dans
+      // l'historique, sans nouvelle entrée ; son « Retour » mène alors à Mes marchés (relecture de la vague 2a : sinon
+      // « Retour au marché » et « Retour » se renvoyaient l'un à l'autre sans fin).
+      this._sansHistorique(() => { this.view = "aodetail"; this._ecranOuvert("aodetail"); });
+      this.atlCardLoad();
       this.$nextTick(() => { const el = document.getElementById("atl-card"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" }); });
     },
     async atlLoad(silent) {

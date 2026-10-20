@@ -17,10 +17,16 @@ une ancienne clé « envoye » qui y serait lue est comprise comme « depose » 
 Idempotent : chaque étape regarde d'abord l'état réel (étiquettes du type, valeurs des lignes) ; un rejeu ou une
 révision interrompue entre deux étapes se termine sans erreur.
 
-Déploiement : le code de production précédent ne connaît pas « depose ». Pendant la bascule (migration passée,
-ancienne instance encore en service, quelques secondes), un marché déposé lu par l'ancienne instance répond en erreur ;
-la nouvelle instance prend le relais aussitôt. Retour au code précédent : lancer d'abord
-`alembic downgrade b3mesureecrans`.
+Déploiement (relecture de la vague 2a : étendue mesurée sur Postgres, code de production fab9d9a sur une base migrée) :
+le code de production précédent ne sait pas lire « depose ». Tant qu'il sert sur une base migrée, ce n'est pas
+seulement le marché déposé qui répond en erreur : pour toute organisation qui a un marché déposé, TOUTES ses listes
+répondent 500 (Mes marchés, ses statistiques, le tableau de bord des groupements, ses groupements, la page d'un marché
+déposé et le changement de son étape), et aussi, chez ses partenaires (d'autres organisations, même sans marché déposé à
+eux), « Où je suis partenaire » (/api/shared) et l'historique du réseau. La migration passe avant le démarrage
+(entrypoint.sh) : si la nouvelle instance ne passe pas son contrôle de santé, Railway garde l'ancienne en service sur la
+base déjà migrée, et la panne dure jusqu'au retour arrière. Donc : déployer à une heure creuse, suivre le passage au
+vert de la nouvelle instance, et si elle ne démarre pas, lancer tout de suite `alembic downgrade b3mesureecrans`. Retour
+au code précédent : toujours `alembic downgrade b3mesureecrans` d'abord.
 
 Downgrade RÉEL : « depose » redevient « envoye » ; un marché « suivi » redevient « nouveau » et un marché « decide »
 redevient « en_cours » (le code précédent n'a pas ces étapes : ce sont les siennes les plus proches). Sur Postgres, les

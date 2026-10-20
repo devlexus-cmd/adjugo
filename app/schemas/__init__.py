@@ -210,6 +210,11 @@ class ProjectUpdate(BaseModel):
     competitor_winner: Optional[str] = None
     # Lien vers l'avis officiel : même garde de schéma qu'à la création.
     source_url: Optional[str] = None
+    # Relecture de la vague 2a : un GESTE qui fait avancer le marché (« Préparer seul », un geste de Préparer, une
+    # invitation, « Écarter », « Remettre ») envoie les étapes d'où il part ; l'étape ne change que si le marché y est
+    # encore (une page ou une liste plus ancienne qu'un « Marquer déposé » ne le fait jamais reculer). Absent : le
+    # choix « Statut », libre.
+    si_statut: Optional[List[str]] = Field(None, max_length=8)
 
     @field_validator("source_url")
     @classmethod
@@ -220,6 +225,15 @@ class ProjectUpdate(BaseModel):
     @classmethod
     def _check_status(cls, v):
         return _validate_statut(v)
+
+    @field_validator("si_statut")
+    @classmethod
+    def _check_si_statut(cls, v):
+        if v is None:
+            return None
+        if any(x is None for x in v):
+            raise ValueError(STATUT_INVALIDE_MSG)
+        return [_validate_statut(x) for x in v]
 
 
 class ProjectOut(BaseModel):

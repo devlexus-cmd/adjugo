@@ -18,6 +18,7 @@ La vague a été menée en trois chantiers parallèles, puis réunis :
 | **A2** Mes marchés et invitations | Mes marchés en liste filtrable (Tous · Je pilote · Où je suis partenaire · À plusieurs), Bilan en onglet, une seule fenêtre d'invitation (3 cas), un seul « Qui me complète ? », une seule liste « Prêt à déposer » (calcul pour l'entreprise seule), un seul « Figer l'offre » | § A2 |
 | **A3** entreprise, documents, confirmations, vocabulaire | Mon entreprise en 4 onglets (Tarifs, « Ce que je cherche »), le montant que je porte seul (migration `c4montantseul`), Mes documents (catégorie, date de fin), la fenêtre de confirmation de l'application au lieu des 19 `confirm()` / `prompt()`, « partie (lot n) » (D10) | § A3 |
 | **Réunion** | Les trois chantiers sur la production, ce qui se croisait entre eux, vérifications d'ensemble | § R |
+| **Relecture** | Les 10 remarques de la relecture, reproduites ; 10 retenues et corrigées (une seule est de la documentation) | § L |
 
 Les sections A1, A2 et A3 décrivent chaque chantier tel qu'il a été fait ; quand la réunion a changé un point, la
 section le dit (« Réunion : … ») et le § R le détaille.
@@ -231,10 +232,15 @@ Changé : `accueil-rail` ne porte plus les pièces à renouveler (bloc « À fai
   avec le code de production puis le code nouveau : 294 réussis et le même échec des deux côtés
   (`test_cron_borne_et_jamais_de_depublication_sur_erreur`, propre à Postgres, déjà en production) ; le fichier de la
   vague 2a passe en entier sur Postgres (28 sur 28).
-- **Déploiement** : la migration passe avant le démarrage (`entrypoint.sh`). Le code de production précédent ne connaît
-  pas `depose` : pendant la bascule (migration passée, ancienne instance encore en service quelques secondes), un
-  marché déposé lu par l'ancienne instance répond en erreur ; la nouvelle prend le relais aussitôt. **Retour au code
-  précédent : `alembic downgrade b3mesureecrans` d'abord**, sinon l'ancien code ne lit plus les marchés déposés.
+- **Déploiement** (relecture : étendue mesurée, § L.4) : la migration passe avant le démarrage (`entrypoint.sh`). Le
+  code de production précédent ne sait pas lire `depose` : tant qu'il sert sur une base migrée, toute organisation qui
+  a un marché déposé voit **toutes ses listes** répondre en erreur (Mes marchés, statistiques, tableau de bord des
+  groupements, groupements, la page d'un marché déposé et le changement de son étape), et ses partenaires d'autres
+  organisations aussi (« Où je suis partenaire », `/api/shared`, et l'historique du réseau). Si la nouvelle instance ne
+  passe pas son contrôle de santé, Railway garde l'ancienne sur la base migrée : la panne dure jusqu'au retour arrière.
+  Déployer à une heure creuse, suivre le passage au vert de la nouvelle instance, et si elle ne démarre pas, **lancer
+  tout de suite `alembic downgrade b3mesureecrans`** ; c'est aussi la première commande de tout retour au code
+  précédent.
 - À refaire au moment de la mise en ligne depuis l'état réel de la production, comme pour chaque migration.
 
 ### A1.7 Vérifications
@@ -958,12 +964,184 @@ tels quels.
 
 ### R.8 Pour Eliot
 
-- **Déploiement** : deux migrations passent avant le démarrage (`c4axeetapes`, `c4montantseul`). Retour au code
-  précédent : `alembic downgrade b3mesureecrans` d'abord (A1.6), sinon l'ancien code ne lit plus les marchés déposés.
-  À refaire au moment de la mise en ligne depuis l'état réel de la production.
+- **Déploiement** : deux migrations passent avant le démarrage (`c4axeetapes`, `c4montantseul`). Le code précédent ne
+  lit pas `depose` : sur une base migrée, toute organisation qui a un marché déposé voit **toutes ses listes** répondre
+  en erreur, et ses partenaires « Où je suis partenaire » (`/api/shared`) et l'historique du réseau (mesuré, § L.4). Donc : déployer à une heure creuse ; suivre le passage au vert de la nouvelle instance ; si elle ne démarre
+  pas (Railway garde alors l'ancienne sur la base migrée), lancer tout de suite `alembic downgrade b3mesureecrans`.
+  Tout retour au code précédent commence par `alembic downgrade b3mesureecrans` (A1.6). À refaire au moment de la mise
+  en ligne depuis l'état réel de la production.
 - **Décision prise par A1, à confirmer** : un marché « À venir » le reste jusqu'à sa publication (ni la décision ni un
   geste de préparation ne le font avancer ; on change son statut à la main).
 - **Courriel aux 7 PME** : remplacer les noms d'onglets par les filtres « Où je suis partenaire » et « À plusieurs » de
   Mes marchés, ajouter le Bilan (anciennement sur l'accueil), Mon entreprise › Tarifs et « Ce que je cherche »
   (anciennement « Mes critères ») ; les adresses de chaque écran se partagent et se mettent en favori.
 - **Alertes des pièces** : le courriel part avec la tâche planifiée `POST /api/admin/run-alerts` (A3.3).
+
+---
+
+## L. Relecture de la vague 2a
+
+Dix remarques (cinq lentilles : adresses et liens, données et étapes, cloisonnement et invitations, démonstration et
+suite). Chacune a été **reproduite** avant d'être corrigée ; **aucune n'est rejetée**. Tests :
+`tests/test_reorganisation_v2a_relecture.py` (20 tests : 19 échouent sur `e66ed55`, le 20e garde le calcul d'un
+groupement inchangé). Postgres : `scratchpad/rel2a/run_relecture_pg.py` de la session (§ L.11).
+
+### L.1 Précédent du navigateur avec une fenêtre ouverte (remarques 1 et 9)
+
+**Reproduit** : le gestionnaire `popstate` (A1) changeait l'écran sans fermer les fenêtres de l'application (A3 : la
+confirmation ; A2 : l'invitation) ; confirmer « Écarter » agissait alors sur le marché de l'écran suivant (la
+production n'avait ni `popstate` ni ces fenêtres : `confirm()` bloquait la page). **Corrigé** :
+
+- `_surRetourNavigateur` (le gestionnaire) ferme d'abord toute fenêtre ouverte (`_fermerFenetres` : confirmation, qui
+  répond « Annuler » ; invitation ; fiche d'un partenaire ; formulaire ; tiroir ; cloche ; découverte ; avis ;
+  fenêtres de l'atelier et de Mes preuves). **Précédent avec une fenêtre ouverte ne fait QUE la fermer** (le geste
+  retour d'Android) : l'écran reste, son adresse revient dans l'historique (le seul `pushState`, dans
+  `_adresseSynchro`, sans réécrire la position de défilement de l'entrée d'avant), le focus revient au bouton
+  d'origine. Suivant avec une fenêtre ouverte : elle se ferme et l'écran suit l'adresse. Le sens est lu dans la
+  profondeur gardée dans l'entrée (`n`, `_nIci`).
+- Défense en profondeur : la fenêtre de confirmation retient l'écran où elle s'ouvre (vue, marché, dossier partagé :
+  `_cdlgEcran`) ; si l'écran a changé sous elle, « Confirmer » et le second choix valent « Annuler ». Une seule règle
+  pour tous les appels (`demander`, `confirmer`, `_convAsk`) au lieu de figer chaque cible.
+- Vu dans un vrai navigateur : la cloche ouverte, l'« Écarter ce marché ? » d'Infogérance SI, la fenêtre d'invitation :
+  précédent les ferme, l'adresse et le marché restent (le statut du marché ne bouge pas) ; ensuite précédent et
+  suivant changent d'écran comme avant.
+
+### L.2 Deux invitations acceptées sur le même marché (remarque 2)
+
+**Reproduit** (sur l'API : deux invitations, partenaire du groupement et sous-traitant, acceptées par le même compte ;
+`/api/shared` les rend toutes deux avec le même `project_id`) : `?shared=` et l'adresse ouvraient la première du marché
+(pour `?shared=`, une régression : la production ouvrait celle du jeton). **Corrigé**, sans changer l'API :
+
+- l'adresse d'un dossier partagé porte, après l'identifiant du marché, un **repère de l'invitation** : une empreinte
+  courte de son jeton (`clePartage`, FNV-1a 32 bits, 7 caractères), dont on ne retrouve pas le jeton —
+  `/app/marches/partenaire/34/k3j9x2a` ; **le jeton ne va toujours jamais dans l'adresse** ; `/api/shared` garde
+  exactement ses champs (aucun identifiant ajouté : le test du cloisonnement de A2 reste tel quel) ;
+- `trouverPartage` (fonction pure) : le dossier du repère ; sans repère (adresse tapée), le plus ancien du marché ;
+  repère inconnu : aucun (« Ce dossier n'est plus accessible ») ;
+- `?shared=<jeton>` ouvre l'invitation de ce jeton ; « À faire » garde le jeton en mémoire (`cible.jeton`, jamais dans
+  l'adresse) et ouvre le bon dossier ; ses lignes ont des clés distinctes ;
+- vu dans un vrai navigateur (deux comptes de test locaux) : `?shared=` du partenaire du groupement → son dossier (le
+  sous-traitant venait avant) ; rechargement de chaque adresse → chacun le sien ; depuis le dossier du sous-traitant,
+  Mes marchés puis le dossier du partenaire du groupement, puis précédent deux fois → la liste, puis le dossier du
+  sous-traitant, chaque fois le bon rôle.
+
+### L.3 Un geste ne fait jamais reculer un marché (remarque 3)
+
+**Reproduit** : « Marquer déposé » ne mettait à jour que la page ; la liste de Mes marchés gardait « Repéré » ; inviter
+depuis Mes partenaires envoyait alors `PUT {status: "en_cours"}`, accepté : le marché déposé repassait « En
+préparation » sans entrée au journal (relances reprises). Même cause depuis une page ou une liste ouverte avant le
+« Marquer déposé » d'un collègue. **Corrigé** côté serveur, là où un client périmé ne peut plus rien :
+
+- `PUT /api/projects/{id}` accepte `si_statut` (les étapes d'où part un GESTE) : l'étape ne change que si le marché y
+  est encore, dans la même instruction (`UPDATE … WHERE status IN …`, sûr sur Postgres comme sur SQLite) ; sinon rien ne
+  change et l'étape réelle est renvoyée (200). Valeurs lues comme `status` (« envoye » → « depose », inconnue : 422).
+  Le choix « Statut » (sans `si_statut`) reste libre ; la démonstration garde son seul geste permis (l'étape).
+- L'écran envoie les étapes de départ de chaque geste (`DEPARTS_GESTE`, testées contre `statutApresDecision` et
+  `statutEnPreparation`) : « Préparer seul / à plusieurs », « Écarter », « Remettre », les gestes de Préparer, l'invitation
+  (page du marché et Mes partenaires) ; il reprend l'étape renvoyée, page et liste ; une décision qui ne change rien le
+  dit (« Ce marché a changé d'étape entre-temps : il est à l'étape « Déposé » »).
+- « Marquer déposé », son retrait et le choix « Statut » mettent aussi à jour la carte de Mes marchés (`_listeSuitStatut`).
+- Vu dans un vrai navigateur : « Marquer déposé quand même » (la carte passe « Déposé ») ; liste rendue périmée (comme
+  celle d'un collègue), Partenaires › « Inviter sur un marché » › « Créer le lien » : le marché reste « Déposé » côté
+  serveur et la liste se corrige. Postgres : le marché déposé par la production ne recule pas.
+
+### L.4 Bascule de la migration `c4axeetapes` (remarque 4)
+
+**Reproduit et mesuré** (code de production `fab9d9a` sur la base migrée, Postgres 16.2) : répondent 500, pour le chef
+de file qui a un marché déposé, Mes marchés, les statistiques, le tableau de bord des groupements, ses groupements, la
+page du marché déposé et le changement de son étape ; pour son partenaire d'une autre organisation (sans marché déposé
+à lui), « Où je suis partenaire » (`/api/shared`) et l'historique du réseau. Répondent 200 : un marché non déposé (lu et
+écrit), les notifications, les marchés du partenaire. **Corrigé** (documentation : le code de production ne peut pas
+changer) : docstring de la migration, A1.6 et R.8 disent l'étendue réelle et la procédure — heure creuse, suivre le
+passage au vert de la nouvelle instance, `alembic downgrade b3mesureecrans` tout de suite si elle ne démarre pas
+(Railway garderait l'ancienne sur la base migrée).
+
+### L.5 « Prêt à déposer » : un sous-traitant seul, une convention restée en brouillon (remarque 5)
+
+**Reproduit** : une invitation de sous-traitant seule, ou une convention en brouillon après le déclin du seul
+partenaire, donnaient les 4 contrôles du groupement, dont 2 impossibles (« Aucun partenaire » à la génération).
+**Corrigé** : `a_un_groupement` (même idée que `has_members` de l'état du groupement) — un groupement a un membre : une
+invitation active d'un partenaire (pas d'un sous-traitant, qui relève du DC4), ou une convention générée (à valider,
+validée, à revalider) ou en brouillon avec des partenaires hors ligne. Sinon, le calcul « seul », avec, pour un
+sous-traitant, l'avertissement DC4 (jamais un manque). La liste des pièces dit la même chose : un sous-traitant seul
+n'ajoute ni le pouvoir du chef de file ni la convention (le DC4 « à prévoir ») ; une convention restée en brouillon
+sans partenaire n'ajoute plus sa ligne. Un groupement réel garde ses 4 contrôles (test). Démonstration : inchangée
+(Kerhel « 3 contrôles sur 4 », Réfection toiture « 3 contrôles sur 5 »).
+
+### L.6 Une pièce exigée reconnue sous son nom (remarque 6)
+
+**Reproduit** : « Attestation de visite obligatoire », « Certificat ISO 27001 » (et même « ISO 27001 » déposé sous ce nom
+exact) restaient « à ajouter » : `match_document` ne comparait que les mots-clés des pièces standard. **Corrigé** : un
+document est aussi reconnu quand son nom porte **tous** les mots significatifs de la pièce (sans accents ni casse,
+chiffres séparés des lettres, pluriel ôté, mots vides et génériques — « attestation », « certificat », « obligatoire »,
+« en cours de validité »… — écartés) : « Visite obligatoire », « attestation visite », « ISO 27001 », « iso27001 ».
+Jamais sur un seul mot commun : « … régularité fiscale » ne reconnaît pas « … régularité sociale », « ISO 27001 » pas
+« ISO 9001 ». Les mots-clés des pièces standard ne changent pas.
+
+### L.7 Formulaires rangés par la production (remarque 7)
+
+**Reproduit** (code de production : « Préparer mes documents » d'une entreprise seule range DC1, DC2, ATTRI1 dans
+« Formulaires officiels » sans les horodater) : après la mise en ligne, « Formulaire … à préparer ». **Corrigé** : pour
+une entreprise seule, un formulaire rangé dans le dossier du marché (`DC1.pdf`, `DC2.pdf`, `ATTRI1.pdf`, `DUME.pdf`,
+hors corbeille, de l'organisation) compte comme préparé (`_formulaires_ranges`). Pour un groupement, rien ne change
+(l'horodatage après la convention reste exigé). Aucune migration de données.
+
+### L.8 Atelier ouvert directement (remarque 8)
+
+**Reproduit** : depuis `/app/marches/7/dossier-de-presentation` (courriel « … a envoyé sa partie », favori), « Retour au
+marché » ajoutait une entrée, puis « Retour » ramenait à l'atelier, sans fin. **Corrigé** : sans écran d'avant dans
+l'application, la page du marché prend la place de l'atelier dans l'historique (`_sansHistorique`) ; son « Retour »
+mène à Mes marchés. Vu dans un vrai navigateur (démonstration).
+
+### L.9 La page d'une carte « À venir » (remarque 10)
+
+**Reproduit** : pastille « Annonce seule », bandeau « Le dossier complet du marché est indispensable » et « Aucune
+analyse encore » sur un marché pas encore publié. **Corrigé** (`aoPasPublie`, repère `marche-pas-publie`) : pastille
+« Pas encore publié », phrase « Marché pas encore publié — Le dossier sera à importer à sa publication. Vous pouvez déjà
+inviter vos partenaires. », l'explication dans la bulle (i), l'import discret (bouton secondaire). Dès qu'un dossier est
+importé, la page redevient celle d'un marché publié. Vu à 1 280 et 375 px, sombre et clair.
+
+### L.10 Repère et traductions
+
+| Repère | Zone |
+|---|---|
+| `marche-pas-publie` | La phrase d'un marché « À venir », dans `marche-analyse` (à la place du bandeau « indispensable ») |
+
+Décision 16 : 4 libellés traduits (632 → 636 clés : « Pas encore publié », « Marché pas encore publié », la phrase et la
+bulle). Tests mis à jour, chacun avec sa raison en commentaire : `test_reorganisation_v1_socle.py` (le repère),
+`test_reorganisation_v2a_adresses_etapes.py` (`?shared=` porte le repère ; `_aoChangerStatut` reçoit `depuis`),
+`test_reorganisation_v2a_entreprise.py` (`_cdlgEcran` dans la fenêtre sous Node).
+
+### L.11 Vérifications
+
+- **Suite complète** verte (SQLite, TZ=UTC) : 2 195 tests ; `scripts/sri_update.py --check` ; `node --check` de `app.js` et
+  `i18n.js` ; gabarit de `app.html` compilé par le Vue du dépôt ; `scripts/i18n_ajouter.py --check` (636 clés) ; garde des
+  mots bannis verte.
+- **Les nouveaux tests sur `e66ed55`** (copie par `git archive`) : 19 sur 20 échouent, chacun sur la remarque qu'il
+  décrit ; le 20e (`…d_un_groupement_inchange…`) passe des deux côtés.
+- **Postgres 16.2 depuis l'état exact de la production** (`run_relecture_pg.py`, 27 contrôles sur 27) : code `fab9d9a` (git archive), base
+  montée par lui (tête `b3mesureecrans`), données créées par lui (marché seul passé par « Préparer mes documents »,
+  marché « envoye », sous-traitant seul, partenaire qui décline après le choix de la forme, deux invitations du même
+  partenaire sur un marché, pièce « Attestation de visite obligatoire » déposée sous son nom) ; code relu : deux
+  révisions dans l'ordre, schéma identique à une base neuve ; le geste conditionnel sur le type énuméré de Postgres (le
+  marché déposé ne recule pas, un marché Repéré avance, ancienne clé lue, 422) ; formulaires de la production comptés ;
+  calcul « seul » pour le sous-traitant seul et la convention restée en brouillon ; la pièce reconnue ; `/api/shared`
+  identique à la production ; cloisonnement (404) ; la bascule mesurée (§ L.4) ; retour arrière puis code de production
+  relancé (lectures et écritures 200) ; remontée. Vrais tests : fichiers communs, mêmes échecs qu'avec la production
+  (les 51 dus à `PRAGMA foreign_keys` de `test_secu_rgpd.py`, déjà notés au § R.6) ; les 5 fichiers de la vague 2a,
+  relecture comprise : 107 sur 107.
+- **Navigateur réel** (serveur local, base jetable, démonstration par lien privé avec une clé jetable, `DEMO_PUBLIC=0`,
+  réseau sortant, courriels et IA coupés ; deux comptes de test locaux pour le cas des deux invitations) : L.1, L.2,
+  L.3, L.8 et L.9 comme décrit plus haut ; Kerhel (« Lire : Terminé … Déposer : En cours », « 3 contrôles sur 4 ») ; 375 px
+  sans défilement horizontal ; console sans erreur de script.
+
+### L.12 Laissé, avec sa raison
+
+- **Les routes `/api/shared/{marché}/…` du partenaire connecté** (rédaction, entretien, journal) désignent le dossier par
+  le marché et prennent l'invitation la plus récente du compte sur ce marché. C'est déjà le cas en production
+  (`journal_membre._shared_invite`), sans lien avec la vague 2a ; dans le seul cas de deux invitations du même compte
+  sur le même marché, ces blocs montrent ceux de la plus récente. Rien n'est exposé d'un autre membre (les deux
+  invitations sont au même compte). Les corriger demande de désigner l'invitation dans ces routes et dans
+  `redaction-partenaire.js` : chantier à part, proposé à Eliot.
+- **Précédent qui ne fait que fermer une fenêtre** : l'entrée « suivante » de l'historique est remplacée par l'écran
+  resté affiché (le prix d'un comportement sûr et sans course entre deux mouvements d'historique).

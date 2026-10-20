@@ -100,6 +100,9 @@ ZONES = {
     # « À faire » de l'accueil, décision de l'étape Décider, carte « À venir » créée depuis une fin de contrat.
     "vague2a_a1": ["menu-bas", "fenetre-notifications", "accueil-a-faire", "marche-decision",
                    "trouver-preparer-a-venir"],
+    # Relecture de la vague 2a (docs/REORGANISATION_V2A.md, § L) : la page d'une carte « À venir » (marché pas encore
+    # publié), à la place du bandeau « Le dossier complet du marché est indispensable ».
+    "vague2a_relecture": ["marche-pas-publie"],
 }
 FAMILLES = {"fenetres-atelier": 5, "fenetres-preuves": 2}     # même nom sur plusieurs fenêtres sœurs
 

@@ -279,7 +279,10 @@ def test_le_demarrage_lit_l_adresse_et_preserve_les_liens_envoyes():
     # ?shared=<jeton> (lien d'invitation « ouvert dans mon Adjugo ») ouvre le dossier, et le jeton quitte l'adresse.
     assert 'const st = new URLSearchParams(location.search).get("shared");' in boot
     assert 'history.replaceState(history.state, "", "/app");' in boot
-    assert '_demande = it ? { view: "sharedao", partage: it.project_id } : { view: "pipeline", filtre: "partenaire" };' in boot
+    # Relecture de la vague 2a : l'adresse porte aussi le repère de CETTE invitation (deux invitations acceptées sur le
+    # même marché : ?shared= ouvre celle du jeton ; tests/test_reorganisation_v2a_relecture.py).
+    assert ('_demande = it ? { view: "sharedao", partage: it.project_id, cle: clePartage(it.token) } : '
+            '{ view: "pipeline", filtre: "partenaire" };') in boot
     # ?verify=, ?reset=, #gcode=, ?gerror= et ?inscription sont lus au montage, avant le démarrage, comme avant.
     mounted = JS[JS.index("  mounted() {\n    this.applyTheme();"):JS.index("  updated() {")]
     for m in ('get("reset")', 'get("verify")', 'get("gcode")', 'get("gerror")', "inscriptionDemandee(location)"):
@@ -527,7 +530,8 @@ console.log(JSON.stringify({ d: st.map(s => ch.map(c => statutApresDecision(s, c
     for clic, ic, mot in (("seul", "user", "Préparer seul"), ("plusieurs", "handshake", "Préparer à plusieurs"),
                           ("ecarter", "archive", "Écarter"), ("remettre", "archive-restore", "Remettre")):
         assert f"""@click="aoDecider('{clic}')"><i data-lucide="{ic}"></i>{mot}</button>""" in d
-    dec = JS[JS.index("    async aoDecider(choix) {"):JS.index("    async _aoChangerStatut(cible, message) {")]
+    # Relecture de la vague 2a : _aoChangerStatut reçoit aussi les étapes de départ du geste (`depuis`).
+    dec = JS[JS.index("    async aoDecider(choix) {"):JS.index("    async _aoChangerStatut(cible, message, depuis) {")]
     assert "this._convAsk({" in dec and 'run: () => this._aoChangerStatut("abandonne"' in dec   # confirmé avant
     assert "this.aoInviter();" in dec and 'this.rnScrollTo("etPreparer");' in dec
     # Les gestes de Préparer : estimer, préparer les formulaires, inviter, ouvrir l'atelier.

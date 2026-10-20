@@ -420,8 +420,9 @@ console.log(JSON.stringify([
 
 
 def test_la_fenetre_rend_une_promesse_sous_node():
+    # Relecture de la vague 2a : _cdlgEcran (la fenêtre n'agit que sur l'écran où elle a été ouverte).
     noms = ("_convAsk", "demander", "confirmer", "_cdlgOuvrir", "_cdlgFermer", "cdlgClose", "cdlgValide", "cdlgRun",
-            "cdlgAutre")
+            "cdlgAutre", "_cdlgEcran")
     script = (_fonction(JS, "champsValides")
               + "global.document = { activeElement: null, getElementById: () => null, body: { contains: () => false } };\n"
               + _ent(*noms) + """

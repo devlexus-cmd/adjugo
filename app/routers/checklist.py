@@ -94,17 +94,22 @@ def _is_travaux(project) -> bool:
     return any(kw in hay for kw in _TRAVAUX_KW)
 
 
-def _is_groupement(project, db) -> bool:
-    """Le marché est-il porté en groupement ? (au moins un partenaire invité)."""
+def _invitations_actives(project, db) -> list:
+    """Invitations ACTIVES du marché (ni révoquées, ni déclinées) — source unique de vérité des membres."""
     try:
-        from app.models import ProjectInvite
-        from app.services.groupement_members import active_invite_filter
-        # Membre = invitation ACTIVE (ni révoquée, ni déclinée) — source unique de vérité.
-        return db.query(ProjectInvite).filter(
-            ProjectInvite.project_id == project.id,
-            active_invite_filter()).count() > 0
+        from app.services.groupement_members import active_invites
+        return active_invites(db, project.id)
     except Exception:
-        return False
+        return []
+
+
+def _is_groupement(project, db, invites=None) -> bool:
+    """Le marché est-il porté en groupement ? (au moins un partenaire invité). Relecture de la vague 2a : un
+    sous-traitant n'est pas membre du groupement (il relève du DC4) ; inviter seulement un sous-traitant ne fait pas
+    un groupement (ni pouvoir du chef de file, ni convention)."""
+    from app.services.groupement_convention import _is_sous_traitant
+    invites = _invitations_actives(project, db) if invites is None else invites
+    return any(not _is_sous_traitant(getattr(i, "role", None)) for i in invites)
 
 
 def _convention_item(project, db) -> dict:
@@ -168,9 +173,40 @@ def _norm(s: str) -> str:
     return "".join(c for c in s if not unicodedata.combining(c))
 
 
+# Mots qui ne distinguent pas une pièce d'une autre (« Attestation de … », « Certificat … en cours de validité »).
+_MOTS_VIDES = frozenset("""
+a au aux avec ce ces d de des du en et l la le les ou par pour sa sans ses son sur un une votre vos
+attestation attestations certificat certificats certification justificatif justificatifs document documents piece pieces
+copie copies original obligatoire obligatoires exige exigee exiges exigees fourni fournie fournir signe signee cours validite
+valide valable
+""".split())
+
+
+def _mots(texte) -> list:
+    """Les mots d'un nom, sans accents ni casse, chiffres séparés des lettres (« iso27001 » → iso, 27001), sans le
+    « s » du pluriel."""
+    import re as _re
+    out = []
+    for m in _re.findall(r"[a-z]+|[0-9]+", _norm(texte)):
+        out.append(m[:-1] if len(m) > 3 and m.endswith("s") and not m.isdigit() else m)
+    return out
+
+
+def _mots_significatifs(piece_name) -> list:
+    return [m for m in _mots(piece_name) if len(m) > 1 and m not in _MOTS_VIDES]
+
+
 def match_document(piece_name, documents):
-    """Verifie si un document du coffre-fort correspond a la piece demandee."""
+    """Verifie si un document du coffre-fort correspond a la piece demandee.
+
+    Deux façons de reconnaître un document : les mots-clés d'une pièce standard (« urssaf », « kbis »…), ou — pour
+    toute pièce, d'abord celles que l'analyse lit dans le dossier (« Attestation de visite obligatoire »,
+    « Certificat ISO 27001 ») — un nom qui porte TOUS les mots significatifs de la pièce (« Visite obligatoire »,
+    « ISO 27001 », « iso27001 »). Relecture de la vague 2a : sans mot-clé, une pièce exigée n'était jamais reconnue,
+    même sous son nom exact. Tous les mots, jamais un seul : « … régularité fiscale » ne reconnaît pas « … régularité
+    sociale »."""
     piece_lower = _norm(piece_name)
+    mots_piece = _mots_significatifs(piece_name)
     keywords = {
         "kbis": ["kbis", "extrait k", "registre commerce"],
         "dc1": ["dc1", "lettre de candidature"],
@@ -194,26 +230,28 @@ def match_document(piece_name, documents):
         "planning": ["planning", "calendrier", "delai", "gantt"],
     }
 
+    familles = [terms for key, terms in keywords.items() if key in piece_lower or any(t in piece_lower for t in terms)]
     fallback = None   # un document qui matche mais est expiré : gardé en repli seulement
     for doc in documents:
         doc_name = _norm(doc.name)
         doc_cat = _norm(getattr(doc.category, "value", doc.category))
 
-        # Chercher par mots-cles
-        for key, terms in keywords.items():
-            if key in piece_lower or any(t in piece_lower for t in terms):
-                if any(t in doc_name or t in doc_cat for t in terms):
-                    # Vraie date d'expiration (la colonne days_until_expiration n'existe PAS sur
-                    # le modèle → hasattr renvoyait toujours False → AUCUNE pièce jamais « périmée »).
-                    expired = (doc.expiration_date is not None and doc.expiration_date < date.today())
-                    hit = {"found": True, "document_id": doc.id,
-                           "document_name": doc.name, "expired": expired}
-                    # Un document VALIDE prime : sinon une vieille version expirée masquait
-                    # une pièce à jour présente dans le coffre-fort (checklist « périmée » à tort).
-                    if not expired:
-                        return hit
-                    fallback = fallback or hit
-                    break   # ce doc est déjà classé, passe au suivant
+        # Chercher par mots-cles, puis par les mots de la pièce (relecture de la vague 2a)
+        trouve = any(any(t in doc_name or t in doc_cat for t in terms) for terms in familles)
+        if not trouve and mots_piece:
+            mots_doc = set(_mots(doc.name))
+            trouve = all(m in mots_doc for m in mots_piece)
+        if trouve:
+            # Vraie date d'expiration (la colonne days_until_expiration n'existe PAS sur
+            # le modèle → hasattr renvoyait toujours False → AUCUNE pièce jamais « périmée »).
+            expired = (doc.expiration_date is not None and doc.expiration_date < date.today())
+            hit = {"found": True, "document_id": doc.id,
+                   "document_name": doc.name, "expired": expired}
+            # Un document VALIDE prime : sinon une vieille version expirée masquait
+            # une pièce à jour présente dans le coffre-fort (checklist « périmée » à tort).
+            if not expired:
+                return hit
+            fallback = fallback or hit
 
     return fallback or {"found": False}
 
@@ -260,7 +298,8 @@ def checklist_du_marche(db: Session, project: Project, ids) -> dict:
 
     # Contexte du marché : réévalue les pièces « conditionnelles » en obligatoires.
     is_travaux = _is_travaux(project)
-    is_groupement = _is_groupement(project, db)
+    _invites = _invitations_actives(project, db)
+    is_groupement = _is_groupement(project, db, _invites)
     contextual = {}
     if is_travaux:
         contextual["rc_decennale"] = "Marché de travaux : assurance décennale obligatoire."
@@ -268,6 +307,8 @@ def checklist_du_marche(db: Session, project: Project, ids) -> dict:
     if is_groupement:
         contextual["pouvoir"] = "Groupement : pouvoir / habilitation du chef de file obligatoire."
         contextual["dc4"] = "Groupement avec sous-traitance : DC4 à prévoir le cas échéant."
+    elif _invites:
+        contextual["dc4"] = "Sous-traitant invité : DC4 à prévoir le cas échéant."
     # DPGF/BPU imposé par l'acheteur : si une trame figure dans les pièces requises du DCE,
     # il faut la compléter telle quelle — le modèle Adjugo ne sert alors que de chiffrage.
     _pieces_txt = " ".join(_piece_name(ap) for ap in ai_pieces).lower()
@@ -317,12 +358,15 @@ def checklist_du_marche(db: Session, project: Project, ids) -> dict:
 
     # Groupement : « convention de groupement validée par tous les membres » (vague 2). Statut
     # calculé depuis la convention réelle (jamais deviné) ; avertit, ne bloque rien.
+    # Relecture de la vague 2a : seulement pour un marché qui a un groupement (un partenaire invité, ou une convention
+    # qui compte des membres) — une convention restée en brouillon sans partenaire n'en fait pas un (a_un_groupement).
     try:
         from app.services.groupement_convention import get_convention as _gconv
-        _has_conv = _gconv(db, project.id) is not None
+        from app.services.groupement_members import a_un_groupement
+        _a_grp = a_un_groupement(_invites, _gconv(db, project.id))
     except Exception:
-        _has_conv = False
-    convention_item = _convention_item(project, db) if (is_groupement or _has_conv) else None
+        _a_grp = is_groupement
+    convention_item = _convention_item(project, db) if _a_grp else None
 
     for piece in all_pieces:
         match = match_document(piece["name"], documents)
