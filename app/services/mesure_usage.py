@@ -33,11 +33,13 @@ PARIS = ZoneInfo("Europe/Paris")
 # chaque ouverture de Trouver des marchés, quel que soit l'onglet). Mes marchés en liste filtrable (vague 2a, A2) :
 # « bilan » (Mes marchés › Bilan) est une vue ; « shared » et « consortiums » comptent les filtres « Où je suis
 # partenaire » et « À plusieurs » de la liste (leurs anciens écrans, pour comparer avant et après). Vague 2a (A3) :
-# « tarifs », l'onglet « Tarifs » de Mon entreprise, sorti d'« Identité » (une vue).
+# « tarifs », l'onglet « Tarifs » de Mon entreprise, sorti d'« Identité » (une vue). Vague 2b (B2) : « exemple », le
+# marché d'exemple (page à part, lecture seule) : son ouverture est comptée ici comme tout écran, sans compte ni
+# organisation, jamais pour la démo — c'est la seule trace qu'il laisse.
 ECRANS = frozenset({
     "dashboard", "sourcing", "amont", "pipeline", "aodetail", "atelier", "cotraitants", "reseau", "contacts",
     "documents", "kb", "company", "preuves", "criteria", "invoices", "consortiums", "shared", "sharedao",
-    "team", "billing", "admin", "compte", "avenir", "alertes", "bilan", "tarifs",
+    "team", "billing", "admin", "compte", "avenir", "alertes", "bilan", "tarifs", "exemple",
 })
 
 JOURS_MAX = 400          # relevé : au plus ~13 mois d'un coup

@@ -1898,3 +1898,31 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
   .pp-l .pp-st { margin-left:26px; }
   .pp-a { flex-basis:100%; margin-left:26px; }
 }
+
+/* Marché d'exemple (réorganisation, vague 2b, chantier B2) : page à part, lecture seule ; les classes de la page du marché,
+   plus la mention « Exemple · entreprises et client fictifs » et le cadre de l'écran du partenaire. Rythme de 16 px, 375 px. */
+.ex .ex-mention { font-size:11px; white-space:normal; text-align:left; }
+.ex .ex-titre { margin:8px 0 2px; font-size:18px; line-height:1.3; font-weight:560; }
+.ex .ex-texte { margin:10px 0 0; line-height:1.6; }
+.ex .ex-acteurs { list-style:none; margin:16px 0 0; padding:0; display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
+.ex .ex-acteurs li { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); }
+.ex .ex-acteurs li > i[data-lucide], .ex .ex-acteurs li > .lucide { width:16px; height:16px; flex:none; margin-top:2px; color:var(--accent-text); }
+.ex .ex-vers { display:inline-block; margin:10px 2px 0; }
+.ex .ex-cite + .ex-cite { margin-top:12px; }
+.ex .ex-points { list-style:none; margin:8px 0 0; padding:0; }
+.ex .ex-cand { margin-top:0; }
+.ex .ex-resultat { margin-top:14px; padding:10px 12px; border:1px solid var(--accent); border-radius:9px; background:var(--accent-weak); }
+.ex .ex-resultat > * + * { margin-top:4px; }
+.ex .ex-liste { margin:0; padding-left:18px; line-height:1.6; }
+.ex .ex-liste li + li { margin-top:4px; }
+.ex .ex-manque { display:block; margin-top:2px; }
+.ex .ex-ecran { margin-top:12px; padding:14px 16px; border:1.5px dashed var(--accent); border-radius:12px; background:var(--surface); }
+.ex .ex-ecran .sg-big { font-size:28px; font-weight:800; letter-spacing:-.02em; line-height:1; }
+.ex .ex-ecran-t { font-size:17px; font-weight:700; line-height:1.3; margin:2px 0 4px; overflow-wrap:anywhere; }
+.ex .ex-voit { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0 16px; }
+.ex .ex-fin { margin:26px 2px 8px; }
+@media (max-width:640px) {
+  .ex .ex-acteurs, .ex .ex-voit { grid-template-columns:minmax(0,1fr); }
+  .ex .ex-ecran { padding:12px; }
+  .ex .ex-ecran .offre-box .offre-total { font-size:19px; }
+}

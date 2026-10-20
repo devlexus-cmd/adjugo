@@ -124,7 +124,10 @@ def test_chaque_vue_a_sa_rubrique_et_s_atteint_en_deux_clics_au_plus():
     assert '{ k: "partenaire", label: "Où je suis partenaire"' in JS and '{ k: "plusieurs", label: "À plusieurs"' in JS
     # Pages de détail (un marché, son atelier, un dossier partagé) : depuis la liste de leur rubrique.
     detail = {"aodetail", "atelier", "sharedao"}
-    for e in ECRANS - detail:
+    # Vague 2b (B2) : le marché d'exemple est une page à part, sans entrée de menu (étude, § 10 : pas d'entrée par
+    # fonction nouvelle) ; il s'ouvre depuis « Répondre à plusieurs ? », les états vides et les premiers pas.
+    a_part = {"exemple"}
+    for e in ECRANS - detail - a_part:
         assert e in un_clic or e in deux_clics or e in sous or e in filtres, f"« {e} » à plus de 2 clics"
     assert sous == {"publies", "avenir", "alertes"}
     assert un_clic == {"dashboard", "sourcing", "pipeline", "cotraitants", "documents", "company"}

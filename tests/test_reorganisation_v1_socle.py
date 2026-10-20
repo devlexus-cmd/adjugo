@@ -106,6 +106,10 @@ ZONES = {
     # Vague 2b, B1 (docs/REORGANISATION_V2B.md) : l'attente d'une adresse au rechargement (aucun écran avant qu'elle
     # soit résolue), à côté de `contenu`.
     "vague2b_b1": ["ecran-attente"],
+    # Vague 2b, B2 (docs/REORGANISATION_V2B.md, section B2) : le marché d'exemple, page à part en lecture seule
+    # (/app/exemple) : l'en-tête, la barre d'ancres, les 4 étapes et l'écran du partenaire.
+    "vague2b_exemple": ["vue-exemple", "exemple-entete", "exemple-etapes", "exemple-lire", "exemple-decider",
+                        "exemple-preparer", "exemple-deposer", "exemple-partenaire"],
 }
 FAMILLES = {"fenetres-atelier": 5, "fenetres-preuves": 2}     # même nom sur plusieurs fenêtres sœurs
 
