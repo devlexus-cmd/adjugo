@@ -911,3 +911,67 @@ partenaire » aussi).
   dossier de présentation, accès retiré, code de vérification) restent en texte : ce ne sont pas des invitations ; leurs
   mots sont relus (§ B4.4).
 - **Langues** : les courriels d'Adjugo sont en français ; aucun libellé de l'interface ne change (traductions inchangées).
+
+---
+
+## R. Réunion des chantiers
+
+Base : `feat/produit-acheteur-collectivites` = `0afc1ed` (production), puis, dans cet ordre, B4 (`917c5ac`), B1
+(`c37e51c`), B2 (`163686e`) et B3 (`d784c88`), chacun fusionné par `git merge` avec un commit de fusion. Tests de la
+réunion : `tests/test_reorganisation_v2b_reunion.py` (9 tests, sans réseau ; fonctions de `app.js` sous Node).
+
+### R.1 Les fusions
+
+Conflits résolus **bloc par bloc** (jamais un fichier entier pris d'un côté) :
+
+| Fichier | Résolution |
+|---|---|
+| `docs/REORGANISATION_V2B.md` | un seul en-tête (la convention commune, la table des chantiers), puis les sections B1, B2, B3 et B4 reprises telles quelles, puis § R |
+| `app/static/app.js` | noms et phrases des vues (`titles`, `subtitles`) : « Votre part » et l'aperçu de B3, « Marché d'exemple » de B2 ; l'état `exemple` de B2 gardé |
+| `app/services/mesure_usage.py` | `ECRANS` reçoit `exemple` (B2) et `apercu` (B3) |
+| `app/static/styles.css` | les blocs de B1, B2 puis B3, chacun avec sa media query |
+| `tests/test_reorganisation_v1_menu.py` | l'aperçu est une page de détail du marché (B3), l'exemple une page à part (B2) |
+| `tests/test_reorganisation_v1_socle.py` | les repères des trois chantiers (`vague2b_b1`, `vague2b_exemple`, `vague2b_b3`) |
+| `app/static/i18n.js` | **clé par clé** (fusion à trois sur le dictionnaire de la production) : 636 + 53 (B1) + 35 (B2) + 51 (B3, dont une commune) = **774 clés** ; la seule clé ajoutée par deux chantiers, « Chef de file : », avait deux traductions espagnoles (« Empresa principal: » chez B2, « Mandatario: » chez B3) : « Mandatario: », le mot du reste du dictionnaire |
+| `app/static/app.html`, `app/static/sri-manifest.json` | empreintes SRI recalculées par `scripts/sri_update.py` après chaque fusion |
+
+Fusions automatiques relues : `email_templates.py` (le pied au choix de B4 et la phrase de la suite de B1 dans
+`verify_email_html` se cumulent), `invites.py` (B1 : `claim_invite` ; B3 : l'aperçu ; B4 : le courriel), `main.py`
+(routeur de B1, `essai_jours` de B3), `adresseDe` / `etatDeAdresse` / `_appliquerAdresse` (écrans `exemple` et
+`apercu` côte à côte). **Une seule tête Alembic** : `c5priseenmain` (B1), après `c4montantseul` ; aucune autre
+migration dans la vague.
+
+### R.2 Ce que la réunion ajoute
+
+- **L'écran du partenaire de l'exemple a la barre de son espace réel** (laissé par B2, § B2.8, et proposé par B3,
+  § B3.8) : sous « Votre part dans « … » », la barre de « Votre part dans [marché] » en lecture (une liste, aucun bouton,
+  comme dans l'aperçu de B3), calculée par **la même fonction**, `barrePartenaire`, à partir de l'état que l'exemple
+  décrit déjà (`barreExemple` : parts reçues 1 sur 1, accords des membres 2 sur 2, dépôt pas encore fait) : Accepter,
+  Ma part et Donner mon accord « Terminé », Déposé par le chef de file « En cours ». Méthode `exBarre`, sans appel à
+  l'API ; aucun texte nouveau (les libellés de la barre sont ceux de B3, déjà traduits) ; une règle de marge
+  (`.ex .ex-ecran .ex-barre`).
+- **Test de B1 mis à jour** (raison en commentaire) : `test_exemple_en_ligne_seulement_quand_l_adresse_ouvre_l_ecran_sous_node`
+  simulait l'absence du chantier B2 ; avec lui, « Voir un exemple » s'affiche, et ne s'afficherait pas sans l'adresse
+  de l'exemple.
+
+### R.3 Ce que les tests de la réunion vérifient
+
+1. La barre de l'exemple : celle de `barrePartenaire`, cohérente avec les chiffres du fichier, à sa place (sous le
+   titre, avant « Pourquoi vous dans ce groupement »), en lecture.
+2. Adresses : `/app/exemple` → un marché → son aperçu `/apercu-partenaire/<n°>` ; précédent deux fois, suivant deux
+   fois (méthodes réelles, navigateur simulé) ; rechargement de l'exemple et des deux adresses de l'aperçu : l'écran
+   s'ouvre sans attente du serveur (`_adresseAttente` reste faux) et jamais l'accueil d'abord.
+3. Premiers pas × aperçu × courriel (API locale) : regarder ce que verrait un partenaire pas encore invité ne crée
+   aucune invitation, n'envoie aucun courriel et laisse la tâche « Seul ou à plusieurs » à « Pas commencé » ;
+   l'invitation envoyée la termine ; le courriel, l'aperçu de cette invitation et l'écran du partenaire nomment le même
+   chef de file et le même marché, sous le même titre « Votre part dans « … » » (aussi celui d'`invite.html`, de la
+   vue `sharedao` et de l'exemple) ; le lien du courriel ouvre l'écran du partenaire.
+4. Les trois boutons « Voir un exemple » de B1 et le lien de B2 mènent à `go('exemple')`, `/app/exemple`.
+5. Une seule tête `c5priseenmain` ; `exemple` et `apercu` mesurés et nommés ; traductions complètes (774 clés,
+   « Chef de file : » = « Mandatario: ») ; ce contrat (sections B1 à B4 puis R, un seul en-tête).
+
+### R.4 Vérifications
+
+- Suite complète : en cours.
+- **Postgres 16.2** depuis l'état exact de la production : en cours.
+- **Navigateur réel** : en cours.

@@ -3534,6 +3534,10 @@
                   <div class="muted small"><span>Chef de file :</span> <b>{{ ex.ecran_partenaire.chef_de_file }}</b></div>
                   <div class="ex-ecran-t">{{ ex.ecran_partenaire.titre }}</div>
                   <div class="muted small">{{ ex.ecran_partenaire.role }} · {{ ex.ecran_partenaire.partie }}</div>
+                  <!-- Réunion de la vague 2b : la barre de son espace réel (« Votre part dans … », B3), en lecture -->
+                  <ol class="mk-etapes pa-barre ex-barre" :class="'pa-n'+exBarre(ex).length" aria-label="Étapes de sa part">
+                    <li v-for="s in exBarre(ex)" :key="'exb'+s.k" class="mk-et" :class="['mk-'+s.etat, {cur:s.courante}]" :aria-current="s.courante?'step':null"><span class="mk-n" aria-hidden="true">{{ s.n }}</span><span>{{ s.label }}</span><span class="mk-st"><span class="sr-only"> : </span>{{ s.statut }}</span></li>
+                  </ol>
                   <div class="row wrap" style="gap:14px;align-items:center;margin-top:10px">
                     <div style="text-align:center;min-width:96px"><div class="sg-big" style="color:var(--accent-text)">{{ ex.ecran_partenaire.a_plusieurs }} %</div><div class="sg-lab">à plusieurs</div></div>
                     <div style="flex:1;min-width:180px">
@@ -4625,6 +4629,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-lmrpsRjNi9+DhxQevB/9wYyqtWHfz9OYxBpvijkXbPmTyT26ZtyIz58YfUIRJD+b" defer></script>
+<script src="/static/app.js" integrity="sha384-EexO1TT/8bZL/t6dsBdBae+T+hfpBfZtZJeoAA31AyoAaqwGiLxS1Wko6sIiVk9m" defer></script>
 </body>
 </html>

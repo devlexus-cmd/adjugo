@@ -503,13 +503,15 @@ def test_aucune_promesse_d_une_fonction_qui_n_est_pas_en_ligne():
 
 
 def test_exemple_en_ligne_seulement_quand_l_adresse_ouvre_l_ecran_sous_node():
+    # Réunion de la vague 2b (docs/REORGANISATION_V2B.md, § R) : le chantier B2 a mis en ligne /app/exemple, donc
+    # « Voir un exemple » s'affiche ; sans l'adresse de l'exemple (un écran absent), il ne s'afficherait pas.
     m = _methode("exempleEnLigne")
     r = _node(_ADRESSES + "\nconst o = {\n" + m + """
 };
-const avant = o.exempleEnLigne();
-ADRESSES.exemple = "exemple";              // ce que fait le chantier du marché d'exemple : son adresse, son écran
-console.log(JSON.stringify({ avant, apres: o.exempleEnLigne(), adr: adresseDe({ view: "exemple" }) }));""")
-    assert r == {"avant": False, "apres": True, "adr": "/app/exemple"}
+const en_ligne = o.exempleEnLigne(), adr = adresseDe({ view: "exemple" });
+delete ADRESSES.exemple;                   // sans l'écran du marché d'exemple
+console.log(JSON.stringify({ en_ligne, adr, sans: o.exempleEnLigne() }));""")
+    assert r == {"en_ligne": True, "adr": "/app/exemple", "sans": False}
 
 
 # ═══ 4. La confirmation d'email vivante (décision 12 (a)) ══════════════════════════════════════════════════════════

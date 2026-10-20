@@ -290,6 +290,18 @@ function exempleValide(d) {
     && n(pr.total_ht) && l(pr.cloisonnement) && l(dp.controles) && dp.controles.length > 0
     && n(ep.prix_ht) && n(ep.total_ht) && l(ep.apporte) && l(ep.voit) && l(ep.ne_voit_pas);
 }
+// Réunion de la vague 2b (docs/REORGANISATION_V2B.md, § R) : l'écran du partenaire de l'exemple a la barre de son espace
+// réel (chantier B3, « Votre part dans [marché] »), calculée par la MÊME fonction, barrePartenaire, à partir de l'état
+// que l'exemple décrit déjà : sa part reçue (parts reçues = parts attendues), la convention validée par tous (accords =
+// membres), le dépôt pas encore fait (« Avant de déposer » n'est pas au complet ; le dépôt est le geste du chef de file).
+function barreExemple(d) {
+  const pr = (d && d.preparer) || {}, n = x => Number(x) || 0;
+  return barrePartenaire({
+    partStatut: n(pr.parts_attendues) > 0 && n(pr.parts_recues) >= n(pr.parts_attendues) ? "submitted" : "draft",
+    conventionStatut: n(pr.membres) > 0 && n(pr.accords) >= n(pr.membres) ? "signee" : "a_signer",
+    groupement: "",
+  });
+}
 // Montant de l'exemple, en euros hors taxes, sans décimale (« 280 000 € HT »).
 function eurExemple(v) {
   const x = Number(v);
@@ -2339,6 +2351,7 @@ const __adjApp = createApp({
     exempleRetour() { if (!this._retourHistorique()) this.go("dashboard"); },
     exEur(v) { return eurExemple(v); },
     exOk(controles) { return (controles || []).filter(c => c && c.ok).length; },
+    exBarre(d) { return barreExemple(d); },
     fmtEur(v) { const n = Number(v); return isFinite(n) ? n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €" : "—"; },
     adminRvPublished(it) { return ((it && it.conflits) || []).filter(c => c.statut === "publie"); },
     // Lien vers l'annuaire officiel des entreprises : seulement l'adresse attendue (SIREN à 9 chiffres).
