@@ -1081,6 +1081,21 @@ def _unfreeze_offer_if_needed(db: Session, project_id: int, reason: str, *, acto
     return True
 
 
+def _documents_partages(inv, db: Session) -> list:
+    """Les pièces du marché que le lien laisse télécharger (rien si le partage des pièces est coupé)."""
+    if not inv.can_view_docs:
+        return []
+    # Versions remplacées (parent_id posé) EXCLUES : ce que le mandataire a remplacé
+    # disparaît aussi pour le partenaire (même règle que le coffre-fort et l'export).
+    rows = db.query(Document).filter(
+        Document.project_id == inv.project_id, Document.deleted_at.is_(None),
+        Document.parent_id.is_(None)
+    ).order_by(Document.created_at.desc()).all()
+    return [{"id": d.id, "name": d.name,
+             "category": d.category.value if hasattr(d.category, "value") else str(d.category or ""),
+             "folder": d.folder or "", "size": d.file_size or 0} for d in rows]
+
+
 @router.get("/api/invite/{token}")
 @limiter.limit("120/minute")
 def guest_view(token: str, request: Request, db: Session = Depends(get_db)):
@@ -1092,18 +1107,7 @@ def guest_view(token: str, request: Request, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(404, "Projet introuvable ou retiré")
     owner_company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
-
-    docs = []
-    if inv.can_view_docs:
-        # Versions remplacées (parent_id posé) EXCLUES : ce que le mandataire a remplacé
-        # disparaît aussi pour le partenaire (même règle que le coffre-fort et l'export).
-        rows = db.query(Document).filter(
-            Document.project_id == inv.project_id, Document.deleted_at.is_(None),
-            Document.parent_id.is_(None)
-        ).order_by(Document.created_at.desc()).all()
-        docs = [{"id": d.id, "name": d.name,
-                 "category": d.category.value if hasattr(d.category, "value") else str(d.category or ""),
-                 "folder": d.folder or "", "size": d.file_size or 0} for d in rows]
+    docs = _documents_partages(inv, db)
 
     # Compteur de vues + trace d'accès
     inv.view_count = (inv.view_count or 0) + 1
@@ -1114,6 +1118,118 @@ def guest_view(token: str, request: Request, db: Session = Depends(get_db)):
                  target_type="project", target_id=inv.project_id, invite_id=inv.id,
                  detail=(inv.company_name or "")[:255], ip=audit.client_ip(request))
     return _invite_public(inv, project, owner_company, docs, db=db)
+
+
+# ── « Voir ce que verra [partenaire] » (réorganisation, vague 2b, B3 ; docs/REORGANISATION_V2B.md) ──────────────
+# Le chef de file voit, avant et après l'invitation, l'écran de son partenaire en lecture. L'aperçu est TIRÉ de la
+# vue que le partenaire reçoit (la même fonction, _invite_public, sans compteur de vues ni journal), champ par champ :
+# le marché, le chef de file, la date limite, ce qui est attendu de lui et le total de l'offre commune quand le
+# partenaire le voit. Jamais la décomposition du prix du chef de file (le partenaire ne la reçoit pas), jamais la
+# matière d'un autre membre (ni la liste des membres, ni leurs parts), jamais une donnée du partenaire que le chef de
+# file ne voit pas déjà : ni son adresse (masquée pour une invitation du réseau), ni ses capacités, ni son brouillon
+# pendant l'aperçu minimal, ni aucun jeton. Prouvé par tests/test_reorganisation_v2b_espace_partenaire.py : ce que
+# reçoit l'aperçu est inclus, valeur pour valeur, dans ce que reçoit le partenaire.
+_APERCU_PROJET = ("name", "client", "deadline", "source_url", "analysis")
+
+
+def _apercu_de(vue: dict) -> dict:
+    """La part de la vue du partenaire que montre l'aperçu (toujours un sous-ensemble, mêmes clés, mêmes valeurs)."""
+    p = vue.get("project") or {}
+    who = vue.get("invited") or {}
+    out = {
+        "project": {k: p.get(k) for k in _APERCU_PROJET},
+        "mandataire": vue.get("mandataire") or "",
+        "invited": {"company": who.get("company") or "", "role": who.get("role") or "cotraitant"},
+        "can_view_docs": bool(vue.get("can_view_docs")),
+        "can_contribute": bool(vue.get("can_contribute")),
+        # Les pièces du marché, nommées (le chef de file les a déposées) : ni identifiant ni lien de téléchargement.
+        "documents": [{"name": d.get("name"), "folder": d.get("folder")} for d in (vue.get("documents") or [])],
+        "apercu_minimal": bool(vue.get("apercu_minimal")),
+    }
+    if vue.get("apercu_message"):
+        out["apercu_message"] = vue["apercu_message"]
+    fm = vue.get("for_member")
+    if isinstance(fm, dict):
+        st = fm.get("state") or {}
+        out["for_member"] = {
+            # L'étape du groupement (« depose » : déposé par le chef de file) et le total de l'offre commune, seulement
+            # quand le partenaire le voit (offre figée, membre du groupement, signataire de la convention générée).
+            "state": {k: st.get(k) for k in ("state", "offer_frozen", "total_offre_ht", "frozen_at")},
+            "warning_two_members": fm.get("warning_two_members"),
+        }
+    return out
+
+
+def _pieces_attendues(project) -> list:
+    """Les pièces administratives attendues de chaque membre (en-tête du coffre-fort croisé) : clé et libellé."""
+    keys = list(_EXPECTED_BASE) + (["qualification"] if _dce_requires_qualification(project) else [])
+    return [{"key": k, "label": _PIECE_LABELS.get(k, k)} for k in keys]
+
+
+def _raison_sans_acces(inv) -> str:
+    if inv.revoked:
+        return "revoquee"
+    if getattr(inv, "declined_at", None):
+        return "declinee"
+    if _is_expired(inv.expires_at):
+        return "expiree"
+    return ""
+
+
+@router.get("/api/projects/{project_id}/apercu-partenaire")
+def apercu_partenaire(project_id: int, invite_id: Optional[int] = None, role: str = "cotraitant",
+                      reseau: bool = False, can_view_docs: bool = True, can_contribute: bool = True,
+                      nom: str = "", current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Ce que verra (ou voit) un partenaire de ce marché, pour le chef de file : une invitation existante
+    (`invite_id`), ou une invitation pas encore envoyée, décrite par les choix de la fenêtre d'invitation (rôle,
+    réseau Adjugo, pièces du marché, part). Lecture seule : rien n'est créé, compté ni journalisé."""
+    project = _owned_project(project_id, current_user, db)
+    if invite_id is not None:
+        inv = db.query(ProjectInvite).filter(ProjectInvite.id == invite_id,
+                                             ProjectInvite.project_id == project.id).first()
+        if not inv:
+            raise HTTPException(404, "Invitation introuvable sur ce marché")
+        raison = _raison_sans_acces(inv)
+        if raison:
+            # Le partenaire ne voit plus rien (son lien répond 404 ou 410) : l'aperçu le dit, sans rien montrer.
+            return {"acces": False, "raison": raison, "invite_id": inv.id, "pour": "invitation",
+                    "company": inv.company_name or "", "role": inv.role or "cotraitant"}
+        # Même calcul que GET /api/invite/{token} (chef de file = entreprise du propriétaire de l'invitation).
+        owner_company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
+        vue = _apercu_de(_invite_public(inv, project, owner_company, _documents_partages(inv, db), db=db))
+        c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+        conv_status, signature = None, None
+        if not vue["apercu_minimal"]:
+            try:
+                from app.services import groupement_convention as _gc
+                conv = _gc.get_convention(db, project.id)
+                if conv is not None:
+                    conv_status = conv.status
+                    mine = next((s for s in _gc.signatures_of(db, conv) if s.invite_id == inv.id), None)
+                    signature = mine.status if mine else None
+            except Exception:
+                conv_status, signature = None, None
+        etat = {
+            # L'état de SA part tel que le chef de file le voit déjà (une part du réseau sans réponse lui reste cachée).
+            "part": None if (c is None or _owner_hides_part(inv, c)) else c.status,
+            "convention": conv_status, "signature": signature,
+        }
+        return {"acces": True, "invite_id": inv.id, "pour": "invitation", "vue": vue, "etat": etat,
+                "pieces_attendues": None if vue["apercu_minimal"] else _pieces_attendues(project)}
+    # Pas encore invité : la vue d'une invitation neuve, calculée sur une invitation qui n'existe pas en base (jamais
+    # ajoutée à la session). Une invitation neuve n'a ni part ni accord ; elle rend caduque une offre figée et une
+    # convention générée (_create_invite) : le partenaire n'y verra donc aucun total à son arrivée.
+    owner = data_owner_id(current_user, db)
+    tmp = ProjectInvite(project_id=project.id, owner_id=owner, token="", recipient="",
+                        company_name=(nom or "").strip()[:255],
+                        role=(role if role in ("cotraitant", "sous_traitant") else "cotraitant"),
+                        can_view_docs=bool(can_view_docs), can_contribute=bool(can_contribute),
+                        source=("reseau_adjugo" if reseau else "manuel"))
+    owner_company = db.query(Company).filter(Company.user_id == owner).first()
+    vue = _apercu_de(_invite_public(tmp, project, owner_company, _documents_partages(tmp, db), db=None))
+    return {"acces": True, "invite_id": None, "pour": "nouveau", "vue": vue,
+            "etat": {"part": None, "convention": None, "signature": None},
+            "pieces_attendues": None if vue["apercu_minimal"] else _pieces_attendues(project)}
 
 
 @router.get("/api/invite/{token}/doc/{doc_id}")
@@ -2492,8 +2608,8 @@ def coffre_croise(db: Session, project, invites: list, viewer_invite_id: Optiona
     deadline = project.deadline
     if isinstance(deadline, datetime):
         deadline = deadline.date()
-    expected_keys = list(_EXPECTED_BASE) + (["qualification"] if _dce_requires_qualification(project) else [])
-    expected = [{"key": k, "label": _PIECE_LABELS.get(k, k)} for k in expected_keys]
+    expected = _pieces_attendues(project)          # la même liste que l'aperçu du chef de file (vague 2b)
+    expected_keys = [e["key"] for e in expected]
 
     # Réseau sans réponse : part absente pour le chef de file et les autres membres (seul son
     # auteur la voit) — ni le nom saisi dans le brouillon, ni ses pièces.

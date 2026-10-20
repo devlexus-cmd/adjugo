@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-q8DL80RVudBWgsaCfc4AJZ3iCrB4O6OoIs5lA81bOty2NmjC5qh+tkxKPVJDzShC"></script>
-<script src="/static/i18n.js" integrity="sha384-4BDWJmETmDG98l35AOVByquBxpJxSEnn5xVAwlzfoyz9GGUZXfVn7CteP6MwSV/c" defer></script>
+<script src="/static/i18n.js" integrity="sha384-j/bj2Z91W4pmhaCVUGhaUdYE7pANkCIOFm178JY56Fo012Ajplbfb+PMkF+QPA6+" defer></script>
 </head>
 <body>
 <div id="app">
@@ -424,6 +424,8 @@
             <!-- « Inviter un partenaire » : le bouton le plus visible de chaque marché (décision 0), à toutes les étapes. Il
                  ouvre la fenêtre d'invitation unique (vague 2a, A2) : réseau Adjugo, partenaire connu, registre officiel. -->
             <button data-test="marche-inviter" type="button" class="btn primary" @click="aoInviter()" aria-haspopup="dialog" style="margin-top:12px;width:100%;justify-content:center;padding:12px;font-size:14px"><i data-lucide="user-plus"></i>Inviter un partenaire</button>
+            <!-- Vague 2b (B3) : avant comme après l'invitation, l'écran du partenaire en lecture (/app/marches/<id>/apercu-partenaire). -->
+            <div class="mk-apercu"><button data-test="marche-apercu" type="button" class="linkbtn small" @click="apercuDepuisMarche()"><i data-lucide="eye" aria-hidden="true"></i>Voir ce que verra votre partenaire</button></div>
             <div class="cards cols-4" style="margin-top:14px">
               <div class="kpi"><div class="kh"><span>Date limite</span><i data-lucide="calendar-clock"></i></div><div class="v" style="font-size:15px">{{ aoDetails().date_limite || ao.project.deadline || 'non précisée' }}</div></div>
               <div class="kpi"><div class="kh"><span>Montant estimé</span><i data-lucide="banknote"></i></div><div class="v" style="font-size:15px">{{ aoDetails().budget_estime || 'non publié' }}</div></div>
@@ -1089,6 +1091,7 @@
                         <span v-else style="color:var(--warning)">Email non envoyé — copiez le lien ou relancez</span>
                       </div>
                     </div>
+                    <button v-if="!inv.revoked && !inviteDeclined(inv)" class="btn icon sm ghost" @click="apercuInvitation(inv)" :aria-label="'Voir ce que voit ' + (inv.company_name || 'ce partenaire')" :title="'Voir ce que voit ' + (inv.company_name || 'ce partenaire')"><i data-lucide="eye"></i></button>
                     <button v-if="!inviteIsNetwork(inv)" class="btn icon sm ghost" @click="copyInvite(inviteUrl(inv))" aria-label="Copier le lien" :disabled="inv.revoked"><i data-lucide="copy"></i></button>
                     <button v-if="!inv.revoked && !inviteDeclined(inv) && inviteRelancable(inv)" class="btn icon sm ghost" @click="aoResendInvite(inv)" :aria-label="inviteIsNetwork(inv)?'Relancer le partenaire (Adjugo renvoie l\'invitation)':'Renvoyer l\'invitation par email'" :title="inviteIsNetwork(inv)?'Relancer (Adjugo renvoie l\'invitation)':'Renvoyer / relancer par email'"><i data-lucide="send"></i></button>
                     <button v-if="!inv.revoked && !inviteDeclined(inv)" class="btn icon sm ghost" @click="aoRevokeInvite(inv)" :aria-label="inviteIsNetwork(inv)?'Révoquer l\'invitation':'Révoquer le lien'"><i data-lucide="ban"></i></button>
@@ -3895,12 +3898,13 @@
           <div v-else class="card pad" style="text-align:center"><span class="spin"></span> Chargement du dossier partagé…</div>
         </section>
 
-        <!-- Partagé avec moi — un AO : je contribue en tant que MON entreprise -->
-        <section data-test="vue-sharedao" v-if="view==='sharedao' && sharedAo.project">
+        <!-- « Votre part dans [marché] » (réorganisation, vague 2b, B3) : le marché d'une autre entreprise où je suis partenaire.
+             Je contribue en tant que MON entreprise ; la barre est celle de la page du marché, avec mes tâches à moi. -->
+        <section data-test="vue-sharedao" class="pa-vue" v-if="view==='sharedao' && sharedAo.project">
           <button class="btn ghost sm" @click="partageRetour()" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Où je suis partenaire</button>
-          <div data-test="partage-entete" class="card pad" style="margin-bottom:14px">
-            <div class="muted small">Partagé par <b>{{ sharedAo.mandataire }}</b></div>
-            <div style="font-size:19px;font-weight:800;margin:2px 0 4px;letter-spacing:-.02em">{{ sharedAo.project.name }}</div>
+          <div data-test="partage-entete" ref="sharedEntete" tabindex="-1" class="card pad pa-entete" style="margin-bottom:14px">
+            <div class="muted small"><span>Chef de file :</span> <b>{{ sharedAo.mandataire }}</b></div>
+            <h2 class="pa-titre"><span>Votre part dans</span> « {{ sharedAo.project.name }} »</h2>
             <div v-if="sharedAo.project.client" class="muted small">{{ sharedAo.project.client }}</div>
             <div style="margin-top:10px">
               <div v-if="sharedAo.project.deadline && !(sharedAo.project.analysis && sharedAo.project.analysis.date_limite)" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">Date limite</span><span style="flex:1"><b>{{ fmtDate(sharedAo.project.deadline) }}</b></span></div>
@@ -3908,6 +3912,11 @@
               <div v-if="sharedAo.project.source_url" class="row small" style="padding:5px 0"><span class="muted" style="min-width:140px">Source</span><a :href="safeUrl(sharedAo.project.source_url)" target="_blank" rel="noopener noreferrer nofollow" style="color:var(--accent-text)">Avis d'origine ↗</a></div>
             </div>
           </div>
+          <!-- La même barre que la page du marché du chef de file, avec mes tâches : Accepter · Ma part · Donner mon accord ·
+               Déposé par le chef de file (sharedBarre, barrePartenaire). Des ancres, sans blocage ; trois statuts. -->
+          <nav data-test="partage-barre" class="mk-etapes pa-barre" :class="'pa-n'+sharedBarre().length" aria-label="Étapes de votre part">
+            <button v-for="s in sharedBarre()" :key="'pb'+s.k" type="button" class="mk-et" :class="['mk-'+s.etat, {cur:s.courante}]" :aria-current="s.courante?'step':null" @click="sharedBarreAller(s.k)"><span class="mk-n" aria-hidden="true">{{ s.n }}</span><span>{{ s.label }}</span><span class="mk-st"><span class="sr-only"> : </span>{{ s.statut }}</span></button>
+          </nav>
           <!-- Comment vous serez noté : la même grille que le chef de file, en lecture seule -->
           <div data-test="partage-grille" v-if="sharedGrille(sharedAo.project.analysis)" class="card gn-card" style="margin-bottom:14px">
             <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Comment vous serez noté</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les critères de jugement et leurs poids, repris du règlement de la consultation avec la phrase où Adjugo les a trouvés. Un poids n'est affiché que s'il est écrit tel quel dans cette phrase, ou s'il a été saisi par le chef de file (c'est alors indiqué). C'est la même grille que celle du chef de file : elle sert de base commune au groupement. Le règlement fait foi.</span></button></div>
@@ -3916,8 +3925,7 @@
 
           <!-- Pourquoi vous dans ce groupement : le % COMMUN, votre apport, les seuils — jamais le score seul du mandataire ni le prix des autres -->
           <div data-test="partage-pourquoi" v-if="sharedAo.forMember" class="card pad" style="margin-bottom:14px;border:1.5px solid var(--accent)">
-            <div v-if="grpSteps(sfmState()).length"><ol class="gstep" aria-label="Étapes du groupement"><li v-for="s in grpSteps(sfmState())" :key="s.key" class="gs" :class="{done:s.done,cur:s.cur}" :aria-current="s.cur?'step':null"><span class="sr-only">{{ s.n }}. </span>{{ s.label }}<span v-if="s.done" class="sr-only"> (fait)</span></li></ol><div v-if="grpEtapeNow(sfmState())" class="gstep-now">{{ grpEtapeNow(sfmState()) }}</div></div>
-            <div class="row wrap" style="gap:14px;align-items:center;margin-top:8px">
+            <div class="row wrap" style="gap:14px;align-items:center">
               <div style="text-align:center;min-width:96px"><div class="sg-big" style="color:var(--accent-text)">{{ sfm().score_groupement!=null ? sfm().score_groupement+' %' : '—' }}</div><div class="sg-lab">à plusieurs</div></div>
               <div style="flex:1;min-width:200px">
                 <b style="font-size:13.5px">Pourquoi vous dans ce groupement</b>
@@ -3935,7 +3943,7 @@
 
           <!-- Convention de groupement (vague 2), vue du partenaire depuis son compte : même texte et même empreinte
                pour tous ; en brouillon, seulement SON prix (jamais ceux des autres ni le total). Texte échappé (convHtml). -->
-          <div data-test="partage-convention" v-if="sharedAo.conv.d || sharedAo.conv.loading || sharedAo.conv.error" class="card pad conv-card" style="margin-bottom:14px" role="region" aria-labelledby="sconv-h">
+          <div data-test="partage-convention" v-if="sharedAo.conv.d || sharedAo.conv.loading || sharedAo.conv.error" ref="sharedConv" tabindex="-1" class="card pad conv-card" style="margin-bottom:14px" role="region" aria-labelledby="sconv-h">
             <div class="row wrap" style="gap:6px 8px;align-items:center"><i data-lucide="file-signature" style="color:var(--accent-text)"></i><b id="sconv-h" style="font-size:14px">Convention de groupement</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le chef de file prépare la convention ; une fois générée, chaque membre la relit et donne son accord depuis son espace. Le texte, donc l'empreinte, est le même pour tous.</span></button><div class="spacer"></div>
               <span v-if="sharedAo.conv.d && sharedAo.conv.d.ma_signature && sharedAo.conv.d.ma_signature.peut_valider" class="pill a_etudier" style="font-size:11px">À valider</span>
               <span v-else-if="sharedAo.conv.d" class="pill" :class="convStatusPill(sharedAo.conv.d.status)" style="font-size:11px">{{ sharedAo.conv.d.status_label }}</span></div>
@@ -4021,7 +4029,7 @@
             </div>
           </div>
 
-          <div data-test="partage-ma-part" v-if="sharedAo.canContribute" class="card pad" style="border:1.5px solid var(--accent)">
+          <div data-test="partage-ma-part" v-if="sharedAo.canContribute" ref="sharedPart" tabindex="-1" class="card pad" style="border:1.5px solid var(--accent)">
             <div class="row" style="gap:8px;align-items:center"><b style="font-size:13.5px">Ma contribution au dossier commun</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le chef de file assemble, l'IA fusionne votre part dans la réponse commune.</span></button><div class="spacer"></div>
               <span class="pill" :class="sharedAo.status==='submitted'?'go':'neutral'" style="font-size:11px;gap:3px"><i v-if="sharedAo.status==='submitted'" data-lucide="check" style="width:11px;height:11px"></i>{{ sharedAo.status==='submitted'?'Soumise':'Brouillon' }}</span></div>
             <div class="muted small" style="margin-top:4px">Vous contribuez en tant que <b>{{ company.name||'votre entreprise' }}</b>.</div>
@@ -4129,6 +4137,79 @@
           </details>
 
           <div style="margin-top:16px;text-align:center"><a href="#" class="muted small" style="text-decoration:underline" @click.prevent="sharedDecline()">Décliner l'invitation</a></div>
+        </section>
+
+        <!-- « Voir ce que verra [partenaire] » (réorganisation, vague 2b, B3) : sur la page du marché, l'écran du partenaire
+             en lecture, avant et après l'invitation (/app/marches/<id>/apercu-partenaire). Rien que ce que le partenaire
+             reçoit : GET /api/projects/{id}/apercu-partenaire le tire de sa vue (le marché, le chef de file, la date limite,
+             ce qui est attendu de lui, le total de l'offre commune quand il le voit). Jamais la décomposition de votre prix,
+             jamais la part d'un autre membre, jamais une donnée du partenaire que vous ne voyez pas déjà. -->
+        <section data-test="vue-apercu-partenaire" class="pa-vue" v-if="view==='apercu'">
+          <button class="btn ghost sm" @click="apercuRetour()" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Retour au marché</button>
+          <div data-test="apercu-choix" class="card pad" style="margin-bottom:14px">
+            <div class="row wrap" style="gap:6px 8px;align-items:center"><i data-lucide="eye" style="color:var(--accent-text)"></i><h2 class="pa-ap-t">Ce que verra votre partenaire</h2><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Son écran tel qu'il le verra, en lecture. Adjugo n'y met que ce qu'il lui montre : le marché, votre nom de chef de file, la date limite, ce qui est attendu de lui et, quand il le voit, le total de l'offre commune. Jamais le détail de votre prix, ni la part des autres partenaires.</span></button>
+              <div class="spacer"></div>
+              <button v-if="apercu.depuis" type="button" class="btn sm primary" @click="apercuReprendre()"><i data-lucide="user-plus"></i>Revenir à l'invitation</button></div>
+            <div class="field" style="margin:12px 0 0"><label for="ap-pour">Aperçu pour</label>
+              <select id="ap-pour" class="inp" :value="apercu.inviteId || ''" @change="apercuChoisir($event.target.value)">
+                <option value="">{{ apercu.nom ? apercu.nom + ' (pas encore invité)' : 'Un partenaire pas encore invité' }}</option>
+                <option v-for="i in apercu.invites" :key="'api'+i.id" :value="i.id">{{ (i.company_name || 'Lien de partage') + ' · ' + (i.role === 'sous_traitant' ? 'sous-traitant' : 'partenaire') }}</option>
+              </select></div>
+            <div v-if="!apercu.inviteId" class="row wrap pa-ap-opts">
+              <label class="rn-check"><input type="radio" name="ap-role" value="cotraitant" :checked="apercu.role==='cotraitant'" @change="apercuOption('role','cotraitant')"><span>Partenaire du groupement</span></label>
+              <label class="rn-check"><input type="radio" name="ap-role" value="sous_traitant" :checked="apercu.role==='sous_traitant'" @change="apercuOption('role','sous_traitant')"><span>Sous-traitant</span></label>
+              <label class="rn-check"><input type="checkbox" :checked="apercu.reseau" @change="apercuOption('reseau',$event.target.checked)"><span>Invité par le réseau Adjugo</span></label>
+              <label class="rn-check"><input type="checkbox" :checked="apercu.can_view_docs" @change="apercuOption('can_view_docs',$event.target.checked)"><span>Pièces du marché téléchargeables</span></label>
+            </div>
+          </div>
+          <div v-if="apercu.loading && !apercu.d" class="card pad" style="text-align:center" role="status"><span class="spin"></span> Chargement de l'aperçu…</div>
+          <div v-else-if="apercu.err" class="empty card pad" role="alert"><div class="eic"><i data-lucide="lock"></i></div><h4>Aperçu indisponible</h4><p>{{ apercu.err }}</p></div>
+          <div v-else-if="apercu.d && !apercu.d.acces" data-test="apercu-sans-acces" class="empty card pad"><div class="eic"><i data-lucide="link-2-off"></i></div><h4><span>{{ apercu.d.company || 'Ce partenaire' }}</span> <span>ne voit plus ce marché</span></h4><p>{{ apercuRaison(apercu.d.raison) }}</p></div>
+          <template v-for="v in (apercu.d && apercu.d.acces && apercu.d.vue ? [apercu.d.vue] : [])" :key="'apv'">
+            <div data-test="apercu-ecran" class="pa-ecran" role="region" aria-label="Écran du partenaire, en lecture">
+              <div class="pa-ecran-l"><i data-lucide="eye"></i><span>Son écran, en lecture</span></div>
+              <div class="card pad pa-entete" style="margin-bottom:14px">
+                <div class="muted small"><span>Chef de file :</span> <b>{{ v.mandataire || 'votre entreprise' }}</b></div>
+                <h2 class="pa-titre"><span>Votre part dans</span> « {{ v.project.name }} »</h2>
+                <div v-if="v.project.client" class="muted small">{{ v.project.client }}</div>
+                <div v-if="v.apercu_minimal" class="pa-limite"><i data-lucide="lock"></i><div><b>Aperçu limité</b><div class="muted small">{{ v.apercu_message }}</div></div></div>
+                <div v-if="paJours(v.project.deadline) !== null" class="pa-delai small"><i data-lucide="clock"></i><span>{{ paDelai(v.project.deadline) }}</span></div>
+                <div style="margin-top:10px">
+                  <div v-if="v.project.deadline && !(v.project.analysis && v.project.analysis.date_limite)" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">Date limite</span><span style="flex:1"><b>{{ fmtDate(v.project.deadline) }}</b></span></div>
+                  <div v-for="f in sharedFact(v.project.analysis)" :key="'apf'+f.k" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">{{ f.k }}</span><span style="flex:1">{{ f.v }}</span></div>
+                  <div v-if="v.project.source_url" class="row small" style="padding:5px 0"><span class="muted" style="min-width:140px">Source</span><a :href="safeUrl(v.project.source_url)" target="_blank" rel="noopener noreferrer nofollow" style="color:var(--accent-text)">Avis d'origine ↗</a></div>
+                </div>
+              </div>
+              <ol class="mk-etapes pa-barre" :class="'pa-n'+apercuBarre().length" aria-label="Étapes de sa part">
+                <li v-for="s in apercuBarre()" :key="'apb'+s.k" class="mk-et" :class="['mk-'+s.etat, {cur:s.courante}]" :aria-current="s.courante?'step':null"><span class="mk-n" aria-hidden="true">{{ s.n }}</span><span>{{ s.label }}</span><span class="mk-st"><span class="sr-only"> : </span>{{ s.statut }}</span></li>
+              </ol>
+              <div v-if="sharedGrille(v.project.analysis)" class="card gn-card" style="margin-bottom:14px">
+                <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="list-checks"></i><h3>Comment vous serez noté</h3></div>
+                <div class="cb"><grille-carte :g="sharedGrille(v.project.analysis)" :edit="false"></grille-carte></div>
+              </div>
+              <div data-test="apercu-attendu" class="card pad" style="margin-bottom:14px">
+                <b style="font-size:13.5px">Ce qui est attendu de vous</b>
+                <ul class="pa-attendu">
+                  <li v-if="v.apercu_minimal"><i data-lucide="log-in"></i><span>Accepter l'invitation depuis votre compte Adjugo : vous verrez alors le dossier complet.</span></li>
+                  <li v-if="v.can_contribute"><i data-lucide="file-pen-line"></i><span>Votre part : le prix de vente de votre partie, vos références et votre paragraphe pour le dossier de présentation.</span></li>
+                  <li v-if="apercuPieces()"><i data-lucide="folder-lock"></i><span><span>Vos pièces administratives :</span> {{ apercuPieces() }}.</span></li>
+                  <li v-if="v.invited.role !== 'sous_traitant'"><i data-lucide="file-signature"></i><span>Votre accord sur la convention de groupement, quand le chef de file l'aura générée.</span></li>
+                  <li v-else><i data-lucide="info"></i><span>Vous intervenez en sous-traitance : vous n'avez pas à valider la convention de groupement.</span></li>
+                </ul>
+              </div>
+              <div v-if="apercuTotal()" data-test="apercu-offre" class="offre-box" style="flex-wrap:wrap;margin-bottom:14px"><i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i><div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b><template v-if="apercuTotal().frozen_at"> le {{ fmtDate(apercuTotal().frozen_at) }}</template></div><div v-if="v.for_member.warning_two_members" class="muted small">À deux, le total révèle mécaniquement la part de l'autre.</div></div><div class="offre-total">{{ eur(apercuTotal().total_offre_ht) }} HT</div></div>
+              <div v-if="v.documents.length" class="card pad" style="margin-bottom:14px">
+                <b style="font-size:13.5px">Pièces partagées</b>
+                <div v-for="(d,i) in v.documents" :key="'apd'+i" class="row" style="padding:8px 0;border-bottom:1px solid var(--hairline);gap:10px;align-items:center">
+                  <div style="flex:1;min-width:0"><span class="strong small">{{ d.name }}</span><div class="muted small">{{ folderLabel(d.folder) }}</div></div>
+                </div>
+              </div>
+              <div v-if="v.can_contribute" class="card pad" style="border:1.5px solid var(--accent)">
+                <b style="font-size:13.5px">Ma contribution au dossier commun</b>
+                <p class="pa-note"><i data-lucide="info"></i><span>Ici, il saisit sa part. Vous en recevez le prix de vente de sa partie, ses références, son paragraphe et ses pièces ; le détail de son chiffrage est chiffré dans son navigateur : ni vous, ni Adjugo, ni l'IA ne pouvez le lire.</span></p>
+              </div>
+            </div>
+          </template>
         </section>
 
       </div>
@@ -4360,6 +4441,8 @@
             <div v-if="rinv.kind==='connu'" class="rn-check-line"><input id="rinv-part" type="checkbox" v-model="rinv.can_contribute" :disabled="rinv.busy"><label for="rinv-part">Laisser le partenaire apporter sa part (ses références, sa partie, son prix)</label></div>
             <div class="rn-check-line"><input id="rinv-docs" type="checkbox" v-model="rinv.can_view_docs" :disabled="rinv.busy"><label for="rinv-docs">Autoriser le téléchargement des pièces du marché</label><button v-if="rinv.kind==='reseau'" type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le partenaire ne voit les pièces, l'acheteur et la composition du groupement qu'après avoir accepté l'invitation depuis son compte.</span></button></div>
             <div v-if="rinv.kind==='connu'" class="field"><label for="rinv-x">Durée du lien</label><select id="rinv-x" class="inp" v-model.number="rinv.expires_days" :disabled="rinv.busy"><option :value="7">7 jours</option><option :value="30">30 jours</option><option :value="90">90 jours</option><option :value="0">Sans limite</option></select></div>
+            <!-- Vague 2b (B3) : avant d'envoyer, l'écran que verra ce partenaire (ses choix : rôle, réseau, pièces, part) -->
+            <button v-if="rinv.projectId && !rinv.noRole" type="button" class="linkbtn small rinv-apercu" @click="rinvApercu()"><i data-lucide="eye" aria-hidden="true"></i><span>Voir ce que verra</span> {{ rinv.name || 'ce partenaire' }}</button>
             <button v-if="rinv.depuisChoix" type="button" class="linkbtn small rinv-retour" @click="rinvChoisir('choix')"><i data-lucide="arrow-left" aria-hidden="true"></i>Inviter une autre sorte d'entreprise</button>
           </template>
           <div v-if="rinv.err" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ rinv.err }}
@@ -4370,6 +4453,7 @@
           <div v-if="rinv.done" class="rn-done" role="status">
             <div class="small"><i data-lucide="check" style="width:13px;height:13px;vertical-align:-2px;color:var(--success-text)"></i> {{ rinv.done }}</div>
             <div v-if="rinv.url" class="row rn-g8 rn-mt"><input class="inp" :value="rinv.url" readonly aria-label="Lien d'invitation à transmettre" style="flex:1;min-width:0;font-size:12px" @focus="$event.target.select()"><button type="button" class="btn sm" @click="copyInvite(rinv.url)"><i data-lucide="copy"></i>Copier le lien</button></div>
+            <button v-if="rinv.inviteId" type="button" class="linkbtn small rinv-apercu" @click="rinvApercu()"><i data-lucide="eye" aria-hidden="true"></i><span>Voir ce que voit</span> {{ rinv.name || 'ce partenaire' }}</button>
           </div>
         </template>
       </div>
@@ -4541,6 +4625,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-PTD5rWs/QWef4YeBPuBWF111ViANopDAlMq8Q5+zu/tGLlY9cXwYTN6LbD31ANv/" defer></script>
+<script src="/static/app.js" integrity="sha384-lmrpsRjNi9+DhxQevB/9wYyqtWHfz9OYxBpvijkXbPmTyT26ZtyIz58YfUIRJD+b" defer></script>
 </body>
 </html>

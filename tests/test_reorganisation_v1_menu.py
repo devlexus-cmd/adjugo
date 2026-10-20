@@ -123,7 +123,8 @@ def test_chaque_vue_a_sa_rubrique_et_s_atteint_en_deux_clics_au_plus():
     filtres = {"shared", "consortiums"}
     assert '{ k: "partenaire", label: "Où je suis partenaire"' in JS and '{ k: "plusieurs", label: "À plusieurs"' in JS
     # Pages de détail (un marché, son atelier, un dossier partagé) : depuis la liste de leur rubrique.
-    detail = {"aodetail", "atelier", "sharedao"}
+    # Vague 2b (B3) : « Voir ce que verra [partenaire] » (apercu) s'ouvre depuis la page du marché.
+    detail = {"aodetail", "atelier", "sharedao", "apercu"}
     # Vague 2b (B2) : le marché d'exemple est une page à part, sans entrée de menu (étude, § 10 : pas d'entrée par
     # fonction nouvelle) ; il s'ouvre depuis « Répondre à plusieurs ? », les états vides et les premiers pas.
     a_part = {"exemple"}
@@ -175,7 +176,7 @@ def test_onglets_titre_et_bulle_de_l_en_tete_sous_node():
     r = _node(_app("""
 const res = {};
 const lib = () => o.ongletsVisibles().map(t => t.label);
-for (const v of ["dashboard", "pipeline", "bilan", "aodetail", "atelier", "sharedao", "reseau", "kb", "company",
+for (const v of ["dashboard", "pipeline", "bilan", "aodetail", "atelier", "sharedao", "apercu", "reseau", "kb", "company",
                  "preuves", "team", "compte", "billing"]) {
   o.view = v; res[v] = { rub: o.rubrique(), onglets: lib(), titre: o.enteteTitre(), aide: o.enteteAide() };
 }
@@ -194,7 +195,10 @@ console.log(JSON.stringify(res));
     assert r["pipeline"]["aide"].endswith("sont des filtres de cette liste.") and "« Partagé avec moi »" in r["pipeline"]["aide"]
     assert r["bilan"]["titre"] == "Mes marchés" and r["bilan"]["aide"].endswith("« Où vous gagnez / perdez » était sur l'accueil.")
     # Pages de détail : rubrique surlignée (Mes marchés), aucun onglet, leur propre titre.
-    for v, titre in (("aodetail", "Le marché"), ("atelier", "Dossier de présentation"), ("sharedao", "Dossier partagé")):
+    # Vague 2b (B3) : le dossier partagé devient « Votre part » (« Votre part dans [marché] ») ; l'aperçu du partenaire,
+    # une page de détail du marché.
+    for v, titre in (("aodetail", "Le marché"), ("atelier", "Dossier de présentation"), ("sharedao", "Votre part"),
+                     ("apercu", "Ce que verra votre partenaire")):
         assert r[v]["rub"] == "marches" and r[v]["onglets"] == [] and r[v]["titre"] == titre, v
     assert r["aodetail"]["aide"] == ""                                   # plus de « Dossier complet de l'appel d'offres »
     assert r["reseau"]["onglets"] == ["Mes partenaires", "Réseau Adjugo", "Contacts"] and r["reseau"]["titre"] == "Partenaires"

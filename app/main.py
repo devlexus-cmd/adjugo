@@ -722,9 +722,12 @@ def public_config():
     """Config publique (sans secret) pour le front : analytics activé par env, fonctions activées
     (« Projets à venir » masqué tant que PROJETS_A_VENIR=0)."""
     from app.core.interrupteurs import projets_a_venir_actif
+    from app.core.quota import TRIAL_DAYS
     s = settings
+    # essai_jours : la durée de l'essai gratuit, lue dans le code (app/core/quota.py), jamais écrite en dur dans une
+    # page (encart « Créer mon compte » de l'espace du partenaire, réorganisation vague 2b).
     return {"analytics_src": s.ANALYTICS_SRC or "", "analytics_domain": s.ANALYTICS_DOMAIN or "",
-            "projets_a_venir": projets_a_venir_actif()}
+            "projets_a_venir": projets_a_venir_actif(), "essai_jours": int(TRIAL_DAYS)}
 
 
 @app.get("/api/securite/empreintes-scripts", tags=["Sante"])

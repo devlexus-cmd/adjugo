@@ -152,22 +152,16 @@ def test_n_sur_m_dans_l_application_et_l_espace_partenaire():
 
 # ═══ L'espace partenaire montre le menu de l'application réorganisée ═════════════════════════════════════════
 
-def test_menu_verrouille_de_l_espace_partenaire_est_celui_de_l_application():
-    rub = _rubriques()
-    side = INV[INV.index('<aside class="side">'):INV.index("</aside>")]
-    items = re.findall(r'<a class="nav-item" data-view="(\w+)"([^>]*)><i data-lucide="([\w-]+)"></i>([^<]+)</a>', side)
-    menu = [(v, ic, lib) for v, _a, ic, lib in items if v not in ("monao", "amont")]
-    assert menu[:6] == [(r["onglets"][0]["view"], r["ic"], r["label"]) for r in rub[:6]]
-    assert menu[6:] == [("team", "users-round", "Collègues"), ("billing", "credit-card", "Abonnement")]
-    assert '<div class="nav-group">Réglages</div>' in side
-    permis = {v for v, attrs, _ic, _l in items if 'data-allowed="1"' in attrs}
-    assert permis == {"monao", "sourcing", "amont"}
-    for ancien in ("Tableau de bord", "Pilotage", "Gestion", "Configuration", ">Entreprise<", ">Équipe<",
-                   "Devis &amp; factures", "layout-dashboard", "square-kanban", "briefcase", "brain-circuit"):
-        assert ancien not in side, ancien
-    # « Mon appel d'offres » devient « Le marché » (comme l'en-tête de la page du marché dans l'application).
-    assert "Mon appel d'offres" not in INV and 'monao: ["Le marché",' in INV and 'nav("monao", "Le marché")' in INV
-    assert "Trouvez des marchés publics" in INV and "pipeline, coffre-fort" not in INV
+def test_espace_partenaire_sans_menu_reduit_a_sa_part():
+    # Vague 2b (B3, décision 15 a ; docs/REORGANISATION_V2B.md) : ce test vérifiait que le menu fermé à cadenas de
+    # l'espace partenaire était celui de l'application (vague 1). Ce menu est retiré : l'espace se réduit à « Votre part
+    # dans [marché] », avec un seul encart « Créer mon compte » ; la recherche de marchés et « Projets à venir » partent
+    # avec lui (le détail : tests/test_reorganisation_v2b_espace_partenaire.py).
+    assert '<aside class="side">' not in INV and 'class="nav-item"' not in INV and "nav-group" not in INV
+    for parti in ("renderBlocked", "renderSourcing", "nav-amont", "data-allowed", "Trouvez des marchés publics",
+                  "est réservé aux membres", "Mon appel d'offres", "pipeline, coffre-fort"):
+        assert parti not in INV, parti
+    assert 'Votre part dans « ${esc(p.name || "Marché")} »' in INV and "renderMonAO();" in INV
 
 
 # ═══ Pages collectivités, en-tête du marché sur téléphone, derniers libellés ═════════════════════════════════

@@ -103,10 +103,11 @@ def test_barre_d_ancres_qui_remplace_les_etapes_du_groupement():
         assert f"@click=\"rnScrollTo('{ref}')\"" in barre and f'<span>{TITRES[etape]}</span>' in barre
     assert barre.count(":aria-current=") == 4 and "aoEtape()" in barre
     # Les étapes 1 à 5 du groupement ne sont plus sur cette page (elles deviennent les tâches de Préparer) ;
-    # côté partenaire, le stepper reste jusqu'à la vague 2b.
+    # côté partenaire, vague 2b (B3) : la même barre, avec ses tâches à lui (partage-barre, barrePartenaire).
     for motif in ("gstep", "grpSteps(", "grpEtapeNow("):
         assert motif not in PAGE, motif
-    assert "grpSteps(sfmState())" in zone(HTML, "vue-sharedao")
+        assert motif not in zone(HTML, "vue-sharedao") and motif not in JS, motif
+    assert 'class="mk-etapes pa-barre"' in zone(HTML, "partage-barre") and "sharedBarre()" in zone(HTML, "partage-barre")
     assert "Étape 3" not in HTML
     # À 375 px, la barre tient sur une ligne : 4 colonnes, le numéro au-dessus du mot.
     assert ".mk-etapes { display:grid; grid-template-columns:repeat(4, minmax(0,1fr));" in CSS

@@ -126,7 +126,12 @@ def test_front_links_go_through_safe_url_guard():
     assert "const safeUrl" in inv
     assert 'href="${esc(p.source_url)}"' not in inv
     assert "href=\"${esc(t.url || t.provenance.source_url)}\"" not in inv
-    assert inv.count("safeUrl(") >= 3
+    # Vague 2b (B3) : la recherche de marchés (3e lien construit depuis une donnée) a quitté l'espace partenaire ; le
+    # lien de l'avis d'origine passe toujours par le garde, et tout autre lien est un chemin interne fixe.
+    assert inv.count("safeUrl(") >= 2 and 'href="${esc(safeUrl(p.source_url))}"' in inv
+    import re
+    for m in re.finditer(r'href="\$\{([^}]+)\}', inv):
+        assert m.group(1).startswith("esc(safeUrl(") or m.group(1) == "pieceUrl", m.group(1)
     html = (STATIC / "app.html").read_text(encoding="utf-8")
     js = (STATIC / "app.js").read_text(encoding="utf-8")
     assert "safeUrl(u)" in js

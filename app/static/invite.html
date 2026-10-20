@@ -18,14 +18,34 @@
   <style>
     .g-state { text-align:center; padding:80px 20px; color:var(--text-2,#6b7280); font-family:system-ui,sans-serif; }
     .g-banner { display:flex; gap:10px; align-items:center; padding:11px 14px; border-radius:10px; background:var(--accent-weak,#eef2ff); border:1px solid var(--accent,#3b5bdb); margin-bottom:14px; }
-    .g-locked { opacity:.62; }
+    /* Vague 2b (B3) : un seul écran, « Votre part dans [marché] », sans menu latéral. */
+    .app.g-solo { grid-template-columns:1fr; }
+    .g-top { gap:12px; }
+    .g-brand { display:flex; align-items:baseline; gap:9px; min-width:0; }
+    .g-brand .wordmark { font-size:20px; flex:none; }
+    .g-brand .org-sub { font-size:12px; color:var(--muted,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+    .g-user { padding:0; min-width:0; max-width:48%; }
+    .g-user b, .g-user small { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .g-main { padding:18px 22px 60px; max-width:980px; margin:0 auto; }
+    .g-titre-l { display:flex; align-items:center; min-width:0; }
+    .g-titre-l .pa-titre { min-width:0; }
+    #g-entete, #g-part, .cv-card, .g-compte { scroll-margin-top:84px; }
+    #g-entete:focus, #g-part:focus { outline:none; }
+    .g-compte { margin-bottom:16px; }
+    .g-compte-h { display:flex; align-items:center; min-width:0; }
+    .g-compte-h h2 { margin:0; font-size:15px; font-weight:800; font-family:inherit; letter-spacing:0; }
+    .g-compte p { margin:8px 0 0; color:var(--text-2,#4b5563); line-height:1.5; }
+    .g-compte .g-compte-essai { font-weight:600; color:var(--text,#16181d); }
+    .g-compte .btn { margin-top:12px; }
+    .g-compte .btn svg.lucide { margin-right:4px; }
+    @media (max-width:640px){ .g-main { padding:14px 16px 48px; } .g-brand .org-sub { display:none; } }
     .g-fact { display:grid; grid-template-columns:170px 1fr; gap:6px 14px; font-size:13.5px; margin-top:10px; }
     .g-fact dt { color:var(--text-2,#6b7280); font-weight:600; } .g-fact dd { margin:0; }
     .g-doc { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 13px; border:1px solid var(--border,#e6e8ec); border-radius:10px; margin-top:8px; background:var(--surface,#fff); }
     ul.g-list { margin:4px 0 0; padding-left:18px; } ul.g-list li { margin:2px 0; }
-    .g-res { padding:12px 14px; border:1px solid var(--border,#e6e8ec); border-radius:11px; margin-top:10px; background:var(--surface,#fff); }
     /* Co-traitance v2 : compléments locaux (les composants partagés sont dans styles.css) */
     .g-sec { margin-top:14px; padding-top:12px; border-top:1px solid var(--hairline,#eef0f3); }
+    .g-pourquoi > .g-sec:first-child { margin-top:0; padding-top:0; border-top:0; }
     .g-members { list-style:none; margin:6px 0 0; padding:0; }
     .g-members li { display:flex; gap:7px; align-items:center; flex-wrap:wrap; padding:5px 0; border-bottom:1px solid var(--hairline,#eef0f3); font-size:12.5px; }
     .g-lockwrap textarea[readonly] { background:var(--surface-2,#f6f7f9); color:var(--text-2,#6b7280); cursor:not-allowed; }
@@ -45,7 +65,6 @@
     .g-apercu-msg { flex:1 1 100%; color:var(--text-2,#4b5563); }
     .g-apercu-msg:empty { display:none; }
     @media (max-width:640px){ .g-fact { grid-template-columns:1fr; gap:1px 0; } .g-fact dt { margin-top:7px; } }
-    @media (max-width:480px){ .g-hide-sm { display:none; } }
     /* ── Convention de groupement (co-traitance v2, vague 2) — styles locaux à cette page ── */
     .cv-card { margin-bottom:16px; }
     .cv-head { display:flex; gap:6px 8px; align-items:center; flex-wrap:wrap; }
@@ -109,11 +128,7 @@
     .cv-sig-h .pill { margin-left:auto; }
     .cv-sig-d { margin-top:2px; font-size:12px; color:var(--text-2,#4b5563); }
     .cv-alert { display:flex; gap:8px 10px; align-items:center; flex-wrap:wrap; margin-top:12px; padding:10px 12px; border-radius:10px; border:1px solid var(--accent,#3b5bdb); background:var(--accent-weak,#eef2ff); }
-    .cv-stepline { margin-top:12px; font-size:12.5px; color:var(--text-2,#4b5563); }
-    .cv-stepline b { color:var(--text,#16181d); }
-    ol.cv-steps { list-style:none; padding:0 0 4px; margin:8px 0 4px; }
     @media (max-width:640px){
-      ol.cv-steps .gs { min-width:0; padding-left:2px; padding-right:2px; font-size:10.5px; line-height:1.3; -webkit-hyphens:auto; hyphens:auto; }
       .cv-form, .cv-rules { grid-template-columns:1fr; }
       .cv-tbl thead { display:none; }
       .cv-tbl, .cv-tbl tbody, .cv-tbl tfoot, .cv-tbl tr, .cv-tbl td { display:block; width:100%; }
@@ -179,36 +194,17 @@
 <body>
   <div class="g-state" id="loading"><div class="spin" style="margin:0 auto 12px"></div>Chargement de votre espace…</div>
 
-  <div class="app" id="shell" style="display:none">
-    <aside class="side">
-      <div class="brand"><span class="wordmark"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></span><span class="org-sub" id="brand-sub">Espace partenaire</span></div>
-      <div class="nav-group">Votre invitation</div>
-      <a class="nav-item" data-view="monao" data-allowed="1"><i data-lucide="folder-open"></i>Le marché</a>
-      <!-- Le menu de l'application tel qu'il est depuis la réorganisation (vague 1, RUBRIQUES de app.js) : les
-           rubriques, puis le groupe « Réglages ». Verrouillé tant que le partenaire n'a pas de compte. -->
-      <div class="nav-group">Avec un compte Adjugo</div>
-      <a class="nav-item" data-view="dashboard"><i data-lucide="house"></i>Accueil</a>
-      <a class="nav-item" data-view="sourcing" data-allowed="1"><i data-lucide="search"></i>Trouver des marchés</a>
-      <a class="nav-item" data-view="amont" data-allowed="1" id="nav-amont" style="display:none"><i data-lucide="calendar-clock"></i>Projets à venir</a>
-      <a class="nav-item" data-view="pipeline"><i data-lucide="folder-kanban"></i>Mes marchés</a>
-      <a class="nav-item" data-view="cotraitants"><i data-lucide="handshake"></i>Partenaires</a>
-      <a class="nav-item" data-view="documents"><i data-lucide="folder-lock"></i>Mes documents</a>
-      <a class="nav-item" data-view="company"><i data-lucide="building-2"></i>Mon entreprise</a>
-      <div class="nav-group">Réglages</div>
-      <a class="nav-item" data-view="team"><i data-lucide="users-round"></i>Collègues</a>
-      <a class="nav-item" data-view="billing"><i data-lucide="credit-card"></i>Abonnement</a>
-      <div class="side-foot">
-        <div class="user"><div class="av" id="g-av">PA</div><div style="min-width:0"><b id="g-name">Partenaire</b><small id="g-role" style="display:block">Partenaire invité</small></div></div>
-      </div>
-    </aside>
-
+  <!-- Réorganisation, vague 2b (B3 ; décision 15 a) : l'espace se réduit à « Votre part dans [marché] ». Plus de menu fermé
+       à cadenas ni d'entrée « Projets à venir » : un seul écran, la même barre d'étapes que la page du marché du chef de
+       file, et un seul encart « Créer mon compte » (durée de l'essai lue dans la configuration du serveur). -->
+  <div class="app g-solo" id="shell" style="display:none">
     <main class="work">
-      <header class="top">
-        <div class="top-title"><div style="display:flex;align-items:center;min-width:0"><h1 id="g-title" style="min-width:0">Le marché</h1><span id="g-tip" style="flex:none;display:inline-flex"></span></div><div class="sub" id="g-sub"></div></div>
+      <header class="top g-top">
+        <div class="g-brand"><span class="wordmark" aria-label="Adjugo"><span class="wm-text">adjug</span><svg class="wm-o" viewBox="0 0 48 48" fill="none" aria-hidden="true"><circle cx="24" cy="24" r="21" stroke="currentColor" stroke-opacity=".16" stroke-width="3"/><circle cx="24" cy="24" r="13.5" stroke="currentColor" stroke-opacity=".42" stroke-width="3"/><circle cx="24" cy="24" r="6.5" fill="currentColor"/></svg></span><span class="org-sub" id="brand-sub">Espace partenaire</span></div>
         <div class="spacer"></div>
-        <a class="btn primary" href="/app?inscription" target="_blank" rel="noopener"><i data-lucide="sparkles"></i>Créer mon compte<span class="g-hide-sm">&nbsp;Adjugo</span></a>
+        <div class="user g-user"><div class="av" id="g-av" aria-hidden="true">PA</div><div style="min-width:0"><b id="g-name">Partenaire</b><small id="g-role" style="display:block">Partenaire invité</small></div></div>
       </header>
-      <div style="padding:18px 22px 60px;max-width:980px">
+      <div class="g-main">
         <div class="g-banner" id="g-banner"></div>
         <div id="content"></div>
       </div>
@@ -217,13 +213,9 @@
 
   <script>
     const TOKEN = decodeURIComponent(location.pathname.split("/invite/")[1] || "").replace(/\/.*$/, "");
-    const ALLOWED = { monao: 1, sourcing: 1, amont: 1 };
-    const VIEW_TITLE = {
-      monao: ["Le marché", "Le dossier partagé avec vous — apportez votre part."],
-      sourcing: ["Trouver des marchés", "Les marchés publiés sur les sources officielles."],
-      amont: ["Projets à venir", "Surveillez les marchés publics qui vous correspondent."],
-    };
     let DATA = null, ICONS, CLAIM_BTN = null;
+    // Durée de l'essai gratuit : lue dans la configuration du serveur (/api/public-config), jamais écrite ici.
+    let ESSAI_JOURS = null;
     // MY_TOKEN : compte Adjugo de ce navigateur (s'il existe) ; MY_COMPANY : entreprise saisie dans
     // MA part (repère « vous ») ; RELOAD_JOURNAL : rafraîchit « Mon journal » après une action.
     let MY_TOKEN = null, MY_COMPANY = "", RELOAD_JOURNAL = null;
@@ -328,36 +320,68 @@
       });
     }
 
-    // ── Routeur ──
-    function setActive(view) {
-      document.querySelectorAll(".nav-item").forEach(a => a.classList.toggle("active", a.dataset.view === view && ALLOWED[view]));
-      const t = VIEW_TITLE[view] || ["", ""];
-      document.getElementById("g-title").textContent = t[0];
-      document.getElementById("g-sub").textContent = t[1];
+    // ══════════ « Votre part dans [marché] » (réorganisation, vague 2b, B3 ; décision 15 a) ══════════
+    // Un seul écran : le menu fermé à cadenas et l'entrée « Projets à venir » sont retirés. La barre est celle de la page
+    // du marché du chef de file, avec les tâches du partenaire (barrePartenaire, MÊME texte que dans app.js : les tests le
+    // vérifient). Un seul encart « Créer mon compte » (renderCompte).
+    // `d` : { apercuMinimal, role, part (false : pas de part demandée), partStatut, conventionStatut, signature, groupement }.
+    function barrePartenaire(d) {
+      d = d || {};
+      const libelles = { accepter: "Accepter", part: "Ma part", accord: "Donner mon accord", depose: "Déposé par le chef de file" };
+      const statuts = { fait: "Terminé", en_cours: "En cours", a_faire: "À faire" };
+      const sousTraitant = String(d.role || "").trim().toLowerCase().replace(/-/g, "_") === "sous_traitant";
+      const ordre = ["accepter"].concat(d.part === false ? [] : ["part"], sousTraitant ? [] : ["accord"], ["depose"]);
+      const fait = {
+        accepter: !d.apercuMinimal,
+        part: d.partStatut === "submitted",
+        accord: d.conventionStatut === "signee" || (d.conventionStatut === "a_signer" && (d.signature === "signed" || d.signature === "hors_ligne")),
+        depose: d.groupement === "depose",
+      };
+      const fini = fait.depose, ic = ordre.findIndex(k => !fait[k]);
+      return ordre.map((k, i) => {
+        const etat = (fini || fait[k]) ? "fait" : (i === ic ? "en_cours" : "a_faire");
+        return { k, n: i + 1, label: libelles[k], etat, statut: statuts[etat], courante: !fini && i === ic };
+      });
     }
-    function nav(view, label) {
-      if (!ALLOWED[view]) return renderBlocked(label);
-      setActive(view);
-      if (view === "monao") renderMonAO();
-      else renderSourcing();
+    // La barre lit ce que la page a reçu : l'aperçu limité, le rôle, la part demandée ou non (DATA), l'état de la part
+    // (BARRE.partStatut, mis à jour à chaque enregistrement), la convention et mon accord (CV.data), l'étape du groupement.
+    const BARRE = { el: null, partStatut: "" };
+    function renderBarre() {
+      const el = BARRE.el; if (!el || !el.isConnected || !DATA) return;
+      const st = (DATA.for_member && DATA.for_member.state) || {}, cv = CV.data || {}, ms = cv.ma_signature || {};
+      const etapes = barrePartenaire({ apercuMinimal: !!DATA.apercu_minimal, role: DATA.invited && DATA.invited.role,
+        part: DATA.can_contribute ? undefined : false, partStatut: BARRE.partStatut, conventionStatut: cv.status,
+        signature: ms.status, groupement: st.state });
+      el.className = "mk-etapes pa-barre pa-n" + etapes.length;
+      el.innerHTML = "";
+      etapes.forEach(s => {
+        const b = $(`<button type="button" class="mk-et mk-${esc(s.etat)}${s.courante ? " cur" : ""}"${s.courante ? ' aria-current="step"' : ""}><span class="mk-n" aria-hidden="true">${esc(s.n)}</span><span>${esc(s.label)}</span><span class="mk-st"><span class="sr-only"> : </span>${esc(s.statut)}</span></button>`);
+        b.onclick = () => barreAller(s.k);
+        el.appendChild(b);
+      });
     }
-    function renderBlocked(label) {
-      document.getElementById("g-title").textContent = label || "Accès réservé";
-      document.getElementById("g-sub").textContent = "";
-      content().innerHTML =
-        `<div class="card pad" style="text-align:center;padding:46px 24px">
-           <div style="color:var(--text-2,#6b7280)">${ico("lock", 34)}</div>
-           <h2 style="margin:10px 0 4px;font-size:18px">« ${esc(label)} » est réservé aux membres</h2>
-           <p class="muted" style="max-width:460px;margin:4px auto 0">Vous êtes invité sur un dossier précis. Commencez votre essai gratuit de 30 jours pour débloquer tout l'espace : vos marchés, vos documents, vos collègues, la facturation…</p>
-           <a class="btn primary" href="/app?inscription" target="_blank" rel="noopener" style="margin-top:16px"><i data-lucide="sparkles"></i>Commencer mon essai gratuit de 30 jours</a>
-         </div>`;
-      icons();
+    // Des ancres, sans blocage (comme la barre du chef de file) : l'en-tête, ma part, la convention.
+    function barreAller(k) {
+      const t = k === "part" ? document.getElementById("g-part") : (k === "accord" && CV.el ? CV.el : document.getElementById("g-entete"));
+      if (!t || !t.isConnected) return;
+      t.scrollIntoView({ behavior: "smooth", block: "start" });
+      const f = t.querySelector("#cv-title") || t;
+      setTimeout(() => { try { f.focus({ preventScroll: true }); } catch (e) {} }, 300);
+    }
+    // Un seul encart « Créer mon compte » (décision 15 a), à la place du menu fermé à cadenas. Texte juste : la part ne
+    // demande pas de compte ; la durée de l'essai vient du serveur. Pas d'encart pour une invitation du réseau (elle est
+    // envoyée à un compte Adjugo) ni quand un compte est ouvert dans ce navigateur (« Ouvrir dans mon Adjugo »).
+    function renderCompte() {
+      const old = document.getElementById("g-compte"); if (old) old.remove();
+      if (!DATA || DATA.apercu_minimal || MY_TOKEN) return;
+      const essai = ESSAI_JOURS ? `<p class="small g-compte-essai">Essai gratuit de ${esc(ESSAI_JOURS)} jours, sans carte bancaire.</p>` : "";
+      const card = $(`<section class="card pad g-compte" id="g-compte" aria-labelledby="g-compte-t"><div class="g-compte-h"><h2 id="g-compte-t">Créer mon compte Adjugo</h2>${tip("À la fin de l'essai, les fonctions d'IA se mettent en pause tant qu'aucun forfait n'est choisi. Vos marchés, vos documents et vos dossiers restent accessibles.")}</div><p class="small">Votre part à ce marché ne demande pas de compte. Avec un compte, vous cherchez aussi les marchés publiés, vous préparez vos propres réponses, seul ou à plusieurs, et vous gardez vos pièces au même endroit.</p>${essai}<a class="btn primary" href="/app?inscription" target="_blank" rel="noopener">${ico("user-plus", 15)}Créer mon compte</a></section>`);
+      content().appendChild(card); icons();
     }
 
-    // ── Stepper + « Pourquoi vous dans ce groupement » (for_member, vue membre) ──
+    // ── « Pourquoi vous dans ce groupement » (for_member, vue membre) ──
     // Règle : on n'affiche QUE ce que l'API envoie. Jamais le score seul du mandataire,
     // jamais le prix d'un autre membre (l'API ne les transmet pas au partenaire).
-    const SOON_STEPS = { convention_a_signer: 1, pret_a_deposer: 1 };
     const ROLE_LABEL = { cotraitant: "partenaire", sous_traitant: "sous-traitant", mandataire: "chef de file" };
     const MEMBER_STATUS = { invited: ["invité", "pill neutral"], draft: ["brouillon", "pill neutral"], submitted: ["part soumise", "pill go"] };
     // Horodatages de l'API : UTC « naïf » (sans fuseau, ex. 2026-10-08T01:30:11) → lus comme UTC,
@@ -365,37 +389,9 @@
     const apiDate = (s) => new Date(typeof s === "string" && /T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s) ? s + "Z" : s);
     const fmtShort = (s) => { if (!s) return ""; try { return apiDate(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch (e) { return s; } };
     const fmtDT = (s) => { if (!s) return ""; try { const d = apiDate(s); return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } };
-    // Stepper 1→5 (vague 2) : étapes du parcours dérivées par le serveur (fait / en cours / à faire).
-    const ETAPE_SR = { fait: "fait", en_cours: "en cours", a_faire: "à venir" };
-    function renderEtapes(st, etapes) {
-      const wrap = document.createElement("div");
-      const cur = etapes.find(e => e.status === "en_cours");
-      const n = st.etape || (cur && cur.n);
-      if (n) wrap.appendChild($(`<div class="cv-stepline">Étape <b>${esc(n)}</b> sur ${esc(etapes.length)}${st.label ? " · " + esc(st.label) : ""}</div>`));
-      const ol = $(`<ol class="gstep cv-steps" aria-label="Étapes du groupement"></ol>`);
-      etapes.forEach(e => {
-        const cls = e.status === "fait" ? " done" : e.status === "en_cours" ? " cur" : "";
-        ol.appendChild($(`<li class="gs${cls}"${e.status === "en_cours" ? ' aria-current="step"' : ""}>${esc(e.label)}<span class="sr-only"> (${ETAPE_SR[e.status] || ""})</span></li>`));
-      });
-      wrap.appendChild(ol);
-      return wrap;
-    }
-    function renderForMember(head, fm, d) {
+    // Vague 2b (B3) : le stepper des 5 étapes du groupement a laissé la place à la barre de « Votre part » (renderBarre).
+    function renderForMember(carte, fm, d) {
       const st = fm.state || {};
-      const steps = Array.isArray(st.steps) ? st.steps : [];
-      const etapes = Array.isArray(st.etapes) ? st.etapes : [];
-      if (etapes.length) head.appendChild(renderEtapes(st, etapes));
-      else if (steps.length) {
-        let idx = steps.findIndex(s => s.key === st.state);
-        if (idx < 0 && typeof st.index === "number") idx = st.index;
-        const gs = $(`<div class="gstep" aria-label="Étapes du groupement"></div>`);
-        steps.forEach((s, i) => {
-          const cls = i < idx ? " done" : i === idx ? " cur" : "";
-          const soon = (SOON_STEPS[s.key] && i > idx) ? " soon" : "";
-          gs.appendChild($(`<div class="gs${cls}${soon}"${i === idx ? ' aria-current="step"' : ""}>${esc(s.label)}</div>`));
-        });
-        head.appendChild(gs);
-      }
       const box = $(`<div class="g-sec"></div>`);
       box.appendChild($(`<b style="font-size:13.5px">Pourquoi vous dans ce groupement</b>`));
       const cols = $(`<div class="sg-cols"></div>`);
@@ -442,7 +438,7 @@
       if (st.offer_frozen && (!cvSt || CV_ACTIVE[cvSt])) {
         box.appendChild($(`<div class="offre-box"><i data-lucide="lock"></i><div style="flex:1"><div style="font-weight:700">Offre commune figée${st.frozen_at ? " le " + esc(fmtShort(st.frozen_at)) : ""}</div>${fm.warning_two_members ? '<div class="small muted">À deux, le total révèle mécaniquement la part de l\'autre.</div>' : ""}</div>${st.total_offre_ht != null ? `<div class="offre-total">${esc(eurHT(st.total_offre_ht))}</div>` : ""}</div>`));
       }
-      head.appendChild(box);
+      carte.appendChild(box);
     }
 
     // ── « Comment vous serez noté » : la grille de l'acheteur, en LECTURE (même grille que le chef
@@ -547,9 +543,10 @@
       const root = content(); root.innerHTML = "";
       RELOAD_JOURNAL = null;
 
-      const head = $(`<div class="card pad" style="margin-bottom:16px"></div>`);
-      head.appendChild($(`<div class="muted small">${d.mandataire ? "Partagé par <b>" + esc(d.mandataire) + "</b>" : "Dossier partagé"}${d.invited && d.invited.company ? " · pour " + esc(d.invited.company) : ""}</div>`));
-      head.appendChild($(`<div style="font-size:21px;font-weight:800;margin:2px 0 3px;letter-spacing:-.02em">${esc(p.name || "Marché")}${tip("Vous ne voyez que ce dossier et <b>votre</b> contribution, jamais les données des autres entreprises. Conformément au RGPD, vos actions sont journalisées et visibles par le chef de file.")}</div>`));
+      const head = $(`<div class="card pad pa-entete" id="g-entete" tabindex="-1" style="margin-bottom:16px"></div>`);
+      head.appendChild($(`<div class="muted small">${d.mandataire ? "Chef de file : <b>" + esc(d.mandataire) + "</b>" : "Marché partagé avec vous"}${d.invited && d.invited.company ? " · pour " + esc(d.invited.company) : ""}</div>`));
+      head.appendChild($(`<div class="g-titre-l"><h1 class="pa-titre">Votre part dans « ${esc(p.name || "Marché")} »</h1>${tip("Vous ne voyez que ce marché et <b>votre</b> part : jamais le détail du chiffrage ni les fichiers des autres entreprises. Conformément au RGPD, vos actions sont journalisées et visibles par le chef de file.")}</div>`));
+      document.title = "Votre part dans « " + (p.name || "Marché") + " » · Adjugo";
       if (p.client) head.appendChild($(`<div class="muted small">${esc(p.client)}</div>`));
       // Invitation du RÉSEAU Adjugo pas encore acceptée (vague 3) : aperçu minimal — ni acheteur, ni
       // lien de l'avis, ni pièces, ni composition du groupement. On l'explique dans une bulle (i) et on
@@ -585,7 +582,6 @@
         }
       }
       CV.alertEl = document.createElement("div"); head.appendChild(CV.alertEl);   // « Convention à valider »
-      if (d.for_member) { try { renderForMember(head, d.for_member, d); } catch (e) { console.warn("for_member", e); } }
       const dl = $(`<dl class="g-fact"></dl>`);
       const addFact = (t, h) => { dl.appendChild($(`<dt>${t}</dt>`)); const dd = document.createElement("dd"); dd.innerHTML = h; dl.appendChild(dd); };
       if (p.deadline && !a.date_limite) addFact("Date limite", `<b>${esc(fmtDate(p.deadline))}</b>`);   // la date du dossier (avec l'heure) prime
@@ -593,7 +589,16 @@
       if (p.source_url && safeUrl(p.source_url) !== "#") addFact("Source", `<a href="${esc(safeUrl(p.source_url))}" target="_blank" rel="noopener noreferrer nofollow">Avis d'origine ${ico("external-link", 13)}</a>`);
       if (dl.children.length) head.appendChild(dl);
       root.appendChild(head);
+      // La barre de « Votre part » (vague 2b, B3), sous l'en-tête comme sur la page du marché du chef de file.
+      BARRE.el = $(`<nav class="mk-etapes pa-barre" aria-label="Étapes de votre part"></nav>`); BARRE.partStatut = "";
+      root.appendChild(BARRE.el); renderBarre();
       if (grille) { try { root.appendChild(renderGrille(grille)); } catch (e) { console.warn("grille", e); } }
+      // « Pourquoi vous dans ce groupement » et ses membres : leur propre carte, sous la barre, dans le même ordre que le
+      // dossier partagé de l'application (en-tête et faits · barre · grille · pourquoi vous). Contenu inchangé.
+      if (d.for_member) {
+        const pq = $(`<div class="card pad g-pourquoi" style="margin-bottom:16px"></div>`);
+        try { renderForMember(pq, d.for_member, d); root.appendChild(pq); } catch (e) { console.warn("for_member", e); }
+      }
 
       // Convention de groupement (vague 2) : état d'attente, brouillon, texte figé + accords.
       // Aperçu minimal (invitation du réseau pas encore acceptée) : pas de convention (elle cite
@@ -635,6 +640,7 @@
       root.appendChild(docCard);
 
       if (d.can_contribute) renderContribution(d);
+      renderCompte();     // après la part et le journal (rangés tout de suite par renderContribution)
       icons();
     }
 
@@ -653,7 +659,7 @@
 
     async function renderContribution(d) {
       const role = (d.invited && d.invited.role === "sous_traitant") ? "sous-traitant" : "partenaire";
-      const card = $(`<div class="card pad" style="margin-bottom:16px;border:1px solid var(--accent,#3b5bdb)"></div>`);
+      const card = $(`<div class="card pad" id="g-part" tabindex="-1" style="margin-bottom:16px;border:1px solid var(--accent,#3b5bdb)"></div>`);
       card.appendChild($(`<div class="row" style="gap:8px;align-items:center"><span style="flex:1;min-width:0"><b style="font-size:13.5px">Ma contribution au dossier commun</b>${tip("Vous ne voyez que <b>vos</b> données ; le chef de file les assemble et l'IA les fusionne dans la réponse commune.")}</span></div>`));
       const status = $(`<span class="pill neutral" style="font-size:11px">Brouillon</span>`); card.firstChild.appendChild(status);
       card.appendChild($(`<div class="muted small" style="margin-top:4px">En tant que <b>${role}</b>, renseignez votre part.</div>`));
@@ -1018,7 +1024,7 @@
       content().appendChild(jCard);
       reloadCoffre(); loadJournal();
 
-      const setStatus = (s) => { const ok = s === "submitted"; status.innerHTML = ok ? ico("check", 12, "vertical-align:0") + "Soumise" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; if (ok) icons(); };
+      const setStatus = (s) => { const ok = s === "submitted"; status.innerHTML = ok ? ico("check", 12, "vertical-align:0") + "Soumise" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; if (ok) icons(); BARRE.partStatut = s || ""; renderBarre(); };
       let curVer = 0;   // verrou optimiste : version chargée
       // ── Détail du chiffrage chiffré : état local ──
       let curEnv = null;          // enveloppe actuellement enregistrée côté serveur
@@ -1878,6 +1884,7 @@
     }
     // Badge « Convention à valider » en tête du dossier (si MON accord est attendu).
     function syncConvAlert() {
+      renderBarre();     // « Donner mon accord » suit la convention (vague 2b, B3)
       const a = CV.alertEl; if (!a || !a.isConnected) return;
       a.innerHTML = "";
       const d = CV.data, ms = (d && d.ma_signature) || {};
@@ -1897,46 +1904,6 @@
     async function confirmPartChange() {
       if (!cvPartLocksConvention()) return true;
       return !!(await openModal({ title: "Modifier votre part ?", bodyHtml: "La convention de groupement est déjà générée. Si vous modifiez votre part, elle <b>ne sera plus à jour</b> : le chef de file devra la régénérer et chaque membre redonner son accord.", confirmLabel: "Modifier ma part", cancelLabel: "Annuler" }));
-    }
-
-    // ── Vue : Sourcing IA / Veille AO (découverte, lecture seule) ──
-    function renderSourcing() {
-      const root = content(); root.innerHTML = "";
-      const bar = $(`<div class="card pad" style="margin-bottom:12px"></div>`);
-      const q = inp("Mots-clés (ex. toiture, voirie, informatique)"); q.style.flex = "1"; q.style.minWidth = "200px";
-      const dep = inp("Département (ex. 56)"); dep.style.width = "150px";
-      const btn = $(`<button class="btn primary"><i data-lucide="search"></i>Rechercher</button>`);
-      const row = document.createElement("div"); row.className = "row wrap"; row.style.gap = "8px";
-      row.appendChild(q); row.appendChild(dep); row.appendChild(btn);
-      bar.appendChild($(`<div style="margin-bottom:10px"><b style="font-size:13.5px">Trouvez des marchés publics</b>${tip("Sources officielles en direct (BOAMP, TED…). En tant qu'invité, la recherche est ouverte ; pour <b>analyser</b> ou <b>répondre</b>, créez votre compte.")}</div>`));
-      bar.appendChild(row);
-      root.appendChild(bar);
-      const results = document.createElement("div"); root.appendChild(results);
-
-      async function search() {
-        results.innerHTML = `<div class="g-state"><div class="spin" style="margin:0 auto 10px"></div>Recherche en cours…</div>`;
-        let d;
-        try {
-          d = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q.value, departements: dep.value ? [dep.value.trim()] : [], countries: ["FR"], limit: 20 }) }).then(r => r.ok ? r.json() : Promise.reject());
-        } catch (e) { results.innerHTML = `<div class="muted small" style="padding:14px">Recherche indisponible. Réessayez.</div>`; return; }
-        if (!d.tenders.length) { results.innerHTML = `<div class="muted small" style="padding:14px">Aucun marché trouvé. Élargissez les mots-clés.</div>`; return; }
-        results.innerHTML = `<div class="muted small" style="margin:2px 0 6px">${esc(d.count)} résultat(s)</div>`;
-        d.tenders.forEach(t => {
-          const card = $(`<div class="g-res"></div>`);
-          card.appendChild($(`<div style="font-weight:700;font-size:14px">${esc(t.objet || "Marché")}</div>`));
-          const meta = [t.acheteur, t.lieu, t.montant_estime ? eur(t.montant_estime) : "", t.date_limite ? "limite " + fmtDate(t.date_limite) : ""].filter(Boolean).map(esc).join(" · ");
-          card.appendChild($(`<div class="muted small" style="margin-top:3px">${meta}</div>`));
-          const acts = $(`<div class="row" style="gap:8px;margin-top:9px"></div>`);
-          const avisUrl = safeUrl(t.url || (t.provenance && t.provenance.source_url));
-          if (avisUrl !== "#") acts.appendChild($(`<a class="btn sm" href="${esc(avisUrl)}" target="_blank" rel="noopener noreferrer nofollow">Voir l'avis<i data-lucide="external-link"></i></a>`));
-          const ana = $(`<button class="btn sm primary">Analyser ce marché</button>`);
-          ana.onclick = () => { const b = document.getElementById("g-banner"); b.style.background = "var(--accent-weak,#eef2ff)"; b.style.borderColor = "var(--accent,#3b5bdb)"; b.innerHTML = '<i data-lucide="sparkles"></i><div class="small">L\'analyse de pertinence, le chiffrage et la génération du dossier sont réservés aux comptes Adjugo. <a href="/app?inscription" target="_blank" rel="noopener"><b>Commencez votre essai gratuit de 30 jours</b>' + ico("arrow-right", 13, "margin-left:3px") + '</a></div>'; icons(); window.scrollTo({ top: 0, behavior: "smooth" }); };
-          acts.appendChild(ana); card.appendChild(acts); results.appendChild(card);
-        });
-        icons();
-      }
-      btn.onclick = search; q.addEventListener("keyup", e => { if (e.key === "Enter") search(); });
-      icons();
     }
 
     // Suggestion d'interface « publiez votre profil partenaire » renvoyée par le rattachement : transmise à
@@ -1973,23 +1940,17 @@
       icons();
     }
     function fail(title, msg, icon) { finalScreen(icon, title, msg); }
-    // L'invitation n'occupe plus un bandeau : elle passe dans la bulle (i) à côté du titre de page
-    // (le bouton « Créer mon compte Adjugo » est déjà dans l'en-tête). #g-banner reste pour les
-    // messages ponctuels (part soumise, analyse réservée, compte existant) et se masque s'il est vide.
+    // #g-banner : les messages ponctuels (part soumise, compte existant) ; il se masque s'il est vide. Le chef de file
+    // est nommé en tête de « Votre part » (vague 2b, B3).
     function setBanner() {
       document.getElementById("g-banner").innerHTML = "";
-      document.getElementById("g-tip").innerHTML = tip("Vous êtes invité par " + (DATA.mandataire ? "<b>" + esc(DATA.mandataire) + "</b>" : "le chef de file") + " sur ce dossier. Créez votre compte Adjugo pour débloquer tout l'espace.");
     }
     function initials(s) { return (s || "CO").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase(); }
 
-    document.querySelectorAll(".nav-item").forEach(a => {
-      if (!a.dataset.allowed) a.classList.add("g-locked");
-      a.addEventListener("click", () => nav(a.dataset.view, a.textContent.trim()));
-    });
-    // « Projets à venir » : masqué tant que le serveur ne l'active pas (PROJETS_A_VENIR=1).
+    // La durée de l'essai gratuit (encart « Créer mon compte ») : celle du serveur, jamais écrite dans la page.
     fetch("/api/public-config").then(r => r.ok ? r.json() : null).then(c => {
-      const el = document.getElementById("nav-amont");
-      if (el && c && c.projets_a_venir === true) el.style.display = "";
+      const n = c && Number(c.essai_jours);
+      if (n > 0 && n < 1000) { ESSAI_JOURS = Math.round(n); if (document.getElementById("g-compte")) renderCompte(); }
     }).catch(() => {});
 
     fetch("/api/invite/" + encodeURIComponent(TOKEN))
@@ -2009,7 +1970,6 @@
         // à tort (il a un formulaire d'écriture juste à côté). On distingue aussi partenaire et sous-traitant.
         const _role = (d.invited && d.invited.role === "sous_traitant") ? "Sous-traitant invité" : "Partenaire invité";
         document.getElementById("g-role").textContent = d.can_contribute ? _role : _role + " · lecture seule";
-        document.getElementById("brand-sub").textContent = d.mandataire || "Espace partenaire";
         document.getElementById("loading").style.display = "none";
         document.getElementById("shell").style.display = "";
         setBanner();
@@ -2039,7 +1999,7 @@
           };
           if (!d.apercu_minimal) b.appendChild(btn);
         }
-        nav("monao", "Le marché");
+        renderMonAO();
         icons();
       })
       .catch(e => fail(e.t || "Accès impossible", e.m || "Réessayez plus tard.", e.icon));

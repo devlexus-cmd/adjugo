@@ -1926,3 +1926,47 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
   .ex .ex-ecran { padding:12px; }
   .ex .ex-ecran .offre-box .offre-total { font-size:19px; }
 }
+
+/* ══════════ L'espace du partenaire : « Votre part dans [marché] » (réorganisation, vague 2b, B3) ══════════
+   Même barre que la page du marché du chef de file (.mk-etapes, .mk-et), avec les tâches du partenaire : 4 étapes, ou 3
+   pour un sous-traitant ou un lien en lecture seule. « Voir ce que verra [partenaire] » : son écran en lecture, dans un
+   cadre. Mêmes couleurs, même police ; 375 px sans défilement horizontal. */
+.pa-titre { margin:2px 0 4px; font-size:19px; font-weight:800; line-height:1.3; letter-spacing:-.02em; overflow-wrap:anywhere; }
+.pa-entete:focus { outline:none; }
+/* Les deux écrans (« Votre part », l'aperçu) contiennent leurs éléments positionnés (textes pour lecteur d'écran, région
+   annoncée) : rien ne déborde de la zone qui défile ni n'allonge la page entière. */
+.pa-vue { position:relative; }
+.pa-barre { list-style:none; padding:0; margin:0 0 14px; }
+.pa-barre.pa-n3 { grid-template-columns:repeat(3, minmax(0,1fr)); }
+.pa-barre.pa-n2 { grid-template-columns:repeat(2, minmax(0,1fr)); }
+/* Les libellés du partenaire sont plus longs (« Donner mon accord », « Déposé par le chef de file ») : chaque étape en
+   colonne (numéro, mot, statut), à toutes les largeurs, comme la barre du chef de file sur téléphone. */
+.pa-barre .mk-et { position:relative; flex-direction:column; gap:3px; padding:8px; min-height:58px; border-radius:14px; }
+.pa-barre li.mk-et { cursor:default; }
+.pa-barre li.mk-et:hover { background:var(--surface); color:var(--text-2); }
+.pa-barre li.mk-et.cur:hover { background:var(--accent-weak); color:var(--accent-text); }
+.pa-barre .mk-et > span:nth-child(2) { text-align:center; overflow-wrap:anywhere; }
+.pa-limite { display:flex; gap:9px; align-items:flex-start; margin-top:10px; padding:10px 12px; border-radius:10px; border:1px solid var(--accent); background:var(--accent-weak); font-size:13px; }
+.pa-limite > .lucide, .pa-limite > i { width:15px; height:15px; flex:none; margin-top:2px; }
+.pa-delai { display:flex; gap:6px; align-items:center; margin-top:10px; padding:8px 12px; border-radius:9px; background:var(--accent-weak); color:var(--accent-text); }
+.pa-delai > .lucide, .pa-delai > i { width:14px; height:14px; flex:none; }
+.pa-ap-t { margin:0; font-size:15px; font-weight:800; }
+.pa-ap-opts { gap:6px 16px; margin-top:12px; }
+.pa-ecran { padding:16px; border:1.5px dashed var(--border); border-radius:14px; background:var(--surface-2); }
+.pa-ecran-l { display:flex; align-items:center; gap:6px; margin:0 0 12px; font-size:12px; font-weight:600; color:var(--muted); }
+.pa-ecran-l > .lucide, .pa-ecran-l > i { width:14px; height:14px; flex:none; }
+.pa-attendu { list-style:none; margin:8px 0 0; padding:0; }
+.pa-attendu li { display:flex; gap:8px; align-items:flex-start; padding:6px 0; border-bottom:1px solid var(--hairline); font-size:13px; }
+.pa-attendu li:last-child { border-bottom:0; }
+.pa-attendu li > .lucide, .pa-attendu li > i { width:15px; height:15px; flex:none; margin-top:2px; color:var(--accent-text); }
+.pa-note { display:flex; gap:7px; align-items:flex-start; margin:8px 0 0; font-size:12.5px; color:var(--text-2); line-height:1.45; }
+.pa-note > .lucide, .pa-note > i { width:14px; height:14px; flex:none; margin-top:2px; }
+.mk-apercu { margin-top:8px; text-align:center; }
+.mk-apercu .linkbtn, .rinv-apercu { display:inline-flex; align-items:center; gap:5px; }
+.mk-apercu .lucide, .rinv-apercu .lucide { width:14px; height:14px; }
+.rinv-apercu { margin-top:10px; margin-right:14px; }
+@media (max-width:520px) {
+  .pa-barre .mk-et { padding:6px 4px; min-height:54px; }
+  .pa-ecran { padding:10px; }
+  .pa-titre { font-size:17px; }
+}
