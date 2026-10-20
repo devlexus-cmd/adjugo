@@ -99,7 +99,7 @@ def test_chaque_ecran_a_son_adresse_et_chaque_adresse_rouvre_son_ecran():
     r = _node(_ADRESSES + """
 const vues = JSON.parse(process.argv[1]), out = {};
 for (const v of vues) {
-  const e = v === "aodetail" || v === "atelier" ? { view: v, projet: 12 } : v === "sharedao" ? { view: v, partage: 34 } : { view: v };
+  const e = v === "aodetail" || v === "atelier" || v === "apercu" ? { view: v, projet: 12 } : v === "sharedao" ? { view: v, partage: 34 } : { view: v };
   const a = adresseDe(e), r = etatDeAdresse(a);
   out[v] = { a, retour: r && r.view, projet: r && (r.projet || r.partage) || null };
 }
@@ -116,6 +116,8 @@ console.log(JSON.stringify(out));
     assert r["aodetail"] == {"a": "/app/marches/12", "retour": "aodetail", "projet": 12}
     assert r["atelier"]["a"] == "/app/marches/12/dossier-de-presentation"
     assert r["sharedao"] == {"a": "/app/marches/partenaire/34", "retour": "sharedao", "projet": 34}
+    # Vague 2b (B3) : « Voir ce que verra [partenaire] », un écran de la page du marché (docs/REORGANISATION_V2B.md).
+    assert r["apercu"] == {"a": "/app/marches/12/apercu-partenaire", "retour": "apercu", "projet": 12}
     assert r["compte"]["a"] == "/app/reglages/compte" and r["admin"]["a"] == "/app/reglages/administration"
     assert len({x["a"] for x in r.values()}) == len(r)                               # une adresse par écran
 

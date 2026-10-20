@@ -97,7 +97,8 @@ def test_libelles_justes_ecrans():
         assert "Chorus" not in s
     # Un essai de 30 jours n'est pas un « compte gratuit ».
     assert "compte gratuit" not in inv and "(gratuit)" not in inv and "Créez le vôtre gratuitement" not in inv
-    assert "essai gratuit de 30 jours" in inv
+    # Vague 2b (B3) : la durée de l'essai est lue dans la configuration du serveur (/api/public-config), jamais écrite.
+    assert "Essai gratuit de ${esc(ESSAI_JOURS)} jours" in inv and "30 jours" not in inv
     # Verdict en mots et en pourcentage, jamais « GO / NO-GO » à l'écran.
     assert "NO-GO" not in land and ">GO</div>" not in land and "Bon potentiel" in land
     assert not re.search(r"\bNo-Go\b|\bNO-GO\b", html + js)
@@ -761,9 +762,9 @@ def test_signature_dans_les_documents_produits(client, auth):
 
 def test_projets_a_venir_ni_espace_partenaire_ni_vitrine():
     inv, land = _static("invite.html"), _static("landing.html")
-    assert ('<a class="nav-item" data-view="amont" data-allowed="1" id="nav-amont" style="display:none">'
-            in inv)
-    assert 'c.projets_a_venir === true) el.style.display = "";' in inv
+    # Vague 2b (B3, étude § 7.6) : l'entrée « Projets à venir » de l'espace partenaire, qui affichait en fait la recherche
+    # de marchés, est retirée avec le menu (l'espace se réduit à la part du partenaire).
+    assert "nav-amont" not in inv and "></i>Projets à venir<" not in inv and "projets_a_venir" not in inv
     assert "veille amont" not in land.lower() and "fins de contrat à suivre" in land
 
 

@@ -60,7 +60,7 @@ const RUBRIQUES = [
   // Vague 2a (A2) : « Où je suis partenaire » et « À plusieurs » sont des FILTRES de la liste (plus des onglets) ; les
   // vues « shared » et « consortiums » n'existent plus que comme raccourcis de go() vers ces filtres.
   { k: "marches", label: "Mes marchés", ic: "folder-kanban",
-    vues: ["pipeline", "shared", "consortiums", "invoices", "bilan", "aodetail", "atelier", "sharedao"], onglets: [
+    vues: ["pipeline", "shared", "consortiums", "invoices", "bilan", "aodetail", "atelier", "sharedao", "apercu"], onglets: [
     { view: "pipeline", label: "Marchés", ic: "folder-kanban", pastille: "partenaire",
       avant: "« Où je suis partenaire » (anciennement « Partagé avec moi ») et « À plusieurs » (anciennement « Mes groupements ») sont des filtres de cette liste." },
     { view: "invoices", label: "Devis et factures", ic: "receipt", ancien: "Devis & factures" },
@@ -176,6 +176,9 @@ const ADRESSES_TROUVER = { avenir: "a-venir", alertes: "alertes" };             
 const ADRESSES_RESEAU = { annuaire: "annuaire", historique: "historique" };   // « profil » : la vue
 const ADRESSES_MES_MARCHES = { pilote: "je-pilote", partenaire: "partenaire", plusieurs: "a-plusieurs" };   // « tous » : la vue
 const ADRESSE_ATELIER = "dossier-de-presentation";
+// Vague 2b (B3) : « Voir ce que verra [partenaire] », sur la page du marché : /app/marches/12/apercu-partenaire (un
+// partenaire pas encore invité), /app/marches/12/apercu-partenaire/56 (l'invitation n° 56 de ce marché, jamais son jeton).
+const ADRESSE_APERCU = "apercu-partenaire";
 function _adrId(n) { const t = String(n == null ? "" : n); return /^[1-9][0-9]{0,11}$/.test(t) ? t : ""; }
 // Relecture de la vague 2a : un même compte peut être partenaire deux fois du même marché (partenaire du groupement
 // sur une partie, sous-traitant sur une autre). L'adresse d'un dossier partagé porte donc, après l'identifiant du
@@ -202,6 +205,7 @@ function adresseDe(e) {
   e = e || {};
   if (e.view === "aodetail") return _adrId(e.projet) ? "/app/marches/" + _adrId(e.projet) : null;
   if (e.view === "atelier") return _adrId(e.projet) ? "/app/marches/" + _adrId(e.projet) + "/" + ADRESSE_ATELIER : null;
+  if (e.view === "apercu") return _adrId(e.projet) ? "/app/marches/" + _adrId(e.projet) + "/" + ADRESSE_APERCU + (_adrId(e.invitation) ? "/" + _adrId(e.invitation) : "") : null;
   if (e.view === "sharedao") return _adrId(e.partage) ? "/app/marches/partenaire/" + _adrId(e.partage) + (_adrCle(e.cle) ? "/" + _adrCle(e.cle) : "") : null;
   if (!Object.prototype.hasOwnProperty.call(ADRESSES, e.view)) return null;
   let c = "/app" + (ADRESSES[e.view] ? "/" + ADRESSES[e.view] : "");
@@ -220,6 +224,8 @@ function etatDeAdresse(chemin) {
   if (m) return { view: "aodetail", projet: Number(m[1]) };
   m = /^marches\/([1-9][0-9]{0,11})\/dossier-de-presentation$/.exec(r);
   if (m) return { view: "atelier", projet: Number(m[1]) };
+  m = /^marches\/([1-9][0-9]{0,11})\/apercu-partenaire(?:\/([1-9][0-9]{0,11}))?$/.exec(r);
+  if (m) return m[2] ? { view: "apercu", projet: Number(m[1]), invitation: Number(m[2]) } : { view: "apercu", projet: Number(m[1]) };
   m = /^marches\/partenaire\/([1-9][0-9]{0,11})(?:\/([0-9a-z]{7}))?$/.exec(r);
   if (m) return m[2] ? { view: "sharedao", partage: Number(m[1]), cle: m[2] } : { view: "sharedao", partage: Number(m[1]) };
   for (const v of Object.keys(ADRESSES)) if (ADRESSES[v] && ADRESSES[v] === r) return v === "sourcing" ? { view: v, sous: "publies" } : { view: v };
@@ -364,6 +370,31 @@ function barreDuMarche(statut, dossierLu, etapeGroupement) {
     return { k, label: ETAPES_LIBELLES[k], etat, statut: BARRE_ETATS[etat] || "", courante: k === cur };
   });
 }
+// ══════════ L'espace du partenaire : « Votre part dans [marché] » (réorganisation, vague 2b, B3) — fonction pure ══════════
+// La même barre que la page du marché du chef de file, avec les tâches du partenaire (étude, § 5.3) : Accepter · Ma part
+// · Donner mon accord · Déposé par le chef de file. Des faits que son écran reçoit déjà : l'aperçu limité d'une
+// invitation du réseau pas encore acceptée, l'état de sa part, la convention et son accord, l'étape du groupement.
+// Un sous-traitant ne valide pas la convention (pas d'étape « accord ») ; un lien en lecture seule n'a pas de part.
+// Trois statuts, comme la barre du chef de file. MÊME texte dans app.js et invite.html (vérifié par les tests).
+// `d` : { apercuMinimal, role, part (false : pas de part demandée), partStatut, conventionStatut, signature, groupement }.
+function barrePartenaire(d) {
+  d = d || {};
+  const libelles = { accepter: "Accepter", part: "Ma part", accord: "Donner mon accord", depose: "Déposé par le chef de file" };
+  const statuts = { fait: "Terminé", en_cours: "En cours", a_faire: "À faire" };
+  const sousTraitant = String(d.role || "").trim().toLowerCase().replace(/-/g, "_") === "sous_traitant";
+  const ordre = ["accepter"].concat(d.part === false ? [] : ["part"], sousTraitant ? [] : ["accord"], ["depose"]);
+  const fait = {
+    accepter: !d.apercuMinimal,
+    part: d.partStatut === "submitted",
+    accord: d.conventionStatut === "signee" || (d.conventionStatut === "a_signer" && (d.signature === "signed" || d.signature === "hors_ligne")),
+    depose: d.groupement === "depose",
+  };
+  const fini = fait.depose, ic = ordre.findIndex(k => !fait[k]);
+  return ordre.map((k, i) => {
+    const etat = (fini || fait[k]) ? "fait" : (i === ic ? "en_cours" : "a_faire");
+    return { k, n: i + 1, label: libelles[k], etat, statut: statuts[etat], courante: !fini && i === ic };
+  });
+}
 
 // ══════════ « À faire » (réorganisation, vague 2a, A1) — fonction pure ══════════
 // Une seule liste de ce qui attend VOTRE action, lue par la cloche (onglet « À faire ») et par le bloc « À faire » de
@@ -450,6 +481,17 @@ function _sharedInit(token, mandataire, projectId, role) {
            refsRiches: [],
            contrib: { company_name: "", lot: "", siret: "", forme_juridique: "", address: "", postal_code: "", city: "", quals: "", refs: "", memoire_paragraph: "",
                       prix_lot_ht: "", representant_legal: "", signataire_qualite: "", ca_n1: "", effectif: "", contact: { nom: "", email: "", telephone: "" } } };
+}
+
+// État initial de « Voir ce que verra [partenaire] » (vague 2b, B3). `inviteId` : une invitation de ce marché ; sinon
+// un partenaire pas encore invité, décrit par les choix de la fenêtre d'invitation (rôle, réseau Adjugo, pièces du
+// marché, part). `depuis` : la fenêtre d'invitation d'où l'on vient (reprise telle quelle par « Revenir à l'invitation »).
+function _apercuInit(o) {
+  o = o || {};
+  return { projectId: o.projectId || null, inviteId: o.inviteId || null, nom: o.nom || "",
+           role: o.role === "sous_traitant" ? "sous_traitant" : "cotraitant", reseau: !!o.reseau,
+           can_view_docs: o.can_view_docs !== false, can_contribute: o.can_contribute !== false,
+           depuis: o.depuis || null, invites: [], loading: false, err: "", d: null };
 }
 
 // État initial de la carte « Répondre à plusieurs ? » (co-traitance v2) — réinitialisé à chaque ouverture de marché.
@@ -1167,6 +1209,7 @@ const __adjApp = createApp({
       cdetail: {}, copen: {}, cexport: {}, cexportWarn: {}, cpreview: {}, cerror: {},
       shared: [],
       sharedAo: _sharedInit(),
+      apercu: _apercuInit(),
       atl: _atlInit(),        // atelier du dossier de présentation (rédaction, vague 2)
       atlJobs: {},            // rédactions en cours (tâches de fond), suivies toutes les 2 s, toutes pages confondues
       atlEchecs: {},          // « marché:partie » → message d'échec de la dernière rédaction, gardé jusqu'à la prochaine action
@@ -1275,11 +1318,11 @@ const __adjApp = createApp({
             share: { busy: false, invites: [], auditOpen: false, audit: [], contributions: [], contribOpen: false, consortium: null, cockpitOpen: false, freezing: false } },
       // Nom de chaque vue (en-tête des vues hors onglets, relevé de la mesure). Réorganisation, vague 1 (1.3) : les noms
       // de l'architecture C corrigée ; une vue rangée en onglet affiche en tête le nom de sa rubrique (enteteTitre).
-      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Accueil", sourcing: "Trouver des marchés", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes pièces", invoices: "Devis et factures", bilan: "Bilan", company: "Identité", criteria: "Ce que je cherche", tarifs: "Tarifs", team: "Collègues", billing: "Abonnement", compte: "Mon compte", aodetail: "Le marché", consortiums: "À plusieurs", shared: "Où je suis partenaire", sharedao: "Dossier partagé", admin: "Administration", reseau: "Réseau Adjugo" },
+      titles: { preuves: "Mes preuves", atelier: "Dossier de présentation", kb: "Mon savoir-faire", amont: "Projets à venir", dashboard: "Accueil", sourcing: "Trouver des marchés", pipeline: "Mes marchés", veille: "Trouver des marchés", cotraitants: "Mes partenaires", contacts: "Contacts", documents: "Mes pièces", invoices: "Devis et factures", bilan: "Bilan", company: "Identité", criteria: "Ce que je cherche", tarifs: "Tarifs", team: "Collègues", billing: "Abonnement", compte: "Mon compte", aodetail: "Le marché", consortiums: "À plusieurs", shared: "Où je suis partenaire", sharedao: "Votre part", apercu: "Ce que verra votre partenaire", admin: "Administration", reseau: "Réseau Adjugo" },
       // Ce que fait chaque vue, en une phrase, dans la bulle (i) de l'en-tête (1.7) : plus de sous-titre affiché, plus de
       // promesse (« Débloquez toute la puissance… »). Une vue sans phrase utile n'a pas de bulle. Clés : la vue, ou
       // l'onglet interne de Trouver des marchés (avenir, alertes).
-      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", sourcing: "Les marchés publiés sur les sources officielles : chaque résultat renvoie à son annonce.", avenir: "Contrats déjà attribués dont la fin estimée approche : un nouveau marché peut suivre.", alertes: "Recevez par email les nouveaux marchés d'une recherche enregistrée.", pipeline: "Suivez vos marchés étape par étape", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Clients, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", bilan: "Où vous gagnez et où vous perdez, d'après les marchés terminés, et ce que vos notes vous apprennent", company: "Informations utilisées dans vos candidatures", criteria: "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous", tarifs: "Vos prix de journée et vos frais de déplacement, pour estimer vos prix", team: "Invitez vos collègues à collaborer sur vos dossiers", compte: "Votre mot de passe, l'export de vos données et la suppression de votre compte", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Votre part dans le groupement", reseau: "Trouvez des partenaires et faites-vous trouver" },
+      subtitles: { preuves: "Les faits de votre entreprise, chacun avec l'endroit où il a été trouvé", atelier: "Rédigez, relisez et validez chaque partie, puis exportez", kb: "Déposez vos documents : l'IA s'en sert pour rédiger vos dossiers de présentation et vos réponses", amont: "Détectez les projets des collectivités, des mois avant l'appel d'offres", sourcing: "Les marchés publiés sur les sources officielles : chaque résultat renvoie à son annonce.", avenir: "Contrats déjà attribués dont la fin estimée approche : un nouveau marché peut suivre.", alertes: "Recevez par email les nouveaux marchés d'une recherche enregistrée.", pipeline: "Suivez vos marchés étape par étape", cotraitants: "Vos partenaires pour répondre en groupement", contacts: "Clients, partenaires, fournisseurs", documents: "Vos pièces administratives centralisées", invoices: "Facturation liée à vos marchés", bilan: "Où vous gagnez et où vous perdez, d'après les marchés terminés, et ce que vos notes vous apprennent", company: "Informations utilisées dans vos candidatures", criteria: "Vos métiers, votre zone et vos montants : ce qu'Adjugo cherche pour vous", tarifs: "Vos prix de journée et vos frais de déplacement, pour estimer vos prix", team: "Invitez vos collègues à collaborer sur vos dossiers", compte: "Votre mot de passe, l'export de vos données et la suppression de votre compte", consortiums: "Vos groupements en cours et leur dossier commun", shared: "Les marchés où d'autres entreprises vous ont invité", sharedao: "Le marché d'une autre entreprise, où vous apportez votre part", apercu: "Son écran tel qu'il le verra, en lecture : rien de plus que ce qu'Adjugo lui montre", reseau: "Trouvez des partenaires et faites-vous trouver" },
     };
   },
   computed: {
@@ -1385,8 +1428,11 @@ const __adjApp = createApp({
     },
     // Une adresse par écran (vague 2a, A1) : le chemin de l'écran ouvert (null : pas d'adresse, rien ne change).
     adresseCourante() {
-      return adresseDe({ view: this.view, sous: this.trouverOnglet, projet: this.ao.project && this.ao.project.id,
-                         partage: this.sharedAo.projectId, cle: this.sharedAo.cle, reseau: this.reseau.tab, filtre: this.mmFiltre });
+      const ap = this.apercu || {};          // vague 2b (B3) : « Voir ce que verra [partenaire] »
+      return adresseDe({ view: this.view, sous: this.trouverOnglet,
+                         projet: this.view === "apercu" ? ap.projectId : (this.ao.project && this.ao.project.id),
+                         partage: this.sharedAo.projectId, cle: this.sharedAo.cle, reseau: this.reseau.tab, filtre: this.mmFiltre,
+                         invitation: ap.inviteId });
     },
   },
   watch: {
@@ -1906,6 +1952,9 @@ const __adjApp = createApp({
       }
       this._nIci = n || 0;
       this._ouvrirAdresse(etatDeAdresse(location.pathname), ev && ev.state && ev.state.defil);
+      // Vague 2b (B3) : « Revenir à l'invitation » de l'aperçu du partenaire rouvre la fenêtre une fois l'écran revenu.
+      const apres = this._apresRetour; this._apresRetour = null;
+      if (typeof apres === "function") this.$nextTick(apres);
     },
     // Ferme toute fenêtre de l'application ouverte ; vrai si l'une l'était. La confirmation répond « Annuler » (sa
     // promesse rend null). `rendreFocus` : l'écran reste, le focus revient où il était. Contre-relecture : le menu du
@@ -1968,6 +2017,10 @@ const __adjApp = createApp({
           if (v === "aodetail" && this.view === "atelier" && this.ao.project && this.ao.project.id === p.id) {
             this.view = "aodetail"; this._ecranOuvert("aodetail"); this.atlCardLoad(); return;
           }
+          // Vague 2b (B3) : de l'aperçu du partenaire, la page du marché revient telle qu'on l'avait laissée.
+          if (v === "aodetail" && this.view === "apercu" && this.ao.project && this.ao.project.id === p.id) {
+            this.view = "aodetail"; this._ecranOuvert("aodetail"); return;
+          }
           if (!(this.ao.project && this.ao.project.id === p.id && (this.view === "aodetail" || this.view === "atelier"))) {
             this.openAo(p);
             this.ao.back = "pipeline";       // ouvert par son adresse : « Retour » mène à Mes marchés
@@ -1982,6 +2035,16 @@ const __adjApp = createApp({
         this.api("GET", "/api/projects/" + e.projet)
           .then(pp => { if (!(pp && pp.id)) throw new Error(); this._adresseAttente = false; if (encore()) this._sansHistorique(() => ouvrir(pp)); })
           .catch(() => { this._adresseAttente = false; if (!encore()) return; this.notify("Ce marché n'est plus accessible", "err"); this._sansHistorique(() => this.go("pipeline")); });
+        return;
+      }
+      if (v === "apercu") {
+        // « Voir ce que verra [partenaire] » (vague 2b, B3) : le serveur dit si ce marché et cette invitation sont les
+        // vôtres (404 sinon : « Ce marché n'est plus accessible »).
+        if (this.view === "apercu" && this.apercu.projectId === e.projet) {
+          if ((this.apercu.inviteId || null) !== (e.invitation || null)) { this.apercu.inviteId = e.invitation || null; this.apercuCharger(); }
+          return;
+        }
+        this.apercuOuvrir({ projectId: e.projet, inviteId: e.invitation || null });
         return;
       }
       if (v === "sharedao") {
@@ -2752,6 +2815,110 @@ const __adjApp = createApp({
     },
     sfm() { return this.sharedAo.forMember || {}; },
     sfmState() { return (this.sharedAo.forMember && this.sharedAo.forMember.state) || {}; },
+    // « Votre part dans [marché] » (vague 2b, B3) : la barre du partenaire (barrePartenaire, en tête du fichier), lue
+    // dans ce que son écran a déjà reçu (sa part, la convention et son accord, l'étape du groupement).
+    sharedBarre() {
+      const s = this.sharedAo, cv = s.conv.d || {}, ms = cv.ma_signature || {};
+      return barrePartenaire({ apercuMinimal: false, role: s.role, part: s.canContribute ? undefined : false, partStatut: s.status,
+                               conventionStatut: cv.status, signature: ms.status, groupement: this.sfmState().state });
+    },
+    sharedBarreAller(k) { this.rnScrollTo(({ part: "sharedPart", accord: "sharedConv" })[k] || "sharedEntete"); },
+
+    // ══════════ « Voir ce que verra [partenaire] » (réorganisation, vague 2b, B3 ; docs/REORGANISATION_V2B.md) ══════════
+    // L'écran du partenaire, en lecture, sur la page du marché (/app/marches/<id>/apercu-partenaire) : avant l'invitation
+    // (les choix de la fenêtre d'invitation) et après (une invitation du marché, /apercu-partenaire/<n°>). Tout vient de
+    // GET /api/projects/{id}/apercu-partenaire, que le serveur tire de la vue que reçoit le partenaire : rien de plus.
+    apercuOuvrir(o) {
+      o = o || {}; if (!_adrId(o.projectId)) return;
+      this.apercu = _apercuInit(o);
+      this.view = "apercu"; this._ecranOuvert("apercu");
+      this.apercuCharger(); this._apercuInvitations();
+    },
+    // Depuis la page du marché : l'invitation la plus récente encore ouverte, sinon un partenaire pas encore invité.
+    apercuDepuisMarche() {
+      const p = this.ao.project; if (!p) return;
+      const inv = (this.ao.share.invites || []).find(i => i && !i.revoked && !this.inviteDeclined(i));
+      this.apercuOuvrir({ projectId: p.id, inviteId: inv ? inv.id : null });
+    },
+    apercuInvitation(inv) { if (this.ao.project && inv) this.apercuOuvrir({ projectId: this.ao.project.id, inviteId: inv.id }); },
+    // Depuis la fenêtre d'invitation : l'aperçu reprend ses choix (rôle, réseau Adjugo, pièces, part, nom) ; « Revenir à
+    // l'invitation » la rouvre telle quelle. Une fois l'invitation créée : celle-ci.
+    rinvApercu() {
+      const v = this.rinv; if (!v || !v.projectId) return;
+      const o = v.inviteId ? { projectId: v.projectId, inviteId: v.inviteId }
+        : { projectId: v.projectId, nom: v.name, role: v.role, reseau: v.kind === "reseau", can_view_docs: !!v.can_view_docs,
+            can_contribute: v.kind === "connu" ? !!v.can_contribute : true,
+            depuis: v.done ? null : Object.assign({}, v, { busy: false, err: "", errCode: "", errProfile: "", errStatus: 0 }) };
+      this.rinvClose(true);
+      this.apercuOuvrir(o);
+    },
+    async apercuCharger() {
+      const a = this.apercu; if (!a.projectId) return;
+      a.loading = true; a.err = "";
+      const oui = b => (b ? "true" : "false");
+      const q = a.inviteId ? "invite_id=" + encodeURIComponent(a.inviteId)
+        : ["role=" + a.role, "reseau=" + oui(a.reseau), "can_view_docs=" + oui(a.can_view_docs),
+           "can_contribute=" + oui(a.can_contribute), "nom=" + encodeURIComponent(a.nom || "")].join("&");
+      try {
+        const d = await this.api("GET", "/api/projects/" + a.projectId + "/apercu-partenaire?" + q);
+        if (this.apercu === a) a.d = d;
+      } catch (e) {
+        if (this.apercu !== a) return;
+        a.d = null;
+        a.err = e && e.status === 404 ? "Ce marché ou cette invitation n'est plus accessible." : ((e && e.message) || "Aperçu indisponible pour le moment.");
+      } finally { if (this.apercu === a) a.loading = false; }
+    },
+    async _apercuInvitations() {
+      const a = this.apercu;
+      try { const l = await this.api("GET", "/api/projects/" + a.projectId + "/invites"); if (this.apercu === a) a.invites = Array.isArray(l) ? l : []; }
+      catch (e) { if (this.apercu === a) a.invites = []; }
+    },
+    // Le choix « Aperçu pour » : un partenaire pas encore invité (""), ou une invitation du marché. Même écran : l'adresse
+    // suit sans nouvelle entrée d'historique.
+    apercuChoisir(val) {
+      const a = this.apercu, id = Number(val) || null;
+      if ((a.inviteId || null) === id) return;
+      this._sansHistorique(() => { a.inviteId = id; });
+      this.apercuCharger();
+    },
+    // Un partenaire pas encore invité : rôle, invitation par le réseau Adjugo, pièces du marché téléchargeables.
+    apercuOption(k, val) { const a = this.apercu; if (a.inviteId) return; a[k] = val; this.apercuCharger(); },
+    apercuRetour() {
+      if (this._retourHistorique()) return;
+      this._ouvrirAdresse({ view: "aodetail", projet: this.apercu.projectId });   // ouvert par son adresse : le marché prend sa place
+    },
+    // « Revenir à l'invitation » : la page du marché, puis la fenêtre telle qu'on l'avait laissée.
+    apercuReprendre() {
+      const a = this.apercu, v = a.depuis; if (!v) return;
+      const rouvrir = () => { this.rinv = Object.assign({}, v); this._rinvFocusPremier(); };
+      if (this._retourHistorique()) { this._apresRetour = rouvrir; return; }
+      this._ouvrirAdresse({ view: "aodetail", projet: a.projectId });
+      this.$nextTick(rouvrir);
+    },
+    apercuBarre() {
+      const d = this.apercu.d; if (!(d && d.acces && d.vue)) return [];
+      const v = d.vue, e = d.etat || {}, st = (v.for_member && v.for_member.state) || {};
+      return barrePartenaire({ apercuMinimal: v.apercu_minimal, role: v.invited && v.invited.role, part: v.can_contribute ? undefined : false,
+                               partStatut: e.part, conventionStatut: e.convention, signature: e.signature, groupement: st.state });
+    },
+    apercuPieces() { return ((this.apercu.d && this.apercu.d.pieces_attendues) || []).map(x => x && x.label).filter(Boolean).join(", "); },
+    // Le compte à rebours de son écran (invite.html) : le partenaire sait combien de temps il lui reste pour sa part.
+    paJours(dl) { if (!dl) return null; const n = Math.ceil((new Date(dl) - new Date()) / 86400000); return isNaN(n) ? null : n; },
+    paDelai(dl) {
+      const n = this.paJours(dl); if (n === null) return "";
+      if (n < 0) return "Date limite dépassée : contactez le chef de file.";
+      if (n === 0) return "Dernier jour : soumettez votre part aujourd'hui.";
+      return "Il vous reste " + n + " " + (n > 1 ? "jours" : "jour") + " pour soumettre votre part au chef de file.";
+    },
+    apercuTotal() {
+      const v = this.apercu.d && this.apercu.d.vue, st = v && v.for_member && v.for_member.state;
+      return st && st.total_offre_ht != null ? st : null;
+    },
+    apercuRaison(r) {
+      return ({ revoquee: "Vous avez révoqué cette invitation : son lien ne s'ouvre plus.",
+                declinee: "Ce partenaire a décliné l'invitation : son lien ne s'ouvre plus.",
+                expiree: "Ce lien a expiré : il ne s'ouvre plus." })[r] || "Ce lien ne s'ouvre plus.";
+    },
     memberStatusLabel(s) { return ({ submitted: "part soumise", draft: "brouillon", invited: "invité" })[s] || s || ""; },
     cryptoLabels() { return (window.AdjugoCrypto && window.AdjugoCrypto.LABELS) || {}; },
     async sharedReload(t) {
@@ -3341,20 +3508,8 @@ const __adjApp = createApp({
       if (this.convVisible() && !this.ao.conv.loaded) this.aoConvLoad(true);
       this.aoDepotLoadSoon();
     },
-    // Stepper du groupement : les 5 étapes du parcours (state.etapes, dérivées côté serveur) ;
-    // repli sur les 8 états de la vague 1 si l'API ne les renvoie pas. Plus de marque « bientôt ».
-    grpSteps(state) {
-      if (!state) return [];
-      if (Array.isArray(state.etapes) && state.etapes.length)
-        return state.etapes.map(e => ({ key: e.key, n: e.n, label: e.label, done: e.status === "fait", cur: e.status === "en_cours" }));
-      const idx = typeof state.index === "number" ? state.index : -1;
-      return (state.steps || []).map((s, i) => ({ key: s.key, n: i + 1, label: s.label, done: i < idx, cur: i === idx }));
-    },
-    grpEtapeNow(state) {
-      const all = this.grpSteps(state), cur = all.find(s => s.cur); if (!cur) return "";
-      const sub = state && state.label && state.label !== cur.label ? " — " + state.label : "";
-      return "Étape " + cur.n + " sur " + all.length + " : " + cur.label + sub;
-    },
+    // Vague 2b (B3) : le stepper des 5 étapes du groupement a quitté le dossier partagé (sa dernière place) ; le
+    // partenaire a la barre de ses tâches (barrePartenaire), la même que la page du marché du chef de file.
     grpPlan() { const st = this.ao.grp.state; const p = st && st.plan; return (p && typeof p === "object" && (p.members || []).length) ? p : null; },
     grpBreakdown() {
       const sim = this.ao.grp.sim, plan = this.grpPlan();
@@ -3936,7 +4091,7 @@ const __adjApp = createApp({
       return { kind: "choix", card: null, name: "", profile_id: "", siret: "", siretSaisi: false, email: "", cotraitantId: "",
                link_id: null, depuisChoix: false, projectId, pickProject, roles: ["cotraitant", "sous_traitant"], role: "cotraitant",
                noRole: false, lot: "", can_view_docs: true, can_contribute: true, expires_days: 30,
-               busy: false, err: "", errCode: "", errProfile: "", errStatus: 0, url: "", done: "" };
+               busy: false, err: "", errCode: "", errProfile: "", errStatus: 0, url: "", done: "", inviteId: null };
     },
     // Message d'erreur ou lien créé : en bas de la fenêtre, qui peut défiler ; on l'amène à l'écran.
     _rinvMontrer() {
@@ -4047,6 +4202,7 @@ const __adjApp = createApp({
             company_name: String(v.name).trim().slice(0, 255), recipient: email, role: v.role, can_view_docs: !!v.can_view_docs,
             can_contribute: !!v.can_contribute, expires_days: Number(v.expires_days) || 0 }, v.link_id ? { link_id: v.link_id } : {}));
           v.url = (inv && inv.path) ? this.inviteUrl(inv) : ((inv && inv.url) || "");
+          v.inviteId = (inv && inv.id) || null;          // « Voir ce que voit … » (vague 2b, B3)
           v.done = inv && inv.emailed ? "Invitation envoyée par Adjugo à " + email + ". Le lien reste ici, si l'email n'arrive pas."
             : (email ? "Lien créé. L'email n'a pas pu partir pour le moment : copiez le lien et envoyez-le."
                      : "Lien créé : copiez-le et envoyez-le à l'entreprise.");
@@ -4057,6 +4213,7 @@ const __adjApp = createApp({
           const inv = (r && r.invitation) || {};
           v.url = inv.path ? this.inviteUrl(inv) : ((r && r.url) || "");
           if (!v.name && inv.company_name) v.name = inv.company_name;
+          v.inviteId = inv.id || null;                   // « Voir ce que voit … » (vague 2b, B3)
           v.done = (r && r.message) || "Lien créé : transmettez-le à l'entreprise.";
           this._rnMarkInvited(v);
           if (v.url) this.copyInvite(v.url, true);

@@ -103,6 +103,11 @@ ZONES = {
     # Relecture de la vague 2a (docs/REORGANISATION_V2A.md, § L) : la page d'une carte « À venir » (marché pas encore
     # publié), à la place du bandeau « Le dossier complet du marché est indispensable ».
     "vague2a_relecture": ["marche-pas-publie"],
+    # Vague 2b, chantier B3 (docs/REORGANISATION_V2B.md) : la barre de « Votre part » (dossier partagé), le lien « Voir ce
+    # que verra votre partenaire » de l'en-tête du marché et l'écran de l'aperçu (son choix, l'écran du partenaire en
+    # lecture, ce qui est attendu de lui, l'offre commune, un lien qui ne s'ouvre plus).
+    "vague2b_b3": ["partage-barre", "marche-apercu", "vue-apercu-partenaire", "apercu-choix", "apercu-sans-acces",
+                   "apercu-ecran", "apercu-attendu", "apercu-offre"],
 }
 FAMILLES = {"fenetres-atelier": 5, "fenetres-preuves": 2}     # même nom sur plusieurs fenêtres sœurs
 
@@ -345,9 +350,10 @@ def test_boutons_d_essai_vers_l_inscription():
     essais = re.findall(r'<a [^>]*href="([^"]*)"[^>]*>Démarrer l’essai gratuit</a>', landing)
     assert len(essais) == 4 and set(essais) == {"/app?inscription"}
     assert landing.count('href="/app">Se connecter</a>') == 1           # « Se connecter » reste la connexion
-    assert '<a class="btn primary" href="/app?inscription" target="_blank" rel="noopener"><i data-lucide="sparkles"></i>Créer mon compte' in invite
-    assert 'href="/app?inscription" target="_blank" rel="noopener" style="margin-top:16px"' in invite
-    assert '<a href="/app?inscription" target="_blank" rel="noopener"><b>Commencez votre essai gratuit de 30 jours</b>' in invite
+    # Vague 2b (B3, décision 15 a) : le menu fermé à cadenas, le bouton de l'en-tête et la recherche de marchés de
+    # l'espace partenaire ont laissé la place à UN SEUL encart « Créer mon compte », qui mène à l'inscription.
+    assert invite.count('href="/app?inscription"') == 1
+    assert '<a class="btn primary" href="/app?inscription" target="_blank" rel="noopener">${ico("user-plus", 15)}Créer mon compte</a>' in invite
     # Les liens « Me connecter » de l'espace partenaire restent des liens de connexion.
     assert invite.count('href="/app" target="_blank" rel="noopener"') == 2
 
@@ -482,14 +488,15 @@ def test_cartes_d_offre_et_vitrine_disent_juste():
 def test_espace_partenaire_dit_juste():
     inv = _lire("invite.html")
     assert "<title>Espace partenaire — Adjugo</title>" in inv
-    # Menu verrouillé : celui de l'application depuis la vague 1 (rubriques, dont « Partenaires », puis « Réglages »),
-    # vérifié en détail par test_reorganisation_v1_reunion.py.
-    assert '<i data-lucide="handshake"></i>Partenaires</a>' in inv and '<div class="nav-group">CRM</div>' not in inv
+    # Vague 2b (B3, décision 15 a) : plus de menu (ni fermé à cadenas, ni « CRM ») ; l'espace se réduit à « Votre part
+    # dans [marché] », vérifié en détail par test_reorganisation_v2b_espace_partenaire.py.
+    assert 'class="nav-item"' not in inv and '<div class="nav-group">CRM</div>' not in inv
     assert '<b id="g-name">Partenaire</b><small id="g-role" style="display:block">Partenaire invité</small>' in inv
     assert '"Partenaire invité"' in inv and '"Invité · "' not in inv
     visibles = " ".join(t for _l, t in textes_html(inv))
     assert "Mon tableau de prix" in visibles and "Ma DPGF de lot" not in visibles and "DPGF" not in visibles.replace("DPGF du lot - prix de vente HT", "")
-    assert "essai gratuit de 30 jours" in inv and "compte gratuit" not in inv
+    # La durée de l'essai est celle du serveur (/api/public-config), jamais écrite dans la page.
+    assert "Essai gratuit de ${esc(ESSAI_JOURS)} jours" in inv and "30 jours" not in inv and "compte gratuit" not in inv
     assert "Mon tableau de prix" in zone(HTML, "partage-tableau-prix")
 
 

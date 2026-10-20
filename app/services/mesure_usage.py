@@ -38,6 +38,8 @@ ECRANS = frozenset({
     "dashboard", "sourcing", "amont", "pipeline", "aodetail", "atelier", "cotraitants", "reseau", "contacts",
     "documents", "kb", "company", "preuves", "criteria", "invoices", "consortiums", "shared", "sharedao",
     "team", "billing", "admin", "compte", "avenir", "alertes", "bilan", "tarifs",
+    # Vague 2b (B3) : « Voir ce que verra [partenaire] », sur la page du marché (/app/marches/<id>/apercu-partenaire).
+    "apercu",
 })
 
 JOURS_MAX = 400          # relevé : au plus ~13 mois d'un coup
