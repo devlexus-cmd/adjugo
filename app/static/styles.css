@@ -1875,6 +1875,9 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
 .afaire-vide { margin:8px 0 0; }
 .kb-vide .pp-rappel { margin-top:10px; }
 .ecran-attente { display:flex; align-items:center; justify-content:center; min-height:40vh; }
+/* Avant que Vue soit monté, le gabarit brut (tous les écrans à la fois, avec leurs {{ … }}) était peint le temps de
+   charger app.js : rien n'est montré tant que Vue n'a pas posé `data-v-app` sur #app (il le pose au montage). */
+#app:not([data-v-app]) { display:none; }
 .siret-seul { border:0; margin:14px 0 0; padding:0; min-width:0; text-align:left; }
 .siret-seul legend { padding:0; margin:0 0 6px; font-weight:600; }
 .siret-seul-l { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
@@ -1882,9 +1885,16 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
 .siret-seul-ns, .ent-seul-inconnu { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
 .siret-seul-ns input, .ent-seul-inconnu input { width:auto; height:auto; margin:0; }
 .ent-seul-inconnu { margin-top:6px; }
+/* Dans « Ce que je cherche », la case est dans un .field : la règle « .field label » (bloc) ne doit pas l'emporter. */
+.field label.ent-seul-inconnu { display:inline-flex; margin-bottom:0; font-weight:500; }
 .conf-suite { margin:0 0 12px; line-height:1.5; }
 .conf-vivant { display:flex; align-items:center; justify-content:center; gap:8px; margin:0 0 16px; }
+.conf-msg { margin:0 0 12px; line-height:1.5; }
 @media (max-width:640px) {
+  /* 375 px : l'icône et le texte sur la première ligne (le texte passe à la ligne dans sa colonne), le statut puis les
+     boutons en dessous, alignés sur le texte. */
   .pp-l { flex-wrap:wrap; }
+  .pp-tx { flex:1 1 calc(100% - 26px); }
+  .pp-l .pp-st { margin-left:26px; }
   .pp-a { flex-basis:100%; margin-left:26px; }
 }

@@ -484,7 +484,9 @@ process.stdout.write(JSON.stringify(res));
     assert _node(script) == [["perime", "/demo", False], ["terminee", "/demo", False],
                              ["terminee", "/demo", False], [None, "/app", True]]
     assert const == '\nconst DEMO_LIEN_PERIME = "' + PERIME + '";'
-    assert js.count("this.sessionPerdue(await r.json().then(j => j && j.detail") == 2   # api() et export
+    # api(), export, et la revérification de la confirmation d'email (vague 2b, B1 : confirmationVerifier, qui appelle
+    # /api/auth/me sans la barre de progression) : chaque 401 transmet le détail reçu.
+    assert js.count("this.sessionPerdue(await r.json().then(j => j && j.detail") == 3
     # Inactivité d'une heure : une session du lien revient aussi sur /demo (« terminée »).
     assert "this.sessionPerdue(); } }, 60000);" in js
     assert "_idleStale() && jetonDemoLien(this.token)) { this.sessionPerdue(); return; }" in js

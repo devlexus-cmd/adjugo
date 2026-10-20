@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-q8DL80RVudBWgsaCfc4AJZ3iCrB4O6OoIs5lA81bOty2NmjC5qh+tkxKPVJDzShC"></script>
-<script src="/static/i18n.js" integrity="sha384-f/9VMPh+zhTkCBa4Dh2FgnaBGf5iUeBTE4JLdEpm5njCXOpjo7/zl1CRYjYR3VRz" defer></script>
+<script src="/static/i18n.js" integrity="sha384-zKkpz1OwhhaTHHDqiGHZGXRkDuMTcejJgDgsil94inEBBs73UPyWo+w/dpWP3NoD" defer></script>
 </head>
 <body>
 <div id="app">
@@ -4309,7 +4309,10 @@
       <p id="conf-d" class="muted" style="margin:0 0 12px;line-height:1.55">Pour accéder à Adjugo, vérifiez <b>{{ user.email }}</b>.<br>Un lien de confirmation vous a été envoyé par email — pensez à regarder vos spams.</p>
       <p v-if="!(company && company.siret)" class="small conf-suite">Une fois confirmé, vous entrez votre SIRET et vous voyez les marchés de votre zone.</p>
       <p class="muted small conf-vivant" role="status"><span class="spin" aria-hidden="true"></span><span>Dès que vous cliquez sur le lien, ici ou sur votre téléphone, cette page s'ouvre d'elle-même.</span></p>
-      <button class="btn primary block" @click="resendVerification"><i data-lucide="mail"></i>Renvoyer l'email de vérification</button>
+      <!-- La réponse de « Renvoyer » et de « J'ai cliqué sur le lien » s'affiche ici : le message habituel, en bas de
+           page, passe sous cet écran plein. -->
+      <p v-if="confirmation.message" class="small conf-msg" role="status" aria-live="polite">{{ confirmation.message }}</p>
+      <button class="btn primary block" @click="confirmationRenvoyer()"><i data-lucide="mail"></i>Renvoyer l'email de vérification</button>
       <button class="btn block" style="margin-top:9px" @click="confirmationVerifier(true)" :disabled="confirmation.enCours"><i data-lucide="refresh-cw"></i>J'ai cliqué sur le lien</button>
       <button class="btn ghost block" style="margin-top:9px" @click="logout">Se déconnecter</button>
     </div>
@@ -4343,6 +4346,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-1K7BECluE64BVfCddsdGjL+5YJ9SBAFLAxEg8xmQSN2w1xcj9T52vexNBFfnkvGS" defer></script>
+<script src="/static/app.js" integrity="sha384-Tw3icWG8Z0SjK10nD+Q9V4AGNZGem5phVXY8IG8SdlNCmagGWQn9AYQkglAyoAuP" defer></script>
 </body>
 </html>

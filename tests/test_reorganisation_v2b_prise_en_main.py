@@ -519,6 +519,10 @@ def test_ecran_de_confirmation_dit_la_suite_et_se_reverifie():
     assert APRES in e and '<p v-if="!(company && company.siret)" class="small conf-suite">' in e
     assert "cette page s'ouvre d'elle-même" in e and 'role="status"' in e
     assert '@click="confirmationVerifier(true)"' in e and "Renvoyer l'email de vérification" in e
+    # La réponse des deux boutons s'affiche DANS l'écran : le message habituel (z-index 200) passe sous lui (300).
+    assert '<p v-if="confirmation.message" class="small conf-msg" role="status" aria-live="polite">' in e
+    assert '@click="confirmationRenvoyer()"' in e and "resendVerification" not in e
+    assert re.search(r"\.toast \{[^}]*z-index:200;", CSS) and "z-index:300" in e
     assert 'role="dialog" aria-modal="true" aria-labelledby="conf-t"' in e
     from app.routers.auth import APRES_CONFIRMATION
     assert APRES_CONFIRMATION == APRES                                          # la même phrase, écran et courriel
@@ -562,6 +566,31 @@ const vivantes = () => minuteries.filter(m => m.vive);
     assert r["premier"] == [5000] and r["cache"] == 0
     assert r["apresRetour"] == 1 and r["apresFocus"] == 1 and r["cacheOpt"] == "no-store"
     assert r["user"]["email_verified"] is True and r["j"] == ["Adresse email confirmée", "pp"]
+
+
+def test_reponses_de_l_ecran_de_confirmation_dans_l_ecran_sous_node():
+    noms = ("confirmationRenvoyer", "confirmationVerifier", "_confPlanifier")
+    r = _node(_PP + "\nconst o = {\n" + ",\n".join(_methode(n) for n in noms) + "\n};\n" + r"""
+const j = [], appels = [];
+let reponse = { message: "Email de confirmation renvoyé." }, refus = null;
+global.document = { visibilityState: "visible" };
+global.setTimeout = () => 1; global.clearTimeout = () => {};
+global.fetch = async () => ({ status: 200, ok: true, json: async () => ({ id: 1, email_verified: false }) });
+Object.assign(o, { token: "t", user: { id: 1, email_verified: false }, confirmation: { enCours: false, depuis: 0, vu: 0, message: "" },
+  notify: m => j.push(m), loadPriseEnMain() {}, sessionPerdue() {},
+  api: async (m, p) => { appels.push(m + " " + p); if (refus) throw new Error(refus); return reponse; } });
+(async () => {
+  await o.confirmationVerifier(true);
+  const clic = o.confirmation.message;
+  await o.confirmationRenvoyer();
+  const renvoi = o.confirmation.message;
+  refus = "Plusieurs emails de confirmation sont déjà partis."; await o.confirmationRenvoyer();
+  console.log(JSON.stringify({ clic, renvoi, refus: o.confirmation.message, j, appels }));
+})();
+""")
+    assert r["clic"] == "Pas encore confirmée : cliquez sur le lien du courriel, puis revenez ici."
+    assert r["renvoi"] == "Email de confirmation renvoyé." and r["refus"].startswith("Plusieurs emails")
+    assert r["j"] == [] and r["appels"] == ["POST /api/auth/resend-verification"] * 2     # aucun message sous l'écran
 
 
 def test_courriel_de_confirmation_dit_la_suite_seulement_quand_elle_est_vraie(client, monkeypatch):
@@ -643,6 +672,16 @@ def test_aucun_ecran_avant_que_l_adresse_soit_resolue():
     assert boot.index("this._ouvrirAdresse(_demande);") < boot.index("if (!this._adresseAttente) this.ecranPret = true;")
     assert "catch (e) { this.ecranPret = true; return; }" in boot
     assert "|| !this.ecranPret) return false;" in JS[JS.index("    showWelcome() {"):JS.index("    showWelcome() {") + 400]
+    # Avant le montage de Vue, le gabarit brut (tous les écrans, avec leurs {{ … }}) n'est pas peint : la feuille de
+    # style, chargée dans <head>, le cache jusqu'à ce que Vue pose `data-v-app` sur #app (il le pose au montage).
+    assert "#app:not([data-v-app]) { display:none; }" in CSS
+    assert HTML.index('<link rel="stylesheet" href="/static/styles.css">') < HTML.index("</head>") < HTML.index('<div id="app">')
+    vue = sorted(p.name for p in (STATIC / "vendor").glob("vue-*.js"))[-1]
+    assert 'r.setAttribute("data-v-app","")' in (STATIC / "vendor" / vue).read_text(encoding="utf-8")
+    # Seule la page de l'application a un #app (les autres pages qui lisent styles.css n'en ont pas).
+    for page in STATIC.glob("*.html"):
+        if page.name != "app.html":
+            assert 'id="app"' not in page.read_text(encoding="utf-8"), page.name
 
 
 def test_marche_demande_a_l_api_l_ecran_s_ouvre_a_la_reponse_sous_node():
@@ -711,7 +750,7 @@ NOUVEAUX = [
     "Lire le dossier d'un marché", "Inviter un partenaire, ou vous faire trouver",
     "Ajouter vos 3 derniers dossiers de présentation", "Pas commencé", "En cours", "Terminé",
     "Métier, zone et montant porté seul : c'est dit.", "Un dossier complet lu.", "Dossier importé, pas encore lu en entier.",
-    "Importez le dossier complet d'un marché, à l'étape Lire de sa page.", "Invitation envoyée.",
+    "Importez le dossier complet d'un marché, à l'étape Lire de sa page.", "Partenaire invité sur un marché.",
     "Profil publié sur le réseau Adjugo.", "Profil en attente de validation par Adjugo.",
     "Profil partenaire enregistré, pas encore publié.",
     "Invitez une entreprise sur un marché, ou publiez votre profil partenaire.", "Ouvrir le marché", "Publier mon profil",
@@ -725,7 +764,7 @@ NOUVEAUX = [
     "Ouvrir l'avis du marché", "Comment Adjugo dit seul ou à plusieurs", "Je ne sais pas",
     "Jusqu'à quel montant répondez-vous seul ?", "Montant en € HT", APRES,
     "Dès que vous cliquez sur le lien, ici ou sur votre téléphone, cette page s'ouvre d'elle-même.",
-    "J'ai cliqué sur le lien", "Chargement de l'écran", "Adresse email confirmée",
+    "J'ai cliqué sur le lien", "Chargement de l'écran", "Adresse email confirmée", "Email de confirmation renvoyé.",
     "Pas encore confirmée : cliquez sur le lien du courriel, puis revenez ici.",
 ]
 
@@ -762,7 +801,11 @@ def test_aucun_mot_banni_aucun_emoji_et_verifie_seulement_pour_le_registre():
 def test_375_px_la_liste_passe_a_la_ligne_sans_defiler_de_cote():
     i = CSS.index("/* ══════════ Prise en main (réorganisation, vague 2b, B1")
     bloc = CSS[i:]
-    assert "@media (max-width:640px) {\n  .pp-l { flex-wrap:wrap; }\n  .pp-a { flex-basis:100%; margin-left:26px; }\n}" in bloc
+    m = bloc[bloc.index("@media (max-width:640px) {"):]
+    m = m[:m.index("\n}") + 2]
+    for regle in (".pp-l { flex-wrap:wrap; }", ".pp-tx { flex:1 1 calc(100% - 26px); }", ".pp-l .pp-st { margin-left:26px; }",
+                  ".pp-a { flex-basis:100%; margin-left:26px; }"):
+        assert regle in m, regle
     assert not re.search(r"(?<![-\w])(min-)?width:\s*\d{3,}px", bloc)            # aucune largeur fixe de 100 px et plus
     assert ".siret-seul-l .inp { flex:1 1 160px; min-width:0; }" in bloc
 

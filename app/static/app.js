@@ -451,7 +451,7 @@ function tachePremiersPas(t, nbMarches) {
     actions = t.projet ? [{ label: "Ouvrir le marché", ic: "folder-open", cible: { view: "aodetail", projet: t.projet } }]
       : [{ label: "Trouver des marchés", ic: "search", cible: { rubrique: "trouver" } }];
   } else if (t.k === "plusieurs") {
-    detail = t.invitation ? "Invitation envoyée." : t.profil === "publie" ? "Profil publié sur le réseau Adjugo."
+    detail = t.invitation ? "Partenaire invité sur un marché." : t.profil === "publie" ? "Profil publié sur le réseau Adjugo."
       : t.profil === "en_attente" ? "Profil en attente de validation par Adjugo."
       : t.profil === "brouillon" ? "Profil partenaire enregistré, pas encore publié."
       : "Invitez une entreprise sur un marché, ou publiez votre profil partenaire.";
@@ -1225,7 +1225,7 @@ const __adjApp = createApp({
       // Prise en main (vague 2b, B1) : « Vos premiers pas » (GET /api/prise-en-main, état gardé sur le serveur), le profil
       // réseau tel que le serveur le dit (états vides), la revérification de la confirmation d'email.
       pp: { d: null, profil: "" },
-      confirmation: { enCours: false, depuis: 0, vu: 0 },
+      confirmation: { enCours: false, depuis: 0, vu: 0, message: "" },
       // Menu par rubriques (réorganisation, vague 1, 1.3) : groupe « Réglages » replié par défaut, état gardé ;
       // onglet interne de Trouver des marchés ; note « Ce qui a changé » (1.8), état gardé dans ce navigateur.
       navReglages: (function(){ try { return localStorage.getItem("adjugo_nav_reglages") === "1"; } catch(e){ return false; } })(),
@@ -1778,6 +1778,15 @@ const __adjApp = createApp({
       if (seulementArreter || !this._confVu || document.visibilityState !== "visible") return;
       this._confT = setTimeout(() => { this._confT = null; this.confirmationVerifier(); }, delaiReverification(Date.now() - this.confirmation.depuis));
     },
+    // « Renvoyer l'email de vérification » depuis l'écran plein : la réponse du serveur (envoyé, déjà confirmée, trop
+    // d'envois) s'affiche dans l'écran ; une adresse déjà confirmée ailleurs l'ouvre à la vérification qui suit.
+    async confirmationRenvoyer() {
+      try {
+        const r = await this.api("POST", "/api/auth/resend-verification");
+        this.confirmation.message = (r && r.message) || "Email de confirmation renvoyé.";
+        this.confirmationVerifier();
+      } catch (e) { this.confirmation.message = e.message; }
+    },
     async confirmationVerifier(clic) {
       if (!this.token || this.confirmation.enCours) return;
       if (!clic && Date.now() - (this.confirmation.vu || 0) < 2000) { this._confPlanifier(); return; }   // focus + visibilité : un seul appel
@@ -1788,11 +1797,13 @@ const __adjApp = createApp({
         const u = r.ok ? await r.json() : null;
         if (u && u.id && u.email_verified) {
           this.user = u;      // l'écran s'ouvre (l'observateur arrête la revérification)
+          this.confirmation.message = "";
           this.notify("Adresse email confirmée");
           this.loadPriseEnMain();
           return;
         }
-        if (clic) this.notify("Pas encore confirmée : cliquez sur le lien du courriel, puis revenez ici.", "err");
+        // Dit DANS l'écran plein (le message habituel, en bas de page, passe sous lui).
+        if (clic) this.confirmation.message = "Pas encore confirmée : cliquez sur le lien du courriel, puis revenez ici.";
       } catch (e) {} finally { this.confirmation.enCours = false; }
       this._confPlanifier();
     },
