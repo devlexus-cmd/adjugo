@@ -916,8 +916,9 @@ partenaire » aussi).
 
 ## R. Réunion des chantiers
 
-Base : `feat/produit-acheteur-collectivites` = `0afc1ed` (production), puis, dans cet ordre, B4 (`917c5ac`), B1
-(`c37e51c`), B2 (`163686e`) et B3 (`d784c88`), chacun fusionné par `git merge` avec un commit de fusion. Tests de la
+Base : `feat/produit-acheteur-collectivites` = `0afc1ed` (production). La réunion part de B4 (`917c5ac`, un commit
+au-dessus de `0afc1ed`), puis fusionne, dans cet ordre, B1 (`c37e51c`), B2 (`163686e`) et B3 (`d784c88`), chacun par
+`git merge` avec son commit de fusion. Tests de la
 réunion : `tests/test_reorganisation_v2b_reunion.py` (9 tests, sans réseau ; fonctions de `app.js` sous Node).
 
 ### R.1 Les fusions
@@ -972,14 +973,26 @@ migration dans la vague.
 
 ### R.4 Vérifications
 
-- **Suite complète** (SQLite, `TZ=UTC`, sur une copie du commit par `git archive`) : SUITE_RESULTAT ;
+- **Suite complète** (SQLite, `TZ=UTC`, sur une copie du commit par `git archive`) : **2 302 réussis sur 2 302** ;
   `scripts/sri_update.py --check` ; `node --check` de tous les fichiers JS servis et du script d'`invite.html` ;
   `scripts/i18n_ajouter.py --check` (774 clés) ; gabarit de `app.html` compilé par le Vue du dépôt (tests existants) ;
   `tests/test_demo_*.py` et `tests/test_demo_sans_cout.py` verts.
 - **Postgres 16.2** depuis l'état exact de la production (`scratchpad/r2b/run_r2b_pg.py` de la session : code `0afc1ed`
   extrait par `git archive`, tête `c4montantseul`, base montée et remplie par ce code — chef de file avec critères et
   montant porté seul, partenaire avec compte qui a soumis sa part, sous-traitant sans compte, invitation en attente,
-  3 marchés dont un lu et un avec son dossier rangé, compte non confirmé, compte de 40 jours) : PG_RESULTAT
+  3 marchés dont un lu et un avec son dossier rangé, compte non confirmé, compte de 40 jours) : une seule tête
+  `c5priseenmain`, colonnes de B1 avec leurs valeurs par défaut, rien d'autre ne bouge, schéma égal à celui d'une base
+  neuve ; sur ces données, B1 (premiers pas lus, replié gardé, analyse toujours refusée sans adresse confirmée, plus de
+  liste après 30 jours), B3 (aperçus inclus valeur pour valeur dans la vue du partenaire, rien d'interdit, ni compteur ni
+  journal ni invitation créée, 404 au partenaire, essai de 30 jours lu dans la configuration), B4 (renvoi en HTML et
+  texte, « Rappel : », même jeton, lien vers « Votre part dans « … » » ; rappel planifié seulement à la part non soumise)
+  et leurs points de contact (un aperçu ne termine pas « Seul ou à plusieurs », l'invitation envoyée la termine ;
+  l'acceptation d'une invitation propose la carte « Faites-vous trouver », gardée en base ; l'exemple et l'aperçu
+  comptés par la mesure anonyme, qui n'a aucune colonne personnelle) ; code de production relancé sur la base migrée,
+  puis après le retour arrière réel : il lit et écrit ; remontée et rejeu forcé sans effet : **31 contrôles sur 31**.
+  27 fichiers de tests communs, code de production puis code réuni : **mêmes échecs** (20 contre 20, tous dans
+  `test_secu_rgpd.py` et `test_secu2_donnees.py`, déjà en échec avec la production) ; les 5 fichiers de la vague 2b,
+  sur une base à part : **96 sur 96**.
 - **Navigateur réel** (Chromium, serveur local sur le code réuni, base jetable, réseau sortant et IA coupés, aucun
   courriel envoyé : `send_email` remplacé par un relevé dans le seul processus du serveur ; comptes de test locaux
   créés par la vraie route d'inscription, identifiants dans un fichier de la session, jamais affichés ; démonstration
