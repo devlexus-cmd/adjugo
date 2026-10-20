@@ -24,6 +24,9 @@ router = APIRouter(prefix="/api/auth", tags=["Authentification"])
 
 
 VERIFY_LINK_HOURS = 48
+# Ce qui suit la confirmation (vague 2b, décision 12 (a)) : la même phrase à l'écran (app.html,
+# ecran-confirmation-email) et dans le courriel de confirmation (texte et HTML).
+APRES_CONFIRMATION = "Une fois confirmé, vous entrez votre SIRET et vous voyez les marchés de votre zone."
 
 
 def _norm_email(e) -> str:
@@ -57,6 +60,22 @@ def clean_full_name(v) -> str:
     return v[:120]
 
 
+def _suite_apres_confirmation(user: User) -> str:
+    """La phrase APRES_CONFIRMATION, seulement quand elle est vraie : l'entreprise n'a pas encore de SIRET (compte
+    neuf). Une adresse changée, ou un collègue d'une entreprise déjà renseignée, ne reçoit pas « vous entrez votre
+    SIRET ». Lue dans la fiche de l'entreprise de l'organisation (data_owner_id)."""
+    try:
+        from sqlalchemy.orm import object_session
+        from app.core.org import data_owner_id
+        db = object_session(user)
+        if db is None:
+            return APRES_CONFIRMATION
+        row = db.query(Company.siret).filter(Company.user_id == data_owner_id(user, db)).first()
+        return "" if (row and (row[0] or "").strip()) else APRES_CONFIRMATION
+    except Exception:
+        return APRES_CONFIRMATION
+
+
 def _send_verification(user: User) -> None:
     """Génère un lien signé (48 h) et envoie l'email de confirmation. Silencieux si l'email
     est désactivé/échoue → ne bloque JAMAIS l'inscription.
@@ -70,10 +89,12 @@ def _send_verification(user: User) -> None:
                                     expires_delta=timedelta(hours=VERIFY_LINK_HOURS))
         base = (get_settings().APP_BASE_URL or "https://adjugo.pro").rstrip("/")
         link = f"{base}/app?verify={token}"
+        suite = _suite_apres_confirmation(user)
         send_email(user.email, "Confirmez votre adresse email — Adjugo",
                    "Bienvenue sur Adjugo !\n\nConfirmez votre adresse email (lien valable 48 heures) :\n"
-                   f"{link}\n\nSi vous n'êtes pas à l'origine de cette inscription, ignorez ce message.\n\n— Adjugo",
-                   html=verify_email_html(link, user.full_name or ""))
+                   f"{link}\n\n" + (suite + "\n\n" if suite else "")
+                   + "Si vous n'êtes pas à l'origine de cette inscription, ignorez ce message.\n\n— Adjugo",
+                   html=verify_email_html(link, user.full_name or "", suite))
     except Exception:
         pass
 
@@ -121,17 +142,26 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    # Email de confirmation. Choix du 24/06 (gardé, décision 12 de l'étude « organisation du logiciel ») : tant que
-    # l'adresse n'est pas confirmée, l'application affiche un écran plein « Confirmez votre adresse email »
-    # (app.html, BLOCAGE plein écran) et le serveur refuse toute action coûteuse (exiger_ia / consume_analysis dans
-    # app/core/quota.py : 403). Le jeton est rendu quand même : il sert à renvoyer l'email et à se déconnecter.
+    # Email de confirmation. Choix du 24/06, gardé (décision 12 (a) de l'étude « organisation du logiciel », vague 2b) :
+    # tant que l'adresse n'est pas confirmée, l'application affiche un écran plein « Confirmez votre adresse email »
+    # (app.html, `ecran-confirmation-email`) qui dit la suite (APRES_CONFIRMATION) et revérifie seul la confirmation
+    # (au retour sur l'onglet, puis à intervalle croissant tant qu'il est ouvert : GET /api/auth/me). Le serveur ne s'en
+    # remet pas à cet écran : sans adresse confirmée, il refuse toute analyse d'un marché (consume_analysis,
+    # app/core/quota.py : 403), les rédactions de l'atelier, de l'entretien et des fiches de Mon savoir-faire (403
+    # « email_non_confirme »), l'invitation d'un membre du réseau, la demande de publication du profil partenaire,
+    # l'accord donné sur une convention et l'acceptation d'un lien nominatif (403) ; il n'envoie aucun courriel au nom
+    # d'Adjugo vers un tiers (invitation d'un partenaire ou d'un collègue : le lien reste à copier). Ne vérifient PAS
+    # l'adresse : les appels qui passent seulement par exiger_ia (questions sur un marché déjà analysé, estimation du
+    # prix, veille) ; ils restent bornés par le garde-fou de l'essai (docs/REORGANISATION_V2B.md, B1, laissé). Le jeton
+    # est rendu quand même : il sert à renvoyer l'email, à revérifier la confirmation et à se déconnecter.
     _send_verification(user)
 
     token = create_access_token(data={"sub": str(user.id), "tv": int(user.token_version or 0)})
-    # Boucle de croissance (vague 3) : suggestion d'INTERFACE « publiez votre profil partenaire »,
-    # affichée après l'inscription — aucun email n'est envoyé pour ça.
-    from app.services.partner_network import suggest_profile
-    return {"access_token": token, "token_type": "bearer", "suggest_profile": suggest_profile(db, user)}
+    # Boucle de croissance (vague 3) : suggestion d'INTERFACE « publiez votre profil partenaire », affichée après
+    # l'inscription — aucun email n'est envoyé pour ça. Vague 2b : notée sur le serveur (users.suggestion_reseau), elle
+    # s'affiche aussi dans l'onglet ouvert par le lien de confirmation, jusqu'à ce qu'on la ferme.
+    from app.services.prise_en_main import proposer_suggestion_reseau
+    return {"access_token": token, "token_type": "bearer", "suggest_profile": proposer_suggestion_reseau(db, user)}
 
 
 class VerifyIn(BaseModel):

@@ -155,7 +155,9 @@ def test_une_seule_tete_alembic_dans_l_ordre_des_chantiers():
     from alembic.config import Config
     from alembic.script import ScriptDirectory
     sd = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert sd.get_heads() == ["c4montantseul"]
+    # Vague 2b (B1) : une seule tête, c5priseenmain, qui suit c4montantseul (la chaîne de la vague 2a ne change pas).
+    assert len(sd.get_heads()) == 1
+    assert "c4montantseul" in {r.revision for r in sd.walk_revisions()}
     assert sd.get_revision("c4montantseul").down_revision == "c4axeetapes"
     assert sd.get_revision("c4axeetapes").down_revision == "b3mesureecrans"
 

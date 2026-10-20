@@ -134,6 +134,13 @@ class User(Base):
     # Réinitialisation de mot de passe par email (sha256 d'un token à usage unique).
     reset_token_hash = Column(String(64), default="")
     reset_expires_at = Column(DateTime, nullable=True)
+    # Prise en main (réorganisation, vague 2b, B1 ; migration c5priseenmain ; app/services/prise_en_main.py) : l'état
+    # de « Vos premiers pas » et de la carte « Faites-vous trouver », gardé SUR LE SERVEUR (un autre onglet, un autre
+    # appareil, la page ouverte par le lien de confirmation les retrouvent). Préférences d'affichage, jamais un fait.
+    # `premiers_pas_replie` : la liste de l'accueil est repliée. `suggestion_reseau` : "" (jamais proposée),
+    # "a_montrer" (proposée après l'inscription ou l'acceptation d'une invitation), "fermee" (fermée ou suivie).
+    premiers_pas_replie = Column(Boolean, default=False, nullable=True, server_default=sa_false())
+    suggestion_reseau = Column(String(12), default="", nullable=True, server_default="")
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 

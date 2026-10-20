@@ -203,6 +203,11 @@ SANS_COUT = {
     ("PUT", "/api/chiffrage/{project_id}"): "recalcul déterministe",
     ("PUT", "/api/chiffrage/{project_id}/review"): _I,
     ("POST", "/api/registre/import"): "lecture du registre public SIRENE puis base de données",
+    # Prise en main (réorganisation, vague 2b, B1) : l'état de l'accueil du compte connecté ; aucune IA, aucun courriel,
+    # aucun fichier, rien chez un tiers ; la démo, qui n'a ni premiers pas ni carte, est refusée dans la route.
+    ("PUT", "/api/prise-en-main"): "état replié de « Vos premiers pas » (refusé à la démo dans la route)",
+    ("POST", "/api/prise-en-main/suggestion-reseau/fermer"): ("carte « Faites-vous trouver » fermée (refusé à la démo "
+                                                             "dans la route)"),
     ("POST", "/api/mesure/ecran"): ("mesure d'usage (réorganisation, vague 1) : compteur agrégé par écran et par jour, "
                                     "sans donnée personnelle ; la session démo n'est pas comptée"),
     ("POST", "/api/admin/run-backup"): "administrateur de la plateforme seulement (la démo est refusée)",

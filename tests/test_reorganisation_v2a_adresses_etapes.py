@@ -591,7 +591,8 @@ def test_la_cloche_a_faire_et_activite():
     f = zone(HTML, "fenetre-notifications")
     assert f in entete and 'role="dialog" aria-label="À faire et activité"' in f
     assert re.findall(r'role="tab"[^>]*>\s*<span>([^<]+)</span>', f) == ["À faire", "Activité"]
-    assert "Rien n'attend votre action pour l'instant." in f and "Aucune activité récente de vos partenaires." in f
+    # Vague 2b (B1, étude § 7.3) : la phrase de l'état vide est celle de l'étude, la même que sur l'accueil.
+    assert "Rien n'attend de réponse de votre part." in f and "Aucune activité récente de vos partenaires." in f
     assert '@click="aFaireOuvrir(t)"' in f and 'v-for="n in notifs"' in f
     # La pastille de la cloche ne compte que ce qui est à faire ; l'activité nouvelle n'est qu'un point, sans nombre.
     assert "notifUnseen>99" not in entete and '<span v-if="aFaire().length" class="notif-pastille"' in entete
@@ -606,7 +607,9 @@ def test_l_accueil_lit_la_meme_liste_a_faire():
     a = zone(HTML, "accueil-a-faire")
     dash = zone(HTML, "vue-dashboard")
     assert a in dash and dash.index(zone(HTML, "accueil-premiers-pas")) < dash.index(a) < dash.index(zone(HTML, "accueil-reseau"))
-    assert a.startswith('<div data-test="accueil-a-faire" v-if="aFaire().length"')          # rien quand il n'y a rien
+    # Vague 2b (B1, étude § 7.3) : jamais « 0 » ; quand rien n'attend, le bloc le dit en une phrase.
+    assert a.startswith('<div data-test="accueil-a-faire" class="card pad dash-block"')
+    assert '<p v-if="!aFaire().length" class="muted small afaire-vide">Rien n\'attend de réponse de votre part.</p>' in a
     assert 'v-for="t in aFaire().slice(0, 6)"' in a and '@click="aFaireOuvrir(t)"' in a
     m = _method("aFaire")
     assert "listeAFaire({ shared: this.shared, recues: this.reseau.recues.list, projects: this.projects," in m

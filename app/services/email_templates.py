@@ -74,15 +74,20 @@ def reset_password_html(link: str, name: str = "") -> str:
     return _shell(inner, preheader="Réinitialisez votre mot de passe Adjugo.")
 
 
-def verify_email_html(link: str, name: str = "") -> str:
-    """Email de confirmation d'adresse à l'inscription."""
+def verify_email_html(link: str, name: str = "", suite: str = "") -> str:
+    """Email de confirmation d'adresse à l'inscription. `suite` : ce qui vient après la confirmation (vague 2b, décision
+    12 (a) : la même phrase que l'écran « Confirmez votre adresse email ») ; vide, rien n'est ajouté."""
     hello = "Bienvenue" + (f" {_first(name)}" if _first(name) else "")
+    suite_html = (f"""
+        <p style="margin:0 0 20px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:{_MUTED};text-align:center;">
+          {html.escape(suite, quote=True)}
+        </p>""" if suite else "")
     inner = f"""\
       <tr><td style="padding:6px 36px 4px;">
         <h1 style="margin:14px 0 6px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:21px;font-weight:800;color:{_INK};text-align:center;">{hello}</h1>
         <p style="margin:0 0 20px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.62;color:{_INK};text-align:center;">
           Plus qu'une étape pour activer votre compte Adjugo : confirmez votre adresse email.
-        </p>
+        </p>{suite_html}
         {_button("Vérifier mon adresse email", link)}
         <p style="margin:18px 0 4px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:12.5px;line-height:1.6;color:{_MUTED};text-align:center;">
           Ce lien est valable <b>48 heures</b>. S'il ne fonctionne pas, copiez-collez cette adresse&nbsp;:

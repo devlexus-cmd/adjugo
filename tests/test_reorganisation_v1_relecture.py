@@ -555,8 +555,9 @@ def test_statut_et_non_etape_a_cote_de_la_barre_d_etapes():
 
 def test_bandeau_des_cookies_jamais_sur_le_groupe_reglages():
     b = zone(HTML, "bandeau-cookies")
-    assert b.startswith('<div data-test="bandeau-cookies" v-if="!cookiesOk && !mobileNav" class="bandeau-cookies" '
-                        ":class=\"{'avec-menu':!!token}\">")
+    # Vague 2b (B1, étude § 7.1) : il s'efface aussi tant que la fenêtre du SIRET est ouverte (il passait par-dessus).
+    assert b.startswith('<div data-test="bandeau-cookies" v-if="!cookiesOk && !mobileNav && !(token && showWelcome)" '
+                        "class=\"bandeau-cookies\" :class=\"{'avec-menu':!!token}\">")
     assert "position:fixed" not in b                                   # placé par la feuille de style
     i = CSS.index(".bandeau-cookies {")
     assert "position:fixed; left:12px; right:12px; bottom:12px; z-index:70;" in CSS[i:i + 200]
