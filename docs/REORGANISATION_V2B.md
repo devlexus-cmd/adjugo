@@ -972,6 +972,62 @@ migration dans la vague.
 
 ### R.4 Vérifications
 
-- Suite complète : en cours.
-- **Postgres 16.2** depuis l'état exact de la production : en cours.
-- **Navigateur réel** : en cours.
+- **Suite complète** (SQLite, `TZ=UTC`, sur une copie du commit par `git archive`) : SUITE_RESULTAT ;
+  `scripts/sri_update.py --check` ; `node --check` de tous les fichiers JS servis et du script d'`invite.html` ;
+  `scripts/i18n_ajouter.py --check` (774 clés) ; gabarit de `app.html` compilé par le Vue du dépôt (tests existants) ;
+  `tests/test_demo_*.py` et `tests/test_demo_sans_cout.py` verts.
+- **Postgres 16.2** depuis l'état exact de la production (`scratchpad/r2b/run_r2b_pg.py` de la session : code `0afc1ed`
+  extrait par `git archive`, tête `c4montantseul`, base montée et remplie par ce code — chef de file avec critères et
+  montant porté seul, partenaire avec compte qui a soumis sa part, sous-traitant sans compte, invitation en attente,
+  3 marchés dont un lu et un avec son dossier rangé, compte non confirmé, compte de 40 jours) : PG_RESULTAT
+- **Navigateur réel** (Chromium, serveur local sur le code réuni, base jetable, réseau sortant et IA coupés, aucun
+  courriel envoyé : `send_email` remplacé par un relevé dans le seul processus du serveur ; comptes de test locaux
+  créés par la vraie route d'inscription, identifiants dans un fichier de la session, jamais affichés ; démonstration
+  par **lien privé** avec une clé jetable écrite dans un fichier, `DEMO_PUBLIC=0`) :
+  - **compte neuf** : écran « Confirmez votre adresse email » avec la phrase de la suite ; « Renvoyer » et « J'ai cliqué
+    sur le lien » répondent dans l'écran (« Email de confirmation renvoyé. », « Pas encore confirmée… ») ; le courriel
+    relevé dit la même phrase ; adresse confirmée en base pendant que l'écran est ouvert : il s'ouvre seul, la fenêtre
+    du SIRET suit avec « Jusqu'à quel montant répondez-vous seul ? » et « Je ne sais pas », sans le bandeau des cookies ;
+    puis « Vos premiers pas » (0 sur 5, chaque tâche avec son action), « Voir un exemple », la carte « Faites-vous
+    trouver » ; états vides de « À faire », « À plusieurs » et Mes marchés avec le rappel de leur tâche et « Voir un
+    exemple » ; « Voir un exemple » → `/app/exemple`, précédent → l'accueil ;
+  - **chef de file** : page du marché, « Voir ce que verra votre partenaire » → `/app/marches/<id>/apercu-partenaire/<n°>`
+    (en-tête, faits, barre en lecture), précédent → le marché ; « voir un exemple » de « Répondre à plusieurs ? » →
+    l'exemple, dont l'écran du partenaire porte la barre (Accepter, Ma part, Donner mon accord « Terminé », Déposé par
+    le chef de file « En cours ») et la mention « Exemple · entreprises et client fictifs » sur chacun de ses 6 blocs ;
+    précédent → le marché ;
+  - **rechargement d'adresse profonde**, chaque image notée par un iframe du même domaine : `/app/exemple`,
+    `/app/marches/<id>/apercu-partenaire`, `…/apercu-partenaire/<n°>`, `/app/marches/<id>` (chef de file),
+    `/app/marches/partenaire/<id>/<repère>`, `/app/marches/partenaire` (partenaire) : gabarit caché, attente, puis
+    l'écran demandé, **jamais l'accueil** ;
+  - **partenaire sans compte** (`invite.html`) : « Votre part dans « … » », la barre, un seul écran sans menu, l'encart
+    « Créer mon compte Adjugo » avec « Essai gratuit de 30 jours » lu du serveur, un seul lien vers l'inscription ;
+    **partenaire avec compte** : Mes marchés › Où je suis partenaire, la carte « Faites-vous trouver » proposée après
+    l'acceptation (gardée sur le serveur), « Votre part dans « … » » et sa barre ;
+  - **courriel d'invitation** relevé tel que la vraie route l'a composé (fenêtre d'invitation du chef de file) : HTML
+    (chef de file, marché, date limite, rôle, entreprise invitée, « Ce qui est attendu de vous », « Ce que vous
+    verrez », « Ouvrir votre part », pied qui dit pourquoi on le reçoit) et version texte qui dit la même chose ;
+  - **adresses et retour arrière de la vague 2a** : Mes marchés › « À plusieurs » → Mon entreprise › Ce que je cherche,
+    précédent trois fois puis suivant : chaque écran et son titre retrouvés ;
+  - **démonstration comme un pitcheur** : `/demo` → Espace entreprises : ni premiers pas ni carte « Faites-vous
+    trouver », « À faire » et « À plusieurs » ; Kerhel : « Voir ce que verra votre partenaire » (Breizh Désamiantage,
+    même barre que l'exemple), « voir un exemple » (deux requêtes seulement : le fichier de l'exemple et le relevé
+    anonyme, ignoré pour la démo), précédent ; aucun courriel tenté ;
+  - **1 280 et 375 px, clair et sombre** : aucun défilement horizontal (largeur du document = largeur de la fenêtre) ;
+    console sans erreur de script (seules erreurs : la réponse 404 attendue de `…/redaction` quand aucune partie du
+    dossier de présentation n'est confiée au partenaire, déjà vraie en production et traitée par la page).
+
+### R.5 Laissé, avec sa raison
+
+- **`demo_seed.py` n'est pas réécrit** (étude, § 9) : la démo de pitch reste identique (§ B2.8) ; son analyse de Kerhel
+  garde une injonction (« La bonne stratégie est claire… »). À décider avec Eliot, avec le pitch.
+- **`POST /api/invite/{jeton}/search`** gardée côté serveur pour les pages de partenaire ouvertes avant la mise en ligne
+  (§ B3.10).
+- **Tests Postgres** : les échecs de `test_secu_rgpd.py` (son `PRAGMA foreign_keys=ON` propre à SQLite) et de
+  `test_secu2_donnees.py` sont ceux du code de production, à l'identique.
+- **D14** (offres, tarifs) : rien n'a changé (aucun contrôle d'offre, aucun prix, aucune carte d'offre, ni la vitrine).
+
+### R.6 Pour Eliot
+
+Une seule migration à la mise en ligne, `c5priseenmain` (B1, trois colonnes avec leurs valeurs par défaut, retour
+arrière réel vérifié sur Postgres) : `alembic upgrade head`, comme à chaque vague. Aucune variable nouvelle.
