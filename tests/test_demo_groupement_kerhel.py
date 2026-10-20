@@ -23,7 +23,7 @@ import pytest
 from app.core.database import SessionLocal
 from tests.test_demo_sans_cout import _cle_neuve, espions  # noqa: F401  (fixture)
 
-URSSAF = "Votre Attest. sociale (URSSAF) (coffre-fort) expire avant la date limite"
+URSSAF = "Votre Attest. sociale (URSSAF), dans Mes documents, expire avant la date limite"   # réunion 2a : le nom de l'écran
 
 
 def _db():

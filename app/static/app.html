@@ -1068,7 +1068,7 @@
                     <div class="row" style="gap:6px;align-items:center">
                       <span class="strong small">{{ c.company_name || 'Partenaire' }}</span>
                       <span class="pill neutral" style="font-size:10px">{{ c.role==='sous_traitant'?'Sous-traitant':'Partenaire' }}</span>
-                      <span v-if="c.lot" class="pill neutral" style="font-size:10px">{{ c.lot }}</span>
+                      <span v-if="c.lot" class="pill neutral" style="font-size:10px">{{ partieLot(c.lot) }}</span>
                       <span class="pill" :class="c.status==='submitted'?'go':'a_etudier'" style="font-size:10px">{{ c.status==='submitted'?'Soumise':'Brouillon' }}</span>
                     </div>
                     <div v-if="c.qualifications && c.qualifications.length" class="muted small" style="margin-top:4px">Qualifications : {{ c.qualifications.join(', ') }}</div>
@@ -1094,7 +1094,7 @@
                   <div v-if="(ao.share.consortium.lots||[]).length" style="margin-bottom:12px">
                     <div class="muted small" style="font-weight:600;margin-bottom:5px">Parties couvertes</div>
                     <div v-for="l in ao.share.consortium.lots" :key="l.lot" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
-                      <span class="pill go" style="font-size:10px"><i data-lucide="check" style="width:11px;height:11px"></i>{{ l.lot }}</span>
+                      <span class="pill go" style="font-size:10px"><i data-lucide="check" style="width:11px;height:11px"></i>{{ partieLot(l.lot) }}</span>
                       <span class="muted">{{ l.partners.join(', ') }}</span>
                     </div>
                   </div>
@@ -1106,7 +1106,7 @@
                       <span class="strong small">{{ p.company }}</span>
                       <span class="pill" :class="p.status==='submitted'?'go':p.status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ p.status==='submitted'?'Soumise':p.status==='draft'?'Brouillon':'En attente' }}</span>
                       <span v-if="p.pieces_count" class="pill neutral" style="font-size:10px"><i data-lucide="paperclip" style="width:10px;height:10px"></i>{{ p.pieces_count }} pièce(s)</span>
-                      <span v-if="p.lot" class="muted small"> · {{ p.lot }}</span>
+                      <span v-if="p.lot" class="muted small"> · {{ partieLot(p.lot) }}</span>
                       <span v-if="p.prix_lot_ht!=null" class="pill neutral" style="font-size:10px" title="Prix de vente de sa partie (visible du chef de file)">{{ eur(p.prix_lot_ht) }} HT</span>
                       <span v-else-if="p.status==='submitted'" class="pill a_etudier" style="font-size:10px">prix de sa partie manquant</span>
                       <span v-if="p.has_dpgf_lot" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="file-check-2" style="width:10px;height:10px"></i>Tableau de prix reçu</span><button v-if="p.has_dpgf_lot" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le tableau de prix du partenaire : le détail de ses prix de vente pour sa partie, ligne par ligne. Jamais ses coûts ni ses marges.</span></button>
@@ -2281,7 +2281,7 @@
                 <div class="cb">
                   <p class="small atl-m0">Adjugo propose qui rédige chaque partie d'après la partie du marché (lot) de chaque partenaire. Vous pourrez tout changer ensuite.</p>
                   <ul class="atl-rep-mbs atl-mt8">
-                    <li v-for="m in atl.rep.d.membres" :key="'rm'+m.invite_id" class="small"><b>{{ m.nom }}</b><span v-if="m.lot" class="muted"> · {{ m.lot }}</span><span v-if="!m.peut_rediger" class="muted"> · {{ m.raison }}</span></li>
+                    <li v-for="m in atl.rep.d.membres" :key="'rm'+m.invite_id" class="small"><b>{{ m.nom }}</b><span v-if="m.lot" class="muted"> · {{ partieLot(m.lot) }}</span><span v-if="!m.peut_rediger" class="muted"> · {{ m.raison }}</span></li>
                   </ul>
                   <div class="row wrap atl-g8 atl-mt16">
                     <button type="button" class="btn primary" @click="atlRepPreparer()" :disabled="!!atl.rep.busy"><span v-if="atl.rep.busy==='preparer'" class="spin"></span><i v-else data-lucide="users-round"></i>Préparer la répartition</button>
@@ -2439,7 +2439,7 @@
                     <button type="button" class="btn sm" @click="atlAjouter()" :disabled="!!atl.busy || (atl.add||'').trim().length < 2"><i data-lucide="plus"></i>Ajouter</button>
                   </div>
                   <details v-if="atl.st.sections_retirees.length" class="atl-det"><summary>Parties retirées ({{ atl.st.sections_retirees.length }})</summary>
-                    <div v-for="r in atl.st.sections_retirees" :key="'r'+r.id" class="row atl-g6 small atl-mt4"><span style="flex:1;min-width:0">{{ r.intitule }}<span v-if="r.lot_libelle" class="muted"> · {{ r.lot_libelle }}</span></span><button type="button" class="btn ghost sm" @click="atlRemettre(r)" :disabled="!!atl.busy">Remettre</button></div>
+                    <div v-for="r in atl.st.sections_retirees" :key="'r'+r.id" class="row atl-g6 small atl-mt4"><span style="flex:1;min-width:0">{{ r.intitule }}<span v-if="r.lot_libelle" class="muted"> · {{ partieLot(r.lot_libelle) }}</span></span><button type="button" class="btn ghost sm" @click="atlRemettre(r)" :disabled="!!atl.busy">Remettre</button></div>
                   </details>
                   <div v-if="(atl.st.dossier.plan.criteres_hors_dossier || []).length" class="muted small atl-mt8">
                     <div v-for="(c,i) in atl.st.dossier.plan.criteres_hors_dossier" :key="'hc'+i">{{ c.critere }}<template v-if="c.poids"> ({{ c.poids }})</template> : {{ c.raison }}</div></div>
@@ -2664,7 +2664,7 @@
               <div class="rn-inv-t">
                 <b class="rn-name">{{ inv.project }}</b>
                 <div class="muted small">Chef de file : {{ inv.mandataire || 'non précisé' }} · rôle proposé : {{ roleLabel(inv.role) }}</div>
-                <div v-if="inv.lot_propose" class="small">Part proposée : {{ inv.lot_propose }}</div>
+                <div v-if="inv.lot_propose" class="small">Part proposée : {{ partieLot(inv.lot_propose) }}</div>
                 <div class="muted small">Reçue le {{ fmtDate(inv.recue_le) }}<span v-if="inv.deadline"> · date limite {{ fmtDate(inv.deadline) }}</span></div>
               </div>
               <span class="pill rn-pill-sm" :class="inv._declined?'declined':inv.statut==='acceptee'?'go':'a_etudier'">{{ inv._declined ? 'Vous avez décliné' : inv.statut_label }}</span>
@@ -2714,7 +2714,7 @@
                     <template v-else>
                       <div v-if="cdetail[p.id].lots.length">
                         <div class="muted small" style="font-weight:600;margin-bottom:4px">Parties couvertes</div>
-                        <div v-for="l in cdetail[p.id].lots" :key="l.lot" class="row small" style="padding:3px 0;gap:8px;align-items:center"><span class="pill go" style="font-size:10px">{{ l.lot }}</span><span class="muted">{{ l.partners.join(', ') }}</span></div>
+                        <div v-for="l in cdetail[p.id].lots" :key="l.lot" class="row small" style="padding:3px 0;gap:8px;align-items:center"><span class="pill go" style="font-size:10px">{{ partieLot(l.lot) }}</span><span class="muted">{{ l.partners.join(', ') }}</span></div>
                       </div>
                       <div class="muted small" style="font-weight:600;margin:9px 0 4px">Partenaires et pièces</div>
                       <div v-for="pp in cdetail[p.id].partners" :key="pp.company" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">

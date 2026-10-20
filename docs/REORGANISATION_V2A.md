@@ -1,16 +1,26 @@
 # Réorganisation de l'interface : vague 2a, « un marché, une page, une adresse »
 
-Contrat de la vague 2a. Étude : « Réorganiser l'interface d'Adjugo : étude définitive » (12/10/2026), § 5.3, 8, 9
+Contrat de la vague 2a. Étude : « Réorganiser l'interface d'Adjugo : étude définitive » (12/10/2026), § 5.3, 7, 8, 9
 (vague 2a et « Ensuite »), 10 et 11. Base : `feat/produit-acheteur-collectivites` = `fab9d9a` (production du
-20/10/2026 : vagues 0 et 1, contrat `docs/REORGANISATION_V1.md`). Tête Alembic de départ : `b3mesureecrans`.
+20/10/2026 : vagues 0 et 1, contrat `docs/REORGANISATION_V1.md`). Tête Alembic de départ : `b3mesureecrans` ; tête
+d'arrivée : `c4montantseul` (`b3mesureecrans` → `c4axeetapes` → `c4montantseul`).
 
 Décisions de la vague (recommandations de l'étude, validées par Eliot) : D7 (un seul axe d'étapes, la clé « envoye »
-migre, la barre affiche des statuts dérivés), D10 (« partie (lot n) »), D11 (une carte de Mes marchés avant la
-publication, « Suivre » reste dans Trouver des marchés), D18 (barre basse de 5 sur téléphone) ; D8 et D9 comme en
-vague 1. La vague 2b (prise en main, marché d'exemple, espace partenaire réduit) vient après : rien ici.
+migre, la barre affiche des statuts dérivés), D10 (« partie (lot n) » partout, tests compris), D11 (une carte de Mes
+marchés avant la publication, « Suivre » reste dans Trouver des marchés), D18 (barre basse de 5 sur téléphone) ; D8
+et D9 comme en vague 1. La vague 2b (prise en main, marché d'exemple, espace partenaire réduit) vient après : rien ici.
 
-Chantiers : **A1** adresses et étapes (ce document, § A1 : D7, D11, D18, une adresse par écran, la cloche et
-« À faire »).
+La vague a été menée en trois chantiers parallèles, puis réunis :
+
+| Chantier | Contenu | Section |
+|---|---|---|
+| **A1** adresses et étapes | Une adresse par écran (précédent sur plusieurs niveaux, liens, rechargement), un seul axe d'étapes (D7, migration `c4axeetapes`), la décision dans l'étape Décider, la carte « À venir » (D11), la barre basse (D18), la cloche et « À faire » | § A1 |
+| **A2** Mes marchés et invitations | Mes marchés en liste filtrable (Tous · Je pilote · Où je suis partenaire · À plusieurs), Bilan en onglet, une seule fenêtre d'invitation (3 cas), un seul « Qui me complète ? », une seule liste « Prêt à déposer » (calcul pour l'entreprise seule), un seul « Figer l'offre » | § A2 |
+| **A3** entreprise, documents, confirmations, vocabulaire | Mon entreprise en 4 onglets (Tarifs, « Ce que je cherche »), le montant que je porte seul (migration `c4montantseul`), Mes documents (catégorie, date de fin), la fenêtre de confirmation de l'application au lieu des 19 `confirm()` / `prompt()`, « partie (lot n) » (D10) | § A3 |
+| **Réunion** | Les trois chantiers sur la production, ce qui se croisait entre eux, vérifications d'ensemble | § R |
+
+Les sections A1, A2 et A3 décrivent chaque chantier tel qu'il a été fait ; quand la réunion a changé un point, la
+section le dit (« Réunion : … ») et le § R le détaille.
 
 ---
 
@@ -37,13 +47,14 @@ accent ni « # ».
 | Accueil | `/app` |
 | Trouver des marchés › Publiés · À venir · Mes alertes | `/app/trouver` · `/app/trouver/a-venir` · `/app/trouver/alertes` |
 | Trouver des marchés › Projets à venir (si `PROJETS_A_VENIR=1`) | `/app/trouver/projets-a-venir` |
-| Mes marchés › Marchés · Où je suis partenaire · À plusieurs · Devis et factures | `/app/marches` · `/app/marches/partenaire` · `/app/marches/a-plusieurs` · `/app/marches/devis-et-factures` |
+| Mes marchés › Marchés (filtres Tous · Je pilote · Où je suis partenaire · À plusieurs) | `/app/marches` · `/app/marches/je-pilote` · `/app/marches/partenaire` · `/app/marches/a-plusieurs` (réunion : des filtres de la liste, § R.2) |
+| Mes marchés › Devis et factures · Bilan | `/app/marches/devis-et-factures` · `/app/marches/bilan` |
 | Un marché · son atelier | `/app/marches/12` · `/app/marches/12/dossier-de-presentation` |
 | Un marché où je suis partenaire | `/app/marches/partenaire/34` (l'identifiant du marché, **jamais le jeton d'invitation**) |
 | Partenaires › Mes partenaires · Réseau Adjugo · Contacts | `/app/partenaires` · `/app/partenaires/reseau` · `/app/partenaires/contacts` |
-| Réseau Adjugo › Annuaire · Historique · Invitations reçues | `/app/partenaires/reseau/annuaire` · `…/historique` · `…/invitations` |
+| Réseau Adjugo › Annuaire · Historique | `/app/partenaires/reseau/annuaire` · `…/historique` (réunion : `…/invitations` ouvre Mes marchés, filtre « Où je suis partenaire », § R.2) |
 | Mes documents › Mes pièces · Mon savoir-faire | `/app/documents` · `/app/documents/savoir-faire` |
-| Mon entreprise › Identité · Mes critères · Mes preuves | `/app/entreprise` · `/app/entreprise/criteres` · `/app/entreprise/preuves` |
+| Mon entreprise › Identité · Ce que je cherche · Mes preuves · Tarifs | `/app/entreprise` · `/app/entreprise/ce-que-je-cherche` · `/app/entreprise/preuves` · `/app/entreprise/tarifs` (réunion, § R.2) |
 | Réglages › Collègues · Abonnement · Mon compte · Administration | `/app/reglages/collegues` · `…/abonnement` · `…/compte` · `…/administration` |
 
 Un chemin inconnu, un identifiant douteux (0, signe, lettres, plus de 12 chiffres) ou un jeton ouvrent l'accueil et
@@ -121,7 +132,8 @@ réussite compte les marchés déposés, gagnés ou perdus.
 
 **L'écran** : le choix « Statut » de la page du marché et du tiroir propose les 8 étapes ; Mes marchés a une colonne
 par étape (`kanbanColonnes` : « À venir » et « Abandonné » seulement s'il y en a) ; l'entonnoir et les pastilles disent
-les mêmes mots.
+les mêmes mots. Réunion : Mes marchés est la liste filtrable de A2, un groupe par étape dans l'ordre de l'axe, un
+groupe seulement s'il a des marchés ; `kanbanColonnes` est retirée (§ R.1).
 
 **La barre affiche des statuts dérivés.** `barreDuMarche` (fonction pure) donne, pour Lire · Décider · Préparer ·
 Déposer, « Terminé », « En cours » ou « À faire », lus dans le statut, le dossier lu et l'étape du groupement ; rien
@@ -136,7 +148,8 @@ passer un marché Repéré (ou écarté) à Décidé ; « Écarter » (`archive`
 « Abandonné » : plus de rappel de date limite ni de relance ») et se défait par « Remettre » (`archive-restore`, retour à
 Repéré). **Un geste de Préparer** (estimer le prix, préparer les formulaires, inviter un partenaire, ouvrir le dossier
 de présentation) fait passer un marché Repéré ou Décidé à En préparation (`statutEnPreparation`, sans message : le
-choix « Statut » change sous les yeux). **Un marché « À venir » le reste** jusqu'à sa publication : ni la décision ni
+choix « Statut » change sous les yeux). Réunion : inviter passe par la fenêtre unique de A2 (`rinvSend` →
+`_marcheEnPreparation`), sur la page du marché comme depuis Mes partenaires (§ R.3). **Un marché « À venir » le reste** jusqu'à sa publication : ni la décision ni
 un geste ne le font avancer (on peut y inviter ses partenaires), seul le choix « Statut » le change.
 
 **Une carte avant la publication (décision 11)** : sur chaque fin de contrat de Trouver des marchés › À venir,
@@ -248,10 +261,10 @@ Changé : `accueil-rail` ne porte plus les pièces à renouveler (bloc « À fai
 
 ### A1.8 Laissé, avec sa raison
 
-- **D10 « partie (lot n) »** : hors de ce chantier (A1 = adresses et étapes).
+- **D10 « partie (lot n) »** : hors de ce chantier (A1 = adresses et étapes) ; fait par A3.
 - **Mes marchés en liste filtrable, une seule fenêtre d'invitation, « Qui me complète ? » unique, « Prêt à déposer »
-  pour l'entreprise seule, Mon entreprise en onglets, Mes documents** : autres chantiers de la vague 2a. Mes marchés
-  garde ici son tableau par colonnes, une par étape de l'axe.
+  pour l'entreprise seule, Mon entreprise en onglets, Mes documents** : autres chantiers de la vague 2a (A2, A3),
+  réunis au § R.
 - **Un menu latéral sans les 4 rubriques de la barre basse sur téléphone** : le menu complet reste derrière « Menu »
   (aucune entrée qui apparaît ou disparaît selon l'écran).
 - **Passage automatique « À venir » → « Repéré » à la publication** : il demande de relier une fin de contrat à son
@@ -290,7 +303,8 @@ l'ancien rangement sont mis à jour (§ A2.8).
   le réseau Adjugo, avec les mêmes boutons qu'avant (Accepter depuis mon compte, Voir l'invitation, Décliner ; réservées
   au compte à qui Adjugo les a envoyées). Ce bloc remplace l'onglet « Invitations reçues » du Réseau Adjugo.
 - **La liste**, groupée par statut dans l'ordre des statuts (`statuses2` : Nouveau, En cours, Déposé, Gagné, Perdu,
-  Abandonné), chaque groupe avec son nombre de marchés. Deux sortes de cartes :
+  Abandonné), chaque groupe avec son nombre de marchés. Réunion : l'ordre est celui de l'axe de A1 (À venir, Repéré,
+  Décidé, En préparation, Déposé, Gagné, Perdu, Abandonné ; § R.1). Deux sortes de cartes :
   - un marché que je pilote (`kcard`, la carte de l'ancien tableau) ; s'il a au moins un partenaire invité, la ligne
     « parts reçues N sur M · pièces · limite » et « Compte-rendu » (`mes-marches-plusieurs`), qui déplie le
     compte-rendu de l'ancienne vue « À plusieurs » : lots couverts, partenaires et pièces, manques, « Exporter le
@@ -540,6 +554,7 @@ montée par le code de production (Postgres, § A2.10).
 
 ### A2.11 Pour la réunion des chantiers
 
+- **Fait à la réunion (§ R)** pour chacun des points ci-dessous.
 - **Axe d'étapes (D7)** : la liste se groupe par `statuses2` et `statusLabel` ; un marché où je suis partenaire prend
   la clé `envoye` quand le groupement est déposé (`statutPartenaire`, seul endroit nouveau qui écrit cette clé). Quand
   la clé migre et que la barre affiche des statuts dérivés, ces deux fonctions suivent ; `listeMesMarches` prend l'ordre
@@ -788,7 +803,167 @@ dans l'espace des entreprises (`app.js`, `app.html`, `invite.html`, `redaction-p
 
 - **Migration** : `c4montantseul` a pour parent `b3mesureecrans`. Si un autre chantier de la vague 2a ajoute une
   révision sur le même parent (la clé `envoye` qui migre, décision 7), chaîner l'une après l'autre (changer
-  `down_revision` de la seconde) pour garder une seule tête.
+  `down_revision` de la seconde) pour garder une seule tête. Réunion : fait, `c4montantseul` suit `c4axeetapes` (§ R.4).
 - **Zones de fichier touchées** : `RUBRIQUES` (rubrique « Mon entreprise » seulement), vues `company`, `criteria`,
   `tarifs`, `documents`, la fenêtre `fenetre-confirmation`, les textes « lot » un peu partout (page du marché,
   atelier, espace partenaire) ; `go()` n'est pas modifiée.
+
+---
+
+## R. Réunion des chantiers
+
+Tests : `tests/test_reorganisation_v2a_reunion.py` (10 tests : ce qui se croise entre les chantiers ; 2 échouent sur la
+fusion brute, les 8 autres décrivent ce que les commits de fusion ont déjà corrigé). Postgres :
+`scratchpad/a4/run_reunion_pg.py` de la session (§ R.6).
+
+### R.0 Ordre et méthode
+
+Sur la production (`feat/produit-acheteur-collectivites` = `fab9d9a`, avance rapide), A1 (`0134174`, avance rapide),
+puis A2 (`93c674c`, fusion `6a3d7ad`), puis A3 (`c0c952f`, fusion `8bc89b3`), puis les corrections de la réunion.
+Conflits résolus bloc par bloc, jamais un fichier entier d'un seul côté : `app.js` 4 puis 6 blocs, `app.html` 4 puis
+11, `styles.css` 2, `mesure_usage.py` 2, `test_reorganisation_v1_socle.py` 1, ce contrat. `i18n.js` : fusion à trois
+clé par clé (469 + 31 de A1 + 83 de A2 + 50 de A3 − 1 en commun = 632 clés : « Chercher pour cette partie »,
+ajoutée par A2 et par A3 avec la même traduction ; aucune clé changée différemment des deux côtés). Empreintes SRI régénérées (`sri-manifest.json`,
+`app.html`, `invite.html`).
+
+### R.1 Axe d'étapes (A1) et Mes marchés (A2)
+
+- Mes marchés est la **liste filtrable de A2** ; les colonnes de A1 (`kanbanColonnes`) sont retirées. La liste se
+  groupe dans l'ordre de l'axe (`statuses2` = `AXE_ETAPES`) : « À venir » en tête quand il y a une carte avant
+  publication (D11), un groupe seulement s'il a des marchés (comme les colonnes « À venir » et « Abandonné » de A1).
+- **Plus aucune clé `envoye` écrite** : `statutPartenaire` (A2) rend `depose` pour un marché où je suis partenaire et
+  dont le groupement est déposé ; les tests de A2 suivent l'axe à 8 étapes ; « Prêt à déposer » (pastille et
+  « Retirer le marquage ») lit `depose`.
+
+### R.2 Une adresse par écran (A1), filtres de Mes marchés (A2), onglets de Mon entreprise (A3)
+
+| Écran | Adresse |
+|---|---|
+| Mes marchés › Marchés, filtre Tous · Je pilote · Où je suis partenaire · À plusieurs | `/app/marches` · `/app/marches/je-pilote` · `/app/marches/partenaire` · `/app/marches/a-plusieurs` |
+| Mes marchés › Bilan | `/app/marches/bilan` |
+| Mon entreprise › Ce que je cherche · Tarifs | `/app/entreprise/ce-que-je-cherche` · `/app/entreprise/tarifs` |
+| `/app/partenaires/reseau/invitations` (onglet retiré par A2) | ouvre Mes marchés, filtre « Où je suis partenaire » (là où les invitations se traitent), l'adresse devient `/app/marches/partenaire` |
+
+- `adresseCourante` lit aussi le filtre (`mmFiltre`) ; un filtre choisi est une entrée de l'historique (précédent :
+  le filtre d'avant). `_appliquerAdresse` ouvre la liste puis pose le filtre comme un clic (`mmFiltrer` : chargements et
+  mesure de l'ancien écran compris). `ADRESSES_MES_MARCHES` en tête de `app.js`.
+- `?shared=<jeton>` sans dossier trouvé, `go("shared")`, `go("consortiums")` et « Retour » d'un dossier partagé mènent
+  au filtre, à son adresse ; « À faire » (invitation reçue) aussi (cible `{ view: "shared" }`).
+- Le chemin `/app/entreprise/criteres` de A1 (jamais en production) devient `/app/entreprise/ce-que-je-cherche`, le nom
+  de l'onglet de A3.
+
+### R.3 Gestes de Préparer (A1) et fenêtre d'invitation unique (A2)
+
+A2 a retiré le formulaire d'invitation et `aoCreateInvite`, où A1 faisait passer le marché « En préparation ». Une
+invitation réussie dans la fenêtre unique (`rinvSend`, les trois cas) appelle `_marcheEnPreparation(pid)` : sur la page
+du marché, `aoAvancer` (A1) ; ailleurs (« Inviter sur un marché » de Mes partenaires), le marché choisi passe de Repéré
+ou Décidé à En préparation par la même route (`PUT /api/projects/{id}`) ; « À venir », « En préparation » et au-delà ne
+bougent pas. Une invitation refusée (démonstration, registre indisponible) ne change rien. « Préparer à plusieurs »
+(étape Décider, et carte « À venir » de D11) ouvre la fenêtre unique sur « qui invitez-vous ? ».
+
+### R.4 Migrations : une seule tête
+
+`b3mesureecrans` → `c4axeetapes` (A1) → `c4montantseul` (A3, `down_revision` changé ; les deux révisions sont
+indépendantes : un type énuméré d'un côté, une colonne de l'autre). Le retour au code de production est
+`alembic downgrade b3mesureecrans` (les deux révisions redescendent). Les tests de migration de A1 et de A3 passent
+tels quels.
+
+### R.5 Textes : « partie (lot n) » (A3) dans les vues de A2, et un nom d'écran
+
+- Structure de A2, textes de A3 : « Qui me complète ? » et la fenêtre d'invitation (déjà « partie ») gardés ; reportés
+  sur eux : « Parties (lots) dont le métier n'a pas été reconnu », « selon la partie (lot) », « par partie (lot) », « ex.
+  Électricité (lot 2) » ; dans le compte-rendu de la liste : « Parties couvertes ».
+- Les libellés de parties venus des données (`l.lot` du compte-rendu et des parties couvertes, `c.lot`, `p.lot`,
+  `m.lot`, `r.lot_libelle`, `inv.lot_propose`) s'affichent par `partieLot` : « Lot 1 — Désamiantage… » se lit « Partie
+  (lot 1) — Désamiantage… » ; un texte libre reste tel quel ; les données ne changent pas (A3).
+- « Prêt à déposer », désormais vu par toute entreprise (A2) : « Votre Attest. sociale (URSSAF), dans Mes documents,
+  expire avant la date limite » (l'ancien nom « coffre-fort » ; deux tests suivent).
+- Le second « Figer l'offre » et son `confirm()` restent retirés (A2) ; le test des confirmations de A3 le dit.
+- Mesure d'usage : `bilan` (A2) et `tarifs` (A3) dans `ECRANS` ; titres et bulles des deux vues.
+
+### R.6 Vérifications
+
+- **Suite complète** verte (SQLite, TZ=UTC) : 2 175 tests ; `scripts/sri_update.py --check` ; `node --check` des scripts
+  servis ; gabarit de `app.html` compilé par le Vue du dépôt ; `scripts/i18n_ajouter.py --check` (632 clés) ; garde des
+  mots bannis verte.
+- **Postgres 16.2 depuis l'état exact de la production** (`run_reunion_pg.py`, 44 contrôles sur 44) : base neuve
+  du code réuni (une seule tête `c4montantseul`, étiquettes de l'axe dans l'ordre, identiques au modèle, colonne du
+  montant `FLOAT NULL` sans défaut) ; code de production `fab9d9a` extrait par `git archive`, base montée par son propre
+  code (tête `b3mesureecrans`) et données créées par lui (chef de file et partenaire, annuaire, critères avec une
+  fourchette de 800 000 €, pièces avec et sans date de fin, un marché seul avec prix et formulaires, un second seul, un
+  marché à plusieurs, un marché marqué déposé par la production — clé « envoye » —, gagné, perdu, abandonné, un devis
+  « envoye », le journal, et la démonstration qu'elle crée au démarrage) ; code réuni : **deux révisions, dans l'ordre**
+  (`b3mesureecrans → c4axeetapes → c4montantseul`), « envoye » → « depose » sur les seuls marchés, devis et factures,
+  journal chaîné, critères et pièces intacts, chaque table garde ses lignes, montant vide, schéma identique à une base
+  neuve, seconde montée et rejeu forcé sans effet, révision interrompue qui se termine ; le code réuni sur la base
+  montée (axe et 422, « Prêt à déposer » seul et à plusieurs, marché déposé lu « depose », Mes marchés avec les mêmes
+  champs qu'avec la production, « Qui me complète ? », formulaires horodatés pour un marché seul, « Marquer déposé »
+  seul puis retrait, inviter puis « En préparation », critères et montant, pièces, pastille, export RGPD, adresses
+  servies) ; cloisonnement (le partenaire : 404 sur le marché, le dépôt, « Qui me complète ? » du chef de file) ; retour
+  arrière à `b3mesureecrans` (statuts rendus à l'ancienne clé, colonne retirée, rien d'autre), **code de production
+  relancé : lectures et écritures 200** ; remontée (schéma identique). Vrais tests sur Postgres, bases neuves montées
+  par chaque code : 28 fichiers communs, **mêmes résultats avec la production et avec le code réuni** (596 réussis,
+  6 échecs et 45 erreurs des deux côtés, tous dus à l'instruction propre à SQLite `PRAGMA foreign_keys` de
+  `test_secu_rgpd.py` et à ce qu'elle laisse dans la session de test) ; les 4 fichiers de la vague 2a : 87 sur 87.
+- **Navigateur réel** (serveur local, base jetable, démonstration par lien privé avec une clé jetable de 48 caractères,
+  `DEMO_PUBLIC=0`, réseau sortant, courriels et IA coupés), 1 280 px et 375 px :
+  - adresses : chaque écran visité a la sienne et son titre d'onglet ; Mes marchés › À plusieurs, Où je suis
+    partenaire, Je pilote, puis un marché, puis précédent cinq fois et suivant deux fois (écran et filtre justes à chaque
+    pas) ; rechargement de `/app/marches/a-plusieurs` (filtre rouvert) ; liens profonds `/app/marches/1` et `/2` ;
+    `/app/partenaires/reseau/invitations` → `/app/marches/partenaire` ; `/app/n-importe-quoi/12` → `/app` ;
+    `/app/marches/9999` → Mes marchés ; `?shared=` inconnu → filtre « Où je suis partenaire », jeton retiré ;
+  - liens des courriels : `?verify=` (lu, adresse nettoyée), `?reset=` (« Choisissez un nouveau mot de passe »),
+    `#gcode=` invalide (message, adresse `/app`), `/invite/…` (espace partenaire) ; déconnecté,
+    `/app/marches/9?inscription` → « Créons votre compte » sur la même adresse, puis connexion → le marché 9 ;
+  - Mes marchés : groupes dans l'ordre de l'axe (« À venir » en tête après une carte D11), filtres, compte-rendu de
+    Kerhel déplié (« Partie (lot 1) — Désamiantage et retrait d'amiante (SS3) »), Bilan, Devis et factures ;
+  - invitation, avec deux comptes de test locaux (chef de file et partenaire) : partenaire connu avec email (« Lien
+    créé. L'email n'a pas pu partir… », le marché passe de Repéré à En préparation), registre (SIRET → « Le registre
+    officiel est momentanément indisponible », « Inviter sans passer par le registre », le marché ne bouge pas), réseau
+    (le cas, sa phrase « Adjugo envoie l'invitation… », le renvoi vers « Qui me complète ? ») ; dans la démonstration,
+    le refus « La démo est en lecture guidée… » ; le partenaire ouvre le lien, « Ouvrir dans mon Adjugo » →
+    `/app/marches/partenaire/9` (l'identifiant, jamais le jeton), puis « Où je suis partenaire » (sa carte, statuts
+    seulement) ; cloisonnement vérifié depuis son compte (marché, dépôt, « Qui me complète ? », invitations,
+    état du groupement du chef de file : 404) ;
+  - « Prêt à déposer » seul (« 1 contrôle sur 5 », aucun manque de groupement ; démo, Réfection toiture : « 3 contrôles
+    sur 5 ») et en groupement (Kerhel : « 3 contrôles sur 4 » ; le compte de test, une fois l'invitation faite :
+    les 4 contrôles du groupement) ;
+  - décision : Infogérance SI « Préparer à plusieurs » → Décidé et la fenêtre ; « Écarter » (fenêtre `alertdialog`) →
+    Abandonné ; « Remettre » → Repéré ; carte « À venir » créée depuis une fin de contrat, sa page, précédent (la
+    recherche est encore là) ;
+  - Mon entreprise : 4 onglets, chacun son adresse ; Tarifs ; Ce que je cherche (montant « Non renseigné ») ; Mes
+    documents (catégorie et date de fin) ; « Renommer le document » (`dialog`, focus dans le champ, Échap, focus rendu) ;
+  - 375 px : barre basse (5 mots entiers, « Mes marchés » puis « Menu » surlignés), menu complet, Mes marchés
+    (filtres sur 2 colonnes), page de Kerhel, Mes documents (une pièce par bloc), Mon entreprise (onglets sur 2
+    lignes) : aucun défilement horizontal ;
+  - cloche (« À faire », « Activité ») ; accueil (« À faire », « Bilan · 3 marchés terminés · 2 gagnés sur 3 ») ;
+  - espace partenaire (`/invite/…` de Kerhel et du compte de test) et espace collectivités (`/acheteur/app` par la
+    démonstration) : intacts ;
+  - démonstration complète (pitch), après redémarrage sur une base neuve : accueil, Trouver des marchés (recherche),
+    Mes marchés, Kerhel (Lire, Décider, Préparer, Déposer), atelier (« Partie (lot 1) — … », « Retour au marché » =
+    précédent), Partenaires (Mes partenaires, Réseau Adjugo sans l'onglet des invitations reçues), sans erreur de script
+    (seules erreurs de console : les refus attendus, 403 de la démonstration, 404 du cloisonnement, 503 du registre
+    coupé, 400 des liens invalides).
+
+### R.7 Laissé, avec sa raison
+
+- **« coffre-fort » ailleurs** (espace partenaire : « Joindre depuis mon coffre-fort », messages de `invites.py`) :
+  textes de l'espace partenaire, réduit en vague 2b ; seul le message que A2 montre maintenant à toute entreprise a
+  été changé.
+- **La table des membres de la convention** (« Lots 2 et 3 — … ») et le fait lu « allotissement » gardent « lot » : la
+  convention et les citations du règlement le gardent (A3).
+- **Cartes de recherche « adéquation 100/100 »** : déjà en production, zone du Moteur V0 (étude, § 9 « Ensuite »).
+- **Le titre de la fenêtre d'invitation** garde le nom saisi quand on change de cas (« Inviter Atelier Fictif SARL »
+  sur le cas « registre ») : comportement de A2, sans effet sur l'envoi (le registre relit l'identité par le SIRET).
+
+### R.8 Pour Eliot
+
+- **Déploiement** : deux migrations passent avant le démarrage (`c4axeetapes`, `c4montantseul`). Retour au code
+  précédent : `alembic downgrade b3mesureecrans` d'abord (A1.6), sinon l'ancien code ne lit plus les marchés déposés.
+  À refaire au moment de la mise en ligne depuis l'état réel de la production.
+- **Décision prise par A1, à confirmer** : un marché « À venir » le reste jusqu'à sa publication (ni la décision ni un
+  geste de préparation ne le font avancer ; on change son statut à la main).
+- **Courriel aux 7 PME** : remplacer les noms d'onglets par les filtres « Où je suis partenaire » et « À plusieurs » de
+  Mes marchés, ajouter le Bilan (anciennement sur l'accueil), Mon entreprise › Tarifs et « Ce que je cherche »
+  (anciennement « Mes critères ») ; les adresses de chaque écran se partagent et se mettent en favori.
+- **Alertes des pièces** : le courriel part avec la tâche planifiée `POST /api/admin/run-alerts` (A3.3).

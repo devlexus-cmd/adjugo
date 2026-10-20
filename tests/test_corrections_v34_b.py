@@ -510,7 +510,7 @@ def test_pret_a_deposer_controle_aussi_les_attestations_du_chef_de_file(client, 
         db.close()
     p = pret()
     assert p["checks"]["attestations_ok"] is False and p["pret"] is False
-    assert any("(coffre-fort) a expiré" in m for m in p["manques"]), p["manques"]
+    assert any(", dans Mes documents, a expiré" in m for m in p["manques"]), p["manques"]   # réunion 2a : le nom de l'écran
     # Une attestation à jour (valide après la date limite) remplace l'ancienne.
     db = _db()
     try:

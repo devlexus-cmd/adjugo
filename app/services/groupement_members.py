@@ -502,9 +502,9 @@ def _lead_attestations(db: Session, project, deadline) -> tuple:
         best = max(cands, key=lambda d: (d.expiration_date or date.max))
         status = _piece_status(best, deadline)
         if status == "expire":
-            problems.append(f"Votre {label} (coffre-fort) a expiré")
+            problems.append(f"Votre {label}, dans Mes documents, a expiré")
         elif status == "expire_avant_limite":
-            problems.append(f"Votre {label} (coffre-fort) expire avant la date limite")
+            problems.append(f"Votre {label}, dans Mes documents, expire avant la date limite")
     return problems, missing
 
 
