@@ -2,6 +2,7 @@
 Adjugo - Checklist intelligente
 Compare les pieces requises (extraites par l'IA) avec les documents du coffre-fort.
 """
+import re
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -178,22 +179,38 @@ _MOTS_VIDES = frozenset("""
 a au aux avec ce ces d de des du en et l la le les ou par pour sa sans ses son sur un une votre vos
 attestation attestations certificat certificats certification justificatif justificatifs document documents piece pieces
 copie copies original obligatoire obligatoires exige exigee exiges exigees fourni fournie fournir signe signee cours validite
-valide valable
+valide valable no num numero
 """.split())
+
+# Mots qui désignent une pièce parmi d'autres du même nom : la lettre qui les suit est son repère (« Annexe A »,
+# « Lot B », « Partie C ») — contre-relecture de la vague 2a.
+_MOTS_REPERE = frozenset("annexe lot partie tranche piece formulaire cadre modele volet phase chapitre article section "
+                         "titre".split())
+
+_ELISION = re.compile(r"(?<!\w)(?:qu|[cdjlmnst])['’]")      # « d'identité », « l'acte », « n'est »
+_A_SEUL = re.compile(r"(?<!\w)à(?!\w)")                       # « Annexe à la convention » : jamais un repère
 
 
 def _mots(texte) -> list:
     """Les mots d'un nom, sans accents ni casse, chiffres séparés des lettres (« iso27001 » → iso, 27001), sans le
-    « s » du pluriel."""
-    import re as _re
+    « s » du pluriel. Contre-relecture de la vague 2a : un chiffre est un mot comme un autre, même seul (« DC 4 »,
+    « Annexe 1 », « n° 2 ») ; une lettre seule n'en est un que derrière un mot de repère, liée à lui (« Annexe A » →
+    annexe, annexe:a), jamais « à », une élision (« d' ») ni le « n » de « n° »."""
+    t = _A_SEUL.sub(" ", _ELISION.sub(" ", str(texte or "").lower()))
     out = []
-    for m in _re.findall(r"[a-z]+|[0-9]+", _norm(texte)):
+    for m in re.findall(r"[a-z]+|[0-9]+", _norm(t)):
+        if len(m) == 1 and not m.isdigit():
+            if m != "n" and out and out[-1] in _MOTS_REPERE:
+                out.append(out[-1] + ":" + m)
+            continue
         out.append(m[:-1] if len(m) > 3 and m.endswith("s") and not m.isdigit() else m)
     return out
 
 
 def _mots_significatifs(piece_name) -> list:
-    return [m for m in _mots(piece_name) if len(m) > 1 and m not in _MOTS_VIDES]
+    """Les mots qui distinguent la pièce : tous doivent être dans le nom du document. Les chiffres en sont toujours
+    (« ATTRI2 » ne se reconnaît pas dans ATTRI1.pdf)."""
+    return [m for m in _mots(piece_name) if (len(m) > 1 or m.isdigit()) and m not in _MOTS_VIDES]
 
 
 def match_document(piece_name, documents):
@@ -204,7 +221,7 @@ def match_document(piece_name, documents):
     « Certificat ISO 27001 ») — un nom qui porte TOUS les mots significatifs de la pièce (« Visite obligatoire »,
     « ISO 27001 », « iso27001 »). Relecture de la vague 2a : sans mot-clé, une pièce exigée n'était jamais reconnue,
     même sous son nom exact. Tous les mots, jamais un seul : « … régularité fiscale » ne reconnaît pas « … régularité
-    sociale »."""
+    sociale », « DC 4 » pas DC1.pdf, « Annexe A » pas « Annexe B » (contre-relecture)."""
     piece_lower = _norm(piece_name)
     mots_piece = _mots_significatifs(piece_name)
     keywords = {
@@ -236,9 +253,11 @@ def match_document(piece_name, documents):
         doc_name = _norm(doc.name)
         doc_cat = _norm(getattr(doc.category, "value", doc.category))
 
-        # Chercher par mots-cles, puis par les mots de la pièce (relecture de la vague 2a)
+        # Chercher par mots-cles, puis par les mots de la pièce (relecture de la vague 2a). Contre-relecture : jamais
+        # par les mots d'un fichier du dossier de l'acheteur (dossier « DCE », importé par l'entreprise) — son CCAP
+        # n'est pas le « CCAP signé » qu'il demande.
         trouve = any(any(t in doc_name or t in doc_cat for t in terms) for terms in familles)
-        if not trouve and mots_piece:
+        if not trouve and mots_piece and getattr(doc, "folder", None) != "DCE":
             mots_doc = set(_mots(doc.name))
             trouve = all(m in mots_doc for m in mots_piece)
         if trouve:

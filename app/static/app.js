@@ -1908,14 +1908,21 @@ const __adjApp = createApp({
       this._ouvrirAdresse(etatDeAdresse(location.pathname), ev && ev.state && ev.state.defil);
     },
     // Ferme toute fenêtre de l'application ouverte ; vrai si l'une l'était. La confirmation répond « Annuler » (sa
-    // promesse rend null). `rendreFocus` : l'écran reste, le focus revient où il était.
+    // promesse rend null). `rendreFocus` : l'écran reste, le focus revient où il était. Contre-relecture : le menu du
+    // téléphone (« Menu » de la barre basse) et les fenêtres hors de Vue — cotraitance-crypto.js (« Vérifiez votre
+    // identité », code de récupération) et redaction-partenaire.js (ses confirmations) — se ferment aussi, comme
+    // « Annuler » (leur fermerFenetres).
     _fermerFenetres(rendreFocus) {
       const a = this.atl || {}, pv = this.pv || {};
       const atelier = !!(a.derog || a.debit || a.vue || a.lotsDlg || a.plan);
+      const horsVue = (typeof window !== "undefined" ? [window.AdjugoCrypto, window.AdjugoRedactionPartenaire] : [])
+        .filter(m => m && typeof m.fenetresOuvertes === "function" && m.fenetresOuvertes() > 0);
       const ouverte = !!(this.cdlg || this.rinv || (this.reseau && this.reseau.fiche) || this.modal || this.drawer
         || this.notifsOpen || (this.discover && this.discover.open) || (this.fb && this.fb.open) || pv.passage
-        || (this.pvAtl && this.pvAtl.open) || atelier);
+        || (this.pvAtl && this.pvAtl.open) || atelier || this.mobileNav || horsVue.length);
       if (!ouverte) return false;
+      horsVue.forEach(m => m.fermerFenetres());
+      this.mobileNav = false;
       if (this.cdlg) this.cdlgClose();
       if (this.rinv) this.rinvClose(!rendreFocus);
       if (this.reseau && this.reseau.fiche) this.rnCloseFiche(!rendreFocus);
@@ -2782,12 +2789,16 @@ const __adjApp = createApp({
         else this.sharedAo.detailLocked = true;
       } catch (e) { this.sharedAo.detailLocked = true; }
     },
+    // Contre-relecture de la vague 2a : un dossier partagé quitté pendant qu'une fenêtre de cotraitance-crypto.js
+    // était ouverte (suivant du navigateur) ne reçoit jamais le code, la clé ni le détail d'un autre (`s`, le dossier
+    // de la fenêtre ; `this.sharedAo` est remplacé à chaque dossier ouvert).
     async sharedUnlock() {
-      const C = window.AdjugoCrypto, env = this.sharedAo.envelope; if (!C || !env) return;
-      const code = await C.askRecoveryCode(); if (!code) return;
+      const C = window.AdjugoCrypto, s = this.sharedAo, env = s.envelope; if (!C || !env) return;
+      const code = await C.askRecoveryCode(); if (!code || this.sharedAo !== s) return;
       try {
-        const ctx = await C.keyFromCode(this.sharedAo.token, code, env);
-        this._sharedApplyPlain(await C.decrypt(ctx, env)); this.sharedAo.cryptoCtx = this._rawCtx(ctx); this.sharedAo.detailLocked = false;
+        const ctx = await C.keyFromCode(s.token, code, env);
+        const plain = await C.decrypt(ctx, env); if (this.sharedAo !== s) return;
+        this._sharedApplyPlain(plain); this.sharedAo.cryptoCtx = this._rawCtx(ctx); this.sharedAo.detailLocked = false;
         this.notify("Détail déverrouillé");
       } catch (e) { this.notify((e && e.code === "wrong_code") ? "Code incorrect" : ((e && e.message) || "Code incorrect"), "err"); }
     },
@@ -2796,10 +2807,11 @@ const __adjApp = createApp({
       if (!(await this.confirmer({ title: "Vous avez perdu votre code de récupération ?", ok: "Effacer l'ancien détail", danger: true,
         lines: [{ t: "L'ancien détail de votre chiffrage sera définitivement perdu : personne, ni Adjugo ni le chef de file, ne peut le récupérer.", warn: true },
                 "Vous pourrez en saisir un nouveau."] }))) return;
+      const s = this.sharedAo;
       try {
-        const rr = await C.resetKey(this.sharedAo.token);
+        const rr = await C.resetKey(s.token); if (this.sharedAo !== s) return;
         this.sharedAo.envelope = null; this.sharedAo.detailClair = ""; this.sharedAo.detailDpgf = null; this.sharedAo.detailLocked = false;
-        const ok = await C.showRecoveryCode(rr.code);
+        const ok = await C.showRecoveryCode(rr.code); if (this.sharedAo !== s) return;
         if (ok) { this.sharedAo.cryptoCtx = this._rawCtx(rr.ctx); this.sharedAo.pendingCode = null; } else { this.sharedAo.pendingCode = { code: rr.code, ctx: this._rawCtx(rr.ctx) }; }
         await this._sharedPut();   // efface l'ancien détail (désormais illisible) côté serveur
         this.notify("Ancien détail effacé — vous pouvez en saisir un nouveau");
@@ -2814,19 +2826,20 @@ const __adjApp = createApp({
     // Chiffre le texte ; null = ne pas envoyer (code non noté, détail verrouillé, navigateur sans WebCrypto…).
     async _sharedEncrypt(txt) {
       const C = window.AdjugoCrypto; if (!C) { this.notify("Chiffrement indisponible dans ce navigateur — détail non enregistré", "err"); return null; }
+      const s = this.sharedAo;     // le dossier de la fenêtre du code (contre-relecture, voir sharedUnlock)
       let ctx = this.sharedAo.cryptoCtx;
       if (!ctx) {
         let code = null;
         if (this.sharedAo.pendingCode) { code = this.sharedAo.pendingCode.code; ctx = this.sharedAo.pendingCode.ctx; }
         else {
-          const r = await C.ensureKey(this.sharedAo.token, this.sharedAo.envelope);
+          const r = await C.ensureKey(s.token, s.envelope); if (this.sharedAo !== s) return null;
           if (r.needCode) { this.notify("Déverrouillez d'abord votre détail avec votre code", "err"); return null; }
           if (r.isNew) { code = r.code; ctx = r.ctx; }
-          else if (!this.sharedAo.envelope) { const rr = await C.resetKey(this.sharedAo.token); code = rr.code; ctx = rr.ctx; }   // clé en cache mais rien de chiffré encore : on montre un code
+          else if (!this.sharedAo.envelope) { const rr = await C.resetKey(s.token); if (this.sharedAo !== s) return null; code = rr.code; ctx = rr.ctx; }   // clé en cache mais rien de chiffré encore : on montre un code
           else ctx = r.ctx;
         }
         if (code) {
-          const ok = await C.showRecoveryCode(code);
+          const ok = await C.showRecoveryCode(code); if (this.sharedAo !== s) return null;
           if (!ok) { this.sharedAo.pendingCode = { code, ctx: this._rawCtx(ctx) }; this.notify("Détail non enregistré : notez d'abord votre code", "err"); return null; }
           this.sharedAo.pendingCode = null;
         }
@@ -2857,9 +2870,11 @@ const __adjApp = createApp({
       return body;
     },
     async _sharedPut() {   // PUT avec gestion du verrou optimiste (409)
-      const body = await this._sharedBody();
-      const r = await fetch("/api/invite/" + this.sharedAo.token + "/contribution", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (r.ok) { const c = await r.json(); this.sharedAo.version = c.version || 0; this.sharedAo.status = c.status; this.sharedAo.envelope = (c.detail_chiffre && c.detail_chiffre.ciphertext) ? c.detail_chiffre : null; return true; }
+      const s = this.sharedAo;     // la part de CE dossier ne part jamais vers un autre (contre-relecture, voir sharedUnlock)
+      const body = await this._sharedBody(); if (this.sharedAo !== s) return false;
+      const r = await fetch("/api/invite/" + s.token + "/contribution", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (r.ok) { const c = await r.json(); s.version = c.version || 0; s.status = c.status; s.envelope = (c.detail_chiffre && c.detail_chiffre.ciphertext) ? c.detail_chiffre : null; return true; }
+      if (this.sharedAo !== s) return false;
       if (r.status === 409) { this.notify("Modifié ailleurs entre-temps — rechargement de la dernière version", "err"); await this.sharedReload(); return false; }
       const e = await r.json().catch(() => ({})); const d = e && e.detail;
       this.notify((typeof d === "string" ? d : ((d && d.message) || (Array.isArray(d) && d[0] && this.validationMsg(d[0])))) || "Erreur d'enregistrement", "err"); return false;
@@ -2868,8 +2883,8 @@ const __adjApp = createApp({
     // Vague 5 (E2) : reprendre ses preuves et ses marchés publics dans sa part. La saisie en cours est d'abord
     // enregistrée (rien n'est perdu), puis le serveur ajoute ce qui a été coché à la version obtenue.
     async sharedAvantReprise() {
-      const ok = await this._sharedPut();
-      return ok ? { ok: true, version: this.sharedAo.version } : { ok: false, message: "Votre part n'a pas pu être enregistrée : rien n'a été ajouté." };
+      const s = this.sharedAo, ok = await this._sharedPut();
+      return ok ? { ok: true, version: s.version } : { ok: false, message: "Votre part n'a pas pu être enregistrée : rien n'a été ajouté." };
     },
     sharedApresReprise(d) {
       const c = d && d.contribution; if (!c) return;
@@ -2900,6 +2915,7 @@ const __adjApp = createApp({
       let code = null;
       if (window.AdjugoCrypto && window.AdjugoCrypto.modal) {
         const r = await window.AdjugoCrypto.modal({ title: "Vérifiez votre identité", bodyHtml: "<p style='margin:0'>Saisissez le code à 6 chiffres envoyé à <b>" + esc(masked) + "</b> pour confirmer que c'est bien vous.</p>", withInput: true, placeholder: "123456", confirmLabel: "Valider", cancelLabel: "Annuler" });
+        if (this.sharedAo.token !== t) return false;    // un autre dossier à l'écran (contre-relecture, voir sharedUnlock)
         code = r && r.value;
       } else {
         const v = await this.demander({ title: "Vérifiez votre identité", ok: "Valider",
@@ -2912,13 +2928,14 @@ const __adjApp = createApp({
       catch (e) { this.notify(e.message || "Code incorrect", "err"); return false; }
     },
     async sharedSubmit() {
-      this.sharedAo.busy = true;
+      const s = this.sharedAo;     // soumet la part de CE dossier, jamais celle d'un autre (contre-relecture, voir sharedUnlock)
+      s.busy = true;
       try {
-        if (!(await this._sharedPut())) return;
-        if (!(await this.sharedEnsureVerified())) return;
-        const c = await this.api("POST", "/api/invite/" + this.sharedAo.token + "/contribution/submit");
-        this.sharedAo.status = c.status; this.notify("Contribution soumise au chef de file"); this.loadShared(); this.sharedConvLoad();
-      } catch (e) { this.notify(e.message, "err"); } finally { this.sharedAo.busy = false; }
+        if (!(await this._sharedPut()) || this.sharedAo !== s) return;
+        if (!(await this.sharedEnsureVerified()) || this.sharedAo !== s) return;
+        const c = await this.api("POST", "/api/invite/" + s.token + "/contribution/submit");
+        s.status = c.status; this.notify("Contribution soumise au chef de file"); this.loadShared(); if (this.sharedAo === s) this.sharedConvLoad();
+      } catch (e) { this.notify(e.message, "err"); } finally { s.busy = false; }
     },
     async sharedUpload(ev) {
       const f = ev.target.files[0]; if (!f) return;

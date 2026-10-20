@@ -143,6 +143,11 @@
   }
 
   // ── Modales minimales (DOM pur, couleurs Adjugo) — partagées par invite.html et app.js ──
+  // Fenêtres ouvertes : le précédent du navigateur dans app.html les ferme comme « Annuler » (fermerFenetres), avant
+  // tout changement d'écran (réorganisation, vague 2a, contre-relecture).
+  const _ouvertes = new Set();
+  function fenetresOuvertes() { return _ouvertes.size; }
+  function fermerFenetres() { const f = Array.from(_ouvertes); f.forEach((close) => close(null)); return f.length > 0; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
   function modal({ title, bodyHtml, confirmLabel, cancelLabel, withInput, placeholder, requireCheck }) {
     return new Promise((resolve) => {
@@ -168,7 +173,8 @@
       const cancel = document.createElement("button"); cancel.className = "btn"; cancel.textContent = cancelLabel || "Annuler";
       const ok = document.createElement("button"); ok.className = "btn primary"; ok.textContent = confirmLabel || "Continuer";
       bar.appendChild(cancel); bar.appendChild(ok); box.appendChild(bar); ov.appendChild(box); document.body.appendChild(ov);
-      const close = (v) => { ov.remove(); resolve(v); };
+      const close = (v) => { _ouvertes.delete(close); ov.remove(); resolve(v); };
+      _ouvertes.add(close);
       cancel.onclick = () => close(null);
       ok.onclick = () => {
         if (check && !check.checked) { err.textContent = "Cochez la case pour confirmer que vous avez noté le code."; return; }
@@ -329,7 +335,7 @@
   window.AdjugoCrypto = {
     ALG, KDF, ITER, LABELS,
     generateRecoveryCode, normalizeCode, derive, newSalt, encrypt, decrypt,
-    ensureKey, keyFromCode, resetKey, showRecoveryCode, askRecoveryCode, modal,
+    ensureKey, keyFromCode, resetKey, showRecoveryCode, askRecoveryCode, modal, fenetresOuvertes, fermerFenetres,
     packDetail, unpackDetail,
     dpgf: { MAX_LIGNES, parseNum, montant, total, lineErrors, rows: dpgfRows, csv: dpgfCsv, fileName: dpgfFileName, headerProblem, forbiddenWord },
     _setStore: (s) => { _store = s; },   // tests

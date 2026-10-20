@@ -218,6 +218,12 @@
   }
 
   // ── Fenêtre de confirmation (aux couleurs d'Adjugo, sans dialogue système) ─────────────────────────
+  // Fenêtres ouvertes : le précédent du navigateur dans app.html les ferme comme « Annuler » (fermerFenetres), avant
+  // tout changement d'écran — une confirmation n'agit jamais sur un écran quitté (réorganisation, vague 2a,
+  // contre-relecture).
+  const _ouvertes = new Set();
+  function fenetresOuvertes() { return _ouvertes.size; }
+  function fermerFenetres() { const f = Array.from(_ouvertes); f.forEach(close => close(null)); return f.length > 0; }
 
   function modal(o) {
     return new Promise(resolve => {
@@ -230,7 +236,8 @@
       document.body.appendChild(ov);
       const input = ov.querySelector("input");
       const prev = document.activeElement;
-      const close = (v) => { ov.remove(); try { if (prev && prev.focus) prev.focus({ preventScroll: true }); } catch (e) {} resolve(v); };
+      const close = (v) => { _ouvertes.delete(close); ov.remove(); try { if (prev && prev.focus) prev.focus({ preventScroll: true }); } catch (e) {} resolve(v); };
+      _ouvertes.add(close);
       ov.addEventListener("click", e => {
         const b = e.target.closest && e.target.closest("[data-r]");
         if (e.target === ov) close(null);
@@ -1150,5 +1157,5 @@
     };
   }
 
-  root.AdjugoRedactionPartenaire = { mount, _pur: { partieLot, rpEsc, rpSrcLib, rpMots, rpTexte, rpPhrase, rpLim, rpCompteurs, rpJour, rpACompleter, rpDiff, rpTaille, rpAccept } };
+  root.AdjugoRedactionPartenaire = { mount, fenetresOuvertes, fermerFenetres, _modal: modal /* tests */, _pur: { partieLot, rpEsc, rpSrcLib, rpMots, rpTexte, rpPhrase, rpLim, rpCompteurs, rpJour, rpACompleter, rpDiff, rpTaille, rpAccept } };
 })(typeof window !== "undefined" ? window : this);

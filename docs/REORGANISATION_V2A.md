@@ -19,6 +19,7 @@ La vague a été menée en trois chantiers parallèles, puis réunis :
 | **A3** entreprise, documents, confirmations, vocabulaire | Mon entreprise en 4 onglets (Tarifs, « Ce que je cherche »), le montant que je porte seul (migration `c4montantseul`), Mes documents (catégorie, date de fin), la fenêtre de confirmation de l'application au lieu des 19 `confirm()` / `prompt()`, « partie (lot n) » (D10) | § A3 |
 | **Réunion** | Les trois chantiers sur la production, ce qui se croisait entre eux, vérifications d'ensemble | § R |
 | **Relecture** | Les 10 remarques de la relecture, reproduites ; 10 retenues et corrigées (une seule est de la documentation) | § L |
+| **Contre-relecture** | Les 3 remarques de la contre-relecture (deux sur la même correction), reproduites et corrigées | § M |
 
 Les sections A1, A2 et A3 décrivent chaque chantier tel qu'il a été fait ; quand la réunion a changé un point, la
 section le dit (« Réunion : … ») et le § R le détaille.
@@ -1076,7 +1077,9 @@ document est aussi reconnu quand son nom porte **tous** les mots significatifs d
 chiffres séparés des lettres, pluriel ôté, mots vides et génériques — « attestation », « certificat », « obligatoire »,
 « en cours de validité »… — écartés) : « Visite obligatoire », « attestation visite », « ISO 27001 », « iso27001 ».
 Jamais sur un seul mot commun : « … régularité fiscale » ne reconnaît pas « … régularité sociale », « ISO 27001 » pas
-« ISO 9001 ». Les mots-clés des pièces standard ne changent pas.
+« ISO 9001 ». Les mots-clés des pièces standard ne changent pas. *Contre-relecture (§ M.1) : ce n'était pas tenu pour un
+chiffre ou une lettre seuls (« DC 4 » était reconnu par DC1.pdf) ni pour le dossier de l'acheteur ; la règle exacte est
+« tous les mots significatifs de la pièce, chiffres compris ».*
 
 ### L.7 Formulaires rangés par la production (remarque 7)
 
@@ -1145,3 +1148,103 @@ bulle). Tests mis à jour, chacun avec sa raison en commentaire : `test_reorgani
   `redaction-partenaire.js` : chantier à part, proposé à Eliot.
 - **Précédent qui ne fait que fermer une fenêtre** : l'entrée « suivante » de l'historique est remplacée par l'écran
   resté affiché (le prix d'un comportement sûr et sans course entre deux mouvements d'historique).
+
+---
+
+## M. Contre-relecture de la vague 2a
+
+Trois remarques (deux lentilles : cloisonnement et liens ; données, démonstration et suite), dont deux sur la même
+correction (R6 de la relecture). Chacune a été **reproduite** avant d'être corrigée ; **aucune n'est rejetée**. Tests :
+`tests/test_reorganisation_v2a_contre_relecture.py` (10 tests : les 10 échouent sur `238f6e0`). Postgres :
+`scratchpad/cr2a/run_contre_relecture_pg.py` de la session (§ M.3).
+
+### M.1 Une pièce reconnue sous son nom, jamais sous celui d'une autre (remarques 1 et 3)
+
+**Reproduit** (appel direct de `match_document`, puis par l'API sur une entreprise seule) : `_mots_significatifs`
+écartait tout mot d'un seul caractère, chiffres compris. « DC 4 » (→ dc) était reconnu par DC1.pdf, « ATTRI2 » par
+ATTRI1.pdf (que « Préparer mes documents » range lui-même dans le dossier du marché), « Annexe 4 » par « Annexe 1 »,
+« Annexe 1 - Cadre de réponse technique » par « Annexe 2 - … », « Attestation de visite n° 2 » par « … n° 1 » ; et le
+repli lisait aussi le dossier « DCE » du marché (le dossier de l'acheteur, importé par l'entreprise) : « CCAP signé »
+était reconnu par le CCAP.pdf de l'acheteur. La carte « Pièces à fournir » les cochait « ok » et « Prêt à déposer »
+d'une entreprise seule ne les listait plus. Sur `e66ed55` (avant la relecture), ces pièces restaient « à ajouter » :
+régression de la correction R6. **Corrigé** (`app/routers/checklist.py`, le repli par les mots seulement) :
+
+- un chiffre est toujours un mot significatif, même seul : tous les chiffres de la pièce doivent être dans le nom du
+  document (« Annexe 1 » ne reconnaît ni « Annexe 2 » ni « Annexe 12 ») ;
+- une lettre seule n'est un mot que derrière un mot de repère (annexe, lot, partie, tranche, pièce, formulaire, cadre,
+  modèle, volet, phase, chapitre, article, section, titre), et liée à lui (« Annexe A » → annexe, annexe:a) : « Annexe
+  A » ne reconnaît ni « Annexe B », ni « Annexe B à compléter », ni « Annexe » ; « à », les élisions (« d' », « l' »…)
+  et le « n » de « n° » n'en sont jamais (« Pièce d'identité » reconnaît « Pièce identité ») ; « no », « num »,
+  « numéro » sont des mots vides ;
+- le repli ne lit jamais les fichiers du dossier « DCE » : le même nom déposé dans Mes documents ou dans un autre
+  dossier du marché est reconnu.
+
+Le prix, assumé : une pièce sans mot-clé qui cite une durée (« Liste des services des 3 dernières années ») n'est
+reconnue que par un nom qui porte ce chiffre. C'est un manque de trop, que l'entreprise voit et lève en nommant son
+document ; jamais une pièce cochée à tort.
+
+Les mots-clés des pièces standard (comportement de la production) ne changent pas. Démonstration : listes de pièces et
+« Prêt à déposer » de tous les marchés de la démo identiques avant et après (`scratchpad/cr2a/demo_pieces.py`, code
+`238f6e0` puis code corrigé, mêmes sorties) ; Kerhel « 3 contrôles sur 4 », Réfection toiture « 3 contrôles sur 5 ».
+
+### M.2 Précédent du navigateur : le menu du téléphone et les fenêtres hors de Vue (remarque 2)
+
+**Reproduit** (harnais Node des tests, gestionnaire `popstate` réel) : « Menu » de la barre basse ouvert
+(`mobileNav`), précédent changeait l'écran et le menu restait ouvert. Les fenêtres que deux fichiers ajoutent à la page
+hors de Vue restaient ouvertes sur l'écran suivant : `cotraitance-crypto.js` (« Vérifiez votre identité », code de
+récupération) et `redaction-partenaire.js` (ses confirmations, « Envoyer votre partie au groupement ? »…, liées au
+dossier quitté). **Vu dans le code puis reproduit sous Node avec les méthodes réelles** : un dossier partagé A quitté
+pour un dossier B (suivant du navigateur) pendant que la fenêtre du code était ouverte — la part de A (nom, prix,
+détail chiffré avec la clé de A) partait vers l'invitation de B (`PUT /api/invite/B/contribution`) ; avec « Vérifiez
+votre identité », la vérification portait sur A et la soumission sur B ; « Déverrouiller » rangeait la clé de A sous
+l'espace de B et affichait le détail de A sur B ; « Code perdu » rendait le nouveau code de A à B. Les deux dossiers
+sont ceux du même compte (rien d'un autre membre n'était lu), mais la part d'un dossier pouvait partir vers un autre
+chef de file. La production n'avait ni `popstate` ni ces adresses : précédent quittait l'application. **Corrigé** :
+
+- `_fermerFenetres` ferme aussi le menu du téléphone (`mobileNav`) et les fenêtres hors de Vue : chacun des deux
+  fichiers tient la liste de ses fenêtres ouvertes et l'expose (`fenetresOuvertes`, `fermerFenetres`, réponse
+  « Annuler ») ; précédent les ferme et l'écran reste ; suivant les ferme et l'écran suit l'adresse ;
+- défense en profondeur : les gestes d'un dossier partagé retiennent leur dossier et s'arrêtent si un autre est à
+  l'écran après une fenêtre ou un appel (`_sharedPut`, `_sharedEncrypt`, `sharedSubmit`, `sharedEnsureVerified`,
+  `sharedUnlock`, `sharedLostCode`, `sharedAvantReprise`) ; la réponse d'un enregistrement met à jour son dossier,
+  jamais celui de l'écran suivant ;
+- garde des tests étendue : tout fichier servi qui ajoute une fenêtre à la page (`document.body.appendChild`) expose
+  `fermerFenetres` et `_fermerFenetres` l'appelle ; `_fermerFenetres` connaît `mobileNav`.
+
+`invite.html` (le lien sans compte) n'a pas de routage : rien n'y change, à part les empreintes SRI des deux fichiers.
+
+### M.3 Vérifications
+
+- **Suite complète** verte (SQLite, TZ=UTC) : 2 205 tests ; `scripts/sri_update.py --check` ; `node --check` de
+  `app.js`, `cotraitance-crypto.js` et `redaction-partenaire.js` ; gabarit de `app.html` compilé par le Vue du dépôt ;
+  garde des mots bannis verte.
+- **Les nouveaux tests sur `238f6e0`** : les 10 échouent, chacun sur la remarque qu'il décrit.
+- **Postgres 16.2 depuis l'état exact de la production** (`run_contre_relecture_pg.py`, 30 contrôles) : le
+  script de la relecture (§ L.11), plus un marché créé par le code de production (`fab9d9a`, tête `b3mesureecrans`) dont
+  le dossier exige « ATTRI2 », « Annexe 4 » et « CCAP signé », passé par « Préparer mes documents » (ATTRI1.pdf rangé),
+  avec « Annexe 1 » déposée et le CCAP.pdf de l'acheteur dans le dossier « DCE » : sur la base migrée, le code corrigé
+  laisse les trois pièces « à ajouter » (carte et « Prêt à déposer ») et coche toujours « Attestation de visite
+  obligatoire » déposée sous son nom ; le reste comme au § L.11 (geste conditionnel, formulaires de la production,
+  sous-traitant seul, `/api/shared`, cloisonnement 404, bascule mesurée, retour arrière, remontée). Vrais tests : fichiers
+  communs, mêmes échecs qu'avec la production (51 contre 51, les mêmes) ; 29 contrôles sur 30 au premier passage — le
+  seul échec, le test du contrat, venait de la copie du code faite avant l'écriture de cette section ; relancés sur le
+  code final (`run_v2a_pg_seul.py`), les 6 fichiers de la vague 2a : 117 sur 117.
+- **Navigateur réel** (serveur local sur le code corrigé, base jetable, démonstration par lien privé avec une clé
+  jetable, `DEMO_PUBLIC=0`, réseau sortant, courriels et IA coupés), à 375 px : Mes marchés → Infogérance SI → Mes
+  marchés → Kerhel → précédent → Mes marchés ; « Menu » de la barre basse ouvert, précédent : le menu se ferme
+  (`aside.side` sans `open`, plus de toile de fond), l'adresse reste `/app/marches` ; précédent suivant : Infogérance SI.
+  Sur la page d'Infogérance SI, une fenêtre « Vérifiez votre identité » de `cotraitance-crypto.js`, puis une
+  confirmation de `redaction-partenaire.js` : précédent ferme chacune (réponse « Annuler »), l'écran et l'adresse
+  restent. 375 px sans défilement horizontal ; Kerhel « 3 contrôles sur 4 », Réfection toiture « 3 contrôles sur 5 » ;
+  console sans erreur de script.
+
+### M.4 Laissé, avec sa raison
+
+- **Les mots-clés des pièces standard ne lisent pas les repères** (comportement de la production, inchangé) : une pièce
+  lue dans le dossier qui contient un mot-clé (« Lot A - Planning », « Annexe à l'acte d'engagement n° 3 ») est
+  reconnue par tout document de la famille (« Planning.pdf », ATTRI1.pdf), et ces mots-clés lisent aussi le dossier
+  « DCE ». Ce n'est pas la correction R6 ; resserrer les mots-clés changerait ce que la production coche aujourd'hui
+  (« Kbis de moins de 3 mois » ne doit pas exiger un « 3 » dans le nom du Kbis) : proposé à Eliot, avec des cas réels.
+- **Le précédent ne ferme pas l'écran d'accueil du SIRET** (« Bienvenue sur Adjugo ») : un premier pas, pas une
+  fenêtre (déjà exclu par la garde de la relecture).
+
