@@ -414,6 +414,75 @@ function listeAFaire(d, aujourdhui) {
   return out.sort((a, b) => a.rang - b.rang || (a.tri || 0) - (b.tri || 0));
 }
 
+// ══════════ Prise en main (réorganisation, vague 2b, B1 ; contrat docs/REORGANISATION_V2B.md) — fonctions pures ══════════
+// « Vos premiers pas » : le SERVEUR dit, pour chaque tâche, son statut lu dans les données de l'organisation
+// (GET /api/prise-en-main, app/services/prise_en_main.py) ; l'écran dit les mots. Chaque tâche commence par un verbe et
+// n'a que trois statuts. Une tâche que le serveur ne renvoie pas n'est pas affichée (« dossiers » : seulement parce que
+// sa fonction, l'import dans Mon savoir-faire, est en ligne). L'ancienne étape de recherche (validée après une analyse) n'existe
+// plus. La même tâche revient dans l'état vide de l'écran où elle se fait (`rappelPremiersPas`).
+const PP_STATUTS = { pas_commence: "Pas commencé", en_cours: "En cours", termine: "Terminé" };
+const PP_PILLS = { pas_commence: "neutral", en_cours: "a_etudier", termine: "go" };
+const PP_TACHES = {
+  dire: { titre: "Dire ce que vous faites et où", ic: "sliders-horizontal" },
+  suivre: { titre: "Suivre 3 marchés", ic: "folder-kanban" },
+  lire: { titre: "Lire le dossier d'un marché", ic: "folder-open" },
+  plusieurs: { titre: "Inviter un partenaire, ou vous faire trouver", ic: "handshake" },
+  dossiers: { titre: "Ajouter vos 3 derniers dossiers de présentation", ic: "library" },
+};
+const PP_MANQUES = { metier: "votre métier", zone: "votre zone", montant: "le montant que vous portez seul (ou « Je ne sais pas »)" };
+// Une tâche du serveur → ce que l'écran affiche : titre, statut, une ligne qui dit l'état, et ses actions (`cible` : ce
+// qu'ouvre le bouton). `nbMarches` : les marchés de Mes marchés (pour proposer « Inviter un partenaire » seulement s'il y
+// en a un sur lequel inviter). null pour une clé inconnue.
+function tachePremiersPas(t, nbMarches) {
+  const def = t && PP_TACHES[t.k];
+  if (!def || !PP_STATUTS[t.statut]) return null;
+  const fini = t.statut === "termine", sur = (t.fait != null && t.sur) ? t.fait + " sur " + t.sur : "";
+  let detail = "", actions = [];
+  if (t.k === "dire") {
+    const m = (t.manque || []).map(x => PP_MANQUES[x]).filter(Boolean);
+    detail = fini ? "Métier, zone et montant porté seul : c'est dit." : "Reste à dire : " + m.join(", ") + ".";
+    actions = [{ label: "Renseigner", ic: "sliders-horizontal", cible: { view: "criteria" } }];
+  } else if (t.k === "suivre") {
+    detail = sur + " dans Mes marchés.";
+    actions = [{ label: "Trouver des marchés", ic: "search", cible: { rubrique: "trouver" } }];
+  } else if (t.k === "lire") {
+    detail = fini ? "Un dossier complet lu." : t.statut === "en_cours" ? "Dossier importé, pas encore lu en entier."
+      : "Importez le dossier complet d'un marché, à l'étape Lire de sa page.";
+    actions = t.projet ? [{ label: "Ouvrir le marché", ic: "folder-open", cible: { view: "aodetail", projet: t.projet } }]
+      : [{ label: "Trouver des marchés", ic: "search", cible: { rubrique: "trouver" } }];
+  } else if (t.k === "plusieurs") {
+    detail = t.invitation ? "Partenaire invité sur un marché." : t.profil === "publie" ? "Profil publié sur le réseau Adjugo."
+      : t.profil === "en_attente" ? "Profil en attente de validation par Adjugo."
+      : t.profil === "brouillon" ? "Profil partenaire enregistré, pas encore publié."
+      : "Invitez une entreprise sur un marché, ou publiez votre profil partenaire.";
+    if (nbMarches > 0) actions.push({ label: "Inviter un partenaire", ic: "user-plus", cible: { inviter: true } });
+    if (t.profil !== "publie") actions.push({ label: t.profil === "en_attente" ? "Voir ma demande de publication" : "Publier mon profil",
+                                             ic: "id-card", cible: { reseau: "profil" } });
+  } else if (t.k === "dossiers") {
+    detail = sur + " dans Mon savoir-faire.";
+    actions = [{ label: "Importer", ic: "library", cible: { view: "kb" } }];
+  }
+  return { k: t.k, titre: def.titre, ic: def.ic, statut: t.statut, libelle: PP_STATUTS[t.statut], pill: PP_PILLS[t.statut],
+           detail, sur, actions: fini ? [] : actions };
+}
+function tachesPremiersPas(pp, nbMarches) {
+  return ((pp && pp.taches) || []).map(t => tachePremiersPas(t, nbMarches)).filter(Boolean);
+}
+// Le rappel d'une tâche dans l'état vide de son écran : la tâche, tant que la liste est affichée et qu'elle n'est pas
+// terminée ; sinon null (rien à rappeler).
+function rappelPremiersPas(pp, k) {
+  if (!pp || !pp.visible) return null;
+  const t = tachesPremiersPas(pp, 0).find(x => x.k === k);
+  return t && t.statut !== "termine" ? t : null;
+}
+// Confirmation d'email vivante (décision 12 (a)) : l'écran revérifie seul, sans marteler le serveur — toutes les 5 s
+// pendant 2 minutes, puis toutes les 15 s jusqu'à 15 minutes, puis chaque minute ; seulement quand l'onglet est visible,
+// et tout de suite quand on y revient. `ecouleMs` : depuis l'affichage de l'écran (ou le dernier retour sur l'onglet).
+function delaiReverification(ecouleMs) {
+  const t = Number(ecouleMs) || 0;
+  return t < 120000 ? 5000 : (t < 900000 ? 15000 : 60000);
+}
+
 // Préparer › À plusieurs : les étapes 2 à 4 du groupement deviennent des tâches. Des FAITS lus dans l'état dérivé
 // du serveur (GET /groupement/state, jamais stocké) : partenaires invités, parts reçues avec leur prix, convention et
 // accords, offre figée ; rien d'autre n'est calculé. La 5e étape (« Déposer ») est l'étape Déposer de la page. Vide
@@ -1150,7 +1219,13 @@ const __adjApp = createApp({
       mobileNav: false,
       user: {}, company: {}, criteria: {}, googleEnabled: false,
       idleLimitMs: 60 * 60 * 1000,   // déconnexion auto après 1 h SANS activité (sécurité appareil partagé/perdu)
-      view: "dashboard", busy: false, toast: null, pending: 0, llmInfo: null,
+      // Vague 2b (B1) : aucun écran avant que l'adresse soit résolue (rechargement de /app/marches/1 : l'accueil
+      // s'affichait une seconde). `view` est vide jusque-là ; `ecranPret` passe à vrai quand boot() a ouvert l'écran.
+      view: "", ecranPret: false, busy: false, toast: null, pending: 0, llmInfo: null,
+      // Prise en main (vague 2b, B1) : « Vos premiers pas » (GET /api/prise-en-main, état gardé sur le serveur), le profil
+      // réseau tel que le serveur le dit (états vides), la revérification de la confirmation d'email.
+      pp: { d: null, profil: "" },
+      confirmation: { enCours: false, depuis: 0, vu: 0, message: "" },
       // Menu par rubriques (réorganisation, vague 1, 1.3) : groupe « Réglages » replié par défaut, état gardé ;
       // onglet interne de Trouver des marchés ; note « Ce qui a changé » (1.8), état gardé dans ce navigateur.
       navReglages: (function(){ try { return localStorage.getItem("adjugo_nav_reglages") === "1"; } catch(e){ return false; } })(),
@@ -1178,7 +1253,9 @@ const __adjApp = createApp({
       rinv: null,                             // modale d'invitation en 1 clic (partenaire du réseau ou entreprise SIRENE)
       offre402: null, essaiAlerteOff: false,   // invitation à choisir un forfait (refus 402, limite d'usage de l'essai)
       reseauSuggest: null, reseauSuggestOff: false,   // suggestion « publiez votre profil » (après inscription / acceptation)
-      welcome: { siret: "", busy: false, dismissed: false },   // activation par SIRET (1er lancement)
+      // Activation par SIRET (1er lancement) ; vague 2b : « Jusqu'à quel montant répondez-vous seul ? » (seul, ou « Je ne
+      // sais pas »), facultatif, enregistré dans « Ce que je cherche ».
+      welcome: { siret: "", busy: false, dismissed: false, seul: "", seulInconnu: false },
       ag: { query: "réhabilitation groupe scolaire", running: false, log: [], gonogo: null, coverage: null, lots: [], dossier: null },
       agState: {}, agStep: {},
       // Un seul axe d'étapes (vague 2a, décision 7) : AXE_ETAPES, en tête de ce fichier.
@@ -1360,26 +1437,12 @@ const __adjApp = createApp({
         .slice(0, 3);
     },
     predepotDone() { return (this.predepot || []).filter(Boolean).length; },
-    onboarding() {
-      // Premiers pas : 3 jalons d'activation, dérivés des données réelles du compte.
-      const c = this.company || {}, cr = this.criteria || {};
-      const profil = !!(c.name && c.siret);
-      const criteres = !!((cr.specialites && String(cr.specialites).trim()) || (cr.departements && String(cr.departements).trim()));
-      const premier = (this.projects || []).length > 0;
-      const steps = [
-        { k: "profil", done: profil, label: "Renseignez le nom et le SIRET de votre entreprise", view: "company", cta: "Compléter" },
-        { k: "criteres", done: criteres, label: "Dites ce que vous cherchez : vos métiers ou votre zone", view: "criteria", cta: "Renseigner" },
-        { k: "premier", done: premier, label: "Lancez votre première recherche de marchés", view: "sourcing", cta: "Rechercher" },
-      ];
-      return { steps, done: steps.filter(s => s.done).length, total: steps.length };
-    },
-    showOnboarding() {
-      try { if (localStorage.getItem("adjugo_onboarding_done") === "1") return false; } catch (e) {}
-      return this.onboarding.done < this.onboarding.total;
-    },
-    // Activation par SIRET : écran d'accueil au 1er lancement tant que le profil n'a pas de SIRET.
+    // « Vos premiers pas » (vague 2b, B1) : les méthodes pp… ; l'état vient du serveur (GET /api/prise-en-main), plus du
+    // navigateur (l'ancienne liste et sa clé dans le navigateur ont disparu).
+    // Activation par SIRET : écran d'accueil au 1er lancement tant que le profil n'a pas de SIRET. Vague 2b : pas avant
+    // que l'écran de l'adresse soit ouvert (la fiche de l'entreprise est alors lue : plus d'éclair de la fenêtre).
     showWelcome() {
-      if (!this.token || this.welcome.dismissed) return false;
+      if (!this.token || this.welcome.dismissed || !this.ecranPret) return false;
       try { if (localStorage.getItem("adjugo_welcome_done") === "1") return false; } catch (e) {}
       return !!(this.user && this.user.id) && !(this.company && this.company.siret);
     },
@@ -1393,6 +1456,9 @@ const __adjApp = createApp({
     // Chaque changement d'écran devient une entrée de l'historique du navigateur (précédent / suivant), sauf quand
     // l'écran suit déjà l'adresse (démarrage, retour arrière) : l'adresse est alors seulement corrigée.
     adresseCourante(adr) { this._adresseSynchro(adr); },
+    // Confirmation d'email vivante (vague 2b, B1) : l'écran plein revérifie seul tant que l'adresse n'est pas confirmée
+    // (inscription, adresse changée) ; la revérification s'arrête dès qu'elle l'est, ou à la déconnexion.
+    "user.email_verified"(v) { if (v === false && this.token) this.confirmationSuivre(); else this.confirmationArreter(); },
   },
   mounted() {
     this.applyTheme();
@@ -1652,7 +1718,95 @@ const __adjApp = createApp({
       try { sessionStorage.setItem("adjugo_demo_fin", detail === DEMO_LIEN_PERIME ? "perime" : "terminee"); } catch (e) {}
       localStorage.removeItem("adjugo_token"); localStorage.removeItem("adjugo_active"); atlPurgeDrafts(true); window.location.href = "/demo";
     },
-    dismissOnboarding() { try { localStorage.setItem("adjugo_onboarding_done", "1"); } catch (e) {} this.$forceUpdate(); },
+    // ══════════ Prise en main (réorganisation, vague 2b, B1 ; fonctions pures en tête du fichier) ══════════
+    // « Vos premiers pas » et la carte « Faites-vous trouver » : l'état est sur le serveur (GET /api/prise-en-main) ; rien
+    // n'est gardé dans ce navigateur. Lu au démarrage, en revenant à l'accueil et après « Ce que je cherche ».
+    async loadPriseEnMain() {
+      try {
+        const r = await this.api("GET", "/api/prise-en-main");
+        this.pp.d = (r && r.premiers_pas) || null;
+        this.pp.profil = (r && r.profil_reseau) || "";
+        if (r && r.suggestion_reseau) this._rnSuggest(r.suggestion_reseau);
+      } catch (e) {}          // rien d'affiché plutôt qu'un état faux
+    },
+    ppVisible() { return !!(this.pp.d && this.pp.d.visible); },
+    ppTaches() { return tachesPremiersPas(this.pp.d, (this.projects || []).length); },
+    ppRappel(k) { return rappelPremiersPas(this.pp.d, k); },
+    // « Publier mon profil sur le réseau » dans un état vide : seulement si le serveur dit qu'il n'est ni publié ni en
+    // attente de validation.
+    ppProfilAPublier() { return this.pp.profil === "aucun" || this.pp.profil === "brouillon"; },
+    async ppReplier(replie) {
+      const d = this.pp.d; if (!d) return;
+      const avant = d.replie; d.replie = !!replie;
+      try { const r = await this.api("PUT", "/api/prise-en-main", { replie: !!replie }); if (r && r.premiers_pas) this.pp.d = r.premiers_pas; }
+      catch (e) { d.replie = avant; this.notify(e.message, "err"); }
+    },
+    ppOuvrir(a) {
+      const c = (a && a.cible) || {};
+      if (c.rubrique) this.rubriqueGo(c.rubrique);
+      else if (c.view === "aodetail" && c.projet) this.openProjectById(c.projet);
+      else if (c.inviter) this.inviterOuvrir();
+      else if (c.reseau) this.openReseau(c.reseau);
+      else if (c.view) this.go(c.view);
+    },
+    // Le marché d'exemple (vague 2b, chantier « exemple ») vit à l'adresse /app/exemple, écran « exemple » : « Voir un
+    // exemple » ne s'affiche que quand cette adresse ouvre vraiment cet écran (aucun bouton vers un écran absent).
+    exempleEnLigne() { const e = etatDeAdresse("/app/exemple"); return !!(e && e.view === "exemple"); },
+    // « Je ne sais pas » au montant porté seul (Ce que je cherche) : une réponse, qui efface le montant.
+    critSeulInconnu(oui) { this.criteria.montant_porte_seul_inconnu = !!oui; if (oui) this.criteria.montant_porte_seul = null; },
+    welcomeSeulInconnu() { if (this.welcome.seulInconnu) this.welcome.seul = ""; },
+
+    // ── Confirmation d'email vivante (vague 2b, B1 ; décision 12 (a)) ──
+    // Tant que l'adresse n'est pas confirmée, l'écran plein revérifie seul : tout de suite quand on revient sur l'onglet,
+    // puis à intervalle croissant (delaiReverification) tant qu'il est ouvert ET visible — jamais dans un onglet caché.
+    // GET /api/auth/me sans la barre de progression ; dès que le serveur dit « confirmée », l'écran s'ouvre. Le serveur,
+    // lui, refuse toujours ce qu'il refusait sans adresse confirmée (analyses, IA, courriels, réseau).
+    confirmationSuivre() {
+      if (this._confVu) return;
+      this._confVu = () => { if (document.visibilityState === "visible") { this.confirmation.depuis = Date.now(); this.confirmationVerifier(); } else this._confPlanifier(true); };
+      document.addEventListener("visibilitychange", this._confVu);
+      window.addEventListener("focus", this._confVu);
+      this.confirmation.depuis = Date.now();
+      this._confPlanifier();
+    },
+    confirmationArreter() {
+      if (this._confT) { clearTimeout(this._confT); this._confT = null; }
+      if (this._confVu) { document.removeEventListener("visibilitychange", this._confVu); window.removeEventListener("focus", this._confVu); this._confVu = null; }
+    },
+    _confPlanifier(seulementArreter) {
+      if (this._confT) { clearTimeout(this._confT); this._confT = null; }
+      if (seulementArreter || !this._confVu || document.visibilityState !== "visible") return;
+      this._confT = setTimeout(() => { this._confT = null; this.confirmationVerifier(); }, delaiReverification(Date.now() - this.confirmation.depuis));
+    },
+    // « Renvoyer l'email de vérification » depuis l'écran plein : la réponse du serveur (envoyé, déjà confirmée, trop
+    // d'envois) s'affiche dans l'écran ; une adresse déjà confirmée ailleurs l'ouvre à la vérification qui suit.
+    async confirmationRenvoyer() {
+      try {
+        const r = await this.api("POST", "/api/auth/resend-verification");
+        this.confirmation.message = (r && r.message) || "Email de confirmation renvoyé.";
+        this.confirmationVerifier();
+      } catch (e) { this.confirmation.message = e.message; }
+    },
+    async confirmationVerifier(clic) {
+      if (!this.token || this.confirmation.enCours) return;
+      if (!clic && Date.now() - (this.confirmation.vu || 0) < 2000) { this._confPlanifier(); return; }   // focus + visibilité : un seul appel
+      this.confirmation.enCours = true; this.confirmation.vu = Date.now();
+      try {
+        const r = await fetch("/api/auth/me", { headers: { Authorization: "Bearer " + this.token }, cache: "no-store" });
+        if (r.status === 401) { this.sessionPerdue(await r.json().then(j => j && j.detail, () => "")); return; }
+        const u = r.ok ? await r.json() : null;
+        if (u && u.id && u.email_verified) {
+          this.user = u;      // l'écran s'ouvre (l'observateur arrête la revérification)
+          this.confirmation.message = "";
+          this.notify("Adresse email confirmée");
+          this.loadPriseEnMain();
+          return;
+        }
+        // Dit DANS l'écran plein (le message habituel, en bas de page, passe sous lui).
+        if (clic) this.confirmation.message = "Pas encore confirmée : cliquez sur le lien du courriel, puis revenez ici.";
+      } catch (e) {} finally { this.confirmation.enCours = false; }
+      this._confPlanifier();
+    },
     // ── Feedback in-app ──
     openFeedback() { this.fb.open = true; this.fb.message = ""; this.fb.kind = "idee"; },
     async sendFeedback() {
@@ -1710,8 +1864,10 @@ const __adjApp = createApp({
 
     async boot() {
       try { localStorage.setItem("adjugo_active", String(Date.now())); } catch (e) {}   // toute connexion réussie = activité (réarme le verrou d'inactivité)
-      try { this.user = await this.api("GET", "/api/auth/me"); } catch (e) { return; }
-      await Promise.all([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadNotifs(), this.loadConsortiums(), this.loadShared(), this.loadGrpDash()]);
+      try { this.user = await this.api("GET", "/api/auth/me"); } catch (e) { this.ecranPret = true; return; }
+      // Vague 2b (B1) : allSettled — un chargement en échec n'empêche plus d'ouvrir l'écran de l'adresse (aucun écran
+      // n'est affiché avant : ecranPret). « Vos premiers pas » et la carte « Faites-vous trouver » viennent du serveur.
+      await Promise.allSettled([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadNotifs(), this.loadConsortiums(), this.loadShared(), this.loadGrpDash(), this.loadPriseEnMain()]);
       // Adaptation au pays de l'organisation : scope AO + devise + LANGUE par défaut
       if (this.org.data && this.org.data.country) { this.src.country = this.org.data.country; this.orgCountry = this.org.data.country; this.applyLang(this.org.data.lang); }
       // Une adresse par écran (vague 2a, A1) : l'écran que demande l'adresse (lien, favori, rechargement, ou
@@ -1730,6 +1886,8 @@ const __adjApp = createApp({
       this._adresseActive = true;
       try { history.replaceState(Object.assign({}, history.state || {}, { adjugo: 1, n: (history.state && history.state.n) || 0 }), ""); } catch (e) {}
       this._ouvrirAdresse(_demande);
+      // L'écran de l'adresse est ouvert (un marché absent de la liste : à la réponse de l'API, _appliquerAdresse).
+      if (!this._adresseAttente) this.ecranPret = true;
       try {   // posée par invite.html juste avant la redirection « Accepter depuis mon compte »
         const raw = sessionStorage.getItem("adjugo_suggest_profile");
         if (raw) { sessionStorage.removeItem("adjugo_suggest_profile"); this._rnSuggest(JSON.parse(raw)); }
@@ -1848,7 +2006,7 @@ const __adjApp = createApp({
       if (filtre) this._ecranOuvert(filtre === "partenaire" ? "shared" : "consortiums");   // mesure : l'ancien écran
       this.mobileNav = false;  // referme le menu mobile à la navigation
       this.notifsOpen = false; this.fb.open = false;  // referme les popups (notifications / retour d'avis) à la navigation
-      if (v === "dashboard") { this.loadStats(); this.loadExpiring(); this.loadConsortiums(); this.loadNotifs(); this.loadGrpDash(); this.noteReorgMarquer(); }
+      if (v === "dashboard") { this.loadStats(); this.loadExpiring(); this.loadConsortiums(); this.loadNotifs(); this.loadGrpDash(); this.noteReorgMarquer(); this.loadPriseEnMain(); }
       if (v === "pipeline") { this.loadProjects(); this.loadShared(); this.rnLoadRecues(true); this.loadConsortiums(); }   // la liste et ses pastilles à jour
       if (v === "bilan") this.loadStats();
       if (v === "contacts") this.loadContacts();
@@ -1980,8 +2138,8 @@ const __adjApp = createApp({
         this._adresseAttente = true;
         const voulue = adresseDe(e), encore = () => location.pathname === voulue;   // personne n'est allé ailleurs
         this.api("GET", "/api/projects/" + e.projet)
-          .then(pp => { if (!(pp && pp.id)) throw new Error(); this._adresseAttente = false; if (encore()) this._sansHistorique(() => ouvrir(pp)); })
-          .catch(() => { this._adresseAttente = false; if (!encore()) return; this.notify("Ce marché n'est plus accessible", "err"); this._sansHistorique(() => this.go("pipeline")); });
+          .then(pp => { if (!(pp && pp.id)) throw new Error(); this._adresseAttente = false; if (encore()) this._sansHistorique(() => ouvrir(pp)); this.ecranPret = true; })
+          .catch(() => { this._adresseAttente = false; this.ecranPret = true; if (!encore()) return; this.notify("Ce marché n'est plus accessible", "err"); this._sansHistorique(() => this.go("pipeline")); });
         return;
       }
       if (v === "sharedao") {
@@ -2144,7 +2302,13 @@ const __adjApp = createApp({
         const dep = (r.postal_code || this.company.postal_code || "").slice(0, 2);
         if (spec && !((this.criteria.specialites || "").trim())) this.criteria.specialites = spec;
         if (dep && !((this.criteria.departements || "").trim())) this.criteria.departements = dep;
+        // Vague 2b (B1) : la réponse à « Jusqu'à quel montant répondez-vous seul ? », seulement si elle a été donnée (un
+        // montant, ou « Je ne sais pas ») ; sans réponse, rien n'est enregistré ni déduit.
+        const seul = this.welcome.seul;
+        if (this.welcome.seulInconnu) { this.criteria.montant_porte_seul = null; this.criteria.montant_porte_seul_inconnu = true; }
+        else if (seul !== "" && seul != null && Number(seul) >= 0) { this.criteria.montant_porte_seul = Number(seul); this.criteria.montant_porte_seul_inconnu = false; }
         try { await this.api("PUT", "/api/criteria/", this.criteria); } catch (e) {}
+        this.loadPriseEnMain();
         // 3) Pré-remplir et lancer la 1re recherche pertinente.
         if (spec && !this.src.query) this.src.query = spec.split(/[ ,;]/)[0];
         if (dep && !this.src.dept) this.src.dept = dep;
@@ -2485,7 +2649,7 @@ const __adjApp = createApp({
       // Un champ numérique vidé arrive en "" → on l'envoie en null (le backend garde le défaut au lieu de refuser).
       const payload = {};
       for (const [k, v] of Object.entries(this.criteria || {})) payload[k] = (v === "" || (typeof v === "number" && Number.isNaN(v))) ? null : v;
-      try { await this.api("PUT", "/api/criteria/", payload); this.notify("Critères enregistrés"); }
+      try { await this.api("PUT", "/api/criteria/", payload); this.notify("Critères enregistrés"); this.loadPriseEnMain(); }
       catch (e) { this.notify(e.message, "err"); } finally { this.busy = false; }
     },
     // ── Garde-fou critères + résolution des libellés CPV ──
@@ -3570,8 +3734,11 @@ const __adjApp = createApp({
     },
     essaiCarteClose() { if (this.offre402) this.offre402 = null; else this.essaiAlerteOff = true; },
     essaiCarteGo() { this.offre402 = null; this.go("billing"); },
-    rnSuggestClose() { this.reseauSuggest = null; this.reseauSuggestOff = true; },
-    rnSuggestGo() { this.reseauSuggest = null; this.reseauSuggestOff = true; this.openReseau("profil"); },
+    // Vague 2b (B1) : la carte est fermée SUR LE SERVEUR aussi (elle ne revient ni dans un autre onglet ni sur un autre
+    // appareil) ; une erreur réseau ne gêne rien (la carte reste fermée dans cette page).
+    rnSuggestClose() { this.reseauSuggest = null; this.reseauSuggestOff = true; this._rnSuggestFermer(); },
+    rnSuggestGo() { this.reseauSuggest = null; this.reseauSuggestOff = true; this._rnSuggestFermer(); this.openReseau("profil"); },
+    _rnSuggestFermer() { this.api("POST", "/api/prise-en-main/suggestion-reseau/fermer").catch(() => {}); },
 
     // ── Mon profil partenaire ──
     rnLoadProfil(quiet) {   // renvoie la requête en cours si elle existe déjà (pas de double appel)

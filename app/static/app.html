@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-q8DL80RVudBWgsaCfc4AJZ3iCrB4O6OoIs5lA81bOty2NmjC5qh+tkxKPVJDzShC"></script>
-<script src="/static/i18n.js" integrity="sha384-KpXowPcwcNEmHnlAs08IgZwUFCrYOh4fpKxbdlauvZYi6XOlVMLIQLKQ/opchP5S" defer></script>
+<script src="/static/i18n.js" integrity="sha384-zKkpz1OwhhaTHHDqiGHZGXRkDuMTcejJgDgsil94inEBBs73UPyWo+w/dpWP3NoD" defer></script>
 </head>
 <body>
 <div id="app">
@@ -135,7 +135,7 @@
               <button type="button" role="tab" class="notif-og" :class="{on:notifsOnglet==='activite'}" :aria-selected="notifsOnglet==='activite'?'true':'false'" @click="notifsVoir('activite')"><span>Activité</span><span v-if="notifUnseen>0" class="notif-point" aria-hidden="true"></span><span v-if="notifUnseen>0" class="sr-only"> (nouvelle activité)</span></button>
             </div>
             <div v-if="notifsOnglet==='a_faire'" role="tabpanel">
-              <div v-if="!aFaire().length" class="muted small notif-vide">Rien n'attend votre action pour l'instant.</div>
+              <div v-if="!aFaire().length" class="muted small notif-vide">Rien n'attend de réponse de votre part.</div>
               <button v-for="t in aFaire()" :key="'nf'+t.k" type="button" class="notif-l" @click="aFaireOuvrir(t)">
                 <i :data-lucide="t.ic" aria-hidden="true"></i>
                 <span class="notif-tx"><b class="small">{{ t.titre }}</b><span class="muted small">{{ t.detail }}</span></span>
@@ -159,7 +159,11 @@
         <button v-if="view==='documents'" class="btn primary" @click="$refs.upl.click()" :disabled="uploading" aria-label="Ajouter un document"><span v-if="uploading" class="spin"></span><i v-else data-lucide="upload"></i><span class="btn-l">Ajouter un document</span></button>
         <input ref="upl" type="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.odt,.ods,.zip,.txt" multiple class="hidden" @change="uploadDoc">
       </header>
-      <div data-test="contenu" class="content">
+      <!-- Rechargement d'une adresse (réorganisation, vague 2b, B1) : aucun écran tant que l'adresse n'est pas résolue
+           (l'accueil s'affichait une seconde avant /app/marches/1). `ecranPret` passe à vrai quand boot() a ouvert
+           l'écran de l'adresse, après la réponse de l'API pour un marché qui n'est pas encore dans la liste. -->
+      <div data-test="ecran-attente" v-if="token && !ecranPret" class="content ecran-attente" role="status"><span class="spin" aria-hidden="true"></span><span class="sr-only">Chargement de l'écran</span></div>
+      <div data-test="contenu" v-show="ecranPret" class="content">
 
         <!-- Onglets de la rubrique (réorganisation, vague 1, 1.3) : un seul composant pour toutes les rubriques
              (RUBRIQUES, app.js). Chaque onglet ouvre une ancienne vue par go(), sans changement ; jamais sur une page
@@ -212,30 +216,41 @@
               <button type="button" class="btn icon sm ghost" aria-label="Fermer" @click="noteReorgFermer()"><i data-lucide="x"></i></button>
             </div>
           </div>
-          <!-- Premiers pas : onboarding guidé (disparaît une fois les 3 jalons faits) -->
-          <div data-test="accueil-premiers-pas" v-if="showOnboarding" class="card pad dash-block" style="border:1px solid var(--accent-weak)">
-            <div class="row" style="align-items:center;gap:8px">
-              <i data-lucide="rocket" style="color:var(--accent-text)"></i>
-              <b style="flex:1">Premiers pas sur Adjugo</b>
-              <span class="pill" :class="onboarding.done===onboarding.total?'go':'neutral'" style="font-size:11px">{{ onboarding.done }} sur {{ onboarding.total }}</span>
-              <button class="icon-btn xs" title="Masquer" aria-label="Masquer" @click="dismissOnboarding()"><i data-lucide="x" style="width:15px;height:15px"></i></button>
+          <!-- « Vos premiers pas » (réorganisation, vague 2b, B1 ; contrat docs/REORGANISATION_V2B.md) : la liste
+               d'activation, pendant les 30 jours qui suivent la création du compte (le serveur dit jusqu'au ; jamais pour
+               la démonstration). Chaque tâche commence par un verbe, a l'un des trois statuts Pas commencé · En cours ·
+               Terminé, LU dans les données par le serveur (GET /api/prise-en-main) ; rien n'est coché à la main. Repliable :
+               l'état est gardé sur le serveur (PUT /api/prise-en-main), jamais seulement dans ce navigateur. -->
+          <section data-test="accueil-premiers-pas" v-if="ppVisible()" class="card pad dash-block pp-bloc" aria-labelledby="pp-t">
+            <div class="pp-h">
+              <i data-lucide="rocket" class="pp-ic" aria-hidden="true"></i>
+              <b id="pp-t" class="pp-titre">Vos premiers pas</b>
+              <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Chaque tâche se coche d'elle-même, d'après ce que vous avez fait dans Adjugo. Un marché entre dans Mes marchés quand vous l'analysez, ou quand vous préparez à plusieurs un contrat qui arrive à échéance. <span v-if="pp.d.jusqu_au">Cette liste reste sur l'accueil jusqu'au {{ fmtDate(pp.d.jusqu_au) }}.</span></span></button>
+              <span class="pill neutral pp-compte">{{ pp.d.n_terminees }} sur {{ pp.d.n_total }}<span class="sr-only"> terminées</span></span>
+              <button type="button" class="btn sm ghost pp-replier" :aria-expanded="pp.d.replie ? 'false' : 'true'" aria-controls="pp-liste" @click="ppReplier(!pp.d.replie)"><i :data-lucide="pp.d.replie ? 'chevron-down' : 'chevron-up'"></i>{{ pp.d.replie ? 'Déplier' : 'Replier' }}</button>
             </div>
-            <div class="muted small" style="margin:4px 0 10px">3 étapes pour configurer votre espace et trouver vos premiers marchés.</div>
-            <div v-for="(s,i) in onboarding.steps" :key="s.k" class="row" style="padding:7px 0;border-top:1px solid var(--hairline);gap:10px;align-items:center">
-              <i :data-lucide="s.done?'check-circle-2':'circle'" :style="s.done?'color:var(--success)':'color:var(--subtle)'" style="width:18px;height:18px"></i>
-              <span style="flex:1" :style="s.done?'text-decoration:line-through;opacity:.6':''">{{ s.label }}</span>
-              <button v-if="!s.done" class="btn sm primary" @click="go(s.view)">{{ s.cta }}</button>
-            </div>
-          </div>
+            <template v-if="!pp.d.replie">
+              <ul id="pp-liste" class="pp-liste">
+                <li v-for="t in ppTaches()" :key="'pp'+t.k" class="pp-l" :class="'pp-'+t.statut">
+                  <i :data-lucide="t.ic" class="pp-l-ic" aria-hidden="true"></i>
+                  <span class="pp-tx"><b class="small">{{ t.titre }}</b><span class="muted small">{{ t.detail }}</span></span>
+                  <span class="pill pp-st" :class="t.pill">{{ t.libelle }}</span>
+                  <span v-if="t.actions.length" class="pp-a"><button v-for="(a,ai) in t.actions" :key="'ppa'+t.k+ai" type="button" class="btn sm" :class="{primary: ai===0}" @click="ppOuvrir(a)"><i :data-lucide="a.ic"></i>{{ a.label }}</button></span>
+                </li>
+              </ul>
+              <div v-if="exempleEnLigne()" class="pp-exemple"><button type="button" class="btn sm ghost" @click="go('exemple')"><i data-lucide="book-open"></i>Voir un exemple</button><span class="muted small">Entreprises et client fictifs</span></div>
+            </template>
+          </section>
           <!-- « À faire » (réorganisation, vague 2a, A1) : ce qui attend votre action, la même liste que la cloche
-               (listeAFaire, app.js). Absent quand il n'y a rien (jamais « 0 »). -->
-          <div data-test="accueil-a-faire" v-if="aFaire().length" class="card pad dash-block" role="region" aria-labelledby="afaire-t">
+               (listeAFaire, app.js). Jamais « 0 » ; vague 2b (B1, étude § 7.3) : quand rien n'attend, une phrase le dit. -->
+          <div data-test="accueil-a-faire" class="card pad dash-block" role="region" aria-labelledby="afaire-t">
             <div class="row" style="align-items:center;gap:8px">
               <i data-lucide="bell" style="color:var(--accent-text)"></i>
               <b id="afaire-t" style="flex:1">À faire</b>
               <button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ce qui attend votre action : un accord ou une partie du dossier de présentation qu'un chef de file vous demande, une invitation reçue, une date limite dans les 7 jours, une part de partenaire encore attendue, une pièce à renouveler. La même liste est dans la cloche, en haut de chaque écran.</span></button>
             </div>
-            <ul class="afaire-liste">
+            <p v-if="!aFaire().length" class="muted small afaire-vide">Rien n'attend de réponse de votre part.</p>
+            <ul v-else class="afaire-liste">
               <li v-for="t in aFaire().slice(0, 6)" :key="'af'+t.k" class="afaire-l">
                 <i :data-lucide="t.ic" aria-hidden="true"></i>
                 <span class="afaire-tx"><b class="small">{{ t.titre }}</b><span class="muted small">{{ t.detail }}</span></span>
@@ -277,9 +292,15 @@
               </button>
             </div>
 
-            <div v-else-if="grpDashState()==='vide'" class="row wrap" style="margin-top:16px;gap:10px;align-items:center;padding:11px 13px;border:1px dashed var(--border);border-radius:9px;background:var(--surface)">
-              <i data-lucide="sparkles" style="color:var(--accent-text);flex:none"></i>
-              <div class="small" style="flex:1;min-width:170px">Aucun groupement pour l'instant. Ouvrez un marché et <b>invitez un partenaire</b>.</div>
+            <!-- État vide (vague 2b, B1, étude § 7.3) : l'état, et un chemin direct ; « Voir un exemple » mène au marché
+                 d'exemple (/app/exemple), seulement quand cet écran est en ligne. La tâche des premiers pas revient ici. -->
+            <div v-else-if="grpDashState()==='vide'" class="dash-vide" style="margin-top:16px;padding:11px 13px;border:1px dashed var(--border);border-radius:9px;background:var(--surface)">
+              <div class="row wrap" style="gap:10px;align-items:center">
+                <i data-lucide="handshake" style="color:var(--accent-text);flex:none"></i>
+                <div class="small" style="flex:1;min-width:170px">Aucun groupement en cours. Pour répondre avec une autre entreprise, ouvrez un marché et invitez-la.</div>
+                <button v-if="exempleEnLigne()" type="button" class="btn sm" @click="go('exemple')"><i data-lucide="book-open"></i>Voir un exemple</button>
+              </div>
+              <p v-if="ppRappel('plusieurs')" class="pp-rappel small"><i data-lucide="rocket" aria-hidden="true"></i><span>Vos premiers pas :</span> <span>{{ ppRappel('plusieurs').titre }}</span> <span class="pill pp-st" :class="ppRappel('plusieurs').pill">{{ ppRappel('plusieurs').libelle }}</span></p>
             </div>
             <div v-else-if="grpDashState()==='deposes'" class="row wrap" style="margin-top:16px;gap:10px;align-items:center;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--surface)">
               <i data-lucide="send" style="color:var(--accent-text);flex:none"></i>
@@ -451,7 +472,11 @@
                 </div>
                 <div v-else-if="!aoDceAvailable()" class="row wrap" style="margin-bottom:12px;gap:10px;padding:12px;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:8px">
                   <i data-lucide="alert-triangle" style="width:18px;height:18px;color:#b45309;flex-shrink:0;margin-top:2px"></i>
-                  <div style="flex:1;min-width:180px"><b class="small" style="color:#92400e">Le dossier complet du marché est indispensable</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le <b>dossier complet</b> (le règlement, le cahier des charges, le tableau de prix) donne une <b>compatibilité fiable</b>, la liste exacte des pièces et les formulaires corrects. Téléchargez-le sur la plateforme de l'acheteur et déposez-le ici.</span></button><div class="muted small" style="margin-top:2px">Analyse <b>préliminaire</b> (annonce seule) : importez le dossier complet du marché pour un résultat fiable.</div></div>
+                  <!-- Vague 2b (B1, étude § 7.4) : la bulle « Où récupérer le dossier du marché » ; le lien de l'avis est à
+                       côté, jamais dans la bulle (aucune action dans une bulle). La tâche des premiers pas revient ici. -->
+                  <div style="flex:1;min-width:180px"><b class="small" style="color:#92400e">Le dossier complet du marché est indispensable</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Où récupérer le dossier du marché</span><span class="tip-b" role="tooltip"><b>Où récupérer le dossier du marché</b> : sur la plateforme où le client l'a publié ; l'avis du marché en donne en général l'adresse. Téléchargez-y le <b>dossier complet</b> (le règlement, le cahier des charges, le tableau de prix) et déposez-le ici : il donne une <b>compatibilité fiable</b>, la liste exacte des pièces et les formulaires corrects.</span></button><div class="muted small" style="margin-top:2px">Analyse <b>préliminaire</b> (annonce seule) : importez le dossier complet du marché pour un résultat fiable.</div>
+                    <a v-if="aoSource() && aoSource().source_url" :href="safeUrl(aoSource().source_url)" target="_blank" rel="noopener" class="small row" style="gap:4px;margin-top:6px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:13px;height:13px"></i>Ouvrir l'avis du marché</a>
+                    <p v-if="ppRappel('lire')" class="pp-rappel small"><i data-lucide="rocket" aria-hidden="true"></i><span>Vos premiers pas :</span> <span>{{ ppRappel('lire').titre }}</span> <span class="pill pp-st" :class="ppRappel('lire').pill">{{ ppRappel('lire').libelle }}</span></p></div>
                   <button class="btn primary sm" @click="$refs.aoDce.click()" :disabled="aoBusy()"><span v-if="aoBusy()" class="spin"></span><i v-else data-lucide="upload"></i>Importer le dossier du marché</button>
                 </div>
                 <div v-else class="row" style="margin-bottom:10px;gap:8px"><button class="btn ghost sm" @click="$refs.aoDce.click()" :disabled="aoBusy()"><i data-lucide="upload"></i>Ré-importer le dossier</button><button class="btn ghost sm" @click="aoReanalyze()" :disabled="aoBusy()"><span v-if="aoBusy()" class="spin"></span><i v-else data-lucide="refresh-cw"></i>Ré-analyser</button></div>
@@ -581,7 +606,9 @@
             <p v-if="!ao.project.ai_analysis" class="card pad muted small mk-vide">Analysez d'abord le marché (étape Lire) : Adjugo montre alors ce que vous couvrez seul, ce qui manque et qui peut vous compléter.</p>
             <!-- Répondre à plusieurs ? — seul ou à plusieurs (décision 8), manques du dossier, candidats, simulation (co-traitance v2) -->
             <div data-test="marche-plusieurs" v-if="ao.project.ai_analysis" class="card" style="margin-top:14px;border:1.5px solid var(--accent)">
-              <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="scale" style="color:var(--accent-text)"></i><h3>Répondre à plusieurs ?</h3><div class="spacer"></div>
+              <!-- Vague 2b (B1, étude § 7.4) : la bulle « Comment Adjugo dit seul ou à plusieurs », fidèle au calcul
+                   (app/services/dce_scoring.py, groupement_scoring.py). -->
+              <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="scale" style="color:var(--accent-text)"></i><h3>Répondre à plusieurs ?</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">Comment Adjugo dit seul ou à plusieurs</span><span class="tip-b" role="tooltip"><b>Seul</b> : Adjugo compare ce que le dossier du marché demande à ce que vous avez dit de votre entreprise, sur six critères (métier, zone, montant, capacité financière, qualifications, délai de réponse). <b>À plusieurs</b> : le même calcul, sur vos capacités et celles des partenaires choisis, réunies. Une capacité inconnue ne compte jamais en plus.</span></button><div class="spacer"></div>
                 <span v-if="ao.grp.state && ao.grp.state.label" class="pill go_groupement" style="font-size:11px">{{ ao.grp.state.label }}</span>
                 <button class="btn sm" @click="aoOptimizeGroup()" :disabled="ao.group&&ao.group.loading" title="Répartition des parties (lots) entre vos partenaires"><span v-if="ao.group&&ao.group.loading" class="spin"></span><i v-else data-lucide="scale"></i>Répartir entre partenaires</button></div>
               <div class="cb">
@@ -1551,7 +1578,12 @@
               <input class="inp" v-model="src.dept" placeholder="Départements (29, 56…)" @keyup.enter="srcRenewals()" style="width:165px" aria-label="Départements">
               <button class="btn primary" @click="srcRenewals()" :disabled="src.renewals.loading"><span v-if="src.renewals.loading" class="spin"></span><i v-else data-lucide="search"></i>Chercher les fins de contrat</button>
             </div>
-            <div v-if="src.renewals.done && !src.renewals.list.length" class="muted small" style="margin-top:8px">Aucune échéance proche sur ce périmètre.</div>
+            <!-- État vide (vague 2b, B1, étude § 7.3) : ce que montre l'onglet, et « Modifier ma zone ». Les projets votés en
+                 conseil n'y sont pas annoncés : cette fonction (Veille V1) n'est pas en ligne. -->
+            <div v-if="!src.renewals.list.length && !src.renewals.loading" class="row wrap small" style="margin-top:8px;gap:8px;align-items:center">
+              <span class="muted">{{ src.renewals.done ? "Aucune échéance proche sur ce périmètre." : "Contrats de votre zone qui arrivent à échéance." }}</span>
+              <button type="button" class="linkbtn small" @click="go('criteria')">Modifier ma zone</button>
+            </div>
             <div v-for="r in src.renewals.list" :key="r.idweb" class="row" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:10px;align-items:flex-start;gap:10px">
               <div style="flex:1;min-width:0">
                 <div class="row wrap" style="gap:6px">
@@ -1638,6 +1670,7 @@
             <h4>Trouvez vos marchés</h4><p>Marchés réels issus des sources officielles (BOAMP, TED, Mégalis Bretagne).</p>
             <button class="btn primary" style="margin-top:12px" @click="srcSearchMine()"><i data-lucide="sparkles"></i>Voir les marchés pour mon entreprise</button>
             <div class="muted small" style="margin-top:6px">D'après vos spécialités et votre département.</div>
+            <p v-if="ppRappel('suivre')" class="pp-rappel small"><i data-lucide="rocket" aria-hidden="true"></i><span>Vos premiers pas :</span> <span>{{ ppRappel('suivre').titre }}</span> <span class="pill pp-st" :class="ppRappel('suivre').pill">{{ ppRappel('suivre').libelle }}</span></p>
           </div>
           <!-- 0 résultat après recherche : carte ACTIONNABLE (élargir en un clic) (#2) -->
           <div v-else-if="src.empty && !src.searching" class="empty card pad" style="margin-top:14px">
@@ -1835,7 +1868,14 @@
             <div class="ch"><i data-lucide="library"></i><h3>Mon savoir-faire</h3><div class="spacer"></div>
               <span class="muted small">{{ kb.docs.length }} document(s) · {{ kb.totalChunks }} extrait(s) indexés</span></div>
             <div class="cb">
-              <div v-if="!kb.docs.length" class="muted small">Aucun document. Importez les vôtres pour que l'IA rédige à partir de votre savoir-faire réel.</div>
+              <!-- État vide (vague 2b, B1, étude § 7.3) : l'état, et un chemin direct ; la tâche des premiers pas revient ici. -->
+              <div v-if="!kb.docs.length" class="kb-vide">
+                <div class="row wrap" style="gap:10px;align-items:center">
+                  <span class="muted small" style="flex:1;min-width:200px">Vos anciens dossiers servent de source au dossier de présentation.</span>
+                  <button type="button" class="btn sm primary" @click="$refs.kbUpl.click()" :disabled="kb.uploading"><i data-lucide="upload"></i>Importer</button>
+                </div>
+                <p v-if="ppRappel('dossiers')" class="pp-rappel small"><i data-lucide="rocket" aria-hidden="true"></i><span>Vos premiers pas :</span> <span>{{ ppRappel('dossiers').titre }}</span> <span class="pill pp-st" :class="ppRappel('dossiers').pill">{{ ppRappel('dossiers').libelle }}</span></p>
+              </div>
               <template v-for="d in kb.docs" :key="d.id">
               <div class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline);gap:10px">
                 <i data-lucide="file-text" style="width:16px;height:16px;color:var(--muted)"></i>
@@ -2684,15 +2724,23 @@
             </article>
           </section>
 
-          <!-- États vides : un par filtre, qui dit quoi faire -->
+          <!-- États vides : un par filtre, qui dit l'état et propose un chemin direct (vague 2b, B1, étude § 7.3). Aucune
+               promesse d'une fonction qui n'est pas en ligne : « Voir un exemple » seulement quand le marché d'exemple
+               (/app/exemple) l'est. La tâche des premiers pas de l'écran revient ici. -->
           <div v-if="mmVide() && (mmFiltre==='tous' || mmFiltre==='pilote')" class="empty card pad">
-            <div class="eic"><i data-lucide="inbox"></i></div>
-            <h4>Aucun marché pour l'instant</h4><p>Lancez une recherche pour trouver des marchés qui vous correspondent.</p>
-            <button class="btn primary" @click="rubriqueGo('trouver')"><i data-lucide="search"></i>Trouver des marchés</button>
+            <div class="eic"><i data-lucide="folder-kanban"></i></div>
+            <h4>Aucun marché pour l'instant</h4><p>Les marchés que vous suivez ou analysez arrivent ici.</p>
+            <div class="row wrap" style="gap:8px;justify-content:center;margin-top:12px">
+              <button class="btn primary" @click="rubriqueGo('trouver')"><i data-lucide="search"></i>Trouver des marchés</button>
+              <button v-if="exempleEnLigne()" type="button" class="btn" @click="go('exemple')"><i data-lucide="book-open"></i>Voir un exemple</button>
+            </div>
+            <p v-if="ppRappel('suivre')" class="pp-rappel small"><i data-lucide="rocket" aria-hidden="true"></i><span>Vos premiers pas :</span> <span>{{ ppRappel('suivre').titre }}</span> <span class="pill pp-st" :class="ppRappel('suivre').pill">{{ ppRappel('suivre').libelle }}</span></p>
           </div>
           <div v-else-if="mmVide() && mmFiltre==='partenaire'" class="empty card pad">
             <div class="eic"><i data-lucide="inbox"></i></div>
             <h4>Aucun marché où vous êtes partenaire</h4><p>Quand une entreprise vous invite dans un groupement et que vous acceptez depuis votre compte, son marché apparaît ici.</p>
+            <button v-if="ppProfilAPublier()" type="button" class="btn" style="margin-top:12px" @click="openReseau('profil')"><i data-lucide="id-card"></i>Publier mon profil sur le réseau</button>
+            <p v-if="ppRappel('plusieurs')" class="pp-rappel small"><i data-lucide="rocket" aria-hidden="true"></i><span>Vos premiers pas :</span> <span>{{ ppRappel('plusieurs').titre }}</span> <span class="pill pp-st" :class="ppRappel('plusieurs').pill">{{ ppRappel('plusieurs').libelle }}</span></p>
           </div>
           <div v-else-if="mmVide() && mmFiltre==='plusieurs'" class="empty card pad">
             <div class="eic"><i data-lucide="handshake"></i></div>
@@ -3169,6 +3217,8 @@
 
         <!-- ░░ CRITERIA ░░ -->
         <section data-test="vue-criteria" v-if="view==='criteria'">
+          <!-- La tâche des premiers pas de cet écran (vague 2b, B1) : ce qui reste à dire, lu par le serveur. -->
+          <p v-if="ppRappel('dire')" class="pp-rappel small pp-rappel-haut"><i data-lucide="rocket" aria-hidden="true"></i><span>Vos premiers pas :</span> <span>{{ ppRappel('dire').titre }}</span> <span class="pill pp-st" :class="ppRappel('dire').pill">{{ ppRappel('dire').libelle }}</span> <span class="muted">{{ ppRappel('dire').detail }}</span></p>
           <div class="card pad" style="max-width:820px">
             <div class="sectitle ent-sectitle0">Mes métiers</div>
             <div class="frow"><div class="field"><label for="crit-spec">Spécialités</label><input id="crit-spec" v-model="criteria.specialites" placeholder="Gros œuvre, Maçonnerie"></div>
@@ -3183,8 +3233,10 @@
             <div class="sectitle">Montants<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Cette fourchette entre dans le classement des marchés trouvés et dans l'analyse d'un marché : un montant publié hors de la fourchette compte moins. Elle ne masque aucun marché.</span></button></div>
             <div class="frow"><div class="field"><label for="crit-bmin">Marchés à partir de (€ HT)</label><input id="crit-bmin" type="number" min="0" v-model.number="criteria.budget_min"></div>
               <div class="field"><label for="crit-bmax">Jusqu'à (€ HT)</label><input id="crit-bmax" type="number" min="0" v-model.number="criteria.budget_max"></div></div>
-            <div class="field ent-seul"><label for="crit-seul">Montant que je porte seul (€ HT) <span class="hint">facultatif</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le montant du plus gros marché, ou de la plus grosse partie (lot) d'un marché, que votre entreprise réalise seule. Laissez vide si vous ne savez pas : Adjugo ne le déduit d'aucun autre champ. Il ne masque aucun marché et ne change aucune note.</span></button></label>
-              <input id="crit-seul" type="number" min="0" step="1000" v-model.number="criteria.montant_porte_seul" placeholder="Non renseigné"></div>
+            <div class="field ent-seul"><label for="crit-seul">Montant que je porte seul (€ HT) <span class="hint">facultatif</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le montant du plus gros marché, ou de la plus grosse partie (lot) d'un marché, que votre entreprise réalise seule. Si vous ne savez pas, cochez « Je ne sais pas » : Adjugo ne le déduit d'aucun autre champ. Il ne masque aucun marché et ne change aucune note.</span></button></label>
+              <input id="crit-seul" type="number" min="0" step="1000" v-model.number="criteria.montant_porte_seul" placeholder="Non renseigné" :disabled="!!criteria.montant_porte_seul_inconnu">
+              <!-- « Je ne sais pas » (vague 2b, B1) : une réponse, distincte d'un champ vide ; cochée, elle efface le montant. -->
+              <label class="ent-seul-inconnu small"><input type="checkbox" :checked="!!criteria.montant_porte_seul_inconnu" @change="critSeulInconnu($event.target.checked)">Je ne sais pas</label></div>
             <div class="sectitle">Seuils de recommandation</div>
             <div class="frow"><div class="field"><label for="crit-go">Seuil « bon potentiel » <span class="hint">score ≥</span></label><input id="crit-go" type="number" min="0" max="100" placeholder="65 (défaut)" v-model.number="criteria.go_threshold"></div>
               <div class="field"><label for="crit-nogo">Seuil « peu adapté » <span class="hint">score &lt;</span></label><input id="crit-nogo" type="number" min="0" max="100" placeholder="40 (défaut)" v-model.number="criteria.nogo_threshold"></div></div>
@@ -3576,11 +3628,14 @@
             <div v-if="reseau.an.loading && !reseau.an.d" class="card pad muted small rn-block"><span class="spin"></span> Recherche dans le réseau…</div>
             <div v-if="reseau.an.error" class="card pad rn-block"><div class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ reseau.an.error }} <button type="button" class="linkbtn" @click="rnLoadAnnuaire(reseau.an.page)">Réessayer</button></div></div></div>
             <template v-for="ad in (reseau.an.d ? [reseau.an.d] : [])" :key="'rna'">
-              <!-- Profil non publié : seulement un compteur (le réseau fonctionne dans les deux sens) -->
+              <!-- Profil non publié : seulement un compteur (le réseau fonctionne dans les deux sens). Vague 2b (B1, étude
+                   § 7.3) : la règle dite en une phrase, « Compléter mon profil » ; une demande en attente garde le message
+                   du serveur. La tâche des premiers pas revient ici. -->
               <div v-if="!ad.visible" class="card pad rn-block rn-empty">
                 <i data-lucide="lock" class="rn-empty-ic"></i>
-                <div class="rn-empty-t"><b>{{ ad.message }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau fonctionne dans les deux sens : seules les entreprises qui ont publié leur profil voient celui des autres. Au lancement, le réseau est encore petit : c'est normal.</span></button></div>
-                <div class="row wrap rn-g8 rn-empty-a"><button type="button" class="btn primary" @click="rnGoPublish()"><i data-lucide="send"></i>{{ rnPubCta() }}</button><button type="button" class="btn" @click="rnDiscover()"><i data-lucide="search"></i>Chercher dans le registre officiel</button><button type="button" class="btn ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
+                <div class="rn-empty-t"><b>{{ rnPending() ? ad.message : "L'annuaire s'ouvre quand votre profil est publié : c'est la règle pour tous." }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau fonctionne dans les deux sens : seules les entreprises qui ont publié leur profil voient celui des autres. Au lancement, le réseau est encore petit : c'est normal.</span></button></div>
+                <p v-if="ppRappel('plusieurs')" class="pp-rappel small"><i data-lucide="rocket" aria-hidden="true"></i><span>Vos premiers pas :</span> <span>{{ ppRappel('plusieurs').titre }}</span> <span class="pill pp-st" :class="ppRappel('plusieurs').pill">{{ ppRappel('plusieurs').libelle }}</span></p>
+                <div class="row wrap rn-g8 rn-empty-a"><button type="button" class="btn primary" @click="rnGoPublish()"><i data-lucide="id-card"></i>{{ rnPending() ? 'Voir ma demande de publication' : 'Compléter mon profil' }}</button><button type="button" class="btn" @click="rnDiscover()"><i data-lucide="search"></i>Chercher dans le registre officiel</button><button type="button" class="btn ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
               </div>
               <div v-else-if="!(ad.profils||[]).length" class="card pad rn-block rn-empty">
                 <i data-lucide="users-round" class="rn-empty-ic"></i>
@@ -4008,10 +4063,19 @@
   <div data-test="fenetre-siret" v-if="token && showWelcome" class="overlay" style="align-items:center;z-index:60">
     <div class="modal" style="max-width:480px;text-align:center;padding:38px 36px">
       <div class="logo" aria-hidden="true" style="margin:4px auto 10px"><svg class="mark" viewBox="0 0 48 48" fill="none" style="width:44px;height:44px"><circle cx="24" cy="24" r="21" stroke="var(--accent)" stroke-opacity=".42" stroke-width="3.5"/><circle cx="24" cy="24" r="13" stroke="var(--accent)" stroke-opacity=".72" stroke-width="3.5"/><circle cx="24" cy="24" r="6" fill="var(--accent)"/></svg></div>
-      <div style="display:flex;align-items:center;justify-content:center;margin:0 0 4px"><h2 style="font-size:20px;font-weight:800;margin:0">Bienvenue sur Adjugo</h2><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Un seul champ suffit : on règle aussi vos critères automatiquement. Données issues du registre officiel des entreprises (Insee). Rien n'est publié.</span></button></div>
+      <div style="display:flex;align-items:center;justify-content:center;margin:0 0 4px"><h2 id="siret-t" style="font-size:20px;font-weight:800;margin:0">Bienvenue sur Adjugo</h2><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Seul le SIRET est demandé : on règle aussi votre métier et votre zone à partir de lui. Données issues du registre officiel des entreprises (Insee). Rien n'est publié.</span></button></div>
       <p class="muted small" style="margin:0 0 16px">Entrez votre <b>SIRET</b> : on remplit votre profil et on vous montre <b>vos premiers marchés</b>.</p>
       <input class="inp" v-model="welcome.siret" placeholder="SIRET (14 chiffres)" inputmode="numeric" style="width:100%;text-align:center;font-size:16px;letter-spacing:1px" @keyup.enter="welcomeStart()" aria-label="Votre SIRET">
-      <button class="btn primary block" style="margin-top:12px" @click="welcomeStart()" :disabled="welcome.busy"><span v-if="welcome.busy" class="spin"></span><i v-else data-lucide="sparkles"></i>Démarrer avec mon SIRET</button>
+      <!-- Vague 2b (B1, étude § 7.1) : une question de plus, facultative. Réponse enregistrée dans « Ce que je cherche »
+           (montant que je porte seul, ou « Je ne sais pas ») ; laissée sans réponse, rien n'est enregistré ni déduit. -->
+      <fieldset class="siret-seul">
+        <legend class="small">Jusqu'à quel montant répondez-vous seul ? <span class="hint">facultatif</span></legend>
+        <div class="siret-seul-l">
+          <input id="siret-seul" class="inp" type="number" min="0" step="1000" v-model.number="welcome.seul" :disabled="welcome.seulInconnu" placeholder="Montant en € HT" aria-label="Montant que vous portez seul, en euros HT">
+          <label class="small siret-seul-ns"><input type="checkbox" v-model="welcome.seulInconnu" @change="welcomeSeulInconnu()">Je ne sais pas</label>
+        </div>
+      </fieldset>
+      <button class="btn primary block" style="margin-top:12px" @click="welcomeStart()" :disabled="welcome.busy"><span v-if="welcome.busy" class="spin"></span><i v-else data-lucide="building-2"></i>Démarrer avec mon SIRET</button>
       <button class="btn ghost sm" style="margin-top:8px" @click="welcomeSkip()">Je remplirai plus tard</button>
     </div>
   </div>
@@ -4233,13 +4297,23 @@
     </div>
   </div>
 
-  <!-- BLOCAGE plein écran tant que l'adresse email n'est pas confirmée (tous modes de connexion) -->
-  <div data-test="ecran-confirmation-email" v-if="token && user && user.id && user.email_verified===false" style="position:fixed;inset:0;z-index:300;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px">
-    <div class="card pad" style="max-width:440px;text-align:center">
+  <!-- BLOCAGE plein écran tant que l'adresse email n'est pas confirmée (tous modes de connexion). Vague 2b (B1,
+       décision 12 (a)) : gardé, et VIVANT — l'écran revérifie seul (au retour sur l'onglet, puis toutes les 5 s, 15 s,
+       puis chaque minute tant qu'il est ouvert et visible : delaiReverification, app.js) et s'ouvre dès que le lien a été
+       cliqué, ici ou sur un autre appareil ; il dit la suite (la même phrase que le courriel, APRES_CONFIRMATION
+       d'app/routers/auth.py, quand l'entreprise n'a pas encore de SIRET). Le serveur refuse toujours ce qu'il refusait. -->
+  <div data-test="ecran-confirmation-email" v-if="token && user && user.id && user.email_verified===false" style="position:fixed;inset:0;z-index:300;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px" role="dialog" aria-modal="true" aria-labelledby="conf-t" aria-describedby="conf-d">
+    <div class="card pad conf-email" style="max-width:440px;text-align:center">
       <div style="width:56px;height:56px;border-radius:50%;background:var(--accent-weak);display:flex;align-items:center;justify-content:center;margin:2px auto 16px"><i data-lucide="mail-check" style="color:var(--accent-text);width:27px;height:27px"></i></div>
-      <h2 style="margin:0 0 9px;font-size:19px">Confirmez votre adresse email</h2>
-      <p class="muted" style="margin:0 0 20px;line-height:1.55">Pour accéder à Adjugo, vérifiez <b>{{ user.email }}</b>.<br>Un lien de confirmation vous a été envoyé par email — pensez à regarder vos spams.</p>
-      <button class="btn primary block" @click="resendVerification"><i data-lucide="send"></i>Renvoyer l'email de vérification</button>
+      <h2 id="conf-t" style="margin:0 0 9px;font-size:19px">Confirmez votre adresse email</h2>
+      <p id="conf-d" class="muted" style="margin:0 0 12px;line-height:1.55">Pour accéder à Adjugo, vérifiez <b>{{ user.email }}</b>.<br>Un lien de confirmation vous a été envoyé par email — pensez à regarder vos spams.</p>
+      <p v-if="!(company && company.siret)" class="small conf-suite">Une fois confirmé, vous entrez votre SIRET et vous voyez les marchés de votre zone.</p>
+      <p class="muted small conf-vivant" role="status"><span class="spin" aria-hidden="true"></span><span>Dès que vous cliquez sur le lien, ici ou sur votre téléphone, cette page s'ouvre d'elle-même.</span></p>
+      <!-- La réponse de « Renvoyer » et de « J'ai cliqué sur le lien » s'affiche ici : le message habituel, en bas de
+           page, passe sous cet écran plein. -->
+      <p v-if="confirmation.message" class="small conf-msg" role="status" aria-live="polite">{{ confirmation.message }}</p>
+      <button class="btn primary block" @click="confirmationRenvoyer()"><i data-lucide="mail"></i>Renvoyer l'email de vérification</button>
+      <button class="btn block" style="margin-top:9px" @click="confirmationVerifier(true)" :disabled="confirmation.enCours"><i data-lucide="refresh-cw"></i>J'ai cliqué sur le lien</button>
       <button class="btn ghost block" style="margin-top:9px" @click="logout">Se déconnecter</button>
     </div>
   </div>
@@ -4260,8 +4334,9 @@
   </div>
 
   <!-- Bandeau cookies / stockage (RGPD). Jamais sur le menu : le groupe « Réglages » et le compte sont en bas du
-       menu. Sur ordinateur, il se place à droite du menu ; sur téléphone, il s'efface tant que le menu est ouvert. -->
-  <div data-test="bandeau-cookies" v-if="!cookiesOk && !mobileNav" class="bandeau-cookies" :class="{'avec-menu':!!token}">
+       menu. Sur ordinateur, il se place à droite du menu ; sur téléphone, il s'efface tant que le menu est ouvert.
+       Vague 2b (B1, étude § 7.1) : il ne passe plus par-dessus la fenêtre du SIRET ; il revient quand elle se ferme. -->
+  <div data-test="bandeau-cookies" v-if="!cookiesOk && !mobileNav && !(token && showWelcome)" class="bandeau-cookies" :class="{'avec-menu':!!token}">
     <span class="small" style="flex:1;min-width:220px">Adjugo utilise un stockage local strictement nécessaire à votre connexion et, le cas échéant, une mesure d'audience anonyme. Aucun cookie publicitaire. <a href="/confidentialite" target="_blank" rel="noopener" style="color:var(--accent-text)">En savoir plus</a>.</span>
     <button class="btn primary sm" @click="acceptCookies()">J'ai compris</button>
   </div>
@@ -4271,6 +4346,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-A+387th1PTAcERz3qexzFazsOqliPRzOAsCghg4FCkZJnaSZMvSmYFUv7nrPzCh7" defer></script>
+<script src="/static/app.js" integrity="sha384-Tw3icWG8Z0SjK10nD+Q9V4AGNZGem5phVXY8IG8SdlNCmagGWQn9AYQkglAyoAuP" defer></script>
 </body>
 </html>

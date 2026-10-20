@@ -243,6 +243,13 @@ def google_callback(request: Request, code: str = "", state: str = "", error: st
     if is_new:
         from app.routers.auth import _send_verification
         _send_verification(user)
+        # Vague 2b (B1) : la carte « Faites-vous trouver », proposée après l'inscription comme par mot de passe, notée
+        # sur le serveur (le retour de Google n'apporte rien d'autre à l'écran). Jamais bloquant.
+        try:
+            from app.services.prise_en_main import proposer_suggestion_reseau
+            proposer_suggestion_reseau(db, user)
+        except Exception:
+            db.rollback()
 
     # Jamais de jeton de session dans l'URL : code à usage unique dans le fragment.
     resp = RedirectResponse(_front("/app#gcode=" + _issue_exchange_code(user)))

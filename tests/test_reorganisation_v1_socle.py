@@ -103,6 +103,9 @@ ZONES = {
     # Relecture de la vague 2a (docs/REORGANISATION_V2A.md, § L) : la page d'une carte « À venir » (marché pas encore
     # publié), à la place du bandeau « Le dossier complet du marché est indispensable ».
     "vague2a_relecture": ["marche-pas-publie"],
+    # Vague 2b, B1 (docs/REORGANISATION_V2B.md) : l'attente d'une adresse au rechargement (aucun écran avant qu'elle
+    # soit résolue), à côté de `contenu`.
+    "vague2b_b1": ["ecran-attente"],
 }
 FAMILLES = {"fenetres-atelier": 5, "fenetres-preuves": 2}     # même nom sur plusieurs fenêtres sœurs
 

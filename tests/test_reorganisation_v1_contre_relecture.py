@@ -226,8 +226,13 @@ def test_les_autres_renvois_disent_le_chemin_d_aujourd_hui():
     bd = score_dce({"intitule_marche": "Travaux"}, {}, {})["breakdown"]
     metier = next(c for c in bd if c["key"] == "metier")
     assert metier["detail"] == "Activité non renseignée (vos spécialités dans Mon entreprise, onglet « Ce que je cherche »)"
-    # Onboarding de l'accueil : le jalon dit ce qu'il attend (nom et SIRET), et il est traduit (décision 16).
-    assert 'label: "Renseignez le nom et le SIRET de votre entreprise", view: "company"' in JS
+    # Onboarding de l'accueil : la tâche dit ce qu'elle attend, et elle est traduite (décision 16). Vague 2b (B1) : les
+    # 3 jalons calculés dans le navigateur (dont « Renseignez le nom et le SIRET… ») sont remplacés par « Vos premiers
+    # pas », lus sur le serveur ; la tâche de Mon entreprise est « Dire ce que vous faites et où » (Ce que je cherche),
+    # le SIRET restant demandé par la fenêtre du premier lancement.
+    assert 'label: "Renseignez le nom et le SIRET de votre entreprise", view: "company"' not in JS
+    assert 'dire: { titre: "Dire ce que vous faites et où", ic: "sliders-horizontal" }' in JS
+    assert 'actions = [{ label: "Renseigner", ic: "sliders-horizontal", cible: { view: "criteria" } }];' in JS
     import json
     import subprocess
     import shutil
@@ -238,5 +243,5 @@ def test_les_autres_renvois_disent_le_chemin_d_aujourd_hui():
                         "console.log(JSON.stringify(window.ADJUGO_I18N))", str(STATIC / "i18n.js")],
                        capture_output=True, text=True, timeout=60)
     d = json.loads(r.stdout)
-    k = "Renseignez le nom et le SIRET de votre entreprise"
-    assert d["nl"].get(k) and d["es"].get(k)
+    for k in ("Dire ce que vous faites et où", "Renseigner"):
+        assert d["nl"].get(k) and d["es"].get(k), k

@@ -4,7 +4,7 @@ Stocke les criteres supplementaires en JSON pour flexibilite.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import Column, Integer, Float, String, JSON, ForeignKey
+from sqlalchemy import Column, Integer, Float, String, JSON, ForeignKey, Boolean, false as sa_false
 from pydantic import BaseModel, field_validator
 from typing import Optional
 from app.core.database import get_db, Base
@@ -60,6 +60,11 @@ class MatchingCriteriaExt(Base):
     # « à plusieurs » quand une partie dépasse ce montant (innovation A du moteur, derrière un interrupteur). Migration
     # c4montantseul. Contrat : docs/REORGANISATION_V2A.md, section A3.
     montant_porte_seul = Column(Float, nullable=True)
+    # « Je ne sais pas » (réorganisation, vague 2b, B1 ; migration c5priseenmain) : l'entreprise a répondu à la question
+    # « Jusqu'à quel montant répondez-vous seul ? » sans donner de montant. Distinct d'un champ VIDE (jamais répondu) ;
+    # jamais vrai en même temps qu'un montant. Comme le montant, il n'entre dans aucun calcul : la liste d'activation
+    # (« Dire ce que vous faites et où », app/services/prise_en_main.py) lit seulement qu'une réponse a été donnée.
+    montant_porte_seul_inconnu = Column(Boolean, default=False, nullable=True, server_default=sa_false())
 
 
 MONTANT_SEUL_MAX = 10_000_000_000      # 10 milliards d'euros HT : au-delà, une faute de frappe
@@ -91,6 +96,8 @@ class CriteriaUpdate(BaseModel):
     nogo_threshold: Optional[int] = 40
     # Vide par défaut ; envoyé vide (None), il est EFFACÉ ; absent de la requête (ancienne page), il est gardé.
     montant_porte_seul: Optional[float] = None
+    # « Je ne sais pas » (vague 2b) : vrai efface le montant ; un montant donné le remet à faux ; absent, il est gardé.
+    montant_porte_seul_inconnu: Optional[bool] = None
 
     # Un champ numérique laissé VIDE dans le formulaire arrive en "" (v-model.number)
     # → Pydantic refusait tout l'enregistrement (422). On accepte le vide = None,
@@ -112,15 +119,31 @@ class CriteriaUpdate(BaseModel):
 router = APIRouter(prefix="/api/criteria", tags=["Criteres de matching"])
 
 
+def _criteres_out(c) -> dict:
+    """Les critères tels que la page les lit (ligne absente : les valeurs par défaut). « Je ne sais pas » est toujours un
+    booléen (jamais None) : faux tant que l'entreprise ne l'a pas choisi."""
+    result = CriteriaUpdate().model_dump() if c is None else {f: getattr(c, f, None) for f in CriteriaUpdate.model_fields}
+    result["montant_porte_seul_inconnu"] = bool(result.get("montant_porte_seul_inconnu"))
+    return result
+
+
+def ce_que_je_cherche_dit(db: Session, owner_id: int) -> dict:
+    """Pour la liste d'activation (réorganisation, vague 2b, B1 ; app/services/prise_en_main.py) : l'entreprise a-t-elle
+    dit son métier, sa zone et ce qu'elle porte seule ? Lecture seule, rien n'est déduit : métier = spécialités ou
+    codes CPV saisis ; zone = départements saisis ; montant = un montant donné OU « Je ne sais pas » coché. Ce n'est
+    pas un calcul sur le montant (il n'entre toujours dans aucun classement, aucune note, aucun filtre)."""
+    c = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == owner_id).first()
+    if c is None:
+        return {"metier": False, "zone": False, "montant": False}
+    txt = lambda v: bool(str(v or "").strip())
+    return {"metier": txt(c.specialites) or txt(c.codes_cpv), "zone": txt(c.departements),
+            "montant": c.montant_porte_seul is not None or bool(c.montant_porte_seul_inconnu)}
+
+
 @router.get("/")
 def get_criteria(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     c = db.query(MatchingCriteriaExt).filter(MatchingCriteriaExt.user_id == data_owner_id(current_user, db)).first()
-    if not c:
-        return CriteriaUpdate().model_dump()
-    result = {}
-    for field in CriteriaUpdate.model_fields.keys():
-        result[field] = getattr(c, field, None)
-    return result
+    return _criteres_out(c)
 
 
 @router.put("/")
@@ -141,6 +164,10 @@ def update_criteria(data: CriteriaUpdate, current_user: User = Depends(get_curre
             if k in data.model_fields_set:
                 c.montant_porte_seul = v
             continue
+        if k == "montant_porte_seul_inconnu":
+            if k in data.model_fields_set and v is not None:
+                c.montant_porte_seul_inconnu = bool(v)
+            continue
         if v is None:
             # Champ TEXTE explicitement vidé → on l'EFFACE (l'utilisateur doit pouvoir
             # retirer ses spécialités/départements/CPV). Champ numérique laissé vide → on
@@ -149,9 +176,12 @@ def update_criteria(data: CriteriaUpdate, current_user: User = Depends(get_curre
                 setattr(c, k, "")
             continue
         setattr(c, k, v)
+    # Une seule réponse à la fois (vague 2b) : un montant donné retire « Je ne sais pas » ; « Je ne sais pas » coché (sans
+    # montant dans la même requête) efface le montant. Une page qui n'envoie ni l'un ni l'autre ne change rien.
+    if c.montant_porte_seul is not None and "montant_porte_seul" in data.model_fields_set:
+        c.montant_porte_seul_inconnu = False
+    elif c.montant_porte_seul_inconnu:
+        c.montant_porte_seul = None
     db.commit()
     db.refresh(c)
-    result = {}
-    for field in CriteriaUpdate.model_fields.keys():
-        result[field] = getattr(c, field, None)
-    return result
+    return _criteres_out(c)

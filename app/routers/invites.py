@@ -3040,8 +3040,9 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
     out = _shared_item(inv, db)
     # Boucle de croissance (vague 3) : simple SUGGESTION d'interface « publiez votre profil
     # partenaire » si l'organisation n'en a pas de publié — jamais d'email non sollicité.
-    from app.services.partner_network import suggest_profile
-    out["suggest_profile"] = suggest_profile(db, current_user)
+    # Vague 2b (B1) : notée sur le serveur (users.suggestion_reseau), elle ne se perd plus entre deux onglets.
+    from app.services.prise_en_main import proposer_suggestion_reseau
+    out["suggest_profile"] = proposer_suggestion_reseau(db, current_user)
     return out
 
 
